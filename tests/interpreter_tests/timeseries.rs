@@ -1390,4 +1390,34 @@ mod event_series_queries {
       "{{1, a}, {2, b}}"
     );
   }
+
+  /// Regression: Wolfram's own `TemporalData` form with regular numeric
+  /// times `{{t0, t1, dt}}` and the value path wrapped in a list stayed
+  /// unevaluated instead of becoming the series.
+  #[test]
+  fn temporal_data_with_regular_numeric_times() {
+    assert_eq!(
+      interpret(
+        "Normal[TemporalData[TimeSeries, {{{412, 480, 683}}, {{1937, 1939, 1}}, \
+         1, {\"Continuous\", 1}, {\"Discrete\", 1}, 1, {ResamplingMethod -> \
+         {\"Interpolation\", InterpolationOrder -> 1}}}, False, 10.]]"
+      )
+      .unwrap(),
+      "{{1937, 412}, {1938, 480}, {1939, 683}}"
+    );
+  }
+
+  /// Regression: explicit time stamps given out of order stayed in the
+  /// given order instead of being sorted.
+  #[test]
+  fn explicit_times_are_sorted() {
+    assert_eq!(
+      interpret("TimeSeries[{1, 2, 3}, {{1937, 1939, 1}}][\"Path\"]").unwrap(),
+      "{{1, 3}, {1937, 1}, {1939, 2}}"
+    );
+    assert_eq!(
+      interpret("TimeSeries[{1, 2, 3}, {1937, 1939, 1}][\"Path\"]").unwrap(),
+      "{{1937, 1}, {1938, 2}, {1939, 3}}"
+    );
+  }
 }

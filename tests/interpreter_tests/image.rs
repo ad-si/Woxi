@@ -9234,4 +9234,90 @@ mod morphology_3d {
       "{1 -> 1, 2 -> 3}"
     );
   }
+
+  mod image3d_volumes {
+    use super::*;
+
+    /// Regression: a type given positionally, `Image3D[data, "Byte"]`, was
+    /// ignored.
+    #[test]
+    fn positional_type() {
+      assert_eq!(
+        interpret("ImageType[Image3D[{{{0, 1}, {1, 0}}}, \"Byte\"]]").unwrap(),
+        "Byte"
+      );
+    }
+
+    #[test]
+    fn image_data_of_a_volume() {
+      assert_eq!(
+        interpret("ImageData[Image3D[{{{0, 255}, {255, 0}}, {{1, 2}, {3, 4}}}, \"Byte\"], \"Byte\"]")
+          .unwrap(),
+        "{{{0, 255}, {255, 0}}, {{1, 2}, {3, 4}}}"
+      );
+    }
+
+    #[test]
+    fn slices() {
+      assert_eq!(
+        interpret(
+          "Length[Image3DSlices[Image3D[ConstantArray[0.5, {3, 4, 5}]]]]"
+        )
+        .unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret("ImageDimensions[Image3DSlices[Image3D[ConstantArray[0.5, {3, 4, 5}]], 2]]")
+          .unwrap(),
+        "{5, 4}"
+      );
+      assert_eq!(
+        interpret(
+          "ImageData[Image3DSlices[Image3D[{{{0.}}, {{0.5}}, {{1.}}}], 3]]"
+        )
+        .unwrap(),
+        "{{1.}}"
+      );
+      // Only 1 … depth are slice numbers.
+      let r = woxi::interpret_with_stdout(
+        "Image3DSlices[Image3D[{{{0.}}, {{1.}}}], -1]",
+      )
+      .unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains(
+          "Image3DSlices::slices: Expecting All, an integer value or a vector of integer \
+           values between 1 and 2 instead of -1."
+        )),
+        "{:?}",
+        r.warnings
+      );
+    }
+
+    #[test]
+    fn color_space_option() {
+      assert_eq!(
+        interpret(
+          "ImageColorSpace[Image3D[{{{0.5}}}, ColorSpace -> \"Grayscale\"]]"
+        )
+        .unwrap(),
+        "Grayscale"
+      );
+    }
+  }
+
+  /// Regression: the InputForm named the image type after the array type
+  /// (`"UnsignedInteger8"` instead of `"Byte"`) and dropped the colour space.
+  #[test]
+  fn input_form_names_the_image_type() {
+    assert_eq!(
+      interpret("ToString[InputForm[Image[{{0, 255}}, \"Byte\"]]]").unwrap(),
+      "Image[NumericArray[{{0, 255}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> Automatic, \
+       Interleaving -> None]"
+    );
+    assert_eq!(
+      interpret("ToString[InputForm[Image[{{0.5, 0.25}}]]]").unwrap(),
+      "Image[NumericArray[{{0.5, 0.25}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, \
+       Interleaving -> None]"
+    );
+  }
 }

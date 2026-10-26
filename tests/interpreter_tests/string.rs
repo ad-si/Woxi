@@ -15500,4 +15500,27 @@ mod form_wrappers_take_extra_arguments_silently {
     assert_eq!(r.result, "{TraditionalForm, TeXForm, FullForm, OutputForm}");
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
+
+  /// Regression: `ToExpression` (and every runtime re-parse of text) left
+  /// the `\:XXXX` and octal character escapes undecoded inside strings,
+  /// although the reader decodes them in typed input.
+  #[test]
+  fn to_expression_decodes_character_escapes_in_strings() {
+    // The source text is spelled out as character codes so that no layer of
+    // quoting decodes the escape before ToExpression sees it.
+    let decoded = |source: &str| {
+      let codes: Vec<String> =
+        source.chars().map(|c| (c as u32).to_string()).collect();
+      interpret(&format!(
+        "ToCharacterCode[ToExpression[FromCharacterCode[{{{}}}]]]",
+        codes.join(", ")
+      ))
+      .unwrap()
+    };
+    assert_eq!(decoded(r#""\:043e""#), "{1086}");
+    assert_eq!(decoded(r#""\271""#), "{185}");
+    assert_eq!(decoded(r#""\[Alpha]""#), "{945}");
+    // An escaped backslash stays a backslash.
+    assert_eq!(decoded(r#""a\\:043e""#), "{97, 92, 58, 48, 52, 51, 101}");
+  }
 }

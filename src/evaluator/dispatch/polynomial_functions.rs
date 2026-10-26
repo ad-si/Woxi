@@ -377,6 +377,11 @@ pub fn dispatch_polynomial_functions(
       }
       return Some(minimize_or_numeric_fallback(args, name == "Maximize"));
     }
+    "LinearOptimization" if (2..=3).contains(&args.len()) => {
+      return Some(crate::functions::polynomial_ast::linear_optimization_ast(
+        args,
+      ));
+    }
     "LinearProgramming" if (3..=5).contains(&args.len()) => {
       return Some(crate::functions::polynomial_ast::linear_programming_ast(
         args,

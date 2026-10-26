@@ -2706,123 +2706,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let s = pair.as_str();
       // Remove surrounding quotes and process escape sequences
       let raw = &s[1..s.len() - 1];
-      let mut result = String::with_capacity(raw.len());
-      let mut chars = raw.chars().peekable();
-      while let Some(c) = chars.next() {
-        if c == '\\' {
-          match chars.peek() {
-            Some('[') => {
-              // Potential named character \[Name]
-              chars.next(); // consume '['
-              let mut name = String::new();
-              let mut found_close = false;
-              while let Some(&ch) = chars.peek() {
-                if ch == ']' {
-                  chars.next();
-                  found_close = true;
-                  break;
-                }
-                // A few long names carry a digit (`\[Mod1Key]`), so the name
-                // runs over alphanumerics, not letters alone.
-                if ch.is_ascii_alphanumeric() {
-                  name.push(ch);
-                  chars.next();
-                } else {
-                  break;
-                }
-              }
-              if found_close {
-                if let Some(unicode) = named_char_to_unicode(&name) {
-                  result.push_str(unicode);
-                } else {
-                  // A name Wolfram has no character for is reported by the
-                  // reader and left in the string as written, so `"\[Tab]"`
-                  // stays the six characters `\`, `[`, `T`, `a`, `b`, `]`.
-                  crate::emit_message(&format!(
-                    "Syntax::sntufn: Unknown unicode longname {name}."
-                  ));
-                  result.push_str("\\[");
-                  result.push_str(&name);
-                  result.push(']');
-                }
-              } else {
-                // Incomplete \[... — preserve as-is
-                result.push_str("\\[");
-                result.push_str(&name);
-              }
-            }
-            Some(&'n') => {
-              chars.next();
-              result.push('\n');
-            }
-            Some(&'t') => {
-              chars.next();
-              result.push('\t');
-            }
-            Some(&'r') => {
-              chars.next();
-              result.push('\r');
-            }
-            Some(&'\\') => {
-              chars.next();
-              result.push('\\');
-            }
-            Some(&'"') => {
-              chars.next();
-              result.push('"');
-            }
-            Some(&'`') => {
-              // Wolfram represents `\`` inside a string as a private-use
-              // character (U+F7CD), distinct from a literal backtick. The
-              // formatter renders it back as `\``.
-              chars.next();
-              result.push('\u{F7CD}');
-            }
-            // Box-syntax escapes — Wolfram maps each to a private-use codepoint
-            // distinct from the literal two-character sequence. The formatter
-            // renders these back as `\(`, `\)`, `\!`, `\*` in OutputForm.
-            Some(&'(') => {
-              chars.next();
-              result.push(crate::functions::string_ast::BOX_OPEN);
-            }
-            Some(&')') => {
-              chars.next();
-              result.push(crate::functions::string_ast::BOX_CLOSE);
-            }
-            Some(&'!') => {
-              chars.next();
-              result.push(crate::functions::string_ast::BOX_START);
-            }
-            Some(&'*') => {
-              chars.next();
-              result.push(crate::functions::string_ast::BOX_SEP);
-            }
-            Some(&'\n') => {
-              chars.next();
-            } // line continuation
-            Some(&' ') => {
-              // Linear-syntax escape for a literal space, part of the same
-              // family as `\(`/`\)`/`\!`/`\*`: inside `\!\(…\)` embedded box
-              // syntax, a bare space separates tokens (implicit
-              // multiplication) rather than standing for itself, so the
-              // FrontEnd escapes an actual space character as `\ ` — e.g. a
-              // Manipulate control label padding a subscript's digits with
-              // `\(2\(\ \ \ \)\)`. Unescapes to one plain space.
-              chars.next();
-              result.push(' ');
-            }
-            Some(_) => {
-              let other = chars.next().unwrap();
-              result.push('\\');
-              result.push(other);
-            }
-            None => result.push('\\'),
-          }
-        } else {
-          result.push(c);
-        }
-      }
-      Expr::String(result)
+      Expr::String(decode_string_literal(raw))
     }
     Rule::InformationQuery => {
       // `?symbol` is a REPL shortcut for symbol inspection. Information has
@@ -14028,6 +13912,59 @@ pub fn expr_to_source_form(expr: &Expr) -> String {
   out
 }
 
+/// The InputForm of an `Audio` built from samples:
+/// `Audio[NumericArray[{{…}, …}, array type], type, Appearance -> Automatic,
+/// AudioOutputDevice -> Automatic, SampleRate -> r, SoundVolume -> 1]`.
+/// `None` for audio read from a file (printed as written).
+fn audio_input_form(args: &[Expr]) -> Option<String> {
+  if !matches!(args.first(), Some(Expr::List(_))) {
+    return None;
+  }
+  let audio = crate::functions::audio_ast::parse_audio(&Expr::FunctionCall {
+    name: "Audio".to_string(),
+    args: args.to_vec().into(),
+  })?;
+  let ty = match args.get(1) {
+    Some(Expr::String(t)) => t.as_str(),
+    _ => "Real32",
+  };
+  let bits = crate::functions::audio_ast::integer_sample_bits(ty);
+  let array_type = match ty {
+    "SignedInteger8" => "Integer8",
+    "SignedInteger16" => "Integer16",
+    "SignedInteger32" => "Integer32",
+    "Real64" => "Real64",
+    _ => "Real32",
+  };
+  let sample = |v: f64| match (bits, ty) {
+    (Some(b), _) => {
+      crate::functions::audio_ast::integer_sample(v, b).to_string()
+    }
+    (None, "Real64") => expr_to_input_form(&Expr::Real(v)),
+    _ => expr_to_input_form(&Expr::Real(v as f32 as f64)),
+  };
+  let channels: Vec<String> = audio
+    .channels
+    .iter()
+    .map(|c| {
+      format!(
+        "{{{}}}",
+        c.iter().map(|&v| sample(v)).collect::<Vec<_>>().join(", ")
+      )
+    })
+    .collect();
+  let rate = if audio.rate.fract() == 0.0 {
+    format!("{}", audio.rate as i64)
+  } else {
+    expr_to_input_form(&Expr::Real(audio.rate))
+  };
+  Some(format!(
+    "Audio[NumericArray[{{{}}}, \"{array_type}\"], \"{ty}\", Appearance -> Automatic, \
+     AudioOutputDevice -> Automatic, SampleRate -> {rate}, SoundVolume -> 1]",
+    channels.join(", ")
+  ))
+}
+
 pub fn expr_to_input_form(expr: &Expr) -> String {
   // Grow the stack when running low so rendering a deeply nested expression
   // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
@@ -14066,6 +14003,14 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   };
 
   match expr {
+    // `Audio[samples, …]` prints the way Wolfram stores it: the samples as a
+    // `NumericArray` of the sample type, then the type and the options.
+    Expr::FunctionCall { name, args }
+      if name == "Audio"
+        && let Some(text) = audio_input_form(args) =>
+    {
+      text
+    }
     // `CompoundExpression[a, b]` written out prints as `a; b`, the same as
     // the `;` the parser reads.
     Expr::FunctionCall { name, args }
@@ -15269,7 +15214,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // Image: produce NumericArray InputForm
     Expr::Image {
-      color_space: _,
+      color_space,
       display_size: _,
       width,
       height,
@@ -15277,12 +15222,18 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       data,
       image_type,
     } => {
-      let type_str = match image_type {
-        ImageType::Bit => "Bit",
-        ImageType::Byte => "UnsignedInteger8",
-        ImageType::Bit16 => "UnsignedInteger16",
-        ImageType::Real32 => "Real32",
-        ImageType::Real64 => "Real64",
+      // The array's element type, and the image type named after it:
+      // `Image[NumericArray[…, "UnsignedInteger8"], "Byte", …]`.
+      let (type_str, image_type_str) = match image_type {
+        ImageType::Bit => ("Bit", "Bit"),
+        ImageType::Byte => ("UnsignedInteger8", "Byte"),
+        ImageType::Bit16 => ("UnsignedInteger16", "Bit16"),
+        ImageType::Real32 => ("Real32", "Real32"),
+        ImageType::Real64 => ("Real64", "Real64"),
+      };
+      let color_space = match color_space {
+        Some(cs) => format!("\"{cs}\""),
+        None => "Automatic".to_string(),
       };
       let interleaving = if *channels == 1 { "None" } else { "True" };
 
@@ -15319,7 +15270,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let array_data = format!("{{{}}}", rows.join(", "));
 
       format!(
-        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{type_str}\", ColorSpace -> Automatic, Interleaving -> {interleaving}]"
+        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{image_type_str}\", ColorSpace -> {color_space}, Interleaving -> {interleaving}]"
       )
     }
 
@@ -15422,6 +15373,129 @@ fn format_image_value(v: f64, image_type: ImageType) -> String {
 
 /// Parse a string into an Expr AST.
 /// This is used when we need to convert external string input to AST form.
+/// Decode the escapes of a string literal's text (without the quotes):
+/// `\[Name]`, `\n`, `\t`, `\"`, `\\`, the box escapes, line
+/// continuations. Shared by the parser and the runtime re-parse fast path.
+pub fn decode_string_literal(raw: &str) -> String {
+  let mut result = String::with_capacity(raw.len());
+  let mut chars = raw.chars().peekable();
+  while let Some(c) = chars.next() {
+    if c == '\\' {
+      match chars.peek() {
+        Some('[') => {
+          // Potential named character \[Name]
+          chars.next(); // consume '['
+          let mut name = String::new();
+          let mut found_close = false;
+          while let Some(&ch) = chars.peek() {
+            if ch == ']' {
+              chars.next();
+              found_close = true;
+              break;
+            }
+            // A few long names carry a digit (`\[Mod1Key]`), so the name
+            // runs over alphanumerics, not letters alone.
+            if ch.is_ascii_alphanumeric() {
+              name.push(ch);
+              chars.next();
+            } else {
+              break;
+            }
+          }
+          if found_close {
+            if let Some(unicode) = named_char_to_unicode(&name) {
+              result.push_str(unicode);
+            } else {
+              // A name Wolfram has no character for is reported by the
+              // reader and left in the string as written, so `"\[Tab]"`
+              // stays the six characters `\`, `[`, `T`, `a`, `b`, `]`.
+              crate::emit_message(&format!(
+                "Syntax::sntufn: Unknown unicode longname {name}."
+              ));
+              result.push_str("\\[");
+              result.push_str(&name);
+              result.push(']');
+            }
+          } else {
+            // Incomplete \[... — preserve as-is
+            result.push_str("\\[");
+            result.push_str(&name);
+          }
+        }
+        Some(&'n') => {
+          chars.next();
+          result.push('\n');
+        }
+        Some(&'t') => {
+          chars.next();
+          result.push('\t');
+        }
+        Some(&'r') => {
+          chars.next();
+          result.push('\r');
+        }
+        Some(&'\\') => {
+          chars.next();
+          result.push('\\');
+        }
+        Some(&'"') => {
+          chars.next();
+          result.push('"');
+        }
+        Some(&'`') => {
+          // Wolfram represents `\`` inside a string as a private-use
+          // character (U+F7CD), distinct from a literal backtick. The
+          // formatter renders it back as `\``.
+          chars.next();
+          result.push('\u{F7CD}');
+        }
+        // Box-syntax escapes — Wolfram maps each to a private-use codepoint
+        // distinct from the literal two-character sequence. The formatter
+        // renders these back as `\(`, `\)`, `\!`, `\*` in OutputForm.
+        Some(&'(') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_OPEN);
+        }
+        Some(&')') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_CLOSE);
+        }
+        Some(&'!') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_START);
+        }
+        Some(&'*') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_SEP);
+        }
+        Some(&'\n') => {
+          chars.next();
+        } // line continuation
+        Some(&' ') => {
+          // Linear-syntax escape for a literal space, part of the same
+          // family as `\(`/`\)`/`\!`/`\*`: inside `\!\(…\)` embedded box
+          // syntax, a bare space separates tokens (implicit
+          // multiplication) rather than standing for itself, so the
+          // FrontEnd escapes an actual space character as `\ ` — e.g. a
+          // Manipulate control label padding a subscript's digits with
+          // `\(2\(\ \ \ \)\)`. Unescapes to one plain space.
+          chars.next();
+          result.push(' ');
+        }
+        Some(_) => {
+          let other = chars.next().unwrap();
+          result.push('\\');
+          result.push(other);
+        }
+        None => result.push('\\'),
+      }
+    } else {
+      result.push(c);
+    }
+  }
+  result
+}
+
 /// Parse text into an expression the way the reader does: symbols resolve
 /// against the contexts open right now. Every runtime re-parse of rendered
 /// text (a stored value, a string-based replacement) goes through here, and
@@ -15439,6 +15513,15 @@ pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
 }
 
 fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
+  // Character escapes (`\.HH`, `\:HHHH`, `\OOO`) are expanded before any
+  // fast path, exactly as the reader does for typed input.
+  let expanded;
+  let s = if s.contains('\\') {
+    expanded = crate::expand_char_escapes(s);
+    expanded.as_str()
+  } else {
+    s
+  };
   let trimmed = s.trim();
 
   // Handle empty string - return as empty quoted string literal
@@ -15495,7 +15578,7 @@ fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
     }
     if is_single_literal {
       let inner = &trimmed[1..trimmed.len() - 1];
-      return Ok(str_expr(inner));
+      return Ok(Expr::String(decode_string_literal(inner)));
     }
   }
 

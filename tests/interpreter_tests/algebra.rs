@@ -22053,4 +22053,43 @@ mod solve_disjunction {
     assert_eq!(r.result, "{{i -> 1}, {j -> 30}}");
     assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
   }
+
+  /// Regression: a `SparseArray` constraint matrix left LinearProgramming
+  /// unevaluated.
+  #[test]
+  fn linear_programming_accepts_a_sparse_matrix() {
+    assert_eq!(
+      interpret("LinearProgramming[{1, 1}, SparseArray[{{1, 2}, {3, 1}}], {{4, 1}, {6, 1}}]")
+        .unwrap(),
+      "{8/5, 6/5}"
+    );
+  }
+
+  /// `LinearOptimization` in matrix form solves the same problem as
+  /// `LinearProgramming` over free variables.
+  #[test]
+  fn linear_optimization_matrix_forms() {
+    assert_eq!(
+      interpret("LinearOptimization[{1, 1}, {{{1, 2}, {3, 1}}, {-4, -6}}]")
+        .unwrap(),
+      "{8/5, 6/5}"
+    );
+    assert_eq!(
+      interpret("LinearOptimization[{1, 1}, {{{1, 2}, {3, 1}}, {-4, -6}}, {{{1, -1}}, {0}}]")
+        .unwrap(),
+      "{3/2, 3/2}"
+    );
+  }
+
+  /// Inexact input is solved in machine precision and answered in machine
+  /// reals (exact pivoting of machine reals used to take minutes on
+  /// a hundred-variable problem).
+  #[test]
+  fn linear_programming_with_machine_reals() {
+    assert_eq!(
+      interpret("LinearProgramming[{1., 1.}, {{1, 2}, {3, 1}}, {{4, 1}, {6, 0}}, {{0, 10}, {0, 10}}]")
+        .unwrap(),
+      "{1.6, 1.2}"
+    );
+  }
 }

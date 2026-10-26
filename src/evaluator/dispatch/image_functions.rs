@@ -875,6 +875,9 @@ pub fn dispatch_image_functions(
     "ImageType" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_type_ast(args));
     }
+    "Image3DSlices" if !args.is_empty() && args.len() <= 3 => {
+      return Some(crate::functions::image_ast::image3d_slices_ast(args));
+    }
     "ImageData" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_data_ast(args));
     }

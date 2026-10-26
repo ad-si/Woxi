@@ -1078,4 +1078,54 @@ mod audio_normalize_reverse_pad {
       );
     }
   }
+
+  /// Regression: `AudioType` answered `Real32` whatever type the audio was
+  /// built with.
+  #[test]
+  fn audio_type_keeps_the_given_sample_type() {
+    assert_eq!(
+      interpret("AudioType[Audio[{0.1, -0.2, 0.3}, \"SignedInteger16\"]]")
+        .unwrap(),
+      "SignedInteger16"
+    );
+    assert_eq!(
+      interpret("AudioType[Audio[{0.1, -0.2, 0.3}]]").unwrap(),
+      "Real32"
+    );
+  }
+
+  /// The InputForm is Wolfram's stored form, and reads back.
+  #[test]
+  fn input_form_is_the_stored_form() {
+    assert_eq!(
+      interpret("ToString[InputForm[Audio[{0.1, -0.2}, SampleRate -> 8000]]]")
+        .unwrap(),
+      "Audio[NumericArray[{{0.10000000149011612, -0.20000000298023224}}, \"Real32\"], \
+       \"Real32\", Appearance -> Automatic, AudioOutputDevice -> Automatic, SampleRate -> 8000, \
+       SoundVolume -> 1]"
+    );
+    assert_eq!(
+      interpret(
+        "a = Audio[{0.1, -0.2}, SampleRate -> 8000]; \
+         AudioLength[ToExpression[ToString[InputForm[a]]]]"
+      )
+      .unwrap(),
+      "Quantity[2, Samples]"
+    );
+  }
+
+  /// Integer sample types hold integers: positive values span up to
+  /// 2^(b-1) - 1, negative ones down to -2^(b-1).
+  #[test]
+  fn integer_samples() {
+    assert_eq!(
+      interpret("AudioData[Audio[NumericArray[{{3277, -6553}}, \"Integer16\"], \"SignedInteger16\"]]")
+        .unwrap(),
+      "{{0.1000091555528428, -0.199981689453125}}"
+    );
+    assert_eq!(
+      interpret("AudioData[Audio[{0.1, -0.2}, \"SignedInteger16\"]]").unwrap(),
+      "{{0., 0.}}"
+    );
+  }
 }
