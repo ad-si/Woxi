@@ -6325,7 +6325,7 @@ fn cylinder_max_subdivisions(
     return MAX_SIDE_SUBDIVISIONS;
   }
   let rel = radius.abs() / scene_extent;
-  if rel > 0.08 {
+  let by_size = if rel > 0.08 {
     MAX_SIDE_SUBDIVISIONS
   } else if rel > 0.04 {
     100
@@ -6333,8 +6333,16 @@ fn cylinder_max_subdivisions(
     50
   } else {
     16
-  }
+  };
+  // A crowd of hundreds of cylinders (a ring-stacked molecule model) shares
+  // a total ring budget, so the SVG stays tractable even when each one is
+  // individually too fat to be throttled by its relative size.
+  let by_count = (TOTAL_CYLINDER_RING_BUDGET / cylinder_count).max(2);
+  by_size.min(by_count)
 }
+
+/// Total longitudinal rings shared by all `Cylinder`s of a crowded scene.
+const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
 thread_local! {
   /// Number of `Tube`s in the `Graphics3D` currently being collected, so

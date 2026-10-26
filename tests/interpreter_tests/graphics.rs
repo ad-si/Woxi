@@ -6323,6 +6323,18 @@ mod plot3d {
       );
     }
 
+    /// A crowd of several hundred relatively fat `Cylinder`s must not each
+    /// get the full ring budget: the SVG stays a tractable size.
+    #[test]
+    fn crowded_cylinders_share_a_ring_budget() {
+      let svg = export_svg(
+        "Graphics3D[Table[Cylinder[{{i, 0, 0}, {i, 1, 0}}, 0.06], {i, 600}], \
+         Boxed -> False]",
+      );
+      let polygons = svg.matches("<polygon").count();
+      assert!(polygons < 200_000, "too many polygons: {polygons}");
+    }
+
     /// An explicit `PlotRange` frames the picture by itself: a primitive
     /// reaching far beyond it (a long axis cylinder) is cut off rather than
     /// shrinking the rest of the scene to a speck.
