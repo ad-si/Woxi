@@ -2056,6 +2056,66 @@ fn render_contour_lines_styled(
 /// other graphics. It keeps the call's options too, so the merged picture is
 /// still drawn on the axes and range the plot asked for, and spells out the
 /// plot's own defaults where `Graphics` differs: framed, and square.
+/// Wrap a contour plot's primitives into the `GraphicsComplex[pts, …]`
+/// Wolfram returns: every `Line` of coordinate pairs (at any list depth)
+/// becomes a `Line` of 1-based indices into one shared point table, so
+/// `Cases[plot, _GraphicsComplex, ∞]` and `pts[[First[line]]]` work as in
+/// Wolfram and `Normal` recovers the coordinates.
+fn contour_graphics_complex(items: Vec<Expr>) -> Expr {
+  fn coords(e: &Expr) -> Option<(f64, f64)> {
+    match e {
+      Expr::List(p) if p.len() == 2 => match (&p[0], &p[1]) {
+        (Expr::Real(x), Expr::Real(y)) => Some((*x, *y)),
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+  fn index(
+    e: &Expr,
+    pts: &mut Vec<Expr>,
+    seen: &mut std::collections::HashMap<(u64, u64), i128>,
+  ) -> Expr {
+    match e {
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|i| index(i, pts, seen)).collect())
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Line"
+          && args.len() == 1
+          && let Expr::List(chain) = &args[0]
+          && !chain.is_empty()
+          && chain.iter().all(|p| coords(p).is_some()) =>
+      {
+        let ids: Vec<Expr> = chain
+          .iter()
+          .map(|p| {
+            let (x, y) = coords(p).unwrap();
+            let id =
+              *seen.entry((x.to_bits(), y.to_bits())).or_insert_with(|| {
+                pts.push(p.clone());
+                pts.len() as i128
+              });
+            Expr::Integer(id)
+          })
+          .collect();
+        call1("Line", Expr::List(ids.into()))
+      }
+      _ => e.clone(),
+    }
+  }
+  let mut pts = Vec::new();
+  let mut seen = std::collections::HashMap::new();
+  let data: Vec<Expr> = items
+    .iter()
+    .map(|i| index(i, &mut pts, &mut seen))
+    .collect();
+  call(
+    "GraphicsComplex",
+    vec![Expr::List(pts.into()), Expr::List(data.into())],
+  )
+}
+
 fn field_plot_structure(
   items: Vec<Expr>,
   args: &[Expr],
@@ -2562,7 +2622,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let structure = field_plot_structure(
-    structure_items,
+    vec![contour_graphics_complex(structure_items)],
     args,
     (x_min, x_max),
     (y_min, y_max),
@@ -2848,7 +2908,10 @@ fn contour_plot_equations(
       structure_items.push(call1("Line", Expr::List(points.into())));
     }
   }
-  let structure = call1("Graphics", Expr::List(structure_items.into()));
+  let structure = call1(
+    "Graphics",
+    Expr::List(vec![contour_graphics_complex(structure_items)].into()),
+  );
   // A contour plot is framed and has no axes unless asked otherwise, so a
   // `Show` of several of them (`Frame -> False` or not) must not grow the
   // axes that `Show` otherwise gives a plot.

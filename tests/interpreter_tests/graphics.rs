@@ -36257,10 +36257,11 @@ mod color_data_indexed {
       interpret(
         "With[{prims = (ContourPlot[x == y, {x, -3, 3}, {y, -3, 3}, \
          ContourStyle -> {Pink}] /. Tooltip[q_, ___] :> q)[[1]]}, \
-         {prims[[1]], Head[prims[[2]]]}]"
+         {Head[prims[[1]]], Cases[prims, _RGBColor, Infinity], \
+         Head[First[Cases[prims, _Line, Infinity]]]}]"
       )
       .unwrap(),
-      "{RGBColor[1, 0.5, 0.5], Line}"
+      "{GraphicsComplex, {RGBColor[1, 0.5, 0.5]}, Line}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
@@ -36276,6 +36277,60 @@ mod color_data_indexed {
       )
       .unwrap(),
       "List"
+    );
+  }
+
+  // Like Wolfram, a ContourPlot holds its curves in a
+  // `GraphicsComplex[pts, {… Line[indices] …}]`: the Demonstrations idiom
+  // `pts = First[Cases[plot, x_GraphicsComplex :> First[x], Infinity]]`
+  // followed by `pts[[First[line]]]` recovers each curve's points, and
+  // `Normal` resolves the indices back to coordinates.
+  #[test]
+  fn contour_plot_lines_live_in_graphics_complex() {
+    clear_state();
+    for (body, opts) in [
+      ("x^2 + y^2 - 1", ", Contours -> {0}"),
+      ("x^2 + y^2 == 1", ""),
+    ] {
+      let setup = format!(
+        "p = ContourPlot[{body}, {{x, -2, 2}}, {{y, -2, 2}}{opts}]; \
+         pts = First[Cases[p, g_GraphicsComplex :> First[g], Infinity]]; \
+         lines = Cases[p, l_Line :> First[l], Infinity];"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{setup} {{MatrixQ[pts], Length[lines], \
+           VectorQ[lines[[1]], IntegerQ], \
+           Max[Abs[Norm /@ pts[[lines[[1]]]] - 1]] < 0.01}}"
+        ))
+        .unwrap(),
+        "{True, 1, True, True}"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{setup} Cases[Normal[p], Line[q_] :> q, Infinity] == \
+           {{pts[[lines[[1]]]]}}"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+  }
+
+  // `Normal` resolves a GraphicsComplex at any depth, not just at the top.
+  #[test]
+  fn normal_resolves_nested_graphics_complex() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "gc = GraphicsComplex[{{0, 0}, {1, 0}}, Line[{1, 2}]]; \
+         {Normal[{gc}], Normal[f[gc]], Normal[Graphics[{Red, gc}]], \
+         Normal[Graphics[gc]]} // InputForm // ToString"
+      )
+      .unwrap(),
+      "{{{Line[{{0, 0}, {1, 0}}]}}, f[{Line[{{0, 0}, {1, 0}}]}], \
+       Graphics[{RGBColor[1, 0, 0], {Line[{{0, 0}, {1, 0}}]}}], \
+       Graphics[{Line[{{0, 0}, {1, 0}}]}]}"
     );
   }
 

@@ -8366,12 +8366,44 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
         _ => expr.clone(),
       }
     }
+    // A nested GraphicsComplex resolves its point indices, so
+    // `Normal[Graphics[GraphicsComplex[…]]]` holds plain primitives.
+    Expr::FunctionCall { name, args }
+      if name == "GraphicsComplex"
+        && args.len() >= 2
+        && matches!(args[0], Expr::List(_)) =>
+    {
+      let Expr::List(pts) = &args[0] else {
+        unreachable!()
+      };
+      crate::functions::graphics::graphics_complex_to_normal_form(
+        pts,
+        &args[1],
+        &args[2..],
+      )
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args.iter().map(normal_convert_associations).collect(),
     },
     Expr::List(items) => {
       Expr::List(items.iter().map(normal_convert_associations).collect())
+    }
+    // A rendered plot normalizes its symbolic structure (which is what
+    // `Cases`/`Part` look into) and keeps its rendering.
+    Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } => {
+      let mut result = expr.clone();
+      if let Expr::Graphics {
+        structure: Some(slot),
+        ..
+      } = &mut result
+      {
+        **slot = normal_convert_associations(structure);
+      }
+      result
     }
     _ => expr.clone(),
   }
