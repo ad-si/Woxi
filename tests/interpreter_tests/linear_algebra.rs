@@ -3723,6 +3723,22 @@ mod find_fit {
     );
   }
 
+  // `NormFunction` swaps the sum of squares for another norm of the
+  // residuals: the 1-norm ignores the outlier, the max-norm balances it.
+  #[test]
+  fn norm_function() {
+    let fit = |norm: &str| {
+      interpret(&format!(
+        "Round[{{a, b}} /. FindFit[{{{{1, 1}}, {{2, 2}}, {{3, 3}}, {{4, 4}}, \
+         {{5, 10}}}}, a x + b, {{a, b}}, x, NormFunction -> {norm}], 0.001]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(fit("(Norm[#, 1] &)"), "{1., 0.}");
+    assert_eq!(fit("(Norm[#, 2] &)"), "{2., -2.}");
+    assert_eq!(fit("(Norm[#, Infinity] &)"), "{2.25, -3.125}");
+  }
+
   #[test]
   fn numeric_variable_is_invalid() {
     clear_state();
