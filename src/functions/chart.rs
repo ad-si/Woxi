@@ -687,17 +687,19 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
     {
       let base = expr_to_label(&args[0])?;
-      let scripts: String = args[1..]
+      // Several scripts read as one comma-separated run: `P_{B,D}`.
+      let scripts = args[1..]
         .iter()
         .filter_map(expr_to_label)
-        .map(|s| {
-          crate::functions::graphics::to_unicode_script_digits(
-            &s,
-            name == "Superscript",
-          )
-        })
-        .collect();
-      Some(format!("{base}{scripts}"))
+        .collect::<Vec<_>>()
+        .join(",");
+      Some(format!(
+        "{base}{}",
+        crate::functions::graphics::to_unicode_script_digits(
+          &scripts,
+          name == "Superscript",
+        )
+      ))
     }
     // `base^exp` (e.g. a `FrameLabel` typesetting `e^(iΩ)` as
     // `Style["e", Italic]^Row[{Style["i", Italic], "Ω"}]`) reads the same
@@ -1031,10 +1033,7 @@ fn applied_label(e: &Expr) -> Option<String> {
         expr_to_label(arg)?
       ));
     }
-    Expr::CurriedCall { func, args } => (
-      applied_label(func).or_else(|| expr_to_label(func))?,
-      &args[..],
-    ),
+    Expr::CurriedCall { func, args } => (expr_to_label(func)?, &args[..]),
     Expr::FunctionCall { name, args }
       if crate::evaluator::functions::get_builtin_function_info(name)
         .is_none() =>
