@@ -8866,7 +8866,22 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           // Parse as list of {x,y,z} points
           let mut points: Vec<(f64, f64, f64)> = Vec::new();
-          for item in outer {
+          // An array of rows of points (`Table[{x, y, z}, {y, …}, {x, …}]`)
+          // is the same point set, one row at a time.
+          let flattened: Vec<&Expr> = outer
+            .iter()
+            .flat_map(|item| match item {
+              Expr::List(row)
+                if row
+                  .iter()
+                  .all(|p| matches!(p, Expr::List(c) if c.len() == 3)) =>
+              {
+                row.iter().collect::<Vec<_>>()
+              }
+              _ => vec![item],
+            })
+            .collect();
+          for item in flattened {
             if let Expr::List(coords) = item
               && coords.len() == 3
             {

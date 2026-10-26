@@ -21110,6 +21110,24 @@ mod list_plot_3d {
     assert!(!svg.contains(">8</text>"));
   }
 
+  // An unflattened array of rows of {x, y, z} triples is the same point
+  // set as its flattened form.
+  #[test]
+  fn list_plot3d_rows_of_triples() {
+    clear_state();
+    let rows = "Table[{Cos[i Pi/8], Cos[j Pi/8], i + j}, {i, 0, 8}, {j, 0, 8}]";
+    let svg = interpret_with_stdout(&format!("ListPlot3D[{rows}]"))
+      .unwrap()
+      .graphics
+      .unwrap();
+    let flat =
+      interpret_with_stdout(&format!("ListPlot3D[Flatten[{rows}, 1]]"))
+        .unwrap()
+        .graphics
+        .unwrap();
+    assert_eq!(svg, flat);
+  }
+
   #[test]
   fn list_plot3d_matrix_format() {
     clear_state();
