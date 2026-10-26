@@ -727,6 +727,95 @@ fn image_stack_info(e: &Expr) -> Option<(Vec<i128>, usize, ImageType)> {
   })
 }
 
+/// The slices of a volume as 2D images, front to back: the images of a
+/// stacked `Image3D[{img1, …}]`, or one `Image[plane, type]` per plane of
+/// `Image3D[data]` / `Image3D[NumericArray[data, …], type]`. The canonical
+/// view of a volume for `ImageData` and `Image3DSlices`.
+pub fn image3d_slices(e: &Expr) -> Option<Vec<Expr>> {
+  if image_stack_info(e).is_some() {
+    let Expr::FunctionCall { args, .. } = e else {
+      return None;
+    };
+    let Expr::List(items) = &args[0] else {
+      return None;
+    };
+    return Some(items.iter().cloned().collect());
+  }
+  let t = image3d_type(e)?;
+  let Expr::FunctionCall { args, .. } = e else {
+    return None;
+  };
+  let data = match &args[0] {
+    Expr::FunctionCall { name, args: na }
+      if name == "NumericArray" && !na.is_empty() =>
+    {
+      &na[0]
+    }
+    other => other,
+  };
+  let Expr::List(planes) = data else {
+    return None;
+  };
+  let tag = match t {
+    ImageType::Bit => "Bit",
+    ImageType::Byte => "Byte",
+    ImageType::Bit16 => "Bit16",
+    ImageType::Real32 => "Real32",
+    ImageType::Real64 => "Real64",
+  };
+  planes
+    .iter()
+    .map(|plane| {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Image",
+        vec![plane.clone(), str_expr(tag)],
+      ))
+      .ok()
+    })
+    .collect()
+}
+
+/// `Image3DSlices[vol]` — the slices of a volume; `Image3DSlices[vol, n]` the
+/// `n`-th, `Image3DSlices[vol, {n1, …}]` a list of them.
+pub fn image3d_slices_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Only slicing along the depth axis (direction 1) is supported.
+  if args.len() == 3 && !matches!(args[2], Expr::Integer(1)) {
+    return Ok(unevaluated("Image3DSlices", args));
+  }
+  let Some(slices) = args.first().and_then(image3d_slices) else {
+    return Ok(unevaluated("Image3DSlices", args));
+  };
+  let len = slices.len() as i128;
+  let pick = |n: &Expr| -> Option<Expr> {
+    let Expr::Integer(k) = n else { return None };
+    (1..=len)
+      .contains(k)
+      .then(|| slices[(*k - 1) as usize].clone())
+  };
+  let invalid = |spec: &Expr| {
+    crate::emit_message(&format!(
+      "Image3DSlices::slices: Expecting All, an integer value or a vector of \
+       integer values between 1 and {len} instead of {}.",
+      expr_to_string(spec)
+    ));
+    Ok(unevaluated("Image3DSlices", args))
+  };
+  match args.get(1) {
+    None => Ok(Expr::List(slices.into())),
+    Some(Expr::Identifier(a)) if a == "All" => Ok(Expr::List(slices.into())),
+    Some(spec @ Expr::List(ns)) => {
+      match ns.iter().map(pick).collect::<Option<Vec<_>>>() {
+        Some(v) => Ok(Expr::List(v.into())),
+        None => invalid(spec),
+      }
+    }
+    Some(n) => match pick(n) {
+      Some(s) => Ok(s),
+      None => invalid(n),
+    },
+  }
+}
+
 /// Flatten a stacked `Image3D[{img1, img2, …}]` into a 2D picture for hosts
 /// that can only show flat images: the mean of the slices inside `ClipRange`
 /// along the depth axis. `ClipRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` is in
@@ -1088,6 +1177,11 @@ fn image3d_type(e: &Expr) -> Option<ImageType> {
   if rank != 3 && rank != 4 {
     return None;
   }
+  // `Image3D[data, "Byte"]`: a positional type wins over the array's.
+  let type_tag = match args.get(1) {
+    Some(Expr::String(t)) => Some(t.as_str()),
+    _ => type_tag,
+  };
   Some(match type_tag {
     Some("Byte" | "UnsignedInteger8") => ImageType::Byte,
     Some("Bit") => ImageType::Bit,
@@ -1115,6 +1209,18 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     args
   };
+  // A volume: the data of each slice, front to back.
+  if !matches!(&args[0], Expr::Image { .. })
+    && let Some(slices) = image3d_slices(&args[0])
+  {
+    let mut out = Vec::with_capacity(slices.len());
+    for slice in slices {
+      let mut a = vec![slice];
+      a.extend(args[1..].iter().cloned());
+      out.push(image_data_ast(&a)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
   let requested_type: Option<&str> = if args.len() == 2 {
     match &args[1] {
       Expr::String(s) => Some(s.as_str()),
@@ -1323,6 +1429,27 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   if is_valid_image3d(&args[0]) {
+    // An explicit ColorSpace option, else the slices' colour space.
+    if let Expr::FunctionCall { args: a, .. } = &args[0] {
+      for opt in a.iter().skip(1) {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorSpace")
+        {
+          return Ok(replacement.as_ref().clone());
+        }
+      }
+    }
+    if image_stack_info(&args[0]).is_some()
+      && let Some(Expr::Image {
+        color_space: Some(cs),
+        ..
+      }) = image3d_slices(&args[0]).and_then(|s| s.into_iter().next())
+    {
+      return Ok(str_expr(cs));
+    }
     return Ok(id_expr("Automatic"));
   }
   // Matches wolframscript: emit ImageColorSpace::imginv and return

@@ -5135,6 +5135,11 @@ pub fn dispatch_list_operations(
             .iter()
             .all(|r| matches!(r, Expr::List(cols) if cols.len() == nrows))
         }
+        // A sparse matrix: its recorded dimensions.
+        Expr::FunctionCall { name, args: sa } if name == "SparseArray" => {
+          matches!(sa.get(1), Some(Expr::List(d))
+            if d.len() == 2 && matches!((&d[0], &d[1]), (Expr::Integer(a), Expr::Integer(b)) if a == b))
+        }
         _ => false,
       };
       return Some(Ok(if result {

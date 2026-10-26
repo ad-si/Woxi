@@ -9990,7 +9990,7 @@ fn normalize_line_ends(src: &str) -> String {
 fn parse_program_statements(src: &str) -> Option<Vec<Expr>> {
   use crate::Rule;
   let normalized = normalize_line_ends(src);
-  let preprocessed = crate::insert_statement_separators(normalized.trim());
+  let preprocessed = crate::normalize_source(&normalized);
   let program = crate::parse(&preprocessed).ok()?.next()?;
   if program.as_rule() != Rule::Program {
     return None;

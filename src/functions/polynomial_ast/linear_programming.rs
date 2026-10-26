@@ -102,6 +102,102 @@ impl Rat {
   }
 }
 
+/// The arithmetic the simplex needs: exact rationals for exact input, or
+/// machine reals (with a tolerance) when any input is inexact, as Wolfram
+/// solves such problems in machine precision.
+trait LpNum: Clone {
+  fn zero() -> Self;
+  fn one() -> Self;
+  fn is_zero(&self) -> bool;
+  fn is_negative(&self) -> bool;
+  fn is_positive(&self) -> bool;
+  fn neg(&self) -> Self;
+  fn add(&self, o: &Self) -> Self;
+  fn sub(&self, o: &Self) -> Self;
+  fn mul(&self, o: &Self) -> Self;
+  fn div(&self, o: &Self) -> Self;
+  fn cmp(&self, o: &Self) -> std::cmp::Ordering;
+}
+
+impl LpNum for Rat {
+  fn zero() -> Self {
+    Rat::zero()
+  }
+  fn one() -> Self {
+    Rat::one()
+  }
+  fn is_zero(&self) -> bool {
+    Rat::is_zero(self)
+  }
+  fn is_negative(&self) -> bool {
+    Rat::is_negative(self)
+  }
+  fn is_positive(&self) -> bool {
+    Rat::is_positive(self)
+  }
+  fn neg(&self) -> Self {
+    Rat::neg(self)
+  }
+  fn add(&self, o: &Self) -> Self {
+    Rat::add(self, o)
+  }
+  fn sub(&self, o: &Self) -> Self {
+    Rat::sub(self, o)
+  }
+  fn mul(&self, o: &Self) -> Self {
+    Rat::mul(self, o)
+  }
+  fn div(&self, o: &Self) -> Self {
+    Rat::div(self, o)
+  }
+  fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+    Rat::cmp(self, o)
+  }
+}
+
+/// Values this close to zero count as zero in machine-precision pivoting.
+const LP_EPS: f64 = 1e-9;
+
+impl LpNum for f64 {
+  fn zero() -> Self {
+    0.0
+  }
+  fn one() -> Self {
+    1.0
+  }
+  fn is_zero(&self) -> bool {
+    self.abs() <= LP_EPS
+  }
+  fn is_negative(&self) -> bool {
+    *self < -LP_EPS
+  }
+  fn is_positive(&self) -> bool {
+    *self > LP_EPS
+  }
+  fn neg(&self) -> Self {
+    -*self
+  }
+  fn add(&self, o: &Self) -> Self {
+    self + o
+  }
+  fn sub(&self, o: &Self) -> Self {
+    self - o
+  }
+  fn mul(&self, o: &Self) -> Self {
+    self * o
+  }
+  fn div(&self, o: &Self) -> Self {
+    self / o
+  }
+  fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+    if (self - o).abs() <= LP_EPS * (1.0 + self.abs().max(o.abs())) {
+      std::cmp::Ordering::Equal
+    } else {
+      self.total_cmp(o)
+    }
+  }
+}
+
 fn bigint_to_expr(n: &BigInt) -> Expr {
   match i128::try_from(n.clone()) {
     Ok(small) => Expr::Integer(small),
@@ -301,6 +397,27 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if !(3..=5).contains(&args.len()) {
     return call();
+  }
+  // Sparse operands (the constraint matrix of a large problem, typically)
+  // are solved as their dense form.
+  if args.iter().any(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+  ) {
+    let dense: Option<Vec<Expr>> = args
+      .iter()
+      .map(|a| match a {
+        Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+          crate::functions::list_helpers_ast::densify_sparse_array(a)
+        }
+        other => Some(other.clone()),
+      })
+      .collect();
+    return match dense {
+      Some(d) if !d.iter().any(|a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray")) => {
+        linear_programming_ast(&d)
+      }
+      _ => call(),
+    };
   }
   let (Expr::List(c_items), Expr::List(m_rows), Expr::List(b_items)) =
     (&args[0], &args[1], &args[2])
@@ -512,31 +629,62 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  let outcome = if unsatisfiable {
+  // Inexact input is solved in machine precision and answered in machine
+  // reals, as in Wolfram; this also keeps large problems tractable (exact
+  // pivots grow without bound).
+  let inexact = args
+    .iter()
+    .take(4)
+    .any(crate::functions::predicate_ast::contains_real_literal);
+  let outcome: LpResult<Expr> = if unsatisfiable {
     LpResult::Infeasible
-  } else if any_integer {
-    solve_branch_and_bound(&c2, &a2, &b2, &rel2, width, &maps, &integer)
+  } else if inexact && !any_integer {
+    let to_f = |v: &[Rat]| v.iter().map(rat_to_f64).collect::<Vec<f64>>();
+    let a3: Vec<Vec<f64>> = a2.iter().map(|r| to_f(r)).collect();
+    match solve_simplex(&to_f(&c2), &a3, &to_f(&b2), &rel2, width) {
+      LpResult::Optimal(y) => LpResult::Optimal(
+        maps
+          .iter()
+          .map(|map| {
+            Expr::Real(match map {
+              VarMap::Shifted { col, offset } => rat_to_f64(offset) + y[*col],
+              VarMap::Free { pos, neg } => y[*pos] - y[*neg],
+            })
+          })
+          .collect(),
+      ),
+      LpResult::Unbounded => LpResult::Unbounded,
+      LpResult::Infeasible => LpResult::Infeasible,
+    }
   } else {
-    solve_simplex(&c2, &a2, &b2, &rel2, width)
+    let exact = if any_integer {
+      solve_branch_and_bound(&c2, &a2, &b2, &rel2, width, &maps, &integer)
+    } else {
+      solve_simplex(&c2, &a2, &b2, &rel2, width)
+    };
+    match exact {
+      LpResult::Optimal(y) => LpResult::Optimal(
+        maps
+          .iter()
+          .zip(&integer)
+          .map(|(map, &is_int)| {
+            let value = original_value(map, &y);
+            // A mixed problem is solved in machine precision in Wolfram, so
+            // its continuous variables come back as machine reals.
+            if any_integer && !is_int {
+              Expr::Real(rat_to_f64(&value))
+            } else {
+              value.to_expr()
+            }
+          })
+          .collect(),
+      ),
+      LpResult::Unbounded => LpResult::Unbounded,
+      LpResult::Infeasible => LpResult::Infeasible,
+    }
   };
   match outcome {
-    LpResult::Optimal(y) => {
-      let values: Vec<Expr> = maps
-        .iter()
-        .zip(&integer)
-        .map(|(map, &is_int)| {
-          let value = original_value(map, &y);
-          // A mixed problem is solved in machine precision in Wolfram, so
-          // its continuous variables come back as machine reals.
-          if any_integer && !is_int {
-            Expr::Real(rat_to_f64(&value))
-          } else {
-            value.to_expr()
-          }
-        })
-        .collect();
-      Ok(Expr::List(values.into()))
-    }
+    LpResult::Optimal(values) => Ok(Expr::List(values.into())),
     LpResult::Unbounded => {
       crate::emit_message(
         "LinearProgramming::lpsub: This problem is unbounded.",
@@ -728,8 +876,8 @@ fn solve_branch_and_bound(
   }
 }
 
-enum LpResult {
-  Optimal(Vec<Rat>),
+enum LpResult<T = Rat> {
+  Optimal(Vec<T>),
   Unbounded,
   Infeasible,
 }
@@ -738,23 +886,23 @@ enum LpResult {
 /// variables, followed by one slack/surplus per inequality and one artificial
 /// per `>=`/`==` constraint. Each tableau row stores all column coefficients
 /// plus a trailing right-hand-side entry.
-fn solve_simplex(
-  c: &[Rat],
-  a: &[Vec<Rat>],
-  b: &[Rat],
+fn solve_simplex<T: LpNum>(
+  c: &[T],
+  a: &[Vec<T>],
+  b: &[T],
   rel: &[Rel],
   n: usize,
-) -> LpResult {
+) -> LpResult<T> {
   let k = a.len();
 
   // Normalize each constraint to a non-negative right-hand side, flipping the
   // row and relation when b_i < 0.
-  let mut rows: Vec<Vec<Rat>> = Vec::with_capacity(k);
-  let mut rhs: Vec<Rat> = Vec::with_capacity(k);
+  let mut rows: Vec<Vec<T>> = Vec::with_capacity(k);
+  let mut rhs: Vec<T> = Vec::with_capacity(k);
   let mut rels: Vec<Rel> = Vec::with_capacity(k);
   for i in 0..k {
     if b[i].is_negative() {
-      rows.push(a[i].iter().map(Rat::neg).collect());
+      rows.push(a[i].iter().map(T::neg).collect());
       rhs.push(b[i].neg());
       rels.push(match rel[i] {
         Rel::Ge => Rel::Le,
@@ -781,31 +929,31 @@ fn solve_simplex(
   let total = n + n_slack + n_art;
   let rhs_col = total; // index of the RHS entry in each row
 
-  let mut tab: Vec<Vec<Rat>> = Vec::with_capacity(k);
+  let mut tab: Vec<Vec<T>> = Vec::with_capacity(k);
   let mut basis: Vec<usize> = Vec::with_capacity(k);
   let mut slack_i = 0usize;
   let mut art_i = 0usize;
   for i in 0..k {
-    let mut row = vec![Rat::zero(); total + 1];
+    let mut row = vec![T::zero(); total + 1];
     for (j, v) in rows[i].iter().enumerate() {
       row[j] = v.clone();
     }
     row[rhs_col] = rhs[i].clone();
     match rels[i] {
       Rel::Le => {
-        row[slack_base + slack_i] = Rat::one();
+        row[slack_base + slack_i] = T::one();
         basis.push(slack_base + slack_i);
         slack_i += 1;
       }
       Rel::Ge => {
-        row[slack_base + slack_i] = Rat::one().neg();
+        row[slack_base + slack_i] = T::one().neg();
         slack_i += 1;
-        row[art_base + art_i] = Rat::one();
+        row[art_base + art_i] = T::one();
         basis.push(art_base + art_i);
         art_i += 1;
       }
       Rel::Eq => {
-        row[art_base + art_i] = Rat::one();
+        row[art_base + art_i] = T::one();
         basis.push(art_base + art_i);
         art_i += 1;
       }
@@ -815,9 +963,9 @@ fn solve_simplex(
 
   // Phase I: minimize the sum of the artificial variables.
   if n_art > 0 {
-    let mut phase1_cost = vec![Rat::zero(); total];
+    let mut phase1_cost = vec![T::zero(); total];
     for cost in phase1_cost.iter_mut().take(total).skip(art_base) {
-      *cost = Rat::one();
+      *cost = T::one();
     }
     match run_simplex(&mut tab, &mut basis, &phase1_cost, total, rhs_col) {
       SimplexOutcome::Optimal(obj) => {
@@ -845,7 +993,7 @@ fn solve_simplex(
   // Phase II: minimize the true objective c·x. Artificial columns keep a large
   // implicit cost by being excluded from entering (their cost stays 0 but we
   // never let them re-enter — they are zeroed and pinned below).
-  let mut cost = vec![Rat::zero(); total];
+  let mut cost = vec![T::zero(); total];
   for (j, cj) in c.iter().enumerate() {
     cost[j] = cj.clone();
   }
@@ -859,7 +1007,7 @@ fn solve_simplex(
   }
 
   // Read the structural variable values from the final basis.
-  let mut x = vec![Rat::zero(); n];
+  let mut x = vec![T::zero(); n];
   for i in 0..k {
     if basis[i] < n {
       x[basis[i]] = tab[i][rhs_col].clone();
@@ -868,32 +1016,32 @@ fn solve_simplex(
   LpResult::Optimal(x)
 }
 
-enum SimplexOutcome {
-  Optimal(Rat),
+enum SimplexOutcome<T> {
+  Optimal(T),
   Unbounded,
 }
 
-fn run_simplex(
-  tab: &mut [Vec<Rat>],
+fn run_simplex<T: LpNum>(
+  tab: &mut [Vec<T>],
   basis: &mut [usize],
-  cost: &[Rat],
+  cost: &[T],
   total: usize,
   rhs_col: usize,
-) -> SimplexOutcome {
+) -> SimplexOutcome<T> {
   run_simplex_restricted(tab, basis, cost, total, total, rhs_col)
 }
 
 /// Primal simplex with Bland's rule. Only columns `0..entering_limit` are
 /// considered for entering the basis (used to exclude artificial columns in
 /// Phase II). Returns the optimal objective value or reports unboundedness.
-fn run_simplex_restricted(
-  tab: &mut [Vec<Rat>],
+fn run_simplex_restricted<T: LpNum>(
+  tab: &mut [Vec<T>],
   basis: &mut [usize],
-  cost: &[Rat],
+  cost: &[T],
   total: usize,
   entering_limit: usize,
   rhs_col: usize,
-) -> SimplexOutcome {
+) -> SimplexOutcome<T> {
   let k = tab.len();
   // Dantzig's rule matches wolframscript's vertex choice among multiple
   // optima, but can cycle on degenerate problems; after a generous iteration
@@ -909,7 +1057,7 @@ fn run_simplex_restricted(
     // wolframscript reports when a problem has multiple optima. Under Bland's
     // fallback we instead take the first column with a negative reduced cost.
     let mut entering = None;
-    let mut best_rc: Option<Rat> = None;
+    let mut best_rc: Option<T> = None;
     for j in 0..entering_limit {
       let mut rc = cost[j].clone();
       for i in 0..k {
@@ -934,7 +1082,7 @@ fn run_simplex_restricted(
     }
     let Some(col) = entering else {
       // Optimal: compute the objective value.
-      let mut obj = Rat::zero();
+      let mut obj = T::zero();
       for i in 0..k {
         let cb = &cost[basis[i]];
         if !cb.is_zero() {
@@ -947,7 +1095,7 @@ fn run_simplex_restricted(
     // Ratio test: minimize rhs_i / tab[i][col] over rows with tab[i][col] > 0.
     // Bland's rule breaks ties by the smallest leaving basic-variable index.
     let mut leaving: Option<usize> = None;
-    let mut best_ratio: Option<Rat> = None;
+    let mut best_ratio: Option<T> = None;
     for i in 0..k {
       if tab[i][col].is_positive() {
         let ratio = tab[i][rhs_col].div(&tab[i][col]);
@@ -974,8 +1122,8 @@ fn run_simplex_restricted(
 }
 
 /// Gauss-Jordan pivot on `tab[row][col]`, updating the basis.
-fn pivot(
-  tab: &mut [Vec<Rat>],
+fn pivot<T: LpNum>(
+  tab: &mut [Vec<T>],
   basis: &mut [usize],
   row: usize,
   col: usize,
@@ -1000,4 +1148,102 @@ fn pivot(
     }
   }
   basis[row] = col;
+}
+
+/// `LinearOptimization[c, {a, b}]` and `LinearOptimization[c, {a, b},
+/// {aeq, beq}]` — minimize `c . x` over real `x` subject to `a . x + b >= 0`
+/// (and `aeq . x + beq == 0`), the matrix forms. Solved as the equivalent
+/// `LinearProgramming` problem with unbounded variables; returns the
+/// minimizing `x`.
+pub fn linear_optimization_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let call = || Ok(unevaluated("LinearOptimization", args));
+  let densify = |e: &Expr| -> Expr {
+    crate::functions::list_helpers_ast::densify_sparse_array(e)
+      .unwrap_or_else(|| e.clone())
+  };
+  // `{matrix, vector}` with as many rows as entries.
+  let pair = |e: &Expr| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    let Expr::List(p) = e else { return None };
+    if p.len() != 2 {
+      return None;
+    }
+    let (Expr::List(ref rows), Expr::List(ref rhs)) =
+      (densify(&p[0]), densify(&p[1]))
+    else {
+      return None;
+    };
+    (rows.len() == rhs.len()).then(|| {
+      (
+        rows.iter().cloned().collect(),
+        rhs.iter().cloned().collect(),
+      )
+    })
+  };
+  let c = densify(&args[0]);
+  let Expr::List(ref c_items) = c else {
+    return call();
+  };
+  let n = c_items.len();
+  let (Some(ineq), eq) = (args.get(1).and_then(pair), args.get(2).map(pair))
+  else {
+    return call();
+  };
+  let eq = match eq {
+    None => (Vec::new(), Vec::new()),
+    Some(Some(e)) => e,
+    Some(None) => return call(),
+  };
+  if args.len() > 3 || n == 0 {
+    return call();
+  }
+  let negate = |v: &Expr| {
+    crate::functions::math_ast::times_ast(&[Expr::Integer(-1), v.clone()])
+      .unwrap_or_else(|_| v.clone())
+  };
+  let mut rows = ineq.0;
+  let mut b: Vec<Expr> = ineq
+    .1
+    .iter()
+    .map(|v| Expr::List(vec![negate(v), Expr::Integer(1)].into()))
+    .collect();
+  rows.extend(eq.0);
+  b.extend(
+    eq.1
+      .iter()
+      .map(|v| Expr::List(vec![negate(v), Expr::Integer(0)].into())),
+  );
+  if rows.is_empty() {
+    return call();
+  }
+  let free = Expr::List(
+    (0..n)
+      .map(|_| {
+        Expr::List(
+          vec![
+            crate::functions::math_ast::times_ast(&[
+              Expr::Integer(-1),
+              id_expr("Infinity"),
+            ])
+            .unwrap_or(id_expr("Infinity")),
+            id_expr("Infinity"),
+          ]
+          .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let result = linear_programming_ast(&[
+    c.clone(),
+    Expr::List(rows.into()),
+    Expr::List(b.into()),
+    free,
+  ])?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "LinearProgramming")
+  {
+    return call();
+  }
+  Ok(result)
 }

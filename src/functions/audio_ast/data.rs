@@ -100,7 +100,42 @@ pub fn parse_audio(expr: &Expr) -> Option<AudioData> {
     Expr::FunctionCall { name, args }
       if name == "Audio" && !args.is_empty() =>
     {
-      if let Some(channels) = samples_from_list(&args[0]) {
+      // Integer samples — `Audio[{…}, "SignedInteger16"]` or Wolfram's
+      // stored `Audio[NumericArray[{…}, "Integer16"], …]` — span their
+      // type's range.
+      let declared = match args.get(1) {
+        Some(Expr::String(t)) => integer_sample_bits(t),
+        _ => None,
+      };
+      if let Some(mut channels) = samples_from_list(&args[0]) {
+        if let Some(bits) = declared {
+          // The values are taken as integers, as in Wolfram.
+          for c in &mut channels {
+            for v in c.iter_mut() {
+              *v = v.round();
+            }
+          }
+          scale_integer_samples(&mut channels, bits);
+        }
+        return Some(AudioData {
+          channels,
+          rate: sound::audio_sample_rate(args),
+        });
+      }
+      if let Expr::FunctionCall {
+        name: na,
+        args: na_args,
+      } = &args[0]
+        && na == "NumericArray"
+        && let Some(mut channels) = na_args.first().and_then(samples_from_list)
+      {
+        let bits = match na_args.get(1) {
+          Some(Expr::String(t)) => integer_sample_bits(t),
+          _ => None,
+        };
+        if let Some(bits) = bits.or(declared) {
+          scale_integer_samples(&mut channels, bits);
+        }
         return Some(AudioData {
           channels,
           rate: sound::audio_sample_rate(args),
@@ -119,6 +154,35 @@ pub fn parse_audio(expr: &Expr) -> Option<AudioData> {
     }
     _ => None,
   }
+}
+
+/// The width of an integer sample type (`"SignedInteger16"` or the
+/// `NumericArray` type `"Integer16"`).
+pub fn integer_sample_bits(t: &str) -> Option<u32> {
+  match t {
+    "SignedInteger8" | "Integer8" => Some(8),
+    "SignedInteger16" | "Integer16" => Some(16),
+    "SignedInteger32" | "Integer32" => Some(32),
+    _ => None,
+  }
+}
+
+/// Integer samples to `[-1, 1]`: positive values over `2^(bits-1) - 1`,
+/// negative ones over `2^(bits-1)`, as Wolfram reads them.
+fn scale_integer_samples(channels: &mut [Vec<f64>], bits: u32) {
+  let neg = 2f64.powi(bits as i32 - 1);
+  for c in channels.iter_mut() {
+    for v in c.iter_mut() {
+      *v /= if *v < 0.0 { neg } else { neg - 1.0 };
+    }
+  }
+}
+
+/// A sample in `[-1, 1]` as an integer of `bits` width (the inverse of
+/// reading one).
+pub fn integer_sample(v: f64, bits: u32) -> i64 {
+  let neg = 2f64.powi(bits as i32 - 1);
+  (v * if v < 0.0 { neg } else { neg - 1.0 }).round() as i64
 }
 
 /// True when the expression looks like an audio object (`Audio`, `Sound`,
@@ -535,14 +599,32 @@ pub fn audio_sample_rate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// `AudioType[audio]` — the type its samples are held as, which for audio
-/// built from sample data is always `Real32`.
+/// `AudioType[audio]` — the type its samples are held as: the type given
+/// as `Audio[data, type, …]`, else `Real32`.
 pub fn audio_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("AudioType", args));
   }
   match audio_argument("AudioType", args) {
-    Some(_) => Ok(str_expr("Real32")),
+    // `Audio[data, "SignedInteger16", …]` keeps the sample type it was given.
+    Some(_) => Ok(str_expr(match &args[0] {
+      Expr::FunctionCall { args: a, .. } => match a.get(1) {
+        Some(Expr::String(t))
+          if matches!(
+            t.as_str(),
+            "SignedInteger8"
+              | "SignedInteger16"
+              | "SignedInteger32"
+              | "Real32"
+              | "Real64"
+          ) =>
+        {
+          t.as_str()
+        }
+        _ => "Real32",
+      },
+      _ => "Real32",
+    })),
     None => Ok(unevaluated("AudioType", args)),
   }
 }

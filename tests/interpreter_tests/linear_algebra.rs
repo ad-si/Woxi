@@ -11021,4 +11021,33 @@ mod fitted_model_diagnostics {
       r.warnings
     );
   }
+
+  /// Regression: the matrix predicates answered `False` for every
+  /// `SparseArray` instead of testing its matrix.
+  #[test]
+  fn matrix_predicates_accept_sparse_arrays() {
+    let sparse =
+      "SparseArray[{{1, 1} -> 2., {1, 2} -> 1., {2, 1} -> 1., {2, 2} -> 2.}]";
+    for (predicate, expected) in [
+      ("SymmetricMatrixQ", "True"),
+      ("HermitianMatrixQ", "True"),
+      ("PositiveDefiniteMatrixQ", "True"),
+      ("PositiveSemidefiniteMatrixQ", "True"),
+      ("NormalMatrixQ", "True"),
+      ("SquareMatrixQ", "True"),
+      ("AntisymmetricMatrixQ", "False"),
+      ("DiagonalMatrixQ", "False"),
+      ("UpperTriangularMatrixQ", "False"),
+    ] {
+      assert_eq!(
+        interpret(&format!("{predicate}[{sparse}]")).unwrap(),
+        expected,
+        "{predicate}"
+      );
+    }
+    assert_eq!(
+      interpret("SquareMatrixQ[SparseArray[{{1, 1} -> 1}, {2, 3}]]").unwrap(),
+      "False"
+    );
+  }
 }

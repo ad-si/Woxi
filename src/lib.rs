@@ -6101,7 +6101,7 @@ fn normalize_circumflex_operator(input: &str) -> String {
   result
 }
 
-fn expand_char_escapes(input: &str) -> String {
+pub(crate) fn expand_char_escapes(input: &str) -> String {
   // Fast path: no backslash means nothing to do.
   if !input.contains('\\') {
     return input.to_string();
@@ -6913,7 +6913,7 @@ pub(crate) fn is_statement_rule(rule: Rule) -> bool {
 /// reading `f[x_] := x + 1⏎g[y_] := f[y]` parses as one statement with an
 /// implicit multiplication across the line break, leaving only the first
 /// symbol defined.
-fn normalize_source(input: &str) -> String {
+pub(crate) fn normalize_source(input: &str) -> String {
   let normalized = if input.contains('\r') {
     input.replace("\r\n", "\n").replace('\r', "\n")
   } else {

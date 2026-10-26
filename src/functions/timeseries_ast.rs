@@ -248,6 +248,16 @@ fn build_pairs_from_event_spec(fields: &[Expr]) -> Option<Vec<Expr>> {
 /// specification embedded in `TemporalData`'s field list.
 fn build_pairs_from_temporal(fields: &[Expr]) -> Option<Vec<Expr>> {
   let values: Vec<Expr> = match fields.first()? {
+    // Wolfram's internal form wraps the single value path in a list.
+    Expr::List(items)
+      if items.len() == 1
+        && matches!(items.first(), Some(Expr::List(p)) if p.len() > 1) =>
+    {
+      match items.first() {
+        Some(Expr::List(p)) => p.iter().cloned().collect(),
+        _ => return None,
+      }
+    }
     Expr::List(items) => items.iter().cloned().collect(),
     _ => return None,
   };
@@ -632,7 +642,19 @@ fn rebuild_series(source: &Expr, path: Vec<Expr>) -> Expr {
   call1(head, Expr::List(path.into()))
 }
 
-fn time_series(pairs: Vec<Expr>) -> Expr {
+fn time_series(mut pairs: Vec<Expr>) -> Expr {
+  // A series runs in time order however its stamps were given.
+  let key = |e: &Expr| match e {
+    Expr::List(kv) if !kv.is_empty() => to_time(&kv[0]),
+    _ => None,
+  };
+  if pairs.iter().all(|p| key(p).is_some()) {
+    pairs.sort_by(|a, b| {
+      key(a)
+        .unwrap_or(f64::NAN)
+        .total_cmp(&key(b).unwrap_or(f64::NAN))
+    });
+  }
   call1("TimeSeries", Expr::List(pairs.into()))
 }
 
@@ -891,6 +913,11 @@ pub fn temporal_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(pairs) = build_pairs_from_temporal(&fields) {
       return Ok(time_series(pairs));
     }
+    // Wolfram's own form: a list holding the one value path, sampled at the
+    // regular numeric times `{{t0, t1, dt}}`.
+    if let Some(pairs) = build_pairs_from_event_spec(&fields) {
+      return Ok(time_series(pairs));
+    }
   }
 
   // `TemporalData[EventSeries, {values, {{t0, t1, dt}}, …}]`: a value path
@@ -1052,6 +1079,36 @@ pub fn time_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into_iter()
           .zip(values.iter())
           .map(|(d, v)| Expr::List(vec![d, v.clone()].into()))
+          .collect();
+        return Ok(time_series(pairs));
+      }
+
+      // `{tmin, tmax, dt}` describing exactly one stamp per value is a
+      // regular range, even when there happen to be three values.
+      if let [t0, t1, dt] = times[..]
+        && let (Some(a), Some(b), Some(d)) =
+          (as_f64(t0), as_f64(t1), as_f64(dt))
+        && d > 0.0
+        && ((b - a) / d).round() as usize + 1 == values.len()
+        && ((b - a) / d - ((b - a) / d).round()).abs() < 1e-9
+      {
+        let exact = matches!((t0, dt), (Expr::Integer(_), Expr::Integer(_)));
+        let pairs = values
+          .iter()
+          .enumerate()
+          .map(|(i, v)| {
+            let t = if exact {
+              match (t0, dt) {
+                (Expr::Integer(a), Expr::Integer(d)) => {
+                  Expr::Integer(a + d * i as i128)
+                }
+                _ => unreachable!(),
+              }
+            } else {
+              Expr::Real(a + d * i as f64)
+            };
+            Expr::List(vec![t, v.clone()].into())
+          })
           .collect();
         return Ok(time_series(pairs));
       }

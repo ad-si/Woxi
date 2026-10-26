@@ -113,6 +113,22 @@ pub fn dispatch_linear_algebra_functions(
       | "LinearSolve"
       | "Minors"
       | "Inverse"
+      | "SymmetricMatrixQ"
+      | "AntisymmetricMatrixQ"
+      | "HermitianMatrixQ"
+      | "AntihermitianMatrixQ"
+      | "PositiveDefiniteMatrixQ"
+      | "PositiveSemidefiniteMatrixQ"
+      | "NegativeDefiniteMatrixQ"
+      | "NegativeSemidefiniteMatrixQ"
+      | "IndefiniteMatrixQ"
+      | "DiagonalizableMatrixQ"
+      | "NormalMatrixQ"
+      | "UnitaryMatrixQ"
+      | "OrthogonalMatrixQ"
+      | "DiagonalMatrixQ"
+      | "UpperTriangularMatrixQ"
+      | "LowerTriangularMatrixQ"
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
     if args.iter().any(is_sparse) {
