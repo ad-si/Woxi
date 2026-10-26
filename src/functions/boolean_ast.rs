@@ -4060,7 +4060,6 @@ pub fn satisfying_assignments(
   // `None` for one it skips.
   fn paths(
     table: &[bool],
-    var: usize,
     prefix: &mut Vec<Option<bool>>,
     out: &mut Vec<Vec<Option<bool>>>,
   ) {
@@ -4074,18 +4073,18 @@ pub fn satisfying_assignments(
     let (low, high) = table.split_at(table.len() / 2);
     if low == high {
       prefix.push(None);
-      paths(low, var + 1, prefix, out);
+      paths(low, prefix, out);
     } else {
       prefix.push(Some(true));
-      paths(high, var + 1, prefix, out);
+      paths(high, prefix, out);
       prefix.pop();
       prefix.push(Some(false));
-      paths(low, var + 1, prefix, out);
+      paths(low, prefix, out);
     }
     prefix.pop();
   }
   let mut found = Vec::new();
-  paths(&table, 0, &mut Vec::with_capacity(n), &mut found);
+  paths(&table, &mut Vec::with_capacity(n), &mut found);
 
   let mut instances = Vec::new();
   let mut round = 0u64;

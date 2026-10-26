@@ -2757,14 +2757,14 @@ fn stacked_lines_svg(label: &str, x: f64, line_height: f64) -> String {
   if !label.contains('\n') {
     return label.to_string();
   }
-  label
-    .split('\n')
-    .enumerate()
-    .map(|(i, line)| {
-      let dy = if i == 0 { 0.0 } else { line_height };
-      format!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
-    })
-    .collect()
+  let mut out = String::new();
+  for (i, line) in label.split('\n').enumerate() {
+    let dy = if i == 0 { 0.0 } else { line_height };
+    out.push_str(&format!(
+      "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+    ));
+  }
+  out
 }
 
 /// Draw the marks and labels of an explicit `Ticks -> {xspec, yspec}`, in
