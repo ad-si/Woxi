@@ -8446,4 +8446,26 @@ mod graph_coordinates_3d {
       "3"
     );
   }
+
+  #[test]
+  fn large_connected_graph_uses_force_directed_layout() {
+    assert_eq!(
+      interpret(
+        "e = Table[i -> Mod[2 i, 13], {i, 1, 12}]; ExportString[GraphPlot[e], \"SVG\"] =!= ExportString[GraphPlot[e, Method -> \"CircularEmbedding\"], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn small_connected_graph_keeps_circular_layout() {
+    assert_eq!(
+      interpret(
+        "e = {1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}; ExportString[GraphPlot[e], \"SVG\"] === ExportString[GraphPlot[e, Method -> \"CircularEmbedding\"], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }

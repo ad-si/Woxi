@@ -1753,6 +1753,13 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
   let components = weakly_connected_components(graph);
 
   if components.len() <= 1 {
+    // Larger connected graphs get the force-directed embedding too, as
+    // wolframscript's default spring-electrical layout would; small ones
+    // keep the circular layout for stable output.
+    if n > 8 {
+      let comp: Vec<usize> = (0..n).collect();
+      return layout_component(graph, &comp);
+    }
     return circular_layout(n);
   }
 
@@ -1968,11 +1975,25 @@ fn layout_component(
       let step = dlen.min(temp);
       pos[i].0 += disp[i].0 / dlen * step;
       pos[i].1 += disp[i].1 / dlen * step;
-      pos[i].0 = pos[i].0.clamp(-w / 2.0, w / 2.0);
-      pos[i].1 = pos[i].1.clamp(-h / 2.0, h / 2.0);
     }
 
     temp *= cool;
+  }
+
+  // Centre on the origin and scale the layout to fit [-1, 1]^2 so the
+  // spread is kept as it is instead of being squashed against the border.
+  let (mut min_x, mut max_x, mut min_y, mut max_y) =
+    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+  for &(x, y) in &pos {
+    min_x = min_x.min(x);
+    max_x = max_x.max(x);
+    min_y = min_y.min(y);
+    max_y = max_y.max(y);
+  }
+  let (cx, cy) = (f64::midpoint(min_x, max_x), f64::midpoint(min_y, max_y));
+  let half = ((max_x - min_x).max(max_y - min_y) / 2.0).max(1e-9);
+  for p in &mut pos {
+    *p = ((p.0 - cx) / half, (p.1 - cy) / half);
   }
 
   pos
