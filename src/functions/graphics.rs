@@ -30491,6 +30491,10 @@ fn resolve_choice_label(label: &Expr) -> Option<Expr> {
     match e {
       Expr::Identifier(s) => !crate::evaluator::is_builtin_symbol(s),
       Expr::List(items) => items.iter().any(has_user_symbol),
+      // `names[[3]]` — a part of a user list.
+      Expr::Part { expr, index } => {
+        has_user_symbol(expr) || has_user_symbol(index)
+      }
       // A call to a user-defined function (`reactionNames[1]`) also needs
       // resolving, not just calls whose arguments mention a user symbol.
       Expr::FunctionCall { name, args } => {
@@ -32655,8 +32659,15 @@ fn parse_manipulate_control(
       let init = head_items.get(1).cloned();
       // A string label still goes through the label renderer: it may carry
       // inline `\!\(\*SubscriptBox[…]\)` typesetting.
+      // A caption indexing a notebook list (`names[[3]]`) shows the element,
+      // so it is resolved against the current definitions first.
       let lbl = match head_items.get(2) {
-        Some(other) => manipulate_label_runs(other, false),
+        Some(other) => match resolve_choice_label(other) {
+          Some(resolved @ Expr::String(_)) => {
+            manipulate_label_runs(&resolved, false)
+          }
+          _ => manipulate_label_runs(other, false),
+        },
         None => plain_run(default_control_label(&n)),
       };
       (n, init, lbl)
