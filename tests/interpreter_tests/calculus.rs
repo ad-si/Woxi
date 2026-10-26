@@ -23028,6 +23028,32 @@ mod integrate_interpolating_function {
       "3."
     );
   }
+
+  #[test]
+  fn dsolve_second_order_without_unknown_reduces_order() {
+    assert_eq!(
+      interpret("DSolve[y''[x] == -y'[x]/x, y[x], x]").unwrap(),
+      "{{y[x] -> C[2] + C[1]*Log[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> x^3/6 + C[1] + x*C[2]}}"
+    );
+    assert!(
+      interpret(
+        "u /. First[DSolve[{u[1] == 1, u[2] == 2, -3 u'[x]/u''[x] == x}, u, x]]"
+      )
+      .unwrap()
+      .contains("Function")
+    );
+    assert_eq!(
+      interpret(
+        "f = u /. First@First@FullSimplify[DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]]; f[x]"
+      )
+      .unwrap(),
+      "3 - 2/x"
+    );
+  }
 }
 
 mod nintegrate_limits_numeric_after_n {
