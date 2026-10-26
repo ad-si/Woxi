@@ -2531,6 +2531,9 @@ fn collect_primitives(
         "Parallelogram" => {
           parse_parallelogram(args, style, prims);
         }
+        "StadiumShape" => {
+          parse_stadium_shape(args, style, prims);
+        }
         // JoinedCurve[{c1, c2, …}] draws its curve components as one path;
         // stroke-rendering each component in order is visually equivalent.
         "JoinedCurve" if !args.is_empty() => {
@@ -3709,6 +3712,48 @@ fn parse_parallelogram(
     (p.0 + v1.0 + v2.0, p.1 + v1.1 + v2.1),
     (p.0 + v2.0, p.1 + v2.1),
   ];
+  prims.push(Primitive::PolygonPrim {
+    points,
+    holes: Vec::new(),
+    vertex_colors: None,
+    style: style.clone(),
+  });
+}
+
+/// StadiumShape[{p1, p2}, r] — all points within distance r of the segment
+/// p1–p2, drawn as a polygon with semicircular caps.
+fn parse_stadium_shape(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let [Expr::List(ends), r] = args else {
+    return;
+  };
+  if ends.len() != 2 {
+    return;
+  }
+  let (Some(p1), Some(p2), Some(r)) = (
+    expr_to_point(&ends[0]),
+    expr_to_point(&ends[1]),
+    expr_to_f64(r),
+  ) else {
+    return;
+  };
+  let theta = (p2.1 - p1.1).atan2(p2.0 - p1.0);
+  const CAP_STEPS: usize = 32;
+  let mut points = Vec::with_capacity(2 * CAP_STEPS + 2);
+  // The cap around p2 sweeps -90° to +90° relative to the axis, then the
+  // cap around p1 sweeps +90° to +270°.
+  for (center, start) in [
+    (p2, theta - std::f64::consts::FRAC_PI_2),
+    (p1, theta + std::f64::consts::FRAC_PI_2),
+  ] {
+    for k in 0..=CAP_STEPS {
+      let a = start + std::f64::consts::PI * (k as f64) / (CAP_STEPS as f64);
+      points.push((center.0 + r * a.cos(), center.1 + r * a.sin()));
+    }
+  }
   prims.push(Primitive::PolygonPrim {
     points,
     holes: Vec::new(),
