@@ -41542,3 +41542,35 @@ mod list_plot_scalar_data_range {
     );
   }
 }
+
+mod styled_text_and_computed_options_in_graphics_layouts {
+  use super::*;
+
+  #[test]
+  fn styled_text_cell_keeps_its_colour_and_size() {
+    clear_state();
+    let svg =
+      export_svg("GraphicsGrid[{{Style[1, 16, Red], Style[2, 16, Blue]}}]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "red lost: {svg}");
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""), "blue lost: {svg}");
+    assert!(svg.contains("font-size=\"16\""), "size lost: {svg}");
+  }
+
+  #[test]
+  fn styled_text_exports_with_its_colour() {
+    clear_state();
+    let svg = export_svg("Style[5, 16, Red]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "colour lost: {svg}");
+  }
+
+  #[test]
+  fn computed_background_option_is_evaluated() {
+    clear_state();
+    let svg = export_svg(
+      "zz = {2}; GraphicsGrid[Partition[Table[GraphicsGrid[{{i}}, \
+       Background -> If[MemberQ[zz, i], Red, Blue]], {i, 2}], 2]]",
+    );
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "no red: {svg}");
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""), "no blue: {svg}");
+  }
+}
