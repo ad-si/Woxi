@@ -2760,11 +2760,14 @@ fn stacked_lines_svg(label: &str, x: f64, line_height: f64) -> String {
   label
     .split('\n')
     .enumerate()
-    .map(|(i, line)| {
+    .fold(String::new(), |mut out, (i, line)| {
       let dy = if i == 0 { 0.0 } else { line_height };
-      format!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
+      let _ = std::fmt::Write::write_fmt(
+        &mut out,
+        format_args!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"),
+      );
+      out
     })
-    .collect()
 }
 
 /// Draw the marks and labels of an explicit `Ticks -> {xspec, yspec}`, in
