@@ -430,7 +430,78 @@ fn polylog_numeric(s: f64, z: f64) -> f64 {
       z_power *= z;
     }
     sum
+  } else if s <= 0.0 && s.fract() == 0.0 {
+    polylog_nonpositive_integer(-s as usize, z)
+  } else if z < -1.0 && s > 0.0 {
+    -fermi_dirac_integral(s, (-z).ln())
   } else {
     f64::NAN
   }
+}
+
+/// Li_{-n}(z) = Σ A(n, k) z^(k+1) / (1 - z)^(n+1), valid for every z != 1.
+fn polylog_nonpositive_integer(n: usize, z: f64) -> f64 {
+  if n == 0 {
+    return z / (1.0 - z);
+  }
+  let numerator: f64 = eulerian_numbers(n)
+    .iter()
+    .enumerate()
+    .map(|(k, &a)| a as f64 * z.powi(k as i32 + 1))
+    .sum();
+  numerator / (1.0 - z).powi(n as i32 + 1)
+}
+
+/// The complete Fermi–Dirac integral
+/// `1/Gamma(s) * Integral[t^(s-1) / (Exp[t - mu] + 1), {t, 0, Infinity}]`
+/// for `s > 0`, which equals `-PolyLog[s, -Exp[mu]]`. The substitution
+/// `t = u^(2/s)` removes the endpoint singularity of `t^(s-1)`, and the
+/// remaining smooth integrand is summed with composite Gauss–Legendre panels.
+fn fermi_dirac_integral(s: f64, mu: f64) -> f64 {
+  const NODES: usize = 24;
+  const PANELS: usize = 256;
+  let (xs, ws) = gauss_legendre_nodes(NODES);
+  let p = 2.0 / s;
+  let t_max = mu.max(0.0) + 45.0;
+  let u_max = t_max.powf(1.0 / p);
+  let h = u_max / PANELS as f64;
+  let mut sum = 0.0;
+  for panel in 0..PANELS {
+    let a = panel as f64 * h;
+    for (x, w) in xs.iter().zip(&ws) {
+      let u = a + 0.5 * h * (x + 1.0);
+      let t = u.powf(p);
+      let weight = 0.5 * h * w * p * u.powf(p * s - 1.0);
+      sum += weight / ((t - mu).exp() + 1.0);
+    }
+  }
+  sum / super::gamma::gamma_fn(s)
+}
+
+/// Nodes and weights of the `n`-point Gauss–Legendre rule on [-1, 1].
+fn gauss_legendre_nodes(n: usize) -> (Vec<f64>, Vec<f64>) {
+  let mut xs = vec![0.0; n];
+  let mut ws = vec![0.0; n];
+  for i in 0..n {
+    let mut x =
+      (std::f64::consts::PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+    let mut dp = 1.0;
+    for _ in 0..100 {
+      let (mut p0, mut p1) = (1.0, x);
+      for k in 2..=n {
+        let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
+        p0 = p1;
+        p1 = p2;
+      }
+      dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
+      let dx = p1 / dp;
+      x -= dx;
+      if dx.abs() < 1e-15 {
+        break;
+      }
+    }
+    xs[i] = x;
+    ws[i] = 2.0 / ((1.0 - x * x) * dp * dp);
+  }
+  (xs, ws)
 }

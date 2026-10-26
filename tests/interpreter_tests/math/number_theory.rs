@@ -6929,3 +6929,39 @@ mod continued_fraction_big_float {
     );
   }
 }
+
+mod polylog_real_below_unit_disk {
+  use super::*;
+
+  fn approx(code: &str, expected: f64) {
+    let out = interpret(code).unwrap();
+    let v: f64 = out.parse().unwrap_or_else(|_| panic!("{code} -> {out}"));
+    assert!(
+      (v - expected).abs() < 1e-9 * expected.abs().max(1.0),
+      "{code} -> {out}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn integer_order_matches_inversion_formula() {
+    // Li2(-x) = -Pi^2/6 - Log[x]^2/2 - Li2(-1/x)
+    approx("PolyLog[2, -4.]", -2.369939796998366);
+    // Li3(-x) = Li3(-1/x) - Pi^2/6 Log[x] - Log[x]^3/6
+    approx("PolyLog[3, -100.]", -23.862617597794994);
+    approx("PolyLog[3, -1000.]", -66.30012385080926);
+  }
+
+  #[test]
+  fn fractional_order_is_real_and_continuous_at_minus_one() {
+    // Li_s(-1) = -(1 - 2^(1-s)) Zeta[s]
+    approx("PolyLog[1.5, -1.]", -0.765146524662909);
+    approx("PolyLog[3/2, -2.]", -1.2813803831594726);
+  }
+
+  #[test]
+  fn nonpositive_integer_order_uses_rational_function() {
+    // Li_{-2}(z) = z (1 + z) / (1 - z)^3
+    approx("PolyLog[-2, -3.]", 0.09375);
+    approx("PolyLog[0, -3.]", -0.75);
+  }
+}
