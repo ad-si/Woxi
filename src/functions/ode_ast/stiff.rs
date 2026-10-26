@@ -180,3 +180,147 @@ fn jacobian(
   }
   Ok(Some(jac))
 }
+
+/// Steps the explicit adaptive fallback may take before handing a leg to
+/// the stiff method.
+const MAX_EXPLICIT_STEPS: usize = 1_000_000;
+
+/// Integrate `y' = f(x, y)` from `x_from` to `x_to` with the adaptive
+/// Dormand–Prince 5(4) pair — the explicit fallback for a leg the fixed RK4
+/// grid cannot follow, such as a spiking membrane model whose fast phases
+/// last a fraction of a nominal step. `None` when the right-hand side fails
+/// or the steps the error control asks for collapse (a stiff system, left
+/// to [`rosenbrock_leg`]).
+pub(super) fn dormand_prince_leg(
+  f: &Rhs,
+  init: &[f64],
+  x_from: f64,
+  x_to: f64,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  const C: [f64; 7] =
+    [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
+  const A: [[f64; 6]; 7] = [
+    [0.0; 6],
+    [1.0 / 5.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [3.0 / 40.0, 9.0 / 40.0, 0.0, 0.0, 0.0, 0.0],
+    [44.0 / 45.0, -56.0 / 15.0, 32.0 / 9.0, 0.0, 0.0, 0.0],
+    [
+      19372.0 / 6561.0,
+      -25360.0 / 2187.0,
+      64448.0 / 6561.0,
+      -212.0 / 729.0,
+      0.0,
+      0.0,
+    ],
+    [
+      9017.0 / 3168.0,
+      -355.0 / 33.0,
+      46732.0 / 5247.0,
+      49.0 / 176.0,
+      -5103.0 / 18656.0,
+      0.0,
+    ],
+    [
+      35.0 / 384.0,
+      0.0,
+      500.0 / 1113.0,
+      125.0 / 192.0,
+      -2187.0 / 6784.0,
+      11.0 / 84.0,
+    ],
+  ];
+  // Fifth-order weights (the last stage's row) minus the fourth-order ones.
+  const E: [f64; 7] = [
+    71.0 / 57600.0,
+    0.0,
+    -71.0 / 16695.0,
+    71.0 / 1920.0,
+    -17253.0 / 339200.0,
+    22.0 / 525.0,
+    -1.0 / 40.0,
+  ];
+
+  let n = init.len();
+  let span = x_to - x_from;
+  if span == 0.0 || n == 0 {
+    return Ok(Some(vec![(x_from, init.to_vec())]));
+  }
+  let dir = span.signum();
+  let mut x = x_from;
+  let mut y = init.to_vec();
+  let mut points = vec![(x, y.clone())];
+  let Some(mut k0) = f(x, &y)? else {
+    return Ok(None);
+  };
+  let scale0 = y
+    .iter()
+    .zip(&k0)
+    .map(|(yi, fi)| fi.abs() / (ATOL + RTOL * yi.abs()))
+    .fold(0.0_f64, f64::max);
+  let mut h = if scale0 > 0.0 {
+    (0.1 * scale0.powf(-0.2)).min(span.abs() / 10.0)
+  } else {
+    span.abs() / 100.0
+  };
+  let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
+
+  for _ in 0..MAX_EXPLICIT_STEPS {
+    if (x_to - x) * dir <= h_min {
+      return Ok(Some(points));
+    }
+    h = h.min((x_to - x).abs());
+    if h < h_min {
+      return Ok(None);
+    }
+    let hs = h * dir;
+    let mut k: Vec<Vec<f64>> = Vec::with_capacity(7);
+    k.push(k0.clone());
+    let mut failed = false;
+    for stage in 1..7 {
+      let ys: Vec<f64> = (0..n)
+        .map(|i| {
+          y[i] + hs * (0..stage).map(|j| A[stage][j] * k[j][i]).sum::<f64>()
+        })
+        .collect();
+      match f(x + C[stage] * hs, &ys)? {
+        Some(ks) if ks.iter().all(|v| v.is_finite()) => k.push(ks),
+        _ => {
+          failed = true;
+          break;
+        }
+      }
+    }
+    if failed {
+      h /= 4.0;
+      continue;
+    }
+    // The fifth-order solution is the last stage's argument (FSAL).
+    let y_new: Vec<f64> = (0..n)
+      .map(|i| y[i] + hs * (0..6).map(|j| A[6][j] * k[j][i]).sum::<f64>())
+      .collect();
+    let error = (0..n)
+      .map(|i| {
+        let e = (hs * (0..7).map(|j| E[j] * k[j][i]).sum::<f64>()).abs();
+        e / (ATOL + RTOL * y[i].abs().max(y_new[i].abs()))
+      })
+      .fold(0.0_f64, f64::max);
+    if !error.is_finite() {
+      h /= 4.0;
+      continue;
+    }
+    let factor = (0.9 * error.powf(-0.2)).clamp(0.2, 5.0);
+    if error > 1.0 {
+      h *= factor;
+      continue;
+    }
+    x += hs;
+    if (x_to - x) * dir <= h_min {
+      x = x_to;
+    }
+    y = y_new;
+    k0 = k.pop().unwrap_or_default();
+    points.push((x, y.clone()));
+    h *= factor;
+  }
+  Ok(None)
+}

@@ -6464,8 +6464,9 @@ fn integrate_leg(
       // returns an `InterpolatingFunction` valid up to where it could
       // integrate instead of failing the whole call (alongside the
       // `NDSolve::ndsz` message it prints at the point stepping stalled).
-      // A stiff system makes RK4 diverge too: without events to locate,
-      // the whole leg is integrated again with a stiff method.
+      // A stiff system or a transient faster than the grid makes RK4
+      // diverge: without events to locate, the whole leg is integrated
+      // again with adaptive steps.
       if event_fn.is_none()
         && time_events.is_empty()
         && state_events.events.is_empty()
@@ -6482,6 +6483,13 @@ fn integrate_leg(
             cached_m,
           ))
         };
+        // An adaptive explicit step first (a fast transient the grid
+        // missed), then the stiff method.
+        if let Some(adaptive_points) =
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to)?
+        {
+          return Ok(Some(adaptive_points));
+        }
         if let Some(stiff_points) =
           stiff::rosenbrock_leg(&rhs, &points[0].1, x_from, x_to)?
         {

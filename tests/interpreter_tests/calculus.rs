@@ -23124,6 +23124,31 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // The Chay–Keizer beta-cell model spikes faster than the nominal grid
+  // follows; the leg falls back to adaptive Dormand–Prince steps.
+  // wolframscript: V[5000] = -58.01807302788192.
+  #[test]
+  fn spiking_model_falls_back_to_adaptive_steps() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{V'[t] == (0.09*Ca[t]*(-75 - V[t]))/(1 + Ca[t]) + \
+         13.*hca[t]*mca[t]^3*(100 - V[t]) + 12*n[t]^4*(-75 - V[t]) + \
+         0.04*(-40 - V[t]), V[0] == -54.774, Ca'[t] == 0.004*(-0.04*Ca[t] + \
+         0.22707838734286032*hca[t]*mca[t]^3*(100 - V[t])), Ca[0] == 0.10749, \
+         mca'[t] == 4.504598822453431*((-0.1*(1 - mca[t])*(25 + V[t]))/\
+         (-1 + E^((-25 - V[t])/10)) - 4*E^((-50 - V[t])/18)*mca[t]), \
+         mca[0] == 0.02753, hca'[t] == 4.504598822453431*(0.07*\
+         E^((-50 - V[t])/20)*(1 - hca[t]) - hca[t]/(1 + E^((-20 - V[t])/10))), \
+         hca[0] == 0.08632, n'[t] == 4.504598822453431*((-0.01*(1 - n[t])*\
+         (20 + V[t]))/(-1 + E^((-20 - V[t])/10)) - 0.125*E^((-30 - V[t])/80)*\
+         n[t]), n[0] == 0.00044035}, {V, Ca, mca, hca, n}, {t, 0, 5000}]; \
+         Abs[(V[5000] /. First[s]) + 58.01807302788192] < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A Piecewise branch with an exact non-rational value (`-Sin[2]`) is a
   // number like any other. Exact: Sin[2] (1.87^2/2 + 1.87 (3 - 1.87)).
   #[test]
