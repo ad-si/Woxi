@@ -9562,3 +9562,28 @@ mod parametric_region {
     );
   }
 }
+
+mod stadium_shape_graphics {
+  use super::*;
+
+  // StadiumShape inside Graphics draws as a filled polygon (also through
+  // Translate/Scale), spanning the segment plus the radius on every side.
+  #[test]
+  fn renders_as_polygon() {
+    let svg = interpret(
+      "ExportString[Graphics[{Blue, StadiumShape[{{-5, 0}, {-2, 0}}, 1]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polygon"));
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+  }
+
+  #[test]
+  fn renders_through_translate_and_scale() {
+    let svg = interpret(
+      "ExportString[Graphics[{Scale[Translate[{StadiumShape[{{0, 0}, {0, 3}}, 1]}, {2, 2}], 1/2]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polygon"));
+  }
+}
