@@ -150,3 +150,14 @@ $ wo 'ExampleData[{"TestImage", "Moon"}, "Foo"]'
 ExampleData::notpropx: "Foo" is not a known property for {"TestImage", "Moon"}. Use ExampleData[{"TestImage", "Moon"}, "Properties"] for a list of properties.
 ExampleData[{TestImage, Moon}, Foo]
 ```
+
+Retired entries, such as `{"TestImage", "Lena"}` and
+`{"TestImage", "TestPattern"}`, are no longer listed but are still served,
+with a warning.
+
+```scrut
+$ wo 'ExampleData[{"TestImage", "Lena"}, "ImageSize"]'
+
+ExampleData::obsolete: {TestImage, Lena} is being deprecated, and may not be available in future versions of Wolfram Language.
+{512, 512}
+```

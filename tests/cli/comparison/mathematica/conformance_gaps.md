@@ -4969,12 +4969,18 @@ Known structural gaps:
   `TemporalData[…]` (see the `TimeSeries` section).
 - `Options` of an example image omit Wolfram's `MetaInformation` (file
   comments, creation dates).
-- Synthetic test patterns (`"Gray21"`, `"ResolutionChart"`, `"Ruler"`) are
-  drawn, not reproduced pixel for pixel.
+- Synthetic test patterns (`"Gray21"`, `"ResolutionChart"`, `"Ruler"`,
+  `"TestPattern"`) are drawn, not reproduced pixel for pixel.
 - `"FilePath"` names a file Woxi exports on first request under the
   temporary directory, not a paclet file; `"AudioFile"` reads that file.
 - `ExampleData["SpatialPointData"]` is `$Failed` in wolframscript (the
   collection needs a server), and is in Woxi too.
+- The retired `"TestImage"` entries `"Lena"` and `"TestPattern"` (no longer
+  listed, still served with `ExampleData::obsolete`) were added to the table
+  by hand from the USC-SIPI originals they came from (4.2.04, 512 × 512 RGB;
+  testpat.1k, 1024 × 1024 gray; both sizes and colour types confirmed
+  against wolframscript). Their histogram statistics are estimates, not
+  recorded from wolframscript.
 
 ### `ShortTimeFourier` partitions differently
 

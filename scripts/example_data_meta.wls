@@ -193,8 +193,13 @@ imageExtra = <|
   "@Stats" -> (imageStats[ExampleData[#]] &),
   "@Tile" -> (tileStats[ExampleData[#]] &)|>;
 
-spec["TestImage"] := {catalogue["TestImage"],
-  {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"}, imageExtra};
+(* retired entries: no longer in the catalogue, still served with an
+   ExampleData::obsolete warning *)
+obsolete["TestImage"] = {"Lena", "TestPattern"};
+spec["TestImage"] := {Join[catalogue["TestImage"], obsolete["TestImage"]],
+  {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"},
+  Append[imageExtra, "@Obsolete" -> (Quiet[Check[ExampleData[#]; False, True,
+    ExampleData::obsolete], ExampleData::obsolete] &)]};
 spec["AerialImage"] := {catalogue["AerialImage"],
   {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"}, imageExtra};
 spec["Texture"] := {catalogue["Texture"],

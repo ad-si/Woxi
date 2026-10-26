@@ -123,6 +123,12 @@ impl Entry<'_> {
   fn listed(&self) -> bool {
     !matches!(self.stat("@Listed"), Some(Expr::Identifier(ref s)) if s == "False")
   }
+
+  /// Entries Wolfram has retired from the catalogue but still serves with
+  /// an `ExampleData::obsolete` warning (`{"TestImage", "Lena"}`).
+  fn obsolete(&self) -> bool {
+    matches!(self.stat("@Obsolete"), Some(Expr::Identifier(ref s)) if s == "True")
+  }
 }
 
 fn evaluate(e: Expr) -> Expr {
@@ -249,6 +255,13 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     table,
     row,
   };
+  if entry.obsolete() {
+    crate::emit_message(&format!(
+      "ExampleData::obsolete: {{{collection}, {name}}} is being \
+       deprecated, and may not be available in future versions of \
+       Wolfram Language."
+    ));
+  }
   let property = match args.get(1) {
     None => None,
     Some(Expr::String(p)) => Some(p.as_str()),
