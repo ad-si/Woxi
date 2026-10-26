@@ -11307,17 +11307,19 @@ mod plot3d {
       }
     }
 
-    /// A plot label is plain text, so a `Subscript` renders through the
-    /// Unicode subscript digits. Letters stay full size: their subscript
-    /// forms are missing from most text fonts and would draw as boxes.
+    /// A `Subscript` renders through the Unicode subscript digits; letters
+    /// have no such form (it is missing from most text fonts), so they are
+    /// lowered with a `<tspan>` instead.
     #[test]
     fn frame_label_renders_subscripts() {
       let svg = export_svg(
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {{Row[{Subscript["P", "inj"], "(t)"}], ""}, {Row[{Subscript["log", 10], "n"}], ""}}]"#,
       );
       assert!(
-        svg.contains(">Pinj(t)</text>"),
-        "the subscript letters must still read: {svg}"
+        svg.contains(
+          "P<tspan baseline-shift=\"sub\" font-size=\"70%\">inj</tspan>(t)</text>"
+        ),
+        "the subscript letters must be lowered: {svg}"
       );
       assert!(
         svg.contains(">log\u{2081}\u{2080}n</text>"),

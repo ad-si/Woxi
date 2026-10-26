@@ -4539,6 +4539,35 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_axes_label_letter_script_is_typeset() {
+    // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    clear_state();
+    let svg = interpret(
+      "ExportString[ListLinePlot[{1, 3, 2}, \
+         AxesLabel -> {n, Subscript[x, n]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+      ),
+      "subscript letter not typeset: {svg}"
+    );
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {None, Superscript[y, k]}], \
+         \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+      ),
+      "superscript letter not typeset: {svg}"
+    );
+  }
+
+  #[test]
   fn test_frame_label_power_renders_as_unicode_superscript() {
     // A `FrameLabel`/`AxesLabel` entry built from `base^exp` (a Demonstration
     // typesets `e^(iΩ)` as `Style["e", Italic]^Row[{Style["i", Italic],

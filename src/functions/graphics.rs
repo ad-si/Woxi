@@ -15312,9 +15312,19 @@ fn contains_visible_style(e: &Expr) -> bool {
       ) =>
     {
       args.iter().any(contains_visible_style)
+        || args[1..].iter().any(script_needs_typesetting)
     }
     _ => false,
   }
+}
+
+/// Whether a script argument holds letters. The Unicode script characters a
+/// plain-text label falls back to exist for digits and signs only, so
+/// `Subscript[x, n]` would flatten to a flat `xn`; it has to be typeset as a
+/// shifted `<tspan>` instead.
+fn script_needs_typesetting(script: &Expr) -> bool {
+  crate::functions::chart::expr_to_label(script)
+    .is_none_or(|s| s.chars().any(char::is_alphabetic))
 }
 
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
