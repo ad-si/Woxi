@@ -6384,3 +6384,4 @@ Combinatorica`ConnectedComponents,Connected components of a Combinatorica graph 
 Combinatorica`BreadthFirstTraversal,Vertices of a Combinatorica graph in breadth-first order from a start vertex,✅,pure,6.0,
 Combinatorica`ShortestPath,Shortest vertex path between two vertices of a Combinatorica graph,✅,pure,6.0,
 ToColor,Converts a color directive to RGBColor GrayLevel Hue CMYKColor or another color space head,✅,pure,2.0,
+LinearRegression`Regress,Legacy least-squares fit with a literal basis returning RegressionCommon` rules for ParameterTable and RSquared,✅,pure,6.0,
