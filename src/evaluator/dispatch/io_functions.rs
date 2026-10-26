@@ -1804,9 +1804,16 @@ pub fn dispatch_io_functions(
         channels,
         data,
         display_size,
+        color_space,
         ..
       } = &args[1]
       {
+        let (channels, data) = crate::functions::image_ast::rgb_pixels(
+          *color_space,
+          *channels,
+          data,
+        );
+        let (channels, data) = (&channels, &*data);
         if fmt == "SVG" {
           let svg = crate::functions::image_ast::image_to_svg_document(
             *width,
@@ -2155,10 +2162,18 @@ pub fn dispatch_io_functions(
             height,
             channels,
             data: pixels,
+            color_space,
             ..
-          } => match crate::functions::image_ast::export_image_bytes(
-            &fmt, *width, *height, *channels, pixels,
-          ) {
+          } => match {
+            let (ch, px) = crate::functions::image_ast::rgb_pixels(
+              *color_space,
+              *channels,
+              pixels,
+            );
+            crate::functions::image_ast::export_image_bytes(
+              &fmt, *width, *height, ch, &px,
+            )
+          } {
             Ok(b) => b,
             Err(e) => return Some(Err(e)),
           },
@@ -6867,14 +6882,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       channels,
       data,
       display_size,
+      color_space,
       ..
-    } => crate::functions::image_ast::image_to_svg_document(
-      *width,
-      *height,
-      *channels,
-      data,
-      *display_size,
-    ),
+    } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
+      crate::functions::image_ast::image_to_svg_document(
+        *width,
+        *height,
+        ch,
+        &px,
+        *display_size,
+      )
+    }
     // TableForm[data, opts…] — render the aligned grid (matching how visual
     // frontends show it), instead of dumping the raw `TableForm[…]` text.
     Expr::FunctionCall { name, args }
