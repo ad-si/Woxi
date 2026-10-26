@@ -1242,8 +1242,12 @@ pub fn from_coefficient_rules_ast(
 /// expression is returned unchanged. CoefficientArrays extracts coefficients
 /// from the difference so that equations and plain polynomials behave alike.
 fn equation_to_poly(e: &Expr) -> Expr {
-  let subtract =
-    |lhs: &Expr, rhs: &Expr| call("Subtract", vec![lhs.clone(), rhs.clone()]);
+  // Evaluated, so the expansion below sees a canonical sum: an unevaluated
+  // `Subtract[(a + b)/2 + c, 0]` keeps the `(a + b)/2` product opaque.
+  let subtract = |lhs: &Expr, rhs: &Expr| {
+    let difference = call("Subtract", vec![lhs.clone(), rhs.clone()]);
+    crate::evaluator::evaluate_expr_to_expr(&difference).unwrap_or(difference)
+  };
   match e {
     Expr::Comparison {
       operands,
@@ -1587,8 +1591,36 @@ fn coefficient_arrays_multi(
     .map(|(d, _, _)| *d)
     .max()
     .unwrap_or(0);
+  // A linear system with any inexact coefficient is numericized as a
+  // whole: every coefficient becomes a machine number, zero constants
+  // (`== 0.`) drop out, and c_0's background is `0.`.
+  let inexact = max_degree <= 1
+    && per_poly
+      .iter()
+      .flatten()
+      .any(|(_, _, c)| crate::syntax::contains_inexact(c));
+  if inexact {
+    for entries in &mut per_poly {
+      for entry in entries.iter_mut() {
+        entry.2 =
+          crate::evaluator::evaluate_expr_to_expr(&call1("N", entry.2.clone()))
+            .unwrap_or_else(|_| entry.2.clone());
+      }
+      entries.retain(|(_, _, c)| !matches!(c, Expr::Real(r) if *r == 0.0));
+    }
+  }
   let output: Vec<Expr> = (0..=max_degree)
-    .map(|d| build_sparse_array_multi(d, m, n, &per_poly, max_degree >= 2))
+    .map(|d| {
+      let mut sa =
+        build_sparse_array_multi(d, m, n, &per_poly, max_degree >= 2);
+      if d == 0
+        && inexact
+        && let Expr::FunctionCall { args, .. } = &mut sa
+      {
+        args[2] = Expr::Real(0.0);
+      }
+      sa
+    })
     .collect();
   Expr::List(output.into())
 }

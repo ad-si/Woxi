@@ -8025,6 +8025,31 @@ mod cases {
     assert_case("Normal[CoefficientArrays[x + y, {}]]", "{0, {1, 1}}");
     assert_case("CoefficientArrays[{}, {x}]", "{{}}");
   }
+  // An equation's side may hold an unexpanded product of a sum: `(a + b)/2`.
+  #[test]
+  fn coefficient_arrays_equation_with_scaled_sum() {
+    assert_case(
+      "Normal[CoefficientArrays[{(-a - b)/2 + c == 0, a == 1}, {a, b, c}]]",
+      "{{0, -1}, {{-1/2, -1/2, 1}, {1, 0, 0}}}",
+    );
+  }
+  // A linear system with an inexact coefficient is numericized as a whole;
+  // a `== 0.` constant drops out and c_0's background becomes `0.`.
+  #[test]
+  fn coefficient_arrays_inexact_linear_system() {
+    assert_case(
+      "CoefficientArrays[{a + 2 b == 1., a - b}, {a, b}]",
+      "{SparseArray[Automatic, {2}, 0., {1, {{0, 1}, {{1}}}, {-1.}}], \
+       SparseArray[Automatic, {2, 2}, 0, {1, {{0, 2, 4}, \
+       {{1}, {2}, {1}, {2}}}, {1., 2., 1., -1.}}]}",
+    );
+    assert_case(
+      "CoefficientArrays[{a + b + 0.}, {a, b}]",
+      "{SparseArray[Automatic, {1}, 0., {1, {{0, 0}, {}}, {}}], \
+       SparseArray[Automatic, {1, 2}, 0, {1, {{0, 2}, {{1}, {2}}}, \
+       {1., 1.}}]}",
+    );
+  }
   #[test]
   fn coefficient_arrays_not_a_polynomial() {
     for (input, poly) in [
