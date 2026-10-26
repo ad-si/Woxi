@@ -36254,8 +36254,10 @@ fn list_children(
   ons: &mut Vec<String>,
 ) -> Vec<DisplayNode> {
   match list {
+    // `Null` (e.g. from an empty `Row[{a, , b}]` slot) is drawn as nothing.
     Expr::List(items) => items
       .iter()
+      .filter(|c| !matches!(c, Expr::Identifier(n) if n == "Null"))
       .map(|c| display_expr_to_node(c, bindings, probes, ons))
       .collect(),
     other => vec![display_expr_to_node(other, bindings, probes, ons)],
@@ -38276,6 +38278,18 @@ mod manipulate_display_pane_selector_tests {
   fn renders_matching_pane_as_row() {
     let code = r#"PaneSelector[{1 -> Row[{Style["a"], Style["b"]}], 2 -> Style["c"]}, mode]"#;
     let node = build_manipulate_display(code, &[("mode".into(), "1".into())]);
+    match node {
+      DisplayNode::Row(children) => assert_eq!(children.len(), 2),
+      other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+
+  /// An empty slot in a `Row` (`Row[{a, , b}]` holds `Null`) is invisible
+  /// in the front end; it must not show up as the text "Null".
+  #[test]
+  fn null_entries_in_row_are_skipped() {
+    let code = r#"Row[{Style["a"], , Style["b"]}]"#;
+    let node = build_manipulate_display(code, &[]);
     match node {
       DisplayNode::Row(children) => assert_eq!(children.len(), 2),
       other => panic!("expected a row node, got {other:?}"),
