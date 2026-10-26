@@ -5292,6 +5292,44 @@ fn ndsolve_system(
         }
       }
     }
+    // An equation that holds the highest derivative only implicitly
+    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it.
+    if !highest.iter().any(|(name, _, _)| *name == f.name) {
+      for ode in &odes {
+        fn find_node(
+          e: &Expr,
+          name: &str,
+          order: usize,
+          x: &str,
+        ) -> Option<Expr> {
+          if let Some((k, Expr::Identifier(ref p))) =
+            extract_derivative_order_and_point(e, name)
+            && k == order
+            && p == x
+          {
+            return Some(e.clone());
+          }
+          expr_children(e)
+            .into_iter()
+            .find_map(|c| find_node(c, name, order, x))
+        }
+        let Some(node) = find_node(ode, &f.name, f.order, x_name) else {
+          continue;
+        };
+        let solved = crate::functions::polynomial_ast::solve_ast(&[
+          ode.clone(),
+          node.clone(),
+        ]);
+        if let Ok(Expr::List(ref sols)) = solved
+          && let [Expr::List(rules)] = sols.as_slice()
+          && let [Expr::Rule { replacement, .. }] = rules.as_slice()
+          && max_derivative_order(replacement, &f.name) < f.order
+        {
+          highest.push((f.name.clone(), f.order, (**replacement).clone()));
+          break;
+        }
+      }
+    }
   }
   let explicit_highest = |e: &Expr| -> Expr {
     crate::functions::string_ast::map_expr_tree(e, &|node: &Expr| {

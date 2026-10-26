@@ -22327,6 +22327,22 @@ mod interpolation_spline_method {
 mod ndsolve_state_events {
   use super::*;
 
+  // An event on the highest derivative reads it from an equation that
+  // holds it only implicitly. wolframscript: {3.3867047933779557,
+  // 9.92978013087389}.
+  #[test]
+  fn event_on_implicit_highest_derivative() {
+    assert_eq!(
+      interpret(
+        "Round[Reap[NDSolve[{5 Piecewise[{{-Sin[0.5], t <= 1}}, \
+         -Sin[0.5 + y[t]]] + 7 y''[t] == 0, y[0] == 0, y'[0] == 0, \
+         WhenEvent[y''[t] == 0, Sow[t]]}, y, {t, 0, 10}]][[-1, 1]], 0.001]"
+      )
+      .unwrap(),
+      "{3.387, 9.93}"
+    );
+  }
+
   #[test]
   fn stop_integration_with_side_effect() {
     // The integration ends where the condition turns true; the action's
