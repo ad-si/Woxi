@@ -2684,6 +2684,30 @@ mod tests {
     );
   }
 
+  /// An interval control whose bounds are wrapped in `QuantityMagnitude`
+  /// (a plain number is its own magnitude) must still be a real
+  /// `IntervalSlider`; it used to vanish because the bounds stayed symbolic.
+  #[test]
+  fn interval_slider_with_quantity_magnitude_bounds() {
+    let code = r#"Manipulate[
+      {lam},
+      Row[{Control[{{lam, {0.2, 0.3}, "volume"}, QuantityMagnitude[0.1],
+        QuantityMagnitude[1.0] - 0.05, ControlType -> IntervalSlider}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.controls.iter().any(|c| matches!(
+        c,
+        ControlState::IntervalSlider { min, max, .. }
+          if (*min - 0.1).abs() < 1e-9 && (*max - 0.95).abs() < 1e-9
+      )),
+      "expected an IntervalSlider over 0.1..0.95: {:?}",
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>()
+    );
+  }
+
   /// A slider whose whole range is one `Dynamic[Switch[…]]` handing back
   /// both ends as a spliced `Apply[Sequence, {lo, hi}]` pair must be a real
   /// slider over the active branch's range that follows the other control

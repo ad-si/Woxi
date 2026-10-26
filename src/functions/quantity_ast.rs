@@ -1664,6 +1664,17 @@ pub fn quantity_magnitude_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect();
         return Ok(Expr::List(mapped?.into()));
       }
+      // A bare number is a dimensionless quantity: its magnitude is itself.
+      if matches!(
+        &args[0],
+        Expr::Integer(_)
+          | Expr::BigInteger(_)
+          | Expr::Real(_)
+          | Expr::BigFloat(..)
+      ) || crate::functions::ode_ast::is_exact_number(&args[0])
+      {
+        return Ok(args[0].clone());
+      }
       Ok(unevaluated("QuantityMagnitude", args))
     }
     2 => {
