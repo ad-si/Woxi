@@ -7463,12 +7463,25 @@ fn fit_parameter_bounds(
 /// Finds parameter values that minimize the sum of squared residuals.
 /// Returns {param1 -> val1, param2 -> val2, ...}.
 pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 4 {
+  if args.len() < 4 {
     return Err(InterpreterError::EvaluationError(
-      "FindFit expects exactly 4 arguments: data, model, params, var".into(),
+      "FindFit expects at least 4 arguments: data, model, params, var".into(),
     ));
   }
   let (model, constraints) = split_fit_model_spec(&args[1]);
+  // `NormFunction -> f` replaces the sum of squares by `f` of the residual
+  // vector; the other options only steer how the minimum is sought.
+  let mut norm: Option<Expr> = None;
+  for opt in &args[4..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "NormFunction")
+    {
+      norm = Some(replacement.as_ref().clone());
+    }
+  }
   find_fit_weighted(
     &args[0],
     &model,
@@ -7476,8 +7489,99 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &args[2],
     &args[3],
     None,
+    norm.as_ref(),
     "FindFit",
   )
+}
+
+/// Nelder-Mead minimization of `objective` from `start`, kept inside the
+/// box `bounds`. The simplex is restarted around the best point until a
+/// restart no longer improves it, which copes with the kinks of norms such
+/// as the 1-norm. `start` is overwritten with the minimizer found.
+fn minimize_nelder_mead(
+  start: &mut [f64],
+  bounds: &[(f64, f64)],
+  objective: impl Fn(&[f64]) -> f64,
+) {
+  let n = start.len();
+  if n == 0 {
+    return;
+  }
+  let clamp = |p: &mut Vec<f64>| {
+    for (v, &(lo, hi)) in p.iter_mut().zip(bounds) {
+      *v = v.clamp(lo, hi);
+    }
+  };
+  let mut best = start.to_vec();
+  let mut best_val = objective(&best);
+  for _ in 0..30 {
+    let mut simplex: Vec<(Vec<f64>, f64)> = Vec::with_capacity(n + 1);
+    simplex.push((best.clone(), best_val));
+    for j in 0..n {
+      let mut p = best.clone();
+      p[j] += 0.1 * p[j].abs().max(0.1);
+      clamp(&mut p);
+      let v = objective(&p);
+      simplex.push((p, v));
+    }
+    for _ in 0..400 {
+      simplex.sort_by(|a, b| a.1.total_cmp(&b.1));
+      let spread = simplex[n].1 - simplex[0].1;
+      if spread.is_finite() && spread <= 1e-14 * simplex[0].1.abs().max(1e-300)
+      {
+        break;
+      }
+      let centroid: Vec<f64> = (0..n)
+        .map(|j| simplex[..n].iter().map(|(p, _)| p[j]).sum::<f64>() / n as f64)
+        .collect();
+      let along = |t: f64| -> (Vec<f64>, f64) {
+        let mut p: Vec<f64> = (0..n)
+          .map(|j| centroid[j] + t * (simplex[n].0[j] - centroid[j]))
+          .collect();
+        clamp(&mut p);
+        let v = objective(&p);
+        (p, v)
+      };
+      let reflected = along(-1.0);
+      if reflected.1 < simplex[0].1 {
+        let expanded = along(-2.0);
+        simplex[n] = if expanded.1 < reflected.1 {
+          expanded
+        } else {
+          reflected
+        };
+      } else if reflected.1 < simplex[n - 1].1 {
+        simplex[n] = reflected;
+      } else {
+        let contracted = if reflected.1 < simplex[n].1 {
+          along(-0.5)
+        } else {
+          along(0.5)
+        };
+        if contracted.1 < simplex[n].1.min(reflected.1) {
+          simplex[n] = contracted;
+        } else {
+          let anchor = simplex[0].0.clone();
+          for item in simplex.iter_mut().skip(1) {
+            let mut p: Vec<f64> = (0..n)
+              .map(|j| anchor[j] + 0.5 * (item.0[j] - anchor[j]))
+              .collect();
+            clamp(&mut p);
+            let v = objective(&p);
+            *item = (p, v);
+          }
+        }
+      }
+    }
+    simplex.sort_by(|a, b| a.1.total_cmp(&b.1));
+    if simplex[0].1 < best_val {
+      best = simplex[0].0.clone();
+      best_val = simplex[0].1;
+    } else {
+      break;
+    }
+  }
+  start.copy_from_slice(&best);
 }
 
 /// The fitting core: least squares by Gauss-Newton, optionally weighted
@@ -7490,6 +7594,7 @@ fn find_fit_weighted(
   params_expr: &Expr,
   var_expr: &Expr,
   weights: Option<&[f64]>,
+  norm: Option<&Expr>,
   caller: &str,
 ) -> Result<Expr, InterpreterError> {
   // A parameter may be any expression (`sigma[1]`): each one that is not a
@@ -7825,6 +7930,40 @@ fn find_fit_weighted(
     if max_change < tol {
       break;
     }
+  }
+
+  // A `NormFunction` other than the 2-norm changes what is minimized, so
+  // the least-squares solution only serves as the starting point of a
+  // derivative-free search on the norm of the residual vector.
+  if let Some(norm) = norm {
+    let objective = |values: &[f64]| -> f64 {
+      let mut residuals = Vec::with_capacity(n_data);
+      for i in 0..n_data {
+        let mut e = at_point(&x_vals[i]);
+        for (k, pname) in param_names.iter().enumerate() {
+          e = crate::syntax::substitute_variable(
+            &e,
+            pname,
+            &Expr::Real(values[k]),
+          );
+        }
+        let v = match evaluate_expr_to_expr(&e) {
+          Ok(ref v) => try_eval_to_f64(v).unwrap_or(f64::NAN),
+          Err(_) => f64::NAN,
+        };
+        residuals.push(Expr::Real((y_vals[i] - v) * scale[i]));
+      }
+      let applied =
+        crate::evaluator::function_application::apply_function_to_arg(
+          norm,
+          &Expr::List(residuals.into()),
+        );
+      match applied.ok().as_ref().and_then(try_eval_to_f64) {
+        Some(v) if v.is_finite() => v,
+        _ => f64::INFINITY,
+      }
+    };
+    minimize_nelder_mead(&mut param_values, &bounds, objective);
   }
 
   // Build result: {param1 -> val1, param2 -> val2, ...}
@@ -8766,6 +8905,7 @@ pub fn nonlinear_model_fit_ast(
     params,
     var,
     weights.as_deref(),
+    None,
     "NonlinearModelFit",
   )?;
   let Expr::List(rules) = &param_rules else {

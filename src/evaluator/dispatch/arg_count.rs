@@ -517,7 +517,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "FindShortestPath" => Some((3, 4)),
     "FiniteAbelianGroupCount" => Some((1, 1)),
     "FiniteGroupCount" => Some((1, 1)),
-    "FindFit" => Some((4, 4)),
+    "FindFit" => Some((4, usize::MAX)),
     "NonlinearModelFit" => Some((4, usize::MAX)),
     "FindInstance" => Some((2, 4)),
     "FindIntegerNullVector" => Some((1, 2)),
