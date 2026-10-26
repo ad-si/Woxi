@@ -6386,3 +6386,4 @@ Combinatorica`BreadthFirstTraversal,Vertices of a Combinatorica graph in breadth
 Combinatorica`ShortestPath,Shortest vertex path between two vertices of a Combinatorica graph,✅,pure,6.0,
 ToColor,Converts a color directive to RGBColor GrayLevel Hue CMYKColor or another color space head,✅,pure,2.0,
 LinearRegression`Regress,Legacy least-squares fit with a literal basis returning RegressionCommon` rules for ParameterTable and RSquared,✅,pure,6.0,
+BarCharts`GeneralizedBarChart,Legacy package bar chart from {position height width} triples drawn as rectangles,✅,pure,6.0,

@@ -41677,3 +41677,36 @@ mod styled_text_and_computed_options_in_graphics_layouts {
     assert!(svg.contains("fill=\"rgb(0,0,255)\""), "no blue: {svg}");
   }
 }
+
+mod generalized_bar_chart {
+  use super::*;
+
+  #[test]
+  fn bars_are_centred_on_their_position() {
+    assert_eq!(
+      interpret(
+        "Cases[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}], _Rectangle, Infinity]"
+      )
+      .unwrap(),
+      "{Rectangle[{-0.5, 0.}, {0.5, 3.}], Rectangle[{1.75, 0.}, {2.25, 5.}]}"
+    );
+  }
+
+  #[test]
+  fn bar_style_and_options_reach_the_graphics() {
+    assert_eq!(
+      interpret(
+        "Head[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red, PlotRange -> {{-1, 1}, {0, 4}}]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "FreeQ[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red], Red]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+}

@@ -781,6 +781,9 @@ pub fn dispatch_plotting(
     "RectangleChart" if !args.is_empty() => Some(
       crate::functions::rectangle_chart::rectangle_chart_ast(args, false),
     ),
+    "BarCharts`GeneralizedBarChart" if !args.is_empty() => {
+      Some(crate::functions::rectangle_chart::generalized_bar_chart_ast(args))
+    }
     "RectangleChart3D" if !args.is_empty() => Some(
       crate::functions::rectangle_chart::rectangle_chart_ast(args, true),
     ),
