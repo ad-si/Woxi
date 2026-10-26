@@ -2,19 +2,110 @@ use super::*;
 use num_traits::{Signed, Zero};
 use std::cell::RefCell;
 
-fn nth_prime(n: i128) -> i128 {
-  if n == 0 {
-    return 0; // Return 0 for invalid input
-  }
-  let mut count = 0;
-  let mut num = 1;
-  while count < n {
-    num += 1;
-    if is_prime_i128(num) {
-      count += 1;
+/// The primes below `limit`, by the sieve of Eratosthenes.
+fn primes_below(limit: usize) -> Vec<u64> {
+  let mut composite = vec![false; limit.max(2)];
+  let mut primes = Vec::new();
+  for i in 2..limit {
+    if !composite[i] {
+      primes.push(i as u64);
+      let mut j = i * i;
+      while j < limit {
+        composite[j] = true;
+        j += i;
+      }
     }
   }
-  num
+  primes
+}
+
+/// Walk the primes up to `limit` segment by segment (a segmented sieve, so
+/// memory stays small), calling `visit` with each until it returns false.
+fn for_each_prime_up_to(limit: u64, mut visit: impl FnMut(u64) -> bool) {
+  if limit < 2 {
+    return;
+  }
+  let root = ((limit as f64).sqrt() as u64 + 1) as usize;
+  let base = primes_below(root + 1);
+  const SEGMENT: u64 = 1 << 18;
+  let mut low = 2u64;
+  let mut sieve = vec![true; SEGMENT as usize];
+  while low <= limit {
+    let high = (low + SEGMENT - 1).min(limit);
+    let len = (high - low + 1) as usize;
+    sieve[..len].iter_mut().for_each(|v| *v = true);
+    for &p in &base {
+      if p * p > high {
+        break;
+      }
+      let mut start = (low.div_ceil(p) * p).max(p * p);
+      while start <= high {
+        sieve[(start - low) as usize] = false;
+        start += p;
+      }
+    }
+    for (offset, &is_prime) in sieve[..len].iter().enumerate() {
+      if is_prime && !visit(low + offset as u64) {
+        return;
+      }
+    }
+    low = high + 1;
+  }
+}
+
+/// The number of primes up to `n`.
+fn prime_count(n: i128) -> i128 {
+  if n < 2 {
+    return 0;
+  }
+  let mut count = 0i128;
+  for_each_prime_up_to(n as u64, |_| {
+    count += 1;
+    true
+  });
+  count
+}
+
+thread_local! {
+  /// The first primes, kept between calls so `Table[Prime[k], {k, n}]`
+  /// sieves once.
+  static SMALL_PRIMES: std::cell::RefCell<Vec<u64>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The `n`-th prime (`n >= 1`).
+fn nth_prime(n: i128) -> i128 {
+  if n <= 0 {
+    return 0;
+  }
+  // An upper bound for p_n (Rosser): n (ln n + ln ln n) for n >= 6.
+  let nf = n as f64;
+  let bound = if n < 6 {
+    15.0
+  } else {
+    nf * (nf.ln() + nf.ln().ln()) + 3.0
+  } as u64;
+  const CACHE_LIMIT: u64 = 50_000_000;
+  if bound <= CACHE_LIMIT {
+    return SMALL_PRIMES.with(|cache| {
+      let mut cache = cache.borrow_mut();
+      if (cache.len() as i128) < n {
+        *cache = primes_below(bound as usize + 1);
+      }
+      cache[(n - 1) as usize] as i128
+    });
+  }
+  let mut count = 0i128;
+  let mut found = 0u64;
+  for_each_prime_up_to(bound, |p| {
+    count += 1;
+    if count == n {
+      found = p;
+      return false;
+    }
+    true
+  });
+  found as i128
 }
 
 /// Primality test for i128 values (Miller-Rabin via BigInt beyond 1u128 << 53).
@@ -4831,13 +4922,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if n < 2 {
         return Ok(Expr::Integer(0));
       }
-      let mut count: i128 = 0;
-      for i in 2..=n {
-        if is_prime_i128(i) {
-          count += 1;
-        }
-      }
-      Ok(Expr::Integer(count))
+      Ok(Expr::Integer(prime_count(n)))
     }
     None if matches!(&args[0], Expr::Real(_)) => {
       let f = if let Expr::Real(f) = &args[0] {
@@ -4849,13 +4934,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Integer(0));
       }
       let n = f.floor() as i128;
-      let mut count: i128 = 0;
-      for i in 2..=n {
-        if is_prime_i128(i) {
-          count += 1;
-        }
-      }
-      Ok(Expr::Integer(count))
+      Ok(Expr::Integer(prime_count(n)))
     }
     _ => {
       // Try to evaluate symbolic constants (Pi, E, etc.) to f64
@@ -4864,13 +4943,7 @@ pub fn prime_pi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Integer(0));
         }
         let n = f.floor() as i128;
-        let mut count: i128 = 0;
-        for i in 2..=n {
-          if is_prime_i128(i) {
-            count += 1;
-          }
-        }
-        Ok(Expr::Integer(count))
+        Ok(Expr::Integer(prime_count(n)))
       } else {
         Ok(unevaluated("PrimePi", args))
       }

@@ -1493,6 +1493,29 @@ mod heaviside_lambda {
   }
 }
 
+mod prime_and_prime_pi {
+  use super::*;
+
+  // Prime and PrimePi sieve (segmented beyond a cached range) instead of
+  // testing every integer by trial division.
+  #[test]
+  fn sieve_values() {
+    assert_eq!(
+      interpret("{Prime[1], Prime[6], Prime[100000], Prime[2000000]}").unwrap(),
+      "{2, 13, 1299709, 32452843}"
+    );
+    assert_eq!(
+      interpret("{PrimePi[1], PrimePi[100.5], PrimePi[10^7], PrimePi[Pi]}")
+        .unwrap(),
+      "{0, 25, 664579, 2}"
+    );
+    assert_eq!(
+      interpret("Total[Table[Prime[k], {k, 1, 20000}]]").unwrap(),
+      "2137755325"
+    );
+  }
+}
+
 mod prime_omega {
   use super::*;
 
