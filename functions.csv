@@ -847,6 +847,7 @@ Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/St
 ComputationalGeometry`ConvexHull,Legacy package function: counter-clockwise indices of the convex hull corners of a 2D point set (bare ConvexHull after loading the package),✅,pure,1.0,814
 ComputationalGeometry`DelaunayTriangulation,Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set,✅,pure,5.0,814
 ComputationalGeometry`DiagramPlot,Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices),✅,pure,5.0,814
+ComputationalGeometry`VoronoiDiagram,Legacy package function: {vertices; cells} of the Voronoi diagram of a 2D point set with Ray[origin; direction] entries for unbounded edges,✅,pure,5.0,814
 ConvexHullMesh,Convex hull of a 2D or 3D point set as a BoundaryMeshRegion,✅,pure,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816

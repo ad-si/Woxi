@@ -1098,11 +1098,12 @@ fn evaluate_function_call_ast_inner(
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
-    "DelaunayTriangulation" | "DiagramPlot"
+    "DelaunayTriangulation" | "DiagramPlot" | "VoronoiDiagram"
       if computational_geometry_active() =>
     {
       match name {
         "DiagramPlot" => "ComputationalGeometry`DiagramPlot",
+        "VoronoiDiagram" => "ComputationalGeometry`VoronoiDiagram",
         _ => "ComputationalGeometry`DelaunayTriangulation",
       }
     }
@@ -5581,6 +5582,9 @@ fn evaluate_function_call_ast_inner(
 
   if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_triangulation_ast(args);
+  }
+  if name == "ComputationalGeometry`VoronoiDiagram" && args.len() == 1 {
+    return crate::functions::delaunay::voronoi_diagram_ast(args);
   }
   if name == "ComputationalGeometry`DiagramPlot" && !args.is_empty() {
     return crate::functions::delaunay::diagram_plot_ast(args);
