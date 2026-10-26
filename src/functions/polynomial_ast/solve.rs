@@ -15038,7 +15038,29 @@ pub fn find_minimum_ast(
   })();
 
   // Evaluate expression at point
+  // The objective, gradient and Hessian are evaluated at many points, so
+  // each is compiled once into a plain float tree (keyed by address; they
+  // are not mutated from here on). Anything the compiler hands to the AST
+  // evaluator, and any non-finite result, takes the general path below so
+  // messages and exotic values behave as before.
+  let compiled: std::cell::RefCell<
+    std::collections::HashMap<*const Expr, Option<NumNode>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+    let fast = {
+      let mut cache = compiled.borrow_mut();
+      cache
+        .entry(std::ptr::from_ref::<Expr>(expr))
+        .or_insert_with(|| {
+          compile_numeric(expr, &vars).filter(|node| !node.has_fallback())
+        })
+        .as_ref()
+        .map(|node| node.eval(point))
+        .filter(|v| v.is_finite())
+    };
+    if let Some(v) = fast {
+      return Ok(v);
+    }
     let mut e = expr.clone();
     for (i, var) in vars.iter().enumerate() {
       e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
@@ -15178,7 +15200,10 @@ pub fn find_minimum_ast(
       // Convergence: the Newton step itself is small. Using gval alone
       // would terminate too eagerly when the function is scaled by a
       // tiny constant (gradient is O(scale), but the step is O(1)).
-      if step.abs() < tol {
+      // The threshold scales with the iterate: near a large `x` the step
+      // is stuck at rounding noise (a few ulps) and would otherwise never
+      // drop below the absolute tolerance, burning every iteration.
+      if step.abs() < tol * (1.0 + x[0].abs()) {
         break;
       }
 
@@ -15209,6 +15234,11 @@ pub fn find_minimum_ast(
           break 'newton;
         };
         best_f = v * sign;
+      }
+      // The line search could not move off the current point, so every
+      // further iteration would repeat this one exactly.
+      if best_x == x[0] {
+        break;
       }
       x[0] = best_x;
       fire_step_monitor(step_monitor, &vars, &x);
