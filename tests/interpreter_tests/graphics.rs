@@ -9879,6 +9879,24 @@ mod plot3d {
       );
     }
 
+    /// `\[Implies]` (U+F523) and its private-use neighbours were drawn as
+    /// blank boxes; they now substitute the nearest standard character.
+    #[test]
+    fn implies_and_short_arrow_glyphs_are_drawn_as_standard_characters() {
+      let svg = export_svg(
+        r#"Graphics[{Text["a \[Implies] b", {0, 0}], Text["\[ShortLeftArrow]", {0, 1}],
+           Text["\[Square]", {0, 2}]}, PlotRange -> {{-1, 1}, {-1, 3}}]"#,
+      );
+      assert!(svg.contains("\u{21D2}"), "implies not drawn: {svg}");
+      assert!(svg.contains(">\u{2190}</text>"), "arrow not drawn: {svg}");
+      assert!(svg.contains(">\u{25A1}</text>"), "square not drawn: {svg}");
+      assert!(!svg.contains('\u{F523}'), "private-use drawn: {svg}");
+      assert_eq!(
+        woxi::interpret(r#"ToCharacterCode["\[Implies]"]"#).unwrap(),
+        "{62755}"
+      );
+    }
+
     /// The `Abs`/`Norm` bar characters are private use too, and were
     /// missing from the substitution table entirely (not just drawing the
     /// wrong glyph): a caption written with them drew the literal

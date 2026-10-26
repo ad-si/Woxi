@@ -321,6 +321,12 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
   Some(match c {
     '\u{F522}' | '\u{F3D5}' => "\u{2192}", // Rule, DirectedEdge: →
     '\u{F51F}' => "\u{29F4}",              // RuleDelayed: ⧴
+    '\u{F523}' => "\u{21D2}",              // Implies: ⇒
+    '\u{F520}' => "\u{25A1}",              // Square: □
+    '\u{F525}' => "\u{2192}",              // ShortRightArrow: →
+    '\u{F526}' => "\u{2190}",              // ShortLeftArrow: ←
+    '\u{F52A}' => "\u{2191}",              // ShortUpArrow: ↑
+    '\u{F52B}' => "\u{2193}",              // ShortDownArrow: ↓
     '\u{F3D4}' => "\u{2194}",              // UndirectedEdge: ↔
     '\u{F3D3}' => "\u{2223}",              // Conditioned: ∣
     '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
