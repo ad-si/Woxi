@@ -18157,6 +18157,18 @@ fn parse_bg_spec_list(items: &[Expr]) -> (Vec<Option<Color>>, bool) {
   (out, true)
 }
 
+/// The entries of one row/column part of a `Background -> {cols, rows}`
+/// spec: a list, or a single bare `n -> color` rule standing for `{n -> color}`.
+fn bg_spec_items(expr: &Expr) -> Option<Vec<Expr>> {
+  match expr {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::Rule { pattern, .. } if matches!(pattern.as_ref(), Expr::Integer(n) if *n >= 1) => {
+      Some(vec![expr.clone()])
+    }
+    _ => None,
+  }
+}
+
 /// A 1-indexed row/column position from a `Background -> {…, {{i, j} ->
 /// color, ...}}` explicit cell rule.
 fn grid_bg_index(expr: &Expr) -> Option<usize> {
@@ -18618,16 +18630,17 @@ fn grid_svg_styled_internal(
           Expr::List(items) => {
             // Background -> {{col_colors...}, {row_colors...}}
             if !items.is_empty() {
-              if let Expr::List(cols) = &items[0] {
-                (col_backgrounds, col_bg_indexed) = parse_bg_spec_list(cols);
+              if let Some(cols) = bg_spec_items(&items[0]) {
+                (col_backgrounds, col_bg_indexed) = parse_bg_spec_list(&cols);
               } else if parse_color(&items[0]).is_some() {
                 // Background -> {color} (single color in list)
                 background_color = parse_color(&items[0]);
               }
             }
             if items.len() >= 2
-              && let Expr::List(row_cols) = &items[1]
+              && let Some(row_cols) = bg_spec_items(&items[1])
             {
+              let row_cols = &row_cols;
               // Check for repeating-list pattern: {first..., {repeat...}, last...}
               let has_nested =
                 row_cols.iter().any(|c| matches!(c, Expr::List(_)));
