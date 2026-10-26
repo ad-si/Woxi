@@ -836,6 +836,7 @@ fn field(
       noise,
       noise2,
       &WoodKind {
+        vertical: false,
         spacing: 6.0,
         warp: 2.0,
         ..WoodKind::default()
