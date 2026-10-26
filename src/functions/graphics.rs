@@ -27120,8 +27120,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           // can make sense of is skipped rather than failing the whole
           // Manipulate — one unrecognised control row must not take every
           // other, already-understood row down with it (see the comment
-          // above the loop on `Initialization`/`TrackedSymbols`).
-          None => continue,
+          // above the loop on `Initialization`/`TrackedSymbols`). A spec
+          // that states an initial value (`{{u, {1, 1, 1}}, {0, 0, 0},
+          // {1, 1, 1}}`, a 3-vector Woxi draws no widget for) still binds
+          // its variable to it, as Wolfram does whatever the control.
+          None => match spec_variable_and_initial(&spec) {
+            Some((name, value)) => ParsedControl::State { name, value },
+            None => continue,
+          },
         },
       }
     } else {
@@ -33060,6 +33066,22 @@ fn strip_ncache(expr: &Expr) -> Expr {
       Expr::List(items.iter().map(strip_ncache).collect::<Vec<_>>().into())
     }
     other => other.clone(),
+  }
+}
+
+/// The variable and InputForm initial value of a `{{u, init, …}, …}` spec.
+fn spec_variable_and_initial(spec: &Expr) -> Option<(String, String)> {
+  let Expr::List(items) = &strip_ncache(spec) else {
+    return None;
+  };
+  match items.first() {
+    Some(Expr::List(head)) if head.len() >= 2 => match &head[0] {
+      Expr::Identifier(name) => {
+        Some((name.clone(), manipulate_value_to_input_form(&head[1])))
+      }
+      _ => None,
+    },
+    _ => None,
   }
 }
 

@@ -28431,6 +28431,28 @@ mod manipulate {
     );
   }
 
+  // A spec Woxi draws no widget for — a 3-vector `{{u, init}, min, max}`,
+  // here inside the `"XYZ" -> spec` controller form — still binds its
+  // variable to the initial value, as Wolfram does.
+  #[test]
+  fn spec_without_widget_binds_initial_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[rgb[[1]] + r, {{r, 2}, 0, 3}, \
+       \"XYZ\" -> {{rgb, {1, 1, 1}}, {0, 0, 0}, {1, 1, 1}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(spec.displays.is_empty(), "displays: {:?}", spec.displays);
+    assert!(
+      spec
+        .state
+        .iter()
+        .any(|(name, value)| name == "rgb" && value == "{1, 1, 1}"),
+      "state: {:?}",
+      spec.state
+    );
+  }
+
   // A hidden `ControlType -> None` point driven only by a `LocatorPane` that
   // a user-defined display helper produces still gets a draggable control,
   // with the pane's `PlotRange -> r` giving the symmetric `[-r, r]` square.
