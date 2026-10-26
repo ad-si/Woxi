@@ -5151,7 +5151,7 @@ mod solve {
 {x -> (-3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}, \
 {x -> (3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}}"
     );
-    assert!(woxi::get_captured_warnings().is_empty());
+    assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
   // Machine radicals the exact elimination cannot handle are searched
