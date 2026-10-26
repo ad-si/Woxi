@@ -22945,13 +22945,12 @@ mod integrate_interpolating_function {
       interpret("DSolve[y''[x] == x, y[x], x]").unwrap(),
       "{{y[x] -> x^3/6 + C[1] + x*C[2]}}"
     );
-    assert_eq!(
+    assert!(
       interpret(
         "u /. First[DSolve[{u[1] == 1, u[2] == 2, -3 u'[x]/u''[x] == x}, u, x]]"
       )
       .unwrap()
-      .contains("Function"),
-      true
+      .contains("Function")
     );
     assert_eq!(
       interpret(
