@@ -4997,6 +4997,47 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  #[test]
+  fn gauss_rule_data() {
+    assert_eq!(
+      interpret("NIntegrate`GaussRuleData[2, MachinePrecision]").unwrap(),
+      "{{0.21132486540518713, 0.7886751345948129}, \
+{0.5000000000000001, 0.5000000000000001}, {}}"
+    );
+    // The 3-point rule on [0, 1]: (1 -+ Sqrt[3/5])/2 and 1/2, weighted
+    // 5/18, 4/9, 5/18.
+    assert_eq!(
+      interpret(
+        "{x, w, e} = NIntegrate`GaussRuleData[3, MachinePrecision]; \
+         {Max[Abs[x - {(1 - Sqrt[3/5])/2, 1/2, (1 + Sqrt[3/5])/2}]] < 10^-14, \
+         Max[Abs[w - {5/18, 4/9, 5/18}]] < 10^-14, e}"
+      )
+      .unwrap(),
+      "{True, True, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "Total[#2 Exp[#1]] & @@ Most[NIntegrate`GaussRuleData[12, \
+         MachinePrecision]] - (E - 1) // Abs // # < 10^-14 &"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn gauss_rule_data_needs_a_positive_integer() {
+    clear_state();
+    assert_eq!(
+      interpret("NIntegrate`GaussRuleData[x, MachinePrecision]").unwrap(),
+      "$Failed"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "NIntegrate`GaussRuleData::intpm: Positive machine-sized integer \
+          expected at position 1 in NIntegrate`GaussRuleData[x, \
+          MachinePrecision]."));
+  }
+
   // A non-numeric integrand is reported and left unevaluated, not
   // integrated as zero.
   #[test]
@@ -8138,6 +8179,23 @@ mod quadratic_denominator {
 
 mod dsolve {
   use super::*;
+
+  // `{{eqns…}, {conditions…}}` is one system of equations.
+  #[test]
+  fn nested_equation_lists() {
+    assert_eq!(
+      interpret(
+        "DSolve[{{a'[t] == b[t], b'[t] == -a[t]}, {a[0] == 1, b[0] == 0}}, \
+         {a[t], b[t]}, t]"
+      )
+      .unwrap(),
+      "{{a[t] -> Cos[t], b[t] -> -Sin[t]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{{y'[t] == y[t]}, {y[0] == 1}}, y[t], t]").unwrap(),
+      "{{y[t] -> E^t}}"
+    );
+  }
 
   // A list naming a single function goes to the single-equation solver;
   // the linear-system solver it went to left these unevaluated.
@@ -22951,6 +23009,51 @@ mod nintegrate_limits_numeric_after_n {
   fn nested_limit_that_is_numeric_only_after_n() {
     assert_eq!(
       interpret("Abs[NIntegrate[x*y, {x, 0, Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]}, {y, 0, 1}] - N[Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]^2/4]] < 10^-6").unwrap(),
+      "True"
+    );
+  }
+}
+
+mod ndsolve_stiff_system {
+  use super::*;
+
+  #[test]
+  fn oregonator_is_integrated_with_a_stiff_method() {
+    // The Belousov–Zhabotinsky Oregonator: rate constants 2500 apart make
+    // RK4 diverge, so the leg falls back to a Rosenbrock method.
+    // wolframscript (StiffnessSwitching) gives
+    // {0.0015164491772817774, 2.062699017831478, 0.0019126537680043626}.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t]/25 == (1 - x[t]) x[t] + y[t]/1250 - x[t] y[t], \
+         y'[t]/2500 == -y[t]/1250 - x[t] y[t] + 2.2 z[t], \
+         z'[t] == x[t] - z[t], x[0] == 1, y[0] == 1, z[0] == 1}, \
+         {x[t], y[t], z[t]}, {t, 0, 100}]; \
+         v = First[{x[t], y[t], z[t]} /. s /. t -> 50]; \
+         Max[Abs[v/{0.0015164491772817774, 2.062699017831478, \
+         0.0019126537680043626} - 1]] < 10^-4"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(
+      !woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.contains("NDSolve::"))
+    );
+  }
+
+  #[test]
+  fn stiff_linear_decay() {
+    // y' = -10^5 (y - Cos[t]) tracks Cos[t] once the transient dies out.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -10^5 (y[t] - Cos[t]), y[0] == 0}, y, \
+         {t, 0, 10}]; Abs[y[10] /. First[s]] - Abs[Cos[10.]] // Abs // \
+         # < 10^-4 &"
+      )
+      .unwrap(),
       "True"
     );
   }

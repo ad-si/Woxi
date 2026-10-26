@@ -3863,6 +3863,31 @@ mod power_combining {
 mod sqrt_negative {
   use super::*;
 
+  // An exact sum with a negative value is I times the root of its negation;
+  // a rational factor of a numeric sum stays inside the radical.
+  #[test]
+  fn negative_exact_sum() {
+    assert_eq!(
+      interpret(
+        "InputForm[{Sqrt[-3 - Sqrt[17]], Sqrt[(-3 - Sqrt[17])/2], \
+         Sqrt[9/16 (-15 - 2 Sqrt[70])], Sqrt[1 - Sqrt[3]], Sqrt[-1 + x]}]"
+      )
+      .unwrap(),
+      "InputForm[{I*Sqrt[3 + Sqrt[17]], I*Sqrt[(3 + Sqrt[17])/2], \
+(3*I)/4*Sqrt[15 + 2*Sqrt[70]], I*Sqrt[-1 + Sqrt[3]], Sqrt[-1 + x]}]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[{Power[Times[1/2, 3 + Sqrt[17]], 1/3], \
+         Sqrt[3/8 (1 + Sqrt[2])], (16 (2 + Sqrt[3]))^(1/3), \
+         x = Sqrt[(3 + Sqrt[17])/2]; I x}]"
+      )
+      .unwrap(),
+      "InputForm[{((3 + Sqrt[17])/2)^(1/3), Sqrt[(3*(1 + Sqrt[2]))/2]/2, \
+2*(2*(2 + Sqrt[3]))^(1/3), I*Sqrt[(3 + Sqrt[17])/2]}]"
+    );
+  }
+
   #[test]
   fn sqrt_neg_1() {
     assert_eq!(interpret("Sqrt[-1]").unwrap(), "I");
@@ -7503,6 +7528,38 @@ mod rational_overflow {
 
 mod real_digits_base {
   use super::*;
+
+  // A base that is not a real number above 1 is reported (rbase) and a
+  // symbolic one leaves the call alone; neither is an evaluation error.
+  #[test]
+  fn invalid_or_symbolic_base() {
+    clear_state();
+    assert_eq!(
+      interpret("RealDigits[1/7, b]").unwrap(),
+      "RealDigits[1/7, b]"
+    );
+    assert_eq!(
+      interpret("RealDigits[1/7, 1]").unwrap(),
+      "RealDigits[1/7, 1]"
+    );
+    assert!(
+      woxi::get_captured_warnings().iter().any(|w| w
+        == "RealDigits::rbase: Base 1 is not a real number greater than 1.")
+    );
+    assert_eq!(
+      interpret("RealDigits[1/7, 10, x]").unwrap(),
+      "RealDigits[1/7, 10, x]"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "RealDigits::intnm: Non-negative machine-sized integer expected at \
+          position 3 in RealDigits[1/7, 10, x]."));
+  }
+
+  #[test]
+  fn zero_digits_keep_the_exponent() {
+    assert_eq!(interpret("RealDigits[1/7, 10, 0]").unwrap(), "{{}, 0}");
+    assert_eq!(interpret("RealDigits[Pi, 10, 0]").unwrap(), "{{}, 1}");
+  }
 
   #[test]
   fn base_140() {
@@ -11958,6 +12015,64 @@ mod bigfloat_exp_log {
 
 mod bigfloat_subtract {
   use super::*;
+
+  // A machine factor makes a product machine precision.
+  #[test]
+  fn machine_factor_demotes_product() {
+    assert_eq!(interpret("2.5`50 * 0.5").unwrap(), "1.25");
+    assert_eq!(interpret("Times[0.5, x, 2.5`50]").unwrap(), "1.25*x");
+    assert_eq!(
+      interpret("NestList[2`50 # (1 - #) &, 0.5, 2]").unwrap(),
+      "{0.5, 0.5, 0.5}"
+    );
+  }
+
+  // A machine literal past the machine range is an arbitrary-precision
+  // number of machine precision; one below it underflows to zero.
+  #[test]
+  fn overflowing_scientific_literal() {
+    assert_eq!(
+      interpret("{Precision[1.*^400], 1.*^400 > 10^399, 1.*^-400}").unwrap(),
+      "{15.954589770191003, True, 0.}"
+    );
+  }
+
+  // Numbers beyond the machine range still order correctly, and a tiny
+  // arbitrary-precision literal is no zero.
+  #[test]
+  fn out_of_range_comparisons() {
+    assert_eq!(
+      interpret(
+        "{Exp[1000.] > 10^400, 1.5`20*^400 > 2.5`20*^399, \
+         1.5`20*^-400 > 0, Positive[1.5`20*^-400], Negative[-1.*^400]}"
+      )
+      .unwrap(),
+      "{True, True, True, True, True}"
+    );
+    assert_eq!(
+      interpret("InputForm[{1.5`20*^-400, 1.5``20*^-400}]").unwrap(),
+      "InputForm[{1.5`20.*^-400, 0``20.}]"
+    );
+  }
+
+  // An exact numeric term joins an arbitrary-precision sum as a number; the
+  // precision follows from the inexact term's absolute error alone.
+  #[test]
+  fn exact_irrational_term() {
+    assert_eq!(
+      interpret("3.5`50 + Sqrt[5]").unwrap(),
+      "5.7360679774997896964091736687312762354406183596115257242708972454105209256378`50.21454624511528"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[1 + Sqrt[5] - \
+         3.4985616993277015199989453819445392678868790365444268365728236385235`50.]"
+      )
+      .unwrap(),
+      "InputForm[-0.26249372182791182358977171321326303244626067693290111230192639311297907436219`48.87522938329249]"
+    );
+    assert_eq!(interpret("3.5`50 + x").unwrap(), "3.5`50. + x");
+  }
 
   // The `-` operator on a BigFloat used to collapse to a 16-digit machine Real
   // (N[Pi,30] - 3 gave 0.14159265358979312). It must stay precision-tracked

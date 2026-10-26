@@ -6546,6 +6546,22 @@ mod random_real {
   use super::*;
 
   #[test]
+  fn non_real_endpoints_are_reported() {
+    clear_state();
+    assert_eq!(
+      interpret("RandomReal[{0, x}]").unwrap(),
+      "RandomReal[{0, x}]"
+    );
+    assert!(woxi::get_captured_warnings().iter().any(|w| w
+      == "RandomReal::unifr: The endpoints specified by {0, x} for the \
+          endpoints of the uniform distribution range are not real valued."));
+    assert_eq!(
+      interpret("RandomReal[{x, 1}, 3]").unwrap(),
+      "RandomReal[{x, 1}, 3]"
+    );
+  }
+
+  #[test]
   fn no_args() {
     let result: f64 = interpret("RandomReal[]").unwrap().parse().unwrap();
     assert!((0.0..1.0).contains(&result));
@@ -24687,6 +24703,40 @@ mod delete_cases_keeps_forms {
     assert_eq!(
       interpret("DeleteCases[{a + b + 1, c}, 1, 2]").unwrap(),
       "{a + b, c}"
+    );
+  }
+}
+
+mod part_of_held_pieces {
+  use super::*;
+
+  #[test]
+  fn held_part_expression_is_evaluated_once_lifted_out() {
+    clear_state();
+    assert_eq!(interpret("x = {1, 2}; Hold[x[[2]]][[1]]").unwrap(), "2");
+    assert_eq!(interpret("x = {1, 2}; Dynamic[x[[2]]][[1]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn multi_index_reaches_part_held_inside_a_wrapper() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "nl = {{\"a\", \"b\"}, {\"c\", \"d\"}}; \
+         pm = Table[With[{j = j}, PopupMenu[Dynamic[nl[[j, j]]], {\"x\"}]], {j, 2}]; \
+         {pm[[1, 1, 1]], pm[[2, 1, 1]]}"
+      )
+      .unwrap(),
+      "{a, d}"
+    );
+  }
+
+  #[test]
+  fn failed_multi_index_part_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("{{1, 2}}[[1, 1, 1]]").unwrap(),
+      "{{1, 2}}[[1,1,1]]"
     );
   }
 }

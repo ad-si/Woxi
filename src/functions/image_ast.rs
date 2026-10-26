@@ -1,6 +1,7 @@
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 use crate::syntax::ImageType;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -4314,7 +4315,7 @@ pub fn image_apply_ast(
   };
 
   let Expr::Image {
-    color_space: _,
+    color_space,
     display_size: _,
     width,
     height,
@@ -4431,8 +4432,10 @@ pub fn image_apply_ast(
     }
   }
 
+  // The result stays in the source's colour space (an HSB image mapped
+  // through `f` is still HSB) unless `f` changed the channel count.
   Ok(Expr::Image {
-    color_space: None,
+    color_space: if out_ch == ch { *color_space } else { None },
     display_size: None,
     width: *width,
     height: *height,
@@ -4503,6 +4506,37 @@ fn color_directive_to_rgb(e: &Expr) -> Option<(f64, f64, f64, Option<f64>)> {
     }
     _ => None,
   }
+}
+
+/// The pixels of an image as they are displayed: an HSB or CMYK image is
+/// decoded to RGB (keeping an HSBA alpha channel), anything else is shown as
+/// stored. Returns the channel count of the returned data.
+pub fn rgb_pixels<'a>(
+  color_space: Option<&str>,
+  channels: u8,
+  data: &'a [f64],
+) -> (u8, Cow<'a, [f64]>) {
+  let ch = channels as usize;
+  let (is_cmyk, has_alpha) = match (color_space, ch) {
+    (Some("HSB"), 3) => (false, false),
+    (Some("HSB"), 4) => (false, true),
+    (Some("CMYK"), 4) => (true, false),
+    _ => return (channels, Cow::Borrowed(data)),
+  };
+  let mut rgb = Vec::with_capacity(data.len());
+  for px in data.chunks_exact(ch) {
+    let (r, g, b) = if is_cmyk {
+      let k = 1.0 - px[3];
+      ((1.0 - px[0]) * k, (1.0 - px[1]) * k, (1.0 - px[2]) * k)
+    } else {
+      hsv_to_rgb(px[0], px[1], px[2])
+    };
+    rgb.extend_from_slice(&[r, g, b]);
+    if has_alpha {
+      rgb.push(px[3]);
+    }
+  }
+  (if has_alpha { 4 } else { 3 }, Cow::Owned(rgb))
 }
 
 /// HSB/HSV → RGB. `h`, `s`, `v` in [0, 1]; the hue wraps modulo 1.
@@ -4747,7 +4781,42 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ColorConvert", args));
   }
 
-  match &args[0] {
+  // An HSB or CMYK source is first decoded to RGB, so every target below
+  // starts from RGB (or gray) pixels; converting to its own space is a no-op.
+  let decoded;
+  let source = match &args[0] {
+    Expr::Image {
+      color_space: Some(space @ ("HSB" | "CMYK")),
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } => {
+      if color_space_tag(target_space) == Some(*space) {
+        return Ok(args[0].clone());
+      }
+      match rgb_pixels(Some(space), *channels, data) {
+        (out_ch, Cow::Owned(rgb)) => {
+          decoded = Expr::Image {
+            color_space: Some("RGB"),
+            display_size: None,
+            width: *width,
+            height: *height,
+            channels: out_ch,
+            data: Arc::new(rgb),
+            image_type: *image_type,
+          };
+          &decoded
+        }
+        _ => &args[0],
+      }
+    }
+    other => other,
+  };
+
+  match source {
     Expr::Image {
       color_space: _,
       display_size: _,
@@ -4766,7 +4835,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match target_space {
         "Grayscale" => {
           if ch == 1 {
-            return Ok(retag(&args[0], tag)); // Already grayscale
+            return Ok(retag(source, tag)); // Already grayscale
           }
           let mut new_data = Vec::with_capacity(w * h);
           for i in 0..(w * h) {
@@ -4788,7 +4857,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "RGB" => {
           if ch == 3 {
-            return Ok(retag(&args[0], tag)); // Already RGB
+            return Ok(retag(source, tag)); // Already RGB
           }
           if ch == 1 {
             // Grayscale → RGB

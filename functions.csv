@@ -3069,7 +3069,7 @@ PacletFind,,🚫,,12.1,3108
 PlayRange,,🚫,,2.0,3108
 PreviousCell,,🚫,,10.0,3108
 RadialAxisPlot,,🚫,,12.2,3108
-SatisfiabilityInstances,Instance ordering and free-variable fill follow WL-internal BDD structure (not reproducible black-box),🚫,pure,7.0,3108
+SatisfiabilityInstances,Satisfying assignments of a Boolean expression in BDD path order (a single instance may differ from WL),✅,pure,7.0,3108
 StandbyDistribution,Lifetime distribution of a cold standby system of components,✅,none,9.0,3108
 SummationLayer,,🚫,,11.0,3108
 Typed,,,,12.0,3108
@@ -3394,7 +3394,7 @@ ConstantRegionQ,,,,10.0,3462
 ConvectionPDETerm,,,,12.2,3462
 DynamicEvaluationTimeout,,🚫,,8.0,3462
 FileSize,"Returns the size of a file as Quantity[bytes;""Bytes""] with a Real magnitude; accepts File wrappers",✅,io,11.2,3462
-GaussianUnitaryMatrixDistribution,,,,10.3,3462
+GaussianUnitaryMatrixDistribution,represents the Gaussian unitary ensemble of random Hermitian matrices (sampled by RandomVariate),✅,none,10.3,3462
 HolidayCalendar,,,,9.0,3462
 HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
 KaiserWindow,Kaiser–Bessel window function; KaiserWindow[x] or KaiserWindow[x alpha] (default alpha 3),✅,pure,9.0,3462
@@ -3572,7 +3572,7 @@ WindVectorData,,🚫,,10.0,3636
 AudioNormalize,Scales audio so its loudest sample sits at full scale — the scale is taken over every channel at once,✅,pure,11.0,3656
 CombinerFunction,,,,10.0,3656
 CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9.0,3656
-GaussianOrthogonalMatrixDistribution,,,,10.3,3656
+GaussianOrthogonalMatrixDistribution,represents the Gaussian orthogonal ensemble of random real symmetric matrices (sampled by RandomVariate),✅,none,10.3,3656
 GeoScaleBar,,🚫,,10.0,3656
 HTTPResponse,Symbolic HTTP response object produced by URLRead; stays unevaluated,✅,unevaluated,10.0,3656
 HilbertFilter,,,,9.0,3656
@@ -6307,6 +6307,7 @@ ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
 Convert`TeX`ExpressionToTeX,The converter behind TeXForm — returns the TeX of an expression as a string,✅,pure,1.0,
 Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type; an optional second argument converts the leaves to Integer Real or Complex and anything unpackable is returned unchanged,✅,pure,4.0,
 Developer`FromPackedArray,Converts a packed array to a regular list; Woxi has no packed arrays so it returns the array unchanged,✅,pure,4.0,
+NIntegrate`GaussRuleData,Abscissas and weights of the n-point Gauss-Legendre rule on [0 1] at machine precision,✅,pure,5.0,
 Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
 Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,
 PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,

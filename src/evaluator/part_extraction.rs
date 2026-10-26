@@ -171,6 +171,20 @@ fn extract_span_from_items(
   Ok(rebuild(out))
 }
 
+/// Whether `taken` is the unevaluated `obj[[index]]` that a failed extraction
+/// hands back, as opposed to a piece of `obj` that is a `Part` expression
+/// itself (the `x[[2]]` held inside `Dynamic[x[[2]]]`).
+pub fn part_failed(obj: &Expr, taken: &Expr, index: &Expr) -> bool {
+  // `Expr` has no structural equality; the printed forms stand in for it
+  // (only reached once the extraction came back as a `Part`).
+  let Expr::Part { expr, index: i } = taken else {
+    return false;
+  };
+  let form =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  form(i) == form(index) && form(expr) == form(obj)
+}
+
 /// Get the innermost base of nested Part expressions
 pub fn get_part_base(expr: &Expr) -> &Expr {
   match expr {

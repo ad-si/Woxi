@@ -4875,6 +4875,28 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 };
               }
             }
+            // A content the two terms share stays a factor of the sum:
+            // `3 (-1 - Sqrt[2])`, `(3 (-45 - Sqrt[2585]))/16`.
+            let content = if nb == 0 { 1 } else { gcd_i128(nb.abs(), so) };
+            if content > 1 {
+              let radical = if so == content {
+                make_sqrt(Expr::Integer(sqrt_in))
+              } else {
+                multiply_exprs(
+                  &Expr::Integer(so / content),
+                  &make_sqrt(Expr::Integer(sqrt_in)),
+                )
+              };
+              let join_op = if sign_minus {
+                BinaryOperator::Minus
+              } else {
+                BinaryOperator::Plus
+              };
+              let sum = binop(join_op, Expr::Integer(nb / content), radical);
+              let root = times2(make_rational(content, den), sum);
+              return crate::evaluator::evaluate_expr_to_expr(&root)
+                .unwrap_or(root);
+            }
             let num = if nb == 0 {
               if sign_minus {
                 negate_expr(&sqrt_part)
@@ -4978,6 +5000,28 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         );
         let make_sol = |sign_minus: bool| -> Expr {
+          // A shared content stays a factor of the sum, as for real roots.
+          let content = if nb == 0 { 1 } else { gcd_i128(nb.abs(), so) };
+          if content > 1 {
+            let radical = multiply_exprs(
+              &id_expr("I"),
+              &if so == content {
+                make_sqrt(Expr::Integer(sqrt_in))
+              } else {
+                multiply_exprs(
+                  &Expr::Integer(so / content),
+                  &make_sqrt(Expr::Integer(sqrt_in)),
+                )
+              },
+            );
+            let join_op = if sign_minus {
+              BinaryOperator::Minus
+            } else {
+              BinaryOperator::Plus
+            };
+            let sum = binop(join_op, Expr::Integer(nb / content), radical);
+            return times2(make_rational(content, den), sum);
+          }
           let num = if nb == 0 {
             if sign_minus {
               negate_expr(&sqrt_part)
@@ -5295,6 +5339,83 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let Some(numeric) = numeric_polynomial_solutions(&coeffs, var)
       {
         return Ok(numeric);
+      }
+      // An irreducible quartic in x^2 alone is a quadratic in u = x^2:
+      // each of its roots gives the two square roots ±Sqrt[u].
+      if degree == 4
+        && matches!(&coeffs[1], Expr::Integer(0))
+        && matches!(&coeffs[3], Expr::Integer(0))
+      {
+        let u = "Solve$u";
+        let quadratic = Expr::Comparison {
+          operands: vec![
+            plus(vec![
+              coeffs[0].clone(),
+              times(vec![coeffs[2].clone(), id_expr(u)]),
+              times(vec![coeffs[4].clone(), pow(id_expr(u), Expr::Integer(2))]),
+            ]),
+            Expr::Integer(0),
+          ],
+          operators: vec![ComparisonOp::Equal],
+        };
+        if let Ok(Expr::List(ref u_roots)) = solve_ast(&[quadratic, id_expr(u)])
+        {
+          let mut values: Vec<Expr> = u_roots
+            .iter()
+            .filter_map(|root| match root {
+              Expr::List(rules) => match rules.first() {
+                Some(Expr::Rule { replacement, .. }) => {
+                  Some((**replacement).clone())
+                }
+                _ => None,
+              },
+              _ => None,
+            })
+            .collect();
+          // The roots with real square roots (u >= 0) come first, each
+          // group by the value of u.
+          let keys: Vec<Option<(bool, f64, f64)>> = values
+            .iter()
+            .map(|v| {
+              let (re, im) = try_extract_complex_f64(
+                &crate::evaluator::evaluate_expr_to_expr(&call(
+                  "N",
+                  vec![v.clone()],
+                ))
+                .ok()?,
+              )?;
+              Some((!(im.abs() < 1e-12 && re >= 0.0), re, im))
+            })
+            .collect();
+          if keys.iter().all(Option::is_some) {
+            let mut order: Vec<usize> = (0..values.len()).collect();
+            order.sort_by(|&a, &b| {
+              let (ka, kb) = (keys[a].unwrap(), keys[b].unwrap());
+              ka.0
+                .cmp(&kb.0)
+                .then(ka.1.total_cmp(&kb.1))
+                .then(ka.2.total_cmp(&kb.2))
+            });
+            values = order.into_iter().map(|i| values[i].clone()).collect();
+          }
+          let mut solutions = Vec::with_capacity(4);
+          for replacement in &values {
+            let sqrt = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Sqrt",
+              vec![replacement.clone()],
+            ))?;
+            let negated =
+              crate::evaluator::evaluate_expr_to_expr(&times(vec![
+                Expr::Integer(-1),
+                sqrt.clone(),
+              ]))?;
+            solutions.push(make_rule(negated));
+            solutions.push(make_rule(sqrt));
+          }
+          if solutions.len() == 4 {
+            return Ok(Expr::List(solutions.into()));
+          }
+        }
       }
       // Last resort for irreducible polynomials of degree ≥ 3 with
       // integer/rational coefficients: emit the wolframscript-style
@@ -8163,6 +8284,7 @@ fn try_solve_radical_equation(
     return None;
   };
   let mut kept: Vec<Expr> = Vec::new();
+  let mut undecided = false;
   for candidate in candidates {
     let Expr::List(rules) = candidate else {
       return None;
@@ -8170,9 +8292,34 @@ fn try_solve_radical_equation(
     let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
       return None;
     };
-    if equation_holds_at(equation, var, replacement)? {
+    // With other symbols in the equation the check cannot decide; the
+    // candidate is kept, with the warning wolframscript gives for it.
+    match equation_holds_at(equation, var, replacement) {
+      Some(true) => {}
+      Some(false) => continue,
+      None => {
+        // Decided at a generic point instead: every other symbol set to a
+        // positive number of its own. A candidate failing there (`x ->
+        // Sqrt[-a^2]/2` from squaring) is no solution for most parameters.
+        match holds_generically(equation, var, replacement) {
+          Some(GenericValidity::Fails) => continue,
+          Some(GenericValidity::Always) => {}
+          _ => undecided = true,
+        }
+      }
+    }
+    if !kept
+      .iter()
+      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, candidate))
+    {
       kept.push(candidate.clone());
     }
+  }
+  if undecided {
+    crate::emit_message(
+      "Solve::nongen: There may be values of the parameters for which some \
+       or all solutions are not valid.",
+    );
   }
   Some(Ok(Expr::List(kept.into())))
 }
@@ -8402,6 +8549,74 @@ fn rational_parts(exponent: &Expr) -> Option<(i128, i128)> {
 
 /// Whether `equation` holds with `value` put in for `var`, or `None` when
 /// that cannot be decided.
+/// Whether a candidate solves an equation with other symbols in it, judged
+/// at sample points where each of those symbols takes a number: `None`
+/// when the first (positive) point does not decide, `Fails` when the
+/// equation fails there, and otherwise whether it also holds at negative,
+/// larger and complex points — valid for every parameter value as far as
+/// the samples tell — or only for some.
+fn holds_generically(
+  equation: &Expr,
+  var: &str,
+  value: &Expr,
+) -> Option<GenericValidity> {
+  fn collect(e: &Expr, out: &mut std::collections::BTreeSet<String>) {
+    if let Expr::Identifier(name) = e {
+      out.insert(name.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect(child, out);
+    }
+  }
+  let mut found = std::collections::BTreeSet::new();
+  collect(equation, &mut found);
+  collect(value, &mut found);
+  let symbols: Vec<String> = found
+    .into_iter()
+    .filter(|s| s != var && !crate::evaluator::functions::is_builtin_symbol(s))
+    .collect();
+  if symbols.is_empty() {
+    return None;
+  }
+  let at = |point: &dyn Fn(usize) -> Expr| -> Option<bool> {
+    let mut equation = equation.clone();
+    let mut value = value.clone();
+    for (k, symbol) in symbols.iter().enumerate() {
+      equation =
+        crate::syntax::substitute_variable(&equation, symbol, &point(k));
+      value = crate::syntax::substitute_variable(&value, symbol, &point(k));
+    }
+    equation_holds_at(&equation, var, &value)
+  };
+  let shift = |k: usize| 0.3127 * k as f64;
+  if !at(&|k| Expr::Real(0.7349 + shift(k)))? {
+    return Some(GenericValidity::Fails);
+  }
+  let others: [&dyn Fn(usize) -> Expr; 3] = [
+    &|k| Expr::Real(-1.3127 - shift(k)),
+    &|k| Expr::Real(7.3149 + shift(k)),
+    &|k| {
+      crate::functions::math_ast::build_complex_float_expr_keep_real(
+        0.5213 + shift(k),
+        0.8137,
+      )
+    },
+  ];
+  Some(if others.iter().all(|p| at(*p) == Some(true)) {
+    GenericValidity::Always
+  } else {
+    GenericValidity::Partly
+  })
+}
+
+/// How a candidate with parameters fares across sample parameter values.
+#[derive(PartialEq)]
+enum GenericValidity {
+  Always,
+  Partly,
+  Fails,
+}
+
 fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
   let (lhs, rhs, CompOp::Equal) =
     crate::functions::polynomial_ast::reduce::extract_comparison(equation)?
@@ -17812,6 +18027,74 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => vec![],
   };
 
+  // A Boolean system — over `Booleans`, or a formula of plain connectives
+  // in every variable — has its instances read off its truth table. (A
+  // variable the formula does not mention is complex then, not Boolean.)
+  let var_exprs: Vec<Expr> = match vars {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  // Equations between truth values only count over `Booleans`.
+  fn has_comparison(e: &Expr) -> bool {
+    matches!(e, Expr::Comparison { .. })
+      || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(has_comparison)
+  }
+  if domain.as_deref() == Some("Booleans")
+    || (domain.is_none()
+      && !var_exprs.is_empty()
+      && var_names.len() == var_exprs.len()
+      && var_names.iter().all(|v| !is_constant_wrt(cond, v))
+      && !has_comparison(cond)
+      && crate::functions::boolean_ast::is_connective_formula(cond, &var_exprs))
+  {
+    // A list of conditions must hold together.
+    let conjunction;
+    let cond = match cond {
+      Expr::List(items) => {
+        conjunction = call("And", items.to_vec());
+        &conjunction
+      }
+      other => other,
+    };
+    let rules = |assignment: Vec<bool>| {
+      Expr::List(
+        var_exprs
+          .iter()
+          .zip(assignment)
+          .map(|(v, b)| rule_expr(v.clone(), bool_expr(b)))
+          .collect(),
+      )
+    };
+    match crate::functions::boolean_ast::satisfying_assignments(
+      cond, &var_exprs, n,
+    )? {
+      Some(Ok(instances)) => {
+        return Ok(Expr::List(instances.into_iter().map(rules).collect()));
+      }
+      Some(Err(assignment)) => {
+        crate::emit_message(&format!(
+          "FindInstance::boolv: The system is not Boolean valued at {}.",
+          crate::syntax::format_expr(
+            &rules(assignment),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(call("FindInstance", args.to_vec()));
+      }
+      None => {}
+    }
+  }
+
+  // Linear inequalities (and equations) over the reals.
+  if matches!(domain.as_deref(), None | Some("Reals"))
+    && var_names.len() == var_exprs.len()
+    && let Some(instances) = find_instance_linear(cond, &var_names, n)?
+  {
+    return Ok(Expr::List(instances.into()));
+  }
+
   // Whether the solution set below is provably complete: Solve returned the
   // full (finite) solution set and the concreteness filter dropped nothing.
   // Only then may an empty result become `{}` ("no instance exists");
@@ -17929,6 +18212,281 @@ pub fn find_instance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     filtered.into_iter().skip(len - n).collect()
   };
   Ok(Expr::List(result.into()))
+}
+
+/// The atoms of a conjunction of conditions: the members of lists and
+/// `And`s, with a comparison chain `a < x <= b` split into its links.
+fn condition_atoms(
+  cond: &Expr,
+  out: &mut Vec<(Expr, ComparisonOp, Expr)>,
+) -> bool {
+  match cond {
+    Expr::List(items) => items.iter().all(|c| condition_atoms(c, out)),
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().all(|c| condition_atoms(c, out))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => condition_atoms(left, out) && condition_atoms(right, out),
+    Expr::Identifier(s) if s == "True" => true,
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() + 1 == operands.len() => {
+      for (i, op) in operators.iter().enumerate() {
+        out.push((operands[i].clone(), *op, operands[i + 1].clone()));
+      }
+      true
+    }
+    _ => false,
+  }
+}
+
+/// `FindInstance` for a conjunction of linear equations and inequalities
+/// over the reals: an exact linear program finds a point, maximizing the
+/// slack `t` of the strict inequalities (`a.x + c > 0` becomes
+/// `a.x + c >= t`; capped at 1 where it is unbounded) so that a positive
+/// optimum proves them satisfiable and a zero optimum, like an infeasible
+/// program, proves there is no instance. The largest slack centres a
+/// bounded interval: `3 < x < 10` gives `x -> 13/2`. Further instances are
+/// the extreme points of the same system with the slack fixed at half its
+/// optimum, which keeps them strictly inside, and then midpoints of those.
+/// `None` when the condition is not of that shape.
+fn find_instance_linear(
+  cond: &Expr,
+  var_names: &[String],
+  n: usize,
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let mut atoms = Vec::new();
+  if var_names.is_empty() || !condition_atoms(cond, &mut atoms) {
+    return Ok(None);
+  }
+  let vars: Vec<Expr> = var_names
+    .iter()
+    .map(|v| Expr::Identifier(v.clone()))
+    .collect();
+  let zero_rules = Expr::List(
+    vars
+      .iter()
+      .map(|v| rule_expr(v.clone(), Expr::Integer(0)))
+      .collect(),
+  );
+  let is_real_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+
+  // Each atom as `a.x + c  rel  0` with rel `>`, `>=` or `==`.
+  let mut rows: Vec<(Vec<Expr>, Expr, ComparisonOp)> = Vec::new();
+  let mut inexact = false;
+  let mut has_inequality = false;
+  for (lhs, op, rhs) in &atoms {
+    let (difference, op) = match op {
+      ComparisonOp::Equal => (minus2(lhs.clone(), rhs.clone()), *op),
+      ComparisonOp::Greater | ComparisonOp::GreaterEqual => {
+        (minus2(lhs.clone(), rhs.clone()), *op)
+      }
+      ComparisonOp::Less => {
+        (minus2(rhs.clone(), lhs.clone()), ComparisonOp::Greater)
+      }
+      ComparisonOp::LessEqual => {
+        (minus2(rhs.clone(), lhs.clone()), ComparisonOp::GreaterEqual)
+      }
+      _ => return Ok(None),
+    };
+    has_inequality |= op != ComparisonOp::Equal;
+    let difference = eval(&call("Expand", vec![difference]))?;
+    let mut coefficients = Vec::with_capacity(vars.len());
+    for v in &vars {
+      let a = eval(&call("Coefficient", vec![difference.clone(), v.clone()]))?;
+      if !is_real_number(&a) {
+        return Ok(None);
+      }
+      coefficients.push(a);
+    }
+    let constant = eval(&call(
+      "ReplaceAll",
+      vec![difference.clone(), zero_rules.clone()],
+    ))?;
+    if !is_real_number(&constant) {
+      return Ok(None);
+    }
+    // Linear: nothing is left once the linear part is taken off.
+    let mut linear = constant.clone();
+    for (a, v) in coefficients.iter().zip(&vars) {
+      linear = plus2(linear, times2(a.clone(), v.clone()));
+    }
+    let rest = eval(&call("Expand", vec![minus2(difference.clone(), linear)]))?;
+    if !matches!(rest, Expr::Integer(0))
+      && !matches!(rest, Expr::Real(r) if r == 0.0)
+    {
+      return Ok(None);
+    }
+    inexact |= coefficients
+      .iter()
+      .chain(std::iter::once(&constant))
+      .any(|e| matches!(e, Expr::Real(_)));
+    rows.push((coefficients, constant, op));
+  }
+  if !has_inequality {
+    return Ok(None);
+  }
+  let strict = rows.iter().any(|(_, _, op)| *op == ComparisonOp::Greater);
+
+  // `LinearProgramming[c, m, b, bounds]` over the variables and the slack
+  // `t` every strict inequality must clear (`a.x + c >= t`); the solution
+  // values, or None when infeasible or unbounded. A non-strict inequality
+  // may hold with equality, and wolframscript, too, likes to pick such a
+  // boundary point: `x >= 3` gives `x -> 3`.
+  let k = vars.len();
+  let solve = |objective: &[Expr],
+               slack: &Expr|
+   -> Result<Option<Vec<Expr>>, InterpreterError> {
+    let mut m = Vec::with_capacity(rows.len());
+    let mut b = Vec::with_capacity(rows.len());
+    for (coefficients, constant, op) in &rows {
+      let mut row = coefficients.clone();
+      row.push(Expr::Integer(if *op == ComparisonOp::Greater {
+        -1
+      } else {
+        0
+      }));
+      m.push(Expr::List(row.into()));
+      b.push(Expr::List(
+        vec![
+          eval(&negate_expr(constant))?,
+          Expr::Integer(i128::from(*op != ComparisonOp::Equal)),
+        ]
+        .into(),
+      ));
+    }
+    let infinity = Expr::Identifier("Infinity".to_string());
+    let mut bounds: Vec<Expr> = (0..k)
+      .map(|_| {
+        Expr::List(vec![negate_expr(&infinity), infinity.clone()].into())
+      })
+      .collect();
+    bounds.push(slack.clone());
+    let program = call(
+      "LinearProgramming",
+      vec![
+        Expr::List(objective.to_vec().into()),
+        Expr::List(m.into()),
+        Expr::List(b.into()),
+        Expr::List(bounds.into()),
+      ],
+    );
+    let saved = crate::snapshot_warnings();
+    crate::push_quiet();
+    let result = eval(&program);
+    crate::pop_quiet();
+    crate::restore_warnings(saved);
+    Ok(match &result? {
+      Expr::List(values)
+        if values.len() == k + 1 && values.iter().all(is_real_number) =>
+      {
+        Some(values.to_vec())
+      }
+      _ => None,
+    })
+  };
+  let slack_between = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
+
+  // The largest slack, which centres a bounded interval; where it can grow
+  // without bound it is capped at 1.
+  let mut objective = vec![Expr::Integer(0); k + 1];
+  objective[k] = Expr::Integer(-1);
+  let first = match solve(
+    &objective,
+    &slack_between(Expr::Integer(0), Expr::Identifier("Infinity".to_string())),
+  )? {
+    Some(p) => Some(p),
+    None => solve(
+      &objective,
+      &slack_between(Expr::Integer(0), Expr::Integer(1)),
+    )?,
+  };
+  let Some(first) = first else {
+    // An exact system without a solution has no instance.
+    return Ok(if inexact { None } else { Some(Vec::new()) });
+  };
+  let t = eval(&first[k])?;
+  // No room at all: the strict inequalities cannot hold.
+  if strict && matches!(t, Expr::Integer(0)) {
+    return Ok(if inexact { None } else { Some(Vec::new()) });
+  }
+  let half = eval(&call(
+    "Times",
+    vec![
+      t,
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    ],
+  ))?;
+  let slack = slack_between(half.clone(), half);
+  let same = |p: &[Expr], q: &[Expr]| {
+    p.iter()
+      .zip(q)
+      .all(|(a, b)| crate::evaluator::pattern_matching::expr_equal(a, b))
+  };
+  let mut points: Vec<Vec<Expr>> = vec![first[..k].to_vec()];
+  'more: for j in 0..k {
+    for sign in [1, -1] {
+      if points.len() >= n {
+        break 'more;
+      }
+      let mut objective = vec![Expr::Integer(0); k + 1];
+      objective[j] = Expr::Integer(sign);
+      if let Some(p) = solve(&objective, &slack)?
+        && !points.iter().any(|q| same(q, &p[..k]))
+      {
+        points.push(p[..k].to_vec());
+      }
+    }
+  }
+  // Still short (a ray has a single extreme point): midpoints between
+  // found points, which the convexity of the system keeps inside it.
+  let mut i = 0;
+  while points.len() < n && points.len() >= 2 && i + 1 < points.len() {
+    let mid: Vec<Expr> = points[i]
+      .iter()
+      .zip(&points[i + 1])
+      .map(|(a, b)| {
+        eval(&call(
+          "Times",
+          vec![
+            plus2(a.clone(), b.clone()),
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+          ],
+        ))
+      })
+      .collect::<Result<_, _>>()?;
+    if !points.iter().any(|q| same(q, &mid)) {
+      points.insert(i + 1, mid);
+    }
+    i += 2;
+    if i + 1 >= points.len() {
+      i = 0;
+    }
+  }
+  points.truncate(n);
+
+  let mut instances = Vec::with_capacity(points.len());
+  for point in points {
+    let mut rules = Vec::with_capacity(k);
+    for (v, value) in vars.iter().zip(point) {
+      let value = if inexact {
+        eval(&call("N", vec![value]))?
+      } else {
+        value
+      };
+      rules.push(rule_expr(v.clone(), value));
+    }
+    instances.push(Expr::List(rules.into()));
+  }
+  Ok(Some(instances))
 }
 
 /// Try to find instances numerically by evaluating the condition at sample points.

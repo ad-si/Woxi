@@ -55,6 +55,51 @@ thread_local! {
 /// a tie above ~2^53, so `2^60 < 2^60 + 1` would otherwise return
 /// False. Returns `None` if either side isn't an exact integer, in
 /// which case the f64 path takes over.
+/// The order of two real numbers at least one of which is an
+/// arbitrary-precision number outside the machine range, where the f64
+/// values both overflow (`1.*^400 > 10^399`) or underflow. Compared in
+/// astro-float; `None` when the machine values decide it or either side is
+/// not a real number.
+fn big_range_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  let is_real_number = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !is_real_number(a)
+    || !is_real_number(b)
+    || !(matches!(a, Expr::BigFloat(..)) || matches!(b, Expr::BigFloat(..)))
+  {
+    return None;
+  }
+  let machine = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+  let decided = |v: Option<f64>| v.is_some_and(|x| x.is_finite() && x != 0.0);
+  if decided(machine(a)) && decided(machine(b)) {
+    return None;
+  }
+  let rm = astro_float::RoundingMode::ToEven;
+  let mut cc = astro_float::Consts::new().ok()?;
+  let bits = 512;
+  let x =
+    crate::functions::math_ast::expr_to_bigfloat(a, bits, rm, &mut cc).ok()?;
+  let y =
+    crate::functions::math_ast::expr_to_bigfloat(b, bits, rm, &mut cc).ok()?;
+  // By the sign of the difference: astro-float's `cmp` misorders a number
+  // this far below 1 against zero.
+  let d = x.sub(&y, bits, rm);
+  Some(if d.is_zero() {
+    std::cmp::Ordering::Equal
+  } else if d.is_positive() {
+    std::cmp::Ordering::Greater
+  } else {
+    std::cmp::Ordering::Less
+  })
+}
+
 fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   // Each side as an exact fraction with a positive denominator. Rationals are
   // included so a value too small for an f64 still compares correctly: without
@@ -3071,6 +3116,10 @@ fn evaluate_expr_to_expr_uncached(
         // under `Block[{x = 5}, …]`) rather than fixing it.
         || name == "NDSolve"
         || name == "NDSolveValue"
+        // MatrixPropertyDistribution holds its property expression: it is a
+        // function of the symbolic matrix variable (e.g. Eigenvalues[x]) and
+        // only becomes evaluable once a sampled matrix is substituted in.
+        || name == "MatrixPropertyDistribution"
         {
           // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
           // BooleanTable aren't actually HoldAll in Wolfram Language, so a
@@ -3662,7 +3711,8 @@ fn evaluate_expr_to_expr_uncached(
           // short-circuit to False. Use the BigInt path when both
           // endpoints are exact integers; let the f64 fallback handle
           // any pair that mixes a non-integer.
-          let exact = exact_integer_ord(&values[w[0].0], &values[w[1].0]);
+          let exact = exact_integer_ord(&values[w[0].0], &values[w[1].0])
+            .or_else(|| big_range_ord(&values[w[0].0], &values[w[1].0]));
           let ok = match (exact, op) {
             (Some(o), ComparisonOp::Less) => {
               matches!(o, std::cmp::Ordering::Less)
@@ -3974,7 +4024,9 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
           ComparisonOp::Less => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            if let Some(ord) = exact_integer_ord(left, right)
+              .or_else(|| big_range_ord(left, right))
+            {
               matches!(ord, std::cmp::Ordering::Less)
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
@@ -3993,7 +4045,9 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
           ComparisonOp::LessEqual => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            if let Some(ord) = exact_integer_ord(left, right)
+              .or_else(|| big_range_ord(left, right))
+            {
               !matches!(ord, std::cmp::Ordering::Greater)
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
@@ -4011,7 +4065,9 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
           ComparisonOp::Greater => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            if let Some(ord) = exact_integer_ord(left, right)
+              .or_else(|| big_range_ord(left, right))
+            {
               matches!(ord, std::cmp::Ordering::Greater)
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
@@ -4029,7 +4085,9 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
           ComparisonOp::GreaterEqual => {
-            if let Some(ord) = exact_integer_ord(left, right) {
+            if let Some(ord) = exact_integer_ord(left, right)
+              .or_else(|| big_range_ord(left, right))
+            {
               !matches!(ord, std::cmp::Ordering::Less)
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
@@ -4430,6 +4488,18 @@ fn evaluate_expr_to_expr_uncached(
       // time just to ask what its head is doubled the cost of every failing
       // Part on a large list.
       let base_holds = head_holds_arguments(&base_val);
+      let held_head = |e: &Expr| match e {
+        Expr::FunctionCall { name, .. } => Some(name.clone()),
+        Expr::Function { .. } | Expr::NamedFunction { .. } => {
+          Some("Function".to_string())
+        }
+        _ => None,
+      };
+      let base_head = if base_holds {
+        held_head(&base_val)
+      } else {
+        None
+      };
       // An index that cannot address any part fails the whole spec before
       // the object is looked at. Returning here also keeps a held base
       // (`Hold[a][[x]]`) from re-evaluating the unevaluated Part below.
@@ -4441,6 +4511,7 @@ fn evaluate_expr_to_expr_uncached(
           index: Box::new(idx),
         }));
       }
+      let mut lifted_piece = false;
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         apply_part_indices(&base_val, &indices)?
@@ -4459,7 +4530,16 @@ fn evaluate_expr_to_expr_uncached(
           // any level, the spec is deeper than the object — return the full
           // Part expression unevaluated (matching wolframscript Part::partd).
           let mut part_too_deep = false;
+          // A first extraction that fails hands back the Part it could not
+          // take; one that succeeds on a held piece (`Dynamic[x[[2]]][[1]]`)
+          // hands back that piece, which is a Part expression of its own.
+          if part_extraction::part_failed(&base_val, &result, &indices[0]) {
+            part_too_deep = true;
+          }
           for idx in &indices[1..] {
+            if part_too_deep {
+              break;
+            }
             if let Expr::Part { .. } = &result {
               part_too_deep = true;
               break;
@@ -4481,10 +4561,16 @@ fn evaluate_expr_to_expr_uncached(
               hit_atom_mid = true;
               break;
             }
-            result = extract_part_ast(&result, idx)?;
+            let taken = extract_part_ast(&result, idx)?;
+            if part_extraction::part_failed(&result, &taken, idx) {
+              part_too_deep = true;
+            }
+            result = taken;
           }
-          if let Expr::Part { .. } = &result {
-            part_too_deep = true;
+          if let Expr::Part { .. } = &result
+            && !part_too_deep
+          {
+            lifted_piece = true;
           }
           if part_too_deep {
             result = base_val;
@@ -4508,7 +4594,18 @@ fn evaluate_expr_to_expr_uncached(
       // just re-applies the same hold. A failed extraction comes back as the
       // unevaluated Part itself, which must not be evaluated again: that
       // would retry the same extraction forever.
-      let result = if base_holds && !matches!(result, Expr::Part { .. }) {
+      //
+      // A piece that is itself a `Part` (`Hold[x[[2]]][[1]]`) is such a lift
+      // too, unlike a failed extraction, whose `Part` still wraps the held
+      // object it could not index.
+      let piece_is_part = lifted_piece
+        || (base_holds
+          && matches!(&result, Expr::Part { .. })
+          && base_head.is_some()
+          && held_head(get_part_base(&result)) != base_head);
+      let result = if piece_is_part
+        || (base_holds && !matches!(result, Expr::Part { .. }))
+      {
         evaluate_expr_to_expr(&result)?
       } else {
         result
@@ -4527,7 +4624,10 @@ fn evaluate_expr_to_expr_uncached(
 
       // Part::partd / Part::pspec1: warn only at the outermost Part level
       let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
-      if at_outermost && let Expr::Part { .. } = &result {
+      if at_outermost
+        && !piece_is_part
+        && let Expr::Part { .. } = &result
+      {
         // A string part spec on a non-association is never applicable,
         // regardless of the base (wolframscript: Part::pspec1).
         if let Some(Expr::String(s)) =
@@ -4656,6 +4756,17 @@ fn evaluate_expr_to_expr_uncached(
         }
         let prepared =
           crate::evaluator::listable::flatten_sequences("Function", &prepared);
+        // A notebook-saved function keeps its grid and values as
+        // `CompressedData["…"]`, which only becomes the data once evaluated.
+        if func_args.iter().any(holds_compressed_data) {
+          let expanded = func_args
+            .iter()
+            .map(evaluate_expr_to_expr)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::ode_ast::evaluate_interpolating_function(
+            &expanded, &prepared,
+          );
+        }
         return crate::functions::ode_ast::evaluate_interpolating_function(
           func_args, &prepared,
         );
@@ -4689,6 +4800,22 @@ fn evaluate_expr_to_expr_uncached(
         crate::evaluator::listable::flatten_sequences("Function", &prepared);
       apply_curried_call(&evaluated_func, &prepared)
     }
+  }
+}
+
+/// Whether `e` is a `CompressedData[…]` or a short list (a packed array's
+/// `{tag, offsets, CompressedData[…]}` wrapper) holding one. Long data lists
+/// are never walked, so a plain tabulated function stays cheap to sample.
+fn holds_compressed_data(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } => name == "CompressedData",
+    Expr::List(items) => {
+      items.len() <= 4
+        && items.iter().any(|i| {
+          matches!(i, Expr::FunctionCall { name, .. } if name == "CompressedData")
+        })
+    }
+    _ => false,
   }
 }
 

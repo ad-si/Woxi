@@ -1343,6 +1343,45 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if all_numeric && has_bigfloat {
     return Ok(bigfloat_plus(&flat_args));
   }
+  // An exact numeric term (`Sqrt[5]`, `Pi`) joins an arbitrary-precision
+  // sum as a number: numericized with guard digits it carries no error of
+  // its own, so `3.5`50 + Sqrt[5]` is one number of about 50 digits.
+  if has_bigfloat
+    && !has_real
+    && let Some(precision) = flat_args
+      .iter()
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min)
+    && flat_args.iter().all(|a| {
+      matches!(a, Expr::BigFloat(..))
+        || expr_to_coeff(a).is_some()
+        || (crate::functions::predicate_ast::is_numeric_q(a)
+          && !contains_imaginary_unit(a))
+    })
+  {
+    let numericized: Vec<Expr> = flat_args
+      .iter()
+      .map(|a| {
+        if matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some() {
+          Ok(a.clone())
+        } else {
+          crate::functions::math_ast::n_ast(&[
+            a.clone(),
+            Expr::Real(precision + 20.0),
+          ])
+        }
+      })
+      .collect::<Result<_, _>>()?;
+    if numericized
+      .iter()
+      .all(|a| matches!(a, Expr::BigFloat(..)) || expr_to_coeff(a).is_some())
+    {
+      return Ok(bigfloat_plus(&numericized));
+    }
+  }
 
   // If all numeric but has Reals, fold to f64 as the balanced machine
   // tree over the terms in input order (see machine_sum).
@@ -9561,6 +9600,28 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &sorted_storage
   };
 
+  // A machine number makes the whole product machine precision: an
+  // arbitrary-precision factor joins it as the f64 it rounds to
+  // (`2.5`50 * 0.5` is `1.25`), as in Plus.
+  if args.iter().any(|a| matches!(a, Expr::Real(_)))
+    && args.iter().any(|a| matches!(a, Expr::BigFloat(..)))
+  {
+    let demoted: Vec<Expr> = args
+      .iter()
+      .map(|a| match a {
+        Expr::BigFloat(digits, _) => digits
+          .parse::<f64>()
+          .ok()
+          .filter(|v| v.is_finite())
+          .map_or_else(|| a.clone(), Expr::Real),
+        other => other.clone(),
+      })
+      .collect();
+    if demoted.iter().all(|a| !matches!(a, Expr::BigFloat(..))) {
+      return times_ast(&demoted);
+    }
+  }
+
   // BigFloat-aware product. When any factor is a precision-tagged
   // BigFloat and every factor evaluates to a BigFloat (via expr_to_bigfloat
   // — Integer, Rational, BigFloat, or one of the math constants E / Pi /
@@ -12524,36 +12585,64 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
             _ => false,
           }
         }
-        let numeric_sum_radicand = matches!(
-          (&rargs[0], &rargs[1]),
-          (Expr::Integer(1), Expr::Integer(2))
-        ) && matches!(&numeric, Expr::Integer(_))
-          && rest.iter().all(is_numeric_with_sums)
-          && rest.iter().any(contains_sum);
-        if numeric_sum_radicand
-          && let Expr::Integer(c) = &numeric
-          && *c <= 1_000_000_000_000
-        {
-          // Largest s with s^2 | c.
-          let mut s: i128 = 1;
-          let mut k: i128 = 2;
-          let mut m = *c;
-          while k * k <= m {
-            while m % (k * k) == 0 {
-              m /= k * k;
-              s *= k;
-            }
-            k += 1;
+        // The same holds for a rational factor and any root `1/d`:
+        // `Sqrt[(3 + Sqrt[17])/2]` and `((3 + Sqrt[17])/2)^(1/3)` stay
+        // merged, `Sqrt[9/16 (-15 - 2 Sqrt[70])]`... gives `3/4 Sqrt[…]`.
+        let root_index = match (&rargs[0], &rargs[1]) {
+          (Expr::Integer(1), Expr::Integer(d)) if *d >= 2 && *d <= 16 => {
+            Some(*d as u32)
           }
-          if s == 1 {
+          _ => None,
+        };
+        let numeric_parts = match &numeric {
+          Expr::Integer(c) => Some((*c, 1)),
+          Expr::FunctionCall { name, args: ra }
+            if name == "Rational" && ra.len() == 2 =>
+          {
+            match (&ra[0], &ra[1]) {
+              (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+              _ => None,
+            }
+          }
+          _ => None,
+        };
+        if let (Some(d), Some((p, q))) = (root_index, numeric_parts)
+          && p > 0
+          && q > 0
+          && p <= 1_000_000_000_000
+          && q <= 1_000_000_000_000
+          && rest.iter().all(is_numeric_with_sums)
+          && rest.iter().any(contains_sum)
+        {
+          // Largest s with s^d | c, and the residue.
+          let extract = |c: i128| -> (i128, i128) {
+            let mut s: i128 = 1;
+            let mut m = c;
+            let mut k: i128 = 2;
+            while k.checked_pow(d).is_some_and(|kd| kd <= m) {
+              let kd = k.pow(d);
+              while m % kd == 0 {
+                m /= kd;
+                s *= k;
+              }
+              k += 1;
+            }
+            (s, m)
+          };
+          let (sp, rp) = extract(p);
+          let (sq, rq) = extract(q);
+          if sp == 1 && sq == 1 {
             // Nothing to extract: keep the radical merged (skip the
             // distribution below and every later rewrite of this power).
-            return Ok(call1("Sqrt", base.clone()));
+            return Ok(if d == 2 {
+              call1("Sqrt", base.clone())
+            } else {
+              call("Power", vec![base.clone(), exp.clone()])
+            });
           }
-          let r = *c / (s * s);
           let mut radicand_factors: Vec<Expr> = Vec::new();
-          if r != 1 {
-            radicand_factors.push(Expr::Integer(r));
+          if rp != 1 || rq != 1 {
+            radicand_factors.push(make_rational(rp, rq));
           }
           radicand_factors.extend(rest.iter().cloned());
           let radicand = if radicand_factors.len() == 1 {
@@ -12561,7 +12650,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else {
             times(radicand_factors)
           };
-          return times_ast(&[Expr::Integer(s), call1("Sqrt", radicand)]);
+          let root = if d == 2 {
+            call1("Sqrt", radicand)
+          } else {
+            call("Power", vec![radicand, exp.clone()])
+          };
+          return times_ast(&[make_rational(sp, sq), root]);
         }
         let rest_has_nonnumeric =
           rest.iter().any(|f| !is_numeric_like_extended(f));
@@ -13833,7 +13927,7 @@ pub fn try_around_unary(
 /// Such operands must still numericize in the complex power path of
 /// `power_two` — the zero imaginary part alone is no reason to leave
 /// `E^(0.5 + 0.*I)` symbolic.
-fn contains_imaginary_unit(e: &Expr) -> bool {
+pub(crate) fn contains_imaginary_unit(e: &Expr) -> bool {
   match e {
     Expr::Identifier(name) => name == "I",
     Expr::BinaryOp { left, right, .. } => {
@@ -14700,9 +14794,7 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// `$MachinePrecision` in digits: the precision a machine real carries when
-/// it takes part in an arbitrary-precision computation.
-const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
+use super::numerical::MACHINE_PRECISION_DIGITS;
 
 /// Split a numeric expression into `(m, k)` with value `m·10^k`, so that
 /// arbitrary-precision numbers beyond the f64 range (whose digit strings

@@ -622,6 +622,24 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
+        // `GraphPlot`'s legacy spelling: `{vertex -> {x, y}, …}`, in any
+        // order. It only applies when every vertex is placed.
+        "VertexCoordinateRules" => {
+          let (rules, _) = split_style_rules(replacement);
+          let pts: Option<Vec<(f64, f64)>> = vertices
+            .iter()
+            .map(|v| {
+              let key = vertex_key(unwrap_vertex_style(v).0);
+              rules
+                .iter()
+                .find(|(k, _)| vertex_key(k) == key)
+                .and_then(|(_, pt)| expr_to_point(pt))
+            })
+            .collect();
+          if pts.is_some() {
+            explicit_coordinates = pts;
+          }
+        }
         // `EdgeShapeFunction -> f` hands the drawing of each edge to `f`,
         // which is applied as `f[{pt, …}, edge]` and returns the graphics
         // to use in place of the default line or arrow. `EdgeRenderingFunction`
@@ -690,11 +708,15 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // laid out independently (force-directed when large enough) and the
   // components are packed into a grid so clusters are visible.
   let mut shown_range: Option<Expr> = None;
+  // Factor that maps the caller's own coordinate units onto the internal
+  // diameter-2 scale (1 when the layout is ours to choose).
+  let mut coord_scale = 1.0_f64;
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
       // Keep the caller's window: map it onto the same diameter-2 scale
       // the heuristics expect, so points keep their place within it.
       let scale = 2.0 / (x1 - x0).max(y1 - y0);
+      coord_scale = scale;
       let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
       let pair =
         |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
@@ -713,7 +735,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
         .collect()
     } else {
-      normalize_explicit_positions(pts)
+      let (pts, scale) = normalize_explicit_positions(pts);
+      coord_scale = scale;
+      pts
     }
   } else {
     match layered {
@@ -1014,7 +1038,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ) {
           // The result is wrapped in a list so that any directives it
           // sets stay scoped to this edge.
-          Ok(drawn) => primitives.push(Expr::List(vec![drawn].into())),
+          Ok(drawn) => {
+            // `GraphPlot`'s legacy function sees the layout in the
+            // caller's own units, where an `Arrow` setback is absolute.
+            let drawn = if edge_arg_as_list && coord_scale != 1.0 {
+              scale_arrow_setbacks(&drawn, coord_scale)
+            } else {
+              drawn
+            };
+            primitives.push(Expr::List(vec![drawn].into()));
+          }
           Err(_) => {
             primitives.push(line_or_arrow(edge_data.directed, &default_pts));
           }
@@ -1793,7 +1826,9 @@ fn linear_layout(n: usize) -> Vec<(f64, f64)> {
 /// the same rough diameter-2 extent the auto layouts already produce, so
 /// the vertex-size and plot-range heuristics tuned for that scale still
 /// give a sensibly-proportioned picture.
-fn normalize_explicit_positions(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+fn normalize_explicit_positions(
+  pts: Vec<(f64, f64)>,
+) -> (Vec<(f64, f64)>, f64) {
   let (mut x_min, mut x_max, mut y_min, mut y_max) = (
     f64::INFINITY,
     f64::NEG_INFINITY,
@@ -1808,15 +1843,51 @@ fn normalize_explicit_positions(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
   }
   let extent = (x_max - x_min).max(y_max - y_min);
   if !extent.is_finite() || extent <= 0.0 {
-    return pts;
+    return (pts, 1.0);
   }
   let scale = 2.0 / extent;
   let cx = f64::midpoint(x_min, x_max);
   let cy = f64::midpoint(y_min, y_max);
-  pts
+  let scaled = pts
     .into_iter()
     .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
-    .collect()
+    .collect();
+  (scaled, scale)
+}
+
+/// Convert the setbacks of `Arrow[path, setback]` primitives from the
+/// caller's coordinate units to the internal scale (`factor` = internal /
+/// caller), so an absolute setback keeps its length relative to the edge.
+fn scale_arrow_setbacks(e: &Expr, factor: f64) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Arrow" && args.len() == 2 => {
+      let setback = match &args[1] {
+        Expr::Real(r) => Some(*r),
+        Expr::Integer(i) => Some(*i as f64),
+        _ => None,
+      };
+      match setback {
+        Some(s) => call("Arrow", vec![args[0].clone(), Expr::Real(s * factor)]),
+        None => e.clone(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| scale_arrow_setbacks(a, factor))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| scale_arrow_setbacks(a, factor))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    other => other.clone(),
+  }
 }
 
 /// Weakly connected components of `graph` (directed edges treated as

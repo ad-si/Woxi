@@ -1770,16 +1770,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RealDigits expects 1 to 4 arguments".into(),
     ));
   }
+  let unevaluated_call = || Ok(unevaluated("RealDigits", args));
   // Optional 4th argument: the position of the most-significant returned digit
   // (as the exponent of `base`, so Pi at position −3 means the 10^−3 place).
   let start_pos: Option<i128> = if args.len() == 4 {
     match expr_to_i128(&args[3]) {
       Some(n) => Some(n),
-      None => {
-        return Err(InterpreterError::EvaluationError(
-          "RealDigits: starting position must be an integer".into(),
-        ));
-      }
+      None => return unevaluated_call(),
     }
   } else {
     None
@@ -1788,15 +1785,21 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let base: i128 = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
-      Some(_) => {
-        return Err(InterpreterError::EvaluationError(
-          "RealDigits: base must be an integer >= 2".into(),
-        ));
-      }
-      None => {
-        return Err(InterpreterError::EvaluationError(
-          "RealDigits: base must be an integer".into(),
-        ));
+      _ => {
+        // A number that is not a real above 1 is reported; a symbolic base
+        // (and, for now, a non-integer one) leaves the call as it is.
+        let numeric = crate::functions::predicate_ast::is_numeric_q(&args[1]);
+        let above_one = try_eval_to_f64(&args[1]).is_some_and(|b| b > 1.0);
+        if numeric && !above_one {
+          crate::emit_message(&format!(
+            "RealDigits::rbase: Base {} is not a real number greater than 1.",
+            crate::syntax::format_expr(
+              &args[1],
+              crate::syntax::ExprForm::Output
+            )
+          ));
+        }
+        return unevaluated_call();
       }
     }
   } else {
@@ -1807,11 +1810,28 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let num_digits: usize = if explicit_num_digits {
     match expr_to_i128(&args[2]) {
+      // No digits at all still tells the exponent.
+      Some(0) => {
+        let mut one = args.to_vec();
+        one[2] = Expr::Integer(1);
+        return Ok(match &real_digits_ast(&one)? {
+          Expr::List(parts) if parts.len() == 2 => {
+            Expr::List(vec![Expr::List(vec![].into()), parts[1].clone()].into())
+          }
+          other => other.clone(),
+        });
+      }
       Some(n) if n > 0 => n as usize,
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "RealDigits: number of digits must be a positive integer".into(),
+        crate::emit_message(&format!(
+          "RealDigits::intnm: Non-negative machine-sized integer expected at \
+           position 3 in {}.",
+          crate::syntax::format_expr(
+            &unevaluated("RealDigits", args),
+            crate::syntax::ExprForm::Output
+          )
         ));
+        return unevaluated_call();
       }
     }
   } else if matches!(&args[0], Expr::Real(_)) && base != 10 {

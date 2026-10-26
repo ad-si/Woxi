@@ -134,10 +134,45 @@ fn plld_message_head(name: &str) -> &str {
   }
 }
 
+/// A plot whose iterator names a compound variable (`{Subscript[w, f], 0,
+/// 1}`, `{x[1], 0, 1}`) runs with each such variable replaced by a fresh
+/// symbol, in the iterator and in the plotted expression alike. `None` when
+/// every variable is already a symbol.
+fn with_symbol_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
+  let mut out = args.to_vec();
+  let mut renamed = false;
+  for (k, spec) in args.iter().enumerate().skip(1) {
+    let Expr::List(items) = spec else { continue };
+    if items.len() < 2 {
+      continue;
+    }
+    let var = &items[0];
+    if !matches!(var, Expr::FunctionCall { .. })
+      || crate::functions::predicate_ast::is_numeric_q(var)
+    {
+      continue;
+    }
+    let fresh = Expr::Identifier(format!("Plot$var{k}"));
+    out[0] =
+      crate::functions::polynomial_ast::substitute_expr(&out[0], var, &fresh);
+    let mut items = items.to_vec();
+    items[0] = fresh;
+    out[k] = Expr::List(items.into());
+    renamed = true;
+  }
+  renamed.then_some(out)
+}
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  if PLLD_HEADS.contains(&name)
+    && args.len() >= 2
+    && let Some(renamed) = with_symbol_iterators(args)
+  {
+    return dispatch_plotting(name, &renamed);
+  }
   // A range like `{x, 1, 1}` has nothing to sample. The check sits here,
   // ahead of `quiet_plot`, because the plot bodies run with messages
   // suppressed — and in one place, so every plot head refuses alike.

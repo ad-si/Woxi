@@ -63,6 +63,9 @@ pub fn dispatch_boolean_functions(
     "SatisfiabilityCount" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::satisfiability_count_ast(args));
     }
+    "SatisfiabilityInstances" if args.len() == 2 || args.len() == 3 => {
+      return Some(crate::functions::satisfiability_instances_ast(args));
+    }
     "TautologyQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::boolean_ast::tautology_q_ast(args));
     }

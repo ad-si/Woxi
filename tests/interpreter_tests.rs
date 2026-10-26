@@ -1204,6 +1204,20 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg"));
   }
 
+  /// A `LocatorPane` over `Show[plot, …]` keeps the `Epilog` of the first
+  /// plot: the locator markers are appended to it instead of replacing it.
+  #[test]
+  fn test_locator_pane_over_show_keeps_first_plot_epilog() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[LocatorPane[{0.2, 0.2}, \
+       Show[Plot[0, {t, 0, 1}, Epilog -> {Text[\"readout\", {0.5, 0.5}]}], \
+       Plot[x, {x, 0, 1}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(r.result.contains("readout"), "Epilog text was dropped");
+  }
+
   /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
   /// *computes* a picture) shows that picture, not the symbolic call.
   #[test]
@@ -4536,6 +4550,35 @@ mod interpreter_tests {
     .unwrap();
     assert!(svg.contains(">Re[Z]</text>"), "missing x label: {svg}");
     assert!(svg.contains(">-Im[Z]</text>"), "missing y label: {svg}");
+  }
+
+  #[test]
+  fn test_axes_label_letter_script_is_typeset() {
+    // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    clear_state();
+    let svg = interpret(
+      "ExportString[ListLinePlot[{1, 3, 2}, \
+         AxesLabel -> {n, Subscript[x, n]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+      ),
+      "subscript letter not typeset: {svg}"
+    );
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {None, Superscript[y, k]}], \
+         \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+      ),
+      "superscript letter not typeset: {svg}"
+    );
   }
 
   #[test]

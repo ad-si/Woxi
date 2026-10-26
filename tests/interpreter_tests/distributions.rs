@@ -9343,3 +9343,112 @@ mod zipf_quantile {
     );
   }
 }
+
+mod gaussian_matrix_ensembles {
+  use super::*;
+
+  #[test]
+  fn constructors_stay_inert() {
+    assert_eq!(
+      interpret("GaussianOrthogonalMatrixDistribution[3]").unwrap(),
+      "GaussianOrthogonalMatrixDistribution[3]"
+    );
+    assert_eq!(
+      interpret("GaussianUnitaryMatrixDistribution[2, 3]").unwrap(),
+      "GaussianUnitaryMatrixDistribution[2, 3]"
+    );
+  }
+
+  #[test]
+  fn orthogonal_sample_is_real_symmetric() {
+    assert_eq!(
+      interpret(
+        "m = RandomVariate[GaussianOrthogonalMatrixDistribution[5]]; \
+         {Dimensions[m], m == Transpose[m]}"
+      )
+      .unwrap(),
+      "{{5, 5}, True}"
+    );
+  }
+
+  #[test]
+  fn unitary_sample_is_hermitian_with_real_eigenvalues() {
+    assert_eq!(
+      interpret(
+        "m = RandomVariate[GaussianUnitaryMatrixDistribution[4]]; \
+         {Dimensions[m], m == ConjugateTranspose[m], \
+         VectorQ[Eigenvalues[m], Element[#, Reals] &]}"
+      )
+      .unwrap(),
+      "{{4, 4}, True, True}"
+    );
+  }
+
+  #[test]
+  fn matrix_property_samples_the_property() {
+    // Each draw is the sorted spectrum of a 6x6 matrix, trimmed to 3 values.
+    assert_eq!(
+      interpret(
+        "d = RandomVariate[MatrixPropertyDistribution[\
+         Take[Sort[Eigenvalues[x]], {2, 4}], \
+         Distributed[x, GaussianOrthogonalMatrixDistribution[6]]], 5]; \
+         Dimensions[d]"
+      )
+      .unwrap(),
+      "{5, 3}"
+    );
+  }
+
+  #[test]
+  fn matrix_property_resolves_ensemble_size_from_variables() {
+    assert_eq!(
+      interpret(
+        "dim = 8; Length[RandomVariate[MatrixPropertyDistribution[\
+         Eigenvalues[x], \
+         Distributed[x, GaussianUnitaryMatrixDistribution[dim]]]]]"
+      )
+      .unwrap(),
+      "8"
+    );
+  }
+
+  #[test]
+  fn spectrum_stays_within_the_semicircle() {
+    // Off-diagonal variance sigma^2/2 puts the edge at Sqrt[2 n].
+    assert_eq!(
+      interpret(
+        "Max[Abs[RandomVariate[MatrixPropertyDistribution[Eigenvalues[x], \
+         Distributed[x, GaussianOrthogonalMatrixDistribution[50]]]]]] < 14"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod event_series_temporal_data {
+  use super::*;
+
+  #[test]
+  fn internal_form_exposes_values_and_times() {
+    assert_eq!(
+      interpret(
+        "z = TemporalData[EventSeries, {{{3.5, 4.5, 6.}}, {{0, 2, 1}}, 1}]; \
+         {z[\"Values\"], z[\"Times\"]}"
+      )
+      .unwrap(),
+      "{{3.5, 4.5, 6.}, {0, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn step_sets_the_time_spacing() {
+    assert_eq!(
+      interpret(
+        "TemporalData[EventSeries, {{{1, 2, 3}}, {{10, 14, 2}}, 1}][\"Times\"]"
+      )
+      .unwrap(),
+      "{10, 12, 14}"
+    );
+  }
+}

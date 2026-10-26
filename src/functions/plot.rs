@@ -2750,6 +2750,23 @@ fn grid_line_props(
   (rgb, stroke_w, style.dashing.clone())
 }
 
+/// A label that spans several lines (a `Column[…]` tick label) as one
+/// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
+/// previous one. A single-line label is returned unchanged.
+fn stacked_lines_svg(label: &str, x: f64, line_height: f64) -> String {
+  if !label.contains('\n') {
+    return label.to_string();
+  }
+  label
+    .split('\n')
+    .enumerate()
+    .map(|(i, line)| {
+      let dy = if i == 0 { 0.0 } else { line_height };
+      format!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
+    })
+    .collect()
+}
+
 /// Draw the marks and labels of an explicit `Ticks -> {xspec, yspec}`, in
 /// the same place the automatic ticks would sit: the x ticks below the
 /// bottom axis and the y ticks left of the left one. Returns the empty
@@ -2788,8 +2805,9 @@ pub(crate) fn explicit_ticks_svg(
         axis_y - tick_len,
       ));
       out.push_str(&format!(
-        "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+        "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_y + tick_font,
+        stacked_lines_svg(label, px, tick_font * 1.2),
       ));
     }
   }
@@ -2863,14 +2881,26 @@ pub(crate) fn plot_labels_svg(
     let cx = plot_x0 + plot_w / 2.0;
     // Sit clearly below the x tick labels (which occupy ~one tick-font
     // height below the axis) rather than crowding the frame.
-    let base_y = axis_y + sf * 13.0 + font_size * 1.4;
+    // Tick labels stacked over several lines push the label further down.
+    let tick_lines = opts.ticks_x.as_ref().map_or(1, |ticks| {
+      ticks
+        .iter()
+        .map(|(_, l)| l.split('\n').count())
+        .max()
+        .unwrap_or(1)
+    });
+    let base_y = axis_y + sf * 13.0 * tick_lines as f64 + font_size * 1.4;
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg_scaled(
-        x_label,
-        RESOLUTION_SCALE as f64
+      stacked_lines_svg(
+        &crate::functions::graphics::box_string_to_svg_scaled(
+          x_label,
+          RESOLUTION_SCALE as f64
+        ),
+        cx,
+        font_size * 1.2
       )
     ));
   }
@@ -10212,6 +10242,25 @@ fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// A body that applies replacement rules to the plot variable — `y[t] /.
+/// sol` — has to be replaced while the variable is still symbolic: once
+/// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
+/// `y[0.3]`. Returns the replaced body when it still depends on `var`.
+fn resolve_replaced_body(body: &Expr, var: &str) -> Option<Expr> {
+  let is_replacement = match body {
+    Expr::ReplaceAll { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      name == "ReplaceAll" && args.len() == 2
+    }
+    _ => false,
+  };
+  if !is_replacement || !expr_mentions_var(body, var) {
+    return None;
+  }
+  let evaluated = eval_body_var_symbolic(body, var);
+  expr_mentions_var(&evaluated, var).then_some(evaluated)
+}
+
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
 pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
   let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
@@ -10473,7 +10522,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|it| resolve_generated_bodies_deep(it, var))
           .collect(),
       ),
-      _ => expand_generated_bodies(body, var).unwrap_or_else(|| body.clone()),
+      _ => expand_generated_bodies(body, var)
+        .or_else(|| resolve_replaced_body(body, var))
+        .unwrap_or_else(|| body.clone()),
     }
   }
   let generated_storage = resolve_generated_bodies_deep(body, &var_name);

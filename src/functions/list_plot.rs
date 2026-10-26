@@ -962,7 +962,10 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
                 _ => None,
               }
             }
-            _ => None,
+            // A bare number `xmax` spans the data over {0, xmax}.
+            other => try_eval_to_f64(other)
+              .filter(|hi| hi.is_finite())
+              .map(|hi| DataRangeSpec::Span(0.0, hi)),
           };
         }
         "PlotLayout" => {

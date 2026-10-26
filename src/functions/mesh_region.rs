@@ -706,7 +706,7 @@ pub fn triangulate_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Gauss–Legendre nodes and weights on `[0, 1]`.
-fn gauss_legendre_unit(n: usize) -> Vec<(f64, f64)> {
+pub(crate) fn gauss_legendre_unit(n: usize) -> Vec<(f64, f64)> {
   (0..n)
     .map(|i| {
       let mut x =

@@ -457,6 +457,9 @@ pub fn dispatch_calculus_functions(
     "Integrate" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::integrate_ast(args));
     }
+    "NIntegrate`GaussRuleData" if args.len() == 2 => {
+      return Some(crate::functions::calculus_ast::gauss_rule_data_ast(args));
+    }
     "NIntegrate" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::nintegrate_ast(args));
     }
