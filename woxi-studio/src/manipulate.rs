@@ -4151,6 +4151,23 @@ mod tests {
     assert!(!dump.contains("StringJoin"), "{dump}");
   }
 
+  /// A slider caption that indexes a notebook list (`names[[2]]`) shows the
+  /// element, not the source of the `Part` call.
+  #[test]
+  fn control_label_indexing_a_notebook_list_shows_the_element() {
+    let code = r#"Manipulate[Plot[a x + b, {x, 0, 1}],
+      {{a, 1, geneNames[[1]]}, 0, 2, 0.5},
+      {{b, 1, geneNames[[2]]}, 0, 2, 0.5},
+      Initialization :> (geneNames = {"AOAH", "CBLL1"})]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"AOAH\""), "{dump}");
+    assert!(dump.contains("label: \"CBLL1\""), "{dump}");
+    assert!(!dump.contains("geneNames"), "{dump}");
+  }
+
   /// A 2D slider captioned with a `GraphicsRow` of text and a small picture
   /// shows the text; the picture and the layout head's source drop out.
   #[test]
