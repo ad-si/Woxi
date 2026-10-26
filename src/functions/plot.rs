@@ -10212,6 +10212,25 @@ fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// A body that applies replacement rules to the plot variable — `y[t] /.
+/// sol` — has to be replaced while the variable is still symbolic: once
+/// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
+/// `y[0.3]`. Returns the replaced body when it still depends on `var`.
+fn resolve_replaced_body(body: &Expr, var: &str) -> Option<Expr> {
+  let is_replacement = match body {
+    Expr::ReplaceAll { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      name == "ReplaceAll" && args.len() == 2
+    }
+    _ => false,
+  };
+  if !is_replacement || !expr_mentions_var(body, var) {
+    return None;
+  }
+  let evaluated = eval_body_var_symbolic(body, var);
+  expr_mentions_var(&evaluated, var).then_some(evaluated)
+}
+
 /// As [`eval_body_var_symbolic`], for a body in several plot variables.
 pub(crate) fn eval_body_vars_symbolic(body: &Expr, vars: &[&str]) -> Expr {
   let saved: Vec<(&str, Option<crate::StoredValue>)> = vars
@@ -10473,7 +10492,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|it| resolve_generated_bodies_deep(it, var))
           .collect(),
       ),
-      _ => expand_generated_bodies(body, var).unwrap_or_else(|| body.clone()),
+      _ => expand_generated_bodies(body, var)
+        .or_else(|| resolve_replaced_body(body, var))
+        .unwrap_or_else(|| body.clone()),
     }
   }
   let generated_storage = resolve_generated_bodies_deep(body, &var_name);

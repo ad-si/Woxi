@@ -41278,3 +41278,41 @@ mod plot_non_numeric_limit {
     assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
   }
 }
+
+mod plot_replaced_solution {
+  use super::*;
+
+  // `y[t] /. sol` only matches while `t` is symbolic, so Plot has to apply
+  // the rules before sampling — otherwise the curves come out empty.
+  #[test]
+  fn plots_curves_taken_from_ndsolve_with_replace_all() {
+    clear_state();
+    let svg = export_svg(
+      "Module[{sol}, sol = NDSolve[{y[0] == 1, z[0] == 0, \
+         y'[t] == -z[t], z'[t] == y[t]}, {y[t], z[t]}, {t, 0, 3}]; \
+         Plot[{ReplaceAll[y[t], sol[[1, 1]]], z[t] /. sol[[1, 2]]}, \
+         {t, 0, 3}]]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 2, "{svg}");
+  }
+}
+
+mod saved_interpolating_function {
+  use super::*;
+
+  // A notebook saves the grid and values of an `InterpolatingFunction` as
+  // `CompressedData["…"]`; applying the function in place (without storing
+  // it first) must still decode them.
+  #[test]
+  fn applies_inline_function_with_compressed_data() {
+    clear_state();
+    let grid = interpret("Compress[{{0., 1., 2.}}]").unwrap();
+    let values = interpret("Compress[{0., 1., 4.}]").unwrap();
+    let code = format!(
+      "InterpolatingFunction[{{{{0., 2.}}}}, {{3, 0, 0, {{3}}, {{4}}, 0, 0, 0, \
+       0}}, CompressedData[\"{grid}\"], {{Developer`PackedArrayForm, \
+       {{0, 1, 2, 3}}, CompressedData[\"{values}\"]}}, {{Automatic}}][1.5]"
+    );
+    assert_eq!(interpret(&code).unwrap(), "2.25");
+  }
+}

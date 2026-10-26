@@ -4656,6 +4656,17 @@ fn evaluate_expr_to_expr_uncached(
         }
         let prepared =
           crate::evaluator::listable::flatten_sequences("Function", &prepared);
+        // A notebook-saved function keeps its grid and values as
+        // `CompressedData["…"]`, which only becomes the data once evaluated.
+        if func_args.iter().any(holds_compressed_data) {
+          let expanded = func_args
+            .iter()
+            .map(evaluate_expr_to_expr)
+            .collect::<Result<Vec<_>, _>>()?;
+          return crate::functions::ode_ast::evaluate_interpolating_function(
+            &expanded, &prepared,
+          );
+        }
         return crate::functions::ode_ast::evaluate_interpolating_function(
           func_args, &prepared,
         );
@@ -4689,6 +4700,22 @@ fn evaluate_expr_to_expr_uncached(
         crate::evaluator::listable::flatten_sequences("Function", &prepared);
       apply_curried_call(&evaluated_func, &prepared)
     }
+  }
+}
+
+/// Whether `e` is a `CompressedData[…]` or a short list (a packed array's
+/// `{tag, offsets, CompressedData[…]}` wrapper) holding one. Long data lists
+/// are never walked, so a plain tabulated function stays cheap to sample.
+fn holds_compressed_data(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } => name == "CompressedData",
+    Expr::List(items) => {
+      items.len() <= 4
+        && items.iter().any(|i| {
+          matches!(i, Expr::FunctionCall { name, .. } if name == "CompressedData")
+        })
+    }
+    _ => false,
   }
 }
 
