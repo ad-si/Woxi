@@ -32,6 +32,7 @@ use std::sync::LazyLock;
 
 use super::*;
 
+pub mod aerials;
 pub mod animation;
 pub mod audio;
 pub mod dataset;
@@ -45,6 +46,7 @@ pub mod matrix;
 pub mod mesh;
 pub mod meta;
 pub mod network_graph;
+pub mod photos;
 pub mod raster;
 pub mod rng;
 pub mod scenes;
@@ -52,7 +54,9 @@ pub mod statistics;
 pub mod synth;
 pub mod tabular;
 pub mod test_image_3d;
+pub mod testimages;
 pub mod text;
+pub mod textures;
 pub mod words;
 
 use meta::{Cell, META, Row, Table};

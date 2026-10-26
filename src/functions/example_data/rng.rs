@@ -164,6 +164,49 @@ impl Noise {
     }
     sum / norm
   }
+
+  /// Gradient (Perlin) noise at `(x, y)` in roughly `[-1, 1]`: smooth and
+  /// free of the axis-aligned blocks value noise shows.
+  pub fn perlin(&self, x: f64, y: f64) -> f64 {
+    let (x0, y0) = (x.floor(), y.floor());
+    let (fx, fy) = (x - x0, y - y0);
+    let (xi, yi) = (x0 as i64, y0 as i64);
+    let grad = |ix: i64, iy: i64, dx: f64, dy: f64| -> f64 {
+      let (ix, iy) = if self.period > 0 {
+        let p = self.period as i64;
+        (ix.rem_euclid(p), iy.rem_euclid(p))
+      } else {
+        (ix, iy)
+      };
+      let h = self.perm
+        [(self.perm[(ix & 255) as usize] as usize + (iy & 255) as usize) & 511];
+      let a = h as f64 * (std::f64::consts::TAU / 256.0);
+      a.cos() * dx + a.sin() * dy
+    };
+    let s = |t: f64| t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    let (sx, sy) = (s(fx), s(fy));
+    let n00 = grad(xi, yi, fx, fy);
+    let n10 = grad(xi + 1, yi, fx - 1.0, fy);
+    let n01 = grad(xi, yi + 1, fx, fy - 1.0);
+    let n11 = grad(xi + 1, yi + 1, fx - 1.0, fy - 1.0);
+    let a = n00 + (n10 - n00) * sx;
+    let b = n01 + (n11 - n01) * sx;
+    (a + (b - a) * sy) * 1.41
+  }
+
+  /// Fractal sum of Perlin octaves, normalized to roughly `[-1, 1]`.
+  pub fn pfbm(&self, x: f64, y: f64, octaves: u32, gain: f64) -> f64 {
+    let (mut sum, mut amp, mut freq, mut norm) = (0.0, 1.0, 1.0, 0.0);
+    for o in 0..octaves {
+      // Offset each octave so lattice points do not line up.
+      let off = o as f64 * 17.31;
+      sum += amp * self.perlin(x * freq + off, y * freq - off);
+      norm += amp;
+      amp *= gain;
+      freq *= 2.0;
+    }
+    sum / norm
+  }
 }
 
 #[cfg(test)]

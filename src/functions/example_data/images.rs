@@ -130,11 +130,16 @@ pub fn render(entry: &Entry, shape: ImageShape) -> Expr {
   cached(format!("{}/{}/image", entry.collection, entry.name), || {
     let mut canvas =
       scenes::draw(entry.collection, entry.name, shape.width, shape.height);
-    apply_stats(
-      &mut canvas,
-      entry.stat("@Stats").as_ref(),
-      shape.channels == 1,
-    );
+    let drawn = !matches!(entry.collection, "Texture" | "ColorTexture");
+    if drawn && shape.channels >= 3 {
+      apply_stats_soft(&mut canvas, entry.stat("@Stats").as_ref());
+    } else {
+      apply_stats(
+        &mut canvas,
+        entry.stat("@Stats").as_ref(),
+        shape.channels == 1,
+      );
+    }
     canvas.into_image(shape.channels, shape.image_type, shape.color_space)
   })
 }
@@ -152,6 +157,20 @@ pub fn apply_stats(canvas: &mut Canvas, stats: Option<&Expr>, gray: bool) {
     return;
   }
   canvas.match_stats(&means, &sds, gray || means.len() == 1);
+}
+
+/// As [`apply_stats`], keeping hue relations (for drawn scenes).
+pub fn apply_stats_soft(canvas: &mut Canvas, stats: Option<&Expr>) {
+  let Some(Expr::List(s)) = stats else {
+    return;
+  };
+  if s.len() != 2 {
+    return;
+  }
+  let (means, sds) = (numbers(&s[0]), numbers(&s[1]));
+  if means.len() >= 3 && sds.len() >= 3 {
+    canvas.match_stats_soft(&means, &sds);
+  }
 }
 
 /// Image fields: width, height, channels, type, data.

@@ -20,71 +20,76 @@ fn ellipsoid(p: [f64; 3], c: [f64; 3], r: [f64; 3]) -> bool {
     <= 1.0
 }
 
-fn cylinder_z(p: [f64; 3], c: [f64; 2], r: f64, z0: f64, z1: f64) -> bool {
-  (p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2) <= r * r
-    && p[2] >= z0
-    && p[2] <= z1
-}
-
 /// Density in `[0, 1]` at `p` for the phantom `name`.
 fn density(name: &str, p: [f64; 3], noise: &Noise) -> f64 {
   let n = noise.fbm(p[0] * 6.0 + p[2] * 3.1, p[1] * 6.0 - p[2] * 2.3, 3, 0.5);
   match name {
     "CThead" => {
-      if !ellipsoid(p, [0.0; 3], [0.72, 0.88, 0.95]) {
-        0.0
-      } else if !ellipsoid(p, [0.0; 3], [0.64, 0.8, 0.87]) {
-        0.95
-      } else if ellipsoid(p, [0.0, -0.1, 0.1], [0.1, 0.25, 0.2]) {
-        0.15
-      } else {
+      // Coronal slices: skull outline, brain, the jaw and spine below.
+      let skull = ellipsoid(p, [0.0, -0.15, 0.0], [0.62, 0.72, 0.9]);
+      let brain = ellipsoid(p, [0.0, -0.15, 0.0], [0.56, 0.65, 0.85]);
+      let jaw = ellipsoid(p, [0.0, 0.62, 0.0], [0.25, 0.3, 0.6]);
+      if brain {
         0.42 + 0.04 * n
+      } else if skull {
+        0.95
+      } else if jaw {
+        if (p[0].abs() < 0.05)
+          || ellipsoid(p, [0.0, 0.62, 0.0], [0.18, 0.24, 0.5])
+        {
+          0.15 + 0.3 * (p[1] * 30.0).sin().abs()
+        } else {
+          0.85
+        }
+      } else {
+        0.0
       }
     }
     "MRbrain" => {
-      if !ellipsoid(p, [0.0; 3], [0.7, 0.86, 0.9]) {
-        0.02
-      } else if !ellipsoid(p, [0.0; 3], [0.62, 0.78, 0.82]) {
-        0.25
-      } else if ellipsoid(p, [-0.12, 0.0, 0.1], [0.07, 0.3, 0.15])
-        || ellipsoid(p, [0.12, 0.0, 0.1], [0.07, 0.3, 0.15])
-      {
-        0.08
-      } else {
-        // Gray and white matter with folds.
+      // Sagittal slices: head in profile facing left, folded brain, spine.
+      let head = ellipsoid(p, [0.05, -0.1, 0.0], [0.7, 0.75, 0.9]);
+      let face = ellipsoid(p, [-0.5, 0.35, 0.0], [0.25, 0.35, 0.5]);
+      let neck = p[0] > -0.2 && p[0] < 0.25 && p[1] > 0.4;
+      let brain = ellipsoid(p, [0.1, -0.25, 0.0], [0.58, 0.5, 0.8]);
+      if brain {
         let folds = (n * 9.0).sin();
-        if folds > 0.3 { 0.7 } else { 0.5 }
+        if folds > 0.3 { 0.7 } else { 0.4 }
+      } else if ellipsoid(p, [0.35, 0.3, 0.0], [0.2, 0.15, 0.5]) {
+        0.6
+      } else if head || face || neck {
+        0.2 + 0.1 * n
+      } else {
+        0.02
       }
     }
     "MRknee" => {
-      let femur = cylinder_z(p, [0.0, 0.0], 0.3, 0.08, 1.0)
-        || ellipsoid(p, [0.0, 0.0, 0.08], [0.42, 0.32, 0.2]);
-      let tibia = cylinder_z(p, [0.0, 0.05], 0.28, -1.0, -0.12)
-        || ellipsoid(p, [0.0, 0.05, -0.12], [0.45, 0.35, 0.12]);
-      if femur || tibia {
-        0.75 + 0.1 * n
-      } else if (p[2]).abs() < 0.12 && ellipsoid(p, [0.0; 3], [0.45, 0.4, 0.3])
-      {
-        0.45
-      } else if ellipsoid(p, [0.0, 0.0, 0.0], [0.8, 0.7, 2.0]) {
-        0.3 + 0.08 * n
+      // A bright irregular blob: the knee in cross-section.
+      let r = (p[0] * p[0] + p[1] * p[1]).sqrt();
+      let a = p[1].atan2(p[0]);
+      let edge = 0.55
+        + 0.1 * (2.0 * a).sin()
+        + 0.06 * (3.0 * a + 1.0).cos()
+        + 0.1 * p[2];
+      if r < edge { 1.0 } else { 0.0 }
+    }
+    "CTengine" => {
+      // An engine casting: an irregular vertical outline with ribs.
+      let outline = p[0].abs() < 0.35 + 0.1 * (p[1] * 4.0).sin()
+        && p[1].abs() < 0.85
+        && p[2].abs() < 0.8;
+      let cavity = ellipsoid(p, [0.08, 0.1, 0.0], [0.18, 0.45, 2.0]);
+      let rib = (p[1] * 10.0).sin() > 0.9;
+      if outline && (!cavity || rib) {
+        0.6 + 0.3 * (1.0 - p[0].abs())
       } else {
         0.0
       }
     }
-    "CTengine" => {
-      let block = p[0].abs() < 0.8 && p[1].abs() < 0.5 && p[2].abs() < 0.7;
-      let bores = (0..4)
-        .any(|k| cylinder_z(p, [-0.6 + 0.4 * k as f64, 0.0], 0.15, -0.6, 0.8));
-      if block && !bores { 0.9 } else { 0.0 }
-    }
     _ => {
-      // Orbitals: a few lobes of |Y_lm|^2-like densities.
-      let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt().max(1e-9);
-      let cos_t = p[2] / r;
-      let lobes =
-        (3.0 * cos_t * cos_t - 1.0).abs() * (-3.0 * r).exp() * r * r * 8.0;
-      lobes.min(1.0)
+      // An orbital: a bright core fading outwards.
+      let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+      (1.0 - (r / 0.55).powi(4)).clamp(0.0, 1.0)
+        + 0.2 * (-((r - 0.6) / 0.08).powi(2)).exp()
     }
   }
 }

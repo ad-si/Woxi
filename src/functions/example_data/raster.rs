@@ -423,6 +423,35 @@ impl Canvas {
     }
   }
 
+  /// Match the recorded statistics gently, for drawn scenes: one common
+  /// contrast scale (from the luma spread) keeps the colours' relations,
+  /// then each channel's mean is shifted to its recorded mean.
+  pub fn match_stats_soft(&mut self, means: &[f64], sds: &[f64]) {
+    let n = (self.width * self.height).max(1) as f64;
+    let l: Vec<f64> = self
+      .data
+      .chunks(3)
+      .map(|c| luma([c[0], c[1], c[2]]))
+      .collect();
+    let m = l.iter().sum::<f64>() / n;
+    let sd = (l.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n)
+      .sqrt()
+      .max(1e-6);
+    let pick = |v: &[f64], k: usize| v[k.min(v.len() - 1)];
+    let target_sd = luma([pick(sds, 0), pick(sds, 1), pick(sds, 2)]);
+    let k = target_sd / sd;
+    for v in &mut self.data {
+      *v = (*v - m) * k + m;
+    }
+    for ch in 0..3 {
+      let cur = self.data.iter().skip(ch).step_by(3).sum::<f64>() / n;
+      let shift = pick(means, ch) - cur;
+      for v in self.data.iter_mut().skip(ch).step_by(3) {
+        *v = (*v + shift).clamp(0.0, 1.0);
+      }
+    }
+  }
+
   /// The pixels as `channels`-channel data in `[0, 1]` (1: luma, 3: RGB,
   /// 4: RGB plus opaque alpha), top row first.
   pub fn pixels(&self, channels: usize) -> Vec<f64> {

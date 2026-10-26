@@ -63,6 +63,8 @@ fn frame(entry: &Entry, base: &str, k: usize, n: usize) -> Option<Expr> {
       (0.5 + 0.4 * (t * std::f64::consts::TAU).sin()) * (bw - w) as f64,
       (0.5 + 0.2 * (t * std::f64::consts::PI).sin()) * (bh - h) as f64,
     ),
+    // The toys move, not the camera.
+    "ToyVehicles" => (0.5 * (bw - w) as f64, 0.5 * (bh - h) as f64),
     _ => (t * (bw - w) as f64, 0.3 * t * (bh - h) as f64),
   };
   let mut c = Canvas::new(w, h, [0.0; 3]);
@@ -76,24 +78,31 @@ fn frame(entry: &Entry, base: &str, k: usize, n: usize) -> Option<Expr> {
     }
   }
   if base == "ToyVehicles" {
-    // Two toy cars crossing in opposite directions.
-    for (lane, dir) in [(0.35, 1.0), (0.7, -1.0)] {
-      let x =
-        if dir > 0.0 { t } else { 1.0 - t } * (w as f64 * 1.2) - 0.1 * w as f64;
-      let y = lane * h as f64;
+    // White toys on the table: a jeep driving right, a bus driving left.
+    let (wf, hf) = (w as f64, h as f64);
+    for (lane, dir, len) in [(0.62, 1.0, 0.09), (0.7, -1.0, 0.12)] {
+      let x = (0.15 + 0.7 * if dir > 0.0 { t } else { 1.0 - t }) * wf;
+      let y = lane * hf;
       c.rect(
-        x - 0.08 * w as f64,
-        y - 0.04 * h as f64,
-        x + 0.08 * w as f64,
-        y + 0.04 * h as f64,
-        &Paint::Solid(rgb8(40, 40, 40)),
+        x - len * wf,
+        y - 0.05 * hf,
+        x + len * wf,
+        y + 0.02 * hf,
+        &Paint::Solid(rgb8(240, 240, 240)),
       );
-      for wx in [-0.05, 0.05] {
+      c.rect(
+        x - len * wf * 0.6,
+        y - 0.045 * hf,
+        x + len * wf * 0.6,
+        y - 0.02 * hf,
+        &Paint::Solid(rgb8(70, 70, 70)),
+      );
+      for wx in [-0.6, 0.6] {
         c.circle(
-          x + wx * w as f64,
-          y + 0.045 * h as f64,
-          0.02 * w as f64,
-          &Paint::Solid(rgb8(10, 10, 10)),
+          x + wx * len * wf,
+          y + 0.025 * hf,
+          0.018 * wf,
+          &Paint::Solid(rgb8(30, 30, 30)),
         );
       }
     }

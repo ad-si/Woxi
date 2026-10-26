@@ -288,11 +288,13 @@ mod example_data_tests {
   }
 
   /// Every image has the recorded size, channels, type and colour space.
-  fn check_images(c: &str) {
+  /// Check the images of every `parts`-th entry of `c`, starting at `part`
+  /// (large collections are split so each test stays within its budget).
+  fn check_images_part(c: &str, part: usize, parts: usize) {
     clear_state();
     {
       let t = table(c);
-      for row in t.rows() {
+      for row in t.rows().iter().skip(part).step_by(parts) {
         let Some(sk) = t.raw(row, "Image") else {
           continue;
         };
@@ -323,12 +325,35 @@ mod example_data_tests {
       }
     }
   }
+  fn check_images(c: &str) {
+    check_images_part(c, 0, 1);
+  }
+
   mod image_shapes {
     use super::*;
     per_collection!(check_images:
-      test_image => "TestImage", aerial_image => "AerialImage", texture => "Texture",
-      color_texture => "ColorTexture", test_image_set => "TestImageSet",
+      test_image => "TestImage", color_texture => "ColorTexture", test_image_set => "TestImageSet",
     );
+    #[test]
+    fn aerial_image_1() {
+      check_images_part("AerialImage", 0, 2);
+    }
+    #[test]
+    fn aerial_image_2() {
+      check_images_part("AerialImage", 1, 2);
+    }
+    #[test]
+    fn texture_1() {
+      check_images_part("Texture", 0, 3);
+    }
+    #[test]
+    fn texture_2() {
+      check_images_part("Texture", 1, 3);
+    }
+    #[test]
+    fn texture_3() {
+      check_images_part("Texture", 2, 3);
+    }
   }
 
   /// Byte images hold multiples of 1/255.
