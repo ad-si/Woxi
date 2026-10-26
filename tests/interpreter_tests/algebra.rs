@@ -5113,6 +5113,56 @@ mod solve {
     );
   }
 
+  // Undoing a square root with a symbolic other side keeps the candidates
+  // that hold for some parameter values, with nongen — also the ones that
+  // fail for positive values (`x == -Sqrt[4 - y^2]`).
+  #[test]
+  fn inverse_square_root_with_parameters() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[x == -Sqrt[4 - y^2], y]").unwrap(),
+      "{{y -> -Sqrt[4 - x^2]}, {y -> Sqrt[4 - x^2]}}"
+    );
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.starts_with("Solve::nongen"))
+    );
+    clear_state();
+    assert_eq!(interpret("Solve[x == Sqrt[y], y]").unwrap(), "{{y -> x^2}}");
+    assert!(
+      woxi::get_captured_warnings()
+        .iter()
+        .any(|w| w.starts_with("Solve::nongen"))
+    );
+  }
+
+  // A system with a parameter: the solution is back-substituted and
+  // simplified, branches that hold only for special parameter values are
+  // no solutions, and an equation linear in one variable is solved first.
+  #[test]
+  fn parametric_system_back_substitution() {
+    assert_eq!(
+      interpret("Solve[{8 == p/a + p/b, 3 == p}, {b, p}]").unwrap(),
+      "{{b -> (3*a)/(-3 + 8*a), p -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a TA == (b Pfi)^(2/7), c == d Pfi}, {TA, Pfi}]")
+        .unwrap(),
+      "{{TA -> ((b*c)/d)^(2/7)/a, Pfi -> c/d}}"
+    );
+    assert_eq!(
+      interpret(
+        "{TA, TB, Pfi} /. First[Solve[{8.314 == (22.4*Pfi)/TA + \
+         (22.4*Pfi)/TB, 0.0036639754618530535*TA == \
+         (0.009871668311944718*Pfi)^(2/7), 2269.12 == 44.8*Pfi}, \
+         {TA, TB, Pfi}]] // Round"
+      )
+      .unwrap(),
+      "{224, 349, 51}"
+    );
+  }
+
   // Roots nested in roots are eliminated through norms, outermost first.
   #[test]
   fn nested_radical_equations() {
@@ -5151,7 +5201,7 @@ mod solve {
 {x -> (-3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}, \
 {x -> (3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}}"
     );
-    assert_eq!(woxi::get_captured_warnings(), [] as [String; 0]);
+    assert_eq!(woxi::get_captured_warnings(), Vec::<String>::new());
   }
 
   // Machine radicals the exact elimination cannot handle are searched

@@ -1718,6 +1718,38 @@ mod projection {
 mod eigenvalues {
   use super::*;
 
+  // A real machine matrix lists a conjugate pair upper half first.
+  #[test]
+  fn machine_conjugate_pair_order() {
+    assert_eq!(
+      interpret("Eigenvalues[{{0., 1.}, {-1., 0.}}]").unwrap(),
+      "{0. + 1.*I, 0. - 1.*I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[N[{{1, 2}, {-3, 1}}]]").unwrap(),
+      "{1. + 2.449489742783178*I, 1. - 2.449489742783178*I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {-b, a}}]").unwrap(),
+      "{a - I*b, a + I*b}"
+    );
+  }
+
+  // Francis double-shift QR: a random real matrix's complex pairs converge
+  // quickly, and the eigenvalues sum to the trace.
+  #[test]
+  fn large_random_real_matrix() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; m = RandomReal[{-1, 1}, {150, 150}]; \
+         e = Eigenvalues[m]; {Length[e], Abs[Total[e] - Tr[m]] < 10^-9, \
+         Max[Abs[Im[e]]] > 0}"
+      )
+      .unwrap(),
+      "{150, True, True}"
+    );
+  }
+
   /// Regression: float matrices (n ≥ 3) with complex-conjugate eigenvalues
   /// stayed unevaluated, and `Eigenvectors[…][[1]]` then failed.
   #[test]

@@ -4449,6 +4449,18 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
       );
       result = pow2(result, exponent);
     }
+    // `f[x]! y` is `f[x]! * y`.
+    if let Some(bang) = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::FactorialSuffix))
+    {
+      let head = if bang.as_str() == "!!" {
+        "Factorial2"
+      } else {
+        "Factorial"
+      };
+      result = call1(head, result);
+    }
     let suffix_pair = inner_pairs
       .iter()
       .find(|p| matches!(p.as_rule(), Rule::FunctionCallImplicitSuffix))
@@ -4470,6 +4482,18 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
           .clone(),
       );
       result = pow2(result, exponent);
+    }
+    // `f[x]! y` is `f[x]! * y`.
+    if let Some(bang) = inner_pairs
+      .iter()
+      .find(|p| matches!(p.as_rule(), Rule::FactorialSuffix))
+    {
+      let head = if bang.as_str() == "!!" {
+        "Factorial2"
+      } else {
+        "Factorial"
+      };
+      result = call1(head, result);
     }
     let suffix_pair = inner_pairs
       .iter()

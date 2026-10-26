@@ -570,6 +570,35 @@ fn derivative_tag_orders(s: &str) -> Option<Vec<String>> {
 /// The elements of a `TemplateBox`'s first argument, which holds the
 /// template's slots. It is a list, written either as `{…}` (how a `.nb` file
 /// spells it) or as `List[…]` (how `InputForm` writes a box escape).
+/// The source a `TemplateBox[<|…|>, tag, InterpretationFunction ->
+/// (Slot["key"] &)]` stands for: the association's `"key"` entry, and of an
+/// `InterpretationBox[display, expr, …]` there its `expr`.
+fn template_box_interpretation(args: &[String]) -> Option<String> {
+  let assoc = args.first()?.trim();
+  let inner = assoc.strip_prefix("<|")?.strip_suffix("|>")?;
+  let function = args.iter().find_map(|a| {
+    let (name, value) = a.split_once("->")?;
+    (name.trim() == "InterpretationFunction").then_some(value.trim())
+  })?;
+  let key = function
+    .split_once("Slot[\"")
+    .and_then(|(_, rest)| rest.split_once("\"]"))
+    .map(|(key, _)| key.to_string())?;
+  let value = split_top_level_commas(inner)
+    .into_iter()
+    .find_map(|entry| {
+      let (name, value) = entry.split_once("->")?;
+      (name.trim().trim_matches('"') == key).then_some(value.trim())
+    })?;
+  if let Some(rest) = value.strip_prefix("InterpretationBox[")
+    && let Ok((body, _)) = find_matching_bracket(rest)
+    && let Some(expr) = split_top_level_commas(body).get(1)
+  {
+    return Some(strip_display_form_wrapper(expr.trim()));
+  }
+  Some(extract_cell_content(value))
+}
+
 fn template_box_parts(first_arg: &str) -> Vec<&str> {
   let first = first_arg.trim();
   let inner = first
@@ -702,6 +731,13 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     && let Some(args) = split_args("TemplateBox", s)
     && args.len() >= 2
   {
+    // A template over an association whose `InterpretationFunction` picks
+    // one of its entries (`Slot["interp"] &`) — the FrontEnd's icon of a
+    // `Root[…]` or of a long number — stands for that entry, which is
+    // usually an `InterpretationBox[display, expr]`.
+    if let Some(value) = template_box_interpretation(&args) {
+      return Some(value);
+    }
     let tag = args.last().unwrap().trim();
     let tag = tag.trim_matches('"');
     let parts = template_box_parts(&args[0]);
@@ -3938,6 +3974,9 @@ fn split_top_level_commas(s: &str) -> Vec<&str> {
       '"' => in_string = true,
       '{' | '[' | '(' => depth += 1,
       '}' | ']' | ')' => depth -= 1,
+      // An association's `<|` … `|>` nests like a bracket pair.
+      '<' if bytes.get(i + 1) == Some(&b'|') => depth += 1,
+      '|' if bytes.get(i + 1) == Some(&b'>') => depth -= 1,
       ',' if depth == 0 => {
         parts.push(&s[start..i]);
         start = i + 1;
@@ -5168,6 +5207,17 @@ mod tests {
   }
 
   use super::*;
+
+  /// The FrontEnd's icon for a `Root[…]` is a `TemplateBox` over an
+  /// association whose `InterpretationFunction` picks the `"interp"` entry.
+  #[test]
+  fn root_icon_template_box_reads_back_as_root() {
+    let boxes = r#"RowBox[{"Sqrt", "[", TemplateBox[<|"icon" -> "Root", "small" -> InterpretationBox[StyleBox["1.47", ShowStringCharacters -> False], 1.4655712318767679`15.95, Editable -> False], "approx" -> 1.465571231876768, "interp" -> InterpretationBox["", Root[-1 - #^2 + #^3& , 1, 0]], "head" -> "Root", "degree" -> "3"|>, "NumericalApproximationInterp", InterpretationFunction->(Slot["interp"]& )], "]"}]"#;
+    assert_eq!(
+      extract_cell_content(boxes).replace(' ', ""),
+      "Sqrt[Root[-1-#^2+#^3&,1,0]]"
+    );
+  }
 
   /// Regression: a control variable named with a private-use-area letter
   /// (`\[ScriptM]`, already decoded to U+F6BE in the saved box dump) lost

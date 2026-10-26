@@ -3188,8 +3188,19 @@ pub fn reduce_multi_var_and(
   vars: &[String],
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
-  let result = reduce_multi_var_and_inner(constraints, vars, domain)?;
-  Ok(normalize_solution_branches(&result, vars))
+  // The elimination substitutes values into the remaining constraints and
+  // tries the branches where a denominator vanishes; a division by zero met
+  // on the way only rules a branch out, it is no message of Reduce's.
+  crate::push_quiet_filter(
+    Some(vec![
+      "Power::infy".to_string(),
+      "Infinity::indet".to_string(),
+    ]),
+    vec![],
+  );
+  let result = reduce_multi_var_and_inner(constraints, vars, domain);
+  crate::pop_quiet_filter();
+  Ok(normalize_solution_branches(&result?, vars))
 }
 
 /// Flatten a nested And/Or answer into a disjunction of conjunctions, drop
@@ -3380,17 +3391,22 @@ fn reduce_multi_var_and_inner(
   // An equation pinning a variable to a constant (`v == c`) is eliminated
   // first: substituting it leaves a smaller system in which contradictions
   // (`0 == 1`) surface immediately instead of being solved for a variable.
+  // So is one linear in a single variable with a numeric coefficient
+  // (`44 p == 2269`): solved for it first, the rest stays free of it.
   for (i, constraint) in constraints.iter().enumerate() {
-    let Some((lhs, c, CompOp::Equal)) = extract_comparison(constraint) else {
+    let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) else {
       continue;
     };
-    let Expr::Identifier(v) = &lhs else {
+    let (v, c) = if let Expr::Identifier(v) = &lhs
+      && vars.contains(v)
+      && !vars.iter().any(|w| contains_var(&rhs, w))
+    {
+      (v.clone(), rhs.clone())
+    } else if let Some(pinned) = linear_pin(&lhs, &rhs, vars) {
+      pinned
+    } else {
       continue;
     };
-    let v = v.clone();
-    if !vars.contains(&v) || vars.iter().any(|w| contains_var(&c, w)) {
-      continue;
-    }
     let mut remaining = Vec::new();
     for (j, other) in constraints.iter().enumerate() {
       if j == i {
@@ -3640,12 +3656,14 @@ fn reduce_multi_var_and_inner(
                       // Under inequalities the answer is cylindrical: the
                       // variable stays expressed in the earlier ones
                       // (`x > 0 && y == (-2 + x)/3 && z == (1 - x - 2*y)/3`).
+                      // A `!=` condition (a denominator kept from zero) is
+                      // no inequality in that sense.
                       let mut parts = Vec::new();
                       collect_and_constraints(branch, &mut parts);
                       if parts.iter().any(|p| {
                         !matches!(
                           extract_comparison(p),
-                          Some((_, _, CompOp::Equal))
+                          Some((_, _, CompOp::Equal | CompOp::NotEqual))
                         )
                       }) {
                         let var_eq =
@@ -3761,15 +3779,91 @@ fn reduce_multi_var_and_inner(
 /// A solved value the way `Reduce` reports it once every variable is solved
 /// for the free ones: expanded when it is a polynomial in them — a plain
 /// number such as `(2 - 2*Sqrt[3])/2` as `1 - Sqrt[3]`, `(-2 + x)/3` as
-/// `-2/3 + x/3` — while a quotient by one of them stays a quotient
-/// (`(3 + x^2)/(1 + x)`).
+/// `-2/3 + x/3` — while a quotient by one of them is put over a common
+/// denominator (`(3 + x^2)/(1 + x)`).
 fn expanded_if_polynomial(value: &Expr, vars: &[String]) -> Expr {
-  if vanishing_denominators(value, vars).is_empty() {
-    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", value.clone()))
-      .unwrap_or_else(|_| value.clone())
-  } else {
-    value.clone()
+  // A denominator in a parameter counts as much as one in a variable.
+  let mut symbols: Vec<String> = vars.to_vec();
+  fn collect(e: &Expr, out: &mut Vec<String>) {
+    if let Expr::Identifier(name) = e
+      && !crate::evaluator::functions::is_builtin_symbol(name)
+      && !out.contains(name)
+    {
+      out.push(name.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect(child, out);
+    }
   }
+  collect(value, &mut symbols);
+  let head = if vanishing_denominators(value, &symbols).is_empty() {
+    "Expand"
+  } else {
+    // A quotient over a common denominator, its common factors cancelled:
+    // back-substitution leaves nested fractions (`24 a^2/((-3 + 8 a) (a +
+    // 3 a/(-3 + 8 a)))` is 3).
+    "Together"
+  };
+  crate::evaluator::evaluate_expr_to_expr(&call1(head, value.clone()))
+    .unwrap_or_else(|_| value.clone())
+}
+
+/// `(v, c)` when `lhs == rhs` mentions a single one of `vars` and is linear
+/// in it with a nonzero numeric coefficient: `a v + b == 0` gives `c =
+/// -b/a`.
+fn linear_pin(
+  lhs: &Expr,
+  rhs: &Expr,
+  vars: &[String],
+) -> Option<(String, Expr)> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let difference =
+    eval(&call1("Expand", minus2(lhs.clone(), rhs.clone()))).ok()?;
+  let mut present = vars.iter().filter(|w| contains_var(&difference, w));
+  let v = present.next()?.clone();
+  if present.next().is_some() {
+    return None;
+  }
+  let a = eval(&call(
+    "Coefficient",
+    vec![difference.clone(), Expr::Identifier(v.clone())],
+  ))
+  .ok()?;
+  if !crate::functions::predicate_ast::is_numeric_q(&a)
+    || crate::functions::math_ast::try_eval_to_f64(&a).is_some_and(|x| x == 0.0)
+  {
+    return None;
+  }
+  let b = eval(&call(
+    "ReplaceAll",
+    vec![
+      difference.clone(),
+      rule_expr(Expr::Identifier(v.clone()), Expr::Integer(0)),
+    ],
+  ))
+  .ok()?;
+  // Linear: nothing of `v` is left once `a v + b` is taken off.
+  let rest = eval(&call1(
+    "Expand",
+    minus2(
+      difference,
+      plus2(times2(a.clone(), Expr::Identifier(v.clone())), b.clone()),
+    ),
+  ))
+  .ok()?;
+  if !matches!(rest, Expr::Integer(0)) || contains_var(&b, &v) {
+    return None;
+  }
+  let c = eval(&call(
+    "Times",
+    vec![
+      Expr::Integer(-1),
+      b,
+      call("Power", vec![a, Expr::Integer(-1)]),
+    ],
+  ))
+  .ok()?;
+  Some((v, c))
 }
 
 thread_local! {

@@ -3604,6 +3604,25 @@ fn split_symbolic_scale(
 }
 
 /// Eigenvalues[matrix] - eigenvalues of a square matrix, sorted descending.
+/// A real machine 2×2 matrix lists a conjugate pair of eigenvalues upper
+/// half first, like the QR route for larger matrices does:
+/// `{1. + 2.45 I, 1. - 2.45 I}`. Exact and symbolic pairs keep their order.
+fn machine_conjugate_pair_upper_first(matrix: &[Vec<Expr>], eigs: &mut [Expr]) {
+  let machine = matrix
+    .iter()
+    .flatten()
+    .all(|e| matches!(e, Expr::Real(_) | Expr::Integer(_)))
+    && matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_)));
+  if machine
+    && let [first, second] = eigs
+    && let (Some((_, im0)), Some((_, im1))) =
+      (numeric_re_im(first), numeric_re_im(second))
+    && im0 < im1
+  {
+    eigs.swap(0, 1);
+  }
+}
+
 pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -3757,6 +3776,8 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if eigs.iter().all(is_real_num) {
       sort_eigenvalues(&mut eigs);
+    } else {
+      machine_conjugate_pair_upper_first(&matrix, &mut eigs);
     }
     return Ok(Expr::List(eigs.into()));
   }
@@ -3792,6 +3813,8 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // eigenvalues keep the closed `minus, plus` branch order.
     if result.iter().all(is_real_numeric_value) {
       sort_eigenvalues(&mut result);
+    } else {
+      machine_conjugate_pair_upper_first(&matrix, &mut result);
     }
     return Ok(Expr::List(result.into()));
   }
@@ -5486,119 +5509,175 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
 /// `(re, im)` entries (`im > 0` first) instead of aborting. Empty on
 /// non-convergence.
 fn qr_eigenvalues_complex(h: &mut [Vec<f64>], n: usize) -> Vec<(f64, f64)> {
-  let mut eigenvalues: Vec<(f64, f64)> = Vec::new();
-  let mut hi = n; // active block occupies rows/columns 0..hi
-  let mut stagnant = 0usize;
-
-  while hi > 0 {
-    // Zero out negligible subdiagonal entries.
-    for i in 1..hi {
-      if h[i][i - 1].abs()
-        <= 1e-13 * (h[i][i].abs() + h[i - 1][i - 1].abs()).max(1e-300)
-      {
-        h[i][i - 1] = 0.0;
-      }
-    }
-    // Deflate a trailing 1×1 block.
-    if hi == 1 || h[hi - 1][hi - 2] == 0.0 {
-      eigenvalues.push((h[hi - 1][hi - 1], 0.0));
-      hi -= 1;
-      stagnant = 0;
-      continue;
-    }
-    // Deflate a trailing 2×2 block in closed form.
-    if hi == 2 || h[hi - 2][hi - 3] == 0.0 {
-      let (a, b) = (h[hi - 2][hi - 2], h[hi - 2][hi - 1]);
-      let (c, d) = (h[hi - 1][hi - 2], h[hi - 1][hi - 1]);
-      let tr = a + d;
-      let det = a * d - b * c;
-      let disc = tr * tr - 4.0 * det;
-      if disc < 0.0 {
-        let sq = (-disc).sqrt() / 2.0;
-        eigenvalues.push((tr / 2.0, sq));
-        eigenvalues.push((tr / 2.0, -sq));
-      } else {
-        let sq = disc.sqrt();
-        eigenvalues.push(((tr - sq) / 2.0, 0.0));
-        eigenvalues.push((f64::midpoint(tr, sq), 0.0));
-      }
-      hi -= 2;
-      stagnant = 0;
-      continue;
-    }
-    stagnant += 1;
-    if stagnant > 60 * n {
-      return Vec::new(); // no convergence (e.g. complex pairs upstream)
-    }
-
-    // Start of the trailing irreducible block.
-    let mut lo = hi - 1;
-    while lo > 0 && h[lo][lo - 1] != 0.0 {
-      lo -= 1;
-    }
-
-    // Wilkinson shift: the eigenvalue of the trailing 2×2 closest to the
-    // corner entry; an occasional exceptional shift breaks symmetric
-    // stagnation.
-    let (a, b) = (h[hi - 2][hi - 2], h[hi - 2][hi - 1]);
-    let (c, d) = (h[hi - 1][hi - 2], h[hi - 1][hi - 1]);
-    let shift = if stagnant.is_multiple_of(17) {
-      d + h[hi - 1][hi - 2].abs()
-    } else {
-      let tr = a + d;
-      let det = a * d - b * c;
-      let disc = tr * tr - 4.0 * det;
-      if disc >= 0.0 {
-        let sq = disc.sqrt();
-        let l1 = f64::midpoint(tr, sq);
-        let l2 = (tr - sq) / 2.0;
-        if (l1 - d).abs() < (l2 - d).abs() {
-          l1
-        } else {
-          l2
-        }
-      } else {
-        d
-      }
-    };
-
-    // One shifted QR sweep on the active block via Givens rotations.
-    for i in lo..hi {
-      h[i][i] -= shift;
-    }
-    let mut rotations: Vec<(f64, f64)> = Vec::with_capacity(hi - lo);
-    for i in lo..hi - 1 {
-      let x = h[i][i];
-      let y = h[i + 1][i];
-      let r = x.hypot(y);
-      if r < 1e-300 {
-        rotations.push((1.0, 0.0));
-        continue;
-      }
-      let (cs, sn) = (x / r, y / r);
-      rotations.push((cs, sn));
-      for j in lo..hi {
-        let t1 = h[i][j];
-        let t2 = h[i + 1][j];
-        h[i][j] = cs * t1 + sn * t2;
-        h[i + 1][j] = -sn * t1 + cs * t2;
-      }
-    }
-    for (idx, (cs, sn)) in rotations.iter().enumerate() {
-      let i = lo + idx;
-      for j in lo..hi {
-        let t1 = h[j][i];
-        let t2 = h[j][i + 1];
-        h[j][i] = cs * t1 + sn * t2;
-        h[j][i + 1] = -sn * t1 + cs * t2;
-      }
-    }
-    for i in lo..hi {
-      h[i][i] += shift;
+  // Francis double-shift QR on the upper Hessenberg matrix (EISPACK's
+  // `hqr`): a complex-conjugate pair converges as a real 2×2 block, so a
+  // random real matrix takes a few sweeps per eigenvalue instead of the
+  // hundreds a real single shift needs. Indices below are 1-based.
+  let mut a = vec![vec![0.0f64; n + 1]; n + 1];
+  for i in 0..n {
+    for j in 0..n {
+      a[i + 1][j + 1] = h[i][j];
     }
   }
-
-  eigenvalues
+  let sign = |a: f64, b: f64| if b >= 0.0 { a.abs() } else { -a.abs() };
+  let mut wr = vec![0.0f64; n + 1];
+  let mut wi = vec![0.0f64; n + 1];
+  let mut anorm = 0.0;
+  for i in 1..=n {
+    for j in i.saturating_sub(1).max(1)..=n {
+      anorm += a[i][j].abs();
+    }
+  }
+  let mut nn = n;
+  let mut t = 0.0;
+  while nn >= 1 {
+    let mut its = 0;
+    loop {
+      let mut l = nn;
+      while l >= 2 {
+        let mut s = a[l - 1][l - 1].abs() + a[l][l].abs();
+        if s == 0.0 {
+          s = anorm;
+        }
+        if a[l][l - 1].abs() + s == s {
+          a[l][l - 1] = 0.0;
+          break;
+        }
+        l -= 1;
+      }
+      let mut x = a[nn][nn];
+      if l == nn {
+        wr[nn] = x + t;
+        wi[nn] = 0.0;
+        nn -= 1;
+        break;
+      }
+      let mut y = a[nn - 1][nn - 1];
+      let mut w = a[nn][nn - 1] * a[nn - 1][nn];
+      if l == nn - 1 {
+        let p = 0.5 * (y - x);
+        let q = p * p + w;
+        let mut z = q.abs().sqrt();
+        x += t;
+        if q >= 0.0 {
+          z = p + sign(z, p);
+          wr[nn - 1] = x + z;
+          wr[nn] = x + z;
+          if z != 0.0 {
+            wr[nn] = x - w / z;
+          }
+          wi[nn - 1] = 0.0;
+          wi[nn] = 0.0;
+        } else {
+          wr[nn - 1] = x + p;
+          wr[nn] = x + p;
+          wi[nn - 1] = z;
+          wi[nn] = -z;
+        }
+        nn -= 2;
+        break;
+      }
+      if its == 60 {
+        return Vec::new();
+      }
+      if its == 10 || its == 20 {
+        // Exceptional shift.
+        t += x;
+        for i in 1..=nn {
+          a[i][i] -= x;
+        }
+        let s = a[nn][nn - 1].abs() + a[nn - 1][nn - 2].abs();
+        x = 0.75 * s;
+        y = x;
+        w = -0.4375 * s * s;
+      }
+      its += 1;
+      let (mut p, mut q, mut r, mut z);
+      let mut m = nn - 2;
+      loop {
+        z = a[m][m];
+        r = x - z;
+        let s0 = y - z;
+        p = (r * s0 - w) / a[m + 1][m] + a[m][m + 1];
+        q = a[m + 1][m + 1] - z - r - s0;
+        r = a[m + 2][m + 1];
+        let s = p.abs() + q.abs() + r.abs();
+        p /= s;
+        q /= s;
+        r /= s;
+        if m == l {
+          break;
+        }
+        let u = a[m][m - 1].abs() * (q.abs() + r.abs());
+        let v =
+          p.abs() * (a[m - 1][m - 1].abs() + z.abs() + a[m + 1][m + 1].abs());
+        if u + v == v {
+          break;
+        }
+        m -= 1;
+      }
+      for i in m + 2..=nn {
+        a[i][i - 2] = 0.0;
+        if i != m + 2 {
+          a[i][i - 3] = 0.0;
+        }
+      }
+      let mut k = m;
+      while k < nn {
+        if k != m {
+          p = a[k][k - 1];
+          q = a[k + 1][k - 1];
+          r = 0.0;
+          if k != nn - 1 {
+            r = a[k + 2][k - 1];
+          }
+          x = p.abs() + q.abs() + r.abs();
+          if x != 0.0 {
+            p /= x;
+            q /= x;
+            r /= x;
+          }
+        }
+        let s = sign((p * p + q * q + r * r).sqrt(), p);
+        if s != 0.0 {
+          if k == m {
+            if l != m {
+              a[k][k - 1] = -a[k][k - 1];
+            }
+          } else {
+            a[k][k - 1] = -s * x;
+          }
+          p += s;
+          x = p / s;
+          y = q / s;
+          z = r / s;
+          q /= p;
+          r /= p;
+          for j in k..=nn {
+            let mut pj = a[k][j] + q * a[k + 1][j];
+            if k != nn - 1 {
+              pj += r * a[k + 2][j];
+              a[k + 2][j] -= pj * z;
+            }
+            a[k + 1][j] -= pj * y;
+            a[k][j] -= pj * x;
+          }
+          let mmin = if nn < k + 3 { nn } else { k + 3 };
+          for i in l..=mmin {
+            let mut pi = x * a[i][k] + y * a[i][k + 1];
+            if k != nn - 1 {
+              pi += z * a[i][k + 2];
+              a[i][k + 2] -= pi * r;
+            }
+            a[i][k + 1] -= pi * q;
+            a[i][k] -= pi;
+          }
+        }
+        k += 1;
+      }
+    }
+  }
+  (1..=n).map(|i| (wr[i], wi[i])).collect()
 }
 
 /// Refine an eigenvalue's eigenvector via (shifted) inverse iteration:

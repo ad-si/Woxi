@@ -5638,6 +5638,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Superscript" if args.len() == 2 => {
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
     }
+    "Subsuperscript" if args.len() == 3 => tf_box(
+      "SubsuperscriptBox",
+      vec![tf(&args[0]), tf(&args[1]), tf(&args[2])],
+    ),
     // `Overscript[a, b]` / `Underscript[a, b]` and their `OverBar`/`UnderBar`
     // accent shorthands — same `…Box` mapping as the StandardForm converter
     // (`expr_to_box_form`), just recursing through `tf` for the pieces.
