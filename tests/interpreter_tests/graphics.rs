@@ -4400,6 +4400,28 @@ mod plot3d {
       }
     }
 
+    // `AxesLabel -> Automatic` labels the axes with the plot's variables;
+    // it used to be drawn as the literal word "Automatic". The labels
+    // survive `Show` and an `Automatic` among explicit labels.
+    #[test]
+    fn automatic_axes_label_uses_plot_variables() {
+      for code in [
+        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]",
+        "Show[{Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(!svg.contains("Automatic"), "{code}: {svg}");
+        for label in ["s", "t", "z"] {
+          assert!(svg.contains(&format!(">{label}<")), "{code}: {label}");
+        }
+      }
+      let svg = export_svg(
+        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> {Automatic, \"depth\", None}]",
+      );
+      assert!(svg.contains(">s<") && svg.contains(">depth<"));
+      assert!(!svg.contains(">z<"));
+    }
+
     // A long z-axis label used to be laid out horizontally beside the
     // vertical axis, which pushed its centre past the left edge of the
     // canvas so it was clipped. It now runs alongside the axis.
