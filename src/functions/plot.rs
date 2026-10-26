@@ -342,11 +342,27 @@ impl<'a> PlotBody2<'a> {
         return Some(v);
       }
     }
-    evaluate_at_xy(self.body, self.xvar, self.yvar, x, y)
+    evaluate_symbolically_at_xy(self.body, self.xvar, self.yvar, x, y)
   }
 }
 
 pub(crate) fn evaluate_at_xy(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  xval: f64,
+  yval: f64,
+) -> Option<f64> {
+  if let Some(c) = compiled_body(body, &[xvar.to_string(), yvar.to_string()]) {
+    let v = c.eval(&[xval, yval]);
+    if v.is_finite() {
+      return Some(v);
+    }
+  }
+  evaluate_symbolically_at_xy(body, xvar, yvar, xval, yval)
+}
+
+fn evaluate_symbolically_at_xy(
   body: &Expr,
   xvar: &str,
   yvar: &str,
