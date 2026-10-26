@@ -815,6 +815,10 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return sqrt_ast(&[u_args[0].clone()]);
   }
+  // A Gaussian rational with a Gaussian rational root, e.g. `Sqrt[2 I]`.
+  if let Some(result) = try_sqrt_gaussian(&args[0]) {
+    return Ok(result);
+  }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
     return Ok(id_expr("Indeterminate"));
   }
@@ -1475,26 +1479,30 @@ fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
   }
 }
 
-/// Try to compute an exact Gaussian integer square root of a complex number.
+/// Try to compute an exact Gaussian rational square root of a complex number.
 ///
-/// For `z = a + b*I` (Gaussian integer), finds `p + q*I` such that `(p+qI)^2 = z`,
-/// choosing the principal root with `p >= 0` (or `p == 0, q > 0`).
-/// Returns `None` if no such integer solution exists.
+/// For `z = a + b*I` with rational `a`, `b`, finds `p + q*I` with rational
+/// `p`, `q` such that `(p+qI)^2 = z`, choosing the principal root (`p > 0`,
+/// or `p == 0` and `q > 0`). Returns `None` if no such root exists.
 fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
-  // Normalize to integers a and b where z = a + b*I
-  // Require both parts to be integers (denominator 1 after reducing)
   let (rn, rd) = rat_reduce(rn, rd);
   let (in_, id) = rat_reduce(in_, id);
   // Pure real cases are handled by existing code; skip to avoid duplication
   if in_ == 0 {
     return None;
   }
-  if rd != 1 || id != 1 {
-    return None; // Only handle Gaussian integers, not Gaussian rationals
-  }
-  let a = rn; // real part
-  let b = in_; // imaginary part
+  // z = w / D with a common denominator D, so sqrt(z) = sqrt(w * D) / D.
+  let den = rd / gcd_i128(rd, id).max(1) * id;
+  let a = rn.checked_mul(den / rd)?.checked_mul(den)?;
+  let b = in_.checked_mul(den / id)?.checked_mul(den)?;
+  let (p, q) = sqrt_gaussian_integer(a, b)?;
+  Some(build_complex_expr(p, den, q, den))
+}
+
+/// Exact principal square root `p + q*I` of the Gaussian integer `a + b*I`
+/// (with `b != 0`), if both parts are integers.
+fn sqrt_gaussian_integer(a: i128, b: i128) -> Option<(i128, i128)> {
   // |z|^2 = a^2 + b^2; needs to be a perfect square n^2
   let m = a.checked_mul(a)?.checked_add(b.checked_mul(b)?)?;
   let n = (m as f64).sqrt() as i128;
@@ -1511,17 +1519,13 @@ fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   if p * p != p_sq {
     return None; // p is not an integer
   }
-  // Determine q: q = b / (2*p)
   if p == 0 {
-    // Handle p == 0: then a == -n <= 0 and b != 0 → q^2 = n, pick q > 0
-    let q_sq = n;
-    let q = (q_sq as f64).sqrt() as i128;
-    if q * q != q_sq {
+    // a == -n <= 0 and b != 0 → q^2 = n, with the sign of b
+    let q = (n as f64).sqrt() as i128;
+    if q * q != n {
       return None;
     }
-    // Choose q with same sign as b (principal root convention)
-    let q = if b < 0 { -q } else { q };
-    return Some(build_complex_expr(0, 1, q, 1));
+    return Some((0, if b < 0 { -q } else { q }));
   }
   let two_p = p.checked_mul(2)?;
   if b % two_p != 0 {
@@ -1534,7 +1538,7 @@ fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   if check_re != a || check_im != b {
     return None;
   }
-  Some(build_complex_expr(p, 1, q, 1))
+  Some((p, q))
 }
 
 /// wolframscript refuses a non-real base for both spellings of the real root

@@ -13507,4 +13507,26 @@ mod arccosh_complex {
       "1361800900858 + 2863838397032*I"
     );
   }
+
+  mod sqrt_gaussian_rational {
+    use super::*;
+
+    #[test]
+    fn pure_imaginary_with_gaussian_root() {
+      assert_eq!(interpret("Sqrt[2 I]").unwrap(), "1 + I");
+      assert_eq!(interpret("Sqrt[-2 I]").unwrap(), "1 - I");
+      assert_eq!(interpret("Sqrt[18 I]").unwrap(), "3 + 3*I");
+    }
+
+    #[test]
+    fn gaussian_rational_root() {
+      assert_eq!(interpret("Sqrt[(2 I)/9]").unwrap(), "1/3 + I/3");
+      assert_eq!(interpret("Sqrt[(3 + 4 I)/4]").unwrap(), "1 + I/2");
+    }
+
+    #[test]
+    fn no_gaussian_root_stays_symbolic() {
+      assert_eq!(interpret("Sqrt[3 I]").unwrap(), "(-1)^(1/4)*Sqrt[3]");
+    }
+  }
 }
