@@ -10133,10 +10133,14 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       }
       Ok(result)
     }
-    _ => Err(InterpreterError::EvaluationError(format!(
-      "cannot convert {} to a numeric value",
-      expr_to_string(expr)
-    ))),
+    // Any other real numeric value — `-Sin[2]` from a `Piecewise` branch,
+    // say — through the general numericization.
+    _ => crate::functions::math_ast::try_eval_to_f64(expr).ok_or_else(|| {
+      InterpreterError::EvaluationError(format!(
+        "cannot convert {} to a numeric value",
+        expr_to_string(expr)
+      ))
+    }),
   }
 }
 

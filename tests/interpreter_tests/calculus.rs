@@ -23124,6 +23124,21 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // A Piecewise branch with an exact non-rational value (`-Sin[2]`) is a
+  // number like any other. Exact: Sin[2] (1.87^2/2 + 1.87 (3 - 1.87)).
+  #[test]
+  fn piecewise_with_exact_numeric_branch() {
+    assert_eq!(
+      interpret(
+        "v = y[3] /. First[NDSolve[{Piecewise[{{-Sin[2], t <= 1.87}}, 0] + \
+         y''[t] == 0, y[0] == 0, y'[0] == 0}, y, {t, 0, 20}]]; \
+         Abs[v - Sin[2] (1.87^2/2 + 1.87 (3 - 1.87))] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn oregonator_is_integrated_with_a_stiff_method() {
     // The Belousov–Zhabotinsky Oregonator: rate constants 2500 apart make
