@@ -2061,7 +2061,7 @@ fn render_contour_lines_styled(
 /// becomes a `Line` of 1-based indices into one shared point table, so
 /// `Cases[plot, _GraphicsComplex, ∞]` and `pts[[First[line]]]` work as in
 /// Wolfram and `Normal` recovers the coordinates.
-fn contour_graphics_complex(items: Vec<Expr>) -> Expr {
+fn contour_graphics_complex(items: &[Expr]) -> Expr {
   fn coords(e: &Expr) -> Option<(f64, f64)> {
     match e {
       Expr::List(p) if p.len() == 2 => match (&p[0], &p[1]) {
@@ -2622,7 +2622,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let structure = field_plot_structure(
-    vec![contour_graphics_complex(structure_items)],
+    vec![contour_graphics_complex(&structure_items)],
     args,
     (x_min, x_max),
     (y_min, y_max),
@@ -2910,7 +2910,7 @@ fn contour_plot_equations(
   }
   let structure = call1(
     "Graphics",
-    Expr::List(vec![contour_graphics_complex(structure_items)].into()),
+    Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
   );
   // A contour plot is framed and has no axes unless asked otherwise, so a
   // `Show` of several of them (`Frame -> False` or not) must not grow the
