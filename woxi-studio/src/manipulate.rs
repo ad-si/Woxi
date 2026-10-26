@@ -3326,6 +3326,40 @@ mod tests {
     assert!(state.graphics_handle.is_some(), "the plot should render");
   }
 
+  /// Regression coverage for a hidden-state `Manipulate` whose whole control
+  /// panel is `Text[Row[{Grid[{{label, Slider[Dynamic[v], …]}}]}]]`: the
+  /// `Text[…]` wrapper used to turn the display into a static picture, so the
+  /// slider could not be dragged. The display tree must keep a live slider.
+  #[test]
+  fn text_wrapped_row_grid_keeps_live_slider() {
+    let code = r#"Manipulate[
+      Plot[g*x, {x, 0, 1}],
+      Text[Row[{Grid[{{"gain", Spacer[5], Slider[Dynamic[g], {1, 5}]}}]}]],
+      {{g, 2}, None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the Text[Row[Grid[…]]] panel should build a ManipulateState");
+
+    fn has_slider(node: &DisplayNode) -> bool {
+      match node {
+        DisplayNode::Slider { .. } => true,
+        DisplayNode::Row(c) | DisplayNode::Column(c) => {
+          c.iter().any(has_slider)
+        }
+        DisplayNode::Grid(rows) => rows.iter().flatten().any(has_slider),
+        DisplayNode::Panel(inner) => has_slider(inner),
+        _ => false,
+      }
+    }
+    assert!(
+      state.display_trees.iter().any(has_slider),
+      "Text-wrapped Row/Grid must keep its slider live: {:?}",
+      state.display_trees
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Crystal Lattices in Reciprocal Space") whose control panel is two
   /// collapsible `OpenerView[{label, content}]` sections: one of preset

@@ -35653,6 +35653,22 @@ fn display_expr_to_node(
         };
         display_expr_to_node(&slides[0], bindings, probes, ons)
       }
+      // `Text[Row[…]]` / `Text[Grid[…]]` (the `Text@Grid[…]` idiom) lays out
+      // its layout content exactly as the bare container would, so the
+      // controls inside stay live instead of being flattened to a picture.
+      "Text"
+        if args.len() == 1
+          && matches!(
+            &args[0],
+            Expr::FunctionCall { name, .. }
+              if matches!(
+                name.as_str(),
+                "Row" | "Column" | "Grid" | "Dynamic" | "Panel" | "Framed"
+              )
+          ) =>
+      {
+        display_expr_to_node(&args[0], bindings, probes, ons)
+      }
       // A cell around an expression shows just the expression.
       "ExpressionCell" if !args.is_empty() => {
         display_expr_to_node(&args[0], bindings, probes, ons)
