@@ -742,6 +742,7 @@ MaxSteps,Option specifying the maximum number of steps,✅,none,2.0,705
 Alphabet,Returns the list of lowercase English letters,✅,pure,10.1,706
 FileNames,Lists file names matching a pattern,✅,effectful,2.0,707
 DateList,Converts to date list,✅,pure,6.0,709
+Date,Returns the current date as a list {year; month; day; hour; minute; second},✅,contextual,6.0,709
 RegularPolygon,Regular polygon graphics primitive,✅,none,10.2,710
 DSolveValue,Solve a differential equation and return the solution value,✅,pure,10.0,711
 VertexCoordinates,Option for vertex coordinates in graphs,✅,none,8.0,713

@@ -26,6 +26,11 @@ pub fn dispatch_datetime_functions(
     "DateList" => {
       return Some(crate::functions::datetime_ast::date_list_ast(args));
     }
+    // Date[]: the current date as {y, m, d, h, min, s}, the same list
+    // DateList[] gives.
+    "Date" if args.is_empty() => {
+      return Some(crate::functions::datetime_ast::date_list_ast(args));
+    }
     "TimeZoneConvert" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::time_zone_convert_ast(args));
     }
