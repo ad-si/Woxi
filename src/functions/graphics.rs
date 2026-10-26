@@ -12057,7 +12057,15 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         font_size,
       )
     }
-    Expr::String(s) => BoxLayout::text(strip_precision_marker(s), font_size),
+    // A string box is stored as its quoted source but drawn without quotes.
+    Expr::String(s) => {
+      let s = strip_precision_marker(s);
+      let unquoted = s
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(s);
+      BoxLayout::text(unquoted, font_size)
+    }
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
     }
@@ -32000,7 +32008,10 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Subsuperscript" | "SubsuperscriptBox" if args.len() == 3 => {
         let mut runs = script_runs(&args[..2], italic, false);
         let sup = to_unicode_script(
-          &flatten_label_runs(&manipulate_label_runs(&args[2], false)),
+          &flatten_label_runs(&manipulate_label_runs(
+            &unquote_box_string(&args[2]),
+            false,
+          )),
           true,
         );
         if !sup.is_empty() {
@@ -32520,6 +32531,23 @@ fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
 
+/// A string box is stored as its quoted source (`"\"*\""`) but drawn without
+/// the quotes; a script made of one (`Subsuperscript[q, 1, "*"]` typeset
+/// through TraditionalForm) must not show them.
+fn unquote_box_string(e: &Expr) -> Expr {
+  match e {
+    Expr::String(s)
+      if s.len() >= 2
+        && s.starts_with('"')
+        && s.ends_with('"')
+        && !s[1..s.len() - 1].contains('"') =>
+    {
+      Expr::String(s[1..s.len() - 1].to_string())
+    }
+    other => other.clone(),
+  }
+}
+
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
 /// inherited style, followed by each remaining argument folded into Unicode
 /// sub-/superscript glyphs (which have no italic variant, so they stay
@@ -32546,7 +32574,10 @@ fn script_runs(
     .iter()
     .skip(1)
     .map(|a| {
-      let text = flatten_label_runs(&manipulate_label_runs(a, false));
+      let text = flatten_label_runs(&manipulate_label_runs(
+        &unquote_box_string(a),
+        false,
+      ));
       if mark
         && text
           .chars()

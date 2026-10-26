@@ -7456,6 +7456,16 @@ mod make_boxes {
   /// own box renderer draws the same picture. Only the wrapper is shared,
   /// so the exact inner box is pinned here rather than in tests/cli.
   #[test]
+  fn traditional_form_boxes_subsuperscript() {
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[Subsuperscript[q, 1, \"*\"]]]")
+        .unwrap(),
+      "TagBox[FormBox[SubsuperscriptBox[q, 1, \"*\"], TraditionalForm], \
+       TraditionalForm, Editable -> True]"
+    );
+  }
+
+  #[test]
   fn traditional_form_boxes_special_functions_inline() {
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[LegendreP[n, x]]]").unwrap(),

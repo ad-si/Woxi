@@ -14372,6 +14372,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn traditional_form_subsuperscript_label_in_graphics() {
+      // `Subsuperscript[q, 1, "*"]` inside a TraditionalForm Text label
+      // typesets as base, subscript and superscript, without the quotes of
+      // the string script and without the raw head.
+      let svg = export_svg(
+        r#"Graphics[Text[Row[{TraditionalForm[HoldForm[Subsuperscript[q, 1, "*"] == b/a]]}], {0, 0}]]"#,
+      );
+      assert!(
+        !svg.contains("Subsuperscript"),
+        "raw Subsuperscript leaked into SVG: {svg}"
+      );
+      assert!(
+        !svg.contains("&quot;*&quot;") && !svg.contains("\"*\""),
+        "string script drawn with quotes: {svg}"
+      );
+    }
+
+    #[test]
     fn bar_chart_horizontal_plot_label_box_syntax() {
       // Same via the horizontal (BarOrigin -> Left) generator.
       let svg = export_svg(
