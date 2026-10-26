@@ -1103,6 +1103,22 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// Inline `\!\(\*SubscriptBox[...]\)` box notation in a plot's text
+    /// (an `Epilog` `Text`, styled or not, or a `PlotLabel`) typesets to
+    /// real sub/superscripts instead of dropping the script.
+    #[test]
+    fn plot_text_with_inline_box_notation_keeps_scripts() {
+      let sub = "\"\\!\\(\\*SubscriptBox[\\(x\\), \\(1\\)]\\)\"";
+      let sup = "\"\\!\\(\\*SuperscriptBox[\\(x\\), \\(2\\)]\\)\"";
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Epilog -> {{Text[{sub}, {{0.5, 0.5}}], \
+         Text[Style[{sub}, Red], {{0.2, 0.8}}]}}, PlotLabel -> {sup}]"
+      ));
+      assert_eq!(svg.matches("baseline-shift=\"sub\"").count(), 2, "{svg}");
+      assert!(svg.contains("baseline-shift=\"super\""), "{svg}");
+      assert!(!svg.contains("SubscriptBox"), "{svg}");
+    }
+
     /// A `Dynamic[...]` item in a plot's `Epilog` list draws its current
     /// value (here a label chosen by `If`) rather than being dropped.
     #[test]
