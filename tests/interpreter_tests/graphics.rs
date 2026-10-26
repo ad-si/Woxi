@@ -11324,6 +11324,27 @@ mod plot3d {
         "subscript digits must render as such: {svg}"
       );
     }
+
+    /// A subscripted symbol applied to the plot variable, with several
+    /// subscripts, reads as typeset text — not as the raw `Subscript[…]` call.
+    #[test]
+    fn frame_label_applied_multi_subscript() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[P, B, D][t]}]"#,
+      );
+      assert!(
+        svg.contains(">PB,D(t)</text>"),
+        "applied multi-subscript label must be typeset: {svg}"
+      );
+      assert!(!svg.contains("Subscript["), "raw call leaked: {svg}");
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[x, 1, 2]}]"#,
+      );
+      assert!(
+        svg.contains(">x\u{2081},\u{2082}</text>"),
+        "several subscripts read comma-separated: {svg}"
+      );
+    }
   }
 
   mod list_plot {
