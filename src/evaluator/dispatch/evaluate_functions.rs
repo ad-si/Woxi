@@ -1090,6 +1090,14 @@ fn evaluate_function_call_ast_inner(
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
+    "DelaunayTriangulation" | "DiagramPlot"
+      if computational_geometry_active() =>
+    {
+      match name {
+        "DiagramPlot" => "ComputationalGeometry`DiagramPlot",
+        _ => "ComputationalGeometry`DelaunayTriangulation",
+      }
+    }
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
@@ -5561,6 +5569,13 @@ fn evaluate_function_call_ast_inner(
   // corners, counter-clockwise.
   if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
     return crate::functions::convex_hull::convex_hull_indices_ast(args);
+  }
+
+  if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
+    return crate::functions::delaunay::delaunay_triangulation_ast(args);
+  }
+  if name == "ComputationalGeometry`DiagramPlot" && !args.is_empty() {
+    return crate::functions::delaunay::diagram_plot_ast(args);
   }
 
   // ExpressionGraph[expr] → Graph of the expression tree
