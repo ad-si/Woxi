@@ -11529,7 +11529,7 @@ pub(crate) fn kernel_interpolating_function_to_native(
 /// machine real `x`, anything with a non-zero imaginary part is kept.
 fn demote_zero_imaginary(e: &Expr) -> Expr {
   match crate::functions::math_ast::numeric_utils::machine_complex_shape(e) {
-    Some((re, im)) if im == 0.0 => Expr::Real(re),
+    Some((re, 0.0)) => Expr::Real(re),
     _ => e.clone(),
   }
 }
