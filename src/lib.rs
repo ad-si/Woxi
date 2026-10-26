@@ -3330,6 +3330,21 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         content = inner.clone();
       }
+      // A paragraph of words joined from styled boxes (`Style[word, color,
+      // size]` through `ToString[…, StandardForm]`) is drawn with each word
+      // at its own size and color.
+      let mut text = &content;
+      while let syntax::Expr::FunctionCall { name: n, args: a } = text
+        && n == "Style"
+        && let Some(first) = a.first()
+      {
+        text = first;
+      }
+      if let syntax::Expr::String(s) = text
+        && let Some(svg) = functions::graphics::styled_inline_text_svg(s, 600.0)
+      {
+        return graphics_result(svg);
+      }
       match render_grid_if_needed(content) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,

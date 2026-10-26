@@ -2993,14 +2993,17 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && args.len() == 2)
   };
 
-  // The bounds and targets must be literal numbers. Symbolic bounds/targets
-  // ({a, b}) make wolframscript produce an Apart/Expand-normalized form that
-  // Woxi's canonicalization does not reproduce, so those stay unevaluated.
-  if !is_numeric_literal(&range[0])
-    || !is_numeric_literal(&range[1])
-    || !is_numeric_literal(ymin)
-    || !is_numeric_literal(ymax)
-  {
+  // The bounds and targets must be numbers. Symbolic bounds/targets ({a, b})
+  // make wolframscript produce an Apart/Expand-normalized form that Woxi's
+  // canonicalization does not reproduce, so those stay unevaluated. Exact
+  // numeric constants (`Log[3]`, as in a weighting of `Log[n/df]` values)
+  // are numbers too, as long as the value being rescaled is numeric as well.
+  let bounds = [&range[0], &range[1], ymin, ymax];
+  if bounds.iter().any(|b| try_eval_to_f64(b).is_none()) {
+    return unevaluated();
+  }
+  let literal_bounds = bounds.iter().all(|b| is_numeric_literal(b));
+  if !literal_bounds && try_eval_to_f64(&args[0]).is_none() {
     return unevaluated();
   }
   let xmin_n = try_eval_to_f64(&range[0]).unwrap();
@@ -3011,7 +3014,10 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // For a non-literal x (a symbol or constant like Pi), only xmin == 0 is
   // safe: with a nonzero xmin wolframscript distributes the offset
   // (10 + 5 (x - 2) -> 5 x) in a way Woxi's evaluator leaves factored.
-  if !is_numeric_literal(&args[0]) && xmin_n.abs() >= f64::EPSILON {
+  if literal_bounds
+    && !is_numeric_literal(&args[0])
+    && xmin_n.abs() >= f64::EPSILON
+  {
     return unevaluated();
   }
 
