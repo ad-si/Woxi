@@ -465,13 +465,30 @@ pub fn expr_to_wav_bytes(expr: &Expr) -> Option<Vec<u8>> {
   if let Some((samples, rate)) = sound_to_samples(expr) {
     return Some(samples_to_mono_wav(&samples, rate));
   }
-  audio_to_output(expr)
+  let direct = audio_to_output(expr)
     .filter(|a| a.mime == "audio/wav" && !a.base64.is_empty())
     .and_then(|a| {
       base64::engine::general_purpose::STANDARD
         .decode(a.base64)
         .ok()
-    })
+    });
+  if direct.is_some() {
+    return direct;
+  }
+  // Sample data stored as a `NumericArray` or as integers.
+  let audio = crate::functions::audio_ast::parse_audio(expr)?;
+  let frames = audio.channels.first()?.len();
+  let mut pcm = Vec::with_capacity(frames * audio.channels.len());
+  for i in 0..frames {
+    for ch in &audio.channels {
+      pcm.push(quantize_i16(ch[i]));
+    }
+  }
+  Some(encode_wav(
+    &pcm,
+    audio.channels.len() as u16,
+    audio.rate.round() as u32,
+  ))
 }
 
 /// Default sample rate wolframscript assumes for `Audio[{samples…}]` built

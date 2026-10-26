@@ -107,6 +107,14 @@ pub fn parse_audio(expr: &Expr) -> Option<AudioData> {
         Some(Expr::String(t)) => integer_sample_bits(t),
         _ => None,
       };
+      // A WAV file path stands for the recording it holds.
+      if let Expr::String(path) = &args[0]
+        && path.to_lowercase().ends_with(".wav")
+        && let Ok(bytes) = std::fs::read(crate::vfs::resolve(path))
+        && let Some(audio) = decode_wav(&bytes)
+      {
+        return Some(audio);
+      }
       if let Some(mut channels) = samples_from_list(&args[0]) {
         if let Some(bits) = declared {
           // The values are taken as integers, as in Wolfram.
