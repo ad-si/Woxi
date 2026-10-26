@@ -4396,6 +4396,22 @@ mod linear_model_fit {
     assert!((parts[1] - 0.23485434678900033).abs() < 1e-10);
   }
 
+  // Regression test: `NonlinearModelFit` models lacked the ANOVA table
+  // properties, so `fit["ANOVATableMeanSquares"]` failed with
+  // `FittedModel::elmntav`. Checks internal consistency of the table.
+  #[test]
+  fn nonlinear_anova_table() {
+    let result = interpret(
+      "fit = NonlinearModelFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}, {4, 7.8}, {5, 10.1}}, a x + b x^2, {a, b}, x]; \
+       ms = fit[\"ANOVATableMeanSquares\"]; ss = fit[\"ANOVATableSumsOfSquares\"]; \
+       {Length[ms], fit[\"ANOVATableDegreesOfFreedom\"], \
+        Abs[ms[[2]] - ss[[2]]/3] < 10^-10, Abs[ms[[1]] - ss[[1]]/2] < 10^-10, \
+        Abs[ss[[2]] - Total[fit[\"FitResiduals\"]^2]] < 10^-10}",
+    )
+    .unwrap();
+    assert_eq!(result, "{2, {2, 3, 5, 4}, True, True, True}");
+  }
+
   #[test]
   fn parameter_t_statistics() {
     let result = interpret(

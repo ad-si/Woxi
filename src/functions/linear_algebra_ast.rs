@@ -8700,7 +8700,7 @@ pub fn nonlinear_model_fit_ast(
     (str_expr("BestFit"), fitted_expr),
   ];
   if let Some((residuals, predicted, r_squared, adjusted_r_squared)) =
-    goodness_of_fit
+    goodness_of_fit.clone()
   {
     assoc.push((
       str_expr("FitResiduals"),
@@ -8712,6 +8712,52 @@ pub fn nonlinear_model_fit_ast(
     ));
     assoc.push((str_expr("RSquared"), Expr::Real(r_squared)));
     assoc.push((str_expr("AdjustedRSquared"), Expr::Real(adjusted_r_squared)));
+  }
+
+  // ANOVA table of a nonlinear fit: model/error/uncorrected-total/
+  // corrected-total rows (no F-test, unlike the linear case). Needs error
+  // degrees of freedom, as the parameter statistics below do.
+  if let Some((residuals, predicted, ..)) = &goodness_of_fit {
+    let (n, m) = (residuals.len(), rules.len());
+    if n > m {
+      let y: Vec<f64> = residuals
+        .iter()
+        .zip(predicted)
+        .map(|(r, p)| r + p)
+        .collect();
+      let y_mean = y.iter().sum::<f64>() / n as f64;
+      let ss_error: f64 = residuals.iter().map(|r| r * r).sum();
+      let ss_uncorrected: f64 = y.iter().map(|v| v * v).sum();
+      let ss_corrected: f64 = y.iter().map(|v| (v - y_mean).powi(2)).sum();
+      let ss_model = ss_uncorrected - ss_error;
+      let (ms_model, ms_error) =
+        (ss_model / m as f64, ss_error / (n - m) as f64);
+      let int = |v: usize| Expr::Integer(v as i128);
+      let reals =
+        |vs: &[f64]| Expr::List(vs.iter().map(|v| Expr::Real(*v)).collect());
+      let row = |items: Vec<Expr>| Expr::List(items.into());
+      assoc.push((
+        str_expr("ANOVATableEntries"),
+        row(vec![
+          row(vec![int(m), Expr::Real(ss_model), Expr::Real(ms_model)]),
+          row(vec![int(n - m), Expr::Real(ss_error), Expr::Real(ms_error)]),
+          row(vec![int(n), Expr::Real(ss_uncorrected)]),
+          row(vec![int(n - 1), Expr::Real(ss_corrected)]),
+        ]),
+      ));
+      assoc.push((
+        str_expr("ANOVATableDegreesOfFreedom"),
+        row(vec![int(m), int(n - m), int(n), int(n - 1)]),
+      ));
+      assoc.push((
+        str_expr("ANOVATableSumsOfSquares"),
+        reals(&[ss_model, ss_error, ss_uncorrected, ss_corrected]),
+      ));
+      assoc.push((
+        str_expr("ANOVATableMeanSquares"),
+        reals(&[ms_model, ms_error]),
+      ));
+    }
   }
 
   if let Some((errors, t_stats, p_values, values)) =
