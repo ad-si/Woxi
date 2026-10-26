@@ -17581,6 +17581,24 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   gs
 }
 
+/// Whether a string's inline box notation stacks material vertically
+/// (a fraction, root, or over/underscript). Such a string cannot be set as
+/// a line of text with sub/superscript runs, so it goes through the box
+/// layout; scripts and other inline-only boxes keep the text path.
+fn has_stacked_inline_box(s: &str) -> bool {
+  inline_box_string_to_box_expr(s).is_some()
+    && [
+      "FractionBox",
+      "SqrtBox",
+      "RadicalBox",
+      "OverscriptBox",
+      "UnderscriptBox",
+      "UnderoverscriptBox",
+    ]
+    .iter()
+    .any(|head| s.contains(head))
+}
+
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
 /// string with inline `\!\(\*…\)` linear syntax (`note == "A\!\(\*…\)"`),
 /// typeset through the box layout at the style's size, so the typeset
@@ -17603,6 +17621,20 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
       }
       _ => break,
     }
+  }
+  // A plain string holding inline `\!\(\*…\)` box notation is typeset the
+  // same way: `"\!\(\*FractionBox[\(a\), \(b\)]\)"` is a fraction, not its
+  // linear `a/b` reading, which loses the grouping of nested fractions.
+  if let Expr::String(s) = content {
+    if !has_stacked_inline_box(s) {
+      return None;
+    }
+    let boxes = inline_box_string_to_box_expr(s)?;
+    let layout = layout_box(&boxes, size);
+    if layout.width <= 0.0 || layout.height <= 0.0 {
+      return None;
+    }
+    return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
     return None;
@@ -18264,6 +18296,13 @@ fn grid_svg_styled_internal(
     for cell in row.iter_mut() {
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
+      // A string with inline box notation is typeset at the grid's size.
+      if let Expr::String(text) = &*cell
+        && let Some(size) = default_style.font_size
+        && has_stacked_inline_box(text)
+      {
+        *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
+      }
     }
   }
 
