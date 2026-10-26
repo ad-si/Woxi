@@ -35772,6 +35772,28 @@ mod input_form_reciprocal_sqrt {
 mod plot_body_resolution {
   use super::*;
 
+  // A compound variable (`Subscript[w, f]`, `x[1]`) is localized like a
+  // symbol.
+  #[test]
+  fn compound_iterator_variable() {
+    assert_eq!(
+      interpret(
+        "{Head[Plot[Subscript[w, f]^2, {Subscript[w, f], 0, 1}]], \
+         Head[Plot3D[x[1] y, {x[1], 0, 1}, {y, 0, 1}]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics3D}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[Plot[x[1]^2, {x[1], 0, 2}], Line[p_] :> Max[p[[All, 2]]], \
+         Infinity] // Max // Round"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
   fn assert_has_curve(expr: &str) {
     clear_state();
     let svg = export_svg(expr);
