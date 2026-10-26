@@ -5113,6 +5113,64 @@ mod solve {
     );
   }
 
+  // Roots nested in roots are eliminated through norms, outermost first.
+  #[test]
+  fn nested_radical_equations() {
+    assert_eq!(
+      interpret("Solve[Sqrt[1 + Sqrt[x]] + Sqrt[x] == 3, x]").unwrap(),
+      "{{x -> (33 - 7*Sqrt[17])/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[Sqrt[1 - Sqrt[x]] + Sqrt[1 + Sqrt[x]] == 3/2, x]")
+        .unwrap(),
+      "{{x -> 63/64}}"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[Sqrt[x^2 + (Sqrt[1 - x^2] - 1)^2] + \
+         Sqrt[x^2 + (Sqrt[1 - x^2] + 1)^2] == 3, x]"
+      )
+      .unwrap(),
+      "{{x -> -5/4}, {x -> 5/4}}"
+    );
+  }
+
+  // Two ellipses through their foci: the elimination substitutes one
+  // radical solution into the other equation, without a nongen warning.
+  #[test]
+  fn radical_system() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Solve[{Sqrt[(x - 1)^2 + y^2] + Sqrt[(x + 1)^2 + y^2] == 3, \
+         Sqrt[x^2 + (y - 1)^2] + Sqrt[x^2 + (y + 1)^2] == 3}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> (-3*Sqrt[5/14])/2, y -> (-3*Sqrt[5/14])/2}, \
+{x -> (3*Sqrt[5/14])/2, y -> (-3*Sqrt[5/14])/2}, \
+{x -> (-3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}, \
+{x -> (3*Sqrt[5/14])/2, y -> (3*Sqrt[5/14])/2}}"
+    );
+    assert!(woxi::get_captured_warnings().is_empty());
+  }
+
+  // Machine radicals the exact elimination cannot handle are searched
+  // numerically.
+  #[test]
+  fn nsolve_radical_system_with_machine_numbers() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NSolve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + \
+         Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == \
+         Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, \
+         {x, y}]; Round[{x, y} /. s, 0.001]"
+      )
+      .unwrap(),
+      "{{0.365, -1.6}, {-5.557, -5.59}}"
+    );
+  }
+
   #[test]
   fn nonvanishing_exponential_factors() {
     assert_eq!(interpret("Solve[E^x == 0, x]").unwrap(), "{}");
