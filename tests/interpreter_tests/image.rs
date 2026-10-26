@@ -9319,5 +9319,14 @@ mod morphology_3d {
       "Image[NumericArray[{{0.5, 0.25}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, \
        Interleaving -> None]"
     );
+    assert_eq!(
+      interpret(
+        "StringEndsQ[ToString[InputForm[ExampleData[{\"TestImage\", \"Moon\"}]]], \
+         \"\\\"UnsignedInteger8\\\"], \\\"Byte\\\", ColorSpace -> \\\"Grayscale\\\", \
+         Interleaving -> None]\"]"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 }
