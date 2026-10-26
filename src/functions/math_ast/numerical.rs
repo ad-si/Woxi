@@ -7356,7 +7356,7 @@ fn bandstop_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
 /// I]] for residual imaginary parts) on success and `None` for shapes that
 /// don't fit — letting the caller fall back to the generic recursive `N`.
 fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
-  use crate::functions::polynomial_ast::extract_poly_coeffs;
+  use crate::functions::polynomial_ast::extract_poly_coeffs_big as extract_poly_coeffs;
   // poly_arg should be a Function whose body is a polynomial in #1.
   let poly_body = match poly_arg {
     Expr::Function { body } => body.as_ref(),
@@ -7375,7 +7375,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   if coeffs_i.len() < 2 {
     return None;
   }
-  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
   let roots = aberth_complex_roots(&coeffs_f);
   if roots.is_empty() {
     return None;
@@ -7414,8 +7414,8 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
 fn root_coeffs_and_seed(
   poly_arg: &Expr,
   k_arg: &Expr,
-) -> Option<(Vec<i128>, bool, f64, f64)> {
-  use crate::functions::polynomial_ast::extract_poly_coeffs;
+) -> Option<(Vec<num_bigint::BigInt>, bool, f64, f64)> {
+  use crate::functions::polynomial_ast::extract_poly_coeffs_big as extract_poly_coeffs;
   let k = expr_to_i128(k_arg)?;
   if k < 1 {
     return None;
@@ -7447,7 +7447,7 @@ fn root_coeffs_and_seed(
   if coeffs_i.len() < 2 {
     return None;
   }
-  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
   let mut roots = aberth_complex_roots(&coeffs_f);
   if roots.is_empty() || (k as usize) > roots.len() {
     return None;
@@ -7469,6 +7469,38 @@ fn root_coeffs_and_seed(
   });
   let (re, im) = roots[(k - 1) as usize];
   Some((coeffs_i, is_real(re, im), re, im))
+}
+
+/// Integer polynomial coefficients as machine numbers; `None` when one
+/// overflows a double.
+fn bigint_coeffs_to_f64(coeffs: &[num_bigint::BigInt]) -> Option<Vec<f64>> {
+  use num_traits::ToPrimitive;
+  coeffs
+    .iter()
+    .map(|c| c.to_f64().filter(|v| v.is_finite()))
+    .collect()
+}
+
+/// An integer coefficient as a `bits`-precision BigFloat.
+fn bigint_to_bigfloat(
+  c: &num_bigint::BigInt,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> astro_float::BigFloat {
+  use num_traits::ToPrimitive;
+  match c.to_i128() {
+    Some(small) => astro_float::BigFloat::from_i128(small, bits),
+    None => match astro_float::Consts::new() {
+      Ok(mut cc) => astro_float::BigFloat::parse(
+        &c.to_string(),
+        astro_float::Radix::Dec,
+        bits,
+        rm,
+        &mut cc,
+      ),
+      Err(_) => astro_float::BigFloat::nan(None),
+    },
+  }
 }
 
 /// `N[Root[poly &, k]]`: the k-th root of the polynomial `poly`, ordered as
@@ -7521,7 +7553,7 @@ pub(crate) fn root_n_eval_arbitrary(
   let wbits = bits + 64;
   let coeffs_bf: Vec<BigFloat> = coeffs_i
     .iter()
-    .map(|&c| BigFloat::from_i128(c, wbits))
+    .map(|c| bigint_to_bigfloat(c, wbits, rm))
     .collect();
   let n = coeffs_bf.len() - 1;
   let eval = |x: &BigFloat| -> (BigFloat, BigFloat) {
@@ -7566,7 +7598,7 @@ pub(crate) fn root_n_eval_arbitrary_complex(
   let wbits = bits + 64;
   let coeffs: Vec<BigFloat> = coeffs_i
     .iter()
-    .map(|&c| BigFloat::from_i128(c, wbits))
+    .map(|c| bigint_to_bigfloat(c, wbits, rm))
     .collect();
   let n = coeffs.len() - 1;
   let zero = || BigFloat::from_i32(0, wbits);

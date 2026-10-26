@@ -958,7 +958,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // `C` is the default generated-parameter symbol of DSolve, RSolve,
     // Reduce, Solve, … (`C[1]`, `C[2]`, …), so it is a protected built-in
     // even though it is a bare single letter.
-    "C" | "InverseFunction" => {
+    // `Root[f, k, 0]`: N evaluates the root itself, never its index.
+    "C" | "InverseFunction" | "Root" => {
       A::NHoldAll | A::Protected | A::ReadProtected
     }
     "PrintTemporary" => A::Protected | A::ReadProtected,

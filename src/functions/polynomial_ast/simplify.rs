@@ -9919,11 +9919,20 @@ fn poly_divide_single_var(num: &Expr, den: &Expr, var: &str) -> Option<Expr> {
 }
 
 /// Extract integer polynomial coefficients from expr, indexed by power.
-/// coeffs[i] = coefficient of var^i
+/// coeffs[i] = coefficient of var^i. `None` when a coefficient does not fit
+/// an `i128` (see [`extract_poly_coeffs_big`]).
 pub fn extract_poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<i128>> {
+  extract_poly_coeffs_big(expr, var)?
+    .iter()
+    .map(num_traits::ToPrimitive::to_i128)
+    .collect()
+}
+
+/// [`extract_poly_coeffs`] with arbitrary-size integer coefficients.
+pub fn extract_poly_coeffs_big(expr: &Expr, var: &str) -> Option<Vec<BigInt>> {
   let terms = collect_additive_terms(expr);
   let mut max_pow: i128 = 0;
-  let mut term_data: Vec<(i128, i128)> = Vec::new(); // (power, integer_coeff)
+  let mut term_data: Vec<(i128, BigInt)> = Vec::new(); // (power, integer_coeff)
 
   for term in &terms {
     let (power, coeff) = term_var_power_and_coeff(term, var);
@@ -9931,24 +9940,23 @@ pub fn extract_poly_coeffs(expr: &Expr, var: &str) -> Option<Vec<i128>> {
       return None; // non-polynomial term
     }
     let int_coeff = match &simplify(coeff) {
-      Expr::Integer(n) => *n,
+      Expr::Integer(n) => BigInt::from(*n),
+      Expr::BigInteger(n) => n.clone(),
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,
-      } => {
-        if let Expr::Integer(n) = operand.as_ref() {
-          -n
-        } else {
-          return None;
-        }
-      }
+      } => match operand.as_ref() {
+        Expr::Integer(n) => -BigInt::from(*n),
+        Expr::BigInteger(n) => -n.clone(),
+        _ => return None,
+      },
       _ => return None, // non-integer coefficient
     };
     max_pow = max_pow.max(power);
     term_data.push((power, int_coeff));
   }
 
-  let mut coeffs = vec![0i128; (max_pow + 1) as usize];
+  let mut coeffs = vec![BigInt::from(0); (max_pow + 1) as usize];
   for (power, c) in term_data {
     coeffs[power as usize] += c;
   }
