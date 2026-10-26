@@ -7575,7 +7575,7 @@ fn minimize_nelder_mead(
     }
     simplex.sort_by(|a, b| a.1.total_cmp(&b.1));
     if simplex[0].1 < best_val {
-      best = simplex[0].0.clone();
+      best.clone_from(&simplex[0].0);
       best_val = simplex[0].1;
     } else {
       break;
