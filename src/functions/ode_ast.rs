@@ -573,10 +573,7 @@ fn expand_defined_derivatives(expr: &Expr) -> Expr {
       && expr_to_string(&value) != expr_to_string(&applied)
       && let Ok(d) = crate::evaluator::evaluate_function_call_ast(
         "D",
-        &[
-          value,
-          Expr::List(vec![var.clone(), order.clone()].into()),
-        ],
+        &[value, Expr::List(vec![var.clone(), order.clone()].into())],
       )
     {
       return d;
