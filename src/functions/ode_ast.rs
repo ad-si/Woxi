@@ -666,6 +666,85 @@ impl Drop for StepHintScope {
   }
 }
 
+/// The unknowns of a PDE `NDSolve` written as applied functions of the two
+/// domain variables (`u[x, t]`, or a list of them) as `(name, arguments)`.
+/// `None` if any unknown is a bare symbol or applied to anything else.
+fn pde_applied_unknowns(
+  spec: &Expr,
+  dom_a: &Expr,
+  dom_b: &Expr,
+) -> Option<Vec<(String, Vec<Expr>)>> {
+  let var_of = |d: &Expr| match d {
+    Expr::List(items) => items.first().map(expr_to_string),
+    _ => None,
+  };
+  let (va, vb) = (var_of(dom_a)?, var_of(dom_b)?);
+  let single = std::slice::from_ref(spec);
+  let items: &[Expr] = match spec {
+    Expr::List(items) => items,
+    _ => single,
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::FunctionCall { name, args } = item else {
+      return None;
+    };
+    let vars: Vec<String> = args.iter().map(expr_to_string).collect();
+    let is_pair = vars.len() == 2
+      && ((vars[0] == va && vars[1] == vb) || (vars[0] == vb && vars[1] == va));
+    if !is_pair {
+      return None;
+    }
+    out.push((name.clone(), args.to_vec()));
+  }
+  (!out.is_empty()).then_some(out)
+}
+
+/// Rewrite `{{u -> f}}` into `{{u[x, t] -> f[x, t]}}` for the unknowns
+/// asked for in applied form.
+fn apply_pde_unknown_rules(
+  solved: &Expr,
+  applied: &[(String, Vec<Expr>)],
+) -> Expr {
+  let Expr::List(solutions) = solved else {
+    return solved.clone();
+  };
+  let mut out = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return solved.clone();
+    };
+    let mut new_rules = Vec::with_capacity(rules.len());
+    for rule in rules {
+      let Expr::Rule {
+        pattern,
+        replacement,
+      } = rule
+      else {
+        return solved.clone();
+      };
+      let Expr::Identifier(name) = pattern.as_ref() else {
+        return solved.clone();
+      };
+      let Some((_, call_args)) = applied.iter().find(|(n, _)| n == name) else {
+        return solved.clone();
+      };
+      new_rules.push(Expr::Rule {
+        pattern: Box::new(Expr::FunctionCall {
+          name: name.clone(),
+          args: call_args.clone().into(),
+        }),
+        replacement: Box::new(Expr::CurriedCall {
+          func: replacement.clone(),
+          args: call_args.clone(),
+        }),
+      });
+    }
+    out.push(Expr::List(new_rules.into()));
+  }
+  Expr::List(out.into())
+}
+
 fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Split trailing option rules (`Method -> …`, `MaxSteps -> …`, …) from
   // the positional arguments: three for an ODE/DAE system in one
@@ -682,6 +761,22 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     flatten_eq_list(&args[0], &mut flat_eqs);
     let mut args = args.to_vec();
     args[0] = Expr::List(flat_eqs.into());
+    // Unknowns written with their arguments (`u[x, t]`) are solved as the
+    // bare functions, then the result rules are keyed by the same forms.
+    if let Some(applied) = pde_applied_unknowns(&args[1], &args[2], &args[3]) {
+      let mut bare = args.clone();
+      bare[1] = match &args[1] {
+        Expr::List(_) => Expr::List(
+          applied
+            .iter()
+            .map(|(n, _)| Expr::Identifier(n.clone()))
+            .collect(),
+        ),
+        _ => Expr::Identifier(applied[0].0.clone()),
+      };
+      let solved = ndsolve_ast_inner(&bare)?;
+      return Ok(apply_pde_unknown_rules(&solved, &applied));
+    }
     let args = &args[..];
     // Unknowns written as compound expressions (`Subscript[c, A]`) are keyed
     // by a fresh symbol while integrating, then restored in the result —
