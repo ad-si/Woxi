@@ -431,19 +431,19 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
       s.line((0.9, 0.0), (0.9, 0.35), 0.004, rgb8(50, 50, 50));
       s.line((0.9, 0.35), (1.0, 0.35), 0.004, rgb8(50, 50, 50));
       s.line((0.8, 1.0), (0.8, 0.8), 0.004, rgb8(50, 50, 50));
-      aircraft(&mut s, 0.45, 0.65, 0.25, -2.4, rgb8(200, 200, 200), 0.55);
+      aircraft(&mut s, 0.45, 0.6, 0.25, 0.0, rgb8(200, 200, 200), 0.55);
     }
     "Airplane2" => {
       s.ground(0.0, 1.0, rgb8(220, 220, 215), 0.05, false);
       for side in [-1.0, 1.0] {
         s.line(
-          (0.5 + side * 0.22, 0.35),
-          (0.5 + side * 0.1, 0.75),
+          (0.5 + side * 0.22, 0.65),
+          (0.5 + side * 0.1, 0.25),
           0.02,
           rgb8(60, 60, 60),
         );
       }
-      aircraft(&mut s, 0.52, 0.52, 0.18, -2.2, rgb8(90, 90, 90), 0.5);
+      aircraft(&mut s, 0.52, 0.48, 0.18, 2.2, rgb8(90, 90, 90), 0.5);
     }
     "F16" => {
       s.sky(Sky::Clouds, 0.3);
@@ -476,7 +476,15 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
     }
     "U2" => {
       s.ground(0.0, 1.0, rgb8(30, 30, 30), 0.02, false);
-      aircraft(&mut s, 0.42, 0.45, 0.35, 2.1, rgb8(130, 130, 130), 0.9);
+      aircraft(
+        &mut s,
+        0.45,
+        0.55,
+        0.35,
+        -PI / 4.0,
+        rgb8(130, 130, 130),
+        0.9,
+      );
     }
     "Boat" => {
       s.sky(Sky::Overcast, 0.4);
@@ -908,18 +916,6 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
           &Paint::Solid([0.62; 3]),
         );
       }
-      // A wrinkle ridge: a soft bright band with a dark side.
-      let ridge = bezier(
-        (wf * 0.45, 0.0),
-        (wf * 0.35, hf * 0.35),
-        (wf * 0.6, hf * 0.6),
-        (wf * 0.5, hf),
-        60,
-      );
-      let shadow: Vec<(f64, f64)> =
-        ridge.iter().map(|&(x, y)| (x + wf * 0.025, y)).collect();
-      s.c.polyline(&shadow, wf * 0.04, &Paint::Solid([0.45; 3]));
-      s.c.polyline(&ridge, wf * 0.05, &Paint::Solid([0.68; 3]));
       s.c.blur(2);
     }
     "RadcliffeCamera" => {

@@ -1214,9 +1214,10 @@ fn pattern(name: &str, w: usize, h: usize, rng: &mut Rng) -> Option<Field> {
       while y < hf + step {
         let mut x = if j % 2 == 0 { step / 2.0 } else { step * 1.5 };
         while x < wf + step {
-          c.ellipse(x, y - 5.0 * s, 3.0 * s, 7.0 * s, 0.0, &ink);
-          c.ellipse(x - 7.0 * s, y - 1.0 * s, 3.0 * s, 6.0 * s, 0.7, &ink);
-          c.ellipse(x + 7.0 * s, y - 1.0 * s, 3.0 * s, 6.0 * s, -0.7, &ink);
+          // Three petals hanging down: the middle one longest.
+          c.ellipse(x, y + 5.0 * s, 3.0 * s, 7.0 * s, 0.0, &ink);
+          c.ellipse(x - 7.0 * s, y + 1.0 * s, 3.0 * s, 6.0 * s, -0.7, &ink);
+          c.ellipse(x + 7.0 * s, y + 1.0 * s, 3.0 * s, 6.0 * s, 0.7, &ink);
           x += step * 2.0;
         }
         y += step * 0.75;
@@ -1528,12 +1529,13 @@ fn pattern(name: &str, w: usize, h: usize, rng: &mut Rng) -> Option<Field> {
           (hf * 0.15, hf * 0.85)
         };
         c.line((x, y0), (x, y1), 2.5 * s, &ink);
+        // Ears at the bottom of the short stalks, grains pointing down.
         if k % 2 == 1 {
-          let mut y = y0 + 10.0 * s;
-          while y < y0 + (y1 - y0) * 0.6 {
-            leaf(&mut c, x, y, 16.0 * s, -PI / 2.0 - 0.6);
-            leaf(&mut c, x, y, 16.0 * s, -PI / 2.0 + 0.6);
-            y += 18.0 * s;
+          let mut y = y1 - 10.0 * s;
+          while y > y1 - (y1 - y0) * 0.6 {
+            leaf(&mut c, x, y, 16.0 * s, PI / 2.0 - 0.6);
+            leaf(&mut c, x, y, 16.0 * s, PI / 2.0 + 0.6);
+            y -= 18.0 * s;
           }
         }
       }
@@ -1588,23 +1590,30 @@ fn painted(
       }
     }
     "CatFur" => {
+      // Tabby stripes running top to bottom, fanning out slightly from the
+      // top centre; hairs follow the same direction.
+      let (cx, cy) = (wf / 2.0, -hf * 0.8);
+      let angle_at = |x: f64, y: f64| (x - cx).atan2(y - cy);
       c.fill(&Paint::Fn(&|x, y| {
-        let stripe = ((x * 0.6 + y) / (40.0 * s)
+        let stripe = (angle_at(x, y) * 30.0
           + noise.pfbm(x / 60.0, y / 60.0, 3, 0.5) * 2.0)
           .sin();
         let g = 0.5 + 0.2 * stripe;
         [g, g * 0.9, g * 0.75]
       }));
-      strokes(
-        &mut c,
-        rng,
-        (6000.0 * s * s) as usize,
-        -0.9,
-        0.3,
-        (6.0 * s, 16.0 * s),
-        1.0,
-        (0.1, 0.9),
-      );
+      for _ in 0..(6000.0 * s * s) as usize {
+        let (x, y) = (rng.range(0.0, wf), rng.range(0.0, hf));
+        let a = PI / 2.0 - angle_at(x, y) + rng.range(-0.15, 0.15);
+        let l = rng.range(6.0, 16.0) * s;
+        let g = rng.range(0.1, 0.9);
+        let (dx, dy) = (a.cos() * l / 2.0, a.sin() * l / 2.0);
+        c.line(
+          (x - dx, y - dy),
+          (x + dx, y + dy),
+          1.0,
+          &Paint::Solid([g; 3]),
+        );
+      }
     }
     "CheetahFur" => {
       c.fill(&Paint::Fn(&|x, y| {
@@ -1646,11 +1655,9 @@ fn painted(
         1.0,
       );
       c.fill(&Paint::Fn(&|x, y| {
-        let (d1, d2, k) = cells.query(
-          x + noise.perlin(x / 20.0, y / 20.0) * 8.0,
-          y + noise2.perlin(x / 20.0, y / 20.0) * 8.0,
-        );
-        if d2 - d1 < 9.0 * s {
+        // Plain Voronoi cells: straight light seams of even width.
+        let (d1, d2, k) = cells.query(x, y);
+        if d2 - d1 < 9.0 * s + noise2.perlin(x / 15.0, y / 15.0) * 2.0 * s {
           rgb8(220, 210, 195)
         } else {
           shade(
@@ -1689,6 +1696,8 @@ fn painted(
         let (fu, fv) = (u - i - 0.5, v - j - 0.5);
         let horizontal = (i + j) as i64 % 2 == 0;
         let (a, b) = if horizontal { (fu, fv) } else { (fv, fu) };
+        let in_lozenge =
+          |a: f64, b: f64| (a / 0.42).powi(2) + (b / 0.13).powi(2) < 1.0;
         let lozenge = if name == "Metal4" {
           // Groups of slender parallel bars.
           (-0.3..0.3).contains(&b)
@@ -1698,6 +1707,22 @@ fn painted(
           (a / 0.42).powi(2) + (b / 0.13).powi(2) < 1.0
         };
         let grime = noise.pfbm(x / 30.0, y / 30.0, 4, 0.6) * 0.3;
+        if name == "Metal2" {
+          // Rusted plate: the lozenges a deeper rust, each casting a shadow
+          // below it.
+          let (su, sv) = ((x + y - 5.0 * s) / cell, (x - y + 5.0 * s) / cell);
+          let (si, sj) = (su.floor(), sv.floor());
+          let (sfu, sfv) = (su - si - 0.5, sv - sj - 0.5);
+          let shadow_h = (si + sj) as i64 % 2 == 0;
+          let (sa, sb) = if shadow_h { (sfu, sfv) } else { (sfv, sfu) };
+          return if lozenge {
+            shade(rgb8(150, 85, 50), 1.15 + grime - 0.3 * b)
+          } else if in_lozenge(sa, sb) {
+            shade(base, 0.5 + grime)
+          } else {
+            shade(base, 0.9 + grime)
+          };
+        }
         if lozenge {
           shade(base, 1.35 + grime - 0.6 * b)
         } else {
