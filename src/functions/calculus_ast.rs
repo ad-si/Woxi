@@ -16669,7 +16669,23 @@ fn expr_to_bound(expr: &Expr) -> Option<f64> {
       return Some(f64::NEG_INFINITY);
     }
   }
-  crate::functions::math_ast::try_eval_to_f64(expr)
+  if let Some(v) = crate::functions::math_ast::try_eval_to_f64(expr) {
+    return Some(v);
+  }
+  // Limits such as `Re[EllipticTheta[...]]` stay symbolic until `N`
+  // evaluates them.
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let numeric = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![expr.clone()].into(),
+  });
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  match numeric {
+    Ok(Expr::Real(f)) if f.is_finite() => Some(f),
+    _ => None,
+  }
 }
 
 /// Exactly integrates `Boole[cond]` (as a function of `var_name`, holding

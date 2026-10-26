@@ -22935,3 +22935,23 @@ mod integrate_interpolating_function {
     );
   }
 }
+
+mod nintegrate_limits_numeric_after_n {
+  use super::*;
+
+  #[test]
+  fn limit_that_is_numeric_only_after_n() {
+    assert_eq!(
+      interpret("NIntegrate[x^2, {x, 0, Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]}] == NIntegrate[x^2, {x, 0, N[Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]]}]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn nested_limit_that_is_numeric_only_after_n() {
+    assert_eq!(
+      interpret("Abs[NIntegrate[x*y, {x, 0, Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]}, {y, 0, 1}] - N[Re[EllipticTheta[4, I/4*Pi, E^(-5*Pi/2)]]^2/4]] < 10^-6").unwrap(),
+      "True"
+    );
+  }
+}
