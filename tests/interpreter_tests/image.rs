@@ -3279,6 +3279,50 @@ mod image_processing {
     );
   }
 
+  // ImageTransformation samples the input at the point the function maps
+  // each output position to; positions outside it take the padding value.
+  #[test]
+  fn image_transformation_flip_and_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTransformation[Image[{{0, 0.5, 1}, {1, 0.5, 0}, {0, 1, 0}}], {#[[1]], 3 - #[[2]]} &, DataRange -> {{0, 3}, {0, 3}}]]"
+      )
+      .unwrap(),
+      "{{0., 1., 0.}, {1., 0.5, 0.}, {0., 0.5, 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTransformation[Image[{{1, 1}, {1, 1}}], {#[[1]] + 1, #[[2]]} &, DataRange -> {{0, 2}, {0, 2}}]]"
+      )
+      .unwrap(),
+      "{{1., 0.}, {1., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTransformation[Image[{{0, 1}, {0, 1}}], {#[[1]] + 1, #[[2]]} &, DataRange -> {{0, 2}, {0, 2}}, Padding -> \"Fixed\"]]"
+      )
+      .unwrap(),
+      "{{1., 1.}, {1., 1.}}"
+    );
+  }
+
+  #[test]
+  fn image_transformation_size_and_non_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageTransformation[Image[{{0, 1}, {1, 0}}], # &, {5, 4}]]"
+      )
+      .unwrap(),
+      "{5, 4}"
+    );
+    assert_eq!(
+      interpret("ImageTransformation[x, f]").unwrap(),
+      "ImageTransformation[x, f]"
+    );
+  }
+
   // HighlightImage draws marks over the image, in pixel coordinates, and
   // returns an image of the same size.
   #[test]

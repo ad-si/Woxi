@@ -1827,6 +1827,55 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A conformal-map explorer: a textured square translated by a locator,
+  /// shown beside its warp under a map chosen from a popup of pure
+  /// functions labelled with `TraditionalForm`.
+  #[test]
+  fn conformal_warp_explorer_renders() {
+    let code = r#"Manipulate[
+      With[{g = Graphics[Translate[{Texture[ImageData[img]],
+            Polygon[{{-2, -2}, {2, -2}, {2, 2}, {-2, 2}},
+              VertexTextureCoordinates -> {{0, 0}, {1, 0}, {1, 1}, {0, 1}}]},
+            pt], PlotRange -> {{-4, 4}, {-4, 4}},
+          GridLines -> (Table[i, {i, Ceiling[#1], Floor[#2], 0.5}] &),
+          Prolog -> {Opacity[0.2], LightGray, Scaled /@ Rectangle[{0, 0}, {1, 1}]},
+          ImageSize -> 200]},
+        Row[{g, Image[ImageTransformation[Image[g],
+          {Re@f[#[[1]] + I #[[2]]], Im@f[#[[1]] + I #[[2]]]} &,
+          DataRange -> {{-Pi, Pi}, {-Pi, Pi}}, PlotRange -> {{-Pi, Pi}, {-Pi, Pi}}],
+          ImageSize -> 200]}]],
+      {{img, Image[{{0, 1, 0, 1}, {1, 0, 1, 0}, {0, 1, 0, 1}, {1, 0, 1, 0}}]}, ControlType -> None},
+      Spacer[10],
+      Control[{{f, 1/# &}, (#[[1]] -> TraditionalForm[#[[2]]] &) /@
+        {(#/I &) -> I z, (1/# &) -> z^-1, (#^2 &) -> Sqrt[z],
+         (Exp[#] &) -> Log[z], (Sin[#] &) -> ArcSin[z]}, ControlType -> PopupMenu}],
+      {{pt, {0, 0}}, {-Pi, -Pi}, {Pi, Pi}, ControlType -> Locator},
+      TrackedSymbols :> {img, pt, f}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Slider2D { .. })),
+      "the point locator must be exposed as a 2D pad"
+    );
+    assert!(
+      state
+        .controls
+        .iter()
+        .any(|c| matches!(c, ControlState::Discrete { .. })),
+      "the function popup must be exposed"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "warp view must render, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// A contour-line explorer: a photo picked from a setter bar of images,
   /// contour levels set by a custom `Dynamic[slider[##]] &` control built on
   /// a `LocatorPane`, a color-scheme popup that is disabled while

@@ -945,6 +945,9 @@ pub fn dispatch_image_functions(
         crate::functions::image_ast::image_forward_transformation_ast(args),
       );
     }
+    "ImageTransformation" if args.len() >= 2 => {
+      return Some(crate::functions::image_ast::image_transformation_ast(args));
+    }
     "HighlightImage" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::highlight_image_ast(
         args,
