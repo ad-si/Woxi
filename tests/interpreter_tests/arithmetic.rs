@@ -2090,6 +2090,16 @@ mod big_integer {
     );
   }
 
+  // A factorial of a call multiplies the factor that follows it.
+  #[test]
+  fn factorial_of_call_then_implicit_times() {
+    assert_eq!(interpret("Length[{a, b, c}]!Total[{1, 2}]").unwrap(), "18");
+    assert_eq!(
+      interpret("ToString[Hold[f[x]! y], InputForm]").unwrap(),
+      "Hold[f[x]!*y]"
+    );
+  }
+
   #[test]
   fn factorial_implicit_times_two_integers() {
     assert_eq!(interpret("5! 3!").unwrap(), "720");

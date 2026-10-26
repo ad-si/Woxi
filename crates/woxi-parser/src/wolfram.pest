@@ -758,8 +758,8 @@ FunctionCallExtended = {
     (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BracketArgs+
     ~ (DerivativePrime ~ BracketArgs*)?
     ~ (
-        (PartIndexSuffix ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix)?
-      | ImplicitPowerSuffix? ~ FunctionCallImplicitSuffix
+        (PartIndexSuffix ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FactorialSuffix? ~ FunctionCallImplicitSuffix)?
+      | ImplicitPowerSuffix? ~ FactorialSuffix? ~ FunctionCallImplicitSuffix
     )?
     // `x[a]++` / `x[a]--` on an indexed variable. Matched here, not as a
     // separate Term, so the call is still parsed only once.
