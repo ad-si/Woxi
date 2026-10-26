@@ -23149,3 +23149,32 @@ mod ndsolve_stiff_system {
     );
   }
 }
+
+mod differentiate_wrt_derivative {
+  use super::*;
+
+  // Differentiating with respect to a velocity `D[q[t], t]` must find the
+  // `q'[t]` written literally in the expression (Euler-Lagrange equations).
+  #[test]
+  fn velocity_variable_matches_literal_derivative() {
+    assert_eq!(interpret("D[a'[t] a[t], D[a[t], t]]").unwrap(), "a[t]");
+    assert_eq!(interpret("D[a[t] a'[t], D[a[t], t]]").unwrap(), "a[t]");
+    assert_eq!(
+      interpret("D[m a'[t]^2/2 + a[t]^2, a'[t]]").unwrap(),
+      "m*Derivative[1][a][t]"
+    );
+  }
+
+  // A coupled spring-pendulum Lagrangian with radial and angular unknowns
+  // solves numerically from its Euler-Lagrange equations.
+  #[test]
+  fn euler_lagrange_system_solves_with_ndsolve() {
+    assert_eq!(
+      interpret(
+        "lag = m/2 (D[l[t] Sin[a[t]], t]^2 + D[-l[t] Cos[a[t]], t]^2) + m g l[t] Cos[a[t]] - k/2 (1 - l[t])^2; eqs = Table[D[D[lag, D[q[t], t]], t] - D[lag, q[t]], {q, {l, a}}] /. {m -> 1, g -> 1, k -> 2}; sol = NDSolve[Join[Thread[eqs == 0], {a[0] == 1, a'[0] == 0, l[0] == 1, l'[0] == 0}], {a, l}, {t, 0, 2}]; Head[a /. First[sol]]"
+      )
+      .unwrap(),
+      "InterpolatingFunction"
+    );
+  }
+}
