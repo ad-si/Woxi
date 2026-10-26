@@ -41300,3 +41300,19 @@ mod plot_non_numeric_limit {
     assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
   }
 }
+
+mod list_plot_scalar_data_range {
+  use super::*;
+
+  #[test]
+  fn bare_number_spans_zero_to_that_value() {
+    assert_eq!(
+      interpret(
+        "ExportString[ListPlot[{1, 2, 3}, DataRange -> 2], \"SVG\"] === \
+         ExportString[ListPlot[{1, 2, 3}, DataRange -> {0, 2}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

@@ -3116,6 +3116,10 @@ fn evaluate_expr_to_expr_uncached(
         // under `Block[{x = 5}, …]`) rather than fixing it.
         || name == "NDSolve"
         || name == "NDSolveValue"
+        // MatrixPropertyDistribution holds its property expression: it is a
+        // function of the symbolic matrix variable (e.g. Eigenvalues[x]) and
+        // only becomes evaluable once a sampled matrix is substituted in.
+        || name == "MatrixPropertyDistribution"
         {
           // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
           // BooleanTable aren't actually HoldAll in Wolfram Language, so a
