@@ -392,6 +392,66 @@ fn replace_subexpr_simple(
   }
 }
 
+/// Whether `e` is an applied derivative such as `f'[t]`. The parser and `D`
+/// build it in two shapes (flattened `Derivative[1, f, t]` vs curried
+/// `Derivative[1][f][t]`) that print identically but compare unequal
+/// structurally.
+fn is_derivative_form(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } => name == "Derivative",
+    Expr::CurriedCall { func, .. } => {
+      matches!(func.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+        || is_derivative_form(func)
+    }
+    _ => false,
+  }
+}
+
+/// Like `replace_subexpr_simple`, but matches applied derivatives by their
+/// printed form so both internal shapes of `f'[t]` are recognised.
+fn replace_derivative_form(
+  expr: &Expr,
+  target: &Expr,
+  replacement: &Expr,
+) -> Expr {
+  if is_derivative_form(expr) && expr_to_string(expr) == expr_to_string(target)
+  {
+    return replacement.clone();
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| replace_derivative_form(a, target, replacement))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| replace_derivative_form(a, target, replacement))
+        .collect(),
+    ),
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_derivative_form(left, target, replacement),
+      replace_derivative_form(right, target, replacement),
+    ),
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(replace_derivative_form(operand, target, replacement)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(replace_derivative_form(func, target, replacement)),
+      args: args
+        .iter()
+        .map(|a| replace_derivative_form(a, target, replacement))
+        .collect(),
+    },
+    _ => expr.clone(),
+  }
+}
+
 /// Differentiate an expression with respect to a non-symbol expression (e.g., x[k]).
 /// For symbolic indexed variables, D[f[x[i]], x[k]] = 0 when we can't determine equality.
 fn differentiate_wrt_expr(
@@ -441,7 +501,11 @@ fn differentiate_wrt_expr(
   // Plus/Times) that silently fell to "treat as constant → 0" for anything
   // else, e.g. `D[(a x[k])^2, x[k]]` or `D[Log[x[k]], x[k]]`.
   let fresh = "$__DIndexedVar__";
-  let body = replace_subexpr_simple(expr, var_expr, &id_expr(fresh));
+  let body = if is_derivative_form(var_expr) {
+    replace_derivative_form(expr, var_expr, &id_expr(fresh))
+  } else {
+    replace_subexpr_simple(expr, var_expr, &id_expr(fresh))
+  };
   let result = differentiate(&body, fresh)?;
   let result = simplify(result);
   // `x[k]` sorts differently from the fresh symbol it stood in for, so the
