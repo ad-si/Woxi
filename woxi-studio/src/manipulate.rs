@@ -2340,6 +2340,37 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("hello!"));
   }
 
+  /// Words joined from `Style[word, color, size]` through
+  /// `ToString[…, StandardForm]` are drawn at their own sizes and colors,
+  /// not as the `DisplayForm[…]` source of each box.
+  #[test]
+  fn styled_word_paragraph_draws_each_word_at_its_size() {
+    woxi::clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Text[Style[StringJoin[Riffle[ToString[#, StandardForm] & /@ \
+       MapThread[Style[##, Bold] &, {{\"alpha\", \"beta\", \"gamma\"}, \
+       {Red, Blue, Gray}, {n, 2 n, 3 n}}], \" \"]], LineIndent -> 0]], \
+       {{n, 10}, 8, 12, 1}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert!(state.text_output.is_none(), "{:?}", state.text_output);
+    let render =
+      woxi::with_scoped_globals(&[("n".to_string(), "10".to_string())], || {
+        woxi::interpret_with_stdout(&state.body)
+      })
+      .expect("evaluate body");
+    let svg = render.graphics.expect("body draws a graphic");
+    for (word, size) in [("alpha", 10), ("beta", 20), ("gamma", 30)] {
+      assert!(
+        svg.contains(&format!("font-size=\"{size}.0\"")),
+        "{word} at {size}: {svg}"
+      );
+      assert!(svg.contains(&format!(">{word}</text>")), "{svg}");
+    }
+    assert!(!svg.contains("DisplayForm"), "{svg}");
+  }
+
   /// An exact but non-integer bound (`Pi`) makes the slider continuous,
   /// even though no bound was written as a machine real.
   #[test]
