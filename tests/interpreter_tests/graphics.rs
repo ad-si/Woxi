@@ -26509,6 +26509,20 @@ mod find_spanning_tree {
 mod parametric_plot3d {
   use super::*;
 
+  // A 1-D plot body is compiled once too; side effects in it still run
+  // per sample, through the evaluator leaves.
+  #[test]
+  fn compiled_curve_sampling_keeps_side_effects() {
+    assert_eq!(
+      interpret(
+        "n = 0; Plot[(n++; Sin[x]), {x, 0, 1}, PlotPoints -> 10, \
+         MaxRecursion -> 0]; n > 0"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A surface body is compiled once and sampled numerically; a body the
   // compiler cannot reduce still samples through the evaluator.
   #[test]

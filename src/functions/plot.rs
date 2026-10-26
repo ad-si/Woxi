@@ -403,7 +403,52 @@ fn marker_in_view(x: f64, y: f64, xr: (f64, f64), yr: (f64, f64)) -> bool {
   x.is_finite() && y.is_finite() && near(x, xr) && near(y, yr)
 }
 
+thread_local! {
+  /// Plot bodies compiled for numeric sampling, keyed by the body's address
+  /// (checked structurally, as the address may be reused) and variables.
+  static COMPILED_BODIES: std::cell::RefCell<
+    Vec<(usize, Expr, Vec<String>, Option<std::rc::Rc<crate::functions::ode_ast::CompiledReal>>)>,
+  > = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The compiled form of `body` over `vars`, compiled on first use.
+fn compiled_body(
+  body: &Expr,
+  vars: &[String],
+) -> Option<std::rc::Rc<crate::functions::ode_ast::CompiledReal>> {
+  let key = std::ptr::from_ref::<Expr>(body) as usize;
+  if let Some(hit) = COMPILED_BODIES.with(|cache| {
+    cache
+      .borrow()
+      .iter()
+      .find(|(k, e, v, _)| {
+        *k == key
+          && v.as_slice() == vars
+          && crate::evaluator::pattern_matching::expr_equal(e, body)
+      })
+      .map(|(_, _, _, c)| c.clone())
+  }) {
+    return hit;
+  }
+  let compiled = crate::functions::ode_ast::CompiledReal::new(body, vars)
+    .map(std::rc::Rc::new);
+  COMPILED_BODIES.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    if cache.len() >= 32 {
+      cache.remove(0);
+    }
+    cache.push((key, body.clone(), vars.to_vec(), compiled.clone()));
+  });
+  compiled
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
+  if let Some(c) = compiled_body(body, &[var.to_string()]) {
+    let v = c.eval(&[x]);
+    if v.is_finite() {
+      return Some(v);
+    }
+  }
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
   if let Some(v) = try_eval_to_f64_lenient(&result) {
