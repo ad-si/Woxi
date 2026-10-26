@@ -728,6 +728,13 @@ pub(crate) fn audio_file_source(arg: &Expr) -> Option<String> {
 /// All channels must be non-empty, equally long, and numeric; samples are
 /// clipped to [-1, 1] like wolframscript does before quantizing.
 fn audio_sample_channels(data: &Expr) -> Option<Vec<Vec<f64>>> {
+  // The stored form keeps the samples in a `NumericArray[{{…}}, type]`.
+  if let Expr::FunctionCall { name, args } = data
+    && name == "NumericArray"
+    && !args.is_empty()
+  {
+    return audio_sample_channels(&args[0]);
+  }
   let Expr::List(items) = data else {
     return None;
   };
