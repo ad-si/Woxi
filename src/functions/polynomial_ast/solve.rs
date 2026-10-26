@@ -191,6 +191,13 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
+  // `NSolve[eqns]` solves for the variables `Solve[eqns]` would pick.
+  if args.len() == 1
+    && !matches!(&args[0], Expr::Identifier(s) if s == "True" || s == "False")
+    && let Some(vars) = auto_detect_solve_vars(&args[0])
+  {
+    return nsolve_ast(&[args[0].clone(), vars]);
+  }
   // A system of several equations with machine coefficients is solved the
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
@@ -284,6 +291,9 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // its own head — unless a numeric multi-seed search below finds real
   // roots that no symbolic technique reached in closed form.
   if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve") {
+    if let Some(result) = try_nsolve_bracketed(args) {
+      return Ok(result);
+    }
     if let Some(result) = try_nsolve_numeric_search(args) {
       return Ok(sort_nsolve_solutions(result));
     }
@@ -2170,6 +2180,62 @@ fn solve_piecewise_max_min(
   }
 }
 
+/// Generalized variables: `Solve[eqns, f[x]]` (or a variable list containing
+/// such applications) treats the whole application `f[x]` as the unknown,
+/// matching wolframscript. Every function-application target is replaced
+/// with a fresh bare symbol, `solver` runs on the result, and the fresh
+/// symbols are mapped back to the original applications. `None` when no
+/// target is an application, so bare-symbol calls are unaffected. Shared by
+/// `Solve` and `Reduce`.
+pub(crate) fn with_generalized_variables(
+  args: &[Expr],
+  solver: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Option<Result<Expr, InterpreterError>> {
+  let targets: Vec<Expr> = match args.get(1)? {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  if !targets
+    .iter()
+    .any(|t| matches!(t, Expr::FunctionCall { .. }))
+  {
+    return None;
+  }
+  let ctx = format!("{}{}", expr_to_string(&args[0]), expr_to_string(&args[1]));
+  let mut subs: Vec<(Expr, Expr)> = Vec::new();
+  let mut fresh_targets: Vec<Expr> = Vec::new();
+  for (i, t) in targets.iter().enumerate() {
+    if matches!(t, Expr::FunctionCall { .. }) {
+      let mut k = i;
+      let mut name = format!("WoxiSolveVar{k}");
+      while ctx.contains(&name) {
+        k += 1000;
+        name = format!("WoxiSolveVar{k}");
+      }
+      let sym = Expr::Identifier(name);
+      subs.push((t.clone(), sym.clone()));
+      fresh_targets.push(sym);
+    } else {
+      fresh_targets.push(t.clone());
+    }
+  }
+  let mut new_eqns = args[0].clone();
+  for (from, to) in &subs {
+    new_eqns = substitute_expr(&new_eqns, from, to);
+  }
+  let new_var_arg = match &args[1] {
+    Expr::List(_) => Expr::List(fresh_targets.into()),
+    _ => fresh_targets.into_iter().next().unwrap(),
+  };
+  let mut new_args = vec![new_eqns, new_var_arg];
+  new_args.extend(args[2..].iter().cloned());
+  Some(solver(&new_args).map(|result| {
+    subs.iter().fold(result, |mapped, (from, to)| {
+      substitute_expr(&mapped, to, from)
+    })
+  }))
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A disjunction (also one inside a conjunction) is solved branch by
   // branch: `x == 1 || x == 2`, `(x == -1 || x == 2) && x + 1 != 0`.
@@ -3755,60 +3821,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Pre-pass: generalized variables. Solve[eqns, f[x]] (or a variable list
-  // containing such applications) treats the whole application `f[x]` as the
-  // unknown, matching wolframscript. Replace every function-application target
-  // with a fresh bare symbol, solve, then map the fresh symbols back to the
-  // original applications in the result. Only triggers when a target is a
-  // FunctionCall, so ordinary bare-symbol solves are unaffected.
-  {
-    let targets: Vec<Expr> = match &args[1] {
-      Expr::List(items) => items.to_vec(),
-      other => vec![other.clone()],
-    };
-    if targets
-      .iter()
-      .any(|t| matches!(t, Expr::FunctionCall { .. }))
-    {
-      let ctx =
-        format!("{}{}", expr_to_string(&args[0]), expr_to_string(&args[1]));
-      let mut subs: Vec<(Expr, Expr)> = Vec::new();
-      let mut fresh_targets: Vec<Expr> = Vec::new();
-      for (i, t) in targets.iter().enumerate() {
-        if matches!(t, Expr::FunctionCall { .. }) {
-          let mut k = i;
-          let mut name = format!("WoxiSolveVar{k}");
-          while ctx.contains(&name) {
-            k += 1000;
-            name = format!("WoxiSolveVar{k}");
-          }
-          let sym = Expr::Identifier(name);
-          subs.push((t.clone(), sym.clone()));
-          fresh_targets.push(sym);
-        } else {
-          fresh_targets.push(t.clone());
-        }
-      }
-      let mut new_eqns = args[0].clone();
-      for (from, to) in &subs {
-        new_eqns = substitute_expr(&new_eqns, from, to);
-      }
-      let new_var_arg = match &args[1] {
-        Expr::List(_) => Expr::List(fresh_targets.into()),
-        _ => fresh_targets.into_iter().next().unwrap(),
-      };
-      let mut new_args = vec![new_eqns, new_var_arg];
-      if args.len() == 3 {
-        new_args.push(args[2].clone());
-      }
-      let result = solve_ast(&new_args)?;
-      // Map the fresh symbols back to the original applications.
-      let mut mapped = result;
-      for (from, to) in &subs {
-        mapped = substitute_expr(&mapped, to, from);
-      }
-      return Ok(mapped);
-    }
+  // Pre-pass: generalized variables (`Solve[eqns, f[x]]`).
+  if let Some(result) = with_generalized_variables(args, solve_ast) {
+    return result;
   }
 
   // Pre-pass: turn an And-of-equations into a List of equations so the
@@ -6334,15 +6349,28 @@ fn max_degree_of_var(eq: &Expr, var: &str) -> Option<i128> {
 /// Returns None when some coefficient is not a machine number or the leading
 /// one vanishes.
 fn numeric_polynomial_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
-  let mut numeric = Vec::with_capacity(coeffs.len());
+  // Complex machine coefficients (`(0. - 4.4*^-16 I) z`, `0. + 0.*I`) are
+  // solved by the complex-coefficient iteration.
+  let mut complex = Vec::with_capacity(coeffs.len());
+  let mut has_complex_coefficient = false;
   for c in coeffs {
-    numeric.push(try_eval_to_f64(c)?);
+    complex.push(if let Some(v) = try_eval_to_f64(c) {
+      (v, 0.0)
+    } else {
+      has_complex_coefficient = true;
+      try_extract_complex_float(c)?
+    });
   }
-  let degree = numeric.len().checked_sub(1)?;
-  if degree < 1 || numeric[degree].abs() < 1e-300 {
+  let degree = complex.len().checked_sub(1)?;
+  if degree < 1 || complex[degree].0.hypot(complex[degree].1) < 1e-300 {
     return None;
   }
-  let mut roots = durand_kerner_roots(&numeric);
+  let mut roots = if has_complex_coefficient {
+    durand_kerner_complex_roots(&complex)
+  } else {
+    let numeric: Vec<f64> = complex.iter().map(|c| c.0).collect();
+    durand_kerner_roots(&numeric)
+  };
   roots.sort_by(|a, b| {
     a.0
       .partial_cmp(&b.0)
@@ -8667,6 +8695,186 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
       .map(|r| Expr::List(vec![rule_expr(var.clone(), Expr::Real(r))].into()))
       .collect(),
   ))
+}
+
+/// `NSolve[{eqn, bounds…}, x]`: one equation in one variable whose
+/// inequalities confine `x` to a finite interval (`0 <= x < Pi`). The
+/// residual is sampled across the interval and every sign change is
+/// bisected to full precision, which finds the roots of transcendental
+/// equations that no symbolic technique reaches; roots where the
+/// inequalities fail are dropped.
+fn try_nsolve_bracketed(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let var = match args.get(1)? {
+    Expr::List(vs) if vs.len() == 1 => vs[0].clone(),
+    v @ Expr::Identifier(_) => v.clone(),
+    _ => return None,
+  };
+  let Expr::Identifier(var_name) = &var else {
+    return None;
+  };
+  let mut equation = None;
+  let mut constraints = Vec::new();
+  for item in items {
+    match crate::functions::polynomial_ast::reduce::extract_comparison(item) {
+      Some((
+        lhs,
+        rhs,
+        crate::functions::polynomial_ast::reduce::CompOp::Equal,
+      )) => {
+        if equation.replace(minus2(lhs, rhs)).is_some() {
+          return None;
+        }
+      }
+      _ => constraints.push(item.clone()),
+    }
+  }
+  let residual = equation?;
+  if constraints.is_empty() {
+    return None;
+  }
+  let (mut lo, mut hi) = (f64::NEG_INFINITY, f64::INFINITY);
+  for c in &constraints {
+    let (l, h) = variable_bounds(c, var_name)?;
+    lo = lo.max(l);
+    hi = hi.min(h);
+  }
+  if !(lo.is_finite() && hi.is_finite() && lo < hi) {
+    return None;
+  }
+  let eval_at = |x: f64| -> Option<f64> {
+    let substituted = substitute_expr(&residual, &var, &Expr::Real(x));
+    let evaled =
+      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+    try_eval_to_f64(&evaled).filter(|v| v.is_finite())
+  };
+  let admissible = |x: f64| {
+    constraints.iter().all(|c| {
+      let substituted = substitute_expr(c, &var, &Expr::Real(x));
+      matches!(
+        quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+        Ok(Expr::Identifier(ref t)) if t == "True"
+      )
+    })
+  };
+  const SAMPLES: usize = 2000;
+  let points: Vec<(f64, Option<f64>)> = (0..=SAMPLES)
+    .map(|i| {
+      let x = lo + (hi - lo) * i as f64 / SAMPLES as f64;
+      (x, eval_at(x))
+    })
+    .collect();
+  let mut roots: Vec<f64> = Vec::new();
+  for pair in points.windows(2) {
+    let ((a, Some(fa)), (b, Some(fb))) = (pair[0], pair[1]) else {
+      continue;
+    };
+    let root = if fa == 0.0 {
+      a
+    } else if fa.signum() == fb.signum() || fb == 0.0 {
+      continue;
+    } else {
+      let (mut a, mut b, mut fa) = (a, b, fa);
+      loop {
+        let m = f64::midpoint(a, b);
+        if m <= a || m >= b {
+          break if eval_at(a)?.abs() <= eval_at(b)?.abs() {
+            a
+          } else {
+            b
+          };
+        }
+        let fm = eval_at(m)?;
+        if fm == 0.0 {
+          break m;
+        }
+        if fm.signum() == fa.signum() {
+          a = m;
+          fa = fm;
+        } else {
+          b = m;
+        }
+      }
+    };
+    // A sign change across a pole is not a root.
+    let scale = fa.abs().max(1.0);
+    if eval_at(root)?.abs() <= 1e-8 * scale && admissible(root) {
+      roots.push(root);
+    }
+  }
+  if let Some((x, Some(f))) = points.last()
+    && *f == 0.0
+    && admissible(*x)
+  {
+    roots.push(*x);
+  }
+  if roots.is_empty() {
+    return None;
+  }
+  Some(Expr::List(
+    roots
+      .into_iter()
+      .map(|r| Expr::List(vec![rule_expr(var.clone(), Expr::Real(r))].into()))
+      .collect(),
+  ))
+}
+
+/// The interval a constraint such as `0 <= x < 3`, `x > 1` or
+/// `Inequality[0, LessEqual, x, Less, 3]` confines `var` to, open or closed
+/// alike. `None` for a constraint of another shape.
+fn variable_bounds(constraint: &Expr, var: &str) -> Option<(f64, f64)> {
+  use crate::syntax::ComparisonOp as Op;
+  let (operands, ops): (Vec<Expr>, Vec<Op>) = match constraint {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => (operands.clone(), operators.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Inequality" && args.len() % 2 == 1 =>
+    {
+      let mut ops = Vec::new();
+      for op in args.iter().skip(1).step_by(2) {
+        ops.push(match op {
+          Expr::Identifier(n) => match n.as_str() {
+            "Less" => Op::Less,
+            "LessEqual" => Op::LessEqual,
+            "Greater" => Op::Greater,
+            "GreaterEqual" => Op::GreaterEqual,
+            _ => return None,
+          },
+          _ => return None,
+        });
+      }
+      (args.iter().step_by(2).cloned().collect(), ops)
+    }
+    _ => return None,
+  };
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+  let (mut lo, mut hi) = (f64::NEG_INFINITY, f64::INFINITY);
+  for (i, op) in ops.iter().enumerate() {
+    let (left, right) = (&operands[i], &operands[i + 1]);
+    let (bound, var_on_right) = if is_var(right) {
+      (try_eval_to_f64(left)?, true)
+    } else if is_var(left) {
+      (try_eval_to_f64(right)?, false)
+    } else {
+      return None;
+    };
+    let below = matches!(op, Op::Less | Op::LessEqual);
+    let above = matches!(op, Op::Greater | Op::GreaterEqual);
+    if !(below || above) {
+      return None;
+    }
+    // `bound < x` and `x > bound` give a lower bound.
+    if below == var_on_right {
+      lo = lo.max(bound);
+    } else {
+      hi = hi.min(bound);
+    }
+  }
+  Some((lo, hi))
 }
 
 /// Whether a solution `{v -> value, …}` has an infinite or indeterminate

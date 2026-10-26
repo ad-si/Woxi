@@ -6776,6 +6776,69 @@ mod solve {
       "{{x -> 2}, {x -> -2*(-1)^(1/3)}, {x -> 2*(-1)^(2/3)}}"
     );
   }
+
+  // A machine polynomial with complex coefficients (here a rounding-noise
+  // imaginary part) is solved numerically like a real one.
+  #[test]
+  fn inexact_polynomial_with_complex_coefficients() {
+    clear_state();
+    let result = interpret(
+      "Chop[z /. Solve[(0. + 0.*I) + 2.*z + (0. - 4.4*^-16*I)*z - 3.*z^2 + \
+       z^3 == 0, z], 10^-12]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0, 1., 2.}");
+  }
+
+  // `NSolve[{eqn, bounds}]` finds every root of a transcendental equation
+  // in the interval the inequalities give, and picks the variable itself.
+  #[test]
+  fn nsolve_transcendental_on_bounded_interval() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "NSolve[{50.*Sin[x] == 48.31*Sin[0.087 - 1.*x], 0. <= x < 3.14}]"
+      )
+      .unwrap(),
+      "{{x -> 0.042751740504714975}}"
+    );
+    assert_eq!(
+      interpret(
+        "Max[Abs[(x /. NSolve[{Sin[x] == 0.5, 0 < x < 10}, x]) - \
+         N[{Pi/6, 5 Pi/6, 13 Pi/6, 17 Pi/6}]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A sign change across a pole of Tan is not a root.
+    assert_eq!(
+      interpret("NSolve[{Tan[x] == 0, 1 < x < 2}, x]").unwrap(),
+      "{}"
+    );
+  }
+}
+
+mod reduce_generalized_variables {
+  use super::*;
+
+  // Reduce treats an indexed variable like `m[1]` as an unknown, as Solve
+  // does.
+  #[test]
+  fn indexed_variables() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[m[1] == 1, {m[1]}], Reduce[x == 1, {m[1]}], \
+         Reduce[False, m[1]], ToRules[Reduce[True, {m[1, 1], m[1, 2]}]]}"
+      )
+      .unwrap(),
+      "{m[1] == 1, x == 1, False, {}}"
+    );
+    assert_eq!(
+      interpret("Reduce[m[1]^2 < 1, m[1]] // InputForm // ToString").unwrap(),
+      "Inequality[-1, Less, m[1], Less, 1]"
+    );
+  }
 }
 
 mod rsolve {
@@ -21056,7 +21119,7 @@ mod constrained_solve_roots {
     clear_state();
     assert_eq!(
       interpret("NSolve[x^2 == 2]").unwrap(),
-      "{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}"
+      "{{x -> -1.4142135623730951}, {x -> 1.414213562373095}}"
     );
   }
 

@@ -22,6 +22,12 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Generalized variables (`Reduce[m[1] == 1, {m[1]}]`).
+  if let Some(result) =
+    super::solve::with_generalized_variables(args, reduce_ast)
+  {
+    return result;
+  }
   // `a == b == c` is `a == b && b == c`.
   if let Some(first) = args.first() {
     let expanded = super::solve::expand_chained_equalities(first);
