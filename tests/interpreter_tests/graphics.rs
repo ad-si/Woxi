@@ -2769,6 +2769,20 @@ mod graphics {
       );
     }
 
+    /// A product or power holding scripted symbols inside a `Text` is set on
+    /// one line with the scripts shifted, not as the two-line OutputForm box
+    /// that printed `Subscript[t, 1]` literally.
+    #[test]
+    fn text_typesets_products_of_subscripts() {
+      let svg = export_svg(
+        "Graphics[{Text[Subscript[t, 1] Subscript[t, 2] x^2, {0, 0}], \
+         Text[(Subscript[r, 1] Subscript[r, 2])^n, {1, 0}]}]",
+      );
+      assert!(svg.contains(">x\u{00B2} t\u{2081} t\u{2082}<"), "{svg}");
+      assert!(svg.contains(">(r\u{2081} r\u{2082})\u{207F}<"), "{svg}");
+      assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
     /// `Framed[…]` around a label draws a box: a border, and a panel when
     /// the label asks for a `Background`. `FrameStyle -> None` keeps the
     /// panel but drops the border.
@@ -4386,6 +4400,28 @@ mod plot3d {
       }
     }
 
+    // `AxesLabel -> Automatic` labels the axes with the plot's variables;
+    // it used to be drawn as the literal word "Automatic". The labels
+    // survive `Show` and an `Automatic` among explicit labels.
+    #[test]
+    fn automatic_axes_label_uses_plot_variables() {
+      for code in [
+        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]",
+        "Show[{Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(!svg.contains("Automatic"), "{code}: {svg}");
+        for label in ["s", "t", "z"] {
+          assert!(svg.contains(&format!(">{label}<")), "{code}: {label}");
+        }
+      }
+      let svg = export_svg(
+        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> {Automatic, \"depth\", None}]",
+      );
+      assert!(svg.contains(">s<") && svg.contains(">depth<"));
+      assert!(!svg.contains(">z<"));
+    }
+
     // A long z-axis label used to be laid out horizontally beside the
     // vertical axis, which pushed its centre past the left edge of the
     // canvas so it was clipped. It now runs alongside the axis.
@@ -5978,6 +6014,25 @@ mod plot3d {
             .ok()
         })
         .collect()
+    }
+
+    /// A `Plot3D` with `PlotRange -> {zmin, zmax}` shown together with
+    /// other 3D graphics keeps that vertical range: the z axis spans it
+    /// instead of shrinking to the data, while x and y keep their extent.
+    #[test]
+    fn show_keeps_plot3d_vertical_plot_range() {
+      let alone = export_svg(
+        "Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, PlotRange -> {0, 10}]",
+      );
+      let shown = export_svg(
+        "Show[{Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, \
+         PlotRange -> {0, 10}], Graphics3D[{Red, Sphere[{1, 1, 5}, 0.2]}]}]",
+      );
+      for label in [">0</text>", ">5</text>", ">10</text>"] {
+        assert!(alone.contains(label), "standalone plot lacks {label}");
+        assert!(shown.contains(label), "shown plot lacks {label}");
+      }
+      assert!(!shown.contains(">4.5</text>"));
     }
 
     /// `Specularity[colour, n]` describes a surface's *highlight*, not its
@@ -8809,6 +8864,25 @@ mod plot3d {
       assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
+    // A `Pane[Column[{a, b}], size]` tick label reads as its content, set on
+    // one line per `Column` item, and a `Column` bottom `FrameLabel` stacks
+    // the same way instead of leaking the `Pane[…]` text or joining lines.
+    #[test]
+    fn frame_ticks_pane_column_labels_stack_lines() {
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 3}, {3, 5}}, Frame -> True,
+          FrameTicks -> {{Automatic, None},
+            {Map[{#, Pane[Column[{#, #^2}], {35, 35}]} &, {1, 2, 3}], None}},
+          FrameLabel -> {Column[{"first", "second"}], "y"}]"#,
+      );
+      assert!(!svg.contains("Pane["), "Pane leaked into the SVG: {svg}");
+      assert!(svg.contains(">9</tspan>"), "tick line 2 missing: {svg}");
+      assert!(
+        svg.contains(">second</tspan>"),
+        "label line 2 missing: {svg}"
+      );
+    }
+
     // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
     // `Show` that overlays one on a `ListPlot`) labels exactly those ticks.
     #[test]
@@ -9876,6 +9950,24 @@ mod plot3d {
       assert_eq!(
         woxi::interpret(r#"ToCharacterCode["\[Rule]"]"#).unwrap(),
         "{62754}"
+      );
+    }
+
+    /// `\[Implies]` (U+F523) and its private-use neighbours were drawn as
+    /// blank boxes; they now substitute the nearest standard character.
+    #[test]
+    fn implies_and_short_arrow_glyphs_are_drawn_as_standard_characters() {
+      let svg = export_svg(
+        r#"Graphics[{Text["a \[Implies] b", {0, 0}], Text["\[ShortLeftArrow]", {0, 1}],
+           Text["\[Square]", {0, 2}]}, PlotRange -> {{-1, 1}, {-1, 3}}]"#,
+      );
+      assert!(svg.contains("\u{21D2}"), "implies not drawn: {svg}");
+      assert!(svg.contains(">\u{2190}</text>"), "arrow not drawn: {svg}");
+      assert!(svg.contains(">\u{25A1}</text>"), "square not drawn: {svg}");
+      assert!(!svg.contains('\u{F523}'), "private-use drawn: {svg}");
+      assert_eq!(
+        woxi::interpret(r#"ToCharacterCode["\[Implies]"]"#).unwrap(),
+        "{62755}"
       );
     }
 
@@ -11307,21 +11399,44 @@ mod plot3d {
       }
     }
 
-    /// A plot label is plain text, so a `Subscript` renders through the
-    /// Unicode subscript digits. Letters stay full size: their subscript
-    /// forms are missing from most text fonts and would draw as boxes.
+    /// A `Subscript` renders through the Unicode subscript digits; letters
+    /// have no such form (it is missing from most text fonts), so they are
+    /// lowered with a `<tspan>` instead.
     #[test]
     fn frame_label_renders_subscripts() {
       let svg = export_svg(
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {{Row[{Subscript["P", "inj"], "(t)"}], ""}, {Row[{Subscript["log", 10], "n"}], ""}}]"#,
       );
       assert!(
-        svg.contains(">Pinj(t)</text>"),
-        "the subscript letters must still read: {svg}"
+        svg.contains(
+          "P<tspan baseline-shift=\"sub\" font-size=\"70%\">inj</tspan>(t)</text>"
+        ),
+        "the subscript letters must be lowered: {svg}"
       );
       assert!(
         svg.contains(">log\u{2081}\u{2080}n</text>"),
         "subscript digits must render as such: {svg}"
+      );
+    }
+
+    /// A subscripted symbol applied to the plot variable, with several
+    /// subscripts, reads as typeset text — not as the raw `Subscript[…]` call.
+    #[test]
+    fn frame_label_applied_multi_subscript() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[P, B, D][t]}]"#,
+      );
+      assert!(
+        svg.contains(">PB,D(t)</text>"),
+        "applied multi-subscript label must be typeset: {svg}"
+      );
+      assert!(!svg.contains("Subscript["), "raw call leaked: {svg}");
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[x, 1, 2]}]"#,
+      );
+      assert!(
+        svg.contains(">x\u{2081},\u{2082}</text>"),
+        "several subscripts read comma-separated: {svg}"
       );
     }
   }
@@ -17285,6 +17400,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_mesh_style_and_frame_style_colors() {
+      let plain = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
+      assert!(plain.contains("#666666"));
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True, MeshStyle -> Red, \
+         FrameStyle -> {Blue, Thick}]",
+      );
+      assert!(svg.contains("#FF0000"), "mesh lines take MeshStyle: {svg}");
+      assert!(svg.contains("#0000FF"), "border takes FrameStyle: {svg}");
+      assert!(!svg.contains("#666666"));
+    }
+
+    #[test]
     fn array_plot_plot_label_is_drawn_above() {
       let svg =
         export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"Caption\"]");
@@ -18387,6 +18515,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         (boxed - plain).abs() < plain * 0.5,
         "the box cell ({boxed}) must measure like the text it shows ({plain})"
       );
+    }
+
+    // A string cell with a nested `FractionBox` is a stacked fraction, not
+    // its linear `a/b/c` reading, which cannot tell `(a/b)/c` from
+    // `a/(b/c)`. The grid's own font size applies to the typeset cell.
+    #[test]
+    fn a_nested_fraction_string_cell_is_typeset_not_flattened() {
+      let svg = export_svg(
+        "Text@Style[Grid[{{\"\\!\\(\\*FractionBox[FractionBox[\\(a\\), \\(b\\)], \\(c\\)]\\)\", \"x\"}}, Frame -> All], 18]",
+      );
+      assert!(!svg.contains("a/b/c"), "fraction must not be linear: {svg}");
+      assert!(svg.contains("font-size=\"18\""), "grid size kept: {svg}");
+      for part in [">a<", ">b<", ">c<"] {
+        assert!(svg.contains(part), "{part} must be typeset: {svg}");
+      }
     }
 
     // A named style supplies the base appearance and the explicit directives
@@ -39659,6 +39802,29 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn full_aspect_ratio_frame_fills_the_requested_image_size() {
+  // Regression: with `ImageSize -> {w, h}` a framed `AspectRatio -> Full`
+  // picture stretches the plot range over the whole drawing area instead of
+  // hugging the data's shape (a 1 x 5 range gave a 77 pixel wide sliver).
+  let svg = export_svg(
+    "Graphics[{Line[{{0, 0}, {1, 1}}]}, PlotRange -> {{0, 1}, {0, 5}}, \
+     Frame -> True, ImageSize -> {600, 420}, AspectRatio -> Full]",
+  );
+  let (w, _) = plot_clip_size(&svg);
+  assert!(w > 400.0, "{svg}");
+}
+
+fn plot_clip_size(svg: &str) -> (f64, f64) {
+  let start = svg.find("<clipPath id=\"plotClip_").expect("clip path");
+  let rest = &svg[start..];
+  let num = |key: &str| -> f64 {
+    let at = rest.find(key).expect(key) + key.len();
+    rest[at..].split('"').next().unwrap().parse().unwrap()
+  };
+  (num("width=\""), num("height=\""))
+}
+
+#[test]
 fn pane_pads_small_content_to_its_fixed_box() {
   // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
   // smaller than it is placed by an explicit `Alignment`, not left in the
@@ -41298,5 +41464,81 @@ mod plot_non_numeric_limit {
     let r =
       woxi::interpret_with_stdout("ParametricPlot[{t, t}, {t, a, 1}]").unwrap();
     assert_eq!(r.result, "ParametricPlot[{t, t}, {t, a, 1}]");
+  }
+}
+
+mod plot_replaced_solution {
+  use super::*;
+
+  // `y[t] /. sol` only matches while `t` is symbolic, so Plot has to apply
+  // the rules before sampling — otherwise the curves come out empty.
+  #[test]
+  fn plots_curves_taken_from_ndsolve_with_replace_all() {
+    clear_state();
+    let svg = export_svg(
+      "Module[{sol}, sol = NDSolve[{y[0] == 1, z[0] == 0, \
+         y'[t] == -z[t], z'[t] == y[t]}, {y[t], z[t]}, {t, 0, 3}]; \
+         Plot[{ReplaceAll[y[t], sol[[1, 1]]], z[t] /. sol[[1, 2]]}, \
+         {t, 0, 3}]]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 2, "{svg}");
+  }
+}
+
+mod saved_interpolating_function {
+  use super::*;
+
+  // A notebook saves the grid and values of an `InterpolatingFunction` as
+  // `CompressedData["…"]`; applying the function in place (without storing
+  // it first) must still decode them.
+  #[test]
+  fn applies_inline_function_with_compressed_data() {
+    clear_state();
+    let grid = interpret("Compress[{{0., 1., 2.}}]").unwrap();
+    let values = interpret("Compress[{0., 1., 4.}]").unwrap();
+    let code = format!(
+      "InterpolatingFunction[{{{{0., 2.}}}}, {{3, 0, 0, {{3}}, {{4}}, 0, 0, 0, \
+       0}}, CompressedData[\"{grid}\"], {{Developer`PackedArrayForm, \
+       {{0, 1, 2, 3}}, CompressedData[\"{values}\"]}}, {{Automatic}}][1.5]"
+    );
+    assert_eq!(interpret(&code).unwrap(), "2.25");
+  }
+}
+
+mod invisible_and_text_cells {
+  use super::*;
+
+  #[test]
+  fn invisible_column_item_hides_nested_style_colors() {
+    clear_state();
+    let svg = export_svg(
+      "Column[{\"x\", Invisible[Row[{\"a\", Style[\"b\", Blue]}]]}]",
+    );
+    assert!(svg.contains("fill-opacity=\"0\""), "not hidden: {svg}");
+    assert!(!svg.contains("Invisible"), "wrapper leaked: {svg}");
+  }
+
+  #[test]
+  fn text_cell_in_a_grid_shows_its_content() {
+    clear_state();
+    let svg = export_svg("Grid[{{TextCell[\"abc\"], \"z\"}}]");
+    assert!(svg.contains(">abc<"), "content missing: {svg}");
+    assert!(!svg.contains("TextCell"), "wrapper leaked: {svg}");
+  }
+}
+
+mod list_plot_scalar_data_range {
+  use super::*;
+
+  #[test]
+  fn bare_number_spans_zero_to_that_value() {
+    assert_eq!(
+      interpret(
+        "ExportString[ListPlot[{1, 2, 3}, DataRange -> 2], \"SVG\"] === \
+         ExportString[ListPlot[{1, 2, 3}, DataRange -> {0, 2}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 }

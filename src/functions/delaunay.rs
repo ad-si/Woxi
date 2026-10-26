@@ -186,3 +186,213 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(call("MeshRegion", mesh_args))
 }
+
+/// The real 2D points of a list argument, or `None` for anything else.
+fn read_points(arg: &Expr) -> Option<Vec<[f64; 2]>> {
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| match item {
+      Expr::List(c) if c.len() == 2 => {
+        Some([try_eval_to_f64(&c[0])?, try_eval_to_f64(&c[1])?])
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// `ComputationalGeometry`DelaunayTriangulation[{{x, y}, …}]` — the legacy
+/// package's adjacency-list form: `{i, {neighbours of point i}}` per point.
+pub fn delaunay_triangulation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original =
+    || unevaluated("ComputationalGeometry`DelaunayTriangulation", args);
+  let Some(points) = args.first().and_then(read_points) else {
+    return Ok(original());
+  };
+  let Some(triangles) = triangulate(&points) else {
+    return Ok(original());
+  };
+  let mut neighbours: Vec<std::collections::BTreeSet<usize>> =
+    vec![std::collections::BTreeSet::new(); points.len()];
+  for t in &triangles {
+    for k in 0..3 {
+      let (a, b) = (t[k], t[(k + 1) % 3]);
+      neighbours[a].insert(b);
+      neighbours[b].insert(a);
+    }
+  }
+  Ok(Expr::List(
+    neighbours
+      .into_iter()
+      .enumerate()
+      .map(|(i, set)| {
+        Expr::List(
+          vec![
+            Expr::Integer(i as i128 + 1),
+            Expr::List(
+              set
+                .into_iter()
+                .map(|j| Expr::Integer(j as i128 + 1))
+                .collect(),
+            ),
+          ]
+          .into(),
+        )
+      })
+      .collect(),
+  ))
+}
+
+fn circumcenter_of(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> [f64; 2] {
+  let d =
+    2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  let (a2, b2, c2) = (
+    a[0] * a[0] + a[1] * a[1],
+    b[0] * b[0] + b[1] * b[1],
+    c[0] * c[0] + c[1] * c[1],
+  );
+  [
+    (a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d,
+    (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d,
+  ]
+}
+
+/// Liang–Barsky: the part of the segment `p → q` inside `[x0, x1] × [y0, y1]`.
+fn clip_segment(
+  p: [f64; 2],
+  q: [f64; 2],
+  bounds: [f64; 4],
+) -> Option<([f64; 2], [f64; 2])> {
+  let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+  let d = [q[0] - p[0], q[1] - p[1]];
+  let checks = [
+    (-d[0], p[0] - bounds[0]),
+    (d[0], bounds[1] - p[0]),
+    (-d[1], p[1] - bounds[2]),
+    (d[1], bounds[3] - p[1]),
+  ];
+  for (dir, dist) in checks {
+    if dir == 0.0 {
+      if dist < 0.0 {
+        return None;
+      }
+    } else {
+      let t = dist / dir;
+      if dir < 0.0 {
+        t0 = t0.max(t);
+      } else {
+        t1 = t1.min(t);
+      }
+    }
+  }
+  if t0 >= t1 {
+    return None;
+  }
+  Some((
+    [p[0] + t0 * d[0], p[1] + t0 * d[1]],
+    [p[0] + t1 * d[0], p[1] + t1 * d[1]],
+  ))
+}
+
+/// `ComputationalGeometry`DiagramPlot[{{x, y}, …}]` — the Voronoi diagram as
+/// graphics: the cell edges as `Line`s (unbounded ones cut at a frame around
+/// the sites), the sites as `Point`s, and with `LabelPoints -> True` their
+/// 1-based indices as `Text`.
+pub fn diagram_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("ComputationalGeometry`DiagramPlot", args);
+  let Some(points) = args.first().and_then(read_points) else {
+    return Ok(original());
+  };
+  let label_points = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(&**pattern, Expr::Identifier(n) if n == "ComputationalGeometry`LabelPoints" || n == "LabelPoints")
+        && matches!(&**replacement, Expr::Identifier(v) if v == "True"))
+  });
+  let Some(triangles) = triangulate(&points) else {
+    return Ok(original());
+  };
+
+  let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+  for p in &points {
+    for k in 0..2 {
+      lo[k] = lo[k].min(p[k]);
+      hi[k] = hi[k].max(p[k]);
+    }
+  }
+  let pad = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1.0) * 0.5;
+  let bounds = [lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad];
+  let far = pad * 1000.0;
+
+  let centers: Vec<[f64; 2]> = triangles
+    .iter()
+    .map(|t| circumcenter_of(points[t[0]], points[t[1]], points[t[2]]))
+    .collect();
+  // Each undirected Delaunay edge with the triangles (and opposite vertices)
+  // on its sides.
+  let mut edges: std::collections::BTreeMap<[usize; 2], Vec<(usize, usize)>> =
+    std::collections::BTreeMap::new();
+  for (ti, t) in triangles.iter().enumerate() {
+    for k in 0..3 {
+      let (a, b, opposite) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+      edges
+        .entry([a.min(b), a.max(b)])
+        .or_default()
+        .push((ti, opposite));
+    }
+  }
+
+  let real = |v: f64| Expr::Real(v);
+  let point_expr =
+    |p: [f64; 2]| Expr::List(vec![real(p[0]), real(p[1])].into());
+  let mut lines = Vec::new();
+  for ([a, b], sides) in &edges {
+    let segment = match sides.as_slice() {
+      [(t1, _), (t2, _)] => Some((centers[*t1], centers[*t2])),
+      [(t, opposite)] => {
+        // A hull edge: its cell edge is a ray from the circumcentre, away
+        // from the triangle's third vertex.
+        let (pa, pb, po) = (points[*a], points[*b], points[*opposite]);
+        let mut dir = [-(pb[1] - pa[1]), pb[0] - pa[0]];
+        let mid = [f64::midpoint(pa[0], pb[0]), f64::midpoint(pa[1], pb[1])];
+        if dir[0] * (mid[0] - po[0]) + dir[1] * (mid[1] - po[1]) < 0.0 {
+          dir = [-dir[0], -dir[1]];
+        }
+        let norm = dir[0].hypot(dir[1]);
+        let c = centers[*t];
+        Some((c, [c[0] + dir[0] / norm * far, c[1] + dir[1] / norm * far]))
+      }
+      _ => None,
+    };
+    if let Some((p, q)) = segment
+      && let Some((p, q)) = clip_segment(p, q, bounds)
+    {
+      lines.push(call1(
+        "Line",
+        Expr::List(vec![point_expr(p), point_expr(q)].into()),
+      ));
+    }
+  }
+  let mut primitives = vec![Expr::List(lines.into())];
+  primitives.push(Expr::List(
+    points
+      .iter()
+      .map(|p| call1("Point", point_expr(*p)))
+      .collect(),
+  ));
+  if label_points {
+    primitives.push(Expr::List(
+      points
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+          call("Text", vec![Expr::Integer(i as i128 + 1), point_expr(*p)])
+        })
+        .collect(),
+    ));
+  }
+  Ok(call("Graphics", vec![Expr::List(primitives.into())]))
+}

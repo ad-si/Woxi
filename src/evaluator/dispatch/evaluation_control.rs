@@ -509,6 +509,33 @@ pub fn dispatch_evaluation_control(
     }
     // The constructor never validates (wolframscript echoes even
     // non-symmetric matrices silently); Mean/Variance validate.
+    "GaussianOrthogonalMatrixDistribution"
+    | "GaussianUnitaryMatrixDistribution"
+      if args.len() == 1 || args.len() == 2 =>
+    {
+      return Some(Ok(unevaluated(name, args)));
+    }
+    // The property (args[0]) stays held, as it is a function of the matrix
+    // variable; the ensemble inside `Distributed[x, ensemble]` is evaluated
+    // so that its size and scale parameters resolve.
+    "MatrixPropertyDistribution" if args.len() == 2 => {
+      let spec = match &args[1] {
+        Expr::FunctionCall {
+          name: dname,
+          args: dspec,
+        } if dname == "Distributed" && dspec.len() == 2 => {
+          match crate::evaluator::evaluate_expr_to_expr(&dspec[1]) {
+            Ok(dist) => unevaluated("Distributed", &[dspec[0].clone(), dist]),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        other => other.clone(),
+      };
+      return Some(Ok(unevaluated(
+        "MatrixPropertyDistribution",
+        &[args[0].clone(), spec],
+      )));
+    }
     "WishartMatrixDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("WishartMatrixDistribution", args)));
     }

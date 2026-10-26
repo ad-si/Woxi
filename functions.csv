@@ -845,6 +845,8 @@ SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
 ComputationalGeometry`ConvexHull,Legacy package function: counter-clockwise indices of the convex hull corners of a 2D point set (bare ConvexHull after loading the package),✅,pure,1.0,814
+ComputationalGeometry`DelaunayTriangulation,Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set,✅,pure,5.0,814
+ComputationalGeometry`DiagramPlot,Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices),✅,pure,5.0,814
 ConvexHullMesh,Convex hull of a 2D or 3D point set as a BoundaryMeshRegion,✅,pure,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
@@ -3394,7 +3396,7 @@ ConstantRegionQ,,,,10.0,3462
 ConvectionPDETerm,,,,12.2,3462
 DynamicEvaluationTimeout,,🚫,,8.0,3462
 FileSize,"Returns the size of a file as Quantity[bytes;""Bytes""] with a Real magnitude; accepts File wrappers",✅,io,11.2,3462
-GaussianUnitaryMatrixDistribution,,,,10.3,3462
+GaussianUnitaryMatrixDistribution,represents the Gaussian unitary ensemble of random Hermitian matrices (sampled by RandomVariate),✅,none,10.3,3462
 HolidayCalendar,,,,9.0,3462
 HotellingTSquareDistribution,Hotelling T-squared distribution,✅,pure,8.0,3462
 KaiserWindow,Kaiser–Bessel window function; KaiserWindow[x] or KaiserWindow[x alpha] (default alpha 3),✅,pure,9.0,3462
@@ -3572,7 +3574,7 @@ WindVectorData,,🚫,,10.0,3636
 AudioNormalize,Scales audio so its loudest sample sits at full scale — the scale is taken over every channel at once,✅,pure,11.0,3656
 CombinerFunction,,,,10.0,3656
 CompatibleUnitQ,Tests if two quantities have compatible units,✅,pure,9.0,3656
-GaussianOrthogonalMatrixDistribution,,,,10.3,3656
+GaussianOrthogonalMatrixDistribution,represents the Gaussian orthogonal ensemble of random real symmetric matrices (sampled by RandomVariate),✅,none,10.3,3656
 GeoScaleBar,,🚫,,10.0,3656
 HTTPResponse,Symbolic HTTP response object produced by URLRead; stays unevaluated,✅,unevaluated,10.0,3656
 HilbertFilter,,,,9.0,3656

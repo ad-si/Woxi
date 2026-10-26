@@ -1804,9 +1804,16 @@ pub fn dispatch_io_functions(
         channels,
         data,
         display_size,
+        color_space,
         ..
       } = &args[1]
       {
+        let (channels, data) = crate::functions::image_ast::rgb_pixels(
+          *color_space,
+          *channels,
+          data,
+        );
+        let (channels, data) = (&channels, &*data);
         if fmt == "SVG" {
           let svg = crate::functions::image_ast::image_to_svg_document(
             *width,
@@ -2155,10 +2162,18 @@ pub fn dispatch_io_functions(
             height,
             channels,
             data: pixels,
+            color_space,
             ..
-          } => match crate::functions::image_ast::export_image_bytes(
-            &fmt, *width, *height, *channels, pixels,
-          ) {
+          } => match {
+            let (ch, px) = crate::functions::image_ast::rgb_pixels(
+              *color_space,
+              *channels,
+              pixels,
+            );
+            crate::functions::image_ast::export_image_bytes(
+              &fmt, *width, *height, ch, &px,
+            )
+          } {
             Ok(b) => b,
             Err(e) => return Some(Err(e)),
           },
@@ -5420,6 +5435,25 @@ fn rendered_graphic_span(body: &Expr) -> f64 {
   1.0
 }
 
+/// The `Epilog` option a rendered picture was drawn with, if any.
+fn rendered_graphic_epilog(body: &Expr) -> Option<Expr> {
+  let Expr::Graphics {
+    source: Some(src), ..
+  } = body
+  else {
+    return None;
+  };
+  src.options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  })
+}
+
 /// Whether `name` is a graphics-producing head known to accept an
 /// `Epilog -> {…}` option — extra primitives drawn on top of the picture,
 /// in the same data coordinates, without changing the call's arity the
@@ -5430,30 +5464,43 @@ fn accepts_epilog_option(name: &str) -> bool {
 
 /// Add `Epilog -> markers` (merging with any `Epilog` already there) to a
 /// `FunctionCall` with a head [`accepts_epilog_option`] recognizes.
-fn with_epilog(name: &str, args: &[Expr], markers: &Expr) -> Expr {
+///
+/// `inherited` is the `Epilog` the evaluated picture already carries. A
+/// `Show[…]` without an `Epilog` option of its own takes the one of its
+/// first graphic, but an `Epilog` given to `Show` *replaces* that one, so
+/// the markers are appended to it rather than hiding it.
+fn with_epilog(
+  name: &str,
+  args: &[Expr],
+  markers: &Expr,
+  inherited: Option<&Expr>,
+) -> Expr {
   let mut new_args: crate::ExprList = args.to_vec().into();
   let existing = new_args.iter().position(|a| {
     matches!(a, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog"))
   });
-  match existing {
-    Some(pos) => {
-      let merged = match &new_args[pos] {
-        Expr::Rule { replacement, .. } => match replacement.as_ref() {
-          Expr::List(items) => {
-            let mut v = items.to_vec();
-            v.push(markers.clone());
-            Expr::List(v.into())
-          }
-          other => Expr::List(vec![other.clone(), markers.clone()].into()),
-        },
-        _ => markers.clone(),
-      };
-      new_args[pos] = rule_expr(id_expr("Epilog"), merged);
-    }
-    None => {
-      new_args.push(rule_expr(id_expr("Epilog"), markers.clone()));
-    }
+  if let Some(pos) = existing {
+    let merged = match &new_args[pos] {
+      Expr::Rule { replacement, .. } => match replacement.as_ref() {
+        Expr::List(items) => {
+          let mut v = items.to_vec();
+          v.push(markers.clone());
+          Expr::List(v.into())
+        }
+        other => Expr::List(vec![other.clone(), markers.clone()].into()),
+      },
+      _ => markers.clone(),
+    };
+    new_args[pos] = rule_expr(id_expr("Epilog"), merged);
+  } else {
+    let combined = match inherited {
+      Some(prior) if name == "Show" => {
+        Expr::List(vec![prior.clone(), markers.clone()].into())
+      }
+      _ => markers.clone(),
+    };
+    new_args.push(rule_expr(id_expr("Epilog"), combined));
   }
   Expr::FunctionCall {
     name: name.to_string(),
@@ -5474,12 +5521,17 @@ fn with_epilog(name: &str, args: &[Expr], markers: &Expr) -> Expr {
 /// unchanged, including a call whose head [`accepts_epilog_option`]
 /// does not recognize (appending an option to those could break their
 /// arity).
-fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
+fn inject_epilog_through_control_flow(
+  expr: &Expr,
+  markers: &Expr,
+  inherited: Option<&Expr>,
+) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "If" && args.len() >= 2 => {
       let mut new_args = args.clone();
       for branch in new_args.iter_mut().skip(1) {
-        *branch = inject_epilog_through_control_flow(branch, markers);
+        *branch =
+          inject_epilog_through_control_flow(branch, markers, inherited);
       }
       Expr::FunctionCall {
         name: name.clone(),
@@ -5490,7 +5542,8 @@ fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
       let mut new_args = args.clone();
       let mut i = 1;
       while i < new_args.len() {
-        new_args[i] = inject_epilog_through_control_flow(&new_args[i], markers);
+        new_args[i] =
+          inject_epilog_through_control_flow(&new_args[i], markers, inherited);
         i += 2;
       }
       Expr::FunctionCall {
@@ -5504,7 +5557,8 @@ fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
       let mut new_args = args.clone();
       let mut i = 2;
       while i < new_args.len() {
-        new_args[i] = inject_epilog_through_control_flow(&new_args[i], markers);
+        new_args[i] =
+          inject_epilog_through_control_flow(&new_args[i], markers, inherited);
         i += 2;
       }
       Expr::FunctionCall {
@@ -5520,7 +5574,7 @@ fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
         name: name.clone(),
         args: vec![
           args[0].clone(),
-          inject_epilog_through_control_flow(&args[1], markers),
+          inject_epilog_through_control_flow(&args[1], markers, inherited),
         ]
         .into(),
       }
@@ -5528,12 +5582,15 @@ fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
     Expr::CompoundExpr(items) if !items.is_empty() => {
       let mut new_items = items.clone();
       let last = new_items.len() - 1;
-      new_items[last] =
-        inject_epilog_through_control_flow(&new_items[last], markers);
+      new_items[last] = inject_epilog_through_control_flow(
+        &new_items[last],
+        markers,
+        inherited,
+      );
       Expr::CompoundExpr(new_items)
     }
     Expr::FunctionCall { name, args } if accepts_epilog_option(name) => {
-      with_epilog(name, args, markers)
+      with_epilog(name, args, markers, inherited)
     }
     other => other.clone(),
   }
@@ -5568,8 +5625,12 @@ fn locator_pane_graphic_via_epilog(
   if markers.is_empty() {
     return Some(body.clone());
   }
-  let augmented =
-    inject_epilog_through_control_flow(held, &Expr::List(markers.into()));
+  let inherited = rendered_graphic_epilog(body);
+  let augmented = inject_epilog_through_control_flow(
+    held,
+    &Expr::List(markers.into()),
+    inherited.as_ref(),
+  );
   Some(
     crate::evaluator::evaluate_expr_to_expr(&augmented)
       .unwrap_or_else(|_| body.clone()),
@@ -6821,14 +6882,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       channels,
       data,
       display_size,
+      color_space,
       ..
-    } => crate::functions::image_ast::image_to_svg_document(
-      *width,
-      *height,
-      *channels,
-      data,
-      *display_size,
-    ),
+    } => {
+      let (ch, px) =
+        crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
+      crate::functions::image_ast::image_to_svg_document(
+        *width,
+        *height,
+        ch,
+        &px,
+        *display_size,
+      )
+    }
     // TableForm[data, opts…] — render the aligned grid (matching how visual
     // frontends show it), instead of dumping the raw `TableForm[…]` text.
     Expr::FunctionCall { name, args }

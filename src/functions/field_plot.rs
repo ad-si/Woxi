@@ -5325,6 +5325,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // have no `f64` form) and patterns alike, not just real numbers.
   let mut color_rules: Option<Expr> = None;
   let mut mesh = false;
+  // `MeshStyle` / `FrameStyle`: colors of the cell grid and of the border.
+  let mut mesh_style_color: Option<RGBColor> = None;
+  let mut frame_style_color: Option<RGBColor> = None;
   let mut color_function: Option<String> = None;
   // `ColorFunction -> f` for an `f` that isn't a recognized named gradient
   // (a pure function, a user-defined symbol, …): applied per-cell via the
@@ -5405,6 +5408,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
           _ => {}
         },
+        "MeshStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_style_color = style_rgb(&val);
+        }
+        "FrameStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          frame_style_color = style_rgb(&val);
+        }
         "ColorFunction" => {
           if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
             color_function = Some(s);
@@ -5527,7 +5540,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let render_height = svg_height * s;
 
   let (bg_color, _, _, _, _) = plot_theme();
-  let border_color = RGBColor(0x66, 0x66, 0x66);
+  let border_color = frame_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
 
   let mut cell_rgb: Vec<Vec<(u8, u8, u8)>> = Vec::with_capacity(n_rows);
   let mut buf = String::new();
@@ -5642,7 +5655,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Draw mesh grid lines between cells
     if mesh {
-      let mesh_color = RGBColor(0x66, 0x66, 0x66);
+      let mesh_color = mesh_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
       let line_w = (s as i32).max(1);
       // Vertical lines
       for j in 1..n_cols {
@@ -5835,6 +5848,22 @@ struct FrameTickLabels {
 }
 
 /// Fold a number (font size) and color directives into `base`.
+/// The color a style spec (`White`, `{Red, Thick}`, `Directive[…]`) sets.
+fn style_rgb(value: &Expr) -> Option<RGBColor> {
+  let items: Vec<&Expr> = match value {
+    Expr::List(items) => items.iter().collect(),
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().collect()
+    }
+    other => vec![other],
+  };
+  items.into_iter().find_map(|item| {
+    let c = parse_color(item)?;
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some(RGBColor(ch(c.r), ch(c.g), ch(c.b)))
+  })
+}
+
 fn parse_tick_style(value: &Expr, base: TickStyle) -> TickStyle {
   let mut style = base;
   let items: Vec<&Expr> = match value {

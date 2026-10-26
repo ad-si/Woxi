@@ -893,15 +893,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          let items: Vec<Expr> = match &value {
-            Expr::List(items) => items.to_vec(),
-            other => vec![other.clone()],
-          };
-          for (i, item) in items.iter().take(3).enumerate() {
-            axes_labels[i] = axis_label_markup(item);
-          }
+          axes_labels =
+            parse_axes_labels(replacement, Some([&xvar, &yvar, "z"]));
         }
         _ => {}
       }
@@ -1148,6 +1141,39 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // inside another graphic keeps the shape it was drawn with.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
+    // `AxesLabel -> Automatic` names the axes after the plot's variables;
+    // a `Graphics3D` has no variables to name them by, so spell them out.
+    for opt in &mut structure_args {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AxesLabel")
+      {
+        let name = |s: &str| Expr::Identifier(s.to_string());
+        let resolve = |e: &Expr, default: &str| match e {
+          Expr::Identifier(a) if a == "Automatic" => name(default),
+          other => other.clone(),
+        };
+        let defaults = [xvar.as_str(), yvar.as_str(), "z"];
+        match replacement.as_ref() {
+          Expr::Identifier(a) if a == "Automatic" => {
+            **replacement = Expr::List(
+              defaults.iter().map(|d| name(d)).collect::<Vec<_>>().into(),
+            );
+          }
+          Expr::List(items) => {
+            let resolved: Vec<Expr> = items
+              .iter()
+              .enumerate()
+              .map(|(i, e)| resolve(e, defaults.get(i).unwrap_or(&"")))
+              .collect();
+            **replacement = Expr::List(resolved.into());
+          }
+          _ => {}
+        }
+      }
+    }
     let names = |opt: &str| {
       structure_args.iter().any(|o| {
         matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
@@ -7061,6 +7087,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
   // pins each axis separately.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
+  // `PlotRange -> {zmin, zmax}`: pins the vertical axis only, the other two
+  // keep the extent of the contents (what a `Plot3D` carries into `Show`).
+  let mut z_only_range: Option<(f64, f64)> = None;
   // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
   // box simply has the proportions of the data.
   let mut box_ratios: Option<[f64; 3]> = None;
@@ -7191,6 +7220,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           } else if let Some(ranges) = parse_axis_ranges(&value) {
             plot_range = Some(ranges);
+          } else if let Some((lo, hi)) = parse_z_only_range(&value)
+            && hi > lo
+          {
+            z_only_range = Some((lo, hi));
           }
         }
         // `BoxRatios -> {rx, ry, rz}` fixes the *shape* of the bounding
@@ -7248,15 +7281,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "AxesLabel" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          let items: Vec<Expr> = match &value {
-            Expr::List(items) => items.to_vec(),
-            other => vec![other.clone()],
-          };
-          for (i, item) in items.iter().take(3).enumerate() {
-            axes_labels[i] = axis_label_markup(item);
-          }
+          axes_labels = parse_axes_labels(replacement, None);
         }
         _ => {}
       }
@@ -7272,6 +7297,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  if plot_range.is_none()
+    && let Some(z) = z_only_range
+  {
+    let [x, y, _] = primitives_bounds(&prims);
+    if x.0.is_finite() && x.1.is_finite() && y.0.is_finite() && y.1.is_finite()
+    {
+      plot_range = Some([x, y, z]);
+    }
+  }
 
   // Unbounded primitives (`InfiniteLine`, `InfinitePlane`, …) show only the
   // part of themselves that falls inside the picture's box, so they are
@@ -8398,14 +8433,43 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
   Some(ranges)
 }
 
+/// The three axis labels an `AxesLabel` value names. A lone label (or a
+/// shorter list) labels the leading axes; `defaults` are the names
+/// `Automatic` stands for.
+fn parse_axes_labels(
+  replacement: &Expr,
+  defaults: Option<[&str; 3]>,
+) -> [Option<String>; 3] {
+  let value =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  let items: Vec<Expr> = match &value {
+    Expr::List(items) => items.to_vec(),
+    // A bare `Automatic` labels every axis, not just the first.
+    Expr::Identifier(s) if s == "Automatic" => vec![value.clone(); 3],
+    other => vec![other.clone()],
+  };
+  let mut labels: [Option<String>; 3] = [None, None, None];
+  for (i, item) in items.iter().take(3).enumerate() {
+    labels[i] = axis_label_markup(item, defaults.map(|d| d[i]));
+  }
+  labels
+}
+
 /// The SVG markup of one `AxesLabel` entry. `None` for `None` — the way an
 /// axis asks to stay unlabelled. Everything else is typeset by the shared
 /// label renderer, so a label written in the FrontEnd as linear syntax
 /// (`"\!\(\*FractionBox[\(d\[Theta]\), \(dt\)]\) (rad/s)"`) draws as the
 /// fraction it stands for.
-fn axis_label_markup(expr: &Expr) -> Option<String> {
+fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
   match expr {
     Expr::Identifier(s) if s == "None" => None,
+    // `Automatic` asks for the plot's default label: the variable's name
+    // for a function plot, nothing for a bare `Graphics3D`.
+    Expr::Identifier(s) if s == "Automatic" => default.map(|name| {
+      crate::functions::graphics::expr_to_svg_markup(&Expr::Identifier(
+        name.to_string(),
+      ))
+    }),
     _ => {
       let markup = crate::functions::graphics::expr_to_svg_markup(expr);
       (!markup.is_empty()).then_some(markup)
@@ -8728,15 +8792,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z_clip = parse_z_only_range(replacement);
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          let items: Vec<Expr> = match &value {
-            Expr::List(items) => items.to_vec(),
-            other => vec![other.clone()],
-          };
-          for (i, item) in items.iter().take(3).enumerate() {
-            axes_labels[i] = axis_label_markup(item);
-          }
+          axes_labels = parse_axes_labels(replacement, None);
         }
         _ => {}
       }
@@ -9911,15 +9967,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       color_fn.read_option(pattern, replacement);
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "AxesLabel" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          let items: Vec<Expr> = match &value {
-            Expr::List(items) => items.to_vec(),
-            other => vec![other.clone()],
-          };
-          for (i, item) in items.iter().take(3).enumerate() {
-            axes_labels[i] = axis_label_markup(item);
-          }
+          axes_labels = parse_axes_labels(replacement, None);
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -12058,15 +12106,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          let items: Vec<Expr> = match &value {
-            Expr::List(items) => items.to_vec(),
-            other => vec![other.clone()],
-          };
-          for (i, item) in items.iter().take(3).enumerate() {
-            axes_labels[i] = axis_label_markup(item);
-          }
+          axes_labels = parse_axes_labels(replacement, None);
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {

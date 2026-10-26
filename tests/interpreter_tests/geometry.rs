@@ -2950,6 +2950,30 @@ mod computational_geometry_convex_hull {
       "{1, 2, 3, 5}"
     );
   }
+
+  // The legacy adjacency-list triangulation: neighbours of each point.
+  #[test]
+  fn delaunay_triangulation_adjacency() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; DelaunayTriangulation[{{-3,-3},{2,-2},{4,2},{1,3}}]"
+      )
+      .unwrap(),
+      "{{1, {2, 4}}, {2, {1, 3, 4}}, {3, {2, 4}}, {4, {1, 2, 3}}}"
+    );
+  }
+
+  // The Voronoi diagram: cell edges clipped to a frame, sites, index labels.
+  #[test]
+  fn diagram_plot_voronoi_edges_sites_and_labels() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; g = DiagramPlot[{{0,0},{4,0},{0,3}}, LabelPoints -> True]; {Length[Cases[g, _Line, Infinity]], Cases[g, _Point, Infinity], Cases[g, _Text, Infinity]}"
+      )
+      .unwrap(),
+      "{3, {Point[{0., 0.}], Point[{4., 0.}], Point[{0., 3.}]}, {Text[1, {0., 0.}], Text[2, {4., 0.}], Text[3, {0., 3.}]}}"
+    );
+  }
 }
 
 mod convex_hull_mesh {
@@ -9560,5 +9584,30 @@ mod parametric_region {
       interpret("ParametricRegion[{s, t, 1}, {{s, 1, 0}, {t, 0, 1}}]").unwrap(),
       "EmptyRegion[3]"
     );
+  }
+}
+
+mod stadium_shape_graphics {
+  use super::*;
+
+  // StadiumShape inside Graphics draws as a filled polygon (also through
+  // Translate/Scale), spanning the segment plus the radius on every side.
+  #[test]
+  fn renders_as_polygon() {
+    let svg = interpret(
+      "ExportString[Graphics[{Blue, StadiumShape[{{-5, 0}, {-2, 0}}, 1]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polygon"));
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+  }
+
+  #[test]
+  fn renders_through_translate_and_scale() {
+    let svg = interpret(
+      "ExportString[Graphics[{Scale[Translate[{StadiumShape[{{0, 0}, {0, 3}}, 1]}, {2, 2}], 1/2]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("<polygon"));
   }
 }

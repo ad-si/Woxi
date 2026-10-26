@@ -4875,6 +4875,28 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 };
               }
             }
+            // A content the two terms share stays a factor of the sum:
+            // `3 (-1 - Sqrt[2])`, `(3 (-45 - Sqrt[2585]))/16`.
+            let content = if nb == 0 { 1 } else { gcd_i128(nb.abs(), so) };
+            if content > 1 {
+              let radical = if so == content {
+                make_sqrt(Expr::Integer(sqrt_in))
+              } else {
+                multiply_exprs(
+                  &Expr::Integer(so / content),
+                  &make_sqrt(Expr::Integer(sqrt_in)),
+                )
+              };
+              let join_op = if sign_minus {
+                BinaryOperator::Minus
+              } else {
+                BinaryOperator::Plus
+              };
+              let sum = binop(join_op, Expr::Integer(nb / content), radical);
+              let root = times2(make_rational(content, den), sum);
+              return crate::evaluator::evaluate_expr_to_expr(&root)
+                .unwrap_or(root);
+            }
             let num = if nb == 0 {
               if sign_minus {
                 negate_expr(&sqrt_part)
@@ -4978,6 +5000,28 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         );
         let make_sol = |sign_minus: bool| -> Expr {
+          // A shared content stays a factor of the sum, as for real roots.
+          let content = if nb == 0 { 1 } else { gcd_i128(nb.abs(), so) };
+          if content > 1 {
+            let radical = multiply_exprs(
+              &id_expr("I"),
+              &if so == content {
+                make_sqrt(Expr::Integer(sqrt_in))
+              } else {
+                multiply_exprs(
+                  &Expr::Integer(so / content),
+                  &make_sqrt(Expr::Integer(sqrt_in)),
+                )
+              },
+            );
+            let join_op = if sign_minus {
+              BinaryOperator::Minus
+            } else {
+              BinaryOperator::Plus
+            };
+            let sum = binop(join_op, Expr::Integer(nb / content), radical);
+            return times2(make_rational(content, den), sum);
+          }
           let num = if nb == 0 {
             if sign_minus {
               negate_expr(&sqrt_part)
@@ -5295,6 +5339,83 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let Some(numeric) = numeric_polynomial_solutions(&coeffs, var)
       {
         return Ok(numeric);
+      }
+      // An irreducible quartic in x^2 alone is a quadratic in u = x^2:
+      // each of its roots gives the two square roots ±Sqrt[u].
+      if degree == 4
+        && matches!(&coeffs[1], Expr::Integer(0))
+        && matches!(&coeffs[3], Expr::Integer(0))
+      {
+        let u = "Solve$u";
+        let quadratic = Expr::Comparison {
+          operands: vec![
+            plus(vec![
+              coeffs[0].clone(),
+              times(vec![coeffs[2].clone(), id_expr(u)]),
+              times(vec![coeffs[4].clone(), pow(id_expr(u), Expr::Integer(2))]),
+            ]),
+            Expr::Integer(0),
+          ],
+          operators: vec![ComparisonOp::Equal],
+        };
+        if let Ok(Expr::List(ref u_roots)) = solve_ast(&[quadratic, id_expr(u)])
+        {
+          let mut values: Vec<Expr> = u_roots
+            .iter()
+            .filter_map(|root| match root {
+              Expr::List(rules) => match rules.first() {
+                Some(Expr::Rule { replacement, .. }) => {
+                  Some((**replacement).clone())
+                }
+                _ => None,
+              },
+              _ => None,
+            })
+            .collect();
+          // The roots with real square roots (u >= 0) come first, each
+          // group by the value of u.
+          let keys: Vec<Option<(bool, f64, f64)>> = values
+            .iter()
+            .map(|v| {
+              let (re, im) = try_extract_complex_f64(
+                &crate::evaluator::evaluate_expr_to_expr(&call(
+                  "N",
+                  vec![v.clone()],
+                ))
+                .ok()?,
+              )?;
+              Some((!(im.abs() < 1e-12 && re >= 0.0), re, im))
+            })
+            .collect();
+          if keys.iter().all(Option::is_some) {
+            let mut order: Vec<usize> = (0..values.len()).collect();
+            order.sort_by(|&a, &b| {
+              let (ka, kb) = (keys[a].unwrap(), keys[b].unwrap());
+              ka.0
+                .cmp(&kb.0)
+                .then(ka.1.total_cmp(&kb.1))
+                .then(ka.2.total_cmp(&kb.2))
+            });
+            values = order.into_iter().map(|i| values[i].clone()).collect();
+          }
+          let mut solutions = Vec::with_capacity(4);
+          for replacement in &values {
+            let sqrt = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Sqrt",
+              vec![replacement.clone()],
+            ))?;
+            let negated =
+              crate::evaluator::evaluate_expr_to_expr(&times(vec![
+                Expr::Integer(-1),
+                sqrt.clone(),
+              ]))?;
+            solutions.push(make_rule(negated));
+            solutions.push(make_rule(sqrt));
+          }
+          if solutions.len() == 4 {
+            return Ok(Expr::List(solutions.into()));
+          }
+        }
       }
       // Last resort for irreducible polynomials of degree ≥ 3 with
       // integer/rational coefficients: emit the wolframscript-style
@@ -8163,6 +8284,7 @@ fn try_solve_radical_equation(
     return None;
   };
   let mut kept: Vec<Expr> = Vec::new();
+  let mut undecided = false;
   for candidate in candidates {
     let Expr::List(rules) = candidate else {
       return None;
@@ -8170,9 +8292,34 @@ fn try_solve_radical_equation(
     let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
       return None;
     };
-    if equation_holds_at(equation, var, replacement)? {
+    // With other symbols in the equation the check cannot decide; the
+    // candidate is kept, with the warning wolframscript gives for it.
+    match equation_holds_at(equation, var, replacement) {
+      Some(true) => {}
+      Some(false) => continue,
+      None => {
+        // Decided at a generic point instead: every other symbol set to a
+        // positive number of its own. A candidate failing there (`x ->
+        // Sqrt[-a^2]/2` from squaring) is no solution for most parameters.
+        match holds_generically(equation, var, replacement) {
+          Some(GenericValidity::Fails) => continue,
+          Some(GenericValidity::Always) => {}
+          _ => undecided = true,
+        }
+      }
+    }
+    if !kept
+      .iter()
+      .any(|k| crate::evaluator::pattern_matching::expr_equal(k, candidate))
+    {
       kept.push(candidate.clone());
     }
+  }
+  if undecided {
+    crate::emit_message(
+      "Solve::nongen: There may be values of the parameters for which some \
+       or all solutions are not valid.",
+    );
   }
   Some(Ok(Expr::List(kept.into())))
 }
@@ -8402,6 +8549,74 @@ fn rational_parts(exponent: &Expr) -> Option<(i128, i128)> {
 
 /// Whether `equation` holds with `value` put in for `var`, or `None` when
 /// that cannot be decided.
+/// Whether a candidate solves an equation with other symbols in it, judged
+/// at sample points where each of those symbols takes a number: `None`
+/// when the first (positive) point does not decide, `Fails` when the
+/// equation fails there, and otherwise whether it also holds at negative,
+/// larger and complex points — valid for every parameter value as far as
+/// the samples tell — or only for some.
+fn holds_generically(
+  equation: &Expr,
+  var: &str,
+  value: &Expr,
+) -> Option<GenericValidity> {
+  fn collect(e: &Expr, out: &mut std::collections::BTreeSet<String>) {
+    if let Expr::Identifier(name) = e {
+      out.insert(name.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect(child, out);
+    }
+  }
+  let mut found = std::collections::BTreeSet::new();
+  collect(equation, &mut found);
+  collect(value, &mut found);
+  let symbols: Vec<String> = found
+    .into_iter()
+    .filter(|s| s != var && !crate::evaluator::functions::is_builtin_symbol(s))
+    .collect();
+  if symbols.is_empty() {
+    return None;
+  }
+  let at = |point: &dyn Fn(usize) -> Expr| -> Option<bool> {
+    let mut equation = equation.clone();
+    let mut value = value.clone();
+    for (k, symbol) in symbols.iter().enumerate() {
+      equation =
+        crate::syntax::substitute_variable(&equation, symbol, &point(k));
+      value = crate::syntax::substitute_variable(&value, symbol, &point(k));
+    }
+    equation_holds_at(&equation, var, &value)
+  };
+  let shift = |k: usize| 0.3127 * k as f64;
+  if !at(&|k| Expr::Real(0.7349 + shift(k)))? {
+    return Some(GenericValidity::Fails);
+  }
+  let others: [&dyn Fn(usize) -> Expr; 3] = [
+    &|k| Expr::Real(-1.3127 - shift(k)),
+    &|k| Expr::Real(7.3149 + shift(k)),
+    &|k| {
+      crate::functions::math_ast::build_complex_float_expr_keep_real(
+        0.5213 + shift(k),
+        0.8137,
+      )
+    },
+  ];
+  Some(if others.iter().all(|p| at(*p) == Some(true)) {
+    GenericValidity::Always
+  } else {
+    GenericValidity::Partly
+  })
+}
+
+/// How a candidate with parameters fares across sample parameter values.
+#[derive(PartialEq)]
+enum GenericValidity {
+  Always,
+  Partly,
+  Fails,
+}
+
 fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
   let (lhs, rhs, CompOp::Equal) =
     crate::functions::polynomial_ast::reduce::extract_comparison(equation)?
@@ -14823,7 +15038,29 @@ pub fn find_minimum_ast(
   })();
 
   // Evaluate expression at point
+  // The objective, gradient and Hessian are evaluated at many points, so
+  // each is compiled once into a plain float tree (keyed by address; they
+  // are not mutated from here on). Anything the compiler hands to the AST
+  // evaluator, and any non-finite result, takes the general path below so
+  // messages and exotic values behave as before.
+  let compiled: std::cell::RefCell<
+    std::collections::HashMap<*const Expr, Option<NumNode>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+    let fast = {
+      let mut cache = compiled.borrow_mut();
+      cache
+        .entry(std::ptr::from_ref::<Expr>(expr))
+        .or_insert_with(|| {
+          compile_numeric(expr, &vars).filter(|node| !node.has_fallback())
+        })
+        .as_ref()
+        .map(|node| node.eval(point))
+        .filter(|v| v.is_finite())
+    };
+    if let Some(v) = fast {
+      return Ok(v);
+    }
     let mut e = expr.clone();
     for (i, var) in vars.iter().enumerate() {
       e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
@@ -14963,7 +15200,10 @@ pub fn find_minimum_ast(
       // Convergence: the Newton step itself is small. Using gval alone
       // would terminate too eagerly when the function is scaled by a
       // tiny constant (gradient is O(scale), but the step is O(1)).
-      if step.abs() < tol {
+      // The threshold scales with the iterate: near a large `x` the step
+      // is stuck at rounding noise (a few ulps) and would otherwise never
+      // drop below the absolute tolerance, burning every iteration.
+      if step.abs() < tol * (1.0 + x[0].abs()) {
         break;
       }
 
@@ -14994,6 +15234,11 @@ pub fn find_minimum_ast(
           break 'newton;
         };
         best_f = v * sign;
+      }
+      // The line search could not move off the current point, so every
+      // further iteration would repeat this one exactly.
+      if best_x == x[0] {
+        break;
       }
       x[0] = best_x;
       fire_step_monitor(step_monitor, &vars, &x);

@@ -5728,3 +5728,13 @@ woxi eval 'lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm["ParameterTableEntrie
 wolframscript divides by the zero degrees of freedom (with `Power::infy`
 messages) and reports `Indeterminate` standard errors and statistics; Woxi
 does not store the table for such a fit.
+
+### `Style[Column[{Style[…, color], …}], size]` inside `Text` loses the per-item colors
+
+```sh
+wolframscript -code 'ExportString[Graphics[Text[Column[{Style["a", Blue], Style["b", Red]}], {0, 0}]], "SVG"]'
+woxi eval 'ExportString[Graphics[Text[Column[{Style["a", Blue], Style["b", Red]}], {0, 0}]], "SVG"]'
+```
+
+wolframscript draws each line in its own color; Woxi flattens the `Column`
+to one multi-line text label, which carries a single fill color.
