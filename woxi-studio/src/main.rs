@@ -6829,7 +6829,12 @@ fn check_notebook(path: &std::path::Path) -> i32 {
         }
         for w in &result.warnings {
           println!("warning: {w}");
-          ok = false;
+          // A deprecation notice (`ExampleData::obsolete` for the retired
+          // `{"TestImage", "Lena"}`) is what Wolfram prints too, not a
+          // sign the notebook went wrong.
+          if !is_deprecation_notice(w) {
+            ok = false;
+          }
         }
       }
       Err(e) => {
@@ -6839,6 +6844,13 @@ fn check_notebook(path: &std::path::Path) -> i32 {
     }
   }
   if ok { 0 } else { 1 }
+}
+
+/// Whether a `--check` warning is a `Symbol::obsolete` deprecation notice.
+fn is_deprecation_notice(warning: &str) -> bool {
+  warning
+    .split_once(": ")
+    .is_some_and(|(tag, _)| tag.ends_with("::obsolete"))
 }
 
 // ── CLI argument parsing ─────────────────────────────────────────────
@@ -33358,5 +33370,17 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         "missing control {n}: {names:?}"
       );
     }
+  }
+
+  #[test]
+  fn deprecation_notices_do_not_fail_check() {
+    assert!(is_deprecation_notice(
+      "ExampleData::obsolete: {TestImage, Lena} is being deprecated, and \
+       may not be available in future versions of Wolfram Language."
+    ));
+    assert!(!is_deprecation_notice(
+      "Part::partw: Part 3 of {1, 2} does not exist."
+    ));
+    assert!(!is_deprecation_notice("obsolete::x is not a tag: here"));
   }
 }
