@@ -631,13 +631,17 @@ LeadingPlus = { "+" ~ !"+" ~ !"=" }
 // An operator or suffix that binds tighter than a unary minus (`-a^2` is
 // `-(a^2)`). `!-x` negates `x` directly, which is only right when nothing
 // like this follows `x`.
-TighterThanMinus = _{ "^" | "!" ~ !"=" | "'" | "." ~ !ASCII_DIGIT | "**" | "@" | "/@" | "//@" | "<>" | "~" | "/*" }
+TighterThanMinus = _{ "^" | BangNotUnequal | "'" | "." ~ !ASCII_DIGIT | "**" | "@" | "/@" | "//@" | "<>" | "~" | "/*" }
+// A "!" that does not begin "!=" (whitespace before an "=" does not count).
+BangNotUnequal = @{ "!" ~ !"=" }
 // LeadingNot marks prefix "!" as Not[expr]: !True, !x, !(a && b), etc.
 // Must not be followed by "=" (which would be != operator)
 LeadingNot = { "!" ~ !"=" ~ !"!" | "\\[Not]" | "\u{00AC}" }
 // FactorialSuffix: n! or n!! (Factorial / Factorial2)
-// Must not be followed by "=" (which would be != operator)
-FactorialSuffix = { "!!" | "!" ~ !"=" ~ !"!" }
+// Must not be *directly* followed by "=" (which would be the != operator);
+// atomic so the lookahead sees no skipped whitespace: `x! == 3` is
+// Factorial[x] == 3.
+FactorialSuffix = @{ "!!" | "!" ~ !"=" ~ !"!" }
 
 // TransposeSuffix: expr \[Transpose] → Transpose[expr]
 // Both the ASCII named-character form and the Unicode PUA glyph

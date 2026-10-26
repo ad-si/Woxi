@@ -2071,6 +2071,25 @@ mod big_integer {
     assert_eq!(interpret("a! b!").unwrap(), "a!*b!");
   }
 
+  // Only a "!" directly followed by "=" is Unequal; with a space between,
+  // `x! == 3` compares a factorial (a notebook's `RowBox[{"x", "!"}] ==`
+  // comes out that way).
+  #[test]
+  fn factorial_before_spaced_comparison() {
+    assert_eq!(
+      interpret("ToString[Hold[x! == 3], InputForm]").unwrap(),
+      "Hold[x! == 3]"
+    );
+    assert_eq!(
+      interpret("{3! == 6, 3! != 6, 3!=6}").unwrap(),
+      "{True, False, True}"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[x!=3], InputForm]").unwrap(),
+      "Hold[x != 3]"
+    );
+  }
+
   #[test]
   fn factorial_implicit_times_two_integers() {
     assert_eq!(interpret("5! 3!").unwrap(), "720");
