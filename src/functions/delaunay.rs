@@ -396,3 +396,136 @@ pub fn diagram_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(call("Graphics", vec![Expr::List(primitives.into())]))
 }
+
+/// `ComputationalGeometry`VoronoiDiagram[{{x, y}, …}]` — the legacy package's
+/// `{vertices, cells}`: the finite Voronoi vertices followed by one
+/// `Ray[origin, direction]` per unbounded cell edge, and per site
+/// `{i, {vertex numbers}}` listing its cell counter-clockwise (an unbounded
+/// cell starts and ends with a ray).
+pub fn voronoi_diagram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("ComputationalGeometry`VoronoiDiagram", args);
+  let Some(points) = args.first().and_then(read_points) else {
+    return Ok(original());
+  };
+  let Some(triangles) = triangulate(&points) else {
+    return Ok(original());
+  };
+
+  // Circumcentres, merging those of cocircular sites into one vertex.
+  let mut vertices: Vec<[f64; 2]> = Vec::new();
+  let mut triangle_vertex = Vec::with_capacity(triangles.len());
+  for t in &triangles {
+    let c = circumcenter_of(points[t[0]], points[t[1]], points[t[2]]);
+    let tol = 1e-9 * (1.0 + c[0].abs().max(c[1].abs()));
+    let found = vertices
+      .iter()
+      .position(|v| (v[0] - c[0]).abs() <= tol && (v[1] - c[1]).abs() <= tol);
+    triangle_vertex.push(found.unwrap_or_else(|| {
+      vertices.push(c);
+      vertices.len() - 1
+    }));
+  }
+
+  // Hull edges (seen by one triangle only) give the rays.
+  let mut edges: std::collections::BTreeMap<[usize; 2], Vec<(usize, usize)>> =
+    std::collections::BTreeMap::new();
+  for (ti, t) in triangles.iter().enumerate() {
+    for k in 0..3 {
+      let (a, b, opposite) = (t[k], t[(k + 1) % 3], t[(k + 2) % 3]);
+      edges
+        .entry([a.min(b), a.max(b)])
+        .or_default()
+        .push((ti, opposite));
+    }
+  }
+  // (site a, site b, origin vertex, unit direction)
+  let mut rays: Vec<(usize, usize, usize, [f64; 2])> = Vec::new();
+  for ([a, b], sides) in &edges {
+    if let [(t, opposite)] = sides.as_slice() {
+      let (pa, pb, po) = (points[*a], points[*b], points[*opposite]);
+      let mut dir = [-(pb[1] - pa[1]), pb[0] - pa[0]];
+      let mid = [f64::midpoint(pa[0], pb[0]), f64::midpoint(pa[1], pb[1])];
+      if dir[0] * (mid[0] - po[0]) + dir[1] * (mid[1] - po[1]) < 0.0 {
+        dir = [-dir[0], -dir[1]];
+      }
+      let norm = dir[0].hypot(dir[1]);
+      rays.push((*a, *b, triangle_vertex[*t], [dir[0] / norm, dir[1] / norm]));
+    }
+  }
+
+  let cross = |u: [f64; 2], v: [f64; 2]| u[0] * v[1] - u[1] * v[0];
+  let mut cells = Vec::with_capacity(points.len());
+  for (i, site) in points.iter().enumerate() {
+    let mut finite: Vec<usize> = triangles
+      .iter()
+      .enumerate()
+      .filter(|(_, t)| t.contains(&i))
+      .map(|(ti, _)| triangle_vertex[ti])
+      .collect();
+    finite.sort_unstable();
+    finite.dedup();
+    let own: Vec<usize> = rays
+      .iter()
+      .enumerate()
+      .filter(|(_, r)| r.0 == i || r.1 == i)
+      .map(|(k, _)| k)
+      .collect();
+
+    // Directions from the site, with the unbounded cell's entering ray (the
+    // one with the cell on its left) as the sweep's start.
+    let start = own.iter().copied().find(|&k| {
+      let (_, _, o, d) = rays[k];
+      let to_site = [site[0] - vertices[o][0], site[1] - vertices[o][1]];
+      cross([-d[0], -d[1]], to_site) > 0.0
+    });
+    let start_dir = start.map(|k| rays[k].3);
+    let sweep = |d: [f64; 2]| -> f64 {
+      let a = match start_dir {
+        Some(s) => cross(s, d).atan2(s[0] * d[0] + s[1] * d[1]),
+        None => d[1].atan2(d[0]),
+      };
+      if a < 0.0 {
+        a + std::f64::consts::TAU
+      } else {
+        a
+      }
+    };
+    // (sweep angle, vertex number in the final list)
+    let mut items: Vec<(f64, usize)> = finite
+      .iter()
+      .map(|&v| {
+        (
+          sweep([vertices[v][0] - site[0], vertices[v][1] - site[1]]),
+          v,
+        )
+      })
+      .collect();
+    for &k in &own {
+      let angle = if Some(k) == start { 0.0 } else { f64::INFINITY };
+      items.push((angle, vertices.len() + k));
+    }
+    items.sort_by(|a, b| a.0.total_cmp(&b.0));
+    cells.push(Expr::List(
+      vec![
+        Expr::Integer(i as i128 + 1),
+        Expr::List(
+          items
+            .iter()
+            .map(|(_, v)| Expr::Integer(*v as i128 + 1))
+            .collect(),
+        ),
+      ]
+      .into(),
+    ));
+  }
+
+  let real = |v: f64| Expr::Real(v);
+  let pair = |p: [f64; 2]| Expr::List(vec![real(p[0]), real(p[1])].into());
+  let mut vertex_exprs: Vec<Expr> = vertices.iter().map(|v| pair(*v)).collect();
+  for (_, _, origin, dir) in &rays {
+    vertex_exprs.push(call("Ray", vec![pair(vertices[*origin]), pair(*dir)]));
+  }
+  Ok(Expr::List(
+    vec![Expr::List(vertex_exprs.into()), Expr::List(cells.into())].into(),
+  ))
+}

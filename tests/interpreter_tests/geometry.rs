@@ -2974,6 +2974,30 @@ mod computational_geometry_convex_hull {
       "{3, {Point[{0., 0.}], Point[{4., 0.}], Point[{0., 3.}]}, {Text[1, {0., 0.}], Text[2, {4., 0.}], Text[3, {0., 3.}]}}"
     );
   }
+
+  // One finite vertex (the circumcentre) followed by a ray per hull edge.
+  #[test]
+  fn voronoi_diagram_vertices_rays_and_cells() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,3}}]; {Length[v], v[[1]], Head /@ Rest[v], Length /@ c[[All, 2]], c[[All, 1]]}"
+      )
+      .unwrap(),
+      "{4, {2., 1.5}, {Ray, Ray, Ray}, {3, 3, 3}, {1, 2, 3}}"
+    );
+  }
+
+  // Bounded cell of an interior site lists only finite vertices, in order.
+  #[test]
+  fn voronoi_diagram_bounded_cell() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,4},{-4,0},{0,-4}}]; {Length[c[[1, 2]]], AllTrue[c[[1, 2]], # <= Length[v] - 4 &]}"
+      )
+      .unwrap(),
+      "{4, True}"
+    );
+  }
 }
 
 mod convex_hull_mesh {
