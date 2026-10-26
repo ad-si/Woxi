@@ -435,7 +435,10 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   match expr {
     // A string with line breaks stacks like a `Column` title: each line
     // is its own row.
-    Expr::String(s) if s.contains('\n') => {
+    Expr::String(s)
+      if s.contains('\n')
+        || s.contains(crate::functions::string_ast::BOX_START) =>
+    {
       let mut lines = s
         .split('\n')
         .map(crate::functions::graphics::box_string_to_svg);
@@ -476,6 +479,13 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     {
       let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
+        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
+        Expr::String(s)
+          if s.contains(crate::functions::string_ast::BOX_START) =>
+        {
+          let markup = crate::functions::graphics::box_string_to_svg(s);
+          (svg_markup_visible_text(&markup), Some(markup))
+        }
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
         // Any other content (`Row[…]`, a number, …) is typeset the way the
