@@ -196,6 +196,77 @@ mod symbolic_product {
 
 mod sum {
   use super::*;
+  use crate::interpreter_tests::case_helpers::assert_case;
+
+  #[test]
+  fn inner_bound_depending_on_outer_index_iterates_outer_first() {
+    // `{j, i - 1}` only becomes concrete once `i` has a value: the summand
+    // must never be evaluated with `i` symbolic (here that would quote
+    // `i - j` in Part::pkspec1 messages, as in a Demonstration notebook).
+    clear_state();
+    let result = interpret_with_stdout(
+      "lp = {a, b, c, d}; Sum[lp[[i - j]] lp[[j]], {i, 3, 4}, {j, i - 1}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "2*a*b + b^2 + 2*a*c");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    // Substituted bounds are evaluated, so the inner index stays an integer
+    assert_case(
+      "Sum[g[i, j], {i, 2}, {j, 3 - i, 2}]",
+      "g[1, 2] + g[2, 1] + g[2, 2]",
+    );
+    assert_case(
+      "Product[g[i, j], {i, 2}, {j, 3 - i, 2}]",
+      "g[1, 2]*g[2, 1]*g[2, 2]",
+    );
+  }
+
+  #[test]
+  fn unevaluated_sum_keeps_its_written_form() {
+    assert_case("Sum[f[j], {j, n}]", "Sum[f[j], {j, n}]");
+    assert_case("Sum[1 + 1 + f[j], {j, n}]", "Sum[2 + f[j], {j, n}]");
+    assert_case("Sum[f[j], {j, Infinity}]", "Sum[f[j], {j, Infinity}]");
+    assert_case(
+      "Sum[f[j], {j, 1, n}, Method -> Automatic]",
+      "Sum[f[j], {j, 1, n}, Method -> Automatic]",
+    );
+    // A multiple Sum is all or nothing: no partially closed inner sums
+    assert_case(
+      "Sum[f[j, k], {j, n}, {k, m}]",
+      "Sum[f[j, k], {j, n}, {k, m}]",
+    );
+    assert_case("Sum[f[j] k, {j, n}, {k, m}]", "Sum[k*f[j], {j, n}, {k, m}]");
+    assert_case(
+      "Sum[f[j, k], {j, 2}, {k, m}]",
+      "Sum[f[j, k], {j, 2}, {k, m}]",
+    );
+    assert_case("Sum[f[j], {j, n}] /. n -> 2", "f[1] + f[2]");
+  }
+
+  #[test]
+  fn unevaluated_sum_localizes_its_index_under_its_own_name() {
+    // A global value of the index does not leak into the summand, and
+    // messages from it name the index itself
+    clear_state();
+    let result =
+      interpret_with_stdout("j = 7; lp = {a, b, c}; Sum[lp[[j]], {j, n}]")
+        .unwrap();
+    assert_eq!(result.result, "Sum[{a, b, c}[[j]], {j, n}]");
+    assert!(
+      result.warnings.iter().all(|w| !w.contains("$")),
+      "{:?}",
+      result.warnings
+    );
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("The expression j cannot be used")),
+      "{:?}",
+      result.warnings
+    );
+    assert_case("j = 7; Sum[f[j], {j, n}]", "Sum[f[j], {j, n}]");
+  }
 
   #[test]
   fn finite_sum_integers() {
@@ -291,7 +362,7 @@ mod sum {
   fn infinite_sum_rational_poles_transcendental_unevaluated() {
     assert_eq!(
       interpret("Sum[1/(9 n^2 - 1), {n, 1, Infinity}]").unwrap(),
-      "Sum[(9*n^2 - 1)^(-1), {n, 1, Infinity}]"
+      "Sum[(-1 + 9*n^2)^(-1), {n, 1, Infinity}]"
     );
   }
 
