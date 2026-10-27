@@ -1235,6 +1235,11 @@ fn evaluate_function_call_ast_inner(
     }
     "V"
     | "ConnectedComponents"
+    | "Neighborhood"
+    | "IsomorphicQ"
+    | "SpringEmbedding"
+    | "DegreeSequence"
+    | "ToUnorderedPairs"
     | "ShortestPath"
     | "ShowGraph"
     | "ShowLabeledGraph"
@@ -14510,6 +14515,11 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ToAdjacencyLists" => "Combinatorica`ToAdjacencyLists",
     "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
     "V" => "Combinatorica`V",
+    "Neighborhood" => "Combinatorica`Neighborhood",
+    "IsomorphicQ" => "Combinatorica`IsomorphicQ",
+    "SpringEmbedding" => "Combinatorica`SpringEmbedding",
+    "DegreeSequence" => "Combinatorica`DegreeSequence",
+    "ToUnorderedPairs" => "Combinatorica`ToUnorderedPairs",
     "ConnectedComponents" => "Combinatorica`ConnectedComponents",
     "ToAdjacencyMatrix" => "Combinatorica`ToAdjacencyMatrix",
     "Edges" => "Combinatorica`Edges",
