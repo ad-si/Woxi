@@ -4537,3 +4537,26 @@ mod date_strings {
     );
   }
 }
+
+mod date_current {
+  use super::*;
+
+  #[test]
+  fn date_without_arguments_is_the_current_date_list() {
+    assert_eq!(interpret("Length[Date[]]").unwrap(), "6");
+    assert_eq!(
+      interpret("Date[][[1]] == DateList[][[1]] && Head[Date[][[6]]] === Real")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("{y, m} = Date[][[{1, 2}]]; IntegerQ[y] && 1 <= m <= 12")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringQ[DateString[Date[], \"Date\"]]").unwrap(),
+      "True"
+    );
+  }
+}
