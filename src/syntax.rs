@@ -16696,6 +16696,14 @@ fn substitute_parts(
       {
         out.extend(args.iter().cloned());
       }
+      // The synthetic `Sequence @@ Drop[_lp, n]` accessor of a trailing
+      // sequence element, resolved to the tail it names.
+      (
+        Expr::FunctionCall { name: head, .. },
+        Expr::FunctionCall { name, args },
+      ) if head == "Apply" && name == "Sequence" => {
+        out.extend(args.iter().cloned());
+      }
       _ => out.push(substituted),
     }
   }
@@ -16961,6 +16969,44 @@ fn resolve_synthetic_list_part(
   }
 }
 
+/// Statically resolve the `Sequence @@ Drop[base, n]` accessor that list-pattern
+/// lowering emits for a trailing `x__` / `x___` element to the
+/// `Sequence[tail…]` it names, so a held body sees the matched elements
+/// instead of the internal encoding (see [`resolve_synthetic_list_part`]).
+fn resolve_synthetic_list_tail(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Apply" || args.len() != 2 {
+    return None;
+  }
+  if !matches!(&args[0], Expr::Identifier(h) if h == "Sequence") {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: drop_name,
+    args: drop_args,
+  } = &args[1]
+  else {
+    return None;
+  };
+  if drop_name != "Drop" || drop_args.len() != 2 {
+    return None;
+  }
+  let base = resolve_synthetic_list_part(&drop_args[0], bindings)?;
+  let Expr::List(items) = &base else {
+    return None;
+  };
+  let Expr::Integer(n) = &drop_args[1] else {
+    return None;
+  };
+  let n = usize::try_from(*n).ok()?;
+  Some(call("Sequence", items.iter().skip(n).cloned().collect()))
+}
+
 fn substitute_variables_impl(
   expr: &Expr,
   bindings: &[(&str, &Expr)],
@@ -16993,6 +17039,13 @@ fn substitute_variables_impl(
     // net that can be an image's worth of samples): nothing to substitute.
     Expr::FunctionCall { name, args } if is_structured_bspline(name, args) => {
       expr.clone()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Apply"
+        && args.len() == 2
+        && resolve_synthetic_list_tail(expr, bindings).is_some() =>
+    {
+      resolve_synthetic_list_tail(expr, bindings).unwrap()
     }
     Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
       match resolve_synthetic_list_part(expr, bindings) {

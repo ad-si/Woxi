@@ -33550,3 +33550,31 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert!(!is_deprecation_notice("obsolete::x is not a tag: here"));
   }
 }
+#[cfg(test)]
+mod list_pattern_definition_tests {
+  use super::*;
+
+  /// An initialization cell defines a display helper through list patterns
+  /// with sequence variables (`{a__}`) inside `HoldForm`, and another whose
+  /// left-hand side repeats a `Longest[x___]` split across two factors. The
+  /// held body leaked its internal accessor and the repeated `Longest` never
+  /// matched, so the widget showed the unexpanded helper call.
+  #[test]
+  fn held_list_pattern_sequences_render_in_manipulate() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["pair[{a__}, {i__}] := HoldForm[sg[{a}] sg[{i}]]; expand[HoldForm[sg[{Longest[a___], b___}] sg[{Longest[a___], c___}]]] := Length[{a}] + Length[{b}] + Length[{c}];"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Row[{pair[{p, q}, {p, r}], \" = \", expand[HoldForm[sg[{p, q}] sg[{p, r}]]], k}], {{k, 1}, {1, 2}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the row must render");
+  }
+}

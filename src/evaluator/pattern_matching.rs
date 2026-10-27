@@ -4704,7 +4704,124 @@ pub fn match_pattern(
   let pattern = canonical_pattern(pattern);
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
     match_pattern_impl(expr, &pattern)
+      .or_else(|| match_with_ordered_shared_sequences(expr, &pattern))
   })
+}
+
+/// Named `Longest[x___]` / `Shortest[x___]` sequence patterns that occur more
+/// than once in `pattern`: `(name, head, min_count, greedy)`.
+fn shared_ordered_sequences(
+  pattern: &Expr,
+) -> Vec<(String, Option<String>, usize, bool)> {
+  fn collect(
+    pat: &Expr,
+    found: &mut Vec<(String, Option<String>, usize, bool, usize)>,
+  ) {
+    if let Expr::FunctionCall { name, args } = pat
+      && (name == "Longest" || name == "Shortest")
+      && args.len() == 1
+      && let Expr::Pattern {
+        name: var,
+        head,
+        blank_type,
+      } = &args[0]
+      && *blank_type >= 2
+      && !var.is_empty()
+    {
+      match found.iter_mut().find(|f| f.0 == *var) {
+        Some(entry) => entry.4 += 1,
+        None => found.push((
+          var.clone(),
+          head.clone(),
+          usize::from(*blank_type == 2),
+          name == "Longest",
+          1,
+        )),
+      }
+      return;
+    }
+    for child in crate::syntax::expr_children(pat) {
+      collect(child, found);
+    }
+  }
+  let mut found = Vec::new();
+  collect(pattern, &mut found);
+  found
+    .into_iter()
+    .filter(|f| f.4 > 1)
+    .map(|f| (f.0, f.1, f.2, f.3))
+    .collect()
+}
+
+/// Replace every `Longest[var___]` / `Shortest[var___]` with `var` bound to
+/// exactly `len` elements (`var : PatternSequence[_, …]`).
+fn fix_sequence_length(
+  pattern: &Expr,
+  var: &str,
+  head: &Option<String>,
+  len: usize,
+) -> Expr {
+  if let Expr::FunctionCall { name, args } = pattern
+    && (name == "Longest" || name == "Shortest")
+    && args.len() == 1
+    && matches!(&args[0], Expr::Pattern { name: n, .. } if n == var)
+  {
+    let blank = Expr::Pattern {
+      name: String::new(),
+      head: head.clone(),
+      blank_type: 1,
+    };
+    return call(
+      "Pattern",
+      vec![
+        Expr::Identifier(var.to_string()),
+        call("PatternSequence", vec![blank; len]),
+      ],
+    );
+  }
+  crate::syntax::map_children(pattern, &|c| {
+    fix_sequence_length(c, var, head, len)
+  })
+}
+
+/// The most elements any one list or call in `expr` holds — a bound on how
+/// long a sequence pattern can usefully be.
+fn max_arg_count(expr: &Expr) -> usize {
+  let children = crate::syntax::expr_children(expr);
+  children
+    .iter()
+    .map(|c| max_arg_count(c))
+    .max()
+    .unwrap_or(0)
+    .max(children.len())
+}
+
+/// A named `Longest[x___]` that appears in several places has to take the
+/// same value everywhere, so the longest split of the first occurrence is
+/// not necessarily the one that works: `{{Longest[a___], b___},
+/// {Longest[a___], c___}}` against `{{x, y}, {x, z}}` needs `a = {x}`. The
+/// single-pass matcher only commits to each occurrence's preferred split, so
+/// when it fails try each length for the shared sequence in turn (longest
+/// first for `Longest`, shortest first for `Shortest`).
+fn match_with_ordered_shared_sequences(
+  expr: &Expr,
+  pattern: &Expr,
+) -> Option<Vec<(String, Expr)>> {
+  let shared = shared_ordered_sequences(pattern);
+  let (var, head, min, greedy) = shared.first()?;
+  let max = max_arg_count(expr);
+  let lengths: Box<dyn Iterator<Item = usize>> = if *greedy {
+    Box::new((*min..=max).rev())
+  } else {
+    Box::new(*min..=max)
+  };
+  for len in lengths {
+    let fixed = fix_sequence_length(pattern, var, head, len);
+    if let Some(found) = match_pattern(expr, &fixed) {
+      return Some(found);
+    }
+  }
+  None
 }
 
 /// Implements `KeyValuePattern[arg]` matching.
