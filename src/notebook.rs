@@ -3164,13 +3164,39 @@ fn unescape_code_outside_strings(s: &str) -> String {
       segment.clear();
       out.push('"');
       while let Some(d) = chars.next() {
-        out.push(d);
         if d == '\\' {
-          if let Some(e) = chars.next() {
-            out.push(e);
+          match chars.next() {
+            // A named character inside the literal draws as the glyph the
+            // cell's own source shows for it (`"air \[ShortRightArrow]
+            // disk"` reads `"air → disk"` there). Left as the escape, it
+            // would parse to Wolfram's private-use code point and never
+            // equal the source's string, so a control restored from the
+            // dump would match none of the body's `=== "air → disk"` tests.
+            Some('[') => {
+              let mut name = String::new();
+              for ch in chars.by_ref() {
+                if ch == ']' {
+                  break;
+                }
+                name.push(ch);
+              }
+              match crate::syntax::named_char_to_unicode(&name) {
+                Some(uni) => out
+                  .push_str(&crate::syntax::substitute_private_use_glyphs(uni)),
+                None => out.push_str(&format!("\\[{name}]")),
+              }
+            }
+            Some(e) => {
+              out.push(d);
+              out.push(e);
+            }
+            None => out.push(d),
           }
-        } else if d == '"' {
-          break;
+        } else {
+          out.push(d);
+          if d == '"' {
+            break;
+          }
         }
       }
     } else {
@@ -8096,6 +8122,26 @@ yf4GL4DwC5VA4w
     assert_eq!(
       extract_saved_manipulate_variables(dump),
       vec![("n".to_string(), "33.".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_decodes_named_characters_in_strings()
+   {
+    // A saved string choice written with a named character
+    // (`\[ShortRightArrow]`) must read back as the glyph the cell's own
+    // source shows for it, or the restored control equals none of the
+    // body's string comparisons and the widget renders nothing.
+    // Other escapes inside the literal stay untouched.
+    let dump = "DynamicModuleBox[{$CellContext`mode$$ = \
+      \"a \\[ShortRightArrow] b\", $CellContext`t$$ = \
+      \"q\\\"\\[NoSuchName]\"}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("mode".to_string(), "\"a → b\"".to_string()),
+        ("t".to_string(), "\"q\\\"\\[NoSuchName]\"".to_string()),
+      ]
     );
   }
 
