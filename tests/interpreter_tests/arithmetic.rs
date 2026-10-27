@@ -9676,6 +9676,33 @@ mod power_overflow {
 mod set_precision {
   use woxi::interpret;
 
+  // Infinite precision is the exact value: a machine real's binary value
+  // (LorenzAttractor runs NDSolve on SetPrecision[eqns, Infinity])
+  #[test]
+  fn infinity_gives_exact_values() {
+    assert_eq!(
+      interpret(
+        "{SetPrecision[1., Infinity], SetPrecision[0.1, Infinity], SetPrecision[-0.25, Infinity], SetPrecision[1.5`30, Infinity], SetPrecision[1. + 2. I, Infinity], SetPrecision[{x == 1.5, f[2.5]}, Infinity], SetPrecision[x, Infinity]}"
+      )
+      .unwrap(),
+      "{1, 3602879701896397/36028797018963968, -1/4, 3/2, 1 + 2*I, {x == 3/2, f[5/2]}, x}"
+    );
+    assert_eq!(
+      interpret("SetPrecision[1.*^-20, Infinity]").unwrap(),
+      "6646139978924579/664613997892457936451903530140172288"
+    );
+  }
+
+  // Comparisons and rules have their numbers set too
+  #[test]
+  fn reaches_inside_comparisons_and_rules() {
+    assert_eq!(
+      interpret("{SetPrecision[{x == 1.5, a -> 2.5}, 20], SetPrecision[x == 1.5, MachinePrecision]}")
+        .unwrap(),
+      "{{x == 1.5`20., a -> 2.5`20.}, x == 1.5}"
+    );
+  }
+
   #[test]
   fn integer_to_bigfloat() {
     assert_eq!(interpret("SetPrecision[3, 20]").unwrap(), "3.`20.");

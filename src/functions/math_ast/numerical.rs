@@ -1307,6 +1307,14 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(target, Expr::Identifier(s) if s == "MachinePrecision") {
     return set_precision_machine(expr);
   }
+  if matches!(target, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+  {
+    let exact = set_precision_exact(expr);
+    if crate::evaluator::pattern_matching::expr_equal(&exact, expr) {
+      return Ok(exact);
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&exact);
+  }
 
   let precision_f64 = match target {
     Expr::Integer(n) if *n > 0 => *n as f64,
@@ -1393,7 +1401,30 @@ fn set_precision_walk(
       leaf_to_bigfloat(expr, precision, bits, rm, cc)
         .or_else(|_| Ok(expr.clone()))
     }
-    _ => Ok(expr.clone()),
+    // Every other compound node (comparisons, rules, …) has its children
+    // set the same way.
+    _ => {
+      let cc = std::cell::RefCell::new(cc);
+      let failure = std::cell::RefCell::new(None);
+      let mapped =
+        crate::syntax::map_children(expr, &|child| match set_precision_walk(
+          child,
+          precision,
+          bits,
+          rm,
+          &mut cc.borrow_mut(),
+        ) {
+          Ok(e) => e,
+          Err(e) => {
+            failure.borrow_mut().get_or_insert(e);
+            child.clone()
+          }
+        });
+      match failure.into_inner() {
+        Some(e) => Err(e),
+        None => Ok(mapped),
+      }
+    }
   }
 }
 
@@ -1591,7 +1622,80 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
         operand: Box::new(o),
       })
     }
-    _ => Ok(expr.clone()),
+    // Comparisons, rules and the other compound nodes
+    _ => Ok(crate::syntax::map_children(expr, &|child| {
+      set_precision_machine(child).unwrap_or_else(|_| child.clone())
+    })),
+  }
+}
+
+/// `SetPrecision[expr, Infinity]`: every inexact number replaced by the exact
+/// rational it stands for — a machine real by its binary value
+/// (`0.1` → `3602879701896397/36028797018963968`), an arbitrary-precision
+/// one by its digits (`1.5`30` → `3/2`). Complex numbers convert part by
+/// part when the result is evaluated.
+fn set_precision_exact(expr: &Expr) -> Expr {
+  use num_bigint::BigInt;
+  match expr {
+    Expr::Real(f) if f.is_finite() => {
+      if *f == 0.0 {
+        return Expr::Integer(0);
+      }
+      let bits = f.to_bits();
+      let negative = bits >> 63 == 1;
+      let exponent = ((bits >> 52) & 0x7ff) as i64;
+      let fraction = bits & ((1u64 << 52) - 1);
+      // value = mantissa * 2^power
+      let (mantissa, power) = if exponent == 0 {
+        (fraction, -1074)
+      } else {
+        (fraction | (1u64 << 52), exponent - 1075)
+      };
+      let mut num = BigInt::from(mantissa);
+      if negative {
+        num = -num;
+      }
+      let one = BigInt::from(1);
+      if power >= 0 {
+        crate::functions::math_ast::number_theory::make_rational_expr(
+          &(num << power as usize),
+          &one,
+        )
+      } else {
+        crate::functions::math_ast::number_theory::make_rational_expr(
+          &num,
+          &(one << (-power) as usize),
+        )
+      }
+    }
+    Expr::BigFloat(digits, _) => {
+      let mantissa = digits.split("*^").next().unwrap_or(digits);
+      let exponent: i64 = digits
+        .split("*^")
+        .nth(1)
+        .and_then(|e| e.parse().ok())
+        .unwrap_or(0);
+      let (int_part, frac_part) =
+        mantissa.split_once('.').unwrap_or((mantissa, ""));
+      let Ok(num) = format!("{int_part}{frac_part}").parse::<BigInt>() else {
+        return expr.clone();
+      };
+      let scale = exponent - frac_part.len() as i64;
+      let ten = BigInt::from(10);
+      let one = BigInt::from(1);
+      if scale >= 0 {
+        crate::functions::math_ast::number_theory::make_rational_expr(
+          &(num * ten.pow(scale as u32)),
+          &one,
+        )
+      } else {
+        crate::functions::math_ast::number_theory::make_rational_expr(
+          &num,
+          &ten.pow((-scale) as u32),
+        )
+      }
+    }
+    _ => crate::syntax::map_children(expr, &set_precision_exact),
   }
 }
 

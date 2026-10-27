@@ -3613,6 +3613,9 @@ answer. These do not:
 - `NIntegrate`'s `MaxRecursion`, `MinRecursion`, `WorkingPrecision`,
   `MaxPoints`, `PrecisionGoal`, `AccuracyGoal`.
 - `NSum` and `NProduct` accept `WorkingPrecision` and ignore it.
+- `NDSolve`'s `WorkingPrecision` and `PrecisionGoal`: the solution is always
+  machine precision. The Lorenz system with `WorkingPrecision -> 20` gives
+  `x[1] = -12.49383128851448835…` in WL and `-12.493889543181242` here.
 - `Root[…, ExactRootIsolation -> True]` stays unevaluated.
 - `D[f[x] g[x], x, NonConstants -> {f}]` differentiates `f` anyway; WL holds it
   as `D[f[x], x, NonConstants -> {f}]`. (The plain
