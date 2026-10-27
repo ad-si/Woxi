@@ -14233,6 +14233,41 @@ mod trig_to_exp {
 mod interpolation {
   use super::*;
 
+  // Complex values interpolate their real and imaginary parts (a wave
+  // function in RadioactiveDecayInTheCausalInterpretation...), derivatives
+  // included; a spline falls back to the default method
+  #[test]
+  fn complex_values() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "d = {{1, 1. + 0. I}, {2, 2. + I}, {3, 3.}, {4, 1. - I}}; {Interpolation[d, Method -> \"Spline\"][1.5], Interpolation[d][2.5], Interpolation[d, InterpolationOrder -> 1][2.5], Interpolation[{1., 2. + I, 3.}][1.5]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "{1.3125 + 0.875*I, 2.6875 + 0.625*I, 2.5 + 0.5*I, 1.5 + 0.75*I}"
+    );
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("Interpolation::mspl")),
+      "{:?}",
+      result.warnings
+    );
+    let d: String = interpret(
+      "d = {{1, 1. + 0. I}, {2, 2. + I}, {3, 3.}, {4, 1. - I}}; Round[10^9 {Re[#], Im[#]}] &[Interpolation[d]'[2.5]]",
+    )
+    .unwrap();
+    assert_eq!(d, "{1125000000, -1083333333}");
+    // A real first value does not hide the complex ones after it
+    assert_eq!(
+      interpret("f = Interpolation[{{1, 1.}, {2, 2. + I}, {3, 3.}}, InterpolationOrder -> 1]; {f[1.5], f[2.5]}")
+        .unwrap(),
+      "{1.5 + 0.5*I, 2.5 + 0.5*I}"
+    );
+  }
+
   #[test]
   fn basic_list_of_values() {
     // Interpolation[{y1, y2, ...}] — x values are 1, 2, 3, ...

@@ -10826,6 +10826,85 @@ pub fn interpolation_ast(
   // Evaluate the data argument
   let data_evaluated = crate::evaluator::evaluate_expr_to_expr(data_arg)?;
 
+  // Complex values: the function is built from the real parts and keeps the
+  // complex `{x, z}` rows, which `evaluate_interpolating_function` splits.
+  // A spline needs machine reals, so `Method -> "Spline"` falls back to the
+  // default method with `Interpolation::mspl`, as in wolframscript.
+  if let Expr::List(items) = &data_evaluated {
+    let pairs: Vec<Expr> = if items
+      .iter()
+      .all(|i| matches!(i, Expr::List(p) if p.len() == 2))
+    {
+      items.to_vec()
+    } else {
+      items
+        .iter()
+        .enumerate()
+        .map(|(k, v)| {
+          Expr::List(vec![Expr::Integer(k as i128 + 1), v.clone()].into())
+        })
+        .collect()
+    };
+    let pairs_expr = Expr::List(pairs.into());
+    if domain_spec.is_none()
+      && let Some((re_rows, _)) =
+        complex_interpolation_parts(&pairs_expr, false)
+    {
+      if spline {
+        crate::emit_message(
+          "Interpolation::mspl: The Spline method could not be used because the data could not be coerced to machine real numbers.",
+        );
+      }
+      let mut real_args = vec![Expr::List(re_rows.into())];
+      real_args.extend(
+        args
+          .iter()
+          .skip(1)
+          .filter(|opt| {
+            !matches!(opt, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method"))
+          })
+          .cloned(),
+      );
+      let built = interpolation_ast(&real_args, head)?;
+      if let Expr::FunctionCall { name, args: fargs } = &built
+        && name == "InterpolatingFunction"
+        && (2..=4).contains(&fargs.len())
+      {
+        // Every value in complex form, real ones included, which is what
+        // marks the function as complex for evaluation
+        let complex_rows: Vec<Expr> = match &pairs_expr {
+          Expr::List(rows) => rows
+            .iter()
+            .map(|row| match row {
+              Expr::List(p) if p.len() == 2 => {
+                let (re, im) =
+                  crate::functions::math_ast::numeric_utils::try_extract_complex_f64(&p[1])
+                    .unwrap_or((f64::NAN, 0.0));
+                Expr::List(
+                  vec![
+                    p[0].clone(),
+                    plus2(Expr::Real(re), times2(Expr::Real(im), id_expr("I"))),
+                  ]
+                  .into(),
+                )
+              }
+              other => other.clone(),
+            })
+            .collect(),
+          _ => Vec::new(),
+        };
+        let mut fargs = fargs.to_vec();
+        fargs[1] = Expr::List(complex_rows.into());
+        return Ok(Expr::FunctionCall {
+          name: name.clone(),
+          args: fargs.into(),
+        });
+      }
+      return Ok(unevaluated(head, args));
+    }
+  }
+
   let Expr::List(data_list) = &data_evaluated else {
     // A non-list first argument is not interpolatable. wolframscript emits
     // this message tagged `Interpolation` (regardless of the actual head)
@@ -12272,6 +12351,44 @@ fn hermite_blocks(
   .then_some(blocks)
 }
 
+/// For `{{x, z}, …}` interpolation data in which some `z` is a complex
+/// number, the same rows with only the real parts and with only the
+/// imaginary parts. `None` for real data or any other shape.
+fn complex_interpolation_parts(
+  data: &Expr,
+  stored: bool,
+) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_f64;
+  let Expr::List(rows) = data else {
+    return None;
+  };
+  // A complex interpolant stores every value in complex form (see
+  // `interpolation_ast`), so for `stored` data the first row decides, at no
+  // cost to the real data of an NDSolve solution evaluated at every plot
+  // point; the raw data `Interpolation` is given is scanned in full
+  let first_is_complex = matches!(rows.first(), Some(Expr::List(p))
+    if p.len() == 2 && crate::functions::math_ast::contains_imaginary_unit(&p[1]));
+  if stored && !first_is_complex {
+    return None;
+  }
+  let mut any_complex = false;
+  let mut re_rows = Vec::with_capacity(rows.len());
+  let mut im_rows = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(pair) = row else {
+      return None;
+    };
+    let [x, z] = pair.as_slice() else {
+      return None;
+    };
+    let (re, im) = try_extract_complex_f64(z)?;
+    any_complex |= crate::functions::math_ast::contains_imaginary_unit(z);
+    re_rows.push(Expr::List(vec![x.clone(), Expr::Real(re)].into()));
+    im_rows.push(Expr::List(vec![x.clone(), Expr::Real(im)].into()));
+  }
+  any_complex.then_some((re_rows, im_rows))
+}
+
 pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
@@ -12367,6 +12484,26 @@ pub fn evaluate_interpolating_function(
     && !matches!(&call_args[0], Expr::String(_))
   {
     return evaluate_tensor_interpolating_function(func_args, rows, call_args);
+  }
+
+  // Complex-valued `{{x, z}, …}` data interpolates the real and imaginary
+  // parts on their own (interpolation is linear in the values) and
+  // recombines them, derivatives included.
+  if let Some((re_rows, im_rows)) =
+    complex_interpolation_parts(&func_args[1], true)
+    && !matches!(&call_args[0], Expr::String(_))
+  {
+    let with_rows = |rows: Vec<Expr>| {
+      let mut args = func_args.to_vec();
+      args[1] = Expr::List(rows.into());
+      evaluate_interpolating_function(&args, call_args)
+    };
+    let re = with_rows(re_rows)?;
+    let im = with_rows(im_rows)?;
+    return crate::evaluator::evaluate_expr_to_expr(&plus2(
+      re,
+      times2(id_expr("I"), im),
+    ));
   }
 
   let data = &func_args[1];
