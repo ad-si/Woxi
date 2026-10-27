@@ -842,11 +842,92 @@ fn eval_dispatch_condition(
   evaluate_expr_to_expr(substituted_cond)
 }
 
+/// A `NumericArray[data, type]` stands for the array `data`: Wolfram's
+/// structural list functions work on that array and give a NumericArray of
+/// the same type back (`Take`, `Reverse`, `Part` of a row, …), and a few
+/// summaries give plain values (`Total`, `Max`, `Length`). Functions that
+/// traverse the elements (`Map`, `Sort`, `Mean`) are not listed: Wolfram
+/// refuses those. `None` when no argument is a NumericArray.
+fn numeric_array_list_operation(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  const STRUCTURAL: &[&str] = &[
+    "Take",
+    "Drop",
+    "Reverse",
+    "Transpose",
+    "First",
+    "Last",
+    "Rest",
+    "Most",
+    "Part",
+    "Flatten",
+    "RotateLeft",
+    "RotateRight",
+    "ArrayReshape",
+    "Differences",
+    "Join",
+  ];
+  const VALUES: &[&str] = &["Total", "Max", "Min", "Length"];
+  let structural = STRUCTURAL.contains(&name);
+  if !structural && !VALUES.contains(&name) {
+    return None;
+  }
+  let payload = |e: &Expr| match e {
+    Expr::FunctionCall { name, args: na }
+      if name == "NumericArray"
+        && (na.len() == 1 || na.len() == 2)
+        && matches!(&na[0], Expr::List(_)) =>
+    {
+      Some((na[0].clone(), na.get(1).cloned()))
+    }
+    _ => None,
+  };
+  let mut array_type = None;
+  let mut found = false;
+  let dense: Vec<Expr> = args
+    .iter()
+    .map(|a| match payload(a) {
+      Some((data, ty)) => {
+        found = true;
+        if array_type.is_none() {
+          array_type = ty;
+        }
+        data
+      }
+      None => a.clone(),
+    })
+    .collect();
+  // Only the array argument itself: `Take[list, na]` is not this, and Join
+  // joins NumericArrays with each other only.
+  if !found
+    || payload(&args[0]).is_none()
+    || (name == "Join" && !args.iter().all(|a| payload(a).is_some()))
+  {
+    return None;
+  }
+  let result = match evaluate_function_call_ast(name, &dense) {
+    Ok(r) => r,
+    Err(e) => return Some(Err(e)),
+  };
+  if structural && matches!(result, Expr::List(_)) {
+    let mut wrap = vec![result];
+    wrap.extend(array_type);
+    return Some(evaluate_function_call_ast("NumericArray", &wrap));
+  }
+  Some(Ok(result))
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
+
+  if let Some(result) = numeric_array_list_operation(name, args) {
+    return result;
+  }
 
   // Legacy standard-distribution package functions whose modern built-in
   // equivalent lives under a different name. Woxi keeps every built-in in

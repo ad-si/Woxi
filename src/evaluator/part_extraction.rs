@@ -201,6 +201,25 @@ pub fn apply_part_indices(
   if indices.is_empty() {
     return Ok(expr.clone());
   }
+  // A NumericArray indexes the array it stands for (see
+  // `extract_part_ast_rest`), with every index — `All` included — applied
+  // to that array rather than to the wrapper's arguments.
+  if let Expr::FunctionCall { name, args: na } = expr
+    && name == "NumericArray"
+    && (na.len() == 1 || na.len() == 2)
+    && matches!(&na[0], Expr::List(_))
+  {
+    let part = apply_part_indices(&na[0], indices)?;
+    if matches!(part, Expr::List(_)) {
+      let mut wrap = vec![part];
+      wrap.extend(na.get(1).cloned());
+      return crate::evaluator::evaluate_function_call_ast(
+        "NumericArray",
+        &wrap,
+      );
+    }
+    return Ok(part);
+  }
   let idx = &indices[0];
   let rest = &indices[1..];
   if matches!(idx, Expr::Identifier(s) if s == "All") {
@@ -726,6 +745,25 @@ fn extract_part_ast_rest(
     if matches!(&dense, Expr::List(_)) {
       return extract_part_ast(&dense, index);
     }
+  }
+
+  // A NumericArray stands for its array: a part that is itself an array
+  // stays a NumericArray of the same type, a single element is a number.
+  if let Expr::FunctionCall { name, args: na } = expr
+    && name == "NumericArray"
+    && (na.len() == 1 || na.len() == 2)
+    && matches!(&na[0], Expr::List(_))
+  {
+    let part = extract_part_ast(&na[0], index)?;
+    if matches!(part, Expr::List(_)) {
+      let mut wrap = vec![part];
+      wrap.extend(na.get(1).cloned());
+      return crate::evaluator::evaluate_function_call_ast(
+        "NumericArray",
+        &wrap,
+      );
+    }
+    return Ok(part);
   }
 
   // A structured matrix (CauchyMatrix[…], BlockDiagonalMatrix[…], the
