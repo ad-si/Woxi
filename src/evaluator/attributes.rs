@@ -700,8 +700,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "ToExpression" | "Exponent" => A::Listable | A::Protected,
 
     // HoldAllComplete + Protected
-    "HoldComplete" | "HoldCompleteForm" | "Unevaluated"
-    | "Association" => A::HoldAllComplete | A::Protected,
+    "HoldComplete" | "HoldCompleteForm" | "Unevaluated" | "Association"
+    | "PreemptProtect" => A::HoldAllComplete | A::Protected,
 
     // HoldAllComplete + Protected + ReadProtected
     "InterpretationBox" => {
@@ -710,6 +710,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
+    | "AbortProtect"
     | "Module" | "DynamicModule" | "Block" | "With"
     | "Trace" | "TraceScan" | "TracePrint"
     | "Defer" | "Compile" | "CompiledFunction" | "Which"

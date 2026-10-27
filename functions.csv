@@ -3362,7 +3362,7 @@ GeoModel,,🚫,,10.0,3413
 MeixnerDistribution,Meixner distribution with PDF Mean and Variance,✅,pure,9.0,3413
 PageTheme,,🚫,,11.0,3413
 PermissionsKey,,🚫,,11.0,3413
-PreemptProtect,,,,7.0,3413
+PreemptProtect,Evaluates an expression without interruption by preemptive computations,✅,pure,7.0,3413
 StratonovichProcess,,🚫,,9.0,3413
 UnitVectorLayer,,🚫,,11.1,3413
 WindowToolbars,,🚫,,3.0,3413

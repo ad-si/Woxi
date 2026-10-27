@@ -2781,7 +2781,10 @@ fn evaluate_expr_to_expr_uncached(
         }
         // AbortProtect[expr] evaluates expr and returns its result (the body
         // runs transparently; the deferred-abort nuance is not modeled).
-        if name == "AbortProtect" && args.len() == 1 {
+        // PreemptProtect[expr] likewise: nothing preempts an evaluation here.
+        if (name == "AbortProtect" || name == "PreemptProtect")
+          && args.len() == 1
+        {
           return evaluate_expr_to_expr(&args[0]);
         }
         // Special handling for CheckAbort[expr, failexpr]
