@@ -30907,6 +30907,11 @@ fn manipulate_bound_expr_deep(expr: &Expr) -> (Expr, bool) {
         operands: list(operands, found),
         operators: operators.clone(),
       },
+      // `counts[[Dynamic[n]]]` — a bound looked up by another control
+      Expr::Part { expr, index } => Expr::Part {
+        expr: Box::new(strip(expr, found)),
+        index: Box::new(strip(index, found)),
+      },
       other => other.clone(),
     }
   }

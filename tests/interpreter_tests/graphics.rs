@@ -33381,6 +33381,25 @@ mod manipulate {
     assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
   }
 
+  // A bound looked up through another control, `counts[[Dynamic[n]]]`
+  // (SchlegelDiagrams), resolves to that entry instead of handing the
+  // `Dynamic` to Part as an index
+  #[test]
+  fn dynamic_index_in_a_part_bound() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "m = Manipulate[g, {{n, 3, \"\"}, Range[2, 4], ControlType -> SetterBar}, \
+       {{g, 1, \"\"}, 1, {5, 6, 7, 8}[[Dynamic[n]]], 1}]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    let expr = interpret_to_expr("m").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""max":7"#), "json: {json}");
+    assert!(json.contains(r#""maxCode":"#), "json: {json}");
+  }
+
   // `{{u, uinit, ulbl}, func}` is a custom control: `func` builds the
   // widget instead of describing a range. The Demonstrations idiom is a
   // `Button` that resets the variable, so the row is the button and the
