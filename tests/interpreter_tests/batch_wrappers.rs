@@ -3183,6 +3183,23 @@ mod batch_unevaluated_wrappers_2 {
       "Graphics"
     );
   }
+  // VerticalGauge is the same gauge stood upright: its marker for 0.3 on
+  // {0, 1} sits at height 0.3 of the track.
+  #[test]
+  fn vertical_gauge_renders_upright() {
+    assert_eq!(
+      interpret(
+        "VerticalGauge[0.3, {0, 1}, GaugeStyle -> Red, ScaleDivisions -> None]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Cases[VerticalGauge[0.3, {0, 1}], Line[p_] :> p, Infinity]")
+        .unwrap(),
+      "{{{0., 0.3}, {0.2, 0.3}}}"
+    );
+  }
   #[test]
   fn horizontal_gauge_accepts_multiple_values() {
     // Multiple values (e.g. potential/total/kinetic energy) each render as

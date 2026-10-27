@@ -2447,7 +2447,7 @@ NRoots,Numerical roots of a polynomial equation,✅,pure,1.0,2462
 ParallelSum,,🚫,,7.0,2462
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7.0,2462
 SystemsModelSeriesConnect,,🚫,,8.0,2462
-VerticalGauge,,🚫,,9.0,2462
+VerticalGauge,Display one or more values on a vertical scale as a Graphics gauge,✅,pure,9.0,2462
 Algebraics,,🚫,,4.0,2468
 Beep,,🚫,,6.0,2468
 GaussianIntegers,,🚫,,2.0,2468
