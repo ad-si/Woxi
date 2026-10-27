@@ -1303,7 +1303,15 @@ pub fn dispatch_predicate_functions(
         Expr::Identifier(name) => name.as_str(),
         Expr::Constant(name) => name.as_str(),
         Expr::String(name) => name.as_str(),
-        _ => {
+        // Attributes holds its argument, so this is what was written:
+        // `Attributes[f[x]]`, or a valued symbol such as `Red` only when it
+        // reached here already evaluated (`Attributes /@ {Red}`).
+        other => {
+          crate::emit_message(&format!(
+            "Attributes::ssle: Symbol or string expected at position 1 in \
+             Attributes[{}].",
+            expr_to_output(other)
+          ));
           return Some(Ok(unevaluated("Attributes", args)));
         }
       };

@@ -3267,6 +3267,20 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
         }
+        // A built-in symbol that has a value (`Red`, `Dotted`, `Thick`, …)
+        // evaluates as a head too, like any symbol with an OwnValue:
+        // `Dotted[u, v]` is `Dashing[{0, Small}][u, v]`, so rules written
+        // with it on either side keep matching each other.
+        if let Some(head_value) =
+          named_color_expr(name).or_else(|| style_directive_expr(name))
+          && !ENV.with(|e| e.borrow().contains_key(name))
+        {
+          let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+          for a in args {
+            prepared.push(evaluate_expr_to_expr(a)?);
+          }
+          return apply_curried_call(&head_value, &prepared);
+        }
         let var_val = ENV.with(|e| match e.borrow().get(name) {
           Some(
             value @ StoredValue::ExprVal(
