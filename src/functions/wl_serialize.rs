@@ -92,6 +92,12 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
       let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
       Some(str_expr(s))
     }
+    // An arbitrary-precision real, spelled as its input form
+    // (`-4.`10.000000000000004`).
+    b'R' => {
+      let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
+      crate::syntax::string_to_expr(s).ok()
+    }
     b's' => {
       let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
       Some(id_expr(s))

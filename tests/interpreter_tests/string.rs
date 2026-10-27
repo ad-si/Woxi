@@ -4799,6 +4799,19 @@ mod compress {
     );
   }
 
+  // wolframscript's binary payload stores an arbitrary-precision real as an
+  // `R` token holding its input form.
+  #[test]
+  fn uncompress_binary_arbitrary_precision_reals() {
+    assert_eq!(
+      interpret(
+        "ToString[Uncompress[\"1:eJxTTMoPSmNiYGAoZgESPpnFJUE6QIaxnqGJoamlkZmpsamFpbmlsZGxhYmZkZmJsbGFsZG5pamBkYWFqYVRgpGBXhA7UIOuiV6CoYEeAGhRDz8=\"], InputForm]"
+      )
+      .unwrap(),
+      "{3.14159265358979323846264338327950288582`20., -4.`10.}"
+    );
+  }
+
   #[test]
   fn uncompress_via_variable() {
     clear_state();
