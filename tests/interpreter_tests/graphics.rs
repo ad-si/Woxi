@@ -41790,6 +41790,50 @@ mod list_plot_scalar_data_range {
   }
 }
 
+mod frame_ticks_style {
+  use super::*;
+
+  #[test]
+  fn list_plot_tick_labels_take_color_and_size() {
+    for plot in ["ListPlot", "ListLinePlot"] {
+      assert_eq!(
+        interpret(&format!(
+          "StringContainsQ[ExportString[{plot}[{{{{1, 2}}, {{2, 3}}}}, \
+           Frame -> True, FrameTicksStyle -> Directive[Red, 10]], \"SVG\"], \
+           \"fill=\\\"#FF0000\\\"\"]"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+  }
+
+  #[test]
+  fn tick_size_changes_label_font() {
+    assert_eq!(
+      interpret(
+        "ExportString[ListPlot[{{1, 2}, {2, 3}}, Frame -> True, \
+         FrameTicksStyle -> Directive[Black, 6]], \"SVG\"] =!= \
+         ExportString[ListPlot[{{1, 2}, {2, 3}}, Frame -> True], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn plot_tick_labels_take_color_from_a_bare_color() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ListPlot[{{1, 2}, {2, 3}}, Frame -> True, \
+         FrameTicksStyle -> Blue], \"SVG\"], \"fill=\\\"#0000FF\\\"\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod styled_text_and_computed_options_in_graphics_layouts {
   use super::*;
 

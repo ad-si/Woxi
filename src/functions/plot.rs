@@ -2433,6 +2433,8 @@ pub(crate) struct PlotOptions {
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
+  /// `FrameTicksStyle -> …`: font size / color of the tick labels alone.
+  pub tick_label_style: Option<LabelStyleSpec>,
   /// Set when the bottom `FrameLabel` is a `Grid[…]`/`TableForm[…]` — a
   /// picture to embed under the frame instead of the plain-text
   /// `frame_label_bottom` (which stays empty in that case).
@@ -2556,6 +2558,7 @@ impl Default for PlotOptions {
       aspect_automatic: false,
       plot_markers: Vec::new(),
       label_style: None,
+      tick_label_style: None,
       joined_per_series: None,
       axes_origin: (None, None),
       axes_origin_low: (None, None),
@@ -3660,6 +3663,15 @@ fn generate_svg_with_options(
   }
 
   let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  // `FrameTicksStyle` recolours the tick labels without touching the frame.
+  let tick_text_color =
+    opts
+      .tick_label_style
+      .and_then(|s| s.color)
+      .map_or(dark_gray, |c| {
+        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        RGBColor(byte(c.r), byte(c.g), byte(c.b))
+      });
   // Background -> color replaces the theme background for the whole image.
   let bg_color = opts.background.unwrap_or(theme_bg);
 
@@ -3779,9 +3791,15 @@ fn generate_svg_with_options(
             })
             .axis_style(axis_style)
             .label_style(
-              ("sans-serif", sf * 13.0)
+              (
+                "sans-serif",
+                opts
+                  .tick_label_style
+                  .and_then(|s| s.font_size)
+                  .map_or(sf * 13.0, |pt| RESOLUTION_SCALE as f64 * pt),
+              )
                 .into_font()
-                .color(&dark_gray),
+                .color(&tick_text_color),
             )
             .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
             .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
@@ -5192,6 +5210,15 @@ pub(crate) fn generate_scatter_svg_with_options(
   };
 
   let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  // `FrameTicksStyle` recolours the tick labels without touching the frame.
+  let tick_text_color =
+    opts
+      .tick_label_style
+      .and_then(|s| s.color)
+      .map_or(dark_gray, |c| {
+        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+        RGBColor(byte(c.r), byte(c.g), byte(c.b))
+      });
   // Background -> color replaces the theme background for the whole image.
   let bg_color = opts.background.unwrap_or(theme_bg);
 
@@ -5271,9 +5298,17 @@ pub(crate) fn generate_scatter_svg_with_options(
         })
         .axis_style(axis_style)
         .label_style(
-          ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
+          (
+            "sans-serif",
+            opts
+              .tick_label_style
+              .and_then(|s| s.font_size)
+              .map_or(RESOLUTION_SCALE as f64 * 18.0, |pt| {
+                RESOLUTION_SCALE as f64 * pt
+              }),
+          )
             .into_font()
-            .color(&dark_gray),
+            .color(&tick_text_color),
         )
         .set_tick_mark_size(
           LabelAreaPosition::Left,
@@ -10161,6 +10196,14 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.image_padding = parse_image_padding(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
+    "FrameTicksStyle" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      let (color, font_size) = parse_label_style(&val);
+      if color.is_some() || font_size.is_some() {
+        plot_opts.tick_label_style = Some(LabelStyleSpec { color, font_size });
+      }
+    }
     "LabelStyle" => {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
