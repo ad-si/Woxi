@@ -2852,7 +2852,7 @@ VertexEccentricity,Maximum distance from a vertex,✅,1,8.0,2871
 ArcCurvature,Compute the curvature of a parametric curve,✅,pure,10.0,2880
 ArcSinDistribution,Represents an arcsine distribution on an interval,✅,pure,8.0,2880
 CoordinateBoundsArray,Array of coordinate bounds with optional padding,✅,1,10.1,2880
-FourierSequenceTransform,,🚫,,7.0,2880
+FourierSequenceTransform,Discrete-time Fourier transform of a finite-support sequence,✅,pure,7.0,2880
 NormFunction,,🚫,,5.0,2880
 PIDTune,,🚫,,9.0,2880
 PairedSmoothHistogram,,🚫,,9.0,2880

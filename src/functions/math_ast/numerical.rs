@@ -6349,6 +6349,81 @@ pub fn list_fourier_sequence_transform_ast(
   evaluate_expr_to_expr(&sum)
 }
 
+/// FourierSequenceTransform[f, n, omega] — discrete-time Fourier transform of a
+/// sequence with finite support, `Sum[f E^(I b n omega), n]` scaled by
+/// `Sqrt[Abs[b]/(2 Pi)^(1 - a)]` for `FourierParameters -> {a, b}`.
+/// Sequences whose support is not finite stay unevaluated.
+pub fn fourier_sequence_transform_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr;
+  use crate::syntax::substitute_variable;
+
+  let unevaluated_result = || Ok(unevaluated("FourierSequenceTransform", args));
+  if args.len() < 3 {
+    return unevaluated_result();
+  }
+  let Expr::Identifier(var) = &args[1] else {
+    return unevaluated_result();
+  };
+  let Ok((a, b)) = parse_fourier_parameters(&args[3..]) else {
+    return unevaluated_result();
+  };
+  let (a, b) = if args.len() > 3 { (a, b) } else { (1.0, 1.0) };
+  if a.fract() != 0.0 || b.fract() != 0.0 || b == 0.0 {
+    return unevaluated_result();
+  }
+  let (a, b) = (a as i128, b as i128);
+
+  // Probe a window of integers: the support must lie well inside it.
+  const RADIUS: i128 = 64;
+  const MARGIN: i128 = 16;
+  let mut values: Vec<(i128, Expr)> = Vec::new();
+  for k in -RADIUS..=RADIUS {
+    let v = evaluate_expr_to_expr(&substitute_variable(
+      &args[0],
+      var,
+      &Expr::Integer(k),
+    ))?;
+    if matches!(v, Expr::Integer(0)) {
+      continue;
+    }
+    if k.abs() > RADIUS - MARGIN {
+      return unevaluated_result();
+    }
+    values.push((k, v));
+  }
+
+  let omega = &args[2];
+  let terms: Vec<Expr> = values
+    .into_iter()
+    .map(|(k, v)| {
+      let exponent =
+        times(vec![Expr::Integer(b * k), id_expr("I"), omega.clone()]);
+      times2(v, pow2(id_expr("E"), exponent))
+    })
+    .collect();
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  let mut sum = plus(terms);
+  if a != 1 || b.abs() != 1 {
+    // Sqrt[Abs[b]/(2 Pi)^(1 - a)]
+    let scale = pow2(
+      times2(
+        Expr::Integer(b.abs()),
+        pow2(
+          times2(Expr::Integer(2), id_expr("Pi")),
+          Expr::Integer(a - 1),
+        ),
+      ),
+      make_rational(1, 2),
+    );
+    sum = times2(scale, sum);
+  }
+  evaluate_expr_to_expr(&sum)
+}
+
 /// The defining expression of a window function at `x`, built symbolically
 /// so the evaluator's exact trig tables can fold it: `CosineWindow[1/4]`
 /// becomes `Cos[Pi/4]` → `1/Sqrt[2]` and `LanczosWindow[1/4]` becomes

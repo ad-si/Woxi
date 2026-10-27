@@ -876,6 +876,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "LiouvilleLambda" => Some((1, 1)),
     "ListConvolve" => Some((2, 6)),
     "ListCorrelate" => Some((2, 6)),
+    "FourierSequenceTransform" => Some((3, 4)),
     "ListFourierSequenceTransform" => Some((2, 2)),
     "ListQ" => Some((1, 1)),
     "ListZTransform" => Some((2, 3)),

@@ -23381,3 +23381,48 @@ mod differentiate_wrt_derivative {
     );
   }
 }
+
+mod fourier_sequence_transform {
+  use super::*;
+
+  #[test]
+  fn moving_average_window() {
+    clear_state();
+    assert_eq!(
+      interpret("FourierSequenceTransform[If[Abs[n] <= 1, 1, 0]/3, n, w]")
+        .unwrap(),
+      "1/3 + 1/(3*E^(I*w)) + E^(I*w)/3"
+    );
+  }
+
+  #[test]
+  fn shifted_delta() {
+    clear_state();
+    assert_eq!(
+      interpret("FourierSequenceTransform[KroneckerDelta[n - 2], n, w]")
+        .unwrap(),
+      "E^((2*I)*w)"
+    );
+  }
+
+  #[test]
+  fn fourier_parameters() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "FourierSequenceTransform[Boole[0 <= n <= 2], n, w, FourierParameters -> {0, 1}]"
+      )
+      .unwrap(),
+      "(1 + E^(I*w) + E^((2*I)*w))/Sqrt[2*Pi]"
+    );
+  }
+
+  #[test]
+  fn infinite_support_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("FourierSequenceTransform[a^n, n, w]").unwrap(),
+      "FourierSequenceTransform[a^n, n, w]"
+    );
+  }
+}
