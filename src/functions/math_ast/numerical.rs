@@ -362,6 +362,24 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
         Err(_) => new_expr,
       })
     }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      if let Some(v) = try_eval_to_f64(expr).filter(|v| !v.is_nan()) {
+        return Ok(Expr::Real(v));
+      }
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[Expr::Real(-1.0), n_eval(operand)?],
+      )
+    }
+    Expr::Identifier(name) | Expr::Constant(name) if name == "I" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(0.0), Expr::Real(1.0)],
+      )
+    }
     Expr::Identifier(_) | Expr::Constant(_) => {
       if let Some(v) = try_eval_to_f64(expr) {
         return Ok(Expr::Real(v));
@@ -8008,6 +8026,7 @@ fn apply_fn_to_complex(fnexpr: &Expr, zr: f64, zi: f64) -> Option<(f64, f64)> {
         crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
       let n_form = n_eval(&evaluated).ok()?;
       complex_from_expr(&n_form)
+        .or_else(|| super::numeric_utils::try_extract_complex_float(&n_form))
     }
     _ => None,
   }

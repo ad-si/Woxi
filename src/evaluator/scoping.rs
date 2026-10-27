@@ -764,11 +764,18 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Validate domain name
+  // Any other symbol is a domain Element knows nothing about; only the
+  // singular spelling of a number domain (`Integer` for `Integers`) is
+  // reported, the way wolframscript does.
   if !VALID_DOMAINS.contains(&domain_name) {
-    crate::emit_message(&format!(
-      "Element::bset: The second argument {domain_name} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans."
-    ));
+    if matches!(
+      domain_name,
+      "Integer" | "Real" | "Complex" | "Rational" | "Prime"
+    ) {
+      crate::emit_message(&format!(
+        "Element::bset: The second argument {domain_name} of Element should be one of: Primes, Integers, Rationals, Algebraics, Reals, Complexes or Booleans."
+      ));
+    }
     return Ok(call("Element", vec![x.clone(), domain.clone()]));
   }
 

@@ -1591,7 +1591,9 @@ pub fn machine_complex_result(re: f64, im: f64) -> Expr {
 /// Returns Some((re, im)) if the expression contains float components with I.
 pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
   match expr {
-    Expr::Identifier(name) if name == "I" => Some((0.0, 1.0)),
+    Expr::Identifier(name) | Expr::Constant(name) if name == "I" => {
+      Some((0.0, 1.0))
+    }
     Expr::Integer(n) => Some((*n as f64, 0.0)),
     Expr::Real(f) => Some((*f, 0.0)),
     Expr::BigFloat(digits, _) => Some((digits.parse::<f64>().ok()?, 0.0)),

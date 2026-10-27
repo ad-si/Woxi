@@ -1487,8 +1487,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // A complex value (`E^I` → `0.54… + 0.84…*I`) splits into its
           // real part, which joins the machine fold, and its imaginary term.
           match try_extract_complex_float(&n_val) {
-            Some((re, im)) if re != 0.0 => {
-              numerified_tail.push(re);
+            Some((re, im)) => {
+              if re != 0.0 {
+                numerified_tail.push(re);
+              }
               remaining_symbolic.push(times2(Expr::Real(im), id_expr("I")));
             }
             _ => remaining_symbolic.push(n_val),

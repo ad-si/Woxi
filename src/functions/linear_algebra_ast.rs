@@ -3276,21 +3276,24 @@ fn is_triangular_matrix(matrix: &[Vec<Expr>]) -> bool {
 
 fn sort_eigenvalues(eigenvalues: &mut [Expr]) {
   // Wolfram's Eigenvalues sorts by decreasing magnitude; when the magnitudes
-  // tie (e.g. {1, -1}), the tiebreaker is *ascending* value (so {-1, 1}
-  // follows {2, _}, not {1, _}).
+  // tie, by ascending real part and then descending imaginary part:
+  // {-1, I, -I, 1}, {-1 + I, -1 - I, 1 + I, 1 - I}.
   eigenvalues.sort_by(|a, b| {
-    let va = eigenvalue_sort_key(a);
-    let vb = eigenvalue_sort_key(b);
-    let abs_cmp = vb
-      .abs()
-      .partial_cmp(&va.abs())
-      .unwrap_or(std::cmp::Ordering::Equal);
-    if abs_cmp == std::cmp::Ordering::Equal {
-      va.partial_cmp(&vb).unwrap_or(std::cmp::Ordering::Equal)
-    } else {
-      abs_cmp
-    }
+    eigenvalue_order(eigenvalue_sort_key(a), eigenvalue_sort_key(b))
   });
+}
+
+/// The order of two numeric eigenvalues `(re, im)`: decreasing magnitude,
+/// then increasing real part, then decreasing imaginary part.
+fn eigenvalue_order(
+  (ra, ia): (f64, f64),
+  (rb, ib): (f64, f64),
+) -> std::cmp::Ordering {
+  let cmp =
+    |x: f64, y: f64| x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal);
+  cmp(rb.hypot(ib), ra.hypot(ia))
+    .then(cmp(ra, rb))
+    .then(cmp(ib, ia))
 }
 
 /// True when `e` evaluates (under N) to a real number — i.e. not a complex
@@ -3302,36 +3305,19 @@ fn is_real_numeric_value(e: &Expr) -> bool {
   )
 }
 
-/// Get a numeric sort key for an eigenvalue expression.
-/// For integer: the value itself.
-/// For expressions involving Sqrt: approximate numerically.
-fn eigenvalue_sort_key(e: &Expr) -> f64 {
+/// The numeric value `(re, im)` an eigenvalue is sorted by; `(0, 0)` for a
+/// symbolic one.
+fn eigenvalue_sort_key(e: &Expr) -> (f64, f64) {
   match e {
-    Expr::Integer(n) => *n as f64,
-    Expr::Real(r) => *r,
-    Expr::FunctionCall { name, args }
-      if name == "Rational" && args.len() == 2 =>
-    {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        *n as f64 / *d as f64
-      } else {
-        0.0
-      }
-    }
-    _ => {
-      // Try to evaluate numerically
-      if let Ok(n_result) =
-        crate::functions::math_ast::n_ast(std::slice::from_ref(e))
-      {
-        match &n_result {
-          Expr::Real(r) => *r,
-          Expr::Integer(n) => *n as f64,
-          _ => 0.0,
-        }
-      } else {
-        0.0
-      }
-    }
+    Expr::Integer(n) => (*n as f64, 0.0),
+    Expr::Real(r) => (*r, 0.0),
+    _ => evaluate_expr_to_expr(&call1("N", e.clone()))
+      .ok()
+      .and_then(|v| {
+        crate::functions::math_ast::numeric_utils::try_extract_complex_float(&v)
+          .or_else(|| try_eval_to_f64(&v).map(|re| (re, 0.0)))
+      })
+      .unwrap_or((0.0, 0.0)),
   }
 }
 
@@ -3452,7 +3438,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
       if coeff != 1 {
         factors.push(Expr::Integer(coeff));
       }
-      factors.push(const_expr("I"));
+      factors.push(id_expr("I"));
       if inner != 1 {
         factors.push(call1("Sqrt", Expr::Integer(inner as i128)));
       }
@@ -3745,14 +3731,7 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(Option::unwrap)
         .zip(diag.iter().cloned())
         .collect();
-      pairs.sort_by(|a, b| {
-        let abs_a = a.0.0.hypot(a.0.1);
-        let abs_b = b.0.0.hypot(b.0.1);
-        abs_b
-          .partial_cmp(&abs_a)
-          .unwrap_or(std::cmp::Ordering::Equal)
-          .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-      });
+      pairs.sort_by(|a, b| eigenvalue_order(a.0, b.0));
       diag = pairs.into_iter().map(|(_, e)| e).collect();
     }
     return Ok(Expr::List(diag.into()));
@@ -4607,6 +4586,46 @@ fn integer_eigenvectors(
 
   // Check if all eigenvalues are integers
   let all_integer = eigenvalues.iter().all(|e| expr_to_i128(e).is_some());
+
+  // Gaussian-integer eigenvalues (`-1 + I`): the null spaces of `m - λ I`,
+  // a repeated eigenvalue taking its vectors in turn and a defective one
+  // padded with zero vectors.
+  if !all_integer
+    && n >= 3
+    && eigenvalues.iter().all(|e| expr_to_gq(e).is_some())
+  {
+    let mut eigenvectors: Vec<Expr> = Vec::new();
+    let mut processed: Vec<(String, Vec<Expr>)> = Vec::new();
+    for eigenvalue in &eigenvalues {
+      let key = expr_to_string(eigenvalue);
+      if !processed.iter().any(|(k, _)| *k == key) {
+        let shifted = call(
+          "Subtract",
+          vec![
+            matrix_to_expr(matrix.to_vec()),
+            times2(
+              eigenvalue.clone(),
+              call1("IdentityMatrix", Expr::Integer(n as i128)),
+            ),
+          ],
+        );
+        let null_space = evaluate_expr_to_expr(&shifted).and_then(|m| {
+          crate::evaluator::evaluate_function_call_ast("NullSpace", &[m])
+        });
+        let Ok(Expr::List(ref basis)) = null_space else {
+          return call1("Eigenvectors", matrix_to_expr(matrix.to_vec()));
+        };
+        processed.push((key.clone(), basis.to_vec()));
+      }
+      let entry = processed.iter_mut().find(|(k, _)| *k == key).unwrap();
+      eigenvectors.push(if entry.1.is_empty() {
+        Expr::List(vec![Expr::Integer(0); n].into())
+      } else {
+        entry.1.remove(0)
+      });
+    }
+    return Expr::List(eigenvectors.into());
+  }
 
   if !all_integer && n == 2 {
     // 2x2 with symbolic eigenvalues: build eigenvectors directly

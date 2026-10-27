@@ -176,14 +176,20 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = {
     let rewritten_first =
       args.first().and_then(equations_from_bare_polynomials);
-    let drop_precision = args.len() == 3 && is_precision_spec(&args[2]);
-    if rewritten_first.is_some() || drop_precision {
+    // `NSolve[eqns, n]` with a number in the variable slot is the legacy
+    // precision form, solving for the variables the equations contain.
+    let precision_at = match args.len() {
+      3 if is_precision_spec(&args[2]) => Some(2),
+      2 if is_precision_spec(&args[1]) => Some(1),
+      _ => None,
+    };
+    if rewritten_first.is_some() || precision_at.is_some() {
       let mut new_args = args.to_vec();
       if let Some(first) = rewritten_first {
         new_args[0] = first;
       }
-      if drop_precision {
-        new_args.truncate(2);
+      if let Some(at) = precision_at {
+        new_args.truncate(at);
       }
       normalized_owned = new_args;
       normalized_owned.as_slice()

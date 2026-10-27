@@ -11191,3 +11191,48 @@ Length[First[RegressionCommon`ParameterTable /. r]]";
     assert_eq!(interpret(code).unwrap(), "1");
   }
 }
+
+// Eigenvalues of equal magnitude are ordered by real part, then by
+// decreasing imaginary part; Gaussian-integer eigenvalues get the null
+// spaces of m - λ I as eigenvectors.
+mod complex_eigen_order {
+  use super::*;
+
+  #[test]
+  fn eigenvalues_order_ties_by_real_then_imaginary_part() {
+    assert_eq!(
+      interpret("Eigenvalues[DiagonalMatrix[{-1, 1, I, -I}]]").unwrap(),
+      "{-1, I, -I, 1}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[DiagonalMatrix[{1 - I, 1 + I, -1 + I, -1 - I}]]")
+        .unwrap(),
+      "{-1 + I, -1 - I, 1 + I, 1 - I}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{0,1,1,0},{1,0,0,1},{0,1,0,1},{1,0,1,0}}]")
+        .unwrap(),
+      "{2, -1 + I, -1 - I, 0}"
+    );
+  }
+
+  #[test]
+  fn eigenvectors_for_gaussian_integer_eigenvalues() {
+    assert_eq!(
+      interpret("Eigenvectors[{{0,1,1,0},{1,0,0,1},{0,1,0,1},{1,0,1,0}}]")
+        .unwrap(),
+      "{{1, 1, 1, 1}, {I, -I, -1, 1}, {-I, I, -1, 1}, {-1, -1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret("Eigensystem[{{0,-1,0},{1,0,0},{0,0,2}}]").unwrap(),
+      "{{2, I, -I}, {{0, 0, 1}, {I, 1, 0}, {-I, 1, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "N[Eigenvectors[{{0,1,1,0},{1,0,0,1},{0,1,0,1},{1,0,1,0}}, 2]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1., 1.}, {0. + 1.*I, 0. - 1.*I, -1., 1.}}"
+    );
+  }
+}
