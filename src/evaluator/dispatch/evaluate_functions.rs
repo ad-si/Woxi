@@ -5574,6 +5574,14 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::convex_hull::convex_hull_mesh_ast(args);
   }
 
+  // The legacy package's DistanceMatrix[data, DistanceFunction -> f] is the
+  // built-in DistanceMatrix.
+  if name == "HierarchicalClustering`DistanceMatrix"
+    && (args.len() == 1 || args.len() == 2)
+  {
+    return crate::functions::list_helpers_ast::distance_matrix_ast(args);
+  }
+
   // ComputationalGeometry`ConvexHull[{{x1,y1},...}] → indices of the hull
   // corners, counter-clockwise.
   if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
