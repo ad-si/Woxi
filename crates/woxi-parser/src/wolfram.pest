@@ -145,10 +145,13 @@ PrecisionReal = @{
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
     ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
-UnsignedConstant = { ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
+// A constant's name ends where a symbol name would: `Eδ`, `Pi$`, `E\[Phi]d`
+// are symbols of their own, not `E δ`.
+ConstantEnd = _{ !(ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) }
+UnsignedConstant = { ("Pi" | "Degree" | "E") ~ ConstantEnd }
 // Base-prefix literal: base^^digits (e.g. 16^^FF, 2^^1010, 2^^1.01, 16^^FF.A)
 BasePrefix = @{ ASCII_DIGIT+ ~ "^^" ~ ASCII_ALPHANUMERIC+ ~ ("." ~ !"." ~ ASCII_ALPHANUMERIC*)? }
-Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ !(ASCII_ALPHANUMERIC | "_") }
+Constant = { ("-")? ~ ("Pi" | "Degree" | "E") ~ ConstantEnd }
 NumericValue = { BasePrefix | PrecisionReal | Real | IntegerScientific | Integer | Constant }
 UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | UnsignedIntegerScientific | UnsignedInteger | UnsignedConstant }
 
