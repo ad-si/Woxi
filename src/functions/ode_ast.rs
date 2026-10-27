@@ -6602,6 +6602,10 @@ fn integrate_leg(
         && state_events.events.is_empty()
         && !dde_active()
         && !funcs.iter().any(|f| f.order == 0)
+        // A right-hand side that solves a system at every evaluation makes
+        // an adaptive leg crawling towards a singular point prohibitively
+        // slow; such a leg stops where RK4 did.
+        && !residuals.iter().any(NumFn::is_costly)
       {
         let rhs = |xv: f64, s: &[f64]| {
           Ok(system_derivative(
@@ -7613,6 +7617,17 @@ enum NumFn {
 }
 
 impl NumFn {
+  /// Whether each evaluation solves an algebraic system by Newton
+  /// iteration (an index-1 DAE's constraints) or goes through the symbolic
+  /// evaluator — too costly for the thousands of evaluations an adaptive
+  /// leg spends near a singular point.
+  fn is_costly(&self) -> bool {
+    match self {
+      Self::Compiled(e) => e.has_implicit(),
+      Self::Symbolic { .. } => true,
+    }
+  }
+
   fn new(expr: Expr, var_names: &[String]) -> Self {
     match compile_numeric(&expr, var_names) {
       Some(compiled) => Self::Compiled(compiled),
@@ -7730,9 +7745,11 @@ enum NExpr {
     guess: std::cell::RefCell<Vec<f64>>,
     init: Vec<f64>,
     /// The last solve: the first `key_len` variables it was solved at and
-    /// the root found. Shared by every residual of a system, which are
-    /// evaluated at the same point one after another.
-    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Vec<f64>)>>>,
+    /// the root found, or `None` where Newton failed. Shared by every
+    /// residual of a system, which are evaluated at the same point one
+    /// after another — a failure is remembered too, since retrying it costs
+    /// a full failing Newton run per residual.
+    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Option<Vec<f64>>)>>>,
     key_len: usize,
     body: Box<Self>,
   },
@@ -7846,6 +7863,33 @@ fn solve_dense(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 }
 
 impl NExpr {
+  /// Whether an `Implicit` (Newton-solved) node appears anywhere inside.
+  fn has_implicit(&self) -> bool {
+    match self {
+      Self::Implicit { .. } => true,
+      Self::Add(items) | Self::Mul(items) => {
+        items.iter().any(Self::has_implicit)
+      }
+      Self::Pow(a, b) | Self::Fn2(_, a, b) => {
+        a.has_implicit() || b.has_implicit()
+      }
+      Self::Neg(a) | Self::Fn1(_, a) => a.has_implicit(),
+      Self::If {
+        lhs,
+        rhs,
+        then,
+        otherwise,
+        ..
+      } => [lhs, rhs, then, otherwise].iter().any(|e| e.has_implicit()),
+      Self::Interp1D { arg, .. } => arg.has_implicit(),
+      Self::Const(_)
+      | Self::Var(_)
+      | Self::External { .. }
+      | Self::ComplexReal(_)
+      | Self::Delayed { .. } => false,
+    }
+  }
+
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
       Self::Implicit {
@@ -7871,12 +7915,14 @@ impl NExpr {
           let start = guess.borrow().clone();
           let root = newton_system(constraints, &mut local, *slot, &start)
             .or_else(|| newton_system(constraints, &mut local, *slot, init));
-          let Some(root) = root else {
-            return f64::NAN;
-          };
-          guess.borrow_mut().clone_from(&root);
+          if let Some(ref root) = root {
+            guess.borrow_mut().clone_from(root);
+          }
           *memo.borrow_mut() = Some((key.to_vec(), root.clone()));
           root
+        };
+        let Some(root) = root else {
+          return f64::NAN;
         };
         local[*slot..*slot + root.len()].copy_from_slice(&root);
         body.eval(&local)

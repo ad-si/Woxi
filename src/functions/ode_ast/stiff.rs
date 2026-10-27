@@ -61,6 +61,7 @@ pub(super) fn rosenbrock_leg(
     span.abs() / 100.0
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
+  let mut failures = 0;
 
   for _ in 0..MAX_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -107,6 +108,10 @@ pub(super) fn rosenbrock_leg(
     let y1: Vec<f64> =
       y.iter().zip(&k1).map(|(a, k)| a + 0.5 * hs * k).collect();
     let Some(f1) = f(x + 0.5 * hs, &y1)? else {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     };
@@ -117,6 +122,10 @@ pub(super) fn rosenbrock_leg(
       .collect();
     let y_new: Vec<f64> = y.iter().zip(&k2).map(|(a, k)| a + hs * k).collect();
     let Some(f2) = f(x + hs, &y_new)? else {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     };
@@ -187,6 +196,14 @@ fn jacobian(
 /// Steps the explicit adaptive fallback may take before handing a leg to
 /// the stiff method.
 const MAX_EXPLICIT_STEPS: usize = 1_000_000;
+
+/// Steps of a leg whose right-hand side cannot be evaluated (the state
+/// left the domain of a `Log`, or an algebraic constraint has no root
+/// there) before the leg is given up. Shrinking the step and growing it
+/// again after each success would otherwise probe the boundary for up to
+/// the whole step budget — and each failed evaluation of a DAE's
+/// constraints is a full failing Newton run.
+const MAX_EVALUATION_FAILURES: usize = 20;
 
 /// Integrate `y' = f(x, y)` from `x_from` to `x_to` with the adaptive
 /// Dormand–Prince 5(4) pair — the explicit fallback for a leg the fixed RK4
@@ -268,6 +285,7 @@ pub(super) fn dormand_prince_leg(
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
   let (mut stiff_steps, mut calm_steps) = (0, 0);
+  let mut failures = 0;
 
   for _ in 0..MAX_EXPLICIT_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -301,6 +319,10 @@ pub(super) fn dormand_prince_leg(
       }
     }
     if failed {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     }
@@ -372,6 +394,31 @@ mod tests {
     // y = cos x + 10^-5 sin x + O(10^-10).
     let err = (y[0] - (300.0f64.cos() + 1e-5 * 300.0f64.sin())).abs();
     assert!(err < 1e-7, "{err}");
+  }
+
+  // A right-hand side with no value past x = 1 makes both legs give up
+  // after a bounded number of evaluations instead of probing the boundary
+  // with ever smaller steps for the whole step budget.
+  #[test]
+  fn undefined_right_hand_side_gives_up_quickly() {
+    let calls = std::cell::Cell::new(0usize);
+    let undefined_past_one = |x: f64, y: &[f64]| {
+      calls.set(calls.get() + 1);
+      Ok((x <= 1.0).then(|| vec![-y[0]]))
+    };
+    assert!(
+      dormand_prince_leg(&undefined_past_one, &[1.0], 0.0, 10.0, true)
+        .unwrap()
+        .is_none()
+    );
+    assert!(calls.get() < 5_000, "{} evaluations", calls.get());
+    calls.set(0);
+    assert!(
+      rosenbrock_leg(&undefined_past_one, &[1.0], 0.0, 10.0)
+        .unwrap()
+        .is_none()
+    );
+    assert!(calls.get() < 5_000, "{} evaluations", calls.get());
   }
 
   // A stiff system makes the explicit leg give up quickly so the stiff
