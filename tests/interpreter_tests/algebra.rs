@@ -6865,6 +6865,28 @@ mod nsolve_drops_extraneous_radical_solutions {
       "{1, True}"
     );
   }
+
+  // A root of a polynomial with large coefficients leaves a rounding
+  // residual far above 1; it is judged against the size of the terms that
+  // cancel, so it is kept. Regression: the quartic secular equation of the
+  // Rayleigh-Ritz Demonstration lost all four roots.
+  #[test]
+  fn roots_of_a_large_coefficient_polynomial_are_kept() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[a_, m_, n_] := -((((1/m + 1/n) a)^(-m - n)) (-m (-1 + n) n \
+         (-2 + a) + m^3 a + (-1 + n) n^2 a - m^2 (n (-2 + a) + a)) \
+         (-2 + m + n)!)/(2 m n); \
+         s[a_, m_, n_] := (((1/m + 1/n) a)^(-1 - m - n)) (m + n)!; \
+         mat = Table[h[0.5, m, n] - l s[0.5, m, n], {m, 4}, {n, 4}]; \
+         sol = l /. NSolve[Det[mat] == 0, l]; \
+         {Length[sol], Abs[First[sol] + 0.40319833706648545] < 10^-12}"
+      )
+      .unwrap(),
+      "{4, True}"
+    );
+  }
 }
 
 mod reduce_univariate_polynomial_inequalities {

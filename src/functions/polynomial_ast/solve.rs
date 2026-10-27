@@ -414,11 +414,20 @@ fn numerically_violates(eqns: &Expr, solution: &Expr) -> bool {
       .ok()
       .and_then(|v| try_extract_complex_f64(&v))
     };
-    let (Some(l), Some(r)) = (value(&lhs), value(&rhs)) else {
-      return false;
-    };
-    let scale = 1.0 + l.0.hypot(l.1).max(r.0.hypot(r.1));
-    (l.0 - r.0).hypot(l.1 - r.1) > 1e-6 * scale
+    // The residual is judged against the size of the terms that cancel in
+    // it: a root of a polynomial with large coefficients leaves a rounding
+    // residual far above 1 that is still a root.
+    let difference = expand_and_combine(&minus2(lhs.clone(), rhs.clone()));
+    let mut residual = (0.0, 0.0);
+    let mut scale = 1.0;
+    for term in collect_additive_terms(&difference) {
+      let Some(t) = value(&term) else {
+        return false;
+      };
+      residual = (residual.0 + t.0, residual.1 + t.1);
+      scale += t.0.hypot(t.1);
+    }
+    residual.0.hypot(residual.1) > 1e-6 * scale
   })
 }
 
