@@ -172,6 +172,7 @@ and the membership predicate `MemberQ`.
 - [`HeavisideTheta`](utility/HeavisideTheta.md)
 - [`IntervalIntersection`](utility/IntervalIntersection.md)
 - [`JaccardDissimilarity`](utility/JaccardDissimilarity.md)
+- [`FourierSequenceTransform`](utility/FourierSequenceTransform.md)
 - [`ListFourierSequenceTransform`](utility/ListFourierSequenceTransform.md)
 - [`LocationTest`](utility/LocationTest.md)
 - [`MatchingDissimilarity`](utility/MatchingDissimilarity.md)

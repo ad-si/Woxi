@@ -743,6 +743,7 @@
       - [`Line`](math/utility/Line.md)
       - [`LinearRecurrence`](math/utility/LinearRecurrence.md)
       - [`LiouvilleLambda`](math/utility/LiouvilleLambda.md)
+      - [`FourierSequenceTransform`](math/utility/FourierSequenceTransform.md)
       - [`ListFourierSequenceTransform`](math/utility/ListFourierSequenceTransform.md)
       - [`LocationTest`](math/utility/LocationTest.md)
       - [`Longitude`](math/utility/Longitude.md)
