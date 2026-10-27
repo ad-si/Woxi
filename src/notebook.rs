@@ -1211,9 +1211,19 @@ fn extract_typeset_box(s: &str) -> Option<String> {
               .strip_prefix('{')
               .and_then(|s| s.strip_suffix('}'))
               .unwrap_or(row);
+            // A quoted cell is code like a row element (`"\[ScriptM]"`
+            // names the same symbol it does inside a `RowBox`), not prose
+            // whose private-use letters give way to visible glyphs.
             let cells: Vec<String> = split_top_level_commas(row_inner)
               .into_iter()
-              .map(|cell| extract_cell_content(cell.trim()))
+              .map(|cell| {
+                let cell = cell.trim();
+                if cell.starts_with('"') {
+                  box_part_source(cell)
+                } else {
+                  extract_cell_content(cell)
+                }
+              })
               .collect();
             format!("{{{}}}", cells.join(", "))
           })
@@ -8950,6 +8960,27 @@ Cell[BoxData[\n\
     assert_eq!(strip_line_continuations("ab\\\\\ncd"), "ab\\\\\ncd");
     assert_eq!(strip_line_continuations("ab\\\r\ncd"), "abcd");
     assert_eq!(strip_line_continuations("plain\ntext"), "plain\ntext");
+  }
+
+  #[test]
+  fn test_gridbox_cell_script_letter_names_the_row_symbol() {
+    // A script letter standing alone in a grid cell is the same symbol as
+    // in a row: both must keep Wolfram's private-use code point, or the
+    // `With` below substitutes into one occurrence and not the other.
+    let nb = r#"Notebook[{
+Cell[BoxData[RowBox[{"With", "[", RowBox[{RowBox[{"{", RowBox[{"\[ScriptM]", "=", "2"}], "}"}], ",", RowBox[{"Transpose", "[", GridBox[{{RowBox[{"1", "-", "\[ScriptM]"}], "\[ScriptM]"}}], "]"}]}], "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "With[{\u{f6be}=2},Transpose[{{1-\u{f6be}, \u{f6be}}}]]"
+        );
+        assert_eq!(crate::interpret(&cell.content).unwrap(), "{{-1}, {2}}");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
   }
 
   #[test]
