@@ -17219,6 +17219,27 @@ mod cases {
     );
   }
 
+  // Inner over the n-th index of the first tensor.
+  #[test]
+  fn inner_over_a_chosen_index() {
+    assert_case(
+      r#"Inner[f, {a, b}, {c, d}, g, 1]"#,
+      r#"g[f[a, c], f[b, d]]"#,
+    );
+    assert_case(
+      r#"Inner[f, {{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, g, 1]"#,
+      r#"{{g[f[1, 5], f[3, 7]], g[f[1, 6], f[3, 8]]}, {g[f[2, 5], f[4, 7]], g[f[2, 6], f[4, 8]]}}"#,
+    );
+    assert_case(
+      r#"Inner[Times, {{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, Plus, 2]"#,
+      r#"{{19, 22}, {43, 50}}"#,
+    );
+    assert_case(
+      r#"Inner[f, {a, b}, {c, d}, g, 3]"#,
+      r#"Inner[f, {a, b}, {c, d}, g, 3]"#,
+    );
+  }
+
   #[test]
   fn divisible_arity_message() {
     woxi::clear_state();
