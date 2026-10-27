@@ -6796,6 +6796,29 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // Powers of one base with symbolic exponents order by the exponents, and a
+  // power of a plain sum with a symbolic exponent orders after the variable
+  #[test]
+  fn symbolic_exponents_of_one_base() {
+    assert_eq!(
+      interpret("{c^(1 + n) + c^n, c^n + c^(n - 1), a c^(1 + n) + b c^n, 5 c^(1 + n) - 5 c^n, 2^n + 2^(n + 1) + 3}")
+        .unwrap(),
+      "{c^n + c^(1 + n), c^(-1 + n) + c^n, b*c^n + a*c^(1 + n), -5*c^n + 5*c^(1 + n), 3 + 2^n + 2^(1 + n)}"
+    );
+    assert_eq!(
+      interpret("{r (1 + r)^t, r (1 + r)^(-t), x (1 + x)^n, Sqrt[1 + x]^t x, x^(-1 + a) (1 - x^a)^(-1 + b)}")
+        .unwrap(),
+      "{r*(1 + r)^t, r/(1 + r)^t, x*(1 + x)^n, x*(1 + x)^(t/2), x^(-1 + a)*(1 - x^a)^(-1 + b)}"
+    ); // A power under a symbolic exponent leads a sum of powers of its base
+    assert_eq!(
+      interpret(
+        "{c^n (1 - c^(-n)), c^n (1 + c^n), x^a (1 + x^b), (-1 + E^t) E^t}"
+      )
+      .unwrap(),
+      "{c^n*(1 - c^(-n)), c^n*(1 + c^n), x^a*(1 + x^b), E^t*(-1 + E^t)}"
+    );
+  }
+
   // The terms are sorted through an index permutation; every term has to
   // land exactly once, in canonical order, however scrambled the input is.
   #[test]

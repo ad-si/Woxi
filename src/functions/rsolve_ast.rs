@@ -117,6 +117,23 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // First-order linear a[n+1] == c a[n] + d with any constant c and d,
+  // symbolic ones included.
+  if let Some(solution) = solve_first_order_linear(
+    &rec_lhs,
+    &rec_rhs,
+    &func_name,
+    &var_name,
+    &initial_conditions,
+  ) {
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
+  }
+
   // Nonlinear logistic map a[n+1] == 4 a[n] (1 - a[n]).
   if let Some(solution) = solve_logistic_map(
     &rec_lhs,
@@ -555,6 +572,149 @@ fn solve_first_order_arithmetic(
       Some(raw_plus(constant, dn))
     }
     _ => None, // over-determined: leave to the general solver / unevaluated
+  }
+}
+
+/// First-order linear recurrence `a[m + 1] == c a[m] + d` whose `c` and `d`
+/// are free of the index (they may be symbols: `p[t + 1] == (1 + r) p[t] -
+/// k`), in whatever form it is written (`a[n] == c a[n - 1] + d`, `2 a[n + 1]
+/// == 6 a[n] + 4`). The closed forms are wolframscript's:
+///   no initial condition:  (c^n (1 - c^-n) d)/(c - 1) + c^(n - 1) C[1]
+///   a[k0] == v:            Together[c^(n - k0) v + d (c^(n - k0) - 1)/(c - 1)]
+/// `None` for anything else, including `c == 1` (an arithmetic progression,
+/// handled by [`solve_first_order_arithmetic`]).
+fn solve_first_order_linear(
+  lhs: &Expr,
+  rhs: &Expr,
+  func_name: &str,
+  var_name: &str,
+  ics: &[(i128, Expr)],
+) -> Option<Expr> {
+  use crate::evaluator::{evaluate_expr_to_expr, evaluate_function_call_ast};
+  let eval = |e: Expr| evaluate_expr_to_expr(&e).ok();
+  let difference = minus2(lhs.clone(), rhs.clone());
+  let mut offsets = Vec::new();
+  if !all_func_offsets(&difference, func_name, var_name, &mut offsets) {
+    return None;
+  }
+  offsets.sort_unstable();
+  offsets.dedup();
+  let [lo, hi] = offsets.as_slice() else {
+    return None;
+  };
+  if hi - lo != 1 {
+    return None;
+  }
+  // The two occurrences as placeholder symbols
+  let at = |k: i128| {
+    let index = plus2(id_expr(var_name), Expr::Integer(k));
+    call1(func_name, eval(index.clone()).unwrap_or(index))
+  };
+  let u_hi = id_expr("Woxi`RSolveNext");
+  let u_lo = id_expr("Woxi`RSolveThis");
+  let replaced = eval(call(
+    "ReplaceAll",
+    vec![
+      difference,
+      Expr::List(
+        vec![
+          rule_expr(at(*hi), u_hi.clone()),
+          rule_expr(at(*lo), u_lo.clone()),
+        ]
+        .into(),
+      ),
+    ],
+  ))?;
+  let coefficient = |u: &Expr| {
+    evaluate_function_call_ast(
+      "Coefficient",
+      &[replaced.clone(), u.clone(), Expr::Integer(1)],
+    )
+    .ok()
+  };
+  let a_hi = coefficient(&u_hi)?;
+  let a_lo = coefficient(&u_lo)?;
+  let rest = eval(call(
+    "ReplaceAll",
+    vec![
+      replaced.clone(),
+      Expr::List(
+        vec![
+          rule_expr(u_hi.clone(), Expr::Integer(0)),
+          rule_expr(u_lo.clone(), Expr::Integer(0)),
+        ]
+        .into(),
+      ),
+    ],
+  ))?;
+  // The equation must be exactly a_hi u_hi + a_lo u_lo + rest
+  let check = evaluate_function_call_ast(
+    "Expand",
+    &[minus2(
+      replaced.clone(),
+      plus(vec![
+        times2(a_hi.clone(), u_hi.clone()),
+        times2(a_lo.clone(), u_lo.clone()),
+        rest.clone(),
+      ]),
+    )],
+  )
+  .ok()?;
+  let free = |e: &Expr| {
+    !crate::functions::polynomial_ast::contains_var(e, var_name)
+      && !contains_func(e, func_name)
+      && !crate::functions::polynomial_ast::contains_var(e, "Woxi`RSolveNext")
+      && !crate::functions::polynomial_ast::contains_var(e, "Woxi`RSolveThis")
+  };
+  // With machine coefficients the remainder is a machine zero
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0))
+      || crate::functions::math_ast::try_eval_to_f64(e) == Some(0.0)
+  };
+  if !is_zero(&check)
+    || is_zero(&a_hi)
+    || !free(&a_hi)
+    || !free(&a_lo)
+    || !free(&rest)
+  {
+    return None;
+  }
+  let c = eval(div2(neg1(a_lo), a_hi.clone()))?;
+  let d = eval(div2(neg1(rest), a_hi))?;
+  if matches!(c, Expr::Integer(1 | 0)) {
+    return None;
+  }
+  let n = id_expr(var_name);
+  let c_minus_1 = plus2(c.clone(), Expr::Integer(-1));
+  match ics {
+    [] => {
+      let homogeneous = times2(
+        pow(c.clone(), plus2(Expr::Integer(-1), n.clone())),
+        call1("C", Expr::Integer(1)),
+      );
+      if matches!(d, Expr::Integer(0)) {
+        return eval(homogeneous);
+      }
+      let particular = div2(
+        times(vec![
+          pow(c.clone(), n.clone()),
+          minus2(Expr::Integer(1), pow(c.clone(), neg1(n.clone()))),
+          d,
+        ]),
+        c_minus_1,
+      );
+      eval(plus2(particular, homogeneous))
+    }
+    [(k0, v)] => {
+      let steps = plus2(n.clone(), Expr::Integer(-k0));
+      let power = pow(c.clone(), steps);
+      let solution = plus2(
+        times2(power.clone(), v.clone()),
+        div2(times2(d, plus2(power, Expr::Integer(-1))), c_minus_1),
+      );
+      evaluate_function_call_ast("Together", &[eval(solution)?]).ok()
+    }
+    _ => None,
   }
 }
 

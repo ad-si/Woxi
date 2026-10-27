@@ -2948,6 +2948,40 @@ fn is_sum_based(e: &Expr) -> bool {
 /// For polynomial-like terms, sorts by (variable, exponent) pairs in reverse-lex order:
 /// each term's pairs are sorted by variable name descending, then compared
 /// lexicographically (variable ascending, exponent ascending, shorter first).
+/// The factor a Plus term is ordered by: the last one of a product (any
+/// leading factor acts as a coefficient), the term itself otherwise.
+fn last_plus_factor(e: &Expr) -> &Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Times" && !args.is_empty() =>
+    {
+      args.last().unwrap()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      right,
+      ..
+    } => right,
+    other => other,
+  }
+}
+
+/// `(base, exponent)` of a power whose exponent is not a number.
+fn symbolic_power(e: &Expr) -> Option<(&Expr, &Expr)> {
+  let (base, exp) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  expr_to_f64(exp).is_none().then_some((base, exp))
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -2955,6 +2989,20 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (true, false) => return std::cmp::Ordering::Less,
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
+  }
+  // Two terms ending in powers of one base with symbolic exponents order by
+  // those exponents, whatever leads them: `c^(-1 + n) + c^n`, `b c^n + a
+  // c^(1 + n)`. (Rendered as text they would compare `(` against `n`.)
+  if let (Some((base_a, exp_a)), Some((base_b, exp_b))) = (
+    symbolic_power(last_plus_factor(a)),
+    symbolic_power(last_plus_factor(b)),
+  ) && crate::evaluator::pattern_matching::expr_equal(base_a, base_b)
+  {
+    let ord =
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(exp_a, exp_b);
+    if ord != std::cmp::Ordering::Equal {
+      return ord;
+    }
   }
   // Two real numeric terms (`E`, `Sqrt[8 + E^2]`) are in canonical order:
   // `-E + Sqrt[8 + E^2]`, `Pi + Sqrt[2 + Pi]`, `Sqrt[2] + Pi`.
@@ -6177,17 +6225,50 @@ fn power_additive_base(e: &Expr) -> Option<&Expr> {
     }
     _ => false,
   };
+  // A symbolic exponent counts as positive too, unless it is written as a
+  // negation — `r*(1 + r)^t` orders like `r*(1 + r)^2`, `r/(1 + r)^t` like a
+  // reciprocal — but only over a sum of plain monomials: the rule cannot
+  // weigh a sum like `1 - x^a`, whose own powers are symbolic
+  // (`x^(-1 + a)*(1 - x^a)^(-1 + b)` keeps its order).
+  let has_symbolic_power = |sum: &Expr| {
+    plus_call_args(sum).is_some_and(|terms| {
+      terms.iter().any(|t| {
+        crate::syntax::expr_children(t).into_iter().chain([t]).any(|f| {
+          matches!(f, Expr::BinaryOp { op: BinaryOperator::Power, right, .. }
+              if crate::functions::math_ast::try_eval_to_f64(right).is_none())
+            || matches!(f, Expr::FunctionCall { name, args }
+              if name == "Power" && args.len() == 2
+                && crate::functions::math_ast::try_eval_to_f64(&args[1]).is_none())
+        })
+      })
+    })
+  };
+  let symbolic_positive = |x: &Expr, base: &Expr| {
+    !matches!(
+      x,
+      Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::BigFloat(..)
+    ) && crate::functions::math_ast::try_eval_to_f64(x).is_none()
+      && crate::functions::math_ast::complex::negate_if_negative(x).is_none()
+      && !has_symbolic_power(base)
+  };
+  let is_positive_exp_over =
+    |x: &Expr, base: &Expr| is_positive_exp(x) || symbolic_positive(x, base);
   let base = match e {
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
-    } if is_positive_exp(right) => left.as_ref(),
+    } if is_positive_exp_over(right, left) => left.as_ref(),
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       &args[0]
     }
     Expr::FunctionCall { name, args }
-      if name == "Power" && args.len() == 2 && is_positive_exp(&args[1]) =>
+      if name == "Power"
+        && args.len() == 2
+        && is_positive_exp_over(&args[1], &args[0]) =>
     {
       &args[0]
     }
@@ -6264,6 +6345,16 @@ fn order_factor_vs_additive(
   }
   if let (Some(f), Some(h)) = (fe, he)
     && f < h
+  {
+    return Ordering::Less;
+  }
+  // The same base under symbolic exponents on both sides: the factor leads,
+  // whatever the exponents — `c^n*(1 - c^(-n))`, `c^n*(1 + c^n)`,
+  // `x^a*(1 + x^b)` (wolframscript-verified).
+  if fe.is_none()
+    && he.is_none()
+    && symbolic_power(factor).is_some()
+    && symbolic_power(last_plus_factor(top)).is_some()
   {
     return Ordering::Less;
   }
