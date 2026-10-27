@@ -4589,6 +4589,37 @@ mod random_choice {
     }
   }
 
+  // A malformed `weights -> choices` rule emits wolframscript's message and
+  // stays unevaluated instead of raising a hard error.
+  #[test]
+  fn malformed_weight_rules_emit_messages() {
+    for (input, tag) in [
+      ("RandomChoice[{} -> {}]", "lrwl"),
+      ("RandomChoice[{1, 2} -> x]", "lrwl"),
+      ("RandomChoice[x -> {a}]", "wghtv"),
+      ("RandomChoice[{x, 1} -> {a, b}]", "wghtv"),
+      ("RandomChoice[{-1, 2} -> {a, b}]", "wghtv"),
+      ("RandomChoice[{0, 0} -> {a, b}]", "wghtv"),
+      ("RandomChoice[{1, I} -> {a, b}]", "wghtv"),
+      ("RandomChoice[{} -> {a}]", "wghtvl"),
+      ("RandomChoice[{1, 2} -> {a, b, c}, 3]", "wghtvl"),
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      let expected = format!("RandomChoice::{tag}:");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&expected)),
+        "expected {tag} for {input}, got {:?}",
+        r.warnings
+      );
+    }
+    // A zero weight is fine as long as the total is positive.
+    assert_eq!(
+      interpret("RandomChoice[{0, 1} -> {a, b}, 3]").unwrap(),
+      "{b, b, b}"
+    );
+  }
+
   // A negative or non-integer dimension emits ::array and stays unevaluated,
   // rather than raising a hard evaluation error.
   #[test]

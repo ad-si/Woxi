@@ -17042,6 +17042,46 @@ mod cases {
     );
   }
 
+  // With machine numbers an exponential is inverted, not solved in full:
+  // only the principal value, no `C[1]` family, and one `ifun` per Solve.
+  #[test]
+  fn solve_inexact_exponential_gives_principal_value() {
+    for (input, expected) in [
+      (
+        "Solve[0.000225 Exp[0.0693 x] == 1, x]",
+        "{{x -> 121.20360975122445}}",
+      ),
+      ("Solve[Exp[x] == 2., x]", "{{x -> 0.6931471805599453}}"),
+      ("Solve[2.0^x == 5, x]", "{{x -> 2.321928094887362}}"),
+      ("Solve[2^(x - 2) == 15., x]", "{{x -> 5.906890595608519}}"),
+      ("Solve[3^x == 15., x]", "{{x -> 2.464973520717927}}"),
+      ("Solve[Exp[x] == 1., x]", "{{x -> 0.}}"),
+      (
+        "Solve[Exp[2 x] - 3. Exp[x] + 2 == 0, x]",
+        "{{x -> 0.}, {x -> 0.6931471805599453}}",
+      ),
+    ] {
+      woxi::clear_state();
+      assert_eq!(woxi::interpret(input).unwrap(), expected, "{input}");
+      let ifun = woxi::get_captured_messages_raw()
+        .iter()
+        .filter(|m| m.contains("Solve::ifun"))
+        .count();
+      assert_eq!(ifun, 1, "{input}: expected one Solve::ifun");
+    }
+    // Exact input keeps the whole family, without the message.
+    woxi::clear_state();
+    assert_eq!(
+      woxi::interpret("Solve[Exp[x] == 2, x]").unwrap(),
+      "{{x -> ConditionalExpression[(2*I)*Pi*C[1] + Log[2], Element[C[1], Integers]]}}"
+    );
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("Solve::ifun"))
+    );
+  }
+
   // A function without definitions is inverted symbolically, the value
   // taking the place of the argument that holds the unknown.
   #[test]

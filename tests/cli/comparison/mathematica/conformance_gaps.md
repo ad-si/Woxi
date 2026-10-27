@@ -655,6 +655,20 @@ gets wolframscript's per-part precision markers; others, including complex
 powers like `N[(1 + 2 I)^(3/2), 20]`, carry a flat `20.` where WL tracks
 `19.10381839395503` and `20.148756595204922`.
 
+### Inexact `Solve` of `b^x == v` with negative `v` is 1 ULP off
+
+```sh
+wolframscript -code 'InputForm[Solve[2^x == -3., x]]'  # {{x -> 1.584962500721156 + 4.532360141827194*I}}
+woxi eval 'InputForm[Solve[2^x == -3., x]]'            # {{x -> 1.5849625007211563 + 4.532360141827194*I}}
+```
+
+Woxi inverts through `Log[b, v]`, which matches wolframscript for positive
+`v` (`Solve[2^(x - 2) == 15., x]`) and for `Log[2, -3.]` itself. Inside
+`Solve`, wolframscript rounds the real part of a negative `v` differently
+(`Log[3.]/Log[2.]`), but not consistently: `Solve[3^x == -15., x]` differs
+in the last digit of the imaginary part instead. The same applies to the
+complex roots of `Solve[2^b + 4^b == 6., b]`.
+
 ### `` NIntegrate`GaussRuleData `` differs in the last digits
 
 Woxi finds the Gauss–Legendre nodes by Newton iteration in machine

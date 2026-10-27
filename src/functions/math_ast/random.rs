@@ -838,37 +838,66 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         pattern,
         replacement,
       } => {
-        let (Expr::List(weights), Expr::List(values)) =
-          (pattern.as_ref(), replacement.as_ref())
-        else {
-          return Ok(unevaluated("RandomChoice", args));
+        // Every malformed rule leaves the call unevaluated with the
+        // message wolframscript uses for it: a non-list (or empty) choice
+        // side is `lrwl`, mismatched lengths `wghtvl`, and anything but
+        // non-negative real weights with a positive total `wghtv`.
+        let rule = expr_to_string(&args[0]);
+        let reject = |tag: &str, text: &str| {
+          crate::emit_message(&format!("RandomChoice::{tag}: {text}"));
+          Ok(unevaluated("RandomChoice", args))
         };
-        if weights.is_empty() || weights.len() != values.len() {
-          return Err(InterpreterError::EvaluationError(
-            "RandomChoice: weight and value lists must have matching length"
-              .into(),
-          ));
+        let lrwl = || {
+          reject(
+            "lrwl",
+            &format!(
+              "The items for choice {rule} should be a nonempty list or a \
+               rule weights -> choices."
+            ),
+          )
+        };
+        let wghtv = || {
+          reject(
+            "wghtv",
+            &format!(
+              "The weights given on the left-hand side of {rule} should be \
+               a list of positive numerical quantities having the same \
+               length as the list given on the right-hand side."
+            ),
+          )
+        };
+        let Expr::List(values) = replacement.as_ref() else {
+          return lrwl();
+        };
+        let Expr::List(weights) = pattern.as_ref() else {
+          return wghtv();
+        };
+        if weights.is_empty() && values.is_empty() {
+          return lrwl();
+        }
+        if weights.len() != values.len() {
+          return reject(
+            "wghtvl",
+            &format!(
+              "The weights given on the left-hand side of {rule} should \
+               have the same length as the data given on the right-hand \
+               side."
+            ),
+          );
         }
         let mut cdf = Vec::with_capacity(weights.len());
         let mut acc = 0.0f64;
         for w in weights {
-          let v = try_eval_to_f64(w).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "RandomChoice: weights must be numeric".into(),
-            )
-          })?;
-          if v < 0.0 {
-            return Err(InterpreterError::EvaluationError(
-              "RandomChoice: weights must be non-negative".into(),
-            ));
+          match try_eval_to_f64(w) {
+            Some(v) if v >= 0.0 => {
+              acc += v;
+              cdf.push(acc);
+            }
+            _ => return wghtv(),
           }
-          acc += v;
-          cdf.push(acc);
         }
         if acc <= 0.0 {
-          return Err(InterpreterError::EvaluationError(
-            "RandomChoice: weights must sum to a positive value".into(),
-          ));
+          return wghtv();
         }
         (values.iter().cloned().collect(), Some(cdf))
       }

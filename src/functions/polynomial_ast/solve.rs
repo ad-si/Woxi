@@ -2037,6 +2037,27 @@ thread_local! {
   static IFUN_HEAD: std::cell::RefCell<&'static str> = const {
     std::cell::RefCell::new("Solve")
   };
+  /// Set when a report was swallowed by `IFUN_SUPPRESS`, so a solver that
+  /// suppressed it can still report it once on its own behalf.
+  static IFUN_SWALLOWED: std::cell::Cell<bool> = const {
+    std::cell::Cell::new(false)
+  };
+}
+
+/// Runs `f` with `ifun` held back, then reports it at most once if any part
+/// of `f` asked for it — several sub-solves (one per root of a polynomial
+/// in `E^x`) give one message, as in wolframscript.
+fn with_single_ifun<T>(f: impl FnOnce() -> T) -> T {
+  let outer = IFUN_SWALLOWED.with(|w| w.replace(false));
+  let result = {
+    let _quiet = SuppressIfun::new(true);
+    f()
+  };
+  let asked = IFUN_SWALLOWED.with(|w| w.replace(outer));
+  if asked {
+    report_inverse_function_use();
+  }
+  result
 }
 
 /// Suppresses the `ifun` report for as long as it is alive.
@@ -2115,6 +2136,7 @@ fn has_inequality(expr: &Expr) -> bool {
 /// Report that an inverted function may have cost some solutions.
 fn report_inverse_function_use() {
   if IFUN_SUPPRESS.with(std::cell::Cell::get) > 0 {
+    IFUN_SWALLOWED.with(|w| w.set(true));
     return;
   }
   let head = IFUN_HEAD.with(|h| *h.borrow());
@@ -6314,7 +6336,7 @@ fn eliminate_var(dividend: &Expr, divisor: &Expr, var: &str) -> Option<Expr> {
 /// leftover, not a coefficient anybody wrote. Exact equations are left
 /// alone: nothing there is approximate.
 fn drop_rounding_noise(poly: &Expr) -> Expr {
-  if !contains_inexact_number(poly) {
+  if !crate::functions::math_ast::numeric_utils::expr_contains_real(poly) {
     return poly.clone();
   }
   let terms = collect_additive_terms(poly);
@@ -6360,19 +6382,6 @@ fn contains_bigfloat(expr: &Expr) -> bool {
       contains_bigfloat(left) || contains_bigfloat(right)
     }
     Expr::UnaryOp { operand, .. } => contains_bigfloat(operand),
-    _ => false,
-  }
-}
-
-fn contains_inexact_number(expr: &Expr) -> bool {
-  match expr {
-    Expr::Real(_) => true,
-    Expr::List(items) => items.iter().any(contains_inexact_number),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_inexact_number),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_inexact_number(left) || contains_inexact_number(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_inexact_number(operand),
     _ => false,
   }
 }
@@ -8183,35 +8192,42 @@ fn try_solve_exponential_polynomial(
   let slope = eval(div2(Expr::Integer(g), Expr::Integer(lcd)))?;
   let power = pow2(base, times2(slope, id_expr(var)));
   let mut solutions: Vec<Expr> = Vec::new();
-  for root in roots {
-    let Expr::List(rules) = root else { return None };
-    let [Expr::Rule { replacement, .. }] = &rules[..] else {
-      return None;
-    };
-    if matches!(replacement.as_ref(), Expr::Integer(0)) {
-      continue;
-    }
-    let solved = match solve_ast(&[
-      Expr::Comparison {
-        operands: vec![power.clone(), replacement.as_ref().clone()],
-        operators: vec![ComparisonOp::Equal],
-      },
-      id_expr(var),
-    ]) {
-      Ok(found) => found,
-      Err(e) => return Some(Err(e)),
-    };
-    let Expr::List(ref solved) = solved else {
-      return None;
-    };
-    for solution in solved {
-      if !solutions
-        .iter()
-        .any(|s| crate::evaluator::pattern_matching::expr_equal(s, solution))
-      {
-        solutions.push(solution.clone());
+  // `None` gives up on the equation; `Some(Err(…))` is a failed sub-solve.
+  let done = with_single_ifun(|| -> Option<Result<(), InterpreterError>> {
+    for root in roots {
+      let Expr::List(rules) = root else { return None };
+      let [Expr::Rule { replacement, .. }] = &rules[..] else {
+        return None;
+      };
+      if matches!(replacement.as_ref(), Expr::Integer(0)) {
+        continue;
+      }
+      let solved = match solve_ast(&[
+        Expr::Comparison {
+          operands: vec![power.clone(), replacement.as_ref().clone()],
+          operators: vec![ComparisonOp::Equal],
+        },
+        id_expr(var),
+      ]) {
+        Ok(found) => found,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(ref solved) = solved else {
+        return None;
+      };
+      for solution in solved {
+        if !solutions
+          .iter()
+          .any(|s| crate::evaluator::pattern_matching::expr_equal(s, solution))
+        {
+          solutions.push(solution.clone());
+        }
       }
     }
+    Some(Ok(()))
+  });
+  if let Err(e) = done? {
+    return Some(Err(e));
   }
   // wolframscript lists the families in canonical order.
   Some(crate::evaluator::evaluate_function_call_ast(
@@ -8591,9 +8607,14 @@ fn try_solve_inverse_function(
       // The periodic branches are only emitted for a concrete base E or > 1; a
       // symbolic base (or 0 < base < 1) falls through to the principal value,
       // matching wolframscript.
+      // With inexact numbers wolframscript inverts the function instead:
+      // only the principal value, reported with `ifun`
+      // (`Solve[E^x == 2., x]` → `{{x -> 0.693…}}`).
+      let inexact =
+        crate::functions::math_ast::numeric_utils::contains_inexact_real(eq);
       let base_gets_period = matches!(&base, Expr::Constant(n) if n == "E")
         || base_is_real_gt_one(&base);
-      if base_gets_period {
+      if base_gets_period && !inexact {
         // Log[base] (evaluates to 1 for E).
         let log_base =
           crate::evaluator::evaluate_expr_to_expr(&call1("Log", base.clone()))
@@ -8689,15 +8710,25 @@ fn try_solve_inverse_function(
         }
       }
       // base^exp == val where base is constant, exp contains var
-      // → exp == Log[val] / Log[base]
-      let inverse_rhs = div2(call1("Log", val.clone()), call1("Log", base));
+      // → exp == Log[val] / Log[base]. A machine value goes through the
+      // two-argument `Log`, which rounds the way wolframscript's does
+      // (`Solve[2^(x - 2) == 15., x]` → `5.906890595608519`).
+      let inverse_rhs = if inexact {
+        call("Log", vec![base, val.clone()])
+      } else {
+        div2(call1("Log", val.clone()), call1("Log", base))
+      };
       let simplified_rhs =
         crate::evaluator::evaluate_expr_to_expr(&inverse_rhs).ok()?;
       let new_eq = Expr::Comparison {
         operands: vec![exp, simplified_rhs],
         operators: vec![ComparisonOp::Equal],
       };
-      return Some(solve_ast(&[new_eq, id_expr(var)]));
+      let solved = solve_ast(&[new_eq, id_expr(var)]);
+      if inexact && base_gets_period && solved.is_ok() {
+        report_inverse_function_use();
+      }
+      return Some(solved);
     }
   }
 
