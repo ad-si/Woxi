@@ -985,6 +985,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "Reals"
     | "Thick"
     | "Thin"
+    | "Dashed"
+    | "Dotted"
+    | "DotDashed"
     | "Integrate" => {
       A::Protected | A::ReadProtected
     }

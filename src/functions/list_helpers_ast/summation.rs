@@ -943,6 +943,49 @@ fn concrete_iteration_grid(specs: &[Expr]) -> Option<Vec<(String, Vec<Expr>)>> {
   Some(grid)
 }
 
+/// An inner iterator spec of a multiple `Sum` / `Product` with the outer
+/// index replaced by one of its values. Its bounds are evaluated right away
+/// (`{j, 3 - i, 2}` at `i = 1` becomes `{j, 2, 2}`), like the bounds of any
+/// iterator, so the inner sum sees concrete integers rather than an
+/// unevaluated `3 - 1`.
+fn substitute_into_spec(
+  spec: &Expr,
+  var: &str,
+  value: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let substituted = crate::syntax::substitute_variable(spec, var, value);
+  let Expr::List(items) = &substituted else {
+    return Ok(substituted);
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for (i, item) in items.iter().enumerate() {
+    out.push(if i == 0 {
+      item.clone()
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(item)?
+    });
+  }
+  Ok(Expr::List(out.into()))
+}
+
+/// The outermost iterator of a multiple `Sum` / `Product` and its values,
+/// when it should be enumerated before the inner iterators are evaluated:
+/// either the whole grid is concrete and small, or the outer iterator is
+/// concrete and an inner spec depends on it (`{i, 3, 5}, {j, i - 1}`). In the
+/// latter case the inner bounds only become concrete once `i` is substituted;
+/// evaluating the inner sum first would run its summand with `i` symbolic,
+/// which is not what Wolfram's `HoldAll` evaluation order does.
+fn outer_iteration_values(specs: &[Expr]) -> Option<(String, Vec<Expr>)> {
+  if let Some(grid) = concrete_iteration_grid(specs) {
+    return grid.into_iter().next();
+  }
+  let (var, values) = concrete_iterator_values(specs.first()?)?;
+  let dependent = specs[1..]
+    .iter()
+    .any(|spec| !crate::functions::calculus_ast::is_constant_wrt(spec, &var));
+  dependent.then_some((var, values))
+}
+
 pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Trailing options are not iterators; none of Product's change the answer
   // here, so they are accepted and dropped.
@@ -976,16 +1019,14 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Product[Product[expr, {j,...}], {i,...}] (the rightmost iterator is
   // innermost), mirroring multi-index Sum.
   if args.len() > 2 {
-    // See `concrete_iteration_grid`: enumerate outermost-first when possible.
-    if let Some((var, values)) = concrete_iteration_grid(&args[1..])
-      .map(|grid| grid.into_iter().next().expect("at least one iterator"))
-    {
+    // See `outer_iteration_values`: enumerate outermost-first when possible.
+    if let Some((var, values)) = outer_iteration_values(&args[1..]) {
       let mut acc = Expr::Integer(1);
       for value in values {
         let mut inner = Vec::with_capacity(args.len() - 1);
         inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
         for spec in &args[2..] {
-          inner.push(crate::syntax::substitute_variable(spec, &var, &value));
+          inner.push(substitute_into_spec(spec, &var, &value)?);
         }
         let val = product_ast(&inner)?;
         acc = crate::functions::math_ast::times_ast(&[acc, val])?;
@@ -2153,29 +2194,72 @@ fn plus_all(terms: &[Expr]) -> Result<Expr, InterpreterError> {
 
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = sum_ast_unevaluated_body(args)?;
-  // A sum that stays symbolic (e.g. a symbolic upper bound) is returned with
-  // its summand evaluated, so later rules such as `x -> 0.3` act on the
-  // evaluated terms rather than on the held input.
-  if let Expr::FunctionCall { name, args: held } = &result
-    && name == "Sum"
-    && held.len() == 2
-    && let Expr::List(spec) = &held[1]
-    && let Some(Expr::Identifier(var)) = spec.first()
-    && !matches!(spec.last(), Some(Expr::Identifier(b)) if b == "Infinity")
-  {
-    let fresh_name = format!("$sum_body_{var}_$");
-    let fresh = Expr::Identifier(fresh_name.clone());
-    let body = crate::syntax::substitute_variable(&held[0], var, &fresh);
-    if let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(&body) {
-      let restored = crate::syntax::substitute_variable(
-        &evaluated,
-        &fresh_name,
-        &Expr::Identifier(var.clone()),
-      );
-      return Ok(call("Sum", vec![restored, held[1].clone()]));
-    }
+  // A sum that does not close is all-or-nothing in wolframscript: the call
+  // comes back as written — every iterator spec (`{j, n}` stays `{j, n}`) and
+  // option in place, even when an inner sum of a multiple Sum did close —
+  // with only its summand evaluated, so later rules such as `x -> 0.3` act on
+  // the evaluated terms rather than on the held input.
+  let (positional, _) = split_iteration_options(args);
+  let vars: Option<Vec<String>> = positional
+    .get(1..)
+    .unwrap_or_default()
+    .iter()
+    .map(|spec| match spec {
+      Expr::List(items) => match items.first() {
+        Some(Expr::Identifier(var)) => Some(var.clone()),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  let Some(vars) = vars.filter(|vars| !vars.is_empty()) else {
+    return Ok(result);
+  };
+  if !has_sum_over(&result, &vars) {
+    return Ok(result);
   }
-  Ok(result)
+  // The indices are localized like in Block (a global value of one must not
+  // leak in) but keep their own names, which is what messages from the
+  // summand quote. Unlike Block, the result is not evaluated again once the
+  // global values are back: it is the body of a held Sum.
+  use crate::evaluator::symbol_values::{
+    restore_symbol_values, take_symbol_values,
+  };
+  let saved: Vec<_> = vars.iter().map(|var| take_symbol_values(var)).collect();
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+  for values in saved.into_iter().rev() {
+    restore_symbol_values(values);
+  }
+  let mut held = args.to_vec();
+  if let Ok(evaluated) = evaluated {
+    held[0] = evaluated;
+  }
+  Ok(call("Sum", held))
+}
+
+/// Whether `expr` still contains a `Sum` over one of `vars` — i.e. the sum
+/// over those iterators did not close.
+fn has_sum_over(expr: &Expr, vars: &[String]) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Sum"
+        && args.iter().skip(1).any(|spec| {
+          matches!(spec, Expr::List(items)
+            if matches!(items.first(), Some(Expr::Identifier(v)) if vars.contains(v)))
+        }) =>
+    {
+      true
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| has_sum_over(a, vars))
+    }
+    Expr::List(items) => items.iter().any(|a| has_sum_over(a, vars)),
+    Expr::BinaryOp { left, right, .. } => {
+      has_sum_over(left, vars) || has_sum_over(right, vars)
+    }
+    Expr::UnaryOp { operand, .. } => has_sum_over(operand, vars),
+    _ => false,
+  }
 }
 
 fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2266,17 +2350,15 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Multi-dimensional Sum: Sum[expr, {i,...}, {j,...}, ...] => Sum[Sum[expr, {j,...}], {i,...}]
   if args.len() > 2 {
-    // Enumerate the iterators outermost-first when they are all concrete and
-    // the grid is small, matching Wolfram's `HoldAll` substitution order.
-    if let Some((var, values)) = concrete_iteration_grid(&args[1..])
-      .map(|grid| grid.into_iter().next().expect("at least one iterator"))
-    {
+    // Enumerate outermost-first when possible (see `outer_iteration_values`),
+    // matching Wolfram's `HoldAll` substitution order.
+    if let Some((var, values)) = outer_iteration_values(&args[1..]) {
       let mut terms = Vec::with_capacity(values.len());
       for value in values {
         let mut inner = Vec::with_capacity(args.len() - 1);
         inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
         for spec in &args[2..] {
-          inner.push(crate::syntax::substitute_variable(spec, &var, &value));
+          inner.push(substitute_into_spec(spec, &var, &value)?);
         }
         terms.push(sum_ast(&inner)?);
       }
