@@ -16539,6 +16539,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// Options of a held field plot are evaluated while the plot runs, so a
+    /// style computed from a `Table` index does not end up in the graphics
+    /// as an expression that only works while the index is bound
+    /// (FindingAnInverse Demonstration).
+    #[test]
+    fn field_plot_options_are_evaluated() {
+      clear_state();
+      let result = interpret_with_stdout(
+        "SetAttributes[g, HoldAll]; g[e_] := Block[{n = 1}, e]; \
+         c[r_] := Length[Position[r, Mod[n, 2, 1], Infinity]]; \
+         {c[g[First@ContourPlot[{x == y}, {x, -1, 1}, {y, 0, 1}, \
+           ContourStyle -> {{Green}, {Red}}[[Mod[n, 2, 1]]]]]], \
+          c[g[First@ContourPlot[x y, {x, -1, 1}, {y, 0, 1}, \
+           ContourStyle -> {{Green}, {Red}}[[Mod[n, 2, 1]]]]]], \
+          c[g[First@RegionPlot[x < y, {x, 0, 1}, {y, 0, 1}, \
+           PlotStyle -> {Green, Red}[[Mod[n, 2, 1]]]]]]}",
+      )
+      .unwrap();
+      assert_eq!(result.result, "{0, 0, 0}");
+      assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+      // The plot variables stay symbolic in the options
+      assert_eq!(
+        interpret(
+          "x = 5; Head[ContourPlot[Tan[x y], {x, 0, 1}, {y, 0, 1}, \
+           Exclusions -> {Cos[x y] == 0}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
     /// The default contour line keeps its thin dark-grey look when no
     /// `ContourStyle` is given.
     #[test]
@@ -36561,7 +36592,9 @@ mod color_data_indexed {
          BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]"
       )
       .unwrap(),
-      "{EdgeForm[Thick]}"
+      // The option is evaluated like any plot option, so `Thick` arrives as
+      // its value
+      "{EdgeForm[Thickness[Large]]}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
