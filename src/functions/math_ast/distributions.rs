@@ -1088,6 +1088,24 @@ pub fn quantile_distribution_closed_form(
       let (mu, beta) = (dargs[0].clone(), dargs[1].clone());
       eval(&plus2(mu, times2(beta, log(neg(log(one_minus_q())))))).ok()
     }
+    // Quantile[TriangularDistribution[{a, b}, c], q]: a + Sqrt[q (b-a) (c-a)]
+    // up to the mode's cumulative mass (c-a)/(b-a), else
+    // b - Sqrt[(1-q) (b-a) (b-c)].
+    "TriangularDistribution" => {
+      let (a, b, c) = triangular_params(dargs).ok()??;
+      let width = minus2(b.clone(), a.clone());
+      let left_mass = div2(minus2(c.clone(), a.clone()), width.clone());
+      let on_left = try_eval_to_f64(&eval(&left_mass).ok()?)? >= q_num;
+      let body = if on_left {
+        plus2(a.clone(), sqrt(times(vec![q.clone(), width, minus2(c, a)])))
+      } else {
+        minus2(
+          b.clone(),
+          sqrt(times(vec![one_minus_q(), width, minus2(b, c)])),
+        )
+      };
+      eval(&body).ok()
+    }
     // Quantile[UniformDistribution[{a, b}], q] = (1 - q)*a + q*b
     "UniformDistribution" if dargs.len() == 1 => {
       let (a, b) = match &dargs[0] {
