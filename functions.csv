@@ -1894,7 +1894,7 @@ ZTransform,Computes the Z transform of sequences c*n^k*a^n and a^n/n! plus Sin/C
 FeatureTypes,Feature types option,,unevaluated,10.1,1885
 LeastSquares,Least squares solution,✅,pure,6.0,1885
 CovarianceFunction,Sample autocovariance of data at a lag; or the covariance function of ARMA and the common continuous/counting processes,✅,pure,9.0,1887
-XYZColor,XYZ color specification,,unevaluated,10.0,1887
+XYZColor,XYZ color specification,✅,pure,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
 BSplineSurface,B-spline surface 3D graphics primitive,✅,unevaluated,7.0,1891
@@ -1928,7 +1928,7 @@ SubsuperscriptBox,Represents a box with both subscript and superscript for types
 TakeLargestBy,Takes the n largest elements by a criterion; supports the operator form TakeLargestBy[f;n][list],✅,pure,10.1,1921
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,✅,graphics,8.0,1921
 BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
-LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
+LABColor,Represents a color in the LAB color space,✅,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
 SignedRegionDistance,Signed distance from a point to a region (negative inside); Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon,✅,pure,10.0,1926
 TakeLargest,Takes the n largest elements from a list; supports the operator form TakeLargest[n][list],✅,pure,10.1,1926

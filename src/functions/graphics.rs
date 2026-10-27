@@ -1303,6 +1303,18 @@ fn unpack_channels(
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
+    // The other color spaces convert to sRGB (out-of-gamut channels clip,
+    // as in the front end).
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "LABColor" | "XYZColor" | "CMYKColor") =>
+    {
+      let (r, g, b, a) =
+        crate::functions::image_ast::color_directive_to_rgb(expr)?;
+      Some(
+        Color::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+          .with_alpha(a.unwrap_or(1.0)),
+      )
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
         let args = unpack_channels(args, 2);
