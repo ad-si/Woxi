@@ -543,9 +543,43 @@ pub fn ndsolve_ast_with_head(
   let evaluated: Vec<Expr> = evaluate_ndsolve_args(args)?
     .iter()
     .map(total_derivative_to_derivative)
+    .map(|e| expand_defined_derivatives(&e))
     .collect();
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+/// Rewrite `Derivative[n][g[i]][v]` — the derivative of an indexed function
+/// whose definition (`g[i_][v_] := …`) gives `g[i][v]` a value — into the
+/// derivative of that value, `D[g[i][v], {v, n}]`. Unknowns, whose
+/// `f[i][v]` stays unevaluated, are left as they are.
+fn expand_defined_derivatives(expr: &Expr) -> Expr {
+  if let Expr::CurriedCall { func, args } = expr
+    && let [var] = args.as_slice()
+    && let Expr::CurriedCall {
+      func: head,
+      args: orders,
+    } = func.as_ref()
+    && let Expr::FunctionCall { name, args: dargs } = head.as_ref()
+    && name == "Derivative"
+    && let [order] = dargs.as_slice()
+    && let [inner @ Expr::FunctionCall { .. }] = orders.as_slice()
+  {
+    let applied = Expr::CurriedCall {
+      func: Box::new(inner.clone()),
+      args: vec![var.clone()],
+    };
+    if let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&applied)
+      && expr_to_string(&value) != expr_to_string(&applied)
+      && let Ok(d) = crate::evaluator::evaluate_function_call_ast(
+        "D",
+        &[value, Expr::List(vec![var.clone(), order.clone()].into())],
+      )
+    {
+      return d;
+    }
+  }
+  map_children(expr, &expand_defined_derivatives)
 }
 
 /// Rewrite `Dt[f[v], v]` / `Dt[f[v], {v, n}]` — a total derivative of a
