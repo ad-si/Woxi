@@ -4397,6 +4397,22 @@ fn graphics_text_content(expr: &Expr) -> String {
       );
       graphics_text_content(&Expr::String(filled))
     }
+    // A number in scientific notation sets on one line with a raised
+    // exponent (`7.08 × 10⁷`), not as the stacked 2D `ToString` layout.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "NumberForm" | "PaddedForm" | "AccountingForm")
+        && !args.is_empty()
+        && crate::functions::string_ast::number_form_family_to_string(
+          name, args,
+        )
+        .is_some_and(|s| split_scientific_2d(&s).is_some()) =>
+    {
+      let text =
+        crate::functions::string_ast::number_form_family_to_string(name, args)
+          .unwrap_or_default();
+      let (base, exp) = split_scientific_2d(&text).unwrap_or_default();
+      format!("{base}{}", to_unicode_script_digits(&exp, true))
+    }
     // A one-argument `Text[label]` nested in a label is just the label.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       graphics_text_content(&args[0])
@@ -22981,6 +22997,22 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     current = traditionalize_layout_items(&current);
   }
   current
+}
+
+/// Split the 2D `ToString` layout of a scientific number — the exponent on
+/// the line above `mantissa × 10` — into `("mantissa × 10", "exponent")`.
+fn split_scientific_2d(text: &str) -> Option<(String, String)> {
+  let (top, bottom) = text.split_once('\n')?;
+  let (exp, base) = (top.trim(), bottom.trim());
+  let exp_digits = exp.strip_prefix('-').unwrap_or(exp);
+  if base.ends_with("\u{00d7} 10")
+    && !exp_digits.is_empty()
+    && exp_digits.chars().all(|c| c.is_ascii_digit())
+  {
+    Some((base.to_string(), exp.to_string()))
+  } else {
+    None
+  }
 }
 
 fn is_number_form_layout(expr: &Expr) -> bool {
