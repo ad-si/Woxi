@@ -22154,6 +22154,25 @@ fn render_items_at_size(
       } else {
         evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
       };
+      // A cell made by a user function that returns a `Dynamic[…]` (a
+      // `DynamicModule` holding a clickable square) shows the value it holds
+      // now, so unwrap it to the picture or `Button` inside.
+      let target = {
+        let is_user_call = matches!(&target, Expr::FunctionCall { name, .. }
+          if !is_graphics_producing_head(name)
+            && !matches!(name.as_str(), "Button" | "Dynamic"));
+        let value = if is_user_call {
+          evaluate_expr_to_expr(&target).unwrap_or_else(|_| target.clone())
+        } else {
+          target.clone()
+        };
+        if matches!(&value, Expr::FunctionCall { name, .. } if name == "Dynamic")
+        {
+          dynamic_current_value(&value)
+        } else {
+          target
+        }
+      };
       // A finished plot (`p = Plot[…]` collected into a layout) can't take
       // an `ImageSize` through its expression, but it keeps the sampled
       // curves and its options, so it is drawn again at the cell's size.
@@ -23513,6 +23532,28 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
     match name.as_str() {
       "Row" => return row_to_svg(&args),
       "Column" => return column_to_svg(&args),
+      // An `Underscript`/`Overscript` over or under a picture or layout
+      // stacks the two, centred — a caption under a plot. A text-only pair
+      // stays an inline accent (`accent_text`).
+      "Overscript" | "Underscript"
+        if args.len() == 2
+          && args.iter().any(|a| {
+            matches!(
+              resolve_display_item(a),
+              Expr::Graphics { .. } | Expr::Image { .. }
+            ) || nested_layout_svg(&resolve_display_item(a)).is_some()
+          }) =>
+      {
+        let stacked = if name == "Overscript" {
+          vec![args[1].clone(), args[0].clone()]
+        } else {
+          args.clone()
+        };
+        return column_to_svg(&[
+          Expr::List(stacked.into()),
+          Expr::Identifier("Center".to_string()),
+        ]);
+      }
       // A `Grid` nested in a layout is laid out too, rather than printed
       // as its own expression text.
       "Grid" => return grid_svg_with_gaps(&args, &[]).ok(),
