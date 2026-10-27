@@ -7440,6 +7440,34 @@ mod make_boxes {
     assert_eq!(interpret("MakeBoxes[14]").unwrap(), "14");
   }
 
+  #[test]
+  fn traditional_form_inequality_chain() {
+    assert_eq!(
+      interpret(
+        "MakeBoxes[TraditionalForm[Inequality[a, Less, b, LessEqual, c]]]"
+      )
+      .unwrap(),
+      "TagBox[FormBox[RowBox[{a, <, b, ≤, c}], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+  }
+
+  /// TraditionalForm writes `And`/`Or` calls (as `Reduce` returns them) with
+  /// `∧`/`∨`, parenthesizing an `Or` inside an `And`.
+  #[test]
+  fn traditional_form_logic_operators() {
+    assert_eq!(
+      interpret("MakeBoxes[TraditionalForm[And[Or[a < b, c < d], e < f]]]")
+        .unwrap(),
+      interpret("MakeBoxes[TraditionalForm[(a < b || c < d) && e < f]]")
+        .unwrap()
+    );
+    assert_eq!(
+      interpret("MakeBoxes[TraditionalForm[Or[a < b, And[c < d, e < f]]]]")
+        .unwrap(),
+      "TagBox[FormBox[RowBox[{RowBox[{a, <, b}], ∨, RowBox[{RowBox[{c, <, d}], ∧, RowBox[{e, <, f}]}]}], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+  }
+
   // `MakeBoxes[StandardForm[expr]]` and `MakeBoxes[TraditionalForm[expr]]`
   // wrap the inner box in `TagBox[FormBox[<inner>, <form>], <form>,
   // Editable -> True]`. TraditionalForm uses `(` / `)` instead of

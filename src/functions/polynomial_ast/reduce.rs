@@ -981,6 +981,11 @@ fn reduce_single_var(
     }
   }
 
+  // A disjunction reduces branch by branch; the caller distributes And over it.
+  if is_or_expr(expr) {
+    return reduce_expr(expr, &[var.to_string()], domain);
+  }
+
   // An already-reduced compound bound — `Inequality[lo, op, var, op, hi]` or a
   // 3-operand chained `Comparison` (`lo < var < hi`). These arise as Or-branches
   // when distributing And over Or (e.g. reducing `x^3-x>0 && x<1/2`, whose cubic
@@ -2326,6 +2331,17 @@ fn reduce_and(
     if !inequalities.is_empty() && other.is_empty() {
       return reduce_combined_inequalities(&inequalities, var, domain);
     }
+
+    // Inequalities and disjunctions of them (`(x <= -1 || x >= 2) && x >= -4`):
+    // And distributes over each Or, and the bounds of every branch are
+    // intersected.
+    if !(inequalities.is_empty() && other.len() < 2)
+      && other.iter().all(is_or_expr)
+    {
+      let all: Vec<Expr> =
+        inequalities.iter().chain(other.iter()).cloned().collect();
+      return reduce_combined_inequalities(&all, var, domain);
+    }
   } else {
     // Multi-variable And: try to solve equations for each variable
     return reduce_multi_var_and(&constraints, vars, domain);
@@ -2370,6 +2386,16 @@ fn collect_and_equalities(expr: &Expr) -> Vec<(String, Expr)> {
     }
   }
   result
+}
+
+fn is_or_expr(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, .. } if name == "Or")
 }
 
 /// Collect all Or-connected terms.
