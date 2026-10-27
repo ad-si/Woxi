@@ -9661,3 +9661,32 @@ mod hierarchical_clustering_distance_matrix {
     );
   }
 }
+
+// Derivatives of a B-spline curve evaluate as the derivative curve.
+mod bspline_function_derivatives {
+  use super::*;
+
+  #[test]
+  fn derivatives_of_a_bspline_curve() {
+    clear_state();
+    interpret(
+      "rear = BSplineFunction[{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, \
+       {1.5, 0.3}, {2.1, 0.5}}]; g = BSplineFunction[{1, 3, 2, 5}];",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("rear'[0.5]").unwrap(),
+      "{1.6875, 0.22499999999999992}"
+    );
+    assert_eq!(
+      interpret("Chop[rear''[0.3] - {-3.375, 1.485}, 10^-12]").unwrap(),
+      "{0, 0}"
+    );
+    assert_eq!(interpret("Derivative[4][rear][0.2]").unwrap(), "{0., 0.}");
+    assert_eq!(interpret("g'[0.5]").unwrap(), "2.25");
+    assert_eq!(
+      interpret("Head[rear'[x]]").unwrap(),
+      "Derivative[1][BSplineFunction[1, {{0., 1.}}, {3}, {False}, {{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, {1.5, 0.3}, {2.1, 0.5}}, Automatic}, {{0., 0., 0., 0., 0.3333333333333333, 0.6666666666666666, 1., 1., 1., 1.}}, {0}, MachinePrecision, Unevaluated]]"
+    );
+  }
+}
