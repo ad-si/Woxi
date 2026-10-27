@@ -9862,6 +9862,24 @@ pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
   }
 }
 
+/// The rule an association entry stands for: `key :> value` for an entry
+/// marked as delayed (see `assoc_marker_matches`), `key -> value` otherwise.
+fn association_entry_rule(key: &Expr, value: &Expr) -> Expr {
+  match value {
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if assoc_marker_matches(key, pattern) => Expr::RuleDelayed {
+      pattern: Box::new(key.clone()),
+      replacement: replacement.clone(),
+    },
+    _ => Expr::Rule {
+      pattern: Box::new(key.clone()),
+      replacement: Box::new(value.clone()),
+    },
+  }
+}
+
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
@@ -13051,27 +13069,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Convention: a value of `RuleDelayed { pattern, replacement }` whose
       // `pattern` equals the key marks an entry that was originally `key :> v`,
       // since `Expr::Association` doesn't otherwise track Rule vs RuleDelayed.
-      // A key that is itself a rule needs parentheses so the entry's own
-      // `->` isn't misread (e.g. `<|(a -> b) -> 1|>`).
-      let fmt_key = |k: &Expr| -> String {
-        match k {
-          Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
-            format!("({})", fmt(k))
-          }
-          _ => fmt(k),
-        }
-      };
+      // Each entry prints as the rule it is, so its key and value get the
+      // rule's parentheses: `<|(a -> b) -> 1|>`, `<|s -> (#1 == 2 & )|>`.
       let parts: Vec<String> = items
         .iter()
-        .map(|(k, v)| match v {
-          Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } if assoc_marker_matches(k, pattern) => {
-            format!("{} :> {}", fmt_key(k), fmt(replacement))
-          }
-          _ => format!("{} -> {}", fmt_key(k), fmt(v)),
-        })
+        .map(|(k, v)| fmt(&association_entry_rule(k, v)))
         .collect();
       format!("<|{}|>", parts.join(", "))
     }
@@ -14123,23 +14125,10 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       format!("{{{}}}", parts.join(", "))
     }
     Expr::Association(items) => {
+      // See `format_expr_impl`: each entry prints as its rule.
       let parts: Vec<String> = items
         .iter()
-        .map(|(k, v)| match v {
-          Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } if assoc_marker_matches(k, pattern) => {
-            format!(
-              "{} :> {}",
-              expr_to_input_form(k),
-              expr_to_input_form(replacement)
-            )
-          }
-          _ => {
-            format!("{} -> {}", input_form_rule_lhs(k), expr_to_input_form(v))
-          }
-        })
+        .map(|(k, v)| expr_to_input_form(&association_entry_rule(k, v)))
         .collect();
       format!("<|{}|>", parts.join(", "))
     }
