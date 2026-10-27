@@ -6867,6 +6867,72 @@ mod nsolve_drops_extraneous_radical_solutions {
   }
 }
 
+mod reduce_univariate_polynomial_inequalities {
+  use super::*;
+
+  // Any polynomial in one variable with numeric coefficients: its real
+  // roots split the line, and runs of pieces where it holds are joined in
+  // Wolfram's interval form.
+  #[test]
+  fn exact_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[t/2 + 7/25 >= 0, t], Reduce[x^3/2 - x > 0, x], \
+         Reduce[x^2 - 1/4 < 0, x], Reduce[(x - 1)^2 > 0, x], \
+         Reduce[(x - 1)^2 (x - 2) >= 0, x], Reduce[x^2 + 1 > 0, x], \
+         Reduce[x^2 + 1 > 0, x, Reals], Reduce[x^2 + 1 < 0, x]}"
+      )
+      .unwrap(),
+      "{t >= -14/25, Inequality[-Sqrt[2], Less, x, Less, 0] || x > Sqrt[2], \
+       Inequality[-1/2, Less, x, Less, 1/2], x < 1 || x > 1, \
+       x == 1 || x >= 2, Element[x, Reals], True, False}"
+    );
+  }
+
+  // A rational function also splits the line at its poles, where it never
+  // holds.
+  #[test]
+  fn rational_functions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[1/x > 2, x], Reduce[(x - 1)/(x + 2) >= 0, x], \
+         Reduce[x/(x^2 - 4) <= 0, x], Reduce[(x^2 - 1)/x < 0, x]}"
+      )
+      .unwrap(),
+      "{Inequality[0, Less, x, Less, 1/2], x < -2 || x >= 1, \
+       x < -2 || Inequality[0, LessEqual, x, Less, 2], \
+       x < -1 || Inequality[0, Less, x, Less, 1]}"
+    );
+  }
+
+  // Machine coefficients are rationalized, reduced exactly and numericized
+  // with Reduce::ratnz; a root at zero stays exact.
+  #[test]
+  fn inexact_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[{Reduce[0.2244994432064365*t + 0.28 >= 0, t], \
+         Reduce[x^2 < 2., x], Reduce[x^2 - 2. x > 0, x], \
+         Reduce[0.5 t > 1 && t < 5., t]}]"
+      )
+      .unwrap(),
+      "{t >= -1.247219128924647, \
+       Inequality[-1.4142135623730951, Less, x, Less, 1.4142135623730951], \
+       x < 0 || x > 2., Inequality[2., Less, t, Less, 5.]}"
+    );
+    clear_state();
+    interpret("Reduce[x^2 < 2., x]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.starts_with("Reduce::ratnz")),
+      "{msgs:?}"
+    );
+  }
+}
+
 mod reduce_generalized_variables {
   use super::*;
 
