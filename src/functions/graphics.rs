@@ -24526,6 +24526,43 @@ fn framed_box_to_svg(
     } else if let Expr::Graphics { svg, .. } = content {
       let (w, h) = parse_svg_wh(svg);
       (Some(svg.clone()), w, h)
+    } else if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      display_size,
+      ..
+    } = content
+    {
+      // A framed raster image embeds its pixels, drawn at its display size
+      // (an `ImageSize` option, else the default width capped at 240).
+      let (draw_w, draw_h) = display_size.map_or_else(
+        || {
+          let w = (*width as f64).min(240.0);
+          (w, *height as f64 * w / (*width as f64).max(1.0))
+        },
+        |(w, h)| (w as f64, h as f64),
+      );
+      let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
+        *width, *height, *channels, data,
+      );
+      let mut png = Vec::new();
+      if dyn_img
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .is_ok()
+      {
+        let b64 = base64::Engine::encode(
+          &base64::engine::general_purpose::STANDARD,
+          &png,
+        );
+        let svg = format!(
+          "<svg width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" viewBox=\"0 0 {draw_w:.1} {draw_h:.1}\" xmlns=\"http://www.w3.org/2000/svg\">\n<image width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"none\" style=\"image-rendering:pixelated\"/>\n</svg>"
+        );
+        (Some(svg), draw_w, draw_h)
+      } else {
+        (None, 0.0, 0.0)
+      }
     } else {
       (None, 0.0, 0.0)
     };

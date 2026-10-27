@@ -1762,6 +1762,29 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_framed_image_embeds_pixels_in_grid() {
+    // Regression: a Framed image inside a Grid (the way a Manipulate shows
+    // an image before and after processing) drew the `-Image (w×h)-`
+    // placeholder text instead of the picture.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Framed[Image[{{{1, 0, 0}, {0, 1, 0}}}, ImageSize -> 100], \
+       FrameMargins -> 2]}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Grid should produce a graphics SVG");
+    assert!(
+      svg.contains("<image") && svg.contains("data:image/png;base64"),
+      "Framed image must embed its pixels:\n{svg}"
+    );
+    assert!(
+      !svg.contains("-Image ("),
+      "Framed image must not print the placeholder:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_show_merged_plot3d_keeps_per_surface_plotstyle() {
     // Regression: a Manipulate body that stacks several flat `Plot3D`
     // surfaces with an explicit per-surface `PlotStyle` list inside a
