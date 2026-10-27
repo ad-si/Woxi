@@ -2295,6 +2295,20 @@ mod cases {
       r#"{HoldPattern[f[1][x_]] :> x, HoldPattern[f[2][x_]] :> x^2}"#,
     );
   }
+  // A more specific SubValue is tried first whatever the definition order
+  // (DominoSubstitutionTilings defines `DimerSubst[RuleList[rules_]][…]`
+  // after the general `DimerSubst[rule_][…]`)
+  #[test]
+  fn sub_values_ordered_by_specificity() {
+    assert_case(
+      r#"f[r_][x_] := {"generic", r, x}; f[h[r_]][x_] := {"specific", r, x}; {f[h[1]][2], f[3][4], SubValues[f]}"#,
+      r#"{{specific, 1, 2}, {generic, 3, 4}, {HoldPattern[f[h[r_]][x_]] :> {specific, r, x}, HoldPattern[f[r_][x_]] :> {generic, r, x}}}"#,
+    );
+    assert_case(
+      r#"f[a_][x_] := 1; f[a_][0] := 2; f[a_Integer][x_] := 3; f[2][x_] := 4; f[a_][x_] := 7 /; a > 10; {f[s][1], f[s][0], f[1][1], f[2][1], f[20][1], f[2][0], SubValues[f]}"#,
+      r#"{1, 2, 3, 4, 3, 2, {HoldPattern[f[a_][0]] :> 2, HoldPattern[f[2][x_]] :> 4, HoldPattern[f[a_Integer][x_]] :> 3, HoldPattern[f[a_][x_]] :> 7 /; a > 10, HoldPattern[f[a_][x_]] :> 1}}"#,
+    );
+  }
   #[test]
   fn definition_1() {
     assert_case(
