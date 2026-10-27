@@ -646,6 +646,15 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### Arbitrary-precision complex numbers print every working digit
+
+`N[(1 + I)/3, 20]` is right but shows 58 digits per part,
+`0.3333…3334`20.`, where wolframscript shows 38, `0.33333333333333333333333333333333333333`20.`.
+Only a complex result of a one-argument function (`N[Sin[1 + I], 20]`)
+gets wolframscript's per-part precision markers; others, including complex
+powers like `N[(1 + 2 I)^(3/2), 20]`, carry a flat `20.` where WL tracks
+`19.10381839395503` and `20.148756595204922`.
+
 ### `` NIntegrate`GaussRuleData `` differs in the last digits
 
 Woxi finds the Gauss–Legendre nodes by Newton iteration in machine

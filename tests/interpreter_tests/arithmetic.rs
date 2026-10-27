@@ -1540,6 +1540,28 @@ mod plus_numeric_contagion {
   }
 }
 
+mod arbitrary_precision_complex_powers {
+  use super::*;
+
+  // A negative or complex base under any exponent is evaluated on the
+  // principal branch (PowersOfComplexPoints): the values, rounded
+  #[test]
+  fn values_on_the_principal_branch() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[10^15 {Re[#], Im[#]}] & /@ {N[(1 + 2 I)^(3/2), 20], N[(-1)^(2/3), 20], N[(-1 - I)^(2/3), 20], N[I^(2/3), 20], N[(-8)^(1/3), 30]}"
+      )
+      .unwrap(),
+      "{{-300283106000778, 3330190676785561}, {-500000000000000, 866025403784439}, {0, -1259921049894873}, {500000000000000, 866025403784439}, {1000000000000000, 1732050807568877}}"
+    );
+    assert_eq!(
+      interpret("{N[(2 + I)^5, 20], N[(1 + I)^(-2), 20]}").unwrap(),
+      "{-38.`20. + 41.`20.*I, -0.5`20.*I}"
+    );
+  }
+}
+
 mod plus_arbitrary_precision_terms {
   use super::*;
 

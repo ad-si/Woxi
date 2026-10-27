@@ -2161,6 +2161,13 @@ pub fn expr_to_bigfloat(
         BinaryOperator::Minus => Ok(l.sub(&r, bits, rm)),
         BinaryOperator::Times => Ok(l.mul(&r, bits, rm)),
         BinaryOperator::Divide => Ok(l.div(&r, bits, rm)),
+        // A negative base under a non-integer exponent is complex: left to
+        // `expr_to_complex_bigfloat` rather than computed as NaN
+        BinaryOperator::Power if l.is_negative() => {
+          Err(InterpreterError::EvaluationError(
+            "N: complex power of a negative base".into(),
+          ))
+        }
         BinaryOperator::Power => Ok(l.pow(&r, bits, rm, cc)),
         _ => Err(InterpreterError::EvaluationError(
           "N: unsupported binary operator for arbitrary precision".into(),
@@ -2359,6 +2366,11 @@ pub fn expr_to_bigfloat(
             return Ok(bigfloat_powi(&base, n, bits, rm));
           }
           let base = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          if base.is_negative() {
+            return Err(InterpreterError::EvaluationError(
+              "N: complex power of a negative base".into(),
+            ));
+          }
           let exp = expr_to_bigfloat(&args[1], bits, rm, cc)?;
           Ok(base.pow(&exp, bits, rm, cc))
         }
@@ -2459,6 +2471,89 @@ pub fn expr_to_bigfloat(
   }
 }
 
+/// `z^w` for complex arbitrary-precision `z` and `w`. An integer exponent
+/// multiplies out exactly (a negative one through the reciprocal); any other
+/// is `exp(w log z)` on the principal branch, `log z = ln|z| + i arg z`.
+fn complex_bigfloat_pow(
+  (zr, zi): (&astro_float::BigFloat, &astro_float::BigFloat),
+  (wr, wi): (&astro_float::BigFloat, &astro_float::BigFloat),
+  integer_exponent: Option<i128>,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use astro_float::BigFloat;
+  let zero = || BigFloat::from_i32(0, bits);
+  let mul = |(ar, ai): (&BigFloat, &BigFloat),
+             (br, bi): (&BigFloat, &BigFloat)| {
+    (
+      ar.mul(br, bits, rm).sub(&ai.mul(bi, bits, rm), bits, rm),
+      ar.mul(bi, bits, rm).add(&ai.mul(br, bits, rm), bits, rm),
+    )
+  };
+  if let Some(n) = integer_exponent {
+    if zi.is_zero() {
+      return Ok((bigfloat_powi(zr, n, bits, rm), zero()));
+    }
+    // Repeated squaring on the complex base
+    let (mut br, mut bi) = if n < 0 {
+      let denom = zr.mul(zr, bits, rm).add(&zi.mul(zi, bits, rm), bits, rm);
+      (zr.div(&denom, bits, rm), zi.neg().div(&denom, bits, rm))
+    } else {
+      (zr.clone(), zi.clone())
+    };
+    let mut k = n.unsigned_abs();
+    let (mut rr, mut ri) = (BigFloat::from_i32(1, bits), zero());
+    while k > 0 {
+      if k & 1 == 1 {
+        (rr, ri) = mul((&rr, &ri), (&br, &bi));
+      }
+      (br, bi) = mul((&br, &bi), (&br, &bi));
+      k >>= 1;
+    }
+    return Ok((rr, ri));
+  }
+  if zr.is_zero() && zi.is_zero() {
+    if wr.is_positive() {
+      return Ok((zero(), zero()));
+    }
+    return Err(InterpreterError::EvaluationError(
+      "N: 0 to a non-positive power".into(),
+    ));
+  }
+  // arg z, quadrant by quadrant
+  let pi = cc.pi(bits, rm);
+  let arg = if zr.is_zero() {
+    let half_pi = pi.div(&BigFloat::from_i32(2, bits), bits, rm);
+    if zi.is_negative() {
+      half_pi.neg()
+    } else {
+      half_pi
+    }
+  } else {
+    let base = zi.div(zr, bits, rm).atan(bits, rm, cc);
+    if zr.is_positive() {
+      base
+    } else if zi.is_negative() {
+      base.sub(&pi, bits, rm)
+    } else {
+      base.add(&pi, bits, rm)
+    }
+  };
+  let modulus_sq = zr.mul(zr, bits, rm).add(&zi.mul(zi, bits, rm), bits, rm);
+  let ln_modulus =
+    modulus_sq
+      .ln(bits, rm, cc)
+      .div(&BigFloat::from_i32(2, bits), bits, rm);
+  // w log z
+  let (er, ei) = mul((wr, wi), (&ln_modulus, &arg));
+  let scale = er.exp(bits, rm, cc);
+  Ok((
+    scale.mul(&ei.cos(bits, rm, cc), bits, rm),
+    scale.mul(&ei.sin(bits, rm, cc), bits, rm),
+  ))
+}
+
 /// Convert an expression to a complex (BigFloat, BigFloat) pair with given precision.
 /// Returns (real_part, imaginary_part) as BigFloats.
 /// Handles expressions involving the imaginary unit I.
@@ -2513,21 +2608,14 @@ fn expr_to_complex_bigfloat(
           let im = li.mul(&rr, bits, rm).sub(&lr.mul(&ri, bits, rm), bits, rm);
           Ok((re.div(&denom, bits, rm), im.div(&denom, bits, rm)))
         }
-        BinaryOperator::Power => {
-          // Only handle real^integer for now
-          if li.is_zero()
-            && ri.is_zero()
-            && let Some(n) = try_as_integer(right)
-          {
-            return Ok((
-              bigfloat_powi(&lr, n, bits, rm),
-              BigFloat::from_i32(0, bits),
-            ));
-          }
-          Err(InterpreterError::EvaluationError(
-            "N: complex Power not supported yet".into(),
-          ))
-        }
+        BinaryOperator::Power => complex_bigfloat_pow(
+          (&lr, &li),
+          (&rr, &ri),
+          try_as_integer(right),
+          bits,
+          rm,
+          cc,
+        ),
         _ => Err(InterpreterError::EvaluationError(
           "N: unsupported binary operator for complex arbitrary precision"
             .into(),
@@ -2702,18 +2790,16 @@ fn expr_to_complex_bigfloat(
         Ok((n.div(&d, bits, rm), BigFloat::from_i32(0, bits)))
       }
       "Power" if args.len() == 2 => {
-        if let Some(n) = try_as_integer(&args[1]) {
-          let (re, im) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
-          if im.is_zero() {
-            return Ok((
-              bigfloat_powi(&re, n, bits, rm),
-              BigFloat::from_i32(0, bits),
-            ));
-          }
-        }
-        Err(InterpreterError::EvaluationError(
-          "N: complex Power not fully supported".into(),
-        ))
+        let (zr, zi) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
+        let (wr, wi) = expr_to_complex_bigfloat(&args[1], bits, rm, cc)?;
+        complex_bigfloat_pow(
+          (&zr, &zi),
+          (&wr, &wi),
+          try_as_integer(&args[1]),
+          bits,
+          rm,
+          cc,
+        )
       }
       "Abs" if args.len() == 1 => {
         let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
