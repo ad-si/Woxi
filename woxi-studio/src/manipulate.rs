@@ -5275,3 +5275,30 @@ pub fn trace_evaluation(code: &str) {
     eprintln!("{};\n", code.trim_end().trim_end_matches(';'));
   }
 }
+
+#[cfg(test)]
+mod mapped_layout_tests {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a crystal-structure
+  /// viewer). Its control panel is `Column[(Row[#, Spacer[3]] &) /@ {rows}]`
+  /// — a pure function mapped over literal rows — which used to build no
+  /// widget at all. This is a self-authored, construct-equivalent example.
+  #[test]
+  fn column_of_mapped_rows_exposes_its_controls() {
+    let code = r#"Manipulate[
+      Graphics[{c, Circle[{0, 0}, r]}],
+      Column[(Row[#, Spacer[3]] &) /@ {
+        {"radius", Control[{{r, 1, "r"}, 0, 2, 0.1}]},
+        {Style["colour", Bold]},
+        {Control[{{c, Red, ""}, Red, ImageSize -> Tiny}]}}],
+      ControlPlacement -> Left, SaveDefinitions -> True]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert!(names.contains(&"r") && names.contains(&"c"), "{names:?}");
+    assert!(state.graphics_handle.is_some(), "the graphic should render");
+  }
+}
