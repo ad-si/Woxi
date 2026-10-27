@@ -109,6 +109,164 @@ fn vertex_arg(g: &CGraph, e: &Expr) -> Option<usize> {
   }
 }
 
+/// Whether `a` and `b` are isomorphic as simple undirected graphs.
+fn isomorphic(a: &CGraph, b: &CGraph) -> bool {
+  if a.n != b.n {
+    return false;
+  }
+  let (adj_a, adj_b) = (a.adjacency(), b.adjacency());
+  let matrix = |adj: &[Vec<usize>]| {
+    let mut m = vec![vec![false; a.n]; a.n];
+    for (u, list) in adj.iter().enumerate() {
+      for &v in list {
+        m[u][v] = true;
+      }
+    }
+    m
+  };
+  let (ma, mb) = (matrix(&adj_a), matrix(&adj_b));
+  let deg_a: Vec<usize> = adj_a.iter().map(Vec::len).collect();
+  let deg_b: Vec<usize> = adj_b.iter().map(Vec::len).collect();
+  let (mut sa, mut sb) = (deg_a.clone(), deg_b.clone());
+  sa.sort_unstable();
+  sb.sort_unstable();
+  if sa != sb {
+    return false;
+  }
+  // Map the vertices of `a`, highest degree first, onto unused vertices of
+  // `b` with the same degree that agree on all earlier adjacencies.
+  let mut order: Vec<usize> = (0..a.n).collect();
+  order.sort_by_key(|&v| std::cmp::Reverse(deg_a[v]));
+  fn extend(
+    k: usize,
+    order: &[usize],
+    deg: (&[usize], &[usize]),
+    m: (&[Vec<bool>], &[Vec<bool>]),
+    image: &mut Vec<usize>,
+    used: &mut Vec<bool>,
+  ) -> bool {
+    if k == order.len() {
+      return true;
+    }
+    let u = order[k];
+    for w in 0..used.len() {
+      if used[w]
+        || deg.0[u] != deg.1[w]
+        || (0..k).any(|j| m.0[u][order[j]] != m.1[w][image[order[j]]])
+        || m.0[u][u] != m.1[w][w]
+      {
+        continue;
+      }
+      image[u] = w;
+      used[w] = true;
+      if extend(k + 1, order, deg, m, image, used) {
+        return true;
+      }
+      used[w] = false;
+    }
+    false
+  }
+  extend(
+    0,
+    &order,
+    (&deg_a, &deg_b),
+    (&ma, &mb),
+    &mut vec![0; a.n],
+    &mut vec![false; a.n],
+  )
+}
+
+/// The vertex coordinates of a Combinatorica graph.
+fn coordinates(expr: &Expr) -> Option<Vec<(f64, f64)>> {
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let Expr::List(vertices) = args.get(1)? else {
+    return None;
+  };
+  vertices
+    .iter()
+    .map(|v| {
+      let Expr::List(parts) = v else { return None };
+      real_pair(parts.first()?)
+    })
+    .collect()
+}
+
+/// `SpringEmbedding[g]`: a force-directed layout (edges attract, all vertex
+/// pairs repel) started from the current coordinates and scaled to the
+/// unit square.
+fn spring_embedding(g: &CGraph, graph: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { args, .. } = graph else {
+    return None;
+  };
+  let mut pos = coordinates(graph)?;
+  let n = g.n;
+  if n == 0 {
+    return Some(graph.clone());
+  }
+  // Coincident starting points would exert no direction; spread them out.
+  if pos.windows(2).all(|w| w[0] == w[1]) {
+    for (k, p) in pos.iter_mut().enumerate() {
+      let t = 2.0 * std::f64::consts::PI * k as f64 / n as f64;
+      *p = (t.cos(), t.sin());
+    }
+  }
+  let k = (1.0 / n as f64).sqrt();
+  let iterations = 200;
+  for it in 0..iterations {
+    let temp = 0.1 * (1.0 - it as f64 / iterations as f64);
+    let mut disp = vec![(0.0f64, 0.0f64); n];
+    for u in 0..n {
+      for v in (u + 1)..n {
+        let (dx, dy) = (pos[u].0 - pos[v].0, pos[u].1 - pos[v].1);
+        let d = (dx * dx + dy * dy).sqrt().max(1e-9);
+        let f = k * k / d;
+        disp[u].0 += dx / d * f;
+        disp[u].1 += dy / d * f;
+        disp[v].0 -= dx / d * f;
+        disp[v].1 -= dy / d * f;
+      }
+    }
+    for &(u, v) in &g.edges {
+      if u == v {
+        continue;
+      }
+      let (dx, dy) = (pos[u].0 - pos[v].0, pos[u].1 - pos[v].1);
+      let d = (dx * dx + dy * dy).sqrt().max(1e-9);
+      let f = d * d / k;
+      disp[u].0 -= dx / d * f;
+      disp[u].1 -= dy / d * f;
+      disp[v].0 += dx / d * f;
+      disp[v].1 += dy / d * f;
+    }
+    for u in 0..n {
+      let (dx, dy) = disp[u];
+      let d = (dx * dx + dy * dy).sqrt().max(1e-9);
+      let step = d.min(temp);
+      pos[u].0 += dx / d * step;
+      pos[u].1 += dy / d * step;
+    }
+  }
+  let span = |f: fn(&(f64, f64)) -> f64| {
+    let lo = pos.iter().map(f).fold(f64::INFINITY, f64::min);
+    let hi = pos.iter().map(f).fold(f64::NEG_INFINITY, f64::max);
+    (lo, if hi > lo { hi - lo } else { 1.0 })
+  };
+  let ((x0, wx), (y0, wy)) = (span(|p| p.0), span(|p| p.1));
+  let vertices = pos
+    .iter()
+    .map(|&(x, y)| Expr::List(vec![pt((x - x0) / wx, (y - y0) / wy)].into()))
+    .collect::<Vec<_>>();
+  Some(crate::helpers::call(
+    GRAPH,
+    std::iter::once(args[0].clone())
+      .chain(std::iter::once(Expr::List(vertices.into())))
+      .chain(args[2..].iter().cloned())
+      .collect(),
+  ))
+}
+
 /// `FromUnorderedPairs[{{u, v}, …}]`: the graph on vertices `1..Max[pairs]`
 /// with one edge per distinct pair, drawn on a circle.
 fn from_unordered_pairs(args: &[Expr]) -> Option<Expr> {
@@ -211,15 +369,37 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   let g = CGraph::parse(args.first()?)?;
   match (name, args.len()) {
+    ("Combinatorica`IsomorphicQ", 2) => {
+      let h = CGraph::parse(&args[1])?;
+      Some(Expr::Identifier(
+        if isomorphic(&g, &h) { "True" } else { "False" }.to_string(),
+      ))
+    }
+    ("Combinatorica`SpringEmbedding", 1) => spring_embedding(&g, &args[0]),
+    // Vertex degrees in decreasing order.
+    ("Combinatorica`DegreeSequence", 1) => {
+      let mut degrees: Vec<usize> =
+        g.adjacency().iter().map(Vec::len).collect();
+      degrees.sort_unstable_by(|a, b| b.cmp(a));
+      Some(Expr::List(
+        degrees
+          .into_iter()
+          .map(|d| Expr::Integer(d as i128))
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
     ("Combinatorica`V", 1) => Some(Expr::Integer(g.n as i128)),
     ("Combinatorica`M", 1) => Some(Expr::Integer(g.edges.len() as i128)),
-    ("Combinatorica`Edges", 1) => Some(Expr::List(
-      g.edges
-        .iter()
-        .map(|&(a, b)| int_list([a, b]))
-        .collect::<Vec<_>>()
-        .into(),
-    )),
+    ("Combinatorica`Edges" | "Combinatorica`ToUnorderedPairs", 1) => {
+      Some(Expr::List(
+        g.edges
+          .iter()
+          .map(|&(a, b)| int_list([a, b]))
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
     ("Combinatorica`ToAdjacencyMatrix", 1) => {
       let mut m = vec![vec![0i128; g.n]; g.n];
       for &(a, b) in &g.edges {
@@ -272,6 +452,18 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
     ("Combinatorica`BreadthFirstTraversal", 2) => {
       let start = vertex_arg(&g, &args[1])?;
       Some(int_list(g.bfs(start).0))
+    }
+    // The vertices within `d` edges of `v` (including `v`), in increasing
+    // order.
+    ("Combinatorica`Neighborhood", 3) => {
+      let start = vertex_arg(&g, &args[1])?;
+      let Expr::Integer(d) = &args[2] else {
+        return None;
+      };
+      let (_, level, _) = g.bfs(start);
+      Some(int_list(
+        (0..g.n).filter(|&v| level[v].is_some_and(|l| (l as i128) <= *d)),
+      ))
     }
     // Edge-count distances between all vertex pairs, Infinity where no
     // path joins them (GraphUtilities` reading a Combinatorica graph).

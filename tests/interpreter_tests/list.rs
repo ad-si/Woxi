@@ -11318,6 +11318,52 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_isomorphism_and_degrees() {
+    assert_eq!(
+      interpret(
+        "p = Combinatorica`FromUnorderedPairs[{{1,2},{2,3},{3,4}}]; \
+         q = Combinatorica`FromUnorderedPairs[{{1,3},{3,2},{2,4}}]; \
+         s = Combinatorica`FromUnorderedPairs[{{1,2},{1,3},{1,4}}]; \
+         {Combinatorica`IsomorphicQ[p, q], Combinatorica`IsomorphicQ[p, s], \
+          Combinatorica`DegreeSequence[s], Combinatorica`ToUnorderedPairs[q]}"
+      )
+      .unwrap(),
+      "{True, False, {3, 1, 1, 1}, {{1, 3}, {2, 3}, {2, 4}}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_spring_embedding_keeps_edges_and_fits_unit_square() {
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`SpringEmbedding[\
+           Combinatorica`FromUnorderedPairs[{{1,2},{2,3},{3,4},{4,1}}]]; \
+         c = Flatten[g[[2]]]; \
+         {Combinatorica`Edges[g], Min[c], Max[c], \
+          Combinatorica`IsomorphicQ[g, Combinatorica`FromUnorderedPairs[\
+            {{1,2},{2,3},{3,4},{4,1}}]]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {1, 4}, {2, 3}, {3, 4}}, 0., 1., True}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_neighborhood() {
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`FromUnorderedPairs[{{1,2},{2,3},{3,4},{4,5},{6,7}}]; \
+         {Combinatorica`Neighborhood[g, 3, 0], \
+          Combinatorica`Neighborhood[g, 3, 1], \
+          Combinatorica`Neighborhood[g, 1, 3], \
+          Combinatorica`Neighborhood[g, 6, 5]}"
+      )
+      .unwrap(),
+      "{{3}, {2, 3, 4}, {1, 2, 3, 4}, {6, 7}}"
+    );
+  }
+
+  #[test]
   fn combinatorica_permutation_groups() {
     assert_eq!(
       interpret("Combinatorica`SymmetricGroup[3]").unwrap(),
