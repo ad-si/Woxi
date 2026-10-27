@@ -4754,6 +4754,15 @@ fn fourier_impl(
     )));
   }
 
+  // A SparseArray stands for the dense array it represents.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut dense_args = args.to_vec();
+    dense_args[0] = dense;
+    return fourier_impl(func_name, &dense_args, inverse);
+  }
+
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {

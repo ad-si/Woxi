@@ -12222,6 +12222,7 @@ fn evaluate_function_call_ast_inner(
         | "Matrices"
         // A sound primitive: inert data that `Sound` plays.
         | "SampledSoundList"
+        | "SampledSoundFunction"
         // A kernel density estimate: PDF, CDF, Mean and Variance read it.
         | "SmoothKernelDistribution"
     )
