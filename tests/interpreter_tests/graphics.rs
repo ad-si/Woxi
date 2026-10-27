@@ -23489,6 +23489,31 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn panel_places_labels_above_and_below_its_content() {
+    // Regression: `Panel[content, {top, bottom}, {Top, Bottom}]` dropped
+    // both labels (and printed the call as source text) because only a
+    // `Style`d caption was recognised.
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Panel[Graphics[Disk[]], {\"headline\", \"footnote\"}, {Top, Bottom}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Panel should produce a graphics SVG");
+    assert!(!svg.contains("Panel["), "Panel head must not leak:\n{svg}");
+    let head = svg.find("headline").expect("top label drawn");
+    let foot = svg.find("footnote").expect("bottom label drawn");
+    assert!(head < foot, "top label comes first:\n{svg}");
+
+    let bottom =
+      woxi::interpret_with_stdout("Panel[Graphics[Disk[]], \"below\", Bottom]")
+        .unwrap()
+        .graphics
+        .expect("Panel should produce a graphics SVG");
+    assert!(bottom.contains("below"), "{bottom}");
+  }
+
+  #[test]
   fn framed_pane_cell_takes_the_pane_size_and_honours_frame_style_none() {
     // Regression: a `Framed[Pane[Text[…], {w, h}], FrameStyle -> None]`
     // grid cell shrank to the text and always drew a gray border, so a

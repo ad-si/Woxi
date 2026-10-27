@@ -4874,14 +4874,46 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, .. }
       if functions::graphics::is_style_wrapper(name)
   );
-  let only_options = args[2..].iter().all(|a| {
+  let is_option = |a: &syntax::Expr| {
     matches!(
       a,
       syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. }
     )
-  });
-  if !styled_caption || !only_options {
-    return expr;
+  };
+  // An explicit position (`Panel[content, label, Bottom]`, or a list of
+  // labels with a list of positions) places each label above or below the
+  // content; any other side is left to the plain panel.
+  let position_spec = args.get(2).filter(|a| !is_option(a));
+  let side_of = |pos: &syntax::Expr| match pos {
+    syntax::Expr::Identifier(n) if n == "Top" || n == "Bottom" => {
+      Some(n == "Top")
+    }
+    _ => None,
+  };
+  let mut labels: Vec<(bool, syntax::Expr)> = Vec::new();
+  match (&args[1], position_spec) {
+    (syntax::Expr::List(ls), Some(syntax::Expr::List(ps)))
+      if ls.len() == ps.len() =>
+    {
+      for (l, p) in ls.iter().zip(ps.iter()) {
+        let Some(top) = side_of(p) else {
+          return expr.clone();
+        };
+        labels.push((top, l.clone()));
+      }
+    }
+    (label, Some(pos)) => {
+      let Some(top) = side_of(pos) else {
+        return expr.clone();
+      };
+      labels.push((top, label.clone()));
+    }
+    (label, None) => labels.push((true, label.clone())),
+  }
+  let options_from = if position_spec.is_some() { 3 } else { 2 };
+  let only_options = args[options_from..].iter().all(is_option);
+  if (!styled_caption && position_spec.is_none()) || !only_options {
+    return expr.clone();
   }
   // A sized `Pane` around a plain list re-flows the list's text to the
   // pane width; the pipeline clips what a fixed-size pane cannot show.
@@ -4912,13 +4944,26 @@ fn render_captioned_panel_if_needed(expr: syntax::Expr) -> syntax::Expr {
     drawn @ syntax::Expr::Graphics { .. } => drawn,
     _ => functions::graphics::unwrap_display_wrappers(&args[0]),
   };
+  let mut rows: Vec<syntax::Expr> = Vec::new();
+  rows.extend(
+    labels
+      .iter()
+      .filter(|(top, _)| *top)
+      .map(|(_, l)| l.clone()),
+  );
+  rows.push(content);
+  rows.extend(
+    labels
+      .iter()
+      .filter(|(top, _)| !*top)
+      .map(|(_, l)| l.clone()),
+  );
   let stacked = syntax::Expr::FunctionCall {
     name: "Column".to_string(),
-    args: vec![syntax::Expr::List(vec![args[1].clone(), content].into())]
-      .into(),
+    args: vec![syntax::Expr::List(rows.into())].into(),
   };
   let mut panel_args = vec![stacked];
-  panel_args.extend(args[2..].iter().cloned());
+  panel_args.extend(args[options_from..].iter().cloned());
   match functions::graphics::panel_to_svg(&panel_args) {
     Some(svg) => graphics_result(svg),
     None => expr,
