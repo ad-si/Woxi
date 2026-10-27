@@ -3766,6 +3766,20 @@ fn render_audio_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// `-Sound-` identifier. Sounds with no samplable `Play` segment are left
 /// unchanged (they still render textually as `-Sound-`).
 fn render_sound_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  // `Magnify[sound, s]` only scales how the player is drawn, so it plays
+  // like the sound it wraps.
+  if let syntax::Expr::FunctionCall { ref name, ref args } = expr
+    && name == "Magnify"
+    && (args.len() == 1 || args.len() == 2)
+    && matches!(&args[0], syntax::Expr::FunctionCall { name, .. } if name == "Sound")
+  {
+    let inner = render_sound_if_needed(args[0].clone());
+    return if matches!(&inner, syntax::Expr::FunctionCall { .. }) {
+      expr
+    } else {
+      inner
+    };
+  }
   if let syntax::Expr::FunctionCall { ref name, .. } = expr
     && name == "Sound"
     && let Some(wav_base64) = functions::sound::sound_to_wav_base64(&expr)
