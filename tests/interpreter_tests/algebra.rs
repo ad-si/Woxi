@@ -17209,7 +17209,7 @@ mod cases {
       woxi::interpret("Element[2, foo]").unwrap(),
       "Element[2, foo]"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
     woxi::clear_state();
     woxi::interpret("Element[x, Real]").unwrap();
     assert!(
