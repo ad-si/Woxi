@@ -8703,7 +8703,9 @@ fn try_solve_through_undefined_function(
       }
       Expr::UnaryOp { operand, .. } => atoms(operand, var, out),
       Expr::Comparison { operands, .. } => {
-        operands.iter().for_each(|a| atoms(a, var, out));
+        for a in operands {
+          atoms(a, var, out);
+        }
       }
       _ => {}
     }
