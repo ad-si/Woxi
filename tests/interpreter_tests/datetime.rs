@@ -373,6 +373,41 @@ mod date_plus {
   use super::*;
 
   #[test]
+  fn date_plus_seconds_carries_into_days() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27, 10, 0, 0}, {100000, \"Second\"}]")
+        .unwrap(),
+      "{2026, 10, 28, 13, 46, 40.}"
+    );
+  }
+
+  #[test]
+  fn date_plus_hours_and_minutes_on_a_plain_date() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 12, 31}, {{25, \"Hour\"}, {30, \"Minute\"}}]")
+        .unwrap(),
+      "{2027, 1, 1, 1, 30, 0.}"
+    );
+  }
+
+  #[test]
+  fn date_plus_fractional_days() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27}, {1.5, \"Day\"}]").unwrap(),
+      "{2026, 10, 28, 12, 0, 0.}"
+    );
+  }
+
+  #[test]
+  fn date_plus_string_keeps_clock_time() {
+    assert_eq!(
+      interpret("DatePlus[\"Tue 27 Oct 2026 23:00:00\", {2, \"Hour\"}]")
+        .unwrap(),
+      "Wed 28 Oct 2026 01:00:00"
+    );
+  }
+
+  #[test]
   fn date_plus_days() {
     assert_eq!(
       interpret("DatePlus[{2010, 2, 5}, 73]").unwrap(),

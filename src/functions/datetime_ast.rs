@@ -1655,6 +1655,115 @@ fn named_zone_offset(_name: &str, _c: &[f64], _local: bool) -> Option<f64> {
   None
 }
 
+/// The `(hours, minutes, seconds)` of the first clock time ("12:30:05") in a
+/// date string.
+fn clock_time_of(text: &str) -> Option<Vec<f64>> {
+  let word = text
+    .split(|c: char| c.is_whitespace() || c == 'T')
+    .find(|w| w.contains(':'))?;
+  let mut parts = word
+    .split(':')
+    .map(|p| p.parse::<f64>().ok())
+    .collect::<Option<Vec<f64>>>()?;
+  parts.resize(3, 0.0);
+  Some(parts)
+}
+
+fn is_sub_day_unit(unit: &str) -> bool {
+  matches!(
+    unit.to_ascii_lowercase().trim_end_matches('s'),
+    "hour" | "minute" | "second"
+  )
+}
+
+/// A `DatePlus` increment as `(amount, unit)` pairs: `{n, "unit"}`, a list
+/// of such pairs, or `Quantity[n, "unit"]`. `None` for anything else.
+fn parse_increments(delta: &Expr) -> Option<Vec<(f64, String)>> {
+  let number = |e: &Expr| match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(f) => Some(*f),
+    _ => None,
+  };
+  let unit = |e: &Expr| match e {
+    Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+    _ => None,
+  };
+  let pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => Some((number(&p[0])?, unit(&p[1])?)),
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      Some((number(&args[0])?, unit(&args[1])?))
+    }
+    _ => None,
+  };
+  match delta {
+    Expr::Integer(_) | Expr::Real(_) => {
+      Some(vec![(number(delta)?, "Day".to_string())])
+    }
+    Expr::List(items) => match pair(delta) {
+      Some(single) => Some(vec![single]),
+      None => items.iter().map(pair).collect(),
+    },
+    _ => Some(vec![pair(delta)?]),
+  }
+}
+
+/// Adds increments to a date with a time of day. Years and months move the
+/// calendar fields (clamping the day); days, weeks, hours, minutes and
+/// seconds move the absolute time.
+fn date_plus_with_time(
+  components: &[f64],
+  increments: &[(f64, String)],
+) -> Expr {
+  let get = |i: usize| components.get(i).copied().unwrap_or(0.0);
+  let mut y = components[0] as i64;
+  let mut m = if components.len() > 1 {
+    get(1) as i64
+  } else {
+    1
+  };
+  let mut d = if components.len() > 2 {
+    get(2) as i64
+  } else {
+    1
+  };
+  let mut secs = get(3) * 3600.0 + get(4) * 60.0 + get(5);
+  for (n, unit) in increments {
+    let lower = unit.to_ascii_lowercase();
+    let seconds = match lower.trim_end_matches('s') {
+      "year" => {
+        (y, m, d) = add_months_clamped(y, m, d, (*n as i64) * 12);
+        continue;
+      }
+      "month" => {
+        (y, m, d) = add_months_clamped(y, m, d, *n as i64);
+        continue;
+      }
+      "week" => n * 604800.0,
+      "day" => n * 86400.0,
+      "hour" => n * 3600.0,
+      "minute" => n * 60.0,
+      "second" => *n,
+      _ => 0.0,
+    };
+    secs += seconds;
+    let carry = (secs / 86400.0).floor();
+    secs -= carry * 86400.0;
+    (y, m, d) =
+      absolute_days_to_date(date_to_absolute_days(y, m, d) + carry as i64);
+  }
+  let whole = secs.floor() as i64;
+  make_date_list(
+    y,
+    m,
+    d,
+    whole / 3600,
+    whole % 3600 / 60,
+    secs - (whole / 60 * 60) as f64,
+  )
+}
+
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated("DatePlus", args));
@@ -1665,9 +1774,15 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // A date string comes back as a date string, in DateString's form:
   // DatePlus["Jan 1 2012", 3] is "Wed 4 Jan 2012 00:00:00".
-  if matches!(date_arg, Expr::String(_))
-    && let Some(components) = extract_date_components(&date_arg)
+  if let Expr::String(text) = &date_arg
+    && let Some(mut components) = extract_date_components(&date_arg)
   {
+    // The clock time of "Tue 27 Oct 2026 12:30:05" is part of the date.
+    if components.len() == 3
+      && let Some(clock) = clock_time_of(text)
+    {
+      components.extend(clock);
+    }
     let list = Expr::List(
       components
         .iter()
@@ -1719,6 +1834,18 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1
   };
   let input_len = components.len();
+
+  // A date with a clock time, or an increment in hours, minutes or seconds,
+  // moves through the time of day too.
+  if !input_is_date_object
+    && let Some(increments) = parse_increments(&delta_arg)
+    && (components.len() > 3
+      || increments
+        .iter()
+        .any(|(n, unit)| is_sub_day_unit(unit) || n.fract() != 0.0))
+  {
+    return Ok(date_plus_with_time(&components, &increments));
+  }
 
   // Calculate total days to add
   let total_days = match &delta_arg {
