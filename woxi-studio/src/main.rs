@@ -5009,6 +5009,7 @@ fn render_display_node<'a>(
       current,
       enabled,
       after,
+      vertical,
     } => {
       // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
       // dragging writes `lval = <value>` back, followed by the statements of
@@ -5017,7 +5018,7 @@ fn render_display_node<'a>(
       let enabled = *enabled;
       let target = target.clone();
       let after = after.clone();
-      let mut s = slider(*min..=*max, *current, move |v| {
+      let on_change = move |v: f64| {
         if !enabled {
           return Message::Noop;
         }
@@ -5027,13 +5028,25 @@ fn render_display_node<'a>(
           mutation.push_str(a);
         }
         Message::ManipulateDisplayToggled(cell_idx, mutation)
-      })
-      .width(iced::Length::Fixed(120.0));
-      if *step > 0.0 {
-        s = s.step(*step);
+      };
+      let step = if *step > 0.0 {
+        *step
       } else {
-        s = s.step((max - min) / 1000.0);
+        (max - min) / 1000.0
+      };
+      if *vertical {
+        let mut s =
+          iced::widget::vertical_slider(*min..=*max, *current, on_change)
+            .step(step)
+            .height(120.0);
+        if !enabled {
+          s = s.style(disabled_slider_style);
+        }
+        return s.into();
       }
+      let mut s = slider(*min..=*max, *current, on_change)
+        .width(iced::Length::Fixed(120.0))
+        .step(step);
       if !enabled {
         s = s.style(disabled_slider_style);
       }
@@ -16017,6 +16030,41 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   /// `EventHandler` whose click action copies `slot` into persistent state —
   /// is a live slider: its module-local stays one stable state variable,
   /// and dragging it writes back and runs the handler's statements.
+  #[test]
+  fn display_vertical_slider_is_a_live_vertical_slider() {
+    use woxi::functions::graphics::DisplayNode;
+    fn sliders(node: &DisplayNode, out: &mut Vec<(String, f64, f64, bool)>) {
+      match node {
+        DisplayNode::Slider {
+          target,
+          min,
+          max,
+          vertical,
+          ..
+        } => out.push((target.clone(), *min, *max, *vertical)),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          children.iter().for_each(|c| sliders(c, out))
+        }
+        DisplayNode::Panel(child) => sliders(child, out),
+        _ => {}
+      }
+    }
+    let code = "Manipulate[Plot[Sin[a x], {x, 0, 1}], \
+      {{a, 1}, ControlType -> None}, \
+      Row[{VerticalSlider[Dynamic[a], {-2, 2}, Background -> Red]}]]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("Manipulate with display sliders must build a widget");
+    let mut found = Vec::new();
+    state
+      .display_trees
+      .iter()
+      .for_each(|t| sliders(t, &mut found));
+    assert_eq!(found, vec![("a".to_string(), -2.0, 2.0, true)]);
+    for t in &state.display_trees {
+      let _: Element<'_, Message> = render_display_node(0, t);
+    }
+  }
+
   #[test]
   fn display_manipulator_in_event_handler_writes_back_and_runs_actions() {
     use woxi::functions::graphics::DisplayNode;
