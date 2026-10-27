@@ -42053,4 +42053,35 @@ mod generalized_bar_chart {
       "cells kept their 360 default size: {first}"
     );
   }
+
+  /// A `NumberForm` number run through `ToString[TraditionalForm[…]]` is an
+  /// `InterpretationBox`; a `Text` label draws its display (`11.547`), not the
+  /// exact value it stands for.
+  #[test]
+  fn text_label_draws_number_form_display() {
+    let svg = export_svg(
+      r#"Graphics[{Text[Row[{"x = ", ToString[TraditionalForm[NumberForm[11.5470053837925, {6, 3}]]]}]]}]"#,
+    );
+    assert!(svg.contains("x = 11.547"), "display digits missing: {svg}");
+    assert!(
+      !svg.contains("11.5470053"),
+      "the underlying value leaked into the label: {svg}"
+    );
+  }
+
+  /// `Epilog` primitives are drawn over a `Histogram`, in its data
+  /// coordinates (a fitted density curve over the bars).
+  #[test]
+  fn histogram_epilog_is_drawn() {
+    let plain = export_svg("Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True]");
+    let with_epilog = export_svg(
+      "Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True, \
+       Epilog -> {Red, Line[{{1, 0}, {4, 2}}]}]",
+    );
+    assert!(
+      with_epilog.contains("stroke=\"rgb(255,0,0)\"")
+        && !plain.contains("stroke=\"rgb(255,0,0)\""),
+      "the Epilog line was not drawn: {with_epilog}"
+    );
+  }
 }
