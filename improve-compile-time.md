@@ -187,8 +187,6 @@ Recorded for later if more speedup is wanted:
   so it costs little wall time incrementally on a multi-core machine, but
   it is ~4 CPU-minutes of every cold build. Moving those tests to
   `tests/` (exposing what they need) would remove it.
-- `keshvar` (~40s) sits on the critical path of cold builds: the woxi crate
-  cannot start until it is done.
 - The `cdylib` crate type (needed only by `wasm-pack`) makes every native
   build link an extra shared library (~1s per incremental build). A small
   dedicated wasm wrapper crate would avoid it.
@@ -200,5 +198,5 @@ Recorded for later if more speedup is wanted:
 - Split the ~12k-line `src/evaluator/dispatch/mod.rs` and its ~100-arm
   match into smaller functions/modules to ease LLVM.
 - Gate heavyweight, rarely-exercised dependencies behind cargo features
-  (e.g. `keshvar` with its embedded gazetteer data, `calamine` /
+  (e.g. `calamine` /
   `rust_xlsxwriter`) for a leaner default dev loop.

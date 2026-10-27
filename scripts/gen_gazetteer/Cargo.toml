@@ -1,0 +1,13 @@
+# One-off generator for resources/gazetteer.tsv.gz (see src/main.rs).
+# Its own workspace, so it never joins the root build.
+[workspace]
+
+[package]
+name = "gen_gazetteer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+keshvar = { version = "=0.7.0", features = ["subdivisions", "geo", "translations"] }
+flate2 = "1.0"

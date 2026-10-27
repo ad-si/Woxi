@@ -2914,15 +2914,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "keshvar"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef04cac6e6a99c72d5e4441afc2ae0530ae319ad8b4361a699278aaadaa2b192"
-dependencies = [
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7002,7 +6993,6 @@ dependencies = [
  "itertools 0.10.5",
  "js-sys",
  "jupyter-protocol",
- "keshvar",
  "libc",
  "libm",
  "log",

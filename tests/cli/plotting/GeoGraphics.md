@@ -69,8 +69,9 @@ GeoGraphics
 
 ### Geographic entities
 
-A position may be given as an `Entity[…]`, resolved to coordinates through the
-[keshvar](https://crates.io/crates/keshvar) gazetteer. `Entity["Country", name]`
+A position may be given as an `Entity[…]`, resolved to coordinates through an
+embedded ISO 3166 gazetteer (data from the
+[keshvar](https://crates.io/crates/keshvar) crate). `Entity["Country", name]`
 resolves to the country's center, and `Entity["City", {city, region, country}]`
 to the center of its administrative subdivision (the gazetteer has no
 city-level coordinates, so the `region` — e.g. a state or province — gives the

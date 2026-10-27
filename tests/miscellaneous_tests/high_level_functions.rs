@@ -7241,9 +7241,9 @@ mod high_level_functions {
     }
 
     #[test]
-    fn test_geomarker_city_entity_resolves_via_keshvar() {
-      // Entity["City", {city, region, country}] is resolved through the keshvar
-      // gazetteer. It has no city coordinates, so Munich resolves to the center
+    fn test_geomarker_city_entity_resolves_via_gazetteer() {
+      // Entity["City", {city, region, country}] is resolved through the
+      // embedded gazetteer. It has no city coordinates, so Munich resolves to the center
       // of its administrative subdivision (Bavaria); the red pin must render.
       let svg = interpret(
         "ExportString[GeoGraphics[{Red, \

@@ -268,13 +268,6 @@ imbl = "5"
 # wasm-compatible; `safe-decode` keeps the decoder free of unsafe code since
 # the input is untrusted file data.
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
-# Country / subdivision gazetteer (names, translations, geo coordinates) used
-# to resolve geographic Entity[…] specifications to positions.
-# `search-translations` is deliberately NOT enabled: its single auto-generated
-# ~34k-entry HashMap literal adds ~20s to every clean compile. We rebuild that
-# name→country lookup ourselves at runtime from `translations` (see
-# `country_name_index` in src/functions/geographics.rs), which is identical.
-keshvar = { version = "0.7", features = ["subdivisions", "geo", "translations"] }
 sha3 = "0.10"
 ripemd = "0.1"
 md4 = "0.10"

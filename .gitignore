@@ -16,3 +16,4 @@
 /tests/playground/vendor
 /tests/scripts/_*
 /todos.md
+/scripts/gen_gazetteer/target
