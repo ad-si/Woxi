@@ -3088,17 +3088,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // `Evaluate[target] = value` (also written `target // Evaluate = value`)
   // forces the otherwise held left-hand side to evaluate first, then assigns
   // to whatever it produced — e.g. a list of `sol[i]` targets.
-  let evaluate_target = match lhs {
-    Expr::FunctionCall { name, args }
-      if name == "Evaluate" && args.len() == 1 =>
-    {
-      Some(&args[0])
-    }
-    Expr::Postfix { expr, func } if matches!(func.as_ref(), Expr::Identifier(f) if f == "Evaluate") => {
-      Some(expr.as_ref())
-    }
-    _ => None,
-  };
+  let evaluate_target =
+    match crate::evaluator::core_eval::evaluate_wrapper_args(lhs) {
+      Some([target]) => Some(target),
+      _ => None,
+    };
   if let Some(target) = evaluate_target {
     let target = evaluate_expr_to_expr(target)?;
     return set_ast(&target, rhs);
@@ -3996,12 +3990,8 @@ fn evaluate_curried_lhs_non_pattern_parts(
 /// evaluated `inner`, since `Evaluate` forces evaluation inside the held
 /// right-hand side. Any other body is returned unchanged.
 pub fn evaluate_forced_body(body: Expr) -> Result<Expr, InterpreterError> {
-  match &body {
-    Expr::FunctionCall { name, args }
-      if name == "Evaluate" && args.len() == 1 =>
-    {
-      evaluate_expr_to_expr(&args[0])
-    }
+  match crate::evaluator::core_eval::evaluate_wrapper_args(&body) {
+    Some([inner]) => evaluate_expr_to_expr(inner),
     _ => Ok(body),
   }
 }
