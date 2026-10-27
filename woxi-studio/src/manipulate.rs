@@ -518,6 +518,9 @@ pub struct ManipulateState {
   /// Audio produced by the last pressed button's action (`Button[…,
   /// EmitSound[…]]`), waiting for the host to play it.
   pub emitted_sound: Option<woxi::AudioOutput>,
+  /// Audio the body itself evaluates to (`Manipulate[Sound[…], …]`), shown
+  /// as a play button under the controls.
+  pub body_sound: Option<woxi::AudioOutput>,
   /// Whether this widget auto-plays (from `Animate[…]` / `ListAnimate[…]` /
   /// `Animator[…]`): a timer advances the first continuous control while
   /// `playing` is set, and the view shows a play/pause toggle.
@@ -703,6 +706,7 @@ impl ManipulateState {
       text_output: None,
       error: None,
       emitted_sound: None,
+      body_sound: None,
       animated: spec.animated,
       // Auto-play immediately (Wolfram's default AnimationRunning -> True)
       // unless the spec was built paused (`AnimationRunning -> False`).
@@ -1556,6 +1560,17 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
+    // A `Dynamic` late in the body may set a module variable an earlier one
+    // reads (`r = NSolve[…]` after a `Dynamic[… /. r]`); the front end
+    // re-renders those once it changes. When that first pass warned, render
+    // again with the updated variables, as the front end settles.
+    if allow_retry
+      && self.self_refreshing
+      && matches!(&render, Ok(r) if !r.warnings.is_empty())
+    {
+      self.reevaluate_inner(false);
+      return;
+    }
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -1571,6 +1586,7 @@ impl ManipulateState {
     // changes — that async upload gap is what made the graphic flicker while
     // dragging. The `svg` widget uploads synchronously in the same frame, so
     // the new graphic is drawn the instant it replaces the old one.
+    self.body_sound = render.as_ref().ok().and_then(|r| r.sound.clone());
     match render {
       Ok(result) => {
         let cleaned = if result.graphics.is_some() || result.result == "\0" {
@@ -1583,6 +1599,12 @@ impl ManipulateState {
             .replace("-Image-", "")
             .trim()
             .to_string()
+        };
+        // The player stands in for the `-Sound-` placeholder.
+        let cleaned = if self.body_sound.is_some() && cleaned == "-Sound-" {
+          String::new()
+        } else {
+          cleaned
         };
 
         if let Some(svg) = result.graphics {
@@ -1943,6 +1965,28 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A `Dynamic` that sets a module variable after an earlier `Dynamic`
+  /// reads it (PolynomialRootsInTheComplexPlane): the front end re-renders
+  /// once the variable changes, so the settled render carries no warnings
+  /// from the read of the not-yet-set variable.
+  #[test]
+  fn later_dynamic_assignment_settles_the_earlier_reads() {
+    let code = r#"Manipulate[DynamicModule[{f, r},
+      Column[{Graphics[{Dynamic@Point[{Re[x], Im[x]} /. r /. (_Re | _Im) -> Sequence[]]},
+          PlotRange -> 10],
+        Dynamic[f = Function[a, a^2 - n]; r = Chop[NSolve[f[x] == 0, x]]; " "]}]],
+      {{n, 4}, 1, 9}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let render = state.check_render().expect("render");
+    assert!(
+      render.warnings.is_empty(),
+      "settled render must not warn: {:?}",
+      render.warnings
+    );
+  }
+
   /// A conformal-map explorer: a textured square translated by a locator,
   /// shown beside its warp under a map chosen from a popup of pure
   /// functions labelled with `TraditionalForm`.
@@ -2229,6 +2273,25 @@ mod tests {
       state.emitted_sound.is_none(),
       "a silent button must not replay stale audio"
     );
+  }
+
+  /// A body that evaluates to a `Sound` (optionally wrapped in `Magnify`)
+  /// exposes playable audio that follows the controls, instead of a bare
+  /// `-Sound-` placeholder.
+  #[test]
+  fn sound_body_exposes_playable_audio() {
+    for body in [
+      r#"Sound[SoundNote[{0, 4, 7} + k, 0.2, "Flute"]]"#,
+      r#"Magnify[Sound[SoundNote[{0, 4, 7} + k, 0.2, "Flute"]], 2]"#,
+    ] {
+      let code = format!("Manipulate[{body}, {{k, 0, 11, 1}}]");
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      assert_eq!(state.error, None, "build must not report an error");
+      assert!(state.body_sound.is_some(), "no audio for {body}");
+      assert_eq!(state.text_output, None, "placeholder shown for {body}");
+    }
   }
 
   /// Regression: `Item[Button[…], Alignment -> Center]` in a Manipulate's

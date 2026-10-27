@@ -3000,6 +3000,23 @@ mod collect_tests {
 mod together {
   use super::*;
 
+  // Combining a sum reads `c^(-1 + n)` as `c^n/c`; a lone power keeps it
+  #[test]
+  fn integer_exponent_offsets_join_the_denominator() {
+    assert_eq!(
+      interpret(
+        "{Together[5 c^(-1 + n) + d (c^(-1 + n) - 1)/(c - 1)], Together[1 + 2 3^(-2 + n)], Together[x^(-1 + a)], D[Beta[x, a, b], x]}"
+      )
+      .unwrap(),
+      "{(-5*c^n + 5*c^(1 + n) - c*d + c^n*d)/((-1 + c)*c), (9 + 2*3^n)/9, x^(-1 + a), (1 - x)^(-1 + b)*x^(-1 + a)}"
+    );
+    // Solve clears denominators with the offset kept whole
+    assert_eq!(
+      interpret("Solve[2^x/12 == 5, x]").unwrap(),
+      "{{x -> ConditionalExpression[2 + ((2*I)*Pi*C[1])/Log[2] + Log[15]/Log[2], Element[C[1], Integers]]}}"
+    );
+  }
+
   // Combining terms rationalizes a numeric radical denominator.
   #[test]
   fn rationalizes_numeric_radical_denominators() {
@@ -7162,18 +7179,62 @@ mod rsolve {
     );
   }
 
-  // An index-dependent forcing term (a[n-1] + n) or a coefficient other than 1
-  // (3 a[n-1] + 1) is not an arithmetic progression and stays unevaluated,
-  // matching the deeper cases Woxi does not yet close-form.
+  // An index-dependent forcing term (a[n-1] + n) is not yet closed-formed
   #[test]
-  fn non_arithmetic_forcing_stays_unevaluated() {
+  fn index_dependent_forcing_stays_unevaluated() {
     assert_eq!(
       interpret("RSolve[a[n] == a[n-1] + n, a[n], n]").unwrap(),
       "RSolve[a[n] == n + a[-1 + n], a[n], n]"
     );
+  }
+
+  // A first-order linear recurrence with any constant coefficient and
+  // forcing, symbolic ones included (PayThePoints' loan balance)
+  #[test]
+  fn first_order_linear_with_constant_coefficients() {
     assert_eq!(
       interpret("RSolve[a[n] == 3 a[n-1] + 1, a[n], n]").unwrap(),
-      "RSolve[a[n] == 1 + 3*a[-1 + n], a[n], n]"
+      "{{a[n] -> (3^n*(1 - 3^(-n)))/2 + 3^(-1 + n)*C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 1] == c a[n] + d, a[n], n]").unwrap(),
+      "{{a[n] -> (c^n*(1 - c^(-n))*d)/(-1 + c) + c^(-1 + n)*C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{a[n] == c a[n - 1] + d, a[1] == 5}, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> (-5*c^n + 5*c^(1 + n) - c*d + c^n*d)/((-1 + c)*c)}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{2 a[n + 1] == 6 a[n] + 4, a[2] == 1}, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> (-9 + 2*3^n)/9}}"
+    );
+    assert_eq!(
+      interpret("RSolve[{p[0] == p0, p[t + 1] == (1 + r) p[t] - k}, p[t], t]")
+        .unwrap(),
+      "{{p[t] -> (k - k*(1 + r)^t + p0*r*(1 + r)^t)/r}}"
+    ); // Machine coefficients solve too, to the same values
+    assert_eq!(
+      interpret(
+        "Chop[(p[t] /. RSolve[{p[0] == 100000, p[t + 1] == 1.05 p[t] - k}, p[t], t][[1]] /. {t -> 3, k -> 5000}) - 100000.]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  // A linear equation whose coefficients hold a huge power of a sum is read
+  // off without expanding it (a 30-year monthly loan: (12 + r)^360)
+  #[test]
+  fn linear_equation_with_a_huge_power_is_solved_without_expanding() {
+    assert_eq!(
+      interpret("k /. First[Solve[1000 (1 + r/12)^360 + 12 k (1 - (1 + r/12)^360)/r == 0, k]] /. r -> 0.06")
+        .unwrap()
+        .parse::<f64>()
+        .map(|v| (v - 5.99550525).abs() < 1e-6)
+        .unwrap(),
+      true
     );
   }
 }

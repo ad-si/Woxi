@@ -2945,9 +2945,88 @@ fn solve_by_isolating_power(eq: &Expr, var: &str) -> Option<Expr> {
   Some(Expr::List(out.into()))
 }
 
+/// `Solve[eq, x]` for an equation linear in `x` whose coefficients hold a
+/// power of a sum with a large integer exponent (`(12 + r)^360`, a 30-year
+/// monthly loan in PayThePoints): `x == -(eq /. x -> 0)/D[eq, x]`, read off
+/// without expanding anything. The general path expands that power, which
+/// takes practically forever; wolframscript answers instantly. Ordinary
+/// linear equations keep the general path and its answer forms.
+fn solve_linear_with_huge_powers(args: &[Expr]) -> Option<Expr> {
+  const HUGE: i128 = 40;
+  let [eq, Expr::Identifier(var)] = args else {
+    return None;
+  };
+  fn has_huge_sum_power(e: &Expr) -> bool {
+    let huge = |base: &Expr, exp: &Expr| {
+      matches!(exp, Expr::Integer(n) if n.abs() >= HUGE)
+        && matches!(base, Expr::FunctionCall { name, .. } if name == "Plus")
+          | matches!(
+            base,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus,
+              ..
+            }
+          )
+          | matches!(
+            base,
+            Expr::BinaryOp {
+              op: BinaryOperator::Minus,
+              ..
+            }
+          )
+    };
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if huge(left, right) => true,
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 && huge(&args[0], &args[1]) =>
+      {
+        true
+      }
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(has_huge_sum_power),
+    }
+  }
+  let (lhs, rhs) = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.as_slice() == [ComparisonOp::Equal] =>
+    {
+      (&operands[0], &operands[1])
+    }
+    _ => return None,
+  };
+  if !has_huge_sum_power(eq) {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let difference = minus2(lhs.clone(), rhs.clone());
+  let slope = eval(call("D", vec![difference.clone(), id_expr(var)]))?;
+  if contains_var(&slope, var) || matches!(slope, Expr::Integer(0)) {
+    return None;
+  }
+  let intercept = eval(call(
+    "ReplaceAll",
+    vec![difference, rule_expr(id_expr(var), Expr::Integer(0))],
+  ))?;
+  let value = eval(div2(neg(intercept), slope))?;
+  Some(Expr::List(
+    vec![Expr::List(vec![rule_expr(id_expr(var), value)].into())].into(),
+  ))
+}
+
 fn solve_ast_entry(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = solve_piecewise_max_min(args) {
     return result;
+  }
+  if let Some(result) = solve_linear_with_huge_powers(args) {
+    return Ok(result);
   }
   // Only a trailing rule can be an option — `Solve[eqns, vars, Reals]` passes a
   // domain in the same slot.

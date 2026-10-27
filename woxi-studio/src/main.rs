@@ -2302,7 +2302,7 @@ impl WoxiStudio {
 
         self.stop_playback();
         if let Some(editor) = self.cell_editors.get(idx)
-          && let Some(audio) = editor.sound.clone()
+          && let Some(audio) = cell_audio(editor).cloned()
         {
           let playing_image = editor
             .graphics_svg
@@ -3314,7 +3314,7 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound
+      if let Some(audio) = cell_audio(editor)
         && !audio.embedded
       {
         output_col = output_col.push(render_audio_player(
@@ -3401,7 +3401,7 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound
+      if let Some(audio) = cell_audio(editor)
         && !audio.embedded
       {
         content_col = content_col.push(render_audio_player(
@@ -5097,6 +5097,16 @@ fn render_hyperlink<'a>(
     .padding([2, 6])
     .style(move |_theme, status| hyperlink_button_style(status, alpha))
     .into()
+}
+
+/// The audio a cell can play: its result's, or the sound a `Manipulate`
+/// body currently evaluates to.
+fn cell_audio(editor: &CellEditor) -> Option<&woxi::AudioOutput> {
+  editor
+    .manipulate_state
+    .as_ref()
+    .and_then(|s| s.body_sound.as_ref())
+    .or(editor.sound.as_ref())
 }
 
 /// Render the graphical audio player shown for cells whose result is
@@ -28474,8 +28484,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       )
     })
     .expect("the run-length helpers must evaluate");
+    // The draws are Woxi's own seeded sequence (not wolframscript's); since
+    // the rand 0.10 upgrade, seed 5 holds a run of five losses.
     assert_eq!(
-      stats.result, "{15, 15, 5, 3}",
+      stats.result, "{15, 15, 5, 5}",
       "wins, losses, longest win streak, longest loss streak"
     );
   }

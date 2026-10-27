@@ -6,6 +6,8 @@ use super::*;
 /// Together[expr, Modulus -> p] - Combines and cancels over GF(p)
 /// Threads over List.
 pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let _allow_split =
+    AllowSplitGuard(ALLOW_SPLIT_OFFSET_EXPONENTS.with(|f| f.replace(true)));
   if args.len() == 2 {
     let unevaluated = || call("Together", args.to_vec());
     let Some(p) = super::polynomial_gcd::extract_modulus_option(&args[1])
@@ -536,6 +538,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       if let Some(flipped) = quotient_base_flip(&args[0], &args[1]) {
         return flipped;
       }
+      if let Some(split) = split_integer_offset_exponent(&args[0], &args[1]) {
+        return split;
+      }
       if let Some(pos_exp) = get_negative_exponent(&args[1]) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), args[0].clone())
@@ -559,6 +564,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             args: pargs,
           } if pname == "Power" && pargs.len() == 2 => {
             if let Some((fnum, fden)) = quotient_base_flip(&pargs[0], &pargs[1])
+              .or_else(|| split_integer_offset_exponent(&pargs[0], &pargs[1]))
             {
               num_factors.push(fnum);
               den_factors.push(fden);
@@ -584,7 +590,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             left,
             right,
           } => {
-            if let Some((fnum, fden)) = quotient_base_flip(left, right) {
+            if let Some((fnum, fden)) = quotient_base_flip(left, right)
+              .or_else(|| split_integer_offset_exponent(left, right))
+            {
               num_factors.push(fnum);
               den_factors.push(fden);
             } else if let Some(pos_exp) = get_negative_exponent(right) {
@@ -701,6 +709,81 @@ pub fn flatten_times_args(args: &[Expr]) -> Vec<Expr> {
     }
   }
   flat
+}
+
+thread_local! {
+  /// Set while [`together_expr`] combines the terms of a sum; see
+  /// [`split_integer_offset_exponent`].
+  static SPLIT_OFFSET_EXPONENTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+  /// Set while a user-level `Together[…]` runs. The solvers that call
+  /// [`together_expr`] to clear denominators keep `2^(-2 + x)` whole, which
+  /// is what makes `Solve[2^x/12 == 5, x]` read `x == 2 + Log[15]/Log[2]`.
+  static ALLOW_SPLIT_OFFSET_EXPONENTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Restores [`ALLOW_SPLIT_OFFSET_EXPONENTS`] when `Together[…]` returns.
+struct AllowSplitGuard(bool);
+
+impl Drop for AllowSplitGuard {
+  fn drop(&mut self) {
+    ALLOW_SPLIT_OFFSET_EXPONENTS.with(|f| f.set(self.0));
+  }
+}
+
+/// Restores [`SPLIT_OFFSET_EXPONENTS`] when a sum's combination finishes.
+struct SplitOffsetGuard(bool);
+
+impl Drop for SplitOffsetGuard {
+  fn drop(&mut self) {
+    SPLIT_OFFSET_EXPONENTS.with(|f| f.set(self.0));
+  }
+}
+
+/// `b^(rest + k)` with a negative integer `k` as the fraction `b^rest/b^-k`,
+/// the way wolframscript's `Together` reads it: `c^(-1 + n)` is `c^n/c`, so
+/// `Together[5 c^(-1 + n) + d]` comes over the denominator `c`.
+fn split_integer_offset_exponent(
+  base: &Expr,
+  exp: &Expr,
+) -> Option<(Expr, Expr)> {
+  // Only while the terms of a sum are put over one denominator: a lone
+  // power or product keeps its exponent (`Together[x^(-1 + a)]` is itself)
+  if !SPLIT_OFFSET_EXPONENTS.with(std::cell::Cell::get) {
+    return None;
+  }
+  let terms: Vec<Expr> = match exp {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => vec![*left.clone(), *right.clone()],
+    _ => return None,
+  };
+  let k = terms.iter().find_map(|t| match t {
+    Expr::Integer(k) if *k < 0 => Some(*k),
+    _ => None,
+  })?;
+  let rest: Vec<Expr> = terms
+    .into_iter()
+    .filter(|t| !matches!(t, Expr::Integer(_)))
+    .collect();
+  if rest.is_empty() {
+    return None;
+  }
+  let rest = if rest.len() == 1 {
+    rest.into_iter().next().unwrap()
+  } else {
+    call("Plus", rest)
+  };
+  let den = if k == -1 {
+    base.clone()
+  } else {
+    pow(base.clone(), Expr::Integer(-k))
+  };
+  Some((pow(base.clone(), rest), den))
 }
 
 /// Check if an expression is a negative integer and return its absolute value
@@ -1634,6 +1717,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
 
   // Collect additive terms and put them over a common denominator
   let terms = collect_additive_terms(&expr_rec);
+  let _split_guard = (terms.len() > 1
+    && ALLOW_SPLIT_OFFSET_EXPONENTS.with(std::cell::Cell::get))
+  .then(|| SplitOffsetGuard(SPLIT_OFFSET_EXPONENTS.with(|f| f.replace(true))));
   if terms.len() <= 1 {
     // A single additive term with no denominator has nothing to combine —
     // return the (preprocessed) form. A single term that carries a
