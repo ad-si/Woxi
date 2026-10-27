@@ -1833,7 +1833,7 @@ OutputForm,Converts expression to output form,✅,pure,1.0,1833
 RandomPermutation,Random permutation of n points returned as a Cycles object,✅,contextual,8.0,1833
 TooltipDelay,Tooltip delay option,,unevaluated,7.0,1833
 FactorialMoment,Computes the r-th factorial moment of data or a distribution (mean of falling factorials),✅,pure,8.0,1836
-WatershedComponents,Watershed components,,unevaluated,8.0,1836
+WatershedComponents,Label the basins of an image treated as a height field; watershed lines get 0,✅,pure,8.0,1836
 ViewCenter,Option specifying the point of the displayed box a 3D camera looks at,✅,pure,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
@@ -2750,7 +2750,7 @@ GraphComplement,Complement of a graph,✅,1,8.0,2777
 Groupings,Generates all ways to group elements with an operator of given arity,✅,pure,11.0,2777
 KochCurve,Generates a Koch fractal curve as a Line primitive,✅,pure,11.1,2777
 LocalSymbol,,🚫,,10.2,2777
-MorphologicalGraph,,🚫,,8.0,2777
+MorphologicalGraph,Graph of the end points and branch points of an image's skeleton,✅,pure,8.0,2777
 NormalsFunction,option for normals computation,✅,Symbolic,6.0,2777
 PassEventsUp,option for passing events up,✅,Symbolic,6.0,2777
 ReplacePixelValue,,🚫,,9.0,2777
