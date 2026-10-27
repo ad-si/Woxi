@@ -4758,7 +4758,7 @@ fn shared_ordered_sequences(
 fn fix_sequence_length(
   pattern: &Expr,
   var: &str,
-  head: &Option<String>,
+  head: Option<&String>,
   len: usize,
 ) -> Expr {
   if let Expr::FunctionCall { name, args } = pattern
@@ -4768,7 +4768,7 @@ fn fix_sequence_length(
   {
     let blank = Expr::Pattern {
       name: String::new(),
-      head: head.clone(),
+      head: head.cloned(),
       blank_type: 1,
     };
     return call(
@@ -4816,7 +4816,7 @@ fn match_with_ordered_shared_sequences(
     Box::new(*min..=max)
   };
   for len in lengths {
-    let fixed = fix_sequence_length(pattern, var, head, len);
+    let fixed = fix_sequence_length(pattern, var, head.as_ref(), len);
     if let Some(found) = match_pattern(expr, &fixed) {
       return Some(found);
     }
