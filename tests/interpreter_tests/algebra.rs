@@ -7228,13 +7228,12 @@ mod rsolve {
   // off without expanding it (a 30-year monthly loan: (12 + r)^360)
   #[test]
   fn linear_equation_with_a_huge_power_is_solved_without_expanding() {
-    assert_eq!(
+    assert!(
       interpret("k /. First[Solve[1000 (1 + r/12)^360 + 12 k (1 - (1 + r/12)^360)/r == 0, k]] /. r -> 0.06")
         .unwrap()
         .parse::<f64>()
         .map(|v| (v - 5.99550525).abs() < 1e-6)
-        .unwrap(),
-      true
+        .unwrap()
     );
   }
 }
