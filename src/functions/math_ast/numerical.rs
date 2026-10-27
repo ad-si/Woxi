@@ -7544,12 +7544,13 @@ fn root_n_eval_uncached(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   let (coeffs, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if is_real {
     // The machine seed can be an ulp off; Wolfram's is correctly rounded.
-    let refined =
-      refine_real_root(&coeffs, re, 128, astro_float::RoundingMode::ToEven)
-        .and_then(|bf| bigfloat_to_f64_approx(&bf))
-        .filter(|v| {
-          v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0)
-        });
+    let refined = bigfloat_to_f64_approx(&refine_real_root(
+      &coeffs,
+      re,
+      128,
+      astro_float::RoundingMode::ToEven,
+    ))
+    .filter(|v| v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0));
     Some(Expr::Real(refined.unwrap_or(re)))
   } else {
     Some(plus(vec![
@@ -7575,7 +7576,7 @@ pub(crate) fn root_n_eval_arbitrary(
   if !is_real {
     return None;
   }
-  refine_real_root(&coeffs_i, re0, bits, rm)
+  Some(refine_real_root(&coeffs_i, re0, bits, rm))
 }
 
 /// Newton-refine the real root seed `re0` of the integer polynomial
@@ -7585,7 +7586,7 @@ fn refine_real_root(
   re0: f64,
   bits: usize,
   rm: astro_float::RoundingMode,
-) -> Option<astro_float::BigFloat> {
+) -> astro_float::BigFloat {
   use astro_float::BigFloat;
   // A couple of guard words above the target precision so the Newton
   // iterates (and the Horner evaluation of p/p' at each step) don't lose
@@ -7622,7 +7623,7 @@ fn refine_real_root(
     }
     x = x.sub(&p.div(&dp, wbits, rm), wbits, rm);
   }
-  Some(x)
+  x
 }
 
 /// Arbitrary-precision complex `Root[f, k]`: Newton's method on the
