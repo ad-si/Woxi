@@ -14826,6 +14826,27 @@ mod root {
     );
   }
 
+  // An index past the degree reports Root::deg, every time (Root results
+  // are remembered, but not those of calls that printed a message), and the
+  // call stays unevaluated.
+  #[test]
+  fn index_past_degree() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Root[#^2 - 2 &, 5], Root[#^2 - 2 &, 5], Root[#^5 - # - 1 &, 7]}"
+      )
+      .unwrap(),
+      "{Root[#1^2 - 2 & , 5], Root[#1^2 - 2 & , 5], Root[#1^5 - #1 - 1 & , 7]}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let deg = msgs.iter().filter(|m| m.contains("\nRoot::deg:")).count();
+    assert_eq!(deg, 3, "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains(
+      "Root::deg: -2 + #1  has fewer than 5 root(s) as a polynomial in #1."
+    )));
+  }
+
   // N of a higher-degree Root (no radical form) numerically finds the k-th
   // root: real roots first in increasing order.
   #[test]
@@ -14896,8 +14917,11 @@ mod root {
   }
 
   #[test]
-  fn out_of_range_error() {
-    assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
+  fn out_of_range_stays_unevaluated() {
+    assert_eq!(
+      interpret("Root[#^2 - 1 &, 3]").unwrap(),
+      "Root[#1^2 - 1 & , 3]"
+    );
   }
 
   // `N[Root[…], prec]` — arbitrary-precision evaluation of a root with no

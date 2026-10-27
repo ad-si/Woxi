@@ -7509,17 +7509,38 @@ fn bigint_to_bigfloat(
 /// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
 /// roots), or `None` when the shape doesn't fit.
 pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
-  let (_, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  // A polyhedron's coordinates repeat the same few `Root[…]` numbers many
+  // times, and each one costs a root finder and a BigFloat refinement.
+  thread_local! {
+    static ROOT_VALUES: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let key = (expr_to_string(poly_arg), expr_to_string(k_arg));
+  if let Some(hit) = ROOT_VALUES.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let value = root_n_eval_uncached(poly_arg, k_arg);
+  ROOT_VALUES.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= 4096 {
+      c.clear();
+    }
+    c.insert(key, value.clone());
+  });
+  value
+}
+
+fn root_n_eval_uncached(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+  let (coeffs, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if is_real {
     // The machine seed can be an ulp off; Wolfram's is correctly rounded.
-    let refined = root_n_eval_arbitrary(
-      poly_arg,
-      k_arg,
-      128,
-      astro_float::RoundingMode::ToEven,
-    )
-    .and_then(|bf| bigfloat_to_f64_approx(&bf))
-    .filter(|v| v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0));
+    let refined =
+      refine_real_root(&coeffs, re, 128, astro_float::RoundingMode::ToEven)
+        .and_then(|bf| bigfloat_to_f64_approx(&bf))
+        .filter(|v| {
+          v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0)
+        });
     Some(Expr::Real(refined.unwrap_or(re)))
   } else {
     Some(plus(vec![
@@ -7541,11 +7562,22 @@ pub(crate) fn root_n_eval_arbitrary(
   bits: usize,
   rm: astro_float::RoundingMode,
 ) -> Option<astro_float::BigFloat> {
-  use astro_float::BigFloat;
   let (coeffs_i, is_real, re0, _im0) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if !is_real {
     return None;
   }
+  refine_real_root(&coeffs_i, re0, bits, rm)
+}
+
+/// Newton-refine the real root seed `re0` of the integer polynomial
+/// `coeffs_i` to `bits` of working precision.
+fn refine_real_root(
+  coeffs_i: &[num_bigint::BigInt],
+  re0: f64,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
   // A couple of guard words above the target precision so the Newton
   // iterates (and the Horner evaluation of p/p' at each step) don't lose
   // the last few bits to rounding before the final result is rounded down

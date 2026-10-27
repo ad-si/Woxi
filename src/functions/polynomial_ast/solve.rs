@@ -9978,6 +9978,38 @@ fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
 }
 
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A `Root[…]` is re-evaluated whenever an expression holding it is, and
+  // canonicalizing it factors its polynomial; the outcome only depends on
+  // the arguments. A call that reported a message is not remembered, so
+  // that it reports it again.
+  thread_local! {
+    static ROOT_FORMS: std::cell::RefCell<
+      std::collections::HashMap<String, Expr>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let key = args
+    .iter()
+    .map(expr_to_string)
+    .collect::<Vec<_>>()
+    .join("\u{1}");
+  if let Some(hit) = ROOT_FORMS.with(|c| c.borrow().get(&key).cloned()) {
+    return Ok(hit);
+  }
+  let side_effects = crate::epoch::side_effect_count();
+  let result = root_ast_uncached(args)?;
+  if crate::epoch::side_effect_count() == side_effects {
+    ROOT_FORMS.with(|c| {
+      let mut c = c.borrow_mut();
+      if c.len() >= 4096 {
+        c.clear();
+      }
+      c.insert(key, result.clone());
+    });
+  }
+  Ok(result)
+}
+
+fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("Root", args));
   }
@@ -10040,6 +10072,13 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // irreducible Root[x^3 - 2, 1] keeps the canonical Root form even though
   // Solve writes that root as 2^(1/3).
   let expanded_poly = expand_and_combine(&poly);
+  // An index past the degree names no root.
+  if let Some(degree) = max_power_int(&expanded_poly, var_name)
+    && degree >= 1
+    && k > degree
+  {
+    return Ok(root_degree_message(args));
+  }
   let factor_degree = |factor: &Expr| -> Option<i128> {
     let base = match factor {
       Expr::BinaryOp {
@@ -10192,15 +10231,30 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let idx = (k as usize) - 1;
   if idx >= roots.len() {
-    return Err(InterpreterError::EvaluationError(format!(
-      "Root: index {} is out of range; polynomial has only {} roots",
-      k,
-      roots.len()
-    )));
+    return Ok(root_degree_message(args));
   }
 
   // Simplify the result
   crate::evaluator::evaluate_expr_to_expr(&roots[idx])
+}
+
+/// `Root[f, k]` with `k` beyond the degree of `f`: `Root::deg`, and the call
+/// stays unevaluated.
+fn root_degree_message(args: &[Expr]) -> Expr {
+  let body = match &args[0] {
+    Expr::Function { body } => body.as_ref().clone(),
+    other => other.clone(),
+  };
+  let body = crate::evaluator::evaluate_expr_to_expr(&body).unwrap_or(body);
+  crate::emit_message(&crate::syntax::message_with_expr_2d(
+    "Root::deg: ",
+    &body,
+    &format!(
+      " has fewer than {} root(s) as a polynomial in #1.",
+      expr_to_string(&args[1])
+    ),
+  ));
+  unevaluated("Root", args)
 }
 
 /// Order roots the way Wolfram's `Root` does: real roots first, sorted

@@ -18277,6 +18277,28 @@ pub fn expr_to_output_form_2d(expr: &Expr) -> String {
   })
 }
 
+/// A message that quotes `expr` in 2D OutputForm, the way the kernel prints
+/// `Root::deg` about `-2 + #1^2`: the message text sits on the expression's
+/// baseline row and the rows above and below (exponents, fraction parts)
+/// are indented past `prefix`.
+pub fn message_with_expr_2d(prefix: &str, expr: &Expr, suffix: &str) -> String {
+  let tb =
+    with_display_names(expr, |e| with_complex_display(e, expr_to_textbox));
+  let indent = " ".repeat(prefix.chars().count());
+  tb.lines
+    .iter()
+    .enumerate()
+    .map(|(i, line)| {
+      if i == tb.baseline {
+        format!("{prefix}{line}{suffix}")
+      } else {
+        format!("{indent}{line}").trim_end().to_string()
+      }
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 /// Render a box tree (`RowBox`, `FractionBox`, `SuperscriptBox`, …) as the
 /// same 2D text `expr_to_output_form_2d` produces for ordinary expressions.
 /// `ToString[expr, TraditionalForm]` goes through here: the typesetter turns
