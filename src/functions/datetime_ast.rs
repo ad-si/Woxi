@@ -1033,6 +1033,33 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// DateList[{y,m,d,...}] — normalize a date list
 /// DateList["string"] — parse a date string
 pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `TimeZone -> tz` expresses the date (read in $TimeZone) in zone `tz`.
+  if let Some((last, rest)) = args.split_last()
+    && let Expr::Rule {
+      pattern,
+      replacement,
+    } = last
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TimeZone")
+  {
+    let date = date_list_ast(rest)?;
+    let target = crate::evaluator::evaluate_expr_to_expr(replacement)?;
+    let local = crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
+      "$TimeZone".to_string(),
+    ))?;
+    let (Some(target), Some(local)) =
+      (try_eval_to_f64(&target), try_eval_to_f64(&local))
+    else {
+      return Ok(unevaluated("DateList", args));
+    };
+    if !matches!(date, Expr::List(_)) {
+      return Ok(unevaluated("DateList", args));
+    }
+    let absolute = absolute_time_ast(&[date])?;
+    let Some(seconds) = try_eval_to_f64(&absolute) else {
+      return Ok(unevaluated("DateList", args));
+    };
+    return date_list_ast(&[Expr::Real(seconds + (target - local) * 3600.0)]);
+  }
   if args.is_empty() {
     // Current date
     return absolute_time_ast(&[]).and_then(|t| date_list_ast(&[t]));

@@ -125,6 +125,22 @@ mod absolute_time {
 mod date_list {
   use super::*;
 
+  // `TimeZone -> tz` expresses the date, read in $TimeZone, in zone `tz`.
+  #[test]
+  fn date_list_time_zone_option() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Block[{$TimeZone = 0}, {DateList[3600*24*365, TimeZone -> -5], \
+         DateList[{2020, 1, 1, 12, 0, 0}, TimeZone -> -5], \
+         DateList[0, TimeZone -> 0], Length[DateList[TimeZone -> 3]]}]"
+      )
+      .unwrap(),
+      "{{1900, 12, 31, 19, 0, 0.}, {2020, 1, 1, 7, 0, 0.}, \
+       {1900, 1, 1, 0, 0, 0.}, 6}"
+    );
+  }
+
   #[test]
   fn date_list_epoch() {
     assert_eq!(interpret("DateList[0]").unwrap(), "{1900, 1, 1, 0, 0, 0.}");
