@@ -8059,6 +8059,23 @@ mod batch_unevaluated_wrappers_2 {
       "{10, 30, 4.999999999997584}"
     );
   }
+  // A machine number, an angle Quantity and a DMS string (with symbols or
+  // d/m/s letters) all convert; FromDMS reads the strings too.
+  #[test]
+  fn dms_list_from_real_quantity_and_string() {
+    assert_eq!(
+      interpret(
+        "{DMSList[14.853343960298783], DMSList[-14.853343960298783], \
+         DMSList[0.5], DMSList[Quantity[14.5, \"AngularDegrees\"]], \
+         DMSList[Quantity[Pi/6, \"Radians\"]], DMSList[\"14d51m12s\"], \
+         FromDMS[\"14d51m12s\"]} // InputForm"
+      )
+      .unwrap(),
+      "InputForm[{{14, 51, 12.038257075620038}, \
+       {-14, -51, -12.038257075620038}, {0, 30, 0.}, {14, 30, 0.}, \
+       {30, 0, 0}, {14, 51, 12}, 1114/75}]"
+    );
+  }
   #[test]
   fn dms_list_from_integer_triple() {
     // All-integer input → all-integer output, normalised via rationals.

@@ -398,6 +398,17 @@ fn format_dms(v: &AngleVal, prec: u32) -> String {
   }
 }
 
+/// The decimal degrees a DMS string such as `30°15'50"` or `30d15m50s`
+/// stands for: an exact rational, or a machine real when a component has a
+/// decimal point that does not terminate exactly. `None` for any other
+/// string.
+pub(crate) fn dms_string_degrees(s: &str) -> Option<Expr> {
+  Some(match parse_dms_string(s)? {
+    AngleVal::Exact(p, q) => crate::functions::math_ast::make_rational(p, q),
+    AngleVal::Real(x) => Expr::Real(x),
+  })
+}
+
 /// Parse a DMS string like `30°15'50.5"` (each component optional after the
 /// degrees, optional sign, optional trailing N/S/E/W). Numbers may have a
 /// decimal part and are kept exact so integral seconds round-trip without
@@ -436,19 +447,25 @@ fn parse_dms_string(s: &str) -> Option<AngleVal> {
     *rest = &rest[consumed..];
     Some((num, den))
   }
+  // Each unit is marked by its symbol or its letter: `30°15'50"` or
+  // `30d15m50s`.
+  fn take_mark<'a>(rest: &'a str, marks: &[char]) -> Option<&'a str> {
+    let c = rest.chars().next()?;
+    marks.contains(&c).then(|| &rest[c.len_utf8()..])
+  }
   let deg = take_number(&mut rest)?;
-  rest = rest.strip_prefix('°')?;
+  rest = take_mark(rest, &['°', 'd'])?;
   let mut min = (0, 1);
   let mut sec = (0, 1);
   if !rest.is_empty() && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
   {
     min = take_number(&mut rest)?;
-    rest = rest.strip_prefix('\'')?;
+    rest = take_mark(rest, &['\'', '′', 'm'])?;
   }
   if !rest.is_empty() && rest.chars().next().is_some_and(|c| c.is_ascii_digit())
   {
     sec = take_number(&mut rest)?;
-    rest = rest.strip_prefix('"')?;
+    rest = take_mark(rest, &['"', '″', 's'])?;
   }
   if matches!(rest, "N" | "S" | "E" | "W") {
     rest = "";
