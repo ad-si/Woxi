@@ -2602,18 +2602,9 @@ fn explicit_rule(pos: &[i128], value: Expr) -> Expr {
 
 /// Whether `expr` contains a pattern (Blank) node anywhere within it.
 fn expr_contains_pattern(expr: &Expr) -> bool {
-  match expr {
-    Expr::Pattern { .. }
-    | Expr::PatternOptional { .. }
-    | Expr::PatternTest { .. } => true,
-    Expr::List(items) => items.iter().any(expr_contains_pattern),
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_pattern),
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_pattern(left) || expr_contains_pattern(right)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_pattern(operand),
-    _ => false,
-  }
+  // The one pattern detector, which also knows the long forms a reloaded
+  // definition carries (`Pattern[i, Blank[]]` for `i_`)
+  crate::evaluator::pattern_matching::contains_pattern(expr)
 }
 
 fn list_of_positive_ints(e: &Expr, rank: usize) -> Option<Vec<usize>> {

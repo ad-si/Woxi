@@ -24294,6 +24294,20 @@ mod sparse_array_banded_patterns {
   }
 
   #[test]
+  fn long_form_patterns_from_a_reloaded_definition() {
+    // A SaveDefinitions Manipulate reloads `{i_, j_} /; …` as
+    // `Condition[{Pattern[i, Blank[]], Pattern[j, Blank[]]}, …]`
+    // (RaggedAutomatonDisk)
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Condition[{Pattern[i, Blank[]], Pattern[j, Blank[]]}, i + j < 4] -> 1}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0}, {1, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
   fn condition_reading_data_matches_every_position() {
     // A condition on the data rather than index arithmetic cannot be solved
     // for the matching positions: every position has to be tested (the
