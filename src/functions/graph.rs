@@ -481,6 +481,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // RNA sequence's positions), so edges between non-neighbors don't have
   // to cross the line.
   let mut linear = false;
+  // `GraphLayout -> "PlanarEmbedding"` draws a planar graph without
+  // crossings (see [`planar_layout`]).
+  let mut planar = false;
   // `VertexCoordinates -> {{x, y}, …}`, one pair per vertex in order,
   // fixes the layout outright instead of computing one.
   let mut explicit_coordinates: Option<Vec<(f64, f64)>> = None;
@@ -610,6 +613,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           circular = layered.is_none() && layout_is_circular(replacement);
           linear = layered.is_none() && layout_is_linear(replacement);
+          planar = layered.is_none() && layout_is_planar(replacement);
         }
         "VertexCoordinates" => {
           if let Expr::List(items) = replacement {
@@ -750,6 +754,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       None if circular && n > 2 => circular_layout(n),
       None if linear && n > 1 => linear_layout(n),
+      None if planar => planar_layout(n, &render_graph_pairs(&graph))
+        .map(normalize_explicit_positions)
+        .map_or_else(|| compute_layout(&graph), |(pts, _)| pts),
       None => compute_layout(&graph),
     }
   };
@@ -1529,6 +1536,27 @@ fn layout_is_circular(value: &Expr) -> bool {
     Expr::List(items) => items.iter().any(layout_is_circular),
     _ => false,
   }
+}
+
+/// `GraphLayout -> "PlanarEmbedding"` (see [`layout_is_circular`] for the
+/// accepted shapes).
+fn layout_is_planar(value: &Expr) -> bool {
+  match value {
+    Expr::String(s) => s == "PlanarEmbedding",
+    Expr::List(items) => items.iter().any(layout_is_planar),
+    _ => false,
+  }
+}
+
+/// The vertex-index pairs of a render graph's edges.
+fn render_graph_pairs(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> Vec<(usize, usize)> {
+  graph
+    .edge_indices()
+    .filter_map(|e| graph.edge_endpoints(e))
+    .map(|(a, b)| (a.index(), b.index()))
+    .collect()
 }
 
 /// `GraphLayout -> "LinearEmbedding"` (see [`layout_is_circular`] for the
@@ -7048,8 +7076,20 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
   if k < 5 || edges.len() < 9 {
     return true;
   }
-  if edges.len() > 3 * k - 6 {
-    return false;
+  dmp_faces(edges).is_some()
+}
+
+/// The faces of a planar embedding of the biconnected simple graph with
+/// `edges`, each as its cycle of vertices, found by the
+/// Demoucron-Malgrange-Pertuiset algorithm; `None` when the graph is not
+/// planar. A graph without a cycle has no faces.
+fn dmp_faces(edges: &[(usize, usize)]) -> Option<Vec<Vec<usize>>> {
+  let mut verts: Vec<usize> = edges.iter().flat_map(|&(a, b)| [a, b]).collect();
+  verts.sort_unstable();
+  verts.dedup();
+  let k = verts.len();
+  if k >= 3 && edges.len() > 3 * k - 6 {
+    return None;
   }
   let index = |v: usize| verts.binary_search(&v).unwrap();
   let es: Vec<(usize, usize)> =
@@ -7084,7 +7124,7 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
     }
   }
   let Some((mut cu, cw)) = back_edge else {
-    return true;
+    return Some(Vec::new());
   };
   let mut cycle = vec![cu];
   while cu != cw {
@@ -7170,7 +7210,7 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
       if endpoint == usize::MAX {
         // a0's and a1's component neighborhoods did not connect — should
         // not happen inside one component, but bail out conservatively
-        return false;
+        return None;
       }
       let mut path = vec![a1];
       let mut cur = endpoint;
@@ -7196,14 +7236,14 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
         }
       }
       if count == 0 {
-        return false;
+        return None;
       }
       if best.is_none_or(|(c, _, _)| count < c) {
         best = Some((count, fi, first_face));
       }
     }
     let Some((_, fi, face_idx)) = best else {
-      return true;
+      break;
     };
     let path = fragments[fi].1.clone();
 
@@ -7247,7 +7287,185 @@ fn dmp_planar(edges: &[(usize, usize)]) -> bool {
     faces.push(f1);
     faces.push(f2);
   }
-  true
+  Some(
+    faces
+      .into_iter()
+      .map(|f| f.into_iter().map(|v| verts[v]).collect())
+      .collect(),
+  )
+}
+
+/// Vertex positions for `GraphLayout -> "PlanarEmbedding"`: a straight-line
+/// drawing of the planar graph on vertices `0..n` with `edges` in which no
+/// two edges cross. The largest face of a planar embedding becomes the
+/// outer face, its vertices on a regular polygon, and every other vertex
+/// sits at the barycenter of its neighbors (Tutte's embedding). An extra
+/// point inside every other face, joined to the face's corners, keeps
+/// graphs that are only biconnected (rather than 3-connected) from folding
+/// onto themselves; those points are not part of the result. `None` for a
+/// graph that is not planar, not biconnected, or too small to need it.
+pub fn planar_layout(
+  n: usize,
+  edges: &[(usize, usize)],
+) -> Option<Vec<(f64, f64)>> {
+  let mut simple: Vec<(usize, usize)> = edges
+    .iter()
+    .filter(|&&(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
+    .collect();
+  simple.sort_unstable();
+  simple.dedup();
+  if n < 3 || simple.is_empty() {
+    return None;
+  }
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &simple {
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  // One biconnected component spanning every vertex
+  if adj.iter().any(Vec::is_empty) || biconnected_components(n, &adj).len() != 1
+  {
+    return None;
+  }
+  let faces = dmp_faces(&simple)?;
+  let outer = faces.iter().max_by_key(|f| f.len())?.clone();
+
+  // Fixed outer polygon, starting at the top and going counterclockwise
+  let mut pos = vec![(0.0_f64, 0.0_f64); n];
+  let mut fixed = vec![false; n];
+  let m = outer.len();
+  for (i, &v) in outer.iter().enumerate() {
+    let angle = std::f64::consts::FRAC_PI_2
+      + 2.0 * std::f64::consts::PI * i as f64 / m as f64;
+    pos[v] = (angle.cos(), angle.sin());
+    fixed[v] = true;
+  }
+
+  // Neighbors in the drawing graph: the edges plus one center point per
+  // inner face (indices n, n + 1, …) joined to that face's corners
+  let mut nbrs = adj.clone();
+  let mut skipped_outer = false;
+  for face in &faces {
+    if !skipped_outer && face == &outer {
+      skipped_outer = true;
+      continue;
+    }
+    if face.len() <= 3 {
+      continue;
+    }
+    let center = nbrs.len();
+    nbrs.push(face.clone());
+    for &v in face {
+      nbrs[v].push(center);
+    }
+  }
+  let total = nbrs.len();
+  pos.resize(total, (0.0, 0.0));
+  fixed.resize(total, false);
+
+  // Solve the barycentric system for the free points:
+  // deg(v) p_v - sum of free neighbors p_u = sum of fixed neighbors p_u
+  let free: Vec<usize> = (0..total).filter(|&v| !fixed[v]).collect();
+  if !free.is_empty() {
+    let mut index = vec![usize::MAX; total];
+    for (i, &v) in free.iter().enumerate() {
+      index[v] = i;
+    }
+    let k = free.len();
+    let mut a = vec![vec![0.0_f64; k]; k];
+    let mut bx = vec![0.0_f64; k];
+    let mut by = vec![0.0_f64; k];
+    for (i, &v) in free.iter().enumerate() {
+      a[i][i] = nbrs[v].len() as f64;
+      for &u in &nbrs[v] {
+        if fixed[u] {
+          bx[i] += pos[u].0;
+          by[i] += pos[u].1;
+        } else {
+          a[i][index[u]] -= 1.0;
+        }
+      }
+    }
+    // Gaussian elimination with partial pivoting (the matrix is a
+    // nonsingular weighted Laplacian block)
+    for col in 0..k {
+      let pivot = (col..k)
+        .max_by(|&r1, &r2| a[r1][col].abs().total_cmp(&a[r2][col].abs()))?;
+      if a[pivot][col].abs() < 1e-12 {
+        return None;
+      }
+      a.swap(col, pivot);
+      bx.swap(col, pivot);
+      by.swap(col, pivot);
+      for row in col + 1..k {
+        let factor = a[row][col] / a[col][col];
+        if factor == 0.0 {
+          continue;
+        }
+        for c in col..k {
+          a[row][c] -= factor * a[col][c];
+        }
+        bx[row] -= factor * bx[col];
+        by[row] -= factor * by[col];
+      }
+    }
+    for row in (0..k).rev() {
+      let (mut sx, mut sy) = (bx[row], by[row]);
+      for c in row + 1..k {
+        sx -= a[row][c] * bx[c];
+        sy -= a[row][c] * by[c];
+      }
+      bx[row] = sx / a[row][row];
+      by[row] = sy / a[row][row];
+    }
+    for (i, &v) in free.iter().enumerate() {
+      pos[v] = (bx[i], by[i]);
+    }
+  }
+  pos.truncate(n);
+  Some(pos)
+}
+
+/// `GraphEmbedding[g]` for a graph laid out with `GraphLayout ->
+/// "PlanarEmbedding"`, or `GraphEmbedding[g, "PlanarEmbedding"]`: the
+/// [`planar_layout`] coordinates, in vertex order. `None` when neither asks
+/// for it or the graph cannot be drawn that way.
+pub fn planar_graph_embedding(args: &[Expr]) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: gargs } = args.first()? else {
+    return None;
+  };
+  if name != "Graph" {
+    return None;
+  }
+  let asked = match args.get(1) {
+    Some(method) => layout_is_planar(method),
+    None => gargs.iter().skip(2).any(|opt| {
+      crate::evaluator::dispatch::list_operations::as_rule(opt).is_some_and(
+        |(p, v)| {
+          matches!(p, Expr::Identifier(n) if n == "GraphLayout")
+            && layout_is_planar(v)
+        },
+      )
+    }),
+  };
+  if !asked {
+    return None;
+  }
+  let (n, pairs) = parse_graph_pairs(&args[0])?;
+  let pairs: Vec<(usize, usize)> =
+    pairs.into_iter().map(|(a, b, _)| (a, b)).collect();
+  let pts = planar_layout(n, &pairs)?;
+  Some(Expr::List(
+    pts
+      .into_iter()
+      .map(|(x, y)| {
+        Expr::List(
+          vec![Expr::Real(snap_coord(x)), Expr::Real(snap_coord(y))].into(),
+        )
+      })
+      .collect(),
+  ))
 }
 
 /// PlanarGraphQ[g]

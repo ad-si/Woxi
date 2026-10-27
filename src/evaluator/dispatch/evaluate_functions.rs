@@ -10286,6 +10286,10 @@ fn evaluate_function_call_ast_inner(
 
   // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
   if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
+    if let Some(coords) = crate::functions::graph::planar_graph_embedding(args)
+    {
+      return Ok(coords);
+    }
     if let Expr::FunctionCall {
       name: gname,
       args: gargs,

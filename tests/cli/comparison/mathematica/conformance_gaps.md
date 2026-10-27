@@ -4679,6 +4679,18 @@ An item-level `VertexCoordinates` read returns the laid-out coordinate, so
 Woxi answers from its own `GraphEmbedding` — the values diverge because the
 layout differs.
 
+### `"PlanarEmbedding"` coordinates
+
+`GraphLayout -> "PlanarEmbedding"` and `GraphEmbedding[g, "PlanarEmbedding"]`
+give a crossing-free straight-line drawing in both, but not the same one. WL
+places the vertices on an integer grid (`ImportString["Fxo[g", "Graph6"]`
+spans `{0..6} × {0..6}`, a triangle `{0,0}, {6,0}, {0,6}` outside), the shape
+of a canonical-ordering grid drawing whose exact variant is not known. Woxi
+puts the largest face of a Demoucron–Malgrange–Pertuiset embedding on a
+regular polygon and every other vertex at the barycenter of its neighbors
+(Tutte), so the points are reals in `[-1, 1]`. A graph that is not
+biconnected falls back to the default layout.
+
 ### Multi-entry rule lists inside a graph option
 
 WL scrambles the order of a multi-entry rule list inside an option

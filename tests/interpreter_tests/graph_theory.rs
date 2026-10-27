@@ -5109,6 +5109,54 @@ mod planar_graph_q {
   }
 }
 
+mod planar_embedding_layout {
+  use super::*;
+
+  // Counts the pairs of edges (without a shared vertex) that properly cross
+  // in `GraphEmbedding[g]`, plus whether all points are distinct.
+  const CROSSINGS: &str = r#"
+    cross[{p1_, p2_}, {q1_, q2_}] := Module[{d = Function[{a, b, c},
+        (b[[1]] - a[[1]]) (c[[2]] - a[[2]]) - (b[[2]] - a[[2]]) (c[[1]] - a[[1]])]},
+      If[Length[Intersection[{p1, p2}, {q1, q2}]] > 0, False,
+        d[p1, p2, q1] d[p1, p2, q2] < -1*^-12 && d[q1, q2, p1] d[q1, q2, p2] < -1*^-12]];
+    check[g_] := Module[{c = GraphEmbedding[g], vl = VertexList[g], es},
+      es = (c[[Position[vl, #][[1, 1]]]] & /@ {#[[1]], #[[2]]}) & /@ EdgeList[g];
+      {Count[Subsets[es, {2}], s_ /; cross @@ s],
+       Length[DeleteDuplicates[c]] == Length[c]}];
+    planar[g_] := Graph[VertexList[g], EdgeList[g], GraphLayout -> "PlanarEmbedding"];
+  "#;
+
+  #[test]
+  fn polyhedral_and_biconnected_graphs_draw_without_crossings() {
+    // A polyhedral graph from the SchlegelDiagrams Demonstration, then
+    // graphs that are 3-connected and ones that are only biconnected
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        r#"{CROSSINGS} check[planar[#]] & /@ {{ImportString["Fxo[g", "Graph6"],
+          GraphData["CubicalGraph"], GraphData["OctahedralGraph"], CycleGraph[6],
+          GridGraph[{{3, 4}}], CompleteGraph[4], WheelGraph[7]}}"#
+      ))
+      .unwrap(),
+      "{{0, True}, {0, True}, {0, True}, {0, True}, {0, True}, {0, True}, {0, True}}"
+    );
+  }
+
+  #[test]
+  fn method_argument_and_coordinates() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        r#"{CROSSINGS} {{check[GraphData["CubicalGraph"]][[1]] >= 0,
+          Length[GraphEmbedding[CycleGraph[5], "PlanarEmbedding"]],
+          Max[Abs[Flatten[GraphEmbedding[planar[WheelGraph[6]]]]]] <= 1}}"#
+      ))
+      .unwrap(),
+      "{True, 5, True}"
+    );
+  }
+}
+
 mod graph_metrics {
   use super::*;
 
