@@ -5832,6 +5832,38 @@ mod high_level_functions {
       );
     }
 
+    // A named graph family takes trailing Graph options.
+    #[test]
+    fn test_graph_families_accept_graph_options() {
+      for (input, edges) in [
+        ("StarGraph[4, ImageSize -> 300]", "{1 -> 2, 1 -> 3, 1 -> 4}"),
+        ("PathGraph[{1, 2, 3}, ImageSize -> 300]", "{1 -> 2, 2 -> 3}"),
+        (
+          "CycleGraph[3, ImageSize -> 300]",
+          "{1 -> 2, 1 -> 3, 2 -> 3}",
+        ),
+        (
+          "CompleteGraph[3, ImageSize -> 300]",
+          "{1 -> 2, 1 -> 3, 2 -> 3}",
+        ),
+        (
+          "TuranGraph[4, 2, ImageSize -> 300]",
+          "{1 -> 3, 1 -> 4, 2 -> 3, 2 -> 4}",
+        ),
+      ] {
+        assert_eq!(
+          interpret(&format!("EdgeRules[{input}]")).unwrap(),
+          edges,
+          "{input}"
+        );
+        assert_eq!(
+          interpret(&format!("Options[{input}, ImageSize]")).unwrap(),
+          "{ImageSize -> 300}",
+          "{input}"
+        );
+      }
+    }
+
     // Trailing graph options are forwarded to the Graph, and trees are
     // drawn in layers with the labels placed where `Placed` asks.
     #[test]

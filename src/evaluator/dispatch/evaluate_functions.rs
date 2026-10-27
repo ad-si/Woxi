@@ -3930,6 +3930,54 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
+  // A named graph family with trailing options (`StarGraph[5, ImageSize ->
+  // 300]`) is the graph its other arguments build, carrying the options.
+  // (KaryTree, CompleteKaryTree, HararyGraph, HypercubeGraph and
+  // PetersenGraph read their options themselves: they shape the layout.)
+  if matches!(
+    name,
+    "CompleteGraph"
+      | "CycleGraph"
+      | "GridGraph"
+      | "TorusGraph"
+      | "StarGraph"
+      | "WheelGraph"
+      | "CirculantGraph"
+      | "TuranGraph"
+      | "DeBruijnGraph"
+      | "ButterflyGraph"
+      | "KnightTourGraph"
+      | "PathGraph"
+  ) && let Some(first_option) = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    && first_option > 0
+    && args[first_option..]
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    let graph = evaluate_function_call_ast(name, &args[..first_option])?;
+    let Expr::FunctionCall {
+      name: graph_head,
+      args: graph_args,
+    } = &graph
+    else {
+      return Ok(unevaluated(name, args));
+    };
+    if graph_head != "Graph" || !(2..=3).contains(&graph_args.len()) {
+      return Ok(unevaluated(name, args));
+    }
+    let mut options: Vec<Expr> = match graph_args.get(2) {
+      Some(Expr::List(own)) => own.to_vec(),
+      Some(_) => return Ok(unevaluated(name, args)),
+      None => Vec::new(),
+    };
+    options.extend(args[first_option..].iter().cloned());
+    let mut new_args = vec![graph_args[0].clone(), graph_args[1].clone()];
+    new_args.extend(options);
+    return Ok(call("Graph", new_args));
+  }
+
   // RelationGraph[f, {v1, ..., vn}, opts...] → Graph whose edge i->j exists
   // whenever f[vi, vj] evaluates to True. The graph is undirected when the
   // relation is symmetric over every pair (f[vi,vj] == f[vj,vi]), otherwise
@@ -4006,7 +4054,7 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
-  // CompleteGraph[n, opts...] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}, {opts}]
+  // CompleteGraph[n] → Graph[{1,...,n}, {UndirectedEdge[i,j] for all i<j}]
   if name == "CompleteGraph" && !args.is_empty() {
     if let Expr::Integer(n) = &args[0] {
       let n = *n as usize;
@@ -4021,19 +4069,10 @@ fn evaluate_function_call_ast_inner(
           ));
         }
       }
-      // Collect any trailing Rule options into a {opts} list as Graph's
-      // third argument, matching wolframscript's representation.
-      let opts: Vec<Expr> = args[1..]
-        .iter()
-        .filter(|a| matches!(a, Expr::Rule { .. }))
-        .cloned()
-        .collect();
-      let mut graph_args =
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
-      if !opts.is_empty() {
-        graph_args.push(Expr::List(opts.into()));
-      }
-      return Ok(call("Graph", graph_args));
+      return Ok(call(
+        "Graph",
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      ));
     }
     // CompleteGraph[{n1, ..., nk}] → complete k-partite graph: vertices
     // partitioned into groups of the given sizes, with an edge between every
@@ -4118,17 +4157,10 @@ fn evaluate_function_call_ast_inner(
           )
         })
         .collect();
-      let opts: Vec<Expr> = args[1..]
-        .iter()
-        .filter(|a| matches!(a, Expr::Rule { .. }))
-        .cloned()
-        .collect();
-      let mut graph_args =
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())];
-      if !opts.is_empty() {
-        graph_args.push(Expr::List(opts.into()));
-      }
-      return Ok(call("Graph", graph_args));
+      return Ok(call(
+        "Graph",
+        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      ));
     }
   }
 
