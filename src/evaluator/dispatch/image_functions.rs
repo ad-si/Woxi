@@ -310,8 +310,32 @@ fn import_format_name(name: &str) -> Option<&'static str> {
     "PBM" => "pbm",
     "PNM" => "pnm",
     "Text" | "String" | "Plaintext" => "txt",
+    "Graph6" => "g6",
     _ => return None,
   })
+}
+
+/// `Import` of a Graph6 file: its text read the way `ImportString[text,
+/// {"Graph6", element}]` reads it. `spec` is Import's second argument, if
+/// any — the format, an element, or `{"Graph6", element}`. `None` when the
+/// file cannot be read, leaving the usual missing-file handling to run.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_graph6_file(
+  path: &str,
+  spec: Option<&Expr>,
+) -> Option<Result<Expr, InterpreterError>> {
+  let content = std::fs::read_to_string(path).ok()?;
+  let element = match spec {
+    Some(Expr::String(s)) if s != "Graph6" => Some(Expr::String(s.clone())),
+    Some(Expr::List(items)) if items.len() == 2 => Some(items[1].clone()),
+    _ => None,
+  };
+  let mut format = vec![str_expr("Graph6")];
+  format.extend(element);
+  dispatch_image_functions(
+    "ImportString",
+    &[Expr::String(content), Expr::List(format.into())],
+  )
 }
 
 /// The format an `Import` spec names, for the `"FMT"` and `{"FMT", elem…}`
@@ -1565,6 +1589,14 @@ pub fn dispatch_image_functions(
         return Some(import_virtual(&path, None));
       }
 
+      #[cfg(not(target_arch = "wasm32"))]
+      if ext == "g6"
+        && !is_url
+        && let Some(result) = import_graph6_file(&path, None)
+      {
+        return Some(result);
+      }
+
       if ext == "pdf" && !is_url {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1758,6 +1790,14 @@ pub fn dispatch_image_functions(
       // extension would otherwise have dispatched to.
       let ext = import_spec_format(&args[1])
         .map_or_else(|| file_ext.clone(), ToString::to_string);
+
+      #[cfg(not(target_arch = "wasm32"))]
+      if ext == "g6"
+        && !is_url
+        && let Some(result) = import_graph6_file(&path, Some(&args[1]))
+      {
+        return Some(result);
+      }
 
       // In the browser every non-URL path is served from the
       // host-registered virtual file store.
@@ -2350,28 +2390,96 @@ pub fn dispatch_image_functions(
 
       // `Graph6` stores graphs as printable-ASCII adjacency bit vectors.
       if format == "Graph6" {
-        if requested_element.as_deref() == Some("EdgeRules")
-          && let Some(graphs) = crate::functions::graph::decode_graph6(&content)
-        {
-          let per_graph = graphs
-            .into_iter()
-            .map(|(_, edges)| {
+        const GRAPH6_ELEMENTS: &[&str] = &[
+          "AdjacencyMatrix",
+          "EdgeRules",
+          "Graph",
+          "Graphics",
+          "GraphicsList",
+          "GraphList",
+          "Summary",
+          "VertexCount",
+          "VertexList",
+        ];
+        let element = requested_element.as_deref().unwrap_or("Graph");
+        if element == "Elements" {
+          return Some(Ok(Expr::List(
+            GRAPH6_ELEMENTS.iter().map(|n| str_expr(n)).collect(),
+          )));
+        }
+        if !GRAPH6_ELEMENTS.contains(&element) {
+          return unknown_element(element, "Graph6");
+        }
+        let Some(mut graphs) = crate::functions::graph::decode_graph6(&content)
+        else {
+          crate::emit_message(
+            "Import::fmterr: Cannot import data as Graph6 format.",
+          );
+          return Some(Ok(fail_expr()));
+        };
+        // Edges are listed in lexicographic order of their vertex pairs,
+        // not in the column order the bit vector stores them in.
+        for (_, edges) in &mut graphs {
+          for edge in edges.iter_mut() {
+            *edge = (edge.0.min(edge.1), edge.0.max(edge.1));
+          }
+          edges.sort_unstable();
+        }
+        let int = |v: usize| Expr::Integer(v as i128);
+        let vertices = |n: usize| Expr::List((1..=n).map(int).collect());
+        let graph = |n: usize, edges: &[(usize, usize)]| {
+          crate::evaluator::evaluate_function_call_ast(
+            "Graph",
+            &[
+              vertices(n),
               Expr::List(
                 edges
-                  .into_iter()
-                  .map(|(a, b)| {
-                    rule_expr(
-                      Expr::Integer(a as i128),
-                      Expr::Integer(b as i128),
-                    )
-                  })
+                  .iter()
+                  .map(|&(a, b)| call("UndirectedEdge", vec![int(a), int(b)]))
                   .collect(),
-              )
-            })
-            .collect::<Vec<_>>();
-          return Some(Ok(Expr::List(per_graph.into())));
-        }
-        return Some(Ok(unevaluated("ImportString", args)));
+              ),
+            ],
+          )
+        };
+        let per_graph: Result<Vec<Expr>, InterpreterError> = graphs
+          .iter()
+          .map(|(n, edges)| match element {
+            "EdgeRules" => Ok(Expr::List(
+              edges
+                .iter()
+                .map(|&(a, b)| rule_expr(int(a), int(b)))
+                .collect(),
+            )),
+            "VertexCount" => Ok(int(*n)),
+            "VertexList" => Ok(vertices(*n)),
+            "AdjacencyMatrix" => {
+              let mut rows = vec![vec![Expr::Integer(0); *n]; *n];
+              for &(a, b) in edges {
+                rows[a - 1][b - 1] = Expr::Integer(1);
+                rows[b - 1][a - 1] = Expr::Integer(1);
+              }
+              Ok(Expr::List(
+                rows.into_iter().map(|r| Expr::List(r.into())).collect(),
+              ))
+            }
+            _ => graph(*n, edges),
+          })
+          .collect();
+        let per_graph = match per_graph {
+          Ok(list) => list,
+          Err(e) => return Some(Err(e)),
+        };
+        return Some(Ok(match element {
+          // The drawings are not produced; leave the request as written.
+          "Graphics" | "GraphicsList" | "Summary" => {
+            unevaluated("ImportString", args)
+          }
+          // A single graph comes back on its own, several as a list.
+          "Graph" if per_graph.len() == 1 => {
+            per_graph.into_iter().next().unwrap()
+          }
+          _ => Expr::List(per_graph.into()),
+        }));
       }
 
       if format != "CSV" {

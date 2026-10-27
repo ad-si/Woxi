@@ -6007,6 +6007,66 @@ mod import_string {
       interpret(r#"ImportString["Cr\nB?", {"Graph6", "EdgeRules"}]"#).unwrap(),
       "{{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4}, {}}"
     );
+    // Edges are sorted by vertex pair, not listed in bit-vector order
+    assert_eq!(
+      interpret(r#"ImportString["Fxo[g", {"Graph6", "EdgeRules"}]"#).unwrap(),
+      "{{1 -> 2, 1 -> 3, 1 -> 5, 1 -> 7, 2 -> 3, 2 -> 5, 3 -> 4, 4 -> 6, 4 -> 7, 5 -> 6, 6 -> 7}}"
+    );
+  }
+
+  #[test]
+  fn import_string_graph6_elements() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"g = ImportString["D^s", "Graph6"]; {Head[g], VertexList[g], EdgeList[g]}"#
+      )
+      .unwrap(),
+      "{Graph, {1, 2, 3, 4, 5}, {1 \u{f3d4} 3, 1 \u{f3d4} 4, 1 \u{f3d4} 5, 2 \u{f3d4} 3, 2 \u{f3d4} 4, 2 \u{f3d4} 5, 3 \u{f3d4} 4, 4 \u{f3d4} 5}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ImportString["D^s\nC~", {"Graph6", #}] & /@ {"VertexCount", "VertexList", "AdjacencyMatrix"}"#
+      )
+      .unwrap(),
+      "{{5, 4}, {{1, 2, 3, 4, 5}, {1, 2, 3, 4}}, {{{0, 0, 1, 1, 1}, {0, 0, 1, 1, 1}, {1, 1, 0, 1, 0}, {1, 1, 1, 0, 1}, {1, 1, 0, 1, 0}}, {{0, 1, 1, 1}, {1, 0, 1, 1}, {1, 1, 0, 1}, {1, 1, 1, 0}}}}"
+    );
+    assert_eq!(
+      interpret(r#"{Head /@ ImportString["D^s\nC~", "Graph6"], Head /@ ImportString["D^s", {"Graph6", "GraphList"}]}"#)
+        .unwrap(),
+      "{{Graph, Graph}, {Graph}}"
+    );
+  }
+
+  #[test]
+  fn import_string_graph6_invalid_data() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      r#"ImportString["D?", {"Graph6", "EdgeRules"}]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert_eq!(
+      result.warnings,
+      vec!["Import::fmterr: Cannot import data as Graph6 format."]
+    );
+  }
+
+  #[test]
+  fn import_graph6_file() {
+    clear_state();
+    let dir = std::env::temp_dir().join("woxi_graph6_import_test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("a.g6");
+    std::fs::write(&path, "Fxo[g\n").unwrap();
+    let p = path.to_str().unwrap();
+    assert_eq!(
+      interpret(&format!(
+        r#"{{Head[Import["{p}"]], Import["{p}", {{"Graph6", "VertexCount"}}], Length[Import["{p}", "EdgeRules"][[1]]]}}"#
+      ))
+      .unwrap(),
+      "{Graph, {7}, 11}"
+    );
   }
 
   #[test]
