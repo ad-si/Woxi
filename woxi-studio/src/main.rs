@@ -28474,8 +28474,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       )
     })
     .expect("the run-length helpers must evaluate");
+    // The draws are Woxi's own seeded sequence (not wolframscript's); since
+    // the rand 0.10 upgrade, seed 5 holds a run of five losses.
     assert_eq!(
-      stats.result, "{15, 15, 5, 3}",
+      stats.result, "{15, 15, 5, 5}",
       "wins, losses, longest win streak, longest loss streak"
     );
   }
