@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- The JupyterLite kernel extension now targets JupyterLite 0.8. It was built
+    against the 0.5 plugin API (`@jupyterlite/server`), which current
+    JupyterLite releases no longer provide.
+- Python: `evaluate_expr` crashed the interpreter with a segmentation fault on
+    trees nested a few thousand levels deep in unoptimised builds, instead of
+    converting them or raising `RecursionError` past the 5000-level limit.
+- Rust, npm, Nix and GitHub Actions dependencies were upgraded to their
+    latest versions (rand 0.10, jupyter-protocol 2, runtimelib 3, zeromq 0.6,
+    rustyline 19, pyo3 0.30, criterion 0.8, CodeMirror 6.x, …). resvg stays
+    on 0.45 and num-bigint on 0.4 until svg2pdf/iced and num-prime/pyo3 move.
 - A `Manipulate` control written `{u, colour}` — a colour as the initial
     value, with no range or choice list — was baked into the body as a fixed
     constant, so its swatch never appeared in the control panel. It now

@@ -8,7 +8,7 @@
     "jsx": "react",
     "lib": ["ES2020", "DOM"],
     "module": "ES2020",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmitOnError": true,
     "noUnusedLocals": true,
     "outDir": "lib",

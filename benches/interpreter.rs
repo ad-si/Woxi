@@ -4,7 +4,8 @@
 //! `script_build_summary` bench ties the micro-benchmarks back to a real
 //! end-to-end workload.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Duration;
 

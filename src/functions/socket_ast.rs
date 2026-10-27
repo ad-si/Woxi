@@ -734,7 +734,7 @@ fn socket_listen(args: &[Expr]) -> Expr {
   // so nothing can depend on the order listeners were created in.
   let id = {
     let mut bytes = [0u8; 8];
-    crate::with_rng(|rng| rand::RngCore::fill_bytes(rng, &mut bytes));
+    crate::with_rng(|rng| rand::Rng::fill_bytes(rng, &mut bytes));
     i128::from(u64::from_be_bytes(bytes) >> 1)
   };
   let stop = Arc::new(AtomicBool::new(false));
@@ -918,8 +918,10 @@ thread_local! {
 fn uuid_for_accepted() -> String {
   let mut bytes = [0u8; 16];
   {
-    use rand::RngCore;
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    use rand::TryRng;
+    rand::rngs::SysRng
+      .try_fill_bytes(&mut bytes)
+      .expect("operating system randomness unavailable");
   }
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;

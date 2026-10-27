@@ -1989,7 +1989,7 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(format!(
@@ -2047,8 +2047,8 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut out = data.as_ref().clone();
       crate::with_rng(|rng| {
         for pixel in out.chunks_mut(ch) {
-          if rng.gen_range(0.0..1.0) < density {
-            let value = if rng.gen_range(0.0..1.0) < 0.5 {
+          if rng.random_range(0.0..1.0) < density {
+            let value = if rng.random_range(0.0..1.0) < 0.5 {
               0.0
             } else {
               1.0
@@ -2088,7 +2088,7 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::with_rng(|rng| {
         for pixel in out.chunks_mut(ch) {
           for channel in pixel.iter_mut().take(color_channels) {
-            *channel += rng.gen_range(-amplitude.abs()..=amplitude.abs());
+            *channel += rng.random_range(-amplitude.abs()..=amplitude.abs());
           }
         }
       });
@@ -5587,11 +5587,13 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (150u32, 150u32)
   };
 
-  use rand::Rng;
+  use rand::RngExt;
   let channels = 1u8; // Grayscale by default (matches Wolfram)
   let len = (w as usize) * (h as usize) * (channels as usize);
   let data: Vec<f64> = crate::with_rng(|rng| {
-    (0..len).map(|_| rng.gen_range(min_val..max_val)).collect()
+    (0..len)
+      .map(|_| rng.random_range(min_val..max_val))
+      .collect()
   });
 
   Ok(Expr::Image {

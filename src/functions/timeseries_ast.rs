@@ -689,9 +689,9 @@ fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
     })
     .collect::<Option<_>>()?;
   let draw = |w: &[f64]| -> usize {
-    use rand::Rng;
+    use rand::RngExt;
     let total: f64 = w.iter().sum();
-    let mut r = crate::with_rng(|rng| rng.gen_range(0.0..total));
+    let mut r = crate::with_rng(|rng| rng.random_range(0.0..total));
     for (k, wk) in w.iter().enumerate() {
       if r < *wk {
         return k;

@@ -26,7 +26,10 @@ use woxi::syntax::Expr as WExpr;
 
 /// Deepest expression tree that converts in either direction. Deep enough
 /// for anything a real evaluation produces, shallow enough that the native
-/// frames cannot overflow the stack.
+/// frames cannot overflow the stack. The recursive conversions push their
+/// children with plain loops rather than `collect()`: the iterator adapters
+/// add a dozen frames per level, which in an unoptimised build overflowed
+/// the 8 MiB main-thread stack before this limit was reached.
 const MAX_DEPTH: usize = 5000;
 
 fn too_deep() -> PyErr {
@@ -245,10 +248,10 @@ fn composite_obj(
   children: &[WExpr],
   depth: usize,
 ) -> PyResult<Py<PyAny>> {
-  let args = children
-    .iter()
-    .map(|c| expr_to_py_at(py, c, depth + 1))
-    .collect::<PyResult<Vec<_>>>()?;
+  let mut args = Vec::with_capacity(children.len());
+  for c in children {
+    args.push(expr_to_py_at(py, c, depth + 1)?);
+  }
   Ok(
     Bound::new(
       py,
@@ -300,11 +303,11 @@ fn expr_to_py_at(
     // A Wolfram list is a Python list. `Expr(Symbol("List"), […])` is
     // accepted on the way back in, so this round-trips.
     WExpr::List(items) => {
-      let items = items
-        .iter()
-        .map(|i| expr_to_py_at(py, i, depth + 1))
-        .collect::<PyResult<Vec<_>>>()?;
-      PyList::new(py, items)?.into_any().unbind()
+      let mut converted = Vec::with_capacity(items.len());
+      for i in items.iter() {
+        converted.push(expr_to_py_at(py, i, depth + 1)?);
+      }
+      PyList::new(py, converted)?.into_any().unbind()
     }
     // Heads that are themselves expressions. `decompose_expr` flattens
     // these to a rendered string, which loses the head's structure.
@@ -405,10 +408,10 @@ fn py_to_expr_at(obj: &Bound<'_, PyAny>, depth: usize) -> PyResult<WExpr> {
     return Ok(WExpr::String(s.extract::<String>()?));
   }
   if obj.cast::<PyList>().is_ok() || obj.cast::<PyTuple>().is_ok() {
-    let items = obj
-      .try_iter()?
-      .map(|i| py_to_expr_at(&i?, depth + 1))
-      .collect::<PyResult<Vec<_>>>()?;
+    let mut items = Vec::new();
+    for i in obj.try_iter()? {
+      items.push(py_to_expr_at(&i?, depth + 1)?);
+    }
     return Ok(WExpr::List(items.into()));
   }
   // The remaining cases are what `to_python()` produces, so its output can
@@ -450,12 +453,11 @@ fn expr_node_to_expr(
   py: Python<'_>,
   depth: usize,
 ) -> PyResult<WExpr> {
-  let args = node
-    .args
-    .bind(py)
-    .iter()
-    .map(|a| py_to_expr_at(&a, depth + 1))
-    .collect::<PyResult<Vec<_>>>()?;
+  let node_args = node.args.bind(py);
+  let mut args = Vec::with_capacity(node_args.len());
+  for a in node_args.iter() {
+    args.push(py_to_expr_at(&a, depth + 1)?);
+  }
   let head = node.head.bind(py);
   // A symbolic head is an ordinary function call; anything else — a curried
   // head like `f[a][b]` — keeps its structure.

@@ -8,13 +8,13 @@ repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
 woxi = { path = ".." }
-base64 = "0.22"
+base64 = "0.23"
 iced = { version = "0.14", features = ["tokio", "svg", "image", "advanced"] }
 resvg = "0.45"
 tiny-skia = "0.11"
-dark-light = "2"
+dark-light = "3"
 svg2pdf = { version = "0.13", default-features = false, features = ["text"] }
-rfd = "0.15"
+rfd = "0.17"
 tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

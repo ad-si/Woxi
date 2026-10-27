@@ -7,5 +7,5 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
-pest = "2.5"
-pest_derive = "2.5"
+pest = "2.9"
+pest_derive = "2.9"

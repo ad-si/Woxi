@@ -8,11 +8,11 @@ readme = "README.md"
 repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
-num-bigint = "0.4.6"
+num-bigint = "0.4.8"
 num-traits = "0.2.19"
 
 [dev-dependencies]
-criterion = { version = "0.5", default-features = false }
+criterion = { version = "0.8", default-features = false }
 proptest = "1"
 
 [[bench]]

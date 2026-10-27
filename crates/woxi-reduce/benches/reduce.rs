@@ -1,5 +1,6 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use num_bigint::BigInt;
+use std::hint::black_box;
 use woxi_reduce::presburger;
 use woxi_reduce::rational_qe;
 use woxi_reduce::{

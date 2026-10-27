@@ -41,7 +41,7 @@
           # builds outside this dev shell (Homebrew, plain checkouts) fall
           # back to the system linker instead of failing on a missing lld.
           # Scoped to the host triple so wasm builds are unaffected.
-          env = pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          env = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS = "-C link-arg=-fuse-ld=lld";
           };
         };

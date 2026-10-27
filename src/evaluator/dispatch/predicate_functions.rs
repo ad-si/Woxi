@@ -543,7 +543,7 @@ pub fn dispatch_predicate_functions(
         }
       };
       let mut bytes = [0u8; 16];
-      crate::with_rng(|rng| rand::RngCore::fill_bytes(rng, &mut bytes));
+      crate::with_rng(|rng| rand::Rng::fill_bytes(rng, &mut bytes));
       // Version 4, variant 1 — the bits RFC 4122 fixes for random UUIDs.
       bytes[6] = (bytes[6] & 0x0f) | 0x40;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;

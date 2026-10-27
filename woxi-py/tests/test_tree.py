@@ -28,7 +28,7 @@ def full_form(value) -> str:
     if isinstance(value, Symbol):
         return value.name
     if isinstance(value, str):
-        return f'\\"{value}\\"'
+        return f'"{value}"'
     if isinstance(value, float):
         # FullForm marks machine reals with a trailing backtick and drops
         # the trailing zero of an integral value.
@@ -271,6 +271,26 @@ class TestPythonToExpr:
             deep = wl.f(deep)
         with pytest.raises(RecursionError):
             woxi.evaluate_expr(deep)
+
+    def test_converts_tree_just_inside_depth_limit(self):
+        # Regression: the native conversion used to overflow the stack in
+        # unoptimised builds well before reaching its 5000-level limit.
+        deep = Symbol("x")
+        for _ in range(4990):
+            deep = wl.f(deep)
+        # Hold keeps the body unevaluated, so the same tree converts back.
+        # Walk it iteratively: comparing with `==` would recurse in Python.
+        node = woxi.evaluate_expr(wl.Hold(deep)).expr.args[0]
+        levels = 0
+        while isinstance(node, Expr):
+            assert node.head == Symbol("f")
+            node, levels = node.args[0], levels + 1
+        assert (node, levels) == (Symbol("x"), 4990)
+
+    def test_deep_result_converts_up_to_depth_limit(self):
+        assert isinstance(woxi.evaluate("Nest[f, x, 4999]").expr, Expr)
+        with pytest.raises(RecursionError):
+            woxi.evaluate("Nest[f, x, 5001]").expr
 
 
 class TestParseExpr:

@@ -204,14 +204,14 @@ pub fn restore_rng_state(state: Option<ChaCha8Rng>) {
 /// Uses the seeded RNG if set, otherwise falls back to thread_rng().
 pub fn with_rng<F, R>(f: F) -> R
 where
-  F: FnOnce(&mut dyn rand::RngCore) -> R,
+  F: FnOnce(&mut dyn rand::Rng) -> R,
 {
   SEEDED_RNG.with(|cell| {
     let mut borrow = cell.borrow_mut();
     if let Some(ref mut seeded) = *borrow {
       f(seeded)
     } else {
-      f(&mut rand::thread_rng())
+      f(&mut rand::rng())
     }
   })
 }

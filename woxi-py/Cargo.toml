@@ -23,8 +23,8 @@ woxi = { path = "..", default-features = false }
 # CPython >= 3.10 instead of one wheel per Python minor version.
 # num-bigint converts Woxi's arbitrary-precision integers to Python `int`
 # exactly, rather than round-tripping them through a decimal string.
-pyo3 = { version = "0.27", features = ["abi3-py310", "num-bigint"] }
-num-bigint = "0.4.6"
+pyo3 = { version = "0.30", features = ["abi3-py310", "num-bigint"] }
+num-bigint = "0.4.8"
 
 [features]
 # Enabled by maturin (see pyproject.toml). Kept behind a feature so plain

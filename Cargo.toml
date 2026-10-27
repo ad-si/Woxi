@@ -81,7 +81,7 @@ cli = [
   "dep:uuid",
   "dep:zeromq",
 ]
-wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:console_error_panic_hook", "dep:js-sys"]
+wasm = ["dep:wasm-bindgen", "dep:getrandom", "dep:getrandom_02", "dep:console_error_panic_hook", "dep:js-sys"]
 # Compiles in the tests that are excluded from the normal test run: the
 # heavy RosettaCode script snapshots (`slow_script_test!`) and the tests
 # that query the live wikidata.org API. Without this feature they don't
@@ -198,20 +198,21 @@ items_after_statements = "allow"
 wildcard_imports = "allow"
 
 [dependencies]
-anyhow = "1.0.98"
-clap = { version = "4.3", features = ["derive"], optional = true }
-dirs = { version = "6.0.0", optional = true }
+anyhow = "1.0.104"
+clap = { version = "4.6", features = ["derive"], optional = true }
+dirs = { version = "7.0.0", optional = true }
 env_logger = { version = "0.11", optional = true }
-getrandom = { version = "0.2", features = ["js"], optional = true }
+# Not used directly: they select the browser entropy source on
+# wasm32-unknown-unknown, for rand 0.10 (getrandom 0.4) and for the
+# transitive rand 0.8 users astro-float and num-prime (getrandom 0.2).
+getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"], optional = true }
 log = { version = "0.4", optional = true }
-jupyter-protocol = { version = "1.2", optional = true }
-# The git rev carries a wasm32 word-size overflow fix that is not in any
-# crates.io release yet. The version is only used for the published crate
-# (cargo strips the git spec), where the bug is irrelevant: the wasm build
-# is always made from this repo and keeps the pinned rev.
-astro-float = { version = "0.9.5", git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }
-base64 = "0.22"
-flate2 = "1.0"
+jupyter-protocol = { version = "2.0", optional = true }
+# >= 0.9.6 carries the wasm32 word-size overflow fix.
+astro-float = "0.9.6"
+base64 = "0.23"
+flate2 = "1.1"
 # Pure-Rust OpenType parser (wasm-compatible), used to extract Leland (SMuFL)
 # music-glyph outlines as self-contained SVG paths. Matches the version resvg
 # already pulls in so no duplicate copy is linked.
@@ -222,56 +223,58 @@ geographiclib-rs = "0.2"
 # and MSVC, which flips 8-bit color rounding at .5 boundaries and moves the
 # last digit of a position, so the snapshots break across platforms.
 libm = "0.2"
-num-bigint = "0.4.6"
-num-prime = "0.5"
+# Stays on 0.4 while num-prime and pyo3's `num-bigint` feature (woxi-py)
+# do; a 0.5 BigInt would not interoperate with theirs.
+num-bigint = "0.4.8"
+num-prime = "0.7"
 plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "area_series"] }
 num-traits = "0.2.19"
 # Fast non-cryptographic hashing for the interpreter's hot symbol tables
 # (built-in names, attributes), already in the dependency graph.
 rustc-hash = "2"
 woxi-reduce = { version = "0.1.0", path = "crates/woxi-reduce" }
-pest = "2.5"
+pest = "2.9"
 # The pest grammar and its generated parser (`WolframParser`, `Rule`), kept
 # in a separate crate so `pest_derive` doesn't rerun on every rebuild.
 woxi-parser = { version = "0.1.0", path = "crates/woxi-parser" }
 petgraph = "0.8.3"
-rand = "0.8"
-runtimelib = { version = "1.3", features = ["tokio-runtime"], optional = true }
-rustyline = { version = "15", optional = true }
+rand = "0.10"
+runtimelib = { version = "3.0", features = ["tokio-runtime"], optional = true }
+rustyline = { version = "19", optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 snailquote = "0.3.1"
-thiserror = "1.0.63"
-tokio = { version = "1.45.0", features = ["full"], optional = true }
-uuid = { version = "1.16.0", features = ["v4"], optional = true }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["full"], optional = true }
+uuid = { version = "1.29.0", features = ["v4"], optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 js-sys = { version = "0.3", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
-zeromq = { version = "0.5.0-pre", features = ["tokio-runtime"], default-features = false, optional = true }
-regex = "1.12.3"
+zeromq = { version = "0.6.0", features = ["tokio-runtime"], default-features = false, optional = true }
+regex = "1.13.1"
 unicode-normalization = "0.1"
 # Drop-in replacement for std::time::{Instant, SystemTime} that works on
 # wasm32-unknown-unknown (uses Performance.now()/Date.now()) instead of
 # panicking. Re-exports std on native targets.
 web-time = "1.1"
-sha2 = "0.10"
-md-5 = "0.10"
-sha1 = "0.10"
-rand_distr = "0.4"
-rand_chacha = "0.3"
+sha2 = "0.11"
+md-5 = "0.11"
+sha1 = "0.11"
+rand_distr = "0.6"
+rand_chacha = "0.10"
 stacker = "0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tiff"] }
 # Persistent / structurally-shared vector for the Prepend hot path.
 # Most lists stay backed by Vec<Expr> (cheap, contiguous slices). Lists
 # that hit `push_front` upgrade to imbl::Vector for O(log N) prepends.
-imbl = "5"
+imbl = "7"
 # LZ4 block decompression for CERN ROOT (.root) file imports. Pure Rust and
 # wasm-compatible; `safe-decode` keeps the decoder free of unsafe code since
 # the input is untrusted file data.
-lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode"] }
-sha3 = "0.10"
-ripemd = "0.1"
-md4 = "0.10"
-fancy-regex = "0.19.0"
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-decode"] }
+sha3 = "0.12"
+ripemd = "0.2"
+md4 = "0.11"
+fancy-regex = "0.20.0"
 
 # Kept on the same resvg minor as svg2pdf 0.13 and iced 0.14 (woxi-studio),
 # so only ONE copy of the resvg/usvg/tiny-skia stack is compiled and linked
@@ -290,13 +293,13 @@ features = ["text"]
 # stream decompression. The page content is interpreted in
 # `functions::pdf_import`.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.lopdf]
-version = "0.44"
+version = "0.46"
 default-features = false
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
-calamine = "0.34"
-rust_xlsxwriter = { version = "0.94", default-features = false }
+calamine = "0.37"
+rust_xlsxwriter = { version = "0.101", default-features = false }
 # All chrono call sites are `#[cfg(not(target_arch = "wasm32"))]`, not
 # cli-gated, so chrono must be available whenever the library itself is
 # built for a native target (e.g. the woxi-py Python extension, which
@@ -313,19 +316,17 @@ chrono-tz = "0.10"
 # builds share one set of artifacts. Check with:
 # `cargo build -Zunstable-options --unit-graph [--tests]` (RUSTC_BOOTSTRAP=1).
 aho-corasick = "1"
-bit-set = "0.8"
-bit-vec = "0.8"
+bitflags = { version = "2", features = ["std"] }
 either = { version = "1", features = ["use_std"] }
-itertools = "0.10"
 serde = { version = "1", features = ["alloc"] }
 
 [dev-dependencies]
-base64 = "0.22"
-num-bigint = "0.4.6"
+base64 = "0.23"
+num-bigint = "0.4.8"
 insta = { version = "1", features = ["glob"] }
 proptest = "1"
 image = { version = "0.25", default-features = false, features = ["png", "gif"] }
-criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+criterion = { version = "0.8", default-features = false, features = ["html_reports"] }
 
 [[bench]]
 name = "interpreter"
@@ -358,6 +359,3 @@ overflow-checks = true
 inherits = "release"
 lto = "thin"
 codegen-units = 16
-
-[patch.crates-io]
-astro-float-num = { git = "https://github.com/stencillogic/astro-float", rev = "f92380e025deb8e1743ed93c6d5bf0783ac28717" }

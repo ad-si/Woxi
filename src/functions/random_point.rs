@@ -11,7 +11,7 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::helpers::unevaluated;
 use crate::syntax::{Expr, expr_to_string};
-use rand::Rng;
+use rand::RngExt;
 
 type Point = Vec<f64>;
 
@@ -704,11 +704,11 @@ fn region_sampler(region: &Expr) -> Option<Sampler> {
   }
 }
 
-fn uniform(rng: &mut dyn rand::RngCore) -> f64 {
-  rng.r#gen::<f64>()
+fn uniform(rng: &mut dyn rand::Rng) -> f64 {
+  rng.random::<f64>()
 }
 
-fn gaussian(rng: &mut dyn rand::RngCore) -> f64 {
+fn gaussian(rng: &mut dyn rand::Rng) -> f64 {
   // Box–Muller.
   let u1 = 1.0 - uniform(rng);
   let u2 = uniform(rng);
@@ -762,9 +762,9 @@ fn sample(sampler: &Sampler) -> Option<Point> {
   crate::with_rng(|rng| Some(sample_direct(sampler, rng)))
 }
 
-fn sample_direct(sampler: &Sampler, rng: &mut dyn rand::RngCore) -> Point {
+fn sample_direct(sampler: &Sampler, rng: &mut dyn rand::Rng) -> Point {
   match sampler {
-    Sampler::Points(pts) => pts[rng.gen_range(0..pts.len())].clone(),
+    Sampler::Points(pts) => pts[rng.random_range(0..pts.len())].clone(),
     Sampler::Weighted(parts) => {
       let total: f64 = parts.iter().map(|p| p.0).sum();
       let mut x = uniform(rng) * total;
