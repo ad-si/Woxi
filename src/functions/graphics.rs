@@ -29316,6 +29316,22 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
+    // A bare `VerticalSlider[Dynamic[var], {min, max}, …]` drawn by the body
+    // (a Demonstration's side slider next to its picture) is a live control
+    // writing `var` back, so it moves into the display list as well.
+    Expr::FunctionCall { name, args }
+      if name == "VerticalSlider"
+        && args.len() >= 2
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: dname, args: dargs })
+            if dname == "Dynamic"
+              && matches!(dargs.first(), Some(Expr::Identifier(_)))
+        ) =>
+    {
+      displays.push(crate::syntax::expr_to_source_form(expr));
+      id_expr("Nothing")
+    }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of
     // graphics and captions), distinct from a `Button` given as its own
@@ -36071,6 +36087,8 @@ pub enum DisplayNode {
     current: f64,
     enabled: bool,
     after: Vec<String>,
+    /// `VerticalSlider`: drawn running bottom-to-top.
+    vertical: bool,
   },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
@@ -36281,8 +36299,8 @@ fn display_expr_to_node(
       // `Manipulator[Dynamic[lval], {min, max, step}, …]` / `Slider[…]`
       // written inside a display element: a live slider writing back to
       // `lval`.
-      "Manipulator" | "Slider" if args.len() >= 2 => {
-        match slider_node(args, Vec::new()) {
+      "Manipulator" | "Slider" | "VerticalSlider" if args.len() >= 2 => {
+        match slider_node(args, Vec::new(), name == "VerticalSlider") {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -36321,8 +36339,12 @@ fn display_expr_to_node(
           Expr::FunctionCall {
             name: n,
             args: sargs,
-          } if (n == "Manipulator" || n == "Slider") && sargs.len() >= 2 => {
-            match slider_node(sargs, after) {
+          } if matches!(
+            n.as_str(),
+            "Manipulator" | "Slider" | "VerticalSlider"
+          ) && sargs.len() >= 2 =>
+          {
+            match slider_node(sargs, after, n == "VerticalSlider") {
               Some(node) => node,
               None => static_leaf_node(&args[0], bindings),
             }
@@ -37239,7 +37261,11 @@ fn held_action_statements(action: &Expr) -> Vec<String> {
 /// Bounds are evaluated against the live bindings (the caller has already
 /// released the enclosing `Dynamic`, so they are numbers); a missing step
 /// falls back to a continuous slider.
-fn slider_node(args: &[Expr], after: Vec<String>) -> Option<DisplayNode> {
+fn slider_node(
+  args: &[Expr],
+  after: Vec<String>,
+  vertical: bool,
+) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
       if name == "Dynamic" && !dargs.is_empty() =>
@@ -37283,6 +37309,7 @@ fn slider_node(args: &[Expr], after: Vec<String>) -> Option<DisplayNode> {
     current,
     enabled,
     after,
+    vertical,
   })
 }
 
@@ -37567,13 +37594,14 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       current,
       enabled,
       after,
+      vertical,
     } => {
       let after_json: Vec<String> = after
         .iter()
         .map(|a| format!("\"{}\"", json_escape_manipulate(a)))
         .collect();
       format!(
-        r#"{{"kind":"slider","target":"{}","min":{min},"max":{max},"step":{step},"current":{current},"enabled":{enabled},"after":[{}]}}"#,
+        r#"{{"kind":"slider","target":"{}","min":{min},"max":{max},"step":{step},"current":{current},"enabled":{enabled},"after":[{}],"vertical":{vertical}}}"#,
         json_escape_manipulate(target),
         after_json.join(","),
       )
