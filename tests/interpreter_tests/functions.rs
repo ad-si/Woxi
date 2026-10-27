@@ -3961,6 +3961,35 @@ mod geo_projection {
 mod sound {
   use super::*;
 
+  #[test]
+  fn sampled_sound_function_is_inert() {
+    let result =
+      interpret_with_stdout("SampledSoundFunction[(Sin[#] &), 100, 8000]")
+        .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  #[test]
+  fn sampled_sound_function_in_sound() {
+    assert_eq!(
+      interpret("Sound[SampledSoundFunction[(Sin[#] &), 100, 8000]]").unwrap(),
+      "-Sound-"
+    );
+  }
+
+  #[test]
+  fn inverse_fourier_of_sparse_array() {
+    assert_eq!(
+      interpret("InverseFourier[SparseArray[{2 -> 1. + I, 4 -> 1. - I}, 4]]")
+        .unwrap(),
+      interpret("InverseFourier[{0, 1. + I, 0, 1. - I}]").unwrap()
+    );
+    assert_eq!(
+      interpret("Fourier[SparseArray[{1 -> 1, 3 -> 1}, 4]]").unwrap(),
+      interpret("Fourier[{1, 0, 1, 0}]").unwrap()
+    );
+  }
+
   // A SampledSoundList is inert data, evaluated without any warning (a
   // stored Sound read back with `sounds[[i]]` is evaluated again).
   #[test]
