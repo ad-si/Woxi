@@ -9672,18 +9672,44 @@ mod ndsolve {
   }
 
   #[test]
-  fn ndsolve_boundary_value_problem_requires_conditions_at_the_domain_ends() {
-    // Regression guard: conditions at two points that *aren't* the solved
-    // domain's own endpoints aren't a boundary value problem this solver
-    // understands, and NDSolve should stay unevaluated rather than guess.
-    let result = interpret(
-      "NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[1] == 1}, y, {x, 0, N[Pi]/2}]",
-    )
-    .unwrap();
-    assert!(
-      result.starts_with("NDSolve["),
-      "Expected an unevaluated NDSolve, got {result}"
+  fn ndsolve_boundary_conditions_inside_the_domain() {
+    // Conditions need not sit at the domain's ends: y = Sin[x]/Sin[1]
+    let num = |code: &str| -> f64 { interpret(code).unwrap().parse().unwrap() };
+    let at = |x: f64| {
+      num(&format!(
+        "y[{x}] /. First[NDSolve[{{y''[x] + y[x] == 0, y[0] == 0, y[1] == 1}}, y, {{x, 0, N[Pi]/2}}]]"
+      ))
+    };
+    for x in [0.3, 1.0, 1.5] {
+      assert!((at(x) - x.sin() / 1f64.sin()).abs() < 1e-6, "x = {x}");
+    }
+    // Two interior points of a wider domain (the quantized-oscillator
+    // Demonstration): y = Exp[(1 - x^2)/2]
+    let y0 = num(
+      "y[0.] /. First[NDSolve[{-0.5*y[x] + 0.5*x^2*y[x] - 0.5*y''[x] == 0, y[1.] == 1., y[-1.] == 1.}, y, {x, -5.9, 5.9}]]",
     );
+    assert!((y0 - 0.5f64.exp()).abs() < 1e-6, "{y0}");
+  }
+
+  #[test]
+  fn ndsolve_boundary_conditions_relating_several_values() {
+    // A Robin condition `1 == f[0] - f'[0]` with `f'[1] == 0`: f'' = f'
+    // gives f = 1 (NumericalSolutionOfTheDispersionEquation...)
+    let v: f64 = interpret(
+      "f[z] /. First[NDSolve[{f''[z] == f'[z], f'[1] == 0, 1. == f[0] - f'[0]}, {f[z]}, {z, 0, 1}]] /. z -> 0.5",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!((v - 1.0).abs() < 1e-6, "{v}");
+    // Nonlinear, with a mixed condition at the far end
+    let w: f64 = interpret(
+      "y[0.5] /. First[NDSolve[{y''[x] == y[x]^2, y[0] == 1, y'[1] + y[1] == 2}, y, {x, 0, 1}]]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!((w - 0.9828333528123083).abs() < 1e-6, "{w}");
   }
 
   #[test]

@@ -5034,6 +5034,9 @@ fn ndsolve_system(
   // Conditions whose value refers to another initial value
   // (`PD[0] == 1 - PB[0]`) wait until those values are known.
   let mut pending: Vec<(Expr, String)> = Vec::new();
+  // Conditions that tie several values at one point together, as `(point,
+  // residual)` with each `f^(k)[point]` replaced by its state placeholder.
+  let mut general_conds: Vec<(f64, Expr)> = Vec::new();
   // `f[x0] -> value` for every condition read so far.
   let mut known: Vec<Expr> = Vec::new();
   let record_known = |eq: &Expr, value: f64, known: &mut Vec<Expr>| {
@@ -5061,7 +5064,12 @@ fn ndsolve_system(
       }
     }
     if !is_ic {
-      odes.push(eq.clone());
+      // An equation over the unknowns at one numeric point only
+      // (`y'[1] + y[1] == 2`) is a condition, not an equation to integrate.
+      match general_condition(eq, &funcs, x_name) {
+        Some(cond) => general_conds.push(cond),
+        None => odes.push(eq.clone()),
+      }
     }
   }
   while !pending.is_empty() {
@@ -5108,7 +5116,16 @@ fn ndsolve_system(
       }
     }
     if still.len() == before {
-      return Ok(None);
+      // What is left relates several values at one point (`1 == f[0] -
+      // f'[0]`, a Robin condition): kept as an equation for the
+      // boundary-value solver below.
+      for (eq, _) in &still {
+        match general_condition(eq, &funcs, x_name) {
+          Some(cond) => general_conds.push(cond),
+          None => return Ok(None),
+        }
+      }
+      break;
     }
     pending = still;
   }
@@ -5284,9 +5301,13 @@ fn ndsolve_system(
   // Anything else (three or more distinct points, a coupled system, …)
   // isn't a shape this solver understands.
   let mut distinct_points: Vec<f64> = Vec::new();
-  for (_, _, x_val, _) in &raw_ics {
+  for x_val in raw_ics
+    .iter()
+    .map(|(_, _, x, _)| *x)
+    .chain(general_conds.iter().map(|(x, _)| *x))
+  {
     if !distinct_points.iter().any(|p| (p - x_val).abs() <= 1e-9) {
-      distinct_points.push(*x_val);
+      distinct_points.push(x_val);
     }
   }
   #[derive(Clone, Copy)]
@@ -5294,31 +5315,35 @@ fn ndsolve_system(
     Initial { x0: f64 },
     Boundary { x_lo: f64, x_hi: f64 },
   }
+  let boundary_shape = eliminated.is_empty()
+    && implicit.is_empty()
+    && raw_ics.len() + general_conds.len()
+      == funcs.iter().map(|f| f.order).sum::<usize>()
+    && raw_ics.iter().all(|(name, order, _, _)| {
+      funcs.iter().any(|f| &f.name == name && *order < f.order)
+    });
   let kind = match distinct_points.len() {
-    1 => ProblemKind::Initial {
+    1 if general_conds.is_empty() => ProblemKind::Initial {
       x0: distinct_points[0],
     },
-    2 if eliminated.is_empty()
-      && implicit.is_empty()
-      && raw_ics.len() == funcs.iter().map(|f| f.order).sum::<usize>()
-      && raw_ics.iter().all(|(name, order, _, _)| {
-        funcs.iter().any(|f| &f.name == name && *order < f.order)
-      }) =>
-    {
-      let (mut p0, mut p1) = (distinct_points[0], distinct_points[1]);
-      if p0 > p1 {
-        std::mem::swap(&mut p0, &mut p1);
-      }
+    // Conditions at several points, or relating several values at one: a
+    // boundary value problem, solved by shooting. The points may lie
+    // anywhere in the domain, not only at its ends.
+    n if n >= 1 && boundary_shape => {
       let Some(x_min_given) = x_min_given else {
         return Ok(None);
       };
-      // A two-point boundary value problem states its conditions at the
-      // domain's own endpoints; anything else isn't a shape this solver
-      // understands.
-      if (p0 - x_min_given).abs() > 1e-9 || (p1 - x_max).abs() > 1e-9 {
+      let tol = 1e-9 * (1.0 + x_min_given.abs().max(x_max.abs()));
+      if distinct_points
+        .iter()
+        .any(|p| *p < x_min_given - tol || *p > x_max + tol)
+      {
         return Ok(None);
       }
-      ProblemKind::Boundary { x_lo: p0, x_hi: p1 }
+      ProblemKind::Boundary {
+        x_lo: x_min_given,
+        x_hi: x_max,
+      }
     }
     _ => return Ok(None),
   };
@@ -5763,34 +5788,40 @@ fn ndsolve_system(
       }
     }
     ProblemKind::Boundary { x_lo, x_hi } => {
-      // Each condition fixes one state component, at one end or the other.
+      // Each simple condition fixes one state component at its point; the
+      // general ones are residual equations over the state there.
       let state_index = |name: &str, order: usize| {
         funcs
           .iter()
           .position(|f| f.name == name)
           .map(|fi| state_offset[fi] + order)
       };
-      let mut lo_conds: Vec<(usize, f64)> = Vec::new();
-      let mut hi_conds: Vec<(usize, f64)> = Vec::new();
+      let mut conds: Vec<(f64, BvpCondition)> = Vec::new();
       for (name, order, x_val, val) in &raw_ics {
         let Some(idx) = state_index(name, *order) else {
           return Ok(None);
         };
-        if (x_val - x_lo).abs() <= 1e-9 {
-          lo_conds.push((idx, *val));
-        } else {
-          hi_conds.push((idx, *val));
-        }
+        conds.push((*x_val, BvpCondition::Fixed(idx, *val)));
+      }
+      let placeholders: Vec<(String, usize)> = funcs
+        .iter()
+        .enumerate()
+        .flat_map(|(fi, f)| {
+          let offset = state_offset[fi];
+          (0..f.order).map(move |k| (placeholder_name(&f.name, k), offset + k))
+        })
+        .collect();
+      for (x_val, residual) in &general_conds {
+        conds.push((*x_val, BvpCondition::Residual(residual.clone())));
       }
       let Some(points) = solve_bvp_shooting(
         &residuals,
         &funcs,
         &state_offset,
         n_state,
-        x_lo,
-        &lo_conds,
-        x_hi,
-        &hi_conds,
+        (x_lo, x_hi),
+        &conds,
+        &placeholders,
         n_steps,
         x_name,
       )?
@@ -6149,114 +6180,287 @@ fn integrate_leg_until_event(
   Ok(None)
 }
 
-/// Solve a two-point boundary value problem by shooting: at `x_lo` the
-/// state components in `lo_conds` are fixed while the remaining ones are
-/// repeatedly guessed and the *same* IVP stepper (`integrate_leg`)
-/// integrates out to `x_hi`; the guesses are refined by Newton's method
-/// (finite-difference Jacobian) until every condition in `hi_conds` is met
-/// there. Conditions are `(state index, value)` pairs, so values and
-/// derivatives of one equation or of a coupled system are treated alike,
-/// and there must be as many conditions at `x_hi` as unknowns at `x_lo`.
-/// This works for any well-posed system — linear or not — since it never
-/// inspects the equations' coefficients directly, only the trajectories the
-/// existing integrator already knows how to produce.
+/// A condition `lhs == rhs` relating values and derivatives of the unknowns
+/// at one numeric point (`1 == f[0] - f'[0]`): that point, and `lhs - rhs`
+/// with every `f[point]` / `Derivative[k][f][point]` replaced by the
+/// placeholder of state component `(f, k)`. `None` when the unknowns are
+/// taken at different points or at a non-numeric one.
+fn general_condition(
+  eq: &Expr,
+  funcs: &[SysFunc],
+  x_name: &str,
+) -> Option<(f64, Expr)> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let point: std::cell::Cell<Option<f64>> = std::cell::Cell::new(None);
+  let ok = std::cell::Cell::new(true);
+  fn walk(
+    e: &Expr,
+    funcs: &[SysFunc],
+    x_name: &str,
+    point: &std::cell::Cell<Option<f64>>,
+    ok: &std::cell::Cell<bool>,
+  ) -> Expr {
+    // `f[p]` or `Derivative[k][f][p]`
+    let unknown_at = |name: &str, k: usize, arg: &Expr| -> Option<Expr> {
+      // Orders are not known yet here; a derivative beyond the state is
+      // left for the solver, which cannot evaluate it and gives up.
+      funcs.iter().find(|f| f.name == name)?;
+      // The independent variable is never a point, even when an outer
+      // `Block` gives it a value: `y'[t] == 1` is an equation.
+      if crate::functions::plot::expr_mentions_var(arg, x_name) {
+        ok.set(false);
+        return None;
+      }
+      let at = nval_to_f64(arg)?;
+      match point.get() {
+        Some(p) if (p - at).abs() > 1e-12 => ok.set(false),
+        _ => point.set(Some(at)),
+      }
+      Some(Expr::Identifier(placeholder_name(name, k)))
+    };
+    if let Expr::FunctionCall { name, args } = e
+      && args.len() == 1
+      && let Some(r) = unknown_at(name, 0, &args[0])
+    {
+      return r;
+    }
+    for f in funcs {
+      if let Some((k, at)) = extract_derivative_order_and_point(e, &f.name)
+        && let Some(r) = unknown_at(&f.name, k, &at)
+      {
+        return r;
+      }
+    }
+    crate::syntax::map_children(e, &|c| walk(c, funcs, x_name, point, ok))
+  }
+  let residual = walk(
+    &crate::helpers::minus2(lhs.clone(), rhs.clone()),
+    funcs,
+    x_name,
+    &point,
+    &ok,
+  );
+  let p = point.get()?;
+  // Every mention of an unknown must have been replaced
+  let leftover = funcs.iter().any(|f| {
+    crate::functions::calculus_ast::is_constant_wrt(&residual, &f.name)
+      .then_some(())
+      .is_none()
+  });
+  (ok.get() && !leftover).then_some((p, residual))
+}
+
+/// One condition of a boundary value problem, at its point.
+enum BvpCondition {
+  /// State component `index` equals `value` (`f[a] == v`, `f'[b] == v`).
+  Fixed(usize, f64),
+  /// This residual over the state placeholders is zero
+  /// (`1 == f[0] - f'[0]` as `1 - (f[0] - f'[0])`).
+  Residual(Expr),
+}
+
+/// Solve a boundary value problem on `domain` by shooting. The conditions
+/// may sit at any points of the domain. Shooting starts at the point with
+/// the most fixed state components: those are set, the others guessed, and
+/// the *same* IVP stepper (`integrate_leg`) integrates from there through
+/// every other condition point out to both ends of the domain. Newton's
+/// method (finite-difference Jacobian) refines the guesses until every
+/// remaining condition holds, so linear and nonlinear systems alike are
+/// handled without inspecting the equations. Returns the trajectory over
+/// the whole domain, ascending in x.
 #[allow(clippy::too_many_arguments)]
 fn solve_bvp_shooting(
   residuals: &[NumFn],
   funcs: &[SysFunc],
   state_offset: &[usize],
   n_state: usize,
-  x_lo: f64,
-  lo_conds: &[(usize, f64)],
-  x_hi: f64,
-  hi_conds: &[(usize, f64)],
+  domain: (f64, f64),
+  conds: &[(f64, BvpCondition)],
+  placeholders: &[(String, usize)],
   n_steps: usize,
   x_name: &str,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
-  // The state components at `x_lo` that shooting guesses.
-  let unknowns: Vec<usize> = (0..n_state)
-    .filter(|i| !lo_conds.iter().any(|(j, _)| j == i))
-    .collect();
-  if unknowns.len() != hi_conds.len()
-    || lo_conds.len() + unknowns.len() != n_state
-  {
+  let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs());
+  let fixed_at = |p: f64| {
+    conds
+      .iter()
+      .filter(|(x, c)| same(*x, p) && matches!(c, BvpCondition::Fixed(..)))
+      .count()
+  };
+  // The start point: most fixed components, then the leftmost
+  let Some(x0) = conds
+    .iter()
+    .map(|(x, _)| *x)
+    .max_by(|a, b| fixed_at(*a).cmp(&fixed_at(*b)).then(b.total_cmp(a)))
+  else {
+    return Ok(None);
+  };
+  let mut probe_state = vec![0.0; n_state];
+  let mut is_fixed = vec![false; n_state];
+  let mut remaining: Vec<&(f64, BvpCondition)> = Vec::new();
+  for cond in conds {
+    match cond {
+      (x, BvpCondition::Fixed(i, v)) if same(*x, x0) && !is_fixed[*i] => {
+        probe_state[*i] = *v;
+        is_fixed[*i] = true;
+      }
+      other => remaining.push(other),
+    }
+  }
+  let unknowns: Vec<usize> = (0..n_state).filter(|i| !is_fixed[*i]).collect();
+  if unknowns.len() != remaining.len() {
     return Ok(None);
   }
-  let h = (x_hi - x_lo) / n_steps as f64;
-
-  let mut probe_state = vec![0.0; n_state];
-  for (i, v) in lo_conds {
-    probe_state[*i] = *v;
-  }
+  let (lo, hi) = domain;
+  let h = (hi - lo) / n_steps as f64;
   let cached_mass_matrix = probe_constant_mass_matrix(
     residuals,
     funcs.len(),
-    x_lo,
+    x0,
     &probe_state,
-    x_lo,
-    x_hi,
+    lo,
+    hi,
   );
 
-  // Shoot with the given guesses; the far-end misses of `hi_conds` (and
-  // the trajectory) when the integration reaches `x_hi`.
-  let residual = |guess: &[f64]| -> Result<
-    Option<(Vec<f64>, Vec<(f64, Vec<f64>)>)>,
-    InterpreterError,
-  > {
-    let mut init_state = probe_state.clone();
+  // Breakpoints on either side of x0: every condition point, then the end
+  let mut ahead: Vec<f64> = conds
+    .iter()
+    .map(|(x, _)| *x)
+    .filter(|x| *x > x0 && !same(*x, x0))
+    .collect();
+  ahead.push(hi);
+  ahead.sort_by(f64::total_cmp);
+  ahead.dedup_by(|a, b| same(*a, *b));
+  let mut behind: Vec<f64> = conds
+    .iter()
+    .map(|(x, _)| *x)
+    .filter(|x| *x < x0 && !same(*x, x0))
+    .collect();
+  behind.push(lo);
+  behind.sort_by(|a, b| b.total_cmp(a));
+  behind.dedup_by(|a, b| same(*a, *b));
+
+  // Integrate from x0 with `init` to both ends; the ascending trajectory.
+  let shoot =
+    |init: &[f64]| -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+      let legs =
+        |targets: &[f64],
+         step: f64|
+         -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+          let mut path: Vec<(f64, Vec<f64>)> = vec![(x0, init.to_vec())];
+          for &target in targets {
+            let (from, state) = path.last().unwrap().clone();
+            if same(from, target) {
+              continue;
+            }
+            let Some(leg) = integrate_leg(
+              residuals,
+              funcs,
+              state_offset,
+              state,
+              from,
+              target,
+              step,
+              None,
+              None,
+              &[],
+              StateEventCtx::none(),
+              x_name,
+              cached_mass_matrix.as_ref(),
+            )?
+            else {
+              return Ok(None);
+            };
+            let Some((x_end, _)) = leg.last() else {
+              return Ok(None);
+            };
+            if !same(*x_end, target)
+              && (x_end - target).abs() > 1e-6 * (1.0 + target.abs())
+            {
+              return Ok(None);
+            }
+            path.extend(leg.into_iter().skip(1));
+          }
+          Ok(Some(path))
+        };
+      let Some(forward) = legs(&ahead, h)? else {
+        return Ok(None);
+      };
+      let Some(mut backward) = legs(&behind, -h)? else {
+        return Ok(None);
+      };
+      backward.reverse();
+      backward.pop();
+      backward.extend(forward);
+      Ok(Some(backward))
+    };
+  let state_at = |path: &[(f64, Vec<f64>)], p: f64| -> Option<Vec<f64>> {
+    path
+      .iter()
+      .min_by(|(a, _), (b, _)| (a - p).abs().total_cmp(&(b - p).abs()))
+      .map(|(_, s)| s.clone())
+  };
+  let misses = |path: &[(f64, Vec<f64>)]| -> Option<Vec<f64>> {
+    remaining
+      .iter()
+      .map(|(p, cond)| {
+        let state = state_at(path, *p)?;
+        match cond {
+          BvpCondition::Fixed(i, v) => Some(state[*i] - v),
+          BvpCondition::Residual(r) => {
+            // Substituted directly: a placeholder name starting with `__`
+            // would read as a sequence blank in a replacement rule.
+            let mut filled = r.clone();
+            for (name, i) in placeholders {
+              filled = crate::syntax::substitute_variable(
+                &filled,
+                name,
+                &Expr::Real(state[*i]),
+              );
+            }
+            let value =
+              crate::evaluator::evaluate_expr_to_expr(&filled).ok()?;
+            nval_to_f64(&value)
+          }
+        }
+      })
+      .collect()
+  };
+  let with_guess = |guess: &[f64]| {
+    let mut init = probe_state.clone();
     for (i, g) in unknowns.iter().zip(guess) {
-      init_state[*i] = *g;
+      init[*i] = *g;
     }
-    let pts = integrate_leg(
-      residuals,
-      funcs,
-      state_offset,
-      init_state,
-      x_lo,
-      x_hi,
-      h,
-      None,
-      None,
-      &[],
-      StateEventCtx::none(),
-      x_name,
-      cached_mass_matrix.as_ref(),
-    )?;
-    let Some(pts) = pts else {
-      return Ok(None);
-    };
-    let Some((x_end, end)) = pts.last() else {
-      return Ok(None);
-    };
-    if (x_end - x_hi).abs() > 1e-6 * (1.0 + x_hi.abs()) {
-      return Ok(None);
-    }
-    let miss = hi_conds.iter().map(|(i, v)| end[*i] - v).collect();
-    Ok(Some((miss, pts)))
+    init
   };
 
   let k = unknowns.len();
-  let tol = 1e-7
-    * (1.0
-      + hi_conds
-        .iter()
-        .map(|(_, v)| v.abs())
-        .fold(0.0_f64, f64::max));
   let mut guess = vec![0.0; k];
   for _ in 0..60 {
-    let Some((miss, pts)) = residual(&guess)? else {
+    let Some(path) = shoot(&with_guess(&guess))? else {
       return Ok(None);
     };
-    if miss.iter().all(|m| m.abs() <= tol) {
-      return Ok(Some(pts));
+    let Some(miss) = misses(&path) else {
+      return Ok(None);
+    };
+    let scale = 1.0
+      + path
+        .iter()
+        .flat_map(|(_, s)| s.iter())
+        .fold(0.0_f64, |m, v| m.max(v.abs()).min(1e12));
+    if miss.iter().all(|m| m.abs() <= 1e-9 * scale) || k == 0 {
+      return Ok(Some(path));
     }
-    // Jacobian of the misses w.r.t. the guesses, by forward differences.
+    // Jacobian of the misses w.r.t. the guesses, by forward differences
     let mut jac = vec![vec![0.0; k]; k];
     for j in 0..k {
       let delta = 1e-6 * (1.0 + guess[j].abs());
       let mut bumped = guess.clone();
       bumped[j] += delta;
-      let Some((miss_j, _)) = residual(&bumped)? else {
+      let Some(bumped_path) = shoot(&with_guess(&bumped))? else {
+        return Ok(None);
+      };
+      let Some(miss_j) = misses(&bumped_path) else {
         return Ok(None);
       };
       for i in 0..k {
