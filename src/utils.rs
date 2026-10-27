@@ -229,6 +229,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "Geodesy",
   "Graphics",
   "GraphUtilities",
+  "HierarchicalClustering",
   "HypothesisTesting",
   "Internal",
   "JLink",

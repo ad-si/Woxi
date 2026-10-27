@@ -1805,6 +1805,7 @@ NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control (stays symbolic in script mode),✅,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803
 DistanceMatrix,Matrix of pairwise distances between vectors (default EuclideanDistance),✅,pure,10.3,1806
+HierarchicalClustering`DistanceMatrix,Legacy package function: matrix of pairwise distances between vectors; same as DistanceMatrix,✅,pure,1.0,1806
 InverseWaveletTransform,Inverse discrete/stationary/packet/lifting wavelet transform,✅,pure,8.0,1806
 RayleighDistribution,Rayleigh distribution,✅,pure,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
