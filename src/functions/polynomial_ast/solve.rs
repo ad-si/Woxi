@@ -1852,20 +1852,58 @@ fn is_solve_constant(s: &str) -> bool {
 /// `select_underdetermined_vars` / the linear solver pick.
 fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
   let mut vars = Vec::new();
-  collect_solve_vars(eqns, &mut vars);
+  collect_solve_var_exprs(eqns, &mut vars);
   if solve_equalities(eqns).is_empty() {
     return None;
   }
-  vars.sort_by(|a, b| {
-    crate::functions::list_helpers_ast::sorting::canonical_cmp(
-      &Expr::Identifier(a.clone()),
-      &Expr::Identifier(b.clone()),
-    )
-  });
+  vars.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
   match vars.len() {
     0 => None,
-    1 => Some(Expr::Identifier(vars.remove(0))),
-    _ => Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect())),
+    1 => Some(vars.remove(0)),
+    _ => Some(Expr::List(vars.into())),
+  }
+}
+
+/// The unknowns of `Solve[eqns]`: the free symbols, except that a
+/// `Subscript[β, 0]` or a call of a head with no built-in meaning (`a[1]`,
+/// `f[x]`) is one unknown of its own, as in Wolfram
+/// (`Solve[1 - Subscript[β, 0] == 0]` solves for `Subscript[β, 0]`).
+fn collect_solve_var_exprs(expr: &Expr, out: &mut Vec<Expr>) {
+  let push = |e: Expr, out: &mut Vec<Expr>| {
+    if !out
+      .iter()
+      .any(|v| crate::evaluator::pattern_matching::expr_equal(v, &e))
+    {
+      out.push(e);
+    }
+  };
+  match expr {
+    Expr::Identifier(s) if !is_solve_constant(s) => {
+      push(expr.clone(), out);
+    }
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && (name == "Subscript" && matches!(&args[0], Expr::Identifier(_))
+          || !crate::evaluator::functions::is_builtin_symbol(name)) =>
+    {
+      push(expr.clone(), out);
+    }
+    Expr::Comparison { operands, .. } => {
+      for e in operands {
+        collect_solve_var_exprs(e, out);
+      }
+    }
+    Expr::List(items) | Expr::FunctionCall { args: items, .. } => {
+      for e in items {
+        collect_solve_var_exprs(e, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_solve_var_exprs(left, out);
+      collect_solve_var_exprs(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => collect_solve_var_exprs(operand, out),
+    _ => {}
   }
 }
 
@@ -3875,6 +3913,23 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if s == "False" {
         return Ok(Expr::List(vec![].into()));
+      }
+    }
+    // In a list, a `True` constrains nothing and a `False` rules out
+    // everything: `Solve[{True}]` is `{{}}`, `Solve[{x == 1, True}]` solves
+    // `x == 1`.
+    if let Expr::List(items) = &args[0] {
+      let is = |e: &Expr, v: &str| matches!(e, Expr::Identifier(s) if s == v);
+      if items.iter().any(|e| is(e, "False")) {
+        return Ok(Expr::List(vec![].into()));
+      }
+      if items.iter().any(|e| is(e, "True")) {
+        let kept: Vec<Expr> =
+          items.iter().filter(|e| !is(e, "True")).cloned().collect();
+        if kept.is_empty() {
+          return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
+        }
+        return solve_ast(&[Expr::List(kept.into())]);
       }
     }
     return match auto_detect_solve_vars(&args[0]) {

@@ -6822,6 +6822,28 @@ mod solve {
 // for polynomial systems only; equations with radicals of the unknowns
 // (`Norm[{x, y} - c] == r`) are solved without it, as in Wolfram
 // (LinkingTwoRings).
+// One-argument Solve takes a Subscript or a call of a head with no built-in
+// meaning as one unknown, and reads True/False entries of an equation list
+// as constraining nothing/everything (LinearMultistepMethodsGenerator).
+mod solve_one_argument_unknowns {
+  use super::*;
+
+  #[test]
+  fn indexed_unknowns_and_trivial_entries() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[1 - Subscript[b, 0] == 0], Solve[{a[1] + a[2] == 0, a[1] == 2}], \
+         Solve[f[x] == 1], Solve[{True}], Solve[{x == 1, True}], \
+         Solve[{x == 1, False}]}"
+      )
+      .unwrap(),
+      "{{{Subscript[b, 0] -> 1}}, {{a[1] -> 2, a[2] -> -2}}, {{f[x] -> 1}}, \
+       {{}}, {{x -> 1}}, {}}"
+    );
+  }
+}
+
 mod solve_ratnz_only_for_polynomial_systems {
   use super::*;
 
