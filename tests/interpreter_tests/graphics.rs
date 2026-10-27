@@ -22873,6 +22873,21 @@ mod grid_frame_and_background {
     assert!(svg.contains("rgb(255,0,0)"), "{svg}");
   }
 
+  /// A bare style as the whole `Dividers` value rules every line on both
+  /// axes in that style. Regression: only `All`/`True`/`Center` and lists
+  /// were recognised, so `Dividers -> Directive[Orange, Thick]` drew nothing.
+  #[test]
+  fn dividers_bare_style_rules_every_line() {
+    for spec in ["Directive[Orange, Thick, Dashed]", "Orange"] {
+      let svg = export_svg(&format!(
+        r#"Grid[{{{{"a", "b"}}, {{"c", "d"}}}}, Dividers -> {spec}]"#
+      ));
+      let lines = grid_lines(&svg);
+      assert_eq!(lines.len(), 6, "{spec}: {svg}");
+      assert!(svg.contains("rgb(255,128,0)"), "{spec}: {svg}");
+    }
+  }
+
   /// `Dividers -> Center` rules only the boundaries *between* cells, so the
   /// same grid keeps its outer edges open.
   #[test]

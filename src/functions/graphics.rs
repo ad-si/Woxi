@@ -18684,7 +18684,16 @@ fn grid_svg_styled_internal(
               }
             }
           }
-          _ => {}
+          // A bare style (`Dividers -> Red`, `Dividers -> Directive[Orange,
+          // Thick]`) rules every line on both axes in that style.
+          spec => {
+            if let Some(color) = parse_divider_entry(spec) {
+              col_div_has_repeating = true;
+              col_div_repeating = vec![Some(color)];
+              row_div_has_repeating = true;
+              row_div_repeating = vec![Some(color)];
+            }
+          }
         },
         "Background" => match replacement.as_ref() {
           expr if parse_color(expr).is_some() => {
