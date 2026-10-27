@@ -5933,10 +5933,107 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !data_reversed {
     raster_rows.reverse();
   }
-  let structure = call1(
-    "Graphics",
-    call("Raster", vec![Expr::List(raster_rows.into()), rect]),
-  );
+  let raster = call("Raster", vec![Expr::List(raster_rows.into()), rect]);
+  // What `Show` redraws when it layers other graphics over the plot: the
+  // mesh lines as primitives, and the explicit frame ticks as a framed
+  // plot's options (ticks are in `ArrayPlot` coordinates — the center of
+  // column `j` is `j`, of row `i` from the top is `i` — which sit half a
+  // cell inside the raster's own coordinates).
+  let mut prims = vec![raster];
+  if mesh {
+    let mesh_color = mesh_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
+    let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
+    prims.push(call(
+      "RGBColor",
+      vec![
+        channel(mesh_color.0),
+        channel(mesh_color.1),
+        channel(mesh_color.2),
+      ],
+    ));
+    let point = |x: usize, y: usize| {
+      Expr::List(
+        vec![Expr::Integer(x as i128), Expr::Integer(y as i128)].into(),
+      )
+    };
+    let segment =
+      |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
+    for j in 1..n_cols {
+      prims.push(segment(point(j, 0), point(j, n_rows)));
+    }
+    for i in 1..n_rows {
+      prims.push(segment(point(0, i), point(n_cols, i)));
+    }
+  }
+  let content = if prims.len() == 1 {
+    prims.remove(0)
+  } else {
+    Expr::List(prims.into())
+  };
+  let mut structure_args = vec![content];
+  let ticks_present = [
+    &frame_ticks.left,
+    &frame_ticks.right,
+    &frame_ticks.bottom,
+    &frame_ticks.top,
+  ]
+  .iter()
+  .any(|edge| !edge.is_empty());
+  if ticks_present {
+    let rule = |name: &str, value: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(name.to_string())),
+      replacement: Box::new(value),
+    };
+    let edge = |ticks: &[FrameTickLabel], horizontal: bool| {
+      if ticks.is_empty() {
+        return Expr::Identifier("None".to_string());
+      }
+      Expr::List(
+        ticks
+          .iter()
+          .map(|t| {
+            let pos = if horizontal {
+              t.pos - 0.5
+            } else {
+              n_rows as f64 - t.pos + 0.5
+            };
+            Expr::List(
+              vec![Expr::Real(pos), Expr::String(t.text.clone())].into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    };
+    structure_args.push(rule("Frame", Expr::Identifier("True".to_string())));
+    structure_args.push(rule(
+      "PlotRangePadding",
+      Expr::Identifier("None".to_string()),
+    ));
+    structure_args.push(rule(
+      "FrameTicks",
+      Expr::List(
+        vec![
+          Expr::List(
+            vec![
+              edge(&frame_ticks.left, false),
+              edge(&frame_ticks.right, false),
+            ]
+            .into(),
+          ),
+          Expr::List(
+            vec![
+              edge(&frame_ticks.bottom, true),
+              edge(&frame_ticks.top, true),
+            ]
+            .into(),
+          ),
+        ]
+        .into(),
+      ),
+    ));
+  }
+  let structure = call("Graphics", structure_args);
   Ok(crate::graphics_result_with_structure(buf, structure))
 }
 

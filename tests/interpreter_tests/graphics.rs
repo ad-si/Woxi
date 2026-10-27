@@ -17941,6 +17941,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn show_matrix_plot_keeps_mesh_and_frame_ticks() {
+      // Regression: layering graphics over a MatrixPlot dropped its mesh
+      // lines and explicit FrameTicks labels.
+      let svg = export_svg(
+        "Show[MatrixPlot[{{1, 2, 3}, {3, 4, 5}, {1, 1, 1}}, Mesh -> All, \
+         FrameTicks -> {{{1, \"a\"}, {2, \"b\"}, {3, \"c\"}}, \
+         {{1, \"X\"}, {2, \"Y\"}, {3, \"Z\"}}}], \
+         Graphics[Text[\"q\", {1.5, 1.5}]]]",
+      );
+      for label in [">a<", ">b<", ">c<", ">X<", ">Y<", ">Z<", ">q<"] {
+        assert!(svg.contains(label), "{label}: {svg}");
+      }
+      assert!(svg.contains("<polyline"), "mesh lines: {svg}");
+    }
+
+    #[test]
     fn smooth_density_histogram() {
       assert_eq!(
         interpret(
