@@ -6965,3 +6965,26 @@ mod polylog_real_below_unit_disk {
     approx("PolyLog[0, -3.]", -0.75);
   }
 }
+
+// Quadratic irrationals with rational parts, negative roots and negative
+// values have periodic expansions; a negative value negates every term.
+mod continued_fraction_quadratic_irrationals {
+  use super::*;
+
+  #[test]
+  fn periodic_expansions() {
+    for (input, expected) in [
+      ("ContinuedFraction[1/2 + Sqrt[5]]", "{2, {1, 2, 1, 3}}"),
+      ("ContinuedFraction[-Sqrt[2]]", "{-1, {-2}}"),
+      ("ContinuedFraction[3 - Sqrt[2]]", "{1, 1, 1, {2}}"),
+      ("ContinuedFraction[-3/2 - Sqrt[3]/2]", "{-2, {-2, -1}}"),
+      ("ContinuedFraction[2/3 Sqrt[5]]", "{1, {2, 26, 2, 2}}"),
+      (
+        "ContinuedFraction[(5 - Sqrt[13])/3]",
+        "{0, 2, {6, 1, 1, 1, 1}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}

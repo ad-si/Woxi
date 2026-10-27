@@ -409,9 +409,30 @@ fn extract_quadratic_irrational(
     _ => (expr.clone(), 1, 1),
   };
   let inner = &inner_owned;
-  // Inner: expect Plus[int, (q·Sqrt[d])] or just Sqrt[d] or k·Sqrt[d]
-  let mut p: i128 = 0;
-  let mut q: i128 = 0;
+  // Inner: a sum of rationals and rational multiples of one Sqrt[d], as
+  // the exact fractions p = pn/pd and q = qn/qd.
+  let rational = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let add =
+    |(an, ad): (i128, i128), (bn, bd): (i128, i128)| -> Option<(i128, i128)> {
+      let n = an.checked_mul(bd)?.checked_add(bn.checked_mul(ad)?)?;
+      let d = ad.checked_mul(bd)?;
+      let g = gcd_i128(n, d).max(1);
+      Some((n / g, d / g))
+    };
+  let (mut p, mut q): ((i128, i128), (i128, i128)) = ((0, 1), (0, 1));
   let mut d: i128 = 0;
   let terms: Vec<&Expr> = match inner {
     Expr::BinaryOp {
@@ -425,52 +446,41 @@ fn extract_quadratic_irrational(
     _ => vec![inner],
   };
   for t in &terms {
-    if let Expr::Integer(n) = t {
-      p = p.checked_add(*n)?;
+    if let Some(r) = rational(t) {
+      p = add(p, r)?;
       continue;
     }
-    if let Some(dd) = extract_sqrt_integer(t) {
-      q = q.checked_add(1)?;
-      if d != 0 && d != dd {
-        return None;
-      }
-      d = dd;
-      continue;
-    }
-    // k * Sqrt[d] — canonically as Times[k, Sqrt[d]].
+    // Sqrt[d], or k * Sqrt[d] (canonically Times[k, Sqrt[d]]).
     let (coeff, sqrt_expr) = match t {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
         left,
         right,
-      } => (left.as_ref(), right.as_ref()),
+      } => (rational(left)?, right.as_ref()),
       Expr::FunctionCall { name, args }
         if name == "Times" && args.len() == 2 =>
       {
-        (&args[0], &args[1])
+        (rational(&args[0])?, &args[1])
       }
-      _ => return None,
-    };
-    let k = match coeff {
-      Expr::Integer(n) => *n,
-      _ => return None,
+      _ => ((1, 1), *t),
     };
     let dd = extract_sqrt_integer(sqrt_expr)?;
-    q = q.checked_add(k)?;
+    q = add(q, coeff)?;
     if d != 0 && d != dd {
       return None;
     }
     d = dd;
   }
-  if q == 0 || d == 0 {
+  if q.0 == 0 || d == 0 {
     return None;
   }
   // Compose with the outer scale: (scale_num/scale_den) · (p + q√d)
-  //   = (scale_num·p + scale_num·q·√d) / scale_den.
-  let final_p = p.checked_mul(scale_num)?;
-  let final_q = q.checked_mul(scale_num)?;
-  let final_r = scale_den;
-  Some((final_p, final_q, d, final_r))
+  //   = (sn·pn·qd + sn·qn·pd·√d) / (sd·pd·qd).
+  let final_p = scale_num.checked_mul(p.0)?.checked_mul(q.1)?;
+  let final_q = scale_num.checked_mul(q.0)?.checked_mul(p.1)?;
+  let final_r = scale_den.checked_mul(p.1)?.checked_mul(q.1)?;
+  let g = gcd_i128(gcd_i128(final_p, final_q), final_r).max(1);
+  Some((final_p / g, final_q / g, d, final_r / g))
 }
 
 fn is_perfect_square(d: i128) -> bool {
@@ -490,42 +500,43 @@ fn continued_fraction_of_quadratic(
   d: i128,
   r: i128,
 ) -> Option<(Vec<i128>, Vec<i128>)> {
-  // Normalize to the form `(P + √N) / Q` with `Q | (N − P²)`.
-  // Starting from `(p + q √d) / r`: set P = p · sign(r), Q = |r|,
-  // N = q² · d, then if `Q ∤ (N − P²)` multiply P and Q by |Q| (and N by Q²)
-  // until divisibility holds.
-  let sign = if r < 0 { -1i128 } else { 1 };
-  let mut big_p: i128 = p.checked_mul(sign)?;
-  // Merge the sign of q by absorbing it into the root: we rely on q·√d
-  // appearing with the sign carried into q. When q < 0, we need to adjust:
-  // (p + q √d) / r with q < 0 is the same as (p - |q| √d)/r — but CF of a
-  // negative-Sqrt combination is harder to handle uniformly. Bail if q < 0.
-  if q <= 0 {
+  if q == 0 || r == 0 {
     return None;
   }
+  // A negative value expands as its negation does, every term negated:
+  // ContinuedFraction[-Sqrt[2]] is {-1, {-2}}.
+  let value = (p as f64 + q as f64 * (d as f64).sqrt()) / r as f64;
+  if value < 0.0 {
+    let (pre, period) = continued_fraction_of_quadratic(-p, -q, d, r)?;
+    let negate = |v: Vec<i128>| v.into_iter().map(|t| -t).collect();
+    return Some((negate(pre), negate(period)));
+  }
+  // Normalize to the form `(P + √N) / Q` with `Q | (N − P²)`: the root's
+  // sign moves into P and Q, and while Q does not divide N − P², P and Q
+  // are multiplied by |Q| (and N by Q²).
+  let (mut big_p, mut big_q) = if q > 0 { (p, r) } else { (-p, -r) };
   let mut big_n: i128 = q.checked_mul(q)?.checked_mul(d)?;
-  let mut big_q: i128 = r.checked_mul(sign)?;
-  if big_q <= 0 {
-    return None;
-  }
-  // Ensure Q divides (N − P²); multiply through by |Q| if not.
   for _ in 0..4 {
     let diff = big_n.checked_sub(big_p.checked_mul(big_p)?)?;
     if diff.rem_euclid(big_q) == 0 {
       break;
     }
-    // Scale P ← P · Q, N ← N · Q², Q ← Q · |Q|.
-    let new_p = big_p.checked_mul(big_q)?;
-    let q_sq = big_q.checked_mul(big_q)?;
-    let new_n = big_n.checked_mul(q_sq)?;
-    let new_q = big_q.checked_mul(big_q)?;
-    big_p = new_p;
-    big_n = new_n;
-    big_q = new_q;
+    let scale = big_q.abs();
+    big_p = big_p.checked_mul(scale)?;
+    big_n = big_n.checked_mul(scale)?.checked_mul(scale)?;
+    big_q = big_q.checked_mul(scale)?;
+  }
+  if big_n
+    .checked_sub(big_p.checked_mul(big_p)?)?
+    .rem_euclid(big_q)
+    != 0
+  {
+    return None;
   }
 
-  // Iterate: a_k = floor((P + √N) / Q); M = P − a·Q;
-  //          P' = −M; Q' = (N − M²) / Q.
+  // Iterate: a_k = floor((P + √N) / Q); P' = a·Q − P; Q' = (N − P'²) / Q.
+  // With s = ⌊√N⌋ < √N < s + 1, the floor is ⌊(P + s)/Q⌋ for Q > 0 and
+  // ⌊(P + s + 1)/Q⌋ for Q < 0.
   let sqrt_n_floor = integer_sqrt(big_n);
   let mut seen: std::collections::HashMap<(i128, i128), usize> =
     std::collections::HashMap::new();
@@ -550,20 +561,20 @@ fn continued_fraction_of_quadratic(
       return Some((pre, period));
     }
     seen.insert((p_k, q_k), step);
-    // a = floor((P + sqrt(N)) / Q). Since Q > 0, use integer floor:
-    // a = floor((P + sqrt_N_floor) / Q) when P + sqrt_N_floor > 0,
-    // but we also need to handle the case where sqrt(N) is not integer and
-    // the approximation rounds down. Using `sqrt_n_floor` works as a
-    // lower bound for sqrt(N); division floor then yields the correct a.
-    let num = p_k + sqrt_n_floor;
-    let a = num.div_euclid(q_k);
+    let num = if q_k > 0 {
+      p_k + sqrt_n_floor
+    } else {
+      p_k + sqrt_n_floor + 1
+    };
+    let a =
+      num.div_euclid(q_k) - i128::from(num.rem_euclid(q_k) != 0 && q_k < 0);
     terms.push(a);
-    let m = p_k - a * q_k;
-    let new_q = (big_n - m * m) / q_k;
+    let next_p = a.checked_mul(q_k)?.checked_sub(p_k)?;
+    let new_q = big_n.checked_sub(next_p.checked_mul(next_p)?)? / q_k;
     if new_q == 0 {
       return None;
     }
-    p_k = -m;
+    p_k = next_p;
     q_k = new_q;
   }
   None
@@ -3815,7 +3826,7 @@ pub fn minkowski_question_mark_ast(
         // Sign of (p + q*sqrt(d)) / r
         let value = (p as f64 + q as f64 * (d as f64).sqrt()) / r as f64;
         if value < 0.0 {
-          Some((-p, -q, d, -r, true))
+          Some((-p, -q, d, r, true))
         } else {
           Some((p, q, d, r, false))
         }

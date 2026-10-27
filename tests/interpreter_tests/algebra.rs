@@ -17240,6 +17240,19 @@ mod cases {
     );
   }
 
+  // An integer-valued machine real is that integer in a sequence spec.
+  #[test]
+  fn take_drop_with_integral_reals() {
+    assert_case(
+      r#"{Take[{1, 2, 3}, 2.], Drop[{1, 2, 3}, 1.], Take[{1, 2, 3}, -1.], Drop[{1, 2, 3}, {2.}], Take[{1, 2, 3, 4, 5}, {1., 5., 2.}]}"#,
+      r#"{{1, 2}, {2, 3}, {3}, {1, 3}, {1, 3, 5}}"#,
+    );
+    assert_case(r#"Take[{1, 2, 3}, 0.]"#, r#"{}"#);
+    assert_case(r#"Take[{1, 2, 3}, UpTo[2.]]"#, r#"{1, 2}"#);
+    assert_case(r#"UpTo[2.]"#, r#"UpTo[2]"#);
+    assert_case(r#"Take[{1, 2, 3}, 1.5]"#, r#"Take[{1, 2, 3}, 1.5]"#);
+  }
+
   #[test]
   fn divisible_arity_message() {
     woxi::clear_state();

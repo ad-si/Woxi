@@ -60,6 +60,42 @@ fn parse_nest_while_m(expr: &Expr) -> Option<list_helpers_ast::NestWhileM> {
   }
 }
 
+/// Whether a sequence specification holds a machine real with an integer
+/// value, at its top or inside a list or `UpTo`.
+fn has_integral_real(e: &Expr) -> bool {
+  match e {
+    Expr::Real(f) => f.is_finite() && f.fract() == 0.0 && f.abs() < 9.0e15,
+    Expr::List(items) => items.iter().any(has_integral_real),
+    Expr::FunctionCall { name, args } if name == "UpTo" => {
+      args.iter().any(has_integral_real)
+    }
+    _ => false,
+  }
+}
+
+/// The specification with its integer-valued machine reals made integers.
+fn integral_reals_to_integers(e: &Expr) -> Expr {
+  match e {
+    Expr::Real(f) if f.is_finite() && f.fract() == 0.0 && f.abs() < 9.0e15 => {
+      Expr::Integer(*f as i128)
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(integral_reals_to_integers)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::FunctionCall { name, args } if name == "UpTo" => {
+      crate::helpers::call(
+        name,
+        args.iter().map(integral_reals_to_integers).collect(),
+      )
+    }
+    other => other.clone(),
+  }
+}
+
 /// Validate the sequence-specification arguments of Take/Drop. On the
 /// first argument that is not a valid spec shape, emits ::seqs naming
 /// its position and returns the unevaluated call.
@@ -74,7 +110,7 @@ fn invalid_seq_spec(
         name,
         i + 1,
         crate::syntax::format_expr(
-          &unevaluated(name, args),
+          &crate::to_display_precision(&unevaluated(name, args)),
           crate::syntax::ExprForm::Output
         )
       ));
@@ -3428,6 +3464,20 @@ pub fn dispatch_list_operations(
     // they are not operator forms — `Drop[1][list]` is `1[list]`.)
     "Take" | "Drop" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
+    }
+    // A machine real with an integer value counts as that integer in a
+    // sequence specification: `Take[list, 2.]` is `Take[list, 2]`.
+    "Take" | "Drop"
+      if args.len() >= 2 && args[1..].iter().any(has_integral_real) =>
+    {
+      let mut normalized = vec![args[0].clone()];
+      normalized.extend(args[1..].iter().map(integral_reals_to_integers));
+      if !normalized[1..].iter().any(has_integral_real) {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          name,
+          &normalized,
+        ));
+      }
     }
     "Take" if args.len() >= 2 => {
       if let Some(r) = invalid_seq_spec(name, args) {

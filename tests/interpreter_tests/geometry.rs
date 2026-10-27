@@ -9690,3 +9690,62 @@ mod bspline_function_derivatives {
     );
   }
 }
+
+// Inscribed and circumscribed circles of polygons and regular polygons.
+mod polygon_in_and_circumspheres {
+  use super::*;
+
+  #[test]
+  fn inspheres() {
+    for (input, expected) in [
+      (
+        "Insphere[RegularPolygon[5]]",
+        "Sphere[{0, 0}, (1 + Sqrt[5])/4]",
+      ),
+      ("Insphere[RegularPolygon[2, 4]]", "Sphere[{0, 0}, Sqrt[2]]"),
+      (
+        "Insphere[RegularPolygon[{1, 1}, {2, Pi/6}, 6]]",
+        "Sphere[{1, 1}, Sqrt[3]]",
+      ),
+      (
+        "Insphere[Polygon[{{0, 0}, {4, 0}, {0, 3}}]]",
+        "Sphere[{1, 1}, 1]",
+      ),
+      (
+        "Insphere[RegularPolygon[{1, 2}, 3, 4]]",
+        "Insphere[RegularPolygon[{1, 2}, 3, 4]]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn circumspheres() {
+    for (input, expected) in [
+      (
+        "Circumsphere[RegularPolygon[{1, 2}, 3, 4]]",
+        "Sphere[{1, 2}, 3]",
+      ),
+      ("Circumsphere[RegularPolygon[5]]", "Sphere[{0, 0}, 1]"),
+      (
+        "Circumsphere[Polygon[{{0, 0}, {4, 0}, {0, 3}}]]",
+        "Sphere[{2, 3/2}, 5/2]",
+      ),
+      (
+        "Circumsphere[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]]",
+        "Sphere[{1/2, 1/2}, 1/Sqrt[2]]",
+      ),
+      (
+        "Circumsphere[Triangle[{{0, 0}, {4, 0}, {0, 3}}]]",
+        "Sphere[{2, 3/2}, 5/2]",
+      ),
+      (
+        "Circumsphere[Polygon[{{0, 0}, {2, 0}, {3, 1}, {0, 1}}]]",
+        "Circumsphere[Polygon[{{0, 0}, {2, 0}, {3, 1}, {0, 1}}]]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}

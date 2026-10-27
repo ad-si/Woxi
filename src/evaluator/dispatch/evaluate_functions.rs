@@ -3544,6 +3544,15 @@ fn evaluate_function_call_ast_inner(
     // UpTo stays symbolic but validates its argument: anything numeric
     // that is not a non-negative integer (or Infinity) emits ::innf.
     "UpTo" => {
+      // A non-negative machine real with an integer value is that integer.
+      if let [Expr::Real(f)] = args
+        && f.is_finite()
+        && f.fract() == 0.0
+        && *f >= 0.0
+        && *f < 9.0e15
+      {
+        return Ok(unevaluated(name, &[Expr::Integer(*f as i128)]));
+      }
       if args.len() == 1 {
         let invalid = match &args[0] {
           Expr::Integer(v) => *v < 0,

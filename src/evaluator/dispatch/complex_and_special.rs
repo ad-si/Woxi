@@ -14085,6 +14085,75 @@ fn compute_circular_arc_through(
 
 fn compute_circumsphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   let uneval = || Ok(call1("Circumsphere", expr.clone()));
+  if let Expr::FunctionCall { name, args } = expr {
+    match (name.as_str(), args.as_slice()) {
+      // The simplex on a triangle's or tetrahedron's vertices.
+      ("Triangle" | "Tetrahedron" | "Simplex", [points @ Expr::List(_)]) => {
+        let sphere = compute_circumsphere(points)?;
+        return if matches!(&sphere, Expr::FunctionCall { name, .. } if name == "Sphere")
+        {
+          Ok(sphere)
+        } else {
+          uneval()
+        };
+      }
+      // A polygon whose vertices all lie on the circle through its first
+      // three.
+      ("Polygon", [Expr::List(points)]) if points.len() >= 3 => {
+        let sphere =
+          compute_circumsphere(&Expr::List(points[..3].to_vec().into()))?;
+        let Expr::FunctionCall { name, args: parts } = &sphere else {
+          return uneval();
+        };
+        if name != "Sphere" || parts.len() != 2 {
+          return uneval();
+        }
+        for point in &points[3..] {
+          let off = evaluate_expr_to_expr(&call1(
+            "Simplify",
+            call(
+              "Subtract",
+              vec![
+                call1(
+                  "Total",
+                  pow(
+                    call("Subtract", vec![point.clone(), parts[0].clone()]),
+                    Expr::Integer(2),
+                  ),
+                ),
+                pow(parts[1].clone(), Expr::Integer(2)),
+              ],
+            ),
+          ))?;
+          if !matches!(off, Expr::Integer(0)) {
+            crate::emit_message(&format!(
+              "Circumsphere::indep: Circumsphere does not exist for {}.",
+              expr_to_string(expr)
+            ));
+            return uneval();
+          }
+        }
+        return Ok(sphere);
+      }
+      // A regular polygon's circle is its circumradius about its center.
+      ("RegularPolygon", rest) => {
+        let radius = |r: &Expr| match r {
+          Expr::List(rt) if rt.len() == 2 => rt[0].clone(),
+          other => other.clone(),
+        };
+        let origin =
+          || Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into());
+        let (center, r) = match rest {
+          [_] => (origin(), Expr::Integer(1)),
+          [r, _] => (origin(), radius(r)),
+          [c, r, _] => (c.clone(), radius(r)),
+          _ => return uneval(),
+        };
+        return Ok(call("Sphere", vec![center, r]));
+      }
+      _ => return uneval(),
+    }
+  }
   let Expr::List(points) = expr else {
     return uneval();
   };
@@ -14255,6 +14324,54 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
       Ok(call1("Insphere", expr.clone()))
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // A three-vertex polygon is the triangle on its points.
+      "Polygon"
+        if args.len() == 1
+          && matches!(&args[0], Expr::List(vertices) if vertices.len() == 3) =>
+      {
+        let inscribed = compute_insphere(&args[0])?;
+        if matches!(&inscribed, Expr::FunctionCall { name, .. } if name == "Sphere")
+        {
+          Ok(inscribed)
+        } else {
+          Ok(call1("Insphere", expr.clone()))
+        }
+      }
+      // A regular n-gon with circumradius r: the circle of radius r Cos[Pi/n]
+      // about its center. wolframscript leaves the scalar-radius form with
+      // an explicit center, RegularPolygon[c, r, n], without one.
+      "RegularPolygon" => {
+        let (center, radius, sides) = match args.as_slice() {
+          [n] => (None, Expr::Integer(1), n),
+          [Expr::List(rt), n] if rt.len() == 2 => (None, rt[0].clone(), n),
+          [r, n] if !matches!(r, Expr::List(_)) => (None, r.clone(), n),
+          [c @ Expr::List(_), Expr::List(rt), n] if rt.len() == 2 => {
+            (Some(c.clone()), rt[0].clone(), n)
+          }
+          _ => (None, Expr::Integer(0), &Expr::Integer(0)),
+        };
+        if !matches!(sides, Expr::Integer(k) if *k >= 3) {
+          crate::emit_message(&format!(
+            "Insphere::indep: Insphere does not exist for {}.",
+            expr_to_string(expr)
+          ));
+          return Ok(call1("Insphere", expr.clone()));
+        }
+        let center = center.unwrap_or_else(|| {
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+        });
+        let inradius = evaluate_expr_to_expr(&times(vec![
+          radius,
+          call1(
+            "Cos",
+            times(vec![
+              const_expr("Pi"),
+              pow(sides.clone(), Expr::Integer(-1)),
+            ]),
+          ),
+        ]))?;
+        Ok(call("Sphere", vec![center, inradius]))
+      }
       "Triangle" if args.len() == 1 => {
         if let Expr::List(vertices) = &args[0]
           && vertices.len() == 3
