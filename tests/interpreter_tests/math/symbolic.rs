@@ -253,7 +253,7 @@ mod sum {
         .unwrap();
     assert_eq!(result.result, "Sum[{a, b, c}[[j]], {j, n}]");
     assert!(
-      result.warnings.iter().all(|w| !w.contains("$")),
+      result.warnings.iter().all(|w| !w.contains('$')),
       "{:?}",
       result.warnings
     );
