@@ -2426,6 +2426,20 @@ mod graphics {
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
 
+    /// A number in scientific notation inside a label sets its exponent as a
+    /// superscript digit on one line, not stacked on a second text line.
+    #[test]
+    fn text_number_form_scientific_raises_exponent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"P= \", NumberForm[70777777.78, {3, 2}], \" Pa\"}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(">P= 7.08 \u{00d7} 10\u{2077} Pa</text>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("dy=\"-"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
