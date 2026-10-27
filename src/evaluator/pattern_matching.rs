@@ -1207,74 +1207,55 @@ pub fn apply_replace_ast(
     return Ok(Expr::List(results?.into()));
   }
 
-  // Try to apply single rule or list of rules at top level only
-  match rules {
-    Expr::Rule {
+  Ok(try_replace_top(expr, rules)?.unwrap_or_else(|| expr.clone()))
+}
+
+/// Apply a rule or list of rules to `expr` as a whole (not its parts), the
+/// way `Replace` does. Returns `None` when no rule matches, so callers can
+/// tell "no match" apart from a rule that rewrote `expr` to an equal value.
+pub fn try_replace_top(
+  expr: &Expr,
+  rules: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let single;
+  let items: &[Expr] = match rules {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+      single = [rules.clone()];
+      &single
+    }
+    Expr::List(items) => items,
+    _ => return Ok(None),
+  };
+  for rule in items {
+    let (Expr::Rule {
       pattern,
       replacement,
     }
     | Expr::RuleDelayed {
       pattern,
       replacement,
-    } => {
-      // Try structural pattern matching first
-      let (pat_expr, condition) = extract_pattern_and_condition(pattern);
-      if contains_pattern(&pat_expr) {
-        if let Some(result) = try_ast_pattern_replace_single(
-          expr,
-          &pat_expr,
-          replacement,
-          condition.as_deref(),
-        )? {
-          return Ok(result);
-        }
-        return Ok(expr.clone());
+    }) = rule
+    else {
+      continue;
+    };
+    let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+    if contains_pattern(&pat_expr) {
+      if let Some(result) = try_ast_pattern_replace_single(
+        expr,
+        &pat_expr,
+        replacement,
+        condition.as_deref(),
+      )? {
+        return Ok(Some(result));
       }
-      // Simple string-based matching at top level
-      let expr_str = expr_to_string(expr);
-      let pattern_str = expr_to_string(pattern);
-      if expr_str == pattern_str {
-        return Ok((**replacement).clone());
-      }
-      Ok(expr.clone())
+      continue;
     }
-    Expr::List(items) if !items.is_empty() => {
-      // Multiple rules - try each in order, use first match
-      for rule in items {
-        match rule {
-          Expr::Rule {
-            pattern,
-            replacement,
-          }
-          | Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } => {
-            let (pat_expr, condition) = extract_pattern_and_condition(pattern);
-            if contains_pattern(&pat_expr) {
-              if let Some(result) = try_ast_pattern_replace_single(
-                expr,
-                &pat_expr,
-                replacement,
-                condition.as_deref(),
-              )? {
-                return Ok(result);
-              }
-              continue;
-            }
-            let expr_str = expr_to_string(expr);
-            let pattern_str = expr_to_string(pattern);
-            if expr_str == pattern_str {
-              return Ok((**replacement).clone());
-            }
-          }
-          _ => {}
-        }
-      }
-      Ok(expr.clone())
+    // Simple string-based matching at top level
+    if expr_to_string(expr) == expr_to_string(pattern) {
+      return Ok(Some((**replacement).clone()));
     }
-    _ => Ok(expr.clone()),
   }
+  Ok(None)
 }
 
 /// Apply Replace with level specification: Replace[expr, rules, levelspec]
@@ -3057,6 +3038,11 @@ fn apply_replace_all_ast_impl(
     structure,
   } = expr
   {
+    // Like any expression, the graphic as a whole is tried first:
+    // `plot /. _Graphics -> 0` replaces the entire picture.
+    if let Some(result) = try_replace_top(expr, rules)? {
+      return Ok(result);
+    }
     // A plot remembers its curve as sampled series rather than as symbolic
     // primitives, so a rule naming one of those primitives — the
     // Demonstrations idiom `plot /. L_Line :> {Red,
@@ -5900,6 +5886,10 @@ pub fn get_expr_head(expr: &Expr) -> String {
     // symbol — return its rendered form so typed blanks like `_Symbol` or
     // `_h` do not spuriously match the whole expression.
     Expr::CurriedCall { func, .. } => return expr_to_string(func),
+    Expr::Image { .. } | Expr::Graphics { .. } => {
+      crate::functions::predicate_ast::rendered_object_head(expr)
+        .unwrap_or("Symbol")
+    }
     _ => "Symbol",
   };
   result.to_string()

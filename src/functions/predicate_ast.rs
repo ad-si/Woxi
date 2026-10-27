@@ -2071,6 +2071,22 @@ pub fn contains_real_literal(expr: &Expr) -> bool {
 }
 
 /// Head[expr] - Returns the head of an expression
+/// Head of an opaque rendered object (`Image`, or `Graphics`/`Graphics3D`
+/// and heads like `GeoGraphics` that override it). `None` for any other
+/// expression. Shared by `Head` and typed blanks such as `_Graphics`, so the
+/// two can never disagree.
+pub fn rendered_object_head(expr: &Expr) -> Option<&str> {
+  match expr {
+    Expr::Image { .. } => Some("Image"),
+    Expr::Graphics { is_3d, head, .. } => Some(match head {
+      Some(h) => h.as_str(),
+      None if *is_3d => "Graphics3D",
+      None => "Graphics",
+    }),
+    _ => None,
+  }
+}
+
 pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -2193,12 +2209,9 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
     Expr::Pattern { .. } => "Pattern",
     Expr::PatternTest { .. } => "PatternTest",
-    Expr::Image { .. } => "Image",
-    Expr::Graphics { is_3d, head, .. } => match head {
-      Some(h) => h.as_str(),
-      None if *is_3d => "Graphics3D",
-      None => "Graphics",
-    },
+    Expr::Image { .. } | Expr::Graphics { .. } => {
+      rendered_object_head(&args[0]).unwrap_or("Symbol")
+    }
     Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };

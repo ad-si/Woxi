@@ -156,6 +156,36 @@ mod graphics {
       assert_eq!(interpret("Graphics[{}]").unwrap(), "-Graphics-");
     }
 
+    /// Rendered plots and images are opaque objects internally, but typed
+    /// blanks must see the same head `Head` reports.
+    #[test]
+    fn rendered_objects_match_typed_blanks() {
+      assert_eq!(
+        interpret(
+          "p = Plot[x, {x, 0, 1}]; g = Plot3D[x y, {x, 0, 1}, {y, 0, 1}]; \
+           i = Image[{{0, 1}}]; \
+           {MatchQ[p, _Graphics], MatchQ[p, _Symbol], MatchQ[g, _Graphics3D], \
+           MatchQ[g, _Graphics], MatchQ[i, _Image], \
+           Length[Cases[{p, g, i, 1}, _Graphics | _Graphics3D | _Image]]}"
+        )
+        .unwrap(),
+        "{True, False, True, False, True, 3}"
+      );
+    }
+
+    #[test]
+    fn replace_all_matches_whole_rendered_graphic() {
+      assert_eq!(
+        interpret(
+          "p = Plot[x, {x, 0, 1}]; \
+           {p /. _Graphics -> 0, p /. g_Graphics :> Head[g], \
+           Replace[p, _Graphics -> 0], {p} /. _Graphics -> 0}"
+        )
+        .unwrap(),
+        "{0, Graphics, 0, {0}}"
+      );
+    }
+
     #[test]
     fn graphics_with_text_primitive_text_output() {
       assert_eq!(

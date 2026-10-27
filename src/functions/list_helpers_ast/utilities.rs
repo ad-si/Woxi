@@ -130,6 +130,10 @@ pub fn get_expr_head_str(expr: &Expr) -> &str {
         "Inequality"
       }
     }
+    Expr::Image { .. } | Expr::Graphics { .. } => {
+      crate::functions::predicate_ast::rendered_object_head(expr)
+        .unwrap_or("Symbol")
+    }
     _ => "Symbol",
   }
 }
