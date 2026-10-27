@@ -6331,6 +6331,37 @@ mod distribution_quantile_closed_forms {
   }
 
   #[test]
+  fn triangular() {
+    // Symmetric default mode: the median is exactly zero, not a bisection
+    // residue like -2.2*^-16.
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{-3, 3}], 0.5]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{-3, 3}], 1/2]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{0, 2}, 1], 1/4]").unwrap(),
+      "1/Sqrt[2]"
+    );
+    // Falling branch with an explicit mode.
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{0, 4}, 1], 3/4]").unwrap(),
+      "4 - Sqrt[3]"
+    );
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{0, 4}, 1], 0]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Quantile[TriangularDistribution[{0, 4}, 1], 1]").unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
   fn laplace() {
     // Piecewise about q = 1/2.
     assert_eq!(
