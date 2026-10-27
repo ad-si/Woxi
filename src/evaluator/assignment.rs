@@ -2465,10 +2465,11 @@ fn downvalue_arg_info(
       // element, which relaxes the length check and (for named sequence
       // elements) binds the sequence variable to the matching tail.
       Expr::List(patterns)
-        if patterns.iter().any(|p| {
+        if patterns.iter().enumerate().any(|(idx, p)| {
           contains_mutating_head(p)
             || crate::evaluator::pattern_matching::is_optional_slot(p)
             || is_options_or_repeated_element(p)
+            || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
         }) =>
       {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
@@ -4825,6 +4826,29 @@ fn collect_element_bindings(
 /// being a plain trailing blank sequence — `OptionsPattern[]`, `p..`, `p...`,
 /// each optionally named (`o : OptionsPattern[]`). The `Length`/`Part`
 /// lowering cannot express these, so such lists use the structural matcher.
+/// A list-pattern element that the positional `Part` accessors cannot
+/// express: a `Longest[…]` / `Shortest[…]` wrapper, or a sequence pattern
+/// (`x__`, `x___`) with more elements after it, whose extent depends on
+/// where the rest of the list matches.
+fn is_ordered_or_inner_sequence(p: &Expr, has_following: bool) -> bool {
+  match p {
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      is_ordered_or_inner_sequence(&args[1], has_following)
+    }
+    Expr::FunctionCall { name, .. }
+      if name == "Longest" || name == "Shortest" =>
+    {
+      true
+    }
+    Expr::Pattern { blank_type, .. } | Expr::PatternTest { blank_type, .. } => {
+      has_following && *blank_type >= 2
+    }
+    _ => false,
+  }
+}
+
 fn is_options_or_repeated_element(p: &Expr) -> bool {
   match p {
     Expr::FunctionCall { name, args }

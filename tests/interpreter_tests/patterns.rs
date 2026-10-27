@@ -7087,3 +7087,66 @@ mod literal_rule_with_condition {
     );
   }
 }
+
+mod list_pattern_sequences_in_definitions {
+  use super::*;
+
+  // A trailing sequence element of a list pattern must be spliced into a
+  // held body, not leak its internal `Sequence @@ Drop[…]` accessor.
+  #[test]
+  fn trailing_sequence_is_spliced_into_held_body() {
+    assert_eq!(
+      interpret("lpsA[{a__}] := HoldForm[g[{a}]]; lpsA[{p, q}]").unwrap(),
+      "HoldForm[g[{p, q}]]"
+    );
+    assert_eq!(
+      interpret("lpsB[{a_, b__}] := Hold[{a, b}]; lpsB[{p, q, r}]").unwrap(),
+      "Hold[{p, q, r}]"
+    );
+    assert_eq!(
+      interpret("lpsC[{a_, b___}] := Hold[g[b]]; lpsC[{p}]").unwrap(),
+      "Hold[g[]]"
+    );
+  }
+
+  #[test]
+  fn sequence_before_another_element_matches_in_definitions() {
+    assert_eq!(
+      interpret("lpsD[{a___, b_}] := {{a}, b}; lpsD[{x, y, z}]").unwrap(),
+      "{{x, y}, z}"
+    );
+    assert_eq!(
+      interpret("lpsE[{Longest[a___], b___}] := Hold[a, b]; lpsE[{x, y, z}]")
+        .unwrap(),
+      "Hold[x, y, z]"
+    );
+  }
+
+  // A named Longest/Shortest sequence repeated in a pattern takes the same
+  // value everywhere, so the longest split of the first occurrence may have
+  // to give way.
+  #[test]
+  fn repeated_longest_sequence_backtracks() {
+    assert_eq!(
+      interpret(
+        "Replace[{{x, y}, {x, z}}, \
+         {{Longest[a___], b___}, {Longest[a___], c___}} :> {{a}, {b}, {c}}]"
+      )
+      .unwrap(),
+      "{{x}, {y}, {z}}"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[f[{x, y}] g[{x, z}], \
+         f[{Longest[a___], b___}] g[{Longest[a___], c___}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{{x}, {y}}, {{Longest[a__]}, {Longest[a__]}}]")
+        .unwrap(),
+      "False"
+    );
+  }
+}
