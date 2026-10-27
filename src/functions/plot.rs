@@ -4413,8 +4413,8 @@ fn generate_svg_with_options(
   // Inject logarithmic axis labels with superscript formatting on a frame
   // (the origin axes label their own decades).
   if !origin_axes
-    && ((opts.log_y && show_y_axis && show_ticks && opts.ticks_y.is_none())
-      || (opts.log_x && show_x_axis && show_ticks && opts.ticks_x.is_none()))
+    && ((opts.log_y && tick_axis_y && show_ticks && opts.ticks_y.is_none())
+      || (opts.log_x && tick_axis_x && show_ticks && opts.ticks_x.is_none()))
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -4440,7 +4440,7 @@ fn generate_svg_with_options(
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut log_labels = String::new();
 
-      if opts.log_y && show_y_axis && opts.ticks_y.is_none() {
+      if opts.log_y && tick_axis_y && opts.ticks_y.is_none() {
         inject_log_axis_labels(
           &mut log_labels,
           y_min,
@@ -4455,7 +4455,7 @@ fn generate_svg_with_options(
         );
       }
 
-      if opts.log_x && show_x_axis && opts.ticks_x.is_none() {
+      if opts.log_x && tick_axis_x && opts.ticks_x.is_none() {
         inject_log_axis_labels(
           &mut log_labels,
           x_min,
