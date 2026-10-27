@@ -10069,6 +10069,24 @@ mod ndsolve {
     assert_eq!(result, "3");
   }
 
+  // A condition as the event fires where its sides cross, and the method's
+  // option names may be symbols as well as strings.
+  #[test]
+  fn event_locator_condition_and_symbol_names() {
+    for method in [
+      "{\"EventLocator\", \"Event\" :> y[t] < 0.5, \"EventAction\" :> Throw[stopT = t, \"StopIntegration\"]}",
+      "{EventLocator, Event :> y[t] < 0.5, EventAction :> Throw[stopT = t, \"StopIntegration\"]}",
+    ] {
+      clear_state();
+      let result = interpret(&format!(
+        "NDSolve[{{y'[t] == -y[t], y[0] == 1}}, y, {{t, 0, 10}}, \
+         Method -> {method}]; Round[1000 stopT]"
+      ))
+      .unwrap();
+      assert_eq!(result, "693", "{method}");
+    }
+  }
+
   #[test]
   fn event_locator_stops_integration() {
     // Method -> {"EventLocator", …} stops at the event crossing and runs

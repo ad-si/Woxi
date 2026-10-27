@@ -1596,6 +1596,33 @@ pub fn apply_curried_call(
   if let Some(result) = try_apply_curry(func, args) {
     return result;
   }
+  // `Derivative[k][BSplineFunction[…]][t]`: the k-th derivative curve.
+  if let Expr::CurriedCall {
+    func: derivative,
+    args: inner,
+  } = func
+    && let Expr::FunctionCall {
+      name: d_name,
+      args: d_args,
+    } = derivative.as_ref()
+    && d_name == "Derivative"
+    && let [Expr::Integer(k)] = d_args.as_slice()
+    && *k >= 0
+    && let [
+      Expr::FunctionCall {
+        name: s_name,
+        args: spline,
+      },
+    ] = inner.as_slice()
+    && s_name == "BSplineFunction"
+    && spline.len() == 9
+    && args
+      .iter()
+      .all(|a| crate::functions::math_ast::try_eval_to_f64(a).is_some())
+    && let Some(derived) = bspline_curve_derivative(spline, *k as usize)
+  {
+    return Ok(evaluate_bspline_function(&derived, args));
+  }
   if let Some(result) = try_apply_reverse_applied(func, args) {
     return result;
   }
@@ -3424,6 +3451,101 @@ fn bspline_point_coords(e: &Expr) -> Option<Vec<f64>> {
       .collect(),
     _ => crate::functions::math_ast::try_eval_to_f64(e).map(|v| vec![v]),
   }
+}
+
+/// The structured form of the k-th derivative of a (non-rational) B-spline
+/// curve: degree p - k, control points `p (P[i+1] - P[i])/(u[i+p+1] -
+/// u[i+1])` taken k times, and the knot vector without its end knots.
+/// Past the degree the derivative is the zero curve.
+fn bspline_curve_derivative(spline: &[Expr], k: usize) -> Option<Vec<Expr>> {
+  if !matches!(&spline[0], Expr::Integer(1)) {
+    return None;
+  }
+  let Expr::List(degrees) = &spline[2] else {
+    return None;
+  };
+  let [Expr::Integer(p)] = degrees.as_slice() else {
+    return None;
+  };
+  let Expr::List(slot) = &spline[4] else {
+    return None;
+  };
+  if !matches!(slot.get(1), Some(Expr::Identifier(w)) if w == "Automatic") {
+    return None;
+  }
+  let Expr::List(net) = slot.first()? else {
+    return None;
+  };
+  let scalar = !matches!(net.first()?, Expr::List(_));
+  let mut points: Vec<Vec<f64>> = net
+    .iter()
+    .map(bspline_point_coords)
+    .collect::<Option<_>>()?;
+  let Expr::List(knot_sets) = &spline[5] else {
+    return None;
+  };
+  let Expr::List(knots) = knot_sets.first()? else {
+    return None;
+  };
+  let mut knots: Vec<f64> = knots
+    .iter()
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .collect::<Option<_>>()?;
+  let mut degree = *p as usize;
+  for _ in 0..k {
+    if degree == 0 || points.len() < 2 {
+      let width = points.first().map_or(1, Vec::len);
+      points = vec![vec![0.0; width]];
+      knots = vec![knots[0], *knots.last()?];
+      degree = 0;
+      break;
+    }
+    points = (0..points.len() - 1)
+      .map(|i| {
+        let span = knots[i + degree + 1] - knots[i + 1];
+        points[i + 1]
+          .iter()
+          .zip(&points[i])
+          .map(|(b, a)| {
+            if span == 0.0 {
+              0.0
+            } else {
+              degree as f64 * (b - a) / span
+            }
+          })
+          .collect()
+      })
+      .collect();
+    knots = knots[1..knots.len() - 1].to_vec();
+    degree -= 1;
+  }
+  let to_expr = |pt: &Vec<f64>| {
+    if scalar {
+      Expr::Real(pt[0])
+    } else {
+      Expr::List(pt.iter().map(|v| Expr::Real(*v)).collect::<Vec<_>>().into())
+    }
+  };
+  let mut derived = spline.to_vec();
+  derived[2] = Expr::List(vec![Expr::Integer(degree as i128)].into());
+  derived[4] = Expr::List(
+    vec![
+      Expr::List(points.iter().map(to_expr).collect::<Vec<_>>().into()),
+      Expr::Identifier("Automatic".into()),
+    ]
+    .into(),
+  );
+  derived[5] = Expr::List(
+    vec![Expr::List(
+      knots
+        .iter()
+        .map(|v| Expr::Real(*v))
+        .collect::<Vec<_>>()
+        .into(),
+    )]
+    .into(),
+  );
+  Some(derived)
 }
 
 /// Evaluate the structured `BSplineFunction[...]` object at the supplied

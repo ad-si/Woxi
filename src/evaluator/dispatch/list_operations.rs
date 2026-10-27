@@ -5638,6 +5638,52 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2], &args[3],
       ));
     }
+    // Inner[f, a, b, g, n] contracts the n-th index of `a` with the first
+    // of `b`: `a` with that index moved last, under the ordinary Inner.
+    "Inner" if args.len() == 5 => {
+      let rank = match crate::functions::list_helpers_ast::array_depth_ast(&args[1]) {
+        Ok(Expr::Integer(d)) if d >= 1 => d as usize,
+        _ => return Some(Ok(crate::helpers::unevaluated("Inner", args))),
+      };
+      let n = match &args[4] {
+        Expr::Integer(n) if *n >= 1 && (*n as usize) <= rank => *n as usize,
+        level => {
+          if let Ok(dims) = crate::evaluator::evaluate_function_call_ast(
+            "Dimensions",
+            &[args[1].clone()],
+          ) {
+            crate::emit_message(&format!(
+              "Inner::nolev: Level {} is not available in {} (dimensions {}).",
+              crate::syntax::expr_to_string(level),
+              crate::syntax::expr_to_string(&args[1]),
+              crate::syntax::expr_to_string(&dims)
+            ));
+          }
+          return Some(Ok(crate::helpers::unevaluated("Inner", args)));
+        }
+      };
+      let permutation: Vec<Expr> = (1..=rank)
+        .map(|k| {
+          Expr::Integer(if k < n {
+            k
+          } else if k == n {
+            rank
+          } else {
+            k - 1
+          } as i128)
+        })
+        .collect();
+      let moved = match crate::evaluator::evaluate_function_call_ast(
+        "Transpose",
+        &[args[1].clone(), Expr::List(permutation.into())],
+      ) {
+        Ok(m) => m,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(list_helpers_ast::inner_ast(
+        &args[0], &moved, &args[2], &args[3],
+      ));
+    }
     "ReplacePart" if args.len() == 2 => {
       return Some(list_helpers_ast::replace_part_ast(&args[0], &args[1]));
     }

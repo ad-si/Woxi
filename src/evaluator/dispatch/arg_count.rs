@@ -749,7 +749,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "KirchhoffGraph" => Some((1, usize::MAX)),
     "InexactNumberQ" => Some((1, 1)),
     "Information" => Some((1, 2)),
-    "Inner" => Some((3, 4)),
+    "Inner" => Some((3, 5)),
     "Insert" => Some((2, 3)),
     "Insphere" => Some((1, 1)),
     "IntegerDigits" => Some((1, 3)),

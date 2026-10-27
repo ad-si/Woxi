@@ -17179,6 +17179,67 @@ mod cases {
     assert_case(r#"Area[{u, v}, {u, 0, 1}]"#, r#"Area[{u, v}, {u, 0, 1}]"#);
   }
 
+  // A number in NSolve's variable slot is the legacy precision argument.
+  #[test]
+  fn nsolve_legacy_precision_argument() {
+    assert_case(
+      r#"NSolve[{x + y == 1, x - y == 0}, 5]"#,
+      r#"{{x -> 0.5, y -> 0.5}}"#,
+    );
+    assert_case(r#"Length[NSolve[x^2 == 2, 10]]"#, r#"2"#);
+  }
+
+  // N gives the imaginary unit and negated expressions machine values.
+  #[test]
+  fn n_of_imaginary_unit_and_negation() {
+    assert_case(r#"N[I]"#, r#"0. + 1.*I"#);
+    assert_case(r#"N[-I]"#, r#"0. - 1.*I"#);
+    assert_case(r#"N[{I, 2}]"#, r#"{0. + 1.*I, 2.}"#);
+    assert_case(r#"N[x + I]"#, r#"(0. + 1.*I) + x"#);
+    assert_case(r#"N[-x]"#, r#"-1.*x"#);
+    assert_case(r#"N[-Sqrt[2] x]"#, r#"-1.4142135623730951*x"#);
+  }
+
+  // Element is silent about an unknown domain symbol; only the singular
+  // spelling of a number domain is reported.
+  #[test]
+  fn element_unknown_domain_is_silent() {
+    woxi::clear_state();
+    assert_eq!(
+      woxi::interpret("Element[2, foo]").unwrap(),
+      "Element[2, foo]"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    woxi::clear_state();
+    woxi::interpret("Element[x, Real]").unwrap();
+    assert!(
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("Element::bset: The second argument Real"))
+    );
+  }
+
+  // Inner over the n-th index of the first tensor.
+  #[test]
+  fn inner_over_a_chosen_index() {
+    assert_case(
+      r#"Inner[f, {a, b}, {c, d}, g, 1]"#,
+      r#"g[f[a, c], f[b, d]]"#,
+    );
+    assert_case(
+      r#"Inner[f, {{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, g, 1]"#,
+      r#"{{g[f[1, 5], f[3, 7]], g[f[1, 6], f[3, 8]]}, {g[f[2, 5], f[4, 7]], g[f[2, 6], f[4, 8]]}}"#,
+    );
+    assert_case(
+      r#"Inner[Times, {{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}, Plus, 2]"#,
+      r#"{{19, 22}, {43, 50}}"#,
+    );
+    assert_case(
+      r#"Inner[f, {a, b}, {c, d}, g, 3]"#,
+      r#"Inner[f, {a, b}, {c, d}, g, 3]"#,
+    );
+  }
+
   #[test]
   fn divisible_arity_message() {
     woxi::clear_state();
