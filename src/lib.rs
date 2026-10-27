@@ -1370,6 +1370,16 @@ fn promote_result_graphics(expr: &syntax::Expr) {
     }
     return;
   }
+  // `Legended[g, None]` has no legend to draw and shows `g` alone, which
+  // Demonstrations use to toggle a legend on and off.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Legended"
+    && args.len() == 2
+    && matches!(&args[1], syntax::Expr::Identifier(n) if n == "None")
+  {
+    promote_result_graphics(&args[0]);
+    return;
+  }
   // A cell whose value is an `Animate[…]` (typically built by a helper
   // function a Demonstration defines in its Initialization) shows the
   // animation's first frame. Script mode keeps the symbolic form.

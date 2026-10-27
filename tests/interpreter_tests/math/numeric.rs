@@ -335,6 +335,46 @@ mod n_arbitrary_precision {
     );
   }
 
+  // Regression: the Brent–McMillan series for EulerGamma ran in BigFloat
+  // arithmetic, so 10^4 digits took ~25s. In fixed-point integers it is
+  // instant; the digits agree between two independently sized runs.
+  #[test]
+  fn n_euler_gamma_ten_thousand_digits() {
+    assert_eq!(
+      interpret(
+        "RealDigits[N[EulerGamma, 10000]][[1, 9000 ;; 9990]] === \
+         RealDigits[N[EulerGamma, 10200]][[1, 9000 ;; 9990]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Regression: RealDigits of a high-precision real in a base other than 10
+  // did a full-precision BigFloat operation (and a decimal formatting) per
+  // digit, so 10^4 digits of Pi in base 3 took over a minute.
+  #[test]
+  fn real_digits_big_float_other_base_is_fast_and_exact() {
+    assert_eq!(
+      interpret("RealDigits[N[Pi, 30], 3][[1, 1 ;; 20]]").unwrap(),
+      "{1, 0, 0, 1, 0, 2, 1, 1, 0, 1, 2, 2, 2, 2, 0, 1, 0, 2, 1, 1}"
+    );
+    assert_eq!(interpret("RealDigits[N[Pi, 30], 3][[2]]").unwrap(), "2");
+    assert_eq!(
+      interpret("Length[First[RealDigits[N[Pi, 10000], 3]]]").unwrap(),
+      "20959"
+    );
+    // A value below 1 and a base above 255 take the same path.
+    assert_eq!(
+      interpret("RealDigits[N[1/3, 30], 7][[1, 1 ;; 5]]").unwrap(),
+      "{2, 2, 2, 2, 2}"
+    );
+    assert_eq!(
+      interpret("RealDigits[N[Pi, 20], 260][[1, 1 ;; 3]]").unwrap(),
+      "{3, 36, 211}"
+    );
+  }
+
   #[test]
   fn n_catalan_arbitrary() {
     // N[Catalan, 20] — Catalan's constant G at arbitrary precision.

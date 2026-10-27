@@ -5968,6 +5968,75 @@ pub(crate) fn complex_exp_integral_ei(
   (result_re, result_im)
 }
 
+/// `floor(x · 2^frac_bits)` of a BigFloat, exactly.
+fn bigfloat_to_fixed(
+  x: &astro_float::BigFloat,
+  frac_bits: usize,
+) -> num_bigint::BigInt {
+  use num_bigint::{BigInt, BigUint, Sign};
+  let Some((words, _, sign, exp, _)) = x.as_raw_parts() else {
+    return BigInt::from(0);
+  };
+  let mut mantissa = BigUint::from(0u8);
+  for &word in words.iter().rev() {
+    mantissa = (mantissa << astro_float::Word::BITS) | BigUint::from(word);
+  }
+  let shift = exp as i64
+    - (words.len() * astro_float::Word::BITS as usize) as i64
+    + frac_bits as i64;
+  let scaled = if shift >= 0 {
+    mantissa << shift as usize
+  } else {
+    mantissa >> (-shift) as usize
+  };
+  let sign = if sign == astro_float::Sign::Neg {
+    Sign::Minus
+  } else {
+    Sign::Plus
+  };
+  BigInt::from_biguint(sign, scaled)
+}
+
+/// The BigFloat `n · 2^-frac_bits` rounded to `bits` bits.
+fn fixed_to_bigfloat(
+  n: &num_bigint::BigInt,
+  frac_bits: usize,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> astro_float::BigFloat {
+  use astro_float::BigFloat;
+  use num_bigint::Sign;
+  let (sign, magnitude) = n.clone().into_parts();
+  if sign == Sign::NoSign {
+    return BigFloat::from_i32(0, bits);
+  }
+  const WORD_BYTES: usize = (astro_float::Word::BITS / 8) as usize;
+  // Left-align the integer in whole words so the mantissa's top bit is set.
+  let len = magnitude.bits() as usize;
+  let total = len.div_ceil(astro_float::Word::BITS as usize)
+    * astro_float::Word::BITS as usize;
+  let bytes = (magnitude << (total - len)).to_bytes_le();
+  let words: Vec<astro_float::Word> = bytes
+    .chunks(WORD_BYTES)
+    .map(|chunk| {
+      let mut buf = [0u8; WORD_BYTES];
+      buf[..chunk.len()].copy_from_slice(chunk);
+      astro_float::Word::from_le_bytes(buf)
+    })
+    .collect();
+  let sign = if sign == Sign::Minus {
+    astro_float::Sign::Neg
+  } else {
+    astro_float::Sign::Pos
+  };
+  let exact = BigFloat::from_words(
+    &words,
+    sign,
+    (len as i64 - frac_bits as i64) as astro_float::Exponent,
+  );
+  exact.add(&BigFloat::from_i32(0, bits), bits, rm)
+}
+
 /// The Euler–Mascheroni constant γ to `bits` bits: from a 105-digit literal
 /// up to 340 bits, beyond that by Brent and McMillan's algorithm B1,
 /// γ = U/V with U = Σ A_k, V = Σ B_k, B_k = B_{k−1} n²/k²,
@@ -5990,33 +6059,29 @@ pub(crate) fn compute_euler_gamma(
   if let Some(v) = CACHE.with(|c| c.borrow().get(&bits).cloned()) {
     return v;
   }
+  // Every term is a rational multiple of the previous one, so the series
+  // runs in fixed point on integers (`w` fractional bits): a multiplication
+  // and a division by machine integers per term instead of full-precision
+  // BigFloat divisions.
+  use num_traits::Zero;
   let w = bits + 64;
   let n = (bits as f64 * std::f64::consts::LN_2 / 4.0).ceil() as u64 + 2;
-  let n_bf = BigFloat::from_u64(n, w);
-  let n2 = n_bf.mul(&n_bf, w, rm);
-  let mut a = n_bf.ln(w, rm, cc).neg();
-  let mut b = BigFloat::from_i32(1, w);
+  let n2 = n * n;
+  let mut a = -bigfloat_to_fixed(&BigFloat::from_u64(n, w).ln(w, rm, cc), w);
+  let mut b = num_bigint::BigInt::from(1) << w;
   let mut u = a.clone();
   let mut v = b.clone();
   for k in 1u64.. {
-    let k_bf = BigFloat::from_u64(k, w);
-    b = b.mul(&n2, w, rm).div(&k_bf.mul(&k_bf, w, rm), w, rm);
-    a = a
-      .mul(&n2, w, rm)
-      .div(&k_bf, w, rm)
-      .add(&b, w, rm)
-      .div(&k_bf, w, rm);
-    u = u.add(&a, w, rm);
-    v = v.add(&b, w, rm);
-    let small = |t: &BigFloat, s: &BigFloat| {
-      t.is_zero()
-        || t.exponent().unwrap_or(0) < s.exponent().unwrap_or(0) - w as i32
-    };
-    if k > n && small(&a, &u) && small(&b, &v) {
+    let k2 = k * k;
+    b = b * n2 / k2;
+    a = (a * n2 / k + &b) / k;
+    u += &a;
+    v += &b;
+    if k > n && a.is_zero() && b.is_zero() {
       break;
     }
   }
-  let gamma = u.div(&v, bits, rm);
+  let gamma = fixed_to_bigfloat(&((u << w) / v), w, bits, rm);
   CACHE.with(|c| c.borrow_mut().insert(bits, gamma.clone()));
   gamma
 }
