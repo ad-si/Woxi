@@ -106,6 +106,7 @@ impl Attributes {
 const UNPROTECTED_BUILTINS: &[&str] = &[
   "$Context",
   "$ContextPath",
+  "$DefaultFont",
   "$Display",
   "$DisplayFunction",
   "$Echo",

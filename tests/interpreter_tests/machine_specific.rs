@@ -448,6 +448,18 @@ mod cases {
   fn machine_precision_1() {
     assert_case(r#"$MachinePrecision"#, r#"15.954589770191003"#);
   }
+  // The legacy text font is a family and a size, and user code may reset it.
+  #[test]
+  fn default_font() {
+    assert_case(
+      r#"{$DefaultFont, $DefaultFont[[2]]}"#,
+      r#"{{Courier, 10.}, 10.}"#,
+    );
+    assert_case(
+      r#"$DefaultFont = {"Times", 12}; {$DefaultFont, Attributes[$DefaultFont]}"#,
+      r#"{{Times, 12}, {}}"#,
+    );
+  }
   #[test]
   fn min_precision() {
     assert_case(r#"$MinPrecision"#, r#"0"#);

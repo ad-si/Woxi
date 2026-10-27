@@ -447,6 +447,7 @@ pub const SYSTEM_VARIABLES: &[&str] = &[
   "$Context",
   "$ContextAliases",
   "$ContextPath",
+  "$DefaultFont",
   "$DisplayFunction",
   "$ExportFormats",
   "$Failed",
@@ -525,6 +526,10 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // actually being read.
     "$InputFileName" => Some(Expr::String(String::new())),
     "$MachinePrecision" => Some(Expr::Real(15.954589770191003)),
+    // The legacy default text font: family and size.
+    "$DefaultFont" => Some(Expr::List(
+      vec![Expr::String("Courier".into()), Expr::Real(10.0)].into(),
+    )),
     // Woxi's whole datetime layer works in UTC (DateObject instants carry
     // TimeZone 0.), so $TimeZone reads as 0. too.
     "$TimeZone" => Some(Expr::Real(0.0)),

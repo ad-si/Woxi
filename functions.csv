@@ -6327,6 +6327,7 @@ $Aborted,A special symbol representing an aborted function evaluation,✅,pure,2
 $CommandLine,The command line arguments,✅,stateful,1.0,
 $Context,The current context,✅,stateful,1.0,
 $ContextPath,A list of paths to search for contexts,✅,stateful,1.0,
+$DefaultFont,The legacy default font family and size for text in graphics,✅,stateful,1.0,
 $Display,,🚫,stateful,1.0,
 $DisplayFunction,The default setting for DisplayFunction in graphics,✅,stateful,1.0,
 $Echo,,🚫,stateful,1.0,
