@@ -4182,6 +4182,141 @@ pub fn find_fundamental_cycles_ast(
   Ok(Expr::List(cycles.into()))
 }
 
+/// `FindPath[g, s, t]`, `FindPath[g, s, t, kspec]`, `FindPath[g, s, t,
+/// kspec, n]`: up to `n` (default 1, or `All`) simple paths from `s` to `t`
+/// whose edge count fits `kspec` (`Infinity`, at most `k`, `{k}` exactly, or
+/// `{kmin, kmax}`). Like wolframscript, the paths are the first ones a
+/// depth-first search meets, trying neighbors in vertex order, and are
+/// returned shortest first, equal lengths in descending lexicographic
+/// order. A path needs at least one edge, so `FindPath[g, v, v]` is `{}`.
+pub fn find_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let inert = || Ok(unevaluated("FindPath", args));
+  if !(3..=5).contains(&args.len()) {
+    return inert();
+  }
+  let Expr::FunctionCall { name, args: gargs } = &args[0] else {
+    return inert();
+  };
+  if name != "Graph" {
+    return inert();
+  }
+  let Some(Expr::List(vertices)) = gargs.first() else {
+    return inert();
+  };
+  let Some((n, pairs)) = parse_graph_pairs(&args[0]) else {
+    return inert();
+  };
+  let position = |v: &Expr| {
+    let key = expr_to_string(v);
+    vertices.iter().position(|u| expr_to_string(u) == key)
+  };
+  let (Some(source), Some(target)) = (position(&args[1]), position(&args[2]))
+  else {
+    let bad = if position(&args[1]).is_none() {
+      &args[1]
+    } else {
+      &args[2]
+    };
+    crate::emit_message(&format!(
+      "FindPath::inv: The argument {} in {} is not a valid vertex.",
+      crate::syntax::format_expr(bad, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &unevaluated("FindPath", args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return inert();
+  };
+  let as_count = |e: &Expr| match e {
+    Expr::Integer(k) if *k >= 0 => Some(*k as usize),
+    Expr::Identifier(s) if s == "Infinity" => Some(usize::MAX),
+    _ => None,
+  };
+  let (k_min, k_max) = match args.get(3) {
+    None => (1, usize::MAX),
+    Some(Expr::List(spec)) => match spec.as_slice() {
+      [k] => match as_count(k) {
+        Some(k) => (k, k),
+        None => return inert(),
+      },
+      [lo, hi] => match (as_count(lo), as_count(hi)) {
+        (Some(lo), Some(hi)) => (lo, hi),
+        _ => return inert(),
+      },
+      _ => return inert(),
+    },
+    Some(k) => match as_count(k) {
+      Some(k) => (1, k),
+      None => return inert(),
+    },
+  };
+  let limit = match args.get(4) {
+    None => 1,
+    Some(Expr::Identifier(s)) if s == "All" => usize::MAX,
+    Some(e) => match as_count(e) {
+      Some(m) => m,
+      None => return inert(),
+    },
+  };
+
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b, directed) in &pairs {
+    adj[a].push(b);
+    if !directed {
+      adj[b].push(a);
+    }
+  }
+  for list in &mut adj {
+    list.sort_unstable();
+    list.dedup();
+  }
+
+  // Depth-first over simple paths, collecting them in discovery order
+  let mut found: Vec<Vec<usize>> = Vec::new();
+  if source != target && limit > 0 {
+    let mut path = vec![source];
+    let mut on_path = vec![false; n];
+    on_path[source] = true;
+    let mut cursor = vec![0usize];
+    while let Some(&u) = path.last() {
+      let i = *cursor.last().unwrap();
+      let edges_so_far = path.len() - 1;
+      if i >= adj[u].len() || edges_so_far >= k_max {
+        on_path[u] = false;
+        path.pop();
+        cursor.pop();
+        continue;
+      }
+      *cursor.last_mut().unwrap() += 1;
+      let w = adj[u][i];
+      if on_path[w] {
+        continue;
+      }
+      if w == target {
+        if edges_so_far + 1 >= k_min {
+          let mut p = path.clone();
+          p.push(w);
+          found.push(p);
+          if found.len() >= limit {
+            break;
+          }
+        }
+        continue;
+      }
+      path.push(w);
+      on_path[w] = true;
+      cursor.push(0);
+    }
+  }
+  found.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| b.cmp(a)));
+  Ok(Expr::List(
+    found
+      .into_iter()
+      .map(|p| Expr::List(p.into_iter().map(|v| vertices[v].clone()).collect()))
+      .collect(),
+  ))
+}
+
 pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let inert = || Ok(unevaluated("FindShortestPath", args));
   if args.len() < 3 {

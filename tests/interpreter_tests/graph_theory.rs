@@ -5109,6 +5109,94 @@ mod planar_graph_q {
   }
 }
 
+mod find_path {
+  use super::*;
+
+  #[test]
+  fn first_path_of_a_depth_first_search() {
+    clear_state();
+    // Not the shortest: the first path found trying neighbors in order
+    assert_eq!(
+      interpret(
+        "{FindPath[GridGraph[{3, 3}], 1, 9], FindPath[CompleteGraph[4], 1, 4]}"
+      )
+      .unwrap(),
+      "{{{1, 2, 3, 6, 5, 4, 7, 8, 9}}, {{1, 2, 3, 4}}}"
+    );
+    assert_eq!(
+      interpret(
+        "{FindPath[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 3, 2], FindPath[CycleGraph[4], 1, 1], FindPath[Graph[{1, 2, 3}, {1 <-> 2}], 1, 3]}"
+      )
+      .unwrap(),
+      "{{{3, 1, 2}}, {}, {}}"
+    );
+  }
+
+  #[test]
+  fn all_paths_shortest_first_then_descending() {
+    clear_state();
+    assert_eq!(
+      interpret("FindPath[CompleteGraph[4], 1, 4, Infinity, All]").unwrap(),
+      "{{1, 4}, {1, 3, 4}, {1, 2, 4}, {1, 3, 2, 4}, {1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("FindPath[GridGraph[{3, 3}], 1, 9, {4}, All]").unwrap(),
+      "{{1, 4, 7, 8, 9}, {1, 4, 5, 8, 9}, {1, 4, 5, 6, 9}, {1, 2, 5, 8, 9}, {1, 2, 5, 6, 9}, {1, 2, 3, 6, 9}}"
+    );
+  }
+
+  #[test]
+  fn a_limited_count_keeps_the_first_found() {
+    clear_state();
+    assert_eq!(
+      interpret("{FindPath[GridGraph[{3, 3}], 1, 9, 6, 3], FindPath[GridGraph[{3, 3}], 1, 9, {6}, 2]}")
+        .unwrap(),
+      "{{{1, 2, 3, 6, 9}, {1, 2, 5, 4, 7, 8, 9}, {1, 2, 3, 6, 5, 8, 9}}, {{1, 2, 5, 4, 7, 8, 9}, {1, 2, 3, 6, 5, 8, 9}}}"
+    );
+  }
+
+  #[test]
+  fn unknown_vertex() {
+    clear_state();
+    let result =
+      woxi::interpret_with_stdout("FindPath[CycleGraph[3], 1, z]").unwrap();
+    assert_eq!(result.result, "FindPath[Graph[<3>, <3>], 1, z]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "FindPath::inv: The argument z in FindPath[Graph[<3>, <3>], 1, z] is not a valid vertex."
+      ]
+    );
+  }
+}
+
+mod graph_embedding_vertex_coordinates {
+  use super::*;
+
+  // Explicit coordinates are the embedding, exactly as given
+  // (BishopEdgeColoring selects edges by coordinate differences)
+  #[test]
+  fn given_coordinates_come_back_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {{0, 0}, {1, 2}, {3, 1}}]], \
+         GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {2 -> {5, 5}, 1 -> {0, 1}, 3 -> {1, 1}}]], \
+         GraphEmbedding[Graph[{a, b}, {a <-> b}, VertexCoordinates -> {{0.5, 1}, {2, 3/2}}]]}"
+      )
+      .unwrap(),
+      "{{{0, 0}, {1, 2}, {3, 1}}, {{0, 1}, {5, 5}, {1, 1}}, {{0.5, 1}, {2, 3/2}}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {2 -> {5, 5}}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}
+
 mod graph_of_a_graph {
   use super::*;
 

@@ -6100,6 +6100,10 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::find_shortest_path_ast(args);
   }
 
+  if name == "FindPath" && (3..=5).contains(&args.len()) {
+    return crate::functions::graph::find_path_ast(args);
+  }
+
   // EdgeList[Graph[vertices, edges]] → edges list
   if name == "EdgeList" && args.len() == 1 {
     if let Expr::FunctionCall {
@@ -10326,6 +10330,84 @@ fn evaluate_function_call_ast_inner(
 
   // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
   if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
+    // Explicit `VertexCoordinates` are the embedding, exactly as given (a
+    // list in vertex order, or `v -> {x, y}` rules; vertices a partial rule
+    // list leaves out get the default layout's position)
+    if args.len() == 1
+      && let Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(verts) = &gargs[0]
+      && let Some(spec) = gargs[2..]
+        .iter()
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .find_map(|o| match &o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexCoordinates") => {
+            Some(replacement.as_ref().clone())
+          }
+          _ => None,
+        })
+      && let Expr::List(items) = &spec
+    {
+      let is_point = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2 || p.len() == 3);
+      if items.len() == verts.len() && items.iter().all(is_point) {
+        return Ok(spec.clone());
+      }
+      let rules: Vec<(String, Expr)> = items
+        .iter()
+        .filter_map(|it| match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if is_point(replacement) => Some((
+            crate::syntax::expr_to_string(pattern),
+            (**replacement).clone(),
+          )),
+          _ => None,
+        })
+        .collect();
+      if !rules.is_empty() && rules.len() == items.len() {
+        let mut stripped = gargs.to_vec();
+        stripped.retain(|o| {
+          !matches!(o, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexCoordinates"))
+        });
+        let fallback = evaluate_function_call_ast(
+          "GraphEmbedding",
+          &[call("Graph", stripped)],
+        )?;
+        let fallback_items = match &fallback {
+          Expr::List(f) => f.to_vec(),
+          _ => Vec::new(),
+        };
+        return Ok(Expr::List(
+          verts
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+              let key = crate::syntax::expr_to_string(v);
+              rules
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, p)| p.clone())
+                .or_else(|| fallback_items.get(i).cloned())
+                .unwrap_or_else(|| {
+                  Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+                })
+            })
+            .collect(),
+        ));
+      }
+    }
     if let Some(coords) = crate::functions::graph::planar_graph_embedding(args)
     {
       return Ok(coords);
