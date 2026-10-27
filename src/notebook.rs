@@ -3003,7 +3003,7 @@ fn stylebox_bare_operator(s: &str) -> Option<&'static str> {
 /// glyph in normal fonts. Returning ASCII keeps the cell editable.
 ///
 /// Display-only "invisible" characters — `\[NoBreak]`, `\[InvisibleSpace]`,
-/// `\[InvisibleTimes]`, `\[InvisibleComma]`, `\[ImplicitPlus]` — exist purely
+/// `\[InvisibleTimes]`, `\[ImplicitPlus]` — exist purely
 /// to influence pretty-printing in the FrontEnd. They have no meaning at
 /// evaluation time, so we strip them when reconstructing InputForm text
 /// from box expressions to avoid the parser tripping over the leftover
@@ -3043,7 +3043,6 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "ConjugateTranspose" => "\\[ConjugateTranspose]",
     "NoBreak"
     | "InvisibleSpace"
-    | "InvisibleComma"
     | "ImplicitPlus"
     | "AutoSpace"
     | "ZeroWidthSpace"
@@ -3059,6 +3058,10 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // The FrontEnd's own newline (U+F3A3) separates statements in a typeset
     // cell; the reconstructed code needs a plain line break.
     "IndentingNewLine" => "\n",
+    // `\[InvisibleComma]` is a real comma that merely isn't drawn: it
+    // separates the indices of `SubscriptBox["k", RowBox[{"2",
+    // "\[InvisibleComma]", "1"}]]`, i.e. `Subscript[k, 2, 1]`.
+    "InvisibleComma" => ",",
     // Typographic spacing characters separate tokens in typeset code
     // (e.g. `"/.", "\[VeryThinSpace]", "sol"`). Emit a plain ASCII space
     // so the reconstructed code carries no invisible Unicode.
@@ -6220,6 +6223,18 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// `\[InvisibleComma]` is a comma that isn't drawn. Regression: it was
+  /// dropped, so the indices of `k` with subscript `2,2` fused into the
+  /// product `2*2` and became `Subscript[k, 4]`.
+  #[test]
+  fn test_invisible_comma_separates_subscript_indices() {
+    let s =
+      r#"BoxData[SubscriptBox["k", RowBox[{"2", "\[InvisibleComma]", "1"}]]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[k, 2,1]");
+    let s = r#"BoxData[RowBox[{"f", "[", RowBox[{"1", "\[InvisibleComma]", "2"}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[1,2]");
   }
 
   /// `a[[i]]` normally typesets as a *flat* row — `"a"`,
