@@ -22194,6 +22194,34 @@ mod solve_with_max_min {
     );
   }
 
+  // Piecewise is split the same way: each piece where its condition holds
+  // and no earlier one does, the default where none holds (DuopolyModelIn3D)
+  #[test]
+  fn piecewise_equations_split_by_pieces() {
+    assert_eq!(
+      interpret(
+        "Solve[Piecewise[{{0.4 - 0.6*r, r < 2/3}}, 0] == 0.75 - 2*r, r]"
+      )
+      .unwrap(),
+      "{{r -> 0.25}}"
+    );
+    // x == -1 solves x^2 == 1 but lies in the first piece, where x == 1 fails
+    assert_eq!(
+      interpret("Solve[Piecewise[{{x, x < 0}, {x^2, x < 2}}, 4] == 1, x]")
+        .unwrap(),
+      "{{x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Solve[Piecewise[{{x - 1, x > 0}}, x + 1] == 3, x]").unwrap(),
+      "{{x -> 4}}"
+    );
+    // A solution whose piece cannot be decided is not reported
+    assert_eq!(
+      interpret("Solve[Piecewise[{{x - 1, x > 0}}, x + 1] == y, x]").unwrap(),
+      "{}"
+    );
+  }
+
   #[test]
   fn inexact_bellman_system_is_solved_exactly_then_numericized() {
     // The RecyclingRobotInReinforcementLearning Demonstration's Bellman

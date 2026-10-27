@@ -2135,12 +2135,18 @@ fn report_inverse_function_use() {
 /// The rules inside one multivariate modular solution come out in the order the
 /// variables were given; wolframscript orders them by its own elimination path,
 /// which reverses them for a linear system but not otherwise.
-/// `Max[…]` / `Min[…]` calls in `e` whose arguments involve one of `vars`,
-/// each listed once.
+/// `Max[…]` / `Min[…]` / `Piecewise[…]` calls in `e` that involve one of
+/// `vars`, each listed once.
 fn collect_variable_max_min(e: &Expr, vars: &[String], out: &mut Vec<Expr>) {
+  let is_split_node = |name: &str, args: &[Expr]| {
+    ((name == "Max" || name == "Min") && args.len() >= 2)
+      || (name == "Piecewise"
+        && (1..=2).contains(&args.len())
+        && matches!(&args[0], Expr::List(pieces) if !pieces.is_empty()
+          && pieces.iter().all(|p| matches!(p, Expr::List(vc) if vc.len() == 2))))
+  };
   if let Expr::FunctionCall { name, args } = e
-    && (name == "Max" || name == "Min")
-    && args.len() >= 2
+    && is_split_node(name, args)
     && vars.iter().any(|v| contains_var(e, v))
   {
     let key = crate::syntax::expr_to_string(e);
@@ -2194,10 +2200,63 @@ fn solve_piecewise_max_min(
   if extrema.is_empty() {
     return None;
   }
-  // Like Wolfram, an inexact system is solved exactly (its machine numbers
-  // rationalized) and the solutions are numericized afterwards.
-  let inexact =
-    crate::functions::predicate_ast::contains_real_literal(&args[0]);
+  // Each node's alternatives: the value it takes and the conditions under
+  // which it takes it. `Max`/`Min` takes argument k when that one is the
+  // largest (smallest); `Piecewise` takes piece k when its condition holds
+  // and no earlier one does, and its default when none holds.
+  let alternatives: Vec<Vec<(Expr, Vec<Expr>)>> = extrema
+    .iter()
+    .map(|e| {
+      let Expr::FunctionCall { name, args: xs } = e else {
+        return Vec::new();
+      };
+      if name == "Piecewise" {
+        let Expr::List(pieces) = &xs[0] else {
+          return Vec::new();
+        };
+        let not = |c: &Expr| call1("Not", c.clone());
+        let mut out = Vec::new();
+        let mut earlier: Vec<Expr> = Vec::new();
+        for piece in pieces {
+          let Expr::List(vc) = piece else { continue };
+          let mut conds: Vec<Expr> = earlier.iter().map(not).collect();
+          conds.push(vc[1].clone());
+          out.push((vc[0].clone(), conds));
+          earlier.push(vc[1].clone());
+        }
+        let default = xs.get(1).cloned().unwrap_or(Expr::Integer(0));
+        out.push((default, earlier.iter().map(not).collect()));
+        return out;
+      }
+      let op = if name == "Max" {
+        ComparisonOp::GreaterEqual
+      } else {
+        ComparisonOp::LessEqual
+      };
+      (0..xs.len())
+        .map(|k| {
+          let conds = xs
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != k)
+            .map(|(_, other)| Expr::Comparison {
+              operands: vec![xs[k].clone(), other.clone()],
+              operators: vec![op],
+            })
+            .collect();
+          (xs[k].clone(), conds)
+        })
+        .collect()
+    })
+    .collect();
+  // Like Wolfram, an inexact system with `Max`/`Min` is solved exactly (its
+  // machine numbers rationalized) and the solutions are numericized
+  // afterwards; one with only `Piecewise` is solved as it is.
+  let has_max_min = extrema.iter().any(|e| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Max" || name == "Min")
+  });
+  let inexact = has_max_min
+    && crate::functions::predicate_ast::contains_real_literal(&args[0]);
   if inexact {
     let exact = crate::evaluator::evaluate_expr_to_expr(&call(
       "Rationalize",
@@ -2221,13 +2280,10 @@ fn solve_piecewise_max_min(
       crate::evaluator::evaluate_expr_to_expr(&call1("N", sols))
     }));
   }
-  let choices: Vec<usize> = extrema
-    .iter()
-    .map(|e| match e {
-      Expr::FunctionCall { args, .. } => args.len(),
-      _ => 1,
-    })
-    .collect();
+  let choices: Vec<usize> = alternatives.iter().map(Vec::len).collect();
+  if choices.contains(&0) {
+    return None;
+  }
   if choices.iter().product::<usize>() > 512 {
     return None;
   }
@@ -2236,24 +2292,10 @@ fn solve_piecewise_max_min(
   loop {
     let mut system = args[0].clone();
     let mut conditions = Vec::new();
-    for (e, &k) in extrema.iter().zip(&pick) {
-      let Expr::FunctionCall { name, args: xs } = e else {
-        return None;
-      };
-      system = substitute_expr(&system, e, &xs[k]);
-      let op = if name == "Max" {
-        ComparisonOp::GreaterEqual
-      } else {
-        ComparisonOp::LessEqual
-      };
-      for (j, other) in xs.iter().enumerate() {
-        if j != k {
-          conditions.push(Expr::Comparison {
-            operands: vec![xs[k].clone(), other.clone()],
-            operators: vec![op],
-          });
-        }
-      }
+    for ((e, alts), &k) in extrema.iter().zip(&alternatives).zip(&pick) {
+      let (value, conds) = &alts[k];
+      system = substitute_expr(&system, e, value);
+      conditions.extend(conds.iter().cloned());
     }
     let mut call_args = args.to_vec();
     call_args[0] = system;
