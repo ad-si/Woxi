@@ -11,7 +11,8 @@
 - Rust, npm, Nix and GitHub Actions dependencies were upgraded to their
     latest versions (rand 0.10, jupyter-protocol 2, runtimelib 3, zeromq 0.6,
     rustyline 19, pyo3 0.30, criterion 0.8, CodeMirror 6.x, …). resvg stays
-    on 0.45 and num-bigint on 0.4 until svg2pdf/iced and num-prime/pyo3 move.
+    on 0.45 and num-bigint on 0.4 until svg2pdf/iced and num-prime/pyo3 move,
+    and pest on 2.8: 2.9's per-rule stack probe made evaluation ~30% slower.
 - A `Manipulate` control written `{u, colour}` — a colour as the initial
     value, with no range or choice list — was baked into the body as a fixed
     constant, so its swatch never appeared in the control panel. It now

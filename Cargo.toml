@@ -233,7 +233,10 @@ num-traits = "0.2.19"
 # (built-in names, attributes), already in the dependency graph.
 rustc-hash = "2"
 woxi-reduce = { version = "0.1.0", path = "crates/woxi-reduce" }
-pest = "2.9"
+# Held on 2.8: pest 2.9 probes the remaining native stack (pest_stack_guard)
+# on every rule call, which made parse-heavy evaluation ~30% slower
+# (plot3d_of_one_element_list_result: 9 s -> 12 s, timing out in CI).
+pest = "~2.8.8"
 # The pest grammar and its generated parser (`WolframParser`, `Rule`), kept
 # in a separate crate so `pest_derive` doesn't rerun on every rebuild.
 woxi-parser = { version = "0.1.0", path = "crates/woxi-parser" }
