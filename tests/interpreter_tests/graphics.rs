@@ -4098,6 +4098,31 @@ mod graphics {
 // solution over a long range) samples quickly: the compiled-body cache
 // compares the body with its cached clone per sample, and clones of one
 // shared list are equal without walking the data.
+// `Graphics3D[Dynamic[content]]` draws what the content evaluates to; the
+// held `Table[…]` body is never read outside its iterator.
+mod graphics3d_dynamic_content {
+  use super::*;
+
+  #[test]
+  fn dynamic_table_of_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sides = {{1, 2}, {3, 4}, {5, 6}}; t = 1; \
+         StringCount[ExportString[Graphics3D[Dynamic@Table[\
+         {Point[{i, sides[[i, t]], 0}]}, {i, 3}]], \"SVG\"], \"<circle\"]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert!(
+      woxi::get_captured_messages_raw().is_empty(),
+      "{:?}",
+      woxi::get_captured_messages_raw()
+    );
+  }
+}
+
 mod plot_body_with_large_shared_data {
   use super::*;
 

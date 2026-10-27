@@ -5528,6 +5528,14 @@ fn collect_3d_primitives(
           collect_3d_primitives(&args[0], style, prims);
           *style = saved;
         }
+        // `Dynamic[content]` holds its content; the scene shows what it
+        // evaluates to now. Walking the held `Table[…]` instead would read
+        // its body outside the iterator (`sides[[i, t]]` with `i` unbound).
+        "Dynamic" if !args.is_empty() => {
+          let content =
+            evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+          collect_3d_primitives(&content, style, prims);
+        }
         _ => {
           // Try as directive first
           if !apply_3d_directive(expr, style) {
