@@ -7710,7 +7710,7 @@ fn pixel_ring(
 }
 
 /// How many separate runs of set pixels the ring contains.
-fn ring_runs(ring: &[bool; 8]) -> usize {
+fn ring_runs(ring: [bool; 8]) -> usize {
   (0..8).filter(|&i| !ring[i] && ring[(i + 1) % 8]).count()
 }
 
@@ -7728,14 +7728,14 @@ fn thin_to_skeleton(fg: &mut [bool], w: usize, h: usize) {
           }
           let ring = pixel_ring(fg, w, h, y, x);
           let neighbors = ring.iter().filter(|&&p| p).count();
-          if !(2..=6).contains(&neighbors) || ring_runs(&ring) != 1 {
+          if !(2..=6).contains(&neighbors) || ring_runs(ring) != 1 {
             continue;
           }
           let (n, e, s, west) = (ring[0], ring[2], ring[4], ring[6]);
           let keep = if second_pass {
-            n && e && west || n && s && west
+            n && west && (e || s)
           } else {
-            n && e && s || e && s && west
+            e && s && (n || west)
           };
           if !keep {
             doomed.push(y * w + x);
@@ -7971,7 +7971,7 @@ pub fn morphological_graph_ast(
     .map(|i| {
       skeleton[i] && {
         let ring = pixel_ring(&skeleton, w, h, i / w, i % w);
-        ring_runs(&ring) != 2
+        ring_runs(ring) != 2
       }
     })
     .collect();
@@ -7998,7 +7998,7 @@ pub fn morphological_graph_ast(
   let arc_of = connected_components(&on_arc, w, h);
   let arc_count = arc_of.iter().flatten().max().map_or(0, |l| l + 1);
   let mut touching: Vec<std::collections::BTreeSet<usize>> =
-    vec![Default::default(); arc_count];
+    vec![std::collections::BTreeSet::default(); arc_count];
   let mut first_pixel = vec![usize::MAX; arc_count];
   for i in 0..w * h {
     let Some(arc) = arc_of[i] else { continue };
