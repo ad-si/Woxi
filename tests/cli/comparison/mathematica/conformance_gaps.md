@@ -5496,6 +5496,18 @@ outward-wound unit triangles of mutual second neighbours, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
+### `Solve` roots with a symbolic parameter keep the quadratic-formula form
+
+The roots are right but not written the way wolframscript writes them.
+`Solve[(x - 3)^2 == a, x]` gives `(6 - 2*Sqrt[a])/2` here and `3 - Sqrt[a]`
+in WL; `Solve[(x/2 + 1)^2 == c, x]` is `(-4 + 4*Sqrt[c])/2` against
+`2*(-1 + Sqrt[c])`; `Solve[y == 1/(x - 3)^2, x]` is
+`(6*y - 2*Sqrt[9*y^2 - y*(-1 + 9*y)])/(2*y)` against
+`(-1 + 3*Sqrt[y])/Sqrt[y]`, and the cube's principal root is
+`3 + (y^(-1))^(1/3)` against `3 + y^(-1/3)`. WL's forms look like `Factor`
+of the inverted single power (`Factor[3 - 1/Sqrt[y]]`), but the rule that
+picks them is not pinned down; numeric coefficients already agree.
+
 ### `Solve` of a cubic with symbolic coefficients is unevaluated
 
 `Solve[x^3 + b x + c == 0, x]` (and any cubic whose coefficients or

@@ -8477,12 +8477,10 @@ fn try_solve_inverse_function(
   };
   if let Some((base, exp)) = power_parts {
     if is_constant_wrt(&exp, var) && !is_constant_wrt(&base, var) {
-      // Skip if exponent is a positive integer — the polynomial solver
-      // handles those and gives all roots (not just the principal root).
-      if let Expr::Integer(n) = &exp
-        && *n > 0
-      {
-        // Let polynomial solver handle x^n == a
+      // Skip if exponent is an integer — the polynomial solver handles
+      // those (a negative one after clearing the denominator) and gives all
+      // roots, not just the principal one: `1/x^2 == 4` is `x == ±1/2`.
+      if matches!(&exp, Expr::Integer(n) if *n != 0) {
         return None;
       }
       // base^exp == val where exp is constant (non-integer), base contains var

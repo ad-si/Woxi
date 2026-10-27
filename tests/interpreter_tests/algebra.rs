@@ -22194,6 +22194,23 @@ mod solve_with_max_min {
     );
   }
 
+  // A negative integer power has every root, not just the principal one
+  // (InfiniteLimitAtAFinitePoint takes the second root of 1/(x - 3)^2)
+  #[test]
+  fn negative_integer_powers_give_every_root() {
+    assert_eq!(
+      interpret(
+        "{Solve[1/x^2 == 4, x], Solve[y == x^(-2), x], Solve[x^(-3) == 8, x]}"
+      )
+      .unwrap(),
+      "{{{x -> -1/2}, {x -> 1/2}}, {{x -> -(1/Sqrt[y])}, {x -> 1/Sqrt[y]}}, {{x -> 1/2}, {x -> -1/2*(-1)^(1/3)}, {x -> (-1)^(2/3)/2}}}"
+    );
+    assert_eq!(
+      interpret("Length[Solve[y == 1/(x - 3)^2, x]]").unwrap(),
+      "2"
+    );
+  }
+
   // Piecewise is split the same way: each piece where its condition holds
   // and no earlier one does, the default where none holds (DuopolyModelIn3D)
   #[test]
