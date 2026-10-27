@@ -431,7 +431,7 @@ fn extract_cell_content(s: &str) -> String {
   // `BoxData[{ RowBox[...], "\n", RowBox[...], ... }]`). The list's items
   // follow the same conventions as a RowBox, so reuse that extractor.
   if s.starts_with('{') && s.ends_with('}') {
-    return extract_rowbox_content(s);
+    return extract_row(s, true);
   }
 
   // Handle quoted strings
@@ -1807,9 +1807,17 @@ fn is_soft_whitespace_box_token(part: &str) -> bool {
 /// `Module` local-variable list, or a `With[{v = 1}, body]`'s body sitting
 /// right after the binding list's own `,`, in one invalid `(a, b, …)`
 /// group instead of leaving each item alone.
-fn has_real_predecessor(parts: &[String], i: usize) -> bool {
+fn has_real_predecessor(
+  parts: &[String],
+  i: usize,
+  newline_ends_statement: bool,
+) -> bool {
   for part in parts[..i].iter().rev() {
     let t = part.trim();
+    // Inside a row a line break is layout, not a statement boundary
+    if t == "\"\\n\"" && !newline_ends_statement {
+      continue;
+    }
     // A literal `"\n"` multi-statement separator, a list/argument comma or
     // statement `;`, or an opening delimiter starting the enclosing group
     // are all structural punctuation, not a value the current part could be
@@ -1885,6 +1893,15 @@ fn merge_double_bracket_parts(parts: &[&str]) -> Vec<String> {
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
+  extract_row(s, false)
+}
+
+/// The text of a box row. `newline_ends_statement` is set only for a
+/// cell's top-level statement list (`BoxData[{stmt, "\n", stmt}]`), where
+/// a `"\n"` separates statements; inside a `RowBox` it is layout, and two
+/// operands either side of it multiply — `RowBox[{"0", "\n",
+/// RowBox[{"b", "=", "1"}]}]` is `0*(b = 1)` in wolframscript.
+fn extract_row(s: &str, newline_ends_statement: bool) -> String {
   let s = s.trim();
   let s = s.strip_prefix('{').unwrap_or(s);
   let s = s.strip_suffix('}').unwrap_or(s);
@@ -2055,7 +2072,7 @@ fn extract_rowbox_content(s: &str) -> String {
     // it would trap that comma inside a bare `(…)`, which is not valid
     // Wolfram syntax and fails to reparse.
     let piece = if part.trim().starts_with("RowBox[")
-      && has_real_predecessor(&parts, i)
+      && has_real_predecessor(&parts, i, newline_ends_statement)
       && has_top_level_assignment(&piece)
       && split_top_level_commas(&piece).len() == 1
     {
@@ -9018,6 +9035,20 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       "the assignment must actually run (not fail as Set::write on a \
        corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn line_break_inside_a_row_multiplies_its_neighbours() {
+    // Inside a row a "\n" is layout, so `0` and the assignment row after it
+    // multiply, with the assignment kept as its own factor: wolframscript
+    // reads `RowBox[{"0", "\n", RowBox[{"b", "=", …}]}]` as `0*(b = …)`
+    // (SecondOrderReactionWithDiffusionInALiquidFilm relies on the
+    // assignment running when the surrounding definition is used).
+    let boxes = r#"RowBox[{RowBox[{"e", "[", "i_", "]"}], ":=", RowBox[{"x", "\[Equal]", RowBox[{"0", "\n", RowBox[{"b", "=", RowBox[{"a", "\[Equal]", "1"}]}]}]}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    let result = crate::interpret(&format!("{expr_src}; {{e[1], b}}")).unwrap();
+    assert_eq!(result, "{x == 0, a == 1}", "from {expr_src:?}");
   }
 
   #[test]
