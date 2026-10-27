@@ -3369,8 +3369,37 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
 /// bare names, so keeping the prefix would make `` DemonstrationsTools`x ``
 /// a different symbol from the `x` those definitions refer to.
 fn strip_saved_contexts(s: &str) -> String {
-  s.replace("$CellContext`", "")
+  strip_numbered_cell_contexts(&s.replace("$CellContext`", ""))
     .replace("DemonstrationsTools`", "")
+}
+
+/// Drop the `` Cell$$2138` `` style qualifiers a notebook saved with
+/// `CellContext -> Cell` writes on a cell's symbols: the same cell's
+/// definitions also appear with bare names, so, like `` $CellContext` ``,
+/// the qualifier has to go for the two spellings to be one symbol.
+fn strip_numbered_cell_contexts(s: &str) -> String {
+  const PREFIX: &str = "Cell$$";
+  let mut out = String::with_capacity(s.len());
+  let mut rest = s;
+  while let Some(at) = rest.find(PREFIX) {
+    let after = &rest[at + PREFIX.len()..];
+    let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+    // Only `Cell$$<digits>`` as a whole symbol prefix, not inside a name
+    let preceded_by_name_char = rest[..at]
+      .chars()
+      .next_back()
+      .is_some_and(|c| c.is_alphanumeric() || c == '$' || c == '`');
+    if digits > 0 && after[digits..].starts_with('`') && !preceded_by_name_char
+    {
+      out.push_str(&rest[..at]);
+      rest = &after[digits + 1..];
+    } else {
+      out.push_str(&rest[..at + PREFIX.len()]);
+      rest = after;
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// Drop the `` $CellContext` `` qualifier from the source of an Input cell.
@@ -3380,7 +3409,7 @@ fn strip_saved_contexts(s: &str) -> String {
 /// the pattern heads of the same definition stay bare, so left alone the
 /// body would refer to symbols the heads never bind.
 pub fn strip_cell_context_prefix(code: &str) -> String {
-  code.replace("$CellContext`", "")
+  strip_numbered_cell_contexts(&code.replace("$CellContext`", ""))
 }
 
 /// Net open-bracket depth of Wolfram source: `(`, `[` and `{` open, their
@@ -5210,6 +5239,16 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn strip_cell_context_prefix_drops_numbered_cell_contexts() {
+    assert_eq!(
+      strip_cell_context_prefix(
+        "Cell$$2138`f[1] := Cell$$2138`dfunc[x]; a$Cell$$2`b; Cell$$`c; Cell$$12x"
+      ),
+      "f[1] := dfunc[x]; a$Cell$$2`b; Cell$$`c; Cell$$12x"
+    );
+  }
+
   #[test]
   fn strip_cell_context_prefix_drops_only_the_qualifier() {
     assert_eq!(
