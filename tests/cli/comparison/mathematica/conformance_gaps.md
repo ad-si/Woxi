@@ -1027,6 +1027,20 @@ the display's scale — twice the pixels on a Retina Mac — and with a minimum
 height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
 pixels. **Not reproducible** across machines.
 
+### Exact generalized eigenvectors are scaled differently
+
+```sh
+wolframscript -code 'Eigenvectors[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]'
+# {{-1, Sqrt[2]}, {1, Sqrt[2]}}
+woxi eval 'Eigenvectors[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]'
+# {{-(1/Sqrt[2]), 1}, {1/Sqrt[2], 1}}
+```
+
+Woxi takes the eigenvectors of a pencil `{a, b}` from `Inverse[b] . a`, which
+scales them so their last component is 1. The kernel's exact generalized
+eigenvectors clear that radical denominator; the rule behind its scaling is not
+known yet. Eigenvalues and machine eigenvectors agree.
+
 ### Machine eigenvectors have other signs
 
 ```sh

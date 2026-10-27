@@ -771,8 +771,9 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     // The generalized problem `a v == λ b v`: with `b` invertible its
-    // eigenvalues are those of `Inverse[b] . a`, in the same order.
-    "Eigenvalues"
+    // eigenvalues and eigenvectors are those of `Inverse[b] . a`, in the
+    // same order.
+    "Eigenvalues" | "Eigenvectors" | "Eigensystem"
       if (1..=2).contains(&args.len())
         && let Some((a, b)) = matrix_pencil(&args[0]) =>
     {
@@ -791,13 +792,12 @@ pub fn dispatch_linear_algebra_functions(
         Ok(r) if !matches!(&r, Expr::FunctionCall { name, .. } if name == "Dot") => {
           r
         }
-        _ => return Some(Ok(crate::helpers::unevaluated("Eigenvalues", args))),
+        _ => return Some(Ok(crate::helpers::unevaluated(name, args))),
       };
       let mut new_args = vec![reduced];
       new_args.extend(args[1..].iter().cloned());
       return Some(crate::evaluator::evaluate_function_call_ast(
-        "Eigenvalues",
-        &new_args,
+        name, &new_args,
       ));
     }
     "Eigenvalues" if args.len() == 1 => {

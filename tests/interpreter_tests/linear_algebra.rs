@@ -6640,6 +6640,22 @@ mod cases {
       r#"{{3363, 4756}, {2378, 3363}}"#,
     );
   }
+  // Eigenvectors and Eigensystem of a matrix pencil {a, b} (a v == λ b v),
+  // like Eigenvalues: the double pendulum's normal modes. wolframscript:
+  // {{33.45929291125633, 5.740707088743667}, {{-0.5773502691896257,
+  // 0.816496580927726}, {-0.5773502691896258, -0.816496580927726}}}.
+  #[test]
+  fn generalized_eigensystem() {
+    assert_case(
+      "{vals, vecs} = Eigensystem[{{{19.6, 0}, {0, 9.8}}, {{2., 1.}, {1., 1.}}}]; \
+       {Max[Abs[vals - {33.45929291125633, 5.740707088743667}]] < 10^-12, \
+       Max[Abs[Abs[vecs] - {{0.5773502691896257, 0.816496580927726}, \
+       {0.5773502691896258, 0.816496580927726}}]] < 10^-12, \
+       Eigenvalues[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]}",
+      "{True, True, {2 + Sqrt[2], 2 - Sqrt[2]}}",
+    );
+  }
+
   #[test]
   fn matrix_power_2() {
     assert_case(
