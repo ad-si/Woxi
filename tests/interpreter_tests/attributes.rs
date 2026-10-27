@@ -1642,6 +1642,37 @@ mod cases {
     assert_case(r#"qq2 = 7; qq2"#, r#"7"#);
   }
   #[test]
+  fn postfix_evaluate_in_held_arguments() {
+    // `x // Evaluate` is the same Evaluate as `Evaluate[x]`
+    assert_case(r#"Hold[1 + 1 // Evaluate]"#, r#"Hold[2]"#);
+    assert_case(r#"If[u, Evaluate[1 + 1], 3 // Evaluate]"#, r#"If[u, 2, 3]"#);
+    assert_case(
+      r#"ClearAll[g]; g[x_] := (1 + 1 // Evaluate); DownValues[g]"#,
+      r#"{HoldPattern[g[x_]] :> 2}"#,
+    );
+    assert_case(r#"(1 + 1 // Evaluate)&"#, r#"2 & "#);
+  }
+  #[test]
+  fn evaluate_nested_in_pure_function_body_waits_for_slots() {
+    // Only a body that *is* Evaluate[…] is evaluated when the Function is;
+    // a nested one stays held until the slots are filled, so `#` is never
+    // used as a part specification on its own.
+    assert_case(
+      r#"v = {{1, 2}, {3, 4}}; Hold[Evaluate[v[[#]]]]&[1]"#,
+      r#"Hold[{1, 2}]"#,
+    );
+    assert_case(
+      r#"v = {{1, 2}, {3, 4}}; Hold[v[[#]] // Evaluate]&[2]"#,
+      r#"Hold[{3, 4}]"#,
+    );
+    assert_case(r#"Function[x, Hold[x // Evaluate]][1]"#, r#"Hold[1]"#);
+    assert_case(
+      r#"InputForm /@ {f[Evaluate[1 + 1]]&, {Evaluate[1 + 1]}&, (Evaluate[1 + 1] + #)&}"#,
+      r#"{InputForm[f[Evaluate[1 + 1]] & ], InputForm[{Evaluate[1 + 1]} & ], InputForm[Evaluate[1 + 1] + #1 & ]}"#,
+    );
+    assert_case(r#"Function[x, Evaluate[1 + 1]]"#, r#"Function[x, 2]"#);
+  }
+  #[test]
   fn f_16() {
     assert_case(
       r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]"#,

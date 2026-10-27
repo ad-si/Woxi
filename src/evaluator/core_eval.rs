@@ -608,15 +608,26 @@ pub fn strip_unevaluated_ref(expr: &Expr) -> &Expr {
   expr
 }
 
+/// The arguments of `arg` when it is `Evaluate[…]`, in either spelling:
+/// `Evaluate[x]` or `x // Evaluate` (which stays an `Expr::Postfix` while
+/// held).
+pub fn evaluate_wrapper_args(arg: &Expr) -> Option<&[Expr]> {
+  match arg {
+    Expr::FunctionCall { name, args } if name == "Evaluate" => Some(args),
+    Expr::Postfix { expr, func } if matches!(func.as_ref(), Expr::Identifier(f) if f == "Evaluate") => {
+      Some(std::slice::from_ref(expr.as_ref()))
+    }
+    _ => None,
+  }
+}
+
 /// If `arg` is `Evaluate[expr]`, evaluate `expr`. Otherwise return `arg`
 /// unchanged. (Only the top-level Evaluate is unwrapped — nested calls
 /// keep their normal evaluation rules.) Multi-argument
 /// `Evaluate[a, b, …]` becomes `Sequence[a-evaluated, b-evaluated, …]`,
 /// which the caller splices into the surrounding args.
-fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
-  if let Expr::FunctionCall { name, args } = arg
-    && name == "Evaluate"
-  {
+pub fn unwrap_top_level_evaluate(arg: &Expr) -> Result<Expr, InterpreterError> {
+  if let Some(args) = evaluate_wrapper_args(arg) {
     if args.len() == 1 {
       return evaluate_expr_to_expr(&args[0]);
     }
@@ -4673,10 +4684,11 @@ fn evaluate_expr_to_expr_uncached(
       Ok(result)
     }
     Expr::Function { body } => {
-      // Function has HoldAll, but Evaluate[...] inside the body forces
-      // evaluation of its argument before the function is held. Match
-      // wolframscript: Evaluate[expr]& becomes Function[expr_evaluated].
-      let new_body = unwrap_evaluate_in_body(body)?;
+      // Function has HoldAll, so like any held argument a body that *is*
+      // `Evaluate[expr]` is evaluated now: `Evaluate[expr]&` becomes
+      // `Function[expr_evaluated]`. A nested `f[Evaluate[expr]]&` stays held
+      // — evaluating it here would run `expr` before its slots are filled.
+      let new_body = unwrap_top_level_evaluate(body)?;
       Ok(Expr::Function {
         body: Box::new(new_body),
       })
@@ -5228,48 +5240,6 @@ fn function_hold_attributes(expr: &Expr) -> (bool, bool, bool) {
     has("HoldFirst"),
     has("HoldRest"),
   )
-}
-
-/// Recursively unwrap `Evaluate[expr]` subexpressions inside a Function body
-/// (or any held expression), evaluating their arguments. This implements
-/// Wolfram's rule that Evaluate forces evaluation through HoldAll wrappers.
-fn unwrap_evaluate_in_body(body: &Expr) -> Result<Expr, InterpreterError> {
-  if let Expr::FunctionCall { name, args } = body
-    && name == "Evaluate"
-    && args.len() == 1
-  {
-    return evaluate_expr_to_expr(&args[0]);
-  }
-  // Recurse into common compound forms so nested Evaluate gets evaluated too.
-  match body {
-    Expr::FunctionCall { name, args } => {
-      let new_args: Vec<Expr> = args
-        .iter()
-        .map(unwrap_evaluate_in_body)
-        .collect::<Result<_, _>>()?;
-      Ok(Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      })
-    }
-    Expr::List(items) => {
-      let new_items: Vec<Expr> = items
-        .iter()
-        .map(unwrap_evaluate_in_body)
-        .collect::<Result<_, _>>()?;
-      Ok(Expr::List(new_items.into()))
-    }
-    Expr::BinaryOp { op, left, right } => Ok(binop(
-      *op,
-      unwrap_evaluate_in_body(left)?,
-      unwrap_evaluate_in_body(right)?,
-    )),
-    Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(unwrap_evaluate_in_body(operand)?),
-    }),
-    other => Ok(other.clone()),
-  }
 }
 
 /// Determines whether a comparison chain should stay as a single node or

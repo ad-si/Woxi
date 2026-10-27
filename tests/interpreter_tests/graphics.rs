@@ -2426,6 +2426,20 @@ mod graphics {
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
 
+    /// A number in scientific notation inside a label sets its exponent as a
+    /// superscript digit on one line, not stacked on a second text line.
+    #[test]
+    fn text_number_form_scientific_raises_exponent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"P= \", NumberForm[70777777.78, {3, 2}], \" Pa\"}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(">P= 7.08 \u{00d7} 10\u{2077} Pa</text>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("dy=\"-"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
@@ -42051,6 +42065,37 @@ mod generalized_bar_chart {
     assert!(
       !first.contains("width=\"1440\""),
       "cells kept their 360 default size: {first}"
+    );
+  }
+
+  /// A `NumberForm` number run through `ToString[TraditionalForm[…]]` is an
+  /// `InterpretationBox`; a `Text` label draws its display (`11.547`), not the
+  /// exact value it stands for.
+  #[test]
+  fn text_label_draws_number_form_display() {
+    let svg = export_svg(
+      r#"Graphics[{Text[Row[{"x = ", ToString[TraditionalForm[NumberForm[11.5470053837925, {6, 3}]]]}]]}]"#,
+    );
+    assert!(svg.contains("x = 11.547"), "display digits missing: {svg}");
+    assert!(
+      !svg.contains("11.5470053"),
+      "the underlying value leaked into the label: {svg}"
+    );
+  }
+
+  /// `Epilog` primitives are drawn over a `Histogram`, in its data
+  /// coordinates (a fitted density curve over the bars).
+  #[test]
+  fn histogram_epilog_is_drawn() {
+    let plain = export_svg("Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True]");
+    let with_epilog = export_svg(
+      "Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True, \
+       Epilog -> {Red, Line[{{1, 0}, {4, 2}}]}]",
+    );
+    assert!(
+      with_epilog.contains("stroke=\"rgb(255,0,0)\"")
+        && !plain.contains("stroke=\"rgb(255,0,0)\""),
+      "the Epilog line was not drawn: {with_epilog}"
     );
   }
 }

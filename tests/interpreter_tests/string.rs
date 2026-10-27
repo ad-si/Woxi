@@ -7772,6 +7772,28 @@ mod make_boxes {
   }
 
   #[test]
+  fn to_string_number_form_fixed_switches_to_scientific() {
+    // `{n, f}` switches to `mantissa × 10^e` outside 10^-5 <= |x| < 10^6,
+    // with f decimals in the mantissa; in range it stays fixed.
+    assert_eq!(
+      interpret("ToString[NumberForm[70777777.78, {3, 2}]]").unwrap(),
+      "         7\n7.08 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[1.*^-7, {4, 3}]]").unwrap(),
+      "          -7\n1.000 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[-70777777.78, {3, 2}]]").unwrap(),
+      "          7\n-7.08 \u{00d7} 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[0.5, {3, 2}]]").unwrap(),
+      "0.50"
+    );
+  }
+
+  #[test]
   fn number_form_reqsigz_warns_when_precision_below_integer_digits() {
     // Requesting fewer significant figures than the number has integer digits
     // pads with zeros and emits NumberForm::reqsigz. The value still renders.

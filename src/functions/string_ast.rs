@@ -4157,14 +4157,47 @@ pub(crate) fn number_form_parts(
   Some((number_form_to_string(x, n)?, None))
 }
 
-/// Render `NumberForm[x, {n, f}]` as a `(mantissa, exponent)` pair. The fixed
-/// `f`-decimal-places renderer never produces a `× 10^e` factor, so the
-/// exponent is always `None`.
+/// Render `NumberForm[x, {n, f}]` as a `(mantissa, exponent)` pair. A real
+/// whose magnitude (rounded to `n` significant digits) lies outside
+/// `10^-5 ≤ |x| < 10^6` switches to scientific notation with `f` decimals in
+/// the mantissa, like the one-argument form; in range the fixed
+/// `f`-decimal-places renderer is used and the exponent is `None`.
 pub(crate) fn number_form_fixed_parts(
   x: &Expr,
   n: i64,
   f: i64,
 ) -> Option<(String, Option<i64>)> {
+  if let Expr::Real(v) = x
+    && *v != 0.0
+    && v.is_finite()
+    && n >= 1
+    && n != i64::MAX
+    && f >= 0
+  {
+    let ax = v.abs();
+    let m0 = ax.log10().floor() as i64;
+    // Exponent of the value rounded to `n` significant digits, so 999999.9
+    // rounding up to 10^6 counts as out of range. An `Infinity` digit
+    // budget (excluded above) always shows every digit, so never switches.
+    let factor = 10f64.powi((n - 1 - m0) as i32);
+    let rounded = (ax * factor).round() / factor;
+    let m = if rounded == 0.0 || !rounded.is_finite() {
+      m0
+    } else {
+      rounded.log10().floor() as i64
+    };
+    if m >= 6 || m <= -6 {
+      let formatted = format!("{v:.prec$e}", prec = f as usize);
+      let (mantissa, exp_raw) = formatted.split_once('e')?;
+      let exp: i64 = exp_raw.parse().ok()?;
+      let mantissa = if f == 0 {
+        format!("{mantissa}.")
+      } else {
+        mantissa.to_string()
+      };
+      return Some((mantissa, if exp == 0 { None } else { Some(exp) }));
+    }
+  }
   Some((number_form_fixed_to_string(x, n, f)?, None))
 }
 
@@ -16120,7 +16153,13 @@ fn number_form_family_scalar(
   };
   // Body digits, and the exponent when the value goes to scientific notation.
   let (body, exp) = match (fixed, spec) {
-    (Some((n, f)), _) => (number_form_fixed_to_string(&magnitude, n, f)?, None),
+    (Some((n, f)), _) => {
+      if head == "AccountingForm" || opts.suppress_exponent {
+        (number_form_fixed_to_string(&magnitude, n, f)?, None)
+      } else {
+        number_form_fixed_parts(&magnitude, n, f)?
+      }
+    }
     (None, Some(Expr::Integer(n))) => {
       if head == "AccountingForm" || opts.suppress_exponent {
         // AccountingForm never switches to scientific notation.
@@ -16166,7 +16205,12 @@ fn number_form_family_scalar(
   // An integer ignores the fractional spec entirely: no point, no padding.
   if let Some((_, f)) = fixed.filter(|_| !is_integer) {
     let slots = f as usize + usize::from(head == "AccountingForm");
-    let keep = frac_digits.trim_end_matches('0').chars().count();
+    // A scientific mantissa keeps all `f` decimals (`1.000 × 10^-7`).
+    let keep = if exp.is_some() {
+      frac_digits.chars().count()
+    } else {
+      frac_digits.trim_end_matches('0').chars().count()
+    };
     frac_digits = frac_digits.chars().take(keep).collect();
     if !opts.rpad.is_empty() {
       let mut used = keep + close.chars().count();

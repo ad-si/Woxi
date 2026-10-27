@@ -35,12 +35,8 @@ fn unevaluated_with_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
 /// simplifying it. Without unwrapping `Evaluate` here, that spec is passed
 /// through literally and rejected as "not a List".
 fn resolve_var_spec(vars_expr: &Expr) -> Result<Expr, InterpreterError> {
-  match vars_expr {
-    Expr::FunctionCall { name, args }
-      if name == "Evaluate" && args.len() == 1 =>
-    {
-      evaluate_expr_to_expr(&args[0])
-    }
+  match crate::evaluator::core_eval::evaluate_wrapper_args(vars_expr) {
+    Some([vars]) => evaluate_expr_to_expr(vars),
     _ => Ok(vars_expr.clone()),
   }
 }
