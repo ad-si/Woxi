@@ -3976,8 +3976,14 @@ fn evaluate_expr_to_expr_uncached(
               // `{{x -> 1}} == {{}}` is `False` even though `x` is
               // unbound.
               false
-            } else if has_free_symbols(left) || has_free_symbols(right) {
-              // Symbolic: return unevaluated
+            } else if has_free_symbols(left)
+              || has_free_symbols(right)
+              || crate::functions::boolean_ast::equality_undecidable(
+                left, right,
+              )
+            {
+              // Symbolic, or shapes that cannot decide it (`{1, 2} == 0`):
+              // return unevaluated
               return Ok(Expr::Comparison {
                 operands: values,
                 operators: operators.clone(),
@@ -4041,8 +4047,14 @@ fn evaluate_expr_to_expr_uncached(
               // A structural shape mismatch decides `!=` regardless of any
               // free symbol nested inside, mirroring the `Equal` rule above.
               true
-            } else if has_free_symbols(left) || has_free_symbols(right) {
-              // Symbolic: return unevaluated
+            } else if has_free_symbols(left)
+              || has_free_symbols(right)
+              || crate::functions::boolean_ast::equality_undecidable(
+                left, right,
+              )
+            {
+              // Symbolic, or shapes that cannot decide it (`{1, 2} != 0`):
+              // return unevaluated
               return Ok(Expr::Comparison {
                 operands: values,
                 operators: operators.clone(),

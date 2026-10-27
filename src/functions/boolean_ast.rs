@@ -659,43 +659,58 @@ pub fn structurally_unequal(a: &Expr, b: &Expr) -> bool {
   if matches!(a, Expr::Identifier(_)) || matches!(b, Expr::Identifier(_)) {
     return false;
   }
-  fn parts(e: &Expr) -> Option<(&'static str, Vec<&Expr>)> {
-    match e {
-      Expr::List(items) => Some(("List", items.iter().collect())),
-      Expr::Rule {
-        pattern,
-        replacement,
-      } => Some(("Rule", vec![pattern.as_ref(), replacement.as_ref()])),
-      Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } => Some(("RuleDelayed", vec![pattern.as_ref(), replacement.as_ref()])),
-      _ => None,
-    }
+  // Lists are compared element by element; rules are not compared part by
+  // part at all — `(1 -> 1) == (1 -> 2)` stays unevaluated in wolframscript.
+  let is_rule =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  if is_rule(a) || is_rule(b) {
+    return false;
   }
-  match (parts(a), parts(b)) {
-    (Some((h1, a1)), Some((h2, a2))) => {
-      h1 != h2
-        || a1.len() != a2.len()
+  match (a, b) {
+    (Expr::List(a1), Expr::List(a2)) => {
+      a1.len() != a2.len()
         || a1
           .iter()
           .zip(a2.iter())
           .any(|(x, y)| structurally_unequal(x, y))
     }
-    (None, None) => {
+    (Expr::List(_), _) | (_, Expr::List(_)) => false,
+    _ => {
       use crate::functions::math_ast::try_eval_to_f64;
       match (try_eval_to_f64(a), try_eval_to_f64(b)) {
         (Some(x), Some(y)) => !leaves_numerically_equal(a, b, x, y),
         _ => matches!((a, b), (Expr::String(x), Expr::String(y)) if x != y),
       }
     }
-    // A bare `List`/`Rule`/`RuleDelayed` lined up against a plain number or
-    // an opaque expression (e.g. a `FunctionCall`) is left undecided: Solve
-    // relies on `{e1, e2, …} == 0` staying unevaluated so it can thread the
-    // scalar across the list itself (see `solve_broadcasts_scalar_across_
-    // list_equation`), and a generic `FunctionCall`'s value could still be
-    // data-dependent.
-    (Some(_), None) | (None, Some(_)) => false,
+  }
+}
+
+/// Whether `a == b` cannot be decided from the shapes involved, once
+/// [`structurally_unequal`] has found no definite difference: a `List` or a
+/// rule lined up against anything not identical to it, at the top or in
+/// corresponding elements of equal-length lists. wolframscript leaves
+/// `{1, 2} == 0`, `{1} == {{1}}` and `(1 -> 1) == (1 -> 2)` unevaluated
+/// (Solve relies on `{e1, e2, …} == 0` staying that way, to thread the
+/// scalar across the list itself), rather than calling them False.
+pub fn equality_undecidable(a: &Expr, b: &Expr) -> bool {
+  let structured = |e: &Expr| {
+    matches!(
+      e,
+      Expr::List(_) | Expr::Rule { .. } | Expr::RuleDelayed { .. }
+    )
+  };
+  match (a, b) {
+    (Expr::List(x), Expr::List(y)) => {
+      x.len() == y.len()
+        && x
+          .iter()
+          .zip(y.iter())
+          .any(|(p, q)| equality_undecidable(p, q))
+    }
+    _ if structured(a) || structured(b) => {
+      expr_to_string(a) != expr_to_string(b) && !all_components_equal(a, b)
+    }
+    _ => false,
   }
 }
 
@@ -974,8 +989,11 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(false));
   }
 
-  // Only stay symbolic if at least one arg has free symbols
-  if args.iter().any(crate::evaluator::has_free_symbols) {
+  // Only stay symbolic if at least one arg has free symbols, or the shapes
+  // compared cannot decide it
+  if args.iter().any(crate::evaluator::has_free_symbols)
+    || args.windows(2).any(|w| equality_undecidable(&w[0], &w[1]))
+  {
     Ok(symbolic_comparison_chain(args, ComparisonOp::Equal))
   } else {
     // No free symbols, not identical → False
@@ -1102,8 +1120,9 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(true));
   }
 
-  // Only stay symbolic if at least one arg has free symbols
-  if has_free {
+  // Only stay symbolic if at least one arg has free symbols, or the shapes
+  // compared cannot decide it
+  if has_free || args.windows(2).any(|w| equality_undecidable(&w[0], &w[1])) {
     Ok(symbolic_comparison_chain(args, ComparisonOp::NotEqual))
   } else {
     // No free symbols, pairwise different → True

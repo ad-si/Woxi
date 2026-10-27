@@ -13058,6 +13058,60 @@ mod equal_needs_comparable_operands {
 /// relies on this: `sol` is a `Module`-local `NSolve` result like
 /// `{{x$1 -> -0.36}}`, and comparing it against `{{}}`/`{}` must resolve to
 /// `False` even though `x$1` is never bound, so `Which` can pick a branch.
+mod equal_leaves_list_against_non_list_undecided {
+  use super::*;
+
+  // A list against a number, string or another shape, and any rule that is
+  // not identical, cannot be decided: wolframscript leaves them unevaluated
+  // rather than calling them False (or True for `!=`)
+  #[test]
+  fn list_against_a_non_list() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"{{1, 2} == 0, 0 == {1, 2}, {} == 0, {1, 2} == "s", {1} == {{1}}, {{1, 2}} == {0}}"#)
+        .unwrap(),
+      "{{1, 2} == 0, 0 == {1, 2}, {} == 0, {1, 2} == s, {1} == {{1}}, {{1, 2}} == {0}}"
+    );
+    assert_eq!(
+      interpret(
+        "{{1, 2} != 0, {1} != {{1}}, Equal[{1}, 1, 1], Unequal[{1}, 2, 3]}"
+      )
+      .unwrap(),
+      "{{1, 2} != 0, {1} != {{1}}, {1} == 1 == 1, {1} != 2 != 3}"
+    );
+  }
+
+  #[test]
+  fn a_definite_element_difference_still_decides() {
+    clear_state();
+    assert_eq!(
+      interpret("{{{1, 2}, 3} == {0, 4}, {{1, 2}, 3} != {0, 4}, {1, 2} == {{1, 2}}, {1 -> 2, 3} == {1 -> 2, 4}}")
+        .unwrap(),
+      "{False, True, False, False}"
+    );
+  }
+
+  #[test]
+  fn rules_are_not_compared_part_by_part() {
+    clear_state();
+    assert_eq!(
+      interpret("{(1 -> 1) == (1 -> 2), (1 -> 1) == 0, {x -> 1} == {x -> 2}, (1 :> 2) == (1 :> 2), (1 -> 1) != (1 -> 2)}")
+        .unwrap(),
+      "{(1 -> 1) == (1 -> 2), (1 -> 1) == 0, {x -> 1} == {x -> 2}, True, (1 -> 1) != (1 -> 2)}"
+    );
+  }
+
+  #[test]
+  fn position_with_an_unequal_test_skips_sublists() {
+    // PricingABermudanOptionWithTheLongstaffSchwartzAlgorithm
+    clear_state();
+    assert_eq!(
+      interpret("Position[{{0, 1.2}, {3, 0}}, x_ /; x != 0]").unwrap(),
+      "{{1, 2}, {2, 1}}"
+    );
+  }
+}
+
 mod equal_decides_structural_shape_mismatches {
   use super::*;
 
