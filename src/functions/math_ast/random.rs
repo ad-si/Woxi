@@ -18,7 +18,7 @@ fn random_array_dims_error(name: &str, args: &[Expr]) -> Expr {
 
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   // RandomInteger[dist] / RandomInteger[dist, n] samples from a discrete
   // distribution, exactly like RandomVariate (e.g. `RandomInteger[
@@ -31,13 +31,17 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match args.len() {
-    0 => Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(0..=1)))),
+    0 => Ok(Expr::Integer(crate::with_rng(|rng| {
+      rng.random_range(0..=1)
+    }))),
     1 => match &args[0] {
       // `RandomInteger[n]` draws from 0 through n — which for a negative n is
       // the range n through 0, not an error.
       Expr::Integer(max) => {
         let (lo, hi) = if *max < 0 { (*max, 0) } else { (0, *max) };
-        Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
+        Ok(Expr::Integer(crate::with_rng(|rng| {
+          rng.random_range(lo..=hi)
+        })))
       }
       Expr::List(items) if items.len() == 2 => {
         if let (Expr::Integer(min), Expr::Integer(max)) = (&items[0], &items[1])
@@ -45,7 +49,9 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // A reversed range {max, min} is ordered before sampling, matching
           // wolframscript (RandomInteger[{5, 2}] draws from [2, 5]).
           let (lo, hi) = (*min.min(max), *min.max(max));
-          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
+          Ok(Expr::Integer(crate::with_rng(|rng| {
+            rng.random_range(lo..=hi)
+          })))
         } else {
           Err(InterpreterError::EvaluationError(
             "RandomInteger: range must be integers".into(),
@@ -57,7 +63,9 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) if items.len() == 1 => {
         if let Expr::Integer(max) = &items[0] {
           let (lo, hi) = if *max < 0 { (*max, 0) } else { (0, *max) };
-          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
+          Ok(Expr::Integer(crate::with_rng(|rng| {
+            rng.random_range(lo..=hi)
+          })))
         } else {
           Err(InterpreterError::EvaluationError(
             "RandomInteger: range must be integers".into(),
@@ -125,7 +133,7 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if dims.len() == 1 {
           let results: Vec<Expr> = crate::with_rng(|rng| {
             (0..n)
-              .map(|_| Expr::Integer(rng.gen_range(min..=max)))
+              .map(|_| Expr::Integer(rng.random_range(min..=max)))
               .collect()
           });
           Expr::List(results.into())
@@ -148,7 +156,7 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomReal[] or RandomReal[max] or RandomReal[{min, max}]
 pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   // `RandomReal` takes options — `WorkingPrecision -> p` above all — after
   // its range and dimensions. (`RandomInteger` does not: wolframscript
@@ -213,13 +221,15 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   match args.len() {
-    0 => Ok(Expr::Real(crate::with_rng(|rng| rng.gen_range(0.0..1.0)))),
+    0 => Ok(Expr::Real(crate::with_rng(|rng| {
+      rng.random_range(0.0..1.0)
+    }))),
     1 => {
       let Some((min, max)) = range(&args[0]) else {
         return Ok(unevaluated("RandomReal", args));
       };
       Ok(Expr::Real(crate::with_rng(|rng| {
-        min + rng.gen_range(0.0..1.0) * (max - min)
+        min + rng.random_range(0.0..1.0) * (max - min)
       })))
     }
     2 => {
@@ -250,7 +260,9 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if dims.len() == 1 {
           let results: Vec<Expr> = crate::with_rng(|rng| {
             (0..n)
-              .map(|_| Expr::Real(min + rng.gen_range(0.0..1.0) * (max - min)))
+              .map(|_| {
+                Expr::Real(min + rng.random_range(0.0..1.0) * (max - min))
+              })
               .collect()
           });
           Expr::List(results.into())
@@ -319,7 +331,7 @@ fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
 /// or RandomComplex[range, dims]. Real and imaginary parts are drawn
 /// uniformly from the specified rectangle.
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   // `(re, im)` of a numeric bound (`-1 - I` is `Complex[-1, -1]`, but a
   // bound may also arrive as an unevaluated sum or product).
@@ -355,7 +367,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   fn draw_one(
-    rng: &mut dyn rand::RngCore,
+    rng: &mut dyn rand::Rng,
     re_lo: f64,
     re_hi: f64,
     im_lo: f64,
@@ -368,12 +380,12 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = if re_lo == re_hi {
       re_lo
     } else {
-      rng.gen_range(re_lo..re_hi)
+      rng.random_range(re_lo..re_hi)
     };
     let im = if im_lo == im_hi {
       im_lo
     } else {
-      rng.gen_range(im_lo..im_hi)
+      rng.random_range(im_lo..im_hi)
     };
     make_complex(re, im)
   }
@@ -434,14 +446,14 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// are independent uniform draws from [0, 1). `RandomColor[n]` returns a
 /// list of `n` such colours.
 pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   fn one_color() -> Expr {
     let (r, g, b) = crate::with_rng(|rng| {
       (
-        rng.gen_range(0.0..1.0),
-        rng.gen_range(0.0..1.0),
-        rng.gen_range(0.0..1.0),
+        rng.random_range(0.0..1.0),
+        rng.random_range(0.0..1.0),
+        rng.random_range(0.0..1.0),
       )
     });
     call(
@@ -476,7 +488,7 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use chrono::{Datelike, Local, TimeZone, Timelike};
-  use rand::Rng;
+  use rand::RngExt;
 
   fn one_date() -> Expr {
     let now = Local::now();
@@ -490,7 +502,7 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .single()
       .unwrap_or(now);
     let span = (next_year_start - year_start).num_milliseconds().max(1) as f64;
-    let offset_ms = crate::with_rng(|rng| rng.gen_range(0.0..span));
+    let offset_ms = crate::with_rng(|rng| rng.random_range(0.0..span));
     let total_micros = (offset_ms * 1000.0) as i64;
     let chosen = year_start + chrono::Duration::microseconds(total_micros);
     let seconds = chosen.second() as f64 + (chosen.nanosecond() as f64) / 1e9;
@@ -535,7 +547,7 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 #[cfg(target_arch = "wasm32")]
 pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   fn one_date() -> Expr {
     let now = js_sys::Date::new_0();
@@ -543,7 +555,7 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let year_start = js_sys::Date::new_with_year_month_day(year, 0, 1);
     let next_year_start = js_sys::Date::new_with_year_month_day(year + 1, 0, 1);
     let span = (next_year_start.get_time() - year_start.get_time()).max(1.0);
-    let offset_ms = crate::with_rng(|rng| rng.gen_range(0.0..span));
+    let offset_ms = crate::with_rng(|rng| rng.random_range(0.0..span));
     let total_micros = (offset_ms * 1000.0) as i64;
     let chosen = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(
       year_start.get_time() + (total_micros / 1000) as f64,
@@ -685,7 +697,7 @@ fn time_object_span(expr: &Expr) -> Option<(f64, f64)> {
 ///     end TimeObject's full granularity span, like wolframscript)
 ///   * `RandomTime[spec, n]` — list of `n` draws from any spec above
 pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   fn build_time(total: f64) -> Expr {
     // Round to microsecond resolution (the same precision RandomDate uses
@@ -712,7 +724,7 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   fn sample(lo: f64, hi: f64) -> Expr {
     if hi > lo {
-      build_time(crate::with_rng(|rng| rng.gen_range(lo..hi)))
+      build_time(crate::with_rng(|rng| rng.random_range(lo..hi)))
     } else {
       build_time(lo)
     }
@@ -808,7 +820,7 @@ pub fn random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomChoice[list]
 pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -882,13 +894,13 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
   // Helper: pick one index given the (optional) weight CDF.
-  let pick_index = |rng: &mut dyn rand::RngCore| -> usize {
+  let pick_index = |rng: &mut dyn rand::Rng| -> usize {
     if let Some(cdf) = weighted_cdf.as_ref() {
       let total = *cdf.last().unwrap();
-      let u = rng.gen_range(0.0..total);
+      let u = rng.random_range(0.0..total);
       cdf.iter().position(|&c| u < c).unwrap_or(cdf.len() - 1)
     } else {
-      rng.gen_range(0..items.len())
+      rng.random_range(0..items.len())
     }
   };
 
@@ -913,7 +925,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return Ok(random_array_dims_error("RandomChoice", args)),
     };
     fn build(items: &[Expr], dims: &[usize], cdf: Option<&[f64]>) -> Expr {
-      use rand::Rng;
+      use rand::RngExt;
       let n = dims[0];
       if dims.len() == 1 {
         let result: Vec<Expr> = crate::with_rng(|rng| {
@@ -921,10 +933,10 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|_| {
               let idx = if let Some(cdf) = cdf {
                 let total = *cdf.last().unwrap();
-                let u = rng.gen_range(0.0..total);
+                let u = rng.random_range(0.0..total);
                 cdf.iter().position(|&c| u < c).unwrap_or(cdf.len() - 1)
               } else {
-                rng.gen_range(0..items.len())
+                rng.random_range(0..items.len())
               };
               items[idx].clone()
             })
@@ -944,8 +956,8 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomSample[list]
 pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
-  use rand::seq::SliceRandom;
+  use rand::RngExt;
+  use rand::seq::{IndexedRandom, SliceRandom};
 
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1047,7 +1059,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let keys: Vec<f64> = crate::with_rng(|rng| {
         ws.iter()
           .map(|&w| {
-            let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
+            let u: f64 = rng.random_range(f64::MIN_POSITIVE..1.0);
             if w <= 0.0 {
               f64::NEG_INFINITY
             } else {
@@ -1101,7 +1113,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let keys: Vec<f64> = crate::with_rng(|rng| {
         ws.iter()
           .map(|&w| {
-            let u: f64 = rng.gen_range(f64::MIN_POSITIVE..1.0);
+            let u: f64 = rng.random_range(f64::MIN_POSITIVE..1.0);
             if w <= 0.0 {
               f64::NEG_INFINITY
             } else {
@@ -1122,7 +1134,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(sampled.into()))
     } else {
       let sampled: Vec<Expr> =
-        crate::with_rng(|rng| items.choose_multiple(rng, n).cloned().collect());
+        crate::with_rng(|rng| items.sample(rng, n).cloned().collect());
       Ok(Expr::List(sampled.into()))
     }
   }
@@ -1456,7 +1468,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(unevaluated("RandomVariate", args));
   }
-  use rand::Rng;
+  use rand::RngExt;
   use rand_distr::{Distribution, Normal};
 
   let dist = &args[0];
@@ -1594,8 +1606,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // interval, and a degenerate one has a single possible value —
             // sampling either without care would panic on an empty range.
             let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
-            let draw = |rng: &mut dyn rand::RngCore| -> f64 {
-              if lo == hi { lo } else { rng.gen_range(lo..hi) }
+            let draw = |rng: &mut dyn rand::Rng| -> f64 {
+              if lo == hi {
+                lo
+              } else {
+                rng.random_range(lo..hi)
+              }
             };
             match n {
               None => Ok(Expr::Real(crate::with_rng(|rng| draw(rng)))),
@@ -1776,7 +1792,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       let sample = || -> Expr {
-        let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..table.total));
+        let u: f64 = crate::with_rng(|rng| rng.random_range(0.0..table.total));
         let i = table
           .cumulative
           .partition_point(|&c| c <= u)
@@ -1792,7 +1808,8 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let x = match table.width {
           // Continuous: uniform within the selected grid cell.
           Some(w) => {
-            table.points[i] + w * crate::with_rng(|rng| rng.gen_range(0.0..1.0))
+            table.points[i]
+              + w * crate::with_rng(|rng| rng.random_range(0.0..1.0))
           }
           None => table.points[i],
         };
@@ -1829,7 +1846,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let count = n.unwrap_or(1);
       let mut out = Vec::with_capacity(count);
       for _ in 0..count {
-        let u: f64 = crate::with_rng(|rng| rng.gen_range(0.0..total));
+        let u: f64 = crate::with_rng(|rng| rng.random_range(0.0..total));
         let mut acc = 0.0;
         let mut idx = ws.len() - 1;
         for (i, w) in ws.iter().enumerate() {
@@ -1865,7 +1882,8 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("RandomVariate", args));
       }
       let sample = || -> Expr {
-        let u: f64 = crate::with_rng(|rng| 1.0 - rng.gen_range(0.0..1.0_f64));
+        let u: f64 =
+          crate::with_rng(|rng| 1.0 - rng.random_range(0.0..1.0_f64));
         Expr::Real(k * u.powf(-1.0 / alpha))
       };
       match n {
@@ -1885,7 +1903,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("RandomVariate", args));
       };
       let sample = || -> Expr {
-        let u: f64 = 1.0 - crate::with_rng(|rng| rng.gen_range(0.0..1.0));
+        let u: f64 = 1.0 - crate::with_rng(|rng| rng.random_range(0.0..1.0));
         Expr::Integer((u.ln() / (-p).ln_1p()).floor() as i128)
       };
       match n {
@@ -2240,7 +2258,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("RandomVariate", args));
       }
       let sample_bernoulli = || -> i128 {
-        crate::with_rng(|rng| (rng.gen_range(0.0..1.0) < prob) as i128)
+        crate::with_rng(|rng| (rng.random_range(0.0..1.0) < prob) as i128)
       };
       match n {
         None => Ok(Expr::Integer(sample_bernoulli())),
@@ -2284,7 +2302,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let draw = || -> Result<Option<Expr>, InterpreterError> {
         let u = crate::with_rng(|rng| {
           loop {
-            let u: f64 = rng.gen_range(0.0..1.0);
+            let u: f64 = rng.random_range(0.0..1.0);
             if u > 0.0 {
               break u;
             }
@@ -2326,7 +2344,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomPrime[imax] or RandomPrime[{imin, imax}] or RandomPrime[range, n]
 pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -2450,12 +2468,12 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return uneval();
     }
     if dims.is_empty() {
-      let idx = crate::with_rng(|rng| rng.gen_range(0..primes.len()));
+      let idx = crate::with_rng(|rng| rng.random_range(0..primes.len()));
       Ok(Expr::Integer(primes[idx]))
     } else {
       let flat: Vec<Expr> = crate::with_rng(|rng| {
         (0..count)
-          .map(|_| Expr::Integer(primes[rng.gen_range(0..primes.len())]))
+          .map(|_| Expr::Integer(primes[rng.random_range(0..primes.len())]))
           .collect()
       });
       Ok(reshape_into_dims(flat, &dims))
@@ -2473,7 +2491,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for _ in 0..count {
       let prime = crate::with_rng(|rng| {
         loop {
-          let candidate = rng.gen_range(start..=max);
+          let candidate = rng.random_range(start..=max);
           if is_prime_i128(candidate) {
             return candidate;
           }
@@ -2549,7 +2567,7 @@ fn uniform_random_edges(n: usize, m: usize) -> Vec<(usize, usize)> {
 /// on `k + 1` vertices, then attach every further vertex to `k` distinct
 /// existing vertices chosen with probability proportional to their degree.
 fn barabasi_albert_edges(n: usize, k: usize) -> Vec<(usize, usize)> {
-  use rand::Rng;
+  use rand::RngExt;
   let mut edges: Vec<(usize, usize)> = Vec::new();
   let seed = (k + 1).min(n);
   for i in 1..=seed {
@@ -2566,9 +2584,9 @@ fn barabasi_albert_edges(n: usize, k: usize) -> Vec<(usize, usize)> {
       let mut targets: Vec<usize> = Vec::with_capacity(k);
       while targets.len() < k.min(v - 1) {
         let t = if endpoints.is_empty() {
-          rng.gen_range(1..v)
+          rng.random_range(1..v)
         } else {
-          endpoints[rng.gen_range(0..endpoints.len())]
+          endpoints[rng.random_range(0..endpoints.len())]
         };
         if !targets.contains(&t) {
           targets.push(t);
@@ -2590,7 +2608,7 @@ fn barabasi_albert_edges(n: usize, k: usize) -> Vec<(usize, usize)> {
 /// endpoint rewired with probability `p` to a uniformly chosen vertex that
 /// keeps the graph simple.
 fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
-  use rand::Rng;
+  use rand::RngExt;
   use std::collections::HashSet;
   let key = |a: usize, b: usize| (a.min(b), a.max(b));
   let mut edges: Vec<(usize, usize)> = Vec::new();
@@ -2605,7 +2623,7 @@ fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
   }
   crate::with_rng(|rng| {
     for e in &mut edges {
-      if !rng.gen_bool(p) {
+      if !rng.random_bool(p) {
         continue;
       }
       let (u, v) = *e;
@@ -2615,7 +2633,7 @@ fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
       if free.is_empty() {
         continue;
       }
-      let w = free[rng.gen_range(0..free.len())];
+      let w = free[rng.random_range(0..free.len())];
       present.remove(&key(u, v));
       present.insert(key(u, w));
       *e = (u, w);
@@ -2628,7 +2646,7 @@ fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
 /// RandomGraph[gdist] — a graph drawn from a random graph distribution.
 /// RandomGraph[spec, k] — list of k such graphs.
 pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use rand::Rng;
+  use rand::RngExt;
 
   let unevaluated = || unevaluated("RandomGraph", args);
 
@@ -2689,7 +2707,7 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::with_rng(|rng| {
             for i in 1..=n {
               for j in (i + 1)..=n {
-                if rng.gen_bool(p) {
+                if rng.random_bool(p) {
                   edges.push((i, j));
                 }
               }

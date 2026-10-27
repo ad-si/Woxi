@@ -43,14 +43,14 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           manylinux: auto
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: woxi-py/dist
@@ -71,12 +71,12 @@ jobs:
           - runner: macos-latest
             arch: aarch64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
           args: --release --out dist
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-${{ matrix.platform.arch }}
           path: woxi-py/dist
@@ -85,13 +85,13 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
           target: x64
           args: --release --out dist
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-windows-x64
           path: woxi-py/dist
@@ -99,7 +99,7 @@ jobs:
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: woxi-py
@@ -114,7 +114,7 @@ jobs:
           python3 -m venv venv
           venv/bin/pip install woxi-py/dist/woxi-*.tar.gz
           venv/bin/python -c "import woxi; assert woxi.interpret('Plus[1, 2]') == '3'"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist
           path: woxi-py/dist
@@ -128,7 +128,7 @@ jobs:
       # Required for PyPI Trusted Publishing (OIDC).
       id-token: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

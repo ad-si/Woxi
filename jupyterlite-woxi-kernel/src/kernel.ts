@@ -1,5 +1,5 @@
 import { KernelMessage } from '@jupyterlab/services';
-import { BaseKernel, IKernel } from '@jupyterlite/kernel';
+import { BaseKernel, IKernel } from '@jupyterlite/services';
 
 interface OutputItem {
   type: 'text' | 'graphics' | 'print' | 'warning' | 'error';

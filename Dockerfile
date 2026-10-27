@@ -18,10 +18,9 @@
 # Pin to a specific Rust release so test runs are byte-for-byte
 # reproducible across machines. Bump deliberately when upgrading the
 # toolchain — Cargo edition 2024 needs Rust >= 1.85, and current
-# `cargo-nextest` (0.9.133) requires Rust >= 1.91.
-FROM rust:1.91-slim-bookworm
+# `cargo-nextest` requires a recent stable toolchain.
+FROM rust:1.97-slim-trixie
 
-# - git: `cargo` clones the `astro-float` git dependency
 # - curl: Woxi's `Import["…", "URL"]` shells out to `curl` at runtime
 # - pkg-config / libssl-dev: cover transitive crates that probe for
 #   system OpenSSL during the build
@@ -29,7 +28,6 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    git \
     pkg-config \
     libssl-dev \
   && rm -rf /var/lib/apt/lists/*
@@ -45,16 +43,24 @@ ENV USER=woxi \
 WORKDIR /home/woxi/woxi
 
 # Fetch crates in their own layer, keyed only on the manifests +
-# lockfile. Source-only edits no longer redownload from crates.io /
-# the astro-float git remote on rebuild. Stub source files are needed
-# because cargo validates that each workspace member's lib/bin paths
-# exist before resolving.
+# lockfile. Source-only edits no longer redownload from crates.io on
+# rebuild. Stub source files are needed because cargo validates that
+# each workspace member's lib/bin/bench paths exist before resolving.
 COPY Cargo.toml Cargo.lock ./
+COPY crates/woxi-parser/Cargo.toml crates/woxi-parser/Cargo.toml
+COPY crates/woxi-reduce/Cargo.toml crates/woxi-reduce/Cargo.toml
 COPY woxi-studio/Cargo.toml woxi-studio/Cargo.toml
-RUN mkdir -p src woxi-studio/src \
+COPY woxi-py/Cargo.toml woxi-py/Cargo.toml
+RUN mkdir -p src benches woxi-studio/src woxi-py/src \
+    crates/woxi-parser/src crates/woxi-reduce/src crates/woxi-reduce/benches \
   && : > src/lib.rs \
   && echo 'fn main() {}' > src/main.rs \
+  && : > benches/interpreter.rs \
+  && : > crates/woxi-parser/src/lib.rs \
+  && : > crates/woxi-reduce/src/lib.rs \
+  && : > crates/woxi-reduce/benches/reduce.rs \
   && echo 'fn main() {}' > woxi-studio/src/main.rs \
+  && : > woxi-py/src/lib.rs \
   && cargo fetch --locked
 
 # Bring in the real source (overwrites the stubs above).

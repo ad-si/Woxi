@@ -1,17 +1,18 @@
 import {
-  JupyterLiteServer,
-  JupyterLiteServerPlugin,
-} from '@jupyterlite/server';
+  JupyterFrontEnd,
+  JupyterFrontEndPlugin,
+} from '@jupyterlab/application';
 
-import { IKernel, IKernelSpecs } from '@jupyterlite/kernel';
+import { IKernel, IKernelSpecs } from '@jupyterlite/services';
 
 import { WoxiKernel } from './kernel';
 
-const server_kernel: JupyterLiteServerPlugin<void> = {
+const kernel: JupyterFrontEndPlugin<void> = {
   id: '@woxi/jupyterlite-woxi-kernel:kernel',
+  description: 'A plugin providing the Woxi (Wolfram Language) kernel.',
   autoStart: true,
   requires: [IKernelSpecs],
-  activate: (app: JupyterLiteServer, kernelspecs: IKernelSpecs) => {
+  activate: (app: JupyterFrontEnd, kernelspecs: IKernelSpecs) => {
     kernelspecs.register({
       spec: {
         name: 'woxi',
@@ -30,5 +31,5 @@ const server_kernel: JupyterLiteServerPlugin<void> = {
   },
 };
 
-const plugins: JupyterLiteServerPlugin<any>[] = [server_kernel];
+const plugins: JupyterFrontEndPlugin<any>[] = [kernel];
 export default plugins;

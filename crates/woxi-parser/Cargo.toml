@@ -7,5 +7,8 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/ad-si/Woxi"
 
 [dependencies]
-pest = "2.5"
-pest_derive = "2.5"
+# Held on 2.8: pest 2.9 probes the remaining native stack (pest_stack_guard)
+# on every rule call, which made parse-heavy evaluation ~30% slower
+# (plot3d_of_one_element_list_result: 9 s -> 12 s, timing out in CI).
+pest = "~2.8.8"
+pest_derive = "~2.8.8"
