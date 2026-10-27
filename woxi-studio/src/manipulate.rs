@@ -419,6 +419,69 @@ pub fn button_regions_of(svg: &str) -> Vec<ButtonRegion> {
   regions
 }
 
+/// A `ClickPane` drawn in a rendered picture: its rectangle in the picture's
+/// pixel coordinates and the coordinate system a click inside it is reported
+/// in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClickRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub hit: woxi::functions::graphics::ClickPaneHit,
+}
+
+impl ClickRegion {
+  /// The code applying the pane's handler to a click at pixel `(px, py)` of
+  /// the picture (the y axis points up in the pane's coordinates).
+  pub fn click_action(&self, px: f32, py: f32) -> String {
+    let h = &self.hit;
+    let fx = f64::from((px - self.x) / self.width).clamp(0.0, 1.0);
+    let fy = f64::from((py - self.y) / self.height).clamp(0.0, 1.0);
+    let x = h.x_min + fx * (h.x_max - h.x_min);
+    let y = h.y_max - fy * (h.y_max - h.y_min);
+    format!("({})[{{{x}, {y}}}]", h.handler)
+  }
+}
+
+/// Find every `ClickPane` the renderer marked in `svg` (see
+/// `woxi::functions::graphics::CLICK_PANE_HIT_ID_PREFIX`).
+pub fn click_regions_of(svg: &str) -> Vec<ClickRegion> {
+  use resvg::usvg;
+  use woxi::functions::graphics::{
+    CLICK_PANE_HIT_ID_PREFIX, click_pane_from_hit_id,
+  };
+  if !svg.contains(CLICK_PANE_HIT_ID_PREFIX) {
+    return Vec::new();
+  }
+  let Ok(tree) = usvg::Tree::from_str(svg, &usvg::Options::default()) else {
+    return Vec::new();
+  };
+  fn walk(group: &usvg::Group, out: &mut Vec<ClickRegion>) {
+    for node in group.children() {
+      match node {
+        usvg::Node::Group(g) => walk(g, out),
+        usvg::Node::Path(p) => {
+          if let Some(hit) = click_pane_from_hit_id(p.id()) {
+            let r = p.abs_bounding_box();
+            out.push(ClickRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              hit,
+            });
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+  let mut regions = Vec::new();
+  walk(tree.root(), &mut regions);
+  regions
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -445,6 +508,11 @@ pub struct ManipulateState {
   /// game's clickable squares in a `GraphicsGrid`), in the picture's pixel
   /// coordinates. The view overlays a real clickable area on each.
   pub button_regions: Vec<ButtonRegion>,
+  /// `ClickPane`s drawn in the picture; a click inside one runs its handler
+  /// on the click position.
+  pub click_regions: Vec<ClickRegion>,
+  /// Last cursor position over the picture, in its pixel coordinates.
+  pub pointer: (f32, f32),
   pub text_output: Option<String>,
   pub error: Option<String>,
   /// Audio produced by the last pressed button's action (`Button[…,
@@ -625,6 +693,8 @@ impl ManipulateState {
       display_trees: Vec::new(),
       graphics_handle: None,
       button_regions: Vec::new(),
+      click_regions: Vec::new(),
+      pointer: (0.0, 0.0),
       text_output: None,
       error: None,
       emitted_sound: None,
@@ -823,6 +893,23 @@ impl ManipulateState {
   /// Run a `Button[…]` control's action: global side effects persist, and
   /// writes to bound control variables (e.g. `time = 0`) move the
   /// corresponding widgets. Re-renders afterwards.
+  /// Run the handler of the picture's `ClickPane` for a click at the last
+  /// pointer position, when that position lies inside the pane.
+  pub fn apply_pane_click(&mut self) {
+    let (px, py) = self.pointer;
+    let action = self
+      .click_regions
+      .iter()
+      .rev()
+      .find(|r| {
+        px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height
+      })
+      .map(|r| r.click_action(px, py));
+    if let Some(action) = action {
+      self.apply_button_action(&action);
+    }
+  }
+
   pub fn apply_button_action(&mut self, action: &str) {
     woxi::clear_captured_sound();
     let updated = woxi::functions::graphics::apply_manipulate_button_action(
@@ -1475,6 +1562,7 @@ impl ManipulateState {
         if let Some(svg) = result.graphics {
           let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
           self.button_regions = button_regions_of(&svg);
+          self.click_regions = click_regions_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
           self.error = None;
@@ -1483,6 +1571,7 @@ impl ManipulateState {
           // Blank the graphic and show the text (empty text => blank cell).
           self.graphics_handle = None;
           self.button_regions.clear();
+          self.click_regions.clear();
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -1496,6 +1585,7 @@ impl ManipulateState {
         // place of the graphic, so drop the cached rendering here.
         self.graphics_handle = None;
         self.button_regions.clear();
+        self.click_regions.clear();
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
@@ -4457,6 +4547,43 @@ mod tests {
   }
 
   /// A two-player board game laid out as a `GraphicsGrid` of
+  /// A `ClickPane` as the whole Manipulate body (a board painted by
+  /// clicking it): the picture must offer a click region whose coordinates
+  /// follow the graphic's `PlotRange`, and a click must run the handler on
+  /// the clicked position and redraw.
+  #[test]
+  fn click_pane_body_runs_its_handler_on_the_clicked_position() {
+    let code = r#"Manipulate[
+      ClickPane[
+        Graphics[{Table[{If[tiles[[i]] == 1, Red, Blue], Rectangle[{i - 1, 0}, {i, 1}]}, {i, 4}]},
+          PlotRange -> {{0, 4}, {0, 1}}, ImageSize -> {400, 100}],
+        (tiles[[Floor[#[[1]]] + 1]] = paint) &],
+      {{paint, 2}, {1, 2}, ControlType -> SetterBar},
+      {{tiles, {1, 1, 1, 1}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(state.click_regions.len(), 1);
+    let region = state.click_regions[0].clone();
+    assert_eq!((region.width, region.height), (400.0, 100.0));
+    // The third tile spans x in [200, 300) pixels.
+    state.pointer = (250.0, 50.0);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let tiles = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "tiles")
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default();
+    assert_eq!(tiles, "{1, 1, 2, 1}");
+    // A click's y axis points up: the top edge is the range's maximum.
+    assert!(region.click_action(0.0, 0.0).contains(", 1}]"));
+    assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
+  }
+
   /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style
   /// Demonstration): every enabled cell must be a pressable region of the
   /// picture, pressing one runs that cell's own action on the widget state,

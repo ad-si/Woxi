@@ -367,6 +367,12 @@ enum Message {
   /// A `Button[…]` control row was pressed; run its action code.
   /// (cell_idx, ctrl_idx)
   ManipulateButtonPressed(usize, usize),
+  /// The cursor moved over a Manipulate picture holding a `ClickPane`
+  /// (cell_idx, x, y in the picture's pixels).
+  ManipulatePointerMoved(usize, f32, f32),
+  /// The picture was pressed: run the `ClickPane` handler on the last
+  /// pointer position.
+  ManipulatePaneClicked(usize),
   /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
   /// its assignment code. (cell_idx, bookmark_idx — indexes
   /// `ManipulateState::bookmarks`, not `controls`)
@@ -2013,6 +2019,26 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::ManipulatePointerMoved(cell_idx, x, y) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.pointer = (x, y);
+        }
+        Task::none()
+      }
+      Message::ManipulatePaneClicked(cell_idx) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.apply_pane_click();
+        }
+        Task::none()
+      }
       Message::ManipulateButtonPressed(cell_idx, ctrl_idx) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
@@ -4687,6 +4713,15 @@ fn render_manipulate_widget<'a>(
         );
       }
       stack(layers).into()
+    };
+    // A `ClickPane` hands its handler the position of each click.
+    let picture: Element<'_, Message> = if state.click_regions.is_empty() {
+      picture
+    } else {
+      mouse_area(picture)
+        .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+        .on_press(Message::ManipulatePaneClicked(cell_idx))
+        .into()
     };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {

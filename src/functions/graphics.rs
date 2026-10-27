@@ -21884,15 +21884,7 @@ pub const BUTTON_HIT_ID_PREFIX: &str = "woxi-btn-";
 
 /// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.
 pub fn button_action_from_hit_id(id: &str) -> Option<String> {
-  let hex = id.strip_prefix(BUTTON_HIT_ID_PREFIX)?;
-  if hex.len() % 2 != 0 || !hex.is_ascii() {
-    return None;
-  }
-  let bytes: Option<Vec<u8>> = (0..hex.len())
-    .step_by(2)
-    .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-    .collect();
-  String::from_utf8(bytes?).ok()
+  decode_hit_id_hex(id.strip_prefix(BUTTON_HIT_ID_PREFIX)?)
 }
 
 /// Dress the picture of a `Button[Graphics[…], action, opts…]` grid cell:
@@ -21970,6 +21962,109 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
       "<rect id=\"{BUTTON_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
     ));
   }
+  out.push_str(&svg[close..]);
+  out
+}
+
+/// Prefix of the `id` on the invisible rectangle that marks a `ClickPane`
+/// in a rendered picture. The rest of the id is the hex-encoded text
+/// `xmin ymin xmax ymax` (the pane's coordinate system) followed by a newline
+/// and the InputForm of the click handler. A live widget (Woxi Studio) turns a
+/// click on the rectangle into `handler[{x, y}]` in that coordinate system.
+pub const CLICK_PANE_HIT_ID_PREFIX: &str = "woxi-click-";
+
+/// A decoded [`CLICK_PANE_HIT_ID_PREFIX`] id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClickPaneHit {
+  pub x_min: f64,
+  pub y_min: f64,
+  pub x_max: f64,
+  pub y_max: f64,
+  /// InputForm of the handler function.
+  pub handler: String,
+}
+
+/// Decode the id of a [`CLICK_PANE_HIT_ID_PREFIX`] rectangle.
+pub fn click_pane_from_hit_id(id: &str) -> Option<ClickPaneHit> {
+  let text = decode_hit_id_hex(id.strip_prefix(CLICK_PANE_HIT_ID_PREFIX)?)?;
+  let (range, handler) = text.split_once('\n')?;
+  let nums: Vec<f64> =
+    range.split(' ').filter_map(|v| v.parse().ok()).collect();
+  let [x_min, y_min, x_max, y_max] = nums[..] else {
+    return None;
+  };
+  Some(ClickPaneHit {
+    x_min,
+    y_min,
+    x_max,
+    y_max,
+    handler: handler.to_string(),
+  })
+}
+
+fn decode_hit_id_hex(hex: &str) -> Option<String> {
+  if !hex.len().is_multiple_of(2) || !hex.is_ascii() {
+    return None;
+  }
+  let bytes: Option<Vec<u8>> = (0..hex.len())
+    .step_by(2)
+    .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+    .collect();
+  String::from_utf8(bytes?).ok()
+}
+
+/// Cover the picture `svg` that a `ClickPane[content, handler]` (or
+/// `ClickPane[content, {{xmin, ymin}, {xmax, ymax}}, handler]`) displays with
+/// an invisible rectangle recording the handler and the pane's coordinate
+/// system. The coordinates come from the explicit range or the `PlotRange`
+/// of `content`; without either the click position can't be mapped, so the
+/// picture is returned unchanged.
+pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
+  let Expr::FunctionCall { name, args } = pane else {
+    return svg;
+  };
+  if name != "ClickPane" || args.len() < 2 {
+    return svg;
+  }
+  let explicit_range = |arg: Option<&Expr>| match arg {
+    Some(Expr::List(corners)) if corners.len() == 2 => {
+      list2_f64(&corners[0]).zip(list2_f64(&corners[1]))
+    }
+    _ => None,
+  };
+  let range = explicit_range(args.get(1).filter(|_| args.len() >= 3))
+    .or_else(|| find_plot_range(&args[0]))
+    .or_else(|| {
+      let shown = evaluate_expr_to_expr(&args[0]).ok()?;
+      find_plot_range(&shown)
+    });
+  let Some(((x_min, y_min), (x_max, y_max))) = range else {
+    return svg;
+  };
+  let Some(dims) = parse_svg_dimensions(&svg) else {
+    return svg;
+  };
+  let vb: Vec<f64> = dims
+    .view_box
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+    return svg;
+  };
+  let Some(close) = svg.rfind("</svg>") else {
+    return svg;
+  };
+  let handler = crate::syntax::expr_to_source_form(&args[args.len() - 1]);
+  let mut hex = String::new();
+  for b in format!("{x_min} {y_min} {x_max} {y_max}\n{handler}").bytes() {
+    hex.push_str(&format!("{b:02x}"));
+  }
+  let mut out = String::with_capacity(svg.len() + hex.len() + 160);
+  out.push_str(&svg[..close]);
+  out.push_str(&format!(
+    "<rect id=\"{CLICK_PANE_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
+  ));
   out.push_str(&svg[close..]);
   out
 }
