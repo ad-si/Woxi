@@ -5835,7 +5835,43 @@ fn evaluate_function_call_ast_inner(
         other => other.clone(),
       }
     }
-    let args_vec: Vec<Expr> = args.iter().map(rewrite_two_way_rules).collect();
+    let mut args_vec: Vec<Expr> =
+      args.iter().map(rewrite_two_way_rules).collect();
+    // An edge list given as pairs of positive integers, `{{1, 2}, {2, 3}}`,
+    // is a list of undirected edges (in the edge position only: a vertex
+    // list of pairs stays a list of vertices).
+    fn integer_pairs_as_edges(e: &Expr) -> Option<Expr> {
+      let Expr::List(items) = e else {
+        return None;
+      };
+      let positive = |x: &Expr| matches!(x, Expr::Integer(k) if *k > 0);
+      if items.is_empty()
+        || !items.iter().all(|it| {
+          matches!(it, Expr::List(p) if p.len() == 2 && p.iter().all(positive))
+        })
+      {
+        return None;
+      }
+      Some(Expr::List(
+        items
+          .iter()
+          .map(|it| match it {
+            Expr::List(p) => call("UndirectedEdge", p.to_vec()),
+            other => other.clone(),
+          })
+          .collect(),
+      ))
+    }
+    let edge_position = usize::from(
+      args_vec.len() >= 2
+        && matches!(&args_vec[0], Expr::List(_))
+        && matches!(&args_vec[1], Expr::List(_)),
+    );
+    if let Some(edges) =
+      args_vec.get(edge_position).and_then(integer_pairs_as_edges)
+    {
+      args_vec[edge_position] = edges;
+    }
     let args: &[Expr] = &args_vec;
 
     // `Graph[g, opts…]` on an existing graph is that graph with the new

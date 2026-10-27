@@ -3719,6 +3719,14 @@ as `Dot[a, -b]`.
 
 ## Messages and error handling
 
+### Graph functions say nothing about a non-graph argument
+
+`EdgeList[{1, 2}]` and `VertexList[Graph[{{a, b}}]]` (a `Graph` that did not
+evaluate) come back unevaluated in both, but wolframscript also prints
+`EdgeList::graph: A graph object is expected at position 1 in …`. A bare
+symbol (`EdgeList[x]`) is silent in both. Woxi has no `::graph` message for
+any graph function.
+
 ### `RealDigits` in a non-integer base stays unevaluated
 
 `RealDigits[1/7, 2.5]` lists 39 digits of the greedy expansion in base 2.5 in

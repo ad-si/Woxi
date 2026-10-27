@@ -5197,6 +5197,44 @@ mod graph_embedding_vertex_coordinates {
   }
 }
 
+mod graph_from_integer_pairs {
+  use super::*;
+
+  // HatMonotileCoronas builds its adjacency graph from `Subsets` pairs
+  #[test]
+  fn pairs_of_positive_integers_are_undirected_edges() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graph[{{1, 2}, {1, 3}, {2, 4}}]; {VertexList[g], EdgeList[g], Normal[GraphDistanceMatrix[g]][[1]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 4}, {1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 4}, {0, 1, 1, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"EdgeList /@ {Graph[{1, 2, 3}, {{1, 2}, {2, 3}}], Graph[{{1, 2}, {2, 3}}, VertexLabels -> "Name"], Graph[{{1, 1}}]}"#
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1 \u{f3d4} 1}}"
+    );
+  }
+
+  #[test]
+  fn other_pairs_are_not_edges() {
+    clear_state();
+    // Symbols, zero, negatives or a mix with rules make no graph, and a
+    // vertex list of pairs stays a list of vertices
+    assert_eq!(
+      interpret(
+        "{EdgeList[Graph[{{a, b}}]], EdgeList[Graph[{{0, 1}}]], EdgeList[Graph[{{1, 2}, 2 -> 3}]], VertexList[Graph[{{1, 2}, {3, 4}}, {}]]}"
+      )
+      .unwrap(),
+      "{EdgeList[Graph[{{a, b}}]], EdgeList[Graph[{{0, 1}}]], EdgeList[Graph[{{1, 2}, 2 -> 3}]], {{1, 2}, {3, 4}}}"
+    );
+  }
+}
+
 mod graph_of_a_graph {
   use super::*;
 
