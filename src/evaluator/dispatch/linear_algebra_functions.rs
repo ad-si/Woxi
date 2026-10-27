@@ -129,6 +129,15 @@ pub fn dispatch_linear_algebra_functions(
       | "DiagonalMatrixQ"
       | "UpperTriangularMatrixQ"
       | "LowerTriangularMatrixQ"
+      | "Eigensystem"
+      | "SingularValueList"
+      | "RowReduce"
+      | "LUDecomposition"
+      | "QRDecomposition"
+      | "SchurDecomposition"
+      | "CholeskyDecomposition"
+      | "MatrixExp"
+      | "MatrixPower"
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
     if args.iter().any(is_sparse) {
@@ -147,9 +156,12 @@ pub fn dispatch_linear_algebra_functions(
       // avoid recursing forever on a form we could not expand.
       if !dense.iter().any(is_sparse) {
         let result = dispatch_linear_algebra_functions(name, &dense);
-        // The inverse of a SparseArray is itself a SparseArray.
-        if name == "Inverse"
-          && let Some(Ok(inv @ Expr::List(_))) = &result
+        // The inverse, exponential and powers of a SparseArray are
+        // SparseArrays themselves.
+        if matches!(name, "Inverse" | "MatrixExp" | "MatrixPower")
+          && let Some(Ok(inv @ Expr::List(rows))) = &result
+          // `MatrixExp[m, v]` is a vector.
+          && rows.iter().all(|r| matches!(r, Expr::List(_)))
           && let Some(sparse) =
             super::list_operations::dense_to_sparse_array_with_default(
               inv,

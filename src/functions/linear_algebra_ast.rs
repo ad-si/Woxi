@@ -4380,11 +4380,14 @@ fn eigenvectors_impl(
   };
   let n = matrix.len();
 
-  // 1x1
+  // 1x1: the unit vector, a machine number for a machine matrix.
   if n == 1 {
-    return Ok(Expr::List(
-      vec![Expr::List(vec![Expr::Integer(1)].into())].into(),
-    ));
+    let one = if crate::functions::math_ast::contains_inexact_real(&args[0]) {
+      Expr::Real(1.0)
+    } else {
+      Expr::Integer(1)
+    };
+    return Ok(Expr::List(vec![Expr::List(vec![one].into())].into()));
   }
 
   // A common symbolic factor doesn't change the eigenvectors.

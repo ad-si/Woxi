@@ -6647,6 +6647,23 @@ mod cases {
       r#"{{169, -70}, {-70, 29}}"#,
     );
   }
+  // Decompositions of a SparseArray work on its dense form; its exponential
+  // and powers stay SparseArrays, as in Wolfram. A 1x1 machine matrix has the
+  // machine unit vector.
+  #[test]
+  fn sparse_array_decompositions() {
+    assert_case(
+      "s = SparseArray[{{1, 2} -> 1., {2, 1} -> 1., {1, 1} -> 2.}]; \
+       {Map[Head, {Eigensystem[s], SingularValueList[s], RowReduce[s], \
+       LUDecomposition[s], QRDecomposition[s], SchurDecomposition[s], \
+       MatrixExp[s], MatrixPower[s, 2]}], Normal[MatrixPower[s, 2]], \
+       Eigensystem[SparseArray[{{1, 1} -> -7.}, {1, 1}]], \
+       Eigensystem[{{-7}}]}",
+      "{{List, List, List, List, List, List, SparseArray, SparseArray}, \
+       {{5., 2.}, {2., 1.}}, {{-7.}, {{1.}}}, {{-7}, {{1}}}}",
+    );
+  }
+
   // A non-integer power (and any matrix function) of a diagonalizable
   // matrix goes through its eigensystem: V f(D) V^-1.
   #[test]
