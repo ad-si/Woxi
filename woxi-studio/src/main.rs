@@ -628,30 +628,7 @@ impl WoxiStudio {
             if let Some(state) =
               instantiate_manipulate_from_box_dump(&cell.content)
             {
-              editors.push(CellEditor {
-                content: text_editor::Content::with_text(&cell.content),
-                style: cell.style,
-                output: None,
-                stdout: None,
-                graphics_svg: None,
-                graphics_handle: None,
-                graphics_image: None,
-                output_svgs: Vec::new(),
-                output_images: Vec::new(),
-                output_dark: false,
-                output_all_svg: false,
-                sound: None,
-                warnings: Vec::new(),
-                undo_stack: Vec::new(),
-                redo_stack: Vec::new(),
-                output_stale: false,
-                is_collapsed: cell.collapsed,
-                manipulate_state: Some(state),
-                hyperlinks: Vec::new(),
-                stored_graphic: false,
-                output_content: text_editor::Content::new(),
-                stdout_content: text_editor::Content::new(),
-              });
+              editors.push(widget_dump_editor(cell, state));
               continue;
             }
           }
@@ -792,6 +769,21 @@ impl WoxiStudio {
                 stdout_content,
               });
               i = j;
+            } else if is_dynamic_box_dump(&cell.content)
+              && let Some(state) = {
+                // A widget stored on its own inside a group — a
+                // "Snapshots" section of live Manipulate outputs — opens
+                // live too, like a standalone one.
+                if !state_cleared {
+                  woxi::clear_state();
+                  state_cleared = true;
+                }
+                evaluate_pending_initialization(&mut pending_init);
+                instantiate_manipulate_from_box_dump(&cell.content)
+              }
+            {
+              editors.push(widget_dump_editor(cell, state));
+              i += 1;
             } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
               && let Some(editor) = stored_output_editor(cell)
             {
@@ -5663,6 +5655,38 @@ fn instantiate_stored_manipulate(
   Some(state)
 }
 
+/// The editor of a cell holding a stored widget dump, showing the widget
+/// rebuilt from it.
+fn widget_dump_editor(
+  cell: &Cell,
+  state: manipulate::ManipulateState,
+) -> CellEditor {
+  CellEditor {
+    content: text_editor::Content::with_text(&cell.content),
+    style: cell.style,
+    output: None,
+    stdout: None,
+    graphics_svg: None,
+    graphics_handle: None,
+    graphics_image: None,
+    output_svgs: Vec::new(),
+    output_images: Vec::new(),
+    output_dark: false,
+    output_all_svg: false,
+    sound: None,
+    warnings: Vec::new(),
+    undo_stack: Vec::new(),
+    redo_stack: Vec::new(),
+    output_stale: false,
+    is_collapsed: cell.collapsed,
+    manipulate_state: Some(state),
+    hyperlinks: Vec::new(),
+    stored_graphic: false,
+    output_content: text_editor::Content::new(),
+    stdout_content: text_editor::Content::new(),
+  }
+}
+
 /// Rebuild the interactive widget for a standalone stored Output cell that
 /// holds a dynamic-widget dump with no preceding Input cell to fall back
 /// on — e.g. a notebook downloaded straight from a Wolfram Demonstrations
@@ -6780,6 +6804,46 @@ const CELL_STYLES: &[CellStyle] = &[
 
 // ── Headless check mode ──────────────────────────────────────────────
 
+/// The widgets a notebook's stored dumps stand for, paired the way
+/// `editors_from_notebook` pairs them: an Input cell absorbs every dump
+/// stored right after it (its Output, and a stray Input-styled evaluation
+/// snapshot of the same widget), and all of those show the one widget its
+/// source instantiates.
+fn expected_widget_count(notebook: &Notebook) -> usize {
+  let mut count = 0;
+  for entry in &notebook.cells {
+    match entry {
+      CellEntry::Single(cell) => {
+        count += usize::from(is_dynamic_box_dump(&cell.content));
+      }
+      CellEntry::Group(group) => {
+        let cells = &group.cells;
+        let mut i = 0;
+        while i < cells.len() {
+          if !matches!(cells[i].style, CellStyle::Input | CellStyle::Code) {
+            count += usize::from(is_dynamic_box_dump(&cells[i].content));
+            i += 1;
+            continue;
+          }
+          let mut j = i + 1;
+          let mut absorbed_dump = false;
+          while j < cells.len()
+            && (matches!(cells[j].style, CellStyle::Output | CellStyle::Print)
+              || (cells[j].style == CellStyle::Input
+                && is_dynamic_box_dump(&cells[j].content)))
+          {
+            absorbed_dump |= is_dynamic_box_dump(&cells[j].content);
+            j += 1;
+          }
+          count += usize::from(absorbed_dump);
+          i = j;
+        }
+      }
+    }
+  }
+  count
+}
+
 /// Load `path` as the editor would and report, per stored widget, whether
 /// it was rebuilt and what its first render produced. Returns the process
 /// exit code: 0 when every widget renders without warnings, 1 otherwise,
@@ -6802,11 +6866,7 @@ fn check_notebook(path: &std::path::Path) -> i32 {
   if let Some(parent) = path.parent() {
     woxi::set_notebook_directory(Some(parent.to_string_lossy().into_owned()));
   }
-  let dumps = notebook
-    .flat_cells()
-    .iter()
-    .filter(|(_, cell)| is_dynamic_box_dump(&cell.content))
-    .count();
+  let dumps = expected_widget_count(&notebook);
   let editors = WoxiStudio::editors_from_notebook(&notebook);
   let widgets: Vec<_> = editors
     .iter()
@@ -10749,6 +10809,42 @@ Manipulate[
       state.error
     );
     assert_eq!(state.controls.len(), 1);
+  }
+
+  /// Widgets stored on their own inside a group (a "Snapshots" section of
+  /// live Manipulate outputs) open live, and a stray Input-styled snapshot
+  /// right after the source counts as the source's own widget.
+  #[test]
+  fn grouped_widget_dumps_open_live_and_count_once_per_source() {
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 3}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> Graphics[Disk[{0, 0}, $CellContext`x$$]], \n\
+      \"Specifications\" :> {{$CellContext`x$$, 0, 10}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let nb = woxi::notebook::parse_notebook(&format!(
+      "Notebook[{{\n\
+       Cell[CellGroupData[{{\n\
+       Cell[\"Manipulate[Graphics[Disk[{{0, 0}}, x]], {{x, 0, 10}}]\", \"Input\"],\n\
+       Cell[BoxData[{dump}], \"Input\"],\n\
+       Cell[BoxData[{dump}], \"Output\"]\n\
+       }}, Open]],\n\
+       Cell[CellGroupData[{{\n\
+       Cell[\"Snapshots\", \"Section\"],\n\
+       Cell[BoxData[{dump}], \"Output\"],\n\
+       Cell[BoxData[{dump}], \"Output\"]\n\
+       }}, Open]]\n\
+       }}]"
+    ))
+    .unwrap();
+    assert_eq!(expected_widget_count(&nb), 3);
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widgets = editors
+      .iter()
+      .filter(|e| e.manipulate_state.is_some())
+      .count();
+    assert_eq!(widgets, 3);
   }
 
   /// A share-link dump's `"Options" :> {FrameLabel -> …}` caption must
