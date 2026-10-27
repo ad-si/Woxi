@@ -1556,6 +1556,17 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
+    // A `Dynamic` late in the body may set a module variable an earlier one
+    // reads (`r = NSolve[…]` after a `Dynamic[… /. r]`); the front end
+    // re-renders those once it changes. When that first pass warned, render
+    // again with the updated variables, as the front end settles.
+    if allow_retry
+      && self.self_refreshing
+      && matches!(&render, Ok(r) if !r.warnings.is_empty())
+    {
+      self.reevaluate_inner(false);
+      return;
+    }
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -1943,6 +1954,28 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A `Dynamic` that sets a module variable after an earlier `Dynamic`
+  /// reads it (PolynomialRootsInTheComplexPlane): the front end re-renders
+  /// once the variable changes, so the settled render carries no warnings
+  /// from the read of the not-yet-set variable.
+  #[test]
+  fn later_dynamic_assignment_settles_the_earlier_reads() {
+    let code = r#"Manipulate[DynamicModule[{f, r},
+      Column[{Graphics[{Dynamic@Point[{Re[x], Im[x]} /. r /. (_Re | _Im) -> Sequence[]]},
+          PlotRange -> 10],
+        Dynamic[f = Function[a, a^2 - n]; r = Chop[NSolve[f[x] == 0, x]]; " "]}]],
+      {{n, 4}, 1, 9}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let render = state.check_render().expect("render");
+    assert!(
+      render.warnings.is_empty(),
+      "settled render must not warn: {:?}",
+      render.warnings
+    );
+  }
+
   /// A conformal-map explorer: a textured square translated by a locator,
   /// shown beside its warp under a map chosen from a popup of pure
   /// functions labelled with `TraditionalForm`.
