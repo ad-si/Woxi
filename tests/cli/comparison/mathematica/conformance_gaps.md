@@ -2018,6 +2018,20 @@ a degree-20 polynomial in `Sqrt[t]` whose wrong-branch roots are not all
 discarded (17 solutions instead of 10). This blocks the Demonstration
 "Compressible Flow Through a Nozzle/Diffuser".
 
+### Solve orders the solutions of `Norm` equations differently
+
+```sh
+wolframscript -code 'Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]'
+# {{x -> 0.9137715508089904, y -> 0.4062284491910096}, {x -> 0.4062284491910096, y -> 0.9137715508089904}}
+woxi eval 'Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]'
+# {{x -> 0.40622844919100964, y -> 0.9137715508089904}, {x -> 0.9137715508089904, y -> 0.40622844919100953}}
+```
+
+Written as polynomials (`x^2 + y^2 == 1`), both list `x -> 0.406…` first.
+The kernel solves the radical form by another route, which also skips the
+`Solve::ratnz` message (Woxi matches that part). Woxi squares the radicals
+away and keeps the polynomial order.
+
 ### Solve over a system of two Abs equations gives no solutions
 
 ```sh

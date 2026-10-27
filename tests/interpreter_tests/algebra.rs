@@ -6818,6 +6818,38 @@ mod solve {
   }
 }
 
+// Solve::ratnz (an inexact system solved through its exact form) is reported
+// for polynomial systems only; equations with radicals of the unknowns
+// (`Norm[{x, y} - c] == r`) are solved without it, as in Wolfram
+// (LinkingTwoRings).
+mod solve_ratnz_only_for_polynomial_systems {
+  use super::*;
+
+  #[test]
+  fn norm_equations_are_quiet() {
+    clear_state();
+    interpret(
+      "Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]",
+    )
+    .unwrap();
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz")),
+      "{:?}",
+      woxi::get_captured_messages_raw()
+    );
+    clear_state();
+    interpret("Solve[{x^2 + y^2 == 1, (x - 1)^2 + (y - 1)^2 == 0.36}, {x, y}]")
+      .unwrap();
+    assert!(
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.starts_with("Solve::ratnz"))
+    );
+  }
+}
+
 mod solve_system_rejects_invalid_candidates {
   use super::*;
 

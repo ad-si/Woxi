@@ -2487,8 +2487,25 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if found(&exact_result) > found(&result)
       || (nonlinear && found(&exact_result) > 0)
     {
-      // NSolve answers numerically by design and says nothing about it.
-      if !in_nsolve() {
+      // NSolve answers numerically by design and says nothing about it;
+      // neither does Solve for equations with radicals of the unknowns
+      // (`Norm[{x, y} - c] == r`), which Wolfram solves another way.
+      let polynomial = parts.iter().all(|eq| {
+        let difference = match eq {
+          Expr::Comparison { operands, .. } if operands.len() == 2 => {
+            plus(vec![operands[0].clone(), neg(operands[1].clone())])
+          }
+          other => other.clone(),
+        };
+        matches!(
+          crate::evaluator::evaluate_function_call_ast(
+            "PolynomialQ",
+            &[difference, Expr::List(vars.clone().into())],
+          ),
+          Ok(Expr::Identifier(ref t)) if t == "True"
+        )
+      });
+      if !in_nsolve() && polynomial {
         crate::emit_message(
           "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
         );
