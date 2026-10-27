@@ -795,6 +795,8 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageAspectRatio"
     | "Thinning"
     | "MorphologicalComponents"
+    | "WatershedComponents"
+    | "MorphologicalGraph"
     | "FillingTransform"
     | "DistanceTransform"
     | "ImageConvolve"
@@ -918,6 +920,12 @@ pub fn dispatch_image_functions(
     }
     "ImageLevels" if !args.is_empty() => {
       return Some(crate::functions::image_ast::image_levels_ast(args));
+    }
+    "WatershedComponents" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::watershed_components_ast(args));
+    }
+    "MorphologicalGraph" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::morphological_graph_ast(args));
     }
     "Pruning" if !args.is_empty() => {
       return Some(crate::functions::image_ast::pruning_ast(args));

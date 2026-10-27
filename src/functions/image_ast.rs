@@ -7670,6 +7670,406 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
+/// The pixels of an image as a gray plane `(width, height, values)` in
+/// raster order (top row first); `None` for anything that is not an image.
+fn image_gray_plane(e: &Expr) -> Option<(usize, usize, Vec<f64>)> {
+  let rows = image_gray_matrix(e)?;
+  let h = rows.len();
+  let w = rows.first().map_or(0, Vec::len);
+  Some((w, h, rows.into_iter().flatten().collect()))
+}
+
+/// The pixels around `(y, x)`, clockwise from the one above:
+/// N, NE, E, SE, S, SW, W, NW. Anything beyond the border is `false`.
+fn pixel_ring(
+  mask: &[bool],
+  w: usize,
+  h: usize,
+  y: usize,
+  x: usize,
+) -> [bool; 8] {
+  const OFFSETS: [(i64, i64); 8] = [
+    (-1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+    (1, 0),
+    (1, -1),
+    (0, -1),
+    (-1, -1),
+  ];
+  let mut ring = [false; 8];
+  for (slot, (dy, dx)) in ring.iter_mut().zip(OFFSETS) {
+    let ny = y as i64 + dy;
+    let nx = x as i64 + dx;
+    if ny >= 0 && nx >= 0 && ny < h as i64 && nx < w as i64 {
+      *slot = mask[ny as usize * w + nx as usize];
+    }
+  }
+  ring
+}
+
+/// How many separate runs of set pixels the ring contains.
+fn ring_runs(ring: [bool; 8]) -> usize {
+  (0..8).filter(|&i| !ring[i] && ring[(i + 1) % 8]).count()
+}
+
+/// Reduce a foreground mask to a one-pixel-wide skeleton (Zhang–Suen
+/// thinning). Isolated pixels and the tips of thin lines survive.
+fn thin_to_skeleton(fg: &mut [bool], w: usize, h: usize) {
+  loop {
+    let mut changed = false;
+    for second_pass in [false, true] {
+      let mut doomed = Vec::new();
+      for y in 0..h {
+        for x in 0..w {
+          if !fg[y * w + x] {
+            continue;
+          }
+          let ring = pixel_ring(fg, w, h, y, x);
+          let neighbors = ring.iter().filter(|&&p| p).count();
+          if !(2..=6).contains(&neighbors) || ring_runs(ring) != 1 {
+            continue;
+          }
+          let (n, e, s, west) = (ring[0], ring[2], ring[4], ring[6]);
+          let keep = if second_pass {
+            n && west && (e || s)
+          } else {
+            e && s && (n || west)
+          };
+          if !keep {
+            doomed.push(y * w + x);
+          }
+        }
+      }
+      changed |= !doomed.is_empty();
+      for i in doomed {
+        fg[i] = false;
+      }
+    }
+    if !changed {
+      break;
+    }
+  }
+}
+
+/// A key that orders `f64`s the way `f64::total_cmp` does.
+fn total_order_key(v: f64) -> u64 {
+  let bits = v.to_bits();
+  if bits >> 63 == 1 {
+    !bits
+  } else {
+    bits | (1 << 63)
+  }
+}
+
+/// WatershedComponents[image] / WatershedComponents[image, markers] —
+/// flood the image as a height field from its markers and label every
+/// pixel with the number of the basin it drains into.
+///
+/// Without markers, each regional minimum (a connected plateau with no
+/// lower neighbor) seeds a basin; the basins are numbered from 1 in raster
+/// order of their first pixel. Explicit markers are a matrix of integers
+/// the size of the image, where 0 means "not a marker". Pixels reached by
+/// two different basins at once form the watershed lines and are labeled 0.
+/// Pixels touch their eight neighbors.
+pub fn watershed_components_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("WatershedComponents", args);
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated());
+  }
+  let Some((w, h, gray)) = image_gray_plane(&args[0]) else {
+    crate::emit_message(&format!(
+      "WatershedComponents::imginv: Expecting an image or graphics instead \
+       of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let n = w * h;
+  // `labels`: 0 = unlabeled, -1 = watershed line, otherwise the basin.
+  let mut labels = vec![0i64; n];
+  match args.get(1) {
+    Some(Expr::List(rows)) => {
+      let parsed: Option<Vec<i64>> = (rows.len() == h)
+        .then(|| {
+          rows
+            .iter()
+            .map(|row| match row {
+              Expr::List(cells) if cells.len() == w => cells
+                .iter()
+                .map(|c| match c {
+                  Expr::Integer(v) if *v >= 0 => i64::try_from(*v).ok(),
+                  _ => None,
+                })
+                .collect::<Option<Vec<i64>>>(),
+              _ => None,
+            })
+            .collect::<Option<Vec<Vec<i64>>>>()
+            .map(|r| r.into_iter().flatten().collect())
+        })
+        .flatten();
+      match parsed {
+        Some(markers) => labels = markers,
+        None => return Ok(unevaluated()),
+      }
+    }
+    Some(_) => return Ok(unevaluated()),
+    None => {
+      let mut next = 0i64;
+      let mut seen = vec![false; n];
+      for start in 0..n {
+        if seen[start] {
+          continue;
+        }
+        let level = gray[start];
+        let mut plateau = vec![start];
+        seen[start] = true;
+        let mut is_minimum = true;
+        let mut k = 0;
+        while k < plateau.len() {
+          let (y, x) = (plateau[k] / w, plateau[k] % w);
+          k += 1;
+          for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+              let ny = y as i64 + dy;
+              let nx = x as i64 + dx;
+              if (dy == 0 && dx == 0)
+                || ny < 0
+                || nx < 0
+                || ny >= h as i64
+                || nx >= w as i64
+              {
+                continue;
+              }
+              let j = ny as usize * w + nx as usize;
+              if gray[j] < level {
+                is_minimum = false;
+              } else if gray[j] == level && !seen[j] {
+                seen[j] = true;
+                plateau.push(j);
+              }
+            }
+          }
+        }
+        if is_minimum {
+          next += 1;
+          for &p in &plateau {
+            labels[p] = next;
+          }
+        }
+      }
+    }
+  }
+
+  let mut queued = vec![false; n];
+  let mut heap = std::collections::BinaryHeap::new();
+  let mut seq = 0u64;
+  for i in 0..n {
+    if labels[i] > 0 {
+      queued[i] = true;
+      heap.push(std::cmp::Reverse((total_order_key(gray[i]), seq, i)));
+      seq += 1;
+    }
+  }
+  while let Some(std::cmp::Reverse((_, _, i))) = heap.pop() {
+    let (y, x) = (i / w, i % w);
+    let mut neighbors = Vec::with_capacity(8);
+    for dy in -1i64..=1 {
+      for dx in -1i64..=1 {
+        let ny = y as i64 + dy;
+        let nx = x as i64 + dx;
+        if (dy == 0 && dx == 0)
+          || ny < 0
+          || nx < 0
+          || ny >= h as i64
+          || nx >= w as i64
+        {
+          continue;
+        }
+        neighbors.push(ny as usize * w + nx as usize);
+      }
+    }
+    if labels[i] == 0 {
+      let mut basin = 0i64;
+      let mut contested = false;
+      for &j in &neighbors {
+        if labels[j] > 0 {
+          if basin == 0 {
+            basin = labels[j];
+          } else if basin != labels[j] {
+            contested = true;
+          }
+        }
+      }
+      if contested {
+        labels[i] = -1;
+        continue;
+      }
+      labels[i] = basin;
+    }
+    for &j in &neighbors {
+      if !queued[j] && labels[j] == 0 {
+        queued[j] = true;
+        heap.push(std::cmp::Reverse((total_order_key(gray[j]), seq, j)));
+        seq += 1;
+      }
+    }
+  }
+
+  Ok(Expr::List(
+    (0..h)
+      .map(|y| {
+        Expr::List(
+          (0..w)
+            .map(|x| Expr::Integer(labels[y * w + x].max(0) as i128))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
+/// MorphologicalGraph[image] — the graph of the skeleton of the nonzero
+/// pixels of an image. Its vertices are the skeleton's end points, branch
+/// points and isolated points (touching ones merged into one vertex, placed
+/// at their centroid, with `y` pointing up as in `ImageDimensions`), and its
+/// edges are the skeleton arcs joining them. A closed loop without any
+/// branch point becomes a single vertex. Vertices are numbered in raster
+/// order of their first pixel. Trailing options are passed on to `Graph`.
+pub fn morphological_graph_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("MorphologicalGraph", args);
+  if args.is_empty() {
+    return Ok(unevaluated());
+  }
+  let Some((w, h, gray)) = image_gray_plane(&args[0]) else {
+    crate::emit_message(&format!(
+      "MorphologicalGraph::imginv: Expecting an image or graphics instead \
+       of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  if !args[1..]
+    .iter()
+    .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    return Ok(unevaluated());
+  }
+  let mut skeleton: Vec<bool> = gray.iter().map(|&v| v != 0.0).collect();
+  thin_to_skeleton(&mut skeleton, w, h);
+
+  // Vertices sit at end points (one run of neighbors), branch points (three
+  // or more runs) and isolated pixels.
+  let is_vertex_pixel: Vec<bool> = (0..w * h)
+    .map(|i| {
+      skeleton[i] && {
+        let ring = pixel_ring(&skeleton, w, h, i / w, i % w);
+        ring_runs(ring) != 2
+      }
+    })
+    .collect();
+  let vertex_of = connected_components(&is_vertex_pixel, w, h);
+  let mut vertex_count = vertex_of.iter().flatten().max().map_or(0, |l| l + 1);
+  let mut sums = vec![(0.0f64, 0.0f64, 0usize); vertex_count];
+  for (i, label) in vertex_of.iter().enumerate() {
+    if let Some(v) = label {
+      sums[*v].0 += (i % w) as f64 + 0.5;
+      sums[*v].1 += h as f64 - ((i / w) as f64 + 0.5);
+      sums[*v].2 += 1;
+    }
+  }
+  let mut coordinates: Vec<(f64, f64)> = sums
+    .iter()
+    .map(|&(sx, sy, c)| (sx / c as f64, sy / c as f64))
+    .collect();
+
+  // The arcs are the chains of the remaining skeleton pixels; each joins the
+  // vertices it touches.
+  let on_arc: Vec<bool> = (0..w * h)
+    .map(|i| skeleton[i] && !is_vertex_pixel[i])
+    .collect();
+  let arc_of = connected_components(&on_arc, w, h);
+  let arc_count = arc_of.iter().flatten().max().map_or(0, |l| l + 1);
+  let mut touching: Vec<std::collections::BTreeSet<usize>> =
+    vec![std::collections::BTreeSet::default(); arc_count];
+  let mut first_pixel = vec![usize::MAX; arc_count];
+  for i in 0..w * h {
+    let Some(arc) = arc_of[i] else { continue };
+    first_pixel[arc] = first_pixel[arc].min(i);
+    for dy in -1i64..=1 {
+      for dx in -1i64..=1 {
+        let ny = (i / w) as i64 + dy;
+        let nx = (i % w) as i64 + dx;
+        if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+          continue;
+        }
+        if let Some(v) = vertex_of[ny as usize * w + nx as usize] {
+          touching[arc].insert(v);
+        }
+      }
+    }
+  }
+  let mut edges = std::collections::BTreeSet::new();
+  for (arc, vertices) in touching.iter().enumerate() {
+    if vertices.is_empty() {
+      // A closed loop: its one vertex is the loop's first pixel.
+      let i = first_pixel[arc];
+      coordinates
+        .push(((i % w) as f64 + 0.5, h as f64 - ((i / w) as f64 + 0.5)));
+      vertex_count += 1;
+      continue;
+    }
+    let vs: Vec<usize> = vertices.iter().copied().collect();
+    for (a, &u) in vs.iter().enumerate() {
+      for &v in &vs[a + 1..] {
+        edges.insert((u, v));
+      }
+    }
+  }
+
+  let mut graph_args = vec![
+    Expr::List(
+      (1..=vertex_count as i128)
+        .map(Expr::Integer)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::List(
+      edges
+        .iter()
+        .map(|&(u, v)| Expr::FunctionCall {
+          name: "UndirectedEdge".to_string(),
+          args: vec![
+            Expr::Integer(u as i128 + 1),
+            Expr::Integer(v as i128 + 1),
+          ]
+          .into(),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier("VertexCoordinates".to_string())),
+      replacement: Box::new(Expr::List(
+        coordinates
+          .iter()
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect::<Vec<_>>()
+          .into(),
+      )),
+    },
+  ];
+  graph_args.extend(args[1..].iter().cloned());
+  crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
+}
+
 /// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
 /// binarization: pixels strictly above t2 seed regions that grow through
 /// 8-connected pixels strictly above t1. A scalar t means {0.8 t, t},

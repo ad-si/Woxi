@@ -9374,3 +9374,95 @@ mod morphology_3d {
     );
   }
 }
+
+mod watershed_and_morphological_graph {
+  use super::*;
+
+  #[test]
+  fn watershed_splits_plateaus_with_a_line() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "WatershedComponents[Image[{{0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, \
+         {0, 1, 1, 1, 0}}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0, 2, 2}, {1, 1, 0, 2, 2}, {1, 1, 0, 2, 2}}"
+    );
+  }
+
+  #[test]
+  fn watershed_single_basin_has_no_lines() {
+    clear_state();
+    assert_eq!(
+      interpret("WatershedComponents[Image[{{0, 0.5, 1}, {0.2, 0.6, 1}}]]")
+        .unwrap(),
+      "{{1, 1, 1}, {1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn watershed_with_explicit_markers() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], {{1, 0, 0, 0, 2}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 0, 2, 2}}"
+    );
+  }
+
+  #[test]
+  fn watershed_rejects_non_images() {
+    clear_state();
+    assert_eq!(
+      interpret("WatershedComponents[5]").unwrap(),
+      "WatershedComponents[5]"
+    );
+  }
+
+  #[test]
+  fn morphological_graph_of_a_y_shape() {
+    clear_state();
+    let y = "Image[{{1, 0, 0, 0, 1}, {0, 1, 0, 1, 0}, {0, 0, 1, 0, 0}, \
+             {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}]";
+    assert_eq!(
+      interpret(&format!("VertexCount[MorphologicalGraph[{y}]]")).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(&format!("EdgeList[MorphologicalGraph[{y}]]")).unwrap(),
+      "{1 \u{f3d4} 3, 2 \u{f3d4} 3, 3 \u{f3d4} 4}"
+    );
+  }
+
+  #[test]
+  fn morphological_graph_of_separate_pieces() {
+    clear_state();
+    // A bar, an isolated pixel and a closed ring: 2 + 1 + 1 vertices.
+    let img = "Image[{{1, 1, 1, 0, 1, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}, \
+               {0, 0, 0, 0, 1, 1, 1, 0}, {0, 0, 0, 0, 1, 0, 1, 0}, \
+               {0, 0, 0, 0, 1, 1, 1, 0}}]";
+    assert_eq!(
+      interpret(&format!(
+        "{{VertexCount[#], EdgeCount[#]}} &[MorphologicalGraph[{img}]]"
+      ))
+      .unwrap(),
+      "{4, 1}"
+    );
+  }
+
+  #[test]
+  fn morphological_graph_passes_options_to_graph() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "FullForm[MorphologicalGraph[Image[{{1, 1, 1}}], ImageSize -> 50]]"
+      )
+      .unwrap(),
+      "FullForm[Graph[{1, 2}, {UndirectedEdge[1, 2]}, \
+       VertexCoordinates -> {{0.5, 0.5}, {2.5, 0.5}}, ImageSize -> 50]]"
+    );
+  }
+}
