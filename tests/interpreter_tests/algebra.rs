@@ -22794,6 +22794,41 @@ mod reduce_chained_equality {
   }
 }
 
+// A conjunction of a disjunction of inequalities and further bounds is
+// intersected branch by branch instead of being returned as written.
+mod reduce_disjunction_with_bounds {
+  use super::*;
+
+  #[test]
+  fn lower_bound_clips_a_branch() {
+    assert_eq!(
+      interpret("Reduce[(x <= -1 || x >= 2) && x >= -4, x]").unwrap(),
+      "Inequality[-4, LessEqual, x, LessEqual, -1] || x >= 2"
+    );
+  }
+
+  #[test]
+  fn bounds_drop_a_branch() {
+    assert_eq!(
+      interpret("Reduce[(x <= -1 || x >= 2) && x >= 3, x]").unwrap(),
+      "x >= 3"
+    );
+    assert_eq!(
+      interpret("Reduce[(x <= -1 || x >= 2) && x >= 0 && x <= 1, x]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn nested_reduce_results_combine() {
+    assert_eq!(
+      interpret("Reduce[And[Reduce[(x - 2) (x + 1) >= 0, x], x + 4 >= 0], x]")
+        .unwrap(),
+      "Inequality[-4, LessEqual, x, LessEqual, -1] || x >= 2"
+    );
+  }
+}
+
 // A disjunction, also one inside a conjunction, is solved branch by branch
 // (it was reported as Solve::naqs).
 mod solve_disjunction {

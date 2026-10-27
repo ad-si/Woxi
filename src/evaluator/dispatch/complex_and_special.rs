@@ -5288,8 +5288,65 @@ fn padded_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
   })
 }
 
+fn tf_comparison_glyph(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "Equal" => "=",
+    "Unequal" => "\u{2260}",
+    "Less" => "<",
+    "LessEqual" => "\u{2264}",
+    "Greater" => ">",
+    "GreaterEqual" => "\u{2265}",
+    _ => return None,
+  })
+}
+
+/// `a ∧ b ∧ …` / `a ∨ b ∨ …`. `And` binds tighter than `Or`, so an `Or`
+/// operand of an `And` is parenthesized (`(x ≤ -1 ∨ x ≥ 2) ∧ x ≥ -4`).
+fn tf_logic(is_and: bool, operands: &[Expr]) -> Expr {
+  let is_or = |e: &Expr| {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, args } if name == "Or" && args.len() > 1)
+  };
+  let glyph = if is_and { "\u{2227}" } else { "\u{2228}" };
+  let mut parts = Vec::new();
+  for (i, operand) in operands.iter().enumerate() {
+    if i > 0 {
+      parts.push(tf_string(glyph));
+    }
+    parts.push(if is_and && is_or(operand) {
+      tf_parens(tf(operand))
+    } else {
+      tf(operand)
+    });
+  }
+  tf_row(parts)
+}
+
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
+    "And" | "Or" if args.len() > 1 => tf_logic(name == "And", args),
+    // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
+    "Inequality"
+      if args.len() >= 5
+        && args.len() % 2 == 1
+        && args.iter().skip(1).step_by(2).all(
+          |op| matches!(op, Expr::Identifier(o) if tf_comparison_glyph(o).is_some()),
+        ) =>
+    {
+      let mut parts = vec![tf(&args[0])];
+      for pair in args[1..].chunks(2) {
+        if let Expr::Identifier(o) = &pair[0] {
+          parts.push(tf_string(tf_comparison_glyph(o).unwrap()));
+        }
+        parts.push(tf(&pair[1]));
+      }
+      tf_row(parts)
+    }
     _ if args.len() == 2 && assignment_operator(name).is_some() => {
       tf_row(vec![
         tf(&args[0]),
@@ -5757,15 +5814,9 @@ fn tf(expr: &Expr) -> Expr {
       ..
     } => tf_plus(expr),
     Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left,
-      right,
-    } => tf_row(vec![tf(left), tf_string("\u{2227}"), tf(right)]),
-    Expr::BinaryOp {
-      op: BinaryOperator::Or,
-      left,
-      right,
-    } => tf_row(vec![tf(left), tf_string("\u{2228}"), tf(right)]),
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      ..
+    } => tf_logic(matches!(op, BinaryOperator::And), &flatten_binop(expr, *op)),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,

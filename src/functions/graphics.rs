@@ -23042,6 +23042,13 @@ pub(crate) fn is_traditional_layout(expr: &Expr) -> bool {
       matches!(args.first(), Some(Expr::List(_)))
     }
     Expr::FunctionCall { name, args }
+      if name == "Grid"
+        && matches!(args.first(), Some(Expr::List(rows))
+          if rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args }
       if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
     {
       is_traditional_layout(&args[0])
@@ -23083,6 +23090,28 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
       expr.clone()
     }
     Expr::Identifier(s) if s == "Null" => expr.clone(),
+    // A grid typesets each of its cells traditionally.
+    Expr::FunctionCall { name, args }
+      if name == "Grid"
+        && let Some(Expr::List(rows)) = args.first()
+        && rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      let rows = rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) => {
+            Expr::List(cells.iter().map(traditionalize_layout_items).collect())
+          }
+          other => other.clone(),
+        })
+        .collect();
+      let mut new_args = args.clone();
+      new_args[0] = Expr::List(rows);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "TraditionalForm") =>
     {
