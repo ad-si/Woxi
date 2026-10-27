@@ -2988,6 +2988,30 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
+    /// A wide tick label centred on the right end of the x axis keeps its
+    /// whole width inside the image instead of being clipped.
+    #[test]
+    fn right_end_tick_label_stays_inside_the_image() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, \
+         Ticks -> {{0, {2 Pi, \"a very long label\"}}, Automatic}]",
+      );
+      let attr = |tag: &str, name: &str| -> f64 {
+        let i = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+        tag[i..].split('"').next().unwrap().parse().unwrap()
+      };
+      let vb = svg.split("viewBox=\"").nth(1).unwrap();
+      let width: f64 = vb.split_whitespace().nth(2).unwrap().parse().unwrap();
+      let text = svg
+        .split("<text ")
+        .find(|t| t.contains(">a very long label</text>"))
+        .unwrap();
+      let x = attr(text, "x");
+      let font = attr(text, "font-size");
+      let half = "a very long label".len() as f64 * 0.5 * font / 2.0;
+      assert!(x + half <= width, "label reaches {} of {width}", x + half);
+    }
+
     /// A tick label wrapped in `FormBox[…, TraditionalForm]` (as notebooks
     /// store typeset labels) draws its content, not the wrapper.
     #[test]

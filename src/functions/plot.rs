@@ -3610,6 +3610,34 @@ fn generate_svg_with_options(
     ),
   };
 
+  // A tick label centred on the right end of the x axis hangs half its width
+  // past the plotting area; keep that part of the label inside the image.
+  if opts.image_padding.is_none()
+    && let Some(ticks) = opts.ticks_x.as_ref()
+    && !opts.log_x
+    && x_max > x_min
+  {
+    let tick_font = sf * 13.0;
+    let overhang = ticks
+      .iter()
+      .filter(|(pos, _)| *pos >= x_min && *pos <= x_max)
+      .map(|(pos, label)| {
+        let half_width = label
+          .lines()
+          .map(crate::functions::graphics::box_string_visible_len)
+          .max()
+          .unwrap_or(0) as f64
+          * 0.6
+          * tick_font
+          / 2.0;
+        // Distance the label reaches beyond the right end of the axis
+        // (in pixels, assuming the plot fills roughly the canvas).
+        half_width - (x_max - pos) / (x_max - x_min) * render_width as f64
+      })
+      .fold(0.0_f64, f64::max);
+    margin_right = margin_right.max(overhang.ceil() as u32);
+  }
+
   // The automatic margins above are fixed pixel sizes tuned for a
   // normal-sized plot; a small explicit `ImageSize` (an 80x80 panel in a
   // Manipulate's GraphicsGrid, say) can ask for less canvas than they add up
