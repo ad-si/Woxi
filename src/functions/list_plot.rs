@@ -1039,6 +1039,16 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             parse_plot_legends(replacement);
           opts.plot_legends = labels;
         }
+        "FrameTicksStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          let (color, font_size) =
+            crate::functions::chart::parse_label_style(&val);
+          if color.is_some() || font_size.is_some() {
+            opts.tick_label_style =
+              Some(crate::functions::plot::LabelStyleSpec { color, font_size });
+          }
+        }
         "PlotLabel" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
