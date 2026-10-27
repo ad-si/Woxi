@@ -256,9 +256,7 @@ fn spring_embedding(g: &CGraph, graph: &Expr) -> Option<Expr> {
   let ((x0, wx), (y0, wy)) = (span(|p| p.0), span(|p| p.1));
   let vertices = pos
     .iter()
-    .map(|&(x, y)| {
-      Expr::List(vec![pt((x - x0) / wx, (y - y0) / wy)].into())
-    })
+    .map(|&(x, y)| Expr::List(vec![pt((x - x0) / wx, (y - y0) / wy)].into()))
     .collect::<Vec<_>>();
   Some(crate::helpers::call(
     GRAPH,
@@ -393,13 +391,15 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
     }
     ("Combinatorica`V", 1) => Some(Expr::Integer(g.n as i128)),
     ("Combinatorica`M", 1) => Some(Expr::Integer(g.edges.len() as i128)),
-    ("Combinatorica`Edges", 1) | ("Combinatorica`ToUnorderedPairs", 1) => Some(Expr::List(
-      g.edges
-        .iter()
-        .map(|&(a, b)| int_list([a, b]))
-        .collect::<Vec<_>>()
-        .into(),
-    )),
+    ("Combinatorica`Edges" | "Combinatorica`ToUnorderedPairs", 1) => {
+      Some(Expr::List(
+        g.edges
+          .iter()
+          .map(|&(a, b)| int_list([a, b]))
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
     ("Combinatorica`ToAdjacencyMatrix", 1) => {
       let mut m = vec![vec![0i128; g.n]; g.n];
       for &(a, b) in &g.edges {
