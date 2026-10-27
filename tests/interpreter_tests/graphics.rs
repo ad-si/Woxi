@@ -19200,6 +19200,23 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // A held LocatorPane body that is a compound statement ending in a
+    // `Show[…]` (InfiniteLimitAtAFinitePoint) is still a picture inside a
+    // layout
+    #[test]
+    fn locator_pane_with_a_compound_body_in_a_layout() {
+      let r = woxi::interpret_with_stdout(
+        "Labeled[Column[{LocatorPane[{{0.5, 0.5}}, a = 1; \
+         Show[Graphics[{Disk[]}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 100]]], \"x\"}], \"y\"]",
+      )
+      .unwrap();
+      assert!(
+        r.graphics.is_some_and(|g| g.starts_with("<svg")),
+        "must render as a picture, got {}",
+        r.result
+      );
+    }
+
     // `LocatorPane[locators, body]` shows `body` with a marker on every
     // locator. Wolfram's default marker is a small circle with a crosshair
     // through it; a Demonstration that lets you drag the vertices of a shape

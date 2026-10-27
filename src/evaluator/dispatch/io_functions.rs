@@ -5067,6 +5067,24 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // So is any other held call that produces a picture — `Show[…]`, a plot —
+  // the way a held `LocatorPane` body arrives. (`Framed` is a wrapper,
+  // judged by what it frames below.)
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if !args.is_empty()
+      && name != "Framed"
+      && (name == "Show"
+        || crate::functions::graphics::is_graphics_producing_head(name)))
+  {
+    return true;
+  }
+  // A held compound statement shows the value of its last statement
+  // (`ptx = Dynamic[…]; Deploy[Show[…]]`).
+  if let Expr::CompoundExpr(statements) = expr
+    && let Some(last) = statements.last()
+  {
+    return lays_out_a_graphic(last);
+  }
   // A `Frameless` `Button[picture, …]` shows just its picture.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Button"
