@@ -2760,6 +2760,12 @@ fn collect_primitives(
         "Tooltip" if !args.is_empty() => {
           collect_primitives(&args[0], style, prims, errors);
         }
+        // `Mouseover[g, hover]` draws `g`; the hover appearance replaces it
+        // only while the pointer is over it, so a static picture must not
+        // draw it as well.
+        "Mouseover" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
         // `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker
         // drawn at the point's current position. A custom appearance
         // graphic keeps its own ImageSize in screen pixels.
