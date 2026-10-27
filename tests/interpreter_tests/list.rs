@@ -24255,6 +24255,27 @@ mod sparse_array_banded_patterns {
       "{2049, -1, 0}"
     );
   }
+
+  #[test]
+  fn condition_reading_data_matches_every_position() {
+    // A condition on the data rather than index arithmetic cannot be solved
+    // for the matching positions: every position has to be tested (the
+    // ElectronicStructureOf1DAnd2DQuasiperiodicSystems Hamiltonian)
+    assert_eq!(
+      interpret(
+        "w = {L, S, L}; Normal[SparseArray[{{i_, j_} /; w[[i]] == S -> 7}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {7, 7, 7}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "w = {L, S, L}; Normal[SparseArray[{{i_, j_} /; And[(i - j) == 1, w[[j]] == L] -> 1, {i_, j_} /; And[(i - j) == -1, w[[i]] == S] -> t}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {1, 0, t}, {0, 0, 0}}"
+    );
+  }
 }
 
 mod part_assignment_real_positions {
