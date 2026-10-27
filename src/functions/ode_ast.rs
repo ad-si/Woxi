@@ -4343,16 +4343,34 @@ fn parse_event_locator_option(opts: &[Expr]) -> Option<EventSpec> {
       } = item
       {
         match pattern.as_ref() {
-          Expr::String(s) if s == "Event" => {
+          Expr::String(s) | Expr::Identifier(s) if s == "Event" => {
             event = Some(replacement.as_ref().clone());
           }
-          Expr::String(s) if s == "EventAction" => {
+          Expr::String(s) | Expr::Identifier(s) if s == "EventAction" => {
             action = Some(replacement.as_ref().clone());
           }
           _ => {}
         }
       }
     }
+    // A condition (`y[t] < 0`) fires where its two sides cross.
+    let event = event.map(|e| match &e {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && matches!(
+          operators[0],
+          ComparisonOp::Less
+            | ComparisonOp::LessEqual
+            | ComparisonOp::Greater
+            | ComparisonOp::GreaterEqual
+        ) =>
+      {
+        minus2(operands[0].clone(), operands[1].clone())
+      }
+      _ => e,
+    });
     if let Some(event) = event {
       return Some(EventSpec { event, action });
     }
