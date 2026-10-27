@@ -8477,6 +8477,27 @@ C[1]*Sin[t]}}"
       );
     }
 
+    // Coefficients written as a product of a sum, and a solution fixed by
+    // its initial conditions coming back over one denominator
+    // (OscillationOfTwoMassesConnectedBySprings)
+    #[test]
+    fn unexpanded_coefficients_and_determined_solution_form() {
+      assert_eq!(
+        interpret(
+          "DSolve[{(4*(q1[t] - q2[t]) + 4*q1[t])/2 + q1''[t] == 0, (-4*(q1[t] - q2[t]) + 4*q2[t])/2 + q2''[t] == 0, q1[0] == 1, q2[0] == 0, q1'[0] == 0, q2'[0] == 0}, {q1, q2}, t]"
+        )
+        .unwrap(),
+        "{{q1 -> Function[{t}, (Cos[Sqrt[2]*t] + Cos[Sqrt[6]*t])/2], q2 -> Function[{t}, (Cos[Sqrt[2]*t] - Cos[Sqrt[6]*t])/2]}}"
+      );
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == x[t] + 2 y[t], y'[t] == 2 x[t] + y[t], x[0] == 1, y[0] == 3}, {x, y}, t]"
+        )
+        .unwrap(),
+        "{{x -> Function[{t}, (-1 + 2*E^(4*t))/E^t], y -> Function[{t}, (1 + 2*E^(4*t))/E^t]}}"
+      );
+    }
+
     // Two coupled second-order equations (rotational coupling, as a
     // Foucault pendulum's x/y equations of motion have) — the shape that
     // motivated this solver. The closed form must match independent

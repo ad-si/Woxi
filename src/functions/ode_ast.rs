@@ -14741,7 +14741,12 @@ fn dsolve_linear_system(
   let mut forcing_sum: Vec<f64> = vec![0.0; n];
 
   for (row, ode) in odes.iter().enumerate() {
-    let normalized = normalize_equation(ode)?;
+    // Expanded, so a coefficient written as a product of a sum
+    // (`(4 (x[t] - y[t]) + 4 x[t])/2`) splits into its terms
+    let normalized = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[normalize_equation(ode)?],
+    )?;
     let terms = collect_multivar_terms(&normalized, &y_names)?;
     for term in terms {
       match term.var_index {
@@ -14946,8 +14951,14 @@ fn dsolve_linear_system(
               crate::syntax::substitute_variable(y_expr, var_name, replacement);
           }
         }
-        *y_expr = crate::evaluator::evaluate_expr_to_expr(y_expr)
-          .unwrap_or_else(|_| y_expr.clone());
+        // A fully determined component comes back over one denominator,
+        // as wolframscript writes it: `(Cos[t] + Cos[Sqrt[3] t])/2`
+        *y_expr = crate::evaluator::evaluate_function_call_ast(
+          "Together",
+          &[crate::evaluator::evaluate_expr_to_expr(y_expr)
+            .unwrap_or_else(|_| y_expr.clone())],
+        )
+        .unwrap_or_else(|_| y_expr.clone());
       }
     }
   } else {
