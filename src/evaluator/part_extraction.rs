@@ -74,6 +74,21 @@ fn part_take_warn(expr: &Expr, start: i64, end: i64) {
   ));
 }
 
+/// A span endpoint as a position in a part of length `len`: an integer, or
+/// `UpTo[n]`, which stands for `Min[n, len]` at either end of the span
+/// (`l[[2 ;; UpTo[9]]]` stops at the last element, `{}[[1 ;; UpTo[3]]]` is
+/// `{}`).
+fn span_endpoint(e: &Expr, len: i64) -> Option<i64> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "UpTo" && args.len() == 1 => {
+      expr_to_i64(&args[0])
+        .filter(|n| *n >= 0)
+        .map(|n| n.min(len))
+    }
+    other => expr_to_i64(other),
+  }
+}
+
 fn extract_span_from_items(
   expr: &Expr,
   index: &Expr,
@@ -86,7 +101,7 @@ fn extract_span_from_items(
   let len = items.len() as i64;
   let start_raw = if matches!(start_expr, Expr::Identifier(s) if s == "All") {
     1
-  } else if let Some(v) = expr_to_i64(start_expr) {
+  } else if let Some(v) = span_endpoint(start_expr, len) {
     v
   } else {
     return Ok(part_take_unevaluated(expr, index));
@@ -101,7 +116,7 @@ fn extract_span_from_items(
   if step == 0 {
     let end_raw = if matches!(end_expr, Expr::Identifier(s) if s == "All") {
       len
-    } else if let Some(v) = expr_to_i64(end_expr) {
+    } else if let Some(v) = span_endpoint(end_expr, len) {
       v
     } else {
       return Ok(part_take_unevaluated(expr, index));
@@ -111,7 +126,7 @@ fn extract_span_from_items(
   }
   let end_raw = if matches!(end_expr, Expr::Identifier(s) if s == "All") {
     if step < 0 { -1 } else { len }
-  } else if let Some(v) = expr_to_i64(end_expr) {
+  } else if let Some(v) = span_endpoint(end_expr, len) {
     v
   } else {
     return Ok(part_take_unevaluated(expr, index));

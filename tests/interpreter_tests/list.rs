@@ -5343,6 +5343,43 @@ mod part_upto {
     );
   }
 
+  // As a Span endpoint, however, `UpTo[n]` is accepted and stands for
+  // `Min[n, length]` (RepeatedMediantsLeadToIterativeBrackets)
+  #[test]
+  fn span_endpoint() {
+    assert_eq!(
+      interpret(
+        "l = {a, b, c, d}; {l[[2 ;; UpTo[9]]], l[[1 ;; UpTo[3]]], l[[;; UpTo[2]]], {}[[1 ;; UpTo[3]]]}"
+      )
+      .unwrap(),
+      "{{b, c, d}, {a, b, c}, {a, b}, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "l = {a, b, c, d}; {l[[1 ;; UpTo[9] ;; 2]], l[[UpTo[2] ;; 3]], l[[-1 ;; UpTo[2] ;; -1]]}"
+      )
+      .unwrap(),
+      "{{a, c}, {b, c}, {d, c, b}}"
+    );
+    assert_eq!(
+      interpret(
+        "{{{1, 2, 3}, {4, 5, 6}}[[1 ;; UpTo[5], 2 ;; UpTo[7]]], f[a, b, c][[2 ;; UpTo[5]]], <|1 -> a, 2 -> b|>[[1 ;; UpTo[4]]]}"
+      )
+      .unwrap(),
+      "{{{2, 3}, {5, 6}}, f[b, c], <|1 -> a, 2 -> b|>}"
+    );
+  }
+
+  #[test]
+  fn span_endpoint_past_the_start() {
+    let r = interpret_with_stdout("{a, b, c, d}[[3 ;; UpTo[1]]]").unwrap();
+    assert_eq!(r.result, "{a, b, c, d}[[Span[3, UpTo[1]]]]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::take: Cannot take positions 3 through 1 in {a, b, c, d}."]
+    );
+  }
+
   #[test]
   fn rule() {
     rejected("(a -> b)[[UpTo[1]]]", "(a -> b)[[UpTo[1]]]", "UpTo[1]");
