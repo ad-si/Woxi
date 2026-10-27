@@ -12969,6 +12969,30 @@ mod plot3d {
       insta::assert_snapshot!(svg);
     }
 
+    // Regression: a framed log plot with `Axes -> False` drew empty tick
+    // labels on the log axes, because the superscript decade labels were
+    // only injected when the axes themselves were shown.
+    #[test]
+    fn framed_log_plots_label_log_axes() {
+      let y = export_svg(
+        "ListLogPlot[{{1950, 10^6}, {2000, 10^8}}, Frame -> True, Axes -> False, PlotRange -> {{1900, 2010}, {10^4, 10^10}}]",
+      );
+      assert!(
+        y.contains(">10<tspan baseline-shift=\"super\"")
+          && y.contains(">4</tspan></text>")
+          && y.contains(">10</tspan></text>"),
+        "log y decades must be labelled on the frame"
+      );
+      let x = export_svg(
+        "ListLogLogPlot[{{10, 10}, {1000, 1000}}, Frame -> True, Axes -> False]",
+      );
+      assert!(x.matches("baseline-shift=\"super\"").count() >= 4);
+      let xonly = export_svg(
+        "ListLogLinearPlot[{{10, 1}, {1000, 5}}, Frame -> True, Axes -> False]",
+      );
+      assert!(xonly.contains("baseline-shift=\"super\""));
+    }
+
     #[test]
     fn list_log_log_plot() {
       insta::assert_snapshot!(export_svg(
