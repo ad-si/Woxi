@@ -37,6 +37,27 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   all_vars.remove("E");
   all_vars.remove("I");
 
+  // Inexact coefficients: the gcd of the rationalized polynomials, monic
+  // and numericized.
+  if polys
+    .iter()
+    .any(crate::functions::math_ast::contains_inexact_real)
+  {
+    let exact: Vec<Expr> = polys
+      .iter()
+      .map(|p| {
+        crate::evaluator::evaluate_function_call_ast(
+          "Rationalize",
+          &[p.clone(), Expr::Integer(0)],
+        )
+        .map(|e| expand_and_combine(&e))
+      })
+      .collect::<Result<_, _>>()?;
+    if let Some(g) = super::mfactor::monic_machine_gcd(&exact) {
+      return crate::evaluator::evaluate_expr_to_expr(&g);
+    }
+  }
+
   if all_vars.is_empty() {
     // All arguments are numeric - compute integer GCD
     return integer_gcd_multi(&polys);
@@ -52,6 +73,20 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // With a modulus, compute the GCD over the field GF(p).
   if let Some(p) = modulus {
     return polynomial_gcd_mod(&polys, var, p);
+  }
+
+  // Several variables: the gcd over all of them at once.
+  if var_list.len() > 1 {
+    let expanded: Vec<Expr> = polys
+      .iter()
+      .map(|p| {
+        crate::evaluator::evaluate_expr_to_expr(p)
+          .map(|e| expand_and_combine(&e))
+      })
+      .collect::<Result<_, _>>()?;
+    if let Some(g) = super::mfactor::gcd_multivariate_polys(&expanded) {
+      return crate::evaluator::evaluate_expr_to_expr(&g);
+    }
   }
 
   // Fold pairwise GCD

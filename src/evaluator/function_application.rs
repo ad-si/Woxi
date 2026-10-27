@@ -35,6 +35,7 @@ pub fn map_all_ast(f: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
 /// Distribute[f[x1, x2, ...]] distributes f over Plus in the xi
 /// Distribute[expr, g] distributes over g instead of Plus
 /// Distribute[expr, g, f] only distributes if outer head is f
+/// Distribute[expr, g, f, gp, fp] writes gp and fp for g and f in the result
 pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
 
@@ -94,6 +95,19 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     combinations = new_combinations;
   }
+
+  // Distribute[expr, g, f, gp, fp] writes the result with gp in place of g
+  // and fp in place of f.
+  let head_arg = |i: usize| match args.get(i) {
+    Some(Expr::Identifier(name)) => Ok(Some(name.clone())),
+    Some(_) => Err(()),
+    None => Ok(None),
+  };
+  let (Ok(new_inner), Ok(new_outer)) = (head_arg(3), head_arg(4)) else {
+    return Ok(unevaluated("Distribute", args));
+  };
+  let outer_name = new_outer.unwrap_or(outer_name);
+  let distribute_over = new_inner.unwrap_or(distribute_over);
 
   // Build result: wrap each combination in outer_name, then combine with distribute_over
   let terms: Vec<Expr> = combinations

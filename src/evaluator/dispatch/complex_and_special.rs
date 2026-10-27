@@ -1391,6 +1391,14 @@ pub fn dispatch_complex_and_special(
     "Area" if args.len() == 1 => {
       return Some(compute_area(strip_region_wrapper(&args[0])));
     }
+    // Area[{x[u, v], …}, {u, …}, {v, …}] and Volume[{x[u, v, w], …}, {u, …},
+    // {v, …}, {w, …}]: the measure of a parametrized surface or solid
+    "Area" if args.len() == 3 => {
+      return Some(compute_parametric_measure("Area", args));
+    }
+    "Volume" if args.len() == 4 => {
+      return Some(compute_parametric_measure("Volume", args));
+    }
     // Volume[region] — n-dimensional measure of a geometric region
     "Volume" if args.len() == 1 => {
       return Some(compute_volume(strip_region_wrapper(&args[0])));
@@ -12540,6 +12548,115 @@ fn compute_arc_length_curve(
     return unevaluated();
   }
   Ok(result)
+}
+
+/// The measure of the region a map `{x1[t1, …, tk], …, xn[…]}` (n ≥ k)
+/// parametrizes over the box of its iterators `{ti, ai, bi}`: the integral
+/// of the volume element `Sqrt[Det[Transpose[J] . J]]` of its Jacobian J,
+/// which is `Abs[Det[J]]` when n == k. The element is simplified under the
+/// iterator ranges first, so that `Sqrt[Sin[v]^2]` on `0 <= v <= Pi` is
+/// `Sin[v]`. Unevaluated when the integral has no closed form and its
+/// bounds are not numeric.
+fn compute_parametric_measure(
+  head: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated(head, args));
+  let Expr::List(map) = &args[0] else {
+    return unevaluated();
+  };
+  let iters = &args[1..];
+  let mut params = Vec::with_capacity(iters.len());
+  let mut ranges = Vec::with_capacity(iters.len());
+  for iter in iters {
+    let Expr::List(spec) = iter else {
+      return unevaluated();
+    };
+    let [t @ Expr::Identifier(_), a, b] = spec.as_slice() else {
+      return unevaluated();
+    };
+    params.push(t.clone());
+    ranges.push(Expr::Comparison {
+      operands: vec![a.clone(), t.clone(), b.clone()],
+      operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+    });
+  }
+  if map.len() < params.len() {
+    return unevaluated();
+  }
+  let jacobian = Expr::List(
+    map
+      .iter()
+      .map(|component| {
+        Ok(Expr::List(
+          params
+            .iter()
+            .map(|t| {
+              evaluate_expr_to_expr(&call(
+                "D",
+                vec![component.clone(), t.clone()],
+              ))
+            })
+            .collect::<Result<Vec<_>, InterpreterError>>()?
+            .into(),
+        ))
+      })
+      .collect::<Result<Vec<_>, InterpreterError>>()?
+      .into(),
+  );
+  let element = if map.len() == params.len() {
+    call1(
+      "Abs",
+      evaluate_expr_to_expr(&call1("Simplify", call1("Det", jacobian)))?,
+    )
+  } else {
+    let gram = call1(
+      "Det",
+      call("Dot", vec![call1("Transpose", jacobian.clone()), jacobian]),
+    );
+    let gram = evaluate_expr_to_expr(&call1("Simplify", gram))?;
+    // A perfect square's root is the absolute value of its base.
+    match &gram {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(2)) => {
+        call1("Abs", left.as_ref().clone())
+      }
+      Expr::FunctionCall { name, args: parts }
+        if name == "Power"
+          && parts.len() == 2
+          && matches!(&parts[1], Expr::Integer(2)) =>
+      {
+        call1("Abs", parts[0].clone())
+      }
+      _ => make_sqrt(gram),
+    }
+  };
+  let element = evaluate_expr_to_expr(&call(
+    "Simplify",
+    vec![element, call("And", ranges)],
+  ))?;
+  let mut integral_args = vec![element];
+  integral_args.extend(iters.iter().cloned());
+  let result =
+    evaluate_expr_to_expr(&call("Integrate", integral_args.clone()))?;
+  if !matches!(&result, Expr::FunctionCall { name, .. } if name == "Integrate")
+  {
+    return Ok(result);
+  }
+  let numeric_bounds = iters.iter().all(|iter| {
+    matches!(iter, Expr::List(spec) if spec[1..].iter().all(|e| crate::functions::math_ast::try_eval_to_f64(e).is_some()))
+  });
+  if numeric_bounds
+    && let Ok(value) =
+      crate::evaluator::evaluate_function_call_ast("NIntegrate", &integral_args)
+    && !matches!(&value, Expr::FunctionCall { name, .. } if name == "NIntegrate")
+  {
+    return Ok(value);
+  }
+  unevaluated()
 }
 
 fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {

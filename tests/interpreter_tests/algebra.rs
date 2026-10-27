@@ -17020,6 +17020,178 @@ mod cases {
     );
   }
 
+  // CoefficientList cut or padded to given dimensions, threaded over a list
+  // of polynomials, and of a rational expression whose denominators cancel.
+  #[test]
+  fn coefficient_list_dimensions_lists_and_cancellation() {
+    assert_case(
+      r#"CoefficientList[1 + 2 x + 3 x^2, x, 5]"#,
+      r#"{1, 2, 3, 0, 0}"#,
+    );
+    assert_case(r#"CoefficientList[1 + 2 x + 3 x^2, x, 2]"#, r#"{1, 2}"#);
+    assert_case(r#"CoefficientList[1 + x, x, 0]"#, r#"{}"#);
+    assert_case(r#"CoefficientList[0, x, 3]"#, r#"{0, 0, 0}"#);
+    assert_case(
+      r#"CoefficientList[x^2 y + x y^3, {x, y}, {4, 2}]"#,
+      r#"{{0, 0}, {0, 0}, {0, 1}, {0, 0}}"#,
+    );
+    assert_case(
+      r#"CoefficientList[{1 + x, x^2}, x]"#,
+      r#"{{1, 1}, {0, 0, 1}}"#,
+    );
+    assert_case(
+      r#"CoefficientList[{1 + x, x^2}, x, 3]"#,
+      r#"{{1, 1, 0}, {0, 0, 1}}"#,
+    );
+    assert_case(r#"CoefficientList[(x^2 - 1)/(x - 1), x]"#, r#"{1, 1}"#);
+    assert_case(
+      r#"CoefficientList[(2 x^2 + 3 x - 2) (a + b/(2 + x)), x]"#,
+      r#"{-2*a - b, 3*a + 2*b, 2*a}"#,
+    );
+  }
+
+  #[test]
+  fn distribute_with_result_heads() {
+    assert_case(
+      r#"Distribute[f[g[a, b], g[c, d]], g, f, gp, fp]"#,
+      r#"gp[fp[a, c], fp[a, d], fp[b, c], fp[b, d]]"#,
+    );
+    assert_case(
+      r#"Distribute[f[g[a, b], g[c, d]], g, f, gp]"#,
+      r#"gp[f[a, c], f[a, d], f[b, c], f[b, d]]"#,
+    );
+    assert_case(
+      r#"Distribute[(a + b) (c + d), Plus, Times, List, Times]"#,
+      r#"{a*c, a*d, b*c, b*d}"#,
+    );
+  }
+
+  // The gcd of polynomials in several variables, and of inexact ones.
+  #[test]
+  fn polynomial_gcd_multivariate_and_inexact() {
+    assert_case(
+      r#"PolynomialGCD[-4 a - 2 b + 4 a x + 3 b x + 7 a x^2 + 2 b x^2 + 2 a x^3, 2 + x]"#,
+      r#"2 + x"#,
+    );
+    assert_case(r#"PolynomialGCD[x^2 - y^2, x^2 + 2 x y + y^2]"#, r#"x + y"#);
+    assert_case(
+      r#"PolynomialGCD[2 a x + 2 a y, 4 a^2 x + 4 a^2 y]"#,
+      r#"2*a*x + 2*a*y"#,
+    );
+    assert_case(r#"PolynomialGCD[x y/2, x^2 y/3]"#, r#"(x*y)/6"#);
+    assert_case(r#"PolynomialGCD[x^2 y + y, x z]"#, r#"1"#);
+    assert_case(r#"PolynomialGCD[2.0 x, x]"#, r#"1.*x"#);
+    assert_case(
+      r#"PolynomialGCD[2.0 x y + 1.5 y, 3 x + 2.25]"#,
+      r#"0.75 + 1.*x"#,
+    );
+    assert_case(r#"PolynomialGCD[0.5, 0.25]"#, r#"1."#);
+  }
+
+  #[test]
+  fn cancel_multivariate_gcd() {
+    assert_case(
+      r#"Cancel[(-4 a - 2 b + 4 a x + 3 b x + 7 a x^2 + 2 b x^2 + 2 a x^3)/(2 + x)]"#,
+      r#"-2*a - b + 3*a*x + 2*b*x + 2*a*x^2"#,
+    );
+    assert_case(r#"Cancel[(a x^2 - a y^2)/(x + y)]"#, r#"a*x - a*y"#);
+    assert_case(
+      r#"Cancel[(x^2 - y^2)/(x^2 + 2 x y + y^2)]"#,
+      r#"(x - y)/(x + y)"#,
+    );
+  }
+
+  // Maximize finds its critical points with Solve but never reports the
+  // inverse functions Solve used.
+  #[test]
+  fn maximize_does_not_report_solve_ifun() {
+    woxi::clear_state();
+    assert_eq!(
+      woxi::interpret("Maximize[-2*2*0.4*Pi*Sin[2*2*Pi*T], T]").unwrap(),
+      "{5.026548245743669, {T -> -0.125}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(!msgs.iter().any(|m| m.contains("ifun")), "{msgs:?}");
+  }
+
+  // Abs of a Sin or Cos that keeps its sign over the assumed interval.
+  #[test]
+  fn simplify_abs_trig_on_interval() {
+    assert_case(r#"Simplify[Abs[Sin[u]], 0 <= u <= Pi]"#, r#"Sin[u]"#);
+    assert_case(r#"Simplify[Abs[Cos[u]], -Pi/2 <= u <= Pi/2]"#, r#"Cos[u]"#);
+    assert_case(r#"Simplify[Abs[2 Sin[u]], 0 < u < 1]"#, r#"2*Sin[u]"#);
+    assert_case(r#"Simplify[Abs[Sin[2 u]], 0 <= u <= Pi/2]"#, r#"Sin[2*u]"#);
+    assert_case(
+      r#"Simplify[Abs[Sin[u]], ArcCos[0.5] <= u <= ArcCos[-0.2]]"#,
+      r#"Sin[u]"#,
+    );
+    assert_case(r#"Simplify[Abs[Sin[u]], 0 <= u <= 4]"#, r#"Abs[Sin[u]]"#);
+    assert_case(
+      r#"Simplify[Abs[Sin[u]], Pi <= u <= 2 Pi]"#,
+      r#"Abs[Sin[u]]"#,
+    );
+  }
+
+  // Sin^2 + Cos^2 == 1 across several angles at once.
+  #[test]
+  fn simplify_pythagorean_identity_several_angles() {
+    assert_case(
+      r#"Simplify[Cos[u]^4 Cos[v]^2 + 2 Cos[u]^2 Cos[v]^2 Sin[u]^2 + Cos[v]^2 Sin[u]^4 + Sin[v]^2]"#,
+      r#"1"#,
+    );
+    assert_case(
+      r#"Simplify[Sin[v]^2 (Cos[u]^4 Cos[v]^2 + 2 Cos[u]^2 Cos[v]^2 Sin[u]^2 + Cos[v]^2 Sin[u]^4 + Sin[v]^2)]"#,
+      r#"Sin[v]^2"#,
+    );
+    assert_case(
+      r#"Simplify[Sin[a]^2 Cos[b]^2 + Cos[a]^2 Cos[b]^2]"#,
+      r#"Cos[b]^2"#,
+    );
+    assert_case(
+      r#"Simplify[Cos[x]^2 Sin[y] + Sin[x]^2 Sin[y]]"#,
+      r#"Sin[y]"#,
+    );
+  }
+
+  // The measure of a parametrized surface or solid.
+  #[test]
+  fn area_and_volume_of_parametrizations() {
+    assert_case(
+      r#"Area[{u Cos[v], u Sin[v]}, {u, 0, 1}, {v, 0, 2 Pi}]"#,
+      r#"Pi"#,
+    );
+    assert_case(
+      r#"Area[{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}, {u, 0, 2 Pi}, {v, 0, Pi}]"#,
+      r#"4*Pi"#,
+    );
+    assert_case(
+      r#"Area[{Sin[u] Sin[t], Sin[u] Cos[t], Cos[u]}, {t, 0, 2 Pi}, {u, ArcCos[1/2], ArcCos[-1/5]}]"#,
+      r#"(7*Pi)/5"#,
+    );
+    assert_case(
+      r#"Volume[{r Cos[t], r Sin[t], z}, {r, 0, 1}, {t, 0, 2 Pi}, {z, 0, 1}]"#,
+      r#"Pi"#,
+    );
+    assert_case(
+      r#"Area[{u, v, 0.5 u}, {u, 0, 1}, {v, 0, 2}]"#,
+      r#"2.23606797749979"#,
+    );
+    assert_case(r#"Area[{u, v}, {u, 0, 1}]"#, r#"Area[{u, v}, {u, 0, 1}]"#);
+  }
+
+  #[test]
+  fn divisible_arity_message() {
+    woxi::clear_state();
+    assert_eq!(woxi::interpret("Divisible[6]").unwrap(), "Divisible[6]");
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Divisible::argmu: Divisible called with 1 argument; 2 or more arguments are expected."
+      )),
+      "{msgs:?}"
+    );
+  }
+
   #[test]
   fn arctan_two_argument_machine_complex() {
     assert_case(

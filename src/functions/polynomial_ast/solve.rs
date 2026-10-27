@@ -12929,6 +12929,9 @@ pub fn minimize_ast(
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
   let func_name = if maximize { "Maximize" } else { "Minimize" };
+  // The critical points come from Solve, whose inverted functions are its
+  // own business: wolframscript's Maximize never reports Solve::ifun.
+  let _no_ifun = SuppressIfun::new(true);
   // An `Integers` domain becomes `Element[var, Integers]` constraints below,
   // which the solver only handles for a bounded problem. When that comes back
   // with nothing, solve over the reals instead and keep the answer only if every

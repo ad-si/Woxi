@@ -69,7 +69,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ArcTan" => Some((1, 2)),
     "ArcTanDegrees" => Some((1, 1)),
     "ArcTanh" => Some((1, 1)),
-    "Area" => Some((1, 1)),
+    "Area" => Some((1, 4)),
     "Arg" => Some((1, 1)),
     // f, vars[, dom][, opts] — wolframscript accepts between 2 and 4 args.
     "ArgMax" => Some((2, 4)),
@@ -175,7 +175,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CellularAutomaton" => Some((1, 4)),
     "CensoredDistribution" => Some((2, 2)),
     "CenterArray" => Some((1, 3)),
-    "CentralMoment" => Some((2, 2)),
+    "CentralMoment" => Some((1, 2)),
     "CharacteristicFunction" => Some((2, 2)),
     "MomentGeneratingFunction" => Some((2, 2)),
     "FactorialMomentGeneratingFunction" => Some((2, 2)),
@@ -203,7 +203,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Clip" => Some((1, 3)),
     "Close" => Some((1, 1)),
     "Coefficient" => Some((2, 3)),
-    "CoefficientList" => Some((2, 2)),
+    "CoefficientList" => Some((2, 3)),
     "CoefficientRules" => Some((1, 2)),
     "CoefficientArrays" => Some((1, 2)),
     "CollinearPoints" => Some((1, 1)),
@@ -295,7 +295,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CscDegrees" => Some((1, 1)),
     "Csch" => Some((1, 1)),
     "CubeRoot" => Some((1, 1)),
-    "Cumulant" => Some((2, 2)),
+    "Cumulant" => Some((1, 2)),
     "Curl" => Some((2, 3)),
     "CycleIndexPolynomial" => Some((2, 3)),
     "Cyclotomic" => Some((2, 2)),
@@ -397,12 +397,12 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Discriminant" => Some((2, 3)),
     "DisjointQ" => Some((2, 3)),
     "DiskMatrix" => Some((1, 1)),
-    "Distribute" => Some((1, 3)),
+    "Distribute" => Some((1, 5)),
     "DistributionParameterQ" => Some((1, 1)),
     "Div" => Some((2, 3)),
     "Divide" => Some((2, 2)),
     "DivideSides" => Some((1, 2)),
-    "Divisible" => Some((2, 2)),
+    "Divisible" => Some((2, usize::MAX)),
     "Divisors" => Some((1, 2)),
     "DivisorSigma" => Some((2, 3)),
     "DivisorSum" => Some((2, 3)),
@@ -977,7 +977,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ModularInverse" => Some((2, 2)),
     "MoebiusMu" => Some((1, 1)),
     "FactorialMoment" => Some((1, 2)),
-    "Moment" => Some((2, 2)),
+    "Moment" => Some((1, 2)),
+    "MomentEvaluate" => Some((2, 2)),
     "MonomialList" => Some((1, 3)),
     "Most" => Some((1, 1)),
     "DirichletDistribution" => Some((1, 1)),
@@ -1641,7 +1642,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "SolidAngle" => Some((2, 2)),
     "VertexQ" => Some((2, 2)),
     "DihedralAngle" => Some((2, 2)),
-    "Volume" => Some((1, 1)),
+    "Volume" => Some((1, 5)),
     "VectorGreater" => Some((1, 2)),
     "VectorGreaterEqual" => Some((1, 2)),
     "VectorLess" => Some((1, 2)),
@@ -1706,10 +1707,34 @@ fn is_option_arg(e: &Expr) -> bool {
   }
 }
 
+/// Functions whose valid argument counts are not one range: a region's
+/// measure takes the region alone, or a parametrization and its iterators.
+fn discrete_arg_counts(name: &str) -> Option<&'static [usize]> {
+  match name {
+    "Area" => Some(&[1, 3, 4]),
+    "Volume" => Some(&[1, 4, 5]),
+    _ => None,
+  }
+}
+
 pub fn check_arg_count(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  if let Some(counts) = discrete_arg_counts(name) {
+    let n = args.len();
+    if counts.contains(&n) {
+      return None;
+    }
+    let (last, rest) = counts.split_last()?;
+    let rest: Vec<String> = rest.iter().map(usize::to_string).collect();
+    let arg_word = if n == 1 { "argument" } else { "arguments" };
+    crate::emit_message(&format!(
+      "{name}::argt: {name} called with {n} {arg_word}; {} or {last} arguments are expected.",
+      rest.join(", ")
+    ));
+    return Some(Ok(unevaluated(name, args)));
+  }
   let (min, max) = get_arg_count_range(name)?;
   // A function that takes options counts only the arguments before its
   // trailing options, as wolframscript does: `Fit[data, f, x,

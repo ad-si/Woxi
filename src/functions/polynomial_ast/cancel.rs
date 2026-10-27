@@ -328,6 +328,23 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         }
       }
 
+      // Several variables: divide out the polynomial gcd of numerator and
+      // denominator, e.g. (a x^2 - a y^2)/(x + y) → a (x - y).
+      if find_single_variable_both(&num, &den).is_none()
+        && let Some((new_num, new_den)) =
+          super::mfactor::cancel_polynomial_gcd(&num, &den)
+      {
+        let new_num = expand_and_combine(&new_num);
+        let new_den = expand_and_combine(&new_den);
+        if matches!(&new_den, Expr::Integer(1)) {
+          return new_num;
+        }
+        return cancel_expr_impl(
+          &make_divide(new_num, new_den),
+          canonicalize_sign,
+        );
+      }
+
       // Try multivariate cancellation: extract common monomial factors from
       // additive terms in the numerator, then cancel with the denominator.
       // E.g. (a^2*x + a*x^2) / a^2 → factor out a from numerator → a*(a*x + x^2) / a^2 → (a*x + x^2)/a

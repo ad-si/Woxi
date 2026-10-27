@@ -3517,6 +3517,28 @@ fn distribution_moment(
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&expanded)?))
 }
 
+/// MomentEvaluate[expr, source]: every formal moment `Moment[r]`,
+/// `CentralMoment[r]`, `Cumulant[r]` or `FactorialMoment[r]` in `expr` is
+/// replaced by its value for the data or distribution `source`.
+pub fn moment_evaluate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let order = id_expr("$MomentOrder");
+  let rules: Vec<Expr> =
+    ["Moment", "CentralMoment", "Cumulant", "FactorialMoment"]
+      .iter()
+      .map(|name| Expr::RuleDelayed {
+        pattern: Box::new(call1(
+          name,
+          call("Pattern", vec![order.clone(), call("Blank", vec![])]),
+        )),
+        replacement: Box::new(call(name, vec![args[1].clone(), order.clone()])),
+      })
+      .collect();
+  crate::evaluator::evaluate_function_call_ast(
+    "ReplaceAll",
+    &[args[0].clone(), Expr::List(rules.into())],
+  )
+}
+
 /// CentralMoment[list, r] - r-th central moment of a numeric list
 pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A SparseArray data argument is handled via its dense form. (This also

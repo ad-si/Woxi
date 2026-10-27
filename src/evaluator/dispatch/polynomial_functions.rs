@@ -31,7 +31,7 @@ pub fn dispatch_polynomial_functions(
     "HornerForm" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::horner_form_ast(args));
     }
-    "Distribute" if !args.is_empty() && args.len() <= 3 => {
+    "Distribute" if !args.is_empty() && args.len() <= 5 => {
       return Some(distribute_ast(args));
     }
     "PolynomialRemainder" if args.len() == 3 || args.len() == 4 => {

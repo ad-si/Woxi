@@ -1193,6 +1193,123 @@ fn poly_to_expr(p: &Poly, gens: &[Expr]) -> Expr {
   combine_and_build(&terms)
 }
 
+/// Expanded expressions → polynomials over their common generators, sorted
+/// by printed form like `expr_to_poly`'s.
+fn exprs_to_polys(exprs: &[Expr]) -> Option<(Vec<Poly>, Vec<Expr>)> {
+  let converted: Vec<(Poly, Vec<Expr>)> =
+    exprs.iter().map(expr_to_poly).collect::<Option<_>>()?;
+  let mut union: BTreeMap<String, Expr> = BTreeMap::new();
+  for (_, gens) in &converted {
+    for g in gens {
+      union.entry(expr_to_string(g)).or_insert_with(|| g.clone());
+    }
+  }
+  let keys: Vec<String> = union.keys().cloned().collect();
+  let polys = converted
+    .iter()
+    .map(|(p, gens)| {
+      let positions: Vec<usize> = gens
+        .iter()
+        .map(|g| {
+          let key = expr_to_string(g);
+          keys.iter().position(|k| *k == key)
+        })
+        .collect::<Option<_>>()?;
+      let mut q = Poly::zero(keys.len());
+      for (m, c) in &p.t {
+        let mut mono = vec![0u32; keys.len()];
+        for (i, &e) in m.iter().enumerate() {
+          mono[positions[i]] = e;
+        }
+        q.add_term(mono, c.clone());
+      }
+      Some(q)
+    })
+    .collect::<Option<_>>()?;
+  Some((polys, union.into_values().collect()))
+}
+
+/// Greatest common divisor of expanded polynomials in any number of
+/// generators: the gcd of their rational contents times the gcd of their
+/// primitive parts (coprime integer coefficients, positive leading term).
+/// None when a coefficient is not rational.
+pub(super) fn gcd_multivariate_polys(exprs: &[Expr]) -> Option<Expr> {
+  let (polys, gens) = exprs_to_polys(exprs)?;
+  let mut content: Option<Q> = None;
+  let mut g = Poly::zero(gens.len());
+  for p in &polys {
+    if p.is_zero() {
+      continue;
+    }
+    let (unit, prim) = p.normalize();
+    let unit = Q::new(unit.n.abs(), unit.d);
+    content = Some(match content {
+      None => unit,
+      Some(c) => Q::new(
+        big_gcd(&c.n, &unit.n),
+        &c.d / big_gcd(&c.d, &unit.d) * &unit.d,
+      ),
+    });
+    g = gcd(&g, &prim);
+  }
+  let Some(content) = content else {
+    return Some(Expr::Integer(0));
+  };
+  Some(poly_to_expr(&g.scale(&content), &gens))
+}
+
+/// `num/den` with the polynomial gcd of numerator and denominator divided
+/// out of both, when that gcd involves any generator. None when there is
+/// nothing to cancel or a coefficient is not rational.
+pub(super) fn cancel_polynomial_gcd(
+  num: &Expr,
+  den: &Expr,
+) -> Option<(Expr, Expr)> {
+  let (polys, gens) = exprs_to_polys(&[num.clone(), den.clone()])?;
+  let [n, d] = polys.as_slice() else {
+    return None;
+  };
+  if n.is_zero() || d.is_zero() {
+    return None;
+  }
+  let g = gcd(n, d);
+  if g.is_const() {
+    return None;
+  }
+  Some((
+    poly_to_expr(&n.div_exact(&g)?, &gens),
+    poly_to_expr(&d.div_exact(&g)?, &gens),
+  ))
+}
+
+/// The gcd of `gcd_multivariate_polys` made monic and written with machine
+/// coefficients, every one of them shown (`0.75 + 1.*x`): the form of the
+/// gcd of polynomials with inexact coefficients, computed from their
+/// rationalized forms.
+pub(super) fn monic_machine_gcd(exprs: &[Expr]) -> Option<Expr> {
+  let (polys, gens) = exprs_to_polys(exprs)?;
+  let g = polys.iter().fold(Poly::zero(gens.len()), |g, p| gcd(&g, p));
+  let lead = g.leading_coeff()?.clone();
+  let terms: Vec<Expr> = g
+    .t
+    .iter()
+    .map(|(m, c)| {
+      let c = c.div(&lead);
+      let value = c.n.to_f64()? / c.d.to_f64()?;
+      let mut factors = vec![Expr::Real(value)];
+      for (i, &e) in m.iter().enumerate() {
+        match e {
+          0 => {}
+          1 => factors.push(gens[i].clone()),
+          _ => factors.push(pow2(gens[i].clone(), Expr::Integer(e as i128))),
+        }
+      }
+      Some(call("Times", factors))
+    })
+    .collect::<Option<_>>()?;
+  Some(call("Plus", terms))
+}
+
 /// Factor an expanded polynomial.
 /// Returns the numeric content (its sign that of the lexicographically
 /// leading term) and the irreducible factors with multiplicities, each

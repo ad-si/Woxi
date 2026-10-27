@@ -9483,3 +9483,51 @@ mod event_series_temporal_data {
     );
   }
 }
+
+// One-argument moments are formal symbols; MomentEvaluate gives them the
+// values of data or a distribution.
+mod formal_moments {
+  use super::*;
+
+  #[test]
+  fn formal_moments_stay_symbolic() {
+    assert_eq!(interpret("CentralMoment[3]").unwrap(), "CentralMoment[3]");
+    assert_eq!(interpret("Moment[x]").unwrap(), "Moment[x]");
+    assert_eq!(interpret("Cumulant[{1, 2}]").unwrap(), "Cumulant[{1, 2}]");
+    assert_eq!(
+      interpret("Attributes[MomentEvaluate]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+  }
+
+  #[test]
+  fn moment_evaluate_data_and_distributions() {
+    assert_eq!(
+      interpret("MomentEvaluate[CentralMoment[2] + Moment[1]^2, {1, 2, 4}]")
+        .unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("MomentEvaluate[Cumulant[2], {1, 2, 4}]").unwrap(),
+      "14/9"
+    );
+    assert_eq!(
+      interpret("MomentEvaluate[FactorialMoment[2], {1, 2, 4}]").unwrap(),
+      "14/3"
+    );
+    assert_eq!(
+      interpret("MomentEvaluate[CentralMoment[2] x, NormalDistribution[m, s]]")
+        .unwrap(),
+      "s^2*x"
+    );
+    assert_eq!(
+      interpret("MomentEvaluate[CentralMoment[2], {{1, 2}, {3, 5}}]").unwrap(),
+      "{1, 9/4}"
+    );
+    // A distribution parameter named like the pattern variable stays put.
+    assert_eq!(
+      interpret("MomentEvaluate[Moment[1], NormalDistribution[r, 1]]").unwrap(),
+      "r"
+    );
+  }
+}

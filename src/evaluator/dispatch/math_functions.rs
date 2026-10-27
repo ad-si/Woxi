@@ -939,6 +939,9 @@ pub fn dispatch_math_functions(
     "DiscreteAsymptotic" if args.len() >= 2 && args.len() <= 3 => {
       return Some(crate::functions::math_ast::discrete_asymptotic_ast(args));
     }
+    "MomentEvaluate" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::moment_evaluate_ast(args));
+    }
     "Moment" if args.len() == 2 => {
       return Some(crate::functions::math_ast::moment_ast(args));
     }
@@ -3198,7 +3201,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "CoefficientList" if args.len() == 2 => {
+    "CoefficientList" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::coefficient_list_ast(
         args,
       ));

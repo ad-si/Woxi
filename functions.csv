@@ -3666,7 +3666,7 @@ HatchShading,,,,12.1,3737
 LongLeftRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3737
 ManagedLibraryExpressionID,,,,10.0,3737
 MathMLForm,Converts expression to MathML form,✅,pure,4.1,3737
-MomentEvaluate,,,,8.0,3737
+MomentEvaluate,Replaces formal moments in an expression by their values for data or a distribution,✅,pure,8.0,3737
 NHoldFirst,Attribute preventing N from numericizing the first argument,✅,pure,3.0,3737
 NumberMultiplier,,,,3.0,3737
 PrintableASCIIQ,Tests whether a string consists only of printable ASCII characters,✅,pure,10.1,3737

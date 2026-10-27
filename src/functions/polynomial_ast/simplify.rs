@@ -1964,6 +1964,14 @@ fn make_power_or_identity(base: &Expr, exp: i128) -> Expr {
 /// Returns Some(simplified) if possible, None otherwise.
 fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
   match expr {
+    // Only the nonnegative case: wolframscript's Simplify keeps
+    // `Abs[Sin[u]]` over an interval where it is `-Sin[u]`.
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Sin" | "Cos")
+        && get_sign(expr, info) == Some(1) =>
+    {
+      Some(expr.clone())
+    }
     Expr::Identifier(name) => {
       if info.positive_vars.contains(name)
         || info.nonnegative_vars.contains(name)
@@ -2027,9 +2035,87 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
   }
 }
 
+/// The numeric interval the assumptions confine the variable `var` to
+/// (`0 <= u <= Pi`, `u > 1 && u < 2`); infinite ends where none is known.
+fn variable_interval(var: &str, info: &AssumptionInfo) -> (f64, f64) {
+  let (mut lo, mut hi) = (f64::NEG_INFINITY, f64::INFINITY);
+  for assumption in &info.raw_assumptions {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = assumption
+    else {
+      continue;
+    };
+    for (i, op) in operators.iter().enumerate() {
+      let (left, right) = (&operands[i], &operands[i + 1]);
+      let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+      // Normalize to `small <= big`.
+      let (small, big) = match op {
+        ComparisonOp::Less | ComparisonOp::LessEqual => (left, right),
+        ComparisonOp::Greater | ComparisonOp::GreaterEqual => (right, left),
+        _ => continue,
+      };
+      if is_var(small)
+        && let Some(b) = try_eval_to_f64(big)
+      {
+        hi = hi.min(b);
+      }
+      if is_var(big)
+        && let Some(b) = try_eval_to_f64(small)
+      {
+        lo = lo.max(b);
+      }
+    }
+  }
+  (lo, hi)
+}
+
+/// The sign `Sin` or `Cos` of an argument linear in one bounded variable
+/// keeps over the variable's interval: 1 when it is never negative there,
+/// -1 when it is never positive, None when the interval crosses a zero.
+fn trig_sign_on_interval(
+  name: &str,
+  arg: &Expr,
+  info: &AssumptionInfo,
+) -> Option<i8> {
+  let mut vars = std::collections::HashSet::new();
+  collect_variables(arg, &mut vars);
+  let vars: Vec<String> = vars.into_iter().collect();
+  let [var] = vars.as_slice() else {
+    return None;
+  };
+  let (a, b) = super::apart::extract_linear_coeffs(arg, var)?;
+  let (a, b) = (try_eval_to_f64(&a)?, try_eval_to_f64(&b)?);
+  let (lo, hi) = variable_interval(var, info);
+  let (mut p, mut q) = (a * lo + b, a * hi + b);
+  if p > q {
+    std::mem::swap(&mut p, &mut q);
+  }
+  // Cos[x] == Sin[x + Pi/2].
+  if name == "Cos" {
+    p += std::f64::consts::FRAC_PI_2;
+    q += std::f64::consts::FRAC_PI_2;
+  }
+  if !(p.is_finite() && q.is_finite()) {
+    return None;
+  }
+  let pi = std::f64::consts::PI;
+  let k = (p / pi + 1e-12).floor();
+  if q > (k + 1.0) * pi * (1.0 + 1e-12) + 1e-12 {
+    return None;
+  }
+  Some(if k.rem_euclid(2.0) == 0.0 { 1 } else { -1 })
+}
+
 /// Get the sign of an expression: Some(1) for positive, Some(-1) for negative, None if unknown.
 fn get_sign(expr: &Expr, info: &AssumptionInfo) -> Option<i8> {
   match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Sin" | "Cos") && args.len() == 1 =>
+    {
+      trig_sign_on_interval(name, &args[0], info)
+    }
     Expr::Identifier(name) => {
       // Non-negative counts as positive for Abs simplification.
       if info.positive_vars.contains(name)
@@ -7703,6 +7789,14 @@ fn simplify_additive(expr: &Expr) -> Expr {
     let c = leaf_count(&trig_reduced);
     if c < best_c {
       best = trig_reduced;
+      best_c = c;
+    }
+  }
+  // Sin[a]^2 + Cos[a]^2 == 1 over several arguments at once.
+  if let Some(reduced) = try_pythagorean_reduction(&best) {
+    let c = leaf_count(&reduced);
+    if c < best_c {
+      best = reduced;
     }
   }
   // A sum that collapsed into a single fraction goes through the quotient
@@ -11220,6 +11314,131 @@ fn try_cos_power_reduction(expr: &Expr) -> Option<Expr> {
     Expr::Integer(2),
   );
   Some(simplify_product(&two_alpha, &squared))
+}
+
+/// A polynomial in `Sin` and `Cos` of a few arguments, reduced with
+/// `Sin[a]^2 + Cos[a]^2 == 1`: for every argument either the even powers of
+/// `Sin[a]` become powers of `1 - Cos[a]^2` or the other way round, and the
+/// smallest expanded or factored result of all those choices is returned
+/// when it is smaller than `expr`.
+/// `Cos[u]^4 Cos[v]^2 + 2 Cos[u]^2 Cos[v]^2 Sin[u]^2 + Cos[v]^2 Sin[u]^4 +
+/// Sin[v]^2` is `1`.
+fn try_pythagorean_reduction(expr: &Expr) -> Option<Expr> {
+  fn trig_args(e: &Expr, out: &mut Vec<(String, Expr)>) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Sin" | "Cos") && args.len() == 1 =>
+      {
+        let key = expr_to_string(&args[0]);
+        if !out.iter().any(|(k, _)| *k == key) {
+          out.push((key, args[0].clone()));
+        }
+      }
+      Expr::FunctionCall { args, .. } | Expr::List(args) => {
+        args.iter().for_each(|a| trig_args(a, out));
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        trig_args(left, out);
+        trig_args(right, out);
+      }
+      Expr::UnaryOp { operand, .. } => trig_args(operand, out),
+      _ => {}
+    }
+  }
+  /// Replace `head[arg]^n` (n ≥ 2) by `head[arg]^(n mod 2) (1 - other[arg]^2)^(n/2)`.
+  fn substitute(e: &Expr, head: &str, other: &str, arg: &str) -> Expr {
+    let power = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      _ => None,
+    };
+    if let Some((base, Expr::Integer(n))) = power
+      && *n >= 2
+      && let Expr::FunctionCall { name, args } = base
+      && name == head
+      && args.len() == 1
+      && expr_to_string(&args[0]) == arg
+    {
+      let complement = minus2(
+        Expr::Integer(1),
+        pow2(call1(other, args[0].clone()), Expr::Integer(2)),
+      );
+      let mut factors = vec![pow2(complement, Expr::Integer(n / 2))];
+      if n % 2 == 1 {
+        factors.push(base.clone());
+      }
+      return times(factors);
+    }
+    match e {
+      Expr::FunctionCall { name, args } => call(
+        name,
+        args
+          .iter()
+          .map(|a| substitute(a, head, other, arg))
+          .collect(),
+      ),
+      Expr::List(items) => Expr::List(
+        items
+          .iter()
+          .map(|a| substitute(a, head, other, arg))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      Expr::BinaryOp { op, left, right } => binop(
+        *op,
+        substitute(left, head, other, arg),
+        substitute(right, head, other, arg),
+      ),
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(substitute(operand, head, other, arg)),
+      },
+      _ => e.clone(),
+    }
+  }
+  let mut args = Vec::new();
+  trig_args(expr, &mut args);
+  // One argument is the single-angle simplifier's job.
+  if !(2..=3).contains(&args.len()) {
+    return None;
+  }
+  let expanded = expand_and_combine(expr);
+  let mut best: Option<Expr> = None;
+  let mut best_c = leaf_count(expr);
+  for choice in 0..(1u32 << args.len()) {
+    let mut e = expanded.clone();
+    for (i, (key, _)) in args.iter().enumerate() {
+      let (head, other) = if choice & (1 << i) == 0 {
+        ("Sin", "Cos")
+      } else {
+        ("Cos", "Sin")
+      };
+      e = substitute(&e, head, other, key);
+    }
+    let reduced =
+      expand_and_combine(&crate::evaluator::evaluate_expr_to_expr(&e).ok()?);
+    let factored = crate::evaluator::evaluate_function_call_ast(
+      "Factor",
+      std::slice::from_ref(&reduced),
+    )
+    .unwrap_or_else(|_| reduced.clone());
+    for candidate in [reduced, factored] {
+      let c = leaf_count(&candidate);
+      if c < best_c {
+        best_c = c;
+        best = Some(candidate);
+      }
+    }
+  }
+  best
 }
 
 /// Try to simplify a sum of trig monomials by:

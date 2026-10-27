@@ -475,6 +475,60 @@ fn coefficient_list_multi(
 /// CoefficientList[poly, {x1, x2, …}] - rectangular nested list of coefficients
 /// indexed by (x1^p1, x2^p2, …).
 pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // CoefficientList[poly, vars, dims]: the coefficient array cut or padded
+  // with zeros to the dimensions `dims`.
+  if args.len() == 3 {
+    let dims: Option<Vec<usize>> = match (&args[1], &args[2]) {
+      (Expr::List(vars), Expr::List(ds)) if vars.len() == ds.len() => ds
+        .iter()
+        .map(|d| {
+          crate::functions::math_ast::expr_to_i128(d)
+            .and_then(|n| usize::try_from(n).ok())
+        })
+        .collect::<Option<_>>(),
+      (Expr::List(_), _) => None,
+      (_, d) => crate::functions::math_ast::expr_to_i128(d)
+        .and_then(|n| usize::try_from(n).ok())
+        .map(|n| vec![n]),
+    };
+    let Some(dims) = dims else {
+      return Ok(unevaluated("CoefficientList", args));
+    };
+    if let Expr::List(polys) = &args[0] {
+      return Ok(Expr::List(
+        polys
+          .iter()
+          .map(|p| {
+            coefficient_list_ast(&[p.clone(), args[1].clone(), args[2].clone()])
+          })
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      ));
+    }
+    let full = coefficient_list_ast(&args[..2])?;
+    if !matches!(full, Expr::List(_)) {
+      return Ok(unevaluated("CoefficientList", args));
+    }
+    fn reshape(e: &Expr, dims: &[usize]) -> Expr {
+      let Some((&d, rest)) = dims.split_first() else {
+        return e.clone();
+      };
+      let items: &[Expr] = match e {
+        Expr::List(items) => items,
+        _ => &[],
+      };
+      Expr::List(
+        (0..d)
+          .map(|i| match items.get(i) {
+            Some(item) => reshape(item, rest),
+            None => reshape(&Expr::Integer(0), rest),
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    }
+    return Ok(reshape(&full, &dims));
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "CoefficientList expects 2 arguments".into(),
@@ -499,6 +553,17 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("CoefficientList", args));
   }
 
+  // A list of polynomials gives the list of their coefficient lists.
+  if let Expr::List(polys) = &args[0] {
+    return Ok(Expr::List(
+      polys
+        .iter()
+        .map(|p| coefficient_list_ast(&[p.clone(), args[1].clone()]))
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ));
+  }
+
   // SeriesData input: reduce via `Normal` first so the ordinary polynomial
   // path can extract the coefficients and trim trailing zeros.
   let normalized = match &args[0] {
@@ -509,6 +574,32 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?
     }
     _ => args[0].clone(),
+  };
+  // A rational expression whose denominators cancel is the polynomial it
+  // equals: `(2 x^2 + 3 x - 2) b/(2 + x)` has the coefficients of
+  // `b (2 x - 1)`.
+  let is_polynomial = |e: &Expr| {
+    matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[e.clone(), args[1].clone()],
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+  };
+  let normalized = if is_polynomial(&normalized) {
+    normalized
+  } else {
+    match crate::evaluator::evaluate_function_call_ast(
+      "Together",
+      std::slice::from_ref(&normalized),
+    )
+    .and_then(|together| {
+      crate::evaluator::evaluate_function_call_ast("Cancel", &[together])
+    }) {
+      Ok(cancelled) if is_polynomial(&cancelled) => cancelled,
+      _ => normalized,
+    }
   };
 
   // Multivariate form: CoefficientList[poly, {x1, x2, …}]
