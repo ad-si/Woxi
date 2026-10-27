@@ -1282,6 +1282,21 @@ mod real_number_formatting {
 mod machine_complex_zero_imaginary {
   use super::super::case_helpers::assert_case;
 
+  // The machine complex zero: a positive power is `0. + 0.*I`, a negative
+  // one ComplexInfinity, and Log has no direction (Indeterminate).
+  // Regression: Sqrt and Power handed `0. + 0.*I` back and forth until
+  // the stack overflowed.
+  #[test]
+  fn machine_complex_zero() {
+    assert_case(
+      "Quiet[{Sqrt[Complex[0., 0.]], Complex[0., 0.]^0.5, \
+       Complex[0., 0.]^(-1/2), Exp[Complex[0., 0.]], Log[Complex[0., 0.]], \
+       With[{u = 0., v = 0.}, (u + I v)^(1/2)]}]",
+      "{0. + 0.*I, 0. + 0.*I, ComplexInfinity, 1. + 0.*I, Indeterminate, \
+       0. + 0.*I}",
+    );
+  }
+
   #[test]
   fn elementary_functions_keep_it_complex() {
     assert_case(

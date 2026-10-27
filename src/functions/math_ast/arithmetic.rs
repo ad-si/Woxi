@@ -11975,6 +11975,21 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   {
     // z^w = exp(w * log z), with log z = ln|z| + i*arg(z).
     let abs_z = (a * a + b * b).sqrt();
+    // The machine complex zero: `0. + 0.*I` for a positive real part of
+    // the exponent, ComplexInfinity (with Power::infy) for a negative one.
+    if abs_z == 0.0 {
+      if c > 0.0 {
+        return Ok(build_complex_float_expr_keep_real(0.0, 0.0));
+      }
+      if c < 0.0 {
+        crate::emit_message(&format_power_infy_2d(
+          &expr_to_string(base),
+          &expr_to_string(exp),
+        ));
+        return Ok(id_expr("ComplexInfinity"));
+      }
+      return Ok(id_expr("Indeterminate"));
+    }
     if abs_z != 0.0 {
       let ln_abs = abs_z.ln();
       let arg_z = b.atan2(a);

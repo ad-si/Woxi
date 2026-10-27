@@ -3340,6 +3340,10 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A machine complex number with a zero imaginary part
       // (`Complex[-1., 0.]`) gives a machine complex logarithm.
       if let Some((a, b)) = machine_complex_parts(&args[0]) {
+        // `Log[0. + 0.*I]` has no direction to take: Indeterminate.
+        if a == 0.0 && b == 0.0 {
+          return Ok(id_expr("Indeterminate"));
+        }
         let re = 0.5 * (a * a + b * b).ln();
         return Ok(build_complex_float_expr_keep_real(re, b.atan2(a)));
       }
