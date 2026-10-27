@@ -18001,6 +18001,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Regression: `DataRange` on matrix data was ignored, so the axes
+    /// showed the 1-based column / row indices instead of the given
+    /// coordinates.
+    #[test]
+    fn list_density_plot_matrix_data_range() {
+      let default = export_svg("ListDensityPlot[{{1, 2, 3, 4}, {4, 5, 6, 7}}]");
+      let ranged = export_svg(
+        "ListDensityPlot[{{1, 2, 3, 4}, {4, 5, 6, 7}}, DataRange -> {{0, 400}, {0, 2000}}]",
+      );
+      assert_ne!(default, ranged);
+      assert!(ranged.contains(">\n2000\n</text>"), "{ranged}");
+      assert!(!default.contains(">\n2000\n</text>"));
+      let contour = export_svg(
+        "ListContourPlot[{{1, 2, 3, 4}, {4, 5, 6, 7}}, DataRange -> {{0, 400}, {0, 2000}}]",
+      );
+      assert!(contour.contains(">\n2000\n</text>"), "{contour}");
+    }
+
     /// Regression: the marching-squares case table used to swap the
     /// side cases (5/10) with the saddle cases (6/9), which interpolated
     /// along edges without a sign change and drew long spurious spikes
