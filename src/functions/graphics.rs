@@ -27631,7 +27631,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // itself a draggable point, add another, independent one (the same
       // "two rows, one binding" pattern a coarse/fine preset pair uses).
       if controls.iter().any(|c| {
-        c.name() == var && matches!(c, ManipulateControl::Slider2D { .. })
+        c.name() == var
+          && matches!(
+            c,
+            ManipulateControl::Slider2D { .. }
+              | ManipulateControl::Locator { .. }
+          )
       }) {
         continue;
       }
