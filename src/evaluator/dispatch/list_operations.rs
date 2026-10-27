@@ -301,30 +301,11 @@ fn split_same_test_option(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
   }
 }
 
-/// Check recursively whether an expression contains pattern elements (Blank, Pattern, etc.)
+/// Whether an expression contains pattern elements (Blank, Pattern, etc.)
+/// — the one pattern detector, so long forms like `Pattern[x, Blank[]]` from
+/// a reloaded definition count too.
 fn has_pattern_element(expr: &Expr) -> bool {
-  match expr {
-    Expr::Pattern { .. }
-    | Expr::PatternOptional { .. }
-    | Expr::PatternTest { .. } => true,
-    Expr::FunctionCall { name, args } => {
-      matches!(
-        name.as_str(),
-        "Blank"
-          | "BlankSequence"
-          | "BlankNullSequence"
-          | "Pattern"
-          | "Alternatives"
-          | "PatternTest"
-          | "Condition"
-          | "Repeated"
-          | "RepeatedNull"
-          | "Except"
-      ) || args.iter().any(has_pattern_element)
-    }
-    Expr::List(items) => items.iter().any(has_pattern_element),
-    _ => false,
-  }
+  crate::evaluator::pattern_matching::contains_pattern(expr)
 }
 
 /// Check if a pattern contains sequence-matching elements (BlankSequence, BlankNullSequence,

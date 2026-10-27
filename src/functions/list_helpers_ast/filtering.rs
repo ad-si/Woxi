@@ -652,6 +652,12 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
       let head = &s[1..];
       get_expr_head_str(expr) == head
     }
+    // HoldPattern[p] matches what p matches; it only keeps p from evaluating
+    Expr::FunctionCall { name, args }
+      if name == "HoldPattern" && args.len() == 1 =>
+    {
+      matches_pattern_ast(expr, &args[0])
+    }
     // Verbatim[expr] - matches literally, not treating contents as patterns
     Expr::FunctionCall { name, args }
       if name == "Verbatim" && args.len() == 1 =>
@@ -803,7 +809,12 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         false
       }
     }
-    // Literal comparison
+    // Any other shape holding a pattern (`_ -> 2`, `x_ == y_`, an
+    // association or a curried call with blanks) goes to the full matcher;
+    // without one it is a literal, compared as written.
+    _ if crate::evaluator::pattern_matching::contains_pattern(pattern) => {
+      crate::evaluator::pattern_matching::match_pattern(expr, pattern).is_some()
+    }
     _ => {
       let pattern_str = expr_to_string(pattern);
       let expr_str = expr_to_string(expr);

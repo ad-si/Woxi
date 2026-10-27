@@ -1867,6 +1867,46 @@ mod between {
 mod free_q {
   use super::*;
 
+  // A rule, comparison or association written as the form is a pattern
+  // like any other, not a literal to compare as text
+  #[test]
+  fn structured_pattern_forms() {
+    assert_eq!(
+      interpret(
+        "{FreeQ[{a -> 1, b -> 2}, _ -> 2], MemberQ[{a -> 1, b -> 2}, _ -> 2], FreeQ[f[a -> 1], _ -> 1], FreeQ[{a -> 1}, b -> _]}"
+      )
+      .unwrap(),
+      "{False, True, False, True}"
+    );
+    assert_eq!(
+      interpret(
+        "{FreeQ[{b -> 2}, HoldPattern[_ -> 2]], FreeQ[{1 == 2}, _ == 2], MemberQ[{x < 1}, _ < 1], FreeQ[{<|a -> 1|>}, <|_ -> 1|>]}"
+      )
+      .unwrap(),
+      // `{1 == 2}` is `{False}` before FreeQ looks at it
+      "{False, True, True, False}"
+    );
+  }
+
+  // An association pattern matches entry by entry, in order
+  #[test]
+  fn association_patterns() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[<|a -> 1|>, <|_ -> 1|>], MatchQ[<|a -> 1, b -> 2|>, <|b -> 2, a -> 1|>], MatchQ[<|a -> 1, b -> 2|>, <|_ -> 1|>], MatchQ[<|a -> 1, b -> 2|>, <|a -> _, b -> x_Integer|>], MatchQ[<||>, <||>], MatchQ[<|a -> 1|>, <|a :> 1|>]}"
+      )
+      .unwrap(),
+      "{True, False, False, True, True, False}"
+    );
+    assert_eq!(
+      interpret(
+        "{Replace[<|a -> 1|>, <|k_ -> v_|> :> {k, v}], MatchQ[<|a -> 1, b -> 1|>, <|a -> x_, b -> x_|>], MatchQ[<|a -> 1, b -> 2|>, <|a -> x_, b -> x_|>], Cases[{<|a -> 1, b -> 2|>, <|a -> 1|>}, <|a -> _, _ -> _|>]}"
+      )
+      .unwrap(),
+      "{{a, 1}, True, False, {<|a -> 1, b -> 2|>}}"
+    );
+  }
+
   #[test]
   fn free_q_head_matching_plus() {
     // Plus is the head of a+b inside a^(a+b)

@@ -5247,6 +5247,32 @@ fn match_pattern_impl(
         None
       }
     }
+    // An association pattern `<|k1 -> v1, …|>` matches an association with
+    // as many entries, entry by entry in order: each key against its key
+    // pattern and each value against its value pattern. (A pattern written
+    // with a repeated key, `<|_ -> 1, _ -> 2|>`, has already collapsed to its
+    // last entry, as any association does.)
+    Expr::Association(pat_pairs) => {
+      let Expr::Association(expr_pairs) = expr else {
+        return None;
+      };
+      if pat_pairs.len() != expr_pairs.len() {
+        return None;
+      }
+      let mut bindings = Vec::new();
+      for ((pk, pv), (ek, ev)) in pat_pairs.iter().zip(expr_pairs.iter()) {
+        // `k :> v` and `k -> v` entries do not match each other
+        if is_delayed_entry(pk, pv) != is_delayed_entry(ek, ev) {
+          return None;
+        }
+        if !merge_bindings(&mut bindings, match_pattern(ek, pk)?)
+          || !merge_bindings(&mut bindings, match_pattern(ev, pv)?)
+        {
+          return None;
+        }
+      }
+      Some(bindings)
+    }
     // KeyValuePattern[{k1 -> v1, ...}] - matches an Association or a list of
     // rules that contains, for each rule `ki -> vi`, a key matching `ki` whose
     // value matches the pattern `vi`. Order-independent, subset (extra keys are
