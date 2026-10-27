@@ -5145,6 +5145,38 @@ mod textcell_tests {
       "the Grid readout should render with the default control values"
     );
   }
+
+  /// A random polygon whose vertices live in a hidden `ControlType -> None`
+  /// list the body regenerates from a seed slider and drags through a
+  /// `LocatorPane`: the list gets exactly one draggable control (the pane's),
+  /// never a second one from its hidden declaration.
+  #[test]
+  fn hidden_point_list_dragged_through_locator_pane_has_one_locator() {
+    let code = r#"Manipulate[
+      SeedRandom[sd];
+      If[sd == oldsd, {}, pts = RandomReal[{0, 1}, {Length[pts], 2}]; oldsd = sd];
+      If[cnt == oldcnt, oldcnt = Length[pts]; cnt = Length[pts],
+        pts = PadRight[pts, {cnt, 2}, RandomReal[]]; oldcnt = cnt];
+      LocatorPane[Dynamic[pts],
+        Dynamic[ListLinePlot[pts, AspectRatio -> 1, Axes -> False] /. Line -> Polygon],
+        LocatorAutoCreate -> True],
+      {{cnt, 6, "points"}, 3, 20, 1},
+      {{sd, 0, "random seed"}, 0, 1000, 1},
+      {{oldsd, 0}, ControlType -> None},
+      {{oldcnt, 6}, ControlType -> None},
+      {{pts, RandomReal[{0, 1}, {6, 2}]}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let locators = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ControlState::Locator { .. }))
+      .count();
+    assert_eq!(locators, 1, "controls: {:?}", state.controls);
+  }
 }
 
 /// With `WOXI_STUDIO_TRACE` set, print every piece of code the notebook
