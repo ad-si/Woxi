@@ -4535,6 +4535,8 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nearest = interpolation_order_is_zero(&args[1..]);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
     parse_list_data_to_grid(rows, "ListDensityPlot", nearest);
+  let ((x_min, x_max), (y_min, y_max)) =
+    matrix_data_range(rows, &args[1..], (x_min, x_max), (y_min, y_max));
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -4929,6 +4931,50 @@ fn parse_list_data_to_grid(
   }
 }
 
+/// `DataRange -> {{xmin, xmax}, {ymin, ymax}}` for matrix data: the
+/// coordinates the first and last columns (x) and rows (y) sit at, instead
+/// of the default of 1-based indices. Triples carry their own coordinates,
+/// so they and absent or malformed options keep `default_x` / `default_y`.
+fn matrix_data_range(
+  rows: &[Expr],
+  opts: &[Expr],
+  default_x: (f64, f64),
+  default_y: (f64, f64),
+) -> ((f64, f64), (f64, f64)) {
+  if is_triples_data(rows) {
+    return (default_x, default_y);
+  }
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DataRange") {
+      continue;
+    }
+    let val = evaluate_expr_to_expr(replacement)
+      .unwrap_or_else(|_| (**replacement).clone());
+    if let Expr::List(axes) = &val
+      && axes.len() == 2
+      && let (Expr::List(xs), Expr::List(ys)) = (&axes[0], &axes[1])
+      && xs.len() == 2
+      && ys.len() == 2
+      && let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+        try_eval_to_f64(&xs[0]),
+        try_eval_to_f64(&xs[1]),
+        try_eval_to_f64(&ys[0]),
+        try_eval_to_f64(&ys[1]),
+      )
+    {
+      return ((x0, x1), (y0, y1));
+    }
+  }
+  (default_x, default_y)
+}
+
 /// Check if list data represents {x,y,z} triples
 fn is_triples_data(rows: &[Expr]) -> bool {
   rows.iter().all(|r| {
@@ -5165,6 +5211,8 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
     parse_list_data_to_grid(rows, "ListContourPlot", false);
+  let ((x_min, x_max), (y_min, y_max)) =
+    matrix_data_range(rows, &args[1..], (x_min, x_max), (y_min, y_max));
 
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
