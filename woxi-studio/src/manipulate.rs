@@ -2489,6 +2489,31 @@ mod tests {
     assert!(svg.contains("<ellipse"), "{svg}");
   }
 
+  /// A body that is a `ListAnimate` of precomputed frames (here 3D ones,
+  /// built by a helper) draws the first frame, not the last one evaluated.
+  #[test]
+  fn body_list_animate_draws_first_frame() {
+    woxi::clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ListAnimate[frames[h]], {{h, 1}, 1, 3}, \
+       Initialization :> (frames[q_] := Table[Graphics3D[{Polygon[{{0, 0, 0}, \
+       {4, 0, 0}, {4, 4, k q}}]}, Boxed -> False], {k, 1, 3}])]",
+    )
+    .expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let render =
+      woxi::with_scoped_globals(&[("h".to_string(), "1".to_string())], || {
+        woxi::interpret_with_stdout(&state.body)
+      })
+      .expect("evaluate body");
+    let first = woxi::interpret(
+      "ExportString[Graphics3D[{Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 1}}]}, \
+       Boxed -> False], \"SVG\"]",
+    )
+    .expect("render first frame");
+    assert_eq!(render.graphics.expect("body draws a graphic"), first);
+  }
+
   /// A body that is a sized, padded `Pane` around styled text shows the
   /// text itself rather than the `Pane[…, {400, 80}, ImageMargins -> 20]`
   /// call it prints as in a terminal.

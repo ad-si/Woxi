@@ -1382,6 +1382,25 @@ fn promote_result_graphics(expr: &syntax::Expr) {
     capture_graphics(&svg);
     return;
   }
+  // A cell whose value is a `ListAnimate[{f1, f2, …}, …]` (a helper
+  // returning precomputed frames) starts on its first frame, like the front
+  // end's frame slider does.
+  if VISUAL_MODE.with(|v| *v.borrow())
+    && let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "ListAnimate"
+    && let Some(syntax::Expr::List(frames)) = args.first()
+    && let Some(first) = frames.first()
+  {
+    if matches!(first, syntax::Expr::Graphics { .. }) {
+      promote_result_graphics(first);
+    } else {
+      let svg = evaluator::expr_to_svg(first);
+      if svg.starts_with("<svg") {
+        capture_graphics(&svg);
+      }
+    }
+    return;
+  }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
     && let Some(items) =
