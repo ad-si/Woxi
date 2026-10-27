@@ -36064,6 +36064,44 @@ fn display_expr_to_node(
         label: Box::new(display_expr_to_node(&args[0], bindings, probes, ons)),
         action: crate::syntax::expr_to_source_form(&args[1]),
       },
+      // `ButtonBar[{label :> action, …}]` written inside a display element
+      // (a `Grid` cell next to its caption): a row of pressable buttons,
+      // one per rule, each keeping its action held — the same buttons the
+      // top-level control form produces, instead of the frozen source.
+      "ButtonBar" if !args.is_empty() => match &args[0] {
+        Expr::List(items)
+          if !items.is_empty()
+            && items.iter().all(|i| {
+              matches!(i, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            }) =>
+        {
+          DisplayNode::Row(
+            items
+              .iter()
+              .map(|item| {
+                let (Expr::Rule {
+                  pattern,
+                  replacement,
+                }
+                | Expr::RuleDelayed {
+                  pattern,
+                  replacement,
+                }) = item
+                else {
+                  unreachable!()
+                };
+                DisplayNode::Button {
+                  label: Box::new(display_expr_to_node(
+                    pattern, bindings, probes, ons,
+                  )),
+                  action: crate::syntax::expr_to_source_form(replacement),
+                }
+              })
+              .collect(),
+          )
+        }
+        _ => static_leaf_node(expr, bindings),
+      },
       "Spacer" if !args.is_empty() => DisplayNode::Spacer {
         width: spacer_width(&args[0]),
       },
