@@ -6647,6 +6647,28 @@ mod cases {
       r#"{{169, -70}, {-70, 29}}"#,
     );
   }
+  // A non-integer power (and any matrix function) of a diagonalizable
+  // matrix goes through its eigensystem: V f(D) V^-1.
+  #[test]
+  fn matrix_power_fractional() {
+    assert_case(
+      "MatrixPower[{{2, 1}, {1, 2}}, 1/2]",
+      "{{1/2 + Sqrt[3]/2, -1/2 + Sqrt[3]/2}, {-1/2 + Sqrt[3]/2, 1/2 + Sqrt[3]/2}}",
+    );
+    // wolframscript: {{0.5158091539374333, -0.08165898261441804}, …}.
+    assert_case(
+      "Max[Abs[MatrixPower[{{4., 1.}, {1., 3.}}, -1/2] - \
+       {{0.5158091539374333, -0.08165898261441804}, \
+       {-0.08165898261441804, 0.5974681365518514}}]] < 10^-14",
+      "True",
+    );
+    assert_case(
+      "Max[Abs[MatrixFunction[Sin[#] &, {{1., 2.}, {3., 4.}}] - \
+       {{-0.4655814863137303, -0.14842445991317654}, \
+       {-0.22263668986976481, -0.6882181761834951}}]] < 10^-14",
+      "True",
+    );
+  }
   #[test]
   fn matrix_power_diagonal_symbolic_n() {
     assert_case(
