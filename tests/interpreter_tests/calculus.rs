@@ -23140,6 +23140,20 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // NDSolve::ndsz names the independent variable where stepping stalled.
+  #[test]
+  fn ndsz_names_the_independent_variable() {
+    clear_state();
+    interpret("NDSolve[{y'[t] == y[t]^2, y[0] == 1}, y, {t, 0, 2}]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.starts_with("NDSolve::ndsz: At t == ")),
+      "{msgs:?}"
+    );
+  }
+
   // Without a WhenEvent nothing needs the highest derivative of an implicit
   // equation solved for: solving this geodesic equation for `u''[s]` (from
   // the Conjugate Locus Demonstration) took minutes.

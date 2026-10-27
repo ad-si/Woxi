@@ -6639,9 +6639,12 @@ fn integrate_leg(
         }
       }
       if points.len() > 1 {
+        // Named by the independent variable (`At t == 1.002`), as Wolfram
+        // reports it.
         crate::emit_message(&format!(
-          "NDSolve::ndsz: At x == {x}, step size is effectively zero; \
-           singularity or stiff system suspected."
+          "NDSolve::ndsz: At {x_name} == {}, step size is effectively zero; \
+           singularity or stiff system suspected.",
+          crate::syntax::expr_to_string(&Expr::Real(x))
         ));
       }
       return Ok(if points.len() > 1 { Some(points) } else { None });
