@@ -9246,7 +9246,7 @@ fn solve_mass_like(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
 
 /// True when `target` occurs (structurally, via string comparison like
 /// `substitute_expr`) anywhere inside `expr`.
-fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
+pub(crate) fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
   if expr_to_string(expr) == expr_to_string(target) {
     return true;
   }

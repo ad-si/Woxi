@@ -23140,6 +23140,35 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // An algebraic equation among differentiated unknowns (y == x^2 next to
+  // 2 x' + y' == -x) is differentiated into y' == 2 x x' (index
+  // reduction), and an initial value for an algebraic unknown is accepted.
+  // wolframscript: {0.7662486027219241, 0.5871369211279744} and
+  // {2.7182820111027923, 5.436564022205585}.
+  #[test]
+  fn dae_index_reduction_and_algebraic_initial_values() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{2 x'[t] + y'[t] == -x[t], y[t] == x[t]^2, x[0] == 1, \
+         y[0] == 1}, {x, y}, {t, 0, 1}]; \
+         Max[Abs[({x[1], y[1]} /. s[[1]]) - \
+         {0.7662486027219241, 0.5871369211279744}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t] + z[t], z[t] == 2 x[t], x[0] == 1, \
+         z[0] == 2}, {x, z}, {t, 0, 1}]; \
+         Max[Abs[({x[1], z[1]} /. s[[1]]) - \
+         {2.7182820111027923, 5.436564022205585}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // NDSolve::ndsz names the independent variable where stepping stalled.
   #[test]
   fn ndsz_names_the_independent_variable() {

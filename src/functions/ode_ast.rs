@@ -4749,11 +4749,48 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
     }
   }
 
-  let solved = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Solve",
-    vec![eq.clone(), unknown],
-  ))
-  .ok()?;
+  // An equation linear in the unknown, `c u + r == 0` with `c` free of it,
+  // gives `-r/c` straight away. `Solve` would get the same answer, but it
+  // expands everything first, which is what makes the growing equations of
+  // a large DAE (a distillation column's dozens of stages) stop scaling.
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let u = Expr::Identifier("\u{2620}dae\u{2620}".to_string());
+  let residual = crate::functions::polynomial_ast::solve::substitute_expr(
+    &crate::helpers::minus2(lhs.clone(), rhs.clone()),
+    &unknown,
+    &u,
+  );
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  if let Ok(c) = eval(&call("D", vec![residual.clone(), u.clone()]))
+    && crate::functions::calculus_ast::is_constant_wrt(
+      &c,
+      "\u{2620}dae\u{2620}",
+    )
+    && !matches!(c, Expr::Integer(0))
+    && let Ok(r) =
+      eval(&crate::functions::polynomial_ast::solve::substitute_expr(
+        &residual,
+        &u,
+        &Expr::Integer(0),
+      ))
+  {
+    return eval(&call(
+      "Times",
+      vec![
+        Expr::Integer(-1),
+        r,
+        call("Power", vec![c, Expr::Integer(-1)]),
+      ],
+    ))
+    .ok();
+  }
+  // A large equation that is not linear in the unknown is left to the
+  // numerical elimination rather than to an expanding `Solve`.
+  if expr_size_exceeds(eq, 400) {
+    return None;
+  }
+
+  let solved = eval(&call("Solve", vec![eq.clone(), unknown])).ok()?;
   let Expr::List(ref sols) = solved else {
     return None;
   };
@@ -4764,6 +4801,20 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
     return None;
   };
   Some(replacement.as_ref().clone())
+}
+
+/// Whether `expr` has more than `limit` nodes, counting no further than
+/// that.
+fn expr_size_exceeds(expr: &Expr, limit: usize) -> bool {
+  fn count(e: &Expr, left: &mut usize) -> bool {
+    if *left == 0 {
+      return true;
+    }
+    *left -= 1;
+    expr_children(e).into_iter().any(|c| count(c, left))
+  }
+  let mut left = limit;
+  count(expr, &mut left)
 }
 
 /// The first `fname[…]` call inside `expr`.
@@ -5066,6 +5117,58 @@ fn ndsolve_system(
     }
   }
 
+  // Index reduction: an algebraic equation whose unknowns are all
+  // differentiated elsewhere (`y[t] == x[t]^2` next to `2 x'[t] + y'[t] ==
+  // -x[t]`) determines no unknown on its own; its time derivative
+  // (`y'[t] == 2 x[t] x'[t]`) is the differential equation the integrator
+  // needs. The initial conditions already satisfy the constraint.
+  let differentiated: Vec<String> = funcs
+    .iter()
+    .filter(|f| odes.iter().any(|o| max_derivative_order(o, &f.name) > 0))
+    .map(|f| f.name.clone())
+    .collect();
+  for ode in &mut odes {
+    let mentioned: Vec<&SysFunc> = funcs
+      .iter()
+      .filter(|f| expr_mentions_function(ode, &f.name))
+      .collect();
+    // Only a constraint along the solution: an initial condition
+    // (`x[0] == 1`) mentions its unknown at a point instead of at `t`.
+    let at_variable = |f: &&SysFunc| {
+      let call_at_x = Expr::FunctionCall {
+        name: f.name.clone(),
+        args: vec![Expr::Identifier(x_name.clone())].into(),
+      };
+      crate::functions::polynomial_ast::solve::expr_contains_expr(
+        ode, &call_at_x,
+      )
+    };
+    // An equation with any derivative in it (of a mentioned unknown or not:
+    // `x'[t] == y[t]` mentions only `y` as a call) is no constraint.
+    if mentioned.is_empty()
+      || !mentioned.iter().all(at_variable)
+      || funcs.iter().any(|f| max_derivative_order(ode, &f.name) > 0)
+      || mentioned.iter().any(|f| !differentiated.contains(&f.name))
+    {
+      continue;
+    }
+    let Some((lhs, rhs)) = as_equal_pair(ode) else {
+      continue;
+    };
+    let d = |side: &Expr| {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "D",
+        vec![side.clone(), Expr::Identifier(x_name.clone())],
+      ))
+    };
+    if let (Ok(dl), Ok(dr)) = (d(lhs), d(rhs)) {
+      *ode = Expr::Comparison {
+        operands: vec![dl, dr],
+        operators: vec![ComparisonOp::Equal],
+      };
+    }
+  }
+
   // An algebraic constraint — an equation with no derivative in it — that
   // determines one unknown explicitly is eliminated: the constraint is
   // solved for that unknown, the solution substituted into the remaining
@@ -5079,6 +5182,12 @@ fn ndsolve_system(
     else {
       break;
     };
+    // Substituting one solution into the next makes the expressions swell
+    // (a distillation column's stage-by-stage equilibria); past a modest
+    // size the remaining constraints are cheaper to solve numerically.
+    if expr_size_exceeds(&solved, 300) {
+      break;
+    }
     let f = funcs.remove(fi);
     odes.remove(eq_idx);
     let target = Expr::FunctionCall {
@@ -5249,6 +5358,12 @@ fn ndsolve_system(
       let Some(f) = funcs.iter_mut().find(|f| &f.name == name) else {
         continue;
       };
+      // A value given for an algebraic unknown (`L[0] == 5` for an `L[t]`
+      // no equation differentiates) is fixed by the constraints anyway;
+      // Wolfram accepts it as the consistent starting value.
+      if f.order == 0 && *order == 0 {
+        continue;
+      }
       if *order >= f.order || f.ics[*order].is_some() {
         return Ok(None);
       }

@@ -1868,6 +1868,18 @@ first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
 leaves the region the equations are defined on.
 
+### `NDSolve` of a DAE mixing algebraic unknowns into differential equations
+
+A distillation-column model (Housam Binous's Demonstrations: holdup balances
+with `T[i]'[t]` and `y[i]'[t]` terms, vapor-liquid equilibria, and flows
+`L[t]`, `V[t]`, `D[t]` that only appear algebraically) returns `NDSolve`
+unevaluated. Index reduction (differentiating an algebraic equation whose
+unknowns are all differentiated elsewhere) and initial values for algebraic
+unknowns are handled, but an equation combining differentiated unknowns with
+the Newton-solved algebraic ones does not compile. Because `sol` then holds
+the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /. sol, …]`
+reruns it at every sample and times out.
+
 ### `NDSolve` uses a fixed grid
 
 Woxi integrates on 1000 nominal RK4 steps with bisection refinement;
