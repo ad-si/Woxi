@@ -1120,6 +1120,27 @@ mod interpreter_tests {
     );
   }
 
+  /// `Legended[g, None]` is `g` without a legend, so a body that builds
+  /// several plots and returns the picked one wrapped that way shows the
+  /// picked plot, not the last one drawn.
+  #[test]
+  fn test_displayed_graphic_through_legended_none_is_the_wrapped_plot() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Module[{p1, p2}, \
+       p1 = Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]; \
+       p2 = Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]; \
+       Legended[p1, None]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the wrapped plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
   /// `TabView[{"first" -> pane1, "second" -> pane2}]` has no single branch
   /// the way `Switch` does — a real front end keeps every pane's expression
   /// live and just *displays* the first one until the user clicks another
