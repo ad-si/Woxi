@@ -21320,6 +21320,22 @@ mod list_plot_3d {
     );
   }
 
+  // Regression: points spanning no area (collinear, here two copies of one
+  // row) draw an empty plot rather than failing.
+  #[test]
+  fn list_plot3d_collinear_points_draw_an_empty_plot() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = {{0, 0, 1}, {1, 0, 2}, {2, 0, 3}}; g = ListPlot3D[{d, d}]; \
+         {Head[g], Cases[g, _Polygon, Infinity], \
+         StringQ[ExportString[g, \"SVG\"]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {}, True}"
+    );
+  }
+
   // Regression: a flattened tensor grid of {x, y, z} triples (non-uniform
   // spacing) must plot over its real x/y extents, not over row indices.
   #[test]

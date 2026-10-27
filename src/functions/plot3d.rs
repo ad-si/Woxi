@@ -9141,11 +9141,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  if all_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "ListPlot3D: data produced no renderable triangles".into(),
-    ));
-  }
+  // Data spanning no area (every point on one line, as in two copies of
+  // the same collinear row) draws the empty box, as in wolframscript.
 
   let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
     (z_lo - 0.5, z_hi + 0.5)
