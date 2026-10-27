@@ -4284,17 +4284,13 @@ fn evaluate_expr_to_expr_uncached(
       }
       apply_replace_repeated_ast(&evaluated_expr, unwrapped)
     }
-    Expr::Map { func, list } => {
-      let evaluated_list = evaluate_expr_to_expr(list)?;
-      // Map does not hold its head: `list[[1]] /@ x` must reduce the part
-      // extraction first, as `Map[list[[1]], x]` does.
-      if matches!(func.as_ref(), Expr::Part { .. } | Expr::FunctionCall { .. })
-      {
-        let evaluated_func = evaluate_expr_to_expr(func)?;
-        return apply_map_ast(&evaluated_func, &evaluated_list);
-      }
-      apply_map_ast(func, &evaluated_list)
-    }
+    // `f /@ x` is `Map[f, x]`: one implementation, so the operator form
+    // cannot drift from the bracket form (it evaluates its head too, so
+    // `Function[…][2] /@ x` maps the function that call returns).
+    Expr::Map { func, list } => evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Map".to_string(),
+      args: vec![(**func).clone(), (**list).clone()].into(),
+    }),
     Expr::Apply { func, list } => {
       // Apply does not hold its head, so evaluate it (matching the function
       // form `Apply[f, list]`). This normalizes a compound head such as

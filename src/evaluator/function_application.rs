@@ -626,37 +626,6 @@ fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   }
 }
 
-/// Apply Map operation on AST (func /@ list)
-pub fn apply_map_ast(
-  func: &Expr,
-  list: &Expr,
-) -> Result<Expr, InterpreterError> {
-  match list {
-    Expr::List(items) => {
-      let results: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| apply_function_to_arg(func, item))
-        .collect();
-      Ok(Expr::List(results?.into()))
-    }
-    Expr::Association(items) => {
-      // Map over association applies function to values only
-      let results: Result<Vec<(Expr, Expr)>, InterpreterError> = items
-        .iter()
-        .map(|(key, val)| {
-          let new_val = apply_function_to_arg(func, val)?;
-          Ok((key.clone(), new_val))
-        })
-        .collect();
-      Ok(Expr::Association(results?))
-    }
-    // Any other expression maps over its arguments, keeping its head:
-    // `f /@ g[a, b]` is `g[f[a], f[b]]`, and an atom maps to itself.
-    // Delegating keeps the `/@` operator form and `Map[…]` from drifting.
-    _ => crate::functions::list_helpers_ast::map_ast(func, list),
-  }
-}
-
 /// Apply Apply operation on AST (func @@ list)
 pub fn apply_apply_ast(
   func: &Expr,

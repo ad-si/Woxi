@@ -3028,6 +3028,29 @@ mod map_operator_composite_head {
     );
   }
 
+  // `/@` evaluates its head like `Map[…]` does: a curried call returning a
+  // function (a pattern variable bound to `Function[{h}, Function[…]]`
+  // applied to an argument) maps that function, not the unevaluated call.
+  #[test]
+  fn map_operator_evaluates_curried_head() {
+    assert_eq!(
+      interpret("Function[{h}, Function[{n}, n^h]][2] /@ Range[3]").unwrap(),
+      "{1, 4, 9}"
+    );
+    assert_eq!(
+      interpret(
+        "w[f_] := Table[f[j - 1] /@ Range[j - 1], {j, 3, 2, -1}]; \
+         w[Function[{h}, Function[{n}, h n]]]"
+      )
+      .unwrap(),
+      "{{2, 4}, {1}}"
+    );
+    assert_eq!(
+      interpret("f /@ <|a -> 1, b :> 2|>").unwrap(),
+      "<|a -> f[1], b :> f[2]|>"
+    );
+  }
+
   // Postfix (//) and prefix (@) with a composite head also curry.
   #[test]
   fn postfix_and_prefix_composite_head() {
