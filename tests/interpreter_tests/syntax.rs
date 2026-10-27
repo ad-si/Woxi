@@ -41,6 +41,27 @@ mod dollar_in_symbol_names {
   }
 }
 
+// A name that starts like a constant (`E`, `Pi`, `Degree`) continued by any
+// letter — Greek, letterlike or private-use, not just ASCII — is a symbol of
+// its own: `Eδ` is not `E δ`. Regression: Module rejected the local variable
+// `Eδ` (HertzianContactStress).
+mod constant_prefixed_symbol_names {
+  use super::*;
+
+  #[test]
+  fn greek_letter_continues_the_name() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Module[{Eδ = 1, Eϕd = 2}, {Eδ, Eϕd}], Head[Hold[Piδ][[1]]], \
+         Length[Hold[Eδ]], E^x, 2 E}"
+      )
+      .unwrap(),
+      "{{1, 2}, Symbol, 1, E^x, 2*E}"
+    );
+  }
+}
+
 mod char_escapes {
   use super::*;
 

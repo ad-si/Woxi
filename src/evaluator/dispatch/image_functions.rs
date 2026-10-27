@@ -1133,16 +1133,13 @@ pub fn dispatch_image_functions(
       ));
     }
     "ColorConvert" if args.len() == 2 => {
-      let is_color_directive = matches!(
-        &args[0],
-        Expr::FunctionCall { name: n, .. }
-          if n == "RGBColor" || n == "GrayLevel"
-            || n == "Hue" || n == "CMYKColor"
-      );
+      // Any color directive `color_convert_ast` can read.
+      let is_color = |c: &Expr| {
+        crate::functions::image_ast::color_directive_to_rgb(c).is_some()
+      };
+      let is_color_directive = is_color(&args[0]);
       let is_color_list = matches!(&args[0], Expr::List(items)
-        if !items.is_empty() && items.iter().all(|c| matches!(c,
-          Expr::FunctionCall { name: n, .. }
-            if n == "RGBColor" || n == "GrayLevel" || n == "Hue" || n == "CMYKColor")));
+        if !items.is_empty() && items.iter().all(is_color));
       if matches!(&args[0], Expr::Image { .. })
         || is_color_directive
         || is_color_list

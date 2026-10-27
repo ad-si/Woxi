@@ -129,6 +129,15 @@ pub fn dispatch_linear_algebra_functions(
       | "DiagonalMatrixQ"
       | "UpperTriangularMatrixQ"
       | "LowerTriangularMatrixQ"
+      | "Eigensystem"
+      | "SingularValueList"
+      | "RowReduce"
+      | "LUDecomposition"
+      | "QRDecomposition"
+      | "SchurDecomposition"
+      | "CholeskyDecomposition"
+      | "MatrixExp"
+      | "MatrixPower"
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
     if args.iter().any(is_sparse) {
@@ -147,9 +156,12 @@ pub fn dispatch_linear_algebra_functions(
       // avoid recursing forever on a form we could not expand.
       if !dense.iter().any(is_sparse) {
         let result = dispatch_linear_algebra_functions(name, &dense);
-        // The inverse of a SparseArray is itself a SparseArray.
-        if name == "Inverse"
-          && let Some(Ok(inv @ Expr::List(_))) = &result
+        // The inverse, exponential and powers of a SparseArray are
+        // SparseArrays themselves.
+        if matches!(name, "Inverse" | "MatrixExp" | "MatrixPower")
+          && let Some(Ok(inv @ Expr::List(rows))) = &result
+          // `MatrixExp[m, v]` is a vector.
+          && rows.iter().all(|r| matches!(r, Expr::List(_)))
           && let Some(sparse) =
             super::list_operations::dense_to_sparse_array_with_default(
               inv,
@@ -759,8 +771,9 @@ pub fn dispatch_linear_algebra_functions(
       }
     }
     // The generalized problem `a v == λ b v`: with `b` invertible its
-    // eigenvalues are those of `Inverse[b] . a`, in the same order.
-    "Eigenvalues"
+    // eigenvalues and eigenvectors are those of `Inverse[b] . a`, in the
+    // same order.
+    "Eigenvalues" | "Eigenvectors" | "Eigensystem"
       if (1..=2).contains(&args.len())
         && let Some((a, b)) = matrix_pencil(&args[0]) =>
     {
@@ -779,13 +792,12 @@ pub fn dispatch_linear_algebra_functions(
         Ok(r) if !matches!(&r, Expr::FunctionCall { name, .. } if name == "Dot") => {
           r
         }
-        _ => return Some(Ok(crate::helpers::unevaluated("Eigenvalues", args))),
+        _ => return Some(Ok(crate::helpers::unevaluated(name, args))),
       };
       let mut new_args = vec![reduced];
       new_args.extend(args[1..].iter().cloned());
       return Some(crate::evaluator::evaluate_function_call_ast(
-        "Eigenvalues",
-        &new_args,
+        name, &new_args,
       ));
     }
     "Eigenvalues" if args.len() == 1 => {
@@ -1189,6 +1201,9 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(Expr::List(new_rows.into())));
         }
       }
+      if let Some(result) = matrix_function_by_eigensystem(&args[0], &args[1]) {
+        return Some(Ok(result));
+      }
       return uneval();
     }
     // MatrixExp[m, v] computes MatrixExp[m] . v (the action of the matrix
@@ -1330,6 +1345,21 @@ pub fn dispatch_linear_algebra_functions(
 
           return Some(Ok(result.unwrap_or(mat.clone())));
         }
+      }
+      // A non-integer numeric power is a matrix function of the matrix:
+      // `MatrixPower[m, 1/2]` is the principal square root.
+      if crate::functions::predicate_ast::number_q_ast(std::slice::from_ref(
+        &args[1],
+      ))
+      .is_ok_and(|q| matches!(q, Expr::Identifier(ref t) if t == "True"))
+        && let Some(result) = matrix_function_by_eigensystem(
+          &Expr::Function {
+            body: Box::new(call("Power", vec![Expr::Slot(1), args[1].clone()])),
+          },
+          &args[0],
+        )
+      {
+        return Some(Ok(result));
       }
       // Symbolic n with a matrix that splits (after a row/column
       // permutation) into multiple connected components: handle each
@@ -5067,4 +5097,77 @@ fn matrix_pencil(e: &Expr) -> Option<(Expr, Expr)> {
     .then_some(n)
   };
   (square(a)? == square(b)?).then(|| (a.clone(), b.clone()))
+}
+
+/// `f(m)` for a diagonalizable matrix with distinct eigenvalues: with
+/// `m = V D V^-1` (eigenvectors as the columns of `V`), `f(m)` is
+/// `V f(D) V^-1`. Exact entries come back expanded (`1/2 + Sqrt[3]/2`), as
+/// Wolfram writes them. `None` when an eigenvalue repeats or the
+/// eigensystem does not evaluate.
+fn matrix_function_by_eigensystem(f: &Expr, m: &Expr) -> Option<Expr> {
+  let Expr::List(rows) = m else { return None };
+  let n = rows.len();
+  if n == 0 {
+    return None;
+  }
+  let system = evaluate_expr_to_expr(&call1("Eigensystem", m.clone())).ok()?;
+  let Expr::List(parts) = &system else {
+    return None;
+  };
+  let [Expr::List(values), Expr::List(vectors)] = parts.as_slice() else {
+    return None;
+  };
+  if values.len() != n || vectors.len() != n {
+    return None;
+  }
+  let numeric: Vec<(f64, f64)> = values
+    .iter()
+    .map(|v| {
+      let nv = evaluate_expr_to_expr(&call1("N", v.clone())).ok()?;
+      crate::functions::math_ast::try_extract_complex_float(&nv)
+    })
+    .collect::<Option<_>>()?;
+  for i in 0..n {
+    for j in 0..i {
+      let (a, b) = (numeric[i], numeric[j]);
+      let scale = 1.0 + a.0.hypot(a.1).max(b.0.hypot(b.1));
+      if (a.0 - b.0).hypot(a.1 - b.1) <= 1e-10 * scale {
+        return None;
+      }
+    }
+  }
+  let applied: Vec<Expr> = values
+    .iter()
+    .map(|v| {
+      crate::evaluator::function_application::apply_function_to_arg(f, v).ok()
+    })
+    .collect::<Option<_>>()?;
+  let v = call1("Transpose", Expr::List(vectors.clone()));
+  let product = call(
+    "Dot",
+    vec![
+      v.clone(),
+      call1("DiagonalMatrix", Expr::List(applied.into())),
+      call1("Inverse", v),
+    ],
+  );
+  let result = evaluate_expr_to_expr(&product).ok()?;
+  let result = if crate::functions::math_ast::contains_inexact_real(&result) {
+    result
+  } else {
+    evaluate_expr_to_expr(&call(
+      "Map",
+      vec![
+        id_expr("Expand"),
+        result,
+        Expr::List(vec![Expr::Integer(2)].into()),
+      ],
+    ))
+    .ok()?
+  };
+  // Every entry must have come out as a value.
+  let Expr::List(out_rows) = &result else {
+    return None;
+  };
+  (out_rows.len() == n).then_some(result)
 }

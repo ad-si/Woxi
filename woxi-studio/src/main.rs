@@ -1999,10 +1999,9 @@ impl WoxiStudio {
         if animation_tick_is_fresh(tick_at, self.last_anim_advance) {
           for editor in &mut self.cell_editors {
             if let Some(state) = editor.manipulate_state.as_mut()
-              && state.animated
-              && state.playing
+              && state.wants_tick()
             {
-              state.advance_animation();
+              state.tick();
             }
           }
           self.last_anim_advance = Some(std::time::Instant::now());
@@ -2542,11 +2541,11 @@ impl WoxiStudio {
     }
     // While any Animate/ListAnimate widget is playing, tick its animation
     // forward. One shared timer drives all playing widgets.
-    if self.cell_editors.iter().any(|e| {
-      e.manipulate_state
-        .as_ref()
-        .is_some_and(|s| s.animated && s.playing)
-    }) {
+    if self
+      .cell_editors
+      .iter()
+      .any(|e| e.manipulate_state.as_ref().is_some_and(|s| s.wants_tick()))
+    {
       subs.push(
         iced::time::every(std::time::Duration::from_millis(ANIM_INTERVAL_MS))
           .map(Message::ManipulateAnimationTick),
@@ -7596,6 +7595,42 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`pts$$ = {{-3, -3}, {2, -2}, {4, 2},
       .expect("the stored Manipulate must instantiate on load");
     assert!(widget.error.is_none(), "{:?}", widget.error);
     assert!(widget.graphics_handle.is_some(), "the diagrams must render");
+  }
+  /// A spinning-disks Manipulate wraps its picture in `Dynamic@DynamicModule`
+  /// with locals that the inner `Dynamic` advances (`s = s + sam`), colors the
+  /// rings from an indexed `ColorData[c, r]` scheme, and labels its controls
+  /// (`{sam, 1, "speed"}`, a `False/True` "run" toggle). The widget must
+  /// instantiate and draw the rings.
+  #[test]
+  fn dynamic_module_spinning_rings_manipulate_renders() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Dynamic@DynamicModule[{q = 6, s = 0}, Dynamic[If[gg, s = s + sam]; Graphics[Flatten[Table[{With[{qq = 1/(2^(q - r))}, Table[{If[c == 0, Hue[r/(q - 1)], ColorData[c, r]], Disk[{0, 0}, q - r, {s + a 2 Pi - qq, s + a 2 Pi + qq}]}, {a, qq, 1, qq}]], GrayLevel[b], Disk[{0, 0}, q - r - 1]}, {r, 1, q - 1}]], ImageSize -> Medium, Background -> GrayLevel[b], PlotRange -> All]]], {{sam, 1, \"speed\"}, 0, Pi}, {{gg, False, \"run\"}, {False, True}}, {{c, 43, \"color\"}, 0, 43, 1, ControlPlacement -> Left, ImageSize -> Tiny}, {{b, .5, \"background\"}, 0, 1, ControlPlacement -> Left, ImageSize -> Tiny}, ControlPlacement -> Top, AutorunSequencing -> {2, 3, 4}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`sam$$ = 1, $CellContext`gg$$ = False, $CellContext`c$$ = 43, $CellContext`b$$ = 0.5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the rings must render");
+    let mut widget = widget;
+    widget.apply_saved_variables(&[("gg".to_string(), "True".to_string())]);
+    widget.reevaluate();
+    let s1 = widget.state.iter().find(|(n, _)| n == "s").cloned();
+    widget.reevaluate();
+    let s2 = widget.state.iter().find(|(n, _)| n == "s").cloned();
+    assert_ne!(s1, s2, "running must advance the rotation");
+    assert!(
+      widget.wants_tick(),
+      "a running spinner is driven by the timer"
+    );
+    widget.apply_saved_variables(&[("gg".to_string(), "False".to_string())]);
+    widget.reevaluate();
+    assert!(!widget.wants_tick(), "a stopped spinner needs no timer");
   }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered

@@ -4296,6 +4296,41 @@ pub fn dispatch_math_functions(
     "DMSList" if args.len() == 1 => {
       let val =
         evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+      // An angle Quantity or a DMS string stands for its decimal degrees.
+      let degrees = match &val {
+        Expr::String(s) => crate::functions::geo_math::dms_string_degrees(s),
+        Expr::FunctionCall { name, args: q }
+          if name == "Quantity"
+            && q.len() == 2
+            && matches!(&q[1], Expr::String(u) if u == "AngularDegrees") =>
+        {
+          Some(q[0].clone())
+        }
+        Expr::FunctionCall { name, args: q }
+          if name == "Quantity"
+            && q.len() == 2
+            && matches!(&q[1], Expr::String(u) if u == "Radians") =>
+        {
+          evaluate_expr_to_expr(&times(vec![
+            q[0].clone(),
+            Expr::Integer(180),
+            call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
+          ]))
+          .ok()
+        }
+        _ => None,
+      };
+      if let Some(degrees) = degrees {
+        return Some(evaluate_expr_to_expr(&call1("DMSList", degrees)));
+      }
+      // A machine number splits into whole degrees and minutes, the rest
+      // going to the seconds, each part carrying the sign.
+      if let Expr::Real(x) = &val {
+        let (d, m, s) = dms_parts_f64(*x);
+        return Some(Ok(Expr::List(
+          vec![Expr::Integer(d), Expr::Integer(m), Expr::Real(s)].into(),
+        )));
+      }
 
       // List input: combine into decimal degrees first, then re-emit.
       if let Expr::List(items) = &val
@@ -4310,16 +4345,8 @@ pub fn dispatch_math_functions(
           let m_num = crate::functions::math_ast::try_eval_to_f64(&items[1]);
           let s_num = crate::functions::math_ast::try_eval_to_f64(&items[2]);
           if let (Some(dv), Some(mv), Some(sv)) = (d_num, m_num, s_num) {
-            let total_deg = dv + mv / 60.0 + sv / 3600.0;
-            let sign = if total_deg < 0.0 { -1.0 } else { 1.0 };
-            let abs_deg = total_deg.abs();
-            let d_part = abs_deg.trunc();
-            let min_total = (abs_deg - d_part) * 60.0;
-            let m_part = min_total.trunc();
-            let s_part = (min_total - m_part) * 60.0;
-            let d_i = (sign * d_part) as i128;
-            let m_i = (sign * m_part) as i128;
-            let s_real = sign * s_part;
+            let (d_i, m_i, s_real) =
+              dms_parts_f64(dv + mv / 60.0 + sv / 3600.0);
             return Some(Ok(Expr::List(
               vec![Expr::Integer(d_i), Expr::Integer(m_i), Expr::Real(s_real)]
                 .into(),
@@ -4609,6 +4636,14 @@ pub fn dispatch_math_functions(
         // FromDMS[n] where n is just degrees
         Expr::Integer(_) | Expr::Real(_) => {
           return Some(Ok(args[0].clone()));
+        }
+        // `FromDMS["30°15'50\""]`, `FromDMS["30d15m50s"]`.
+        Expr::String(s) => {
+          if let Some(degrees) =
+            crate::functions::geo_math::dms_string_degrees(s)
+          {
+            return Some(Ok(degrees));
+          }
         }
         _ => {}
       }
@@ -7240,5 +7275,21 @@ fn resample_array(expr: &Expr, dims: &[usize]) -> Expr {
       .map(|child| resample_array(child, &dims[1..]))
       .collect::<Vec<_>>()
       .into(),
+  )
+}
+
+/// Decimal degrees as whole degrees, whole minutes and the remaining
+/// seconds, each carrying the sign of the angle.
+fn dms_parts_f64(total_deg: f64) -> (i128, i128, f64) {
+  let sign = if total_deg < 0.0 { -1.0 } else { 1.0 };
+  let abs_deg = total_deg.abs();
+  let d_part = abs_deg.trunc();
+  let min_total = (abs_deg - d_part) * 60.0;
+  let m_part = min_total.trunc();
+  let s_part = (min_total - m_part) * 60.0;
+  (
+    (sign * d_part) as i128,
+    (sign * m_part) as i128,
+    sign * s_part,
   )
 }

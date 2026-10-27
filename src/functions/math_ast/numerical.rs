@@ -4754,6 +4754,15 @@ fn fourier_impl(
     )));
   }
 
+  // A SparseArray stands for the dense array it represents.
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(&args[0])
+  {
+    let mut dense_args = args.to_vec();
+    dense_args[0] = dense;
+    return fourier_impl(func_name, &dense_args, inverse);
+  }
+
   let items = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
     _ => {
@@ -7356,7 +7365,7 @@ fn bandstop_kernel(n: usize, omega1: f64, omega2: f64) -> Vec<f64> {
 /// I]] for residual imaginary parts) on success and `None` for shapes that
 /// don't fit — letting the caller fall back to the generic recursive `N`.
 fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
-  use crate::functions::polynomial_ast::extract_poly_coeffs;
+  use crate::functions::polynomial_ast::extract_poly_coeffs_big as extract_poly_coeffs;
   // poly_arg should be a Function whose body is a polynomial in #1.
   let poly_body = match poly_arg {
     Expr::Function { body } => body.as_ref(),
@@ -7375,7 +7384,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   if coeffs_i.len() < 2 {
     return None;
   }
-  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
   let roots = aberth_complex_roots(&coeffs_f);
   if roots.is_empty() {
     return None;
@@ -7414,8 +7423,8 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
 fn root_coeffs_and_seed(
   poly_arg: &Expr,
   k_arg: &Expr,
-) -> Option<(Vec<i128>, bool, f64, f64)> {
-  use crate::functions::polynomial_ast::extract_poly_coeffs;
+) -> Option<(Vec<num_bigint::BigInt>, bool, f64, f64)> {
+  use crate::functions::polynomial_ast::extract_poly_coeffs_big as extract_poly_coeffs;
   let k = expr_to_i128(k_arg)?;
   if k < 1 {
     return None;
@@ -7447,7 +7456,7 @@ fn root_coeffs_and_seed(
   if coeffs_i.len() < 2 {
     return None;
   }
-  let coeffs_f: Vec<f64> = coeffs_i.iter().map(|&c| c as f64).collect();
+  let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
   let mut roots = aberth_complex_roots(&coeffs_f);
   if roots.is_empty() || (k as usize) > roots.len() {
     return None;
@@ -7471,23 +7480,76 @@ fn root_coeffs_and_seed(
   Some((coeffs_i, is_real(re, im), re, im))
 }
 
+/// Integer polynomial coefficients as machine numbers; `None` when one
+/// overflows a double.
+fn bigint_coeffs_to_f64(coeffs: &[num_bigint::BigInt]) -> Option<Vec<f64>> {
+  use num_traits::ToPrimitive;
+  coeffs
+    .iter()
+    .map(|c| c.to_f64().filter(|v| v.is_finite()))
+    .collect()
+}
+
+/// An integer coefficient as a `bits`-precision BigFloat.
+fn bigint_to_bigfloat(
+  c: &num_bigint::BigInt,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> astro_float::BigFloat {
+  use num_traits::ToPrimitive;
+  match c.to_i128() {
+    Some(small) => astro_float::BigFloat::from_i128(small, bits),
+    None => match astro_float::Consts::new() {
+      Ok(mut cc) => astro_float::BigFloat::parse(
+        &c.to_string(),
+        astro_float::Radix::Dec,
+        bits,
+        rm,
+        &mut cc,
+      ),
+      Err(_) => astro_float::BigFloat::nan(None),
+    },
+  }
+}
+
 /// `N[Root[poly &, k]]`: the k-th root of the polynomial `poly`, ordered as
 /// wolframscript does — real roots first in increasing order, then the
 /// non-real roots by increasing real part and then increasing imaginary part.
 /// Returns the root as a `Real` (or `Plus[Real, Times[Real, I]]` for complex
 /// roots), or `None` when the shape doesn't fit.
 pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
-  let (_, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
+  // A polyhedron's coordinates repeat the same few `Root[…]` numbers many
+  // times, and each one costs a root finder and a BigFloat refinement.
+  thread_local! {
+    static ROOT_VALUES: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let key = (expr_to_string(poly_arg), expr_to_string(k_arg));
+  if let Some(hit) = ROOT_VALUES.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let value = root_n_eval_uncached(poly_arg, k_arg);
+  ROOT_VALUES.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= 4096 {
+      c.clear();
+    }
+    c.insert(key, value.clone());
+  });
+  value
+}
+
+fn root_n_eval_uncached(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
+  let (coeffs, is_real, re, im) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if is_real {
     // The machine seed can be an ulp off; Wolfram's is correctly rounded.
-    let refined = root_n_eval_arbitrary(
-      poly_arg,
-      k_arg,
-      128,
-      astro_float::RoundingMode::ToEven,
-    )
-    .and_then(|bf| bigfloat_to_f64_approx(&bf))
-    .filter(|v| v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0));
+    let refined =
+      refine_real_root(&coeffs, re, 128, astro_float::RoundingMode::ToEven)
+        .and_then(|bf| bigfloat_to_f64_approx(&bf))
+        .filter(|v| {
+          v.is_finite() && (v - re).abs() <= 1e-9 * re.abs().max(1.0)
+        });
     Some(Expr::Real(refined.unwrap_or(re)))
   } else {
     Some(plus(vec![
@@ -7509,11 +7571,22 @@ pub(crate) fn root_n_eval_arbitrary(
   bits: usize,
   rm: astro_float::RoundingMode,
 ) -> Option<astro_float::BigFloat> {
-  use astro_float::BigFloat;
   let (coeffs_i, is_real, re0, _im0) = root_coeffs_and_seed(poly_arg, k_arg)?;
   if !is_real {
     return None;
   }
+  refine_real_root(&coeffs_i, re0, bits, rm)
+}
+
+/// Newton-refine the real root seed `re0` of the integer polynomial
+/// `coeffs_i` to `bits` of working precision.
+fn refine_real_root(
+  coeffs_i: &[num_bigint::BigInt],
+  re0: f64,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
   // A couple of guard words above the target precision so the Newton
   // iterates (and the Horner evaluation of p/p' at each step) don't lose
   // the last few bits to rounding before the final result is rounded down
@@ -7521,7 +7594,7 @@ pub(crate) fn root_n_eval_arbitrary(
   let wbits = bits + 64;
   let coeffs_bf: Vec<BigFloat> = coeffs_i
     .iter()
-    .map(|&c| BigFloat::from_i128(c, wbits))
+    .map(|c| bigint_to_bigfloat(c, wbits, rm))
     .collect();
   let n = coeffs_bf.len() - 1;
   let eval = |x: &BigFloat| -> (BigFloat, BigFloat) {
@@ -7566,7 +7639,7 @@ pub(crate) fn root_n_eval_arbitrary_complex(
   let wbits = bits + 64;
   let coeffs: Vec<BigFloat> = coeffs_i
     .iter()
-    .map(|&c| BigFloat::from_i128(c, wbits))
+    .map(|c| bigint_to_bigfloat(c, wbits, rm))
     .collect();
   let n = coeffs.len() - 1;
   let zero = || BigFloat::from_i32(0, wbits);

@@ -842,11 +842,92 @@ fn eval_dispatch_condition(
   evaluate_expr_to_expr(substituted_cond)
 }
 
+/// A `NumericArray[data, type]` stands for the array `data`: Wolfram's
+/// structural list functions work on that array and give a NumericArray of
+/// the same type back (`Take`, `Reverse`, `Part` of a row, …), and a few
+/// summaries give plain values (`Total`, `Max`, `Length`). Functions that
+/// traverse the elements (`Map`, `Sort`, `Mean`) are not listed: Wolfram
+/// refuses those. `None` when no argument is a NumericArray.
+fn numeric_array_list_operation(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  const STRUCTURAL: &[&str] = &[
+    "Take",
+    "Drop",
+    "Reverse",
+    "Transpose",
+    "First",
+    "Last",
+    "Rest",
+    "Most",
+    "Part",
+    "Flatten",
+    "RotateLeft",
+    "RotateRight",
+    "ArrayReshape",
+    "Differences",
+    "Join",
+  ];
+  const VALUES: &[&str] = &["Total", "Max", "Min", "Length"];
+  let structural = STRUCTURAL.contains(&name);
+  if !structural && !VALUES.contains(&name) {
+    return None;
+  }
+  let payload = |e: &Expr| match e {
+    Expr::FunctionCall { name, args: na }
+      if name == "NumericArray"
+        && (na.len() == 1 || na.len() == 2)
+        && matches!(&na[0], Expr::List(_)) =>
+    {
+      Some((na[0].clone(), na.get(1).cloned()))
+    }
+    _ => None,
+  };
+  let mut array_type = None;
+  let mut found = false;
+  let dense: Vec<Expr> = args
+    .iter()
+    .map(|a| match payload(a) {
+      Some((data, ty)) => {
+        found = true;
+        if array_type.is_none() {
+          array_type = ty;
+        }
+        data
+      }
+      None => a.clone(),
+    })
+    .collect();
+  // Only the array argument itself: `Take[list, na]` is not this, and Join
+  // joins NumericArrays with each other only.
+  if !found
+    || payload(&args[0]).is_none()
+    || (name == "Join" && !args.iter().all(|a| payload(a).is_some()))
+  {
+    return None;
+  }
+  let result = match evaluate_function_call_ast(name, &dense) {
+    Ok(r) => r,
+    Err(e) => return Some(Err(e)),
+  };
+  if structural && matches!(result, Expr::List(_)) {
+    let mut wrap = vec![result];
+    wrap.extend(array_type);
+    return Some(evaluate_function_call_ast("NumericArray", &wrap));
+  }
+  Some(Ok(result))
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
+
+  if let Some(result) = numeric_array_list_operation(name, args) {
+    return result;
+  }
 
   // Legacy standard-distribution package functions whose modern built-in
   // equivalent lives under a different name. Woxi keeps every built-in in
@@ -5460,15 +5541,17 @@ fn evaluate_function_call_ast_inner(
   // HorizontalGauge[value, {min, max}, opts...] or
   // HorizontalGauge[{value1, value2, …}, {min, max}, opts...] → Graphics bar
   // showing one or more values on a horizontal scale from `min` to `max`.
-  // Each value is drawn as a vertical marker bar at its position along the
-  // track, like AngularGauge's needle but on a linear rather than angular
-  // scale. Options are kept on the resulting Graphics so wolframscript's
-  // `-Graphics-` placeholder is produced for callers that just check the
-  // head.
+  // Each value is drawn as a marker bar at its position along the track,
+  // like AngularGauge's needle but on a linear rather than angular scale.
+  // VerticalGauge is the same gauge stood upright. Options are kept on the
+  // resulting Graphics so wolframscript's `-Graphics-` placeholder is
+  // produced for callers that just check the head.
   //
   // The range is optional — `HorizontalGauge[value]` gauges against
   // `{0, 1}`, as wolframscript does.
-  if name == "HorizontalGauge" && !args.is_empty() {
+  if (name == "HorizontalGauge" || name == "VerticalGauge") && !args.is_empty()
+  {
+    let vertical = name == "VerticalGauge";
     let values: Vec<f64> = match &args[0] {
       Expr::List(items) => items
         .iter()
@@ -5479,15 +5562,18 @@ fn evaluate_function_call_ast_inner(
         .collect(),
     };
     let (lo, hi) = gauge_range(args.get(1));
+    // A point at `along` the track and `across` it.
+    let pt = |along: f64, across: f64| {
+      let (x, y) = if vertical {
+        (across, along)
+      } else {
+        (along, across)
+      };
+      Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+    };
     let mut primitives: Vec<Expr> = Vec::new();
     // Track: a shallow rectangle spanning the full scale.
-    primitives.push(call(
-      "Rectangle",
-      vec![
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-        Expr::List(vec![Expr::Integer(1), Expr::Real(0.2)].into()),
-      ],
-    ));
+    primitives.push(call("Rectangle", vec![pt(0.0, 0.0), pt(1.0, 0.2)]));
     // One marker bar per value, at its normalized position along the track.
     if let (Some(lo), Some(hi)) = (lo, hi)
       && hi != lo
@@ -5496,13 +5582,7 @@ fn evaluate_function_call_ast_inner(
         let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
         primitives.push(call1(
           "Line",
-          Expr::List(
-            vec![
-              Expr::List(vec![Expr::Real(t), Expr::Integer(0)].into()),
-              Expr::List(vec![Expr::Real(t), Expr::Real(0.2)].into()),
-            ]
-            .into(),
-          ),
+          Expr::List(vec![pt(t, 0.0), pt(t, 0.2)].into()),
         ));
       }
     }
@@ -5572,6 +5652,14 @@ fn evaluate_function_call_ast_inner(
   // (e.g. MeshCellStyle) through to the result.
   if name == "ConvexHullMesh" && !args.is_empty() {
     return crate::functions::convex_hull::convex_hull_mesh_ast(args);
+  }
+
+  // The legacy package's DistanceMatrix[data, DistanceFunction -> f] is the
+  // built-in DistanceMatrix.
+  if name == "HierarchicalClustering`DistanceMatrix"
+    && (args.len() == 1 || args.len() == 2)
+  {
+    return crate::functions::list_helpers_ast::distance_matrix_ast(args);
   }
 
   // ComputationalGeometry`ConvexHull[{{x1,y1},...}] → indices of the hull
@@ -12142,6 +12230,7 @@ fn evaluate_function_call_ast_inner(
         | "Matrices"
         // A sound primitive: inert data that `Sound` plays.
         | "SampledSoundList"
+        | "SampledSoundFunction"
         // A kernel density estimate: PDF, CDF, Mean and Variance read it.
         | "SmoothKernelDistribution"
     )

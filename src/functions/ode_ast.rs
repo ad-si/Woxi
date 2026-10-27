@@ -4749,11 +4749,48 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
     }
   }
 
-  let solved = crate::evaluator::evaluate_expr_to_expr(&call(
-    "Solve",
-    vec![eq.clone(), unknown],
-  ))
-  .ok()?;
+  // An equation linear in the unknown, `c u + r == 0` with `c` free of it,
+  // gives `-r/c` straight away. `Solve` would get the same answer, but it
+  // expands everything first, which is what makes the growing equations of
+  // a large DAE (a distillation column's dozens of stages) stop scaling.
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let u = Expr::Identifier("\u{2620}dae\u{2620}".to_string());
+  let residual = crate::functions::polynomial_ast::solve::substitute_expr(
+    &crate::helpers::minus2(lhs.clone(), rhs.clone()),
+    &unknown,
+    &u,
+  );
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  if let Ok(c) = eval(&call("D", vec![residual.clone(), u.clone()]))
+    && crate::functions::calculus_ast::is_constant_wrt(
+      &c,
+      "\u{2620}dae\u{2620}",
+    )
+    && !matches!(c, Expr::Integer(0))
+    && let Ok(r) =
+      eval(&crate::functions::polynomial_ast::solve::substitute_expr(
+        &residual,
+        &u,
+        &Expr::Integer(0),
+      ))
+  {
+    return eval(&call(
+      "Times",
+      vec![
+        Expr::Integer(-1),
+        r,
+        call("Power", vec![c, Expr::Integer(-1)]),
+      ],
+    ))
+    .ok();
+  }
+  // A large equation that is not linear in the unknown is left to the
+  // numerical elimination rather than to an expanding `Solve`.
+  if expr_size_exceeds(eq, 400) {
+    return None;
+  }
+
+  let solved = eval(&call("Solve", vec![eq.clone(), unknown])).ok()?;
   let Expr::List(ref sols) = solved else {
     return None;
   };
@@ -4764,6 +4801,20 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
     return None;
   };
   Some(replacement.as_ref().clone())
+}
+
+/// Whether `expr` has more than `limit` nodes, counting no further than
+/// that.
+fn expr_size_exceeds(expr: &Expr, limit: usize) -> bool {
+  fn count(e: &Expr, left: &mut usize) -> bool {
+    if *left == 0 {
+      return true;
+    }
+    *left -= 1;
+    expr_children(e).into_iter().any(|c| count(c, left))
+  }
+  let mut left = limit;
+  count(expr, &mut left)
 }
 
 /// The first `fname[…]` call inside `expr`.
@@ -5066,6 +5117,58 @@ fn ndsolve_system(
     }
   }
 
+  // Index reduction: an algebraic equation whose unknowns are all
+  // differentiated elsewhere (`y[t] == x[t]^2` next to `2 x'[t] + y'[t] ==
+  // -x[t]`) determines no unknown on its own; its time derivative
+  // (`y'[t] == 2 x[t] x'[t]`) is the differential equation the integrator
+  // needs. The initial conditions already satisfy the constraint.
+  let differentiated: Vec<String> = funcs
+    .iter()
+    .filter(|f| odes.iter().any(|o| max_derivative_order(o, &f.name) > 0))
+    .map(|f| f.name.clone())
+    .collect();
+  for ode in &mut odes {
+    let mentioned: Vec<&SysFunc> = funcs
+      .iter()
+      .filter(|f| expr_mentions_function(ode, &f.name))
+      .collect();
+    // Only a constraint along the solution: an initial condition
+    // (`x[0] == 1`) mentions its unknown at a point instead of at `t`.
+    let at_variable = |f: &&SysFunc| {
+      let call_at_x = Expr::FunctionCall {
+        name: f.name.clone(),
+        args: vec![Expr::Identifier(x_name.clone())].into(),
+      };
+      crate::functions::polynomial_ast::solve::expr_contains_expr(
+        ode, &call_at_x,
+      )
+    };
+    // An equation with any derivative in it (of a mentioned unknown or not:
+    // `x'[t] == y[t]` mentions only `y` as a call) is no constraint.
+    if mentioned.is_empty()
+      || !mentioned.iter().all(at_variable)
+      || funcs.iter().any(|f| max_derivative_order(ode, &f.name) > 0)
+      || mentioned.iter().any(|f| !differentiated.contains(&f.name))
+    {
+      continue;
+    }
+    let Some((lhs, rhs)) = as_equal_pair(ode) else {
+      continue;
+    };
+    let d = |side: &Expr| {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "D",
+        vec![side.clone(), Expr::Identifier(x_name.clone())],
+      ))
+    };
+    if let (Ok(dl), Ok(dr)) = (d(lhs), d(rhs)) {
+      *ode = Expr::Comparison {
+        operands: vec![dl, dr],
+        operators: vec![ComparisonOp::Equal],
+      };
+    }
+  }
+
   // An algebraic constraint — an equation with no derivative in it — that
   // determines one unknown explicitly is eliminated: the constraint is
   // solved for that unknown, the solution substituted into the remaining
@@ -5079,6 +5182,12 @@ fn ndsolve_system(
     else {
       break;
     };
+    // Substituting one solution into the next makes the expressions swell
+    // (a distillation column's stage-by-stage equilibria); past a modest
+    // size the remaining constraints are cheaper to solve numerically.
+    if expr_size_exceeds(&solved, 300) {
+      break;
+    }
     let f = funcs.remove(fi);
     odes.remove(eq_idx);
     let target = Expr::FunctionCall {
@@ -5249,6 +5358,12 @@ fn ndsolve_system(
       let Some(f) = funcs.iter_mut().find(|f| &f.name == name) else {
         continue;
       };
+      // A value given for an algebraic unknown (`L[0] == 5` for an `L[t]`
+      // no equation differentiates) is fixed by the constraints anyway;
+      // Wolfram accepts it as the consistent starting value.
+      if f.order == 0 && *order == 0 {
+        continue;
+      }
       if *order >= f.order || f.ics[*order].is_some() {
         return Ok(None);
       }
@@ -5422,26 +5537,27 @@ fn ndsolve_system(
       }
     }
     // An equation that holds the highest derivative only implicitly
-    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it.
-    if !highest.iter().any(|(name, _, _)| *name == f.name) {
+    // (`5 g Sin[θ[t]] + 7 r θ''[t] == 0`) is solved for it — only when an
+    // event asks for that derivative, since solving a large equation is
+    // costly.
+    fn find_node(e: &Expr, name: &str, order: usize, x: &str) -> Option<Expr> {
+      if let Some((k, Expr::Identifier(ref p))) =
+        extract_derivative_order_and_point(e, name)
+        && k == order
+        && p == x
+      {
+        return Some(e.clone());
+      }
+      expr_children(e)
+        .into_iter()
+        .find_map(|c| find_node(c, name, order, x))
+    }
+    if !highest.iter().any(|(name, _, _)| *name == f.name)
+      && raw_state_events
+        .iter()
+        .any(|ev| find_node(&ev.condition, &f.name, f.order, x_name).is_some())
+    {
       for ode in &odes {
-        fn find_node(
-          e: &Expr,
-          name: &str,
-          order: usize,
-          x: &str,
-        ) -> Option<Expr> {
-          if let Some((k, Expr::Identifier(ref p))) =
-            extract_derivative_order_and_point(e, name)
-            && k == order
-            && p == x
-          {
-            return Some(e.clone());
-          }
-          expr_children(e)
-            .into_iter()
-            .find_map(|c| find_node(c, name, order, x))
-        }
         let Some(node) = find_node(ode, &f.name, f.order, x_name) else {
           continue;
         };
@@ -6601,6 +6717,10 @@ fn integrate_leg(
         && state_events.events.is_empty()
         && !dde_active()
         && !funcs.iter().any(|f| f.order == 0)
+        // A right-hand side that solves a system at every evaluation makes
+        // an adaptive leg crawling towards a singular point prohibitively
+        // slow; such a leg stops where RK4 did.
+        && !residuals.iter().any(NumFn::is_costly)
       {
         let rhs = |xv: f64, s: &[f64]| {
           Ok(system_derivative(
@@ -6613,9 +6733,12 @@ fn integrate_leg(
           ))
         };
         // An adaptive explicit step first (a fast transient the grid
-        // missed), then the stiff method.
+        // missed), handing a stiff system to the stiff method as soon as
+        // the explicit steps detect it; when the stiff method fails too
+        // (fast spikes rather than stiffness), the explicit steps run to
+        // the end after all.
         if let Some(adaptive_points) =
-          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to)?
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, true)?
         {
           return Ok(Some(adaptive_points));
         }
@@ -6624,11 +6747,19 @@ fn integrate_leg(
         {
           return Ok(Some(stiff_points));
         }
+        if let Some(adaptive_points) =
+          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, false)?
+        {
+          return Ok(Some(adaptive_points));
+        }
       }
       if points.len() > 1 {
+        // Named by the independent variable (`At t == 1.002`), as Wolfram
+        // reports it.
         crate::emit_message(&format!(
-          "NDSolve::ndsz: At x == {x}, step size is effectively zero; \
-           singularity or stiff system suspected."
+          "NDSolve::ndsz: At {x_name} == {}, step size is effectively zero; \
+           singularity or stiff system suspected.",
+          crate::syntax::expr_to_string(&Expr::Real(x))
         ));
       }
       return Ok(if points.len() > 1 { Some(points) } else { None });
@@ -7604,6 +7735,17 @@ enum NumFn {
 }
 
 impl NumFn {
+  /// Whether each evaluation solves an algebraic system by Newton
+  /// iteration (an index-1 DAE's constraints) or goes through the symbolic
+  /// evaluator — too costly for the thousands of evaluations an adaptive
+  /// leg spends near a singular point.
+  fn is_costly(&self) -> bool {
+    match self {
+      Self::Compiled(e) => e.has_implicit(),
+      Self::Symbolic { .. } => true,
+    }
+  }
+
   fn new(expr: Expr, var_names: &[String]) -> Self {
     match compile_numeric(&expr, var_names) {
       Some(compiled) => Self::Compiled(compiled),
@@ -7721,9 +7863,11 @@ enum NExpr {
     guess: std::cell::RefCell<Vec<f64>>,
     init: Vec<f64>,
     /// The last solve: the first `key_len` variables it was solved at and
-    /// the root found. Shared by every residual of a system, which are
-    /// evaluated at the same point one after another.
-    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Vec<f64>)>>>,
+    /// the root found, or `None` where Newton failed. Shared by every
+    /// residual of a system, which are evaluated at the same point one
+    /// after another — a failure is remembered too, since retrying it costs
+    /// a full failing Newton run per residual.
+    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Option<Vec<f64>>)>>>,
     key_len: usize,
     body: Box<Self>,
   },
@@ -7837,6 +7981,33 @@ fn solve_dense(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 }
 
 impl NExpr {
+  /// Whether an `Implicit` (Newton-solved) node appears anywhere inside.
+  fn has_implicit(&self) -> bool {
+    match self {
+      Self::Implicit { .. } => true,
+      Self::Add(items) | Self::Mul(items) => {
+        items.iter().any(Self::has_implicit)
+      }
+      Self::Pow(a, b) | Self::Fn2(_, a, b) => {
+        a.has_implicit() || b.has_implicit()
+      }
+      Self::Neg(a) | Self::Fn1(_, a) => a.has_implicit(),
+      Self::If {
+        lhs,
+        rhs,
+        then,
+        otherwise,
+        ..
+      } => [lhs, rhs, then, otherwise].iter().any(|e| e.has_implicit()),
+      Self::Interp1D { arg, .. } => arg.has_implicit(),
+      Self::Const(_)
+      | Self::Var(_)
+      | Self::External { .. }
+      | Self::ComplexReal(_)
+      | Self::Delayed { .. } => false,
+    }
+  }
+
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
       Self::Implicit {
@@ -7862,12 +8033,14 @@ impl NExpr {
           let start = guess.borrow().clone();
           let root = newton_system(constraints, &mut local, *slot, &start)
             .or_else(|| newton_system(constraints, &mut local, *slot, init));
-          let Some(root) = root else {
-            return f64::NAN;
-          };
-          guess.borrow_mut().clone_from(&root);
+          if let Some(ref root) = root {
+            guess.borrow_mut().clone_from(root);
+          }
           *memo.borrow_mut() = Some((key.to_vec(), root.clone()));
           root
+        };
+        let Some(root) = root else {
+          return f64::NAN;
         };
         local[*slot..*slot + root.len()].copy_from_slice(&root);
         body.eval(&local)

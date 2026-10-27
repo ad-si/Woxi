@@ -7,6 +7,8 @@ use super::*;
 pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
   match name {
     "Abs" => Some((1, 1)),
+    "AbortProtect" => Some((1, 1)),
+    "PreemptProtect" => Some((1, 1)),
     "AbsArg" => Some((1, 1)),
     "Accumulate" => Some((1, 1)),
     "Accuracy" => Some((1, 1)),
@@ -666,6 +668,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HermitianMatrixQ" => Some((1, 1)),
     "HighpassFilter" => Some((2, 4)),
     "HorizontalGauge" => Some((1, usize::MAX)),
+    "VerticalGauge" => Some((1, usize::MAX)),
     "ThermometerGauge" => Some((1, usize::MAX)),
     "HilbertMatrix" => Some((1, 1)),
     "HistogramDistribution" => Some((1, 2)),

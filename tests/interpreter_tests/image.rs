@@ -4503,6 +4503,26 @@ mod image_advanced {
     assert!(r3 > 0.0, "r=3 should detect some edges");
   }
 
+  // LABColor and XYZColor convert back to RGB (the inverse of the forward
+  // conversion) and work as graphics directives.
+  #[test]
+  fn color_convert_from_lab_and_xyz() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Max[Abs[List @@ ColorConvert[LABColor[0.5, 0.2, -0.3], \"RGB\"] - \
+         {0.5211390517619886, 0.423666366803764, 0.6685131020883269}]] < 10^-14, \
+         Max[Abs[List @@ ColorConvert[ColorConvert[RGBColor[0.2, 0.5, 0.7], \
+         \"LAB\"], \"RGB\"] - {0.2, 0.5, 0.7}]] < 10^-14, \
+         Max[Abs[List @@ ColorConvert[XYZColor[0.3, 0.4, 0.2], \"RGB\"] - \
+         {0.4791677798855795, 0.7216984139466889, 0.4967486449086132}]] < 10^-14, \
+         StringContainsQ[ExportString[Graphics[{LABColor[0.5, 0.2, -0.3], \
+         Disk[]}], \"SVG\"], \"rgb(133\"]}"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+  }
   #[test]
   fn color_convert_rgb_to_grayscale() {
     clear_state();

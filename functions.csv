@@ -1805,6 +1805,7 @@ NumericFunction,Numeric function attribute,,unevaluated,3.0,1801
 ColorSetter,Color setter control (stays symbolic in script mode),✅,unevaluated,6.0,1803
 Scrollbars,Scrollbars option,,unevaluated,7.0,1803
 DistanceMatrix,Matrix of pairwise distances between vectors (default EuclideanDistance),✅,pure,10.3,1806
+HierarchicalClustering`DistanceMatrix,Legacy package function: matrix of pairwise distances between vectors; same as DistanceMatrix,✅,pure,1.0,1806
 InverseWaveletTransform,Inverse discrete/stationary/packet/lifting wavelet transform,✅,pure,8.0,1806
 RayleighDistribution,Rayleigh distribution,✅,pure,6.0,1806
 SetSharedVariable,Set shared variable,,unevaluated,7.0,1808
@@ -1894,7 +1895,7 @@ ZTransform,Computes the Z transform of sequences c*n^k*a^n and a^n/n! plus Sin/C
 FeatureTypes,Feature types option,,unevaluated,10.1,1885
 LeastSquares,Least squares solution,✅,pure,6.0,1885
 CovarianceFunction,Sample autocovariance of data at a lag; or the covariance function of ARMA and the common continuous/counting processes,✅,pure,9.0,1887
-XYZColor,XYZ color specification,,unevaluated,10.0,1887
+XYZColor,XYZ color specification,✅,pure,10.0,1887
 GraphHighlightStyle,Graph highlight style,,unevaluated,8.0,1889
 ImageTrim,Trims an image to a specified coordinate region,✅,pure,8.0,1889
 BSplineSurface,B-spline surface 3D graphics primitive,✅,unevaluated,7.0,1891
@@ -1928,7 +1929,7 @@ SubsuperscriptBox,Represents a box with both subscript and superscript for types
 TakeLargestBy,Takes the n largest elements by a criterion; supports the operator form TakeLargestBy[f;n][list],✅,pure,10.1,1921
 WaveletListPlot,Plots wavelet coefficients from a DiscreteWaveletData object,✅,graphics,8.0,1921
 BinaryRead,Reads a single binary object from a file or stream,✅,io,5.1,1926
-LABColor,Represents a color in the LAB color space,🚫,pure,10.0,1926
+LABColor,Represents a color in the LAB color space,✅,pure,10.0,1926
 Overflow,Symbol representing arithmetic overflow,✅,pure,1.0,1926
 SignedRegionDistance,Signed distance from a point to a region (negative inside); Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon,✅,pure,10.0,1926
 TakeLargest,Takes the n largest elements from a list; supports the operator form TakeLargest[n][list],✅,pure,10.1,1926
@@ -2447,7 +2448,7 @@ NRoots,Numerical roots of a polynomial equation,✅,pure,1.0,2462
 ParallelSum,,🚫,,7.0,2462
 Sharpen,Sharpens an image using unsharp mask,✅,pure,7.0,2462
 SystemsModelSeriesConnect,,🚫,,8.0,2462
-VerticalGauge,,🚫,,9.0,2462
+VerticalGauge,Display one or more values on a vertical scale as a Graphics gauge,✅,pure,9.0,2462
 Algebraics,,🚫,,4.0,2468
 Beep,,🚫,,6.0,2468
 GaussianIntegers,,🚫,,2.0,2468
@@ -3221,7 +3222,7 @@ FactorTermsList,factors out a common numerical factor from a polynomial,✅,none
 HiddenMarkovProcess,,🚫,,10.0,3265
 InterpolationPoints,,,,8.0,3265
 QuadraticOptimization,,,,12.0,3265
-SampledSoundFunction,,🚫,,2.0,3265
+SampledSoundFunction,"Sound primitive that plays f[1] through f[n] as samples at the given rate",✅,pure,2.0,3265
 StringExtract,Extracts fields (by position or span) split by whitespace or chained delimiter rules,✅,pure,10.1,3265
 Tilde,Symbolic tilde relation operator with Unicode display,✅,pure,3.0,3265
 BrownianBridgeProcess,Brownian bridge process with Normal time slices,✅,unevaluated,9.0,3280
@@ -3362,7 +3363,7 @@ GeoModel,,🚫,,10.0,3413
 MeixnerDistribution,Meixner distribution with PDF Mean and Variance,✅,pure,9.0,3413
 PageTheme,,🚫,,11.0,3413
 PermissionsKey,,🚫,,11.0,3413
-PreemptProtect,,,,7.0,3413
+PreemptProtect,Evaluates an expression without interruption by preemptive computations,✅,pure,7.0,3413
 StratonovichProcess,,🚫,,9.0,3413
 UnitVectorLayer,,🚫,,11.1,3413
 WindowToolbars,,🚫,,3.0,3413

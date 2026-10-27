@@ -700,8 +700,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "ToExpression" | "Exponent" => A::Listable | A::Protected,
 
     // HoldAllComplete + Protected
-    "HoldComplete" | "HoldCompleteForm" | "Unevaluated"
-    | "Association" => A::HoldAllComplete | A::Protected,
+    "HoldComplete" | "HoldCompleteForm" | "Unevaluated" | "Association"
+    | "PreemptProtect" => A::HoldAllComplete | A::Protected,
 
     // HoldAllComplete + Protected + ReadProtected
     "InterpretationBox" => {
@@ -710,6 +710,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
+    | "AbortProtect"
     | "Module" | "DynamicModule" | "Block" | "With"
     | "Trace" | "TraceScan" | "TracePrint"
     | "Defer" | "Compile" | "CompiledFunction" | "Which"
@@ -958,7 +959,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // `C` is the default generated-parameter symbol of DSolve, RSolve,
     // Reduce, Solve, … (`C[1]`, `C[2]`, …), so it is a protected built-in
     // even though it is a bare single letter.
-    "C" | "InverseFunction" => {
+    // `Root[f, k, 0]`: N evaluates the root itself, never its index.
+    "C" | "InverseFunction" | "Root" => {
       A::NHoldAll | A::Protected | A::ReadProtected
     }
     "PrintTemporary" => A::Protected | A::ReadProtected,

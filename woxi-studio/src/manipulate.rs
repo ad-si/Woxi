@@ -528,6 +528,11 @@ pub struct ManipulateState {
   /// `Appearance -> None`: hide the control rows (the animation just runs);
   /// the play/pause toggle stays visible for animated widgets.
   pub appearance_none: bool,
+  /// Locals hoisted out of a `DynamicModule` around the body.
+  module_locals: Vec<String>,
+  /// Whether the last evaluation changed one of `module_locals`: the body's
+  /// own `Dynamic` rewrote it, so Wolfram would refresh it again right away.
+  self_refreshing: bool,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
   pub control_placement: ControlPlacement,
@@ -706,6 +711,8 @@ impl ManipulateState {
       control_placement: spec.control_placement,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
+      module_locals: spec.module_locals,
+      self_refreshing: false,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       dynamic_values: spec.dynamic_values,
@@ -1238,6 +1245,21 @@ impl ManipulateState {
     }
   }
 
+  /// Whether the app's timer should drive this widget: it plays an
+  /// animation, or its body keeps rewriting its own `DynamicModule` state.
+  pub fn wants_tick(&self) -> bool {
+    (self.animated && self.playing) || self.self_refreshing
+  }
+
+  /// One timer step: advance the animation, or refresh a self-updating body.
+  pub fn tick(&mut self) {
+    if self.animated && self.playing {
+      self.advance_animation();
+    } else if self.self_refreshing {
+      self.reevaluate();
+    }
+  }
+
   /// Advance the animated control by one step, wrapping back to the start
   /// once it passes the end, then re-render. Called from the app's
   /// animation-tick subscription while `playing` is set. The target is the
@@ -1501,8 +1523,12 @@ impl ManipulateState {
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
+    self.self_refreshing = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+        if slot.1 != value && self.module_locals.contains(&name) {
+          self.self_refreshing = true;
+        }
         slot.1 = value.clone();
       }
       // Every row bound to this name (a body may reassign a variable that

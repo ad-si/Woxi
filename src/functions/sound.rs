@@ -44,6 +44,11 @@ fn collect_segments(expr: &Expr, out: &mut Vec<(Vec<f64>, u32)>) {
         out.push(seg);
       }
     }
+    Expr::FunctionCall { name, args } if name == "SampledSoundFunction" => {
+      if let Some(seg) = sample_sampled_sound_function(args) {
+        out.push(seg);
+      }
+    }
     Expr::FunctionCall { args, .. } => {
       for a in args {
         collect_segments(a, out);
@@ -223,6 +228,27 @@ fn sample_sampled_sound_list(args: &[Expr]) -> Option<(Vec<f64>, u32)> {
     .and_then(try_eval_to_f64)
     .filter(|r| *r > 0.0)
     .map_or(SAMPLE_RATE, |r| r.round() as u32);
+  Some((samples, rate))
+}
+
+/// `SampledSoundFunction[f, n, rate]` primitive: the samples are `f[1]`
+/// through `f[n]`, clipped to [-1, 1], played at `rate` Hz. `None` when `n`
+/// is not a positive integer or `f[i]` is not numeric.
+fn sample_sampled_sound_function(args: &[Expr]) -> Option<(Vec<f64>, u32)> {
+  let [func, count, rate] = args else {
+    return None;
+  };
+  let count = try_eval_to_f64(count)?;
+  if count < 1.0 || count.fract() != 0.0 {
+    return None;
+  }
+  let rate = try_eval_to_f64(rate).filter(|r| *r > 0.0)?.round() as u32;
+  let mut samples = Vec::with_capacity(count as usize);
+  for i in 1..=count as i128 {
+    let value =
+      crate::evaluator::apply_function_to_arg(func, &Expr::Integer(i)).ok()?;
+    samples.push(try_eval_to_f64(&value)?.clamp(-1.0, 1.0));
+  }
   Some((samples, rate))
 }
 

@@ -672,6 +672,13 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ]));
     }
   }
+  // `Sign[Complex[-2., 0.]]` is the machine complex `-1. + 0.*I`.
+  if let Some((re, im)) = machine_complex_parts(&args[0]) {
+    let abs = (re * re + im * im).sqrt();
+    if abs > 0.0 {
+      return Ok(machine_complex_result(re / abs, im / abs));
+    }
+  }
   // Sign[Sign[x]] = Sign[x] (idempotent).
   if let Expr::FunctionCall { name, args: inner } = &args[0]
     && name == "Sign"
@@ -899,10 +906,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // match wolframscript, rather than staying wrapped as a symbolic Sqrt[…].
   // Exact complex arguments like `2 + 3 I` have no Real component and are left
   // symbolic.
-  if let Some((_, im)) = try_extract_complex_float(&args[0])
-    && im != 0.0
-    && contains_inexact_real(&args[0])
-  {
+  if machine_complex_parts(&args[0]).is_some() {
     return power_two(&args[0], &make_rational(1, 2));
   }
   // Handle Sqrt[Quantity[mag, unit]] by delegating to Power[quantity, 1/2]

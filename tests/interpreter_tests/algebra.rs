@@ -6776,6 +6776,260 @@ mod solve {
       "{{x -> 2}, {x -> -2*(-1)^(1/3)}, {x -> 2*(-1)^(2/3)}}"
     );
   }
+
+  // A machine polynomial with complex coefficients (here a rounding-noise
+  // imaginary part) is solved numerically like a real one.
+  #[test]
+  fn inexact_polynomial_with_complex_coefficients() {
+    clear_state();
+    let result = interpret(
+      "Chop[z /. Solve[(0. + 0.*I) + 2.*z + (0. - 4.4*^-16*I)*z - 3.*z^2 + \
+       z^3 == 0, z], 10^-12]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0, 1., 2.}");
+  }
+
+  // `NSolve[{eqn, bounds}]` finds every root of a transcendental equation
+  // in the interval the inequalities give, and picks the variable itself.
+  #[test]
+  fn nsolve_transcendental_on_bounded_interval() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "NSolve[{50.*Sin[x] == 48.31*Sin[0.087 - 1.*x], 0. <= x < 3.14}]"
+      )
+      .unwrap(),
+      "{{x -> 0.042751740504714975}}"
+    );
+    assert_eq!(
+      interpret(
+        "Max[Abs[(x /. NSolve[{Sin[x] == 0.5, 0 < x < 10}, x]) - \
+         N[{Pi/6, 5 Pi/6, 13 Pi/6, 17 Pi/6}]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A sign change across a pole of Tan is not a root.
+    assert_eq!(
+      interpret("NSolve[{Tan[x] == 0, 1 < x < 2}, x]").unwrap(),
+      "{}"
+    );
+  }
+}
+
+// Solve::ratnz (an inexact system solved through its exact form) is reported
+// for polynomial systems only; equations with radicals of the unknowns
+// (`Norm[{x, y} - c] == r`) are solved without it, as in Wolfram
+// (LinkingTwoRings).
+// One-argument Solve takes a Subscript or a call of a head with no built-in
+// meaning as one unknown, and reads True/False entries of an equation list
+// as constraining nothing/everything (LinearMultistepMethodsGenerator).
+mod solve_one_argument_unknowns {
+  use super::*;
+
+  #[test]
+  fn indexed_unknowns_and_trivial_entries() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[1 - Subscript[b, 0] == 0], Solve[{a[1] + a[2] == 0, a[1] == 2}], \
+         Solve[f[x] == 1], Solve[{True}], Solve[{x == 1, True}], \
+         Solve[{x == 1, False}]}"
+      )
+      .unwrap(),
+      "{{{Subscript[b, 0] -> 1}}, {{a[1] -> 2, a[2] -> -2}}, {{f[x] -> 1}}, \
+       {{}}, {{x -> 1}}, {}}"
+    );
+  }
+}
+
+mod solve_ratnz_only_for_polynomial_systems {
+  use super::*;
+
+  #[test]
+  fn norm_equations_are_quiet() {
+    clear_state();
+    interpret(
+      "Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]",
+    )
+    .unwrap();
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz")),
+      "{:?}",
+      woxi::get_captured_messages_raw()
+    );
+    clear_state();
+    interpret("Solve[{x^2 + y^2 == 1, (x - 1)^2 + (y - 1)^2 == 0.36}, {x, y}]")
+      .unwrap();
+    assert!(
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.starts_with("Solve::ratnz"))
+    );
+  }
+}
+
+mod solve_system_rejects_invalid_candidates {
+  use super::*;
+
+  // An elimination through a fractional power must not report an infinite
+  // candidate, nor one (`p -> 0`, `t -> 405`) that fails `p == t^(-7/2)`.
+  #[test]
+  fn no_infinite_or_failing_candidates() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{FreeQ[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, \
+         t == p^(-2/7)}, {p, u, t}], ComplexInfinity], \
+         MemberQ[Solve[{u == p/t, 1000*(t - 400) == (10000 - u^2)/2, \
+         p == t^(-7/2)}, {p, u, t}], {p -> 0, __}]}"
+      )
+      .unwrap(),
+      "{True, False}"
+    );
+  }
+}
+
+mod nsolve_drops_extraneous_radical_solutions {
+  use super::*;
+
+  // The Malfatti circles of a triangle: squaring the radicals away gave an
+  // answer whose `Sqrt` terms have the wrong sign. NSolve checks its numeric
+  // solutions against the equations as written and searches numerically
+  // when none holds. wolframscript: h -> 1.150959189917622 (one solution).
+  #[test]
+  fn malfatti_system() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = {-1., -1.}; b = {1., 0.}; c = {0., 1.}; \
+         {ab, ac, bc} = Norm /@ {a - b, a - c, b - c}; \
+         al = VectorAngle[b - a, c - a]; be = VectorAngle[c - b, a - b]; \
+         ga = VectorAngle[a - c, b - c]; \
+         sol = NSolve[{h + 2 Sqrt[r1 r2] + k == ab, \
+         h + 2 Sqrt[r1 r3] + l == ac, k + 2 Sqrt[r2 r3] + l == bc, \
+         r1 == Tan[al/2] h, r2 == Tan[be/2] k, r3 == Tan[ga/2] l}, \
+         {h, k, l, r1, r2, r3}]; \
+         {Length[sol], Abs[(h /. First[sol]) - 1.150959189917622] < 10^-9}"
+      )
+      .unwrap(),
+      "{1, True}"
+    );
+  }
+
+  // A root of a polynomial with large coefficients leaves a rounding
+  // residual far above 1; it is judged against the size of the terms that
+  // cancel, so it is kept. Regression: the quartic secular equation of the
+  // Rayleigh-Ritz Demonstration lost all four roots.
+  #[test]
+  fn roots_of_a_large_coefficient_polynomial_are_kept() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[a_, m_, n_] := -((((1/m + 1/n) a)^(-m - n)) (-m (-1 + n) n \
+         (-2 + a) + m^3 a + (-1 + n) n^2 a - m^2 (n (-2 + a) + a)) \
+         (-2 + m + n)!)/(2 m n); \
+         s[a_, m_, n_] := (((1/m + 1/n) a)^(-1 - m - n)) (m + n)!; \
+         mat = Table[h[0.5, m, n] - l s[0.5, m, n], {m, 4}, {n, 4}]; \
+         sol = l /. NSolve[Det[mat] == 0, l]; \
+         {Length[sol], Abs[First[sol] + 0.40319833706648545] < 10^-12}"
+      )
+      .unwrap(),
+      "{4, True}"
+    );
+  }
+}
+
+mod reduce_univariate_polynomial_inequalities {
+  use super::*;
+
+  // Any polynomial in one variable with numeric coefficients: its real
+  // roots split the line, and runs of pieces where it holds are joined in
+  // Wolfram's interval form.
+  #[test]
+  fn exact_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[t/2 + 7/25 >= 0, t], Reduce[x^3/2 - x > 0, x], \
+         Reduce[x^2 - 1/4 < 0, x], Reduce[(x - 1)^2 > 0, x], \
+         Reduce[(x - 1)^2 (x - 2) >= 0, x], Reduce[x^2 + 1 > 0, x], \
+         Reduce[x^2 + 1 > 0, x, Reals], Reduce[x^2 + 1 < 0, x]}"
+      )
+      .unwrap(),
+      "{t >= -14/25, Inequality[-Sqrt[2], Less, x, Less, 0] || x > Sqrt[2], \
+       Inequality[-1/2, Less, x, Less, 1/2], x < 1 || x > 1, \
+       x == 1 || x >= 2, Element[x, Reals], True, False}"
+    );
+  }
+
+  // A rational function also splits the line at its poles, where it never
+  // holds.
+  #[test]
+  fn rational_functions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[1/x > 2, x], Reduce[(x - 1)/(x + 2) >= 0, x], \
+         Reduce[x/(x^2 - 4) <= 0, x], Reduce[(x^2 - 1)/x < 0, x]}"
+      )
+      .unwrap(),
+      "{Inequality[0, Less, x, Less, 1/2], x < -2 || x >= 1, \
+       x < -2 || Inequality[0, LessEqual, x, Less, 2], \
+       x < -1 || Inequality[0, Less, x, Less, 1]}"
+    );
+  }
+
+  // Machine coefficients are rationalized, reduced exactly and numericized
+  // with Reduce::ratnz; a root at zero stays exact.
+  #[test]
+  fn inexact_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[{Reduce[0.2244994432064365*t + 0.28 >= 0, t], \
+         Reduce[x^2 < 2., x], Reduce[x^2 - 2. x > 0, x], \
+         Reduce[0.5 t > 1 && t < 5., t]}]"
+      )
+      .unwrap(),
+      "{t >= -1.247219128924647, \
+       Inequality[-1.4142135623730951, Less, x, Less, 1.4142135623730951], \
+       x < 0 || x > 2., Inequality[2., Less, t, Less, 5.]}"
+    );
+    clear_state();
+    interpret("Reduce[x^2 < 2., x]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.starts_with("Reduce::ratnz")),
+      "{msgs:?}"
+    );
+  }
+}
+
+mod reduce_generalized_variables {
+  use super::*;
+
+  // Reduce treats an indexed variable like `m[1]` as an unknown, as Solve
+  // does.
+  #[test]
+  fn indexed_variables() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Reduce[m[1] == 1, {m[1]}], Reduce[x == 1, {m[1]}], \
+         Reduce[False, m[1]], ToRules[Reduce[True, {m[1, 1], m[1, 2]}]]}"
+      )
+      .unwrap(),
+      "{m[1] == 1, x == 1, False, {}}"
+    );
+    assert_eq!(
+      interpret("Reduce[m[1]^2 < 1, m[1]] // InputForm // ToString").unwrap(),
+      "Inequality[-1, Less, m[1], Less, 1]"
+    );
+  }
 }
 
 mod rsolve {
@@ -14632,6 +14886,43 @@ mod root {
     );
   }
 
+  // Coefficients beyond 128 bits (from eliminating a system) still give a
+  // numeric value; N leaves the index of `Root[f, k, 0]` alone (NHoldAll).
+  #[test]
+  fn numerical_value_with_huge_coefficients() {
+    assert_eq!(
+      interpret(
+        "{N[Root[-2*10^40 + #^3 + # &, 1]], N[Root[-2*10^40 + #^3 + # &, 2]], \
+         N[RootSum[-2*10^40 + #^3 + # &, #^2 &]], Attributes[Root]}"
+      )
+      .unwrap(),
+      "{2.7144176165949066*^13, \
+       -1.3572088082974533*^13 - 2.3507546124511977*^13*I, -2., \
+       {NHoldAll, Protected, ReadProtected}}"
+    );
+  }
+
+  // An index past the degree reports Root::deg, every time (Root results
+  // are remembered, but not those of calls that printed a message), and the
+  // call stays unevaluated.
+  #[test]
+  fn index_past_degree() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Root[#^2 - 2 &, 5], Root[#^2 - 2 &, 5], Root[#^5 - # - 1 &, 7]}"
+      )
+      .unwrap(),
+      "{Root[#1^2 - 2 & , 5], Root[#1^2 - 2 & , 5], Root[#1^5 - #1 - 1 & , 7]}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    let deg = msgs.iter().filter(|m| m.contains("\nRoot::deg:")).count();
+    assert_eq!(deg, 3, "{msgs:?}");
+    assert!(msgs.iter().any(|m| m.contains(
+      "Root::deg: -2 + #1  has fewer than 5 root(s) as a polynomial in #1."
+    )));
+  }
+
   // N of a higher-degree Root (no radical form) numerically finds the k-th
   // root: real roots first in increasing order.
   #[test]
@@ -14702,8 +14993,11 @@ mod root {
   }
 
   #[test]
-  fn out_of_range_error() {
-    assert!(interpret("Root[#^2 - 1 &, 3]").is_err());
+  fn out_of_range_stays_unevaluated() {
+    assert_eq!(
+      interpret("Root[#^2 - 1 &, 3]").unwrap(),
+      "Root[#1^2 - 1 & , 3]"
+    );
   }
 
   // `N[Root[…], prec]` — arbitrary-precision evaluation of a root with no
@@ -21056,7 +21350,7 @@ mod constrained_solve_roots {
     clear_state();
     assert_eq!(
       interpret("NSolve[x^2 == 2]").unwrap(),
-      "{{x -> -1.4142135623730951}, {x -> 1.4142135623730951}}"
+      "{{x -> -1.4142135623730951}, {x -> 1.414213562373095}}"
     );
   }
 

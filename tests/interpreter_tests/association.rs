@@ -2552,3 +2552,28 @@ mod append_to_association {
     );
   }
 }
+
+// An entry whose value is a pure function prints it parenthesized, as the
+// rule it is, so the printed association reads back as itself. Regression:
+// `<|s -> #1 == 2 & , …|>` re-read as `(s -> #1 == 2) &`, which broke a
+// Manipulate's saved association (SlidingBlockPuzzles).
+mod association_entry_printing {
+  use super::*;
+
+  #[test]
+  fn function_values_and_rule_keys_round_trip() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|s -> (#1 == 2 &), t -> 3, (u -> v) -> 1, w :> 1 + 1|>; \
+         {ToString[InputForm[a]], ToExpression[ToString[InputForm[a]]] === a}"
+      )
+      .unwrap(),
+      "{<|s -> (#1 == 2 & ), t -> 3, (u -> v) -> 1, w :> 1 + 1|>, True}"
+    );
+    assert_eq!(
+      interpret("<|s -> (#1 == 2 &)|>").unwrap(),
+      "<|s -> (#1 == 2 & )|>"
+    );
+  }
+}

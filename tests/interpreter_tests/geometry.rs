@@ -9635,3 +9635,29 @@ mod stadium_shape_graphics {
     assert!(svg.contains("<polygon"));
   }
 }
+
+mod hierarchical_clustering_distance_matrix {
+  use super::*;
+
+  #[test]
+  fn qualified_name_with_distance_function() {
+    assert_eq!(
+      interpret(
+        "HierarchicalClustering`DistanceMatrix[{{1, 0, 1}, {0, 0, 1}, {1, 1, 0}}, DistanceFunction -> HammingDistance]"
+      )
+      .unwrap(),
+      "{{0, 1, 2}, {1, 0, 3}, {2, 3, 0}}"
+    );
+  }
+
+  #[test]
+  fn needs_succeeds_and_default_distance() {
+    assert_eq!(
+      interpret(
+        "Needs[\"HierarchicalClustering`\"]; HierarchicalClustering`DistanceMatrix[{{0, 0}, {3, 4}}]"
+      )
+      .unwrap(),
+      "{{0, 5}, {5, 0}}"
+    );
+  }
+}

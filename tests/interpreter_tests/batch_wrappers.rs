@@ -3183,6 +3183,23 @@ mod batch_unevaluated_wrappers_2 {
       "Graphics"
     );
   }
+  // VerticalGauge is the same gauge stood upright: its marker for 0.3 on
+  // {0, 1} sits at height 0.3 of the track.
+  #[test]
+  fn vertical_gauge_renders_upright() {
+    assert_eq!(
+      interpret(
+        "VerticalGauge[0.3, {0, 1}, GaugeStyle -> Red, ScaleDivisions -> None]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Cases[VerticalGauge[0.3, {0, 1}], Line[p_] :> p, Infinity]")
+        .unwrap(),
+      "{{{0., 0.3}, {0.2, 0.3}}}"
+    );
+  }
   #[test]
   fn horizontal_gauge_accepts_multiple_values() {
     // Multiple values (e.g. potential/total/kinetic energy) each render as
@@ -8057,6 +8074,23 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("DMSList[{11, -30, 5.}]").unwrap(),
       "{10, 30, 4.999999999997584}"
+    );
+  }
+  // A machine number, an angle Quantity and a DMS string (with symbols or
+  // d/m/s letters) all convert; FromDMS reads the strings too.
+  #[test]
+  fn dms_list_from_real_quantity_and_string() {
+    assert_eq!(
+      interpret(
+        "{DMSList[14.853343960298783], DMSList[-14.853343960298783], \
+         DMSList[0.5], DMSList[Quantity[14.5, \"AngularDegrees\"]], \
+         DMSList[Quantity[Pi/6, \"Radians\"]], DMSList[\"14d51m12s\"], \
+         FromDMS[\"14d51m12s\"]} // InputForm"
+      )
+      .unwrap(),
+      "InputForm[{{14, 51, 12.038257075620038}, \
+       {-14, -51, -12.038257075620038}, {0, 30, 0.}, {14, 30, 0.}, \
+       {30, 0, 0}, {14, 51, 12}, 1114/75}]"
     );
   }
   #[test]

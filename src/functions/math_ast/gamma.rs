@@ -363,12 +363,9 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Only triggers when the argument has a non-zero imaginary part AND
       // some component is a Real (not exact rationals/integers — those are
       // handled symbolically above).
-      if let Some((re, im)) = try_extract_complex_float(&args[0])
-        && im != 0.0
-        && contains_inexact_real(&args[0])
-      {
+      if let Some((re, im)) = machine_complex_parts(&args[0]) {
         let (gr, gi) = gamma_complex(re, im);
-        return Ok(build_complex_float_expr(gr, gi));
+        return Ok(machine_complex_result(gr, gi));
       }
       Ok(unevaluated("Gamma", args))
     }

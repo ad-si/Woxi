@@ -1303,6 +1303,18 @@ fn unpack_channels(
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
+    // The other color spaces convert to sRGB (out-of-gamut channels clip,
+    // as in the front end).
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "LABColor" | "XYZColor" | "CMYKColor") =>
+    {
+      let (r, g, b, a) =
+        crate::functions::image_ast::color_directive_to_rgb(expr)?;
+      Some(
+        Color::new(r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
+          .with_alpha(a.unwrap_or(1.0)),
+      )
+    }
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
         let args = unpack_channels(args, 2);
@@ -18684,7 +18696,16 @@ fn grid_svg_styled_internal(
               }
             }
           }
-          _ => {}
+          // A bare style (`Dividers -> Red`, `Dividers -> Directive[Orange,
+          // Thick]`) rules every line on both axes in that style.
+          spec => {
+            if let Some(color) = parse_divider_entry(spec) {
+              col_div_has_repeating = true;
+              col_div_repeating = vec![Some(color)];
+              row_div_has_repeating = true;
+              row_div_repeating = vec![Some(color)];
+            }
+          }
         },
         "Background" => match replacement.as_ref() {
           expr if parse_color(expr).is_some() => {
@@ -26229,6 +26250,11 @@ pub fn heading_visibility_key(label: &str) -> String {
 /// A parsed Manipulate expression ready for interactive rendering.
 #[derive(Debug, Clone)]
 pub struct ManipulateSpec {
+  /// Names of the locals hoisted out of a `DynamicModule` wrapping the body.
+  /// A body that rewrites one of them (`s = s + step` inside its own
+  /// `Dynamic`) keeps refreshing itself, which a front end drives with a
+  /// timer for as long as the value keeps changing.
+  pub module_locals: Vec<String>,
   /// The body expression as an InputForm-compatible string, ready to be
   /// substituted into a `Block[{…}, body]` for re-evaluation.
   pub body_code: String,
@@ -26587,6 +26613,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     .as_ref()
     .map(|i| i.dynamic_labels.clone())
     .unwrap_or_default();
+  let mut module_locals: Vec<String> = Vec::new();
   let (
     body_code,
     mut controls,
@@ -26635,6 +26662,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       &mut dynamic_module_state,
       &mut module_initializations,
     );
+    module_locals = dynamic_module_state
+      .iter()
+      .map(|(n, _)| n.clone())
+      .collect();
     // `TogglerBar[Dynamic[var], …]` and a bare `Button[label, action]`
     // inside the body move into the display list (replaced by `Nothing` in
     // the body): a front-end renders displays as live widgets, whereas
@@ -27845,6 +27876,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   };
 
   Some(ManipulateSpec {
+    module_locals,
     body_code,
     controls,
     state,
@@ -31275,6 +31307,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     imaginary: false,
   };
   Some(ManipulateSpec {
+    module_locals: Vec::new(),
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -31364,6 +31397,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     imaginary: false,
   };
   Some(ManipulateSpec {
+    module_locals: Vec::new(),
     body_code: var,
     controls: vec![control],
     state: Vec::new(),
@@ -31532,6 +31566,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     write_callback: None,
   };
   Some(ManipulateSpec {
+    module_locals: Vec::new(),
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -31589,6 +31624,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     write_callback: None,
   };
   Some(ManipulateSpec {
+    module_locals: Vec::new(),
     body_code,
     controls: vec![control],
     state: Vec::new(),
@@ -31658,6 +31694,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // its own variable.
   let animation_var = animate.map(|_| control.name().to_string());
   Some(ManipulateSpec {
+    module_locals: Vec::new(),
     body_code,
     controls: vec![control],
     state: Vec::new(),

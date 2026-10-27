@@ -1027,6 +1027,20 @@ the display's scale — twice the pixels on a Retina Mac — and with a minimum
 height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
 pixels. **Not reproducible** across machines.
 
+### Exact generalized eigenvectors are scaled differently
+
+```sh
+wolframscript -code 'Eigenvectors[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]'
+# {{-1, Sqrt[2]}, {1, Sqrt[2]}}
+woxi eval 'Eigenvectors[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]'
+# {{-(1/Sqrt[2]), 1}, {1/Sqrt[2], 1}}
+```
+
+Woxi takes the eigenvectors of a pencil `{a, b}` from `Inverse[b] . a`, which
+scales them so their last component is 1. The kernel's exact generalized
+eigenvectors clear that radical denominator; the rule behind its scaling is not
+known yet. Eigenvalues and machine eigenvectors agree.
+
 ### Machine eigenvectors have other signs
 
 ```sh
@@ -1854,6 +1868,18 @@ first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
 leaves the region the equations are defined on.
 
+### `NDSolve` of a DAE mixing algebraic unknowns into differential equations
+
+A distillation-column model (Housam Binous's Demonstrations: holdup balances
+with `T[i]'[t]` and `y[i]'[t]` terms, vapor-liquid equilibria, and flows
+`L[t]`, `V[t]`, `D[t]` that only appear algebraically) returns `NDSolve`
+unevaluated. Index reduction (differentiating an algebraic equation whose
+unknowns are all differentiated elsewhere) and initial values for algebraic
+unknowns are handled, but an equation combining differentiated unknowns with
+the Newton-solved algebraic ones does not compile. Because `sol` then holds
+the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /. sol, …]`
+reruns it at every sample and times out.
+
 ### `NDSolve` uses a fixed grid
 
 Woxi integrates on 1000 nominal RK4 steps with bisection refinement;
@@ -1987,6 +2013,36 @@ woxi eval 'Reduce[a x > 0, x]'              # Reduce[a*x + 0 > 0, x]
 
 Independent constraints *are* separated and reduced one group at a time, so
 `Reduce[x > 1 && a^2 < 4 && b^2 < 9, x]` matches.
+
+### Solve of a system eliminated through a fractional power finds nothing
+
+```sh
+wolframscript -code 'Length[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, t == p^(-2/7)}, {p, u, t}]]'
+# 10
+woxi eval 'Length[Solve[{1 == u*t/p, 1000*(t - 400) == (10000 - u^2)/2, t == p^(-2/7)}, {p, u, t}]]'
+# 0
+```
+
+The kernel solves `t == p^(-2/7)` for `p`, substitutes, and reduces the system
+to a degree-10 polynomial in `t`. Woxi's elimination does not invert the
+fractional power. Written as `p == t^(-7/2)`, the system is solved, but through
+a degree-20 polynomial in `Sqrt[t]` whose wrong-branch roots are not all
+discarded (17 solutions instead of 10). This blocks the Demonstration
+"Compressible Flow Through a Nozzle/Diffuser".
+
+### Solve orders the solutions of `Norm` equations differently
+
+```sh
+wolframscript -code 'Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]'
+# {{x -> 0.9137715508089904, y -> 0.4062284491910096}, {x -> 0.4062284491910096, y -> 0.9137715508089904}}
+woxi eval 'Solve[{Norm[{x, y}] == 1, Norm[{x, y} - {1, 1}] == 0.6}, {x, y}]'
+# {{x -> 0.40622844919100964, y -> 0.9137715508089904}, {x -> 0.9137715508089904, y -> 0.40622844919100953}}
+```
+
+Written as polynomials (`x^2 + y^2 == 1`), both list `x -> 0.406…` first.
+The kernel solves the radical form by another route, which also skips the
+`Solve::ratnz` message (Woxi matches that part). Woxi squares the radicals
+away and keeps the polynomial order.
 
 ### Solve over a system of two Abs equations gives no solutions
 
@@ -5566,10 +5622,18 @@ clips its right-hand column, where the FrontEnd fits it.
 
 ## Machine complex numbers with a `0.` imaginary part
 
-`Sinh`, `Sqrt`, `Log` and the other elementary functions still leave an
-argument like `2. + 0.*I` unevaluated, where the kernel returns a complex
-machine number. Arithmetic, `Sin`, `Cos`, `Tan` and the inverse circular
-functions keep the `0.` imaginary part correctly.
+```sh
+wolframscript -code '{LogGamma[2. + 0. I], Erf[0.5 + 0. I], Zeta[2. + 0. I], BesselJ[0, 2. + 0. I]}'
+# {3.552713678800501*^-15 + 0.*I, 0.5204998778130466 + 0.*I, 1.6449340668482264 + 0.*I, 0.22389077914123562 + 0.*I}
+woxi eval '{LogGamma[2. + 0. I], Erf[0.5 + 0. I], Zeta[2. + 0. I], BesselJ[0, 2. + 0. I]}'
+# {LogGamma[2. + 0.*I], 0.5204998778130465, 1.6449340668482264, BesselJ[0, 2. + 0.*I]}
+```
+
+Arithmetic, `Power`, `Sqrt`, `Exp`, `Log`, `Sign`, `Gamma` and the circular
+and hyperbolic functions keep the `0.` imaginary part (they read the argument
+through `machine_complex_parts`). Special functions such as `LogGamma`,
+`PolyGamma`, `Zeta`, `Erf` and the Bessel family still either drop it or stay
+unevaluated.
 
 
 ## `Sum` over symbolic bounds with a step stays unreduced

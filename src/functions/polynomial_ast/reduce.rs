@@ -22,6 +22,12 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Generalized variables (`Reduce[m[1] == 1, {m[1]}]`).
+  if let Some(result) =
+    super::solve::with_generalized_variables(args, reduce_ast)
+  {
+    return result;
+  }
   // `a == b == c` is `a == b && b == c`.
   if let Some(first) = args.first() {
     let expanded = super::solve::expand_chained_equalities(first);
@@ -1472,24 +1478,247 @@ fn reduce_inequality(
     return Ok(make_comparison(&val, &Expr::Integer(0), op));
   }
 
+  // A polynomial in `var` alone: its real roots split the line, and the
+  // sign between them decides each piece.
+  if let Some(result) =
+    reduce_univariate_polynomial_inequality(&expanded, var, op, domain)
+  {
+    return Ok(result);
+  }
+
   // Try to find the degree
   let degree = max_power_int(&expanded, var);
 
-  match degree {
-    Some(1) => Ok(reduce_linear_inequality(&expanded, var, op, domain)),
-    Some(2) => Ok(reduce_quadratic_inequality(&expanded, var, op, domain)),
-    _ => {
-      // Try to factor and handle
-      let factored =
-        try_factor_and_reduce_inequality(lhs, rhs, op, var, domain);
-      if let Some(result) = factored {
-        return Ok(result);
+  // Symbolic coefficients are left alone; other functions of `var` go by
+  // the roots Solve finds.
+  if !matches!(degree, Some(1 | 2))
+    && let Some(result) =
+      try_factor_and_reduce_inequality(lhs, rhs, op, var, domain)
+  {
+    return Ok(result);
+  }
+  Ok(call(
+    "Reduce",
+    vec![make_comparison(lhs, rhs, op), id_expr(var)],
+  ))
+}
+
+/// `poly op 0` for a polynomial whose only symbol is `var`, as Wolfram
+/// writes it: the real roots in increasing order split the line into open
+/// intervals, the sign of `poly` on each (and whether the roots themselves
+/// count) picks the pieces, and each run of adjacent pieces becomes one
+/// condition — `x < r`, `Inequality[r1, Less, x, LessEqual, r2]`, `x == r`,
+/// … — joined by `||`. A condition true everywhere is `Element[x, Reals]`
+/// (`True` over `Reals`). Machine coefficients are rationalized, solved
+/// exactly and numericized, with `Reduce::ratnz`, as Wolfram does. `None`
+/// when `poly` has another symbol or its roots cannot be found.
+fn reduce_univariate_polynomial_inequality(
+  poly: &Expr,
+  var: &str,
+  op: CompOp,
+  domain: Option<&str>,
+) -> Option<Expr> {
+  if !matches!(
+    op,
+    CompOp::Less | CompOp::LessEqual | CompOp::Greater | CompOp::GreaterEqual
+  ) {
+    return None;
+  }
+  let mut symbols = Vec::new();
+  constraint_variables(poly, &mut symbols);
+  if symbols.iter().any(|s| s != var) {
+    return None;
+  }
+  // A rational function splits the line at the roots of its numerator and
+  // its poles, the denominator's roots, where it never holds.
+  let together = crate::evaluator::evaluate_function_call_ast(
+    "Together",
+    std::slice::from_ref(poly),
+  )
+  .ok()?;
+  let (numerator, denominator) = super::together::extract_num_den(&together);
+  let numerator = expand_and_combine(&numerator);
+  let denominator = expand_and_combine(&denominator);
+  let numerator_degree = max_power_int(&numerator, var)?;
+  let denominator_degree = max_power_int(&denominator, var)?;
+  if numerator_degree < 0
+    || denominator_degree < 0
+    || numerator_degree.max(denominator_degree) < 1
+  {
+    return None;
+  }
+  if crate::functions::math_ast::contains_inexact_real(poly) {
+    let exact = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      &[poly.clone(), Expr::Integer(0)],
+    )
+    .ok()?;
+    if crate::functions::math_ast::contains_inexact_real(&exact) {
+      return None;
+    }
+    let exact_result =
+      reduce_univariate_polynomial_inequality(&exact, var, op, domain)?;
+    crate::emit_message(
+      "Reduce::ratnz: Reduce was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+    );
+    // A root at zero stays exact (`x < 0 || x > 2.`), as in Wolfram.
+    let numeric =
+      crate::evaluator::evaluate_function_call_ast("N", &[exact_result])
+        .ok()?;
+    return Some(crate::functions::string_ast::map_expr_tree(
+      &numeric,
+      &|e: &Expr| {
+        matches!(e, Expr::Real(r) if *r == 0.0).then(|| Expr::Integer(0))
+      },
+    ));
+  }
+  // The real roots of the numerator and the poles, in increasing order,
+  // without repeats; a pole is marked `true`.
+  let mut roots: Vec<(f64, Expr)> = Vec::new();
+  let mut poles: Vec<bool> = Vec::new();
+  for (part, degree, is_pole) in [
+    (&numerator, numerator_degree, false),
+    (&denominator, denominator_degree, true),
+  ] {
+    if degree < 1 {
+      continue;
+    }
+    let solved = crate::functions::polynomial_ast::solve_ast(&[
+      make_equality(part, &Expr::Integer(0)),
+      id_expr(var),
+    ])
+    .ok()?;
+    let Expr::List(ref solutions) = solved else {
+      return None;
+    };
+    for solution in solutions {
+      let Expr::List(rules) = solution else {
+        return None;
+      };
+      let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+        return None;
+      };
+      let numeric = crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(replacement.as_ref()),
+      )
+      .ok()?;
+      let (re, im) =
+        crate::functions::math_ast::try_extract_complex_float(&numeric)?;
+      if im.abs() > 1e-10 * (1.0 + re.abs()) {
+        continue;
       }
-      // Return unevaluated
-      Ok(call(
-        "Reduce",
-        vec![make_comparison(lhs, rhs, op), id_expr(var)],
-      ))
+      if !roots
+        .iter()
+        .any(|(r, _)| (r - re).abs() <= 1e-12 * (1.0 + re.abs()))
+      {
+        roots.push((re, replacement.as_ref().clone()));
+        poles.push(is_pole);
+      }
+    }
+  }
+  let mut order: Vec<usize> = (0..roots.len()).collect();
+  order.sort_by(|&a, &b| {
+    roots[a]
+      .0
+      .partial_cmp(&roots[b].0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let roots: Vec<(f64, Expr)> =
+    order.iter().map(|&i| roots[i].clone()).collect();
+  let poles: Vec<bool> = order.iter().map(|&i| poles[i]).collect();
+  let holds_at = |x: f64| -> Option<bool> {
+    let value = try_eval_to_f64(&crate::syntax::substitute_variable(
+      poly,
+      var,
+      &Expr::Real(x),
+    ))?;
+    Some(match op {
+      CompOp::Less => value < 0.0,
+      CompOp::LessEqual => value <= 0.0,
+      CompOp::Greater => value > 0.0,
+      CompOp::GreaterEqual => value >= 0.0,
+      _ => false,
+    })
+  };
+  let roots_hold = matches!(op, CompOp::LessEqual | CompOp::GreaterEqual);
+  // The pieces in order — interval 0, root 0, interval 1, …, root n-1,
+  // interval n — and whether the condition holds on each.
+  let n = roots.len();
+  let mut holds = Vec::with_capacity(2 * n + 1);
+  for i in 0..=n {
+    let x = match (i, n) {
+      (_, 0) => 0.0,
+      (0, _) => roots[0].0 - 1.0,
+      (i, n) if i == n => roots[n - 1].0 + 1.0,
+      (i, _) => f64::midpoint(roots[i - 1].0, roots[i].0),
+    };
+    holds.push(holds_at(x)?);
+    if i < n {
+      holds.push(roots_hold && !poles[i]);
+    }
+  }
+  if holds.iter().all(|h| *h) {
+    return Some(if domain == Some("Reals") {
+      bool_expr(true)
+    } else {
+      call("Element", vec![id_expr(var), id_expr("Reals")])
+    });
+  }
+  // Every maximal run of pieces where it holds is one condition.
+  let mut conditions = Vec::new();
+  let mut i = 0;
+  while i < holds.len() {
+    if !holds[i] {
+      i += 1;
+      continue;
+    }
+    let first = i;
+    while i + 1 < holds.len() && holds[i + 1] {
+      i += 1;
+    }
+    conditions.push(run_condition(var, first, i, &roots));
+    i += 1;
+  }
+  Some(build_or(conditions))
+}
+
+/// The condition for the run of pieces `first..=last` (even indices are
+/// the intervals between roots, odd ones the roots themselves): an interval
+/// leaves its bounding root out, a root piece puts it in.
+fn run_condition(
+  var: &str,
+  first: usize,
+  last: usize,
+  roots: &[(f64, Expr)],
+) -> Expr {
+  let x = id_expr(var);
+  let n = roots.len();
+  if first == last && first % 2 == 1 {
+    return make_equality(&x, &roots[first / 2].1);
+  }
+  // Lower end: an interval starting the run is bounded by the root before
+  // it (none for the first interval); a root starting it is included.
+  let lower = if first % 2 == 1 {
+    Some((first / 2, CompOp::LessEqual))
+  } else if first == 0 {
+    None
+  } else {
+    Some((first / 2 - 1, CompOp::Less))
+  };
+  let upper = if last % 2 == 1 {
+    Some((last / 2, CompOp::LessEqual))
+  } else if last / 2 == n {
+    None
+  } else {
+    Some((last / 2, CompOp::Less))
+  };
+  match (lower, upper) {
+    (None, None) => bool_expr(true),
+    (None, Some((e, op))) => make_comparison(&x, &roots[e].1, op),
+    (Some((s, op)), None) => make_comparison(&x, &roots[s].1, flip_op(op)),
+    (Some((s, lop)), Some((e, uop))) => {
+      make_compound_inequality(&roots[s].1, lop, var, uop, &roots[e].1)
     }
   }
 }
@@ -1721,262 +1950,6 @@ pub fn expr_to_number(expr: &Expr) -> Option<f64> {
   }
 }
 
-/// Reduce a linear inequality (a*x + b op 0)
-fn reduce_linear_inequality(
-  poly: &Expr,
-  var: &str,
-  op: CompOp,
-  domain: Option<&str>,
-) -> Expr {
-  let terms = collect_additive_terms(poly);
-  let mut a_parts: Vec<Expr> = Vec::new();
-  let mut b_parts: Vec<Expr> = Vec::new();
-
-  for term in &terms {
-    if let Some(c) = extract_coefficient_of_power(term, var, 1) {
-      a_parts.push(c);
-    }
-    if let Some(c) = extract_coefficient_of_power(term, var, 0) {
-      b_parts.push(c);
-    }
-  }
-
-  let a = simplify(build_sum_from_parts(&a_parts));
-  let b = simplify(build_sum_from_parts(&b_parts));
-
-  // a*x + b op 0 → x op' -b/a
-  // Sign of a determines if inequality flips
-  if let Expr::Integer(ai) = &a {
-    let neg_b = negate_expr(&b);
-    let bound = simplify(solve_divide(&neg_b, &a));
-
-    let final_op = if *ai < 0 { flip_op(op) } else { op };
-
-    let _ = domain;
-    return make_comparison(&id_expr(var), &bound, final_op);
-  }
-
-  // Symbolic coefficient — can't determine sign, return unevaluated
-  call(
-    "Reduce",
-    vec![
-      make_comparison(
-        &plus2(times2(a, id_expr(var)), b),
-        &Expr::Integer(0),
-        op,
-      ),
-      id_expr(var),
-    ],
-  )
-}
-
-/// Reduce a quadratic inequality (a*x^2 + b*x + c op 0)
-fn reduce_quadratic_inequality(
-  poly: &Expr,
-  var: &str,
-  op: CompOp,
-  domain: Option<&str>,
-) -> Expr {
-  let terms = collect_additive_terms(poly);
-  let mut coeffs: Vec<Expr> = Vec::new();
-  for d in 0..=2 {
-    let mut coeff_sum: Vec<Expr> = Vec::new();
-    for term in &terms {
-      if let Some(c) = extract_coefficient_of_power(term, var, d) {
-        coeff_sum.push(c);
-      }
-    }
-    coeffs.push(simplify(build_sum_from_parts(&coeff_sum)));
-  }
-
-  let c = &coeffs[0];
-  let b = &coeffs[1];
-  let a = &coeffs[2];
-
-  // Need integer coefficients for now
-  if let (Expr::Integer(ai), Expr::Integer(bi), Expr::Integer(ci)) = (a, b, c) {
-    let ai = *ai;
-    let bi = *bi;
-    let ci = *ci;
-    let disc = bi * bi - 4 * ai * ci;
-
-    if disc < 0 {
-      // No real roots
-      // If a > 0: polynomial is always positive
-      // If a < 0: polynomial is always negative
-      let always_positive = ai > 0;
-      let result = match op {
-        CompOp::Greater => always_positive,
-        CompOp::GreaterEqual => always_positive,
-        CompOp::Less => !always_positive,
-        CompOp::LessEqual => !always_positive,
-        _ => false,
-      };
-      return if result {
-        // Always true over reals
-        if domain == Some("Reals") {
-          bool_expr(true)
-        } else {
-          call("Element", vec![id_expr(var), id_expr("Reals")])
-        }
-      } else {
-        bool_expr(false)
-      };
-    }
-
-    if disc == 0 {
-      // One repeated root: r = -b/(2a)
-      let root = solve_divide(&Expr::Integer(-bi), &Expr::Integer(2 * ai));
-      // If a > 0: poly = a*(x - r)^2 >= 0, equals 0 at r
-      let _ = domain;
-      return match op {
-        CompOp::Equal => make_equality(&id_expr(var), &root),
-        CompOp::GreaterEqual if ai > 0 => {
-          if domain == Some("Reals") {
-            bool_expr(true)
-          } else {
-            call("Element", vec![id_expr(var), id_expr("Reals")])
-          }
-        }
-        CompOp::Greater if ai > 0 => Expr::Comparison {
-          operands: vec![id_expr(var), root],
-          operators: vec![ComparisonOp::NotEqual],
-        },
-        CompOp::LessEqual if ai > 0 => make_equality(&id_expr(var), &root),
-        CompOp::Less if ai > 0 => bool_expr(false),
-        CompOp::LessEqual if ai < 0 => {
-          if domain == Some("Reals") {
-            bool_expr(true)
-          } else {
-            call("Element", vec![id_expr(var), id_expr("Reals")])
-          }
-        }
-        CompOp::Less if ai < 0 => Expr::Comparison {
-          operands: vec![id_expr(var), root],
-          operators: vec![ComparisonOp::NotEqual],
-        },
-        CompOp::GreaterEqual if ai < 0 => make_equality(&id_expr(var), &root),
-        CompOp::Greater if ai < 0 => bool_expr(false),
-        _ => bool_expr(false),
-      };
-    }
-
-    // Two distinct roots
-    let (sqrt_out, sqrt_in) = simplify_sqrt_parts(disc);
-    let (r1, r2) = if sqrt_in == 1 {
-      // Rational roots
-      let root1 =
-        solve_divide(&Expr::Integer(-bi - sqrt_out), &Expr::Integer(2 * ai));
-      let root2 =
-        solve_divide(&Expr::Integer(-bi + sqrt_out), &Expr::Integer(2 * ai));
-      order_roots(root1, root2)
-    } else {
-      // Irrational roots
-      let root1 = make_quadratic_root(-bi, -sqrt_out, sqrt_in, 2 * ai);
-      let root2 = make_quadratic_root(-bi, sqrt_out, sqrt_in, 2 * ai);
-      order_roots(root1, root2)
-    };
-
-    // For a > 0: poly > 0 when x < r1 or x > r2
-    //            poly < 0 when r1 < x < r2
-    // For a < 0: reversed
-    let positive_outside = ai > 0;
-    let _ = domain;
-
-    match (op, positive_outside) {
-      (CompOp::Greater, true) | (CompOp::Less, false) => {
-        // x < r1 || x > r2
-        build_or(vec![
-          make_comparison(&id_expr(var), &r1, CompOp::Less),
-          make_comparison(&id_expr(var), &r2, CompOp::Greater),
-        ])
-      }
-      (CompOp::GreaterEqual, true) | (CompOp::LessEqual, false) => {
-        // x <= r1 || x >= r2
-        build_or(vec![
-          make_comparison(&id_expr(var), &r1, CompOp::LessEqual),
-          make_comparison(&id_expr(var), &r2, CompOp::GreaterEqual),
-        ])
-      }
-      (CompOp::Less, true) | (CompOp::Greater, false) => {
-        // r1 < x < r2 → Inequality[r1, Less, x, Less, r2]
-        make_compound_inequality(&r1, CompOp::Less, var, CompOp::Less, &r2)
-      }
-      (CompOp::LessEqual, true) | (CompOp::GreaterEqual, false) => {
-        // r1 <= x <= r2 → Inequality[r1, LessEqual, x, LessEqual, r2]
-        make_compound_inequality(
-          &r1,
-          CompOp::LessEqual,
-          var,
-          CompOp::LessEqual,
-          &r2,
-        )
-      }
-      _ => bool_expr(false),
-    }
-  } else {
-    // Non-integer coefficients — return unevaluated
-    call(
-      "Reduce",
-      vec![minus2(poly.clone(), Expr::Integer(0)), id_expr(var)],
-    )
-  }
-}
-
-/// Make a quadratic root expression: (nb + so*Sqrt[si]) / den
-fn make_quadratic_root(nb: i128, so: i128, si: i128, den: i128) -> Expr {
-  let g = gcd_i128(gcd_i128(nb, so), den);
-  let nb = nb / g;
-  let so = so / g;
-  let den = den / g;
-  let (nb, so, den) = if den < 0 {
-    (-nb, -so, -den)
-  } else {
-    (nb, so, den)
-  };
-
-  let sqrt_part = if si == 1 {
-    Expr::Integer(1)
-  } else if so == 1 {
-    make_sqrt(Expr::Integer(si))
-  } else if so == -1 {
-    neg1(make_sqrt(Expr::Integer(si)))
-  } else {
-    multiply_exprs(&Expr::Integer(so), &make_sqrt(Expr::Integer(si)))
-  };
-
-  let num = if nb == 0 {
-    sqrt_part
-  } else {
-    add_exprs(&Expr::Integer(nb), &sqrt_part)
-  };
-
-  if den == 1 {
-    num
-  } else {
-    div2(num, Expr::Integer(den))
-  }
-}
-
-/// Order two roots so that the smaller one comes first.
-fn order_roots(r1: Expr, r2: Expr) -> (Expr, Expr) {
-  if let (Some(v1), Some(v2)) = (expr_to_number(&r1), expr_to_number(&r2)) {
-    if v1 <= v2 { (r1, r2) } else { (r2, r1) }
-  } else {
-    // Try evaluating symbolically
-    let s1 = expr_to_string(&r1);
-    let s2 = expr_to_string(&r2);
-    // For expressions like -Sqrt[3] and Sqrt[3], the negative one should come first
-    if s1.starts_with('-') && !s2.starts_with('-') {
-      (r1, r2)
-    } else if !s1.starts_with('-') && s2.starts_with('-') {
-      (r2, r1)
-    } else {
-      (r1, r2)
-    }
-  }
-}
-
 /// Try to factor and solve higher-degree polynomial inequalities.
 fn try_factor_and_reduce_inequality(
   lhs: &Expr,
@@ -1997,8 +1970,16 @@ fn try_factor_and_reduce_inequality(
     for sol in solutions {
       if let Expr::List(rules) = sol {
         for rule in rules {
+          // Irrational roots (`Sqrt[2]`) count by their numeric value.
           if let Expr::Rule { replacement, .. } = rule
-            && let Some(val) = expr_to_number(replacement)
+            && let Some(val) = expr_to_number(replacement).or_else(|| {
+              crate::evaluator::evaluate_function_call_ast(
+                "N",
+                std::slice::from_ref(replacement.as_ref()),
+              )
+              .ok()
+              .and_then(|v| expr_to_number(&v))
+            })
           {
             roots.push((replacement.as_ref().clone(), val));
           }

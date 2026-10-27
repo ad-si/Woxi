@@ -11859,18 +11859,6 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// Helper for Power of two arguments
 /// A machine complex power's value: a zero imaginary part stays as
 /// `0.*I` (`(-1. + 0. I)^4` is `1. + 0.*I`), never an exact integer.
-fn machine_complex_result(re: f64, im: f64) -> Expr {
-  if im == 0.0 {
-    crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(0.0)],
-    )
-    .unwrap_or(Expr::Real(re))
-  } else {
-    build_complex_float_expr(re, im)
-  }
-}
-
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
@@ -11978,14 +11966,30 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // Exact bases (`Sqrt[2 + 3 I]`) lack a Real component and stay symbolic;
   // positive integer exponents fall through to the more precise
   // repeated-multiplication path further down.
+  // A zero imaginary part (`Complex[1., 0.]`) is still a complex number:
+  // `Complex[1., 0.]^0.5` is `1. + 0.*I`, not the exact `1` the real-base
+  // rules below would give.
   if !matches!(exp, Expr::Integer(_))
-    && let Some((a, b)) = try_extract_complex_float(base)
-    && b != 0.0
-    && contains_real(base)
+    && let Some((a, b)) = machine_complex_parts(base)
     && let Some((c, d)) = try_extract_complex_float(exp)
   {
     // z^w = exp(w * log z), with log z = ln|z| + i*arg(z).
     let abs_z = (a * a + b * b).sqrt();
+    // The machine complex zero: `0. + 0.*I` for a positive real part of
+    // the exponent, ComplexInfinity (with Power::infy) for a negative one.
+    if abs_z == 0.0 {
+      if c > 0.0 {
+        return Ok(build_complex_float_expr_keep_real(0.0, 0.0));
+      }
+      if c < 0.0 {
+        crate::emit_message(&format_power_infy_2d(
+          &expr_to_string(base),
+          &expr_to_string(exp),
+        ));
+        return Ok(id_expr("ComplexInfinity"));
+      }
+      return Ok(id_expr("Indeterminate"));
+    }
     if abs_z != 0.0 {
       let ln_abs = abs_z.ln();
       let arg_z = b.atan2(a);
@@ -11996,7 +12000,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       let im = mag * im_exp.sin();
       let re = if re.abs() < 1e-15 { 0.0 } else { re };
       let im = if im.abs() < 1e-15 { 0.0 } else { im };
-      return Ok(build_complex_float_expr(re, im));
+      // A machine complex result keeps both parts (`0. + 2.*I`).
+      return Ok(build_complex_float_expr_keep_real(re, im));
     }
   }
 
@@ -13683,7 +13688,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // Round near-zero components to avoid floating-point noise
       let re = if re.abs() < 1e-15 { 0.0 } else { re };
       let im = if im.abs() < 1e-15 { 0.0 } else { im };
-      return Ok(build_complex_float_expr(re, im));
+      return Ok(machine_complex_result(re, im));
     }
     Ok(pow2(base.clone(), exp.clone()))
   }

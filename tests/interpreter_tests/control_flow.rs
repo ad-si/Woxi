@@ -3566,6 +3566,13 @@ mod cases {
     // AbortProtect[expr] evaluates and returns its body (no wrapper).
     assert_case(r#"AbortProtect[1 + 1]"#, r#"2"#);
     assert_case(r#"AbortProtect[Total[{1, 2, 3}]]"#, r#"6"#);
+    // PreemptProtect[expr] likewise evaluates its body; both check arity.
+    assert_case(r#"PreemptProtect[x = 3; x^2]"#, r#"9"#);
+    assert_case(
+      r#"{Attributes[PreemptProtect], Attributes[AbortProtect]}"#,
+      r#"{{HoldAllComplete, Protected}, {HoldAll, Protected}}"#,
+    );
+    assert_case(r#"PreemptProtect[]"#, r#"PreemptProtect[]"#);
   }
   #[test]
   fn check_abort_1() {

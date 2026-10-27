@@ -4094,6 +4094,54 @@ mod graphics {
   }
 }
 
+// A plot whose body holds a large InterpolatingFunction (an NDSolve
+// solution over a long range) samples quickly: the compiled-body cache
+// compares the body with its cached clone per sample, and clones of one
+// shared list are equal without walking the data.
+// `Graphics3D[Dynamic[content]]` draws what the content evaluates to; the
+// held `Table[…]` body is never read outside its iterator.
+mod graphics3d_dynamic_content {
+  use super::*;
+
+  #[test]
+  fn dynamic_table_of_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sides = {{1, 2}, {3, 4}, {5, 6}}; t = 1; \
+         StringCount[ExportString[Graphics3D[Dynamic@Table[\
+         {Point[{i, sides[[i, t]], 0}]}, {i, 3}]], \"SVG\"], \"<circle\"]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert!(
+      woxi::get_captured_messages_raw().is_empty(),
+      "{:?}",
+      woxi::get_captured_messages_raw()
+    );
+  }
+}
+
+mod plot_body_with_large_shared_data {
+  use super::*;
+
+  #[test]
+  fn parametric_plot3d_of_long_ndsolve_solution() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == y[t], y'[t] == -x[t], x[0] == 1, y[0] == 0}, \
+         {x, y}, {t, 0, 6000}]; \
+         First[Timing[ParametricPlot3D[{x[t], y[t], t/1000} /. First[s], \
+         {t, 0, 6000}, PlotPoints -> 4000]]] < 5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod plot3d {
   /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
   /// colours and thins out the surface, both when drawn on its own and when
@@ -22871,6 +22919,21 @@ mod grid_frame_and_background {
       r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{2 -> Directive[Red, Thick]}, None}]"#,
     );
     assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
+
+  /// A bare style as the whole `Dividers` value rules every line on both
+  /// axes in that style. Regression: only `All`/`True`/`Center` and lists
+  /// were recognised, so `Dividers -> Directive[Orange, Thick]` drew nothing.
+  #[test]
+  fn dividers_bare_style_rules_every_line() {
+    for spec in ["Directive[Orange, Thick, Dashed]", "Orange"] {
+      let svg = export_svg(&format!(
+        r#"Grid[{{{{"a", "b"}}, {{"c", "d"}}}}, Dividers -> {spec}]"#
+      ));
+      let lines = grid_lines(&svg);
+      assert_eq!(lines.len(), 6, "{spec}: {svg}");
+      assert!(svg.contains("rgb(255,128,0)"), "{spec}: {svg}");
+    }
   }
 
   /// `Dividers -> Center` rules only the boundaries *between* cells, so the

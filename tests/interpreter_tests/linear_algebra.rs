@@ -6640,11 +6640,66 @@ mod cases {
       r#"{{3363, 4756}, {2378, 3363}}"#,
     );
   }
+  // Eigenvectors and Eigensystem of a matrix pencil {a, b} (a v == λ b v),
+  // like Eigenvalues: the double pendulum's normal modes. wolframscript:
+  // {{33.45929291125633, 5.740707088743667}, {{-0.5773502691896257,
+  // 0.816496580927726}, {-0.5773502691896258, -0.816496580927726}}}.
+  #[test]
+  fn generalized_eigensystem() {
+    assert_case(
+      "{vals, vecs} = Eigensystem[{{{19.6, 0}, {0, 9.8}}, {{2., 1.}, {1., 1.}}}]; \
+       {Max[Abs[vals - {33.45929291125633, 5.740707088743667}]] < 10^-12, \
+       Max[Abs[Abs[vecs] - {{0.5773502691896257, 0.816496580927726}, \
+       {0.5773502691896258, 0.816496580927726}}]] < 10^-12, \
+       Eigenvalues[{{{2, 0}, {0, 1}}, {{2, 1}, {1, 1}}}]}",
+      "{True, True, {2 + Sqrt[2], 2 - Sqrt[2]}}",
+    );
+  }
+
   #[test]
   fn matrix_power_2() {
     assert_case(
       r#"MatrixPower[{{1, 2}, {1, 1}}, 10]; MatrixPower[{{1, 2}, {2, 5}}, -3]"#,
       r#"{{169, -70}, {-70, 29}}"#,
+    );
+  }
+  // Decompositions of a SparseArray work on its dense form; its exponential
+  // and powers stay SparseArrays, as in Wolfram. A 1x1 machine matrix has the
+  // machine unit vector.
+  #[test]
+  fn sparse_array_decompositions() {
+    assert_case(
+      "s = SparseArray[{{1, 2} -> 1., {2, 1} -> 1., {1, 1} -> 2.}]; \
+       {Map[Head, {Eigensystem[s], SingularValueList[s], RowReduce[s], \
+       LUDecomposition[s], QRDecomposition[s], SchurDecomposition[s], \
+       MatrixExp[s], MatrixPower[s, 2]}], Normal[MatrixPower[s, 2]], \
+       Eigensystem[SparseArray[{{1, 1} -> -7.}, {1, 1}]], \
+       Eigensystem[{{-7}}]}",
+      "{{List, List, List, List, List, List, SparseArray, SparseArray}, \
+       {{5., 2.}, {2., 1.}}, {{-7.}, {{1.}}}, {{-7}, {{1}}}}",
+    );
+  }
+
+  // A non-integer power (and any matrix function) of a diagonalizable
+  // matrix goes through its eigensystem: V f(D) V^-1.
+  #[test]
+  fn matrix_power_fractional() {
+    assert_case(
+      "MatrixPower[{{2, 1}, {1, 2}}, 1/2]",
+      "{{1/2 + Sqrt[3]/2, -1/2 + Sqrt[3]/2}, {-1/2 + Sqrt[3]/2, 1/2 + Sqrt[3]/2}}",
+    );
+    // wolframscript: {{0.5158091539374333, -0.08165898261441804}, …}.
+    assert_case(
+      "Max[Abs[MatrixPower[{{4., 1.}, {1., 3.}}, -1/2] - \
+       {{0.5158091539374333, -0.08165898261441804}, \
+       {-0.08165898261441804, 0.5974681365518514}}]] < 10^-14",
+      "True",
+    );
+    assert_case(
+      "Max[Abs[MatrixFunction[Sin[#] &, {{1., 2.}, {3., 4.}}] - \
+       {{-0.4655814863137303, -0.14842445991317654}, \
+       {-0.22263668986976481, -0.6882181761834951}}]] < 10^-14",
+      "True",
     );
   }
   #[test]

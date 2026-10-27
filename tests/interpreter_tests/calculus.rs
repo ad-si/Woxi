@@ -23140,6 +23140,106 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // An algebraic equation among differentiated unknowns (y == x^2 next to
+  // 2 x' + y' == -x) is differentiated into y' == 2 x x' (index
+  // reduction), and an initial value for an algebraic unknown is accepted.
+  // wolframscript: {0.7662486027219241, 0.5871369211279744} and
+  // {2.7182820111027923, 5.436564022205585}.
+  #[test]
+  fn dae_index_reduction_and_algebraic_initial_values() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{2 x'[t] + y'[t] == -x[t], y[t] == x[t]^2, x[0] == 1, \
+         y[0] == 1}, {x, y}, {t, 0, 1}]; \
+         Max[Abs[({x[1], y[1]} /. s[[1]]) - \
+         {0.7662486027219241, 0.5871369211279744}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t] + z[t], z[t] == 2 x[t], x[0] == 1, \
+         z[0] == 2}, {x, z}, {t, 0, 1}]; \
+         Max[Abs[({x[1], z[1]} /. s[[1]]) - \
+         {2.7182820111027923, 5.436564022205585}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // NDSolve::ndsz names the independent variable where stepping stalled.
+  #[test]
+  fn ndsz_names_the_independent_variable() {
+    clear_state();
+    interpret("NDSolve[{y'[t] == y[t]^2, y[0] == 1}, y, {t, 0, 2}]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.starts_with("NDSolve::ndsz: At t == ")),
+      "{msgs:?}"
+    );
+  }
+
+  // Without a WhenEvent nothing needs the highest derivative of an implicit
+  // equation solved for: solving this geodesic equation for `u''[s]` (from
+  // the Conjugate Locus Demonstration) took minutes.
+  #[test]
+  fn implicit_equation_without_events_is_not_solved() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{T''[s] == -T[s], T[0] == 1, T'[0] == 0, P''[s] == 0, \
+         P[0] == 0.1, P'[0] == 0.2, \
+         -(((0. + (3.9999999999999996*Cos[P[s]]^2)/(8.454545454545455 + \
+         1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - T[s])] - \
+         2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + T[s])]) + \
+         0.9999999999999993*Cot[T[s]]^2 - 0.9999999999999997*Csc[T[s]]^2 - \
+         (3.9999999999999996*Sin[P[s]]^2)/(8.454545454545455 + 1.*Cos[2*P[s]] \
+         - 0.5*Cos[2*(P[s] - T[s])] - 2.6363636363636362*Cos[2*T[s]] - \
+         0.5*Cos[2*(P[s] + T[s])]) - \
+         (0.9999999999999997*Cos[T[s]]^2*(0.9062499999999999 + \
+         0.34374999999999983*Cos[P[s]]^2 - \
+         0.34374999999999983*Sin[P[s]]^2))/(1.453125 + 0.171875*Cos[2*P[s]] - \
+         0.0859375*Cos[2*(P[s] - T[s])] - 0.453125*Cos[2*T[s]] - \
+         0.0859375*Cos[2*(P[s] + T[s])]) - \
+         (15.999999999999996*Cos[P[s]]^2*Sin[P[s]]^2*Sin[T[s]]^2)/(8.454545454545455 \
+         + 1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - T[s])] - \
+         2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + T[s])])^2 - \
+         (3.9999999999999996*Cos[P[s]]*Sin[P[s]]*(-2.*Sin[2*P[s]] + \
+         1.*Sin[2*(P[s] - T[s])] + 1.*Sin[2*(P[s] + \
+         T[s])]))/(8.454545454545455 + 1.*Cos[2*P[s]] - 0.5*Cos[2*(P[s] - \
+         T[s])] - 2.6363636363636362*Cos[2*T[s]] - 0.5*Cos[2*(P[s] + \
+         T[s])])^2)*u[s])/(Cos[P[s]]^2*Cos[T[s]]^2 + \
+         1.44*Cos[T[s]]^2*Sin[P[s]]^2 + 2.25*Sin[T[s]]^2)) + \
+         Derivative[2][u][s] == 0, \
+         u[0] == 0, u'[0] == 1}, {T, P, u}, {s, 0, 1}]; \
+         NumericQ[u[1] /. First[s]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // Robertson's chemical kinetics: the adaptive explicit steps detect the
+  // stiffness and hand the leg to the Rosenbrock method instead of crawling
+  // through millions of steps. wolframscript: y1[40] = 0.7158270453506574.
+  #[test]
+  fn robertson_problem_switches_to_stiff_method() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y1'[t] == -0.04 y1[t] + 10^4 y2[t] y3[t], \
+         y2'[t] == 0.04 y1[t] - 10^4 y2[t] y3[t] - 3*10^7 y2[t]^2, \
+         y3'[t] == 3*10^7 y2[t]^2, y1[0] == 1, y2[0] == 0, y3[0] == 0}, \
+         {y1, y2, y3}, {t, 0, 40}]; \
+         Abs[(y1[40] /. First[s]) - 0.7158270453506574] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // The Chay–Keizer beta-cell model spikes faster than the nominal grid
   // follows; the leg falls back to adaptive Dormand–Prince steps.
   // wolframscript: V[5000] = -58.01807302788192.

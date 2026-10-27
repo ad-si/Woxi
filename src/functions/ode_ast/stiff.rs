@@ -14,8 +14,11 @@ use super::*;
 const RTOL: f64 = 1e-8;
 const ATOL: f64 = 1e-10;
 
-/// Accepted plus rejected steps a leg may take before giving up.
-const MAX_STEPS: usize = 200_000;
+/// Accepted plus rejected steps a leg may take before giving up. The
+/// order-2 method needs ~500 steps per unit of `x` on a stiff problem whose
+/// slow solution varies on a unit scale (`y' = -10^5 (y - Cos[x])`), so a
+/// leg of a few hundred units must fit.
+const MAX_STEPS: usize = 2_000_000;
 
 /// The right-hand side `f(x, y)` of `y' = f(x, y)`; `None` where it cannot
 /// be evaluated.
@@ -58,6 +61,7 @@ pub(super) fn rosenbrock_leg(
     span.abs() / 100.0
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
+  let mut failures = 0;
 
   for _ in 0..MAX_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -104,6 +108,10 @@ pub(super) fn rosenbrock_leg(
     let y1: Vec<f64> =
       y.iter().zip(&k1).map(|(a, k)| a + 0.5 * hs * k).collect();
     let Some(f1) = f(x + 0.5 * hs, &y1)? else {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     };
@@ -114,6 +122,10 @@ pub(super) fn rosenbrock_leg(
       .collect();
     let y_new: Vec<f64> = y.iter().zip(&k2).map(|(a, k)| a + hs * k).collect();
     let Some(f2) = f(x + hs, &y_new)? else {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     };
@@ -185,6 +197,14 @@ fn jacobian(
 /// the stiff method.
 const MAX_EXPLICIT_STEPS: usize = 1_000_000;
 
+/// Steps of a leg whose right-hand side cannot be evaluated (the state
+/// left the domain of a `Log`, or an algebraic constraint has no root
+/// there) before the leg is given up. Shrinking the step and growing it
+/// again after each success would otherwise probe the boundary for up to
+/// the whole step budget — and each failed evaluation of a DAE's
+/// constraints is a full failing Newton run.
+const MAX_EVALUATION_FAILURES: usize = 20;
+
 /// Integrate `y' = f(x, y)` from `x_from` to `x_to` with the adaptive
 /// Dormand–Prince 5(4) pair — the explicit fallback for a leg the fixed RK4
 /// grid cannot follow, such as a spiking membrane model whose fast phases
@@ -196,6 +216,7 @@ pub(super) fn dormand_prince_leg(
   init: &[f64],
   x_from: f64,
   x_to: f64,
+  detect_stiffness: bool,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   const C: [f64; 7] =
     [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
@@ -263,6 +284,8 @@ pub(super) fn dormand_prince_leg(
     span.abs() / 100.0
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
+  let (mut stiff_steps, mut calm_steps) = (0, 0);
+  let mut failures = 0;
 
   for _ in 0..MAX_EXPLICIT_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -276,12 +299,17 @@ pub(super) fn dormand_prince_leg(
     let mut k: Vec<Vec<f64>> = Vec::with_capacity(7);
     k.push(k0.clone());
     let mut failed = false;
+    // The sixth stage's argument, for the stiffness estimate below.
+    let mut y_stage6 = Vec::new();
     for stage in 1..7 {
       let ys: Vec<f64> = (0..n)
         .map(|i| {
           y[i] + hs * (0..stage).map(|j| A[stage][j] * k[j][i]).sum::<f64>()
         })
         .collect();
+      if stage == 5 {
+        y_stage6.clone_from(&ys);
+      }
       match f(x + C[stage] * hs, &ys)? {
         Some(ks) if ks.iter().all(|v| v.is_finite()) => k.push(ks),
         _ => {
@@ -291,6 +319,10 @@ pub(super) fn dormand_prince_leg(
       }
     }
     if failed {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
       h /= 4.0;
       continue;
     }
@@ -313,6 +345,26 @@ pub(super) fn dormand_prince_leg(
       h *= factor;
       continue;
     }
+    // Hairer's stiffness detection: the last two stages share the abscissa
+    // x + h, so |k7 - k6| / |y7 - y6| estimates the Jacobian's dominant
+    // eigenvalue. When h |λ| keeps reaching the stability boundary the
+    // explicit method only crawls on, so the leg is left to the stiff one.
+    // The step size hovers around that boundary, so the count of stiff
+    // steps is only reset after six calm ones in a row.
+    let num: f64 = (0..n).map(|i| (k[6][i] - k[5][i]).powi(2)).sum();
+    let den: f64 = (0..n).map(|i| (y_new[i] - y_stage6[i]).powi(2)).sum();
+    if detect_stiffness && den > 0.0 && h * h * num > 3.25 * 3.25 * den {
+      calm_steps = 0;
+      stiff_steps += 1;
+      if stiff_steps >= 15 {
+        return Ok(None);
+      }
+    } else {
+      calm_steps += 1;
+      if calm_steps >= 6 {
+        stiff_steps = 0;
+      }
+    }
     x += hs;
     if (x_to - x) * dir <= h_min {
       x = x_to;
@@ -323,4 +375,66 @@ pub(super) fn dormand_prince_leg(
     h *= factor;
   }
   Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // The stiff method resolves a slow solution under a fast relaxation
+  // (`y' = -10^5 (y - cos x)`) over a long leg without running out of steps.
+  #[test]
+  fn long_stiff_leg_completes() {
+    let stiff = |x: f64, y: &[f64]| Ok(Some(vec![-1e5 * (y[0] - x.cos())]));
+    let points = rosenbrock_leg(&stiff, &[0.0], 0.0, 300.0)
+      .unwrap()
+      .expect("integrates");
+    let (x, y) = points.last().unwrap();
+    assert_eq!(*x, 300.0);
+    // y = cos x + 10^-5 sin x + O(10^-10).
+    let err = (y[0] - (300.0f64.cos() + 1e-5 * 300.0f64.sin())).abs();
+    assert!(err < 1e-7, "{err}");
+  }
+
+  // A right-hand side with no value past x = 1 makes both legs give up
+  // after a bounded number of evaluations instead of probing the boundary
+  // with ever smaller steps for the whole step budget.
+  #[test]
+  fn undefined_right_hand_side_gives_up_quickly() {
+    let calls = std::cell::Cell::new(0usize);
+    let undefined_past_one = |x: f64, y: &[f64]| {
+      calls.set(calls.get() + 1);
+      Ok((x <= 1.0).then(|| vec![-y[0]]))
+    };
+    assert!(
+      dormand_prince_leg(&undefined_past_one, &[1.0], 0.0, 10.0, true)
+        .unwrap()
+        .is_none()
+    );
+    assert!(calls.get() < 5_000, "{} evaluations", calls.get());
+    calls.set(0);
+    assert!(
+      rosenbrock_leg(&undefined_past_one, &[1.0], 0.0, 10.0)
+        .unwrap()
+        .is_none()
+    );
+    assert!(calls.get() < 5_000, "{} evaluations", calls.get());
+  }
+
+  // A stiff system makes the explicit leg give up quickly so the stiff
+  // method takes over; a non-stiff one integrates to the end.
+  #[test]
+  fn explicit_leg_detects_stiffness() {
+    let stiff = |x: f64, y: &[f64]| Ok(Some(vec![-1e5 * (y[0] - x.cos())]));
+    assert!(
+      dormand_prince_leg(&stiff, &[1.0], 0.0, 300.0, true)
+        .unwrap()
+        .is_none()
+    );
+    let decay = |_: f64, y: &[f64]| Ok(Some(vec![-y[0]]));
+    let points = dormand_prince_leg(&decay, &[1.0], 0.0, 10.0, true)
+      .unwrap()
+      .expect("integrates");
+    assert!((points.last().unwrap().1[0] - (-10.0f64).exp()).abs() < 1e-9);
+  }
 }

@@ -4575,7 +4575,9 @@ pub fn image_apply_ast(
 /// Extract `(r, g, b, optional_alpha)` from a color directive (RGBColor
 /// or GrayLevel). Returns None for anything else, including named
 /// constants that haven't already been resolved to RGBColor.
-fn color_directive_to_rgb(e: &Expr) -> Option<(f64, f64, f64, Option<f64>)> {
+pub(crate) fn color_directive_to_rgb(
+  e: &Expr,
+) -> Option<(f64, f64, f64, Option<f64>)> {
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
@@ -4609,6 +4611,22 @@ fn color_directive_to_rgb(e: &Expr) -> Option<(f64, f64, f64, Option<f64>)> {
     "Hue" if args.len() == 3 || args.len() == 4 => {
       let (r, g, b) =
         hsv_to_rgb(to_f(&args[0])?, to_f(&args[1])?, to_f(&args[2])?);
+      let alpha = if args.len() == 4 {
+        Some(to_f(&args[3])?)
+      } else {
+        None
+      };
+      Some((r, g, b, alpha))
+    }
+    // `LABColor[l, a, b(, alpha)]` (scaled by 1/100, D50) and
+    // `XYZColor[x, y, z(, alpha)]` (D50), back to sRGB.
+    "LABColor" | "XYZColor" if args.len() == 3 || args.len() == 4 => {
+      let (p, q, t) = (to_f(&args[0])?, to_f(&args[1])?, to_f(&args[2])?);
+      let (r, g, b) = if name == "LABColor" {
+        lab_to_srgb(p, q, t)
+      } else {
+        xyz_d50_to_srgb(p, q, t)
+      };
       let alpha = if args.len() == 4 {
         Some(to_f(&args[3])?)
       } else {
@@ -11798,6 +11816,35 @@ fn srgb_to_lab(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
   let a = 500.0 * (fx - fy);
   let b_star = 200.0 * (fy - fz);
   (l / 100.0, a / 100.0, b_star / 100.0)
+}
+
+/// CIE XYZ under a D50 illuminant → gamma-encoded sRGB, the inverse of
+/// `linear_rgb_to_xyz_d50` followed by `srgb_to_linear`.
+fn xyz_d50_to_srgb(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+  let (r, g, b) = mat3_apply(&mat3_inverse(&LINEAR_RGB_TO_XYZ_D50), (x, y, z));
+  (linear_to_srgb(r), linear_to_srgb(g), linear_to_srgb(b))
+}
+
+/// Wolfram-style scaled LAB (each component divided by 100) → sRGB, the
+/// inverse of [`srgb_to_lab`].
+fn lab_to_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
+  // The inverse of `lab_f`: a cube above the cutoff, affine below.
+  fn lab_f_inverse(t: f64) -> f64 {
+    const DELTA: f64 = 6.0 / 29.0;
+    if t > DELTA {
+      t * t * t
+    } else {
+      3.0 * DELTA * DELTA * (t - 4.0 / 29.0)
+    }
+  }
+  let fy = (100.0 * l + 16.0) / 116.0;
+  let fx = fy + 100.0 * a / 500.0;
+  let fz = fy - 100.0 * b / 200.0;
+  // The D50 reference white of `srgb_to_lab`.
+  let x = 0.9642119944211995 * lab_f_inverse(fx);
+  let y = lab_f_inverse(fy);
+  let z = 0.8251882845188289 * lab_f_inverse(fz);
+  xyz_d50_to_srgb(x, y, z)
 }
 
 /// Resolve any color expression (named, RGBColor, GrayLevel, etc.) to

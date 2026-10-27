@@ -1277,6 +1277,39 @@ mod real_number_formatting {
   }
 }
 
+// A machine complex number with a zero imaginary part (`Complex[1., 0.]`)
+// stays complex through every elementary function, as in Wolfram.
+mod machine_complex_zero_imaginary {
+  use super::super::case_helpers::assert_case;
+
+  // The machine complex zero: a positive power is `0. + 0.*I`, a negative
+  // one ComplexInfinity, and Log has no direction (Indeterminate).
+  // Regression: Sqrt and Power handed `0. + 0.*I` back and forth until
+  // the stack overflowed.
+  #[test]
+  fn machine_complex_zero() {
+    assert_case(
+      "Quiet[{Sqrt[Complex[0., 0.]], Complex[0., 0.]^0.5, \
+       Complex[0., 0.]^(-1/2), Exp[Complex[0., 0.]], Log[Complex[0., 0.]], \
+       With[{u = 0., v = 0.}, (u + I v)^(1/2)]}]",
+      "{0. + 0.*I, 0. + 0.*I, ComplexInfinity, 1. + 0.*I, Indeterminate, \
+       0. + 0.*I}",
+    );
+  }
+
+  #[test]
+  fn elementary_functions_keep_it_complex() {
+    assert_case(
+      "{Complex[1., 0.]^0.5, Complex[1., 0.]^(1/3), Sqrt[Complex[-4., 0.]], \
+       Exp[Complex[1., 0.]], Log[Complex[1., 0.]], Log[Complex[-1., 0.]], \
+       Sinh[Complex[1., 0.]], Sign[Complex[-2., 0.]]}",
+      "{1. + 0.*I, 1. + 0.*I, 0. + 2.*I, 2.718281828459045 + 0.*I, \
+       0. + 0.*I, 0. + 3.141592653589793*I, 1.1752011936438014 + 0.*I, \
+       -1. + 0.*I}",
+    );
+  }
+}
+
 mod plus_numeric_contagion {
   use super::*;
 
@@ -2344,13 +2377,20 @@ mod machine_complex_power_zero_imaginary {
   fn e_to_complex_with_zero_imaginary() {
     // Regression: a structurally complex exponent whose imaginary part
     // works out to `0.` still numericizes. Previously `E^(0.5 + 0.*I)`
-    // stayed symbolic, so `s*Exp[I*t]` at `t = 0.` never evaluated.
-    assert_eq!(interpret("E^(0.5 + 0.*I)").unwrap(), "1.6487212707001282");
+    // stayed symbolic, so `s*Exp[I*t]` at `t = 0.` never evaluated. The
+    // result is a machine complex number, as in Wolfram.
+    assert_eq!(
+      interpret("E^(0.5 + 0.*I)").unwrap(),
+      "1.6487212707001282 + 0.*I"
+    );
   }
 
   #[test]
   fn real_base_complex_exponent_with_zero_imaginary() {
-    assert_eq!(interpret("2.^(0.5 + 0.*I)").unwrap(), "1.414213562373095");
+    assert_eq!(
+      interpret("2.^(0.5 + 0.*I)").unwrap(),
+      "1.414213562373095 + 0.*I"
+    );
   }
 
   #[test]

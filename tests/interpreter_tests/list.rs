@@ -24740,3 +24740,31 @@ mod part_of_held_pieces {
     );
   }
 }
+
+// A NumericArray stands for its array: structural list functions and Part
+// give a NumericArray of the same type, summaries give plain values, as in
+// Wolfram. Regression: Length gave 2 and na[[2]] the type tag, and Take
+// failed (HistogramThresholdByMaxContourContrast).
+mod numeric_array_list_operations {
+  use super::*;
+
+  #[test]
+  fn structural_functions_and_part() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "na = NumericArray[Range[10], \"Integer32\"]; \
+         m = NumericArray[{{1, 2, 3}, {4, 5, 6}}, \"Integer32\"]; \
+         {Normal[Take[na, 3]], Normal[Drop[na, 3]], Head[Reverse[na]], \
+         Total[na], Max[na], Length[na], na[[2]], Normal[na[[2 ;; 4]]], \
+         m[[1, 2]], Head[m[[1]]], Normal[m[[All, 2]]], \
+         Normal[Transpose[m]], Total[m], Length[Normal[Join[na, na]]], \
+         Take[m, 1]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 5, 6, 7, 8, 9, 10}, NumericArray, 55, 10, 10, 2, \
+       {2, 3, 4}, 2, NumericArray, {2, 5}, {{1, 4}, {2, 5}, {3, 6}}, \
+       {5, 7, 9}, 20, NumericArray[<1,3>, Integer32]}"
+    );
+  }
+}
