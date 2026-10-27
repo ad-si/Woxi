@@ -4810,12 +4810,18 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = try_solve_inverse_function(&args[0], var) {
     return result;
   }
+  if let Some(result) = try_solve_through_undefined_function(&args[0], var) {
+    return result;
+  }
 
   // Trigonometric equations of the form `Trig[var] == const` where the trig
   // head is Sin/Cos/Tan/Cot. Wolframscript prints the periodic solution set
   // as `{{var -> ConditionalExpression[base + 2*Pi*C[1], Element[C[1],
   // Integers]]}, …}` for Sin/Cos and `{var -> ConditionalExpression[base +
   // Pi*C[1], Element[C[1], Integers]]}` for Tan/Cot.
+  if let Some(result) = try_solve_inexact_trig(&args[0], var) {
+    return Ok(result);
+  }
   if let Some(result) = try_solve_trig_eq(&args[0], var) {
     return Ok(result);
   }
@@ -7338,6 +7344,226 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   Some(make_rule_list(solutions))
 }
 
+/// An inexact equation that is a polynomial in `Sin[u]`, `Cos[u]` or `Tan[u]`
+/// of one argument `u` linear in `var`. wolframscript inverts the functions
+/// instead of returning the periodic family: it solves for the function
+/// values and takes principal branches — `ArcSin[s]` when only `Sin` occurs,
+/// `ArcTan[t]` when only `Tan` does, and `±ArcCos[c]` when only `Cos` does.
+/// Equations mixing `Sin` and `Cos` are reduced to `Cos` alone through
+/// `Sin[u]^2 == 1 - Cos[u]^2` (squaring away the odd `Sin` part), and only the
+/// angles `ArcTan[c, ±Sqrt[1 - c^2]]` that satisfy the original equation are
+/// kept.
+fn try_solve_inexact_trig(eq: &Expr, var: &str) -> Option<Expr> {
+  fn collect<'a>(e: &'a Expr, var: &str, out: &mut Vec<&'a Expr>) {
+    match e {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(name.as_str(), "Sin" | "Cos" | "Tan")
+          && contains_var(&args[0], var) =>
+      {
+        out.push(e);
+      }
+      Expr::FunctionCall { args, .. } => {
+        args.iter().for_each(|a| collect(a, var, out));
+      }
+      Expr::List(items) => items.iter().for_each(|a| collect(a, var, out)),
+      Expr::BinaryOp { left, right, .. } => {
+        collect(left, var, out);
+        collect(right, var, out);
+      }
+      Expr::UnaryOp { operand, .. } => collect(operand, var, out),
+      _ => {}
+    }
+  }
+  if !crate::functions::math_ast::contains_inexact_real(eq) {
+    return None;
+  }
+  let (lhs, rhs, CompOp::Equal) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(eq)?
+  else {
+    return None;
+  };
+  let difference = minus2(lhs, rhs);
+  let mut calls = Vec::new();
+  collect(&difference, var, &mut calls);
+  let Expr::FunctionCall { args, .. } = calls.first()? else {
+    return None;
+  };
+  let argument = args[0].clone();
+  let mut heads = std::collections::BTreeSet::new();
+  let mut substituted = difference.clone();
+  for trig_call in &calls {
+    let Expr::FunctionCall { name, args } = trig_call else {
+      return None;
+    };
+    if expr_to_string(&args[0]) != expr_to_string(&argument) {
+      return None;
+    }
+    heads.insert(name.as_str());
+    let symbol = id_expr(&format!("$SolveTrig{name}"));
+    substituted = substitute_expr(&substituted, trig_call, &symbol);
+  }
+  if contains_var(&substituted, var) {
+    return None;
+  }
+  let (lin_a, lin_b) = if matches!(&argument, Expr::Identifier(s) if s == var) {
+    (Expr::Integer(1), Expr::Integer(0))
+  } else {
+    super::apart::extract_linear_coeffs(&argument, var)?
+  };
+  if contains_var(&lin_a, var) || contains_var(&lin_b, var) {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let n =
+    |e: Expr| crate::evaluator::evaluate_function_call_ast("N", &[e]).ok();
+  let heads: Vec<&str> = heads.into_iter().collect();
+  // For a mixed equation, the parts of its reduced form `even + odd*Sin[u]`.
+  let mut sine_parts = None;
+  let (unknown, polynomial) = match heads.as_slice() {
+    [head] => (id_expr(&format!("$SolveTrig{head}")), substituted.clone()),
+    ["Cos", "Sin"] => {
+      let s = id_expr("$SolveTrigSin");
+      let c = id_expr("$SolveTrigCos");
+      let circle = eval(call(
+        "Plus",
+        vec![
+          pow2(s.clone(), Expr::Integer(2)),
+          pow2(c.clone(), Expr::Integer(2)),
+          Expr::Integer(-1),
+        ],
+      ))?;
+      let remainder = eval(call(
+        "PolynomialRemainder",
+        vec![substituted.clone(), circle, s.clone()],
+      ))?;
+      let coefficient = |k: i128| {
+        eval(call(
+          "Coefficient",
+          vec![remainder.clone(), s.clone(), Expr::Integer(k)],
+        ))
+      };
+      let (even, odd) = (coefficient(0)?, coefficient(1)?);
+      sine_parts = Some((even.clone(), odd.clone()));
+      let resolvent = if matches!(odd, Expr::Integer(0)) {
+        even
+      } else {
+        call(
+          "Subtract",
+          vec![
+            pow2(even, Expr::Integer(2)),
+            times2(
+              pow2(odd, Expr::Integer(2)),
+              minus2(Expr::Integer(1), pow2(c.clone(), Expr::Integer(2))),
+            ),
+          ],
+        )
+      };
+      (c, eval(call1("Expand", resolvent))?)
+    }
+    _ => return None,
+  };
+  let Expr::Identifier(unknown_name) = &unknown else {
+    return None;
+  };
+  if !matches!(
+    eval(call(
+      "PolynomialQ",
+      vec![polynomial.clone(), unknown.clone()]
+    ))?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return None;
+  }
+  let roots = quietly(|| {
+    solve_ast(&[
+      Expr::Comparison {
+        operands: vec![polynomial, Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      },
+      unknown.clone(),
+    ])
+  })
+  .ok()?;
+  let Expr::List(ref roots) = roots else {
+    return None;
+  };
+  let mut candidates = Vec::new();
+  for root in roots {
+    let Expr::List(rules) = root else {
+      return None;
+    };
+    let [
+      Expr::Rule {
+        pattern,
+        replacement,
+      },
+    ] = rules.as_slice()
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(p) if p == unknown_name) {
+      return None;
+    }
+    let value = replacement.as_ref().clone();
+    try_extract_complex_f64(&n(value.clone())?)?;
+    // The angle of the point `(Cos[u], Sin[u])`; a missing `Cos[u]` takes
+    // the principal (nonnegative) root, a missing `Sin[u]` both signs.
+    let other = || {
+      call1(
+        "Sqrt",
+        minus2(Expr::Integer(1), pow2(value.clone(), Expr::Integer(2))),
+      )
+    };
+    match heads.as_slice() {
+      ["Tan"] => candidates.push(call1("ArcTan", value)),
+      ["Sin"] => candidates.push(call("ArcTan", vec![other(), value.clone()])),
+      ["Cos"] => {
+        let arc = call1("ArcCos", value.clone());
+        candidates.push(neg1(arc.clone()));
+        candidates.push(arc);
+      }
+      _ => {
+        // Where the odd part does not vanish it pins `Sin[u]` down without
+        // the cancellation `1 - c^2` suffers near `c = ±1`.
+        let (even, odd) = sine_parts.as_ref()?;
+        let at = |e: &Expr| n(substitute_expr(e, &unknown, &value));
+        let odd_value = at(odd)?;
+        let sine = match try_extract_complex_f64(&odd_value) {
+          Some((re, im)) if re.hypot(im) > 1e-8 => {
+            eval(neg1(div2(at(even)?, odd_value)))?
+          }
+          _ => other(),
+        };
+        candidates
+          .push(call("ArcTan", vec![value.clone(), neg1(sine.clone())]));
+        candidates.push(call("ArcTan", vec![value.clone(), sine]));
+      }
+    }
+  }
+  let mut solutions: Vec<Expr> = Vec::new();
+  let mut seen: Vec<(f64, f64)> = Vec::new();
+  for candidate in candidates {
+    let value =
+      n(eval(div2(minus2(candidate, lin_b.clone()), lin_a.clone()))?)?;
+    let point = try_extract_complex_f64(&value)?;
+    let solution =
+      Expr::List(vec![rule_expr(id_expr(var), value.clone())].into());
+    if numerically_violates(eq, &solution)
+      || seen.iter().any(|p| {
+        (p.0 - point.0).abs() <= 1e-12 * (1.0 + p.0.abs())
+          && (p.1 - point.1).abs() <= 1e-12 * (1.0 + p.1.abs())
+      })
+    {
+      continue;
+    }
+    seen.push(point);
+    solutions.push(solution);
+  }
+  report_inverse_function_use();
+  Some(sort_nsolve_solutions(Expr::List(solutions.into())))
+}
+
 /// `Sin/Cos[a1*var + b1] == Sin/Cos[a2*var + b2]` (both sides depend on `var`
 /// through a linear argument). Writing `Cos[A]` as `Sin[Pi/2 + A]`, the
 /// equation `Sin[A] == Sin[B]` holds iff `A == B + 2*Pi*k` or
@@ -7520,6 +7746,7 @@ fn is_invertible_atom_shape(e: &Expr) -> bool {
   matches!(
     e,
     Expr::FunctionCall { .. }
+      | Expr::CurriedCall { .. }
       | Expr::BinaryOp {
         op: BinaryOperator::Power,
         ..
@@ -8349,6 +8576,22 @@ fn try_solve_inverse_function(
     }
   }
 
+  if let Some((inner, inverse_value)) =
+    undefined_function_inverse(func_call, val, var)
+  {
+    let solved = solve_ast(&[
+      Expr::Comparison {
+        operands: vec![inner, inverse_value],
+        operators: vec![ComparisonOp::Equal],
+      },
+      id_expr(var),
+    ]);
+    if solved.is_ok() {
+      report_inverse_function_use();
+    }
+    return Some(solved);
+  }
+
   if let Expr::FunctionCall { name, args } = func_call {
     if args.len() != 1 {
       return None;
@@ -8430,6 +8673,162 @@ fn try_solve_inverse_function(
   } else {
     None
   }
+}
+
+/// An equation that involves `var` only through one call of an undefined
+/// function, polynomially (`f[x]^2 == 4`): solved for the call's values
+/// first, each of which is then inverted as in `undefined_function_inverse`.
+fn try_solve_through_undefined_function(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  fn atoms<'a>(e: &'a Expr, var: &str, out: &mut Vec<&'a Expr>) {
+    if is_constant_wrt(e, var) {
+      return;
+    }
+    match e {
+      Expr::FunctionCall { name, .. }
+        if !crate::evaluator::functions::is_builtin_symbol(name) =>
+      {
+        out.push(e);
+      }
+      Expr::CurriedCall { .. } => out.push(e),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().for_each(|a| atoms(a, var, out));
+      }
+      Expr::List(items) => items.iter().for_each(|a| atoms(a, var, out)),
+      Expr::BinaryOp { left, right, .. } => {
+        atoms(left, var, out);
+        atoms(right, var, out);
+      }
+      Expr::UnaryOp { operand, .. } => atoms(operand, var, out),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().for_each(|a| atoms(a, var, out));
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  atoms(eq, var, &mut found);
+  let atom = (*found.first()?).clone();
+  if found
+    .iter()
+    .any(|a| expr_to_string(a) != expr_to_string(&atom))
+  {
+    return None;
+  }
+  let placeholder = id_expr("$SolveUndefinedCall");
+  let substituted = substitute_expr(eq, &atom, &placeholder);
+  if contains_var(&substituted, var) {
+    return None;
+  }
+  let (lhs, rhs, CompOp::Equal) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(&substituted)?
+  else {
+    return None;
+  };
+  let is_polynomial = crate::evaluator::evaluate_expr_to_expr(&call(
+    "PolynomialQ",
+    vec![minus2(lhs, rhs), placeholder.clone()],
+  ))
+  .ok()?;
+  if !matches!(is_polynomial, Expr::Identifier(ref t) if t == "True") {
+    return None;
+  }
+  let values =
+    quietly(|| solve_ast(&[substituted, placeholder.clone()])).ok()?;
+  let Expr::List(ref values) = values else {
+    return None;
+  };
+  let mut solutions = Vec::new();
+  for value in values {
+    let Expr::List(rules) = value else {
+      return None;
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return None;
+    };
+    let (inner, inverse_value) =
+      undefined_function_inverse(&atom, replacement, var)?;
+    let solved = quietly(|| {
+      solve_ast(&[
+        Expr::Comparison {
+          operands: vec![inner, inverse_value],
+          operators: vec![ComparisonOp::Equal],
+        },
+        id_expr(var),
+      ])
+    })
+    .ok()?;
+    let Expr::List(ref found) = solved else {
+      return None;
+    };
+    solutions.extend(found.iter().cloned());
+  }
+  report_inverse_function_use();
+  Some(Ok(Expr::List(solutions.into())))
+}
+
+/// `f[a1, …, ak, …, an] == val` for a function `f` with no definition (a
+/// symbol that is not built in, or a compound head like `F[4]` built on one),
+/// where only the argument `ak` involves `var`: that argument equals
+/// `InverseFunction[f, k, n][a1, …, val, …, an]`, `val` taking its place.
+fn undefined_function_inverse(
+  func_call: &Expr,
+  val: &Expr,
+  var: &str,
+) -> Option<(Expr, Expr)> {
+  fn undefined_head(head: &Expr, var: &str) -> bool {
+    match head {
+      Expr::Identifier(name) => {
+        !crate::evaluator::functions::is_builtin_symbol(name)
+      }
+      Expr::FunctionCall { name, args } => {
+        !crate::evaluator::functions::is_builtin_symbol(name)
+          && args.iter().all(|a| is_constant_wrt(a, var))
+      }
+      Expr::CurriedCall { func, args } => {
+        undefined_head(func, var)
+          && args.iter().all(|a| is_constant_wrt(a, var))
+      }
+      _ => false,
+    }
+  }
+  let (head, args) = match func_call {
+    Expr::FunctionCall { name, args } => (id_expr(name), args.as_slice()),
+    Expr::CurriedCall { func, args } => {
+      (func.as_ref().clone(), args.as_slice())
+    }
+    _ => return None,
+  };
+  if !undefined_head(&head, var) {
+    return None;
+  }
+  let mut dependent = args
+    .iter()
+    .enumerate()
+    .filter(|(_, a)| !is_constant_wrt(a, var));
+  let (k, inner) = dependent.next()?;
+  if dependent.next().is_some() {
+    return None;
+  }
+  let mut inverse_args = args.to_vec();
+  inverse_args[k] = val.clone();
+  let inverse = call(
+    "InverseFunction",
+    vec![
+      head,
+      Expr::Integer(k as i128 + 1),
+      Expr::Integer(args.len() as i128),
+    ],
+  );
+  Some((
+    inner.clone(),
+    Expr::CurriedCall {
+      func: Box::new(inverse),
+      args: inverse_args,
+    },
+  ))
 }
 
 /// Drop the solutions that do not satisfy `equation`. A solution that

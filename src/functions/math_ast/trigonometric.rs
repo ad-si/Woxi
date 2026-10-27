@@ -4102,6 +4102,27 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Real(fy.atan2(fx)));
   }
+  // A machine complex argument: ArcTan[x, y] = -I Log[(x + I y)/Sqrt[x^2 + y^2]].
+  if (machine_complex_parts(x).is_some() || machine_complex_parts(y).is_some())
+    && let (Some((xr, xi)), Some((yr, yi))) =
+      (try_extract_complex_float(x), try_extract_complex_float(y))
+  {
+    let (zr, zi) = (xr - yi, xi + yr);
+    let (wr, wi) = (
+      xr * xr - xi * xi + yr * yr - yi * yi,
+      2.0 * (xr * xi + yr * yi),
+    );
+    // Principal square root of w.
+    let modulus = wr.hypot(wi);
+    let sr = f64::midpoint(modulus, wr).sqrt();
+    let si = ((modulus - wr) / 2.0).sqrt().copysign(wi);
+    let denominator = sr * sr + si * si;
+    let (qr, qi) = (
+      (zr * sr + zi * si) / denominator,
+      (zi * sr - zr * si) / denominator,
+    );
+    return Ok(machine_complex_result(qi.atan2(qr), -qr.hypot(qi).ln()));
+  }
 
   // ArcTan[0, 0] = Indeterminate, with the ArcTan::indet message (matching
   // wolframscript). The inexact case ArcTan[0., 0.] above returns 0. instead.

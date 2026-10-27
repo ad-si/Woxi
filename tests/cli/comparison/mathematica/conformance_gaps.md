@@ -5791,3 +5791,35 @@ woxi eval 'ExportString[Graphics[Text[Column[{Style["a", Blue], Style["b", Red]}
 
 wolframscript draws each line in its own color; Woxi flattens the `Column`
 to one multi-line text label, which carries a single fill color.
+
+### Inexact trig `Solve` and complex `ArcTan[x, y]` differ in the last digits
+
+```sh
+wolframscript -code 'InputForm[Solve[Sin[b] == 0.5 Cos[b], b]]'
+# {{b -> -2.677945044588987}, {b -> 0.4636476090008061}}
+woxi eval 'InputForm[Solve[Sin[b] == 0.5 Cos[b], b]]'
+# {{b -> -2.6779450445889874}, {b -> 0.4636476090008059}}
+wolframscript -code 'InputForm[ArcTan[1.2, 0.5 I]]'
+# 0. + 0.44365159750045163*I
+woxi eval 'InputForm[ArcTan[1.2, 0.5 I]]'
+# 0. + 0.44365159750045147*I
+```
+
+The solutions are the same principal values in the same order; Woxi reaches
+them through machine roots of the resolvent in `Cos[b]` and
+`ArcTan[c, s]`, wolframscript through an evaluation order it does not
+document, so a few ulps differ. Complex two-argument `ArcTan` is evaluated
+as `-I Log[(x + I y)/Sqrt[x^2 + y^2]]`, which matches wolframscript's
+branches but not its last digits.
+
+### `N` evaluates inside `Hold`
+
+```sh
+wolframscript -code 'N[Hold[ArcTan[1, 2]]]'
+# Hold[ArcTan[1., 2.]]
+woxi eval 'N[Hold[ArcTan[1, 2]]]'
+# Hold[1.1071487177940904]
+```
+
+wolframscript only numericizes the numbers inside a held expression; Woxi
+evaluates the numericized calls as well.

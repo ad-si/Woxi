@@ -16926,6 +16926,126 @@ mod cases {
     );
   }
 
+  // An inexact trig equation is inverted to principal values instead of the
+  // periodic family: ArcSin alone, ±ArcCos alone, ArcTan alone, and for a
+  // Sin/Cos mix the angles of the points (c, ±s) that satisfy it.
+  #[test]
+  fn solve_inexact_trig_principal_values() {
+    assert_case(
+      r#"Solve[Sin[b] == -0.5, b]"#,
+      r#"{{b -> -0.5235987755982989}}"#,
+    );
+    assert_case(
+      r#"Solve[Cos[b] == -0.5, b]"#,
+      r#"{{b -> -2.0943951023931957}, {b -> 2.0943951023931957}}"#,
+    );
+    assert_case(r#"Solve[Cos[b] == 1., b]"#, r#"{{b -> 0.}}"#);
+    assert_case(
+      r#"Solve[Tan[b] == 0.3, b]"#,
+      r#"{{b -> 0.2914567944778671}}"#,
+    );
+    assert_case(
+      r#"Solve[Tan[b]^2 == 0.5, b]"#,
+      r#"{{b -> -0.6154797086703874}, {b -> 0.6154797086703874}}"#,
+    );
+    assert_case(
+      r#"Solve[Sin[b]^2 == 0.3, b]"#,
+      r#"{{b -> -0.5796397403637042}, {b -> 0.5796397403637042}}"#,
+    );
+    assert_case(
+      r#"Solve[Sin[2 b + 1] == 0.3, b]"#,
+      r#"{{b -> -0.34765367299230127}}"#,
+    );
+    assert_case(
+      r#"Solve[Sin[b] + 0.5 Cos[b] == -0.5, b]"#,
+      r#"{{b -> -3.141592653589793}, {b -> -0.9272952180016122}, {b -> 3.141592653589793}}"#,
+    );
+    assert_case(
+      r#"Solve[Cos[b]^2 + Cos[b] == 0.5, b]"#,
+      r#"{{b -> -3.141592653589793 + 0.8314429455293105*I}, {b -> -1.1960618940861565}, {b -> 1.1960618940861565}, {b -> 3.141592653589793 - 0.8314429455293105*I}}"#,
+    );
+    assert_case(r#"Length[Solve[Sin[b] Cos[b] == 0.3, b]]"#, r#"4"#);
+    assert_case(
+      r#"Chop[(b /. Solve[(-928.8662998576833 + 935.8*Cos[b])^2 + (382.41655327144696 + 935.8*Sin[b])^2 == 542874.24, b]) - {-1.1665072424315626, 0.38539957829657223}, 10^-12]"#,
+      r#"{0, 0}"#,
+    );
+  }
+
+  #[test]
+  fn solve_inexact_trig_reports_ifun() {
+    woxi::clear_state();
+    woxi::interpret("Solve[Sin[b] == 0.5 Cos[b], b]").unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Solve::ifun")),
+      "expected Solve::ifun, got {msgs:?}"
+    );
+  }
+
+  // A function without definitions is inverted symbolically, the value
+  // taking the place of the argument that holds the unknown.
+  #[test]
+  fn solve_undefined_function_inverse() {
+    assert_case(
+      r#"Solve[f[x] == 4, x]"#,
+      r#"{{x -> InverseFunction[f, 1, 1][4]}}"#,
+    );
+    assert_case(
+      r#"Solve[f[2 x + 1] == y, x]"#,
+      r#"{{x -> (-1 + InverseFunction[f, 1, 1][y])/2}}"#,
+    );
+    assert_case(
+      r#"Solve[f[1, x] == 4, x]"#,
+      r#"{{x -> InverseFunction[f, 2, 2][1, 4]}}"#,
+    );
+    assert_case(
+      r#"Solve[f[x, 1] == 4, x]"#,
+      r#"{{x -> InverseFunction[f, 1, 2][4, 1]}}"#,
+    );
+    assert_case(
+      r#"Solve[F[4][x] == 4, x]"#,
+      r#"{{x -> InverseFunction[F[4], 1, 1][4]}}"#,
+    );
+    assert_case(
+      r#"Solve[f[x] + 1 == 4, x]"#,
+      r#"{{x -> InverseFunction[f, 1, 1][3]}}"#,
+    );
+    assert_case(
+      r#"Solve[F[4][x]^2 == 4, x]"#,
+      r#"{{x -> InverseFunction[F[4], 1, 1][-2]}, {x -> InverseFunction[F[4], 1, 1][2]}}"#,
+    );
+    assert_case(
+      r#"Solve[f[x]^2 + f[x] == a, x]"#,
+      r#"{{x -> InverseFunction[f, 1, 1][(-1 - Sqrt[1 + 4*a])/2]}, {x -> InverseFunction[f, 1, 1][(-1 + Sqrt[1 + 4*a])/2]}}"#,
+    );
+  }
+
+  #[test]
+  fn arctan_two_argument_machine_complex() {
+    assert_case(
+      r#"Chop[ArcTan[1.2, 0.5 I] - 0.44365159750045163 I, 10^-14]"#,
+      r#"0"#,
+    );
+    assert_case(
+      r#"Chop[ArcTan[1. + 2. I, 3.] - (1.0793994651712322 - 0.6412373393653842 I), 10^-14]"#,
+      r#"0"#,
+    );
+    assert_case(
+      r#"Chop[ArcTan[-1.5 + 0.1 I, 0.2 I] - (-3.1325846193127656 - 0.1335206214825643 I), 10^-14]"#,
+      r#"0"#,
+    );
+  }
+
+  // `N` must not turn a held machine Sqrt of a negative number into
+  // Indeterminate (its real-only shortcut produced NaN).
+  #[test]
+  fn n_held_sqrt_of_negative_real() {
+    assert_case(
+      r#"ReleaseHold[N[Hold[Sqrt[-3.]]]]"#,
+      r#"0. + 1.7320508075688772*I"#,
+    );
+  }
+
   #[test]
   fn maximize_minimize_machine_precision_falls_back_to_numeric() {
     // With approximate coefficients and no closed form, Maximize/Minimize

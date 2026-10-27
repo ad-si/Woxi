@@ -164,7 +164,7 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
         return n_eval(&value);
       }
       // First try to evaluate the whole expression to a number
-      if let Some(v) = try_eval_to_f64(expr) {
+      if let Some(v) = try_eval_to_f64(expr).filter(|v| !v.is_nan()) {
         return Ok(Expr::Real(v));
       }
       // N[Integrate[expr, {var, a, b}]] — when symbolic Integrate
@@ -285,7 +285,7 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::BinaryOp { op, left, right } => {
-      if let Some(v) = try_eval_to_f64(expr) {
+      if let Some(v) = try_eval_to_f64(expr).filter(|v| !v.is_nan()) {
         return Ok(Expr::Real(v));
       }
       let new_right = if keeps_exact_exponent(*op, right) {
