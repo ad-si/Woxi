@@ -5343,6 +5343,43 @@ mod part_upto {
     );
   }
 
+  // As a Span endpoint, however, `UpTo[n]` is accepted and stands for
+  // `Min[n, length]` (RepeatedMediantsLeadToIterativeBrackets)
+  #[test]
+  fn span_endpoint() {
+    assert_eq!(
+      interpret(
+        "l = {a, b, c, d}; {l[[2 ;; UpTo[9]]], l[[1 ;; UpTo[3]]], l[[;; UpTo[2]]], {}[[1 ;; UpTo[3]]]}"
+      )
+      .unwrap(),
+      "{{b, c, d}, {a, b, c}, {a, b}, {}}"
+    );
+    assert_eq!(
+      interpret(
+        "l = {a, b, c, d}; {l[[1 ;; UpTo[9] ;; 2]], l[[UpTo[2] ;; 3]], l[[-1 ;; UpTo[2] ;; -1]]}"
+      )
+      .unwrap(),
+      "{{a, c}, {b, c}, {d, c, b}}"
+    );
+    assert_eq!(
+      interpret(
+        "{{{1, 2, 3}, {4, 5, 6}}[[1 ;; UpTo[5], 2 ;; UpTo[7]]], f[a, b, c][[2 ;; UpTo[5]]], <|1 -> a, 2 -> b|>[[1 ;; UpTo[4]]]}"
+      )
+      .unwrap(),
+      "{{{2, 3}, {5, 6}}, f[b, c], <|1 -> a, 2 -> b|>}"
+    );
+  }
+
+  #[test]
+  fn span_endpoint_past_the_start() {
+    let r = interpret_with_stdout("{a, b, c, d}[[3 ;; UpTo[1]]]").unwrap();
+    assert_eq!(r.result, "{a, b, c, d}[[Span[3, UpTo[1]]]]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::take: Cannot take positions 3 through 1 in {a, b, c, d}."]
+    );
+  }
+
   #[test]
   fn rule() {
     rejected("(a -> b)[[UpTo[1]]]", "(a -> b)[[UpTo[1]]]", "UpTo[1]");
@@ -24253,6 +24290,41 @@ mod sparse_array_banded_patterns {
       )
       .unwrap(),
       "{2049, -1, 0}"
+    );
+  }
+
+  #[test]
+  fn long_form_patterns_from_a_reloaded_definition() {
+    // A SaveDefinitions Manipulate reloads `{i_, j_} /; …` as
+    // `Condition[{Pattern[i, Blank[]], Pattern[j, Blank[]]}, …]`
+    // (RaggedAutomatonDisk)
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Condition[{Pattern[i, Blank[]], Pattern[j, Blank[]]}, i + j < 4] -> 1}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0}, {1, 0, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn condition_reading_data_matches_every_position() {
+    // A condition on the data rather than index arithmetic cannot be solved
+    // for the matching positions: every position has to be tested (the
+    // ElectronicStructureOf1DAnd2DQuasiperiodicSystems Hamiltonian)
+    assert_eq!(
+      interpret(
+        "w = {L, S, L}; Normal[SparseArray[{{i_, j_} /; w[[i]] == S -> 7}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {7, 7, 7}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "w = {L, S, L}; Normal[SparseArray[{{i_, j_} /; And[(i - j) == 1, w[[j]] == L] -> 1, {i_, j_} /; And[(i - j) == -1, w[[i]] == S] -> t}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {1, 0, t}, {0, 0, 0}}"
     );
   }
 }

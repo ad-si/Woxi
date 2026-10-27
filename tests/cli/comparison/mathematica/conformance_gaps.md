@@ -138,13 +138,12 @@ woxi eval 'ToString[NumberForm[123456789.]]'            # 123457000.
 Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 (WL `1.5 × 10^-8`). In-range reals — roughly `10^-5 ≤ |x| < 10^6` — agree.
 
-### `NumberForm[x, {n, f}]` never switches to scientific notation
+### `NumberForm[x, {n, f}]` with an `ExponentFunction`
 
-Seen in a Demonstration notebook (`NumberForm[h, {4, 3}, ExponentFunction -> (-6& )]`).
-Not checked against wolframscript (unavailable when found); expected from WL:
-`NumberForm[1.*^-7, {4, 3}]` is `1.000 × 10^-7`, Woxi prints `0.000`. With an
-`ExponentFunction` the 3-argument form in Studio ignores the function
-(`1.×10^-7`) and `ToString` prints `0.1 × 10^-6` without padding.
+`NumberForm[x, {n, f}]` now switches to scientific notation outside
+`10^-5 ≤ |x| < 10^6` (`1.000 × 10^-7`), but the 3-argument form with an
+`ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
+prints `0.1 × 10^-6` without padding.
 
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
@@ -3720,6 +3719,14 @@ as `Dot[a, -b]`.
 
 ## Messages and error handling
 
+### Graph functions say nothing about a non-graph argument
+
+`EdgeList[{1, 2}]` and `VertexList[Graph[{{a, b}}]]` (a `Graph` that did not
+evaluate) come back unevaluated in both, but wolframscript also prints
+`EdgeList::graph: A graph object is expected at position 1 in …`. A bare
+symbol (`EdgeList[x]`) is silent in both. Woxi has no `::graph` message for
+any graph function.
+
 ### `RealDigits` in a non-integer base stays unevaluated
 
 `RealDigits[1/7, 2.5]` lists 39 digits of the greedy expansion in base 2.5 in
@@ -4679,6 +4686,18 @@ It is Schreier–Sims discovery order. **Not reproducible.**
 An item-level `VertexCoordinates` read returns the laid-out coordinate, so
 Woxi answers from its own `GraphEmbedding` — the values diverge because the
 layout differs.
+
+### `"PlanarEmbedding"` coordinates
+
+`GraphLayout -> "PlanarEmbedding"` and `GraphEmbedding[g, "PlanarEmbedding"]`
+give a crossing-free straight-line drawing in both, but not the same one. WL
+places the vertices on an integer grid (`ImportString["Fxo[g", "Graph6"]`
+spans `{0..6} × {0..6}`, a triangle `{0,0}, {6,0}, {0,6}` outside), the shape
+of a canonical-ordering grid drawing whose exact variant is not known. Woxi
+puts the largest face of a Demoucron–Malgrange–Pertuiset embedding on a
+regular polygon and every other vertex at the barycenter of its neighbors
+(Tutte), so the points are reals in `[-1, 1]`. A graph that is not
+biconnected falls back to the default layout.
 
 ### Multi-entry rule lists inside a graph option
 

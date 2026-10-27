@@ -5109,6 +5109,208 @@ mod planar_graph_q {
   }
 }
 
+mod find_path {
+  use super::*;
+
+  #[test]
+  fn first_path_of_a_depth_first_search() {
+    clear_state();
+    // Not the shortest: the first path found trying neighbors in order
+    assert_eq!(
+      interpret(
+        "{FindPath[GridGraph[{3, 3}], 1, 9], FindPath[CompleteGraph[4], 1, 4]}"
+      )
+      .unwrap(),
+      "{{{1, 2, 3, 6, 5, 4, 7, 8, 9}}, {{1, 2, 3, 4}}}"
+    );
+    assert_eq!(
+      interpret(
+        "{FindPath[Graph[{1 -> 2, 2 -> 3, 3 -> 1}], 3, 2], FindPath[CycleGraph[4], 1, 1], FindPath[Graph[{1, 2, 3}, {1 <-> 2}], 1, 3]}"
+      )
+      .unwrap(),
+      "{{{3, 1, 2}}, {}, {}}"
+    );
+  }
+
+  #[test]
+  fn all_paths_shortest_first_then_descending() {
+    clear_state();
+    assert_eq!(
+      interpret("FindPath[CompleteGraph[4], 1, 4, Infinity, All]").unwrap(),
+      "{{1, 4}, {1, 3, 4}, {1, 2, 4}, {1, 3, 2, 4}, {1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret("FindPath[GridGraph[{3, 3}], 1, 9, {4}, All]").unwrap(),
+      "{{1, 4, 7, 8, 9}, {1, 4, 5, 8, 9}, {1, 4, 5, 6, 9}, {1, 2, 5, 8, 9}, {1, 2, 5, 6, 9}, {1, 2, 3, 6, 9}}"
+    );
+  }
+
+  #[test]
+  fn a_limited_count_keeps_the_first_found() {
+    clear_state();
+    assert_eq!(
+      interpret("{FindPath[GridGraph[{3, 3}], 1, 9, 6, 3], FindPath[GridGraph[{3, 3}], 1, 9, {6}, 2]}")
+        .unwrap(),
+      "{{{1, 2, 3, 6, 9}, {1, 2, 5, 4, 7, 8, 9}, {1, 2, 3, 6, 5, 8, 9}}, {{1, 2, 5, 4, 7, 8, 9}, {1, 2, 3, 6, 5, 8, 9}}}"
+    );
+  }
+
+  #[test]
+  fn unknown_vertex() {
+    clear_state();
+    let result =
+      woxi::interpret_with_stdout("FindPath[CycleGraph[3], 1, z]").unwrap();
+    assert_eq!(result.result, "FindPath[Graph[<3>, <3>], 1, z]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "FindPath::inv: The argument z in FindPath[Graph[<3>, <3>], 1, z] is not a valid vertex."
+      ]
+    );
+  }
+}
+
+mod graph_embedding_vertex_coordinates {
+  use super::*;
+
+  // Explicit coordinates are the embedding, exactly as given
+  // (BishopEdgeColoring selects edges by coordinate differences)
+  #[test]
+  fn given_coordinates_come_back_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {{0, 0}, {1, 2}, {3, 1}}]], \
+         GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {2 -> {5, 5}, 1 -> {0, 1}, 3 -> {1, 1}}]], \
+         GraphEmbedding[Graph[{a, b}, {a <-> b}, VertexCoordinates -> {{0.5, 1}, {2, 3/2}}]]}"
+      )
+      .unwrap(),
+      "{{{0, 0}, {1, 2}, {3, 1}}, {{0, 1}, {5, 5}, {1, 1}}, {{0.5, 1}, {2, 3/2}}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[GraphEmbedding[Graph[{1, 2, 3}, {1 <-> 2}, VertexCoordinates -> {2 -> {5, 5}}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}
+
+mod graph_from_integer_pairs {
+  use super::*;
+
+  // HatMonotileCoronas builds its adjacency graph from `Subsets` pairs
+  #[test]
+  fn pairs_of_positive_integers_are_undirected_edges() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graph[{{1, 2}, {1, 3}, {2, 4}}]; {VertexList[g], EdgeList[g], Normal[GraphDistanceMatrix[g]][[1]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 4}, {1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 4}, {0, 1, 1, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"EdgeList /@ {Graph[{1, 2, 3}, {{1, 2}, {2, 3}}], Graph[{{1, 2}, {2, 3}}, VertexLabels -> "Name"], Graph[{{1, 1}}]}"#
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1 \u{f3d4} 1}}"
+    );
+  }
+
+  #[test]
+  fn other_pairs_are_not_edges() {
+    clear_state();
+    // Symbols, zero, negatives or a mix with rules make no graph, and a
+    // vertex list of pairs stays a list of vertices
+    assert_eq!(
+      interpret(
+        "{EdgeList[Graph[{{a, b}}]], EdgeList[Graph[{{0, 1}}]], EdgeList[Graph[{{1, 2}, 2 -> 3}]], VertexList[Graph[{{1, 2}, {3, 4}}, {}]]}"
+      )
+      .unwrap(),
+      "{EdgeList[Graph[{{a, b}}]], EdgeList[Graph[{{0, 1}}]], EdgeList[Graph[{{1, 2}, 2 -> 3}]], {{1, 2}, {3, 4}}}"
+    );
+  }
+}
+
+mod graph_of_a_graph {
+  use super::*;
+
+  #[test]
+  fn options_merge_into_the_existing_graph() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"g = CycleGraph[4]; h = Graph[g, VertexLabels -> "Name"]; {Head[h], VertexCount[h], EdgeCount[h], Options[h, VertexLabels], h === g}"#
+      )
+      .unwrap(),
+      "{Graph, 4, 4, {VertexLabels -> Name}, False}"
+    );
+    // A repeated option replaces the old value; others are kept
+    assert_eq!(
+      interpret(
+        r#"Options[Graph[Graph[{1 <-> 2}, VertexLabels -> "Name", EdgeStyle -> Red], VertexLabels -> None]]"#
+      )
+      .unwrap(),
+      "{EdgeStyle -> RGBColor[1, 0, 0], VertexLabels -> None}"
+    );
+    assert_eq!(
+      interpret("g = CycleGraph[4]; Graph[g] === g").unwrap(),
+      "True"
+    );
+  }
+}
+
+mod planar_embedding_layout {
+  use super::*;
+
+  // Counts the pairs of edges (without a shared vertex) that properly cross
+  // in `GraphEmbedding[g]`, plus whether all points are distinct.
+  const CROSSINGS: &str = r#"
+    cross[{p1_, p2_}, {q1_, q2_}] := Module[{d = Function[{a, b, c},
+        (b[[1]] - a[[1]]) (c[[2]] - a[[2]]) - (b[[2]] - a[[2]]) (c[[1]] - a[[1]])]},
+      If[Length[Intersection[{p1, p2}, {q1, q2}]] > 0, False,
+        d[p1, p2, q1] d[p1, p2, q2] < -1*^-12 && d[q1, q2, p1] d[q1, q2, p2] < -1*^-12]];
+    check[g_] := Module[{c = GraphEmbedding[g], vl = VertexList[g], es},
+      es = (c[[Position[vl, #][[1, 1]]]] & /@ {#[[1]], #[[2]]}) & /@ EdgeList[g];
+      {Count[Subsets[es, {2}], s_ /; cross @@ s],
+       Length[DeleteDuplicates[c]] == Length[c]}];
+    planar[g_] := Graph[g, GraphLayout -> "PlanarEmbedding"];
+  "#;
+
+  #[test]
+  fn polyhedral_and_biconnected_graphs_draw_without_crossings() {
+    // A polyhedral graph from the SchlegelDiagrams Demonstration, then
+    // graphs that are 3-connected and ones that are only biconnected
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        r#"{CROSSINGS} check[planar[#]] & /@ {{ImportString["Fxo[g", "Graph6"],
+          GraphData["CubicalGraph"], GraphData["OctahedralGraph"], CycleGraph[6],
+          GridGraph[{{3, 4}}], CompleteGraph[4], WheelGraph[7]}}"#
+      ))
+      .unwrap(),
+      "{{0, True}, {0, True}, {0, True}, {0, True}, {0, True}, {0, True}, {0, True}}"
+    );
+  }
+
+  #[test]
+  fn method_argument_and_coordinates() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        r#"{CROSSINGS} {{check[GraphData["CubicalGraph"]][[1]] >= 0,
+          Length[GraphEmbedding[CycleGraph[5], "PlanarEmbedding"]],
+          Max[Abs[Flatten[GraphEmbedding[planar[WheelGraph[6]]]]]] <= 1}}"#
+      ))
+      .unwrap(),
+      "{True, 5, True}"
+    );
+  }
+}
+
 mod graph_metrics {
   use super::*;
 

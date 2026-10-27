@@ -2439,6 +2439,58 @@ fn parse_dependent_iterator(
   Ok((var.clone(), lo, hi, Some(bounds)))
 }
 
+/// The arguments of a held field plot (`ContourPlot`, `DensityPlot`,
+/// `RegionPlot`) with each option's value evaluated, the way the plot
+/// itself evaluates its options. The plot variables (`{x, …}` iterator
+/// specs among `args[1..first_option]`) are localized meanwhile, so an
+/// option may still mention them symbolically (`Exclusions -> {x == 0}`).
+/// Without this, a style such as `ContourStyle -> styles[[Mod[n, 2, 1]]]`
+/// in a `Table` over `n` was copied into the graphics unevaluated, and
+/// failed once `n` was no longer bound. Delayed `:>` options stay held.
+pub fn with_evaluated_options(
+  args: &[Expr],
+  first_option: usize,
+) -> Result<Vec<Expr>, InterpreterError> {
+  use crate::evaluator::symbol_values::{
+    restore_symbol_values, take_symbol_values,
+  };
+  let first_option = first_option.min(args.len());
+  let vars: Vec<String> = args[1..first_option]
+    .iter()
+    .filter_map(|spec| match spec {
+      Expr::List(items) => match items.first() {
+        Some(Expr::Identifier(var)) => Some(var.clone()),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  let saved: Vec<_> = vars.iter().map(|v| take_symbol_values(v)).collect();
+  let mut out = args[..first_option].to_vec();
+  let mut result = Ok(());
+  for arg in &args[first_option..] {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if result.is_ok() => {
+        match crate::evaluator::evaluate_expr_to_expr(replacement) {
+          Ok(value) => out.push(Expr::Rule {
+            pattern: pattern.clone(),
+            replacement: Box::new(value),
+          }),
+          Err(e) => result = Err(e),
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  for values in saved.into_iter().rev() {
+    restore_symbol_values(values);
+  }
+  result.map(|()| out)
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that names its function indirectly (`f = x^2 + y^2;
   // ContourPlot[f, …]`) is evaluated once first — see

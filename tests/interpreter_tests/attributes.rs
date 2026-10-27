@@ -1642,6 +1642,32 @@ mod cases {
     assert_case(r#"qq2 = 7; qq2"#, r#"7"#);
   }
   #[test]
+  fn line_style_directive_attributes() {
+    assert_case(
+      r#"{Attributes[Thick], Attributes[Dashed], Attributes[Dotted], Attributes[DotDashed], Attributes[Red]}"#,
+      r#"{{Protected, ReadProtected}, {Protected, ReadProtected}, {Protected, ReadProtected}, {Protected, ReadProtected}, {Protected}}"#,
+    );
+  }
+  #[test]
+  fn attributes_of_a_non_symbol() {
+    woxi::clear_state();
+    let result = woxi::interpret_with_stdout(
+      r#"{Attributes[f[x]], Attributes[{Plus, 2}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      r#"{Attributes[f[x]], {{Flat, Listable, NumericFunction, OneIdentity, Orderless, Protected}, Attributes[2]}}"#
+    );
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Attributes::ssle: Symbol or string expected at position 1 in Attributes[f[x]].",
+        "Attributes::ssle: Symbol or string expected at position 1 in Attributes[2].",
+      ]
+    );
+  }
+  #[test]
   fn postfix_evaluate_in_held_arguments() {
     // `x // Evaluate` is the same Evaluate as `Evaluate[x]`
     assert_case(r#"Hold[1 + 1 // Evaluate]"#, r#"Hold[2]"#);

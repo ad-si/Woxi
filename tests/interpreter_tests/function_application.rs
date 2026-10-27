@@ -51,6 +51,27 @@ mod anonymous_function_call {
 
 mod function_name_substitution {
   use super::*;
+  use crate::interpreter_tests::case_helpers::assert_case;
+
+  #[test]
+  fn builtin_symbol_with_a_value_evaluates_as_head() {
+    // `Red`, `Thick`, `Dotted`, … have values, so as a head they evaluate
+    // like any symbol with an OwnValue
+    assert_case(
+      "InputForm[{Red[1], Thick[2], Dashed[x], LightRed[], Black[1]}]",
+      "InputForm[{RGBColor[1, 0, 0][1], Thickness[Large][2], Dashing[{Small, Small}][x], RGBColor[1, 0.85, 0.85][], GrayLevel[0][1]}]",
+    );
+    assert_case(
+      "InputForm[Dotted[{1}, 2]]",
+      "InputForm[Dashing[{0, Small}][{1}, 2]]",
+    );
+    // A rule written with one keeps matching data built with it (Huffman
+    // Encoding of the Evolution of a Cellular Automaton Demonstration)
+    assert_case(
+      "Dotted[{a, b}, 1] /. Dotted[u_, v_, w___] :> {u, v}",
+      "{{a, b}, 1}",
+    );
+  }
 
   #[test]
   fn pass_function_as_argument() {

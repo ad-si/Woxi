@@ -5835,8 +5835,84 @@ fn evaluate_function_call_ast_inner(
         other => other.clone(),
       }
     }
-    let args_vec: Vec<Expr> = args.iter().map(rewrite_two_way_rules).collect();
+    let mut args_vec: Vec<Expr> =
+      args.iter().map(rewrite_two_way_rules).collect();
+    // An edge list given as pairs of positive integers, `{{1, 2}, {2, 3}}`,
+    // is a list of undirected edges (in the edge position only: a vertex
+    // list of pairs stays a list of vertices).
+    fn integer_pairs_as_edges(e: &Expr) -> Option<Expr> {
+      let Expr::List(items) = e else {
+        return None;
+      };
+      let positive = |x: &Expr| matches!(x, Expr::Integer(k) if *k > 0);
+      if items.is_empty()
+        || !items.iter().all(|it| {
+          matches!(it, Expr::List(p) if p.len() == 2 && p.iter().all(positive))
+        })
+      {
+        return None;
+      }
+      Some(Expr::List(
+        items
+          .iter()
+          .map(|it| match it {
+            Expr::List(p) => call("UndirectedEdge", p.to_vec()),
+            other => other.clone(),
+          })
+          .collect(),
+      ))
+    }
+    let edge_position = usize::from(
+      args_vec.len() >= 2
+        && matches!(&args_vec[0], Expr::List(_))
+        && matches!(&args_vec[1], Expr::List(_)),
+    );
+    if let Some(edges) =
+      args_vec.get(edge_position).and_then(integer_pairs_as_edges)
+    {
+      args_vec[edge_position] = edges;
+    }
     let args: &[Expr] = &args_vec;
+
+    // `Graph[g, opts…]` on an existing graph is that graph with the new
+    // options merged in: one named again replaces the old value. `Graph[g]`
+    // is `g` itself.
+    if let Some(Expr::FunctionCall {
+      name: inner_head,
+      args: inner,
+    }) = args.first()
+      && inner_head == "Graph"
+      && inner.len() >= 2
+      && matches!(&inner[0], Expr::List(_))
+      && matches!(&inner[1], Expr::List(_))
+      && args[1..]
+        .iter()
+        .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    {
+      if args.len() == 1 {
+        return Ok(args[0].clone());
+      }
+      let option_name = |o: &Expr| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          Some(crate::syntax::expr_to_string(pattern))
+        }
+        _ => None,
+      };
+      let new_names: Vec<Option<String>> =
+        args[1..].iter().map(option_name).collect();
+      let mut merged = vec![inner[0].clone(), inner[1].clone()];
+      // Options a `Graph` restored via `Uncompress` keeps packed in a list
+      for old in inner[2..].iter().flat_map(|o| match o {
+        Expr::List(items) => items.to_vec(),
+        other => vec![other.clone()],
+      }) {
+        if !new_names.contains(&option_name(&old)) {
+          merged.push(old);
+        }
+      }
+      merged.extend(args[1..].iter().cloned());
+      return evaluate_function_call_ast("Graph", &merged);
+    }
 
     // Helper: check if expr is a graph edge (DirectedEdge/UndirectedEdge,
     // possibly wrapped in Labeled)
@@ -6058,6 +6134,10 @@ fn evaluate_function_call_ast_inner(
   // shortest weighted path (Dijkstra).
   if name == "FindShortestPath" && args.len() >= 3 {
     return crate::functions::graph::find_shortest_path_ast(args);
+  }
+
+  if name == "FindPath" && (3..=5).contains(&args.len()) {
+    return crate::functions::graph::find_path_ast(args);
   }
 
   // EdgeList[Graph[vertices, edges]] → edges list
@@ -10286,6 +10366,88 @@ fn evaluate_function_call_ast_inner(
 
   // GraphEmbedding[graph] or GraphEmbedding[graph, method] — vertex coordinates
   if name == "GraphEmbedding" && (args.len() == 1 || args.len() == 2) {
+    // Explicit `VertexCoordinates` are the embedding, exactly as given (a
+    // list in vertex order, or `v -> {x, y}` rules; vertices a partial rule
+    // list leaves out get the default layout's position)
+    if args.len() == 1
+      && let Expr::FunctionCall {
+        name: gname,
+        args: gargs,
+      } = &args[0]
+      && gname == "Graph"
+      && gargs.len() >= 2
+      && let Expr::List(verts) = &gargs[0]
+      && let Some(spec) = gargs[2..]
+        .iter()
+        .flat_map(|o| match o {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+        .find_map(|o| match &o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexCoordinates") => {
+            Some(replacement.as_ref().clone())
+          }
+          _ => None,
+        })
+      && let Expr::List(items) = &spec
+    {
+      let is_point = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2 || p.len() == 3);
+      if items.len() == verts.len() && items.iter().all(is_point) {
+        return Ok(spec.clone());
+      }
+      let rules: Vec<(String, Expr)> = items
+        .iter()
+        .filter_map(|it| match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if is_point(replacement) => Some((
+            crate::syntax::expr_to_string(pattern),
+            (**replacement).clone(),
+          )),
+          _ => None,
+        })
+        .collect();
+      if !rules.is_empty() && rules.len() == items.len() {
+        let mut stripped = gargs.to_vec();
+        stripped.retain(|o| {
+          !matches!(o, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "VertexCoordinates"))
+        });
+        let fallback = evaluate_function_call_ast(
+          "GraphEmbedding",
+          &[call("Graph", stripped)],
+        )?;
+        let fallback_items = match &fallback {
+          Expr::List(f) => f.to_vec(),
+          _ => Vec::new(),
+        };
+        return Ok(Expr::List(
+          verts
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+              let key = crate::syntax::expr_to_string(v);
+              rules
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, p)| p.clone())
+                .or_else(|| fallback_items.get(i).cloned())
+                .unwrap_or_else(|| {
+                  Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+                })
+            })
+            .collect(),
+        ));
+      }
+    }
+    if let Some(coords) = crate::functions::graph::planar_graph_embedding(args)
+    {
+      return Ok(coords);
+    }
     if let Expr::FunctionCall {
       name: gname,
       args: gargs,

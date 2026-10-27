@@ -2462,6 +2462,13 @@ fn pattern_rule_candidates(
     return Some((1..=rows.min(cols) as i128).map(|i| vec![i, i]).collect());
   }
   let cond = cond?;
+  // Solving only finds every position when the condition is arithmetic in
+  // the two indices. One that reads data (`w[[i]] == S`) or calls a
+  // function would be evaluated with symbolic indices and come back with
+  // no solutions, silently dropping positions that do match.
+  if !is_index_arithmetic(cond, &[a, b]) {
+    return None;
+  }
   let solved = {
     crate::push_quiet();
     let r = crate::evaluator::evaluate_expr_to_expr(&call(
@@ -2501,6 +2508,45 @@ fn pattern_rule_candidates(
     }
   }
   Some(out)
+}
+
+/// Whether `cond` is built only from the index variables `vars`, numbers and
+/// arithmetic, comparison and logical operators — the conditions `Solve`
+/// can turn into the complete set of matching positions.
+fn is_index_arithmetic(cond: &Expr, vars: &[&str]) -> bool {
+  let all = |items: &[Expr]| items.iter().all(|e| is_index_arithmetic(e, vars));
+  match cond {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::Identifier(name) => vars.contains(&name.as_str()),
+    Expr::BinaryOp { left, right, .. } => {
+      is_index_arithmetic(left, vars) && is_index_arithmetic(right, vars)
+    }
+    Expr::UnaryOp { operand, .. } => is_index_arithmetic(operand, vars),
+    Expr::Comparison { operands, .. } => all(operands),
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Plus"
+          | "Times"
+          | "Power"
+          | "Subtract"
+          | "Minus"
+          | "Divide"
+          | "Rational"
+          | "Abs"
+          | "Equal"
+          | "Unequal"
+          | "Less"
+          | "LessEqual"
+          | "Greater"
+          | "GreaterEqual"
+          | "And"
+          | "Or"
+          | "Not"
+      ) && all(args)
+    }
+    _ => false,
+  }
 }
 
 /// The dimensions a rule list's explicit integer positions span, when the
@@ -2556,18 +2602,9 @@ fn explicit_rule(pos: &[i128], value: Expr) -> Expr {
 
 /// Whether `expr` contains a pattern (Blank) node anywhere within it.
 fn expr_contains_pattern(expr: &Expr) -> bool {
-  match expr {
-    Expr::Pattern { .. }
-    | Expr::PatternOptional { .. }
-    | Expr::PatternTest { .. } => true,
-    Expr::List(items) => items.iter().any(expr_contains_pattern),
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_contains_pattern),
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_pattern(left) || expr_contains_pattern(right)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_pattern(operand),
-    _ => false,
-  }
+  // The one pattern detector, which also knows the long forms a reloaded
+  // definition carries (`Pattern[i, Blank[]]` for `i_`)
+  crate::evaluator::pattern_matching::contains_pattern(expr)
 }
 
 fn list_of_positive_ints(e: &Expr, rank: usize) -> Option<Vec<usize>> {

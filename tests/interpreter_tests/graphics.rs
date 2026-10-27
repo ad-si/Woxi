@@ -2426,6 +2426,20 @@ mod graphics {
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
 
+    /// A number in scientific notation inside a label sets its exponent as a
+    /// superscript digit on one line, not stacked on a second text line.
+    #[test]
+    fn text_number_form_scientific_raises_exponent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"P= \", NumberForm[70777777.78, {3, 2}], \" Pa\"}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(">P= 7.08 \u{00d7} 10\u{2077} Pa</text>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("dy=\"-"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
@@ -16523,6 +16537,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "expected a Thick contour stroke in {expr}, widths: {widths:?}"
         );
       }
+    }
+
+    /// Options of a held field plot are evaluated while the plot runs, so a
+    /// style computed from a `Table` index does not end up in the graphics
+    /// as an expression that only works while the index is bound
+    /// (FindingAnInverse Demonstration).
+    #[test]
+    fn field_plot_options_are_evaluated() {
+      clear_state();
+      let result = interpret_with_stdout(
+        "SetAttributes[g, HoldAll]; g[e_] := Block[{n = 1}, e]; \
+         c[r_] := Length[Position[r, Mod[n, 2, 1], Infinity]]; \
+         {c[g[First@ContourPlot[{x == y}, {x, -1, 1}, {y, 0, 1}, \
+           ContourStyle -> {{Green}, {Red}}[[Mod[n, 2, 1]]]]]], \
+          c[g[First@ContourPlot[x y, {x, -1, 1}, {y, 0, 1}, \
+           ContourStyle -> {{Green}, {Red}}[[Mod[n, 2, 1]]]]]], \
+          c[g[First@RegionPlot[x < y, {x, 0, 1}, {y, 0, 1}, \
+           PlotStyle -> {Green, Red}[[Mod[n, 2, 1]]]]]]}",
+      )
+      .unwrap();
+      assert_eq!(result.result, "{0, 0, 0}");
+      assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+      // The plot variables stay symbolic in the options
+      assert_eq!(
+        interpret(
+          "x = 5; Head[ContourPlot[Tan[x y], {x, 0, 1}, {y, 0, 1}, \
+           Exclusions -> {Cos[x y] == 0}]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
     }
 
     /// The default contour line keeps its thin dark-grey look when no
@@ -33336,6 +33381,25 @@ mod manipulate {
     assert!(json.contains(r#""animationRunning":false"#), "json: {json}");
   }
 
+  // A bound looked up through another control, `counts[[Dynamic[n]]]`
+  // (SchlegelDiagrams), resolves to that entry instead of handing the
+  // `Dynamic` to Part as an index
+  #[test]
+  fn dynamic_index_in_a_part_bound() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "m = Manipulate[g, {{n, 3, \"\"}, Range[2, 4], ControlType -> SetterBar}, \
+       {{g, 1, \"\"}, 1, {5, 6, 7, 8}[[Dynamic[n]]], 1}]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    let expr = interpret_to_expr("m").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    let json = manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""max":7"#), "json: {json}");
+    assert!(json.contains(r#""maxCode":"#), "json: {json}");
+  }
+
   // `{{u, uinit, ulbl}, func}` is a custom control: `func` builds the
   // widget instead of describing a range. The Demonstrations idiom is a
   // `Button` that resets the variable, so the row is the button and the
@@ -36547,7 +36611,9 @@ mod color_data_indexed {
          BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]"
       )
       .unwrap(),
-      "{EdgeForm[Thick]}"
+      // The option is evaluated like any plot option, so `Thick` arrives as
+      // its value
+      "{EdgeForm[Thickness[Large]]}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
@@ -42051,6 +42117,37 @@ mod generalized_bar_chart {
     assert!(
       !first.contains("width=\"1440\""),
       "cells kept their 360 default size: {first}"
+    );
+  }
+
+  /// A `NumberForm` number run through `ToString[TraditionalForm[…]]` is an
+  /// `InterpretationBox`; a `Text` label draws its display (`11.547`), not the
+  /// exact value it stands for.
+  #[test]
+  fn text_label_draws_number_form_display() {
+    let svg = export_svg(
+      r#"Graphics[{Text[Row[{"x = ", ToString[TraditionalForm[NumberForm[11.5470053837925, {6, 3}]]]}]]}]"#,
+    );
+    assert!(svg.contains("x = 11.547"), "display digits missing: {svg}");
+    assert!(
+      !svg.contains("11.5470053"),
+      "the underlying value leaked into the label: {svg}"
+    );
+  }
+
+  /// `Epilog` primitives are drawn over a `Histogram`, in its data
+  /// coordinates (a fitted density curve over the bars).
+  #[test]
+  fn histogram_epilog_is_drawn() {
+    let plain = export_svg("Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True]");
+    let with_epilog = export_svg(
+      "Histogram[{1, 2, 2, 3, 3, 3, 4}, Frame -> True, \
+       Epilog -> {Red, Line[{{1, 0}, {4, 2}}]}]",
+    );
+    assert!(
+      with_epilog.contains("stroke=\"rgb(255,0,0)\"")
+        && !plain.contains("stroke=\"rgb(255,0,0)\""),
+      "the Epilog line was not drawn: {with_epilog}"
     );
   }
 }

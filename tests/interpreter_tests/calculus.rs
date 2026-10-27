@@ -18838,7 +18838,7 @@ mod infinite_log_series {
     // The divergent harmonic-over-odds (s = 1, non-alternating) is left alone.
     assert_eq!(
       interpret("Sum[1/(2 n - 1), {n, 1, Infinity}]").unwrap(),
-      "Sum[(2*n - 1)^(-1), {n, 1, Infinity}]"
+      "Sum[(-1 + 2*n)^(-1), {n, 1, Infinity}]"
     );
   }
 
@@ -19386,7 +19386,7 @@ mod infinite_arith_geometric {
     );
     assert_eq!(
       interpret("Sum[k 2^k, {k, 1, Infinity}]").unwrap(),
-      "Sum[k*2^k, {k, 1, Infinity}]"
+      "Sum[2^k*k, {k, 1, Infinity}]"
     );
   }
 }

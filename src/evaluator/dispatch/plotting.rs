@@ -655,10 +655,14 @@ pub fn dispatch_plotting(
       }))
     }
     "DensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
-      crate::functions::field_plot::density_plot_ast(args)
+      crate::functions::field_plot::density_plot_ast(
+        &crate::functions::field_plot::with_evaluated_options(args, 3)?,
+      )
     })),
     "ContourPlot" if args.len() >= 3 => Some(quiet_plot(|| {
-      crate::functions::field_plot::contour_plot_ast(args)
+      crate::functions::field_plot::contour_plot_ast(
+        &crate::functions::field_plot::with_evaluated_options(args, 3)?,
+      )
     })),
     // ContourPlot3D[f == c, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}, opts…] —
     // extracts the level-set surface with marching tetrahedra.
@@ -682,7 +686,9 @@ pub fn dispatch_plotting(
       }))
     }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
-      crate::functions::field_plot::region_plot_ast(args)
+      crate::functions::field_plot::region_plot_ast(
+        &crate::functions::field_plot::with_evaluated_options(args, 3)?,
+      )
     })),
     "VectorPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::vector_plot_ast(args)

@@ -3826,15 +3826,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       SUB_VALUES.with(|m| {
         let mut m = m.borrow_mut();
         let rules = m.entry(head).or_default();
-        // Redefining the same pattern replaces the old rule in place,
-        // matching `DownValues` and how a Demonstration's Manipulate body
-        // re-evaluates (and thus re-defines) its SubValues on every control
-        // change.
-        let lhs_str = expr_to_string(&evaluated_lhs);
-        match rules.iter().position(|(l, _)| expr_to_string(l) == lhs_str) {
-          Some(idx) => rules[idx] = (evaluated_lhs, rhs_value.clone()),
-          None => rules.push((evaluated_lhs, rhs_value.clone())),
-        }
+        install_sub_value(rules, evaluated_lhs, rhs_value.clone());
       });
       return Ok(rhs_value);
     }
@@ -4553,20 +4545,7 @@ pub fn set_delayed_ast(
       SUB_VALUES.with(|m| {
         let mut m = m.borrow_mut();
         let rules = m.entry(head).or_default();
-        // Redefining the same pattern replaces the old rule in place —
-        // matching `DownValues`, and how a Demonstration's Manipulate body
-        // re-evaluates on every control change, redefining each SubValue
-        // with an identical LHS on every one of those re-evaluations.
-        // A condition makes a rule of its own: `f[a_][t_] := 1 /; a > 0`
-        // and `f[a_][t_] := -1` both stay.
-        let lhs_str = expr_to_string(&evaluated_lhs);
-        let condition = rhs_condition(&stored_body);
-        match rules.iter().position(|(l, b)| {
-          expr_to_string(l) == lhs_str && rhs_condition(b) == condition
-        }) {
-          Some(idx) => rules[idx] = (evaluated_lhs, stored_body),
-          None => rules.push((evaluated_lhs, stored_body)),
-        }
+        install_sub_value(rules, evaluated_lhs, stored_body);
       });
       return Ok(null_expr());
     }
@@ -4574,6 +4553,75 @@ pub fn set_delayed_ast(
 
   // Fallback: return symbolic form
   Ok(call("SetDelayed", vec![lhs.clone(), body.clone()]))
+}
+
+/// Add the SubValue rule `lhs :> body` (`f[a][b] := …`) to `rules`.
+///
+/// Redefining the same pattern replaces the old rule in place — matching
+/// `DownValues`, and how a Demonstration's Manipulate body re-evaluates on
+/// every control change, redefining each SubValue with an identical LHS on
+/// every one of those re-evaluations. A condition makes a rule of its own:
+/// `f[a_][t_] := 1 /; a > 0` and `f[a_][t_] := -1` both stay.
+///
+/// A new rule goes in front of the first rule it strictly specializes, the
+/// way wolframscript orders them: `f[h[r_]][x_]` defined after `f[r_][x_]`
+/// is still tried first, and so is a guarded `f[a_][x_] := … /; test`
+/// after an unguarded `f[a_][x_]`. A rule whose guard the new one lacks
+/// keeps its place.
+fn install_sub_value(rules: &mut Vec<(Expr, Expr)>, lhs: Expr, body: Expr) {
+  let lhs_str = expr_to_string(&lhs);
+  let condition = rhs_condition(&body);
+  if let Some(idx) = rules.iter().position(|(l, b)| {
+    expr_to_string(l) == lhs_str && rhs_condition(b) == condition
+  }) {
+    rules[idx] = (lhs, body);
+    return;
+  }
+  let groups = curried_argument_groups(&lhs);
+  let position = groups.as_ref().and_then(|new_groups| {
+    rules.iter().position(|(l, b)| {
+      let guard_kept = match rhs_condition(b) {
+        Some(g) => condition.as_ref() == Some(&g),
+        None => true,
+      };
+      guard_kept
+        && curried_argument_groups(l).is_some_and(|old_groups| {
+          match structural_subsumes(new_groups, &old_groups) {
+            Some(true) => true,
+            // The same pattern with a guard the old rule lacks
+            Some(false) => condition.is_some() && rhs_condition(b).is_none(),
+            None => false,
+          }
+        })
+    })
+  });
+  match position {
+    Some(idx) => rules.insert(idx, (lhs, body)),
+    None => rules.push((lhs, body)),
+  }
+}
+
+/// The argument lists of a curried call `f[a…][b…]…`, outermost head's
+/// first, each wrapped as one `Woxi`Group[…]` so whole left-hand sides can be
+/// compared by [`structural_subsumes`].
+fn curried_argument_groups(lhs: &Expr) -> Option<Vec<Expr>> {
+  let mut groups = Vec::new();
+  let mut cur = lhs;
+  loop {
+    match cur {
+      Expr::CurriedCall { func, args } => {
+        groups.push(call("Woxi`Group", args.clone()));
+        cur = func;
+      }
+      Expr::FunctionCall { args, .. } => {
+        groups.push(call("Woxi`Group", args.to_vec()));
+        break;
+      }
+      _ => return None,
+    }
+  }
+  groups.reverse();
+  Some(groups)
 }
 
 /// The test of a right-hand side written `rhs /; test`, rendered.
