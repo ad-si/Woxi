@@ -9973,13 +9973,19 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
   let (xvar, x_min, x_max) =
     parse_iterator_generic(&args[1], "RegionPlot3D", "first")?;
   let (yvar, y_min, y_max) =
     parse_iterator_generic(&args[2], "RegionPlot3D", "second")?;
   let (zvar, z_min, z_max) =
     parse_iterator_generic(&args[3], "RegionPlot3D", "third")?;
+  // `cond[n] = x < 2 y + z; RegionPlot3D[cond[3], …]` — the head holds its
+  // arguments, so a condition named indirectly is read through its value.
+  let resolved = crate::functions::plot::resolve_indirect_plot_body(
+    &args[0],
+    &[xvar.as_str(), yvar.as_str(), zvar.as_str()],
+  );
+  let body = resolved.as_ref().unwrap_or(&args[0]);
 
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
@@ -10345,12 +10351,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  if all_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "RegionPlot3D: no region satisfies the condition in the given range"
-        .into(),
-    ));
-  }
+  // A condition true nowhere in the box draws the empty box, as in
+  // wolframscript, rather than failing the whole display.
 
   // Painter's algorithm
   all_triangles.sort_by(|a, b| {
@@ -10434,13 +10436,21 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // `RegionPlot3D` draws its axes where a bare `Graphics3D` does not, so
     // the default is spelled out for a plot shown inside another graphic.
-    let mut structure_args = vec![call(
-      "GraphicsComplex",
-      vec![
-        Expr::List(point_exprs.into()),
-        Expr::List(complex_content.into()),
-      ],
-    )];
+    // An empty region holds no primitives at all: `{{}, {}}` in WL.
+    let primitives = if world_quads.is_empty() {
+      Expr::List(
+        vec![Expr::List(vec![].into()), Expr::List(vec![].into())].into(),
+      )
+    } else {
+      call(
+        "GraphicsComplex",
+        vec![
+          Expr::List(point_exprs.into()),
+          Expr::List(complex_content.into()),
+        ],
+      )
+    };
+    let mut structure_args = vec![primitives];
     structure_args.extend(args[4..].iter().cloned());
     let names_axes = structure_args.iter().any(|o| {
       matches!(o, Expr::Rule { pattern, .. }
@@ -10654,9 +10664,16 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A body naming a symbol whose value depends on the plot variables is
+  // read through that value first (see `resolve_indirect_plot_body`), so
+  // `b = f == c; ContourPlot3D[b, …]` is seen as the equation it names.
+  let plot_vars = [xvar.as_str(), yvar.as_str(), zvar.as_str()];
+  let resolved =
+    crate::functions::plot::resolve_indirect_plot_body(&args[0], &plot_vars);
+  let body = resolved.as_ref().unwrap_or(&args[0]);
   // `f == c` (or a list of such equations) plots the zero contour of
   // `f - c`; a bare expression is its own zero contour.
-  let bodies: Vec<Expr> = match &args[0] {
+  let bodies: Vec<Expr> = match body {
     Expr::List(items)
       if !items.is_empty()
         && items.iter().all(|i| {
@@ -10673,16 +10690,6 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .unwrap_or_else(|| other.clone()),
     ],
   };
-  // A body naming a symbol whose value depends on the plot variables is
-  // read through that value first (see `resolve_indirect_plot_body`).
-  let plot_vars = [xvar.as_str(), yvar.as_str(), zvar.as_str()];
-  let bodies: Vec<Expr> = bodies
-    .into_iter()
-    .map(|b| {
-      crate::functions::plot::resolve_indirect_plot_body(&b, &plot_vars)
-        .unwrap_or(b)
-    })
-    .collect();
 
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;

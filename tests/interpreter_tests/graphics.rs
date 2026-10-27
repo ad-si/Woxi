@@ -4971,6 +4971,34 @@ mod plot3d {
           "RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}]"
         ));
       }
+      #[test]
+      fn indirect_condition_matches_the_direct_one() {
+        // The head holds its arguments, so `fun[3]` must be read through
+        // the definition before the plot variables are substituted.
+        assert_eq!(
+          interpret(
+            "fun[n_] := x < 2 y + z + n && y > x - 2 z; \
+             ExportString[RegionPlot3D[fun[3], {x, -5, 5}, {y, -5, 5}, \
+             {z, -5, 5}, PlotPoints -> 5], \"SVG\"] === \
+             ExportString[RegionPlot3D[x < 2 y + z + 3 && y > x - 2 z, \
+             {x, -5, 5}, {y, -5, 5}, {z, -5, 5}, PlotPoints -> 5], \"SVG\"]"
+          )
+          .unwrap(),
+          "True"
+        );
+      }
+
+      #[test]
+      fn empty_region_draws_the_empty_box() {
+        assert_eq!(
+          interpret(
+            "g = RegionPlot3D[x > 10, {x, 0, 1}, {y, 0, 1}, {z, 0, 1}]; \
+             {Head[g], Cases[g, _Polygon, Infinity], g[[1]]}"
+          )
+          .unwrap(),
+          "{Graphics3D, {}, {{}, {}}}"
+        );
+      }
     }
 
     mod options {
@@ -25724,6 +25752,23 @@ mod contour_plot_3d {
       )
       .unwrap(),
       "{GraphicsComplex, True, True, VertexNormals}"
+    );
+  }
+
+  #[test]
+  fn indirect_equation_body_matches_the_direct_one() {
+    // `b = f == c; ContourPlot3D[b, …]` is the equation `b` names, not a
+    // bare expression whose zero contour is plotted.
+    assert_eq!(
+      interpret(
+        "b3 = x^2 + y^2 + z^2 == 1; \
+         ExportString[ContourPlot3D[b3, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         PlotPoints -> 5], \"SVG\"] === \
+         ExportString[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, PlotPoints -> 5], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
