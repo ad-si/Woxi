@@ -5838,6 +5838,46 @@ fn evaluate_function_call_ast_inner(
     let args_vec: Vec<Expr> = args.iter().map(rewrite_two_way_rules).collect();
     let args: &[Expr] = &args_vec;
 
+    // `Graph[g, opts…]` on an existing graph is that graph with the new
+    // options merged in: one named again replaces the old value. `Graph[g]`
+    // is `g` itself.
+    if let Some(Expr::FunctionCall {
+      name: inner_head,
+      args: inner,
+    }) = args.first()
+      && inner_head == "Graph"
+      && inner.len() >= 2
+      && matches!(&inner[0], Expr::List(_))
+      && matches!(&inner[1], Expr::List(_))
+      && args[1..]
+        .iter()
+        .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    {
+      if args.len() == 1 {
+        return Ok(args[0].clone());
+      }
+      let option_name = |o: &Expr| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          Some(crate::syntax::expr_to_string(pattern))
+        }
+        _ => None,
+      };
+      let new_names: Vec<Option<String>> =
+        args[1..].iter().map(option_name).collect();
+      let mut merged = vec![inner[0].clone(), inner[1].clone()];
+      // Options a `Graph` restored via `Uncompress` keeps packed in a list
+      for old in inner[2..].iter().flat_map(|o| match o {
+        Expr::List(items) => items.to_vec(),
+        other => vec![other.clone()],
+      }) {
+        if !new_names.contains(&option_name(&old)) {
+          merged.push(old);
+        }
+      }
+      merged.extend(args[1..].iter().cloned());
+      return evaluate_function_call_ast("Graph", &merged);
+    }
+
     // Helper: check if expr is a graph edge (DirectedEdge/UndirectedEdge,
     // possibly wrapped in Labeled)
     fn is_graph_edge(e: &Expr) -> bool {

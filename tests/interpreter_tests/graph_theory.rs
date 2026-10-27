@@ -5109,6 +5109,34 @@ mod planar_graph_q {
   }
 }
 
+mod graph_of_a_graph {
+  use super::*;
+
+  #[test]
+  fn options_merge_into_the_existing_graph() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"g = CycleGraph[4]; h = Graph[g, VertexLabels -> "Name"]; {Head[h], VertexCount[h], EdgeCount[h], Options[h, VertexLabels], h === g}"#
+      )
+      .unwrap(),
+      "{Graph, 4, 4, {VertexLabels -> Name}, False}"
+    );
+    // A repeated option replaces the old value; others are kept
+    assert_eq!(
+      interpret(
+        r#"Options[Graph[Graph[{1 <-> 2}, VertexLabels -> "Name", EdgeStyle -> Red], VertexLabels -> None]]"#
+      )
+      .unwrap(),
+      "{EdgeStyle -> RGBColor[1, 0, 0], VertexLabels -> None}"
+    );
+    assert_eq!(
+      interpret("g = CycleGraph[4]; Graph[g] === g").unwrap(),
+      "True"
+    );
+  }
+}
+
 mod planar_embedding_layout {
   use super::*;
 
@@ -5123,7 +5151,7 @@ mod planar_embedding_layout {
       es = (c[[Position[vl, #][[1, 1]]]] & /@ {#[[1]], #[[2]]}) & /@ EdgeList[g];
       {Count[Subsets[es, {2}], s_ /; cross @@ s],
        Length[DeleteDuplicates[c]] == Length[c]}];
-    planar[g_] := Graph[VertexList[g], EdgeList[g], GraphLayout -> "PlanarEmbedding"];
+    planar[g_] := Graph[g, GraphLayout -> "PlanarEmbedding"];
   "#;
 
   #[test]
