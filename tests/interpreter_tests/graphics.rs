@@ -4094,6 +4094,29 @@ mod graphics {
   }
 }
 
+// A plot whose body holds a large InterpolatingFunction (an NDSolve
+// solution over a long range) samples quickly: the compiled-body cache
+// compares the body with its cached clone per sample, and clones of one
+// shared list are equal without walking the data.
+mod plot_body_with_large_shared_data {
+  use super::*;
+
+  #[test]
+  fn parametric_plot3d_of_long_ndsolve_solution() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == y[t], y'[t] == -x[t], x[0] == 1, y[0] == 0}, \
+         {x, y}, {t, 0, 6000}]; \
+         First[Timing[ParametricPlot3D[{x[t], y[t], t/1000} /. First[s], \
+         {t, 0, 6000}, PlotPoints -> 4000]]] < 5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 mod plot3d {
   /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
   /// colours and thins out the surface, both when drawn on its own and when

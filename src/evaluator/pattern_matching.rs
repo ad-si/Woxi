@@ -3484,17 +3484,21 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
     (Expr::Slot(x), Expr::Slot(y)) => x == y,
     (Expr::SlotSequence(x), Expr::SlotSequence(y)) => x == y,
     (Expr::Constant(x), Expr::Constant(y)) => x == y,
+    // Clones of one shared list are equal without looking inside (a plot
+    // body holding an InterpolatingFunction's data is compared per sample).
     (Expr::List(xs), Expr::List(ys)) => {
-      xs.len() == ys.len()
-        && xs.iter().zip(ys.iter()).all(|(x, y)| expr_equal(x, y))
+      xs.same_shared(ys)
+        || (xs.len() == ys.len()
+          && xs.iter().zip(ys.iter()).all(|(x, y)| expr_equal(x, y)))
     }
     (
       Expr::FunctionCall { name: n1, args: a1 },
       Expr::FunctionCall { name: n2, args: a2 },
     ) => {
       n1 == n2
-        && a1.len() == a2.len()
-        && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
+        && (a1.same_shared(a2)
+          || (a1.len() == a2.len()
+            && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))))
     }
     // The operator nodes of a held or unevaluated expression compare
     // structurally too, so that two rule guards (`FreeQ[…] && LtQ[m, -1]`)
