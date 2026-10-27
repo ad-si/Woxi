@@ -168,7 +168,7 @@ pub fn parse(
   WolframParser::parse_wolfram(input)
 }
 
-// Global RNG state: None = use thread_rng(), Some = use seeded ChaCha8Rng
+// Global RNG state: None = use the thread-local rand::rng(), Some = use seeded ChaCha8Rng
 thread_local! {
     static SEEDED_RNG: crate::epoch::EpochCell<Option<ChaCha8Rng>> = const { crate::epoch::EpochCell::new(None) };
 }
@@ -201,7 +201,7 @@ pub fn restore_rng_state(state: Option<ChaCha8Rng>) {
 }
 
 /// Execute a closure with a mutable reference to the current RNG.
-/// Uses the seeded RNG if set, otherwise falls back to thread_rng().
+/// Uses the seeded RNG if set, otherwise falls back to rand::rng().
 pub fn with_rng<F, R>(f: F) -> R
 where
   F: FnOnce(&mut dyn rand::Rng) -> R,
