@@ -4305,7 +4305,7 @@ fn render_interactive_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
   let svg = evaluator::dispatch::io_functions::expr_to_svg(&expr);
   if svg.starts_with("<svg") {
-    graphics_result(svg)
+    graphics_result(functions::graphics::with_click_pane_marker(svg, &expr))
   } else {
     expr
   }
