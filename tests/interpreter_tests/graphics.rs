@@ -42015,4 +42015,42 @@ mod generalized_bar_chart {
       "False"
     );
   }
+
+  /// Regression: `Underscript` over a picture in a `Row` printed
+  /// `-Graphics-` text; it stacks the picture and its caption instead.
+  #[test]
+  fn underscript_stacks_picture_and_caption_in_row() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ExportString[Row[{Underscript[Graphics[{Red, Disk[]}], Text[\"cap\"]]}], \"SVG\"]",
+    )
+    .unwrap()
+    .result;
+    assert!(svg.contains("<ellipse"), "picture missing: {svg}");
+    assert!(svg.contains("cap"), "caption missing");
+    assert!(!svg.contains("-Graphics-"));
+  }
+
+  /// Regression: a `GraphicsGrid` cell produced by a function returning
+  /// `DynamicModule[…, Dynamic[Button[picture, …]]]` was drawn at the full
+  /// 360-pixel default size instead of being fitted to the grid.
+  #[test]
+  fn graphics_grid_cell_from_dynamic_button_is_fitted() {
+    clear_state();
+    interpret(
+      "sq[c_] := DynamicModule[{v = c}, Dynamic@Button[If[v, Graphics[Disk[]], Graphics[Rectangle[]]], v = !v]]",
+    )
+    .unwrap();
+    let svg = interpret_with_stdout(
+      "GraphicsGrid[{Table[sq[True], 4]}, Frame -> All, Spacings -> {0, 0}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("layout should render");
+    let first = svg.lines().next().unwrap();
+    assert!(
+      !first.contains("width=\"1440\""),
+      "cells kept their 360 default size: {first}"
+    );
+  }
 }
