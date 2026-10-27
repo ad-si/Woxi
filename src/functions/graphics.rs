@@ -32762,6 +32762,21 @@ fn box_has_spaced_text(e: &Expr) -> bool {
 /// typesets and rendered by the same label machinery (so `SubscriptBox[p, 0]`
 /// folds into the Unicode `p₀`). Returns None when the string has no box
 /// segment, leaving plain strings on the normal path.
+/// Whether `boxes`, under any `FormBox`/`TagBox` wrappers, is an
+/// `InterpretationBox` that carries a typeset display for its value.
+fn is_interpretation_display(boxes: &Expr) -> bool {
+  match boxes {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "FormBox" | "TagBox" if !args.is_empty() => {
+        is_interpretation_display(&args[0])
+      }
+      "InterpretationBox" => args.len() >= 2,
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
   let segments =
     crate::functions::string_ast::split_inline_boxes_keeping_punctuation(s);
@@ -32802,6 +32817,19 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // expression would give `Sin[x]` or a product.
     if seg.text.starts_with("FormBox[RowBox[")
       && seg.text.ends_with(", TraditionalForm]")
+    {
+      runs.push(LabelRun {
+        text: crate::notebook::render_boxes_text(&seg.text),
+        italic,
+        ..Default::default()
+      });
+      continue;
+    }
+    // A number formatted by `NumberForm` and friends is an
+    // `InterpretationBox[display, value]`: the label shows the display
+    // (`300.000`), not the exact value the box stands for.
+    if let Ok(boxes) = crate::parse_to_expr(&seg.text)
+      && is_interpretation_display(&boxes)
     {
       runs.push(LabelRun {
         text: crate::notebook::render_boxes_text(&seg.text),

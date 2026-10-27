@@ -8277,6 +8277,30 @@ pub(crate) fn generate_histogram_svg(
     );
   }
 
+  // `Epilog` primitives are written in the histogram's data coordinates.
+  if !opts.epilog.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    let area = crate::functions::plot_epilog::PlotArea {
+      x0: plot_x0,
+      y0: plot_y0,
+      w: plot_w,
+      h: plot_h,
+      x_min: x_lo,
+      x_max: x_hi,
+      y_min,
+      y_max,
+      scale: sf,
+    };
+    let overlay = crate::functions::plot_epilog::render_overlay_svg(
+      &opts.epilog,
+      &area,
+      "epilog",
+      false,
+    );
+    buf.insert_str(pos, &overlay);
+  }
+
   // AxesLabel / FrameLabel and PlotLabel, inserted before </svg>.
   let font_size = sf * 18.0;
   let title_font_size = sf * 22.0;
