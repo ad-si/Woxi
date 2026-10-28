@@ -1944,6 +1944,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);
   }
 
+  // Lattice data function
+  if name == "LatticeData" {
+    return crate::functions::lattice_data::lattice_data_ast(args);
+  }
+
   // Knot data function
   if name == "KnotData" {
     return crate::functions::knot_data::knot_data_ast(args);
