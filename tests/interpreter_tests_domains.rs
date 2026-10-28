@@ -28,6 +28,7 @@ mod interpreter_tests {
   mod graph_theory;
   mod isotope_data;
   mod knot_data;
+  mod lattice_data;
   mod molecule;
   mod polyhedron_data;
   mod polyhedron_operations;
