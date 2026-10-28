@@ -41866,6 +41866,18 @@ mod geometric_mean_filter {
        {0.2514866888523102, 0.3771945536136627, 0.6160140633583069}}"
     );
   }
+
+  #[test]
+  fn exact_data_stays_in_radical_form() {
+    assert_eq!(
+      interpret("GeometricMeanFilter[{1, 2, 4, 8, 16}, 1]").unwrap(),
+      "{Sqrt[2], 2, 4, 8, 8*Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("GeometricMeanFilter[{{1, 2}, {4, 8}}, 1]").unwrap(),
+      "{{2*Sqrt[2], 2*Sqrt[2]}, {2*Sqrt[2], 2*Sqrt[2]}}"
+    );
+  }
 }
 
 mod inpaint_diffusion {

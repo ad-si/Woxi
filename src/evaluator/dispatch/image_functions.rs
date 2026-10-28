@@ -1102,7 +1102,16 @@ pub fn dispatch_image_functions(
         Expr::Image { .. } => {
           "Image[Exp[MeanFilter[Log[ImageData[#1]], #2]]] &"
         }
-        Expr::List(_) => "Exp[MeanFilter[Log[#1], #2]] &",
+        // Windows of a vector go through GeometricMean so that exact
+        // data stays in radical form instead of E^(Log[..]/n).
+        Expr::List(items)
+          if items.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          "Table[GeometricMean[#1[[Max[i - #2, 1] ;; Min[i + #2, Length[#1]]]]], {i, Length[#1]}] &"
+        }
+        Expr::List(_) => {
+          "Table[GeometricMean[Flatten[#1[[Max[i - #2, 1] ;; Min[i + #2, Length[#1]], Max[j - #2, 1] ;; Min[j + #2, Length[#1[[1]]]]]]]], {i, Length[#1]}, {j, Length[#1[[1]]]}] &"
+        }
         _ => {
           return Some(Ok(crate::helpers::unevaluated(
             "GeometricMeanFilter",
