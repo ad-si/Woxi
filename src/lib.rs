@@ -4552,7 +4552,13 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
 
   match (pane_box, &result) {
     (Some((w, h, align)), syntax::Expr::Graphics { svg, .. }) => {
-      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h, align);
+      let clipped = functions::graphics::clip_svg_to_pane_box(
+        svg,
+        w,
+        h,
+        align,
+        functions::graphics::pane_picture_is_auto_sized(&result),
+      );
       let mut clipped_result = result.clone();
       if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
         *svg = clipped;
