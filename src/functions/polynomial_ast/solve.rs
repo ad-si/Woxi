@@ -18909,6 +18909,11 @@ enum NumNode {
   Div(Box<Self>, Box<Self>),
   Pow(Box<Self>, Box<Self>),
   Unary(fn(f64) -> f64, Box<Self>),
+  // Exp, Sqrt and Log get their own nodes so the wide re-evaluation can
+  // keep them exact outside machine range.
+  Exp(Box<Self>),
+  Sqrt(Box<Self>),
+  Ln(Box<Self>),
   Binary(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
   // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
   // distribution's CDF/PDF), evaluated via the full AST evaluator with the
@@ -18925,7 +18930,11 @@ impl NumNode {
   fn has_fallback(&self) -> bool {
     match self {
       Self::Const(_) | Self::Var(_) => false,
-      Self::Neg(a) | Self::Unary(_, a) => a.has_fallback(),
+      Self::Neg(a)
+      | Self::Unary(_, a)
+      | Self::Exp(a)
+      | Self::Sqrt(a)
+      | Self::Ln(a) => a.has_fallback(),
       Self::Add(xs) | Self::Mul(xs) => xs.iter().any(Self::has_fallback),
       Self::Sub(a, b)
       | Self::Div(a, b)
@@ -18935,18 +18944,31 @@ impl NumNode {
     }
   }
 
+  /// Value at `point`. When plain machine arithmetic overflows or
+  /// underflows on the way (e.g. `E^878 * (E^-880 - …)`, which is `inf * 0`),
+  /// the tree is re-evaluated with an unbounded exponent, the way Wolfram
+  /// leaves machine range instead of producing `Indeterminate`.
   fn eval(&self, point: &[f64]) -> f64 {
+    let v = self.eval_plain(point);
+    if v.is_finite() {
+      v
+    } else {
+      self.eval_wide(point).to_f64()
+    }
+  }
+
+  fn eval_plain(&self, point: &[f64]) -> f64 {
     match self {
       Self::Const(c) => *c,
       Self::Var(i) => point[*i],
-      Self::Neg(a) => -a.eval(point),
-      Self::Add(xs) => xs.iter().map(|x| x.eval(point)).sum(),
-      Self::Mul(xs) => xs.iter().map(|x| x.eval(point)).product(),
-      Self::Sub(a, b) => a.eval(point) - b.eval(point),
-      Self::Div(a, b) => a.eval(point) / b.eval(point),
+      Self::Neg(a) => -a.eval_plain(point),
+      Self::Add(xs) => xs.iter().map(|x| x.eval_plain(point)).sum(),
+      Self::Mul(xs) => xs.iter().map(|x| x.eval_plain(point)).product(),
+      Self::Sub(a, b) => a.eval_plain(point) - b.eval_plain(point),
+      Self::Div(a, b) => a.eval_plain(point) / b.eval_plain(point),
       Self::Pow(a, b) => {
-        let base = a.eval(point);
-        let exp = b.eval(point);
+        let base = a.eval_plain(point);
+        let exp = b.eval_plain(point);
         // Integer exponents via powi keep `(-x)^2` real instead of NaN.
         if exp.fract() == 0.0 && exp.abs() < 1e9 {
           base.powi(exp as i32)
@@ -18954,8 +18976,45 @@ impl NumNode {
           base.powf(exp)
         }
       }
-      Self::Unary(f, a) => f(a.eval(point)),
-      Self::Binary(f, a, b) => f(a.eval(point), b.eval(point)),
+      Self::Unary(f, a) => f(a.eval_plain(point)),
+      Self::Exp(a) => a.eval_plain(point).exp(),
+      Self::Sqrt(a) => a.eval_plain(point).sqrt(),
+      Self::Ln(a) => a.eval_plain(point).ln(),
+      Self::Binary(f, a, b) => f(a.eval_plain(point), b.eval_plain(point)),
+      Self::Fallback(..) => self.eval_fallback(point),
+    }
+  }
+
+  /// `eval_plain` with every intermediate kept as a `WideFloat`.
+  fn eval_wide(&self, point: &[f64]) -> WideFloat {
+    match self {
+      Self::Const(c) => WideFloat::new(*c),
+      Self::Var(i) => WideFloat::new(point[*i]),
+      Self::Neg(a) => a.eval_wide(point).neg(),
+      Self::Add(xs) => xs
+        .iter()
+        .fold(WideFloat::new(0.0), |acc, x| acc.add(x.eval_wide(point))),
+      Self::Mul(xs) => xs
+        .iter()
+        .fold(WideFloat::new(1.0), |acc, x| acc.mul(x.eval_wide(point))),
+      Self::Sub(a, b) => a.eval_wide(point).add(b.eval_wide(point).neg()),
+      Self::Div(a, b) => a.eval_wide(point).div(b.eval_wide(point)),
+      Self::Pow(a, b) => a.eval_wide(point).pow(b.eval_wide(point).to_f64()),
+      // Any other function sees its argument rounded into machine range.
+      Self::Unary(f, a) => WideFloat::new(f(a.eval_wide(point).to_f64())),
+      Self::Exp(a) => WideFloat::exp(a.eval_wide(point).to_f64()),
+      Self::Sqrt(a) => a.eval_wide(point).sqrt(),
+      Self::Ln(a) => WideFloat::new(a.eval_wide(point).ln()),
+      Self::Binary(f, a, b) => WideFloat::new(f(
+        a.eval_wide(point).to_f64(),
+        b.eval_wide(point).to_f64(),
+      )),
+      Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
+    }
+  }
+
+  fn eval_fallback(&self, point: &[f64]) -> f64 {
+    match self {
       Self::Fallback(expr, vars) => {
         let mut e = (**expr).clone();
         for (i, var) in vars.iter().enumerate() {
@@ -18967,7 +19026,141 @@ impl NumNode {
           .and_then(|v| expr_to_f64(&v).ok())
           .unwrap_or(f64::NAN)
       }
+      _ => f64::NAN,
     }
+  }
+}
+
+/// A float with an unbounded binary exponent: `mant * 2^exp`, `mant` in
+/// `[0.5, 1)` in magnitude (or zero / non-finite, with `exp == 0`).
+///
+/// Like Wolfram's machine arithmetic, only overflow leaves machine range:
+/// a value below the smallest normal machine number flushes to zero
+/// (`Exp[800.] (Exp[-800.] - Exp[-801.])` is `0.`).
+#[derive(Clone, Copy, Debug)]
+struct WideFloat {
+  mant: f64,
+  exp: i64,
+}
+
+impl WideFloat {
+  fn new(x: f64) -> Self {
+    Self::normalized(x, 0)
+  }
+
+  fn normalized(mant: f64, exp: i64) -> Self {
+    if mant == 0.0 || !mant.is_finite() {
+      return Self { mant, exp: 0 };
+    }
+    let (m, e) = libm::frexp(mant);
+    let exp = exp.saturating_add(i64::from(e));
+    if exp < f64::MIN_EXP as i64 {
+      return Self {
+        mant: 0.0_f64.copysign(m),
+        exp: 0,
+      };
+    }
+    Self { mant: m, exp }
+  }
+
+  fn to_f64(self) -> f64 {
+    if self.exp > 2000 {
+      self.mant * f64::INFINITY
+    } else if self.exp < -2000 {
+      self.mant * 0.0
+    } else {
+      libm::ldexp(self.mant, self.exp as i32)
+    }
+  }
+
+  fn neg(self) -> Self {
+    Self {
+      mant: -self.mant,
+      exp: self.exp,
+    }
+  }
+
+  fn mul(self, other: Self) -> Self {
+    Self::normalized(self.mant * other.mant, self.exp.saturating_add(other.exp))
+  }
+
+  fn div(self, other: Self) -> Self {
+    Self::normalized(self.mant / other.mant, self.exp.saturating_sub(other.exp))
+  }
+
+  fn add(self, other: Self) -> Self {
+    if self.mant == 0.0 || !other.mant.is_finite() {
+      return other;
+    }
+    if other.mant == 0.0 || !self.mant.is_finite() {
+      return self;
+    }
+    let (big, small) = if self.exp >= other.exp {
+      (self, other)
+    } else {
+      (other, self)
+    };
+    let shift = small.exp - big.exp;
+    if shift < -1100 {
+      return big;
+    }
+    Self::normalized(big.mant + libm::ldexp(small.mant, shift as i32), big.exp)
+  }
+
+  /// `e^x` for a machine `x`, whatever the size of the result.
+  fn exp(x: f64) -> Self {
+    if !x.is_finite() || x.abs() > 1e15 {
+      return Self::new(x.exp());
+    }
+    let k = (x / std::f64::consts::LN_2).floor();
+    let r = x - k * std::f64::consts::LN_2;
+    Self::normalized(r.exp(), k as i64)
+  }
+
+  /// Natural log, which always fits a machine real.
+  fn ln(self) -> f64 {
+    if self.mant <= 0.0 || !self.mant.is_finite() {
+      return self.to_f64().ln();
+    }
+    self.mant.ln() + self.exp as f64 * std::f64::consts::LN_2
+  }
+
+  fn sqrt(self) -> Self {
+    if self.mant < 0.0 || !self.mant.is_finite() {
+      return Self::new(self.to_f64().sqrt());
+    }
+    // Make the exponent even so it halves exactly.
+    let (m, e) = if self.exp % 2 == 0 {
+      (self.mant, self.exp)
+    } else {
+      (self.mant * 2.0, self.exp - 1)
+    };
+    Self::normalized(m.sqrt(), e / 2)
+  }
+
+  fn pow(self, p: f64) -> Self {
+    if p.fract() == 0.0 && p.abs() <= 64.0 {
+      // Exact repeated squaring keeps full precision and the sign.
+      let mut result = Self::new(1.0);
+      let mut base = self;
+      let mut n = p.abs() as u32;
+      while n > 0 {
+        if n & 1 == 1 {
+          result = result.mul(base);
+        }
+        base = base.mul(base);
+        n >>= 1;
+      }
+      return if p < 0.0 {
+        Self::new(1.0).div(result)
+      } else {
+        result
+      };
+    }
+    if self.mant <= 0.0 || !self.mant.is_finite() || !p.is_finite() {
+      return Self::new(self.to_f64().powf(p));
+    }
+    Self::exp(p * self.ln())
   }
 }
 
@@ -19032,8 +19225,10 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Minus" if args.len() == 1 => {
           Some(NumNode::Neg(Box::new(c(&args[0])?)))
         }
-        "Sqrt" => unary(f64::sqrt, args),
-        "Exp" => unary(f64::exp, args),
+        "Sqrt" if args.len() == 1 => {
+          Some(NumNode::Sqrt(Box::new(c(&args[0])?)))
+        }
+        "Exp" if args.len() == 1 => Some(NumNode::Exp(Box::new(c(&args[0])?))),
         "Sin" => unary(f64::sin, args),
         "Cos" => unary(f64::cos, args),
         "Tan" => unary(f64::tan, args),
@@ -19071,7 +19266,7 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           Box::new(c(&args[0])?),
           Box::new(c(&args[1])?),
         )),
-        "Log" => unary(f64::ln, args),
+        "Log" if args.len() == 1 => Some(NumNode::Ln(Box::new(c(&args[0])?))),
         "Log2" => unary(f64::log2, args),
         "Log10" => unary(f64::log10, args),
         "Floor" => unary(f64::floor, args),
@@ -20732,4 +20927,50 @@ fn solve_with_eliminated(
     out.push(Expr::List(rules.into()));
   }
   Some(Ok(Expr::List(out.into())))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::NumNode;
+
+  fn exp_of_var() -> NumNode {
+    NumNode::Exp(Box::new(NumNode::Var(0)))
+  }
+
+  #[test]
+  fn compiled_eval_survives_intermediate_overflow() {
+    // E^800 * 1e-300 is finite although E^800 is not a machine number.
+    let node = NumNode::Mul(vec![exp_of_var(), NumNode::Const(1e-300)]);
+    let v = node.eval(&[800.0]);
+    let expected = 300.0f64.mul_add(-std::f64::consts::LN_10, 800.0).exp();
+    assert!((v / expected - 1.0).abs() < 1e-12, "{v} vs {expected}");
+    // Sums, quotients and integer powers stay in the wide range too.
+    let node = NumNode::Div(
+      Box::new(NumNode::Pow(
+        Box::new(NumNode::Add(vec![exp_of_var(), exp_of_var()])),
+        Box::new(NumNode::Const(2.0)),
+      )),
+      Box::new(NumNode::Exp(Box::new(NumNode::Const(1599.0)))),
+    );
+    let v = node.eval(&[800.0]);
+    assert!((v / (4.0 * std::f64::consts::E) - 1.0).abs() < 1e-12, "{v}");
+  }
+
+  #[test]
+  fn compiled_eval_flushes_underflow_like_machine_arithmetic() {
+    // Wolfram: Exp[800.] (Exp[-800.] - Exp[-801.]) is 0., not 0.63.
+    let shifted = |c: f64| {
+      NumNode::Exp(Box::new(NumNode::Add(vec![
+        NumNode::Neg(Box::new(NumNode::Var(0))),
+        NumNode::Const(c),
+      ])))
+    };
+    let node = NumNode::Mul(vec![
+      exp_of_var(),
+      NumNode::Sub(Box::new(shifted(0.0)), Box::new(shifted(-1.0))),
+    ]);
+    assert_eq!(node.eval(&[800.0]), 0.0);
+    // A plain machine result is untouched.
+    assert_eq!(node.eval(&[1.0]), 1.0 - (-1.0f64).exp());
+  }
 }

@@ -1680,6 +1680,33 @@ mod differentiate_plus_times {
     assert_eq!(interpret("D[x + 1, x]").unwrap(), "1");
   }
 
+  // The term derivatives of a sum are collected together.
+  #[test]
+  fn d_sum_collects_term_derivatives() {
+    assert_eq!(
+      interpret("D[x^3/3 + Sin[x] + x Cos[x], x]").unwrap(),
+      "x^2 + 2*Cos[x] - x*Sin[x]"
+    );
+  }
+
+  // Summing the term derivatives pairwise re-collected the growing partial
+  // sum each time: quadratic, ~2 s here and minutes for FindMinimum's
+  // gradient of an option-pricing formula (Demonstration
+  // ACanonicalOptimalStoppingProblemForAmericanOptions).
+  #[test]
+  fn d_of_a_long_sum_is_linear() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "e = Sum[Exp[k x] Erfc[x + k], {k, 400}]; d = D[e, x]; \
+         {Length[d], d === Sum[D[Exp[k x] Erfc[x + k], x], {k, 400}]}"
+      )
+      .unwrap(),
+      "{800, True}"
+    );
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+
   // The quotient-rule sum orders the squared-denominator term first
   // (shared denominator base, ascending exponent), and D does NOT
   // canonicalize the quotient signs — both wolframscript-verified

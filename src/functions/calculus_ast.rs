@@ -3130,12 +3130,14 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         }
         // Handle evaluated Plus[a, b, ...] (FunctionCall form of +)
         "Plus" if args.len() >= 2 => {
-          let mut result = differentiate(&args[0], var)?;
-          for arg in &args[1..] {
-            let d = differentiate(arg, var)?;
-            result = simplify(plus2(result, d));
-          }
-          Ok(result)
+          // Sum all term derivatives at once: folding them pairwise re-walks
+          // and re-collects the growing partial sum, quadratic in the terms.
+          let terms = args
+            .iter()
+            .map(|arg| differentiate(arg, var).map(simplify))
+            .collect::<Result<Vec<_>, _>>()?;
+          crate::functions::math_ast::plus_ast(&terms)
+            .or_else(|_| Ok(simplify(plus(terms))))
         }
         // Handle evaluated Times[a, b, ...] (FunctionCall form of *)
         "Times" if args.len() >= 2 => {

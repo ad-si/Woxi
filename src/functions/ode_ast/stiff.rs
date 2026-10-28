@@ -116,7 +116,7 @@ pub(super) fn rosenbrock_leg(
         // The stage point: y plus the a-combination of the previous
         // increments (stages 5 and 6 add the last increment to u).
         if stage <= 4 {
-          u = y.clone();
+          u.clone_from(&y);
           for (k, kv) in ks.iter().enumerate() {
             let a = RODAS_A[stage - 1][k];
             if a != 0.0 {

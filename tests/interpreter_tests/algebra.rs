@@ -18544,6 +18544,16 @@ mod cases {
   fn find_minimum_1() {
     assert_case(r#"FindMinimum[(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
   }
+  // At x = 1 machine arithmetic gives `E^800 (E^-800 - …)` = inf * 0. The
+  // compiled objective is re-evaluated past machine range, where (as in
+  // Wolfram) the overflow survives and the underflow flushes to 0.
+  #[test]
+  fn find_minimum_overflow_times_underflow() {
+    assert_case(
+      r#"Last[FindMinimum[(Exp[800 x] (Exp[-800 x] - Exp[-800 x - x^2]) - 1/2)^2, {x, 1}]]"#,
+      r#"{x -> 1.}"#,
+    );
+  }
   #[test]
   fn find_minimum_2() {
     assert_case(
