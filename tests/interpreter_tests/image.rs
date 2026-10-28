@@ -8870,6 +8870,34 @@ mod demonstration_image_filters {
     );
   }
 
+  #[test]
+  fn image_pad_promotes_a_gray_image_to_the_colors_channels() {
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.2, 0.4}}]; \
+         {ImageChannels[ImagePad[i, 1, Red]], \
+          ImageData[ImagePad[i, {{1, 0}, {0, 0}}, GrayLevel[0.5, 0.3]]], \
+          ImageData[ImagePad[i, {{1, 0}, {0, 0}}, RGBColor[1, 0, 0, 0.5]]][[1, 1]]}"
+      )
+      .unwrap(),
+      "{3, {{{0.5, 0.30000001192092896}, {0.20000000298023224, 1.}, \
+       {0.4000000059604645, 1.}}}, {1., 0., 0., 0.5}}"
+    );
+  }
+
+  #[test]
+  fn image_pad_counts_whole_pixels_of_a_fractional_extent() {
+    assert_eq!(
+      interpret(
+        "j = Image[ConstantArray[0, {3, 4}]]; \
+         Table[ImageDimensions[ImagePad[j, {{0, 0}, {p, 0}}]], \
+         {p, {26.6, 0.9, 1.5, -1.5, 133/5}}]"
+      )
+      .unwrap(),
+      "{{4, 29}, {4, 3}, {4, 4}, {4, 2}, {4, 29}}"
+    );
+  }
+
   // A color directive is a valid ImagePad fill, in any channel layout.
   #[test]
   fn image_pad_color_fill() {

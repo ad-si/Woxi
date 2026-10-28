@@ -3692,12 +3692,21 @@ fn as_int(e: &Expr) -> Option<i64> {
 
 /// Read one padding extent pair `{lo, hi}`, or a scalar standing for both.
 fn image_pad_extent(spec: &Expr) -> Option<(i64, i64)> {
+  // A fractional extent counts its whole pixels (26.6 pads 26, -1.5
+  // trims 1).
+  let whole = |e: &Expr| {
+    as_int(e).or_else(|| {
+      crate::functions::math_ast::try_eval_to_f64(e)
+        .filter(|v| v.is_finite())
+        .map(|v| v.trunc() as i64)
+    })
+  };
   match spec {
     Expr::List(pair) if pair.len() == 2 => {
-      Some((as_int(&pair[0])?, as_int(&pair[1])?))
+      Some((whole(&pair[0])?, whole(&pair[1])?))
     }
     other => {
-      let n = as_int(other)?;
+      let n = whole(other)?;
       Some((n, n))
     }
   }
@@ -3735,32 +3744,41 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // A color fills an image only with as many channels as the image has (or
-  // just one, a gray level); any color fits a single-channel image.
-  if let (Some(padding), Expr::Image { channels, .. }) = (args.get(2), &args[0])
-    && *channels > 1
-  {
-    let color_channels = match padding {
-      Expr::FunctionCall { name, args: c } => match (name.as_str(), c.len()) {
+  // just one, a gray level); a single-channel image takes on the color's
+  // channels: gray values become RGB and existing pixels opaque.
+  let color_channels = match args.get(2) {
+    Some(Expr::FunctionCall { name, args: c }) => {
+      match (name.as_str(), c.len()) {
         ("GrayLevel", 1) => Some(1),
         ("GrayLevel", 2) => Some(2),
         ("RGBColor" | "Hue", 3) => Some(3),
         ("RGBColor" | "Hue", 4) => Some(4),
         _ => None,
-      },
-      _ => None,
-    };
-    if let Some(n) = color_channels
-      && n != 1
-      && n != *channels as usize
-    {
-      crate::emit_message(&format!(
-        "ImagePad::incpad: The specified padding value {} is not compatible \
-         with a {}-channel image with Automatic color space.",
-        crate::syntax::format_expr(padding, crate::syntax::ExprForm::Output),
-        channels
-      ));
-      return echo();
+      }
     }
+    _ => None,
+  };
+  if let (Some(n), Expr::Image { channels: 1, .. }) = (color_channels, &args[0])
+    && n > 1
+  {
+    let promoted = promote_gray_image(&args[0], n);
+    let mut promoted_args = args.to_vec();
+    promoted_args[0] = promoted;
+    return image_pad_ast(&promoted_args);
+  }
+  if let (Some(padding), Expr::Image { channels, .. }) = (args.get(2), &args[0])
+    && *channels > 1
+    && let Some(n) = color_channels
+    && n != 1
+    && n != *channels as usize
+  {
+    crate::emit_message(&format!(
+      "ImagePad::incpad: The specified padding value {} is not compatible \
+         with a {}-channel image with Automatic color space.",
+      crate::syntax::format_expr(padding, crate::syntax::ExprForm::Output),
+      channels
+    ));
+    return echo();
   }
   if let Some(image) =
     image_pad_extents(&args[0], left, right, bottom, top, args.get(2))
@@ -3772,6 +3790,43 @@ pub fn image_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
     ));
     echo()
+  }
+}
+
+/// A single-channel image with `channels` channels: the gray value in each
+/// color channel and an opaque alpha.
+fn promote_gray_image(image: &Expr, channels: usize) -> Expr {
+  let Expr::Image {
+    color_space,
+    display_size,
+    width,
+    height,
+    data,
+    image_type,
+    ..
+  } = image
+  else {
+    return image.clone();
+  };
+  let colors = if channels >= 3 { 3 } else { 1 };
+  let alpha = channels == 2 || channels == 4;
+  let mut out = Vec::with_capacity(data.len() * channels);
+  for &v in data.iter() {
+    for _ in 0..colors {
+      out.push(v);
+    }
+    if alpha {
+      out.push(1.0);
+    }
+  }
+  Expr::Image {
+    color_space: *color_space,
+    display_size: *display_size,
+    width: *width,
+    height: *height,
+    channels: channels as u8,
+    data: Arc::new(out),
+    image_type: *image_type,
   }
 }
 
