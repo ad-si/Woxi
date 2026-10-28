@@ -9451,6 +9451,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
+  let mut color_fn = FacetColorFunction::default();
 
   for opt in &args[opt_start..] {
     if let Expr::Rule {
@@ -9458,6 +9459,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement,
     } = opt
     {
+      color_fn.read_option(pattern, replacement);
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style = Some(replacement.as_ref().clone());
@@ -9484,9 +9486,16 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
-          if let Expr::List(items) = replacement.as_ref()
-            && items.len() == 2
-          {
+          // `{zmin, zmax}` or the full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}`
+          let z_items = match replacement.as_ref() {
+            Expr::List(items) if items.len() == 2 => Some(items.clone()),
+            Expr::List(items) if items.len() == 3 => match &items[2] {
+              Expr::List(z) if z.len() == 2 => Some(z.clone()),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(items) = z_items {
             let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
             let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1])?);
             if let (Some(lo), Some(hi)) = (lo, hi) {
@@ -9743,6 +9752,32 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ((cz - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
   };
 
+  // The style `ColorFunction` gives the facet with corners `ps`, evaluated
+  // at the facet's centre in world coordinates; it takes precedence over
+  // `PlotStyle`.
+  let x_range = if axis_is_z {
+    (-global_r_max, global_r_max)
+  } else {
+    (global_x_min, global_x_max)
+  };
+  let y_range = if axis_is_z {
+    (-global_r_max, global_r_max)
+  } else {
+    (global_y_min, global_y_max)
+  };
+  let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
+    color_fn.function.as_ref()?;
+    let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
+    color_fn.style_at(
+      [
+        mid(&|p| p.x),
+        mid(&|p| p.y),
+        mid(&|p| p.z.clamp(z_lo, z_hi)),
+      ],
+      [x_range, y_range, (z_lo, z_hi)],
+    )
+  };
+
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
@@ -9784,8 +9819,13 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
           let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) =
-            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+          let cf_style = facet_style([pp00, pp10, pp01]);
+          let (color, opacity) = shade_facet(
+            default_color,
+            cf_style.as_ref().or(render_style.as_ref()),
+            normal,
+            view_dir,
+          );
 
           let proj0 = project(v0, &camera);
           let proj1 = project(v1, &camera);
@@ -9818,8 +9858,13 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
           let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) =
-            shade_facet(default_color, render_style.as_ref(), normal, view_dir);
+          let cf_style = facet_style([pp11, pp01, pp10]);
+          let (color, opacity) = shade_facet(
+            default_color,
+            cf_style.as_ref().or(render_style.as_ref()),
+            normal,
+            view_dir,
+          );
 
           let proj0 = project(v0, &camera);
           let proj1 = project(v1, &camera);
@@ -9869,16 +9914,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &all_triangles,
     &[],
     &camera,
-    if axis_is_z {
-      (-global_r_max, global_r_max)
-    } else {
-      (global_x_min, global_x_max)
-    },
-    if axis_is_z {
-      (-global_r_max, global_r_max)
-    } else {
-      (global_y_min, global_y_max)
-    },
+    x_range,
+    y_range,
     (z_axis_min, z_axis_max),
     svg_width,
     svg_height,

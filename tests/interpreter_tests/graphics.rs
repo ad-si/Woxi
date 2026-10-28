@@ -37601,6 +37601,49 @@ mod revolution_plot3d_part_extraction {
     );
     assert!(svg.contains("<polygon"), "the surface must draw");
   }
+
+  /// `ColorFunction -> Function[{x, y, z}, …]` colours each facet from its
+  /// world coordinates (`ColorFunctionScaling -> False`), so a height split
+  /// paints two distinct regions instead of the default height gradient.
+  #[test]
+  fn revolution_plot3d_color_function_paints_facets() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[RevolutionPlot3D[r^2, {r, 0, 2}, \
+       ColorFunction -> Function[{x, y, z}, If[z <= 1, Red, Blue]], \
+       ColorFunctionScaling -> False, Mesh -> None, \
+       PlotRange -> {{-2, 2}, {-2, 2}, {0, 4}}], \"SVG\"]",
+    )
+    .unwrap();
+    let fills: Vec<(u32, u32, u32)> = svg
+      .split("<polygon ")
+      .skip(1)
+      .filter_map(|tag| {
+        let inner = tag.split("fill=\"rgb(").nth(1)?.split(')').next()?;
+        let mut it = inner.split(',').map(|v| v.trim().parse::<u32>());
+        Some((it.next()?.ok()?, it.next()?.ok()?, it.next()?.ok()?))
+      })
+      .collect();
+    assert!(fills.iter().any(|&(r, g, b)| r > 2 * g && r > 2 * b));
+    assert!(fills.iter().any(|&(r, g, b)| b > 2 * r && b > 2 * g));
+  }
+
+  /// A full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` `PlotRange` clips
+  /// the height just like `{zmin, zmax}`.
+  #[test]
+  fn revolution_plot3d_full_plot_range_clips_height() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExportString[RevolutionPlot3D[r^2, {r, 0, 2}, \
+         PlotRange -> {{-2, 2}, {-2, 2}, {0, 1}}], \"SVG\"] === \
+         ExportString[RevolutionPlot3D[r^2, {r, 0, 2}, \
+         PlotRange -> {0, 1}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod arrowheads_render {
