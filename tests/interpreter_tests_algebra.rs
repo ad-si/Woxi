@@ -18,6 +18,7 @@ mod interpreter_tests {
 
   mod algebra;
   mod calculus;
+  mod control_systems;
   mod linear_algebra;
   mod wavelets;
 }

@@ -980,6 +980,35 @@ pub fn dispatch_linear_algebra_functions(
         ),
       );
     }
+    "TransferFunctionModel" if args.len() >= 2 => {
+      return Some(
+        crate::functions::control_systems::transfer_function_model_ast(args),
+      );
+    }
+    "TransferFunctionPoles" if args.len() == 1 => {
+      return Some(
+        crate::functions::control_systems::transfer_function_poles_ast(args),
+      );
+    }
+    "TransferFunctionZeros" if args.len() == 1 => {
+      return Some(
+        crate::functions::control_systems::transfer_function_zeros_ast(args),
+      );
+    }
+    "OutputResponse" if args.len() == 3 => {
+      return Some(crate::functions::control_systems::output_response_ast(
+        args,
+      ));
+    }
+    "BodePlot" if !args.is_empty() => {
+      return Some(crate::functions::control_systems::bode_plot_ast(args));
+    }
+    "NicholsPlot" if !args.is_empty() => {
+      return Some(crate::functions::control_systems::nichols_plot_ast(args));
+    }
+    "NyquistPlot" if !args.is_empty() => {
+      return Some(crate::functions::control_systems::nyquist_plot_ast(args));
+    }
     "DiscreteIndicator" if args.len() == 3 => {
       return Some(Ok(
         crate::functions::linear_algebra_ast::discrete_indicator(args)

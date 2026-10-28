@@ -2265,6 +2265,23 @@ local minima — for a sine fit Wolfram lands on the constraint boundary while
 Woxi finds an interior point with a smaller residual. Compare the picture, not
 the parameters.
 
+### Control systems: response forms and plot details
+
+- `OutputResponse[model, u, t]` gives the inverse Laplace transform of
+  `G(s) U(s)` through `Together`; wolframscript's forms come from its own
+  state-space integration (`{1 + (2*(-1 + E^t))/E^t}` where Woxi has
+  `{(1 + 3*E^t)/E^t}` for `(s + 3)/(s + 1)` and a unit step). Over a time
+  span both are `{InterpolatingFunction[…][t]}`, but Woxi's samples a
+  fixed-step Runge–Kutta simulation and interpolates linearly. An input
+  step between two of its steps costs about 1e-4.
+- An inexact delay is written exactly and the rest numericized; where
+  the `1.` lands differs (`Exp[-0.5 s]/(s + 1)` gives `1. + s` as the
+  denominator in wolframscript and `1. + 1.*s` in Woxi).
+- `BodePlot` draws the whole unwrapped phase. With a delay, wolframscript
+  cuts the phase curve at a phase range it chooses (`[φ0 - 180°, φ0]` for
+  `E^-s/(s (s + 1))`). `NyquistPlot` has no arrows, and the frequency
+  range of `NicholsPlot` differs.
+
 ### `PowerMod[a, 1/n, m]` with multiple roots
 
 When `gcd(a,m)=1` and `gcd(n, λ(m)) ≠ 1` with n ≥ 3, WL returns a specific root

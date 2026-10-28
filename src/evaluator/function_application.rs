@@ -2342,6 +2342,15 @@ pub fn apply_curried_call(
         }),
       }
     }
+    Expr::FunctionCall { name, .. }
+      if name == "TransferFunctionModel"
+        && let Some(result) =
+          crate::functions::control_systems::apply_transfer_function_model(
+            func, args,
+          ) =>
+    {
+      result
+    }
     Expr::FunctionCall {
       name,
       args: func_args,

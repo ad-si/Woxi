@@ -983,7 +983,7 @@ Expectation,Compute expected value of a function of a random variable,✅,pure,8
 TrigReduce,Reduce products and powers of trig functions to sums,✅,pure,3.0,954
 PreIncrement,Increments a variable by 1 and returns the new value,✅,stateful,1.0,955
 DisplayForm,Wrapper that causes box expressions to be rendered visually,✅,pure,3.0,956
-TransferFunctionModel,Requires external services or GUI infrastructure,🚫,io,8.0,957
+TransferFunctionModel,Transfer-function model of a linear system (continuous; delays),✅,pure,8.0,957
 Shortest,Pattern wrapper that tries the shortest match first — the default for both string and expression sequences,✅,pure,6.0,958
 Region,Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D; Style[reg + directives] applies styling),✅,pure,11.1,959
 EdgeDetect,Detects edges by thinning the derivative-of-Gaussian gradient to single-pixel ridges,✅,pure,8.0,962
@@ -1271,7 +1271,7 @@ ParetoDistribution,Pareto distribution with optional location and shape paramete
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph (optionally matching a pattern),✅,pure,8.0,1256
 Transparent,,🚫,,7.0,1256
-OutputResponse,,🚫,,8.0,1257
+OutputResponse,Output of a continuous transfer-function model to an input (symbolic or simulated),✅,pure,8.0,1257
 RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,effectful,6.0,1258
 Random,Legacy pseudorandom generator (wraps RandomReal/RandomInteger/RandomComplex),✅,effectful,1.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
@@ -2040,7 +2040,7 @@ DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036
 RootLocusPlot,Root locus plot for control systems,🚫,,8.0,2036
 UndirectedGraph,Gives the graph with every edge undirected and duplicates dropped,✅,pure,8.0,2038
 DegreeGraphDistribution,Degree-based graph distribution,🚫,,8.0,2039
-NyquistPlot,Nyquist stability plot,🚫,,8.0,2040
+NyquistPlot,Nyquist stability plot,✅,pure,8.0,2040
 FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
 VertexInDegree,Number of incoming edges per vertex of a graph or edge list,✅,none,8.0,2042
 NotebookEventActions,Actions for notebook events,🚫,,6.0,2045
@@ -2471,7 +2471,7 @@ MatrixPropertyDistribution,represents the distribution of a matrix property for 
 Regularization,,🚫,,7.0,2483
 ColorProfileData,,🚫,,9.0,2487
 DegreeCentrality,Degree centrality of graph vertices,✅,1,8.0,2487
-TransferFunctionPoles,,🚫,,8.0,2487
+TransferFunctionPoles,Poles of each element of a transfer-function model,✅,pure,8.0,2487
 WhiteNoiseProcess,White noise process sliced as its underlying distribution,✅,unevaluated,10.0,2487
 EulerAngles,Extract Euler angles from rotation matrix,✅,none,10.2,2491
 SemanticImportString,,🚫,,10.0,2491
@@ -3214,7 +3214,7 @@ NullRecords,,,,2.0,3257
 ParallelNeeds,,🚫,,7.0,3257
 PartLayer,,🚫,,11.1,3257
 RidgeFilter,,🚫,,8.0,3257
-SystemsModelDelay,,🚫,,9.0,3257
+SystemsModelDelay,Symbolic time delay in a systems model (stays symbolic),✅,unevaluated,9.0,3257
 VarianceTest,,,,8.0,3257
 WordCount,Count words in a string,✅,none,10.1,3257
 ApplySides,Apply a function to both sides of an equation,✅,none,11.3,3265
@@ -3315,7 +3315,7 @@ Equilibrium,Operator without built-in meaning displayed infix,✅,pure,3.0,3363
 FindMeshDefects,,,,11.0,3363
 Interactive,,🚫,,9.0,3363
 NakagamiDistribution,Nakagami distribution with shape parameter m and spread w,✅,pure,8.0,3363
-NicholsPlot,,🚫,,8.0,3363
+NicholsPlot,Nichols plot of magnitude against phase,✅,pure,8.0,3363
 SystemsModelDelete,,🚫,,8.0,3363
 VarianceGammaDistribution,Variance-gamma Bessel-type distribution,✅,pure,9.0,3363
 ArrayFilter,Applies a function to every radius-r block of a list or array with edge elements replicated at the boundaries,✅,pure,10.2,3378
@@ -3612,7 +3612,7 @@ SechDistribution,Hyperbolic secant distribution (Sech PDF and ArcTan CDF),✅,pu
 StartWebSession,,🚫,,12.0,3678
 TimeSeriesInsert,Inserts a point into a series keeping the path sorted by time,✅,pure,10.0,3678
 TimeSeriesMapThread,,🚫,,10.0,3678
-TransferFunctionZeros,,🚫,,8.0,3678
+TransferFunctionZeros,Zeros of each element of a transfer-function model,✅,pure,8.0,3678
 UnequalTo,Operator form of Unequal,✅,none,10.4,3678
 WakebyDistribution,Wakeby quantile-defined distribution,✅,pure,8.0,3678
 AiryAiZero,n-th real zero of the Airy function Ai,✅,pure,6.0,3697

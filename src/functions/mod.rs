@@ -26,6 +26,7 @@ pub mod color_blend;
 pub mod combinatorica_graph;
 pub mod confirm_ast;
 pub mod control_flow_ast;
+pub mod control_systems;
 pub mod convex_hull;
 pub mod convolve_ast;
 pub mod count_roots_ast;
