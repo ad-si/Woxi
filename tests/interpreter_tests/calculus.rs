@@ -23773,3 +23773,23 @@ mod sums_over_interpolating_functions {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
 }
+
+mod equality_of_atoms_and_data_calls {
+  use super::*;
+
+  #[test]
+  fn atom_against_a_curried_call_is_decided_without_rendering() {
+    // Regression: comparing InterpolatingFunction[…][t] with 0 rendered the
+    // whole table for each comparison.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{i, N[i^2]}, {i, 3000}]]; \
+         {Count[Table[f[t] === 0, {200}], False], {1, 2} === 1, g[1][2] === x}"
+      )
+      .unwrap(),
+      "{200, False, False}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}
