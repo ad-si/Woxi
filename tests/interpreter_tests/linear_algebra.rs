@@ -626,6 +626,23 @@ mod inverse {
   }
 
   #[test]
+  fn inverse_of_a_large_exact_matrix_is_eliminated() {
+    // Regression: the adjugate's n^2 determinants took 116 s on this
+    // 40-by-40 rational matrix (wolframscript: 0.02 s).
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "n = 40; m = Table[Which[i == j, 2/3, Abs[i - j] == 1, 1/7, True, 0], \
+         {i, n}, {j, n}]; r = Inverse[m]; {r . m == IdentityMatrix[n], r[[1, 1]]}"
+      )
+      .unwrap(),
+      "{True, 1607934203810280302171869536977730565698772920/\
+       1020238488101510497393661299133534060063794441}"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
   fn inverse_identity() {
     assert_eq!(
       interpret("Inverse[{{1, 0}, {0, 1}}]").unwrap(),

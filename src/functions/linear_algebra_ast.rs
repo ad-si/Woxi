@@ -1860,6 +1860,55 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // A matrix of exact numbers: Gauss–Jordan elimination on [A | I], which
+  // is polynomial where the adjugate's n^2 determinants are not.
+  let exact_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if matrix.iter().flatten().all(exact_number) {
+    let mut aug: Vec<Vec<Expr>> = matrix
+      .iter()
+      .enumerate()
+      .map(|(i, row)| {
+        let mut r = row.clone();
+        r.extend((0..n).map(|j| Expr::Integer(i128::from(i == j))));
+        r
+      })
+      .collect();
+    for col in 0..n {
+      let Some(pivot_row) = (col..n).find(|&r| !is_zero_expr(&aug[r][col]))
+      else {
+        crate::emit_message(&format!(
+          "Inverse::sing: Matrix {} is singular.",
+          expr_to_string(&args[0])
+        ));
+        return Ok(unevaluated("Inverse", args));
+      };
+      aug.swap(col, pivot_row);
+      let pivot = aug[col][col].clone();
+      for j in col..2 * n {
+        aug[col][j] = eval_divide(&aug[col][j], &pivot);
+      }
+      for row in 0..n {
+        if row == col || is_zero_expr(&aug[row][col]) {
+          continue;
+        }
+        let factor = aug[row][col].clone();
+        for j in col..2 * n {
+          if is_zero_expr(&aug[col][j]) {
+            continue;
+          }
+          let prod = eval_mul(&factor, &aug[col][j]);
+          aug[row][j] = eval_sub(&aug[row][j], &prod);
+        }
+      }
+    }
+    return Ok(matrix_to_expr(
+      aug.into_iter().map(|row| row[n..].to_vec()).collect(),
+    ));
+  }
+
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
   let det_is_zero = matches!(&det, Expr::Integer(0))
