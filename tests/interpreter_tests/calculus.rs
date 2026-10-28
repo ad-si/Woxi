@@ -12754,6 +12754,33 @@ mod recurrence_table {
     );
   }
 
+  // An initial value given by another one (`r[1] == r[0]`) takes its
+  // value. Left as the symbol `r[0.]`, every step nested the previous
+  // expressions, and a 3000-step table never finished (Demonstration
+  // ANonlinearModelForTheRingsOfSaturn).
+  #[test]
+  fn initial_value_referring_to_another() {
+    assert_eq!(
+      interpret(
+        "{RecurrenceTable[{a[n+1] == a[n] + a[n-1], a[1] == 1, a[2] == a[1] + 1}, a, {n, 1, 6}], \
+          RecurrenceTable[{a[n+1] == a[n] + b[n], b[n+1] == b[n], a[1] == b[1], b[1] == 2}, {a, b}, {n, 1, 4}]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3, 5, 8, 13}, {{2, 2}, {4, 2}, {6, 2}, {8, 2}}}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "rt = RecurrenceTable[{r[n + 1] == 2 r[n] - r[n - 1] - 20 Cos[t[n]]/(r[n] - 185.7)^2, \
+           t[n + 1] == t[n] + 2 Pi (185.7/r[n])^(3/2), r[0] == 70, r[1] == r[0], t[0] == 0}, \
+           {r, t}, {n, 1, 3000}]; {Dimensions[rt], Round[rt[[2]], 10^-6]}"
+      )
+      .unwrap(),
+      "{{3000, 2}, {70000643/1000000, 54297603/1000000}}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
   #[test]
   fn affine() {
     assert_eq!(

@@ -3924,6 +3924,15 @@ as `Dot[a, -b]`.
 
 ## Messages and error handling
 
+### `RecurrenceTable` of a transcendental system prints no `Solve` messages
+
+A nonlinear system such as `RecurrenceTable[{r[n + 1] == 2 r[n] - r[n - 1]
+- 20 Cos[t[n]]/(r[n] - 185.7)^2, t[n + 1] == t[n] + 2 Pi (185.7/r[n])^(3/2),
+r[0] == 70, r[1] == r[0], t[0] == 0}, {r, t}, {n, 1, 4}]` gives the same
+table in both, but wolframscript first tries to `Solve` the equations and
+prints `Solve::incnst` and `Solve::ifun`. Woxi steps the recurrences
+directly and prints nothing.
+
 ### Graph functions say nothing about a non-graph argument
 
 `EdgeList[{1, 2}]` and `VertexList[Graph[{{a, b}}]]` (a `Graph` that did not

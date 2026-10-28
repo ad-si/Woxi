@@ -2067,10 +2067,6 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|(name, idx)| (name, idx, lhs.clone()))
       });
     if let Some((name, idx, val)) = initial {
-      let mut val = crate::evaluator::evaluate_expr_to_expr(&val)?;
-      if numericize {
-        val = crate::evaluator::evaluate_expr_to_expr(&call("N", vec![val]))?;
-      }
       values.insert((name, idx), val);
       continue;
     }
@@ -2110,6 +2106,33 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if recurrences.len() != func_names.len() {
     return Ok(unevaluated());
+  }
+
+  // An initial value may be given by another one (`r[1] == r[0]`): resolve
+  // those references before evaluating, and numericizing, the values.
+  let keys: Vec<(String, i128)> = values.keys().cloned().collect();
+  for _ in 0..keys.len() {
+    let mut changed = false;
+    for key in &keys {
+      let resolved = substitute_func_values(&values[key], &func_names, &values);
+      if !crate::evaluator::pattern_matching::expr_equal(
+        &resolved,
+        &values[key],
+      ) {
+        values.insert(key.clone(), resolved);
+        changed = true;
+      }
+    }
+    if !changed {
+      break;
+    }
+  }
+  for key in &keys {
+    let mut val = crate::evaluator::evaluate_expr_to_expr(&values[key])?;
+    if numericize {
+      val = crate::evaluator::evaluate_expr_to_expr(&call("N", vec![val]))?;
+    }
+    values.insert(key.clone(), val);
   }
 
   // Step through the range, computing every function at each index. A
