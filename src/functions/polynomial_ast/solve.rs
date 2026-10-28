@@ -2463,7 +2463,9 @@ fn numericize_inexact_components(args: &[Expr], solved: Expr) -> Expr {
         if parts.len() == 1 {
           out.extend(parts);
         } else {
-          parts.iter().for_each(|p| split_equations(p, out));
+          for p in &parts {
+            split_equations(p, out);
+          }
         }
       }
     }

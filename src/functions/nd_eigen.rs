@@ -513,13 +513,17 @@ fn solve(
     // Normalize: Σ w_i u_i² = 1.
     let norm = mass.sqrt();
     if norm > 0.0 {
-      full.iter_mut().for_each(|v| *v /= norm);
+      for v in &mut full {
+        *v /= norm;
+      }
     }
     let peak = full.iter().fold(0.0f64, |m, v| m.max(v.abs()));
     if let Some(lead) = full.iter().find(|v| v.abs() > 1e-3 * peak)
       && *lead < 0.0
     {
-      full.iter_mut().for_each(|v| *v = -*v);
+      for v in &mut full {
+        *v = -*v;
+      }
     }
     functions.push(full);
   }
