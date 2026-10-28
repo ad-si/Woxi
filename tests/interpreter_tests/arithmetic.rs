@@ -13784,4 +13784,83 @@ mod arccosh_complex {
       assert_eq!(interpret("Sqrt[3 I]").unwrap(), "(-1)^(1/4)*Sqrt[3]");
     }
   }
+
+  mod machine_real_arrays {
+    use super::*;
+
+    #[test]
+    fn elementwise_on_nested_lists() {
+      assert_eq!(
+        interpret("{{1., 2.}, {3., 4.}} + {{0.5, 0.5}, {0.5, 0.5}}").unwrap(),
+        "{{1.5, 2.5}, {3.5, 4.5}}"
+      );
+      assert_eq!(
+        interpret("{{1., 2.}, {3., 4.}} - {{0.5, 0.5}, {0.5, 0.5}}").unwrap(),
+        "{{0.5, 1.5}, {2.5, 3.5}}"
+      );
+      assert_eq!(
+        interpret("{{1., 2.}, {3., 4.}} * {{2., 2.}, {2., 2.}}").unwrap(),
+        "{{2., 4.}, {6., 8.}}"
+      );
+      assert_eq!(
+        interpret("{{1., 2.}, {3., 4.}} / 2.").unwrap(),
+        "{{0.5, 1.}, {1.5, 2.}}"
+      );
+    }
+
+    #[test]
+    fn scalar_broadcast() {
+      assert_eq!(interpret("{1., 2.} + 1").unwrap(), "{2., 3.}");
+      assert_eq!(interpret("3 * {1., 2.}").unwrap(), "{3., 6.}");
+      assert_eq!(interpret("1.5 - {1., 2.}").unwrap(), "{0.5, -0.5}");
+    }
+
+    #[test]
+    fn exact_elements_stay_exact() {
+      assert_eq!(interpret("{1., 2} + {1., 2}").unwrap(), "{2., 4}");
+      assert_eq!(interpret("{1, 2} * {3, 4}").unwrap(), "{3, 8}");
+      assert_eq!(interpret("{1/2, 0.5} + 1").unwrap(), "{3/2, 1.5}");
+    }
+
+    #[test]
+    fn mismatched_shapes_are_not_combined() {
+      assert_eq!(
+        interpret("Quiet[{1., 2.} + {1., 2., 3.}]").unwrap(),
+        "{1., 2.} + {1., 2., 3.}"
+      );
+    }
+
+    #[test]
+    fn trig_over_real_arrays_matches_scalars() {
+      assert_eq!(
+        interpret("Sin[{{0.3, 1.2}, {-2.5, 0.}}] == Map[Sin, {{0.3, 1.2}, {-2.5, 0.}}, {2}]")
+          .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret("Cos[{0.3, 1.2}] == {Cos[0.3], Cos[1.2]}").unwrap(),
+        "True"
+      );
+      assert_eq!(interpret("Tan[{0., 0.}]").unwrap(), "{0., 0.}");
+      assert_eq!(interpret("Sin[{0, 0.}]").unwrap(), "{0, 0.}");
+    }
+
+    #[test]
+    fn sums_of_three_arrays_and_scalars() {
+      assert_eq!(
+        interpret("{{1., 2.}, {3., 4.}} - {{0.5, 0.5}, {0.5, 0.5}} - 0.25")
+          .unwrap(),
+        "{{0.25, 1.25}, {2.25, 3.25}}"
+      );
+      assert_eq!(
+        interpret("{1., 2.} + {0.5, 0.5} + {1., 1.} == {2.5, 3.5}").unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn symbolic_elements_are_left_alone() {
+      assert_eq!(interpret("{1., x} + 1.").unwrap(), "{2., 1. + x}");
+    }
+  }
 }

@@ -12,6 +12,22 @@ pub fn thread_binary_op(
   // would be split apart before the broadcast could see its shape). Handle the
   // additive and multiplicative operators by routing to the Threaded-aware
   // Plus/Times in math_ast; Divide/Power fall through.
+  // Machine-real arrays combine elementwise in one pass. A real divisor is a
+  // single IEEE division (see `divide_two`).
+  let machine_op = match op {
+    BinaryOperator::Minus => Some((|a, b| a - b) as fn(f64, f64) -> f64),
+    BinaryOperator::Divide if matches!(right, Expr::Real(y) if *y != 0.0) => {
+      Some((|a, b| a / b) as fn(f64, f64) -> f64)
+    }
+    _ => None,
+  };
+  if let Some(machine_op) = machine_op
+    && let Some(result) =
+      crate::functions::math_ast::machine_tensor_binary(left, right, machine_op)
+  {
+    return Ok(result);
+  }
+
   let is_threaded = |e: &Expr| {
     matches!(e, Expr::FunctionCall { name, args }
       if name == "Threaded" && args.len() == 1)
