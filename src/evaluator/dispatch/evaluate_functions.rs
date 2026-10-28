@@ -925,6 +925,31 @@ fn evaluate_function_call_ast_inner(
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
 
+  // Big numeric arrays (simulation grids) are combined elementwise in one
+  // pass instead of threading the Listable head over every element.
+  if let Some(op) = match name {
+    "Plus" => Some((|a, b| a + b) as fn(f64, f64) -> f64),
+    "Times" if args.len() == 2 => Some((|a, b| a * b) as fn(f64, f64) -> f64),
+    _ => None,
+  } && let Some(result) =
+    crate::functions::math_ast::machine_tensor_call(args, op)
+  {
+    return Ok(result);
+  }
+
+  if let [arg @ Expr::List(_)] = args
+    && let Some(op) = match name {
+      "Sin" => Some(f64::sin as fn(f64) -> f64),
+      "Cos" => Some(f64::cos as fn(f64) -> f64),
+      "Tan" => Some(f64::tan as fn(f64) -> f64),
+      _ => None,
+    }
+    && let Some(result) =
+      crate::functions::math_ast::machine_tensor_map(arg, op)
+  {
+    return Ok(result);
+  }
+
   if let Some(result) = numeric_array_list_operation(name, args) {
     return result;
   }

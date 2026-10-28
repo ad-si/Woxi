@@ -932,6 +932,121 @@ fn machine_real_sum(args: &[Expr]) -> Option<f64> {
   sum.is_finite().then_some(sum)
 }
 
+/// Elementwise machine-real arithmetic on two (possibly nested) lists, or a
+/// list and a scalar, evaluated directly in `f64`. Large numeric arrays (e.g.
+/// simulation grids) otherwise go through the general threading machinery per
+/// element. Returns `None` — leaving everything to the general path — unless
+/// the shapes agree, every leaf is a number, no leaf pair is all-exact
+/// (`2 + 2` must stay an integer) and every result is finite.
+pub fn machine_tensor_binary(
+  a: &Expr,
+  b: &Expr,
+  op: fn(f64, f64) -> f64,
+) -> Option<Expr> {
+  fn leaf(e: &Expr) -> Option<(f64, bool)> {
+    match e {
+      Expr::Real(r) => Some((*r, true)),
+      Expr::Integer(i) => Some((*i as f64, false)),
+      _ => None,
+    }
+  }
+  match (a, b) {
+    (Expr::List(xs), Expr::List(ys)) => {
+      if xs.len() != ys.len() {
+        return None;
+      }
+      xs.iter()
+        .zip(ys)
+        .map(|(x, y)| machine_tensor_binary(x, y, op))
+        .collect::<Option<Vec<_>>>()
+        .map(|v| Expr::List(v.into()))
+    }
+    (Expr::List(xs), y) => xs
+      .iter()
+      .map(|x| machine_tensor_binary(x, y, op))
+      .collect::<Option<Vec<_>>>()
+      .map(|v| Expr::List(v.into())),
+    (x, Expr::List(ys)) => ys
+      .iter()
+      .map(|y| machine_tensor_binary(x, y, op))
+      .collect::<Option<Vec<_>>>()
+      .map(|v| Expr::List(v.into())),
+    (x, y) => {
+      let ((xv, xr), (yv, yr)) = (leaf(x)?, leaf(y)?);
+      let v = op(xv, yv);
+      (xr || yr)
+        .then_some(v)
+        .filter(|v| v.is_finite())
+        .map(Expr::Real)
+    }
+  }
+}
+
+/// Elementwise `op` over a (possibly nested) list whose leaves are all machine
+/// reals, or `None` (leaving the general path to it) for anything else,
+/// including a non-finite result.
+pub fn machine_tensor_map(e: &Expr, op: fn(f64) -> f64) -> Option<Expr> {
+  match e {
+    Expr::List(items) => items
+      .iter()
+      .map(|x| machine_tensor_map(x, op))
+      .collect::<Option<Vec<_>>>()
+      .map(|v| Expr::List(v.into())),
+    Expr::Real(r) => Some(op(*r)).filter(|v| v.is_finite()).map(Expr::Real),
+    _ => None,
+  }
+}
+
+/// A sum of three or more arrays/scalars whose leaves are all machine reals,
+/// folded per element in the balanced machine order of `machine_real_sum`.
+fn machine_tensor_sum(args: &[&Expr], op: fn(f64, f64) -> f64) -> Option<Expr> {
+  if args.iter().any(|a| matches!(a, Expr::List(_))) {
+    let len = args.iter().find_map(|a| match a {
+      Expr::List(items) => Some(items.len()),
+      _ => None,
+    })?;
+    let mut rows = Vec::with_capacity(len);
+    for i in 0..len {
+      let column = args
+        .iter()
+        .map(|a| match a {
+          Expr::List(items) if items.len() == len => Some(&items[i]),
+          Expr::List(_) => None,
+          scalar => Some(*scalar),
+        })
+        .collect::<Option<Vec<_>>>()?;
+      rows.push(machine_tensor_sum(&column, op)?);
+    }
+    return Some(Expr::List(rows.into()));
+  }
+  let reals = args
+    .iter()
+    .map(|a| match a {
+      Expr::Real(r) => Some(*r),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()?;
+  Some(machine_tree_fold(&reals, op))
+    .filter(|v| v.is_finite())
+    .map(Expr::Real)
+}
+
+/// `machine_tensor_binary` for a two-argument call with at least one list.
+pub fn machine_tensor_call(
+  args: &[Expr],
+  op: fn(f64, f64) -> f64,
+) -> Option<Expr> {
+  match args {
+    [_, _, _, ..] if args.iter().any(|a| matches!(a, Expr::List(_))) => {
+      machine_tensor_sum(&args.iter().collect::<Vec<_>>(), op)
+    }
+    [a, b] if matches!(a, Expr::List(_)) || matches!(b, Expr::List(_)) => {
+      machine_tensor_binary(a, b, op)
+    }
+    _ => None,
+  }
+}
+
 pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(Expr::Integer(0));
