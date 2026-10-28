@@ -416,6 +416,67 @@ mod country_data_tests {
   }
 
   #[test]
+  fn country_data_shape_projections() {
+    clear_state();
+    // Every projection yields a Graphics of polygons.
+    assert_eq!(
+      interpret(
+        "Union[Table[Head[CountryData[\"World\", {\"Shape\", {p, {0, 0}}}]], \
+         {p, {\"Albers\", \"Bonne\", {\"CylindricalEqualArea\", 0}, \
+         {\"CylindricalEquidistant\", 0}, \"EckertIV\", \"EckertVI\", \
+         \"Equirectangular\", \"LambertAzimuthal\", \"LambertConic\", \
+         \"LambertCylindrical\", \"Mercator\", \"MillerCylindrical\", \
+         \"Mollweide\", \"Orthographic\", \"Polyconic\", \"Robinson\", \
+         \"Sinusoidal\", \"VanDerGrinten\", \"WinkelTripel\"}}]]"
+      )
+      .unwrap(),
+      "{Graphics}"
+    );
+  }
+
+  #[test]
+  fn country_data_shape_equirectangular_is_plain_lon_lat() {
+    clear_state();
+    // Centered on the origin, the projected extent is in radians of lon/lat.
+    assert_eq!(
+      interpret(
+        "pts = Flatten[CountryData[\"Egypt\", {\"Shape\", {\"Equirectangular\", {0, 0}}}][[1, All, 1]], 1]; \
+         {0.4 < Min[pts[[All, 1]]] < 0.5, 0.45 < Max[pts[[All, 1]]] < 0.65}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn country_data_shape_recenters_across_the_antimeridian() {
+    clear_state();
+    // Centered on the Pacific, no point leaves the map and nothing is dropped
+    // for a full-world cylindrical projection.
+    assert_eq!(
+      interpret(
+        "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Equirectangular\", {0, 180}}}][[1, All, 1]], 1]; \
+         {Max[Abs[pts[[All, 1]]]] <= Pi, Min[pts[[All, 1]]] < -3.1, Max[pts[[All, 1]]] > 3.1}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  #[test]
+  fn country_data_shape_orthographic_hides_far_side() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Orthographic\", {0, 0}}}][[1, All, 1]], 1]; \
+         Max[Norm /@ pts] <= 1.0000001"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn country_data_population() {
     clear_state();
     assert_eq!(
