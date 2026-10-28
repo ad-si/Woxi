@@ -1156,10 +1156,41 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))?;
     return coefficient_rules_ast(&[args[0].clone(), vars]);
   }
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "CoefficientRules expects 1 or 2 arguments".into(),
+      "CoefficientRules expects 1 to 3 arguments".into(),
     ));
+  }
+  // The rules come in a monomial order, lexicographic unless named.
+  let order = match args.get(2) {
+    None => MonomialOrder::Lexicographic,
+    Some(spec) => {
+      let name = match spec {
+        Expr::String(s) | Expr::Identifier(s) | Expr::Constant(s) => {
+          Some(s.as_str())
+        }
+        _ => None,
+      };
+      if let Some(o) = name.and_then(MonomialOrder::parse) {
+        o
+      } else {
+        crate::emit_message(&format!(
+          "CoefficientRules::mnmord1: {} is not a valid monomial order.",
+          crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(unevaluated("CoefficientRules", args));
+      }
+    }
+  };
+  // A list of polynomials gives a list of rule lists.
+  if let Expr::List(polys) = &args[0] {
+    let mut out = Vec::with_capacity(polys.len());
+    for p in polys {
+      let mut each = args.to_vec();
+      each[0] = p.clone();
+      out.push(coefficient_rules_ast(&each)?);
+    }
+    return Ok(Expr::List(out.into()));
   }
 
   // Extract variable names
@@ -1234,16 +1265,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     entries.push((exps, coeff));
   }
 
-  // Sort descending lexicographic
-  entries.sort_by(|a, b| {
-    for (ea, eb) in a.0.iter().zip(b.0.iter()) {
-      match eb.cmp(ea) {
-        std::cmp::Ordering::Equal => {}
-        other => return other,
-      }
-    }
-    std::cmp::Ordering::Equal
-  });
+  entries.sort_by(|a, b| order.compare(&a.0, &b.0));
 
   // Build the list of rules
   let rules: Vec<Expr> = entries

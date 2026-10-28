@@ -204,7 +204,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Close" => Some((1, 1)),
     "Coefficient" => Some((2, 3)),
     "CoefficientList" => Some((2, 3)),
-    "CoefficientRules" => Some((1, 2)),
+    "CoefficientRules" => Some((1, 3)),
     "CoefficientArrays" => Some((1, 2)),
     "CollinearPoints" => Some((1, 1)),
     "CoplanarPoints" => Some((1, 1)),

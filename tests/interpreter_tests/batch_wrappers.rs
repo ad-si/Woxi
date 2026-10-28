@@ -994,6 +994,42 @@ mod batch_unevaluated_wrappers_2 {
       "ConfidenceLevel[x]"
     );
   }
+  // A list of polynomials gives a rule list for each, and a monomial order
+  // can be named.
+  #[test]
+  fn coefficient_rules_lists_and_orders() {
+    assert_eq!(
+      interpret("CoefficientRules[{1 - x^2, 2 x + 3}, x]").unwrap(),
+      "{{{2} -> -1, {0} -> 1}, {{1} -> 2, {0} -> 3}}"
+    );
+    assert_eq!(interpret("CoefficientRules[{}, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret(
+        "CoefficientRules[x^2 y + x y^2 + y^3 + x, {x, y}, \
+         \"DegreeReverseLexicographic\"]"
+      )
+      .unwrap(),
+      "{{2, 1} -> 1, {1, 2} -> 1, {0, 3} -> 1, {1, 0} -> 1}"
+    );
+    assert_eq!(
+      interpret(
+        "CoefficientRules[x^2 y + x y^2 + x^3, {x, y}, \"NegativeLexicographic\"]"
+      )
+      .unwrap(),
+      "{{1, 2} -> 1, {2, 1} -> 1, {3, 0} -> 1}"
+    );
+    let r = woxi::interpret_with_stdout("CoefficientRules[x + 1, x, \"Foo\"]")
+      .unwrap();
+    assert_eq!(r.result, "CoefficientRules[1 + x, x, Foo]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("CoefficientRules::mnmord1")),
+      "{:?}",
+      r.warnings
+    );
+  }
+
   #[test]
   fn coefficient_rules() {
     // Single variable, single term
