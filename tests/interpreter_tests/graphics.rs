@@ -12866,6 +12866,17 @@ mod plot3d {
       ));
     }
 
+    // `Filling -> {1 -> {{2}, {c1, c2}}}` fills the regions where curve 1 is
+    // above / below curve 2 in the two colors.
+    #[test]
+    fn plot_filling_between_curves_two_colors() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, Filling -> {1 -> {{2}, {Red, Blue}}}]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
     // The ListPlot documentation example: sample irregular points via
     // `EvaluationMonitor :> Sow[…]` inside Plot, then fill between the two
     // datasets. Regression test for `Filling -> {1 -> {2}}` combined with

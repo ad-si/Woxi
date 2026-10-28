@@ -1813,6 +1813,9 @@ impl Filling {
 pub(crate) struct FillStyle {
   pub color: Option<(u8, u8, u8)>,
   pub opacity: Option<f64>,
+  /// Second color of a two-color style `{above, below}`: used where the
+  /// filled curve lies below the curve it is filled to.
+  pub below_color: Option<(u8, u8, u8)>,
 }
 
 impl FillStyle {
@@ -1848,6 +1851,17 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
         }
       }
       Expr::List(items) => {
+        // `{above, below}`: two plain colors fill the regions where the
+        // curve is above / below its target in different colors.
+        if let [a, b] = items.as_slice()
+          && !matches!(a, Expr::FunctionCall { name, .. } if name == "Opacity")
+          && !matches!(b, Expr::FunctionCall { name, .. } if name == "Opacity")
+          && let (Some(ca), Some(cb)) = (parse_color(a), parse_color(b))
+        {
+          fs.color = Some(color_to_rgb8(ca));
+          fs.below_color = Some(color_to_rgb8(cb));
+          return;
+        }
         for item in items {
           walk(item, fs);
         }
@@ -1869,6 +1883,7 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
   let mut fs = FillStyle {
     color: None,
     opacity: None,
+    below_color: None,
   };
   walk(&val, &mut fs);
   if fs.color.is_none() && fs.opacity.is_none() {
@@ -1897,6 +1912,7 @@ fn fill_paint(
   let fs = filling_style.unwrap_or(FillStyle {
     color: None,
     opacity: None,
+    below_color: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
   RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
@@ -2151,6 +2167,94 @@ pub(crate) fn fill_between_polygon(
   } else {
     None
   }
+}
+
+/// The region between two polylines split where they cross: each piece is
+/// tagged `true` when the source curve lies above the target there. Pieces
+/// share the interpolated crossing points, so they tile the full
+/// `fill_between_polygon` region.
+fn fill_between_polygons_by_side(
+  source: &[(f64, f64)],
+  target: &[(f64, f64)],
+) -> Vec<(bool, Vec<(f64, f64)>)> {
+  let finite = |pts: &[(f64, f64)]| -> Vec<(f64, f64)> {
+    pts
+      .iter()
+      .copied()
+      .filter(|(x, y)| x.is_finite() && y.is_finite())
+      .collect()
+  };
+  let (src, tgt) = (finite(source), finite(target));
+  if src.len() < 2 || tgt.len() < 2 {
+    return Vec::new();
+  }
+  let span = |pts: &[(f64, f64)]| {
+    pts
+      .iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      })
+  };
+  let (s, t) = (span(&src), span(&tgt));
+  let (lo, hi) = (s.0.max(t.0), s.1.min(t.1));
+  if lo >= hi {
+    return Vec::new();
+  }
+  let mut xs: Vec<f64> = vec![lo, hi];
+  xs.extend(
+    src
+      .iter()
+      .chain(tgt.iter())
+      .map(|p| p.0)
+      .filter(|&x| x > lo && x < hi),
+  );
+  xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+  xs.dedup();
+  // (x, source y, target y) on the merged grid.
+  let rows: Vec<(f64, f64, f64)> = xs
+    .iter()
+    .filter_map(|&x| {
+      Some((x, interp_polyline_y(&src, x)?, interp_polyline_y(&tgt, x)?))
+    })
+    .collect();
+  let mut out: Vec<(bool, Vec<(f64, f64)>)> = Vec::new();
+  let mut top: Vec<(f64, f64)> = Vec::new();
+  let mut bottom: Vec<(f64, f64)> = Vec::new();
+  let mut above = true;
+  let flush = |above: bool,
+               top: &mut Vec<(f64, f64)>,
+               bottom: &mut Vec<(f64, f64)>,
+               out: &mut Vec<(bool, Vec<(f64, f64)>)>| {
+    let mut poly = std::mem::take(top);
+    poly.extend(std::mem::take(bottom).into_iter().rev());
+    if poly.len() >= 3 {
+      out.push((above, poly));
+    }
+  };
+  for (i, &(x, sy, ty)) in rows.iter().enumerate() {
+    if i > 0 {
+      let (px, psy, pty) = rows[i - 1];
+      let (d0, d1) = (psy - pty, sy - ty);
+      if d0 * d1 < 0.0 {
+        let f = d0 / (d0 - d1);
+        let cx = px + (x - px) * f;
+        let cy = psy + (sy - psy) * f;
+        top.push((cx, cy));
+        bottom.push((cx, cy));
+        flush(above, &mut top, &mut bottom, &mut out);
+        top.push((cx, cy));
+        bottom.push((cx, cy));
+      }
+    }
+    let d = sy - ty;
+    if d != 0.0 {
+      above = d > 0.0;
+    }
+    top.push((x, sy));
+    bottom.push((x, ty));
+  }
+  flush(above, &mut top, &mut bottom, &mut out);
+  out
 }
 
 /// Parse a `Filling` option value from an expression.
@@ -4029,11 +4133,31 @@ fn generate_svg_with_options(
                     && let Some(target) = all_points.get(target_idx)
                     && let Some(polygon) = fill_between_polygon(points, target)
                   {
-                    chart
-                      .draw_series(std::iter::once(Polygon::new(polygon, paint)))
-                      .map_err(|e| {
-                        InterpreterError::EvaluationError(format!("Plot: {e}"))
-                      })?;
+                    let below_paint = series_filling_style(opts, series_idx)
+                      .and_then(|fs| fs.below_color.map(|c| (fs, c)))
+                      .map(|(fs, (br, bg, bb))| {
+                        RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
+                      });
+                    let pieces = match below_paint {
+                      Some(_) => fill_between_polygons_by_side(points, target),
+                      None => vec![(true, polygon)],
+                    };
+                    for (is_above, piece) in pieces {
+                      let piece_paint = match (is_above, below_paint) {
+                        (false, Some(bp)) => bp,
+                        _ => paint,
+                      };
+                      chart
+                        .draw_series(std::iter::once(Polygon::new(
+                          piece,
+                          piece_paint,
+                        )))
+                        .map_err(|e| {
+                          InterpreterError::EvaluationError(format!(
+                            "Plot: {e}"
+                          ))
+                        })?;
+                    }
                   }
                 }
               }
@@ -5711,6 +5835,7 @@ pub(crate) fn render_merged_plot_source(
         FillStyle {
           color: s.fill_color,
           opacity: s.fill_opacity,
+          below_color: None,
         },
       )
     })
