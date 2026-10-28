@@ -12316,6 +12316,35 @@ mod findroot_secant_domain_backtracking {
 mod laplace_transform {
   use super::*;
 
+  // The transform of a differential equation: it threads over the equation
+  // (and over lists of them), an unknown function stays as its transform,
+  // and its derivatives bring in their values at 0.
+  #[test]
+  fn differential_equations() {
+    for (input, expected) in [
+      (
+        "LaplaceTransform[x''[t] + x[t] == 0, t, s]",
+        "LaplaceTransform[x[t], t, s] + s^2*LaplaceTransform[x[t], t, s] - s*x[0] - Derivative[1][x][0] == 0",
+      ),
+      (
+        "LaplaceTransform[x'[t], t, s]",
+        "s*LaplaceTransform[x[t], t, s] - x[0]",
+      ),
+      (
+        "LaplaceTransform[{x'[t] == y[t], y'[t] == -x[t]}, t, s]",
+        "{s*LaplaceTransform[x[t], t, s] - x[0] == LaplaceTransform[y[t], t, s], \
+         s*LaplaceTransform[y[t], t, s] - y[0] == -LaplaceTransform[x[t], t, s]}",
+      ),
+      (
+        "LaplaceTransform[x[t], t, s]",
+        "LaplaceTransform[x[t], t, s]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn constant() {
     assert_eq!(interpret("LaplaceTransform[1, t, s]").unwrap(), "s^(-1)");

@@ -908,6 +908,40 @@ fn laplace_transform(
     }
   };
 
+  // The transform threads over equations and lists:
+  // LaplaceTransform[x''[t] + x[t] == 0, t, s] transforms each side.
+  match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let operands = operands
+        .iter()
+        .map(|o| laplace_transform(o, t_expr, s_expr))
+        .collect::<Result<Vec<_>, _>>()?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+        operands,
+        operators: operators.clone(),
+      });
+    }
+    Expr::List(items) => {
+      let items = items
+        .iter()
+        .map(|i| laplace_transform(i, t_expr, s_expr))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(items.into()));
+    }
+    _ => {}
+  }
+  // An unknown function of t has no transform to give: it stays as it is
+  // (and stands for itself in the transforms of its derivatives).
+  if unknown_function_of(expr, t).is_some() {
+    return Ok(call(
+      "LaplaceTransform",
+      vec![expr.clone(), t_expr.clone(), s_expr.clone()],
+    ));
+  }
+
   if let Some(result) = laplace_transform_inner(expr, t, s_expr) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
@@ -1029,10 +1063,82 @@ fn laplace_unit_step(arg: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   ]))
 }
 
+/// The head of `f[t]` when `f` is a symbol with no meaning of its own (an
+/// unknown function of `t`, as in a differential equation).
+fn unknown_function_of<'a>(expr: &'a Expr, t: &str) -> Option<&'a str> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1
+    || !matches!(&args[0], Expr::Identifier(v) if v == t)
+    || crate::evaluator::functions::is_builtin_symbol(name)
+  {
+    return None;
+  }
+  Some(name.as_str())
+}
+
+/// L[f^(n)(t)] = s^n L[f(t)] - Σ_k s^(n-1-k) f^(k)(0) for an unknown f.
+fn laplace_of_derivative(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
+  // Derivative[n][f][t] is stored flat as Derivative[n, f, t].
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Derivative" || args.len() != 3 {
+    return None;
+  }
+  let (Expr::Integer(n), Expr::Identifier(f), Expr::Identifier(v)) =
+    (&args[0], &args[1], &args[2])
+  else {
+    return None;
+  };
+  if v != t || *n < 1 || crate::evaluator::functions::is_builtin_symbol(f) {
+    return None;
+  }
+  let transform = call(
+    "LaplaceTransform",
+    vec![
+      call(f, vec![Expr::Identifier(t.into())]),
+      Expr::Identifier(t.into()),
+      s.clone(),
+    ],
+  );
+  let mut terms =
+    vec![times(vec![pow(s.clone(), Expr::Integer(*n)), transform])];
+  for k in 0..*n {
+    let at_zero = if k == 0 {
+      call(f, vec![Expr::Integer(0)])
+    } else {
+      call(
+        "Derivative",
+        vec![
+          Expr::Integer(k),
+          Expr::Identifier(f.clone()),
+          Expr::Integer(0),
+        ],
+      )
+    };
+    terms.push(neg(times(vec![
+      pow(s.clone(), Expr::Integer(n - 1 - k)),
+      at_zero,
+    ])));
+  }
+  Some(plus(terms))
+}
+
 fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   // L[constant, t, s] = constant/s (if expr doesn't depend on t)
   if !depends_on(expr, t) {
     return Some(times(vec![expr.clone(), pow(s.clone(), Expr::Integer(-1))]));
+  }
+  if unknown_function_of(expr, t).is_some() {
+    return Some(call(
+      "LaplaceTransform",
+      vec![expr.clone(), Expr::Identifier(t.into()), s.clone()],
+    ));
+  }
+  if let Some(result) = laplace_of_derivative(expr, t, s) {
+    return Some(result);
   }
 
   // L[t, t, s] = 1/s^2
