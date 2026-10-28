@@ -7265,6 +7265,32 @@ pub fn gaussian_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(symbolic_gaussian_matrix(args));
   }
 
+  // GaussianMatrix[r, {n1, n2}]: derivative orders along rows and columns;
+  // a single order `n` is `{n, n}`.
+  if let Some(orders) = args.get(1) {
+    let order = |e: &Expr| match e {
+      Expr::Integer(n) if *n >= 0 && *n <= u32::MAX as i128 => Some(*n as u32),
+      _ => None,
+    };
+    let orders: Option<Vec<u32>> = match orders {
+      Expr::List(ns) => ns.iter().map(order).collect(),
+      single => order(single).map(|n| vec![n, n]),
+    };
+    return Ok(match orders.as_deref() {
+      Some(&[n1, n2]) => gaussian_derivative_matrix(radius, sigma, n1, n2),
+      // Orders for a higher-rank array are not implemented.
+      Some(_) => symbolic_gaussian_matrix(args),
+      None => {
+        crate::emit_message(&format!(
+          "GaussianMatrix::ilsmn: Single or list of non-negative \
+           machine-sized integers expected at position 2 of {}.",
+          expr_to_string(&symbolic_gaussian_matrix(args))
+        ));
+        symbolic_gaussian_matrix(args)
+      }
+    });
+  }
+
   let kernel = gaussian_filter_kernel(radius, sigma);
   let rows: Vec<Expr> = kernel
     .iter()
@@ -7279,6 +7305,101 @@ pub fn gaussian_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect::<Vec<_>>();
   Ok(Expr::List(rows.into()))
+}
+
+/// The 1-D factor of order `n` of a Gaussian derivative matrix: the
+/// discrete Gaussian `T(k) = e^-t I_|k|(t)` (`t = sigma^2`) for `n = 0`,
+/// normalized over the window, and otherwise the central difference applied
+/// `n` times to the untruncated `T`,
+/// `sum_i (-1)^i Binomial[n, i] T(k + n - 2 i) / 2^n`.
+fn gaussian_derivative_factor(radius: usize, sigma: f64, n: u32) -> Vec<f64> {
+  if n == 0 {
+    return gaussian_filter_kernel(radius, sigma);
+  }
+  let t = sigma * sigma;
+  let discrete = |k: i64| {
+    (-t).exp()
+      * crate::functions::math_ast::bessel_i(k.unsigned_abs() as f64, t)
+  };
+  let n = n as i64;
+  let scale = 2f64.powi(n as i32);
+  // The factor is even or odd with `n`: computed for `k >= 0` and mirrored,
+  // so that symmetric entries agree to the last bit.
+  let half: Vec<f64> = (0..=radius as i64)
+    .map(|k| {
+      // An odd factor vanishes at the center; the sum would leave rounding.
+      if k == 0 && n % 2 == 1 {
+        return 0.0;
+      }
+      let mut binomial = 1.0;
+      let mut sum = 0.0;
+      for i in 0..=n {
+        let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
+        sum += sign * binomial * discrete(k + n - 2 * i);
+        binomial = binomial * (n - i) as f64 / (i + 1) as f64;
+      }
+      sum / scale
+    })
+    .collect();
+  let mirror = if n % 2 == 0 { 1.0 } else { -1.0 };
+  half[1..]
+    .iter()
+    .rev()
+    .map(|v| mirror * v)
+    .chain(half.iter().copied())
+    .collect()
+}
+
+/// `GaussianMatrix[{r, sigma}, {n1, n2}]`, as wolframscript builds it: the
+/// outer product of the row factor of order `n1` and the column factor of
+/// order `n2` (`gaussian_derivative_factor`), less its mean when both
+/// orders are even (an odd one already sums to zero), scaled so that
+/// `sum M[i, j] i^n1 j^n2 = (-1)^(n1+n2) n1! n2!` over the offsets `i, j`
+/// from the center. Derivatives of a constant vanish and those of the
+/// matching monomial come out exactly.
+fn gaussian_derivative_matrix(
+  radius: usize,
+  sigma: f64,
+  n1: u32,
+  n2: u32,
+) -> Expr {
+  let rows = gaussian_derivative_factor(radius, sigma, n1);
+  let cols = gaussian_derivative_factor(radius, sigma, n2);
+  let mut m: Vec<Vec<f64>> = rows
+    .iter()
+    .map(|a| cols.iter().map(|b| a * b).collect())
+    .collect();
+  if n1 + n2 > 0 {
+    let size = (2 * radius + 1) as f64;
+    let mean = if n1.is_multiple_of(2) && n2.is_multiple_of(2) {
+      m.iter().flatten().sum::<f64>() / (size * size)
+    } else {
+      0.0
+    };
+    let offset = |i: usize| i as f64 - radius as f64;
+    let mut moment = 0.0;
+    for (i, row) in m.iter_mut().enumerate() {
+      for (j, v) in row.iter_mut().enumerate() {
+        *v -= mean;
+        moment += *v * offset(i).powi(n1 as i32) * offset(j).powi(n2 as i32);
+      }
+    }
+    let factorial = |n: u32| (1..=n).map(f64::from).product::<f64>();
+    let sign = if (n1 + n2).is_multiple_of(2) {
+      1.0
+    } else {
+      -1.0
+    };
+    let scale = sign * factorial(n1) * factorial(n2) / moment;
+    for v in m.iter_mut().flatten() {
+      *v *= scale;
+    }
+  }
+  Expr::List(
+    m.into_iter()
+      .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+      .collect(),
+  )
 }
 
 /// Best-effort numeric extraction shared by GaussianMatrix's argument

@@ -669,6 +669,19 @@ Woxi inverts through `Log[b, v]`, which matches wolframscript for positive
 in the last digit of the imaginary part instead. The same applies to the
 complex roots of `Solve[2^b + 4^b == 6., b]`.
 
+### `GaussianMatrix` differs in the last digits
+
+```sh
+wolframscript -code 'InputForm[GaussianMatrix[{{2}, 1}]]'  # {0.05088223571170066, 0.21183832321622456, 0.47455888214414965, …}
+woxi eval 'InputForm[GaussianMatrix[{{2}, 1}]]'            # {0.05088223571170065, 0.2118383232162245, 0.4745588821441496, …}
+```
+
+Woxi builds the kernel from machine `BesselI` values; wolframscript's
+round differently, and neither is the correctly rounded kernel
+(`0.050882235711700655`). The derivative matrices (`GaussianMatrix[r, {n1,
+n2}]`) follow the same construction and differ by up to about 1e-15
+relative, 1e-14 at radius 50.
+
 ### `` NIntegrate`GaussRuleData `` differs in the last digits
 
 Woxi finds the Gauss–Legendre nodes by Newton iteration in machine

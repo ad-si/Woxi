@@ -1071,7 +1071,7 @@ pub fn dispatch_image_functions(
         _ => Ok(crate::helpers::unevaluated("GaussianMatrix", args)),
       }));
     }
-    "GaussianMatrix" if args.len() == 1 => {
+    "GaussianMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_matrix_ast(args));
     }
     "ImageConvolve" if args.len() == 2 => {

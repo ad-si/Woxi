@@ -9601,3 +9601,87 @@ mod color_replace {
     );
   }
 }
+
+mod gaussian_matrix_derivatives {
+  use super::*;
+
+  // `Max[Abs[m - expected]]` relative to the largest entry, below 1e-14:
+  // wolframscript's Bessel values differ from Woxi's in the last digits.
+  fn close(input: &str, expected: &str) {
+    clear_state();
+    let check = format!(
+      "e = {expected}; m = {input}; \
+       Dimensions[m] == Dimensions[e] && Max[Abs[m - e]] < 10^-14 Max[Abs[e]]"
+    );
+    assert_eq!(interpret(&check).unwrap(), "True", "{input}");
+  }
+
+  #[test]
+  fn first_and_mixed_orders() {
+    close(
+      "GaussianMatrix[{2, 1}, {0, 1}][[3]]",
+      "{0.05813317243125226, 0.1210130962095703, 0., -0.1210130962095703, \
+       -0.05813317243125226}",
+    );
+    close(
+      "GaussianMatrix[{1, 1}, 1]",
+      "{{0.25, 0., -0.25}, {0., 0., 0.}, {-0.25, 0., 0.25}}",
+    );
+    close(
+      "GaussianMatrix[{3, 0.7}, {3, 1}][[1]]",
+      "{0.0014276830827069766, 0.011712678742696075, 0.04828274637190671, \
+       0., -0.04828274637190671, -0.011712678742696075, \
+       -0.0014276830827069766}",
+    );
+  }
+
+  // Even orders are made to sum to zero.
+  #[test]
+  fn second_order_sums_to_zero() {
+    close(
+      "GaussianMatrix[{1, 1}, {0, 2}]",
+      "{{0.42579518981472886, -0.2817196539320462, 0.42579518981472886}, \
+       {0.1484096203705423, -1.4365606921359098, 0.1484096203705423}, \
+       {0.42579518981472886, -0.2817196539320462, 0.42579518981472886}}",
+    );
+    close(
+      "GaussianMatrix[3, {2, 2}][[1]]",
+      "{0.00962292438541066, 0.006237908723701168, -0.013071778367205503, \
+       -0.027030247309741934, -0.013071778367205503, 0.006237908723701168, \
+       0.00962292438541066}",
+    );
+    assert_eq!(
+      interpret("Abs[Total[GaussianMatrix[{4, 2}, {2, 0}], 2]] < 10^-14")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // Odd orders are exactly antisymmetric.
+  #[test]
+  fn odd_orders_are_exactly_antisymmetric() {
+    assert_eq!(
+      interpret(
+        "m = GaussianMatrix[{3, 0.7}, {3, 1}]; \
+         {m[[4]], m == Reverse[Reverse[m, 2]]}"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0., 0., 0.}, True}"
+    );
+  }
+
+  #[test]
+  fn invalid_orders_emit_ilsmn() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("GaussianMatrix[2, {-1, 0}]").unwrap();
+    assert_eq!(r.result, "GaussianMatrix[2, {-1, 0}]");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(
+        "GaussianMatrix::ilsmn: Single or list of non-negative machine-sized \
+         integers expected at position 2 of GaussianMatrix[2, {-1, 0}]."
+      )),
+      "{:?}",
+      r.warnings
+    );
+  }
+}
