@@ -37572,6 +37572,23 @@ fn assign_checkbox_state(
 /// typeset context (a control panel caption, not a terminal), so it gets
 /// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
+  // `Text[TraditionalForm[…]]` / `TraditionalForm[…]` is a typeset
+  // expression (an equation caption), not a value to print: draw it through
+  // the same cell renderer a `Grid` cell uses.
+  if matches!(
+    expr,
+    Expr::FunctionCall { name, .. } if name == "Text" || name == "TraditionalForm"
+  ) && let Ok(svg) = grid_svg_with_gaps(
+    &[Expr::List(
+      vec![Expr::List(vec![expr.clone()].into())].into(),
+    )],
+    &[],
+  ) {
+    return DisplayNode::Static {
+      svg: Some(svg),
+      text: String::new(),
+    };
+  }
   // A progress bar only reads its value and range limits, so a `Dynamic[…]`
   // limit (`ProgressIndicator[done, {0, Dynamic[total]}]`) is just the
   // current value of its variable.
@@ -40019,4 +40036,26 @@ pub fn plot_range_expr(range: ((f64, f64), (f64, f64))) -> Expr {
   let pair =
     |(a, b): (f64, f64)| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
   Expr::List(vec![pair(range.0), pair(range.1)].into())
+}
+
+#[cfg(test)]
+mod manipulate_traditional_form_equation_tests {
+  use super::*;
+
+  /// A caption `Text[TraditionalForm[Style[HoldForm[lhs] == HoldForm[rhs]]]]`
+  /// (an equation typeset with held pieces and subscripted symbols) draws
+  /// as a typeset picture, not the literal `TraditionalForm[…]` source.
+  #[test]
+  fn traditional_form_held_equation_caption_draws_a_picture() {
+    let node = build_manipulate_display(
+      "Grid[{{Text[TraditionalForm[Style[HoldForm[D[u[t], {t, 2}] + Subscript[w, n]^2*u[t]] == HoldForm[F/m]*Sin[HoldForm[p*t]]]]]}}]",
+      &[],
+    );
+    let dump = format!("{node:?}");
+    assert!(dump.contains("svg: Some(\"<svg"), "unexpected node: {dump}");
+    assert!(
+      !dump.contains("TraditionalForm["),
+      "TraditionalForm source leaked: {dump}"
+    );
+  }
 }
