@@ -16808,6 +16808,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .filter(|g| matches!(g, Expr::Graphics { .. }))
           .unwrap_or_else(|| expr_owned.clone())
       }
+      // A `Graph3D` with vertex coordinates is drawn as 3D primitives.
+      Expr::FunctionCall { name, .. } if name == "Graph3D" => {
+        crate::functions::graph::graph3d_to_graphics3d(&expr_owned)
+          .unwrap_or_else(|| expr_owned.clone())
+      }
       _ => expr_owned,
     };
     if let Expr::List(items) = &expr_owned {

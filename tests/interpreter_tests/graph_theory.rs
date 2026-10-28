@@ -8440,6 +8440,50 @@ mod find_shortest_tour {
   use super::*;
 
   #[test]
+  fn graph_follows_edges_with_weights() {
+    assert_eq!(
+      interpret(
+        "FindShortestTour[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3}, EdgeWeight -> {1, 2, 3, 4, 1}]]"
+      )
+      .unwrap(),
+      "{10, {1, 4, 3, 2, 1}}"
+    );
+  }
+
+  #[test]
+  fn graph_without_hamiltonian_cycle_gives_empty_list() {
+    assert_eq!(
+      interpret(
+        "FindShortestTour[Graph[{1, 2, 3, 4}, {1 <-> 2, 2 <-> 3, 3 <-> 4}]]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn graph3d_wrapper_and_set_property_weights() {
+    assert_eq!(
+      interpret(
+        "g = Graph[Range[4], {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1}]; {FindShortestTour[SetProperty[g, EdgeWeight -> {1, 2, 3, 4}]], FindShortestTour[Graph3D[g]]}"
+      )
+      .unwrap(),
+      "{{10, {1, 4, 3, 2, 1}}, {4, {1, 4, 3, 2, 1}}}"
+    );
+  }
+
+  #[test]
+  fn graph3d_draws_inside_show() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Show[Graphics3D[], Graph3D[Range[3], {1 <-> 2, 2 <-> 3}, VertexCoordinates -> {{0, 0, 0}, {1, 0, 0}, {1, 1, 1}}]], \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn square_exact_length_and_order() {
     assert_eq!(
       interpret("FindShortestTour[{{0, 0}, {1, 0}, {0, 1}, {1, 1}}]").unwrap(),
