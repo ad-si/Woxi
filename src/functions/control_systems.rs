@@ -823,9 +823,8 @@ fn simulate(
   let c: Vec<f64> = (0..n).map(|k| b[k] - d * a[k]).collect();
   let deriv = |x: &[f64], uu: f64| -> Vec<f64> {
     let mut dx = vec![0.0; n];
-    for k in 0..n.saturating_sub(1) {
-      dx[k] = x[k + 1];
-    }
+    let m = n.saturating_sub(1);
+    dx[..m].copy_from_slice(&x[1..=m]);
     if n > 0 {
       dx[n - 1] = uu - (0..n).map(|k| a[k] * x[k]).sum::<f64>();
     }
