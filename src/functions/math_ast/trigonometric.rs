@@ -1976,12 +1976,20 @@ fn bigfloat_unary(
   };
   // A value the arbitrary-precision evaluator cannot reach (`ArcCosh[0.`39.]`
   // leaves the real branch) falls through to the function's own handling
-  // rather than turning into an error.
-  let result = n_eval_arbitrary(
-    &unevaluated(name, std::slice::from_ref(x)),
-    prec.max(1.0),
-  )
-  .ok()?;
+  // rather than turning into an error, or into re-entering this function
+  // through `N`'s argument-by-argument fallback.
+  let call = unevaluated(name, std::slice::from_ref(x));
+  {
+    use astro_float::{Consts, RoundingMode};
+    let bits = nominal_bits(prec.max(1.0).ceil() as usize) + 64;
+    let mut cc = Consts::new().ok()?;
+    if expr_to_bigfloat(&call, bits, RoundingMode::ToEven, &mut cc)
+      .is_ok_and(|v| v.is_nan())
+    {
+      return None;
+    }
+  }
+  let result = n_eval_arbitrary(&call, prec.max(1.0)).ok()?;
   // A complex (or otherwise non-real) result carries its own per-component
   // markers from `n_eval_arbitrary`; only a plain real one is re-tagged here.
   let Expr::BigFloat(out_digits, _) = &result else {

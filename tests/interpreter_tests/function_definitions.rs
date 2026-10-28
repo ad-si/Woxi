@@ -855,6 +855,30 @@ mod compile {
     );
   }
 
+  // A serialized `CompiledFunction` binds `_Real` arguments as machine reals
+  // and returns machine numbers, like its compiled code: an exact `1/2` or
+  // `87/5` must not turn the body's iteration into exact arithmetic (a
+  // Demonstration's 20-step NestList grew rationals of millions of digits).
+  #[test]
+  fn serialized_compiled_function_coerces_real_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cf = CompiledFunction[{11, 15., 5470}, {_Real, _Integer}, {{3, 0, 0}, {2, 0, 0}, {3, 0, 1}}, {{1, {2, 0, 1}}}, {0, 2, 3, 0, 0}, {{10, 0, 1}, {40, 60, 3, 0, 1, 3, 0, 2}, {16, 0, 2, 1}, {10, 1, 2}, {13, 1, 2, 1}, {1}}, Function[{x, n}, x/n + 1], Evaluate]; {cf[1/2, 3], cf[2, 4]}"
+      )
+      .unwrap(),
+      "{1.1666666666666667, 1.5}"
+    );
+    // The older dump without a version tuple, with `Blank[…]` patterns.
+    assert_eq!(
+      interpret(
+        "cf = CompiledFunction[{Blank[Real], Blank[Integer]}, {{3, 0, 0}, {2, 0, 0}, {3, 0, 1}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x, n}, NestList[#/3 &, x, n]], Evaluate]; cf[1/2, 3]"
+      )
+      .unwrap(),
+      "{0.5, 0.16666666666666666, 0.05555555555555555, 0.018518518518518517}"
+    );
+  }
+
   #[test]
   fn function_with_listable_attribute_threads() {
     clear_state();

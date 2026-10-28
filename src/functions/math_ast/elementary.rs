@@ -218,14 +218,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // returned unchanged (Abs[Sqrt[2] + 1] -> 1 + Sqrt[2]). Floatifying here
   // would lose exactness. A Real-leaf expression still collapses to a Real
   // because the negation/identity re-evaluates the original arithmetic.
-  if let Some(v) = try_eval_to_f64(&args[0]) {
-    if v < 0.0 {
+  match numeric_real_sign(&args[0]) {
+    Some(NumericSign::Known(s)) if s < 0 => {
       let neg = neg(args[0].clone());
-      return crate::evaluator::evaluate_expr_to_expr(&neg);
+      crate::evaluator::evaluate_expr_to_expr(&neg)
     }
-    return Ok(args[0].clone());
+    Some(NumericSign::Known(_)) => Ok(args[0].clone()),
+    Some(NumericSign::Undecidable) | None => Ok(unevaluated("Abs", args)),
   }
-  Ok(unevaluated("Abs", args))
 }
 
 /// True iff `expr` mentions the imaginary unit `I` (either as the symbol
@@ -506,14 +506,10 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  if let Some(n) = try_eval_to_f64(&args[0]) {
-    return Ok(Expr::Integer(if n > 0.0 {
-      1
-    } else if n < 0.0 {
-      -1
-    } else {
-      0
-    }));
+  match numeric_real_sign(&args[0]) {
+    Some(NumericSign::Known(s)) => return Ok(Expr::Integer(i128::from(s))),
+    Some(NumericSign::Undecidable) => return Ok(unevaluated("Sign", args)),
+    None => {}
   }
   // `Sign[Times[r1, r2, ..., z]]` where every `ri` is a positive
   // *exact* real factor and `z` is an exact complex literal: pull the
@@ -1712,6 +1708,86 @@ fn floor_via_bigfloat(
     Some(Expr::Integer(small))
   } else {
     Some(Expr::BigInteger(adjusted))
+  }
+}
+
+/// The sign of a real numeric expression, as `Sign`, `Abs` and `Positive`
+/// need it.
+pub enum NumericSign {
+  Known(i8),
+  /// An exact expression that stays indistinguishable from 0 up to
+  /// `$MaxExtraPrecision` extra digits (e.g. `Sqrt[2] + Sqrt[3] -
+  /// Sqrt[5 + 2 Sqrt[6]]`): Wolfram leaves the call unevaluated.
+  Undecidable,
+}
+
+/// Sign of a real numeric expression, or `None` when it has no machine value.
+///
+/// An exact expression whose machine value is tiny next to its terms
+/// (`1 - c/Log[87/5, 21/5]` with `c` a convergent agreeing to 16 digits)
+/// has lost its sign to cancellation, so it is re-evaluated with up to 50
+/// extra digits like Wolfram's adaptive numerics; when even that cannot
+/// separate it from 0, `N::meprec` is issued and the sign is undecidable.
+pub fn numeric_real_sign(expr: &Expr) -> Option<NumericSign> {
+  use astro_float::{Consts, RoundingMode};
+  let approx = try_eval_to_f64(expr)?;
+  if !approx.is_finite() {
+    return None;
+  }
+  let sign_of =
+    |v: f64| NumericSign::Known(v.partial_cmp(&0.0).map_or(0, |o| o as i8));
+  if crate::functions::predicate_ast::contains_real_literal(expr) {
+    return Some(sign_of(approx));
+  }
+  let scale = cancellation_scale(expr).max(approx.abs());
+  // Every term exactly 0, or nothing cancels.
+  if scale == 0.0 || !scale.is_finite() || approx.abs() > 1e-10 * scale {
+    return Some(sign_of(approx));
+  }
+  let mut cc = Consts::new().ok()?;
+  for digits in [30_i32, 45, 66] {
+    let bits = super::numerical::nominal_bits(digits as usize);
+    let Ok(bf) = expr_to_bigfloat(expr, bits, RoundingMode::ToEven, &mut cc)
+    else {
+      return Some(sign_of(approx));
+    };
+    let Some(v) = super::numerical::bigfloat_to_f64_approx(&bf) else {
+      return Some(sign_of(approx));
+    };
+    if v.abs() > scale * 10f64.powi(8 - digits) {
+      return Some(sign_of(v));
+    }
+  }
+  crate::emit_message(&format!(
+    "N::meprec: Internal precision limit $MaxExtraPrecision = 50. reached while evaluating {}.",
+    crate::syntax::expr_to_output(expr)
+  ));
+  Some(NumericSign::Undecidable)
+}
+
+/// Magnitude of the largest quantity that cancels in `expr`'s machine
+/// evaluation: the biggest term of a sum, scaled through products.
+fn cancellation_scale(expr: &Expr) -> f64 {
+  let value = || try_eval_to_f64(expr).map_or(0.0, f64::abs);
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().map(cancellation_scale).fold(0.0, f64::max)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } => cancellation_scale(left).max(cancellation_scale(right)),
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().map(cancellation_scale).product()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => cancellation_scale(left) * cancellation_scale(right),
+    Expr::UnaryOp { operand, .. } => cancellation_scale(operand),
+    _ => value(),
   }
 }
 

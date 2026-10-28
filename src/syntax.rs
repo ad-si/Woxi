@@ -2589,17 +2589,21 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       } else {
         &s[backtick_pos + 1..]
       };
-      // The scaled literal, as the digit string the BigFloat path stores.
-      let scaled_str = shift_decimal_point(value_str, exponent);
-      // Integer-form `n`p` (no decimal point, with precision p) drops the
-      // precision tag entirely and stays as an Integer (matches Wolfram:
-      // `0`2 // Head` → Integer). The bare-backtick form `n`` still
-      // promotes to Real to match Wolfram (`0` // Head` → Real).
+      // The scaled literal, as the digit string the BigFloat path stores
+      // (always with a decimal point: `3`20` is the real `3.`20.`).
+      let mut scaled_str = shift_decimal_point(value_str, exponent);
+      if !scaled_str.contains('.') {
+        scaled_str.push('.');
+      }
+      // Integer-form zero with a precision, `0`2`, stays the Integer 0 (as
+      // in Wolfram: `0`2 // Head` → Integer); a nonzero `3`20` is a real
+      // of precision 20, and the bare-backtick `0`` is a machine real.
       let int_form =
         !value_str.contains('.') && !prec_str.is_empty() && !double;
-      if int_form && exponent == 0 {
-        let n: i128 = value_str.parse().unwrap_or(0);
-        Expr::Integer(n)
+      if int_form
+        && value_str.trim_start_matches('-').bytes().all(|b| b == b'0')
+      {
+        Expr::Integer(0)
       } else if prec_str.is_empty() {
         // Bare backtick = machine precision, just parse as Real
         Expr::Real(scale(value_str.parse().unwrap_or(0.0)))

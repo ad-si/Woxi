@@ -653,7 +653,23 @@ in WL, which keeps integer coefficients.
 Only a complex result of a one-argument function (`N[Sin[1 + I], 20]`)
 gets wolframscript's per-part precision markers; others, including complex
 powers like `N[(1 + 2 I)^(3/2), 20]`, carry a flat `20.` where WL tracks
-`19.10381839395503` and `20.148756595204922`.
+`19.10381839395503` and `20.148756595204922`. So does a one-argument
+result whose input is tiny next to its output (`N[Log[-10^-17 + I/10^40],
+10]`, WL `10.149…` and `9.0536…`), and the imaginary part of `Log` of a
+negative arbitrary-precision real (`Log[-2.5`20]`: WL `36.75…`, Woxi
+`20.497…`, the accuracy of the real part).
+
+### Inverse trigonometric functions of arbitrary-precision reals off their real domain stay unevaluated
+
+```sh
+wolframscript -code 'ArcSin[3`20]'  # 1.5707963267948966192313216916397514421`36.42616338166145 - 1.76274717403908605046521864995958461806`20.220613765883606*I
+woxi eval 'ArcSin[3`20]'            # ArcSin[3.`20.]
+```
+
+`N[ArcSin[3], 20]` of an exact argument is complex as in Wolfram, but an
+already arbitrary-precision argument (`ArcCos[-2.`30]`, `ArcCosh[0.5`20]`
+except at 0) stays unevaluated: the functions' own arbitrary-precision
+paths are real-only.
 
 ### Inexact `Solve` of `b^x == v` with negative `v` is 1 ULP off
 

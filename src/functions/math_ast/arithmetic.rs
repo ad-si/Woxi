@@ -15426,9 +15426,17 @@ fn try_bigfloat_power(
   let result = if let Some(n) = int_exp {
     bigfloat_powi(&base_bf, n, bits, rm)
   } else {
-    // Non-integer exponent on a negative base is complex — defer.
+    // A negative base under a real non-integer exponent is the principal
+    // value |b|^p (Cos[p Pi] + I Sin[p Pi]).
     if base_bf.is_negative() {
-      return None;
+      return Some(bigfloat_negative_base_power(
+        &base_bf.abs(),
+        exp,
+        exp_val,
+        base_prec - exp_val.abs().log10(),
+        bits,
+        &mut cc,
+      ));
     }
     // Square roots go through the dedicated routine: `pow` never terminates
     // when the root is exact (e.g. Sqrt[4.`3.]) since the rounding test
@@ -15452,6 +15460,59 @@ fn try_bigfloat_power(
     Err(e) => return Some(Err(e)),
   };
   Some(Ok(Expr::BigFloat(result_str, result_prec)))
+}
+
+/// `(-a)^p` for an arbitrary-precision `a > 0` and a real non-integer `p`:
+/// `a^p (Cos[p Pi] + I Sin[p Pi])`, with no real part when `p` is a
+/// half-integer (`(-2.5`20)^(1/2)` is `1.58…`20 I`).
+fn bigfloat_negative_base_power(
+  magnitude: &astro_float::BigFloat,
+  exp: &Expr,
+  exp_val: f64,
+  precision: f64,
+  bits: usize,
+  cc: &mut astro_float::Consts,
+) -> Result<Expr, InterpreterError> {
+  use astro_float::{BigFloat, RoundingMode};
+  let rm = RoundingMode::ToEven;
+  let modulus = if exp_val.abs() == 0.5 {
+    let root = magnitude.sqrt(bits, rm);
+    if exp_val < 0.0 {
+      BigFloat::from_i32(1, bits).div(&root, bits, rm)
+    } else {
+      root
+    }
+  } else {
+    magnitude.pow(&expr_to_bigfloat(exp, bits, rm, cc)?, bits, rm, cc)
+  };
+  let to_expr = |v: &BigFloat, cc: &mut astro_float::Consts| {
+    let digits = wl_fraction_digits(v, precision);
+    bigfloat_to_string(v, Some(digits), rm, cc)
+      .map(|s| Expr::BigFloat(s, precision))
+  };
+  let twice = 2.0 * exp_val;
+  let (re, im) = if twice.fract() == 0.0 {
+    // Half-integer p = k + 1/2: Sin[p Pi] = (-1)^k, Cos[p Pi] = 0.
+    let k = (exp_val - 0.5).round() as i64;
+    let im = if k.rem_euclid(2) == 0 {
+      modulus
+    } else {
+      modulus.neg()
+    };
+    (None, im)
+  } else {
+    let angle =
+      expr_to_bigfloat(exp, bits, rm, cc)?.mul(&cc.pi(bits, rm), bits, rm);
+    (
+      Some(modulus.mul(&angle.cos(bits, rm, cc), bits, rm)),
+      modulus.mul(&angle.sin(bits, rm, cc), bits, rm),
+    )
+  };
+  let im_term = times(vec![to_expr(&im, cc)?, Expr::Identifier("I".into())]);
+  Ok(match re {
+    Some(re) => plus(vec![to_expr(&re, cc)?, im_term]),
+    None => im_term,
+  })
 }
 
 /// Multiply BigFloat-tagged numbers with precision tracking. Mirrors

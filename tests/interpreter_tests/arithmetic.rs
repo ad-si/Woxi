@@ -13882,3 +13882,132 @@ mod log_base_of_zero {
     assert_eq!(interpret("-Log10[0]").unwrap(), "Infinity");
   }
 }
+
+// Deciding the sign of an exact numeric expression whose machine value is
+// lost to cancellation takes extra precision, as in Wolfram (up to
+// $MaxExtraPrecision = 50 digits).
+mod sign_under_cancellation {
+  use super::*;
+
+  #[test]
+  fn sign_abs_positive_use_extra_precision() {
+    assert_eq!(
+      interpret("Sign[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2 Sqrt[6]] - 10^-30]")
+        .unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Abs[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2 Sqrt[6]] - 10^-30]")
+        .unwrap(),
+      "1/1000000000000000000000000000000 - Sqrt[2] - Sqrt[3] + Sqrt[5 + 2*Sqrt[6]]"
+    );
+    assert_eq!(
+      interpret("Positive[Pi - 314159265358979323846/10^20]").unwrap(),
+      "True"
+    );
+    // A continued-fraction convergent agreeing with Log[87/5, 21/5] to 16
+    // digits (Demonstration ApproximatingTheLogarithmOfAnyBase…).
+    assert_eq!(
+      interpret(
+        "c = 4456315661/8870092800; l = Log[87/5, 21/5]; \
+         {Sign[1 - c/l], N[Log[10, Abs[1 - c/l]], 10]}"
+      )
+      .unwrap(),
+      "{-1, -16.0880367830905095532`10.}"
+    );
+  }
+
+  // Indistinguishable from 0 within the extra precision: unevaluated.
+  #[test]
+  fn undecidable_sign_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "{Sign[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2 Sqrt[6]]], \
+          Positive[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2 Sqrt[6]]]}"
+      )
+      .unwrap(),
+      "{Sign[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2*Sqrt[6]]], \
+       Positive[Sqrt[2] + Sqrt[3] - Sqrt[5 + 2*Sqrt[6]]]}"
+    );
+  }
+
+  #[test]
+  fn exact_zero_and_plain_values() {
+    assert_eq!(
+      interpret("{Sign[0], Sign[-3/7 + Sqrt[2]], Abs[Sqrt[2] - 3]}").unwrap(),
+      "{0, 1, 3 - Sqrt[2]}"
+    );
+  }
+}
+
+// Arbitrary-precision values off a real function's domain are complex.
+mod arbitrary_precision_complex_values {
+  use super::*;
+
+  #[test]
+  fn negative_base_powers() {
+    assert_eq!(
+      interpret("(-2.5`20)^(1/2)").unwrap(),
+      "1.58113883008418966599944677221635926686`20.30102999566398*I"
+    );
+    assert_eq!(
+      interpret("Sqrt[-2.5`20]").unwrap(),
+      "1.58113883008418966599944677221635926686`20.30102999566398*I"
+    );
+    assert_eq!(
+      interpret("(-2.5`20)^(-1/2)").unwrap(),
+      "-0.63245553203367586639977870888654370674`20.30102999566398*I"
+    );
+    assert_eq!(
+      interpret("(-2.5`20)^(3/2)").unwrap(),
+      "-3.95284707521047416499861693054089816715`19.82390874094432*I"
+    );
+    assert_eq!(
+      interpret("Round[10^12 ReIm[(-2.5`20)^(1/3)]]").unwrap(),
+      "{678604404149, 1175377306226}"
+    );
+  }
+
+  #[test]
+  fn log_of_negative_values() {
+    assert_eq!(
+      interpret("z = Log[-2.5`20]; {Round[10^15 Re[z]], Im[z] == N[Pi, 20]}")
+        .unwrap(),
+      "{916290731874155, True}"
+    );
+    // A negative sum whose value N only reaches after cancellation.
+    assert_eq!(
+      interpret(
+        "z = N[Log[1 - (4456315661/8870092800)/Log[87/5, 21/5]], 10]; \
+         Round[10^6 ReIm[z]]"
+      )
+      .unwrap(),
+      "{-37044074, 3141593}"
+    );
+  }
+
+  // Principal values beyond the real domain, through Log and Sqrt.
+  #[test]
+  fn inverse_trig_off_the_real_domain() {
+    assert_eq!(
+      interpret("Round[10^15 ReIm[N[{ArcSin[3], ArcSin[-3], ArcCos[3], ArcCosh[1/2]}, 20]]]")
+        .unwrap(),
+      "{{1570796326794897, -1762747174039086}, {-1570796326794897, 1762747174039086}, {0, 1762747174039086}, {0, 1047197551196598}}"
+    );
+    // An exactly imaginary result has no rounding-noise real part.
+    assert_eq!(
+      interpret("{Head[N[ArcCosh[1/2], 20]], Re[N[ArcCosh[1/2], 20]]}")
+        .unwrap(),
+      "{Complex, 0}"
+    );
+  }
+
+  // `n`p` with a nonzero integer n is a real of precision p.
+  #[test]
+  fn integer_precision_literals() {
+    assert_eq!(
+      interpret("{Head[3`20], Head[0`2], 3`20, -1`20, 1`20*^3}").unwrap(),
+      "{Real, Integer, 3.`20., -1.`20., 1000.`20.}"
+    );
+  }
+}

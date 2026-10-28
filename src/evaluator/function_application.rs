@@ -195,6 +195,41 @@ fn compile_spec_rank(spec: &Expr) -> usize {
 
 /// Rank of a parameter in the serialized `{Blank[Real], rank}` argument
 /// pattern list of a `CompiledFunction` restored from a saved notebook.
+/// For a serialized `CompiledFunction[…]`, whether each parameter is
+/// declared `_Real` or `_Complex` (possibly with a rank, `{_Real, 1}`). The
+/// argument patterns are the first list whose entries are all `Blank[type]`
+/// or `{Blank[type], rank}` (after the version tuple in newer dumps).
+fn serialized_real_params(func_args: &[Expr]) -> Vec<bool> {
+  fn blank_type(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Blank" => {
+        match args.as_slice() {
+          [Expr::Identifier(t)] => Some(t.as_str()),
+          _ => None,
+        }
+      }
+      Expr::Pattern { name, head, .. } if name.is_empty() => head.as_deref(),
+      Expr::List(items) if items.len() == 2 => blank_type(&items[0]),
+      _ => None,
+    }
+  }
+  func_args
+    .iter()
+    .take(2)
+    .find_map(|a| match a {
+      Expr::List(items) if items.iter().all(|i| blank_type(i).is_some()) => {
+        Some(
+          items
+            .iter()
+            .map(|i| matches!(blank_type(i), Some("Real" | "Complex")))
+            .collect(),
+        )
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
+}
+
 fn serialized_spec_rank(spec: &Expr) -> usize {
   match spec {
     Expr::List(items) if items.len() == 2 => match &items[1] {
@@ -2643,6 +2678,31 @@ pub fn apply_curried_call(
       // fallback would unroll every iteration on those symbols (exponential
       // in the iteration count), so the call stays unevaluated until it is
       // sampled with numbers — as with the 2-argument form above.
+      // Arguments declared `_Real`/`_Complex` enter the compiled code as
+      // machine numbers (an exact `87/5` must not turn the body's iteration
+      // into exact rational arithmetic), and a real signature makes the
+      // result a machine number too — as in the 2-argument form above.
+      let real_params = serialized_real_params(func_args);
+      let any_real = real_params.iter().any(|&r| r);
+      let coerced: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if real_params.get(i).copied().unwrap_or(false) {
+            coerce_to_real(a)
+          } else {
+            a.clone()
+          }
+        })
+        .collect();
+      let args = coerced.as_slice();
+      let finish = |result: Expr| {
+        if any_real {
+          coerce_to_real(&result)
+        } else {
+          result
+        }
+      };
       let probing_symbolically = SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
         && args.iter().any(|arg| {
           matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
@@ -2690,11 +2750,11 @@ pub fn apply_curried_call(
             } else {
               let plain =
                 evaluate_expr_to_expr(&call("Function", fargs[..2].to_vec()))?;
-              apply_curried_call(&plain, args)
+              apply_curried_call(&plain, args).map(finish)
             };
           }
           let pure_fn = evaluate_expr_to_expr(pure_fn)?;
-          apply_curried_call(&pure_fn, args)
+          apply_curried_call(&pure_fn, args).map(finish)
         }
         None => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),

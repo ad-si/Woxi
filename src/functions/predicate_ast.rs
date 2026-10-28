@@ -695,11 +695,10 @@ fn sign_via_numeric(expr: &Expr, cmp: impl Fn(f64) -> bool) -> Option<bool> {
     };
     return Some(cmp(sign));
   }
-  let val = super::math_ast::try_eval_to_f64(expr)?;
-  if !val.is_finite() {
-    return None;
+  match super::math_ast::numeric_real_sign(expr)? {
+    super::math_ast::NumericSign::Known(s) => Some(cmp(f64::from(s))),
+    super::math_ast::NumericSign::Undecidable => None,
   }
-  Some(cmp(val))
 }
 
 /// Detect a non-real complex value: Complex[_, b] with non-zero b, or its

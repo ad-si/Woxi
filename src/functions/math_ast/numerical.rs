@@ -605,6 +605,27 @@ pub fn bigfloat_log(
 ) -> Option<Result<Expr, InterpreterError>> {
   use astro_float::{BigFloat, Consts, Radix, RoundingMode};
   let x_val: f64 = digits.parse().ok()?;
+  // Log[-x] = Log[x] + I Pi, both parts known to the same accuracy.
+  if let Some(abs_digits) = digits.strip_prefix('-')
+    && x_val < 0.0
+  {
+    let im_prec = prec + std::f64::consts::PI.log10();
+    let rm = RoundingMode::ToEven;
+    let bits = nominal_bits(im_prec.ceil() as usize);
+    let mut cc = Consts::new().ok()?;
+    let pi = cc.pi(bits, rm);
+    let pi_digits = wl_fraction_digits(&pi, im_prec);
+    let im_term = match bigfloat_to_string(&pi, Some(pi_digits), rm, &mut cc) {
+      Ok(s) => times(vec![Expr::BigFloat(s, im_prec), id_expr("I")]),
+      Err(e) => return Some(Err(e)),
+    };
+    if x_val == -1.0 {
+      return Some(Ok(im_term));
+    }
+    return Some(
+      bigfloat_log(abs_digits, prec)?.map(|re| plus(vec![re, im_term])),
+    );
+  }
   if x_val <= 0.0 || x_val == 1.0 {
     return None;
   }
@@ -1449,6 +1470,11 @@ fn wl_bigfloat_expr(
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
   let mut bf = expr_to_bigfloat(expr, bits, rm, cc)?;
+  // A real function leaving its real domain (`Log` of a negative sum) is
+  // NaN here; the caller then evaluates in the complex plane.
+  if bf.is_nan() {
+    return Err(InterpreterError::EvaluationError("N: complex value".into()));
+  }
   // WL's value is the number rounded to its limb grid below the binary
   // point, and the shown digits are that binary value's. For a small
   // magnitude the grid is finer than `bits` resolve (`N[10^-8/7, 20]` keeps
@@ -1772,7 +1798,18 @@ pub fn n_eval_arbitrary(
     Ok(result)
   } else {
     // Try complex BigFloat evaluation (handles expressions with I)
-    if let Ok((re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc) {
+    if let Ok((mut re, im)) = expr_to_complex_bigfloat(expr, bits, rm, &mut cc)
+    {
+      // A real part below the working precision of the imaginary one is
+      // rounding noise of an exactly imaginary value (`N[ArcCosh[1/2], 20]`
+      // is ln|1/2 + Sqrt[3]/2 I| = 0 plus Pi/3 I).
+      if let (Some(re_exp), Some(im_exp)) = (re.exponent(), im.exponent())
+        && !re.is_zero()
+        && !im.is_zero()
+        && i64::from(re_exp) + bits as i64 - 16 < i64::from(im_exp)
+      {
+        re = astro_float::BigFloat::from_i32(0, bits);
+      }
       // For complex function results, compute per-component precision markers
       if let Expr::FunctionCall { name: _, args } = expr
         && !im.is_zero()
@@ -2565,8 +2602,11 @@ fn expr_to_complex_bigfloat(
 ) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
   use astro_float::BigFloat;
 
-  // Fast path: if purely real, delegate
-  if let Ok(val) = expr_to_bigfloat(expr, bits, rm, cc) {
+  // Fast path: if purely real, delegate (a NaN means a real function left
+  // its domain, e.g. Log of a negative sum, and the value is complex)
+  if let Ok(val) = expr_to_bigfloat(expr, bits, rm, cc)
+    && !val.is_nan()
+  {
     return Ok((val, BigFloat::from_i32(0, bits)));
   }
 
@@ -2806,6 +2846,58 @@ fn expr_to_complex_bigfloat(
         let abs_sq = a.mul(&a, bits, rm).add(&b.mul(&b, bits, rm), bits, rm);
         Ok((abs_sq.sqrt(bits, rm), BigFloat::from_i32(0, bits)))
       }
+      // Principal values through Log and Sqrt, whose branch cuts give
+      // Wolfram's: ArcSin[3] = Pi/2 - 1.76… I, ArcCos[3] = 1.76… I,
+      // ArcCosh[1/2] = 1.04… I.
+      "ArcSin" | "ArcCos" | "ArcCosh" if args.len() == 1 => {
+        let z = args[0].clone();
+        let i = || Expr::Identifier("I".to_string());
+        let sqrt = |e: Expr| Expr::FunctionCall {
+          name: "Sqrt".to_string(),
+          args: vec![e].into(),
+        };
+        let log = |e: Expr| Expr::FunctionCall {
+          name: "Log".to_string(),
+          args: vec![e].into(),
+        };
+        let arcsin = |z: Expr| {
+          times(vec![
+            Expr::Integer(-1),
+            i(),
+            log(plus(vec![
+              times(vec![i(), z.clone()]),
+              sqrt(plus(vec![
+                Expr::Integer(1),
+                times(vec![
+                  Expr::Integer(-1),
+                  crate::helpers::pow(z, Expr::Integer(2)),
+                ]),
+              ])),
+            ])),
+          ])
+        };
+        let rewritten = match name.as_str() {
+          "ArcSin" => arcsin(z),
+          "ArcCos" => plus(vec![
+            times(vec![
+              Expr::FunctionCall {
+                name: "Rational".to_string(),
+                args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+              },
+              Expr::Constant("Pi".to_string()),
+            ]),
+            times(vec![Expr::Integer(-1), arcsin(z)]),
+          ]),
+          _ => log(plus(vec![
+            z.clone(),
+            times(vec![
+              sqrt(plus(vec![z.clone(), Expr::Integer(1)])),
+              sqrt(plus(vec![z, Expr::Integer(-1)])),
+            ]),
+          ])),
+        };
+        expr_to_complex_bigfloat(&rewritten, bits, rm, cc)
+      }
       "ExpIntegralEi" if args.len() == 1 => {
         let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
         Ok(complex_exp_integral_ei(&a, &b, bits, rm, cc))
@@ -2926,6 +3018,20 @@ fn compute_complex_precision_markers(
   let prec_re_bf = accuracy.add(&log10_re, pbits, rm);
   // precision_im = accuracy + log10(|im|)
   let prec_im_bf = accuracy.add(&log10_im, pbits, rm);
+
+  // The rule models a function whose output scales like its input (Sin,
+  // Exp near 1 + I). Where it does not (`Log` of a number near 0 has a
+  // large output from a tiny input) it would claim a precision far from the
+  // requested one, even a negative one; the caller then marks both parts
+  // with the requested precision instead.
+  let leading = bigfloat_to_f64_approx(&prec_re_bf)
+    .zip(bigfloat_to_f64_approx(&prec_im_bf))
+    .map(|(a, b)| a.max(b));
+  if !leading.is_some_and(|l| (l - precision as f64).abs() <= 1.0) {
+    return Err(InterpreterError::EvaluationError(
+      "N: precision markers do not apply".into(),
+    ));
+  }
 
   // Format precision markers directly from BigFloat with f64-like precision
   // This avoids f64 rounding issues by going from BigFloat → string directly
