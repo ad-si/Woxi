@@ -32618,6 +32618,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
       "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
+      // `SuperscriptBox[x, "*"]` reads back as `SuperStar[x]` (and `"†"` as
+      // `SuperDagger[x]`); as a label they still draw the base with the
+      // operator character hung on it.
+      "SuperStar" | "SuperDagger" if args.len() == 1 => {
+        let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
+        script_runs(
+          &[args[0].clone(), Expr::String(mark.to_string())],
+          italic,
+          true,
+        )
+      }
       // `Subsuperscript[base, sub, sup]` — a Demonstration's slider label for
       // an initial derivative writes `y0'` as `Subsuperscript[y, 0, "\[Prime]"]`.
       // Plain text can't stack a sub- and superscript at once, so the two
