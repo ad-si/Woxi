@@ -5335,33 +5335,51 @@ fn pointwise_image_op(
   {
     // An image carrying an alpha channel combines with its opaque
     // counterpart (an RGBA rasterized graphic with an RGB photo, say) on
-    // the shared color channels.
+    // the shared color channels; a grayscale image broadcasts over a
+    // color one.
     let alpha_pair = matches!((*ch1, *ch2), (2, 1) | (1, 2) | (4, 3) | (3, 4));
-    if w1 != w2 || h1 != h2 || (ch1 != ch2 && !alpha_pair) {
+    let gray_pair = (*ch1 == 1) != (*ch2 == 1) && !alpha_pair;
+    if ch1 != ch2 && !alpha_pair && !gray_pair {
       return Err(InterpreterError::EvaluationError(format!(
-        "{name}: images must have the same dimensions and channels"
+        "{name}: images must have the same number of channels"
       )));
     }
-    let out_ch = *ch1.min(ch2) as usize;
-    let (c1, c2) = (*ch1 as usize, *ch2 as usize);
-    let is_r32 = matches!(t1, ImageType::Real32);
-    let new_data: Vec<f64> = if ch1 == ch2 {
-      data1
-        .iter()
-        .zip(data2.iter())
-        .map(|(&a, &b)| apply(a, b, is_r32))
-        .collect()
+    let out_ch = if gray_pair {
+      *ch1.max(ch2) as usize
     } else {
-      data1
-        .chunks(c1)
-        .zip(data2.chunks(c2))
-        .flat_map(|(p1, p2)| {
-          (0..out_ch)
-            .map(|k| apply(p1[k], p2[k], is_r32))
-            .collect::<Vec<_>>()
-        })
-        .collect()
+      *ch1.min(ch2) as usize
     };
+    let (c1, c2) = (*ch1 as usize, *ch2 as usize);
+    let (w1, h1, w2, h2) = (*w1 as i64, *h1 as i64, *w2 as i64, *h2 as i64);
+    let is_r32 = matches!(t1, ImageType::Real32);
+    // Images of different sizes: the result keeps the first image's size,
+    // the second is centered over it, and pixels it does not cover keep
+    // the first image's values.
+    let (dx, dy) = ((w1 - w2).div_euclid(2), (h1 - h2).div_euclid(2));
+    let mut new_data: Vec<f64> =
+      Vec::with_capacity((w1 * h1) as usize * out_ch);
+    for y in 0..h1 {
+      let y2 = y - dy;
+      for x in 0..w1 {
+        let x2 = x - dx;
+        let i1 = (y * w1 + x) as usize * c1;
+        let covered = (0..h2).contains(&y2) && (0..w2).contains(&x2);
+        let i2 = if covered {
+          Some((y2 * w2 + x2) as usize * c2)
+        } else {
+          None
+        };
+        for k in 0..out_ch {
+          let a = data1[i1 + if c1 == 1 { 0 } else { k }];
+          new_data.push(match i2 {
+            Some(i2) => {
+              apply(a, data2[i2 + if c2 == 1 { 0 } else { k }], is_r32)
+            }
+            None => a,
+          });
+        }
+      }
+    }
     // Integer-typed images saturate at their range limits.
     let new_data =
       if matches!(t1, ImageType::Bit | ImageType::Byte | ImageType::Bit16) {
@@ -5372,8 +5390,8 @@ fn pointwise_image_op(
     return Ok(Expr::Image {
       color_space: None,
       display_size: None,
-      width: *w1,
-      height: *h1,
+      width: w1 as u32,
+      height: h1 as u32,
       channels: out_ch as u8,
       data: Arc::new(new_data),
       image_type: *t1,

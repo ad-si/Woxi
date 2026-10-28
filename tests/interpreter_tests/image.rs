@@ -4646,6 +4646,72 @@ mod image_advanced {
   }
 
   #[test]
+  fn image_add_larger_second_image_is_centered() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdd[Image[{{0.1, 0.2, 0.3, 0.4}}], \
+         Image[{{0.5, 0.6, 0.7, 0.8, 0.9, 0.95}}]]]"
+      )
+      .unwrap(),
+      "{{0.7000000476837158, 0.8999999761581421, 1.100000023841858, \
+       1.2999999523162842}}"
+    );
+  }
+
+  #[test]
+  fn image_add_smaller_second_image_leaves_uncovered_pixels() {
+    clear_state();
+    // Odd size difference: the second image sits one pixel left of center.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdd[Image[{{0.1, 0.2, 0.3, 0.4, 0.5}}], \
+         Image[{{0.5, 0.6}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.699999988079071, 0.9000000357627869, \
+       0.4000000059604645, 0.5}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageSubtract[Image[ConstantArray[0.9, {3, 4}]], \
+         Image[{{0.1, 0.2}, {0.3, 0.4}}]]]"
+      )
+      .unwrap(),
+      "{{0.8999999761581421, 0.7999999523162842, 0.699999988079071, \
+       0.8999999761581421}, {0.8999999761581421, 0.5999999642372131, \
+       0.4999999701976776, 0.8999999761581421}, {0.8999999761581421, \
+       0.8999999761581421, 0.8999999761581421, 0.8999999761581421}}"
+    );
+  }
+
+  #[test]
+  fn image_multiply_gray_by_rgb_broadcasts() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageMultiply[Image[{{0.5, 0.5, 0.5}}], \
+         Image[{{{0.2, 0.4, 0.6}}}]]]"
+      )
+      .unwrap(),
+      "{{{0.5, 0.5, 0.5}, {0.10000000149011612, 0.20000000298023224, \
+       0.30000001192092896}, {0.5, 0.5, 0.5}}}"
+    );
+  }
+
+  #[test]
+  fn image_difference_rejects_mismatched_sizes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[ImageDifference[Image[{{0.1, 0.2, 0.3}}], Image[{{0.5}}]]]"
+      )
+      .unwrap(),
+      "ImageDifference"
+    );
+  }
+
+  #[test]
   fn image_subtract() {
     clear_state();
     let result = interpret(
