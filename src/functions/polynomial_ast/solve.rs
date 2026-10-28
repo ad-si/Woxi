@@ -11486,8 +11486,17 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let tol = 1e-15;
     let mut x_prev = x0;
     let mut x_curr = x1_opt.unwrap_or(x0 + 0.1);
-    let mut f_prev = find_root_eval_at(&func, &var, x_prev)?;
-    let mut f_curr = find_root_eval_at(&func, &var, x_curr)?;
+    // A residual that is complex at a starting point (a logarithm of a
+    // negative number) sends the whole iteration into the complex plane, as
+    // in wolframscript, whose root then carries a vanishing imaginary part.
+    let (Ok(f0), Ok(f1)) = (
+      find_root_eval_at(&func, &var, x_prev),
+      find_root_eval_at(&func, &var, x_curr),
+    ) else {
+      return complex_secant(&func, &var, x_prev, x_curr, step_monitor);
+    };
+    let mut f_prev = f0;
+    let mut f_curr = f1;
 
     for _ in 0..max_iter {
       if f_curr.abs() < tol {
@@ -12088,6 +12097,93 @@ fn unwrap_singleton_list(e: Expr) -> Expr {
 }
 
 /// Evaluate an expression numerically at a specific value of var.
+/// The secant iteration for `func` in `var` in complex arithmetic, from the
+/// real starting points `a` and `b`. The root keeps its imaginary part
+/// unless that is exactly zero.
+fn complex_secant(
+  func: &Expr,
+  var: &str,
+  a: f64,
+  b: f64,
+  step_monitor: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  type C = (f64, f64);
+  let eval = |x: C| -> Option<C> {
+    let point = if x.1 == 0.0 {
+      Expr::Real(x.0)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "Complex",
+        vec![Expr::Real(x.0), Expr::Real(x.1)],
+      ))
+      .ok()?
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(&call(
+      "N",
+      vec![crate::syntax::substitute_variable(func, var, &point)],
+    ))
+    .ok()?;
+    crate::functions::math_ast::numeric_utils::try_extract_complex_f64(
+      &unwrap_singleton_list(value),
+    )
+    .filter(|(r, i)| r.is_finite() && i.is_finite())
+  };
+  let sub = |p: C, q: C| (p.0 - q.0, p.1 - q.1);
+  let mul = |p: C, q: C| (p.0 * q.0 - p.1 * q.1, p.0 * q.1 + p.1 * q.0);
+  let div = |p: C, q: C| {
+    let d = q.0 * q.0 + q.1 * q.1;
+    ((p.0 * q.0 + p.1 * q.1) / d, (p.1 * q.0 - p.0 * q.1) / d)
+  };
+  let abs = |p: C| p.0.hypot(p.1);
+  let (mut x_prev, mut x_curr) = ((a, 0.0), (b, 0.0));
+  let (Some(mut f_prev), Some(mut f_curr)) = (eval(x_prev), eval(x_curr))
+  else {
+    crate::emit_message(
+      "FindRoot::nlnum: The function value is not a number at the starting point.",
+    );
+    return Ok(unevaluated("FindRoot", &[]));
+  };
+  for _ in 0..100 {
+    if abs(f_curr) < 1e-15 {
+      break;
+    }
+    let denom = sub(f_curr, f_prev);
+    if abs(denom) < 1e-30 {
+      break;
+    }
+    // Damped: a step is halved until the residual does not grow (an
+    // undamped complex secant wanders off from a start like this one).
+    let step = div(mul(f_curr, sub(x_curr, x_prev)), denom);
+    let mut scale = 1.0;
+    let mut next = None;
+    for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+      let x_try = sub(x_curr, (step.0 * scale, step.1 * scale));
+      if let Some(f_try) = eval(x_try) {
+        next = Some((x_try, f_try));
+        if abs(f_try) < abs(f_curr) {
+          break;
+        }
+      }
+      scale *= 0.5;
+    }
+    let Some((x_next, f_next)) = next else { break };
+    (x_prev, f_prev) = (x_curr, f_curr);
+    (x_curr, f_curr) = (x_next, f_next);
+    fire_step_monitor(step_monitor, &[var.to_string()], &[x_curr.0]);
+  }
+  let value = if x_curr.1 == 0.0 {
+    Expr::Real(x_curr.0)
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Complex",
+      vec![Expr::Real(x_curr.0), Expr::Real(x_curr.1)],
+    ))?
+  };
+  Ok(Expr::List(
+    vec![rule_expr(Expr::Identifier(var.to_string()), value)].into(),
+  ))
+}
+
 fn find_root_eval_at(
   expr: &Expr,
   var: &str,

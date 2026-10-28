@@ -10722,6 +10722,22 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // With two starting values, a residual that is complex at one of them (a
+  // logarithm of a negative number) moves the secant iteration into the
+  // complex plane; it still finds the real root, keeping a vanishing
+  // imaginary part as wolframscript does.
+  #[test]
+  fn secant_through_complex_residuals() {
+    assert_eq!(
+      interpret(
+        "r = x /. FindRoot[Log[x] == -1, {x, 0.2, -0.5}]; \
+         {Round[Re[r], 10.^-12], Abs[Im[r]] < 10^-15}"
+      )
+      .unwrap(),
+      "{0.36787944117099997, True}"
+    );
+  }
+
   // A large linear system mixing exact rationals with machine numbers goes
   // through the machine elimination with pivoting (CliffWalkingProblem lost
   // two unknowns to the fraction-free route).
