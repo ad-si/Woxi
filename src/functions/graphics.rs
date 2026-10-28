@@ -32599,6 +32599,20 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // a Demonstration's quark-content picker; anything else (a rate
       // constant over a reaction arrow) hangs above the base instead.
       "Overscript" if args.len() == 2 => overscript_runs(args, italic),
+      // `OverBar[x]`, `OverHat[x]`, … are the one-argument spellings of the
+      // same accented base: `OverBar[X]` reads as X̄.
+      "OverBar" | "OverHat" | "OverTilde" | "OverDot" | "OverVector"
+        if args.len() == 1 =>
+      {
+        let mark = match name.as_str() {
+          "OverBar" => "_",
+          "OverHat" => "^",
+          "OverTilde" => "~",
+          "OverDot" => ".",
+          _ => "\\[RightVector]",
+        };
+        overscript_runs(&[args[0].clone(), Expr::String(mark.into())], italic)
+      }
       // `Power[b, e]`, which is what a label's typeset `SuperscriptBox`
       // reads as: a Demonstration writes its gravity slider's unit as
       // `m/\!\(\*SuperscriptBox[\(s\), \(2\)]\)`, and it must show as
