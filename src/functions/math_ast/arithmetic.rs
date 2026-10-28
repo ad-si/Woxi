@@ -8809,6 +8809,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(image) = image_arithmetic(args, |a, b| a * b) {
     return Ok(image);
   }
+  if let Some(indeterminate) = zero_times_infinity(args) {
+    return Ok(indeterminate);
+  }
   if let Some(product) =
     super::canonical_polynomial::canonical_monomial_product(args)
   {
@@ -8836,6 +8839,56 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bigfloat_times(&promoted);
   }
   Ok(flip_unit_negative_rational_product(product))
+}
+
+/// A zero (exact or machine) times an infinity is Indeterminate, reported
+/// as wolframscript writes the product: the zero, the other factors in
+/// canonical order, then the infinity.
+fn zero_times_infinity(args: &[Expr]) -> Option<Expr> {
+  let mut factors: Vec<&Expr> = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::FunctionCall { name, args: inner } if name == "Times" => {
+        factors.extend(inner.iter());
+      }
+      other => factors.push(other),
+    }
+  }
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(r) if *r == 0.0)
+  };
+  let zero = factors.iter().position(|e| is_zero(e))?;
+  let infinity = factors.iter().position(|e| is_infinity_like(e))?;
+  let mut others: Vec<&Expr> = factors
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != zero && *i != infinity)
+    .map(|(_, e)| *e)
+    .collect();
+  others.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
+  });
+  let infinity_text = match factors[infinity] {
+    Expr::Identifier(name) => name.clone(),
+    Expr::FunctionCall { args: dir, .. } if dir.len() == 1 => match &dir[0] {
+      Expr::Integer(1) => "Infinity".to_string(),
+      Expr::Integer(-1) => "(-Infinity)".to_string(),
+      d @ Expr::Identifier(_) => {
+        format!("({} Infinity)", crate::syntax::expr_to_output(d))
+      }
+      d => format!("(({}) Infinity)", crate::syntax::expr_to_output(d)),
+    },
+    Expr::UnaryOp { .. } => "(-Infinity)".to_string(),
+    other => crate::syntax::expr_to_output(other),
+  };
+  let mut words = vec![crate::syntax::expr_to_output(factors[zero])];
+  words.extend(others.iter().map(|e| crate::syntax::expr_to_output(e)));
+  words.push(infinity_text);
+  crate::emit_message(&format!(
+    "Infinity::indet: Indeterminate expression {} encountered.",
+    words.join(" ")
+  ));
+  Some(id_expr("Indeterminate"))
 }
 
 fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -9162,19 +9215,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&combined_cond)?;
     return Ok(call("ConditionalExpression", vec![combined_value, combined_cond]));
   }
-  // ComplexInfinity * 0 = Indeterminate, ComplexInfinity * x = ComplexInfinity
+  // ComplexInfinity * x = ComplexInfinity (a zero factor is handled first)
   let has_complex_inf = flat_args
     .iter()
     .any(|a| matches!(a, Expr::Identifier(n) if n == "ComplexInfinity"));
   if has_complex_inf {
-    let has_zero = flat_args.iter().any(|a| matches!(a, Expr::Integer(0)));
-    if has_zero {
-      crate::emit_message(
-        "Infinity::indet: Indeterminate expression 0 ComplexInfinity \
-         encountered.",
-      );
-      return Ok(id_expr("Indeterminate"));
-    }
     return Ok(id_expr("ComplexInfinity"));
   }
 
@@ -10229,14 +10274,6 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If all arguments are numeric, return the product
   if symbolic_args.is_empty() {
     return Ok(coeff);
-  }
-
-  // 0 * Infinity = Indeterminate (check before the general 0 * anything = 0 rule)
-  if combined_numer == 0 && symbolic_args.iter().any(is_infinity_like) {
-    crate::emit_message(
-      "Infinity::indet: Indeterminate expression 0 Infinity encountered.",
-    );
-    return Ok(id_expr("Indeterminate"));
   }
 
   // 0 * anything = 0

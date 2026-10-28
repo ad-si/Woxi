@@ -2273,6 +2273,22 @@ null deviances are the constant model's and Woxi reports them; the
 Gaussian, Gamma and inverse Gaussian ones are left out rather than
 reported differently.
 
+### `LinearModelFit` estimates differ in the last bits
+
+```sh
+wolframscript -code 'LinearModelFit[{{0, 1}, {1, 0}}, x, x]["BestFitParameters"]'
+# {1., -1.}
+woxi eval '…same…'   # {0.9999999999999999, -1.}
+```
+
+Woxi solves the least-squares problem by Householder QR. None of LAPACK's
+`gelsd`, `gelsy` or `gelss`, the normal equations or the pseudo-inverse
+reproduces wolframscript's digits on every input. With as many points as
+parameters, the difference becomes visible: when wolframscript's residuals
+come out exactly zero, its standard errors are `Indeterminate` (with
+`Infinity::indet`), while Woxi's tiny nonzero residuals give
+`ComplexInfinity`.
+
 ### Constrained and weighted fitting find different local minima
 
 On a non-convex constrained problem the two engines land on *different valid*

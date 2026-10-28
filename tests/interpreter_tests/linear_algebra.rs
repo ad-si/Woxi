@@ -4723,6 +4723,26 @@ mod linear_model_fit {
   }
 
   #[test]
+  fn parameter_table_without_error_degrees_of_freedom() {
+    // As in wolframscript: the zero residual variance over zero degrees of
+    // freedom is ComplexInfinity, with Power::infy on each query.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{0, Log[200]}, {Log[2], Log[150]}}, x, x]; \
+         lm[\"ParameterTableEntries\"][[All, 2 ;;]]"
+      )
+      .unwrap(),
+      "{{ComplexInfinity, 0., 1.}, {ComplexInfinity, 0., 1.}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("Power::infy")),
+      "expected Power::infy, got: {msgs:?}"
+    );
+  }
+
+  #[test]
   fn unknown_property_in_a_list_leaves_the_query_unevaluated() {
     assert_eq!(
       interpret(
@@ -4767,19 +4787,19 @@ mod linear_model_fit {
   // rather than divide by zero or panic, same as before this statistic
   // existed.
   #[test]
-  fn parameter_table_entries_absent_with_zero_degrees_of_freedom() {
+  fn parameter_table_entries_with_zero_degrees_of_freedom() {
+    // Two points, two parameters: the entries exist (wolframscript divides
+    // by the zero error degrees of freedom) rather than being FittedModel::
+    // elmntav.
     clear_state();
-    let r = woxi::interpret_with_stdout(
-      "lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm[\"ParameterTableEntries\"] =!= lm",
-    )
-    .unwrap();
-    assert_eq!(r.result, "True");
-    assert!(
-      r.warnings
-        .iter()
-        .any(|w| w.starts_with("FittedModel::elmntav")),
-      "{:?}",
-      r.warnings
+    assert_eq!(
+      interpret(
+        "e = Quiet[LinearModelFit[{{0, 1}, {1, 0}}, x, x]\
+         [\"ParameterTableEntries\"]]; \
+         {Dimensions[e], NumericQ[e[[1, 2]]]}"
+      )
+      .unwrap(),
+      "{{2, 4}, False}"
     );
   }
 

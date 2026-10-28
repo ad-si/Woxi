@@ -10443,6 +10443,27 @@ mod zero_divisor {
     assert!(r.warnings.iter().any(|w| w.contains(
       "Infinity::indet: Indeterminate expression 0 ComplexInfinity encountered."
     )));
+    // A machine zero is as indeterminate as an exact one, and the message
+    // lists the other factors in canonical order before the infinity.
+    for (input, product) in [
+      ("0. * ComplexInfinity", "0. ComplexInfinity"),
+      ("0. * Infinity", "0. Infinity"),
+      ("0 * (-Infinity)", "0 (-Infinity)"),
+      ("Times[0, x, Infinity]", "0 x Infinity"),
+      ("Times[y, 0., Infinity, x]", "0. x y Infinity"),
+      ("0. * DirectedInfinity[I]", "0. (I Infinity)"),
+    ] {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, "Indeterminate", "result for {input}");
+      let expected = format!(
+        "Infinity::indet: Indeterminate expression {product} encountered."
+      );
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&expected)),
+        "expected {expected:?} for {input}: {:?}",
+        r.warnings
+      );
+    }
     // Indeterminate propagation (already-Indeterminate operand) does NOT
     // re-emit the message.
     let r = interpret_with_stdout("Indeterminate + 1").unwrap();

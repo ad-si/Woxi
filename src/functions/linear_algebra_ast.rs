@@ -8776,6 +8776,34 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
   ];
 
+  // No error degrees of freedom left: wolframscript divides the residual
+  // sum of squares by zero. A nonzero one makes every standard error
+  // ComplexInfinity, every t statistic 0. and every p-value 1.; an exactly
+  // zero one makes them all Indeterminate.
+  if n == m {
+    let (se, t, p) = if ss_res == 0.0 {
+      let indeterminate = id_expr("Indeterminate");
+      (indeterminate.clone(), indeterminate.clone(), indeterminate)
+    } else {
+      (id_expr("ComplexInfinity"), Expr::Real(0.0), Expr::Real(1.0))
+    };
+    let column = |e: &Expr| Expr::List((0..m).map(|_| e.clone()).collect());
+    let entries = Expr::List(
+      coeffs
+        .iter()
+        .map(|c| {
+          Expr::List(
+            vec![Expr::Real(*c), se.clone(), t.clone(), p.clone()].into(),
+          )
+        })
+        .collect(),
+    );
+    assoc.push((str_expr("ParameterErrors"), column(&se)));
+    assoc.push((str_expr("ParameterTStatistics"), column(&t)));
+    assoc.push((str_expr("ParameterPValues"), column(&p)));
+    assoc.push((str_expr("ParameterTableEntries"), entries));
+  }
+
   if let Some((errors, t_stats, p_values)) = parameter_stats {
     let entries = Expr::List(
       (0..m)
@@ -9968,6 +9996,36 @@ fn lookup_fitted_model_property(
       "FittedModel: unknown property \"{prop}\""
     ))
   };
+  // The statistics of a fit without error degrees of freedom come from a
+  // division by zero, which wolframscript reports on every query.
+  if matches!(
+    prop,
+    "ParameterTable"
+      | "ParameterTableEntries"
+      | "ParameterErrors"
+      | "ParameterTStatistics"
+      | "ParameterPValues"
+  ) && matches!(
+    fit_property(assoc, "ParameterErrors"),
+    Some(Expr::List(errors)) if errors.iter().any(|e| matches!(
+      e,
+      Expr::Identifier(n) if n == "ComplexInfinity" || n == "Indeterminate"
+    ))
+  ) && let Some(Expr::List(residuals)) = fit_property(assoc, "FitResiduals")
+  {
+    let rss: f64 = residuals
+      .iter()
+      .filter_map(try_eval_to_f64)
+      .map(|r| r * r)
+      .sum();
+    let _ = evaluate_expr_to_expr(&call(
+      "Times",
+      vec![
+        Expr::Real(rss),
+        call("Power", vec![Expr::Integer(0), Expr::Integer(-1)]),
+      ],
+    ));
+  }
   match prop {
     "ParameterTable" => return parameter_table(assoc).ok_or_else(unknown),
     "ANOVATable" => return anova_table(assoc).ok_or_else(unknown),
