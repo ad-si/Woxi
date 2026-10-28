@@ -13143,6 +13143,33 @@ mod plot3d {
       insta::assert_snapshot!(svg);
     }
 
+    // Regression: `Show[ListLogPlot[…], Epilog -> …]` dropped the epilog and
+    // later lost the log axes, because the plot carried no series for `Show`
+    // to merge. The epilog is drawn in natural-log y coordinates.
+    #[test]
+    fn show_list_log_plot_with_epilog_keeps_log_axes() {
+      let plain = export_svg(
+        "Show[ListLogPlot[{{1, 0.01}, {2, 1}, {3, 100}}, Joined -> True, Frame -> True, PlotRange -> {{0, 4}, {0.001, 100}}]]",
+      );
+      let shown = export_svg(
+        "Show[ListLogPlot[{{1, 0.01}, {2, 1}, {3, 100}}, Joined -> True, Frame -> True, PlotRange -> {{0, 4}, {0.001, 100}}], Epilog -> {PointSize[0.05], Point[{2, 0.}]}]",
+      );
+      assert!(shown.contains("epilog"), "the epilog must be drawn");
+      assert!(
+        shown.contains(">10<tspan baseline-shift=\"super\""),
+        "log y decades must stay labelled after Show"
+      );
+      assert!(!plain.contains("epilog"));
+    }
+
+    #[test]
+    fn show_list_log_log_plot_with_epilog() {
+      let svg = export_svg(
+        "Show[ListLogLogPlot[{{1, 1}, {10, 100}, {100, 10000}}, Joined -> True], Epilog -> {Point[{Log[10.], Log[100.]}]}]",
+      );
+      assert!(svg.contains("epilog"), "the epilog must be drawn");
+    }
+
     // Regression: a framed log plot with `Axes -> False` drew empty tick
     // labels on the log axes, because the superscript decade labels were
     // only injected when the axes themselves were shown.
