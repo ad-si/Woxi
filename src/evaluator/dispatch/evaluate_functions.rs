@@ -949,6 +949,14 @@ fn evaluate_function_call_ast_inner(
   {
     return Ok(result);
   }
+  // The same for the elementwise functions whose machine result is exact
+  // or an integer (`Sign[R - qq]` over a 50x50 matrix, thousands of times).
+  if let [arg @ Expr::List(_)] = args
+    && let Some(result) =
+      crate::evaluator::listable::machine_real_elementwise(name, arg)
+  {
+    return Ok(result);
+  }
 
   if let Some(result) = numeric_array_list_operation(name, args) {
     return result;

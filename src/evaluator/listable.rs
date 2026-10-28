@@ -315,15 +315,6 @@ pub fn thread_listable(
     return Ok(None);
   }
 
-  // Exact elementwise functions of a machine-real array are applied
-  // directly instead of dispatching one call per element (`Sign[R - qq]`
-  // over a 50x50 matrix, thousands of times).
-  if let [arr] = args
-    && let Some(result) = machine_real_elementwise(name, arr)
-  {
-    return Ok(Some(result));
-  }
-
   // A `Threaded[…]` operand broadcasts right-aligned, which Plus and Times
   // implement themselves (`try_threaded_op`); splitting the lists apart here
   // first would pair the whole Threaded with each element.
@@ -1707,7 +1698,7 @@ pub fn resolve_sequence_apply_args(
 /// the functions whose machine result is exact: Sign, Abs, Floor, Ceiling,
 /// Round. `None` for anything else, or a non-real element, so the caller
 /// threads the general way.
-fn machine_real_elementwise(name: &str, arr: &Expr) -> Option<Expr> {
+pub(crate) fn machine_real_elementwise(name: &str, arr: &Expr) -> Option<Expr> {
   let f: fn(f64) -> Option<Expr> = match name {
     "Sign" => |x| {
       Some(Expr::Integer(if x > 0.0 {
