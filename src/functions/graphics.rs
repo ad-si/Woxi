@@ -30610,6 +30610,19 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
         out.extend(splice_items(inner));
         continue;
       }
+      // `f /@ {{…Control[…]…}, …}`: a layout row list written as a mapped
+      // pure function over literal rows. Evaluating it yields the rows
+      // themselves (`Control` stays inert), so the controls inside become
+      // visible to the spec parser like those of a literal list.
+      if let Expr::Map { func, list } = item
+        && matches!(func.as_ref(), Expr::Function { .. })
+        && matches!(list.as_ref(), Expr::List(_))
+        && expr_contains_call(list, &["Control"])
+        && let Ok(evaluated @ Expr::List(_)) = evaluate_expr_to_expr(item)
+      {
+        out.push(splice_sequence_applies(&evaluated));
+        continue;
+      }
       out.push(splice_sequence_applies(item));
     }
     out
