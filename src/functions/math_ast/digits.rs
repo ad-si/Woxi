@@ -1886,6 +1886,40 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("RealDigits", args));
   }
 
+  // An inexact zero has no digits to give: its exponent is where the
+  // smallest machine number would sit, trunc(-1075 Log[base, 2]) (-323 in
+  // base 10, -1075 in base 2), and an explicit count of its digits is that
+  // many Indeterminates, as in wolframscript.
+  let inexact_zero = match expr {
+    Expr::Real(f) => *f == 0.0,
+    Expr::BigFloat(..) => try_eval_to_f64(expr) == Some(0.0),
+    _ => false,
+  };
+  // From a given position a zero is all zero digits, the first of them at
+  // that position.
+  if let Some(start) = start_pos
+    && (inexact_zero || matches!(expr, Expr::Integer(0)))
+  {
+    return Ok(Expr::List(
+      vec![
+        Expr::List(vec![Expr::Integer(0); num_digits].into()),
+        Expr::Integer(start + 1),
+      ]
+      .into(),
+    ));
+  }
+  if inexact_zero && start_pos.is_none() {
+    let exponent = (-1075.0 * 2f64.ln() / (base as f64).ln()).trunc() as i128;
+    let digits: Vec<Expr> = if explicit_num_digits {
+      vec![Expr::Identifier("Indeterminate".into()); num_digits]
+    } else {
+      vec![Expr::Integer(0)]
+    };
+    return Ok(Expr::List(
+      vec![Expr::List(digits.into()), Expr::Integer(exponent)].into(),
+    ));
+  }
+
   // Determine sign and work with absolute value
   let is_negative = match expr {
     Expr::Integer(n) => *n < 0,

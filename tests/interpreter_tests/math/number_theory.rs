@@ -3060,6 +3060,25 @@ mod jacobi_symbol {
 mod real_digits {
   use super::*;
 
+  // An inexact zero sits where the smallest machine number would, and has
+  // no digits to report; from a given position a zero is all zeros.
+  #[test]
+  fn inexact_zero() {
+    for (input, expected) in [
+      ("RealDigits[0.]", "{{0}, -323}"),
+      ("RealDigits[0., 2]", "{{0}, -1075}"),
+      (
+        "RealDigits[0., 10, 3]",
+        "{{Indeterminate, Indeterminate, Indeterminate}, -323}",
+      ),
+      ("RealDigits[0, 10, 3, -2]", "{{0, 0, 0}, -1}"),
+      ("RealDigits[0., 10, 3, 2]", "{{0, 0, 0}, 3}"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   // An exact irrational has no natural digit count; a complex number is not
   // real (wolframscript-verified).
   #[test]
