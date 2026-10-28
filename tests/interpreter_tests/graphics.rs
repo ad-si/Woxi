@@ -9911,6 +9911,34 @@ mod plot3d {
       assert!(y >= 0.0, "title starts above the image: {line}");
     }
 
+    /// A multi-line string inside `Text[Style[…]]` (a `PlotLabel` as
+    /// Demonstrations write it) stacks one line per row, growing upwards
+    /// from a tight `ImagePadding`; it used to be one `<text>` whose later
+    /// lines collapsed and whose first line was clipped.
+    #[test]
+    fn styled_multiline_string_plot_label_stacks_inside_the_image() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, ImagePadding -> {{25, 10}, {25, 10}}, \
+         PlotLabel -> Text[Style[\"first\\nsecond\\nthird\", 12]]]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("first"))
+        .expect("title text");
+      assert!(line.contains(">second</tspan>"), "{line}");
+      assert!(line.contains(">third</tspan>"), "{line}");
+      let y: f64 = line
+        .split_once(" y=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .parse()
+        .unwrap();
+      assert!(y >= 0.0, "title starts above the image: {line}");
+    }
+
     /// A `PlotLabel` stacked above a top `FrameLabel` under a tight explicit
     /// `ImagePadding` used to be drawn above the canvas, so the title was
     /// invisible.
