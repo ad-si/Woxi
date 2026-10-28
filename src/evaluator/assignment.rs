@@ -4569,7 +4569,15 @@ pub fn set_delayed_ast(
 /// is still tried first, and so is a guarded `f[a_][x_] := … /; test`
 /// after an unguarded `f[a_][x_]`. A rule whose guard the new one lacks
 /// keeps its place.
-fn install_sub_value(rules: &mut Vec<(Expr, Expr)>, lhs: Expr, body: Expr) {
+fn install_sub_value(
+  rules: &mut Vec<(Expr, Expr)>,
+  mut lhs: Expr,
+  mut body: Expr,
+) {
+  // Every call looks the rules up by copying them; a body holding a table
+  // (an InterpolatingFunction's, say) is copied in O(1) once it is shared.
+  crate::evaluator::core_eval::share_large_lists(&mut lhs, 0);
+  crate::evaluator::core_eval::share_large_lists(&mut body, 0);
   let lhs_str = expr_to_string(&lhs);
   let condition = rhs_condition(&body);
   if let Some(idx) = rules.iter().position(|(l, b)| {

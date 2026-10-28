@@ -1037,6 +1037,9 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(product) = machine_dot(&args[0], &args[1]) {
     return Ok(product);
   }
+  if let Some(product) = machine_complex_dot(&args[0], &args[1]) {
+    return Ok(product);
+  }
 
   // Vector . Vector -> scalar
   if let (Some(va), Some(vb)) =
@@ -1117,6 +1120,137 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Return unevaluated
   Ok(unevaluated("Dot", args))
+}
+
+/// The parts of a machine complex number (or machine real), read
+/// structurally from its usual forms `re + im*I`, `im*I` and `I` before
+/// falling back to the general reader.
+fn machine_complex_parts(e: &Expr) -> Option<(f64, f64)> {
+  let imaginary = |e: &Expr| -> Option<f64> {
+    match e {
+      Expr::Identifier(i) if i == "I" => Some(1.0),
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Real(c), Expr::Identifier(i)) if i == "I" => Some(*c),
+          (Expr::Integer(c), Expr::Identifier(i)) if i == "I" => {
+            Some(*c as f64)
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  match e {
+    Expr::Real(r) => return Some((*r, 0.0)),
+    Expr::Integer(n) => return Some((*n as f64, 0.0)),
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
+      if let (Expr::Real(re), Some(im)) = (&args[0], imaginary(&args[1])) {
+        return Some((*re, im));
+      }
+    }
+    other => {
+      if let Some(im) = imaginary(other) {
+        return Some((0.0, im));
+      }
+    }
+  }
+  crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(e)
+}
+
+/// `a . b` for vectors and matrices of machine complex numbers (at least
+/// one entry inexact and one non-real), in complex machine arithmetic.
+fn machine_complex_dot(a: &Expr, b: &Expr) -> Option<Expr> {
+  type C = (f64, f64);
+  fn vector(e: &Expr) -> Option<Vec<C>> {
+    match e {
+      Expr::List(items)
+        if !items.is_empty()
+          && !items.iter().any(|x| matches!(x, Expr::List(_))) =>
+      {
+        items.iter().map(machine_complex_parts).collect()
+      }
+      _ => None,
+    }
+  }
+  fn matrix(e: &Expr) -> Option<Vec<Vec<C>>> {
+    let Expr::List(rows) = e else { return None };
+    let m: Vec<Vec<C>> = rows.iter().map(vector).collect::<Option<_>>()?;
+    let width = m.first()?.len();
+    m.iter().all(|r| r.len() == width).then_some(m)
+  }
+  // Cheap gate before parsing: some entry of either operand mentions I.
+  fn mentions_i(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(i) => i == "I",
+      Expr::List(items) => items.iter().any(mentions_i),
+      Expr::FunctionCall { args, .. } => args.iter().any(mentions_i),
+      _ => false,
+    }
+  }
+  if !(mentions_i(a) || mentions_i(b)) {
+    return None;
+  }
+  if !(crate::functions::math_ast::numeric_utils::contains_inexact_real(a)
+    || crate::functions::math_ast::numeric_utils::contains_inexact_real(b))
+  {
+    return None;
+  }
+  let mul = |x: C, y: C| (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0);
+  let dot = |pairs: &mut dyn Iterator<Item = (C, C)>| -> C {
+    pairs.fold((0.0, 0.0), |acc, (x, y)| {
+      let p = mul(x, y);
+      (acc.0 + p.0, acc.1 + p.1)
+    })
+  };
+  let out = |c: C| {
+    crate::functions::math_ast::numeric_utils::machine_complex_result(c.0, c.1)
+  };
+  let list = |v: Vec<Expr>| Expr::List(v.into());
+  if let (Some(u), Some(v)) = (vector(a), vector(b)) {
+    if u.len() != v.len() {
+      return None;
+    }
+    return Some(out(dot(&mut u.iter().copied().zip(v.iter().copied()))));
+  }
+  if let (Some(u), Some(mb)) = (vector(a), matrix(b)) {
+    if mb.len() != u.len() {
+      return None;
+    }
+    return Some(list(
+      (0..mb[0].len())
+        .map(|j| out(dot(&mut (0..u.len()).map(|i| (u[i], mb[i][j])))))
+        .collect(),
+    ));
+  }
+  let ma = matrix(a)?;
+  if let Some(v) = vector(b) {
+    if ma[0].len() != v.len() {
+      return None;
+    }
+    return Some(list(
+      ma.iter()
+        .map(|row| out(dot(&mut row.iter().copied().zip(v.iter().copied()))))
+        .collect(),
+    ));
+  }
+  let mb = matrix(b)?;
+  if ma[0].len() != mb.len() {
+    return None;
+  }
+  Some(list(
+    ma.iter()
+      .map(|row| {
+        list(
+          (0..mb[0].len())
+            .map(|j| out(dot(&mut (0..row.len()).map(|k| (row[k], mb[k][j])))))
+            .collect(),
+        )
+      })
+      .collect(),
+  ))
 }
 
 /// `a . b` for vectors and matrices of machine reals, computed in `f64`
@@ -1860,6 +1994,96 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // A machine-complex matrix: Gauss–Jordan elimination with partial
+  // pivoting in complex machine arithmetic.
+  if matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real)
+    && let Some(m) = matrix
+      .iter()
+      .map(|row| {
+        row
+          .iter()
+          .map(machine_complex_parts)
+          .collect::<Option<Vec<(f64, f64)>>>()
+      })
+      .collect::<Option<Vec<_>>>()
+  {
+    return Ok(if let Some(inv) = machine_complex_inverse(&m) {
+      matrix_to_expr(
+        inv
+          .into_iter()
+          .map(|row| {
+            row
+            .into_iter()
+            .map(|(re, im)| {
+              crate::functions::math_ast::numeric_utils::machine_complex_result(
+                re, im,
+              )
+            })
+            .collect()
+          })
+          .collect(),
+      )
+    } else {
+      crate::emit_message(&format!(
+        "Inverse::sing: Matrix {} is singular.",
+        expr_to_string(&args[0])
+      ));
+      unevaluated("Inverse", args)
+    });
+  }
+
+  // A matrix of exact numbers: Gauss–Jordan elimination on [A | I], which
+  // is polynomial where the adjugate's n^2 determinants are not.
+  let exact_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if matrix.iter().flatten().all(exact_number) {
+    let mut aug: Vec<Vec<Expr>> = matrix
+      .iter()
+      .enumerate()
+      .map(|(i, row)| {
+        let mut r = row.clone();
+        r.extend((0..n).map(|j| Expr::Integer(i128::from(i == j))));
+        r
+      })
+      .collect();
+    for col in 0..n {
+      let Some(pivot_row) = (col..n).find(|&r| !is_zero_expr(&aug[r][col]))
+      else {
+        crate::emit_message(&format!(
+          "Inverse::sing: Matrix {} is singular.",
+          expr_to_string(&args[0])
+        ));
+        return Ok(unevaluated("Inverse", args));
+      };
+      aug.swap(col, pivot_row);
+      let pivot = aug[col][col].clone();
+      for j in col..2 * n {
+        aug[col][j] = eval_divide(&aug[col][j], &pivot);
+      }
+      for row in 0..n {
+        if row == col || is_zero_expr(&aug[row][col]) {
+          continue;
+        }
+        let factor = aug[row][col].clone();
+        for j in col..2 * n {
+          if is_zero_expr(&aug[col][j]) {
+            continue;
+          }
+          let prod = eval_mul(&factor, &aug[col][j]);
+          aug[row][j] = eval_sub(&aug[row][j], &prod);
+        }
+      }
+    }
+    return Ok(matrix_to_expr(
+      aug.into_iter().map(|row| row[n..].to_vec()).collect(),
+    ));
+  }
+
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
   let det_is_zero = matches!(&det, Expr::Integer(0))
@@ -1909,6 +2133,57 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(matrix_to_expr(result))
+}
+
+/// The inverse of a complex machine matrix by Gauss–Jordan elimination
+/// with partial pivoting; `None` when it is singular.
+fn machine_complex_inverse(
+  m: &[Vec<(f64, f64)>],
+) -> Option<Vec<Vec<(f64, f64)>>> {
+  type C = (f64, f64);
+  let mul = |a: C, b: C| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+  let div = |a: C, b: C| {
+    let d = b.0 * b.0 + b.1 * b.1;
+    ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+  };
+  let n = m.len();
+  let mut aug: Vec<Vec<C>> = m
+    .iter()
+    .enumerate()
+    .map(|(i, row)| {
+      let mut r = row.clone();
+      r.extend((0..n).map(|j| (if i == j { 1.0 } else { 0.0 }, 0.0)));
+      r
+    })
+    .collect();
+  let abs = |c: C| c.0.hypot(c.1);
+  let scale = m.iter().flatten().fold(0.0f64, |acc, &c| acc.max(abs(c)));
+  for col in 0..n {
+    let pivot_row = (col..n)
+      .max_by(|&a, &b| abs(aug[a][col]).total_cmp(&abs(aug[b][col])))?;
+    if abs(aug[pivot_row][col]) <= scale * 1e-15 * n as f64 {
+      return None;
+    }
+    aug.swap(col, pivot_row);
+    let pivot = aug[col][col];
+    for j in col..2 * n {
+      aug[col][j] = div(aug[col][j], pivot);
+    }
+    for row in 0..n {
+      if row == col {
+        continue;
+      }
+      let factor = aug[row][col];
+      if factor == (0.0, 0.0) {
+        continue;
+      }
+      for j in col..2 * n {
+        let p = mul(factor, aug[col][j]);
+        aug[row][j] = (aug[row][j].0 - p.0, aug[row][j].1 - p.1);
+      }
+    }
+  }
+  Some(aug.into_iter().map(|row| row[n..].to_vec()).collect())
 }
 
 /// Helper: divide two expressions, producing Rational if needed
@@ -6676,9 +6951,64 @@ pub fn linear_solve_method_ok(
 /// build. Returns `None` when the data is not purely numeric or the matrix is
 /// (numerically) singular, so the general path can report it.
 fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
-  use crate::functions::math_ast::numeric_utils::{
-    build_complex_float_expr, try_extract_complex_f64,
+  // A matrix right-hand side solves for each of its columns at once.
+  let columns: Vec<Vec<Expr>> = if b.iter().all(|e| matches!(e, Expr::List(_)))
+  {
+    let rows: Vec<&[Expr]> = b
+      .iter()
+      .map(|e| match e {
+        Expr::List(items) => &items[..],
+        _ => unreachable!(),
+      })
+      .collect();
+    let k = rows.first()?.len();
+    if k == 0 || rows.iter().any(|r| r.len() != k) {
+      return None;
+    }
+    rows.iter().map(|r| r.to_vec()).collect()
+  } else {
+    b.iter().map(|e| vec![e.clone()]).collect()
   };
+  let solution = linear_solve_machine_columns(matrix, &columns)?;
+  let to_expr = |(re, im): (f64, f64)| {
+    if im == 0.0 {
+      Expr::Real(re)
+    } else {
+      crate::functions::math_ast::numeric_utils::build_complex_float_expr(
+        re, im,
+      )
+    }
+  };
+  if b.iter().all(|e| matches!(e, Expr::List(_))) {
+    Some(Expr::List(
+      solution
+        .into_iter()
+        .map(|row| {
+          Expr::List(row.into_iter().map(to_expr).collect::<Vec<_>>().into())
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ))
+  } else {
+    Some(Expr::List(
+      solution
+        .into_iter()
+        .map(|row| to_expr(row[0]))
+        .collect::<Vec<_>>()
+        .into(),
+    ))
+  }
+}
+
+/// `matrix . x == rhs` for an n-by-k right-hand side, by Gaussian
+/// elimination with partial pivoting in machine arithmetic (complex only
+/// when some entry is). `None` unless some entry is inexact and all are
+/// numbers, or when the matrix is singular.
+fn linear_solve_machine_columns(
+  matrix: &[Vec<Expr>],
+  rhs: &[Vec<Expr>],
+) -> Option<Vec<Vec<(f64, f64)>>> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_f64;
   fn has_real(e: &Expr) -> bool {
     match e {
       Expr::Real(_) => true,
@@ -6689,14 +7019,25 @@ fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
     }
   }
   let n = matrix.len();
-  if !matrix.iter().flatten().chain(b.iter()).any(has_real) {
+  let k = rhs.first()?.len();
+  if rhs.len() != n
+    || !matrix
+      .iter()
+      .flatten()
+      .chain(rhs.iter().flatten())
+      .any(has_real)
+  {
     return None;
   }
   let mut a: Vec<Vec<(f64, f64)>> = Vec::with_capacity(n);
-  for (row, rhs) in matrix.iter().zip(b) {
-    let mut parts = Vec::with_capacity(n + 1);
-    for e in row.iter().chain(std::iter::once(rhs)) {
-      let (re, im) = try_extract_complex_f64(e)?;
+  for (row, r) in matrix.iter().zip(rhs) {
+    let mut parts = Vec::with_capacity(n + k);
+    for e in row.iter().chain(r.iter()) {
+      let (re, im) = match e {
+        Expr::Real(x) => (*x, 0.0),
+        Expr::Integer(i) => (*i as f64, 0.0),
+        other => try_extract_complex_f64(other)?,
+      };
       if !re.is_finite() || !im.is_finite() {
         return None;
       }
@@ -6704,57 +7045,92 @@ fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
     }
     a.push(parts);
   }
-  let mul = |x: (f64, f64), y: (f64, f64)| {
-    (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
-  };
-  let div = |x: (f64, f64), y: (f64, f64)| {
-    let d = y.0 * y.0 + y.1 * y.1;
-    ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
-  };
-  let norm = |x: (f64, f64)| x.0.hypot(x.1);
-  for col in 0..n {
-    let pivot_row = (col..n)
-      .max_by(|&r1, &r2| norm(a[r1][col]).total_cmp(&norm(a[r2][col])))?;
-    if norm(a[pivot_row][col]) == 0.0 {
-      return None;
-    }
-    a.swap(col, pivot_row);
-    let pivot = a[col][col];
-    for row in (col + 1)..n {
-      if a[row][col] == (0.0, 0.0) {
-        continue;
+  let width = n + k;
+  let solution = if a.iter().flatten().all(|c| c.1 == 0.0) {
+    // Real arithmetic.
+    let mut m: Vec<Vec<f64>> =
+      a.iter().map(|r| r.iter().map(|c| c.0).collect()).collect();
+    for col in 0..n {
+      let pivot_row = (col..n)
+        .max_by(|&r1, &r2| m[r1][col].abs().total_cmp(&m[r2][col].abs()))?;
+      if m[pivot_row][col] == 0.0 {
+        return None;
       }
-      let factor = div(a[row][col], pivot);
-      for j in col..=n {
-        let p = mul(factor, a[col][j]);
-        a[row][j] = (a[row][j].0 - p.0, a[row][j].1 - p.1);
-      }
-    }
-  }
-  let mut x = vec![(0.0, 0.0); n];
-  for i in (0..n).rev() {
-    let mut sum = a[i][n];
-    for j in (i + 1)..n {
-      let p = mul(a[i][j], x[j]);
-      sum = (sum.0 - p.0, sum.1 - p.1);
-    }
-    x[i] = div(sum, a[i][i]);
-    if !x[i].0.is_finite() || !x[i].1.is_finite() {
-      return None;
-    }
-  }
-  Some(Expr::List(
-    x.into_iter()
-      .map(|(re, im)| {
-        if im == 0.0 {
-          Expr::Real(re)
-        } else {
-          build_complex_float_expr(re, im)
+      m.swap(col, pivot_row);
+      let (upper, lower) = m.split_at_mut(col + 1);
+      let pivot_row = &upper[col];
+      let pivot = pivot_row[col];
+      for row in lower.iter_mut() {
+        if row[col] == 0.0 {
+          continue;
         }
-      })
-      .collect::<Vec<_>>()
-      .into(),
-  ))
+        let factor = row[col] / pivot;
+        for j in col..width {
+          row[j] -= factor * pivot_row[j];
+        }
+      }
+    }
+    let mut x = vec![vec![0.0; k]; n];
+    for c in 0..k {
+      for i in (0..n).rev() {
+        let mut sum = m[i][n + c];
+        for j in (i + 1)..n {
+          sum -= m[i][j] * x[j][c];
+        }
+        x[i][c] = sum / m[i][i];
+        if !x[i][c].is_finite() {
+          return None;
+        }
+      }
+    }
+    x.into_iter()
+      .map(|r| r.into_iter().map(|v| (v, 0.0)).collect())
+      .collect()
+  } else {
+    let mul = |x: (f64, f64), y: (f64, f64)| {
+      (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
+    };
+    let div = |x: (f64, f64), y: (f64, f64)| {
+      let d = y.0 * y.0 + y.1 * y.1;
+      ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
+    };
+    let norm = |x: (f64, f64)| x.0.hypot(x.1);
+    for col in 0..n {
+      let pivot_row = (col..n)
+        .max_by(|&r1, &r2| norm(a[r1][col]).total_cmp(&norm(a[r2][col])))?;
+      if norm(a[pivot_row][col]) == 0.0 {
+        return None;
+      }
+      a.swap(col, pivot_row);
+      let pivot = a[col][col];
+      for row in (col + 1)..n {
+        if a[row][col] == (0.0, 0.0) {
+          continue;
+        }
+        let factor = div(a[row][col], pivot);
+        for j in col..width {
+          let p = mul(factor, a[col][j]);
+          a[row][j] = (a[row][j].0 - p.0, a[row][j].1 - p.1);
+        }
+      }
+    }
+    let mut x = vec![vec![(0.0, 0.0); k]; n];
+    for c in 0..k {
+      for i in (0..n).rev() {
+        let mut sum = a[i][n + c];
+        for j in (i + 1)..n {
+          let p = mul(a[i][j], x[j][c]);
+          sum = (sum.0 - p.0, sum.1 - p.1);
+        }
+        x[i][c] = div(sum, a[i][i]);
+        if !x[i][c].0.is_finite() || !x[i][c].1.is_finite() {
+          return None;
+        }
+      }
+    }
+    x
+  };
+  Some(solution)
 }
 
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

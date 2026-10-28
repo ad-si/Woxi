@@ -790,10 +790,21 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (args[0].clone(), args[1].clone(), args[2].clone())
   };
 
-  // Check if any arg is non-numeric (symbolic)
-  let has_symbolic = expr_to_f64(&min_expr).is_none()
-    || expr_to_f64(&max_expr).is_none()
-    || expr_to_f64(&step_expr).is_none();
+  // Check if any arg is non-numeric (symbolic). Exact rationals among
+  // machine reals are numbers too: the elements are machine reals then.
+  let literal_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let machine_literals = [&min_expr, &max_expr, &step_expr]
+    .iter()
+    .all(|e| literal_number(e))
+    && (matches!(&min_expr, Expr::Real(_))
+      || matches!(&step_expr, Expr::Real(_)));
+  let has_symbolic = !machine_literals
+    && (expr_to_f64(&min_expr).is_none()
+      || expr_to_f64(&max_expr).is_none()
+      || expr_to_f64(&step_expr).is_none());
 
   if has_symbolic {
     // Numeric contagion: Range[start, stop, di] is computed as
@@ -919,11 +930,13 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Fallback to f64 for Real arguments
-  let (min, max, step) = (
-    expr_to_f64(&min_expr).unwrap(),
-    expr_to_f64(&max_expr).unwrap(),
-    expr_to_f64(&step_expr).unwrap(),
-  );
+  let as_f64 = |e: &Expr| {
+    expr_to_f64(e)
+      .or_else(|| crate::functions::math_ast::try_eval_to_f64(e))
+      .unwrap_or(f64::NAN)
+  };
+  let (min, max, step) =
+    (as_f64(&min_expr), as_f64(&max_expr), as_f64(&step_expr));
 
   if step == 0.0 {
     let call = unevaluated("Range", args);
@@ -939,33 +952,36 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let any_real =
     matches!(&min_expr, Expr::Real(_)) || matches!(&step_expr, Expr::Real(_));
 
-  // Compute each element as `min + k*step` rather than by repeated addition.
-  // Accumulation compounds the rounding error of an inexact step, so e.g.
-  // Range[10, 11, 0.1] would end at 10.999999999999996; `min + k*step` matches
-  // wolframscript's 11. (The termination tolerance is unchanged.)
-  let mut results = Vec::new();
-  let mut k: i128 = 0;
-  loop {
-    let val = min + (k as f64) * step;
-    let within = if step > 0.0 {
-      val <= max + f64::EPSILON
-    } else {
-      val >= max - f64::EPSILON
-    };
-    if !within {
-      break;
+  // As wolframscript does: the count is `(max - min)/step` rounded down,
+  // allowing for that ratio to land one rounding step under an integer
+  // (Range[-0.8, 3.8, 0.01] has 461 elements, although the ratio is
+  // 459.99999999999994); each element is `min + k*step` with a single
+  // rounding, and a last element past `max` is `max` itself.
+  let ratio = (max - min) / step;
+  if !ratio.is_finite() {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let steps = (ratio * (1.0 + f64::EPSILON)).floor();
+  if steps < 0.0 {
+    return Ok(Expr::List(vec![].into()));
+  }
+  if steps >= MAX_RANGE_LENGTH as f64 {
+    return Err(InterpreterError::EvaluationError(
+      "Range: result too large".into(),
+    ));
+  }
+  let count = steps as usize + 1;
+  let mut results = Vec::with_capacity(count);
+  for k in 0..count {
+    let mut val = (k as f64).mul_add(step, min);
+    if (step > 0.0 && val > max) || (step < 0.0 && val < max) {
+      val = max;
     }
     results.push(if any_real {
       Expr::Real(val)
     } else {
       f64_to_expr(val)
     });
-    k += 1;
-    if k > MAX_RANGE_LENGTH as i128 {
-      return Err(InterpreterError::EvaluationError(
-        "Range: result too large".into(),
-      ));
-    }
   }
 
   Ok(Expr::List(results.into()))

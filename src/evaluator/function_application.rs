@@ -1146,7 +1146,10 @@ fn linear_solve_operator_args(
   func_args: &[Expr],
   applied: &Expr,
 ) -> Option<Vec<Expr>> {
-  if func_args.is_empty() || !matches!(&func_args[0], Expr::List(_)) {
+  if func_args.is_empty()
+    || !(matches!(&func_args[0], Expr::List(_))
+      || matches!(&func_args[0], Expr::FunctionCall { name, .. } if name == "SparseArray"))
+  {
     return None;
   }
   if !func_args[1..]

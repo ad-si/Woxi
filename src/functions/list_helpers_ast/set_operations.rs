@@ -6,7 +6,8 @@ use super::*;
 /// Identity key for the set operations in this file: the displayed form plus
 /// the renderings of any graphics inside (see `graphics_identity_suffix`).
 fn expr_to_string(expr: &Expr) -> String {
-  crate::syntax::expr_to_string(expr)
+  crate::syntax::data_to_string(expr)
+    .unwrap_or_else(|| crate::syntax::expr_to_string(expr))
     + &crate::syntax::graphics_identity_suffix(expr)
 }
 

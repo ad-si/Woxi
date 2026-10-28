@@ -6742,13 +6742,17 @@ fn poly_vanishes_at(poly: &Expr, vars: &[String], values: &[Expr]) -> bool {
   let Some((re, im)) = try_extract_complex_f64(&substituted) else {
     return false;
   };
+  // The size of the terms that cancelled is the rounding error to expect, so
+  // measure each term of the polynomial itself at the point: the evaluated
+  // sum has already lost them (`1.4e15 - 1.4e15 + 1.` is just `1.`).
   let mut scale: f64 = 1.0;
-  for term in collect_additive_terms(&substituted) {
-    if let Some((tre, tim)) = try_extract_complex_f64(&term) {
+  for term in collect_additive_terms(&expand_and_combine(poly)) {
+    let at_point = substitute_values(&term, vars, values);
+    if let Some((tre, tim)) = try_extract_complex_f64(&at_point) {
       scale += tre.hypot(tim);
     }
   }
-  re.hypot(im) <= 1e-9 * scale
+  re.hypot(im) <= 1e-12 * scale
 }
 
 /// Whether `expr` is the literal zero left by a cancellation.
