@@ -14599,6 +14599,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn polar_plot_polar_axes_draw_a_degree_circle() {
+      let svg = export_svg(
+        "PolarPlot[Abs[Cos[4 t]], {t, 0, 2 Pi}, PolarAxes -> True, \
+         PolarTicks -> {\"Degrees\", None}]",
+      );
+      for angle in ["0°", "90°", "180°", "270°", "330°"] {
+        assert!(svg.contains(&format!(">{angle}<")), "missing {angle}");
+      }
+      // The Cartesian tick labels are gone, and so are the radial ones.
+      assert!(!svg.contains(">0.5<") && !svg.contains(">-0.5<"));
+    }
+
+    #[test]
+    fn polar_plot_polar_grid_lines_and_radial_ticks() {
+      let svg = export_svg(
+        "PolarPlot[2 Cos[3 t], {t, 0, Pi}, PolarAxes -> True, \
+         PolarGridLines -> {None, Automatic}]",
+      );
+      assert!(svg.contains(">1<") && svg.contains(">2<"));
+      assert!(!svg.contains("°"));
+    }
+
+    #[test]
     fn polar_plot_rose() {
       insta::assert_snapshot!(export_svg("PolarPlot[Cos[3 t], {t, 0, 2 Pi}]"));
     }
