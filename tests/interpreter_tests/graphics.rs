@@ -26010,6 +26010,27 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn style_list_of_colour_and_opacity_is_translucent() {
+    // A list or nested `Directive` mixing a colour with `Opacity` keeps the
+    // opacity, exactly like `Directive[colour, Opacity[o]]` does.
+    for style in [
+      "{RGBColor[0, 0, 1], Opacity[0.4]}",
+      "{Directive[{RGBColor[0, 0, 1], Opacity[0.4]}]}",
+      "{Directive[RGBColor[0, 0, 1], Opacity[0.4]]}",
+    ] {
+      let svg = export_svg(&format!(
+        "ContourPlot3D[z == x + y, {{x, -1, 1}}, {{y, -1, 1}}, \
+         {{z, -2, 2}}, Boxed -> False, PlotPoints -> 5, \
+         ContourStyle -> {style}]"
+      ));
+      assert!(
+        svg.contains("<polygon") && svg.contains("opacity=\"0.4\""),
+        "{style}: surface must be translucent"
+      );
+    }
+  }
+
+  #[test]
   fn background_option_repaints_the_backdrop() {
     for call in [
       "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \

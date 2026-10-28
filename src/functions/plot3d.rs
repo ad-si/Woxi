@@ -3530,6 +3530,16 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   use crate::functions::graphics::parse_color;
   use crate::functions::math_ast::expr_to_f64;
 
+  // {Red, Thick, Opacity[.4], …} – apply each element as a sub-directive.
+  // This precedes the colour parse, which would otherwise read a list of
+  // directives as its one colour and drop the rest (the opacity).
+  if let Expr::List(items) = expr {
+    for it in items {
+      apply_3d_directive(it, style);
+    }
+    return true;
+  }
+
   if let Some(color) = parse_color(expr) {
     let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -3738,13 +3748,6 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       }
       _ => {}
     },
-    Expr::List(items) => {
-      // {Red, Thick, …} – apply each element as a sub-directive
-      for it in items {
-        apply_3d_directive(it, style);
-      }
-      return true;
-    }
     _ => {}
   }
 
