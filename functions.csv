@@ -1645,7 +1645,7 @@ PowersRepresentations,Gives all representations of n as a sum of k non-negative 
 ShowStringCharacters,Show string quote characters,,unevaluated,3.0,1639
 TakeWhile,Takes elements from start while predicate is true,✅,pure,6.0,1639
 ImageCollage,Creates a collage from a list of images with optional weights and fitting,✅,pure,10.0,1641
-NDEigensystem,Numerical eigensystem,,unevaluated,10.2,1641
+NDEigensystem,Eigenvalues and eigenfunctions of a 1D Sturm-Liouville operator (Dirichlet or natural ends),✅,pure,10.2,1641
 FindDistribution,Find matching distribution,,unevaluated,10.3,1643
 TextureCoordinateFunction,Option mapping surface points to Texture image coordinates (SphericalPlot3D),,unevaluated,8.0,1643
 TextCases,Extract text units of a given type from a string (Word mirrors TextWords and Sentence mirrors TextSentences; optional third arg keeps the first n),✅,pure,10.2,1644
@@ -2317,7 +2317,7 @@ Parallelepiped,Symbolic parallelepiped region; stays unevaluated and is consumed
 SendMail,email sending,🚫,None,7.0,2324
 FourierSinCoefficient,Half-range Fourier sine coefficient of polynomials,✅,pure,7.0,2329
 HeavisideLambda,Triangular pulse function: 1 - |x| for |x| < 1,✅,1,7.0,2329
-NDEigenvalues,numerical PDE eigenvalues,🚫,None,10.2,2329
+NDEigenvalues,Eigenvalues of a 1D Sturm-Liouville operator (Dirichlet or natural ends),✅,pure,10.2,2329
 Star,Symbolic star operator with Unicode display,✅,pure,3.0,2329
 TimeSeriesWindow,Gives the time series points whose time stamps fall in a window,✅,pure,10.0,2329
 Bra,Dirac bra notation (stays symbolic),✅,unevaluated,13.3,2333

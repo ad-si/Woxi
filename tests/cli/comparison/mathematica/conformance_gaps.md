@@ -2265,6 +2265,18 @@ local minima — for a sine fit Wolfram lands on the constraint boundary while
 Woxi finds an interior point with a smaller residual. Compare the picture, not
 the parameters.
 
+### `NDEigensystem` digits and scope
+
+Woxi discretizes a one-dimensional operator `a u'' + c(x) u` by finite
+differences on 2000 intervals and refines each eigenvalue by its Rayleigh
+quotient; wolframscript's default finite-element mesh is coarser, so its
+values are less accurate (`{1., 4.0001, 9.0006}` for `-u''` with Dirichlet
+ends on `[0, π]`, where Woxi has `{1., 4., 9.}`; both agree to 1e-4 with
+wolframscript on a refined mesh). The eigenfunctions are
+`InterpolatingFunction`s over the grid rather than over a finite-element
+mesh. Operators with a `u'` term, a variable `u''` coefficient, more than
+one dimension, or inhomogeneous conditions stay unevaluated.
+
 ### `TriangleCenter` of a symbolic triangle is not simplified
 
 With numbers for vertices both bring each coordinate together and agree.

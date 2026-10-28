@@ -72,6 +72,7 @@ pub mod music_font;
 pub mod music_midi;
 pub mod music_plot;
 pub mod music_render;
+pub mod nd_eigen;
 pub mod number_line_plot;
 pub mod ode_ast;
 #[cfg(not(target_arch = "wasm32"))]

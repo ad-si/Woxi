@@ -3308,25 +3308,68 @@ fn evaluate_function_call_ast_inner(
     return Ok(args[0].clone());
   }
 
-  // DiffusionPDETerm[{u, x}, c] → 0 (PDE term evaluates to zero outside solver context)
+  // DiffusionPDETerm[{u[x…], {x…}}, c] is the inactive operator
+  // -Div[c Grad[u]]: Inactive[Div][(-c) . Inactive[Grad][u, {x…}], {x…}],
+  // a scalar c standing for c times the identity. A dependent variable
+  // that is not a function of the variables has none: {u, x} gives 0.
   if name == "DiffusionPDETerm"
-    && args.len() == 2
-    && let Expr::List(_) = &args[0]
+    && (1..=2).contains(&args.len())
+    && let Expr::List(spec) = &args[0]
+    && spec.len() == 2
   {
-    return Ok(Expr::Integer(0));
-  }
-
-  // NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, Element[{x}, Line[{{a}, {b}}]], n]
-  // → the first n Neumann eigenvalues of -d²/dx² on [a, b], i.e.
-  //   λ_k = (k π / (b - a))² for k = 0, 1, …, n - 1.
-  // Wolfram's FEM solver returns the same sequence with small
-  // discretisation errors; matching the closed form is at least as
-  // accurate.
-  if name == "NDEigenvalues"
-    && args.len() == 4
-    && let Some(eigs) = nd_eigenvalues_diffusion_line(args)
-  {
-    return Ok(eigs);
+    if let (Expr::FunctionCall { args: uargs, .. }, Expr::List(vars)) =
+      (&spec[0], &spec[1])
+      && !vars.is_empty()
+      && uargs.len() == vars.len()
+      && uargs
+        .iter()
+        .zip(vars.iter())
+        .all(|(a, v)| matches!((a, v), (Expr::Identifier(a), Expr::Identifier(v)) if a == v))
+    {
+      let n = vars.len();
+      let c = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      let matrix = match &c {
+        Expr::List(_) => evaluate_expr_to_expr(&call(
+          "Times",
+          vec![Expr::Integer(-1), c.clone()],
+        ))?,
+        scalar => {
+          let negated = evaluate_expr_to_expr(&call(
+            "Times",
+            vec![Expr::Integer(-1), scalar.clone()],
+          ))?;
+          Expr::List(
+            (0..n)
+              .map(|i| {
+                Expr::List(
+                  (0..n)
+                    .map(|j| {
+                      if i == j {
+                        negated.clone()
+                      } else {
+                        Expr::Integer(0)
+                      }
+                    })
+                    .collect(),
+                )
+              })
+              .collect(),
+          )
+        }
+      };
+      let grad = Expr::CurriedCall {
+        func: Box::new(call("Inactive", vec![Expr::Identifier("Grad".into())])),
+        args: vec![spec[0].clone(), spec[1].clone()],
+      };
+      let div = Expr::CurriedCall {
+        func: Box::new(call("Inactive", vec![Expr::Identifier("Div".into())])),
+        args: vec![call("Dot", vec![matrix, grad]), spec[1].clone()],
+      };
+      return evaluate_expr_to_expr(&div);
+    }
+    if args.len() == 2 {
+      return Ok(Expr::Integer(0));
+    }
   }
 
   // Disk[] → Disk[{0, 0}] (default center)
@@ -13031,88 +13074,6 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
       result_rgb[2].clone(),
     ],
   ))
-}
-
-/// Match `NDEigenvalues[DiffusionPDETerm[{u[x], {x}}], u, Element[{x}, Line[{{a}, {b}}]], n]`
-/// and return the closed-form list of `n` Neumann eigenvalues of
-/// `-d²/dx²` on `[a, b]`: `(k π / (b - a))²` for `k = 0, …, n - 1`.
-fn nd_eigenvalues_diffusion_line(args: &[Expr]) -> Option<Expr> {
-  // args[0]: DiffusionPDETerm[{u[x], {x}}]
-  let (op_name, op_args) = match &args[0] {
-    Expr::FunctionCall { name, args } => (name.as_str(), args),
-    _ => return None,
-  };
-  if op_name != "DiffusionPDETerm" || op_args.len() != 1 {
-    return None;
-  }
-  let vars = match &op_args[0] {
-    Expr::List(items) if items.len() == 2 => items,
-    _ => return None,
-  };
-  // Must be {u[x], {x}} — single dependent variable with single spatial var.
-  let dep = match &vars[0] {
-    Expr::FunctionCall { args, .. } if args.len() == 1 => Some(&args[0]),
-    _ => None,
-  }?;
-  let spatial = match &vars[1] {
-    Expr::List(xs) if xs.len() == 1 => &xs[0],
-    _ => return None,
-  };
-  if !matches!(dep, Expr::Identifier(_))
-    || !matches!(spatial, Expr::Identifier(_))
-  {
-    return None;
-  }
-  // args[2]: Element[{x}, Line[{{a}, {b}}]]
-  let elem = match &args[2] {
-    Expr::FunctionCall { name, args }
-      if name == "Element" && args.len() == 2 =>
-    {
-      args
-    }
-    _ => return None,
-  };
-  let line = match &elem[1] {
-    Expr::FunctionCall { name, args } if name == "Line" && args.len() == 1 => {
-      &args[0]
-    }
-    _ => return None,
-  };
-  let endpoints = match line {
-    Expr::List(items) if items.len() == 2 => items,
-    _ => return None,
-  };
-  let to_pt = |e: &Expr| -> Option<Expr> {
-    match e {
-      Expr::List(xs) if xs.len() == 1 => Some(xs[0].clone()),
-      _ => None,
-    }
-  };
-  let a_expr = to_pt(&endpoints[0])?;
-  let b_expr = to_pt(&endpoints[1])?;
-  // args[3]: n (positive integer)
-  let n = match &args[3] {
-    Expr::Integer(n) if *n > 0 => *n as usize,
-    _ => return None,
-  };
-
-  // Length L = b - a, evaluated to a number.
-  let length_expr =
-    crate::evaluator::evaluate_expr_to_expr(&plus(vec![b_expr, neg(a_expr)]))
-      .ok()?;
-  let l = match crate::functions::math_ast::try_eval_to_f64(&length_expr) {
-    Some(v) if v > 0.0 => v,
-    _ => return None,
-  };
-
-  let pi = std::f64::consts::PI;
-  let eigs: Vec<Expr> = (0..n)
-    .map(|k| {
-      let v = (k as f64 * pi / l).powi(2);
-      Expr::Real(v)
-    })
-    .collect();
-  Some(Expr::List(eigs.into()))
 }
 
 /// Evaluate Blend[{c1, c2, ...}] or Blend[{c1, c2, ...}, t].

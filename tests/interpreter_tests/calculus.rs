@@ -18035,16 +18035,17 @@ mod ndeigenvalues_diffusion_line {
 
   // For 1D Laplacian (DiffusionPDETerm) on Line[{{a}, {b}}] with the
   // default Neumann boundary condition, the eigenvalues are (kπ/L)²
-  // for k = 0, 1, 2, … where L = b - a. Wolfram's finite-element
-  // solver returns these with small discretisation errors; Woxi
-  // returns the analytic values directly.
+  // for k = 0, 1, 2, … where L = b - a. Both Wolfram's finite elements and
+  // Woxi's finite differences return them with small discretisation
+  // errors.
 
   fn parse_list(s: &str) -> Vec<f64> {
     s.trim()
       .trim_start_matches('{')
       .trim_end_matches('}')
       .split(',')
-      .map(|p| p.trim().parse().unwrap())
+      // A numerically found zero mode prints as e.g. `7.3*^-26`.
+      .map(|p| p.trim().replace("*^", "e").parse().unwrap())
       .collect()
   }
 
@@ -23551,6 +23552,74 @@ mod fourier_sequence_transform {
     assert_eq!(
       interpret("FourierSequenceTransform[a^n, n, w]").unwrap(),
       "FourierSequenceTransform[a^n, n, w]"
+    );
+  }
+}
+
+mod nd_eigensystem {
+  use super::*;
+
+  // DiffusionPDETerm is the inactive operator -Div[c Grad[u]].
+  #[test]
+  fn diffusion_term() {
+    for (input, expected) in [
+      (
+        "DiffusionPDETerm[{u[x], {x}}, 2]",
+        "Inactive[Div][{{-2}} . Inactive[Grad][u[x], {x}], {x}]",
+      ),
+      (
+        "DiffusionPDETerm[{u[x, y], {x, y}}, k]",
+        "Inactive[Div][{{-k, 0}, {0, -k}} . Inactive[Grad][u[x, y], {x, y}], {x, y}]",
+      ),
+      ("DiffusionPDETerm[{u, x}, c]", "0"),
+      (
+        "Round[NDEigenvalues[DiffusionPDETerm[{u[x], {x}}, 2], u, \
+         Element[{x}, Line[{{0}, {1}}]], 2], 10.^-4]",
+        "{0., 19.7392}",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Dirichlet ends: the sine modes, L²-normalized and positive inside the
+  // left end.
+  #[test]
+  fn dirichlet() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{v, f} = NDEigensystem[{-Derivative[2][u][x], \
+         DirichletCondition[u[x] == 0, True]}, u[x], {x, 0, Pi}, 3]; \
+         {Round[v, 10.^-4], Round[Table[g /. x -> 0.3, {g, f}], 10.^-3]}"
+      )
+      .unwrap(),
+      "{{1., 4., 9.}, {0.23600000000000002, 0.451, 0.625}}"
+    );
+  }
+
+  // Natural ends by default; a function head gives functions.
+  #[test]
+  fn natural_ends_and_function_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{v, f} = NDEigensystem[{-Derivative[2][w][y]}, w, {y, 0, Pi}, 2]; \
+         {Round[v, 10.^-4], Round[f[[1]][0.3], 10.^-4]}"
+      )
+      .unwrap(),
+      "{{0., 1.}, 0.5642}"
+    );
+    // Smallest in magnitude first; NDEigenvalues gives them alone.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[NDEigenvalues[(0.9*x^2 + 0.5*x^4)*u[x] - Derivative[2][u][x]/2, \
+         u[x], {x, -3.5, 3.5}, 3], 10.^-3]"
+      )
+      .unwrap(),
+      "{0.812, 2.632, 4.777}"
     );
   }
 }

@@ -980,6 +980,12 @@ pub fn dispatch_linear_algebra_functions(
         ),
       );
     }
+    "NDEigensystem" if args.len() >= 4 => {
+      return Some(crate::functions::nd_eigen::nd_eigensystem_ast(args));
+    }
+    "NDEigenvalues" if args.len() >= 4 => {
+      return Some(crate::functions::nd_eigen::nd_eigenvalues_ast(args));
+    }
     "TransferFunctionModel" if args.len() >= 2 => {
       return Some(
         crate::functions::control_systems::transfer_function_model_ast(args),
