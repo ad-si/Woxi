@@ -954,6 +954,15 @@ fn evaluate_function_call_ast_inner(
     return result;
   }
 
+  // An elementary function of a power series is a power series.
+  if let [sd @ Expr::FunctionCall { name: sd_head, .. }] = args
+    && sd_head == "SeriesData"
+    && let Some(series) =
+      crate::functions::calculus_ast::function_of_series(name, sd)
+  {
+    return Ok(series);
+  }
+
   // Legacy standard-distribution package functions whose modern built-in
   // equivalent lives under a different name. Woxi keeps every built-in in
   // one flat namespace (see `is_standard_distribution_context`), so a

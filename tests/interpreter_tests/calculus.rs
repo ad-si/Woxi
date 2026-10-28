@@ -24041,3 +24041,55 @@ mod sub_values_holding_tables {
     assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
   }
 }
+
+// Series at Infinity: Log[x] rides in the coefficients, constants join a
+// series about any centre, elementary functions of a series are series,
+// and Gamma over its Stirling approximation expands through LogGamma
+// (Demonstration AsymptoticExpansionsForSomeSpecialFunctions hung here).
+mod series_asymptotic_products {
+  use super::*;
+
+  #[test]
+  fn log_in_coefficients_and_constants() {
+    assert_eq!(
+      interpret(
+        "{Series[x Log[x] + 1/x, {x, Infinity, 2}], Series[Log[x]/(1 + x), {x, Infinity, 2}], \
+          Log[2] + SeriesData[x, Infinity, {1, 2}, 1, 3, 1], a + SeriesData[x, 1, {1, 2}, 0, 2, 1], \
+          Series[LogGamma[x] + x - (x - 1/2) Log[x] - Log[2 Pi]/2, {x, Infinity, 3}]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {Log[x], 0, 1}, -1, 3, 1], \
+       SeriesData[x, Infinity, {Log[x], -Log[x]}, 1, 3, 1], \
+       SeriesData[x, Infinity, {Log[2], 1, 2}, 0, 3, 1], SeriesData[x, 1, {1 + a, 2}, 0, 2, 1], \
+       SeriesData[x, Infinity, {1/12, 0, -1/360}, 1, 4, 1]}"
+    );
+  }
+
+  #[test]
+  fn functions_of_series() {
+    assert_eq!(
+      interpret(
+        "{Exp[SeriesData[x, Infinity, {2, 1/12}, 0, 3, 1]], E^SeriesData[x, 0, {1, 1}, 1, 3, 1], \
+          Sin[SeriesData[x, 0, {1, 1}, 1, 3, 1]], Log[SeriesData[x, 0, {1, 1}, 0, 3, 1]]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {E^2, E^2/12, E^2/288}, 0, 3, 1], \
+       SeriesData[x, 0, {1, 1, 3/2}, 0, 3, 1], SeriesData[x, 0, {1, 1}, 1, 3, 1], \
+       SeriesData[x, 0, {1, -1/2}, 1, 3, 1]}"
+    );
+  }
+
+  #[test]
+  fn gamma_over_stirling() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{Series[Gamma[x]/(E^-x x^(x - 1/2) Sqrt[2 Pi]), {x, Infinity, 2}], \
+          Normal[Series[Gamma[x]/(E^-x x^(x - 1/2)), {x, Infinity, 1}]]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {1, 0, 1/12, 0, 1/288}, 0, 6, 2], Sqrt[2*Pi] + Sqrt[Pi/2]/(6*x)}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}

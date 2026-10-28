@@ -211,15 +211,21 @@ fn try_series_data_plus(
       } else {
         return Ok(None);
       };
-    // Only handle x0 = 0 here; other expansion centres would need the
-    // polynomial term to be expressed in `(x - x0)` already.
-    if !matches!(&sd_x0, Expr::Integer(0)) {
-      return Ok(None);
-    }
     let var_name = match &sd_var {
       Expr::Identifier(s) => s.clone(),
       _ => return Ok(None),
     };
+    // About another centre only constants lift (`Log[2] + SeriesData[x,
+    // Infinity, …]`); a power of x would have to be rewritten in `x - x0`
+    // (or `1/x`) first.
+    if !matches!(&sd_x0, Expr::Integer(0))
+      && args.iter().enumerate().any(|(i, a)| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(a, &var_name)
+      })
+    {
+      return Ok(None);
+    }
     let mut lifted: Vec<Expr> = Vec::with_capacity(args.len());
     for (i, a) in args.iter().enumerate() {
       if i == only_idx {
@@ -12218,6 +12224,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
   {
     return Ok(image);
+  }
+  // E raised to a power series is a power series (`Exp[s]`).
+  if matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+    && matches!(exp, Expr::FunctionCall { name, .. } if name == "SeriesData")
+    && let Some(series) =
+      crate::functions::calculus_ast::function_of_series("Exp", exp)
+  {
+    return Ok(series);
   }
   // A negative integer power of a trig or hyperbolic function is its
   // reciprocal partner raised to the positive power: `Sin[x]^-1` is
