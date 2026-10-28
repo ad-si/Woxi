@@ -3410,6 +3410,48 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
   result
 }
 
+/// Give the symbols a saved Manipulate dump shares by bare name with a
+/// control variable their own spelling. The FrontEnd writes the control `n`
+/// as `` $CellContext`n$$ `` but a helper definition's `n` (a pattern
+/// variable, a stored rule `p[n_, 1] -> n`) as `` $CellContext`n ``: two
+/// distinct symbols. Stripping the `$$` suffix and the context would merge
+/// them, so a rule stored by the Initialization would read the control's
+/// current value wherever it is re-evaluated. The bare ones get a `$ctx`
+/// suffix instead, which no stripping step removes.
+fn separate_control_namesakes(dump: &str) -> String {
+  const PREFIX: &str = "$CellContext`";
+  let symbol_at = |from: usize| {
+    let end = dump[from..]
+      .find(|c: char| !(is_symbol_char(c) || c == '$'))
+      .map_or(dump.len(), |i| from + i);
+    &dump[from..end]
+  };
+  let mut controls: Vec<&str> = Vec::new();
+  let mut at = 0;
+  while let Some(rel) = dump[at..].find(PREFIX) {
+    let start = at + rel + PREFIX.len();
+    let name = symbol_at(start);
+    if let Some(base) = name.strip_suffix("$$") {
+      controls.push(base);
+    }
+    at = start + name.len().max(1);
+  }
+  let mut out = String::with_capacity(dump.len());
+  let mut at = 0;
+  while let Some(rel) = dump[at..].find(PREFIX) {
+    let start = at + rel + PREFIX.len();
+    let name = symbol_at(start);
+    out.push_str(&dump[at..start]);
+    out.push_str(name);
+    if !name.ends_with("$$") && controls.contains(&name) {
+      out.push_str("$ctx");
+    }
+    at = start + name.len();
+  }
+  out.push_str(&dump[at..]);
+  out
+}
+
 /// Drop the contexts a saved Manipulate dump qualifies its symbols with:
 /// `` $CellContext` `` (the DynamicModule's private context) and
 /// `` DemonstrationsTools` `` (where the Demonstrations authoring notebooks
@@ -3539,6 +3581,7 @@ pub fn join_continuation_cells<S: AsRef<str>>(cells: &[S]) -> Vec<String> {
 /// markers (a `\` at end of line in box text) are removed, and so is the
 /// `$$` suffix of the DynamicModule's control variables.
 pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
+  let box_dump = &separate_control_namesakes(box_dump);
   let mut search_from = 0;
   while let Some(rel) = box_dump[search_from..].find("Initialization") {
     let after_kw = search_from + rel + "Initialization".len();
@@ -3712,6 +3755,7 @@ fn strip_uniquification_suffix(src: &str) -> String {
 /// the same way [`extract_saved_initialization`] strips them, so the result
 /// evaluates as ordinary session-level input.
 pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
+  let box_dump = &separate_control_namesakes(box_dump);
   let clean = |s: &str| {
     strip_uniquification_suffix(&strip_saved_contexts(s).replace("\\\n", ""))
   };
@@ -8177,6 +8221,23 @@ yf4GL4DwC5VA4w
       $CellContext`m$$]; $CellContext`x$7$$ = 1)]";
     let init = extract_saved_initialization(dump).unwrap();
     assert_eq!(init, "take := Take[data, m]; x$7 = 1");
+  }
+
+  #[test]
+  fn test_extract_saved_initialization_keeps_control_namesakes_apart() {
+    // `$CellContext`k` (a helper's own symbol) and the control
+    // `$CellContext`k$$` are different symbols; a rule stored by the
+    // Initialization must not read the control's value once it is set.
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 3}, DynamicBox[…],\n\
+      Initialization:>($CellContext`r = {p[Pattern[$CellContext`k, Blank[]]] \
+      -> $CellContext`k}; $CellContext`s = $CellContext`k$$)]";
+    let init = extract_saved_initialization(dump).unwrap();
+    assert_eq!(init, "r = {p[Pattern[k$ctx, Blank[]]] -> k$ctx}; s = k");
+    crate::interpret("k = 3").unwrap();
+    assert_eq!(
+      crate::interpret("r = {p[k$ctx_] -> k$ctx}; r").unwrap(),
+      "{p[k$ctx_] -> k$ctx}"
+    );
   }
 
   #[test]
