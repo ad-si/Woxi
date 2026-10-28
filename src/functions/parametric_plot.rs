@@ -1446,6 +1446,7 @@ fn parametric_region_layer(
 /// What `PolarAxes`, `PolarTicks` and `PolarGridLines` ask a `PolarPlot` to
 /// draw: a circular angular axis with an optional radial axis, instead of the
 /// Cartesian axes. Both two-part options are `{angular, radial}`.
+#[allow(clippy::struct_excessive_bools)]
 struct PolarAxesSpec {
   angular_grid: bool,
   radial_grid: bool,
