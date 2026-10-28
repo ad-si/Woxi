@@ -2682,12 +2682,26 @@ fn group_script(script: &str) -> String {
 /// `D_U`, `SuperscriptBox["V", "2"]` → `V²`, `FractionBox[a, b]` → `a/b`,
 /// and `GridBox` rows on separate lines. Named characters resolve to
 /// Unicode (`\[Del]` → `∇`), never to ASCII operator rewrites.
+/// `0.2\`` / `1.5\`20` — a number token carrying a precision or accuracy
+/// mark. The mark is input syntax only; the notebook shows just the number.
+fn strip_number_precision_mark(text: &str) -> Option<String> {
+  let (number, mark) = text.split_once('`')?;
+  let is_number = !number.is_empty()
+    && number.chars().next().is_some_and(|c| c.is_ascii_digit())
+    && number.chars().all(|c| c.is_ascii_digit() || c == '.');
+  let mark = mark.strip_prefix('`').unwrap_or(mark);
+  let is_mark = mark.chars().all(|c| c.is_ascii_digit() || c == '.');
+  (is_number && is_mark).then(|| number.to_string())
+}
+
 pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
   // Plain string literal.
   if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    return render_linear_syntax_escapes(&unescape_string(&s[1..s.len() - 1]));
+    let text =
+      render_linear_syntax_escapes(&unescape_string(&s[1..s.len() - 1]));
+    return strip_number_precision_mark(&text).unwrap_or(text);
   }
 
   // A bare `{…}` list of inline items.
@@ -2850,7 +2864,14 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
   if let Some(args) = positional_box_args("SqrtBox", s)
     && args.len() == 1
   {
-    return format!("√{}", render_boxes_text(&args[0]));
+    let radicand = render_boxes_text(&args[0]);
+    // A multi-token radicand needs parentheses to stay unambiguous in
+    // linear text: `√(a+b)`, but `√x`.
+    return if radicand.chars().all(|c| c.is_alphanumeric() || c == '.') {
+      format!("√{radicand}")
+    } else {
+      format!("√({radicand})")
+    };
   }
   // Limits under and over a base — in prose this is nearly always a big
   // operator: `∑_(n=1)^m`. Multi-token limits get parentheses so the
@@ -8383,6 +8404,27 @@ yf4GL4DwC5VA4w
         "DynamicModuleBox[{}, DynamicBox[…]]"
       ),
       None
+    );
+  }
+
+  #[test]
+  fn test_render_boxes_text_drops_number_precision_marks() {
+    assert_eq!(
+      render_boxes_text(r#"RowBox[{"0.2`", " ", "mm"}]"#),
+      "0.2 mm"
+    );
+    assert_eq!(render_boxes_text(r#""1.5`20""#), "1.5");
+    assert_eq!(render_boxes_text(r#""3``2""#), "3");
+    // Not a number followed by a mark: left untouched.
+    assert_eq!(render_boxes_text(r#""x`""#), "x`");
+  }
+
+  #[test]
+  fn test_render_boxes_text_sqrt_parenthesizes_compound_radicand() {
+    assert_eq!(render_boxes_text(r#"SqrtBox["x"]"#), "√x");
+    assert_eq!(
+      render_boxes_text(r#"SqrtBox[RowBox[{"a", "+", "b"}]]"#),
+      "√(a+b)"
     );
   }
 
