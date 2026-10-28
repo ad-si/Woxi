@@ -14066,3 +14066,39 @@ mod machine_real_elementwise {
     );
   }
 }
+
+// Exact coefficients past i128 times a radical: like terms combine, and the
+// coefficient is merged into the radical without factoring its square
+// (Demonstration FlowsnakeQFunction memoizes a 500-step recurrence over
+// Sqrt[3]).
+mod big_rational_radical_coefficients {
+  use super::*;
+
+  #[test]
+  fn long_exact_recurrence_over_a_radical() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "im[1] = -Sqrt[3]/14; im[2] = -5 Sqrt[3]/98; \
+         im[n_] := (im[n] = 5/7 im[n - 1] - 1/7 im[n - 2]); im /@ Range[500]; \
+         {LeafCount[im[500]], im[48]}"
+      )
+      .unwrap(),
+      "{9, (32555117278250218080*Sqrt[3])/36703368217294125441230211032033660188801}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn coefficient_merges_into_radical() {
+    assert_eq!(
+      interpret(
+        "{30*Sqrt[23/15], 2/Sqrt[30], 6*Sqrt[5/3], (1/3)*Sqrt[15/11], (2/5)/Sqrt[14], \
+          (13/35)*Sqrt[35/6], 12 Sqrt[2/9], (10/3) Sqrt[3/8], 3^20/2^70 Sqrt[6/35]}"
+      )
+      .unwrap(),
+      "{2*Sqrt[345], Sqrt[2/15], 2*Sqrt[15], Sqrt[5/33], Sqrt[2/7]/5, 13/Sqrt[210], \
+       4*Sqrt[2], 5/Sqrt[6], (3486784401*Sqrt[3/70])/590295810358705651712}"
+    );
+  }
+}

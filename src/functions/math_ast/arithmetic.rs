@@ -2184,9 +2184,11 @@ fn leading_coeff(e: &Expr) -> Option<Coeff> {
     return Some(Coeff::Exact(n, d));
   }
   match e {
-    Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
     Expr::Real(f) => Some(Coeff::Real(*f)),
-    _ => None,
+    // Including a rational past i128 (`(1671628867869824893*Sqrt[3])/
+    // 30573401263885152387530371538553652802`), so like terms over it
+    // still combine.
+    _ => expr_to_coeff(e),
   }
 }
 
@@ -10723,6 +10725,40 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// `(cn/cd) Sqrt[rn/rd]` as `(s/t) Sqrt[p1/q1]` in lowest terms with
+/// square-free radicands (for positive `cn`, `cd`, `rn`, `rd`, `cn/cd` and
+/// `rn/rd` reduced). Only the radicand is factored: squaring the
+/// coefficient into it and pulling the square back out by trial division
+/// cost 100,000 big-integer divisions per product once the coefficient
+/// passed i128 (a long exact recurrence over `Sqrt[3]`).
+fn coefficient_radical_parts(
+  cn: &BigInt,
+  cd: &BigInt,
+  rn: &BigInt,
+  rd: &BigInt,
+) -> (BigInt, BigInt, BigInt, BigInt) {
+  let gcd = |a: &BigInt, b: &BigInt| {
+    crate::functions::math_ast::numeric_utils::gcd_bigint(a, b)
+  };
+  let (o1, i1) = extract_square_factor_big(rn);
+  let (o2, i2) = extract_square_factor_big(rd);
+  // X^2 i1 / (Y^2 i2), i1 and i2 square-free and coprime.
+  let (mut x, mut y) = (cn * o1, cd * o2);
+  let g = gcd(&x, &y);
+  x /= &g;
+  y /= &g;
+  // A factor k of i2 dividing X: X^2/i2 = (X/k)^2 k/(i2/k).
+  let k = gcd(&x, &i2);
+  x /= &k;
+  let (mut n_in, mut d_in) = (&i1 * &k, &i2 / &k);
+  // A factor m of the numerator radicand dividing Y, the same way round.
+  let m = gcd(&y, &n_in);
+  y /= &m;
+  n_in /= &m;
+  d_in *= &m;
+  (x, n_in, y, d_in)
+}
+
 /// Final-pass canonicalization: a rational coefficient times a square root
 /// of a positive rational merges into one canonical radical, wolframscript
 /// style — square the coefficient into the radicand, reduce the fraction,
@@ -10795,12 +10831,12 @@ fn merge_coefficient_into_radical(
       let (rn, rd) = if half > 0 { (bn, bd) } else { (bd, bn) };
       let one = BigInt::from(1);
       {
-        let (num, den) = rat_reduce_bigint(
-          &(&cn * &cn * BigInt::from(rn)),
-          &(&cd * &cd * BigInt::from(rd)),
+        let (s, p1, t, q1) = coefficient_radical_parts(
+          &num_traits::Signed::abs(&cn),
+          &cd,
+          &BigInt::from(rn),
+          &BigInt::from(rd),
         );
-        let (s, p1) = extract_square_factor_big(&num_traits::Signed::abs(&num));
-        let (t, q1) = extract_square_factor_big(&den);
         let s = if cn.sign() == num_bigint::Sign::Minus {
           -s
         } else {
