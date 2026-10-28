@@ -30,6 +30,62 @@ fn poly_divmod_mod_exprs(
   Ok((coeffs_to_poly(&quot, var, m), coeffs_to_poly(&rem, var, m)))
 }
 
+/// The remainder of `p_poly` by `q_poly` over GF(m). A power `b^k` is
+/// reduced by square-and-multiply modulo `q_poly`, so its degree never
+/// grows past twice that of `q_poly` (`PolynomialRemainder[g^2047, x^23 + 1,
+/// x, Modulus -> 2]` would otherwise expand g^2047 to degree 22517).
+fn poly_remainder_mod_expr(
+  p_poly: &Expr,
+  q_poly: &Expr,
+  var: &str,
+  m: i128,
+) -> Result<Expr, InterpreterError> {
+  let qc = poly_to_coeffs_mod(q_poly, var, m)?;
+  let power = match p_poly {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    _ => None,
+  };
+  let remainder = match power {
+    // (Coefficients below m < 2^62 multiply within i128.)
+    Some((base, Expr::Integer(k)))
+      if *k >= 0 && m < 1 << 62 && qc.iter().any(|&c| c != 0) =>
+    {
+      let rem = |a: &[i128]| poly_divmod_mod(a, &qc, m).1;
+      let mul = |a: &[i128], b: &[i128]| {
+        let mut out = vec![0i128; a.len() + b.len() - 1];
+        for (i, &x) in a.iter().enumerate() {
+          for (j, &y) in b.iter().enumerate() {
+            out[i + j] = (out[i + j] + x * y % m) % m;
+          }
+        }
+        rem(&out)
+      };
+      let mut base = rem(&poly_to_coeffs_mod(base, var, m)?);
+      let mut result = rem(&[1]);
+      let mut k = *k;
+      while k > 0 {
+        if k & 1 == 1 {
+          result = mul(&result, &base);
+        }
+        k >>= 1;
+        if k > 0 {
+          base = mul(&base, &base);
+        }
+      }
+      result
+    }
+    _ => poly_divmod_mod(&poly_to_coeffs_mod(p_poly, var, m)?, &qc, m).1,
+  };
+  Ok(coeffs_to_poly(&remainder, var, m))
+}
+
 /// PolynomialRemainder[p, q, x] - remainder of polynomial division
 pub fn polynomial_remainder_ast(
   args: &[Expr],
@@ -47,7 +103,7 @@ pub fn polynomial_remainder_ast(
     }
   };
   if let Some(m) = modulus {
-    return Ok(poly_divmod_mod_exprs(&pos[0], &pos[1], var, m)?.1);
+    return poly_remainder_mod_expr(&pos[0], &pos[1], var, m);
   }
 
   let (_, remainder) = poly_divide_symbolic(&pos[0], &pos[1], var)?;

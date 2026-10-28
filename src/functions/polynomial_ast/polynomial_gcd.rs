@@ -145,6 +145,12 @@ pub(super) fn poly_to_coeffs_mod(
   var: &str,
   p: i128,
 ) -> Result<Vec<i128>, InterpreterError> {
+  // Reduced modulo p throughout: `g^2047` over Z has coefficients of
+  // hundreds of digits that the mod-p arithmetic never needs.
+  if let Some(mut coeffs) = coeffs_mod_direct(poly, var, p) {
+    trim_high(&mut coeffs);
+    return Ok(coeffs);
+  }
   let expanded = expand_and_combine(poly);
   let deg = max_power_int(&expanded, var).unwrap_or(0);
   let mut coeffs = Vec::with_capacity((deg + 1) as usize);
@@ -159,6 +165,120 @@ pub(super) fn poly_to_coeffs_mod(
     coeffs.push(mod_norm(ci, p));
   }
   Ok(coeffs)
+}
+
+/// The coefficients of `poly` in `var` modulo `p`, computed without
+/// expanding over the integers; `None` for anything but sums, products,
+/// non-negative integer powers, integers and rationals invertible mod `p`.
+fn coeffs_mod_direct(poly: &Expr, var: &str, p: i128) -> Option<Vec<i128>> {
+  // Products of coefficients below p (< 2^62) stay within i128.
+  if !(2..1 << 62).contains(&p) {
+    return None;
+  }
+  let mul = |a: &[i128], b: &[i128]| -> Vec<i128> {
+    let mut out = vec![0i128; a.len() + b.len() - 1];
+    for (i, &x) in a.iter().enumerate() {
+      if x == 0 {
+        continue;
+      }
+      for (j, &y) in b.iter().enumerate() {
+        out[i + j] = (out[i + j] + x * y) % p;
+      }
+    }
+    out
+  };
+  let add = |mut a: Vec<i128>, b: &[i128]| -> Vec<i128> {
+    if a.len() < b.len() {
+      a.resize(b.len(), 0);
+    }
+    for (i, &y) in b.iter().enumerate() {
+      a[i] = (a[i] + y) % p;
+    }
+    a
+  };
+  let constant = |c: i128| vec![mod_norm(c, p)];
+  match poly {
+    Expr::Integer(n) => Some(constant(*n)),
+    Expr::BigInteger(n) => {
+      use num_traits::ToPrimitive;
+      let r = n % num_bigint::BigInt::from(p);
+      Some(constant(r.to_i128()?))
+    }
+    Expr::Identifier(name) if name == var => Some(vec![0, 1]),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Rational" if args.len() == 2 => {
+        let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) else {
+          return None;
+        };
+        if mod_norm(*d, p) == 0 {
+          return None;
+        }
+        Some(constant(mod_norm(*n, p) * mod_inv(*d, p) % p))
+      }
+      "Plus" => args.iter().try_fold(vec![0], |acc, a| {
+        Some(add(acc, &coeffs_mod_direct(a, var, p)?))
+      }),
+      "Times" => args.iter().try_fold(vec![1], |acc, a| {
+        Some(mul(&acc, &coeffs_mod_direct(a, var, p)?))
+      }),
+      "Power" if args.len() == 2 => {
+        let Expr::Integer(k) = args[1] else {
+          return None;
+        };
+        if k < 0 {
+          return None;
+        }
+        let mut base = coeffs_mod_direct(&args[0], var, p)?;
+        trim_high(&mut base);
+        let mut result = vec![1];
+        let mut k = k;
+        while k > 0 {
+          if k & 1 == 1 {
+            result = mul(&result, &base);
+            trim_high(&mut result);
+          }
+          k >>= 1;
+          if k > 0 {
+            base = mul(&base, &base);
+            trim_high(&mut base);
+          }
+        }
+        Some(result)
+      }
+      _ => None,
+    },
+    Expr::BinaryOp { op, left, right } => {
+      let l = coeffs_mod_direct(left, var, p)?;
+      let r = coeffs_mod_direct(right, var, p)?;
+      match op {
+        BinaryOperator::Plus => Some(add(l, &r)),
+        BinaryOperator::Minus => Some(add(
+          l,
+          &r.iter().map(|c| mod_norm(-c, p)).collect::<Vec<_>>(),
+        )),
+        BinaryOperator::Times => Some(mul(&l, &r)),
+        BinaryOperator::Power => coeffs_mod_direct(
+          &Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![(**left).clone(), (**right).clone()].into(),
+          },
+          var,
+          p,
+        ),
+        _ => None,
+      }
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(
+      coeffs_mod_direct(operand, var, p)?
+        .iter()
+        .map(|c| mod_norm(-c, p))
+        .collect(),
+    ),
+    _ => None,
+  }
 }
 
 fn mod_norm(a: i128, p: i128) -> i128 {

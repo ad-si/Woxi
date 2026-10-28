@@ -11872,6 +11872,32 @@ mod polynomial_remainder {
 
   // The Modulus option performs the division over the field GF(p).
   #[test]
+  fn modulus_option_of_large_powers() {
+    // A power is reduced modulo the divisor as it is raised, and its
+    // coefficients modulo p, instead of being expanded over the integers
+    // first (Demonstration GolayCode raises a degree-11 factor to every
+    // power up to 2047).
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "g = Factor[x^23 + 1, Modulus -> 2][[3]]; \
+         {g, PolynomialRemainder[g^2047, x^23 + 1, x, Modulus -> 2], \
+          PolynomialRemainder[(x^2 + 3 x/2 + 1)^5, x^3 + 2, x, Modulus -> 7], \
+          PolynomialRemainder[(x + 1)^0, x^2 + 1, x, Modulus -> 5], \
+          PolynomialRemainder[(x + 1)^3, x + 1, x, Modulus -> 5], \
+          PolynomialGCD[(x + 1)^10, x^2 - 1, Modulus -> 3], \
+          Length[Select[Table[PolynomialRemainder[g^k, x^23 + 1, x, Modulus -> 2], \
+            {k, 2^11 - 1}], Length[#] == 7 &]]}"
+      )
+      .unwrap(),
+      "{1 + x^2 + x^4 + x^5 + x^6 + x^10 + x^11, \
+       x^5 + x^7 + x^10 + x^11 + x^14 + x^15 + x^17 + x^19 + x^20 + x^21 + x^22, \
+       6 + 6*x + x^2, 1, 0, 1 + x, 253}"
+    );
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+
+  #[test]
   fn modulus_option() {
     // Over GF(2), (x^2-1)/(x-1) = x+1 exactly.
     assert_eq!(

@@ -8016,6 +8016,24 @@ mod topological_sort {
 mod graph_data {
   use super::*;
 
+  // The icosahedron and dodecahedron skeletons, in the Knowledgebase's
+  // vertex labelling (Demonstration GolayCode builds a code from the
+  // icosahedral adjacency matrix).
+  #[test]
+  fn platonic_skeletons() {
+    assert_eq!(
+      interpret(
+        "{Normal[GraphData[\"IcosahedralGraph\", \"AdjacencyMatrix\"]][[{1, 12}]], \
+          VertexDegree[GraphData[\"DodecahedralGraph\"]] // Union, \
+          EdgeCount /@ {GraphData[\"IcosahedralGraph\"], GraphData[\"DodecahedralGraph\"]}, \
+          GraphData[\"IcosahedralGraph\", \"Name\"]}"
+      )
+      .unwrap(),
+      "{{{0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0}, {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0}}, \
+       {3}, {30, 30}, icosahedral graph}"
+    );
+  }
+
   #[test]
   fn no_args_lists_known_names() {
     assert_eq!(
