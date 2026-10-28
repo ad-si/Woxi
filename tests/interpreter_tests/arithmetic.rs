@@ -14022,3 +14022,47 @@ mod arbitrary_precision_complex_values {
     );
   }
 }
+
+// Random array generators accept whole-valued real dimensions, as in
+// Wolfram (`n = 50.; RandomReal[1, {n, n}]` in Demonstration
+// KolkataPaiseRestaurantKPRProblem); a fractional one is still rejected.
+mod random_real_dimensions {
+  use super::*;
+
+  #[test]
+  fn whole_valued_real_dimensions() {
+    assert_eq!(
+      interpret(
+        "Dimensions /@ {RandomReal[1, {5., 4.}], RandomInteger[5, {2., 2}], \
+          RandomVariate[NormalDistribution[], 3.], RandomChoice[{a, b}, 3.], \
+          RandomSample[Range[5], 3.], RandomComplex[1, 3.], RandomPoint[Disk[], 3.]}"
+      )
+      .unwrap(),
+      "{{5, 4}, {2, 2}, {3}, {3}, {3}, {3}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Head[RandomReal[1, 2.5]]]").unwrap(),
+      "RandomReal"
+    );
+  }
+}
+
+// Sign, Abs, Floor, Ceiling and Round of a machine-real array are applied
+// element by element directly.
+mod machine_real_elementwise {
+  use super::*;
+
+  #[test]
+  fn exact_elementwise_functions() {
+    assert_eq!(
+      interpret(
+        "{Sign[{-2., 0., 3.5, {-0., 1.}}], Abs[{-2.5, 3.}], Floor[{-2.5, 2.5}], \
+          Ceiling[{-2.5, 2.5}], Round[{-2.5, 2.5, 3.5, 0.5, -0.5}], Round[{1.*^20}], \
+          Sign[{1., x}]}"
+      )
+      .unwrap(),
+      "{{-1, 0, 1, {0, 1}}, {2.5, 3.}, {-3, 2}, {-2, 3}, {-2, 2, 4, 0, 0}, \
+       {100000000000000000000}, {1, Sign[x]}}"
+    );
+  }
+}
