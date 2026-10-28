@@ -6935,7 +6935,11 @@ fn check_notebook(path: &std::path::Path) -> i32 {
   for (i, state) in widgets.iter().enumerate() {
     match state.check_render() {
       Ok(result) => {
-        if result.graphics.is_some() {
+        if let Some(svg) = &result.graphics {
+          // `WOXI_CHECK_SVG=FILE` saves the rendered graphic for a look.
+          if let Some(out) = std::env::var_os("WOXI_CHECK_SVG") {
+            let _ = std::fs::write(out, svg);
+          }
           println!("widget {i}: graphics");
         } else if result.result == "\0" || result.result.trim().is_empty() {
           println!("widget {i}: empty");
