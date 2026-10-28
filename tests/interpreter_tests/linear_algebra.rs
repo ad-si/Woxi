@@ -708,6 +708,38 @@ mod inverse {
     );
   }
 
+  // Over a polynomial matrix each entry is an expanded cofactor over the
+  // expanded determinant — Det's own form — so `Inverse[m] Det[m]` cancels
+  // to the adjugate. With the determinant left as a cofactor expansion,
+  // the CIE chromaticity Demonstration's `Simplify` of the 3x3 case ran
+  // for minutes.
+  #[test]
+  fn inverse_symbolic_entries_over_expanded_determinant() {
+    assert_eq!(
+      interpret(
+        "{Inverse[{{(1 + x)^2, 1}, {1, x}}], Inverse[{{a, b, c}, {d, e, f}, {g, h, k}}][[2]], \
+          Inverse[{{x, x}, {0, x}}]}"
+      )
+      .unwrap(),
+      "{{{x/(-1 + x + 2*x^2 + x^3), -(-1 + x + 2*x^2 + x^3)^(-1)}, \
+       {-(-1 + x + 2*x^2 + x^3)^(-1), (1 + 2*x + x^2)/(-1 + x + 2*x^2 + x^3)}}, \
+       {(f*g - d*k)/(-(c*e*g) + b*f*g + c*d*h - a*f*h - b*d*k + a*e*k), \
+       (-(c*g) + a*k)/(-(c*e*g) + b*f*g + c*d*h - a*f*h - b*d*k + a*e*k), \
+       (c*d - a*f)/(-(c*e*g) + b*f*g + c*d*h - a*f*h - b*d*k + a*e*k)}, \
+       {{x^(-1), -x^(-1)}, {0, x^(-1)}}}"
+    );
+    assert_eq!(
+      interpret(
+        "m = {{xr, yr, zr}, {xg, yg, zg}, {xb, yb, zb}}; \
+         Simplify[Transpose[Inverse[m] Det[m]] . ({xw, yw, zw}/yw)]"
+      )
+      .unwrap(),
+      "{(xw*yg*zb - xg*yw*zb - xw*yb*zg + xb*yw*zg + xg*yb*zw - xb*yg*zw)/yw, \
+       (-(xw*yr*zb) + xr*yw*zb + xw*yb*zr - xb*yw*zr - xr*yb*zw + xb*yr*zw)/yw, \
+       (xw*yr*zg - xr*yw*zg - xw*yg*zr + xg*yw*zr + xr*yg*zw - xg*yr*zw)/yw}"
+    );
+  }
+
   #[test]
   fn inverse_times_identity() {
     // A . Inverse[A] should give identity matrix for numeric matrices

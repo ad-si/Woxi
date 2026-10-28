@@ -1494,19 +1494,6 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // With rational coefficients it is brought over one denominator
   // (`Det[{{1/2, x}, {x, 1}}]` is `(1 - 2 x^2)/2`).
   if is_polynomial_matrix(&matrix) {
-    fn has_rational(e: &Expr) -> bool {
-      match e {
-        Expr::FunctionCall { name, args } => {
-          name == "Rational" || args.iter().any(has_rational)
-        }
-        Expr::List(items) => items.iter().any(has_rational),
-        Expr::BinaryOp { left, right, .. } => {
-          has_rational(left) || has_rational(right)
-        }
-        Expr::UnaryOp { operand, .. } => has_rational(operand),
-        _ => false,
-      }
-    }
     let combine = if matrix.iter().flatten().any(has_rational) {
       "Together"
     } else {
@@ -1522,6 +1509,21 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// Whether `e` contains a `Rational` anywhere.
+fn has_rational(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Rational" || args.iter().any(has_rational)
+    }
+    Expr::List(items) => items.iter().any(has_rational),
+    Expr::BinaryOp { left, right, .. } => {
+      has_rational(left) || has_rational(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_rational(operand),
+    _ => false,
+  }
 }
 
 /// Whether every entry is a polynomial in its symbols with exact rational
@@ -2124,11 +2126,32 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Transpose cofactor matrix (adjugate) and divide by det
+  // Transpose cofactor matrix (adjugate) and divide by det. Over a
+  // polynomial matrix each entry is one reduced fraction of expanded
+  // polynomials, as Wolfram gives it: the denominator is then `Det`'s own
+  // form, so `Inverse[m] Det[m]` cancels to the adjugate.
+  // With rational coefficients the fraction is brought together instead.
+  let polynomial = is_polynomial_matrix(&matrix);
+  let rational = polynomial && matrix.iter().flatten().any(has_rational);
+  let call = |head: &str, e: Expr| {
+    crate::evaluator::evaluate_function_call_ast(head, std::slice::from_ref(&e))
+      .unwrap_or(e)
+  };
+  let det = if polynomial && !rational {
+    call("Expand", det)
+  } else {
+    det
+  };
   let mut result = vec![vec![Expr::Integer(0); n]; n];
   for i in 0..n {
     for j in 0..n {
-      result[i][j] = eval_divide(&cofactors[j][i], &det);
+      result[i][j] = if rational {
+        call("Together", eval_divide(&cofactors[j][i], &det))
+      } else if polynomial {
+        eval_divide(&call("Expand", cofactors[j][i].clone()), &det)
+      } else {
+        eval_divide(&cofactors[j][i], &det)
+      };
     }
   }
 

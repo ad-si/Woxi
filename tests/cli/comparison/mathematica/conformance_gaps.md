@@ -2800,6 +2800,16 @@ Unevaluated.
 
 ## Linear algebra
 
+### Symbolic `Inverse` with rational entries normalizes one sign differently
+
+```sh
+wolframscript -code 'Inverse[{{1/2, x}, {x, 1}}]'  # {{-2/(-1 + 2*x^2), (2*x)/(-1 + 2*x^2)}, {(2*x)/(-1 + 2*x^2), -(-1 + 2*x^2)^(-1)}}
+woxi eval 'Inverse[{{1/2, x}, {x, 1}}]'            # {{-2/(-1 + 2*x^2), (2*x)/(-1 + 2*x^2)}, {(2*x)/(-1 + 2*x^2), (1 - 2*x^2)^(-1)}}
+```
+
+Woxi brings each entry together on its own; Wolfram gives every entry the
+denominator `-1 + 2 x^2`. Polynomial matrices without rationals agree.
+
 ### Float matrices with complex eigenvalues
 
 Wolfram complexifies the **whole** result and orders each conjugate pair with
