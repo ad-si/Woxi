@@ -22958,6 +22958,42 @@ mod ndsolve_constant_mass_matrix {
   }
 }
 
+mod interpolation_symbolic_values {
+  use super::*;
+
+  #[test]
+  fn values_need_not_be_numbers() {
+    // Interpolation is linear in the values: each value times the
+    // interpolant of its unit data (wolframscript writes the same
+    // polynomial in Newton form).
+    assert_eq!(
+      interpret(
+        "Interpolation[{{1, a}, {2, b}, {3, c}, {5, d}}, \
+         InterpolationOrder -> 1][2.5]"
+      )
+      .unwrap(),
+      "0.5*b + 0.5*c"
+    );
+    assert_eq!(
+      interpret(
+        "Interpolation[{a, b, c, d}][2.5] /. {a -> 1, b -> 2, c -> 3, d -> 5}"
+      )
+      .unwrap(),
+      "2.4375"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{-0.8, PlusMinus[0.5, 0.05]}, \
+         {-0.5, PlusMinus[-0.5, 0.05]}, {0.25, PlusMinus[-0.25, 0.05]}, \
+         {0.75, PlusMinus[0.75, 0.05]}}]; \
+         {Head[f], Round[f[0.1] /. PlusMinus[v_, _] :> v, 10^-9]}"
+      )
+      .unwrap(),
+      "{InterpolatingFunction, -250737327/500000000}"
+    );
+  }
+}
+
 mod interpolation_domain_slack {
   use super::*;
 

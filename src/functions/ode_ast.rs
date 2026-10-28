@@ -10692,6 +10692,118 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   }
 }
 
+/// The value of an `{x, y}` interpolation point when it is not a number
+/// (nor a list or complex number, which have their own paths).
+fn symbolic_interpolation_value(row: &Expr) -> Option<&Expr> {
+  match row {
+    Expr::List(p) if p.len() == 2 => {
+      let y = &p[1];
+      // Literal numbers and lists, by far the common case (every NDSolve
+      // solution), are told apart without evaluating anything.
+      if matches!(
+        y,
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::BigInteger(_)
+          | Expr::BigFloat(..)
+          | Expr::List(_)
+      ) {
+        return None;
+      }
+      let numeric = crate::functions::math_ast::try_eval_to_f64(y).is_some()
+        || matches!(y, Expr::List(_))
+        || matches!(
+          crate::evaluator::evaluate_expr_to_expr(&call1("NumericQ", y.clone())),
+          Ok(Expr::Identifier(ref t)) if t == "True"
+        );
+      (!numeric).then_some(y)
+    }
+    _ => None,
+  }
+}
+
+/// `Interpolation[{{x1, y1}, …}]` whose values are not all numbers: the
+/// interpolating function built for zero values (so the coordinates are
+/// checked and sorted the same way) with the values put back.
+fn symbolic_value_interpolation(
+  args: &[Expr],
+  head: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(given) = &args[0] else {
+    return Ok(None);
+  };
+  // A list of values alone stands at the coordinates 1, 2, ….
+  let indexed: Vec<Expr>;
+  let rows: &[Expr] = if given.iter().all(|v| !matches!(v, Expr::List(_))) {
+    indexed = given
+      .iter()
+      .enumerate()
+      .map(|(i, v)| {
+        Expr::List(vec![Expr::Integer(i as i128 + 1), v.clone()].into())
+      })
+      .collect();
+    &indexed
+  } else {
+    given
+  };
+  if !rows
+    .iter()
+    .any(|r| symbolic_interpolation_value(r).is_some())
+    || !rows.iter().all(|r| {
+      matches!(r, Expr::List(p) if p.len() == 2
+        && crate::functions::math_ast::try_eval_to_f64(&p[0]).is_some())
+    })
+  {
+    return Ok(None);
+  }
+  let zeros: Vec<Expr> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(p) => Expr::List(vec![p[0].clone(), Expr::Integer(0)].into()),
+      other => other.clone(),
+    })
+    .collect();
+  let mut zero_args = args.to_vec();
+  zero_args[0] = Expr::List(zeros.into());
+  let function = interpolation_ast(&zero_args, head)?;
+  let Expr::FunctionCall { name, args: f_args } = &function else {
+    return Ok(Some(function));
+  };
+  let Some(Expr::List(sorted)) = f_args.get(1) else {
+    return Ok(None);
+  };
+  // Each point gets its own value back, found by its coordinate.
+  let value_at = |x: &Expr| {
+    let xf = crate::functions::math_ast::try_eval_to_f64(x);
+    rows.iter().find_map(|r| match r {
+      Expr::List(p)
+        if crate::functions::math_ast::try_eval_to_f64(&p[0]) == xf =>
+      {
+        Some(p[1].clone())
+      }
+      _ => None,
+    })
+  };
+  let restored: Option<Vec<Expr>> = sorted
+    .iter()
+    .map(|r| match r {
+      Expr::List(p) if p.len() == 2 => {
+        value_at(&p[0]).map(|y| Expr::List(vec![p[0].clone(), y].into()))
+      }
+      _ => None,
+    })
+    .collect();
+  let Some(restored) = restored else {
+    return Ok(None);
+  };
+  let mut new_args = f_args.to_vec();
+  new_args[1] = Expr::List(restored.into());
+  Ok(Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  }))
+}
+
 /// Evaluate an expression to f64, with simplification
 fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   let evaluated =
@@ -10754,6 +10866,9 @@ pub fn interpolation_ast(
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Ok(unevaluated(head, args));
+  }
+  if let Some(function) = symbolic_value_interpolation(args, head)? {
+    return Ok(function);
   }
 
   // Extract InterpolationOrder option (default 3). A 2-D grid may give one
@@ -12506,6 +12621,58 @@ pub fn evaluate_interpolating_function(
     ));
   }
 
+  // Values that are not numbers (`a`, `0.5 ± 0.05`): interpolation is
+  // linear in the values, so the result is each value times the
+  // interpolant of the data that is 1 at its point and 0 elsewhere.
+  //
+  // The numeric path is tried first, so that the long numeric tables of
+  // NDSolve solutions are never scanned for such values.
+  let numeric = evaluate_interpolating_function_values(func_args, call_args);
+  if numeric.is_ok() {
+    return numeric;
+  }
+  if let Expr::List(rows) = &func_args[1]
+    && !matches!(&call_args[0], Expr::String(_))
+    && rows
+      .iter()
+      .any(|r| symbolic_interpolation_value(r).is_some())
+  {
+    let mut terms = Vec::new();
+    for i in 0..rows.len() {
+      let unit: Vec<Expr> = rows
+        .iter()
+        .enumerate()
+        .map(|(j, r)| match r {
+          Expr::List(p) if p.len() == 2 => Expr::List(
+            vec![p[0].clone(), Expr::Integer(i128::from(i == j))].into(),
+          ),
+          other => other.clone(),
+        })
+        .collect();
+      let mut unit_args = func_args.to_vec();
+      unit_args[1] = Expr::List(unit.into());
+      let weight = evaluate_interpolating_function(&unit_args, call_args)?;
+      if matches!(weight, Expr::Integer(0))
+        || matches!(weight, Expr::Real(w) if w == 0.0)
+      {
+        continue;
+      }
+      let Expr::List(p) = &rows[i] else {
+        continue;
+      };
+      terms.push(times2(weight, p[1].clone()));
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&plus(terms));
+  }
+
+  numeric
+}
+
+/// A one-dimensional InterpolatingFunction with numeric values at a point.
+fn evaluate_interpolating_function_values(
+  func_args: &[Expr],
+  call_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   let data = &func_args[1];
   let order = if func_args.len() >= 3 {
     match &func_args[2] {

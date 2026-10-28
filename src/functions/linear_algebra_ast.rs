@@ -2705,6 +2705,49 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A variable need not be a symbol (`#`, `Subscript[x, 1]`): each other
+  // one is fitted as a placeholder symbol and put back afterwards.
+  let vars: Vec<Expr> = match &args[2] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  if vars
+    .iter()
+    .any(|v| !matches!(v, Expr::Identifier(_)) && try_eval_to_f64(v).is_none())
+  {
+    let mut basis = args[1].clone();
+    let mut placeholders = Vec::new();
+    let new_vars: Vec<Expr> = vars
+      .iter()
+      .enumerate()
+      .map(|(k, v)| {
+        if matches!(v, Expr::Identifier(_)) {
+          return v.clone();
+        }
+        let name = format!("Woxi`FitVariable{}", k + 1);
+        basis = crate::functions::polynomial_ast::solve::substitute_expr(
+          &basis,
+          v,
+          &Expr::Identifier(name.clone()),
+        );
+        placeholders.push((name.clone(), v.clone()));
+        Expr::Identifier(name)
+      })
+      .collect();
+    let var_arg = if matches!(&args[2], Expr::List(_)) {
+      Expr::List(new_vars.into())
+    } else {
+      new_vars
+        .into_iter()
+        .next()
+        .unwrap_or(Expr::List(vec![].into()))
+    };
+    let fitted = fit_ast(&[args[0].clone(), basis, var_arg])?;
+    return Ok(placeholders.iter().fold(fitted, |e, (name, var)| {
+      crate::syntax::substitute_variable(&e, name, var)
+    }));
+  }
+
   // Extract basis functions
   let basis = match &args[1] {
     Expr::List(items) => items.clone(),
@@ -2746,6 +2789,12 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+
+  // Responses that are not numbers (`a`, `0.5 ± 0.05`) are fitted as the
+  // linear combinations of them the estimates are.
+  if let Some(fitted) = fit_symbolic_responses(data_list, &basis, &var_names)? {
+    return Ok(fitted);
+  }
 
   let (x_vals, y_vals) =
     extract_fit_data_multi(data_list, var_names.len(), "Fit")?;
@@ -2800,6 +2849,93 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Ok(plus(terms))
   }
+}
+
+/// `Fit` of data whose coordinates are numbers but whose responses are not
+/// all numbers: each estimate is a linear combination of the responses,
+/// written as wolframscript does with the design matrix's columns scaled
+/// to unit length, `s_j (P_j1 y_1 + … + P_jn y_n)` where `s_j` is one over
+/// the length of column `j` and `P` the pseudo-inverse of the scaled
+/// matrix. `None` when every response is a number (or the coordinates are
+/// not).
+fn fit_symbolic_responses(
+  data: &[Expr],
+  basis: &[Expr],
+  var_names: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  let k = var_names.len();
+  let mut coords: Vec<Vec<f64>> = Vec::with_capacity(data.len());
+  let mut responses: Vec<Expr> = Vec::with_capacity(data.len());
+  for (i, row) in data.iter().enumerate() {
+    match row {
+      Expr::List(items) if items.len() == k + 1 => {
+        let Some(xs) = items[..k].iter().map(try_eval_to_f64).collect() else {
+          return Ok(None);
+        };
+        coords.push(xs);
+        responses.push(items[k].clone());
+      }
+      Expr::List(_) => return Ok(None),
+      y if k == 1 => {
+        coords.push(vec![(i + 1) as f64]);
+        responses.push(y.clone());
+      }
+      _ => return Ok(None),
+    }
+  }
+  if responses.iter().all(|y| try_eval_to_f64(y).is_some()) {
+    return Ok(None);
+  }
+  let (n, m) = (coords.len(), basis.len());
+  let mut design = vec![vec![0.0f64; m]; n];
+  for i in 0..n {
+    for j in 0..m {
+      let at = var_names
+        .iter()
+        .zip(&coords[i])
+        .fold(basis[j].clone(), |e, (v, x)| {
+          crate::syntax::substitute_variable(&e, v, &Expr::Real(*x))
+        });
+      let Some(value) = try_eval_to_f64(&evaluate_expr_to_expr(&at)?) else {
+        return Ok(None);
+      };
+      design[i][j] = value;
+    }
+  }
+  let scales: Vec<f64> = (0..m)
+    .map(|j| 1.0 / design.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt())
+    .collect();
+  let scaled = Expr::List(
+    design
+      .iter()
+      .map(|r| {
+        Expr::List((0..m).map(|j| Expr::Real(r[j] * scales[j])).collect())
+      })
+      .collect(),
+  );
+  let pinv = pseudo_inverse_ast(&[scaled])?;
+  let Expr::List(pinv_rows) = &pinv else {
+    return Ok(None);
+  };
+  let mut terms = Vec::with_capacity(m);
+  for (j, b) in basis.iter().enumerate() {
+    let Expr::List(row) = &pinv_rows[j] else {
+      return Ok(None);
+    };
+    let combination = plus(
+      row
+        .iter()
+        .zip(&responses)
+        .map(|(c, y)| times(vec![c.clone(), y.clone()]))
+        .collect(),
+    );
+    let mut factors = vec![Expr::Real(scales[j]), combination];
+    if !matches!(b, Expr::Integer(1)) {
+      factors.push(b.clone());
+    }
+    terms.push(times(factors));
+  }
+  Ok(Some(evaluate_expr_to_expr(&plus(terms))?))
 }
 
 /// Extract x and y values from Fit data.

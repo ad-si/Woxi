@@ -14,7 +14,7 @@ use super::*;
 
 /// One `FUNC_DEFS` entry: `(params, conditions, defaults, head_constraints,
 /// blank_types, body)`.
-type FuncDef = (
+pub(crate) type FuncDef = (
   Vec<String>,
   Vec<Option<Expr>>,
   Vec<Option<Expr>>,

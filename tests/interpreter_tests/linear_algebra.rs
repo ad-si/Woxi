@@ -2587,11 +2587,43 @@ mod fit {
   }
 
   #[test]
-  fn non_numeric_y_names_fit_in_error() {
-    let err = interpret(r#"Fit[{{1, "a"}, {2, "b"}}, {1, x}, x]"#).unwrap_err();
-    assert!(
-      err.to_string().contains("Fit:"),
-      "error should be tagged with the calling function's name, got: {err}"
+  fn symbolic_responses_give_linear_combinations() {
+    // As in wolframscript: each estimate is s_j (P_j1 y_1 + …) with s_j one
+    // over the length of the design matrix's column j.
+    assert_eq!(
+      interpret(
+        "f = Fit[{{1, a}, {2, b}, {3, c}}, {1, x}, x]; \
+         {Round[Coefficient[f, x, 0] /. {a -> 1, b -> 2, c -> 4}, 10^-12], \
+          Round[Coefficient[f, x] /. {a -> 1, b -> 2, c -> 4}, 10^-12], \
+          Head[f[[1]]], f[[1, 1]]}"
+      )
+      .unwrap(),
+      "{-666666666667/1000000000000, 3/2, Times, 0.5773502691896258}"
+    );
+    // Uncertain values stay inert inside the combination.
+    assert_eq!(
+      interpret(
+        "InputForm[Fit[{{1, PlusMinus[2, 0.1]}, {2, 3}}, {1, x}, x]] // \
+         ToString // StringContainsQ[\"*(2 ± 0.1)\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn variables_need_not_be_symbols() {
+    assert_eq!(
+      interpret("Head[Fit[{{1, 2}, {2, 3.}, {3, 5}}, {1, #}, #]]").unwrap(),
+      "Plus"
+    );
+    assert_eq!(
+      interpret(
+        "Fit[{{1, 2}, {2, 3.}, {3, 5}}, {1, Subscript[x, 1]}, Subscript[x, 1]] \
+         /. Subscript[x, 1] -> 2 // Round[#, 10^-9] &"
+      )
+      .unwrap(),
+      "3333333333/1000000000"
     );
   }
 }
