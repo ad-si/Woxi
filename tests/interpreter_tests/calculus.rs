@@ -8925,6 +8925,22 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // A parameter inside a held `If` branch of a numerically eliminated
+  // constraint takes its value from the enclosing Block, rather than making
+  // the constraint uncompilable (Demonstration
+  // DistillationOfATernaryIdealMixture's reflux step `R[t]`).
+  #[test]
+  fn block_parameter_in_implicit_constraint() {
+    assert_eq!(
+      interpret(
+        "Block[{d = 2.}, Round[10^4 ({x[2], y[2]} /. First[NDSolve[{x'[t] == -y[t], \
+         y[t]^3 + y[t] == If[t < 1, x[t], d x[t]], x[0] == 1}, {x, y}, {t, 0, 2}]])]]"
+      )
+      .unwrap(),
+      "{815, 1590}"
+    );
+  }
+
   // A complex-valued system is solved as the real system of its parts
   // (HarmonicElectricFieldAppliedToAParticleInAnInfiniteSquareWell).
   #[test]

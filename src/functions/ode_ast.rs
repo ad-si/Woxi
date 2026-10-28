@@ -8532,7 +8532,14 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         "E" => Some(NExpr::Const(std::f64::consts::E)),
         "Degree" => Some(NExpr::Const(std::f64::consts::PI / 180.0)),
         "GoldenRatio" => Some(NExpr::Const(f64::midpoint(1.0, 5.0_f64.sqrt()))),
-        _ => None,
+        // A parameter left symbolic in a held branch (`If[t <= 100, 2.5,
+        // 2.5 + delta/40]`) takes the value it has where NDSolve runs,
+        // e.g. from an enclosing Block.
+        _ => crate::evaluator::evaluate_expr_to_expr(expr)
+          .ok()
+          .filter(|v| !matches!(v, Expr::Identifier(_)))
+          .and_then(|v| crate::functions::math_ast::try_eval_to_f64(&v))
+          .map(NExpr::Const),
       }
     }
     Expr::BinaryOp { op, left, right } => {
