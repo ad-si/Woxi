@@ -680,6 +680,24 @@ mod accounting_form {
   }
 
   #[test]
+  fn number_format_option_receives_mantissa_base_exponent() {
+    assert_eq!(
+      interpret(
+        "ToString[AccountingForm[54881.2, {9, 0}, NumberFormat -> (Row[{#1, \"\", #3}] &), DigitBlock -> 3]]"
+      )
+      .unwrap(),
+      "54,881."
+    );
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[1234.5, 6, NumberFormat -> (Row[{#1, \"|\", #2}] &)]]"
+      )
+      .unwrap(),
+      "1234.5|10"
+    );
+  }
+
+  #[test]
   fn wrapping_number_form_uses_inner_spec() {
     assert_eq!(
       interpret(

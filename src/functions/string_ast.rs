@@ -16333,6 +16333,58 @@ fn number_format_is_identity(args: &[Expr]) -> bool {
   })
 }
 
+/// `NumberFormat -> f` on a number that is written without an exponent:
+/// `f` receives the formatted mantissa, the base `"10"` and an empty
+/// exponent string, and what it returns is the text shown. Anything with an
+/// exponent line (or an `ExponentFunction` that picks one) is left alone.
+fn number_format_option_to_string(
+  head: &str,
+  inner: &[Expr],
+) -> Option<String> {
+  let is_option = |a: &Expr, name: &str| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == name))
+  };
+  let format = inner.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberFormat") =>
+    {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  if inner.iter().any(|a| is_option(a, "ExponentFunction"))
+    && !exponent_function_suppresses(inner)
+  {
+    return None;
+  }
+  let plain: Vec<Expr> = inner
+    .iter()
+    .filter(|a| !is_option(a, "NumberFormat"))
+    .cloned()
+    .collect();
+  let mantissa = number_form_family_to_string(head, &plain)?;
+  if mantissa.contains('\n') || mantissa.contains("*^") {
+    return None;
+  }
+  let applied = crate::functions::list_helpers_ast::apply_func_to_args(
+    format,
+    &[
+      Expr::String(mantissa),
+      Expr::String("10".to_string()),
+      Expr::String(String::new()),
+    ],
+  )
+  .ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&applied).ok()?;
+  match to_string_ast(std::slice::from_ref(&evaluated)) {
+    Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+    _ => None,
+  }
+}
+
 /// Render `NumberForm[…]`, `PaddedForm[…]` or `AccountingForm[…]` (options
 /// included) to its plain-text form. Lists thread element-wise, non-numeric
 /// arguments render as the expression itself (wolframscript shows
@@ -16411,7 +16463,7 @@ pub(crate) fn number_form_family_to_string(
         if s == "ExponentFunction"))
   }) && !exponent_function_suppresses(inner));
   if has_custom_format {
-    return None;
+    return number_format_option_to_string(head, inner);
   }
   let value = positional[0];
   let spec = positional.get(1).copied();
