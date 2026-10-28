@@ -23652,3 +23652,21 @@ mod nd_eigensystem {
     );
   }
 }
+
+mod derivative_definitions {
+  use super::*;
+
+  // A value given to a derivative (`w' = …` stores it for Derivative[1] of
+  // w's value) is used before the built-in derivative rules.
+  #[test]
+  fn assigned_derivative_values() {
+    for (input, expected) in [
+      ("w = q^2; w' = 7; w'", "7"),
+      ("w = q^2; Derivative[1][w] = 7; Derivative[1][q^2]", "7"),
+      ("Derivative[1][g] = Cos; g'[0]", "1"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}

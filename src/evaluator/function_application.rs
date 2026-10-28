@@ -2825,6 +2825,13 @@ pub fn apply_curried_call(
           }
         }
       } else if name == "Derivative"
+        && let Some(result) = try_sub_value_curried_match(func, args)
+      {
+        // A definition made for a derivative (`w' = …`, which stores the
+        // rule for `Derivative[1]` of w's value) comes before the built-in
+        // rules, as in wolframscript.
+        result
+      } else if name == "Derivative"
         && func_args.len() == 1
         && args.len() == 1
         && let Expr::Integer(n) = &func_args[0]
