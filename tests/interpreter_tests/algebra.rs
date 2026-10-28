@@ -2475,6 +2475,38 @@ mod cancel {
   // `(m w/h)^(1/4)` into `(m w)^(1/4)/h^(1/4)` and like terms meet: the
   // lowering operator annihilates the oscillator ground state (Demonstration
   // EnergyLevelsOfAQuantumHarmonicOscillatorInSecondQuantization).
+  // Radicals of one symbolic base cancel as powers of its root, sums are
+  // cancelled term by term, and Simplify uses both: the number operator
+  // gives the level n for every oscillator eigenstate, quickly — the
+  // heuristic gcd of the six-variable quotients D cancels is bounded
+  // instead of retrying 6^depth images.
+  #[test]
+  fn radicals_of_one_base_and_sums() {
+    assert_eq!(
+      interpret(
+        "{Cancel[(Sqrt[r] + r)/Sqrt[r]], Cancel[(r - 1)/(Sqrt[r] - 1)], \
+          Cancel[(a^(3/2) + a^(5/2) x)/(a^(1/2) + a^(3/2) x)], \
+          Cancel[(x^2 - 1)/(x - 1) + (x^2 - 4)/(x - 2)], Cancel[1/x + 1/y], \
+          Cancel[x/(x + x y) + 2]}"
+      )
+      .unwrap(),
+      "{1 + Sqrt[r], 1 + Sqrt[r], a, 3 + 2*x, x^(-1) + y^(-1), 2 + (1 + y)^(-1)}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "p := -I h D[#, x] &; a = Sqrt[m w/(2 h)] (x # + I/(m w) p@#) &; \
+         ad = Sqrt[m w/(2 h)] (x # - I/(m w) p@#) &; \
+         psi[n_] := (m w/h)^(1/4) 1/Sqrt[2^n n! Sqrt[Pi]] Exp[-z^2/2] HermiteH[n, z] /. \
+           z -> Sqrt[m w/h] x; \
+         Table[Simplify[ad[a[psi[n]]]/psi[n]], {n, 0, 3}]"
+      )
+      .unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
   #[test]
   fn radical_of_symbolic_quotient_stays_whole() {
     assert_eq!(

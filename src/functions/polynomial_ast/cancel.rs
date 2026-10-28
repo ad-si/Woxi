@@ -11,6 +11,17 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cancel expects exactly 1 argument".into(),
     ));
   }
+  // A sum is cancelled term by term, as in Wolfram:
+  // Cancel[(x^2 - 1)/(x - 1) + 1/y] is 1 + x + 1/y.
+  if let Expr::FunctionCall { name, args: terms } = &args[0]
+    && name == "Plus"
+  {
+    let cancelled = terms
+      .iter()
+      .map(|t| cancel_ast(std::slice::from_ref(t)))
+      .collect::<Result<Vec<_>, _>>()?;
+    return crate::evaluator::evaluate_function_call_ast("Plus", &cancelled);
+  }
   // A unit numerator has nothing to cancel: wolframscript returns the
   // fraction unchanged — Cancel[1/(2 - 2*x)] stays (2 - 2*x)^(-1) and
   // Cancel[1/((x-1)(x+1))] keeps the factored denominator. A denominator
@@ -138,7 +149,7 @@ fn cancel_expr_with_opaque_fallback(
   // (reordering a numerator it could not factor), so the opaque-atom
   // attempt is always made and the smaller result wins.
   let direct = cancel_expr_impl(expr, canonicalize_sign);
-  match cancel_via_opaque_atoms(expr, canonicalize_sign) {
+  let best = match cancel_via_opaque_atoms(expr, canonicalize_sign) {
     Some(alt)
       if super::simplify::leaf_count(&alt)
         < super::simplify::leaf_count(&direct) =>
@@ -146,7 +157,144 @@ fn cancel_expr_with_opaque_fallback(
       alt
     }
     _ => direct,
+  };
+  match cancel_via_radical_variables(expr, canonicalize_sign) {
+    Some(alt)
+      if super::simplify::leaf_count(&alt)
+        < super::simplify::leaf_count(&best) =>
+    {
+      alt
+    }
+    _ => best,
   }
+}
+
+/// Cancel a quotient over radicals of one symbolic base — `r^(7/4)`,
+/// `r^(3/4)` — by reading them as powers of one new variable `u = r^(1/4)`:
+/// `(a r^(7/4) + b r^(11/4))/(c r^(3/4))` has the common factor `u^3`. The
+/// radicals are put back afterwards (`u^4` is `r` again) and the quotient
+/// cancelled once more over the original symbols.
+pub(super) fn cancel_via_radical_variables(
+  expr: &Expr,
+  canonicalize_sign: bool,
+) -> Option<Expr> {
+  // Each symbolic base raised to a non-integer rational power, with the
+  // lcm of those exponents' denominators.
+  fn collect(e: &Expr, out: &mut Vec<(Expr, String, i128)>) {
+    if let Some((base, p, q)) = radical_parts(e) {
+      let _ = p;
+      let key = expr_to_string(base);
+      match out.iter_mut().find(|(_, k, _)| *k == key) {
+        Some(entry) => entry.2 = lcm_i128(entry.2, q),
+        None => out.push((base.clone(), key, q)),
+      }
+      return;
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect(child, out);
+    }
+  }
+  fn radical_parts(e: &Expr) -> Option<(&Expr, i128, i128)> {
+    let (base, exp) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    let Expr::FunctionCall { name, args } = exp else {
+      return None;
+    };
+    if name != "Rational" || args.len() != 2 {
+      return None;
+    }
+    let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1]) else {
+      return None;
+    };
+    if crate::functions::predicate_ast::is_numeric_q(base) {
+      return None;
+    }
+    Some((base, *p, *q))
+  }
+  fn lcm_i128(a: i128, b: i128) -> i128 {
+    a / gcd_i128(a, b) * b
+  }
+  let (num, den) = super::together::extract_num_den(expr);
+  if matches!(den, Expr::Integer(1)) {
+    return None;
+  }
+  let mut bases = Vec::new();
+  collect(expr, &mut bases);
+  // Only a base present — as a radical or itself — on both sides of the
+  // quotient can cancel.
+  fn occurs(e: &Expr, key: &str) -> bool {
+    if radical_parts(e).is_some_and(|(b, _, _)| expr_to_string(b) == key)
+      || expr_to_string(e) == key
+    {
+      return true;
+    }
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|c| occurs(c, key))
+  }
+  if !bases
+    .iter()
+    .any(|(_, key, _)| occurs(&num, key) && occurs(&den, key))
+  {
+    return None;
+  }
+  let names: Vec<Expr> = (0..bases.len())
+    .map(|i| Expr::Identifier(format!("Woxi$radical${i}")))
+    .collect();
+  // r^(p/q) → u^(p L/q) for u = r^(1/L).
+  fn replace(e: &Expr, bases: &[(Expr, String, i128)], names: &[Expr]) -> Expr {
+    if let Some((base, p, q)) = radical_parts(e) {
+      let key = expr_to_string(base);
+      if let Some(i) = bases.iter().position(|(_, k, _)| *k == key) {
+        let l = bases[i].2;
+        return Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![names[i].clone(), Expr::Integer(p * l / q)].into(),
+        };
+      }
+    }
+    // The base itself is u^L too (`(Sqrt[r] + r)/Sqrt[r]`).
+    let key = expr_to_string(e);
+    if let Some(i) = bases.iter().position(|(_, k, _)| *k == key) {
+      return Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![names[i].clone(), Expr::Integer(bases[i].2)].into(),
+      };
+    }
+    crate::syntax::map_children(e, &|c| replace(c, bases, names))
+  }
+  let abstracted =
+    crate::evaluator::evaluate_expr_to_expr(&replace(expr, &bases, &names))
+      .ok()?;
+  let cancelled = cancel_expr_impl(&abstracted, canonicalize_sign);
+  if expr_to_string(&cancelled) == expr_to_string(&abstracted) {
+    return None;
+  }
+  let mut restored = cancelled;
+  for ((base, _, l), name) in bases.iter().zip(&names) {
+    let root = Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![
+        base.clone(),
+        crate::functions::math_ast::make_rational(1, *l),
+      ]
+      .into(),
+    };
+    restored = super::solve::substitute_expr(&restored, name, &root);
+  }
+  let restored = crate::evaluator::evaluate_expr_to_expr(&restored).ok()?;
+  Some(cancel_expr_impl(&restored, canonicalize_sign))
 }
 
 /// Cancel a quotient whose "variables" are opaque subexpressions the
