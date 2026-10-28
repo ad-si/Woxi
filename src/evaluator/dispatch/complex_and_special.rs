@@ -5027,6 +5027,21 @@ fn tf_negated_term(term: &Expr) -> Option<Expr> {
       Expr::BigInteger(n) if n.sign() == Sign::Minus => {
         Some(Expr::BigInteger(-n.clone()))
       }
+      // `Rational[-1, 4]` leads the evaluated `-Pi/4`, so its sign is the
+      // term's sign too.
+      Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+      {
+        let Expr::Integer(n) = &args[0] else {
+          return None;
+        };
+        Some(Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![Expr::Integer(-n), args[1].clone()].into(),
+        })
+      }
       _ => None,
     }
   }
