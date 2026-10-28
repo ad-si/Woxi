@@ -2463,6 +2463,34 @@ fn collect_primitives(
         "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
           parse_ellipsoid(args, style, prims);
         }
+        // A fitted model's parameter confidence region, `ParameterEllipsoid[
+        // center, radii, directions]`, draws as wolframscript formats it:
+        // the axis-aligned ellipse turned onto the directions about its
+        // center.
+        "FittedModels`ParameterEllipsoid" if args.len() == 3 => {
+          if let (Some((cx, cy)), Expr::List(dirs)) =
+            (expr_to_point(&args[0]), &args[2])
+            && let [d0, d1] = dirs.as_slice()
+            && let (Some((a, b)), Some((c, d))) =
+              (expr_to_point(d0), expr_to_point(d1))
+          {
+            // Transpose[directions], rotating about the center.
+            let m = [[a, c], [b, d]];
+            let shift = (
+              cx - (m[0][0] * cx + m[0][1] * cy),
+              cy - (m[1][0] * cx + m[1][1] * cy),
+            );
+            let circle = Expr::FunctionCall {
+              name: "Circle".to_string(),
+              args: vec![args[0].clone(), args[1].clone()].into(),
+            };
+            let mut inner = Vec::new();
+            collect_primitives(&circle, &mut style.clone(), &mut inner, errors);
+            for p in &inner {
+              prims.push(affine_primitive(p, m, shift));
+            }
+          }
+        }
         // `Rectangle[p1, p2, g]` stretches the picture `g` over the
         // rectangle instead of filling it, i.e. `Inset[g, center, Center,
         // {w, h}]`.

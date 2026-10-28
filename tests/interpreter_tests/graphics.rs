@@ -14267,6 +14267,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn parameter_ellipsoid_draws_its_turned_ellipse() {
+      // A fitted model's confidence region draws as wolframscript formats
+      // it: Circle[center, radii] turned by Transpose[directions] about the
+      // center.
+      let ellipsoid = export_svg(
+        "Graphics[FittedModels`ParameterEllipsoid[{1, 2}, {3, 1}, \
+         {{0.6, 0.8}, {-0.8, 0.6}}], PlotRange -> {{-4, 6}, {-3, 7}}]",
+      );
+      let transformed = export_svg(
+        "Graphics[GeometricTransformation[Circle[{1, 2}, {3, 1}], \
+         {{{0.6, -0.8}, {0.8, 0.6}}, {1, 2} - {{0.6, -0.8}, {0.8, 0.6}} . \
+         {1, 2}}], PlotRange -> {{-4, 6}, {-3, 7}}]",
+      );
+      assert!(ellipsoid.contains("<polyline"), "got: {ellipsoid}");
+      assert_eq!(ellipsoid, transformed);
+    }
+
+    #[test]
     fn geometric_transformation_distorts_text_glyphs() {
       // Transformed text moves its anchor and has its glyphs sheared and
       // stretched by the linear part (square 4-by-4 window: equal x/y

@@ -4316,6 +4316,43 @@ mod lower_triangularize {
   }
 }
 
+mod nonlinear_model_fit_report {
+  use super::*;
+
+  const FIT: &str = "m = NonlinearModelFit[{{-3., -2.1}, {-2., -1.2}, \
+    {-1., 0.3}, {0., 0.8}, {1., 2.2}, {2., 2.9}, {3., 4.1}}, \
+    a x + b, {a, b}, x];";
+
+  #[test]
+  fn anova_table() {
+    assert_eq!(
+      interpret(&format!(
+        "{FIT} t = m[\"ANOVATable\"]; \
+         {{t[[1, 1, 1]], t[[1, 1, All, 1]], Round[t[[1, 1, 2 ;;, 3]], 10^-6]}}"
+      ))
+      .unwrap(),
+      "{{, DF, SS, MS}, {, Model, Error, Uncorrected Total, Corrected Total}, \
+       {14567/400, 89/400, 916/25, 741/25}}"
+    );
+  }
+
+  #[test]
+  fn parameter_confidence_region_and_level() {
+    // wolframscript: radii {0.2712315876194963, 0.13561579380974811}, and
+    // {0.10077592551722225, 0.05038796275861111} at ConfidenceLevel -> 0.5.
+    assert_eq!(
+      interpret(&format!(
+        "{FIT} {{Round[m[\"ParameterConfidenceRegion\"][[2]], 10^-8], \
+         Round[m[\"ParameterConfidenceRegion\", ConfidenceLevel -> 0.5][[2]], \
+         10^-8], Round[m[\"ParameterConfidenceRegion\"][[1]], 10^-8]}}"
+      ))
+      .unwrap(),
+      "{{27123159/100000000, 13561579/100000000}, \
+       {10077593/100000000, 1259699/25000000}, {41/40, 1}}"
+    );
+  }
+}
+
 mod generalized_linear_model_fit {
   use super::*;
 
@@ -4619,6 +4656,81 @@ mod linear_model_fit {
       )
       .unwrap(),
       "{Style, Estimate, 1, x, True}"
+    );
+  }
+
+  #[test]
+  fn report_tables_are_styled_like_wolframscript() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2.}, {2, 3.5}, {3, 7.}, {4, 8.}}, x, x]; \
+         t = lm[\"ANOVATable\"]; \
+         {t[[2]], Rest[List @@ t[[1]]], t[[1, 1, 1]], t[[1, 1, 2, 1]], \
+          t[[1, 1, 3, 1]], t[[1, 1, 4]]}"
+      )
+      .unwrap(),
+      "{DialogStyle, {Alignment -> {Left, Automatic}, Dividers -> \
+       {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> \
+       {{2 -> 1}, {2 -> 0.75}}}, {, DF, SS, MS, F‐Statistic, P‐Value}, \
+       x, Error, {Total, 3, 24.1875}}"
+    );
+  }
+
+  #[test]
+  fn anova_has_a_sequential_row_per_basis_function() {
+    // wolframscript: {{1, 34.225, …}, {1, 0.8265625, …}, {2, 1.1484375,
+    // 0.57421875}, {4, 36.2}}.
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2, 2.}, {2, 1, 3.5}, {3, 5, 7.}, \
+         {4, 3, 8.}, {5, 5, 9.}}, {x, y}, {x, y}]; \
+         e = lm[\"ANOVATableEntries\"]; \
+         {e[[All, 1]], Round[e[[All, 2]], 10^-6], \
+          Round[lm[\"ANOVATableFStatistics\"], 10^-6]}"
+      )
+      .unwrap(),
+      "{{1, 1, 2, 4}, {1369/40, 826563/1000000, 1148437/1000000, 181/5}, \
+       {59602721/1000000, 44983/31250}}"
+    );
+    // Without a constant the total is uncentered.
+    assert_eq!(
+      interpret(
+        "LinearModelFit[{{1, 2, 2.}, {2, 1, 3.5}, {3, 5, 7.}, {4, 3, 8.}, \
+         {5, 5, 9.}}, {x, y}, {x, y}, IncludeConstantBasis -> False]\
+         [\"ANOVATableEntries\"][[All, 1]]"
+      )
+      .unwrap(),
+      "{1, 1, 3, 5}"
+    );
+  }
+
+  #[test]
+  fn parameter_confidence_region_is_an_ellipsoid() {
+    // wolframscript: ParameterEllipsoid[{-0.25, 2.15}, {5.840461914996732,
+    // 0.7819876082602373}, Eigenvectors[CovarianceMatrix]].
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2.}, {2, 3.5}, {3, 7.}, {4, 8.}}, x, x]; \
+         r = lm[\"ParameterConfidenceRegion\"]; \
+         {Head[r], Round[r[[1]], 10^-9], Round[r[[2]], 10^-9], \
+          Round[lm[\"CovarianceMatrix\"], 10^-9]}"
+      )
+      .unwrap(),
+      "{FittedModels`ParameterEllipsoid, {-1/4, 43/20}, \
+       {1168092383/200000000, 97748451/125000000}, \
+       {{129/160, -43/160}, {-43/160, 43/400}}}"
+    );
+  }
+
+  #[test]
+  fn unknown_property_in_a_list_leaves_the_query_unevaluated() {
+    assert_eq!(
+      interpret(
+        "lm = LinearModelFit[{{1, 2.}, {2, 3.5}, {3, 7.}}, x, x]; \
+         Head[Head[lm[{\"RSquared\", \"NoSuchProperty\"}]]]"
+      )
+      .unwrap(),
+      "FittedModel"
     );
   }
 

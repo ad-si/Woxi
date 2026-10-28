@@ -8576,44 +8576,87 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .flatten();
 
-  // ANOVA table ("ANOVATableEntries" and its constituent properties): the
-  // model/error/total decomposition of the sum of squares and the overall
-  // F-test. A model with a constant term is centered on the response mean
-  // (`n - 1` total degrees of freedom); one without is uncentered. `None`
-  // when no error degrees of freedom remain or the F-test is undefined.
+  // ANOVA table ("ANOVATableEntries" and its constituent properties): one
+  // row per basis function but the constant with its sequential sum of
+  // squares (the drop in residual sum of squares as it joins the ones
+  // before it) and F-test, then the error and total rows. A model with a
+  // constant term is centered on the response mean (`n - 1` total degrees
+  // of freedom); one without is uncentered. `None` when no error degrees
+  // of freedom remain or a nested fit is singular.
   let anova: Option<AnovaTable> = (n > m)
     .then(|| {
-      let has_constant = basis.iter().any(|b| matches!(b, Expr::Integer(1)));
-      let (df_model, df_total, ss_total) = if has_constant {
-        (m - 1, n - 1, ss_tot)
-      } else {
-        (m, n, y_vals.iter().map(|y| y * y).sum::<f64>())
+      let constant = basis.iter().position(|b| matches!(b, Expr::Integer(1)));
+      let (df_total, ss_total) = match constant {
+        Some(_) => (n - 1, ss_tot),
+        None => (n, y_vals.iter().map(|y| y * y).sum::<f64>()),
       };
-      if df_model == 0 {
+      let df_error = n - m;
+      let ms_error = ss_res / df_error as f64;
+      // Residual sum of squares of the least-squares fit on `columns`.
+      let rss_of = |columns: &[usize]| -> Option<f64> {
+        let xtx: Vec<Vec<f64>> = columns
+          .iter()
+          .map(|&i| {
+            columns
+              .iter()
+              .map(|&j| a_matrix.iter().map(|r| r[i] * r[j]).sum())
+              .collect()
+          })
+          .collect();
+        let xty: Vec<f64> = columns
+          .iter()
+          .map(|&i| a_matrix.iter().zip(&y_vals).map(|(r, y)| r[i] * y).sum())
+          .collect();
+        let beta = solve_linear_system(&xtx, &xty)?;
+        Some(
+          a_matrix
+            .iter()
+            .zip(&y_vals)
+            .map(|(r, y)| {
+              let fit: f64 =
+                columns.iter().zip(&beta).map(|(&c, b)| r[c] * b).sum();
+              (y - fit).powi(2)
+            })
+            .sum(),
+        )
+      };
+      let mut columns: Vec<usize> = constant.into_iter().collect();
+      let mut previous_rss = ss_total;
+      let mut terms = Vec::new();
+      for j in (0..m).filter(|&j| Some(j) != constant) {
+        columns.push(j);
+        let rss = if columns.len() == m {
+          ss_res
+        } else {
+          rss_of(&columns)?
+        };
+        let ss = previous_rss - rss;
+        previous_rss = rss;
+        let f_stat = ss / ms_error;
+        let dist = call(
+          "FRatioDistribution",
+          vec![Expr::Integer(1), Expr::Integer(df_error as i128)],
+        );
+        let cdf =
+          evaluate_expr_to_expr(&call("CDF", vec![dist, Expr::Real(f_stat)]))
+            .ok()
+            .and_then(|e| try_eval_to_f64(&e))?;
+        terms.push(AnovaTerm {
+          ss,
+          f_stat,
+          p_value: 1.0 - cdf,
+        });
+      }
+      if terms.is_empty() {
         return None;
       }
-      let df_error = n - m;
-      let ss_model = ss_total - ss_res;
-      let ms_model = ss_model / df_model as f64;
-      let ms_error = ss_res / df_error as f64;
-      let f_stat = ms_model / ms_error;
-      let dist = call(
-        "FRatioDistribution",
-        vec![
-          Expr::Integer(df_model as i128),
-          Expr::Integer(df_error as i128),
-        ],
-      );
-      let cdf =
-        evaluate_expr_to_expr(&call("CDF", vec![dist, Expr::Real(f_stat)]))
-          .ok()
-          .and_then(|e| try_eval_to_f64(&e))?;
       Some(AnovaTable {
-        df: [df_model, df_error, df_total],
-        ss: [ss_model, ss_res, ss_total],
-        ms: [ms_model, ms_error],
-        f_stat,
-        p_value: 1.0 - cdf,
+        terms,
+        df_error,
+        ss_error: ss_res,
+        ms_error,
+        df_total,
+        ss_total,
       })
     })
     .flatten();
@@ -8767,30 +8810,62 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(t) = anova {
     let int = |v: usize| Expr::Integer(v as i128);
     let reals =
-      |vs: &[f64]| Expr::List(vs.iter().map(|v| Expr::Real(*v)).collect());
+      |vs: Vec<f64>| Expr::List(vs.into_iter().map(Expr::Real).collect());
     let row = |items: Vec<Expr>| Expr::List(items.into());
-    assoc.push((
-      str_expr("ANOVATableEntries"),
-      row(vec![
+    let mut entries: Vec<Expr> = t
+      .terms
+      .iter()
+      .map(|term| {
         row(vec![
-          int(t.df[0]),
-          Expr::Real(t.ss[0]),
-          Expr::Real(t.ms[0]),
-          Expr::Real(t.f_stat),
-          Expr::Real(t.p_value),
-        ]),
-        row(vec![int(t.df[1]), Expr::Real(t.ss[1]), Expr::Real(t.ms[1])]),
-        row(vec![int(t.df[2]), Expr::Real(t.ss[2])]),
-      ]),
-    ));
+          int(1),
+          Expr::Real(term.ss),
+          Expr::Real(term.ss),
+          Expr::Real(term.f_stat),
+          Expr::Real(term.p_value),
+        ])
+      })
+      .collect();
+    entries.push(row(vec![
+      int(t.df_error),
+      Expr::Real(t.ss_error),
+      Expr::Real(t.ms_error),
+    ]));
+    entries.push(row(vec![int(t.df_total), Expr::Real(t.ss_total)]));
+    let term_ss: Vec<f64> = t.terms.iter().map(|term| term.ss).collect();
+    assoc.push((str_expr("ANOVATableEntries"), row(entries)));
     assoc.push((
       str_expr("ANOVATableDegreesOfFreedom"),
-      row(t.df.iter().map(|d| int(*d)).collect()),
+      row(
+        t.terms
+          .iter()
+          .map(|_| int(1))
+          .chain([int(t.df_error), int(t.df_total)])
+          .collect(),
+      ),
     ));
-    assoc.push((str_expr("ANOVATableSumsOfSquares"), reals(&t.ss)));
-    assoc.push((str_expr("ANOVATableMeanSquares"), reals(&t.ms)));
-    assoc.push((str_expr("ANOVATableFStatistics"), reals(&[t.f_stat])));
-    assoc.push((str_expr("ANOVATablePValues"), reals(&[t.p_value])));
+    assoc.push((
+      str_expr("ANOVATableSumsOfSquares"),
+      reals(
+        term_ss
+          .iter()
+          .copied()
+          .chain([t.ss_error, t.ss_total])
+          .collect(),
+      ),
+    ));
+    assoc.push((
+      str_expr("ANOVATableMeanSquares"),
+      reals(term_ss.iter().copied().chain([t.ms_error]).collect()),
+    ));
+    assoc.push((
+      str_expr("ANOVATableFStatistics"),
+      reals(t.terms.iter().map(|term| term.f_stat).collect()),
+    ));
+    assoc.push((
+      str_expr("ANOVATablePValues"),
+      reals(t.terms.iter().map(|term| term.p_value).collect()),
+    ));
+    assoc.push((str_expr("SequentialSumOfSquares"), reals(term_ss)));
   }
 
   Ok(call1("FittedModel", Expr::Association(assoc)))
@@ -8872,9 +8947,18 @@ pub fn regress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// fit: model/error/total degrees of freedom and sums of squares, the
 /// model/error mean squares, and the F statistic with its p-value.
 struct AnovaTable {
-  df: [usize; 3],
-  ss: [f64; 3],
-  ms: [f64; 2],
+  terms: Vec<AnovaTerm>,
+  df_error: usize,
+  ss_error: f64,
+  ms_error: f64,
+  df_total: usize,
+  ss_total: f64,
+}
+
+/// One basis function's row of a linear model's ANOVA table (one degree
+/// of freedom, so its mean square is its sum of squares).
+struct AnovaTerm {
+  ss: f64,
   f_stat: f64,
   p_value: f64,
 }
@@ -8914,12 +8998,17 @@ fn student_t_two_tailed_p_value(dof: f64, t_stat: f64) -> Option<f64> {
 /// the parameters (central differences) at the fitted values. Returns the
 /// standard errors, t-statistics, two-tailed p-values and parameter values;
 /// `None` when degrees of freedom are exhausted or `J^T J` is singular.
+/// Standard errors, t statistics, p-values, estimates and the covariance
+/// matrix of a nonlinear fit's parameters.
+type NonlinearParameterStats =
+  (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>);
+
 fn nonlinear_parameter_stats(
   data: &Expr,
   model: &Expr,
   rules: &[Expr],
   var_name: &str,
-) -> Option<(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>)> {
+) -> Option<NonlinearParameterStats> {
   let data_evaluated = evaluate_expr_to_expr(data).ok()?;
   let Expr::List(data_list) = &data_evaluated else {
     return None;
@@ -8980,6 +9069,10 @@ fn nonlinear_parameter_stats(
     }
   }
   let inv = invert_square_matrix(&jtj)?;
+  let covariance: Vec<Vec<f64>> = inv
+    .iter()
+    .map(|row| row.iter().map(|v| v * sigma2).collect())
+    .collect();
   let (mut errors, mut ts, mut ps) = (vec![], vec![], vec![]);
   for j in 0..m {
     let se = (sigma2 * inv[j][j]).max(0.0).sqrt();
@@ -8992,7 +9085,7 @@ fn nonlinear_parameter_stats(
     errors.push(se);
     ts.push(t);
   }
-  Some((errors, ts, ps, values))
+  Some((errors, ts, ps, values, covariance))
 }
 
 /// NonlinearModelFit[data, model, params, var] — fits a (possibly nonlinear)
@@ -9183,7 +9276,7 @@ pub fn nonlinear_model_fit_ast(
     }
   }
 
-  if let Some((errors, t_stats, p_values, values)) =
+  if let Some((errors, t_stats, p_values, values, covariance)) =
     nonlinear_parameter_stats(data, model, rules, &var_name)
   {
     let entries = Expr::List(
@@ -9207,6 +9300,10 @@ pub fn nonlinear_model_fit_ast(
     assoc.push((str_expr("ParameterTStatistics"), reals(&t_stats)));
     assoc.push((str_expr("ParameterPValues"), reals(&p_values)));
     assoc.push((str_expr("ParameterTableEntries"), entries));
+    assoc.push((
+      str_expr("CovarianceMatrix"),
+      Expr::List(covariance.iter().map(|row| reals(row)).collect()),
+    ));
   }
 
   Ok(call1("FittedModel", Expr::Association(assoc)))
@@ -9589,58 +9686,322 @@ fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
 /// `fit["ParameterTable"]`: the estimates table as a styled `Grid` whose
 /// first row holds the column headings and whose later rows hold a basis
 /// function label followed by the entries of `"ParameterTableEntries"`.
-fn parameter_table(assoc: &[(Expr, Expr)]) -> Option<Expr> {
-  let get = |name: &str| {
-    assoc.iter().find_map(|(k, v)| match k {
-      Expr::String(k) if k == name => Some(v),
-      _ => None,
-    })
-  };
-  let Expr::List(entries) = get("ParameterTableEntries")? else {
+fn fit_property<'a>(assoc: &'a [(Expr, Expr)], name: &str) -> Option<&'a Expr> {
+  assoc.iter().find_map(|(k, v)| match k {
+    Expr::String(k) if k == name => Some(v),
+    _ => None,
+  })
+}
+
+/// A fitted model's report table as wolframscript styles it: a heading
+/// row, then one row per label holding that label and its entries.
+fn fit_report_table(
+  heading: &[&str],
+  labels: Vec<Expr>,
+  entries: &[Expr],
+) -> Option<Expr> {
+  if labels.len() != entries.len() {
     return None;
-  };
-  let Expr::List(basis) = get("BasisFunctions")? else {
-    return None;
-  };
-  let heading = [
-    "",
-    "Estimate",
-    "Standard Error",
-    "t\u{2010}Statistic",
-    "P\u{2010}Value",
-  ];
+  }
   let mut rows = vec![Expr::List(
     heading
       .iter()
       .map(|h| Expr::String((*h).to_string()))
       .collect(),
   )];
-  for (b, entry) in basis.iter().zip(entries.iter()) {
+  for (label, entry) in labels.into_iter().zip(entries) {
     let Expr::List(values) = entry else {
       return None;
     };
-    let mut row = vec![Expr::String(expr_to_string(b))];
+    let mut row = vec![label];
     row.extend(values.iter().cloned());
     rows.push(Expr::List(row.into()));
   }
-  Some(call1("Style", call1("Grid", Expr::List(rows.into()))))
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  let at_second = |value: Expr| {
+    Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(Expr::Integer(2)),
+        replacement: Box::new(value),
+      }]
+      .into(),
+    )
+  };
+  let gray = || call1("GrayLevel", Expr::Real(0.7));
+  let grid = call(
+    "Grid",
+    vec![
+      Expr::List(rows.into()),
+      rule(
+        "Alignment",
+        Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
+      ),
+      rule(
+        "Dividers",
+        Expr::List(vec![at_second(gray()), at_second(gray())].into()),
+      ),
+      rule(
+        "Spacings",
+        Expr::List(
+          vec![at_second(Expr::Integer(1)), at_second(Expr::Real(0.75))].into(),
+        ),
+      ),
+    ],
+  );
+  Some(call(
+    "Style",
+    vec![grid, Expr::String("DialogStyle".to_string())],
+  ))
+}
+
+/// The fitted parameter names: the basis functions of a linear model, the
+/// parameter symbols of a nonlinear one.
+fn fit_parameter_labels(assoc: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
+  if let Some(Expr::List(basis)) = fit_property(assoc, "BasisFunctions") {
+    return Some(basis.to_vec());
+  }
+  match fit_property(assoc, "BestFitParameters")? {
+    Expr::List(rules) => rules
+      .iter()
+      .map(|r| match r {
+        Expr::Rule { pattern, .. } => Some(pattern.as_ref().clone()),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  }
+}
+
+/// The fitted parameter values, from either a list of values or rules.
+fn fit_parameter_values(assoc: &[(Expr, Expr)]) -> Option<Vec<f64>> {
+  match fit_property(assoc, "BestFitParameters")? {
+    Expr::List(items) => items
+      .iter()
+      .map(|r| match r {
+        Expr::Rule { replacement, .. } => try_eval_to_f64(replacement),
+        other => try_eval_to_f64(other),
+      })
+      .collect(),
+    _ => None,
+  }
+}
+
+fn parameter_table(assoc: &[(Expr, Expr)]) -> Option<Expr> {
+  let Expr::List(entries) = fit_property(assoc, "ParameterTableEntries")?
+  else {
+    return None;
+  };
+  fit_report_table(
+    &[
+      "",
+      "Estimate",
+      "Standard Error",
+      "t\u{2010}Statistic",
+      "P\u{2010}Value",
+    ],
+    fit_parameter_labels(assoc)?,
+    entries,
+  )
+}
+
+/// `"ANOVATable"`: a linear model has one row per basis function but the
+/// constant, then the error and total rows; a nonlinear one has model,
+/// error and the uncorrected and corrected totals.
+fn anova_table(assoc: &[(Expr, Expr)]) -> Option<Expr> {
+  let Expr::List(entries) = fit_property(assoc, "ANOVATableEntries")? else {
+    return None;
+  };
+  let word = |w: &str| Expr::String(w.to_string());
+  match fit_property(assoc, "Type")? {
+    Expr::Identifier(t) if t == "Nonlinear" => fit_report_table(
+      &["", "DF", "SS", "MS"],
+      vec![
+        word("Model"),
+        word("Error"),
+        word("Uncorrected Total"),
+        word("Corrected Total"),
+      ],
+      entries,
+    ),
+    Expr::Identifier(t) if t == "Linear" => {
+      let Expr::List(basis) = fit_property(assoc, "BasisFunctions")? else {
+        return None;
+      };
+      let mut labels: Vec<Expr> = basis
+        .iter()
+        .filter(|b| !matches!(b, Expr::Integer(1)))
+        .cloned()
+        .collect();
+      labels.extend([word("Error"), word("Total")]);
+      fit_report_table(
+        &["", "DF", "SS", "MS", "F\u{2010}Statistic", "P\u{2010}Value"],
+        labels,
+        entries,
+      )
+    }
+    _ => None,
+  }
+}
+
+/// `"ParameterConfidenceRegion"`: the ellipsoid of parameter values whose
+/// F statistic stays below its `level` quantile, with semi-axes along the
+/// covariance matrix's eigenvectors.
+fn parameter_confidence_region(
+  assoc: &[(Expr, Expr)],
+  level: f64,
+) -> Option<Expr> {
+  let center = fit_parameter_values(assoc)?;
+  let covariance = fit_covariance_matrix(assoc)?;
+  let p = center.len();
+  let n = match fit_property(assoc, "FitResiduals")? {
+    Expr::List(items) => items.len(),
+    _ => return None,
+  };
+  if n <= p || covariance.len() != p {
+    return None;
+  }
+  let f_quantile = try_eval_to_f64(
+    &evaluate_expr_to_expr(&call(
+      "Quantile",
+      vec![
+        call(
+          "FRatioDistribution",
+          vec![Expr::Integer(p as i128), Expr::Integer((n - p) as i128)],
+        ),
+        Expr::Real(level),
+      ],
+    ))
+    .ok()?,
+  )?;
+  let matrix = Expr::List(
+    covariance
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+  let eigensystem =
+    evaluate_expr_to_expr(&call1("Eigensystem", matrix)).ok()?;
+  let Expr::List(system) = &eigensystem else {
+    return None;
+  };
+  let [Expr::List(values), vectors @ Expr::List(_)] = system.as_slice() else {
+    return None;
+  };
+  let radii: Vec<Expr> = values
+    .iter()
+    .map(|v| {
+      try_eval_to_f64(v)
+        .map(|v| Expr::Real((v.max(0.0) * p as f64 * f_quantile).sqrt()))
+    })
+    .collect::<Option<_>>()?;
+  Some(call(
+    "FittedModels`ParameterEllipsoid",
+    vec![
+      Expr::List(center.into_iter().map(Expr::Real).collect()),
+      Expr::List(radii.into()),
+      vectors.clone(),
+    ],
+  ))
+}
+
+/// The parameter covariance matrix: stored by a nonlinear fit, the
+/// estimated variance times `Inverse[Transpose[X] . X]` for a linear one.
+fn fit_covariance_matrix(assoc: &[(Expr, Expr)]) -> Option<Vec<Vec<f64>>> {
+  let matrix_of = |e: &Expr| -> Option<Vec<Vec<f64>>> {
+    let Expr::List(rows) = e else {
+      return None;
+    };
+    rows
+      .iter()
+      .map(|row| match row {
+        Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+        _ => None,
+      })
+      .collect()
+  };
+  if let Some(stored) = fit_property(assoc, "CovarianceMatrix") {
+    return matrix_of(stored);
+  }
+  if !matches!(fit_property(assoc, "Type")?, Expr::Identifier(t) if t == "Linear")
+  {
+    return None;
+  }
+  let x = matrix_of(fit_property(assoc, "DesignMatrix")?)?;
+  let residuals: Vec<f64> = match fit_property(assoc, "FitResiduals")? {
+    Expr::List(items) => {
+      items.iter().map(try_eval_to_f64).collect::<Option<_>>()?
+    }
+    _ => return None,
+  };
+  let (n, p) = (x.len(), x.first()?.len());
+  if n <= p || residuals.len() != n {
+    return None;
+  }
+  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let xtx: Vec<Vec<f64>> = (0..p)
+    .map(|i| {
+      (0..p)
+        .map(|j| x.iter().map(|r| r[i] * r[j]).sum())
+        .collect()
+    })
+    .collect();
+  let inverse = invert_square_matrix(&xtx)?;
+  Some(
+    inverse
+      .into_iter()
+      .map(|row| row.into_iter().map(|v| v * variance).collect())
+      .collect(),
+  )
 }
 
 /// Look up a single named property on a `FittedModel` association.
 fn lookup_fitted_model_property(
   assoc: &[(Expr, Expr)],
   prop: &str,
+  options: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let unknown = || {
+    InterpreterError::EvaluationError(format!(
+      "FittedModel: unknown property \"{prop}\""
+    ))
+  };
+  match prop {
+    "ParameterTable" => return parameter_table(assoc).ok_or_else(unknown),
+    "ANOVATable" => return anova_table(assoc).ok_or_else(unknown),
+    "CovarianceMatrix" => {
+      return fit_covariance_matrix(assoc)
+        .map(|m| {
+          Expr::List(
+            m.into_iter()
+              .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+              .collect(),
+          )
+        })
+        .ok_or_else(unknown);
+    }
+    "ParameterConfidenceRegion" => {
+      let level = options
+        .iter()
+        .find_map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ConfidenceLevel") => {
+            try_eval_to_f64(replacement)
+          }
+          _ => None,
+        })
+        .unwrap_or(0.95);
+      return parameter_confidence_region(assoc, level).ok_or_else(unknown);
+    }
+    _ => {}
+  }
   // `"BestFit"` is wolframscript's name for the fitted expression itself
   // (mathematically: the polynomial of the basis terms with their best
   // coefficients). Internally we store that under `"FittedExpression"`.
-  if prop == "ParameterTable" {
-    return parameter_table(assoc).ok_or_else(|| {
-      InterpreterError::EvaluationError(format!(
-        "FittedModel: unknown property \"{prop}\""
-      ))
-    });
-  }
   let lookup_key = if prop == "BestFit" {
     "FittedExpression"
   } else {
@@ -9787,7 +10148,7 @@ pub fn evaluate_fitted_model(
   // Check if the argument is a string (property query). A property the
   // model does not have is FittedModel::elmntav, as in wolframscript.
   if let Expr::String(prop) = &call_args[0] {
-    return match lookup_fitted_model_property(assoc, prop) {
+    return match lookup_fitted_model_property(assoc, prop, &call_args[1..]) {
       Err(InterpreterError::EvaluationError(msg))
         if msg.starts_with("FittedModel: unknown property") =>
       {
@@ -9814,7 +10175,17 @@ pub fn evaluate_fitted_model(
       let Expr::String(prop) = p else {
         unreachable!()
       };
-      results.push(lookup_fitted_model_property(assoc, prop)?);
+      match lookup_fitted_model_property(assoc, prop, &call_args[1..]) {
+        Err(InterpreterError::EvaluationError(msg))
+          if msg.starts_with("FittedModel: unknown property") =>
+        {
+          crate::emit_message(&format!(
+            "FittedModel::elmntav: \"{prop}\" is not an available property."
+          ));
+          return stay_unevaluated();
+        }
+        other => results.push(other?),
+      }
     }
     return Ok(Expr::List(results.into()));
   }
