@@ -4626,6 +4626,23 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_frame_label_left_multiline_stacks_lines() {
+    // A left `FrameLabel` containing a newline used to be drawn as one
+    // rotated `<text>` with a raw line break, so the second line was lost.
+    // Each line must be its own tspan.
+    clear_state();
+    let svg = interpret(
+      "ExportString[ListPlot[{{1, 2}, {2, 3}, {3, 1}}, Frame -> True, \
+         FrameLabel -> {\"x\", \"first\\nsecond\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">first</tspan>") && svg.contains(">second</tspan>"),
+      "each line of a multi-line left FrameLabel must be its own tspan: {svg}"
+    );
+  }
+
+  #[test]
   fn test_frame_label_power_renders_as_unicode_superscript() {
     // A `FrameLabel`/`AxesLabel` entry built from `base^exp` (a Demonstration
     // typesets `e^(iΩ)` as `Style["e", Italic]^Row[{Style["i", Italic],

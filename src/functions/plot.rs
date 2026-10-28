@@ -3041,13 +3041,25 @@ pub(crate) fn plot_labels_svg(
     // `lx` is the text baseline: the glyphs extend ~0.75em to its left
     // (the rotated "up" direction) and ~0.25em to its right, so the clamp
     // must keep the ascenders inside the image.
-    let lx = (tick_left - font_size * 0.25 - sf * 5.0)
-      .max(margin_left_f + font_size * 0.8);
+    // A multi-line label stacks its lines towards the plot, the first
+    // line outermost; the last line sits where a one-line label would.
+    let line_height = font_size * 1.2;
+    let extra_lines = y_label.split('\n').count().saturating_sub(1) as f64;
+    let lx =
+      (tick_left - font_size * 0.25 - sf * 5.0 - extra_lines * line_height)
+        .max(margin_left_f + font_size * 0.8);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg_scaled(y_label, RESOLUTION_SCALE as f64)
+      stacked_lines_svg(
+        &crate::functions::graphics::box_string_to_svg_scaled(
+          y_label,
+          RESOLUTION_SCALE as f64
+        ),
+        lx,
+        line_height
+      )
     ));
   }
 
@@ -3430,6 +3442,13 @@ fn generate_svg_with_options(
   } else {
     65 * RESOLUTION_SCALE
   };
+  // Each further line of a multi-line left `FrameLabel` needs a line's
+  // worth of room beside the tick labels.
+  let y_label_area = y_label_area
+    + opts.frame_label_left.as_ref().map_or(0, |label| {
+      (label.split('\n').count().saturating_sub(1) as f64 * sf * 14.0 * 1.2)
+        .round() as u32
+    });
   let margin_left: u32 = if tick_axis_y {
     10 * s as u32
   } else {
