@@ -8434,6 +8434,21 @@ mod pareto_random_variate {
       "0"
     );
   }
+
+  #[test]
+  fn treeplot_automatic_position_with_root_vertex() {
+    assert_eq!(
+      interpret(
+        "StringCount[ExportString[TreePlot[{{1 -> 2, \"lbl\"}, {1 -> 3, \"lbl\"}}, Automatic, 1], \"SVG\"], \">lbl<\"]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Head[TreePlot[{1 -> 2, 1 -> 3}, Automatic, 1]]").unwrap(),
+      "Graphics"
+    );
+  }
 }
 
 mod find_shortest_tour {
