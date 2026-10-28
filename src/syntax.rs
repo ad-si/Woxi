@@ -13342,6 +13342,102 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   }
 }
 
+/// `expr_to_string(a).cmp(&expr_to_string(b))`, rendering only what the
+/// comparison needs: lists and generically printed calls are walked
+/// element by element, and only the first pair of elements that differ is
+/// printed. Comparing two InterpolatingFunction[…][t] this way does not
+/// print their tables.
+pub fn printed_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  printed_order_with(a, "", b, "")
+}
+
+/// The opener, elements and closer of an expression that prints as
+/// `opener e1, e2, … closer`.
+fn generic_parts(e: &Expr) -> Option<(String, &[Expr], &'static str)> {
+  match e {
+    Expr::List(items) => Some(("{".to_string(), &items[..], "}")),
+    Expr::FunctionCall { name, args }
+      if name == "InterpolatingFunction"
+        || crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+    {
+      Some((format!("{name}["), &args[..], "]"))
+    }
+    _ => None,
+  }
+}
+
+fn printed_order_with(
+  a: &Expr,
+  a_suffix: &str,
+  b: &Expr,
+  b_suffix: &str,
+) -> std::cmp::Ordering {
+  use crate::evaluator::pattern_matching::expr_equal;
+  let full =
+    || (expr_to_string(a) + a_suffix).cmp(&(expr_to_string(b) + b_suffix));
+  if expr_equal(a, b) {
+    return a_suffix.cmp(b_suffix);
+  }
+  // `f[x][y]`: the heads first, each followed by "[".
+  if let (
+    Expr::CurriedCall { func: fa, args: aa },
+    Expr::CurriedCall { func: fb, args: ab },
+  ) = (a, b)
+  {
+    if !expr_equal(fa, fb) {
+      return match printed_order_with(fa, "[", fb, "[") {
+        std::cmp::Ordering::Equal => full(),
+        other => other,
+      };
+    }
+    return sequence_order(aa, "]", a_suffix, ab, "]", b_suffix)
+      .unwrap_or_else(full);
+  }
+  match (generic_parts(a), generic_parts(b)) {
+    (Some((oa, ia, ca)), Some((ob, ib, cb))) if oa == ob => {
+      sequence_order(ia, ca, a_suffix, ib, cb, b_suffix).unwrap_or_else(full)
+    }
+    _ => full(),
+  }
+}
+
+/// The order of `e1, e2, … close suffix` for two element lists after a
+/// common opener; `None` when it cannot be told without printing all.
+fn sequence_order(
+  ia: &[Expr],
+  ca: &str,
+  sa: &str,
+  ib: &[Expr],
+  cb: &str,
+  sb: &str,
+) -> Option<std::cmp::Ordering> {
+  use crate::evaluator::pattern_matching::expr_equal;
+  let common = ia.len().min(ib.len());
+  for i in 0..common {
+    if expr_equal(&ia[i], &ib[i]) {
+      continue;
+    }
+    if ia.len() != ib.len() && i + 1 >= common {
+      return None;
+    }
+    let next_a = if i + 1 < ia.len() {
+      ", ".to_string()
+    } else {
+      format!("{ca}{sa}")
+    };
+    let next_b = if i + 1 < ib.len() {
+      ", ".to_string()
+    } else {
+      format!("{cb}{sb}")
+    };
+    match printed_order_with(&ia[i], &next_a, &ib[i], &next_b) {
+      std::cmp::Ordering::Equal => continue,
+      other => return Some(other),
+    }
+  }
+  (ia.len() == ib.len()).then(|| format!("{ca}{sa}").cmp(&format!("{cb}{sb}")))
+}
+
 /// Convert an Expr back to a string representation (InputForm)
 pub fn expr_to_string(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Input)
