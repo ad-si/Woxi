@@ -6951,9 +6951,64 @@ pub fn linear_solve_method_ok(
 /// build. Returns `None` when the data is not purely numeric or the matrix is
 /// (numerically) singular, so the general path can report it.
 fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
-  use crate::functions::math_ast::numeric_utils::{
-    build_complex_float_expr, try_extract_complex_f64,
+  // A matrix right-hand side solves for each of its columns at once.
+  let columns: Vec<Vec<Expr>> = if b.iter().all(|e| matches!(e, Expr::List(_)))
+  {
+    let rows: Vec<&[Expr]> = b
+      .iter()
+      .map(|e| match e {
+        Expr::List(items) => &items[..],
+        _ => unreachable!(),
+      })
+      .collect();
+    let k = rows.first()?.len();
+    if k == 0 || rows.iter().any(|r| r.len() != k) {
+      return None;
+    }
+    rows.iter().map(|r| r.to_vec()).collect()
+  } else {
+    b.iter().map(|e| vec![e.clone()]).collect()
   };
+  let solution = linear_solve_machine_columns(matrix, &columns)?;
+  let to_expr = |(re, im): (f64, f64)| {
+    if im == 0.0 {
+      Expr::Real(re)
+    } else {
+      crate::functions::math_ast::numeric_utils::build_complex_float_expr(
+        re, im,
+      )
+    }
+  };
+  if b.iter().all(|e| matches!(e, Expr::List(_))) {
+    Some(Expr::List(
+      solution
+        .into_iter()
+        .map(|row| {
+          Expr::List(row.into_iter().map(to_expr).collect::<Vec<_>>().into())
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ))
+  } else {
+    Some(Expr::List(
+      solution
+        .into_iter()
+        .map(|row| to_expr(row[0]))
+        .collect::<Vec<_>>()
+        .into(),
+    ))
+  }
+}
+
+/// `matrix . x == rhs` for an n-by-k right-hand side, by Gaussian
+/// elimination with partial pivoting in machine arithmetic (complex only
+/// when some entry is). `None` unless some entry is inexact and all are
+/// numbers, or when the matrix is singular.
+fn linear_solve_machine_columns(
+  matrix: &[Vec<Expr>],
+  rhs: &[Vec<Expr>],
+) -> Option<Vec<Vec<(f64, f64)>>> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_f64;
   fn has_real(e: &Expr) -> bool {
     match e {
       Expr::Real(_) => true,
@@ -6964,14 +7019,25 @@ fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
     }
   }
   let n = matrix.len();
-  if !matrix.iter().flatten().chain(b.iter()).any(has_real) {
+  let k = rhs.first()?.len();
+  if rhs.len() != n
+    || !matrix
+      .iter()
+      .flatten()
+      .chain(rhs.iter().flatten())
+      .any(has_real)
+  {
     return None;
   }
   let mut a: Vec<Vec<(f64, f64)>> = Vec::with_capacity(n);
-  for (row, rhs) in matrix.iter().zip(b) {
-    let mut parts = Vec::with_capacity(n + 1);
-    for e in row.iter().chain(std::iter::once(rhs)) {
-      let (re, im) = try_extract_complex_f64(e)?;
+  for (row, r) in matrix.iter().zip(rhs) {
+    let mut parts = Vec::with_capacity(n + k);
+    for e in row.iter().chain(r.iter()) {
+      let (re, im) = match e {
+        Expr::Real(x) => (*x, 0.0),
+        Expr::Integer(i) => (*i as f64, 0.0),
+        other => try_extract_complex_f64(other)?,
+      };
       if !re.is_finite() || !im.is_finite() {
         return None;
       }
@@ -6979,57 +7045,92 @@ fn linear_solve_machine(matrix: &[Vec<Expr>], b: &[Expr]) -> Option<Expr> {
     }
     a.push(parts);
   }
-  let mul = |x: (f64, f64), y: (f64, f64)| {
-    (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
-  };
-  let div = |x: (f64, f64), y: (f64, f64)| {
-    let d = y.0 * y.0 + y.1 * y.1;
-    ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
-  };
-  let norm = |x: (f64, f64)| x.0.hypot(x.1);
-  for col in 0..n {
-    let pivot_row = (col..n)
-      .max_by(|&r1, &r2| norm(a[r1][col]).total_cmp(&norm(a[r2][col])))?;
-    if norm(a[pivot_row][col]) == 0.0 {
-      return None;
-    }
-    a.swap(col, pivot_row);
-    let pivot = a[col][col];
-    for row in (col + 1)..n {
-      if a[row][col] == (0.0, 0.0) {
-        continue;
+  let width = n + k;
+  let solution = if a.iter().flatten().all(|c| c.1 == 0.0) {
+    // Real arithmetic.
+    let mut m: Vec<Vec<f64>> =
+      a.iter().map(|r| r.iter().map(|c| c.0).collect()).collect();
+    for col in 0..n {
+      let pivot_row = (col..n)
+        .max_by(|&r1, &r2| m[r1][col].abs().total_cmp(&m[r2][col].abs()))?;
+      if m[pivot_row][col] == 0.0 {
+        return None;
       }
-      let factor = div(a[row][col], pivot);
-      for j in col..=n {
-        let p = mul(factor, a[col][j]);
-        a[row][j] = (a[row][j].0 - p.0, a[row][j].1 - p.1);
-      }
-    }
-  }
-  let mut x = vec![(0.0, 0.0); n];
-  for i in (0..n).rev() {
-    let mut sum = a[i][n];
-    for j in (i + 1)..n {
-      let p = mul(a[i][j], x[j]);
-      sum = (sum.0 - p.0, sum.1 - p.1);
-    }
-    x[i] = div(sum, a[i][i]);
-    if !x[i].0.is_finite() || !x[i].1.is_finite() {
-      return None;
-    }
-  }
-  Some(Expr::List(
-    x.into_iter()
-      .map(|(re, im)| {
-        if im == 0.0 {
-          Expr::Real(re)
-        } else {
-          build_complex_float_expr(re, im)
+      m.swap(col, pivot_row);
+      let (upper, lower) = m.split_at_mut(col + 1);
+      let pivot_row = &upper[col];
+      let pivot = pivot_row[col];
+      for row in lower.iter_mut() {
+        if row[col] == 0.0 {
+          continue;
         }
-      })
-      .collect::<Vec<_>>()
-      .into(),
-  ))
+        let factor = row[col] / pivot;
+        for j in col..width {
+          row[j] -= factor * pivot_row[j];
+        }
+      }
+    }
+    let mut x = vec![vec![0.0; k]; n];
+    for c in 0..k {
+      for i in (0..n).rev() {
+        let mut sum = m[i][n + c];
+        for j in (i + 1)..n {
+          sum -= m[i][j] * x[j][c];
+        }
+        x[i][c] = sum / m[i][i];
+        if !x[i][c].is_finite() {
+          return None;
+        }
+      }
+    }
+    x.into_iter()
+      .map(|r| r.into_iter().map(|v| (v, 0.0)).collect())
+      .collect()
+  } else {
+    let mul = |x: (f64, f64), y: (f64, f64)| {
+      (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0)
+    };
+    let div = |x: (f64, f64), y: (f64, f64)| {
+      let d = y.0 * y.0 + y.1 * y.1;
+      ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
+    };
+    let norm = |x: (f64, f64)| x.0.hypot(x.1);
+    for col in 0..n {
+      let pivot_row = (col..n)
+        .max_by(|&r1, &r2| norm(a[r1][col]).total_cmp(&norm(a[r2][col])))?;
+      if norm(a[pivot_row][col]) == 0.0 {
+        return None;
+      }
+      a.swap(col, pivot_row);
+      let pivot = a[col][col];
+      for row in (col + 1)..n {
+        if a[row][col] == (0.0, 0.0) {
+          continue;
+        }
+        let factor = div(a[row][col], pivot);
+        for j in col..width {
+          let p = mul(factor, a[col][j]);
+          a[row][j] = (a[row][j].0 - p.0, a[row][j].1 - p.1);
+        }
+      }
+    }
+    let mut x = vec![vec![(0.0, 0.0); k]; n];
+    for c in 0..k {
+      for i in (0..n).rev() {
+        let mut sum = a[i][n + c];
+        for j in (i + 1)..n {
+          let p = mul(a[i][j], x[j][c]);
+          sum = (sum.0 - p.0, sum.1 - p.1);
+        }
+        x[i][c] = div(sum, a[i][i]);
+        if !x[i][c].0.is_finite() || !x[i][c].1.is_finite() {
+          return None;
+        }
+      }
+    }
+    x
+  };
+  Some(solution)
 }
 
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

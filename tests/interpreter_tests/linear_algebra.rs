@@ -626,6 +626,31 @@ mod inverse {
   }
 
   #[test]
+  fn linear_solve_with_a_matrix_right_hand_side_and_sparse_operator() {
+    // Each column of the right-hand side is solved (wolframscript values),
+    // and the operator form applies to a SparseArray matrix.
+    assert_eq!(
+      interpret(
+        "{InputForm[LinearSolve[{{2., 1.}, {1., 3.}}, {{1., 2., 3.}, {0., 1., 1.}}]], \
+         Max[Abs[LinearSolve[SparseArray[{{i_, i_} -> 2., {i_, j_} /; Abs[i - j] == 1 \
+         -> -1.}, {3, 3}]][{1., 2., 3.}] - {2.5, 4., 3.5}]] < 10^-12}"
+      )
+      .unwrap(),
+      "{InputForm[{{0.6, 1., 1.6}, {-0.2, 0., -0.2}}], True}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; m = RandomReal[1, {300, 300}] + 10 IdentityMatrix[300]; \
+         b = RandomReal[1, {300, 40}]; Max[Abs[m . LinearSolve[m, b] - b]] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
   fn inverse_and_dot_of_machine_complex_matrices() {
     // Values from wolframscript.
     assert_eq!(
