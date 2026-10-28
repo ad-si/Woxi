@@ -943,6 +943,37 @@ mod image_processing {
     );
   }
 
+  // A grayscale image is colored pixel by pixel with an explicit
+  // `ColorFunction`.
+  #[test]
+  fn colorize_grayscale_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Colorize[Image[{{0., 1.}, {0.5, 0.25}}], \
+         ColorFunction -> (GrayLevel[1 - #] &)]]"
+      )
+      .unwrap(),
+      "{2, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[Colorize[Image[{{0., 1.}}], \
+         ColorFunction -> (RGBColor[#, 0, 1 - #] &)]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[Image[{{0., 1.}}], \
+         ColorFunction -> (RGBColor[#, 0, 1 - #] &)]]"
+      )
+      .unwrap(),
+      "{{{0., 0., 1.}, {1., 0., 0.}}}"
+    );
+  }
+
   // A channel value v lands in byte ceil(256 v) - 1.
   #[test]
   fn colorize_byte_quantization() {

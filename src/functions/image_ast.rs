@@ -7560,6 +7560,50 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type: ImageType::Byte,
     });
   }
+  // A grayscale image is colored pixel by pixel: the value of each pixel,
+  // already in [0, 1], is fed to the explicit `ColorFunction`.
+  if let Expr::Image {
+    width,
+    height,
+    channels: 1,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+    && let Some(cf) = option_value(&args[1..], "ColorFunction")
+      .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"))
+  {
+    let mut cache: Vec<(u64, (f64, f64, f64))> = Vec::new();
+    let mut out: Vec<f64> = Vec::with_capacity(data.len() * 3);
+    for v in data.iter() {
+      let key = v.to_bits();
+      let rgb = if let Some((_, rgb)) = cache.iter().find(|(k, _)| *k == key) {
+        *rgb
+      } else {
+        let (r, g, b) = colorize_label(0, v.clamp(0.0, 1.0), Some(cf));
+        let q = |c: f64| {
+          if *image_type == ImageType::Byte {
+            ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
+          } else {
+            c
+          }
+        };
+        let rgb = (q(r), q(g), q(b));
+        cache.push((key, rgb));
+        rgb
+      };
+      out.extend([rgb.0, rgb.1, rgb.2]);
+    }
+    return Ok(Expr::Image {
+      color_space: None,
+      display_size: None,
+      width: *width,
+      height: *height,
+      channels: 3,
+      data: Arc::new(out),
+      image_type: *image_type,
+    });
+  }
   let is_image = matches!(&args[0], Expr::Image { .. });
   if !is_image {
     crate::emit_message(&format!(
