@@ -14818,35 +14818,33 @@ fn apply_user_overloads_to_subsets(
     fn next_selection(chosen: &mut Vec<usize>, n: usize, k: usize) -> bool {
       // Advance `chosen` to the next k-permutation of 0..n in
       // lexicographic order.
-      loop {
-        if chosen.len() == k {
-          // Increment the last position.
-          while let Some(last) = chosen.pop() {
-            let mut next = last + 1;
-            while next < n && chosen.contains(&next) {
-              next += 1;
-            }
-            if next < n {
-              chosen.push(next);
-              break;
-            }
-          }
-          if chosen.is_empty() {
-            return false;
-          }
-        }
-        while chosen.len() < k {
-          let mut next = 0;
-          while chosen.contains(&next) {
+      if chosen.len() == k {
+        // Increment the last position.
+        while let Some(last) = chosen.pop() {
+          let mut next = last + 1;
+          while next < n && chosen.contains(&next) {
             next += 1;
           }
-          if next >= n {
-            return false;
+          if next < n {
+            chosen.push(next);
+            break;
           }
-          chosen.push(next);
         }
-        return true;
+        if chosen.is_empty() {
+          return false;
+        }
       }
+      while chosen.len() < k {
+        let mut next = 0;
+        while chosen.contains(&next) {
+          next += 1;
+        }
+        if next >= n {
+          return false;
+        }
+        chosen.push(next);
+      }
+      true
     }
     let n = args.len();
     while next_selection(&mut chosen, n, k) {
