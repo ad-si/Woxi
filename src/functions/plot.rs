@@ -2247,11 +2247,19 @@ fn fill_between_polygons_by_side(
       }
     }
     let d = sy - ty;
-    if d != 0.0 {
-      above = d > 0.0;
-    }
     top.push((x, sy));
     bottom.push((x, ty));
+    if d == 0.0 {
+      // The curves meet exactly on a sample: close the piece here so the
+      // regions on either side keep their own color.
+      if i > 0 && i + 1 < rows.len() {
+        flush(above, &mut top, &mut bottom, &mut out);
+        top.push((x, sy));
+        bottom.push((x, ty));
+      }
+    } else {
+      above = d > 0.0;
+    }
   }
   flush(above, &mut top, &mut bottom, &mut out);
   out

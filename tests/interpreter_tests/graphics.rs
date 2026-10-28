@@ -12877,6 +12877,16 @@ mod plot3d {
       assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
     }
 
+    // Curves that meet exactly on a sample point still split into two colors.
+    #[test]
+    fn plot_filling_between_curves_two_colors_touch_on_sample() {
+      let svg = export_svg(
+        "Plot[{x, -x}, {x, -1, 1}, Filling -> {1 -> {{2}, {Red, Blue}}}]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
     // The ListPlot documentation example: sample irregular points via
     // `EvaluationMonitor :> Sow[…]` inside Plot, then fill between the two
     // datasets. Regression test for `Filling -> {1 -> {2}}` combined with
