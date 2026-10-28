@@ -17042,6 +17042,46 @@ mod cases {
     );
   }
 
+  // A variable tied through shared equations to an inexact one is given an
+  // inexact value; one fixed only by exact equations stays exact.
+  #[test]
+  fn solve_inexact_components() {
+    for (input, expected) in [
+      (
+        "Solve[{0.5 x + y == 1., x == 0}, {x, y}]",
+        "{{x -> 0., y -> 1.}}",
+      ),
+      (
+        "Solve[0.5 x + y == 0. && x == 0 && z == 0, {x, y, z}]",
+        "{{x -> 0., y -> 0., z -> 0}}",
+      ),
+      ("Solve[{x == 0, 2. y == 1}, {x, y}]", "{{x -> 0, y -> 0.5}}"),
+    ] {
+      assert_eq!(woxi::interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // Parts of undefined lists can be the unknowns of a system.
+  #[test]
+  fn solve_part_variables() {
+    assert_eq!(
+      woxi::interpret(
+        "Quiet[Solve[{s[[1]] == 150, e[[1]] == 75, p[[1]] == s[[1]] - e[[1]]}, \
+         {s[[1]], e[[1]], p[[1]]}]]"
+      )
+      .unwrap(),
+      "{{s[[1]] -> 150, e[[1]] -> 75, p[[1]] -> 75}}"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "Quiet[Solve[{s[[1]] + s[[2]] == 3, s[[1]] - s[[2]] == 1}, \
+         {s[[1]], s[[2]]}]]"
+      )
+      .unwrap(),
+      "{{s[[1]] -> 2, s[[2]] -> 1}}"
+    );
+  }
+
   // With machine numbers an exponential is inverted, not solved in full:
   // only the principal value, no `C[1]` family, and one `ifun` per Solve.
   #[test]

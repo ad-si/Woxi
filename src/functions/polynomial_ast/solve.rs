@@ -2424,6 +2424,157 @@ pub(crate) fn with_generalized_variables(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let solved = solve_ast_exact_parts(args)?;
+  Ok(numericize_inexact_components(args, solved))
+}
+
+/// A variable tied, through the equations it shares with others, to an
+/// equation holding an inexact number gets an inexact value, as in
+/// wolframscript: `Solve[{0.5 x + y == 1., x == 0}, {x, y}]` gives
+/// `x -> 0.`, while `z == 0` on its own keeps `z -> 0`. The variables and
+/// equations form a graph, and every exact number a solution assigns to a
+/// variable in a component with an inexact equation is numericized.
+fn numericize_inexact_components(args: &[Expr], solved: Expr) -> Expr {
+  use crate::functions::math_ast::numeric_utils::contains_inexact_real;
+  if args.len() < 2 || !contains_inexact_real(&args[0]) {
+    return solved;
+  }
+  let Expr::List(solutions) = &solved else {
+    return solved;
+  };
+  let vars: Vec<String> = match &args[1] {
+    Expr::Identifier(v) => vec![v.clone()],
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|v| match v {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect(),
+    _ => return solved,
+  };
+  // The individual equations of a list or conjunction of them.
+  fn split_equations(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| split_equations(i, out)),
+      other => {
+        let mut parts = Vec::new();
+        collect_and_constraints(other, &mut parts);
+        if parts.len() == 1 {
+          out.extend(parts);
+        } else {
+          parts.iter().for_each(|p| split_equations(p, out));
+        }
+      }
+    }
+  }
+  let mut equations = Vec::new();
+  split_equations(&args[0], &mut equations);
+  // Union-find over the variables.
+  let mut parent: Vec<usize> = (0..vars.len()).collect();
+  fn root(parent: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while parent[r] != r {
+      r = parent[r];
+    }
+    parent[i] = r;
+    r
+  }
+  let mut inexact_vars = vec![false; vars.len()];
+  for eq in &equations {
+    let present: Vec<usize> = (0..vars.len())
+      .filter(|&i| contains_var(eq, &vars[i]))
+      .collect();
+    for w in present.windows(2) {
+      let (a, b) = (root(&mut parent, w[0]), root(&mut parent, w[1]));
+      parent[a] = b;
+    }
+    if contains_inexact_real(eq) {
+      for &i in &present {
+        inexact_vars[i] = true;
+      }
+    }
+  }
+  let mut inexact_root = vec![false; vars.len()];
+  for i in 0..vars.len() {
+    if inexact_vars[i] {
+      let r = root(&mut parent, i);
+      inexact_root[r] = true;
+    }
+  }
+  let numericize = |name: &str, value: &Expr| -> Option<Expr> {
+    let i = vars.iter().position(|v| v == name)?;
+    let r = root(&mut parent.clone(), i);
+    let exact_number = matches!(value, Expr::Integer(_))
+      || matches!(value, Expr::FunctionCall { name, .. } if name == "Rational");
+    (inexact_root[r] && exact_number)
+      .then(|| {
+        crate::evaluator::evaluate_expr_to_expr(&call1("N", value.clone())).ok()
+      })
+      .flatten()
+  };
+  Expr::List(
+    solutions
+      .iter()
+      .map(|sol| match sol {
+        Expr::List(rules) => Expr::List(
+          rules
+            .iter()
+            .map(|rule| match rule {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } => match pattern.as_ref() {
+                Expr::Identifier(name) => match numericize(name, replacement) {
+                  Some(v) => rule_expr(pattern.as_ref().clone(), v),
+                  None => rule.clone(),
+                },
+                _ => rule.clone(),
+              },
+              other => other.clone(),
+            })
+            .collect(),
+        ),
+        other => other.clone(),
+      })
+      .collect(),
+  )
+}
+
+fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A part of an undefined list can be a variable (`s[[1]]` in a
+  // spreadsheet-style system): each is solved for as a placeholder symbol
+  // and put back into the solutions.
+  if let Some(vars) = args.get(1) {
+    let parts: Vec<&Expr> = match vars {
+      Expr::List(items) => items
+        .iter()
+        .filter(|v| matches!(v, Expr::Part { .. }))
+        .collect(),
+      v @ Expr::Part { .. } => vec![v],
+      _ => Vec::new(),
+    };
+    if !parts.is_empty() {
+      let names: Vec<String> = (1..=parts.len())
+        .map(|k| format!("Woxi`SolvePartVariable{k}"))
+        .collect();
+      let renamed: Vec<Expr> = args
+        .iter()
+        .map(|a| {
+          parts.iter().zip(&names).fold(a.clone(), |e, (part, name)| {
+            substitute_expr(&e, part, &Expr::Identifier(name.clone()))
+          })
+        })
+        .collect();
+      let solved = solve_ast(&renamed)?;
+      if matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve") {
+        return Ok(unevaluated("Solve", args));
+      }
+      return Ok(parts.iter().zip(&names).fold(solved, |e, (part, name)| {
+        crate::syntax::substitute_variable(&e, name, part)
+      }));
+    }
+  }
   // A disjunction (also one inside a conjunction) is solved branch by
   // branch: `x == 1 || x == 2`, `(x == -1 || x == 2) && x + 1 != 0`.
   if args.len() == 2
