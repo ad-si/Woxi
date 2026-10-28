@@ -2258,6 +2258,21 @@ both report large finite coefficients that differ (`LogitModelFit[{{0,
 `{-98.58, 39.43}`, Woxi `{-246.8, 98.71}`). Neither R's `glm.fit` starting
 values nor its stopping rule reproduce wolframscript's digits.
 
+### `GeneralizedLinearModelFit` has no `"NullDeviance"` for most families
+
+```sh
+wolframscript -code 'GeneralizedLinearModelFit[{{1,1.},{2,2.},{3,4.},{4,4.}}, x, x]["NullDeviance"]'
+# 3.65505327700101
+woxi eval '…same…'   # FittedModel::elmntav, the property is left out
+```
+
+The constant model's deviance is `Total[(y - Mean[y])^2] = 6.75`, which
+no constant mean can bring down to 3.655; with `LinkFunction -> "LogLink"`
+wolframscript reports yet another value (6.5635). The Poisson and binomial
+null deviances are the constant model's and Woxi reports them; the
+Gaussian, Gamma and inverse Gaussian ones are left out rather than
+reported differently.
+
 ### Constrained and weighted fitting find different local minima
 
 On a non-convex constrained problem the two engines land on *different valid*

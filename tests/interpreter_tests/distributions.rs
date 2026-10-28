@@ -9161,6 +9161,29 @@ mod distribution_parameter_assumptions {
   }
 
   #[test]
+  fn inverse_gaussian_outside_support_without_division_by_zero() {
+    // Regression: the closed form was evaluated at x = 0 before the
+    // support test, so sampling by Quantile reported Power::infy.
+    assert_eq!(
+      interpret(
+        "{PDF[InverseGaussianDistribution[3, 5], 0.], \
+         PDF[InverseGaussianDistribution[3, 5], 0], \
+         PDF[InverseGaussianDistribution[0.3, 5], -1.], \
+         CDF[InverseGaussianDistribution[3, 5], 0.]}"
+      )
+      .unwrap(),
+      "{0., 0, 0., 0}"
+    );
+    clear_state();
+    interpret(
+      "SeedRandom[1]; RandomReal[InverseGaussianDistribution[0.3, 5], 5]",
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(msgs.is_empty(), "unexpected messages: {msgs:?}");
+  }
+
+  #[test]
   fn extended_parameter_forms_are_accepted() {
     assert_eq!(
       interpret("GammaDistribution[a, b, c, d]").unwrap(),

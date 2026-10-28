@@ -14781,6 +14781,28 @@ impl GlmFamily {
     }
   }
 
+  /// The Anscombe residual of `y` at the mean `mu`: the difference of the
+  /// family's variance-stabilizing transform, scaled to unit variance.
+  fn anscombe_residual(self, y: f64, mu: f64) -> f64 {
+    match self {
+      GlmFamily::Gaussian => y - mu,
+      GlmFamily::Binomial => {
+        use crate::functions::math_ast::ln_gamma;
+        use crate::functions::math_ast::numeric_utils::regularized_beta_inc;
+        // Beta[z, 2/3, 2/3], the incomplete beta function.
+        let a = 2.0 / 3.0;
+        let complete = (2.0 * ln_gamma(a) - ln_gamma(2.0 * a)).exp();
+        let beta = |z: f64| complete * regularized_beta_inc(z, a, a);
+        (beta(y) - beta(mu)) / (mu * (1.0 - mu)).powf(1.0 / 6.0)
+      }
+      GlmFamily::Poisson => {
+        1.5 * (y.powf(2.0 / 3.0) - mu.powf(2.0 / 3.0)) / mu.powf(1.0 / 6.0)
+      }
+      GlmFamily::Gamma => 3.0 * (y.cbrt() - mu.cbrt()) / mu.cbrt(),
+      GlmFamily::InverseGaussian => (y.ln() - mu.ln()) / mu.sqrt(),
+    }
+  }
+
   /// Whether the dispersion is estimated rather than fixed at 1.
   fn estimates_dispersion(self) -> bool {
     !matches!(self, GlmFamily::Binomial | GlmFamily::Poisson)
@@ -15146,6 +15168,16 @@ pub fn generalized_linear_model_fit_ast(
     .zip(&deviances)
     .map(|(r, d)| r.signum() * d.max(0.0).sqrt())
     .collect();
+  let pearson_residuals: Vec<f64> = y
+    .iter()
+    .zip(&predicted)
+    .map(|(&yi, &mu)| (yi - mu) / family.variance(mu).sqrt())
+    .collect();
+  let anscombe_residuals: Vec<f64> = y
+    .iter()
+    .zip(&predicted)
+    .map(|(&yi, &mu)| family.anscombe_residual(yi, mu))
+    .collect();
   let integer = |v: usize| Expr::Integer(v as i128);
   let mut assoc = vec![
     (str_expr("Deviances"), reals(&deviances)),
@@ -15159,13 +15191,18 @@ pub fn generalized_linear_model_fit_ast(
       integer(if include_constant { n - 1 } else { n }),
     ),
     (str_expr("DevianceResiduals"), reals(&deviance_residuals)),
+    (str_expr("PearsonResiduals"), reals(&pearson_residuals)),
+    (str_expr("AnscombeResiduals"), reals(&anscombe_residuals)),
     (str_expr("EstimatedDispersion"), Expr::Real(dispersion)),
   ];
-  // wolframscript's null deviance for the Gamma and inverse Gaussian
-  // families, and its inverse Gaussian likelihood, are neither the
-  // constant model's nor the density's; those properties are left out
+  // wolframscript's null deviance for the Gaussian, Gamma and inverse
+  // Gaussian families, and its inverse Gaussian likelihood, are neither
+  // the constant model's nor the density's; those properties are left out
   // rather than reported differently.
-  if !matches!(family, GlmFamily::Gamma | GlmFamily::InverseGaussian) {
+  if !matches!(
+    family,
+    GlmFamily::Gaussian | GlmFamily::Gamma | GlmFamily::InverseGaussian
+  ) {
     assoc.push((str_expr("NullDeviance"), Expr::Real(null_deviance)));
   }
   if !matches!(family, GlmFamily::InverseGaussian) {

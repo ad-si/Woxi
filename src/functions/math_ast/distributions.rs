@@ -3441,6 +3441,17 @@ fn pdf_inverse_gaussian(
   }
   let m = dargs[0].clone();
   let l = dargs[1].clone();
+  // Outside the support the density is zero; evaluating the closed form
+  // at x = 0 would divide by zero.
+  if let Some(xv) = try_eval_to_f64(&x)
+    && xv <= 0.0
+  {
+    return Ok(if matches!(x, Expr::Real(_)) {
+      Expr::Real(0.0)
+    } else {
+      int(0)
+    });
+  }
 
   // Sqrt[l/x^3]
   let numer = sqrt(div2(l.clone(), pow2(x.clone(), int(3))));
@@ -3470,6 +3481,9 @@ fn cdf_inverse_gaussian(
   }
   let m = dargs[0].clone();
   let l = dargs[1].clone();
+  if try_eval_to_f64(&x).is_some_and(|xv| xv <= 0.0) {
+    return Ok(int(0));
+  }
 
   // Sqrt[l/x]
   let sqrt_lx = sqrt(div2(l.clone(), x.clone()));

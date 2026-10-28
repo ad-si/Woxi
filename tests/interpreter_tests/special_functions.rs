@@ -3551,6 +3551,14 @@ mod cases {
   }
 
   #[test]
+  fn incomplete_beta_at_zero() {
+    assert_case("Beta[0, 1/2, 3/2]", "0");
+    assert_case("Beta[0., 1/2, 3/2]", "0.");
+    assert_case("Beta[0, 0.5, 2]", "0.");
+    assert_case("Beta[0, a, b]", "Beta[0, a, b]");
+  }
+
+  #[test]
   fn beta_non_positive_integer_args() {
     // A surviving numerator pole gives ComplexInfinity.
     assert_case("Beta[0, 0]", "ComplexInfinity");

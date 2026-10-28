@@ -4330,6 +4330,92 @@ mod generalized_linear_model_fit {
     );
   }
 
+  const RESIDUAL_DATA: &str = "data = {{1., 2, 3}, {2., 1, 5}, {3., 4, 9}, \
+    {4., 2, 7}, {5., 5, 14}, {6., 3, 11}, {2.5, 3.5, 8}};";
+
+  #[test]
+  fn pearson_residuals_are_unscaled() {
+    // (y - mu)/Sqrt[V[mu]] for each family's variance function.
+    for (family, variance) in [
+      ("Gaussian", "1"),
+      ("Poisson", "mu"),
+      ("Gamma", "mu^2"),
+      ("InverseGaussian", "mu^3"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "{RESIDUAL_DATA} g = GeneralizedLinearModelFit[data, {{x, y}}, \
+           {{x, y}}, ExponentialFamily -> \"{family}\"]; \
+           mu = g[\"PredictedResponse\"]; \
+           Max[Abs[g[\"PearsonResiduals\"] - \
+           (data[[All, 3]] - mu)/Sqrt[{variance}]]] < 10^-12"
+        ))
+        .unwrap(),
+        "True",
+        "{family}"
+      );
+    }
+  }
+
+  #[test]
+  fn anscombe_residuals_match_wolframscript() {
+    // Values from wolframscript, whose iteration stops ~1e-8 short of the
+    // estimate (see conformance_gaps.md).
+    for (family, first, last) in [
+      ("Gaussian", -0.893665158371042, 0.05429864253393557),
+      ("Poisson", -0.6856412645356069, 0.26498271880151486),
+      ("Gamma", -0.4231981631948507, 0.17634383655877794),
+      ("InverseGaussian", -0.22883746873683727, 0.08932988554395493),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "{RESIDUAL_DATA} r = GeneralizedLinearModelFit[data, {{x, y}}, \
+           {{x, y}}, ExponentialFamily -> \"{family}\"][\"AnscombeResiduals\"]; \
+           Abs[First[r] - ({first})] + Abs[Last[r] - ({last})] < 10^-6"
+        ))
+        .unwrap(),
+        "True",
+        "{family}"
+      );
+    }
+    // The binomial transform is the incomplete Beta[z, 2/3, 2/3].
+    assert_eq!(
+      interpret(
+        "r = GeneralizedLinearModelFit[{{1., 0}, {2., 0}, {3., 1}, {4., 0}, \
+         {5., 1}, {6., 1}, {2.5, 1}, {3.5, 0}}, x, x, \
+         ExponentialFamily -> \"Binomial\"][\"AnscombeResiduals\"]; \
+         Abs[First[r] + 0.5617102938348386] + Abs[Last[r] + 1.3586954954507118] \
+         < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn gaussian_family_is_a_generalized_linear_model() {
+    // Not a LinearModelFit: it has the deviance properties and no RSquared.
+    assert_eq!(
+      interpret(&format!(
+        "{RESIDUAL_DATA} g = GeneralizedLinearModelFit[data, {{x, y}}, {{x, y}}]; \
+         Max[Abs[g[{{\"ResidualDeviance\", \"LogLikelihood\", \
+         \"EstimatedDispersion\"}}] - \
+         {{3.9040723981900434, -8.34761021400346, 0.9760180995475108}}]] \
+         < 10^-9"
+      ))
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{RESIDUAL_DATA} Quiet[Head[Head[GeneralizedLinearModelFit[data, {{x, y}}, \
+         {{x, y}}][\"RSquared\"]]]]"
+      ))
+      .unwrap(),
+      "FittedModel"
+    );
+  }
+
   #[test]
   fn default_family_evaluates_at_point() {
     assert_eq!(

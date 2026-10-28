@@ -816,6 +816,22 @@ fn incomplete_beta_ast(
     return Ok(call("Beta", vec![z.clone(), a.clone(), b.clone()]));
   }
 
+  // Beta[0, a, b] = 0 when the integrand t^(a-1) is integrable at 0,
+  // i.e. for a numeric positive a.
+  if (matches!(z, Expr::Integer(0)) || matches!(z, Expr::Real(f) if *f == 0.0))
+    && try_eval_to_f64(a).is_some_and(|af| af > 0.0)
+    && try_eval_to_f64(b).is_some()
+  {
+    let inexact = matches!(z, Expr::Real(_))
+      || contains_inexact_real(a)
+      || contains_inexact_real(b);
+    return Ok(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
+
   // Beta[z, a, 0]: with the upper parameter zero the integrand is
   // t^(a-1) (1 - t)^(-1). For a == 1 this is elementary,
   //   Beta[z, 1, 0] = -Log[1 - z],
