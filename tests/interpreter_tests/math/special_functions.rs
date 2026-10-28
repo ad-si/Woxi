@@ -5165,6 +5165,19 @@ mod fourier {
       "{1., 2., 3., 4.}"
     );
   }
+
+  #[test]
+  fn roundtrip_large_values_stays_real() {
+    // Round-off in the imaginary parts is relative to the data's magnitude,
+    // so a thresholded spectrum of large values still inverts to reals.
+    assert_eq!(
+      interpret(
+        "Head /@ Flatten[InverseFourier[Chop[Fourier[200. + N[Table[Mod[i^3 + 7 j, 11], {i, 9}, {j, 9}]]], 10^-3]]] // Union"
+      )
+      .unwrap(),
+      "{Real}"
+    );
+  }
 }
 
 mod fourier_dct {
