@@ -2265,6 +2265,16 @@ local minima — for a sine fit Wolfram lands on the constraint boundary while
 Woxi finds an interior point with a smaller residual. Compare the picture, not
 the parameters.
 
+### `RSolve` of a Riccati recurrence is written differently
+
+`RSolve[k0 + k1 x[n] + k2 x[n + 1] + x[n] x[n + 1] == 0, x[n], n]` gives
+the same function as wolframscript, with `C[1]` meaning the same number,
+but not the same expression: wolframscript's carries large internal
+scale factors (`4.596043240755094*^15*0.5447870971471407^n`) where Woxi
+writes `(λ1 - s) b1^(1 + n)` with the bases `b = -1/λ` of the
+characteristic roots. As in wolframscript, `C[1]` goes with one root for
+numeric coefficients and with the other for symbolic ones.
+
 ### `NDEigensystem` digits and scope
 
 Woxi discretizes a one-dimensional operator `a u'' + c(x) u` by finite

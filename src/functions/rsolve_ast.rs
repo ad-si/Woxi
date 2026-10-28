@@ -134,6 +134,23 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Riccati (Möbius) recurrence k0 + k1 a[n] + k2 a[n+1] + k3 a[n] a[n+1]
+  // == 0.
+  if let Some(solution) = solve_first_order_mobius(
+    &rec_lhs,
+    &rec_rhs,
+    &func_name,
+    &var_name,
+    &initial_conditions,
+  ) {
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
+  }
+
   // Nonlinear logistic map a[n+1] == 4 a[n] (1 - a[n]).
   if let Some(solution) = solve_logistic_map(
     &rec_lhs,
@@ -583,6 +600,174 @@ fn solve_first_order_arithmetic(
 ///   a[k0] == v:            Together[c^(n - k0) v + d (c^(n - k0) - 1)/(c - 1)]
 /// `None` for anything else, including `c == 1` (an arithmetic progression,
 /// handled by [`solve_first_order_arithmetic`]).
+/// The Riccati recurrence `k0 + k1 a[n] + k2 a[n+1] + k3 a[n] a[n+1] == 0`
+/// (`k3 != 0`), that is the Möbius map `a[n+1] = (p a[n] + q)/(r a[n] + s)`
+/// with `p = -k1, q = -k0, r = k3, s = k2`. With `a[n] = y[n+1]/(r y[n]) -
+/// s/r` it becomes the linear `y[n+2] - (p + s) y[n+1] + (p s - q r) y[n]
+/// == 0`, whose characteristic roots `λ1 != λ2` give
+///   a[n] = (λ1^(n+1) (λ1 - s) + C[1] λ2^(n+1) (λ2 - s)) /
+///          (r (λ1^(n+1) + C[1] λ2^(n+1))),
+/// with `λ1` the root wolframscript's `C[1]` leaves out (see below), fixed
+/// by an initial value when one is given.
+fn solve_first_order_mobius(
+  lhs: &Expr,
+  rhs: &Expr,
+  func_name: &str,
+  var_name: &str,
+  ics: &[(i128, Expr)],
+) -> Option<Expr> {
+  use crate::evaluator::{evaluate_expr_to_expr, evaluate_function_call_ast};
+  let eval = |e: Expr| evaluate_expr_to_expr(&e).ok();
+  let difference = minus2(lhs.clone(), rhs.clone());
+  let mut offsets = Vec::new();
+  if !all_func_offsets(&difference, func_name, var_name, &mut offsets) {
+    return None;
+  }
+  offsets.sort_unstable();
+  offsets.dedup();
+  let [lo, hi] = offsets.as_slice() else {
+    return None;
+  };
+  if hi - lo != 1 {
+    return None;
+  }
+  let at = |k: i128| {
+    let index = plus2(id_expr(var_name), Expr::Integer(k));
+    call1(func_name, eval(index.clone()).unwrap_or(index))
+  };
+  let u_hi = id_expr("Woxi`RSolveNext");
+  let u_lo = id_expr("Woxi`RSolveThis");
+  let replaced = eval(call(
+    "ReplaceAll",
+    vec![
+      difference,
+      Expr::List(
+        vec![
+          rule_expr(at(*hi), u_hi.clone()),
+          rule_expr(at(*lo), u_lo.clone()),
+        ]
+        .into(),
+      ),
+    ],
+  ))?;
+  let expanded = evaluate_function_call_ast("Expand", &[replaced]).ok()?;
+  let coefficient = |e: &Expr, u: &Expr| {
+    evaluate_function_call_ast(
+      "Coefficient",
+      &[e.clone(), u.clone(), Expr::Integer(1)],
+    )
+    .ok()
+  };
+  let at_zero = |e: &Expr, u: &Expr| {
+    eval(call(
+      "ReplaceAll",
+      vec![e.clone(), rule_expr(u.clone(), Expr::Integer(0))],
+    ))
+  };
+  let with_hi = coefficient(&expanded, &u_hi)?;
+  let k3 = coefficient(&with_hi, &u_lo)?;
+  let k2 = at_zero(&with_hi, &u_lo)?;
+  let without_hi = at_zero(&expanded, &u_hi)?;
+  let k1 = coefficient(&without_hi, &u_lo)?;
+  let k0 = at_zero(&without_hi, &u_lo)?;
+  let check = evaluate_function_call_ast(
+    "Expand",
+    &[minus2(
+      expanded.clone(),
+      plus(vec![
+        k0.clone(),
+        times2(k1.clone(), u_lo.clone()),
+        times2(k2.clone(), u_hi.clone()),
+        times(vec![k3.clone(), u_lo.clone(), u_hi.clone()]),
+      ]),
+    )],
+  )
+  .ok()?;
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0))
+      || crate::functions::math_ast::try_eval_to_f64(e) == Some(0.0)
+  };
+  let free = |e: &Expr| {
+    !crate::functions::polynomial_ast::contains_var(e, var_name)
+      && !contains_func(e, func_name)
+      && !crate::functions::polynomial_ast::contains_var(e, "Woxi`RSolveNext")
+      && !crate::functions::polynomial_ast::contains_var(e, "Woxi`RSolveThis")
+  };
+  if !is_zero(&check)
+    || is_zero(&k3)
+    || ![&k0, &k1, &k2, &k3].iter().all(|k| free(k))
+  {
+    return None;
+  }
+  let numeric = [&k0, &k1, &k2, &k3]
+    .iter()
+    .all(|k| crate::functions::predicate_ast::is_numeric_q(k));
+  let (p, q, r, s) = (neg1(k1), neg1(k0), k3, k2);
+  // λ² - (p + s) λ + (p s - q r) == 0.
+  let trace = plus2(p.clone(), s.clone());
+  let det = minus2(times2(p, s.clone()), times2(q, r.clone()));
+  let discriminant = eval(minus2(
+    pow(trace.clone(), Expr::Integer(2)),
+    times2(Expr::Integer(4), det),
+  ))?;
+  if is_zero(&discriminant) {
+    return None;
+  }
+  let root = call1("Sqrt", discriminant);
+  let half = |e: Expr| div2(e, Expr::Integer(2));
+  let plus_root = eval(half(plus2(trace.clone(), root.clone())))?;
+  let minus_root = eval(half(minus2(trace, root)))?;
+  // wolframscript's C[1] goes with the -Sqrt root when the coefficients are
+  // numbers and with the +Sqrt root when they are symbols: keep both
+  // meanings, so that a C[1] solved for later (once numbers are put in for
+  // the symbols) is the same number in both.
+  let (l1, l2) = if numeric {
+    (plus_root, minus_root)
+  } else {
+    (minus_root, plus_root)
+  };
+  let n = id_expr(var_name);
+  // The term of each root runs with the base -1/(other root): equal to the
+  // root's own power at every integer n (the factor (-λ1 λ2)^(n+1) common to
+  // all terms cancels), and wolframscript's continuation to real n — real
+  // where the roots are negative, which a power of the roots is not.
+  let b1 = eval(div2(Expr::Integer(-1), l2.clone()))?;
+  let b2 = eval(div2(Expr::Integer(-1), l1.clone()))?;
+  let constant = match ics {
+    [] => call1("C", Expr::Integer(1)),
+    [(k, v)] => {
+      // a[k] = v fixes C[1].
+      let kk = Expr::Integer(*k + 1);
+      let p1 = pow(b1.clone(), kk.clone());
+      let p2 = pow(b2.clone(), kk);
+      eval(div2(
+        minus2(
+          times2(p1.clone(), minus2(l1.clone(), s.clone())),
+          times(vec![r.clone(), v.clone(), p1]),
+        ),
+        minus2(
+          times(vec![r.clone(), v.clone(), p2.clone()]),
+          times2(p2, minus2(l2.clone(), s.clone())),
+        ),
+      ))?
+    }
+    _ => return None,
+  };
+  // wolframscript's C[1] multiplies the second term at n + 1: the same
+  // family, written so that a C[1] found for its solution means the same
+  // here.
+  let n1 = plus2(n, Expr::Integer(1));
+  let p1 = pow(b1, n1.clone());
+  let p2 = pow(b2, n1);
+  eval(div2(
+    plus2(
+      times2(p1.clone(), minus2(l1, s.clone())),
+      times(vec![constant.clone(), p2.clone(), minus2(l2, s)]),
+    ),
+    times2(r, plus2(p1, times2(constant, p2))),
+  ))
+}
+
 fn solve_first_order_linear(
   lhs: &Expr,
   rhs: &Expr,

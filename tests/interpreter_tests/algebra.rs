@@ -7093,6 +7093,46 @@ mod reduce_generalized_variables {
 mod rsolve {
   use super::*;
 
+  // The Riccati recurrence k0 + k1 x[n] + k2 x[n+1] + x[n] x[n+1] == 0. Its
+  // closed form is written differently from wolframscript's, but C[1] means
+  // the same (which root it goes with differs between numeric and symbolic
+  // coefficients there, and here), and the continuation to real n agrees.
+  #[test]
+  fn riccati_recurrence() {
+    let numeric = "s = RSolve[0.4 + 0.6666666666666666 x[n] - 2.177777777777778 x[n + 1] + \
+                   x[n] x[n + 1] == 0, x[n], n]; ";
+    assert_eq!(
+      interpret(&format!(
+        "{numeric}Round[Chop[N[Table[x[n] /. s[[1]] /. C[1] -> c, {{c, {{0, 1, -2.5}}}}, \
+         {{n, {{0, 3}}}}]]], 10.^-6]"
+      ))
+      .unwrap(),
+      "{{1.1689129999999999, 1.1689129999999999}, {0.635417, 0.411329}, {0.109231, 0.31088}}"
+    );
+    // With an initial value.
+    assert_eq!(
+      interpret(
+        "s = RSolve[{2 + 3 x[n] - 4 x[n + 1] + x[n] x[n + 1] == 0, x[0] == 1/2}, \
+         x[n], n]; Round[Re[N[Table[x[n] /. s[[1]], {n, 0, 4}]]], 10.^-9]"
+      )
+      .unwrap(),
+      "{0.5, 1., 1.666666667, 3., 11.}"
+    );
+    // Symbolic coefficients put C[1] on the other root, and a real n gives
+    // a real value.
+    let symbolic = "s = RSolve[x[n + 1] x[n] + a x[n + 1] + b x[n] + c == 0, x[n], n]; \
+                    {a, b, c} = {-2.177777777777778, 0.6666666666666666, 0.4}; ";
+    assert_eq!(
+      interpret(&format!(
+        "{symbolic}Round[N[{{x[n] /. s[[1]] /. {{C[1] -> 0, n -> 2}}, \
+         x[n] /. s[[1]] /. {{C[1] -> 2, n -> 1}}, \
+         x[n] /. s[[1]] /. {{C[1] -> 1, n -> 1.5}}}}], 10.^-6]"
+      ))
+      .unwrap(),
+      "{0.342198, 0.653555, 0.49346399999999996}"
+    );
+  }
+
   #[test]
   fn constant_coeff_second_order() {
     assert_eq!(
