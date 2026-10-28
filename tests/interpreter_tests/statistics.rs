@@ -1985,6 +1985,19 @@ mod rectt_messages {
   }
 
   #[test]
+  fn mean_of_machine_reals_adds_left_to_right() {
+    // wolframscript's Mean is the left-to-right sum over the length, which
+    // can differ from Total[…]/Length[…] in the last bit.
+    assert_eq!(
+      interpret(
+        "{Mean[N[Range[10]/3]], Mean[{1.2, 2.3, 1.9, 3.1, 2.2, 4.0, 1.4}]}"
+      )
+      .unwrap(),
+      "{1.8333333333333333, 2.3}"
+    );
+  }
+
+  #[test]
   fn mean_numeric_scalar() {
     assert_rectt(
       "Mean[5]",

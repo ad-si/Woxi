@@ -1672,6 +1672,62 @@ mod integrate_linear_power {
 mod find_distribution_parameters {
   use super::*;
 
+  const DATA: &str = "{1.2, 2.3, 1.9, 3.1, 2.2, 4.0, 1.4}";
+
+  #[test]
+  fn closed_forms_match_wolframscript() {
+    assert_eq!(
+      interpret(&format!(
+        "{{FindDistributionParameters[{DATA}, LogNormalDistribution[a, b]], \
+         FindDistributionParameters[Round[{DATA}], PoissonDistribution[m]], \
+         FindDistributionParameters[{DATA}, NormalDistribution[a, 1]]}}"
+      ))
+      .unwrap(),
+      "{{a -> 0.7571015193568468, b -> 0.3897430587188327}, \
+       {m -> 2.142857142857143}, {a -> 2.3}}"
+    );
+    // Starting values and ParameterEstimator are accepted.
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1.2, 2.3, 1.9, 3.1, 2.2}, \
+         LogNormalDistribution[x, y], {{x, 2.5}, {y, 1}}, \
+         ParameterEstimator -> \"MaximumLikelihood\"]"
+      )
+      .unwrap(),
+      "{x -> 0.7153888075513647, y -> 0.3104142991181933}"
+    );
+  }
+
+  #[test]
+  fn numeric_maximum_likelihood() {
+    // The score vanishes at the estimate (wolframscript stops ~1e-8 short
+    // for the Weibull: {2.741731603271059, 2.5933610456170526}).
+    assert_eq!(
+      interpret(&format!(
+        "{{Round[{{a, b}} /. FindDistributionParameters[{DATA}, \
+         WeibullDistribution[a, b]], 10^-6], \
+         Round[{{a, b}} /. FindDistributionParameters[{DATA}, \
+         GammaDistribution[a, b]], 10^-9]}}"
+      ))
+      .unwrap(),
+      "{{685433/250000, 2593361/1000000}, \
+       {3378977807/500000000, 340339613/1000000000}}"
+    );
+  }
+
+  #[test]
+  fn estimated_distribution() {
+    assert_eq!(
+      interpret(&format!(
+        "{{EstimatedDistribution[{DATA}, LogNormalDistribution[a, b]], \
+         EstimatedDistribution[{DATA}, NormalDistribution[a, 1]]}}"
+      ))
+      .unwrap(),
+      "{LogNormalDistribution[0.7571015193568468, 0.3897430587188327], \
+       NormalDistribution[2.3, 1]}"
+    );
+  }
+
   #[test]
   fn laplace_mle() {
     // μ = median = (1.5 + 2.8)/2 = 2.15

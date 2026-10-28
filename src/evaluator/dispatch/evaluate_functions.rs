@@ -4570,95 +4570,11 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // FindDistributionParameters[data, dist[var1, var2]]
-  // Closed-form MLE for known distributions.
-  if name == "FindDistributionParameters"
-    && args.len() == 2
-    && let Expr::List(_) = &args[0]
-    && let Expr::FunctionCall {
-      name: dist_name,
-      args: dist_args,
-    } = &args[1]
-    && dist_args.len() == 1
-    && dist_name == "ExponentialDistribution"
-  {
-    let data = args[0].clone();
-    let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
-      crate::evaluator::evaluate_expr_to_expr(&call1("N", v))
-    };
-    let rule = |p: Expr, v: Expr| rule_expr(p, v);
-    // Exponential[λ] MLE: λ̂ = 1 / mean(data).
-    let mean = crate::functions::mean_ast(std::slice::from_ref(&data))?;
-    let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
-    let rate = div2(Expr::Integer(1), mean);
-    return Ok(Expr::List(
-      vec![rule(dist_args[0].clone(), to_real(rate)?)].into(),
-    ));
+  if name == "FindDistributionParameters" {
+    return crate::functions::math_ast::find_distribution_parameters_ast(args);
   }
-  if name == "FindDistributionParameters"
-    && args.len() == 2
-    && let Expr::List(_) = &args[0]
-    && let Expr::FunctionCall {
-      name: dist_name,
-      args: dist_args,
-    } = &args[1]
-    && dist_args.len() == 2
-  {
-    let data = args[0].clone();
-    let v1 = dist_args[0].clone();
-    let v2 = dist_args[1].clone();
-    // wolframscript always returns MachinePrecision results.
-    let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
-      crate::evaluator::evaluate_expr_to_expr(&call1("N", v))
-    };
-    let rule = |p: Expr, v: Expr| rule_expr(p, v);
-    match dist_name.as_str() {
-      "LaplaceDistribution" => {
-        let median = crate::functions::median_ast(&data)?;
-        let median = crate::evaluator::evaluate_expr_to_expr(&median)?;
-        // mean(|x - median|)
-        let abs_diffs = if let Expr::List(items) = &data {
-          let mut out = Vec::with_capacity(items.len());
-          for x in items {
-            let diff = minus2(x.clone(), median.clone());
-            let abs_expr = call1("Abs", diff);
-            out.push(crate::evaluator::evaluate_expr_to_expr(&abs_expr)?);
-          }
-          Expr::List(out.into())
-        } else {
-          unreachable!()
-        };
-        let scale = crate::functions::mean_ast(&[abs_diffs])?;
-        let scale = crate::evaluator::evaluate_expr_to_expr(&scale)?;
-        return Ok(Expr::List(
-          vec![rule(v1, to_real(median)?), rule(v2, to_real(scale)?)].into(),
-        ));
-      }
-      "NormalDistribution" => {
-        let mean = crate::functions::mean_ast(std::slice::from_ref(&data))?;
-        let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
-        // population variance: sum((x - mean)^2) / n
-        let (n, squared_diffs) = if let Expr::List(items) = &data {
-          let mut out = Vec::with_capacity(items.len());
-          for x in items {
-            let diff = minus2(x.clone(), mean.clone());
-            let sq = pow2(diff, Expr::Integer(2));
-            out.push(crate::evaluator::evaluate_expr_to_expr(&sq)?);
-          }
-          (items.len() as i128, Expr::List(out.into()))
-        } else {
-          unreachable!()
-        };
-        let sum_sq = call1("Total", squared_diffs);
-        let variance = div2(sum_sq, Expr::Integer(n));
-        let std_dev = call1("Sqrt", variance);
-        let std_dev = crate::evaluator::evaluate_expr_to_expr(&std_dev)?;
-        return Ok(Expr::List(
-          vec![rule(v1, to_real(mean)?), rule(v2, to_real(std_dev)?)].into(),
-        ));
-      }
-      _ => {}
-    }
+  if name == "EstimatedDistribution" {
+    return crate::functions::math_ast::estimated_distribution_ast(args);
   }
 
   // ParameterMixtureDistribution[

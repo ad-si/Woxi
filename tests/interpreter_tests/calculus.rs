@@ -23732,3 +23732,23 @@ mod derivative_definitions {
     }
   }
 }
+
+mod d_with_symbolic_exponents {
+  use super::*;
+
+  #[test]
+  fn quotient_with_symbolic_powers_is_not_cancelled() {
+    // Regression: Cancel over powers like ((x - c)/b)^(a - 1) blew up in
+    // the polynomial GCD search (20 s). wolframscript's D leaves the
+    // chain-rule quotient as it is.
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "p = PDF[WeibullDistribution[a, b, c], x][[1, 1, 1]]; \
+       Chop[(D[Log[p], b] - (a*(-1 + ((-c + x)/b)^a))/b) /. \
+       {a -> 1.7, b -> 2.3, c -> 0.4, x -> 3.1}]",
+    )
+    .unwrap();
+    assert_eq!(result, "0");
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+}

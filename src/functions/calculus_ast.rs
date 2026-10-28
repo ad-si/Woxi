@@ -338,7 +338,37 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // canonicalize (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
   let (_, den) =
     crate::functions::polynomial_ast::together::extract_num_den(&result);
-  if matches!(&den, Expr::Integer(1)) {
+  // Powers with symbolic exponents (`((x - c)/b)^(a - 1)`, exponentials
+  // aside) are not polynomial; cancelling over them only makes the GCD
+  // search blow up.
+  fn has_symbolic_exponent(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        (name == "Power"
+          && args.len() == 2
+          && !matches!(&args[0], Expr::Constant(c) if c == "E")
+          && crate::functions::math_ast::try_eval_to_f64(&args[1]).is_none())
+          || args.iter().any(has_symbolic_exponent)
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        right,
+        left,
+      } => {
+        (!matches!(left.as_ref(), Expr::Constant(c) if c == "E")
+          && crate::functions::math_ast::try_eval_to_f64(right).is_none())
+          || has_symbolic_exponent(left)
+          || has_symbolic_exponent(right)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        has_symbolic_exponent(left) || has_symbolic_exponent(right)
+      }
+      Expr::UnaryOp { operand, .. } => has_symbolic_exponent(operand),
+      Expr::List(items) => items.iter().any(has_symbolic_exponent),
+      _ => false,
+    }
+  }
+  if matches!(&den, Expr::Integer(1)) || has_symbolic_exponent(&result) {
     Ok(result)
   } else {
     Ok(

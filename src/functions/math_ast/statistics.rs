@@ -708,6 +708,19 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if items.iter().all(|item| matches!(item, Expr::List(_))) {
           return mean_columnwise(items);
         }
+        // A list of machine reals: wolframscript adds them left to right
+        // and divides by the length — not Total's summation, which can
+        // differ in the last bit (Mean[N[Range[10]/3]] is
+        // 1.8333333333333333, Total[…]/10 1.8333333333333337).
+        if items.iter().all(|item| matches!(item, Expr::Real(_))) {
+          let mut sum = 0.0;
+          for item in items {
+            if let Expr::Real(x) = item {
+              sum += x;
+            }
+          }
+          return Ok(Expr::Real(sum / items.len() as f64));
+        }
         // Compute as Total[list] / Length[list]. Total, not Plus[items...]:
         // Plus canonical-sorts its operands, changing the f64 summation
         // order for real entries (Mean[{23.1, 24.4, 21.8, 25.5}] must stay

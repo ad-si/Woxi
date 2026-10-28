@@ -1115,7 +1115,7 @@ PatternSequence,Represents a sequence of patterns spliced into the enclosing arg
 PiecewiseExpand,Expands functions and nested cases to a single Piecewise,✅,pure,5.1,1090
 ImageAdd,Adds pixel values of two images pointwise,✅,pure,7.0,1091
 OwnValues,Returns the own values of a symbol,✅,pure,2.0,1092
-EstimatedDistribution,,🚫,,8.0,1093
+EstimatedDistribution,Distribution with maximum-likelihood parameter estimates,✅,pure,8.0,1093
 SplineWeights,,🚫,,7.0,1094
 Histogram3D,,🚫,,7.0,1096
 ImageCrop,Trims uniform borders or crops an image to a given size and side,✅,pure,7.0,1097
@@ -1535,7 +1535,7 @@ LetterNumber,Get the position of a letter in the English alphabet,✅,pure,10.1,
 TimeValue,Time value of money computation,✅,pure,8.0,1524
 DedekindEta,Dedekind eta modular function,✅,pure,3.0,1525
 LineIndent,Line indentation option,✅,pure,3.0,1526
-FindDistributionParameters,Estimate distribution parameters,✅,pure,8.0,1528
+FindDistributionParameters,Maximum-likelihood distribution parameter estimates,✅,pure,8.0,1528
 NetEncoder,Neural network encoder,✅,pure,11.0,1528
 LayeredGraphPlot,Draws a graph in layers by distance from its roots,✅,pure,6.0,1529
 AssociationMap,Maps a function over an association; supports the operator form AssociationMap[f][data],✅,pure,10.0,1530

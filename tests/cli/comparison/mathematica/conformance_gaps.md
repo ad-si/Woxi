@@ -1366,6 +1366,20 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `Simplify` does not factor out powers whose exponents differ by an integer
+
+```sh
+wolframscript -code 'Simplify[c*(x - c)^(a - 1) - x*(x - c)^(a - 1) + (x - c)^a]'
+# 0
+woxi eval '…same…'   # c*(-c + x)^(-1 + a) + (-c + x)^a - x*(-c + x)^(-1 + a)
+```
+
+wolframscript takes `(x - c)^(a - 1)` out of all three terms, which leaves
+`(c - x) + (x - c) = 0`. Woxi's `Times` merges `(x - c)*(x - c)^(a - 1)`
+into `(x - c)^a`, but `Simplify` has no step that factors a symbolic
+power out of a sum. Because of this, `D[Log[PDF[WeibullDistribution[a, b,
+c], x]], b]` does not simplify to `a*(-1 + ((x - c)/b)^a)/b` either.
+
 ### `D` of `Min`/`Max` stays in `Derivative[…][Max]` form instead of a `Piecewise`
 
 wolframscript differentiates `Min`/`Max` of a real variable into a

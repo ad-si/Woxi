@@ -16333,7 +16333,7 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
 /// `eval` (already signed for maximize, and never returning an error —
 /// callers score a failed trial point as `f64::INFINITY`). Used by
 /// [`find_minimum_ast`] whenever `f` isn't symbolically differentiable.
-fn nelder_mead_minimize(
+pub(crate) fn nelder_mead_minimize(
   eval: &impl Fn(&[f64]) -> f64,
   clamp: &impl Fn(&mut [f64]),
   x0: &[f64],
