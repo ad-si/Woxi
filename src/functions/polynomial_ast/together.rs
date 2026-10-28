@@ -1483,7 +1483,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
       op: BinaryOperator::Times,
       left,
       right,
-    } => times2(together_expr(left), together_expr(right)),
+    } => merge_numeric_factors(&[together_expr(left), together_expr(right)]),
 
     // Binary plus/minus: recurse into each side. together_expr itself will
     // combine additive terms after preprocessing.
@@ -1513,15 +1513,35 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
     // case above) so a Plus factor becomes a single fraction.
     Expr::FunctionCall { name, args } if name == "Times" => {
       let new_args: Vec<Expr> = args.iter().map(together_expr).collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
+      merge_numeric_factors(&new_args)
     }
 
     // Other function calls — do not descend (e.g. Sin[...], f[x]); leave as-is.
     _ => expr.clone(),
   }
+}
+
+/// The product of `factors` with its numeric factors multiplied into one,
+/// so that content a factor gave up merges with the rest: `2 (6 + 3 x)` is
+/// `6 (2 + x)`, not `2*3*(2 + x)`. The other factors stay as they are.
+fn merge_numeric_factors(factors: &[Expr]) -> Expr {
+  let flat = flatten_times_args(factors);
+  let is_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let (numbers, rest): (Vec<Expr>, Vec<Expr>) =
+    flat.into_iter().partition(is_number);
+  if numbers.len() < 2 {
+    return times(numbers.into_iter().chain(rest).collect());
+  }
+  let product =
+    crate::evaluator::evaluate_expr_to_expr(&times(numbers.clone()))
+      .unwrap_or_else(|_| times(numbers));
+  if matches!(&product, Expr::Integer(1)) && !rest.is_empty() {
+    return times(rest);
+  }
+  times(std::iter::once(product).chain(rest).collect())
 }
 
 /// Build a Divide expression, collapsing trivial cases.

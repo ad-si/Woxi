@@ -3443,6 +3443,23 @@ mod together {
   }
 
   #[test]
+  fn together_merges_numeric_content_of_a_product() {
+    // Content a sum factor gives up multiplies into the product's own.
+    assert_eq!(interpret("Together[2 (6 + 3 x)]").unwrap(), "6*(2 + x)");
+    assert_eq!(
+      interpret("Together[x (6 + 3 x)/(1 + y)]").unwrap(),
+      "(3*x*(2 + x))/(1 + y)"
+    );
+    assert_eq!(
+      interpret(
+        "Together[(2*(6 + 3*Sqrt[2] - 6*Sqrt[5] + 3*Sqrt[10]))/(4 + 3*Sqrt[2] + Sqrt[10])]"
+      )
+      .unwrap(),
+      "(6*(2 + Sqrt[2] - 2*Sqrt[5] + Sqrt[10]))/(4 + 3*Sqrt[2] + Sqrt[10])"
+    );
+  }
+
+  #[test]
   fn together_scalar_times_sum_of_fractions() {
     // A sum of fractions wrapped in a scalar product must still be combined;
     // preprocessing previously left `Times[scalar, Plus[...]]` uncombined.
