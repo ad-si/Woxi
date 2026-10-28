@@ -7884,6 +7884,20 @@ mod cases {
     );
   }
 
+  /// A sum whose later term has a negative rational coefficient sets that
+  /// term with a minus sign, not as `+ (-1 π)/4`.
+  #[test]
+  fn traditional_form_sum_with_negative_rational_term() {
+    assert_case(
+      "ToString[1 - Pi/4, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{1, -, FractionBox[π, 4]}], TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[a - 2 b/3, TraditionalForm]",
+      "DisplayForm[FormBox[RowBox[{a, -, FractionBox[RowBox[{2,  , b}], 3]}], TraditionalForm]]",
+    );
+  }
+
   // A balanced `(...)` group inside box-notation is taken as a
   // single unit by the surrounding operator. wolframscript:
   // `\(x \/ (y + z)\)` → `FractionBox["x", RowBox[{"(", RowBox[{"y",
