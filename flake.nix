@@ -19,19 +19,21 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             bash
-            cargo
             cargo-insta
             cargo-nextest
             cargo-outdated
-            clippy
+            cargo-sweep # `make sweep`
             coreutils # cat
             gnumake
             gnused
             lld
             nodejs
             prek
-            rustc
-            rustfmt
+            # The Rust toolchain itself comes from rustup (pinned by
+            # rust-toolchain.toml), never from nixpkgs: a nix cargo next to
+            # the rustup proxies in ~/.cargo/bin lets PATH order pick the
+            # compiler, and every switch rebuilds target/ from scratch.
+            rustup
             uv
             wasm-pack
           ];

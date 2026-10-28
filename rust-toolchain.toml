@@ -1,0 +1,6 @@
+# The single toolchain for local builds, `make` and CI (see flake.nix).
+# Nightly-only work (cargo-fuzz) overrides it via `cargo +nightly` or
+# RUSTUP_TOOLCHAIN=nightly.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]

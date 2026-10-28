@@ -5,6 +5,9 @@
 .direnv
 .env
 .DS_Store
+# The image pins its own Rust release; rust-toolchain.toml's "stable"
+# would make rustup download a newer one and rebuild everything.
+rust-toolchain.toml
 target
 node_modules
 tests/book

@@ -246,14 +246,14 @@ fuzz-parse: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	cargo +nightly fuzz run parse -- -timeout=10 -max_len=4096
+	RUSTUP_TOOLCHAIN=nightly cargo fuzz run parse -- -timeout=10 -max_len=4096
 
 .PHONY: fuzz-interpret
 fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	cargo +nightly fuzz run interpret -- -timeout=1200 -max_len=2048 -rss_limit_mb=8192
+	RUSTUP_TOOLCHAIN=nightly cargo fuzz run interpret -- -timeout=1200 -max_len=2048 -rss_limit_mb=8192
 
 # Differential fuzzing against wolframscript (local binary or the
 # cmd-server.js Docker bridge — auto-detected). Reports and shrinks any
@@ -515,6 +515,18 @@ docs/build: jupyterlite-build docs/site playground-codemirror
 .PHONY: docs/serve
 docs/serve: docs/build
 	cd tests/book && npx -y http-server -p 5501 -c-1 -s .
+
+
+# Cargo never garbage-collects target/: every feature, flag or toolchain
+# change leaves a full set of stale, differently-hashed artifacts behind.
+# Drop artifacts from toolchains rustup no longer has, then evict the
+# oldest until each target/ fits SWEEP_MAXSIZE. A plain age cutoff
+# (`--time`) frees almost nothing here, as stale variants are rebuilt daily.
+SWEEP_MAXSIZE ?= 30GB
+.PHONY: sweep
+sweep:
+	cargo sweep --installed . fuzz
+	cargo sweep --maxsize $(SWEEP_MAXSIZE) . fuzz
 
 
 .PHONY: clean
