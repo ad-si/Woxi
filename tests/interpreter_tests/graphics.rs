@@ -16591,6 +16591,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Tick labels on a narrow `ImageSize` must not squeeze the bitmap to a
+    /// negative width.
+    #[test]
+    fn density_plot_narrow_image_keeps_positive_bitmap_width() {
+      let svg = export_svg(
+        "DensityPlot[y, {x, 0, 1}, {y, 0, 4}, ImageSize -> {100, 240}, \
+         Frame -> True, FrameTicks -> {None, Automatic, None, Automatic}]",
+      );
+      assert!(svg.contains("<image "));
+      assert!(!svg.contains("width=\"-"), "negative width in {svg}");
+    }
+
     /// `RegionFunction -> Function[{x, y, z}, …]` masks out grid cells
     /// where it is `False`, matching `Plot3D`/`ContourPlot3D`'s option of
     /// the same name. A region excluding the whole domain leaves no
@@ -26021,6 +26033,27 @@ mod contour_plot_3d {
       .unwrap(),
       "True"
     );
+  }
+
+  #[test]
+  fn style_list_of_colour_and_opacity_is_translucent() {
+    // A list or nested `Directive` mixing a colour with `Opacity` keeps the
+    // opacity, exactly like `Directive[colour, Opacity[o]]` does.
+    for style in [
+      "{RGBColor[0, 0, 1], Opacity[0.4]}",
+      "{Directive[{RGBColor[0, 0, 1], Opacity[0.4]}]}",
+      "{Directive[RGBColor[0, 0, 1], Opacity[0.4]]}",
+    ] {
+      let svg = export_svg(&format!(
+        "ContourPlot3D[z == x + y, {{x, -1, 1}}, {{y, -1, 1}}, \
+         {{z, -2, 2}}, Boxed -> False, PlotPoints -> 5, \
+         ContourStyle -> {style}]"
+      ));
+      assert!(
+        svg.contains("<polygon") && svg.contains("opacity=\"0.4\""),
+        "{style}: surface must be translucent"
+      );
+    }
   }
 
   #[test]

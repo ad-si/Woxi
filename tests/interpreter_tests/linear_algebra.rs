@@ -626,6 +626,73 @@ mod inverse {
   }
 
   #[test]
+  fn linear_solve_with_a_matrix_right_hand_side_and_sparse_operator() {
+    // Each column of the right-hand side is solved (wolframscript values),
+    // and the operator form applies to a SparseArray matrix.
+    assert_eq!(
+      interpret(
+        "{InputForm[LinearSolve[{{2., 1.}, {1., 3.}}, {{1., 2., 3.}, {0., 1., 1.}}]], \
+         Max[Abs[LinearSolve[SparseArray[{{i_, i_} -> 2., {i_, j_} /; Abs[i - j] == 1 \
+         -> -1.}, {3, 3}]][{1., 2., 3.}] - {2.5, 4., 3.5}]] < 10^-12}"
+      )
+      .unwrap(),
+      "{InputForm[{{0.6, 1., 1.6}, {-0.2, 0., -0.2}}], True}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; m = RandomReal[1, {300, 300}] + 10 IdentityMatrix[300]; \
+         b = RandomReal[1, {300, 40}]; Max[Abs[m . LinearSolve[m, b] - b]] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn inverse_and_dot_of_machine_complex_matrices() {
+    // Values from wolframscript.
+    assert_eq!(
+      interpret(
+        "InputForm[{Inverse[{{1. + 2. I, 0.5}, {0.25, 3. - I}}][[1, 1]], \
+         {{1. + I, 2.}, {1., 3.}} . {{1. - I, 0.}, {0., 1.}}}]"
+      )
+      .unwrap(),
+      "InputForm[{0.19737263697532842 - 0.4075616789490548*I, \
+       {{2. + 0.*I, 2. + 0.*I}, {1. - 1.*I, 3. + 0.*I}}}]"
+    );
+    // A large complex system stays a machine computation.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; m = RandomComplex[{-1 - I, 1 + I}, {120, 120}]; \
+         Max[Abs[Inverse[m] . m - IdentityMatrix[120]]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn inverse_of_a_large_exact_matrix_is_eliminated() {
+    // Regression: the adjugate's n^2 determinants took 116 s on this
+    // 40-by-40 rational matrix (wolframscript: 0.02 s).
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "n = 40; m = Table[Which[i == j, 2/3, Abs[i - j] == 1, 1/7, True, 0], \
+         {i, n}, {j, n}]; r = Inverse[m]; {r . m == IdentityMatrix[n], r[[1, 1]]}"
+      )
+      .unwrap(),
+      "{True, 1607934203810280302171869536977730565698772920/\
+       1020238488101510497393661299133534060063794441}"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
   fn inverse_identity() {
     assert_eq!(
       interpret("Inverse[{{1, 0}, {0, 1}}]").unwrap(),

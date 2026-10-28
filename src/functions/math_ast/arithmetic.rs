@@ -6033,10 +6033,9 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
       }
       if ta == tb {
-        // Fall back to string comparison
-        let sa = expr_to_string(a);
-        let sb = expr_to_string(b);
-        sa.cmp(&sb)
+        // Fall back to comparing the printed forms (rendering only as much
+        // of them as the comparison needs).
+        crate::syntax::printed_order(a, b)
       } else {
         ta.cmp(&tb)
       }

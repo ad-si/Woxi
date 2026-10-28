@@ -3638,8 +3638,36 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
     {
       false
     }
+    // An atom never prints like a list, a curried call or an association
+    // (a plot comparing `InterpolatingFunction[…][t]` with 0 would render
+    // the function's whole table per sample).
+    _ if (is_atom(a) && is_bracketed_compound(b))
+      || (is_atom(b) && is_bracketed_compound(a)) =>
+    {
+      false
+    }
     _ => expr_to_string(a) == expr_to_string(b),
   }
+}
+
+fn is_atom(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Constant(_)
+  )
+}
+
+fn is_bracketed_compound(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::List(_) | Expr::CurriedCall { .. } | Expr::Association(_)
+  )
 }
 
 /// The head of `e` when it is cheap to tell and is the same however `e` is
@@ -3654,6 +3682,24 @@ fn cheap_head(e: &Expr) -> Option<&str> {
     Expr::Comparison { operators, .. } if operators.len() == 1 => {
       Some(operators[0].head_name())
     }
+    // An operator node prints like the call it stands for. A power of a
+    // number is left out: `2^-1` prints like `Rational[1, 2]`.
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } if !matches!(
+      left.as_ref(),
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+    ) && !matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Rational") =>
+    {
+      Some("Power")
+    }
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      ..
+    } => Some("Plus"),
     // `CurriedCall` with a symbol head prints like the plain call.
     Expr::CurriedCall { func, .. } => match func.as_ref() {
       Expr::Identifier(name) => Some(name),

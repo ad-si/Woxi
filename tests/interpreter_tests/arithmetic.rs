@@ -13864,3 +13864,21 @@ mod arccosh_complex {
     }
   }
 }
+
+mod log_base_of_zero {
+  use super::*;
+
+  #[test]
+  fn log_of_zero_in_other_bases_is_negative_infinity() {
+    assert_eq!(interpret("Log10[0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Log2[0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("Log[2, 0]").unwrap(), "-Infinity");
+    assert_eq!(interpret("N[Log10[0], 7]").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn reciprocal_log_times_infinity_keeps_sign() {
+    assert_eq!(interpret("Log[3]^(-1) * Infinity").unwrap(), "Infinity");
+    assert_eq!(interpret("-Log10[0]").unwrap(), "Infinity");
+  }
+}

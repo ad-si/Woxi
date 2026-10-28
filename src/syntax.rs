@@ -13342,6 +13342,153 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   }
 }
 
+/// `expr_to_string(a).cmp(&expr_to_string(b))`, rendering only what the
+/// comparison needs: lists and generically printed calls are walked
+/// element by element, and only the first pair of elements that differ is
+/// printed. Comparing two InterpolatingFunction[…][t] this way does not
+/// print their tables.
+pub fn printed_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  printed_order_with(a, "", b, "")
+}
+
+/// The opener, elements and closer of an expression that prints as
+/// `opener e1, e2, … closer`.
+fn generic_parts(e: &Expr) -> Option<(String, &[Expr], &'static str)> {
+  match e {
+    Expr::List(items) => Some(("{".to_string(), &items[..], "}")),
+    Expr::FunctionCall { name, args }
+      if name == "InterpolatingFunction"
+        || crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+    {
+      Some((format!("{name}["), &args[..], "]"))
+    }
+    _ => None,
+  }
+}
+
+fn printed_order_with(
+  a: &Expr,
+  a_suffix: &str,
+  b: &Expr,
+  b_suffix: &str,
+) -> std::cmp::Ordering {
+  use crate::evaluator::pattern_matching::expr_equal;
+  let full =
+    || (expr_to_string(a) + a_suffix).cmp(&(expr_to_string(b) + b_suffix));
+  if expr_equal(a, b) {
+    return a_suffix.cmp(b_suffix);
+  }
+  // `f[x][y]`: the heads first, each followed by "[".
+  if let (
+    Expr::CurriedCall { func: fa, args: aa },
+    Expr::CurriedCall { func: fb, args: ab },
+  ) = (a, b)
+  {
+    if !expr_equal(fa, fb) {
+      return match printed_order_with(fa, "[", fb, "[") {
+        std::cmp::Ordering::Equal => full(),
+        other => other,
+      };
+    }
+    return sequence_order(aa, "]", a_suffix, ab, "]", b_suffix)
+      .unwrap_or_else(full);
+  }
+  match (generic_parts(a), generic_parts(b)) {
+    (Some((oa, ia, ca)), Some((ob, ib, cb))) if oa == ob => {
+      sequence_order(ia, ca, a_suffix, ib, cb, b_suffix).unwrap_or_else(full)
+    }
+    _ => full(),
+  }
+}
+
+/// The order of `e1, e2, … close suffix` for two element lists after a
+/// common opener; `None` when it cannot be told without printing all.
+fn sequence_order(
+  ia: &[Expr],
+  ca: &str,
+  sa: &str,
+  ib: &[Expr],
+  cb: &str,
+  sb: &str,
+) -> Option<std::cmp::Ordering> {
+  use crate::evaluator::pattern_matching::expr_equal;
+  let common = ia.len().min(ib.len());
+  for i in 0..common {
+    if expr_equal(&ia[i], &ib[i]) {
+      continue;
+    }
+    if ia.len() != ib.len() && i + 1 >= common {
+      return None;
+    }
+    let next_a = if i + 1 < ia.len() {
+      ", ".to_string()
+    } else {
+      format!("{ca}{sa}")
+    };
+    let next_b = if i + 1 < ib.len() {
+      ", ".to_string()
+    } else {
+      format!("{cb}{sb}")
+    };
+    let order = printed_order_with(&ia[i], &next_a, &ib[i], &next_b);
+    if order != std::cmp::Ordering::Equal {
+      return Some(order);
+    }
+  }
+  (ia.len() == ib.len()).then(|| format!("{ca}{sa}").cmp(&format!("{cb}{sb}")))
+}
+
+/// `expr_to_string(expr)` for plain data — integers, machine reals,
+/// symbols outside any context, lists and calls of non-built-in heads of
+/// such — built directly rather than through the general formatter; `None`
+/// for anything else. Set operations key elements by their printed forms.
+pub fn data_to_string(expr: &Expr) -> Option<String> {
+  fn go(e: &Expr, out: &mut String) -> bool {
+    match e {
+      Expr::Integer(n) => out.push_str(&n.to_string()),
+      Expr::Real(_) => out.push_str(&expr_to_string(e)),
+      Expr::Identifier(name)
+        if !name.contains('`')
+          && crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+      {
+        out.push_str(name);
+      }
+      Expr::List(items) => {
+        out.push('{');
+        for (i, item) in items.iter().enumerate() {
+          if i > 0 {
+            out.push_str(", ");
+          }
+          if !go(item, out) {
+            return false;
+          }
+        }
+        out.push('}');
+      }
+      Expr::FunctionCall { name, args }
+        if !name.contains('`')
+          && crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+      {
+        out.push_str(name);
+        out.push('[');
+        for (i, item) in args.iter().enumerate() {
+          if i > 0 {
+            out.push_str(", ");
+          }
+          if !go(item, out) {
+            return false;
+          }
+        }
+        out.push(']');
+      }
+      _ => return false,
+    }
+    true
+  }
+  let mut out = String::new();
+  go(expr, &mut out).then_some(out)
+}
+
 /// Convert an Expr back to a string representation (InputForm)
 pub fn expr_to_string(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Input)

@@ -223,12 +223,27 @@ pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
       }
       return;
     }
+    // Lists inside a curried call or an operator node (an
+    // `InterpolatingFunction[…][x]` within a product) are shared too.
     Expr::CurriedCall { func, args } => {
       if depth < 64 {
         share_large_lists(func, depth + 1);
-        for a in args.iter_mut() {
-          share_large_lists(a, depth + 1);
+        for arg in args.iter_mut() {
+          share_large_lists(arg, depth + 1);
         }
+      }
+      return;
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      if depth < 64 {
+        share_large_lists(left, depth + 1);
+        share_large_lists(right, depth + 1);
+      }
+      return;
+    }
+    Expr::UnaryOp { operand, .. } => {
+      if depth < 64 {
+        share_large_lists(operand, depth + 1);
       }
       return;
     }

@@ -5612,6 +5612,24 @@ mod solve {
   }
 
   #[test]
+  fn nsolve_quadratic_system_with_large_cancelling_terms() {
+    // The eliminant's terms are ~1e15 while its value at a root is O(1), so
+    // the residual check must weigh the cancelled terms, not the sum.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = NSolve[{100 (a^2 + b^2 + a b) == 157.5, \
+         100 (b^2 + c^2 + b c) == 314., \
+         100 (c^2 + a^2 + c a) == 204.5}, {a, b, c}]; \
+         {Length[s], Max[Abs[{a^2 + b^2 + a b - 1.575, b^2 + c^2 + b c - 3.14, \
+         c^2 + a^2 + c a - 2.045} /. s]] < 10^-9}"
+      )
+      .unwrap(),
+      "{4, True}"
+    );
+  }
+
+  #[test]
   fn nsolve_underdetermined_linear_solves_for_first_variables() {
     // NSolve, unlike Solve, solves a linear underdetermined system for its
     // first variables and reports no `svars`.

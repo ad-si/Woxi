@@ -23813,3 +23813,143 @@ mod ndsolve_with_interpolated_coupling {
     );
   }
 }
+
+mod equality_of_atoms_and_data_calls {
+  use super::*;
+
+  #[test]
+  fn atom_against_a_curried_call_is_decided_without_rendering() {
+    // Regression: comparing InterpolatingFunction[…][t] with 0 rendered the
+    // whole table for each comparison.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{i, N[i^2]}, {i, 3000}]]; \
+         {Count[Table[f[t] === 0, {200}], False], {1, 2} === 1, g[1][2] === x}"
+      )
+      .unwrap(),
+      "{200, False, False}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}
+
+mod plot_body_cache_compares_operator_nodes_by_head {
+  use super::*;
+
+  #[test]
+  fn contour_plot_of_a_complex_modulus_is_quick() {
+    // Regression: comparing a power node with a product while checking the
+    // compiled-body cache rendered both, per sample point.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f[kx_, ky_] := Exp[I kx] + 2 Exp[-I kx/2] Cos[ky]; \
+         w[kx_, ky_] := Sqrt[Conjugate[f[kx, ky]] f[kx, ky]]; \
+         Head[ContourPlot[w[kx, ky], {kx, -1.5, 1.5}, {ky, -1.5, 1.5}, \
+         PlotPoints -> 25]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
+  }
+}
+
+// `printed_order` must order expressions exactly as comparing their
+// printed forms does, while printing only what it needs.
+mod printed_order_matches_string_order {
+  use woxi::syntax::{Expr, data_to_string, expr_to_string, printed_order};
+
+  /// A small deterministic generator of nested lists and calls of
+  /// numbers and symbols, many of them sharing long prefixes.
+  fn generate(seed: &mut u64, depth: u32) -> Expr {
+    *seed = seed
+      .wrapping_mul(6364136223846793005)
+      .wrapping_add(1442695040888963407);
+    let r = (*seed >> 33) % 10;
+    if depth == 0 || r < 4 {
+      return match r % 5 {
+        0 => Expr::Integer(((*seed >> 20) % 12) as i128 - 3),
+        1 => Expr::Real(((*seed >> 20) % 7) as f64 * 0.5),
+        2 => Expr::Real(1.0 + ((*seed >> 20) % 3) as f64 * 0.25),
+        3 => Expr::Identifier(
+          ["a", "b", "ab", "x"][((*seed >> 20) % 4) as usize].to_string(),
+        ),
+        _ => Expr::Real(10.0),
+      };
+    }
+    let n = ((*seed >> 25) % 4) as usize;
+    let items: Vec<Expr> = (0..n).map(|_| generate(seed, depth - 1)).collect();
+    match r % 3 {
+      0 => Expr::List(items.into()),
+      1 => Expr::FunctionCall {
+        name: "f".to_string(),
+        args: items.into(),
+      },
+      _ => Expr::CurriedCall {
+        func: Box::new(Expr::FunctionCall {
+          name: "g".to_string(),
+          args: vec![Expr::Integer(1)].into(),
+        }),
+        args: items,
+      },
+    }
+  }
+
+  #[test]
+  fn agrees_with_comparing_the_printed_strings() {
+    let mut seed = 7u64;
+    for _ in 0..20000 {
+      let a = generate(&mut seed, 3);
+      // Pair with a near copy half of the time, so prefixes are shared.
+      let b = if seed.is_multiple_of(2) {
+        let mut s2 = seed;
+        let tail = generate(&mut s2, 2);
+        match &a {
+          Expr::List(items) if !items.is_empty() => {
+            let mut v = items.to_vec();
+            let last = v.len() - 1;
+            v[last] = tail;
+            Expr::List(v.into())
+          }
+          _ => tail,
+        }
+      } else {
+        generate(&mut seed, 3)
+      };
+      if let Some(direct) = data_to_string(&a) {
+        assert_eq!(direct, expr_to_string(&a));
+      }
+      let expected = expr_to_string(&a).cmp(&expr_to_string(&b));
+      assert_eq!(
+        printed_order(&a, &b),
+        expected,
+        "{} vs {}",
+        expr_to_string(&a),
+        expr_to_string(&b)
+      );
+    }
+  }
+}
+
+mod sub_values_holding_tables {
+  use super::*;
+
+  #[test]
+  fn a_sub_value_body_with_an_interpolating_function_is_not_copied_per_call() {
+    // Regression: each call copied the stored rules, tables included.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{i, N[Sin[i/50]]}, {i, 4000}]]; \
+         q[k_][x_] = 2 f[x]; \
+         Round[Total[Table[q[1][x], {x, 1., 3000., 1.}]], 10^-6] == \
+         Round[2 Total[Table[f[x], {x, 1., 3000., 1.}]], 10^-6]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+}

@@ -716,13 +716,17 @@ fn field_plot_axes(
     // Without tick labels only a `FrameLabel` still needs room outside.
     let (x_ticks, y_ticks) = opts.frame_ticks;
     let outer = opts.has_outer_frame_labels();
+    // On a small `ImageSize` the full tick-label areas would swallow the
+    // plot (or even go negative), so they never take more than 40% of it.
     let x_label_area = if x_ticks || outer {
-      (40 + 24) * RESOLUTION_SCALE
+      ((40 + 24) * RESOLUTION_SCALE)
+        .min(opts.svg_height * RESOLUTION_SCALE * 2 / 5)
     } else {
       0
     };
     let y_label_area = if y_ticks || outer {
-      (65 + 20) * RESOLUTION_SCALE
+      ((65 + 20) * RESOLUTION_SCALE)
+        .min(opts.svg_width * RESOLUTION_SCALE * 2 / 5)
     } else {
       0
     };
