@@ -3252,11 +3252,10 @@ mod batch_unevaluated_wrappers_2 {
       .unwrap(),
       "-Graphics-"
     );
-    assert_eq!(
+    assert!(
       interpret("Cases[VerticalGauge[{0.3}, {0, 1}], Line[p_] :> p, Infinity]")
         .unwrap()
-        .contains("{{0., 0.3}, {0.2, 0.3}}"),
-      true
+        .contains("{{0., 0.3}, {0.2, 0.3}}")
     );
     assert_eq!(
       interpret(
