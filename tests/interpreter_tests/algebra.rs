@@ -21870,6 +21870,41 @@ mod constrained_numeric_optimization {
     );
   }
 
+  // Linear equality constraints are solved for some of the variables and
+  // the search runs locally from the starting values over the rest,
+  // strictly inside the inequalities (a mole number under a logarithm never
+  // turns negative). Demonstration DrivingAReactionByChemicalCoupling's
+  // Gibbs minimization diverged to -3*10^302 in 33 s; Wolfram's IPOPT
+  // agrees with the result to 8 digits.
+  #[test]
+  fn linear_equalities_with_strict_bounds() {
+    assert_eq!(
+      interpret(
+        "Round[10^5 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{x Log[x] + y Log[y], \
+         x + y == 1, x > 0, y > 0}, {{x, 0.3}, {y, 0.7}}]]]"
+      )
+      .unwrap(),
+      "{-69315, {50000, 50000}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^8 {#[[1]], {x, y, z} /. #[[2]]} &[FindMinimum[{(x - 2)^2 + (y - 1)^2 + z^2, \
+         x + y + z == 1, x - y == 0}, {{x, 0}, {y, 0}, {z, 0}}]]]"
+      )
+      .unwrap(),
+      "{183333333, {83333333, 83333333, -66666667}}"
+    );
+    // An active non-strict bound becomes an equality.
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{(x - 3)^2 + y^2, \
+         x + y == 1, x <= 1}, {{x, 0}, {y, 0}}]]]"
+      )
+      .unwrap(),
+      "{4000000, {1000000, 0}}"
+    );
+  }
+
   // Several constraints combine with And.
   #[test]
   fn several_constraints() {

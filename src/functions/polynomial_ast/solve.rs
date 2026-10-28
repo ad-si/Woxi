@@ -16337,6 +16337,393 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
   }
 }
 
+/// A local `FindMinimum` of `f` from the given starting values under
+/// constraints whose equalities are all linear (the mass balances of a
+/// chemical-equilibrium Gibbs minimization) and whose other constraints are
+/// inequalities. The equalities are solved for some of the variables, so
+/// the search runs over the rest; the inequalities are kept strictly, every
+/// trial point outside them being rejected — a logarithm of a mole number
+/// must never see a negative argument. `None` when the problem has another
+/// shape (or no feasible point is found), for the general solver.
+fn find_minimum_linear_equalities(
+  f: &Expr,
+  constraints: &[Expr],
+  var_specs: &[Expr],
+  maximize: bool,
+) -> Option<Expr> {
+  use super::reduce::{CompOp, extract_comparison};
+  // Variables and starting values, `{x, x0}` each (possibly in one list).
+  let mut vars: Vec<String> = Vec::new();
+  let mut start: Vec<f64> = Vec::new();
+  let mut take_spec = |spec: &Expr| -> Option<()> {
+    let Expr::List(items) = spec else { return None };
+    let [Expr::Identifier(v), x0] = items.as_slice() else {
+      return None;
+    };
+    vars.push(v.clone());
+    start.push(find_root_eval_number(x0).ok()?);
+    Some(())
+  };
+  for spec in var_specs {
+    match spec {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      {
+        for i in items {
+          take_spec(i)?;
+        }
+      }
+      other => take_spec(other)?,
+    }
+  }
+  let n = vars.len();
+  if n == 0 {
+    return None;
+  }
+  // Flatten the constraints into single comparisons.
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().for_each(|i| flatten(i, out));
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.len() > 1 => {
+        for (k, op) in operators.iter().enumerate() {
+          out.push(Expr::Comparison {
+            operands: vec![operands[k].clone(), operands[k + 1].clone()],
+            operators: vec![*op],
+          });
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut flat = Vec::new();
+  for c in constraints {
+    flatten(c, &mut flat);
+  }
+  let minus = |a: Expr, b: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![a, call("Times", vec![Expr::Integer(-1), b])],
+    ))
+    .ok()
+  };
+  // Linear equalities as rows of A x = b; inequalities as g >= 0 / g > 0.
+  let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
+  let mut ineqs: Vec<(Expr, Option<Expr>)> = Vec::new();
+  // The position in `flat` each inequality came from.
+  let mut ineq_source: Vec<usize> = Vec::new();
+  for (ci, c) in flat.iter().enumerate() {
+    if !matches!(extract_comparison(c), Some((_, _, CompOp::Equal)) | None) {
+      ineq_source.push(ci);
+    }
+    let (lhs, rhs, op) = extract_comparison(c)?;
+    match op {
+      CompOp::Equal => {
+        let g = minus(lhs, rhs)?;
+        let mut coeffs = Vec::with_capacity(n);
+        for v in &vars {
+          let d =
+            crate::functions::calculus_ast::differentiate_expr(&g, v).ok()?;
+          let d = crate::evaluator::evaluate_expr_to_expr(&d).ok()?;
+          coeffs.push(crate::functions::math_ast::try_eval_to_f64(&d)?);
+        }
+        let zero = Expr::Integer(0);
+        let zero_point: Vec<(&str, &Expr)> =
+          vars.iter().map(|v| (v.as_str(), &zero)).collect();
+        let at_zero = crate::syntax::substitute_variables(&g, &zero_point);
+        let c0 = crate::functions::math_ast::try_eval_to_f64(
+          &crate::evaluator::evaluate_expr_to_expr(&at_zero).ok()?,
+        )?;
+        rows.push((coeffs, -c0));
+      }
+      CompOp::Greater => ineqs.push((minus(lhs, rhs)?, None)),
+      CompOp::Less => ineqs.push((minus(rhs, lhs)?, None)),
+      // A non-strict one may end up active: it can then be imposed as the
+      // equality `lhs == rhs`.
+      CompOp::GreaterEqual => {
+        ineqs.push((
+          minus(lhs.clone(), rhs.clone())?,
+          Some(call("Equal", vec![lhs, rhs])),
+        ));
+      }
+      CompOp::LessEqual => {
+        ineqs.push((
+          minus(rhs.clone(), lhs.clone())?,
+          Some(call("Equal", vec![lhs, rhs])),
+        ));
+      }
+      CompOp::NotEqual => return None,
+    }
+  }
+  if rows.is_empty() {
+    return None;
+  }
+  // Reduced row echelon form: pivot variables in terms of the free ones.
+  let mut a: Vec<Vec<f64>> = rows
+    .iter()
+    .map(|(c, b)| {
+      let mut r = c.clone();
+      r.push(*b);
+      r
+    })
+    .collect();
+  let mut pivots: Vec<usize> = Vec::new();
+  let mut row = 0;
+  for col in 0..n {
+    if row == a.len() {
+      break;
+    }
+    let (best, val) = (row..a.len())
+      .map(|r| (r, a[r][col].abs()))
+      .max_by(|x, y| x.1.total_cmp(&y.1))?;
+    if val < 1e-12 {
+      continue;
+    }
+    a.swap(row, best);
+    let p = a[row][col];
+    for v in &mut a[row] {
+      *v /= p;
+    }
+    for r in 0..a.len() {
+      if r != row && a[r][col] != 0.0 {
+        let factor = a[r][col];
+        let pivot_row = a[row].clone();
+        for (x, y) in a[r].iter_mut().zip(pivot_row) {
+          *x -= factor * y;
+        }
+      }
+    }
+    pivots.push(col);
+    row += 1;
+  }
+  // An inconsistent system has no feasible point at all.
+  if a[row..].iter().any(|r| r[n].abs() > 1e-9) {
+    return None;
+  }
+  let free: Vec<usize> = (0..n).filter(|c| !pivots.contains(c)).collect();
+  let full_point = |z: &[f64]| -> Vec<f64> {
+    let mut x = vec![0.0; n];
+    for (k, &c) in free.iter().enumerate() {
+      x[c] = z[k];
+    }
+    for (r, &pc) in pivots.iter().enumerate() {
+      let mut v = a[r][n];
+      for &c in &free {
+        v -= a[r][c] * x[c];
+      }
+      x[pc] = v;
+    }
+    x
+  };
+  let objective = compile_numeric(f, &vars)?;
+  let ineq_nodes: Vec<NumNode> = ineqs
+    .iter()
+    .map(|(g, _)| compile_numeric(g, &vars))
+    .collect::<Option<_>>()?;
+  let sign = if maximize { -1.0 } else { 1.0 };
+  // Strictly inside every inequality (a boundary point is no more use to a
+  // logarithm than an outside one).
+  let feasible = |x: &[f64]| ineq_nodes.iter().all(|g| g.eval(x) > 0.0);
+  let phi = |z: &[f64]| -> f64 {
+    let x = full_point(z);
+    if !feasible(&x) {
+      return f64::INFINITY;
+    }
+    let v = sign * objective.eval(&x);
+    if v.is_finite() { v } else { f64::INFINITY }
+  };
+  let mut z: Vec<f64> = free.iter().map(|&c| start[c]).collect();
+  // Phase one: walk into the feasible region when the start lies outside.
+  if !phi(&z).is_finite() {
+    let violation = |zz: &[f64]| -> f64 {
+      let x = full_point(zz);
+      ineq_nodes
+        .iter()
+        .map(|g| {
+          let v = g.eval(&x);
+          if v.is_finite() {
+            (1e-6 - v).max(0.0).powi(2)
+          } else {
+            1e6
+          }
+        })
+        .sum()
+    };
+    for _ in 0..20 {
+      z = nelder_mead_minimize(&violation, &|_: &mut [f64]| {}, &z, 2000);
+      if phi(&z).is_finite() {
+        break;
+      }
+    }
+    if !phi(&z).is_finite() {
+      return None;
+    }
+  }
+  // Phase two: quasi-Newton (BFGS) with central-difference gradients and a
+  // backtracking line search that stays inside the feasible region.
+  let m = z.len();
+  // The gradient in the free variables from the symbolic partials of f:
+  // dx_free/dz is the identity and dx_pivot/dz the negated echelon entries.
+  let partials: Option<Vec<NumNode>> = vars
+    .iter()
+    .map(|v| {
+      let d = crate::functions::calculus_ast::differentiate_expr(f, v).ok()?;
+      compile_numeric(&d, &vars).filter(|node| !node.has_fallback())
+    })
+    .collect();
+  let exact_grad = |zz: &[f64]| -> Option<Vec<f64>> {
+    let parts = partials.as_ref()?;
+    let x = full_point(zz);
+    let gx: Vec<f64> = parts.iter().map(|p| sign * p.eval(&x)).collect();
+    let g: Vec<f64> = free
+      .iter()
+      .map(|&c| {
+        let mut v = gx[c];
+        for (r, &pc) in pivots.iter().enumerate() {
+          v -= a[r][c] * gx[pc];
+        }
+        v
+      })
+      .collect();
+    g.iter().all(|v| v.is_finite()).then_some(g)
+  };
+  let grad = |zz: &[f64]| -> Vec<f64> {
+    if let Some(g) = exact_grad(zz) {
+      return g;
+    }
+    (0..m)
+      .map(|k| {
+        let h = 1e-6 * zz[k].abs().max(1.0);
+        let mut p = zz.to_vec();
+        p[k] += h;
+        let fp = phi(&p);
+        p[k] -= 2.0 * h;
+        let fm = phi(&p);
+        if fp.is_finite() && fm.is_finite() {
+          (fp - fm) / (2.0 * h)
+        } else if fp.is_finite() {
+          (fp - phi(zz)) / h
+        } else {
+          (phi(zz) - fm) / h
+        }
+      })
+      .collect()
+  };
+  if m > 0 {
+    let mut hinv: Vec<Vec<f64>> = (0..m)
+      .map(|i| (0..m).map(|j| f64::from(u8::from(i == j))).collect())
+      .collect();
+    let mut fz = phi(&z);
+    let mut g = grad(&z);
+    for _ in 0..500 {
+      let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+      if gnorm < 1e-10 * fz.abs().max(1.0) {
+        break;
+      }
+      let dir: Vec<f64> = (0..m)
+        .map(|i| -(0..m).map(|j| hinv[i][j] * g[j]).sum::<f64>())
+        .collect();
+      let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+      let dir = if slope < 0.0 {
+        dir
+      } else {
+        g.iter().map(|v| -v).collect()
+      };
+      let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+      let mut t = 1.0;
+      let mut accepted = None;
+      for _ in 0..60 {
+        let trial: Vec<f64> =
+          z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+        let ft = phi(&trial);
+        if ft.is_finite() && ft <= fz + 1e-4 * t * slope {
+          accepted = Some((trial, ft));
+          break;
+        }
+        t *= 0.5;
+      }
+      let Some((znew, fnew)) = accepted else { break };
+      let gnew = grad(&znew);
+      let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
+      let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
+      let sy: f64 = s_vec.iter().zip(&y_vec).map(|(a, b)| a * b).sum();
+      if sy > 1e-14 {
+        // H <- (I - rho s y^T) H (I - rho y s^T) + rho s s^T
+        let rho = 1.0 / sy;
+        let hy: Vec<f64> = (0..m)
+          .map(|i| (0..m).map(|j| hinv[i][j] * y_vec[j]).sum())
+          .collect();
+        let yhy: f64 = y_vec.iter().zip(&hy).map(|(a, b)| a * b).sum();
+        for i in 0..m {
+          for j in 0..m {
+            hinv[i][j] += (1.0 + rho * yhy) * rho * s_vec[i] * s_vec[j]
+              - rho * (hy[i] * s_vec[j] + s_vec[i] * hy[j]);
+          }
+        }
+      }
+      let converged = (fz - fnew).abs() <= 1e-15 * fz.abs().max(1.0);
+      z = znew;
+      fz = fnew;
+      g = gnew;
+      if converged {
+        break;
+      }
+    }
+  }
+  let x = full_point(&z);
+  let value = objective.eval(&x);
+  if !value.is_finite() {
+    return None;
+  }
+  // A non-strict inequality the search ended up pressed against is active:
+  // impose it as an equality and solve again from here, which lands on the
+  // boundary exactly rather than as close as the line search got.
+  let scale = x.iter().fold(1.0f64, |m, v| m.max(v.abs()));
+  if let Some(k) = ineqs.iter().enumerate().position(|(k, (_, eq))| {
+    eq.is_some() && ineq_nodes[k].eval(&x).abs() < 1e-6 * scale
+  }) {
+    let mut tightened: Vec<Expr> = flat
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != ineq_source[k])
+      .map(|(_, c)| c.clone())
+      .collect();
+    tightened.push(ineqs[k].1.clone()?);
+    let specs: Vec<Expr> = vars
+      .iter()
+      .zip(&x)
+      .map(|(v, xv)| {
+        Expr::List(vec![Expr::Identifier(v.clone()), Expr::Real(*xv)].into())
+      })
+      .collect();
+    if let Some(r) = find_minimum_linear_equalities(
+      f,
+      &tightened,
+      &[Expr::List(specs.into())],
+      maximize,
+    ) {
+      return Some(r);
+    }
+  }
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(&x)
+    .map(|(v, xv)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(v.clone())),
+      replacement: Box::new(Expr::Real(*xv)),
+    })
+    .collect();
+  Some(Expr::List(
+    vec![Expr::Real(value), Expr::List(rules.into())].into(),
+  ))
+}
+
 /// Derivative-free Nelder–Mead simplex search for a local minimum of
 /// `eval` (already signed for maximize, and never returning an error —
 /// callers score a failed trial point as `f64::INFINITY`). Used by
@@ -16604,6 +16991,17 @@ pub fn find_minimum_ast(
     while var_args_end < args.len() && single_var_spec(&args[var_args_end]) {
       var_args_end += 1;
     }
+  }
+  if let Expr::List(items) = &args[0]
+    && items.len() >= 2
+    && let Some(result) = find_minimum_linear_equalities(
+      &items[0],
+      &items[1..],
+      &args[1..var_args_end],
+      maximize,
+    )
+  {
+    return Ok(result);
   }
   if let Expr::List(items) = &args[0]
     && items.len() >= 2
