@@ -1271,7 +1271,7 @@ ParetoDistribution,Pareto distribution with optional location and shape paramete
 Read,Read an object of a specified type from a stream,✅,effectful,1.0,1254
 EdgeCount,Returns the number of edges in a graph (optionally matching a pattern),✅,pure,8.0,1256
 Transparent,,🚫,,7.0,1256
-OutputResponse,Output of a continuous transfer-function model to an input (symbolic or simulated),✅,pure,8.0,1257
+OutputResponse,Output of a transfer-function model to an input (symbolic; simulated; or sampled),✅,pure,8.0,1257
 RandomComplex,Gives a pseudorandom complex number in a rectangular region,✅,effectful,6.0,1258
 Random,Legacy pseudorandom generator (wraps RandomReal/RandomInteger/RandomComplex),✅,effectful,1.0,1258
 Hypergeometric0F1,Confluent hypergeometric limit function,✅,pure,1.0,1259
@@ -2244,7 +2244,7 @@ BooleanRegion,Region built by combining regions with a Boolean function,✅,pure
 GraphUnion,Union of the vertices and edges of graphs,✅,pure,8.0,2251
 PrimeOmega,Count prime factors with multiplicity (Listable),✅,pure,7.0,2251
 SubValues,Returns the sub values of a symbol,✅,pure,2.0,2251
-ToDiscreteTimeModel,Control systems,🚫,None,8.0,2251
+ToDiscreteTimeModel,Sampled model of a continuous transfer function (bilinear or rectangular rules),✅,pure,8.0,2251
 FileNameSetter,UI file picker,🚫,None,6.0,2254
 FindLinearRecurrence,Finds a minimal linear recurrence for a sequence,✅,None,7.0,2254
 StateResponse,Control systems,🚫,None,8.0,2254
@@ -3895,7 +3895,7 @@ MoleculeModify,,🚫,,12.0,3972
 NormalMatrixQ,Test whether a matrix is normal,✅,none,10.0,3972
 SpeechSynthesize,,🚫,,11.2,3972
 Therefore,Represents a therefore logical relation,✅,pure,3.0,3972
-ToContinuousTimeModel,,,,8.0,3972
+ToContinuousTimeModel,Continuous model of a sampled transfer function (bilinear or rectangular rules),✅,pure,8.0,3972
 ArrayPlot3D,,🚫,,12.2,4006
 BlockchainTokenData,,🚫,,12.0,4006
 CanonicalizePolygon,,,,12.0,4006

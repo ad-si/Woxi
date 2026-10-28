@@ -995,10 +995,20 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::control_systems::transfer_function_zeros_ast(args),
       );
     }
-    "OutputResponse" if args.len() == 3 => {
+    "OutputResponse" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::control_systems::output_response_ast(
         args,
       ));
+    }
+    "ToDiscreteTimeModel" if args.len() >= 2 => {
+      return Some(
+        crate::functions::control_systems::to_discrete_time_model_ast(args),
+      );
+    }
+    "ToContinuousTimeModel" if !args.is_empty() => {
+      return Some(
+        crate::functions::control_systems::to_continuous_time_model_ast(args),
+      );
     }
     "BodePlot" if !args.is_empty() => {
       return Some(crate::functions::control_systems::bode_plot_ast(args));

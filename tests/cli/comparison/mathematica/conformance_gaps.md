@@ -2281,6 +2281,12 @@ the parameters.
   cuts the phase curve at a phase range it chooses (`[φ0 - 180°, φ0]` for
   `E^-s/(s (s + 1))`). `NyquistPlot` has no arrows, and the frequency
   range of `NicholsPlot` differs.
+- `ToDiscreteTimeModel`/`ToContinuousTimeModel` have the same values but
+  write them differently (`0.1*(1 + z)` for wolframscript's `0.1*(1. +
+  1.*z)`; with `"ForwardRectangularRule"` wolframscript scales to
+  `{{{1}}, -9. + 10.*z}`, Woxi to `{{{0.1}}, {{-0.9 + 1.*z}}}`). The
+  hold methods (`"ZeroOrderHold"`, `"FirstOrderHold"`) and
+  `"ZeroPoleMapping"` stay unevaluated.
 
 ### `PowerMod[a, 1/n, m]` with multiple roots
 

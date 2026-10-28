@@ -184,3 +184,76 @@ mod frequency_response_plots {
     );
   }
 }
+
+mod discrete_time {
+  use super::*;
+
+  // The bilinear transform (the default) and the rectangular rules, both
+  // ways; the forms differ from wolframscript's in where `1.` appears.
+  #[test]
+  fn conversions() {
+    assert_eq!(
+      eval(
+        "m = ToDiscreteTimeModel[TransferFunctionModel[1/(s^2 + 3 s + 2), s], \
+         0.5, z]; {m[[1, 2, 1, 1]], m[[3]]}"
+      ),
+      "{1.5 - 7.*z + 7.5*z^2, SamplingPeriod -> 0.5}"
+    );
+    assert_eq!(
+      eval(
+        "ToDiscreteTimeModel[TransferFunctionModel[1/(s + 1), s], 0.1, z, \
+         Method -> \"BackwardRectangularRule\"]"
+      ),
+      "TransferFunctionModel[{{{0.1*z}}, {{-1 + 1.1*z}}}, z, SamplingPeriod -> 0.1]"
+    );
+    assert_eq!(
+      eval(
+        "m = ToContinuousTimeModel[TransferFunctionModel[(1.*z)/(0.68 - 0.4*z + \
+         z^2), z, SamplingPeriod -> 1.], s]; \
+         {m[[1, 1, 1, 1]], Round[CoefficientList[m[[1, 2, 1, 1]], s], 10.^-10], \
+         m[[3]]}"
+      ),
+      "{1. - 0.25*s^2, {1.28, 0.32, 0.52}, SamplingPeriod -> None}"
+    );
+  }
+
+  // A sampled model's response over {n, nmin, nmax} (in time units, one
+  // value per period) or to a list of samples.
+  #[test]
+  fn responses() {
+    let tf = "tf = TransferFunctionModel[(1.*z)/(0.68 - 0.4*z + z^2), z, \
+              SamplingPeriod -> 1.]; ";
+    assert_eq!(
+      eval(&format!(
+        "{tf}Round[OutputResponse[tf, DiscreteDelta[n], {{n, 0, 4}}], 10.^-10]"
+      )),
+      "{{0., 1., 0.4, -0.52, -0.48000000000000004}}"
+    );
+    assert_eq!(
+      eval(&format!("{tf}OutputResponse[tf, {{0, 1, 2, 3, 4}}]")),
+      "{{0., 0., 1., 2.4, 3.28}}"
+    );
+    assert_eq!(
+      eval(
+        "Length[First[OutputResponse[TransferFunctionModel[(z + 0.5)/(z^2 - \
+         0.5), z, SamplingPeriod -> 0.1], 1, {n, 0, 4}]]]"
+      ),
+      "41"
+    );
+    // A continuous impulse acts through the state.
+    assert_eq!(
+      eval(
+        "Round[OutputResponse[TransferFunctionModel[1/(s + 1), s], DiracDelta[t], \
+         {t, 0, 2}][[1]] /. t -> 1., 10.^-6]"
+      ),
+      "0.36787899999999996"
+    );
+    assert_eq!(
+      eval(
+        "Head[BodePlot[TransferFunctionModel[(1.*z)/(0.68 - 0.4*z + z^2), z, \
+         SamplingPeriod -> 1.], {0.001, 2 Pi - 0.0001}]]"
+      ),
+      "Grid"
+    );
+  }
+}

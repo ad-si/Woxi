@@ -495,9 +495,46 @@ impl NumericElement {
   }
 }
 
+/// One frequency-response series: an element of a model, and the model's
+/// sampling period if it is discrete.
+struct Series {
+  element: NumericElement,
+  period: Option<f64>,
+}
+
+impl Series {
+  /// The response at the frequency `ω`: `G(i ω)`, or `G(E^(i ω T))`.
+  fn at(&self, omega: f64) -> (f64, f64) {
+    match self.period {
+      None => self.element.at(0.0, omega),
+      Some(t) => self.element.at((omega * t).cos(), (omega * t).sin()),
+    }
+  }
+
+  /// The phases (radians) over increasing frequencies, without jumps: the
+  /// analytic angle sum for a continuous model, the unwrapped argument for
+  /// a sampled one.
+  fn phases(&self, omegas: &[f64]) -> Vec<f64> {
+    if self.period.is_none() {
+      return omegas.iter().map(|&w| self.element.phase(w)).collect();
+    }
+    let mut out: Vec<f64> = Vec::with_capacity(omegas.len());
+    for &w in omegas {
+      let (r, i) = self.at(w);
+      let mut p = i.atan2(r);
+      if let Some(&prev) = out.last() {
+        let tau = std::f64::consts::TAU;
+        p += tau * ((prev - p) / tau).round();
+      }
+      out.push(p);
+    }
+    out
+  }
+}
+
 /// The numeric elements of every model in `spec` (a model or a list of
 /// them), one series per element.
-fn numeric_series(spec: &Expr) -> Option<Vec<NumericElement>> {
+fn numeric_series(spec: &Expr) -> Option<Vec<Series>> {
   let models: Vec<&Expr> = match spec {
     Expr::List(items) => items.iter().collect(),
     single => vec![single],
@@ -505,12 +542,19 @@ fn numeric_series(spec: &Expr) -> Option<Vec<NumericElement>> {
   let mut out = Vec::new();
   for m in models {
     let tf = TfModel::from_expr(m)?;
-    if tf.sampling_period.is_some() {
-      return None;
-    }
+    let period = match &tf.sampling_period {
+      None => None,
+      Some(Expr::Identifier(n)) if n == "None" => None,
+      Some(p) => Some(
+        crate::functions::math_ast::try_eval_to_f64(p).filter(|p| *p > 0.0)?,
+      ),
+    };
     for (nrow, drow) in tf.nums.iter().zip(&tf.dens) {
       for (n, d) in nrow.iter().zip(drow) {
-        out.push(NumericElement::new(n, d, &tf.var)?);
+        out.push(Series {
+          element: NumericElement::new(n, d, &tf.var)?,
+          period,
+        });
       }
     }
   }
@@ -520,11 +564,16 @@ fn numeric_series(spec: &Expr) -> Option<Vec<NumericElement>> {
 /// wolframscript's automatic frequency range: a decade and a third either
 /// side of the corner frequencies (`ω/20` to `20 ω`), from `0.001` when a
 /// pole or zero lies at the origin, and up to 10 without any.
-fn automatic_frequency_range(series: &[NumericElement]) -> (f64, f64) {
+fn automatic_frequency_range(series: &[Series]) -> (f64, f64) {
+  // A sampled model's response repeats past the Nyquist frequency π/T.
+  if let Some(t) = series.iter().filter_map(|s| s.period).reduce(f64::min) {
+    let nyquist = std::f64::consts::PI / t;
+    return (nyquist / 1000.0, nyquist);
+  }
   let mut corners = Vec::new();
   let mut origin = false;
-  for e in series {
-    let (c, o) = e.corner_frequencies();
+  for s in series {
+    let (c, o) = s.element.corner_frequencies();
     corners.extend(c);
     origin |= o;
   }
@@ -612,7 +661,7 @@ pub fn bode_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       omegas
         .iter()
         .map(|&w| {
-          let (r, i) = e.at(0.0, w);
+          let (r, i) = e.at(w);
           point(w, 20.0 * r.hypot(i).log10())
         })
         .collect(),
@@ -620,7 +669,8 @@ pub fn bode_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     phase.push(Expr::List(
       omegas
         .iter()
-        .map(|&w| point(w, e.phase(w).to_degrees()))
+        .zip(e.phases(&omegas))
+        .map(|(&w, p)| point(w, p.to_degrees()))
         .collect(),
     ));
   }
@@ -665,9 +715,10 @@ pub fn nichols_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(
         omegas
           .iter()
-          .map(|&w| {
-            let (r, i) = e.at(0.0, w);
-            point(e.phase(w).to_degrees(), 20.0 * r.hypot(i).log10())
+          .zip(e.phases(&omegas))
+          .map(|(&w, p)| {
+            let (r, i) = e.at(w);
+            point(p.to_degrees(), 20.0 * r.hypot(i).log10())
           })
           .collect(),
       )
@@ -717,8 +768,7 @@ pub fn nyquist_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let omegas = log_grid(low, high, SAMPLES);
   let mut curves = Vec::with_capacity(2 * series.len());
   for e in &series {
-    let positive: Vec<(f64, f64)> =
-      omegas.iter().map(|&w| e.at(0.0, w)).collect();
+    let positive: Vec<(f64, f64)> = omegas.iter().map(|&w| e.at(w)).collect();
     curves.push(Expr::List(
       positive.iter().map(|&(r, i)| point(r, i)).collect(),
     ));
@@ -754,7 +804,12 @@ fn id(name: &str) -> Expr {
 /// so that an input that jumps at a step boundary is integrated from the
 /// jump on rather than a fraction of a step early. Returns the output at
 /// the start of every step and at the end of the last.
-fn simulate(e: &NumericElement, u: &[f64], h: f64) -> Option<Vec<f64>> {
+fn simulate(
+  e: &NumericElement,
+  u: &[f64],
+  h: f64,
+  impulse: Option<(usize, f64)>,
+) -> Option<Vec<f64>> {
   let lead = *e.den.last()?;
   if lead == 0.0 || e.num.len() > e.den.len() {
     return None;
@@ -784,6 +839,16 @@ fn simulate(e: &NumericElement, u: &[f64], h: f64) -> Option<Vec<f64>> {
   };
   out.push(output(&x, u[0]));
   for k in 0..steps {
+    // An impulse of weight w kicks the state by w B (B = e_n here).
+    if let Some((at, weight)) = impulse
+      && at == k
+      && n > 0
+    {
+      x[n - 1] += weight;
+      if k == 0 {
+        out[0] = output(&x, u[0]);
+      }
+    }
     let (u0, um, u1) = (u[3 * k], u[3 * k + 1], u[3 * k + 2]);
     let k1 = deriv(&x, u0);
     let x2: Vec<f64> =
@@ -811,41 +876,66 @@ fn simulate(e: &NumericElement, u: &[f64], h: f64) -> Option<Vec<f64>> {
 /// at rest.
 pub fn output_response_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated_call = || Ok(unevaluated("OutputResponse", args));
-  if args.len() != 3 {
+  if !(2..=3).contains(&args.len()) {
     return unevaluated_call();
   }
   let Some(tf) = TfModel::from_expr(&args[0]) else {
     return unevaluated_call();
   };
-  if tf.sampling_period.is_some() {
-    return unevaluated_call();
-  }
   let inputs: Vec<Expr> = match &args[1] {
+    // One list per input; a list of numbers is the samples of one input.
+    Expr::List(items)
+      if args.len() == 2
+        && items.iter().all(|i| !matches!(i, Expr::List(_))) =>
+    {
+      vec![args[1].clone()]
+    }
     Expr::List(items) => items.to_vec(),
     single => vec![single.clone()],
   };
   if inputs.len() != tf.inputs() {
     return unevaluated_call();
   }
-  match &args[2] {
-    Expr::Identifier(t) => symbolic_response(&tf, &inputs, t, args),
-    Expr::List(spec) if spec.len() == 3 => {
-      let Expr::Identifier(t) = &spec[0] else {
-        return unevaluated_call();
-      };
-      let (Some(t0), Some(t1)) = (
-        crate::functions::math_ast::try_eval_to_f64(&spec[1]),
-        crate::functions::math_ast::try_eval_to_f64(&spec[2]),
-      ) else {
-        return unevaluated_call();
-      };
-      if t1 <= t0 {
-        return unevaluated_call();
-      }
-      simulated_response(&tf, &inputs, t, t0, t1)
-        .map(|r| r.unwrap_or_else(|| unevaluated("OutputResponse", args)))
-    }
-    _ => unevaluated_call(),
+  // `{t, tmax}` starts at 0.
+  let span = |spec: &Expr| -> Option<(String, f64, f64)> {
+    let Expr::List(items) = spec else { return None };
+    let (var, lo, hi) = match items.as_slice() {
+      [v, hi] => (v, Expr::Integer(0), hi.clone()),
+      [v, lo, hi] => (v, lo.clone(), hi.clone()),
+      _ => return None,
+    };
+    let Expr::Identifier(var) = var else {
+      return None;
+    };
+    let lo = crate::functions::math_ast::try_eval_to_f64(&lo)?;
+    let hi = crate::functions::math_ast::try_eval_to_f64(&hi)?;
+    (hi > lo).then(|| (var.clone(), lo, hi))
+  };
+  if let Some(period) = &tf.sampling_period {
+    let Some(period) =
+      crate::functions::math_ast::try_eval_to_f64(period).filter(|p| *p > 0.0)
+    else {
+      return unevaluated_call();
+    };
+    let result = match args.get(2) {
+      None => discrete_response(&tf, period, &inputs, None)?,
+      Some(spec) => match span(spec) {
+        Some((var, lo, hi)) => {
+          discrete_response(&tf, period, &inputs, Some((&var, lo, hi)))?
+        }
+        None => None,
+      },
+    };
+    return Ok(result.unwrap_or_else(|| unevaluated("OutputResponse", args)));
+  }
+  match args.get(2) {
+    Some(Expr::Identifier(t)) => symbolic_response(&tf, &inputs, t, args),
+    Some(spec) => match span(spec) {
+      Some((t, t0, t1)) => simulated_response(&tf, &inputs, &t, t0, t1)
+        .map(|r| r.unwrap_or_else(|| unevaluated("OutputResponse", args))),
+      None => unevaluated_call(),
+    },
+    None => unevaluated_call(),
   }
 }
 
@@ -912,6 +1002,27 @@ fn symbolic_response(
     outputs.push(ev(&call("Together", vec![y]))?);
   }
   Ok(Expr::List(outputs.into()))
+}
+
+/// The weight `c` of an input `c DiracDelta[t]`.
+fn impulse_weight(u: &Expr, t: &str) -> Option<f64> {
+  let is_delta = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "DiracDelta"
+        && matches!(args.as_slice(), [Expr::Identifier(v)] if v == t))
+  };
+  let factors = crate::functions::polynomial_ast::together::flatten_times_args(
+    std::slice::from_ref(u),
+  );
+  let deltas = factors.iter().filter(|f| is_delta(f)).count();
+  if deltas != 1 {
+    return None;
+  }
+  factors
+    .iter()
+    .filter(|f| !is_delta(f))
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .try_fold(1.0, |acc, v| v.map(|v| acc * v))
 }
 
 fn simulated_response(
@@ -998,15 +1109,26 @@ fn simulated_response(
   for row in &elements {
     let mut total: Vec<f64> = vec![0.0; total_steps + 1];
     for (e, u) in row.iter().zip(inputs) {
-      let Some(samples) = sample_input(u, e.delay)? else {
-        return Ok(None);
-      };
       let rational = NumericElement {
         num: e.num.clone(),
         den: e.den.clone(),
         delay: 0.0,
       };
-      let Some(y) = simulate(&rational, &samples, h) else {
+      // `c DiracDelta[t]` acts through the state rather than as samples.
+      let y = if let Some(weight) = impulse_weight(u, t) {
+        let at = ((e.delay - start) / h).round();
+        if at < 0.0 {
+          return Ok(None);
+        }
+        let zeros = vec![0.0; 3 * total_steps];
+        simulate(&rational, &zeros, h, Some((at as usize, weight)))
+      } else {
+        let Some(samples) = sample_input(u, e.delay)? else {
+          return Ok(None);
+        };
+        simulate(&rational, &samples, h, None)
+      };
+      let Some(y) = y else {
         return Ok(None);
       };
       for (acc, v) in total.iter_mut().zip(y) {
@@ -1036,4 +1158,383 @@ fn simulated_response(
     });
   }
   Ok(Some(Expr::List(results.into())))
+}
+
+// ── Discrete-time models ────────────────────────────────────────────────
+
+/// The algebraic maps between `s` and `z` that a conversion method stands
+/// for (`T` the sampling period).
+#[derive(Clone, Copy)]
+enum Discretization {
+  /// `s = (2/T) (z - 1)/(z + 1)`.
+  Bilinear,
+  /// `s = (z - 1)/T`.
+  ForwardRectangular,
+  /// `s = (z - 1)/(z T)`.
+  BackwardRectangular,
+}
+
+fn discretization(opts: &[Expr]) -> Option<Discretization> {
+  let mut method = Discretization::Bilinear;
+  for o in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = o
+    else {
+      continue;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") {
+      continue;
+    }
+    method = match replacement.as_ref() {
+      Expr::String(m) => match m.as_str() {
+        "BilinearTransform" => Discretization::Bilinear,
+        "ForwardRectangularRule" => Discretization::ForwardRectangular,
+        "BackwardRectangularRule" => Discretization::BackwardRectangular,
+        _ => return None,
+      },
+      _ => return None,
+    };
+  }
+  Some(method)
+}
+
+/// `Σ c_k a^k b^(n - k)` for the coefficients `c` (ascending) of `p` in
+/// `var`: the polynomial `p(a/b)` cleared of its denominator `b^n`.
+fn homogenize(
+  p: &Expr,
+  var: &str,
+  n: usize,
+  a: &Expr,
+  b: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let coefficients = ev(&call(
+    "CoefficientList",
+    vec![p.clone(), Expr::Identifier(var.into())],
+  ))?;
+  let coefficients: Vec<Expr> = match &coefficients {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  if coefficients.len() > n + 1 {
+    return Ok(None);
+  }
+  let terms: Vec<Expr> = coefficients
+    .into_iter()
+    .enumerate()
+    .map(|(k, c)| {
+      call(
+        "Times",
+        vec![
+          c,
+          call("Power", vec![a.clone(), Expr::Integer(k as i128)]),
+          call("Power", vec![b.clone(), Expr::Integer((n - k) as i128)]),
+        ],
+      )
+    })
+    .collect();
+  Ok(Some(ev(&call("Plus", terms))?))
+}
+
+fn degree(p: &Expr, var: &str) -> Result<usize, InterpreterError> {
+  let d = ev(&call(
+    "Exponent",
+    vec![p.clone(), Expr::Identifier(var.into())],
+  ))?;
+  Ok(match d {
+    Expr::Integer(k) if k > 0 => k as usize,
+    _ => 0,
+  })
+}
+
+/// Convert every element with the substitution `old = a/b` (`a`, `b`
+/// polynomials in the new variable), clearing `b^n` from numerator and
+/// denominator alike. `expand_numerator` writes the numerator out.
+fn convert_model(
+  tf: &TfModel,
+  new_var: &Expr,
+  a: &Expr,
+  b: &Expr,
+  extra_factor: &Expr,
+  expand_numerator: bool,
+  opts: Vec<Expr>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut nums = Vec::with_capacity(tf.outputs());
+  let mut dens = Vec::with_capacity(tf.outputs());
+  for (nrow, drow) in tf.nums.iter().zip(&tf.dens) {
+    let mut num_row = Vec::with_capacity(nrow.len());
+    let mut den_row = Vec::with_capacity(nrow.len());
+    for (num, den) in nrow.iter().zip(drow) {
+      let (tau, _) = split_delay(num, &tf.var)?;
+      if !matches!(tau, Expr::Integer(0)) {
+        return Ok(None);
+      }
+      let n = degree(den, &tf.var)?.max(degree(num, &tf.var)?);
+      let factor = call(
+        "Power",
+        vec![extra_factor.clone(), Expr::Integer(n as i128)],
+      );
+      let (Some(new_num), Some(new_den)) = (
+        homogenize(num, &tf.var, n, a, b)?,
+        homogenize(den, &tf.var, n, a, b)?,
+      ) else {
+        return Ok(None);
+      };
+      let new_num = ev(&call("Times", vec![factor.clone(), new_num]))?;
+      let new_den = ev(&call("Times", vec![factor, new_den]))?;
+      num_row.push(if expand_numerator {
+        ev(&call("Expand", vec![new_num]))?
+      } else {
+        new_num
+      });
+      den_row.push(ev(&call("Expand", vec![new_den]))?);
+    }
+    nums.push(Expr::List(num_row.into()));
+    dens.push(Expr::List(den_row.into()));
+  }
+  let mut args = vec![
+    Expr::List(vec![Expr::List(nums.into()), Expr::List(dens.into())].into()),
+    new_var.clone(),
+  ];
+  args.extend(opts);
+  Ok(Some(call("TransferFunctionModel", args)))
+}
+
+fn sampling_rule(value: Expr) -> Expr {
+  rule("SamplingPeriod", value)
+}
+
+/// `ToDiscreteTimeModel[model, T, z, Method -> m]`: the sampled model by
+/// the bilinear transform (the default) or a rectangular rule.
+pub fn to_discrete_time_model_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated("ToDiscreteTimeModel", args));
+  let (positional, options) = split_options(args);
+  let (Some(model), Some(period)) = (positional.first(), positional.get(1))
+  else {
+    return unevaluated_call();
+  };
+  let Some(tf) = TfModel::from_expr(model) else {
+    return unevaluated_call();
+  };
+  if tf.sampling_period.is_some() {
+    return unevaluated_call();
+  }
+  let Some(method) = discretization(&options) else {
+    return unevaluated_call();
+  };
+  let z = match positional.get(2) {
+    Some(v @ Expr::Identifier(_)) => (*v).clone(),
+    Some(_) => return unevaluated_call(),
+    None => Expr::Identifier("z".into()),
+  };
+  let period = (*period).clone();
+  let z_minus_1 = call("Plus", vec![z.clone(), Expr::Integer(-1)]);
+  let z_plus_1 = call("Plus", vec![z.clone(), Expr::Integer(1)]);
+  // s = a/b, with every element multiplied through by T^n.
+  let (a, b) = match method {
+    Discretization::Bilinear => (
+      call("Times", vec![Expr::Integer(2), z_minus_1]),
+      call("Times", vec![period.clone(), z_plus_1]),
+    ),
+    Discretization::ForwardRectangular => (z_minus_1, period.clone()),
+    Discretization::BackwardRectangular => {
+      (z_minus_1, call("Times", vec![period.clone(), z.clone()]))
+    }
+  };
+  let converted = convert_model(
+    &tf,
+    &z,
+    &a,
+    &b,
+    &Expr::Integer(1),
+    false,
+    vec![sampling_rule(period)],
+  )?;
+  Ok(converted.unwrap_or_else(|| unevaluated("ToDiscreteTimeModel", args)))
+}
+
+/// `ToContinuousTimeModel[model, s, Method -> m]`: the inverse of
+/// `ToDiscreteTimeModel`'s maps.
+pub fn to_continuous_time_model_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated("ToContinuousTimeModel", args));
+  let (positional, options) = split_options(args);
+  let Some(tf) = positional.first().and_then(|m| TfModel::from_expr(m)) else {
+    return unevaluated_call();
+  };
+  let Some(period) = tf.sampling_period.clone() else {
+    return unevaluated_call();
+  };
+  if matches!(&period, Expr::Identifier(n) if n == "None") {
+    return unevaluated_call();
+  }
+  let Some(method) = discretization(&options) else {
+    return unevaluated_call();
+  };
+  let s = match positional.get(1) {
+    Some(v @ Expr::Identifier(_)) => (*v).clone(),
+    Some(_) => return unevaluated_call(),
+    None => Expr::Identifier("s".into()),
+  };
+  let st = call("Times", vec![s.clone(), period.clone()]);
+  let half_st = call(
+    "Times",
+    vec![
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      st.clone(),
+    ],
+  );
+  // z = a/b.
+  let (a, b) = match method {
+    Discretization::Bilinear => (
+      call("Plus", vec![Expr::Integer(1), half_st.clone()]),
+      call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          call("Times", vec![Expr::Integer(-1), half_st]),
+        ],
+      ),
+    ),
+    Discretization::ForwardRectangular => {
+      (call("Plus", vec![Expr::Integer(1), st]), Expr::Integer(1))
+    }
+    Discretization::BackwardRectangular => (
+      Expr::Integer(1),
+      call(
+        "Plus",
+        vec![Expr::Integer(1), call("Times", vec![Expr::Integer(-1), st])],
+      ),
+    ),
+  };
+  let converted = convert_model(
+    &tf,
+    &s,
+    &a,
+    &b,
+    &Expr::Integer(1),
+    true,
+    vec![sampling_rule(Expr::Identifier("None".into()))],
+  )?;
+  Ok(converted.unwrap_or_else(|| unevaluated("ToContinuousTimeModel", args)))
+}
+
+/// Run `Σ a_k y[j-n+k] = Σ b_k u[j-n+k]` from rest over the samples `u`.
+fn difference_equation(e: &NumericElement, u: &[f64]) -> Option<Vec<f64>> {
+  let lead = *e.den.last()?;
+  if lead == 0.0 || e.num.len() > e.den.len() {
+    return None;
+  }
+  let n = e.den.len() - 1;
+  let at = |v: &[f64], i: isize| if i < 0 { 0.0 } else { v[i as usize] };
+  let mut y: Vec<f64> = Vec::with_capacity(u.len());
+  for j in 0..u.len() {
+    let base = j as isize - n as isize;
+    let forced: f64 = e
+      .num
+      .iter()
+      .enumerate()
+      .map(|(k, b)| b * at(u, base + k as isize))
+      .sum();
+    let past: f64 = (0..n).map(|k| e.den[k] * at(&y, base + k as isize)).sum();
+    y.push((forced - past) / lead);
+  }
+  Some(y)
+}
+
+/// Discrete `OutputResponse`: over `{n, nmin, nmax}` (in time units, one
+/// value per sampling period) or for a list of input samples.
+fn discrete_response(
+  tf: &TfModel,
+  period: f64,
+  inputs: &[Expr],
+  span: Option<(&str, f64, f64)>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut elements = Vec::with_capacity(tf.outputs());
+  for (nrow, drow) in tf.nums.iter().zip(&tf.dens) {
+    let mut row = Vec::with_capacity(nrow.len());
+    for (n, d) in nrow.iter().zip(drow) {
+      match NumericElement::new(n, d, &tf.var) {
+        Some(e) if e.delay == 0.0 => row.push(e),
+        _ => return Ok(None),
+      }
+    }
+    elements.push(row);
+  }
+  // The input samples from time 0, and the first one reported.
+  let (samples, first): (Vec<Vec<f64>>, usize) =
+    if let Some((var, t0, t1)) = span {
+      let count = ((t1 / period) + 1e-9).floor() as usize + 1;
+      let first = ((t0.max(0.0) / period) - 1e-9).ceil().max(0.0) as usize;
+      let mut all = Vec::with_capacity(inputs.len());
+      for u in inputs {
+        let times: Vec<Expr> =
+          (0..count).map(|k| Expr::Real(k as f64 * period)).collect();
+        let values = ev(&call(
+          "Map",
+          vec![
+            Expr::Function {
+              body: Box::new(crate::syntax::substitute_variable(
+                u,
+                var,
+                &Expr::Slot(1),
+              )),
+            },
+            Expr::List(times.into()),
+          ],
+        ))?;
+        let Expr::List(values) = &values else {
+          return Ok(None);
+        };
+        let numbers: Option<Vec<f64>> = values
+          .iter()
+          .map(crate::functions::math_ast::try_eval_to_f64)
+          .collect();
+        let Some(numbers) = numbers else {
+          return Ok(None);
+        };
+        all.push(numbers);
+      }
+      (all, first)
+    } else {
+      let mut all = Vec::with_capacity(inputs.len());
+      for u in inputs {
+        let Expr::List(items) = u else {
+          return Ok(None);
+        };
+        let numbers: Option<Vec<f64>> = items
+          .iter()
+          .map(crate::functions::math_ast::try_eval_to_f64)
+          .collect();
+        let Some(numbers) = numbers else {
+          return Ok(None);
+        };
+        all.push(numbers);
+      }
+      (all, 0)
+    };
+  let length = samples.iter().map(Vec::len).min().unwrap_or(0);
+  let mut outputs = Vec::with_capacity(elements.len());
+  for row in &elements {
+    let mut total = vec![0.0; length];
+    for (e, u) in row.iter().zip(&samples) {
+      let Some(y) = difference_equation(e, &u[..length]) else {
+        return Ok(None);
+      };
+      for (acc, v) in total.iter_mut().zip(y) {
+        *acc += v;
+      }
+    }
+    outputs.push(Expr::List(
+      total[first.min(length)..]
+        .iter()
+        .map(|v| Expr::Real(*v))
+        .collect(),
+    ));
+  }
+  Ok(Some(Expr::List(outputs.into())))
 }
