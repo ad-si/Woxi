@@ -10607,6 +10607,30 @@ fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// A body that stays unevaluated while the plot variable is symbolic — a
+/// user function wrapping `If[x == 1., 0., f[x, {a, b}]]` — can still yield a
+/// list once the variable is a number. Wolfram then draws one curve per
+/// element, so probe the body at `x` and split it into `Part[body, i]`
+/// curves. Returns `None` for a body that samples to a plain number.
+fn expand_list_valued_body(body: &Expr, var: &str, x: f64) -> Option<Expr> {
+  if !expr_mentions_var(body, var) {
+    return None;
+  }
+  let probe =
+    evaluate_expr_to_expr(&substitute_var(body, var, &Expr::Real(x))).ok()?;
+  match &probe {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 /// A body that applies replacement rules to the plot variable — `y[t] /.
 /// sol` — has to be replaced while the variable is still symbolic: once
 /// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
@@ -10879,20 +10903,29 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // own singleton list, which the flattening step below unwraps same as
   // any other nested list; left unresolved, every sample point comes back
   // as an unconvertible list and the curve silently plots as nothing.
-  fn resolve_generated_bodies_deep(body: &Expr, var: &str) -> Expr {
+  fn resolve_generated_bodies_deep(
+    body: &Expr,
+    var: &str,
+    probe_x: f64,
+  ) -> Expr {
     match body {
       Expr::List(items) => Expr::List(
         items
           .iter()
-          .map(|it| resolve_generated_bodies_deep(it, var))
+          .map(|it| resolve_generated_bodies_deep(it, var, probe_x))
           .collect(),
       ),
       _ => expand_generated_bodies(body, var)
         .or_else(|| resolve_replaced_body(body, var))
+        .or_else(|| expand_list_valued_body(body, var, probe_x))
         .unwrap_or_else(|| body.clone()),
     }
   }
-  let generated_storage = resolve_generated_bodies_deep(body, &var_name);
+  let generated_storage = resolve_generated_bodies_deep(
+    body,
+    &var_name,
+    x_min + 0.5 * (x_max - x_min),
+  );
   let body: &Expr = &generated_storage;
 
   // Collect function bodies: a single function or a (possibly nested) list of

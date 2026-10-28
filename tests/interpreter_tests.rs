@@ -1373,6 +1373,27 @@ mod interpreter_tests {
     assert_eq!(labeled.matches("dominant-baseline=\"central\"").count(), 1);
   }
 
+  /// A user function that applies a list-valued argument stays unevaluated
+  /// while `x` is symbolic (the `If` can't decide), yet yields a list at
+  /// every sample — one curve per element, like a literal `{f, g}`.
+  #[test]
+  fn test_plot_list_valued_user_function_draws_one_curve_per_element() {
+    clear_state();
+    let svg = interpret(
+      "h[x_, a_] := If[x == 1., 0., a x]; \
+       ExportString[Plot[h[x, {1, 2, 3}], {x, 0., 1.}], \"SVG\"]",
+    )
+    .unwrap();
+    let literal =
+      interpret("ExportString[Plot[{x, 2 x, 3 x}, {x, 0., 1.}], \"SVG\"]")
+        .unwrap();
+    assert_eq!(
+      svg.matches("<polyline").count(),
+      literal.matches("<polyline").count()
+    );
+    assert!(svg.matches("<polyline").count() >= 3);
+  }
+
   /// Extract the outermost `<svg width="…" height="…"` pair as an `f64`.
   fn svg_root_height(svg: &str) -> f64 {
     let after = svg.split("height=\"").nth(1).expect("no height attribute");
