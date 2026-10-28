@@ -626,6 +626,31 @@ mod inverse {
   }
 
   #[test]
+  fn inverse_and_dot_of_machine_complex_matrices() {
+    // Values from wolframscript.
+    assert_eq!(
+      interpret(
+        "InputForm[{Inverse[{{1. + 2. I, 0.5}, {0.25, 3. - I}}][[1, 1]], \
+         {{1. + I, 2.}, {1., 3.}} . {{1. - I, 0.}, {0., 1.}}}]"
+      )
+      .unwrap(),
+      "InputForm[{0.19737263697532842 - 0.4075616789490548*I, \
+       {{2. + 0.*I, 2. + 0.*I}, {1. - 1.*I, 3. + 0.*I}}}]"
+    );
+    // A large complex system stays a machine computation.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; m = RandomComplex[{-1 - I, 1 + I}, {120, 120}]; \
+         Max[Abs[Inverse[m] . m - IdentityMatrix[120]]] < 10^-9"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+  }
+
+  #[test]
   fn inverse_of_a_large_exact_matrix_is_eliminated() {
     // Regression: the adjugate's n^2 determinants took 116 s on this
     // 40-by-40 rational matrix (wolframscript: 0.02 s).

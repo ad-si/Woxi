@@ -1577,11 +1577,19 @@ pub fn machine_complex_parts(expr: &Expr) -> Option<(f64, f64)> {
 /// A machine complex result: a zero imaginary part stays as `re + 0.*I`.
 pub fn machine_complex_result(re: f64, im: f64) -> Expr {
   if im == 0.0 {
-    crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(0.0)],
-    )
-    .unwrap_or(Expr::Real(re))
+    // What `Complex[re, 0.]` evaluates to, built directly: a product of
+    // complex matrices makes one per element.
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Real(0.0), Expr::Identifier("I".to_string())].into(),
+        },
+      ]
+      .into(),
+    }
   } else {
     build_complex_float_expr(re, im)
   }
