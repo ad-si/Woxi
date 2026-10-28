@@ -11249,6 +11249,17 @@ mod times_factor_vs_sum_ordering {
     );
   }
 
+  // A power of a product orders canonically against the symbol its base
+  // ends with: the symbol first.
+  #[test]
+  fn symbol_vs_power_of_product() {
+    assert_eq!(
+      interpret("{w (m w/h)^(1/4), w (m w)^(1/4), z (m w)^(1/4), v (m/h)^(1/4), x (h m)^(1/4)}")
+        .unwrap(),
+      "{w*((m*w)/h)^(1/4), w*(m*w)^(1/4), (m*w)^(1/4)*z, (m/h)^(1/4)*v, (h*m)^(1/4)*x}"
+    );
+  }
+
   // A power of a sum orders against a monomial by the sum's top term, the
   // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
   #[test]

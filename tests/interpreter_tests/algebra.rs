@@ -2470,6 +2470,32 @@ mod factor_list {
 mod cancel {
   use super::*;
 
+  // A radical of a quotient with a symbolic denominator stays whole (one
+  // with a numeric denominator splits), so D's cancellation no longer turns
+  // `(m w/h)^(1/4)` into `(m w)^(1/4)/h^(1/4)` and like terms meet: the
+  // lowering operator annihilates the oscillator ground state (Demonstration
+  // EnergyLevelsOfAQuantumHarmonicOscillatorInSecondQuantization).
+  #[test]
+  fn radical_of_symbolic_quotient_stays_whole() {
+    assert_eq!(
+      interpret(
+        "{Cancel[Sqrt[m/h]], Cancel[(m/2)^(1/4)], D[(m/h)^(1/4) x, x], \
+          Together[Sqrt[m/h] + 1/x], Together[(m/2)^(1/4) + 1/x]}"
+      )
+      .unwrap(),
+      "{Sqrt[m/h], m^(1/4)/2^(1/4), (m/h)^(1/4), (1 + Sqrt[m/h]*x)/x, \
+       (2 + 2^(3/4)*m^(1/4)*x)/(2*x)}"
+    );
+    assert_eq!(
+      interpret(
+        "p := -I h D[#, x] &; a = Sqrt[m w/(2 h)] (x # + I/(m w) p@#) &; \
+         a[(m w/h)^(1/4) Exp[-m w x^2/(2 h)]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // A function call that appears only on one side of the quotient is a
   // coefficient for the polynomial engine, exactly like a plain symbol
   // (wolframscript-verified).

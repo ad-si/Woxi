@@ -7227,8 +7227,25 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     } else if ord < 0 {
       std::cmp::Ordering::Greater
     } else {
-      // Equal sort keys: fall back to full string comparison
-      expr_to_string(a).cmp(&expr_to_string(b))
+      // Equal sort keys: a power of a product orders canonically against
+      // the symbol it ends with, as in Wolfram (`w*(m*w)^(1/4)`); anything
+      // else by its printed form (`Sqrt[1 - x]*x`).
+      let product_power = |e: &Expr| {
+        matches!(
+          extract_base_exponent_ref(e).0.as_ref(),
+          Expr::FunctionCall { name, .. } if name == "Times"
+        )
+      };
+      let canonical = if product_power(a) || product_power(b) {
+        crate::functions::list_helpers_ast::compare_exprs(a, b)
+      } else {
+        0
+      };
+      match canonical {
+        o if o > 0 => std::cmp::Ordering::Less,
+        o if o < 0 => std::cmp::Ordering::Greater,
+        _ => expr_to_string(a).cmp(&expr_to_string(b)),
+      }
     }
   }
 }
