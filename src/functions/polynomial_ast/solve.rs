@@ -159,6 +159,29 @@ fn is_precision_spec(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` holds a square root or any other non-integer power. The
+/// exact elimination of such equations is slow and squares radicals into
+/// spurious roots, so inexact radical systems skip it.
+fn has_radical(expr: &Expr) -> bool {
+  is_sqrt(expr).is_some()
+    || match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => !matches!(right.as_ref(), Expr::Integer(_)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        !matches!(args[1], Expr::Integer(_))
+      }
+      _ => false,
+    }
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(has_radical)
+}
+
 /// NSolve[equation, var] — solve an equation numerically.
 ///
 /// For quadratic polynomials, uses Kahan's numerically stable formula to
@@ -215,6 +238,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone()],
@@ -228,19 +252,6 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && !sols.is_empty()
     {
       let numerized = nsolve_numerize(&solved)?;
-      // Radical equations squared away by the exact elimination yield
-      // spurious roots and partial branches; such a system is solved
-      // numerically as a whole instead.
-      if let Expr::List(found) = &numerized
-        && let Expr::List(vars) = &args[1]
-        && found.iter().any(|s| {
-          numerically_violates(&args[0], s)
-            || matches!(s, Expr::List(r) if r.len() < vars.len())
-        })
-        && let Some(numeric) = try_nsolve_numeric_system(args)
-      {
-        return Ok(sort_nsolve_solutions(numeric));
-      }
       let filtered = if args.len() >= 2
         && matches!(args.last(), Some(Expr::Identifier(d) | Expr::Constant(d)) if d == "Reals")
       {
@@ -2685,6 +2696,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone(), Expr::Integer(0)],
