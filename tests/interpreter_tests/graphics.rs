@@ -10090,6 +10090,28 @@ mod plot3d {
       );
     }
 
+    /// A `Button` whose label is a picture, laid out as a `Grid` cell, shows
+    /// that picture at the button's `ImageSize` (not the `-Graphics-`
+    /// placeholder plate) and draws a blank-labelled one at that size too.
+    #[test]
+    fn a_grid_button_with_a_picture_label_draws_the_picture() {
+      let svg = export_svg(
+        r#"Grid[{{Button[Graphics[Line[{{0, 0}, {1, 1}}]], q = 1,
+             ImageSize -> {40, 40}], Button[" ", q = 2, ImageSize -> {40, 40}]}}]"#,
+      );
+      assert!(!svg.contains("-Graphics-"), "drew a placeholder: {svg}");
+      assert!(
+        svg.contains("<polyline")
+          || svg.contains("<line")
+          || svg.contains("<path"),
+        "no picture: {svg}"
+      );
+      assert!(
+        svg.contains("width=\"40.0\" height=\"40.0\""),
+        "button ignored ImageSize: {svg}"
+      );
+    }
+
     /// Wolfram keeps some of its operator glyphs in the private use area —
     /// `\[Rule]` is U+F522 — and only its own fonts draw them, so a label
     /// written with one came out as a blank box. The drawing substitutes
