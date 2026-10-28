@@ -9596,6 +9596,9 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "Map" | "Apply" | "MapApply" | "MapAll" if args.len() == 2 => Some(49),
       "Plus" if args.len() >= 2 => Some(30),
       "Times" if args.len() >= 2 => Some(33),
+      // `a ± b` binds like `+`; the prefix `±a` like a unary minus.
+      "PlusMinus" | "MinusPlus" if args.len() >= 2 => Some(30),
+      "PlusMinus" | "MinusPlus" if args.len() == 1 => Some(39),
       // `=`, `:=`, `^=` and `^:=` print infix and bind looser than every
       // operator shorthand except `;` and `&`.
       "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" if args.len() == 2 => {
@@ -11869,6 +11872,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           if needs_pattern_parens(a)
             || needs_condition_parens(a)
             || needs_nested_plus_parens(a)
+            || plus_term_needs_parens(a)
           {
             format!("({s})")
           } else {
@@ -18081,7 +18085,7 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
     && matches!(
       name.as_str(),
       "Star" | "CirclePlus" | "CircleMinus" | "Tilde" | "Subset" | "LeftArrow"
-        | "DotEqual"
+        | "DotEqual" | "PlusMinus" | "MinusPlus"
     ))
 }
 
@@ -18143,13 +18147,16 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
 
 fn is_infix_display_call(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
-  if args.len() >= 2
+  if (args.len() >= 2
     && matches!(
       name.as_str(),
       "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
         | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
         | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual" | "Dot"
+        | "PlusMinus" | "MinusPlus"
     ))
+    // The prefix `±a` binds looser than `^` as well: `(±a)^2`.
+    || (args.len() == 1 && matches!(name.as_str(), "PlusMinus" | "MinusPlus")))
 }
 
 /// An operand of `Star` (Precedence 390) that binds looser than it — a sum,

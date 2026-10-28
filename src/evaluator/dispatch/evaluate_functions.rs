@@ -1658,663 +1658,28 @@ fn evaluate_function_call_ast_inner(
   };
 
   if let Some(overloads) = overloads {
-    // Use stripped args for user-defined matching (Unevaluated wrapper is
-    // transparent to pattern matching). Original `args` stays untouched
-    // for the fall-through path so unmatched calls keep the wrapper.
-    let args = match_args;
-    for (
-      overload_idx,
-      (params, conditions, param_defaults, param_heads, blank_types, body_expr),
-    ) in overloads.iter().enumerate()
-    {
-      // Check if any parameter is a sequence pattern (BlankSequence/BlankNullSequence)
-      let has_sequence_param = blank_types.iter().any(|&bt| bt >= 2);
-
-      if has_sequence_param {
-        // Variable-length argument matching for BlankSequence/BlankNullSequence
-        // Count minimum required arguments: Blank=1, BlankSequence=1, BlankNullSequence=0
-        let min_args: usize = blank_types
-          .iter()
-          .zip(param_defaults.iter())
-          .map(|(&bt, d)| {
-            // Optional params and BlankNullSequence (bt == 3) match zero
-            // arguments; Blank and BlankSequence need at least one.
-            usize::from(!(d.is_some() || bt == 3))
-          })
-          .sum();
-        if args.len() < min_args {
-          continue;
-        }
-
-        // Distribute args to params using backtracking for sequence patterns
-        let repeat_names = repeat_check_names(params, conditions);
-        let distribution = distribute_args_to_params(
-          args,
-          &repeat_names,
-          blank_types,
-          param_heads,
-          param_defaults,
-          0,
-          &[],
-        );
-        let mut effective_args = match distribution {
-          Some(dist) => {
-            // Validate OptionsPattern slots: every arg landing in an
-            // `__opts<i>` parameter must be a `Rule` / `RuleDelayed`, or
-            // an arbitrarily nested `List` / `Sequence` of those (e.g.
-            // `f[x, {n -> 4}]` and `f[x, {{{n -> 4}}}]` both bind a
-            // single option). Without this check `r[arg_., OptionsPattern
-            // [r]] := …` would accept `r[a, b]` (binding `__opts` to
-            // `b`), but wolframscript leaves that call unevaluated since
-            // `b` isn't an option container.
-            fn is_option_container(e: &Expr) -> bool {
-              match e {
-                Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
-                Expr::List(items) => items.iter().all(is_option_container),
-                Expr::FunctionCall { name, args } if name == "Sequence" => {
-                  args.iter().all(is_option_container)
-                }
-                _ => false,
-              }
-            }
-            let mut opts_ok = true;
-            for (i, param_args) in dist.iter().enumerate() {
-              if params[i].starts_with("__opts")
-                && !param_args.iter().all(is_option_container)
-              {
-                opts_ok = false;
-                break;
-              }
-            }
-            if !opts_ok {
-              continue;
-            }
-            let mut eff = Vec::with_capacity(params.len());
-            for (i, param_args) in dist.iter().enumerate() {
-              if blank_types[i] >= 2 {
-                if param_args.len() == 1 {
-                  eff.push(param_args[0].clone());
-                } else {
-                  eff.push(call("Sequence", param_args.clone()));
-                }
-              } else if param_args.is_empty() {
-                // Must be a default param
-                match param_defaults[i].as_ref().and_then(resolve_param_default)
-                {
-                  Some(default) => eff.push(default),
-                  None => break,
-                }
-              } else {
-                eff.push(param_args[0].clone());
-              }
-            }
-            if eff.len() != params.len() {
-              continue;
-            }
-            eff
-          }
-          None => continue,
-        };
-
-        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
-        // slots receive the same argument.
-        if !crate::evaluator::pattern_matching::repeated_params_agree(
-          params,
-          &effective_args,
-        ) {
-          continue;
-        }
-
-        // Check conditions
-        let mut conditions_met = true;
-        let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
-        for cond_expr in conditions.iter().flatten() {
-          if let Expr::FunctionCall {
-            name: marker_name,
-            args: marker_args,
-          } = cond_expr
-            && marker_name == "__StructuralPattern__"
-            && marker_args.len() == 2
-            && let Expr::Identifier(param_name) = &marker_args[0]
-          {
-            let pattern = &marker_args[1];
-            if let Some(idx) = params.iter().position(|p| p == param_name) {
-              if idx < effective_args.len() {
-                // Canonicalize the expression to match the canonical pattern form
-                let canonical_arg =
-                  crate::evaluator::assignment::canonicalize_divide_in_expr(
-                    &effective_args[idx],
-                  );
-                // Push positional parameter bindings as context so inner
-                // Orderless matching can check compatibility (e.g. x_Symbol=r).
-                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
-                for (pi, param) in params.iter().enumerate() {
-                  if pi == idx
-                    || pi >= effective_args.len()
-                    || param.starts_with("__sp")
-                    || param.starts_with("_dv")
-                  {
-                    continue;
-                  }
-                  positional_ctx
-                    .push((param.clone(), effective_args[pi].clone()));
-                }
-                crate::evaluator::pattern_matching::push_match_context(
-                  &positional_ctx,
-                );
-                let match_result = structural_slot_match(
-                  &canonical_arg,
-                  pattern,
-                  blank_types[idx] >= 2,
-                );
-                crate::evaluator::pattern_matching::pop_match_context();
-                if let Some(bindings) = match_result {
-                  // Check consistency: structural bindings must not conflict
-                  // with positional parameter bindings (skip the structural
-                  // param itself and synthetic names)
-                  let mut check = bindings.clone();
-                  let mut consistent = true;
-                  for (pi, param) in params.iter().enumerate() {
-                    if pi == idx
-                      || pi >= effective_args.len()
-                      || param.starts_with("__sp")
-                      || param.starts_with("_dv")
-                    {
-                      continue;
-                    }
-                    if !crate::evaluator::pattern_matching::merge_bindings(
-                      &mut check,
-                      vec![(param.clone(), effective_args[pi].clone())],
-                    ) {
-                      consistent = false;
-                      break;
-                    }
-                  }
-                  if !consistent {
-                    conditions_met = false;
-                    break;
-                  }
-                  structural_bindings.extend(bindings);
-                } else {
-                  conditions_met = false;
-                  break;
-                }
-              } else {
-                conditions_met = false;
-                break;
-              }
-            }
-            continue;
-          }
-          // Build combined bindings for simultaneous substitution
-          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-          for (param, arg) in params.iter().zip(effective_args.iter()) {
-            all_bindings.push((param.as_str(), arg));
-          }
-          for (bind_name, bind_val) in &structural_bindings {
-            all_bindings.push((bind_name.as_str(), bind_val));
-          }
-          let substituted_cond = crate::syntax::substitute_pattern_bindings(
-            cond_expr,
-            &all_bindings,
-          );
-          match eval_dispatch_condition(
-            cond_expr,
-            &all_bindings,
-            &substituted_cond,
-          ) {
-            Ok(Expr::Identifier(ref s)) if s == "True" => {}
-            _ => {
-              conditions_met = false;
-              break;
-            }
-          }
-        }
-        if !conditions_met {
-          continue;
-        }
-        // Substitute and evaluate body — use simultaneous substitution
-        // to prevent parameter values from leaking into other arguments
-        promote_lists_for_substitution(&mut effective_args);
-        let substituted = {
-          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-          for (param, arg) in params.iter().zip(effective_args.iter()) {
-            all_bindings.push((param.as_str(), arg));
-          }
-          for (bind_name, bind_val) in &structural_bindings {
-            all_bindings.push((bind_name.as_str(), bind_val));
-          }
-          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
-        };
-        // Push option context if this overload uses OptionsPattern
-        let inline_opts = inline_opts_overloads
-          .as_ref()
-          .and_then(|v| v.get(overload_idx))
-          .and_then(|o| o.as_ref());
-        let opt_bindings =
-          collect_option_bindings(name, params, &effective_args, inline_opts);
-        if let Some(ref bindings) = opt_bindings {
-          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-            ctx.borrow_mut().push((name.to_string(), bindings.clone()));
-          });
-        }
-        if is_identity_rewrite(name, args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
-          // only `$IterationLimit` stops.
-          if opt_bindings.is_some() {
-            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-              ctx.borrow_mut().pop();
-            });
-          }
-          // A literal rule (every slot a `_dvN` literal) is a fixed point.
-          let literal = structural_bindings.is_empty()
-            && params.iter().all(|p| p.starts_with("_dv"));
-          return Ok(if literal {
-            substituted
-          } else {
-            iteration_limit_exceeded()
-          });
-        }
-        let mut body = substituted;
-        let result = loop {
-          match evaluate_expr_to_expr_inner(&body) {
-            Err(InterpreterError::TailCall(next)) => body = *next,
-            Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
-            result => break result,
-          }
-        };
-        // Block/Module/While/For inside the body wrap an internal
-        // Return[val] as a literal `Return[val]` Expr; unwrap that here
-        // so user-defined functions still short-circuit to `val`,
-        // matching wolframscript's `f[] := Block[{}, Return[42]]; f[]`.
-        let result = match result {
-          Ok(Expr::FunctionCall {
-            name: ref n,
-            args: ref a,
-          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
-          other => other,
-        };
-        // Pop option context
-        if opt_bindings.is_some() {
-          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-            ctx.borrow_mut().pop();
-          });
-        }
-        // If the body returned Condition[expr, test], evaluate the test
-        // as a guard: True → return expr, otherwise this overload fails.
-        {
-          let value = result?;
-          match unwrap_condition_guards(value)? {
-            Some(value) => return Ok(value),
-            None => continue, // condition not met, try next overload
-          }
-        }
-      }
-
-      // Count required params (those without defaults)
-      let required_count =
-        param_defaults.iter().filter(|d| d.is_none()).count();
-      let total_count = params.len();
-
-      // Accept if required_count <= args.len() <= total_count
-      if args.len() < required_count || args.len() > total_count {
-        continue;
-      }
-
-      // For Orderless functions, try different argument orderings when conditions
-      // involve literal matching (SameQ). Generate permutations for small arg counts.
-      let arg_orderings: Vec<Vec<Expr>> =
-        if has_orderless && args.len() >= 2 && args.len() <= 6 {
-          let mut perms = Vec::new();
-          let mut indices: Vec<usize> = (0..args.len()).collect();
-          loop {
-            perms.push(indices.iter().map(|&i| args[i].clone()).collect());
-            // Next permutation (Heap's algorithm inline)
-            if !next_permutation(&mut indices) {
-              break;
-            }
-          }
-          perms
-        } else {
-          vec![args.to_vec()]
-        };
-
-      for perm_args in &arg_orderings {
-        // Build the effective argument list by matching provided args to params.
-        // Optional params are filled left-to-right; when there are fewer args than params,
-        // optional params use their defaults starting from the leftmost optional param.
-        let mut effective_args = if perm_args.len() == total_count {
-          // All params provided - check head constraints
-          let mut head_ok = true;
-          for (i, arg) in perm_args.iter().enumerate() {
-            if let Some(head) = &param_heads[i]
-              && get_expr_head(arg) != *head
-            {
-              head_ok = false;
-              break;
-            }
-          }
-          if !head_ok {
-            continue;
-          }
-          perm_args.clone()
-        } else {
-          // Fewer args than params - fill optional params with defaults
-          let num_optional_to_default = total_count - perm_args.len();
-          let mut effective = Vec::with_capacity(total_count);
-          let mut arg_idx = 0;
-          let mut defaults_used = 0;
-
-          for i in 0..total_count {
-            if param_defaults[i].is_some()
-              && defaults_used < num_optional_to_default
-            {
-              let remaining_args = perm_args.len() - arg_idx;
-              let remaining_required: usize = param_defaults[i + 1..]
-                .iter()
-                .filter(|d| d.is_none())
-                .count();
-              // An optional slot takes its default when there is nothing
-              // left for it, or when the next argument does not fit — by
-              // head, or by the pattern the slot records for itself.
-              // `f[t_, p : _Symbol?TypeQ : Base, rest_List : {}]` called as
-              // `f[t, {…}]` has to skip `p` rather than force `{…}` into it.
-              let arg_fits = |arg: &Expr| {
-                if let Some(head) = &param_heads[i]
-                  && get_expr_head(arg) != *head
-                {
-                  return false;
-                }
-                match conditions[i].as_ref() {
-                  Some(Expr::FunctionCall {
-                    name: marker,
-                    args: marker_args,
-                  }) if marker == "__StructuralPattern__"
-                    && marker_args.len() == 2 =>
-                  {
-                    crate::evaluator::pattern_matching::match_pattern(
-                      arg,
-                      &marker_args[1],
-                    )
-                    .is_some()
-                  }
-                  _ => true,
-                }
-              };
-              let should_default = remaining_args <= remaining_required
-                || (arg_idx < perm_args.len()
-                  && !arg_fits(&perm_args[arg_idx]));
-
-              if should_default {
-                let Some(resolved) =
-                  param_defaults[i].as_ref().and_then(resolve_param_default)
-                else {
-                  break;
-                };
-                effective.push(resolved);
-                defaults_used += 1;
-              } else if arg_idx < perm_args.len() {
-                if let Some(head) = &param_heads[i]
-                  && get_expr_head(&perm_args[arg_idx]) != *head
-                {
-                  break;
-                }
-                effective.push(perm_args[arg_idx].clone());
-                arg_idx += 1;
-              }
-            } else if arg_idx < perm_args.len() {
-              if let Some(head) = &param_heads[i]
-                && get_expr_head(&perm_args[arg_idx]) != *head
-              {
-                break;
-              }
-              effective.push(perm_args[arg_idx].clone());
-              arg_idx += 1;
-            }
-          }
-
-          if effective.len() != total_count {
-            continue; // this permutation doesn't match
-          }
-          effective
-        };
-
-        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
-        // slots receive the same argument.
-        if !crate::evaluator::pattern_matching::repeated_params_agree(
-          params,
-          &effective_args,
-        ) {
-          continue;
-        }
-
-        // Check all conditions (if any) by substituting params with args and evaluating
-        let mut conditions_met = true;
-        // Collect bindings from structural pattern matches for body substitution
-        let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
-        // An Orderless argument can satisfy a structural pattern in more than
-        // one way, and the rule's guard may accept only some of them:
-        // `f[u_*x_] := … /; x > 0` has to read `3 q` as `u -> q, x -> 3`. The
-        // matcher commits to a single reading, so when the guard turns that
-        // one down, offer it the other orderings before giving up on the rule.
-        // Reading 0 is the argument exactly as it stands, so a rule that fired
-        // before still fires the same way, on the same binding.
-        let readings =
-          orderless_reading_count(conditions, params, &effective_args);
-        for reading in 0..readings {
-          conditions_met = true;
-          structural_bindings.clear();
-          for cond_expr in conditions.iter().flatten() {
-            // Check for __StructuralPattern__ marker — use match_pattern instead of eval
-            if let Expr::FunctionCall {
-              name: marker_name,
-              args: marker_args,
-            } = cond_expr
-              && marker_name == "__StructuralPattern__"
-              && marker_args.len() == 2
-              && let Expr::Identifier(param_name) = &marker_args[0]
-            {
-              let pattern = &marker_args[1];
-              // Find the effective arg for this structural param
-              if let Some(idx) = params.iter().position(|p| p == param_name) {
-                if idx < effective_args.len() {
-                  // Canonicalize the expression to match the canonical pattern form
-                  // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
-                  let reread =
-                    nth_orderless_reading(&effective_args[idx], reading);
-                  let canonical_arg =
-                    crate::evaluator::assignment::canonicalize_divide_in_expr(
-                      &reread,
-                    );
-                  // Push positional parameter bindings as context so inner
-                  // Orderless matching can check compatibility.
-                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
-                  for (pi, param) in params.iter().enumerate() {
-                    if pi == idx
-                      || pi >= effective_args.len()
-                      || param.starts_with("__sp")
-                      || param.starts_with("_dv")
-                    {
-                      continue;
-                    }
-                    positional_ctx
-                      .push((param.clone(), effective_args[pi].clone()));
-                  }
-                  crate::evaluator::pattern_matching::push_match_context(
-                    &positional_ctx,
-                  );
-                  let match_result = structural_slot_match(
-                    &canonical_arg,
-                    pattern,
-                    blank_types[idx] >= 2,
-                  );
-                  crate::evaluator::pattern_matching::pop_match_context();
-                  if let Some(bindings) = match_result {
-                    // Check consistency: structural bindings must not conflict
-                    // with positional parameter bindings (skip the structural
-                    // param itself and synthetic names)
-                    let mut check = bindings.clone();
-                    let mut consistent = true;
-                    for (pi, param) in params.iter().enumerate() {
-                      if pi == idx
-                        || pi >= effective_args.len()
-                        || param.starts_with("__sp")
-                        || param.starts_with("_dv")
-                      {
-                        continue;
-                      }
-                      if !crate::evaluator::pattern_matching::merge_bindings(
-                        &mut check,
-                        vec![(param.clone(), effective_args[pi].clone())],
-                      ) {
-                        consistent = false;
-                        break;
-                      }
-                    }
-                    if !consistent {
-                      conditions_met = false;
-                      break;
-                    }
-                    structural_bindings.extend(bindings);
-                  } else {
-                    conditions_met = false;
-                    break;
-                  }
-                } else {
-                  conditions_met = false;
-                  break;
-                }
-              }
-              continue;
-            }
-            // Build combined bindings for simultaneous substitution
-            let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-            for (param, arg) in params.iter().zip(effective_args.iter()) {
-              all_bindings.push((param.as_str(), arg));
-            }
-            for (bind_name, bind_val) in &structural_bindings {
-              all_bindings.push((bind_name.as_str(), bind_val));
-            }
-            let substituted_cond = crate::syntax::substitute_pattern_bindings(
-              cond_expr,
-              &all_bindings,
-            );
-            // Evaluate the condition - it must return True. A `?test` whose
-            // test is a pure function can be stored as a FunctionCall whose
-            // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
-            // which doesn't reduce as a call; if the direct evaluation leaves
-            // it unapplied, re-parse the string form (which yields a proper
-            // application) and evaluate that — same approach MatchQ uses.
-            let mut cond_ok = matches!(
-              eval_dispatch_condition(
-                cond_expr,
-                &all_bindings,
-                &substituted_cond
-              ),
-              Ok(Expr::Identifier(ref s)) if s == "True"
-            );
-            if !cond_ok
-              && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
-              if !is_identifier_like(name))
-            {
-              cond_ok = matches!(
-                crate::interpret(&expr_to_string(
-                  &substituted_cond
-                )),
-                Ok(ref s) if s == "True"
-              );
-            }
-            if !cond_ok {
-              conditions_met = false;
-              break;
-            }
-          }
-          if conditions_met {
-            break;
-          }
-        }
-        if !conditions_met {
-          continue; // try next permutation (or next overload if no more permutations)
-        }
-        // All conditions met - substitute parameters with arguments and evaluate body
-        // Use simultaneous substitution to prevent variable name leakage
-        promote_lists_for_substitution(&mut effective_args);
-        let substituted = {
-          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
-          for (param, arg) in params.iter().zip(effective_args.iter()) {
-            all_bindings.push((param.as_str(), arg));
-          }
-          for (bind_name, bind_val) in &structural_bindings {
-            all_bindings.push((bind_name.as_str(), bind_val));
-          }
-          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
-        };
-        // Push option context if this overload uses OptionsPattern
-        let inline_opts2 = inline_opts_overloads
-          .as_ref()
-          .and_then(|v| v.get(overload_idx))
-          .and_then(|o| o.as_ref());
-        let opt_bindings =
-          collect_option_bindings(name, params, &effective_args, inline_opts2);
-        if let Some(ref bindings) = opt_bindings {
-          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-            ctx.borrow_mut().push((name.to_string(), bindings.clone()));
-          });
-        }
-        // Tail-call: return body for the trampoline to evaluate.
-        // Catch Return[] at the function call boundary via local trampoline.
-        if is_identity_rewrite(name, args, &substituted) {
-          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
-          // only `$IterationLimit` stops.
-          if opt_bindings.is_some() {
-            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-              ctx.borrow_mut().pop();
-            });
-          }
-          // A literal rule (every slot a `_dvN` literal) is a fixed point.
-          let literal = structural_bindings.is_empty()
-            && params.iter().all(|p| p.starts_with("_dv"));
-          return Ok(if literal {
-            substituted
-          } else {
-            iteration_limit_exceeded()
-          });
-        }
-        let mut body = substituted;
-        let result = loop {
-          match evaluate_expr_to_expr_inner(&body) {
-            Err(InterpreterError::TailCall(next)) => body = *next,
-            Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
-            result => break result,
-          }
-        };
-        // Unwrap a Block/Module/While/For-produced literal `Return[val]`
-        // when it surfaces as the body's result of a user-defined function,
-        // matching wolframscript: `f[] := Block[{}, Return[42]]; f[]` ⇒ 42.
-        let result = match result {
-          Ok(Expr::FunctionCall {
-            name: ref n,
-            args: ref a,
-          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
-          other => other,
-        };
-        // Pop option context
-        if opt_bindings.is_some() {
-          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
-            ctx.borrow_mut().pop();
-          });
-        }
-        // If the body returned Condition[expr, test], evaluate the test
-        // as a guard: True → return expr, otherwise this overload fails.
-        {
-          let value = result?;
-          if let Some(value) = unwrap_condition_guards(value)? {
-            return Ok(value);
-          }
-          // condition not met, try next permutation
-        }
-      } // end permutation loop
-      // No permutation matched; fall through to the next overload.
+    // User rules see every order of an Orderless head's arguments, Plus
+    // and Times included (only their numeric fold is order-sensitive).
+    let try_orders = has_orderless || matches!(name, "Plus" | "Times");
+    if let Some(value) = apply_user_overloads(
+      name,
+      match_args,
+      &overloads,
+      inline_opts_overloads.as_ref(),
+      try_orders,
+    )? {
+      return Ok(value);
+    }
+    // A Flat and Orderless head applies a rule to any of its arguments
+    // the rule's own arity covers: `g[a_] + g[b_] := …` combines two of
+    // the terms of `g[1] + g[2] + g[3]` and leaves the rest.
+    if let Some(value) = apply_user_overloads_to_subsets(
+      name,
+      match_args,
+      &overloads,
+      inline_opts_overloads.as_ref(),
+    )? {
+      return Ok(value);
     }
   }
 
@@ -14741,4 +14106,771 @@ fn bspline_basis_exact(
     return Ok(Expr::Integer(0));
   }
   plus_ast(&terms)
+}
+
+/// The user-defined rules of `name` tried on `args` in order; the value of
+/// the first that matches. `try_orders` also tries every order of the
+/// arguments (an Orderless head).
+fn apply_user_overloads(
+  name: &str,
+  args: &[Expr],
+  overloads: &[crate::evaluator::symbol_values::FuncDef],
+  inline_opts_overloads: Option<&Vec<Option<Vec<Expr>>>>,
+  has_orderless: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let inline_opts_overloads = inline_opts_overloads.cloned();
+  {
+    for (
+      overload_idx,
+      (params, conditions, param_defaults, param_heads, blank_types, body_expr),
+    ) in overloads.iter().enumerate()
+    {
+      // Check if any parameter is a sequence pattern (BlankSequence/BlankNullSequence)
+      let has_sequence_param = blank_types.iter().any(|&bt| bt >= 2);
+
+      if has_sequence_param {
+        // Variable-length argument matching for BlankSequence/BlankNullSequence
+        // Count minimum required arguments: Blank=1, BlankSequence=1, BlankNullSequence=0
+        let min_args: usize = blank_types
+          .iter()
+          .zip(param_defaults.iter())
+          .map(|(&bt, d)| {
+            // Optional params and BlankNullSequence (bt == 3) match zero
+            // arguments; Blank and BlankSequence need at least one.
+            usize::from(!(d.is_some() || bt == 3))
+          })
+          .sum();
+        if args.len() < min_args {
+          continue;
+        }
+
+        // Distribute args to params using backtracking for sequence patterns
+        let repeat_names = repeat_check_names(params, conditions);
+        let distribution = distribute_args_to_params(
+          args,
+          &repeat_names,
+          blank_types,
+          param_heads,
+          param_defaults,
+          0,
+          &[],
+        );
+        let mut effective_args = match distribution {
+          Some(dist) => {
+            // Validate OptionsPattern slots: every arg landing in an
+            // `__opts<i>` parameter must be a `Rule` / `RuleDelayed`, or
+            // an arbitrarily nested `List` / `Sequence` of those (e.g.
+            // `f[x, {n -> 4}]` and `f[x, {{{n -> 4}}}]` both bind a
+            // single option). Without this check `r[arg_., OptionsPattern
+            // [r]] := …` would accept `r[a, b]` (binding `__opts` to
+            // `b`), but wolframscript leaves that call unevaluated since
+            // `b` isn't an option container.
+            fn is_option_container(e: &Expr) -> bool {
+              match e {
+                Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+                Expr::List(items) => items.iter().all(is_option_container),
+                Expr::FunctionCall { name, args } if name == "Sequence" => {
+                  args.iter().all(is_option_container)
+                }
+                _ => false,
+              }
+            }
+            let mut opts_ok = true;
+            for (i, param_args) in dist.iter().enumerate() {
+              if params[i].starts_with("__opts")
+                && !param_args.iter().all(is_option_container)
+              {
+                opts_ok = false;
+                break;
+              }
+            }
+            if !opts_ok {
+              continue;
+            }
+            let mut eff = Vec::with_capacity(params.len());
+            for (i, param_args) in dist.iter().enumerate() {
+              if blank_types[i] >= 2 {
+                if param_args.len() == 1 {
+                  eff.push(param_args[0].clone());
+                } else {
+                  eff.push(call("Sequence", param_args.clone()));
+                }
+              } else if param_args.is_empty() {
+                // Must be a default param
+                match param_defaults[i].as_ref().and_then(resolve_param_default)
+                {
+                  Some(default) => eff.push(default),
+                  None => break,
+                }
+              } else {
+                eff.push(param_args[0].clone());
+              }
+            }
+            if eff.len() != params.len() {
+              continue;
+            }
+            eff
+          }
+          None => continue,
+        };
+
+        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
+        // slots receive the same argument.
+        if !crate::evaluator::pattern_matching::repeated_params_agree(
+          params,
+          &effective_args,
+        ) {
+          continue;
+        }
+
+        // Check conditions
+        let mut conditions_met = true;
+        let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
+        for cond_expr in conditions.iter().flatten() {
+          if let Expr::FunctionCall {
+            name: marker_name,
+            args: marker_args,
+          } = cond_expr
+            && marker_name == "__StructuralPattern__"
+            && marker_args.len() == 2
+            && let Expr::Identifier(param_name) = &marker_args[0]
+          {
+            let pattern = &marker_args[1];
+            if let Some(idx) = params.iter().position(|p| p == param_name) {
+              if idx < effective_args.len() {
+                // Canonicalize the expression to match the canonical pattern form
+                let canonical_arg =
+                  crate::evaluator::assignment::canonicalize_divide_in_expr(
+                    &effective_args[idx],
+                  );
+                // Push positional parameter bindings as context so inner
+                // Orderless matching can check compatibility (e.g. x_Symbol=r).
+                let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
+                for (pi, param) in params.iter().enumerate() {
+                  if pi == idx
+                    || pi >= effective_args.len()
+                    || param.starts_with("__sp")
+                    || param.starts_with("_dv")
+                  {
+                    continue;
+                  }
+                  positional_ctx
+                    .push((param.clone(), effective_args[pi].clone()));
+                }
+                crate::evaluator::pattern_matching::push_match_context(
+                  &positional_ctx,
+                );
+                let match_result = structural_slot_match(
+                  &canonical_arg,
+                  pattern,
+                  blank_types[idx] >= 2,
+                );
+                crate::evaluator::pattern_matching::pop_match_context();
+                if let Some(bindings) = match_result {
+                  // Check consistency: structural bindings must not conflict
+                  // with positional parameter bindings (skip the structural
+                  // param itself and synthetic names)
+                  let mut check = bindings.clone();
+                  let mut consistent = true;
+                  for (pi, param) in params.iter().enumerate() {
+                    if pi == idx
+                      || pi >= effective_args.len()
+                      || param.starts_with("__sp")
+                      || param.starts_with("_dv")
+                    {
+                      continue;
+                    }
+                    if !crate::evaluator::pattern_matching::merge_bindings(
+                      &mut check,
+                      vec![(param.clone(), effective_args[pi].clone())],
+                    ) {
+                      consistent = false;
+                      break;
+                    }
+                  }
+                  if !consistent {
+                    conditions_met = false;
+                    break;
+                  }
+                  structural_bindings.extend(bindings);
+                } else {
+                  conditions_met = false;
+                  break;
+                }
+              } else {
+                conditions_met = false;
+                break;
+              }
+            }
+            continue;
+          }
+          // Build combined bindings for simultaneous substitution
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            all_bindings.push((param.as_str(), arg));
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            all_bindings.push((bind_name.as_str(), bind_val));
+          }
+          let substituted_cond = crate::syntax::substitute_pattern_bindings(
+            cond_expr,
+            &all_bindings,
+          );
+          match eval_dispatch_condition(
+            cond_expr,
+            &all_bindings,
+            &substituted_cond,
+          ) {
+            Ok(Expr::Identifier(ref s)) if s == "True" => {}
+            _ => {
+              conditions_met = false;
+              break;
+            }
+          }
+        }
+        if !conditions_met {
+          continue;
+        }
+        // Substitute and evaluate body — use simultaneous substitution
+        // to prevent parameter values from leaking into other arguments
+        promote_lists_for_substitution(&mut effective_args);
+        let substituted = {
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            all_bindings.push((param.as_str(), arg));
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            all_bindings.push((bind_name.as_str(), bind_val));
+          }
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
+        };
+        // Push option context if this overload uses OptionsPattern
+        let inline_opts = inline_opts_overloads
+          .as_ref()
+          .and_then(|v| v.get(overload_idx))
+          .and_then(|o| o.as_ref());
+        let opt_bindings =
+          collect_option_bindings(name, params, &effective_args, inline_opts);
+        if let Some(ref bindings) = opt_bindings {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().push((name.to_string(), bindings.clone()));
+          });
+        }
+        if is_identity_rewrite(name, args, &substituted) {
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
+          if opt_bindings.is_some() {
+            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+              ctx.borrow_mut().pop();
+            });
+          }
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(Some(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          }));
+        }
+        let mut body = substituted;
+        let result = loop {
+          match evaluate_expr_to_expr_inner(&body) {
+            Err(InterpreterError::TailCall(next)) => body = *next,
+            Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
+            result => break result,
+          }
+        };
+        // Block/Module/While/For inside the body wrap an internal
+        // Return[val] as a literal `Return[val]` Expr; unwrap that here
+        // so user-defined functions still short-circuit to `val`,
+        // matching wolframscript's `f[] := Block[{}, Return[42]]; f[]`.
+        let result = match result {
+          Ok(Expr::FunctionCall {
+            name: ref n,
+            args: ref a,
+          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
+          other => other,
+        };
+        // Pop option context
+        if opt_bindings.is_some() {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().pop();
+          });
+        }
+        // If the body returned Condition[expr, test], evaluate the test
+        // as a guard: True → return expr, otherwise this overload fails.
+        {
+          let value = result?;
+          match unwrap_condition_guards(value)? {
+            Some(value) => return Ok(Some(value)),
+            None => continue, // condition not met, try next overload
+          }
+        }
+      }
+
+      // Count required params (those without defaults)
+      let required_count =
+        param_defaults.iter().filter(|d| d.is_none()).count();
+      let total_count = params.len();
+
+      // Accept if required_count <= args.len() <= total_count
+      if args.len() < required_count || args.len() > total_count {
+        continue;
+      }
+
+      // For Orderless functions, try different argument orderings when conditions
+      // involve literal matching (SameQ). Generate permutations for small arg counts.
+      let arg_orderings: Vec<Vec<Expr>> =
+        if has_orderless && args.len() >= 2 && args.len() <= 6 {
+          let mut perms = Vec::new();
+          let mut indices: Vec<usize> = (0..args.len()).collect();
+          loop {
+            perms.push(indices.iter().map(|&i| args[i].clone()).collect());
+            // Next permutation (Heap's algorithm inline)
+            if !next_permutation(&mut indices) {
+              break;
+            }
+          }
+          perms
+        } else {
+          vec![args.to_vec()]
+        };
+
+      for perm_args in &arg_orderings {
+        // Build the effective argument list by matching provided args to params.
+        // Optional params are filled left-to-right; when there are fewer args than params,
+        // optional params use their defaults starting from the leftmost optional param.
+        let mut effective_args = if perm_args.len() == total_count {
+          // All params provided - check head constraints
+          let mut head_ok = true;
+          for (i, arg) in perm_args.iter().enumerate() {
+            if let Some(head) = &param_heads[i]
+              && get_expr_head(arg) != *head
+            {
+              head_ok = false;
+              break;
+            }
+          }
+          if !head_ok {
+            continue;
+          }
+          perm_args.clone()
+        } else {
+          // Fewer args than params - fill optional params with defaults
+          let num_optional_to_default = total_count - perm_args.len();
+          let mut effective = Vec::with_capacity(total_count);
+          let mut arg_idx = 0;
+          let mut defaults_used = 0;
+
+          for i in 0..total_count {
+            if param_defaults[i].is_some()
+              && defaults_used < num_optional_to_default
+            {
+              let remaining_args = perm_args.len() - arg_idx;
+              let remaining_required: usize = param_defaults[i + 1..]
+                .iter()
+                .filter(|d| d.is_none())
+                .count();
+              // An optional slot takes its default when there is nothing
+              // left for it, or when the next argument does not fit — by
+              // head, or by the pattern the slot records for itself.
+              // `f[t_, p : _Symbol?TypeQ : Base, rest_List : {}]` called as
+              // `f[t, {…}]` has to skip `p` rather than force `{…}` into it.
+              let arg_fits = |arg: &Expr| {
+                if let Some(head) = &param_heads[i]
+                  && get_expr_head(arg) != *head
+                {
+                  return false;
+                }
+                match conditions[i].as_ref() {
+                  Some(Expr::FunctionCall {
+                    name: marker,
+                    args: marker_args,
+                  }) if marker == "__StructuralPattern__"
+                    && marker_args.len() == 2 =>
+                  {
+                    crate::evaluator::pattern_matching::match_pattern(
+                      arg,
+                      &marker_args[1],
+                    )
+                    .is_some()
+                  }
+                  _ => true,
+                }
+              };
+              let should_default = remaining_args <= remaining_required
+                || (arg_idx < perm_args.len()
+                  && !arg_fits(&perm_args[arg_idx]));
+
+              if should_default {
+                let Some(resolved) =
+                  param_defaults[i].as_ref().and_then(resolve_param_default)
+                else {
+                  break;
+                };
+                effective.push(resolved);
+                defaults_used += 1;
+              } else if arg_idx < perm_args.len() {
+                if let Some(head) = &param_heads[i]
+                  && get_expr_head(&perm_args[arg_idx]) != *head
+                {
+                  break;
+                }
+                effective.push(perm_args[arg_idx].clone());
+                arg_idx += 1;
+              }
+            } else if arg_idx < perm_args.len() {
+              if let Some(head) = &param_heads[i]
+                && get_expr_head(&perm_args[arg_idx]) != *head
+              {
+                break;
+              }
+              effective.push(perm_args[arg_idx].clone());
+              arg_idx += 1;
+            }
+          }
+
+          if effective.len() != total_count {
+            continue; // this permutation doesn't match
+          }
+          effective
+        };
+
+        // A non-linear pattern (`f[i_, i_]`) only matches when its repeated
+        // slots receive the same argument.
+        if !crate::evaluator::pattern_matching::repeated_params_agree(
+          params,
+          &effective_args,
+        ) {
+          continue;
+        }
+
+        // Check all conditions (if any) by substituting params with args and evaluating
+        let mut conditions_met = true;
+        // Collect bindings from structural pattern matches for body substitution
+        let mut structural_bindings: Vec<(String, Expr)> = Vec::new();
+        // An Orderless argument can satisfy a structural pattern in more than
+        // one way, and the rule's guard may accept only some of them:
+        // `f[u_*x_] := … /; x > 0` has to read `3 q` as `u -> q, x -> 3`. The
+        // matcher commits to a single reading, so when the guard turns that
+        // one down, offer it the other orderings before giving up on the rule.
+        // Reading 0 is the argument exactly as it stands, so a rule that fired
+        // before still fires the same way, on the same binding.
+        let readings =
+          orderless_reading_count(conditions, params, &effective_args);
+        for reading in 0..readings {
+          conditions_met = true;
+          structural_bindings.clear();
+          for cond_expr in conditions.iter().flatten() {
+            // Check for __StructuralPattern__ marker — use match_pattern instead of eval
+            if let Expr::FunctionCall {
+              name: marker_name,
+              args: marker_args,
+            } = cond_expr
+              && marker_name == "__StructuralPattern__"
+              && marker_args.len() == 2
+              && let Expr::Identifier(param_name) = &marker_args[0]
+            {
+              let pattern = &marker_args[1];
+              // Find the effective arg for this structural param
+              if let Some(idx) = params.iter().position(|p| p == param_name) {
+                if idx < effective_args.len() {
+                  // Canonicalize the expression to match the canonical pattern form
+                  // (e.g., BinaryOp::Divide → Times[..., Power[..., -1]])
+                  let reread =
+                    nth_orderless_reading(&effective_args[idx], reading);
+                  let canonical_arg =
+                    crate::evaluator::assignment::canonicalize_divide_in_expr(
+                      &reread,
+                    );
+                  // Push positional parameter bindings as context so inner
+                  // Orderless matching can check compatibility.
+                  let mut positional_ctx: Vec<(String, Expr)> = Vec::new();
+                  for (pi, param) in params.iter().enumerate() {
+                    if pi == idx
+                      || pi >= effective_args.len()
+                      || param.starts_with("__sp")
+                      || param.starts_with("_dv")
+                    {
+                      continue;
+                    }
+                    positional_ctx
+                      .push((param.clone(), effective_args[pi].clone()));
+                  }
+                  crate::evaluator::pattern_matching::push_match_context(
+                    &positional_ctx,
+                  );
+                  let match_result = structural_slot_match(
+                    &canonical_arg,
+                    pattern,
+                    blank_types[idx] >= 2,
+                  );
+                  crate::evaluator::pattern_matching::pop_match_context();
+                  if let Some(bindings) = match_result {
+                    // Check consistency: structural bindings must not conflict
+                    // with positional parameter bindings (skip the structural
+                    // param itself and synthetic names)
+                    let mut check = bindings.clone();
+                    let mut consistent = true;
+                    for (pi, param) in params.iter().enumerate() {
+                      if pi == idx
+                        || pi >= effective_args.len()
+                        || param.starts_with("__sp")
+                        || param.starts_with("_dv")
+                      {
+                        continue;
+                      }
+                      if !crate::evaluator::pattern_matching::merge_bindings(
+                        &mut check,
+                        vec![(param.clone(), effective_args[pi].clone())],
+                      ) {
+                        consistent = false;
+                        break;
+                      }
+                    }
+                    if !consistent {
+                      conditions_met = false;
+                      break;
+                    }
+                    structural_bindings.extend(bindings);
+                  } else {
+                    conditions_met = false;
+                    break;
+                  }
+                } else {
+                  conditions_met = false;
+                  break;
+                }
+              }
+              continue;
+            }
+            // Build combined bindings for simultaneous substitution
+            let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+            for (param, arg) in params.iter().zip(effective_args.iter()) {
+              all_bindings.push((param.as_str(), arg));
+            }
+            for (bind_name, bind_val) in &structural_bindings {
+              all_bindings.push((bind_name.as_str(), bind_val));
+            }
+            let substituted_cond = crate::syntax::substitute_pattern_bindings(
+              cond_expr,
+              &all_bindings,
+            );
+            // Evaluate the condition - it must return True. A `?test` whose
+            // test is a pure function can be stored as a FunctionCall whose
+            // head is the function's *string form* (e.g. `#1 > 0 & [arg]`),
+            // which doesn't reduce as a call; if the direct evaluation leaves
+            // it unapplied, re-parse the string form (which yields a proper
+            // application) and evaluate that — same approach MatchQ uses.
+            let mut cond_ok = matches!(
+              eval_dispatch_condition(
+                cond_expr,
+                &all_bindings,
+                &substituted_cond
+              ),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            );
+            if !cond_ok
+              && matches!(&substituted_cond, Expr::FunctionCall { name, .. }
+              if !is_identifier_like(name))
+            {
+              cond_ok = matches!(
+                crate::interpret(&expr_to_string(
+                  &substituted_cond
+                )),
+                Ok(ref s) if s == "True"
+              );
+            }
+            if !cond_ok {
+              conditions_met = false;
+              break;
+            }
+          }
+          if conditions_met {
+            break;
+          }
+        }
+        if !conditions_met {
+          continue; // try next permutation (or next overload if no more permutations)
+        }
+        // All conditions met - substitute parameters with arguments and evaluate body
+        // Use simultaneous substitution to prevent variable name leakage
+        promote_lists_for_substitution(&mut effective_args);
+        let substituted = {
+          let mut all_bindings: Vec<(&str, &Expr)> = Vec::new();
+          for (param, arg) in params.iter().zip(effective_args.iter()) {
+            all_bindings.push((param.as_str(), arg));
+          }
+          for (bind_name, bind_val) in &structural_bindings {
+            all_bindings.push((bind_name.as_str(), bind_val));
+          }
+          crate::syntax::substitute_pattern_bindings(body_expr, &all_bindings)
+        };
+        // Push option context if this overload uses OptionsPattern
+        let inline_opts2 = inline_opts_overloads
+          .as_ref()
+          .and_then(|v| v.get(overload_idx))
+          .and_then(|o| o.as_ref());
+        let opt_bindings =
+          collect_option_bindings(name, params, &effective_args, inline_opts2);
+        if let Some(ref bindings) = opt_bindings {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().push((name.to_string(), bindings.clone()));
+          });
+        }
+        // Tail-call: return body for the trampoline to evaluate.
+        // Catch Return[] at the function call boundary via local trampoline.
+        if is_identity_rewrite(name, args, &substituted) {
+          // The rule rewrites the call to itself (`g[x_] := g[x]`), which
+          // only `$IterationLimit` stops.
+          if opt_bindings.is_some() {
+            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+              ctx.borrow_mut().pop();
+            });
+          }
+          // A literal rule (every slot a `_dvN` literal) is a fixed point.
+          let literal = structural_bindings.is_empty()
+            && params.iter().all(|p| p.starts_with("_dv"));
+          return Ok(Some(if literal {
+            substituted
+          } else {
+            iteration_limit_exceeded()
+          }));
+        }
+        let mut body = substituted;
+        let result = loop {
+          match evaluate_expr_to_expr_inner(&body) {
+            Err(InterpreterError::TailCall(next)) => body = *next,
+            Err(InterpreterError::ReturnValue(val)) => break Ok(*val),
+            result => break result,
+          }
+        };
+        // Unwrap a Block/Module/While/For-produced literal `Return[val]`
+        // when it surfaces as the body's result of a user-defined function,
+        // matching wolframscript: `f[] := Block[{}, Return[42]]; f[]` ⇒ 42.
+        let result = match result {
+          Ok(Expr::FunctionCall {
+            name: ref n,
+            args: ref a,
+          }) if n == "Return" && a.len() == 1 => Ok(a[0].clone()),
+          other => other,
+        };
+        // Pop option context
+        if opt_bindings.is_some() {
+          crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().pop();
+          });
+        }
+        // If the body returned Condition[expr, test], evaluate the test
+        // as a guard: True → return expr, otherwise this overload fails.
+        {
+          let value = result?;
+          if let Some(value) = unwrap_condition_guards(value)? {
+            return Ok(Some(value));
+          }
+          // condition not met, try next permutation
+        }
+      } // end permutation loop
+      // No permutation matched; fall through to the next overload.
+    }
+  }
+  Ok(None)
+}
+
+/// A Flat and Orderless head's rules applied to a selection of its
+/// arguments: the first ordered selection, of the size of a fixed-arity
+/// rule, that one of the rules matches is replaced by the rule's value and
+/// the call is evaluated again with the remaining arguments.
+fn apply_user_overloads_to_subsets(
+  name: &str,
+  args: &[Expr],
+  overloads: &[crate::evaluator::symbol_values::FuncDef],
+  inline_opts_overloads: Option<&Vec<Option<Vec<Expr>>>>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let flat_orderless = |attr| {
+    get_builtin_attributes(name).contains(attr)
+      || crate::func_attrs_contains(name, attr)
+  };
+  if args.len() < 3
+    || !flat_orderless(Attributes::Flat)
+    || !flat_orderless(Attributes::Orderless)
+  {
+    return Ok(None);
+  }
+  let mut arities: Vec<usize> = overloads
+    .iter()
+    .filter(|(params, _, defaults, _, blank_types, _)| {
+      blank_types.iter().all(|&bt| bt < 2)
+        && defaults.iter().all(Option::is_none)
+        && params.len() >= 2
+        && params.len() < args.len()
+    })
+    .map(|(params, ..)| params.len())
+    .collect();
+  arities.sort_unstable();
+  arities.dedup();
+  for k in arities {
+    // Ordered selections of k of the n arguments, bounded so a long sum
+    // does not explode.
+    let mut chosen: Vec<usize> = Vec::with_capacity(k);
+    let mut tried = 0usize;
+    fn next_selection(chosen: &mut Vec<usize>, n: usize, k: usize) -> bool {
+      // Advance `chosen` to the next k-permutation of 0..n in
+      // lexicographic order.
+      loop {
+        if chosen.len() == k {
+          // Increment the last position.
+          while let Some(last) = chosen.pop() {
+            let mut next = last + 1;
+            while next < n && chosen.contains(&next) {
+              next += 1;
+            }
+            if next < n {
+              chosen.push(next);
+              break;
+            }
+          }
+          if chosen.is_empty() {
+            return false;
+          }
+        }
+        while chosen.len() < k {
+          let mut next = 0;
+          while chosen.contains(&next) {
+            next += 1;
+          }
+          if next >= n {
+            return false;
+          }
+          chosen.push(next);
+        }
+        return true;
+      }
+    }
+    let n = args.len();
+    while next_selection(&mut chosen, n, k) {
+      tried += 1;
+      if tried > 5000 {
+        break;
+      }
+      let selected: Vec<Expr> =
+        chosen.iter().map(|&i| args[i].clone()).collect();
+      if let Some(value) = apply_user_overloads(
+        name,
+        &selected,
+        overloads,
+        inline_opts_overloads,
+        false,
+      )? {
+        let mut rest: Vec<Expr> = (0..n)
+          .filter(|i| !chosen.contains(i))
+          .map(|i| args[i].clone())
+          .collect();
+        rest.push(value);
+        return evaluate_function_call_ast(name, &rest).map(Some);
+      }
+    }
+  }
+  Ok(None)
 }

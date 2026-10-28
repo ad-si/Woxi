@@ -5097,6 +5097,60 @@ mod anonymous_head_patterns {
 mod upvalues_for_arithmetic_shorthands {
   use super::*;
 
+  #[test]
+  fn pattern_test_in_an_upvalue_is_checked() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g /: c_?NumericQ + g[v_] := {c, v}; {g[1] + g[2], g[2] + 3, x + g[1]}"
+      )
+      .unwrap(),
+      "{g[1] + g[2], {3, 2}, x + g[1]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g /: f[c_Integer?Positive, g[v_]] := {c, v}; \
+         {f[-2, g[1]], f[2, g[1]], f[2.5, g[1]]}"
+      )
+      .unwrap(),
+      "{f[-2, g[1]], {2, 1}, f[2.5, g[1]]}"
+    );
+  }
+
+  #[test]
+  fn flat_orderless_rules_combine_some_of_the_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g /: g[a_] + g[b_] := g[a + b]; {g[1] + g[2] + g[3], x + g[1] + g[2]}"
+      )
+      .unwrap(),
+      "{g[6], x + g[3]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[h, {Flat, Orderless}]; h[g[a_], g[b_]] := g[a + b]; \
+         {h[g[1], g[2], g[3]], h[x, g[1], g[2]]}"
+      )
+      .unwrap(),
+      "{g[6], h[x, g[3]]}"
+    );
+    // Uncertainty arithmetic as a Demonstration defines it.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PlusMinus /: c_?NumericQ * PlusMinus[v_, u_] := PlusMinus[c v, c u]; \
+         PlusMinus /: PlusMinus[v1_, u1_] + PlusMinus[v2_, u2_] := \
+           PlusMinus[v1 + v2, Sqrt[u1^2 + u2^2]]; \
+         2 * PlusMinus[1, 0.1] + 3 * PlusMinus[2, 0.2] + PlusMinus[0.5, 0.5]"
+      )
+      .unwrap(),
+      "8.5 ± 0.806225774829855"
+    );
+  }
+
   const MYTAG: &str = "mytag /: mytag[a_] + mytag[b_] := mytag[a + b]\n\
                        mytag /: i_Integer mytag[a_] := mytag[a i]\n";
 

@@ -2540,6 +2540,21 @@ mod plus_minus {
   fn binary() {
     assert_eq!(interpret("PlusMinus[a, b]").unwrap(), "a \u{00B1} b");
   }
+
+  #[test]
+  fn operand_parentheses() {
+    // `a ± b` binds like `+`, `±a` like a unary minus (wolframscript).
+    assert_eq!(
+      interpret(
+        "{2*PlusMinus[a, b], PlusMinus[a, b]^2, PlusMinus[a, b] + c, \
+         -PlusMinus[a, b], 2*PlusMinus[a], PlusMinus[a]^2, x + PlusMinus[a], \
+         2*MinusPlus[a, b]}"
+      )
+      .unwrap(),
+      "{2*(a ± b), (a ± b)^2, c + (a ± b), -(a ± b), 2*±a, (±a)^2, x + ±a, \
+       2*(a ∓ b)}"
+    );
+  }
 }
 
 mod minus_plus {

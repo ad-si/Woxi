@@ -5931,6 +5931,21 @@ gives `0.6399999999999999`. Partial derivatives (`Derivative[1, 0, 0][f]`)
 can come out a few ULP away from WL's value, so a mixed derivative that WL
 returns as exactly `0.` can be about `1*^-16` in Woxi.
 
+### Symbolic values: `Interpolation` and `Fit` write their results differently
+
+```sh
+wolframscript -code 'Interpolation[{{1, a}, {2, b}, {3, c}, {5, d}}, InterpolationOrder -> 1][2.5]'
+# 0.5*(b - c) + c
+woxi eval '…same…'   # 0.5*b + 0.5*c
+```
+
+Values that are not numbers, such as symbols or `PlusMinus[v, u]`, are
+interpolated as a linear combination of the values. Woxi writes it as each
+value times its weight; wolframscript keeps the Newton divided-difference
+form. `Fit` with such responses uses wolframscript's form, `s_j (P_j1 y_1 +
+…)` with unit-length design columns, but the pseudo-inverse's last digits
+(and tiny entries such as `-2.45*^-16 b` versus `2.2*^-16 b`) differ.
+
 ### `NDSolve` ignores the `"FixedStep"` sub-method
 
 `Method -> {"FixedStep", Method -> "ExplicitEuler"}` (or any other

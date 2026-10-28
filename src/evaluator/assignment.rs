@@ -5761,7 +5761,12 @@ pub fn tag_set_delayed_ast(
       };
       if is_pattern {
         let (pat_name, head, _blank_type) = extract_pattern_info(arg);
-        if pat_name.is_empty() && head.is_none() {
+        // A `?test` is part of what the argument must match: such a pattern
+        // takes the structural path too, or the test would be dropped and
+        // `c_?NumericQ` would accept anything.
+        let has_test = matches!(arg, Expr::PatternTest { .. })
+          || matches!(arg, Expr::FunctionCall { name, .. } if name == "PatternTest");
+        if (pat_name.is_empty() && head.is_none()) || has_test {
           let param_name = format!("_up{i}");
           if crate::evaluator::pattern_matching::contains_pattern(arg) {
             // A structural pattern — `UObject[s_Symbol][k_String]` in
