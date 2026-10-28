@@ -7307,6 +7307,23 @@ mod find_minimum {
 mod dt {
   use super::*;
 
+  // Dt with a variable threads over an equation, like the one-argument form.
+  #[test]
+  fn threads_over_equations() {
+    assert_eq!(
+      interpret("Dt[x^2 + y == 1, x]").unwrap(),
+      "2*x + Dt[y, x] == 0"
+    );
+    assert_eq!(
+      interpret("Dt[x^3 == y, {x, 2}]").unwrap(),
+      "6*x == Dt[y, {x, 2}]"
+    );
+    assert_eq!(
+      interpret("Solve[Dt[z^2*(1 + z^2) == 0, z], z]").unwrap(),
+      "{{z -> 0}, {z -> -I/Sqrt[2]}, {z -> I/Sqrt[2]}}"
+    );
+  }
+
   #[test]
   fn constant() {
     assert_eq!(interpret("Dt[5, x]").unwrap(), "0");

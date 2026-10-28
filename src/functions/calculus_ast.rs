@@ -17691,6 +17691,29 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Dt threads over an equation: Dt[a == b, x] is Dt[a, x] == Dt[b, x].
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = &args[0]
+    && operators
+      .iter()
+      .all(|op| matches!(op, crate::syntax::ComparisonOp::Equal))
+  {
+    let operands = operands
+      .iter()
+      .map(|o| {
+        let mut sides = vec![o.clone()];
+        sides.extend_from_slice(&args[1..]);
+        dt_ast(&sides)
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands,
+      operators: operators.clone(),
+    });
+  }
+
   // Dt[expr, x1, x2, …] — differentiate against each spec in turn.
   if args.len() > 2 {
     let inner = dt_ast(&[args[0].clone(), args[1].clone()])?;
