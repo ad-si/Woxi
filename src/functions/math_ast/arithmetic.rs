@@ -2331,7 +2331,22 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     // Group by string representation of base
     let mut index: BTreeMap<String, usize> = BTreeMap::new();
     for (term, (c, base)) in terms.iter().zip(decomposed) {
-      let key = expr_to_string(&term_base_expr(base));
+      let factors = product_factors(base);
+      let key = if factors.iter().any(|f| data_factor_hash(f).is_some()) {
+        // A factor carrying a large table (an InterpolatingFunction's
+        // data, say) is keyed by its structure: printing it for every
+        // term was most of the cost of the sum.
+        factors
+          .iter()
+          .map(|f| match data_factor_hash(f) {
+            Some(h) => format!("\u{F8FF}{h:x}"),
+            None => expr_to_string(f),
+          })
+          .collect::<Vec<_>>()
+          .join("\u{1}")
+      } else {
+        expr_to_string(&term_base_expr(base))
+      };
       let found = index.get(&key).copied();
       let idx = add_term(found, c, base, term);
       index.insert(key, idx);
@@ -2437,6 +2452,48 @@ fn prints_injectively(e: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// For a large factor built only from atoms, lists and calls — whose
+/// printed forms are equal exactly when the factors are structurally equal
+/// — a hash of its structure; `None` for small or other factors.
+fn data_factor_hash(e: &Expr) -> Option<u64> {
+  use std::hash::{Hash, Hasher};
+  fn go(
+    e: &Expr,
+    h: &mut std::collections::hash_map::DefaultHasher,
+    leaves: &mut usize,
+  ) -> bool {
+    *leaves += 1;
+    match e {
+      Expr::Integer(n) => (0u8, n).hash(h),
+      Expr::Real(x) => {
+        // -0. prints as 0.
+        let x = if *x == 0.0 { 0.0 } else { *x };
+        (1u8, x.to_bits()).hash(h);
+      }
+      Expr::Identifier(s) => (2u8, s).hash(h),
+      Expr::Constant(s) => (3u8, s).hash(h),
+      Expr::String(s) => (4u8, s).hash(h),
+      Expr::List(items) => {
+        (5u8, items.len()).hash(h);
+        return items.iter().all(|i| go(i, h, leaves));
+      }
+      Expr::FunctionCall { name, args } => {
+        (6u8, name, args.len()).hash(h);
+        return args.iter().all(|a| go(a, h, leaves));
+      }
+      Expr::CurriedCall { func, args } => {
+        (7u8, args.len()).hash(h);
+        return go(func, h, leaves) && args.iter().all(|a| go(a, h, leaves));
+      }
+      _ => return false,
+    }
+    true
+  }
+  let mut h = std::collections::hash_map::DefaultHasher::new();
+  let mut leaves = 0;
+  (go(e, &mut h, &mut leaves) && leaves > 100).then(|| h.finish())
 }
 
 /// A hash of a factor list consistent with `factors_equal`.

@@ -23752,3 +23752,24 @@ mod d_with_symbolic_exponents {
     assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
   }
 }
+
+mod sums_over_interpolating_functions {
+  use super::*;
+
+  #[test]
+  fn like_terms_with_large_data_collect_quickly() {
+    // Regression: like terms were grouped by printed form, so every term
+    // printed the function's whole data table.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{i, N[i^2]}, {i, 400}]]; \
+         s = Sum[k*f[t] + 0.5*k^2*f[t], {k, 300}]; \
+         {Length[s] == 2, s /. t -> 2}"
+      )
+      .unwrap(),
+      "{True, 1.82707*^7}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}
