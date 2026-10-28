@@ -5905,7 +5905,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // boxes out and embed the result centred on the anchor.
   if frame_opts.is_empty()
     && let Expr::String(s) = content
-    && has_stacked_inline_box(s)
+    && has_script_stacked_inline_box(s)
     && let Some(boxes) = inline_box_string_to_box_expr(s)
     && let Some((x, y, scaled)) = match args.get(1) {
       Some(pos) => expr_to_anchor(pos),
@@ -17934,6 +17934,20 @@ fn has_stacked_inline_box(s: &str) -> bool {
     ]
     .iter()
     .any(|head| s.contains(head))
+}
+
+/// Whether a string's inline box notation stacks an over/underscript (an
+/// arrow with its rate above it) and nothing else vertical. Such a label has
+/// no faithful one-line reading, whereas fractions and roots keep their
+/// linear `(a)/(b)` text in a graphic.
+fn has_script_stacked_inline_box(s: &str) -> bool {
+  has_stacked_inline_box(s)
+    && ["OverscriptBox", "UnderscriptBox", "UnderoverscriptBox"]
+      .iter()
+      .any(|head| s.contains(head))
+    && !["FractionBox", "SqrtBox", "RadicalBox"]
+      .iter()
+      .any(|head| s.contains(head))
 }
 
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
