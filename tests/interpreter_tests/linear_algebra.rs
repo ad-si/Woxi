@@ -4604,16 +4604,105 @@ mod linear_model_fit {
     assert!((val - 3.0).abs() < 1e-10);
   }
 
+  // Data that cannot form a numeric design matrix, or no data at all,
+  // leaves the call unevaluated with wolframscript's message.
   #[test]
-  fn non_numeric_y_names_linear_model_fit_in_error() {
-    // A y-coordinate that isn't a number should be reported against the
-    // function the user actually called, not against the internal `Fit`
-    // helper the two share.
-    let err =
-      interpret(r#"LinearModelFit[{{1, "a"}, {2, "b"}}, x, x]"#).unwrap_err();
+  fn non_numeric_or_empty_data_emits_messages() {
+    for (input, tag) in [
+      ("LinearModelFit[{{1, b}, {2, c}}, x, x]", "desmat"),
+      ("LinearModelFit[{a, 1, 2}, x, x]", "desmat"),
+      ("LinearModelFit[{{1, a}, {2, 3}}, x, x]", "desmat"),
+      ("LinearModelFit[{}, x, x]", "notdata"),
+      ("LinearModelFit[d, x, x]", "notdata"),
+    ] {
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, input, "result mismatch for {input}");
+      let expected = format!("LinearModelFit::{tag}:");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&expected)),
+        "expected {tag} for {input}, got {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  // A data point holding a `Missing[…]` is left out of the fit; a vector
+  // keeps the positions of the remaining responses as their x values.
+  #[test]
+  fn missing_data_points_are_dropped() {
+    assert_eq!(
+      interpret(
+        "Rationalize[LinearModelFit[{Missing[], 1, 2}, x, x][\"BestFitParameters\"], \
+         10^-6]"
+      )
+      .unwrap(),
+      "{-1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Rationalize[LinearModelFit[{{1, Missing[]}, {2, 3}, {3, 5}, {4, 6}}, x, \
+         x][\"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "{1/6, 3/2}"
+    );
+    // One-element rows are responses too.
+    assert_eq!(
+      interpret(
+        "Rationalize[LinearModelFit[{{1}, {2}}, x, x][\"BestFitParameters\"], 10^-6]"
+      )
+      .unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  // Variables need not be symbols.
+  #[test]
+  fn subscripted_variables() {
+    assert_eq!(
+      interpret(
+        "fm = LinearModelFit[{{1, 2, 3}, {2, 3, 5}, {3, 5, 6}, {4, 4, 9}}, \
+         {Subscript[x, 1], Subscript[x, 1] Subscript[x, 2]}, \
+         {Subscript[x, 1], Subscript[x, 2]}]; \
+         {Rationalize[fm[\"BestFitParameters\"], 10^-6], \
+         fm[\"IndependentVariables\"], Rationalize[fm[2, 3], 10^-6]}"
+      )
+      .unwrap(),
+      "{{26/107, 341/107, -27/107}, {Subscript[x, 1], Subscript[x, 2]}, 546/107}"
+    );
+  }
+
+  // A model takes one value per independent variable: a list is not
+  // threaded over, and a wrong count is FittedModel::argrx.
+  #[test]
+  fn fitted_model_application_arity() {
+    assert_eq!(
+      interpret(
+        "fm = LinearModelFit[{{1, 2, 3}, {2, 3, 5}, {3, 5, 6}, {4, 4, 9}}, \
+         {x, y}, {x, y}]; Rationalize[fm[2, 3], 10^-6]"
+      )
+      .unwrap(),
+      "175/36"
+    );
+    let r = woxi::interpret_with_stdout(
+      "fm = LinearModelFit[{1, 2, 4}, x, x]; Head[fm[1, 2]] === FittedModel[fm[[1]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "True");
     assert!(
-      err.to_string().contains("LinearModelFit:"),
-      "error should be tagged with the calling function's name, got: {err}"
+      r.warnings.iter().any(|w| w.contains(
+        "FittedModel::argrx: FittedModel[\u{2026}] called with 2 arguments; \
+         1 arguments are expected."
+      )),
+      "{:?}",
+      r.warnings
+    );
+    assert_eq!(
+      interpret(
+        "fm = LinearModelFit[{1, 2, 4}, x, x]; Head[fm[{1, 2}]] === FittedModel[fm[[1]]]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 

@@ -8263,6 +8263,116 @@ fn triangularize_ast(args: &[Expr], upper: bool) -> Expr {
 /// - Queried for properties: `lm["BestFitParameters"]`, `lm["FitResiduals"]`, `lm["RSquared"]`
 /// - Converted with Normal: `Normal[lm]` returns the fitted expression
 pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return linear_model_fit_core(args);
+  }
+  let unevaluated_with = |tag: &str, text: &str| {
+    crate::emit_message(&format!("LinearModelFit::{tag}: {text}"));
+    Ok(unevaluated("LinearModelFit", args))
+  };
+  let rows = match &args[0] {
+    Expr::List(rows) => rows.as_ref(),
+    _ => &[],
+  };
+  if rows.is_empty() {
+    return unevaluated_with(
+      "notdata",
+      "The first argument is not a vector, a matrix or a list containing a \
+       design matrix and response vector.",
+    );
+  }
+  // A vector of responses is the matrix `{{1, y1}, {2, y2}, …}`; then every
+  // row holding a `Missing[…]` is left out, as wolframscript does
+  // (`{Missing[], 1, 2}` fits `{{2, 1}, {3, 2}}`).
+  let is_missing = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Missing");
+  // One-element rows (`{{y1}, {y2}, …}`) are responses as well.
+  let responses: Option<Vec<&Expr>> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(items) if items.len() == 1 => Some(&items[0]),
+      Expr::List(_) => None,
+      other => Some(other),
+    })
+    .collect();
+  let rows: Vec<Expr> = if let Some(responses) = responses {
+    responses
+      .into_iter()
+      .enumerate()
+      .map(|(i, y)| {
+        Expr::List(vec![Expr::Integer(i as i128 + 1), y.clone()].into())
+      })
+      .collect()
+  } else {
+    rows.to_vec()
+  };
+  let rows: Vec<Expr> = rows
+    .into_iter()
+    .filter(|row| match row {
+      Expr::List(items) => !items.iter().any(is_missing),
+      other => !is_missing(other),
+    })
+    .collect();
+  let numeric = |e: &Expr| try_eval_to_f64(e).is_some();
+  if rows.iter().any(|row| match row {
+    Expr::List(items) => !items.iter().all(numeric),
+    other => !numeric(other),
+  }) {
+    return unevaluated_with(
+      "desmat",
+      "Unable to construct a numeric design matrix. Nominal variables may \
+       need to be specified, or non-numeric entries for numeric variables \
+       may need to be replaced.",
+    );
+  }
+  // A variable need not be a symbol (`Subscript[x, 1]`): each other one is
+  // fitted as a placeholder symbol and put back into the model afterwards.
+  let vars: Vec<Expr> = match &args[2] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut basis = args[1].clone();
+  let mut placeholders: Vec<(String, Expr)> = Vec::new();
+  let new_vars: Vec<Expr> = vars
+    .iter()
+    .enumerate()
+    .map(|(k, v)| {
+      if matches!(v, Expr::Identifier(_)) {
+        return v.clone();
+      }
+      let name = format!("Woxi`LinearModelVariable{}", k + 1);
+      basis = crate::functions::polynomial_ast::solve::substitute_expr(
+        &basis,
+        v,
+        &Expr::Identifier(name.clone()),
+      );
+      placeholders.push((name.clone(), v.clone()));
+      Expr::Identifier(name)
+    })
+    .collect();
+  let mut core_args = vec![
+    Expr::List(rows.into()),
+    basis,
+    if matches!(&args[2], Expr::List(_)) {
+      Expr::List(new_vars.into())
+    } else {
+      new_vars
+        .into_iter()
+        .next()
+        .unwrap_or(Expr::List(vec![].into()))
+    },
+  ];
+  core_args.extend(args[3..].iter().cloned());
+  let fitted = linear_model_fit_core(&core_args)?;
+  if matches!(&fitted, Expr::FunctionCall { name, .. } if name == "LinearModelFit")
+  {
+    return Ok(unevaluated("LinearModelFit", args));
+  }
+  Ok(placeholders.iter().fold(fitted, |model, (name, var)| {
+    crate::syntax::substitute_variable(&model, name, var)
+  }))
+}
+
+fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 1 {
     return linear_model_fit_design_matrix_form(&args[0]);
   }
@@ -9708,11 +9818,17 @@ pub fn evaluate_fitted_model(
   model_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if model_args.len() != 1 || call_args.len() != 1 {
+  if model_args.len() != 1 || call_args.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "FittedModel: invalid call".into(),
     ));
   }
+  let stay_unevaluated = || {
+    Ok(Expr::CurriedCall {
+      func: Box::new(call("FittedModel", model_args.to_vec())),
+      args: call_args.to_vec(),
+    })
+  };
 
   let Expr::Association(assoc) = &model_args[0] else {
     return Err(InterpreterError::EvaluationError(
@@ -9755,34 +9871,60 @@ pub fn evaluate_fitted_model(
     return Ok(Expr::List(results.into()));
   }
 
-  // Otherwise, evaluate the model at the given point
+  // Otherwise, evaluate the model at the given point: one value per
+  // independent variable. A list of points is not threaded over, and a
+  // wrong argument count is FittedModel::argrx, both left unevaluated as in
+  // wolframscript.
   let mut fitted_expr = None;
-  let mut var_name = None;
+  let mut variables: Option<Vec<Expr>> = None;
   for (key, val) in assoc {
     if let Expr::String(k) = key {
-      if k == "FittedExpression" {
-        fitted_expr = Some(val.clone());
-      } else if k == "VariableName"
-        && let Expr::String(v) = val
-      {
-        var_name = Some(v.clone());
+      match (k.as_str(), val) {
+        ("FittedExpression", _) => fitted_expr = Some(val.clone()),
+        ("IndependentVariables", Expr::List(vars)) => {
+          variables = Some(vars.to_vec());
+        }
+        ("VariableName", Expr::String(v)) if variables.is_none() => {
+          variables = Some(vec![Expr::Identifier(v.clone())]);
+        }
+        _ => {}
       }
     }
   }
-
   let fitted_expr = fitted_expr.ok_or_else(|| {
     InterpreterError::EvaluationError(
       "FittedModel: missing FittedExpression".into(),
     )
   })?;
-  let var_name = var_name.ok_or_else(|| {
+  let variables = variables.ok_or_else(|| {
     InterpreterError::EvaluationError(
       "FittedModel: missing VariableName".into(),
     )
   })?;
-
+  if call_args.iter().any(|a| matches!(a, Expr::List(_))) {
+    return stay_unevaluated();
+  }
+  if call_args.len() != variables.len() {
+    crate::emit_message(&format!(
+      "FittedModel::argrx: FittedModel[\u{2026}] called with {} arguments; \
+       {} arguments are expected.",
+      call_args.len(),
+      variables.len()
+    ));
+    return stay_unevaluated();
+  }
   let substituted =
-    crate::syntax::substitute_variable(&fitted_expr, &var_name, &call_args[0]);
+    variables
+      .iter()
+      .zip(call_args)
+      .fold(fitted_expr, |e, (var, value)| match var {
+        Expr::Identifier(name) => {
+          crate::syntax::substitute_variable(&e, name, value)
+        }
+        other => crate::functions::polynomial_ast::solve::substitute_expr(
+          &e, other, value,
+        ),
+      });
   evaluate_expr_to_expr(&substituted)
 }
 

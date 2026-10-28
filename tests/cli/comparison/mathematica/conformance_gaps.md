@@ -2222,6 +2222,12 @@ For a **rank-deficient** design wolframscript is not minimum-norm:
 0.7546 where the minimum-norm solution has norm 0.6134. Both interpolate;
 WL switched to some other regularization there. **Not reproducible.**
 
+`Fit` with a symbolic data value fits symbolically in wolframscript
+(`Fit[{a, 1, 2}, {1, x}, x]` is linear in `a`); Woxi fails with "could not
+convert data value to a number". `LinearModelFit` gives
+`LinearModelFit::desmat` for such data in both. `LinearModelFit[…, Weights
+-> w]` stays unevaluated in Woxi.
+
 ### Constrained and weighted fitting find different local minima
 
 On a non-convex constrained problem the two engines land on *different valid*
