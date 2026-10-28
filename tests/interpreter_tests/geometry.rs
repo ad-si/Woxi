@@ -3687,6 +3687,45 @@ mod cantor_mesh {
 mod planar_angle {
   use super::*;
 
+  // The kind of angle: the interior one, its supplement, or the turn in a
+  // given sense (in [0, 2 Pi)); another kind stays unevaluated.
+  #[test]
+  fn kinds() {
+    for (input, expected) in [
+      (
+        "PlanarAngle[{{1, 0}, {0, 0}, {0, 1}}, \"Counterclockwise\"]",
+        "Pi/2",
+      ),
+      (
+        "PlanarAngle[{{0, 1}, {0, 0}, {1, 0}}, \"Counterclockwise\"]",
+        "(3*Pi)/2",
+      ),
+      (
+        "PlanarAngle[{{0, 1}, {0, 0}, {1, 0}}, \"Clockwise\"]",
+        "Pi/2",
+      ),
+      (
+        "PlanarAngle[{{1, 0}, {0, 0}, {0, 1}}, \"Interior\"]",
+        "Pi/2",
+      ),
+      (
+        "PlanarAngle[{{1, 0}, {0, 0}, {-1, -1}}, \"Exterior\"]",
+        "Pi/4",
+      ),
+      (
+        "PlanarAngle[{0, 0} -> {{0, 1}, {1, 0}}, \"Counterclockwise\"]",
+        "(3*Pi)/2",
+      ),
+      (
+        "PlanarAngle[{{1, 0}, {0, 0}, {0, 1}}, \"Foo\"]",
+        "PlanarAngle[{{1, 0}, {0, 0}, {0, 1}}, Foo]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn right_angle() {
     assert_eq!(

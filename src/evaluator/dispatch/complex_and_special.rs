@@ -1545,29 +1545,35 @@ pub fn dispatch_complex_and_special(
     // PlanarAngle is a planar (2-D) construct: every point must be a pair, and
     // higher-dimensional or malformed input stays unevaluated (matching
     // wolframscript, which leaves e.g. 3-D points unevaluated).
-    "PlanarAngle" if args.len() == 1 => {
+    "PlanarAngle" if args.len() == 1 || args.len() == 2 => {
       let is_2d = |e: &Expr| matches!(e, Expr::List(c) if c.len() == 2);
-      // PlanarAngle[{q1, p, q2}] — angle at the middle vertex p.
-      if let Expr::List(pts) = &args[0]
-        && pts.len() == 3
-        && pts.iter().all(&is_2d)
-      {
-        return Some(compute_planar_angle(&pts[0], &pts[1], &pts[2]));
-      }
-      // PlanarAngle[p -> {q1, q2}] — angle at p between the half-lines through
-      // q1 and q2.
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = &args[0]
-        && is_2d(pattern)
-        && let Expr::List(rays) = replacement.as_ref()
-        && rays.len() == 2
-        && rays.iter().all(is_2d)
-      {
-        return Some(compute_planar_angle(&rays[0], pattern, &rays[1]));
-      }
-      return Some(Ok(unevaluated("PlanarAngle", args)));
+      // PlanarAngle[{q1, p, q2}] — angle at the middle vertex p;
+      // PlanarAngle[p -> {q1, q2}] — angle at p between the half-lines
+      // through q1 and q2.
+      let points = match &args[0] {
+        Expr::List(pts) if pts.len() == 3 && pts.iter().all(&is_2d) => {
+          Some((pts[0].clone(), pts[1].clone(), pts[2].clone()))
+        }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if is_2d(pattern) => match replacement.as_ref() {
+          Expr::List(rays) if rays.len() == 2 && rays.iter().all(is_2d) => {
+            Some((rays[0].clone(), (**pattern).clone(), rays[1].clone()))
+          }
+          _ => None,
+        },
+        _ => None,
+      };
+      let Some((q1, p, q2)) = points else {
+        return Some(Ok(unevaluated("PlanarAngle", args)));
+      };
+      return Some(match args.get(1) {
+        None => compute_planar_angle(&q1, &p, &q2),
+        Some(Expr::String(kind)) => planar_angle_of_kind(&q1, &p, &q2, kind)
+          .map(|r| r.unwrap_or_else(|| unevaluated("PlanarAngle", args))),
+        Some(_) => Ok(unevaluated("PlanarAngle", args)),
+      });
     }
     // PolygonCoordinates[poly] — the vertices of a 2-D polygon in canonical
     // (sorted) order. Degenerate (zero-area / collinear) polygons and non-2-D
@@ -13160,6 +13166,53 @@ fn compute_region_equal(args: &[Expr]) -> Expr {
 
 /// Compute PlanarAngle[{p1, vertex, p2}] — the angle at vertex between rays to p1 and p2.
 /// Uses ArcCos of the dot product divided by the product of magnitudes.
+/// `PlanarAngle[{q1, p, q2}, kind]`: the `"Interior"` angle (in [0, Pi]),
+/// its `"Exterior"` supplement, or the angle turned from `q1` to `q2`
+/// `"Counterclockwise"` or `"Clockwise"` (in [0, 2 Pi)). `None` for another
+/// kind, or when the sense of the turn cannot be decided.
+fn planar_angle_of_kind(
+  q1: &Expr,
+  p: &Expr,
+  q2: &Expr,
+  kind: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let interior = compute_planar_angle(q1, p, q2)?;
+  let pi = Expr::Constant("Pi".into());
+  match kind {
+    "Interior" => Ok(Some(interior)),
+    "Exterior" => Ok(Some(ev(&plus(vec![pi, neg(interior)]))?)),
+    "Counterclockwise" | "Clockwise" => {
+      let v1 = ev(&plus(vec![q1.clone(), neg(p.clone())]))?;
+      let v2 = ev(&plus(vec![q2.clone(), neg(p.clone())]))?;
+      let (Expr::List(a), Expr::List(b)) = (&v1, &v2) else {
+        return Ok(None);
+      };
+      let cross = ev(&plus(vec![
+        times(vec![a[0].clone(), b[1].clone()]),
+        neg(times(vec![a[1].clone(), b[0].clone()])),
+      ]))?;
+      let Some(cross) = crate::functions::math_ast::try_eval_to_f64(&cross)
+      else {
+        return Ok(None);
+      };
+      // The interior angle is the turn when it goes the asked way.
+      let same_sense = if kind == "Counterclockwise" {
+        cross >= 0.0
+      } else {
+        cross <= 0.0
+      };
+      if same_sense {
+        Ok(Some(interior))
+      } else {
+        let two_pi = times(vec![Expr::Integer(2), pi]);
+        Ok(Some(ev(&plus(vec![two_pi, neg(interior)]))?))
+      }
+    }
+    _ => Ok(None),
+  }
+}
+
 fn compute_planar_angle(
   p1: &Expr,
   vertex: &Expr,
