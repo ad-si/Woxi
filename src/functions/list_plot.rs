@@ -1945,6 +1945,37 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
+/// Wrap a log-scaled list plot's SVG together with its series, so `Show`
+/// can merge it with other graphics (an `Epilog`, a second plot) and keep
+/// the logarithmic axes instead of treating it as an opaque rendering.
+fn log_plot_result(
+  svg: String,
+  series: &[Vec<(f64, f64)>],
+  ranges: ((f64, f64), (f64, f64)),
+  parsed: &ParsedOptions,
+  args: &[Expr],
+) -> Expr {
+  let opts = &parsed.opts;
+  let mut source = build_plot_source(
+    series,
+    &opts.plot_style,
+    ranges.0,
+    ranges.1,
+    (opts.svg_width, opts.svg_height),
+    &[false],
+    opts.filling,
+    opts.filling_style,
+    crate::functions::plot::explicit_options(args),
+  );
+  source.log_x = opts.log_x;
+  source.log_y = opts.log_y;
+  crate::functions::plot::apply_markers_to_source(
+    &mut source,
+    &opts.plot_markers,
+  );
+  crate::graphics_result_with_source(svg, source)
+}
+
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
@@ -1966,7 +1997,13 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(crate::graphics_result(svg))
+  Ok(log_plot_result(
+    svg,
+    &filtered,
+    (x_range, y_range),
+    &parsed,
+    args,
+  ))
 }
 
 /// ListLogLogPlot: both axes log10 scale
@@ -1997,7 +2034,13 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(crate::graphics_result(svg))
+  Ok(log_plot_result(
+    svg,
+    &filtered,
+    (x_range, y_range),
+    &parsed,
+    args,
+  ))
 }
 
 /// ListLogLinearPlot: x-axis is log10 scale
@@ -2023,7 +2066,13 @@ pub fn list_log_linear_plot_ast(
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(crate::graphics_result(svg))
+  Ok(log_plot_result(
+    svg,
+    &filtered,
+    (x_range, y_range),
+    &parsed,
+    args,
+  ))
 }
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
