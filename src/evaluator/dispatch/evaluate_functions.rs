@@ -4966,12 +4966,40 @@ fn evaluate_function_call_ast_inner(
       Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
     };
     let mut primitives: Vec<Expr> = Vec::new();
-    // Track: a shallow rectangle spanning the full scale.
-    primitives.push(call("Rectangle", vec![pt(0.0, 0.0), pt(1.0, 0.2)]));
-    // One marker bar per value, at its normalized position along the track.
-    if let (Some(lo), Some(hi)) = (lo, hi)
-      && hi != lo
+    // A single value fills the bar from `min` up to the value, in the
+    // `GaugeStyle` colour; several values are marked on the bare track.
+    let single = !matches!(&args[0], Expr::List(_));
+    let normalized = match (lo, hi) {
+      (Some(lo), Some(hi)) if hi != lo => Some((lo, hi)),
+      _ => None,
+    };
+    if single
+      && let Some((lo, hi)) = normalized
+      && let Some(&v) = values.first()
     {
+      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+      if let Some(style) = gauge_style(args) {
+        primitives.push(style);
+      }
+      primitives.push(call("Rectangle", vec![pt(0.0, 0.0), pt(t, 0.2)]));
+      primitives.push(call1("GrayLevel", Expr::Integer(0)));
+    }
+    // Track: an outline spanning the full scale.
+    primitives.push(call1(
+      "Line",
+      Expr::List(
+        vec![
+          pt(0.0, 0.0),
+          pt(1.0, 0.0),
+          pt(1.0, 0.2),
+          pt(0.0, 0.2),
+          pt(0.0, 0.0),
+        ]
+        .into(),
+      ),
+    ));
+    // One marker bar per value, at its normalized position along the track.
+    if !single && let Some((lo, hi)) = normalized {
       for v in values {
         let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
         primitives.push(call1(
@@ -5009,6 +5037,9 @@ fn evaluate_function_call_ast_inner(
       && hi != lo
     {
       let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+      if let Some(style) = gauge_style(args) {
+        primitives.push(style);
+      }
       primitives.push(call("Disk", vec![pt(0.0, 0.0), Expr::Real(0.2)]));
       primitives.push(call(
         "Rectangle",
@@ -11842,6 +11873,19 @@ fn gauge_range(range_arg: Option<&Expr>) -> (Option<f64>, Option<f64>) {
     ),
     _ => (None, None),
   }
+}
+
+/// The `GaugeStyle` colour of a gauge call, if one was given.
+fn gauge_style(args: &[Expr]) -> Option<Expr> {
+  args.iter().skip(1).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "GaugeStyle") => {
+      Some((**replacement).clone())
+    }
+    _ => None,
+  })
 }
 
 /// The option rules of a gauge call — everything after the value that is a
