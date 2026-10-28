@@ -3476,6 +3476,20 @@ mod graphics {
         assert!(!svg.contains("Grid["), "{svg}");
       }
 
+      // A grid cell `Row[{TraditionalForm["\\!\\(\\*…\\)"], " = ", value}]`
+      // typesets the stacked inline boxes (a root over the whole radicand)
+      // instead of flattening them into a line of text.
+      #[test]
+      fn grid_row_with_stacked_traditional_string_typesets_boxes() {
+        let svg = export_svg(
+          "Grid[{{Row[{TraditionalForm[\"\\!\\(\\*FractionBox[\\(b\\ c\\), \
+           SqrtBox[\\(x + y\\)]]\\)\"], \" = \", 2.5}]}}]",
+        );
+        assert!(svg.contains("<line"), "fraction bar missing: {svg}");
+        assert!(svg.contains("<path"), "root sign missing: {svg}");
+        assert!(!svg.contains("b c/"), "flattened to text: {svg}");
+      }
+
       // A framed plot with `AspectRatio -> Full` fills the whole
       // `ImageSize` (less `ImagePadding`) instead of hugging the shape of
       // a tall, narrow plot range.

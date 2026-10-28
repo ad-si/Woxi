@@ -18145,7 +18145,9 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
         // equation like `[menu] x + [menu] = y`).
         "Row"
           if !args.is_empty()
-            && (contains_body_button(cell) || contains_popup_menu(cell)) =>
+            && (contains_body_button(cell)
+              || contains_popup_menu(cell)
+              || contains_stacked_traditional_string(cell)) =>
         {
           row_to_svg(&args)?
         }
@@ -29453,6 +29455,20 @@ fn contains_popup_menu(expr: &Expr) -> bool {
     }
     Expr::List(items) => items.iter().any(contains_popup_menu),
     Expr::CompoundExpr(items) => items.iter().any(contains_popup_menu),
+    _ => false,
+  }
+}
+
+/// Whether `expr` has a `TraditionalForm["…"]` holding a string whose inline
+/// box notation stacks material (a fraction or root) anywhere inside it.
+fn contains_stacked_traditional_string(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      (name == "TraditionalForm"
+        && matches!(args.as_slice(), [Expr::String(s)] if has_stacked_inline_box(s)))
+        || args.iter().any(contains_stacked_traditional_string)
+    }
+    Expr::List(items) => items.iter().any(contains_stacked_traditional_string),
     _ => false,
   }
 }
