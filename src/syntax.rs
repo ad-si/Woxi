@@ -3775,18 +3775,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       {
         arg_expr = apply_part_index_suffix(arg_expr, suffix);
       }
+      // `h@x` is `h[x]`, whatever the head: the same node the bracket form
+      // builds, so the two evaluate alike (`list[[1]]@x` reduces the part).
       match func_expr {
         Expr::Identifier(ref name) => Expr::FunctionCall {
           name: name.clone(),
           args: vec![arg_expr].into(),
         },
-        Expr::FunctionCall { .. } => Expr::CurriedCall {
+        _ => Expr::CurriedCall {
           func: Box::new(func_expr),
           args: vec![arg_expr],
-        },
-        _ => Expr::PrefixApply {
-          func: Box::new(func_expr),
-          arg: Box::new(arg_expr),
         },
       }
     }
@@ -6577,13 +6575,9 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         name: name.clone(),
         args: vec![right.clone()].into(),
       },
-      Expr::FunctionCall { .. } => Expr::CurriedCall {
+      _ => Expr::CurriedCall {
         func: Box::new(left.clone()),
         args: vec![right.clone()],
-      },
-      _ => Expr::PrefixApply {
-        func: Box::new(left.clone()),
-        arg: Box::new(right.clone()),
       },
     },
     "." => call("Dot", vec![left.clone(), right.clone()]),

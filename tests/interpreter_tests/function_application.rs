@@ -3051,6 +3051,19 @@ mod map_operator_composite_head {
     );
   }
 
+  // `h@x` is `h[x]` for any head: a part of a list of functions is
+  // extracted first, as in the bracket form.
+  #[test]
+  fn prefix_apply_part_head_evaluates() {
+    assert_eq!(interpret("oper = {f, g}; oper[[1]]@x").unwrap(), "f[x]");
+    assert_eq!(interpret("h = {(#^2 &)}; h[[1]]@3").unwrap(), "9");
+    assert_eq!(
+      interpret("ops = {(# &), Reverse}; ops[[2]]@{1, 2}").unwrap(),
+      "{2, 1}"
+    );
+    assert_eq!(interpret("Hold[h[[1]]@x]").unwrap(), "Hold[h[[1]][x]]");
+  }
+
   // Postfix (//) and prefix (@) with a composite head also curry.
   #[test]
   fn postfix_and_prefix_composite_head() {

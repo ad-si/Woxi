@@ -4304,19 +4304,19 @@ fn evaluate_expr_to_expr_uncached(
       let evaluated_list = evaluate_expr_to_expr(list)?;
       apply_map_apply_ast(func, &evaluated_list)
     }
+    // `f @ x` is `f[x]`; the parser already builds that node, and one
+    // constructed some other way evaluates as it.
     Expr::PrefixApply { func, arg } => {
-      // f @ x is equivalent to f[x]. Per Wolfram semantics the head is
-      // evaluated first, so a dynamic head like `If[cond, A, B]@x` reduces
-      // to `B[x]` rather than being treated as a curried call
-      // `If[cond, A, B, x]`.
-      let evaluated_arg = evaluate_expr_to_expr(arg)?;
-      let evaluated_func = if matches!(func.as_ref(), Expr::FunctionCall { .. })
-      {
-        evaluate_expr_to_expr(func)?
-      } else {
-        (**func).clone()
-      };
-      apply_function_to_arg(&evaluated_func, &evaluated_arg)
+      evaluate_expr_to_expr(&match func.as_ref() {
+        Expr::Identifier(name) => Expr::FunctionCall {
+          name: name.clone(),
+          args: vec![(**arg).clone()].into(),
+        },
+        _ => Expr::CurriedCall {
+          func: func.clone(),
+          args: vec![(**arg).clone()],
+        },
+      })
     }
     Expr::Postfix { expr: e, func } => {
       // `expr // f` is `f[expr]`. If `f` is a head with HoldAll/
