@@ -5092,6 +5092,7 @@ pub(crate) fn generate_scatter_svg_with_options(
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
@@ -5679,6 +5680,7 @@ pub(crate) fn render_merged_plot_source(
   if let Some(ar) = overrides.aspect_ratio {
     opts.aspect_ratio = Some(ar);
   }
+  opts.aspect_automatic = overrides.aspect_automatic;
   opts.log_x = source.log_x;
   opts.log_y = source.log_y;
   let x_range = overrides.x.unwrap_or(source.x_range);
