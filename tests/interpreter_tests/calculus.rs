@@ -23793,3 +23793,25 @@ mod equality_of_atoms_and_data_calls {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
 }
+
+mod plot_body_cache_compares_operator_nodes_by_head {
+  use super::*;
+
+  #[test]
+  fn contour_plot_of_a_complex_modulus_is_quick() {
+    // Regression: comparing a power node with a product while checking the
+    // compiled-body cache rendered both, per sample point.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f[kx_, ky_] := Exp[I kx] + 2 Exp[-I kx/2] Cos[ky]; \
+         w[kx_, ky_] := Sqrt[Conjugate[f[kx, ky]] f[kx, ky]]; \
+         Head[ContourPlot[w[kx, ky], {kx, -1.5, 1.5}, {ky, -1.5, 1.5}, \
+         PlotPoints -> 25]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
+  }
+}

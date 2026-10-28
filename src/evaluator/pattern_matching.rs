@@ -3682,6 +3682,24 @@ fn cheap_head(e: &Expr) -> Option<&str> {
     Expr::Comparison { operators, .. } if operators.len() == 1 => {
       Some(operators[0].head_name())
     }
+    // An operator node prints like the call it stands for. A power of a
+    // number is left out: `2^-1` prints like `Rational[1, 2]`.
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } if !matches!(
+      left.as_ref(),
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_)
+    ) && !matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Rational") =>
+    {
+      Some("Power")
+    }
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      ..
+    } => Some("Plus"),
     // `CurriedCall` with a symbol head prints like the plain call.
     Expr::CurriedCall { func, .. } => match func.as_ref() {
       Expr::Identifier(name) => Some(name),
