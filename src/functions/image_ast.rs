@@ -13815,3 +13815,211 @@ pub fn inpaint_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     image_type: *image_type,
   })
 }
+
+/// ImageLines[image] / ImageLines[image, t] / ImageLines[image, t, MaxFeatures -> n]
+/// — straight lines through the foreground pixels of `image`, found with a
+/// Hough transform and returned as `{{x1, y1}, {x2, y2}}` pairs where the
+/// ends lie on the image border (image coordinates, origin bottom-left),
+/// strongest first. `t` is the minimum number of votes as a fraction of the
+/// strongest line (default 0.5). `MaxFeatures -> n` keeps the n strongest.
+pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let option_start = all_args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(all_args.len());
+  let (args, opts) = all_args.split_at(option_start);
+  let mut max_features: Option<usize> = None;
+  for o in opts {
+    match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(k), Expr::Integer(n)) if k == "MaxFeatures" => {
+          max_features = Some((*n).max(0) as usize);
+        }
+        (Expr::Identifier(k), Expr::Identifier(a))
+          if k == "MaxFeatures" && a == "All" => {}
+        _ => return Ok(unevaluated("ImageLines", all_args)),
+      },
+      _ => return Ok(unevaluated("ImageLines", all_args)),
+    }
+  }
+  let Some(Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  }) = args.first()
+  else {
+    return Ok(unevaluated("ImageLines", all_args));
+  };
+  let min_fraction = match args.get(1) {
+    None => 0.5,
+    Some(t) => match crate::functions::math_ast::try_eval_to_f64(t) {
+      Some(v) if (0.0..=1.0).contains(&v) => v,
+      _ => return Ok(unevaluated("ImageLines", all_args)),
+    },
+  };
+  if args.len() > 2 {
+    return Ok(unevaluated("ImageLines", all_args));
+  }
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  let (wf, hf) = (w as f64, h as f64);
+
+  // Foreground pixels in image coordinates (pixel centres, y upwards).
+  let mut points: Vec<(f64, f64)> = Vec::new();
+  for row in 0..h {
+    for col in 0..w {
+      let i = row * w + col;
+      let v = if ch >= 3 {
+        let b = i * ch;
+        0.299 * data[b] + 0.587 * data[b + 1] + 0.114 * data[b + 2]
+      } else {
+        data[i * ch]
+      };
+      if v > 0.5 {
+        points.push((col as f64 + 0.5, hf - row as f64 - 0.5));
+      }
+    }
+  }
+  if points.is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  const THETA_STEPS: usize = 180;
+  let diagonal = wf.hypot(hf);
+  let rho_bins = (2.0 * diagonal).ceil() as usize + 1;
+  let trig: Vec<(f64, f64)> = (0..THETA_STEPS)
+    .map(|k| {
+      let t = std::f64::consts::PI * k as f64 / THETA_STEPS as f64;
+      (t.cos(), t.sin())
+    })
+    .collect();
+  let mut acc = vec![0u32; THETA_STEPS * rho_bins];
+  for &(x, y) in &points {
+    for (k, &(c, s)) in trig.iter().enumerate() {
+      let rho = x * c + y * s + diagonal;
+      acc[k * rho_bins + rho.round() as usize] += 1;
+    }
+  }
+
+  // Local maxima of the accumulator, strongest first.
+  let at = |k: i64, r: i64| -> u32 {
+    if r < 0 || r >= rho_bins as i64 {
+      return 0;
+    }
+    let kk = k.rem_euclid(THETA_STEPS as i64) as usize;
+    // Wrapping theta by pi mirrors rho.
+    let rr = if k < 0 || k >= THETA_STEPS as i64 {
+      rho_bins as i64 - 1 - r
+    } else {
+      r
+    };
+    acc[kk * rho_bins + rr as usize]
+  };
+  let mut peaks: Vec<(u32, usize, usize)> = Vec::new();
+  for k in 0..THETA_STEPS {
+    for r in 0..rho_bins {
+      let v = acc[k * rho_bins + r];
+      if v == 0 {
+        continue;
+      }
+      let is_peak = (-2i64..=2).all(|dk| {
+        (-2i64..=2).all(|dr| {
+          (dk == 0 && dr == 0) || {
+            let n = at(k as i64 + dk, r as i64 + dr);
+            n < v || (n == v && (dk, dr) > (0, 0))
+          }
+        })
+      });
+      if is_peak {
+        peaks.push((v, k, r));
+      }
+    }
+  }
+  peaks.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+  let strongest = peaks.first().map_or(0, |p| p.0) as f64;
+  let cutoff = (strongest * min_fraction).max(2.0);
+
+  let mut lines = Vec::new();
+  for &(votes, k, r) in &peaks {
+    if (votes as f64) < cutoff || max_features.is_some_and(|n| lines.len() >= n)
+    {
+      break;
+    }
+    let (mut c, mut s) = trig[k];
+    let mut rho = r as f64 - diagonal;
+    // Refine the binned estimate with a total-least-squares fit through
+    // the pixels lying within a pixel of it.
+    for tolerance in [1.0, 0.6, 0.6] {
+      let near: Vec<(f64, f64)> = points
+        .iter()
+        .copied()
+        .filter(|&(x, y)| (x * c + y * s - rho).abs() <= tolerance)
+        .collect();
+      if near.len() >= 2 {
+        let n = near.len() as f64;
+        let mx = near.iter().map(|p| p.0).sum::<f64>() / n;
+        let my = near.iter().map(|p| p.1).sum::<f64>() / n;
+        let sxx = near.iter().map(|p| (p.0 - mx).powi(2)).sum::<f64>();
+        let syy = near.iter().map(|p| (p.1 - my).powi(2)).sum::<f64>();
+        let sxy = near.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f64>();
+        // Normal direction of the principal axis' complement.
+        let angle =
+          0.5 * (2.0 * sxy).atan2(sxx - syy) + std::f64::consts::FRAC_PI_2;
+        let (nc, ns) = (angle.cos(), angle.sin());
+        // Keep the normal on the same side as the binned one.
+        let sign = if nc * c + ns * s < 0.0 { -1.0 } else { 1.0 };
+        c = sign * nc;
+        s = sign * ns;
+        rho = mx * c + my * s;
+      }
+    }
+    // Intersect x c + y s = rho with the border of [0, w] x [0, h].
+    let mut ends: Vec<(f64, f64)> = Vec::new();
+    let mut add = |p: (f64, f64)| {
+      if !ends
+        .iter()
+        .any(|q| (q.0 - p.0).abs() < 1e-9 && (q.1 - p.1).abs() < 1e-9)
+      {
+        ends.push(p);
+      }
+    };
+    let eps = 1e-9;
+    if s.abs() > 1e-12 {
+      for x in [0.0, wf] {
+        let y = (rho - x * c) / s;
+        if (-eps..=hf + eps).contains(&y) {
+          add((x, y.clamp(0.0, hf)));
+        }
+      }
+    }
+    if c.abs() > 1e-12 {
+      for y in [0.0, hf] {
+        let x = (rho - y * s) / c;
+        if (-eps..=wf + eps).contains(&x) {
+          add((x.clamp(0.0, wf), y));
+        }
+      }
+    }
+    if ends.len() < 2 {
+      continue;
+    }
+    ends.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let pt =
+      |p: (f64, f64)| Expr::List(vec![Expr::Real(p.0), Expr::Real(p.1)].into());
+    lines.push(Expr::List(
+      vec![pt(ends[0]), pt(ends[ends.len() - 1])].into(),
+    ));
+  }
+  Ok(Expr::List(lines.into()))
+}

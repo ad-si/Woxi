@@ -9810,3 +9810,64 @@ mod gaussian_matrix_derivatives {
     );
   }
 }
+
+mod image_lines {
+  use super::*;
+
+  #[test]
+  fn finds_horizontal_and_vertical_lines() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{{0., 15.5}, {30., 15.5}}, {{9.5, 0.}, {9.5, 20.}}}"
+    );
+  }
+
+  #[test]
+  fn max_features_keeps_strongest() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]], MaxFeatures -> 1]]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn diagonal_line_ends_on_the_border() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{{0., 20.}, {20., 0.}}}"
+    );
+  }
+
+  #[test]
+  fn blank_image_has_no_lines() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageLines[Image[Table[0, {5}, {5}]]]").unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
+  fn works_with_highlight_image() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[HighlightImage[#, Line /@ ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
+}

@@ -793,6 +793,7 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageReflect"
     | "Blur"
     | "EdgeDetect"
+    | "ImageLines"
     | "ImageDimensions"
     | "Sharpen"
     | "DominantColors"
@@ -1151,6 +1152,9 @@ pub fn dispatch_image_functions(
     }
     "EdgeDetect" if !args.is_empty() => {
       return Some(crate::functions::image_ast::edge_detect_ast(args));
+    }
+    "ImageLines" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::image_lines_ast(args));
     }
     "DominantColors" if !args.is_empty() => {
       // Dispatch every non-empty call: dominant_colors_ast itself checks

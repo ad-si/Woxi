@@ -429,6 +429,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Echo" => Some((1, 3)),
     // Options (Method, "StraightEdges") ride beyond the three positional arguments.
     "EdgeDetect" => Some((1, usize::MAX)),
+    "ImageLines" => Some((1, usize::MAX)),
     "DamerauLevenshteinDistance" => Some((2, 3)),
     "EditDistance" => Some((2, 3)),
     "EffectiveInterest" => Some((2, 2)),
