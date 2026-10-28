@@ -42357,4 +42357,16 @@ mod generalized_bar_chart {
       "the Epilog line was not drawn: {with_epilog}"
     );
   }
+
+  /// `Show[BarChart[…], ListLinePlot[…]]` keeps the bars as well as the
+  /// curve laid over them.
+  #[test]
+  fn show_bar_chart_with_line_plot_keeps_both() {
+    let svg = export_svg(
+      "Show[BarChart[{3, 5, 2, 6}], ListLinePlot[{3, 5, 2, 6}, \
+       PlotStyle -> {Black, Thick}]]",
+    );
+    assert_eq!(svg.matches("<rect").count(), 5, "bars missing: {svg}");
+    assert!(svg.contains("<polyline"), "curve missing: {svg}");
+  }
 }

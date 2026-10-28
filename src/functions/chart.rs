@@ -2137,7 +2137,88 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.ticks,
     &opts.epilog,
   )?;
-  Ok(crate::graphics_result(svg))
+  let structure = bar_chart_structure(&groups, &opts, args);
+  Ok(crate::graphics_result_with_structure(svg, structure))
+}
+
+/// The bars of a vertical `BarChart` as `Graphics[{Rectangle[…], …}, opts]`
+/// in chart coordinates (the first bar centred at x = 1), so `Show` can lay
+/// other plots over the chart instead of dropping one of them. Only the
+/// options that shape the frame and axes are carried over.
+fn bar_chart_structure(
+  groups: &[Vec<f64>],
+  opts: &ChartOptions,
+  args: &[Expr],
+) -> Expr {
+  let gap = 0.1;
+  let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
+  let mut prims: Vec<Expr> = Vec::new();
+  for (gi, group) in groups.iter().enumerate() {
+    let group_x0 = gi as f64 + gap + 0.5;
+    let slots = if opts.stacked { 1 } else { bars_per_group };
+    let bar_w = (1.0 - 2.0 * gap) / slots as f64;
+    let (mut up, mut down) = (0.0_f64, 0.0_f64);
+    for (bi, &val) in group.iter().enumerate() {
+      let color_idx = if bars_per_group > 1 { bi } else { gi };
+      let (r, g, b) = if opts.chart_style.is_empty() {
+        PLOT_COLORS[color_idx % PLOT_COLORS.len()]
+      } else {
+        let c = &opts.chart_style[color_idx % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      };
+      let (x0, y0, y1) = if opts.stacked {
+        let base = if val >= 0.0 { &mut up } else { &mut down };
+        let y0 = *base;
+        *base += val;
+        (group_x0, y0, *base)
+      } else {
+        (group_x0 + bi as f64 * bar_w, 0.0, val)
+      };
+      let point =
+        |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      prims.push(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![
+          Expr::Real(r as f64 / 255.0),
+          Expr::Real(g as f64 / 255.0),
+          Expr::Real(b as f64 / 255.0),
+        ]
+        .into(),
+      });
+      prims.push(Expr::FunctionCall {
+        name: "Rectangle".to_string(),
+        args: vec![point(x0, y0), point(x0 + bar_w, y1)].into(),
+      });
+    }
+  }
+  let mut graphics_args = vec![Expr::List(prims.into())];
+  let mut framed = false;
+  for arg in args.iter().skip(1) {
+    if let Expr::Rule { pattern, .. } = arg
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && matches!(
+        name.as_str(),
+        "Frame" | "FrameLabel" | "ImageSize" | "Axes" | "AxesLabel"
+      )
+    {
+      framed |= name == "Frame";
+      graphics_args.push(arg.clone());
+    }
+  }
+  if !framed {
+    graphics_args.push(crate::helpers::rule_expr(
+      crate::helpers::id_expr("Axes"),
+      crate::helpers::bool_expr(true),
+    ));
+  }
+  Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: graphics_args.into(),
+  }
 }
 
 /// Apply a `LabelingFunction` to a single bar value, returning the display
