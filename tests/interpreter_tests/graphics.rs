@@ -36407,6 +36407,22 @@ mod float_negative_exponent_display {
 mod input_form_reciprocal_sqrt {
   use super::*;
 
+  // A bare -I over a denominator prints as one quotient, as in
+  // wolframscript: `-I/Sqrt[2]`, and `(-I)/Sqrt[2]` in InputForm.
+  #[test]
+  fn negative_imaginary_unit_over_denominator() {
+    clear_state();
+    for (input, expected) in [
+      ("-I/Sqrt[2]", "-I/Sqrt[2]"),
+      ("-I/x", "-I/x"),
+      ("-I/(x + 1)", "-I/(1 + x)"),
+      ("ToString[-I/Sqrt[2], InputForm]", "(-I)/Sqrt[2]"),
+      ("ToString[(-I) x, InputForm]", "(-I)*x"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn reciprocal_sqrt_inside_power_bases() {
     clear_state();

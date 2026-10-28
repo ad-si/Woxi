@@ -11546,6 +11546,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             {
               return format!("(-I*{}", &frac[3..]);
             }
+            // …and a bare -I over a denominator as one quotient: -I/Sqrt[2],
+            // not -(I/Sqrt[2]).
+            if matches!(&args[1], Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+              && frac.starts_with("I/")
+            {
+              return format!("-{frac}");
+            }
             return format!("-({frac})");
           }
           let rest = args[1..]
