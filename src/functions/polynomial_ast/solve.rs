@@ -2456,14 +2456,20 @@ fn numericize_inexact_components(args: &[Expr], solved: Expr) -> Expr {
   // The individual equations of a list or conjunction of them.
   fn split_equations(e: &Expr, out: &mut Vec<Expr>) {
     match e {
-      Expr::List(items) => items.iter().for_each(|i| split_equations(i, out)),
+      Expr::List(items) => {
+        for i in items {
+          split_equations(i, out);
+        }
+      }
       other => {
         let mut parts = Vec::new();
         collect_and_constraints(other, &mut parts);
         if parts.len() == 1 {
           out.extend(parts);
         } else {
-          parts.iter().for_each(|p| split_equations(p, out));
+          for p in &parts {
+            split_equations(p, out);
+          }
         }
       }
     }
