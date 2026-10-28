@@ -3194,6 +3194,27 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn gauge_style_colours_the_filled_part() {
+    // GaugeStyle colours the thermometer column and the bar gauges' fill.
+    for f in ["ThermometerGauge", "VerticalGauge", "HorizontalGauge"] {
+      let svg = interpret(&format!(
+        "ExportString[{f}[3, {{0, 10}}, GaugeStyle -> Red], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.contains("rgb(255,0,0)"), "{f}: {svg}");
+    }
+  }
+  #[test]
+  fn bar_gauge_fill_follows_value_and_range() {
+    assert_eq!(
+      interpret(
+        "ExportString[VerticalGauge[1, {0, 65}], \"SVG\"] != ExportString[VerticalGauge[40, {0, 65}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+  #[test]
   fn horizontal_gauge_without_range_gauges_against_zero_to_one() {
     // The `{min, max}` argument is optional: wolframscript gauges a bare
     // value against `{0, 1}` and still returns a Graphics, even when the
@@ -3219,8 +3240,9 @@ mod batch_unevaluated_wrappers_2 {
       "Graphics"
     );
   }
-  // VerticalGauge is the same gauge stood upright: its marker for 0.3 on
-  // {0, 1} sits at height 0.3 of the track.
+  // VerticalGauge is the same gauge stood upright: a single value 0.3 on
+  // {0, 1} fills the track up to height 0.3, and each of several values
+  // gets a marker at its height.
   #[test]
   fn vertical_gauge_renders_upright() {
     assert_eq!(
@@ -3230,10 +3252,17 @@ mod batch_unevaluated_wrappers_2 {
       .unwrap(),
       "-Graphics-"
     );
+    assert!(
+      interpret("Cases[VerticalGauge[{0.3}, {0, 1}], Line[p_] :> p, Infinity]")
+        .unwrap()
+        .contains("{{0., 0.3}, {0.2, 0.3}}")
+    );
     assert_eq!(
-      interpret("Cases[VerticalGauge[0.3, {0, 1}], Line[p_] :> p, Infinity]")
-        .unwrap(),
-      "{{{0., 0.3}, {0.2, 0.3}}}"
+      interpret(
+        "Cases[VerticalGauge[0.3, {0, 1}], Rectangle[a_, b_] :> {a, b}, Infinity]"
+      )
+      .unwrap(),
+      "{{{0., 0.}, {0.2, 0.3}}}"
     );
   }
   #[test]
