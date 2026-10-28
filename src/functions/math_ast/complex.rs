@@ -933,6 +933,14 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       is_strictly_positive_real(&args[0])
     }
+    // Log[n] > 0 for a real argument above 1 (so `1/Log[10]` has a sign).
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Integer(n) => *n > 1,
+        Expr::Real(f) => *f > 1.0,
+        _ => false,
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       // Power[positive, real_exp] > 0; require the exponent to be
       // real-valued so a symbolic exponent (potentially complex) doesn't
