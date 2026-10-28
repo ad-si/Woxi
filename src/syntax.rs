@@ -13438,6 +13438,57 @@ fn sequence_order(
   (ia.len() == ib.len()).then(|| format!("{ca}{sa}").cmp(&format!("{cb}{sb}")))
 }
 
+/// `expr_to_string(expr)` for plain data — integers, machine reals,
+/// symbols outside any context, lists and calls of non-built-in heads of
+/// such — built directly rather than through the general formatter; `None`
+/// for anything else. Set operations key elements by their printed forms.
+pub fn data_to_string(expr: &Expr) -> Option<String> {
+  fn go(e: &Expr, out: &mut String) -> bool {
+    match e {
+      Expr::Integer(n) => out.push_str(&n.to_string()),
+      Expr::Real(_) => out.push_str(&expr_to_string(e)),
+      Expr::Identifier(name)
+        if !name.contains('`')
+          && crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+      {
+        out.push_str(name);
+      }
+      Expr::List(items) => {
+        out.push('{');
+        for (i, item) in items.iter().enumerate() {
+          if i > 0 {
+            out.push_str(", ");
+          }
+          if !go(item, out) {
+            return false;
+          }
+        }
+        out.push('}');
+      }
+      Expr::FunctionCall { name, args }
+        if !name.contains('`')
+          && crate::functions::math_ast::canonical_polynomial::is_plain_symbol(name) =>
+      {
+        out.push_str(name);
+        out.push('[');
+        for (i, item) in args.iter().enumerate() {
+          if i > 0 {
+            out.push_str(", ");
+          }
+          if !go(item, out) {
+            return false;
+          }
+        }
+        out.push(']');
+      }
+      _ => return false,
+    }
+    true
+  }
+  let mut out = String::new();
+  go(expr, &mut out).then_some(out)
+}
+
 /// Convert an Expr back to a string representation (InputForm)
 pub fn expr_to_string(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Input)

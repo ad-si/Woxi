@@ -23819,7 +23819,7 @@ mod plot_body_cache_compares_operator_nodes_by_head {
 // `printed_order` must order expressions exactly as comparing their
 // printed forms does, while printing only what it needs.
 mod printed_order_matches_string_order {
-  use woxi::syntax::{Expr, expr_to_string, printed_order};
+  use woxi::syntax::{Expr, data_to_string, expr_to_string, printed_order};
 
   /// A small deterministic generator of nested lists and calls of
   /// numbers and symbols, many of them sharing long prefixes.
@@ -23878,6 +23878,9 @@ mod printed_order_matches_string_order {
       } else {
         generate(&mut seed, 3)
       };
+      if let Some(direct) = data_to_string(&a) {
+        assert_eq!(direct, expr_to_string(&a));
+      }
       let expected = expr_to_string(&a).cmp(&expr_to_string(&b));
       assert_eq!(
         printed_order(&a, &b),
