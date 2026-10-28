@@ -106,6 +106,35 @@ pub fn pseudo_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(matrix_to_expr(result));
   }
 
+  // A machine-real matrix: from its singular value decomposition, keeping
+  // the singular values above wolframscript's rank tolerance of
+  // 100 $MachineEpsilon relative to the largest one.
+  if let Some(a) = machine_real_matrix(&matrix)
+    && let Some((u, sigma, v)) = jacobi_svd(&a)
+  {
+    let rank = nrows.min(ncols);
+    let largest = (0..rank).map(|i| sigma[i][i].abs()).fold(0.0, f64::max);
+    let cutoff = 100.0 * f64::EPSILON * largest;
+    // A⁺ = V . Σ⁺ . U'
+    let result: Vec<Vec<Expr>> = (0..ncols)
+      .map(|i| {
+        (0..nrows)
+          .map(|j| {
+            let mut sum = 0.0;
+            for k in 0..rank {
+              let s = sigma[k][k];
+              if s > cutoff {
+                sum += v[i][k] * u[j][k] / s;
+              }
+            }
+            Expr::Real(sum)
+          })
+          .collect()
+      })
+      .collect();
+    return Ok(matrix_to_expr(result));
+  }
+
   // Square non-singular: just use the exact inverse. (try_invert returns None
   // for a singular matrix, so we fall through to the rank-deficient path
   // instead of emitting Inverse::sing.)
@@ -9071,15 +9100,50 @@ fn nonlinear_parameter_stats(
     }
     try_eval_to_f64(&evaluate_expr_to_expr(&e).ok()?)
   };
+  // The Jacobian from the model's symbolic gradient at the estimate, or
+  // by central differences when D leaves a derivative unevaluated.
+  let rules_expr = Expr::List(rules.to_vec().into());
+  let gradient: Option<Vec<Expr>> = names
+    .iter()
+    .map(|nm| {
+      let d = evaluate_expr_to_expr(&call(
+        "ReplaceAll",
+        vec![
+          call("D", vec![model.clone(), Expr::Identifier(nm.clone())]),
+          rules_expr.clone(),
+        ],
+      ))
+      .ok()?;
+      (!expr_to_string(&d).contains("Derivative")).then_some(d)
+    })
+    .collect();
+  let symbolic_jacobian = gradient.and_then(|g| {
+    x_vals
+      .iter()
+      .map(|&x| {
+        g.iter()
+          .map(|d| {
+            let at =
+              crate::syntax::substitute_variable(d, var_name, &Expr::Real(x));
+            try_eval_to_f64(&evaluate_expr_to_expr(&at).ok()?)
+          })
+          .collect::<Option<Vec<f64>>>()
+      })
+      .collect::<Option<Vec<Vec<f64>>>>()
+  });
   let mut jac = vec![vec![0.0f64; m]; n];
-  for j in 0..m {
-    let h = 1e-6 * values[j].abs().max(1.0);
-    let (mut up, mut down) = (values.clone(), values.clone());
-    up[j] += h;
-    down[j] -= h;
-    for i in 0..n {
-      jac[i][j] =
-        (eval_at(x_vals[i], &up)? - eval_at(x_vals[i], &down)?) / (2.0 * h);
+  if let Some(symbolic) = symbolic_jacobian {
+    jac = symbolic;
+  } else {
+    for j in 0..m {
+      let h = 1e-6 * values[j].abs().max(1.0);
+      let (mut up, mut down) = (values.clone(), values.clone());
+      up[j] += h;
+      down[j] -= h;
+      for i in 0..n {
+        jac[i][j] =
+          (eval_at(x_vals[i], &up)? - eval_at(x_vals[i], &down)?) / (2.0 * h);
+      }
     }
   }
   let mut ss_res = 0.0;
@@ -9096,7 +9160,36 @@ fn nonlinear_parameter_stats(
       }
     }
   }
-  let inv = invert_square_matrix(&jtj)?;
+  // A model whose parameters are not all identifiable (`Exp[a x/(b + c x)]`
+  // only depends on the ratios) has a singular `Transpose[J] . J`;
+  // wolframscript's covariance is then its pseudo-inverse. Rounding keeps
+  // such a matrix invertible in name, so judge by the condition number.
+  let max_abs = |m: &[Vec<f64>]| {
+    m.iter()
+      .flat_map(|row| row.iter())
+      .fold(0.0f64, |acc, v| acc.max(v.abs()))
+  };
+  let inv = invert_square_matrix(&jtj)
+    .filter(|inv| max_abs(&jtj) * max_abs(inv) < 1e12)
+    .or_else(|| {
+      let matrix = Expr::List(
+        jtj
+          .iter()
+          .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+          .collect(),
+      );
+      let pinv = pseudo_inverse_ast(&[matrix]).ok()?;
+      let Expr::List(rows) = &pinv else {
+        return None;
+      };
+      rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+          _ => None,
+        })
+        .collect()
+    })?;
   let covariance: Vec<Vec<f64>> = inv
     .iter()
     .map(|row| row.iter().map(|v| v * sigma2).collect())
@@ -9242,6 +9335,7 @@ pub fn nonlinear_model_fit_ast(
     ),
     (str_expr("VariableName"), Expr::String(var_name.clone())),
     (str_expr("BestFit"), fitted_expr),
+    (str_expr("Model"), model.clone()),
   ];
   if let Some((residuals, predicted, r_squared, adjusted_r_squared)) =
     goodness_of_fit.clone()
@@ -9935,6 +10029,126 @@ fn parameter_confidence_region(
   ))
 }
 
+/// The `ConfidenceLevel -> cl` option of a property query, 0.95 by default.
+fn confidence_level(options: &[Expr]) -> f64 {
+  options
+    .iter()
+    .find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ConfidenceLevel") => {
+        try_eval_to_f64(replacement)
+      }
+      _ => None,
+    })
+    .unwrap_or(0.95)
+}
+
+/// `"MeanPredictionBands"` / `"SinglePredictionBands"`: the fitted function
+/// minus and plus the Student t quantile times the standard error of the
+/// mean prediction, `Sqrt[g . C . g]` with `g` the model's gradient in the
+/// parameters (the basis functions of a linear model) and `C` the
+/// parameter covariance; a single prediction adds the estimated variance
+/// under the root.
+fn prediction_bands(
+  assoc: &[(Expr, Expr)],
+  single: bool,
+  level: f64,
+) -> Option<Expr> {
+  let fitted = fit_property(assoc, "FittedExpression")?.clone();
+  let covariance = fit_covariance_matrix(assoc)?;
+  let p = covariance.len();
+  let gradient: Vec<Expr> = match fit_property(assoc, "Type")? {
+    Expr::Identifier(t) if t == "Linear" => {
+      match fit_property(assoc, "BasisFunctions")? {
+        Expr::List(basis) => basis.to_vec(),
+        _ => return None,
+      }
+    }
+    Expr::Identifier(t) if t == "Nonlinear" => {
+      let model = fit_property(assoc, "Model")?;
+      let Expr::List(rules) = fit_property(assoc, "BestFitParameters")? else {
+        return None;
+      };
+      let rules_expr = Expr::List(rules.clone());
+      rules
+        .iter()
+        .map(|r| {
+          let Expr::Rule { pattern, .. } = r else {
+            return None;
+          };
+          let derivative =
+            call("D", vec![model.clone(), pattern.as_ref().clone()]);
+          evaluate_expr_to_expr(&call(
+            "ReplaceAll",
+            vec![derivative, rules_expr.clone()],
+          ))
+          .ok()
+        })
+        .collect::<Option<_>>()?
+    }
+    _ => return None,
+  };
+  if gradient.len() != p {
+    return None;
+  }
+  let n = match fit_property(assoc, "FitResiduals")? {
+    Expr::List(items) => items.len(),
+    _ => return None,
+  };
+  if n <= p {
+    return None;
+  }
+  let residuals: Vec<f64> = match fit_property(assoc, "FitResiduals")? {
+    Expr::List(items) => {
+      items.iter().map(try_eval_to_f64).collect::<Option<_>>()?
+    }
+    _ => return None,
+  };
+  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let mut terms = Vec::new();
+  if single {
+    terms.push(Expr::Real(variance));
+  }
+  for i in 0..p {
+    for j in i..p {
+      let c = if i == j {
+        covariance[i][i]
+      } else {
+        covariance[i][j] + covariance[j][i]
+      };
+      terms.push(times(vec![
+        Expr::Real(c),
+        gradient[i].clone(),
+        gradient[j].clone(),
+      ]));
+    }
+  }
+  let t = try_eval_to_f64(
+    &evaluate_expr_to_expr(&call(
+      "Quantile",
+      vec![
+        call1("StudentTDistribution", Expr::Integer((n - p) as i128)),
+        Expr::Real(f64::midpoint(1.0, level)),
+      ],
+    ))
+    .ok()?,
+  )?;
+  let half_width = times(vec![Expr::Real(t), call1("Sqrt", plus(terms))]);
+  evaluate_expr_to_expr(&Expr::List(
+    vec![
+      plus(vec![
+        fitted.clone(),
+        times(vec![Expr::Integer(-1), half_width.clone()]),
+      ]),
+      plus(vec![fitted, half_width]),
+    ]
+    .into(),
+  ))
+  .ok()
+}
+
 /// The parameter covariance matrix: stored by a nonlinear fit, the
 /// estimated variance times `Inverse[Transpose[X] . X]` for a linear one.
 fn fit_covariance_matrix(assoc: &[(Expr, Expr)]) -> Option<Vec<Vec<f64>>> {
@@ -10040,19 +10254,13 @@ fn lookup_fitted_model_property(
         })
         .ok_or_else(unknown);
     }
+    "MeanPredictionBands" | "SinglePredictionBands" => {
+      let level = confidence_level(options);
+      return prediction_bands(assoc, prop == "SinglePredictionBands", level)
+        .ok_or_else(unknown);
+    }
     "ParameterConfidenceRegion" => {
-      let level = options
-        .iter()
-        .find_map(|o| match o {
-          Expr::Rule {
-            pattern,
-            replacement,
-          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ConfidenceLevel") => {
-            try_eval_to_f64(replacement)
-          }
-          _ => None,
-        })
-        .unwrap_or(0.95);
+      let level = confidence_level(options);
       return parameter_confidence_region(assoc, level).ok_or_else(unknown);
     }
     _ => {}
@@ -10716,8 +10924,9 @@ fn jacobi_svd(
   let mut order: Vec<usize> = (0..n).collect();
   let norms: Vec<f64> = w.iter().map(|c| dot(c, c).sqrt()).collect();
   order.sort_by(|&i, &j| norms[j].total_cmp(&norms[i]));
-  let tol =
-    norms.iter().copied().fold(0.0, f64::max) * 1e-12 * (m.max(n) as f64);
+  // wolframscript's rank tolerance: 100 $MachineEpsilon relative to the
+  // largest singular value, whatever the size.
+  let tol = norms.iter().copied().fold(0.0, f64::max) * 100.0 * f64::EPSILON;
   let mut ucols: Vec<Vec<f64>> = Vec::with_capacity(m);
   let mut vout: Vec<Vec<f64>> = Vec::with_capacity(n);
   let mut sig: Vec<f64> = Vec::with_capacity(n);
@@ -10798,9 +11007,9 @@ pub fn singular_value_decomposition_ast(
     return Ok(unevaluated("SingularValueDecomposition", args));
   };
   let rows = matrix.len();
-  if rows != 2 || matrix[0].len() != 2 {
-    // Any other shape is decomposed numerically when it holds machine
-    // reals (one-sided Jacobi); exact matrices stay unevaluated.
+  {
+    // A machine matrix is decomposed numerically (one-sided Jacobi);
+    // exact matrices other than 2×2 stay unevaluated.
     if let Some(a) = machine_real_matrix(&matrix)
       && let Some((u, sigma, v)) = jacobi_svd(&a)
     {
@@ -10820,7 +11029,9 @@ pub fn singular_value_decomposition_ast(
         vec![to_expr(u), to_expr(sigma), to_expr(v)].into(),
       ));
     }
-    return Ok(unevaluated("SingularValueDecomposition", args));
+    if rows != 2 || matrix[0].len() != 2 {
+      return Ok(unevaluated("SingularValueDecomposition", args));
+    }
   }
   let to_f64 = |e: &Expr| -> Option<f64> {
     match e {
@@ -11756,6 +11967,43 @@ pub fn singular_value_list_ast(
     },
   };
 
+  // The first k values, or the |k| smallest for a negative k.
+  let take_values = |mut values: Vec<Expr>| match take {
+    None => Expr::List(values.into()),
+    Some(k) if k >= 0 => {
+      values.truncate(k as usize);
+      Expr::List(values.into())
+    }
+    Some(k) => {
+      let keep = (-k) as usize;
+      let skip = values.len().saturating_sub(keep);
+      Expr::List(values.split_off(skip).into())
+    }
+  };
+
+  // A machine matrix: the nonzero singular values of its SVD, which keeps
+  // the small ones a Gram matrix's eigenvalues cannot resolve (`3.*^-14`
+  // squares to below their rounding).
+  let matrix: Option<Vec<Vec<Expr>>> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(cols) => Some(cols.to_vec()),
+      _ => None,
+    })
+    .collect();
+  if has_real
+    && let Some(a) = matrix.as_deref().and_then(machine_real_matrix)
+    && let Some((_, sigma, _)) = jacobi_svd(&a)
+  {
+    return Ok(take_values(
+      (0..nrows.min(ncols))
+        .map(|i| sigma[i][i])
+        .filter(|s| *s > 0.0)
+        .map(Expr::Real)
+        .collect(),
+    ));
+  }
+
   // Eigenvalues of the smaller Gram matrix (m.m^H or m^H.m); both share
   // the nonzero spectrum
   let ct = call1("ConjugateTranspose", args[0].clone());
@@ -11798,19 +12046,7 @@ pub fn singular_value_list_ast(
     values.push(evaluate_expr_to_expr(&call1("Sqrt", e.clone()))?);
   }
 
-  match take {
-    None => Ok(Expr::List(values.into())),
-    Some(k) if k >= 0 => {
-      values.truncate(k as usize);
-      Ok(Expr::List(values.into()))
-    }
-    Some(k) => {
-      // Negative k: the |k| smallest singular values
-      let keep = (-k) as usize;
-      let skip = values.len().saturating_sub(keep);
-      Ok(Expr::List(values.split_off(skip).into()))
-    }
-  }
+  Ok(take_values(values))
 }
 
 /// Shared MatrixExp / MatrixLog implementation. `head` is the matrix

@@ -4337,6 +4337,42 @@ mod nonlinear_model_fit_report {
   }
 
   #[test]
+  fn prediction_bands() {
+    // wolframscript: {2.0673713112528813, 3.0076286887471197} and the
+    // mean band's half-width 2.570581835636315*Sqrt[0.006357… + 0.001589…x^2].
+    assert_eq!(
+      interpret(&format!(
+        "{FIT} {{Round[m[\"SinglePredictionBands\", ConfidenceLevel -> 0.9] \
+         /. x -> 1.5, 10^-9], \
+         Round[(m[\"MeanPredictionBands\"] /. x -> 0) - 1., 10^-9]}}"
+      ))
+      .unwrap(),
+      "{{2067371311/1000000000, 3007628689/1000000000}, \
+       {-102478421/500000000, 102478421/500000000}}"
+    );
+  }
+
+  #[test]
+  fn bands_of_a_model_with_unidentifiable_parameters() {
+    // Exp[a x/(b + c x)] depends only on the parameters' ratios, so
+    // Transpose[J] . J is singular and the covariance is its pseudo-inverse
+    // and the bands are the same whichever point of the optimal line the
+    // fit lands on (values from wolframscript).
+    assert_eq!(
+      interpret(
+        "data = {{5.0, 0.6}, {1.5, 0.7}, {9.2, 0.75}, {13.1, 1.05}, \
+         {3.3, 0.4}, {7.7, 0.95}, {11.4, 0.6}, {2.2, 1.1}, {14.6, 0.9}, \
+         {6.1, 0.55}, {4.4, 1.0}, {8.8, 0.7}}; \
+         m = NonlinearModelFit[data, Exp[a x/(b + c x)], {a, b, c}, x]; \
+         Max[Abs[(m[\"MeanPredictionBands\"] /. x -> 5.) - \
+         {0.6138477443873206, 0.9371535816765458}]] < 10^-8"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn parameter_confidence_region_and_level() {
     // wolframscript: radii {0.2712315876194963, 0.13561579380974811}, and
     // {0.10077592551722225, 0.05038796275861111} at ConfidenceLevel -> 0.5.
@@ -4739,6 +4775,20 @@ mod linear_model_fit {
     assert!(
       msgs.iter().any(|m| m.contains("Power::infy")),
       "expected Power::infy, got: {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn linear_prediction_bands() {
+    // wolframscript: {2.4351294753053176, 3.664870524694683} at x = 2.
+    assert_eq!(
+      interpret(
+        "l = LinearModelFit[{{-3., -2.1}, {-2., -1.2}, {-1., 0.3}, {0., 0.8}, \
+         {1., 2.2}, {2., 2.9}, {3., 4.1}}, x, x]; \
+         Round[l[\"SinglePredictionBands\"] /. x -> 2, 10^-12]"
+      )
+      .unwrap(),
+      "{487025895061/200000000000, 732974104939/200000000000}"
     );
   }
 
@@ -7301,6 +7351,48 @@ mod cases {
       r#"{{-11 / 6, -1 / 3, 7 / 6}, {4 / 3, 1 / 3, -2 / 3}}"#,
     );
   }
+  #[test]
+  fn pseudo_inverse_machine_rank_tolerance() {
+    // Singular values up to 100 $MachineEpsilon times the largest count
+    // as zero, as in wolframscript.
+    assert_eq!(
+      woxi::interpret("PseudoInverse[{{1., 0.}, {0., 2.2*^-14}}]").unwrap(),
+      "{{1., 0.}, {0., 0.}}"
+    );
+    assert_eq!(
+      woxi::interpret("PseudoInverse[{{1., 0.}, {0., 2.25*^-14}}]").unwrap(),
+      "{{1., 0.}, {0., 4.4444444444444445*^13}}"
+    );
+    // A numerically singular matrix is not inverted into huge entries.
+    assert_eq!(
+      woxi::interpret(
+        "Max[Abs[PseudoInverse[{{1., 2.}, {2., 4.0000000000001}}] - \
+         {{0.04, 0.08}, {0.08, 0.16}}]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn singular_values_below_gram_resolution() {
+    assert_eq!(
+      woxi::interpret("SingularValueList[{{1., 0.}, {0., 3.*^-14}}]").unwrap(),
+      "{1., 3.*^-14}"
+    );
+    assert_eq!(
+      woxi::interpret("SingularValueList[{{1., 0.}, {0., 2.*^-14}}]").unwrap(),
+      "{1.}"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "SingularValueDecomposition[{{1., 0.}, {0., 2.25*^-14}}][[2]]"
+      )
+      .unwrap(),
+      "{{1., 0.}, {0., 2.25*^-14}}"
+    );
+  }
+
   #[test]
   fn pseudo_inverse_wide_matrix() {
     // Regression: a wide (ncols > nrows) full-row-rank matrix used the right
