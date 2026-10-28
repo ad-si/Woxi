@@ -9459,64 +9459,12 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // IRLS for logistic regression
-  let mut beta = vec![0.0f64; m];
-  let max_iter = 100;
-  let tol = 1e-10;
-
-  for _ in 0..max_iter {
-    // Compute predicted probabilities: p_i = 1 / (1 + exp(-eta_i))
-    let mut eta = vec![0.0f64; n];
-    let mut p = vec![0.0f64; n];
-    for i in 0..n {
-      eta[i] = (0..m).map(|j| beta[j] * a_matrix[i][j]).sum();
-      p[i] = 1.0 / (1.0 + (-eta[i]).exp());
-      // Clamp to avoid numerical issues
-      p[i] = p[i].clamp(1e-15, 1.0 - 1e-15);
-    }
-
-    // Compute W = diag(p*(1-p)) and z = eta + (y - p) / (p*(1-p))
-    let mut w = vec![0.0f64; n];
-    let mut z = vec![0.0f64; n];
-    for i in 0..n {
-      w[i] = p[i] * (1.0 - p[i]);
-      z[i] = eta[i] + (y_vals[i] - p[i]) / w[i];
-    }
-
-    // Weighted least squares: solve (A^T W A) beta = A^T W z
-    // Build A^T W A (m×m) and A^T W z (m×1)
-    let mut atwa = vec![vec![0.0f64; m]; m];
-    let mut atwz = vec![0.0f64; m];
-    for j in 0..m {
-      for k in 0..m {
-        let mut s = 0.0;
-        for i in 0..n {
-          s += a_matrix[i][j] * w[i] * a_matrix[i][k];
-        }
-        atwa[j][k] = s;
-      }
-      let mut s = 0.0;
-      for i in 0..n {
-        s += a_matrix[i][j] * w[i] * z[i];
-      }
-      atwz[j] = s;
-    }
-
-    // Solve via Gaussian elimination
-    let Some(new_beta) = solve_linear_system(&atwa, &atwz) else {
-      break;
-    };
-
-    let delta: f64 = new_beta
-      .iter()
-      .zip(beta.iter())
-      .map(|(a, b)| (a - b).abs())
-      .sum();
-    beta = new_beta;
-    if delta < tol {
-      break;
-    }
-  }
+  // Logistic regression is the binomial GLM with its canonical logit link.
+  let Some(beta) =
+    glm_irls(&a_matrix, &y_vals, GlmFamily::Binomial, GlmLink::Logit)
+  else {
+    return Ok(unevaluated("LogitModelFit", args));
+  };
 
   // Compute fitted probabilities and residuals
   let mut fitted_probs = Vec::with_capacity(n);
@@ -14653,4 +14601,616 @@ pub fn symmetrized_array_to_dense(
     flat[pos_to_linear(&pos, dims)] = value;
   }
   Some(Ok(build_from_flat(&flat, dims)))
+}
+
+/// `DiscreteIndicator[x, x1, {u1, u2, …}]`: 1 when `x` is `x1` and 0 when it
+/// is another of the `ui`; `None` (unevaluated) unless both `x` and `x1`
+/// are among the `ui`. Membership is structural, so `1.` is not `1`.
+pub fn discrete_indicator(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(levels) = &args[2] else {
+    return None;
+  };
+  let member = |e: &Expr| {
+    levels
+      .iter()
+      .any(|l| crate::evaluator::pattern_matching::expr_equal(l, e))
+  };
+  if !member(&args[0]) || !member(&args[1]) {
+    return None;
+  }
+  Some(Expr::Integer(i128::from(
+    crate::evaluator::pattern_matching::expr_equal(&args[0], &args[1]),
+  )))
+}
+
+/// The link between a generalized linear model's mean `mu` and its linear
+/// predictor `eta`.
+#[derive(Clone, Copy, PartialEq)]
+enum GlmLink {
+  Identity,
+  Log,
+  Logit,
+  /// `eta = 1/mu`, the Gamma family's canonical link.
+  Reciprocal,
+  /// `eta = 1/mu^2`, the inverse Gaussian family's canonical link.
+  InverseSquare,
+}
+
+impl GlmLink {
+  fn mean(self, eta: f64) -> f64 {
+    match self {
+      GlmLink::Identity => eta,
+      GlmLink::Log => eta.exp(),
+      GlmLink::Logit => 1.0 / (1.0 + (-eta).exp()),
+      GlmLink::Reciprocal => 1.0 / eta,
+      GlmLink::InverseSquare => 1.0 / eta.sqrt(),
+    }
+  }
+
+  fn predictor(self, mu: f64) -> f64 {
+    match self {
+      GlmLink::Identity => mu,
+      GlmLink::Log => mu.ln(),
+      GlmLink::Logit => (mu / (1.0 - mu)).ln(),
+      GlmLink::Reciprocal => 1.0 / mu,
+      GlmLink::InverseSquare => 1.0 / (mu * mu),
+    }
+  }
+
+  /// `d mu / d eta`, written in terms of `mu` so that it stays usable
+  /// where `eta` has run off to a saturated mean.
+  fn mean_derivative(self, mu: f64) -> f64 {
+    match self {
+      GlmLink::Identity => 1.0,
+      GlmLink::Log => mu,
+      GlmLink::Logit => mu * (1.0 - mu),
+      GlmLink::Reciprocal => -mu * mu,
+      GlmLink::InverseSquare => -0.5 * mu * mu * mu,
+    }
+  }
+
+  /// The mean as an expression in the linear predictor `eta`.
+  fn mean_expr(self, eta: Expr) -> Expr {
+    match self {
+      GlmLink::Identity => eta,
+      GlmLink::Log => pow(Expr::Constant("E".into()), eta),
+      GlmLink::Logit => pow(
+        plus(vec![
+          Expr::Integer(1),
+          pow(Expr::Constant("E".into()), neg(eta)),
+        ]),
+        Expr::Integer(-1),
+      ),
+      GlmLink::Reciprocal => pow(eta, Expr::Integer(-1)),
+      GlmLink::InverseSquare => pow(call1("Sqrt", eta), Expr::Integer(-1)),
+    }
+  }
+}
+
+/// The exponential families a generalized linear model can assume, with
+/// their variance functions `V(mu)`.
+#[derive(Clone, Copy)]
+enum GlmFamily {
+  Gaussian,
+  Binomial,
+  Poisson,
+  Gamma,
+  InverseGaussian,
+}
+
+impl GlmFamily {
+  fn from_name(name: &str) -> Option<Self> {
+    Some(match name {
+      "Gaussian" | "Normal" => GlmFamily::Gaussian,
+      "Binomial" => GlmFamily::Binomial,
+      "Poisson" => GlmFamily::Poisson,
+      "Gamma" => GlmFamily::Gamma,
+      "InverseGaussian" => GlmFamily::InverseGaussian,
+      _ => return None,
+    })
+  }
+
+  fn canonical_link(self) -> GlmLink {
+    match self {
+      GlmFamily::Gaussian => GlmLink::Identity,
+      GlmFamily::Binomial => GlmLink::Logit,
+      GlmFamily::Poisson => GlmLink::Log,
+      GlmFamily::Gamma => GlmLink::Reciprocal,
+      GlmFamily::InverseGaussian => GlmLink::InverseSquare,
+    }
+  }
+
+  fn variance(self, mu: f64) -> f64 {
+    match self {
+      GlmFamily::Gaussian => 1.0,
+      GlmFamily::Binomial => mu * (1.0 - mu),
+      GlmFamily::Poisson => mu,
+      GlmFamily::Gamma => mu * mu,
+      GlmFamily::InverseGaussian => mu * mu * mu,
+    }
+  }
+
+  /// `mu` kept strictly inside the family's domain, so that perfectly
+  /// separated binomial data or zero Poisson counts (whose estimates run
+  /// off to infinity) still give finite weights.
+  fn clamp_mean(self, mu: f64) -> f64 {
+    const EPS: f64 = 1e-15;
+    match self {
+      GlmFamily::Binomial => mu.clamp(EPS, 1.0 - EPS),
+      GlmFamily::Gaussian => mu,
+      _ => mu.max(EPS),
+    }
+  }
+
+  /// The unit deviance of a response `y` at the mean `mu`.
+  fn unit_deviance(self, y: f64, mu: f64) -> f64 {
+    let xlogx = |a: f64, b: f64| if a == 0.0 { 0.0 } else { a * (a / b).ln() };
+    match self {
+      GlmFamily::Gaussian => (y - mu) * (y - mu),
+      GlmFamily::Binomial => 2.0 * (xlogx(y, mu) + xlogx(1.0 - y, 1.0 - mu)),
+      GlmFamily::Poisson => 2.0 * (xlogx(y, mu) - (y - mu)),
+      GlmFamily::Gamma => 2.0 * (-(y / mu).ln() + (y - mu) / mu),
+      GlmFamily::InverseGaussian => (y - mu) * (y - mu) / (mu * mu * y),
+    }
+  }
+
+  /// The log-likelihood of `y` at the mean `mu` with dispersion `phi`.
+  fn log_likelihood(self, y: f64, mu: f64, phi: f64) -> f64 {
+    use crate::functions::math_ast::ln_gamma;
+    use std::f64::consts::PI;
+    match self {
+      GlmFamily::Gaussian => {
+        -0.5 * (2.0 * PI * phi).ln() - (y - mu) * (y - mu) / (2.0 * phi)
+      }
+      GlmFamily::Binomial => {
+        let term = |a: f64, b: f64| if a == 0.0 { 0.0 } else { a * b.ln() };
+        term(y, mu) + term(1.0 - y, 1.0 - mu)
+      }
+      GlmFamily::Poisson => {
+        (if y == 0.0 { 0.0 } else { y * mu.ln() }) - mu - ln_gamma(y + 1.0)
+      }
+      GlmFamily::Gamma => {
+        let shape = 1.0 / phi;
+        -ln_gamma(shape) - shape * (mu * phi).ln() + (shape - 1.0) * y.ln()
+          - y / (mu * phi)
+      }
+      GlmFamily::InverseGaussian => {
+        -0.5 * (2.0 * PI * phi * y * y * y).ln()
+          - (y - mu) * (y - mu) / (2.0 * phi * mu * mu * y)
+      }
+    }
+  }
+
+  /// Whether the dispersion is estimated rather than fixed at 1.
+  fn estimates_dispersion(self) -> bool {
+    !matches!(self, GlmFamily::Binomial | GlmFamily::Poisson)
+  }
+
+  /// The starting mean for a response `y` with sample mean `ybar`.
+  fn initial_mean(self, y: f64, ybar: f64) -> f64 {
+    match self {
+      GlmFamily::Binomial => f64::midpoint(y, 0.5),
+      GlmFamily::Poisson => y + 0.1,
+      GlmFamily::Gaussian => y,
+      GlmFamily::Gamma | GlmFamily::InverseGaussian => {
+        if y > 0.0 {
+          y
+        } else {
+          ybar
+        }
+      }
+    }
+  }
+}
+
+/// Fit `link(mean) = design . beta` by iteratively reweighted least
+/// squares. Where the estimate does not exist (separated data) the
+/// coefficients grow until the clamped means stop moving them, and a
+/// singular weighted system ends the iteration at the last estimate.
+/// `None` when not even the first step can be taken.
+fn glm_irls(
+  design: &[Vec<f64>],
+  y: &[f64],
+  family: GlmFamily,
+  link: GlmLink,
+) -> Option<Vec<f64>> {
+  let n = y.len();
+  let m = design.first()?.len();
+  let ybar = y.iter().sum::<f64>() / n as f64;
+  let mut eta: Vec<f64> = y
+    .iter()
+    .map(|&yi| link.predictor(family.initial_mean(yi, ybar)))
+    .collect();
+  let mut beta: Option<Vec<f64>> = None;
+  for iteration in 0..100 {
+    let mut atwa = vec![vec![0.0; m]; m];
+    let mut atwz = vec![0.0; m];
+    for i in 0..n {
+      let mu = family.clamp_mean(link.mean(eta[i]));
+      let dmu = link.mean_derivative(mu);
+      let variance = family.variance(mu);
+      if !(dmu.is_finite()
+        && dmu != 0.0
+        && variance > 0.0
+        && variance.is_finite())
+      {
+        return beta;
+      }
+      let w = dmu * dmu / variance;
+      let z = eta[i] + (y[i] - mu) / dmu;
+      for j in 0..m {
+        atwz[j] += design[i][j] * w * z;
+        for k in 0..m {
+          atwa[j][k] += design[i][j] * w * design[i][k];
+        }
+      }
+    }
+    let Some(next) = solve_linear_system(&atwa, &atwz) else {
+      return beta;
+    };
+    if next.iter().any(|b| !b.is_finite()) {
+      return beta;
+    }
+    let previous = beta.unwrap_or_else(|| vec![0.0; m]);
+    let change = next
+      .iter()
+      .zip(&previous)
+      .map(|(a, b)| (a - b).abs())
+      .fold(0.0, f64::max);
+    let scale = next.iter().map(|b| b.abs()).fold(1.0, f64::max);
+    eta = design
+      .iter()
+      .map(|row| row.iter().zip(&next).map(|(a, b)| a * b).sum())
+      .collect();
+    beta = Some(next);
+    if iteration > 0 && change <= 1e-13 * scale {
+      break;
+    }
+  }
+  beta
+}
+
+/// `GeneralizedLinearModelFit[data, basis, vars, opts]` for the families
+/// in `GlmFamily`, with their canonical links or an explicit
+/// `"IdentityLink"`, `"LogLink"` or `"LogitLink"`.
+///
+/// A variable named by `NominalVariables` takes symbolic levels: the basis
+/// function that is that variable becomes one `DiscreteIndicator[v, level,
+/// levels]` per level but the last (the levels in canonical order), as in
+/// wolframscript. Anything this does not cover — another family or link,
+/// weights, a nominal variable inside a larger basis function — leaves the
+/// call unevaluated.
+pub fn generalized_linear_model_fit_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated("GeneralizedLinearModelFit", args));
+  if args.len() < 3 {
+    return unevaluated_call();
+  }
+  let mut family = GlmFamily::Gaussian;
+  let mut link: Option<GlmLink> = None;
+  let mut nominal_spec: Option<Expr> = None;
+  let mut include_constant = true;
+  for opt in &args[3..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return unevaluated_call();
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      return unevaluated_call();
+    };
+    match (name.as_str(), replacement.as_ref()) {
+      ("ExponentialFamily", Expr::String(f)) => match GlmFamily::from_name(f) {
+        Some(f) => family = f,
+        None => return unevaluated_call(),
+      },
+      ("LinkFunction", Expr::String(l)) => {
+        link = Some(match l.as_str() {
+          "IdentityLink" => GlmLink::Identity,
+          "LogLink" => GlmLink::Log,
+          "LogitLink" => GlmLink::Logit,
+          _ => return unevaluated_call(),
+        });
+      }
+      ("LinkFunction", Expr::Identifier(a)) if a == "Automatic" => {}
+      ("NominalVariables", spec) => nominal_spec = Some(spec.clone()),
+      ("IncludeConstantBasis", value) => {
+        include_constant =
+          !matches!(value, Expr::Identifier(b) if b == "False");
+      }
+      _ => return unevaluated_call(),
+    }
+  }
+  let link = link.unwrap_or_else(|| family.canonical_link());
+
+  let vars: Vec<String> = match &args[2] {
+    Expr::Identifier(v) => vec![v.clone()],
+    Expr::List(items) => {
+      let mut names = Vec::with_capacity(items.len());
+      for item in items {
+        let Expr::Identifier(v) = item else {
+          return unevaluated_call();
+        };
+        names.push(v.clone());
+      }
+      names
+    }
+    _ => return unevaluated_call(),
+  };
+  let nominal: Vec<bool> = vars
+    .iter()
+    .map(|v| match &nominal_spec {
+      None => false,
+      Some(Expr::Identifier(a)) if a == "All" => true,
+      Some(Expr::Identifier(a)) if a == "None" => false,
+      Some(Expr::Identifier(a)) => a == v,
+      Some(Expr::List(items)) => items
+        .iter()
+        .any(|i| matches!(i, Expr::Identifier(a) if a == v)),
+      Some(_) => false,
+    })
+    .collect();
+
+  // Rows `{x1, …, xk, y}`; a vector of responses for one variable is
+  // indexed from 1.
+  let Expr::List(raw_rows) = &args[0] else {
+    return unevaluated_call();
+  };
+  let k = vars.len();
+  let rows: Vec<Vec<Expr>> = if k == 1
+    && raw_rows.iter().all(|r| !matches!(r, Expr::List(_)))
+  {
+    raw_rows
+      .iter()
+      .enumerate()
+      .map(|(i, y)| vec![Expr::Integer(i as i128 + 1), y.clone()])
+      .collect()
+  } else {
+    let mut rows = Vec::with_capacity(raw_rows.len());
+    for r in raw_rows {
+      match r {
+        Expr::List(items) if items.len() == k + 1 => rows.push(items.to_vec()),
+        _ => return unevaluated_call(),
+      }
+    }
+    rows
+  };
+  if rows.is_empty() {
+    return unevaluated_call();
+  }
+  let mut y = Vec::with_capacity(rows.len());
+  for row in &rows {
+    match try_eval_to_f64(&row[k]) {
+      Some(v) => y.push(v),
+      None => return unevaluated_call(),
+    }
+  }
+
+  // The levels of each nominal variable, in canonical order.
+  let mut levels: Vec<Option<Vec<Expr>>> = Vec::with_capacity(k);
+  for (c, &is_nominal) in nominal.iter().enumerate() {
+    levels.push(if is_nominal {
+      let column = Expr::List(rows.iter().map(|r| r[c].clone()).collect());
+      match &evaluate_expr_to_expr(&call1("Union", column))? {
+        Expr::List(ls) => Some(ls.to_vec()),
+        _ => return unevaluated_call(),
+      }
+    } else {
+      None
+    });
+  }
+
+  // Expand the basis: a nominal variable becomes its level indicators.
+  let user_basis: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut basis: Vec<Expr> = if include_constant {
+    vec![Expr::Integer(1)]
+  } else {
+    Vec::new()
+  };
+  for b in user_basis {
+    if include_constant && matches!(b, Expr::Integer(1)) {
+      continue;
+    }
+    let nominal_index = vars.iter().position(|v| {
+      levels[vars.iter().position(|w| w == v).unwrap()].is_some()
+        && matches!(&b, Expr::Identifier(n) if n == v)
+    });
+    if let Some(c) = nominal_index {
+      let ls = levels[c].as_ref().unwrap();
+      let all = Expr::List(ls.clone().into());
+      for level in &ls[..ls.len().saturating_sub(1)] {
+        basis.push(call(
+          "DiscreteIndicator",
+          vec![
+            Expr::Identifier(vars[c].clone()),
+            level.clone(),
+            all.clone(),
+          ],
+        ));
+      }
+    } else if vars.iter().zip(&levels).any(|(v, l)| {
+      l.is_some() && !crate::functions::calculus_ast::is_constant_wrt(&b, v)
+    }) {
+      return unevaluated_call();
+    } else {
+      basis.push(b);
+    }
+  }
+  if basis.is_empty() {
+    return unevaluated_call();
+  }
+
+  // Design matrix: each basis function at each row's values.
+  let mut design = Vec::with_capacity(rows.len());
+  for row in &rows {
+    let mut values = Vec::with_capacity(basis.len());
+    for b in &basis {
+      let at_row = vars.iter().zip(row).fold(b.clone(), |e, (v, value)| {
+        crate::syntax::substitute_variable(&e, v, value)
+      });
+      match try_eval_to_f64(&evaluate_expr_to_expr(&at_row)?) {
+        Some(v) => values.push(v),
+        None => return unevaluated_call(),
+      }
+    }
+    design.push(values);
+  }
+
+  let Some(beta) = glm_irls(&design, &y, family, link) else {
+    return unevaluated_call();
+  };
+  let predicted: Vec<f64> = design
+    .iter()
+    .map(|row| link.mean(row.iter().zip(&beta).map(|(a, b)| a * b).sum()))
+    .collect();
+
+  let predictor = {
+    let terms: Vec<Expr> = beta
+      .iter()
+      .zip(&basis)
+      .map(|(c, b)| match b {
+        Expr::Integer(1) => Expr::Real(*c),
+        other => times(vec![Expr::Real(*c), other.clone()]),
+      })
+      .collect();
+    let raw = if terms.len() == 1 {
+      terms.into_iter().next().unwrap()
+    } else {
+      plus(terms)
+    };
+    evaluate_expr_to_expr(&raw).unwrap_or(raw)
+  };
+  let fitted_expr = {
+    let raw = link.mean_expr(predictor);
+    evaluate_expr_to_expr(&raw).unwrap_or(raw)
+  };
+  let mut function_body = fitted_expr.clone();
+  for (k, name) in vars.iter().enumerate() {
+    function_body = crate::syntax::substitute_variable(
+      &function_body,
+      name,
+      &Expr::Slot(k + 1),
+    );
+  }
+  let reals =
+    |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
+  let response = Expr::List(rows.iter().map(|r| r[k].clone()).collect());
+  let residuals: Vec<f64> =
+    y.iter().zip(&predicted).map(|(a, b)| a - b).collect();
+
+  // Goodness of fit. The null model is the constant one (its estimate is
+  // the mean response whatever the link), or `eta = 0` without a constant.
+  let n = y.len();
+  let p = beta.len();
+  let deviances: Vec<f64> = y
+    .iter()
+    .zip(&predicted)
+    .map(|(&yi, &mu)| family.unit_deviance(yi, mu))
+    .collect();
+  let null_mean = if include_constant {
+    y.iter().sum::<f64>() / n as f64
+  } else {
+    link.mean(0.0)
+  };
+  let null_deviance: f64 = y
+    .iter()
+    .map(|&yi| family.unit_deviance(yi, null_mean))
+    .sum();
+  let residual_dof = n.saturating_sub(p);
+  // The Pearson estimate of the dispersion, as wolframscript takes it.
+  let dispersion = if family.estimates_dispersion() {
+    let pearson: f64 = y
+      .iter()
+      .zip(&predicted)
+      .map(|(&yi, &mu)| (yi - mu) * (yi - mu) / family.variance(mu))
+      .sum();
+    pearson / residual_dof.max(1) as f64
+  } else {
+    1.0
+  };
+  let log_likelihood: f64 = y
+    .iter()
+    .zip(&predicted)
+    .map(|(&yi, &mu)| family.log_likelihood(yi, mu, dispersion))
+    .sum();
+  // The information criteria count the dispersion as a parameter too.
+  let parameters = (p + 1) as f64;
+  let deviance_residuals: Vec<f64> = residuals
+    .iter()
+    .zip(&deviances)
+    .map(|(r, d)| r.signum() * d.max(0.0).sqrt())
+    .collect();
+  let integer = |v: usize| Expr::Integer(v as i128);
+  let mut assoc = vec![
+    (str_expr("Deviances"), reals(&deviances)),
+    (
+      str_expr("ResidualDeviance"),
+      Expr::Real(deviances.iter().sum()),
+    ),
+    (str_expr("ResidualDegreesOfFreedom"), integer(residual_dof)),
+    (
+      str_expr("NullDegreesOfFreedom"),
+      integer(if include_constant { n - 1 } else { n }),
+    ),
+    (str_expr("DevianceResiduals"), reals(&deviance_residuals)),
+    (str_expr("EstimatedDispersion"), Expr::Real(dispersion)),
+  ];
+  // wolframscript's null deviance for the Gamma and inverse Gaussian
+  // families, and its inverse Gaussian likelihood, are neither the
+  // constant model's nor the density's; those properties are left out
+  // rather than reported differently.
+  if !matches!(family, GlmFamily::Gamma | GlmFamily::InverseGaussian) {
+    assoc.push((str_expr("NullDeviance"), Expr::Real(null_deviance)));
+  }
+  if !matches!(family, GlmFamily::InverseGaussian) {
+    assoc.extend([
+      (str_expr("LogLikelihood"), Expr::Real(log_likelihood)),
+      (
+        str_expr("AIC"),
+        Expr::Real(-2.0 * log_likelihood + 2.0 * parameters),
+      ),
+      (
+        str_expr("BIC"),
+        Expr::Real(-2.0 * log_likelihood + parameters * (n as f64).ln()),
+      ),
+    ]);
+  }
+  assoc.extend([
+    (str_expr("Type"), id_expr("GeneralizedLinear")),
+    (str_expr("FittedExpression"), fitted_expr),
+    (str_expr("BestFitParameters"), reals(&beta)),
+    (
+      str_expr("IndependentVariables"),
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
+    ),
+    (str_expr("BasisFunctions"), Expr::List(basis.into())),
+    (
+      str_expr("DesignMatrix"),
+      Expr::List(design.iter().map(|r| reals(r)).collect()),
+    ),
+    (str_expr("PredictedResponse"), reals(&predicted)),
+    (str_expr("Response"), response),
+    (str_expr("FitResiduals"), reals(&residuals)),
+    (
+      str_expr("InputData"),
+      Expr::List(rows.into_iter().map(|r| Expr::List(r.into())).collect()),
+    ),
+    (
+      str_expr("Function"),
+      Expr::Function {
+        body: Box::new(function_body),
+      },
+    ),
+    (
+      str_expr("VariableName"),
+      Expr::String(vars.first().cloned().unwrap_or_default()),
+    ),
+  ]);
+  Ok(call1("FittedModel", Expr::Association(assoc)))
 }

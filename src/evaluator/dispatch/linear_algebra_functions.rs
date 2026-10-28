@@ -954,9 +954,8 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    // GeneralizedLinearModelFit with the (default) Gaussian family and
-    // identity link is ordinary least squares, so it delegates to
-    // LinearModelFit. Other families stay unevaluated.
+    // The Gaussian family with its identity link is ordinary least
+    // squares, which LinearModelFit fits (with all of its properties).
     "GeneralizedLinearModelFit" if args.len() >= 3 => {
       let gaussian_only = args[3..].iter().all(|a| match a {
         Expr::Rule {
@@ -968,11 +967,25 @@ pub fn dispatch_linear_algebra_functions(
         }
         _ => false,
       });
-      if !gaussian_only {
-        return None;
+      if gaussian_only {
+        return Some(
+          crate::functions::linear_algebra_ast::linear_model_fit_ast(
+            &args[..3],
+          ),
+        );
       }
-      return Some(crate::functions::linear_algebra_ast::linear_model_fit_ast(
-        &args[..3],
+      return Some(
+        crate::functions::linear_algebra_ast::generalized_linear_model_fit_ast(
+          args,
+        ),
+      );
+    }
+    "DiscreteIndicator" if args.len() == 3 => {
+      return Some(Ok(
+        crate::functions::linear_algebra_ast::discrete_indicator(args)
+          .unwrap_or_else(|| {
+            crate::helpers::unevaluated("DiscreteIndicator", args)
+          }),
       ));
     }
     "LogitModelFit" if args.len() == 3 => {

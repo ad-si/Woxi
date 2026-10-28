@@ -2241,6 +2241,23 @@ convert data value to a number". `LinearModelFit` gives
 `LinearModelFit::desmat` for such data in both. `LinearModelFit[…, Weights
 -> w]` stays unevaluated in Woxi.
 
+### `GeneralizedLinearModelFit` and `LogitModelFit` stop short of the estimate
+
+```sh
+wolframscript -code 'GeneralizedLinearModelFit[{{1,2},{2,3},{3,7},{4,9}}, x, x, ExponentialFamily -> "Poisson"]["BestFitParameters"]'
+# {0.22480147381937685, 0.5104799964404124}
+woxi eval '…same…'   # {0.22480147112192…, 0.51047999706…}, the maximum-likelihood estimate
+```
+
+wolframscript's iteration ends about 1e-9 (relative) away from the
+estimate, or 1e-5 with `LinkFunction -> "IdentityLink"`. Woxi iterates to
+the estimate, which solving the score equations at 30 digits confirms.
+With perfectly separated binomial data the estimate does not exist, and
+both report large finite coefficients that differ (`LogitModelFit[{{0,
+0}, {1, 0}, {2, 0}, {3, 1}, {4, 1}, {5, 1}}, {1, x}, x]`: wolframscript
+`{-98.58, 39.43}`, Woxi `{-246.8, 98.71}`). Neither R's `glm.fit` starting
+values nor its stopping rule reproduce wolframscript's digits.
+
 ### Constrained and weighted fitting find different local minima
 
 On a non-convex constrained problem the two engines land on *different valid*

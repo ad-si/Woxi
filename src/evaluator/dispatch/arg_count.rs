@@ -393,6 +393,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DiscreteConvolve" => Some((4, 4)),
     "DiscreteHilbertTransform" => Some((1, 1)),
     "DiscretePlot" => Some((2, usize::MAX)),
+    "DiscreteIndicator" => Some((3, 3)),
     "DiscreteUniformDistribution" => Some((1, 1)),
     "Discriminant" => Some((2, 3)),
     "DisjointQ" => Some((2, 3)),

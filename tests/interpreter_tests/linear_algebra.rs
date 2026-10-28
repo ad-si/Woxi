@@ -5622,6 +5622,165 @@ mod tensor_wedge {
 }
 
 #[cfg(test)]
+mod generalized_linear_model_fit_families {
+  use super::*;
+
+  // `Round[…, 10.^-k]` hides the last digits: wolframscript stops its
+  // iteration about 1e-9 short of the maximum-likelihood estimate, which
+  // Woxi converges to.
+  fn eval(code: &str) -> String {
+    clear_state();
+    interpret(code).unwrap()
+  }
+
+  #[test]
+  fn poisson_with_nominal_variables() {
+    let setup = "data = {{ga, 1, 10}, {ga, 2, 40}, {gb, 1, 20}, {gb, 2, 50}, \
+                 {gc, 1, 30}, {gc, 2, 60}}; \
+                 m = GeneralizedLinearModelFit[data, {c, g}, {g, c}, \
+                 NominalVariables -> All, ExponentialFamily -> \"Poisson\"]; ";
+    assert_eq!(
+      eval(&format!("{setup}Round[m[\"PredictedResponse\"], 10.^-6]")),
+      "{14.285713999999999, 35.714286, 20., 50., 25.714285999999998, 64.285714}"
+    );
+    // A nominal variable is one indicator per level but the last.
+    assert_eq!(
+      eval(&format!("{setup}m[\"BasisFunctions\"]")),
+      "{1, DiscreteIndicator[c, 1, {1, 2}], DiscreteIndicator[g, ga, {ga, gb, gc}], \
+       DiscreteIndicator[g, gb, {ga, gb, gc}]}"
+    );
+    assert_eq!(
+      eval(&format!("{setup}m[\"DesignMatrix\"][[1]]")),
+      "{1., 1., 1., 0.}"
+    );
+    assert_eq!(
+      eval(&format!("{setup}m[\"Response\"]")),
+      "{10, 40, 20, 50, 30, 60}"
+    );
+    // The constant-only model predicts the mean count.
+    assert_eq!(
+      eval(
+        "data = {{ga, 1, 10}, {ga, 2, 40}, {gb, 1, 20}, {gb, 2, 50}, \
+         {gc, 1, 30}, {gc, 2, 60}}; Round[GeneralizedLinearModelFit[data, \
+         {}, {g, c}, NominalVariables -> All, ExponentialFamily -> \
+         \"Poisson\"][\"PredictedResponse\"], 10.^-6]"
+      ),
+      "{35., 35., 35., 35., 35., 35.}"
+    );
+  }
+
+  // Levels are taken in canonical order whatever order they appear in,
+  // and the model evaluates at a level.
+  #[test]
+  fn nominal_levels_and_evaluation() {
+    assert_eq!(
+      eval(
+        "data = {{gc, 1, 10}, {ga, 2, 40}, {gb, 1, 20}, {gc, 2, 50}, \
+         {ga, 1, 30}, {gb, 2, 60}}; m = GeneralizedLinearModelFit[data, \
+         {g, c}, {g, c}, NominalVariables -> g, ExponentialFamily -> \
+         \"Poisson\"]; {Round[m[\"BestFitParameters\"], 10.^-8], \
+         Round[m[ga, 1.5], 10.^-8]}"
+      ),
+      "{{1.92529086, 0.15415068, 0.28768207, 0.91629073}, 31.6227766}"
+    );
+  }
+
+  #[test]
+  fn families_and_links() {
+    let d = "d = {{1, 2.}, {2, 3.}, {3, 7.}, {4, 9.}}; ";
+    for (family, expected) in [
+      ("\"Poisson\"", "{0.2248014711, 0.5104799971}"),
+      ("\"Gamma\"", "{0.5079050156, -0.1025539281}"),
+      (
+        "\"InverseGaussian\"",
+        "{0.1801987668, -0.042845267400000005}",
+      ),
+    ] {
+      assert_eq!(
+        eval(&format!(
+          "{d}Round[GeneralizedLinearModelFit[d, x, x, ExponentialFamily -> \
+           {family}][\"BestFitParameters\"], 10.^-10]"
+        )),
+        expected,
+        "{family}"
+      );
+    }
+    assert_eq!(
+      eval(&format!(
+        "{d}Round[GeneralizedLinearModelFit[d, x, x, ExponentialFamily -> \
+         \"Poisson\", LinkFunction -> \"IdentityLink\"][\
+         \"BestFitParameters\"], 10.^-8]"
+      )),
+      "{-0.59247856, 2.33699142}"
+    );
+    assert_eq!(
+      eval(
+        "Round[GeneralizedLinearModelFit[{{1, 0}, {2, 0}, {3, 1}, {4, 0}, \
+         {5, 1}, {6, 1}}, x, x, ExponentialFamily -> \"Binomial\"][\
+         \"BestFitParameters\"], 10.^-8]"
+      ),
+      "{-4.24909655, 1.21402759}"
+    );
+    assert_eq!(
+      eval(
+        "Normal[GeneralizedLinearModelFit[{{1, 2}, {2, 3}, {3, 7}, {4, 9}}, \
+         x, x, ExponentialFamily -> \"Poisson\"]] /. r_Real :> Round[r, 0.01]"
+      ),
+      "E^(0.22 + 0.51*x)"
+    );
+  }
+
+  // Deviance, degrees of freedom and the likelihood-based criteria, which
+  // count the dispersion as a parameter even where it is fixed at 1.
+  #[test]
+  fn goodness_of_fit_properties() {
+    assert_eq!(
+      eval(
+        "data = {{ga, 1, 10}, {ga, 2, 40}, {gb, 1, 20}, {gb, 2, 50}, \
+         {gc, 1, 30}, {gc, 2, 60}}; m = GeneralizedLinearModelFit[data, \
+         {c, g}, {g, c}, NominalVariables -> All, ExponentialFamily -> \
+         \"Poisson\"]; Round[m[{\"ResidualDegreesOfFreedom\", \
+         \"ResidualDeviance\", \"NullDeviance\", \"NullDegreesOfFreedom\", \
+         \"LogLikelihood\", \"AIC\", \"BIC\"}], 10.^-8]"
+      ),
+      "{2., 2.90269216, 54.340654210000004, 5., -17.18277153, 44.36554306, 43.32434041}"
+    );
+    assert_eq!(
+      eval(
+        "m = GeneralizedLinearModelFit[{{1, 0}, {2, 0}, {3, 1}, {4, 0}, \
+         {5, 1}, {6, 1}}, x, x, ExponentialFamily -> \"Binomial\"]; \
+         Round[m[{\"ResidualDeviance\", \"NullDeviance\", \
+         \"LogLikelihood\", \"AIC\", \"EstimatedDispersion\"}], 10.^-8]"
+      ),
+      "{4.95597367, 8.31776617, -2.4779868400000002, 10.95597367, 1.}"
+    );
+    // The Gamma dispersion is the Pearson estimate.
+    assert_eq!(
+      eval(
+        "d = {{1, 2.}, {2, 3.}, {3, 7.}, {4, 9.}}; \
+         Round[GeneralizedLinearModelFit[d, x, x, ExponentialFamily -> \
+         \"Gamma\"][{\"ResidualDeviance\", \"EstimatedDispersion\", \
+         \"AIC\"}], 10.^-8]"
+      ),
+      "{0.19397071, 0.11009126, 18.23078717}"
+    );
+  }
+
+  #[test]
+  fn discrete_indicator() {
+    assert_eq!(eval("DiscreteIndicator[ga, ga, {ga, gb, gc}]"), "1");
+    assert_eq!(eval("DiscreteIndicator[gb, ga, {ga, gb, gc}]"), "0");
+    // Both values must be levels; `1.` is not the level `1`.
+    for input in [
+      "DiscreteIndicator[q, ga, {ga, gb, gc}]",
+      "DiscreteIndicator[a, c, {a, b}]",
+      "DiscreteIndicator[1., 1, {1, 2}]",
+    ] {
+      assert_eq!(eval(input), input);
+    }
+  }
+}
+
 mod logit_model_fit {
   use super::*;
 

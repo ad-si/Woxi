@@ -2183,7 +2183,7 @@ SetStreamPosition,Sets the current position in an open stream,✅,io,2.0,2184
 VertexShape,Option specifying the shape used to render graph vertices,✅,none,8.0,2184
 DawsonF,Returns the Dawson integral exp(-x^2) times integral of exp(t^2),✅,pure,7.0,2187
 FromPolarCoordinates,Converts polar coordinates to Cartesian,✅,None,10.1,2187
-GeneralizedLinearModelFit,Fits a generalized linear model to data — only the Gaussian family (ordinary least squares) is supported; delegates to LinearModelFit,✅,pure,7.0,2187
+GeneralizedLinearModelFit,Fits a generalized linear model (Gaussian; Binomial; Poisson; Gamma; InverseGaussian families with nominal variables) by IRLS,✅,pure,7.0,2187
 OpenAppend,Opens a file for appending,✅,effectful,1.0,2188
 ErlangDistribution,Erlang probability distribution equivalent to GammaDistribution with a rate parameter,✅,pure,8.0,2190
 FourierCosTransform,Fourier cosine transform of a function,✅,pure,4.0,2190
@@ -3879,7 +3879,7 @@ BrownForsytheTest,,,,8.0,3972
 CommunityLabels,,,,9.0,3972
 CompoundElement,,,,10.1,3972
 ConoverTest,,,,8.0,3972
-DiscreteIndicator,,,,7.0,3972
+DiscreteIndicator,Indicator of one level among a list of discrete levels,✅,pure,7.0,3972
 DoubleBracketingBar,Inert typeset form of double bars around its content,✅,pure,3.0,3972
 EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
