@@ -5630,6 +5630,24 @@ mod solve {
   }
 
   #[test]
+  fn nsolve_radical_system_finds_every_equilibrium() {
+    // Equations with fractional powers leave Solve with a lone `y -> 0`
+    // branch; NSolve completes it numerically. The restricted three-body
+    // problem has three collinear points and the triangular pair.
+    assert_eq!(
+      interpret(
+        "mu = 0.1; s = NSolve[{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + \
+y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, \
+-y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + \
+y^2]^3)) y}, {x, y}]; \
+{Length[s], Sort[Round[{x, y} /. s, 0.001]]}"
+      )
+      .unwrap(),
+      "{5, {{-1.042, 0.}, {0.4, -0.866}, {0.4, 0.866}, {0.609, 0.}, {1.26, 0.}}}"
+    );
+  }
+
+  #[test]
   fn nsolve_underdetermined_linear_solves_for_first_variables() {
     // NSolve, unlike Solve, solves a linear underdetermined system for its
     // first variables and reports no `svars`.
