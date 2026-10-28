@@ -1944,6 +1944,20 @@ mod unimplemented_warnings {
     assert!(result.warnings[0].contains("CityData["));
   }
 
+  // Cell content (a control label written as a cell) is inert, as in
+  // wolframscript.
+  #[test]
+  fn cell_content_heads_no_warning() {
+    for input in [
+      "BoxData[FormBox[SubscriptBox[\"q\", \"1\"], TraditionalForm]]",
+      "TextData[\"y\"]",
+    ] {
+      clear_state();
+      let result = interpret_with_stdout(input).unwrap();
+      assert_eq!(result.warnings, [] as [std::string::String; 0], "{input}");
+    }
+  }
+
   #[test]
   fn unknown_function_no_warning() {
     clear_state();

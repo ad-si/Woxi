@@ -12045,6 +12045,8 @@ fn evaluate_function_call_ast_inner(
       | "File"
       | "DelaunayMesh"
       | "SystemsModelDelay"
+      | "BoxData"
+      | "TextData"
       | "ComplexRegionPlot"
       | "LongRightArrow"
       | "GeoGridPosition"
