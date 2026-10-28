@@ -2108,6 +2108,21 @@ mod circle_points {
 mod bezier_function {
   use super::*;
 
+  // A SplineDegree option is accepted and, as in Wolfram, ignored: the
+  // curve keeps the full degree (Demonstration TheBuffonNoodleProblem
+  // passes SplineDegree -> Length[p] - 1 and samples it in a Table).
+  #[test]
+  fn spline_degree_option_is_ignored() {
+    assert_eq!(
+      interpret(
+        "p = {{0, 0}, {1, 2}, {3, 1}, {4, 4}, {6, 0}}; bt = BezierFunction[p, SplineDegree -> 2][t]; \
+         {Table[bt, {t, 0, 1, 0.5}], Round[10^6 BezierFunction[p, SplineDegree -> 1][0.2]]}"
+      )
+      .unwrap(),
+      "{{{0., 0.}, {2.75, 1.875}, {6., 0.}}, {982400, 1075200}}"
+    );
+  }
+
   #[test]
   fn quadratic_at_half() {
     assert_eq!(

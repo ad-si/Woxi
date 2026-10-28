@@ -2501,9 +2501,22 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "BezierFunction" && func_args.len() == 1 => {
-      // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
-      Ok(evaluate_bezier_function(func_args, args))
+    } if name == "BezierFunction"
+      && !func_args.is_empty()
+      && func_args[1..]
+        .iter()
+        .all(|o| matches!(o, Expr::Rule { .. })) =>
+    {
+      // BezierFunction[{{p1}, {p2}, ...}, opts][t] — evaluate the Bezier
+      // curve at t. Wolfram ignores a `SplineDegree` here: the curve has
+      // the full degree n - 1 whatever is given.
+      if !bezier_parameter_is_numeric(args) {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
+      Ok(evaluate_bezier_function(&func_args[..1], args))
     }
     Expr::FunctionCall {
       name,
@@ -2512,6 +2525,12 @@ pub fn apply_curried_call(
       // Structured form: BezierFunction[degree, knots, {n}, {points, {}}, ...]
       // The control points live in args[3][0]. Wrap them in a 1-arg
       // BezierFunction and reuse the standard evaluator.
+      if !bezier_parameter_is_numeric(args) {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       if let Expr::List(slot) = &func_args[3]
         && !slot.is_empty()
       {
@@ -3355,6 +3374,13 @@ pub fn apply_curried_call(
 }
 
 /// Evaluate BezierFunction[{control_points}][t] using de Casteljau's algorithm.
+/// Whether a BezierFunction is applied to one number; otherwise the call
+/// stays as it is (`BezierFunction[…][t]`).
+fn bezier_parameter_is_numeric(args: &[Expr]) -> bool {
+  matches!(args, [Expr::Real(_) | Expr::Integer(_)])
+    || matches!(args, [Expr::FunctionCall { name, .. }] if name == "Rational")
+}
+
 fn evaluate_bezier_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   if args.len() != 1 {
     return unevaluated("BezierFunction", func_args);
