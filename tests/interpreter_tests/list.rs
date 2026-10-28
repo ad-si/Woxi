@@ -9764,6 +9764,31 @@ mod range_real {
     assert_eq!(interpret("Range[1.0, 2.3, .5]").unwrap(), "{1., 1.5, 2.}");
   }
 
+  // wolframscript counts a ratio (max - min)/step one rounding step under
+  // an integer as that integer, rounds min + k*step once, and ends on max
+  // itself when the last element passes it.
+  #[test]
+  fn range_machine_count_and_last_element() {
+    assert_eq!(
+      interpret(
+        "r = Range[-0.8, 3.8, 0.01]; \
+         InputForm[{Length[r], r[[231]], Last[r], Last[Range[3.8, -0.8, -0.01]]}]"
+      )
+      .unwrap(),
+      "InputForm[{461, 1.5, 3.8, -0.8}]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[{Range[0.3, 0.1, -0.1], Range[-1, 0, 0.1][[-2 ;;]], \
+         Length[Range[0, 9999999999/10000000000, 0.1]], \
+         Length[Range[0, 0.9999999999999996, 0.1]]}]"
+      )
+      .unwrap(),
+      "InputForm[{{0.3, 0.19999999999999998, 0.1}, {-0.09999999999999995, 0.}, \
+       10, 10}]"
+    );
+  }
+
   // Elements are computed as min + k*step, not by repeated addition, so an
   // inexact step does not compound rounding error. (wolframscript parity)
   #[test]
