@@ -5092,6 +5092,19 @@ fn fourier_array_impl(
     }
   }
 
+  // Imaginary parts that are pure round-off relative to the magnitude of the
+  // whole array (e.g. `InverseFourier` of a thresholded, Hermitian-symmetric
+  // spectrum of a large-valued image) are dropped, so the real round trip
+  // stays real instead of turning every entry into `a + 10^-12 I`.
+  let scale = data
+    .iter()
+    .fold(0.0_f64, |m, (re, im)| m.max(re.abs()).max(im.abs()));
+  if scale > 0.0 && data.iter().all(|(_, im)| im.abs() <= scale * 1e-13) {
+    for (_, im) in &mut data {
+      *im = 0.0;
+    }
+  }
+
   let any_complex = data.iter().any(|(_, im)| fourier_round(*im) != 0.0);
 
   fn build(data: &[(f64, f64)], shape: &[usize], any_complex: bool) -> Expr {
