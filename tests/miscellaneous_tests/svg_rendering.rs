@@ -2603,6 +2603,24 @@ mod tests {
     }
 
     #[test]
+    fn single_element_axes_label_names_the_x_axis() {
+      // `AxesLabel -> {xlabel}` labels the x axis; the list braces must not
+      // be drawn, and a plot must not drop the label.
+      for code in [
+        "Plot[x, {x, 0, 1}, AxesLabel -> {\"xlab\"}]",
+        "ListPlot[{1, 2, 3}, AxesLabel -> {\"xlab\"}]",
+        "Show[Plot[x, {x, 0, 1}], AxesLabel -> {\"xlab\"}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(
+          svg.contains(">xlab<"),
+          "expected the label in {code}: {svg}"
+        );
+        assert!(!svg.contains("{xlab"), "unexpected braces in {code}: {svg}");
+      }
+    }
+
+    #[test]
     fn graphics3d_axes_label_typesets_inline_boxes() {
       // An axis label written in the FrontEnd carries its typesetting as
       // linear syntax inside the string; it must draw as the superscript

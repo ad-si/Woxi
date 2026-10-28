@@ -10113,11 +10113,14 @@ pub(crate) fn apply_common_plot_option(
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
       if let Expr::List(items) = &val
-        && items.len() >= 2
+        && !items.is_empty()
       {
         let x = crate::functions::graphics::styled_axis_label(&items[0])
           .unwrap_or_default();
-        let y = crate::functions::graphics::styled_axis_label(&items[1])
+        // `{xlabel}` names the x axis only.
+        let y = items
+          .get(1)
+          .and_then(crate::functions::graphics::styled_axis_label)
           .unwrap_or_default();
         plot_opts.axes_label = Some((x, y));
       }
