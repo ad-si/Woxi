@@ -525,6 +525,49 @@ myLet[{a_ = b_}, a_] := b;
 mod down_values {
   use super::*;
 
+  // A list argument without patterns is a literal, evaluated before it is
+  // stored: Do[f[{i, 1}] = i, …] defines one value per pair. It used to
+  // become the list pattern f[{i, 1}] that matched every pair, so the last
+  // value won — and a memoized table keyed by pairs (Demonstration
+  // DelannoyNumberCarpet) scanned every rule on each lookup.
+  #[test]
+  fn literal_list_arguments_are_evaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = 5; f[{i, 1}] = 7; Clear[i]; Do[g[{i, 1}] = i, {i, 3}]; \
+         {DownValues[f], f[{5, 1}], f[{6, 1}], g[{2, 1}], Length[DownValues[g]]}"
+      )
+      .unwrap(),
+      "{{HoldPattern[f[{5, 1}]] :> 7}, 7, f[{6, 1}], 2, 3}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Block[{ad}, ad[{0, 0}] = 1; ad[{a_, 0}] := ad[{a, 0}] = ad[{a - 1, 0}]; \
+         ad[{0, b_}] := ad[{0, b}] = ad[{0, b - 1}]; \
+         ad[{a_, b_}] := ad[{a, b}] = ad[{a - 1, b}] + ad[{a - 1, b - 1}] + ad[{a, b - 1}]; \
+         Total[Flatten[Table[Mod[ad[{x, y}], 3], {y, 0, 64}, {x, 0, 64}]]]]"
+      )
+      .unwrap(),
+      "3664"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  // Literal definitions are listed first, in canonical order of their
+  // left-hand sides, then the pattern definitions.
+  #[test]
+  fn literal_definitions_first_in_canonical_order() {
+    clear_state();
+    assert_eq!(
+      interpret("f[3] = 3; f[1] = 1; f[b] = 2; f[a] = 0; f[{2}] = 5; f[x_] := x; DownValues[f]")
+        .unwrap(),
+      "{HoldPattern[f[1]] :> 1, HoldPattern[f[3]] :> 3, HoldPattern[f[a]] :> 0, \
+       HoldPattern[f[b]] :> 2, HoldPattern[f[{2}]] :> 5, HoldPattern[f[x_]] :> x}"
+    );
+  }
+
   #[test]
   fn basic_down_value() {
     clear_state();
@@ -6353,7 +6396,7 @@ mod lhs_argument_collapses_to_literal {
     assert_eq!(
       interpret(
         "f[0 Blank[], m_] := 1; f[n_, m_] := f[n, m] = f[n - 1, m] + 1; \
-         {f[3, x], DownValues[f][[1]]}"
+         {f[3, x], DownValues[f][[4]]}"
       )
       .unwrap(),
       "{4, HoldPattern[f[0, m_]] :> 1}"
