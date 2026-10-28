@@ -22151,6 +22151,28 @@ mod rgbcolor_channels_clip {
 mod find_minimum_variable_specs {
   use super::*;
 
+  // A constrained problem with each `{var, start}` as its own argument
+  // optimizes over all of them; only the first used to be taken, leaving
+  // the objective symbolic in the others.
+  #[test]
+  fn constrained_with_separate_variable_specs() {
+    assert_eq!(
+      interpret(
+        "FindMaximum[{-(x - 1)^2 - (y - 2)^2, x >= 0 && y >= 0}, {x, 5}, {y, 5}]"
+      )
+      .unwrap(),
+      "{0., {x -> 1., y -> 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "r = FindMinimum[{(x - 1)^2 + (y - 2)^2, x <= 0}, {x, 5}, {y, 5}]; \
+         Round[{First[r], {x, y} /. Last[r]}, 10^-6]"
+      )
+      .unwrap(),
+      "{1, {0, 2}}"
+    );
+  }
+
   // Indexed variables (`n[j]`) used to be rejected as a bad variable spec.
   #[test]
   fn indexed_variables() {

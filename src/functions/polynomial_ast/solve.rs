@@ -16335,12 +16335,29 @@ pub fn find_minimum_ast(
   // constrained solver handles; the starting values are only a hint and it
   // takes the variables on their own. wolframscript reports the same
   // `{value, {var -> …}}` shape from either.
+  // `{x, x0}, {y, y0}, …` as separate arguments name one variable each.
+  let single_var_spec = |e: &Expr| {
+    matches!(e, Expr::List(items)
+      if (2..=4).contains(&items.len())
+        && matches!(items[0], Expr::Identifier(_))
+        && !items.iter().all(|i| matches!(i, Expr::Identifier(_))))
+  };
+  let mut var_args_end = 2;
+  if single_var_spec(&args[1]) {
+    while var_args_end < args.len() && single_var_spec(&args[var_args_end]) {
+      var_args_end += 1;
+    }
+  }
   if let Expr::List(items) = &args[0]
     && items.len() >= 2
-    && let Some(vars) = optimization_variable_names(&args[1])
+    && let Some(vars) = args[1..var_args_end]
+      .iter()
+      .map(optimization_variable_names)
+      .collect::<Option<Vec<_>>>()
+      .map(|names| names.concat())
     && !vars.is_empty()
   {
-    let step_monitor = monitor_after_noopmon(func_name, &args[2..]);
+    let step_monitor = monitor_after_noopmon(func_name, &args[var_args_end..]);
     let _quiet = QuietGuard::new();
     return nminimize_ast_impl(
       &[
