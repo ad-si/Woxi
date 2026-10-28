@@ -474,6 +474,21 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   // a function of var during evaluation.
   let substituted = substitute_var(&result, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
+    return Some(v);
+  }
+  // Plot evaluates its body once with the variable still symbolic and only
+  // then puts the sample in, so a rule that matches on the variable
+  // (`f[t] /. sol`, with `sol` an NDSolve result) still sees `t`. Putting
+  // the number in first leaves `f[0.5]`, which no such rule matches.
+  // Only for a body that substitutes into the variable itself (`/.`):
+  // other bodies, like a fit, stay unplottable without `Evaluated -> True`.
+  if !crate::syntax::expr_to_string(body).contains("/.") {
+    return None;
+  }
+  let symbolic = evaluate_expr_to_expr(body).ok()?;
+  let substituted = substitute_var(&symbolic, var, &Expr::Real(x));
+  let result = evaluate_expr_to_expr(&substituted).ok()?;
   try_eval_to_f64_lenient(&result)
 }
 

@@ -206,6 +206,23 @@ pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
   let list = match expr {
     Expr::List(items) => items,
     Expr::FunctionCall { args, .. } => args,
+    // An NDSolve result is `{{y -> InterpolatingFunction[…][t]}}`: its
+    // tabulated points sit behind a rule and a curried call, and a copy of
+    // the result must not copy them.
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      if depth < 64 {
+        share_large_lists(pattern, depth + 1);
+        share_large_lists(replacement, depth + 1);
+      }
+      return;
+    }
     // Lists inside a curried call or an operator node (an
     // `InterpolatingFunction[…][x]` within a product) are shared too.
     Expr::CurriedCall { func, args } => {

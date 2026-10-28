@@ -168,6 +168,28 @@ mod evaluation_reuse {
     }
 
     #[test]
+    fn reading_a_stored_ndsolve_result_is_cheap() {
+      clear_state();
+      // The tabulated points sit behind a rule and a curried call, so a
+      // copy of the result used to copy every one of them.
+      interpret(
+        "s = NDSolve[{y'[t] == -y[t] + Sin[50 t], y[0] == 1}, y, {t, 0, 99}]; \
+         s2 = s;",
+      )
+      .unwrap();
+      let start = std::time::Instant::now();
+      assert_eq!(
+        interpret("Do[s2, {2000}]; (y[3.] /. s2) == (y[3.] /. s)").unwrap(),
+        "True"
+      );
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_secs() < 2,
+        "2000 reads of a stored NDSolve result took {elapsed:?}"
+      );
+    }
+
+    #[test]
     fn replacing_a_symbol_that_does_not_occur_is_cheap() {
       clear_state();
       interpret("r = Expand[(a + b + c + d)^12];").unwrap();
