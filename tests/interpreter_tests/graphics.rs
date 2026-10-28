@@ -8911,6 +8911,44 @@ mod plot3d {
       assert_eq!(auto, tenth);
     }
 
+    // `ListPlot` draws through the scatter renderer and a `Show` of plots
+    // through the merged-plot renderer; both used to drop `Automatic`.
+    #[test]
+    fn aspect_ratio_automatic_list_plot_follows_plot_ranges() {
+      let opts = "PlotRange -> {{0, 4}, {0, 1}}, PlotRangePadding -> None";
+      let auto = export_svg(&format!(
+        "ListPlot[{{{{0, 0}}, {{4, 1}}}}, {opts}, AspectRatio -> Automatic]"
+      ));
+      let quarter = export_svg(&format!(
+        "ListPlot[{{{{0, 0}}, {{4, 1}}}}, {opts}, AspectRatio -> 1/4]"
+      ));
+      assert_eq!(auto, quarter);
+    }
+
+    #[test]
+    fn aspect_ratio_automatic_list_line_plot_follows_plot_ranges() {
+      let opts = "PlotRange -> {{0, 4}, {0, 1}}, PlotRangePadding -> None";
+      let auto = export_svg(&format!(
+        "ListLinePlot[{{{{0, 0}}, {{4, 1}}}}, {opts}, AspectRatio -> Automatic]"
+      ));
+      let quarter = export_svg(&format!(
+        "ListLinePlot[{{{{0, 0}}, {{4, 1}}}}, {opts}, AspectRatio -> 1/4]"
+      ));
+      assert_eq!(auto, quarter);
+    }
+
+    #[test]
+    fn aspect_ratio_automatic_show_of_plots_follows_plot_ranges() {
+      let opts = "PlotRange -> {{0, 4}, {0, 1}}, PlotRangePadding -> None";
+      let auto = export_svg(&format!(
+        "Show[ListPlot[{{{{0, 0}}, {{4, 1}}}}], ListPlot[{{{{1, 1}}}}], {opts}, AspectRatio -> Automatic]"
+      ));
+      let quarter = export_svg(&format!(
+        "Show[ListPlot[{{{{0, 0}}, {{4, 1}}}}], ListPlot[{{{{1, 1}}}}], {opts}, AspectRatio -> 1/4]"
+      ));
+      assert_eq!(auto, quarter);
+    }
+
     #[test]
     fn raster_honours_opacity_directive() {
       let svg = export_svg("Graphics[{Opacity[.5], Raster[{{0, 1}, {1, 0}}]}]");

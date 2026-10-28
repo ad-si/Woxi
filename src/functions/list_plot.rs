@@ -986,6 +986,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             && r > 0.0
           {
             opts.aspect_ratio = Some(r);
+          } else if matches!(&val, Expr::Identifier(s) if s == "Automatic") {
+            opts.aspect_automatic = true;
           }
         }
         "Filling" => {
