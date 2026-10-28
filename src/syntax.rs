@@ -13430,9 +13430,9 @@ fn sequence_order(
     } else {
       format!("{cb}{sb}")
     };
-    match printed_order_with(&ia[i], &next_a, &ib[i], &next_b) {
-      std::cmp::Ordering::Equal => continue,
-      other => return Some(other),
+    let order = printed_order_with(&ia[i], &next_a, &ib[i], &next_b);
+    if order != std::cmp::Ordering::Equal {
+      return Some(order);
     }
   }
   (ia.len() == ib.len()).then(|| format!("{ca}{sa}").cmp(&format!("{cb}{sb}")))

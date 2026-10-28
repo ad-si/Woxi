@@ -23863,7 +23863,7 @@ mod printed_order_matches_string_order {
     for _ in 0..20000 {
       let a = generate(&mut seed, 3);
       // Pair with a near copy half of the time, so prefixes are shared.
-      let b = if seed % 2 == 0 {
+      let b = if seed.is_multiple_of(2) {
         let mut s2 = seed;
         let tail = generate(&mut s2, 2);
         match &a {
