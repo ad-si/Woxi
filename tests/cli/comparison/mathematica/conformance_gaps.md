@@ -6027,3 +6027,13 @@ woxi eval 'N[Hold[ArcTan[1, 2]]]'
 
 wolframscript only numericizes the numbers inside a held expression; Woxi
 evaluates the numericized calls as well.
+
+### `CountryData[…, {"Shape", {projection, center}}]` coordinates
+
+The shape is drawn from the bundled 1:110m outlines, projected on a unit
+sphere with the center given as `{lat, lon}`. wolframscript uses finer
+outlines and its own coordinate scale, so point counts and coordinates
+differ. Hemispheric projections (`"Orthographic"`) drop the vertices on the
+far side instead of clipping the outline at the horizon, and the conic
+projections use fixed standard parallels (`"Albers"`) or the center
+latitude (`"LambertConic"`, `"Bonne"`).

@@ -130,6 +130,18 @@ fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
   })
 }
 
+/// The outer ring of every landmass of a country (`None` for the whole world),
+/// as `(lon, lat)` degrees.
+pub fn country_outline_rings(
+  country: Option<&str>,
+) -> Option<Vec<&'static Ring>> {
+  let polys: Vec<&'static Polygon> = match country {
+    Some(name) => country_polygons(name)?.iter().collect(),
+    None => world_polygons().collect(),
+  };
+  Some(polys.iter().filter_map(|p| p.first()).collect())
+}
+
 /// `CountryData[name, "SchematicPolygon"]` — the outline of each landmass of
 /// the country as `Polygon[{{lon, lat}, ...}]` (a list when there are several).
 pub fn country_schematic_polygon(canonical: &str) -> Option<Expr> {

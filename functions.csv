@@ -216,7 +216,7 @@ NDSolve,Solves ordinary differential equations numerically (including vector-val
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
-CountryData,Returns properties (e.g. Population or FullName or Polygon or language flags) or the list of countries or the members of a class (EU or Europe) from a bundled static dataset,✅,pure,6.0,161
+CountryData,Returns properties (e.g. Population or FullName or Polygon or language flags or a projected map via the Shape property) or the list of countries or the members of a class (EU or Europe) from a bundled static dataset,✅,pure,6.0,161
 AstronomicalData,"Classic (pre-Entity) solar-system data: an index 1-9 names a major body Mercury..Pluto; the ""Position"" property (with an optional date) gives its heliocentric position from two-body Keplerian elements",✅,pure,6.0,161
 Sequence,Represents a sequence of arguments that are automatically spliced into any function,✅,pure,3.0,162
 Optional,Represents a pattern with an optional default value — present arguments fill the slots from the left,✅,pure,1.0,164

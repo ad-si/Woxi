@@ -406,6 +406,21 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       country_property(name, property)
         .unwrap_or_else(|| missing("UnknownCountry", name)),
     ),
+    [Expr::String(name), Expr::List(spec)]
+      if spec.len() == 2
+        && matches!(&spec[0], Expr::String(p) if p == "Shape") =>
+    {
+      let shape = match (&spec[1], name.as_str()) {
+        (Expr::List(pc), n) if pc.len() == 2 => {
+          let country = (n != "World").then_some(n);
+          crate::functions::map_projection::country_shape(
+            country, &pc[0], &pc[1],
+          )
+        }
+        _ => None,
+      };
+      Ok(shape.unwrap_or_else(|| unevaluated("CountryData", args)))
+    }
     _ => Ok(unevaluated("CountryData", args)),
   }
 }

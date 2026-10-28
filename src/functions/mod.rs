@@ -62,6 +62,7 @@ pub mod knot_data;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod list_plot;
+pub mod map_projection;
 pub mod math_ast;
 pub mod memory;
 pub mod mesh_region;
