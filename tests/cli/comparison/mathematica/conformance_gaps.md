@@ -2250,7 +2250,10 @@ woxi eval '…same…'   # {0.22480147112192…, 0.51047999706…}, the maximum-
 ```
 
 wolframscript's iteration ends about 1e-9 (relative) away from the
-estimate, or 1e-5 with `LinkFunction -> "IdentityLink"`. Woxi iterates to
+estimate, or 1e-5 with `LinkFunction -> "IdentityLink"` or with
+`ProbitModelFit` (O-ring data: wolframscript `{8.774897560207174,
+-0.13509567688143528}` has log-likelihood -10.188869659392, Woxi's
+`{8.7749543…, -0.1350965…}` -10.188869659266). Woxi iterates to
 the estimate, which solving the score equations at 30 digits confirms.
 With perfectly separated binomial data the estimate does not exist, and
 both report large finite coefficients that differ (`LogitModelFit[{{0,

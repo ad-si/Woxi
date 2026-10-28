@@ -8341,11 +8341,39 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       other => !is_missing(other),
     })
     .collect();
+  let vars: Vec<Expr> = match &args[2] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  if vars.iter().any(|v| try_eval_to_f64(v).is_some()) {
+    return unevaluated_with(
+      "ivar",
+      &format!(
+        "{} is not a valid variable.",
+        crate::syntax::expr_to_message_form(&Expr::List(vars.clone().into()))
+      ),
+    );
+  }
+  if let Some(Expr::List(items)) = rows.iter().find(
+    |row| matches!(row, Expr::List(items) if items.len() != vars.len() + 1),
+  ) {
+    return unevaluated_with(
+      "fitc",
+      &format!(
+        "The number of coordinates ({}) is not equal to the number of \
+         variables ({}).",
+        items.len().saturating_sub(1),
+        vars.len()
+      ),
+    );
+  }
   let numeric = |e: &Expr| try_eval_to_f64(e).is_some();
-  if rows.iter().any(|row| match row {
-    Expr::List(items) => !items.iter().all(numeric),
-    other => !numeric(other),
-  }) {
+  if rows.is_empty()
+    || rows.iter().any(|row| match row {
+      Expr::List(items) => !items.iter().all(numeric),
+      other => !numeric(other),
+    })
+  {
     return unevaluated_with(
       "desmat",
       "Unable to construct a numeric design matrix. Nominal variables may \
@@ -8355,10 +8383,6 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // A variable need not be a symbol (`Subscript[x, 1]`): each other one is
   // fitted as a placeholder symbol and put back into the model afterwards.
-  let vars: Vec<Expr> = match &args[2] {
-    Expr::List(items) => items.to_vec(),
-    other => vec![other.clone()],
-  };
   let mut basis = args[1].clone();
   let mut placeholders: Vec<(String, Expr)> = Vec::new();
   let new_vars: Vec<Expr> = vars
@@ -9620,141 +9644,6 @@ fn linear_model_fit_design_matrix_form(
   Ok(call1("FittedModel", assoc))
 }
 
-/// LogitModelFit[data, {1, x, x^2, ...}, x] — logistic regression.
-///
-/// Fits logit(p) = b0*f0 + b1*f1 + ... using Iteratively Reweighted Least Squares (IRLS).
-/// Returns a FittedModel with Type "Logit".
-pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 3 {
-    return Err(InterpreterError::EvaluationError(
-      "LogitModelFit expects exactly 3 arguments".into(),
-    ));
-  }
-
-  let basis = match &args[1] {
-    Expr::List(items) => items.clone(),
-    other => vec![Expr::Integer(1), other.clone()].into(),
-  };
-
-  let var_name = match &args[2] {
-    Expr::Identifier(name) => name.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "LogitModelFit: third argument must be a variable".into(),
-      ));
-    }
-  };
-
-  let data_list = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "LogitModelFit: first argument must be a non-empty list".into(),
-      ));
-    }
-  };
-
-  let (x_vals, y_vals) = extract_fit_data(data_list, "LogitModelFit")?;
-  let n = x_vals.len();
-  let m = basis.len();
-
-  // Build design matrix A (n×m)
-  let mut a_matrix = vec![vec![0.0f64; m]; n];
-  for i in 0..n {
-    let x_expr = Expr::Real(x_vals[i]);
-    for j in 0..m {
-      let substituted =
-        crate::syntax::substitute_variable(&basis[j], &var_name, &x_expr);
-      let evaluated = evaluate_expr_to_expr(&substituted)?;
-      match try_eval_to_f64(&evaluated) {
-        Some(v) => a_matrix[i][j] = v,
-        None => {
-          return Err(InterpreterError::EvaluationError(format!(
-            "LogitModelFit: could not evaluate basis function {:?} at x = {}",
-            basis[j], x_vals[i]
-          )));
-        }
-      }
-    }
-  }
-
-  // Logistic regression is the binomial GLM with its canonical logit link.
-  let Some(beta) =
-    glm_irls(&a_matrix, &y_vals, GlmFamily::Binomial, GlmLink::Logit)
-  else {
-    return Ok(unevaluated("LogitModelFit", args));
-  };
-
-  // Compute fitted probabilities and residuals
-  let mut fitted_probs = Vec::with_capacity(n);
-  let mut residuals = Vec::with_capacity(n);
-  for i in 0..n {
-    let eta: f64 = (0..m).map(|j| beta[j] * a_matrix[i][j]).sum();
-    let p = 1.0 / (1.0 + (-eta).exp());
-    fitted_probs.push(p);
-    residuals.push(y_vals[i] - p);
-  }
-
-  // Build the fitted logistic expression
-  let mut linear_terms = Vec::new();
-  for (j, c) in beta.iter().enumerate() {
-    let coeff_expr = Expr::Real(*c);
-    if matches!(&basis[j], Expr::Integer(1)) {
-      linear_terms.push(coeff_expr);
-    } else {
-      linear_terms.push(times(vec![coeff_expr, basis[j].clone()]));
-    }
-  }
-  let linear_expr = if linear_terms.len() == 1 {
-    linear_terms.into_iter().next().unwrap()
-  } else {
-    plus(linear_terms)
-  };
-
-  // Build logistic: 1 / (1 + Exp[-linear])
-  let fitted_expr = times(vec![
-    Expr::Integer(1),
-    pow(
-      plus(vec![Expr::Integer(1), call("Exp", vec![neg(linear_expr)])]),
-      Expr::Integer(-1),
-    ),
-  ]);
-
-  let input_data = Expr::List(
-    x_vals
-      .iter()
-      .zip(y_vals.iter())
-      .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-      .collect(),
-  );
-
-  let assoc = Expr::Association(vec![
-    (str_expr("Type"), id_expr("Logit")),
-    (str_expr("FittedExpression"), fitted_expr),
-    (
-      str_expr("BestFitParameters"),
-      Expr::List(beta.iter().map(|c| Expr::Real(*c)).collect()),
-    ),
-    (
-      str_expr("IndependentVariables"),
-      Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
-    ),
-    (str_expr("BasisFunctions"), Expr::List(basis)),
-    (
-      str_expr("FitResiduals"),
-      Expr::List(residuals.iter().map(|r| Expr::Real(*r)).collect()),
-    ),
-    (
-      str_expr("PredictedResponse"),
-      Expr::List(fitted_probs.iter().map(|v| Expr::Real(*v)).collect()),
-    ),
-    (str_expr("InputData"), input_data),
-    (str_expr("VariableName"), Expr::String(var_name)),
-  ]);
-
-  Ok(call1("FittedModel", assoc))
-}
-
 /// Solve a linear system Ax = b using Gaussian elimination with partial pivoting.
 fn solve_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
   let n = a.len();
@@ -9916,12 +9805,18 @@ fn parameter_table(assoc: &[(Expr, Expr)]) -> Option<Expr> {
   else {
     return None;
   };
+  let statistic = match fit_property(assoc, "Type") {
+    Some(Expr::Identifier(t)) if t == "GeneralizedLinear" => {
+      "z\u{2010}Statistic"
+    }
+    _ => "t\u{2010}Statistic",
+  };
   fit_report_table(
     &[
       "",
       "Estimate",
       "Standard Error",
-      "t\u{2010}Statistic",
+      statistic,
       "P\u{2010}Value",
     ],
     fit_parameter_labels(assoc)?,
@@ -9985,19 +9880,28 @@ fn parameter_confidence_region(
   if n <= p || covariance.len() != p {
     return None;
   }
-  let f_quantile = try_eval_to_f64(
+  // The F(p, n - p) quantile for a least-squares fit; wolframscript takes
+  // the ChiSquare(p) one in its place for a generalized linear model.
+  let glm = matches!(
+    fit_property(assoc, "Type"),
+    Some(Expr::Identifier(t)) if t == "GeneralizedLinear"
+  );
+  let distribution = if glm {
+    call1("ChiSquareDistribution", Expr::Integer(p as i128))
+  } else {
+    call(
+      "FRatioDistribution",
+      vec![Expr::Integer(p as i128), Expr::Integer((n - p) as i128)],
+    )
+  };
+  let quantile = try_eval_to_f64(
     &evaluate_expr_to_expr(&call(
       "Quantile",
-      vec![
-        call(
-          "FRatioDistribution",
-          vec![Expr::Integer(p as i128), Expr::Integer((n - p) as i128)],
-        ),
-        Expr::Real(level),
-      ],
+      vec![distribution, Expr::Real(level)],
     ))
     .ok()?,
   )?;
+  let f_quantile = quantile;
   let matrix = Expr::List(
     covariance
       .iter()
@@ -15299,6 +15203,8 @@ enum GlmLink {
   Reciprocal,
   /// `eta = 1/mu^2`, the inverse Gaussian family's canonical link.
   InverseSquare,
+  /// `eta = InverseCDF[NormalDistribution[], mu]`.
+  Probit,
 }
 
 impl GlmLink {
@@ -15309,6 +15215,12 @@ impl GlmLink {
       GlmLink::Logit => 1.0 / (1.0 + (-eta).exp()),
       GlmLink::Reciprocal => 1.0 / eta,
       GlmLink::InverseSquare => 1.0 / eta.sqrt(),
+      GlmLink::Probit => {
+        0.5
+          * crate::functions::math_ast::numeric_utils::erfc_f64(
+            -eta / std::f64::consts::SQRT_2,
+          )
+      }
     }
   }
 
@@ -15319,6 +15231,12 @@ impl GlmLink {
       GlmLink::Logit => (mu / (1.0 - mu)).ln(),
       GlmLink::Reciprocal => 1.0 / mu,
       GlmLink::InverseSquare => 1.0 / (mu * mu),
+      GlmLink::Probit => {
+        std::f64::consts::SQRT_2
+          * crate::functions::math_ast::numeric_utils::inverse_erf_f64(
+            2.0 * mu - 1.0,
+          )
+      }
     }
   }
 
@@ -15331,6 +15249,10 @@ impl GlmLink {
       GlmLink::Logit => mu * (1.0 - mu),
       GlmLink::Reciprocal => -mu * mu,
       GlmLink::InverseSquare => -0.5 * mu * mu * mu,
+      GlmLink::Probit => {
+        let eta = self.predictor(mu);
+        (-0.5 * eta * eta).exp() / (2.0 * std::f64::consts::PI).sqrt()
+      }
     }
   }
 
@@ -15348,13 +15270,30 @@ impl GlmLink {
       ),
       GlmLink::Reciprocal => pow(eta, Expr::Integer(-1)),
       GlmLink::InverseSquare => pow(call1("Sqrt", eta), Expr::Integer(-1)),
+      // (1 + Erf[eta/Sqrt[2]])/2
+      GlmLink::Probit => times(vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+        plus(vec![
+          Expr::Integer(1),
+          call1(
+            "Erf",
+            times(vec![
+              eta,
+              pow(call1("Sqrt", Expr::Integer(2)), Expr::Integer(-1)),
+            ]),
+          ),
+        ]),
+      ]),
     }
   }
 }
 
 /// The exponential families a generalized linear model can assume, with
 /// their variance functions `V(mu)`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum GlmFamily {
   Gaussian,
   Binomial,
@@ -15570,7 +15509,42 @@ fn glm_irls(
 pub fn generalized_linear_model_fit_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated_call = || Ok(unevaluated("GeneralizedLinearModelFit", args));
+  generalized_linear_model_fit(args, "GeneralizedLinearModelFit", args)
+}
+
+/// `LogitModelFit[data, basis, vars, opts]` and `ProbitModelFit[…]`: the
+/// binomial generalized linear model with the logit or probit link.
+pub fn binomial_model_fit_ast(
+  head: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if args.len() < 3 {
+    return Ok(unevaluated(head, args));
+  }
+  let rule = |name: &str, value: &str| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(Expr::String(value.to_string())),
+  };
+  let link = if head == "ProbitModelFit" {
+    "ProbitLink"
+  } else {
+    "LogitLink"
+  };
+  let mut glm_args = args.to_vec();
+  glm_args.push(rule("ExponentialFamily", "Binomial"));
+  glm_args.push(rule("LinkFunction", link));
+  generalized_linear_model_fit(&glm_args, head, args)
+}
+
+/// The generalized linear model fit behind `head[original…]`, with the
+/// options normalized into `args`; an unevaluated result is written with
+/// the caller's head and arguments.
+fn generalized_linear_model_fit(
+  args: &[Expr],
+  head: &str,
+  original: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated(head, original));
   if args.len() < 3 {
     return unevaluated_call();
   }
@@ -15599,6 +15573,7 @@ pub fn generalized_linear_model_fit_ast(
           "IdentityLink" => GlmLink::Identity,
           "LogLink" => GlmLink::Log,
           "LogitLink" => GlmLink::Logit,
+          "ProbitLink" => GlmLink::Probit,
           _ => return unevaluated_call(),
         });
       }
@@ -15660,6 +15635,14 @@ pub fn generalized_linear_model_fit_ast(
     for r in raw_rows {
       match r {
         Expr::List(items) if items.len() == k + 1 => rows.push(items.to_vec()),
+        Expr::List(items) if !items.is_empty() => {
+          crate::emit_message(&format!(
+            "{head}::fitc: The number of coordinates ({}) is not equal to \
+             the number of variables ({k}).",
+            items.len() - 1
+          ));
+          return unevaluated_call();
+        }
         _ => return unevaluated_call(),
       }
     }
@@ -15671,8 +15654,17 @@ pub fn generalized_linear_model_fit_ast(
   let mut y = Vec::with_capacity(rows.len());
   for row in &rows {
     match try_eval_to_f64(&row[k]) {
-      Some(v) => y.push(v),
-      None => return unevaluated_call(),
+      Some(v) if family != GlmFamily::Binomial || (0.0..=1.0).contains(&v) => {
+        y.push(v);
+      }
+      _ if family == GlmFamily::Binomial => {
+        crate::emit_message(&format!(
+          "{head}::binrsp: The response values are expected to be between 0 \
+           and 1 for binomial models."
+        ));
+        return unevaluated_call();
+      }
+      _ => return unevaluated_call(),
     }
   }
 
@@ -15843,6 +15835,43 @@ pub fn generalized_linear_model_fit_ast(
     .zip(&predicted)
     .map(|(&yi, &mu)| family.anscombe_residual(yi, mu))
     .collect();
+  // Parameter statistics: the covariance is the dispersion times the
+  // inverse of the final weighted cross product `Transpose[X] . W . X`, and
+  // each estimate is tested with a two-sided z test.
+  let mut xtwx = vec![vec![0.0; p]; p];
+  for (row, &mu) in design.iter().zip(&predicted) {
+    let mu = family.clamp_mean(mu);
+    let dmu = link.mean_derivative(mu);
+    let w = dmu * dmu / family.variance(mu);
+    for a in 0..p {
+      for b in 0..p {
+        xtwx[a][b] += row[a] * w * row[b];
+      }
+    }
+  }
+  let Some(inverse) = invert_square_matrix(&xtwx) else {
+    return unevaluated_call();
+  };
+  let covariance: Vec<Vec<f64>> = inverse
+    .iter()
+    .map(|row| row.iter().map(|v| v * dispersion).collect())
+    .collect();
+  let covariance_expr =
+    Expr::List(covariance.iter().map(|row| reals(row)).collect());
+  let errors: Vec<f64> =
+    (0..p).map(|j| covariance[j][j].max(0.0).sqrt()).collect();
+  let z_stats: Vec<f64> = (0..p).map(|j| beta[j] / errors[j]).collect();
+  let p_values: Vec<f64> = z_stats
+    .iter()
+    .map(|z| {
+      crate::functions::math_ast::numeric_utils::erfc_f64(
+        z.abs() / std::f64::consts::SQRT_2,
+      )
+    })
+    .collect();
+  // Quantile[NormalDistribution[], 0.975]
+  let z_975 = std::f64::consts::SQRT_2
+    * crate::functions::math_ast::numeric_utils::inverse_erf_f64(0.95);
   let integer = |v: usize| Expr::Integer(v as i128);
   let mut assoc = vec![
     (str_expr("Deviances"), reals(&deviances)),
@@ -15857,6 +15886,28 @@ pub fn generalized_linear_model_fit_ast(
     ),
     (str_expr("DevianceResiduals"), reals(&deviance_residuals)),
     (str_expr("PearsonResiduals"), reals(&pearson_residuals)),
+    (str_expr("CovarianceMatrix"), covariance_expr),
+    (str_expr("ParameterErrors"), reals(&errors)),
+    (str_expr("ParameterZStatistics"), reals(&z_stats)),
+    (str_expr("ParameterPValues"), reals(&p_values)),
+    (
+      str_expr("ParameterTableEntries"),
+      Expr::List(
+        (0..p)
+          .map(|j| reals(&[beta[j], errors[j], z_stats[j], p_values[j]]))
+          .collect(),
+      ),
+    ),
+    (
+      str_expr("ParameterConfidenceIntervals"),
+      Expr::List(
+        (0..p)
+          .map(|j| {
+            reals(&[beta[j] - z_975 * errors[j], beta[j] + z_975 * errors[j]])
+          })
+          .collect(),
+      ),
+    ),
     (str_expr("AnscombeResiduals"), reals(&anscombe_residuals)),
     (str_expr("EstimatedDispersion"), Expr::Real(dispersion)),
   ];

@@ -1014,10 +1014,12 @@ pub fn dispatch_linear_algebra_functions(
           }),
       ));
     }
-    "LogitModelFit" if args.len() == 3 => {
-      return Some(crate::functions::linear_algebra_ast::logit_model_fit_ast(
-        args,
-      ));
+    "LogitModelFit" | "ProbitModelFit" if args.len() >= 3 => {
+      return Some(
+        crate::functions::linear_algebra_ast::binomial_model_fit_ast(
+          name, args,
+        ),
+      );
     }
     "FindFit" if args.len() >= 4 => {
       return Some(crate::functions::linear_algebra_ast::find_fit_ast(args));

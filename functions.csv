@@ -3296,7 +3296,7 @@ GroupStabilizer,Pointwise stabilizer subgroup with canonical generators (named g
 InputStream,Input stream object,✅,effectful,2.0,3344
 NHoldRest,Attribute preventing N from numericizing all but the first argument,✅,pure,3.0,3344
 PageFooters,,🚫,,4.0,3344
-ProbitModelFit,,,,7.0,3344
+ProbitModelFit,Probit regression model fitting via IRLS,✅,pure,7.0,3344
 RootIntervals,,,,6.0,3344
 SurvivalModelFit,,,,9.0,3344
 AlternativeHypothesis,,,,8.0,3353

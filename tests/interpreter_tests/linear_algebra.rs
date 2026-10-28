@@ -4490,6 +4490,43 @@ mod generalized_linear_model_fit {
   }
 
   #[test]
+  fn parameter_statistics_are_z_tests() {
+    // wolframscript: errors {1.0256606111163447, 0.2633192594765787,
+    // 0.33689871968136914}, z {-0.28322988560551043, 4.627660121106638,
+    // 4.401338869042472}; region radii {5.0728958849046775,
+    // 1.7544635852306543, 0.36996278004650185}.
+    assert_eq!(
+      interpret(&format!(
+        "{RESIDUAL_DATA} g = GeneralizedLinearModelFit[data, {{x, y}}, {{x, y}}]; \
+         {{Round[g[\"ParameterErrors\"], 10^-9], \
+          Round[g[\"ParameterZStatistics\"], 10^-9], \
+          Round[g[\"ParameterConfidenceRegion\"][[2]], 10^-9]}}"
+      ))
+      .unwrap(),
+      interpret(
+        "{Round[{1.0256606111163447, 0.2633192594765787, 0.33689871968136914}, \
+         10^-9], Round[{-0.28322988560551043, 4.627660121106638, \
+         4.401338869042472}, 10^-9], Round[{5.0728958849046775, \
+         1.7544635852306543, 0.36996278004650185}, 10^-9]}"
+      )
+      .unwrap()
+    );
+  }
+
+  #[test]
+  fn coordinates_must_match_the_variables() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "GeneralizedLinearModelFit[{{1., 2, 3}, {2., 1, 5}}, x, x]",
+    )
+    .unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "GeneralizedLinearModelFit::fitc: The number of coordinates (2) is \
+       not equal to the number of variables (1)."
+    )));
+  }
+
+  #[test]
   fn default_family_evaluates_at_point() {
     assert_eq!(
       interpret("GeneralizedLinearModelFit[{{1, 2}, {2, 4}, {3, 6}}, x, x][4]")
@@ -4790,6 +4827,42 @@ mod linear_model_fit {
       .unwrap(),
       "{487025895061/200000000000, 732974104939/200000000000}"
     );
+  }
+
+  #[test]
+  fn argument_messages() {
+    for (input, message) in [
+      (
+        "LinearModelFit[{{1, 2}, {2, 3}}, x, {x, 2}]",
+        "LinearModelFit::ivar: {x, 2} is not a valid variable.",
+      ),
+      (
+        "LinearModelFit[{{1, 2}, {2, 3}}, x, 3]",
+        "LinearModelFit::ivar: {3} is not a valid variable.",
+      ),
+      (
+        "LinearModelFit[{{1, 2, 3}, {2, 4, 5}}, {x, y}, {x, y, z}]",
+        "LinearModelFit::fitc: The number of coordinates (2) is not equal to \
+         the number of variables (3).",
+      ),
+      (
+        "LinearModelFit[{{1, Missing[]}, {2, Missing[]}}, x, x]",
+        "LinearModelFit::desmat:",
+      ),
+    ] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(input).unwrap();
+      assert!(
+        r.result.starts_with("LinearModelFit["),
+        "{input}: {}",
+        r.result
+      );
+      assert!(
+        r.warnings.iter().any(|w| w.contains(message)),
+        "{input}: {:?}",
+        r.warnings
+      );
+    }
   }
 
   #[test]
@@ -6118,12 +6191,57 @@ mod logit_model_fit {
   }
 
   #[test]
-  fn non_numeric_y_names_logit_model_fit_in_error() {
-    let err = interpret(r#"LogitModelFit[{{1, "a"}, {2, "b"}}, {1, x}, x]"#)
-      .unwrap_err();
+  fn non_numeric_response_is_binrsp() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"LogitModelFit[{{1, "a"}, {2, "b"}}, {1, x}, x]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "LogitModelFit[{{1, a}, {2, b}}, {1, x}, x]");
     assert!(
-      err.to_string().contains("LogitModelFit:"),
-      "error should be tagged with the calling function's name, got: {err}"
+      r.warnings.iter().any(|w| w.contains(
+        "LogitModelFit::binrsp: The response values are expected to be \
+         between 0 and 1 for binomial models."
+      )),
+      "{:?}",
+      r.warnings
+    );
+  }
+
+  const O_RINGS: &str = "d = {{66, 0}, {70, 1}, {69, 0}, {68, 0}, {67, 0}, \
+    {72, 0}, {73, 0}, {70, 0}, {57, 1}, {63, 1}, {70, 1}, {78, 0}, {67, 0}, \
+    {53, 1}, {67, 0}, {75, 0}, {70, 0}, {81, 0}, {76, 0}, {79, 0}, {75, 1}, \
+    {76, 0}, {58, 1}};";
+
+  #[test]
+  fn logit_is_the_binomial_generalized_linear_model() {
+    // wolframscript: {15.042901647628433, -0.23216274421750444}.
+    assert_eq!(
+      interpret(&format!(
+        "{O_RINGS} l = LogitModelFit[d, x, x]; \
+         {{l[\"BestFitParameters\"] == GeneralizedLinearModelFit[d, x, x, \
+         ExponentialFamily -> \"Binomial\"][\"BestFitParameters\"], \
+         Round[l[\"BestFitParameters\"], 10^-6]}}"
+      ))
+      .unwrap(),
+      "{True, {7521451/500000, -232163/1000000}}"
+    );
+  }
+
+  #[test]
+  fn probit_model_fit() {
+    // wolframscript stops its iteration at {8.774897560207174,
+    // -0.13509567688143528}; the maximum-likelihood estimate it approaches
+    // is {8.77495…, -0.1350965…}.
+    assert_eq!(
+      interpret(&format!(
+        "{O_RINGS} p = ProbitModelFit[d, {{x}}, x]; \
+         {{Round[p[\"BestFitParameters\"], 10^-3], \
+          Head[Normal[p]], Round[p[60], 10^-4], \
+          p[\"ParameterTable\"][[1, 1, 1, 4]]}}"
+      ))
+      .unwrap(),
+      "{{351/40, -27/200}, Times, 7483/10000, z‐Statistic}"
     );
   }
 }

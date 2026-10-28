@@ -10231,6 +10231,39 @@ mod part_list_index {
   }
 
   #[test]
+  fn part_messages_quote_the_expression_in_output_form() {
+    use woxi::interpret_with_stdout;
+    // Strings without quotes, products with spaces, fractions in 2D.
+    for (input, message) in [
+      (
+        r#"f[a + b, "x"][[3]]"#,
+        "Part::partw: Part 3 of f[a + b, x] does not exist.",
+      ),
+      (
+        "{a*b, -x}[[4]]",
+        "Part::partw: Part 4 of {a b, -x} does not exist.",
+      ),
+      (
+        r#"{"a", "b"}[[2 ;; 5]]"#,
+        "Part::take: Cannot take positions 2 through 5 in {a, b}.",
+      ),
+      (
+        r#"{1/2, "s"}[[5]]"#,
+        "                        1\n\
+         Part::partw: Part 5 of {-, s} does not exist.\n\
+         \x20                       2",
+      ),
+    ] {
+      let r = interpret_with_stdout(input).unwrap();
+      assert!(
+        r.warnings.iter().any(|w| w.contains(message)),
+        "{input}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  #[test]
   fn list_index_preserves_head() {
     // expr[[{positions}]] keeps the head of expr, not List.
     assert_eq!(interpret("f[a, b, c][[{1, 3}]]").unwrap(), "f[a, c]");

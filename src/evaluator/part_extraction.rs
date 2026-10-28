@@ -68,9 +68,20 @@ pub fn flatten_alternatives_binop(expr: &Expr) -> Option<Expr> {
 }
 
 fn part_take_warn(expr: &Expr, start: i64, end: i64) {
-  let expr_str = expr_to_string(expr);
-  crate::emit_message_to_stdout(&format!(
-    "Part::take: Cannot take positions {start} through {end} in {expr_str}."
+  crate::emit_message_to_stdout(&crate::syntax::message_with_expr_2d(
+    &format!("Part::take: Cannot take positions {start} through {end} in "),
+    expr,
+    ".",
+  ));
+}
+
+/// `Part::partw` about a position `expr` lacks, quoting `expr` in
+/// OutputForm as the kernel does.
+fn part_missing_warn(position: &str, expr: &Expr) {
+  crate::emit_message_to_stdout(&crate::syntax::message_with_expr_2d(
+    &format!("Part::partw: Part {position} of "),
+    expr,
+    " does not exist.",
   ));
 }
 
@@ -846,11 +857,7 @@ fn extract_part_ast_rest(
             k, v,
           ));
         }
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {} of {} does not exist.",
-          i,
-          crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output)
-        ));
+        part_missing_warn(&i.to_string(), expr);
         return Ok(part_take_unevaluated(expr, index));
       }
       // String index: lookup among string keys; absent -> Missing[KeyAbsent, key]
@@ -907,14 +914,7 @@ fn extract_part_ast_rest(
               if let Some((k, v)) = entry_at(*i) {
                 selected.push((k.clone(), v.clone()));
               } else {
-                crate::emit_message_to_stdout(&format!(
-                  "Part::partw: Part {} of {} does not exist.",
-                  i,
-                  crate::syntax::format_expr(
-                    expr,
-                    crate::syntax::ExprForm::Output
-                  )
-                ));
+                part_missing_warn(&i.to_string(), expr);
                 return Ok(part_take_unevaluated(expr, index));
               }
             }
@@ -1045,14 +1045,13 @@ fn extract_part_ast_rest(
             i == 0 || (1..=len).contains(&i) || (-len..=-1).contains(&i)
           };
           if !positions.iter().all(|&i| in_range(i)) {
-            crate::emit_message_to_stdout(&format!(
-              "Part::partw: Part {} of {} does not exist.",
-              crate::syntax::format_expr(
+            part_missing_warn(
+              &crate::syntax::format_expr(
                 index,
-                crate::syntax::ExprForm::Output
+                crate::syntax::ExprForm::Output,
               ),
-              crate::syntax::format_expr(expr, crate::syntax::ExprForm::Output),
-            ));
+              expr,
+            );
             return Ok(part_take_unevaluated(expr, index));
           }
           // All positions valid: extract each part and keep the head of the
@@ -1087,10 +1086,7 @@ fn extract_part_ast_rest(
         Ok(items[actual_idx as usize].clone())
       } else {
         // Print warning to stderr and return unevaluated Part expression
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1113,10 +1109,7 @@ fn extract_part_ast_rest(
           if actual_idx >= 0 && actual_idx < len {
             return Ok(Expr::Integer(bytes[actual_idx as usize] as i128));
           }
-          let expr_str = expr_to_string(expr);
-          crate::emit_message_to_stdout(&format!(
-            "Part::partw: Part {idx} of {expr_str} does not exist."
-          ));
+          part_missing_warn(&idx.to_string(), expr);
           return Ok(part_take_unevaluated(expr, index));
         }
       }
@@ -1125,10 +1118,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(args[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1142,10 +1132,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(args[actual_idx as usize].clone())
       } else {
-        let expr_str = crate::syntax::expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1172,10 +1159,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(parts[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1219,10 +1203,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(parts[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1241,10 +1222,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(parts[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1270,10 +1248,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(children[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
@@ -1293,10 +1268,7 @@ fn extract_part_ast_rest(
       if actual_idx >= 0 && actual_idx < len {
         Ok(parts[actual_idx as usize].clone())
       } else {
-        let expr_str = expr_to_string(expr);
-        crate::emit_message_to_stdout(&format!(
-          "Part::partw: Part {idx} of {expr_str} does not exist."
-        ));
+        part_missing_warn(&idx.to_string(), expr);
         Ok(part_take_unevaluated(expr, index))
       }
     }
