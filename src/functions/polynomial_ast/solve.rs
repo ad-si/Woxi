@@ -16618,6 +16618,7 @@ pub fn find_minimum_ast(
 
   // `StepMonitor :> …` fires once per accepted iteration below.
   let step_monitor = find_option(&args[2..], "StepMonitor");
+  let evaluation_monitor = find_option(&args[2..], "EvaluationMonitor");
 
   // Trailing arguments are options (e.g. MaxIterations -> 2,
   // Method -> "Newton"). They aren't honoured yet, but we accept them
@@ -16834,6 +16835,15 @@ pub fn find_minimum_ast(
     expr_to_f64(&evaled)
   };
 
+  // Every evaluation of the objective itself (not its derivatives) fires
+  // `EvaluationMonitor :> …` with the variables bound to the trial point.
+  let eval_obj =
+    |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
+      let value = eval_at(expr, point)?;
+      fire_step_monitor(evaluation_monitor, &vars, point);
+      Ok(value)
+    };
+
   // `f` may be a call to a plain (non-symbolic) function — most commonly
   // one guarded by `_?NumericQ` patterns, the standard idiom for a
   // least-squares objective built from `NDSolve`/`ReplaceAll` that
@@ -16853,7 +16863,7 @@ pub fn find_minimum_ast(
   // {func_name}::nrnum and return the call unevaluated. Matches
   // wolframscript's behaviour and lets script chains keep flowing
   // instead of aborting with a hard "Cannot evaluate numerically".
-  if eval_at(f, &x).is_err() {
+  if eval_obj(f, &x).is_err() {
     let mut substituted = f.clone();
     for (i, var) in vars.iter().enumerate() {
       substituted = crate::syntax::substitute_variable(
@@ -16881,7 +16891,11 @@ pub fn find_minimum_ast(
   }
 
   let sign = if maximize { -1.0 } else { 1.0 };
-  let max_iter = 200;
+  // `MaxIterations -> n` caps the iterations (default 200).
+  let max_iter = match find_option(&args[2..], "MaxIterations") {
+    Some(Expr::Integer(n)) if *n > 0 => *n as usize,
+    _ => 200,
+  };
   let tol = 1e-15;
 
   // Like wolframscript, a trial point where the objective is not a real
@@ -16934,7 +16948,7 @@ pub fn find_minimum_ast(
     let signed_eval_clamped = |point: &[f64]| -> f64 {
       let mut p = point.to_vec();
       clamp(&mut p);
-      eval_at(f, &p).map_or(f64::INFINITY, |v| v * sign)
+      eval_obj(f, &p).map_or(f64::INFINITY, |v| v * sign)
     };
     x = nelder_mead_minimize(&signed_eval_clamped, &clamp, &x, max_iter);
   } else if n == 1 {
@@ -16977,11 +16991,11 @@ pub fn find_minimum_ast(
       // quadratic scaled by 10^-30 added to 2., which evaluates to 2.0
       // identically in f64), we still want to take the Newton step rather
       // than backtracking to a near-zero alpha and freezing in place.
-      let current_f = eval_at(f, &x)? * sign;
+      let current_f = eval_obj(f, &x)? * sign;
       let mut alpha = 1.0;
       let mut best_x = x[0] - step;
       clamp(std::slice::from_mut(&mut best_x));
-      let Ok(mut best_f) = eval_at(f, &[best_x]).map(|v| v * sign) else {
+      let Ok(mut best_f) = eval_obj(f, &[best_x]).map(|v| v * sign) else {
         report_nonreal(&[best_x]);
         break 'newton;
       };
@@ -16994,7 +17008,7 @@ pub fn find_minimum_ast(
         alpha *= 0.5;
         best_x = x[0] - alpha * step;
         clamp(std::slice::from_mut(&mut best_x));
-        let Ok(v) = eval_at(f, &[best_x]) else {
+        let Ok(v) = eval_obj(f, &[best_x]) else {
           report_nonreal(&[best_x]);
           break 'newton;
         };
@@ -17057,7 +17071,7 @@ pub fn find_minimum_ast(
 
       // Backtracking line search (Armijo condition on sign*f)
       let c = 1e-4;
-      let current_f = eval_at(f, &x)? * sign;
+      let current_f = eval_obj(f, &x)? * sign;
       let decrease: f64 =
         grad.iter().zip(dir.iter()).map(|(g, d)| g * d).sum::<f64>();
       let mut alpha = 1.0;
@@ -17069,7 +17083,7 @@ pub fn find_minimum_ast(
           .map(|(xi, di)| xi + alpha * di)
           .collect();
         clamp(&mut x_new);
-        let Ok(new_f) = eval_at(f, &x_new).map(|v| v * sign) else {
+        let Ok(new_f) = eval_obj(f, &x_new).map(|v| v * sign) else {
           report_nonreal(&x_new);
           break 'newton;
         };
@@ -17084,7 +17098,7 @@ pub fn find_minimum_ast(
   }
 
   // Compute final function value
-  let min_val = eval_at(f, &x)?;
+  let min_val = eval_obj(f, &x)?;
   let min_val_expr = Expr::Real(min_val);
 
   // Build result: {min_val, {x -> x_min, y -> y_min, ...}}

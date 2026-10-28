@@ -7068,6 +7068,32 @@ mod find_minimum {
   }
 
   #[test]
+  fn unconstrained_find_maximum_fires_evaluation_monitor() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{r, {l}} = Reap[FindMaximum[-(x - 1)^2, {x, 0}, \
+         EvaluationMonitor :> Sow[x]]]; Length[l] > 0"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn find_minimum_honors_max_iterations() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Reap[FindMinimum[(x - 3)^4, {x, 0}, MaxIterations -> 2, \
+         StepMonitor :> Sow[x]]][[2, 1]] // Length"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn find_root_fires_step_monitor_per_iteration() {
     // One firing per Newton step; the last step is the reported root.
     clear_state();
