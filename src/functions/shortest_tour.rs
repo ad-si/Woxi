@@ -52,6 +52,9 @@ pub fn find_shortest_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let positional = &args[..max_positional];
   let options = &args[max_positional..];
+  if let Some(result) = graph_tour(&positional[0], positional.len() == 1) {
+    return Ok(result);
+  }
   let Expr::List(points) = &positional[0] else {
     return Ok(unevaluated("FindShortestTour", args));
   };
@@ -129,6 +132,196 @@ pub fn find_shortest_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|&i| Expr::Integer(i as i128 + 1))
     .collect();
   Ok(Expr::List(vec![length, Expr::List(indices.into())].into()))
+}
+
+/// Search budget (visited partial tours) for the graph tour.
+const GRAPH_TOUR_NODE_LIMIT: u64 = 20_000_000;
+
+/// `FindShortestTour[graph]`: the cheapest closed tour that follows the
+/// graph's edges and visits every vertex once, as `{cost, {v1, …, v1}}`
+/// (edge weights from `EdgeWeight`, default 1), or `{}` when the graph has
+/// no such tour. Returns `None` when `graph` is not a graph.
+fn graph_tour(graph: &Expr, single: bool) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  if !single || (name != "Graph" && name != "Graph3D") {
+    return None;
+  }
+  // Graph3D[Graph[…]] wraps a plain graph; Graph3D[vertices, edges, …] has
+  // the same layout as Graph.
+  if name == "Graph3D"
+    && let [inner @ Expr::FunctionCall { name: n, .. }] = gargs.as_slice()
+    && n == "Graph"
+  {
+    return graph_tour(inner, true);
+  }
+  let (vertices, edges) = crate::functions::graph::fc_parse_input(graph)?;
+  let n = vertices.len();
+  if n == 0 {
+    return Some(Expr::List(Vec::new().into()));
+  }
+  let weights: Vec<Expr> = gargs
+    .iter()
+    .find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "EdgeWeight") => {
+        match replacement.as_ref() {
+          Expr::List(ws) => Some(ws.iter().cloned().collect()),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+
+  let key = |v: &Expr| crate::syntax::expr_to_string(v);
+  let rank: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .rev()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  // cost[i][j]: cheapest edge i → j; weight_expr keeps its exact value.
+  let mut cost = vec![vec![f64::INFINITY; n]; n];
+  let mut exact: Vec<Vec<Option<Expr>>> = vec![vec![None; n]; n];
+  for (k, e) in edges.iter().enumerate() {
+    let Some((u, v, directed)) = crate::functions::graph::edge_endpoints(e)
+    else {
+      continue;
+    };
+    let (Some(&i), Some(&j)) = (rank.get(&key(&u)), rank.get(&key(&v))) else {
+      continue;
+    };
+    if i == j {
+      continue;
+    }
+    let w_expr = weights.get(k).cloned().unwrap_or(Expr::Integer(1));
+    // `Automatic` is the default weight 1.
+    let w_expr = if matches!(&w_expr, Expr::Identifier(s) if s == "Automatic") {
+      Expr::Integer(1)
+    } else {
+      w_expr
+    };
+    let w = crate::functions::math_ast::try_eval_to_f64(&w_expr)?;
+    let mut put = |a: usize, b: usize| {
+      if w < cost[a][b] {
+        cost[a][b] = w;
+        exact[a][b] = Some(w_expr.clone());
+      }
+    };
+    put(i, j);
+    if !directed {
+      put(j, i);
+    }
+  }
+
+  let order = min_cost_cycle(&cost);
+  let Some(mut order) = order else {
+    return Some(Expr::List(Vec::new().into()));
+  };
+  // Of the two directions the one whose second stop has the higher index is
+  // reported, as for point sets.
+  if n > 2 && order[1] < order[n - 1] {
+    let rev_ok = (1..n).all(|k| {
+      let (a, b) = (order[(n - k) % n], order[n - k - 1]);
+      cost[a][b].is_finite()
+    }) && cost[order[0]][order[n - 1]].is_finite();
+    if rev_ok {
+      order[1..].reverse();
+    }
+  }
+  let mut legs = Vec::with_capacity(n);
+  for k in 0..n {
+    let (a, b) = (order[k], order[(k + 1) % n]);
+    legs.push(exact[a][b].clone()?);
+  }
+  let total = evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".into(),
+    args: legs.into(),
+  })
+  .ok()?;
+  let mut tour: Vec<Expr> =
+    order.iter().map(|&i| vertices[i].clone()).collect();
+  tour.push(vertices[order[0]].clone());
+  Some(Expr::List(vec![total, Expr::List(tour.into())].into()))
+}
+
+/// The cheapest Hamiltonian cycle through `cost` (infinite = no edge)
+/// starting at vertex 0, by depth-first branch and bound; `None` if there is
+/// none. The visit order of ties is deterministic (lowest index first).
+fn min_cost_cycle(cost: &[Vec<f64>]) -> Option<Vec<usize>> {
+  let n = cost.len();
+  if n < 3 {
+    return None;
+  }
+  // Cheapest edge leaving each vertex bounds the remaining cost from below.
+  let min_out: Vec<f64> = cost
+    .iter()
+    .map(|row| row.iter().copied().fold(f64::INFINITY, f64::min))
+    .collect();
+  if min_out.iter().any(|m| !m.is_finite()) {
+    return None;
+  }
+  struct Search<'a> {
+    cost: &'a [Vec<f64>],
+    min_out: &'a [f64],
+    path: Vec<usize>,
+    used: Vec<bool>,
+    best: f64,
+    best_path: Option<Vec<usize>>,
+    nodes: u64,
+  }
+  fn go(s: &mut Search, so_far: f64, remaining_bound: f64) {
+    s.nodes += 1;
+    if s.nodes > GRAPH_TOUR_NODE_LIMIT {
+      return;
+    }
+    let n = s.cost.len();
+    let last = *s.path.last().unwrap();
+    if s.path.len() == n {
+      let total = so_far + s.cost[last][0];
+      if total < s.best - 1e-12 {
+        s.best = total;
+        s.best_path = Some(s.path.clone());
+      }
+      return;
+    }
+    let mut next: Vec<usize> = (0..n)
+      .filter(|&j| !s.used[j] && s.cost[last][j].is_finite())
+      .collect();
+    next.sort_by(|&a, &b| s.cost[last][a].total_cmp(&s.cost[last][b]));
+    for j in next {
+      let c = so_far + s.cost[last][j];
+      let bound = remaining_bound - s.min_out[last];
+      if c + bound >= s.best - 1e-12 {
+        continue;
+      }
+      s.used[j] = true;
+      s.path.push(j);
+      go(s, c, bound);
+      s.path.pop();
+      s.used[j] = false;
+    }
+  }
+  let mut s = Search {
+    cost,
+    min_out: &min_out,
+    path: vec![0],
+    used: {
+      let mut u = vec![false; n];
+      u[0] = true;
+      u
+    },
+    best: f64::INFINITY,
+    best_path: None,
+    nodes: 0,
+  };
+  let total_bound: f64 = min_out.iter().sum();
+  go(&mut s, 0.0, total_bound);
+  s.best_path
 }
 
 /// A closed tour through every point, starting and ending at point 0. Of the

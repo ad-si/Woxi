@@ -5756,7 +5756,8 @@ same one in the other direction. Examples:
 
 Above 12 points Woxi uses iterated 2-opt/Or-opt local search. On random
 instances the tour comes within about 0.4% of WL's length and is sometimes
-shorter. `FindShortestTour[graph]` is not implemented.
+shorter. `FindShortestTour[graph]` returns the cheapest Hamiltonian cycle along
+the graph's edges (or `{}`); it has not been compared against WL.
 
 ### `RectangleChart` spacing and 3D layout are approximations
 

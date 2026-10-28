@@ -2847,7 +2847,7 @@ pub fn contract_vertices_in_graph(
 /// Parse the FindCycle input (first argument) into a vertex list (in first-
 /// appearance order, matching VertexList) and the raw edge expressions.
 /// Accepts either `Graph[{verts}, {edges}]` or a bare list of edges/rules.
-fn fc_parse_input(arg: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
+pub(crate) fn fc_parse_input(arg: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
   let raw_edges: Vec<Expr> = match arg {
     Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
       match (&args[0], &args[1]) {
@@ -8423,6 +8423,116 @@ fn graph_parts(expr: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
   ))
 }
 
+/// The `Graphics3D` picture of a `Graph3D[…]` that carries explicit
+/// `VertexCoordinates`: grey edges as lines and one sphere per vertex, sized
+/// by `VertexSize` (a number or `{"Scaled", s}`, relative to the extent of
+/// the vertices). Accepts `Graph3D[graph, opts…]` and
+/// `Graph3D[vertices, edges, opts…]`. `None` when there are no 3D
+/// coordinates to draw at.
+pub(crate) fn graph3d_to_graphics3d(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Graph3D" {
+    return None;
+  }
+  let (inner, outer_options): (Expr, Vec<Expr>) = match args.first()? {
+    Expr::FunctionCall { name, .. } if name == "Graph" => {
+      (args[0].clone(), args[1..].to_vec())
+    }
+    _ => (
+      Expr::FunctionCall {
+        name: "Graph".into(),
+        args: args.clone(),
+      },
+      Vec::new(),
+    ),
+  };
+  let (vertices, edges, mut options) = graph_parts(&inner)?;
+  options.extend(outer_options);
+  let coordinates = graph_option(&options, "VertexCoordinates")?;
+  let Expr::List(coords) = &coordinates else {
+    return None;
+  };
+  let points: Vec<[f64; 3]> = coords
+    .iter()
+    .map(|c| match c {
+      Expr::List(xyz) if xyz.len() == 3 => Some([
+        crate::functions::math_ast::try_eval_to_f64(&xyz[0])?,
+        crate::functions::math_ast::try_eval_to_f64(&xyz[1])?,
+        crate::functions::math_ast::try_eval_to_f64(&xyz[2])?,
+      ]),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if points.len() != vertices.len() {
+    return None;
+  }
+  let extent = (0..3)
+    .map(|d| {
+      let lo = points.iter().map(|p| p[d]).fold(f64::INFINITY, f64::min);
+      let hi = points
+        .iter()
+        .map(|p| p[d])
+        .fold(f64::NEG_INFINITY, f64::max);
+      hi - lo
+    })
+    .fold(0.0_f64, f64::max);
+  let extent = if extent > 0.0 { extent } else { 1.0 };
+  let size = graph_option(&options, "VertexSize");
+  let scaled = match &size {
+    Some(Expr::List(items)) if items.len() == 2 => {
+      crate::functions::math_ast::try_eval_to_f64(&items[1])
+    }
+    Some(other) => crate::functions::math_ast::try_eval_to_f64(other),
+    None => None,
+  }
+  .unwrap_or(0.03);
+  let radius = scaled * extent / 2.0;
+
+  let point = |p: &[f64; 3]| {
+    Expr::List(
+      vec![Expr::Real(p[0]), Expr::Real(p[1]), Expr::Real(p[2])].into(),
+    )
+  };
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .rev()
+    .map(|(i, v)| (expr_to_string(v), i))
+    .collect();
+  let lines: Vec<Expr> = edges
+    .iter()
+    .filter_map(|e| {
+      let (u, v, _) = edge_endpoints(e)?;
+      let (i, j) = (
+        *index.get(&expr_to_string(&u))?,
+        *index.get(&expr_to_string(&v))?,
+      );
+      Some(call(
+        "Line",
+        vec![Expr::List(
+          vec![point(&points[i]), point(&points[j])].into(),
+        )],
+      ))
+    })
+    .collect();
+  let spheres: Vec<Expr> = points
+    .iter()
+    .map(|p| call("Sphere", vec![point(p), Expr::Real(radius)]))
+    .collect();
+  let prims = vec![
+    call("GrayLevel", vec![Expr::Real(0.6)]),
+    Expr::List(lines.into()),
+    call(
+      "RGBColor",
+      vec![Expr::Real(0.37), Expr::Real(0.51), Expr::Real(0.71)],
+    ),
+    Expr::List(spheres.into()),
+  ];
+  Some(call("Graphics3D", vec![Expr::List(prims.into())]))
+}
+
 /// The value a graph option carries, if the graph sets it.
 fn graph_option(options: &[Expr], name: &str) -> Option<Expr> {
   options.iter().find_map(|o| match o {
@@ -9106,6 +9216,13 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(i) => values[i] = (**replacement).clone(),
       None => return Ok(original()),
     }
+  } else if let Expr::List(items) = replacement.as_ref()
+    && items.len() == slots.len()
+  {
+    // One value per vertex or edge, in order.
+    values = items.iter().cloned().collect();
+  } else {
+    values = vec![(**replacement).clone(); slots.len()];
   }
   let mut new_options: Vec<Expr> = options
     .iter()
