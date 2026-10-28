@@ -1443,6 +1443,141 @@ fn parametric_region_layer(
   Ok(Expr::List(items.into()))
 }
 
+/// What `PolarAxes`, `PolarTicks` and `PolarGridLines` ask a `PolarPlot` to
+/// draw: a circular angular axis with an optional radial axis, instead of the
+/// Cartesian axes. Both two-part options are `{angular, radial}`.
+struct PolarAxesSpec {
+  angular_grid: bool,
+  radial_grid: bool,
+  degree_labels: bool,
+  radial_labels: bool,
+}
+
+impl PolarAxesSpec {
+  /// `None` unless `PolarAxes` turns the polar axes on.
+  fn from_options(opts: &[Expr]) -> Option<Self> {
+    let value_of = |wanted: &str| {
+      opts.iter().find_map(|opt| {
+        let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+        (name == wanted).then(|| value.into_owned())
+      })
+    };
+    let is_true = |e: &Expr| matches!(e, Expr::Identifier(n) if n == "True");
+    let is_off = |e: &Expr| matches!(e, Expr::Identifier(n) if n == "None" || n == "False");
+    let on = match &value_of("PolarAxes")? {
+      Expr::List(items) => items.iter().any(is_true),
+      other => is_true(other),
+    };
+    if !on {
+      return None;
+    }
+    // The two parts of a `{angular, radial}` option; a lone value applies to
+    // both, and an absent option leaves both at `default`.
+    let pair = |name: &str, default: Expr| match &value_of(name) {
+      Some(Expr::List(items)) if items.len() == 2 => {
+        (items[0].clone(), items[1].clone())
+      }
+      Some(other) => (other.clone(), other.clone()),
+      None => (default.clone(), default),
+    };
+    let auto = Expr::Identifier("Automatic".to_string());
+    let none = Expr::Identifier("None".to_string());
+    let (grid_angular, grid_radial) = pair("PolarGridLines", none);
+    let (ticks_angular, ticks_radial) = pair("PolarTicks", auto);
+    Some(Self {
+      angular_grid: !is_off(&grid_angular),
+      radial_grid: !is_off(&grid_radial),
+      degree_labels: matches!(
+        &ticks_angular,
+        Expr::String(s) if s == "Degrees"
+      ),
+      radial_labels: !is_off(&ticks_radial),
+    })
+  }
+
+  /// The primitives drawn under the curve, and the half-width of the square
+  /// plot range that holds the axes and their labels. `r_max` is the largest
+  /// radius the curve reaches.
+  fn prolog(&self, r_max: f64) -> (Vec<Expr>, f64) {
+    let step = crate::functions::plot::nice_step(r_max.max(1e-9), 4);
+    let steps = (r_max / step - 1e-9).ceil().max(1.0) as usize;
+    let radius = step * steps as f64;
+    let point =
+      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+    let gray = |level: f64| call1("GrayLevel", Expr::Real(level));
+    let line = |a: (f64, f64), b: (f64, f64)| {
+      call1(
+        "Line",
+        Expr::List(vec![point(a.0, a.1), point(b.0, b.1)].into()),
+      )
+    };
+    let mut items: Vec<Expr> = Vec::new();
+
+    let mut grid = vec![gray(0.8)];
+    if self.radial_grid {
+      for k in 1..steps {
+        grid.push(call(
+          "Circle",
+          vec![point(0.0, 0.0), Expr::Real(step * k as f64)],
+        ));
+      }
+    }
+    if self.angular_grid {
+      for k in 0..12 {
+        let a = std::f64::consts::PI / 6.0 * k as f64;
+        grid.push(line((0.0, 0.0), (radius * a.cos(), radius * a.sin())));
+      }
+    }
+    items.push(Expr::List(grid.into()));
+
+    // The axes: the angular circle and the radial axis along angle zero.
+    let mut axes = vec![gray(0.4)];
+    axes.push(call("Circle", vec![point(0.0, 0.0), Expr::Real(radius)]));
+    axes.push(line((0.0, 0.0), (radius, 0.0)));
+    for k in 0..12 {
+      let a = std::f64::consts::PI / 6.0 * k as f64;
+      let (c, s) = (a.cos(), a.sin());
+      axes.push(line(
+        (radius * c, radius * s),
+        (radius * 1.03 * c, radius * 1.03 * s),
+      ));
+    }
+    items.push(Expr::List(axes.into()));
+
+    let label = |text: String, at: (f64, f64), offset: (f64, f64)| {
+      call(
+        "Text",
+        vec![
+          Expr::String(text),
+          point(at.0, at.1),
+          point(offset.0, offset.1),
+        ],
+      )
+    };
+    let mut labels = vec![gray(0.4)];
+    if self.degree_labels {
+      for k in 0..12 {
+        let a = std::f64::consts::PI / 6.0 * k as f64;
+        labels.push(label(
+          format!("{}°", 30 * k),
+          (radius * 1.12 * a.cos(), radius * 1.12 * a.sin()),
+          (0.0, 0.0),
+        ));
+      }
+    }
+    if self.radial_labels {
+      for k in 1..=steps {
+        let r = step * k as f64;
+        let text = format!("{r:.6}");
+        let text = text.trim_end_matches('0').trim_end_matches('.').to_string();
+        labels.push(label(text, (r, 0.0), (0.0, 1.5)));
+      }
+    }
+    items.push(Expr::List(labels.into()));
+    (items, radius * 1.3)
+  }
+}
+
 /// PolarPlot[r[theta], {theta, tmin, tmax}]
 pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -1483,7 +1618,21 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_points.push(points);
   }
 
-  let (data_x, data_y) = compute_data_ranges(&all_points);
+  let (mut data_x, mut data_y) = compute_data_ranges(&all_points);
+  if let Some(axes) = PolarAxesSpec::from_options(&args[2..]) {
+    let r_max = all_points
+      .iter()
+      .flatten()
+      .map(|&(x, y)| x.hypot(y))
+      .filter(|r| r.is_finite())
+      .fold(0.0_f64, f64::max);
+    let (prolog, extent) = axes.prolog(r_max);
+    plot_opts.prolog.extend(prolog);
+    plot_opts.axes = (false, false);
+    plot_opts.clip_overlays = false;
+    data_x = (-extent, extent);
+    data_y = (-extent, extent);
+  }
   // A `PlotStyle` list applied to a single curve is one combined directive
   // set, not a per-curve cycle: `PolarPlot[r, …, PlotStyle -> {Thick, Red}]`
   // draws one thick red curve.
