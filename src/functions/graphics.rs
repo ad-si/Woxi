@@ -24946,6 +24946,7 @@ fn shrink_scalable_svg(
   natural_h: f64,
   width: f64,
   height: f64,
+  auto_sized: bool,
 ) -> Option<String> {
   let root_start = svg.find("<svg")?;
   let root_end = root_start + svg[root_start..].find('>')?;
@@ -24956,7 +24957,9 @@ fn shrink_scalable_svg(
     .split_whitespace()
     .filter_map(|v| v.parse().ok())
     .collect();
-  if dims.len() != 4 || dims[2] <= natural_w * 1.5 {
+  // An automatically sized picture shrinks to the pane whatever its canvas;
+  // one with an explicit `ImageSize` only when its canvas is a scaled one.
+  if dims.len() != 4 || (!auto_sized && dims[2] <= natural_w * 1.5) {
     return None;
   }
   let scale = (width / natural_w).min(height / natural_h);
@@ -25256,6 +25259,37 @@ pub(crate) fn with_grid_background(svg: String, options: &[Expr]) -> String {
   out
 }
 
+/// Whether a `Pane`'s picture takes its size from the pane: a rendered
+/// graphic whose own expression states no `ImageSize`.
+pub(crate) fn pane_picture_is_auto_sized(content: &Expr) -> bool {
+  // `GraphPlot` and friends spell out the default width (360) as an
+  // `ImageSize`, which still counts as the automatic size.
+  let has_image_size = |args: &[Expr]| {
+    args.iter().any(|a| {
+      matches!(
+        a,
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+            && !matches!(replacement.as_ref(), Expr::Integer(360))
+      )
+    })
+  };
+  match content {
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D")
+        && !has_image_size(args)
+    }
+    Expr::Graphics { structure, .. } => match structure.as_deref() {
+      Some(Expr::FunctionCall { name, args }) => {
+        matches!(name.as_str(), "Graphics" | "Graphics3D")
+          && !has_image_size(args)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 /// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
 /// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
 /// content — with no scrollbar in a static export, content past the
@@ -25268,6 +25302,7 @@ pub(crate) fn clip_svg_to_pane_box(
   width: f64,
   height: f64,
   align: Option<(f64, f64)>,
+  auto_sized: bool,
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
@@ -25291,7 +25326,7 @@ pub(crate) fn clip_svg_to_pane_box(
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
   // cutting it off, keeping its aspect ratio.
   if let Some(scaled) =
-    shrink_scalable_svg(svg, natural_w, natural_h, width, height)
+    shrink_scalable_svg(svg, natural_w, natural_h, width, height, auto_sized)
   {
     return scaled;
   }

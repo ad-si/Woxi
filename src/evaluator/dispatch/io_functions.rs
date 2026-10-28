@@ -6200,6 +6200,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
                 w,
                 h,
                 pane_alignment(&args[1..]),
+                crate::functions::graphics::pane_picture_is_auto_sized(
+                  wrapped.as_ref().unwrap_or(&args[0]),
+                ),
               )
             }
             _ => inner_svg,

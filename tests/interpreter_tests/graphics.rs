@@ -40767,6 +40767,25 @@ fn pane_pads_small_content_to_its_fixed_box() {
 }
 
 #[test]
+fn pane_shrinks_automatically_sized_picture_to_fit() {
+  // Regression: an automatically sized picture bigger than the fixed `Pane`
+  // box was cut off at its edges instead of shrinking to fit; only a picture
+  // with an explicit `ImageSize` is clipped.
+  let graph =
+    export_svg("Pane[GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}], {300, 240}]");
+  assert!(graph.contains("height=\"240.0\""), "{graph}");
+  assert!(!graph.contains("paneClip"), "{graph}");
+  let plain = export_svg("Pane[Graphics[Circle[]], {300, 240}]");
+  assert!(
+    plain.contains("<svg width=\"240.0\" height=\"240.0\""),
+    "{plain}"
+  );
+  let sized =
+    export_svg("Pane[Graphics[Circle[], ImageSize -> 400], {300, 240}]");
+  assert!(sized.contains("paneClip"), "{sized}");
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
