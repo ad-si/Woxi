@@ -5024,6 +5024,24 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // An integrand of plain arithmetic is compiled once to float operations
+  // instead of being evaluated as an expression (exact coefficients and all)
+  // at every sample; a ParametricPlot of this endpoint-singular integral
+  // (Demonstration FisherKolmogoroffEquation) samples it hundreds of times.
+  #[test]
+  fn compiled_integrand_with_endpoint_singularity() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Lval[U1_?NumericQ] := 2 NIntegrate[1/Sqrt[U1^2 - U^2 + 2/3 (U^3 - U1^3)], {U, 0, U1}]; \
+         Round[10^5 Table[Lval[u], {u, 0.1, 0.9, 0.2}]]"
+      )
+      .unwrap(),
+      "{328426, 364183, 415647, 500595, 702267}"
+    );
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+
   #[test]
   fn gauss_rule_data() {
     assert_eq!(

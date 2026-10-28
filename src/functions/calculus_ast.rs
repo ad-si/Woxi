@@ -16593,7 +16593,25 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // finite (e.g. the removable singularity of Sin[x]/x at x = 0) is replaced
   // by its limit via a tiny perturbation, so adaptive quadrature does not
   // abort at such a point.
+  // The integrand compiled once to float arithmetic, when it is nothing but
+  // that: evaluating the expression afresh at every sample (exact
+  // coefficients and all) dominated a quadrature.
+  let compiled = if monitor.is_none() {
+    crate::functions::polynomial_ast::solve::compile_numeric(
+      integrand,
+      std::slice::from_ref(&var_name),
+    )
+    .filter(|node| !node.has_fallback())
+  } else {
+    None
+  };
   let eval_at = |x: f64| -> Option<f64> {
+    if let Some(node) = &compiled {
+      let v = node.eval(&[x]);
+      if v.is_finite() {
+        return Some(v);
+      }
+    }
     // Fire the EvaluationMonitor at each sampled abscissa (with the variable
     // bound to x), e.g. so `Sow[x]` records the sample locations.
     if let Some(m) = &monitor {

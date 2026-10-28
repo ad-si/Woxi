@@ -18899,7 +18899,7 @@ const SYMBOLIC_REFINEMENT_MAX_LEAVES: usize = 150;
 /// floating-point ops, so many restarts / iterations stay cheap. Anything the
 /// compiler doesn't recognise yields `None`, and the caller falls back to the
 /// slow AST path.
-enum NumNode {
+pub(crate) enum NumNode {
   Const(f64),
   Var(usize),
   Neg(Box<Self>),
@@ -18927,7 +18927,7 @@ enum NumNode {
 impl NumNode {
   /// Whether any subexpression is evaluated through the AST evaluator
   /// rather than compiled arithmetic.
-  fn has_fallback(&self) -> bool {
+  pub(crate) fn has_fallback(&self) -> bool {
     match self {
       Self::Const(_) | Self::Var(_) => false,
       Self::Neg(a)
@@ -18948,7 +18948,7 @@ impl NumNode {
   /// underflows on the way (e.g. `E^878 * (E^-880 - …)`, which is `inf * 0`),
   /// the tree is re-evaluated with an unbounded exponent, the way Wolfram
   /// leaves machine range instead of producing `Indeterminate`.
-  fn eval(&self, point: &[f64]) -> f64 {
+  pub(crate) fn eval(&self, point: &[f64]) -> f64 {
     let v = self.eval_plain(point);
     if v.is_finite() {
       v
@@ -19166,7 +19166,7 @@ impl WideFloat {
 
 /// Compile an `Expr` over `vars` into a fast numeric closure tree, or `None`
 /// if it contains anything not handled here (forcing the slow AST fallback).
-fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
+pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
   let c = |e: &Expr| compile_numeric(e, vars);
   match expr {
     Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
