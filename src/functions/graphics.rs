@@ -4946,9 +4946,74 @@ fn button_plate_size(label: &str) -> (f64, f64) {
   (w.max(28.0), 26.0)
 }
 
+/// The pixel size a `Button[label, action, ImageSize -> …]` option asks
+/// for: a single number is the width (the height follows the content, so it
+/// is reported as `None`), `{w, h}` fixes both.
+fn button_image_size(button_args: &[Expr]) -> Option<(f64, Option<f64>)> {
+  let value = button_args.iter().skip(2).find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSize") => {
+      evaluate_expr_to_expr(replacement).ok()
+    }
+    _ => None,
+  })?;
+  let number = |e: &Expr| match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    _ => None,
+  };
+  match &value {
+    Expr::List(dims) if dims.len() == 2 => {
+      let (w, h) = (number(&dims[0])?, number(&dims[1])?);
+      (w > 0.0 && h > 0.0).then_some((w, Some(h)))
+    }
+    other => number(other).filter(|w| *w > 0.0).map(|w| (w, None)),
+  }
+}
+
+/// A `Button[label, action, opts…]` laid out as a cell of a `Grid`, `Row` or
+/// `Column`. A picture label (`Graphics[…]`) is drawn at the button's
+/// `ImageSize` with the button's `Background` and hit region; a text label
+/// draws as the button plate, stretched to a requested `ImageSize`.
+fn button_cell_svg(args: &[Expr]) -> String {
+  let size = button_image_size(args);
+  if let Expr::FunctionCall { name, .. } = &args[0]
+    && matches!(name.as_str(), "Graphics" | "Graphics3D")
+  {
+    let (w, h) = match size {
+      Some((w, Some(h))) => (w.round() as i128, h.round() as i128),
+      Some((w, None)) => (w.round() as i128, w.round() as i128),
+      None => (28, 28),
+    };
+    let sized = with_fixed_image_size(&args[0], w, h);
+    if let Ok(evaluated) = evaluate_expr_to_expr(&sized) {
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      if !svg.is_empty() {
+        return with_button_cell_chrome(svg, args);
+      }
+    }
+  }
+  let label = graphics_text_content(&args[0]);
+  match size {
+    Some((w, h)) => button_plate_svg_sized(
+      &label,
+      w,
+      h.unwrap_or(button_plate_size(&label).1),
+    ),
+    None => button_plate_svg(&label),
+  }
+}
+
 /// A `Button`'s plate, as a standalone SVG to be inset into a picture.
 fn button_plate_svg(label: &str) -> String {
   let (w, h) = button_plate_size(label);
+  button_plate_svg_sized(label, w, h)
+}
+
+/// A `Button` plate of an explicit pixel size.
+fn button_plate_svg_sized(label: &str, w: f64, h: f64) -> String {
   format!(
     "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
@@ -17998,7 +18063,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, args }
       if name == "Button" && args.len() >= 2 =>
     {
-      button_plate_svg(&graphics_text_content(&args[0]))
+      button_cell_svg(args)
     }
     // A bare `PopupMenu[Dynamic[var], items, …]` cell (a puzzle board's
     // fill-in squares) shows the item `var` currently holds — blank while
@@ -23677,7 +23742,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // matters here. Without this a `Column`/`Row` item holding one
       // printed as its raw `Button[…]` source text instead of a button.
       "Button" if args.len() >= 2 => {
-        return Some(button_plate_svg(&graphics_text_content(&args[0])));
+        return Some(button_cell_svg(&args));
       }
       // Likewise a `PopupMenu[Dynamic[var], items, …]` item shows the choice
       // `var` holds rather than its source text.
