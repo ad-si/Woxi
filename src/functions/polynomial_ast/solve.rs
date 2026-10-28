@@ -18223,6 +18223,14 @@ fn nminimize_ast_impl(
 
   let mut x = best_x.clone();
 
+  // The objective to minimize (negated for NMaximize). A point where it is
+  // not a finite number is never an improvement, whichever direction the
+  // search goes — the sign is applied before that fallback, not after it.
+  let signed_objective = |p: &[f64]| match eval_at(&objective, p) {
+    Ok(v) if v.is_finite() => v * sign,
+    _ => f64::INFINITY,
+  };
+
   // Run gradient descent from a starting point, returning the optimized point and value.
   let run_gradient_descent =
     |start: Vec<f64>, grads: &[Expr]| -> (Vec<f64>, f64) {
@@ -18249,7 +18257,7 @@ fn nminimize_ast_impl(
         }
 
         let mut alpha = 0.1 / grad_norm.max(1.0);
-        let current_f = eval_at(&objective, &x).unwrap_or(f64::INFINITY) * sign;
+        let current_f = signed_objective(&x);
 
         let mut moved = false;
         for _ in 0..30 {
@@ -18342,8 +18350,8 @@ fn nminimize_ast_impl(
           let mut xd = x.clone();
           xd[i] = d;
 
-          let fc = eval_at(&objective, &xc).unwrap_or(f64::INFINITY) * sign;
-          let fd = eval_at(&objective, &xd).unwrap_or(f64::INFINITY) * sign;
+          let fc = signed_objective(&xc);
+          let fd = signed_objective(&xd);
 
           if fc < fd {
             b = d;
@@ -18357,8 +18365,12 @@ fn nminimize_ast_impl(
         }
 
         let new_val = f64::midpoint(a, b);
-        if (new_val - x[i]).abs() > tol {
-          x[i] = new_val;
+        let mut moved = x.clone();
+        moved[i] = new_val;
+        if (new_val - x[i]).abs() > tol
+          && signed_objective(&moved) <= signed_objective(&x)
+        {
+          x = moved;
           improved = true;
         }
       }

@@ -11798,6 +11798,35 @@ mod sqrt_differentiation {
 mod nmaximize {
   use super::*;
 
+  // An objective that is not a number at some points (it overflows for a
+  // large argument, or only evaluates for reals) must not draw the search
+  // there: for NMaximize a failed point used to count as -Infinity after
+  // the sign flip, i.e. as the best one, and the search ended at the
+  // bound and failed.
+  #[test]
+  fn objective_failing_far_away() {
+    for (input, expected) in [
+      (
+        "g[l_Real] := -(l - 1)^2 + If[l > 700, Overflow[], 0]; \
+         {Round[First[#], 10^-6], x /. Last[#]} &[NMaximize[g[x], x]]",
+        "{0, 1.}",
+      ),
+      (
+        "g[l_Real] := (l - 1)^2 + If[l > 700, Overflow[], 0]; \
+         {Round[First[#], 10^-6], x /. Last[#]} &[NMinimize[g[x], x]]",
+        "{0, 1.}",
+      ),
+      (
+        "f[l_Real] := -Log[Total[(({1., 2., 3.}^l - 1)/l - 1)^2]]; \
+         Round[x /. Last[NMaximize[f[x], x]], 10^-5]",
+        "637/20000",
+      ),
+    ] {
+      woxi::clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn nmaximize_sin() {
     // NMaximize[{Sin[x], 0 < x < 2*Pi}, x] finds the max at Pi/2. The Newton
