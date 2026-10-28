@@ -16577,6 +16577,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Tick labels on a narrow `ImageSize` must not squeeze the bitmap to a
+    /// negative width.
+    #[test]
+    fn density_plot_narrow_image_keeps_positive_bitmap_width() {
+      let svg = export_svg(
+        "DensityPlot[y, {x, 0, 1}, {y, 0, 4}, ImageSize -> {100, 240}, \
+         Frame -> True, FrameTicks -> {None, Automatic, None, Automatic}]",
+      );
+      assert!(svg.contains("<image "));
+      assert!(!svg.contains("width=\"-"), "negative width in {svg}");
+    }
+
     /// `RegionFunction -> Function[{x, y, z}, …]` masks out grid cells
     /// where it is `False`, matching `Plot3D`/`ContourPlot3D`'s option of
     /// the same name. A region excluding the whole domain leaves no
