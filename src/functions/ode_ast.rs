@@ -7476,17 +7476,27 @@ fn mass_matrix(
   // perturbation's contribution above the rounding floor at that scale, so
   // it survives the subtraction.
   let delta = c.iter().fold(1.0_f64, |acc, v| acc.max(v.abs()));
+  let first_slot = 1 + state.len();
+  // A residual that never mentions a highest derivative has a zero
+  // coefficient for it; skipping those evaluations keeps a sparse system
+  // (a chain of coupled stages) at `O(n)` rather than `O(n^2)` passes.
+  let used: Vec<Option<Vec<usize>>> =
+    residuals.iter().map(|r| r.vars_from(first_slot)).collect();
   let mut m = vec![vec![0.0; n]; n];
   for j in 0..n {
-    vars[1 + state.len() + j] = delta;
+    let slot = first_slot + j;
+    vars[slot] = delta;
     for (i, r) in residuals.iter().enumerate() {
+      if used[i].as_ref().is_some_and(|u| !u.contains(&slot)) {
+        continue;
+      }
       let v = r.eval(&vars).ok()?;
       if !v.is_finite() {
         return None;
       }
       m[i][j] = (v - c[i]) / delta;
     }
-    vars[1 + state.len() + j] = 0.0;
+    vars[slot] = 0.0;
   }
   Some(m)
 }
@@ -7957,6 +7967,18 @@ enum NumFn {
 }
 
 impl NumFn {
+  /// The variable indices `>= from` the value depends on, or `None` when
+  /// it must be assumed to depend on all of them.
+  fn vars_from(&self, from: usize) -> Option<Vec<usize>> {
+    match self {
+      Self::Compiled(e) => {
+        let mut out = Vec::new();
+        e.collect_vars_from(from, &mut out).then_some(out)
+      }
+      Self::Symbolic { .. } => None,
+    }
+  }
+
   /// Whether each evaluation solves an algebraic system by Newton
   /// iteration (an index-1 DAE's constraints) or goes through the symbolic
   /// evaluator — too costly for the thousands of evaluations an adaptive
@@ -8058,6 +8080,10 @@ enum NExpr {
   Interp1D {
     func_args: Vec<Expr>,
     arg: Box<Self>,
+    /// The last `(argument bits, value)` looked up. Building the mass
+    /// matrix re-evaluates every residual once per unknown with the same
+    /// state, so the same argument recurs many times in a row.
+    last: std::cell::Cell<Option<(u64, f64)>>,
   },
   /// A right-hand side written with complex constants (`I`, `Complex[a, b]`)
   /// whose value along the trajectory is real — e.g. a closed-form soliton
@@ -8203,6 +8229,44 @@ fn solve_dense(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
 }
 
 impl NExpr {
+  /// Push every variable index `>= from` the value can depend on. Returns
+  /// `false` when that cannot be told — a node whose inputs are not
+  /// visible (an `Implicit` solve, a complex-valued subtree) — in which
+  /// case the value must be assumed to depend on every variable.
+  fn collect_vars_from(&self, from: usize, out: &mut Vec<usize>) -> bool {
+    match self {
+      Self::Const(_) | Self::Delayed { .. } => true,
+      Self::Var(i) => {
+        if *i >= from {
+          out.push(*i);
+        }
+        true
+      }
+      Self::Add(items) | Self::Mul(items) => {
+        items.iter().all(|e| e.collect_vars_from(from, out))
+      }
+      Self::Pow(a, b) | Self::Fn2(_, a, b) => {
+        a.collect_vars_from(from, out) && b.collect_vars_from(from, out)
+      }
+      Self::Neg(a) | Self::Fn1(_, a) => a.collect_vars_from(from, out),
+      Self::If {
+        lhs,
+        rhs,
+        then,
+        otherwise,
+        ..
+      } => [lhs, rhs, then, otherwise]
+        .iter()
+        .all(|e| e.collect_vars_from(from, out)),
+      Self::Interp1D { arg, .. } => arg.collect_vars_from(from, out),
+      Self::External { refs, .. } => {
+        out.extend(refs.iter().map(|(_, i)| *i).filter(|i| *i >= from));
+        true
+      }
+      Self::ComplexReal(_) | Self::Implicit { .. } => false,
+    }
+  }
+
   /// Whether an `Implicit` (Newton-solved) node appears anywhere inside.
   fn has_implicit(&self) -> bool {
     match self {
@@ -8331,12 +8395,24 @@ impl NExpr {
         }
       }
       Self::Delayed { idx, lag } => dde_history_value(*idx, vars[0] - lag),
-      Self::Interp1D { func_args, arg } => {
+      Self::Interp1D {
+        func_args,
+        arg,
+        last,
+      } => {
         let x = arg.eval(vars);
-        evaluate_interpolating_function(func_args, &[Expr::Real(x)])
-          .ok()
-          .and_then(|r| expr_to_f64(&r).ok())
-          .unwrap_or(f64::NAN)
+        if let Some((bits, value)) = last.get()
+          && bits == x.to_bits()
+        {
+          return value;
+        }
+        let value =
+          evaluate_interpolating_function(func_args, &[Expr::Real(x)])
+            .ok()
+            .and_then(|r| expr_to_f64(&r).ok())
+            .unwrap_or(f64::NAN);
+        last.set(Some((x.to_bits(), value)));
+        value
       }
     }
   }
@@ -8411,6 +8487,7 @@ fn compile_interp1d_call(
   Some(NExpr::Interp1D {
     func_args: func_args.to_vec(),
     arg: Box::new(arg),
+    last: std::cell::Cell::new(None),
   })
 }
 
@@ -11881,14 +11958,19 @@ pub(crate) fn outside_interpolation_domain(x: f64, lo: f64, hi: f64) -> bool {
 
 /// `InterpolatingFunction::dmval` for a query point outside the data.
 pub(crate) fn emit_dmval(point: &[Expr]) {
-  let coords: Vec<String> = point
-    .iter()
-    .map(|c| crate::syntax::format_expr(c, crate::syntax::ExprForm::Output))
-    .collect();
-  crate::emit_message(&format!(
-    "InterpolatingFunction::dmval: Input value {{{}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
-    coords.join(", ")
-  ));
+  // Built lazily: an ODE right-hand side that strays outside its lookup
+  // table queries it tens of thousands of times, and wolframscript stops
+  // reporting after three.
+  crate::emit_message_with("InterpolatingFunction::dmval", || {
+    let coords: Vec<String> = point
+      .iter()
+      .map(|c| crate::syntax::format_expr(c, crate::syntax::ExprForm::Output))
+      .collect();
+    format!(
+      "InterpolatingFunction::dmval: Input value {{{}}} lies outside the range of data in the interpolating function. Extrapolation will be used.",
+      coords.join(", ")
+    )
+  });
 }
 
 /// A machine real when the imaginary part vanishes, else the machine complex.

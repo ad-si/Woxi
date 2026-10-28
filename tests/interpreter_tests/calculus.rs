@@ -23773,3 +23773,43 @@ mod sums_over_interpolating_functions {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
 }
+
+mod ndsolve_with_interpolated_coupling {
+  use super::*;
+
+  // A chain of stages coupled through a piecewise-linear lookup table: each
+  // residual mentions only its neighbours' derivatives, and the table is
+  // queried far outside its data while the iteration settles.
+  #[test]
+  fn chain_of_stages_matches_closed_form_for_linear_table() {
+    clear_state();
+    // `g` is linear, so the chain is the linear system u' = -u + ... whose
+    // first stage decays as Exp[-t] and the second is (1 + t) Exp[-t].
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Table[{x, 2 x}, {x, -1, 3, 1/2}], \
+           InterpolationOrder -> 1]; \
+         sol = NDSolve[{u1'[t] == -g[u1[t]]/2, u1[0] == 1, \
+           2 u2'[t] == g[u1[t]] - g[u2[t]], u2[0] == 1}, \
+           {u1, u2}, {t, 0, 1}]; \
+         Round[1000 {u1[1], u2[1]} /. First[sol]]"
+      )
+      .unwrap(),
+      "{368, 736}"
+    );
+  }
+
+  #[test]
+  fn extrapolating_a_table_reports_the_message_at_most_three_times() {
+    clear_state();
+    // Three of the message plus the `General::stop` notice.
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{0, 0}, {1, 1}}, InterpolationOrder -> 1]; \\
+         Do[g[5. + i], {i, 20}]; Length[$MessageList]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+}

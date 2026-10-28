@@ -283,6 +283,20 @@ mod graphics {
     }
 
     #[test]
+    fn plot_puts_the_sample_in_after_evaluating_the_body_symbolically() {
+      // The body is evaluated with `t` still symbolic and only then given
+      // its sample values, so a rule keyed on `f[t]` (an NDSolve result)
+      // applies; with the number in first it would face `f[0.5]` instead.
+      let svg = export_svg(
+        "tab = Interpolation[{{0, 1}, {1, 2}, {2, 5}}, \
+           InterpolationOrder -> 1]; \
+         sol = {{f[t] -> tab[t]}}; \
+         Plot[First[tab[f[t] /. sol]], {t, 0, 2}]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 1);
+    }
+
+    #[test]
     fn parametric_plot_if_without_else_hides_curve() {
       // `If[cond, curve]` with a false `cond` evaluates to `Null`, which
       // hides that curve instead of making the whole body unplottable.
