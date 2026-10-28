@@ -10816,6 +10816,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             axes_label = Some((label(&items[0]), label(&items[1])));
           }
           Expr::Identifier(s) if s == "None" => axes_label = None,
+          // `{xlabel}` names the x axis only.
+          Expr::List(items) if items.len() == 1 => {
+            axes_label = match &items[0] {
+              Expr::Identifier(s) if s == "None" => None,
+              item => Some((axes_label_markup(item), String::new())),
+            };
+          }
           other => {
             axes_label = Some((axes_label_markup(other), String::new()));
           }
