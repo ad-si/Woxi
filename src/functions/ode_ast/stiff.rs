@@ -3,8 +3,8 @@
 //! The explicit RK4 integrator diverges on a stiff system — the Oregonator
 //! model of the Belousov–Zhabotinsky reaction, with rate constants 2500
 //! times apart, say — long before its step is small enough to be stable.
-//! Such a leg is integrated with the linearly implicit Rosenbrock pair of
-//! Shampine and Reichelt (MATLAB's `ode23s`): an order-2 step with an
+//! Such a leg is integrated with Hairer & Wanner's Rodas4: a linearly
+//! implicit, stiffly accurate order-4 Rosenbrock method with an embedded
 //! order-3 error estimate, stable for any step size, whose Jacobian comes
 //! from finite differences.
 
@@ -40,8 +40,6 @@ pub(super) fn rosenbrock_leg(
     return Ok(Some(vec![(x_from, init.to_vec())]));
   }
   let dir = span.signum();
-  let d = 1.0 / (2.0 + std::f64::consts::SQRT_2);
-  let e32 = 6.0 + std::f64::consts::SQRT_2;
 
   let mut x = x_from;
   let mut y = init.to_vec();
@@ -62,6 +60,7 @@ pub(super) fn rosenbrock_leg(
   };
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
   let mut failures = 0;
+  let mut sparsity = JacobianSparsity::default();
 
   for _ in 0..MAX_STEPS {
     if (x_to - x) * dir <= h_min {
@@ -71,7 +70,7 @@ pub(super) fn rosenbrock_leg(
     let hs = h * dir;
 
     // The Jacobian and the time derivative, by forward differences.
-    let Some(jacobian) = jacobian(f, x, &y, &f0)? else {
+    let Some(jacobian) = sparsity.jacobian(f, x, &y, &f0)? else {
       return Ok(None);
     };
     let dt = f64::EPSILON.sqrt() * x.abs().max(h);
@@ -84,11 +83,15 @@ pub(super) fn rosenbrock_leg(
       .map(|(a, b)| (a - b) / (dt * dir))
       .collect();
 
-    // W = I - h d J.
+    // One Rodas4 step (Hairer & Wanner's stiffly accurate order-4
+    // Rosenbrock method with an embedded order-3 solution): six linear
+    // solves with W = I/(h γ) - J, the last stage's increment being the
+    // error estimate.
+    let inv_hg = 1.0 / (hs * RODAS_GAMMA);
     let w: Vec<Vec<f64>> = (0..n)
       .map(|i| {
         (0..n)
-          .map(|j| f64::from(u8::from(i == j)) - hs * d * jacobian[i][j])
+          .map(|j| f64::from(u8::from(i == j)) * inv_hg - jacobian[i][j])
           .collect()
       })
       .collect();
@@ -103,45 +106,71 @@ pub(super) fn rosenbrock_leg(
     let solve = |b: Vec<f64>| -> Vec<f64> {
       lu.solve(&b.iter().map(|v| -v).collect::<Vec<_>>())
     };
-
-    let k1 = solve(f0.iter().zip(&t).map(|(a, b)| a + hs * d * b).collect());
-    let y1: Vec<f64> =
-      y.iter().zip(&k1).map(|(a, k)| a + 0.5 * hs * k).collect();
-    let Some(f1) = f(x + 0.5 * hs, &y1)? else {
+    let mut ks: Vec<Vec<f64>> = Vec::with_capacity(6);
+    let mut stage_failed = false;
+    let mut u = y.clone();
+    for stage in 0..6 {
+      let (fu, tcoef) = if stage == 0 {
+        (f0.clone(), RODAS_D[0])
+      } else {
+        // The stage point: y plus the a-combination of the previous
+        // increments (stages 5 and 6 add the last increment to u).
+        if stage <= 4 {
+          u = y.clone();
+          for (k, kv) in ks.iter().enumerate() {
+            let a = RODAS_A[stage - 1][k];
+            if a != 0.0 {
+              for i in 0..n {
+                u[i] += a * kv[i];
+              }
+            }
+          }
+        } else {
+          for i in 0..n {
+            u[i] += ks[stage - 1][i];
+          }
+        }
+        let tc = if stage <= 3 { RODAS_C[stage - 1] } else { 1.0 };
+        let Some(fu) = f(x + tc * hs, &u)? else {
+          stage_failed = true;
+          break;
+        };
+        (fu, if stage <= 3 { RODAS_D[stage] } else { 0.0 })
+      };
+      let mut rhs: Vec<f64> =
+        fu.iter().zip(&t).map(|(a, b)| a + hs * tcoef * b).collect();
+      if stage > 0 {
+        for (k, kv) in ks.iter().enumerate() {
+          let c = RODAS_CC[stage - 1][k] / hs;
+          if c != 0.0 {
+            for i in 0..n {
+              rhs[i] += c * kv[i];
+            }
+          }
+        }
+      }
+      ks.push(solve(rhs));
+    }
+    if stage_failed {
       failures += 1;
       if failures > MAX_EVALUATION_FAILURES {
         return Ok(None);
       }
       h /= 4.0;
       continue;
-    };
-    let k2: Vec<f64> = solve(f1.iter().zip(&k1).map(|(a, b)| a - b).collect())
-      .iter()
-      .zip(&k1)
-      .map(|(a, b)| a + b)
-      .collect();
-    let y_new: Vec<f64> = y.iter().zip(&k2).map(|(a, k)| a + hs * k).collect();
-    let Some(f2) = f(x + hs, &y_new)? else {
-      failures += 1;
-      if failures > MAX_EVALUATION_FAILURES {
-        return Ok(None);
-      }
-      h /= 4.0;
-      continue;
-    };
-    let k3 = solve(
-      (0..n)
-        .map(|i| {
-          f2[i] - e32 * (k2[i] - f1[i]) - 2.0 * (k1[i] - f0[i]) + hs * d * t[i]
-        })
-        .collect(),
-    );
-    let error = (0..n)
+    }
+    let y_new: Vec<f64> = (0..n).map(|i| u[i] + ks[5][i]).collect();
+    // The weighted root-mean-square norm of the error, as in Hairer &
+    // Wanner's codes: a max norm lets one component's estimate hold the
+    // whole step back.
+    let error = ((0..n)
       .map(|i| {
-        let e = (hs / 6.0 * (k1[i] - 2.0 * k2[i] + k3[i])).abs();
-        e / (ATOL + RTOL * y[i].abs().max(y_new[i].abs()))
+        let e = ks[5][i] / (ATOL + RTOL * y[i].abs().max(y_new[i].abs()));
+        e * e
       })
-      .fold(0.0_f64, f64::max);
+      .sum::<f64>()
+      / n as f64)
+      .sqrt();
     if !error.is_finite() {
       h /= 4.0;
       if h < h_min {
@@ -149,7 +178,7 @@ pub(super) fn rosenbrock_leg(
       }
       continue;
     }
-    let factor = (0.8 * error.powf(-1.0 / 3.0)).clamp(0.2, 5.0);
+    let factor = (0.9 * error.powf(-0.25)).clamp(0.2, 6.0);
     if error > 1.0 {
       h *= factor;
       if h < h_min {
@@ -157,16 +186,174 @@ pub(super) fn rosenbrock_leg(
       }
       continue;
     }
+    let Some(f_new) = f(x + hs, &y_new)? else {
+      failures += 1;
+      if failures > MAX_EVALUATION_FAILURES {
+        return Ok(None);
+      }
+      h /= 4.0;
+      continue;
+    };
     x += hs;
     if (x_to - x) * dir <= h_min {
       x = x_to;
     }
     y = y_new;
-    f0 = f2;
+    f0 = f_new;
     points.push((x, y.clone()));
     h *= factor;
   }
   Ok(None)
+}
+
+/// Rodas4 (Hairer & Wanner, as tabulated in DifferentialEquations.jl):
+/// γ, the stage times c2..c4, the time-derivative weights d1..d4, the
+/// stage combinations a and the increment couplings C.
+const RODAS_GAMMA: f64 = 0.25;
+const RODAS_C: [f64; 3] = [0.386, 0.21, 0.63];
+const RODAS_D: [f64; 4] = [0.25, -0.1043, 0.1035, -0.0362];
+const RODAS_A: [[f64; 4]; 4] = [
+  [1.544, 0.0, 0.0, 0.0],
+  [0.9466785280815826, 0.2557011698983284, 0.0, 0.0],
+  [
+    3.314825187068521,
+    2.896124015972201,
+    0.9986419139977817,
+    0.0,
+  ],
+  [
+    1.221224509226641,
+    6.019134481288629,
+    12.53708332932087,
+    -0.687886036105895,
+  ],
+];
+const RODAS_CC: [[f64; 5]; 5] = [
+  [-5.6688, 0.0, 0.0, 0.0, 0.0],
+  [-2.430093356833875, -0.2063599157091915, 0.0, 0.0, 0.0],
+  [
+    -0.1073529058151375,
+    -9.594562251023355,
+    -20.47028614809616,
+    0.0,
+    0.0,
+  ],
+  [
+    7.496443313967647,
+    -10.24680431464352,
+    -33.99990352819905,
+    11.7089089320616,
+    0.0,
+  ],
+  [
+    8.083246795921522,
+    -7.981132988064893,
+    -31.52159432874371,
+    16.31930543123136,
+    -6.058818238834054,
+  ],
+];
+
+/// The sparsity of a large system's Jacobian, learned from full
+/// Jacobians, and the column groups (Curtis, Powell & Reid) whose columns
+/// touch disjoint rows, so that one evaluation of `f` differences a whole
+/// group. A method-of-lines system, each equation coupling a few
+/// neighbours, then costs a handful of evaluations per Jacobian instead of
+/// one per unknown. The full Jacobian is recomputed every
+/// `JACOBIAN_PATTERN_REFRESH` uses and its pattern merged in, so an entry
+/// that happened to vanish where the pattern was taken is soon picked up.
+#[derive(Default)]
+struct JacobianSparsity {
+  /// For each column, the rows where it has been seen nonzero.
+  rows: Vec<Vec<usize>>,
+  groups: Vec<Vec<usize>>,
+  uses: usize,
+}
+
+const JACOBIAN_PATTERN_REFRESH: usize = 25;
+
+impl JacobianSparsity {
+  fn jacobian(
+    &mut self,
+    f: &Rhs,
+    x: f64,
+    y: &[f64],
+    f0: &[f64],
+  ) -> Result<Option<Vec<Vec<f64>>>, InterpreterError> {
+    let n = y.len();
+    let refresh = self.uses.is_multiple_of(JACOBIAN_PATTERN_REFRESH);
+    self.uses += 1;
+    if n < 16 || refresh || self.groups.is_empty() {
+      let Some(jac) = jacobian(f, x, y, f0)? else {
+        return Ok(None);
+      };
+      if n >= 16 {
+        self.learn(&jac);
+      }
+      return Ok(Some(jac));
+    }
+    let mut jac = vec![vec![0.0; n]; n];
+    let mut probe = y.to_vec();
+    for group in &self.groups {
+      let deltas: Vec<f64> = group
+        .iter()
+        .map(|&j| f64::EPSILON.sqrt() * y[j].abs().max(1e-5))
+        .collect();
+      for (&j, d) in group.iter().zip(&deltas) {
+        probe[j] = y[j] + d;
+      }
+      let Some(fg) = f(x, &probe)? else {
+        return Ok(None);
+      };
+      for (&j, d) in group.iter().zip(&deltas) {
+        probe[j] = y[j];
+        for &i in &self.rows[j] {
+          jac[i][j] = (fg[i] - f0[i]) / d;
+        }
+      }
+    }
+    Ok(Some(jac))
+  }
+
+  /// Merge a full Jacobian's nonzero pattern in and regroup the columns
+  /// greedily; when grouping saves little, keep differencing column by
+  /// column (no groups).
+  fn learn(&mut self, jac: &[Vec<f64>]) {
+    let n = jac.len();
+    if self.rows.len() != n {
+      self.rows = vec![Vec::new(); n];
+    }
+    for (j, rows) in self.rows.iter_mut().enumerate() {
+      for (i, row) in jac.iter().enumerate() {
+        if row[j] != 0.0 && !rows.contains(&i) {
+          rows.push(i);
+        }
+      }
+    }
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut taken: Vec<Vec<bool>> = Vec::new();
+    for j in 0..n {
+      let slot = taken
+        .iter()
+        .position(|rows| self.rows[j].iter().all(|&i| !rows[i]));
+      let g = if let Some(g) = slot {
+        g
+      } else {
+        groups.push(Vec::new());
+        taken.push(vec![false; n]);
+        groups.len() - 1
+      };
+      groups[g].push(j);
+      for &i in &self.rows[j] {
+        taken[g][i] = true;
+      }
+    }
+    self.groups = if groups.len() * 2 <= n {
+      groups
+    } else {
+      Vec::new()
+    };
+  }
 }
 
 /// `∂f/∂y` at `(x, y)` by forward differences, given `f0 = f(x, y)`.
@@ -383,6 +570,30 @@ mod tests {
 
   // The stiff method resolves a slow solution under a fast relaxation
   // (`y' = -10^5 (y - cos x)`) over a long leg without running out of steps.
+  #[test]
+  fn rodas4_is_accurate_and_takes_few_steps() {
+    // y' = -y: e^-1 at 1, within the tolerance.
+    let decay = |_: f64, y: &[f64]| Ok(Some(vec![-y[0]]));
+    let points = rosenbrock_leg(&decay, &[1.0], 0.0, 1.0)
+      .unwrap()
+      .expect("integrates");
+    let err = (points.last().unwrap().1[0] - (-1.0f64).exp()).abs();
+    assert!(err < 1e-8, "{err}");
+    // A stiff linear pair with eigenvalues -1 and -10^4: an order-4
+    // method follows the slow mode in far fewer steps than an order-2 one
+    // (about 3000 here).
+    let pair = |_: f64, y: &[f64]| {
+      Ok(Some(vec![-y[0] + 9999.0 * y[1], -10000.0 * y[1]]))
+    };
+    let points = rosenbrock_leg(&pair, &[1.0, 1.0], 0.0, 10.0)
+      .unwrap()
+      .expect("integrates");
+    // y1 = (2 e^-x - e^(-10^4 x)), y2 = e^(-10^4 x).
+    let y = &points.last().unwrap().1;
+    assert!((y[0] - 2.0 * (-10.0f64).exp()).abs() < 1e-8, "{y:?}");
+    assert!(points.len() < 600, "{} steps", points.len());
+  }
+
   #[test]
   fn long_stiff_leg_completes() {
     let stiff = |x: f64, y: &[f64]| Ok(Some(vec![-1e5 * (y[0] - x.cos())]));
