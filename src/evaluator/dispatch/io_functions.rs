@@ -5154,6 +5154,11 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Style" && args.len() >= 2 && is_traditional_matrix_form(&args[0]))
+  {
+    return true;
+  }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // A `TabView` shows its selected pane, so it is a picture when that is.
@@ -5192,6 +5197,10 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     }
     // `Item[expr, opts…]` is a layout cell: what it displays is `expr`.
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+      lays_out_a_graphic(&args[0])
+    }
+    // `Text[expr]` displays `expr`, so a matrix inside it is a picture too.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       lays_out_a_graphic(&args[0])
     }
     // `Legended[expr, legend]` draws `expr` with the legend beside it, so it
@@ -6305,7 +6314,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !args.is_empty()
         && !matches!(&args[0], Expr::FunctionCall { name, args }
           if matches!(name.as_str(), "Grid" | "TextGrid" | "TableForm" | "MatrixForm")
-            && !args.is_empty()) =>
+            && !args.is_empty())
+        && !is_traditional_matrix_form(&args[0]) =>
     {
       let pushed = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
@@ -6986,7 +6996,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           Expr::FunctionCall { name: inner, args: inner_args }
           if (inner == "TableForm" || inner == "MatrixForm")
             && !inner_args.is_empty()
-        ) =>
+        )
+        || is_traditional_matrix_form(&args[0]) =>
     {
       if let Some(svg) = styled_tableform_svg(&args[0], &args[1..]) {
         svg
@@ -7123,6 +7134,15 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
   crate::functions::graphics::combine_graphics_svgs(&grid)
 }
 
+/// `TraditionalForm[{…}]` typesets a list as a parenthesized matrix, the same
+/// drawing `MatrixForm` gets.
+fn is_traditional_matrix_form(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "TraditionalForm"
+      && args.len() == 1
+      && matches!(&args[0], Expr::List(_)))
+}
+
 /// Render `Style[TableForm|MatrixForm[data], directives…]` to a styled grid
 /// SVG. Falls back to `None` when the data can't be reshaped into a grid.
 fn styled_tableform_svg(inner: &Expr, directives: &[Expr]) -> Option<String> {
@@ -7134,7 +7154,7 @@ fn styled_tableform_svg(inner: &Expr, directives: &[Expr]) -> Option<String> {
     return None;
   };
   let style = crate::functions::graphics::parse_grid_style(directives);
-  let rendered = if head == "MatrixForm" {
+  let rendered = if head == "MatrixForm" || head == "TraditionalForm" {
     // MatrixForm reshapes the same way as TableForm, but is drawn with
     // enclosing parentheses.
     let (grid_args, _gaps) = crate::tableform_grid_args(inner_args)?;

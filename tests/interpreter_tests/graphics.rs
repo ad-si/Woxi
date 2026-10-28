@@ -20827,6 +20827,36 @@ mod matrix_form {
   }
 
   #[test]
+  fn styled_traditional_form_matrix_has_parentheses() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ExportString[Text[Style[TraditionalForm[{{a, b}, {c, d}}], 26]], \"SVG\"]",
+    )
+    .unwrap()
+    .result;
+    assert_eq!(svg.matches("<path ").count(), 2, "{svg}");
+    assert!(
+      !svg.contains('\t'),
+      "cells must not be tab-separated: {svg}"
+    );
+  }
+
+  #[test]
+  fn matrix_in_text_inside_grid_row_is_drawn() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "ExportString[Grid[{{Row[{\"m\", Text[Style[TraditionalForm[{{a, b}, {c, d}}], 20]]}]}}], \"SVG\"]",
+    )
+    .unwrap()
+    .result;
+    assert_eq!(svg.matches("<path ").count(), 2, "{svg}");
+    assert!(
+      !svg.contains('\t'),
+      "cells must not be tab-separated: {svg}"
+    );
+  }
+
+  #[test]
   fn matrix_form_nested_3d() {
     clear_state();
     let result =
