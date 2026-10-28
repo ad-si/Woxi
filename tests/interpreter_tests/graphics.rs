@@ -42705,4 +42705,23 @@ mod generalized_bar_chart {
     assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
     assert!(svg.contains("<polygon"), "filling missing: {svg}");
   }
+
+  /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
+  /// base, not the `SuperStar[d]` expression the box reads back as.
+  #[test]
+  fn text_label_with_star_superscript_box() {
+    let svg = export_svg(
+      r#"Graphics[Text["\!\(\*SubscriptBox[SuperscriptBox[\(d\), \(*\)], \(hkl\)]\)", {0, 0}]]"#,
+    );
+    assert!(!svg.contains("SuperStar"), "{svg}");
+    assert!(svg.contains("d^*"), "{svg}");
+  }
+
+  #[test]
+  fn text_label_with_dagger_superscript_box() {
+    let svg = export_svg(
+      r#"Graphics[Text["\!\(\*SuperscriptBox[\(U\), \(\[Dagger]\)]\)", {0, 0}]]"#,
+    );
+    assert!(!svg.contains("SuperDagger"), "{svg}");
+  }
 }
