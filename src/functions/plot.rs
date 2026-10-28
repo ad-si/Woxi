@@ -9182,6 +9182,8 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
     Expr::Identifier(s) => match s.as_str() {
       "Thick" => style.thickness = Some(2.0),
       "Thin" => style.thickness = Some(0.5),
+      // `None` hides the curve itself; a `Filling` toward it still shows.
+      "None" => style.opacity = Some(0.0),
       // A named dash length is absolute pixels, not a fraction of the
       // picture: `Dashed` is 4 on / 4 off whatever the image size. Negative
       // marks absolute, as it does for thickness.

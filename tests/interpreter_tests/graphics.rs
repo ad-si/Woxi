@@ -42660,4 +42660,16 @@ mod generalized_bar_chart {
     assert_eq!(svg.matches("<rect").count(), 5, "bars missing: {svg}");
     assert!(svg.contains("<polyline"), "curve missing: {svg}");
   }
+
+  /// `PlotStyle -> {c, None}` hides the second curve, but a `Filling`
+  /// toward it is still drawn.
+  #[test]
+  fn plot_style_none_hides_curve_but_keeps_filling() {
+    let svg = export_svg(
+      "Plot[{Sin[x], Cos[x]}, {x, -4, 4}, PlotStyle -> {Blue, None}, \
+       Filling -> {2 -> Axis}]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
+    assert!(svg.contains("<polygon"), "filling missing: {svg}");
+  }
 }

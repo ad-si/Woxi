@@ -4560,6 +4560,20 @@ mod tests {
     assert!(dump.contains("label: \"show g₁(x) here\""), "{dump}");
   }
 
+  /// A caption that writes a sample mean as `Subscript[OverBar[X], 1]` must
+  /// typeset the bar over the letter, not leak the raw `OverBar[X]` source.
+  #[test]
+  fn control_label_typesets_overbar() {
+    let code = r#"Manipulate[x,
+      {{x, 1, Row[{"mean, ", Subscript[OverBar[Style["X", Italic]], 1]}]}, 0, 2}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("OverBar"), "{dump}");
+    assert!(dump.contains("label: \"mean, X\\u{304}₁\""), "{dump}");
+  }
+
   /// A control caption written `Dynamic[If[mode == 0, x₂, z₀]]` follows the
   /// mode control: it is retypeset on every change rather than frozen to
   /// the source text of the `If`.
