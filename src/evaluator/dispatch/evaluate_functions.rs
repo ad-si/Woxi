@@ -4787,8 +4787,7 @@ fn evaluate_function_call_ast_inner(
       // two-argument form `TreePlot[g, v]` (which pre-Graph-object
       // Demonstrations use) names the root in the position slot instead;
       // wolframscript still accepts it when `v` is a vertex of `g`.
-      let is_center =
-        matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center");
+      let is_center = matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center" || s == "Automatic");
       let root_vertex = if name != "TreePlot" {
         None
       } else if root_pos.is_some() || is_center {
