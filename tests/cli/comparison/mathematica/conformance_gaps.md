@@ -2611,6 +2611,24 @@ format). **Not reproducible.**
 
 ## Distributions and statistics
 
+### Goodness-of-fit p-values other than Kolmogorov–Smirnov, Cramér–von Mises and Pearson
+
+```sh
+wolframscript -code '{AndersonDarlingTest[#, w], KuiperTest[#, w], WatsonUSquareTest[#, w]} &[{1.2, 2.3, 1.9, 3.1, 2.2}] /. w -> WeibullDistribution[2., 2.5]'
+# {0.7774542220369554, 0.588057276340719, 0.4747782205540094}
+woxi eval '…same…'   # {0.7785318445270717, 0.582206479184168, 0.4867170128931776}
+```
+
+The test statistics agree. Woxi's p-values come from Marsaglia's
+finite-sample Anderson–Darling CDF, Stephens' modified Kuiper and
+Watson statistics, and the asymptotic series; none of these, and no
+exact-distribution variant tried, gives wolframscript's numbers, which
+are deterministic. Kolmogorov–Smirnov uses Marsaglia, Tsang & Wang's
+exact distribution as wolframscript does, and agrees except far in the
+tail of large samples (n = 998, D = 0.1024: Woxi 1.4481e-9, equal to
+twice the exact one-sided Smirnov tail; wolframscript 1.4208e-9).
+`KolmogorovSmirnovTest[data1, data2]` (two samples) is not implemented.
+
 Most distribution divergences are the `Plus`/`Times` ordering and `Sqrt`-split
 classes above, reached through a moment formula. The recurring shapes:
 

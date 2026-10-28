@@ -5305,203 +5305,52 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── PearsonChiSquareTest ─────────────────────────────────────────────
 
-/// PearsonChiSquareTest[data] - chi-square goodness-of-fit test (normal with estimated params)
-/// PearsonChiSquareTest[data, dist] - test against a specific distribution
-/// PearsonChiSquareTest[data, dist, "PValue"] - p-value
-/// PearsonChiSquareTest[data, dist, "TestStatistic"] - chi-square statistic
+/// `PearsonChiSquareTest[data, dist, property]`. A fully specified `dist`
+/// is DistributionFitTest's Pearson test; without one (or `Automatic`) the
+/// data are tested against the normal distribution fitted to them by
+/// maximum likelihood, which costs two degrees of freedom.
 pub fn pearson_chi_square_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated("PearsonChiSquareTest", args));
   }
-
-  let data = match &args[0] {
-    Expr::List(items) if items.len() >= 2 => {
-      let mut vals = Vec::new();
-      for item in items {
-        if let Some(v) = try_eval_to_f64(item) {
-          vals.push(v);
-        } else {
-          return Ok(unevaluated("PearsonChiSquareTest", args));
-        }
-      }
-      vals
-    }
-    _ => {
-      return Ok(unevaluated("PearsonChiSquareTest", args));
-    }
-  };
-
-  // Determine the null distribution and number of estimated parameters
-  let (dist_cdf, estimated_params): (Box<dyn Fn(f64) -> f64>, usize) =
-    if args.len() >= 2 {
-      match &args[1] {
-        Expr::Identifier(s) if s == "Automatic" => {
-          // Normal with estimated mean and variance
-          let n = data.len() as f64;
-          let mean = data.iter().sum::<f64>() / n;
-          let var =
-            data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-          let sd = var.sqrt();
-          (
-            Box::new(move |x: f64| {
-              f64::midpoint(
-                1.0,
-                erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)),
-              )
-            }),
-            2, // estimated mean and variance
-          )
-        }
-        Expr::FunctionCall { name, args: dargs } => match name.as_str() {
-          "NormalDistribution" => {
-            let (mu, sigma) = match dargs.len() {
-              0 => (0.0, 1.0),
-              2 => {
-                let mu = try_eval_to_f64(&dargs[0]).unwrap_or(0.0);
-                let sigma = try_eval_to_f64(&dargs[1]).unwrap_or(1.0);
-                (mu, sigma)
-              }
-              _ => (0.0, 1.0),
-            };
-            (
-              Box::new(move |x: f64| {
-                f64::midpoint(
-                  1.0,
-                  erf_f64((x - mu) / (sigma * std::f64::consts::SQRT_2)),
-                )
-              }),
-              0,
-            )
-          }
-          _ => {
-            return Ok(unevaluated("PearsonChiSquareTest", args));
-          }
-        },
-        _ => {
-          return Ok(unevaluated("PearsonChiSquareTest", args));
-        }
-      }
-    } else {
-      // Default: Normal with estimated parameters
-      let n = data.len() as f64;
-      let mean = data.iter().sum::<f64>() / n;
-      let var =
-        data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-      let sd = var.sqrt();
-      (
-        Box::new(move |x: f64| {
-          f64::midpoint(
-            1.0,
-            erf_f64((x - mean) / (sd * std::f64::consts::SQRT_2)),
-          )
-        }),
-        2,
-      )
-    };
-
-  // Parse property
-  let property = if args.len() == 3 {
-    match &args[2] {
-      Expr::String(s) => s.clone(),
-      _ => "PValue".to_string(),
-    }
-  } else {
-    "PValue".to_string()
-  };
-
-  let n = data.len();
-  let k = (2.0 * (n as f64).powf(0.4)).floor() as usize;
-  let k = k.max(2);
-
-  // Compute CDF values for each data point and bin into k equal bins
-  let mut bin_counts = vec![0usize; k];
-  for &x in &data {
-    let cdf_val = dist_cdf(x);
-    let bin = (cdf_val * k as f64).floor() as usize;
-    let bin = bin.min(k - 1);
-    bin_counts[bin] += 1;
+  if args.len() >= 2
+    && !matches!(&args[1], Expr::Identifier(s) if s == "Automatic")
+  {
+    return super::named_fit_test_ast("PearsonChiSquareTest", args);
   }
-
-  let expected = n as f64 / k as f64;
-  let chi_sq: f64 = bin_counts
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated("PearsonChiSquareTest", args));
+  };
+  let Some(data) = items
     .iter()
-    .map(|&o| {
-      let diff = o as f64 - expected;
-      diff * diff / expected
-    })
-    .sum();
-
-  let df = (k as f64 - 1.0 - estimated_params as f64).max(1.0);
-
-  if property.as_str() == "TestStatistic" {
-    Ok(num_to_expr(chi_sq))
-  } else {
-    // P-value from chi-square distribution: P(X > chi_sq) where X ~ ChiSquare(df)
-    // Using regularized gamma: 1 - GammaRegularized(df/2, chi_sq/2)
-    let p = 1.0 - regularized_gamma_lower(df / 2.0, chi_sq / 2.0);
-    Ok(num_to_expr(p))
+    .map(try_eval_to_f64)
+    .collect::<Option<Vec<f64>>>()
+  else {
+    return Ok(unevaluated("PearsonChiSquareTest", args));
+  };
+  if data.len() < 2 {
+    return Ok(unevaluated("PearsonChiSquareTest", args));
   }
-}
-
-/// Regularized lower incomplete gamma function P(a, x) = gamma(a, x) / Gamma(a)
-/// Used for chi-square CDF: CDF(x, df) = P(df/2, x/2)
-fn regularized_gamma_lower(a: f64, x: f64) -> f64 {
-  if x <= 0.0 {
-    return 0.0;
+  let n = data.len() as f64;
+  let mean = data.iter().sum::<f64>() / n;
+  let sd = (data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n).sqrt();
+  let dist = Expr::FunctionCall {
+    name: "NormalDistribution".to_string(),
+    args: vec![Expr::Real(mean), Expr::Real(sd)].into(),
+  };
+  let Some((statistic, p_value)) =
+    super::pearson_chi_square_fitted(&args[0], &dist, 2)
+  else {
+    return Ok(unevaluated("PearsonChiSquareTest", args));
+  };
+  match args.get(2) {
+    None => Ok(Expr::Real(p_value)),
+    Some(Expr::String(p)) if p == "PValue" => Ok(Expr::Real(p_value)),
+    Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(statistic)),
+    _ => Ok(unevaluated("PearsonChiSquareTest", args)),
   }
-  if x < a + 1.0 {
-    // Series expansion
-    gamma_series(a, x)
-  } else {
-    // Continued fraction
-    1.0 - gamma_cf(a, x)
-  }
-}
-
-/// Series expansion for lower incomplete gamma
-fn gamma_series(a: f64, x: f64) -> f64 {
-  let mut sum = 1.0 / a;
-  let mut term = 1.0 / a;
-  for n in 1..200 {
-    term *= x / (a + n as f64);
-    sum += term;
-    if term.abs() < sum.abs() * 1e-15 {
-      break;
-    }
-  }
-  sum * (-x + a * x.ln() - ln_gamma(a)).exp()
-}
-
-/// Continued fraction for upper incomplete gamma
-fn gamma_cf(a: f64, x: f64) -> f64 {
-  let mut f = x + 1.0 - a;
-  if f.abs() < 1e-30 {
-    f = 1e-30;
-  }
-  let mut c = 1.0 / 1e-30;
-  let mut d = 1.0 / f;
-  let mut result = d;
-  for i in 1..200 {
-    let an = -(i as f64) * (i as f64 - a);
-    let bn = x + 2.0 * i as f64 + 1.0 - a;
-    d = bn + an * d;
-    if d.abs() < 1e-30 {
-      d = 1e-30;
-    }
-    c = bn + an / c;
-    if c.abs() < 1e-30 {
-      c = 1e-30;
-    }
-    d = 1.0 / d;
-    let delta = c * d;
-    result *= delta;
-    if (delta - 1.0).abs() < 1e-15 {
-      break;
-    }
-  }
-  result * (-x + a * x.ln() - ln_gamma(a)).exp()
 }
 
 // ─── Longitude / Latitude ─────────────────────────────────────────────

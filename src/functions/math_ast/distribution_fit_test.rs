@@ -152,14 +152,110 @@ fn edf_deviations(u: &[f64]) -> (f64, f64) {
 // ─── Kolmogorov-Smirnov ─────────────────────────────────────────────────
 
 fn ks_test(u: &[f64]) -> TestResult {
-  let n = u.len() as f64;
+  let n = u.len();
   let (d_plus, d_minus) = edf_deviations(u);
   let d = d_plus.max(d_minus);
-  let lambda = (n.sqrt() + 0.12 + 0.11 / n.sqrt()) * d;
+  let p_value = if let Some(cdf) = kolmogorov_cdf_exact(n, d) {
+    (1.0 - cdf).clamp(0.0, 1.0)
+  } else {
+    let nf = n as f64;
+    kolmogorov_tail((nf.sqrt() + 0.12 + 0.11 / nf.sqrt()) * d)
+  };
   TestResult {
     statistic: d,
-    p_value: kolmogorov_tail(lambda),
+    p_value,
   }
+}
+
+/// `P(D_n < d)` for the one-sample Kolmogorov statistic, exactly, by
+/// Marsaglia, Tsang & Wang (2003), "Evaluating Kolmogorov's distribution"
+/// (Journal of Statistical Software 8(18)), as wolframscript computes it.
+/// When the matrix would be too large to raise to the n-th power, the
+/// paper's tail approximation, or `None` away from the tail.
+fn kolmogorov_cdf_exact(n: usize, d: f64) -> Option<f64> {
+  let nf = n as f64;
+  let k = (nf * d) as usize + 1;
+  let m = 2 * k - 1;
+  if m > 300 {
+    let s = d * d * nf;
+    return (s > 3.76).then(|| {
+      1.0 - 2.0 * (-(2.000071 + 0.331 / nf.sqrt() + 1.409 / nf) * s).exp()
+    });
+  }
+  let h = k as f64 - nf * d;
+  let mut hm = vec![vec![0.0f64; m]; m];
+  for (i, row) in hm.iter_mut().enumerate() {
+    for (j, cell) in row.iter_mut().enumerate() {
+      if i + 1 >= j {
+        *cell = 1.0;
+      }
+    }
+  }
+  for i in 0..m {
+    hm[i][0] -= h.powi(i as i32 + 1);
+    hm[m - 1][i] -= h.powi((m - i) as i32);
+  }
+  if 2.0 * h - 1.0 > 0.0 {
+    hm[m - 1][0] += (2.0 * h - 1.0).powi(m as i32);
+  }
+  for (i, row) in hm.iter_mut().enumerate() {
+    for (j, cell) in row.iter_mut().enumerate() {
+      if i + 1 > j {
+        for g in 1..=(i + 1 - j) {
+          *cell /= g as f64;
+        }
+      }
+    }
+  }
+  // H^n with a running power-of-ten exponent against overflow.
+  fn multiply(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let m = a.len();
+    let mut c = vec![vec![0.0; m]; m];
+    for i in 0..m {
+      for l in 0..m {
+        let ail = a[i][l];
+        if ail == 0.0 {
+          continue;
+        }
+        for j in 0..m {
+          c[i][j] += ail * b[l][j];
+        }
+      }
+    }
+    c
+  }
+  fn power(a: &[Vec<f64>], ea: i32, n: usize) -> (Vec<Vec<f64>>, i32) {
+    if n == 1 {
+      return (a.to_vec(), ea);
+    }
+    let (half, eh) = power(a, ea, n / 2);
+    let mut v = multiply(&half, &half);
+    let mut ev = 2 * eh;
+    if n % 2 == 1 {
+      v = multiply(a, &v);
+      ev += ea;
+    }
+    let m = v.len();
+    if v[m / 2][m / 2] > 1e140 {
+      for row in &mut v {
+        for x in row.iter_mut() {
+          *x *= 1e-140;
+        }
+      }
+      ev += 140;
+    }
+    (v, ev)
+  }
+  let (q, mut eq) = power(&hm, 0, n);
+  let mut result = q[k - 1][k - 1];
+  for i in 1..=n {
+    result = result * i as f64 / nf;
+    if result < 1e-140 {
+      result *= 1e140;
+      eq -= 140;
+    }
+  }
+  Some(result * 10f64.powi(eq))
 }
 
 /// `Q_KS(λ) = 2 Σ_{k=1}^∞ (-1)^{k-1} exp(-2k²λ²)`, the asymptotic tail
@@ -351,6 +447,26 @@ fn exp_neg_z_bessel_k(nu: f64, z: f64) -> f64 {
 // ─── Pearson chi-square ─────────────────────────────────────────────────
 
 fn pearson_chi_square_test(u: &[f64]) -> TestResult {
+  pearson_chi_square_test_estimated(u, 0)
+}
+
+/// Pearson's test of `data` against `dist` whose `estimated` parameters
+/// were fitted to the data, each of which takes away a degree of freedom:
+/// `(statistic, p-value)`.
+pub fn pearson_chi_square_fitted(
+  data: &Expr,
+  dist: &Expr,
+  estimated: usize,
+) -> Option<(f64, f64)> {
+  let u = sorted_probability_transform(data, dist)?;
+  let r = pearson_chi_square_test_estimated(&u, estimated);
+  Some((r.statistic, r.p_value))
+}
+
+fn pearson_chi_square_test_estimated(
+  u: &[f64],
+  estimated: usize,
+) -> TestResult {
   let n = u.len();
   let nf = n as f64;
   let k = (2.0 * nf.powf(0.4)).ceil().max(2.0) as usize;
@@ -373,7 +489,7 @@ fn pearson_chi_square_test(u: &[f64]) -> TestResult {
       d * d / expected
     })
     .sum();
-  let df = (k - 1) as i128;
+  let df = (k - 1).saturating_sub(estimated).max(1) as i128;
   let p = cdf_ast(&[
     call1("ChiSquareDistribution", Expr::Integer(df)),
     num_to_expr(chi2),
@@ -456,6 +572,28 @@ fn run_test(name: &str, u: &[f64]) -> Option<TestResult> {
   }
 }
 
+/// A test's name as wolframscript labels it in a table, with the inline
+/// box syntax (`\!\(\*SuperscriptBox[…]\)`) its strings carry.
+fn test_label(name: &str) -> String {
+  const BOX_START: &str = "\u{F7C1}";
+  const OPEN: &str = "\u{F7C9}";
+  const CLOSE: &str = "\u{F7C0}";
+  const STAR: &str = "\u{F7C8}";
+  let superscript = |base: &str| {
+    format!(
+      "{BOX_START}{OPEN}{STAR}SuperscriptBox[{OPEN}{base}{CLOSE},{OPEN}2{CLOSE}]{CLOSE}"
+    )
+  };
+  match name {
+    "AndersonDarling" => "Anderson\u{2010}Darling".to_string(),
+    "CramerVonMises" => "Cram\u{E9}r\u{2010}von Mises".to_string(),
+    "KolmogorovSmirnov" => "Kolmogorov\u{2010}Smirnov".to_string(),
+    "PearsonChiSquare" => format!("Pearson {}", superscript("\u{3C7}")),
+    "WatsonUSquare" => format!("Watson {}", superscript("U")),
+    other => other.to_string(),
+  }
+}
+
 fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
   let header = Expr::List(
     vec![
@@ -465,9 +603,24 @@ fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
     ]
     .into(),
   );
-  let row =
-    Expr::List(vec![str_expr(name), num_to_expr(stat), num_to_expr(p)].into());
-  call(
+  let row = Expr::List(
+    vec![
+      Expr::String(test_label(name)),
+      Expr::Real(stat),
+      Expr::Real(p),
+    ]
+    .into(),
+  );
+  let at_second = || {
+    Expr::List(
+      vec![call(
+        "Rule",
+        vec![Expr::Integer(2), call1("GrayLevel", Expr::Real(0.7))],
+      )]
+      .into(),
+    )
+  };
+  let grid = call(
     "Grid",
     vec![
       Expr::List(vec![header, row].into()),
@@ -478,9 +631,17 @@ fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
           Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
         ],
       ),
+      call(
+        "Rule",
+        vec![
+          id_expr("Dividers"),
+          Expr::List(vec![at_second(), at_second()].into()),
+        ],
+      ),
       call("Rule", vec![id_expr("Spacings"), id_expr("Automatic")]),
     ],
-  )
+  );
+  call("Style", vec![grid, str_expr("DialogStyle")])
 }
 
 /// Build the `HypothesisTestData[<|…|>]` association: `"FittedDistribution"`,
@@ -494,8 +655,8 @@ fn build_hypothesis_test_data(u: &[f64], dist: &Expr) -> Expr {
       tests.push((
         str_expr(name),
         Expr::Association(vec![
-          (str_expr("TestStatistic"), num_to_expr(r.statistic)),
-          (str_expr("PValue"), num_to_expr(r.p_value)),
+          (str_expr("TestStatistic"), Expr::Real(r.statistic)),
+          (str_expr("PValue"), Expr::Real(r.p_value)),
         ]),
       ));
     }
@@ -626,9 +787,18 @@ pub fn distribution_fit_test_ast(
   }
   let data = &args[0];
   let dist = &args[1];
-  let property: &str = match args.get(2) {
-    Some(Expr::String(s)) => s.as_str(),
-    None => "PValue",
+  // `{property, test}` asks for one test's property.
+  let (property, chosen_test): (&str, Option<&str>) = match args.get(2) {
+    Some(Expr::String(s)) => (s.as_str(), None),
+    Some(Expr::List(spec)) => match spec.as_slice() {
+      [Expr::String(prop), Expr::String(test)]
+        if TEST_NAMES.contains(&test.as_str()) =>
+      {
+        (prop.as_str(), Some(test.as_str()))
+      }
+      _ => return Ok(unevaluated("DistributionFitTest", args)),
+    },
+    None => ("PValue", None),
     _ => return Ok(unevaluated("DistributionFitTest", args)),
   };
 
@@ -645,6 +815,36 @@ pub fn distribution_fit_test_ast(
   let Expr::Association(pairs) = &assoc else {
     unreachable!()
   };
+
+  if let Some(name) = chosen_test {
+    let test = selected_test(pairs, Some(name)).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DistributionFitTest: unknown test".into(),
+      )
+    })?;
+    return match property {
+      "PValue" | "TestStatistic" => {
+        if property == "PValue" {
+          warn_if_out_of_range(pairs, name);
+        }
+        Ok(property_from_test(test, property).unwrap_or(assoc))
+      }
+      "TestDataTable" => {
+        let Expr::Association(tp) = test else {
+          return Ok(unevaluated("DistributionFitTest", args));
+        };
+        let (Some(stat), Some(p)) = (
+          association_get(tp, "TestStatistic").and_then(try_eval_to_f64),
+          association_get(tp, "PValue").and_then(try_eval_to_f64),
+        ) else {
+          return Ok(unevaluated("DistributionFitTest", args));
+        };
+        Ok(test_data_table(name, stat, p))
+      }
+      "HypothesisTestData" => Ok(call1("HypothesisTestData", assoc)),
+      _ => Ok(unevaluated("DistributionFitTest", args)),
+    };
+  }
 
   match property {
     "HypothesisTestData" => Ok(call1("HypothesisTestData", assoc)),
@@ -675,4 +875,30 @@ pub fn distribution_fit_test_ast(
       Ok(unevaluated("DistributionFitTest", args))
     }
   }
+}
+
+/// `KolmogorovSmirnovTest[data, dist, property]` and the other named
+/// goodness-of-fit tests: `DistributionFitTest` with that one test chosen.
+pub fn named_fit_test_ast(
+  head: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let test = head.strip_suffix("Test").unwrap_or(head);
+  if !(2..=3).contains(&args.len()) || !TEST_NAMES.contains(&test) {
+    return Ok(unevaluated(head, args));
+  }
+  let property = match args.get(2) {
+    None => str_expr("PValue"),
+    Some(Expr::String(p)) => str_expr(p),
+    Some(_) => return Ok(unevaluated(head, args)),
+  };
+  let spec = Expr::List(vec![property, str_expr(test)].into());
+  let result =
+    distribution_fit_test_ast(&[args[0].clone(), args[1].clone(), spec])?;
+  Ok(match &result {
+    Expr::FunctionCall { name, .. } if name == "DistributionFitTest" => {
+      unevaluated(head, args)
+    }
+    _ => result,
+  })
 }

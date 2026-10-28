@@ -2417,7 +2417,7 @@ DisplayAllSteps,display option,🚫,None,6.0,2431
 ExternalEvaluate,external code execution,🚫,None,11.2,2431
 InterquartileRange,Difference between third and first quartiles under optional Quantile parameters (of a list or an association's values; columnwise for a matrix),✅,pure,6.0,2431
 InverseFunctions,option for inverse computation,🚫,None,2.0,2431
-KolmogorovSmirnovTest,statistical test,🚫,None,8.0,2431
+KolmogorovSmirnovTest,Kolmogorov-Smirnov goodness-of-fit test with exact p-values,✅,pure,8.0,2431
 Arrays,type system,🚫,None,9.0,2435
 ExpandDenominator,Expands the denominator of a rational expression,✅,pure,1.0,2435
 KleinInvariantJ,Normalized elliptic modular invariant J(tau) equal to j(tau)/1728 (exact at tau=I; numeric via theta ratio),✅,pure,3.0,2435
@@ -3367,7 +3367,7 @@ PreemptProtect,Evaluates an expression without interruption by preemptive comput
 StratonovichProcess,,🚫,,9.0,3413
 UnitVectorLayer,,🚫,,11.1,3413
 WindowToolbars,,🚫,,3.0,3413
-AndersonDarlingTest,,,,8.0,3427
+AndersonDarlingTest,Anderson-Darling goodness-of-fit test,✅,pure,8.0,3427
 KnapsackSolve,,,,11.0,3427
 LQRegulatorGains,,,,8.0,3427
 MeanAbsoluteLossLayer,,🚫,,11.0,3427
@@ -3453,7 +3453,7 @@ SavitzkyGolayMatrix,Least-squares Savitzky-Golay smoothing kernel of a given rad
 SpearmanRankTest,,,,9.0,3506
 AASTriangle,Triangle from two angles and the side opposite the first (symbolic angles give the Csc/Cot closed form),✅,pure,10.0,3522
 BlockchainData,,🚫,,11.3,3522
-CramerVonMisesTest,,,,8.0,3522
+CramerVonMisesTest,Cramér-von Mises goodness-of-fit test,✅,pure,8.0,3522
 Decompose,Decomposes a polynomial into a composition of simpler polynomials,✅,pure,1.0,3522
 HyperexponentialDistribution,Mixture of exponential distributions,✅,pure,9.0,3522
 InteractiveTradingChart,,🚫,,8.0,3522
@@ -3642,7 +3642,7 @@ GetEnvironment,Returns rule(s) mapping env variable names to their values,✅,pu
 GrammarToken,,🚫,,10.0,3717
 ImageForestingComponents,,🚫,,8.0,3717
 KarhunenLoeveDecomposition,,,,8.0,3717
-KuiperTest,,,,8.0,3717
+KuiperTest,Kuiper goodness-of-fit test,✅,pure,8.0,3717
 LUVColor,,,,10.0,3717
 LeastSquaresFilterKernel,,,,9.0,3717
 LessFullEqual,Operator without built-in meaning displayed infix,✅,pure,3.0,3717
@@ -3653,7 +3653,7 @@ PersistentObjects,,🚫,,11.1,3717
 RegionSymmetricDifference,,,,10.0,3717
 ReturnPacket,,,,3.0,3717
 RollPitchYawMatrix,Rotation matrix from roll-pitch-yaw angles (default {3 2 1} convention; rotations apply in reverse angle order; optional axis sequence),✅,pure,10.2,3717
-WatsonUSquareTest,,,,8.0,3717
+WatsonUSquareTest,Watson U² goodness-of-fit test,✅,pure,8.0,3717
 BooleanGraph,,,,8.0,3737
 CharacterName,Gives the Wolfram Language name of a character (letters digits and ASCII punctuation) or a list of names for a multi-character string,✅,pure,10.2,3737
 ContourDetect,,,,8.0,3737

@@ -868,6 +868,15 @@ pub fn dispatch_math_functions(
     "DistributionFitTest" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::distribution_fit_test_ast(args));
     }
+    "KolmogorovSmirnovTest"
+    | "AndersonDarlingTest"
+    | "CramerVonMisesTest"
+    | "KuiperTest"
+    | "WatsonUSquareTest"
+      if args.len() == 2 || args.len() == 3 =>
+    {
+      return Some(crate::functions::math_ast::named_fit_test_ast(name, args));
+    }
     "HypothesisTesting`MeanTest" => {
       return Some(
         crate::functions::math_ast::hypothesis_testing_mean_test_ast(args),

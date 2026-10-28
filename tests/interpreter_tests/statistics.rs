@@ -5042,6 +5042,68 @@ mod distribution_fit_test {
       .unwrap_or_else(|_| panic!("expected a numeric p-value, got {s}"))
   }
 
+  const WEIBULL_CASE: &str =
+    "{1.2, 2.3, 1.9, 3.1, 2.2}, WeibullDistribution[2., 2.5]";
+
+  #[test]
+  fn kolmogorov_smirnov_p_value_is_exact() {
+    // wolframscript, from Marsaglia, Tsang & Wang's exact distribution.
+    assert_eq!(
+      interpret(&format!("KolmogorovSmirnovTest[{WEIBULL_CASE}]")).unwrap(),
+      "0.8776478748782217"
+    );
+    assert_eq!(
+      interpret(
+        "DistributionFitTest[Range[0.1, 3, 0.07], WeibullDistribution[2., \
+         2.5], \"KolmogorovSmirnov\"] // Round[#, 10^-15] &"
+      )
+      .unwrap(),
+      interpret("Round[0.01103954470202817, 10^-15]").unwrap()
+    );
+  }
+
+  #[test]
+  fn named_tests_and_property_lists() {
+    assert_eq!(
+      interpret(&format!(
+        "{{KolmogorovSmirnovTest[{WEIBULL_CASE}, \"TestStatistic\"], \
+         DistributionFitTest[{WEIBULL_CASE}, {{\"TestStatistic\", \
+         \"KolmogorovSmirnov\"}}], \
+         CramerVonMisesTest[{WEIBULL_CASE}] == DistributionFitTest[\
+         {WEIBULL_CASE}, \"CramerVonMises\"]}}"
+      ))
+      .unwrap(),
+      "{0.2387562635567651, 0.2387562635567651, True}"
+    );
+    // A two-sample test is not implemented and stays unevaluated.
+    assert_eq!(
+      interpret("KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]").unwrap(),
+      "KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]"
+    );
+  }
+
+  #[test]
+  fn test_data_table_labels_like_wolframscript() {
+    assert_eq!(
+      interpret(&format!(
+        "t = KolmogorovSmirnovTest[{WEIBULL_CASE}, \"TestDataTable\"]; \
+         {{Head[t], t[[2]], t[[1, 1, 2, 1]], \
+          t[[1, 1, 2, 1]] === \"Kolmogorov\\[Hyphen]Smirnov\"}}"
+      ))
+      .unwrap(),
+      "{Style, DialogStyle, Kolmogorov‐Smirnov, True}"
+    );
+    // A machine p-value of zero stays a machine number.
+    assert_eq!(
+      interpret(
+        "DistributionFitTest[Range[0.5, 4.5, 0.0004], WeibullDistribution[2., \
+         2.5], \"KolmogorovSmirnov\"]"
+      )
+      .unwrap(),
+      "0."
+    );
+  }
+
   #[test]
   fn all_tests_lists_the_six_supported_tests() {
     assert_eq!(
@@ -5127,7 +5189,7 @@ mod distribution_fit_test {
     )
     .unwrap();
     assert!(
-      result.contains("KolmogorovSmirnov") && result.contains("Grid"),
+      result.contains("Kolmogorov\u{2010}Smirnov") && result.contains("Grid"),
       "expected a Grid mentioning the test name, got {result}"
     );
   }
@@ -6375,6 +6437,20 @@ mod pearson_chi_square_test {
     assert!(
       val > 0.0 && val < 1.0,
       "Expected p-value between 0 and 1, got {val}"
+    );
+  }
+
+  #[test]
+  fn estimated_normal_costs_two_degrees_of_freedom() {
+    // wolframscript: 0.6872892787909722 and statistic 0.75.
+    assert_eq!(
+      interpret(
+        "d = {1.2, 0.5, 1.9, 2.1, 0.8, 1.5, 1.1, 0.3}; \
+         {Round[PearsonChiSquareTest[d], 10^-12], \
+          PearsonChiSquareTest[d, Automatic, \"TestStatistic\"]}"
+      )
+      .unwrap(),
+      interpret("{Round[0.6872892787909722, 10^-12], 0.75}").unwrap()
     );
   }
 
