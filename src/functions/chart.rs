@@ -486,6 +486,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           let markup = crate::functions::graphics::box_string_to_svg(s);
           (svg_markup_visible_text(&markup), Some(markup))
         }
+        // A multi-line string stacks like a bare one: each line is a row.
+        Expr::String(s) if s.contains('\n') => {
+          let mut lines = s
+            .split('\n')
+            .map(crate::functions::graphics::box_string_to_svg);
+          let first = lines.next().unwrap_or_default();
+          extra_lines = lines.collect();
+          (s.replace('\n', " "), Some(first))
+        }
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
         // Any other content (`Row[…]`, a number, …) is typeset the way the
