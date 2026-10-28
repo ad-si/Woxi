@@ -4620,6 +4620,30 @@ mod replace_all_after_operators {
   }
 }
 
+mod replace_all_derivative_heads {
+  use super::*;
+
+  // A derivative's head is a subexpression before the function in it: the
+  // rule for u'' is tried before the rule for u.
+  #[test]
+  fn head_before_function() {
+    assert_eq!(
+      interpret("Derivative[2][u][x] /. {Derivative[2][u] -> g, u -> h}")
+        .unwrap(),
+      "g[x]"
+    );
+    assert_eq!(
+      interpret("u''[x] + u'[x] + u[x] /. {u'' -> g, u' -> k, u -> h}")
+        .unwrap(),
+      "g[x] + h[x] + k[x]"
+    );
+    assert_eq!(
+      interpret("Derivative[1, 0][f][x, y] /. {f -> g}").unwrap(),
+      "Derivative[1, 0][g][x, y]"
+    );
+  }
+}
+
 mod replace_all_expression_rhs {
   use super::*;
 

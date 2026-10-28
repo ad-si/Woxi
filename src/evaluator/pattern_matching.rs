@@ -3460,6 +3460,41 @@ fn flat_derivative(e: &Expr) -> Option<Expr> {
   }
 }
 
+/// The curried form `Derivative[n…][f][args…]` of a flat
+/// `Derivative[n…, f, args…]` (orders, then the function, then any
+/// arguments). `None` for any other shape.
+fn curried_derivative(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Derivative" {
+    return None;
+  }
+  let orders = args
+    .iter()
+    .take_while(|a| matches!(a, Expr::Integer(_)))
+    .count();
+  if orders == 0 || orders >= args.len() {
+    return None;
+  }
+  let head = Expr::CurriedCall {
+    func: Box::new(Expr::FunctionCall {
+      name: name.clone(),
+      args: args[..orders].to_vec().into(),
+    }),
+    args: vec![args[orders].clone()],
+  };
+  let rest = &args[orders + 1..];
+  Some(if rest.is_empty() {
+    head
+  } else {
+    Expr::CurriedCall {
+      func: Box::new(head),
+      args: rest.to_vec(),
+    }
+  })
+}
+
 /// Check if two Expr values are structurally equal
 pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
   match (a, b) {
@@ -6460,6 +6495,21 @@ fn apply_replace_all_multi_ast_impl(
         return Ok(rebuild_call_with_head(new_head, new_items));
       }
       Ok(Expr::List(new_items.into()))
+    }
+    // A derivative is stored flat (`Derivative[2, u, x]`), but its parts
+    // are those of `Derivative[2][u][x]`: the head `Derivative[2][u]` is
+    // offered to the rules before the `u` inside it, as in wolframscript
+    // (`u''[x] /. {u'' -> g, u -> h}` is `g[x]`).
+    Expr::FunctionCall { name, .. }
+      if name == "Derivative"
+        && let Some(curried) = curried_derivative(expr) =>
+    {
+      let replaced = apply_replace_all_multi_ast_impl(&curried, rules, held)?;
+      if held {
+        Ok(replaced)
+      } else {
+        evaluate_expr_to_expr(&replaced)
+      }
     }
     Expr::FunctionCall { name, args } => {
       // An argument a Hold attribute protects is as held as one inside
