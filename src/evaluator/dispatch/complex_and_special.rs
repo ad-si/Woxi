@@ -1516,6 +1516,10 @@ pub fn dispatch_complex_and_special(
     "TriangleCenter" if args.len() == 1 || args.len() == 2 => {
       return Some(compute_triangle_center(args));
     }
+    // TriangleConstruct[tri, construction] — lines and circles of a triangle
+    "TriangleConstruct" if args.len() == 1 || args.len() == 2 => {
+      return Some(compute_triangle_construct(args));
+    }
     // TriangleMeasurement[tri] / TriangleMeasurement[tri, prop] — scalar
     // triangle measurements (Area default, Perimeter, radii, …)
     "TriangleMeasurement" if args.len() == 1 || args.len() == 2 => {
@@ -14747,6 +14751,202 @@ fn dist2_nd(p1: &[Expr], p2: &[Expr]) -> Expr {
   }
 }
 
+/// TriangleConstruct[tri, construction] for the planar constructions
+/// wolframscript names: `"Altitude"`, `"Median"`, `"AngleBisector"` and
+/// `"PerpendicularBisector"` at a vertex (`{name, k}`, `{name, All}`; the
+/// second vertex by default), and `"Circumcircle"`, `"Incircle"`,
+/// `"NinePointCircle"` and `"EulerLine"`. `TriangleConstruct[tri]` is the
+/// triangle itself; anything else stays unevaluated, as in wolframscript.
+fn compute_triangle_construct(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let uneval = || Ok(unevaluated("TriangleConstruct", args));
+  let vertices = match &args[0] {
+    Expr::FunctionCall { name, args: targs }
+      if name == "Triangle" && targs.len() == 1 =>
+    {
+      targs[0].clone()
+    }
+    v @ Expr::List(_) => v.clone(),
+    _ => return uneval(),
+  };
+  let Expr::List(vs) = &vertices else {
+    return uneval();
+  };
+  let pts: Vec<Expr> = vs.to_vec();
+  if pts.len() != 3
+    || pts
+      .iter()
+      .any(|p| !matches!(p, Expr::List(c) if c.len() == 2))
+  {
+    return uneval();
+  }
+  let Some(spec) = args.get(1) else {
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Triangle",
+      vec![vertices],
+    ));
+  };
+  let (name, which): (&str, Option<&Expr>) = match spec {
+    Expr::String(n) => (n.as_str(), None),
+    Expr::List(items) => match items.as_slice() {
+      [Expr::String(n), k] => (n.as_str(), Some(k)),
+      _ => return uneval(),
+    },
+    _ => return uneval(),
+  };
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let center = |kind: &str| -> Result<Expr, InterpreterError> {
+    ev(&call(
+      "TriangleCenter",
+      vec![vertices.clone(), Expr::String(kind.into())],
+    ))
+  };
+  let minus = |a: &Expr, b: &Expr| {
+    call(
+      "Plus",
+      vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
+    )
+  };
+  let norm = |v: Expr| call("Norm", vec![v]);
+  let half = |e: Expr| {
+    call(
+      "Times",
+      vec![
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+        e,
+      ],
+    )
+  };
+  // The construction at vertex k (0-based), the other two vertices being
+  // the next and the previous one.
+  let at_vertex = |k: usize| -> Result<Option<Expr>, InterpreterError> {
+    let v = &pts[k];
+    let next = &pts[(k + 1) % 3];
+    let prev = &pts[(k + 2) % 3];
+    Ok(Some(match name {
+      // From the vertex to the foot of the perpendicular on the opposite
+      // side.
+      "Altitude" => {
+        let side = minus(next, prev);
+        let t = call(
+          "Times",
+          vec![
+            call("Dot", vec![minus(v, prev), side.clone()]),
+            call(
+              "Power",
+              vec![
+                call("Dot", vec![side.clone(), side.clone()]),
+                Expr::Integer(-1),
+              ],
+            ),
+          ],
+        );
+        let foot =
+          call("Plus", vec![prev.clone(), call("Times", vec![t, side])]);
+        ev(&call(
+          "Line",
+          vec![Expr::List(vec![v.clone(), foot].into())],
+        ))?
+      }
+      "Median" => {
+        let mid = half(call("Plus", vec![prev.clone(), next.clone()]));
+        ev(&call("Line", vec![Expr::List(vec![v.clone(), mid].into())]))?
+      }
+      // Along the sum of the unit vectors to the other two vertices.
+      "AngleBisector" => {
+        let unit = |w: &Expr| {
+          let d = minus(w, v);
+          call(
+            "Times",
+            vec![d.clone(), call("Power", vec![norm(d), Expr::Integer(-1)])],
+          )
+        };
+        let direction = call("Plus", vec![unit(prev), unit(next)]);
+        ev(&call("InfiniteLine", vec![v.clone(), direction]))?
+      }
+      // Of the opposite side: through its midpoint, perpendicular to it.
+      "PerpendicularBisector" => {
+        let mid = half(call("Plus", vec![prev.clone(), next.clone()]));
+        let d = ev(&minus(next, prev))?;
+        let Expr::List(dc) = &d else { return Ok(None) };
+        let normal = Expr::List(
+          vec![
+            dc[1].clone(),
+            call("Times", vec![Expr::Integer(-1), dc[0].clone()]),
+          ]
+          .into(),
+        );
+        ev(&call("InfiniteLine", vec![mid, normal]))?
+      }
+      _ => return Ok(None),
+    }))
+  };
+  let radius_to = |c: &Expr| norm(minus(c, &pts[0]));
+  match name {
+    "Altitude" | "Median" | "AngleBisector" | "PerpendicularBisector" => {
+      match which {
+        None => Ok(at_vertex(1)?.unwrap()),
+        Some(Expr::Identifier(a)) if a == "All" => {
+          let mut all = Vec::with_capacity(3);
+          for k in 0..3 {
+            all.push(at_vertex(k)?.unwrap());
+          }
+          Ok(Expr::List(all.into()))
+        }
+        Some(Expr::Integer(k)) if (1..=3).contains(k) => {
+          Ok(at_vertex(*k as usize - 1)?.unwrap())
+        }
+        _ => uneval(),
+      }
+    }
+    _ if which.is_some() => uneval(),
+    "Circumcircle" => {
+      let c = center("Circumcenter")?;
+      let r = radius_to(&c);
+      ev(&call("Circle", vec![c, r]))
+    }
+    "NinePointCircle" => {
+      let c = center("NinePointCenter")?;
+      let r = half(radius_to(&center("Circumcenter")?));
+      ev(&call("Circle", vec![c, r]))
+    }
+    // The inradius by Heron: Sqrt[(s - a) (s - b) (s - c)/s], brought
+    // together as wolframscript writes it.
+    "Incircle" => {
+      let c = center("Incenter")?;
+      let sides = [
+        norm(minus(&pts[1], &pts[2])),
+        norm(minus(&pts[2], &pts[0])),
+        norm(minus(&pts[0], &pts[1])),
+      ];
+      let s = half(call("Plus", sides.to_vec()));
+      let product = call(
+        "Expand",
+        vec![call(
+          "Times",
+          sides.iter().map(|side| minus(&s, side)).collect(),
+        )],
+      );
+      let r = call(
+        "Sqrt",
+        vec![call(
+          "Together",
+          vec![call(
+            "Times",
+            vec![product, call("Power", vec![s, Expr::Integer(-1)])],
+          )],
+        )],
+      );
+      ev(&call("Circle", vec![c, r]))
+    }
+    "EulerLine" => {
+      let line =
+        Expr::List(vec![center("Centroid")?, center("Orthocenter")?].into());
+      ev(&call("InfiniteLine", vec![line]))
+    }
+    _ => uneval(),
+  }
+}
+
 /// TriangleCenter[tri] / TriangleCenter[tri, ctype] — a named center of a
 /// triangle. The triangle can be Triangle[{p1, p2, p3}] or a bare vertex
 /// list; ctype is one of "Centroid" (the default), "Circumcenter",
@@ -14857,6 +15057,21 @@ fn compute_triangle_center(args: &[Expr]) -> Result<Expr, InterpreterError> {
       insphere_times(num, pow(total.clone(), Expr::Integer(-1)))
     })
     .collect();
+  // With numbers for vertices wolframscript brings each coordinate
+  // together: the incenter of {{0, 0}, {4, 0}, {1, 3}} has the abscissa
+  // (4*(1 + Sqrt[10]))/(4 + 3*Sqrt[2] + Sqrt[10]).
+  let numeric = pts
+    .iter()
+    .flat_map(|p| p.iter())
+    .all(crate::functions::predicate_ast::is_numeric_q);
+  let coords: Vec<Expr> = if numeric {
+    coords
+      .into_iter()
+      .map(|c| call("Together", vec![c]))
+      .collect()
+  } else {
+    coords
+  };
   crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
 }
 

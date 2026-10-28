@@ -2265,6 +2265,22 @@ local minima — for a sine fit Wolfram lands on the constraint boundary while
 Woxi finds an interior point with a smaller residual. Compare the picture, not
 the parameters.
 
+### `TriangleCenter` of a symbolic triangle is not simplified
+
+With numbers for vertices both bring each coordinate together and agree.
+With symbols wolframscript cancels and factors further:
+
+```sh
+wolframscript -code 'TriangleCenter[{{0, 0}, {a, 0}, {b, c}}, "Orthocenter"]'  # {b, ((a - b)*b)/c}
+woxi eval 'TriangleCenter[{{0, 0}, {a, 0}, {b, c}}, "Orthocenter"]'            # the uncancelled barycentric quotient
+```
+
+The rule is not `Together[ExpandAll[…]]` alone (that matches the
+circumcenter and nine-point center but leaves `a*b - b^2` where
+wolframscript writes `(a - b)*b`). It probably needs a `Factor` that
+pulls algebraic content (`Factor[4 + 4 Sqrt[10]]` is `4*(1 + Sqrt[10])`
+in wolframscript and unchanged in Woxi).
+
 ### Control systems: response forms and plot details
 
 - `OutputResponse[model, u, t]` gives the inverse Laplace transform of

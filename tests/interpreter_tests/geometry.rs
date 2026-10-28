@@ -1604,6 +1604,74 @@ mod triangle {
   }
 }
 
+mod triangle_construct {
+  use super::*;
+
+  // A construction at a vertex is at the second one unless named; `All`
+  // gives the three.
+  #[test]
+  fn vertex_constructions() {
+    let tri = "{{0, 0}, {4, 0}, {1, 3}}";
+    for (spec, expected) in [
+      ("\"Altitude\"", "Line[{{4, 0}, {2/5, 6/5}}]"),
+      ("{\"Altitude\", 1}", "Line[{{0, 0}, {2, 2}}]"),
+      (
+        "{\"Altitude\", All}",
+        "{Line[{{0, 0}, {2, 2}}], Line[{{4, 0}, {2/5, 6/5}}], Line[{{1, 3}, {1, 0}}]}",
+      ),
+      ("\"Median\"", "Line[{{4, 0}, {1/2, 3/2}}]"),
+      (
+        "\"AngleBisector\"",
+        "InfiniteLine[{4, 0}, {-1 - 1/Sqrt[2], 1/Sqrt[2]}]",
+      ),
+      (
+        "\"PerpendicularBisector\"",
+        "InfiniteLine[{1/2, 3/2}, {3, -1}]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("TriangleConstruct[{tri}, {spec}]")).unwrap(),
+        expected,
+        "{spec}"
+      );
+    }
+  }
+
+  #[test]
+  fn circles_and_euler_line() {
+    let tri = "{{0, 0}, {4, 0}, {1, 3}}";
+    for (spec, expected) in [
+      ("\"Circumcircle\"", "Circle[{2, 1}, Sqrt[5]]"),
+      ("\"NinePointCircle\"", "Circle[{3/2, 1}, Sqrt[5]/2]"),
+      ("\"EulerLine\"", "InfiniteLine[{{5/3, 1}, {1, 1}}]"),
+      (
+        "\"Incircle\"",
+        "Circle[{(4*(1 + Sqrt[10]))/(4 + 3*Sqrt[2] + Sqrt[10]), \
+         12/(4 + 3*Sqrt[2] + Sqrt[10])}, Sqrt[(6*(2 + Sqrt[2] - 2*Sqrt[5] + \
+         Sqrt[10]))/(4 + 3*Sqrt[2] + Sqrt[10])]]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("TriangleConstruct[{tri}, {spec}]")).unwrap(),
+        expected,
+        "{spec}"
+      );
+    }
+    // Unknown constructions and 3-D triangles stay unevaluated.
+    assert_eq!(
+      interpret("TriangleConstruct[{{0, 0}, {4, 0}, {1, 3}}, \"Foo\"]")
+        .unwrap(),
+      "TriangleConstruct[{{0, 0}, {4, 0}, {1, 3}}, Foo]"
+    );
+    assert_eq!(
+      interpret("TriangleConstruct[{{0, 0}, {4, 0}, {1, 3}}]").unwrap(),
+      "Triangle[{{0, 0}, {4, 0}, {1, 3}}]"
+    );
+  }
+}
+
 mod triangle_center {
   use super::*;
 
