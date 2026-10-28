@@ -1233,6 +1233,19 @@ mod graphics {
       assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
     }
 
+    /// `Mouseover[g, hover]` among the primitives draws `g` only; the hover
+    /// appearance replaces it while the pointer is over it, so a static
+    /// picture must not draw both.
+    #[test]
+    fn a_graphics_mouseover_draws_only_its_base_primitive() {
+      let svg = export_svg(
+        "Graphics[{Green, Mouseover[{Opacity[0], Disk[]}, \
+         {Opacity[.1], Disk[]}]}]",
+      );
+      assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+      assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
