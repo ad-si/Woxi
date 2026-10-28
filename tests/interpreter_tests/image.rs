@@ -9486,3 +9486,118 @@ mod watershed_and_morphological_graph {
     );
   }
 }
+
+mod color_replace {
+  use super::*;
+
+  // `setup; result` evaluates `setup` and shows `result` in InputForm.
+  fn data(code: &str) -> String {
+    clear_state();
+    let shown = |e: &str| format!("ToString[{e}, InputForm]");
+    let input = match code.rsplit_once("; ") {
+      Some((setup, result)) => format!("{setup}; {}", shown(result)),
+      None => shown(code),
+    };
+    interpret(&input).unwrap()
+  }
+
+  // The default distance 0.1 reaches 0.3 (Euclidean) from the color in an
+  // RGB image and 0.1 in a grayscale one; the bound is strict.
+  #[test]
+  fn default_distance_scales_with_channels() {
+    assert_eq!(
+      data(
+        "r = ColorReplace[Image[{{{0, 0, 0}, {0.1, 0.1, 0.1}, \
+         {0.2, 0.2, 0.2}}}], Black -> Red]; {ImageData[r], ImageType[r]}"
+      ),
+      "{{{{1., 0., 0.}, {1., 0., 0.}, {0.20000000298023224, \
+       0.20000000298023224, 0.20000000298023224}}}, \"Real32\"}"
+    );
+    assert_eq!(
+      data("ImageData[ColorReplace[Image[{{0, 0.05, 0.5}}], Black -> White]]"),
+      "{{1., 1., 0.5}}"
+    );
+    assert_eq!(
+      data(
+        "ImageData[ColorReplace[Image[{{{0, 0, 0}, {0.2, 0.2, 0.2}}}], \
+         Black -> Red, 0.15]]"
+      ),
+      "{{{1., 0., 0.}, {1., 0., 0.}}}"
+    );
+    assert_eq!(
+      data("ImageData[ColorReplace[Image[{{{0, 0, 0}}}], Black -> Red, 0.]]"),
+      "{{{0., 0., 0.}}}"
+    );
+  }
+
+  // The first matching rule wins; replacement colors are stored as bytes.
+  #[test]
+  fn rule_lists_and_byte_replacements() {
+    assert_eq!(
+      data(
+        "ImageData[ColorReplace[Image[{{{0, 0, 0}, {0.04, 0.04, 0.04}}}], \
+         {GrayLevel[0.05] -> Blue, Black -> Red}]]"
+      ),
+      "{{{0., 0., 1.}, {0., 0., 1.}}}"
+    );
+    assert_eq!(
+      data(
+        "ImageData[ColorReplace[Image[{{0.3, 0.5}}], \
+         GrayLevel[0.3] -> GrayLevel[0.9]]]"
+      ),
+      "{{0.9019607901573181, 0.5}}"
+    );
+  }
+
+  // A gray image takes a non-gray replacement as RGB, a bare color or a
+  // translucent replacement adds an alpha channel, and Byte stays Byte.
+  #[test]
+  fn color_space_alpha_and_type() {
+    assert_eq!(
+      data(
+        "r = ColorReplace[Image[{{0, 0.5}}], Black -> Red]; \
+         {ImageData[r], ImageChannels[r]}"
+      ),
+      "{{{{1., 0., 0.}, {0.5, 0.5, 0.5}}}, 3}"
+    );
+    assert_eq!(
+      data(
+        "r = ColorReplace[Image[{{0.5, 0.2}}], GrayLevel[0.5]]; \
+         {ImageData[r], ImageChannels[r]}"
+      ),
+      "{{{{0.5, 0.}, {0.20000000298023224, 1.}}}, 2}"
+    );
+    assert_eq!(
+      data(
+        "r = ColorReplace[Image[{{0, 1}}], Black -> RGBColor[1, 0, 0, 0.5]]; \
+         {ImageData[r], ImageChannels[r]}"
+      ),
+      "{{{{1., 0., 0., 0.501960813999176}, {1., 1., 1., 1.}}}, 4}"
+    );
+    assert_eq!(
+      data(
+        "r = ColorReplace[Image[{{{0, 0, 0}, {255, 255, 255}}}, \"Byte\"], \
+         Black -> Red]; {ImageData[r], ImageType[r]}"
+      ),
+      "{{{{1., 0., 0.}, {1., 1., 1.}}}, \"Byte\"}"
+    );
+  }
+
+  #[test]
+  fn non_image_emits_imginv() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("ColorReplace[{1, 2}, Black -> Red]")
+      .unwrap();
+    assert_eq!(
+      r.result,
+      "ColorReplace[{1, 2}, GrayLevel[0] -> RGBColor[1, 0, 0]]"
+    );
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ColorReplace::imginv:")),
+      "{:?}",
+      r.warnings
+    );
+  }
+}

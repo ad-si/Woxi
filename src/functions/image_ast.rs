@@ -12024,6 +12024,145 @@ fn chromaticity_lms(r: f64, g: f64, b: f64) -> Option<(f64, f64, f64)> {
 /// (Wolfram-scaled) CIE LAB space. The optional
 /// `DistanceFunction -> f` rule applies a custom function to the LAB
 /// triples instead of the default Euclidean norm.
+/// ColorReplace[image, c -> r], ColorReplace[image, {c1 -> r1, …}],
+/// ColorReplace[image, c] and a trailing distance `d` (default 0.1).
+///
+/// A pixel takes the replacement of the first rule whose color lies within
+/// `d` of it. Distance is Euclidean in the image's own channels, with the
+/// pixel read at single precision and the bound scaled by the channel
+/// count — `0.1` lets an RGB pixel within `0.3` of the color through, a
+/// grayscale one within `0.1`, as wolframscript decides it. The match is
+/// strict, so `d = 0` replaces nothing. Replacement colors are stored as
+/// bytes (`GrayLevel[0.5]` becomes `128/255`); a bare color makes the
+/// matching pixels transparent instead. A grayscale image stays grayscale
+/// when every replacement is a `GrayLevel`, and the result is a Byte image
+/// for Bit and Byte input and a Real32 image otherwise.
+pub fn color_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ColorReplace::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ColorReplace", args));
+  };
+  let src_ch = *channels as usize;
+  // Images with an alpha channel are not handled.
+  if src_ch != 1 && src_ch != 3 {
+    return Ok(unevaluated("ColorReplace", args));
+  }
+  let distance = match args.get(2) {
+    None => 0.1,
+    Some(d) => match crate::functions::math_ast::try_eval_to_f64(d) {
+      Some(v) if v >= 0.0 => v,
+      _ => return Ok(unevaluated("ColorReplace", args)),
+    },
+  };
+  let is_gray = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "GrayLevel");
+  // (target, replacement); `None` replaces with transparency.
+  let specs: Vec<(&Expr, Option<&Expr>)> = match &args[1] {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => vec![(pattern.as_ref(), Some(replacement.as_ref()))],
+    Expr::List(items) => {
+      let mut specs = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => specs.push((pattern.as_ref(), Some(replacement.as_ref()))),
+          _ => return Ok(unevaluated("ColorReplace", args)),
+        }
+      }
+      specs
+    }
+    color => vec![(color, None)],
+  };
+  let mut rules: Vec<(Vec<f64>, Option<crate::functions::graphics::Color>)> =
+    Vec::with_capacity(specs.len());
+  for (target, replacement) in &specs {
+    let Some(t) = crate::functions::graphics::parse_color(target) else {
+      return Ok(unevaluated("ColorReplace", args));
+    };
+    let target = if src_ch == 1 {
+      vec![if is_gray(target) {
+        t.r
+      } else {
+        0.299 * t.r + 0.587 * t.g + 0.114 * t.b
+      }]
+    } else {
+      vec![t.r, t.g, t.b]
+    };
+    let replacement = match replacement {
+      None => None,
+      Some(r) => match crate::functions::graphics::parse_color(r) {
+        Some(c) => Some(c),
+        None => return Ok(unevaluated("ColorReplace", args)),
+      },
+    };
+    rules.push((target, replacement));
+  }
+  let gray_out =
+    src_ch == 1 && specs.iter().all(|(_, r)| r.is_none_or(is_gray));
+  let alpha_out = rules.iter().any(|(_, r)| r.is_none_or(|c| c.a < 1.0));
+  let color_ch = if gray_out { 1 } else { 3 };
+  let out_ch = color_ch + usize::from(alpha_out);
+  let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() / 255.0;
+  let bound = distance * src_ch as f64;
+  let pixels = (*width as usize) * (*height as usize);
+  let mut out = Vec::with_capacity(pixels * out_ch);
+  for p in 0..pixels {
+    let px: Vec<f64> = data[p * src_ch..(p + 1) * src_ch]
+      .iter()
+      .map(|v| *v as f32 as f64)
+      .collect();
+    let hit = rules.iter().find(|(target, _)| {
+      px.iter()
+        .zip(target)
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f64>()
+        .sqrt()
+        < bound
+    });
+    let color: Vec<f64> = match hit {
+      Some((_, Some(c))) if gray_out => vec![byte(c.r)],
+      Some((_, Some(c))) => vec![byte(c.r), byte(c.g), byte(c.b)],
+      _ if color_ch == src_ch => px.clone(),
+      _ => vec![px[0]; 3],
+    };
+    out.extend(color);
+    if alpha_out {
+      out.push(match hit {
+        Some((_, Some(c))) => byte(c.a),
+        Some((_, None)) => 0.0,
+        None => 1.0,
+      });
+    }
+  }
+  Ok(Expr::Image {
+    color_space: None,
+    display_size: None,
+    width: *width,
+    height: *height,
+    channels: out_ch as u8,
+    data: Arc::new(out),
+    image_type: if matches!(image_type, ImageType::Bit | ImageType::Byte) {
+      ImageType::Byte
+    } else {
+      ImageType::Real32
+    },
+  })
+}
+
 pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(

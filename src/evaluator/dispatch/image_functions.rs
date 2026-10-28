@@ -1171,6 +1171,9 @@ pub fn dispatch_image_functions(
         return Some(crate::functions::image_ast::color_convert_ast(args));
       }
     }
+    "ColorReplace" if (2..=3).contains(&args.len()) => {
+      return Some(crate::functions::image_ast::color_replace_ast(args));
+    }
     "ColorDistance" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::color_distance_ast(args));
     }
