@@ -23892,3 +23892,24 @@ mod printed_order_matches_string_order {
     }
   }
 }
+
+mod sub_values_holding_tables {
+  use super::*;
+
+  #[test]
+  fn a_sub_value_body_with_an_interpolating_function_is_not_copied_per_call() {
+    // Regression: each call copied the stored rules, tables included.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{i, N[Sin[i/50]]}, {i, 4000}]]; \
+         q[k_][x_] = 2 f[x]; \
+         Round[Total[Table[q[1][x], {x, 1., 3000., 1.}]], 10^-6] == \
+         Round[2 Total[Table[f[x], {x, 1., 3000., 1.}]], 10^-6]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+}
