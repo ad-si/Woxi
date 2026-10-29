@@ -2715,8 +2715,20 @@ pub fn apply_curried_call(
         })
         .collect();
       let args = coerced.as_slice();
+      // A compiled result is a homogeneous tensor: a list that mixes reals
+      // with integers is a real tensor (`{4.2, 17.4, 1.}`), while an
+      // all-integer list or an integer stays integer (an index list the
+      // caller then uses with Part).
+      fn contains_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) => true,
+          Expr::List(items) => items.iter().any(contains_real),
+          _ => false,
+        }
+      }
       let finish = |result: Expr| {
-        if any_real {
+        if any_real && matches!(result, Expr::List(_)) && contains_real(&result)
+        {
           coerce_to_real(&result)
         } else {
           result

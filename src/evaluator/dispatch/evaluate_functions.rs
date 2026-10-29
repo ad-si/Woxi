@@ -5440,6 +5440,10 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::random_point::random_point_ast(args);
   }
 
+  if name == "FindCurvePath" {
+    return crate::functions::shortest_tour::find_curve_path_ast(args);
+  }
+
   // FindShortestTour[points[, s, t], opts] → {length, order}
   if name == "FindShortestTour" {
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);

@@ -408,7 +408,9 @@ pub fn dispatch_predicate_functions(
         _ => bool_expr(false),
       }));
     }
-    "Precision" if args.len() == 1 => {
+    // `Internal`EffectivePrecision` (used by packages such as
+    // ComputationalGeometry`) reports what Precision does.
+    "Precision" | "Internal`EffectivePrecision" if args.len() == 1 => {
       return Some(crate::functions::math_ast::precision_ast(args));
     }
     "Precedence" if args.len() == 1 => {

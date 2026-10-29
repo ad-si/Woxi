@@ -5003,6 +5003,13 @@ story as `ElementData["Properties"]`.
 
 ## Geometry and regions
 
+### `FindCurvePath` finds one curve where Wolfram may find several
+
+Woxi orders the points along a single shortest tour, closed or cut at its
+longest step. Wolfram splits scattered points into several curves:
+`FindCurvePath[RandomSample[Table[{t, t^2}, {t, -1, 1, 0.25}], 9]]` gives
+two curves there. A closed polygon and a sampled open curve match.
+
 ### Three region measures are missing for heads whose siblings have them
 
 ```sh

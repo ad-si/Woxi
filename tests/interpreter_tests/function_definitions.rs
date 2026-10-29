@@ -912,6 +912,23 @@ mod compile {
       .unwrap(),
       "{1.1666666666666667, 1.5}"
     );
+    // An all-integer result stays integer (an index list for Part), a list
+    // mixing reals and integers is a real tensor.
+    assert_eq!(
+      interpret(
+        "ci = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {Round[x], 2}], Evaluate]; \
+         cr = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {x, 1}], Evaluate]; \
+         {ci[2.4], cr[2.4]}"
+      )
+      .unwrap(),
+      "{{2, 2}, {2.4, 1.}}"
+    );
+    // `Internal`EffectivePrecision` reports Precision.
+    assert_eq!(
+      interpret("{Internal`EffectivePrecision[{1.2, 3}], Internal`EffectivePrecision[{1, 3}], Internal`EffectivePrecision[1.2`5]}")
+        .unwrap(),
+      "{MachinePrecision, Infinity, 5.}"
+    );
     // The older dump without a version tuple, with `Blank[…]` patterns.
     assert_eq!(
       interpret(

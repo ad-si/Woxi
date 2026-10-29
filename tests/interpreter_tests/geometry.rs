@@ -9871,3 +9871,25 @@ mod polygon_in_and_circumspheres {
     }
   }
 }
+
+// FindCurvePath orders points along one curve: closed when no step is much
+// longer than the rest (written from point 1's predecessor round to it),
+// otherwise open from its lower-numbered end (Demonstration
+// FranklinsPointInclusionInPolygonPNPOLYAlgorithm).
+mod find_curve_path {
+  use super::*;
+
+  #[test]
+  fn closed_and_open_curves() {
+    assert_eq!(
+      interpret(
+        "{FindCurvePath[{{0.99, 0.08}, {0.74, 0.76}, {0.58, 0.99}, {0.45, 0.98}, {0.05, 0.47}, {0.16, 0.02}}], \
+          FindCurvePath[Table[{Cos[t], Sin[t]}, {t, 0, 2 Pi - 0.1, 0.5}]], \
+          FindCurvePath[Table[{t, t^2}, {t, -1, 1, 0.25}]]}"
+      )
+      .unwrap(),
+      "{{{2, 1, 6, 5, 4, 3, 2}}, {{2, 1, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2}}, \
+       {{1, 2, 3, 4, 5, 6, 7, 8, 9}}}"
+    );
+  }
+}
