@@ -42706,6 +42706,47 @@ mod generalized_bar_chart {
     assert!(svg.contains("<polygon"), "filling missing: {svg}");
   }
 
+  /// A picture over 360 points across, drawn as `Text` with no `ImageSize`,
+  /// shrinks to fit 360 points instead of overflowing the plot.
+  #[test]
+  fn a_large_image_in_text_shrinks_to_fit_360_points() {
+    let svg = export_svg(
+      "Graphics[{Text[Image[ConstantArray[0.5, {200, 500}]], {0, 0}]}, \
+       PlotRange -> 1, ImageSize -> 380]",
+    );
+    assert!(svg.contains("<image"), "image missing: {svg}");
+    assert!(
+      svg.contains("width=\"360.00\"") && svg.contains("height=\"144.00\""),
+      "image must be scaled to 360 points wide, keeping its aspect: {svg}"
+    );
+  }
+
+  /// A small image keeps its pixel size.
+  #[test]
+  fn a_small_image_in_text_keeps_its_pixel_size() {
+    let svg = export_svg(
+      "Graphics[{Text[Image[ConstantArray[0.5, {20, 50}]], {0, 0}]}, \
+       PlotRange -> 1, ImageSize -> 380]",
+    );
+    assert!(
+      svg.contains("width='50'") && svg.contains("height='20'"),
+      "small image must not be rescaled: {svg}"
+    );
+  }
+
+  /// A subscript of several words (`f` with `3 db` below it) is lowered as a
+  /// subscript, not flattened to `f_(3 db)`.
+  #[test]
+  fn a_multi_word_subscript_in_text_is_lowered() {
+    let svg = export_svg(
+      "Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(f\\), \\(3 db\\)]\\) =\", {0, 0}]]",
+    );
+    assert!(
+      svg.contains("baseline-shift=\"sub\"") && !svg.contains("f_("),
+      "subscript must be lowered: {svg}"
+    );
+  }
+
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
   /// base, not the `SuperStar[d]` expression the box reads back as.
   #[test]

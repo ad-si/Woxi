@@ -5493,13 +5493,32 @@ fn inset_primitives(
     } => {
       let (ch, px) =
         crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
-      image_svg = crate::functions::image_ast::image_to_html_img(
+      let natural = crate::functions::image_ast::image_to_html_img(
         *width,
         *height,
         ch,
         &px,
         *display_size,
       );
+      // An image with no `ImageSize` shows at its pixel size only up to
+      // 360 points across; a larger one shrinks to fit, keeping its aspect.
+      const MAX_NATURAL_IMAGE_SIDE: f64 = 360.0;
+      let (iw, ih) = display_size
+        .map_or((*width as f64, *height as f64), |(w, h)| {
+          (w as f64, h as f64)
+        });
+      let side = iw.max(ih);
+      image_svg = if display_size.is_none() && side > MAX_NATURAL_IMAGE_SIDE {
+        let k = MAX_NATURAL_IMAGE_SIDE / side;
+        format!(
+          "<svg xmlns='http://www.w3.org/2000/svg' width='{:.2}' \
+           height='{:.2}' viewBox='0 0 {iw} {ih}'>{natural}</svg>",
+          iw * k,
+          ih * k
+        )
+      } else {
+        natural
+      };
       Some(&image_svg)
     }
     // A picture given symbolically normally has its primitives folded into
@@ -33108,6 +33127,51 @@ fn label_is_compound(expr: &Expr) -> bool {
 }
 
 /// Whether a box tree holds a literal text atom that contains a space.
+/// Runs for a top-level `SubscriptBox[base, script]` segment while labels
+/// are flattened with marked subscripts: the base, then the script wrapped in
+/// the subscript markers. `None` for any other box, when not marking, or when
+/// every character of the script has a Unicode subscript form (the ordinary
+/// path folds those).
+fn marked_subscript_box_runs(
+  segment: &str,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  if !MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get) {
+    return None;
+  }
+  let parsed = crate::parse_to_expr(segment).ok()?;
+  let Expr::FunctionCall { name, args } = &parsed else {
+    return None;
+  };
+  let [base, script] = args.as_slice() else {
+    return None;
+  };
+  if name != "SubscriptBox" {
+    return None;
+  }
+  let base = crate::notebook::render_boxes_text(&expr_to_string(base));
+  let script = crate::notebook::render_boxes_text(&expr_to_string(script));
+  let script = script.trim();
+  if script
+    .chars()
+    .all(|c| unicode_script_char(c, false).is_some())
+  {
+    return None;
+  }
+  Some(vec![
+    LabelRun {
+      text: base,
+      italic,
+      ..Default::default()
+    },
+    LabelRun {
+      text: format!("{SUBSCRIPT_START}{script}{SUBSCRIPT_END}"),
+      italic: false,
+      ..Default::default()
+    },
+  ])
+}
+
 fn box_has_spaced_text(e: &Expr) -> bool {
   match e {
     // Padding around an atom (`"12 "`) draws nothing; only a gap between
@@ -33164,6 +33228,12 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // (`FractionBox["my height", …]`): the source round trip would read the
     // gap as a product (`my*height`), so such a segment is drawn straight
     // as display text.
+    // A subscript with a letter Unicode has no subscript form for (`3 db`)
+    // is lowered by the SVG writer, not flattened to `f_(3 db)`.
+    if let Some(sub_runs) = marked_subscript_box_runs(&seg.text, italic) {
+      runs.extend(sub_runs);
+      continue;
+    }
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)
       && box_has_spaced_text(&boxes)
     {
