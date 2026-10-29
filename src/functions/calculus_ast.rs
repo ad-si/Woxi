@@ -14034,6 +14034,130 @@ fn series_coeff_map(
 /// denominator into power series and performs power-series long division:
 /// `num = den * quotient` solved coefficient by coefficient. Returns None when
 /// either piece is not an integer-power series or the numerator is zero.
+/// The value of `expr` at `x0`, evaluated quietly (see the probe in
+/// `series_ast`).
+fn probe_val_for_parts(
+  expr: &Expr,
+  var: &str,
+  x0: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let probe = crate::syntax::substitute_variable(expr, var, x0);
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let val = crate::evaluator::evaluate_expr_to_expr(&probe);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  val
+}
+
+/// The series of a sum or product singular at `x0` as the sum or product of
+/// its parts' series, each of which may be a Laurent series:
+/// `x^2 (1 + 3/x + 2/x^2)/(1 - x^2)` is `2 + 3 x + 3 x^2 + …` though no
+/// derivative of it can be taken at 0. A factor's order is raised by the
+/// negative valuations of the others so the product reaches `order`.
+fn try_series_by_parts(
+  expr: &Expr,
+  var: &str,
+  x0: &Expr,
+  order: i128,
+) -> Option<Expr> {
+  // A positive integer power of a part: the part's series, raised.
+  let power_parts = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    _ => None,
+  };
+  if let Some((base, Expr::Integer(k))) = &power_parts
+    && *k >= 2
+  {
+    let probe = |n: i128| -> Option<(Expr, i128)> {
+      let s = series_ast(&[
+        base.clone(),
+        Expr::List(vec![id_expr(var), x0.clone(), Expr::Integer(n)].into()),
+      ])
+      .ok()?;
+      let parsed = parse_integer_series(&s)?;
+      (!parsed.coeffs.iter().any(is_singular_series_value))
+        .then_some((s, parsed.nmin))
+    };
+    let (_, v) = probe(order)?;
+    let (s, _) = probe(order - (k - 1) * v)?;
+    let raised = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![s, Expr::Integer(*k)],
+    ))
+    .ok()?;
+    parse_integer_series(&raised)?;
+    return Some(raised);
+  }
+  let (parts, product) = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      (args.to_vec(), true)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      (args.to_vec(), false)
+    }
+    _ => return None,
+  };
+  let series_of = |e: &Expr, n: i128| -> Option<Expr> {
+    let s = series_ast(&[
+      e.clone(),
+      Expr::List(vec![id_expr(var), x0.clone(), Expr::Integer(n)].into()),
+    ])
+    .ok()?;
+    // A part that is not a plain power series of x (an unevaluated Series,
+    // E^SeriesData, …) or carries non-finite coefficients spoils the whole.
+    let parsed = parse_integer_series(&s)?;
+    (!parsed.coeffs.iter().any(is_singular_series_value)).then_some(s)
+  };
+  let mut series: Vec<Expr> = Vec::with_capacity(parts.len());
+  if product {
+    // Valuations first, from a series at the requested order.
+    let valuations: Vec<i128> = parts
+      .iter()
+      .map(|p| {
+        if crate::functions::polynomial_ast::contains_var(p, var) {
+          series_of(p, order)
+            .and_then(|s| parse_integer_series(&s))
+            .map(|s| s.nmin)
+        } else {
+          Some(0)
+        }
+      })
+      .collect::<Option<_>>()?;
+    let total: i128 = valuations.iter().sum();
+    for (p, v) in parts.iter().zip(&valuations) {
+      if !crate::functions::polynomial_ast::contains_var(p, var) {
+        series.push(p.clone());
+        continue;
+      }
+      series.push(series_of(p, order - (total - v))?);
+    }
+    let prod =
+      crate::evaluator::evaluate_expr_to_expr(&call("Times", series)).ok()?;
+    parse_integer_series(&prod)?;
+    Some(prod)
+  } else {
+    for p in &parts {
+      if crate::functions::polynomial_ast::contains_var(p, var) {
+        series.push(series_of(p, order)?);
+      } else {
+        series.push(p.clone());
+      }
+    }
+    let sum =
+      crate::evaluator::evaluate_expr_to_expr(&call("Plus", series)).ok()?;
+    parse_integer_series(&sum)?;
+    Some(sum)
+  }
+}
+
 fn try_series_quotient(
   num: &Expr,
   den: &Expr,
@@ -14110,7 +14234,20 @@ fn try_series_quotient(
     nmin += 1;
   }
   if coefficients.is_empty() {
-    return Some(Expr::Integer(0));
+    // The quotient starts past the order: the empty series at its first
+    // power (`Series[1/x, {x, 0, -2}]` is `SeriesData[x, 0, {}, -1, -1, 1]`).
+    let v = q_min.max(order + 1);
+    return Some(call(
+      "SeriesData",
+      vec![
+        id_expr(var_name),
+        x0.clone(),
+        Expr::List(vec![].into()),
+        Expr::Integer(v),
+        Expr::Integer(v),
+        Expr::Integer(1),
+      ],
+    ));
   }
   while coefficients.len() > 1
     && matches!(coefficients.last(), Some(Expr::Integer(0)))
@@ -14785,6 +14922,53 @@ fn leading_fractional_power(
   Some(((p, q), g))
 }
 
+/// The series of `f` when it has no term up to `order`: Wolfram answers
+/// with the empty series starting at the first power the expansion does
+/// reach (`Series[x^3/(1 - x), {x, 0, 1}]` is `SeriesData[x, 0, {}, 3, 3,
+/// 1]`), which is still a series to multiply or add. An expression free of
+/// the variable stays 0.
+fn empty_series_at_valuation(
+  f: &Expr,
+  var_name: &str,
+  x0: &Expr,
+  order: i128,
+) -> Result<Expr, InterpreterError> {
+  if !crate::functions::polynomial_ast::contains_var(f, var_name) {
+    return Ok(Expr::Integer(0));
+  }
+  for higher in (order + 1)..=(order + 12) {
+    let deeper = series_ast(&[
+      f.clone(),
+      Expr::List(
+        vec![
+          Expr::Identifier(var_name.to_string()),
+          x0.clone(),
+          Expr::Integer(higher),
+        ]
+        .into(),
+      ),
+    ])?;
+    if let Expr::FunctionCall { name, args: sd } = &deeper
+      && name == "SeriesData"
+      && let (Expr::List(c), Expr::Integer(v)) = (&sd[2], &sd[3])
+      && !c.is_empty()
+    {
+      return Ok(call(
+        "SeriesData",
+        vec![
+          Expr::Identifier(var_name.to_string()),
+          x0.clone(),
+          Expr::List(vec![].into()),
+          Expr::Integer(*v),
+          Expr::Integer(*v),
+          Expr::Integer(1),
+        ],
+      ));
+    }
+  }
+  Ok(Expr::Integer(0))
+}
+
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -14998,14 +15182,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let terms = additive_terms(&args[0]);
     if terms.len() >= 2 {
       let needs_split = terms.iter().any(|t| {
-        let at_x0 = crate::syntax::substitute_variable(t, &var_name, &x0);
-        // A pole at x0: the direct coefficient sampling chokes on it.
+        // A pole at x0: the direct coefficient sampling chokes on it. The
+        // probe is quiet: its `Power::infy` is an artifact of the check.
+        let at_x0 = probe_val_for_parts(t, &var_name, &x0);
         let has_pole = matches!(
-          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          at_x0,
           Ok(Expr::Identifier(ref s))
             if s == "ComplexInfinity" || s == "Indeterminate" || s == "Infinity"
         ) || matches!(
-          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          at_x0,
           Ok(Expr::FunctionCall { ref name, .. }) if name == "DirectedInfinity"
         );
         // A fractional leading power of (x - x0) needs the Puiseux path, which
@@ -15400,7 +15585,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     if coefficients.is_empty() {
-      return Ok(Expr::Integer(0));
+      return empty_series_at_valuation(&args[0], &var_name, &x0, order);
     }
     let data = vec![
       Expr::Identifier(var_name),
@@ -15576,6 +15761,12 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(series);
     }
+    if let Ok(val) = probe_val_for_parts(&args[0], &var_name, &x0)
+      && is_singular_series_value(&val)
+      && let Some(series) = try_series_by_parts(&args[0], &var_name, &x0, order)
+    {
+      return Ok(series);
+    }
   }
 
   // Compute Taylor coefficients: f^(k)(x0) / k!
@@ -15681,9 +15872,13 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     nmin += 1;
   }
 
-  // If all coefficients are zero, return 0
+  // No term up to the order: Wolfram answers with the empty series that
+  // starts at the first power the expansion does reach
+  // (`Series[x^3/(1 - x), {x, 0, 1}]` is `SeriesData[x, 0, {}, 3, 3, 1]`),
+  // which is still a series to multiply or add. An expression that is
+  // zero altogether stays 0.
   if coefficients.is_empty() {
-    return Ok(Expr::Integer(0));
+    return empty_series_at_valuation(&args[0], &var_name, &x0, order);
   }
 
   // Strip trailing zero coefficients (wolframscript drops them from the

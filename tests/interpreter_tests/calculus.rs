@@ -24093,3 +24093,58 @@ mod series_asymptotic_products {
     assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
   }
 }
+
+// Series of sums and products singular at the point, by their parts'
+// (Laurent) series; empty series that keep their order; Expand combining
+// radicals of one integer (Demonstration FlowsnakeQFunction).
+mod series_by_parts_and_empty_series {
+  use super::*;
+
+  #[test]
+  fn singular_sums_products_and_powers() {
+    assert_eq!(
+      interpret(
+        "{Series[x^2 (1 + 3/x + 2/x^2)/(1 - x^2), {x, 0, 3}], \
+          Series[x (3 + 1/x)/(1 - x^3) + x^3 (2 + 5/x), {x, 0, 4}], \
+          Series[x (1 + 1/x)^2, {x, 0, 2}], Series[(1 + 1/x)^3, {x, 0, 1}], \
+          Coefficient[Series[x^2 (1 + 3/x + 2/x^2)/(1 - x^2), {x, 0, 3}], x, 2]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, 0, {2, 3, 3, 3}, 0, 4, 1], SeriesData[x, 0, {1, 3, 5, 3, 3}, 0, 5, 1], \
+       SeriesData[x, 0, {1, 2, 1}, -1, 3, 1], SeriesData[x, 0, {1, 3, 3, 1}, -3, 2, 1], 3}"
+    );
+  }
+
+  #[test]
+  fn empty_series_keep_their_order() {
+    assert_eq!(
+      interpret(
+        "{Series[x^3/(1 - x), {x, 0, 1}], Series[Sin[x]^3, {x, 0, 2}], Series[0, {x, 0, 2}], \
+          Series[1/x, {x, 0, -2}], Series[3 + x^(-1), {x, 0, -2}], \
+          Series[(3 + x^(-1))*x^2 + x^3/(1 - x), {x, 0, 0}], \
+          SeriesData[x, 0, {1}, -1, 0, 1] SeriesData[x, 0, {}, 2, 2, 1], \
+          3 + SeriesData[x, 0, {}, -1, -1, 1]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, 0, {}, 3, 3, 1], SeriesData[x, 0, {}, 3, 3, 1], 0, \
+       SeriesData[x, 0, {}, -1, -1, 1], SeriesData[x, 0, {}, -1, -1, 1], \
+       SeriesData[x, 0, {}, 1, 1, 1], SeriesData[x, 0, {}, 1, 1, 1], \
+       SeriesData[x, 0, {}, -1, -1, 1]}"
+    );
+  }
+
+  #[test]
+  fn expand_combines_radicals_of_one_integer() {
+    assert_eq!(
+      interpret(
+        "{Expand[Sqrt[3] + 2/Sqrt[3]], Expand[x Sqrt[3] + y/Sqrt[3]], \
+          Expand[2^(1/3) + 2^(-2/3)], Expand[a 3^(1/3) + a 3^(-2/3)], \
+          Expand[I/Sqrt[3] - (5 I)/98 Sqrt[3] + (13 I)/(196 Sqrt[3])], \
+          2/Sqrt[3] + Sqrt[3]}"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], Sqrt[3]*x + y/Sqrt[3], 3/2^(2/3), (4*a)/3^(2/3), (179*I)/196/Sqrt[3], \
+       2/Sqrt[3] + Sqrt[3]}"
+    );
+  }
+}

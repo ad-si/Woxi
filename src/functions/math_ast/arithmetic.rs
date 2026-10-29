@@ -308,11 +308,10 @@ fn try_series_data_plus(
       coeff_lists.push(coeffs.to_vec());
     }
   }
-  let new_nmin = *nmins.iter().min().unwrap();
+  // Every term at or past the common order: only the order remains
+  // (`3 + SeriesData[x, 0, {}, -1, -1, 1]`).
   let new_nmax = *nmaxs.iter().min().unwrap();
-  if new_nmax <= new_nmin {
-    return Ok(None);
-  }
+  let new_nmin = (*nmins.iter().min().unwrap()).min(new_nmax);
   let m_new = (new_nmax - new_nmin) as usize;
   let mut new_coeffs: Vec<Expr> = vec![Expr::Integer(0); m_new];
 
@@ -488,27 +487,33 @@ fn try_series_data_times(
           // Same for b: occupies slots at nmin_i + j*scale_i.
           let nmin_new = nmin_a + nmin_i;
           let nmax_new = (nmax_a + nmin_i).min(nmax_i + nmin_a);
-          if nmax_new <= nmin_new {
-            return Ok(None);
-          }
-          let m_new = (nmax_new - nmin_new) as usize;
-          let mut coeffs_new: Vec<Expr> = vec![Expr::Integer(0); m_new];
-          for (i, ai) in coeffs_a.iter().enumerate() {
-            let exp_a = nmin_a + (i as i128) * scale_a;
-            for (j, bj) in coeffs_i.iter().enumerate() {
-              let exp_b = nmin_i + (j as i128) * scale_i;
-              let exp_total = exp_a + exp_b;
-              if exp_total >= nmax_new {
-                continue;
-              }
-              let pos = (exp_total - nmin_new) as usize;
-              if pos < m_new {
-                let prod = times_ast(&[ai.clone(), bj.clone()])?;
-                coeffs_new[pos] = plus_ast(&[coeffs_new[pos].clone(), prod])?;
+          // An empty factor (no terms below its order, `O[x]^2`) leaves
+          // only the order: the empty series at nmin_a + nmin_i.
+          if nmax_new == nmin_new {
+            (nmin_new, nmax_new, Vec::new(), 1)
+          } else {
+            if nmax_new < nmin_new {
+              return Ok(None);
+            }
+            let m_new = (nmax_new - nmin_new) as usize;
+            let mut coeffs_new: Vec<Expr> = vec![Expr::Integer(0); m_new];
+            for (i, ai) in coeffs_a.iter().enumerate() {
+              let exp_a = nmin_a + (i as i128) * scale_a;
+              for (j, bj) in coeffs_i.iter().enumerate() {
+                let exp_b = nmin_i + (j as i128) * scale_i;
+                let exp_total = exp_a + exp_b;
+                if exp_total >= nmax_new {
+                  continue;
+                }
+                let pos = (exp_total - nmin_new) as usize;
+                if pos < m_new {
+                  let prod = times_ast(&[ai.clone(), bj.clone()])?;
+                  coeffs_new[pos] = plus_ast(&[coeffs_new[pos].clone(), prod])?;
+                }
               }
             }
+            (nmin_new, nmax_new, coeffs_new, 1)
           }
-          (nmin_new, nmax_new, coeffs_new, 1)
         }
       });
     }
