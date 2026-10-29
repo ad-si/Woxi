@@ -9939,6 +9939,12 @@ mod nsolve {
       .unwrap(),
       "{{t -> 0.5235997548400227}}"
     );
+    let r = interpret_with_stdout(
+      "f = Interpolation[Table[{t, 3 - t^2}, {t, 0, 2, 0.1}]]; Solve[f[t] == 0, t]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{t -> 1.7320508075688772}}");
+    assert!(r.warnings.iter().any(|w| w.starts_with("Solve::ifun:")));
   }
 
   #[test]

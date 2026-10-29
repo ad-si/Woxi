@@ -14589,6 +14589,44 @@ mod sparse_array_list_ops {
     );
   }
 
+  #[test]
+  fn join_sparse_arrays_at_a_level() {
+    assert_eq!(
+      interpret("a = SparseArray[{{1, 2} -> 1}, {2, 2}]; Join[a, a, 2]")
+        .unwrap(),
+      "SparseArray[Automatic, {2, 4}, 0, {1, {{0, 2, 2}, {{2}, {4}}}, {1, 1}}]"
+    );
+  }
+
+  // A Band takes a vector only as far as it reaches, a matrix as one block
+  // at the band's start, and a list of matrices as a block diagonal.
+  #[test]
+  fn band_with_vectors_and_blocks() {
+    assert_eq!(
+      interpret("Normal[SparseArray[Band[{1, 1}] -> {a, b}, {3, 3}]]").unwrap(),
+      "{{a, 0, 0}, {0, b, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> {{1, 2}, {3, 4}}}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 0}, {3, 4, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> {{{1, 1}, {1, 1}}, {{2, 2}, {2, 2}}}}, {4, 4}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0, 0}, {1, 1, 0, 0}, {0, 0, 2, 2}, {0, 0, 2, 2}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[SparseArray[{{1, 1, 1, 1} -> 1}, {2, 2, 1, 1}]]")
+        .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1}}]"
+    );
+  }
+
   // Part indexes the array a SparseArray stands for, All included, and an
   // array part is a SparseArray again.
   #[test]

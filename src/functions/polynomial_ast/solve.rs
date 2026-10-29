@@ -190,11 +190,12 @@ fn has_radical(expr: &Expr) -> bool {
 ///
 /// `NSolve[equation]` with the variable left out solves for whatever the
 /// equation contains, the way `Solve[equation]` does.
-/// `NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to `t`:
-/// Wolfram inverts the interpolating function, reporting `NSolve::ifun`, and
-/// gives the first root in its domain. The root is located by a scan of the
+/// `Solve`/`NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to
+/// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`,
+/// and gives the first root in its domain. The root is located by a scan of the
 /// domain for a sign change and refined by bisection.
-fn nsolve_interpolating_function(
+fn solve_interpolating_function(
+  head: &str,
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
   fn domain_of(e: &Expr) -> Option<(f64, f64)> {
@@ -243,9 +244,9 @@ fn nsolve_interpolating_function(
       crate::syntax::substitute_variable(&difference, var_name, &Expr::Real(t));
     try_eval_to_f64(&crate::evaluator::evaluate_expr_to_expr(&at).ok()?)
   };
-  crate::emit_message(
-    "NSolve::ifun: Inverse functions are being used by NSolve, so some solutions may not be found; use Reduce for complete solution information.",
-  );
+  crate::emit_message(&format!(
+    "{head}::ifun: Inverse functions are being used by {head}, so some solutions may not be found; use Reduce for complete solution information."
+  ));
   const SAMPLES: usize = 2000;
   let mut prev_t = lo;
   let Some(mut prev) = g(lo) else {
@@ -333,7 +334,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
-  if let Some(result) = nsolve_interpolating_function(args)? {
+  if let Some(result) = solve_interpolating_function("NSolve", args)? {
     return Ok(result);
   }
   // `NSolve[eqns]` solves for the variables `Solve[eqns]` would pick.
@@ -2579,6 +2580,9 @@ pub(crate) fn with_generalized_variables(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = solve_interpolating_function("Solve", args)? {
+    return Ok(result);
+  }
   let solved = solve_ast_exact_parts(args)?;
   Ok(numericize_inexact_components(args, solved))
 }

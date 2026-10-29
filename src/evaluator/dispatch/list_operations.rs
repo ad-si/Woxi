@@ -1784,9 +1784,12 @@ pub fn dispatch_list_operations(
   // A list of SparseArray blocks (`ArrayFlatten[{{s, s}, {s, s}}]`,
   // `Flatten[{{s, s}}, {{1, 3}, {2, 4}}]`) is an array like any other: its
   // blocks are densified first, and a glued block array is sparse again.
-  if matches!(name, "Flatten" | "ArrayFlatten")
-    && let Some(Expr::List(items)) = args.first()
-    && items.iter().any(contains_sparse_array)
+  if (name == "ArrayFlatten"
+    && args.first().is_some_and(
+      |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+    ))
+    || matches!(name, "Flatten" | "ArrayFlatten")
+      && matches!(args.first(), Some(Expr::List(items)) if items.iter().any(contains_sparse_array))
   {
     let dense = match densify_nested_sparse_arrays(&args[0]) {
       Ok(d) => d,
@@ -4118,8 +4121,13 @@ pub fn dispatch_list_operations(
       let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
       let is_level_spec =
         args.len() >= 2 && matches!(&args[args.len() - 1], Expr::Integer(_));
-      if args.iter().any(is_sparse) && !is_level_spec {
-        let all_sparse = args.iter().all(is_sparse);
+      let arrays = if is_level_spec {
+        &args[..args.len() - 1]
+      } else {
+        args
+      };
+      if arrays.iter().any(is_sparse) {
+        let all_sparse = arrays.iter().all(is_sparse);
         let mut dense = Vec::with_capacity(args.len());
         for a in args {
           if is_sparse(a) {
