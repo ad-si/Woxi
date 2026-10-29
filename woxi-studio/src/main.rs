@@ -8115,6 +8115,44 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// Regression: a control row `Row[{"label", ButtonBar[…], "label",
+  /// ButtonBar[…]}]` mixing captions with several `ButtonBar`s was kept as one
+  /// static heading whose text was the raw `ButtonBar[…]` source. Each bar must
+  /// flatten into its own pressable buttons between the caption headings.
+  #[test]
+  fn manipulate_row_of_captions_and_button_bars_flattens_to_buttons() {
+    let code = r#"Manipulate[
+      Row[{"x = ", x, ", y = ", y}],
+      Row[{"adjust", Spacer[10], "x:",
+        ButtonBar[{"+" :> (x = x + 5), "-" :> (x = x - 5)}], "  y:",
+        ButtonBar[{"+" :> (y = y + 5), "-" :> (y = y - 5)}]}],
+      {{x, 0}, ControlType -> None},
+      {{y, 0}, ControlType -> None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the button-bar row should build a ManipulateState");
+    for c in &state.controls {
+      if let manipulate::ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("ButtonBar"), "leaked source: {label:?}");
+      }
+    }
+    let actions: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => {
+          Some(action.as_str())
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      actions,
+      vec!["x = x + 5", "x = x - 5", "y = y + 5", "y = y - 5"]
+    );
+  }
+
   /// Regression: a Manipulate that plots a Bessel function over a patch of
   /// the complex plane with a chooser for the function family and an order
   /// slider. `BesselJ`/`BesselI`/`BesselY`/`BesselK` had no numeric value at
