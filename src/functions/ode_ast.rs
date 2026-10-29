@@ -5962,6 +5962,12 @@ fn ndsolve_system(
     let rewritten = substitute_function_values(solved, &implicit_funcs, x_name);
     let value_fn = NumFn::new(rewritten, &ext_names);
     let mut vars = vec![0.0; ext_names.len()];
+    // The solve for the highest derivatives probes every residual once per
+    // unknown, so it is skipped at each grid point unless the solution
+    // actually reads one of those slots.
+    let reads_highest_derivatives = value_fn
+      .vars_from(1 + n_state)
+      .is_none_or(|used| used.iter().any(|&slot| slot < implicit_slot));
     let root_fn = (!implicit.is_empty()).then(|| {
       compile_implicit().map(|constraints| NExpr::Implicit {
         constraints,
@@ -6000,13 +6006,15 @@ fn ndsolve_system(
           }
           // A solution written with a highest derivative (`F0 == … - h'`)
           // reads it from the solve for the highest derivatives.
-          if let Some(high) = solve_highest_derivatives_cached(
-            &residuals,
-            funcs.len(),
-            *x,
-            &state[..n_state],
-            None,
-          ) {
+          if reads_highest_derivatives
+            && let Some(high) = solve_highest_derivatives_cached(
+              &residuals,
+              funcs.len(),
+              *x,
+              &state[..n_state],
+              None,
+            )
+          {
             vars[1 + n_state..1 + n_state + high.len()].copy_from_slice(&high);
           }
           Expr::List(
