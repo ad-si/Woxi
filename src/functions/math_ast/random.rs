@@ -289,7 +289,26 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so the option is read and dropped.
   let (args, working_precision) = split_random_options(args);
   let args = args.as_slice();
-  let _ = working_precision;
+  if let Some(p) = working_precision.as_ref().and_then(extended_precision) {
+    // A uniform draw at a precision beyond machine numbers.
+    if let Some(bounds) = match args.first() {
+      None => Some((Expr::Integer(0), Expr::Integer(1))),
+      Some(Expr::FunctionCall { name, .. })
+        if name.ends_with("Distribution") =>
+      {
+        None
+      }
+      Some(Expr::List(items)) if items.len() == 2 => {
+        Some((items[0].clone(), items[1].clone()))
+      }
+      Some(max) => Some((Expr::Integer(0), max.clone())),
+    } && let Some(dims) = random_dims(args.get(1))
+    {
+      return fill_with(&dims, &mut || {
+        uniform_at_precision(&bounds.0, &bounds.1, p)
+      });
+    }
+  }
 
   // RandomReal[dist] / RandomReal[dist, n] samples from a continuous
   // distribution, exactly like RandomVariate (e.g. `RandomReal[
@@ -407,6 +426,82 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// A `WorkingPrecision` beyond machine precision, in decimal digits.
+/// `None` for MachinePrecision or anything at or below it.
+fn extended_precision(wp: &Expr) -> Option<f64> {
+  let p = try_eval_to_f64(wp)?;
+  (p.is_finite() && p > 15.954589770191003).then_some(p)
+}
+
+/// The dimensions of a random array (`n` or `{n1, n2, …}`); `Some(vec![])`
+/// for a single value. `None` for anything else.
+fn random_dims(spec: Option<&Expr>) -> Option<Vec<usize>> {
+  match spec {
+    None => Some(Vec::new()),
+    Some(Expr::Integer(n)) if *n >= 0 => Some(vec![*n as usize]),
+    Some(Expr::List(items)) => items
+      .iter()
+      .map(|i| match i {
+        Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  }
+}
+
+/// A nested list of the given dimensions filled by `draw` (just one value
+/// for no dimensions).
+fn fill_with(
+  dims: &[usize],
+  draw: &mut dyn FnMut() -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let Some((&n, rest)) = dims.split_first() else {
+    return draw();
+  };
+  let mut items = Vec::with_capacity(n);
+  for _ in 0..n {
+    items.push(fill_with(rest, draw)?);
+  }
+  Ok(Expr::List(items.into()))
+}
+
+/// A uniform draw from [lo, hi] carrying `p` digits of precision: lo plus
+/// (hi − lo) times a random fraction with a few more decimal digits than
+/// asked for, evaluated by N at precision p.
+fn uniform_at_precision(
+  lo: &Expr,
+  hi: &Expr,
+  p: f64,
+) -> Result<Expr, InterpreterError> {
+  use rand::RngExt;
+  let digits = p.ceil() as usize + 5;
+  let numerator: String = crate::with_rng(|rng| {
+    (0..digits)
+      .map(|_| char::from(b'0' + rng.random_range(0..10u8)))
+      .collect()
+  });
+  let numerator = numerator
+    .parse::<num_bigint::BigInt>()
+    .map(crate::functions::math_ast::bigint_to_expr)
+    .unwrap_or(Expr::Integer(0));
+  let fraction = times(vec![
+    numerator,
+    pow(Expr::Integer(10), Expr::Integer(-(digits as i128))),
+  ]);
+  let value = plus(vec![
+    lo.clone(),
+    times(vec![
+      plus(vec![hi.clone(), times(vec![Expr::Integer(-1), lo.clone()])]),
+      fraction,
+    ]),
+  ]);
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "N",
+    vec![value, Expr::Real(p)],
+  ))
+}
+
 /// Split trailing option rules off a random-number call, returning the
 /// positional arguments and the `WorkingPrecision` value if one was given.
 fn split_random_options(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
@@ -457,6 +552,36 @@ fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &*integral_dims(args);
   use rand::RngExt;
+  // Options (WorkingPrecision) follow the range and dimensions.
+  let (args, working_precision) = split_random_options(args);
+  let args = args.as_slice();
+  if let Some(p) = working_precision.as_ref().and_then(extended_precision)
+    && let Some((lo, hi)) = match args.first() {
+      None => Some((
+        Expr::Integer(0),
+        call("Complex", vec![Expr::Integer(1), Expr::Integer(1)]),
+      )),
+      Some(Expr::List(items)) if items.len() == 2 => {
+        Some((items[0].clone(), items[1].clone()))
+      }
+      Some(max) => Some((Expr::Integer(0), max.clone())),
+    }
+    && let Some(dims) = random_dims(args.get(1))
+  {
+    let part = |head: &str, e: &Expr| {
+      crate::evaluator::evaluate_expr_to_expr(&call1(head, e.clone()))
+    };
+    let (re_lo, re_hi) = (part("Re", &lo)?, part("Re", &hi)?);
+    let (im_lo, im_hi) = (part("Im", &lo)?, part("Im", &hi)?);
+    return fill_with(&dims, &mut || {
+      let re = uniform_at_precision(&re_lo, &re_hi, p)?;
+      let im = uniform_at_precision(&im_lo, &im_hi, p)?;
+      crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+        re,
+        times(vec![im, id_expr("I")]),
+      ]))
+    });
+  }
 
   // `(re, im)` of a numeric bound (`-1 - I` is `Complex[-1, -1]`, but a
   // bound may also arrive as an unevaluated sum or product).
@@ -561,9 +686,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       Ok(build(&dims, re_lo, re_hi, im_lo, im_hi))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "RandomComplex expects 0, 1, or 2 arguments".into(),
-    )),
+    _ => Ok(unevaluated("RandomComplex", args)),
   }
 }
 

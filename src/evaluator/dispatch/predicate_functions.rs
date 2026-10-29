@@ -450,6 +450,39 @@ pub fn dispatch_predicate_functions(
     "PalindromeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::palindrome_q_ast(args));
     }
+    // PalindromeQ[s, IgnoreCase -> …, IgnoreDiacritics -> …]: the string is
+    // normalized first, then tested as usual.
+    "PalindromeQ" if args.len() > 1 => {
+      let (pos, opts) = super::split_trailing_options(args);
+      if pos.len() != 1 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let mut subject = pos[0].clone();
+      for (opt, value) in &opts {
+        let on = match value {
+          Expr::Identifier(v) if v == "True" => true,
+          Expr::Identifier(v) if v == "False" => false,
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
+        let transform = match opt.as_str() {
+          "IgnoreCase" => "ToLowerCase",
+          "IgnoreDiacritics" => "RemoveDiacritics",
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
+        if on && matches!(subject, Expr::String(_)) {
+          subject = match crate::evaluator::evaluate_function_call_ast(
+            transform,
+            &[subject],
+          ) {
+            Ok(e) => e,
+            Err(e) => return Some(Err(e)),
+          };
+        }
+      }
+      return Some(crate::functions::predicate_ast::palindrome_q_ast(&[
+        subject,
+      ]));
+    }
     // SquareFreeQ[poly, x]: no repeated factor in x — the gcd of poly and
     // its derivative in x is free of x.
     "SquareFreeQ" if args.len() == 2 => {
@@ -814,6 +847,33 @@ pub fn dispatch_predicate_functions(
     }
     "DuplicateFreeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::duplicate_free_q_ast(args));
+    }
+    // PossibleZeroQ[expr, Method -> m, Assumptions -> a]: the method only
+    // chooses how zero is recognized; an expression that simplifies to 0
+    // under the assumptions is zero.
+    "PossibleZeroQ"
+      if args.len() >= 2
+        && super::split_trailing_options(args).0.len() == 1
+        && super::split_trailing_options(args)
+          .1
+          .iter()
+          .all(|(o, _)| o == "Method" || o == "Assumptions") =>
+    {
+      let (pos, opts) = super::split_trailing_options(args);
+      for (opt, value) in &opts {
+        if opt == "Assumptions" {
+          let simplified = crate::evaluator::evaluate_function_call_ast(
+            "Simplify",
+            &[pos[0].clone(), value.clone()],
+          );
+          if matches!(simplified, Ok(Expr::Integer(0))) {
+            return Some(Ok(bool_expr(true)));
+          }
+        }
+      }
+      return Some(crate::functions::predicate_ast::possible_zero_q_ast(
+        &pos[..1],
+      ));
     }
     "PossibleZeroQ" => {
       if args.len() != 1 {

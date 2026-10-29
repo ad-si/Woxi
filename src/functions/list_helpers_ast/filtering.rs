@@ -1462,17 +1462,52 @@ pub fn level_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Outcome of walking one part in DeleteCases.
+enum DeleteWalk {
+  /// The part matched and is removed.
+  Deleted,
+  /// The part is kept (possibly with deletions inside it).
+  Keep(Expr),
+  /// The part's head matched (`Heads -> True`): its arguments are spliced
+  /// into the parent, as `Sequence[args]` would be.
+  Splice(Vec<Expr>),
+}
+
+/// Walk each child of a node one level down, collecting what is kept.
+fn delete_cases_children(
+  children: &[Expr],
+  match_pat: &Expr,
+  level: usize,
+  min: i64,
+  max: i64,
+  heads: bool,
+  remaining: &mut Option<usize>,
+) -> Vec<Expr> {
+  let mut kept = Vec::with_capacity(children.len());
+  for c in children {
+    match delete_cases_walk(c, match_pat, level + 1, min, max, heads, remaining)
+    {
+      DeleteWalk::Deleted => {}
+      DeleteWalk::Keep(e) => kept.push(e),
+      DeleteWalk::Splice(items) => kept.extend(items),
+    }
+  }
+  kept
+}
+
 /// Rebuild `expr` with pattern matches at the requested levels removed.
-/// A node is checked before its children (a deleted parent prunes the
-/// subtree); returns None when the node itself is deleted.
+/// A node is checked before its head and children (a deleted parent
+/// prunes the subtree). With `heads`, a matching head (one level below
+/// its node) is deleted too, leaving the node's arguments as a sequence.
 fn delete_cases_walk(
   expr: &Expr,
   match_pat: &Expr,
   level: usize,
   min: i64,
   max: i64,
+  heads: bool,
   remaining: &mut Option<usize>,
-) -> Option<Expr> {
+) -> DeleteWalk {
   use crate::functions::expr_form::{ExprForm, decompose_expr};
 
   if remaining.is_none_or(|n| n > 0)
@@ -1483,43 +1518,71 @@ fn delete_cases_walk(
     if let Some(n) = remaining.as_mut() {
       *n -= 1;
     }
-    return None;
+    return DeleteWalk::Deleted;
   }
 
   match expr {
     Expr::Association(pairs) => {
-      let kept: Vec<(Expr, Expr)> = pairs
-        .iter()
-        .filter_map(|(k, v)| {
-          delete_cases_walk(v, match_pat, level + 1, min, max, remaining)
-            .map(|nv| (k.clone(), nv))
-        })
-        .collect();
-      Some(Expr::Association(kept))
+      let mut kept: Vec<(Expr, Expr)> = Vec::with_capacity(pairs.len());
+      for (k, v) in pairs.iter() {
+        if let DeleteWalk::Keep(nv) =
+          delete_cases_walk(v, match_pat, level + 1, min, max, heads, remaining)
+        {
+          kept.push((k.clone(), nv));
+        }
+      }
+      DeleteWalk::Keep(Expr::Association(kept))
     }
     Expr::CurriedCall { func, args } => {
-      let kept: Vec<Expr> = args
-        .iter()
-        .filter_map(|a| {
-          delete_cases_walk(a, match_pat, level + 1, min, max, remaining)
-        })
-        .collect();
-      Some(Expr::CurriedCall {
-        func: func.clone(),
-        args: kept,
-      })
+      let new_head = if heads {
+        delete_cases_walk(
+          func,
+          match_pat,
+          level + 1,
+          min,
+          max,
+          heads,
+          remaining,
+        )
+      } else {
+        DeleteWalk::Keep((**func).clone())
+      };
+      let kept = delete_cases_children(
+        args, match_pat, level, min, max, heads, remaining,
+      );
+      match new_head {
+        DeleteWalk::Keep(h) => DeleteWalk::Keep(Expr::CurriedCall {
+          func: Box::new(h),
+          args: kept,
+        }),
+        _ => DeleteWalk::Splice(kept),
+      }
     }
     _ => match decompose_expr(expr) {
-      ExprForm::Atom(_) => Some(expr.clone()),
+      ExprForm::Atom(_) => DeleteWalk::Keep(expr.clone()),
       ExprForm::Composite { head, children } => {
-        let kept: Vec<Expr> = children
-          .iter()
-          .filter_map(|c| {
-            delete_cases_walk(c, match_pat, level + 1, min, max, remaining)
-          })
-          .collect();
-        // Rebuilt in its own form: a rule stays a rule.
-        Some(crate::functions::expr_form::compose_expr(&head, &kept))
+        let head_deleted = heads
+          && remaining.is_none_or(|n| n > 0)
+          && position_level_match(level + 1, 1, min, max)
+          && crate::evaluator::pattern_matching::match_pattern(
+            &Expr::Identifier(head.clone()),
+            match_pat,
+          )
+          .is_some();
+        if head_deleted && let Some(n) = remaining.as_mut() {
+          *n -= 1;
+        }
+        let kept = delete_cases_children(
+          &children, match_pat, level, min, max, heads, remaining,
+        );
+        if head_deleted {
+          DeleteWalk::Splice(kept)
+        } else {
+          // Rebuilt in its own form: a rule stays a rule.
+          DeleteWalk::Keep(crate::functions::expr_form::compose_expr(
+            &head, &kept,
+          ))
+        }
       }
     },
   }
@@ -1536,6 +1599,36 @@ pub fn delete_cases_unified_ast(
   let original = || unevaluated("DeleteCases", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+
+  // A trailing `Heads -> True | False` option.
+  let heads_setting = |e: &Expr| -> Option<bool> {
+    let (lhs, rhs) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return None,
+    };
+    match (lhs, rhs) {
+      (Expr::Identifier(h), Expr::Identifier(v)) if h == "Heads" => {
+        match v.as_str() {
+          "True" => Some(true),
+          "False" => Some(false),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let (args, heads) = match args.last().and_then(heads_setting) {
+    Some(h) if args.len() >= 3 => (&args[..args.len() - 1], h),
+    _ => (args, false),
+  };
 
   if args.len() < 2 || args.len() > 4 {
     return Ok(original());
@@ -1617,10 +1710,12 @@ pub fn delete_cases_unified_ast(
     0,
     min_level,
     max_level,
+    heads,
     &mut remaining,
   ) {
-    Some(result) => Ok(result),
-    None => Ok(call0("Sequence")),
+    DeleteWalk::Keep(result) => Ok(result),
+    DeleteWalk::Deleted => Ok(call0("Sequence")),
+    DeleteWalk::Splice(items) => Ok(call("Sequence", items)),
   }
 }
 

@@ -852,6 +852,28 @@ pub fn dispatch_evaluation_control(
         }
       }
     }
+    // NumericArray[list, type, "ClipAndCoerce" | "ClipAndRound"]: values
+    // outside the type's range are clipped to it; "ClipAndRound" also
+    // rounds reals to the nearest integer for an integer type.
+    "NumericArray"
+      if args.len() == 3
+        && matches!(&args[1], Expr::String(_))
+        && matches!(&args[2], Expr::String(m) if m == "ClipAndCoerce" || m == "ClipAndRound") =>
+    {
+      let (Expr::String(ty), Expr::String(method)) = (&args[1], &args[2])
+      else {
+        return None;
+      };
+      let Some(data) =
+        clip_numeric_array_data(&args[0], ty, method == "ClipAndRound")
+      else {
+        return Some(Ok(unevaluated("NumericArray", args)));
+      };
+      return Some(Ok(call(
+        "NumericArray",
+        vec![data, Expr::String(ty.clone())],
+      )));
+    }
     // CensoredDistribution[{min, max}, dist] — censored distribution
     "CensoredDistribution" if args.len() == 2 => {
       // Evaluate the underlying distribution to normalize it
@@ -1311,4 +1333,75 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
       known.contains(&name) || name.ends_with("Distribution")
     }
   }
+}
+
+/// The payload of `NumericArray[data, ty, "Clip…"]`: every number clipped
+/// to the range of `ty` and stored as that type stores it (integers for the
+/// integer types, single- or double-precision reals for the real ones).
+/// Reals become integers only when `round` is set. `None` for an unknown
+/// type or a non-numeric element.
+fn clip_numeric_array_data(data: &Expr, ty: &str, round: bool) -> Option<Expr> {
+  let int_range: Option<(i128, i128)> = match ty {
+    "UnsignedInteger8" => Some((0, u8::MAX as i128)),
+    "UnsignedInteger16" => Some((0, u16::MAX as i128)),
+    "UnsignedInteger32" => Some((0, u32::MAX as i128)),
+    "UnsignedInteger64" => Some((0, u64::MAX as i128)),
+    "Integer8" => Some((i8::MIN as i128, i8::MAX as i128)),
+    "Integer16" => Some((i16::MIN as i128, i16::MAX as i128)),
+    "Integer32" => Some((i32::MIN as i128, i32::MAX as i128)),
+    "Integer64" => Some((i64::MIN as i128, i64::MAX as i128)),
+    "Real32" | "Real64" => None,
+    _ => return None,
+  };
+  fn walk(
+    e: &Expr,
+    int_range: Option<(i128, i128)>,
+    single: bool,
+    round: bool,
+  ) -> Option<Expr> {
+    if let Expr::List(items) = e {
+      let out: Option<Vec<Expr>> = items
+        .iter()
+        .map(|x| walk(x, int_range, single, round))
+        .collect();
+      return Some(Expr::List(out?.into()));
+    }
+    match int_range {
+      Some((lo, hi)) => {
+        let n: i128 = match e {
+          Expr::Integer(n) => *n,
+          Expr::BigInteger(b) => {
+            use num_traits::Signed;
+            if b.is_negative() { lo } else { hi }
+          }
+          Expr::Real(f) if round && f.is_finite() => {
+            let r = f.round_ties_even();
+            if r < lo as f64 {
+              lo
+            } else if r > hi as f64 {
+              hi
+            } else {
+              r as i128
+            }
+          }
+          _ => return None,
+        };
+        Some(Expr::Integer(n.clamp(lo, hi)))
+      }
+      None => {
+        let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+        if v.is_nan() {
+          return None;
+        }
+        let max = if single { f32::MAX as f64 } else { f64::MAX };
+        let clipped = v.clamp(-max, max);
+        Some(Expr::Real(if single {
+          clipped as f32 as f64
+        } else {
+          clipped
+        }))
+      }
+    }
+  }
+  walk(data, int_range, ty == "Real32", round)
 }

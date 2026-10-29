@@ -905,6 +905,39 @@ pub fn dispatch_image_functions(
     "Image3DSlices" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image3d_slices_ast(args));
     }
+    // ImageData[image, type, Interleaving -> False]: the multichannel data
+    // channel by channel, {c, h, w}, rather than pixel by pixel.
+    "ImageData"
+      if (2..=3).contains(&args.len())
+        && matches!(args.last(), Some(Expr::Rule { pattern, .. })
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Interleaving")) =>
+    {
+      let (pos, opts) = super::split_trailing_options(args);
+      let interleaved = match opts.last().map(|(_, v)| v) {
+        Some(Expr::Identifier(v)) if v == "True" => true,
+        Some(Expr::Identifier(v)) if v == "False" => false,
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      let data = match crate::functions::image_ast::image_data_ast(pos) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      let three_d = matches!(&data, Expr::List(rows)
+        if matches!(rows.first(), Some(Expr::List(px))
+          if matches!(px.first(), Some(Expr::List(_)))));
+      if interleaved || !three_d {
+        return Some(Ok(data));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Transpose",
+        &[
+          data,
+          Expr::List(
+            vec![Expr::Integer(2), Expr::Integer(3), Expr::Integer(1)].into(),
+          ),
+        ],
+      ));
+    }
     "ImageData" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::image_data_ast(args));
     }
@@ -1509,6 +1542,28 @@ pub fn dispatch_image_functions(
     }
     "RandomImage" if args.len() <= 2 => {
       return Some(crate::functions::image_ast::random_image_ast(args));
+    }
+    // ConstantImage[color, size, type, opts]: the constant image, converted
+    // by Image to the requested type and given its options.
+    "ConstantImage"
+      if args.len() >= 3
+        || (args.len() == 2 && matches!(&args[1], Expr::Rule { .. })) =>
+    {
+      let (base, rest) = match &args[1] {
+        Expr::Rule { .. } => (&args[..1], &args[1..]),
+        _ => (&args[..2], &args[2..]),
+      };
+      let image = match crate::functions::image_ast::constant_image_ast(base) {
+        Ok(img @ Expr::Image { .. }) => img,
+        Ok(_) => return Some(Ok(unevaluated(name, args))),
+        Err(e) => return Some(Err(e)),
+      };
+      let mut image_args = vec![image];
+      image_args.extend(rest.iter().cloned());
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Image",
+        &image_args,
+      ));
     }
     "ConstantImage" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::image_ast::constant_image_ast(args));

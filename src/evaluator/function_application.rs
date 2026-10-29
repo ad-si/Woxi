@@ -1279,6 +1279,8 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "DeleteDuplicatesBy"
       | "KeyExistsQ"
       | "ReplaceList"
+      | "AllSameBy"
+      | "DateSelect"
   )
 }
 
@@ -3171,6 +3173,7 @@ pub fn apply_curried_call(
           | "Apply"
           | "Map"
           | "MapIndexed"
+          | "MapApply"
           | "MapThread"
           | "Scan"
           | "Append"

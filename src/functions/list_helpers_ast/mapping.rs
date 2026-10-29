@@ -1125,8 +1125,21 @@ pub fn map_indexed_with_level_ast(
   if is_heads_true_option(level_spec) {
     return map_indexed_at_depth_heads(func, expr, 0, 1, 1, &[]);
   }
-  // A bound is either a level counted from the root or, when negative, a
-  // depth counted from the leaves. Infinity is only ever an upper bound.
+  let Some((min_level, max_level)) = parse_map_indexed_levels(level_spec)
+  else {
+    return Ok(call(
+      "MapIndexed",
+      vec![func.clone(), expr.clone(), level_spec.clone()],
+    ));
+  };
+  map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
+}
+
+/// Parse a MapIndexed level specification: `n` = `{1, n}`, `{n}` = exactly
+/// level `n`, `{min, max}`. A bound is either a level counted from the root
+/// or, when negative, a depth counted from the leaves; Infinity is only
+/// ever an upper bound.
+fn parse_map_indexed_levels(level_spec: &Expr) -> Option<(i64, i64)> {
   let bound = |e: &Expr| -> Option<i64> {
     match e {
       Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
@@ -1142,36 +1155,17 @@ pub fn map_indexed_with_level_ast(
       other => expr_to_i128(other).map(|n| n as i64),
     }
   };
-  let uneval = || {
-    Ok(call(
-      "MapIndexed",
-      vec![func.clone(), expr.clone(), level_spec.clone()],
-    ))
-  };
-  // Parse level spec: n = {1, n}, {n} = exactly level n, {min, max}.
-  let (min_level, max_level) = match level_spec {
+  match level_spec {
     Expr::List(items) if items.len() == 1 => {
-      let Some(n) = bound(&items[0]) else {
-        return uneval();
-      };
-      (n, n)
+      let n = bound(&items[0])?;
+      Some((n, n))
     }
     Expr::List(items) if items.len() == 2 => {
-      let (Some(min), Some(max)) = (bound(&items[0]), bound(&items[1])) else {
-        return uneval();
-      };
-      (min, max)
+      Some((bound(&items[0])?, bound(&items[1])?))
     }
-    Expr::List(_) => return uneval(),
-    other => {
-      let Some(n) = bound(other) else {
-        return uneval();
-      };
-      (1, n)
-    }
-  };
-
-  map_indexed_at_depth(func, expr, 0, min_level, max_level, &[])
+    Expr::List(_) => None,
+    other => Some((1, bound(other)?)),
+  }
 }
 
 /// The depth of an expression in the sense of `Depth`: 1 for an atom, and
@@ -1184,6 +1178,9 @@ fn expression_depth(expr: &Expr) -> i64 {
       1 + items.iter().map(expression_depth).max().unwrap_or(0)
     }
     Expr::FunctionCall { args, .. } => {
+      1 + args.iter().map(expression_depth).max().unwrap_or(0)
+    }
+    Expr::CurriedCall { args, .. } => {
       1 + args.iter().map(expression_depth).max().unwrap_or(0)
     }
     _ => 1,
@@ -1291,15 +1288,15 @@ fn map_indexed_atoms(
   apply_func_to_two_args(func, expr, &index)
 }
 
-/// MapIndexed[f, expr, levelspec, Heads -> True].
+/// MapIndexed[f, expr, levelspec, Heads -> True | False].
 pub fn map_indexed_with_level_heads_ast(
   func: &Expr,
   expr: &Expr,
   level_spec: &Expr,
   heads_opt: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  if !is_heads_true_option(heads_opt) {
-    return Ok(call(
+  let uneval = || {
+    Ok(call(
       "MapIndexed",
       vec![
         func.clone(),
@@ -1307,49 +1304,37 @@ pub fn map_indexed_with_level_heads_ast(
         level_spec.clone(),
         heads_opt.clone(),
       ],
-    ));
+    ))
+  };
+  if !is_heads_true_option(heads_opt) {
+    if is_heads_false_option(heads_opt) {
+      return map_indexed_with_level_ast(func, expr, level_spec);
+    }
+    return uneval();
   }
   // `{-1}` selects every atomic leaf; with `Heads -> True` each compound
   // node's head is also rewritten with `0` appended to its position.
   if is_neg_one_levelspec(level_spec) {
     return map_indexed_atoms(func, expr, &[], true);
   }
-  // Parse level spec the same way as the 3-arg form.
-  let (min_level, max_level) = match level_spec {
-    Expr::Integer(n) => (1i64, *n as i64),
-    Expr::List(items) if items.len() == 1 => {
-      if let Some(n) = expr_to_i128(&items[0]) {
-        (n as i64, n as i64)
-      } else {
-        return Ok(call(
-          "MapIndexed",
-          vec![
-            func.clone(),
-            expr.clone(),
-            level_spec.clone(),
-            heads_opt.clone(),
-          ],
-        ));
-      }
-    }
-    Expr::List(items) if items.len() == 2 => {
-      let min = expr_to_i128(&items[0]).unwrap_or(0) as i64;
-      let max = expr_to_i128(&items[1]).unwrap_or(0) as i64;
-      (min, max)
-    }
-    _ => {
-      return Ok(call(
-        "MapIndexed",
-        vec![
-          func.clone(),
-          expr.clone(),
-          level_spec.clone(),
-          heads_opt.clone(),
-        ],
-      ));
-    }
+  let Some((min_level, max_level)) = parse_map_indexed_levels(level_spec)
+  else {
+    return uneval();
   };
   map_indexed_at_depth_heads(func, expr, 0, min_level, max_level, &[])
+}
+
+fn is_heads_false_option(e: &Expr) -> bool {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Heads")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")
+    }
+    _ => false,
+  }
 }
 
 /// Recursively apply MapIndexed at specified depth levels, tracking position indices.
@@ -1434,84 +1419,69 @@ fn map_indexed_at_depth_heads(
   max_level: i64,
   position: &[i128],
 ) -> Result<Expr, InterpreterError> {
-  let (children, head_name_opt): (Option<&[Expr]>, Option<String>) = match expr
-  {
-    Expr::List(items) => (Some(items.as_slice()), Some("List".to_string())),
-    Expr::FunctionCall { name, args } => {
-      (Some(args.as_slice()), Some(name.clone()))
+  let index_of = |pos: &[i128]| -> Expr {
+    Expr::List(pos.iter().map(|&i| Expr::Integer(i)).collect())
+  };
+  // Split a compound node into its head (an expression in its own right,
+  // compound for curried calls like `p[x][a, b]`) and its arguments.
+  let (head, items): (Expr, &[Expr]) = match expr {
+    Expr::List(items) => (Expr::Identifier("List".to_string()), items),
+    Expr::FunctionCall { name, args } => (Expr::Identifier(name.clone()), args),
+    Expr::CurriedCall { func: h, args } => ((**h).clone(), args),
+    _ => {
+      // Atom: apply f if the current level is in range.
+      if level_in_range(current_depth, 1, min_level, max_level) {
+        return apply_func_to_two_args(func, expr, &index_of(position));
+      }
+      return Ok(expr.clone());
     }
-    _ => (None, None),
   };
 
-  if let (Some(items), Some(head_name)) = (children, head_name_opt) {
-    // Recurse into children first (bottom-up).
-    let mapped: Result<Vec<Expr>, _> = items
-      .iter()
-      .enumerate()
-      .map(|(i, item)| {
-        let mut child_pos = position.to_vec();
-        child_pos.push((i + 1) as i128);
-        map_indexed_at_depth_heads(
-          func,
-          item,
-          current_depth + 1,
-          min_level,
-          max_level,
-          &child_pos,
-        )
-      })
-      .collect();
-    let mapped = mapped?;
+  // The head sits at position {..., 0}, one level below the node, and is
+  // itself mapped over (recursively, when it is compound).
+  let mut head_pos = position.to_vec();
+  head_pos.push(0);
+  let head_expr = map_indexed_at_depth_heads(
+    func,
+    &head,
+    current_depth + 1,
+    min_level,
+    max_level,
+    &head_pos,
+  )?;
 
-    // Transform the head at the current position with index 0 appended.
-    // Heads count as level current_depth+1 (one step deeper than the node),
-    // matching Mathematica's Heads->True convention.
-    let head_expr = {
-      let head_atom = Expr::Identifier(head_name.clone());
-      let mut head_pos = position.to_vec();
-      head_pos.push(0);
-      let head_index =
-        Expr::List(head_pos.iter().map(|&i| Expr::Integer(i)).collect());
-      let head_depth = current_depth + 1;
-      if head_depth >= min_level && head_depth <= max_level {
-        apply_func_to_two_args(func, &head_atom, &head_index)?
-      } else {
-        head_atom
-      }
-    };
+  // Recurse into the arguments (bottom-up).
+  let mut mapped: Vec<Expr> = Vec::with_capacity(items.len());
+  for (i, item) in items.iter().enumerate() {
+    let mut child_pos = position.to_vec();
+    child_pos.push((i + 1) as i128);
+    mapped.push(map_indexed_at_depth_heads(
+      func,
+      item,
+      current_depth + 1,
+      min_level,
+      max_level,
+      &child_pos,
+    )?);
+  }
 
-    // Re-wrap children using the transformed head as a head expression.
-    // If the head is still the original symbol, use List / FunctionCall directly;
-    // otherwise produce a CurriedCall so output renders as 'f[List,{0}][...]'.
-    let inner_expr = match &head_expr {
-      Expr::Identifier(n) if *n == "List" => Expr::List(mapped.into()),
-      Expr::Identifier(n) => Expr::FunctionCall {
-        name: n.clone(),
-        args: mapped.into(),
-      },
-      _ => Expr::CurriedCall {
-        func: Box::new(head_expr.clone()),
-        args: mapped,
-      },
-    };
+  let inner_expr = match &head_expr {
+    Expr::Identifier(n) if n == "List" => Expr::List(mapped.into()),
+    Expr::Identifier(n) => Expr::FunctionCall {
+      name: n.clone(),
+      args: mapped.into(),
+    },
+    _ => Expr::CurriedCall {
+      func: Box::new(head_expr),
+      args: mapped,
+    },
+  };
 
-    // Apply f at this level to the wrapped expression if the level matches.
-    if current_depth >= min_level && current_depth <= max_level {
-      let index =
-        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
-      apply_func_to_two_args(func, &inner_expr, &index)
-    } else {
-      Ok(inner_expr)
-    }
+  if level_in_range(current_depth, expression_depth(expr), min_level, max_level)
+  {
+    apply_func_to_two_args(func, &inner_expr, &index_of(position))
   } else {
-    // Atom: apply f if current depth is in range; heads don't apply to atoms.
-    if current_depth >= min_level && current_depth <= max_level {
-      let index =
-        Expr::List(position.iter().map(|&i| Expr::Integer(i)).collect());
-      apply_func_to_two_args(func, expr, &index)
-    } else {
-      Ok(expr.clone())
-    }
+    Ok(inner_expr)
   }
 }
 

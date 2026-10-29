@@ -139,6 +139,41 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Association(pairs))
 }
 
+/// Counts[list, {e1, e2, …}]: an association keyed by the ei, in the order
+/// given, with the number of times each occurs in list (0 when absent).
+/// Elements of list not among the ei are not counted.
+pub fn counts_with_keys_ast(
+  list: &Expr,
+  keys: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items: Vec<Expr> = match list {
+    Expr::List(items) => items.to_vec(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    _ => return Ok(call("Counts", vec![list.clone(), keys.clone()])),
+  };
+  let Expr::List(keys) = keys else {
+    return Ok(call("Counts", vec![list.clone(), keys.clone()]));
+  };
+  use std::collections::HashMap;
+  let mut index: HashMap<String, usize> = HashMap::new();
+  let mut pairs: Vec<(Expr, Expr)> = Vec::new();
+  for k in keys.iter() {
+    let ks = expr_to_string(k);
+    if !index.contains_key(&ks) {
+      index.insert(ks, pairs.len());
+      pairs.push((k.clone(), Expr::Integer(0)));
+    }
+  }
+  for item in &items {
+    if let Some(&i) = index.get(&expr_to_string(item))
+      && let Expr::Integer(n) = &mut pairs[i].1
+    {
+      *n += 1;
+    }
+  }
+  Ok(Expr::Association(pairs))
+}
+
 /// AST-based DeleteDuplicates: remove duplicate elements.
 /// DeleteDuplicates[{a, b, a, c, b}] -> {a, b, c}
 /// DeleteDuplicates[list, test] uses `test[a, b]` to decide if `b`

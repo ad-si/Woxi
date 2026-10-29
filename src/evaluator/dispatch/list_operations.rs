@@ -2386,6 +2386,9 @@ pub fn dispatch_list_operations(
     "Counts" if args.len() == 1 => {
       return Some(list_helpers_ast::counts_ast(&args[0]));
     }
+    "Counts" if args.len() == 2 => {
+      return Some(list_helpers_ast::counts_with_keys_ast(&args[0], &args[1]));
+    }
     "BinCounts" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_counts_ast(args));
     }
@@ -3103,6 +3106,24 @@ pub fn dispatch_list_operations(
     }
     "Subsequences" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::subsequences_ast(args));
+    }
+    // Subsequences[list, nspec, s]: only the first s subsequences.
+    "Subsequences" if args.len() == 3 => {
+      let Expr::Integer(limit) = &args[2] else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      if *limit < 0 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let limit = *limit as usize;
+      return Some(list_helpers_ast::subsequences_ast(&args[..2]).map(|r| {
+        match r {
+          Expr::List(ref items) if items.len() > limit => {
+            Expr::List(items[..limit].to_vec().into())
+          }
+          other => other,
+        }
+      }));
     }
     "Groupings" if args.len() == 2 => {
       return Some(list_helpers_ast::groupings_ast(args));
@@ -5347,7 +5368,7 @@ pub fn dispatch_list_operations(
     "For" if args.len() == 3 || args.len() == 4 => {
       return Some(for_ast(args));
     }
-    "DeleteCases" if args.len() >= 2 && args.len() <= 4 => {
+    "DeleteCases" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::delete_cases_unified_ast(args));
     }
     "MinMax" if args.len() == 1 || args.len() == 2 => {
