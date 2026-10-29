@@ -159,6 +159,29 @@ fn is_precision_spec(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` holds a square root or any other non-integer power. The
+/// exact elimination of such equations is slow and squares radicals into
+/// spurious roots, so inexact radical systems skip it.
+fn has_radical(expr: &Expr) -> bool {
+  is_sqrt(expr).is_some()
+    || match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => !matches!(right.as_ref(), Expr::Integer(_)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        !matches!(args[1], Expr::Integer(_))
+      }
+      _ => false,
+    }
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(has_radical)
+}
+
 /// NSolve[equation, var] — solve an equation numerically.
 ///
 /// For quadratic polynomials, uses Kahan's numerically stable formula to
@@ -215,6 +238,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone()],
@@ -292,6 +316,21 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&result, Expr::List(sols) if !sols.is_empty())
   {
     return Ok(result);
+  }
+  // A square system whose elimination leaves some unknown unbound (a branch
+  // like `y -> 0` that never pins down `x`, as radical equations give) is
+  // only partly solved; the numeric system solver then finds the complete
+  // solutions.
+  if let Expr::List(sols) = &symbolic
+    && !sols.is_empty()
+    && let Expr::List(vars) = &args[1]
+    && vars.len() >= 2
+    && sols
+      .iter()
+      .any(|s| matches!(s, Expr::List(rules) if rules.len() < vars.len()))
+    && let Some(found) = try_nsolve_numeric_system(args)
+  {
+    return Ok(sort_nsolve_solutions(found));
   }
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
   // its own head — unless a numeric multi-seed search below finds real
@@ -2657,6 +2696,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone(), Expr::Integer(0)],
@@ -9976,17 +10016,23 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
       .collect()
   };
   let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
-  const STARTS: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  const COARSE: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  // Two unknowns afford a finer grid, which reaches roots whose basin of
+  // attraction is small (the off-axis equilibria of a three-body problem).
+  const FINE: [f64; 13] = [
+    -10.0, -3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 10.0, 0.25,
+  ];
+  let starts_grid: &[f64] = if k == 2 { &FINE } else { &COARSE };
   // Up to three unknowns every combination of the start values is tried;
   // beyond that the grid is too large, so the diagonal starts and a fixed
   // pseudo-random scatter in [-3, 3]^k are used instead.
   let starts: Vec<Vec<f64>> = if k <= 3 {
-    (0..STARTS.len().pow(k as u32))
+    (0..starts_grid.len().pow(k as u32))
       .map(|mut n| {
         (0..k)
           .map(|_| {
-            let v = STARTS[n % STARTS.len()];
-            n /= STARTS.len();
+            let v = starts_grid[n % starts_grid.len()];
+            n /= starts_grid.len();
             v + 0.1234
           })
           .collect()
@@ -10000,7 +10046,7 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
       seed ^= seed << 17;
       (seed >> 11) as f64 / (1u64 << 53) as f64 * 6.0 - 3.0
     };
-    STARTS
+    starts_grid
       .iter()
       .map(|&c| vec![c + 0.1234; k])
       .chain((0..40).map(|_| (0..k).map(|_| next()).collect()))
