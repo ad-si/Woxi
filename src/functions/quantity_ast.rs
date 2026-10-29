@@ -12,6 +12,7 @@ enum Dimension {
   ElectricCurrent,
   AmountOfSubstance,
   Information,
+  Temperature,
 }
 
 /// Conversion factor to SI base unit as a rational (numerator, denominator).
@@ -204,6 +205,14 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     "Milliamperes" => UnitInfo {
       dimensions: dims(&[(ElectricCurrent, 1)]),
       to_si: (1, 1000),
+    },
+
+    // ── Temperature differences → Kelvins ────────────────────────────
+    // Only reached inside compound units (e.g. Joules/Kelvins); a bare
+    // temperature scale converts affinely via temperature_scale.
+    "Kelvins" => UnitInfo {
+      dimensions: dims(&[(Dimension::Temperature, 1)]),
+      to_si: (1, 1),
     },
 
     // ── Amount of substance → Moles ──────────────────────────────────
@@ -823,6 +832,24 @@ fn resolve_compound_constant(
       (299792458, 1),
       vec![("Meters".to_string(), 1), ("Seconds".to_string(), -1)],
     )),
+    // Exact by the 2019 SI redefinition.
+    "AvogadroConstant" => Some((
+      (602214076000000000000000, 1),
+      vec![("Moles".to_string(), -1)],
+    )),
+    "BoltzmannConstant" => Some((
+      (1380649, 100000000000000000000000000000),
+      vec![
+        ("Kilograms".to_string(), 1),
+        ("Meters".to_string(), 2),
+        ("Kelvins".to_string(), -1),
+        ("Seconds".to_string(), -2),
+      ],
+    )),
+    "ElementaryCharge" => Some((
+      (801088317, 5000000000000000000000000000),
+      vec![("Amperes".to_string(), 1), ("Seconds".to_string(), 1)],
+    )),
     _ => None,
   }
 }
@@ -912,8 +939,11 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           }
         }
         si = rat_reduce(si.0, si.1);
+        // The constant stays one opaque component: products keep it by name
+        // (Seconds*SpeedOfLight) instead of cancelling its base units while
+        // dropping its magnitude.
         return Some(CompoundUnitInfo {
-          components,
+          components: vec![(name.clone(), 1)],
           si,
           dimensions: dims,
         });
@@ -1110,7 +1140,16 @@ fn simplify_compound_unit(
     }
   }
 
-  simplified.extend(unknown);
+  // Units without a fixed SI factor (named constants such as SpeedOfLight)
+  // only combine with themselves.
+  let mut merged: Vec<(String, i64)> = Vec::new();
+  for (name, exp) in unknown {
+    match merged.iter_mut().find(|(n, _)| *n == name) {
+      Some(entry) => entry.1 += exp,
+      None => merged.push((name, exp)),
+    }
+  }
+  simplified.extend(merged.into_iter().filter(|(_, e)| *e != 0));
 
   (simplified, conv)
 }
@@ -1282,6 +1321,10 @@ fn unit_name(expr: &Expr) -> Option<&str> {
 
 /// Check if two unit expressions represent compatible (same dimension) units.
 fn units_compatible(u1: &Expr, u2: &Expr) -> bool {
+  // Temperature scales convert into each other (affinely).
+  if let (Some(_), Some(_)) = (temperature_scale(u1), temperature_scale(u2)) {
+    return true;
+  }
   if let (Some(info1), Some(info2)) =
     (decompose_unit_expr(u1), decompose_unit_expr(u2))
   {
@@ -1872,6 +1915,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
       ElectricCurrent => "Amperes",
       AmountOfSubstance => "Moles",
       Information => "Bits",
+      Dimension::Temperature => "Kelvins",
     }
   };
   // Collect positive and negative exponents
@@ -2120,6 +2164,7 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Dimension::ElectricCurrent => ("ElectricCurrentUnit", 1),
       Dimension::AmountOfSubstance => ("AmountUnit", 1),
       Dimension::Information => ("InformationUnit", 1),
+      Dimension::Temperature => ("TemperatureUnit", 1),
     };
     *acc.entry(name).or_insert(0) += exp * factor;
   }
