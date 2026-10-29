@@ -552,6 +552,28 @@ pub fn dispatch_calculus_functions(
     "DiscreteConvolve" if args.len() == 4 => {
       return Some(crate::functions::calculus_ast::discrete_convolve_ast(args));
     }
+    // SeriesCoefficient[f, {x, x0, nx}, {y, y0, ny}, …] with integer
+    // orders: the coefficient in x, then that coefficient's coefficient in
+    // y, and so on.
+    "SeriesCoefficient"
+      if args.len() >= 3
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::List(items) if items.len() == 3
+            && matches!(items[2], Expr::Integer(_)))
+        }) =>
+    {
+      let mut f = args[0].clone();
+      for spec in &args[1..] {
+        f = match crate::evaluator::evaluate_function_call_ast(
+          "SeriesCoefficient",
+          &[f, spec.clone()],
+        ) {
+          Ok(c) => c,
+          Err(e) => return Some(Err(e)),
+        };
+      }
+      return Some(Ok(f));
+    }
     "SeriesCoefficient" if args.len() == 2 => {
       // SeriesCoefficient[SeriesData[x, x0, coeffs, nmin, nmax, den], q]
       // — query a SeriesData directly. `q` may be an Integer or a
@@ -699,6 +721,25 @@ pub fn dispatch_calculus_functions(
     }
     "CountRoots" if args.len() == 2 => {
       return Some(crate::functions::count_roots_ast::count_roots_ast(args));
+    }
+    // DependentVariables -> {…} only names the functions; the table is the
+    // one the second argument asks for.
+    "RecurrenceTable"
+      if args.len() == 4
+        && matches!(&args[3], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DependentVariables")) =>
+    {
+      return Some(crate::functions::rsolve_ast::recurrence_table_ast(
+        &args[..3],
+      ));
+    }
+    "RecurrenceTable"
+      if args.len() >= 4
+        && args[3..].iter().all(|a| matches!(a, Expr::List(_))) =>
+    {
+      return Some(crate::functions::rsolve_ast::recurrence_table_multi_ast(
+        args,
+      ));
     }
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));

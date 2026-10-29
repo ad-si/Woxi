@@ -2295,10 +2295,10 @@ pub fn dispatch_list_operations(
     "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
-    "PositionLargest" if args.len() == 1 || args.len() == 2 => {
+    "PositionLargest" if (1..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::position_extreme_ast(args, true));
     }
-    "PositionSmallest" if args.len() == 1 || args.len() == 2 => {
+    "PositionSmallest" if (1..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::position_extreme_ast(args, false));
     }
     "OrderingBy" if (2..=4).contains(&args.len()) => {
@@ -5845,6 +5845,25 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::inner_ast(
         &args[0], &moved, &args[2], &args[3],
+      ));
+    }
+    // ReplacePart[expr, rules, Heads -> h]: True lets position patterns
+    // reach the heads (position 0).
+    "ReplacePart"
+      if args.len() == 3
+        && matches!(&args[2], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[2] else {
+        return None;
+      };
+      let heads = match replacement.as_ref() {
+        Expr::Identifier(b) if b == "True" => true,
+        Expr::Identifier(b) if b == "False" || b == "Automatic" => false,
+        _ => return None,
+      };
+      return Some(list_helpers_ast::replace_part_heads_ast(
+        &args[0], &args[1], heads,
       ));
     }
     "ReplacePart" if args.len() == 2 => {

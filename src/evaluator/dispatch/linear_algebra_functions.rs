@@ -480,28 +480,28 @@ pub fn dispatch_linear_algebra_functions(
     "BoxMatrix" | "DiamondMatrix" if args.len() == 2 => {
       return structuring_element_in_width(name, &args[0], &args[1], args);
     }
-    // DiagonalMatrix[…, TargetStructure -> "Dense" | "Sparse" | Automatic]
-    "DiagonalMatrix"
-      if (2..=4).contains(&args.len())
-        && matches!(&args[args.len() - 1], Expr::Rule { pattern, .. }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TargetStructure")) =>
+    // f[…, TargetStructure -> "Dense" | "Sparse" | Automatic]: the dense
+    // result of f[…], wrapped in a SparseArray for "Sparse".
+    "DiagonalMatrix" | "UpperTriangularize" | "LowerTriangularize"
+    | "CompanionMatrix"
+      if args.len() >= 2
+        && option_rule_value(&args[args.len() - 1], "TargetStructure")
+          .is_some() =>
     {
-      let Expr::Rule { replacement, .. } = &args[args.len() - 1] else {
-        return None;
-      };
-      let sparse = match replacement.as_ref() {
+      let target = option_rule_value(&args[args.len() - 1], "TargetStructure")?;
+      let sparse = match target {
         Expr::String(s) if s == "Dense" => false,
         Expr::Identifier(s) if s == "Automatic" => false,
         Expr::String(s) if s == "Sparse" => true,
-        _ => return Some(Ok(unevaluated("DiagonalMatrix", args))),
+        _ => return Some(Ok(unevaluated(name, args))),
       };
-      let dense =
-        match crate::functions::linear_algebra_ast::diagonal_matrix_ast(
-          &args[..args.len() - 1],
-        ) {
-          Ok(d) => d,
-          Err(e) => return Some(Err(e)),
-        };
+      let dense = match crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..args.len() - 1],
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
       if !sparse || !matches!(dense, Expr::List(_)) {
         return Some(Ok(dense));
       }
@@ -515,7 +515,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "PermutationMatrix" if args.len() == 1 => {
+    "PermutationMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(
         crate::functions::linear_algebra_ast::permutation_matrix_ast(args),
       );
@@ -565,6 +565,38 @@ pub fn dispatch_linear_algebra_functions(
         && !radii.is_empty()
       {
         return Some(Ok(build_disk_matrix(&radii)));
+      }
+    }
+    // DiskMatrix[r, w]: the disk centered in a w×w (or w1×w2×…) array.
+    "DiskMatrix" if args.len() == 2 => {
+      let spec = |e: &Expr| -> Option<Vec<i128>> {
+        match e {
+          Expr::List(elems) => elems.iter().map(cross_radius).collect(),
+          other => cross_radius(other).map(|r| vec![r]),
+        }
+      };
+      if let (Some(radii), Some(widths)) = (spec(&args[0]), spec(&args[1])) {
+        let rank = match (&args[0], &args[1]) {
+          (Expr::List(_), _) | (_, Expr::List(_)) => {
+            radii.len().max(widths.len())
+          }
+          _ => 2,
+        };
+        let at = |v: &[i128], i: usize| v[if v.len() == 1 { 0 } else { i }];
+        if rank > 0
+          && (radii.len() == 1 || radii.len() == rank)
+          && (widths.len() == 1 || widths.len() == rank)
+        {
+          let radii: Vec<i128> = (0..rank).map(|i| at(&radii, i)).collect();
+          let widths: Vec<i128> = (0..rank).map(|i| at(&widths, i)).collect();
+          if radii
+            .iter()
+            .zip(&widths)
+            .all(|(r, w)| *w >= 1 && (w - (2 * r + 1)) % 2 == 0)
+          {
+            return Some(Ok(build_disk_matrix_in(&radii, &widths)));
+          }
+        }
       }
     }
     "DiskMatrix" if args.len() == 1 => {
@@ -658,6 +690,63 @@ pub fn dispatch_linear_algebra_functions(
         }
         return Some(Ok(Expr::List(rows.into())));
       }
+    }
+    // Matrix predicates with `SameTest -> f`: f decides whether two entries
+    // that the property relates are equal.
+    "SymmetricMatrixQ"
+    | "AntisymmetricMatrixQ"
+    | "HermitianMatrixQ"
+    | "AntihermitianMatrixQ"
+    | "UnitaryMatrixQ"
+    | "OrthogonalMatrixQ"
+      if args.len() == 2
+        && option_rule_value(&args[1], "SameTest").is_some() =>
+    {
+      let test = option_rule_value(&args[1], "SameTest")?;
+      return Some(matrix_q_with_same_test(name, &args[0], test));
+    }
+    // `Tolerance -> t`: entries within t of zero count as zero.
+    "DiagonalMatrixQ" | "UpperTriangularMatrixQ" | "LowerTriangularMatrixQ"
+      if (2..=3).contains(&args.len())
+        && option_rule_value(&args[args.len() - 1], "Tolerance").is_some() =>
+    {
+      let tol = option_rule_value(&args[args.len() - 1], "Tolerance")?;
+      let Some(tol) = crate::functions::math_ast::try_eval_to_f64(tol) else {
+        return None;
+      };
+      let chopped = match &args[0] {
+        Expr::List(rows) => Expr::List(
+          rows
+            .iter()
+            .map(|r| match r {
+              Expr::List(row) => Expr::List(
+                row
+                  .iter()
+                  .map(|x| {
+                    let small =
+                      match crate::evaluator::evaluate_function_call_ast(
+                        "Abs",
+                        std::slice::from_ref(x),
+                      ) {
+                        Ok(a) => {
+                          crate::functions::math_ast::try_eval_to_f64(&a)
+                            .is_some_and(|a| a <= tol)
+                        }
+                        Err(_) => false,
+                      };
+                    if small { Expr::Integer(0) } else { x.clone() }
+                  })
+                  .collect(),
+              ),
+              other => other.clone(),
+            })
+            .collect(),
+        ),
+        other => other.clone(),
+      };
+      let mut rest = vec![chopped];
+      rest.extend_from_slice(&args[1..args.len() - 1]);
+      return Some(crate::evaluator::evaluate_function_call_ast(name, &rest));
     }
     "UnitaryMatrixQ" | "OrthogonalMatrixQ" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
@@ -2905,59 +2994,39 @@ pub fn dispatch_linear_algebra_functions(
       // A non-list argument (scalar, symbol, …) is not a matrix → False.
       return Some(Ok(bool_expr(false)));
     }
-    // UpperTriangularMatrixQ[m] — True if m is upper triangular
-    "UpperTriangularMatrixQ" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        let mut is_upper = true;
-        'upper: for i in 0..n {
-          if let Expr::List(row) = &rows[i] {
-            for j in 0..i.min(row.len()) {
-              if !matches!(&row[j], Expr::Integer(0)) {
-                let evaluated =
-                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
-                if !matches!(evaluated, Expr::Integer(0)) {
-                  is_upper = false;
-                  break 'upper;
-                }
-              }
+    // UpperTriangularMatrixQ[m, k] — True if every entry below the k-th
+    // diagonal (j - i < k) is zero; LowerTriangularMatrixQ[m, k] — every
+    // entry above it (j - i > k). k defaults to 0.
+    "UpperTriangularMatrixQ" | "LowerTriangularMatrixQ"
+      if args.len() == 1
+        || (args.len() == 2 && matches!(args[1], Expr::Integer(_))) =>
+    {
+      let k = match args.get(1) {
+        Some(Expr::Integer(k)) => *k as i64,
+        _ => 0,
+      };
+      let upper = name == "UpperTriangularMatrixQ";
+      let Expr::List(rows) = &args[0] else {
+        // A non-list argument (scalar, symbol, …) is not a matrix → False.
+        return Some(Ok(bool_expr(false)));
+      };
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(row) = row else {
+          return Some(Ok(bool_expr(false)));
+        };
+        for (j, entry) in row.iter().enumerate() {
+          let d = j as i64 - i as i64;
+          let must_vanish = if upper { d < k } else { d > k };
+          if must_vanish && !matches!(entry, Expr::Integer(0)) {
+            let evaluated =
+              evaluate_expr_to_expr(entry).unwrap_or(entry.clone());
+            if !matches!(evaluated, Expr::Integer(0)) {
+              return Some(Ok(bool_expr(false)));
             }
-          } else {
-            is_upper = false;
-            break;
           }
         }
-        return Some(Ok(bool_expr(is_upper)));
       }
-      // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(bool_expr(false)));
-    }
-    // LowerTriangularMatrixQ[m] — True if m is lower triangular
-    "LowerTriangularMatrixQ" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        let mut is_lower = true;
-        'lower: for i in 0..n {
-          if let Expr::List(row) = &rows[i] {
-            for j in (i + 1)..row.len() {
-              if !matches!(&row[j], Expr::Integer(0)) {
-                let evaluated =
-                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
-                if !matches!(evaluated, Expr::Integer(0)) {
-                  is_lower = false;
-                  break 'lower;
-                }
-              }
-            }
-          } else {
-            is_lower = false;
-            break;
-          }
-        }
-        return Some(Ok(bool_expr(is_lower)));
-      }
-      // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(bool_expr(false)));
+      return Some(Ok(bool_expr(true)));
     }
     // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
     "AntisymmetricMatrixQ" if args.len() == 1 => {
@@ -3404,10 +3473,18 @@ fn build_diamond_matrix(radii: &[i128]) -> Expr {
 /// when sum_k (|idx_k - r_k| / (r_k + 1/2))^2 <= 1. With A_k = 2*r_k+1 and
 /// P = prod_k A_k the integer test is sum_k 4*d_k^2*(P/A_k)^2 <= P^2.
 fn build_disk_matrix(radii: &[i128]) -> Expr {
+  let widths: Vec<i128> = radii.iter().map(|r| 2 * r + 1).collect();
+  build_disk_matrix_in(radii, &widths)
+}
+
+/// The DiskMatrix of the given radii centered in an array of the given
+/// widths. Each width must differ from 2 r + 1 by an even amount, so the
+/// disk sits on the array's center cell.
+fn build_disk_matrix_in(radii: &[i128], widths: &[i128]) -> Expr {
   let a: Vec<i128> = radii.iter().map(|r| 2 * r + 1).collect();
   let p: i128 = a.iter().product();
-  let dims: Vec<usize> = a.iter().map(|&v| v as usize).collect();
-  let centers: Vec<i128> = radii.to_vec();
+  let dims: Vec<usize> = widths.iter().map(|&v| v as usize).collect();
+  let centers: Vec<i128> = widths.iter().map(|w| (w - 1) / 2).collect();
   fn rec(
     dims: &[usize],
     centers: &[i128],
@@ -5287,4 +5364,97 @@ fn matrix_function_by_eigensystem(f: &Expr, m: &Expr) -> Option<Expr> {
     return None;
   };
   (out_rows.len() == n).then_some(result)
+}
+
+/// The value of `opt -> value` when `e` is that option rule.
+fn option_rule_value<'a>(e: &'a Expr, opt: &str) -> Option<&'a Expr> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt) => {
+      Some(replacement)
+    }
+    _ => None,
+  }
+}
+
+/// SymmetricMatrixQ & co. with a custom `SameTest`: every pair of entries
+/// the property relates must pass `test`. The unitary / orthogonal tests
+/// compare the entries of m^H.m (m^T.m) with those of the identity matrix.
+fn matrix_q_with_same_test(
+  name: &str,
+  m: &Expr,
+  test: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let Expr::List(rows) = m else {
+    return Ok(bool_expr(false));
+  };
+  let n = rows.len();
+  let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(n);
+  for r in rows.iter() {
+    match r {
+      Expr::List(cols) if cols.len() == n => matrix.push(cols.to_vec()),
+      _ => return Ok(bool_expr(false)),
+    }
+  }
+  if n == 0 {
+    return Ok(bool_expr(false));
+  }
+  let passes = |a: Expr, b: Expr| -> Result<bool, InterpreterError> {
+    let r = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Apply".to_string(),
+      args: vec![test.clone(), Expr::List(vec![a, b].into())].into(),
+    })?;
+    Ok(matches!(r, Expr::Identifier(ref s) if s == "True"))
+  };
+  if matches!(name, "UnitaryMatrixQ" | "OrthogonalMatrixQ") {
+    let transpose = if name == "UnitaryMatrixQ" {
+      call1("ConjugateTranspose", m.clone())
+    } else {
+      call1("Transpose", m.clone())
+    };
+    let product =
+      evaluate_expr_to_expr(&call("Dot", vec![transpose, m.clone()]))?;
+    let Expr::List(prows) = &product else {
+      return Ok(bool_expr(false));
+    };
+    for (i, r) in prows.iter().enumerate() {
+      let Expr::List(row) = r else {
+        return Ok(bool_expr(false));
+      };
+      for (j, x) in row.iter().enumerate() {
+        if !passes(x.clone(), Expr::Integer(i128::from(i == j)))? {
+          return Ok(bool_expr(false));
+        }
+      }
+    }
+    return Ok(bool_expr(true));
+  }
+  for i in 0..n {
+    for j in i..n {
+      let other = matrix[j][i].clone();
+      let other = match name {
+        "SymmetricMatrixQ" => other,
+        "AntisymmetricMatrixQ" => {
+          evaluate_expr_to_expr(&times2(Expr::Integer(-1), other))?
+        }
+        "HermitianMatrixQ" => {
+          evaluate_expr_to_expr(&call1("Conjugate", other))?
+        }
+        _ => evaluate_expr_to_expr(&times2(
+          Expr::Integer(-1),
+          call1("Conjugate", other),
+        ))?,
+      };
+      if !passes(matrix[i][j].clone(), other)? {
+        return Ok(bool_expr(false));
+      }
+    }
+  }
+  Ok(bool_expr(true))
 }

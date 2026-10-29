@@ -2325,3 +2325,269 @@ fn substitute_func_values(
     _ => expr.clone(),
   }
 }
+
+/// `RecurrenceTable[eqns, a, {n, nmin, nmax}, {k, kmin, kmax}, …]`: a
+/// recurrence in several indices. The equations are one recurrence
+/// `a[n + p, k + q, …] == rhs` and boundary values such as
+/// `a[0, k] == f[k]`, whose slots are integers or bare index variables.
+/// Each entry is computed recursively from the boundary values (memoized),
+/// so values outside the tabulated range are reached through the
+/// recurrence as they are needed.
+pub fn recurrence_table_multi_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use std::collections::HashMap;
+  let unevaluated = || Ok(unevaluated("RecurrenceTable", args));
+  let Expr::Identifier(func) = &args[1] else {
+    return unevaluated();
+  };
+  // Iterators {v, max} (from 1) or {v, min, max}.
+  let mut iters: Vec<(String, i128, i128)> = Vec::new();
+  for spec in &args[2..] {
+    let Expr::List(items) = spec else {
+      return unevaluated();
+    };
+    let Some(Expr::Identifier(v)) = items.first() else {
+      return unevaluated();
+    };
+    let mut ints = Vec::new();
+    for e in &items[1..] {
+      match crate::evaluator::evaluate_expr_to_expr(e)? {
+        Expr::Integer(i) => ints.push(i),
+        _ => return unevaluated(),
+      }
+    }
+    match ints.as_slice() {
+      [max] => iters.push((v.clone(), 1, *max)),
+      [min, max] => iters.push((v.clone(), *min, *max)),
+      _ => return unevaluated(),
+    }
+  }
+  let dims = iters.len();
+  let vars: Vec<&str> = iters.iter().map(|(v, _, _)| v.as_str()).collect();
+  let Expr::List(eqs) = &args[0] else {
+    return unevaluated();
+  };
+
+  // The integer offset of `slot` from the index variable `v`, when the slot
+  // is `v + offset`.
+  let offset_of =
+    |slot: &Expr, v: &str| -> Result<Option<i128>, InterpreterError> {
+      let at = |x: i128| {
+        crate::evaluator::evaluate_expr_to_expr(
+          &crate::syntax::substitute_variable(slot, v, &Expr::Integer(x)),
+        )
+      };
+      Ok(match (at(0)?, at(1)?) {
+        (Expr::Integer(a), Expr::Integer(b)) if b - a == 1 => Some(a),
+        _ => None,
+      })
+    };
+  enum Slot {
+    Fixed(i128),
+    Free,
+  }
+  // (slots, value expression in the index variables)
+  let mut boundaries: Vec<(Vec<Slot>, Expr)> = Vec::new();
+  // (offsets, rhs)
+  let mut recurrence: Option<(Vec<i128>, Expr)> = None;
+  let call_slots = |e: &Expr| -> Option<Vec<Expr>> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == func && args.len() == dims =>
+      {
+        Some(args.to_vec())
+      }
+      _ => None,
+    }
+  };
+  for eq in eqs.iter() {
+    let Some((lhs, rhs)) = extract_equation(eq) else {
+      return unevaluated();
+    };
+    let mut handled = false;
+    for (side, other) in [(&lhs, &rhs), (&rhs, &lhs)] {
+      let Some(slots) = call_slots(side) else {
+        continue;
+      };
+      // A boundary: every slot an integer or its own bare index variable.
+      let boundary: Option<Vec<Slot>> = slots
+        .iter()
+        .enumerate()
+        .map(|(i, s)| match s {
+          Expr::Integer(c) => Some(Slot::Fixed(*c)),
+          Expr::Identifier(v) if v == vars[i] => Some(Slot::Free),
+          _ => None,
+        })
+        .collect();
+      if let Some(b) = boundary
+        && b.iter().any(|s| matches!(s, Slot::Fixed(_)))
+      {
+        boundaries.push((b, other.clone()));
+        handled = true;
+        break;
+      }
+      let mut offsets = Vec::with_capacity(dims);
+      for (i, s) in slots.iter().enumerate() {
+        match offset_of(s, vars[i])? {
+          Some(o) => offsets.push(o),
+          None => break,
+        }
+      }
+      if offsets.len() == dims && recurrence.is_none() {
+        recurrence = Some((offsets, other.clone()));
+        handled = true;
+        break;
+      }
+    }
+    if !handled {
+      return unevaluated();
+    }
+  }
+  let Some((offsets, rhs)) = recurrence else {
+    return unevaluated();
+  };
+
+  struct Ctx<'a> {
+    func: &'a str,
+    vars: &'a [&'a str],
+    boundaries: &'a [(Vec<Slot>, Expr)],
+    offsets: &'a [i128],
+    rhs: &'a Expr,
+    memo: HashMap<Vec<i128>, Expr>,
+    depth: usize,
+  }
+  fn value(
+    ctx: &mut Ctx,
+    idx: &[i128],
+  ) -> Result<Option<Expr>, InterpreterError> {
+    if let Some(v) = ctx.memo.get(idx) {
+      return Ok(Some(v.clone()));
+    }
+    if ctx.depth > 2000 {
+      return Ok(None);
+    }
+    let bindings: Vec<(String, Expr)>;
+    let template: Expr;
+    if let Some((_, val)) = ctx.boundaries.iter().find(|(slots, _)| {
+      slots
+        .iter()
+        .zip(idx)
+        .all(|(s, i)| !matches!(s, Slot::Fixed(c) if c != i))
+    }) {
+      bindings = ctx
+        .vars
+        .iter()
+        .zip(idx)
+        .map(|(v, i)| (v.to_string(), Expr::Integer(*i)))
+        .collect();
+      template = val.clone();
+    } else {
+      bindings = ctx
+        .vars
+        .iter()
+        .zip(idx.iter().zip(ctx.offsets))
+        .map(|(v, (i, o))| (v.to_string(), Expr::Integer(i - o)))
+        .collect();
+      template = ctx.rhs.clone();
+    }
+    let refs: Vec<(&str, &Expr)> =
+      bindings.iter().map(|(n, e)| (n.as_str(), e)).collect();
+    let instantiated = crate::syntax::substitute_variables(&template, &refs);
+    ctx.depth += 1;
+    let replaced = replace_calls(ctx, &instantiated);
+    ctx.depth -= 1;
+    let Some(replaced) = replaced? else {
+      return Ok(None);
+    };
+    let v = crate::evaluator::evaluate_expr_to_expr(&replaced)?;
+    ctx.memo.insert(idx.to_vec(), v.clone());
+    Ok(Some(v))
+  }
+  // Replace every call of the function by its computed value.
+  fn replace_calls(
+    ctx: &mut Ctx,
+    e: &Expr,
+  ) -> Result<Option<Expr>, InterpreterError> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == ctx.func && args.len() == ctx.vars.len() =>
+      {
+        let mut idx = Vec::with_capacity(args.len());
+        for a in args.iter() {
+          match crate::evaluator::evaluate_expr_to_expr(a)? {
+            Expr::Integer(i) => idx.push(i),
+            _ => return Ok(None),
+          }
+        }
+        value(ctx, &idx)
+      }
+      Expr::FunctionCall { name, args } => {
+        let mut out = Vec::with_capacity(args.len());
+        for a in args.iter() {
+          match replace_calls(ctx, a)? {
+            Some(x) => out.push(x),
+            None => return Ok(None),
+          }
+        }
+        Ok(Some(Expr::FunctionCall {
+          name: name.clone(),
+          args: out.into(),
+        }))
+      }
+      Expr::List(items) => {
+        let mut out = Vec::with_capacity(items.len());
+        for a in items.iter() {
+          match replace_calls(ctx, a)? {
+            Some(x) => out.push(x),
+            None => return Ok(None),
+          }
+        }
+        Ok(Some(Expr::List(out.into())))
+      }
+      other => {
+        // Operators kept in their own node types are evaluated whole.
+        let ev = crate::evaluator::evaluate_expr_to_expr(other)?;
+        if matches!(&ev, Expr::FunctionCall { .. } | Expr::List(_)) {
+          return replace_calls(ctx, &ev);
+        }
+        Ok(Some(ev))
+      }
+    }
+  }
+  let mut ctx = Ctx {
+    func,
+    vars: &vars,
+    boundaries: &boundaries,
+    offsets: &offsets,
+    rhs: &rhs,
+    memo: HashMap::new(),
+    depth: 0,
+  };
+  fn table(
+    ctx: &mut Ctx,
+    iters: &[(String, i128, i128)],
+    idx: &mut Vec<i128>,
+  ) -> Result<Option<Expr>, InterpreterError> {
+    let level = idx.len();
+    if level == iters.len() {
+      return value(ctx, idx);
+    }
+    let (_, lo, hi) = iters[level];
+    let mut row = Vec::new();
+    for i in lo..=hi {
+      idx.push(i);
+      let v = table(ctx, iters, idx)?;
+      idx.pop();
+      match v {
+        Some(v) => row.push(v),
+        None => return Ok(None),
+      }
+    }
+    Ok(Some(Expr::List(row.into())))
+  }
+  match table(&mut ctx, &iters, &mut Vec::new())? {
+    Some(t) => Ok(t),
+    None => unevaluated(),
+  }
+}

@@ -1086,6 +1086,31 @@ pub fn dispatch_math_functions(
     "RootMeanSquare" if args.len() == 1 => {
       return Some(crate::functions::math_ast::root_mean_square_ast(args));
     }
+    // Covariance[dist, i, j] / Correlation[dist, i, j]: the (i, j) entry
+    // of the distribution's covariance / correlation matrix.
+    "Covariance" | "Correlation"
+      if args.len() == 3 && matches!(args[0], Expr::FunctionCall { .. }) =>
+    {
+      let (Some(i), Some(j)) = (expr_to_i128(&args[1]), expr_to_i128(&args[2]))
+      else {
+        return None;
+      };
+      let m =
+        match crate::evaluator::evaluate_function_call_ast(name, &args[..1]) {
+          Ok(m) => m,
+          Err(e) => return Some(Err(e)),
+        };
+      if let Expr::List(rows) = &m
+        && i >= 1
+        && (i as usize) <= rows.len()
+        && let Expr::List(row) = &rows[i as usize - 1]
+        && j >= 1
+        && (j as usize) <= row.len()
+      {
+        return Some(Ok(row[j as usize - 1].clone()));
+      }
+      return None;
+    }
     "Covariance" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
@@ -2592,6 +2617,44 @@ pub fn dispatch_math_functions(
     "PrimeOmega" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_omega_ast(args));
     }
+    // PrimeNu[n, GaussianIntegers -> True]: the number of distinct Gaussian
+    // primes (up to units) dividing n.
+    "PrimeNu"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GaussianIntegers")
+            && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True" || b == "False")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[1] else {
+        return None;
+      };
+      if matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False") {
+        return Some(crate::functions::math_ast::prime_nu_ast(&args[..1]));
+      }
+      if !matches!(&args[0], Expr::Integer(n) if *n != 0)
+        && !matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Complex")
+      {
+        return None;
+      }
+      let factors = match crate::functions::math_ast::factor_integer_ast(args) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return None;
+      };
+      let units = ["1", "-1", "I", "-I", "Complex[0, 1]", "Complex[0, -1]"];
+      let count = pairs
+        .iter()
+        .filter(|p| match p {
+          Expr::List(pair) if !pair.is_empty() => {
+            !units.contains(&expr_to_string(&pair[0]).as_str())
+          }
+          _ => false,
+        })
+        .count();
+      return Some(Ok(Expr::Integer(count as i128)));
+    }
     "PrimeNu" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_nu_ast(args));
     }
@@ -2953,15 +3016,16 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::rationalize_ast(args));
     }
     // NumeratorDenominator[e] = {Numerator[e], Denominator[e]}
-    "NumeratorDenominator" if args.len() == 1 => {
-      let num = crate::evaluator::evaluate_function_call_ast(
-        "Numerator",
-        std::slice::from_ref(&args[0]),
-      );
-      let den = crate::evaluator::evaluate_function_call_ast(
-        "Denominator",
-        std::slice::from_ref(&args[0]),
-      );
+    // NumeratorDenominator[e, Trig -> b] passes the option on to both.
+    "NumeratorDenominator"
+      if args.len() == 1
+        || (args.len() == 2
+          && matches!(&args[1], Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Trig"))) =>
+    {
+      let num = crate::evaluator::evaluate_function_call_ast("Numerator", args);
+      let den =
+        crate::evaluator::evaluate_function_call_ast("Denominator", args);
       return match (num, den) {
         (Ok(n), Ok(d)) => Some(Ok(Expr::List(vec![n, d].into()))),
         (Err(e), _) | (_, Err(e)) => Some(Err(e)),
@@ -3270,6 +3334,34 @@ pub fn dispatch_math_functions(
     }
     "PowerExpand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::power_expand_ast(args));
+    }
+    // Variables[expr, Modulus -> p]: the variables left once the
+    // coefficients are reduced modulo p.
+    "Variables"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Modulus")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[1] else {
+        return None;
+      };
+      let reduced = match replacement.as_ref() {
+        Expr::Integer(0) => args[0].clone(),
+        Expr::Integer(p) if *p > 0 => {
+          match crate::evaluator::evaluate_function_call_ast(
+            "PolynomialMod",
+            &[args[0].clone(), Expr::Integer(*p)],
+          ) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        _ => return None,
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Variables",
+        &[reduced],
+      ));
     }
     "Variables" if args.len() == 1 => {
       return Some(crate::functions::math_ast::variables_ast(args));
@@ -4212,16 +4304,28 @@ pub fn dispatch_math_functions(
         crate::functions::image_ast::NeighborhoodRange::RoundedUp,
       ));
     }
-    "Upsample" if args.len() == 2 => {
-      // Upsample[list, n] — insert n-1 zeros between each element
+    "Upsample" if args.len() == 2 || args.len() == 3 => {
+      // Upsample[list, n] — insert n-1 zeros after each element;
+      // Upsample[list, n, offset] — each element sits at position offset
+      // (1..n) of its block of n.
       if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
-        let n = n as usize;
-        if n > 0 {
-          let mut result = Vec::new();
+        let offset = match args.get(2) {
+          None => Some(1),
+          Some(o) => expr_to_i128(o),
+        };
+        if let Some(offset) = offset
+          && n > 0
+          && (1..=n).contains(&offset)
+        {
+          let (n, offset) = (n as usize, offset as usize);
+          let mut result = Vec::with_capacity(elems.len() * n);
           for elem in elems {
-            result.push(elem.clone());
-            for _ in 1..n {
-              result.push(Expr::Integer(0));
+            for i in 1..=n {
+              result.push(if i == offset {
+                elem.clone()
+              } else {
+                Expr::Integer(0)
+              });
             }
           }
           return Some(Ok(Expr::List(result.into())));

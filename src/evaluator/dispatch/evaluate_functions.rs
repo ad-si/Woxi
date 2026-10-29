@@ -11439,6 +11439,31 @@ fn evaluate_function_call_ast_inner(
     ));
     return Ok(unevaluated(name, args));
   }
+  // Erosion / Dilation [array, r, Padding -> c]: the array is extended by
+  // r cells of value c on every side before filtering, then cropped back.
+  if matches!(name, "Erosion" | "Dilation")
+    && args.len() == 3
+    && matches!(&args[0], Expr::List(_))
+    && let Expr::Integer(r) = &args[1]
+    && *r >= 0
+    && let Expr::Rule {
+      pattern,
+      replacement,
+    } = &args[2]
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Padding")
+    && matches!(replacement.as_ref(), Expr::Integer(_) | Expr::Real(_))
+  {
+    let padded = evaluate_function_call_ast(
+      "ArrayPad",
+      &[args[0].clone(), args[1].clone(), (**replacement).clone()],
+    )?;
+    if let Some(filtered) = morphological_op(name, &padded, &args[1]) {
+      return evaluate_function_call_ast(
+        "ArrayPad",
+        &[filtered?, Expr::Integer(-*r)],
+      );
+    }
+  }
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
   {

@@ -1277,6 +1277,7 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "GatherBy"
       | "SplitBy"
       | "DeleteDuplicatesBy"
+      | "CountDistinctBy"
       | "KeyExistsQ"
       | "ReplaceList"
   )
