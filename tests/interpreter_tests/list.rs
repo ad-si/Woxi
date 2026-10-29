@@ -19676,6 +19676,23 @@ mod map_at_specs_and_messages {
 mod pad_left_right_specs_and_messages {
   use super::*;
 
+  // `Automatic` in the length list is the ragged maximum at that level.
+  #[test]
+  fn automatic_level_in_length_list() {
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3}}, {Automatic, 3}]").unwrap(),
+      "{{1, 2, 0}, {3, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3}}, {Automatic, 3}, x]").unwrap(),
+      "{{x, 1, 2}, {x, x, 3}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4, 5, 6}}, {3, Automatic}]").unwrap(),
+      "{{1, 2, 0, 0}, {3, 4, 5, 6}, {0, 0, 0, 0}}"
+    );
+  }
+
   #[test]
   fn negative_length_pads_opposite_side() {
     // Regression: negative n used to return {}

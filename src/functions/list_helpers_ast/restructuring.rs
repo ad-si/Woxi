@@ -1870,10 +1870,18 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Length specification: a machine integer or a list of them.
+  // `Automatic` within the list stands for the ragged maximum at its level.
+  let ragged = ragged_dims(subject);
   let (spec, spec_is_list): (Vec<i128>, bool) = match &args[1] {
     Expr::List(items) => {
-      if let Some(ns) =
-        items.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+      if let Some(ns) = items
+        .iter()
+        .enumerate()
+        .map(|(level, e)| match e {
+          Expr::Identifier(s) if s == "Automatic" => ragged.get(level).copied(),
+          _ => strict_int(e),
+        })
+        .collect::<Option<Vec<i128>>>()
       {
         (ns, true)
       } else {

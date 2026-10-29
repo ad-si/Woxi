@@ -5019,7 +5019,167 @@ fn eigenvectors_impl(
     return Ok(result);
   }
 
+  if let Some(result) = complex_machine_eigenvectors(args, &matrix) {
+    return Ok(result);
+  }
+
   Ok(unevaluated("Eigenvectors", args))
+}
+
+/// Eigenvectors of a machine matrix with complex entries, one per eigenvalue
+/// in `Eigenvalues`' order, found by inverse iteration on the real 2n×2n
+/// embedding of `A - λI`. The vectors of a repeated eigenvalue are kept
+/// orthogonal to each other, so a normal matrix gets a full eigenbasis. As
+/// LAPACK's `zgeev` does, each vector has unit length and a real, positive
+/// component of largest modulus.
+fn complex_machine_eigenvectors(
+  args: &[Expr],
+  matrix: &[Vec<Expr>],
+) -> Option<Expr> {
+  type C = (f64, f64);
+  let n = matrix.len();
+  if !matrix.iter().flatten().any(|c| {
+    crate::functions::math_ast::try_extract_complex_float(c)
+      .is_some_and(|(_, im)| im != 0.0)
+  }) || !matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::contains_inexact_real)
+  {
+    return None;
+  }
+  let entries: Vec<Vec<C>> = matrix
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|c| {
+          crate::functions::math_ast::try_extract_complex_float(c)
+            .or_else(|| try_eval_to_f64(c).map(|re| (re, 0.0)))
+        })
+        .collect::<Option<Vec<_>>>()
+    })
+    .collect::<Option<_>>()?;
+  let values = eigenvalues_ast(args).ok()?;
+  let Expr::List(values) = &values else {
+    return None;
+  };
+  let values: Vec<C> = values
+    .iter()
+    .map(|v| {
+      crate::functions::math_ast::try_extract_complex_float(v)
+        .or_else(|| try_eval_to_f64(v).map(|re| (re, 0.0)))
+    })
+    .collect::<Option<_>>()?;
+  if values.len() != n {
+    return None;
+  }
+  let scale = entries
+    .iter()
+    .flatten()
+    .fold(1.0f64, |acc, &(re, im)| acc.max(re.hypot(im)));
+  let dot = |a: &[C], b: &[C]| -> C {
+    // conj(a) . b
+    a.iter()
+      .zip(b)
+      .fold((0.0, 0.0), |acc, (&(ar, ai), &(br, bi))| {
+        (acc.0 + ar * br + ai * bi, acc.1 + ar * bi - ai * br)
+      })
+  };
+  let normalize = |v: &mut Vec<C>| -> bool {
+    let norm = v.iter().map(|(r, i)| r * r + i * i).sum::<f64>().sqrt();
+    if norm <= 1e-300 || !norm.is_finite() {
+      return false;
+    }
+    v.iter_mut().for_each(|c| *c = (c.0 / norm, c.1 / norm));
+    true
+  };
+  let mut found: Vec<(C, Vec<C>)> = Vec::with_capacity(n);
+  let mut out = Vec::with_capacity(n);
+  for (k, &(lr, li)) in values.iter().enumerate() {
+    let cluster: Vec<Vec<C>> = found
+      .iter()
+      .filter(|((r, i), _)| (r - lr).hypot(i - li) <= 1e-8 * scale)
+      .map(|(_, v)| v.clone())
+      .collect();
+    let (sr, si) = (lr + scale * 1e-10, li);
+    let mut m = vec![vec![0.0; 2 * n]; 2 * n];
+    for i in 0..n {
+      for j in 0..n {
+        let (mut ar, mut ai) = entries[i][j];
+        if i == j {
+          ar -= sr;
+          ai -= si;
+        }
+        m[i][j] = ar;
+        m[i][n + j] = -ai;
+        m[n + i][j] = ai;
+        m[n + i][n + j] = ar;
+      }
+    }
+    // A start vector of its own for each member of a cluster.
+    let mut v: Vec<C> = (0..n)
+      .map(|i| {
+        let t = (i * (k + 1)) as f64;
+        (
+          1.0 + 0.5 * (1.3 * t + 0.7).sin(),
+          0.5 * (0.9 * t + 0.3).cos(),
+        )
+      })
+      .collect();
+    let orthogonalize = |v: &mut Vec<C>| {
+      for u in &cluster {
+        let (pr, pi) = dot(u, v);
+        for (c, &(ur, ui)) in v.iter_mut().zip(u) {
+          *c = (c.0 - (pr * ur - pi * ui), c.1 - (pr * ui + pi * ur));
+        }
+      }
+    };
+    orthogonalize(&mut v);
+    if !normalize(&mut v) {
+      return None;
+    }
+    for _ in 0..4 {
+      let rhs: Vec<f64> =
+        v.iter().map(|c| c.0).chain(v.iter().map(|c| c.1)).collect();
+      let y = solve_linear_system(&m, &rhs)?;
+      v = (0..n).map(|i| (y[i], y[n + i])).collect();
+      orthogonalize(&mut v);
+      if !normalize(&mut v) {
+        return None;
+      }
+    }
+    // Rotate the phase so the largest-modulus component — the first of
+    // several equally large ones, as LAPACK picks it — is real positive.
+    let largest = v.iter().map(|c| c.0.hypot(c.1)).fold(0.0, f64::max);
+    let bidx = v
+      .iter()
+      .position(|c| c.0.hypot(c.1) >= largest * (1.0 - 1e-12))?;
+    let (br, bi) = v[bidx];
+    let mag = br.hypot(bi);
+    let (pr, pi) = (br / mag, -bi / mag);
+    let rotated: Vec<C> = v
+      .iter()
+      .enumerate()
+      .map(|(i, &(re, im))| {
+        if i == bidx {
+          (mag, 0.0)
+        } else {
+          (re * pr - im * pi, re * pi + im * pr)
+        }
+      })
+      .collect();
+    out.push(Expr::List(
+      rotated
+        .iter()
+        .map(|&(re, im)| {
+          crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+        })
+        .collect(),
+    ));
+    found.push(((lr, li), rotated));
+  }
+  Some(Expr::List(out.into()))
 }
 
 /// Eigenvectors of an exact complex 2×2 matrix, following wolframscript's
