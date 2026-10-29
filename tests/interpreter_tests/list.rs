@@ -16781,6 +16781,26 @@ mod table_infinity_step {
 mod option_value_string_key {
   use super::*;
 
+  // `OptionsPattern[name -> default]` with one rule (no list) supplies
+  // that default (Demonstration PredictiveScoresAndUltimateTestPassage).
+  #[test]
+  fn single_rule_options_pattern_default() {
+    assert_eq!(
+      interpret(
+        r#"g[x_, opts : OptionsPattern["inputRange" -> {120, 180}]] := OptionValue["inputRange"]; {g[1], g[1, "inputRange" -> {1, 2}]}"#
+      )
+      .unwrap(),
+      "{{120, 180}, {1, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "h[OptionsPattern[b -> 3]] := OptionValue[b]; {h[], h[b -> 4]}"
+      )
+      .unwrap(),
+      "{3, 4}"
+    );
+  }
+
   #[test]
   fn string_key_resolves_in_options_pattern() {
     clear_state();
@@ -23866,6 +23886,28 @@ mod atomic_numbers_have_no_parts {
 /// it was.
 mod part_assignment_failures {
   use super::*;
+
+  // A value rather than a variable at the base of a part assignment —
+  // `#` filled in by a pure function (Demonstration
+  // PolarVersusAxialVectors) — gets Set::setps and yields the new value;
+  // it used to stop the evaluation.
+  #[test]
+  fn value_at_the_base() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "({#[[1]] -= 20, #[[2]], #[[3]] += 10} &)[{1, 2, 3}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{-19, 2, 13}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Set::setps: {1, 2, 3} in the part assignment is not a symbol.",
+        "Set::setps: {1, 2, 3} in the part assignment is not a symbol."
+      ]
+    );
+    assert_eq!(interpret("Quiet[{1, 2, 3}[[1]] = 5]").unwrap(), "5");
+  }
 
   fn failing(code: &str) -> (String, Vec<String>) {
     let result = interpret_with_stdout(code).unwrap();

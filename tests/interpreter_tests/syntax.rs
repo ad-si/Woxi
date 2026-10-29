@@ -9354,6 +9354,26 @@ mod parallel_table {
 mod sinc {
   use super::*;
 
+  // A machine complex argument evaluates, an exact one stays symbolic; the
+  // derivative is written out (Demonstration SingleSlitDiffraction's
+  // complex-start FindRoot on D[Sinc[…], θ] stopped the evaluation).
+  #[test]
+  fn complex_argument_and_derivative() {
+    assert_eq!(
+      interpret("{Sinc[I], Sinc[2.5 I], D[Sinc[x], x]}").unwrap(),
+      "{Sinc[I], 2.4200817924159153 + 0.*I, Cos[x]/x - Sin[x]/x^2}"
+    );
+    assert_eq!(
+      interpret("D[Sinc[x], x] /. x -> 1. + 2. I").unwrap(),
+      "-0.7478572632983036 - 0.6817920755530464*I"
+    );
+    assert_eq!(
+      interpret("FindRoot[D[Sinc[Pi 0.8 Sin[t]], t], {t, ArcSin[1.5/0.8]}]")
+        .unwrap(),
+      "{t -> 1.5707963267948966 - 1.1847667860877467*I}"
+    );
+  }
+
   #[test]
   fn sinc_zero() {
     assert_eq!(interpret("Sinc[0]").unwrap(), "1");

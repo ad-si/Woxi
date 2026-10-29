@@ -925,6 +925,31 @@ mod rescale {
 mod bin_counts {
   use super::*;
 
+  // A bin width that is not positive gets `::step` and the call stays
+  // unevaluated; it used to stop the evaluation.
+  #[test]
+  fn non_positive_step() {
+    for (code, message) in [
+      (
+        "BinCounts[{1, 2}, {0, 10, 0}]",
+        "BinCounts::step: The bin step size 0 is expected to be positive.",
+      ),
+      (
+        "BinCounts[{{1, 2}}, {0, 10, -1}, {0, 10, 1}]",
+        "BinCounts::step: The bin step size -1 is expected to be positive.",
+      ),
+      (
+        "BinLists[{1, 2}, {0, 10, 0}]",
+        "BinLists::step: The bin step size 0 is expected to be positive.",
+      ),
+    ] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert_eq!(r.warnings, vec![message.to_string()]);
+    }
+  }
+
   #[test]
   fn bin_counts_exact_numeric_edges() {
     assert_eq!(

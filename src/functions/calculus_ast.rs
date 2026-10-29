@@ -3339,6 +3339,27 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Ok(simplify(times2(dz, result)))
           }
         }
+        // Sinc[z]: D[Sinc[z], z] = Cos[z]/z - Sin[z]/z^2, written out as
+        // wolframscript does.
+        "Sinc" if args.len() == 1 => {
+          let dz = differentiate(&args[0], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let z = args[0].clone();
+          let derivative = crate::evaluator::evaluate_expr_to_expr(&plus2(
+            div2(call1("Cos", z.clone()), z.clone()),
+            times2(
+              Expr::Integer(-1),
+              div2(call1("Sin", z.clone()), pow2(z, Expr::Integer(2))),
+            ),
+          ))?;
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(derivative)
+          } else {
+            Ok(simplify(times2(dz, derivative)))
+          }
+        }
         // SinIntegral[z]: D[SinIntegral[z], z] = Sinc[z] * z'. Wolfram prints
         // the derivative with the named Sinc rather than Sin[z]/z.
         "SinIntegral" if args.len() == 1 => {
@@ -16278,6 +16299,16 @@ fn unevaluated_nintegrate(args: &[Expr]) -> Expr {
   }
 }
 
+/// `NIntegrate::ilim` for a second argument that is no `{x, a, b, …}`
+/// range; the call stays unevaluated.
+fn nintegrate_ilim(args: &[Expr]) -> Expr {
+  crate::emit_message(&format!(
+    "NIntegrate::ilim: Invalid integration variable or limit(s) in {}.",
+    crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+  ));
+  call("NIntegrate", args.to_vec())
+}
+
 fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -16744,12 +16775,18 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() >= 3 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "NIntegrate: first element of integration range must be a symbol"
-              .into(),
+        raw @ (Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)) => {
+          crate::emit_message(&format!(
+            "NIntegrate::itraw: Raw object {} cannot be used as an iterator.",
+            crate::syntax::format_expr(raw, crate::syntax::ExprForm::Output)
           ));
+          return Ok(call("NIntegrate", args.to_vec()));
         }
+        _ => return Ok(nintegrate_ilim(args)),
       };
       let mut evaluated = Vec::with_capacity(items.len() - 1);
       for item in items.iter().skip(1) {
@@ -16757,11 +16794,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       (var_name, evaluated)
     }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "NIntegrate expects {var, lo, hi} as second argument".into(),
-      ));
-    }
+    _ => return Ok(nintegrate_ilim(args)),
   };
 
   // Waypoints that evaluate to a numeric quantity with a nonzero imaginary

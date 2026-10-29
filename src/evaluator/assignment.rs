@@ -2453,11 +2453,10 @@ fn downvalue_arg_info(
         defaults.push(None);
         heads.push(None);
         blank_types.push(3); // BlankNullSequence - matches 0 or more args
-        // Extract inline defaults from OptionsPattern[{a -> a0, ...}]
-        if op_args.len() == 1
-          && let Expr::List(rules) = &op_args[0]
-        {
-          inline_opts_defaults = Some(rules.to_vec());
+        // Extract inline defaults from OptionsPattern[{a -> a0, ...}] or
+        // a single OptionsPattern[a -> a0]
+        if op_args.len() == 1 {
+          inline_opts_defaults = inline_option_defaults(&op_args[0]);
         }
       }
       // A list without any pattern in it is a literal argument like any
@@ -2610,10 +2609,8 @@ fn downvalue_arg_info(
             defaults.push(None);
             heads.push(None);
             blank_types.push(3); // BlankNullSequence — 0 or more
-            if op_args.len() == 1
-              && let Expr::List(rules) = &op_args[0]
-            {
-              inline_opts_defaults = Some(rules.to_vec());
+            if op_args.len() == 1 {
+              inline_opts_defaults = inline_option_defaults(&op_args[0]);
             }
           }
           // `Pattern[name, {p1, p2, ...}]` — named list pattern.
@@ -2850,6 +2847,16 @@ fn part_assignment_rhs(
 }
 
 /// `var[[indices]] = rhs`, or `var[[indices]] := rhs` with `delayed`.
+/// The defaults an `OptionsPattern[spec]` names: a list of rules, or one
+/// rule on its own (`OptionsPattern["range" -> {1, 2}]`).
+fn inline_option_defaults(spec: &Expr) -> Option<Vec<Expr>> {
+  match spec {
+    Expr::List(rules) => Some(rules.to_vec()),
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![spec.clone()]),
+    _ => None,
+  }
+}
+
 fn assign_part(
   lhs: &Expr,
   rhs: &Expr,
@@ -2883,10 +2890,22 @@ fn assign_part(
 
   let var_name = match current {
     Expr::Identifier(name) => name.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Part assignment requires a variable name".into(),
+    // A value, not a variable, at the base (`{1, 2, 3}[[1]] = 5`, or `#`
+    // filled in by a pure function): nothing is assigned, and the right
+    // side is the result.
+    base => {
+      let shown = crate::evaluator::evaluate_expr_to_expr(base)
+        .unwrap_or_else(|_| base.clone());
+      crate::emit_message(&format!(
+        "{}::setps: {} in the part assignment is not a symbol.",
+        if delayed { "SetDelayed" } else { "Set" },
+        crate::syntax::format_expr(&shown, crate::syntax::ExprForm::Output)
       ));
+      return if delayed {
+        Ok(Expr::Identifier("$Failed".to_string()))
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(rhs)
+      };
     }
   };
 

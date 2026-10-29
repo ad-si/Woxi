@@ -5024,6 +5024,32 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A second argument that is no range gets NIntegrate::ilim (or ::itraw
+  // for a number in the variable slot) and stays unevaluated; it used to
+  // stop the evaluation.
+  #[test]
+  fn invalid_range_messages() {
+    for (code, message) in [
+      (
+        "NIntegrate[x, foo]",
+        "NIntegrate::ilim: Invalid integration variable or limit(s) in foo.",
+      ),
+      (
+        "NIntegrate[x, {x, a}]",
+        "NIntegrate::ilim: Invalid integration variable or limit(s) in {x, a}.",
+      ),
+      (
+        "NIntegrate[x, {2, 0, 1}]",
+        "NIntegrate::itraw: Raw object 2 cannot be used as an iterator.",
+      ),
+    ] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert_eq!(r.warnings, vec![message.to_string()]);
+    }
+  }
+
   // An integrand of plain arithmetic is compiled once to float operations
   // instead of being evaluated as an expression (exact coefficients and all)
   // at every sample; a ParametricPlot of this endpoint-singular integral
@@ -5571,9 +5597,11 @@ mod nintegrate {
 
   #[test]
   fn nintegrate_error_no_range() {
-    // NIntegrate requires {var, lo, hi}
-    let result = interpret("NIntegrate[x^2, x]");
-    assert!(result.is_err());
+    // NIntegrate requires {var, lo, hi}: NIntegrate::ilim, unevaluated.
+    assert_eq!(
+      interpret("NIntegrate[x^2, x]").unwrap(),
+      "NIntegrate[x^2, x]"
+    );
   }
 
   #[test]

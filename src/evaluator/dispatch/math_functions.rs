@@ -2096,9 +2096,18 @@ pub fn dispatch_math_functions(
         }
       }
       let sin_result = crate::functions::math_ast::sin_ast(args);
+      // A machine complex value is a value too (Sinc[1. + 2. I]); an exact
+      // one stays Sinc[I], as in wolframscript.
+      let inexact_complex = |v: &Expr| {
+        crate::syntax::contains_inexact(&args[0])
+          && crate::functions::math_ast::numeric_utils::try_extract_complex_f64(
+            v,
+          )
+          .is_some()
+      };
       match sin_result {
         Ok(ref sin_val) => {
-          if !not_a_value(sin_val) {
+          if !not_a_value(sin_val) || inexact_complex(sin_val) {
             let div_expr = div2(sin_val.clone(), args[0].clone());
             return Some(crate::evaluator::evaluate_expr_to_expr(&div_expr));
           }

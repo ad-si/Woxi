@@ -1489,6 +1489,19 @@ fn edge_to_f64(e: &Expr) -> Option<f64> {
   None
 }
 
+/// `head::step` for a bin width that is not positive (the call then stays
+/// unevaluated).
+fn bin_step_message(head: &str, dx: f64) {
+  let shown = if dx.fract() == 0.0 && dx.abs() < 1e15 {
+    format!("{}", dx as i64)
+  } else {
+    crate::syntax::format_expr(&Expr::Real(dx), crate::syntax::ExprForm::Output)
+  };
+  crate::emit_message(&format!(
+    "{head}::step: The bin step size {shown} is expected to be positive."
+  ));
+}
+
 /// BinCounts[{{x1, y1, ...}, ...}, {xmin, xmax, dx}, {ymin, ymax, dy}, ...]
 /// — multidimensional bin counts. The result nests one level per
 /// coordinate (first coordinate outermost); points outside any spec's
@@ -1511,9 +1524,8 @@ fn bin_counts_nd(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return unevaluated_result();
     };
     if dx <= 0.0 {
-      return Err(InterpreterError::EvaluationError(
-        "BinCounts: bin width must be positive".into(),
-      ));
+      bin_step_message("BinCounts", dx);
+      return unevaluated_result();
     }
     let n = ((max_v - min_v) / dx + 1e-9).floor().max(0.0) as usize;
     specs.push((min_v, dx, n));
@@ -1684,9 +1696,8 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if dx <= 0.0 {
-    return Err(InterpreterError::EvaluationError(
-      "BinCounts: bin width must be positive".into(),
-    ));
+    bin_step_message("BinCounts", dx);
+    return Ok(unevaluated("BinCounts", args));
   }
 
   // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
@@ -1837,9 +1848,8 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   if dx <= 0.0 {
-    return Err(InterpreterError::EvaluationError(
-      "BinLists: bin width must be positive".into(),
-    ));
+    bin_step_message("BinLists", dx);
+    return Ok(unevaluated("BinLists", args));
   }
 
   // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
