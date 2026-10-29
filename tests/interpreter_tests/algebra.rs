@@ -23432,3 +23432,23 @@ mod nminimize_radical_objective {
     assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
   }
 }
+
+// A larger FindRoot system is solved with compiled equations and their
+// exact (forward-mode) gradients instead of a symbolic Jacobian
+// (Demonstration OperationOfADepropanizer: 47 s -> 7 s).
+mod find_root_compiled_system {
+  use super::*;
+
+  #[test]
+  fn twelve_coupled_equations() {
+    assert_eq!(
+      interpret(
+        "sol = FindRoot[Table[x[i] - Cos[x[Mod[i, 12] + 1]]/2 - Exp[-x[i]^2]/3 - i/10 == 0, {i, 12}], \
+         Table[{x[i], 0}, {i, 12}]]; Round[10^8 (Table[x[i], {i, 12}] /. sol)]"
+      )
+      .unwrap(),
+      "{67919779, 74056033, 80114767, 86135178, 92072908, 98138622, 103758045, 110628414, \
+       114119615, 126492200, 116445629, 161369703}"
+    );
+  }
+}

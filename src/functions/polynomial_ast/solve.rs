@@ -12951,8 +12951,28 @@ fn find_root_multivariate(
   // the `None` fallback gives. Such equations are not differentiated
   // symbolically at all.
   const MAX_SYMBOLIC_JACOBIAN_LEAVES: usize = 2000;
+  // Equations of plain arithmetic are compiled once: their values and
+  // exact gradients (forward-mode differentiation over the compiled tree)
+  // then cost a pass over each equation, where the symbolic Jacobian of a
+  // large stage-by-stage model took most of a minute to differentiate and
+  // simplify, and every entry was re-evaluated as an expression.
+  // Only for larger systems: a small one keeps the expression evaluation,
+  // whose last digits agree with Wolfram's.
+  let compiled: Option<Vec<NumNode>> = if n >= 8 {
+    eqns
+      .iter()
+      .map(|f| compile_numeric(f, &vars).filter(|node| !node.has_fallback()))
+      .collect()
+  } else {
+    None
+  };
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
+    if compiled.is_some() {
+      // Not used: the compiled gradient stands for every entry.
+      jac.push(vec![Some(Expr::Integer(0)); n]);
+      continue;
+    }
     let mut row = Vec::with_capacity(n);
     let too_large =
       super::simplify::leaf_count(f) > MAX_SYMBOLIC_JACOBIAN_LEAVES;
@@ -13015,6 +13035,18 @@ fn find_root_multivariate(
                           hint: &[Option<f64>]|
    -> Result<Vec<Vec<f64>>, InterpreterError> {
     let mut jm = vec![vec![0.0; n]; n];
+    if let Some(nodes) = &compiled {
+      for (i, node) in nodes.iter().enumerate() {
+        let (_, grad) = node.eval_dual(x);
+        for (j, d) in grad {
+          jm[i][j] = d;
+        }
+      }
+      if jm.iter().flatten().all(|v| v.is_finite()) {
+        return Ok(jm);
+      }
+      jm = vec![vec![0.0; n]; n];
+    }
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
@@ -13174,6 +13206,13 @@ fn find_root_multivariate(
     // above already avoids by updating `best_x` right after each step.
     let eval_residual =
       |x: &[f64]| -> Result<(Vec<f64>, f64), InterpreterError> {
+        if let Some(nodes) = &compiled {
+          let fv: Vec<f64> = nodes.iter().map(|node| node.eval(x)).collect();
+          if fv.iter().all(|v| v.is_finite()) {
+            let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+            return Ok((fv, resid));
+          }
+        }
         let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
         let bindings: Vec<(&str, &Expr)> =
           vars.iter().map(String::as_str).zip(reals.iter()).collect();
@@ -19570,6 +19609,130 @@ impl NumNode {
       Self::Ln(a) => a.eval_plain(point).ln(),
       Self::Binary(f, a, b) => f(a.eval_plain(point), b.eval_plain(point)),
       Self::Fallback(..) => self.eval_fallback(point),
+    }
+  }
+
+  /// The value at `point` with its gradient, as `(variable, derivative)`
+  /// pairs sorted by variable (forward-mode differentiation; only the
+  /// variables the node mentions appear). A function known only as a
+  /// pointer (`Unary`, `Binary`) is differentiated by central differences
+  /// of that one function; a `Fallback` node by central differences of the
+  /// whole subexpression.
+  pub(crate) fn eval_dual(&self, point: &[f64]) -> (f64, Vec<(usize, f64)>) {
+    fn axpy(
+      a: f64,
+      x: &[(usize, f64)],
+      b: f64,
+      y: &[(usize, f64)],
+    ) -> Vec<(usize, f64)> {
+      let mut out = Vec::with_capacity(x.len() + y.len());
+      let (mut i, mut j) = (0, 0);
+      while i < x.len() || j < y.len() {
+        if j >= y.len() || (i < x.len() && x[i].0 < y[j].0) {
+          out.push((x[i].0, a * x[i].1));
+          i += 1;
+        } else if i >= x.len() || y[j].0 < x[i].0 {
+          out.push((y[j].0, b * y[j].1));
+          j += 1;
+        } else {
+          out.push((x[i].0, a * x[i].1 + b * y[j].1));
+          i += 1;
+          j += 1;
+        }
+      }
+      out
+    }
+    let scale = |a: f64, x: Vec<(usize, f64)>| -> Vec<(usize, f64)> {
+      x.into_iter().map(|(k, d)| (k, a * d)).collect()
+    };
+    let numeric_derivative = |f: &dyn Fn(f64) -> f64, a: f64| {
+      let h = 1e-6 * a.abs().max(1.0);
+      (f(a + h) - f(a - h)) / (2.0 * h)
+    };
+    match self {
+      Self::Const(c) => (*c, Vec::new()),
+      Self::Var(i) => (point[*i], vec![(*i, 1.0)]),
+      Self::Neg(a) => {
+        let (v, g) = a.eval_dual(point);
+        (-v, scale(-1.0, g))
+      }
+      Self::Add(xs) => xs.iter().fold((0.0, Vec::new()), |(v, g), x| {
+        let (xv, xg) = x.eval_dual(point);
+        (v + xv, axpy(1.0, &g, 1.0, &xg))
+      }),
+      Self::Mul(xs) => xs.iter().fold((1.0, Vec::new()), |(v, g), x| {
+        let (xv, xg) = x.eval_dual(point);
+        (v * xv, axpy(xv, &g, v, &xg))
+      }),
+      Self::Sub(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        (av - bv, axpy(1.0, &ag, -1.0, &bg))
+      }
+      Self::Div(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        (av / bv, axpy(1.0 / bv, &ag, -av / (bv * bv), &bg))
+      }
+      Self::Pow(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        let v = Self::Pow(Box::new(Self::Const(av)), Box::new(Self::Const(bv)))
+          .eval_plain(point);
+        // d(a^b) = b a^(b-1) da + a^b ln(a) db
+        let da = if bv == 0.0 {
+          0.0
+        } else {
+          bv * Self::Pow(
+            Box::new(Self::Const(av)),
+            Box::new(Self::Const(bv - 1.0)),
+          )
+          .eval_plain(point)
+        };
+        let db = if bg.is_empty() { 0.0 } else { v * av.ln() };
+        (v, axpy(da, &ag, db, &bg))
+      }
+      Self::Exp(a) => {
+        let (av, ag) = a.eval_dual(point);
+        let v = av.exp();
+        (v, scale(v, ag))
+      }
+      Self::Sqrt(a) => {
+        let (av, ag) = a.eval_dual(point);
+        let v = av.sqrt();
+        (v, scale(0.5 / v, ag))
+      }
+      Self::Ln(a) => {
+        let (av, ag) = a.eval_dual(point);
+        (av.ln(), scale(1.0 / av, ag))
+      }
+      Self::Unary(f, a) => {
+        let (av, ag) = a.eval_dual(point);
+        (f(av), scale(numeric_derivative(f, av), ag))
+      }
+      Self::Binary(f, a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        let da = numeric_derivative(&|t| f(t, bv), av);
+        let db = numeric_derivative(&|t| f(av, t), bv);
+        (f(av, bv), axpy(da, &ag, db, &bg))
+      }
+      Self::Fallback(..) => {
+        let v = self.eval_fallback(point);
+        let grad = (0..point.len())
+          .filter_map(|k| {
+            let h = 1e-7 * point[k].abs().max(1.0);
+            let mut p = point.to_vec();
+            p[k] += h;
+            let fp = self.eval_fallback(&p);
+            p[k] -= 2.0 * h;
+            let fm = self.eval_fallback(&p);
+            let d = (fp - fm) / (2.0 * h);
+            (d != 0.0).then_some((k, d))
+          })
+          .collect();
+        (v, grad)
+      }
     }
   }
 
