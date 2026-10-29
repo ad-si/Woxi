@@ -10,8 +10,125 @@ use crate::{ENV, StoredValue};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
+/// `Sqrt[c s1^e1 s2^e2 …]` of a monomial taken apart the way Solve
+/// reports roots: the even powers of the symbols come out
+/// (`Sqrt[a^2 b] → a Sqrt[b]`) and a negative coefficient becomes a factor
+/// `I` (`Sqrt[-a] → I Sqrt[a]`). `None` for anything but such a monomial.
+fn split_monomial_sqrt(arg: &Expr) -> Option<Expr> {
+  split_monomial_root(arg, 2)
+}
+
+/// The `n`th-root counterpart of [`split_monomial_sqrt`]: whole `n`th
+/// powers of the symbols come out (`(a^3 b)^(1/3) → a b^(1/3)`). Only a
+/// square root turns a negative coefficient into `I`; for a higher root
+/// that is `None`.
+fn split_monomial_root(arg: &Expr, n: i128) -> Option<Expr> {
+  fn factors(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().for_each(|a| factors(a, out));
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        factors(left, out);
+        factors(right, out);
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        out.push(Expr::Integer(-1));
+        factors(operand, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut parts = Vec::new();
+  factors(arg, &mut parts);
+  let mut coefficient = Expr::Integer(1);
+  let mut outside = Vec::new();
+  let mut inside = Vec::new();
+  let mut inside_denominator = Vec::new();
+  for part in parts {
+    if crate::functions::predicate_ast::is_numeric_q(&part)
+      && try_eval_to_f64(&part).is_some()
+    {
+      coefficient = times2(coefficient, part);
+      continue;
+    }
+    let (base, exponent) = match &part {
+      Expr::Identifier(_) => (part.clone(), 1),
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Identifier(_)) => match right.as_ref()
+      {
+        Expr::Integer(n) if *n != 0 => (*left.clone(), *n),
+        _ => return None,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(args[0], Expr::Identifier(_)) =>
+      {
+        match &args[1] {
+          Expr::Integer(n) if *n != 0 => (args[0].clone(), *n),
+          _ => return None,
+        }
+      }
+      _ => return None,
+    };
+    // Whole multiples of n come out; the rest stays under the root, in the
+    // denominator for a negative power (`Sqrt[a/b]` is `Sqrt[a]/Sqrt[b]`).
+    let whole = exponent / n;
+    if whole != 0 {
+      outside.push(pow2(base.clone(), Expr::Integer(whole)));
+    }
+    let rest = exponent % n;
+    if rest > 0 {
+      inside.push(pow2(base, Expr::Integer(rest)));
+    } else if rest < 0 {
+      inside_denominator.push(pow2(base, Expr::Integer(-rest)));
+    }
+  }
+  if outside.is_empty() && inside.is_empty() && inside_denominator.is_empty() {
+    return None;
+  }
+  let c = try_eval_to_f64(
+    &crate::evaluator::evaluate_expr_to_expr(&coefficient).ok()?,
+  )?;
+  let mut result = outside;
+  if c < 0.0 {
+    if n != 2 {
+      return None;
+    }
+    result.push(Expr::Identifier("I".to_string()));
+    coefficient = negate_expr(&coefficient);
+  }
+  let root = |e: Expr| {
+    if n == 2 {
+      make_sqrt(e)
+    } else {
+      pow2(e, make_rational(1, n))
+    }
+  };
+  result.push(root(times2(coefficient, times(inside))));
+  if !inside_denominator.is_empty() {
+    result.push(pow2(root(times(inside_denominator)), Expr::Integer(-1)));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&times(result)).ok()
+}
+
 fn strip_sqrt_square(expr: Expr) -> Expr {
   match &expr {
+    // Sqrt[c s^e …] of a monomial: even powers out, a negative sign as I.
+    e if is_sqrt(e).is_some_and(|arg| split_monomial_sqrt(arg).is_some()) => {
+      split_monomial_sqrt(is_sqrt(e).unwrap()).unwrap()
+    }
     // Sqrt[base^(2n)] → base^n
     e if is_sqrt(e).is_some() => {
       let sqrt_arg = is_sqrt(e).unwrap();
@@ -190,6 +307,65 @@ fn has_radical(expr: &Expr) -> bool {
 ///
 /// `NSolve[equation]` with the variable left out solves for whatever the
 /// equation contains, the way `Solve[equation]` does.
+/// The polynomial `Σ coeffs[k] var^k`.
+fn build_poly_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
+  plus(
+    coeffs
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !matches!(c, Expr::Integer(0)))
+      .map(|(k, c)| {
+        times(vec![c.clone(), pow(id_expr(var), Expr::Integer(k as i128))])
+      })
+      .collect(),
+  )
+}
+
+/// Solve `poly == 0` for `var` factor by factor when `FactorList` splits it
+/// into two or more factors in `var`; `None` when it does not split.
+fn solve_by_factor_list(
+  poly: &Expr,
+  var: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let factors = crate::evaluator::evaluate_function_call_ast(
+    "FactorList",
+    &[crate::evaluator::evaluate_expr_to_expr(poly)?],
+  )?;
+  let Expr::List(factors) = &factors else {
+    return Ok(None);
+  };
+  let mut in_var: Vec<(Expr, i128)> = Vec::new();
+  for f in factors {
+    let Expr::List(pair) = f else { return Ok(None) };
+    let [factor, Expr::Integer(m)] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if !is_constant_wrt(factor, var) {
+      in_var.push((factor.clone(), *m));
+    }
+  }
+  if in_var.len() < 2 && in_var.iter().all(|(_, m)| *m == 1) {
+    return Ok(None);
+  }
+  let mut all = Vec::new();
+  for (factor, multiplicity) in in_var {
+    let eq = Expr::Comparison {
+      operands: vec![factor, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let solved = solve_ast(&[eq, args[1].clone()])?;
+    let Expr::List(sols) = &solved else {
+      return Ok(None);
+    };
+    for _ in 0..multiplicity {
+      all.extend(sols.iter().cloned());
+    }
+  }
+  sort_solutions(&mut all);
+  Ok(Some(Expr::List(all.into())))
+}
+
 /// `Solve`/`NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to
 /// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`,
 /// and gives the first root in its domain. The root is located by a scan of the
@@ -293,6 +469,13 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(first) = args.first()
+    && contains_inequality_call(first)
+  {
+    let mut normalized = args.to_vec();
+    normalized[0] = super::reduce::inequalities_to_comparisons(first);
+    return nsolve_ast(&normalized);
+  }
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
   // `NSolve[poly, x]` is `NSolve[poly == 0, x]`, and a trailing precision
@@ -2044,6 +2227,13 @@ fn collect_solve_var_exprs(expr: &Expr, out: &mut Vec<Expr>) {
         collect_solve_var_exprs(e, out);
       }
     }
+    // `Inequality[a, Less, x, LessEqual, b]`: the relation symbols between
+    // the operands are no unknowns.
+    Expr::FunctionCall { name, args } if name == "Inequality" => {
+      for e in args.iter().step_by(2) {
+        collect_solve_var_exprs(e, out);
+      }
+    }
     Expr::List(items) | Expr::FunctionCall { args: items, .. } => {
       for e in items {
         collect_solve_var_exprs(e, out);
@@ -2568,7 +2758,32 @@ pub(crate) fn with_generalized_variables(
   }))
 }
 
+/// Whether `Inequality[…]` (the FullForm of a mixed chained comparison)
+/// occurs among the constraints.
+fn contains_inequality_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "Inequality" => true,
+    Expr::List(items) => items.iter().any(contains_inequality_call),
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().any(contains_inequality_call)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => contains_inequality_call(left) || contains_inequality_call(right),
+    _ => false,
+  }
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(first) = args.first()
+    && contains_inequality_call(first)
+  {
+    let mut normalized = args.to_vec();
+    normalized[0] = super::reduce::inequalities_to_comparisons(first);
+    return solve_ast(&normalized);
+  }
   if let Some(result) = solve_interpolating_function("Solve", args) {
     return Ok(result);
   }
@@ -5525,6 +5740,25 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A polynomial with symbolic coefficients that factors over the rationals
+  // is solved factor by factor, each root as often as its factor occurs:
+  // `(x - b)(x - a) == 0` gives `x -> a` and `x -> b`, not the quadratic
+  // formula's radicals of a perfect square.
+  // (A pure power a x^n + c keeps its own roots-of-unity form below.)
+  let pure_power =
+    (1..degree as usize).all(|i| matches!(&coeffs[i], Expr::Integer(0)));
+  if degree >= 2
+    && !pure_power
+    && coeffs.iter().any(|c| {
+      !crate::functions::predicate_ast::is_numeric_q(c)
+        && !matches!(c, Expr::Integer(_))
+    })
+    && let Some(result) =
+      solve_by_factor_list(&build_poly_from_coeffs(&coeffs, var), var, args)?
+  {
+    return Ok(result);
+  }
+
   match degree {
     0 => {
       // No variable present — check if constant is zero
@@ -5541,9 +5775,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let a = &coeffs[1]; // coefficient of x
       let neg_b = negate_expr(b);
       let solution = simplify(solve_divide(&neg_b, a));
-      // Run the user-level Simplify so forms like -((1 - z)/2) collapse
-      // to (-1 + z)/2, matching wolframscript's canonical output.
-      let solution = crate::functions::polynomial_ast::simplify_ast(
+      // Put the root over one denominator, as wolframscript does: forms
+      // like -((1 - z)/2) become (-1 + z)/2 and a + 1/b becomes
+      // (1 + a b)/b.
+      let solution = crate::evaluator::evaluate_function_call_ast(
+        "Together",
         std::slice::from_ref(&solution),
       )
       .unwrap_or(solution);
@@ -5839,7 +6075,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           (negate_expr(c), Expr::Integer(*a_int))
         };
-        let sqrt_numer = {
+        let monomial_root =
+          crate::evaluator::evaluate_expr_to_expr(&numer_under_sqrt)
+            .ok()
+            .and_then(|m| split_monomial_sqrt(&m));
+        let sqrt_numer = if let Some(root) = monomial_root {
+          root
+        } else {
           let raw =
             crate::functions::sqrt_ast(std::slice::from_ref(&numer_under_sqrt))
               .unwrap_or_else(|_| make_sqrt(numer_under_sqrt));
@@ -5860,6 +6102,22 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sol_neg = negate_expr(&sol_pos);
         return Ok(Expr::List(
           vec![make_rule(sol_neg), make_rule(sol_pos)].into(),
+        ));
+      }
+
+      // b = 0 with a symbolic leading coefficient: x^2 == -c/a, whose root
+      // splits like any monomial's (`b x^2 == a` gives ±Sqrt[a]/Sqrt[b]).
+      if matches!(b, Expr::Integer(0))
+        && let Ok(value) = crate::evaluator::evaluate_expr_to_expr(
+          &solve_divide(&negate_expr(c), a),
+        )
+        && let Some(root) = split_monomial_sqrt(&value)
+      {
+        let negative =
+          crate::evaluator::evaluate_expr_to_expr(&negate_expr(&root))
+            .unwrap_or_else(|_| negate_expr(&root));
+        return Ok(Expr::List(
+          vec![make_rule(negative), make_rule(root)].into(),
         ));
       }
 
@@ -5960,7 +6218,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             );
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
-          let val_root = if n % 2 == 1 && negative_val {
+          let monomial_root = (!negative_val)
+            .then(|| split_monomial_root(&val, n))
+            .flatten();
+          let val_root = if let Some(r) = monomial_root {
+            r
+          } else if n % 2 == 1 && negative_val {
             let magnitude =
               crate::evaluator::evaluate_expr_to_expr(&negate_expr(&val))
                 .unwrap_or_else(|_| negate_expr(&val));
@@ -13851,6 +14114,19 @@ fn minimize_ast_inner(
 
   // Parse objective and constraints: f or {f, cons1, cons2, ...}
   let (raw_objective, raw_constraints) = minimize_parse_objective(&args[0]);
+  // The variables are real, so an even power of the absolute value of a
+  // real expression is that power of the expression itself
+  // (EuclideanDistance gives Sqrt[Abs[x - 1]^2 + …]).
+  let raw_objective = crate::evaluator::evaluate_function_call_ast(
+    "ReplaceAll",
+    &[
+      raw_objective.clone(),
+      crate::syntax::string_to_expr(
+        "Abs[u$_]^(k$_?EvenQ) /; FreeQ[u$, Complex] :> u$^k$",
+      )?,
+    ],
+  )
+  .unwrap_or(raw_objective);
   let objective = rename_forward(raw_objective);
   let mut constraints: Vec<Expr> =
     raw_constraints.into_iter().map(rename_forward).collect();
@@ -14898,6 +15174,88 @@ fn minimize_find_critical_points_numerical(
 }
 
 /// Multi-variable unconstrained minimize.
+/// The minimum of a quadratic polynomial `f` in `vars` whose Hessian is
+/// positive definite: its single critical point, from the (linear) gradient
+/// system. `{value, {var -> point, …}}`, or None for anything else.
+fn convex_quadratic_minimum(
+  f: &Expr,
+  vars: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  if !matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[f.clone(), var_list.clone()]
+    )?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let mut gradient = Vec::with_capacity(vars.len());
+  let mut hessian = Vec::with_capacity(vars.len());
+  for v in vars {
+    let d = crate::functions::calculus_ast::differentiate_expr(f, v)?;
+    let mut row = Vec::with_capacity(vars.len());
+    for w in vars {
+      let dd = crate::evaluator::evaluate_expr_to_expr(
+        &crate::functions::calculus_ast::differentiate_expr(&d, w)?,
+      )?;
+      // Second derivatives must be numbers: degree two at most.
+      if crate::functions::math_ast::try_eval_to_f64(&dd).is_none() {
+        return Ok(None);
+      }
+      row.push(dd);
+    }
+    hessian.push(Expr::List(row.into()));
+    gradient.push(Expr::Comparison {
+      operands: vec![d, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  let hessian = Expr::List(hessian.into());
+  if !matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PositiveDefiniteMatrixQ",
+      &[hessian]
+    )?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let solved = solve_ast(&[Expr::List(gradient.into()), var_list])?;
+  let Expr::List(sets) = &solved else {
+    return Ok(None);
+  };
+  let [Expr::List(rules)] = sets.as_slice() else {
+    return Ok(None);
+  };
+  // The rules in the variables' order.
+  let mut ordered = Vec::with_capacity(vars.len());
+  for v in vars {
+    let Some(rule) = rules.iter().find(|r| {
+      matches!(r, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == v))
+    }) else {
+      return Ok(None);
+    };
+    ordered.push(rule.clone());
+  }
+  if ordered.iter().any(|r| {
+    matches!(r, Expr::Rule { replacement, .. }
+      if vars.iter().any(|v| contains_var(replacement, v)))
+  }) {
+    return Ok(None);
+  }
+  let value = crate::evaluator::evaluate_function_call_ast(
+    "Together",
+    &[substitute_rules(f, &ordered)?],
+  )?;
+  Ok(Some(Expr::List(
+    vec![value, Expr::List(ordered.into())].into(),
+  )))
+}
+
 fn minimize_multi_var(
   f: &Expr,
   vars: &[String],
@@ -14911,6 +15269,50 @@ fn minimize_multi_var(
   };
 
   let n = vars.len();
+
+  // Sqrt[q] is smallest where q is: minimize the radicand, then take the
+  // root of its minimum.
+  let radicand = match f {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && expr_to_string(&args[1]) == "1/2" =>
+    {
+      Some(&args[0])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if expr_to_string(right) == "1/2" => Some(left.as_ref()),
+    _ => None,
+  };
+  if !maximize
+    && let Some(radicand) = radicand
+    && let Some(inner) = convex_quadratic_minimum(radicand, vars)?
+    && let Expr::List(pair) = &inner
+    && let [value, rules] = pair.as_slice()
+  {
+    let root = crate::evaluator::evaluate_function_call_ast(
+      "Sqrt",
+      std::slice::from_ref(value),
+    )?;
+    return Ok(Expr::List(vec![root, rules.clone()].into()));
+  }
+  if let Some(result) = convex_quadratic_minimum(&f_inner, vars)? {
+    let Expr::List(pair) = &result else {
+      unreachable!()
+    };
+    let value = if maximize {
+      simplify(negate_expr(&pair[0]))
+    } else {
+      pair[0].clone()
+    };
+    return Ok(Expr::List(vec![value, pair[1].clone()].into()));
+  }
 
   // Compute symbolic gradient
   let mut grad: Vec<Expr> = Vec::new();
@@ -14936,6 +15338,8 @@ fn minimize_multi_var(
         && let Some(Expr::List(rules)) = sol_sets.first()
         && rules.len() == 1
         && let Some(Expr::Rule { replacement, .. }) = rules.first()
+        // A coupled gradient (x in terms of y) is no critical point.
+        && !vars.iter().any(|v| contains_var(replacement, v))
       {
         solutions[i] = Some(*replacement.clone());
         continue;
@@ -14965,6 +15369,89 @@ fn minimize_multi_var(
       return Ok(Expr::List(
         vec![result_val, Expr::List(rules.into())].into(),
       ));
+    }
+  }
+
+  // The gradient solved jointly: the least value over its exact critical
+  // points. A critical set left in terms of a free variable (`y -> 3/x`
+  // where f is constant along it) is represented by the free variable at 1.
+  {
+    let equations: Vec<Expr> = grad
+      .iter()
+      .map(|g| Expr::Comparison {
+        operands: vec![g.clone(), Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      })
+      .collect();
+    let var_list =
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+    crate::push_quiet();
+    let solved = solve_ast(&[Expr::List(equations.into()), var_list]);
+    crate::pop_quiet();
+    let mut best: Option<(f64, Expr, Vec<Expr>)> = None;
+    if let Ok(Expr::List(sets)) = &solved {
+      for set in sets {
+        let Expr::List(rules) = set else { continue };
+        let mut point = Vec::with_capacity(n);
+        let mut ok = true;
+        for v in vars {
+          let found = rules.iter().find_map(|r| match r {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == v) => {
+              Some((**replacement).clone())
+            }
+            _ => None,
+          });
+          point.push(found.unwrap_or(Expr::Integer(1)));
+        }
+        // Free variables at 1, then the solved ones in terms of them.
+        let free_at_one: Vec<Expr> = vars
+          .iter()
+          .zip(point.iter())
+          .filter(|(v, p)| matches!(p, Expr::Integer(1)) && !rules.iter().any(|r| matches!(r, Expr::Rule { pattern, .. } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == *v))))
+          .map(|(v, _)| rule_expr(Expr::Identifier(v.clone()), Expr::Integer(1)))
+          .collect();
+        let mut values = Vec::with_capacity(n);
+        for p in &point {
+          let at = substitute_rules(p, &free_at_one)?;
+          if vars.iter().any(|v| contains_var(&at, v))
+            || crate::functions::math_ast::try_eval_to_f64(&at).is_none()
+          {
+            ok = false;
+            break;
+          }
+          values.push(at);
+        }
+        if !ok {
+          continue;
+        }
+        let Ok(value) = minimize_eval_exact_multi(&f_inner, vars, &values)
+        else {
+          continue;
+        };
+        let Some(numeric) = crate::functions::math_ast::try_eval_to_f64(&value)
+        else {
+          continue;
+        };
+        if best.as_ref().is_none_or(|(b, _, _)| numeric < *b) {
+          best = Some((numeric, value, values));
+        }
+      }
+    }
+    if let Some((_, value, values)) = best {
+      let value = if maximize {
+        simplify(negate_expr(&value))
+      } else {
+        value
+      };
+      let rules: Vec<Expr> = vars
+        .iter()
+        .zip(values)
+        .map(|(v, val)| rule_expr(Expr::Identifier(v.clone()), val))
+        .collect();
+      return Ok(Expr::List(vec![value, Expr::List(rules.into())].into()));
     }
   }
 
@@ -15125,6 +15612,18 @@ fn minimize_constrained(
     return Ok(restore(result));
   }
 
+  // Equations alone with one parametrized solution (a linear system) are
+  // eliminated: the objective is optimized over the variables they leave
+  // free, and the solved ones follow from those.
+  if constraints.iter().all(|c| {
+    matches!(c, Expr::Comparison { operators, .. }
+      if operators.iter().all(|o| *o == ComparisonOp::Equal))
+  }) && let Some(result) =
+    minimize_eliminating_equations(f, &constraints, vars, maximize, func_name)?
+  {
+    return Ok(result);
+  }
+
   // Single variable with simple bound constraints
   if vars.len() == 1 {
     let var = &vars[0];
@@ -15145,6 +15644,109 @@ fn minimize_constrained(
     maximize,
     func_name,
   )))
+}
+
+/// `expr` with each `var -> value` rule substituted syntactically and the
+/// result evaluated. (`ReplaceAll` would read the solver's internal
+/// `__ilp_i` variable names as patterns.)
+fn substitute_rules(
+  expr: &Expr,
+  rules: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut out = expr.clone();
+  for r in rules {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = r
+      && let Expr::Identifier(v) = pattern.as_ref()
+    {
+      out = crate::syntax::substitute_variable(&out, v, replacement);
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&out)
+}
+
+/// `Minimize[{f, eqns}, vars]` with equations `Solve` parametrizes by a
+/// single solution: optimize `f` with the solved variables substituted over
+/// the remaining ones, then read the solved ones off the optimum. None when
+/// the equations have no such solution or the reduced problem is not solved.
+fn minimize_eliminating_equations(
+  f: &Expr,
+  equations: &[Expr],
+  vars: &[String],
+  maximize: bool,
+  func_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  // Leaving variables free is the point here, not worth a Solve::svars.
+  crate::push_quiet();
+  let solved = solve_ast(&[Expr::List(equations.to_vec().into()), var_list]);
+  crate::pop_quiet();
+  let solved = solved?;
+  let Expr::List(sets) = &solved else {
+    return Ok(None);
+  };
+  let [Expr::List(rules)] = sets.as_slice() else {
+    return Ok(None);
+  };
+  let solved_name = |r: &Expr| match r {
+    Expr::Rule { pattern, .. } => match pattern.as_ref() {
+      Expr::Identifier(n) => Some(n.clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  if rules.is_empty() || rules.iter().any(|r| solved_name(r).is_none()) {
+    return Ok(None);
+  }
+  let free: Vec<String> = vars
+    .iter()
+    .filter(|v| !rules.iter().any(|r| solved_name(r).as_ref() == Some(v)))
+    .cloned()
+    .collect();
+  let reduced = substitute_rules(f, rules)?;
+  let (value, free_rules) = if free.is_empty() {
+    (reduced, Vec::new())
+  } else {
+    let optimum = if free.len() == 1 {
+      minimize_single_var(&reduced, &free[0], maximize, func_name)?
+    } else {
+      minimize_multi_var(&reduced, &free, maximize, func_name)?
+    };
+    let Expr::List(pair) = &optimum else {
+      return Ok(None);
+    };
+    let [value, Expr::List(free_rules)] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if free_rules.iter().any(|r| {
+      matches!(r, Expr::Rule { replacement, .. }
+        if free.iter().any(|v| contains_var(replacement, v)))
+    }) {
+      return Ok(None);
+    }
+    (value.clone(), free_rules.to_vec())
+  };
+  let mut out = Vec::with_capacity(vars.len());
+  for v in vars {
+    if let Some(r) = free_rules
+      .iter()
+      .find(|r| solved_name(r).as_ref() == Some(v))
+    {
+      out.push(r.clone());
+      continue;
+    }
+    let Some(Expr::Rule { replacement, .. }) =
+      rules.iter().find(|r| solved_name(r).as_ref() == Some(v))
+    else {
+      return Ok(None);
+    };
+    let at = substitute_rules(replacement, &free_rules)?;
+    out.push(rule_expr(Expr::Identifier(v.clone()), at));
+  }
+  Ok(Some(Expr::List(vec![value, Expr::List(out.into())].into())))
 }
 
 /// Collect the symbols an `Element[…, dom]` subject names: a single

@@ -14081,3 +14081,23 @@ mod deeply_nested_output {
     );
   }
 }
+
+mod large_literal_data {
+  use super::*;
+
+  // A large literal holding exact fractions, complex numbers and colors as
+  // calls reads the same as through the grammar.
+  #[test]
+  fn numbers_and_colors_written_as_calls() {
+    let row = "{Rational[15, 16], 1, Complex[1, 2], RGBColor[1, 0, 0], x}";
+    let rows = vec![row; 200].join(", ");
+    let src = format!(
+      "data = {{{rows}}}; {{Dimensions[data], data[[7]], Head /@ data[[3]]}}"
+    );
+    assert_eq!(
+      interpret(&src).unwrap(),
+      "{{200, 5}, {15/16, 1, 1 + 2*I, RGBColor[1, 0, 0], x}, \
+       {Rational, Integer, Complex, RGBColor, Symbol}}"
+    );
+  }
+}

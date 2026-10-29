@@ -5285,11 +5285,23 @@ fn box_source_to_graphics_expr(s: &str) -> String {
     return format!("JoinedCurve[{{Line[{points}]}}]");
   }
 
+  // `NCache[exact, approximate]` keeps the exact value a numeric box was
+  // typeset from; the exact one is the value.
+  if let Some(args) = box_call("NCache")
+    && let Some(first) = args.first()
+  {
+    return box_source_to_graphics_expr(first);
+  }
+
   for (box_head, prim_head) in [
     ("PointBox", "Point"),
     ("LineBox", "Line"),
     ("DiskBox", "Disk"),
     ("RectangleBox", "Rectangle"),
+    ("RasterBox", "Raster"),
+    ("PolygonBox", "Polygon"),
+    ("CircleBox", "Circle"),
+    ("ArrowBox", "Arrow"),
   ] {
     if let Some(args) = box_call(box_head) {
       let converted: Vec<String> = args
@@ -7184,8 +7196,9 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(decode_compressed_raster_as_wl_list(&real_payload), None);
   }
 
-  /// A `RasterBox`'s `CompressedData` carries pixel bytes, not the
-  /// packed-real-array coordinate format — an Initialization Code cell
+  /// A `RasterBox` reads as the `Raster` it typesets, and its
+  /// `CompressedData` carries pixel bytes, not the packed-real-array
+  /// coordinate format — an Initialization Code cell
   /// that assigns a bitmap icon to a symbol (a common Demonstrations
   /// pattern for custom pictures used inside a `Manipulate`) must
   /// reconstruct the actual pixel grid rather than losing the picture to
@@ -7199,7 +7212,14 @@ Cell["Chapter 2", "Chapter"]
     );
     assert_eq!(
       box_source_to_graphics_expr(&source),
-      "RasterBox[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 0}, {2, 1}}, {0, 255}]"
+      "Raster[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 0}, {2, 1}}, {0, 255}]"
+    );
+    // `NCache[exact, approximate]` reads as its exact value.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "GraphicsBox[RasterBox[NCache[{{1, 2}}, {{1., 2.}}]]]"
+      ),
+      "Graphics[Raster[{{1, 2}}]]"
     );
   }
 

@@ -4704,6 +4704,50 @@ mod graph_predicates {
   }
 
   #[test]
+  fn find_hamiltonian_cycle_count() {
+    // FindHamiltonianCycle[g, k | All]: up to k distinct cycles, an
+    // undirected cycle and its reversal counted once. wolframscript lists
+    // them in another order (see conformance_gaps.md), so compare sets.
+    assert_eq!(
+      interpret("FindHamiltonianCycle[CompleteGraph[4], 1]").unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[FindHamiltonianCycle[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3, 2 <-> 4}], All]]"
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 2, 2 \u{f3d4} 3, 3 \u{f3d4} 4, 4 \u{f3d4} 1}, \
+       {1 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 3, 3 \u{f3d4} 1}, \
+       {1 \u{f3d4} 3, 3 \u{f3d4} 2, 2 \u{f3d4} 4, 4 \u{f3d4} 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length /@ {FindHamiltonianCycle[CompleteGraph[5], All], \
+         FindHamiltonianCycle[CompleteGraph[6], All], \
+         FindHamiltonianCycle[CompleteGraph[6], 7], \
+         FindHamiltonianCycle[GridGraph[{4, 4}], Infinity], \
+         FindHamiltonianCycle[PathGraph[{1, 2, 3}], All]}"
+      )
+      .unwrap(),
+      "{12, 60, 7, 6, 0}"
+    );
+    // Directed cycles are distinct in each direction.
+    assert_eq!(
+      interpret(
+        "FindHamiltonianCycle[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3, 3 -> 2, 2 -> 1}], All]"
+      )
+      .unwrap(),
+      "{{1 \u{f3d5} 2, 2 \u{f3d5} 3, 3 \u{f3d5} 1}, \
+       {1 \u{f3d5} 3, 3 \u{f3d5} 2, 2 \u{f3d5} 1}}"
+    );
+    assert_eq!(
+      interpret("FindHamiltonianCycle[CompleteGraph[4], 0]").unwrap(),
+      "FindHamiltonianCycle[Graph[<4>, <6>], 0]"
+    );
+  }
+
+  #[test]
   fn find_hamiltonian_cycle_large_polyhedra() {
     // Dead-end branches are pruned, so graphs with dozens of vertices finish
     // quickly. Every result must visit each vertex exactly once.
