@@ -6,6 +6,15 @@ use crate::functions::calculus_ast::simplify;
 /// Expand[expr] - Expands products and positive integer powers
 /// Expand[expr, Modulus -> n] - Expands and reduces coefficients modulo n
 pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  expand_ast_inner(args).map(|e| match &e {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(merge_integer_radical_terms).collect())
+    }
+    _ => merge_integer_radical_terms(&e),
+  })
+}
+
+fn expand_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "Expand expects 1 or 2 arguments".into(),
@@ -99,6 +108,145 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `c*Sin[2*x] + Sin[x]*Sin[2*x]`, not `… + Sin[2*x]*Sin[x]`.
     Ok(crate::evaluator::evaluate_expr_to_expr(&expanded).unwrap_or(expanded))
   }
+}
+
+/// Terms equal but for a radical of one integer, `b^r` against `b^s` with
+/// `r - s` an integer, are like terms to Expand: they combine over the
+/// smaller power (`a/Sqrt[3] + a Sqrt[3]` is `(4 a)/Sqrt[3]`,
+/// `2^(1/3) + 2^(4/3)` is `3*2^(1/3)`). Plain Plus leaves them apart.
+fn merge_integer_radical_terms(expr: &Expr) -> Expr {
+  let Expr::FunctionCall { name, args: terms } = expr else {
+    return expr.clone();
+  };
+  if name != "Plus" {
+    return expr.clone();
+  }
+  // A term as (numeric coefficient, other factors, b, p/q) when it holds
+  // exactly one radical of a positive integer.
+  let split = |t: &Expr| -> Option<(Expr, Vec<Expr>, i128, (i128, i128))> {
+    let factors: Vec<Expr> = match t {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut coeff = Expr::Integer(1);
+    let mut rest = Vec::new();
+    let mut radical = None;
+    for f in factors {
+      let pow = match &f {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          Some((args[0].clone(), args[1].clone()))
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Sqrt" && args.len() == 1 =>
+        {
+          Some((
+            args[0].clone(),
+            crate::functions::math_ast::make_rational(1, 2),
+          ))
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => Some(((**left).clone(), (**right).clone())),
+        _ => None,
+      };
+      if let Some((Expr::Integer(b), Expr::FunctionCall { name: rn, args: ra })) =
+        &pow
+        && *b > 1
+        && rn == "Rational"
+        && let [Expr::Integer(p), Expr::Integer(q)] = ra.as_slice()
+      {
+        if radical.is_some() {
+          return None;
+        }
+        radical = Some((*b, (*p, *q)));
+        continue;
+      }
+      if crate::functions::predicate_ast::is_numeric_q(&f)
+        && crate::functions::math_ast::expr_to_rational(&f).is_some()
+        || matches!(f, Expr::Integer(_))
+      {
+        coeff = call("Times", vec![coeff, f]);
+        continue;
+      }
+      rest.push(f);
+    }
+    let (b, e) = radical?;
+    Some((coeff, rest, b, e))
+  };
+  // Group by (other factors, base, fractional part of the exponent).
+  let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+  let mut parts = Vec::with_capacity(terms.len());
+  for (i, t) in terms.iter().enumerate() {
+    let part = split(t);
+    if let Some((_, rest, b, (p, q))) = &part {
+      let key = format!(
+        "{}|{b}|{}/{q}",
+        rest
+          .iter()
+          .map(expr_to_string)
+          .collect::<Vec<_>>()
+          .join("*"),
+        p.rem_euclid(*q)
+      );
+      match groups.iter_mut().find(|(k, _)| *k == key) {
+        Some((_, members)) => members.push(i),
+        None => groups.push((key, vec![i])),
+      }
+    }
+    parts.push(part);
+  }
+  if groups.iter().all(|(_, m)| m.len() < 2) {
+    return expr.clone();
+  }
+  let mut merged_into: Vec<Option<usize>> = vec![None; terms.len()];
+  let mut new_terms: Vec<Expr> = Vec::new();
+  for (_, members) in groups.iter().filter(|(_, m)| m.len() >= 2) {
+    let (_, rest, b, _) = parts[members[0]].clone().unwrap();
+    // The smallest exponent p/q of the group.
+    let (pm, qm) = members
+      .iter()
+      .map(|&i| parts[i].as_ref().unwrap().3)
+      .min_by(|(p1, q1), (p2, q2)| (p1 * q2).cmp(&(p2 * q1)))
+      .unwrap();
+    let coeff_sum: Vec<Expr> = members
+      .iter()
+      .map(|&i| {
+        let (c, _, _, (p, q)) = parts[i].clone().unwrap();
+        // b^(p/q - pm/qm) is an integer power of b.
+        let k = (p * qm - pm * q) / (q * qm);
+        call(
+          "Times",
+          vec![c, call("Power", vec![Expr::Integer(b), Expr::Integer(k)])],
+        )
+      })
+      .collect();
+    let mut factors = vec![call("Plus", coeff_sum)];
+    factors.extend(rest);
+    factors.push(call(
+      "Power",
+      vec![
+        Expr::Integer(b),
+        crate::functions::math_ast::make_rational(pm, qm),
+      ],
+    ));
+    for &i in members {
+      merged_into[i] = Some(new_terms.len());
+    }
+    new_terms.push(call("Times", factors));
+  }
+  let mut all: Vec<Expr> = terms
+    .iter()
+    .zip(&merged_into)
+    .filter(|(_, m)| m.is_none())
+    .map(|(t, _)| t.clone())
+    .collect();
+  all.extend(new_terms);
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", all))
+    .unwrap_or_else(|_| expr.clone())
 }
 
 /// Top-level driver for the 2-arg `Expand[expr, pat]` form.

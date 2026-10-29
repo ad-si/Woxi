@@ -4,7 +4,34 @@ use super::*;
 /// Returns the valid argument count range (min, max) for a known built-in function.
 /// Returns None if the function is not in the table.
 /// A max of usize::MAX indicates the function is variadic (no upper limit).
+///
+/// Memoized per name: the table below is a match over ~1800 strings, which
+/// the compiler turns into a chain of comparisons, and every built-in call
+/// consults it (a quarter of the time of a listable function threaded
+/// element by element over a large array).
 pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
+  thread_local! {
+    static CACHE: std::cell::RefCell<
+      rustc_hash::FxHashMap<String, Option<(usize, usize)>>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+  }
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(name).copied()) {
+    return hit;
+  }
+  let range = arg_count_range_table(name);
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    // Generated names (Module locals called as functions) must not grow
+    // the cache without bound.
+    if c.len() > 100_000 {
+      c.clear();
+    }
+    c.insert(name.to_string(), range);
+  });
+  range
+}
+
+fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
   match name {
     "Abs" => Some((1, 1)),
     "AbortProtect" => Some((1, 1)),

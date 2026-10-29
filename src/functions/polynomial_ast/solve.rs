@@ -159,6 +159,29 @@ fn is_precision_spec(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` holds a square root or any other non-integer power. The
+/// exact elimination of such equations is slow and squares radicals into
+/// spurious roots, so inexact radical systems skip it.
+fn has_radical(expr: &Expr) -> bool {
+  is_sqrt(expr).is_some()
+    || match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => !matches!(right.as_ref(), Expr::Integer(_)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        !matches!(args[1], Expr::Integer(_))
+      }
+      _ => false,
+    }
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(has_radical)
+}
+
 /// NSolve[equation, var] — solve an equation numerically.
 ///
 /// For quadratic polynomials, uses Kahan's numerically stable formula to
@@ -215,6 +238,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone()],
@@ -292,6 +316,21 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&result, Expr::List(sols) if !sols.is_empty())
   {
     return Ok(result);
+  }
+  // A square system whose elimination leaves some unknown unbound (a branch
+  // like `y -> 0` that never pins down `x`, as radical equations give) is
+  // only partly solved; the numeric system solver then finds the complete
+  // solutions.
+  if let Expr::List(sols) = &symbolic
+    && !sols.is_empty()
+    && let Expr::List(vars) = &args[1]
+    && vars.len() >= 2
+    && sols
+      .iter()
+      .any(|s| matches!(s, Expr::List(rules) if rules.len() < vars.len()))
+    && let Some(found) = try_nsolve_numeric_system(args)
+  {
+    return Ok(sort_nsolve_solutions(found));
   }
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
   // its own head — unless a numeric multi-seed search below finds real
@@ -2657,6 +2696,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::List(eqs) = &args[0]
     && eqs.len() >= 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
       "Rationalize",
       &[args[0].clone(), Expr::Integer(0)],
@@ -4137,6 +4177,70 @@ pub(super) fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
   )
 }
 
+/// A system whose equations have the unknowns in denominators, solved
+/// through the numerators (see the call site). `None` when no equation has
+/// such a denominator.
+fn solve_rational_system(
+  eqs: &[Expr],
+  vars_exprs: &[Expr],
+  var_names: &[String],
+  rest_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  use super::reduce::{CompOp, extract_comparison};
+  let mut numerators = Vec::with_capacity(eqs.len());
+  let mut denominators = Vec::new();
+  for eq in eqs {
+    let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(eq) else {
+      return Ok(None);
+    };
+    let diff = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Together",
+      vec![call("Subtract", vec![lhs, rhs])],
+    ))?;
+    let (num, den) = super::together::extract_num_den(&diff);
+    if var_names
+      .iter()
+      .any(|v| crate::functions::polynomial_ast::contains_var(&den, v))
+    {
+      denominators.push(den);
+    }
+    numerators.push(Expr::Comparison {
+      operands: vec![num, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  if denominators.is_empty() {
+    return Ok(None);
+  }
+  let mut inner = vec![
+    Expr::List(numerators.into()),
+    Expr::List(vars_exprs.to_vec().into()),
+  ];
+  inner.extend(rest_args.iter().cloned());
+  let solved = solve_ast(&inner)?;
+  let Expr::List(solutions) = &solved else {
+    return Ok(None);
+  };
+  let kept: Vec<Expr> = solutions
+    .iter()
+    .filter(|sol| {
+      denominators.iter().all(|den| {
+        let at = crate::evaluator::evaluate_expr_to_expr(&call(
+          "ReplaceAll",
+          vec![den.clone(), (*sol).clone()],
+        ));
+        // A vanishing denominator evaluates to an exact (or machine) zero;
+        // a radical solution is not tested through machine numbers, whose
+        // huge intermediate integers may not survive the conversion.
+        !matches!(at, Ok(Expr::Integer(0)))
+          && !matches!(at, Ok(Expr::Real(r)) if r == 0.0)
+      })
+    })
+    .cloned()
+    .collect();
+  Ok(Some(Expr::List(kept.into())))
+}
+
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
@@ -4664,6 +4768,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect();
     if var_names.len() == vars_exprs.len() && !var_names.is_empty() {
+      // Equations with the unknowns in denominators: solve the numerators
+      // of `lhs - rhs` brought together as a polynomial system, then drop
+      // the solutions that make a denominator vanish. `-19/a^5 + 31/a^3 -
+      // 8/(a^3 b^2) == 0` is the polynomial `-19 b^2 + 31 a^2 b^2 - 8 a^2`
+      // over `a^5 b^2`, so a == 0 is no solution.
+      if let Some(result) =
+        solve_rational_system(eqs, vars_exprs, &var_names, &args[2..])?
+      {
+        return Ok(result);
+      }
       // Try symbolic Gaussian elimination for linear systems (handles underdetermined case)
       if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
         return Ok(result);
@@ -6243,9 +6357,12 @@ fn poly_system_solutions(
       index += 1;
     }
 
+    // With machine values substituted, a coefficient that vanishes at the
+    // point comes out as rounding noise; it would split a multiple root
+    // into nearby roots that fail the check against the system.
     let substituted: Vec<Expr> = polys
       .iter()
-      .map(|p| substitute_values(p, outer_vars, outer))
+      .map(|p| drop_rounding_noise(&substitute_values(p, outer_vars, outer)))
       .collect();
     let pivot = substituted
       .iter()
@@ -6678,6 +6795,7 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
       ),
       Ok(Expr::List(vs)) if vs.len() == 1
     );
+  let poly_exact = &poly.clone();
   let poly = if numeric {
     crate::evaluator::evaluate_function_call_ast(
       "N",
@@ -6714,7 +6832,75 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
     }
     roots.push(replacement.as_ref().clone());
   }
+  if numeric {
+    snap_to_square_free_roots(&mut roots, poly_exact, var);
+  }
   Some(roots)
+}
+
+/// Repeated roots (a resultant is often a square) come out of a numeric root
+/// finder good only to eps^(1/k) for a k-fold root, too rough to pass the
+/// check against the system. Each root is replaced by the nearest root of
+/// the exact square-free part `poly / gcd(poly, poly')`, where every root is
+/// simple and found to full precision; the list keeps its length and order.
+fn snap_to_square_free_roots(roots: &mut [Expr], poly: &Expr, var: &str) {
+  if crate::functions::math_ast::contains_inexact_real(poly) {
+    return;
+  }
+  let ev = |head: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(head, &a)
+  };
+  let Ok(square_free) = ev("D", vec![poly.clone(), id_expr(var)])
+    .and_then(|d| ev("PolynomialGCD", vec![poly.clone(), d]))
+    .and_then(|g| {
+      ev("PolynomialQuotient", vec![poly.clone(), g, id_expr(var)])
+    })
+  else {
+    return;
+  };
+  let Ok(solved) = nsolve_ast(&[
+    Expr::Comparison {
+      operands: vec![square_free, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    },
+    id_expr(var),
+  ]) else {
+    return;
+  };
+  let Expr::List(solutions) = &solved else {
+    return;
+  };
+  let simple: Vec<(Expr, (f64, f64))> = solutions
+    .iter()
+    .filter_map(|s| match s {
+      Expr::List(rules) => match rules.as_slice() {
+        [Expr::Rule { replacement, .. }] => {
+          let v = replacement.as_ref().clone();
+          let c = crate::functions::math_ast::try_extract_complex_float(&v)?;
+          Some((v, c))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  for root in roots.iter_mut() {
+    let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(root)
+    else {
+      continue;
+    };
+    let nearest = simple.iter().min_by(|a, b| {
+      let da = (a.1.0 - re).hypot(a.1.1 - im);
+      let db = (b.1.0 - re).hypot(b.1.1 - im);
+      da.total_cmp(&db)
+    });
+    if let Some((v, (sre, sim))) = nearest
+      && (sre - re).hypot(sim - im) <= 1e-4 * re.hypot(im).max(1.0)
+    {
+      *root = v.clone();
+    }
+  }
 }
 
 /// Substitute `values` for `vars` in `expr` and evaluate.
@@ -9425,6 +9611,14 @@ fn try_solve_by_radical_norms(
     }
     let a = plus(even);
     let b = plus(odd);
+    // Squaring multiplies the terms out; with several radicals of other
+    // unknowns still in the coefficients (a Fermat-point objective in three
+    // variables) the norm grows past anything Solve could use, and building
+    // it took gigabytes. Give up instead.
+    let size = |e: &Expr| super::simplify::leaf_count(e) as u64;
+    if size(&a).pow(2) + size(&p) * size(&b).pow(2) > 400_000 {
+      return None;
+    }
     let norm = minus2(
       pow(a, Expr::Integer(2)),
       times2(p.clone(), pow(b, Expr::Integer(2))),
@@ -9822,17 +10016,23 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
       .collect()
   };
   let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
-  const STARTS: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  const COARSE: [f64; 7] = [-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  // Two unknowns afford a finer grid, which reaches roots whose basin of
+  // attraction is small (the off-axis equilibria of a three-body problem).
+  const FINE: [f64; 13] = [
+    -10.0, -3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 10.0, 0.25,
+  ];
+  let starts_grid: &[f64] = if k == 2 { &FINE } else { &COARSE };
   // Up to three unknowns every combination of the start values is tried;
   // beyond that the grid is too large, so the diagonal starts and a fixed
   // pseudo-random scatter in [-3, 3]^k are used instead.
   let starts: Vec<Vec<f64>> = if k <= 3 {
-    (0..STARTS.len().pow(k as u32))
+    (0..starts_grid.len().pow(k as u32))
       .map(|mut n| {
         (0..k)
           .map(|_| {
-            let v = STARTS[n % STARTS.len()];
-            n /= STARTS.len();
+            let v = starts_grid[n % starts_grid.len()];
+            n /= starts_grid.len();
             v + 0.1234
           })
           .collect()
@@ -9846,7 +10046,7 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
       seed ^= seed << 17;
       (seed >> 11) as f64 / (1u64 << 53) as f64 * 6.0 - 3.0
     };
-    STARTS
+    starts_grid
       .iter()
       .map(|&c| vec![c + 0.1234; k])
       .chain((0..40).map(|_| (0..k).map(|_| next()).collect()))
@@ -12797,8 +12997,28 @@ fn find_root_multivariate(
   // the `None` fallback gives. Such equations are not differentiated
   // symbolically at all.
   const MAX_SYMBOLIC_JACOBIAN_LEAVES: usize = 2000;
+  // Equations of plain arithmetic are compiled once: their values and
+  // exact gradients (forward-mode differentiation over the compiled tree)
+  // then cost a pass over each equation, where the symbolic Jacobian of a
+  // large stage-by-stage model took most of a minute to differentiate and
+  // simplify, and every entry was re-evaluated as an expression.
+  // Only for larger systems: a small one keeps the expression evaluation,
+  // whose last digits agree with Wolfram's.
+  let compiled: Option<Vec<NumNode>> = if n >= 8 {
+    eqns
+      .iter()
+      .map(|f| compile_numeric(f, &vars).filter(|node| !node.has_fallback()))
+      .collect()
+  } else {
+    None
+  };
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
+    if compiled.is_some() {
+      // Not used: the compiled gradient stands for every entry.
+      jac.push(vec![Some(Expr::Integer(0)); n]);
+      continue;
+    }
     let mut row = Vec::with_capacity(n);
     let too_large =
       super::simplify::leaf_count(f) > MAX_SYMBOLIC_JACOBIAN_LEAVES;
@@ -12861,6 +13081,18 @@ fn find_root_multivariate(
                           hint: &[Option<f64>]|
    -> Result<Vec<Vec<f64>>, InterpreterError> {
     let mut jm = vec![vec![0.0; n]; n];
+    if let Some(nodes) = &compiled {
+      for (i, node) in nodes.iter().enumerate() {
+        let (_, grad) = node.eval_dual(x);
+        for (j, d) in grad {
+          jm[i][j] = d;
+        }
+      }
+      if jm.iter().flatten().all(|v| v.is_finite()) {
+        return Ok(jm);
+      }
+      jm = vec![vec![0.0; n]; n];
+    }
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
@@ -13020,6 +13252,13 @@ fn find_root_multivariate(
     // above already avoids by updating `best_x` right after each step.
     let eval_residual =
       |x: &[f64]| -> Result<(Vec<f64>, f64), InterpreterError> {
+        if let Some(nodes) = &compiled {
+          let fv: Vec<f64> = nodes.iter().map(|node| node.eval(x)).collect();
+          if fv.iter().all(|v| v.is_finite()) {
+            let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+            return Ok((fv, resid));
+          }
+        }
         let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
         let bindings: Vec<(&str, &Expr)> =
           vars.iter().map(String::as_str).zip(reals.iter()).collect();
@@ -13365,8 +13604,9 @@ pub fn minimize_ast(
         let seen = before.messages().len();
         crate::push_quiet();
         let result = minimize_ast_inner(probe_args, maximize);
-        crate::pop_quiet();
+        // Read before leaving the quiet block, which drops them.
         let raised = crate::snapshot_warnings().messages()[seen..].to_vec();
+        crate::pop_quiet();
         crate::restore_warnings(before);
         result.map(|value| (value, raised))
       };
@@ -16337,6 +16577,689 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
   }
 }
 
+/// Quasi-Newton (BFGS) minimization of `phi` from `z0` with gradient
+/// `grad` and a backtracking (Armijo) line search; `phi` is infinite
+/// wherever a point is not allowed, which the line search then avoids.
+/// `on_accept` sees every accepted point. The first step moves no
+/// coordinate by more than a tenth of its own size (or 0.1 near zero): a
+/// raw gradient step can be arbitrarily long and land on a far plateau the
+/// search never climbs back from. A full step accepted outright is
+/// extended while it keeps improving, and the first update takes the
+/// Shanno–Phua scale `s.y / y.y`.
+fn bfgs_minimize(
+  phi: &dyn Fn(&[f64]) -> f64,
+  grad: &dyn Fn(&[f64]) -> Vec<f64>,
+  mut z: Vec<f64>,
+  max_iter: usize,
+  on_accept: &mut dyn FnMut(&[f64]),
+) -> Vec<f64> {
+  let m = z.len();
+  let mut fz = phi(&z);
+  let mut g = grad(&z);
+  let first_scale = z
+    .iter()
+    .zip(&g)
+    .filter(|(_, gi)| gi.abs() > 0.0)
+    .map(|(zi, gi)| 0.1 * zi.abs().max(1.0) / gi.abs())
+    .fold(1.0f64, f64::min);
+  let mut hinv: Vec<Vec<f64>> = (0..m)
+    .map(|i| {
+      (0..m)
+        .map(|j| if i == j { first_scale } else { 0.0 })
+        .collect()
+    })
+    .collect();
+  let mut updated = false;
+  for _ in 0..max_iter {
+    let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if gnorm < 1e-10 * fz.abs().max(1.0) {
+      break;
+    }
+    let dir: Vec<f64> = (0..m)
+      .map(|i| -(0..m).map(|j| hinv[i][j] * g[j]).sum::<f64>())
+      .collect();
+    let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+    let dir = if slope < 0.0 {
+      dir
+    } else {
+      g.iter().map(|v| -v).collect()
+    };
+    let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+    let mut t = 1.0;
+    let mut accepted = None;
+    for _ in 0..60 {
+      let trial: Vec<f64> =
+        z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+      let ft = phi(&trial);
+      if ft.is_finite() && ft <= fz + 1e-4 * t * slope {
+        accepted = Some((trial, ft));
+        break;
+      }
+      t *= 0.5;
+    }
+    let Some((mut znew, mut fnew)) = accepted else {
+      break;
+    };
+    if t == 1.0 {
+      for _ in 0..20 {
+        t *= 2.0;
+        let trial: Vec<f64> =
+          z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+        let ft = phi(&trial);
+        if ft.is_finite() && ft < fnew && ft <= fz + 1e-4 * t * slope {
+          znew = trial;
+          fnew = ft;
+        } else {
+          break;
+        }
+      }
+    }
+    on_accept(&znew);
+    let gnew = grad(&znew);
+    let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
+    let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
+    let sy: f64 = s_vec.iter().zip(&y_vec).map(|(a, b)| a * b).sum();
+    if sy > 1e-14 {
+      if !updated {
+        let yy: f64 = y_vec.iter().map(|v| v * v).sum();
+        if yy > 0.0 {
+          for (i, row) in hinv.iter_mut().enumerate() {
+            for (j, v) in row.iter_mut().enumerate() {
+              *v = if i == j { sy / yy } else { 0.0 };
+            }
+          }
+        }
+        updated = true;
+      }
+      // H <- (I - rho s y^T) H (I - rho y s^T) + rho s s^T
+      let rho = 1.0 / sy;
+      let hy: Vec<f64> = (0..m)
+        .map(|i| (0..m).map(|j| hinv[i][j] * y_vec[j]).sum())
+        .collect();
+      let yhy: f64 = y_vec.iter().zip(&hy).map(|(a, b)| a * b).sum();
+      for i in 0..m {
+        for j in 0..m {
+          hinv[i][j] += (1.0 + rho * yhy) * rho * s_vec[i] * s_vec[j]
+            - rho * (hy[i] * s_vec[j] + s_vec[i] * hy[j]);
+        }
+      }
+    }
+    let converged = (fz - fnew).abs() <= 1e-15 * fz.abs().max(1.0);
+    z = znew;
+    fz = fnew;
+    g = gnew;
+    if converged {
+      break;
+    }
+  }
+  z
+}
+
+/// Whether `e` is a polynomial in `vars` of total degree at most `max`.
+fn polynomial_degree_at_most(e: &Expr, vars: &[String], max: i64) -> bool {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  let is_poly = crate::evaluator::evaluate_expr_to_expr(&call(
+    "PolynomialQ",
+    vec![e.clone(), var_list],
+  ));
+  if !matches!(is_poly, Ok(Expr::Identifier(ref t)) if t == "True") {
+    return false;
+  }
+  // The total degree is the degree in `t` once every variable is scaled
+  // by `t`.
+  let t = Expr::Identifier("FindMinimum$degree".to_string());
+  let scaled: Vec<(String, Expr)> = vars
+    .iter()
+    .map(|v| {
+      (
+        v.clone(),
+        call("Times", vec![t.clone(), Expr::Identifier(v.clone())]),
+      )
+    })
+    .collect();
+  let pairs: Vec<(&str, &Expr)> =
+    scaled.iter().map(|(v, e)| (v.as_str(), e)).collect();
+  let scaled_e = crate::syntax::substitute_variables(e, &pairs);
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Exponent",
+      vec![call("Expand", vec![scaled_e]), t],
+    )),
+    Ok(Expr::Integer(d)) if d <= i128::from(max)
+  )
+}
+
+/// A local `FindMinimum` of `f` from the given starting values under
+/// equalities and inequalities. The linear equalities (the mass balances of
+/// a chemical-equilibrium Gibbs minimization) are solved for some of the
+/// variables and each nonlinear one (an equation of state) defines one more
+/// implicitly, so the search runs over the rest; the inequalities are kept
+/// strictly, every trial point outside them being rejected — a logarithm of
+/// a mole number must never see a negative argument. `monitor` is the
+/// caller's name and `StepMonitor`. `None` when the problem has another
+/// shape (or no feasible point is found), for the general solver.
+fn find_minimum_local_constrained(
+  f: &Expr,
+  constraints: &[Expr],
+  var_specs: &[Expr],
+  maximize: bool,
+  monitor: Option<(&str, &Expr)>,
+) -> Option<Expr> {
+  use super::reduce::{CompOp, extract_comparison};
+  // Variables and starting values, `{x, x0}` each (possibly in one list).
+  let mut vars: Vec<String> = Vec::new();
+  let mut start: Vec<f64> = Vec::new();
+  // `{x, x0, xmin, xmax}` also confines x to [xmin, xmax].
+  let mut spec_bounds: Vec<Expr> = Vec::new();
+  let mut take_spec = |spec: &Expr| -> Option<()> {
+    let Expr::List(items) = spec else { return None };
+    let (v, x0) = match items.as_slice() {
+      [Expr::Identifier(v), x0] => (v, x0),
+      [Expr::Identifier(v), x0, lo, hi] => {
+        spec_bounds.push(Expr::Comparison {
+          operands: vec![lo.clone(), Expr::Identifier(v.clone()), hi.clone()],
+          operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+        });
+        (v, x0)
+      }
+      _ => return None,
+    };
+    vars.push(v.clone());
+    start.push(find_root_eval_number(x0).ok()?);
+    Some(())
+  };
+  for spec in var_specs {
+    match spec {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      {
+        for i in items {
+          take_spec(i)?;
+        }
+      }
+      other => take_spec(other)?,
+    }
+  }
+  let n = vars.len();
+  if n == 0 {
+    return None;
+  }
+  // Flatten the constraints into single comparisons.
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().for_each(|i| flatten(i, out));
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.len() > 1 => {
+        for (k, op) in operators.iter().enumerate() {
+          out.push(Expr::Comparison {
+            operands: vec![operands[k].clone(), operands[k + 1].clone()],
+            operators: vec![*op],
+          });
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut flat = Vec::new();
+  for c in constraints.iter().chain(&spec_bounds) {
+    flatten(c, &mut flat);
+  }
+  let minus = |a: Expr, b: Expr| {
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![a, call("Times", vec![Expr::Integer(-1), b])],
+    ))
+    .ok()
+  };
+  // Linear equalities as rows of A x = b; inequalities as g >= 0 / g > 0;
+  // any other equality as g == 0.
+  let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
+  let mut nonlinear: Vec<Expr> = Vec::new();
+  let mut ineqs: Vec<(Expr, Option<Expr>)> = Vec::new();
+  // The position in `flat` each inequality came from.
+  let mut ineq_source: Vec<usize> = Vec::new();
+  for (ci, c) in flat.iter().enumerate() {
+    if !matches!(extract_comparison(c), Some((_, _, CompOp::Equal)) | None) {
+      ineq_source.push(ci);
+    }
+    let (lhs, rhs, op) = extract_comparison(c)?;
+    match op {
+      CompOp::Equal => {
+        let g = minus(lhs, rhs)?;
+        let mut coeffs = Vec::with_capacity(n);
+        for v in &vars {
+          let d =
+            crate::functions::calculus_ast::differentiate_expr(&g, v).ok()?;
+          let d = crate::evaluator::evaluate_expr_to_expr(&d).ok()?;
+          match crate::functions::math_ast::try_eval_to_f64(&d) {
+            Some(c) => coeffs.push(c),
+            None => break,
+          }
+        }
+        if coeffs.len() < n {
+          nonlinear.push(g);
+          continue;
+        }
+        let zero = Expr::Integer(0);
+        let zero_point: Vec<(&str, &Expr)> =
+          vars.iter().map(|v| (v.as_str(), &zero)).collect();
+        let at_zero = crate::syntax::substitute_variables(&g, &zero_point);
+        let c0 = crate::functions::math_ast::try_eval_to_f64(
+          &crate::evaluator::evaluate_expr_to_expr(&at_zero).ok()?,
+        )?;
+        rows.push((coeffs, -c0));
+      }
+      CompOp::Greater => ineqs.push((minus(lhs, rhs)?, None)),
+      CompOp::Less => ineqs.push((minus(rhs, lhs)?, None)),
+      // A non-strict one may end up active: it can then be imposed as the
+      // equality `lhs == rhs`.
+      CompOp::GreaterEqual => {
+        ineqs.push((
+          minus(lhs.clone(), rhs.clone())?,
+          Some(call("Equal", vec![lhs, rhs])),
+        ));
+      }
+      CompOp::LessEqual => {
+        ineqs.push((
+          minus(rhs.clone(), lhs.clone())?,
+          Some(call("Equal", vec![lhs, rhs])),
+        ));
+      }
+      CompOp::NotEqual => return None,
+    }
+  }
+  let has_equalities = !rows.is_empty() || !nonlinear.is_empty();
+  if !has_equalities && ineqs.is_empty() {
+    return None;
+  }
+  // wolframscript solves a linear or quadratic objective under linear
+  // constraints (and any problem with equalities) by a method that does
+  // not report its steps: a `StepMonitor` then gets `noopmon` instead.
+  let monitorable = monitor.is_some()
+    && !has_equalities
+    && !(polynomial_degree_at_most(f, &vars, 2)
+      && ineqs
+        .iter()
+        .all(|(g, _)| polynomial_degree_at_most(g, &vars, 1)));
+  let report_unmonitored = || {
+    if let Some((func_name, _)) = monitor {
+      crate::emit_message(&format!(
+        "{func_name}::noopmon: The optimization was solved by an algorithm that does not provide monitoring information. Choose a specific iterative method if this information is necessary."
+      ));
+    }
+  };
+  // Reduced row echelon form: pivot variables in terms of the free ones.
+  let mut a: Vec<Vec<f64>> = rows
+    .iter()
+    .map(|(c, b)| {
+      let mut r = c.clone();
+      r.push(*b);
+      r
+    })
+    .collect();
+  let mut pivots: Vec<usize> = Vec::new();
+  let mut row = 0;
+  for col in 0..n {
+    if row == a.len() {
+      break;
+    }
+    let (best, val) = (row..a.len())
+      .map(|r| (r, a[r][col].abs()))
+      .max_by(|x, y| x.1.total_cmp(&y.1))?;
+    if val < 1e-12 {
+      continue;
+    }
+    a.swap(row, best);
+    let p = a[row][col];
+    for v in &mut a[row] {
+      *v /= p;
+    }
+    for r in 0..a.len() {
+      if r != row && a[r][col] != 0.0 {
+        let factor = a[r][col];
+        let pivot_row = a[row].clone();
+        for (x, y) in a[r].iter_mut().zip(pivot_row) {
+          *x -= factor * y;
+        }
+      }
+    }
+    pivots.push(col);
+    row += 1;
+  }
+  // An inconsistent system has no feasible point at all.
+  if a[row..].iter().any(|r| r[n].abs() > 1e-9) {
+    return None;
+  }
+  let free: Vec<usize> = (0..n).filter(|c| !pivots.contains(c)).collect();
+  // The point from the values of the free variables, the pivots following.
+  let linear_point = |w: &[f64]| -> Vec<f64> {
+    let mut x = vec![0.0; n];
+    for (k, &c) in free.iter().enumerate() {
+      x[c] = w[k];
+    }
+    for (r, &pc) in pivots.iter().enumerate() {
+      let mut v = a[r][n];
+      for &c in &free {
+        v -= a[r][c] * x[c];
+      }
+      x[pc] = v;
+    }
+    x
+  };
+  // The derivative along free variable `c` of a function with gradient
+  // `gx`, the pivots moving with it.
+  let reduced = |gx: &[f64], c: usize| -> f64 {
+    let mut v = gx[c];
+    for (r, &pc) in pivots.iter().enumerate() {
+      v -= a[r][c] * gx[pc];
+    }
+    v
+  };
+  let dense_gradient = |node: &NumNode, x: &[f64]| -> (f64, Vec<f64>) {
+    let (v, sparse) = node.eval_dual(x);
+    let mut g = vec![0.0; n];
+    for (k, d) in sparse {
+      g[k] = d;
+    }
+    (v, g)
+  };
+  // Each nonlinear equality determines one free variable implicitly (the
+  // one it depends on most strongly at the start, by column pivoting); the
+  // search runs over the remaining free variables, the dependent ones
+  // re-solved by Newton's method at every point.
+  let nl_nodes: Vec<NumNode> = nonlinear
+    .iter()
+    .map(|g| compile_numeric(g, &vars))
+    .collect::<Option<_>>()?;
+  let k_nl = nl_nodes.len();
+  let w0: Vec<f64> = free.iter().map(|&c| start[c]).collect();
+  let mut dependent: Vec<usize> = Vec::new();
+  if k_nl > 0 {
+    let x0 = linear_point(&w0);
+    let mut jac: Vec<Vec<f64>> = nl_nodes
+      .iter()
+      .map(|h| {
+        let (_, g) = dense_gradient(h, &x0);
+        free.iter().map(|&c| reduced(&g, c)).collect()
+      })
+      .collect();
+    for j in 0..k_nl {
+      let (col, val) = (0..free.len())
+        .filter(|c| !dependent.contains(c))
+        .map(|c| (c, jac[j][c].abs()))
+        .max_by(|x, y| x.1.total_cmp(&y.1))?;
+      if val.is_nan() || val <= 1e-12 {
+        return None;
+      }
+      for r in j + 1..k_nl {
+        let factor = jac[r][col] / jac[j][col];
+        let pivot_row = jac[j].clone();
+        for (x, y) in jac[r].iter_mut().zip(pivot_row) {
+          *x -= factor * y;
+        }
+      }
+      dependent.push(col);
+    }
+  }
+  let search: Vec<usize> =
+    (0..free.len()).filter(|c| !dependent.contains(c)).collect();
+  // The dependent values Newton's method starts from: those of the last
+  // accepted point, so the solution stays on one branch.
+  let anchor = std::cell::RefCell::new(
+    dependent.iter().map(|&d| w0[d]).collect::<Vec<f64>>(),
+  );
+  let full_point_from =
+    |z: &[f64], y0: &[f64]| -> Option<(Vec<f64>, Vec<f64>)> {
+      let mut w = vec![0.0; free.len()];
+      for (k, &c) in search.iter().enumerate() {
+        w[c] = z[k];
+      }
+      let mut y = y0.to_vec();
+      if k_nl == 0 {
+        return Some((linear_point(&w), y));
+      }
+      for _ in 0..100 {
+        for (k, &c) in dependent.iter().enumerate() {
+          w[c] = y[k];
+        }
+        let x = linear_point(&w);
+        let mut jac = Vec::with_capacity(k_nl);
+        let mut rhs = Vec::with_capacity(k_nl);
+        for h in &nl_nodes {
+          let (v, g) = dense_gradient(h, &x);
+          jac.push(
+            dependent
+              .iter()
+              .map(|&c| reduced(&g, free[c]))
+              .collect::<Vec<_>>(),
+          );
+          rhs.push(-v);
+        }
+        let step = solve_dense_linear_system(&jac, &rhs)?;
+        if !step.iter().all(|d| d.is_finite()) {
+          return None;
+        }
+        let mut small = true;
+        for (yk, d) in y.iter_mut().zip(&step) {
+          small &= d.abs() <= 1e-14 * yk.abs().max(1.0);
+          *yk += d;
+        }
+        if small {
+          for (k, &c) in dependent.iter().enumerate() {
+            w[c] = y[k];
+          }
+          return Some((linear_point(&w), y));
+        }
+      }
+      None
+    };
+  let full_point =
+    |z: &[f64]| full_point_from(z, &anchor.borrow()).map(|(x, _)| x);
+  let objective = compile_numeric(f, &vars)?;
+  let ineq_nodes: Vec<NumNode> = ineqs
+    .iter()
+    .map(|(g, _)| compile_numeric(g, &vars))
+    .collect::<Option<_>>()?;
+  let sign = if maximize { -1.0 } else { 1.0 };
+  // Strictly inside every inequality (a boundary point is no more use to a
+  // logarithm than an outside one).
+  let feasible = |x: &[f64]| ineq_nodes.iter().all(|g| g.eval(x) > 0.0);
+  let phi = |z: &[f64]| -> f64 {
+    let Some(x) = full_point(z) else {
+      return f64::INFINITY;
+    };
+    if !feasible(&x) {
+      return f64::INFINITY;
+    }
+    let v = sign * objective.eval(&x);
+    if v.is_finite() { v } else { f64::INFINITY }
+  };
+  let mut z: Vec<f64> = search.iter().map(|&c| w0[c]).collect();
+  // Phase one: walk into the feasible region when the start lies outside.
+  if !phi(&z).is_finite() {
+    let violation = |zz: &[f64]| -> f64 {
+      let Some(x) = full_point(zz) else {
+        return 1e6 * ineq_nodes.len().max(1) as f64;
+      };
+      ineq_nodes
+        .iter()
+        .map(|g| {
+          let v = g.eval(&x);
+          if v.is_finite() {
+            (1e-6 - v).max(0.0).powi(2)
+          } else {
+            1e6
+          }
+        })
+        .sum()
+    };
+    for _ in 0..20 {
+      z = nelder_mead_minimize(&violation, &|_: &mut [f64]| {}, &z, 2000);
+      if phi(&z).is_finite() {
+        break;
+      }
+    }
+    if !phi(&z).is_finite() {
+      return None;
+    }
+  }
+  // The points the search visits, for a `StepMonitor`.
+  let steps: std::cell::RefCell<Vec<Vec<f64>>> =
+    std::cell::RefCell::new(full_point(&z).into_iter().collect());
+  // Phase two: quasi-Newton (BFGS) with central-difference gradients and a
+  // backtracking line search that stays inside the feasible region.
+  let m = z.len();
+  // The gradient in the free variables from the symbolic partials of f:
+  // dx_free/dz is the identity and dx_pivot/dz the negated echelon entries.
+  let partials: Option<Vec<NumNode>> = vars
+    .iter()
+    .map(|v| {
+      let d = crate::functions::calculus_ast::differentiate_expr(f, v).ok()?;
+      compile_numeric(&d, &vars).filter(|node| !node.has_fallback())
+    })
+    .collect();
+  // With dependent variables, the implicit function theorem: the
+  // multipliers solve J_y^T lambda = grad_y f and the gradient along a
+  // search variable is its own partial less lambda . J_z.
+  let exact_grad = |zz: &[f64]| -> Option<Vec<f64>> {
+    let x = full_point(zz)?;
+    let gx: Vec<f64> = match partials.as_ref() {
+      Some(parts) => parts.iter().map(|p| sign * p.eval(&x)).collect(),
+      None if k_nl > 0 => dense_gradient(&objective, &x)
+        .1
+        .iter()
+        .map(|d| sign * d)
+        .collect(),
+      None => return None,
+    };
+    let mut g: Vec<f64> =
+      search.iter().map(|&c| reduced(&gx, free[c])).collect();
+    if k_nl > 0 {
+      let hx: Vec<Vec<f64>> =
+        nl_nodes.iter().map(|h| dense_gradient(h, &x).1).collect();
+      let jac_t: Vec<Vec<f64>> = dependent
+        .iter()
+        .map(|&c| hx.iter().map(|gh| reduced(gh, free[c])).collect())
+        .collect();
+      let gy: Vec<f64> =
+        dependent.iter().map(|&c| reduced(&gx, free[c])).collect();
+      let lambda = solve_dense_linear_system(&jac_t, &gy)?;
+      for (gk, &c) in g.iter_mut().zip(&search) {
+        for (l, gh) in lambda.iter().zip(&hx) {
+          *gk -= l * reduced(gh, free[c]);
+        }
+      }
+    }
+    g.iter().all(|v| v.is_finite()).then_some(g)
+  };
+  let grad = |zz: &[f64]| -> Vec<f64> {
+    if let Some(g) = exact_grad(zz) {
+      return g;
+    }
+    (0..m)
+      .map(|k| {
+        let h = 1e-6 * zz[k].abs().max(1.0);
+        let mut p = zz.to_vec();
+        p[k] += h;
+        let fp = phi(&p);
+        p[k] -= 2.0 * h;
+        let fm = phi(&p);
+        if fp.is_finite() && fm.is_finite() {
+          (fp - fm) / (2.0 * h)
+        } else if fp.is_finite() {
+          (fp - phi(zz)) / h
+        } else {
+          (phi(zz) - fm) / h
+        }
+      })
+      .collect()
+  };
+  if m > 0 {
+    z = bfgs_minimize(&phi, &grad, z, 500, &mut |znew: &[f64]| {
+      let solved = full_point_from(znew, &anchor.borrow());
+      if let Some((x, y)) = solved {
+        *anchor.borrow_mut() = y;
+        if monitorable {
+          steps.borrow_mut().push(x);
+        }
+      }
+    });
+  }
+  let x = full_point(&z)?;
+  let value = objective.eval(&x);
+  if !value.is_finite() {
+    return None;
+  }
+  // A non-strict inequality the search ended up pressed against is active:
+  // impose it as an equality and solve again from here, which lands on the
+  // boundary exactly rather than as close as the line search got.
+  let scale = x.iter().fold(1.0f64, |m, v| m.max(v.abs()));
+  if let Some(k) = ineqs.iter().enumerate().position(|(k, (_, eq))| {
+    eq.is_some() && ineq_nodes[k].eval(&x).abs() < 1e-6 * scale
+  }) {
+    let mut tightened: Vec<Expr> = flat
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != ineq_source[k])
+      .map(|(_, c)| c.clone())
+      .collect();
+    tightened.push(ineqs[k].1.clone()?);
+    let specs: Vec<Expr> = vars
+      .iter()
+      .zip(&x)
+      .map(|(v, xv)| {
+        Expr::List(vec![Expr::Identifier(v.clone()), Expr::Real(*xv)].into())
+      })
+      .collect();
+    if let Some(r) = find_minimum_local_constrained(
+      f,
+      &tightened,
+      &[Expr::List(specs.into())],
+      maximize,
+      None,
+    ) {
+      report_unmonitored();
+      return Some(r);
+    }
+  }
+  // The search's steps are the caller's to monitor when it ran unhindered
+  // to a stationary point (wolframscript's interior method); otherwise
+  // the problem was solved another way that reports nothing.
+  let stationary = {
+    let g = grad(&z);
+    let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+    gnorm.is_finite() && gnorm <= 1e-6 * value.abs().max(1.0)
+  };
+  if let Some((_, m)) = monitor
+    && monitorable
+    && stationary
+  {
+    for point in steps.borrow().iter() {
+      fire_step_monitor(Some(m), &vars, point);
+    }
+  } else {
+    report_unmonitored();
+  }
+  let rules: Vec<Expr> = vars
+    .iter()
+    .zip(&x)
+    .map(|(v, xv)| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(v.clone())),
+      replacement: Box::new(Expr::Real(*xv)),
+    })
+    .collect();
+  Some(Expr::List(
+    vec![Expr::Real(value), Expr::List(rules.into())].into(),
+  ))
+}
+
 /// Derivative-free Nelder–Mead simplex search for a local minimum of
 /// `eval` (already signed for maximize, and never returning an error —
 /// callers score a failed trial point as `f64::INFINITY`). Used by
@@ -16607,6 +17530,18 @@ pub fn find_minimum_ast(
   }
   if let Expr::List(items) = &args[0]
     && items.len() >= 2
+    && let Some(result) = find_minimum_local_constrained(
+      &items[0],
+      &items[1..],
+      &args[1..var_args_end],
+      maximize,
+      find_option(&args[var_args_end..], "StepMonitor").map(|m| (func_name, m)),
+    )
+  {
+    return Ok(result);
+  }
+  if let Expr::List(items) = &args[0]
+    && items.len() >= 2
     && let Some(vars) = args[1..var_args_end]
       .iter()
       .map(optimization_variable_names)
@@ -16790,9 +17725,21 @@ pub fn find_minimum_ast(
   // case below already falls back from, a failure here falls back the same
   // way — the derivative-free branch never touches `grad_exprs`/
   // `hess_exprs`, so leaving them empty is safe.
+  // With many variables the symbolic Hessian (n^2 derivatives of what is
+  // often a large sum) costs far more than the search itself: an objective
+  // that compiles is minimized by BFGS — wolframscript's default
+  // quasi-Newton method — on forward-mode gradients instead.
+  let compiled_objective = if n >= 8 && bounds.iter().all(Option::is_none) {
+    compile_numeric(f, &vars).filter(|node| !node.has_fallback())
+  } else {
+    None
+  };
   let mut grad_exprs: Vec<Expr> = Vec::with_capacity(n);
   let mut hess_exprs: Vec<Vec<Expr>> = Vec::new();
   let symbolic_derivatives: Option<()> = (|| {
+    if compiled_objective.is_some() {
+      return None;
+    }
     for var in &vars {
       let deriv =
         crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
@@ -16941,7 +17888,23 @@ pub fn find_minimum_ast(
     ));
   };
 
-  if !symbolic_works {
+  if let Some(node) = &compiled_objective {
+    let phi = |z: &[f64]| -> f64 {
+      fire_step_monitor(evaluation_monitor, &vars, z);
+      let v = sign * node.eval(z);
+      if v.is_finite() { v } else { f64::INFINITY }
+    };
+    let grad = |z: &[f64]| -> Vec<f64> {
+      let mut g = vec![0.0; n];
+      for (k, d) in node.eval_dual(z).1 {
+        g[k] = sign * d;
+      }
+      g
+    };
+    x = bfgs_minimize(&phi, &grad, x, max_iter, &mut |z: &[f64]| {
+      fire_step_monitor(step_monitor, &vars, z);
+    });
+  } else if !symbolic_works {
     // `f` isn't symbolically differentiable — most commonly a call to a
     // `_?NumericQ`-guarded user function, the standard idiom for a
     // least-squares objective built from `NDSolve`/`ReplaceAll` that
@@ -18862,8 +19825,44 @@ fn nminimize_ast_impl(
   // solver's factoring and cancelling never finishes, so the numeric optimum
   // stands on its own.
   let sym_name = if maximize { "Maximize" } else { "Minimize" };
+  // A radical of the unknowns in several variables (a sum of distances,
+  // the Fermat point) sends the exact solver through squaring
+  // eliminations that run for minutes; the numeric optimum stands.
+  fn radical_of(e: &Expr, vars: &[String]) -> bool {
+    let fractional = |exp: &Expr| {
+      matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
+        || matches!(exp, Expr::Real(_))
+    };
+    let depends = |b: &Expr| {
+      vars
+        .iter()
+        .any(|v| crate::functions::polynomial_ast::contains_var(b, v))
+    };
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (fractional(&args[1]) && depends(&args[0]))
+          || args.iter().any(|a| radical_of(a, vars))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        depends(&args[0]) || radical_of(&args[0], vars)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (fractional(right) && depends(left)) || radical_of(left, vars),
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| radical_of(c, vars)),
+    }
+  }
   let symbolic = if super::simplify::leaf_count(&objective)
     <= SYMBOLIC_REFINEMENT_MAX_LEAVES
+    && !(vars.len() >= 2 && radical_of(&objective, &vars))
   {
     crate::evaluator::evaluate_expr_to_expr(&unevaluated(sym_name, args))
       .ok()
@@ -18899,7 +19898,7 @@ const SYMBOLIC_REFINEMENT_MAX_LEAVES: usize = 150;
 /// floating-point ops, so many restarts / iterations stay cheap. Anything the
 /// compiler doesn't recognise yields `None`, and the caller falls back to the
 /// slow AST path.
-enum NumNode {
+pub(crate) enum NumNode {
   Const(f64),
   Var(usize),
   Neg(Box<Self>),
@@ -18915,6 +19914,20 @@ enum NumNode {
   Sqrt(Box<Self>),
   Ln(Box<Self>),
   Binary(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
+  // `Re`, `Im`, `Abs`, … of a subexpression: while the argument stays
+  // real, the function applied to its value; once it leaves the reals
+  // (machine arithmetic gives NaN, e.g. `Log` of a negative number), the
+  // whole call through the `Fallback` node, in complex arithmetic.
+  RealOr(fn(f64) -> f64, Box<Self>, Box<Self>),
+  // An `InterpolatingFunction[…]` (its arguments, in Woxi's own layout)
+  // applied to compiled arguments: evaluated directly, without copying its
+  // data into an expression for every point.
+  // A grid function is also kept in machine numbers.
+  Interpolation(
+    std::rc::Rc<[Expr]>,
+    Option<std::rc::Rc<crate::functions::ode_ast::NumericGrid>>,
+    Vec<Self>,
+  ),
   // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
   // distribution's CDF/PDF), evaluated via the full AST evaluator with the
   // current point substituted in. Isolating just this piece — rather than
@@ -18927,7 +19940,7 @@ enum NumNode {
 impl NumNode {
   /// Whether any subexpression is evaluated through the AST evaluator
   /// rather than compiled arithmetic.
-  fn has_fallback(&self) -> bool {
+  pub(crate) fn has_fallback(&self) -> bool {
     match self {
       Self::Const(_) | Self::Var(_) => false,
       Self::Neg(a)
@@ -18940,6 +19953,9 @@ impl NumNode {
       | Self::Div(a, b)
       | Self::Pow(a, b)
       | Self::Binary(_, a, b) => a.has_fallback() || b.has_fallback(),
+      // The fallback only stands in for complex intermediate values.
+      Self::RealOr(_, a, _) => a.has_fallback(),
+      Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
     }
   }
@@ -18948,7 +19964,7 @@ impl NumNode {
   /// underflows on the way (e.g. `E^878 * (E^-880 - …)`, which is `inf * 0`),
   /// the tree is re-evaluated with an unbounded exponent, the way Wolfram
   /// leaves machine range instead of producing `Indeterminate`.
-  fn eval(&self, point: &[f64]) -> f64 {
+  pub(crate) fn eval(&self, point: &[f64]) -> f64 {
     let v = self.eval_plain(point);
     if v.is_finite() {
       v
@@ -18981,7 +19997,174 @@ impl NumNode {
       Self::Sqrt(a) => a.eval_plain(point).sqrt(),
       Self::Ln(a) => a.eval_plain(point).ln(),
       Self::Binary(f, a, b) => f(a.eval_plain(point), b.eval_plain(point)),
+      Self::Interpolation(func, grid, xs) => {
+        let values: Vec<f64> = xs.iter().map(|x| x.eval_plain(point)).collect();
+        Self::interpolation_value(func, grid.as_deref(), &values)
+      }
+      Self::RealOr(f, a, whole) => {
+        let v = a.eval_plain(point);
+        if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          f(v)
+        }
+      }
       Self::Fallback(..) => self.eval_fallback(point),
+    }
+  }
+
+  /// The value at `point` with its gradient, as `(variable, derivative)`
+  /// pairs sorted by variable (forward-mode differentiation; only the
+  /// variables the node mentions appear). A function known only as a
+  /// pointer (`Unary`, `Binary`) is differentiated by central differences
+  /// of that one function; a `Fallback` node by central differences of the
+  /// whole subexpression.
+  pub(crate) fn eval_dual(&self, point: &[f64]) -> (f64, Vec<(usize, f64)>) {
+    fn axpy(
+      a: f64,
+      x: &[(usize, f64)],
+      b: f64,
+      y: &[(usize, f64)],
+    ) -> Vec<(usize, f64)> {
+      let mut out = Vec::with_capacity(x.len() + y.len());
+      let (mut i, mut j) = (0, 0);
+      while i < x.len() || j < y.len() {
+        if j >= y.len() || (i < x.len() && x[i].0 < y[j].0) {
+          out.push((x[i].0, a * x[i].1));
+          i += 1;
+        } else if i >= x.len() || y[j].0 < x[i].0 {
+          out.push((y[j].0, b * y[j].1));
+          j += 1;
+        } else {
+          out.push((x[i].0, a * x[i].1 + b * y[j].1));
+          i += 1;
+          j += 1;
+        }
+      }
+      out
+    }
+    let scale = |a: f64, x: Vec<(usize, f64)>| -> Vec<(usize, f64)> {
+      x.into_iter().map(|(k, d)| (k, a * d)).collect()
+    };
+    let numeric_derivative = |f: &dyn Fn(f64) -> f64, a: f64| {
+      let h = 1e-6 * a.abs().max(1.0);
+      (f(a + h) - f(a - h)) / (2.0 * h)
+    };
+    match self {
+      Self::Const(c) => (*c, Vec::new()),
+      Self::Var(i) => (point[*i], vec![(*i, 1.0)]),
+      Self::Neg(a) => {
+        let (v, g) = a.eval_dual(point);
+        (-v, scale(-1.0, g))
+      }
+      Self::Add(xs) => xs.iter().fold((0.0, Vec::new()), |(v, g), x| {
+        let (xv, xg) = x.eval_dual(point);
+        (v + xv, axpy(1.0, &g, 1.0, &xg))
+      }),
+      Self::Mul(xs) => xs.iter().fold((1.0, Vec::new()), |(v, g), x| {
+        let (xv, xg) = x.eval_dual(point);
+        (v * xv, axpy(xv, &g, v, &xg))
+      }),
+      Self::Sub(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        (av - bv, axpy(1.0, &ag, -1.0, &bg))
+      }
+      Self::Div(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        (av / bv, axpy(1.0 / bv, &ag, -av / (bv * bv), &bg))
+      }
+      Self::Pow(a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        let v = Self::Pow(Box::new(Self::Const(av)), Box::new(Self::Const(bv)))
+          .eval_plain(point);
+        // d(a^b) = b a^(b-1) da + a^b ln(a) db
+        let da = if bv == 0.0 {
+          0.0
+        } else {
+          bv * Self::Pow(
+            Box::new(Self::Const(av)),
+            Box::new(Self::Const(bv - 1.0)),
+          )
+          .eval_plain(point)
+        };
+        let db = if bg.is_empty() { 0.0 } else { v * av.ln() };
+        (v, axpy(da, &ag, db, &bg))
+      }
+      Self::Exp(a) => {
+        let (av, ag) = a.eval_dual(point);
+        let v = av.exp();
+        (v, scale(v, ag))
+      }
+      Self::Sqrt(a) => {
+        let (av, ag) = a.eval_dual(point);
+        let v = av.sqrt();
+        (v, scale(0.5 / v, ag))
+      }
+      Self::Ln(a) => {
+        let (av, ag) = a.eval_dual(point);
+        (av.ln(), scale(1.0 / av, ag))
+      }
+      Self::Unary(f, a) => {
+        let (av, ag) = a.eval_dual(point);
+        (f(av), scale(numeric_derivative(f, av), ag))
+      }
+      Self::Binary(f, a, b) => {
+        let (av, ag) = a.eval_dual(point);
+        let (bv, bg) = b.eval_dual(point);
+        let da = numeric_derivative(&|t| f(t, bv), av);
+        let db = numeric_derivative(&|t| f(av, t), bv);
+        (f(av, bv), axpy(da, &ag, db, &bg))
+      }
+      Self::RealOr(f, a, whole) => {
+        let (av, ag) = a.eval_dual(point);
+        if av.is_nan() {
+          whole.eval_dual(point)
+        } else {
+          (f(av), scale(numeric_derivative(f, av), ag))
+        }
+      }
+      // Each argument's partial derivative by central differences of the
+      // interpolation, chained with that argument's gradient.
+      Self::Interpolation(func, grid, xs) => {
+        let grid = grid.as_deref();
+        let duals: Vec<(f64, Vec<(usize, f64)>)> =
+          xs.iter().map(|x| x.eval_dual(point)).collect();
+        let values: Vec<f64> = duals.iter().map(|(v, _)| *v).collect();
+        let v = Self::interpolation_value(func, grid, &values);
+        let mut grad: Vec<(usize, f64)> = Vec::new();
+        for (k, (xk, gk)) in duals.iter().enumerate() {
+          if gk.is_empty() {
+            continue;
+          }
+          let h = 1e-6 * xk.abs().max(1.0);
+          let mut shifted = values.clone();
+          shifted[k] = xk + h;
+          let up = Self::interpolation_value(func, grid, &shifted);
+          shifted[k] = xk - h;
+          let down = Self::interpolation_value(func, grid, &shifted);
+          grad = axpy(1.0, &grad, (up - down) / (2.0 * h), gk);
+        }
+        (v, grad)
+      }
+      Self::Fallback(..) => {
+        let v = self.eval_fallback(point);
+        let grad = (0..point.len())
+          .filter_map(|k| {
+            let h = 1e-7 * point[k].abs().max(1.0);
+            let mut p = point.to_vec();
+            p[k] += h;
+            let fp = self.eval_fallback(&p);
+            p[k] -= 2.0 * h;
+            let fm = self.eval_fallback(&p);
+            let d = (fp - fm) / (2.0 * h);
+            (d != 0.0).then_some((k, d))
+          })
+          .collect();
+        (v, grad)
+      }
     }
   }
 
@@ -19009,8 +20192,37 @@ impl NumNode {
         a.eval_wide(point).to_f64(),
         b.eval_wide(point).to_f64(),
       )),
+      Self::Interpolation(..) => WideFloat::new(self.eval_plain(point)),
+      Self::RealOr(f, a, whole) => {
+        let v = a.eval_wide(point).to_f64();
+        WideFloat::new(if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          f(v)
+        })
+      }
       Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
     }
+  }
+
+  /// The value of `InterpolatingFunction[func…][values…]`.
+  fn interpolation_value(
+    func: &[Expr],
+    grid: Option<&crate::functions::ode_ast::NumericGrid>,
+    values: &[f64],
+  ) -> f64 {
+    let args = || values.iter().map(|v| Expr::Real(*v)).collect::<Vec<_>>();
+    if let Some(grid) = grid {
+      if grid.outside(values) {
+        crate::functions::ode_ast::emit_dmval(&args());
+      }
+      return grid.eval_real(values);
+    }
+    let args = args();
+    crate::functions::ode_ast::evaluate_interpolating_function(func, &args)
+      .ok()
+      .and_then(|v| expr_to_f64(&v).ok())
+      .unwrap_or(f64::NAN)
   }
 
   fn eval_fallback(&self, point: &[f64]) -> f64 {
@@ -19166,7 +20378,7 @@ impl WideFloat {
 
 /// Compile an `Expr` over `vars` into a fast numeric closure tree, or `None`
 /// if it contains anything not handled here (forcing the slow AST fallback).
-fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
+pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
   let c = |e: &Expr| compile_numeric(e, vars);
   match expr {
     Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
@@ -19204,6 +20416,17 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           Some(NumNode::Unary(
             f,
             Box::new(compile_numeric(&args[0], vars)?),
+          ))
+        };
+      let real_or =
+        |f: fn(f64) -> f64, args: &crate::ExprList| -> Option<NumNode> {
+          Some(NumNode::RealOr(
+            f,
+            Box::new(compile_numeric(&args[0], vars)?),
+            Box::new(NumNode::Fallback(
+              std::rc::Rc::new(expr.clone()),
+              std::rc::Rc::from(vars.to_vec()),
+            )),
           ))
         };
       match name.as_str() {
@@ -19246,7 +20469,9 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Sinh" => unary(f64::sinh, args),
         "Cosh" => unary(f64::cosh, args),
         "Tanh" => unary(f64::tanh, args),
-        "Abs" => unary(f64::abs, args),
+        "Re" | "Conjugate" if args.len() == 1 => real_or(|x| x, args),
+        "Im" if args.len() == 1 => real_or(|_| 0.0, args),
+        "Abs" if args.len() == 1 => real_or(f64::abs, args),
         "Sign" => unary(f64::signum, args),
         "Erf" => {
           unary(crate::functions::math_ast::numeric_utils::erf_f64, args)
@@ -19292,6 +20517,33 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           std::rc::Rc::from(vars.to_vec()),
         )),
       }
+    }
+    Expr::CurriedCall { func, args }
+      if let Expr::FunctionCall {
+        name,
+        args: func_args,
+      } = func.as_ref()
+        && name == "InterpolatingFunction" =>
+    {
+      // A kernel-layout function is read into Woxi's own layout once here
+      // rather than at every evaluation.
+      let native =
+        crate::functions::ode_ast::kernel_grid_interpolating_function(
+          func_args,
+        )
+        .or_else(|| {
+          crate::functions::ode_ast::kernel_interpolating_function_to_native(
+            func_args,
+          )
+        })
+        .unwrap_or_else(|| func_args.to_vec());
+      let grid = crate::functions::ode_ast::NumericGrid::from_function(&native)
+        .map(std::rc::Rc::new);
+      Some(NumNode::Interpolation(
+        std::rc::Rc::from(native),
+        grid,
+        args.iter().map(&c).collect::<Option<_>>()?,
+      ))
     }
     // Anything else unrecognised (comparisons, curried calls, …) also falls
     // back in isolation rather than failing the whole compile.
@@ -20972,5 +22224,24 @@ mod tests {
     assert_eq!(node.eval(&[800.0]), 0.0);
     // A plain machine result is untouched.
     assert_eq!(node.eval(&[1.0]), 1.0 - (-1.0f64).exp());
+  }
+
+  #[test]
+  fn compiled_real_part_compiles_and_handles_complex_values() {
+    // Re[Log[x]] + Abs[Sqrt[x]]: real arithmetic while x > 0; for x < 0
+    // the call is evaluated in complex arithmetic (Log[2] and Sqrt[2]).
+    let expr =
+      crate::syntax::string_to_expr("Re[Log[x]] + Abs[Sqrt[x]] + Im[x]")
+        .unwrap();
+    let node = super::compile_numeric(&expr, &["x".to_string()]).unwrap();
+    assert!(!node.has_fallback());
+    let at_e = node.eval(&[std::f64::consts::E]);
+    assert!((at_e - (1.0 + std::f64::consts::E.sqrt())).abs() < 1e-15);
+    let at_minus_two = node.eval(&[-2.0]);
+    let expected = 2.0f64.ln() + 2.0f64.sqrt();
+    assert!(
+      (at_minus_two - expected).abs() < 1e-14,
+      "{at_minus_two} vs {expected}"
+    );
   }
 }

@@ -84,7 +84,7 @@ define_class!(
         }
         let delegate_class: *mut AnyClass = msg_send![delegate, class];
         // Encoding for `-(void)application:(id)app openURLs:(id)urls`.
-        let types = b"v@:@@\0".as_ptr();
+        let types = c"v@:@@".as_ptr().cast::<u8>();
         let imp: extern "C" fn() =
           std::mem::transmute(application_open_urls as *const c_void);
         let _added = class_addMethod(

@@ -2501,9 +2501,22 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "BezierFunction" && func_args.len() == 1 => {
-      // BezierFunction[{{p1}, {p2}, ...}][t] — evaluate Bezier curve at t
-      Ok(evaluate_bezier_function(func_args, args))
+    } if name == "BezierFunction"
+      && !func_args.is_empty()
+      && func_args[1..]
+        .iter()
+        .all(|o| matches!(o, Expr::Rule { .. })) =>
+    {
+      // BezierFunction[{{p1}, {p2}, ...}, opts][t] — evaluate the Bezier
+      // curve at t. Wolfram ignores a `SplineDegree` here: the curve has
+      // the full degree n - 1 whatever is given.
+      if !bezier_parameter_is_numeric(args) {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
+      Ok(evaluate_bezier_function(&func_args[..1], args))
     }
     Expr::FunctionCall {
       name,
@@ -2512,6 +2525,12 @@ pub fn apply_curried_call(
       // Structured form: BezierFunction[degree, knots, {n}, {points, {}}, ...]
       // The control points live in args[3][0]. Wrap them in a 1-arg
       // BezierFunction and reuse the standard evaluator.
+      if !bezier_parameter_is_numeric(args) {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       if let Expr::List(slot) = &func_args[3]
         && !slot.is_empty()
       {
@@ -2696,8 +2715,20 @@ pub fn apply_curried_call(
         })
         .collect();
       let args = coerced.as_slice();
+      // A compiled result is a homogeneous tensor: a list that mixes reals
+      // with integers is a real tensor (`{4.2, 17.4, 1.}`), while an
+      // all-integer list or an integer stays integer (an index list the
+      // caller then uses with Part).
+      fn contains_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) => true,
+          Expr::List(items) => items.iter().any(contains_real),
+          _ => false,
+        }
+      }
       let finish = |result: Expr| {
-        if any_real {
+        if any_real && matches!(result, Expr::List(_)) && contains_real(&result)
+        {
           coerce_to_real(&result)
         } else {
           result
@@ -3065,12 +3096,26 @@ pub fn apply_curried_call(
             _ => None,
           })
           .collect();
+        // A kernel-layout grid (as wolframscript stores it) is read into
+        // that form first.
+        let native_grid = match args.first() {
+          Some(Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          }) if interp_name == "InterpolatingFunction" => {
+            crate::functions::ode_ast::kernel_grid_interpolating_function(
+              interp_args,
+            )
+            .map(|a| call("InterpolatingFunction", a))
+          }
+          _ => None,
+        };
         if args.len() == 1
           && let Some(orders) = orders
           && let Expr::FunctionCall {
             name: interp_name,
             args: interp_args,
-          } = &args[0]
+          } = native_grid.as_ref().unwrap_or(&args[0])
           && interp_name == "InterpolatingFunction"
           && matches!(interp_args.len(), 4 | 5)
           && matches!(&interp_args[2], Expr::List(o) if o.len() == orders.len())
@@ -3355,6 +3400,13 @@ pub fn apply_curried_call(
 }
 
 /// Evaluate BezierFunction[{control_points}][t] using de Casteljau's algorithm.
+/// Whether a BezierFunction is applied to one number; otherwise the call
+/// stays as it is (`BezierFunction[…][t]`).
+fn bezier_parameter_is_numeric(args: &[Expr]) -> bool {
+  matches!(args, [Expr::Real(_) | Expr::Integer(_)])
+    || matches!(args, [Expr::FunctionCall { name, .. }] if name == "Rational")
+}
+
 fn evaluate_bezier_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   if args.len() != 1 {
     return unevaluated("BezierFunction", func_args);

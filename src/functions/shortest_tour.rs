@@ -634,3 +634,86 @@ fn improve_tour(
     }
   }
 }
+
+/// FindCurvePath[points]: the points ordered along one curve, as a list
+/// holding one list of 1-based indices. The shortest closed tour is the
+/// curve when no step of it is much longer than the others; otherwise it is
+/// cut at its longest step into an open path. A closed curve is written the
+/// way Wolfram writes it, starting and ending at the neighbour of point 1
+/// that precedes it (`{{2, 1, 6, 5, 4, 3, 2}}`); an open one runs from its
+/// lower-numbered end.
+pub fn find_curve_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated("FindCurvePath", args));
+  let [Expr::List(points)] = args else {
+    return unevaluated_call();
+  };
+  let coords: Option<Vec<Vec<f64>>> = points
+    .iter()
+    .map(|p| match p {
+      Expr::List(cs) if !cs.is_empty() => cs
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      _ => None,
+    })
+    .collect();
+  let Some(coords) = coords else {
+    return unevaluated_call();
+  };
+  let n = coords.len();
+  let indices = |v: Vec<usize>| {
+    Expr::List(
+      vec![Expr::List(
+        v.into_iter()
+          .map(|i| Expr::Integer(i as i128 + 1))
+          .collect(),
+      )]
+      .into(),
+    )
+  };
+  if n <= 2 {
+    return Ok(indices((0..n).collect()));
+  }
+  let dist: Vec<Vec<f64>> = coords
+    .iter()
+    .map(|a| {
+      coords
+        .iter()
+        .map(|b| {
+          a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y).powi(2))
+            .sum::<f64>()
+            .sqrt()
+        })
+        .collect()
+    })
+    .collect();
+  let mut tour = closed_tour(&dist);
+  tour.pop(); // the closing return to point 0
+  let step = |k: usize| dist[tour[k]][tour[(k + 1) % n]];
+  let mut steps: Vec<f64> = (0..n).map(step).collect();
+  let (longest_at, longest) = steps
+    .iter()
+    .copied()
+    .enumerate()
+    .max_by(|a, b| a.1.total_cmp(&b.1))
+    .unwrap_or((0, 0.0));
+  steps.sort_by(f64::total_cmp);
+  let median = steps[n / 2];
+  if longest > 2.5 * median {
+    // Open: cut the cycle at its longest step.
+    let mut path: Vec<usize> =
+      (1..=n).map(|k| tour[(longest_at + k) % n]).collect();
+    let (s, t) = (path[0], path[n - 1]);
+    path = open_path(&dist, s, t);
+    if path.first() > path.last() {
+      path.reverse();
+    }
+    return Ok(indices(path));
+  }
+  // Closed: from point 0's predecessor round to it again.
+  let mut cycle = vec![tour[n - 1]];
+  cycle.extend(tour.iter().copied());
+  Ok(indices(cycle))
+}

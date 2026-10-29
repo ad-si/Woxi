@@ -14034,6 +14034,130 @@ fn series_coeff_map(
 /// denominator into power series and performs power-series long division:
 /// `num = den * quotient` solved coefficient by coefficient. Returns None when
 /// either piece is not an integer-power series or the numerator is zero.
+/// The value of `expr` at `x0`, evaluated quietly (see the probe in
+/// `series_ast`).
+fn probe_val_for_parts(
+  expr: &Expr,
+  var: &str,
+  x0: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let probe = crate::syntax::substitute_variable(expr, var, x0);
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let val = crate::evaluator::evaluate_expr_to_expr(&probe);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  val
+}
+
+/// The series of a sum or product singular at `x0` as the sum or product of
+/// its parts' series, each of which may be a Laurent series:
+/// `x^2 (1 + 3/x + 2/x^2)/(1 - x^2)` is `2 + 3 x + 3 x^2 + …` though no
+/// derivative of it can be taken at 0. A factor's order is raised by the
+/// negative valuations of the others so the product reaches `order`.
+fn try_series_by_parts(
+  expr: &Expr,
+  var: &str,
+  x0: &Expr,
+  order: i128,
+) -> Option<Expr> {
+  // A positive integer power of a part: the part's series, raised.
+  let power_parts = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((args[0].clone(), args[1].clone()))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some(((**left).clone(), (**right).clone())),
+    _ => None,
+  };
+  if let Some((base, Expr::Integer(k))) = &power_parts
+    && *k >= 2
+  {
+    let probe = |n: i128| -> Option<(Expr, i128)> {
+      let s = series_ast(&[
+        base.clone(),
+        Expr::List(vec![id_expr(var), x0.clone(), Expr::Integer(n)].into()),
+      ])
+      .ok()?;
+      let parsed = parse_integer_series(&s)?;
+      (!parsed.coeffs.iter().any(is_singular_series_value))
+        .then_some((s, parsed.nmin))
+    };
+    let (_, v) = probe(order)?;
+    let (s, _) = probe(order - (k - 1) * v)?;
+    let raised = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![s, Expr::Integer(*k)],
+    ))
+    .ok()?;
+    parse_integer_series(&raised)?;
+    return Some(raised);
+  }
+  let (parts, product) = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      (args.to_vec(), true)
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      (args.to_vec(), false)
+    }
+    _ => return None,
+  };
+  let series_of = |e: &Expr, n: i128| -> Option<Expr> {
+    let s = series_ast(&[
+      e.clone(),
+      Expr::List(vec![id_expr(var), x0.clone(), Expr::Integer(n)].into()),
+    ])
+    .ok()?;
+    // A part that is not a plain power series of x (an unevaluated Series,
+    // E^SeriesData, …) or carries non-finite coefficients spoils the whole.
+    let parsed = parse_integer_series(&s)?;
+    (!parsed.coeffs.iter().any(is_singular_series_value)).then_some(s)
+  };
+  let mut series: Vec<Expr> = Vec::with_capacity(parts.len());
+  if product {
+    // Valuations first, from a series at the requested order.
+    let valuations: Vec<i128> = parts
+      .iter()
+      .map(|p| {
+        if crate::functions::polynomial_ast::contains_var(p, var) {
+          series_of(p, order)
+            .and_then(|s| parse_integer_series(&s))
+            .map(|s| s.nmin)
+        } else {
+          Some(0)
+        }
+      })
+      .collect::<Option<_>>()?;
+    let total: i128 = valuations.iter().sum();
+    for (p, v) in parts.iter().zip(&valuations) {
+      if !crate::functions::polynomial_ast::contains_var(p, var) {
+        series.push(p.clone());
+        continue;
+      }
+      series.push(series_of(p, order - (total - v))?);
+    }
+    let prod =
+      crate::evaluator::evaluate_expr_to_expr(&call("Times", series)).ok()?;
+    parse_integer_series(&prod)?;
+    Some(prod)
+  } else {
+    for p in &parts {
+      if crate::functions::polynomial_ast::contains_var(p, var) {
+        series.push(series_of(p, order)?);
+      } else {
+        series.push(p.clone());
+      }
+    }
+    let sum =
+      crate::evaluator::evaluate_expr_to_expr(&call("Plus", series)).ok()?;
+    parse_integer_series(&sum)?;
+    Some(sum)
+  }
+}
+
 fn try_series_quotient(
   num: &Expr,
   den: &Expr,
@@ -14053,10 +14177,12 @@ fn try_series_quotient(
       ),
     ]
   };
+  // A numerator that is no plain power series (Stirling's E^(…) factor)
+  // rules the quotient out before the denominator's series, which can be
+  // costly, is computed.
   let num_s = series_ast(&make_args(num)).ok()?;
-  let den_s = series_ast(&make_args(den)).ok()?;
-
   let num_map = series_coeff_map(&num_s, var_name)?;
+  let den_s = series_ast(&make_args(den)).ok()?;
   let den_map = series_coeff_map(&den_s, var_name)?;
 
   // Valuations (lowest nonzero power) of numerator and denominator.
@@ -14108,7 +14234,20 @@ fn try_series_quotient(
     nmin += 1;
   }
   if coefficients.is_empty() {
-    return Some(Expr::Integer(0));
+    // The quotient starts past the order: the empty series at its first
+    // power (`Series[1/x, {x, 0, -2}]` is `SeriesData[x, 0, {}, -1, -1, 1]`).
+    let v = q_min.max(order + 1);
+    return Some(call(
+      "SeriesData",
+      vec![
+        id_expr(var_name),
+        x0.clone(),
+        Expr::List(vec![].into()),
+        Expr::Integer(v),
+        Expr::Integer(v),
+        Expr::Integer(1),
+      ],
+    ));
   }
   while coefficients.len() > 1
     && matches!(coefficients.last(), Some(Expr::Integer(0)))
@@ -14255,6 +14394,79 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
     Expr::Integer(1),
   ];
   Some(call("SeriesData", data))
+}
+
+/// `f[s]` for an elementary function `f` of a series `s` with no negative
+/// powers, as Wolfram evaluates it: with `c0` the constant term of `s`,
+/// the series of `f[c0 + y]` in `y` composed with `s - c0`.
+/// `Exp[SeriesData[x, Infinity, {1/12, 0, -1/360}, 1, 4, 1]]` is
+/// `SeriesData[x, Infinity, {1, 1/12, 1/288, -139/51840}, 0, 4, 1]`.
+/// `None` for anything else (fractional or negative powers, an exact
+/// constant term the function has no expansion about).
+pub fn function_of_series(name: &str, sd: &Expr) -> Option<Expr> {
+  if !matches!(
+    name,
+    "Exp"
+      | "Log"
+      | "Sin"
+      | "Cos"
+      | "Tan"
+      | "Cot"
+      | "Sec"
+      | "Csc"
+      | "Sinh"
+      | "Cosh"
+      | "Tanh"
+      | "ArcSin"
+      | "ArcCos"
+      | "ArcTan"
+      | "ArcSinh"
+      | "ArcTanh"
+      | "Sqrt"
+  ) {
+    return None;
+  }
+  let s = parse_integer_series(sd)?;
+  if s.nmin < 0 {
+    return None;
+  }
+  // Split off the constant term.
+  let (c0, rest_coeffs, rest_nmin) = if s.nmin == 0 {
+    (
+      s.coeffs.first().cloned().unwrap_or(Expr::Integer(0)),
+      s.coeffs.iter().skip(1).cloned().collect::<Vec<_>>(),
+      1,
+    )
+  } else {
+    (Expr::Integer(0), s.coeffs.clone(), s.nmin)
+  };
+  if rest_nmin >= s.nmax
+    || rest_coeffs.iter().all(|c| matches!(c, Expr::Integer(0)))
+  {
+    return None;
+  }
+  let y = "Woxi`series$y".to_string();
+  let outer_expr = call1(name, call("Plus", vec![c0, id_expr(&y)]));
+  let outer = series_ast(&[
+    crate::evaluator::evaluate_expr_to_expr(&outer_expr).ok()?,
+    Expr::List(
+      vec![id_expr(&y), Expr::Integer(0), Expr::Integer(s.nmax)].into(),
+    ),
+  ])
+  .ok()?;
+  let inner = call(
+    "SeriesData",
+    vec![
+      s.var.clone(),
+      s.center.clone(),
+      Expr::List(rest_coeffs.into()),
+      Expr::Integer(rest_nmin),
+      Expr::Integer(s.nmax),
+      Expr::Integer(1),
+    ],
+  );
+  let composed = compose_series_pair(&outer, &inner)?;
+  crate::evaluator::evaluate_expr_to_expr(&composed).ok()
 }
 
 /// ComposeSeries[s1, s2, ...] — substitute each series into the previous one,
@@ -14710,6 +14922,53 @@ fn leading_fractional_power(
   Some(((p, q), g))
 }
 
+/// The series of `f` when it has no term up to `order`: Wolfram answers
+/// with the empty series starting at the first power the expansion does
+/// reach (`Series[x^3/(1 - x), {x, 0, 1}]` is `SeriesData[x, 0, {}, 3, 3,
+/// 1]`), which is still a series to multiply or add. An expression free of
+/// the variable stays 0.
+fn empty_series_at_valuation(
+  f: &Expr,
+  var_name: &str,
+  x0: &Expr,
+  order: i128,
+) -> Result<Expr, InterpreterError> {
+  if !crate::functions::polynomial_ast::contains_var(f, var_name) {
+    return Ok(Expr::Integer(0));
+  }
+  for higher in (order + 1)..=(order + 12) {
+    let deeper = series_ast(&[
+      f.clone(),
+      Expr::List(
+        vec![
+          Expr::Identifier(var_name.to_string()),
+          x0.clone(),
+          Expr::Integer(higher),
+        ]
+        .into(),
+      ),
+    ])?;
+    if let Expr::FunctionCall { name, args: sd } = &deeper
+      && name == "SeriesData"
+      && let (Expr::List(c), Expr::Integer(v)) = (&sd[2], &sd[3])
+      && !c.is_empty()
+    {
+      return Ok(call(
+        "SeriesData",
+        vec![
+          Expr::Identifier(var_name.to_string()),
+          x0.clone(),
+          Expr::List(vec![].into()),
+          Expr::Integer(*v),
+          Expr::Integer(*v),
+          Expr::Integer(1),
+        ],
+      ));
+    }
+  }
+  Ok(Expr::Integer(0))
+}
+
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -14768,6 +15027,52 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // x -> 1/t turns it into an ordinary expansion about t == 0, and the
   // resulting SeriesData carries straight over: the exponents are already
   // recorded as powers of 1/x once the base is Infinity.
+  // Log[x] at Infinity has no expansion in powers of 1/x: Wolfram carries
+  // it in the coefficients (`Series[x Log[x], {x, Infinity, 1}]` has the
+  // coefficient Log[x] at x^1). Expand with Log[x] standing in as a
+  // constant, then put it back.
+  if matches!(&x0, Expr::Identifier(s) if s == "Infinity") {
+    let log_x = call1("Log", id_expr(&var_name));
+    let mut found = false;
+    let stand_in = id_expr(&format!("Woxi`series$log${var_name}"));
+    let replaced =
+      crate::functions::string_ast::map_expr_tree(&args[0], &|n| {
+        (crate::syntax::expr_to_string(n)
+          == crate::syntax::expr_to_string(&log_x))
+        .then(|| stand_in.clone())
+      });
+    found |= crate::syntax::expr_to_string(&replaced)
+      != crate::syntax::expr_to_string(&args[0]);
+    if found {
+      let mut inner = args.to_vec();
+      inner[0] = replaced;
+      let series = series_ast(&inner)?;
+      if let Expr::FunctionCall { name, args: sd } = &series
+        && name == "SeriesData"
+        && sd.len() == 6
+        && let Expr::List(coeffs) = &sd[2]
+      {
+        let coeffs: Vec<Expr> = coeffs
+          .iter()
+          .map(|c| {
+            let back = crate::syntax::substitute_variable(
+              c,
+              &format!("Woxi`series$log${var_name}"),
+              &log_x,
+            );
+            crate::evaluator::evaluate_expr_to_expr(&call1("Expand", back))
+              .unwrap_or_else(|_| c.clone())
+          })
+          .collect();
+        let mut sd = sd.to_vec();
+        sd[2] = Expr::List(coeffs.into());
+        return crate::evaluator::evaluate_expr_to_expr(&call(
+          "SeriesData",
+          sd,
+        ));
+      }
+    }
+  }
   if matches!(&x0, Expr::Identifier(s) if s == "Infinity")
     && let Some(series) = special_asymptotic_series(&args[0], &var_name, order)?
   {
@@ -14877,14 +15182,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let terms = additive_terms(&args[0]);
     if terms.len() >= 2 {
       let needs_split = terms.iter().any(|t| {
-        let at_x0 = crate::syntax::substitute_variable(t, &var_name, &x0);
-        // A pole at x0: the direct coefficient sampling chokes on it.
+        // A pole at x0: the direct coefficient sampling chokes on it. The
+        // probe is quiet: its `Power::infy` is an artifact of the check.
+        let at_x0 = probe_val_for_parts(t, &var_name, &x0);
         let has_pole = matches!(
-          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          at_x0,
           Ok(Expr::Identifier(ref s))
             if s == "ComplexInfinity" || s == "Indeterminate" || s == "Infinity"
         ) || matches!(
-          crate::evaluator::evaluate_expr_to_expr(&at_x0),
+          at_x0,
           Ok(Expr::FunctionCall { ref name, .. }) if name == "DirectedInfinity"
         );
         // A fractional leading power of (x - x0) needs the Puiseux path, which
@@ -15279,7 +15585,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     if coefficients.is_empty() {
-      return Ok(Expr::Integer(0));
+      return empty_series_at_valuation(&args[0], &var_name, &x0, order);
     }
     let data = vec![
       Expr::Identifier(var_name),
@@ -15455,6 +15761,12 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(series);
     }
+    if let Ok(val) = probe_val_for_parts(&args[0], &var_name, &x0)
+      && is_singular_series_value(&val)
+      && let Some(series) = try_series_by_parts(&args[0], &var_name, &x0, order)
+    {
+      return Ok(series);
+    }
   }
 
   // Compute Taylor coefficients: f^(k)(x0) / k!
@@ -15560,9 +15872,13 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     nmin += 1;
   }
 
-  // If all coefficients are zero, return 0
+  // No term up to the order: Wolfram answers with the empty series that
+  // starts at the first power the expansion does reach
+  // (`Series[x^3/(1 - x), {x, 0, 1}]` is `SeriesData[x, 0, {}, 3, 3, 1]`),
+  // which is still a series to multiply or add. An expression that is
+  // zero altogether stays 0.
   if coefficients.is_empty() {
-    return Ok(Expr::Integer(0));
+    return empty_series_at_valuation(&args[0], &var_name, &x0, order);
   }
 
   // Strip trailing zero coefficients (wolframscript drops them from the
@@ -16593,7 +16909,25 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // finite (e.g. the removable singularity of Sin[x]/x at x = 0) is replaced
   // by its limit via a tiny perturbation, so adaptive quadrature does not
   // abort at such a point.
+  // The integrand compiled once to float arithmetic, when it is nothing but
+  // that: evaluating the expression afresh at every sample (exact
+  // coefficients and all) dominated a quadrature.
+  let compiled = if monitor.is_none() {
+    crate::functions::polynomial_ast::solve::compile_numeric(
+      integrand,
+      std::slice::from_ref(&var_name),
+    )
+    .filter(|node| !node.has_fallback())
+  } else {
+    None
+  };
   let eval_at = |x: f64| -> Option<f64> {
+    if let Some(node) = &compiled {
+      let v = node.eval(&[x]);
+      if v.is_finite() {
+        return Some(v);
+      }
+    }
     // Fire the EvaluationMonitor at each sampled abscissa (with the variable
     // bound to x), e.g. so `Sow[x]` records the sample locations.
     if let Some(m) = &monitor {
@@ -20089,11 +20423,151 @@ fn special_asymptotic_series(
 /// cannot resolve yields `None`, so the caller falls through to the
 /// special-cased asymptotic expansions rather than producing a nonsensical
 /// series.
+/// A product of powers involving `Gamma[x]` at Infinity — typically Gamma
+/// over its own Stirling approximation — expanded through its logarithm:
+/// `Log[Gamma[x]]` is `LogGamma[x]`, whose series is known, the elementary
+/// factors contribute their exponents, and when the essential parts cancel
+/// the exponential of the resulting series is the answer.
+/// `Gamma[x]/(E^-x x^(x - 1/2) Sqrt[2 Pi])` is
+/// `1 + 1/(12 x) + 1/(288 x^2) + …`. `None` when some factor has no such logarithm or the essential
+/// growth does not cancel.
+fn gamma_product_series_at_infinity(
+  expr: &Expr,
+  var: &str,
+  order: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(v) if v == var);
+  let mut factors: Vec<(Expr, Expr)> = Vec::new();
+  let mut push = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      factors.push((args[0].clone(), args[1].clone()));
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => factors.push(((**left).clone(), (**right).clone())),
+    other => factors.push((other.clone(), Expr::Integer(1))),
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().for_each(&mut push);
+    }
+    other => push(other),
+  }
+  let mut has_gamma = false;
+  let mut log_terms: Vec<Expr> = Vec::new();
+  for (base, exp) in &factors {
+    if !is_constant_wrt(exp, var) && !is_constant_wrt(base, var) {
+      // b^g with both depending on x: g Log[b] (x > 0 at Infinity).
+      log_terms.push(times(vec![exp.clone(), call1("Log", base.clone())]));
+      continue;
+    }
+    let log = match base {
+      Expr::FunctionCall { name, args }
+        if name == "Gamma" && args.len() == 1 && is_var(&args[0]) =>
+      {
+        has_gamma = true;
+        call1("LogGamma", args[0].clone())
+      }
+      Expr::Constant(c) | Expr::Identifier(c) if c == "E" => Expr::Integer(1),
+      b if is_constant_wrt(b, var) || is_var(b) => call1("Log", b.clone()),
+      _ => return Ok(None),
+    };
+    // E^g contributes g itself.
+    let term = if matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+    {
+      exp.clone()
+    } else {
+      times(vec![exp.clone(), log])
+    };
+    log_terms.push(term);
+  }
+  if !has_gamma {
+    return Ok(None);
+  }
+  let log_sum =
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", log_terms))?;
+  let log_series = series_ast(&[
+    log_sum,
+    Expr::List(
+      vec![id_expr(var), id_expr("Infinity"), Expr::Integer(order)].into(),
+    ),
+  ])?;
+  // Gamma's own series runs in powers of x^(-1/2) (its Sqrt[2 Pi/x]
+  // factor), and Wolfram keeps that grid for the product: the result is
+  // stated over the denominator 2 with zero odd coefficients.
+  let Some(series) = function_of_series("Exp", &log_series) else {
+    return Ok(None);
+  };
+  let Expr::FunctionCall { name, args } = &series else {
+    return Ok(Some(series));
+  };
+  if name != "SeriesData" || args.len() != 6 {
+    return Ok(Some(series));
+  }
+  let (
+    Expr::List(coeffs),
+    Expr::Integer(nmin),
+    Expr::Integer(nmax),
+    Expr::Integer(1),
+  ) = (&args[2], &args[3], &args[4], &args[5])
+  else {
+    return Ok(Some(series));
+  };
+  let mut doubled = Vec::with_capacity(coeffs.len() * 2);
+  for (i, c) in coeffs.iter().enumerate() {
+    if i > 0 {
+      doubled.push(Expr::Integer(0));
+    }
+    doubled.push(c.clone());
+  }
+  Ok(Some(call(
+    "SeriesData",
+    vec![
+      args[0].clone(),
+      args[1].clone(),
+      Expr::List(doubled.into()),
+      Expr::Integer(2 * nmin),
+      Expr::Integer(2 * nmax),
+      Expr::Integer(2),
+    ],
+  )))
+}
+
 fn series_at_infinity(
   expr: &Expr,
   var: &str,
   order: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
+  // A special function whose expansion at Infinity is asymptotic (Gamma's
+  // Stirling series, Erfc's e^-x^2 factor) has no Taylor series in 1/x:
+  // differentiating it at 1/x -> 0 only grows without end. Only the bare
+  // functions have their expansions (`special_asymptotic_series`).
+  fn has_asymptotic_special(e: &Expr, var: &str) -> bool {
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(
+        name.as_str(),
+        "Gamma"
+          | "LogGamma"
+          | "PolyGamma"
+          | "Erf"
+          | "Erfc"
+          | "ExpIntegralEi"
+          | "ExpIntegralE"
+          | "HypergeometricU"
+      )
+      && args.iter().any(|a| !is_constant_wrt(a, var))
+    {
+      return true;
+    }
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|c| has_asymptotic_special(c, var))
+  }
+  if has_asymptotic_special(expr, var) {
+    return gamma_product_series_at_infinity(expr, var, order);
+  }
   let t = Expr::Identifier(format!("Global`{var}$inf"));
   let reciprocal = pow(t.clone(), Expr::Integer(-1));
   let substituted = crate::syntax::substitute_variable(expr, var, &reciprocal);

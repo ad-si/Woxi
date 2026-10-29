@@ -16,8 +16,49 @@ fn random_array_dims_error(name: &str, args: &[Expr]) -> Expr {
   call
 }
 
+/// The arguments with a dimension spec in position 2 given as whole-valued
+/// reals (`RandomReal[1, {50., 50.}]`, `n = 50.` used as a count) read as
+/// the integers they are, which Wolfram accepts; any other spec is left for
+/// the caller to validate.
+pub(crate) fn integral_dims(args: &[Expr]) -> std::borrow::Cow<'_, [Expr]> {
+  fn whole(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::Real(f) if f.fract() == 0.0 && *f >= 0.0 && *f < 9.0e15 => {
+        Some(Expr::Integer(*f as i128))
+      }
+      _ => None,
+    }
+  }
+  let Some(dims) = args.get(1) else {
+    return std::borrow::Cow::Borrowed(args);
+  };
+  let normalized = match dims {
+    Expr::Real(_) => whole(dims),
+    Expr::List(items) if items.iter().any(|i| matches!(i, Expr::Real(_))) => {
+      items
+        .iter()
+        .map(|i| match i {
+          Expr::Real(_) => whole(i),
+          other => Some(other.clone()),
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|v| Expr::List(v.into()))
+    }
+    _ => None,
+  };
+  match normalized {
+    Some(d) => {
+      let mut v = args.to_vec();
+      v[1] = d;
+      std::borrow::Cow::Owned(v)
+    }
+    None => std::borrow::Cow::Borrowed(args),
+  }
+}
+
 /// RandomInteger[max] or RandomInteger[{min, max}] - Random integer
 pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   use rand::RngExt;
 
   // RandomInteger[dist] / RandomInteger[dist, n] samples from a discrete
@@ -156,6 +197,7 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomReal[] or RandomReal[max] or RandomReal[{min, max}]
 pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   use rand::RngExt;
 
   // `RandomReal` takes options — `WorkingPrecision -> p` above all — after
@@ -331,6 +373,7 @@ fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
 /// or RandomComplex[range, dims]. Real and imaginary parts are drawn
 /// uniformly from the specified rectangle.
 pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   use rand::RngExt;
 
   // `(re, im)` of a numeric bound (`-1 - I` is `Complex[-1, -1]`, but a
@@ -820,6 +863,7 @@ pub fn random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomChoice[list]
 pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   use rand::RngExt;
 
   if args.is_empty() || args.len() > 2 {
@@ -985,6 +1029,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomSample[list]
 pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   use rand::RngExt;
   use rand::seq::{IndexedRandom, SliceRandom};
 
@@ -1490,6 +1535,7 @@ fn matrix_ensemble_sampler<'a>(
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*integral_dims(args);
   if let Some(dist) = args.first()
     && crate::functions::math_ast::distributions::reject_bad_distribution_params(
       dist,

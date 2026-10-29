@@ -5160,15 +5160,14 @@ fn render_graphics_output<'a>(
       img_widget = img_widget.opacity(0.3_f32);
     }
     container(img_widget).padding(PAD).into()
-  } else if let Some(ref handle) = editor.graphics_handle {
+  } else {
+    let handle = editor.graphics_handle.as_ref()?;
     let mut svg_widget =
       svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
     container(svg_widget).padding(PAD).into()
-  } else {
-    return None;
   };
   let picture = if editor.sound.as_ref().is_some_and(|a| a.embedded) {
     use woxi::functions::music_plot::{
@@ -5553,7 +5552,7 @@ fn is_dynamic_box_dump(output: &str) -> bool {
 /// and errors are discarded — the cells keep their stored outputs until
 /// the user explicitly evaluates them.
 fn evaluate_pending_initialization(pending: &mut Vec<String>) {
-  let cells: Vec<String> = pending.drain(..).collect();
+  let cells: Vec<String> = std::mem::take(pending);
   for code in woxi::notebook::join_continuation_cells(&cells) {
     for stmt in woxi::split_into_statements(&code) {
       manipulate::trace_evaluation(&stmt);
@@ -5610,25 +5609,26 @@ fn instantiate_stored_manipulate(
     .is_some_and(|parsed| {
       woxi::functions::graphics::manipulate_has_own_initialization(&parsed)
     });
+  // The names the dump's saved initialization kept in the DynamicModule's
+  // private `$CellContext`` lived there, isolated from anything of the same
+  // name elsewhere, including a built-in a later Wolfram Language version
+  // introduces (a Demonstration's own pre-10.0 `Activate` helper, a
+  // pre-12.0 `Midpoint`). The prefix is stripped so bare references
+  // resolve, which reopens exactly that collision: unprotect them first so
+  // the notebook's own definition can still win, as it does in Wolfram.
+  // This holds whether the stored copy or the live source's own
+  // `Initialization` runs the definitions.
+  let names =
+    woxi::notebook::saved_initialization_context_symbols(stored_output);
+  if !names.is_empty() {
+    let unprotect = format!("Unprotect[{}]", names.join(", "));
+    manipulate::trace_evaluation(&unprotect);
+    let _ = woxi::interpret(&unprotect);
+  }
   if !has_own_initialization
     && let Some(init) =
       woxi::notebook::extract_saved_initialization(stored_output)
   {
-    // These names lived in the DynamicModule's private `$CellContext`` in
-    // Wolfram, isolated from anything of the same name elsewhere —
-    // including a built-in a later Wolfram Language version introduces
-    // (e.g. a Demonstration's own pre-12.0 `Midpoint` helper, now shadowed
-    // by the real `Midpoint` function). `extract_saved_initialization`
-    // strips that prefix so the body's bare references resolve, which
-    // reopens exactly that collision: unprotect them first so the
-    // notebook's own definition can still win, as it does in Wolfram.
-    let names =
-      woxi::notebook::saved_initialization_context_symbols(stored_output);
-    if !names.is_empty() {
-      let unprotect = format!("Unprotect[{}]", names.join(", "));
-      manipulate::trace_evaluation(&unprotect);
-      let _ = woxi::interpret(&unprotect);
-    }
     manipulate::trace_evaluation(&init);
     let _ = woxi::interpret(&init);
   }
@@ -5640,16 +5640,13 @@ fn instantiate_stored_manipulate(
   // Built without a first render: the saved control values applied below
   // decide what is drawn, and rendering the source defaults first would be
   // thrown away (it is also the slowest part of opening a notebook).
-  let Some(mut state) =
-    manipulate::ManipulateState::from_expr_unrendered(&expr).or_else(|| {
+  let mut state = manipulate::ManipulateState::from_expr_unrendered(&expr)
+    .or_else(|| {
       let rebuilt =
         woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
       let rebuilt_expr = woxi::interpret_to_expr(&rebuilt).ok()?;
       manipulate::ManipulateState::from_expr_unrendered(&rebuilt_expr)
-    })
-  else {
-    return None;
-  };
+    })?;
   // A control whose choices come from a notebook variable that never
   // resolved here (`{{s, 4}, Labels, ControlType -> Setter}` with `Labels`
   // built by a cell that errors or reads differently outside the author's
@@ -11076,6 +11073,35 @@ Cell[BoxData["standalone output"], "Output"]
   }
 
   #[test]
+  fn stored_manipulate_own_initialization_may_shadow_a_builtin() {
+    // Same collision as above, but the Manipulate carries its own
+    // `Initialization :> …` (so the stored copy is skipped and the live
+    // source defines the helper). The helper's name is `Activate`, a
+    // Protected built-in the Demonstration predates. Regression: only the
+    // stored-copy path unprotected the private-context names, so the live
+    // `SetDelayed` failed with `Activate is Protected`.
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 3}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      Initialization:>($CellContext`Activate[\
+      Pattern[$CellContext`a, Blank[]], Pattern[$CellContext`b, Blank[]]] := \
+      $CellContext`a + $CellContext`b; \
+      Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[Activate[x, 7], {{x, 3}, 0, 10}, Initialization :> (Activate[a_, b_] := a + b)]",
+      dump,
+    )
+    .unwrap();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("10"),
+      "the notebook's own Activate must win over the built-in"
+    );
+  }
+
+  #[test]
   fn stored_manipulate_own_initialization_skips_saved_box_dump_copy() {
     // Wolfram embeds an `Initialization:>(…)` copy of *any* Manipulate's own
     // `Initialization :> …` option into its cached DynamicModuleBox output —
@@ -16082,10 +16108,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   #[test]
   fn display_manipulator_in_event_handler_writes_back_and_runs_actions() {
     use woxi::functions::graphics::DisplayNode;
-    fn sliders(
-      node: &DisplayNode,
-      out: &mut Vec<(String, f64, f64, f64, bool, Vec<String>)>,
-    ) {
+    type SliderRow = (String, f64, f64, f64, bool, Vec<String>);
+    fn sliders(node: &DisplayNode, out: &mut Vec<SliderRow>) {
       match node {
         DisplayNode::Slider {
           target,
@@ -30821,6 +30845,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   ///    already drew it as a plate) fell back to printing its literal,
   ///    unevaluated source text — so the board's cells would have shown
   ///    `Button[1, Set[chosen, 1]]`-style text, not a numbered button.
+  ///
   /// A third, independent regression in the same notebook: the *title*
   /// screen (`TableForm[Framed[…], …]`, a non-list `display`) rendered as
   /// raw `TableForm[Framed[…], …]` source text too — `TableForm[expr]` for
@@ -33558,7 +33583,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
     for poly in svg.split("<polygon points=\"").skip(1) {
       let pts = poly.split('"').next().unwrap();
-      for c in pts.split(|ch| ch == ' ' || ch == ',') {
+      for c in pts.split([' ', ',']) {
         let v: f64 = c.parse().unwrap();
         assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
       }

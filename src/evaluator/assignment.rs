@@ -2460,6 +2460,28 @@ fn downvalue_arg_info(
           inline_opts_defaults = Some(rules.to_vec());
         }
       }
+      // A list without any pattern in it is a literal argument like any
+      // other, evaluated first: `Do[f[{i, 1}] = i, {i, 3}]` defines
+      // f[{1, 1}], f[{2, 1}] and f[{3, 1}]. Taken as a list pattern, its
+      // symbols became pattern variables, so one rule f[{i, 1}] matched
+      // every pair and the last value won.
+      Expr::List(_)
+        if !crate::evaluator::pattern_matching::contains_pattern(arg)
+          && !lhs_slot_is_held(func_name, i) =>
+      {
+        let param_name = format!("_dv{i}");
+        conditions.push(Some(Expr::Comparison {
+          operands: vec![
+            Expr::Identifier(param_name.clone()),
+            evaluate_expr_to_expr(arg)?,
+          ],
+          operators: vec![ComparisonOp::SameQ],
+        }));
+        params.push(param_name);
+        blank_types.push(1);
+        defaults.push(None);
+        heads.push(None);
+      }
       // List pattern: {x_Integer, y_Integer} — destructure a list argument.
       // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
       // element, which relaxes the length check and (for named sequence

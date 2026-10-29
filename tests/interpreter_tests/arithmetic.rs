@@ -11249,6 +11249,17 @@ mod times_factor_vs_sum_ordering {
     );
   }
 
+  // A power of a product orders canonically against the symbol its base
+  // ends with: the symbol first.
+  #[test]
+  fn symbol_vs_power_of_product() {
+    assert_eq!(
+      interpret("{w (m w/h)^(1/4), w (m w)^(1/4), z (m w)^(1/4), v (m/h)^(1/4), x (h m)^(1/4)}")
+        .unwrap(),
+      "{w*((m*w)/h)^(1/4), w*(m*w)^(1/4), (m*w)^(1/4)*z, (m/h)^(1/4)*v, (h*m)^(1/4)*x}"
+    );
+  }
+
   // A power of a sum orders against a monomial by the sum's top term, the
   // same way a bare sum does: `x*Sqrt[1 + x]` but `Sqrt[1 - x]*x`.
   #[test]
@@ -14008,6 +14019,104 @@ mod arbitrary_precision_complex_values {
     assert_eq!(
       interpret("{Head[3`20], Head[0`2], 3`20, -1`20, 1`20*^3}").unwrap(),
       "{Real, Integer, 3.`20., -1.`20., 1000.`20.}"
+    );
+  }
+}
+
+// Random array generators accept whole-valued real dimensions, as in
+// Wolfram (`n = 50.; RandomReal[1, {n, n}]` in Demonstration
+// KolkataPaiseRestaurantKPRProblem); a fractional one is still rejected.
+mod random_real_dimensions {
+  use super::*;
+
+  #[test]
+  fn whole_valued_real_dimensions() {
+    assert_eq!(
+      interpret(
+        "Dimensions /@ {RandomReal[1, {5., 4.}], RandomInteger[5, {2., 2}], \
+          RandomVariate[NormalDistribution[], 3.], RandomChoice[{a, b}, 3.], \
+          RandomSample[Range[5], 3.], RandomComplex[1, 3.], RandomPoint[Disk[], 3.]}"
+      )
+      .unwrap(),
+      "{{5, 4}, {2, 2}, {3}, {3}, {3}, {3}, {3, 2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Head[RandomReal[1, 2.5]]]").unwrap(),
+      "RandomReal"
+    );
+  }
+}
+
+// Sign, Abs, Floor, Ceiling and Round of a machine-real array are applied
+// element by element directly.
+mod machine_real_elementwise {
+  use super::*;
+
+  #[test]
+  fn exact_elementwise_functions() {
+    assert_eq!(
+      interpret(
+        "{Sign[{-2., 0., 3.5, {-0., 1.}}], Abs[{-2.5, 3.}], Floor[{-2.5, 2.5}], \
+          Ceiling[{-2.5, 2.5}], Round[{-2.5, 2.5, 3.5, 0.5, -0.5}], Round[{1.*^20}], \
+          Sign[{1., x}]}"
+      )
+      .unwrap(),
+      "{{-1, 0, 1, {0, 1}}, {2.5, 3.}, {-3, 2}, {-2, 3}, {-2, 2, 4, 0, 0}, \
+       {100000000000000000000}, {1, Sign[x]}}"
+    );
+  }
+}
+
+// Exact coefficients past i128 times a radical: like terms combine, and the
+// coefficient is merged into the radical without factoring its square
+// (Demonstration FlowsnakeQFunction memoizes a 500-step recurrence over
+// Sqrt[3]).
+mod big_rational_radical_coefficients {
+  use super::*;
+
+  #[test]
+  fn long_exact_recurrence_over_a_radical() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "im[1] = -Sqrt[3]/14; im[2] = -5 Sqrt[3]/98; \
+         im[n_] := (im[n] = 5/7 im[n - 1] - 1/7 im[n - 2]); im /@ Range[500]; \
+         {LeafCount[im[500]], im[48]}"
+      )
+      .unwrap(),
+      "{9, (32555117278250218080*Sqrt[3])/36703368217294125441230211032033660188801}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn coefficient_merges_into_radical() {
+    assert_eq!(
+      interpret(
+        "{30*Sqrt[23/15], 2/Sqrt[30], 6*Sqrt[5/3], (1/3)*Sqrt[15/11], (2/5)/Sqrt[14], \
+          (13/35)*Sqrt[35/6], 12 Sqrt[2/9], (10/3) Sqrt[3/8], 3^20/2^70 Sqrt[6/35]}"
+      )
+      .unwrap(),
+      "{2*Sqrt[345], Sqrt[2/15], 2*Sqrt[15], Sqrt[5/33], Sqrt[2/7]/5, 13/Sqrt[210], \
+       4*Sqrt[2], 5/Sqrt[6], (3486784401*Sqrt[3/70])/590295810358705651712}"
+    );
+  }
+}
+
+// The complex-number test rules out anything not shaped like a small
+// arithmetic tree before scanning it, and still recognizes every complex
+// number spelling.
+mod complex_number_shape {
+  use super::*;
+
+  #[test]
+  fn heads_of_complex_and_other_sums() {
+    assert_eq!(
+      interpret(
+        "Head /@ {2 + 3 I, 1.5 + 2. I, (1 + I)/2, 2.5 I, x + I, h[{1. + I}], {2 + 3 I}}"
+      )
+      .unwrap(),
+      "{Complex, Complex, Complex, Complex, Plus, h, List}"
     );
   }
 }

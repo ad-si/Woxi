@@ -9578,6 +9578,30 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       format!("TemplateBox[List[{}], \"{template}\"]", elements.join(", "))
     }
 
+    // ScientificForm / EngineeringForm typeset as `mantissa × 10^exp`; the
+    // plain-number cases fall through to the generic call rendering.
+    "ScientificForm" | "EngineeringForm"
+      if (1..=2).contains(&args.len())
+        && matches!(args.get(1), None | Some(Expr::Integer(1..))) =>
+    {
+      let n = match args.get(1) {
+        Some(Expr::Integer(n)) => i64::try_from(*n).unwrap_or(6),
+        _ => 6,
+      };
+      let parts = if name == "ScientificForm" {
+        scientific_form_parts(&args[0], n)
+      } else {
+        engineering_form_parts(&args[0], n)
+      };
+      match parts {
+        Some((mantissa, Some(exp))) => format!(
+          "RowBox[{{\"{mantissa}\", \"×\", SuperscriptBox[\"10\", \"{exp}\"]}}]"
+        ),
+        Some((mantissa, None)) => format!("\"{mantissa}\""),
+        None => expr_to_boxes(&args[0]),
+      }
+    }
+
     // Rational → FractionBox
     "Rational" if args.len() == 2 => {
       format!(

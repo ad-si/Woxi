@@ -1304,3 +1304,33 @@ mod cellular_automaton_3d {
     );
   }
 }
+
+// A function rule sees a 2D range neighborhood as its block of rows, and
+// the number of the step it computes, as Wolfram calls `fun[block, t]`.
+// Demonstration GreenbergHastingsModel indexes `#[[3, 3]]` into the 5x5
+// block; given a flat list it errored at every cell and grew without bound.
+mod function_rule_neighborhood_shape {
+  use super::*;
+
+  #[test]
+  fn block_and_step_reach_the_rule() {
+    assert_eq!(
+      interpret(
+        "{CellularAutomaton[{f, {}, {1, 1}}, {{0, 1}, {1, 0}}, 1][[2, 1, 1]], \
+          CellularAutomaton[{f, {}, 1}, {0, 1, 0}, 1][[2, 1]]}"
+      )
+      .unwrap(),
+      "{f[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, 1], f[{0, 0, 1}, 1]}"
+    );
+    assert_eq!(
+      interpret(
+        "n = 7; b = 3; init = Table[Mod[i^2 + 3 j, 7], {i, 8}, {j, 8}]; \
+         Total /@ Flatten /@ CellularAutomaton[{Function[{p, q}, If[p >= 1, Mod[p + 1, n], \
+         If[p == 0 && Count[Clip[q - 2, {-1, 1}, {0, 1}], -1] >= b, 1, p]]][#1[[3, 3]], \
+         Flatten[Delete[#1, {3, 3}]]] &, {}, {2, 2}}, init, 3]"
+      )
+      .unwrap(),
+      "{193, 198, 187, 171}"
+    );
+  }
+}

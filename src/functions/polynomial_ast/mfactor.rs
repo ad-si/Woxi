@@ -357,7 +357,7 @@ fn gcd(a: &Poly, b: &Poly) -> Poly {
   {
     return g;
   }
-  if let Some(g) = gcd_heu(&a.prim(), &b.prim(), 0) {
+  if let Some(g) = gcd_heu(&a.prim(), &b.prim(), 0, &mut { GCD_HEU_BUDGET }) {
     return g;
   }
   if a.deg(var) == 0 {
@@ -498,7 +498,23 @@ fn gcd_by_lifting(a: &Poly, b: &Poly, main: usize) -> Option<Poly> {
 /// evaluate one variable at a large integer, take the gcd of the images
 /// recursively, reconstruct the candidate from its balanced ξ-adic digits
 /// and accept it only when it divides both inputs. None = inconclusive.
-fn gcd_heu(a: &Poly, b: &Poly, depth: usize) -> Option<Poly> {
+/// How many evaluation images one heuristic gcd may try in all. Each level
+/// retries up to six evaluation points and recurses once per variable, so
+/// without a bound a gcd it cannot find costs 6^depth images (minutes for
+/// the six-variable quotients `D` cancels); past the budget the caller's
+/// exact algorithm takes over.
+const GCD_HEU_BUDGET: usize = 400;
+
+fn gcd_heu(
+  a: &Poly,
+  b: &Poly,
+  depth: usize,
+  budget: &mut usize,
+) -> Option<Poly> {
+  if *budget == 0 {
+    return None;
+  }
+  *budget -= 1;
   let nv = a.nv;
   if a.is_const() && b.is_const() {
     let g = big_gcd(&a.t.values().next()?.n, &b.t.values().next()?.n);
@@ -528,7 +544,7 @@ fn gcd_heu(a: &Poly, b: &Poly, depth: usize) -> Option<Poly> {
     if !ea.is_zero() && !eb.is_zero() {
       let (ua, pa) = ea.normalize();
       let (ub, pb) = eb.normalize();
-      if let Some(gamma) = gcd_heu(&pa, &pb, depth + 1) {
+      if let Some(gamma) = gcd_heu(&pa, &pb, depth + 1, budget) {
         // Restore the integer content gcd dropped by the normalization.
         let cg = big_gcd(&ua.n, &ub.n);
         let mut gamma = gamma.scale(&Q::int(cg));

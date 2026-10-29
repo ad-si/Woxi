@@ -1969,6 +1969,39 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   if let Expr::Identifier(name) = expr {
     return name == "I";
   }
+  // A complex number is a small arithmetic tree of numbers and I; anything
+  // else (a list, a call, a deep or wide tree) is ruled out without the
+  // full-expression scans below, which made `MapAt` over a large matrix
+  // quadratic.
+  fn shaped_like_number(e: &Expr, depth: u8) -> bool {
+    if depth > 4 {
+      return false;
+    }
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::Identifier(_)
+      | Expr::Constant(_) => true,
+      Expr::FunctionCall { name, args } => {
+        matches!(
+          name.as_str(),
+          "Complex" | "Plus" | "Times" | "Power" | "Rational" | "Sqrt"
+        ) && args.len() <= 3
+          && args.iter().all(|a| shaped_like_number(a, depth + 1))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        shaped_like_number(left, depth + 1)
+          && shaped_like_number(right, depth + 1)
+      }
+      Expr::UnaryOp { operand, .. } => shaped_like_number(operand, depth + 1),
+      _ => false,
+    }
+  }
+  if !shaped_like_number(expr, 0) {
+    return false;
+  }
   // Check exact complex extraction (integer/rational components)
   if let Some((_, (im_num, _))) =
     super::math_ast::try_extract_complex_exact(expr)

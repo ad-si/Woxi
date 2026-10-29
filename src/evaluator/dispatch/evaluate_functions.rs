@@ -949,9 +949,26 @@ fn evaluate_function_call_ast_inner(
   {
     return Ok(result);
   }
+  // The same for the elementwise functions whose machine result is exact
+  // or an integer (`Sign[R - qq]` over a 50x50 matrix, thousands of times).
+  if let [arg @ Expr::List(_)] = args
+    && let Some(result) =
+      crate::evaluator::listable::machine_real_elementwise(name, arg)
+  {
+    return Ok(result);
+  }
 
   if let Some(result) = numeric_array_list_operation(name, args) {
     return result;
+  }
+
+  // An elementary function of a power series is a power series.
+  if let [sd @ Expr::FunctionCall { name: sd_head, .. }] = args
+    && sd_head == "SeriesData"
+    && let Some(series) =
+      crate::functions::calculus_ast::function_of_series(name, sd)
+  {
+    return Ok(series);
   }
 
   // Legacy standard-distribution package functions whose modern built-in
@@ -5421,6 +5438,10 @@ fn evaluate_function_call_ast_inner(
   // RandomPoint[region[, n | {n1, …}]] → uniformly distributed point(s)
   if name == "RandomPoint" && (1..=2).contains(&args.len()) {
     return crate::functions::random_point::random_point_ast(args);
+  }
+
+  if name == "FindCurvePath" {
+    return crate::functions::shortest_tour::find_curve_path_ast(args);
   }
 
   // FindShortestTour[points[, s, t], opts] → {length, order}

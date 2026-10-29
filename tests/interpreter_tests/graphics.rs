@@ -42746,4 +42746,51 @@ mod generalized_bar_chart {
       "subscript must be lowered: {svg}"
     );
   }
+
+  /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
+  /// base, not the `SuperStar[d]` expression the box reads back as.
+  #[test]
+  fn text_label_with_star_superscript_box() {
+    let svg = export_svg(
+      r#"Graphics[Text["\!\(\*SubscriptBox[SuperscriptBox[\(d\), \(*\)], \(hkl\)]\)", {0, 0}]]"#,
+    );
+    assert!(!svg.contains("SuperStar"), "{svg}");
+    assert!(svg.contains("d^*"), "{svg}");
+  }
+
+  #[test]
+  fn text_label_with_dagger_superscript_box() {
+    let svg = export_svg(
+      r#"Graphics[Text["\!\(\*SuperscriptBox[\(U\), \(\[Dagger]\)]\)", {0, 0}]]"#,
+    );
+    assert!(!svg.contains("SuperDagger"), "{svg}");
+  }
+}
+
+mod stacked_text_and_scientific_form_labels {
+  use super::*;
+
+  /// A `Text` string whose inline box notation stacks an over-script is laid
+  /// out as boxes, not flattened to `→^(k_1)`.
+  #[test]
+  fn text_with_overscript_box_is_laid_out_as_boxes() {
+    let svg = export_svg(
+      "Graphics[Text[\"A + B \\!\\(\\*OverscriptBox[\\(\\[RightArrow]\\), \
+       SubscriptBox[\\(k\\), \\(1\\)]]\\) C\"]]",
+    );
+    assert!(!svg.contains("^(k"), "over-script was flattened: {svg}");
+    assert!(svg.contains("<svg x="), "boxes were not embedded: {svg}");
+  }
+
+  /// `ToString[StandardForm[ScientificForm[x]]]` typesets `m × 10^e` in a
+  /// plot label instead of the literal `ScientificForm[…]` call.
+  #[test]
+  fn plot_label_typesets_scientific_form() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLabel -> \"n: \" <> \
+       ToString[StandardForm[ScientificForm[1000.]]]]",
+    );
+    assert!(!svg.contains("ScientificForm"), "{svg}");
+    assert!(svg.contains("×10<tspan baseline-shift=\"super\""), "{svg}");
+  }
 }

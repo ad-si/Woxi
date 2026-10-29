@@ -5919,6 +5919,35 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // (an italic letter next to an upright bracket) leave the label's own
   // setting alone.
   apply_agreed_row_part_styles(content, &mut local_style);
+  // A string whose inline box notation stacks material (an arrow with its
+  // rate above it, a fraction) cannot be set as one line of text: lay the
+  // boxes out and embed the result centred on the anchor.
+  if frame_opts.is_empty()
+    && let Expr::String(s) = content
+    && has_script_stacked_inline_box(s)
+    && let Some(boxes) = inline_box_string_to_box_expr(s)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let layout = layout_box(&boxes, local_style.font_size);
+    if layout.width > 0.0 && layout.height > 0.0 {
+      prims.push(Primitive::InsetGraphic {
+        svg: layout_to_svg(
+          &layout,
+          &local_style.effective_color().to_svg_rgb(),
+        ),
+        x,
+        y,
+        w: layout.width.ceil().max(1.0),
+        h: layout.height.ceil().max(1.0),
+        scaled,
+        size: None,
+      });
+      return;
+    }
+  }
   let text = graphics_text_content(content);
   local_style.text_line_anchor = column_line_anchor(content);
 
@@ -17924,6 +17953,20 @@ fn has_stacked_inline_box(s: &str) -> bool {
     ]
     .iter()
     .any(|head| s.contains(head))
+}
+
+/// Whether a string's inline box notation stacks an over/underscript (an
+/// arrow with its rate above it) and nothing else vertical. Such a label has
+/// no faithful one-line reading, whereas fractions and roots keep their
+/// linear `(a)/(b)` text in a graphic.
+fn has_script_stacked_inline_box(s: &str) -> bool {
+  has_stacked_inline_box(s)
+    && ["OverscriptBox", "UnderscriptBox", "UnderoverscriptBox"]
+      .iter()
+      .any(|head| s.contains(head))
+    && !["FractionBox", "SqrtBox", "RadicalBox"]
+      .iter()
+      .any(|head| s.contains(head))
 }
 
 /// A `Text@Style[TraditionalForm[expr], size]` cell whose expression holds a
@@ -32637,6 +32680,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
       "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
+      // `SuperscriptBox[x, "*"]` reads back as `SuperStar[x]` (and `"†"` as
+      // `SuperDagger[x]`); as a label they still draw the base with the
+      // operator character hung on it.
+      "SuperStar" | "SuperDagger" if args.len() == 1 => {
+        let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
+        script_runs(
+          &[args[0].clone(), Expr::String(mark.to_string())],
+          italic,
+          true,
+        )
+      }
       // `Subsuperscript[base, sub, sup]` — a Demonstration's slider label for
       // an initial derivative writes `y0'` as `Subsuperscript[y, 0, "\[Prime]"]`.
       // Plain text can't stack a sub- and superscript at once, so the two
