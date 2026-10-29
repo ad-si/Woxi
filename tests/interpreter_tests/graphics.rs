@@ -7617,6 +7617,33 @@ mod plot3d {
       assert_ne!(plain, shifted);
     }
 
+    // `ViewVector` places a perspective camera at an absolute position, so
+    // moving it along the view axis changes the picture (the apparent size
+    // of a sphere grows as the camera approaches) and a camera beyond the
+    // contents sees nothing of them.
+    #[test]
+    fn graphics3d_view_vector_is_a_perspective_camera() {
+      let at = |z: &str| {
+        export_svg(&format!(
+          "Graphics3D[Sphere[{{0, 0, 0}}, 1], ViewVector -> {{0, 0, {z}}}, \
+           ViewAngle -> 45 Degree, Boxed -> False]"
+        ))
+      };
+      let far = at("-20");
+      let near = at("-5");
+      assert_ne!(far, near);
+      let behind = export_svg(
+        "Graphics3D[Sphere[{0, 0, 0}, 1], \
+         ViewVector -> {{0, 0, 5}, {0, 0, 10}}, Boxed -> False]",
+      );
+      assert!(!behind.contains("<polygon"));
+      let two_points = export_svg(
+        "Graphics3D[Sphere[{0, 0, 0}, 1], \
+         ViewVector -> {{0, 0, -5}, {0, 0, 0}}, Boxed -> False]",
+      );
+      assert!(two_points.contains("<polygon"));
+    }
+
     // `AspectRatio` sets the height of a Graphics3D picture relative to
     // its width.
     #[test]
