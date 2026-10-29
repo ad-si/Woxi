@@ -4937,8 +4937,13 @@ fn push_text3d_label(
   let styled = crate::functions::chart::parse_styled_label(label_expr);
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
-      s.svg(),
-      s.visible_char_count(),
+      // A stacked label keeps its lines apart by newlines; the renderer
+      // lays them out.
+      std::iter::once(s.svg())
+        .chain(s.extra_lines.iter().cloned())
+        .collect::<Vec<_>>()
+        .join("\n"),
+      s.max_line_chars(),
       s.font_size.or(style.font_size).unwrap_or(12.0),
       s.color,
     ),
@@ -8564,10 +8569,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let text_w = *width_chars as f64 * font_size * 0.6;
         let x = sx - offset.0 * text_w / 2.0;
         let y = sy + offset.1 * font_size / 2.0;
+        let lines = crate::functions::graphics::split_markup_lines(label);
+        let line_height = font_size * 1.2;
+        let mut body = String::new();
+        if lines.len() == 1 {
+          body.push_str(&lines[0]);
+        } else {
+          // The block of lines is centred on the anchor point.
+          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
+          for (i, line) in lines.iter().enumerate() {
+            let dy = if i == 0 { first_dy } else { line_height };
+            body.push_str(&format!(
+              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            ));
+          }
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{label}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{body}</text>\n",
         ));
       }
       Primitive3D::Point3DPrim { points, style } => {
