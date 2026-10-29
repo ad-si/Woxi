@@ -343,6 +343,28 @@ pub fn dispatch_string_functions(
     "HammingDistance" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::hamming_distance_ast(args));
     }
+    // CharacterCounts / LetterCounts [s, …, IgnoreCase -> b]: with True the
+    // string is lower-cased first; False is the default.
+    "CharacterCounts" | "LetterCounts"
+      if args.len() >= 2
+        && matches!(args.last(), Some(Expr::Rule { pattern, .. })
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "IgnoreCase")) =>
+    {
+      let Some(Expr::Rule { replacement, .. }) = args.last() else {
+        return None;
+      };
+      let mut rest = args[..args.len() - 1].to_vec();
+      match replacement.as_ref() {
+        Expr::Identifier(b) if b == "True" => {
+          if let Expr::String(text) = &rest[0] {
+            rest[0] = Expr::String(text.to_lowercase());
+          }
+        }
+        Expr::Identifier(b) if b == "False" => {}
+        _ => return None,
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(name, &rest));
+    }
     "CharacterCounts" if args.len() == 1 => {
       return Some(crate::functions::string_ast::character_counts_ast(args));
     }

@@ -2477,12 +2477,15 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// AdjacencyMatrix, so Normal[...] agrees with wolframscript.)
 pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PermutationMatrix", args));
-  if args.len() != 1 {
-    return unevaluated();
-  }
+  // PermutationMatrix[perm, n] pads perm with fixed points to length n.
+  let size = match args {
+    [_] => None,
+    [_, Expr::Integer(n)] if *n >= 0 => Some(*n as usize),
+    _ => return unevaluated(),
+  };
   // Accept a permutation list directly, or convert a Cycles object via
   // PermutationList.
-  let perm_list = match &args[0] {
+  let mut perm_list = match &args[0] {
     Expr::List(items) => items.iter().cloned().collect::<Vec<_>>(),
     cycles @ Expr::FunctionCall { name, .. } if name == "Cycles" => {
       let converted = crate::evaluator::evaluate_expr_to_expr(&call(
@@ -2496,6 +2499,14 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => return unevaluated(),
   };
+  if let Some(size) = size {
+    if size < perm_list.len() {
+      return unevaluated();
+    }
+    for k in perm_list.len()..size {
+      perm_list.push(Expr::Integer(k as i128 + 1));
+    }
+  }
   // Every entry must be an integer in 1..=n and no two the same, or the
   // matrix would have a repeated column. wolframscript reports nothing
   // for a list that is not a permutation, it just declines.

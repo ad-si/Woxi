@@ -604,6 +604,30 @@ pub fn dispatch_predicate_functions(
       // For Unique[], format is $nnn (just $counter)
       return Some(Ok(Expr::Identifier(sym_name)));
     }
+    // Unique[x, attrs] - like Unique[x], then the new symbol(s) get attrs.
+    "Unique" if args.len() == 2 => {
+      let syms = match crate::evaluator::evaluate_function_call_ast(
+        "Unique",
+        &args[..1],
+      ) {
+        Ok(s) => s,
+        Err(e) => return Some(Err(e)),
+      };
+      let targets: Vec<Expr> = match &syms {
+        Expr::Identifier(_) => vec![syms.clone()],
+        Expr::List(items) => items.to_vec(),
+        _ => return Some(Ok(syms)),
+      };
+      for t in targets {
+        if let Err(e) = crate::evaluator::evaluate_function_call_ast(
+          "SetAttributes",
+          &[t, args[1].clone()],
+        ) {
+          return Some(Err(e));
+        }
+      }
+      return Some(Ok(syms));
+    }
     "Unique" if args.len() == 1 => {
       match &args[0] {
         Expr::Identifier(name) => {

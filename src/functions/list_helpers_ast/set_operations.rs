@@ -1078,6 +1078,62 @@ pub fn symmetric_difference_ast(
     return Ok(Expr::List(vec![].into()));
   }
 
+  // A trailing `SameTest -> f` decides which elements are the same: keep
+  // the elements that f matches in an odd number of the lists.
+  if let Some(Expr::Rule {
+    pattern,
+    replacement,
+  }) = lists.last()
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest")
+  {
+    let test = replacement.as_ref();
+    let lists = &lists[..lists.len() - 1];
+    let mut slices: Vec<&[Expr]> = Vec::with_capacity(lists.len());
+    for l in lists {
+      let Expr::List(items) = l else {
+        return Ok(unevaluated("SymmetricDifference", lists));
+      };
+      slices.push(items);
+    }
+    let same = |a: &Expr, b: &Expr| -> Result<bool, InterpreterError> {
+      Ok(matches!(
+        apply_func_to_two_args(test, a, b)?,
+        Expr::Identifier(ref s) if s == "True"
+      ))
+    };
+    let mut kept: Vec<Expr> = Vec::new();
+    for (k, items) in slices.iter().enumerate() {
+      for item in *items {
+        let mut count = 1;
+        for (m, other) in slices.iter().enumerate() {
+          if m == k {
+            continue;
+          }
+          for o in *other {
+            if same(item, o)? {
+              count += 1;
+              break;
+            }
+          }
+        }
+        if count % 2 == 1 {
+          kept.push(item.clone());
+        }
+      }
+    }
+    sort_canonical(&mut kept);
+    let mut reps: Vec<Expr> = Vec::new();
+    'dedup: for item in kept {
+      for rep in &reps {
+        if same(&item, rep)? {
+          continue 'dedup;
+        }
+      }
+      reps.push(item);
+    }
+    return Ok(Expr::List(reps.into()));
+  }
+
   // Count how many lists contain each element (dedup within each list)
   let mut membership_count: HashMap<String, (usize, Expr)> = HashMap::new();
 
