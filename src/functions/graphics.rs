@@ -30270,6 +30270,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       Expr::FunctionCall { name, args } => {
         name == "Control"
           || name == "Button"
+          || name == "ButtonBar"
           || dynamic_control_spec(e).is_some()
           || args.iter().any(contains_control)
       }
