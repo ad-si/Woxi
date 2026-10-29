@@ -22718,6 +22718,31 @@ mod nsolve_mixed_precision {
 mod reduce_bounded_integers {
   use super::*;
 
+  // An equation of degree at most two in the last variable is solved for
+  // it, so a sphere of radius 29 needs only 59^2 points; a product equal
+  // to a nonzero integer bounds its factors by its divisors.
+  #[test]
+  fn last_variable_solved_and_divisor_bounds() {
+    assert_eq!(
+      interpret(
+        "{Length[Reduce[x^2 + y^2 + z^2 == 841, {x, y, z}, Integers]], \
+          Length[Reduce[x^2 + y^2 + z^2 == 29^2, {x, y}, Integers]]}"
+      )
+      .unwrap(),
+      "{174, 174}"
+    );
+    assert_eq!(
+      interpret("Reduce[x y == 6 && x > 0, {x, y}, Integers]").unwrap(),
+      "(x == 1 && y == 6) || (x == 2 && y == 3) || (x == 3 && y == 2) || \
+       (x == 6 && y == 1)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 y == 12, {x, y}, Integers]").unwrap(),
+      "(x == -2 && y == 3) || (x == -1 && y == 12) || (x == 1 && y == 12) || \
+       (x == 2 && y == 3)"
+    );
+  }
+
   #[test]
   fn domain_alone_reduces_over_all_variables() {
     assert_eq!(
