@@ -9152,6 +9152,23 @@ mod plot3d {
       );
     }
 
+    // A `Row` frame label that embeds `Graphics` (a legend swatch) is drawn
+    // as a picture on the top and bottom edges instead of leaking the
+    // `Graphics[…]` source as text.
+    #[test]
+    fn frame_label_row_with_graphics_is_drawn_as_picture() {
+      for labels in [
+        r#"{{"y", ""}, {"x", Row[{"a ", Graphics[{Red, Line[{{0, 0}, {1, 0}}]}]}]}}"#,
+        r#"{{"y", ""}, {Row[{"a ", Graphics[{Red, Line[{{0, 0}, {1, 0}}]}]}], ""}}"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {labels}]"
+        ));
+        assert!(!svg.contains("Graphics["), "source leaked: {svg}");
+        assert!(svg.contains("rgb(255,0,0)"), "swatch missing: {svg}");
+      }
+    }
+
     // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
     // `Show` that overlays one on a `ListPlot`) labels exactly those ticks.
     #[test]

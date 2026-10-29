@@ -2566,6 +2566,8 @@ pub(crate) struct PlotOptions {
   /// picture to embed under the frame instead of the plain-text
   /// `frame_label_bottom` (which stays empty in that case).
   pub frame_label_bottom_graphic: Option<GraphicLabel>,
+  /// Same, for the top edge.
+  pub frame_label_top_graphic: Option<GraphicLabel>,
   /// Per-series `Joined` from `ListPlot[…, Joined -> {b1, b2, …}]`: series
   /// `i` is drawn as a connected line when `joined_per_series[i]` is true,
   /// as scattered points otherwise. `None` means every series follows the
@@ -2666,6 +2668,7 @@ impl Default for PlotOptions {
       frame_label_top: None,
       frame_label_right: None,
       frame_label_bottom_graphic: None,
+      frame_label_top_graphic: None,
       date_axis: false,
       callout_labels: Vec::new(),
       plot_labels: Vec::new(),
@@ -3093,7 +3096,8 @@ pub(crate) fn plot_labels_svg(
     .as_deref()
     .unwrap_or(title_default_fill);
   let has_top_label =
-    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty())
+      || opts.frame_label_top_graphic.is_some();
   let axes_label_y = opts
     .axes_label
     .as_ref()
@@ -3238,6 +3242,20 @@ pub(crate) fn plot_labels_svg(
         )
       ));
     }
+  }
+
+  // A top `FrameLabel` drawn as a picture sits just above the frame.
+  if let Some(graphic) = &opts.frame_label_top_graphic {
+    let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
+    let cx = plot_x0 + plot_w / 2.0;
+    let cy = margin_top - font_size * 0.4 - gh / 2.0;
+    labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
+      &graphic.svg,
+      cx,
+      cy,
+      gw,
+      gh,
+    ));
   }
 
   // Right FrameLabel (rotated +90 on the right frame edge)
@@ -3543,7 +3561,8 @@ fn generate_svg_with_options(
     .map(|(_, y)| y.as_str())
     .filter(|y| !y.is_empty() && show_y_axis);
   let has_top_label =
-    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty())
+      || opts.frame_label_top_graphic.is_some();
   let has_right_label = opts
     .frame_label_right
     .as_ref()
@@ -9872,6 +9891,9 @@ pub(crate) struct FrameLabels {
   /// that renders as a picture — `bottom` itself is left empty in that
   /// case.
   pub bottom_graphic: Option<GraphicLabel>,
+  /// Likewise for the top edge, e.g. a `Row[…]` legend whose entries
+  /// embed small `Graphics`.
+  pub top_graphic: Option<GraphicLabel>,
 }
 
 /// Convert a single FrameLabel entry to a label string. `None` (the symbol)
@@ -9890,15 +9912,47 @@ fn frame_label_entry(e: &Expr) -> String {
 /// `Grid[…]` uses so the frame label shows the table instead of nothing.
 fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
   let val = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
-  let Expr::FunctionCall { name, args } = &val else {
+  // `Style[label, …]` is looked through to the label it styles.
+  let mut val = &val;
+  while let Expr::FunctionCall { name, args } = val
+    && name == "Style"
+    && !args.is_empty()
+  {
+    val = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = val else {
     return None;
   };
-  if !matches!(name.as_str(), "Grid" | "TableForm") || args.is_empty() {
-    return None;
-  }
-  let svg = crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?;
+  let svg = match name.as_str() {
+    "Grid" | "TableForm" if !args.is_empty() => {
+      crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?
+    }
+    // A `Row` holding pictures (a legend swatch drawn as `Graphics`) can
+    // only be shown as a picture, not read off as text.
+    "Row" if row_holds_graphics(args) => {
+      crate::functions::graphics::row_to_svg(args)?
+    }
+    _ => return None,
+  };
   let (width, height) = crate::functions::graphics::svg_natural_size(&svg)?;
   Some(GraphicLabel { svg, width, height })
+}
+
+/// Whether the items of a `Row[{…}]` include a `Graphics`, directly or in a
+/// nested `Row`/`Style`.
+fn row_holds_graphics(args: &[Expr]) -> bool {
+  fn has_graphics(e: &Expr) -> bool {
+    match e {
+      Expr::Graphics { .. } => true,
+      Expr::List(items) => items.iter().any(has_graphics),
+      Expr::FunctionCall { name, .. } if name == "Graphics" => true,
+      Expr::FunctionCall { name, args } if name == "Row" || name == "Style" => {
+        args.first().is_some_and(has_graphics)
+      }
+      _ => false,
+    }
+  }
+  args.first().is_some_and(has_graphics)
 }
 
 /// One side of `Ticks -> {xspec, yspec}`: an explicit list of positions,
@@ -10117,6 +10171,9 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   if !fl.top.is_empty() {
     opts.frame_label_top = Some(fl.top);
   }
+  if fl.top_graphic.is_some() {
+    opts.frame_label_top_graphic = fl.top_graphic;
+  }
   if !fl.right.is_empty() {
     opts.frame_label_right = Some(fl.right);
   }
@@ -10126,6 +10183,18 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
 ///   `{bottom, left}` and `{{left, right}, {bottom, top}}`.
 /// A bare label applies to the bottom edge.
 pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
+  let mut out = parse_frame_label_edges(value);
+  // An edge drawn as a picture has no text to draw as well.
+  if out.bottom_graphic.is_some() {
+    out.bottom.clear();
+  }
+  if out.top_graphic.is_some() {
+    out.top.clear();
+  }
+  out
+}
+
+fn parse_frame_label_edges(value: &Expr) -> FrameLabels {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let mut out = FrameLabels::default();
   if let Expr::List(items) = &val {
@@ -10145,6 +10214,7 @@ pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
       }
       if let Some(e) = bt.get(1) {
         out.top = frame_label_entry(e);
+        out.top_graphic = frame_label_graphic(e);
       }
       return out;
     }
@@ -10159,6 +10229,7 @@ pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
     // Flat 4-element form `{bottom, left, top, right}`.
     if let Some(e) = items.get(2) {
       out.top = frame_label_entry(e);
+      out.top_graphic = frame_label_graphic(e);
     }
     if let Some(e) = items.get(3) {
       out.right = frame_label_entry(e);
