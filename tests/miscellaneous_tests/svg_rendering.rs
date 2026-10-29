@@ -4212,4 +4212,38 @@ mod grid_item_style_tests {
     assert_eq!(f[1], "rgb(0,255,0)");
     assert_eq!(f[2], "rgb(0,0,255)");
   }
+
+  #[test]
+  fn framed_array_plot_keeps_its_own_coordinate_space() {
+    // An ArrayPlot draws at a multiple of its display size, so the nested
+    // `<svg>` inside the frame needs the plot's viewBox to show all of it.
+    for code in [
+      "ExportString[Framed[ArrayPlot[{{0, 1}, {1, 0}}]], \"SVG\"]",
+      "ExportString[Highlighted[ArrayPlot[{{0, 1}, {1, 0}}]], \"SVG\"]",
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      let nested = svg
+        .lines()
+        .find(|l| l.starts_with("<svg x=\"") && l.contains("viewBox"))
+        .unwrap_or_else(|| panic!("nested svg without viewBox: {svg}"));
+      let vb = nested.split("viewBox=\"").nth(1).unwrap();
+      let vb: Vec<f64> = vb
+        .split('"')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .map(|n| n.parse().unwrap())
+        .collect();
+      let w: f64 = nested
+        .split("width=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(vb[2] >= w, "viewBox {vb:?} narrower than width {w}");
+    }
+  }
 }
