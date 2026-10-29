@@ -36892,6 +36892,11 @@ fn display_expr_to_node(
       "Style" | "StyleForm" if !args.is_empty() => {
         match style_wrapped_block_layout(&args[0], bindings) {
           Some(inner) => display_expr_to_node(&inner, bindings, probes, ons),
+          // A styled graphic (`Style[Graphics[…], opts]`) is a picture, not
+          // caption text: the label machinery would reduce it to nothing.
+          None if is_graphics_value(&args[0]) => {
+            static_leaf_node(expr, bindings)
+          }
           None => styled_text_node(expr, bindings),
         }
       }
@@ -37020,6 +37025,20 @@ fn style_wrapped_block_layout(
     other => other.clone(),
   };
   is_block_layout(&released).then_some(released)
+}
+
+/// Whether `expr` is an evaluated graphics container (`Graphics[…]`,
+/// `Graphics3D[…]`, `GraphicsRow[…]`, …).
+fn is_graphics_value(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "Graphics" | "Graphics3D" | "GraphicsRow" | "GraphicsColumn"
+          | "GraphicsGrid"
+      )
+  )
 }
 
 /// Whether `expr` is a `Style[…]`/`StyleForm[…]` call.

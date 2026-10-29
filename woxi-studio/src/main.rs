@@ -8434,6 +8434,41 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// A Manipulate with a `Dynamic[Style[Graphics[…], …]]` display element
+  /// (a clickable point strip above the readout, the way a Demonstrations
+  /// Project notebook lays out a picker). Regression: the `Style` case
+  /// treated every styled fragment as caption text, so the evaluated
+  /// `Style[Graphics[…]]` produced an empty text node and the graphic
+  /// never appeared.
+  #[test]
+  fn manipulate_dynamic_styled_graphics_display_keeps_the_graphic() {
+    let code = r#"Manipulate[
+      Column[{k, n}],
+      {{k, 2, "k"}, {1, 2, 3}},
+      {{n, 5}, None},
+      Dynamic[Style[
+        Graphics[{PointSize[0.01], Point[{k, n}]}, Frame -> True,
+          ImageSize -> {200, 80}],
+        Large]],
+      "caption"
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate should build a ManipulateState");
+    let graphic = state.display_trees.iter().any(|t| {
+      matches!(
+        t,
+        woxi::functions::graphics::DisplayNode::Static { svg: Some(_), .. }
+      )
+    });
+    assert!(
+      graphic,
+      "the styled Graphics must render as an SVG leaf: {:?}",
+      state.display_trees
+    );
+  }
+
   /// A `Manipulate` whose body builds a list of points and rotates the
   /// whole list at once with `RotationTransform[…, axis][points]` — the
   /// shape a Wolfram Demonstrations Project notebook's "arrange N copies
