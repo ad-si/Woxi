@@ -904,6 +904,132 @@ fn modulus_equation_system(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
   }
 }
 
+/// The roots in `[0, n)` of `lhs - rhs`, a polynomial in `var` with
+/// integer coefficients, modulo `n`, in increasing order. `None` when the
+/// equation is not such a polynomial, `n` has a prime factor too large to
+/// search, or the arithmetic would overflow.
+fn univariate_roots_mod(
+  lhs: &Expr,
+  rhs: &Expr,
+  var: &str,
+  n: i128,
+) -> Option<Vec<i128>> {
+  if n > 1_000_000_000_000_000_000 {
+    return None;
+  }
+  let coeffs = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CoefficientList",
+    vec![
+      call(
+        "Plus",
+        vec![
+          lhs.clone(),
+          call("Times", vec![Expr::Integer(-1), rhs.clone()]),
+        ],
+      ),
+      Expr::Identifier(var.to_string()),
+    ],
+  ))
+  .ok()?;
+  let Expr::List(items) = &coeffs else {
+    return None;
+  };
+  let coeffs: Vec<i128> = items
+    .iter()
+    .map(|c| match c {
+      Expr::Integer(k) => Some(*k),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  // f(x) mod m by Horner (all values below m <= 10^18, products in i128).
+  let eval = |x: i128, m: i128| -> i128 {
+    coeffs
+      .iter()
+      .rev()
+      .fold(0i128, |acc, &c| (acc * x + c.rem_euclid(m)).rem_euclid(m))
+  };
+  // Prime power factorization of n by trial division.
+  let mut factors: Vec<(i128, u32)> = Vec::new();
+  let mut rest = n;
+  let mut p = 2i128;
+  while p * p <= rest {
+    if rest % p == 0 {
+      let mut k = 0;
+      while rest % p == 0 {
+        rest /= p;
+        k += 1;
+      }
+      factors.push((p, k));
+    }
+    p += if p == 2 { 1 } else { 2 };
+    if p > 10_000_000 {
+      return None;
+    }
+  }
+  if rest > 1 {
+    factors.push((rest, 1));
+  }
+  // Roots modulo each prime power, lifted one power at a time over all p
+  // candidates (which also covers repeated roots).
+  let mut combined: Vec<i128> = vec![0];
+  let mut modulus = 1i128;
+  for (p, k) in factors {
+    if p > 10_000_000 {
+      return None;
+    }
+    let mut roots: Vec<i128> = (0..p).filter(|&r| eval(r, p) == 0).collect();
+    let mut pj = p;
+    for _ in 1..k {
+      let next = pj * p;
+      let mut lifted = Vec::new();
+      for &r in &roots {
+        for t in 0..p {
+          let c = r + t * pj;
+          if eval(c, next) == 0 {
+            lifted.push(c);
+          }
+        }
+      }
+      roots = lifted;
+      pj = next;
+      if roots.len() > 100_000 {
+        return None;
+      }
+    }
+    // Chinese remainder: x = a (mod modulus), x = r (mod pj).
+    let inv = mod_inverse_i128(modulus.rem_euclid(pj), pj)?;
+    let mut next_combined = Vec::with_capacity(combined.len() * roots.len());
+    for &a in &combined {
+      for &r in &roots {
+        let t = ((r - a).rem_euclid(pj) * inv).rem_euclid(pj);
+        next_combined.push(a + modulus * t);
+      }
+    }
+    combined = next_combined;
+    modulus *= pj;
+    if combined.len() > 100_000 {
+      return None;
+    }
+  }
+  combined.sort_unstable();
+  Some(combined)
+}
+
+/// The inverse of `a` modulo `m` (gcd 1), or `None`.
+fn mod_inverse_i128(a: i128, m: i128) -> Option<i128> {
+  if m == 1 {
+    return Some(0);
+  }
+  let (mut old_r, mut r) = (a, m);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+  }
+  (old_r == 1).then(|| old_s.rem_euclid(m))
+}
+
 /// `Reduce[equation, vars, Modulus -> n]` — enumerate all integer
 /// solutions in `[0, n)^k`. The third argument must be a `Modulus -> n`
 /// Rule with a positive integer modulus; otherwise returns None and the
@@ -950,6 +1076,29 @@ fn try_reduce_modulus(expr: &Expr, vars: &Expr, opt: &Expr) -> Option<Expr> {
   // equation has to hold at once. Anything else (Or, an inequality) is left
   // for the generic reducer.
   let equations = modulus_equation_system(expr)?;
+
+  // One polynomial equation in one variable: roots modulo each prime
+  // power by lifting the roots modulo the prime, then combined — instead
+  // of trying every residue (7^12 of them for a p-adic expansion).
+  if let ([(lhs, rhs)], [var]) = (equations.as_slice(), var_names.as_slice())
+    && let Some(roots) = univariate_roots_mod(lhs, rhs, var, modulus)
+  {
+    if roots.is_empty() {
+      return Some(bool_expr(false));
+    }
+    let clauses: Vec<Expr> = roots
+      .iter()
+      .map(|v| Expr::Comparison {
+        operands: vec![Expr::Identifier(var.clone()), Expr::Integer(*v)],
+        operators: vec![ComparisonOp::Equal],
+      })
+      .collect();
+    return Some(if clauses.len() == 1 {
+      clauses.into_iter().next().unwrap()
+    } else {
+      call("Or", clauses)
+    });
+  }
 
   // Iterate over all assignments in [0, n)^k.
   let n = modulus as usize;

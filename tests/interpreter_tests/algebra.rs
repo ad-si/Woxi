@@ -12615,6 +12615,30 @@ mod solve_with_domain {
 mod solve_modulus {
   use super::*;
 
+  // One polynomial in one variable is solved modulo each prime power by
+  // lifting the roots modulo the prime, then combined by the Chinese
+  // remainder theorem, rather than by trying every residue (Demonstration
+  // NewtonsMethodInPAdicForm: 7^12 residues, 30 s).
+  #[test]
+  fn prime_power_moduli() {
+    assert_eq!(
+      interpret("Solve[17 x - 3 == 0, {x}, Modulus -> 7^12]").unwrap(),
+      "{{x -> 4070966824}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 - 2 == 0, {x}, Modulus -> 7^3]").unwrap(),
+      "{{x -> 108}, {x -> 235}}"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 == 4, x, Modulus -> 32]").unwrap(),
+      "x == 2 || x == 6 || x == 10 || x == 14 || x == 18 || x == 22 || x == 26 || x == 30"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 1, x, Modulus -> 24]").unwrap(),
+      "{{x -> 1}, {x -> 5}, {x -> 7}, {x -> 11}, {x -> 13}, {x -> 17}, {x -> 19}, {x -> 23}}"
+    );
+  }
+
   #[test]
   fn quadratic_residues() {
     assert_eq!(
