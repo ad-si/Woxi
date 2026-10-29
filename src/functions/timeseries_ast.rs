@@ -753,12 +753,12 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if count == 1 {
     return Ok(time_series(paths.pop().unwrap()));
   }
-  Ok(multi_path_temporal_data(paths))
+  Ok(multi_path_temporal_data(&paths))
 }
 
 /// Several realizations sharing one time axis, as the multi-path
 /// `TemporalData[{values1, …}, {{t1, …}}]` that [`temporal_paths`] reads.
-fn multi_path_temporal_data(paths: Vec<Vec<Expr>>) -> Expr {
+fn multi_path_temporal_data(paths: &[Vec<Expr>]) -> Expr {
   let split = |pair: &Expr, i: usize| match pair {
     Expr::List(kv) => kv[i].clone(),
     _ => unreachable!(),
@@ -886,22 +886,15 @@ fn one_realization(proc: &Expr, tspec: &Expr) -> Option<Vec<Expr>> {
     ("OrnsteinUhlenbeckProcess", [_, _, _, x0]) => try_eval_to_f64(x0),
     _ => None,
   };
-  let Some(mut x) = initial else {
-    return None;
-  };
+  let mut x = initial?;
 
   let mut pairs = Vec::with_capacity(n_steps as usize + 1);
   pairs.push(Expr::List(vec![Expr::Real(t0), Expr::Real(x)].into()));
   let mut t = t0;
   for _ in 0..n_steps {
     let this_step = dt.min(t1 - t);
-    let Some((mean, sd)) = step_params(x, this_step) else {
-      return None;
-    };
-    let Some(v) = sample_normal(mean, sd) else {
-      return None;
-    };
-    x = v;
+    let (mean, sd) = step_params(x, this_step)?;
+    x = sample_normal(mean, sd)?;
     t += this_step;
     pairs.push(Expr::List(vec![Expr::Real(t), Expr::Real(x)].into()));
   }
@@ -2092,29 +2085,27 @@ pub fn apply_multi_path_temporal_data(
     }
     Ok(Expr::List(out.into()))
   };
-  match arg {
-    Expr::String(prop) => match prop.as_str() {
+  if let Expr::String(prop) = arg {
+    return match prop.as_str() {
       "Paths" => each("Path"),
       "ValueList" | "States" => each("Values"),
       "TimeList" => each("Times"),
       "PathCount" => Ok(Expr::Integer(paths.len() as i128)),
       _ => apply_time_series(&as_series(&paths[0]), arg),
-    },
-    // A time slice is the empirical distribution of the paths' values.
-    _ => {
-      let mut out = Vec::with_capacity(paths.len());
-      for path in &paths {
-        out.push(apply_time_series(&as_series(path), arg)?);
-      }
-      if out.iter().any(|v| matches!(v, Expr::CurriedCall { .. })) {
-        return unevaluated();
-      }
-      crate::evaluator::evaluate_expr_to_expr(&call1(
-        "EmpiricalDistribution",
-        Expr::List(out.into()),
-      ))
-    }
+    };
   }
+  // A time slice is the empirical distribution of the paths' values.
+  let mut out = Vec::with_capacity(paths.len());
+  for path in &paths {
+    out.push(apply_time_series(&as_series(path), arg)?);
+  }
+  if out.iter().any(|v| matches!(v, Expr::CurriedCall { .. })) {
+    return unevaluated();
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call1(
+    "EmpiricalDistribution",
+    Expr::List(out.into()),
+  ))
 }
 
 /// Resolve a string property access on a `TimeSeries`.

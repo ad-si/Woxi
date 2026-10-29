@@ -2824,7 +2824,11 @@ fn collect_primitives(
           match action {
             Some(action) => {
               let hex: String =
-                action.bytes().map(|b| format!("{b:02x}")).collect();
+                action.bytes().fold(String::new(), |mut s, b| {
+                  use std::fmt::Write;
+                  let _ = write!(s, "{b:02x}");
+                  s
+                });
               prims.push(Primitive::ClickGroupStart { hex });
               collect_primitives(&args[0], style, prims, errors);
               prims.push(Primitive::ClickGroupEnd);
