@@ -831,6 +831,13 @@ fn csin(z: (f64, f64)) -> (f64, f64) {
 
 /// Complex Gamma function using the Lanczos approximation.
 pub fn gamma_complex(re: f64, im: f64) -> (f64, f64) {
+  // Far off the real axis |Gamma| decays like e^(-Pi |Im z| / 2): the
+  // reflection's Sin[Pi z] and the Lanczos t^(z + 1/2) e^-t overflow while
+  // their partners underflow, and the product is NaN. The exponential of
+  // LogGamma has no such intermediate (and underflows cleanly to 0).
+  if im.abs() > 10.0 {
+    return cexp(log_gamma_complex(re, im));
+  }
   // Reflection for Re(z) < 0.5
   if re < 0.5 {
     // Gamma(z) = pi / (sin(pi*z) * Gamma(1-z))

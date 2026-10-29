@@ -16942,15 +16942,18 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // finite (e.g. the removable singularity of Sin[x]/x at x = 0) is replaced
   // by its limit via a tiny perturbation, so adaptive quadrature does not
   // abort at such a point.
-  // The integrand compiled once to float arithmetic, when it is nothing but
-  // that: evaluating the expression afresh at every sample (exact
-  // coefficients and all) dominated a quadrature.
+  // The integrand compiled once to float arithmetic: evaluating the
+  // expression afresh at every sample (exact coefficients and all)
+  // dominated a quadrature. Pieces the compiler does not know (`Gamma` of a
+  // complex argument, say) are evaluated on their own, and machine
+  // overflow on the way is retried with an unbounded exponent, so
+  // `E^(4.*^4) Abs[Gamma[…]]^2` in a tail is the 0 it tends to, not
+  // Infinity times 0.
   let compiled = if monitor.is_none() {
     crate::functions::polynomial_ast::solve::compile_numeric(
       integrand,
       std::slice::from_ref(&var_name),
     )
-    .filter(|node| !node.has_fallback())
   } else {
     None
   };

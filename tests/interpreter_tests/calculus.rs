@@ -5024,6 +5024,28 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A tail where E^(huge) meets an underflowed factor: the compiled
+  // integrand retries the overflow with an unbounded exponent (0, not
+  // Infinity times 0), and Gamma far off the real axis underflows instead
+  // of turning NaN (Demonstration FittingTheMeixnerDistributionToSP500Returns).
+  #[test]
+  fn overflowing_factor_times_underflowing_one() {
+    assert_eq!(
+      interpret("Table[Abs[Gamma[0.414 + I v]]^2, {v, {1000., 1.*^10}}]")
+        .unwrap(),
+      "{0., 0.}"
+    );
+    assert_eq!(
+      interpret(
+        "f[x_] := (2 Cos[-0.0829/2])^(2 0.414) E^((-0.0829 (x - 0.0006))/0.0204) \
+         Abs[Gamma[0.414 + (I (x - 0.0006))/0.0204]]^2/(2 Pi 0.0204 Gamma[2 0.414]); \
+         Round[NIntegrate[f[x], {x, -Infinity, Infinity}], 10^-8]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   // A second argument that is no range gets NIntegrate::ilim (or ::itraw
   // for a number in the variable slot) and stays unevaluated; it used to
   // stop the evaluation.
