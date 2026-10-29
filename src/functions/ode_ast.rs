@@ -12824,6 +12824,22 @@ pub fn evaluate_interpolating_function(
       );
     }
   }
+  // A kernel-layout spline over two variables.
+  if func_args.len() == 5
+    && let [a, b] = call_args
+    && let (Some(x), Some(y)) = (
+      crate::functions::math_ast::try_eval_to_f64(a),
+      crate::functions::math_ast::try_eval_to_f64(b),
+    )
+    && let Some(v) =
+      crate::functions::spline_interpolation::Spline::eval_kernel_2d(
+        &func_args[3],
+        x,
+        y,
+      )
+  {
+    return Ok(Expr::Real(v));
+  }
   // A kernel-layout grid in two or more dimensions.
   if func_args.len() == 5
     && let Some(native) = kernel_grid_interpolating_function(func_args)
