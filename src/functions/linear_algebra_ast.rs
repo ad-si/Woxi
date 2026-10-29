@@ -6942,8 +6942,53 @@ pub fn linear_solve_method_ok(
   let Some(rows) = expr_to_matrix(matrix) else {
     return true;
   };
-  let shown = crate::syntax::expr_to_output(matrix);
+  let shown = || crate::syntax::expr_to_output(matrix);
   match name {
+    // A matrix of machine reals: symmetric, and positive definite exactly
+    // when its Cholesky factorization runs to the end with positive pivots
+    // (one O(n^3) pass instead of n determinants).
+    "Cholesky"
+      if rows
+        .iter()
+        .all(|r| r.iter().all(|e| matches!(e, Expr::Real(_)))) =>
+    {
+      let n = rows.len();
+      let a: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|r| {
+          r.iter()
+            .map(|e| match e {
+              Expr::Real(v) => *v,
+              _ => f64::NAN,
+            })
+            .collect()
+        })
+        .collect();
+      if a.iter().any(|r| r.len() != n)
+        || (0..n).any(|i| (0..i).any(|j| a[i][j] != a[j][i]))
+      {
+        return fail(format!(
+          "LinearSolve::herm: The matrix {} is not Hermitian or real and symmetric.",
+          shown()
+        ));
+      }
+      let mut l = vec![vec![0.0f64; n]; n];
+      for j in 0..n {
+        let d = a[j][j] - (0..j).map(|k| l[j][k] * l[j][k]).sum::<f64>();
+        if d.is_nan() || d <= 0.0 {
+          return fail(format!(
+            "LinearSolve::npdef: The matrix {} is not positive definite.",
+            shown()
+          ));
+        }
+        l[j][j] = d.sqrt();
+        for i in j + 1..n {
+          let s: f64 = (0..j).map(|k| l[i][k] * l[j][k]).sum();
+          l[i][j] = (a[i][j] - s) / l[j][j];
+        }
+      }
+      true
+    }
     "Cholesky" => {
       let n = rows.len();
       let hermitian = rows.iter().all(|r| r.len() == n)
@@ -6958,7 +7003,8 @@ pub fn linear_solve_method_ok(
         });
       if !hermitian {
         return fail(format!(
-          "LinearSolve::herm: The matrix {shown} is not Hermitian or real and symmetric."
+          "LinearSolve::herm: The matrix {} is not Hermitian or real and symmetric.",
+          shown()
         ));
       }
       // Sylvester's criterion: every leading principal minor is positive.
@@ -6975,7 +7021,8 @@ pub fn linear_solve_method_ok(
       });
       if !positive_definite {
         return fail(format!(
-          "LinearSolve::npdef: The matrix {shown} is not positive definite."
+          "LinearSolve::npdef: The matrix {} is not positive definite.",
+          shown()
         ));
       }
       true

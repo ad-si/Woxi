@@ -13558,8 +13558,9 @@ pub fn minimize_ast(
         let seen = before.messages().len();
         crate::push_quiet();
         let result = minimize_ast_inner(probe_args, maximize);
-        crate::pop_quiet();
+        // Read before leaving the quiet block, which drops them.
         let raised = crate::snapshot_warnings().messages()[seen..].to_vec();
+        crate::pop_quiet();
         crate::restore_warnings(before);
         result.map(|value| (value, raised))
       };

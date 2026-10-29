@@ -2871,6 +2871,42 @@ mod linear_solve {
     );
   }
 
+  // A machine matrix is checked by one Cholesky factorization rather than
+  // a determinant per leading minor (a 512 x 512 tridiagonal system took
+  // 2.4 s to set up and 9.5 s per solve in Demonstration
+  // EstimatorsOfANoisyCenteredOrnsteinUhlenbeckProcess…).
+  #[test]
+  fn solve_cholesky_machine_matrix() {
+    assert_eq!(
+      interpret(
+        "Chop[LinearSolve[{{2., 1.}, {1., 2.}}, Method -> \"Cholesky\"][{1., 2.}]]"
+      )
+      .unwrap(),
+      "{0, 1.}"
+    );
+    assert_eq!(
+      interpret(
+        "m = SparseArray[{{i_, i_} -> 4., {i_, j_} /; Abs[i - j] == 1 -> -1.}, \
+         {300, 300}]; \
+         Round[10^6 LinearSolve[m, Method -> \"Cholesky\"][N[Range[300]]][[{1, 150, 300}]]]"
+      )
+      .unwrap(),
+      "{500000, 75000000, 109673647}"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{2., 1.}, {0.5, 2.}}, Method -> \"Cholesky\"]")
+        .unwrap(),
+      "LinearSolve[{{2., 1.}, {0.5, 2.}}, Method -> Cholesky]"
+    );
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{-4., 2.}, {2., -3.}}, {5, 6}, Method -> \"Cholesky\"]"
+      )
+      .unwrap(),
+      "LinearSolve[{{-4., 2.}, {2., -3.}}, {5, 6}, Method -> Cholesky]"
+    );
+  }
+
   // `Method -> "Cholesky"` needs a Hermitian positive definite matrix;
   // otherwise wolframscript reports it (`LinearSolve::herm`/`::npdef`) and
   // leaves the call — and the operator form applied to a vector —

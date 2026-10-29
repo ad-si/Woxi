@@ -2966,6 +2966,12 @@ woxi eval 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
 # LinearSolve[{{2, 1}, {1, 3}}, Method -> Cholesky]
 ```
 
+Building that factorization is also where WL's operator form reports a
+matrix that is not positive definite, under other names than the
+three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
+`CholeskyDecomposition::npdef` for an exact matrix and, for a machine one,
+`LinearSolve::posdef: -- Message text not found -- ({{1., 2.}, {2., 1.}})`.
+
 ## Expression structure and evaluation
 
 ### A held `Infinity` is not the symbol

@@ -953,6 +953,21 @@ mod outer_extended {
     );
   }
 
+  // The `Solve` that finds a condition's positions runs quietly and leaves
+  // nothing behind: its `Solve::ifun` reached `$MessageList` and a front
+  // end's message list (an internal `Quiet` without a restore).
+  #[test]
+  fn sparse_array_condition_rule_leaves_no_messages() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "s = SparseArray[{{i_, j_} /; Abs[i - j] == 1 -> 1}, {3, 3}]; \
+       {Normal[s], $MessageList}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, {}}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // MatrixForm of a SparseArray is drawn as the dense matrix.
   #[test]
   fn matrix_form_of_sparse_array_draws_dense_matrix() {
