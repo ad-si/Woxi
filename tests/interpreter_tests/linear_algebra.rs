@@ -412,6 +412,28 @@ mod det {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // Machine numbers with one symbolic row: expanded along that row
+  // (Demonstration NinePointCubic's 10 x 10 cubic through nine points took
+  // minutes of symbolic elimination).
+  #[test]
+  fn machine_matrix_with_one_symbolic_row() {
+    assert_eq!(
+      interpret(
+        "f[{x_, y_}] := {1, x, x^2, x^3, y, y x, y x^2, y^2, y^2 x, y^3}; \
+         kk = {{0.1, 2.5}, {-0.8, 2.1}, {0.4, 0.2}, {0.4, 0.8}, {1.31, 2.855}, \
+         {1.8, 0.5}, {2.3, 1.7}, {2.16, -0.2}, {3.7, 1.5}}; \
+         c = Det[Append[f /@ kk, {1, x, x^2, x^3, y, y x, y x^2, y^2, y^2 x, y^3}]]; \
+         Round[{c /. {x -> 0, y -> 0}, Coefficient[c, x y^2]}]"
+      )
+      .unwrap(),
+      "{11098, -3016}"
+    );
+    assert_eq!(
+      interpret("Det[{{1., 2., 3.}, {4., 5., 6.5}, {p, q, r}}]").unwrap(),
+      "-2.*p + 5.5*q - 3.*r"
+    );
+  }
+
   // A polynomial matrix's determinant is the expanded polynomial (over one
   // denominator for rational coefficients). Cofactor expansion skips zero
   // entries, and a matrix whose symbols all sit in one row (an

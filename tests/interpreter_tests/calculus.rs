@@ -6801,6 +6801,22 @@ mod erfi {
 mod big_o {
   use super::*;
 
+  // Any term in the variable is expanded to the order of the O-term it is
+  // added to (Demonstration TheNumberOfDistinctRealRootsOfARealPolynomial's
+  // `Normal[(x + 1)^s (f /. x -> …) + O[x]^(s + 1)]` stayed unexpanded and
+  // its recursion never ended).
+  #[test]
+  fn terms_expand_against_an_o_term() {
+    assert_eq!(
+      interpret(
+        "{(1 + x)^2/(1 - x) + O[x]^3, Sin[x] + O[x]^4, Exp[x] + O[x, 1]^3}"
+      )
+      .unwrap(),
+      "{SeriesData[x, 0, {1, 3, 4}, 0, 3, 1], SeriesData[x, 0, {1, 0, -1/6}, 1, 4, 1], \
+       SeriesData[x, 1, {E, E, E/2}, 0, 3, 1]}"
+    );
+  }
+
   #[test]
   fn o_basic() {
     assert_eq!(interpret("O[x]").unwrap(), "SeriesData[x, 0, {}, 1, 1, 1]");

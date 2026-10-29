@@ -205,9 +205,9 @@ fn try_series_data_plus(
   // SeriesData's own `nmax` instead of the polynomial term's degree+1.
   if series_indices.len() == 1 {
     let only_idx = series_indices[0];
-    let (sd_var, sd_x0, sd_nmax) =
+    let (sd_var, sd_x0, sd_nmax, sd_den) =
       if let Expr::FunctionCall { args: sa, .. } = &args[only_idx] {
-        (sa[0].clone(), sa[1].clone(), sa[4].clone())
+        (sa[0].clone(), sa[1].clone(), sa[4].clone(), sa[5].clone())
       } else {
         return Ok(None);
       };
@@ -215,6 +215,45 @@ fn try_series_data_plus(
       Expr::Identifier(s) => s.clone(),
       _ => return Ok(None),
     };
+    // Any other term in the variable is expanded to the series' order
+    // (`(1 + x)^2/(1 - x) + O[x]^3`), as wolframscript does.
+    if let (Expr::Integer(nmax), Expr::Integer(1)) = (&sd_nmax, &sd_den)
+      && args.iter().enumerate().any(|(i, a)| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(a, &var_name)
+          && polynomial_term_to_series_data(
+            a, &var_name, &sd_var, &sd_x0, &sd_nmax,
+          )
+          .is_none()
+      })
+    {
+      let mut lifted: Vec<Expr> = Vec::with_capacity(args.len());
+      for (i, a) in args.iter().enumerate() {
+        if i == only_idx
+          || !crate::functions::polynomial_ast::contains_var(a, &var_name)
+        {
+          lifted.push(a.clone());
+          continue;
+        }
+        let series = crate::evaluator::evaluate_function_call_ast(
+          "Series",
+          &[
+            a.clone(),
+            Expr::List(
+              vec![sd_var.clone(), sd_x0.clone(), Expr::Integer(nmax - 1)]
+                .into(),
+            ),
+          ],
+        )?;
+        if !matches!(&series, Expr::FunctionCall { name, .. } if name == "SeriesData")
+        {
+          return Ok(None);
+        }
+        lifted.push(series);
+      }
+      return crate::evaluator::evaluate_function_call_ast("Plus", &lifted)
+        .map(Some);
+    }
     // About another centre only constants lift (`Log[2] + SeriesData[x,
     // Infinity, …]`); a power of x would have to be rewritten in `x - x0`
     // (or `1/x`) first.

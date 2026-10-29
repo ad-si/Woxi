@@ -1487,6 +1487,9 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(m) = machine_real_matrix(&matrix) {
     return Ok(Expr::Real(machine_determinant(&m)));
   }
+  if let Some(det) = det_by_one_symbolic_row(&matrix) {
+    return det;
+  }
   let det = determinant(&matrix);
   // Wolfram's determinant of a polynomial matrix is the expanded
   // polynomial (`Det[{{2, 4}, {6, 2 x}}]` is `-24 + 4 x`), not a factored
@@ -1509,6 +1512,72 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let r = crate::functions::expand_and_combine(&det);
   Ok(simplify_expr(&r))
+}
+
+/// A machine-number matrix with a single row (or column) of symbolic
+/// entries — the `Det[{p1, …, pn, {1, x, y, …}}]` that gives the curve
+/// through n points — expanded along that row with machine-number minors.
+/// Symbolic elimination of the whole matrix took minutes for 10 x 10.
+fn det_by_one_symbolic_row(
+  matrix: &[Vec<Expr>],
+) -> Option<Result<Expr, InterpreterError>> {
+  let n = matrix.len();
+  if n < 3 {
+    return None;
+  }
+  let numeric = |e: &Expr| {
+    matches!(e, Expr::Real(_) | Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+  };
+  let inexact = matrix.iter().flatten().any(|e| matches!(e, Expr::Real(_)));
+  if !inexact {
+    return None;
+  }
+  let symbolic_rows: Vec<usize> =
+    (0..n).filter(|&i| !matrix[i].iter().all(numeric)).collect();
+  let symbolic_cols: Vec<usize> = (0..n)
+    .filter(|&j| !(0..n).all(|i| numeric(&matrix[i][j])))
+    .collect();
+  // Expand along a row: transpose a column case into it.
+  let (rows, row): (Vec<Vec<Expr>>, usize) =
+    match (symbolic_rows.as_slice(), symbolic_cols.as_slice()) {
+      ([i], _) => (matrix.to_vec(), *i),
+      (_, [j]) => (
+        (0..n)
+          .map(|r| (0..n).map(|c| matrix[c][r].clone()).collect())
+          .collect(),
+        *j,
+      ),
+      _ => return None,
+    };
+  let mut terms = Vec::with_capacity(n);
+  for j in 0..n {
+    let minor: Option<Vec<Vec<f64>>> = (0..n)
+      .filter(|&r| r != row)
+      .map(|r| {
+        (0..n)
+          .filter(|&c| c != j)
+          .map(|c| try_eval_to_f64(&rows[r][c]))
+          .collect()
+      })
+      .collect();
+    let minor = minor?;
+    let sign = if (row + j) % 2 == 0 { 1.0 } else { -1.0 };
+    // Small minors by their formula, which is exact where the products are.
+    let value = if minor.len() == 2 {
+      minor[0][0] * minor[1][1] - minor[0][1] * minor[1][0]
+    } else {
+      machine_determinant(&minor)
+    };
+    terms.push(crate::helpers::times(vec![
+      Expr::Real(sign * value),
+      rows[row][j].clone(),
+    ]));
+  }
+  Some(crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    &[crate::helpers::plus(terms)],
+  ))
 }
 
 /// Whether `e` contains a `Rational` anywhere.
