@@ -9571,6 +9571,14 @@ fn try_solve_by_radical_norms(
     }
     let a = plus(even);
     let b = plus(odd);
+    // Squaring multiplies the terms out; with several radicals of other
+    // unknowns still in the coefficients (a Fermat-point objective in three
+    // variables) the norm grows past anything Solve could use, and building
+    // it took gigabytes. Give up instead.
+    let size = |e: &Expr| super::simplify::leaf_count(e) as u64;
+    if size(&a).pow(2) + size(&p) * size(&b).pow(2) > 400_000 {
+      return None;
+    }
     let norm = minus2(
       pow(a, Expr::Integer(2)),
       times2(p.clone(), pow(b, Expr::Integer(2))),
@@ -19406,8 +19414,44 @@ fn nminimize_ast_impl(
   // solver's factoring and cancelling never finishes, so the numeric optimum
   // stands on its own.
   let sym_name = if maximize { "Maximize" } else { "Minimize" };
+  // A radical of the unknowns in several variables (a sum of distances,
+  // the Fermat point) sends the exact solver through squaring
+  // eliminations that run for minutes; the numeric optimum stands.
+  fn radical_of(e: &Expr, vars: &[String]) -> bool {
+    let fractional = |exp: &Expr| {
+      matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
+        || matches!(exp, Expr::Real(_))
+    };
+    let depends = |b: &Expr| {
+      vars
+        .iter()
+        .any(|v| crate::functions::polynomial_ast::contains_var(b, v))
+    };
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (fractional(&args[1]) && depends(&args[0]))
+          || args.iter().any(|a| radical_of(a, vars))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        depends(&args[0]) || radical_of(&args[0], vars)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (fractional(right) && depends(left)) || radical_of(left, vars),
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| radical_of(c, vars)),
+    }
+  }
   let symbolic = if super::simplify::leaf_count(&objective)
     <= SYMBOLIC_REFINEMENT_MAX_LEAVES
+    && !(vars.len() >= 2 && radical_of(&objective, &vars))
   {
     crate::evaluator::evaluate_expr_to_expr(&unevaluated(sym_name, args))
       .ok()

@@ -23410,3 +23410,25 @@ mod rational_equation_systems {
     );
   }
 }
+
+// NMinimize of a sum of distances in three variables (the Fermat point of
+// a tetrahedron) answers numerically: the exact Minimize refinement, which
+// squared radicals into gigabytes, is skipped for multivariate radicals
+// (Demonstration TetrahedronCenters).
+mod nminimize_radical_objective {
+  use super::*;
+
+  #[test]
+  fn fermat_point_of_a_tetrahedron() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "pts = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; \
+         Round[10^5 Flatten[{#[[1]], {a, b, c} /. #[[2]]} &[NMinimize[Total[(EuclideanDistance[{a, b, c}, #] &) /@ pts], {a, b, c}]]]]"
+      )
+      .unwrap(),
+      "{288675, 16667, 16667, 16667}"
+    );
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+}

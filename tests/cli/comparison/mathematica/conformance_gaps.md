@@ -646,6 +646,12 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `NMinimize` ignores `WorkingPrecision`
+
+`NMinimize[Total[EuclideanDistance[{a, b, c}, #] & /@ pts], {a, b, c},
+WorkingPrecision -> 30]` gives 30-digit numbers in wolframscript; Woxi
+answers with machine numbers (located to about 8 digits).
+
 ### Arbitrary-precision complex numbers print every working digit
 
 `N[(1 + I)/3, 20]` is right but shows 58 digits per part,
