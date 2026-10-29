@@ -234,6 +234,54 @@ pub fn dispatch_linear_algebra_functions(
     "ArrayDot" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
     }
+    // RotationMatrix[…, TargetStructure -> "Dense" | "Sparse" | Automatic]:
+    // build the dense matrix, wrapping it in a SparseArray for "Sparse".
+    "RotationMatrix"
+      if (2..=3).contains(&args.len())
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(n), _, false)) if n == "TargetStructure"
+        ) =>
+    {
+      let Some((_, structure, _)) =
+        crate::functions::expr_form::rule_parts(&args[args.len() - 1])
+      else {
+        return None;
+      };
+      let sparse = match structure {
+        Expr::String(s) if s == "Dense" => false,
+        Expr::Identifier(s) if s == "Automatic" => false,
+        Expr::String(s) if s == "Sparse" => true,
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      let dense = match dispatch_linear_algebra_functions(
+        name,
+        &args[..args.len() - 1],
+      ) {
+        Some(Ok(d)) => d,
+        other => return other,
+      };
+      if !sparse || !matches!(dense, Expr::List(_)) {
+        return Some(Ok(dense));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "SparseArray",
+        &[dense],
+      ));
+    }
+    // Inverse[m, Method -> …] and Inverse[m, ZeroTest -> …] for a matrix of
+    // exact numbers: every method and zero test give the same exact inverse.
+    "Inverse"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(n), _, _)) if n == "Method" || n == "ZeroTest"
+        )
+        && matches!(&args[0], Expr::List(rows) if rows.iter().all(|r|
+          matches!(r, Expr::List(xs) if xs.iter().all(is_exact_number)))) =>
+    {
+      return dispatch_linear_algebra_functions(name, &args[..1]);
+    }
     "Det" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::det_ast(args));
     }
@@ -617,6 +665,29 @@ pub fn dispatch_linear_algebra_functions(
     }
     "DiskMatrix" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::disk_matrix_ast(args));
+    }
+    // WorkingPrecision -> Infinity gives the exact kernel;
+    // WorkingPrecision -> MachinePrecision is the default.
+    "SavitzkyGolayMatrix"
+      if args.len() == 3
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[2]),
+          Some((Expr::Identifier(o), Expr::Identifier(v), _))
+            if o == "WorkingPrecision"
+              && (v == "Infinity" || v == "MachinePrecision")
+        ) =>
+    {
+      if let Some((_, Expr::Identifier(v), _)) =
+        crate::functions::expr_form::rule_parts(&args[2])
+        && v == "Infinity"
+      {
+        return Some(
+          crate::functions::linear_algebra_ast::savitzky_golay_matrix_exact_ast(
+            &args[..2],
+          ),
+        );
+      }
+      return dispatch_linear_algebra_functions(name, &args[..2]);
     }
     "SavitzkyGolayMatrix" if args.len() == 2 => {
       return Some(
@@ -3044,6 +3115,24 @@ pub fn dispatch_linear_algebra_functions(
         }
         return Some(Ok(bool_expr(false)));
       }
+    }
+    // Tolerance -> t only affects approximate entries; for a matrix of
+    // exact entries the test is the plain one.
+    "HermitianMatrixQ"
+    | "NegativeSemidefiniteMatrixQ"
+    | "IndefiniteMatrixQ"
+    | "SymmetricMatrixQ"
+    | "PositiveDefiniteMatrixQ"
+    | "PositiveSemidefiniteMatrixQ"
+    | "NegativeDefiniteMatrixQ"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(n), _, _)) if n == "Tolerance"
+        )
+        && !contains_approximate_number(&args[0]) =>
+    {
+      return dispatch_linear_algebra_functions(name, &args[..1]);
     }
     "HermitianMatrixQ" if args.len() == 1 => {
       // Hermitian: M == ConjugateTranspose[M]
@@ -5709,4 +5798,37 @@ fn matrices_agree(
     }
   }
   Ok(true)
+}
+
+/// An exact (integer, rational or exact complex) number.
+fn is_exact_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) => true,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      args.len() == 2
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_)))
+    }
+    Expr::FunctionCall { name, args } if name == "Complex" => {
+      args.len() == 2 && args.iter().all(is_exact_number)
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` contains an approximate (machine or arbitrary-precision) number.
+fn contains_approximate_number(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(..) => true,
+    Expr::List(items) => items.iter().any(contains_approximate_number),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_approximate_number)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_approximate_number(left) || contains_approximate_number(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_approximate_number(operand),
+    _ => false,
+  }
 }

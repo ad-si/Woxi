@@ -11982,65 +11982,122 @@ fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
   }
 }
 
+/// Options of NeedlemanWunschSimilarity / SmithWatermanSimilarity:
+/// `GapPenalty -> g` (a real number, default 1) and `IgnoreCase -> True|False`.
+/// Returns `None` for any other option or value.
+fn alignment_similarity_options(opts: &[Expr]) -> Option<(f64, bool)> {
+  let mut gap = 1.0;
+  let mut ignore_case = false;
+  for opt in opts {
+    let (Expr::Identifier(name), value, _) =
+      crate::functions::expr_form::rule_parts(opt)?
+    else {
+      return None;
+    };
+    match name.as_str() {
+      "GapPenalty" => gap = crate::functions::math_ast::try_eval_to_f64(value)?,
+      "IgnoreCase" => {
+        ignore_case = match value {
+          Expr::Identifier(v) if v == "True" => true,
+          Expr::Identifier(v) if v == "False" => false,
+          _ => return None,
+        }
+      }
+      _ => return None,
+    }
+  }
+  Some((gap, ignore_case))
+}
+
+/// The tokens of both alignment arguments, lower-cased for IgnoreCase.
+fn alignment_token_pair(
+  args: &[Expr],
+  ignore_case: bool,
+) -> (Vec<String>, Vec<String>) {
+  let tokens = |e: &Expr| {
+    let t = alignment_tokens(e);
+    if ignore_case && matches!(e, Expr::String(_)) {
+      t.into_iter().map(|c| c.to_lowercase()).collect()
+    } else {
+      t
+    }
+  };
+  (tokens(&args[0]), tokens(&args[1]))
+}
+
 /// NeedlemanWunschSimilarity[s1, s2] - global sequence-alignment score with the
 /// default scoring (match +1, mismatch -1, gap penalty 1). When one input is
-/// empty, wolframscript returns the length of the other.
+/// empty, wolframscript returns the length of the other. The options
+/// GapPenalty and IgnoreCase are supported.
 pub fn needleman_wunsch_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  let Some((gap, ignore_case)) =
+    alignment_similarity_options(args.get(2..).unwrap_or(&[]))
+  else {
+    return Ok(unevaluated("NeedlemanWunschSimilarity", args));
+  };
+  if args.len() < 2 {
     return Ok(unevaluated("NeedlemanWunschSimilarity", args));
   }
-  let a = alignment_tokens(&args[0]);
-  let b = alignment_tokens(&args[1]);
+  let (a, b) = alignment_token_pair(args, ignore_case);
   let (n, m) = (a.len(), b.len());
   if n == 0 || m == 0 {
+    // Only the default gap penalty's empty-input value is known.
+    if gap != 1.0 {
+      return Ok(unevaluated("NeedlemanWunschSimilarity", args));
+    }
     return Ok(Expr::Real(n.max(m) as f64));
   }
-  let mut dp = vec![vec![0i64; m + 1]; n + 1];
+  let mut dp = vec![vec![0f64; m + 1]; n + 1];
   for (i, row) in dp.iter_mut().enumerate() {
-    row[0] = -(i as i64);
+    row[0] = -(i as f64) * gap;
   }
   for j in 0..=m {
-    dp[0][j] = -(j as i64);
+    dp[0][j] = -(j as f64) * gap;
   }
   for i in 1..=n {
     for j in 1..=m {
-      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      let s = if a[i - 1] == b[j - 1] { 1.0 } else { -1.0 };
       dp[i][j] = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - 1)
-        .max(dp[i][j - 1] - 1);
+        .max(dp[i - 1][j] - gap)
+        .max(dp[i][j - 1] - gap);
     }
   }
-  Ok(Expr::Real(dp[n][m] as f64))
+  Ok(Expr::Real(dp[n][m]))
 }
 
 /// SmithWatermanSimilarity[s1, s2] - local sequence-alignment score with the
 /// default scoring (match +1, mismatch -1, gap penalty 1). Cell scores are
-/// floored at 0 and the result is the maximum cell value.
+/// floored at 0 and the result is the maximum cell value. The options
+/// GapPenalty and IgnoreCase are supported.
 pub fn smith_waterman_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  let Some((gap, ignore_case)) =
+    alignment_similarity_options(args.get(2..).unwrap_or(&[]))
+  else {
+    return Ok(unevaluated("SmithWatermanSimilarity", args));
+  };
+  if args.len() < 2 {
     return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
-  let a = alignment_tokens(&args[0]);
-  let b = alignment_tokens(&args[1]);
+  let (a, b) = alignment_token_pair(args, ignore_case);
   let (n, m) = (a.len(), b.len());
-  let mut dp = vec![vec![0i64; m + 1]; n + 1];
-  let mut best = 0i64;
+  let mut dp = vec![vec![0f64; m + 1]; n + 1];
+  let mut best = 0f64;
   for i in 1..=n {
     for j in 1..=m {
-      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      let s = if a[i - 1] == b[j - 1] { 1.0 } else { -1.0 };
       let v = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - 1)
-        .max(dp[i][j - 1] - 1)
-        .max(0);
+        .max(dp[i - 1][j] - gap)
+        .max(dp[i][j - 1] - gap)
+        .max(0.0);
       dp[i][j] = v;
       best = best.max(v);
     }
   }
-  Ok(Expr::Real(best as f64))
+  Ok(Expr::Real(best))
 }
 
 /// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also
@@ -13297,9 +13354,71 @@ pub fn remove_diacritics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0]);
+  Ok(Expr::String(strip_diacritics(&s)))
+}
+
+/// Remove the diacritics of every character: NFD-decompose, then drop the
+/// combining marks (Unicode category Mn).
+pub fn strip_diacritics(s: &str) -> String {
   use unicode_normalization::UnicodeNormalization;
-  // NFD decompose, then filter out combining marks (Unicode category Mn)
-  let result: String = s.nfd().filter(|c| !is_combining_mark(*c)).collect();
+  s.nfd().filter(|c| !is_combining_mark(*c)).collect()
+}
+
+/// The lower-case letters of `Alphabet[lang]`, or `None` for a language
+/// without a known alphabet.
+pub fn language_alphabet(lang: &str) -> Option<Vec<char>> {
+  let letters = crate::evaluator::evaluate_function_call_ast(
+    "Alphabet",
+    &[Expr::String(lang.to_string())],
+  )
+  .ok()?;
+  let Expr::List(items) = &letters else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for item in items.iter() {
+    let Expr::String(l) = item else {
+      return None;
+    };
+    let mut chars = l.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+      return None;
+    };
+    out.push(c);
+  }
+  if out.is_empty() { None } else { Some(out) }
+}
+
+/// RemoveDiacritics[s, Language -> lang]: letters of the language's own
+/// alphabet (such as the Spanish ñ) keep their marks.
+pub fn remove_diacritics_language_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let lang = match crate::functions::expr_form::rule_parts(&args[1]) {
+    Some((Expr::Identifier(opt), Expr::String(lang), _))
+      if opt == "Language" =>
+    {
+      lang
+    }
+    _ => return Ok(unevaluated("RemoveDiacritics", args)),
+  };
+  let Expr::String(s) = &args[0] else {
+    return Ok(unevaluated("RemoveDiacritics", args));
+  };
+  let Some(alphabet) = language_alphabet(lang) else {
+    return Ok(unevaluated("RemoveDiacritics", args));
+  };
+  let result: String = s
+    .chars()
+    .map(|c| {
+      let in_alphabet = c.to_lowercase().all(|l| alphabet.contains(&l));
+      if in_alphabet {
+        c.to_string()
+      } else {
+        strip_diacritics(&c.to_string())
+      }
+    })
+    .collect();
   Ok(Expr::String(result))
 }
 

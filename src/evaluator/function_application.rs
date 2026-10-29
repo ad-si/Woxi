@@ -2872,6 +2872,13 @@ pub fn apply_curried_call(
           result, name, func_args, args,
         ));
       }
+      // AlphabeticOrder[][s1, s2] and AlphabeticOrder[lang][s1, s2] ->
+      // AlphabeticOrder[s1, s2] / AlphabeticOrder[s1, s2, lang].
+      if name == "AlphabeticOrder" && func_args.len() <= 1 && args.len() == 2 {
+        let mut new_args = args.to_vec();
+        new_args.extend(func_args.iter().cloned());
+        return evaluate_function_call_ast(name, &new_args);
+      }
       if is_subject_first_operator(name)
         && func_args.len() == 1
         && args.len() == 1

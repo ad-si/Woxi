@@ -160,12 +160,12 @@ pub fn dispatch_string_functions(
         crate::functions::string_ast::damerau_levenshtein_distance_ast(args),
       );
     }
-    "NeedlemanWunschSimilarity" if args.len() == 2 => {
+    "NeedlemanWunschSimilarity" if args.len() >= 2 => {
       return Some(
         crate::functions::string_ast::needleman_wunsch_similarity_ast(args),
       );
     }
-    "SmithWatermanSimilarity" if args.len() == 2 => {
+    "SmithWatermanSimilarity" if args.len() >= 2 => {
       return Some(
         crate::functions::string_ast::smith_waterman_similarity_ast(args),
       );
@@ -372,6 +372,11 @@ pub fn dispatch_string_functions(
       return Some(crate::functions::string_ast::character_counts_ngram_ast(
         args,
       ));
+    }
+    "RemoveDiacritics" if args.len() == 2 => {
+      return Some(
+        crate::functions::string_ast::remove_diacritics_language_ast(args),
+      );
     }
     "RemoveDiacritics" if args.len() == 1 => {
       return Some(crate::functions::string_ast::remove_diacritics_ast(args));

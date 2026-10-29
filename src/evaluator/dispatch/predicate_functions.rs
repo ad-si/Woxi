@@ -757,7 +757,7 @@ pub fn dispatch_predicate_functions(
     "SimplePolygonQ" if args.len() == 1 => {
       return crate::functions::geometric_test_ast::simple_polygon_q_ast(args);
     }
-    "CompositeQ" if args.len() == 1 => {
+    "CompositeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }
     "PrimePowerQ" if args.len() == 1 => {
@@ -928,7 +928,7 @@ pub fn dispatch_predicate_functions(
     "Length" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::length_ast(args));
     }
-    "Depth" if args.len() == 1 => {
+    "Depth" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::depth_ast(args));
     }
     "LeafCount" if args.len() == 1 => {
@@ -1956,6 +1956,18 @@ pub fn dispatch_predicate_functions(
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {
       return Some(crate::functions::predicate_ast::construct_ast(args));
+    }
+    // NameQ[name, ResolveContextAliases -> b]: Woxi defines no context
+    // aliases, so resolving them changes nothing.
+    "NameQ"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(o), Expr::Identifier(v), _))
+            if o == "ResolveContextAliases" && (v == "True" || v == "False")
+        ) =>
+    {
+      return dispatch_predicate_functions(name, &args[..1]);
     }
     // NameQ["name"] - check if a symbol with that name exists
     "NameQ" if args.len() == 1 => {

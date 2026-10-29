@@ -18120,6 +18120,15 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Dt[expr, …, Constants -> {c1, …}]: the ci have zero total derivative,
+  // and every total derivative left over keeps the option.
+  if let Some((Expr::Identifier(opt), consts, _)) =
+    crate::functions::expr_form::rule_parts(&args[args.len() - 1])
+    && opt == "Constants"
+  {
+    return dt_with_constants(args, consts);
+  }
+
   // Dt threads over an equation: Dt[a == b, x] is Dt[a, x] == Dt[b, x].
   if let Expr::Comparison {
     operands,
@@ -18178,6 +18187,102 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let result = total_differentiate(&args[0], &var)?;
   Ok(simplify(result))
+}
+
+/// `Dt[expr, spec…, Constants -> consts]` (and the total differential
+/// `Dt[expr, Constants -> consts]`).
+fn dt_with_constants(
+  args: &[Expr],
+  consts: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let option = args[args.len() - 1].clone();
+  let constants: Vec<String> = match consts {
+    Expr::List(items) => {
+      let mut names = Vec::with_capacity(items.len());
+      for item in items.iter() {
+        match item {
+          Expr::Identifier(n) => names.push(n.clone()),
+          _ => return Ok(unevaluated("Dt", args)),
+        }
+      }
+      names
+    }
+    Expr::Identifier(n) => vec![n.clone()],
+    _ => return Ok(unevaluated("Dt", args)),
+  };
+  let plain = &args[..args.len() - 1];
+  if plain.is_empty() {
+    return Ok(unevaluated("Dt", args));
+  }
+  let derivative = if plain.len() == 1 {
+    dt_total_differential_ast(plain)?
+  } else {
+    dt_ast(plain)?
+  };
+
+  // A held Dt[c, …] of a declared constant vanishes.
+  fn drop_constants(e: &Expr, constants: &[String]) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Dt"
+          && matches!(&args[0], Expr::Identifier(n) if constants.contains(n)) =>
+      {
+        Expr::Integer(0)
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| drop_constants(a, constants)).collect(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(drop_constants(left, constants)),
+        right: Box::new(drop_constants(right, constants)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(drop_constants(operand, constants)),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| drop_constants(a, constants)).collect())
+      }
+      _ => e.clone(),
+    }
+  }
+  // The remaining held total derivatives carry the option along.
+  fn add_option(e: &Expr, option: &Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Dt" => {
+        let mut new_args: Vec<Expr> = args.to_vec();
+        new_args.push(option.clone());
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        }
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| add_option(a, option)).collect(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(add_option(left, option)),
+        right: Box::new(add_option(right, option)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(add_option(operand, option)),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| add_option(a, option)).collect())
+      }
+      _ => e.clone(),
+    }
+  }
+  let reduced = crate::evaluator::evaluate_expr_to_expr(&drop_constants(
+    &derivative,
+    &constants,
+  ))?;
+  Ok(add_option(&reduced, &option))
 }
 
 /// Rebuild a held `Dt[expr, spec…]` with its differentiation variables in

@@ -779,6 +779,21 @@ pub fn dispatch_polynomial_functions(
     "ExpandAll" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::expand_all_ast(args));
     }
+    // ExpandNumerator / ExpandDenominator / Cancel with Modulus -> p (and,
+    // for the two Expand… functions, Trig -> True): handled term by term,
+    // with the options passed on to Expand (or Together for Cancel).
+    "ExpandNumerator" | "ExpandDenominator" | "Cancel"
+      if args.len() >= 2
+        && args[1..].iter().all(|o| {
+          matches!(
+            crate::functions::expr_form::rule_parts(o),
+            Some((Expr::Identifier(n), _, false))
+              if n == "Modulus" || (n == "Trig" && name != "Cancel")
+          )
+        }) =>
+    {
+      return Some(rational_parts_with_options(name, &args[0], &args[1..]));
+    }
     "ExpandNumerator" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::expand_numerator_ast(
         args,
@@ -1959,4 +1974,52 @@ fn minimize_or_numeric_fallback(
     crate::emit_message(&message);
   }
   exact
+}
+
+/// `ExpandNumerator[expr, opts]`, `ExpandDenominator[expr, opts]` and
+/// `Cancel[expr, Modulus -> p]`: each term of a sum (and each element of a
+/// list) is split into numerator and denominator; the numerator or the
+/// denominator is expanded by `Expand[…, opts]`, or the term is cancelled by
+/// `Together[…, Modulus -> p]`.
+fn rational_parts_with_options(
+  name: &str,
+  expr: &Expr,
+  opts: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as eval;
+  match expr {
+    Expr::List(items) => {
+      let mapped = items
+        .iter()
+        .map(|it| rational_parts_with_options(name, it, opts))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(mapped.into()));
+    }
+    Expr::FunctionCall { name: head, args } if head == "Plus" => {
+      let mapped = args
+        .iter()
+        .map(|it| rational_parts_with_options(name, it, opts))
+        .collect::<Result<Vec<_>, _>>()?;
+      return eval("Plus", &mapped);
+    }
+    _ => {}
+  }
+  let with_opts = |e: Expr| -> Vec<Expr> {
+    let mut v = Vec::with_capacity(opts.len() + 1);
+    v.push(e);
+    v.extend(opts.iter().cloned());
+    v
+  };
+  if name == "Cancel" {
+    return eval("Together", &with_opts(expr.clone()));
+  }
+  let num = eval("Numerator", std::slice::from_ref(expr))?;
+  let den = eval("Denominator", std::slice::from_ref(expr))?;
+  let (num, den) = if name == "ExpandNumerator" {
+    (eval("Expand", &with_opts(num))?, den)
+  } else {
+    (num, eval("Expand", &with_opts(den))?)
+  };
+  let reciprocal = eval("Power", &[den, Expr::Integer(-1)])?;
+  eval("Times", &[num, reciprocal])
 }
