@@ -8484,6 +8484,30 @@ fn find_fit_weighted(
     param_values.fill(0.0);
   }
 
+  // The model compiled over the data variables and the parameters: a fit
+  // to thousands of points evaluates it, and its gradient in the
+  // parameters, at every one of them on each iteration.
+  let compiled_model: Option<crate::functions::polynomial_ast::solve::NumNode> =
+    vars
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<String>>>()
+      .and_then(|names| {
+        let all: Vec<String> = names
+          .into_iter()
+          .chain(param_names.iter().cloned())
+          .collect();
+        crate::functions::polynomial_ast::solve::compile_numeric(model, &all)
+          .filter(|node| !node.has_fallback())
+      });
+  let n_vars = vars.len();
+  let compiled_point = |i: usize, params: &[f64]| -> Vec<f64> {
+    x_vals[i].iter().chain(params).copied().collect()
+  };
+
   // Gauss-Newton iteration
   let max_iter = 100;
   let tol = 1e-12;
@@ -8494,6 +8518,16 @@ fn find_fit_weighted(
     let mut jacobian = vec![vec![0.0f64; n_params]; n_data];
 
     for i in 0..n_data {
+      if let Some(node) = &compiled_model {
+        let (val, grad) = node.eval_dual(&compiled_point(i, &param_values));
+        residuals[i] = (y_vals[i] - val) * scale[i];
+        for (k, d) in grad {
+          if k >= n_vars {
+            jacobian[i][k - n_vars] = d * scale[i];
+          }
+        }
+        continue;
+      }
       // Substitute variable and parameters
       let mut expr_at_x = at_point(&x_vals[i]);
       for (j, pname) in param_names.iter().enumerate() {
@@ -8588,6 +8622,12 @@ fn find_fit_weighted(
     let ssr_at = |values: &[f64]| -> f64 {
       let mut total = 0.0;
       for i in 0..n_data {
+        if let Some(node) = &compiled_model {
+          let r =
+            (y_vals[i] - node.eval(&compiled_point(i, values))) * scale[i];
+          total += r * r;
+          continue;
+        }
         let mut e = at_point(&x_vals[i]);
         for (k, pname) in param_names.iter().enumerate() {
           e = crate::syntax::substitute_variable(

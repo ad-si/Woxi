@@ -20384,6 +20384,9 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
     Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
     Expr::BigInteger(n) => Some(NumNode::Const(n.to_string().parse().ok()?)),
     Expr::Real(r) => Some(NumNode::Const(*r)),
+    // An arbitrary-precision number (`N[x, $MachinePrecision]` makes them)
+    // enters the machine arithmetic rounded.
+    Expr::BigFloat(..) => Some(NumNode::Const(expr_to_f64(expr).ok()?)),
     Expr::Identifier(name) => vars
       .iter()
       .position(|v| v == name)

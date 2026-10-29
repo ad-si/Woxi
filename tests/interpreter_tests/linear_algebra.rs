@@ -3943,6 +3943,26 @@ mod find_fit {
     );
   }
 
+  // A model that compiles is evaluated with its parameter gradient in
+  // machine arithmetic at every data point (Demonstration
+  // DeconvolutionOfAChromatogram fits 8 parameters to 20001 points: 47 s
+  // through the evaluator, 0.35 s compiled); `N[…, $MachinePrecision]`
+  // numbers in it compile as constants.
+  #[test]
+  fn compiled_model_over_many_points() {
+    assert_eq!(
+      interpret(
+        "tbl = Table[{t, 6.1 Exp[-(t - 1.2)^2/0.4] + 3.3 Exp[-(t - 2.8)^2/0.5]}, \
+         {t, -10, 10, 0.01}]; \
+         sol = FindFit[tbl, {h1 Exp[N[-(t - 1.2)^2/W1, $MachinePrecision]] + \
+         h2 Exp[N[-(t - 2.8)^2/W2, $MachinePrecision]]}, {h1, h2, W1, W2}, t]; \
+         Round[10^6 ({h1, h2, W1, W2} /. sol)]"
+      )
+      .unwrap(),
+      "{6100000, 3300000, 400000, 500000}"
+    );
+  }
+
   // Indexed parameters are fitted like symbols and named as given.
   #[test]
   fn indexed_parameters() {
