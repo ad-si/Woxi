@@ -286,7 +286,9 @@ mod option_forms {
         "NumeratorDenominator[{Sin[x], Cos[x], Tan[x], Csc[x], Sec[x], Cot[x]}, Trig -> True]"
       )
       .unwrap(),
-      "{{Sin[x], Cos[x], Sin[x], 1, 1, Cos[x]}, {1, 1, Cos[x], Sin[x], Cos[x], Sin[x]}}"
+      // NumeratorDenominator is Listable: one {num, den} pair per element.
+      "{{Sin[x], 1}, {Cos[x], 1}, {Sin[x], Cos[x]}, {1, Sin[x]}, {1, Cos[x]}, \
+       {Cos[x], Sin[x]}}"
     );
   }
 
