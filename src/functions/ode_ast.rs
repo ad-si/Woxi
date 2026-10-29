@@ -12878,6 +12878,11 @@ pub fn evaluate_interpolating_function(
   func_args: &[Expr],
   call_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  if crate::functions::fem2d::is_mesh_interpolation(func_args) {
+    return Ok(crate::functions::fem2d::evaluate_mesh_interpolation(
+      func_args, call_args,
+    ));
+  }
   // A one-dimensional function threads over a list argument, at any depth.
   if let [Expr::List(points)] = call_args
     && matches!(func_args.first(), Some(Expr::List(domain)) if domain.len() == 1)

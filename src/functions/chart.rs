@@ -125,13 +125,6 @@ impl StyledLabel {
     })
   }
 
-  /// Number of characters the reader sees once the label is typeset —
-  /// the raw `text` of a `\!\(\*SubscriptBox[…]\)` label is mostly box
-  /// syntax and would overstate its width several times over.
-  pub(crate) fn visible_char_count(&self) -> usize {
-    svg_markup_visible_text(&self.svg()).chars().count()
-  }
-
   /// The label as SVG `<text>` content for a picture drawn at `scale`
   /// render units per nominal point.
   ///

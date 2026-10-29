@@ -27,7 +27,7 @@ fn orientation(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
 /// Bowyer–Watson: insert the points one by one into a super-triangle, then
 /// drop every triangle that still touches it. Triangles come out with their
 /// vertices counter-clockwise.
-fn triangulate(points: &[[f64; 2]]) -> Option<Vec<[usize; 3]>> {
+pub(crate) fn triangulate(points: &[[f64; 2]]) -> Option<Vec<[usize; 3]>> {
   let n = points.len();
   if n < 3 {
     return None;

@@ -41,6 +41,7 @@ pub mod element_data;
 pub mod entity_ast;
 pub mod example_data;
 pub mod expr_form;
+pub mod fem2d;
 pub mod field_plot;
 pub mod financial_ast;
 pub mod function_range_ast;

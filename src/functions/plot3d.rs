@@ -4937,8 +4937,13 @@ fn push_text3d_label(
   let styled = crate::functions::chart::parse_styled_label(label_expr);
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
-      s.svg(),
-      s.visible_char_count(),
+      // A stacked label keeps its lines apart by newlines; the renderer
+      // lays them out.
+      std::iter::once(s.svg())
+        .chain(s.extra_lines.iter().cloned())
+        .collect::<Vec<_>>()
+        .join("\n"),
+      s.max_line_chars(),
       s.font_size.or(style.font_size).unwrap_or(12.0),
       s.color,
     ),
@@ -5368,6 +5373,20 @@ fn collect_3d_primitives(
                     .unwrap_or(0.0)
                   })
                   .collect(),
+                // A list of another length (a radius per spline control
+                // point, say) is spread along the curve and interpolated.
+                Expr::List(items) if items.len() >= 2 => {
+                  let rs: Vec<f64> = items
+                    .iter()
+                    .map(|e| {
+                      try_eval_to_f64(
+                        &evaluate_expr_to_expr(e).unwrap_or(e.clone()),
+                      )
+                      .unwrap_or(0.0)
+                    })
+                    .collect();
+                  resample_tube_radii(&pts, &rs)
+                }
                 _ => {
                   let r = try_eval_to_f64(&spec).unwrap_or(0.0);
                   vec![r; pts.len()]
@@ -5673,6 +5692,36 @@ fn parse_point3d_grid(expr: &Expr) -> Option<Vec<Vec<Point3D>>> {
   } else {
     None
   }
+}
+
+/// One radius per point of `pts` from a shorter or longer list `radii`: the
+/// list is laid at equal steps along the curve's arc length and linearly
+/// interpolated at each point.
+fn resample_tube_radii(pts: &[Point3D], radii: &[f64]) -> Vec<f64> {
+  let mut arc = vec![0.0f64; pts.len()];
+  for i in 1..pts.len() {
+    let (a, b) = (&pts[i - 1], &pts[i]);
+    arc[i] = arc[i - 1]
+      + ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2))
+        .sqrt();
+  }
+  let total = arc.last().copied().unwrap_or(0.0);
+  let last = (radii.len() - 1) as f64;
+  arc
+    .iter()
+    .enumerate()
+    .map(|(i, &d)| {
+      let t = if total > 0.0 {
+        d / total
+      } else {
+        i as f64 / (pts.len().max(2) - 1) as f64
+      };
+      let u = (t * last).clamp(0.0, last);
+      let k = (u.floor() as usize).min(radii.len() - 2);
+      let f = u - k as f64;
+      radii[k] * (1.0 - f) + radii[k + 1] * f
+    })
+    .collect()
 }
 
 /// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for: the uniform
@@ -8564,10 +8613,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let text_w = *width_chars as f64 * font_size * 0.6;
         let x = sx - offset.0 * text_w / 2.0;
         let y = sy + offset.1 * font_size / 2.0;
+        let lines = crate::functions::graphics::split_markup_lines(label);
+        let line_height = font_size * 1.2;
+        let mut body = String::new();
+        if lines.len() == 1 {
+          body.push_str(&lines[0]);
+        } else {
+          // The block of lines is centred on the anchor point.
+          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
+          for (i, line) in lines.iter().enumerate() {
+            let dy = if i == 0 { first_dy } else { line_height };
+            body.push_str(&format!(
+              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            ));
+          }
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{label}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{body}</text>\n",
         ));
       }
       Primitive3D::Point3DPrim { points, style } => {

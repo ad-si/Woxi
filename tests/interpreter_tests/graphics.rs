@@ -6064,6 +6064,24 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // Regression: a radius list whose length differs from the number of
+    // curve points (one radius per spline control point) collapsed the tube
+    // to radius 0, so it drew no surface at all.
+    #[test]
+    fn graphics3d_tube_radius_list_of_other_length_is_interpolated() {
+      let thin = export_svg(
+        "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {0, 1, 0}, {0, 2, 0}}], \
+        {0.1, 0.1, 0.1, 0.1}]]",
+      );
+      let wide = export_svg(
+        "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {0, 1, 0}, {0, 2, 0}}], \
+        {0.1, 0.5, 0.9, 0.1}]]",
+      );
+      assert!(thin.contains("<polygon"));
+      assert!(wide.contains("<polygon"));
+      assert_ne!(thin, wide);
+    }
+
     // A Tube of many curves is as crowded as as many Tubes: it used to get
     // the lone-tube tessellation budget for every curve (gigabytes for 343).
     #[test]
@@ -9147,6 +9165,33 @@ mod plot3d {
                          {None, None}}]"#,
       );
       assert!(graphics.contains(">p0.5<"), "{graphics}");
+    }
+
+    // Explicit `FrameTicks` on the right and top edge of a `Plot` frame are
+    // marked and labelled, whether written as `{pos, label}` pairs or as
+    // plain positions.
+    #[test]
+    fn plot_frame_ticks_label_the_right_and_top_edges() {
+      let plot = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, {{1, "ra"}, {2, "rb"}}},
+                         {All, {{3, "tc"}}}}]"#,
+      );
+      for label in [">ra<", ">rb<", ">tc<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      let numeric = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, Range[3]}, {All, None}}]"#,
+      );
+      let none = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, None}, {All, None}}]"#,
+      );
+      assert!(
+        numeric.matches("<text").count() >= none.matches("<text").count() + 3,
+        "{numeric}"
+      );
     }
 
     // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
@@ -18095,6 +18140,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn row_parts_with_edge_spaces_keep_them() {
+      // Regression: a Row part such as `" is"` has its leading space in the
+      // measured layout, but SVG trims it unless `xml:space="preserve"` is set,
+      // which glued the words together.
+      let svg = export_svg("Row[{\"7\", \" is\", \" prime \"}]");
+      assert!(svg.contains("xml:space=\"preserve\"> is</text>"), "{svg}");
+      assert!(
+        svg.contains("xml:space=\"preserve\"> prime </text>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("xml:space=\"preserve\">7</text>"), "{svg}");
+    }
+
+    #[test]
     fn array_plot_aspect_ratio() {
       // Regression: `AspectRatio -> r` shapes the plot; a one-row, very wide
       // array used to collapse to zero height.
@@ -19637,6 +19696,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "the cell wrapper is not shown: {svg}"
       );
       assert!(svg.contains(">hi<"), "the content shows: {svg}");
+    }
+
+    // `EventHandler[shape, "MouseClicked" :> action]` inside a picture draws
+    // `shape`, and records the action on a group around it so a live widget
+    // can make the shape clickable. The rules may come bare or in a list.
+    #[test]
+    fn an_event_handler_shape_records_its_click_action() {
+      for rules in [
+        "\"MouseClicked\" :> (hit = 7)",
+        "{\"MouseClicked\" :> (hit = 7)}",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Red, EventHandler[Rectangle[{{0, 0}}, {{1, 1}}], {rules}]}}]"
+        ));
+        assert!(svg.contains("<rect"), "the shape is drawn: {svg}");
+        assert_eq!(svg.matches("id=\"woxi-btn-").count(), 1, "{svg}");
+        assert!(!svg.contains("EventHandler"), "not the source: {svg}");
+      }
+      // Without a click rule the shape is plain.
+      let plain = export_svg(
+        "Graphics[EventHandler[Rectangle[{0, 0}, {1, 1}], \"MouseEntered\" :> (hit = 1)]]",
+      );
+      assert!(!plain.contains("woxi-btn-"), "{plain}");
     }
 
     // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,
