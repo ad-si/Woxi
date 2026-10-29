@@ -230,6 +230,17 @@ mod font_size {
   }
 
   #[test]
+  fn visual_output_shows_number_forms_as_digits() {
+    // In a notebook a number format inside a list or `Text`/`Pane` reads as
+    // its formatted digits, not as the wrapper's source.
+    let result = interpret_with_stdout(
+      "Pane[Text[NumberForm[#, {4, 2}] & /@ {1.5, Style[3., Red]}], {590, 100}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{1.50, 3.00}");
+  }
+
+  #[test]
   fn tostring_row_concatenates_and_resolves_wrappers() {
     // A Row concatenates its parts under ToString, resolving nested Style /
     // NumberForm, matching wolframscript.
