@@ -5373,6 +5373,20 @@ fn collect_3d_primitives(
                     .unwrap_or(0.0)
                   })
                   .collect(),
+                // A list of another length (a radius per spline control
+                // point, say) is spread along the curve and interpolated.
+                Expr::List(items) if items.len() >= 2 => {
+                  let rs: Vec<f64> = items
+                    .iter()
+                    .map(|e| {
+                      try_eval_to_f64(
+                        &evaluate_expr_to_expr(e).unwrap_or(e.clone()),
+                      )
+                      .unwrap_or(0.0)
+                    })
+                    .collect();
+                  resample_tube_radii(&pts, &rs)
+                }
                 _ => {
                   let r = try_eval_to_f64(&spec).unwrap_or(0.0);
                   vec![r; pts.len()]
@@ -5678,6 +5692,36 @@ fn parse_point3d_grid(expr: &Expr) -> Option<Vec<Vec<Point3D>>> {
   } else {
     None
   }
+}
+
+/// One radius per point of `pts` from a shorter or longer list `radii`: the
+/// list is laid at equal steps along the curve's arc length and linearly
+/// interpolated at each point.
+fn resample_tube_radii(pts: &[Point3D], radii: &[f64]) -> Vec<f64> {
+  let mut arc = vec![0.0f64; pts.len()];
+  for i in 1..pts.len() {
+    let (a, b) = (&pts[i - 1], &pts[i]);
+    arc[i] = arc[i - 1]
+      + ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2))
+        .sqrt();
+  }
+  let total = arc.last().copied().unwrap_or(0.0);
+  let last = (radii.len() - 1) as f64;
+  arc
+    .iter()
+    .enumerate()
+    .map(|(i, &d)| {
+      let t = if total > 0.0 {
+        d / total
+      } else {
+        i as f64 / (pts.len().max(2) - 1) as f64
+      };
+      let u = (t * last).clamp(0.0, last);
+      let k = (u.floor() as usize).min(radii.len() - 2);
+      let f = u - k as f64;
+      radii[k] * (1.0 - f) + radii[k + 1] * f
+    })
+    .collect()
 }
 
 /// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for: the uniform
