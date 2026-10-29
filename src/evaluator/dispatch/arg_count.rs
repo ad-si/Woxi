@@ -447,8 +447,8 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "DotProduct" => Some((2, 3)),
     "Downsample" => Some((2, 3)),
     "Drop" => Some((1, 3)),
-    "DSolve" => Some((1, 3)),
-    "DSolveValue" => Some((1, 3)),
+    "DSolve" => Some((1, usize::MAX)),
+    "DSolveValue" => Some((1, usize::MAX)),
     // Dt[f], Dt[f, x], Dt[f, {x, n}] and the multiple total derivative
     // Dt[f, x1, x2, …] — any number of differentiation specs is allowed.
     "Dt" => Some((1, usize::MAX)),

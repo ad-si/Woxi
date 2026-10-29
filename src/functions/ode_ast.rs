@@ -53,6 +53,9 @@ pub fn dsolve_ast_with_head(
     }
     _ => args,
   };
+  if let Some(result) = dsolve_single_variable_pde(solved_args)? {
+    return Ok(result);
+  }
   let result = match dsolve_ast_inner(solved_args) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
@@ -66,6 +69,180 @@ pub fn dsolve_ast_with_head(
     other => other,
   };
   result.map(|expr| retag_unevaluated(expr, "DSolve", head))
+}
+
+/// A PDE in which the unknown is differentiated with respect to one variable
+/// only is an ODE in that variable with the others as parameters:
+/// `D[u[x, y], x] == x y` gives `u -> x^2 y/2 + C[1][y]`, every constant of
+/// integration becoming a function of the other variables. `None` when the
+/// equations are not of that shape (or carry conditions).
+fn dsolve_single_variable_pde(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let [eqns, target, Expr::List(vars)] = args else {
+    return Ok(None);
+  };
+  if vars.len() < 2 || !vars.iter().all(|v| matches!(v, Expr::Identifier(_))) {
+    return Ok(None);
+  }
+  let (fname, as_function) = match target {
+    Expr::Identifier(f) => (f.clone(), true),
+    Expr::FunctionCall { name, args: targs }
+      if targs.len() == vars.len()
+        && targs.iter().zip(vars.iter()).all(|(a, v)| {
+          matches!((a, v), (Expr::Identifier(a), Expr::Identifier(v)) if a == v)
+        }) =>
+    {
+      (name.clone(), false)
+    }
+    _ => return Ok(None),
+  };
+  let same_args = |a: &[Expr]| {
+    a.len() == vars.len()
+      && a.iter().zip(vars.iter()).all(|(x, v)| {
+        matches!((x, v), (Expr::Identifier(x), Expr::Identifier(v)) if x == v)
+      })
+  };
+  // Every occurrence is `u[vars…]` or `Derivative[…][u][vars…]` with one
+  // common differentiated position.
+  fn scan(
+    e: &Expr,
+    fname: &str,
+    same_args: &dyn Fn(&[Expr]) -> bool,
+    axis: &mut Option<usize>,
+  ) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if name == fname => same_args(args),
+      Expr::CurriedCall { func, args } => {
+        if let Expr::CurriedCall {
+          func: d,
+          args: inner,
+        } = func.as_ref()
+          && matches!(inner.as_slice(), [Expr::Identifier(n)] if n == fname)
+          && let Expr::FunctionCall { name, args: orders } = d.as_ref()
+          && name == "Derivative"
+        {
+          if !same_args(args) {
+            return false;
+          }
+          let nonzero: Vec<usize> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| !matches!(o, Expr::Integer(0)))
+            .map(|(i, _)| i)
+            .collect();
+          if nonzero.len() != 1
+            || !matches!(orders[nonzero[0]], Expr::Integer(_))
+          {
+            return false;
+          }
+          match axis {
+            Some(a) if *a != nonzero[0] => return false,
+            _ => *axis = Some(nonzero[0]),
+          }
+          return true;
+        }
+        scan(func, fname, same_args, axis)
+          && args.iter().all(|a| scan(a, fname, same_args, axis))
+      }
+      Expr::Identifier(n) if n == fname => false,
+      other => expr_children(other)
+        .into_iter()
+        .all(|c| scan(c, fname, same_args, axis)),
+    }
+  }
+  let mut axis = None;
+  if !scan(eqns, &fname, &same_args, &mut axis) {
+    return Ok(None);
+  }
+  let Some(axis) = axis else {
+    return Ok(None);
+  };
+  let x = vars[axis].clone();
+  let g = format!("{fname}$pde");
+  // u[vars…] → g[x] and Derivative[…, n, …][u][vars…] → Derivative[n][g][x].
+  fn reduce(e: &Expr, fname: &str, g: &str, axis: usize, x: &Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, .. } if name == fname => {
+        call(g, vec![x.clone()])
+      }
+      Expr::CurriedCall { func, .. }
+        if matches!(func.as_ref(), Expr::CurriedCall { args: inner, .. }
+          if matches!(inner.as_slice(), [Expr::Identifier(n)] if n == fname)) =>
+      {
+        let Expr::CurriedCall { func: d, .. } = func.as_ref() else {
+          unreachable!()
+        };
+        let Expr::FunctionCall { args: orders, .. } = d.as_ref() else {
+          unreachable!()
+        };
+        Expr::CurriedCall {
+          func: Box::new(Expr::CurriedCall {
+            func: Box::new(call("Derivative", vec![orders[axis].clone()])),
+            args: vec![Expr::Identifier(g.to_string())],
+          }),
+          args: vec![x.clone()],
+        }
+      }
+      other => map_children(other, &|c| reduce(c, fname, g, axis, x)),
+    }
+  }
+  let reduced = reduce(eqns, &fname, &g, axis, &x);
+  let solved = dsolve_ast(&[reduced, call(&g, vec![x.clone()]), x.clone()])?;
+  let Expr::List(solutions) = &solved else {
+    return Ok(None);
+  };
+  let others: Vec<Expr> = vars
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != axis)
+    .map(|(_, v)| v.clone())
+    .collect();
+  // C[k] → C[k][other variables].
+  fn lift_constants(e: &Expr, others: &[Expr]) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "C"
+          && args.len() == 1
+          && matches!(args[0], Expr::Integer(_)) =>
+      {
+        Expr::CurriedCall {
+          func: Box::new(e.clone()),
+          args: others.to_vec(),
+        }
+      }
+      other => map_children(other, &|c| lift_constants(c, others)),
+    }
+  }
+  let mut out = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return Ok(None);
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return Ok(None);
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(&lift_constants(
+      replacement,
+      &others,
+    ))?;
+    let rule = if as_function {
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(fname.clone())),
+        replacement: Box::new(call(
+          "Function",
+          vec![Expr::List(vars.clone()), value],
+        )),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(target.clone()),
+        replacement: Box::new(value),
+      }
+    };
+    out.push(Expr::List(vec![rule].into()));
+  }
+  Ok(Some(Expr::List(out.into())))
 }
 
 /// Rewrite the head of an unevaluated `solver[args…]` result, leaving genuine

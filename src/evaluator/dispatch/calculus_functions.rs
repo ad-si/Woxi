@@ -717,6 +717,31 @@ pub fn dispatch_calculus_functions(
         Err(e) => Err(e),
       });
     }
+    // Variables given with their ranges, `{x, xmin, xmax}` (one argument
+    // each), name the variables; the ranges only bound the domain.
+    "DSolve" | "DSolveValue"
+      if args.len() >= 3
+        && args[2..].iter().all(|a| {
+          matches!(a, Expr::List(r) if r.len() == 3 && matches!(r[0], Expr::Identifier(_)))
+        }) =>
+    {
+      let vars: Vec<Expr> = args[2..]
+        .iter()
+        .map(|a| match a {
+          Expr::List(r) => r[0].clone(),
+          _ => unreachable!(),
+        })
+        .collect();
+      let var_spec = if vars.len() == 1 {
+        vars[0].clone()
+      } else {
+        Expr::List(vars.into())
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name,
+        &[args[0].clone(), args[1].clone(), var_spec],
+      ));
+    }
     "DSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::dsolve_ast(args));
     }

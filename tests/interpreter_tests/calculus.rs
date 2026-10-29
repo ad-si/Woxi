@@ -24329,3 +24329,37 @@ mod series_by_parts_and_empty_series {
     );
   }
 }
+
+mod dsolve_single_variable_pde {
+  use super::*;
+
+  // Differentiated in one variable only, a PDE is an ODE in it: the
+  // constants become functions of the other variables.
+  #[test]
+  fn reduces_to_an_ode() {
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], x] == x y, u, {x, y}]").unwrap(),
+      "{{u -> Function[{x, y}, (x^2*y)/2 + C[1][y]]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], x, x] == y, u[x, y], {x, y}]").unwrap(),
+      "{{u[x, y] -> (x^2*y)/2 + C[1][y] + x*C[2][y]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], y] == Sin[x], u[x, y], {x, y}]").unwrap(),
+      "{{u[x, y] -> y*Sin[x] + C[1][x]}}"
+    );
+  }
+
+  // Variables may come with their ranges, one argument each.
+  #[test]
+  fn variables_with_ranges() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[{x y == -D[pot[x, y], x]}, pot, {x, -20, 20}, {y, -3, 3}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, -1/2*(x^2*y) + C[1][y]]"
+    );
+  }
+}
