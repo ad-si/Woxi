@@ -5012,14 +5012,55 @@ fn button_cell_svg(args: &[Expr]) -> String {
       }
     }
   }
+  // A raster label is the button's face, drawn at its own size.
+  if matches!(args[0], Expr::Image { .. }) {
+    let exported = crate::evaluator::expr_to_svg(&args[0]);
+    if let Some(start) = exported.find("<svg") {
+      let mut svg = exported[start..].to_string();
+      if !svg.contains("viewBox") {
+        let (w, h) =
+          svg_natural_size(&svg).unwrap_or_else(|| parse_svg_wh(&svg));
+        svg = svg.replacen("<svg", &format!("<svg viewBox=\"0 0 {w} {h}\""), 1);
+      }
+      return with_button_cell_chrome(svg, args);
+    }
+  }
+  button_text_plate_svg(args)
+}
+
+/// The plate of a text-labelled `Button`: stretched to a requested
+/// `ImageSize` and painted with its `Background`.
+fn button_text_plate_svg(args: &[Expr]) -> String {
+  let size = button_image_size(args);
   let label = graphics_text_content(&args[0]);
-  match size {
+  let plate = match size {
     Some((w, h)) => button_plate_svg_sized(
       &label,
       w,
       h.unwrap_or(button_plate_size(&label).1),
     ),
     None => button_plate_svg(&label),
+  };
+  let background = args
+    .iter()
+    .skip(2)
+    .find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == "Background") => {
+        evaluate_expr_to_expr(replacement).ok()
+      }
+      _ => None,
+    })
+    .and_then(|b| parse_color(&b));
+  match background {
+    Some(bg) => plate.replacen(
+      "fill=\"#FDFDFD\"",
+      &format!("fill=\"{}\"", bg.to_svg_rgb()),
+      1,
+    ),
+    None => plate,
   }
 }
 
@@ -22440,8 +22481,11 @@ fn render_items_at_size(
             if inner == "Graphics" || inner == "Graphics3D"
         )
       {
-        let plate = button_plate_svg(&graphics_text_content(&args[0]));
-        return Some(with_button_cell_chrome(plate, args));
+        return Some(if matches!(args[0], Expr::Image { .. }) {
+          button_cell_svg(args)
+        } else {
+          with_button_cell_chrome(button_text_plate_svg(args), args)
+        });
       }
       let target = match &target {
         Expr::FunctionCall { name, args }

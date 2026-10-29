@@ -10281,6 +10281,21 @@ mod plot3d {
       );
     }
 
+    /// A `Button` whose label is a raster image, laid out as a `Grid` cell,
+    /// shows the image (not the `-Image-` placeholder plate), and a
+    /// `Background` paints the plate of a blank-labelled one.
+    #[test]
+    fn a_grid_button_with_an_image_label_draws_the_image() {
+      let svg = export_svg(
+        r#"Grid[{{Button[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 0}}}],
+             q = 1],
+             Button[" ", Null, Background -> GrayLevel[0], Enabled -> False]}}]"#,
+      );
+      assert!(!svg.contains("-Image-"), "drew a placeholder: {svg}");
+      assert!(svg.contains("<image"), "no picture: {svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,0)\""), "no background: {svg}");
+    }
+
     /// Wolfram keeps some of its operator glyphs in the private use area —
     /// `\[Rule]` is U+F522 — and only its own fonts draw them, so a label
     /// written with one came out as a blank box. The drawing substitutes
