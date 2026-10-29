@@ -2812,6 +2812,17 @@ Unevaluated.
 
 ## Linear algebra
 
+### `SingularValueDecomposition` of an exact matrix stays unevaluated
+
+```sh
+wolframscript -code 'SingularValueDecomposition[{{1, 2}, {3, 4}, {5, 6}}]'  # exact radicals
+woxi eval 'SingularValueDecomposition[{{1, 2}, {3, 4}, {5, 6}}]'            # unevaluated
+```
+
+Only machine-precision matrices are decomposed. Demonstration
+ExploratoryFactorAnalysis normalizes exact data and runs its alternating
+least squares on such exact matrices.
+
 ### Symbolic `Inverse` with rational entries normalizes one sign differently
 
 ```sh

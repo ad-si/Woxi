@@ -14102,3 +14102,21 @@ mod big_rational_radical_coefficients {
     );
   }
 }
+
+// The complex-number test rules out anything not shaped like a small
+// arithmetic tree before scanning it, and still recognizes every complex
+// number spelling.
+mod complex_number_shape {
+  use super::*;
+
+  #[test]
+  fn heads_of_complex_and_other_sums() {
+    assert_eq!(
+      interpret(
+        "Head /@ {2 + 3 I, 1.5 + 2. I, (1 + I)/2, 2.5 I, x + I, h[{1. + I}], {2 + 3 I}}"
+      )
+      .unwrap(),
+      "{Complex, Complex, Complex, Complex, Plus, h, List}"
+    );
+  }
+}
