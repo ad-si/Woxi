@@ -1560,6 +1560,15 @@ pub fn dispatch_complex_and_special(
     "ArcLength" if args.len() == 2 => {
       return Some(compute_arc_length_curve(&args[0], &args[1], args));
     }
+    // ArcLength[{q1, …}, {t, a, b}, "chart"]: the curve given in polar,
+    // cylindrical or spherical coordinates.
+    "ArcLength"
+      if args.len() == 3
+        && matches!(&args[2], Expr::String(c)
+          if matches!(c.as_str(), "Cartesian" | "Polar" | "Cylindrical" | "Spherical")) =>
+    {
+      return Some(compute_arc_length_curve(&args[0], &args[1], args));
+    }
     "Perimeter" if args.len() == 1 => {
       return Some(compute_perimeter(strip_region_wrapper(&args[0])));
     }
@@ -1578,6 +1587,13 @@ pub fn dispatch_complex_and_special(
     // AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, as an
     // InfiniteLine through p (2-D points only).
     "AngleBisector" if args.len() == 1 => {
+      return Some(compute_angle_bisector(&args[0]));
+    }
+    // "Interior" names the default bisector explicitly.
+    "AngleBisector"
+      if args.len() == 2
+        && matches!(&args[1], Expr::String(k) if k == "Interior") =>
+    {
       return Some(compute_angle_bisector(&args[0]));
     }
     // PerpendicularBisector[{p1, p2}] — the perpendicular bisector of the
@@ -12711,7 +12727,38 @@ fn compute_arc_length_curve(
     evaluate_expr_to_expr(&call("D", vec![f.clone(), t.clone()]))
   };
   let square = |e: Expr| pow(e, Expr::Integer(2));
+  let chart = match args.get(2) {
+    Some(Expr::String(c)) => c.as_str(),
+    _ => "Cartesian",
+  };
   let sum_of_squares = match curve {
+    // Orthogonal coordinates: speed² = Σ hᵢ² qᵢ'², with the scale factors
+    // h = {1, r} (polar), {1, r, 1} (cylindrical), {1, r, r Sin[θ]}
+    // (spherical).
+    Expr::List(comps) if !comps.is_empty() && chart != "Cartesian" => {
+      let dims_ok = match chart {
+        "Polar" => comps.len() == 2,
+        _ => comps.len() == 3,
+      };
+      if !dims_ok {
+        return unevaluated();
+      }
+      let r = comps[0].clone();
+      let mut terms = Vec::with_capacity(comps.len());
+      for (i, c) in comps.iter().enumerate() {
+        let d2 = square(deriv(c)?);
+        terms.push(match (chart, i) {
+          (_, 0) | ("Cylindrical", 2) => d2,
+          ("Spherical", 2) => times(vec![
+            square(r.clone()),
+            square(call1("Sin", comps[1].clone())),
+            d2,
+          ]),
+          _ => times(vec![square(r.clone()), d2]),
+        });
+      }
+      plus(terms)
+    }
     Expr::List(comps) if !comps.is_empty() => {
       let mut terms = Vec::with_capacity(comps.len());
       for c in comps {
@@ -12719,13 +12766,19 @@ fn compute_arc_length_curve(
       }
       plus(terms)
     }
+    _ if chart != "Cartesian" => return unevaluated(),
     // Scalar function f(t): the graph {t, f(t)} has speed Sqrt[1 + f'(t)^2].
     scalar => plus(vec![Expr::Integer(1), square(deriv(scalar)?)]),
   };
   // Simplify the speed first: Woxi's Integrate does not apply the Pythagorean
   // identity on its own, so e.g. Sqrt[Cos[t]^2 + Sin[t]^2] must collapse to 1
   // before integration.
-  let integrand = call1("Simplify", make_sqrt(sum_of_squares));
+  // The parameter runs over the real interval [a, b].
+  let range = Expr::Comparison {
+    operands: vec![spec[1].clone(), t.clone(), spec[2].clone()],
+    operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+  };
+  let integrand = call("Simplify", vec![make_sqrt(sum_of_squares), range]);
   let integral = call("Integrate", vec![integrand, iter.clone()]);
   let result = evaluate_expr_to_expr(&integral)?;
   // If Integrate could not resolve it, keep ArcLength unevaluated rather than

@@ -1719,9 +1719,104 @@ pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(counts.into_iter().map(Expr::Integer).collect()))
 }
 
+/// The bin range (min, max, dx) of one coordinate: a width `dx` covers the
+/// values the way the one-dimensional `BinLists[data, dx]` does, and an
+/// explicit `{min, max, dx}` is taken as given.
+fn bin_dimension_range(values: &[f64], spec: &Expr) -> Option<(f64, f64, f64)> {
+  match spec {
+    Expr::List(s) if s.len() == 3 => Some((
+      numeric_expr_to_f64(&s[0])?,
+      numeric_expr_to_f64(&s[1])?,
+      numeric_expr_to_f64(&s[2])?,
+    )),
+    Expr::Integer(_) | Expr::Real(_) => {
+      let dx = numeric_expr_to_f64(spec)?;
+      if dx <= 0.0 || values.is_empty() {
+        return None;
+      }
+      let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
+      let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      let mut lo = (data_min / dx).floor() * dx;
+      if (data_min - lo).abs() < 1e-12 {
+        lo -= dx;
+      }
+      let mut hi = (data_max / dx).ceil() * dx;
+      if (data_max - hi).abs() < 1e-12 {
+        hi += dx;
+      }
+      Some((lo, hi, dx))
+    }
+    _ => None,
+  }
+}
+
+/// BinLists[{{x1, y1, …}, …}, xspec, yspec, …]: the points binned in every
+/// coordinate, nested as result[[i, j, …]] for the i-th x bin, j-th y bin.
+fn bin_lists_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("BinLists", args));
+  let Expr::List(data) = &args[0] else {
+    return unevaluated();
+  };
+  let specs = &args[1..];
+  let k = specs.len();
+  let mut points: Vec<(Vec<f64>, &Expr)> = Vec::with_capacity(data.len());
+  for e in data.iter() {
+    let Expr::List(coords) = e else {
+      return unevaluated();
+    };
+    if coords.len() != k {
+      return unevaluated();
+    }
+    let Some(v) = coords.iter().map(numeric_expr_to_f64).collect() else {
+      return unevaluated();
+    };
+    points.push((v, e));
+  }
+  let mut ranges = Vec::with_capacity(k);
+  for (d, spec) in specs.iter().enumerate() {
+    let column: Vec<f64> = points.iter().map(|(v, _)| v[d]).collect();
+    let Some((lo, hi, dx)) = bin_dimension_range(&column, spec) else {
+      return unevaluated();
+    };
+    if dx <= 0.0 {
+      bin_step_message("BinLists", dx);
+      return unevaluated();
+    }
+    let n = ((hi - lo) / dx + 1e-9).floor().max(0.0) as usize;
+    ranges.push((lo, dx, n));
+  }
+  // Flat bins in row-major order.
+  let total: usize = ranges.iter().map(|r| r.2).product();
+  let mut bins: Vec<Vec<Expr>> = vec![Vec::new(); total];
+  'points: for (v, e) in &points {
+    let mut flat = 0usize;
+    for (d, &(lo, dx, n)) in ranges.iter().enumerate() {
+      let idx = ((v[d] - lo) / dx).floor();
+      if v[d] < lo || idx < 0.0 || idx as usize >= n {
+        continue 'points;
+      }
+      flat = flat * n + idx as usize;
+    }
+    bins[flat].push((*e).clone());
+  }
+  fn nest(bins: &mut std::vec::IntoIter<Vec<Expr>>, dims: &[usize]) -> Expr {
+    match dims.split_first() {
+      None => Expr::List(bins.next().unwrap_or_default().into()),
+      Some((&n, rest)) => {
+        Expr::List((0..n).map(|_| nest(bins, rest)).collect::<Vec<_>>().into())
+      }
+    }
+  }
+  let dims: Vec<usize> = ranges.iter().map(|r| r.2).collect();
+  Ok(nest(&mut bins.into_iter(), &dims))
+}
+
 /// BinLists[data, {min, max, dx}] - group data points into equal-width bins
 /// Returns lists of elements per bin instead of counts
 pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() >= 3 {
+    return bin_lists_multi(args);
+  }
   let Expr::List(data) = &args[0] else {
     crate::emit_message(
       "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",

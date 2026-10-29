@@ -861,6 +861,26 @@ pub fn dispatch_evaluation_control(
         .unwrap_or_else(|_| args[0].clone());
       return Some(Ok(call("CensoredDistribution", vec![bounds, dist])));
     }
+    // Names["pattern", IgnoreCase -> True | False]
+    "Names"
+      if args.len() == 2
+        && let Expr::String(pattern) = &args[0]
+        && let Expr::Rule {
+          pattern: opt,
+          replacement,
+        } = &args[1]
+        && matches!(opt.as_ref(), Expr::Identifier(n) if n == "IgnoreCase")
+        && let Expr::Identifier(flag) = replacement.as_ref()
+        && (flag == "True" || flag == "False") =>
+    {
+      let names = crate::evaluator::contexts::names_matching_case(
+        pattern,
+        flag == "True",
+      );
+      return Some(Ok(Expr::List(
+        names.into_iter().map(Expr::String).collect(),
+      )));
+    }
     "Names" if args.len() <= 1 => {
       // Include both user-defined names and built-in function names
       // (from functions.csv) so patterns like "List*" match builtins.
@@ -893,6 +913,32 @@ pub fn dispatch_evaluation_control(
         )));
       }
       return Some(Ok(Expr::List(vec![].into())));
+    }
+    // ValueQ[expr, Method -> m]: "TrialEvaluation" asks whether evaluating
+    // expr changes it; "SymbolDefinitionsPresent" is the default test.
+    "ValueQ"
+      if args.len() == 2
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+        && let Expr::String(method) = replacement.as_ref()
+        && matches!(
+          method.as_str(),
+          "TrialEvaluation" | "SymbolDefinitionsPresent"
+        ) =>
+    {
+      if method == "SymbolDefinitionsPresent" {
+        return dispatch_evaluation_control("ValueQ", &args[..1]);
+      }
+      let evaluated = match evaluate_expr_to_expr(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(bool_expr(
+        !crate::evaluator::pattern_matching::expr_equal(&args[0], &evaluated),
+      )));
     }
     "ValueQ" if args.len() == 1 => {
       // ValueQ[head[args...]] is True iff `head` has any OwnValues or

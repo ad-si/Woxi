@@ -20,6 +20,18 @@ pub fn dispatch_datetime_functions(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   match name {
+    // AbsoluteTime[TimeZone -> tz]: the current time as seen in zone tz.
+    "AbsoluteTime"
+      if args.len() == 1
+        && let Some(tz) = parse_timezone_option(&args[0]) =>
+    {
+      use web_time::{SystemTime, UNIX_EPOCH};
+      let unix_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+      return Some(Ok(Expr::Real(unix_secs + 2_208_988_800.0 + tz * 3600.0)));
+    }
     "AbsoluteTime" => {
       return Some(crate::functions::datetime_ast::absolute_time_ast(args));
     }
@@ -591,6 +603,39 @@ pub fn dispatch_datetime_functions(
     // seconds after the Unix epoch, as a DateObject. The displayed calendar
     // time is shifted by the time-zone offset (in hours); without the option
     // the local offset is used.
+    // FromUnixTime[t, …, DateGranularity -> g]: the instant, rounded down
+    // to granularity g by DateObject.
+    "FromUnixTime"
+      if args.len() >= 2
+        && let Some(pos) = args.iter().position(|a| {
+          matches!(a, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DateGranularity"))
+        }) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[pos] else {
+        return None;
+      };
+      let rest: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != pos)
+        .map(|(_, a)| a.clone())
+        .collect();
+      let instant =
+        match crate::evaluator::evaluate_function_call_ast("FromUnixTime", &rest)
+        {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+      if !matches!(&instant, Expr::FunctionCall { name, .. } if name == "DateObject")
+      {
+        return Some(Ok(unevaluated("FromUnixTime", args)));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "DateObject",
+        &[instant, replacement.as_ref().clone()],
+      ));
+    }
     "FromUnixTime" if args.len() == 1 || args.len() == 2 => {
       let Some(unix_secs) = (match &args[0] {
         Expr::Integer(n) => Some(*n as f64),

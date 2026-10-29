@@ -54,17 +54,26 @@ fn structuring_element_in_width(
     .map(|i| 2 * at(&radii, i) + (at(&widths, i) + 1) % 2)
     .collect();
   let diamond = name == "DiamondMatrix";
+  let cross = name == "CrossMatrix";
 
   // Build the tensor by walking every cell in row-major order.
   fn build(
     dims: &[usize],
     thresholds: &[i128],
-    diamond: bool,
+    (diamond, cross): (bool, bool),
     idx: &mut Vec<i128>,
   ) -> Expr {
     let level = idx.len();
     if level == dims.len() {
-      let inside = if diamond {
+      let offset = |i: usize| (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs();
+      let inside = if cross {
+        // Inside the box, and off the central line in at most one direction.
+        (0..dims.len()).all(|i| offset(i) <= thresholds[i])
+          && (0..dims.len())
+            .filter(|&i| offset(i) > (dims[i] as i128 + 1) % 2)
+            .count()
+            <= 1
+      } else if diamond {
         // sum d/t <= 1, cleared of denominators.
         let denom: i128 = thresholds.iter().product();
         let total: i128 = (0..dims.len())
@@ -88,12 +97,17 @@ fn structuring_element_in_width(
     let mut row = Vec::with_capacity(dims[level]);
     for i in 0..dims[level] {
       idx.push(i as i128);
-      row.push(build(dims, thresholds, diamond, idx));
+      row.push(build(dims, thresholds, (diamond, cross), idx));
       idx.pop();
     }
     Expr::List(row.into())
   }
-  Some(Ok(build(&dims, &thresholds, diamond, &mut Vec::new())))
+  Some(Ok(build(
+    &dims,
+    &thresholds,
+    (diamond, cross),
+    &mut Vec::new(),
+  )))
 }
 
 pub fn dispatch_linear_algebra_functions(
@@ -477,13 +491,14 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(build_ones_tensor(&dims)));
       }
     }
-    "BoxMatrix" | "DiamondMatrix" if args.len() == 2 => {
+    "BoxMatrix" | "DiamondMatrix" | "CrossMatrix" if args.len() == 2 => {
       return structuring_element_in_width(name, &args[0], &args[1], args);
     }
     // f[…, TargetStructure -> "Dense" | "Sparse" | Automatic]: the dense
     // result of f[…], wrapped in a SparseArray for "Sparse".
     "DiagonalMatrix" | "UpperTriangularize" | "LowerTriangularize"
-    | "CompanionMatrix"
+    | "CompanionMatrix" | "ToeplitzMatrix" | "HankelMatrix"
+    | "VandermondeMatrix"
       if args.len() >= 2
         && option_rule_value(&args[args.len() - 1], "TargetStructure")
           .is_some() =>
@@ -530,7 +545,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "VandermondeMatrix" if args.len() == 1 => {
+    "VandermondeMatrix" if (1..=2).contains(&args.len()) => {
       return Some(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),
       );
@@ -1398,6 +1413,29 @@ pub fn dispatch_linear_algebra_functions(
     // exponential on the vector v), avoiding forming the full exponential
     // when only its product with v is wanted. The second argument must be a
     // nonempty vector (a flat list of scalars).
+    // MatrixExp[m, …, Parameter -> t] is MatrixExp[m t, …].
+    "MatrixExp"
+      if args.len() >= 2
+        && matches!(&args[args.len() - 1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Parameter")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[args.len() - 1] else {
+        return None;
+      };
+      let scaled = match evaluate_expr_to_expr(&times(vec![
+        args[0].clone(),
+        replacement.as_ref().clone(),
+      ])) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let mut new_args = vec![scaled];
+      new_args.extend(args[1..args.len() - 1].iter().cloned());
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "MatrixExp",
+        &new_args,
+      ));
+    }
     "MatrixExp" if args.len() == 2 => {
       let is_vector = matches!(&args[1],
         Expr::List(items)
@@ -2588,6 +2626,72 @@ pub fn dispatch_linear_algebra_functions(
       return Some(
         crate::functions::linear_algebra_ast::singular_value_list_ast(args),
       );
+    }
+    // SingularValueDecomposition[m, k]: the decomposition restricted to the
+    // k largest singular values (the k smallest for negative k): the
+    // matching columns of u and v and the k×k block of σ.
+    "SingularValueDecomposition"
+      if args.len() == 2 && matches!(args[1], Expr::Integer(k) if k != 0) =>
+    {
+      let Expr::Integer(k) = args[1] else {
+        return None;
+      };
+      let full =
+        match crate::functions::linear_algebra_ast::singular_value_decomposition_ast(
+          &args[..1],
+        ) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+      let rows_of = |e: &Expr| -> Option<Vec<Vec<Expr>>> {
+        let Expr::List(rows) = e else { return None };
+        rows
+          .iter()
+          .map(|r| match r {
+            Expr::List(c) => Some(c.iter().cloned().collect()),
+            _ => None,
+          })
+          .collect()
+      };
+      let parts = match &full {
+        Expr::List(p) if p.len() == 3 => {
+          match (rows_of(&p[0]), rows_of(&p[1]), rows_of(&p[2])) {
+            (Some(u), Some(sigma), Some(v)) => Some((u, sigma, v)),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let Some((u, sigma, v)) = parts else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let p = sigma.len().min(sigma.first().map_or(0, |r| r.len()));
+      let kk = k.unsigned_abs() as usize;
+      if kk > p {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let idx: Vec<usize> = if k > 0 {
+        (0..kk).collect()
+      } else {
+        (p - kk..p).collect()
+      };
+      let columns = |m: &[Vec<Expr>]| -> Expr {
+        Expr::List(
+          m.iter()
+            .map(|r| {
+              Expr::List(
+                idx.iter().map(|&j| r[j].clone()).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      };
+      let block =
+        columns(&idx.iter().map(|&i| sigma[i].clone()).collect::<Vec<_>>());
+      return Some(Ok(Expr::List(
+        vec![columns(&u), block, columns(&v)].into(),
+      )));
     }
     "SingularValueDecomposition" if args.len() == 1 => {
       return Some(

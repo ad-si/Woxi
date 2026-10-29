@@ -9869,11 +9869,51 @@ pub fn apply_string_template(
   template: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  apply_string_template_with(template, &[], args)
+}
+
+/// The value of option `name` among a template's trailing option rules.
+fn template_option<'a>(opts: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// Apply `f` to `x` and evaluate.
+fn apply_and_evaluate(f: &Expr, x: Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Apply",
+    vec![f.clone(), Expr::List(vec![x].into())],
+  ))
+}
+
+/// StringTemplate[template, opts][args…]: `InsertionFunction -> f` maps
+/// each inserted value through f, and `CombinerFunction -> c` is applied to
+/// the list of literal fragments and inserted values (default: StringJoin).
+pub fn apply_string_template_with(
+  template: &Expr,
+  opts: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let insertion = template_option(opts, "InsertionFunction");
+  let combiner = template_option(opts, "CombinerFunction");
   let tmpl = match template {
     Expr::String(s) => s.clone(),
     _ => {
+      let mut head = vec![template.clone()];
+      head.extend(opts.iter().cloned());
       return Ok(Expr::CurriedCall {
-        func: Box::new(call1("StringTemplate", template.clone())),
+        func: Box::new(call("StringTemplate", head)),
         args: args.to_vec(),
       });
     }
@@ -9897,6 +9937,8 @@ pub fn apply_string_template(
   let tmpl = expand_expression_slots(&tmpl, args)?;
   let chars: Vec<char> = tmpl.chars().collect();
   let mut result = String::new();
+  // Fragments, once an InsertionFunction makes the pieces non-strings.
+  let mut pieces: Vec<Expr> = Vec::new();
   let mut i = 0;
   let mut seq: usize = 0;
   while i < chars.len() {
@@ -9916,7 +9958,15 @@ pub fn apply_string_template(
         named.get(&content)
       };
       if let Some(v) = value {
-        result.push_str(&expr_to_output(v));
+        match insertion {
+          Some(f) => {
+            if !result.is_empty() {
+              pieces.push(Expr::String(std::mem::take(&mut result)));
+            }
+            pieces.push(apply_and_evaluate(f, v.clone())?);
+          }
+          None => result.push_str(&expr_to_output(v)),
+        }
       }
       // Unfilled slots contribute nothing.
       i = close + 1;
@@ -9925,7 +9975,24 @@ pub fn apply_string_template(
     result.push(chars[i]);
     i += 1;
   }
-  Ok(Expr::String(result))
+  if insertion.is_none() && combiner.is_none() {
+    return Ok(Expr::String(result));
+  }
+  if !result.is_empty() {
+    pieces.push(Expr::String(result));
+  }
+  match combiner {
+    Some(c) => apply_and_evaluate(c, Expr::List(pieces.into())),
+    None => Ok(Expr::String(
+      pieces
+        .iter()
+        .map(|p| match p {
+          Expr::String(s) => s.clone(),
+          other => expr_to_output(other),
+        })
+        .collect(),
+    )),
+  }
 }
 
 /// ToExpression[s] / ToExpression[s, form] / ToExpression[s, form, h]
@@ -17210,6 +17277,17 @@ fn expand_template_parts(
       "TemplateSlot" if parts.len() == 1 => {
         match template_slot_value(&parts[0], args) {
           Some(value) => one(value),
+          None => one(expr.clone()),
+        }
+      }
+      // TemplateSlot[key, InsertionFunction -> f]: the value goes through f.
+      "TemplateSlot"
+        if parts.len() > 1
+          && let Some(f) =
+            template_option(&parts[1..], "InsertionFunction") =>
+      {
+        match template_slot_value(&parts[0], args) {
+          Some(value) => one(apply_and_evaluate(f, value)?),
           None => one(expr.clone()),
         }
       }

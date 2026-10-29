@@ -795,7 +795,6 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-///// Ordering[list] / Ordering[list, n] / Ordering[list, n, p]
 /// PositionLargest[list] / PositionSmallest[list]: the 1-based positions of all
 /// occurrences of the maximum (resp. minimum) element of a numeric list, in
 /// ascending order. Non-numeric lists are left unevaluated. (The 2-argument

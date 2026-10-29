@@ -1125,6 +1125,38 @@ pub fn dispatch_math_functions(
     "CovarianceFunction" if args.len() == 3 => {
       return Some(crate::functions::math_ast::covariance_function_ast(args));
     }
+    // AbsoluteCorrelation[dist] = E[X Xᵀ] = Covariance[dist] + μ μᵀ, and
+    // AbsoluteCorrelation[dist, i, j] is its (i, j) entry.
+    "AbsoluteCorrelation"
+      if (args.len() == 1 || args.len() == 3)
+        && matches!(&args[0], Expr::FunctionCall { name, .. }
+          if name.ends_with("Distribution")) =>
+    {
+      let eval = |e: Expr| evaluate_expr_to_expr(&e);
+      let (cov, mean) = match (
+        eval(call1("Covariance", args[0].clone())),
+        eval(call1("Mean", args[0].clone())),
+      ) {
+        (Ok(c), Ok(m)) => (c, m),
+        (Err(e), _) | (_, Err(e)) => return Some(Err(e)),
+      };
+      let (Expr::List(_), Expr::List(_)) = (&cov, &mean) else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let full = call(
+        "Plus",
+        vec![
+          cov,
+          call("Outer", vec![id_expr("Times"), mean.clone(), mean]),
+        ],
+      );
+      let wanted = if args.len() == 3 {
+        call("Part", vec![full, args[1].clone(), args[2].clone()])
+      } else {
+        full
+      };
+      return Some(eval(wanted));
+    }
     "AbsoluteCorrelation" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::absolute_correlation_ast(args));
     }
@@ -2614,46 +2646,45 @@ pub fn dispatch_math_functions(
     "FactorInteger" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::factor_integer_ast(args));
     }
-    "PrimeOmega" if args.len() == 1 => {
-      return Some(crate::functions::math_ast::prime_omega_ast(args));
-    }
-    // PrimeNu[n, GaussianIntegers -> True]: the number of distinct Gaussian
-    // primes (up to units) dividing n.
-    "PrimeNu"
+    // PrimeOmega / PrimeNu [n, GaussianIntegers -> True]: count the
+    // Gaussian prime factors (with / without multiplicity), ignoring units.
+    "PrimeOmega" | "PrimeNu"
       if args.len() == 2
-        && matches!(&args[1], Expr::Rule { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GaussianIntegers")
-            && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True" || b == "False")) =>
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GaussianIntegers")
+        && let Expr::Identifier(flag) = replacement.as_ref()
+        && (flag == "True" || flag == "False") =>
     {
-      let Expr::Rule { replacement, .. } = &args[1] else {
-        return None;
-      };
-      if matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False") {
-        return Some(crate::functions::math_ast::prime_nu_ast(&args[..1]));
-      }
-      if !matches!(&args[0], Expr::Integer(n) if *n != 0)
-        && !matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Complex")
-      {
-        return None;
+      if flag == "False" {
+        return dispatch_math_functions(name, &args[..1]);
       }
       let factors = match crate::functions::math_ast::factor_integer_ast(args) {
         Ok(f) => f,
         Err(e) => return Some(Err(e)),
       };
       let Expr::List(pairs) = &factors else {
-        return None;
+        return Some(Ok(unevaluated(name, args)));
       };
-      let units = ["1", "-1", "I", "-I", "Complex[0, 1]", "Complex[0, -1]"];
-      let count = pairs
-        .iter()
-        .filter(|p| match p {
-          Expr::List(pair) if !pair.is_empty() => {
-            !units.contains(&expr_to_string(&pair[0]).as_str())
-          }
-          _ => false,
-        })
-        .count();
-      return Some(Ok(Expr::Integer(count as i128)));
+      let mut count: i128 = 0;
+      for pair in pairs.iter() {
+        let Expr::List(p) = pair else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let (Some(base), Some(Expr::Integer(e))) = (p.first(), p.get(1)) else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        if matches!(expr_to_string(base).as_str(), "1" | "-1" | "I" | "-I") {
+          continue;
+        }
+        count += if name == "PrimeOmega" { *e } else { 1 };
+      }
+      return Some(Ok(Expr::Integer(count)));
+    }
+    "PrimeOmega" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::prime_omega_ast(args));
     }
     "PrimeNu" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_nu_ast(args));
@@ -3460,7 +3491,7 @@ pub fn dispatch_math_functions(
     "HyperHarmonicNumber" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::math_ast::hyper_harmonic_number_ast(args));
     }
-    "MultipleHarmonicNumber" if args.len() == 1 || args.len() == 2 => {
+    "MultipleHarmonicNumber" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::math_ast::multiple_harmonic_number_ast(
         args,
       ));
@@ -4342,65 +4373,62 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "EulerAngles" if args.len() == 1 => {
-      // EulerAngles[matrix] — extract ZYZ Euler angles from 3x3 rotation matrix
-      // For ZYZ convention: R = Rz(alpha) Ry(beta) Rz(gamma)
-      // beta = ArcCos[R33], alpha = ArcTan[-R23, R13], gamma = ArcTan[R32, R31]
-      if let Expr::List(rows) = &args[0]
-        && rows.len() == 3
-      {
-        let matrix: Vec<Vec<Expr>> = rows
-          .iter()
-          .filter_map(|r| match r {
-            Expr::List(cols) if cols.len() == 3 => Some(cols.to_vec()),
-            _ => None,
-          })
-          .collect();
-        if matrix.len() == 3 {
-          // Use numeric approach: evaluate elements
-          let get = |i: usize, j: usize| -> f64 {
-            match &matrix[i][j] {
-              Expr::Integer(v) => *v as f64,
-              Expr::Real(v) => *v,
-              _ => {
-                if let Ok(Expr::Real(v)) =
-                  evaluate_expr_to_expr(&call1("N", matrix[i][j].clone()))
-                {
-                  v
-                } else {
-                  0.0
-                }
-              }
+    // EulerAngles[m] / EulerAngles[m, {a, b, c}]: angles {α, β, γ} with
+    // m == EulerMatrix[{α, β, γ}, {a, b, c}] (default {3, 2, 3}).
+    "EulerAngles" if args.len() == 1 || args.len() == 2 => {
+      let seq = match args.get(1) {
+        None => [3usize, 2, 3],
+        Some(Expr::List(axes)) if axes.len() == 3 => {
+          let mut out = [0usize; 3];
+          for (o, a) in out.iter_mut().zip(axes.iter()) {
+            match a {
+              Expr::Integer(k @ 1..=3) => *o = *k as usize,
+              _ => return None,
             }
+          }
+          if out[0] == out[1] || out[1] == out[2] {
+            return None;
+          }
+          out
+        }
+        _ => return None,
+      };
+      let Expr::List(rows) = &args[0] else {
+        return None;
+      };
+      if rows.len() != 3 {
+        return None;
+      }
+      let mut r = [[0f64; 3]; 3];
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(cols) = row else { return None };
+        if cols.len() != 3 {
+          return None;
+        }
+        for (j, c) in cols.iter().enumerate() {
+          r[i][j] = match c {
+            Expr::Integer(v) => *v as f64,
+            Expr::Real(v) => *v,
+            other => match evaluate_expr_to_expr(&call1("N", other.clone())) {
+              Ok(Expr::Real(v)) => v,
+              Ok(Expr::Integer(v)) => v as f64,
+              _ => return None,
+            },
           };
-          let r33 = get(2, 2);
-          let beta = r33.acos();
-          let (alpha, gamma) = if beta.abs() < 1e-10 {
-            // beta ≈ 0: gimbal lock, alpha + gamma = atan2(R21, R11)
-            let ag = get(1, 0).atan2(get(0, 0));
-            (ag, 0.0)
-          } else if (beta - std::f64::consts::PI).abs() < 1e-10 {
-            // beta ≈ pi: alpha - gamma = atan2(R21, -R11)
-            let ag = get(1, 0).atan2(-get(0, 0));
-            (ag, 0.0)
-          } else {
-            let alpha = (-get(1, 2)).atan2(get(0, 2));
-            let gamma = get(2, 1).atan2(get(2, 0));
-            (alpha, gamma)
-          };
-          // Convert back to exact if close to simple values
-          let to_expr = |v: f64| -> Expr {
-            if v.abs() < 1e-14 {
-              Expr::Integer(0)
-            } else {
-              Expr::Real(v)
-            }
-          };
-          return Some(Ok(Expr::List(
-            vec![to_expr(alpha), to_expr(beta), to_expr(gamma)].into(),
-          )));
         }
       }
+      let (alpha, beta, gamma) = euler_angles_from_matrix(&r, seq);
+      // Values that vanish come back as an exact 0.
+      let to_expr = |v: f64| -> Expr {
+        if v.abs() < 1e-14 {
+          Expr::Integer(0)
+        } else {
+          Expr::Real(v)
+        }
+      };
+      return Some(Ok(Expr::List(
+        vec![to_expr(alpha), to_expr(beta), to_expr(gamma)].into(),
+      )));
     }
     // KroneckerSymbol[a, n] — generalized Jacobi symbol
     "KroneckerSymbol" if args.len() == 2 => {
@@ -7632,5 +7660,58 @@ fn modulus_option(opt: &Expr) -> Option<i128> {
       }
     }
     _ => None,
+  }
+}
+
+/// Angles (α, β, γ) with R = R_a(α).R_b(β).R_c(γ) for the axis sequence
+/// {a, b, c} (1-based), where R_k(θ) is the rotation by θ about axis k.
+/// Proper sequences (a == c) give β in [0, π]; Tait–Bryan sequences give β
+/// in [-π/2, π/2]. At a gimbal lock γ is taken as 0.
+fn euler_angles_from_matrix(
+  r: &[[f64; 3]; 3],
+  seq: [usize; 3],
+) -> (f64, f64, f64) {
+  let (a, b, c) = (seq[0] - 1, seq[1] - 1, seq[2] - 1);
+  // The index of the axis other than i and j, and the sign of e_i × e_j
+  // relative to it.
+  let other = |i: usize, j: usize| 3 - i - j;
+  let cross_sign = |i: usize, j: usize| -> f64 {
+    if (j + 3 - i) % 3 == 1 { 1.0 } else { -1.0 }
+  };
+  const EPS: f64 = 1e-10;
+  if a == c {
+    // d = e_b × e_a = sd e_k; e_a × d = sd (e_a × e_k).
+    let k = other(a, b);
+    let sd = cross_sign(b, a);
+    let w = k; // d axis
+    let q = b; // e_a × e_k is ±e_b
+    let sq = sd * cross_sign(a, k);
+    // R e_a components along d and e_a × d.
+    let col_d = sd * r[w][a];
+    let col_q = sq * r[q][a];
+    let beta = r[a][a].clamp(-1.0, 1.0).acos();
+    if beta.sin().abs() < EPS {
+      // R d = cos α d + sin α (e_a × d), negated when β = π.
+      let flip = if r[a][a] < 0.0 { -1.0 } else { 1.0 };
+      let rd_d = sd * sd * r[w][w];
+      let rd_q = sq * sd * r[q][w];
+      return ((flip * rd_q).atan2(flip * rd_d), beta, 0.0);
+    }
+    let alpha = col_q.atan2(col_d);
+    // Row a: R^T e_a = cos β e_a − sin β cos γ d + sin β sin γ (e_a × d).
+    let row_d = sd * r[a][w];
+    let row_q = sq * r[a][q];
+    let gamma = row_q.atan2(-row_d);
+    (alpha, beta, gamma)
+  } else {
+    let s = cross_sign(b, c); // e_b × e_c = s e_a
+    let beta = (s * r[a][c]).clamp(-1.0, 1.0).asin();
+    if beta.cos().abs() < EPS {
+      let alpha = (s * r[c][b]).atan2(r[b][b]);
+      return (alpha, beta, 0.0);
+    }
+    let alpha = (-s * r[b][c]).atan2(r[c][c]);
+    let gamma = (-s * r[a][b]).atan2(r[a][a]);
+    (alpha, beta, gamma)
   }
 }

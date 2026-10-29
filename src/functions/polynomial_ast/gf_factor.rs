@@ -419,6 +419,34 @@ pub fn factor_modulus(
   Ok(Some(gf_factored_expr(constant, &factors, &var)?))
 }
 
+/// FactorSquareFree[poly, Modulus -> p]: the square-free decomposition
+/// over GF(p), each part monic, with the leading coefficient in front.
+pub fn factor_square_free_modulus(
+  expr: &Expr,
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  if !(2..=MAX_MODULUS).contains(&p)
+    || !(2..p).take_while(|d| d * d <= p).all(|d| p % d != 0)
+  {
+    return Ok(None);
+  }
+  let Some((var, coeffs)) = univariate_int_coeffs(expr)? else {
+    return Ok(None);
+  };
+  let mut f: Vec<i128> = coeffs.iter().map(|c| c.rem_euclid(p)).collect();
+  trim(&mut f);
+  if is_zero(&f) {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  let constant = *f.last().unwrap();
+  if deg(&f) == 0 {
+    return Ok(Some(Expr::Integer(constant)));
+  }
+  let mut parts = squarefree_decomposition(&make_monic(&f, p), p);
+  parts.sort_by(|a, b| a.0.len().cmp(&b.0.len()).then_with(|| a.0.cmp(&b.0)));
+  Ok(Some(gf_factored_expr(constant, &parts, &var)?))
+}
+
 /// FactorList[poly, Modulus -> p].
 pub fn factor_list_modulus(
   expr: &Expr,
@@ -876,4 +904,141 @@ fn together_modulus_sum(
     num_expr,
     times(den_factors),
   ))?))
+}
+
+/// Quotient and remainder of a by b over GF(p) (b nonzero).
+fn poly_divmod(a: &[i128], b: &[i128], p: i128) -> (Vec<i128>, Vec<i128>) {
+  let db = deg(b);
+  let inv_lc = mod_inv(*b.last().unwrap(), p);
+  let mut r = a.to_vec();
+  trim(&mut r);
+  let mut q = vec![0i128; r.len().saturating_sub(db).max(1)];
+  while !is_zero(&r) && deg(&r) >= db {
+    let dr = deg(&r);
+    let c = (r[dr] * inv_lc).rem_euclid(p);
+    q[dr - db] = c;
+    for (i, &bc) in b.iter().enumerate() {
+      let idx = dr - db + i;
+      r[idx] = (r[idx] - c * bc).rem_euclid(p);
+    }
+    trim(&mut r);
+    if dr == 0 {
+      break;
+    }
+  }
+  trim(&mut q);
+  (q, r)
+}
+
+fn poly_sub(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+  let mut out = vec![0i128; a.len().max(b.len())];
+  for (i, o) in out.iter_mut().enumerate() {
+    let x = a.get(i).copied().unwrap_or(0);
+    let y = b.get(i).copied().unwrap_or(0);
+    *o = (x - y).rem_euclid(p);
+  }
+  trim(&mut out);
+  out
+}
+
+/// The inverse of a modulo m over GF(p), when gcd(a, m) = 1.
+fn poly_inverse_mod(a: &[i128], m: &[i128], p: i128) -> Option<Vec<i128>> {
+  let (mut r0, mut r1) = (m.to_vec(), poly_rem(a, m, p));
+  let (mut s0, mut s1) = (vec![0i128], vec![1i128]);
+  while !is_zero(&r1) {
+    let (q, r) = poly_divmod(&r0, &r1, p);
+    let s = poly_sub(&s0, &poly_mul(&q, &s1, p), p);
+    (r0, r1) = (r1, r);
+    (s0, s1) = (s1, s);
+  }
+  if deg(&r0) != 0 {
+    return None;
+  }
+  let inv = mod_inv(r0[0], p);
+  let s: Vec<i128> = s0.iter().map(|&c| (c * inv).rem_euclid(p)).collect();
+  Some(poly_rem(&s, m, p))
+}
+
+/// Apart[expr, Modulus -> p] (`square_free` false) and
+/// ApartSquareFree[expr, Modulus -> p] (true): the polynomial part plus
+/// one term c/f^k for each irreducible (or square-free) factor f of the
+/// denominator and each power k up to its multiplicity, deg c < deg f.
+pub fn apart_modulus(
+  expr: &Expr,
+  p: i128,
+  square_free: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  if !(2..=MAX_MODULUS).contains(&p)
+    || !(2..p).take_while(|d| d * d <= p).all(|d| p % d != 0)
+  {
+    return Ok(None);
+  }
+  let (var, n, d) = match direct_fraction_parts(expr)? {
+    Some(parts) => parts,
+    None => match fraction_parts(expr)? {
+      Some((var, n, d, ..)) => (var, n, d),
+      None => return Ok(None),
+    },
+  };
+  let (n, d) = (reduce_mod(&n, p), reduce_mod(&d, p));
+  if is_zero(&d) {
+    return Ok(None);
+  }
+  if is_zero(&n) {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  let g = poly_gcd(&n, &d, p);
+  let (n, d) = (poly_div_exact(&n, &g, p), poly_div_exact(&d, &g, p));
+  // Make the denominator monic, moving its leading coefficient up.
+  let lc_inv = mod_inv(*d.last().unwrap(), p);
+  let n: Vec<i128> =
+    reduce_mod(&n.iter().map(|&c| c * lc_inv).collect::<Vec<_>>(), p);
+  let d = make_monic(&d, p);
+  let (quotient, remainder) = poly_divmod(&n, &d, p);
+  let mut terms: Vec<Expr> = Vec::new();
+  if !is_zero(&quotient) {
+    terms.push(gf_poly_to_expr(&quotient, &var)?);
+  }
+  if !is_zero(&remainder) {
+    let parts: Vec<(Vec<i128>, usize)> = if square_free {
+      squarefree_decomposition(&d, p)
+    } else {
+      match gf_factor_coeffs(&d, p) {
+        Some((_, f)) => f,
+        None => return Ok(None),
+      }
+    };
+    for (f, e) in &parts {
+      let mut power = vec![1i128];
+      for _ in 0..*e {
+        power = poly_mul(&power, f, p);
+      }
+      let cofactor = poly_div_exact(&d, &power, p);
+      let Some(inv) = poly_inverse_mod(&cofactor, &power, p) else {
+        return Ok(None);
+      };
+      // remainder / d = A / f^e + (rest) with A = remainder * cofactor⁻¹.
+      let mut a = poly_rem(&poly_mul(&remainder, &inv, p), &power, p);
+      // A = Σ c_k f^k: c_k / f^(e - k).
+      let f_expr = gf_poly_to_expr(f, &var)?;
+      let mut k = 0usize;
+      while !is_zero(&a) {
+        let (q, c) = poly_divmod(&a, f, p);
+        if !is_zero(&c) {
+          let den = if e - k == 1 {
+            f_expr.clone()
+          } else {
+            pow2(f_expr.clone(), Expr::Integer((e - k) as i128))
+          };
+          terms.push(div2(gf_poly_to_expr(&c, &var)?, den));
+        }
+        a = q;
+        k += 1;
+      }
+    }
+  }
+  if terms.is_empty() {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&plus(terms))?))
 }
