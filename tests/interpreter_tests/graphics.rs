@@ -21742,6 +21742,24 @@ mod filling_style {
 mod list_plot_3d {
   use super::*;
 
+  // The log-scale list plots report data that is no list with their own
+  // `::lpn`, as ListPlot does (Demonstration ZipfsLawForCities, whose
+  // CityData lookup is empty offline); they stopped the evaluation.
+  #[test]
+  fn log_list_plots_of_non_list_data() {
+    for head in ["ListLogPlot", "ListLogLogPlot", "ListLogLinearPlot"] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(&format!("{head}[foo]")).unwrap();
+      assert_eq!(r.result, format!("{head}[foo]"));
+      assert_eq!(
+        r.warnings,
+        vec![format!(
+          "{head}::lpn: foo is not a list of numbers or pairs of numbers."
+        )]
+      );
+    }
+  }
+
   // Data that is no list gets `::arrayerr` (outside the plot's own Quiet)
   // and the call stays unevaluated; it used to stop the evaluation.
   #[test]

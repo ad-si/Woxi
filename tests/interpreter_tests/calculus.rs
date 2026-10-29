@@ -8354,6 +8354,46 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // Second-order constant coefficients that are symbols: wolframscript's
+  // forms (trigonometric for a pair ±I s, exponentials otherwise). These
+  // stopped the evaluation with "cannot convert k to a numeric value"
+  // (Demonstration OpticalFilterWithSinusoidallyVaryingPermittivity…).
+  #[test]
+  fn symbolic_constant_coefficients() {
+    for (code, out) in [
+      (
+        "DSolve[y''[x] + k^2 y[x] == 0, y, x]",
+        "{{y -> Function[{x}, C[1]*Cos[k*x] + C[2]*Sin[k*x]]}}",
+      ),
+      (
+        "DSolve[y''[x] - a y[x] == 0, y, x]",
+        "{{y -> Function[{x}, E^(Sqrt[a]*x)*C[1] + C[2]/E^(Sqrt[a]*x)]}}",
+      ),
+      (
+        "DSolve[m y''[x] + k y[x] == 0, y, x]",
+        "{{y -> Function[{x}, C[1]*Cos[(Sqrt[k]*x)/Sqrt[m]] + C[2]*Sin[(Sqrt[k]*x)/Sqrt[m]]]}}",
+      ),
+      (
+        "DSolve[y''[x] + 2 b y'[x] + (b^2 + w^2) y[x] == 0, y, x]",
+        "{{y -> Function[{x}, E^((-b - I*w)*x)*C[1] + E^((-b + I*w)*x)*C[2]]}}",
+      ),
+      (
+        "DSolve[y''[x] + b y'[x] + c y[x] == 0, y, x]",
+        "{{y -> Function[{x}, E^(((-b - Sqrt[b^2 - 4*c])*x)/2)*C[1] + E^(((-b + Sqrt[b^2 - 4*c])*x)/2)*C[2]]}}",
+      ),
+      (
+        "DSolve[y''[x] + 2 b y'[x] + b^2 y[x] == 0, y, x]",
+        "{{y -> Function[{x}, C[1]/E^(b*x) + (x*C[2])/E^(b*x)]}}",
+      ),
+      (
+        "DSolve[y''[x] + k^2 y[x] == 1, y, x]",
+        "{{y -> Function[{x}, k^(-2) + C[1]*Cos[k*x] + C[2]*Sin[k*x]]}}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), out, "{code}");
+    }
+  }
+
   // `{{eqns…}, {conditions…}}` is one system of equations.
   #[test]
   fn nested_equation_lists() {

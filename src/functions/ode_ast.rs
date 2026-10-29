@@ -9462,6 +9462,16 @@ fn solve_constant_coefficient_ode(
   max_order: usize,
   x_name: &str,
 ) -> Result<Expr, InterpreterError> {
+  // Symbolic coefficients (`y'' + k^2 y == 0`) have symbolic roots.
+  if max_order == 2
+    && terms
+      .iter()
+      .filter(|t| t.order >= 0)
+      .any(|t| eval_to_f64(&t.coefficient).is_err())
+    && let Some(solution) = solve_symbolic_second_order(terms, x_name)?
+  {
+    return Ok(solution);
+  }
   // Extract numeric coefficients for the characteristic equation
   let mut coeffs: Vec<f64> = vec![0.0; max_order + 1];
   let mut forcing: Option<Expr> = None;
@@ -9939,6 +9949,98 @@ fn solve_quartic_characteristic(
 }
 
 /// Build homogeneous solution from characteristic roots
+/// `a2 y'' + a1 y' + a0 y + f == 0` with symbolic constant coefficients
+/// (and a constant forcing `f`), in wolframscript's forms. The roots come
+/// from the quadratic formula, a square root taken with `PowerExpand`
+/// (`Sqrt[k^2]` is `k`) and a negative-looking radicand turned into `I`
+/// times the root of its negation. Without a first-order term a pair `±I s`
+/// gives `C[1] Cos[s x] + C[2] Sin[s x]` and a pair `±s` gives
+/// `E^(s x) C[1] + E^(-s x) C[2]`; otherwise `E^(r1 x) C[1] + E^(r2 x) C[2]`
+/// with the minus-sign root first, or `x E^(r x)` for a double root.
+fn solve_symbolic_second_order(
+  terms: &[OdeTerm],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let coefficient = |order: i32| -> Result<Expr, InterpreterError> {
+    eval(&plus(
+      terms
+        .iter()
+        .filter(|t| t.order == order)
+        .map(|t| t.coefficient.clone())
+        .chain(std::iter::once(Expr::Integer(0)))
+        .collect(),
+    ))
+  };
+  let (a2, a1, a0, f) = (
+    coefficient(2)?,
+    coefficient(1)?,
+    coefficient(0)?,
+    coefficient(-1)?,
+  );
+  let x = id_expr(x_name);
+  let c = |i: i128| call1("C", Expr::Integer(i));
+  let i_unit = id_expr("I");
+  let simplify = |e: Expr| eval(&call1("Simplify", e));
+  let power_expand_sqrt =
+    |e: Expr| eval(&call1("PowerExpand", call1("Sqrt", e)));
+  // `Some(p)` when `e` reads as `-p`.
+  let negated = |e: &Expr| crate::functions::math_ast::strip_negation(e);
+  let exp_of = |root: &Expr| call("Exp", vec![times2(root.clone(), x.clone())]);
+  let disc = simplify(plus2(
+    pow2(a1.clone(), Expr::Integer(2)),
+    times(vec![Expr::Integer(-4), a2.clone(), a0.clone()]),
+  ))?;
+  let homogeneous = if matches!(disc, Expr::Integer(0)) {
+    let root = simplify(div2(
+      times2(Expr::Integer(-1), a1),
+      times2(Expr::Integer(2), a2),
+    ))?;
+    plus2(
+      times2(exp_of(&root), c(1)),
+      times(vec![x.clone(), exp_of(&root), c(2)]),
+    )
+  } else if matches!(a1, Expr::Integer(0)) {
+    // r^2 == -a0/a2.
+    let n = simplify(div2(a0.clone(), a2.clone()))?;
+    if let Some(p) = negated(&n) {
+      let s_real = power_expand_sqrt(p)?;
+      plus2(
+        times2(exp_of(&s_real), c(1)),
+        times2(exp_of(&times2(Expr::Integer(-1), s_real)), c(2)),
+      )
+    } else {
+      let s_im = power_expand_sqrt(n)?;
+      plus2(
+        times2(c(1), call1("Cos", times2(s_im.clone(), x.clone()))),
+        times2(c(2), call1("Sin", times2(s_im, x.clone()))),
+      )
+    }
+  } else {
+    let sq = match negated(&disc) {
+      Some(p) => times2(i_unit, power_expand_sqrt(p)?),
+      None => call1("Sqrt", disc),
+    };
+    let two_a2 = times2(Expr::Integer(2), a2);
+    let minus_a1 = times2(Expr::Integer(-1), a1);
+    let r1 = simplify(div2(
+      plus2(minus_a1.clone(), times2(Expr::Integer(-1), sq.clone())),
+      two_a2.clone(),
+    ))?;
+    let r2 = simplify(div2(plus2(minus_a1, sq), two_a2))?;
+    plus2(times2(exp_of(&r1), c(1)), times2(exp_of(&r2), c(2)))
+  };
+  // A constant forcing: the particular solution -f/a0.
+  let solution = if matches!(f, Expr::Integer(0)) {
+    homogeneous
+  } else if matches!(a0, Expr::Integer(0)) {
+    return Ok(None);
+  } else {
+    plus2(times2(Expr::Integer(-1), div2(f, a0)), homogeneous)
+  };
+  Ok(Some(eval(&solution)?))
+}
+
 fn build_homogeneous_solution(
   roots: &[(f64, f64, usize)],
   x_name: &str,

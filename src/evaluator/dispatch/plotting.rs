@@ -15,6 +15,30 @@ fn quiet_plot(
   result
 }
 
+/// Data that is no list (once every data form the plot accepts has been
+/// tried) leaves the call unevaluated with `head::lpn`, as in
+/// wolframscript, rather than the plot's internal error.
+fn lpn_for_non_list(
+  name: &str,
+  args: &[Expr],
+  result: Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  match result {
+    Err(InterpreterError::EvaluationError(msg))
+      if msg == "ListPlot: first argument must be a list" =>
+    {
+      let shown = crate::evaluator::evaluate_expr_to_expr(&args[0])
+        .unwrap_or_else(|_| args[0].clone());
+      crate::emit_message(&format!(
+        "{name}::lpn: {} is not a list of numbers or pairs of numbers.",
+        expr_to_string(&shown)
+      ));
+      Ok(unevaluated(name, args))
+    }
+    other => other,
+  }
+}
+
 /// Data that is no list at all for an array plot: `head::arrayerr`
 /// (issued outside the plot's own `Quiet`) and the call left unevaluated.
 /// `more` extends the message for heads that also take a list of arrays.
@@ -425,20 +449,11 @@ pub fn dispatch_plotting(
       // Data that is no list (once every data form ListPlot accepts has been
       // tried) leaves the call unevaluated with ListPlot::lpn, as in
       // wolframscript.
-      match quiet_plot(|| crate::functions::list_plot::list_plot_ast(args)) {
-        Err(InterpreterError::EvaluationError(msg))
-          if msg == "ListPlot: first argument must be a list" =>
-        {
-          let shown = crate::evaluator::evaluate_expr_to_expr(&args[0])
-            .unwrap_or_else(|_| args[0].clone());
-          crate::emit_message(&format!(
-            "ListPlot::lpn: {} is not a list of numbers or pairs of numbers.",
-            expr_to_string(&shown)
-          ));
-          Some(Ok(unevaluated("ListPlot", args)))
-        }
-        other => Some(other),
-      }
+      Some(lpn_for_non_list(
+        name,
+        args,
+        quiet_plot(|| crate::functions::list_plot::list_plot_ast(args)),
+      ))
     }
     "DiscretePlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::list_plot::discrete_plot_ast(args)
@@ -487,15 +502,23 @@ pub fn dispatch_plotting(
     "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::audio_plot_ast(args)
     })),
-    "ListLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::list_log_plot_ast(args)
-    })),
-    "ListLogLogPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::list_log_log_plot_ast(args)
-    })),
-    "ListLogLinearPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::list_log_linear_plot_ast(args)
-    })),
+    "ListLogPlot" if !args.is_empty() => Some(lpn_for_non_list(
+      name,
+      args,
+      quiet_plot(|| crate::functions::list_plot::list_log_plot_ast(args)),
+    )),
+    "ListLogLogPlot" if !args.is_empty() => Some(lpn_for_non_list(
+      name,
+      args,
+      quiet_plot(|| crate::functions::list_plot::list_log_log_plot_ast(args)),
+    )),
+    "ListLogLinearPlot" if !args.is_empty() => Some(lpn_for_non_list(
+      name,
+      args,
+      quiet_plot(|| {
+        crate::functions::list_plot::list_log_linear_plot_ast(args)
+      }),
+    )),
     "ListPolarPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::list_polar_plot_ast(args)
     })),
