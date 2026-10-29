@@ -14101,3 +14101,41 @@ mod large_literal_data {
     );
   }
 }
+
+mod right_nested_operator_display {
+  use super::*;
+
+  // `/.` and `//.` group to the left and assignments to the right, so the
+  // other nesting keeps its parentheses; printed code must re-read the same.
+  #[test]
+  fn parentheses_kept_where_grouping_differs() {
+    assert_eq!(
+      interpret(
+        "Hold[(a /. b) /. c, a /. (b /. c), a //. (b //. c), (a := b) := c, \
+         (a = b) := c, a = (b = c)]"
+      )
+      .unwrap(),
+      "Hold[a /. b /. c, a /. (b /. c), a //. (b //. c), (a := b) := c, \
+       (a = b) := c, a = b = c]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[(a := b) = c, a ~~ (b ~~ c)], InputForm]")
+        .unwrap(),
+      "Hold[(a := b) = c, a~~(b~~c)]"
+    );
+  }
+
+  // StringExpression is Flat: a parenthesized operand stays nested when
+  // held and flattens on evaluation.
+  #[test]
+  fn string_expression_is_flat() {
+    assert_eq!(
+      interpret(
+        "{Hold[a ~~ (b ~~ c)], a ~~ (b ~~ c), Attributes[StringExpression]}"
+      )
+      .unwrap(),
+      "{Hold[StringExpression[a, StringExpression[b, c]]], \
+       StringExpression[a, b, c], {Flat, OneIdentity, Protected}}"
+    );
+  }
+}

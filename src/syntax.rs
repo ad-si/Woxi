@@ -6516,7 +6516,9 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       call("DoubleLeftTee", vec![left.clone(), right.clone()])
     }
     "~~" => {
-      // Flatten nested StringExpression (it's Flat/associative)
+      // A chain `a ~~ b ~~ c` folds left into one StringExpression; a
+      // right operand that is one came from parentheses, `a ~~ (b ~~ c)`,
+      // and stays nested as in Wolfram (evaluation flattens it anyway).
       let mut parts = Vec::new();
       match left {
         Expr::FunctionCall { name, args } if name == "StringExpression" => {
@@ -6524,12 +6526,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
         }
         _ => parts.push(left.clone()),
       }
-      match right {
-        Expr::FunctionCall { name, args } if name == "StringExpression" => {
-          parts.extend(args.clone());
-        }
-        _ => parts.push(right.clone()),
-      }
+      parts.push(right.clone());
       call("StringExpression", parts)
     }
     "/@" => Expr::Map {
@@ -9871,6 +9868,32 @@ pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
   }
 }
 
+/// An assignment's formatted left-hand side, bracketed when it is itself an
+/// assignment, a `;`-sequence or a pure function: assignments group to the
+/// right, so `(a := b) := c` printed bare re-reads as `a := (b := c)`.
+pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
+  let looser = match lhs {
+    Expr::CompoundExpr(_) | Expr::Function { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Set"
+          | "SetDelayed"
+          | "UpSet"
+          | "UpSetDelayed"
+          | "TagSet"
+          | "TagSetDelayed"
+      ) || (name == "CompoundExpression" && args.len() >= 2)
+    }
+    _ => false,
+  };
+  if looser {
+    format!("({formatted})")
+  } else {
+    formatted
+  }
+}
+
 /// The rule an association entry stands for: `key :> value` for an entry
 /// marked as delayed (see `assoc_marker_matches`), `key -> value` otherwise.
 fn association_entry_rule(key: &Expr, value: &Expr) -> Expr {
@@ -10534,7 +10557,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} = {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} = {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "SetDelayed" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -10543,7 +10570,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} := {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} := {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "UpSet" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -13163,20 +13194,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       };
       format!("{lhs} :> {rhs_final}")
     }
-    // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm
-    Expr::ReplaceAll { expr, rules } => {
-      format!(
-        "{} /. {}",
-        format_expr(expr, ExprForm::Input),
-        format_expr(rules, ExprForm::Input)
-      )
-    }
-    Expr::ReplaceRepeated { expr, rules } => {
-      format!(
-        "{} //. {}",
-        format_expr(expr, ExprForm::Input),
-        format_expr(rules, ExprForm::Input)
-      )
+    // ReplaceAll, ReplaceRepeated, Map, Apply, etc.: always use InputForm,
+    // with its bracketing of a right-hand `/.` (the operator groups left).
+    Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => {
+      expr_to_input_form(expr)
     }
     Expr::Map { func, list } => {
       format_map_apply_shorthand(func, list, "/@", 49)
@@ -14493,7 +14514,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} = {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} = {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     // `Out[-k]` for k > 0 renders as `%` shorthand (`%`, `%%`, `%%%`, …)
     // when held; matches expr_to_string/format_expr behavior.
@@ -14517,7 +14542,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} := {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} := {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     Expr::FunctionCall { name, args } if name == "UpSet" && args.len() == 2 => {
       let rhs = expr_to_input_form(&args[1]);
@@ -14663,7 +14692,18 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "StringExpression" && !args.is_empty() =>
     {
-      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      // A nested StringExpression (only unflattened when held) and a rule
+      // are bracketed, as wolframscript does; Alternatives is not.
+      let parts: Vec<String> = args
+        .iter()
+        .map(|a| {
+          let text = expr_to_input_form(a);
+          let nested = matches!(a, Expr::FunctionCall { name, args }
+            if name == "StringExpression" && args.len() >= 2)
+            || matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+          if nested { format!("({text})") } else { text }
+        })
+        .collect();
       parts.join("~~")
     }
     // StringForm: InputForm shows StringForm["template", args...] with quoted string
