@@ -12683,6 +12683,36 @@ mod plot3d {
       assert_eq!(fills("Plot[x, {x, 0, 1}, Filling -> True]"), 1);
     }
 
+    /// A fill is drawn beneath every curve, including the curves of the
+    /// series listed before the filled one: `Filling -> {2 -> Bottom}` must
+    /// not paint over series 1.
+    #[test]
+    fn a_fill_lies_beneath_the_curves_of_earlier_series() {
+      let svg = export_svg(
+        "Plot[{Sin[x], -2 + x/9}, {x, 0, 6}, Filling -> {2 -> Bottom}]",
+      );
+      let fill = svg.find("<polygon").expect("the fill polygon");
+      let first_curve = svg.find("<polyline").expect("the first curve");
+      assert!(fill < first_curve, "fill must precede the curves");
+    }
+
+    /// A body whose `Module` locals survive in a partly evaluated `Which`
+    /// holds symbols like `z$1 = x/2`; the sample for `x` must reach them,
+    /// or every branch after the first stays symbolic and is not drawn.
+    #[test]
+    fn plot_reaches_module_locals_left_in_a_which() {
+      let svg = export_svg(
+        "Plot[Module[{z = x/2}, Which[z < -1, 1, Abs[z] <= 1, 2, z > 1, 3]], \
+         {x, -6, 6}, Exclusions -> None]",
+      );
+      // All three branches are sampled: the curve reaches y = 1, 2 and 3.
+      assert_eq!(
+        y_tick_labels(&svg).first().map(String::as_str),
+        Some("3.0"),
+        "{svg}"
+      );
+    }
+
     /// The value of `Filling` may be computed rather than named — a
     /// Demonstration switches its shading with
     /// `Filling -> If[b === Axis, Axis, None]` — so it is read evaluated.

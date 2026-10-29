@@ -477,6 +477,14 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
+  // A body can reach the plot variable through a symbol that carries its own
+  // stored value — a `Module` local left behind in a partly evaluated
+  // `Which[…]`, say, holds `z$1 = x/a` — and textual substitution never
+  // touches that stored `x`. Binding the variable as a value, the way
+  // `Block[{x = …}, body]` does, lets those symbols see the sample too.
+  if let Some(v) = evaluate_with_bound_var(body, var, x) {
+    return Some(v);
+  }
   // Plot evaluates its body once with the variable still symbolic and only
   // then puts the sample in, so a rule that matches on the variable
   // (`f[t] /. sol`, with `sol` an NDSolve result) still sees `t`. Putting
@@ -490,6 +498,27 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(&symbolic, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
   try_eval_to_f64_lenient(&result)
+}
+
+/// Evaluate `body` with `var` bound to `x` as a value (dynamic scoping, as in
+/// `Block[{var = x}, body]`), restoring the previous binding afterwards.
+fn evaluate_with_bound_var(body: &Expr, var: &str, x: f64) -> Option<f64> {
+  let saved = crate::ENV.with(|e| {
+    e.borrow_mut()
+      .insert(var.to_string(), crate::StoredValue::ExprVal(Expr::Real(x)))
+  });
+  let result = evaluate_expr_to_expr(body)
+    .ok()
+    .and_then(|r| try_eval_to_f64_lenient(&r));
+  crate::ENV.with(|e| match saved {
+    Some(v) => {
+      e.borrow_mut().insert(var.to_string(), v);
+    }
+    None => {
+      e.borrow_mut().remove(var);
+    }
+  });
+  result
 }
 
 /// Adaptively sample a function, adding more points where the function changes rapidly.
@@ -4093,6 +4122,81 @@ fn generate_svg_with_options(
             .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
         }
 
+        // Fills lie beneath every curve, whichever series they belong to:
+        // a `Filling -> {2 -> Bottom}` area must not paint over the lines
+        // of the series drawn before it.
+        if !opts.stacked {
+          for (series_idx, points) in all_points.iter().enumerate() {
+            if !resolve_series_joined(opts.joined_per_series.as_deref(), series_idx) {
+              continue;
+            }
+            let (r, g, b) = series_color(&opts.plot_style, series_idx);
+            let paint =
+              fill_paint(series_filling_style(opts, series_idx), (r, g, b));
+            match series_fill_target(opts, series_idx) {
+              FillTarget::Level(level) => {
+                if let Some(ref_y) = level.reference_y(y_min, y_max) {
+                  let fill_segments = clip_segments_to_x_range(
+                    clamp_segments_to_y_range(points, y_min, y_max),
+                    x_min,
+                    x_max,
+                  );
+                  for segment in &fill_segments {
+                    if segment.len() < 2 {
+                      continue;
+                    }
+                    chart
+                      .draw_series(AreaSeries::new(
+                        segment.iter().copied(),
+                        ref_y,
+                        paint,
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!(
+                          "Plot: {e}"
+                        ))
+                      })?;
+                  }
+                }
+              }
+              // `Filling -> {i -> {j}}`: fill the region between this
+              // series and series j over the overlap of their x-domains.
+              FillTarget::Series(target_idx) => {
+                if target_idx != series_idx
+                  && let Some(target) = all_points.get(target_idx)
+                  && let Some(polygon) = fill_between_polygon(points, target)
+                {
+                  let below_paint = series_filling_style(opts, series_idx)
+                    .and_then(|fs| fs.below_color.map(|c| (fs, c)))
+                    .map(|(fs, (br, bg, bb))| {
+                      RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
+                    });
+                  let pieces = match below_paint {
+                    Some(_) => fill_between_polygons_by_side(points, target),
+                    None => vec![(true, polygon)],
+                  };
+                  for (is_above, piece) in pieces {
+                    let piece_paint = match (is_above, below_paint) {
+                      (false, Some(bp)) => bp,
+                      _ => paint,
+                    };
+                    chart
+                      .draw_series(std::iter::once(Polygon::new(
+                        piece,
+                        piece_paint,
+                      )))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!(
+                          "Plot: {e}"
+                        ))
+                      })?;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
@@ -4166,70 +4270,6 @@ fn generate_svg_with_options(
                   .map_err(|e| {
                     InterpreterError::EvaluationError(format!("Plot: {e}"))
                   })?;
-              }
-            } else {
-              let paint =
-                fill_paint(series_filling_style(opts, series_idx), (r, g, b));
-              match series_fill_target(opts, series_idx) {
-                FillTarget::Level(level) => {
-                  if let Some(ref_y) = level.reference_y(y_min, y_max) {
-                    let fill_segments = clip_segments_to_x_range(
-                      clamp_segments_to_y_range(points, y_min, y_max),
-                      x_min,
-                      x_max,
-                    );
-                    for segment in &fill_segments {
-                      if segment.len() < 2 {
-                        continue;
-                      }
-                      chart
-                        .draw_series(AreaSeries::new(
-                          segment.iter().copied(),
-                          ref_y,
-                          paint,
-                        ))
-                        .map_err(|e| {
-                          InterpreterError::EvaluationError(format!(
-                            "Plot: {e}"
-                          ))
-                        })?;
-                    }
-                  }
-                }
-                // `Filling -> {i -> {j}}`: fill the region between this
-                // series and series j over the overlap of their x-domains.
-                FillTarget::Series(target_idx) => {
-                  if target_idx != series_idx
-                    && let Some(target) = all_points.get(target_idx)
-                    && let Some(polygon) = fill_between_polygon(points, target)
-                  {
-                    let below_paint = series_filling_style(opts, series_idx)
-                      .and_then(|fs| fs.below_color.map(|c| (fs, c)))
-                      .map(|(fs, (br, bg, bb))| {
-                        RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
-                      });
-                    let pieces = match below_paint {
-                      Some(_) => fill_between_polygons_by_side(points, target),
-                      None => vec![(true, polygon)],
-                    };
-                    for (is_above, piece) in pieces {
-                      let piece_paint = match (is_above, below_paint) {
-                        (false, Some(bp)) => bp,
-                        _ => paint,
-                      };
-                      chart
-                        .draw_series(std::iter::once(Polygon::new(
-                          piece,
-                          piece_paint,
-                        )))
-                        .map_err(|e| {
-                          InterpreterError::EvaluationError(format!(
-                            "Plot: {e}"
-                          ))
-                        })?;
-                    }
-                  }
-                }
               }
             }
 
