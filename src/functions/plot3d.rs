@@ -4971,6 +4971,24 @@ fn push_text3d_label(
   });
 }
 
+/// The primitives of a `Graphics3D` used as the content of a `Text`/`Inset`
+/// in another 3D scene, whether it is still the held call or the evaluated
+/// picture remembering its source.
+fn inset_graphics3d_content(expr: &Expr) -> Option<&Expr> {
+  let call = match expr {
+    Expr::Graphics {
+      is_3d: true,
+      structure: Some(structure),
+      ..
+    } => structure.as_ref(),
+    other => other,
+  };
+  match call {
+    Expr::FunctionCall { name, args } if name == "Graphics3D" => args.first(),
+    _ => None,
+  }
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -5215,6 +5233,18 @@ fn collect_3d_primitives(
         // labels a point of the scene. The label is typeset by the same
         // helper the 2D pictures and plot labels use, so `Subscript[N, B]`
         // reads the same wherever it is written.
+        // `Text[Graphics3D[…], Scaled[{½, ½, ½}]]` is the front end's way of
+        // overlaying a second scene (with its own camera options) on the
+        // first. The inner scene's primitives share the outer coordinates,
+        // so they are drawn as part of this scene.
+        "Text" | "Inset"
+          if args.len() >= 2
+            && inset_graphics3d_content(&args[0]).is_some() =>
+        {
+          if let Some(content) = inset_graphics3d_content(&args[0]) {
+            collect_3d_primitives(content, style, prims);
+          }
+        }
         "Text" if args.len() >= 2 => {
           if let Some(pos) = parse_point3d(&args[1]) {
             let offset = args

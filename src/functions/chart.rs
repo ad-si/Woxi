@@ -2143,6 +2143,125 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
+/// PairedBarChart[left, right, opts] and PairedHistogram[left, right,
+/// bspec, opts]: two series drawn back to back as horizontal bars — the
+/// first extending left of a central gap, the second right. A histogram
+/// bins both datasets with the bins `HistogramList` picks for them together.
+pub fn paired_chart_ast(
+  head: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated(head, args));
+  let (positional, options): (Vec<&Expr>, Vec<&Expr>) = args
+    .iter()
+    .partition(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+  if positional.len() < 2 {
+    return unchanged();
+  }
+  let numbers = |e: &Expr| -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      _ => None,
+    }
+  };
+  // Each bar as (bottom, top, left length, right length).
+  let mut bars: Vec<(f64, f64, f64, f64)> = Vec::new();
+  if head == "PairedHistogram" {
+    let joined = crate::evaluator::evaluate_function_call_ast(
+      "Join",
+      &[positional[0].clone(), positional[1].clone()],
+    )?;
+    let mut list_args = vec![joined];
+    list_args.extend(positional.get(2).map(|b| (*b).clone()));
+    let histogram = crate::evaluator::evaluate_function_call_ast(
+      "HistogramList",
+      &list_args,
+    )?;
+    let Expr::List(parts) = &histogram else {
+      return unchanged();
+    };
+    let Some(edges_expr) = parts.first() else {
+      return unchanged();
+    };
+    let Some(edges) = numbers(edges_expr) else {
+      return unchanged();
+    };
+    let count = |data: &Expr| -> Result<Option<Vec<f64>>, InterpreterError> {
+      let counts = crate::evaluator::evaluate_function_call_ast(
+        "BinCounts",
+        &[data.clone(), Expr::List(vec![edges_expr.clone()].into())],
+      )?;
+      Ok(numbers(&counts))
+    };
+    let (Some(left), Some(right)) =
+      (count(positional[0])?, count(positional[1])?)
+    else {
+      return unchanged();
+    };
+    for (k, w) in edges.windows(2).enumerate() {
+      bars.push((w[0], w[1], left[k], right[k]));
+    }
+  } else {
+    let (Some(left), Some(right)) =
+      (numbers(positional[0]), numbers(positional[1]))
+    else {
+      return unchanged();
+    };
+    for k in 0..left.len().max(right.len()) {
+      let y = (k + 1) as f64;
+      bars.push((
+        y - 0.457,
+        y + 0.457,
+        left.get(k).copied().unwrap_or(0.0),
+        right.get(k).copied().unwrap_or(0.0),
+      ));
+    }
+  }
+  let largest = bars
+    .iter()
+    .fold(0.0f64, |m, &(_, _, l, r)| m.max(l.abs()).max(r.abs()));
+  let gap = 0.075 * largest.max(f64::MIN_POSITIVE);
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let color = |(r, g, b): (u8, u8, u8)| {
+    call(
+      "RGBColor",
+      vec![
+        Expr::Real(f64::from(r) / 255.0),
+        Expr::Real(f64::from(g) / 255.0),
+        Expr::Real(f64::from(b) / 255.0),
+      ],
+    )
+  };
+  let mut left_prims = vec![color(PLOT_COLORS[0])];
+  let mut right_prims = vec![color(PLOT_COLORS[1 % PLOT_COLORS.len()])];
+  for &(y0, y1, l, r) in &bars {
+    if l != 0.0 {
+      left_prims.push(call(
+        "Rectangle",
+        vec![point(-gap - l, y0), point(-gap, y1)],
+      ));
+    }
+    if r != 0.0 {
+      right_prims
+        .push(call("Rectangle", vec![point(gap, y0), point(gap + r, y1)]));
+    }
+  }
+  let mut graphics_args = vec![Expr::List(
+    vec![
+      call1("EdgeForm", call1("GrayLevel", Expr::Real(0.5))),
+      Expr::List(left_prims.into()),
+      Expr::List(right_prims.into()),
+    ]
+    .into(),
+  )];
+  graphics_args.extend(options.into_iter().cloned());
+  crate::evaluator::evaluate_function_call_ast("Graphics", &graphics_args)
+}
+
 /// The bars of a vertical `BarChart` as `Graphics[{Rectangle[…], …}, opts]`
 /// in chart coordinates (the first bar centred at x = 1), so `Show` can lay
 /// other plots over the chart instead of dropping one of them. Only the

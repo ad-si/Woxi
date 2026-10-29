@@ -315,16 +315,9 @@ pub(crate) fn for_each_numeric_step(
         }
         // `min + k*step` for every k, the first included: a machine-real
         // step makes `{i, 1, 2, 1.}` start at `1.`.
-        let current_expr = {
-          let k_step = crate::evaluator::evaluate_function_call_ast(
-            "Times",
-            &[Expr::Integer(k), step_expr.clone()],
-          )?;
-          crate::evaluator::evaluate_function_call_ast(
-            "Plus",
-            &[min_expr.clone(), k_step],
-          )?
-        };
+        let current_expr = super::construction::nth_iterator_value(
+          &min_expr, &step_expr, k as usize,
+        )?;
         if !visit(current_expr)? {
           return Ok(());
         }

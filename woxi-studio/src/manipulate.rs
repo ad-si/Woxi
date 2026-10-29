@@ -4223,6 +4223,37 @@ mod tests {
     );
   }
 
+  /// A built-in-only caption `Dynamic[Last[minmax]]` over a hidden variable
+  /// a `Module` body sets was evaluated while the widget was being searched
+  /// for helper-made `LocatorPane`s — before the body had run — printing
+  /// `Last::normal` for the still unbound variable.
+  #[test]
+  fn builtin_dynamic_caption_waits_for_the_body() {
+    woxi::interpret("captionHeads = {}").unwrap();
+    let code = r#"Manipulate[
+      Module[{w = x}, captionMinMax = {w, w + 1}; w],
+      Column[{Style[Row[{"side ", Dynamic[x],
+          Button["-", x = x - 1, Appearance -> "Palette"],
+          Control@{{x, 1, ""}, 0, 5, 1}}], 14],
+        Style[Row[{"range: ",
+          Dynamic[If[(AppendTo[captionHeads, Head[captionMinMax]]; True),
+            Last[captionMinMax]]],
+          Control[{{flag, False, "flag"}, {False, True}}]}], 14]},
+        Alignment -> Center],
+      {flag, False, ControlType -> None},
+      {captionMinMax, {20, 28}, ControlType -> None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      woxi::interpret("DeleteDuplicates[captionHeads]").unwrap(),
+      "{List}",
+      "the caption was evaluated before the body set its variable"
+    );
+  }
+
   /// A caption `Dynamic[msg]` whose variable holds `Dynamic[a] Dynamic[b]`
   /// (text times a formatted number) shows both pieces, typeset side by
   /// side, instead of the raw `Dynamic[…]*Dynamic[…]` source.
@@ -5370,5 +5401,37 @@ mod mapped_layout_tests {
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert!(names.contains(&"r") && names.contains(&"c"), "{names:?}");
     assert!(state.graphics_handle.is_some(), "the graphic should render");
+  }
+
+  /// A choice label written as `StringForm["1``", Style[1/2, Tiny]]` shows the
+  /// filled template, not the call's source.
+  #[test]
+  fn choice_label_fills_string_form_slots() {
+    let code = r#"Manipulate[n,
+      {{n, 5, "n"}, {5 -> StringForm["``", Style[1/2, Tiny]],
+        9 -> StringForm["1``", Style[1/2, Tiny]]}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("discrete control");
+    assert_eq!(labels, vec!["1/2", "11/2"]);
+  }
+
+  /// `SpanFromLeft` in a display `Grid` is layout, not a cell to draw.
+  #[test]
+  fn display_grid_span_marker_draws_nothing() {
+    let node = build_manipulate_display(
+      r#"Grid[{{"performance", SpanFromLeft}, {"quality", "x"}}]"#,
+      &[],
+    );
+    assert!(!format!("{node:?}").contains("SpanFromLeft"), "{node:?}");
   }
 }

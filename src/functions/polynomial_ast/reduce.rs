@@ -455,6 +455,30 @@ fn comparison_op_of(e: &Expr) -> Option<ComparisonOp> {
   }
 }
 
+/// [`inequality_to_comparison`] applied through a list or conjunction of
+/// constraints, so the solvers see one spelling of a chained comparison.
+pub(crate) fn inequalities_to_comparisons(e: &Expr) -> Expr {
+  match e {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(inequalities_to_comparisons).collect())
+    }
+    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(inequalities_to_comparisons).collect(),
+    },
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(inequalities_to_comparisons(left)),
+      right: Box::new(inequalities_to_comparisons(right)),
+    },
+    other => inequality_to_comparison(other),
+  }
+}
+
 /// Rewrite `Inequality[a, op1, b, op2, c]` as the chained comparison
 /// `a op1 b op2 c`; any other expression is returned unchanged.
 fn inequality_to_comparison(e: &Expr) -> Expr {

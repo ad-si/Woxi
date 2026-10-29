@@ -3371,10 +3371,24 @@ pub fn find_hamiltonian_cycle_ast(
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("FindHamiltonianCycle", args));
 
-  // Only the single-argument form is reproducible; defer the rest.
-  if args.len() != 1 {
-    return unevaluated();
-  }
+  // FindHamiltonianCycle[g, k] finds up to k cycles, `All` every one.
+  let limit = match args {
+    [_] => 1,
+    [_, Expr::Integer(k)] if *k >= 1 => {
+      usize::try_from(*k).unwrap_or(usize::MAX)
+    }
+    [_, Expr::Identifier(all)] if all == "All" => usize::MAX,
+    [_, Expr::Identifier(inf)] if inf == "Infinity" => usize::MAX,
+    [_, other] => {
+      crate::emit_message(&format!(
+        "FindHamiltonianCycle::inv: The argument {} in {} is not a valid parameter.",
+        expr_to_string(other),
+        expr_to_string(&call("FindHamiltonianCycle", args.to_vec()))
+      ));
+      return unevaluated();
+    }
+    _ => return unevaluated(),
+  };
 
   let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
     return unevaluated();
@@ -3495,6 +3509,11 @@ pub fn find_hamiltonian_cycle_ast(
     reached == remaining && closes
   }
 
+  /// Collects Hamiltonian cycles in lexicographic DFS order until `limit`
+  /// are found; returns true once it is reached. In an undirected graph a
+  /// cycle and its reversal are one cycle: only the orientation whose second
+  /// vertex ranks below its last is kept (the one the DFS meets first).
+  #[allow(clippy::too_many_arguments)]
   fn dfs(
     cur: usize,
     depth: usize,
@@ -3503,15 +3522,19 @@ pub fn find_hamiltonian_cycle_ast(
     neighbors: Option<&[Vec<usize>]>,
     visited: &mut [bool],
     path: &mut Vec<(usize, usize, bool)>,
+    found: &mut Vec<Vec<(usize, usize, bool)>>,
+    limit: usize,
   ) -> bool {
     if depth == n {
       // All vertices visited; look for an edge closing back to the start.
       if let Some(&(_, directed)) = adj[cur].iter().find(|&&(dst, _)| dst == 0)
+        && (neighbors.is_none() || n < 3 || path[0].1 < cur)
       {
-        path.push((cur, 0, directed));
-        return true;
+        let mut cycle = path.clone();
+        cycle.push((cur, 0, directed));
+        found.push(cycle);
       }
-      return false;
+      return found.len() >= limit;
     }
     for &(dst, directed) in &adj[cur] {
       if visited[dst] {
@@ -3522,7 +3545,17 @@ pub fn find_hamiltonian_cycle_ast(
         .is_none_or(|nb| hamiltonian_cycle_completable(dst, nb, visited))
       {
         path.push((cur, dst, directed));
-        if dfs(dst, depth + 1, n, adj, neighbors, visited, path) {
+        if dfs(
+          dst,
+          depth + 1,
+          n,
+          adj,
+          neighbors,
+          visited,
+          path,
+          found,
+          limit,
+        ) {
           return true;
         }
         path.pop();
@@ -3532,21 +3565,37 @@ pub fn find_hamiltonian_cycle_ast(
     false
   }
 
-  if !dfs(0, 1, n, &adj, neighbors.as_deref(), &mut visited, &mut path) {
-    return Ok(empty);
-  }
+  let mut found = Vec::new();
+  dfs(
+    0,
+    1,
+    n,
+    &adj,
+    neighbors.as_deref(),
+    &mut visited,
+    &mut path,
+    &mut found,
+    limit,
+  );
 
-  let cycle: Vec<Expr> = path
+  let cycles: Vec<Expr> = found
     .iter()
-    .map(|&(s, d, directed)| {
-      call(
-        edge_head(directed),
-        vec![vertices[s].clone(), vertices[d].clone()],
+    .map(|cycle| {
+      Expr::List(
+        cycle
+          .iter()
+          .map(|&(s, d, directed)| {
+            call(
+              edge_head(directed),
+              vec![vertices[s].clone(), vertices[d].clone()],
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
       )
     })
     .collect();
-
-  Ok(Expr::List(vec![Expr::List(cycle.into())].into()))
+  Ok(Expr::List(cycles.into()))
 }
 
 /// Hierholzer's algorithm from vertex 0. `adj[v]` lists `(neighbour, edge id)`

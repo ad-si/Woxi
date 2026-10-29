@@ -23662,3 +23662,207 @@ mod find_root_compiled_system {
     );
   }
 }
+
+mod solve_symbolic_root_forms {
+  use super::*;
+
+  // A polynomial with symbolic coefficients that factors is solved factor
+  // by factor; linear roots come over one denominator.
+  #[test]
+  fn factored_and_linear_roots() {
+    assert_eq!(
+      interpret("Solve[(x - b) (x - a) == 0, x]").unwrap(),
+      "{{x -> a}, {x -> b}}"
+    );
+    assert_eq!(
+      interpret("Solve[p x^2 - x + 1 - p == 0, x]").unwrap(),
+      "{{x -> 1}, {x -> (1 - p)/p}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 - (1 + a) x^2 + a x == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 1}, {x -> a}}"
+    );
+    assert_eq!(
+      interpret("Solve[x == a + 1/b, x]").unwrap(),
+      "{{x -> (1 + a*b)/b}}"
+    );
+  }
+
+  // Roots of monomials take their whole powers out, a negative radicand
+  // under a square root giving I.
+  #[test]
+  fn monomial_roots_split() {
+    assert_eq!(
+      interpret("Solve[x^2 + a^2 b == 0, x]").unwrap(),
+      "{{x -> -I*a*Sqrt[b]}, {x -> I*a*Sqrt[b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == a/b, x]").unwrap(),
+      "{{x -> -(Sqrt[a]/Sqrt[b])}, {x -> Sqrt[a]/Sqrt[b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 - a^4 == 0, x]").unwrap(),
+      "{{x -> -a}, {x -> -I*a}, {x -> I*a}, {x -> a}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == a^3 b, x]").unwrap(),
+      "{{x -> a*b^(1/3)}, {x -> -((-1)^(1/3)*a*b^(1/3))}, {x -> (-1)^(2/3)*a*b^(1/3)}}"
+    );
+  }
+
+  // The relation symbols of an Inequality are no unknowns.
+  #[test]
+  fn inequality_relations_are_not_variables() {
+    assert_eq!(
+      interpret(
+        "NSolve[{50.*Sin[x] == 48.31*Sin[0.08726646259971638 - 1.*x], Inequality[0, LessEqual, x, Less, Pi]}]"
+      )
+      .unwrap(),
+      "{{x -> 0.04288267713792277}}"
+    );
+  }
+}
+
+mod together_negated_and_shared_factors {
+  use super::*;
+
+  // A denominator factor that is another negated is the same factor, and a
+  // common polynomial factor in several variables cancels.
+  #[test]
+  fn combines_and_cancels() {
+    assert_eq!(
+      interpret("Together[a/(-1 + y) + 1/(1 - y)]").unwrap(),
+      "(-1 + a)/(-1 + y)"
+    );
+    assert_eq!(
+      interpret("Together[1/(1 - x)^2 + 1/(x - 1)]").unwrap(),
+      "x/(-1 + x)^2"
+    );
+    assert_eq!(
+      interpret("Together[1/(a - b) + 1/(b - a) + c]").unwrap(),
+      "c"
+    );
+    assert_eq!(
+      interpret("Together[x/(x^2 - y^2) - y/(x^2 - y^2)]").unwrap(),
+      "(x + y)^(-1)"
+    );
+  }
+}
+
+mod expand_keeps_symbolic_power_bases {
+  use super::*;
+
+  // A power with a non-integer exponent is not multiplied out.
+  #[test]
+  fn bases_stay() {
+    assert_eq!(
+      interpret("Expand[c + ((1 - p)/p)^n d]").unwrap(),
+      "c + d*((1 - p)/p)^n"
+    );
+    assert_eq!(interpret("Expand[(a (b + c))^n]").unwrap(), "(a*(b + c))^n");
+    assert_eq!(
+      interpret("Expand[Sqrt[a (b + c)]]").unwrap(),
+      "Sqrt[a*(b + c)]"
+    );
+  }
+}
+
+mod rsolve_symbolic_constant_coefficients {
+  use super::*;
+
+  // Roots in Roots' order, repeated roots times powers of n, and boundary
+  // values at a symbolic index.
+  #[test]
+  fn general_and_boundary_value_solutions() {
+    assert_eq!(
+      interpret("RSolve[p a[n + 2] - a[n + 1] + (1 - p) a[n] == 0, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> ((1 - p)/p)^n*C[1] + C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == (q + s) a[n + 1] - q s a[n], a[n], n]")
+        .unwrap(),
+      "{{a[n] -> s^n*C[1] + q^n*C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 2 c a[n + 1] - c^2 a[n], a[n], n]")
+        .unwrap(),
+      "{{a[n] -> c^n*C[1] + c^n*n*C[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[{f[0] == 0, f[n] == 1, f[k] == (1 - p) f[k - 1] + p f[k + 1]}, f[k], k]"
+      )
+      .unwrap(),
+      "{{f[k] -> (-1 + ((1 - p)/p)^k)/(-1 + ((1 - p)/p)^n)}}"
+    );
+  }
+
+  // A constant inhomogeneity: A n^m with m the multiplicity of the root 1.
+  #[test]
+  fn constant_inhomogeneity() {
+    assert_eq!(
+      interpret("RSolve[a[n + 1] == q a[n] + c, a[n], n]").unwrap(),
+      "{{a[n] -> (c*q^n*(1 - q^(-n)))/(-1 + q) + q^(-1 + n)*C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 3 a[n + 1] - 2 a[n] + c, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> -(c*n) + C[1] + 2^n*C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 2 a[n + 1] - a[n] + c, a[n], n]").unwrap(),
+      "{{a[n] -> (c*n^2)/2 + C[1] + n*C[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[a[n + 3] == 3 a[n + 2] - 3 a[n + 1] + a[n] + c, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> (c*n^3)/6 + C[1] + n*C[2] + n^2*C[3]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n + 2] == 2 a[n + 1] - a[n] + c, a[0] == 0, a[1] == 1}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> (2*n - c*n + c*n^2)/2}}"
+    );
+  }
+
+  // The combined boundary-value solution keeps its denominator factored.
+  #[test]
+  fn boundary_values_with_inhomogeneity() {
+    assert_eq!(
+      interpret(
+        "RSolve[{g[0] == 0, g[n] == 0, g[k] == (1 - p) (1 + g[k - 1]) + p (1 + g[k + 1])}, g[k], k]"
+      )
+      .unwrap(),
+      "{{g[k] -> -((-k + n - n*((1 - p)/p)^k + k*((1 - p)/p)^n)/((-1 + ((1 - p)/p)^n)*(-1 + 2*p)))}}"
+    );
+  }
+}
+
+mod solve_inequality_constraints {
+  use super::*;
+
+  // Inequality[…] (a mixed chained comparison) restricts the solutions.
+  #[test]
+  fn mixed_chained_comparison() {
+    assert_eq!(
+      interpret("Solve[{x^2 == 2, Inequality[0, Less, x, LessEqual, 3]}, x]")
+        .unwrap(),
+      "{{x -> Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == x && Inequality[-1, Less, x, LessEqual, 1], x]")
+        .unwrap(),
+      "{{x -> 0}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("NSolve[x^2 == 2 && Inequality[0, Less, x, LessEqual, 3], x]")
+        .unwrap(),
+      "{{x -> 1.4142135623730951}}"
+    );
+  }
+}

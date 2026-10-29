@@ -202,9 +202,9 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
   None
 }
 
-/// Whether the range `{min, max, step}` has a definite non-negative integer
-/// count `(max - min)/step`, so `Table` can iterate it symbolically even when
-/// the bounds themselves are symbolic (e.g. `{a, a + 5 n, n}` -> count 5).
+/// Whether the range `{min, max, step}` has a definite real count
+/// `(max - min)/step`, so `Table` can iterate it symbolically even when the
+/// bounds themselves are symbolic (e.g. `{a, a + 5 n, n}` -> count 5).
 fn symbolic_count_definite(
   min: &Expr,
   max: &Expr,
@@ -225,7 +225,9 @@ fn symbolic_count_definite(
   else {
     return false;
   };
-  matches!(ratio, Expr::Integer(n) if n >= 0)
+  // Any real count runs Floor[count] + 1 times (none when negative), as for
+  // numeric bounds: `{θ, Pi + s, 3.4557 + s, Pi/50}` has the count 5.
+  crate::functions::math_ast::try_eval_to_f64(&ratio).is_some()
 }
 
 /// Whether `expr` references any identifier named in `vars`, looking through
@@ -494,13 +496,11 @@ fn table_over_iterator(
       return Ok(Expr::List(results.into()));
     }
 
-    // Symbolic path: if (max - min) / step simplifies to a non-negative
-    // EXACT integer count, iterate symbolically as min, min+step, …,
-    // min+n*step. Handles cases like Table[x, {x, a, a+5n, n}] where the
-    // bounds are symbolic but the iteration count is well-defined.
-    // Accept only Expr::Integer so Real arithmetic (e.g. 10/0.2 → 50.)
-    // keeps using the existing f64 accumulation path, preserving
-    // snapshot-sensitive rounding behavior.
+    // Symbolic path: if (max - min) / step simplifies to a real count,
+    // iterate symbolically as min, min+step, …, min+n*step with
+    // n = Floor[count] (no values when negative). Handles cases like
+    // Table[x, {x, a, a+5n, n}] and {θ, Pi + s, 3.4557 + s, Pi/50} where
+    // the bounds are symbolic but the iteration count is well-defined.
     let diff = crate::evaluator::evaluate_function_call_ast(
       "Subtract",
       &[max_expr.clone(), min_expr.clone()],
@@ -509,12 +509,31 @@ fn table_over_iterator(
       "Divide",
       &[diff, step_expr.clone()],
     )?;
-    if let Expr::Integer(n) = ratio
+    let count = match &ratio {
+      Expr::Integer(n) => Some(*n),
+      other => crate::functions::math_ast::try_eval_to_f64(other)
+        .filter(|f| f.is_finite())
+        .map(range_step_count),
+    };
+    // Numeric bounds keep the machine-real path below.
+    let numeric =
+      |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e).is_some();
+    let count = count.filter(|_| {
+      matches!(ratio, Expr::Integer(_))
+        || !(numeric(&min_expr) && numeric(&max_expr))
+    });
+    if let Some(n) = count
+      && n < 0
+    {
+      return Ok(Expr::List(vec![].into()));
+    }
+    if let Some(n) = count
       && (0..=1_000_000).contains(&n)
     {
       let mut results = Vec::with_capacity((n + 1) as usize);
       for k in 0..=n {
-        let current = if k == 0 {
+        // A machine-real step makes even the first value min + 0.0 a real.
+        let current = if k == 0 && !matches!(step_expr, Expr::Real(_)) {
           min_expr.clone()
         } else {
           let k_step = crate::evaluator::evaluate_function_call_ast(
@@ -628,11 +647,24 @@ use crate::functions::math_ast::expr_to_rational;
 /// time (rather than adding `step` to the previous value) keeps machine-real
 /// steps free of accumulated rounding: `Table[t, {t, 0, 20, 0.1}]` ends
 /// exactly at `20.`, as `Range` does, not at `20.000000000000014`.
-fn nth_iterator_value(
+pub(crate) fn nth_iterator_value(
   min_expr: &Expr,
   step_expr: &Expr,
   k: usize,
 ) -> Result<Expr, InterpreterError> {
+  // Machine reals: one fused multiply-add, as Wolfram computes it
+  // (`{c, 0.1, 3.1, 0.1}` reaches 1.8, not 1.8000000000000003), an exact
+  // rational bound or step numericized first.
+  let machine = super::utilities::numeric_expr_to_f64;
+  if (matches!(min_expr, Expr::Real(_)) || matches!(step_expr, Expr::Real(_)))
+    && let (Some(min), Some(step)) = (machine(min_expr), machine(step_expr))
+  {
+    return Ok(Expr::Real((k as f64).mul_add(step, min)));
+  }
+  // The start itself (an infinite step would make it 0*Infinity).
+  if k == 0 {
+    return crate::evaluator::evaluate_expr_to_expr(min_expr);
+  }
   crate::evaluator::evaluate_expr_to_expr(&plus(vec![
     min_expr.clone(),
     crate::evaluator::evaluate_function_call_ast(

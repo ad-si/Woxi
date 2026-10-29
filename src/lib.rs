@@ -2099,6 +2099,42 @@ pub fn packages_list() -> Vec<String> {
   out
 }
 
+/// The `MEMO_VALUES` key under which `args` are stored in `cache`: their
+/// joined spelling, or — for arguments holding machine reals — the key of an
+/// entry whose arguments are `SameQ` to them, since `SameQ` lets machine
+/// reals differ in their last bits (`f[0.30000000000000004] = 1; f[0.3]`).
+pub fn memo_key(
+  cache: &HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>,
+  args: &[syntax::Expr],
+) -> String {
+  fn has_real(e: &syntax::Expr) -> bool {
+    matches!(e, syntax::Expr::Real(_))
+      || syntax::expr_children(e).into_iter().any(has_real)
+  }
+  let key = args
+    .iter()
+    .map(syntax::expr_to_string)
+    .collect::<Vec<_>>()
+    .join("\u{1}");
+  if cache.contains_key(&key) || !args.iter().any(has_real) {
+    return key;
+  }
+  let same = |a: &syntax::Expr, b: &syntax::Expr| {
+    matches!(
+      functions::boolean_ast::same_q_ast(&[a.clone(), b.clone()]),
+      Ok(syntax::Expr::Identifier(ref t)) if t == "True"
+    )
+  };
+  cache
+    .iter()
+    .find(|(_, (stored, _))| {
+      stored.len() == args.len()
+        && stored.iter().zip(args).all(|(s, a)| same(s, a))
+    })
+    .map(|(k, _)| k.clone())
+    .unwrap_or(key)
+}
+
 /// DownValues for `sym` as stored 6-tuples, merging the literal-argument
 /// memoizations (kept in MEMO_VALUES, not FUNC_DEFS) back in as if they were
 /// ordinary literal DownValues — synthesizing the same shape `set_ast` would

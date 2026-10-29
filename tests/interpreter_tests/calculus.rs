@@ -7605,6 +7605,58 @@ mod dt {
 mod minimize {
   use super::*;
 
+  // A coupled convex quadratic is minimized at the joint critical point;
+  // Sqrt of it at the same point.
+  #[test]
+  fn coupled_convex_quadratic() {
+    assert_eq!(
+      interpret("Minimize[(x - 1)^2 + (y - 2)^2 + (x + y + 2)^2, {x, y}]")
+        .unwrap(),
+      "{25/3, {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(
+      interpret(
+        "Minimize[Sqrt[(x - 1)^2 + (y - 2)^2 + (x + y + 2)^2], {x, y}]"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(
+      interpret("Maximize[-(x - 1)^2 - (y - 2)^2 - (x + y + 2)^2 + 1, {x, y}]")
+        .unwrap(),
+      "{-22/3, {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(interpret("MinValue[(x y - 3)^2 + 1, {x, y}]").unwrap(), "1");
+  }
+
+  // Equation constraints are eliminated; even powers of Abs of a real
+  // expression drop the Abs (EuclideanDistance).
+  #[test]
+  fn equation_constraints_eliminated() {
+    assert_eq!(
+      interpret(
+        "Minimize[{x^2 + y^2 + z^2, x + y == 1, y + z == 2}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{2, {x -> 0, y -> 1, z -> 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Minimize[{EuclideanDistance[{x, y, z}, {1, 2, 3}], {1, x, y, z} . {-1, 1, 1, 1} == 0}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], {x -> -2/3, y -> 1/3, z -> 4/3}}"
+    );
+    assert_eq!(
+      interpret("Minimize[Abs[x - 1]^2 + 3, x]").unwrap(),
+      "{3, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Maximize[{x y, x + y == 1}, {x, y}]").unwrap(),
+      "{1/4, {x -> 1/2, y -> 1/2}}"
+    );
+  }
+
   // --- Unconstrained single-variable ---
 
   #[test]
@@ -22813,6 +22865,44 @@ mod interpolation_spline_method {
 
 mod ndsolve_state_events {
   use super::*;
+  // A `DiracDelta[a t + b]` term is an impulse: the next-lower derivative
+  // jumps by the coefficient over |a| where the root lies strictly inside
+  // the domain; roots on its ends are ignored.
+  #[test]
+  fn dirac_delta_impulses() {
+    assert_eq!(
+      interpret(
+        "f[eq_, r_] := NDSolve[{eq, z[r[[1]]] == 0}, z, {t, r[[1]], r[[2]]}][[1, 1, 2]][r[[2]]]; \
+         Round[{f[z'[t] == DiracDelta[t - 1], {-1, 2}], f[z'[t] == DiracDelta[2 t - 2], {0, 2}], \
+         f[z'[t] == DiracDelta[1 - t], {0, 2}], f[z'[t] == DiracDelta[t - 2], {0, 2}], \
+         f[z'[t] == DiracDelta[t], {0, 2}], f[z'[t] == 3 DiracDelta[t - 1] Sin[t], {0, 2}], \
+         f[2 z'[t] + DiracDelta[t - 1] == 0, {0, 2}]}, 10.^-6]"
+      )
+      .unwrap(),
+      "{1., 0.5, 1., 0., 0., 2.524413, -0.5}"
+    );
+    // The jump reads the state just before the impulse; a second-order
+    // equation jumps in its first derivative.
+    assert_eq!(
+      interpret(
+        "{NDSolve[{z'[t] == DiracDelta[t - 1] z[t], z[0] == 1}, z, {t, 0, 2}][[1, 1, 2]][{0.5, 1.5}], \
+         NDSolve[{z''[t] == DiracDelta[t - 1], z[0] == 0, z'[0] == 0}, z, {t, 0, 2}][[1, 1, 2]][{0.5, 1.5}]}"
+      )
+      .unwrap(),
+      "{{1., 2.}, {0., 0.5}}"
+    );
+    // Impulses in a system at one time all read the state before it.
+    // wolframscript: {225.37641106153808, 538.8304282696442}
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -DiracDelta[t - 1] y[t] - 0.01 t (x[t] - y[t]/5), \
+         y'[t] == DiracDelta[t - 1] x[t] + 0.01 t (x[t] - y[t]/5), x[0] == 325, \
+         y[0] == 1}, {x, y}, {t, 0, 35}]; Round[{x[10], y[35]} /. First[s], 0.001]"
+      )
+      .unwrap(),
+      "{225.376, 538.83}"
+    );
+  }
 
   // An event on the highest derivative reads it from an equation that
   // holds it only implicitly. wolframscript: {3.3867047933779557,
@@ -24326,6 +24416,40 @@ mod series_by_parts_and_empty_series {
       .unwrap(),
       "{5/Sqrt[3], Sqrt[3]*x + y/Sqrt[3], 3/2^(2/3), (4*a)/3^(2/3), (179*I)/196/Sqrt[3], \
        2/Sqrt[3] + Sqrt[3]}"
+    );
+  }
+}
+
+mod dsolve_single_variable_pde {
+  use super::*;
+
+  // Differentiated in one variable only, a PDE is an ODE in it: the
+  // constants become functions of the other variables.
+  #[test]
+  fn reduces_to_an_ode() {
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], x] == x y, u, {x, y}]").unwrap(),
+      "{{u -> Function[{x, y}, (x^2*y)/2 + C[1][y]]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], x, x] == y, u[x, y], {x, y}]").unwrap(),
+      "{{u[x, y] -> (x^2*y)/2 + C[1][y] + x*C[2][y]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[D[u[x, y], y] == Sin[x], u[x, y], {x, y}]").unwrap(),
+      "{{u[x, y] -> y*Sin[x] + C[1][x]}}"
+    );
+  }
+
+  // Variables may come with their ranges, one argument each.
+  #[test]
+  fn variables_with_ranges() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[{x y == -D[pot[x, y], x]}, pot, {x, -20, 20}, {y, -3, 3}]"
+      )
+      .unwrap(),
+      "Function[{x, y}, -1/2*(x^2*y) + C[1][y]]"
     );
   }
 }

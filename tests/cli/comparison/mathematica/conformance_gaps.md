@@ -1534,6 +1534,24 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### `Together` does not pull a sign out of a numerator led by a negative kernel
+
+```sh
+wolframscript -code 'ToString[{Together[(-a^n + b)/z], Together[(-E^a + b)/z], Together[(-a + b)/z], Together[(-a^n + b)/2]}, InputForm]'
+# {-((a^n - b)/z), -((-b + E^a)/z), (-a + b)/z, (-a^n + b)/2}
+woxi eval '{Together[(-a^n + b)/z], Together[(-E^a + b)/z], Together[(-a + b)/z], Together[(-a^n + b)/2]}'
+# {(-a^n + b)/z, (-E^a + b)/z, (-a + b)/z, (-a^n + b)/2}
+```
+
+With a non-numeric denominator, wolframscript makes the coefficient of the
+numerator's leading transcendental kernel (`a^n`, `E^a`; not an algebraic
+`Sqrt[a]`) positive and puts the `-1` outside; plain polynomial numerators
+and purely numeric denominators are left alone. `(a^n - b^n)/z` stays put
+while `(-a^n + b^n)/z` flips, so the first kernel in canonical order leads.
+This is what makes `RSolve[{a[n+2] == q a[n+1] + s a[n], a[0] == 0,
+a[1] == 1}, a[n], n]` come out as `(-(q - S)^n + (q + S)^n)/(2^n*S)`
+instead of `-(((q - S)^n - (q + S)^n)/(2^n*S))`.
+
 ### A quotient with a symbolic negative exponent is split, not held
 
 ```sh
@@ -2280,6 +2298,13 @@ resolves at raised internal precision; f64 Durand–Kerner cannot.
 
 `Minimize[1/(1+x^2), x]` returns a bogus large-x numeric instead of WL's
 `natt` message and 0.
+
+Unbounded non-convex polynomials go the same way: `Minimize[x^2 - y^2,
+{x, y}]` reports the saddle `{0, {x -> 0, y -> 0}}` where WL says
+`-Infinity`. And where the minimum is attained along a whole curve
+(`Minimize[(x y - 3)^2 + 1, {x, y}]`), the value matches but Woxi reports
+the point with the free variable at 1 (`{x -> 1, y -> 3}`), WL
+`{x -> -1, y -> -3}`.
 
 ### Symbolic `Fit` and `LinearModelFit`
 
@@ -4898,6 +4923,24 @@ is `{4}` where `{2}` and `{3}` are equally small. **Not reproducible.**
 choice among ties follows its `LinearProgramming` simplex/branch-and-bound.
 Reverse-index DFS fits some probes and max-count others, and the two
 contradict.
+
+### `FindHamiltonianCycle[g, k]` enumeration order
+
+```sh
+wolframscript -code 'FindHamiltonianCycle[Graph[{1<->2,2<->3,3<->4,4<->1,1<->3,2<->4}], All]'
+# {{1<->3, 3<->2, 2<->4, 4<->1}, {1<->2, 2<->3, 3<->4, 4<->1}, {1<->2, 2<->4, 4<->3, 3<->1}}
+woxi eval 'FindHamiltonianCycle[Graph[{1<->2,2<->3,3<->4,4<->1,1<->3,2<->4}], All]'
+# {{1<->2, 2<->3, 3<->4, 4<->1}, {1<->2, 2<->4, 4<->3, 3<->1}, {1<->3, 3<->2, 2<->4, 4<->1}}
+```
+
+The set of cycles, their orientation and their count match (12 for
+`CompleteGraph[5]`, 60 for `CompleteGraph[6]`), and `k = 1` is the
+single-argument cycle on both sides; Woxi lists them in lexicographic DFS
+order. WL's order is not lexicographic in any reading tried: on
+`CompleteGraph[5]` it groups by last vertex descending (5, 4, 3), then by
+second vertex descending, but the third vertex ascends in some groups and
+descends in others. With `k` below the total, Woxi's first `k` are therefore
+a different subset.
 
 ### Vertex order within a component
 

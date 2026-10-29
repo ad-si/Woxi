@@ -28996,9 +28996,25 @@ fn collect_body_locator_pane_vars(
 /// its argument, so the call inside is evaluated here (under the caller's
 /// scoped bindings) and the result searched like a body. Same result shape
 /// as [`collect_body_locator_pane_vars`].
+///
+/// Only a `Dynamic` that calls such a helper (or wraps a `LocatorPane`) is
+/// evaluated: a caption like `Dynamic[Last[minmax]]` is not run before the
+/// body has set `minmax`.
 fn collect_display_locator_pane_vars(
   expr: &Expr,
 ) -> Vec<(String, Option<Expr>, Expr)> {
+  fn may_yield_locator_pane(expr: &Expr) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        name == "LocatorPane"
+          || !crate::evaluator::functions::is_builtin_symbol(name)
+          || args.iter().any(may_yield_locator_pane)
+      }
+      Expr::List(items) => items.iter().any(may_yield_locator_pane),
+      Expr::CompoundExpr(items) => items.iter().any(may_yield_locator_pane),
+      _ => false,
+    }
+  }
   fn walk(expr: &Expr, found: &mut Vec<(String, Option<Expr>, Expr)>) {
     match expr {
       Expr::FunctionCall { name, args } => {
@@ -29006,6 +29022,7 @@ fn collect_display_locator_pane_vars(
           && let Some(inner @ Expr::FunctionCall { name: head, .. }) =
             args.first()
           && head != "LocatorPane"
+          && may_yield_locator_pane(inner)
           && let Ok(evaluated) = evaluate_expr_to_expr(inner)
         {
           for item in collect_body_locator_pane_vars(&evaluated) {
@@ -32709,6 +32726,28 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       runs
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `StringForm["template", args…]` — a control's choice label such as
+      // `5 -> StringForm["1``", Style[1/2, Tiny]]` shows the template with
+      // each slot filled by its argument's label text, not the call's source.
+      "StringForm" if matches!(args.first(), Some(Expr::String(_))) => {
+        let Some(Expr::String(template)) = args.first() else {
+          unreachable!()
+        };
+        let text = crate::functions::string_ast::format_string_form_with(
+          template,
+          &args[1..],
+          |a| flatten_label_runs(&manipulate_label_runs(a, italic)),
+        );
+        if text.is_empty() {
+          vec![]
+        } else {
+          vec![LabelRun {
+            text,
+            italic,
+            ..Default::default()
+          }]
+        }
+      }
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
       // any bold/color directive to the runs it produces. A nested `Style`
@@ -36826,7 +36865,18 @@ fn display_expr_to_node(
             .map(|row| match row {
               Expr::List(cs) => cs
                 .iter()
-                .map(|c| display_expr_to_node(c, bindings, probes, ons))
+                .map(|c| {
+                  // A span marker only continues its neighbour's cell: it
+                  // draws nothing, not its own name.
+                  if is_span_marker(c) {
+                    DisplayNode::Static {
+                      svg: None,
+                      text: String::new(),
+                    }
+                  } else {
+                    display_expr_to_node(c, bindings, probes, ons)
+                  }
+                })
                 .collect(),
               other => {
                 vec![display_expr_to_node(other, bindings, probes, ons)]

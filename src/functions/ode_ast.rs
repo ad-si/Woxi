@@ -53,6 +53,9 @@ pub fn dsolve_ast_with_head(
     }
     _ => args,
   };
+  if let Some(result) = dsolve_single_variable_pde(solved_args)? {
+    return Ok(result);
+  }
   let result = match dsolve_ast_inner(solved_args) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.starts_with("DSolve:") =>
@@ -66,6 +69,180 @@ pub fn dsolve_ast_with_head(
     other => other,
   };
   result.map(|expr| retag_unevaluated(expr, "DSolve", head))
+}
+
+/// A PDE in which the unknown is differentiated with respect to one variable
+/// only is an ODE in that variable with the others as parameters:
+/// `D[u[x, y], x] == x y` gives `u -> x^2 y/2 + C[1][y]`, every constant of
+/// integration becoming a function of the other variables. `None` when the
+/// equations are not of that shape (or carry conditions).
+fn dsolve_single_variable_pde(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let [eqns, target, Expr::List(vars)] = args else {
+    return Ok(None);
+  };
+  if vars.len() < 2 || !vars.iter().all(|v| matches!(v, Expr::Identifier(_))) {
+    return Ok(None);
+  }
+  let (fname, as_function) = match target {
+    Expr::Identifier(f) => (f.clone(), true),
+    Expr::FunctionCall { name, args: targs }
+      if targs.len() == vars.len()
+        && targs.iter().zip(vars.iter()).all(|(a, v)| {
+          matches!((a, v), (Expr::Identifier(a), Expr::Identifier(v)) if a == v)
+        }) =>
+    {
+      (name.clone(), false)
+    }
+    _ => return Ok(None),
+  };
+  let same_args = |a: &[Expr]| {
+    a.len() == vars.len()
+      && a.iter().zip(vars.iter()).all(|(x, v)| {
+        matches!((x, v), (Expr::Identifier(x), Expr::Identifier(v)) if x == v)
+      })
+  };
+  // Every occurrence is `u[vars…]` or `Derivative[…][u][vars…]` with one
+  // common differentiated position.
+  fn scan(
+    e: &Expr,
+    fname: &str,
+    same_args: &dyn Fn(&[Expr]) -> bool,
+    axis: &mut Option<usize>,
+  ) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if name == fname => same_args(args),
+      Expr::CurriedCall { func, args } => {
+        if let Expr::CurriedCall {
+          func: d,
+          args: inner,
+        } = func.as_ref()
+          && matches!(inner.as_slice(), [Expr::Identifier(n)] if n == fname)
+          && let Expr::FunctionCall { name, args: orders } = d.as_ref()
+          && name == "Derivative"
+        {
+          if !same_args(args) {
+            return false;
+          }
+          let nonzero: Vec<usize> = orders
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| !matches!(o, Expr::Integer(0)))
+            .map(|(i, _)| i)
+            .collect();
+          if nonzero.len() != 1
+            || !matches!(orders[nonzero[0]], Expr::Integer(_))
+          {
+            return false;
+          }
+          match axis {
+            Some(a) if *a != nonzero[0] => return false,
+            _ => *axis = Some(nonzero[0]),
+          }
+          return true;
+        }
+        scan(func, fname, same_args, axis)
+          && args.iter().all(|a| scan(a, fname, same_args, axis))
+      }
+      Expr::Identifier(n) if n == fname => false,
+      other => expr_children(other)
+        .into_iter()
+        .all(|c| scan(c, fname, same_args, axis)),
+    }
+  }
+  let mut axis = None;
+  if !scan(eqns, &fname, &same_args, &mut axis) {
+    return Ok(None);
+  }
+  let Some(axis) = axis else {
+    return Ok(None);
+  };
+  let x = vars[axis].clone();
+  let g = format!("{fname}$pde");
+  // u[vars…] → g[x] and Derivative[…, n, …][u][vars…] → Derivative[n][g][x].
+  fn reduce(e: &Expr, fname: &str, g: &str, axis: usize, x: &Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, .. } if name == fname => {
+        call(g, vec![x.clone()])
+      }
+      Expr::CurriedCall { func, .. }
+        if matches!(func.as_ref(), Expr::CurriedCall { args: inner, .. }
+          if matches!(inner.as_slice(), [Expr::Identifier(n)] if n == fname)) =>
+      {
+        let Expr::CurriedCall { func: d, .. } = func.as_ref() else {
+          unreachable!()
+        };
+        let Expr::FunctionCall { args: orders, .. } = d.as_ref() else {
+          unreachable!()
+        };
+        Expr::CurriedCall {
+          func: Box::new(Expr::CurriedCall {
+            func: Box::new(call("Derivative", vec![orders[axis].clone()])),
+            args: vec![Expr::Identifier(g.to_string())],
+          }),
+          args: vec![x.clone()],
+        }
+      }
+      other => map_children(other, &|c| reduce(c, fname, g, axis, x)),
+    }
+  }
+  let reduced = reduce(eqns, &fname, &g, axis, &x);
+  let solved = dsolve_ast(&[reduced, call(&g, vec![x.clone()]), x.clone()])?;
+  let Expr::List(solutions) = &solved else {
+    return Ok(None);
+  };
+  let others: Vec<Expr> = vars
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != axis)
+    .map(|(_, v)| v.clone())
+    .collect();
+  // C[k] → C[k][other variables].
+  fn lift_constants(e: &Expr, others: &[Expr]) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "C"
+          && args.len() == 1
+          && matches!(args[0], Expr::Integer(_)) =>
+      {
+        Expr::CurriedCall {
+          func: Box::new(e.clone()),
+          args: others.to_vec(),
+        }
+      }
+      other => map_children(other, &|c| lift_constants(c, others)),
+    }
+  }
+  let mut out = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return Ok(None);
+    };
+    let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+      return Ok(None);
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(&lift_constants(
+      replacement,
+      &others,
+    ))?;
+    let rule = if as_function {
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(fname.clone())),
+        replacement: Box::new(call(
+          "Function",
+          vec![Expr::List(vars.clone()), value],
+        )),
+      }
+    } else {
+      Expr::Rule {
+        pattern: Box::new(target.clone()),
+        replacement: Box::new(value),
+      }
+    };
+    out.push(Expr::List(vec![rule].into()));
+  }
+  Ok(Some(Expr::List(out.into())))
 }
 
 /// Rewrite the head of an unevaluated `solver[args…]` result, leaving genuine
@@ -840,6 +1017,9 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
+  }
+  if let Some(rewritten) = dirac_delta_events(args)? {
+    return ndsolve_ast_inner(&rewritten);
   }
   if let Some(result) = ndsolve_vector_unknowns(args, n_pos)? {
     return Ok(result);
@@ -4464,6 +4644,216 @@ fn derivative_dep_item(
 /// initial conditions are often grouped into their own sublist —
 /// `{ode, {ic1, ic2}}` — and that grouping can nest arbitrarily deep, so
 /// each level is flattened, not just the outermost.
+/// `DiracDelta[a t + b]` terms in an ODE are impulses: wolframscript drops
+/// them from the equation and, where the root `r = -b/a` lies strictly inside
+/// the domain, makes the next-lower derivative of the equation's unknown
+/// jump by the term's coefficient (taken at `t = r`, from the state just
+/// before) over `|a|` times the top derivative's coefficient. The impulses
+/// become `WhenEvent[t == r, …]` resets, one per root; a root on either end
+/// of the domain is ignored. Returns None when no equation has an impulse
+/// this covers.
+fn dirac_delta_events(
+  args: &[Expr],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  if !mentions_head(&args[0], "DiracDelta") {
+    return Ok(None);
+  }
+  let Expr::List(domain) = &args[2] else {
+    return Ok(None);
+  };
+  let [Expr::Identifier(t), lo, hi] = domain.as_slice() else {
+    return Ok(None);
+  };
+  let (Some(lo), Some(hi)) = (nval_to_f64(lo), nval_to_f64(hi)) else {
+    return Ok(None);
+  };
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let unknowns: Vec<String> = match &args[1] {
+    Expr::List(items) => items.iter().collect::<Vec<_>>(),
+    other => vec![other],
+  }
+  .into_iter()
+  .filter_map(|u| match u {
+    Expr::Identifier(n) => Some(n.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    _ => None,
+  })
+  .collect();
+  fn deltas(expr: &Expr, out: &mut Vec<Expr>) {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "DiracDelta"
+      && args.len() == 1
+    {
+      if !out.iter().any(|d| exprs_match(d, expr)) {
+        out.push(expr.clone());
+      }
+      return;
+    }
+    for c in expr_children(expr) {
+      deltas(c, out);
+    }
+  }
+  let mut equations = Vec::new();
+  flatten_eq_list(&args[0], &mut equations);
+  // (root, jumping derivative, increment) per impulse.
+  let mut jumps: Vec<(f64, Expr, Expr)> = Vec::new();
+  let mut rewritten = Vec::with_capacity(equations.len());
+  for eq in &equations {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      rewritten.push(eq.clone());
+      continue;
+    };
+    let mut found = Vec::new();
+    deltas(eq, &mut found);
+    if found.is_empty() {
+      rewritten.push(eq.clone());
+      continue;
+    }
+    if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+      return Ok(None);
+    }
+    // The single unknown the equation differentiates, at its top order.
+    let ordered: Vec<(&String, usize)> = unknowns
+      .iter()
+      .map(|f| (f, max_derivative_order(eq, f)))
+      .filter(|(_, k)| *k > 0)
+      .collect();
+    let [(f, k)] = ordered.as_slice() else {
+      return Ok(None);
+    };
+    let derivative = |order: usize| -> Result<Expr, InterpreterError> {
+      if order == 0 {
+        Ok(Expr::FunctionCall {
+          name: (*f).clone(),
+          args: vec![Expr::Identifier(t.clone())].into(),
+        })
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&crate::syntax::string_to_expr(
+          &format!("Derivative[{order}][{f}][{t}]"),
+        )?)
+      }
+    };
+    let residual = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }],
+    )?;
+    let top = crate::evaluator::evaluate_function_call_ast(
+      "Coefficient",
+      &[residual.clone(), derivative(*k)?],
+    )?;
+    if matches!(top, Expr::Integer(0)) {
+      return Ok(None);
+    }
+    for delta in &found {
+      let Expr::FunctionCall { args: dargs, .. } = delta else {
+        unreachable!()
+      };
+      // A linear argument a t + b.
+      let slope = crate::evaluator::evaluate_function_call_ast(
+        "D",
+        &[dargs[0].clone(), Expr::Identifier(t.clone())],
+      )?;
+      let Some(a) = nval_to_f64(&slope) else {
+        return Ok(None);
+      };
+      let Some(b) = nval_to_f64(&crate::syntax::substitute_variable(
+        &dargs[0],
+        t,
+        &Expr::Integer(0),
+      )) else {
+        return Ok(None);
+      };
+      if a == 0.0 {
+        return Ok(None);
+      }
+      let root = -b / a;
+      if !(root > lo && root < hi) {
+        continue;
+      }
+      let coefficient = crate::evaluator::evaluate_function_call_ast(
+        "Coefficient",
+        &[residual.clone(), delta.clone()],
+      )?;
+      if mentions_head(&coefficient, "DiracDelta") {
+        return Ok(None);
+      }
+      // `t` takes the root's value, the unknowns' `f[t]` state stays.
+      let keep_state: Vec<String> = unknowns
+        .iter()
+        .map(|u| format!("{u}[{t}] | Derivative[_][{u}][{t}]"))
+        .collect();
+      let at_root = crate::evaluator::evaluate_function_call_ast(
+        "ReplaceAll",
+        &[
+          coefficient,
+          crate::syntax::string_to_expr(&format!(
+            "{{state$ : ({}) :> state$, {t} -> {root:?}}}",
+            keep_state.join(" | ")
+          ))?,
+        ],
+      )?;
+      let increment = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Real(-1.0 / a.abs()),
+          at_root,
+          crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[top.clone(), Expr::Integer(-1)],
+          )?,
+        ],
+      )?;
+      jumps.push((root, derivative(k - 1)?, increment));
+    }
+    let zeroed = crate::evaluator::evaluate_function_call_ast(
+      "ReplaceAll",
+      &[
+        eq.clone(),
+        crate::syntax::string_to_expr("_DiracDelta -> 0")?,
+      ],
+    )?;
+    rewritten.push(zeroed);
+  }
+  let mut roots: Vec<f64> = jumps.iter().map(|(r, _, _)| *r).collect();
+  roots.sort_by(f64::total_cmp);
+  roots.dedup();
+  for root in roots {
+    let rules: Vec<Expr> = jumps
+      .iter()
+      .filter(|(r, _, _)| *r == root)
+      .map(|(_, target, increment)| Expr::Rule {
+        pattern: Box::new(target.clone()),
+        replacement: Box::new(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![target.clone(), increment.clone()].into(),
+        }),
+      })
+      .collect();
+    rewritten.push(Expr::FunctionCall {
+      name: "WhenEvent".to_string(),
+      args: vec![
+        Expr::Comparison {
+          operands: vec![Expr::Identifier(t.clone()), Expr::Real(root)],
+          operators: vec![ComparisonOp::Equal],
+        },
+        Expr::List(rules.into()),
+      ]
+      .into(),
+    });
+  }
+  let mut out = args.to_vec();
+  out[0] = Expr::List(rewritten.into());
+  Ok(Some(out))
+}
+
 fn flatten_eq_list(expr: &Expr, out: &mut Vec<Expr>) {
   match expr {
     Expr::List(items) => {
@@ -12054,8 +12444,42 @@ fn evaluate_grid_interpolating_function(
     }
   }
 
+  // Only the cells of the interpolation window take part: reading the whole
+  // grid into machine numbers on every call made each evaluation cost as
+  // much as the grid is large. A window spanning its whole sub-axis is the
+  // one the full grid would pick, so the value is unchanged.
+  let sub_axes: Vec<Vec<f64>> = axes
+    .iter()
+    .zip(&windows)
+    .map(|(axis, &(start, end))| axis[start..end].to_vec())
+    .collect();
+  fn slice_values(e: &Expr, windows: &[(usize, usize)]) -> Option<Expr> {
+    let Some((&(start, end), rest)) = windows.split_first() else {
+      return Some(e.clone());
+    };
+    let Expr::List(items) = e else { return None };
+    if end > items.len() {
+      return None;
+    }
+    Some(Expr::List(
+      (start..end)
+        .map(|i| slice_values(&items[i], rest))
+        .collect::<Option<Vec<_>>>()?
+        .into(),
+    ))
+  }
+  let derivative_free = derivative.iter().all(|&d| d == 0);
+  let window_values = if derivative_free {
+    slice_values(values, &windows)
+  } else {
+    None
+  };
+  let (grid_axes, grid_values) = match &window_values {
+    Some(v) => (sub_axes, v),
+    None => (axes, values),
+  };
   let grid = NumericGrid::new(
-    axes,
+    grid_axes,
     orders
       .iter()
       .map(|o| match o {
@@ -12064,7 +12488,7 @@ fn evaluate_grid_interpolating_function(
       })
       .collect(),
     derivative.to_vec(),
-    values,
+    grid_values,
   )
   .ok_or_else(|| {
     InterpreterError::EvaluationError(

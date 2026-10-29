@@ -537,6 +537,24 @@ mod table_with_step {
       "{a, a + n, a + 2*n, a + 3*n, a + 4*n, a + 5*n}"
     );
   }
+
+  #[test]
+  fn table_symbolic_bounds_with_real_count() {
+    // A symbolic range whose count (max - min)/step is any real number runs
+    // Floor[count] + 1 times, and not at all when the count is negative.
+    assert_eq!(
+      interpret("Table[t, {t, Pi + s, 3.4557519189487724 + s, Pi/50}]")
+        .unwrap(),
+      "{Pi + s, (51*Pi)/50 + s, (26*Pi)/25 + s, (53*Pi)/50 + s, (27*Pi)/25 + s, (11*Pi)/10 + s}"
+    );
+    assert_eq!(
+      interpret(
+        "{Table[t, {t, a, a + 2.5}], Table[t, {t, a, a - 2.5, -1}], Table[t, {t, a + 1, a}]}"
+      )
+      .unwrap(),
+      "{{a, 1 + a, 2 + a}, {a, -1 + a, -2 + a}, {}}"
+    );
+  }
 }
 
 mod union_sorting {
@@ -24771,6 +24789,43 @@ mod list_valued_bare_iterator {
 
 mod machine_real_iterators {
   use super::*;
+
+  // min + k*step is one fused multiply-add: {c, 0.1, 3.1, 0.1} reaches
+  // 1.8 and 1.3 exactly, in Table, Do and Range alike.
+  #[test]
+  fn fused_multiply_add_values() {
+    assert_eq!(
+      interpret(
+        "InputForm[{Table[c, {c, 0.1, 3.1, 0.1}][[{6, 13, 18, 25}]], \
+         Range[0.1, 3.1, 0.1][[{6, 13, 18, 25}]], \
+         Reap[Do[Sow[c], {c, 0.1, 3.1, 0.1}]][[2, 1, {6, 13, 18, 25}]], \
+         Table[c, {c, 0.1, 1, 1/10}][[{6, 7, 8}]]}]"
+      )
+      .unwrap(),
+      "InputForm[{{0.6000000000000001, 1.3, 1.8, 2.5}, {0.6000000000000001, 1.3, 1.8, 2.5}, \
+       {0.6000000000000001, 1.3, 1.8, 2.5}, {0.6000000000000001, 0.7000000000000001, 0.8}}]"
+    );
+  }
+
+  // Definitions for machine-real arguments match SameQ arguments, which may
+  // differ in their last bits; a later one replaces an earlier one.
+  #[test]
+  fn real_argument_definitions_match_same_q() {
+    assert_eq!(
+      interpret(
+        "Do[memoReal[c] = c, {c, 0.1, 3.1, 0.1}]; {memoReal[1.8], memoReal[0.3], memoReal[2.9]}"
+      )
+      .unwrap(),
+      "{1.8, 0.30000000000000004, 2.9000000000000004}"
+    );
+    assert_eq!(
+      interpret(
+        "memoReal2[0.3] = 1; memoReal2[0.30000000000000004] = 2; {memoReal2[0.3], DownValues[memoReal2]}"
+      )
+      .unwrap(),
+      "{2, {HoldPattern[memoReal2[0.30000000000000004]] :> 2}}"
+    );
+  }
 
   // Iterator values are min + k*step: machine reals as soon as min or step
   // is one (values from wolframscript).

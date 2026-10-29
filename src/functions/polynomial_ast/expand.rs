@@ -820,6 +820,13 @@ pub fn expand_expr(expr: &Expr) -> Expr {
       }
     }
 
+    // A power with a non-integer exponent is no product to multiply out:
+    // its base stays as written (`((1 - p)/p)^n`, `Sqrt[a (b + c)]`).
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } if !matches!(right.as_ref(), Expr::Integer(_)) => expr.clone(),
     Expr::BinaryOp { op, left, right } => {
       let left_exp = expand_expr(left);
       let right_exp = expand_expr(right);
@@ -939,6 +946,9 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           result = distribute_product(&result, a);
         }
         result
+      }
+      "Power" if args.len() == 2 && !matches!(args[1], Expr::Integer(_)) => {
+        expr.clone()
       }
       "Power" if args.len() == 2 => {
         let base = expand_expr(&args[0]);

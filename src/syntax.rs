@@ -19294,6 +19294,34 @@ pub fn parse_literal_data(src: &str) -> Option<Expr> {
           ) {
             return None;
           }
+          // A number or color written as a call (`Rational[15, 16]`,
+          // `RGBColor[1, 0, 0]`) is data too.
+          if self.s.get(self.i) == Some(&b'[') {
+            if !matches!(
+              name,
+              "Rational" | "Complex" | "RGBColor" | "GrayLevel" | "Hue"
+            ) {
+              return None;
+            }
+            self.i += 1;
+            let mut args = Vec::new();
+            loop {
+              args.push(self.value(depth + 1)?);
+              self.ws();
+              match *self.s.get(self.i)? {
+                b',' => self.i += 1,
+                b']' => {
+                  self.i += 1;
+                  break;
+                }
+                _ => return None,
+              }
+            }
+            return Some(Expr::FunctionCall {
+              name: name.to_string(),
+              args: args.into(),
+            });
+          }
           Some(Expr::Identifier(name.to_string()))
         }
         _ => None,
@@ -19430,6 +19458,9 @@ pub fn hoist_large_literals(src: &str) -> Option<(String, Vec<String>)> {
             }
             b'0'..=b'9' | b'.' | b'-' | b',' | b' ' | b'\t' | b'\n' | b'\r' => {
             }
+            // Symbols and the number/color calls `parse_literal_data` reads
+            // (`Rational[15, 16]`); anything else makes it no literal.
+            b'a'..=b'z' | b'A'..=b'Z' | b'$' | b'[' | b']' => {}
             _ => break,
           }
           j += 1;

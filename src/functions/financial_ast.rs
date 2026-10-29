@@ -124,7 +124,20 @@ pub fn financial_derivative_ast(
 
   let build = |greek: &str| -> Option<Result<Expr, InterpreterError>> {
     let tmpl = greek_template(call, greek)?;
-    let parsed = string_to_expr(tmpl).ok()?;
+    // The formulas are parsed once: a plot evaluates them at every sample.
+    thread_local! {
+      static PARSED: std::cell::RefCell<
+        std::collections::HashMap<&'static str, Expr>,
+      > = std::cell::RefCell::new(std::collections::HashMap::new());
+    }
+    let parsed = if let Some(p) = PARSED.with(|m| m.borrow().get(tmpl).cloned())
+    {
+      p
+    } else {
+      let p = string_to_expr(tmpl).ok()?;
+      PARSED.with(|m| m.borrow_mut().insert(tmpl, p.clone()));
+      p
+    };
     let bound = substitute_variables(
       &parsed,
       &[

@@ -3173,6 +3173,23 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn clock_gauge_renders_graphics() {
+    assert_eq!(interpret("ClockGauge[{10, 10, 25}]").unwrap(), "-Graphics-");
+    assert_eq!(
+      interpret("Head[ClockGauge[{17, 13, 103.1}, ScaleRanges -> {}]]")
+        .unwrap(),
+      "Graphics"
+    );
+    // The hands follow the time.
+    assert_eq!(
+      interpret(
+        "ExportString[ClockGauge[{3, 0, 0}], \"SVG\"] != ExportString[ClockGauge[{9, 30, 0}], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+  #[test]
   fn thermometer_gauge_renders_graphics() {
     assert_eq!(
       interpret("ThermometerGauge[5.5, {0, 10}]").unwrap(),

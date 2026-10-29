@@ -769,6 +769,9 @@ pub fn dispatch_plotting(
         Ok,
       ))
     }
+    "SmoothHistogram" if !args.is_empty() => {
+      Some(crate::functions::field_plot::smooth_histogram_ast(args))
+    }
     "SmoothDensityHistogram" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::smooth_density_histogram_ast(args)
     })),
@@ -798,6 +801,9 @@ pub fn dispatch_plotting(
     })),
     "BarChart" if !args.is_empty() => {
       Some(crate::functions::chart::bar_chart_ast(args))
+    }
+    "PairedBarChart" | "PairedHistogram" if args.len() >= 2 => {
+      Some(crate::functions::chart::paired_chart_ast(name, args))
     }
     // The 3-D charts render quietly, but a first argument that is no
     // dataset still reports `head::ldata` and stays unevaluated.

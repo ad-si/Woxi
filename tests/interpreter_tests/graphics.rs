@@ -43150,3 +43150,92 @@ mod traditional_form_matrix_text {
     assert!(svg.contains(">c  d)</tspan>"), "{svg}");
   }
 }
+
+mod graphics3d_inset_scene {
+  use super::*;
+
+  /// `Text[Graphics3D[…], Scaled[{½, ½, ½}]]` overlays a second scene on the
+  /// first; its primitives are drawn with the outer scene instead of the
+  /// whole picture coming out empty.
+  #[test]
+  fn text_holding_a_graphics3d_draws_the_inner_scene() {
+    let svg = export_svg(
+      "Graphics3D[{Text[Graphics3D[{Sphere[{0, 0, 1}, 0.8]}, Boxed -> False], \
+       Scaled[{1/2, 1/2, 1/2}]]}, PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}, \
+       Boxed -> False]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+  }
+}
+
+mod smooth_histogram {
+  use super::*;
+
+  // A line plot of the data's kernel density estimate, one curve per
+  // dataset, reaching past the data on both sides.
+  #[test]
+  fn plots_the_kernel_density() {
+    assert_eq!(
+      interpret("Head[SmoothHistogram[{1., 2., 3.5, 2.2}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "Head[SmoothHistogram[{{1., 2., 3.5, 2.2}, {3, 4, 5}}, 0.5, \"CDF\", PlotStyle -> Red]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "pts = Cases[First[SmoothHistogram[{1., 2., 3.5, 2.2}]], Line[p_] :> p, Infinity][[1]]; \
+         {pts[[1, 1]] < 0, pts[[-1, 1]] > 5}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+}
+
+mod cayley_graph {
+  use super::*;
+
+  #[test]
+  fn edges_multiply_by_each_generator() {
+    assert_eq!(
+      interpret("List @@@ EdgeList[CayleyGraph[SymmetricGroup[3]]]").unwrap(),
+      "{{1, 3}, {1, 4}, {2, 4}, {2, 3}, {3, 1}, {3, 6}, {4, 2}, {4, 5}, \
+       {5, 6}, {5, 1}, {6, 5}, {6, 2}}"
+    );
+    assert_eq!(
+      interpret("VertexCount[CayleyGraph[AbelianGroup[{4, 3}]]]").unwrap(),
+      "12"
+    );
+  }
+}
+
+mod paired_charts {
+  use super::*;
+
+  // The first series extends left of a central gap, the second right.
+  #[test]
+  fn back_to_back_bars() {
+    assert_eq!(
+      interpret(
+        "Cases[First[PairedBarChart[{1, 2, 3}, {4, 5, 6}]], Rectangle[a_, b_] :> {a[[1]], b[[1]]}, Infinity]"
+      )
+      .unwrap(),
+      "{{-1.45, -0.44999999999999996}, {-2.45, -0.44999999999999996}, \
+       {-3.45, -0.44999999999999996}, {0.44999999999999996, 4.45}, \
+       {0.44999999999999996, 5.45}, {0.44999999999999996, 6.45}}"
+    );
+    // Histograms share the bins of the joined data.
+    assert_eq!(
+      interpret(
+        "Cases[First[PairedHistogram[{1, 2, 2, 3, 3, 3}, {1, 1, 2, 4}]], Rectangle[a_, b_] :> {a[[2]], b[[2]]}, Infinity]"
+      )
+      .unwrap(),
+      "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
+    );
+  }
+}
