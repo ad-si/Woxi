@@ -9364,8 +9364,9 @@ mod sinc {
       "{Sinc[I], 2.4200817924159153 + 0.*I, Cos[x]/x - Sin[x]/x^2}"
     );
     assert_eq!(
-      interpret("D[Sinc[x], x] /. x -> 1. + 2. I").unwrap(),
-      "-0.7478572632983036 - 0.6817920755530464*I"
+      // Rounded: the last digits depend on the platform's libm sin/cos.
+      interpret("Round[D[Sinc[x], x] /. x -> 1. + 2. I, 10.^-12]").unwrap(),
+      "-0.747857263298 - 0.681792075553*I"
     );
     assert_eq!(
       interpret("FindRoot[D[Sinc[Pi 0.8 Sin[t]], t], {t, ArcSin[1.5/0.8]}]")
