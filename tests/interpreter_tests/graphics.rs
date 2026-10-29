@@ -6064,6 +6064,24 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // Regression: a radius list whose length differs from the number of
+    // curve points (one radius per spline control point) collapsed the tube
+    // to radius 0, so it drew no surface at all.
+    #[test]
+    fn graphics3d_tube_radius_list_of_other_length_is_interpolated() {
+      let thin = export_svg(
+        "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {0, 1, 0}, {0, 2, 0}}], \
+        {0.1, 0.1, 0.1, 0.1}]]",
+      );
+      let wide = export_svg(
+        "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {0, 1, 0}, {0, 2, 0}}], \
+        {0.1, 0.5, 0.9, 0.1}]]",
+      );
+      assert!(thin.contains("<polygon"));
+      assert!(wide.contains("<polygon"));
+      assert_ne!(thin, wide);
+    }
+
     // A Tube of many curves is as crowded as as many Tubes: it used to get
     // the lone-tube tessellation budget for every curve (gigabytes for 343).
     #[test]
