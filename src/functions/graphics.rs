@@ -8676,7 +8676,9 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
 /// anything else (`Automatic`, `None`, `All`) hold `None`.
 fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
   let one = |e: &Expr| match e {
-    Expr::List(_) => crate::functions::plot::parse_explicit_ticks(e),
+    Expr::List(_) | Expr::FunctionCall { .. } => {
+      crate::functions::plot::parse_explicit_ticks(e)
+    }
     _ => None,
   };
   match value {

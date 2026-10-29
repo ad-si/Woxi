@@ -9101,6 +9101,27 @@ mod plot3d {
       assert!(!svg.contains("Which["), "raw Which leaked into the SVG");
     }
 
+    // A `FrameTicks` edge given as an unevaluated `Table[…]` is worked out
+    // into its `{position, label}` ticks, in `Plot` and in `Graphics` alike.
+    #[test]
+    fn frame_ticks_accept_a_computed_tick_table() {
+      let plot = export_svg(
+        r#"Plot[x^2, {x, 0, 1}, Frame -> True,
+          FrameTicks -> {{Table[{k, Row[{Round[100 k], "%"}]}, {k, 0, 1, 0.5}], None},
+                         {Table[{k, "q"}, {k, 0, 1, 0.5}], None}}]"#,
+      );
+      for label in [">0%<", ">50%<", ">100%<", ">q<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      assert!(!plot.contains(">0.5<"), "automatic ticks leaked: {plot}");
+      let graphics = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True,
+          FrameTicks -> {{Table[{k, "p" <> ToString[k]}, {k, 0, 1, 0.5}], None},
+                         {None, None}}]"#,
+      );
+      assert!(graphics.contains(">p0.5<"), "{graphics}");
+    }
+
     // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
     // `FrameTicks` puts the tick labels on the edge that asks for them, so a
     // right-hand-only axis labels the right side.
