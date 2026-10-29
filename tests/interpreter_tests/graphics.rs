@@ -9167,6 +9167,33 @@ mod plot3d {
       assert!(graphics.contains(">p0.5<"), "{graphics}");
     }
 
+    // Explicit `FrameTicks` on the right and top edge of a `Plot` frame are
+    // marked and labelled, whether written as `{pos, label}` pairs or as
+    // plain positions.
+    #[test]
+    fn plot_frame_ticks_label_the_right_and_top_edges() {
+      let plot = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, {{1, "ra"}, {2, "rb"}}},
+                         {All, {{3, "tc"}}}}]"#,
+      );
+      for label in [">ra<", ">rb<", ">tc<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      let numeric = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, Range[3]}, {All, None}}]"#,
+      );
+      let none = export_svg(
+        r#"Plot[x, {x, 0, 10}, Frame -> True,
+          FrameTicks -> {{Automatic, None}, {All, None}}]"#,
+      );
+      assert!(
+        numeric.matches("<text").count() >= none.matches("<text").count() + 3,
+        "{numeric}"
+      );
+    }
+
     // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
     // `FrameTicks` puts the tick labels on the edge that asks for them, so a
     // right-hand-only axis labels the right side.
