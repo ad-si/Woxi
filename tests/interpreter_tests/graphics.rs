@@ -43150,3 +43150,20 @@ mod traditional_form_matrix_text {
     assert!(svg.contains(">c  d)</tspan>"), "{svg}");
   }
 }
+
+mod graphics3d_inset_scene {
+  use super::*;
+
+  /// `Text[Graphics3D[…], Scaled[{½, ½, ½}]]` overlays a second scene on the
+  /// first; its primitives are drawn with the outer scene instead of the
+  /// whole picture coming out empty.
+  #[test]
+  fn text_holding_a_graphics3d_draws_the_inner_scene() {
+    let svg = export_svg(
+      "Graphics3D[{Text[Graphics3D[{Sphere[{0, 0, 1}, 0.8]}, Boxed -> False], \
+       Scaled[{1/2, 1/2, 1/2}]]}, PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}, \
+       Boxed -> False]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+  }
+}

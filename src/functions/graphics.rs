@@ -32709,6 +32709,28 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       runs
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // `StringForm["template", args…]` — a control's choice label such as
+      // `5 -> StringForm["1``", Style[1/2, Tiny]]` shows the template with
+      // each slot filled by its argument's label text, not the call's source.
+      "StringForm" if matches!(args.first(), Some(Expr::String(_))) => {
+        let Some(Expr::String(template)) = args.first() else {
+          unreachable!()
+        };
+        let text = crate::functions::string_ast::format_string_form_with(
+          template,
+          &args[1..],
+          |a| flatten_label_runs(&manipulate_label_runs(a, italic)),
+        );
+        if text.is_empty() {
+          vec![]
+        } else {
+          vec![LabelRun {
+            text,
+            italic,
+            ..Default::default()
+          }]
+        }
+      }
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying
       // any bold/color directive to the runs it produces. A nested `Style`
@@ -36826,7 +36848,18 @@ fn display_expr_to_node(
             .map(|row| match row {
               Expr::List(cs) => cs
                 .iter()
-                .map(|c| display_expr_to_node(c, bindings, probes, ons))
+                .map(|c| {
+                  // A span marker only continues its neighbour's cell: it
+                  // draws nothing, not its own name.
+                  if is_span_marker(c) {
+                    DisplayNode::Static {
+                      svg: None,
+                      text: String::new(),
+                    }
+                  } else {
+                    display_expr_to_node(c, bindings, probes, ons)
+                  }
+                })
                 .collect(),
               other => {
                 vec![display_expr_to_node(other, bindings, probes, ons)]
