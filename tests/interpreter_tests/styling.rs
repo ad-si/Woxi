@@ -207,6 +207,29 @@ mod font_size {
   }
 
   #[test]
+  fn number_form_of_style_keeps_the_style() {
+    // A number format around a Style formats the content and keeps the style,
+    // so a styled entry in a list of formatted numbers still draws coloured.
+    assert_eq!(
+      interpret(
+        "{Head[#], Head[First[#]]} &[NumberForm[Style[3., Red], {4, 2}]]"
+      )
+      .unwrap(),
+      "{Style, NumberForm}"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[Style[2.5, Bold], {4, 2}]]").unwrap(),
+      "2.50"
+    );
+    let svg = interpret(
+      "ExportString[Text[{NumberForm[Style[3., Red], {4, 2}], 1.5}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("3.00"), "{svg}");
+    assert!(!svg.contains("NumberForm"), "{svg}");
+  }
+
+  #[test]
   fn tostring_row_concatenates_and_resolves_wrappers() {
     // A Row concatenates its parts under ToString, resolving nested Style /
     // NumberForm, matching wolframscript.
