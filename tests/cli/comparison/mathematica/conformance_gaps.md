@@ -1534,6 +1534,21 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### `CirclePoints[n.]` differs in last digits
+
+```sh
+wolframscript -code 'InputForm[CirclePoints[4.]]'
+# {{0.7071067811865476, -0.7071067811865475}, {0.7071067811865476, 0.7071067811865475}, {-0.7071067811865475, 0.7071067811865476}, {-0.7071067811865477, -0.7071067811865475}}
+woxi eval 'InputForm[CirclePoints[4.]]'
+# {{0.7071067811865475, -0.7071067811865475}, … every coordinate ±0.7071067811865475}
+```
+
+Woxi numericizes the exact points. wolframscript takes `Cos`/`Sin` of machine
+angles starting at `-Pi/2 + Pi/n` in steps of `2 Pi/n`; a fused
+multiply-add `k step + start` reproduces 97 of the 108 points for
+`n = 8 … 16`, plain accumulation and `start + k step` fewer, so the exact
+angle sequence is not decoded.
+
 ### `Together` does not pull a sign out of a numerator led by a negative kernel
 
 ```sh

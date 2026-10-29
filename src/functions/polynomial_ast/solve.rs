@@ -3016,9 +3016,29 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A system with machine coefficients whose inexact elimination lost
   // solutions is re-solved exactly and numericized, with Solve::ratnz, as
   // wolframscript does (PhasePlaneAnalysisOfABiochemicalReactor).
+  // A system written as a conjunction (`a == b && c == d`) is re-solved
+  // only when the inexact route found nothing at all.
+  let conjunction;
+  let system: Option<&[Expr]> = match args.first() {
+    Some(Expr::List(eqs)) if eqs.len() >= 2 => Some(eqs.as_slice()),
+    Some(Expr::FunctionCall { name, args: conj })
+      if name == "And" && matches!(&result, Expr::List(r) if r.is_empty()) =>
+    {
+      Some(conj.as_slice())
+    }
+    Some(
+      e @ Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::And,
+        ..
+      },
+    ) if matches!(&result, Expr::List(r) if r.is_empty()) => {
+      conjunction = vec![e.clone()];
+      Some(conjunction.as_slice())
+    }
+    _ => None,
+  };
   if args.len() == 2
-    && let Expr::List(eqs) = &args[0]
-    && eqs.len() >= 2
+    && let Some(eqs) = system
     && crate::functions::math_ast::contains_inexact_real(&args[0])
     && !has_radical(&args[0])
     && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
@@ -6567,7 +6587,21 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
   }
 
   let coupled = coupled_variables(&polys, vars);
-  let solutions = poly_system_solutions(&polys, vars, &coupled)?;
+  let Some(solutions) = poly_system_solutions(&polys, vars, &coupled) else {
+    // An inconsistent system — its Gröbner basis is {1} — has no solutions.
+    let var_list =
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+    if let Ok(Expr::List(ref basis)) =
+      crate::evaluator::evaluate_function_call_ast(
+        "GroebnerBasis",
+        &[Expr::List(polys.clone().into()), var_list],
+      )
+      && matches!(basis.as_slice(), [Expr::Integer(1)])
+    {
+      return Some(Expr::List(Vec::new().into()));
+    }
+    return solve_polynomial_system_by_factors(&polys, vars);
+  };
   if solutions.is_empty() {
     return Some(Expr::List(Vec::new().into()));
   }
@@ -6587,6 +6621,69 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
   // Real solutions come before complex ones, as everywhere else in Solve.
   wrapped.sort_by_key(|sol| i32::from(contains_complex(sol)));
   Some(Expr::List(wrapped.into()))
+}
+
+/// A system the eliminations cannot take whole is split on an equation
+/// that factors: its solutions are those of the systems with each factor in
+/// the equation's place, merged without repeats — `(x - y)(x + y) == 0`
+/// is `x == y` or `x == -y`.
+fn solve_polynomial_system_by_factors(
+  polys: &[Expr],
+  vars: &[String],
+) -> Option<Expr> {
+  let factors_of = |poly: &Expr| -> Option<Vec<Expr>> {
+    let Ok(Expr::List(ref pairs)) =
+      crate::evaluator::evaluate_function_call_ast(
+        "FactorList",
+        std::slice::from_ref(poly),
+      )
+    else {
+      return None;
+    };
+    let factors: Vec<Expr> = pairs
+      .iter()
+      .filter_map(|p| match p {
+        Expr::List(fm) if fm.len() == 2 => Some(fm[0].clone()),
+        _ => None,
+      })
+      .filter(|f| vars.iter().any(|v| contains_var(f, v)))
+      .collect();
+    (factors.len() >= 2).then_some(factors)
+  };
+  let (index, factors) = polys
+    .iter()
+    .enumerate()
+    .find_map(|(i, p)| factors_of(p).map(|f| (i, f)))?;
+  let mut merged: Vec<Expr> = Vec::new();
+  let mut seen = std::collections::HashSet::new();
+  for factor in factors {
+    let eqs: Vec<Expr> = polys
+      .iter()
+      .enumerate()
+      .map(|(i, p)| Expr::Comparison {
+        operands: vec![
+          if i == index {
+            factor.clone()
+          } else {
+            p.clone()
+          },
+          Expr::Integer(0),
+        ],
+        operators: vec![ComparisonOp::Equal],
+      })
+      .collect();
+    let Expr::List(ref solutions) = try_solve_polynomial_system(&eqs, vars)?
+    else {
+      return None;
+    };
+    for sol in solutions {
+      if seen.insert(expr_to_string(sol)) {
+        merged.push(sol.clone());
+      }
+    }
+  }
+  // In the order of the factors, as wolframscript lists them.
+  Some(Expr::List(merged.into()))
 }
 
 /// The unknowns that some equation ties to another unknown, directly or

@@ -23846,6 +23846,31 @@ mod rsolve_symbolic_constant_coefficients {
 mod solve_inequality_constraints {
   use super::*;
 
+  // A polynomial system whose equations factor is solved branch by branch;
+  // an inconsistent branch (Gröbner basis {1}) contributes nothing.
+  #[test]
+  fn polynomial_system_split_on_factors() {
+    assert_eq!(
+      interpret(
+        "q = (-3 + 8 v1^2 - 5 v1^4 - 10 v1 v2 + 4 v1^3 v2 - 5 v1^2 v2^2 + 4 v1 v2^3 - \
+         5 v1^2 v3^2 + 4 v1 v2 v3^2)/3; \
+         Solve[{(v1 - v2) (v1 + v2) (-4 + v1^2 + v2^2 + v3^2) == 0, q == 0, \
+           v1^2 + v2^2 + v3^2 == 1}, {v1, v2, v3}]"
+      )
+      .unwrap(),
+      "{{v1 -> -I, v2 -> -I, v3 -> -Sqrt[3]}, {v1 -> -I, v2 -> -I, v3 -> Sqrt[3]}, \
+       {v1 -> I, v2 -> I, v3 -> -Sqrt[3]}, {v1 -> I, v2 -> I, v3 -> Sqrt[3]}, \
+       {v1 -> -(1/Sqrt[3]), v2 -> 1/Sqrt[3], v3 -> -(1/Sqrt[3])}, \
+       {v1 -> -(1/Sqrt[3]), v2 -> 1/Sqrt[3], v3 -> 1/Sqrt[3]}, \
+       {v1 -> 1/Sqrt[3], v2 -> -(1/Sqrt[3]), v3 -> -(1/Sqrt[3])}, \
+       {v1 -> 1/Sqrt[3], v2 -> -(1/Sqrt[3]), v3 -> 1/Sqrt[3]}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 4, x^2 + y^2 == 1}, {x, y}]").unwrap(),
+      "{}"
+    );
+  }
+
   // Inequality[…] (a mixed chained comparison) restricts the solutions.
   #[test]
   fn mixed_chained_comparison() {

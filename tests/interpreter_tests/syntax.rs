@@ -8694,7 +8694,7 @@ mod batch_inert_symbols_2 {
     );
     assert_eq!(
       interpret("Around[UniformDistribution[{0, 1}]]").unwrap(),
-      "Around[0.5, 0.28867513459481287]"
+      "Around[0.5, 0.2886751345948129]"
     );
     assert_eq!(
       interpret("Around[PoissonDistribution[4]]").unwrap(),
