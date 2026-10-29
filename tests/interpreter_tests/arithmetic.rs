@@ -13902,6 +13902,17 @@ mod sign_under_cancellation {
 
   // A number below machine range keeps its sign and precision: they come
   // from its digits, not from the machine value it underflows to.
+  // The reciprocal of an arbitrary-precision zero (what a cancellation of
+  // huge numbers leaves, Demonstration PayThePoints) is ComplexInfinity
+  // with Power::infy; it stopped the evaluation ("N: format error").
+  #[test]
+  fn reciprocal_of_arbitrary_precision_zero() {
+    assert_eq!(
+      interpret("Quiet[{2/0``15, 1.5`20/0``15, 0``15^(-2)}]").unwrap(),
+      "{ComplexInfinity, ComplexInfinity, ComplexInfinity}"
+    );
+  }
+
   #[test]
   fn tiny_arbitrary_precision_number() {
     assert_eq!(

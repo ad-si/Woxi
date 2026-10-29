@@ -4489,22 +4489,23 @@ pub fn image_apply_ast(
   args: &[Expr],
   eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 && args.len() != 3 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageApply expects 2 or 3 arguments".into(),
     ));
   }
 
   let func = &args[0];
+  // Any function: a pure function, a symbol, an InterpolatingFunction, ….
   let apply = |arg: Expr| -> Result<Expr, InterpreterError> {
-    let call = match func {
-      Expr::Function { body } => crate::syntax::substitute_slots(body, &[arg]),
-      _ => Expr::FunctionCall {
-        name: expr_to_string(func),
-        args: vec![arg].into(),
-      },
-    };
-    eval_fn(&call)
+    match func {
+      Expr::Function { body } => {
+        eval_fn(&crate::syntax::substitute_slots(body, &[arg]))
+      }
+      _ => crate::evaluator::function_application::apply_function_to_arg(
+        func, &arg,
+      ),
+    }
   };
 
   let Expr::Image {
@@ -4526,23 +4527,47 @@ pub fn image_apply_ast(
   let h = *height as usize;
   let num_pixels = w * h;
 
-  let mask: Option<Vec<bool>> = if args.len() == 3 {
-    let mask_expr = match &args[2] {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Masking") => {
-        replacement.as_ref()
+  // Options: `Masking -> region` and `Interleaving -> False` (f sees each
+  // channel value on its own instead of the list of a pixel's channels).
+  let mut mask: Option<Vec<bool>> = None;
+  let mut interleaving = true;
+  for opt in &args[2..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return Err(InterpreterError::EvaluationError(
+        "ImageApply: unsupported option".into(),
+      ));
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(s) if s == "Masking" => {
+        mask = resolve_mask(replacement, w, h)?;
+      }
+      Expr::Identifier(s) if s == "Interleaving" => {
+        interleaving =
+          !matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False");
       }
       _ => {
         return Err(InterpreterError::EvaluationError(
           "ImageApply: unsupported option".into(),
         ));
       }
-    };
-    resolve_mask(mask_expr, w, h)?
-  } else {
-    None
+    }
+  }
+  // Without interleaving a pixel's channels are mapped one value at a time.
+  let apply = |arg: Expr| -> Result<Expr, InterpreterError> {
+    match &arg {
+      Expr::List(values) if !interleaving => Ok(Expr::List(
+        values
+          .iter()
+          .map(|v| apply(v.clone()))
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      )),
+      _ => apply(arg),
+    }
   };
   let included = |i: usize| -> bool { mask.as_ref().is_none_or(|m| m[i]) };
 

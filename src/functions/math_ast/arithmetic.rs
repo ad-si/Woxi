@@ -12224,11 +12224,36 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 /// Helper for Power of two arguments
 /// A machine complex power's value: a zero imaginary part stays as
 /// `0.*I` (`(-1. + 0. I)^4` is `1. + 0.*I`), never an exact integer.
+/// An arbitrary-precision zero (`0``15`, what a cancellation leaves).
+fn is_big_zero(e: &Expr) -> bool {
+  matches!(e, Expr::BigFloat(d, _)
+    if crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(d))
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
   {
     return Ok(image);
+  }
+  // No reciprocal of an arbitrary-precision zero either: the zero rules
+  // below, before the arbitrary-precision power (which has no value to
+  // give).
+  if is_big_zero(base) && expr_to_num(exp).is_some_and(|e| e < 0.0) {
+    let base_str = expr_to_string(base);
+    if expr_to_num(exp) == Some(-1.0) {
+      crate::emit_message(&format_infy_fraction_2d(
+        "Power::infy: Infinite expression ",
+        "1",
+        &base_str,
+      ));
+    } else {
+      crate::emit_message(&format_power_infy_2d(
+        &base_str,
+        &expr_to_string(exp),
+      ));
+    }
+    return Ok(id_expr("ComplexInfinity"));
   }
   // E raised to a power series is a power series (`Exp[s]`).
   if matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")

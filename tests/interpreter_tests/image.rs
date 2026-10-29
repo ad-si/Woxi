@@ -4846,6 +4846,31 @@ mod image_advanced {
   }
 
   #[test]
+  fn image_apply_any_function_and_interleaving() {
+    // Any function applies, an InterpolatingFunction included
+    // (Demonstration ToneCurve); `Interleaving -> False` maps each channel
+    // value on its own (MidToneContrastEnhancementOfPhotographicImages).
+    // Both used to stop the evaluation.
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0., 0.}, {0.5, 0.7}, {1., 1.}}]; \
+         ImageData[ImageApply[f, Image[{{0.1, 0.5}, {0.9, 0.3}}]]]"
+      )
+      .unwrap(),
+      "{{0.1720000058412552, 0.699999988079071}, {0.972000002861023, 0.46800002455711365}}"
+    );
+    assert_eq!(
+      interpret(
+        "img = Image[{{{0.1, 0.5, 0.2}, {0.9, 0.3, 0.4}}}]; \
+         {ImageData[ImageApply[Max, img, Interleaving -> False]], \
+         ImageData[ImageApply[Max, img]]}"
+      )
+      .unwrap(),
+      "{{{{0.10000000149011612, 0.5, 0.20000000298023224}, {0.8999999761581421, 0.30000001192092896, 0.4000000059604645}}}, {{0.5, 0.8999999761581421}}}"
+    );
+  }
+
+  #[test]
   fn random_image_from_a_distribution() {
     // Pixel values drawn from the distribution (Demonstration
     // ComputationOfRadiativeTransfer); this stopped the evaluation with
