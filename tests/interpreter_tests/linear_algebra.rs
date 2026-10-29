@@ -8923,6 +8923,47 @@ mod linear_fractional_transform {
 mod orthogonalize {
   use super::*;
 
+  // Machine vectors are orthogonalized numerically (zeros come out as 0.);
+  // the Method option picks the algorithm, Householder giving its own
+  // signs. Digits may differ from wolframscript in the last place.
+  #[test]
+  fn machine_vectors_and_methods() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1., 1, 0}, {2, 2, 0}, {0, 0, 1}}]").unwrap(),
+      "{{0.7071067811865475, 0.7071067811865475, 0.}, {0., 0., 0.}, {0., 0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sign[Chop[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}, Method -> \"Householder\"]]]"
+      )
+      .unwrap(),
+      "{{-1, -1, 0}, {1, -1, -1}, {1, -1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "m = {{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}; \
+         Chop[# . Transpose[#] - IdentityMatrix[3] & /@ \
+           {Orthogonalize[m, Method -> \"GramSchmidt\"], \
+            Orthogonalize[m, Method -> \"ModifiedGramSchmidt\"], \
+            Orthogonalize[m, Method -> \"Reorthogonalization\"]}, 10^-12]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, \
+       {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 1}, {0, 1}}, Method -> \"Foo\"]").unwrap(),
+      "Orthogonalize[{{1, 1}, {0, 1}}, Method -> Foo]"
+    );
+    assert_eq!(
+      interpret(
+        "Orthogonalize[{{1, 2}, {3, 4}}, Method -> \"Reorthogonalization\"]"
+      )
+      .unwrap(),
+      "{{1/Sqrt[5], 2/Sqrt[5]}, {2/Sqrt[5], -(1/Sqrt[5])}}"
+    );
+  }
+
   #[test]
   fn already_orthogonal_pair() {
     assert_eq!(

@@ -1534,6 +1534,20 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### Machine `Orthogonalize` differs in last digits
+
+```sh
+wolframscript -code 'InputForm[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}]]'
+# {{0.4472135954999579, 0.8944271909999159, 0.}, {-0.13187609467915742, 0.06593804733957871, 0.9890707100936806}, {0.8846517369293829, -0.44232586846469146, 0.14744195615489716}}
+woxi eval 'InputForm[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}]]'
+# … 0.0659380473395787 …, -0.4423258684646914 …
+```
+
+Woxi runs Gram–Schmidt (twice for the default `Reorthogonalization`),
+modified Gram–Schmidt or Householder QR in plain `f64`; wolframscript's
+LAPACK-backed routines sum in another order, so a few coordinates differ in
+the last place. Signs and zero vectors match.
+
 ### `CirclePoints[n.]` differs in last digits
 
 ```sh

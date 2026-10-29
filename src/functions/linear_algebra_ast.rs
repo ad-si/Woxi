@@ -255,13 +255,80 @@ fn adjoint_matrix(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 /// the result may contain radicals (e.g. 1/Sqrt[2]).
 pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("Orthogonalize", args));
-  // Only the default 1-argument form (standard inner product) is handled.
-  if args.len() != 1 {
-    return unevaluated();
+  // The standard inner product, with an optional `Method -> …`.
+  let (vectors, opts) = match args {
+    [v] => (v, &[][..]),
+    [v, rest @ ..] if rest.iter().all(|o| matches!(o, Expr::Rule { .. })) => {
+      (v, rest)
+    }
+    _ => return unevaluated(),
+  };
+  let mut method = "GramSchmidt".to_string();
+  let mut method_given = false;
+  for o in opts {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = o
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+    {
+      let name = match replacement.as_ref() {
+        Expr::String(m) => m.clone(),
+        Expr::Identifier(m) if m == "Automatic" => continue,
+        other => crate::syntax::expr_to_string(other),
+      };
+      if !matches!(
+        name.as_str(),
+        "GramSchmidt"
+          | "ModifiedGramSchmidt"
+          | "Reorthogonalization"
+          | "Householder"
+      ) {
+        crate::emit_message(&format!(
+          "Orthogonalize::orbop: {name} is not a valid value for the Method option."
+        ));
+        return unevaluated();
+      }
+      method = name;
+      method_given = true;
+    }
   }
-  let Some(matrix) = expr_to_matrix(&args[0]) else {
+  let Some(matrix) = expr_to_matrix(vectors) else {
     return unevaluated();
   };
+  // Machine vectors are orthogonalized numerically; Reorthogonalization is
+  // then the default.
+  let inexact = matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::contains_inexact_real);
+  if inexact
+    && let Some(rows) = matrix
+      .iter()
+      .map(|r| {
+        r.iter()
+          .map(crate::functions::math_ast::try_eval_to_f64)
+          .collect::<Option<Vec<f64>>>()
+      })
+      .collect::<Option<Vec<_>>>()
+  {
+    let method = if method_given {
+      method.as_str()
+    } else {
+      "Reorthogonalization"
+    };
+    let q = machine_orthogonalize(&rows, method);
+    return Ok(Expr::List(
+      q.into_iter()
+        .map(|r| Expr::List(r.into_iter().map(Expr::Real).collect()))
+        .collect(),
+    ));
+  }
+  if method != "GramSchmidt" && !inexact {
+    crate::emit_message(&format!(
+      "Orthogonalize::ornex: The option Method -> {method} cannot be used with exact precision vectors. It is replaced with Method -> GramSchmidt."
+    ));
+  }
 
   let simplify = |e: Expr| evaluate_expr_to_expr(&e).unwrap_or(e);
   // Normalized components can accumulate nested radicals (e.g. combinations of
@@ -345,6 +412,100 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(matrix_to_expr(result))
+}
+
+/// Orthonormalize machine vectors by `method`: classical Gram–Schmidt
+/// (`GramSchmidt`), the modified form, classical with a second projection
+/// pass (`Reorthogonalization`), or Householder QR. A dependent vector
+/// gives a zero vector.
+fn machine_orthogonalize(rows: &[Vec<f64>], method: &str) -> Vec<Vec<f64>> {
+  let dot =
+    |a: &[f64], b: &[f64]| -> f64 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+  let n = rows.first().map_or(0, Vec::len);
+  if method == "Householder" {
+    // QR of the matrix whose columns are the vectors; the rows of the
+    // result are Q's first columns.
+    let m = rows.len();
+    let mut a: Vec<Vec<f64>> = (0..n)
+      .map(|i| rows.iter().map(|r| r[i]).collect())
+      .collect();
+    let mut reflectors: Vec<Vec<f64>> = Vec::new();
+    for k in 0..m.min(n) {
+      let x: Vec<f64> = (k..n).map(|i| a[i][k]).collect();
+      let norm = dot(&x, &x).sqrt();
+      let mut v = x.clone();
+      // A one-element column is left alone (LAPACK's `dlarfg` sets
+      // tau = 0 there), and so is a zero one.
+      if norm == 0.0 || x.len() == 1 {
+        reflectors.push(vec![0.0; n - k]);
+        continue;
+      }
+      v[0] += if x[0] >= 0.0 { norm } else { -norm };
+      let vv = dot(&v, &v);
+      for j in k..m {
+        let col: Vec<f64> = (k..n).map(|i| a[i][j]).collect();
+        let f = 2.0 * dot(&v, &col) / vv;
+        for i in k..n {
+          a[i][j] -= f * v[i - k];
+        }
+      }
+      reflectors.push(v);
+    }
+    let mut out = Vec::with_capacity(m);
+    for j in 0..m {
+      let mut e = vec![0.0; n];
+      if j < n {
+        e[j] = 1.0;
+      }
+      for (k, v) in reflectors.iter().enumerate().rev() {
+        let vv = dot(v, v);
+        if vv == 0.0 {
+          continue;
+        }
+        let f = 2.0 * dot(v, &e[k..]) / vv;
+        for i in k..n {
+          e[i] -= f * v[i - k];
+        }
+      }
+      out.push(e);
+    }
+    return out;
+  }
+  let passes = if method == "Reorthogonalization" {
+    2
+  } else {
+    1
+  };
+  let mut q: Vec<Vec<f64>> = Vec::with_capacity(rows.len());
+  for v in rows {
+    let original = dot(v, v).sqrt();
+    let mut w = v.clone();
+    for _ in 0..passes {
+      if method == "ModifiedGramSchmidt" {
+        for e in &q {
+          let c = dot(e, &w);
+          for (wi, ei) in w.iter_mut().zip(e) {
+            *wi -= c * ei;
+          }
+        }
+      } else {
+        let coeffs: Vec<f64> = q.iter().map(|e| dot(e, &w)).collect();
+        for (c, e) in coeffs.iter().zip(&q) {
+          for (wi, ei) in w.iter_mut().zip(e) {
+            *wi -= c * ei;
+          }
+        }
+      }
+    }
+    let norm = dot(&w, &w).sqrt();
+    if norm <= 1e-12 * original.max(f64::MIN_POSITIVE) {
+      q.push(vec![0.0; n]);
+    } else {
+      let inv = 1.0 / norm;
+      q.push(w.iter().map(|x| x * inv).collect());
+    }
+  }
+  q
 }
 
 /// Helper: extract a matrix (list of lists) from an Expr.

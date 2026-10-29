@@ -300,7 +300,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "Orthogonalize" if args.len() == 1 => {
+    "Orthogonalize" if !args.is_empty() => {
       return Some(crate::functions::linear_algebra_ast::orthogonalize_ast(
         args,
       ));
