@@ -4652,7 +4652,14 @@ pub fn median_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// LocationTest[data, mu0, "TestStatistic"] - returns t-statistic
 /// LocationTest[data, mu0, "TestDataTable"] - returns test data table
 /// LocationTest[{data1, data2}, mu0] - two-sample t-test
-pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Trailing option rules (`VerifyTestAssumptions -> None`, …) do not change
+  // a t-test's numbers; only the leading arguments are read.
+  let positional = full_args
+    .iter()
+    .position(|a| crate::functions::expr_form::rule_parts(a).is_some())
+    .unwrap_or(full_args.len());
+  let args = &full_args[..positional];
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "LocationTest expects 1 to 3 arguments".into(),
@@ -4667,7 +4674,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(v) = try_eval_to_f64(other) {
           v
         } else {
-          return Ok(unevaluated("LocationTest", args));
+          return Ok(unevaluated("LocationTest", full_args));
         }
       }
     }
@@ -4680,7 +4687,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match &args[2] {
       Expr::String(s) => s.clone(),
       _ => {
-        return Ok(unevaluated("LocationTest", args));
+        return Ok(unevaluated("LocationTest", full_args));
       }
     }
   } else {
@@ -4717,7 +4724,7 @@ pub fn location_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (t_stat, df) = one_sample_t_test(&vals, mu0);
       Ok(format_location_test_result(t_stat, df, &property, "T"))
     }
-    _ => Ok(unevaluated("LocationTest", args)),
+    _ => Ok(unevaluated("LocationTest", full_args)),
   }
 }
 
@@ -4892,6 +4899,8 @@ struct LegacyTestOptions {
   /// standard normal instead of Student t and no variance is estimated from
   /// the sample.
   known_variance: Option<Vec<f64>>,
+  /// `ConfidenceLevel -> c`, only meaningful for `MeanCI`.
+  confidence_level: Option<f64>,
 }
 
 /// A symbol's name with the optional `HypothesisTesting`` prefix removed.
@@ -4916,6 +4925,15 @@ fn legacy_option_flag(value: &Expr) -> Option<bool> {
 /// is not an option the package knows, which makes the caller report
 /// `::badargs` and stay unevaluated, exactly as the package does.
 fn parse_legacy_test_options(opts: &[Expr]) -> Option<LegacyTestOptions> {
+  parse_legacy_options(opts, false)
+}
+
+/// Like [`parse_legacy_test_options`]; `allow_confidence` additionally
+/// admits `ConfidenceLevel`, which only the interval functions take.
+fn parse_legacy_options(
+  opts: &[Expr],
+  allow_confidence: bool,
+) -> Option<LegacyTestOptions> {
   let mut parsed = LegacyTestOptions::default();
   for opt in opts {
     let (lhs, rhs, _) = crate::functions::expr_form::rule_parts(opt)?;
@@ -4929,6 +4947,13 @@ fn parse_legacy_test_options(opts: &[Expr]) -> Option<LegacyTestOptions> {
           Expr::List(items) => Some(extract_numeric_list_flat(items).ok()?),
           other => Some(vec![try_eval_to_f64(other)?]),
         }
+      }
+      "ConfidenceLevel" if allow_confidence => {
+        let level = try_eval_to_f64(rhs)?;
+        if !(0.0..1.0).contains(&level) {
+          return None;
+        }
+        parsed.confidence_level = Some(level);
       }
       _ => return None,
     }
@@ -5155,6 +5180,83 @@ pub fn hypothesis_testing_mean_test_ast(
   let report =
     legacy_full_report_rule(collect(means), collect(statistics), df, "Mean");
   Ok(Expr::List(vec![report, p_rule].into()))
+}
+
+/// `HypothesisTesting`MeanCI[data, opts]` — the legacy confidence interval
+/// for a mean, `{lower, upper}` (one pair per column of a matrix argument).
+/// Student t based unless `KnownVariance` selects the normal distribution;
+/// `ConfidenceLevel` defaults to 0.95.
+pub fn hypothesis_testing_mean_ci_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let badargs = || {
+    crate::emit_message(
+      "MeanCI::badargs: Incorrect number or type of arguments.",
+    );
+    unevaluated("HypothesisTesting`MeanCI", args)
+  };
+  if args.is_empty() {
+    return Ok(badargs());
+  }
+  let Some(options) = parse_legacy_options(&args[1..], true) else {
+    return Ok(badargs());
+  };
+  let Some((samples, vectorized)) = legacy_test_samples(&args[0]) else {
+    return Ok(badargs());
+  };
+
+  let n = samples[0].len() as f64;
+  let variances = match &options.known_variance {
+    Some(known) if known.len() == 1 => vec![known[0]; samples.len()],
+    Some(known) if known.len() == samples.len() => known.clone(),
+    Some(_) => return Ok(badargs()),
+    None => {
+      if n < 2.0 {
+        crate::emit_message(&format!(
+          "Variance::shlen: The argument {} should have at least two \
+           elements.",
+          format_expr(&args[0], ExprForm::Output)
+        ));
+        return Ok(unevaluated("HypothesisTesting`MeanCI", args));
+      }
+      samples.iter().map(|s| sample_variance(s)).collect()
+    }
+  };
+
+  let level = options.confidence_level.unwrap_or(0.95);
+  let tail = Expr::Real(1.0 - (1.0 - level) / 2.0);
+  let distribution = match options.known_variance {
+    Some(_) => call(
+      "NormalDistribution",
+      vec![Expr::Integer(0), Expr::Integer(1)],
+    ),
+    None => call1("StudentTDistribution", num_to_expr(n - 1.0)),
+  };
+  let critical = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Quantile",
+    vec![distribution, tail],
+  ))?;
+  let Some(critical) = try_eval_to_f64(&critical) else {
+    return Ok(unevaluated("HypothesisTesting`MeanCI", args));
+  };
+
+  let intervals: Vec<Expr> = samples
+    .iter()
+    .zip(&variances)
+    .map(|(sample, variance)| {
+      let mean = sample_mean(sample);
+      let half_width = critical * (variance / n).sqrt();
+      Expr::List(
+        vec![Expr::Real(mean - half_width), Expr::Real(mean + half_width)]
+          .into(),
+      )
+    })
+    .collect();
+  Ok(if vectorized {
+    Expr::List(intervals.into())
+  } else {
+    intervals.into_iter().next().unwrap_or(Expr::Integer(0))
+  })
 }
 
 /// `HypothesisTesting`MeanDifferenceTest[list1, list2, diff0, opts]` — the

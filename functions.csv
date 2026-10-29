@@ -6320,6 +6320,7 @@ Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub u
 PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,
 HypothesisTesting`MeanTest,Legacy one-sample mean test answering with an OneSidedPValue (or TwoSidedPValue under TwoSided -> True) rule; a matrix argument tests each column; options KnownVariance and FullReport,✅,pure,1.0,
 HypothesisTesting`MeanDifferenceTest,Legacy two-sample test of a mean difference answering with an OneSidedPValue (or TwoSidedPValue under TwoSided -> True) rule; Welch degrees of freedom unless EqualVariances -> True; options KnownVariance and FullReport,✅,pure,1.0,
+HypothesisTesting`MeanCI,Legacy confidence interval (a lower and upper bound) for a mean (Student t based; options ConfidenceLevel and KnownVariance); a matrix argument gives one interval per column,✅,pure,1.0,
 CodeParser`CodeTokenize,Source split into its tokens as LeafNode expressions each carrying the span it came from,✅,pure,12.0,
 CodeParser`CodeConcreteParse,Concrete syntax tree of source code — every character belongs to a token and the tokens carry their source spans,✅,pure,12.0,
 CodeParser`CodeParse,Abstract syntax tree of source code carrying an ErrorNode when the source does not read,✅,pure,12.0,

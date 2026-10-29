@@ -5333,6 +5333,65 @@ mod hypothesis_testing_legacy_package {
   // same string; the raw machine reals differ in their last digits.
 
   #[test]
+  fn location_test_ignores_trailing_options() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "LocationTest[{1, 2, 7/2, 7}, 2, \"T\", VerifyTestAssumptions -> None] \
+         == LocationTest[{1, 2, 7/2, 7}, 2, \"T\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn mean_ci_default_level_is_ninety_five_percent() {
+    clear_state();
+    assert_eq!(
+      interpret("Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}], 10^-6]")
+        .unwrap(),
+      "{249241/1000000, 5000759/1000000}"
+    );
+  }
+
+  #[test]
+  fn mean_ci_confidence_level_option() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+         ConfidenceLevel -> 0.9], 10^-6]"
+      )
+      .unwrap(),
+      "{108521/125000, 547729/125000}"
+    );
+  }
+
+  #[test]
+  fn mean_ci_known_variance_uses_normal_quantile() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+         KnownVariance -> 2], 10^-6]"
+      )
+      .unwrap(),
+      "{154887/125000, 501363/125000}"
+    );
+  }
+
+  #[test]
+  fn mean_ci_matrix_gives_one_interval_per_column() {
+    clear_state();
+    assert_eq!(
+      interpret("Length[HypothesisTesting`MeanCI[{{1, 2}, {3, 5}, {4, 9}}]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
   fn get_hypothesis_testing_context_is_a_noop() {
     clear_state();
     assert_eq!(interpret("Get[\"HypothesisTesting`\"]").unwrap(), "\0");
