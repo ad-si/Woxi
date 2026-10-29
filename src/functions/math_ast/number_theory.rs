@@ -1870,7 +1870,7 @@ pub fn multiple_harmonic_number_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("MultipleHarmonicNumber", args);
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Ok(unevaluated());
   }
   // `n` must be a non-negative integer.
@@ -1903,28 +1903,52 @@ pub fn multiple_harmonic_number_ast(
     return Ok(unevaluated());
   };
 
+  // MultipleHarmonicNumber[n, {s…}, {x…}]: each index ij also contributes
+  // the factor xj^ij.
+  let xs: Vec<Expr> = match args.get(2) {
+    None => Vec::new(),
+    Some(Expr::List(items)) if items.len() == exps.len() => items.to_vec(),
+    Some(_) => return Ok(unevaluated()),
+  };
+
   // Recursively enumerate each strictly-decreasing index tuple, accumulating
-  // its denominator ∏ ij^sj as a `1/denom` term.
+  // its denominator ∏ ij^sj as a `1/denom` term (times ∏ xj^ij).
   fn gen_terms(
     exps: &[u32],
+    xs: &[Expr],
     max_i: i128,
     denom: &BigInt,
+    powers: &mut Vec<Expr>,
     terms: &mut Vec<Expr>,
   ) {
     let Some((&s, rest)) = exps.split_first() else {
-      terms.push(div2(Expr::Integer(1), bigint_to_expr(denom.clone())));
+      let unit = div2(Expr::Integer(1), bigint_to_expr(denom.clone()));
+      terms.push(if powers.is_empty() {
+        unit
+      } else {
+        let mut factors = powers.clone();
+        factors.push(unit);
+        times(factors)
+      });
       return;
     };
     // Leave room for the `rest.len()` smaller indices still to be chosen.
     let mut i = rest.len() as i128 + 1;
     while i <= max_i {
       let factor = BigInt::from(i).pow(s);
-      gen_terms(rest, i - 1, &(denom * &factor), terms);
+      if let Some(x) = xs.first() {
+        powers.push(pow2(x.clone(), Expr::Integer(i)));
+      }
+      let rest_xs = if xs.is_empty() { xs } else { &xs[1..] };
+      gen_terms(rest, rest_xs, i - 1, &(denom * &factor), powers, terms);
+      if !xs.is_empty() {
+        powers.pop();
+      }
       i += 1;
     }
   }
   let mut terms: Vec<Expr> = Vec::new();
-  gen_terms(&exps, n, &BigInt::from(1), &mut terms);
+  gen_terms(&exps, &xs, n, &BigInt::from(1), &mut Vec::new(), &mut terms);
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }

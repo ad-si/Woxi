@@ -961,6 +961,9 @@ fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
 }
 
 fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
+  if let Some(power) = refine_power_of_exp(expr, info) {
+    return power;
+  }
   if let Some(rooted) = refine_reciprocal_root(expr, info, assumption) {
     return rooted;
   }
@@ -1781,6 +1784,39 @@ fn has_root(expr: &Expr) -> bool {
 /// (b^n)^(p/q) → b^(n p/q) for a provably positive base b and an integer
 /// n p/q: the real power law holds for every positive base, so
 /// ((1 + x)^4)^(-1/2) → (1 + x)^(-2) for x > 0.
+/// (E^u)^r → E^(u r) for a real u and a rational r: E^u is then positive,
+/// so Sqrt[E^(-t/5)] is E^(-t/10) for real t.
+fn refine_power_of_exp(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let parts = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref().clone(), right.as_ref().clone())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      _ => None,
+    }
+  };
+  let (outer_base, outer_exp) = parts(expr)?;
+  rational_parts_of(&outer_exp)?;
+  let (base, inner_exp) = parts(&outer_base)?;
+  if !matches!(&base, Expr::Constant(e) | Expr::Identifier(e) if e == "E")
+    || !is_real_under_assumptions(&inner_exp, info)
+  {
+    return None;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&pow2(
+    base,
+    times2(inner_exp, outer_exp),
+  ))
+  .ok()
+}
+
 fn refine_positive_base_root(
   expr: &Expr,
   info: &AssumptionInfo,

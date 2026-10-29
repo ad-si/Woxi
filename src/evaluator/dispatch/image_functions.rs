@@ -1507,6 +1507,22 @@ pub fn dispatch_image_functions(
     "ImageMultiply" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_multiply_ast(args));
     }
+    // RandomImage[spec, size, "type"]: the random image converted to the
+    // given pixel type, as Image[img, "type"] does.
+    "RandomImage" if args.len() == 3 && matches!(args[2], Expr::String(_)) => {
+      let img = match crate::functions::image_ast::random_image_ast(&args[..2])
+      {
+        Ok(i) => i,
+        Err(e) => return Some(Err(e)),
+      };
+      if !matches!(img, Expr::Image { .. }) {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Image",
+        &[img, args[2].clone()],
+      ));
+    }
     "RandomImage" if args.len() <= 2 => {
       return Some(crate::functions::image_ast::random_image_ast(args));
     }

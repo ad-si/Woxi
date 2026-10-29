@@ -2298,6 +2298,9 @@ pub fn dispatch_list_operations(
     "PositionLargest" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::position_extreme_ast(args, true));
     }
+    "PositionSmallest" if args.len() == 3 => {
+      return Some(list_helpers_ast::position_smallest_by_ast(args));
+    }
     "PositionSmallest" if args.len() == 1 || args.len() == 2 => {
       return Some(list_helpers_ast::position_extreme_ast(args, false));
     }
@@ -2389,7 +2392,7 @@ pub fn dispatch_list_operations(
     "BinCounts" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_counts_ast(args));
     }
-    "BinLists" if !args.is_empty() && args.len() <= 2 => {
+    "BinLists" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_lists_ast(args));
     }
     "HistogramList" if !args.is_empty() && args.len() <= 3 => {

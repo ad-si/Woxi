@@ -795,7 +795,70 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-///// Ordering[list] / Ordering[list, n] / Ordering[list, n, p]
+/// PositionSmallest[list, n, p]: the positions of the n smallest distinct
+/// elements under the ordering function p (giving 1 / 0 / -1 like Order),
+/// grouped by value in increasing order. A p giving anything else (True /
+/// False) leaves the call unevaluated.
+pub fn position_smallest_by_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use std::cmp::Ordering as O;
+  let unevaluated = || Ok(unevaluated("PositionSmallest", args));
+  let (Expr::List(items), Expr::Integer(n)) = (&args[0], &args[1]) else {
+    return unevaluated();
+  };
+  if *n < 0 {
+    return unevaluated();
+  }
+  let p = &args[2];
+  let compare = |a: &Expr, b: &Expr| -> Result<Option<O>, InterpreterError> {
+    let r = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Apply",
+      vec![p.clone(), Expr::List(vec![a.clone(), b.clone()].into())],
+    ))?;
+    Ok(match r {
+      Expr::Integer(1) => Some(O::Less),
+      Expr::Integer(0) => Some(O::Equal),
+      Expr::Integer(-1) => Some(O::Greater),
+      _ => None,
+    })
+  };
+  // Distinct values (by p) with their ascending positions, kept sorted.
+  let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    let pos = Expr::Integer((i + 1) as i128);
+    let mut slot = groups.len();
+    let mut found = false;
+    for (g, (rep, _)) in groups.iter().enumerate() {
+      match compare(item, rep)? {
+        Some(O::Equal) => {
+          slot = g;
+          found = true;
+          break;
+        }
+        Some(O::Less) => {
+          slot = g;
+          break;
+        }
+        Some(O::Greater) => {}
+        None => return unevaluated(),
+      }
+    }
+    if found {
+      groups[slot].1.push(pos);
+    } else {
+      groups.insert(slot, (item.clone(), vec![pos]));
+    }
+  }
+  Ok(Expr::List(
+    groups
+      .into_iter()
+      .take(*n as usize)
+      .map(|(_, ps)| Expr::List(ps.into()))
+      .collect(),
+  ))
+}
+
 /// PositionLargest[list] / PositionSmallest[list]: the 1-based positions of all
 /// occurrences of the maximum (resp. minimum) element of a numeric list, in
 /// ascending order. Non-numeric lists are left unevaluated. (The 2-argument

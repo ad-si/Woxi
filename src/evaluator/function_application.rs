@@ -1278,6 +1278,8 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "SplitBy"
       | "DeleteDuplicatesBy"
       | "KeyExistsQ"
+      | "KeyMemberQ"
+      | "ReverseSortBy"
       | "ReplaceList"
   )
 }
@@ -1687,9 +1689,18 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "StringTemplate" && func_args.len() == 1 => {
-      // StringTemplate[template][args…] — fill the template's slots.
-      crate::functions::string_ast::apply_string_template(&func_args[0], args)
+    } if name == "StringTemplate"
+      && !func_args.is_empty()
+      && func_args[1..]
+        .iter()
+        .all(|o| matches!(o, Expr::Rule { .. } | Expr::RuleDelayed { .. })) =>
+    {
+      // StringTemplate[template, opts…][args…] — fill the template's slots.
+      crate::functions::string_ast::apply_string_template_with(
+        &func_args[0],
+        &func_args[1..],
+        args,
+      )
     }
     Expr::FunctionCall {
       name,

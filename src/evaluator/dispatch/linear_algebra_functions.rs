@@ -54,17 +54,26 @@ fn structuring_element_in_width(
     .map(|i| 2 * at(&radii, i) + (at(&widths, i) + 1) % 2)
     .collect();
   let diamond = name == "DiamondMatrix";
+  let cross = name == "CrossMatrix";
 
   // Build the tensor by walking every cell in row-major order.
   fn build(
     dims: &[usize],
     thresholds: &[i128],
-    diamond: bool,
+    (diamond, cross): (bool, bool),
     idx: &mut Vec<i128>,
   ) -> Expr {
     let level = idx.len();
     if level == dims.len() {
-      let inside = if diamond {
+      let offset = |i: usize| (2 * (idx[i] + 1) - (dims[i] as i128 + 1)).abs();
+      let inside = if cross {
+        // Inside the box, and off the central line in at most one direction.
+        (0..dims.len()).all(|i| offset(i) <= thresholds[i])
+          && (0..dims.len())
+            .filter(|&i| offset(i) > (dims[i] as i128 + 1) % 2)
+            .count()
+            <= 1
+      } else if diamond {
         // sum d/t <= 1, cleared of denominators.
         let denom: i128 = thresholds.iter().product();
         let total: i128 = (0..dims.len())
@@ -88,12 +97,17 @@ fn structuring_element_in_width(
     let mut row = Vec::with_capacity(dims[level]);
     for i in 0..dims[level] {
       idx.push(i as i128);
-      row.push(build(dims, thresholds, diamond, idx));
+      row.push(build(dims, thresholds, (diamond, cross), idx));
       idx.pop();
     }
     Expr::List(row.into())
   }
-  Some(Ok(build(&dims, &thresholds, diamond, &mut Vec::new())))
+  Some(Ok(build(
+    &dims,
+    &thresholds,
+    (diamond, cross),
+    &mut Vec::new(),
+  )))
 }
 
 pub fn dispatch_linear_algebra_functions(
@@ -477,12 +491,14 @@ pub fn dispatch_linear_algebra_functions(
         return Some(Ok(build_ones_tensor(&dims)));
       }
     }
-    "BoxMatrix" | "DiamondMatrix" if args.len() == 2 => {
+    "BoxMatrix" | "DiamondMatrix" | "CrossMatrix" if args.len() == 2 => {
       return structuring_element_in_width(name, &args[0], &args[1], args);
     }
-    // DiagonalMatrix[…, TargetStructure -> "Dense" | "Sparse" | Automatic]
-    "DiagonalMatrix"
-      if (2..=4).contains(&args.len())
+    // f[…, TargetStructure -> "Dense" | "Sparse" | Automatic]: build the
+    // dense matrix with the plain form, then wrap it for "Sparse".
+    "DiagonalMatrix" | "ToeplitzMatrix" | "HankelMatrix"
+    | "VandermondeMatrix"
+      if args.len() >= 2
         && matches!(&args[args.len() - 1], Expr::Rule { pattern, .. }
           if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TargetStructure")) =>
     {
@@ -493,15 +509,15 @@ pub fn dispatch_linear_algebra_functions(
         Expr::String(s) if s == "Dense" => false,
         Expr::Identifier(s) if s == "Automatic" => false,
         Expr::String(s) if s == "Sparse" => true,
-        _ => return Some(Ok(unevaluated("DiagonalMatrix", args))),
+        _ => return Some(Ok(unevaluated(name, args))),
       };
-      let dense =
-        match crate::functions::linear_algebra_ast::diagonal_matrix_ast(
-          &args[..args.len() - 1],
-        ) {
-          Ok(d) => d,
-          Err(e) => return Some(Err(e)),
-        };
+      let dense = match crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..args.len() - 1],
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
       if !sparse || !matches!(dense, Expr::List(_)) {
         return Some(Ok(dense));
       }
@@ -530,7 +546,7 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
-    "VandermondeMatrix" if args.len() == 1 => {
+    "VandermondeMatrix" if (1..=2).contains(&args.len()) => {
       return Some(
         crate::functions::linear_algebra_ast::vandermonde_matrix_ast(args),
       );
@@ -1309,6 +1325,29 @@ pub fn dispatch_linear_algebra_functions(
     // exponential on the vector v), avoiding forming the full exponential
     // when only its product with v is wanted. The second argument must be a
     // nonempty vector (a flat list of scalars).
+    // MatrixExp[m, …, Parameter -> t] is MatrixExp[m t, …].
+    "MatrixExp"
+      if args.len() >= 2
+        && matches!(&args[args.len() - 1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Parameter")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[args.len() - 1] else {
+        return None;
+      };
+      let scaled = match evaluate_expr_to_expr(&times(vec![
+        args[0].clone(),
+        replacement.as_ref().clone(),
+      ])) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      let mut new_args = vec![scaled];
+      new_args.extend(args[1..args.len() - 1].iter().cloned());
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "MatrixExp",
+        &new_args,
+      ));
+    }
     "MatrixExp" if args.len() == 2 => {
       let is_vector = matches!(&args[1],
         Expr::List(items)
@@ -2500,6 +2539,72 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::singular_value_list_ast(args),
       );
     }
+    // SingularValueDecomposition[m, k]: the decomposition restricted to the
+    // k largest singular values (the k smallest for negative k): the
+    // matching columns of u and v and the k×k block of σ.
+    "SingularValueDecomposition"
+      if args.len() == 2 && matches!(args[1], Expr::Integer(k) if k != 0) =>
+    {
+      let Expr::Integer(k) = args[1] else {
+        return None;
+      };
+      let full =
+        match crate::functions::linear_algebra_ast::singular_value_decomposition_ast(
+          &args[..1],
+        ) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+      let rows_of = |e: &Expr| -> Option<Vec<Vec<Expr>>> {
+        let Expr::List(rows) = e else { return None };
+        rows
+          .iter()
+          .map(|r| match r {
+            Expr::List(c) => Some(c.iter().cloned().collect()),
+            _ => None,
+          })
+          .collect()
+      };
+      let parts = match &full {
+        Expr::List(p) if p.len() == 3 => {
+          match (rows_of(&p[0]), rows_of(&p[1]), rows_of(&p[2])) {
+            (Some(u), Some(sigma), Some(v)) => Some((u, sigma, v)),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let Some((u, sigma, v)) = parts else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let p = sigma.len().min(sigma.first().map_or(0, |r| r.len()));
+      let kk = k.unsigned_abs() as usize;
+      if kk > p {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let idx: Vec<usize> = if k > 0 {
+        (0..kk).collect()
+      } else {
+        (p - kk..p).collect()
+      };
+      let columns = |m: &[Vec<Expr>]| -> Expr {
+        Expr::List(
+          m.iter()
+            .map(|r| {
+              Expr::List(
+                idx.iter().map(|&j| r[j].clone()).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      };
+      let block =
+        columns(&idx.iter().map(|&i| sigma[i].clone()).collect::<Vec<_>>());
+      return Some(Ok(Expr::List(
+        vec![columns(&u), block, columns(&v)].into(),
+      )));
+    }
     "SingularValueDecomposition" if args.len() == 1 => {
       return Some(
         crate::functions::linear_algebra_ast::singular_value_decomposition_ast(
@@ -2905,61 +3010,89 @@ pub fn dispatch_linear_algebra_functions(
       // A non-list argument (scalar, symbol, …) is not a matrix → False.
       return Some(Ok(bool_expr(false)));
     }
-    // UpperTriangularMatrixQ[m] — True if m is upper triangular
-    "UpperTriangularMatrixQ" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        let mut is_upper = true;
-        'upper: for i in 0..n {
-          if let Expr::List(row) = &rows[i] {
-            for j in 0..i.min(row.len()) {
-              if !matches!(&row[j], Expr::Integer(0)) {
-                let evaluated =
-                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
-                if !matches!(evaluated, Expr::Integer(0)) {
-                  is_upper = false;
-                  break 'upper;
-                }
-              }
-            }
-          } else {
-            is_upper = false;
-            break;
+    // UpperTriangularMatrixQ[m, k] — every entry below the k-th diagonal
+    // (j - i < k) is zero; LowerTriangularMatrixQ[m, k] — every entry above
+    // it (j - i > k) is. k defaults to 0.
+    "UpperTriangularMatrixQ" | "LowerTriangularMatrixQ"
+      if args.len() == 1
+        || args.len() == 2 && matches!(args[1], Expr::Integer(_)) =>
+    {
+      let k = match args.get(1) {
+        Some(Expr::Integer(k)) => *k,
+        _ => 0,
+      };
+      let upper = name == "UpperTriangularMatrixQ";
+      let Expr::List(rows) = &args[0] else {
+        // A non-list argument (scalar, symbol, …) is not a matrix → False.
+        return Some(Ok(bool_expr(false)));
+      };
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(row) = row else {
+          return Some(Ok(bool_expr(false)));
+        };
+        for (j, entry) in row.iter().enumerate() {
+          let d = j as i128 - i as i128;
+          let must_vanish = if upper { d < k } else { d > k };
+          if must_vanish
+            && !matches!(entry, Expr::Integer(0))
+            && !matches!(
+              evaluate_expr_to_expr(entry).unwrap_or(entry.clone()),
+              Expr::Integer(0)
+            )
+          {
+            return Some(Ok(bool_expr(false)));
           }
         }
-        return Some(Ok(bool_expr(is_upper)));
       }
-      // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(bool_expr(false)));
-    }
-    // LowerTriangularMatrixQ[m] — True if m is lower triangular
-    "LowerTriangularMatrixQ" if args.len() == 1 => {
-      if let Expr::List(rows) = &args[0] {
-        let n = rows.len();
-        let mut is_lower = true;
-        'lower: for i in 0..n {
-          if let Expr::List(row) = &rows[i] {
-            for j in (i + 1)..row.len() {
-              if !matches!(&row[j], Expr::Integer(0)) {
-                let evaluated =
-                  evaluate_expr_to_expr(&row[j]).unwrap_or(row[j].clone());
-                if !matches!(evaluated, Expr::Integer(0)) {
-                  is_lower = false;
-                  break 'lower;
-                }
-              }
-            }
-          } else {
-            is_lower = false;
-            break;
-          }
-        }
-        return Some(Ok(bool_expr(is_lower)));
-      }
-      // A non-list argument (scalar, symbol, …) is not a matrix → False.
-      return Some(Ok(bool_expr(false)));
+      return Some(Ok(bool_expr(true)));
     }
     // AntisymmetricMatrixQ[m] — True if m is antisymmetric (m[i][j] == -m[j][i])
+    // (Anti)SymmetricMatrixQ[m, SameTest -> f]: f[m[[i, j]], ±m[[j, i]]]
+    // must give True for every pair i <= j.
+    "SymmetricMatrixQ" | "AntisymmetricMatrixQ"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[1] else {
+        return None;
+      };
+      let Expr::List(rows) = &args[0] else {
+        return Some(Ok(bool_expr(false)));
+      };
+      let n = rows.len();
+      let mut cells: Vec<&[Expr]> = Vec::with_capacity(n);
+      for row in rows.iter() {
+        match row {
+          Expr::List(r) if r.len() == n => cells.push(r),
+          _ => return Some(Ok(bool_expr(false))),
+        }
+      }
+      let anti = name == "AntisymmetricMatrixQ";
+      for i in 0..n {
+        for j in i..n {
+          let other = if anti {
+            times(vec![Expr::Integer(-1), cells[j][i].clone()])
+          } else {
+            cells[j][i].clone()
+          };
+          let test = Expr::FunctionCall {
+            name: "Apply".into(),
+            args: vec![
+              replacement.as_ref().clone(),
+              Expr::List(vec![cells[i][j].clone(), other].into()),
+            ]
+            .into(),
+          };
+          match evaluate_expr_to_expr(&test) {
+            Ok(Expr::Identifier(ref t)) if t == "True" => {}
+            Ok(_) => return Some(Ok(bool_expr(false))),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+      }
+      return Some(Ok(bool_expr(true)));
+    }
     "AntisymmetricMatrixQ" if args.len() == 1 => {
       if let Expr::List(rows) = &args[0] {
         let n = rows.len();

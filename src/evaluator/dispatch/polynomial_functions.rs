@@ -242,6 +242,26 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "AlgebraicNumberNorm" | "AlgebraicNumberTrace"
+      if args.len() == 2
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Extension")
+        && !matches!(
+          replacement.as_ref(),
+          Expr::List(_) | Expr::Identifier(_)
+        ) =>
+    {
+      return Some(
+        crate::functions::polynomial_ast::algebraic_number_trace_norm_in_field(
+          name,
+          args,
+          replacement,
+        ),
+      );
+    }
     "AlgebraicNumberNorm" if args.len() == 1 => {
       return Some(
         crate::functions::polynomial_ast::algebraic_number_norm_ast(args),
@@ -267,7 +287,14 @@ pub fn dispatch_polynomial_functions(
     "FunctionExpand" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::function_expand_ast(args));
     }
-    "ToRadicals" if args.len() == 1 => {
+    "ToRadicals"
+      if !args.is_empty()
+        && args[1..].iter().all(|o| {
+          matches!(o, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n)
+              if n == "Cubics" || n == "Quartics"))
+        }) =>
+    {
       return Some(crate::functions::polynomial_ast::to_radicals_ast(args));
     }
     "ToRules" if args.len() == 1 => {
@@ -699,6 +726,30 @@ pub fn dispatch_polynomial_functions(
     }
     "Together" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::together_ast(args));
+    }
+    // Apart / ApartSquareFree / FactorSquareFree [expr, (x,) Modulus -> p]
+    // over GF(p) for univariate integer rational functions.
+    "Apart" | "ApartSquareFree" | "FactorSquareFree"
+      if (args.len() == 2 || args.len() == 3 && name != "FactorSquareFree")
+        && let Some(p) =
+          crate::functions::linear_algebra_ast::extract_modulus_option_la(
+            &args[args.len() - 1],
+          ) =>
+    {
+      use crate::functions::polynomial_ast as pa;
+      if p == 0 {
+        return dispatch_polynomial_functions(name, &args[..args.len() - 1]);
+      }
+      let result = match name {
+        "Apart" => pa::apart_modulus(&args[0], p, false),
+        "ApartSquareFree" => pa::apart_modulus(&args[0], p, true),
+        _ => pa::factor_square_free_modulus(&args[0], p),
+      };
+      return Some(match result {
+        Ok(Some(e)) => Ok(e),
+        Ok(None) => Ok(unevaluated(name, args)),
+        Err(e) => Err(e),
+      });
     }
     "Apart" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::apart_ast(args));
