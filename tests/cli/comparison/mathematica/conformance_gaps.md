@@ -2299,6 +2299,13 @@ resolves at raised internal precision; f64 Durand–Kerner cannot.
 `Minimize[1/(1+x^2), x]` returns a bogus large-x numeric instead of WL's
 `natt` message and 0.
 
+Unbounded non-convex polynomials go the same way: `Minimize[x^2 - y^2,
+{x, y}]` reports the saddle `{0, {x -> 0, y -> 0}}` where WL says
+`-Infinity`. And where the minimum is attained along a whole curve
+(`Minimize[(x y - 3)^2 + 1, {x, y}]`), the value matches but Woxi reports
+the point with the free variable at 1 (`{x -> 1, y -> 3}`), WL
+`{x -> -1, y -> -3}`.
+
 ### Symbolic `Fit` and `LinearModelFit`
 
 `LinearModelFit[…]["BestFit"]` drops the `0. +` constant term wolframscript

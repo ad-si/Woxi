@@ -7605,6 +7605,58 @@ mod dt {
 mod minimize {
   use super::*;
 
+  // A coupled convex quadratic is minimized at the joint critical point;
+  // Sqrt of it at the same point.
+  #[test]
+  fn coupled_convex_quadratic() {
+    assert_eq!(
+      interpret("Minimize[(x - 1)^2 + (y - 2)^2 + (x + y + 2)^2, {x, y}]")
+        .unwrap(),
+      "{25/3, {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(
+      interpret(
+        "Minimize[Sqrt[(x - 1)^2 + (y - 2)^2 + (x + y + 2)^2], {x, y}]"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(
+      interpret("Maximize[-(x - 1)^2 - (y - 2)^2 - (x + y + 2)^2 + 1, {x, y}]")
+        .unwrap(),
+      "{-22/3, {x -> -2/3, y -> 1/3}}"
+    );
+    assert_eq!(interpret("MinValue[(x y - 3)^2 + 1, {x, y}]").unwrap(), "1");
+  }
+
+  // Equation constraints are eliminated; even powers of Abs of a real
+  // expression drop the Abs (EuclideanDistance).
+  #[test]
+  fn equation_constraints_eliminated() {
+    assert_eq!(
+      interpret(
+        "Minimize[{x^2 + y^2 + z^2, x + y == 1, y + z == 2}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{2, {x -> 0, y -> 1, z -> 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Minimize[{EuclideanDistance[{x, y, z}, {1, 2, 3}], {1, x, y, z} . {-1, 1, 1, 1} == 0}, {x, y, z}]"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], {x -> -2/3, y -> 1/3, z -> 4/3}}"
+    );
+    assert_eq!(
+      interpret("Minimize[Abs[x - 1]^2 + 3, x]").unwrap(),
+      "{3, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("Maximize[{x y, x + y == 1}, {x, y}]").unwrap(),
+      "{1/4, {x -> 1/2, y -> 1/2}}"
+    );
+  }
+
   // --- Unconstrained single-variable ---
 
   #[test]

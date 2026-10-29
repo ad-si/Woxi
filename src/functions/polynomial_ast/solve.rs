@@ -14114,6 +14114,19 @@ fn minimize_ast_inner(
 
   // Parse objective and constraints: f or {f, cons1, cons2, ...}
   let (raw_objective, raw_constraints) = minimize_parse_objective(&args[0]);
+  // The variables are real, so an even power of the absolute value of a
+  // real expression is that power of the expression itself
+  // (EuclideanDistance gives Sqrt[Abs[x - 1]^2 + …]).
+  let raw_objective = crate::evaluator::evaluate_function_call_ast(
+    "ReplaceAll",
+    &[
+      raw_objective.clone(),
+      crate::syntax::string_to_expr(
+        "Abs[u$_]^(k$_?EvenQ) /; FreeQ[u$, Complex] :> u$^k$",
+      )?,
+    ],
+  )
+  .unwrap_or(raw_objective);
   let objective = rename_forward(raw_objective);
   let mut constraints: Vec<Expr> =
     raw_constraints.into_iter().map(rename_forward).collect();
@@ -15161,6 +15174,88 @@ fn minimize_find_critical_points_numerical(
 }
 
 /// Multi-variable unconstrained minimize.
+/// The minimum of a quadratic polynomial `f` in `vars` whose Hessian is
+/// positive definite: its single critical point, from the (linear) gradient
+/// system. `{value, {var -> point, …}}`, or None for anything else.
+fn convex_quadratic_minimum(
+  f: &Expr,
+  vars: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  if !matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[f.clone(), var_list.clone()]
+    )?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let mut gradient = Vec::with_capacity(vars.len());
+  let mut hessian = Vec::with_capacity(vars.len());
+  for v in vars {
+    let d = crate::functions::calculus_ast::differentiate_expr(f, v)?;
+    let mut row = Vec::with_capacity(vars.len());
+    for w in vars {
+      let dd = crate::evaluator::evaluate_expr_to_expr(
+        &crate::functions::calculus_ast::differentiate_expr(&d, w)?,
+      )?;
+      // Second derivatives must be numbers: degree two at most.
+      if crate::functions::math_ast::try_eval_to_f64(&dd).is_none() {
+        return Ok(None);
+      }
+      row.push(dd);
+    }
+    hessian.push(Expr::List(row.into()));
+    gradient.push(Expr::Comparison {
+      operands: vec![d, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  let hessian = Expr::List(hessian.into());
+  if !matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PositiveDefiniteMatrixQ",
+      &[hessian]
+    )?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let solved = solve_ast(&[Expr::List(gradient.into()), var_list])?;
+  let Expr::List(sets) = &solved else {
+    return Ok(None);
+  };
+  let [Expr::List(rules)] = sets.as_slice() else {
+    return Ok(None);
+  };
+  // The rules in the variables' order.
+  let mut ordered = Vec::with_capacity(vars.len());
+  for v in vars {
+    let Some(rule) = rules.iter().find(|r| {
+      matches!(r, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == v))
+    }) else {
+      return Ok(None);
+    };
+    ordered.push(rule.clone());
+  }
+  if ordered.iter().any(|r| {
+    matches!(r, Expr::Rule { replacement, .. }
+      if vars.iter().any(|v| contains_var(replacement, v)))
+  }) {
+    return Ok(None);
+  }
+  let value = crate::evaluator::evaluate_function_call_ast(
+    "Together",
+    &[substitute_rules(f, &ordered)?],
+  )?;
+  Ok(Some(Expr::List(
+    vec![value, Expr::List(ordered.into())].into(),
+  )))
+}
+
 fn minimize_multi_var(
   f: &Expr,
   vars: &[String],
@@ -15174,6 +15269,50 @@ fn minimize_multi_var(
   };
 
   let n = vars.len();
+
+  // Sqrt[q] is smallest where q is: minimize the radicand, then take the
+  // root of its minimum.
+  let radicand = match f {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && expr_to_string(&args[1]) == "1/2" =>
+    {
+      Some(&args[0])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if expr_to_string(right) == "1/2" => Some(left.as_ref()),
+    _ => None,
+  };
+  if !maximize
+    && let Some(radicand) = radicand
+    && let Some(inner) = convex_quadratic_minimum(radicand, vars)?
+    && let Expr::List(pair) = &inner
+    && let [value, rules] = pair.as_slice()
+  {
+    let root = crate::evaluator::evaluate_function_call_ast(
+      "Sqrt",
+      std::slice::from_ref(value),
+    )?;
+    return Ok(Expr::List(vec![root, rules.clone()].into()));
+  }
+  if let Some(result) = convex_quadratic_minimum(&f_inner, vars)? {
+    let Expr::List(pair) = &result else {
+      unreachable!()
+    };
+    let value = if maximize {
+      simplify(negate_expr(&pair[0]))
+    } else {
+      pair[0].clone()
+    };
+    return Ok(Expr::List(vec![value, pair[1].clone()].into()));
+  }
 
   // Compute symbolic gradient
   let mut grad: Vec<Expr> = Vec::new();
@@ -15199,6 +15338,8 @@ fn minimize_multi_var(
         && let Some(Expr::List(rules)) = sol_sets.first()
         && rules.len() == 1
         && let Some(Expr::Rule { replacement, .. }) = rules.first()
+        // A coupled gradient (x in terms of y) is no critical point.
+        && !vars.iter().any(|v| contains_var(replacement, v))
       {
         solutions[i] = Some(*replacement.clone());
         continue;
@@ -15228,6 +15369,89 @@ fn minimize_multi_var(
       return Ok(Expr::List(
         vec![result_val, Expr::List(rules.into())].into(),
       ));
+    }
+  }
+
+  // The gradient solved jointly: the least value over its exact critical
+  // points. A critical set left in terms of a free variable (`y -> 3/x`
+  // where f is constant along it) is represented by the free variable at 1.
+  {
+    let equations: Vec<Expr> = grad
+      .iter()
+      .map(|g| Expr::Comparison {
+        operands: vec![g.clone(), Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      })
+      .collect();
+    let var_list =
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+    crate::push_quiet();
+    let solved = solve_ast(&[Expr::List(equations.into()), var_list]);
+    crate::pop_quiet();
+    let mut best: Option<(f64, Expr, Vec<Expr>)> = None;
+    if let Ok(Expr::List(sets)) = &solved {
+      for set in sets {
+        let Expr::List(rules) = set else { continue };
+        let mut point = Vec::with_capacity(n);
+        let mut ok = true;
+        for v in vars {
+          let found = rules.iter().find_map(|r| match r {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == v) => {
+              Some((**replacement).clone())
+            }
+            _ => None,
+          });
+          point.push(found.unwrap_or(Expr::Integer(1)));
+        }
+        // Free variables at 1, then the solved ones in terms of them.
+        let free_at_one: Vec<Expr> = vars
+          .iter()
+          .zip(point.iter())
+          .filter(|(v, p)| matches!(p, Expr::Integer(1)) && !rules.iter().any(|r| matches!(r, Expr::Rule { pattern, .. } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == *v))))
+          .map(|(v, _)| rule_expr(Expr::Identifier(v.clone()), Expr::Integer(1)))
+          .collect();
+        let mut values = Vec::with_capacity(n);
+        for p in &point {
+          let at = substitute_rules(p, &free_at_one)?;
+          if vars.iter().any(|v| contains_var(&at, v))
+            || crate::functions::math_ast::try_eval_to_f64(&at).is_none()
+          {
+            ok = false;
+            break;
+          }
+          values.push(at);
+        }
+        if !ok {
+          continue;
+        }
+        let Ok(value) = minimize_eval_exact_multi(&f_inner, vars, &values)
+        else {
+          continue;
+        };
+        let Some(numeric) = crate::functions::math_ast::try_eval_to_f64(&value)
+        else {
+          continue;
+        };
+        if best.as_ref().is_none_or(|(b, _, _)| numeric < *b) {
+          best = Some((numeric, value, values));
+        }
+      }
+    }
+    if let Some((_, value, values)) = best {
+      let value = if maximize {
+        simplify(negate_expr(&value))
+      } else {
+        value
+      };
+      let rules: Vec<Expr> = vars
+        .iter()
+        .zip(values)
+        .map(|(v, val)| rule_expr(Expr::Identifier(v.clone()), val))
+        .collect();
+      return Ok(Expr::List(vec![value, Expr::List(rules.into())].into()));
     }
   }
 
@@ -15388,6 +15612,18 @@ fn minimize_constrained(
     return Ok(restore(result));
   }
 
+  // Equations alone with one parametrized solution (a linear system) are
+  // eliminated: the objective is optimized over the variables they leave
+  // free, and the solved ones follow from those.
+  if constraints.iter().all(|c| {
+    matches!(c, Expr::Comparison { operators, .. }
+      if operators.iter().all(|o| *o == ComparisonOp::Equal))
+  }) && let Some(result) =
+    minimize_eliminating_equations(f, &constraints, vars, maximize, func_name)?
+  {
+    return Ok(result);
+  }
+
   // Single variable with simple bound constraints
   if vars.len() == 1 {
     let var = &vars[0];
@@ -15408,6 +15644,109 @@ fn minimize_constrained(
     maximize,
     func_name,
   )))
+}
+
+/// `expr` with each `var -> value` rule substituted syntactically and the
+/// result evaluated. (`ReplaceAll` would read the solver's internal
+/// `__ilp_i` variable names as patterns.)
+fn substitute_rules(
+  expr: &Expr,
+  rules: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut out = expr.clone();
+  for r in rules {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = r
+      && let Expr::Identifier(v) = pattern.as_ref()
+    {
+      out = crate::syntax::substitute_variable(&out, v, replacement);
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&out)
+}
+
+/// `Minimize[{f, eqns}, vars]` with equations `Solve` parametrizes by a
+/// single solution: optimize `f` with the solved variables substituted over
+/// the remaining ones, then read the solved ones off the optimum. None when
+/// the equations have no such solution or the reduced problem is not solved.
+fn minimize_eliminating_equations(
+  f: &Expr,
+  equations: &[Expr],
+  vars: &[String],
+  maximize: bool,
+  func_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  // Leaving variables free is the point here, not worth a Solve::svars.
+  crate::push_quiet();
+  let solved = solve_ast(&[Expr::List(equations.to_vec().into()), var_list]);
+  crate::pop_quiet();
+  let solved = solved?;
+  let Expr::List(sets) = &solved else {
+    return Ok(None);
+  };
+  let [Expr::List(rules)] = sets.as_slice() else {
+    return Ok(None);
+  };
+  let solved_name = |r: &Expr| match r {
+    Expr::Rule { pattern, .. } => match pattern.as_ref() {
+      Expr::Identifier(n) => Some(n.clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  if rules.is_empty() || rules.iter().any(|r| solved_name(r).is_none()) {
+    return Ok(None);
+  }
+  let free: Vec<String> = vars
+    .iter()
+    .filter(|v| !rules.iter().any(|r| solved_name(r).as_ref() == Some(v)))
+    .cloned()
+    .collect();
+  let reduced = substitute_rules(f, rules)?;
+  let (value, free_rules) = if free.is_empty() {
+    (reduced, Vec::new())
+  } else {
+    let optimum = if free.len() == 1 {
+      minimize_single_var(&reduced, &free[0], maximize, func_name)?
+    } else {
+      minimize_multi_var(&reduced, &free, maximize, func_name)?
+    };
+    let Expr::List(pair) = &optimum else {
+      return Ok(None);
+    };
+    let [value, Expr::List(free_rules)] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if free_rules.iter().any(|r| {
+      matches!(r, Expr::Rule { replacement, .. }
+        if free.iter().any(|v| contains_var(replacement, v)))
+    }) {
+      return Ok(None);
+    }
+    (value.clone(), free_rules.to_vec())
+  };
+  let mut out = Vec::with_capacity(vars.len());
+  for v in vars {
+    if let Some(r) = free_rules
+      .iter()
+      .find(|r| solved_name(r).as_ref() == Some(v))
+    {
+      out.push(r.clone());
+      continue;
+    }
+    let Some(Expr::Rule { replacement, .. }) =
+      rules.iter().find(|r| solved_name(r).as_ref() == Some(v))
+    else {
+      return Ok(None);
+    };
+    let at = substitute_rules(replacement, &free_rules)?;
+    out.push(rule_expr(Expr::Identifier(v.clone()), at));
+  }
+  Ok(Some(Expr::List(vec![value, Expr::List(out.into())].into())))
 }
 
 /// Collect the symbols an `Element[…, dom]` subject names: a single
