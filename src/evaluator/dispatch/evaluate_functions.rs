@@ -1957,7 +1957,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Polyhedron data function
-  if name == "PolyhedronData" && !args.is_empty() {
+  if name == "PolyhedronData" {
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);
   }
 
