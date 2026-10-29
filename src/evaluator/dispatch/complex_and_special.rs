@@ -47,6 +47,73 @@ pub fn dispatch_complex_and_special(
     "DiscreteDelta" => {
       return Some(crate::functions::math_ast::discrete_delta_ast(args));
     }
+    // An exact numeric argument that is not a rational (Pi, Sqrt[2]/4, …)
+    // is placed against the support by its numeric value; inside the
+    // support of UnitTriangle/HeavisideLambda the value is 1 - Abs[x].
+    "UnitBox" | "UnitTriangle" | "HeavisidePi" | "HeavisideLambda"
+      if args.len() == 1
+        && !matches!(
+          &args[0],
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::List(_)
+        )
+        && !matches!(&args[0], Expr::FunctionCall { name: r, .. } if r == "Rational")
+        && crate::functions::math_ast::try_eval_to_f64(&args[0]).is_some() =>
+    {
+      let v = crate::functions::math_ast::try_eval_to_f64(&args[0])
+        .unwrap_or(0.0)
+        .abs();
+      let edge = if matches!(name, "UnitBox" | "HeavisidePi") {
+        0.5
+      } else {
+        1.0
+      };
+      if (v - edge).abs() < 1e-12 || v < 1e-12 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      if v > edge {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      return Some(if edge == 0.5 {
+        Ok(Expr::Integer(1))
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Times",
+              vec![Expr::Integer(-1), call1("Abs", args[0].clone())],
+            ),
+          ],
+        ))
+      });
+    }
+    // UnitBox[x1, x2, …] (likewise UnitTriangle, HeavisidePi and
+    // HeavisideLambda) is the product of the one-variable functions; it
+    // evaluates once every factor is a number.
+    "UnitBox" | "UnitTriangle" | "HeavisidePi" | "HeavisideLambda"
+      if args.len() > 1 =>
+    {
+      let mut factors = Vec::with_capacity(args.len());
+      for x in args {
+        match crate::evaluator::evaluate_function_call_ast(
+          name,
+          std::slice::from_ref(x),
+        ) {
+          Ok(Expr::FunctionCall { name: ref h, .. }) if h == name => {
+            return Some(Ok(unevaluated(name, args)));
+          }
+          Ok(v) => factors.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Times", &factors,
+      ));
+    }
     "UnitBox" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_box_ast(args));
     }
@@ -1165,7 +1232,13 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(call1("OutputForm", inner)));
     }
     // ToBoxes[expr] / ToBoxes[expr, form] — convert expression to box form
+    // Only StandardForm boxes are produced; other forms stay unevaluated.
     "ToBoxes" if args.len() == 1 || args.len() == 2 => {
+      if args.len() == 2
+        && !matches!(&args[1], Expr::Identifier(f) if f == "StandardForm")
+      {
+        return Some(Ok(unevaluated(name, args)));
+      }
       return Some(Ok(expr_to_box_form(&args[0])));
     }
     // MakeBoxes[expr] / MakeBoxes[expr, form] — convert unevaluated expression to box form

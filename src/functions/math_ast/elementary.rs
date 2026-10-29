@@ -4003,7 +4003,24 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return match &args[0] {
       Expr::Integer(n) => Ok(Expr::Integer(i128::from(*n == 0))),
       Expr::Real(f) => Ok(Expr::Integer(i128::from(*f == 0.0))),
-      _ => Ok(unevaluated("KroneckerDelta", args)),
+      // Any other numeric quantity (I, Pi, Sqrt[2], 1 + I, …) is decided
+      // by its magnitude.
+      x => {
+        let numeric = crate::evaluator::evaluate_function_call_ast(
+          "NumericQ",
+          std::slice::from_ref(x),
+        )?;
+        if matches!(numeric, Expr::Identifier(ref t) if t == "True") {
+          let abs = crate::evaluator::evaluate_function_call_ast(
+            "Abs",
+            std::slice::from_ref(x),
+          )?;
+          if let Some(m) = try_eval_to_f64(&abs) {
+            return Ok(Expr::Integer(i128::from(m == 0.0)));
+          }
+        }
+        Ok(unevaluated("KroneckerDelta", args))
+      }
     };
   }
 

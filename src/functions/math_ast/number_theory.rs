@@ -3824,11 +3824,30 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The order may be negative. Since divisors pair as d <-> n/d,
   //   DivisorSigma[-p, n] = sum_{d|n} d^{-p} = sigma_p(n) / n^p  (a rational).
-  // Non-integer orders (symbolic/rational/real) are not handled here.
+  // Any other order (symbolic, rational, real) is the explicit sum
+  // of d^k over the divisors of an integer n.
   let Some(order) = expr_to_i128(&args[0]) else {
-    return Err(InterpreterError::EvaluationError(
-      "DivisorSigma: first argument must be a non-negative integer".into(),
-    ));
+    let n = match &args[1] {
+      Expr::Integer(n) if *n != 0 => Expr::Integer(n.abs()),
+      Expr::BigInteger(_) => args[1].clone(),
+      _ => return Ok(unevaluated("DivisorSigma", args)),
+    };
+    let divisors =
+      crate::evaluator::evaluate_function_call_ast("Divisors", &[n])?;
+    let Expr::List(ds) = &divisors else {
+      return Ok(unevaluated("DivisorSigma", args));
+    };
+    let terms: Vec<Expr> = ds
+      .iter()
+      .map(|d| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![d.clone(), args[0].clone()].into(),
+      })
+      .collect();
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: terms.into(),
+    });
   };
 
   let n = match expr_to_i128(&args[1]) {

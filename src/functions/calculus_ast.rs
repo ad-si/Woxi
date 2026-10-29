@@ -3399,6 +3399,33 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Ok(simplify(times2(dz, result)))
           }
         }
+        // PolyLog[n, p, z]: D[_, z] = PolyLog[n-1, p, z] / z.
+        "PolyLog" if args.len() == 3 => {
+          let dn = differentiate(&args[0], var)?;
+          let dp = differentiate(&args[1], var)?;
+          let dz = differentiate(&args[2], var)?;
+          let zero = |e: &Expr| matches!(e, Expr::Integer(0));
+          if zero(&dn) && zero(&dp) && zero(&dz) {
+            return Ok(Expr::Integer(0));
+          }
+          if !zero(&dn) || !zero(&dp) {
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
+          }
+          let n_minus_1 = crate::functions::math_ast::plus_ast(&[
+            Expr::Integer(-1),
+            args[0].clone(),
+          ])?;
+          let pl = crate::evaluator::evaluate_expr_to_expr(&call(
+            "PolyLog",
+            vec![n_minus_1, args[1].clone(), args[2].clone()],
+          ))?;
+          let result = simplify(div2(pl, args[2].clone()));
+          if matches!(dz, Expr::Integer(1)) {
+            Ok(result)
+          } else {
+            Ok(simplify(times2(dz, result)))
+          }
+        }
         // ExpIntegralE[n, z]: D[_, z] = -ExpIntegralE[n-1, z].
         "ExpIntegralE" if args.len() == 2 => {
           let dn = differentiate(&args[0], var)?;

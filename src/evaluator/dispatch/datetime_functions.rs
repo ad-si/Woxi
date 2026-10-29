@@ -34,6 +34,19 @@ pub fn dispatch_datetime_functions(
     "TimeZoneConvert" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::time_zone_convert_ast(args));
     }
+    // DatePlus[n] — n days (or the given duration) after today.
+    "DatePlus" if args.len() == 1 => {
+      return Some(
+        crate::evaluator::evaluate_expr_to_expr(&id_expr("Today")).and_then(
+          |today| {
+            crate::functions::datetime_ast::date_plus_ast(&[
+              today,
+              args[0].clone(),
+            ])
+          },
+        ),
+      );
+    }
     "DatePlus" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_plus_ast(args));
     }

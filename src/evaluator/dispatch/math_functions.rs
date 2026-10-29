@@ -165,6 +165,11 @@ pub fn dispatch_math_functions(
   {
     return Some(result);
   }
+  if let Some(value) =
+    crate::functions::math_ast::infinite_argument_value(name, args)
+  {
+    return Some(Ok(value));
+  }
   match name {
     // AST-native math functions
     "Plus" => {
@@ -920,6 +925,52 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
+    // GroupSupport[group] — the points moved by some generator of the group.
+    "GroupSupport" if args.len() == 1 => {
+      let gens = match crate::evaluator::evaluate_function_call_ast(
+        "GroupGenerators",
+        args,
+      ) {
+        Ok(Expr::List(ref gens)) => gens.to_vec(),
+        Ok(_) => return Some(Ok(unevaluated("GroupSupport", args))),
+        Err(e) => return Some(Err(e)),
+      };
+      let supports = match gens
+        .iter()
+        .map(|g| {
+          crate::evaluator::evaluate_function_call_ast(
+            "PermutationSupport",
+            std::slice::from_ref(g),
+          )
+        })
+        .collect::<Result<Vec<_>, _>>()
+      {
+        Ok(s) => s,
+        Err(e) => return Some(Err(e)),
+      };
+      if !supports.iter().all(|s| matches!(s, Expr::List(_))) {
+        return Some(Ok(unevaluated("GroupSupport", args)));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Union", &supports,
+      ));
+    }
+    // GroupOrbits[group] — the orbits of the points of the group's support.
+    "GroupOrbits" if args.len() == 1 => {
+      return Some(
+        crate::evaluator::evaluate_function_call_ast(
+          "GroupSupport",
+          &args[..1],
+        )
+        .and_then(|support| match support {
+          Expr::List(_) => crate::functions::math_ast::group_orbits_ast(&[
+            args[0].clone(),
+            support,
+          ]),
+          _ => Ok(unevaluated("GroupOrbits", args)),
+        }),
+      );
+    }
     "GroupOrbits" if args.len() == 2 => {
       return Some(crate::functions::math_ast::group_orbits_ast(args));
     }
@@ -1368,6 +1419,18 @@ pub fn dispatch_math_functions(
     "PolyGamma" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::polygamma_ast(args));
     }
+    // LegendreP[n, m, a, z] — type 1 is the default LegendreP[n, m, z];
+    // other types stay unevaluated.
+    "LegendreP" if args.len() == 4 => {
+      if matches!(&args[2], Expr::Integer(1)) {
+        return Some(crate::functions::math_ast::legendre_p_ast(&[
+          args[0].clone(),
+          args[1].clone(),
+          args[3].clone(),
+        ]));
+      }
+      return Some(Ok(unevaluated("LegendreP", args)));
+    }
     "LegendreP" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_p_ast(args));
     }
@@ -1379,6 +1442,45 @@ pub fn dispatch_math_functions(
     }
     "LegendreQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_q_ast(args));
+    }
+    // Nielsen generalized polylogarithm PolyLog[n, p, z]: PolyLog[n, 1, z]
+    // is PolyLog[n + 1, z] and PolyLog[0, p, z] is (-Log[1 - z])^p / p!.
+    "PolyLog" if args.len() == 3 => {
+      if matches!(&args[1], Expr::Integer(1)) {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          "PolyLog",
+          vec![
+            call("Plus", vec![args[0].clone(), Expr::Integer(1)]),
+            args[2].clone(),
+          ],
+        )));
+      }
+      if let (Expr::Integer(0), Expr::Integer(p)) = (&args[0], &args[1])
+        && *p > 0
+      {
+        let log = call(
+          "Log",
+          vec![call(
+            "Plus",
+            vec![
+              Expr::Integer(1),
+              call("Times", vec![Expr::Integer(-1), args[2].clone()]),
+            ],
+          )],
+        );
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+          "Times",
+          vec![
+            call("Power", vec![Expr::Integer(-1), Expr::Integer(*p)]),
+            call("Power", vec![log, Expr::Integer(*p)]),
+            call(
+              "Power",
+              vec![call1("Factorial", Expr::Integer(*p)), Expr::Integer(-1)],
+            ),
+          ],
+        )));
+      }
+      return Some(Ok(unevaluated("PolyLog", args)));
     }
     "PolyLog" if args.len() == 2 => {
       return Some(crate::functions::math_ast::polylog_ast(args));
@@ -1550,6 +1652,23 @@ pub fn dispatch_math_functions(
     }
     "EllipticThetaPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_theta_prime_ast(args));
+    }
+    // EllipticTheta[a, q] — the theta constant EllipticTheta[a, 0, q].
+    "EllipticTheta" if args.len() == 2 => {
+      return Some(
+        match crate::functions::math_ast::elliptic_theta_ast(&[
+          args[0].clone(),
+          Expr::Integer(0),
+          args[1].clone(),
+        ]) {
+          Ok(Expr::FunctionCall { ref name, .. })
+            if name == "EllipticTheta" =>
+          {
+            Ok(unevaluated("EllipticTheta", args))
+          }
+          other => other,
+        },
+      );
     }
     "EllipticTheta" if args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_theta_ast(args));
@@ -1765,7 +1884,7 @@ pub fn dispatch_math_functions(
     "RandomComplex" => {
       return Some(crate::functions::math_ast::random_complex_ast(args));
     }
-    "RandomColor" if args.len() <= 1 => {
+    "RandomColor" if args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_color_ast(args));
     }
     "RandomDate" if args.len() <= 1 => {
@@ -2305,6 +2424,36 @@ pub fn dispatch_math_functions(
     }
     "DawsonF" if args.len() == 1 => {
       return Some(crate::functions::math_ast::dawson_f_ast(args));
+    }
+    // InverseErf[x0, s] solves s == Erf[x0, x]: InverseErf[s + Erf[x0]].
+    "InverseErf" if args.len() == 2 => {
+      if matches!(&args[0], Expr::Integer(0)) {
+        return Some(crate::functions::math_ast::inverse_erf_ast(&args[1..]));
+      }
+      // InverseErf[a, Erf[a, z]] is z.
+      if let Expr::FunctionCall { name: e, args: ea } = &args[1]
+        && e == "Erf"
+        && ea.len() == 2
+        && expr_to_string(&ea[0]) == expr_to_string(&args[0])
+      {
+        return Some(Ok(ea[1].clone()));
+      }
+      let inexact = args.iter().any(|a| matches!(a, Expr::Real(_)));
+      let numeric = args
+        .iter()
+        .all(|a| crate::functions::math_ast::try_eval_to_f64(a).is_some());
+      if inexact && numeric {
+        return Some(
+          crate::evaluator::evaluate_expr_to_expr(&call(
+            "Plus",
+            vec![args[1].clone(), call1("Erf", args[0].clone())],
+          ))
+          .and_then(|target| {
+            crate::functions::math_ast::inverse_erf_ast(&[target])
+          }),
+        );
+      }
+      return Some(Ok(unevaluated("InverseErf", args)));
     }
     "InverseErf" if args.len() == 1 => {
       return Some(crate::functions::math_ast::inverse_erf_ast(args));
@@ -3223,6 +3372,52 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::multiple_harmonic_number_ast(
         args,
       ));
+    }
+    // Coefficient[…, Modulus -> m] / CoefficientList[…, Modulus -> m]:
+    // the coefficients reduced modulo m.
+    "Coefficient" | "CoefficientList"
+      if args.len() >= 3 && modulus_option(&args[args.len() - 1]).is_some() =>
+    {
+      let m = modulus_option(&args[args.len() - 1]).unwrap_or(1);
+      let base = match crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..args.len() - 1],
+      ) {
+        Ok(b) => b,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&base, Expr::FunctionCall { name: h, .. } if h == name) {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let reduced = crate::evaluator::evaluate_function_call_ast(
+        "Map",
+        &[
+          Expr::Function {
+            body: Box::new(Expr::FunctionCall {
+              name: "PolynomialMod".to_string(),
+              args: vec![Expr::Slot(1), Expr::Integer(m)].into(),
+            }),
+          },
+          base,
+          Expr::List(vec![Expr::Integer(-1)].into()),
+        ],
+      );
+      // A one-variable list loses the leading coefficients that vanish.
+      return Some(reduced.map(|r| match &r {
+        Expr::List(items)
+          if name == "CoefficientList"
+            && items.iter().all(|i| !matches!(i, Expr::List(_))) =>
+        {
+          let mut items = items.to_vec();
+          while items.len() > 1
+            && matches!(items.last(), Some(Expr::Integer(0)))
+          {
+            items.pop();
+          }
+          Expr::List(items.into())
+        }
+        _ => r,
+      }));
     }
     "CoefficientList" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::coefficient_list_ast(
@@ -7318,4 +7513,20 @@ fn dms_parts_f64(total_deg: f64) -> (i128, i128, f64) {
     (sign * m_part) as i128,
     sign * s_part,
   )
+}
+
+/// The modulus of a `Modulus -> m` option with a positive integer m.
+fn modulus_option(opt: &Expr) -> Option<i128> {
+  match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Modulus") => {
+      match replacement.as_ref() {
+        Expr::Integer(m) if *m > 0 => Some(*m),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
 }

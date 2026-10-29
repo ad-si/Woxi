@@ -142,6 +142,18 @@ pub fn map_with_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  map_with_level_heads_ast(func, expr, level_spec, false)
+}
+
+/// Map[f, expr, levelspec, Heads -> h] - apply f at specified levels,
+/// including the heads of the subexpressions when `heads` is true (the head
+/// of a part at level n sits at level n + 1).
+pub fn map_with_level_heads_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+  heads: bool,
+) -> Result<Expr, InterpreterError> {
   // Check for Infinity identifier
   let is_infinity = |e: &Expr| -> bool {
     matches!(e, Expr::Identifier(s) if s == "Infinity" || s == "DirectedInfinity")
@@ -215,9 +227,59 @@ pub fn map_with_level_ast(
 
   // If any level bound is negative, we need depth-aware traversal
   if min_level < 0 || max_level < 0 {
+    if heads {
+      return Ok(call(
+        "Map",
+        vec![
+          func.clone(),
+          expr.clone(),
+          level_spec.clone(),
+          rule_expr(id_expr("Heads"), id_expr("True")),
+        ],
+      ));
+    }
     map_at_depth_negative(func, expr, 0, min_level, max_level)
+  } else if heads {
+    map_at_depth_heads(func, expr, 0, min_level, max_level)
   } else {
     map_at_depth(func, expr, 0, min_level, max_level)
+  }
+}
+
+/// Positive-level Map that also visits heads: the head of a composite at
+/// depth d is mapped as a part at depth d + 1 (position 0).
+fn map_at_depth_heads(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> Result<Expr, InterpreterError> {
+  let in_range = |d: i64| d >= min_level && d <= max_level;
+  let result = match map_decompose(expr) {
+    None => expr.clone(),
+    Some((head, children)) => {
+      let mapped: Vec<Expr> = children
+        .iter()
+        .map(|c| {
+          map_at_depth_heads(func, c, current_depth + 1, min_level, max_level)
+        })
+        .collect::<Result<_, _>>()?;
+      if in_range(current_depth + 1) {
+        let new_head = apply_func_ast(func, &id_expr(&head))?;
+        Expr::CurriedCall {
+          func: Box::new(new_head),
+          args: mapped,
+        }
+      } else {
+        rewrap(&head, mapped)
+      }
+    }
+  };
+  if current_depth > 0 && in_range(current_depth) {
+    apply_func_ast(func, &result)
+  } else {
+    Ok(result)
   }
 }
 

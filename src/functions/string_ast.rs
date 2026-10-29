@@ -13627,7 +13627,15 @@ pub fn compress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args.len()
     )));
   }
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  // Compress[Unevaluated[expr]] compresses expr as written.
+  let evaluated = match &args[0] {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Unevaluated" && inner.len() == 1 =>
+    {
+      inner[0].clone()
+    }
+    other => crate::evaluator::evaluate_expr_to_expr(other)?,
+  };
   let repr = expr_to_string(&evaluated);
 
   use flate2::Compression;
@@ -13691,6 +13699,14 @@ fn inflate_compressed(s: &str) -> Result<Vec<u8>, InterpreterError> {
 /// wolframscript's binary `!boR` serialization (packed arrays, nested
 /// expressions) as well as woxi's text serialization.
 fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
+  decompress_to_expr_with(s, true)
+}
+
+/// The compressed expression, evaluated or (for `Uncompress[s, h]`) not.
+fn decompress_to_expr_with(
+  s: &str,
+  evaluate: bool,
+) -> Result<Expr, InterpreterError> {
   let bytes = inflate_compressed(s)?;
 
   if let Some(expr) = crate::functions::wl_serialize::deserialize(&bytes) {
@@ -13710,19 +13726,42 @@ fn decompress_to_expr(s: &str) -> Result<Expr, InterpreterError> {
     // Demonstrations texture arrives as `Image[CompressedData[…]]` whose
     // payload is `RawArray[type, data]`, and `Image` needs the
     // `NumericArray` that evaluates to, not the legacy head.
+    if !evaluate {
+      return Ok(expr);
+    }
     return Ok(crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr));
   }
 
   let text = String::from_utf8(bytes).map_err(|e| {
     InterpreterError::EvaluationError(format!("Uncompress decode failed: {e}"))
   })?;
-  crate::syntax::string_to_expr(&text).map_err(|e| {
+  let parsed = crate::syntax::string_to_expr(&text).map_err(|e| {
     InterpreterError::EvaluationError(format!("Uncompress parse failed: {e}"))
-  })
+  })?;
+  if evaluate {
+    crate::evaluator::evaluate_expr_to_expr(&parsed)
+  } else {
+    Ok(parsed)
+  }
 }
 
 /// Uncompress[str] — decompresses a string produced by Compress
 pub fn uncompress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Uncompress[s, h] wraps the expression in h before it is evaluated.
+  if args.len() == 2 {
+    let Expr::String(s) = &args[0] else {
+      return Ok(unevaluated("Uncompress", args));
+    };
+    let raw = decompress_to_expr_with(s, false)?;
+    let wrapped = match &args[1] {
+      Expr::Identifier(h) => call(h, vec![raw]),
+      h => Expr::CurriedCall {
+        func: Box::new(h.clone()),
+        args: vec![raw],
+      },
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&wrapped);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(format!(
       "Uncompress expects 1 argument, got {}",

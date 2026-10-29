@@ -18,6 +18,7 @@ mod interpreter_tests {
   use path_helpers::*;
 
   mod arg_count;
+  mod argument_forms;
   mod assessment;
   mod attributes;
   mod batch_wrappers;

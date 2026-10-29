@@ -889,6 +889,11 @@ pub fn apply_function_to_arg(
         let new_args = vec![args[0].clone(), arg.clone(), args[1].clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
+      // StringReplacePart[snew, pos][s] -> StringReplacePart[s, snew, pos]
+      if name == "StringReplacePart" && args.len() == 2 {
+        let new_args = vec![arg.clone(), args[0].clone(), args[1].clone()];
+        return evaluate_function_call_ast(name, &new_args);
+      }
       // Fold[f][list] -> Fold[f, list] (and likewise FoldList): the operator
       // form appends the applied list after the accumulating function.
       if (name == "Fold" || name == "FoldList") && args.len() == 1 {
@@ -1272,6 +1277,8 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "GatherBy"
       | "SplitBy"
       | "DeleteDuplicatesBy"
+      | "KeyExistsQ"
+      | "ReplaceList"
   )
 }
 
@@ -2859,6 +2866,14 @@ pub fn apply_curried_call(
         // Operator form: prepend the argument instead of appending
         let new_args = vec![args[0].clone(), func_args[0].clone()];
         evaluate_function_call_ast(name, &new_args)
+      } else if name == "StringReplacePart"
+        && func_args.len() == 2
+        && args.len() == 1
+      {
+        // StringReplacePart[snew, pos][s] -> StringReplacePart[s, snew, pos]
+        let new_args =
+          vec![args[0].clone(), func_args[0].clone(), func_args[1].clone()];
+        evaluate_function_call_ast(name, &new_args)
       } else if (name == "Nest" || name == "NestList")
         && func_args.len() == 2
         && args.len() == 1
@@ -2869,10 +2884,12 @@ pub fn apply_curried_call(
         evaluate_function_call_ast(name, &new_args)
       } else if (name == "Fold" || name == "FoldList")
         && func_args.len() == 1
-        && args.len() == 1
+        && (args.len() == 1 || args.len() == 2)
       {
-        // Fold[f][list] -> Fold[f, list] (and likewise FoldList)
-        let new_args = vec![func_args[0].clone(), args[0].clone()];
+        // Fold[f][list] -> Fold[f, list] and Fold[f][x, list] ->
+        // Fold[f, x, list] (likewise FoldList)
+        let mut new_args = vec![func_args[0].clone()];
+        new_args.extend(args.iter().cloned());
         evaluate_function_call_ast(name, &new_args)
       } else if name == "Composition" && !func_args.is_empty() {
         // Composition[f, g, h][x] applies functions right-to-left: f[g[h[x]]]

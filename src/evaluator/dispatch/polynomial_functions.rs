@@ -201,6 +201,15 @@ pub fn dispatch_polynomial_functions(
     "SolveValues" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::solve_values_ast(args));
     }
+    // NSolve[eqns, vars, dom, prec] — the trailing precision is dropped
+    // like that of NSolve[eqns, vars, prec].
+    "NSolve"
+      if args.len() == 4
+        && matches!(&args[3], Expr::Integer(_) | Expr::Real(_))
+        && matches!(&args[2], Expr::Identifier(_)) =>
+    {
+      return Some(crate::functions::polynomial_ast::nsolve_ast(args));
+    }
     "NSolve" if !args.is_empty() && args.len() <= 3 => {
       // 1-arg NSolve[eqns] auto-detects the variables, as Solve does.
       return Some(crate::functions::polynomial_ast::nsolve_ast(args));

@@ -1784,6 +1784,28 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
+    // Map[f, expr, levelspec, Heads -> True|False]
+    "Map" | "ParallelMap" if args.len() == 4 => {
+      let heads = match &args[3] {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(h) if h == "Heads") => {
+          match replacement.as_ref() {
+            Expr::Identifier(v) if v == "True" => Some(true),
+            Expr::Identifier(v) if v == "False" => Some(false),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      return Some(match heads {
+        Some(h) => list_helpers_ast::map_with_level_heads_ast(
+          &args[0], &args[1], &args[2], h,
+        ),
+        None => Ok(unevaluated(name, args)),
+      });
+    }
     "MapAll" if args.len() == 2 => {
       return Some(map_all_ast(&args[0], &args[1]));
     }
@@ -2774,8 +2796,11 @@ pub fn dispatch_list_operations(
           _ => None,
         }
       };
-      // Partition[list, UpTo[n]] — chunks of up to n, last chunk may be short.
-      if args.len() == 2
+      // Partition[list, UpTo[n]] / Partition[list, UpTo[n], d] — sublists
+      // of up to n elements at offsets d (n by default); the trailing
+      // sublists may be short.
+      if (args.len() == 2
+        || (args.len() == 3 && positive_machine(&args[2]).is_some()))
         && let Expr::FunctionCall {
           name: ut_name,
           args: ut_args,
@@ -2785,6 +2810,10 @@ pub fn dispatch_list_operations(
         && let Some(n) = positive_machine(&ut_args[0])
       {
         let n_usize = n as usize;
+        let d_usize = args
+          .get(2)
+          .and_then(positive_machine)
+          .map_or(n_usize, |d| d as usize);
         let wrap = |elems: Vec<Expr>| -> Expr {
           match subject_head {
             Some(h) => call(h, elems),
@@ -2796,7 +2825,7 @@ pub fn dispatch_list_operations(
         while i < items.len() {
           let end = (i + n_usize).min(items.len());
           chunks.push(wrap(items[i..end].to_vec()));
-          i = end;
+          i += d_usize;
         }
         return Some(Ok(wrap(chunks)));
       }
@@ -3663,6 +3692,13 @@ pub fn dispatch_list_operations(
     "Range" => {
       return Some(list_helpers_ast::range_ast(args));
     }
+    // PowerRange[max] is PowerRange[1, max]: the powers of 10 up to max.
+    "PowerRange" if args.len() == 1 => {
+      return Some(list_helpers_ast::power_range_ast(&[
+        Expr::Integer(1),
+        args[0].clone(),
+      ]));
+    }
     "PowerRange" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::power_range_ast(args));
     }
@@ -4254,32 +4290,44 @@ pub fn dispatch_list_operations(
       } else {
         None
       };
-      // Parse the position spec into a 1-based range [lo, hi].
-      let range: Option<(usize, usize)> = match &args[2] {
-        Expr::Integer(n) if *n >= 1 => Some((1, *n as usize)),
-        Expr::List(items) if items.len() == 1 => match &items[0] {
-          Expr::Integer(n) if *n >= 1 => Some((*n as usize, *n as usize)),
-          _ => None,
-        },
-        Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
-          (Expr::Integer(m), Expr::Integer(n)) if *m >= 1 && *n >= *m => {
-            Some((*m as usize, *n as usize))
-          }
+      // The number of argument positions the spec refers to.
+      let arg_count = match &args[0] {
+        Expr::FunctionCall { args: fargs, .. } => fargs.len() as i128,
+        Expr::List(items) => items.len() as i128,
+        _ => 0,
+      };
+      // Parse the standard sequence spec (n, -n, {n}, {m, n}, {m, n, s},
+      // All, None) into 1-based (lo, hi, step); negative entries count
+      // from the end.
+      let int = |e: &Expr| match e {
+        Expr::Integer(v) => Some(*v),
+        _ => None,
+      };
+      let spec: Option<(i128, i128, i128)> = match &args[2] {
+        Expr::Identifier(s) if s == "All" => Some((1, arg_count, 1)),
+        Expr::Identifier(s) if s == "None" => Some((1, 0, 1)),
+        Expr::Integer(n) if *n >= 0 => Some((1, *n, 1)),
+        Expr::Integer(n) => Some((*n, -1, 1)),
+        Expr::List(items) => match items.as_slice() {
+          [n] => int(n).map(|n| (n, n, 1)),
+          [m, n] => int(m).zip(int(n)).map(|(m, n)| (m, n, 1)),
+          [m, n, st] => match (int(m), int(n), int(st)) {
+            (Some(m), Some(n), Some(st)) if st != 0 => Some((m, n, st)),
+            _ => None,
+          },
           _ => None,
         },
         _ => None,
       };
-      let Some((lo, hi)) = range else {
+      let Some((lo, hi, step)) = spec else {
         return Some(unevaluated());
       };
-      let positions: Vec<usize> = (lo..=hi).collect();
+      let resolve = |i: i128| if i < 0 { arg_count + 1 + i } else { i };
+      let (lo, hi) = (resolve(lo), resolve(hi));
       // The positions must all exist among the expression's arguments.
-      let arg_count = match &args[0] {
-        Expr::FunctionCall { args: fargs, .. } => Some(fargs.len()),
-        _ => None,
-      };
-      if let Some(k) = arg_count
-        && hi > k
+      let empty = if step > 0 { lo > hi } else { lo < hi };
+      if !empty
+        && (lo < 1 || hi < 1 || lo > arg_count || hi > arg_count)
       {
         crate::emit_message(&format!(
           "Thread::tpos: Cannot thread over positions {} through {} in {}.",
@@ -4288,6 +4336,12 @@ pub fn dispatch_list_operations(
           expr_to_string(&args[0])
         ));
         return Some(unevaluated());
+      }
+      let mut positions: Vec<usize> = Vec::new();
+      let mut i = lo;
+      while !empty && (if step > 0 { i <= hi } else { i >= hi }) {
+        positions.push(i as usize);
+        i += step;
       }
       return Some(
         match list_helpers_ast::thread_ast_positions(
@@ -4967,6 +5021,62 @@ pub fn dispatch_list_operations(
         ));
       }
     }
+    // MaximalBy[list, f, n, p] / MinimalBy[…, p] / TakeLargestBy[…, p] /
+    // TakeSmallestBy[…, p]: the values f[e] are ranked with the ordering
+    // function p (stable, so ties keep their order in the list).
+    "MaximalBy" | "MinimalBy" | "TakeLargestBy" | "TakeSmallestBy"
+      if args.len() == 4 && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let n = match &args[2] {
+        Expr::Integer(n) if *n >= 0 => (*n as usize).min(items.len()),
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      let keys = match items
+        .iter()
+        .map(|e| list_helpers_ast::apply_func_ast(&args[1], e))
+        .collect::<Result<Vec<_>, _>>()
+      {
+        Ok(k) => k,
+        Err(e) => return Some(Err(e)),
+      };
+      let largest = matches!(name, "MaximalBy" | "TakeLargestBy");
+      let order = if largest {
+        // p with its arguments swapped ranks the largest first.
+        let swapped = vec![Expr::Slot(2), Expr::Slot(1)];
+        Expr::Function {
+          body: Box::new(match &args[3] {
+            Expr::Identifier(p) => call(p, swapped),
+            p => Expr::CurriedCall {
+              func: Box::new(p.clone()),
+              args: swapped,
+            },
+          }),
+        }
+      } else {
+        args[3].clone()
+      };
+      let ordering = match list_helpers_ast::ordering_ast(&[
+        Expr::List(keys.into()),
+        id_expr("All"),
+        order,
+      ]) {
+        Ok(Expr::List(ref o)) => o.to_vec(),
+        Ok(_) => return Some(Ok(unevaluated(name, args))),
+        Err(e) => return Some(Err(e)),
+      };
+      let picked: Vec<Expr> = ordering
+        .iter()
+        .take(n)
+        .filter_map(|i| match i {
+          Expr::Integer(i) => items.get(*i as usize - 1).cloned(),
+          _ => None,
+        })
+        .collect();
+      return Some(Ok(Expr::List(picked.into())));
+    }
     "MinimalBy" if args.len() == 2 || args.len() == 3 => {
       let n = if args.len() == 3 {
         match extremal_by_count("MinimalBy", args) {
@@ -5396,6 +5506,28 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::apply_at_level_ast(
         &args[0], &args[1], &args[2],
       ));
+    }
+    // Apply[f, expr, levelspec, Heads -> True|False]
+    "Apply" if args.len() == 4 => {
+      let heads = match &args[3] {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(h) if h == "Heads") => {
+          match replacement.as_ref() {
+            Expr::Identifier(v) if v == "True" => Some(true),
+            Expr::Identifier(v) if v == "False" => Some(false),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      return Some(match heads {
+        Some(h) => list_helpers_ast::apply_at_level_heads_ast(
+          &args[0], &args[1], &args[2], h,
+        ),
+        None => Ok(unevaluated(name, args)),
+      });
     }
     "MapApply" if args.len() == 2 => {
       return Some(

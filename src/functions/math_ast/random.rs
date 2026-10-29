@@ -71,6 +71,10 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return random_variate_ast(args);
   }
 
+  if let Some(result) = random_big_integer(args) {
+    return result;
+  }
+
   match args.len() {
     0 => Ok(Expr::Integer(crate::with_rng(|rng| {
       rng.random_range(0..=1)
@@ -193,6 +197,84 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RandomInteger expects 0, 1, or 2 arguments".into(),
     )),
   }
+}
+
+/// `RandomInteger` over a range with a bound beyond machine integers
+/// (`RandomInteger[10^50]`, `RandomInteger[{-10^40, 10^40}, 3]`). `None`
+/// when no bound is a big integer, leaving the machine path in charge.
+fn random_big_integer(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  use num_bigint::BigInt;
+  let big = |e: &Expr| match e {
+    Expr::Integer(n) => Some(BigInt::from(*n)),
+    Expr::BigInteger(n) => Some(n.clone()),
+    _ => None,
+  };
+  let spec = args.first()?;
+  let bounds: Vec<&Expr> = match spec {
+    Expr::List(items) => items.iter().collect(),
+    other => vec![other],
+  };
+  if !bounds.iter().any(|b| matches!(b, Expr::BigInteger(_))) {
+    return None;
+  }
+  let (lo, hi) = match bounds.as_slice() {
+    [max] => {
+      let max = big(max)?;
+      let zero = BigInt::from(0);
+      if max < zero { (max, zero) } else { (zero, max) }
+    }
+    [a, b] => {
+      let (a, b) = (big(a)?, big(b)?);
+      if a <= b { (a, b) } else { (b, a) }
+    }
+    _ => return None,
+  };
+  let span = &hi - &lo + 1u32;
+  let bits = span.bits();
+  // Rejection sampling of a uniform value below `span`.
+  let draw = || -> Expr {
+    let value = crate::with_rng(|rng| {
+      use rand::RngExt;
+      loop {
+        let words = bits.div_ceil(32) as usize;
+        let mut digits: Vec<u32> =
+          (0..words).map(|_| rng.random::<u32>()).collect();
+        let extra = (words as u64) * 32 - bits;
+        if let Some(top) = digits.last_mut() {
+          *top >>= extra;
+        }
+        let r = BigInt::from(num_bigint::BigUint::new(digits));
+        if r < span {
+          return r;
+        }
+      }
+    });
+    crate::functions::math_ast::bigint_to_expr(&lo + value)
+  };
+  fn fill(dims: &[usize], draw: &dyn Fn() -> Expr) -> Expr {
+    match dims.split_first() {
+      None => draw(),
+      Some((&n, rest)) => {
+        Expr::List((0..n).map(|_| fill(rest, draw)).collect::<Vec<_>>().into())
+      }
+    }
+  }
+  let dims: Vec<usize> = match args.get(1) {
+    None => vec![],
+    Some(Expr::Integer(n)) if *n >= 0 => vec![*n as usize],
+    Some(Expr::List(items)) => items
+      .iter()
+      .map(|i| match i {
+        Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?,
+    Some(_) => return None,
+  };
+  if args.len() > 2 {
+    return None;
+  }
+  Some(Ok(fill(&dims, &draw)))
 }
 
 /// RandomReal[] or RandomReal[max] or RandomReal[{min, max}]
@@ -503,6 +585,71 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "RGBColor",
       vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
     )
+  }
+
+  // A color template such as RGBColor[_, _, _] or Hue[_, 1, 1]: every
+  // blank is filled with a uniform random number.
+  fn template_color(model: &Expr) -> Option<Expr> {
+    let Expr::FunctionCall { name, args } = model else {
+      return None;
+    };
+    if !matches!(
+      name.as_str(),
+      "RGBColor" | "Hue" | "GrayLevel" | "CMYKColor" | "XYZColor" | "LABColor"
+    ) {
+      return None;
+    }
+    let is_blank = |e: &Expr| match e {
+      Expr::Pattern {
+        name,
+        head: None,
+        blank_type: 1,
+      } => name.is_empty(),
+      Expr::FunctionCall { name, args } => name == "Blank" && args.is_empty(),
+      _ => false,
+    };
+    if !args.iter().any(is_blank) {
+      return None;
+    }
+    let filled: Vec<Expr> = args
+      .iter()
+      .map(|a| {
+        if is_blank(a) {
+          Expr::Real(crate::with_rng(|rng| rng.random_range(0.0..1.0)))
+        } else {
+          a.clone()
+        }
+      })
+      .collect();
+    Some(call(name, filled))
+  }
+  if let Some(model) = args.first()
+    && template_color(model).is_some()
+  {
+    fn fill(model: &Expr, dims: &[usize]) -> Expr {
+      match dims.split_first() {
+        None => template_color(model).unwrap_or_else(|| model.clone()),
+        Some((&n, rest)) => Expr::List(
+          (0..n).map(|_| fill(model, rest)).collect::<Vec<_>>().into(),
+        ),
+      }
+    }
+    let dims: Option<Vec<usize>> = match args.get(1) {
+      None => Some(vec![]),
+      Some(Expr::Integer(n)) if *n >= 0 => Some(vec![*n as usize]),
+      Some(Expr::List(items)) => items
+        .iter()
+        .map(|i| match i {
+          Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+          _ => None,
+        })
+        .collect(),
+      Some(_) => None,
+    };
+    return match dims {
+      Some(dims) if args.len() <= 2 => Ok(fill(model, &dims)),
+      _ => Ok(unevaluated("RandomColor", args)),
+    };
   }
 
   match args.len() {
