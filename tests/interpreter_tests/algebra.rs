@@ -23347,3 +23347,66 @@ mod solve_disjunction {
     );
   }
 }
+
+// Systems with the unknowns in denominators are solved through the
+// numerators, without the points where a denominator vanishes; inexact ones
+// rationalize, solve exactly and numericize. Demonstration
+// LeastSquaresEstimationOfAnEllipse's normal equations hung for minutes.
+mod rational_equation_systems {
+  use super::*;
+
+  #[test]
+  fn exact_and_inexact() {
+    assert_eq!(
+      interpret(
+        "{Solve[{-19/a^5 + 31/a^3 - 8/(a^3*b^2) == 0, -8/b^5 + 18/b^3 - 8/(a^2*b^3) == 0}, {a, b}], \
+          Solve[{1/x + y == 2, x - y == 0}, {x, y}]}"
+      )
+      .unwrap(),
+      "{{{a -> -Sqrt[11/13], b -> -2*Sqrt[11/47]}, {a -> -Sqrt[11/13], b -> 2*Sqrt[11/47]}, \
+       {a -> Sqrt[11/13], b -> -2*Sqrt[11/47]}, {a -> Sqrt[11/13], b -> 2*Sqrt[11/47]}}, \
+       {{x -> 1, y -> 1}}}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[10^8 ({a, b} /. Solve[{-19.461854333350573/a^5 + 31.792576924839167/a^3 - \
+         8.832059556488895/(a^3*b^2) == 0, -8.535004297291929/b^5 + 18.889248979048332/b^3 - \
+         8.832059556488895/(a^2*b^3) == 0}, {a, b}])]"
+      )
+      .unwrap(),
+      "{{-91811060, -100732041}, {-91811060, 100732041}, {91811060, -100732041}, {91811060, 100732041}}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  // An exact algebraic difference that cancels to 0 in machine arithmetic
+  // only to rounding noise is equal to 0, judged against its terms.
+  #[test]
+  fn equal_of_a_cancelling_radical_expression() {
+    assert_eq!(
+      interpret(
+        "a0 = -1/3*Sqrt[459166902557462217177787456152124786724708855/60525454535147937288340513937925780045854903]; \
+         b0 = -1/16644801528365193838479693525982456362489722172097894284*Sqrt[281120495811090581500403314531678958786552526625631649534322881595968276998634709369166425259547288011517806894]; \
+         e = -235556515/(12103498*a^5) + 639760563/(20122954*a^3) - 195767705/(22165578*a^3*b^2) /. {a -> a0, b -> b0}; \
+         {e == 0, Sqrt[2] + Sqrt[3] == Sqrt[5 + 2 Sqrt[6]], Sqrt[2] == 1414213562373095/10^15}"
+      )
+      .unwrap(),
+      "{True, True, False}"
+    );
+  }
+
+  // A resultant with repeated factors still yields every point (NSolve).
+  #[test]
+  fn nsolve_with_repeated_eliminant_roots() {
+    assert_eq!(
+      interpret(
+        "{Length[NSolve[{1 + x + x^3 - 3 x y^2, y + 3 x^2 y - y^3} == 0, {x, y}]], \
+          Round[10^6 Sort[Cases[{x, y} /. NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, \
+            x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}], {_, b_} /; b != 0]]]}"
+      )
+      .unwrap(),
+      "{9, {{-2236068, -1581139}, {-2236068, 1581139}, {2236068, -1581139}, {2236068, 1581139}}}"
+    );
+  }
+}

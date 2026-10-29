@@ -1382,6 +1382,18 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `NSolve` of a polynomial system: multiplicities and order of points
+
+```sh
+wolframscript -code 'NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}]'
+# {{x -> -2.236…, y -> -1.581…}, {x -> 2.236…, y -> 1.581…}, {x -> 2.236…, y -> -1.581…}, {x -> -2.236…, y -> 1.581…}, {x -> 0., y -> 0.} (4 times)}
+woxi eval 'NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}]'
+# {{x -> 2.236…, y -> -1.581…}, {x -> 2.236…, y -> 1.581…}, {x -> 0., y -> 0.}, {x -> -2.236…, y -> -1.581…}, {x -> -2.236…, y -> 1.581…}}
+```
+
+The same points, but Wolfram lists the origin with its intersection
+multiplicity 4 and orders the points differently.
+
 ### `Simplify` does not factor out powers whose exponents differ by an integer
 
 ```sh

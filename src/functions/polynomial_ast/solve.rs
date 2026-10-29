@@ -4137,6 +4137,70 @@ pub(super) fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
   )
 }
 
+/// A system whose equations have the unknowns in denominators, solved
+/// through the numerators (see the call site). `None` when no equation has
+/// such a denominator.
+fn solve_rational_system(
+  eqs: &[Expr],
+  vars_exprs: &[Expr],
+  var_names: &[String],
+  rest_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  use super::reduce::{CompOp, extract_comparison};
+  let mut numerators = Vec::with_capacity(eqs.len());
+  let mut denominators = Vec::new();
+  for eq in eqs {
+    let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(eq) else {
+      return Ok(None);
+    };
+    let diff = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Together",
+      vec![call("Subtract", vec![lhs, rhs])],
+    ))?;
+    let (num, den) = super::together::extract_num_den(&diff);
+    if var_names
+      .iter()
+      .any(|v| crate::functions::polynomial_ast::contains_var(&den, v))
+    {
+      denominators.push(den);
+    }
+    numerators.push(Expr::Comparison {
+      operands: vec![num, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+  if denominators.is_empty() {
+    return Ok(None);
+  }
+  let mut inner = vec![
+    Expr::List(numerators.into()),
+    Expr::List(vars_exprs.to_vec().into()),
+  ];
+  inner.extend(rest_args.iter().cloned());
+  let solved = solve_ast(&inner)?;
+  let Expr::List(solutions) = &solved else {
+    return Ok(None);
+  };
+  let kept: Vec<Expr> = solutions
+    .iter()
+    .filter(|sol| {
+      denominators.iter().all(|den| {
+        let at = crate::evaluator::evaluate_expr_to_expr(&call(
+          "ReplaceAll",
+          vec![den.clone(), (*sol).clone()],
+        ));
+        // A vanishing denominator evaluates to an exact (or machine) zero;
+        // a radical solution is not tested through machine numbers, whose
+        // huge intermediate integers may not survive the conversion.
+        !matches!(at, Ok(Expr::Integer(0)))
+          && !matches!(at, Ok(Expr::Real(r)) if r == 0.0)
+      })
+    })
+    .cloned()
+    .collect();
+  Ok(Some(Expr::List(kept.into())))
+}
+
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
@@ -4664,6 +4728,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect();
     if var_names.len() == vars_exprs.len() && !var_names.is_empty() {
+      // Equations with the unknowns in denominators: solve the numerators
+      // of `lhs - rhs` brought together as a polynomial system, then drop
+      // the solutions that make a denominator vanish. `-19/a^5 + 31/a^3 -
+      // 8/(a^3 b^2) == 0` is the polynomial `-19 b^2 + 31 a^2 b^2 - 8 a^2`
+      // over `a^5 b^2`, so a == 0 is no solution.
+      if let Some(result) =
+        solve_rational_system(eqs, vars_exprs, &var_names, &args[2..])?
+      {
+        return Ok(result);
+      }
       // Try symbolic Gaussian elimination for linear systems (handles underdetermined case)
       if let Some(result) = solve_linear_symbolic(eqs, &var_names) {
         return Ok(result);
@@ -6243,9 +6317,12 @@ fn poly_system_solutions(
       index += 1;
     }
 
+    // With machine values substituted, a coefficient that vanishes at the
+    // point comes out as rounding noise; it would split a multiple root
+    // into nearby roots that fail the check against the system.
     let substituted: Vec<Expr> = polys
       .iter()
-      .map(|p| substitute_values(p, outer_vars, outer))
+      .map(|p| drop_rounding_noise(&substitute_values(p, outer_vars, outer)))
       .collect();
     let pivot = substituted
       .iter()
@@ -6678,6 +6755,7 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
       ),
       Ok(Expr::List(vs)) if vs.len() == 1
     );
+  let poly_exact = &poly.clone();
   let poly = if numeric {
     crate::evaluator::evaluate_function_call_ast(
       "N",
@@ -6714,7 +6792,75 @@ fn univariate_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
     }
     roots.push(replacement.as_ref().clone());
   }
+  if numeric {
+    snap_to_square_free_roots(&mut roots, poly_exact, var);
+  }
   Some(roots)
+}
+
+/// Repeated roots (a resultant is often a square) come out of a numeric root
+/// finder good only to eps^(1/k) for a k-fold root, too rough to pass the
+/// check against the system. Each root is replaced by the nearest root of
+/// the exact square-free part `poly / gcd(poly, poly')`, where every root is
+/// simple and found to full precision; the list keeps its length and order.
+fn snap_to_square_free_roots(roots: &mut [Expr], poly: &Expr, var: &str) {
+  if crate::functions::math_ast::contains_inexact_real(poly) {
+    return;
+  }
+  let ev = |head: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(head, &a)
+  };
+  let Ok(square_free) = ev("D", vec![poly.clone(), id_expr(var)])
+    .and_then(|d| ev("PolynomialGCD", vec![poly.clone(), d]))
+    .and_then(|g| {
+      ev("PolynomialQuotient", vec![poly.clone(), g, id_expr(var)])
+    })
+  else {
+    return;
+  };
+  let Ok(solved) = nsolve_ast(&[
+    Expr::Comparison {
+      operands: vec![square_free, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    },
+    id_expr(var),
+  ]) else {
+    return;
+  };
+  let Expr::List(solutions) = &solved else {
+    return;
+  };
+  let simple: Vec<(Expr, (f64, f64))> = solutions
+    .iter()
+    .filter_map(|s| match s {
+      Expr::List(rules) => match rules.as_slice() {
+        [Expr::Rule { replacement, .. }] => {
+          let v = replacement.as_ref().clone();
+          let c = crate::functions::math_ast::try_extract_complex_float(&v)?;
+          Some((v, c))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  for root in roots.iter_mut() {
+    let Some((re, im)) =
+      crate::functions::math_ast::try_extract_complex_float(root)
+    else {
+      continue;
+    };
+    let nearest = simple.iter().min_by(|a, b| {
+      let da = (a.1.0 - re).hypot(a.1.1 - im);
+      let db = (b.1.0 - re).hypot(b.1.1 - im);
+      da.total_cmp(&db)
+    });
+    if let Some((v, (sre, sim))) = nearest
+      && (sre - re).hypot(sim - im) <= 1e-4 * re.hypot(im).max(1.0)
+    {
+      *root = v.clone();
+    }
+  }
 }
 
 /// Substitute `values` for `vars` in `expr` and evaluate.
