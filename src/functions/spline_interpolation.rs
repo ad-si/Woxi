@@ -267,6 +267,76 @@ impl Spline {
     Some(spline)
   }
 
+  /// A kernel-layout spline over two variables, `{BSplineFunction[2, domain,
+  /// {p, q}, {False, False}, {controls, {}}, {knots1, knots2}, …], {}}`,
+  /// evaluated as the tensor-product B-spline at `(x, y)`.
+  pub fn eval_kernel_2d(values: &Expr, x: f64, y: f64) -> Option<f64> {
+    let Expr::List(items) = values else {
+      return None;
+    };
+    let Some(Expr::FunctionCall { name, args }) = items.first() else {
+      return None;
+    };
+    if name != "BSplineFunction"
+      || args.len() < 6
+      || !matches!(&args[0], Expr::Integer(2))
+    {
+      return None;
+    }
+    let reals = |e: &Expr| -> Option<Vec<f64>> {
+      match e {
+        Expr::List(v) => v
+          .iter()
+          .map(crate::functions::math_ast::try_eval_to_f64)
+          .collect(),
+        _ => None,
+      }
+    };
+    let degrees = reals(&args[2])?;
+    // A notebook-saved spline keeps its controls and knots as
+    // `CompressedData["…"]`, which only becomes the data once evaluated.
+    let controls = crate::evaluator::evaluate_expr_to_expr(&args[4]).ok()?;
+    let knots = crate::evaluator::evaluate_expr_to_expr(&args[5]).ok()?;
+    let [p, q] = degrees.as_slice() else {
+      return None;
+    };
+    let (p, q) = (*p as usize, *q as usize);
+    let Expr::List(ctrl_parts) = &controls else {
+      return None;
+    };
+    let Some(Expr::List(rows)) = ctrl_parts.first() else {
+      return None;
+    };
+    let Expr::List(knot_sets) = &knots else {
+      return None;
+    };
+    let [kx, ky] = knot_sets.as_slice() else {
+      return None;
+    };
+    let (kx, ky) = (reals(kx)?, reals(ky)?);
+    let (nx, ny) = (rows.len(), ky.len().checked_sub(q + 1)?);
+    if p == 0 || q == 0 || kx.len() != nx + p + 1 {
+      return None;
+    }
+    let (sx, sy) = (span(&kx, p, nx, x), span(&ky, q, ny, y));
+    let (bx, by) = (basis(&kx, p, sx, x), basis(&ky, q, sy, y));
+    let mut total = 0.0;
+    for (i, bi) in bx.iter().enumerate() {
+      let Expr::List(row) = &rows[sx - p + i] else {
+        return None;
+      };
+      if row.len() != ny {
+        return None;
+      }
+      for (j, bj) in by.iter().enumerate() {
+        total += bi
+          * bj
+          * crate::functions::math_ast::try_eval_to_f64(&row[sy - q + j])?;
+      }
+    }
+    Some(total)
+  }
+
   pub fn property(&self, prop: &str) -> Option<Expr> {
     let xs = || self.xs.iter().map(|&x| Expr::Real(x));
     let (a, b) = (self.xs[0], self.xs[self.xs.len() - 1]);

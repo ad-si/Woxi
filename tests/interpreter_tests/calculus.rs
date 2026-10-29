@@ -22600,6 +22600,30 @@ mod interpolation_spline_method {
   }
 
   #[test]
+  fn stored_kernel_spline_in_two_variables() {
+    let knots = "{{0., 0., 1., 1.}, {0., 0., 1., 1.}}";
+    let ifn = |controls: &str| {
+      format!(
+        "InterpolatingFunction[{{{{0., 1.}}, {{0., 1.}}}}, {{5, 39, 0, {{2, 2}}, {{2, 2}}, 0, 0, 0, 0, Automatic, {{}}, {{}}, False}}, {{{{0., 1.}}, {{0., 1.}}}}, {{BSplineFunction[2, {{{{0., 1.}}, {{0., 1.}}}}, {{1, 1}}, {{False, False}}, {{{controls}, {{}}}}, {knots}, {{0, 0}}, MachinePrecision, Unevaluated], {{}}}}, {{Automatic, Automatic}}]"
+      )
+    };
+    // f(x, y) = 2 x + y as a bilinear tensor-product spline.
+    for controls in [
+      "{{0., 1.}, {2., 3.}}",
+      "CompressedData[\"1:eJxeJyrrjbQ01Ew1KvVUag20tNRMNarrQUAN30FSw==\"]",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "s = {}; {{s[0.25, 0.5], s[1., 1.], s[0.5, 0.]}}",
+          ifn(controls)
+        ))
+        .unwrap(),
+        "{1., 3., 1.}"
+      );
+    }
+  }
+
+  #[test]
   fn stored_kernel_spline() {
     let ifn = "InterpolatingFunction[{{0, 3}}, {5, 39, 0, {4}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, {{0, 1, 2, 3}}, {BSplineFunction[1, {{0., 3.}}, {3}, {False}, {{1., 6.833333333333334, -2.333333333333333, 5.}, {}}, {{0., 0., 0., 0., 3., 3., 3., 3.}}, {0}, MachinePrecision, Unevaluated], {}}, {Automatic}]";
     assert_eq!(
