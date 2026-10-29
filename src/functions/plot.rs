@@ -2489,6 +2489,9 @@ pub(crate) struct PlotOptions {
   /// position and the text drawn at it. `None` = the automatic ticks.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
+  /// Explicit `FrameTicks` on the top and right edge of a frame.
+  pub ticks_top: Option<Vec<(f64, String)>>,
+  pub ticks_right: Option<Vec<(f64, String)>>,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
   pub plot_points: usize,
   /// Legend labels for each series (empty = no legend)
@@ -2692,6 +2695,8 @@ impl Default for PlotOptions {
       evaluated: false,
       ticks_x: None,
       ticks_y: None,
+      ticks_top: None,
+      ticks_right: None,
       frame_label_bottom: None,
       frame_label_left: None,
       frame_label_top: None,
@@ -3082,6 +3087,56 @@ pub(crate) fn explicit_ticks_svg(
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
         plot_x0 - tick_len,
+      ));
+    }
+  }
+  out
+}
+
+/// Mark and label the explicit `FrameTicks` of the top and right frame
+/// edges: ticks point into the frame, labels sit above / right of it.
+/// Arguments as for [`explicit_ticks_svg`].
+pub(crate) fn explicit_opposite_ticks_svg(
+  ticks_top: Option<&Vec<(f64, String)>>,
+  ticks_right: Option<&Vec<(f64, String)>>,
+  (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+  sf: f64,
+  label_fill: &str,
+) -> String {
+  let mut out = String::new();
+  let tick_len = sf * 5.0;
+  let tick_font = sf * 13.0;
+  if let Some(ticks) = ticks_top {
+    for (pos, label) in ticks {
+      if *pos < x_min || *pos > x_max || x_max <= x_min {
+        continue;
+      }
+      let px = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
+      out.push_str(&format!(
+        "<line x1=\"{px:.1}\" y1=\"{plot_y0:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+        plot_y0 + tick_len,
+      ));
+      out.push_str(&format!(
+        "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+        plot_y0 - tick_len,
+      ));
+    }
+  }
+  if let Some(ticks) = ticks_right {
+    let edge_x = plot_x0 + plot_w;
+    for (pos, label) in ticks {
+      if *pos < y_min || *pos > y_max || y_max <= y_min {
+        continue;
+      }
+      let py = plot_y0 + plot_h - (pos - y_min) / (y_max - y_min) * plot_h;
+      out.push_str(&format!(
+        "<line x1=\"{edge_x:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+        edge_x - tick_len,
+      ));
+      out.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"start\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+        edge_x + tick_len,
       ));
     }
   }
@@ -4624,6 +4679,8 @@ fn generate_svg_with_options(
     || has_right_label
     || opts.ticks_x.is_some()
     || opts.ticks_y.is_some()
+    || opts.ticks_top.is_some()
+    || opts.ticks_right.is_some()
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -4655,6 +4712,16 @@ fn generate_svg_with_options(
         sf,
         label_fill,
       );
+      labels_svg.push_str(&explicit_opposite_ticks_svg(
+        explicit_ticks_in_axis_space(opts.ticks_top.as_ref(), opts.log_x)
+          .as_ref(),
+        explicit_ticks_in_axis_space(opts.ticks_right.as_ref(), opts.log_y)
+          .as_ref(),
+        (plot_x0, margin_top, plot_w, plot_h),
+        log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
+        sf,
+        label_fill,
+      ));
 
       labels_svg.push_str(&plot_labels_svg(
         opts,
@@ -5874,6 +5941,19 @@ pub(crate) fn generate_scatter_svg_with_options(
     let ticks_svg = explicit_ticks_svg(
       opts.ticks_x.as_ref(),
       opts.ticks_y.as_ref(),
+      (plot_x0, plot_y0, plot_w, plot_h),
+      (x_min, x_max, y_min, y_max),
+      RESOLUTION_SCALE as f64,
+      label_fill,
+    );
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &ticks_svg);
+    }
+  }
+  if opts.ticks_top.is_some() || opts.ticks_right.is_some() {
+    let ticks_svg = explicit_opposite_ticks_svg(
+      opts.ticks_top.as_ref(),
+      opts.ticks_right.as_ref(),
       (plot_x0, plot_y0, plot_w, plot_h),
       (x_min, x_max, y_min, y_max),
       RESOLUTION_SCALE as f64,
@@ -8069,7 +8149,7 @@ pub enum HistogramHeight {
 }
 
 /// Compute the common bin edges for one or more datasets given a bin spec.
-fn histogram_bin_edges(
+pub(crate) fn histogram_bin_edges(
   all_values: &[f64],
   bin_spec: Option<&BinSpec>,
 ) -> Vec<f64> {
@@ -8730,7 +8810,7 @@ pub(crate) fn frame_explicit_ticks(
   Option<Option<Vec<(f64, String)>>>,
   Option<Option<Vec<(f64, String)>>>,
 ) {
-  let (bottom, left) = frame_tick_edge_specs(value);
+  let (bottom, left, _, _) = frame_tick_edge_specs(value);
   let explicit = |spec: Option<&Expr>| match spec {
     Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
     Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
@@ -8744,9 +8824,12 @@ pub(crate) fn frame_explicit_ticks(
   (explicit(bottom), explicit(left))
 }
 
-/// The bottom and left edge specs of a `FrameTicks` value written as
-/// `{{l, r}, {b, t}}`, `{b, l, t, r}` or `{xspec, yspec}`.
-fn frame_tick_edge_specs(value: &Expr) -> (Option<&Expr>, Option<&Expr>) {
+/// The `(bottom, left, top, right)` edge specs of a `FrameTicks` value
+/// written as `{{l, r}, {b, t}}`, `{b, l, t, r}` or `{xspec, yspec}`; the
+/// last form only addresses the bottom and left edges.
+fn frame_tick_edge_specs(
+  value: &Expr,
+) -> (Option<&Expr>, Option<&Expr>, Option<&Expr>, Option<&Expr>) {
   // An edge pair holds specs, never the bare numbers / strings of a tick.
   let is_pair = |e: &Expr| match e {
     Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
@@ -8755,16 +8838,42 @@ fn frame_tick_edge_specs(value: &Expr) -> (Option<&Expr>, Option<&Expr>) {
     _ => false,
   };
   match value {
-    Expr::List(items) if items.len() == 4 => (Some(&items[0]), Some(&items[1])),
+    Expr::List(items) if items.len() == 4 => (
+      Some(&items[0]),
+      Some(&items[1]),
+      Some(&items[2]),
+      Some(&items[3]),
+    ),
     Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
       match (&items[0], &items[1]) {
-        (Expr::List(lr), Expr::List(bt)) => (bt.first(), lr.first()),
-        _ => (None, None),
+        (Expr::List(lr), Expr::List(bt)) => {
+          (bt.first(), lr.first(), bt.get(1), lr.get(1))
+        }
+        _ => (None, None, None, None),
       }
     }
-    Expr::List(items) if items.len() == 2 => (Some(&items[0]), Some(&items[1])),
-    _ => (None, None),
+    Expr::List(items) if items.len() == 2 => {
+      (Some(&items[0]), Some(&items[1]), None, None)
+    }
+    _ => (None, None, None, None),
   }
+}
+
+/// Explicit tick lists on the top and right edge of a `FrameTicks` value,
+/// as `(top, right)`; `None` for an edge without an explicit list.
+#[allow(clippy::type_complexity)]
+pub(crate) fn frame_explicit_ticks_opposite(
+  value: &Expr,
+) -> (Option<Vec<(f64, String)>>, Option<Vec<(f64, String)>>) {
+  let (_, _, top, right) = frame_tick_edge_specs(value);
+  let explicit = |spec: Option<&Expr>| match spec {
+    Some(
+      e
+      @ (Expr::List(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. }),
+    ) => parse_explicit_ticks(e),
+    _ => None,
+  };
+  (explicit(top), explicit(right))
 }
 
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
@@ -10537,6 +10646,9 @@ pub(crate) fn apply_common_plot_option(
       if let Some(t) = left {
         plot_opts.ticks_y = t;
       }
+      let (top, right) = frame_explicit_ticks_opposite(replacement);
+      plot_opts.ticks_top = top;
+      plot_opts.ticks_right = right;
     }
     "Evaluated" => {
       plot_opts.evaluated =

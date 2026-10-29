@@ -49,6 +49,17 @@ fn contains_divide_node(e: &Expr) -> bool {
 }
 
 pub fn coefficient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // The extraction assembles its answer structurally (`Times[I, 2]`); give
+  // back the evaluated, canonical form (`2 I`).
+  let result = coefficient_inner(args)?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Coefficient")
+  {
+    return Ok(result);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+fn coefficient_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Coefficient expects 2 or 3 arguments".into(),

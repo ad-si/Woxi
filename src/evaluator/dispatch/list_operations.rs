@@ -1681,6 +1681,64 @@ fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+fn contains_sparse_array(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => true,
+    Expr::List(items) => items.iter().any(contains_sparse_array),
+    _ => false,
+  }
+}
+
+/// `e` with every SparseArray inside its lists replaced by its dense form.
+fn densify_nested_sparse_arrays(e: &Expr) -> Result<Expr, InterpreterError> {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Normal",
+        std::slice::from_ref(e),
+      )
+    }
+    Expr::List(items) => Ok(Expr::List(
+      items
+        .iter()
+        .map(densify_nested_sparse_arrays)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    )),
+    other => Ok(other.clone()),
+  }
+}
+
+/// `FirstPosition`, `FirstCase` and `SelectFirst` are `HoldRest` only so
+/// that their default (the third argument) is evaluated just when it is
+/// returned; every other argument is evaluated up front, as in Wolfram.
+fn with_held_default(
+  args: &[Expr],
+  f: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let pending = Expr::Identifier("Internal`FirstDefaultPending".to_string());
+  let mut prepared = Vec::with_capacity(args.len());
+  for (i, arg) in args.iter().enumerate() {
+    prepared.push(match i {
+      0 => arg.clone(),
+      2 => pending.clone(),
+      _ => crate::evaluator::evaluate_expr_to_expr(arg)?,
+    });
+  }
+  let result = f(&prepared)?;
+  if matches!(&result, Expr::Identifier(n) if n == "Internal`FirstDefaultPending")
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&args[2]);
+  }
+  // An unevaluated call echoes the default as written.
+  Ok(match args.get(2) {
+    Some(default) => crate::functions::polynomial_ast::solve::substitute_expr(
+      &result, &pending, default,
+    ),
+    None => result,
+  })
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -1720,6 +1778,35 @@ pub fn dispatch_list_operations(
     && let Some(result) =
       list_helpers_ast::sparse_array_take(sa_args, &args[1..])
   {
+    return Some(result);
+  }
+
+  // A list of SparseArray blocks (`ArrayFlatten[{{s, s}, {s, s}}]`,
+  // `Flatten[{{s, s}}, {{1, 3}, {2, 4}}]`) is an array like any other: its
+  // blocks are densified first, and a glued block array is sparse again.
+  if (name == "ArrayFlatten"
+    && args.first().is_some_and(
+      |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
+    ))
+    || matches!(name, "Flatten" | "ArrayFlatten")
+      && matches!(args.first(), Some(Expr::List(items)) if items.iter().any(contains_sparse_array))
+  {
+    let dense = match densify_nested_sparse_arrays(&args[0]) {
+      Ok(d) => d,
+      Err(e) => return Some(Err(e)),
+    };
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    let result = dispatch_list_operations(name, &new_args)?;
+    if name == "ArrayFlatten" {
+      return Some(result.and_then(|r| {
+        if matches!(&r, Expr::List(_)) {
+          crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
+        } else {
+          Ok(r)
+        }
+      }));
+    }
     return Some(result);
   }
 
@@ -1858,7 +1945,7 @@ pub fn dispatch_list_operations(
       }));
     }
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
-      return Some(list_helpers_ast::select_first_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::select_first_ast));
     }
     "DuplicateFreeQ" if args.len() == 1 => {
       if let Expr::List(items) = &args[0] {
@@ -2419,13 +2506,13 @@ pub fn dispatch_list_operations(
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
     "FirstCase" if args.len() >= 2 && args.len() <= 4 => {
-      return Some(list_helpers_ast::first_case_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::first_case_ast));
     }
     "Position" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::position_unified_ast(args));
     }
     "FirstPosition" if args.len() >= 2 => {
-      return Some(list_helpers_ast::first_position_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::first_position_ast));
     }
     "MapIndexed" if args.len() == 2 => {
       return Some(list_helpers_ast::map_indexed_ast(&args[0], &args[1]));
@@ -2914,7 +3001,12 @@ pub fn dispatch_list_operations(
       }
       if let Some(n) = positive_machine(&args[1]) {
         let d = if args.len() >= 3 {
-          if let Some(d) = positive_machine(&args[2]) {
+          // A one-dimensional offset may be given as the list `{d}`.
+          let offset = match &args[2] {
+            Expr::List(ds) if ds.len() == 1 => positive_machine(&ds[0]),
+            e => positive_machine(e),
+          };
+          if let Some(d) = offset {
             Some(d)
           } else {
             ilsmp(3);
@@ -2993,7 +3085,11 @@ pub fn dispatch_list_operations(
             return Some(Ok(unevaluated("Partition", args)));
           }
           return Some(list_helpers_ast::partition_multi_dim_ast(
-            &args[0], &sizes, &offsets,
+            &args[0],
+            &sizes,
+            &offsets,
+            args.get(3),
+            args.get(4),
           ));
         }
       }
@@ -4141,8 +4237,13 @@ pub fn dispatch_list_operations(
       let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
       let is_level_spec =
         args.len() >= 2 && matches!(&args[args.len() - 1], Expr::Integer(_));
-      if args.iter().any(is_sparse) && !is_level_spec {
-        let all_sparse = args.iter().all(is_sparse);
+      let arrays = if is_level_spec {
+        &args[..args.len() - 1]
+      } else {
+        args
+      };
+      if arrays.iter().any(is_sparse) {
+        let all_sparse = arrays.iter().all(is_sparse);
         let mut dense = Vec::with_capacity(args.len());
         for a in args {
           if is_sparse(a) {
@@ -5615,6 +5716,14 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::split_by_ast(&args[1], &args[0]));
     }
     "Extract" if args.len() == 2 || args.len() == 3 => {
+      // Rendered graphics extract from their symbolic form, as Part does.
+      if let Some(symbolic) =
+        crate::evaluator::part_extraction::graphics_symbolic_form(&args[0])
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = symbolic;
+        return Some(list_helpers_ast::extract_unified_ast(&new_args));
+      }
       return Some(
         list_helpers_ast::extract_unified_ast(args)
           .and_then(|r| evaluate_if_unheld(name, &args[0], r)),

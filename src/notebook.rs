@@ -1458,17 +1458,6 @@ fn piecewise_from_grid_box(grid: &str) -> Option<String> {
   })
 }
 
-/// `Binomial[n, k]` from the `GridBox[{{n}, {k}}]` a stacked binomial
-/// coefficient is typeset as; `None` for any other grid shape.
-fn binomial_from_grid_box(grid: &str) -> Option<String> {
-  let (top, bottom) = stacked_pair_of_grid_box(grid)?;
-  Some(format!(
-    "Binomial[{}, {}]",
-    extract_cell_content(&top),
-    extract_cell_content(&bottom)
-  ))
-}
-
 /// The two entries of a two-row, one-column `GridBox[{{top}, {bottom}}]`;
 /// `None` for any other grid shape.
 fn stacked_pair_of_grid_box(grid: &str) -> Option<(String, String)> {
@@ -1708,6 +1697,25 @@ fn partial_derivative_vars(s: &str) -> Option<String> {
 /// (`RowBox[{"2", "400"}]`); a `#` prefix needs a space instead, for
 /// named-slot syntax. A number followed by a letter (`2x`) already reads
 /// as a product.
+/// Whether two adjacent row parts are the pieces of one word whose middle a
+/// `StyleBox` restyles: a bare word token next to a `StyleBox` around a bare
+/// word token, with no space token between them.
+fn styling_splits_word(prev: &str, part: &str) -> bool {
+  let word = |s: &str| -> Option<String> {
+    let t = s.trim().strip_prefix('"')?.strip_suffix('"')?;
+    (!t.is_empty() && t.chars().all(char::is_alphanumeric))
+      .then(|| t.to_string())
+  };
+  let styled = |s: &str| {
+    positional_box_args("StyleBox", s)
+      .and_then(|args| args.first().and_then(|a| word(a)))
+  };
+  matches!(
+    (word(prev), styled(part), styled(prev), word(part)),
+    (Some(_), Some(_), _, _) | (_, _, Some(_), Some(_))
+  )
+}
+
 fn push_juxtaposed(result: &mut String, piece: &str) {
   let piece_starts_alpha =
     piece.chars().next().is_some_and(char::is_alphabetic);
@@ -2006,18 +2014,6 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
       i += 2;
       continue;
     }
-    // `( GridBox[{{n}, {k}}] )` — a two-row, one-column grid in bare
-    // parentheses (no invisible matrix markers) is the stacked binomial
-    // coefficient typeset form of `Binomial[n, k]`.
-    if i + 2 < parts.len()
-      && is_bare_char(part, '(')
-      && is_bare_char(parts[i + 2].trim(), ')')
-      && let Some(binomial) = binomial_from_grid_box(parts[i + 1].trim())
-    {
-      push_juxtaposed(&mut result, &binomial);
-      i += 3;
-      continue;
-    }
     // `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
     // of `Abs[body]` — the only thing that pair of glyphs ever brackets.
     if i + 2 < parts.len()
@@ -2197,6 +2193,13 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
       && parts[i - 1].trim().starts_with("RowBox[")
     {
       result.push(' ');
+    }
+    // A word split by styling part of it (`RowBox[{"Ke", StyleBox["t1",
+    // FontColor -> …]}]`) is still one word to the FrontEnd: `Ket1`.
+    if i > 0 && styling_splits_word(&parts[i - 1], part) {
+      result.push_str(&piece);
+      i += 1;
+      continue;
     }
     push_juxtaposed(&mut result, &piece);
     i += 1;
@@ -6538,23 +6541,25 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "2Abs[x]");
   }
 
-  /// A two-row, one-column `GridBox` in bare parentheses is the stacked
-  /// binomial coefficient — `Binomial[n, k]`, not the column-vector list
-  /// `{{n}, {k}}` it used to come back as.
+  /// Restyling part of a word does not split it: the FrontEnd reads
+  /// `RowBox[{"Ke", StyleBox["t1", …]}]` as the one symbol `Ket1`.
   #[test]
-  fn test_stacked_grid_in_parens_becomes_binomial() {
-    let s = r#"BoxData[RowBox[{"(", GridBox[{{"n"}, {RowBox[{"\[LeftFloor]", FractionBox["n", "2"], "\[RightFloor]"}]}}], ")"}]]"#;
-    assert!(
-      extract_cell_content(s).starts_with("Binomial[n, "),
-      "{}",
-      extract_cell_content(s)
-    );
+  fn test_style_box_inside_word_keeps_word() {
+    let s = r#"BoxData[RowBox[{"Module", "[", RowBox[{RowBox[{"{", RowBox[{StyleBox[RowBox[{"Ke", StyleBox["t1", FontColor->GrayLevel[0]]}]], ",", "Ket2"}], "}"}], ",", "1"}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Module[{Ket1,Ket2},1]");
+  }
+
+  /// A two-row, one-column `GridBox` in bare parentheses reads back as the
+  /// column matrix `{{n}, {k}}`, as `ToExpression` gives it — not as
+  /// `Binomial[n, k]`, which would break code that builds a column vector
+  /// this way (`g = (GridBox[{{a}, {b}}]); LinearSolve[m, g]`).
+  #[test]
+  fn test_stacked_grid_in_parens_is_column_matrix() {
     let s = r#"BoxData[RowBox[{"(", GridBox[{{"a"}, {"b"}}], ")"}]]"#;
-    assert_eq!(extract_cell_content(s), "Binomial[a, b]");
-    // Juxtaposed with the rest of a row, like any other factor.
+    assert_eq!(extract_cell_content(s), "({{a}, {b}})");
     let s =
       r#"BoxData[RowBox[{"2", RowBox[{"(", GridBox[{{"a"}, {"b"}}], ")"}]}]]"#;
-    assert_eq!(extract_cell_content(s), "2Binomial[a, b]");
+    assert_eq!(extract_cell_content(s), "2({{a}, {b}})");
   }
 
   /// A symbol immediately followed by a parenthesised, comma-separated

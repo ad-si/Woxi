@@ -6470,6 +6470,11 @@ pub fn insert_statement_separators(input: &str) -> String {
       comment_depth -= 1;
       result.push(ch);
       result.push(chars[i + 1]);
+      // A comment separates tokens like whitespace: `a;(* c *);` is two
+      // statement separators, not the `;;` of a Span.
+      if comment_depth == 0 {
+        push_code_tail(&mut code_tail, ' ');
+      }
       i += 2;
       continue;
     }

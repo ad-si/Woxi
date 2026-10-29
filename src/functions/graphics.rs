@@ -767,6 +767,13 @@ impl BBox {
 
 #[derive(Debug, Clone)]
 enum Primitive {
+  /// Opens a `<g>` carrying the hex-encoded action of an
+  /// `EventHandler[prim, "MouseClicked" :> action]`; the primitives up to
+  /// the matching [`Primitive::ClickGroupEnd`] are its clickable shape.
+  ClickGroupStart {
+    hex: String,
+  },
+  ClickGroupEnd,
   PointSingle {
     x: f64,
     y: f64,
@@ -971,6 +978,7 @@ impl Primitive {
       | Self::BezierCurvePrim { style, .. }
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
+      Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
       | Self::InsetGraphic { .. } => None,
@@ -2406,7 +2414,10 @@ fn collect_primitives(
       if args.iter().any(|a| {
         matches!(a, Expr::FunctionCall { name, args }
           if name == "Dynamic" && args.len() == 1)
-      }) && !matches!(name.as_str(), "Dynamic" | "Style") =>
+      }) && !matches!(
+        name.as_str(),
+        "Dynamic" | "Style" | "EventHandler"
+      ) =>
     {
       let released: Vec<Expr> = args
         .iter()
@@ -2780,6 +2791,49 @@ fn collect_primitives(
             collect_primitives(&inner, style, prims, errors);
           } else {
             crate::truncate_captured_graphics(captured);
+          }
+        }
+        // `EventHandler[g, "MouseClicked" :> action, …]` draws `g`. Its click
+        // action is recorded on a group around `g`'s shapes (see
+        // `BUTTON_HIT_ID_PREFIX`), so a live widget makes `g` clickable.
+        "EventHandler" if args.len() >= 2 => {
+          let mut events: Vec<&Expr> = Vec::new();
+          for ev in &args[1..] {
+            match ev {
+              Expr::List(items) => events.extend(items.iter()),
+              other => events.push(other),
+            }
+          }
+          let action = events.into_iter().find_map(|ev| match ev {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if matches!(
+              pattern.as_ref(),
+              Expr::String(e) if e == "MouseClicked"
+            ) =>
+            {
+              Some(crate::syntax::expr_to_source_form(replacement))
+            }
+            _ => None,
+          });
+          match action {
+            Some(action) => {
+              let hex: String =
+                action.bytes().fold(String::new(), |mut s, b| {
+                  use std::fmt::Write;
+                  let _ = write!(s, "{b:02x}");
+                  s
+                });
+              prims.push(Primitive::ClickGroupStart { hex });
+              collect_primitives(&args[0], style, prims, errors);
+              prims.push(Primitive::ClickGroupEnd);
+            }
+            None => collect_primitives(&args[0], style, prims, errors),
           }
         }
         // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
@@ -4226,7 +4280,7 @@ fn is_box_display_wrapper(name: &str, args: &[Expr]) -> bool {
 /// the start of the next line, so every line is well-formed markup that
 /// keeps the styling it was inside. An empty line becomes a no-break space
 /// so it still takes up a line of height.
-fn split_markup_lines(markup: &str) -> Vec<String> {
+pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
   let mut lines: Vec<String> = Vec::new();
   let mut current = String::new();
   let mut has_text = false;
@@ -6737,6 +6791,7 @@ fn include_arc_extent(
 fn primitive_bbox(prim: &Primitive) -> BBox {
   let mut bb = BBox::empty();
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
     Primitive::PointSingle { x, y, .. } => {
       bb.include_point(*x, *y);
     }
@@ -7058,6 +7113,9 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -7371,6 +7429,9 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -7620,6 +7681,9 @@ fn scale_primitive(
     }
   };
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -9323,6 +9387,10 @@ fn render_primitive(
   out: &mut String,
 ) {
   match prim {
+    Primitive::ClickGroupStart { hex } => {
+      out.push_str(&format!("<g id=\"{BUTTON_HIT_ID_PREFIX}{hex}\">\n"));
+    }
+    Primitive::ClickGroupEnd => out.push_str("</g>\n"),
     // The inset is embedded whole, centred on its anchor — at its own
     // natural size, unless `Inset[…]` gave an explicit `size` (in this
     // picture's data coordinates), which is only convertible to pixels now
@@ -10671,6 +10739,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
 
   for prim in primitives {
     match prim {
+      Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
       Primitive::PointSingle { x, y, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::point_box(*x, *y));
@@ -24654,8 +24723,18 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
           }
           svg.push_str("</text>\n");
         } else {
+          // A part like `" is"` is laid out with its leading space, but SVG
+          // trims edge whitespace (and collapses runs) unless told not to.
+          let space_attr = if markup.contains("  ")
+            || markup.starts_with(char::is_whitespace)
+            || markup.ends_with(char::is_whitespace)
+          {
+            " xml:space=\"preserve\""
+          } else {
+            ""
+          };
           svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n"
+            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n"
           ));
         }
         x += width;
@@ -24925,7 +25004,8 @@ fn framed_box_to_svg(
     ));
     // Embed child SVG
     svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
+      view_box_attr(child_svg)
     ));
     // Strip outer <svg> and </svg> tags from child to embed its content
     let inner_content = strip_svg_wrapper(child_svg);
@@ -25053,7 +25133,8 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
     ));
     // Embed child SVG.
     svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
+      view_box_attr(child_svg)
     ));
     svg.push_str(strip_svg_wrapper(child_svg));
     svg.push_str("</svg>\n");
@@ -25110,6 +25191,19 @@ pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
     .and_then(|s| s.parse::<f64>().ok())
     .unwrap_or(30.0);
   (w, h)
+}
+
+/// ` viewBox="…"` for a nested `<svg>` that embeds `child`'s content: a
+/// plot draws in a coordinate space larger than its display size, so the
+/// embedding element needs the child's viewBox to show all of it. Empty when
+/// the child declares none.
+fn view_box_attr(child: &str) -> String {
+  parse_svg_dimensions(child).map_or_else(String::new, |p| {
+    format!(
+      " viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\"",
+      p.view_box
+    )
+  })
 }
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
@@ -25628,8 +25722,10 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
         // Embed pre-rendered Framed SVG, vertically centered
         let ey = (total_h - cell.height) / 2.0;
         svg.push_str(&format!(
-          "<svg x=\"{x:.1}\" y=\"{ey:.1}\" width=\"{:.1}\" height=\"{:.1}\">\n",
-          cell.width, cell.height
+          "<svg x=\"{x:.1}\" y=\"{ey:.1}\" width=\"{:.1}\" height=\"{:.1}\"{}>\n",
+          cell.width,
+          cell.height,
+          view_box_attr(child_svg)
         ));
         svg.push_str(strip_svg_wrapper(child_svg));
         svg.push_str("</svg>\n");

@@ -1752,6 +1752,12 @@ fn evaluate_function_call_ast_inner(
     return evaluate_function_call_ast(name, &rewritten);
   }
 
+  if matches!(name, "Table" | "ParallelTable" | "Do" | "ParallelDo")
+    && let Some(rewritten) = crate::evaluator::rename_compound_iterators(args)
+  {
+    return evaluate_function_call_ast(name, &rewritten);
+  }
+
   // Several statistics functions operate on an association's values: replace
   // an association first argument with its list of values, like wolframscript.
   // (Mean/Total/Max/Min already handle associations in their own routines.)
@@ -2548,8 +2554,11 @@ fn evaluate_function_call_ast_inner(
       _ => false,
     };
     // Reject before changing anything, so a bad name leaves no partial update.
+    // A built-in whose defaults Woxi does not tabulate cannot be checked:
+    // its options are accepted rather than all reported unknown.
+    let unchecked = current.is_empty() && arg_count::takes_options(head);
     for (key, _, _) in &updates {
-      if !current.iter().any(|rule| names_option(rule, key)) {
+      if !unchecked && !current.iter().any(|rule| names_option(rule, key)) {
         crate::emit_message(&format!(
           "SetOptions::optnf: {key} is not a known option for {head}."
         ));
@@ -2570,10 +2579,9 @@ fn evaluate_function_call_ast_inner(
           replacement,
         }
       };
-      for slot in &mut current {
-        if names_option(slot, &key) {
-          *slot = rule.clone();
-        }
+      match current.iter_mut().find(|slot| names_option(slot, &key)) {
+        Some(slot) => *slot = rule,
+        None => current.push(rule),
       }
     }
     crate::FUNC_OPTIONS
@@ -5100,6 +5108,9 @@ fn evaluate_function_call_ast_inner(
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
+  }
+  if name == "DiscretizeRegion" && !args.is_empty() {
+    return crate::functions::fem2d::discretize_region_ast(args);
   }
   if name == "VoronoiMesh" && (1..=2).contains(&args.len()) {
     return crate::functions::voronoi::voronoi_mesh_ast(args);

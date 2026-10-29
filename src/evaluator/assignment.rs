@@ -44,7 +44,8 @@ thread_local! {
 /// tag in an UpSet/UpSetDelayed assignment. Returns None otherwise.
 fn pattern_head_tag(expr: &Expr) -> Option<String> {
   match expr {
-    Expr::Pattern { head: Some(h), .. } => Some(h.clone()),
+    Expr::Pattern { head: Some(h), .. }
+    | Expr::PatternTest { head: Some(h), .. } => Some(h.clone()),
     Expr::FunctionCall { name, args }
       if (name == "Blank"
         || name == "BlankSequence"
@@ -6227,6 +6228,29 @@ pub fn upset_delayed_ast(
   lhs: &Expr,
   rhs: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // `lhs /; test ^:= rhs` attaches to the tags of `lhs` itself.
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "Condition"
+    && args.len() == 2
+  {
+    let inner = normalize_lhs_for_upset(&args[0]);
+    let Expr::FunctionCall {
+      args: inner_args, ..
+    } = &inner
+    else {
+      return Ok(call("UpSetDelayed", vec![lhs.clone(), rhs.clone()]));
+    };
+    let lhs = call("Condition", vec![inner.clone(), args[1].clone()]);
+    let all_tags = upvalue_tags(inner_args).len();
+    let tags = writable_upvalue_tags("UpSetDelayed", &lhs, inner_args);
+    for tag in &tags {
+      tag_set_delayed_ast(&Expr::Identifier(tag.clone()), &lhs, rhs, false)?;
+    }
+    if tags.is_empty() || tags.len() < all_tags {
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+    return Ok(null_expr());
+  }
   let normalized_lhs = normalize_lhs_for_upset(lhs);
   let (_, lhs_args) = match &normalized_lhs {
     Expr::FunctionCall { name, args } => (name.clone(), args.clone()),

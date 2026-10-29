@@ -1,6 +1,86 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// The `{cells, bspec}` init equivalent to a 1D or 2D
+/// `{{{aspec1, off1}, …}, bspec}` init, or `None` for any other init.
+fn offset_blocks_init(init: &Expr) -> Option<Expr> {
+  let Expr::List(parts) = init else {
+    return None;
+  };
+  let [Expr::List(blocks), background] = parts.as_slice() else {
+    return None;
+  };
+  if blocks.is_empty() || matches!(background, Expr::List(_)) {
+    return None;
+  }
+  // Each block is `{aspec, {offsets…}}`; its cells keyed by coordinates.
+  let mut cells: Vec<(Vec<i64>, Expr)> = Vec::new();
+  let mut dims: Option<usize> = None;
+  for block in blocks {
+    let Expr::List(pair) = block else { return None };
+    let [Expr::List(aspec), Expr::List(offset)] = pair.as_slice() else {
+      return None;
+    };
+    let offset: Vec<i64> = offset
+      .iter()
+      .map(|o| match o {
+        Expr::Integer(n) => i64::try_from(*n).ok(),
+        _ => None,
+      })
+      .collect::<Option<_>>()?;
+    match offset.len() {
+      1 => {
+        for (j, v) in aspec.iter().enumerate() {
+          if matches!(v, Expr::List(_)) {
+            return None;
+          }
+          cells.push((vec![offset[0] + j as i64], v.clone()));
+        }
+      }
+      2 => {
+        for (i, row) in aspec.iter().enumerate() {
+          let Expr::List(row) = row else { return None };
+          for (j, v) in row.iter().enumerate() {
+            cells.push((
+              vec![offset[0] + i as i64, offset[1] + j as i64],
+              v.clone(),
+            ));
+          }
+        }
+      }
+      _ => return None,
+    }
+    if *dims.get_or_insert(offset.len()) != offset.len() {
+      return None;
+    }
+  }
+  let dims = dims?;
+  let lo: Vec<i64> = (0..dims)
+    .map(|d| cells.iter().map(|(c, _)| c[d]).min().unwrap_or(0))
+    .collect();
+  let hi: Vec<i64> = (0..dims)
+    .map(|d| cells.iter().map(|(c, _)| c[d]).max().unwrap_or(0))
+    .collect();
+  let extent = |d: usize| (hi[d] - lo[d] + 1) as usize;
+  if (0..dims).map(extent).product::<usize>() > 10_000_000 {
+    return None;
+  }
+  let seed = if dims == 1 {
+    let mut row = vec![background.clone(); extent(0)];
+    for (c, v) in cells {
+      row[(c[0] - lo[0]) as usize] = v;
+    }
+    Expr::List(row.into())
+  } else {
+    let mut grid = vec![vec![background.clone(); extent(1)]; extent(0)];
+    for (c, v) in cells {
+      grid[(c[0] - lo[0]) as usize][(c[1] - lo[1]) as usize] = v;
+    }
+    Expr::List(grid.into_iter().map(|r| Expr::List(r.into())).collect())
+  };
+  Some(Expr::List(vec![seed, background.clone()].into()))
+}
+
 /// CellularAutomaton[rule, init, steps]
 ///
 /// Every supported rule specification reduces to a weighted rule: the new
@@ -71,6 +151,17 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       new_args[1] = dense;
       return cellular_automaton_ast(&new_args);
     }
+  }
+
+  // `{{{aspec1, {off1}}, {aspec2, {off2}}, …}, bspec}` places each block at
+  // its offset; it is the `{cells, bspec}` init spanning all of them, the
+  // gaps filled with background (a later block wins where two overlap).
+  if args.len() >= 2
+    && let Some(init) = offset_blocks_init(&args[1])
+  {
+    let mut new_args = args.to_vec();
+    new_args[1] = init;
+    return cellular_automaton_ast(&new_args);
   }
 
   if args.len() == 3
@@ -1058,6 +1149,11 @@ fn parse_cell_spec(expr: &Expr) -> Option<Window> {
       } else {
         Window::Range(n, 0, 1)
       })
+    }
+    // `{i}`: the single cell at offset i, still as a list.
+    Expr::List(items) if items.len() == 1 => {
+      let i = as_int(&items[0])?;
+      Some(Window::Range(i, i, 1))
     }
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let from = as_int(&items[0])?;

@@ -5962,6 +5962,25 @@ mod tagged_rule_reachability {
     );
   }
 
+  // `lhs /; test ^:= rhs` attaches to the tags of `lhs`, and a blank
+  // restricted to a head names that head (`v_cv`, `r_cv?q`).
+  #[test]
+  fn upset_delayed_with_condition_and_restricted_blanks() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cross[u_cv, v___cv] /; Length[{v}] === 1 ^:= \"crossed\"; \
+         a_ v_cv /; Head[a] =!= cv ^:= \"scaled\"; \
+         TwoDimQ[_] := True; ArcTan[r_cv?TwoDimQ] ^:= \"atan\"; \
+         UpSetDelayed[Pattern[u, Blank[cv]] + Pattern[v, Blank[cv]], \"sum\"]; \
+         {Cross[cv[1], cv[2]], 3 cv[1], ArcTan[cv[1]], cv[1] + cv[2], \
+         Length[UpValues[cv]]}"
+      )
+      .unwrap(),
+      "{crossed, scaled, atan, sum, 4}"
+    );
+  }
+
   #[test]
   fn the_transparent_wrappers_are_transparent() {
     for lhs in [
@@ -5975,6 +5994,8 @@ mod tagged_rule_reachability {
       "tagG[RepeatedNull[tagF[_]]]",
       "tagG[x:(y:tagF[_])]",
       "tagG[Blank[tagF]]",
+      "tagG[r_tagF?q]",
+      "tagG[_tagF?q]",
     ] {
       clear_state();
       assert_eq!(

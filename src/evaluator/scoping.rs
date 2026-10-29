@@ -1240,6 +1240,23 @@ pub fn set_part_deep(
     ));
   }
 
+  // An operator form (`a -> b`, `x + y`, `a == b`, …) is a call of its head
+  // like any other; spell it as one so its parts can be assigned.
+  if !matches!(
+    expr,
+    Expr::List(_) | Expr::FunctionCall { .. } | Expr::Association(_)
+  ) && let crate::functions::expr_form::ExprForm::Composite {
+    head,
+    children,
+  } = crate::functions::expr_form::decompose_expr(expr)
+    && !head.contains('[')
+  {
+    *expr = Expr::FunctionCall {
+      name: head,
+      args: children.into(),
+    };
+  }
+
   // Handle `All` index (a[[All]] = ...) — equivalent to Span[1, All].
   // Threads the assignment over every position in the current list.
   if matches!(&indices[0], Expr::Identifier(s) | Expr::Constant(s) if s == "All")

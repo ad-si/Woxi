@@ -288,19 +288,11 @@ pub fn is_builtin_flat(name: &str) -> bool {
     .contains(crate::evaluator::attributes::Attributes::Flat)
 }
 
+/// Whether a builtin carries the Orderless attribute, read off the same
+/// attribute table as [`is_builtin_flat`].
 pub fn is_builtin_orderless(name: &str) -> bool {
-  matches!(
-    name,
-    "Plus"
-      | "Times"
-      | "Max"
-      | "Min"
-      | "GCD"
-      | "LCM"
-      | "ArithmeticGeometricMean"
-      | "Multinomial"
-      | "CoprimeQ"
-  )
+  crate::evaluator::attributes::get_builtin_attributes(name)
+    .contains(crate::evaluator::attributes::Attributes::Orderless)
 }
 
 /// Thread a Listable function over list arguments.
@@ -312,6 +304,10 @@ pub fn thread_listable(
   // Check if any argument is a list
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if !has_list {
+    // Plus, Times and Power have SparseArray arithmetic of their own.
+    if !matches!(name, "Plus" | "Times" | "Power") {
+      return map_over_lone_sparse_array(name, args);
+    }
     return Ok(None);
   }
 
@@ -397,6 +393,60 @@ pub fn thread_listable(
     ));
   }
   Ok(Some(product))
+}
+
+/// A Listable function of one canonical `SparseArray` (and otherwise
+/// scalar arguments) is a SparseArray of the same pattern: the function
+/// applied to every stored value and to the background
+/// (`Conjugate[s]`, `Sin[s]`, `Abs[s]`).
+fn map_over_lone_sparse_array(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let mut sparse = args.iter().enumerate().filter(|(_, a)| is_sparse(a));
+  let Some((index, Expr::FunctionCall { args: sa, .. })) = sparse.next() else {
+    return Ok(None);
+  };
+  if sparse.next().is_some() {
+    return Ok(None);
+  }
+  let [auto, dims, background, Expr::List(data)] = sa.as_slice() else {
+    return Ok(None);
+  };
+  let [version, pattern, Expr::List(values)] = data.as_slice() else {
+    return Ok(None);
+  };
+  let apply = |v: &Expr| -> Result<Expr, InterpreterError> {
+    let mut call_args = args.to_vec();
+    call_args[index] = v.clone();
+    evaluate_function_call_ast(name, &call_args)
+  };
+  let new_values: Vec<Expr> =
+    values.iter().map(apply).collect::<Result<_, _>>()?;
+  // Only a scalar result keeps the shape; anything else is no elementwise
+  // map.
+  if new_values.iter().any(|v| matches!(v, Expr::List(_))) {
+    return Ok(None);
+  }
+  let new_background = apply(background)?;
+  Ok(Some(Expr::FunctionCall {
+    name: "SparseArray".to_string(),
+    args: vec![
+      auto.clone(),
+      dims.clone(),
+      new_background,
+      Expr::List(
+        vec![
+          version.clone(),
+          pattern.clone(),
+          Expr::List(new_values.into()),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  }))
 }
 
 /// Append the relative `sub` to the directory `base` using the host's path

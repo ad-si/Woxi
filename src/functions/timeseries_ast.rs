@@ -737,43 +737,83 @@ fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
 /// other process, or a malformed spec, is left unevaluated.
 pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unchanged = || Ok(unevaluated("RandomFunction", args));
-  if args.len() != 2 {
-    return unchanged();
+  // `RandomFunction[proc, tspec, n]` draws `n` independent realizations.
+  let count = match args {
+    [_, _] => 1,
+    [_, _, Expr::Integer(n)] if *n >= 1 => *n as usize,
+    _ => return unchanged(),
+  };
+  let mut paths = Vec::with_capacity(count);
+  for _ in 0..count {
+    match one_realization(&args[0], &args[1]) {
+      Some(path) => paths.push(path),
+      None => return unchanged(),
+    }
   }
+  if count == 1 {
+    return Ok(time_series(paths.pop().unwrap()));
+  }
+  Ok(multi_path_temporal_data(&paths))
+}
+
+/// Several realizations sharing one time axis, as the multi-path
+/// `TemporalData[{values1, …}, {{t1, …}}]` that [`temporal_paths`] reads.
+fn multi_path_temporal_data(paths: &[Vec<Expr>]) -> Expr {
+  let split = |pair: &Expr, i: usize| match pair {
+    Expr::List(kv) => kv[i].clone(),
+    _ => unreachable!(),
+  };
+  let times: Vec<Expr> = paths[0].iter().map(|p| split(p, 0)).collect();
+  let values: Vec<Expr> = paths
+    .iter()
+    .map(|path| Expr::List(path.iter().map(|p| split(p, 1)).collect()))
+    .collect();
+  call(
+    "TemporalData",
+    vec![
+      Expr::List(values.into()),
+      Expr::List(vec![Expr::List(times.into())].into()),
+    ],
+  )
+}
+
+/// One realization of `proc` over `tspec` as `{{t, value}, …}` pairs, or
+/// `None` for a process or time specification Woxi does not simulate.
+fn one_realization(proc: &Expr, tspec: &Expr) -> Option<Vec<Expr>> {
   let Expr::FunctionCall {
     name: proc_name,
     args: dargs,
-  } = &args[0]
+  } = proc
   else {
-    return unchanged();
+    return None;
   };
-  let Expr::List(spec) = &args[1] else {
-    return unchanged();
+  let Expr::List(spec) = tspec else {
+    return None;
   };
   if proc_name == "DiscreteMarkovProcess" {
-    return match discrete_markov_path(dargs, spec) {
-      Some(path) => Ok(time_series(path)),
-      None => unchanged(),
-    };
+    return discrete_markov_path(dargs, spec);
+  }
+  if let Some(path) = discrete_linear_process_path(proc, spec) {
+    return path;
   }
   let [t0, t1, dt] = spec.as_slice() else {
-    return unchanged();
+    return None;
   };
   let (Some(t0), Some(t1), Some(dt)) = (
     try_eval_to_f64(t0),
     try_eval_to_f64(t1),
     try_eval_to_f64(dt),
   ) else {
-    return unchanged();
+    return None;
   };
   if dt.is_nan() || dt <= 0.0 || t1 < t0 {
-    return unchanged();
+    return None;
   }
 
   use rand_distr::{Distribution, Normal};
   let n_steps = ((t1 - t0) / dt).round() as i64;
   if n_steps < 0 {
-    return unchanged();
+    return None;
   }
 
   if let ("PoissonProcess", [mu]) = (proc_name.as_str(), dargs.as_slice()) {
@@ -782,10 +822,10 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "PoissonProcess::realprm: Parameter {} at position 1 in {} is expected to be real.",
           crate::syntax::expr_to_output(mu),
-          crate::syntax::expr_to_output(&args[0])
+          crate::syntax::expr_to_output(proc)
         ));
       }
-      return unchanged();
+      return None;
     };
     let mut count: i128 = 0;
     let mut t = t0;
@@ -794,13 +834,13 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for _ in 0..n_steps {
       let this_step = dt.min(t1 - t);
       let Ok(increments) = rand_distr::Poisson::new(mu * this_step) else {
-        return unchanged();
+        return None;
       };
       count += crate::with_rng(|rng| increments.sample(rng)) as i128;
       t += this_step;
       pairs.push(Expr::List(vec![Expr::Real(t), Expr::Integer(count)].into()));
     }
-    return Ok(time_series(pairs));
+    return Some(pairs);
   }
 
   let sample_normal = |mean: f64, sd: f64| -> Option<f64> {
@@ -846,27 +886,344 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ("OrnsteinUhlenbeckProcess", [_, _, _, x0]) => try_eval_to_f64(x0),
     _ => None,
   };
-  let Some(mut x) = initial else {
-    return unchanged();
-  };
+  let mut x = initial?;
 
   let mut pairs = Vec::with_capacity(n_steps as usize + 1);
   pairs.push(Expr::List(vec![Expr::Real(t0), Expr::Real(x)].into()));
   let mut t = t0;
   for _ in 0..n_steps {
     let this_step = dt.min(t1 - t);
-    let Some((mean, sd)) = step_params(x, this_step) else {
-      return unchanged();
-    };
-    let Some(v) = sample_normal(mean, sd) else {
-      return unchanged();
-    };
-    x = v;
+    let (mean, sd) = step_params(x, this_step)?;
+    x = sample_normal(mean, sd)?;
     t += this_step;
     pairs.push(Expr::List(vec![Expr::Real(t), Expr::Real(x)].into()));
   }
 
-  Ok(time_series(pairs))
+  Some(pairs)
+}
+
+/// A discrete-time linear process in the canonical form
+/// `ar(L) (1 - L)^d (1 - L^s)^sd x[t] = c + ma(L) e[t]` with Gaussian white
+/// noise `e` of variance `v`. `ar` and `ma` hold the coefficients of `L^1,
+/// L^2, …` after multiplying out any seasonal factors, with the signs of the
+/// recursion `w[t] = c + Σ ar[i] w[t-i] + e[t] + Σ ma[j] e[t-j]`.
+pub struct LinearProcess {
+  pub c: f64,
+  pub ar: Vec<f64>,
+  pub ma: Vec<f64>,
+  pub v: f64,
+  pub d: usize,
+  pub season: usize,
+  pub seasonal_d: usize,
+}
+
+fn f64_list(e: &Expr) -> Option<Vec<f64>> {
+  match e {
+    Expr::List(items) => items.iter().map(try_eval_to_f64).collect(),
+    _ => None,
+  }
+}
+
+fn small_order(e: &Expr) -> Option<usize> {
+  match e {
+    Expr::Integer(n) if (0..=64).contains(n) => Some(*n as usize),
+    _ => None,
+  }
+}
+
+/// Coefficients of `(1 + Σ a[i] L^i)(1 + Σ b[j] L^(s j))` beyond the
+/// constant term; `sign` is -1 for AR polynomials (`1 - Σ a L^i`).
+fn seasonal_product(a: &[f64], b: &[f64], s: usize, sign: f64) -> Vec<f64> {
+  let mut p = vec![0.0; 1 + a.len() + s * b.len()];
+  let left: Vec<f64> = std::iter::once(1.0)
+    .chain(a.iter().map(|x| sign * x))
+    .collect();
+  let mut right = vec![0.0; 1 + s * b.len()];
+  right[0] = 1.0;
+  for (j, x) in b.iter().enumerate() {
+    right[s * (j + 1)] = sign * x;
+  }
+  for (i, l) in left.iter().enumerate() {
+    for (j, r) in right.iter().enumerate() {
+      p[i + j] += l * r;
+    }
+  }
+  p[1..].iter().map(|x| sign * x).collect()
+}
+
+/// Read an `ARProcess`, `MAProcess`, `ARMAProcess`, `ARIMAProcess`,
+/// `SARMAProcess` or `SARIMAProcess` with numeric scalar parameters (an
+/// optional leading constant, no initial data) into a [`LinearProcess`].
+pub fn linear_process(proc: &Expr) -> Option<LinearProcess> {
+  let Expr::FunctionCall { name, args } = proc else {
+    return None;
+  };
+  let args: Vec<Expr> = args.iter().cloned().collect();
+  let arity = match name.as_str() {
+    "ARProcess" | "MAProcess" => 2,
+    "ARMAProcess" => 3,
+    "ARIMAProcess" | "SARMAProcess" => 4,
+    "SARIMAProcess" => 5,
+    _ => return None,
+  };
+  // An optional leading scalar constant shifts the remaining parameters.
+  let (c, rest) = match args.len() {
+    n if n == arity => (0.0, &args[..]),
+    n if n == arity + 1 && !matches!(args[0], Expr::List(_)) => {
+      (try_eval_to_f64(&args[0])?, &args[1..])
+    }
+    _ => return None,
+  };
+  let v = try_eval_to_f64(rest.last()?)?;
+  if v < 0.0 {
+    return None;
+  }
+  let mut model = LinearProcess {
+    c,
+    ar: vec![],
+    ma: vec![],
+    v,
+    d: 0,
+    season: 1,
+    seasonal_d: 0,
+  };
+  match name.as_str() {
+    "ARProcess" => model.ar = f64_list(&rest[0])?,
+    "MAProcess" => model.ma = f64_list(&rest[0])?,
+    "ARMAProcess" => {
+      model.ar = f64_list(&rest[0])?;
+      model.ma = f64_list(&rest[1])?;
+    }
+    "ARIMAProcess" => {
+      model.ar = f64_list(&rest[0])?;
+      model.d = small_order(&rest[1])?;
+      model.ma = f64_list(&rest[2])?;
+    }
+    "SARMAProcess" | "SARIMAProcess" => {
+      let integrated = name == "SARIMAProcess";
+      let ar = f64_list(&rest[0])?;
+      if integrated {
+        model.d = small_order(&rest[1])?;
+      }
+      let ma = f64_list(&rest[if integrated { 2 } else { 1 }])?;
+      let Expr::List(seasonal) = &rest[if integrated { 3 } else { 2 }] else {
+        return None;
+      };
+      let seasonal: Vec<Expr> = seasonal.iter().cloned().collect();
+      let (s, sar, sd, sma) = match (integrated, seasonal.as_slice()) {
+        (true, [s, sar, sd, sma]) => (s, sar, small_order(sd)?, sma),
+        (false, [s, sar, sma]) => (s, sar, 0, sma),
+        _ => return None,
+      };
+      let s = small_order(s).filter(|s| *s >= 1)?;
+      model.season = s;
+      model.seasonal_d = sd;
+      model.ar = seasonal_product(&ar, &f64_list(sar)?, s, -1.0);
+      model.ma = seasonal_product(&ma, &f64_list(sma)?, s, 1.0);
+    }
+    _ => return None,
+  }
+  Some(model)
+}
+
+/// Whether every root of `1 - Σ ar[i] z^i` lies outside the unit circle,
+/// i.e. the AR recursion forgets its starting values.
+pub fn ar_is_stationary(ar: &[f64]) -> bool {
+  let p = match ar.iter().rposition(|x| *x != 0.0) {
+    Some(i) => i + 1,
+    None => return true,
+  };
+  // Roots of 1 - Σ ar[i] z^i (coefficients in ascending powers).
+  let coeffs: Vec<f64> = std::iter::once(1.0)
+    .chain(ar[..p].iter().map(|a| -a))
+    .collect();
+  crate::functions::polynomial_ast::solve::durand_kerner_roots(&coeffs)
+    .iter()
+    .all(|(re, im)| re.hypot(*im) > 1.0 + 1e-12)
+}
+
+/// A realization of a white-noise or ARMA-family process over the integer
+/// times `{tmin, tmax}` (or `{tmax}`, starting at 0). `None` means `proc` is
+/// not such a process; `Some(None)` that it is but cannot be simulated here.
+fn discrete_linear_process_path(
+  proc: &Expr,
+  spec: &[Expr],
+) -> Option<Option<Vec<Expr>>> {
+  let Expr::FunctionCall { name, args: pargs } = proc else {
+    return None;
+  };
+  let noise: Option<(f64, f64)> = match (name.as_str(), pargs.as_slice()) {
+    ("WhiteNoiseProcess", []) => Some((0.0, 1.0)),
+    ("WhiteNoiseProcess", [sd]) => match try_eval_to_f64(sd) {
+      Some(sd) if sd >= 0.0 => Some((0.0, sd)),
+      _ => {
+        // A distribution argument draws its values from that distribution.
+        let Expr::FunctionCall { .. } = sd else {
+          return Some(None);
+        };
+        return Some(white_noise_from_distribution(sd, spec));
+      }
+    },
+    ("WhiteNoiseProcess", [m, sd]) => {
+      match (try_eval_to_f64(m), try_eval_to_f64(sd)) {
+        (Some(m), Some(sd)) if sd >= 0.0 => Some((m, sd)),
+        _ => return Some(None),
+      }
+    }
+    _ => None,
+  };
+  let model = match noise {
+    Some(_) => None,
+    None => Some(linear_process(proc).or_else(|| {
+      // A recognized family member with symbolic or malformed parameters.
+      matches!(
+        name.as_str(),
+        "ARProcess"
+          | "MAProcess"
+          | "ARMAProcess"
+          | "ARIMAProcess"
+          | "SARMAProcess"
+          | "SARIMAProcess"
+      )
+      .then_some(None)?
+    })?),
+  };
+  if noise.is_none() && model.is_none() {
+    return None;
+  }
+  let Some((tmin, tmax)) = integer_time_range(spec) else {
+    return Some(None);
+  };
+  let n = (tmax - tmin + 1) as usize;
+
+  use rand_distr::{Distribution, Normal};
+  let values: Vec<f64> = if let Some((m, sd)) = noise {
+    let Ok(dist) = Normal::new(m, sd) else {
+      return Some(None);
+    };
+    crate::with_rng(|rng| (0..n).map(|_| dist.sample(rng)).collect())
+  } else {
+    let model = model.unwrap();
+    let Ok(dist) = Normal::new(0.0, model.v.sqrt()) else {
+      return Some(None);
+    };
+    // A stationary recursion starts from its stationary regime by running
+    // it in for a while first; otherwise it starts from zero history.
+    let burn = if ar_is_stationary(&model.ar) {
+      1000 + 50 * (model.ar.len() + model.ma.len())
+    } else {
+      0
+    };
+    let total = burn + n;
+    let noise: Vec<f64> = crate::with_rng(|rng| {
+      (0..total + model.ma.len())
+        .map(|_| dist.sample(rng))
+        .collect()
+    });
+    let q = model.ma.len();
+    let mut w: Vec<f64> = Vec::with_capacity(total);
+    for t in 0..total {
+      let mut x = model.c + noise[t + q];
+      for (i, a) in model.ar.iter().enumerate() {
+        if t > i {
+          x += a * w[t - 1 - i];
+        }
+      }
+      for (j, b) in model.ma.iter().enumerate() {
+        x += b * noise[t + q - 1 - j];
+      }
+      w.push(x);
+    }
+    let mut x: Vec<f64> = w.split_off(burn);
+    // Undo the differencing, starting from zero history.
+    for _ in 0..model.d {
+      for t in 1..x.len() {
+        x[t] += x[t - 1];
+      }
+    }
+    for _ in 0..model.seasonal_d {
+      for t in model.season..x.len() {
+        x[t] += x[t - model.season];
+      }
+    }
+    x
+  };
+  Some(Some(
+    values
+      .into_iter()
+      .enumerate()
+      .map(|(i, v)| {
+        Expr::List(vec![Expr::Integer(tmin + i as i128), Expr::Real(v)].into())
+      })
+      .collect(),
+  ))
+}
+
+/// `WeakStationarity[proc]` for an ARMA-family process with numeric
+/// parameters: moving-average parts are always weakly stationary, an
+/// integrated one never is, and an autoregressive one is when every root of
+/// its AR polynomial lies outside the unit circle.
+pub fn weak_stationarity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let [proc] = args else {
+    return Ok(unevaluated("WeakStationarity", args));
+  };
+  if let Expr::FunctionCall { name, .. } = proc
+    && name == "WhiteNoiseProcess"
+  {
+    return Ok(bool_expr(true));
+  }
+  let Some(model) = linear_process(proc) else {
+    return Ok(unevaluated("WeakStationarity", args));
+  };
+  if model.d > 0 || model.seasonal_d > 0 {
+    return Ok(bool_expr(false));
+  }
+  let stationary = ar_is_stationary(&model.ar);
+  if !stationary && let Expr::FunctionCall { name, .. } = proc {
+    crate::emit_message(&format!(
+      "{name}::nonwkst: The process is not weakly stationary."
+    ));
+  }
+  Ok(bool_expr(stationary))
+}
+
+/// `{tmin, tmax}` or `{tmax}` (from 0) as an integer time range.
+fn integer_time_range(spec: &[Expr]) -> Option<(i128, i128)> {
+  let (tmin, tmax) = match spec {
+    [Expr::Integer(tmax)] => (0, *tmax),
+    [Expr::Integer(tmin), Expr::Integer(tmax)] => (*tmin, *tmax),
+    _ => return None,
+  };
+  (tmax >= tmin && tmax - tmin < 100_000_000).then_some((tmin, tmax))
+}
+
+/// `WhiteNoiseProcess[dist]`: independent draws from `dist`.
+fn white_noise_from_distribution(
+  dist: &Expr,
+  spec: &[Expr],
+) -> Option<Vec<Expr>> {
+  let (tmin, tmax) = integer_time_range(spec)?;
+  let n = tmax - tmin + 1;
+  let draws = crate::evaluator::evaluate_expr_to_expr(&call(
+    "RandomVariate",
+    vec![dist.clone(), Expr::Integer(n)],
+  ))
+  .ok()?;
+  let Expr::List(ref draws) = draws else {
+    return None;
+  };
+  if draws.len() as i128 != n {
+    return None;
+  }
+  Some(
+    draws
+      .iter()
+      .enumerate()
+      .map(|(i, v)| {
+        Expr::List(vec![Expr::Integer(tmin + i as i128), v.clone()].into())
+      })
+      .collect(),
+  )
 }
 
 /// Return the `{{date, value}, ...}` pairs of a canonical `TimeSeries`.
@@ -994,9 +1351,21 @@ pub fn temporal_paths(expr: &Expr) -> Option<Vec<Vec<(Expr, Expr)>>> {
   };
   // Times are wrapped as `{{t1, …}}`; unwrap the singleton path-list, otherwise
   // take the stamps directly.
+  let path_len = match paths.iter().next() {
+    Some(Expr::List(vals)) => vals.len(),
+    _ => 0,
+  };
   let times: Vec<Expr> = match args.get(1)? {
     Expr::List(items) => match (items.len(), items.iter().next()) {
       (1, Some(Expr::List(inner))) => inner.iter().cloned().collect(),
+      // `{t0}`: unit steps from the start time t0.
+      (1, Some(t0 @ (Expr::Integer(_) | Expr::Real(_)))) => (0..path_len)
+        .map(|i| match t0 {
+          Expr::Integer(t) => Expr::Integer(t + i as i128),
+          Expr::Real(t) => Expr::Real(t + i as f64),
+          _ => unreachable!(),
+        })
+        .collect(),
       _ => items.iter().cloned().collect(),
     },
     _ => return None,
@@ -1679,6 +2048,64 @@ pub fn apply_time_series(
     Some(value) => Ok(value),
     None => unevaluated(),
   }
+}
+
+/// Apply a multi-path `TemporalData[{p1, …}, tspec]` to an argument. The
+/// path-list properties report every path; the rest answer for the first
+/// path, as Wolfram does, and a time slice is the empirical distribution
+/// of the paths' values there.
+pub fn apply_multi_path_temporal_data(
+  td: &Expr,
+  arg: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || {
+    Ok(Expr::CurriedCall {
+      func: Box::new(td.clone()),
+      args: vec![arg.clone()],
+    })
+  };
+  let Some(paths) = temporal_paths(td).filter(|p| !p.is_empty()) else {
+    return unevaluated();
+  };
+  let as_series = |path: &Vec<(Expr, Expr)>| {
+    call1(
+      "TimeSeries",
+      Expr::List(
+        path
+          .iter()
+          .map(|(t, v)| Expr::List(vec![t.clone(), v.clone()].into()))
+          .collect(),
+      ),
+    )
+  };
+  let each = |prop: &str| -> Result<Expr, InterpreterError> {
+    let mut out = Vec::with_capacity(paths.len());
+    for path in &paths {
+      out.push(apply_time_series(&as_series(path), &str_expr(prop))?);
+    }
+    Ok(Expr::List(out.into()))
+  };
+  if let Expr::String(prop) = arg {
+    return match prop.as_str() {
+      "Paths" => each("Path"),
+      "ValueList" | "States" => each("Values"),
+      "TimeList" => each("Times"),
+      "PathCount" => Ok(Expr::Integer(paths.len() as i128)),
+      _ => apply_time_series(&as_series(&paths[0]), arg),
+    };
+  }
+  // A time slice is the empirical distribution of the paths' values.
+  let mut out = Vec::with_capacity(paths.len());
+  for path in &paths {
+    out.push(apply_time_series(&as_series(path), arg)?);
+  }
+  if out.iter().any(|v| matches!(v, Expr::CurriedCall { .. })) {
+    return unevaluated();
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call1(
+    "EmpiricalDistribution",
+    Expr::List(out.into()),
+  ))
 }
 
 /// Resolve a string property access on a `TimeSeries`.

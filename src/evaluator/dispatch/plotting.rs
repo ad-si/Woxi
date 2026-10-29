@@ -347,6 +347,8 @@ pub fn dispatch_plotting(
       Some(crate::functions::graphics::geometric_scene_ast(args))
     }
     "Plot3D" if args.len() >= 3 => {
+      let domain = crate::functions::fem2d::region_domain_args(args);
+      let args = domain.as_deref().unwrap_or(args);
       Some(quiet_plot(|| crate::functions::plot3d::plot3d_ast(args)))
     }
     "ParametricPlot3D" if args.len() >= 2 => Some(quiet_plot(|| {
@@ -700,11 +702,15 @@ pub fn dispatch_plotting(
       }))
     }
     "DensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      let domain = crate::functions::fem2d::region_domain_args(args);
+      let args = domain.as_deref().unwrap_or(args);
       crate::functions::field_plot::density_plot_ast(
         &crate::functions::field_plot::with_evaluated_options(args, 3)?,
       )
     })),
     "ContourPlot" if args.len() >= 3 => Some(quiet_plot(|| {
+      let domain = crate::functions::fem2d::region_domain_args(args);
+      let args = domain.as_deref().unwrap_or(args);
       crate::functions::field_plot::contour_plot_ast(
         &crate::functions::field_plot::with_evaluated_options(args, 3)?,
       )
@@ -808,6 +814,9 @@ pub fn dispatch_plotting(
     }
     "PieChart3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::chart::pie_chart_3d_ast(args)
+    })),
+    "Histogram3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::histogram_3d_ast(args)
     })),
     "Histogram" if !args.is_empty() => {
       Some(crate::functions::chart::histogram_ast(args))

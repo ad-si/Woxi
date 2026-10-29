@@ -925,6 +925,46 @@ mod rescale {
 mod bin_counts {
   use super::*;
 
+  // `{min, max}` is `{min, max, 1}`.
+  #[test]
+  fn min_max_spec_has_unit_bins() {
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4, 5, 7, 7, 8, 8, 9, 12}, {1, 13}]")
+        .unwrap(),
+      "{1, 1, 1, 1, 1, 0, 2, 2, 1, 0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("BinCounts[{1, 2.5, 3}, {0.5, 3}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("BinLists[{1, 2.5, 3}, {0, 3}]").unwrap(),
+      "{{}, {1}, {2.5}}"
+    );
+  }
+
+  // Data without a single number is no vector to bin.
+  #[test]
+  fn no_numeric_data() {
+    for (code, head) in [
+      ("BinCounts[{}, 2]", "BinCounts"),
+      ("BinCounts[x, 1]", "BinCounts"),
+      ("BinLists[{}, {0, 3, 1}]", "BinLists"),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.starts_with(&format!("{head}::vectmat:"))),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+    // Non-numeric elements among numbers are skipped.
+    assert_eq!(interpret("BinCounts[{1, a, 2}, 1]").unwrap(), "{0, 1, 1}");
+  }
+
   // A bin width that is not positive gets `::step` and the call stays
   // unevaluated; it used to stop the evaluation.
   #[test]
@@ -10939,6 +10979,161 @@ mod random_function_simulation {
     assert_eq!(
       interpret("RandomFunction[PoissonProcess[x], {0, 1, 0.1}]").unwrap(),
       "RandomFunction[PoissonProcess[x], {0, 1, 0.1}]"
+    );
+  }
+
+  #[test]
+  fn arma_family_paths() {
+    // Integer times tmin..tmax (or 0..tmax), one Real value each.
+    assert_eq!(
+      interpret(
+        "p = RandomFunction[ARProcess[{0.9}, 0.19], {1, 50}][\"Path\"]; \
+         {Dimensions[p], p[[All, 1]] == Range[50], VectorQ[p[[All, 2]], Head[#] === Real &]}"
+      )
+      .unwrap(),
+      "{{50, 2}, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "RandomFunction[MAProcess[{0.5, -0.5}, 0.5], {0, 3}][\"Times\"]"
+      )
+      .unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret("RandomFunction[WhiteNoiseProcess[2.], {5}][\"PathLength\"]")
+        .unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomFunction[SARIMAProcess[{-0.3, 0.2}, 1, {0.2, 0.1}, \
+         {12, {0.2, -0.1}, 0, {-0.3, 0.1}}, 1.], {1, 30}][\"Path\"]]"
+      )
+      .unwrap(),
+      "{30, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomFunction[ARMAProcess[{0.9}, {-0.4}, 1], {1, 20}][\"Values\"]]"
+      )
+      .unwrap(),
+      "{20}"
+    );
+  }
+
+  #[test]
+  fn arma_family_statistics() {
+    // A stationary AR(1) starts in its stationary regime: variance
+    // v/(1 - a^2) = 1 at every time, not v at the first step.
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; s = Table[RandomFunction[ARProcess[{0.9}, 0.19], {1, 3}][\"Values\"], {3000}]; \
+         Map[0.85 < # < 1.15 &, Variance[s]]"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+    // The leading constant c shifts the mean to c/(1 - Σa).
+    assert_eq!(
+      interpret(
+        "SeedRandom[2]; m = Mean[RandomFunction[ARProcess[1, {0.5}, 0.1], {1, 4000}][\"Values\"]]; \
+         1.9 < m < 2.1"
+      )
+      .unwrap(),
+      "True"
+    );
+    // White noise drawn from a distribution.
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; m = Mean[RandomFunction[WhiteNoiseProcess[NormalDistribution[3, 1]], {2000}][\"Values\"]]; \
+         2.9 < m < 3.1"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn several_realizations() {
+    assert_eq!(
+      interpret(
+        "p = RandomFunction[ARProcess[{0.9}, 0.19], {1, 3}, 2]; \
+         {Head[p], Dimensions[p[\"Paths\"]], Dimensions[p[\"Path\"]], p[\"PathCount\"], \
+         p[\"Paths\"][[2, All, 1]]}"
+      )
+      .unwrap(),
+      "{TemporalData, {2, 3, 2}, {3, 2}, 2, {1, 2, 3}}"
+    );
+  }
+}
+
+mod weak_stationarity {
+  use super::*;
+
+  #[test]
+  fn numeric_processes() {
+    assert_eq!(
+      interpret("WeakStationarity[ARProcess[{0.9}, 0.19]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("WeakStationarity[ARProcess[{1/2, 1/3}, 1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("WeakStationarity[MAProcess[{3.}, 1]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("WeakStationarity[ARIMAProcess[{0.5}, 1, {}, 1.]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "WeakStationarity[SARMAProcess[{-0.3, 0.2}, {0.2, 0.1}, {12, {0.2, -0.1}, {-0.3, 0.1}}, 1.]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn non_stationary_ar_warns() {
+    let r = interpret_with_stdout("WeakStationarity[ARProcess[{1.2}, 0.19]]")
+      .unwrap();
+    assert_eq!(r.result, "False");
+    assert!(
+      r.warnings.iter().any(|w| w.contains("ARProcess::nonwkst")),
+      "{:?}",
+      r.warnings
+    );
+  }
+}
+
+mod multi_path_temporal_data {
+  use super::*;
+
+  #[test]
+  fn properties() {
+    assert_eq!(
+      interpret(
+        "td = TemporalData[{{1, 2, 3}, {4, 5, 6}}, {0}]; \
+         {td[\"Paths\"], td[\"Path\"], td[\"Values\"], td[\"Times\"], \
+         td[\"PathLength\"], td[\"PathCount\"], td[\"ValueList\"]}"
+      )
+      .unwrap(),
+      "{{{{0, 1}, {1, 2}, {2, 3}}, {{0, 4}, {1, 5}, {2, 6}}}, \
+       {{0, 1}, {1, 2}, {2, 3}}, {1, 2, 3}, {0, 1, 2}, 3, 2, \
+       {{1, 2, 3}, {4, 5, 6}}}"
+    );
+  }
+
+  #[test]
+  fn time_slice_is_empirical_distribution() {
+    assert_eq!(
+      interpret("TemporalData[{{1, 2, 3}, {4, 5, 6}}, {0}][1]").unwrap(),
+      "DataDistribution[Empirical, {{1/2, 1/2}, {2, 5}, False}, 1, 2]"
     );
   }
 }

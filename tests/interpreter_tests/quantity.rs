@@ -1226,6 +1226,74 @@ fn unit_convert_speed_of_light_to_km_h() {
   );
 }
 
+#[test]
+fn speed_of_light_times_unit_keeps_constant() {
+  // The constant's magnitude must not be dropped when its base units cancel.
+  assert_eq!(
+    interpret("Quantity[1, \"SpeedOfLight\"] Quantity[2, \"Seconds\"]")
+      .unwrap(),
+    "Quantity[2, Seconds*SpeedOfLight]"
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"SpeedOfLight\"] Quantity[2, \"Hours\"]]"
+    )
+    .unwrap(),
+    "Quantity[2158505697600, Meters]"
+  );
+  assert_eq!(
+    interpret("Quantity[3, \"SpeedOfLight\"]/Quantity[1, \"SpeedOfLight\"]")
+      .unwrap(),
+    "3"
+  );
+}
+
+// ─── Exact SI constants ───────────────────────────────────────────────────
+
+#[test]
+fn unit_convert_exact_si_constants() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"AvogadroConstant\"]]").unwrap(),
+    "Quantity[602214076000000000000000, Moles^-1]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1., \"AvogadroConstant\"]]").unwrap(),
+    "Quantity[6.02214076*^23, Moles^-1]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"BoltzmannConstant\"]]").unwrap(),
+    "Quantity[1380649/100000000000000000000000000000, \
+     (Kilograms*Meters^2)/(Kelvins*Seconds^2)]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"ElementaryCharge\"]]").unwrap(),
+    "Quantity[801088317/5000000000000000000000000000, Amperes*Seconds]"
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"BoltzmannConstant\"] Quantity[300, \"Kelvins\"]]"
+    )
+    .unwrap(),
+    "Quantity[4141947/1000000000000000000000000000, \
+     (Kilograms*Meters^2)/Seconds^2]"
+  );
+}
+
+#[test]
+fn kelvins_in_compound_units() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"Joules\"/\"Kelvins\"]]").unwrap(),
+    "Quantity[1, (Kilograms*Meters^2)/(Kelvins*Seconds^2)]"
+  );
+  assert_eq!(
+    interpret(
+      "CompatibleUnitQ[Quantity[1, \"Kelvins\"], Quantity[1, \"DegreesCelsius\"]]"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 // ─── UnitConvert with compound string target ──────────────────────────────
 
 #[test]

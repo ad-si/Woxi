@@ -8258,6 +8258,16 @@ mod line_continuation {
   }
 
   #[test]
+  fn comment_between_semicolons_is_no_span() {
+    // `a;(* c *);` ends in two statement separators, not in a `;;` Span
+    // that would swallow the next line.
+    assert_eq!(
+      interpret("x = 1;(* c *);\ny = 2\n{x, y}").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
   fn greater_across_newline() {
     // Regression: `>` at end of line (Greater operator) must continue on
     // the next line, matching wolframscript.

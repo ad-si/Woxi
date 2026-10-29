@@ -7959,6 +7959,28 @@ mod cases {
     assert_case(r#"(x \[Function] x^2)[5]"#, r#"25"#);
   }
   #[test]
+  fn function_arrow_versus_assignment() {
+    // Set binds looser than \[Function] on its left, so `f = x ↦ body`
+    // assigns the function; the body still absorbs an assignment.
+    assert_case(
+      r#"FullForm[Hold[f = x \[Function] {Sin[x], Cos[x]}]]"#,
+      r#"FullForm[Hold[f = Function[x, {Sin[x], Cos[x]}]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a = x \[Function] y = 1]]"#,
+      r#"FullForm[Hold[a = Function[x, y = 1]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a -> x \[Function] y]]"#,
+      r#"FullForm[Hold[Function[a -> x, y]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a \[Function] b \[Function] c]]"#,
+      r#"FullForm[Hold[Function[a, Function[b, c]]]]"#,
+    );
+    assert_case(r#"f = x |-> x + 1; f[2]"#, r#"3"#);
+  }
+  #[test]
   fn function_arrow_ascii() {
     // `|->` is the ASCII spelling of the \[Function] operator.
     assert_case(r#"x |-> x^2"#, r#"Function[x, x^2]"#);
@@ -14175,5 +14197,29 @@ mod complex_number_shape {
       .unwrap(),
       "{Complex, Complex, Complex, Complex, Plus, h, List}"
     );
+  }
+}
+
+mod exact_base_bigfloat_exponent {
+  use super::*;
+
+  // An exact base under an arbitrary-precision exponent is a number whose
+  // precision drops by Log10[|y Log[x]|] (plus |y| for an irrational base,
+  // numericized at the exponent's precision).
+  #[test]
+  fn evaluates_with_tracked_precision() {
+    assert_eq!(
+      interpret("10^0.5`20").unwrap(),
+      "3.16227766016837933199889354443271853372`19.938814306964517"
+    );
+    assert_eq!(
+      interpret("10^-0.5`20").unwrap(),
+      "0.31622776601683793319988935444327185337`19.938814306964517"
+    );
+    assert_eq!(
+      interpret("Round[Precision[Sqrt[2]^1.5`20], 0.0001]").unwrap(),
+      "19.6947"
+    );
+    assert_eq!(interpret("RealDigits[10^0.5`20][[2]]").unwrap(), "1");
   }
 }

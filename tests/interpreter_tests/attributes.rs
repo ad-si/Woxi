@@ -1180,6 +1180,16 @@ mod cases {
     );
   }
 
+  // A built-in whose option defaults Woxi does not tabulate accepts the
+  // options it is given instead of reporting each one unknown.
+  #[test]
+  fn set_options_on_untabulated_builtin() {
+    assert_case(
+      r#"SetOptions[ParametricPlot3D, Boxed -> False]; Options[ParametricPlot3D, Boxed]"#,
+      r#"{Boxed -> False}"#,
+    );
+  }
+
   #[test]
   fn set_options_rejects_bad_arguments() {
     use woxi::interpret_with_stdout;
@@ -2499,5 +2509,29 @@ mod control_active_holds_its_forms {
     .unwrap();
     assert_eq!(result.result, "{{HoldAll, Protected, ReadProtected}, 2}");
     assert_eq!(result.stdout, "2\n");
+  }
+}
+
+mod listable_builtins_from_wolframscript {
+  use super::super::case_helpers::assert_case;
+
+  // Attributes checked against wolframscript; Listable threads.
+  #[test]
+  fn attributes_and_threading() {
+    assert_case("Attributes[Factor]", "{Listable, Protected}");
+    assert_case(
+      "Attributes[HeavisideTheta]",
+      "{Listable, Orderless, Protected}",
+    );
+    assert_case(
+      "Attributes[Subtract]",
+      "{Listable, NumericFunction, Protected}",
+    );
+    assert_case("Coefficient[{I x, 2 I x, 3 x^2}, x]", "{I, 2*I, 0}");
+    assert_case("Coefficient[x^2 + 3 x y, {x, y}]", "{3*y, 3*x}");
+    assert_case(
+      "Together[{1/a + 1/b, 1/x + 1}]",
+      "{(a + b)/(a*b), (1 + x)/x}",
+    );
   }
 }

@@ -12874,6 +12874,19 @@ mod grad {
 mod recurrence_table {
   use super::*;
 
+  // The equations may be joined with && instead of listed.
+  #[test]
+  fn conjunction_of_equations() {
+    assert_eq!(
+      interpret(
+        "RecurrenceTable[(n + 1) (n - 2) y[n + 1] == n (n^2 - n - 1) y[n] - \
+         (n - 1)^3 y[n - 1] && y[2] == 1 && y[3] == 1, y, {n, 2, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 7/4, 5, 121/6, 103, 5041/8, 40321/9, 362881/10}"
+    );
+  }
+
   #[test]
   fn geometric() {
     assert_eq!(

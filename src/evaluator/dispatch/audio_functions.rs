@@ -38,6 +38,9 @@ pub(super) fn dispatch_audio_functions(
     "AudioType" => Some(audio::audio_type_ast(args)),
     "Cepstrogram" => Some(audio::spectral::cepstrogram_ast(args)),
     "Periodogram" => Some(audio::spectral::periodogram_ast(args)),
+    "PeriodogramArray" if !args.is_empty() => {
+      Some(audio::spectral::periodogram_array_ast(args))
+    }
     "WienerFilter" => Some(audio::filters::wiener_filter_ast(args)),
     "TotalVariationFilter" => {
       Some(audio::filters::total_variation_filter_ast(args))

@@ -1731,6 +1731,11 @@ static FUNCTIONS_WITH_OPTIONS: std::sync::LazyLock<
     .collect()
 });
 
+/// Whether the built-in `name` takes options at all.
+pub fn takes_options(name: &str) -> bool {
+  FUNCTIONS_WITH_OPTIONS.contains(name)
+}
+
 /// Whether `e` can be an option argument: a rule, or a list of them.
 fn is_option_arg(e: &Expr) -> bool {
   match e {
