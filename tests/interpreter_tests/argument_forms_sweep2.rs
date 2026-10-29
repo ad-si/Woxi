@@ -222,7 +222,7 @@ mod boolean_terms {
     let r =
       interpret_with_stdout("BooleanMinterms[{{0, 1, 1}, {1, 0, 1}}]").unwrap();
     assert_eq!(r.result, "BooleanMinterms[{{0, 1, 1}, {1, 0, 1}}]");
-    assert!(r.warnings.is_empty());
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     assert_eq!(
       interpret("BooleanMaxterms[{{0, 1, 1}}]").unwrap(),
       "BooleanMaxterms[{{0, 1, 1}}]"
