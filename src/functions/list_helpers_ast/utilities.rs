@@ -226,7 +226,7 @@ pub(crate) fn resolve_numeric_steps(
       .ok_or_else(|| {
         InterpreterError::EvaluationError("Do: step must be an integer".into())
       })?;
-  if step_num.abs() <= f64::EPSILON {
+  if step_num == 0.0 {
     return Err(InterpreterError::EvaluationError(
       "Do: step cannot be zero".into(),
     ));
@@ -277,15 +277,15 @@ pub(crate) fn for_each_numeric_step(
       max_num,
       step_num,
     } => {
-      let positive = step_num > 0.0;
+      // As many values as Range gives: rounding in (max - min)/step must
+      // neither add nor drop the last one, at any magnitude (a slack of
+      // machine epsilon ran a step of 10^-20 a million times).
+      let count =
+        super::construction::range_step_count((max_num - min_num) / step_num)
+          + 1;
       let mut k: i128 = 0;
       loop {
-        let current_num = min_num + (k as f64) * step_num;
-        if positive {
-          if current_num > max_num + f64::EPSILON {
-            break;
-          }
-        } else if current_num < max_num - f64::EPSILON {
+        if k >= count {
           break;
         }
         // `min + k*step` for every k, the first included: a machine-real

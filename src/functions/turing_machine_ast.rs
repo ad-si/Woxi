@@ -65,15 +65,16 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) => *n as usize,
     _ => return Ok(unevaluated("TuringMachine", args)),
   };
-  if tape.is_empty() || start_pos < 1 || start_pos > tape.len() {
+  if tape.is_empty() {
     return Ok(unevaluated("TuringMachine", args));
   }
 
-  // A cyclic tape: the head wraps around at either end.
+  // A cyclic tape: the head wraps around at either end, and a starting
+  // position outside 1..n counts round it too (0 is the last cell).
   let len = tape.len() as i64;
   let mut tape = tape;
   let mut state = state;
-  let mut pos = start_pos as i64; // 1-indexed
+  let mut pos = (start_pos - 1).rem_euclid(len) + 1; // 1-indexed
   let mut shift: i64 = 0;
   let row = |state: &Expr, pos: i64, shift: i64, tape: &[Expr]| {
     Expr::List(
@@ -224,6 +225,15 @@ fn parse_rule_spec(
 ) -> Result<(u64, usize, usize), InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok((*n as u64, 2, 2)),
+    // `{n, s}`: two colours.
+    Expr::List(items) if items.len() == 2 => {
+      let (Expr::Integer(n), Expr::Integer(s)) = (&items[0], &items[1]) else {
+        return Err(InterpreterError::EvaluationError(
+          "TuringMachine: rule number and states must be integers".into(),
+        ));
+      };
+      Ok((*n as u64, *s as usize, 2))
+    }
     Expr::List(items) if items.len() == 3 => {
       let n = match &items[0] {
         Expr::Integer(n) => *n as u64,
@@ -256,11 +266,10 @@ fn parse_rule_spec(
 }
 
 /// Parse init: `{state_spec, tape}` where state_spec is `s`, `{s}` or
-/// `{s, pos}`. Returns the state, the 1-indexed head position and the tape
-/// cells (empty when the tape is not a plain list).
-fn parse_init(
-  expr: &Expr,
-) -> Result<(Expr, usize, Vec<Expr>), InterpreterError> {
+/// `{s, pos}`. Returns the state, the 1-indexed head position (any integer:
+/// it may lie off the given cells) and the tape cells (empty when the tape
+/// is not a plain list).
+fn parse_init(expr: &Expr) -> Result<(Expr, i64, Vec<Expr>), InterpreterError> {
   let items = match expr {
     Expr::List(items) if items.len() == 2 => items,
     _ => {
@@ -270,16 +279,16 @@ fn parse_init(
     }
   };
   let (state, pos) = match &items[0] {
-    Expr::List(spec) if spec.len() == 1 => (spec[0].clone(), 1usize),
+    Expr::List(spec) if spec.len() == 1 => (spec[0].clone(), 1i64),
     Expr::List(spec) if spec.len() == 2 => match &spec[1] {
-      Expr::Integer(n) if *n >= 1 => (spec[0].clone(), *n as usize),
+      Expr::Integer(n) => (spec[0].clone(), *n as i64),
       _ => {
         return Err(InterpreterError::EvaluationError(
-          "TuringMachine: position must be a positive integer".into(),
+          "TuringMachine: position must be an integer".into(),
         ));
       }
     },
-    s => (s.clone(), 1usize),
+    s => (s.clone(), 1i64),
   };
   let tape = match &items[1] {
     Expr::List(cells) => cells.to_vec(),
@@ -386,7 +395,7 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Content index of the cell at offset 0, and the initial colour anywhere:
   // the background is aligned so the content's first cell holds the
   // pattern's first colour.
-  let origin = start_pos as i64 - 1;
+  let origin = start_pos - 1;
   let initial = |x: i64| -> Expr {
     let i = x + origin;
     if i >= 0 && (i as usize) < content.len() {

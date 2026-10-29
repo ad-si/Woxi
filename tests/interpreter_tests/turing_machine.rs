@@ -3,6 +3,28 @@ use super::*;
 mod turing_machine {
   use super::*;
 
+  // A head position may be any integer — off the given cells on an
+  // infinite tape, counted round a cyclic one — and `{n, s}` names a
+  // two-colour machine (Demonstration
+  // TheFirst1936ElegantBinaryTuringMachines; a position 0 stopped the
+  // evaluation).
+  #[test]
+  fn any_integer_start_position() {
+    assert_eq!(
+      interpret("TuringMachine[{2506, 2}, {{1, 0}, {{}, 0}}, 2]").unwrap(),
+      "{{{1, 1, 0}, {0, 0}}, {{2, 2, 1}, {1, 0}}, {{1, 1, 0}, {1, 1}}}"
+    );
+    assert_eq!(
+      interpret("TuringMachine[{2506, 2, 2}, {{1, -2}, {{1, 1}, 0}}, 3]")
+        .unwrap(),
+      "{{{1, 2, 0}, {0, 0, 0, 0, 1, 1}}, {{2, 3, 1}, {0, 1, 0, 0, 1, 1}}, {{1, 2, 0}, {0, 1, 1, 0, 1, 1}}, {{2, 1, -1}, {0, 0, 1, 0, 1, 1}}}"
+    );
+    assert_eq!(
+      interpret("TuringMachine[{2506, 2, 2}, {{1, 0}, {1, 0, 1}}, 2]").unwrap(),
+      "{{{1, 3, 0}, {1, 0, 1}}, {{2, 2, -1}, {1, 0, 0}}, {{1, 1, -2}, {1, 1, 0}}}"
+    );
+  }
+
   #[test]
   fn basic_rule_2506() {
     assert_eq!(

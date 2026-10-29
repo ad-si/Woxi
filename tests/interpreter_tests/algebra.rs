@@ -10856,6 +10856,21 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // `FindRoot[f, {x0}]` finds a root of the function itself and reports
+  // it as `{x}` (Demonstration TheRefinanceDecision, with an
+  // InterpolatingFunction); it used to stop the evaluation.
+  #[test]
+  fn function_with_bare_start_value() {
+    assert_eq!(
+      interpret("FindRoot[Sin, {3}]").unwrap(),
+      "{3.141592653589793}"
+    );
+    assert_eq!(
+      interpret("FindRoot[Cos[#] - # &, {1}]").unwrap(),
+      "{0.7390851332151607}"
+    );
+  }
+
   // With two starting values, a residual that is complex at one of them (a
   // logarithm of a negative number) moves the secant iteration into the
   // complex plane; it still finds the real root, keeping a vanishing

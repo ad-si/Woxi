@@ -2461,6 +2461,31 @@ mod goto_label {
   }
 }
 
+mod tiny_real_steps {
+  use super::*;
+
+  // A step far below 1 is a step like any other: Table took 10^-20 for
+  // zero ("step cannot be zero", Demonstration TheKronigPenneyModel) and
+  // Do ran it a million times, its end compared with an absolute slack of
+  // machine epsilon.
+  #[test]
+  fn table_and_do() {
+    assert_eq!(
+      interpret("Table[e, {e, 1.*^-18, 1.03*^-18, 1.*^-20}]").unwrap(),
+      "{1.*^-18, 1.01*^-18, 1.0200000000000002*^-18, 1.0300000000000001*^-18}"
+    );
+    assert_eq!(
+      interpret("n = 0; Do[n++, {e, 1.*^-18, 1.02*^-18, 1.*^-20}]; n").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("Last[Reap[Do[Sow[e], {e, 0.25, 0.95, 0.05}]][[2, 1]]]")
+        .unwrap(),
+      "0.9500000000000001"
+    );
+  }
+}
+
 mod do_multi_iterator {
   use super::*;
 

@@ -548,7 +548,7 @@ fn table_over_iterator(
       return Ok(table_unevaluated(body, iter_spec));
     };
 
-    if step_num.abs() <= f64::EPSILON {
+    if step_num == 0.0 {
       return Err(InterpreterError::EvaluationError(
         "Table: step cannot be zero".into(),
       ));
@@ -658,7 +658,7 @@ fn nth_iterator_value(
 /// within a relative `1e-9` of an integer to that integer fixes the
 /// boundary without affecting a ratio that is genuinely non-integral
 /// (which still truncates towards `min` exactly as `Range` requires).
-fn range_step_count(ratio: f64) -> i128 {
+pub(crate) fn range_step_count(ratio: f64) -> i128 {
   let rounded = ratio.round();
   if (ratio - rounded).abs() <= 1e-9 * rounded.abs().max(1.0) {
     rounded as i128

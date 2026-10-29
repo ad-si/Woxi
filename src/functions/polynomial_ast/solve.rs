@@ -11409,6 +11409,38 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &arg1_owned
   };
 
+  // `FindRoot[f, {x0}]`: a root of the function `f` itself, from the
+  // starting value x0, reported as `{x}` (no variable to name).
+  if let Expr::List(start) = arg1
+    && let [x0] = start.as_slice()
+    && crate::evaluator::evaluate_expr_to_expr(x0)
+      .is_ok_and(|v| crate::functions::predicate_ast::is_numeric_q(&v))
+    && !matches!(&args[0], Expr::Comparison { .. } | Expr::List(_))
+  {
+    let var = Expr::Identifier("FindRoot$x".to_string());
+    let mut inner = vec![
+      Expr::CurriedCall {
+        func: Box::new(args[0].clone()),
+        args: vec![var.clone()],
+      },
+      Expr::List(vec![var.clone(), x0.clone()].into()),
+    ];
+    inner.extend(args[2..].iter().cloned());
+    let result = find_root_ast(&inner)?;
+    return Ok(match &result {
+      Expr::List(rules) => Expr::List(
+        rules
+          .iter()
+          .map(|r| match r {
+            Expr::Rule { replacement, .. } => replacement.as_ref().clone(),
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      _ => result,
+    });
+  }
+
   // A starting value that is not a number leaves the call unevaluated with
   // FindRoot::srect, as in wolframscript — never a hard error.
   {
