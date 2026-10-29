@@ -288,19 +288,11 @@ pub fn is_builtin_flat(name: &str) -> bool {
     .contains(crate::evaluator::attributes::Attributes::Flat)
 }
 
+/// Whether a builtin carries the Orderless attribute, read off the same
+/// attribute table as [`is_builtin_flat`].
 pub fn is_builtin_orderless(name: &str) -> bool {
-  matches!(
-    name,
-    "Plus"
-      | "Times"
-      | "Max"
-      | "Min"
-      | "GCD"
-      | "LCM"
-      | "ArithmeticGeometricMean"
-      | "Multinomial"
-      | "CoprimeQ"
-  )
+  crate::evaluator::attributes::get_builtin_attributes(name)
+    .contains(crate::evaluator::attributes::Attributes::Orderless)
 }
 
 /// Thread a Listable function over list arguments.

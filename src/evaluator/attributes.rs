@@ -492,6 +492,15 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     "GCD" | "LCM" => {
       A::Flat | A::Listable | A::OneIdentity | A::Orderless | A::Protected
     }
+    // Listable built-ins whose attributes follow wolframscript (checked
+    // against Attributes[…] there).
+    "Factor" | "Together" | "Apart" | "Cancel" | "Coefficient" | "IntervalMemberQ" | "ExpToTrig" | "TrigToExp" | "StringReverse" | "PossibleZeroQ" | "QuotientRemainder" | "ExtendedGCD" | "CreateDirectory" | "BooleanConvert" | "PolynomialGCD" | "TrigFactor" | "RealExponent" | "RootApproximant" | "IrreduciblePolynomialQ" | "MantissaExponent" | "BooleanMinimize" | "PolynomialLCM" | "NumeratorDenominator" | "UnitDimensions" | "EulerE" | "AlgebraicNumberNorm" | "AlgebraicNumberTrace" | "Decompose" | "FromRomanNumeral" | "RootOfUnityQ" | "AlgebraicIntegerQ" | "AudioChannels" | "NumberFieldSignature" | "AlgebraicUnitQ" | "NumberFieldDiscriminant" | "AudioType" | "AlgebraicNumberDenominator" | "QuadraticIrrationalQ" | "EdgeWeightedGraphQ" | "VertexWeightedGraphQ" => A::Listable | A::Protected,
+    "RiemannR" | "KelvinKei" | "KelvinKer" | "RiemannSiegelZ" | "RiemannSiegelTheta" | "HankelH1" | "HankelH2" | "PrimeZetaP" | "DirichletEta" | "RamanujanTauL" | "NevilleThetaS" | "RamanujanTauZ" | "NevilleThetaC" | "NevilleThetaD" | "NevilleThetaN" | "PolygonalNumber" | "LogBarnesG" | "RamanujanTauTheta" | "ErlangC" | "FresnelF" | "FresnelG" | "ErlangB" | "OwenT" | "ScorerHi" | "ScorerGi" | "AlternatingFactorial" | "DirichletBeta" | "DirichletLambda" | "MarcumQ" | "CoulombF" | "CoulombG" | "CoulombH1" | "CoulombH2" => A::Listable | A::NumericFunction | A::Protected | A::ReadProtected,
+    "Subtract" | "Divide" | "Minus" | "SphericalHarmonicY" | "Hypergeometric2F1Regularized" | "QPochhammer" | "Ramp" | "HurwitzLerchPhi" | "QBinomial" | "QGamma" | "HammingWindow" | "HannWindow" | "KaiserWindow" | "BlackmanWindow" | "DirichletWindow" | "BlackmanHarrisWindow" | "CosineWindow" | "TukeyWindow" | "BartlettWindow" | "BlackmanNuttallWindow" | "GaussianWindow" | "CauchyWindow" | "ConnesWindow" | "PoissonWindow" | "WelchWindow" | "NuttallWindow" | "BartlettHannWindow" | "ParzenWindow" | "BohmanWindow" | "ExactBlackmanWindow" | "FlatTopWindow" | "KaiserBesselWindow" | "LanczosWindow" | "AiryAiPrime" | "AiryBiPrime" | "CarlsonRE" => A::Listable | A::NumericFunction | A::Protected,
+    "DiracDelta" | "HeavisideTheta" => A::Listable | A::Orderless | A::Protected,
+    "DirectedInfinity" | "NorlundB" | "Fibonorial" => A::Listable | A::Protected | A::ReadProtected,
+    "EllipticThetaPrime" | "MathieuCharacteristicA" | "MathieuC" | "MathieuS" | "MathieuCharacteristicB" | "MathieuCPrime" | "MathieuSPrime" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,
+    "MessageList" => A::Listable | A::NHoldFirst | A::Protected,
     "Composition" => A::Flat | A::OneIdentity | A::Protected,
     "Power" => A::Listable | A::NumericFunction | A::OneIdentity | A::Protected,
     "Max" | "Min" =>

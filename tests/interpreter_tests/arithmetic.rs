@@ -14199,3 +14199,27 @@ mod complex_number_shape {
     );
   }
 }
+
+mod exact_base_bigfloat_exponent {
+  use super::*;
+
+  // An exact base under an arbitrary-precision exponent is a number whose
+  // precision drops by Log10[|y Log[x]|] (plus |y| for an irrational base,
+  // numericized at the exponent's precision).
+  #[test]
+  fn evaluates_with_tracked_precision() {
+    assert_eq!(
+      interpret("10^0.5`20").unwrap(),
+      "3.16227766016837933199889354443271853372`19.938814306964517"
+    );
+    assert_eq!(
+      interpret("10^-0.5`20").unwrap(),
+      "0.31622776601683793319988935444327185337`19.938814306964517"
+    );
+    assert_eq!(
+      interpret("Round[Precision[Sqrt[2]^1.5`20], 0.0001]").unwrap(),
+      "19.6947"
+    );
+    assert_eq!(interpret("RealDigits[10^0.5`20][[2]]").unwrap(), "1");
+  }
+}
