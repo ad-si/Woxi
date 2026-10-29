@@ -281,6 +281,7 @@ fn parametric_sampler(region_args: &[Expr]) -> Option<Sampler> {
 }
 
 pub fn random_point_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &*crate::functions::math_ast::integral_dims(args);
   let call_str = || expr_to_string(&unevaluated("RandomPoint", args));
   let dims: Option<Vec<usize>> = match args.get(1) {
     None => None,

@@ -3341,25 +3341,54 @@ fn extract_fit_data(
   Ok((xs, ys))
 }
 
-/// The minimum-norm least-squares solution of `A x = b`, via a one-sided Jacobi
-/// SVD of the design matrix.
+/// The minimum-norm least-squares solution of `A x = b` after scaling every
+/// column of `A` to unit length, via a one-sided Jacobi SVD of the scaled
+/// design matrix.
 ///
 /// This is the answer wolframscript gives when the design matrix does not have
 /// full column rank — fewer data points than basis functions, repeated abscissae,
 /// a basis with a linear dependency. `Fit[{{1, 1}}, {1, x}, x]` is
 /// `0.5 + 0.5 x`: of the infinitely many lines through the single point, the one
-/// whose coefficient vector is shortest.
+/// whose (scaled) coefficient vector is shortest. The scaling makes the answer
+/// independent of the units of each basis function: `Fit[{{10, 1}, {20, 3}},
+/// {1, x, x^2}, x]` is `Fit[{{1, 1}, {2, 3}}, {1, x, x^2}, x]` with `x` replaced
+/// by `x/10`, and a high-degree polynomial basis over large abscissae stays
+/// well conditioned. A Gauss–Newton step of a nonlinear fit leaves the columns
+/// unscaled (`scale_columns` false): the shortest step in the parameters
+/// themselves keeps an unidentifiable model's iteration from wandering off
+/// along its flat directions.
 ///
 /// One-sided Jacobi orthogonalizes the columns of `A` by plane rotations; the
 /// resulting column norms are the singular values and the accumulated rotations
 /// are `V`. Padding with zero rows to make `A` tall leaves the problem alone,
 /// since the added rows contribute nothing to the residual.
-fn solve_least_squares_min_norm(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
+fn solve_least_squares_min_norm(
+  a: &[Vec<f64>],
+  b: &[f64],
+  scale_columns: bool,
+) -> Vec<f64> {
   let m = a[0].len();
   let rows = a.len().max(m);
-  // Columns of A, zero-padded to `rows`, alongside b.
+  // Columns of A, zero-padded to `rows` and scaled to unit length,
+  // alongside b.
+  let column_scale: Vec<f64> = (0..m)
+    .map(|j| {
+      let norm = a.iter().map(|r| r[j] * r[j]).sum::<f64>().sqrt();
+      if !scale_columns {
+        1.0
+      } else if norm > 0.0 && norm.is_finite() {
+        1.0 / norm
+      } else {
+        0.0
+      }
+    })
+    .collect();
   let mut u: Vec<Vec<f64>> = (0..m)
-    .map(|j| (0..rows).map(|i| a.get(i).map_or(0.0, |r| r[j])).collect())
+    .map(|j| {
+      (0..rows)
+        .map(|i| a.get(i).map_or(0.0, |r| r[j] * column_scale[j]))
+        .collect()
+    })
     .collect();
   let rhs: Vec<f64> = (0..rows)
     .map(|i| b.get(i).copied().unwrap_or(0.0))
@@ -3420,6 +3449,9 @@ fn solve_least_squares_min_norm(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
       x[i] += coefficient * v[j][i];
     }
   }
+  for (xi, s) in x.iter_mut().zip(&column_scale) {
+    *xi *= s;
+  }
   x
 }
 
@@ -3431,6 +3463,16 @@ fn solve_least_squares_min_norm(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
 fn solve_least_squares_qr(
   a: &[Vec<f64>],
   b: &[f64],
+) -> Result<Vec<f64>, InterpreterError> {
+  least_squares_qr(a, b, true)
+}
+
+/// [`solve_least_squares_qr`], with the rank-deficient fallback's column
+/// scaling chosen by the caller (see [`solve_least_squares_min_norm`]).
+fn least_squares_qr(
+  a: &[Vec<f64>],
+  b: &[f64],
+  scale_columns: bool,
 ) -> Result<Vec<f64>, InterpreterError> {
   let n = a.len();
   if n == 0 {
@@ -3446,7 +3488,7 @@ fn solve_least_squares_qr(
   }
   // Fewer equations than unknowns is underdetermined by construction.
   if n < m {
-    return Ok(solve_least_squares_min_norm(a, b));
+    return Ok(solve_least_squares_min_norm(a, b, scale_columns));
   }
 
   // Copy A and b (we'll transform them in place)
@@ -3465,7 +3507,7 @@ fn solve_least_squares_qr(
     if norm < 1e-15 {
       // Column j is dependent on the earlier ones: no unique least-squares
       // solution, so take the minimum-norm one.
-      return Ok(solve_least_squares_min_norm(a, b));
+      return Ok(solve_least_squares_min_norm(a, b, scale_columns));
     }
 
     // Choose sign to maximize |v[j]| (avoid cancellation)
@@ -6900,8 +6942,53 @@ pub fn linear_solve_method_ok(
   let Some(rows) = expr_to_matrix(matrix) else {
     return true;
   };
-  let shown = crate::syntax::expr_to_output(matrix);
+  let shown = || crate::syntax::expr_to_output(matrix);
   match name {
+    // A matrix of machine reals: symmetric, and positive definite exactly
+    // when its Cholesky factorization runs to the end with positive pivots
+    // (one O(n^3) pass instead of n determinants).
+    "Cholesky"
+      if rows
+        .iter()
+        .all(|r| r.iter().all(|e| matches!(e, Expr::Real(_)))) =>
+    {
+      let n = rows.len();
+      let a: Vec<Vec<f64>> = rows
+        .iter()
+        .map(|r| {
+          r.iter()
+            .map(|e| match e {
+              Expr::Real(v) => *v,
+              _ => f64::NAN,
+            })
+            .collect()
+        })
+        .collect();
+      if a.iter().any(|r| r.len() != n)
+        || (0..n).any(|i| (0..i).any(|j| a[i][j] != a[j][i]))
+      {
+        return fail(format!(
+          "LinearSolve::herm: The matrix {} is not Hermitian or real and symmetric.",
+          shown()
+        ));
+      }
+      let mut l = vec![vec![0.0f64; n]; n];
+      for j in 0..n {
+        let d = a[j][j] - (0..j).map(|k| l[j][k] * l[j][k]).sum::<f64>();
+        if d.is_nan() || d <= 0.0 {
+          return fail(format!(
+            "LinearSolve::npdef: The matrix {} is not positive definite.",
+            shown()
+          ));
+        }
+        l[j][j] = d.sqrt();
+        for i in j + 1..n {
+          let s: f64 = (0..j).map(|k| l[i][k] * l[j][k]).sum();
+          l[i][j] = (a[i][j] - s) / l[j][j];
+        }
+      }
+      true
+    }
     "Cholesky" => {
       let n = rows.len();
       let hermitian = rows.iter().all(|r| r.len() == n)
@@ -6916,7 +7003,8 @@ pub fn linear_solve_method_ok(
         });
       if !hermitian {
         return fail(format!(
-          "LinearSolve::herm: The matrix {shown} is not Hermitian or real and symmetric."
+          "LinearSolve::herm: The matrix {} is not Hermitian or real and symmetric.",
+          shown()
         ));
       }
       // Sylvester's criterion: every leading principal minor is positive.
@@ -6933,7 +7021,8 @@ pub fn linear_solve_method_ok(
       });
       if !positive_definite {
         return fail(format!(
-          "LinearSolve::npdef: The matrix {shown} is not positive definite."
+          "LinearSolve::npdef: The matrix {} is not positive definite.",
+          shown()
         ));
       }
       true
@@ -8375,6 +8464,49 @@ fn find_fit_weighted(
     }
   };
   clamp(&mut param_values);
+  // A model linear in its parameters is a linear least-squares problem:
+  // wolframscript solves it outright, so the starting values play no part
+  // (they would offset the minimum-norm answer of an underdetermined one).
+  let linear_model = bounds
+    .iter()
+    .all(|(lo, hi)| lo.is_infinite() && hi.is_infinite())
+    && partials.iter().all(|d| {
+      d.as_ref().is_some_and(|d| {
+        param_names.iter().all(|p| {
+          !crate::functions::polynomial_ast::solve::expr_contains_expr(
+            d,
+            &Expr::Identifier(p.clone()),
+          )
+        })
+      })
+    });
+  if linear_model {
+    param_values.fill(0.0);
+  }
+
+  // The model compiled over the data variables and the parameters: a fit
+  // to thousands of points evaluates it, and its gradient in the
+  // parameters, at every one of them on each iteration.
+  let compiled_model: Option<crate::functions::polynomial_ast::solve::NumNode> =
+    vars
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<String>>>()
+      .and_then(|names| {
+        let all: Vec<String> = names
+          .into_iter()
+          .chain(param_names.iter().cloned())
+          .collect();
+        crate::functions::polynomial_ast::solve::compile_numeric(model, &all)
+          .filter(|node| !node.has_fallback())
+      });
+  let n_vars = vars.len();
+  let compiled_point = |i: usize, params: &[f64]| -> Vec<f64> {
+    x_vals[i].iter().chain(params).copied().collect()
+  };
 
   // Gauss-Newton iteration
   let max_iter = 100;
@@ -8386,6 +8518,16 @@ fn find_fit_weighted(
     let mut jacobian = vec![vec![0.0f64; n_params]; n_data];
 
     for i in 0..n_data {
+      if let Some(node) = &compiled_model {
+        let (val, grad) = node.eval_dual(&compiled_point(i, &param_values));
+        residuals[i] = (y_vals[i] - val) * scale[i];
+        for (k, d) in grad {
+          if k >= n_vars {
+            jacobian[i][k - n_vars] = d * scale[i];
+          }
+        }
+        continue;
+      }
       // Substitute variable and parameters
       let mut expr_at_x = at_point(&x_vals[i]);
       for (j, pname) in param_names.iter().enumerate() {
@@ -8440,7 +8582,8 @@ fn find_fit_weighted(
     }
 
     // Solve J^T J delta = J^T r using QR on J
-    let Ok(mut delta) = solve_least_squares_qr(&jacobian, &residuals) else {
+    let Ok(mut delta) = least_squares_qr(&jacobian, &residuals, linear_model)
+    else {
       break;
     };
 
@@ -8461,7 +8604,7 @@ fn find_fit_weighted(
         .iter()
         .map(|row| free.iter().map(|&j| row[j]).collect())
         .collect();
-      if let Ok(d) = solve_least_squares_qr(&reduced, &residuals) {
+      if let Ok(d) = least_squares_qr(&reduced, &residuals, linear_model) {
         delta = vec![0.0; n_params];
         for (k, &j) in free.iter().enumerate() {
           delta[j] = d[k];
@@ -8479,6 +8622,12 @@ fn find_fit_weighted(
     let ssr_at = |values: &[f64]| -> f64 {
       let mut total = 0.0;
       for i in 0..n_data {
+        if let Some(node) = &compiled_model {
+          let r =
+            (y_vals[i] - node.eval(&compiled_point(i, values))) * scale[i];
+          total += r * r;
+          continue;
+        }
         let mut e = at_point(&x_vals[i]);
         for (k, pname) in param_names.iter().enumerate() {
           e = crate::syntax::substitute_variable(

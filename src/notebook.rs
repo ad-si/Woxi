@@ -842,7 +842,19 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     && let Some(args) = split_args("GraphicsBox", s)
     && let Some(first) = args.first()
   {
-    if let Some(image) = extract_image_from_boxes(first) {
+    if let Some(mut image) = extract_image_from_boxes(first) {
+      // The box form keeps the image's display size as a `GraphicsBox`
+      // option, which the `Image[…]` constructor takes as `ImageSize`.
+      if let Some(size) = args[1..]
+        .iter()
+        .filter_map(|a| a.trim().strip_prefix("ImageSize"))
+        .find_map(|r| r.trim_start().strip_prefix("->"))
+        .map(normalize_whitespace)
+        .filter(|size| size != "Automatic")
+      {
+        image.pop();
+        image.push_str(&format!(", ImageSize -> {size}]"));
+      }
       return Some(image);
     }
     // A typeset `Graph` is a `NamespaceBox["NetworkGraphics", …]` whose
@@ -6747,6 +6759,19 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "Image[CompressedData[\"1:eJxTTMoPSmNiYGAAAAtLAe0=\"], \"Byte\", \
        ColorSpace -> \"GrayLevel\"]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_keeps_image_size() {
+    // Regression: the `ImageSize` option of the typeset `GraphicsBox` was
+    // dropped, so a restored image showed at its pixel size instead of the
+    // size the notebook displayed it at.
+    let s = "GraphicsBox[\n       TagBox[RasterBox[CompressedData[\"\n1:eJxTTMoP\nSmNiYGAA\nAAtLAe0=\n         \"], {{0, 2}, {2, 0}}, {0, 255}],\n        BoxForm`ImageTag[\"Byte\", ColorSpace -> \"GrayLevel\"],\n        Selectable->False],\n       BaseStyle->\"ImageGraphics\",\n       ImageSize->{281.5, Automatic}]";
+    assert_eq!(
+      extract_cell_content(s),
+      "Image[CompressedData[\"1:eJxTTMoPSmNiYGAAAAtLAe0=\"], \"Byte\", \
+       ColorSpace -> \"GrayLevel\", ImageSize -> {281.5, Automatic}]"
     );
   }
 

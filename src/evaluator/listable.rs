@@ -1693,3 +1693,43 @@ pub fn resolve_sequence_apply_args(
   }
   Ok(std::borrow::Cow::Owned(result))
 }
+
+/// `name` applied to every element of a (nested) list of machine reals, for
+/// the functions whose machine result is exact: Sign, Abs, Floor, Ceiling,
+/// Round. `None` for anything else, or a non-real element, so the caller
+/// threads the general way.
+pub(crate) fn machine_real_elementwise(name: &str, arr: &Expr) -> Option<Expr> {
+  let f: fn(f64) -> Option<Expr> = match name {
+    "Sign" => |x| {
+      Some(Expr::Integer(if x > 0.0 {
+        1
+      } else if x < 0.0 {
+        -1
+      } else {
+        0
+      }))
+    },
+    "Abs" => |x| Some(Expr::Real(x.abs())),
+    "Floor" => |x| to_integer(x.floor()),
+    "Ceiling" => |x| to_integer(x.ceil()),
+    "Round" => |x| to_integer(x.round_ties_even()),
+    _ => return None,
+  };
+  fn to_integer(v: f64) -> Option<Expr> {
+    (v.is_finite() && v.abs() < 1e18).then(|| Expr::Integer(v as i128))
+  }
+  fn go(e: &Expr, f: fn(f64) -> Option<Expr>) -> Option<Expr> {
+    match e {
+      Expr::Real(x) => f(*x),
+      Expr::List(items) if !items.is_empty() => Some(Expr::List(
+        items
+          .iter()
+          .map(|i| go(i, f))
+          .collect::<Option<Vec<_>>>()?
+          .into(),
+      )),
+      _ => None,
+    }
+  }
+  go(arr, f)
+}

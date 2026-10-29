@@ -2470,6 +2470,64 @@ mod factor_list {
 mod cancel {
   use super::*;
 
+  // A radical of a quotient with a symbolic denominator stays whole (one
+  // with a numeric denominator splits), so D's cancellation no longer turns
+  // `(m w/h)^(1/4)` into `(m w)^(1/4)/h^(1/4)` and like terms meet: the
+  // lowering operator annihilates the oscillator ground state (Demonstration
+  // EnergyLevelsOfAQuantumHarmonicOscillatorInSecondQuantization).
+  // Radicals of one symbolic base cancel as powers of its root, sums are
+  // cancelled term by term, and Simplify uses both: the number operator
+  // gives the level n for every oscillator eigenstate, quickly — the
+  // heuristic gcd of the six-variable quotients D cancels is bounded
+  // instead of retrying 6^depth images.
+  #[test]
+  fn radicals_of_one_base_and_sums() {
+    assert_eq!(
+      interpret(
+        "{Cancel[(Sqrt[r] + r)/Sqrt[r]], Cancel[(r - 1)/(Sqrt[r] - 1)], \
+          Cancel[(a^(3/2) + a^(5/2) x)/(a^(1/2) + a^(3/2) x)], \
+          Cancel[(x^2 - 1)/(x - 1) + (x^2 - 4)/(x - 2)], Cancel[1/x + 1/y], \
+          Cancel[x/(x + x y) + 2]}"
+      )
+      .unwrap(),
+      "{1 + Sqrt[r], 1 + Sqrt[r], a, 3 + 2*x, x^(-1) + y^(-1), 2 + (1 + y)^(-1)}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "p := -I h D[#, x] &; a = Sqrt[m w/(2 h)] (x # + I/(m w) p@#) &; \
+         ad = Sqrt[m w/(2 h)] (x # - I/(m w) p@#) &; \
+         psi[n_] := (m w/h)^(1/4) 1/Sqrt[2^n n! Sqrt[Pi]] Exp[-z^2/2] HermiteH[n, z] /. \
+           z -> Sqrt[m w/h] x; \
+         Table[Simplify[ad[a[psi[n]]]/psi[n]], {n, 0, 3}]"
+      )
+      .unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  #[test]
+  fn radical_of_symbolic_quotient_stays_whole() {
+    assert_eq!(
+      interpret(
+        "{Cancel[Sqrt[m/h]], Cancel[(m/2)^(1/4)], D[(m/h)^(1/4) x, x], \
+          Together[Sqrt[m/h] + 1/x], Together[(m/2)^(1/4) + 1/x]}"
+      )
+      .unwrap(),
+      "{Sqrt[m/h], m^(1/4)/2^(1/4), (m/h)^(1/4), (1 + Sqrt[m/h]*x)/x, \
+       (2 + 2^(3/4)*m^(1/4)*x)/(2*x)}"
+    );
+    assert_eq!(
+      interpret(
+        "p := -I h D[#, x] &; a = Sqrt[m w/(2 h)] (x # + I/(m w) p@#) &; \
+         a[(m w/h)^(1/4) Exp[-m w x^2/(2 h)]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // A function call that appears only on one side of the quotient is a
   // coefficient for the polynomial engine, exactly like a plain symbol
   // (wolframscript-verified).
@@ -5626,6 +5684,24 @@ mod solve {
       )
       .unwrap(),
       "{4, True}"
+    );
+  }
+
+  #[test]
+  fn nsolve_radical_system_finds_every_equilibrium() {
+    // Equations with fractional powers leave Solve with a lone `y -> 0`
+    // branch; NSolve completes it numerically. The restricted three-body
+    // problem has three collinear points and the triangular pair.
+    assert_eq!(
+      interpret(
+        "mu = 0.1; s = NSolve[{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + \
+y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, \
+-y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + \
+y^2]^3)) y}, {x, y}]; \
+{Length[s], Sort[Round[{x, y} /. s, 0.001]]}"
+      )
+      .unwrap(),
+      "{5, {{-1.042, 0.}, {0.4, -0.866}, {0.4, 0.866}, {0.609, 0.}, {1.26, 0.}}}"
     );
   }
 
@@ -21795,11 +21871,6 @@ mod constrained_numeric_optimization {
       interpret("FindMaximum[{2 x, x <= 3}, {x, 0}]").unwrap(),
       "{6., {x -> 3.}}"
     );
-    assert_eq!(
-      interpret("FindMaximum[{x + y, x^2 + y^2 <= 1}, {{x, 0.5}, {y, 0.5}}]")
-        .unwrap(),
-      "{1.4142135623730951, {x -> 0.7071067811865476, y -> 0.7071067811865476}}"
-    );
     // wolframscript answers the circle case with 1.4142157575770362, so the
     // agreement is only to about 5 digits — round to 10^-4 to compare.
     assert_eq!(
@@ -21810,6 +21881,165 @@ mod constrained_numeric_optimization {
       .unwrap(),
       "{7071/5000, {7071/10000, 7071/10000}}"
     );
+  }
+
+  // Linear equality constraints are solved for some of the variables and
+  // the search runs locally from the starting values over the rest,
+  // strictly inside the inequalities (a mole number under a logarithm never
+  // turns negative). Demonstration DrivingAReactionByChemicalCoupling's
+  // Gibbs minimization diverged to -3*10^302 in 33 s; Wolfram's IPOPT
+  // agrees with the result to 8 digits.
+  #[test]
+  fn linear_equalities_with_strict_bounds() {
+    assert_eq!(
+      interpret(
+        "Round[10^5 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{x Log[x] + y Log[y], \
+         x + y == 1, x > 0, y > 0}, {{x, 0.3}, {y, 0.7}}]]]"
+      )
+      .unwrap(),
+      "{-69315, {50000, 50000}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^8 {#[[1]], {x, y, z} /. #[[2]]} &[FindMinimum[{(x - 2)^2 + (y - 1)^2 + z^2, \
+         x + y + z == 1, x - y == 0}, {{x, 0}, {y, 0}, {z, 0}}]]]"
+      )
+      .unwrap(),
+      "{183333333, {83333333, 83333333, -66666667}}"
+    );
+    // An active non-strict bound becomes an equality.
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{(x - 3)^2 + y^2, \
+         x + y == 1, x <= 1}, {{x, 0}, {y, 0}}]]]"
+      )
+      .unwrap(),
+      "{4000000, {1000000, 0}}"
+    );
+  }
+
+  // A nonlinear equality determines one variable implicitly (re-solved by
+  // Newton's method at every point), and the local search runs over the
+  // rest from the starting values. Demonstration
+  // GibbsFreeEnergyMinimizationAppliedToTheHaberProcess's equation of state
+  // (a cubic in the compressibility factor) sent FindMinimum into a global
+  // penalty search that did not finish in 300 s; wolframscript takes 0.2 s.
+  #[test]
+  fn nonlinear_equalities_solved_implicitly() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{x + y, \
+         x^2 + y^2 == 1}, {{x, -0.5}, {y, -0.5}}]]]"
+      )
+      .unwrap(),
+      "{-1414214, {-707107, -707107}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {z, x, y} /. #[[2]]} &[FindMinimum[{Re[x Log[x] \
+         + y Log[y] + (z - 2)^2], x + y == 1, z^3 + x z - 1 == 0, x > 0, \
+         y > 0}, {{z, 1}, {x, 0.3}, {y, 0.7}}]]]"
+      )
+      .unwrap(),
+      "{596782, {891982, 325467, 674533}}"
+    );
+  }
+
+  // Eight or more variables: BFGS on forward-mode gradients of the
+  // compiled objective instead of n^2 symbolic second derivatives
+  // (Demonstration RegularizedLogisticRegression's 28-parameter fit spent
+  // over a minute differentiating; wolframscript takes 0.1 s).
+  #[test]
+  fn many_variables_quasi_newton() {
+    assert_eq!(
+      interpret(
+        "vars = Table[Symbol[\"x\" <> ToString[i]], {i, 10}]; \
+         r = FindMinimum[Total[Cosh[vars - Range[10]/10]] + (x1 - x2)^2 + \
+         Log[1 + Exp[x3 x4]], Thread[{vars, 0}]]; \
+         Round[10^6 {r[[1]], vars /. r[[2]]}]"
+      )
+      .unwrap(),
+      "{10733757, {139998, 160002, 130496, 333382, 500000, 600000, 700000, \
+       800000, 900000, 1000000}}"
+    );
+  }
+
+  // `{x, x0, xmin, xmax}` bounds the variable in the constrained local
+  // search too; an interpolating function in the problem is evaluated
+  // directly (Demonstration SolvingTheSubprimeLoanProblem).
+  #[test]
+  fn bounded_specs_and_interpolation_in_constrained_search() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMaximum[{x + y, \
+         x^2 + y^2 == 1}, {{x, 0.5, 0, 0.6}, {y, 0.5}}]]]"
+      )
+      .unwrap(),
+      "{1400000, {600000, 800000}}"
+    );
+    // Quiet: the line search probes past the data (dmval), which
+    // wolframscript's search does not.
+    assert_eq!(
+      interpret(
+        "g = ListInterpolation[Table[(x - 2)^2 + (y - 3)^2 + x y/10, \
+         {x, 0, 4}, {y, 0, 5}], {{0, 4}, {0, 5}}]; \
+         Round[10^4 {#[[1]], {x, y} /. #[[2]]} &[Quiet[FindMinimum[{g[x, y], \
+         x + y >= 1}, {{x, 1.2}, {y, 1.3}}]]]]"
+      )
+      .unwrap(),
+      "{5689, {18546, 29073}}"
+    );
+  }
+
+  // Inequalities alone also get the local search from the starting values
+  // (Demonstration AmericanCappedCallOptionsWithExponentialCap's
+  // FindMaximum went to a global search that ended at L -> 60042 instead
+  // of the local maximum near 52).
+  #[test]
+  fn inequality_constrained_local_search() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {L, a} /. #[[2]]} &[FindMaximum[{100 a \
+         Exp[-a^2/2] + Exp[-(L - 52)^2/100], a > 0 && L >= 45}, \
+         {{L, 45}, {a, 0.05}}]]]"
+      )
+      .unwrap(),
+      "{61653066, {52000000, 1000000}}"
+    );
+  }
+
+  // A `StepMonitor` sees the steps when wolframscript would use its
+  // interior method: no equalities, an objective that is not linear or
+  // quadratic, and a stationary point reached inside the bounds. Otherwise
+  // it reports `noopmon` and fires nothing.
+  #[test]
+  fn constrained_step_monitor() {
+    assert_eq!(
+      interpret(
+        "r = Reap[FindMaximum[{Sin[x] + Cos[y], 0 < x < 3 && 0 < y < 3}, \
+         {{x, 1}, {y, 1}}, StepMonitor :> Sow[{x, y}]]]; \
+         {Round[r[[1, 1]], 10^-6], Round[x /. r[[1, 2]], 10^-6], \
+         r[[2, 1, 1]], Length[r[[2, 1]]] > 3}"
+      )
+      .unwrap(),
+      "{2, 392699/250000, {1., 1.}, True}"
+    );
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Reap[FindMinimum[{Exp[x] + y^2, x >= 1}, {{x, 2}, {y, 2}}, \
+       StepMonitor :> Sow[{x, y}]]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings[0].starts_with("FindMinimum::noopmon:"));
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Reap[FindMinimum[{x Log[x] + y Log[y], x + y == 1, x > 0, y > 0}, \
+       {{x, 0.3}, {y, 0.7}}, StepMonitor :> Sow[{x, y}]]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings[0].starts_with("FindMinimum::noopmon:"));
   }
 
   // Several constraints combine with And.
@@ -23251,6 +23481,111 @@ mod solve_disjunction {
       interpret("LinearProgramming[{1., 1.}, {{1, 2}, {3, 1}}, {{4, 1}, {6, 0}}, {{0, 10}, {0, 10}}]")
         .unwrap(),
       "{1.6, 1.2}"
+    );
+  }
+}
+
+// Systems with the unknowns in denominators are solved through the
+// numerators, without the points where a denominator vanishes; inexact ones
+// rationalize, solve exactly and numericize. Demonstration
+// LeastSquaresEstimationOfAnEllipse's normal equations hung for minutes.
+mod rational_equation_systems {
+  use super::*;
+
+  #[test]
+  fn exact_and_inexact() {
+    assert_eq!(
+      interpret(
+        "{Solve[{-19/a^5 + 31/a^3 - 8/(a^3*b^2) == 0, -8/b^5 + 18/b^3 - 8/(a^2*b^3) == 0}, {a, b}], \
+          Solve[{1/x + y == 2, x - y == 0}, {x, y}]}"
+      )
+      .unwrap(),
+      "{{{a -> -Sqrt[11/13], b -> -2*Sqrt[11/47]}, {a -> -Sqrt[11/13], b -> 2*Sqrt[11/47]}, \
+       {a -> Sqrt[11/13], b -> -2*Sqrt[11/47]}, {a -> Sqrt[11/13], b -> 2*Sqrt[11/47]}}, \
+       {{x -> 1, y -> 1}}}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[10^8 ({a, b} /. Solve[{-19.461854333350573/a^5 + 31.792576924839167/a^3 - \
+         8.832059556488895/(a^3*b^2) == 0, -8.535004297291929/b^5 + 18.889248979048332/b^3 - \
+         8.832059556488895/(a^2*b^3) == 0}, {a, b}])]"
+      )
+      .unwrap(),
+      "{{-91811060, -100732041}, {-91811060, 100732041}, {91811060, -100732041}, {91811060, 100732041}}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+
+  // An exact algebraic difference that cancels to 0 in machine arithmetic
+  // only to rounding noise is equal to 0, judged against its terms.
+  #[test]
+  fn equal_of_a_cancelling_radical_expression() {
+    assert_eq!(
+      interpret(
+        "a0 = -1/3*Sqrt[459166902557462217177787456152124786724708855/60525454535147937288340513937925780045854903]; \
+         b0 = -1/16644801528365193838479693525982456362489722172097894284*Sqrt[281120495811090581500403314531678958786552526625631649534322881595968276998634709369166425259547288011517806894]; \
+         e = -235556515/(12103498*a^5) + 639760563/(20122954*a^3) - 195767705/(22165578*a^3*b^2) /. {a -> a0, b -> b0}; \
+         {e == 0, Sqrt[2] + Sqrt[3] == Sqrt[5 + 2 Sqrt[6]], Sqrt[2] == 1414213562373095/10^15}"
+      )
+      .unwrap(),
+      "{True, True, False}"
+    );
+  }
+
+  // A resultant with repeated factors still yields every point (NSolve).
+  #[test]
+  fn nsolve_with_repeated_eliminant_roots() {
+    assert_eq!(
+      interpret(
+        "{Length[NSolve[{1 + x + x^3 - 3 x y^2, y + 3 x^2 y - y^3} == 0, {x, y}]], \
+          Round[10^6 Sort[Cases[{x, y} /. NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, \
+            x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}], {_, b_} /; b != 0]]]}"
+      )
+      .unwrap(),
+      "{9, {{-2236068, -1581139}, {-2236068, 1581139}, {2236068, -1581139}, {2236068, 1581139}}}"
+    );
+  }
+}
+
+// NMinimize of a sum of distances in three variables (the Fermat point of
+// a tetrahedron) answers numerically: the exact Minimize refinement, which
+// squared radicals into gigabytes, is skipped for multivariate radicals
+// (Demonstration TetrahedronCenters).
+mod nminimize_radical_objective {
+  use super::*;
+
+  #[test]
+  fn fermat_point_of_a_tetrahedron() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "pts = {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; \
+         Round[10^5 Flatten[{#[[1]], {a, b, c} /. #[[2]]} &[NMinimize[Total[(EuclideanDistance[{a, b, c}, #] &) /@ pts], {a, b, c}]]]]"
+      )
+      .unwrap(),
+      "{288675, 16667, 16667, 16667}"
+    );
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+}
+
+// A larger FindRoot system is solved with compiled equations and their
+// exact (forward-mode) gradients instead of a symbolic Jacobian
+// (Demonstration OperationOfADepropanizer: 47 s -> 7 s).
+mod find_root_compiled_system {
+  use super::*;
+
+  #[test]
+  fn twelve_coupled_equations() {
+    assert_eq!(
+      interpret(
+        "sol = FindRoot[Table[x[i] - Cos[x[Mod[i, 12] + 1]]/2 - Exp[-x[i]^2]/3 - i/10 == 0, {i, 12}], \
+         Table[{x[i], 0}, {i, 12}]]; Round[10^8 (Table[x[i], {i, 12}] /. sol)]"
+      )
+      .unwrap(),
+      "{67919779, 74056033, 80114767, 86135178, 92072908, 98138622, 103758045, 110628414, \
+       114119615, 126492200, 116445629, 161369703}"
     );
   }
 }

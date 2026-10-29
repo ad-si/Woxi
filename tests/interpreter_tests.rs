@@ -1413,6 +1413,27 @@ mod interpreter_tests {
     assert!(long * 0.52 * 65.0 <= 5000.0, "title still wider than image");
   }
 
+  /// A user function that applies a list-valued argument stays unevaluated
+  /// while `x` is symbolic (the `If` can't decide), yet yields a list at
+  /// every sample — one curve per element, like a literal `{f, g}`.
+  #[test]
+  fn test_plot_list_valued_user_function_draws_one_curve_per_element() {
+    clear_state();
+    let svg = interpret(
+      "h[x_, a_] := If[x == 1., 0., a x]; \
+       ExportString[Plot[h[x, {1, 2, 3}], {x, 0., 1.}], \"SVG\"]",
+    )
+    .unwrap();
+    let literal =
+      interpret("ExportString[Plot[{x, 2 x, 3 x}, {x, 0., 1.}], \"SVG\"]")
+        .unwrap();
+    assert_eq!(
+      svg.matches("<polyline").count(),
+      literal.matches("<polyline").count()
+    );
+    assert!(svg.matches("<polyline").count() >= 3);
+  }
+
   /// Extract the outermost `<svg width="…" height="…"` pair as an `f64`.
   fn svg_root_height(svg: &str) -> f64 {
     let after = svg.split("height=\"").nth(1).expect("no height attribute");
@@ -1821,6 +1842,38 @@ mod interpreter_tests {
     assert!(
       !svg.contains("-Image ("),
       "Framed image must not print the placeholder:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_image_size_with_automatic_side_keeps_aspect_ratio() {
+    // Regression: `ImageSize -> {w, Automatic}` on an `Image` was ignored,
+    // so an inset picture drew at its pixel size instead of the requested
+    // width (with the height following the aspect ratio).
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[Inset[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 1}}, \
+       {{0, 0, 0}, {1, 0, 1}}, {{1, 1, 0}, {0, 1, 1}}}, \
+       ImageSize -> {40, Automatic}], {0, 0}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Inset image should produce a graphics SVG");
+    assert!(
+      svg.contains("width=\"40.00\" height=\"80.00\""),
+      "Image must be shown at 40 x 80:\n{svg}"
+    );
+    let svg = interpret_with_stdout(
+      "Graphics[Inset[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 1}}, \
+       {{0, 0, 0}, {1, 0, 1}}, {{1, 1, 0}, {0, 1, 1}}}, \
+       ImageSize -> {Automatic, 20}], {0, 0}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Inset image should produce a graphics SVG");
+    assert!(
+      svg.contains("width=\"10.00\" height=\"20.00\""),
+      "Image must be shown at 10 x 20:\n{svg}"
     );
   }
 
@@ -2468,6 +2521,40 @@ mod interpreter_tests {
           && !svg.contains("UnderBar"),
         "accent SVG for {code} must not leak the head as literal text:\n{svg}"
       );
+    }
+  }
+
+  #[test]
+  fn test_vector_accent_angle_bracket_and_nested_number_form_typeset() {
+    // Regression: a vector-annotated readout — `OverVector[v]` labels,
+    // `AngleBracket[a, b]` components and an `nf[n_] := NumberForm[n, {3, 2}]`
+    // helper wrapped around an already formatted number — typeset in a
+    // `TraditionalForm` column as raw `OverVector(v)`, `AngleBracket(5,6)` and
+    // `NumberForm(5, {3, 2})` calls, and the column itself printed as source
+    // when it sat in a `Text[Style[…]]` item of an outer `Column`.
+    for code in [
+      "ExportString[Graphics[{Text[OverVector[v], {0, 0}]}], \"SVG\"]",
+      "ExportString[Graphics[{Text[Style[TraditionalForm[Row[{OverVector[v], \
+       OverHat[w], AngleBracket[5, 6], NumberForm[NumberForm[5, 3], {3, 2}], \
+       NumberForm[287/50, 3]}]], 14], {0, 0}]}], \"SVG\"]",
+      "ExportString[Column[{Text@Style[TraditionalForm[Column[{Row[{a, b}], \
+       Row[{OverVector[c], AngleBracket[d]}]}, Alignment -> Center]], 14], \
+       Graphics[{Circle[]}]}, Alignment -> Center], \"SVG\"]",
+    ] {
+      clear_state();
+      let svg = interpret(code).unwrap();
+      for leak in [
+        "OverVector",
+        "OverHat",
+        "AngleBracket",
+        "NumberForm",
+        "Column[",
+      ] {
+        assert!(
+          !svg.contains(leak),
+          "SVG for {code} must not leak `{leak}` as literal text:\n{svg}"
+        );
+      }
     }
   }
 

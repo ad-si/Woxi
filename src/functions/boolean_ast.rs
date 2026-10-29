@@ -20,23 +20,48 @@ pub fn and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    // And is Flat: splice nested And (whether stored as a FunctionCall or a
-    // `&&` BinaryOp chain) so `a && b && c` is And[a, b, c], not the nested
-    // And[And[a, b], c] the parser builds. Matches wolframscript.
-    let mut pieces = Vec::new();
-    splice_flat_head(&evaluated, BinaryOperator::And, "And", &mut pieces);
-    for piece in pieces {
-      match as_bool(&piece) {
-        Some(false) => return Ok(bool_expr(false)),
-        Some(true) => {} // Skip True values
-        None => remaining.push(piece),
-      }
+    if and_absorb(&evaluated, &mut remaining) {
+      return Ok(bool_expr(false));
     }
   }
+  Ok(and_from_remaining(remaining))
+}
+
+/// `And` of operands that are already evaluated, so they are not evaluated
+/// a second time (which would re-issue messages a surrounding `Quiet`
+/// suppressed while producing them).
+pub fn and_of_evaluated(args: &[Expr]) -> Expr {
+  let mut remaining = Vec::new();
+  for evaluated in args {
+    if and_absorb(evaluated, &mut remaining) {
+      return bool_expr(false);
+    }
+  }
+  and_from_remaining(remaining)
+}
+
+/// Fold one evaluated `And` operand into `remaining`; true when it is False.
+fn and_absorb(evaluated: &Expr, remaining: &mut Vec<Expr>) -> bool {
+  // And is Flat: splice nested And (whether stored as a FunctionCall or a
+  // `&&` BinaryOp chain) so `a && b && c` is And[a, b, c], not the nested
+  // And[And[a, b], c] the parser builds. Matches wolframscript.
+  let mut pieces = Vec::new();
+  splice_flat_head(evaluated, BinaryOperator::And, "And", &mut pieces);
+  for piece in pieces {
+    match as_bool(&piece) {
+      Some(false) => return true,
+      Some(true) => {} // Skip True values
+      None => remaining.push(piece),
+    }
+  }
+  false
+}
+
+fn and_from_remaining(mut remaining: Vec<Expr>) -> Expr {
   match remaining.len() {
-    0 => Ok(bool_expr(true)),
-    1 => Ok(remaining.into_iter().next().unwrap()),
-    _ => Ok(call("And", remaining)),
+    0 => bool_expr(true),
+    1 => remaining.remove(0),
+    _ => call("And", remaining),
   }
 }
 
@@ -68,22 +93,45 @@ pub fn or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut remaining = Vec::new();
   for arg in args {
     let evaluated = evaluate_expr_to_expr(arg)?;
-    // Or is Flat: splice nested Or (FunctionCall or `||` BinaryOp chain) so
-    // `a || b || c` is Or[a, b, c] rather than Or[Or[a, b], c].
-    let mut pieces = Vec::new();
-    splice_flat_head(&evaluated, BinaryOperator::Or, "Or", &mut pieces);
-    for piece in pieces {
-      match as_bool(&piece) {
-        Some(true) => return Ok(bool_expr(true)),
-        Some(false) => {} // Skip False values
-        None => remaining.push(piece),
-      }
+    if or_absorb(&evaluated, &mut remaining) {
+      return Ok(bool_expr(true));
     }
   }
+  Ok(or_from_remaining(remaining))
+}
+
+/// `Or` of operands that are already evaluated; see [`and_of_evaluated`].
+pub fn or_of_evaluated(args: &[Expr]) -> Expr {
+  let mut remaining = Vec::new();
+  for evaluated in args {
+    if or_absorb(evaluated, &mut remaining) {
+      return bool_expr(true);
+    }
+  }
+  or_from_remaining(remaining)
+}
+
+/// Fold one evaluated `Or` operand into `remaining`; true when it is True.
+fn or_absorb(evaluated: &Expr, remaining: &mut Vec<Expr>) -> bool {
+  // Or is Flat: splice nested Or (FunctionCall or `||` BinaryOp chain) so
+  // `a || b || c` is Or[a, b, c] rather than Or[Or[a, b], c].
+  let mut pieces = Vec::new();
+  splice_flat_head(evaluated, BinaryOperator::Or, "Or", &mut pieces);
+  for piece in pieces {
+    match as_bool(&piece) {
+      Some(true) => return true,
+      Some(false) => {} // Skip False values
+      None => remaining.push(piece),
+    }
+  }
+  false
+}
+
+fn or_from_remaining(mut remaining: Vec<Expr>) -> Expr {
   match remaining.len() {
-    0 => Ok(bool_expr(false)),
-    1 => Ok(remaining.into_iter().next().unwrap()),
-    _ => Ok(call("Or", remaining)),
+    0 => bool_expr(false),
+    1 => remaining.remove(0),
+    _ => call("Or", remaining),
   }
 }
 
@@ -719,6 +767,55 @@ pub fn equality_undecidable(a: &Expr, b: &Expr) -> bool {
 /// and `Sqrt[2/3]` round differently in machine arithmetic, so a difference
 /// within a few ULPs is settled the way wolframscript settles it: by the
 /// difference at high precision.
+/// Whether two exact numbers whose machine values differ are nonetheless
+/// equal. The machine difference is judged against the size of the terms
+/// that cancel in it (`numeric_real_sign`), not of the values: comparing a
+/// long radical expression with 0, the value itself is the rounding noise.
+/// An algebraic difference that stays 0 through the extra precision is 0;
+/// anything else is left to [`exact_numbers_coincide`].
+fn exact_difference_vanishes(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
+  fn algebraic(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Rational" | "Plus" | "Times" | "Sqrt" => args.iter().all(algebraic),
+        "Power" if args.len() == 2 => {
+          algebraic(&args[0])
+            && matches!(&args[1], Expr::Integer(_))
+              | matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Rational")
+        }
+        _ => false,
+      },
+      Expr::BinaryOp { left, right, .. } => algebraic(left) && algebraic(right),
+      Expr::UnaryOp { operand, .. } => algebraic(operand),
+      _ => false,
+    }
+  }
+  let difference = crate::helpers::plus2(
+    a.clone(),
+    crate::helpers::times2(Expr::Integer(-1), b.clone()),
+  );
+  if algebraic(&difference) {
+    use crate::functions::math_ast::{NumericSign, numeric_real_sign};
+    match quietly_sign(&difference) {
+      Some(NumericSign::Known(s)) => return s == 0,
+      Some(NumericSign::Undecidable) => return true,
+      None => {}
+    }
+    fn quietly_sign(e: &Expr) -> Option<NumericSign> {
+      let snapshot = crate::snapshot_warnings();
+      crate::push_quiet();
+      let v = crate::evaluator::evaluate_expr_to_expr(e)
+        .ok()
+        .and_then(|v| numeric_real_sign(&v));
+      crate::pop_quiet();
+      crate::restore_warnings(snapshot);
+      v
+    }
+  }
+  exact_numbers_coincide(a, b, fa, fb)
+}
+
 fn exact_numbers_coincide(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
   let scale = fa.abs().max(fb.abs());
   if (fa - fb).abs() > scale * 1e-12 {
@@ -954,7 +1051,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(bool_expr(false));
         }
       } else if v != first
-        && !exact_numbers_coincide(&args[0], &args[i], first, v)
+        && !exact_difference_vanishes(&args[0], &args[i], first, v)
       {
         return Ok(bool_expr(false));
       }

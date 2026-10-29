@@ -5126,6 +5126,18 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     best_c = leaf_count(&best);
   }
 
+  // Candidate 1b: a quotient over radicals of one symbolic base cancels as
+  // a polynomial in that base's root (`r^(7/4)/r^(3/4)` sums).
+  if let Some(cancelled) =
+    super::cancel::cancel_via_radical_variables(&best, true)
+  {
+    let resimplified = simplify_expr(&cancelled);
+    if complexity_digits(&resimplified) < complexity_digits(&best) {
+      best_c = leaf_count(&resimplified);
+      best = resimplified;
+    }
+  }
+
   // Candidate 2: Together sub-expressions (leaves outer structure alone).
   // This helps cases like `1 + 1/(1 + 1/x)` where the whole-expression Together
   // is tied with the original, but combining only the inner fraction is

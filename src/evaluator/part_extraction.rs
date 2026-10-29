@@ -1,4 +1,5 @@
 use super::*;
+use crate::syntax::ImageType;
 
 fn expr_to_i64(expr: &Expr) -> Option<i64> {
   match expr {
@@ -587,6 +588,50 @@ pub(crate) fn is_atomic_number_expr(expr: &Expr) -> bool {
 /// functions (`Part`, `First`, `Last`) can reach its primitives the way
 /// Wolfram's do — `First[Plot[…]]` is the plot's line, not an error.
 pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
+  // An image is `Image[data, type, ColorSpace -> …, Interleaving -> …]`, so
+  // `img[[1]]` is its pixel array in the image's native type.
+  if let Expr::Image {
+    color_space,
+    channels,
+    image_type,
+    ..
+  } = expr
+  {
+    let type_name = match image_type {
+      ImageType::Bit => "Bit",
+      ImageType::Byte => "Byte",
+      ImageType::Bit16 => "Bit16",
+      ImageType::Real32 => "Real32",
+      ImageType::Real64 => "Real64",
+    };
+    let pixels = crate::functions::image_ast::image_data_ast(&[
+      expr.clone(),
+      Expr::String(type_name.to_string()),
+    ])
+    .ok()?;
+    let color_space = match color_space {
+      Some(cs) => Expr::String(cs.to_string()),
+      None => Expr::Identifier("Automatic".to_string()),
+    };
+    let interleaving = Expr::Identifier(
+      if *channels == 1 { "None" } else { "True" }.to_string(),
+    );
+    let rule = |name: &str, value: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(name.to_string())),
+      replacement: Box::new(value),
+    };
+    return Some(Expr::FunctionCall {
+      name: "Image".to_string(),
+      args: vec![
+        pixels,
+        Expr::String(type_name.to_string()),
+        rule("ColorSpace", color_space),
+        rule("Interleaving", interleaving),
+      ]
+      .into(),
+    });
+  }
+
   // A graphic that remembers its symbolic form (e.g. a plot's
   // `Graphics3D[GraphicsComplex[…], opts]`) uses it directly.
   if let Expr::Graphics {

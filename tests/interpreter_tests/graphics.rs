@@ -9101,6 +9101,27 @@ mod plot3d {
       assert!(!svg.contains("Which["), "raw Which leaked into the SVG");
     }
 
+    // A `FrameTicks` edge given as an unevaluated `Table[…]` is worked out
+    // into its `{position, label}` ticks, in `Plot` and in `Graphics` alike.
+    #[test]
+    fn frame_ticks_accept_a_computed_tick_table() {
+      let plot = export_svg(
+        r#"Plot[x^2, {x, 0, 1}, Frame -> True,
+          FrameTicks -> {{Table[{k, Row[{Round[100 k], "%"}]}, {k, 0, 1, 0.5}], None},
+                         {Table[{k, "q"}, {k, 0, 1, 0.5}], None}}]"#,
+      );
+      for label in [">0%<", ">50%<", ">100%<", ">q<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      assert!(!plot.contains(">0.5<"), "automatic ticks leaked: {plot}");
+      let graphics = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True,
+          FrameTicks -> {{Table[{k, "p" <> ToString[k]}, {k, 0, 1, 0.5}], None},
+                         {None, None}}]"#,
+      );
+      assert!(graphics.contains(">p0.5<"), "{graphics}");
+    }
+
     // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
     // `FrameTicks` puts the tick labels on the edge that asks for them, so a
     // right-hand-only axis labels the right side.
@@ -9150,6 +9171,23 @@ mod plot3d {
         svg.contains(">second</tspan>"),
         "label line 2 missing: {svg}"
       );
+    }
+
+    // A `Row` frame label that embeds `Graphics` (a legend swatch) is drawn
+    // as a picture on the top and bottom edges instead of leaking the
+    // `Graphics[…]` source as text.
+    #[test]
+    fn frame_label_row_with_graphics_is_drawn_as_picture() {
+      for labels in [
+        r#"{{"y", ""}, {"x", Row[{"a ", Graphics[{Red, Line[{{0, 0}, {1, 0}}]}]}]}}"#,
+        r#"{{"y", ""}, {Row[{"a ", Graphics[{Red, Line[{{0, 0}, {1, 0}}]}]}], ""}}"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {labels}]"
+        ));
+        assert!(!svg.contains("Graphics["), "source leaked: {svg}");
+        assert!(svg.contains("rgb(255,0,0)"), "swatch missing: {svg}");
+      }
     }
 
     // `FrameTicks` with explicit tick positions on a framed `Graphics` (and a
@@ -12681,6 +12719,36 @@ mod plot3d {
         1
       );
       assert_eq!(fills("Plot[x, {x, 0, 1}, Filling -> True]"), 1);
+    }
+
+    /// A fill is drawn beneath every curve, including the curves of the
+    /// series listed before the filled one: `Filling -> {2 -> Bottom}` must
+    /// not paint over series 1.
+    #[test]
+    fn a_fill_lies_beneath_the_curves_of_earlier_series() {
+      let svg = export_svg(
+        "Plot[{Sin[x], -2 + x/9}, {x, 0, 6}, Filling -> {2 -> Bottom}]",
+      );
+      let fill = svg.find("<polygon").expect("the fill polygon");
+      let first_curve = svg.find("<polyline").expect("the first curve");
+      assert!(fill < first_curve, "fill must precede the curves");
+    }
+
+    /// A body whose `Module` locals survive in a partly evaluated `Which`
+    /// holds symbols like `z$1 = x/2`; the sample for `x` must reach them,
+    /// or every branch after the first stays symbolic and is not drawn.
+    #[test]
+    fn plot_reaches_module_locals_left_in_a_which() {
+      let svg = export_svg(
+        "Plot[Module[{z = x/2}, Which[z < -1, 1, Abs[z] <= 1, 2, z > 1, 3]], \
+         {x, -6, 6}, Exclusions -> None]",
+      );
+      // All three branches are sampled: the curve reaches y = 1, 2 and 3.
+      assert_eq!(
+        y_tick_labels(&svg).first().map(String::as_str),
+        Some("3.0"),
+        "{svg}"
+      );
     }
 
     /// The value of `Filling` may be computed rather than named — a
@@ -24019,6 +24087,35 @@ mod grid_rasterize {
     .expect("Column of Panel should produce a graphics SVG");
     assert!(svg.contains("<rect"), "{svg}");
     assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
+  }
+
+  #[test]
+  fn image_part_reaches_pixel_data() {
+    clear_state();
+    // `img[[1]]` is the pixel array, `img[[2]]` the image type.
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]").unwrap(),
+      "{{0, 255}, {255, 0}}"
+    );
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1, 2]]").unwrap(),
+      "{255, 0}"
+    );
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[2]]").unwrap(),
+      "Byte"
+    );
+    // Part on a rasterized graphic feeds ordinary list functions.
+    assert_eq!(
+      interpret(
+        "Dimensions[Rasterize[Graphics[{Disk[]}], ImageSize -> 10][[1]]]"
+      )
+      .unwrap(),
+      interpret(
+        "Dimensions[ImageData[Rasterize[Graphics[{Disk[]}], ImageSize -> 10], \"Byte\"]]"
+      )
+      .unwrap()
+    );
   }
 
   #[test]
@@ -42704,6 +42801,47 @@ mod generalized_bar_chart {
     );
     assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
     assert!(svg.contains("<polygon"), "filling missing: {svg}");
+  }
+
+  /// A picture over 360 points across, drawn as `Text` with no `ImageSize`,
+  /// shrinks to fit 360 points instead of overflowing the plot.
+  #[test]
+  fn a_large_image_in_text_shrinks_to_fit_360_points() {
+    let svg = export_svg(
+      "Graphics[{Text[Image[ConstantArray[0.5, {200, 500}]], {0, 0}]}, \
+       PlotRange -> 1, ImageSize -> 380]",
+    );
+    assert!(svg.contains("<image"), "image missing: {svg}");
+    assert!(
+      svg.contains("width=\"360.00\"") && svg.contains("height=\"144.00\""),
+      "image must be scaled to 360 points wide, keeping its aspect: {svg}"
+    );
+  }
+
+  /// A small image keeps its pixel size.
+  #[test]
+  fn a_small_image_in_text_keeps_its_pixel_size() {
+    let svg = export_svg(
+      "Graphics[{Text[Image[ConstantArray[0.5, {20, 50}]], {0, 0}]}, \
+       PlotRange -> 1, ImageSize -> 380]",
+    );
+    assert!(
+      svg.contains("width='50'") && svg.contains("height='20'"),
+      "small image must not be rescaled: {svg}"
+    );
+  }
+
+  /// A subscript of several words (`f` with `3 db` below it) is lowered as a
+  /// subscript, not flattened to `f_(3 db)`.
+  #[test]
+  fn a_multi_word_subscript_in_text_is_lowered() {
+    let svg = export_svg(
+      "Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(f\\), \\(3 db\\)]\\) =\", {0, 0}]]",
+    );
+    assert!(
+      svg.contains("baseline-shift=\"sub\"") && !svg.contains("f_("),
+      "subscript must be lowered: {svg}"
+    );
   }
 
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred

@@ -408,7 +408,9 @@ pub fn dispatch_predicate_functions(
         _ => bool_expr(false),
       }));
     }
-    "Precision" if args.len() == 1 => {
+    // `Internal`EffectivePrecision` (used by packages such as
+    // ComputationalGeometry`) reports what Precision does.
+    "Precision" | "Internal`EffectivePrecision" if args.len() == 1 => {
       return Some(crate::functions::math_ast::precision_ast(args));
     }
     "Precedence" if args.len() == 1 => {
@@ -1085,8 +1087,17 @@ pub fn dispatch_predicate_functions(
           m.borrow()
             .get(sym)
             .map(|cache| {
-              cache
-                .values()
+              // In canonical order of the left-hand sides, as Wolfram lists
+              // its hashed literal definitions.
+              let mut entries: Vec<_> = cache.values().collect();
+              entries.sort_by(|(a, _), (b, _)| {
+                crate::functions::list_helpers_ast::sorting::canonical_cmp(
+                  &call(sym.as_str(), a.clone()),
+                  &call(sym.as_str(), b.clone()),
+                )
+              });
+              entries
+                .into_iter()
                 .map(|(arg_exprs, value)| {
                   rule_delayed_expr(
                     call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
@@ -1181,9 +1192,10 @@ pub fn dispatch_predicate_functions(
             )
           })
           .collect();
-        let mut rules = rules;
-        rules.extend(memo_rules);
-        return Some(Ok(Expr::List(rules.into())));
+        // Literal definitions come before the pattern ones.
+        let mut all = memo_rules;
+        all.extend(rules);
+        return Some(Ok(Expr::List(all.into())));
       }
       return Some(Ok(Expr::List(vec![].into())));
     }

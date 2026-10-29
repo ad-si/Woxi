@@ -5024,6 +5024,24 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // An integrand of plain arithmetic is compiled once to float operations
+  // instead of being evaluated as an expression (exact coefficients and all)
+  // at every sample; a ParametricPlot of this endpoint-singular integral
+  // (Demonstration FisherKolmogoroffEquation) samples it hundreds of times.
+  #[test]
+  fn compiled_integrand_with_endpoint_singularity() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Lval[U1_?NumericQ] := 2 NIntegrate[1/Sqrt[U1^2 - U^2 + 2/3 (U^3 - U1^3)], {U, 0, U1}]; \
+         Round[10^5 Table[Lval[u], {u, 0.1, 0.9, 0.2}]]"
+      )
+      .unwrap(),
+      "{328426, 364183, 415647, 500595, 702267}"
+    );
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+
   #[test]
   fn gauss_rule_data() {
     assert_eq!(
@@ -20265,6 +20283,44 @@ mod interpolation_exact_and_derivative {
       "253/64"
     );
   }
+
+  // Arrays of depth three and more interpolate on the grid of their
+  // indices (or an explicit domain), with partial derivatives; the domain
+  // is in machine numbers when the data is. These used to stop the
+  // evaluation with "cannot convert … to a numeric value".
+  #[test]
+  fn multidimensional_list_interpolation() {
+    assert_eq!(
+      interpret(
+        "f = ListInterpolation[Table[x^2 + y + z, {x, 1, 5}, {y, 1, 5}, \
+         {z, 1, 5}]]; {f[2.5, 3., 2.], D[f[a, b, c], a] /. {a -> 2.5, \
+         b -> 3., c -> 2.}, f[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{11.25, 5., {{1, 5}, {1, 5}, {1, 5}}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = ListInterpolation[Table[Sin[x] + y^2 z, {x, 0, 1, 0.25}, \
+         {y, 0, 2, 0.5}, {z, 1, 2, 0.25}], {{0, 1}, {0, 2}, {1, 2}}]; \
+         {Round[g[0.3, 1.1, 1.7], 10^-9], g[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{2352500497/1000000000, {{0., 1.}, {0., 2.}, {1., 2.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ListInterpolation[N[Table[x^2 + y, {x, 1, 5}, {y, 1, 5}]]][\"Domain\"]"
+      )
+      .unwrap(),
+      "{{1., 5.}, {1., 5.}}"
+    );
+    // An axis with a single point is interpolated with order 0.
+    assert_eq!(
+      interpret("Quiet[ListInterpolation[{{1, 2, 3}}][1, 5/2]]").unwrap(),
+      "5/2"
+    );
+  }
 }
 
 /// `∫ Log[a x] dx` and the negative-exponent rendering that shows up in
@@ -22600,6 +22656,30 @@ mod interpolation_spline_method {
   }
 
   #[test]
+  fn stored_kernel_spline_in_two_variables() {
+    let knots = "{{0., 0., 1., 1.}, {0., 0., 1., 1.}}";
+    let ifn = |controls: &str| {
+      format!(
+        "InterpolatingFunction[{{{{0., 1.}}, {{0., 1.}}}}, {{5, 39, 0, {{2, 2}}, {{2, 2}}, 0, 0, 0, 0, Automatic, {{}}, {{}}, False}}, {{{{0., 1.}}, {{0., 1.}}}}, {{BSplineFunction[2, {{{{0., 1.}}, {{0., 1.}}}}, {{1, 1}}, {{False, False}}, {{{controls}, {{}}}}, {knots}, {{0, 0}}, MachinePrecision, Unevaluated], {{}}}}, {{Automatic, Automatic}}]"
+      )
+    };
+    // f(x, y) = 2 x + y as a bilinear tensor-product spline.
+    for controls in [
+      "{{0., 1.}, {2., 3.}}",
+      "CompressedData[\"1:eJxeJyrrjbQ01Ew1KvVUag20tNRMNarrQUAN30FSw==\"]",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "s = {}; {{s[0.25, 0.5], s[1., 1.], s[0.5, 0.]}}",
+          ifn(controls)
+        ))
+        .unwrap(),
+        "{1., 3., 1.}"
+      );
+    }
+  }
+
+  #[test]
   fn stored_kernel_spline() {
     let ifn = "InterpolatingFunction[{{0, 3}}, {5, 39, 0, {4}, {4}, 0, 0, 0, 0, Automatic, {}, {}, False}, {{0, 1, 2, 3}}, {BSplineFunction[1, {{0., 3.}}, {3}, {False}, {{1., 6.833333333333334, -2.333333333333333, 5.}, {}}, {{0., 0., 0., 0., 3., 3., 3., 3.}}, {0}, MachinePrecision, Unevaluated], {}}, {Automatic}]";
     assert_eq!(
@@ -24021,5 +24101,112 @@ mod sub_values_holding_tables {
       "True"
     );
     assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
+}
+
+// Series at Infinity: Log[x] rides in the coefficients, constants join a
+// series about any centre, elementary functions of a series are series,
+// and Gamma over its Stirling approximation expands through LogGamma
+// (Demonstration AsymptoticExpansionsForSomeSpecialFunctions hung here).
+mod series_asymptotic_products {
+  use super::*;
+
+  #[test]
+  fn log_in_coefficients_and_constants() {
+    assert_eq!(
+      interpret(
+        "{Series[x Log[x] + 1/x, {x, Infinity, 2}], Series[Log[x]/(1 + x), {x, Infinity, 2}], \
+          Log[2] + SeriesData[x, Infinity, {1, 2}, 1, 3, 1], a + SeriesData[x, 1, {1, 2}, 0, 2, 1], \
+          Series[LogGamma[x] + x - (x - 1/2) Log[x] - Log[2 Pi]/2, {x, Infinity, 3}]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {Log[x], 0, 1}, -1, 3, 1], \
+       SeriesData[x, Infinity, {Log[x], -Log[x]}, 1, 3, 1], \
+       SeriesData[x, Infinity, {Log[2], 1, 2}, 0, 3, 1], SeriesData[x, 1, {1 + a, 2}, 0, 2, 1], \
+       SeriesData[x, Infinity, {1/12, 0, -1/360}, 1, 4, 1]}"
+    );
+  }
+
+  #[test]
+  fn functions_of_series() {
+    assert_eq!(
+      interpret(
+        "{Exp[SeriesData[x, Infinity, {2, 1/12}, 0, 3, 1]], E^SeriesData[x, 0, {1, 1}, 1, 3, 1], \
+          Sin[SeriesData[x, 0, {1, 1}, 1, 3, 1]], Log[SeriesData[x, 0, {1, 1}, 0, 3, 1]]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {E^2, E^2/12, E^2/288}, 0, 3, 1], \
+       SeriesData[x, 0, {1, 1, 3/2}, 0, 3, 1], SeriesData[x, 0, {1, 1}, 1, 3, 1], \
+       SeriesData[x, 0, {1, -1/2}, 1, 3, 1]}"
+    );
+  }
+
+  #[test]
+  fn gamma_over_stirling() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{Series[Gamma[x]/(E^-x x^(x - 1/2) Sqrt[2 Pi]), {x, Infinity, 2}], \
+          Normal[Series[Gamma[x]/(E^-x x^(x - 1/2)), {x, Infinity, 1}]]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, Infinity, {1, 0, 1/12, 0, 1/288}, 0, 6, 2], Sqrt[2*Pi] + Sqrt[Pi/2]/(6*x)}"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+  }
+}
+
+// Series of sums and products singular at the point, by their parts'
+// (Laurent) series; empty series that keep their order; Expand combining
+// radicals of one integer (Demonstration FlowsnakeQFunction).
+mod series_by_parts_and_empty_series {
+  use super::*;
+
+  #[test]
+  fn singular_sums_products_and_powers() {
+    assert_eq!(
+      interpret(
+        "{Series[x^2 (1 + 3/x + 2/x^2)/(1 - x^2), {x, 0, 3}], \
+          Series[x (3 + 1/x)/(1 - x^3) + x^3 (2 + 5/x), {x, 0, 4}], \
+          Series[x (1 + 1/x)^2, {x, 0, 2}], Series[(1 + 1/x)^3, {x, 0, 1}], \
+          Coefficient[Series[x^2 (1 + 3/x + 2/x^2)/(1 - x^2), {x, 0, 3}], x, 2]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, 0, {2, 3, 3, 3}, 0, 4, 1], SeriesData[x, 0, {1, 3, 5, 3, 3}, 0, 5, 1], \
+       SeriesData[x, 0, {1, 2, 1}, -1, 3, 1], SeriesData[x, 0, {1, 3, 3, 1}, -3, 2, 1], 3}"
+    );
+  }
+
+  #[test]
+  fn empty_series_keep_their_order() {
+    assert_eq!(
+      interpret(
+        "{Series[x^3/(1 - x), {x, 0, 1}], Series[Sin[x]^3, {x, 0, 2}], Series[0, {x, 0, 2}], \
+          Series[1/x, {x, 0, -2}], Series[3 + x^(-1), {x, 0, -2}], \
+          Series[(3 + x^(-1))*x^2 + x^3/(1 - x), {x, 0, 0}], \
+          SeriesData[x, 0, {1}, -1, 0, 1] SeriesData[x, 0, {}, 2, 2, 1], \
+          3 + SeriesData[x, 0, {}, -1, -1, 1]}"
+      )
+      .unwrap(),
+      "{SeriesData[x, 0, {}, 3, 3, 1], SeriesData[x, 0, {}, 3, 3, 1], 0, \
+       SeriesData[x, 0, {}, -1, -1, 1], SeriesData[x, 0, {}, -1, -1, 1], \
+       SeriesData[x, 0, {}, 1, 1, 1], SeriesData[x, 0, {}, 1, 1, 1], \
+       SeriesData[x, 0, {}, -1, -1, 1]}"
+    );
+  }
+
+  #[test]
+  fn expand_combines_radicals_of_one_integer() {
+    assert_eq!(
+      interpret(
+        "{Expand[Sqrt[3] + 2/Sqrt[3]], Expand[x Sqrt[3] + y/Sqrt[3]], \
+          Expand[2^(1/3) + 2^(-2/3)], Expand[a 3^(1/3) + a 3^(-2/3)], \
+          Expand[I/Sqrt[3] - (5 I)/98 Sqrt[3] + (13 I)/(196 Sqrt[3])], \
+          2/Sqrt[3] + Sqrt[3]}"
+      )
+      .unwrap(),
+      "{5/Sqrt[3], Sqrt[3]*x + y/Sqrt[3], 3/2^(2/3), (4*a)/3^(2/3), (179*I)/196/Sqrt[3], \
+       2/Sqrt[3] + Sqrt[3]}"
+    );
   }
 }

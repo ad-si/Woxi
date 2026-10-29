@@ -762,6 +762,9 @@ pub fn set_messages_to_stdout(enabled: bool) {
 // Quiet level: when > 0, message printing is suppressed
 thread_local! {
     static QUIET_LEVEL: RefCell<usize> = const { RefCell::new(0) };
+    // The message buffers' lengths at each `push_quiet`, which the matching
+    // `pop_quiet` cuts them back to.
+    static QUIET_MARKS: RefCell<Vec<(usize, usize, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Clears the captured stdout buffer
@@ -901,12 +904,23 @@ fn quiet_filters_silence(name: &str) -> bool {
   })
 }
 
-/// Increment the quiet level (enter a Quiet[] block)
+/// Increment the quiet level (enter a Quiet[] block). Messages raised
+/// until the matching [`pop_quiet`] are visible inside the block (to
+/// `$MessageList`, say) and gone after it: an internal quiet evaluation —
+/// a solver probing a candidate — leaves no trace in `$MessageList` or in
+/// the captured messages a front end shows.
 pub fn push_quiet() {
   QUIET_LEVEL.with(|level| *level.borrow_mut() += 1);
+  let mark = (
+    UNIMPLEMENTED_CALLS.with(|b| b.borrow().len()),
+    CAPTURED_MESSAGES.with(|b| b.borrow().len()),
+    MESSAGE_LIST.with(|b| b.borrow().len()),
+  );
+  QUIET_MARKS.with(|m| m.borrow_mut().push(mark));
 }
 
-/// Decrement the quiet level (leave a Quiet[] block)
+/// Decrement the quiet level (leave a Quiet[] block), dropping the
+/// messages raised inside it.
 pub fn pop_quiet() {
   QUIET_LEVEL.with(|level| {
     let mut l = level.borrow_mut();
@@ -914,6 +928,13 @@ pub fn pop_quiet() {
       *l -= 1;
     }
   });
+  if let Some((unimplemented, messages, list)) =
+    QUIET_MARKS.with(|m| m.borrow_mut().pop())
+  {
+    UNIMPLEMENTED_CALLS.with(|b| b.borrow_mut().truncate(unimplemented));
+    CAPTURED_MESSAGES.with(|b| b.borrow_mut().truncate(messages));
+    MESSAGE_LIST.with(|b| b.borrow_mut().truncate(list));
+  }
 }
 
 /// A saved copy of every message buffer, taken before a speculative or quieted
@@ -3268,6 +3289,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   // so they display like in a Wolfram notebook.
   // CLI mode preserves wrappers to match wolframscript behavior.
   let is_visual = VISUAL_MODE.with(|v| *v.borrow());
+  // A notebook shows a number format as its formatted digits, also when it
+  // sits inside a list or a `Text`/`Pane`.
+  let shown_expr = if is_visual {
+    std::borrow::Cow::Owned(resolve_number_forms(shown_expr.as_ref()))
+  } else {
+    shown_expr
+  };
   let output_text = if is_visual {
     match shown_expr.as_ref() {
       syntax::Expr::FunctionCall { name, args }
@@ -3297,6 +3325,33 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
     "\0".to_string()
   } else {
     output_text
+  }
+}
+
+/// Replace every `NumberForm`/`PaddedForm`/`AccountingForm` nested in `expr`
+/// by its formatted number, leaving whatever cannot be formatted untouched.
+fn resolve_number_forms(expr: &syntax::Expr) -> syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args } => {
+      if matches!(
+        name.as_str(),
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+      ) && !args.is_empty()
+        && let Some(text) =
+          functions::string_ast::number_form_family_to_string(name, args)
+        && !text.contains('\n')
+      {
+        return syntax::Expr::Identifier(text);
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(resolve_number_forms).collect(),
+      }
+    }
+    syntax::Expr::List(items) => {
+      syntax::Expr::List(items.iter().map(resolve_number_forms).collect())
+    }
+    _ => expr.clone(),
   }
 }
 

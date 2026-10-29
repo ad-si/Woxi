@@ -575,8 +575,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                 den_factors.push(pow(pargs[0].clone(), pos_exp));
               }
             } else {
-              // Power[fraction, n] → split base into num/den
-              let (base_num, base_den) = extract_num_den(&pargs[0]);
+              // Power[fraction, n] → split base into num/den.
+              let (base_num, base_den) =
+                power_base_num_den(&pargs[0], &pargs[1]);
               if matches!(&base_den, Expr::Integer(1)) {
                 num_factors.push(arg.clone());
               } else {
@@ -602,8 +603,8 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
                 den_factors.push(pow(*left.clone(), pos_exp));
               }
             } else {
-              // Power[fraction, n] → split base into num/den
-              let (base_num, base_den) = extract_num_den(left);
+              // Power[fraction, n] → split base into num/den.
+              let (base_num, base_den) = power_base_num_den(left, right);
               if matches!(&base_den, Expr::Integer(1)) {
                 num_factors.push(arg.clone());
               } else {
@@ -658,7 +659,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
         }
       } else {
         // Power[num/den, n] → (num^n, den^n)
-        let (base_num, base_den) = extract_num_den(left);
+        let (base_num, base_den) = power_base_num_den(left, right);
         if matches!(&base_den, Expr::Integer(1)) {
           (expr.clone(), Expr::Integer(1))
         } else {
@@ -687,6 +688,22 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       (negate_expr(&num), den)
     }
     _ => (expr.clone(), Expr::Integer(1)),
+  }
+}
+
+/// The numerator and denominator of the base of `base^exp` that the power
+/// is split over. A radical of a quotient with a symbolic denominator stays
+/// whole, as in Wolfram: `Cancel[Sqrt[m/h]]` is itself, while
+/// `Cancel[(m/2)^(1/4)]` is `m^(1/4)/2^(1/4)` and an integer power always
+/// splits.
+fn power_base_num_den(base: &Expr, exp: &Expr) -> (Expr, Expr) {
+  let (num, den) = extract_num_den(base);
+  if matches!(exp, Expr::Integer(_))
+    || crate::functions::predicate_ast::is_numeric_q(&den)
+  {
+    (num, den)
+  } else {
+    (base.clone(), Expr::Integer(1))
   }
 }
 

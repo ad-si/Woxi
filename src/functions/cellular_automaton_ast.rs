@@ -254,17 +254,13 @@ fn replacement_rule_spec(rule: &Expr) -> Option<Expr> {
     }
   };
   let two_d = first.iter().all(|row| matches!(row, Expr::List(_)));
+  // A 2D neighborhood already arrives as its block of rows.
   let (body, radius) = if two_d {
     let Expr::List(row) = &first[0] else {
       return None;
     };
-    // The neighbors arrive as one flat list; the rules see them as rows.
-    let shaped = Expr::FunctionCall {
-      name: "Partition".into(),
-      args: vec![Expr::Slot(1), Expr::Integer(row.len() as i128)].into(),
-    };
     (
-      shaped,
+      Expr::Slot(1),
       Expr::List(vec![range(first.len()), range(row.len())].into()),
     )
   } else {
@@ -424,9 +420,15 @@ fn function_rule_automaton(
             }
           })
           .collect();
-        match crate::evaluator::apply_function_to_arg(
+        // The rule sees the neighborhood in its own shape — a matrix for a
+        // 2D range — and the number of the step it computes, as Wolfram
+        // calls `fun[block, t]`.
+        match crate::evaluator::apply_curried_call(
           func,
-          &Expr::List(neighbors.into()),
+          &[
+            shape_neighborhood(&nbhd, neighbors),
+            Expr::Integer(i128::from(t as u32) + 1),
+          ],
         ) {
           Ok(v) => row.push(v),
           Err(e) => return Some(Err(e)),
@@ -436,8 +438,12 @@ fn function_rule_automaton(
     }
     grid = next;
     if has_bg {
-      let all_bg = Expr::List(vec![bg.clone(); nbhd.offsets.len()].into());
-      bg = match crate::evaluator::apply_function_to_arg(func, &all_bg) {
+      let all_bg =
+        shape_neighborhood(&nbhd, vec![bg.clone(); nbhd.offsets.len()]);
+      bg = match crate::evaluator::apply_curried_call(
+        func,
+        &[all_bg, Expr::Integer(i128::from(t as u32) + 1)],
+      ) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
       };
@@ -703,6 +709,21 @@ fn range_neighborhood(radii: &[(usize, i64)]) -> Neighborhood {
 /// The neighbor spec at position 3 of a rule: a range `r`, a 2D range
 /// `{r1, r2}` or an offset list. `Err(None)` marks a well-formed spec Woxi
 /// does not support (e.g. offsets in three dimensions).
+/// A neighborhood's cells (in offset order) as the rule receives them: the
+/// `d1 x d2` block of a 2D range, otherwise the flat list.
+fn shape_neighborhood(nbhd: &Neighborhood, cells: Vec<Expr>) -> Expr {
+  match &nbhd.dims {
+    Some(dims) if nbhd.two_d && dims.len() == 2 && dims[1] > 0 => Expr::List(
+      cells
+        .chunks(dims[1])
+        .map(|row| Expr::List(row.to_vec().into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => Expr::List(cells.into()),
+  }
+}
+
 fn parse_neighborhood(
   expr: &Expr,
   spec: &Expr,

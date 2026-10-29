@@ -4543,6 +4543,23 @@ fn graphics_text_content(expr: &Expr) -> String {
         name == "Overscript",
       )
     }
+    // `OverBar[x]`, `OverHat[x]`, … are the one-argument spellings of the
+    // same accent over `x`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "OverBar" | "OverHat" | "OverTilde" | "OverDot" | "OverVector"
+      ) && args.len() == 1 =>
+    {
+      let mark = match name.as_str() {
+        "OverBar" => "_",
+        "OverHat" => "^",
+        "OverTilde" => "~",
+        "OverDot" => ".",
+        _ => "\u{21C0}",
+      };
+      accent_text(&graphics_text_content(&args[0]), mark, true)
+    }
     // `Column[{a, b, …}]` stacks its items, one line each — the label's
     // text carries the line breaks the renderer lays out.
     Expr::FunctionCall { name, args }
@@ -5493,13 +5510,32 @@ fn inset_primitives(
     } => {
       let (ch, px) =
         crate::functions::image_ast::rgb_pixels(*color_space, *channels, data);
-      image_svg = crate::functions::image_ast::image_to_html_img(
+      let natural = crate::functions::image_ast::image_to_html_img(
         *width,
         *height,
         ch,
         &px,
         *display_size,
       );
+      // An image with no `ImageSize` shows at its pixel size only up to
+      // 360 points across; a larger one shrinks to fit, keeping its aspect.
+      const MAX_NATURAL_IMAGE_SIDE: f64 = 360.0;
+      let (iw, ih) = display_size
+        .map_or((*width as f64, *height as f64), |(w, h)| {
+          (w as f64, h as f64)
+        });
+      let side = iw.max(ih);
+      image_svg = if display_size.is_none() && side > MAX_NATURAL_IMAGE_SIDE {
+        let k = MAX_NATURAL_IMAGE_SIDE / side;
+        format!(
+          "<svg xmlns='http://www.w3.org/2000/svg' width='{:.2}' \
+           height='{:.2}' viewBox='0 0 {iw} {ih}'>{natural}</svg>",
+          iw * k,
+          ih * k
+        )
+      } else {
+        natural
+      };
       Some(&image_svg)
     }
     // A picture given symbolically normally has its primitives folded into
@@ -8676,7 +8712,9 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
 /// anything else (`Automatic`, `None`, `All`) hold `None`.
 fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
   let one = |e: &Expr| match e {
-    Expr::List(_) => crate::functions::plot::parse_explicit_ticks(e),
+    Expr::List(_) | Expr::FunctionCall { .. } => {
+      crate::functions::plot::parse_explicit_ticks(e)
+    }
     _ => None,
   };
   match value {
@@ -14245,6 +14283,23 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // base and pulled back over it — inline `tspan`s share one baseline,
         // so true 2-D stacking isn't expressible, but for the single-letter
         // bases these accents dress (σ, x, y, ρ) the overlap reads right.
+        // `OverHat[x]`, `OverTilde[x]`, `OverDot[x]`, `OverVector[x]` — the
+        // accent shorthands typeset as `Overscript[x, accent]`.
+        "OverHat" | "OverTilde" | "OverDot" | "OverVector"
+          if args.len() == 1 =>
+        {
+          let mark = match name.as_str() {
+            "OverHat" => "^",
+            "OverTilde" => "~",
+            "OverDot" => ".",
+            _ => "\u{21C0}",
+          };
+          expr_to_svg_markup(&Expr::FunctionCall {
+            name: "Overscript".to_string(),
+            args: vec![args[0].clone(), Expr::String(mark.to_string())].into(),
+          })
+        }
+
         "Overscript" | "Underscript" if args.len() == 2 => {
           let base_markup = expr_to_svg_markup(&args[0]);
           let accent_markup = expr_to_svg_markup(&args[1]);
@@ -14696,7 +14751,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // OverBar/UnderBar draw their accent as a zero-width line over the
       // content; Overscript/Underscript's accent overlaps the base the same
       // way `expr_to_svg_markup` draws it (see that function's comment).
-      "OverBar" | "UnderBar" if args.len() == 1 => {
+      "OverBar" | "UnderBar" | "OverHat" | "OverTilde" | "OverDot"
+      | "OverVector"
+        if args.len() == 1 =>
+      {
         estimate_display_width(&args[0])
       }
       "Overscript" | "Underscript" if args.len() == 2 => {
@@ -15733,7 +15791,7 @@ fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
     ("...", true) => ('\u{20DB}', false),
     ("^" | "\u{02C6}", true) => ('\u{0302}', false),
     ("~" | "\u{02DC}", true) => ('\u{0303}', false),
-    ("\u{2192}", true) => ('\u{20D7}', false),
+    ("\u{2192}" | "\u{21C0}", true) => ('\u{20D7}', false),
     _ => return None,
   })
 }
@@ -23813,6 +23871,18 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Style" | "StyleForm" => {
         if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
           return nested_layout_svg(&inner);
+        }
+        // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
+        // off first (typesetting each item of the layout traditionally), so
+        // the style reaches the layout's items the same way.
+        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+          if n == "TraditionalForm")
+        {
+          let unwrapped = unwrap_display_wrappers(&args[0]);
+          if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
+          {
+            return nested_layout_svg(&inner);
+          }
         }
         // Not a Row/Column/Grid/TextGrid to push the style into — a
         // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],
@@ -33108,6 +33178,51 @@ fn label_is_compound(expr: &Expr) -> bool {
 }
 
 /// Whether a box tree holds a literal text atom that contains a space.
+/// Runs for a top-level `SubscriptBox[base, script]` segment while labels
+/// are flattened with marked subscripts: the base, then the script wrapped in
+/// the subscript markers. `None` for any other box, when not marking, or when
+/// every character of the script has a Unicode subscript form (the ordinary
+/// path folds those).
+fn marked_subscript_box_runs(
+  segment: &str,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  if !MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get) {
+    return None;
+  }
+  let parsed = crate::parse_to_expr(segment).ok()?;
+  let Expr::FunctionCall { name, args } = &parsed else {
+    return None;
+  };
+  let [base, script] = args.as_slice() else {
+    return None;
+  };
+  if name != "SubscriptBox" {
+    return None;
+  }
+  let base = crate::notebook::render_boxes_text(&expr_to_string(base));
+  let script = crate::notebook::render_boxes_text(&expr_to_string(script));
+  let script = script.trim();
+  if script
+    .chars()
+    .all(|c| unicode_script_char(c, false).is_some())
+  {
+    return None;
+  }
+  Some(vec![
+    LabelRun {
+      text: base,
+      italic,
+      ..Default::default()
+    },
+    LabelRun {
+      text: format!("{SUBSCRIPT_START}{script}{SUBSCRIPT_END}"),
+      italic: false,
+      ..Default::default()
+    },
+  ])
+}
+
 fn box_has_spaced_text(e: &Expr) -> bool {
   match e {
     // Padding around an atom (`"12 "`) draws nothing; only a gap between
@@ -33164,6 +33279,12 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // (`FractionBox["my height", …]`): the source round trip would read the
     // gap as a product (`my*height`), so such a segment is drawn straight
     // as display text.
+    // A subscript with a letter Unicode has no subscript form for (`3 db`)
+    // is lowered by the SVG writer, not flattened to `f_(3 db)`.
+    if let Some(sub_runs) = marked_subscript_box_runs(&seg.text, italic) {
+      runs.extend(sub_runs);
+      continue;
+    }
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)
       && box_has_spaced_text(&boxes)
     {

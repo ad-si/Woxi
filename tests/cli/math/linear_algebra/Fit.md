@@ -8,7 +8,8 @@ $ wo 'Fit[{2, 4, 6}, {x}, x]'
 ```
 
 When the design matrix does not have full column rank there is no unique
-least-squares solution, and the minimum-norm one is returned. Fitting a line
+least-squares solution, and the minimum-norm one is returned (the norm taken
+after scaling each basis function's column of values to unit length). Fitting a line
 through a single point gives the shortest coefficient vector among the
 infinitely many lines through it:
 
@@ -26,5 +27,14 @@ $ wo 'Fit[{{1, 1}, {1, 2}}, {1, x}, x]'
 
 ```scrut
 $ wo 'Fit[{{1, 1}, {1, 2}, {1, 3}}, {1, x}, x]'
-1\.(0+\d*)? \+ 1\.(0+\d*)?\*x (regex)
+(1\.(0+\d*)?|0\.9999999999999\d*) \+ (1\.(0+\d*)?|0\.9999999999999\d*)\*x (regex)
+```
+
+The scaling shows when the basis columns differ in length: at `x = 2` the
+column of `x` is twice that of `1`, so the fit is `1 + x/2` rather than the
+unscaled shortest `2/5 + 4/5 x`:
+
+```scrut
+$ wo 'Fit[{{2, 1}, {2, 2}, {2, 3}}, {1, x}, x]'
+(1\.(0+\d*)?|0\.9999999999999\d*) \+ (0\.5(0+\d*)?|0\.4999999999999\d*)\*x (regex)
 ```

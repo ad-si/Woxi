@@ -59,6 +59,36 @@ mod for_loop {
 mod while_loop {
   use super::*;
 
+  /// A `Quiet`-wrapped out-of-range Part in a `&&`/`||` operand stays
+  /// silent: the operand was evaluated once inside `Quiet`, not again.
+  #[test]
+  fn quiet_operand_of_and_or_is_not_reevaluated() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "m = {{1, 7.}, {3, 8.}}; \
+       {Quiet[m[[0, 2]]] >= 1 && x, Quiet[m[[5, 2]]] >= 1 || y}",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "{{{1, 7.}, {3, 8.}}[[0,2]] >= 1 && x, \
+       {{1, 7.}, {3, 8.}}[[5,2]] >= 1 || y}"
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
+  fn quiet_part_in_while_condition_is_silent() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "m = {{1, 7.}, {3, 8.}}; v = 2; \
+       While[Quiet[m[[v, 2]]] >= 1 && Quiet[m[[v, 1]]] >= 0, v--]; v",
+    )
+    .unwrap();
+    assert_eq!(r.result, "0");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   #[test]
   fn basic_while() {
     clear_state();

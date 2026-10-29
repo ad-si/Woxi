@@ -211,15 +211,21 @@ fn try_series_data_plus(
       } else {
         return Ok(None);
       };
-    // Only handle x0 = 0 here; other expansion centres would need the
-    // polynomial term to be expressed in `(x - x0)` already.
-    if !matches!(&sd_x0, Expr::Integer(0)) {
-      return Ok(None);
-    }
     let var_name = match &sd_var {
       Expr::Identifier(s) => s.clone(),
       _ => return Ok(None),
     };
+    // About another centre only constants lift (`Log[2] + SeriesData[x,
+    // Infinity, …]`); a power of x would have to be rewritten in `x - x0`
+    // (or `1/x`) first.
+    if !matches!(&sd_x0, Expr::Integer(0))
+      && args.iter().enumerate().any(|(i, a)| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(a, &var_name)
+      })
+    {
+      return Ok(None);
+    }
     let mut lifted: Vec<Expr> = Vec::with_capacity(args.len());
     for (i, a) in args.iter().enumerate() {
       if i == only_idx {
@@ -302,11 +308,10 @@ fn try_series_data_plus(
       coeff_lists.push(coeffs.to_vec());
     }
   }
-  let new_nmin = *nmins.iter().min().unwrap();
+  // Every term at or past the common order: only the order remains
+  // (`3 + SeriesData[x, 0, {}, -1, -1, 1]`).
   let new_nmax = *nmaxs.iter().min().unwrap();
-  if new_nmax <= new_nmin {
-    return Ok(None);
-  }
+  let new_nmin = (*nmins.iter().min().unwrap()).min(new_nmax);
   let m_new = (new_nmax - new_nmin) as usize;
   let mut new_coeffs: Vec<Expr> = vec![Expr::Integer(0); m_new];
 
@@ -482,27 +487,33 @@ fn try_series_data_times(
           // Same for b: occupies slots at nmin_i + j*scale_i.
           let nmin_new = nmin_a + nmin_i;
           let nmax_new = (nmax_a + nmin_i).min(nmax_i + nmin_a);
-          if nmax_new <= nmin_new {
-            return Ok(None);
-          }
-          let m_new = (nmax_new - nmin_new) as usize;
-          let mut coeffs_new: Vec<Expr> = vec![Expr::Integer(0); m_new];
-          for (i, ai) in coeffs_a.iter().enumerate() {
-            let exp_a = nmin_a + (i as i128) * scale_a;
-            for (j, bj) in coeffs_i.iter().enumerate() {
-              let exp_b = nmin_i + (j as i128) * scale_i;
-              let exp_total = exp_a + exp_b;
-              if exp_total >= nmax_new {
-                continue;
-              }
-              let pos = (exp_total - nmin_new) as usize;
-              if pos < m_new {
-                let prod = times_ast(&[ai.clone(), bj.clone()])?;
-                coeffs_new[pos] = plus_ast(&[coeffs_new[pos].clone(), prod])?;
+          // An empty factor (no terms below its order, `O[x]^2`) leaves
+          // only the order: the empty series at nmin_a + nmin_i.
+          if nmax_new == nmin_new {
+            (nmin_new, nmax_new, Vec::new(), 1)
+          } else {
+            if nmax_new < nmin_new {
+              return Ok(None);
+            }
+            let m_new = (nmax_new - nmin_new) as usize;
+            let mut coeffs_new: Vec<Expr> = vec![Expr::Integer(0); m_new];
+            for (i, ai) in coeffs_a.iter().enumerate() {
+              let exp_a = nmin_a + (i as i128) * scale_a;
+              for (j, bj) in coeffs_i.iter().enumerate() {
+                let exp_b = nmin_i + (j as i128) * scale_i;
+                let exp_total = exp_a + exp_b;
+                if exp_total >= nmax_new {
+                  continue;
+                }
+                let pos = (exp_total - nmin_new) as usize;
+                if pos < m_new {
+                  let prod = times_ast(&[ai.clone(), bj.clone()])?;
+                  coeffs_new[pos] = plus_ast(&[coeffs_new[pos].clone(), prod])?;
+                }
               }
             }
+            (nmin_new, nmax_new, coeffs_new, 1)
           }
-          (nmin_new, nmax_new, coeffs_new, 1)
         }
       });
     }
@@ -2184,9 +2195,11 @@ fn leading_coeff(e: &Expr) -> Option<Coeff> {
     return Some(Coeff::Exact(n, d));
   }
   match e {
-    Expr::BigInteger(n) => Some(Coeff::BigExact(n.clone(), BigInt::from(1))),
     Expr::Real(f) => Some(Coeff::Real(*f)),
-    _ => None,
+    // Including a rational past i128 (`(1671628867869824893*Sqrt[3])/
+    // 30573401263885152387530371538553652802`), so like terms over it
+    // still combine.
+    _ => expr_to_coeff(e),
   }
 }
 
@@ -7227,8 +7240,25 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     } else if ord < 0 {
       std::cmp::Ordering::Greater
     } else {
-      // Equal sort keys: fall back to full string comparison
-      expr_to_string(a).cmp(&expr_to_string(b))
+      // Equal sort keys: a power of a product orders canonically against
+      // the symbol it ends with, as in Wolfram (`w*(m*w)^(1/4)`); anything
+      // else by its printed form (`Sqrt[1 - x]*x`).
+      let product_power = |e: &Expr| {
+        matches!(
+          extract_base_exponent_ref(e).0.as_ref(),
+          Expr::FunctionCall { name, .. } if name == "Times"
+        )
+      };
+      let canonical = if product_power(a) || product_power(b) {
+        crate::functions::list_helpers_ast::compare_exprs(a, b)
+      } else {
+        0
+      };
+      match canonical {
+        o if o > 0 => std::cmp::Ordering::Less,
+        o if o < 0 => std::cmp::Ordering::Greater,
+        _ => expr_to_string(a).cmp(&expr_to_string(b)),
+      }
     }
   }
 }
@@ -10706,6 +10736,40 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// `(cn/cd) Sqrt[rn/rd]` as `(s/t) Sqrt[p1/q1]` in lowest terms with
+/// square-free radicands (for positive `cn`, `cd`, `rn`, `rd`, `cn/cd` and
+/// `rn/rd` reduced). Only the radicand is factored: squaring the
+/// coefficient into it and pulling the square back out by trial division
+/// cost 100,000 big-integer divisions per product once the coefficient
+/// passed i128 (a long exact recurrence over `Sqrt[3]`).
+fn coefficient_radical_parts(
+  cn: &BigInt,
+  cd: &BigInt,
+  rn: &BigInt,
+  rd: &BigInt,
+) -> (BigInt, BigInt, BigInt, BigInt) {
+  let gcd = |a: &BigInt, b: &BigInt| {
+    crate::functions::math_ast::numeric_utils::gcd_bigint(a, b)
+  };
+  let (o1, i1) = extract_square_factor_big(rn);
+  let (o2, i2) = extract_square_factor_big(rd);
+  // X^2 i1 / (Y^2 i2), i1 and i2 square-free and coprime.
+  let (mut x, mut y) = (cn * o1, cd * o2);
+  let g = gcd(&x, &y);
+  x /= &g;
+  y /= &g;
+  // A factor k of i2 dividing X: X^2/i2 = (X/k)^2 k/(i2/k).
+  let k = gcd(&x, &i2);
+  x /= &k;
+  let (mut n_in, mut d_in) = (&i1 * &k, &i2 / &k);
+  // A factor m of the numerator radicand dividing Y, the same way round.
+  let m = gcd(&y, &n_in);
+  y /= &m;
+  n_in /= &m;
+  d_in *= &m;
+  (x, n_in, y, d_in)
+}
+
 /// Final-pass canonicalization: a rational coefficient times a square root
 /// of a positive rational merges into one canonical radical, wolframscript
 /// style — square the coefficient into the radicand, reduce the fraction,
@@ -10778,12 +10842,12 @@ fn merge_coefficient_into_radical(
       let (rn, rd) = if half > 0 { (bn, bd) } else { (bd, bn) };
       let one = BigInt::from(1);
       {
-        let (num, den) = rat_reduce_bigint(
-          &(&cn * &cn * BigInt::from(rn)),
-          &(&cd * &cd * BigInt::from(rd)),
+        let (s, p1, t, q1) = coefficient_radical_parts(
+          &num_traits::Signed::abs(&cn),
+          &cd,
+          &BigInt::from(rn),
+          &BigInt::from(rd),
         );
-        let (s, p1) = extract_square_factor_big(&num_traits::Signed::abs(&num));
-        let (t, q1) = extract_square_factor_big(&den);
         let s = if cn.sign() == num_bigint::Sign::Minus {
           -s
         } else {
@@ -12165,6 +12229,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
   {
     return Ok(image);
+  }
+  // E raised to a power series is a power series (`Exp[s]`).
+  if matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+    && matches!(exp, Expr::FunctionCall { name, .. } if name == "SeriesData")
+    && let Some(series) =
+      crate::functions::calculus_ast::function_of_series("Exp", exp)
+  {
+    return Ok(series);
   }
   // A negative integer power of a trig or hyperbolic function is its
   // reciprocal partner raised to the positive power: `Sin[x]^-1` is

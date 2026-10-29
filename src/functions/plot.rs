@@ -477,6 +477,14 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
+  // A body can reach the plot variable through a symbol that carries its own
+  // stored value — a `Module` local left behind in a partly evaluated
+  // `Which[…]`, say, holds `z$1 = x/a` — and textual substitution never
+  // touches that stored `x`. Binding the variable as a value, the way
+  // `Block[{x = …}, body]` does, lets those symbols see the sample too.
+  if let Some(v) = evaluate_with_bound_var(body, var, x) {
+    return Some(v);
+  }
   // Plot evaluates its body once with the variable still symbolic and only
   // then puts the sample in, so a rule that matches on the variable
   // (`f[t] /. sol`, with `sol` an NDSolve result) still sees `t`. Putting
@@ -490,6 +498,27 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(&symbolic, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
   try_eval_to_f64_lenient(&result)
+}
+
+/// Evaluate `body` with `var` bound to `x` as a value (dynamic scoping, as in
+/// `Block[{var = x}, body]`), restoring the previous binding afterwards.
+fn evaluate_with_bound_var(body: &Expr, var: &str, x: f64) -> Option<f64> {
+  let saved = crate::ENV.with(|e| {
+    e.borrow_mut()
+      .insert(var.to_string(), crate::StoredValue::ExprVal(Expr::Real(x)))
+  });
+  let result = evaluate_expr_to_expr(body)
+    .ok()
+    .and_then(|r| try_eval_to_f64_lenient(&r));
+  crate::ENV.with(|e| match saved {
+    Some(v) => {
+      e.borrow_mut().insert(var.to_string(), v);
+    }
+    None => {
+      e.borrow_mut().remove(var);
+    }
+  });
+  result
 }
 
 /// Adaptively sample a function, adding more points where the function changes rapidly.
@@ -2566,6 +2595,8 @@ pub(crate) struct PlotOptions {
   /// picture to embed under the frame instead of the plain-text
   /// `frame_label_bottom` (which stays empty in that case).
   pub frame_label_bottom_graphic: Option<GraphicLabel>,
+  /// Same, for the top edge.
+  pub frame_label_top_graphic: Option<GraphicLabel>,
   /// Per-series `Joined` from `ListPlot[…, Joined -> {b1, b2, …}]`: series
   /// `i` is drawn as a connected line when `joined_per_series[i]` is true,
   /// as scattered points otherwise. `None` means every series follows the
@@ -2666,6 +2697,7 @@ impl Default for PlotOptions {
       frame_label_top: None,
       frame_label_right: None,
       frame_label_bottom_graphic: None,
+      frame_label_top_graphic: None,
       date_axis: false,
       callout_labels: Vec::new(),
       plot_labels: Vec::new(),
@@ -3093,7 +3125,8 @@ pub(crate) fn plot_labels_svg(
     .as_deref()
     .unwrap_or(title_default_fill);
   let has_top_label =
-    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty())
+      || opts.frame_label_top_graphic.is_some();
   let axes_label_y = opts
     .axes_label
     .as_ref()
@@ -3238,6 +3271,20 @@ pub(crate) fn plot_labels_svg(
         )
       ));
     }
+  }
+
+  // A top `FrameLabel` drawn as a picture sits just above the frame.
+  if let Some(graphic) = &opts.frame_label_top_graphic {
+    let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
+    let cx = plot_x0 + plot_w / 2.0;
+    let cy = margin_top - font_size * 0.4 - gh / 2.0;
+    labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
+      &graphic.svg,
+      cx,
+      cy,
+      gw,
+      gh,
+    ));
   }
 
   // Right FrameLabel (rotated +90 on the right frame edge)
@@ -3551,7 +3598,8 @@ fn generate_svg_with_options(
     .map(|(_, y)| y.as_str())
     .filter(|y| !y.is_empty() && show_y_axis);
   let has_top_label =
-    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty());
+    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty())
+      || opts.frame_label_top_graphic.is_some();
   let has_right_label = opts
     .frame_label_right
     .as_ref()
@@ -4101,6 +4149,81 @@ fn generate_svg_with_options(
             .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
         }
 
+        // Fills lie beneath every curve, whichever series they belong to:
+        // a `Filling -> {2 -> Bottom}` area must not paint over the lines
+        // of the series drawn before it.
+        if !opts.stacked {
+          for (series_idx, points) in all_points.iter().enumerate() {
+            if !resolve_series_joined(opts.joined_per_series.as_deref(), series_idx) {
+              continue;
+            }
+            let (r, g, b) = series_color(&opts.plot_style, series_idx);
+            let paint =
+              fill_paint(series_filling_style(opts, series_idx), (r, g, b));
+            match series_fill_target(opts, series_idx) {
+              FillTarget::Level(level) => {
+                if let Some(ref_y) = level.reference_y(y_min, y_max) {
+                  let fill_segments = clip_segments_to_x_range(
+                    clamp_segments_to_y_range(points, y_min, y_max),
+                    x_min,
+                    x_max,
+                  );
+                  for segment in &fill_segments {
+                    if segment.len() < 2 {
+                      continue;
+                    }
+                    chart
+                      .draw_series(AreaSeries::new(
+                        segment.iter().copied(),
+                        ref_y,
+                        paint,
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!(
+                          "Plot: {e}"
+                        ))
+                      })?;
+                  }
+                }
+              }
+              // `Filling -> {i -> {j}}`: fill the region between this
+              // series and series j over the overlap of their x-domains.
+              FillTarget::Series(target_idx) => {
+                if target_idx != series_idx
+                  && let Some(target) = all_points.get(target_idx)
+                  && let Some(polygon) = fill_between_polygon(points, target)
+                {
+                  let below_paint = series_filling_style(opts, series_idx)
+                    .and_then(|fs| fs.below_color.map(|c| (fs, c)))
+                    .map(|(fs, (br, bg, bb))| {
+                      RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
+                    });
+                  let pieces = match below_paint {
+                    Some(_) => fill_between_polygons_by_side(points, target),
+                    None => vec![(true, polygon)],
+                  };
+                  for (is_above, piece) in pieces {
+                    let piece_paint = match (is_above, below_paint) {
+                      (false, Some(bp)) => bp,
+                      _ => paint,
+                    };
+                    chart
+                      .draw_series(std::iter::once(Polygon::new(
+                        piece,
+                        piece_paint,
+                      )))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!(
+                          "Plot: {e}"
+                        ))
+                      })?;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
@@ -4174,70 +4297,6 @@ fn generate_svg_with_options(
                   .map_err(|e| {
                     InterpreterError::EvaluationError(format!("Plot: {e}"))
                   })?;
-              }
-            } else {
-              let paint =
-                fill_paint(series_filling_style(opts, series_idx), (r, g, b));
-              match series_fill_target(opts, series_idx) {
-                FillTarget::Level(level) => {
-                  if let Some(ref_y) = level.reference_y(y_min, y_max) {
-                    let fill_segments = clip_segments_to_x_range(
-                      clamp_segments_to_y_range(points, y_min, y_max),
-                      x_min,
-                      x_max,
-                    );
-                    for segment in &fill_segments {
-                      if segment.len() < 2 {
-                        continue;
-                      }
-                      chart
-                        .draw_series(AreaSeries::new(
-                          segment.iter().copied(),
-                          ref_y,
-                          paint,
-                        ))
-                        .map_err(|e| {
-                          InterpreterError::EvaluationError(format!(
-                            "Plot: {e}"
-                          ))
-                        })?;
-                    }
-                  }
-                }
-                // `Filling -> {i -> {j}}`: fill the region between this
-                // series and series j over the overlap of their x-domains.
-                FillTarget::Series(target_idx) => {
-                  if target_idx != series_idx
-                    && let Some(target) = all_points.get(target_idx)
-                    && let Some(polygon) = fill_between_polygon(points, target)
-                  {
-                    let below_paint = series_filling_style(opts, series_idx)
-                      .and_then(|fs| fs.below_color.map(|c| (fs, c)))
-                      .map(|(fs, (br, bg, bb))| {
-                        RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
-                      });
-                    let pieces = match below_paint {
-                      Some(_) => fill_between_polygons_by_side(points, target),
-                      None => vec![(true, polygon)],
-                    };
-                    for (is_above, piece) in pieces {
-                      let piece_paint = match (is_above, below_paint) {
-                        (false, Some(bp)) => bp,
-                        _ => paint,
-                      };
-                      chart
-                        .draw_series(std::iter::once(Polygon::new(
-                          piece,
-                          piece_paint,
-                        )))
-                        .map_err(|e| {
-                          InterpreterError::EvaluationError(format!(
-                            "Plot: {e}"
-                          ))
-                        })?;
-                    }
-                  }
-                }
               }
             }
 
@@ -8675,6 +8734,11 @@ pub(crate) fn frame_explicit_ticks(
   let explicit = |spec: Option<&Expr>| match spec {
     Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
     Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
+    // A spec that still has to be worked out (`Table[{j, …}, {j, 0, 1, .2}]`)
+    // is read once evaluated; a bare keyword keeps the automatic ticks.
+    Some(e @ (Expr::FunctionCall { .. } | Expr::CurriedCall { .. })) => {
+      parse_explicit_ticks(e).map(Some)
+    }
     _ => None,
   };
   (explicit(bottom), explicit(left))
@@ -9880,6 +9944,9 @@ pub(crate) struct FrameLabels {
   /// that renders as a picture — `bottom` itself is left empty in that
   /// case.
   pub bottom_graphic: Option<GraphicLabel>,
+  /// Likewise for the top edge, e.g. a `Row[…]` legend whose entries
+  /// embed small `Graphics`.
+  pub top_graphic: Option<GraphicLabel>,
 }
 
 /// Convert a single FrameLabel entry to a label string. `None` (the symbol)
@@ -9898,15 +9965,47 @@ fn frame_label_entry(e: &Expr) -> String {
 /// `Grid[…]` uses so the frame label shows the table instead of nothing.
 fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
   let val = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
-  let Expr::FunctionCall { name, args } = &val else {
+  // `Style[label, …]` is looked through to the label it styles.
+  let mut val = &val;
+  while let Expr::FunctionCall { name, args } = val
+    && name == "Style"
+    && !args.is_empty()
+  {
+    val = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = val else {
     return None;
   };
-  if !matches!(name.as_str(), "Grid" | "TableForm") || args.is_empty() {
-    return None;
-  }
-  let svg = crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?;
+  let svg = match name.as_str() {
+    "Grid" | "TableForm" if !args.is_empty() => {
+      crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?
+    }
+    // A `Row` holding pictures (a legend swatch drawn as `Graphics`) can
+    // only be shown as a picture, not read off as text.
+    "Row" if row_holds_graphics(args) => {
+      crate::functions::graphics::row_to_svg(args)?
+    }
+    _ => return None,
+  };
   let (width, height) = crate::functions::graphics::svg_natural_size(&svg)?;
   Some(GraphicLabel { svg, width, height })
+}
+
+/// Whether the items of a `Row[{…}]` include a `Graphics`, directly or in a
+/// nested `Row`/`Style`.
+fn row_holds_graphics(args: &[Expr]) -> bool {
+  fn has_graphics(e: &Expr) -> bool {
+    match e {
+      Expr::Graphics { .. } => true,
+      Expr::List(items) => items.iter().any(has_graphics),
+      Expr::FunctionCall { name, .. } if name == "Graphics" => true,
+      Expr::FunctionCall { name, args } if name == "Row" || name == "Style" => {
+        args.first().is_some_and(has_graphics)
+      }
+      _ => false,
+    }
+  }
+  args.first().is_some_and(has_graphics)
 }
 
 /// One side of `Ticks -> {xspec, yspec}`: an explicit list of positions,
@@ -10125,6 +10224,9 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   if !fl.top.is_empty() {
     opts.frame_label_top = Some(fl.top);
   }
+  if fl.top_graphic.is_some() {
+    opts.frame_label_top_graphic = fl.top_graphic;
+  }
   if !fl.right.is_empty() {
     opts.frame_label_right = Some(fl.right);
   }
@@ -10134,6 +10236,18 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
 ///   `{bottom, left}` and `{{left, right}, {bottom, top}}`.
 /// A bare label applies to the bottom edge.
 pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
+  let mut out = parse_frame_label_edges(value);
+  // An edge drawn as a picture has no text to draw as well.
+  if out.bottom_graphic.is_some() {
+    out.bottom.clear();
+  }
+  if out.top_graphic.is_some() {
+    out.top.clear();
+  }
+  out
+}
+
+fn parse_frame_label_edges(value: &Expr) -> FrameLabels {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let mut out = FrameLabels::default();
   if let Expr::List(items) = &val {
@@ -10153,6 +10267,7 @@ pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
       }
       if let Some(e) = bt.get(1) {
         out.top = frame_label_entry(e);
+        out.top_graphic = frame_label_graphic(e);
       }
       return out;
     }
@@ -10167,6 +10282,7 @@ pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
     // Flat 4-element form `{bottom, left, top, right}`.
     if let Some(e) = items.get(2) {
       out.top = frame_label_entry(e);
+      out.top_graphic = frame_label_graphic(e);
     }
     if let Some(e) = items.get(3) {
       out.right = frame_label_entry(e);
@@ -10615,6 +10731,30 @@ fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
   }
 }
 
+/// A body that stays unevaluated while the plot variable is symbolic — a
+/// user function wrapping `If[x == 1., 0., f[x, {a, b}]]` — can still yield a
+/// list once the variable is a number. Wolfram then draws one curve per
+/// element, so probe the body at `x` and split it into `Part[body, i]`
+/// curves. Returns `None` for a body that samples to a plain number.
+fn expand_list_valued_body(body: &Expr, var: &str, x: f64) -> Option<Expr> {
+  if !expr_mentions_var(body, var) {
+    return None;
+  }
+  let probe =
+    evaluate_expr_to_expr(&substitute_var(body, var, &Expr::Real(x))).ok()?;
+  match &probe {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 /// A body that applies replacement rules to the plot variable — `y[t] /.
 /// sol` — has to be replaced while the variable is still symbolic: once
 /// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
@@ -10887,20 +11027,29 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // own singleton list, which the flattening step below unwraps same as
   // any other nested list; left unresolved, every sample point comes back
   // as an unconvertible list and the curve silently plots as nothing.
-  fn resolve_generated_bodies_deep(body: &Expr, var: &str) -> Expr {
+  fn resolve_generated_bodies_deep(
+    body: &Expr,
+    var: &str,
+    probe_x: f64,
+  ) -> Expr {
     match body {
       Expr::List(items) => Expr::List(
         items
           .iter()
-          .map(|it| resolve_generated_bodies_deep(it, var))
+          .map(|it| resolve_generated_bodies_deep(it, var, probe_x))
           .collect(),
       ),
       _ => expand_generated_bodies(body, var)
         .or_else(|| resolve_replaced_body(body, var))
+        .or_else(|| expand_list_valued_body(body, var, probe_x))
         .unwrap_or_else(|| body.clone()),
     }
   }
-  let generated_storage = resolve_generated_bodies_deep(body, &var_name);
+  let generated_storage = resolve_generated_bodies_deep(
+    body,
+    &var_name,
+    x_min + 0.5 * (x_max - x_min),
+  );
   let body: &Expr = &generated_storage;
 
   // Collect function bodies: a single function or a (possibly nested) list of

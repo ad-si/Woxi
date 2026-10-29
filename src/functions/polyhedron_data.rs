@@ -2348,14 +2348,45 @@ fn string_list(items: &[&str]) -> Expr {
 pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PolyhedronData", args));
 
-  // `PolyhedronData[All]` — the list of known entities (by name).
-  if let Some(Expr::Identifier(sym)) = args.first()
-    && sym == "All"
-    && args.len() == 1
-  {
+  // `PolyhedronData[]` and `PolyhedronData[All]` — the list of known
+  // entities (by name).
+  let is_all = match args {
+    [] => true,
+    [Expr::Identifier(sym)] => sym == "All",
+    _ => false,
+  };
+  if is_all {
     let mut names: Vec<&str> = all_polyhedra().map(|p| p.name).collect();
     sort_entity_names(&mut names);
     return Ok(string_list(&names));
+  }
+
+  // `PolyhedronData[n]` / `PolyhedronData[i;;j]` — the nth entity or a
+  // range of entities of that list.
+  if let [spec] = args
+    && (matches!(spec, Expr::Integer(_))
+      || matches!(spec, Expr::FunctionCall { name, .. } if name == "Span"))
+  {
+    let all = polyhedron_data_ast(&[])?;
+    let len = match &all {
+      Expr::List(items) => items.len() as i128,
+      _ => 0,
+    };
+    let in_range = |e: &Expr| match e {
+      Expr::Integer(n) => (1..=len).contains(&n.abs()),
+      _ => true,
+    };
+    let valid = match spec {
+      Expr::FunctionCall { args, .. } => args.iter().all(in_range),
+      _ => in_range(spec),
+    };
+    if !valid {
+      return unevaluated();
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Part".to_string(),
+      args: vec![all, spec.clone()].into(),
+    });
   }
 
   // `PolyhedronData["Properties"]` / `PolyhedronData["Classes"]` — the

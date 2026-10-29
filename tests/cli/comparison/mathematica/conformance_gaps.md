@@ -646,6 +646,12 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `NMinimize` ignores `WorkingPrecision`
+
+`NMinimize[Total[EuclideanDistance[{a, b, c}, #] & /@ pts], {a, b, c},
+WorkingPrecision -> 30]` gives 30-digit numbers in wolframscript; Woxi
+answers with machine numbers (located to about 8 digits).
+
 ### Arbitrary-precision complex numbers print every working digit
 
 `N[(1 + I)/3, 20]` is right but shows 58 digits per part,
@@ -1381,6 +1387,18 @@ last bit and never a formula to correct.
 
 
 ## Algebra and calculus
+
+### `NSolve` of a polynomial system: multiplicities and order of points
+
+```sh
+wolframscript -code 'NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}]'
+# {{x -> -2.236…, y -> -1.581…}, {x -> 2.236…, y -> 1.581…}, {x -> 2.236…, y -> -1.581…}, {x -> -2.236…, y -> 1.581…}, {x -> 0., y -> 0.} (4 times)}
+woxi eval 'NSolve[{x^2 y^2 - 2 x^2 - y^2 == 0, x^2 y^2 - x^2 - 3 y^2 == 0}, {x, y}]'
+# {{x -> 2.236…, y -> -1.581…}, {x -> 2.236…, y -> 1.581…}, {x -> 0., y -> 0.}, {x -> -2.236…, y -> -1.581…}, {x -> -2.236…, y -> 1.581…}}
+```
+
+The same points, but Wolfram lists the origin with its intersection
+multiplicity 4 and orders the points differently.
 
 ### `Simplify` does not factor out powers whose exponents differ by an integer
 
@@ -2260,11 +2278,6 @@ resolves at raised internal precision; f64 Durand–Kerner cannot.
 keeps, and `Fit[{1,2,3,4},{1,x},x]` gives a clean `0. + 1. x` where WL keeps
 `5.07*^-16 + 0.9999999999999999 x` — Woxi is the less noisy one.
 
-For a **rank-deficient** design wolframscript is not minimum-norm:
-`Fit[{{1,1},{2,2},{3,3}}, {1, x, x^2, x^3}, x]` gives coefficients of norm
-0.7546 where the minimum-norm solution has norm 0.6134. Both interpolate;
-WL switched to some other regularization there. **Not reproducible.**
-
 `Fit` with a symbolic data value fits symbolically in wolframscript
 (`Fit[{a, 1, 2}, {1, x}, x]` is linear in `a`); Woxi fails with "could not
 convert data value to a number". `LinearModelFit` gives
@@ -2797,8 +2810,33 @@ a large probe; Woxi's exact behaviour is arguably the better one.
 
 Unevaluated.
 
+### `FinancialDerivative` of an American option is unimplemented
+
+Only European calls and puts (Black–Scholes–Merton price and Greeks) are
+there; an `{"American", …}` contract stays unevaluated, so its
+`"CriticalValue"` feeds a symbolic bound into the optimization that follows
+(Demonstrations GeskeJohnsonMethod,
+MaximizingABermudanPutWithTwoEarlyExerciseTemporalPoints).
+WL prices these on a finite-difference grid (`"GridSize" -> {1000, Automatic}`):
+
+```sh
+wolframscript -code 'FinancialDerivative[{"American", "Put"}, {"StrikePrice" -> 45., "Expiration" -> 3.}, {"InterestRate" -> 0.07, "Volatility" -> 0.3, "CurrentPrice" -> 40., "Dividend" -> 0.}, "CriticalValue", "GridSize" -> {1000, Automatic}]'
+# 30.855855855855857
+```
+
 
 ## Linear algebra
+
+### `SingularValueDecomposition` of an exact matrix stays unevaluated
+
+```sh
+wolframscript -code 'SingularValueDecomposition[{{1, 2}, {3, 4}, {5, 6}}]'  # exact radicals
+woxi eval 'SingularValueDecomposition[{{1, 2}, {3, 4}, {5, 6}}]'            # unevaluated
+```
+
+Only machine-precision matrices are decomposed. Demonstration
+ExploratoryFactorAnalysis normalizes exact data and runs its alternating
+least squares on such exact matrices.
 
 ### Symbolic `Inverse` with rational entries normalizes one sign differently
 
@@ -2941,6 +2979,12 @@ wolframscript -code 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
 woxi eval 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
 # LinearSolve[{{2, 1}, {1, 3}}, Method -> Cholesky]
 ```
+
+Building that factorization is also where WL's operator form reports a
+matrix that is not positive definite, under other names than the
+three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
+`CholeskyDecomposition::npdef` for an exact matrix and, for a machine one,
+`LinearSolve::posdef: -- Message text not found -- ({{1., 2.}, {2., 1.}})`.
 
 ## Expression structure and evaluation
 
@@ -5002,6 +5046,13 @@ Woxi answers — seven, against the roughly sixty of Wolfram's curated chart
 story as `ElementData["Properties"]`.
 
 ## Geometry and regions
+
+### `FindCurvePath` finds one curve where Wolfram may find several
+
+Woxi orders the points along a single shortest tour, closed or cut at its
+longest step. Wolfram splits scattered points into several curves:
+`FindCurvePath[RandomSample[Table[{t, t^2}, {t, -1, 1, 0.25}], 9]]` gives
+two curves there. A closed polygon and a sampled open curve match.
 
 ### Three region measures are missing for heads whose siblings have them
 
