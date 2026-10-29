@@ -1619,12 +1619,9 @@ fn evaluate_function_call_ast_inner(
     if cache.is_empty() {
       return None;
     }
-    let key = args
-      .iter()
-      .map(expr_to_string)
-      .collect::<Vec<_>>()
-      .join("\u{1}");
-    cache.get(&key).map(|(_, v)| v.clone())
+    cache
+      .get(&crate::memo_key(cache, args))
+      .map(|(_, v)| v.clone())
   }) {
     // The stored value is evaluated like any rule's right-hand side: it
     // may mention symbols that have values by now (`f[1] = g + 1; g = 5;

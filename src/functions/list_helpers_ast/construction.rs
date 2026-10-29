@@ -509,12 +509,19 @@ fn table_over_iterator(
       "Divide",
       &[diff, step_expr.clone()],
     )?;
-    let count = match ratio {
-      Expr::Integer(n) => Some(n),
-      ref other => crate::functions::math_ast::try_eval_to_f64(other)
+    let count = match &ratio {
+      Expr::Integer(n) => Some(*n),
+      other => crate::functions::math_ast::try_eval_to_f64(other)
         .filter(|f| f.is_finite())
         .map(range_step_count),
     };
+    // Numeric bounds keep the machine-real path below.
+    let numeric =
+      |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e).is_some();
+    let count = count.filter(|_| {
+      matches!(ratio, Expr::Integer(_))
+        || !(numeric(&min_expr) && numeric(&max_expr))
+    });
     if let Some(n) = count
       && n < 0
     {
@@ -640,11 +647,24 @@ use crate::functions::math_ast::expr_to_rational;
 /// time (rather than adding `step` to the previous value) keeps machine-real
 /// steps free of accumulated rounding: `Table[t, {t, 0, 20, 0.1}]` ends
 /// exactly at `20.`, as `Range` does, not at `20.000000000000014`.
-fn nth_iterator_value(
+pub(crate) fn nth_iterator_value(
   min_expr: &Expr,
   step_expr: &Expr,
   k: usize,
 ) -> Result<Expr, InterpreterError> {
+  // Machine reals: one fused multiply-add, as Wolfram computes it
+  // (`{c, 0.1, 3.1, 0.1}` reaches 1.8, not 1.8000000000000003), an exact
+  // rational bound or step numericized first.
+  let machine = super::utilities::numeric_expr_to_f64;
+  if (matches!(min_expr, Expr::Real(_)) || matches!(step_expr, Expr::Real(_)))
+    && let (Some(min), Some(step)) = (machine(min_expr), machine(step_expr))
+  {
+    return Ok(Expr::Real((k as f64).mul_add(step, min)));
+  }
+  // The start itself (an infinite step would make it 0*Infinity).
+  if k == 0 {
+    return crate::evaluator::evaluate_expr_to_expr(min_expr);
+  }
   crate::evaluator::evaluate_expr_to_expr(&plus(vec![
     min_expr.clone(),
     crate::evaluator::evaluate_function_call_ast(

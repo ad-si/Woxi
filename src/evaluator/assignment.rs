@@ -3707,20 +3707,22 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
       if arg_exprs.len() == conditions.len() {
-        let key = arg_exprs
-          .iter()
-          .map(expr_to_string)
-          .collect::<Vec<_>>()
-          .join("\u{1}");
         // Shared, so every read of `f[lit]` copies a pointer and sees the
         // mark of an earlier read that found the value fully evaluated.
         let mut rhs_value = rhs_value;
         crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
         crate::MEMO_VALUES.with(|m| {
-          m.borrow_mut()
-            .entry(func_name.clone())
-            .or_default()
-            .insert(key, (arg_exprs, rhs_value.clone()));
+          let mut map = m.borrow_mut();
+          let cache = map.entry(func_name.clone()).or_default();
+          // An earlier definition for SameQ arguments is replaced, its
+          // left-hand side too.
+          cache.remove(&crate::memo_key(cache, &arg_exprs));
+          let key = arg_exprs
+            .iter()
+            .map(expr_to_string)
+            .collect::<Vec<_>>()
+            .join("\u{1}");
+          cache.insert(key, (arg_exprs, rhs_value.clone()));
         });
         return Ok(rhs_value);
       }
