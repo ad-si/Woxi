@@ -910,7 +910,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "ListFourierSequenceTransform" => Some((2, 2)),
     "ListQ" => Some((1, 1)),
     "ListZTransform" => Some((2, 3)),
-    "LocationTest" => Some((1, 3)),
+    "LocationTest" => Some((1, usize::MAX)),
     "DistributionFitTest" => Some((2, 3)),
     "Log" => Some((1, 2)),
     "LogGamma" => Some((1, 1)),
