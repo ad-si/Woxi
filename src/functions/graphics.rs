@@ -26051,9 +26051,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // this way).
       Expr::FunctionCall { name, args: inner }
         if (name == "Pane" || name == "Labeled")
-          && inner
-            .first()
-            .is_some_and(|c| expr_contains_call(c, &["Control"])) =>
+          && inner.first().is_some_and(|c| {
+            expr_contains_call(c, &["Control"]) || annotation_contains_place(c)
+          }) =>
       {
         out_args.push(spec.clone());
       }
