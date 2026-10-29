@@ -13912,6 +13912,28 @@ mod sign_under_cancellation {
 
   // A number below machine range keeps its sign and precision: they come
   // from its digits, not from the machine value it underflows to.
+  // Overflow[] against numbers stays Overflow[] (Underflow[] for a
+  // negative power, 1. for b^Underflow[]): a power tower leaving machine
+  // range collapses instead of growing symbolically (Demonstration
+  // TheRepeatedPowerFunction's Plot took over a minute).
+  #[test]
+  fn overflow_algebra() {
+    assert_eq!(
+      interpret(
+        "{1.5^Overflow[], 0.5^Overflow[], Overflow[]^2, Overflow[] + 1, \
+         1/Overflow[], Overflow[]^-2, Exp[Overflow[]], 1.5^Underflow[], \
+         Underflow[] + 1}"
+      )
+      .unwrap(),
+      "{Overflow[], Overflow[], Overflow[], Overflow[], Underflow[], \
+       Underflow[], Overflow[], 1., Underflow[] + 1}"
+    );
+    assert_eq!(
+      interpret("Quiet[Block[{x = 1.5}, Nest[x^#1 &, x, 100]]]").unwrap(),
+      "Overflow[]"
+    );
+  }
+
   // The reciprocal of an arbitrary-precision zero (what a cancellation of
   // huge numbers leaves, Demonstration PayThePoints) is ComplexInfinity
   // with Power::infy; it stopped the evaluation ("N: format error").

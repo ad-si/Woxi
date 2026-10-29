@@ -1073,6 +1073,20 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(image) = image_arithmetic(args, |a, b| a + b) {
     return Ok(image);
   }
+  // Overflow[] plus numbers is Overflow[] (wolframscript; Underflow[]
+  // stays a term of its own).
+  if args.iter().any(|a| {
+    matches!(a, Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
+  }) && args.iter().all(|a| {
+    matches!(a, Expr::FunctionCall { name, args } if name == "Overflow" && args.is_empty())
+      || matches!(
+        a,
+        Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+      )
+      || matches!(a, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+  }) {
+    return Ok(call0("Overflow"));
+  }
   if let Some(sum) = super::canonical_polynomial::canonical_polynomial_sum(args)
   {
     return Ok(sum);
@@ -12567,6 +12581,44 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if name == "Overflow" {
       return Ok(call0("Underflow"));
     }
+  }
+  // Overflow[] against a number (wolframscript): `Overflow[]^p` is
+  // Overflow[] for p > 0 and Underflow[] for p < 0; `b^Overflow[]` is
+  // Overflow[] for a positive b other than 1, `b^Underflow[]` is 1. — so a
+  // power tower that leaves machine range stays Overflow[] instead of
+  // growing a symbolic `1.5^1.5^…^Overflow[]`.
+  fn flag(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::FunctionCall { name, args } if args.is_empty() => {
+        matches!(name.as_str(), "Overflow" | "Underflow")
+          .then_some(name.as_str())
+      }
+      _ => None,
+    }
+  }
+  let positive_number = |e: &Expr| {
+    (matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_) | Expr::BigFloat(..))
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+      || matches!(e, Expr::Constant(c) | Expr::Identifier(c) if c == "E" || c == "Pi"))
+      .then(|| try_eval_to_f64(e))
+      .flatten()
+  };
+  if flag(base) == Some("Overflow")
+    && let Some(p) = positive_number(exp)
+    && p != 0.0
+  {
+    return Ok(call0(if p > 0.0 { "Overflow" } else { "Underflow" }));
+  }
+  if let Some(which) = flag(exp)
+    && let Some(b) = positive_number(base)
+    && b > 0.0
+    && b != 1.0
+  {
+    return Ok(if which == "Overflow" {
+      call0("Overflow")
+    } else {
+      Expr::Real(1.0)
+    });
   }
 
   // E^(Plus[terms]) with at least one Log term: pull out E^Log[z] = z and
