@@ -2432,6 +2432,40 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_vector_accent_angle_bracket_and_nested_number_form_typeset() {
+    // Regression: a vector-annotated readout — `OverVector[v]` labels,
+    // `AngleBracket[a, b]` components and an `nf[n_] := NumberForm[n, {3, 2}]`
+    // helper wrapped around an already formatted number — typeset in a
+    // `TraditionalForm` column as raw `OverVector(v)`, `AngleBracket(5,6)` and
+    // `NumberForm(5, {3, 2})` calls, and the column itself printed as source
+    // when it sat in a `Text[Style[…]]` item of an outer `Column`.
+    for code in [
+      "ExportString[Graphics[{Text[OverVector[v], {0, 0}]}], \"SVG\"]",
+      "ExportString[Graphics[{Text[Style[TraditionalForm[Row[{OverVector[v], \
+       OverHat[w], AngleBracket[5, 6], NumberForm[NumberForm[5, 3], {3, 2}], \
+       NumberForm[287/50, 3]}]], 14], {0, 0}]}], \"SVG\"]",
+      "ExportString[Column[{Text@Style[TraditionalForm[Column[{Row[{a, b}], \
+       Row[{OverVector[c], AngleBracket[d]}]}, Alignment -> Center]], 14], \
+       Graphics[{Circle[]}]}, Alignment -> Center], \"SVG\"]",
+    ] {
+      clear_state();
+      let svg = interpret(code).unwrap();
+      for leak in [
+        "OverVector",
+        "OverHat",
+        "AngleBracket",
+        "NumberForm",
+        "Column[",
+      ] {
+        assert!(
+          !svg.contains(leak),
+          "SVG for {code} must not leak `{leak}` as literal text:\n{svg}"
+        );
+      }
+    }
+  }
+
+  #[test]
   fn test_overscript_accent_inside_grid_cell_typesets() {
     // Regression: a Grid cell holding `Overscript[…]`/`OverBar[…]` (the
     // shape of a Demonstration's summary-statistics table, e.g. a sample
