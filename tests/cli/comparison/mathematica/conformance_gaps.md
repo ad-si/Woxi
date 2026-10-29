@@ -1385,6 +1385,15 @@ throughout — against the correctly rounded value glibc wins at `Cot[0.3]`,
 macOS at `Cot[-0.7]` and `Coth[0.8]` — so a divergence here is the libm's
 last bit and never a formula to correct.
 
+### `$MinNumber` and `$MaxNumber` are undefined
+
+WL's arbitrary-precision range reaches decimal exponents of ±1.36·10^15
+(`$MinNumber` is `6.229688249675322…*^-1355718576299610`); Woxi's
+arbitrary-precision numbers (astro-float, a 32-bit binary exponent) end near
+±6.5·10^8, so the two constants stay symbols. Code that uses `$MinNumber` as
+a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
+1DAnd2DSingularWavefronts — gets `RandomReal::unifr` instead of a number.
+
 
 ## Algebra and calculus
 

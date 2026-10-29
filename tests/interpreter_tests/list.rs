@@ -9094,6 +9094,32 @@ mod quantile {
 mod range {
   use super::*;
 
+  // A bound or step that is no number leaves Range unevaluated with
+  // Range::range — it used to stop the evaluation outright ("argument
+  // must be numeric"; Demonstration 1DAnd2DSingularWavefronts).
+  #[test]
+  fn non_numeric_spec_reports_range() {
+    clear_state();
+    for (code, out) in [
+      ("Range[0, 1, f[x]]", "Range[0, 1, f[x]]"),
+      ("Range[a, b, c]", "Range[a, b, c]"),
+      ("Range[1, b]", "Range[1, b]"),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, out);
+      assert_eq!(
+        r.warnings,
+        vec![format!(
+          "Range::range: Range specification in {out} does not have appropriate bounds."
+        )]
+      );
+    }
+    assert_eq!(
+      interpret("Range[x, x + 3]").unwrap(),
+      "{x, 1 + x, 2 + x, 3 + x}"
+    );
+  }
+
   #[test]
   fn range_single() {
     assert_eq!(interpret("Range[5]").unwrap(), "{1, 2, 3, 4, 5}");

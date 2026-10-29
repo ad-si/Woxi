@@ -1730,6 +1730,21 @@ pub enum NumericSign {
 /// separate it from 0, `N::meprec` is issued and the sign is undecidable.
 pub fn numeric_real_sign(expr: &Expr) -> Option<NumericSign> {
   use astro_float::{Consts, RoundingMode};
+  // An arbitrary-precision number's sign is in its digits, whatever its
+  // magnitude (`N[10^-400, 20]` underflows a machine number).
+  if let Expr::BigFloat(digits, _) = expr {
+    return Some(NumericSign::Known(
+      if crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(
+        digits,
+      ) {
+        0
+      } else if digits.starts_with('-') {
+        -1
+      } else {
+        1
+      },
+    ));
+  }
   let approx = try_eval_to_f64(expr)?;
   if !approx.is_finite() {
     return None;

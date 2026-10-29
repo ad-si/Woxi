@@ -3004,7 +3004,11 @@ fn is_structural_zero(expr: &Expr) -> bool {
       use num_traits::Zero;
       n.is_zero()
     }
-    Expr::BigFloat(digits, _) => digits.parse::<f64>().is_ok_and(|f| f == 0.0),
+    Expr::BigFloat(digits, _) => {
+      crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(
+        digits,
+      )
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {

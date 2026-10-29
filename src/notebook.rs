@@ -1721,7 +1721,17 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
   let trailing_run_has_letter = trailing_run.iter().any(|c| c.is_alphabetic());
   let trailing_run_is_number =
     !trailing_run.is_empty() && trailing_run.iter().all(char::is_ascii_digit);
-  if result.ends_with('#') && piece_starts_alpha {
+  // Two operator tokens side by side would fuse into a different one:
+  // `RowBox[{RowBox[{"view", "!"}], "\[Equal]", …}]` is `(view!) == …`,
+  // which glued reads `view!== …` and does not parse, and `x`, `-`, `-1`
+  // would read as a decrement.
+  const OPERATOR_CHARS: &[char] = &[
+    '!', '=', '+', '-', '*', '/', '<', '>', '&', '|', '.', ':', '^', '@', '~',
+    '?', '%',
+  ];
+  if result.ends_with(OPERATOR_CHARS) && piece.starts_with(OPERATOR_CHARS)
+    || result.ends_with('#') && piece_starts_alpha
+  {
     result.push(' ');
   } else if result.ends_with("/.")
     && piece.chars().next().is_some_and(|c| c.is_ascii_digit())
@@ -8029,7 +8039,7 @@ Cell[BoxData[
     };
     assert_eq!(
       cell.content,
-      "RevolutionPlot3D[Piecewise[{{f[x+6], -6<=x<=-2}}],{x,-6,6}]"
+      "RevolutionPlot3D[Piecewise[{{f[x+6], -6<=x<= -2}}],{x,-6,6}]"
     );
   }
 
@@ -9529,5 +9539,17 @@ Cell[BoxData[
   fn semicolon_terminated_row_before_an_operator_is_parenthesized() {
     let s = r#"BoxData[RowBox[{RowBox[{RowBox[{"s", "=", "x"}], ";"}], "/.", "para"}]]"#;
     assert_eq!(extract_cell_content(s), "(s=x;)/.para");
+  }
+
+  /// Operator tokens from neighbouring boxes are kept apart so they do not
+  /// read back as one longer operator (Demonstration CoulombWavefunctions:
+  /// `(view!) == "complex"` became the unparsable `view!=="complex"`).
+  #[test]
+  fn neighbouring_operator_tokens_do_not_fuse() {
+    let s = r#"BoxData[RowBox[{RowBox[{"view", "!"}], "\[Equal]", "\"\<complex\>\""}]]"#;
+    let text = extract_cell_content(s);
+    assert_eq!(text, "view! ==\"complex\"");
+    let s = r#"BoxData[RowBox[{"x", "-", RowBox[{"-", "1"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "x- -1");
   }
 }

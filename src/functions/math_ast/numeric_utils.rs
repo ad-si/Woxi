@@ -373,6 +373,17 @@ pub fn dawson_f64(x: f64) -> f64 {
 /// Recursively try to evaluate any expression to f64.
 /// This handles constants (Pi, E, Degree), arithmetic operations, and known functions.
 /// Used by N[], comparisons, and anywhere a numeric value is needed from a symbolic expression.
+/// Whether a `BigFloat`'s digit string is zero. Judged by the mantissa,
+/// not by the machine value: `1e-400` underflows a machine number but is
+/// no zero.
+pub fn bigfloat_digits_are_zero(digits: &str) -> bool {
+  let mantissa = digits.split(['e', 'E', '*']).next().unwrap_or(digits);
+  mantissa
+    .trim_start_matches(['-', '+'])
+    .chars()
+    .all(|c| c == '0' || c == '.')
+}
+
 pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),

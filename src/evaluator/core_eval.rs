@@ -81,6 +81,17 @@ fn big_range_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   if decided(machine(a)) && decided(machine(b)) {
     return None;
   }
+  // Numbers of different sign are ordered by it, however far outside
+  // even arbitrary-precision range their magnitudes lie (`$MinNumber > 0`).
+  let sign = |e: &Expr| match crate::functions::math_ast::numeric_real_sign(e) {
+    Some(crate::functions::math_ast::NumericSign::Known(s)) => Some(s),
+    _ => None,
+  };
+  if let (Some(sa), Some(sb)) = (sign(a), sign(b))
+    && sa != sb
+  {
+    return Some(sa.cmp(&sb));
+  }
   let rm = astro_float::RoundingMode::ToEven;
   let mut cc = astro_float::Consts::new().ok()?;
   let bits = 512;

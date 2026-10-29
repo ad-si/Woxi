@@ -3884,7 +3884,9 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // precision 0 in Wolfram — there are no significant digits when
       // the value itself is zero, so precision = -Log10(|0|) is treated
       // as 0 rather than the spec'd precision.
-      if digits.parse::<f64>().is_ok_and(|f| f == 0.0) {
+      if crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(
+        digits,
+      ) {
         Ok(Expr::Real(0.0))
       } else {
         Ok(Expr::Real(*prec))

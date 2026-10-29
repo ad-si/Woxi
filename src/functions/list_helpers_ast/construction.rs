@@ -885,8 +885,13 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(results.into()));
       }
       // Fully symbolic with no way to determine length — leave
-      // unevaluated like Mathematica.
-      return Ok(unevaluated("Range", args));
+      // unevaluated like Mathematica, with its message.
+      let call = unevaluated("Range", args);
+      crate::emit_message(&format!(
+        "Range::range: Range specification in {} does not have appropriate bounds.",
+        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
+      ));
+      return Ok(call);
     }
 
     if let (Some(min_val), Some(max_val), Some(step_val)) =
@@ -924,9 +929,13 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(results.into()));
     }
 
-    return Err(InterpreterError::EvaluationError(
-      "Range: argument must be numeric".into(),
+    // A bound or step that is no number (`Range[0, 1, f[x]]`).
+    let call = unevaluated("Range", args);
+    crate::emit_message(&format!(
+      "Range::range: Range specification in {} does not have appropriate bounds.",
+      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
     ));
+    return Ok(call);
   }
 
   // Fallback to f64 for Real arguments

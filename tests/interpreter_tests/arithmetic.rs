@@ -13900,6 +13900,20 @@ mod log_base_of_zero {
 mod sign_under_cancellation {
   use super::*;
 
+  // A number below machine range keeps its sign and precision: they come
+  // from its digits, not from the machine value it underflows to.
+  #[test]
+  fn tiny_arbitrary_precision_number() {
+    assert_eq!(
+      interpret(
+        "{Sign[N[10^-400, 20]], Sign[-N[10^-400, 20]], \
+         Precision[N[10^-400, 16]], N[10^-400, 20] > 0, Precision[0.`20]}"
+      )
+      .unwrap(),
+      "{1, -1, 16., True, MachinePrecision}"
+    );
+  }
+
   #[test]
   fn sign_abs_positive_use_extra_precision() {
     assert_eq!(
