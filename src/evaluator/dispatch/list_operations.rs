@@ -3016,7 +3016,11 @@ pub fn dispatch_list_operations(
             return Some(Ok(unevaluated("Partition", args)));
           }
           return Some(list_helpers_ast::partition_multi_dim_ast(
-            &args[0], &sizes, &offsets,
+            &args[0],
+            &sizes,
+            &offsets,
+            args.get(3),
+            args.get(4),
           ));
         }
       }

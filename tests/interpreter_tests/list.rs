@@ -4002,6 +4002,25 @@ mod complement {
 mod partition {
   use super::*;
 
+  // Blocks of a matrix may overhang, wrapping cyclically or padding.
+  #[test]
+  fn multi_dimensional_overhang() {
+    assert_eq!(
+      interpret("Partition[{{1, 2}, {3, 4}}, {2, 2}, 1, -1]").unwrap(),
+      "{{{{4, 3}, {2, 1}}, {{3, 4}, {1, 2}}}, {{{2, 1}, {4, 3}}, {{1, 2}, {3, 4}}}}"
+    );
+    assert_eq!(
+      interpret("Partition[{{1}}, {2, 2}, 1, -1]").unwrap(),
+      "{{{{1, 1}, {1, 1}}}}"
+    );
+    assert_eq!(
+      interpret("Partition[{{1, 2, 3}, {4, 5, 6}}, {2, 2}, 1, {1, 1}, x]")
+        .unwrap(),
+      "{{{{1, 2}, {4, 5}}, {{2, 3}, {5, 6}}, {{3, x}, {6, x}}}, \
+       {{{4, 5}, {x, x}}, {{5, 6}, {x, x}}, {{6, x}, {x, x}}}}"
+    );
+  }
+
   // A one-dimensional offset may be written as the one-element list {d}.
   #[test]
   fn offset_as_one_element_list() {
