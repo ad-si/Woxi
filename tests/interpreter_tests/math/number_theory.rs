@@ -3074,6 +3074,23 @@ mod jacobi_symbol {
 mod real_digits {
   use super::*;
 
+  // A non-integer real base expands greedily; exact finite expansions end
+  // in exact zeros.
+  #[test]
+  fn irrational_base() {
+    assert_eq!(
+      interpret(
+        "{RealDigits[3, GoldenRatio, 8], RealDigits[10, GoldenRatio, 12], \
+          RealDigits[3, Pi, 4], RealDigits[1/2, GoldenRatio, 8], \
+          RealDigits[Sqrt[2], E, 8], RealDigits[GoldenRatio^3, GoldenRatio, 6]}"
+      )
+      .unwrap(),
+      "{{{1, 0, 0, 0, 1, 0, 0, 0}, 3}, {{1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0}, 5}, \
+       {{3, 0, 0, 0}, 1}, {{1, 0, 0, 1, 0, 0, 1, 0}, -1}, \
+       {{1, 1, 0, 0, 2, 1, 1, 0}, 1}, {{1, 0, 0, 0, 0, 0}, 4}}"
+    );
+  }
+
   // A pure fraction's digits start at its first nonzero digit, the leading
   // zeros going into the exponent, and its period is counted from there.
   #[test]

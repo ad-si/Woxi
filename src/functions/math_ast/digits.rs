@@ -1789,6 +1789,78 @@ fn real_digits_rational_base(
 
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
 /// Returns {digit_list, exponent}.
+/// `RealDigits[x, b, n]` for an exact positive `x` and a non-integer real
+/// base `b` (`GoldenRatio`, `Pi`): the greedy expansion — each digit the
+/// largest multiple of the place value that fits — worked out at a precision
+/// well beyond the requested digits, so an exact finite expansion
+/// (`3 = φ^1 + φ^-2`) ends in exact zeros. None for anything else.
+fn real_digits_irrational_base(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let n = expr_to_i128(&args[2]).filter(|n| (1..=1000).contains(n))? as usize;
+  let x = &args[0];
+  if !crate::functions::predicate_ast::is_numeric_q(x)
+    || crate::functions::math_ast::contains_inexact_real(x)
+    || !try_eval_to_f64(x).is_some_and(|v| v > 0.0)
+  {
+    return None;
+  }
+  let prec = Expr::Integer(n as i128 + 60);
+  let num = |e: Expr| {
+    crate::evaluator::evaluate_function_call_ast("N", &[e, prec.clone()]).ok()
+  };
+  let eval = |name: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &a).ok()
+  };
+  let b = num(args[1].clone())?;
+  let mut rest = num(x.clone())?;
+  // Exponent: the number of base-b places before the point.
+  let log = eval("Log", vec![b.clone(), rest.clone()])?;
+  let mut exponent = expr_to_i128(&eval("Floor", vec![log])?)? + 1;
+  // The floating logarithm can be one off at an exact power.
+  let place = |k: i128| eval("Power", vec![b.clone(), Expr::Integer(k)]);
+  let ge = |a: &Expr, c: &Expr| {
+    matches!(
+      eval("GreaterEqual", vec![a.clone(), c.clone()]),
+      Some(Expr::Identifier(ref t)) if t == "True"
+    )
+  };
+  if ge(&rest, &place(exponent)?) {
+    exponent += 1;
+  } else if !ge(&rest, &place(exponent - 1)?) {
+    exponent -= 1;
+  }
+  let tiny = num(Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![Expr::Integer(10), Expr::Integer(-(n as i128) - 40)].into(),
+  })?;
+  let mut digits = Vec::with_capacity(n);
+  for k in 1..=n {
+    let pv = place(exponent - k as i128)?;
+    if !ge(&rest, &eval("Times", vec![tiny.clone(), pv.clone()])?) {
+      digits.push(Expr::Integer(0));
+      continue;
+    }
+    let ratio = eval("Divide", vec![rest.clone(), pv.clone()])?;
+    // A remainder within rounding of a whole place counts as that place.
+    let d = expr_to_i128(&eval(
+      "Floor",
+      vec![eval("Plus", vec![ratio, tiny.clone()])?],
+    )?)?;
+    rest = eval(
+      "Subtract",
+      vec![rest, eval("Times", vec![Expr::Integer(d), pv])?],
+    )?;
+    if !ge(&rest, &Expr::Integer(0)) {
+      rest = Expr::Integer(0);
+    }
+    digits.push(Expr::Integer(d));
+  }
+  Some(Ok(Expr::List(
+    vec![Expr::List(digits.into()), Expr::Integer(exponent)].into(),
+  )))
+}
+
 pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
@@ -1823,6 +1895,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               crate::syntax::ExprForm::Output
             )
           ));
+        }
+        if numeric
+          && above_one
+          && args.len() == 3
+          && let Some(digits) = real_digits_irrational_base(args)
+        {
+          return digits;
         }
         return unevaluated_call();
       }
