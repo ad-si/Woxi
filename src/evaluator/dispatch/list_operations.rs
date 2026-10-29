@@ -1905,14 +1905,14 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated("TakeList", args)));
       };
       let mut new_groups = Vec::with_capacity(groups.len());
-      for group in groups.iter() {
+      for group in groups {
         let (head, elems) = match group {
           Expr::List(xs) => (None, xs),
           Expr::FunctionCall { name, args: xs } => (Some(name.clone()), xs),
           _ => return Some(Ok(unevaluated("TakeList", args))),
         };
         let mut new_elems = Vec::with_capacity(elems.len());
-        for elem in elems.iter() {
+        for elem in elems {
           let mut inner_args = Vec::with_capacity(args.len() - 1);
           inner_args.push(elem.clone());
           inner_args.extend(args[2..].iter().cloned());
@@ -3943,7 +3943,7 @@ pub fn dispatch_list_operations(
       };
       return Some(match evaluate_expr_to_expr(&level_call) {
         Ok(Expr::List(ref items)) => {
-          for item in items.iter() {
+          for item in items {
             if let Err(e) = list_helpers_ast::apply_func_ast(&args[0], item) {
               return Some(Err(e));
             }

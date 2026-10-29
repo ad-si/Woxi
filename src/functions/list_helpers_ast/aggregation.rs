@@ -1760,7 +1760,7 @@ fn bin_lists_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let specs = &args[1..];
   let k = specs.len();
   let mut points: Vec<(Vec<f64>, &Expr)> = Vec::with_capacity(data.len());
-  for e in data.iter() {
+  for e in data {
     let Expr::List(coords) = e else {
       return unevaluated();
     };

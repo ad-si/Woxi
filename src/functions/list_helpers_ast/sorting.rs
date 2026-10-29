@@ -865,7 +865,7 @@ pub fn position_extreme_ast(
       Expr::Identifier(s) if s == "Automatic" => None,
       _ => return unevaluated(),
     };
-    return Ok(keep_extreme_groups(groups, n, largest));
+    return Ok(keep_extreme_groups(&groups, n, largest));
   }
   let mut vals = Vec::with_capacity(items.len());
   for it in items {
@@ -908,7 +908,7 @@ pub fn position_extreme_ast(
       a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
     });
     let groups: Vec<Vec<Expr>> = groups.into_iter().map(|(_, ps)| ps).collect();
-    return Ok(keep_extreme_groups(groups, Some(n), largest));
+    return Ok(keep_extreme_groups(&groups, Some(n), largest));
   }
 
   let target = if largest {
@@ -928,7 +928,7 @@ pub fn position_extreme_ast(
 /// The n extreme groups of positions, given the groups in ascending order of
 /// value. `None` asks for the single extreme value, its positions flat.
 fn keep_extreme_groups(
-  groups: Vec<Vec<Expr>>,
+  groups: &[Vec<Expr>],
   n: Option<usize>,
   largest: bool,
 ) -> Expr {
@@ -958,7 +958,7 @@ fn keep_extreme_groups(
       })
       .collect()
   } else {
-    groups.iter().take(n).map(|ps| ps.clone()).collect()
+    groups.iter().take(n).cloned().collect()
   };
   if largest {
     kept.reverse();

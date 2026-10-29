@@ -863,7 +863,7 @@ fn evaluate_expr_to_expr_early_dispatch(
             Expr::FunctionCall { name, args: inner }
               if name == "Evaluate" && inner.len() == 1 =>
             {
-              evaluated.push(evaluate_expr_to_expr(&inner[0])?)
+              evaluated.push(evaluate_expr_to_expr(&inner[0])?);
             }
             other => evaluated.push(other.clone()),
           }

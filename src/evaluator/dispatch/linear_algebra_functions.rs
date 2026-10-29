@@ -234,41 +234,6 @@ pub fn dispatch_linear_algebra_functions(
     "ArrayDot" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::array_dot_ast(args));
     }
-    // RotationMatrix[…, TargetStructure -> "Dense" | "Sparse" | Automatic]:
-    // build the dense matrix, wrapping it in a SparseArray for "Sparse".
-    "RotationMatrix"
-      if (2..=3).contains(&args.len())
-        && matches!(
-          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
-          Some((Expr::Identifier(n), _, false)) if n == "TargetStructure"
-        ) =>
-    {
-      let Some((_, structure, _)) =
-        crate::functions::expr_form::rule_parts(&args[args.len() - 1])
-      else {
-        return None;
-      };
-      let sparse = match structure {
-        Expr::String(s) if s == "Dense" => false,
-        Expr::Identifier(s) if s == "Automatic" => false,
-        Expr::String(s) if s == "Sparse" => true,
-        _ => return Some(Ok(unevaluated(name, args))),
-      };
-      let dense = match dispatch_linear_algebra_functions(
-        name,
-        &args[..args.len() - 1],
-      ) {
-        Some(Ok(d)) => d,
-        other => return other,
-      };
-      if !sparse || !matches!(dense, Expr::List(_)) {
-        return Some(Ok(dense));
-      }
-      return Some(crate::evaluator::evaluate_function_call_ast(
-        "SparseArray",
-        &[dense],
-      ));
-    }
     // Inverse[m, Method -> …] and Inverse[m, ZeroTest -> …] for a matrix of
     // exact numbers: every method and zero test give the same exact inverse.
     "Inverse"
@@ -546,16 +511,17 @@ pub fn dispatch_linear_algebra_functions(
     // of the plain call, expanded to a list or wrapped in a SparseArray.
     "DiagonalMatrix" | "UpperTriangularize" | "LowerTriangularize"
     | "CompanionMatrix" | "ToeplitzMatrix" | "HankelMatrix"
-    | "VandermondeMatrix" | "HadamardMatrix"
+    | "VandermondeMatrix" | "HadamardMatrix" | "RotationMatrix"
       if args.len() >= 2
         && option_rule_value(&args[args.len() - 1], "TargetStructure")
           .is_some() =>
     {
-      let target = match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
-        Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
-        Expr::Identifier(s) if s == "Automatic" => "Automatic",
-        _ => return Some(Ok(unevaluated(name, args))),
-      };
+      let target =
+        match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
+          Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
+          Expr::Identifier(s) if s == "Automatic" => "Automatic",
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
       let result = match crate::evaluator::evaluate_function_call_ast(
         name,
         &args[..args.len() - 1],
@@ -796,9 +762,7 @@ pub fn dispatch_linear_algebra_functions(
         && option_rule_value(&args[args.len() - 1], "Tolerance").is_some() =>
     {
       let tol = option_rule_value(&args[args.len() - 1], "Tolerance")?;
-      let Some(tol) = crate::functions::math_ast::try_eval_to_f64(tol) else {
-        return None;
-      };
+      let tol = crate::functions::math_ast::try_eval_to_f64(tol)?;
       let chopped = match &args[0] {
         Expr::List(rows) => Expr::List(
           rows
@@ -2786,7 +2750,7 @@ pub fn dispatch_linear_algebra_functions(
       let Some(nums) = nums else {
         return Some(Ok(unevaluated(name, args)));
       };
-      let max = nums.iter().cloned().fold(0.0_f64, f64::max);
+      let max = nums.iter().copied().fold(0.0_f64, f64::max);
       let mut kept: Vec<Expr> = all
         .iter()
         .zip(&nums)
@@ -2848,7 +2812,7 @@ pub fn dispatch_linear_algebra_functions(
       let Some((u, sigma, v)) = parts else {
         return Some(Ok(unevaluated(name, args)));
       };
-      let p = sigma.len().min(sigma.first().map_or(0, |r| r.len()));
+      let p = sigma.len().min(sigma.first().map_or(0, std::vec::Vec::len));
       let kk = k.unsigned_abs() as usize;
       if kk > p {
         return Some(Ok(unevaluated(name, args)));
@@ -5700,7 +5664,7 @@ fn matrix_q_with_same_test(
   };
   let n = rows.len();
   let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(n);
-  for r in rows.iter() {
+  for r in rows {
     match r {
       Expr::List(cols) if cols.len() == n => matrix.push(cols.to_vec()),
       _ => return Ok(bool_expr(false)),
@@ -5774,21 +5738,19 @@ fn matrices_agree(
           "Plus",
           vec![x.clone(), call("Times", vec![Expr::Integer(-1), y.clone()])],
         ))?;
-        match (
+        if let (Some(t), Some((re, im))) = (
           tolerance,
           crate::functions::list_helpers_ast::expr_to_complex_parts(&diff),
         ) {
-          (Some(t), Some((re, im))) => re.hypot(im) <= t,
-          _ => {
-            let simplified = crate::evaluator::evaluate_expr_to_expr(&call1(
-              "Simplify", diff,
-            ))?;
-            match crate::functions::list_helpers_ast::expr_to_complex_parts(
-              &simplified,
-            ) {
-              Some((re, im)) => re == 0.0 && im == 0.0,
-              None => false,
-            }
+          re.hypot(im) <= t
+        } else {
+          let simplified =
+            crate::evaluator::evaluate_expr_to_expr(&call1("Simplify", diff))?;
+          match crate::functions::list_helpers_ast::expr_to_complex_parts(
+            &simplified,
+          ) {
+            Some((re, im)) => re == 0.0 && im == 0.0,
+            None => false,
           }
         }
       };

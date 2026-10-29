@@ -14760,14 +14760,13 @@ fn la_mod_inv(a: i128, m: i128) -> i128 {
 
 /// `a * b mod m` for reduced operands, without i128 overflow.
 fn la_mul_mod(a: i128, b: i128, m: i128) -> i128 {
-  match a.checked_mul(b) {
-    Some(p) => p.rem_euclid(m),
-    None => {
-      use num_bigint::BigInt;
-      use num_traits::ToPrimitive;
-      let p = (BigInt::from(a) * BigInt::from(b)) % BigInt::from(m);
-      p.to_i128().unwrap_or(0).rem_euclid(m)
-    }
+  if let Some(p) = a.checked_mul(b) {
+    p.rem_euclid(m)
+  } else {
+    use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
+    let p = (BigInt::from(a) * BigInt::from(b)) % BigInt::from(m);
+    p.to_i128().unwrap_or(0).rem_euclid(m)
   }
 }
 

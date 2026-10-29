@@ -2401,7 +2401,7 @@ pub fn recurrence_table_multi_ast(
       _ => None,
     }
   };
-  for eq in eqs.iter() {
+  for eq in eqs {
     let Some((lhs, rhs)) = extract_equation(eq) else {
       return unevaluated();
     };
@@ -2514,7 +2514,7 @@ pub fn recurrence_table_multi_ast(
         if name == ctx.func && args.len() == ctx.vars.len() =>
       {
         let mut idx = Vec::with_capacity(args.len());
-        for a in args.iter() {
+        for a in args {
           match crate::evaluator::evaluate_expr_to_expr(a)? {
             Expr::Integer(i) => idx.push(i),
             _ => return Ok(None),
@@ -2524,7 +2524,7 @@ pub fn recurrence_table_multi_ast(
       }
       Expr::FunctionCall { name, args } => {
         let mut out = Vec::with_capacity(args.len());
-        for a in args.iter() {
+        for a in args {
           match replace_calls(ctx, a)? {
             Some(x) => out.push(x),
             None => return Ok(None),
@@ -2537,7 +2537,7 @@ pub fn recurrence_table_multi_ast(
       }
       Expr::List(items) => {
         let mut out = Vec::with_capacity(items.len());
-        for a in items.iter() {
+        for a in items {
           match replace_calls(ctx, a)? {
             Some(x) => out.push(x),
             None => return Ok(None),

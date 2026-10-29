@@ -2724,7 +2724,7 @@ pub fn dispatch_math_functions(
         return Some(Ok(unevaluated(name, args)));
       };
       let mut count: i128 = 0;
-      for pair in pairs.iter() {
+      for pair in pairs {
         let Expr::List(p) = pair else {
           return Some(Ok(unevaluated(name, args)));
         };
@@ -2931,7 +2931,7 @@ pub fn dispatch_math_functions(
         return Some(Ok(unevaluated(name, args)));
       };
       let mut total: i128 = 0;
-      for pair in pairs.iter() {
+      for pair in pairs {
         let Expr::List(pe) = pair else {
           return Some(Ok(unevaluated(name, args)));
         };
@@ -7878,7 +7878,7 @@ fn pairwise_column_statistic(
     return uneval();
   };
   let mut width = None;
-  for row in rows.iter() {
+  for row in rows {
     let Expr::List(r) = row else {
       return uneval();
     };

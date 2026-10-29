@@ -1412,41 +1412,38 @@ fn clip_numeric_array_data(data: &Expr, ty: &str, round: bool) -> Option<Expr> {
         .collect();
       return Some(Expr::List(out?.into()));
     }
-    match int_range {
-      Some((lo, hi)) => {
-        let n: i128 = match e {
-          Expr::Integer(n) => *n,
-          Expr::BigInteger(b) => {
-            use num_traits::Signed;
-            if b.is_negative() { lo } else { hi }
-          }
-          Expr::Real(f) if round && f.is_finite() => {
-            let r = f.round_ties_even();
-            if r < lo as f64 {
-              lo
-            } else if r > hi as f64 {
-              hi
-            } else {
-              r as i128
-            }
-          }
-          _ => return None,
-        };
-        Some(Expr::Integer(n.clamp(lo, hi)))
-      }
-      None => {
-        let v = crate::functions::math_ast::try_eval_to_f64(e)?;
-        if v.is_nan() {
-          return None;
+    if let Some((lo, hi)) = int_range {
+      let n: i128 = match e {
+        Expr::Integer(n) => *n,
+        Expr::BigInteger(b) => {
+          use num_traits::Signed;
+          if b.is_negative() { lo } else { hi }
         }
-        let max = if single { f32::MAX as f64 } else { f64::MAX };
-        let clipped = v.clamp(-max, max);
-        Some(Expr::Real(if single {
-          clipped as f32 as f64
-        } else {
-          clipped
-        }))
+        Expr::Real(f) if round && f.is_finite() => {
+          let r = f.round_ties_even();
+          if r < lo as f64 {
+            lo
+          } else if r > hi as f64 {
+            hi
+          } else {
+            r as i128
+          }
+        }
+        _ => return None,
+      };
+      Some(Expr::Integer(n.clamp(lo, hi)))
+    } else {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      if v.is_nan() {
+        return None;
       }
+      let max = if single { f32::MAX as f64 } else { f64::MAX };
+      let clipped = v.clamp(-max, max);
+      Some(Expr::Real(if single {
+        clipped as f32 as f64
+      } else {
+        clipped
+      }))
     }
   }
   walk(data, int_range, ty == "Real32", round)

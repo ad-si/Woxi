@@ -483,8 +483,7 @@ fn uniform_at_precision(
   });
   let numerator = numerator
     .parse::<num_bigint::BigInt>()
-    .map(crate::functions::math_ast::bigint_to_expr)
-    .unwrap_or(Expr::Integer(0));
+    .map_or(Expr::Integer(0), crate::functions::math_ast::bigint_to_expr);
   let fraction = times(vec![
     numerator,
     pow(Expr::Integer(10), Expr::Integer(-(digits as i128))),

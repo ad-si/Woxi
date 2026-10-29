@@ -9907,16 +9907,15 @@ pub fn apply_string_template_with(
 ) -> Result<Expr, InterpreterError> {
   let insertion = template_option(opts, "InsertionFunction");
   let combiner = template_option(opts, "CombinerFunction");
-  let tmpl = match template {
-    Expr::String(s) => s.clone(),
-    _ => {
-      let mut head = vec![template.clone()];
-      head.extend(opts.iter().cloned());
-      return Ok(Expr::CurriedCall {
-        func: Box::new(call("StringTemplate", head)),
-        args: args.to_vec(),
-      });
-    }
+  let tmpl = if let Expr::String(s) = template {
+    s.clone()
+  } else {
+    let mut head = vec![template.clone()];
+    head.extend(opts.iter().cloned());
+    return Ok(Expr::CurriedCall {
+      func: Box::new(call("StringTemplate", head)),
+      args: args.to_vec(),
+    });
   };
 
   // Named bindings from a single association argument.
@@ -13376,7 +13375,7 @@ pub fn language_alphabet(lang: &str) -> Option<Vec<char>> {
     return None;
   };
   let mut out = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     let Expr::String(l) = item else {
       return None;
     };

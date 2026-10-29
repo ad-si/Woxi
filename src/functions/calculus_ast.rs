@@ -18199,7 +18199,7 @@ fn dt_with_constants(
   let constants: Vec<String> = match consts {
     Expr::List(items) => {
       let mut names = Vec::with_capacity(items.len());
-      for item in items.iter() {
+      for item in items {
         match item {
           Expr::Identifier(n) => names.push(n.clone()),
           _ => return Ok(unevaluated("Dt", args)),

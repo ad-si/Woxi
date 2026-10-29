@@ -157,10 +157,10 @@ pub fn counts_with_keys_ast(
   use std::collections::HashMap;
   let mut index: HashMap<String, usize> = HashMap::new();
   let mut pairs: Vec<(Expr, Expr)> = Vec::new();
-  for k in keys.iter() {
+  for k in keys {
     let ks = expr_to_string(k);
-    if !index.contains_key(&ks) {
-      index.insert(ks, pairs.len());
+    if let std::collections::hash_map::Entry::Vacant(e) = index.entry(ks) {
+      e.insert(pairs.len());
       pairs.push((k.clone(), Expr::Integer(0)));
     }
   }

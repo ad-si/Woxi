@@ -2215,7 +2215,7 @@ fn get_sign(expr: &Expr, info: &AssumptionInfo) -> Option<i8> {
         args.iter().map(|a| get_sign(a, info)).collect();
       let signs = signs?;
       if signs.iter().all(|&s| s >= 0) {
-        Some(if signs.iter().any(|&s| s > 0) { 1 } else { 0 })
+        Some(i8::from(signs.iter().any(|&s| s > 0)))
       } else if signs.iter().all(|&s| s <= 0) {
         Some(-1)
       } else {

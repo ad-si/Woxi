@@ -2336,13 +2336,11 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let heads = match args.get(1) {
     None => false,
     Some(opt) => match crate::functions::expr_form::rule_parts(opt) {
-      Some((lhs, rhs, _)) if matches!(lhs, Expr::Identifier(s) if s == "Heads") => {
-        match rhs {
-          Expr::Identifier(s) if s == "True" => true,
-          Expr::Identifier(s) if s == "False" => false,
-          _ => return Ok(unevaluated("Depth", args)),
-        }
-      }
+      Some((Expr::Identifier(lhs), rhs, _)) if lhs == "Heads" => match rhs {
+        Expr::Identifier(s) if s == "True" => true,
+        Expr::Identifier(s) if s == "False" => false,
+        _ => return Ok(unevaluated("Depth", args)),
+      },
       _ => return Ok(unevaluated("Depth", args)),
     },
   };
@@ -2392,8 +2390,7 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A name such as "f[a]" stands for a compound head.
       Expr::FunctionCall { name, args } if heads && name.contains('[') => {
         let head_depth = crate::syntax::string_to_expr(name)
-          .map(|h| calc_depth(&h))
-          .unwrap_or(NO_PARTS);
+          .map_or(NO_PARTS, |h| calc_depth(&h));
         1 + args
           .iter()
           .map(calc_depth)

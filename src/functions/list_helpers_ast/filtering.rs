@@ -1524,7 +1524,7 @@ fn delete_cases_walk(
   match expr {
     Expr::Association(pairs) => {
       let mut kept: Vec<(Expr, Expr)> = Vec::with_capacity(pairs.len());
-      for (k, v) in pairs.iter() {
+      for (k, v) in pairs {
         if let DeleteWalk::Keep(nv) =
           delete_cases_walk(v, match_pat, level + 1, min, max, heads, remaining)
         {
