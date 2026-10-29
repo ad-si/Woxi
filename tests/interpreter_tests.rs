@@ -1373,6 +1373,46 @@ mod interpreter_tests {
     assert_eq!(labeled.matches("dominant-baseline=\"central\"").count(), 1);
   }
 
+  /// A `PlotLabel` wider than the picture shrinks to fit instead of being
+  /// clipped at both edges; a short one keeps the default title size.
+  #[test]
+  fn test_plot_label_wider_than_image_shrinks_to_fit() {
+    clear_state();
+    let title_font = |label: &str| -> f64 {
+      let svg = interpret(&format!(
+        "ExportString[Plot[x, {{x, 0, 1}}, ImageSize -> {{500, 250}}, \
+           PlotLabel -> {label}], \"SVG\"]"
+      ))
+      .unwrap();
+      let tag = svg
+        .lines()
+        .find(|l| {
+          l.contains("text-anchor=\"middle\"")
+            && l.contains(label_marker(label))
+        })
+        .expect("title text missing");
+      let after = tag.split("font-size=\"").nth(1).unwrap();
+      after.split('"').next().unwrap().parse().unwrap()
+    };
+    fn label_marker(label: &str) -> &str {
+      if label.contains("Standard") {
+        "Standard"
+      } else {
+        "Short"
+      }
+    }
+    let long = title_font(
+      "Row[{\"Skew Normal Density Function \", \" and \", \
+         \"Standard Normal Density Function\"}]",
+    );
+    let short = title_font("\"Short\"");
+    assert!(
+      long < short,
+      "long title {long} should be smaller than {short}"
+    );
+    assert!(long * 0.52 * 65.0 <= 5000.0, "title still wider than image");
+  }
+
   /// A user function that applies a list-valued argument stays unevaluated
   /// while `x` is symbolic (the `If` can't decide), yet yields a list at
   /// every sample — one curve per element, like a literal `{f, g}`.

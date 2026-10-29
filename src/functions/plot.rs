@@ -3311,6 +3311,14 @@ pub(crate) fn plot_labels_svg(
       + if axes_label_y.is_some() { 1.0 } else { 0.0 };
     let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
     let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
+    // A title wider than the picture (a long `Row` of text) shrinks to fit
+    // instead of being clipped at both edges.
+    let widest = sl.max_line_chars() as f64;
+    let fs = if widest > 0.0 && !sl.framed {
+      fs.min((canvas_width - 8.0 * sf) / (widest * 0.52))
+    } else {
+      fs
+    };
     // A stacked title grows upwards: its last line stays where a one-line
     // title would sit, so whatever shares the top margin below it (the y
     // `AxesLabel`) is not written over.
