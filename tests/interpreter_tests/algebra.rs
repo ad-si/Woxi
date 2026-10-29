@@ -21946,6 +21946,33 @@ mod constrained_numeric_optimization {
     );
   }
 
+  // `{x, x0, xmin, xmax}` bounds the variable in the constrained local
+  // search too; an interpolating function in the problem is evaluated
+  // directly (Demonstration SolvingTheSubprimeLoanProblem).
+  #[test]
+  fn bounded_specs_and_interpolation_in_constrained_search() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMaximum[{x + y, \
+         x^2 + y^2 == 1}, {{x, 0.5, 0, 0.6}, {y, 0.5}}]]]"
+      )
+      .unwrap(),
+      "{1400000, {600000, 800000}}"
+    );
+    // Quiet: the line search probes past the data (dmval), which
+    // wolframscript's search does not.
+    assert_eq!(
+      interpret(
+        "g = ListInterpolation[Table[(x - 2)^2 + (y - 3)^2 + x y/10, \
+         {x, 0, 4}, {y, 0, 5}], {{0, 4}, {0, 5}}]; \
+         Round[10^4 {#[[1]], {x, y} /. #[[2]]} &[Quiet[FindMinimum[{g[x, y], \
+         x + y >= 1}, {{x, 1.2}, {y, 1.3}}]]]]"
+      )
+      .unwrap(),
+      "{5689, {18546, 29073}}"
+    );
+  }
+
   // Inequalities alone also get the local search from the starting values
   // (Demonstration AmericanCappedCallOptionsWithExponentialCap's
   // FindMaximum went to a global search that ended at L -> 60042 instead

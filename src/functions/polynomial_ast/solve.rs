@@ -16703,10 +16703,20 @@ fn find_minimum_local_constrained(
   // Variables and starting values, `{x, x0}` each (possibly in one list).
   let mut vars: Vec<String> = Vec::new();
   let mut start: Vec<f64> = Vec::new();
+  // `{x, x0, xmin, xmax}` also confines x to [xmin, xmax].
+  let mut spec_bounds: Vec<Expr> = Vec::new();
   let mut take_spec = |spec: &Expr| -> Option<()> {
     let Expr::List(items) = spec else { return None };
-    let [Expr::Identifier(v), x0] = items.as_slice() else {
-      return None;
+    let (v, x0) = match items.as_slice() {
+      [Expr::Identifier(v), x0] => (v, x0),
+      [Expr::Identifier(v), x0, lo, hi] => {
+        spec_bounds.push(Expr::Comparison {
+          operands: vec![lo.clone(), Expr::Identifier(v.clone()), hi.clone()],
+          operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+        });
+        (v, x0)
+      }
+      _ => return None,
     };
     vars.push(v.clone());
     start.push(find_root_eval_number(x0).ok()?);
@@ -16751,7 +16761,7 @@ fn find_minimum_local_constrained(
     }
   }
   let mut flat = Vec::new();
-  for c in constraints {
+  for c in constraints.iter().chain(&spec_bounds) {
     flatten(c, &mut flat);
   }
   let minus = |a: Expr, b: Expr| {
@@ -19862,6 +19872,15 @@ pub(crate) enum NumNode {
   // (machine arithmetic gives NaN, e.g. `Log` of a negative number), the
   // whole call through the `Fallback` node, in complex arithmetic.
   RealOr(fn(f64) -> f64, Box<Self>, Box<Self>),
+  // An `InterpolatingFunction[…]` (its arguments, in Woxi's own layout)
+  // applied to compiled arguments: evaluated directly, without copying its
+  // data into an expression for every point.
+  // A grid function is also kept in machine numbers.
+  Interpolation(
+    std::rc::Rc<[Expr]>,
+    Option<std::rc::Rc<crate::functions::ode_ast::NumericGrid>>,
+    Vec<Self>,
+  ),
   // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
   // distribution's CDF/PDF), evaluated via the full AST evaluator with the
   // current point substituted in. Isolating just this piece — rather than
@@ -19889,6 +19908,7 @@ impl NumNode {
       | Self::Binary(_, a, b) => a.has_fallback() || b.has_fallback(),
       // The fallback only stands in for complex intermediate values.
       Self::RealOr(_, a, _) => a.has_fallback(),
+      Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
     }
   }
@@ -19930,6 +19950,10 @@ impl NumNode {
       Self::Sqrt(a) => a.eval_plain(point).sqrt(),
       Self::Ln(a) => a.eval_plain(point).ln(),
       Self::Binary(f, a, b) => f(a.eval_plain(point), b.eval_plain(point)),
+      Self::Interpolation(func, grid, xs) => {
+        let values: Vec<f64> = xs.iter().map(|x| x.eval_plain(point)).collect();
+        Self::interpolation_value(func, grid.as_deref(), &values)
+      }
       Self::RealOr(f, a, whole) => {
         let v = a.eval_plain(point);
         if v.is_nan() {
@@ -20055,6 +20079,29 @@ impl NumNode {
           (f(av), scale(numeric_derivative(f, av), ag))
         }
       }
+      // Each argument's partial derivative by central differences of the
+      // interpolation, chained with that argument's gradient.
+      Self::Interpolation(func, grid, xs) => {
+        let grid = grid.as_deref();
+        let duals: Vec<(f64, Vec<(usize, f64)>)> =
+          xs.iter().map(|x| x.eval_dual(point)).collect();
+        let values: Vec<f64> = duals.iter().map(|(v, _)| *v).collect();
+        let v = Self::interpolation_value(func, grid, &values);
+        let mut grad: Vec<(usize, f64)> = Vec::new();
+        for (k, (xk, gk)) in duals.iter().enumerate() {
+          if gk.is_empty() {
+            continue;
+          }
+          let h = 1e-6 * xk.abs().max(1.0);
+          let mut shifted = values.clone();
+          shifted[k] = xk + h;
+          let up = Self::interpolation_value(func, grid, &shifted);
+          shifted[k] = xk - h;
+          let down = Self::interpolation_value(func, grid, &shifted);
+          grad = axpy(1.0, &grad, (up - down) / (2.0 * h), gk);
+        }
+        (v, grad)
+      }
       Self::Fallback(..) => {
         let v = self.eval_fallback(point);
         let grad = (0..point.len())
@@ -20098,6 +20145,7 @@ impl NumNode {
         a.eval_wide(point).to_f64(),
         b.eval_wide(point).to_f64(),
       )),
+      Self::Interpolation(..) => WideFloat::new(self.eval_plain(point)),
       Self::RealOr(f, a, whole) => {
         let v = a.eval_wide(point).to_f64();
         WideFloat::new(if v.is_nan() {
@@ -20108,6 +20156,26 @@ impl NumNode {
       }
       Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
     }
+  }
+
+  /// The value of `InterpolatingFunction[func…][values…]`.
+  fn interpolation_value(
+    func: &[Expr],
+    grid: Option<&crate::functions::ode_ast::NumericGrid>,
+    values: &[f64],
+  ) -> f64 {
+    let args = || values.iter().map(|v| Expr::Real(*v)).collect::<Vec<_>>();
+    if let Some(grid) = grid {
+      if grid.outside(values) {
+        crate::functions::ode_ast::emit_dmval(&args());
+      }
+      return grid.eval_real(values);
+    }
+    let args = args();
+    crate::functions::ode_ast::evaluate_interpolating_function(func, &args)
+      .ok()
+      .and_then(|v| expr_to_f64(&v).ok())
+      .unwrap_or(f64::NAN)
   }
 
   fn eval_fallback(&self, point: &[f64]) -> f64 {
@@ -20402,6 +20470,33 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           std::rc::Rc::from(vars.to_vec()),
         )),
       }
+    }
+    Expr::CurriedCall { func, args }
+      if let Expr::FunctionCall {
+        name,
+        args: func_args,
+      } = func.as_ref()
+        && name == "InterpolatingFunction" =>
+    {
+      // A kernel-layout function is read into Woxi's own layout once here
+      // rather than at every evaluation.
+      let native =
+        crate::functions::ode_ast::kernel_grid_interpolating_function(
+          func_args,
+        )
+        .or_else(|| {
+          crate::functions::ode_ast::kernel_interpolating_function_to_native(
+            func_args,
+          )
+        })
+        .unwrap_or_else(|| func_args.to_vec());
+      let grid = crate::functions::ode_ast::NumericGrid::from_function(&native)
+        .map(std::rc::Rc::new);
+      Some(NumNode::Interpolation(
+        std::rc::Rc::from(native),
+        grid,
+        args.iter().map(&c).collect::<Option<_>>()?,
+      ))
     }
     // Anything else unrecognised (comparisons, curried calls, …) also falls
     // back in isolation rather than failing the whole compile.

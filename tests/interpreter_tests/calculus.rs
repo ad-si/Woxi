@@ -20283,6 +20283,44 @@ mod interpolation_exact_and_derivative {
       "253/64"
     );
   }
+
+  // Arrays of depth three and more interpolate on the grid of their
+  // indices (or an explicit domain), with partial derivatives; the domain
+  // is in machine numbers when the data is. These used to stop the
+  // evaluation with "cannot convert … to a numeric value".
+  #[test]
+  fn multidimensional_list_interpolation() {
+    assert_eq!(
+      interpret(
+        "f = ListInterpolation[Table[x^2 + y + z, {x, 1, 5}, {y, 1, 5}, \
+         {z, 1, 5}]]; {f[2.5, 3., 2.], D[f[a, b, c], a] /. {a -> 2.5, \
+         b -> 3., c -> 2.}, f[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{11.25, 5., {{1, 5}, {1, 5}, {1, 5}}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = ListInterpolation[Table[Sin[x] + y^2 z, {x, 0, 1, 0.25}, \
+         {y, 0, 2, 0.5}, {z, 1, 2, 0.25}], {{0, 1}, {0, 2}, {1, 2}}]; \
+         {Round[g[0.3, 1.1, 1.7], 10^-9], g[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{2352500497/1000000000, {{0., 1.}, {0., 2.}, {1., 2.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ListInterpolation[N[Table[x^2 + y, {x, 1, 5}, {y, 1, 5}]]][\"Domain\"]"
+      )
+      .unwrap(),
+      "{{1., 5.}, {1., 5.}}"
+    );
+    // An axis with a single point is interpolated with order 0.
+    assert_eq!(
+      interpret("Quiet[ListInterpolation[{{1, 2, 3}}][1, 5/2]]").unwrap(),
+      "5/2"
+    );
+  }
 }
 
 /// `∫ Log[a x] dx` and the negative-exponent rendering that shows up in

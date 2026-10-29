@@ -3096,12 +3096,26 @@ pub fn apply_curried_call(
             _ => None,
           })
           .collect();
+        // A kernel-layout grid (as wolframscript stores it) is read into
+        // that form first.
+        let native_grid = match args.first() {
+          Some(Expr::FunctionCall {
+            name: interp_name,
+            args: interp_args,
+          }) if interp_name == "InterpolatingFunction" => {
+            crate::functions::ode_ast::kernel_grid_interpolating_function(
+              interp_args,
+            )
+            .map(|a| call("InterpolatingFunction", a))
+          }
+          _ => None,
+        };
         if args.len() == 1
           && let Some(orders) = orders
           && let Expr::FunctionCall {
             name: interp_name,
             args: interp_args,
-          } = &args[0]
+          } = native_grid.as_ref().unwrap_or(&args[0])
           && interp_name == "InterpolatingFunction"
           && matches!(interp_args.len(), 4 | 5)
           && matches!(&interp_args[2], Expr::List(o) if o.len() == orders.len())
