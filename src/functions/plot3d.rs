@@ -6791,6 +6791,214 @@ fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
   }
 }
 
+/// Moves the contents into the screen space of a perspective camera at
+/// `eye` looking at `target`: a point at camera-space `(x, y, z)` (`z`
+/// the distance along the view axis) becomes `(x/z, -1/z, y/z)`. What lies
+/// behind the camera is dropped; a sphere keeps its round outline with the
+/// radius it has at its centre's distance.
+fn perspective_warp(
+  prims: &mut Vec<Primitive3D>,
+  eye: [f64; 3],
+  target: [f64; 3],
+  vertical: [f64; 3],
+) {
+  const NEAR: f64 = 1e-6;
+  let norm = |v: [f64; 3]| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+  let unit = |v: [f64; 3]| {
+    let n = norm(v);
+    [v[0] / n, v[1] / n, v[2] / n]
+  };
+  let cross = |a: [f64; 3], b: [f64; 3]| {
+    [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0],
+    ]
+  };
+  let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let dir = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+  if norm(dir) < 1e-12 {
+    return;
+  }
+  let fwd = unit(dir);
+  let mut right = cross(fwd, vertical);
+  if norm(right) < 1e-9 {
+    right = cross(fwd, [0.0, 1.0, 0.0]);
+  }
+  if norm(right) < 1e-9 {
+    right = cross(fwd, [1.0, 0.0, 0.0]);
+  }
+  let right = unit(right);
+  let up = cross(right, fwd);
+
+  // The warped point, or `None` behind the camera.
+  let warp = |p: &Point3D| -> Option<Point3D> {
+    let d = [p.x - eye[0], p.y - eye[1], p.z - eye[2]];
+    let z = dot(d, fwd);
+    (z > NEAR).then(|| Point3D {
+      x: dot(d, right) / z,
+      y: -1.0 / z,
+      z: dot(d, up) / z,
+    })
+  };
+  let warp_all = |pts: &[Point3D]| -> Option<Vec<Point3D>> {
+    pts.iter().map(&warp).collect()
+  };
+  let dist = |p: &Point3D| dot([p.x - eye[0], p.y - eye[1], p.z - eye[2]], fwd);
+
+  let old = std::mem::take(prims);
+  for prim in old {
+    match prim {
+      Primitive3D::Sphere {
+        center,
+        radius,
+        scaled,
+        style,
+      } => {
+        if let Some(c) = warp(&center) {
+          prims.push(Primitive3D::Sphere {
+            center: c,
+            radius: radius / dist(&center),
+            scaled,
+            style,
+          });
+        }
+      }
+      Primitive3D::Cuboid {
+        p_min,
+        p_max,
+        style,
+      } => {
+        let corner = |i: usize| Point3D {
+          x: if i & 1 == 0 { p_min.x } else { p_max.x },
+          y: if i & 2 == 0 { p_min.y } else { p_max.y },
+          z: if i & 4 == 0 { p_min.z } else { p_max.z },
+        };
+        for face in [
+          [0, 1, 3, 2],
+          [4, 5, 7, 6],
+          [0, 1, 5, 4],
+          [2, 3, 7, 6],
+          [0, 2, 6, 4],
+          [1, 3, 7, 5],
+        ] {
+          let pts: Vec<Point3D> = face.iter().map(|&i| corner(i)).collect();
+          if let Some(points) = warp_all(&pts) {
+            prims.push(Primitive3D::Polygon3D {
+              points,
+              holes: Vec::new(),
+              style: style.clone(),
+            });
+          }
+        }
+      }
+      Primitive3D::Polygon3D {
+        points,
+        holes,
+        style,
+      } => {
+        let warped_holes: Option<Vec<Vec<Point3D>>> =
+          holes.iter().map(|h| warp_all(h)).collect();
+        if let (Some(points), Some(holes)) = (warp_all(&points), warped_holes) {
+          prims.push(Primitive3D::Polygon3D {
+            points,
+            holes,
+            style,
+          });
+        }
+      }
+      Primitive3D::Line3D { segments, style } => {
+        let segments: Vec<Vec<Point3D>> =
+          segments.iter().filter_map(|s| warp_all(s)).collect();
+        if !segments.is_empty() {
+          prims.push(Primitive3D::Line3D { segments, style });
+        }
+      }
+      Primitive3D::Point3DPrim { points, style } => {
+        let points: Vec<Point3D> = points.iter().filter_map(&warp).collect();
+        if !points.is_empty() {
+          prims.push(Primitive3D::Point3DPrim { points, style });
+        }
+      }
+      Primitive3D::Arrow3D { points, style } => {
+        if let Some(points) = warp_all(&points) {
+          prims.push(Primitive3D::Arrow3D { points, style });
+        }
+      }
+      Primitive3D::Cylinder {
+        p1,
+        p2,
+        radius,
+        style,
+      } => {
+        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
+          let r = radius / dist(&p1).min(dist(&p2));
+          prims.push(Primitive3D::Cylinder {
+            p1: a,
+            p2: b,
+            radius: r,
+            style,
+          });
+        }
+      }
+      Primitive3D::Cone {
+        p1,
+        p2,
+        radius,
+        style,
+      } => {
+        if let (Some(a), Some(b)) = (warp(&p1), warp(&p2)) {
+          let r = radius / dist(&p1).min(dist(&p2));
+          prims.push(Primitive3D::Cone {
+            p1: a,
+            p2: b,
+            radius: r,
+            style,
+          });
+        }
+      }
+      Primitive3D::Text3D {
+        label,
+        pos,
+        offset,
+        font_size,
+        width_chars,
+        picture,
+        style,
+      } => {
+        if let Some(pos) = warp(&pos) {
+          prims.push(Primitive3D::Text3D {
+            label,
+            pos,
+            offset,
+            font_size,
+            width_chars,
+            picture,
+            style,
+          });
+        }
+      }
+      Primitive3D::Surface3D {
+        tris,
+        style,
+        smooth,
+      } => {
+        let tris: Vec<(Point3D, Point3D, Point3D)> = tris
+          .iter()
+          .filter_map(|(a, b, c)| Some((warp(a)?, warp(b)?, warp(c)?)))
+          .collect();
+        if !tris.is_empty() {
+          prims.push(Primitive3D::Surface3D {
+            tris,
+            style,
+            smooth,
+          });
+        }
+      }
+    }
+  }
+}
+
 /// Turn each `Sphere[c, Scaled[r]]` radius from the fraction `r` into a
 /// length: that fraction of the picture's widest extent — the explicit
 /// `PlotRange`, or else the box around everything but the scaled spheres.
@@ -7126,6 +7334,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ViewCenter -> {a, b, c}`: the point the camera looks at, as fractions
   // of the displayed box along each axis (`{1/2, 1/2, 1/2}` is its middle).
   let mut view_center: Option<[f64; 3]> = None;
+  // `ViewVector -> {x, y, z}` or `{eye, target}`: a perspective camera
+  // placed at an absolute position of the scene. The target is the middle
+  // of the contents when only the position is given.
+  let mut view_vector: Option<([f64; 3], Option<[f64; 3]>)> = None;
   let mut view_distance = {
     let d = Camera::DEFAULT_VIEW_POINT;
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
@@ -7204,6 +7416,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
               (vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2]).sqrt();
+          }
+        }
+        "ViewVector" => {
+          if let Some(eye) = eval_vec3(replacement) {
+            view_vector = Some((eye, None));
+          } else if let Ok(Expr::List(pair)) =
+            &evaluate_expr_to_expr(strip_dynamic(replacement))
+            && pair.len() == 2
+            && let (Some(eye), Some(target)) =
+              (eval_vec3(&pair[0]), eval_vec3(&pair[1]))
+          {
+            view_vector = Some((eye, Some(target)));
           }
         }
         // `ViewVertical -> {x, y, z}`: which way is up on screen.
@@ -7408,6 +7632,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::graphics3d_result_with_structure(
       empty_svg, structure,
     ));
+  }
+
+  // A `ViewVector` camera sits inside the scene, so the picture is a true
+  // perspective one. A perspective map takes lines to lines and planes to
+  // planes, so warping the contents into the camera's screen space lets the
+  // orthographic pipeline below draw them: x and z carry the screen
+  // position and y the depth.
+  let perspective = view_vector.is_some();
+  if let Some((eye, target)) = view_vector {
+    let target = target.unwrap_or_else(|| {
+      let b = primitives_bounds(&prims);
+      [
+        f64::midpoint(b[0].0, b[0].1),
+        f64::midpoint(b[1].0, b[1].1),
+        f64::midpoint(b[2].0, b[2].1),
+      ]
+    });
+    perspective_warp(&mut prims, eye, target, camera.vertical);
+    camera.azimuth = -std::f64::consts::FRAC_PI_2;
+    camera.elevation = 0.0;
+    camera.vertical = Camera::DEFAULT_VERTICAL;
+    show_axes = false;
+    if prims.is_empty() {
+      let empty_svg = format!(
+        "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+      );
+      return Ok(crate::graphics3d_result_with_structure(
+        empty_svg, structure,
+      ));
+    }
   }
 
   // `BoxRatios` asks for a box of a given shape, so each axis is scaled to
@@ -7914,7 +8168,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (of the box, when `PlotRange` pins one) instead of their projected
   // outline. The sphere projects to the same circle from every direction,
   // so the scale no longer follows the view angle or a moving shape.
-  if spherical_region {
+  if spherical_region && !perspective {
     let center = Point3D {
       x: f64::midpoint(x3_min, x3_max),
       y: f64::midpoint(y3_min, y3_max),
@@ -8002,6 +8256,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (p_cx, p_cy) = look_at(c);
       }
     }
+  }
+
+  // The warped scene is in units of the camera's tangent plane, so the
+  // field of view alone sets the scale, with the view axis at the centre.
+  if perspective {
+    let theta = view_angle.unwrap_or(35.0_f64.to_radians());
+    scale = svg_width.min(svg_height) as f64 / (2.0 * (theta / 2.0).tan());
+    p_cx = 0.0;
+    p_cy = 0.0;
   }
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
