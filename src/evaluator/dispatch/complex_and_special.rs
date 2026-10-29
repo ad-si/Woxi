@@ -4822,7 +4822,7 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
         ..
       }
     )
-    || matches!(base, Expr::FunctionCall { name, .. } if name == "Power" || name == "Rational")
+    || matches!(base, Expr::FunctionCall { name, args } if name == "Power" || name == "Rational" || (name == "Exp" && args.len() == 1))
   {
     tf_parens(tf(base))
   } else {
