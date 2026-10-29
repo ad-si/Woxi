@@ -237,7 +237,9 @@ pub fn dispatch_predicate_functions(
         args,
       ));
     }
-    "RealValuedNumericQ" if args.len() == 1 => {
+    // `Internal`RealValuedNumericQ` is the same predicate (resource
+    // functions use it to validate numeric point coordinates).
+    "RealValuedNumericQ" | "Internal`RealValuedNumericQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::real_valued_numeric_q_ast(
         args,
       ));
