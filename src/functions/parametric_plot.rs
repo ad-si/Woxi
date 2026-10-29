@@ -1111,7 +1111,7 @@ fn refine_region_cell(
   depth: usize,
   tolerance: f64,
   sample: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
-  emit: &mut dyn FnMut([(f64, f64); 4]),
+  emit: &mut dyn FnMut([(f64, f64); 4], (f64, f64)),
 ) {
   if depth > 0 {
     let (u0, v0) = origin;
@@ -1165,10 +1165,18 @@ fn refine_region_cell(
       return;
     }
   }
-  emit(corners);
+  emit(corners, (origin.0 + step.0 / 2.0, origin.1 + step.1 / 2.0));
 }
 
 /// The primitives (filled quads plus stroked boundary) of one region body.
+/// One filled cell of a two-parameter `ParametricPlot`, with the image
+/// (`xy`) and parameter (`uv`) coordinates of its centre for `ColorFunction`.
+struct RegionQuad {
+  polygon: Expr,
+  xy: (f64, f64),
+  uv: (f64, f64),
+}
+
 fn parametric_region_layer(
   body: &Expr,
   u_spec: &Expr,
@@ -1190,8 +1198,23 @@ fn parametric_region_layer(
     .iter()
     .find_map(|opt| {
       let (name, value) = crate::functions::graphics::option_name_value(opt)?;
-      match (name, &*value) {
+      // `plp*{10, 10}` and the like: the option value may still need
+      // evaluating to an integer or a list of them.
+      let value = if name == "PlotPoints" {
+        evaluate_expr_to_expr(&value).unwrap_or_else(|_| value.into_owned())
+      } else {
+        value.into_owned()
+      };
+      match (name, &value) {
         ("PlotPoints", Expr::Integer(n)) if *n >= 2 => Some(*n as usize),
+        // `{nu, nv}`: one square grid with the finer of the two counts.
+        ("PlotPoints", Expr::List(ns)) => ns
+          .iter()
+          .filter_map(|n| match n {
+            Expr::Integer(n) if *n >= 2 => Some(*n as usize),
+            _ => None,
+          })
+          .max(),
         _ => None,
       }
     })
@@ -1250,7 +1273,7 @@ fn parametric_region_layer(
   // `[ua, ub] x [va, vb]`; a cell with a point the body could not be
   // evaluated at (a singularity, a complex value) is left out.
   let quads_over =
-    |(ua, ub): (f64, f64), (va, vb): (f64, f64), g: usize| -> Vec<Expr> {
+    |(ua, ub): (f64, f64), (va, vb): (f64, f64), g: usize| -> Vec<RegionQuad> {
       let (dg_u, dg_v) =
         ((ub - ua) / (g - 1) as f64, (vb - va) / (g - 1) as f64);
       let grid_points: Vec<Vec<Option<(f64, f64)>>> = (0..g)
@@ -1261,11 +1284,20 @@ fn parametric_region_layer(
         })
         .collect();
       let mut quads = Vec::new();
-      let mut emit = |corners: [(f64, f64); 4]| {
-        quads.push(call1(
-          "Polygon",
-          Expr::List(corners.iter().map(|c| pt_expr(*c)).collect()),
-        ));
+      let mut emit = |corners: [(f64, f64); 4], uv: (f64, f64)| {
+        let n = corners.len() as f64;
+        let xy = (
+          corners.iter().map(|c| c.0).sum::<f64>() / n,
+          corners.iter().map(|c| c.1).sum::<f64>() / n,
+        );
+        quads.push(RegionQuad {
+          polygon: call1(
+            "Polygon",
+            Expr::List(corners.iter().map(|c| pt_expr(*c)).collect()),
+          ),
+          xy,
+          uv,
+        });
       };
       for i in 0..g - 1 {
         for j in 0..g - 1 {
@@ -1322,6 +1354,7 @@ fn parametric_region_layer(
         if polys.is_empty() {
           continue;
         }
+        let polys: Vec<Expr> = polys.into_iter().map(|q| q.polygon).collect();
         let mut group = vec![call0("EdgeForm")];
         if let Some(shade) = mesh.shading_at(i, j) {
           group.push(shade);
@@ -1421,12 +1454,75 @@ fn parametric_region_layer(
   let opacity = call1("Opacity", Expr::Real(fill_opacity));
   let no_edges = call0("EdgeForm");
 
-  let mut items = if mesh_cells.is_empty() {
-    let mut face_group = vec![no_edges, color.clone(), opacity];
-    face_group.append(&mut quads);
-    vec![Expr::List(face_group.into())]
-  } else {
+  let mut items = if !mesh_cells.is_empty() {
     mesh_cells
+  } else if let Some(cf) = &plot_opts.color_function {
+    // `ColorFunction -> f` paints every cell in the (opaque) color `f`
+    // gives at the cell's centre; cells of one color share a group.
+    let scale = |v: f64, lo: f64, hi: f64| {
+      if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
+    };
+    let scheme = crate::functions::field_plot::color_function_scheme_name(cf);
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let color_at = |q: &RegionQuad| -> (u8, u8, u8) {
+      let (x, y) = q.xy;
+      let (u, v) = q.uv;
+      let (sx, sy) = (scale(x, lo.0, hi.0), scale(y, lo.1, hi.1));
+      if let Some(name) = &scheme {
+        return crate::functions::field_plot::apply_named_color_function(
+          name, sx,
+        );
+      }
+      let args = if plot_opts.color_function_scaling {
+        vec![
+          Expr::Real(sx),
+          Expr::Real(sy),
+          Expr::Real(scale(u, u_min, u_max)),
+          Expr::Real(scale(v, v_min, v_max)),
+        ]
+      } else {
+        vec![Expr::Real(x), Expr::Real(y), Expr::Real(u), Expr::Real(v)]
+      };
+      let applied = Expr::CurriedCall {
+        func: Box::new(cf.clone()),
+        args,
+      };
+      evaluate_expr_to_expr(&applied)
+        .ok()
+        .and_then(|r| crate::functions::graphics::parse_color(&r))
+        .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
+    };
+    let mut groups: Vec<((u8, u8, u8), Vec<Expr>)> = Vec::new();
+    for q in quads {
+      let c = color_at(&q);
+      match groups.iter_mut().find(|(gc, _)| *gc == c) {
+        Some((_, polys)) => polys.push(q.polygon),
+        None => groups.push((c, vec![q.polygon])),
+      }
+    }
+    groups
+      .into_iter()
+      .map(|((r, g, b), polys)| {
+        let mut group = vec![
+          call0("EdgeForm"),
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(f64::from(r) / 255.0),
+              Expr::Real(f64::from(g) / 255.0),
+              Expr::Real(f64::from(b) / 255.0),
+            ],
+          ),
+          call1("Opacity", Expr::Real(1.0)),
+        ];
+        group.extend(polys);
+        Expr::List(group.into())
+      })
+      .collect()
+  } else {
+    let mut face_group = vec![no_edges, color.clone(), opacity];
+    face_group.extend(quads.into_iter().map(|q| q.polygon));
+    vec![Expr::List(face_group.into())]
   };
   items.append(&mut mesh_lines);
   if border.len() > 1 {
