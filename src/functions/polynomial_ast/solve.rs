@@ -16530,19 +16530,56 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
   }
 }
 
+/// Whether `e` is a polynomial in `vars` of total degree at most `max`.
+fn polynomial_degree_at_most(e: &Expr, vars: &[String], max: i64) -> bool {
+  let var_list =
+    Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+  let is_poly = crate::evaluator::evaluate_expr_to_expr(&call(
+    "PolynomialQ",
+    vec![e.clone(), var_list],
+  ));
+  if !matches!(is_poly, Ok(Expr::Identifier(ref t)) if t == "True") {
+    return false;
+  }
+  // The total degree is the degree in `t` once every variable is scaled
+  // by `t`.
+  let t = Expr::Identifier("FindMinimum$degree".to_string());
+  let scaled: Vec<(String, Expr)> = vars
+    .iter()
+    .map(|v| {
+      (
+        v.clone(),
+        call("Times", vec![t.clone(), Expr::Identifier(v.clone())]),
+      )
+    })
+    .collect();
+  let pairs: Vec<(&str, &Expr)> =
+    scaled.iter().map(|(v, e)| (v.as_str(), e)).collect();
+  let scaled_e = crate::syntax::substitute_variables(e, &pairs);
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Exponent",
+      vec![call("Expand", vec![scaled_e]), t],
+    )),
+    Ok(Expr::Integer(d)) if d <= i128::from(max)
+  )
+}
+
 /// A local `FindMinimum` of `f` from the given starting values under
-/// constraints whose equalities are all linear (the mass balances of a
-/// chemical-equilibrium Gibbs minimization) and whose other constraints are
-/// inequalities. The equalities are solved for some of the variables, so
-/// the search runs over the rest; the inequalities are kept strictly, every
-/// trial point outside them being rejected — a logarithm of a mole number
-/// must never see a negative argument. `None` when the problem has another
+/// equalities and inequalities. The linear equalities (the mass balances of
+/// a chemical-equilibrium Gibbs minimization) are solved for some of the
+/// variables and each nonlinear one (an equation of state) defines one more
+/// implicitly, so the search runs over the rest; the inequalities are kept
+/// strictly, every trial point outside them being rejected — a logarithm of
+/// a mole number must never see a negative argument. `monitor` is the
+/// caller's name and `StepMonitor`. `None` when the problem has another
 /// shape (or no feasible point is found), for the general solver.
-fn find_minimum_linear_equalities(
+fn find_minimum_local_constrained(
   f: &Expr,
   constraints: &[Expr],
   var_specs: &[Expr],
   maximize: bool,
+  monitor: Option<(&str, &Expr)>,
 ) -> Option<Expr> {
   use super::reduce::{CompOp, extract_comparison};
   // Variables and starting values, `{x, x0}` each (possibly in one list).
@@ -16663,9 +16700,26 @@ fn find_minimum_linear_equalities(
       CompOp::NotEqual => return None,
     }
   }
-  if rows.is_empty() && nonlinear.is_empty() {
+  let has_equalities = !rows.is_empty() || !nonlinear.is_empty();
+  if !has_equalities && ineqs.is_empty() {
     return None;
   }
+  // wolframscript solves a linear or quadratic objective under linear
+  // constraints (and any problem with equalities) by a method that does
+  // not report its steps: a `StepMonitor` then gets `noopmon` instead.
+  let monitorable = monitor.is_some()
+    && !has_equalities
+    && !(polynomial_degree_at_most(f, &vars, 2)
+      && ineqs
+        .iter()
+        .all(|(g, _)| polynomial_degree_at_most(g, &vars, 1)));
+  let report_unmonitored = || {
+    if let Some((func_name, _)) = monitor {
+      crate::emit_message(&format!(
+        "{func_name}::noopmon: The optimization was solved by an algorithm that does not provide monitoring information. Choose a specific iterative method if this information is necessary."
+      ));
+    }
+  };
   // Reduced row echelon form: pivot variables in terms of the free ones.
   let mut a: Vec<Vec<f64>> = rows
     .iter()
@@ -16881,6 +16935,9 @@ fn find_minimum_linear_equalities(
       return None;
     }
   }
+  // The points the search visits, for a `StepMonitor`.
+  let steps: std::cell::RefCell<Vec<Vec<f64>>> =
+    std::cell::RefCell::new(full_point(&z).into_iter().collect());
   // Phase two: quasi-Newton (BFGS) with central-difference gradients and a
   // backtracking line search that stays inside the feasible region.
   let m = z.len();
@@ -16955,6 +17012,21 @@ fn find_minimum_linear_equalities(
       .collect();
     let mut fz = phi(&z);
     let mut g = grad(&z);
+    // The first step moves no coordinate by more than a tenth of its own
+    // size (or 0.1 near zero): a raw gradient step can be arbitrarily long
+    // and land on a far plateau the search never climbs back from.
+    let first_scale = z
+      .iter()
+      .zip(&g)
+      .filter(|(_, gi)| gi.abs() > 0.0)
+      .map(|(zi, gi)| 0.1 * zi.abs().max(1.0) / gi.abs())
+      .fold(1.0f64, f64::min);
+    for row in &mut hinv {
+      for v in row.iter_mut() {
+        *v *= first_scale;
+      }
+    }
+    let mut updated = false;
     for _ in 0..500 {
       let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
       if gnorm < 1e-10 * fz.abs().max(1.0) {
@@ -16982,16 +17054,51 @@ fn find_minimum_linear_equalities(
         }
         t *= 0.5;
       }
-      let Some((znew, fnew)) = accepted else { break };
+      let Some((mut znew, mut fnew)) = accepted else {
+        break;
+      };
+      // A full step that was accepted outright may be too short (a
+      // gradient step where the curvature is not yet known): keep doubling
+      // while the objective keeps dropping.
+      if t == 1.0 {
+        for _ in 0..20 {
+          t *= 2.0;
+          let trial: Vec<f64> =
+            z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+          let ft = phi(&trial);
+          if ft.is_finite() && ft < fnew && ft <= fz + 1e-4 * t * slope {
+            znew = trial;
+            fnew = ft;
+          } else {
+            break;
+          }
+        }
+      }
       let solved = full_point_from(&znew, &anchor.borrow());
-      if let Some((_, y)) = solved {
+      if let Some((x, y)) = solved {
         *anchor.borrow_mut() = y;
+        if monitorable {
+          steps.borrow_mut().push(x);
+        }
       }
       let gnew = grad(&znew);
       let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
       let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
       let sy: f64 = s_vec.iter().zip(&y_vec).map(|(a, b)| a * b).sum();
       if sy > 1e-14 {
+        // Before the first update the initial matrix takes the scale the
+        // step has measured (Shanno–Phua): s.y / y.y.
+        if !updated {
+          let yy: f64 = y_vec.iter().map(|v| v * v).sum();
+          if yy > 0.0 {
+            for (i, row) in hinv.iter_mut().enumerate() {
+              for (j, v) in row.iter_mut().enumerate() {
+                *v = if i == j { sy / yy } else { 0.0 };
+              }
+            }
+          }
+          updated = true;
+        }
         // H <- (I - rho s y^T) H (I - rho y s^T) + rho s s^T
         let rho = 1.0 / sy;
         let hy: Vec<f64> = (0..m)
@@ -17040,14 +17147,34 @@ fn find_minimum_linear_equalities(
         Expr::List(vec![Expr::Identifier(v.clone()), Expr::Real(*xv)].into())
       })
       .collect();
-    if let Some(r) = find_minimum_linear_equalities(
+    if let Some(r) = find_minimum_local_constrained(
       f,
       &tightened,
       &[Expr::List(specs.into())],
       maximize,
+      None,
     ) {
+      report_unmonitored();
       return Some(r);
     }
+  }
+  // The search's steps are the caller's to monitor when it ran unhindered
+  // to a stationary point (wolframscript's interior method); otherwise
+  // the problem was solved another way that reports nothing.
+  let stationary = {
+    let g = grad(&z);
+    let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+    gnorm.is_finite() && gnorm <= 1e-6 * value.abs().max(1.0)
+  };
+  if let Some((_, m)) = monitor
+    && monitorable
+    && stationary
+  {
+    for point in steps.borrow().iter() {
+      fire_step_monitor(Some(m), &vars, point);
+    }
+  } else {
+    report_unmonitored();
   }
   let rules: Vec<Expr> = vars
     .iter()
@@ -17332,11 +17459,12 @@ pub fn find_minimum_ast(
   }
   if let Expr::List(items) = &args[0]
     && items.len() >= 2
-    && let Some(result) = find_minimum_linear_equalities(
+    && let Some(result) = find_minimum_local_constrained(
       &items[0],
       &items[1..],
       &args[1..var_args_end],
       maximize,
+      find_option(&args[var_args_end..], "StepMonitor").map(|m| (func_name, m)),
     )
   {
     return Ok(result);

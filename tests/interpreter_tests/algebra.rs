@@ -21853,11 +21853,6 @@ mod constrained_numeric_optimization {
       interpret("FindMaximum[{2 x, x <= 3}, {x, 0}]").unwrap(),
       "{6., {x -> 3.}}"
     );
-    assert_eq!(
-      interpret("FindMaximum[{x + y, x^2 + y^2 <= 1}, {{x, 0.5}, {y, 0.5}}]")
-        .unwrap(),
-      "{1.4142135623730951, {x -> 0.7071067811865476, y -> 0.7071067811865476}}"
-    );
     // wolframscript answers the circle case with 1.4142157575770362, so the
     // agreement is only to about 5 digits — round to 10^-4 to compare.
     assert_eq!(
@@ -21930,6 +21925,57 @@ mod constrained_numeric_optimization {
       .unwrap(),
       "{596782, {891982, 325467, 674533}}"
     );
+  }
+
+  // Inequalities alone also get the local search from the starting values
+  // (Demonstration AmericanCappedCallOptionsWithExponentialCap's
+  // FindMaximum went to a global search that ended at L -> 60042 instead
+  // of the local maximum near 52).
+  #[test]
+  fn inequality_constrained_local_search() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {L, a} /. #[[2]]} &[FindMaximum[{100 a \
+         Exp[-a^2/2] + Exp[-(L - 52)^2/100], a > 0 && L >= 45}, \
+         {{L, 45}, {a, 0.05}}]]]"
+      )
+      .unwrap(),
+      "{61653066, {52000000, 1000000}}"
+    );
+  }
+
+  // A `StepMonitor` sees the steps when wolframscript would use its
+  // interior method: no equalities, an objective that is not linear or
+  // quadratic, and a stationary point reached inside the bounds. Otherwise
+  // it reports `noopmon` and fires nothing.
+  #[test]
+  fn constrained_step_monitor() {
+    assert_eq!(
+      interpret(
+        "r = Reap[FindMaximum[{Sin[x] + Cos[y], 0 < x < 3 && 0 < y < 3}, \
+         {{x, 1}, {y, 1}}, StepMonitor :> Sow[{x, y}]]]; \
+         {Round[r[[1, 1]], 10^-6], Round[x /. r[[1, 2]], 10^-6], \
+         r[[2, 1, 1]], Length[r[[2, 1]]] > 3}"
+      )
+      .unwrap(),
+      "{2, 392699/250000, {1., 1.}, True}"
+    );
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Reap[FindMinimum[{Exp[x] + y^2, x >= 1}, {{x, 2}, {y, 2}}, \
+       StepMonitor :> Sow[{x, y}]]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings[0].starts_with("FindMinimum::noopmon:"));
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Reap[FindMinimum[{x Log[x] + y Log[y], x + y == 1, x > 0, y > 0}, \
+       {{x, 0.3}, {y, 0.7}}, StepMonitor :> Sow[{x, y}]]][[2]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{}");
+    assert!(r.warnings[0].starts_with("FindMinimum::noopmon:"));
   }
 
   // Several constraints combine with And.
