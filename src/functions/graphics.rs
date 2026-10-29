@@ -24654,8 +24654,18 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
           }
           svg.push_str("</text>\n");
         } else {
+          // A part like `" is"` is laid out with its leading space, but SVG
+          // trims edge whitespace (and collapses runs) unless told not to.
+          let space_attr = if markup.contains("  ")
+            || markup.starts_with(char::is_whitespace)
+            || markup.ends_with(char::is_whitespace)
+          {
+            " xml:space=\"preserve\""
+          } else {
+            ""
+          };
           svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n"
+            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n"
           ));
         }
         x += width;

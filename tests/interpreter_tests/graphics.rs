@@ -18071,6 +18071,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn row_parts_with_edge_spaces_keep_them() {
+      // Regression: a Row part such as `" is"` has its leading space in the
+      // measured layout, but SVG trims it unless `xml:space="preserve"` is set,
+      // which glued the words together.
+      let svg = export_svg("Row[{\"7\", \" is\", \" prime \"}]");
+      assert!(svg.contains("xml:space=\"preserve\"> is</text>"), "{svg}");
+      assert!(
+        svg.contains("xml:space=\"preserve\"> prime </text>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("xml:space=\"preserve\">7</text>"), "{svg}");
+    }
+
+    #[test]
     fn array_plot_aspect_ratio() {
       // Regression: `AspectRatio -> r` shapes the plot; a one-row, very wide
       // array used to collapse to zero height.
