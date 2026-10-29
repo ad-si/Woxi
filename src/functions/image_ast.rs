@@ -226,7 +226,8 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Resolve an `ImageSize -> n` / `ImageSize -> {w, h}` option into the pixel
 /// size an image of `width` x `height` is displayed at.  A single number
 /// fixes the width; a pair is a bounding box the image is scaled to fit
-/// while keeping its aspect ratio.
+/// while keeping its aspect ratio (an `Automatic` side leaves the other
+/// side to decide).
 fn image_size_option(
   opts: &[Expr],
   width: u32,
@@ -250,9 +251,19 @@ fn image_size_option(
     _ => None,
   })?;
   let scale = match value {
+    // `Automatic` leaves that side of the bounding box unconstrained, so
+    // `{w, Automatic}` fixes the width and `{Automatic, h}` the height.
     Expr::List(dims) if dims.len() == 2 => {
-      let (bw, bh) = (number(&dims[0])?, number(&dims[1])?);
-      (bw / width as f64).min(bh / height as f64)
+      let is_auto =
+        |e: &Expr| matches!(e, Expr::Identifier(n) if n == "Automatic");
+      match (is_auto(&dims[0]), is_auto(&dims[1])) {
+        (false, true) => number(&dims[0])? / width as f64,
+        (true, false) => number(&dims[1])? / height as f64,
+        _ => {
+          let (bw, bh) = (number(&dims[0])?, number(&dims[1])?);
+          (bw / width as f64).min(bh / height as f64)
+        }
+      }
     }
     other => number(other)? / width as f64,
   };

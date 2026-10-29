@@ -1785,6 +1785,38 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_image_size_with_automatic_side_keeps_aspect_ratio() {
+    // Regression: `ImageSize -> {w, Automatic}` on an `Image` was ignored,
+    // so an inset picture drew at its pixel size instead of the requested
+    // width (with the height following the aspect ratio).
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[Inset[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 1}}, \
+       {{0, 0, 0}, {1, 0, 1}}, {{1, 1, 0}, {0, 1, 1}}}, \
+       ImageSize -> {40, Automatic}], {0, 0}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Inset image should produce a graphics SVG");
+    assert!(
+      svg.contains("width=\"40.00\" height=\"80.00\""),
+      "Image must be shown at 40 x 80:\n{svg}"
+    );
+    let svg = interpret_with_stdout(
+      "Graphics[Inset[Image[{{{1, 0, 0}, {0, 1, 0}}, {{0, 0, 1}, {1, 1, 1}}, \
+       {{0, 0, 0}, {1, 0, 1}}, {{1, 1, 0}, {0, 1, 1}}}, \
+       ImageSize -> {Automatic, 20}], {0, 0}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Inset image should produce a graphics SVG");
+    assert!(
+      svg.contains("width=\"10.00\" height=\"20.00\""),
+      "Image must be shown at 10 x 20:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_show_merged_plot3d_keeps_per_surface_plotstyle() {
     // Regression: a Manipulate body that stacks several flat `Plot3D`
     // surfaces with an explicit per-surface `PlotStyle` list inside a
