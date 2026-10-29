@@ -1117,7 +1117,7 @@ ImageAdd,Adds pixel values of two images pointwise,✅,pure,7.0,1091
 OwnValues,Returns the own values of a symbol,✅,pure,2.0,1092
 EstimatedDistribution,Distribution with maximum-likelihood parameter estimates,✅,pure,8.0,1093
 SplineWeights,,🚫,,7.0,1094
-Histogram3D,,🚫,,7.0,1096
+Histogram3D,3D histogram of binned 2D data,✅,pure,7.0,1096
 ImageCrop,Trims uniform borders or crops an image to a given size and side,✅,pure,7.0,1097
 StringTrim,Removes whitespace from the beginning and end of a string,✅,pure,7.0,1098
 SubtractFrom,Subtracts a value from a variable,✅,stateful,1.0,1099
