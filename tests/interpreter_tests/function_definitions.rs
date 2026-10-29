@@ -929,6 +929,12 @@ mod compile {
         .unwrap(),
       "{MachinePrecision, Infinity, 5.}"
     );
+    // `Internal`RealValuedNumericQ` is the same predicate as the System one.
+    assert_eq!(
+      interpret("{Internal`RealValuedNumericQ[Sqrt[2]], Internal`RealValuedNumericQ[I], MatrixQ[{{0, 0}, {1, 1/2}}, Internal`RealValuedNumericQ], VectorQ[{1, x}, Internal`RealValuedNumericQ]}")
+        .unwrap(),
+      "{True, False, True, False}"
+    );
     // The older dump without a version tuple, with `Blank[…]` patterns.
     assert_eq!(
       interpret(

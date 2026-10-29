@@ -6315,6 +6315,7 @@ Developer`ToPackedArray,Packs a full rectangular array of machine numbers into o
 Developer`FromPackedArray,Converts a packed array to a regular list; Woxi has no packed arrays so it returns the array unchanged,✅,pure,4.0,
 NIntegrate`GaussRuleData,Abscissas and weights of the n-point Gauss-Legendre rule on [0 1] at machine precision,✅,pure,5.0,
 Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
+Internal`RealValuedNumericQ,Tests whether an expression is a numeric quantity with a real value (same as RealValuedNumericQ),✅,pure,13.3,
 Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,
 PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,
 HypothesisTesting`MeanTest,Legacy one-sample mean test answering with an OneSidedPValue (or TwoSidedPValue under TwoSided -> True) rule; a matrix argument tests each column; options KnownVariance and FullReport,✅,pure,1.0,
