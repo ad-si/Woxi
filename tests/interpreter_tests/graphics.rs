@@ -16561,6 +16561,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_3d_returns_graphics3d_head() {
+      assert_eq!(
+        interpret("Head[Histogram3D[{{1, 2}, {2, 3}, {2, 3}}]]").unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn histogram_3d_one_cuboid_per_nonempty_bin() {
+      // Unit-width bins: points fall into 2 distinct bins -> 2 cuboids.
+      let svg =
+        export_svg("Histogram3D[{{0.5, 0.5}, {0.6, 0.4}, {1.5, 1.5}}, {1}]");
+      assert_eq!(svg.matches("<polygon").count(), 24);
+    }
+
+    #[test]
+    fn histogram_3d_invalid_data_stays_unevaluated() {
+      assert_eq!(
+        interpret("Head[Histogram3D[{1, 2, 3}]]").unwrap(),
+        "Histogram3D"
+      );
+    }
+
+    #[test]
     fn pie_chart_3d_basic() {
       let svg = export_svg("PieChart3D[{30, 20, 10}]");
       // Should produce a Graphics3D with many triangle polygons.

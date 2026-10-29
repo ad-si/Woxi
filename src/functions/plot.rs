@@ -8069,7 +8069,7 @@ pub enum HistogramHeight {
 }
 
 /// Compute the common bin edges for one or more datasets given a bin spec.
-fn histogram_bin_edges(
+pub(crate) fn histogram_bin_edges(
   all_values: &[f64],
   bin_spec: Option<&BinSpec>,
 ) -> Vec<f64> {

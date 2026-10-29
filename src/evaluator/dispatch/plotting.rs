@@ -809,6 +809,9 @@ pub fn dispatch_plotting(
     "PieChart3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::chart::pie_chart_3d_ast(args)
     })),
+    "Histogram3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::histogram_3d_ast(args)
+    })),
     "Histogram" if !args.is_empty() => {
       Some(crate::functions::chart::histogram_ast(args))
     }

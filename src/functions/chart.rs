@@ -2868,6 +2868,161 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
+/// Histogram3D[{{x1, y1}, {x2, y2}, ...}] or Histogram3D[data, bspec]
+///
+/// Bins the 2D points on a regular grid and draws one cuboid per non-empty
+/// bin whose height is the number of points in it. `bspec` (a bin count,
+/// `{w}` or `{{e1, e2, ...}}`) applies to both axes.
+pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot3d::{
+    Point3D, Triangle, apply_lighting, depth, project, tessellate_cuboid,
+    triangle_normal,
+  };
+
+  let empty = || {
+    crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    )
+  };
+  let Ok(data) = evaluate_expr_to_expr(&args[0]) else {
+    return Ok(invalid_dataset("Histogram3D", args));
+  };
+  let points: Option<Vec<(f64, f64)>> = match &data {
+    Expr::List(rows) => rows
+      .iter()
+      .map(|r| match r {
+        Expr::List(xy) if xy.len() == 2 => {
+          Some((try_eval_to_f64(&xy[0])?, try_eval_to_f64(&xy[1])?))
+        }
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  };
+  let Some(points) = points else {
+    return Ok(invalid_dataset("Histogram3D", args));
+  };
+  if points.is_empty() {
+    return Ok(empty());
+  }
+
+  let bin_spec = args[1..]
+    .iter()
+    .find(|a| !matches!(a, Expr::Rule { .. }))
+    .and_then(parse_bin_spec);
+  let xs: Vec<f64> = points.iter().map(|p| p.0).collect();
+  let ys: Vec<f64> = points.iter().map(|p| p.1).collect();
+  let x_edges =
+    crate::functions::plot::histogram_bin_edges(&xs, bin_spec.as_ref());
+  let y_edges =
+    crate::functions::plot::histogram_bin_edges(&ys, bin_spec.as_ref());
+  let (nx, ny) = (x_edges.len() - 1, y_edges.len() - 1);
+  if nx == 0 || ny == 0 {
+    return Ok(empty());
+  }
+
+  let bin_of = |edges: &[f64], v: f64| -> Option<usize> {
+    let n = edges.len() - 1;
+    (0..n).find(|&i| {
+      v >= edges[i]
+        && if i == n - 1 {
+          v <= edges[i + 1]
+        } else {
+          v < edges[i + 1]
+        }
+    })
+  };
+  let mut counts = vec![vec![0usize; ny]; nx];
+  for &(x, y) in &points {
+    if let (Some(i), Some(j)) = (bin_of(&x_edges, x), bin_of(&y_edges, y)) {
+      counts[i][j] += 1;
+    }
+  }
+  let c_max = counts.iter().flatten().copied().max().unwrap_or(0);
+  if c_max == 0 {
+    return Ok(empty());
+  }
+
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
+
+  // Same world-space conventions as BarChart3D: x and y span [-1, 1] and
+  // heights span [-Z_SCALE, Z_SCALE] from zero to the tallest bin.
+  const Z_SCALE: f64 = 0.4;
+  let norm = |edges: &[f64], v: f64| -> f64 {
+    let (lo, hi) = (edges[0], edges[edges.len() - 1]);
+    if (hi - lo).abs() < 1e-15 {
+      0.0
+    } else {
+      (v - lo) / (hi - lo) * 2.0 - 1.0
+    }
+  };
+  let nz =
+    |c: usize| -> f64 { c as f64 / c_max as f64 * 2.0 * Z_SCALE - Z_SCALE };
+  let base_color = if opts.chart_style.is_empty() {
+    PLOT_COLORS[0]
+  } else {
+    let c = &opts.chart_style[0];
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  };
+
+  let camera = chart_3d_camera();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+  for (i, column) in counts.iter().enumerate() {
+    for (j, &c) in column.iter().enumerate() {
+      if c == 0 {
+        continue;
+      }
+      let p_min = Point3D {
+        x: norm(&x_edges, x_edges[i]),
+        y: norm(&y_edges, y_edges[j]),
+        z: nz(0),
+      };
+      let p_max = Point3D {
+        x: norm(&x_edges, x_edges[i + 1]),
+        y: norm(&y_edges, y_edges[j + 1]),
+        z: nz(c),
+      };
+      for (v0, v1, v2) in tessellate_cuboid(&p_min, &p_max) {
+        let color = apply_lighting(base_color, triangle_normal(v0, v1, v2));
+        let center = Point3D {
+          x: (v0.x + v1.x + v2.x) / 3.0,
+          y: (v0.y + v1.y + v2.y) / 3.0,
+          z: (v0.z + v1.z + v2.z) / 3.0,
+        };
+        all_triangles.push(Triangle {
+          boundary: [true; 3],
+          edge_color: None,
+          edge_width: None,
+          projected: [
+            project(v0, &camera),
+            project(v1, &camera),
+            project(v2, &camera),
+          ],
+          depth: depth(center, &camera),
+          color,
+          opacity: 1.0,
+          texture: None,
+        });
+      }
+    }
+  }
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  let svg =
+    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+  Ok(crate::graphics3d_result(svg))
+}
+
 /// PieChart3D[{v1, v2, ...}] or PieChart3D[{{v1, v2, ...}, ...}]
 ///
 /// Flat input renders as a short cylinder split into colored wedges.
