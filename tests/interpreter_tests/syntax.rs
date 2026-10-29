@@ -4416,6 +4416,20 @@ mod complex_symbol {
     assert_eq!(interpret("Head[3 + 4 I]").unwrap(), "Complex");
   }
 
+  // A machine complex keeps its head when its imaginary part is zero:
+  // `1. + 0.*I` is Complex[1., 0.], while an exact zero drops the I.
+  #[test]
+  fn machine_zero_imaginary_part_is_complex() {
+    assert_eq!(
+      interpret(
+        "{Head[0.*I], Head[1. + 0.*I], Head[Complex[1, 0.]], Head[Complex[1., 0]], \
+         MatchQ[{1 + I, 0. + I, 0 + 0.*I, 1 + 0.*I}, {__Complex}]}"
+      )
+      .unwrap(),
+      "{Complex, Complex, Complex, Real, True}"
+    );
+  }
+
   #[test]
   fn complex_attributes() {
     assert_eq!(interpret("Attributes[Complex]").unwrap(), "{Protected}");

@@ -2026,9 +2026,15 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   // actually contains a Real / BigFloat literal — symbolic constants like
   // Pi or E should keep Times[Pi, I] as a Times expression, not coerce to
   // a float complex.
+  // A machine imaginary part that is zero still makes a complex number
+  // when the `I` is written out: `1. + 0.*I` is Complex[1., 0.].
+  fn mentions_i(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(n) if n == "I")
+      || crate::syntax::expr_children(e).into_iter().any(mentions_i)
+  }
   if contains_real_literal(expr)
     && let Some((_, im)) = super::math_ast::try_extract_complex_float(expr)
-    && im != 0.0
+    && (im != 0.0 || mentions_i(expr))
   {
     return true;
   }
