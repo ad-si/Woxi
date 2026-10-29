@@ -1912,6 +1912,60 @@ pub fn together_expr(expr: &Expr) -> Expr {
     )));
   }
 
+  // A denominator factor that is another one negated (`1 - y` against
+  // `-1 + y`) is the same factor: spell it the way it was first met and
+  // carry the sign into the numerator, so the two share one place in the
+  // common denominator instead of multiplying into it twice.
+  {
+    let mut seen: Vec<String> = Vec::new();
+    for (num, den) in &mut fractions {
+      if matches!(den, Expr::Integer(1)) {
+        continue;
+      }
+      let mut changed = false;
+      let mut flip = false;
+      let mut factors: Vec<(Expr, Rat)> = Vec::new();
+      for (base, exp) in extract_den_factors(den) {
+        let is_sum = matches!(&base, Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            &base,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          );
+        let key = expr_to_string(&expand_and_combine(&base));
+        if is_sum && exp.1 == 1 && !seen.contains(&key) {
+          let negated = expand_and_combine(&negate_expr(&base));
+          if seen.contains(&expr_to_string(&negated)) {
+            if exp.0 % 2 != 0 {
+              flip = !flip;
+            }
+            factors.push((negated, exp));
+            changed = true;
+            continue;
+          }
+        }
+        if !seen.contains(&key) {
+          seen.push(key);
+        }
+        factors.push((base, exp));
+      }
+      if changed {
+        let rebuilt: Vec<Expr> =
+          factors.iter().map(|(b, e)| rebuild_power(b, *e)).collect();
+        *den = if rebuilt.len() == 1 {
+          rebuilt.into_iter().next().unwrap()
+        } else {
+          build_product(rebuilt)
+        };
+        if flip {
+          *num = negate_expr(num);
+        }
+      }
+    }
+  }
+
   // Compute the common denominator (LCM of all denominators)
   // Decompose each denominator into base^exp pairs and take max exp for each base
   let mut base_exp_map: Vec<(String, Expr, Rat)> = Vec::new();
@@ -2088,6 +2142,24 @@ pub fn together_expr(expr: &Expr) -> Expr {
       try_reduce_to_polynomial(&combined_num, &combined_den)
     {
       return reduced;
+    }
+    // A common polynomial factor in several variables (`(a c - b c)/(a - b)`)
+    // cancels too.
+    if let Ok(gcd) = crate::evaluator::evaluate_function_call_ast(
+      "PolynomialGCD",
+      &[combined_num.clone(), expand_and_combine(&combined_den)],
+    ) && !crate::functions::predicate_ast::is_numeric_q(&gcd)
+      && matches!(&gcd, Expr::FunctionCall { name, .. } if name == "Plus")
+    {
+      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&div2(
+        combined_num.clone(),
+        combined_den.clone(),
+      ));
+      if expr_to_string(&cancelled)
+        != expr_to_string(&div2(combined_num.clone(), combined_den.clone()))
+      {
+        return cancelled;
+      }
     }
     // Try to cancel common monomial factors between numerator and denominator
     // without re-expanding the denominator (preserves factored form).

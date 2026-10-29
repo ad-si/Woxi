@@ -52,12 +52,40 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Separate the recurrence relation from initial conditions
   let mut recurrence = None;
   let mut initial_conditions: Vec<(i128, Expr)> = Vec::new(); // (index, value)
+  // Conditions at any index free of the variable (`f[n] == 1` with a
+  // symbolic `n`), for the solvers that take boundary values.
+  let mut conditions: Vec<(Expr, Expr)> = Vec::new();
+  let symbolic_point = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == &func_name
+          && args.len() == 1
+          && !crate::functions::polynomial_ast::contains_var(
+            &args[0], &var_name,
+          ) =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
 
   for eq in &equations {
     // Each equation should be lhs == rhs
     let Some((lhs, rhs)) = extract_equation(eq) else {
       return Ok(unevaluated());
     };
+    if let Some(at) = symbolic_point(&lhs) {
+      conditions.push((at, rhs.clone()));
+    } else if let Some(at) = symbolic_point(&rhs) {
+      conditions.push((at, lhs.clone()));
+    }
+    if extract_func_at_integer(&lhs).is_none()
+      && extract_func_at_integer(&rhs).is_none()
+      && (symbolic_point(&lhs).is_some() || symbolic_point(&rhs).is_some())
+    {
+      continue;
+    }
 
     // Check if this is an initial condition: a[integer] == value
     if let Some((name, idx)) = extract_func_at_integer(&lhs)
@@ -83,6 +111,28 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some((rec_lhs, rec_rhs)) = recurrence else {
     return Ok(unevaluated());
   };
+  // A condition at a symbolic index only the symbolic solver can use.
+  let symbolic_conditions = conditions.len() > initial_conditions.len();
+
+  if symbolic_conditions {
+    return Ok(
+      match solve_symbolic_const_coeff_linear(
+        &rec_lhs,
+        &rec_rhs,
+        &func_name,
+        &var_name,
+        &conditions,
+      ) {
+        Some(solution) => wrap_rsolve_result(
+          solution,
+          &func_name,
+          &var_name,
+          return_as_func_call,
+        ),
+        None => unevaluated(),
+      },
+    );
+  }
 
   // Try to solve as constant-coefficient linear recurrence
   // Extract: a[n+k] = c_{k-1}*a[n+k-1] + ... + c_0*a[n]
@@ -151,6 +201,22 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Homogeneous linear recurrence with symbolic constant coefficients.
+  if let Some(solution) = solve_symbolic_const_coeff_linear(
+    &rec_lhs,
+    &rec_rhs,
+    &func_name,
+    &var_name,
+    &conditions,
+  ) {
+    return Ok(wrap_rsolve_result(
+      solution,
+      &func_name,
+      &var_name,
+      return_as_func_call,
+    ));
+  }
+
   // Nonlinear logistic map a[n+1] == 4 a[n] (1 - a[n]).
   if let Some(solution) = solve_logistic_map(
     &rec_lhs,
@@ -168,6 +234,183 @@ pub fn rsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(unevaluated())
+}
+
+/// A homogeneous linear recurrence `Σ c_k a[n + k] == 0` whose coefficients
+/// are free of `n` (symbols included). Its characteristic polynomial is
+/// factored, the roots taken in `Roots`' order (the reverse of `FactorList`'s
+/// factors), and each root ρ of multiplicity m contributes
+/// `C[i] ρ^n, C[i+1] n ρ^n, …`. Conditions `a[k] == v` (`k` free of `n`, one
+/// per order) fix the constants.
+fn solve_symbolic_const_coeff_linear(
+  lhs: &Expr,
+  rhs: &Expr,
+  func_name: &str,
+  var_name: &str,
+  conditions: &[(Expr, Expr)],
+) -> Option<Expr> {
+  use crate::evaluator::{evaluate_expr_to_expr, evaluate_function_call_ast};
+  let difference = minus2(lhs.clone(), rhs.clone());
+  let mut offsets = Vec::new();
+  if !all_func_offsets(&difference, func_name, var_name, &mut offsets) {
+    return None;
+  }
+  offsets.sort_unstable();
+  offsets.dedup();
+  let (lo, hi) = (*offsets.first()?, *offsets.last()?);
+  if hi - lo < 1 || hi - lo > 6 {
+    return None;
+  }
+  let at = |k: i128| {
+    let index = plus2(id_expr(var_name), Expr::Integer(k));
+    call1(func_name, evaluate_expr_to_expr(&index).unwrap_or(index))
+  };
+  let placeholder = |k: i128| id_expr(&format!("Woxi`RSolveTerm{}", k - lo));
+  let rules: Vec<Expr> = offsets
+    .iter()
+    .map(|&k| rule_expr(at(k), placeholder(k)))
+    .collect();
+  let replaced = evaluate_expr_to_expr(&call(
+    "ReplaceAll",
+    vec![difference, Expr::List(rules.into())],
+  ))
+  .ok()?;
+  let expanded = evaluate_function_call_ast("Expand", &[replaced]).ok()?;
+  let free = |e: &Expr| {
+    !crate::functions::polynomial_ast::contains_var(e, var_name)
+      && !contains_func(e, func_name)
+  };
+  let mut coefficients = Vec::new();
+  let mut rest = expanded.clone();
+  for k in lo..=hi {
+    let c = evaluate_function_call_ast(
+      "Coefficient",
+      &[expanded.clone(), placeholder(k), Expr::Integer(1)],
+    )
+    .ok()?;
+    if !free(&c) {
+      return None;
+    }
+    rest = evaluate_expr_to_expr(&call(
+      "ReplaceAll",
+      vec![rest, rule_expr(placeholder(k), Expr::Integer(0))],
+    ))
+    .ok()?;
+    coefficients.push(c);
+  }
+  // Homogeneous only, and linear in the terms.
+  let check = evaluate_function_call_ast(
+    "Expand",
+    &[minus2(
+      expanded,
+      plus(
+        (lo..=hi)
+          .zip(&coefficients)
+          .map(|(k, c)| times2(c.clone(), placeholder(k)))
+          .collect(),
+      ),
+    )],
+  )
+  .ok()?;
+  if !matches!(rest, Expr::Integer(0)) || !matches!(check, Expr::Integer(0)) {
+    return None;
+  }
+  let r = id_expr("r$RSolve");
+  let characteristic = plus(
+    coefficients
+      .iter()
+      .enumerate()
+      .map(|(i, c)| times2(c.clone(), pow(r.clone(), Expr::Integer(i as i128))))
+      .collect(),
+  );
+  let factors = evaluate_function_call_ast(
+    "FactorList",
+    &[evaluate_expr_to_expr(&characteristic).ok()?],
+  )
+  .ok()?;
+  let Expr::List(factors) = &factors else {
+    return None;
+  };
+  let mut roots: Vec<(Expr, i128)> = Vec::new();
+  for f in factors.iter().rev() {
+    let Expr::List(pair) = f else { return None };
+    let [factor, Expr::Integer(m)] = pair.as_slice() else {
+      return None;
+    };
+    if !crate::functions::polynomial_ast::contains_var(factor, "r$RSolve") {
+      continue;
+    }
+    let solved = crate::functions::polynomial_ast::solve_ast(&[
+      Expr::Comparison {
+        operands: vec![factor.clone(), Expr::Integer(0)],
+        operators: vec![ComparisonOp::Equal],
+      },
+      r.clone(),
+    ])
+    .ok()?;
+    let Expr::List(sols) = &solved else {
+      return None;
+    };
+    for sol in sols {
+      let Expr::List(rule) = sol else { return None };
+      let [Expr::Rule { replacement, .. }] = rule.as_slice() else {
+        return None;
+      };
+      roots.push(((**replacement).clone(), *m));
+    }
+  }
+  if roots.iter().map(|(_, m)| m).sum::<i128>() != hi - lo {
+    return None;
+  }
+  let n = id_expr(var_name);
+  let mut terms = Vec::new();
+  let mut constant = 1;
+  for (root, m) in &roots {
+    for j in 0..*m {
+      let mut factors = vec![
+        pow(root.clone(), n.clone()),
+        call1("C", Expr::Integer(constant)),
+      ];
+      if j > 0 {
+        factors.push(pow(n.clone(), Expr::Integer(j)));
+      }
+      terms.push(times(factors));
+      constant += 1;
+    }
+  }
+  let general = evaluate_expr_to_expr(&plus(terms)).ok()?;
+  if conditions.is_empty() {
+    return Some(general);
+  }
+  if conditions.len() as i128 != hi - lo {
+    return None;
+  }
+  let equations: Vec<Expr> = conditions
+    .iter()
+    .map(|(k, v)| Expr::Comparison {
+      operands: vec![
+        crate::syntax::substitute_variable(&general, var_name, k),
+        v.clone(),
+      ],
+      operators: vec![ComparisonOp::Equal],
+    })
+    .collect();
+  let unknowns: Vec<Expr> = (1..constant)
+    .map(|i| call1("C", Expr::Integer(i)))
+    .collect();
+  let solved = crate::functions::polynomial_ast::solve_ast(&[
+    Expr::List(equations.into()),
+    Expr::List(unknowns.into()),
+  ])
+  .ok()?;
+  let Expr::List(sols) = &solved else {
+    return None;
+  };
+  let first = sols.first()?;
+  let particular =
+    evaluate_expr_to_expr(&call("ReplaceAll", vec![general, first.clone()]))
+      .ok()?;
+  evaluate_function_call_ast("Together", &[particular]).ok()
 }
 
 /// Collect every offset `k` at which `func[var + k]` occurs in `expr`,

@@ -23722,3 +23722,79 @@ mod solve_symbolic_root_forms {
     );
   }
 }
+
+mod together_negated_and_shared_factors {
+  use super::*;
+
+  // A denominator factor that is another negated is the same factor, and a
+  // common polynomial factor in several variables cancels.
+  #[test]
+  fn combines_and_cancels() {
+    assert_eq!(
+      interpret("Together[a/(-1 + y) + 1/(1 - y)]").unwrap(),
+      "(-1 + a)/(-1 + y)"
+    );
+    assert_eq!(
+      interpret("Together[1/(1 - x)^2 + 1/(x - 1)]").unwrap(),
+      "x/(-1 + x)^2"
+    );
+    assert_eq!(
+      interpret("Together[1/(a - b) + 1/(b - a) + c]").unwrap(),
+      "c"
+    );
+    assert_eq!(
+      interpret("Together[x/(x^2 - y^2) - y/(x^2 - y^2)]").unwrap(),
+      "(x + y)^(-1)"
+    );
+  }
+}
+
+mod expand_keeps_symbolic_power_bases {
+  use super::*;
+
+  // A power with a non-integer exponent is not multiplied out.
+  #[test]
+  fn bases_stay() {
+    assert_eq!(
+      interpret("Expand[c + ((1 - p)/p)^n d]").unwrap(),
+      "c + d*((1 - p)/p)^n"
+    );
+    assert_eq!(interpret("Expand[(a (b + c))^n]").unwrap(), "(a*(b + c))^n");
+    assert_eq!(
+      interpret("Expand[Sqrt[a (b + c)]]").unwrap(),
+      "Sqrt[a*(b + c)]"
+    );
+  }
+}
+
+mod rsolve_symbolic_constant_coefficients {
+  use super::*;
+
+  // Roots in Roots' order, repeated roots times powers of n, and boundary
+  // values at a symbolic index.
+  #[test]
+  fn general_and_boundary_value_solutions() {
+    assert_eq!(
+      interpret("RSolve[p a[n + 2] - a[n + 1] + (1 - p) a[n] == 0, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> ((1 - p)/p)^n*C[1] + C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == (q + s) a[n + 1] - q s a[n], a[n], n]")
+        .unwrap(),
+      "{{a[n] -> s^n*C[1] + q^n*C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 2 c a[n + 1] - c^2 a[n], a[n], n]")
+        .unwrap(),
+      "{{a[n] -> c^n*C[1] + c^n*n*C[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[{f[0] == 0, f[n] == 1, f[k] == (1 - p) f[k - 1] + p f[k + 1]}, f[k], k]"
+      )
+      .unwrap(),
+      "{{f[k] -> (-1 + ((1 - p)/p)^k)/(-1 + ((1 - p)/p)^n)}}"
+    );
+  }
+}
