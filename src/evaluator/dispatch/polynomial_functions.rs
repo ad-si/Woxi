@@ -109,6 +109,71 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    // FactorSquareFreeList[poly, Modulus -> p]: the factorization modulo p,
+    // with the irreducible factors of each multiplicity multiplied together.
+    "FactorSquareFreeList"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Modulus")
+            && matches!(replacement.as_ref(), Expr::Integer(p) if *p >= 0)) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[1] else {
+        return None;
+      };
+      let Expr::Integer(p) = replacement.as_ref() else {
+        return None;
+      };
+      if *p == 0 {
+        return Some(
+          crate::functions::polynomial_ast::factor_square_free_list_ast(
+            &args[..1],
+          ),
+        );
+      }
+      let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+      let factors = match eval(call("FactorList", args.to_vec())) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut constant = Expr::Integer(1);
+      let mut by_exponent: Vec<(i128, Vec<Expr>)> = Vec::new();
+      for (i, pair) in pairs.iter().enumerate() {
+        let Expr::List(fe) = pair else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let (Some(f), Some(Expr::Integer(k))) = (fe.first(), fe.get(1)) else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        if i == 0 && matches!(f, Expr::Integer(_)) {
+          constant = f.clone();
+          continue;
+        }
+        match by_exponent.iter_mut().find(|(e, _)| e == k) {
+          Some((_, fs)) => fs.push(f.clone()),
+          None => by_exponent.push((*k, vec![f.clone()])),
+        }
+      }
+      by_exponent.sort_by_key(|(k, _)| *k);
+      let mut out = vec![Expr::List(vec![constant, Expr::Integer(1)].into())];
+      for (k, fs) in by_exponent {
+        let product = if fs.len() == 1 {
+          fs[0].clone()
+        } else {
+          match eval(call(
+            "PolynomialMod",
+            vec![call1("Expand", call("Times", fs)), Expr::Integer(*p)],
+          )) {
+            Ok(e) => e,
+            Err(e) => return Some(Err(e)),
+          }
+        };
+        out.push(Expr::List(vec![product, Expr::Integer(k)].into()));
+      }
+      return Some(Ok(Expr::List(out.into())));
+    }
     "FactorSquareFreeList" if args.len() == 1 => {
       return Some(
         crate::functions::polynomial_ast::factor_square_free_list_ast(args),
@@ -214,7 +279,13 @@ pub fn dispatch_polynomial_functions(
       // 1-arg NSolve[eqns] auto-detects the variables, as Solve does.
       return Some(crate::functions::polynomial_ast::nsolve_ast(args));
     }
-    "NSolveValues" if args.len() == 2 || args.len() == 3 => {
+    "NSolveValues"
+      if args.len() == 2
+        || args.len() == 3
+        || (args.len() == 4
+          && matches!(&args[3], Expr::Integer(_) | Expr::Real(_))
+          && matches!(&args[2], Expr::Identifier(_))) =>
+    {
       return Some(crate::functions::polynomial_ast::nsolve_values_ast(args));
     }
     "SolveAlways" if args.len() == 2 => {

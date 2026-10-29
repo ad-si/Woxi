@@ -715,7 +715,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "ListFourierSequenceTransform" if args.len() == 2 => {
+    "ListFourierSequenceTransform" if args.len() == 2 || args.len() == 3 => {
       return Some(
         crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
       );
@@ -1162,6 +1162,11 @@ pub fn dispatch_math_functions(
     }
     "Correlation" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_ast(args));
+    }
+    // SpearmanRho[m] / KendallTau[m]: the matrix of the coefficients
+    // between every pair of columns of m.
+    "SpearmanRho" | "KendallTau" if args.len() == 1 => {
+      return Some(pairwise_column_statistic(name, &args[0]));
     }
     "SpearmanRho" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spearman_rho_ast(args));
@@ -2844,6 +2849,55 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Integer(if total % 2 == 0 { 1 } else { -1 })));
         }
       }
+    }
+    // LiouvilleLambda[n, GaussianIntegers -> True]: (-1)^k for the number k
+    // of Gaussian prime factors of n counted with multiplicity (units
+    // excluded).
+    "LiouvilleLambda"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "GaussianIntegers")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True" || v == "False")) =>
+    {
+      let gaussian = matches!(&args[1], Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"));
+      if !gaussian {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "LiouvilleLambda",
+          &args[..1],
+        ));
+      }
+      if matches!(&args[0], Expr::Integer(0)) {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      let factors = match crate::evaluator::evaluate_function_call_ast(
+        "FactorInteger",
+        args,
+      ) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut total: i128 = 0;
+      for pair in pairs.iter() {
+        let Expr::List(pe) = pair else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let (Some(factor), Some(Expr::Integer(k))) = (pe.first(), pe.get(1))
+        else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let unit = crate::evaluator::evaluate_function_call_ast(
+          "Abs",
+          std::slice::from_ref(factor),
+        );
+        if !matches!(unit, Ok(Expr::Integer(1))) {
+          total += k;
+        }
+      }
+      return Some(Ok(Expr::Integer(if total % 2 == 0 { 1 } else { -1 })));
     }
     "EulerPhi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::euler_phi_ast(args));
@@ -5165,14 +5219,14 @@ pub fn dispatch_math_functions(
     }
     // CoordinateBoundsArray[{{xmin,xmax},…}, spec, offsets] — grid of
     // coordinate tuples; spec is a step, per-dimension steps, or Into[n].
-    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 3 => {
+    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::coordinate_bounds_array_ast(
         args,
       ));
     }
     // CoordinateBoundingBoxArray[{mins, maxs}, spec, offsets] — the same
     // grid written with the two corner points.
-    "CoordinateBoundingBoxArray" if !args.is_empty() && args.len() <= 3 => {
+    "CoordinateBoundingBoxArray" if !args.is_empty() && args.len() <= 4 => {
       return Some(
         crate::functions::math_ast::coordinate_bounding_box_array_ast(args),
       );
@@ -7714,4 +7768,61 @@ fn euler_angles_from_matrix(
     let gamma = (-s * r[a][b]).atan2(r[a][a]);
     (alpha, beta, gamma)
   }
+}
+
+/// `name[m]` for a matrix m: the matrix whose (i, j) entry is
+/// `name[column i, column j]`. A SparseArray is expanded first; anything
+/// that is not a rectangular matrix stays unevaluated.
+fn pairwise_column_statistic(
+  name: &str,
+  m: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let dense = if matches!(m, Expr::FunctionCall { name: h, .. } if h == "SparseArray")
+  {
+    crate::evaluator::evaluate_expr_to_expr(&call1("Normal", m.clone()))?
+  } else {
+    m.clone()
+  };
+  let uneval = || Ok(call1(name, m.clone()));
+  let Expr::List(rows) = &dense else {
+    return uneval();
+  };
+  let mut width = None;
+  for row in rows.iter() {
+    let Expr::List(r) = row else {
+      return uneval();
+    };
+    if r.is_empty() || width.is_some_and(|w| w != r.len()) {
+      return uneval();
+    }
+    width = Some(r.len());
+  }
+  let Some(width) = width else {
+    return uneval();
+  };
+  let columns: Vec<Expr> = (0..width)
+    .map(|j| {
+      Expr::List(
+        rows
+          .iter()
+          .map(|row| match row {
+            Expr::List(r) => r[j].clone(),
+            _ => unreachable!(),
+          })
+          .collect(),
+      )
+    })
+    .collect();
+  let mut out = Vec::with_capacity(width);
+  for ci in &columns {
+    let mut row = Vec::with_capacity(width);
+    for cj in &columns {
+      row.push(crate::evaluator::evaluate_expr_to_expr(&call(
+        name,
+        vec![ci.clone(), cj.clone()],
+      ))?);
+    }
+    out.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(out.into()))
 }

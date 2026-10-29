@@ -1480,6 +1480,49 @@ pub fn dispatch_complex_and_special(
     "SurfaceArea" if args.len() == 1 => {
       return Some(compute_surface_area(strip_region_wrapper(&args[0])));
     }
+    // RegionMeasure[{x1[u…], …}, {{u, umin, umax}, …}] — the measure of a
+    // parametrized region; with a coordinate chart ("Polar", "Cylindrical",
+    // …) as third argument the xi are coordinates in that chart.
+    "RegionMeasure"
+      if (args.len() == 2 || args.len() == 3)
+        && matches!(&args[0], Expr::List(_))
+        && matches!(&args[1], Expr::List(iters)
+          if !iters.is_empty() && iters.iter().all(|i| matches!(i, Expr::List(spec) if spec.len() == 3)))
+        && args.get(2).is_none_or(|c| matches!(c, Expr::String(_))) =>
+    {
+      let map = match args.get(2) {
+        None => args[0].clone(),
+        Some(chart) => match evaluate_expr_to_expr(&call(
+          "CoordinateTransform",
+          vec![
+            Expr::Rule {
+              pattern: Box::new(chart.clone()),
+              replacement: Box::new(Expr::String("Cartesian".to_string())),
+            },
+            args[0].clone(),
+          ],
+        )) {
+          Ok(m @ Expr::List(_)) => m,
+          Ok(_) => return Some(Ok(unevaluated(name, args))),
+          Err(e) => return Some(Err(e)),
+        },
+      };
+      let Expr::List(iters) = &args[1] else {
+        return None;
+      };
+      let mut measure_args = vec![map];
+      measure_args.extend(iters.iter().cloned());
+      return Some(
+        compute_parametric_measure("RegionMeasure", &measure_args).map(|r| {
+          match &r {
+            Expr::FunctionCall { name: h, .. } if h == "RegionMeasure" => {
+              unevaluated(name, args)
+            }
+            _ => r,
+          }
+        }),
+      );
+    }
     // RegionMeasure[region] — n-dim measure for explicit regions
     "RegionMeasure" if args.len() == 1 => {
       return Some(compute_region_measure(strip_region_wrapper(&args[0])));

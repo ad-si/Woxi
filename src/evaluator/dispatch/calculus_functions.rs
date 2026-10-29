@@ -483,6 +483,23 @@ pub fn dispatch_calculus_functions(
     // delegate to Limit, and for a list of substitutions apply them
     // outside-in (matches wolframscript's iterated-limit semantics for
     // simple rational expressions).
+    // The Method option only chooses how the limit is found, not its value.
+    "DiscreteLimit"
+      if args.len() == 3
+        && matches!(&args[2], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Method")) =>
+    {
+      let result = crate::evaluator::evaluate_function_call_ast(
+        "DiscreteLimit",
+        &args[..2],
+      );
+      return Some(result.map(|r| match &r {
+        Expr::FunctionCall { name, .. } if name == "DiscreteLimit" => {
+          unevaluated("DiscreteLimit", args)
+        }
+        _ => r,
+      }));
+    }
     "DiscreteLimit" if args.len() == 2 => {
       let inner = &args[1];
       let subs: Vec<Expr> = match inner {
@@ -851,6 +868,31 @@ pub fn dispatch_calculus_functions(
     }
     "DiscreteRatio" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::discrete_ratio_ast(args));
+    }
+    // DifferenceQuotient[f, spec, Assumptions -> a]: the quotient refined
+    // under the assumptions.
+    "DifferenceQuotient"
+      if args.len() >= 3
+        && matches!(args.last(), Some(Expr::Rule { pattern, .. })
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Assumptions")) =>
+    {
+      let (pos, opts) = super::split_trailing_options(args);
+      if opts.len() != 1 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let quotient =
+        match crate::functions::calculus_ast::difference_quotient_ast(pos) {
+          Ok(q) => q,
+          Err(e) => return Some(Err(e)),
+        };
+      if matches!(&quotient, Expr::FunctionCall { name: h, .. } if h == "DifferenceQuotient")
+      {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
+        "Cancel",
+        call("Refine", vec![quotient, opts[0].1.clone()]),
+      )));
     }
     "DifferenceQuotient" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::difference_quotient_ast(

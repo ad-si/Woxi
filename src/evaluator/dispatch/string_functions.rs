@@ -469,8 +469,25 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::List(words.into())));
       }
     }
-    "WordCounts" if args.len() == 1 || args.len() == 2 => {
-      return Some(crate::functions::string_ast::word_counts_ast(args));
+    "WordCounts" if !args.is_empty() => {
+      let (pos, opts) = super::split_trailing_options(args);
+      if pos.is_empty() || pos.len() > 2 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let mut pos = pos.to_vec();
+      for (opt, value) in &opts {
+        match (opt.as_str(), value) {
+          ("IgnoreCase", Expr::Identifier(v)) if v == "False" => {}
+          // Case-insensitive counting counts the lower-cased words.
+          ("IgnoreCase", Expr::Identifier(v)) if v == "True" => {
+            if let Expr::String(s) = &pos[0] {
+              pos[0] = Expr::String(s.to_lowercase());
+            }
+          }
+          _ => return Some(Ok(unevaluated(name, args))),
+        }
+      }
+      return Some(crate::functions::string_ast::word_counts_ast(&pos));
     }
     "DeleteStopwords" if args.len() == 1 => {
       return Some(crate::functions::string_ast::delete_stopwords_ast(args));

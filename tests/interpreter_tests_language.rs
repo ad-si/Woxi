@@ -21,6 +21,7 @@ mod interpreter_tests {
   mod argument_forms;
   mod argument_forms_sweep0;
   mod argument_forms_sweep1;
+  mod argument_forms_sweep2;
   mod assessment;
   mod attributes;
   mod batch_wrappers;

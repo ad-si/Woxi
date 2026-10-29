@@ -136,6 +136,11 @@ pub fn dispatch_datetime_functions(
     "FromJulianDate" if args.len() == 1 => {
       return Some(crate::functions::datetime_ast::from_julian_date_ast(args));
     }
+    "FromJulianDate" if args.len() >= 2 => {
+      return Some(
+        crate::functions::datetime_ast::from_julian_date_general_ast(args),
+      );
+    }
     "MoonPhase" if args.len() <= 2 => {
       return Some(crate::functions::astronomy_ast::moon_phase_ast(args));
     }

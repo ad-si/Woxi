@@ -1282,6 +1282,8 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "KeyMemberQ"
       | "ReverseSortBy"
       | "ReplaceList"
+      | "AllSameBy"
+      | "DateSelect"
   )
 }
 
@@ -3183,6 +3185,7 @@ pub fn apply_curried_call(
           | "Apply"
           | "Map"
           | "MapIndexed"
+          | "MapApply"
           | "MapThread"
           | "Scan"
           | "Append"
