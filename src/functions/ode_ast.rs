@@ -1018,6 +1018,9 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  if let Some(rewritten) = dirac_delta_events(args)? {
+    return ndsolve_ast_inner(&rewritten);
+  }
   if let Some(result) = ndsolve_vector_unknowns(args, n_pos)? {
     return Ok(result);
   }
@@ -4641,6 +4644,216 @@ fn derivative_dep_item(
 /// initial conditions are often grouped into their own sublist —
 /// `{ode, {ic1, ic2}}` — and that grouping can nest arbitrarily deep, so
 /// each level is flattened, not just the outermost.
+/// `DiracDelta[a t + b]` terms in an ODE are impulses: wolframscript drops
+/// them from the equation and, where the root `r = -b/a` lies strictly inside
+/// the domain, makes the next-lower derivative of the equation's unknown
+/// jump by the term's coefficient (taken at `t = r`, from the state just
+/// before) over `|a|` times the top derivative's coefficient. The impulses
+/// become `WhenEvent[t == r, …]` resets, one per root; a root on either end
+/// of the domain is ignored. Returns None when no equation has an impulse
+/// this covers.
+fn dirac_delta_events(
+  args: &[Expr],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  if !mentions_head(&args[0], "DiracDelta") {
+    return Ok(None);
+  }
+  let Expr::List(domain) = &args[2] else {
+    return Ok(None);
+  };
+  let [Expr::Identifier(t), lo, hi] = domain.as_slice() else {
+    return Ok(None);
+  };
+  let (Some(lo), Some(hi)) = (nval_to_f64(lo), nval_to_f64(hi)) else {
+    return Ok(None);
+  };
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let unknowns: Vec<String> = match &args[1] {
+    Expr::List(items) => items.iter().collect::<Vec<_>>(),
+    other => vec![other],
+  }
+  .into_iter()
+  .filter_map(|u| match u {
+    Expr::Identifier(n) => Some(n.clone()),
+    Expr::FunctionCall { name, .. } => Some(name.clone()),
+    _ => None,
+  })
+  .collect();
+  fn deltas(expr: &Expr, out: &mut Vec<Expr>) {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "DiracDelta"
+      && args.len() == 1
+    {
+      if !out.iter().any(|d| exprs_match(d, expr)) {
+        out.push(expr.clone());
+      }
+      return;
+    }
+    for c in expr_children(expr) {
+      deltas(c, out);
+    }
+  }
+  let mut equations = Vec::new();
+  flatten_eq_list(&args[0], &mut equations);
+  // (root, jumping derivative, increment) per impulse.
+  let mut jumps: Vec<(f64, Expr, Expr)> = Vec::new();
+  let mut rewritten = Vec::with_capacity(equations.len());
+  for eq in &equations {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      rewritten.push(eq.clone());
+      continue;
+    };
+    let mut found = Vec::new();
+    deltas(eq, &mut found);
+    if found.is_empty() {
+      rewritten.push(eq.clone());
+      continue;
+    }
+    if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+      return Ok(None);
+    }
+    // The single unknown the equation differentiates, at its top order.
+    let ordered: Vec<(&String, usize)> = unknowns
+      .iter()
+      .map(|f| (f, max_derivative_order(eq, f)))
+      .filter(|(_, k)| *k > 0)
+      .collect();
+    let [(f, k)] = ordered.as_slice() else {
+      return Ok(None);
+    };
+    let derivative = |order: usize| -> Result<Expr, InterpreterError> {
+      if order == 0 {
+        Ok(Expr::FunctionCall {
+          name: (*f).clone(),
+          args: vec![Expr::Identifier(t.clone())].into(),
+        })
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&crate::syntax::string_to_expr(
+          &format!("Derivative[{order}][{f}][{t}]"),
+        )?)
+      }
+    };
+    let residual = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Minus,
+        left: Box::new(operands[0].clone()),
+        right: Box::new(operands[1].clone()),
+      }],
+    )?;
+    let top = crate::evaluator::evaluate_function_call_ast(
+      "Coefficient",
+      &[residual.clone(), derivative(*k)?],
+    )?;
+    if matches!(top, Expr::Integer(0)) {
+      return Ok(None);
+    }
+    for delta in &found {
+      let Expr::FunctionCall { args: dargs, .. } = delta else {
+        unreachable!()
+      };
+      // A linear argument a t + b.
+      let slope = crate::evaluator::evaluate_function_call_ast(
+        "D",
+        &[dargs[0].clone(), Expr::Identifier(t.clone())],
+      )?;
+      let Some(a) = nval_to_f64(&slope) else {
+        return Ok(None);
+      };
+      let Some(b) = nval_to_f64(&crate::syntax::substitute_variable(
+        &dargs[0],
+        t,
+        &Expr::Integer(0),
+      )) else {
+        return Ok(None);
+      };
+      if a == 0.0 {
+        return Ok(None);
+      }
+      let root = -b / a;
+      if !(root > lo && root < hi) {
+        continue;
+      }
+      let coefficient = crate::evaluator::evaluate_function_call_ast(
+        "Coefficient",
+        &[residual.clone(), delta.clone()],
+      )?;
+      if mentions_head(&coefficient, "DiracDelta") {
+        return Ok(None);
+      }
+      // `t` takes the root's value, the unknowns' `f[t]` state stays.
+      let keep_state: Vec<String> = unknowns
+        .iter()
+        .map(|u| format!("{u}[{t}] | Derivative[_][{u}][{t}]"))
+        .collect();
+      let at_root = crate::evaluator::evaluate_function_call_ast(
+        "ReplaceAll",
+        &[
+          coefficient,
+          crate::syntax::string_to_expr(&format!(
+            "{{state$ : ({}) :> state$, {t} -> {root:?}}}",
+            keep_state.join(" | ")
+          ))?,
+        ],
+      )?;
+      let increment = crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[
+          Expr::Real(-1.0 / a.abs()),
+          at_root,
+          crate::evaluator::evaluate_function_call_ast(
+            "Power",
+            &[top.clone(), Expr::Integer(-1)],
+          )?,
+        ],
+      )?;
+      jumps.push((root, derivative(k - 1)?, increment));
+    }
+    let zeroed = crate::evaluator::evaluate_function_call_ast(
+      "ReplaceAll",
+      &[
+        eq.clone(),
+        crate::syntax::string_to_expr("_DiracDelta -> 0")?,
+      ],
+    )?;
+    rewritten.push(zeroed);
+  }
+  let mut roots: Vec<f64> = jumps.iter().map(|(r, _, _)| *r).collect();
+  roots.sort_by(f64::total_cmp);
+  roots.dedup();
+  for root in roots {
+    let rules: Vec<Expr> = jumps
+      .iter()
+      .filter(|(r, _, _)| *r == root)
+      .map(|(_, target, increment)| Expr::Rule {
+        pattern: Box::new(target.clone()),
+        replacement: Box::new(Expr::FunctionCall {
+          name: "Plus".to_string(),
+          args: vec![target.clone(), increment.clone()].into(),
+        }),
+      })
+      .collect();
+    rewritten.push(Expr::FunctionCall {
+      name: "WhenEvent".to_string(),
+      args: vec![
+        Expr::Comparison {
+          operands: vec![Expr::Identifier(t.clone()), Expr::Real(root)],
+          operators: vec![ComparisonOp::Equal],
+        },
+        Expr::List(rules.into()),
+      ]
+      .into(),
+    });
+  }
+  let mut out = args.to_vec();
+  out[0] = Expr::List(rewritten.into());
+  Ok(Some(out))
+}
+
 fn flatten_eq_list(expr: &Expr, out: &mut Vec<Expr>) {
   match expr {
     Expr::List(items) => {

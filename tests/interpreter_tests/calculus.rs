@@ -22813,6 +22813,44 @@ mod interpolation_spline_method {
 
 mod ndsolve_state_events {
   use super::*;
+  // A `DiracDelta[a t + b]` term is an impulse: the next-lower derivative
+  // jumps by the coefficient over |a| where the root lies strictly inside
+  // the domain; roots on its ends are ignored.
+  #[test]
+  fn dirac_delta_impulses() {
+    assert_eq!(
+      interpret(
+        "f[eq_, r_] := NDSolve[{eq, z[r[[1]]] == 0}, z, {t, r[[1]], r[[2]]}][[1, 1, 2]][r[[2]]]; \
+         Round[{f[z'[t] == DiracDelta[t - 1], {-1, 2}], f[z'[t] == DiracDelta[2 t - 2], {0, 2}], \
+         f[z'[t] == DiracDelta[1 - t], {0, 2}], f[z'[t] == DiracDelta[t - 2], {0, 2}], \
+         f[z'[t] == DiracDelta[t], {0, 2}], f[z'[t] == 3 DiracDelta[t - 1] Sin[t], {0, 2}], \
+         f[2 z'[t] + DiracDelta[t - 1] == 0, {0, 2}]}, 10.^-6]"
+      )
+      .unwrap(),
+      "{1., 0.5, 1., 0., 0., 2.524413, -0.5}"
+    );
+    // The jump reads the state just before the impulse; a second-order
+    // equation jumps in its first derivative.
+    assert_eq!(
+      interpret(
+        "{NDSolve[{z'[t] == DiracDelta[t - 1] z[t], z[0] == 1}, z, {t, 0, 2}][[1, 1, 2]][{0.5, 1.5}], \
+         NDSolve[{z''[t] == DiracDelta[t - 1], z[0] == 0, z'[0] == 0}, z, {t, 0, 2}][[1, 1, 2]][{0.5, 1.5}]}"
+      )
+      .unwrap(),
+      "{{1., 2.}, {0., 0.5}}"
+    );
+    // Impulses in a system at one time all read the state before it.
+    // wolframscript: {225.37641106153808, 538.8304282696442}
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -DiracDelta[t - 1] y[t] - 0.01 t (x[t] - y[t]/5), \
+         y'[t] == DiracDelta[t - 1] x[t] + 0.01 t (x[t] - y[t]/5), x[0] == 325, \
+         y[0] == 1}, {x, y}, {t, 0, 35}]; Round[{x[10], y[35]} /. First[s], 0.001]"
+      )
+      .unwrap(),
+      "{225.376, 538.83}"
+    );
+  }
 
   // An event on the highest derivative reads it from an equation that
   // holds it only implicitly. wolframscript: {3.3867047933779557,
