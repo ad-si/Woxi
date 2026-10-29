@@ -199,6 +199,12 @@ pub fn map_with_level_heads_ast(
       {
         return map_with_heads(func, expr);
       }
+      // Heads -> False is the default level {1} without heads.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Heads")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")
+      {
+        return map_ast(func, expr);
+      }
       return Ok(call(
         "Map",
         vec![func.clone(), expr.clone(), level_spec.clone()],
@@ -211,6 +217,11 @@ pub fn map_with_level_heads_ast(
         && matches!(&args[1], Expr::Identifier(v) if v == "True")
       {
         return map_with_heads(func, expr);
+      }
+      if matches!(&args[0], Expr::Identifier(s) if s == "Heads")
+        && matches!(&args[1], Expr::Identifier(v) if v == "False")
+      {
+        return map_ast(func, expr);
       }
       return Ok(call(
         "Map",
@@ -276,7 +287,7 @@ fn map_at_depth_heads(
       }
     }
   };
-  if current_depth > 0 && in_range(current_depth) {
+  if in_range(current_depth) {
     apply_func_ast(func, &result)
   } else {
     Ok(result)

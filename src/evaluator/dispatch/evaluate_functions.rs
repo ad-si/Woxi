@@ -10757,6 +10757,19 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // TimeValue[s, i] — the present value, TimeValue[s, i, 0].
+  if name == "TimeValue" && args.len() == 2 {
+    let result = evaluate_function_call_ast(
+      "TimeValue",
+      &[args[0].clone(), args[1].clone(), Expr::Integer(0)],
+    )?;
+    if matches!(&result, Expr::FunctionCall { name, .. } if name == "TimeValue")
+    {
+      return Ok(unevaluated("TimeValue", args));
+    }
+    return Ok(result);
+  }
+
   // TimeValue[s, i, t] — time value of a present sum s at interest rate
   // i (per period) for t periods. Future value (t > 0) or present value
   // (t < 0): result = s * (1 + i)^t.

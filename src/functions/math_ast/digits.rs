@@ -71,12 +71,22 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DigitSum[n] - sum of digits in base 10
 /// DigitSum[n, b] - sum of digits in base b
+/// DigitSum[n, b, k] - sum of the k-th powers of the base-b digits
 pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "DigitSum expects 1 or 2 arguments".into(),
+      "DigitSum expects 1 to 3 arguments".into(),
     ));
   }
+  // The power each digit is raised to (1 unless a third argument is given).
+  let power: u32 = match args.get(2) {
+    None => 1,
+    Some(Expr::Integer(k)) if *k >= 0 && *k <= u32::MAX as i128 => *k as u32,
+    Some(_) => return Ok(unevaluated("DigitSum", args)),
+  };
+  let add_digit = |sum: &mut BigInt, d: BigInt| {
+    *sum += if power == 1 { d } else { d.pow(power) };
+  };
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {
@@ -112,15 +122,17 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if val.is_zero() {
         break;
       }
-      sum += &val % b;
+      add_digit(&mut sum, &val % b);
       val /= b;
     }
     // Any remaining value is the overflow digit (no base constraint).
-    sum += val;
+    if !val.is_zero() {
+      add_digit(&mut sum, val);
+    }
     return Ok(bigint_to_expr(sum));
   }
 
-  let base = if args.len() == 2 {
+  let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       _ => {
@@ -137,7 +149,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
   while !val.is_zero() {
-    sum += &val % &big_base;
+    add_digit(&mut sum, &val % &big_base);
     val /= &big_base;
   }
   Ok(bigint_to_expr(sum))

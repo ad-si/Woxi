@@ -15055,6 +15055,84 @@ fn sg_outer(rows: &[f64], cols: &[f64]) -> Expr {
   )
 }
 
+/// The exact 1D Savitzky–Golay smoothing kernel of radius `r` and degree `k`
+/// (WorkingPrecision -> Infinity): the first row of (AᵀA)⁻¹Aᵀ for the
+/// Vandermonde matrix A[i][p] = (i - r)^p, computed with exact rationals.
+fn sg_kernel_exact(r: usize, k: usize) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as eval;
+  let m = 2 * r + 1;
+  let ncols = (k + 1).min(m);
+  let offs: Vec<i128> = (0..m).map(|i| i as i128 - r as i128).collect();
+  let int_list =
+    |v: Vec<i128>| Expr::List(v.into_iter().map(Expr::Integer).collect());
+  let vander = Expr::List(
+    offs
+      .iter()
+      .map(|&o| int_list((0..ncols).map(|p| o.pow(p as u32)).collect()))
+      .collect(),
+  );
+  let normal = Expr::List(
+    (0..ncols)
+      .map(|p| {
+        int_list(
+          (0..ncols)
+            .map(|q| offs.iter().map(|&o| o.pow((p + q) as u32)).sum())
+            .collect(),
+        )
+      })
+      .collect(),
+  );
+  let e0 = int_list((0..ncols).map(|p| i128::from(p == 0)).collect());
+  let coeffs = eval("LinearSolve", &[normal, e0])?;
+  eval("Dot", &[vander, coeffs])
+}
+
+/// SavitzkyGolayMatrix[spec, k, WorkingPrecision -> Infinity] — the exact
+/// kernel for the same specifications as savitzky_golay_matrix_ast.
+pub fn savitzky_golay_matrix_exact_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("SavitzkyGolayMatrix", args));
+  let as_int = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    }
+  };
+  let outer = |a: Expr, b: Expr| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Outer",
+      &[Expr::Identifier("Times".to_string()), a, b],
+    )
+  };
+  match (&args[0], &args[1]) {
+    (Expr::List(rs), kexpr) if rs.len() == 1 => {
+      let (Some(r), Some(k)) = (as_int(&rs[0]), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      sg_kernel_exact(r, k)
+    }
+    (Expr::List(rs), Expr::List(ks)) if rs.len() == 2 && ks.len() == 2 => {
+      let (Some(r1), Some(r2), Some(k1), Some(k2)) = (
+        as_int(&rs[0]),
+        as_int(&rs[1]),
+        as_int(&ks[0]),
+        as_int(&ks[1]),
+      ) else {
+        return unevaluated();
+      };
+      outer(sg_kernel_exact(r1, k1)?, sg_kernel_exact(r2, k2)?)
+    }
+    (rexpr, kexpr) => {
+      let (Some(r), Some(k)) = (as_int(rexpr), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      let ker = sg_kernel_exact(r, k)?;
+      outer(ker.clone(), ker)
+    }
+  }
+}
+
 /// SavitzkyGolayMatrix[{r}, k] — the 1D smoothing kernel (a vector).
 /// SavitzkyGolayMatrix[r, k] — the isotropic 2D kernel (outer product of the
 /// 1D kernel with itself). SavitzkyGolayMatrix[{r1, r2}, {k1, k2}] — the

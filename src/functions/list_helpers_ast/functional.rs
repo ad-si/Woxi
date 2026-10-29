@@ -2033,13 +2033,72 @@ pub fn array_reduce_ast(
   Ok(reshape_flat(&flat_results, &remaining_sizes))
 }
 
+/// Element equality used by FindRepeat / FindTransientRepeat: structural
+/// identity by default, or `SameTest -> f` (`f[a, b]` must give True).
+struct RepeatSameTest<'a> {
+  keys: Vec<String>,
+  items: Vec<Expr>,
+  test: Option<&'a Expr>,
+}
+
+impl RepeatSameTest<'_> {
+  fn same(&self, i: usize, j: usize) -> bool {
+    match self.test {
+      None => self.keys[i] == self.keys[j],
+      Some(f) => matches!(
+        apply_func_to_two_args(f, &self.items[i], &self.items[j]),
+        Ok(Expr::Identifier(ref t)) if t == "True"
+      ),
+    }
+  }
+  fn len(&self) -> usize {
+    self.items.len()
+  }
+}
+
+/// Split off a trailing `SameTest -> f` option. Returns the remaining
+/// arguments and the test, or `Err(())` for any other trailing rule.
+fn split_same_test(args: &[Expr]) -> Result<(&[Expr], Option<&Expr>), ()> {
+  if let Some(last) = args.last()
+    && let Some((lhs, rhs, _)) = crate::functions::expr_form::rule_parts(last)
+  {
+    return match lhs {
+      Expr::Identifier(n) if n == "SameTest" => {
+        Ok((&args[..args.len() - 1], Some(rhs)))
+      }
+      _ => Err(()),
+    };
+  }
+  Ok((args, None))
+}
+
+/// The elements of a FindRepeat sequence (list items, characters or
+/// association values) wrapped with the element test.
+fn repeat_elements<'a>(
+  seq: &Expr,
+  test: Option<&'a Expr>,
+) -> Option<RepeatSameTest<'a>> {
+  let items: Vec<Expr> = match seq {
+    Expr::List(items) => items.to_vec(),
+    Expr::String(s) => s.chars().map(|c| Expr::String(c.to_string())).collect(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    _ => return None,
+  };
+  let keys = if test.is_none() {
+    items.iter().map(expr_to_string).collect()
+  } else {
+    Vec::new()
+  };
+  Some(RepeatSameTest { keys, items, test })
+}
+
 /// Smallest period `p` in `[1, len]` such that element `i` equals element
 /// `i % p` for every `i`, and the pattern fits at least `min_reps` whole times
 /// (`len / p >= min_reps`). Returns `None` when no such period exists.
-fn find_repeat_period(strs: &[String], min_reps: i128) -> Option<usize> {
-  let len = strs.len();
+fn find_repeat_period(elems: &RepeatSameTest, min_reps: i128) -> Option<usize> {
+  let len = elems.len();
   for p in 1..=len {
-    let tiles = (0..len).all(|i| strs[i] == strs[i % p]);
+    let tiles = (0..len).all(|i| elems.same(i, i % p));
     if tiles && (len / p) as i128 >= min_reps {
       return Some(p);
     }
@@ -2052,75 +2111,59 @@ fn find_repeat_period(strs: &[String], min_reps: i128) -> Option<usize> {
 /// optional `n` requires the pattern to repeat at least `n` whole times;
 /// when no such period exists the empty sequence is returned. Works on lists,
 /// strings, and associations (over their values, keeping the keys).
+/// `SameTest -> f` decides which elements count as equal.
 ///
 ///   FindRepeat[{1, 2, 3, 1, 2, 3}]    -> {1, 2, 3}
 ///   FindRepeat[{1, 2, 3, 4, 5}]       -> {1, 2, 3, 4, 5}
 ///   FindRepeat[{1, 2, 3, 1, 2, 3}, 3] -> {}
 ///   FindRepeat["abcabc"]              -> "abc"
-pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn find_repeat_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Ok((args, test)) = split_same_test(all_args) else {
+    return Ok(unevaluated("FindRepeat", all_args));
+  };
+  if args.is_empty() || args.len() > 2 {
+    return Ok(unevaluated("FindRepeat", all_args));
+  }
   let arg = &args[0];
   let min_reps: i128 = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(n) if n >= 1 => n,
       _ => {
-        return Ok(unevaluated("FindRepeat", args));
+        return Ok(unevaluated("FindRepeat", all_args));
       }
     }
   } else {
     1
   };
 
-  match arg {
-    Expr::List(items) => {
-      if items.is_empty() {
-        return Ok(Expr::List(vec![].into()));
-      }
-      let strs: Vec<String> = items.iter().map(expr_to_string).collect();
-      match find_repeat_period(&strs, min_reps) {
-        Some(p) => Ok(Expr::List(items[..p].to_vec().into())),
-        None => Ok(Expr::List(vec![].into())),
-      }
-    }
-    Expr::String(s) => {
-      let chars: Vec<char> = s.chars().collect();
-      if chars.is_empty() {
-        return Ok(Expr::String(String::new()));
-      }
-      let strs: Vec<String> =
-        chars.iter().map(std::string::ToString::to_string).collect();
-      match find_repeat_period(&strs, min_reps) {
-        Some(p) => Ok(Expr::String(chars[..p].iter().collect())),
-        None => Ok(Expr::String(String::new())),
-      }
-    }
-    Expr::Association(pairs) => {
-      if pairs.is_empty() {
-        return Ok(Expr::Association(vec![]));
-      }
-      let strs: Vec<String> =
-        pairs.iter().map(|(_, v)| expr_to_string(v)).collect();
-      match find_repeat_period(&strs, min_reps) {
-        Some(p) => Ok(Expr::Association(pairs[..p].to_vec())),
-        None => Ok(Expr::Association(vec![])),
-      }
-    }
-    _ => {
-      crate::emit_message(&format!(
-        "FindRepeat::arg1: The first argument {} to FindRepeat is expected to be a list, an association or a string.",
-        expr_to_string(arg)
-      ));
-      Ok(unevaluated("FindRepeat", args))
-    }
-  }
+  let Some(elems) = repeat_elements(arg, test) else {
+    crate::emit_message(&format!(
+      "FindRepeat::arg1: The first argument {} to FindRepeat is expected to be a list, an association or a string.",
+      expr_to_string(arg)
+    ));
+    return Ok(unevaluated("FindRepeat", all_args));
+  };
+  let period = if elems.len() == 0 {
+    Some(0)
+  } else {
+    find_repeat_period(&elems, min_reps)
+  };
+  let p = period.unwrap_or(0);
+  Ok(match arg {
+    Expr::List(items) => Expr::List(items[..p].to_vec().into()),
+    Expr::String(s) => Expr::String(s.chars().take(p).collect()),
+    Expr::Association(pairs) => Expr::Association(pairs[..p].to_vec()),
+    _ => unreachable!(),
+  })
 }
 
-/// Split `strs` into `(transient_len, period)` for FindTransientRepeat: `period`
-/// is the length of the shortest end-cycle that repeats at least `n` whole
-/// times; the choice minimizes the transient length, tie-breaking on the
-/// smallest period. `period == 0` means no cycle repeats `n` times (the whole
-/// sequence is the transient).
-fn transient_repeat_split(strs: &[String], n: i128) -> (usize, usize) {
-  let len = strs.len();
+/// Split the sequence into `(transient_len, period)` for FindTransientRepeat:
+/// `period` is the length of the shortest end-cycle that repeats at least `n`
+/// whole times; the choice minimizes the transient length, tie-breaking on
+/// the smallest period. `period == 0` means no cycle repeats `n` times (the
+/// whole sequence is the transient).
+fn transient_repeat_split(elems: &RepeatSameTest, n: i128) -> (usize, usize) {
+  let len = elems.len();
   let mut best: Option<(usize, usize)> = None; // (transient_len, period)
   for p in 1..=len {
     // Count how many whole copies of the final p-length block tile the end.
@@ -2128,7 +2171,7 @@ fn transient_repeat_split(strs: &[String], n: i128) -> (usize, usize) {
     while (k + 1) * p <= len {
       let blk = len - (k + 1) * p;
       let c = len - p;
-      if (0..p).all(|j| strs[blk + j] == strs[c + j]) {
+      if (0..p).all(|j| elems.same(blk + j, c + j)) {
         k += 1;
       } else {
         break;
@@ -2147,10 +2190,17 @@ fn transient_repeat_split(strs: &[String], n: i128) -> (usize, usize) {
 /// FindTransientRepeat[seq, n] splits `seq` into `{transient, repeat}` where the
 /// repeat is the shortest end-cycle occurring at least `n` times. Works on
 /// lists, strings, and associations; both parts keep the input head.
+/// `SameTest -> f` decides which elements count as equal.
 pub fn find_transient_repeat_ast(
-  args: &[Expr],
+  all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let unevaluated = || unevaluated("FindTransientRepeat", args);
+  let unevaluated = || unevaluated("FindTransientRepeat", all_args);
+  let Ok((args, test)) = split_same_test(all_args) else {
+    return Ok(unevaluated());
+  };
+  if args.len() != 2 {
+    return Ok(unevaluated());
+  }
   // The second argument must be a positive integer.
   let n: i128 = match expr_to_i128(&args[1]) {
     Some(n) if n >= 1 => n,
@@ -2163,43 +2213,35 @@ pub fn find_transient_repeat_ast(
     }
   };
 
-  match &args[0] {
-    Expr::List(items) => {
-      let strs: Vec<String> = items.iter().map(expr_to_string).collect();
-      let (t, p) = transient_repeat_split(&strs, n);
-      Ok(Expr::List(
-        vec![
-          Expr::List(items[..t].to_vec().into()),
-          Expr::List(items[t..t + p].to_vec().into()),
-        ]
-        .into(),
-      ))
-    }
+  let Some(elems) = repeat_elements(&args[0], test) else {
+    return Ok(unevaluated());
+  };
+  let (t, p) = transient_repeat_split(&elems, n);
+  Ok(match &args[0] {
+    Expr::List(items) => Expr::List(
+      vec![
+        Expr::List(items[..t].to_vec().into()),
+        Expr::List(items[t..t + p].to_vec().into()),
+      ]
+      .into(),
+    ),
     Expr::String(s) => {
       let chars: Vec<char> = s.chars().collect();
-      let strs: Vec<String> =
-        chars.iter().map(std::string::ToString::to_string).collect();
-      let (t, p) = transient_repeat_split(&strs, n);
-      Ok(Expr::List(
+      Expr::List(
         vec![
           Expr::String(chars[..t].iter().collect()),
           Expr::String(chars[t..t + p].iter().collect()),
         ]
         .into(),
-      ))
+      )
     }
-    Expr::Association(pairs) => {
-      let strs: Vec<String> =
-        pairs.iter().map(|(_, v)| expr_to_string(v)).collect();
-      let (t, p) = transient_repeat_split(&strs, n);
-      Ok(Expr::List(
-        vec![
-          Expr::Association(pairs[..t].to_vec()),
-          Expr::Association(pairs[t..t + p].to_vec()),
-        ]
-        .into(),
-      ))
-    }
-    _ => Ok(unevaluated()),
-  }
+    Expr::Association(pairs) => Expr::List(
+      vec![
+        Expr::Association(pairs[..t].to_vec()),
+        Expr::Association(pairs[t..t + p].to_vec()),
+      ]
+      .into(),
+    ),
+    _ => unreachable!(),
+  })
 }

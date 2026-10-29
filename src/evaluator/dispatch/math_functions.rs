@@ -1440,6 +1440,25 @@ pub fn dispatch_math_functions(
     "SphericalHarmonicY" if args.len() == 4 => {
       return Some(crate::functions::math_ast::spherical_harmonic_y_ast(args));
     }
+    // LegendreQ[n, m, a, z] — type 1 is the default LegendreQ[n, m, z];
+    // other types (and unevaluated type-1 calls) stay as they are.
+    "LegendreQ" if args.len() == 4 => {
+      if matches!(&args[2], Expr::Integer(1)) {
+        return Some(
+          match crate::functions::math_ast::legendre_q_ast(&[
+            args[0].clone(),
+            args[1].clone(),
+            args[3].clone(),
+          ]) {
+            Ok(Expr::FunctionCall { ref name, .. }) if name == "LegendreQ" => {
+              Ok(unevaluated("LegendreQ", args))
+            }
+            other => other,
+          },
+        );
+      }
+      return Some(Ok(unevaluated("LegendreQ", args)));
+    }
     "LegendreQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_q_ast(args));
     }
@@ -1649,6 +1668,23 @@ pub fn dispatch_math_functions(
     }
     "BesselK" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_k_ast(args));
+    }
+    // EllipticThetaPrime[a, q] — EllipticThetaPrime[a, 0, q].
+    "EllipticThetaPrime" if args.len() == 2 => {
+      return Some(
+        match crate::functions::math_ast::elliptic_theta_prime_ast(&[
+          args[0].clone(),
+          Expr::Integer(0),
+          args[1].clone(),
+        ]) {
+          Ok(Expr::FunctionCall { ref name, .. })
+            if name == "EllipticThetaPrime" =>
+          {
+            Ok(unevaluated("EllipticThetaPrime", args))
+          }
+          other => other,
+        },
+      );
     }
     "EllipticThetaPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_theta_prime_ast(args));
@@ -1907,6 +1943,20 @@ pub fn dispatch_math_functions(
     }
     "RandomPermutation" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_permutation_ast(args));
+    }
+    // WorkingPrecision -> MachinePrecision is the default precision.
+    "RandomVariate"
+      if (2..=3).contains(&args.len())
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(n), Expr::Identifier(v), _))
+            if n == "WorkingPrecision" && v == "MachinePrecision"
+        ) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "RandomVariate",
+        &args[..args.len() - 1],
+      ));
     }
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_variate_ast(args));
@@ -3286,7 +3336,7 @@ pub fn dispatch_math_functions(
     "DigitCount" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::digit_count_ast(args));
     }
-    "DigitSum" if !args.is_empty() && args.len() <= 2 => {
+    "DigitSum" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::digit_sum_ast(args));
     }
     "ThueMorse" if args.len() == 1 => {
@@ -4676,19 +4726,59 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::Integer(result_str.parse().unwrap_or(0))));
       }
     }
-    // AlphabeticOrder[s1, s2] — 1 if s1 < s2, -1 if s1 > s2, 0 if equal
-    "AlphabeticOrder" if args.len() == 2 => {
+    // AlphabeticOrder[] and AlphabeticOrder[lang] are operator forms.
+    "AlphabeticOrder" if args.len() <= 1 => {
+      return Some(Ok(unevaluated("AlphabeticOrder", args)));
+    }
+    // AlphabeticOrder[s1, s2] — 1 if s1 < s2, -1 if s1 > s2, 0 if equal;
+    // AlphabeticOrder[s1, s2, lang] uses the alphabet of `lang`.
+    "AlphabeticOrder" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::String(s1), Expr::String(s2)) = (&args[0], &args[1]) {
-        let s1_lower = s1.to_lowercase();
-        let s2_lower = s2.to_lowercase();
-        let result = match s1_lower.cmp(&s2_lower) {
+        // A language other than English orders letters by its alphabet
+        // (Alphabet[lang]); a letter outside it sorts with its base letter,
+        // the diacritic only breaking ties.
+        let alphabet: Option<Vec<char>> = match args.get(2) {
+          None => None,
+          Some(Expr::String(lang)) if lang == "English" => None,
+          Some(Expr::String(lang)) => {
+            match crate::functions::string_ast::language_alphabet(lang) {
+              Some(a) => Some(a),
+              None => return Some(Ok(unevaluated("AlphabeticOrder", args))),
+            }
+          }
+          Some(_) => return Some(Ok(unevaluated("AlphabeticOrder", args))),
+        };
+        let primary_key = |s: &str| -> Vec<(u8, u32)> {
+          s.to_lowercase()
+            .chars()
+            .map(|c| {
+              let Some(alphabet) = &alphabet else {
+                return (1, c as u32);
+              };
+              let base = || {
+                crate::functions::string_ast::strip_diacritics(&c.to_string())
+                  .chars()
+                  .next()
+                  .unwrap_or(c)
+              };
+              match alphabet.iter().position(|&a| a == c) {
+                Some(i) => (1, i as u32),
+                None => match alphabet.iter().position(|&a| a == base()) {
+                  Some(i) => (1, i as u32),
+                  None => (0, c as u32),
+                },
+              }
+            })
+            .collect()
+        };
+        let ord = primary_key(s1)
+          .cmp(&primary_key(s2))
+          .then_with(|| s1.to_lowercase().cmp(&s2.to_lowercase()))
+          .then_with(|| s1.cmp(s2));
+        let result = match ord {
           std::cmp::Ordering::Less => 1,
           std::cmp::Ordering::Greater => -1,
-          std::cmp::Ordering::Equal => match s1.cmp(s2) {
-            std::cmp::Ordering::Less => 1,
-            std::cmp::Ordering::Greater => -1,
-            std::cmp::Ordering::Equal => 0,
-          },
+          std::cmp::Ordering::Equal => 0,
         };
         return Some(Ok(Expr::Integer(result)));
       }
