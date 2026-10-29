@@ -28968,6 +28968,28 @@ mod manipulate {
     assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
   }
 
+  /// Layout wrappers (`Labeled`, `Pane`, `Framed`, `Rotate`, …) are valid
+  /// Manipulate arguments whatever they wrap; a bare control or an unknown
+  /// head is a vsform, as in wolframscript.
+  #[test]
+  fn layout_wrappers_are_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x, Labeled[foo, \"lbl\"], {x, 0, 1}]; \
+       Manipulate[x, Framed[Slider[Dynamic[x]]], {x, 0, 1}]; \
+       Manipulate[x, Rotate[a, 1], {x, 0, 1}]; \
+       Manipulate[x, Slider[Dynamic[x]], {x, 0, 1}];",
+    )
+    .unwrap();
+    let warnings = out.warnings.join("\n");
+    assert!(!warnings.contains("Labeled"), "{warnings}");
+    assert!(!warnings.contains("Framed"), "{warnings}");
+    assert!(!warnings.contains("Rotate"), "{warnings}");
+    assert!(
+      warnings.contains("Manipulate argument Slider[Dynamic[x]]"),
+      "{warnings}"
+    );
+  }
+
   #[test]
   fn initialization_option_is_not_vsform() {
     // Regression: `Initialization :> …` is a Manipulate option, not a
