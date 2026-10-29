@@ -2630,9 +2630,22 @@ mod fit {
       interpret("Fit[{{1, 1}, {1, 2}}, {1, x}, x]").unwrap(),
       "0.75 + 0.75*x"
     );
+    // wolframscript carries rounding residue here too (1. + 1.0000000000000004 x).
     assert_eq!(
-      interpret("Fit[{{1, 1}, {1, 2}, {1, 3}}, {1, x}, x]").unwrap(),
-      "1. + 1.*x"
+      interpret(
+        "Round[CoefficientList[Fit[{{1, 1}, {1, 2}, {1, 3}}, {1, x}, x], x], 10^-12]"
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    // At x = 2 the columns {1, 1, 1} and {2, 2, 2} are scaled to unit length
+    // before the shortest solution is taken: 1 + x/2, not 2/5 + 4/5 x.
+    assert_eq!(
+      interpret(
+        "Round[CoefficientList[Fit[{{2, 1}, {2, 2}, {2, 3}}, {1, x}, x], x], 10^-12]"
+      )
+      .unwrap(),
+      "{1, 1/2}"
     );
     // A single basis function and a single point stays exact.
     assert_eq!(interpret("Fit[{{1, 1}}, {x}, x]").unwrap(), "1.*x");
@@ -2656,6 +2669,59 @@ mod fit {
     )
     .unwrap();
     assert_eq!(fit, "True");
+  }
+
+  // The minimum norm is taken after scaling every basis column to unit
+  // length, as wolframscript does: the answer does not depend on the units
+  // of the abscissae, and a large-x polynomial basis stays well conditioned.
+  #[test]
+  fn rank_deficient_fit_scales_the_basis_columns() {
+    assert_eq!(
+      interpret(
+        "Round[10^10 CoefficientList[Fit[{{1, 1}, {2, 3}}, {1, x, x^2}, x], x]]"
+      )
+      .unwrap(),
+      "{-285714286, 5428571429, 4857142857}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^10 CoefficientList[Fit[{{10, 1}, {20, 3}}, {1, x, x^2}, x], x] {1, 10, 100}]"
+      )
+      .unwrap(),
+      "{-285714286, 5428571429, 4857142857}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^10 CoefficientList[Fit[{{1, 1}, {2, 2}, {3, 3}}, {1, x, x^2, x^3}, x], x]]"
+      )
+      .unwrap(),
+      "{1508817766, 7233834095, 1508817766, -251469628}"
+    );
+    // Nine points, ten basis functions up to x^8 over x in [298, 1000]: the
+    // fit still passes through the data.
+    assert_eq!(
+      interpret(
+        "xs = Join[{298.15}, Range[300, 1000, 100]]; \
+         ys = 10^3 {-272.667, -273.110, -297.819, -323.827, -351.028, -379.343, -408.711, -439.077, -470.388}; \
+         f = Fit[Transpose[{xs, ys}], {1, x, x^2, x^3, x^4, x^5, x^6, x^7, x^8, x Log[x]}, x]; \
+         {Round[First[f]], Max[Abs[(f /. x -> #) & /@ xs - ys]] < 10^-6}"
+      )
+      .unwrap(),
+      "{-268947, True}"
+    );
+  }
+
+  // FindFit of a model linear in its parameters is that linear least-squares
+  // problem, whatever the starting values.
+  #[test]
+  fn find_fit_linear_model_ignores_starting_values() {
+    assert_eq!(
+      interpret(
+        "Round[10^10 ({a, b, c} /. FindFit[{{1, 1}, {2, 3}}, a + b x + c x^2, {{a, 5}, {b, 7}, {c, 1}}, x])]"
+      )
+      .unwrap(),
+      "{-285714286, 5428571429, 4857142857}"
+    );
   }
 
   // LinearModelFit shares the same solver, so it no longer aborts either.
@@ -3844,13 +3910,15 @@ mod find_fit {
   // Indexed parameters are fitted like symbols and named as given.
   #[test]
   fn indexed_parameters() {
+    // wolframscript: {s[1] -> 2.1, s[2] -> -0.09999999999999759}, the
+    // intercept's last digits being rounding residue.
     assert_eq!(
       interpret(
-        "FindFit[{{1, 2}, {2, 4.1}, {3, 6.2}}, s[1] x + s[2], \
-         {{s[1], 1}, {s[2], 0}}, x]"
+        "MapAt[Round[#, 10^-12] &, FindFit[{{1, 2}, {2, 4.1}, {3, 6.2}}, \
+         s[1] x + s[2], {{s[1], 1}, {s[2], 0}}, x], {All, 2}]"
       )
       .unwrap(),
-      "{s[1] -> 2.1, s[2] -> -0.1000000000000004}"
+      "{s[1] -> 21/10, s[2] -> -1/10}"
     );
   }
 

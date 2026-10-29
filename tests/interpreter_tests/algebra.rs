@@ -21905,6 +21905,33 @@ mod constrained_numeric_optimization {
     );
   }
 
+  // A nonlinear equality determines one variable implicitly (re-solved by
+  // Newton's method at every point), and the local search runs over the
+  // rest from the starting values. Demonstration
+  // GibbsFreeEnergyMinimizationAppliedToTheHaberProcess's equation of state
+  // (a cubic in the compressibility factor) sent FindMinimum into a global
+  // penalty search that did not finish in 300 s; wolframscript takes 0.2 s.
+  #[test]
+  fn nonlinear_equalities_solved_implicitly() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {x, y} /. #[[2]]} &[FindMinimum[{x + y, \
+         x^2 + y^2 == 1}, {{x, -0.5}, {y, -0.5}}]]]"
+      )
+      .unwrap(),
+      "{-1414214, {-707107, -707107}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 {#[[1]], {z, x, y} /. #[[2]]} &[FindMinimum[{Re[x Log[x] \
+         + y Log[y] + (z - 2)^2], x + y == 1, z^3 + x z - 1 == 0, x > 0, \
+         y > 0}, {{z, 1}, {x, 0.3}, {y, 0.7}}]]]"
+      )
+      .unwrap(),
+      "{596782, {891982, 325467, 674533}}"
+    );
+  }
+
   // Several constraints combine with And.
   #[test]
   fn several_constraints() {

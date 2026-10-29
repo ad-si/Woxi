@@ -2278,11 +2278,6 @@ resolves at raised internal precision; f64 Durand–Kerner cannot.
 keeps, and `Fit[{1,2,3,4},{1,x},x]` gives a clean `0. + 1. x` where WL keeps
 `5.07*^-16 + 0.9999999999999999 x` — Woxi is the less noisy one.
 
-For a **rank-deficient** design wolframscript is not minimum-norm:
-`Fit[{{1,1},{2,2},{3,3}}, {1, x, x^2, x^3}, x]` gives coefficients of norm
-0.7546 where the minimum-norm solution has norm 0.6134. Both interpolate;
-WL switched to some other regularization there. **Not reproducible.**
-
 `Fit` with a symbolic data value fits symbolically in wolframscript
 (`Fit[{a, 1, 2}, {1, x}, x]` is linear in `a`); Woxi fails with "could not
 convert data value to a number". `LinearModelFit` gives

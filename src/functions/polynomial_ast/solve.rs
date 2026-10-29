@@ -16606,8 +16606,10 @@ fn find_minimum_linear_equalities(
     ))
     .ok()
   };
-  // Linear equalities as rows of A x = b; inequalities as g >= 0 / g > 0.
+  // Linear equalities as rows of A x = b; inequalities as g >= 0 / g > 0;
+  // any other equality as g == 0.
   let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
+  let mut nonlinear: Vec<Expr> = Vec::new();
   let mut ineqs: Vec<(Expr, Option<Expr>)> = Vec::new();
   // The position in `flat` each inequality came from.
   let mut ineq_source: Vec<usize> = Vec::new();
@@ -16624,7 +16626,14 @@ fn find_minimum_linear_equalities(
           let d =
             crate::functions::calculus_ast::differentiate_expr(&g, v).ok()?;
           let d = crate::evaluator::evaluate_expr_to_expr(&d).ok()?;
-          coeffs.push(crate::functions::math_ast::try_eval_to_f64(&d)?);
+          match crate::functions::math_ast::try_eval_to_f64(&d) {
+            Some(c) => coeffs.push(c),
+            None => break,
+          }
+        }
+        if coeffs.len() < n {
+          nonlinear.push(g);
+          continue;
         }
         let zero = Expr::Integer(0);
         let zero_point: Vec<(&str, &Expr)> =
@@ -16654,7 +16663,7 @@ fn find_minimum_linear_equalities(
       CompOp::NotEqual => return None,
     }
   }
-  if rows.is_empty() {
+  if rows.is_empty() && nonlinear.is_empty() {
     return None;
   }
   // Reduced row echelon form: pivot variables in terms of the free ones.
@@ -16700,10 +16709,11 @@ fn find_minimum_linear_equalities(
     return None;
   }
   let free: Vec<usize> = (0..n).filter(|c| !pivots.contains(c)).collect();
-  let full_point = |z: &[f64]| -> Vec<f64> {
+  // The point from the values of the free variables, the pivots following.
+  let linear_point = |w: &[f64]| -> Vec<f64> {
     let mut x = vec![0.0; n];
     for (k, &c) in free.iter().enumerate() {
-      x[c] = z[k];
+      x[c] = w[k];
     }
     for (r, &pc) in pivots.iter().enumerate() {
       let mut v = a[r][n];
@@ -16714,6 +16724,115 @@ fn find_minimum_linear_equalities(
     }
     x
   };
+  // The derivative along free variable `c` of a function with gradient
+  // `gx`, the pivots moving with it.
+  let reduced = |gx: &[f64], c: usize| -> f64 {
+    let mut v = gx[c];
+    for (r, &pc) in pivots.iter().enumerate() {
+      v -= a[r][c] * gx[pc];
+    }
+    v
+  };
+  let dense_gradient = |node: &NumNode, x: &[f64]| -> (f64, Vec<f64>) {
+    let (v, sparse) = node.eval_dual(x);
+    let mut g = vec![0.0; n];
+    for (k, d) in sparse {
+      g[k] = d;
+    }
+    (v, g)
+  };
+  // Each nonlinear equality determines one free variable implicitly (the
+  // one it depends on most strongly at the start, by column pivoting); the
+  // search runs over the remaining free variables, the dependent ones
+  // re-solved by Newton's method at every point.
+  let nl_nodes: Vec<NumNode> = nonlinear
+    .iter()
+    .map(|g| compile_numeric(g, &vars))
+    .collect::<Option<_>>()?;
+  let k_nl = nl_nodes.len();
+  let w0: Vec<f64> = free.iter().map(|&c| start[c]).collect();
+  let mut dependent: Vec<usize> = Vec::new();
+  if k_nl > 0 {
+    let x0 = linear_point(&w0);
+    let mut jac: Vec<Vec<f64>> = nl_nodes
+      .iter()
+      .map(|h| {
+        let (_, g) = dense_gradient(h, &x0);
+        free.iter().map(|&c| reduced(&g, c)).collect()
+      })
+      .collect();
+    for j in 0..k_nl {
+      let (col, val) = (0..free.len())
+        .filter(|c| !dependent.contains(c))
+        .map(|c| (c, jac[j][c].abs()))
+        .max_by(|x, y| x.1.total_cmp(&y.1))?;
+      if val.is_nan() || val <= 1e-12 {
+        return None;
+      }
+      for r in j + 1..k_nl {
+        let factor = jac[r][col] / jac[j][col];
+        let pivot_row = jac[j].clone();
+        for (x, y) in jac[r].iter_mut().zip(pivot_row) {
+          *x -= factor * y;
+        }
+      }
+      dependent.push(col);
+    }
+  }
+  let search: Vec<usize> =
+    (0..free.len()).filter(|c| !dependent.contains(c)).collect();
+  // The dependent values Newton's method starts from: those of the last
+  // accepted point, so the solution stays on one branch.
+  let anchor = std::cell::RefCell::new(
+    dependent.iter().map(|&d| w0[d]).collect::<Vec<f64>>(),
+  );
+  let full_point_from =
+    |z: &[f64], y0: &[f64]| -> Option<(Vec<f64>, Vec<f64>)> {
+      let mut w = vec![0.0; free.len()];
+      for (k, &c) in search.iter().enumerate() {
+        w[c] = z[k];
+      }
+      let mut y = y0.to_vec();
+      if k_nl == 0 {
+        return Some((linear_point(&w), y));
+      }
+      for _ in 0..100 {
+        for (k, &c) in dependent.iter().enumerate() {
+          w[c] = y[k];
+        }
+        let x = linear_point(&w);
+        let mut jac = Vec::with_capacity(k_nl);
+        let mut rhs = Vec::with_capacity(k_nl);
+        for h in &nl_nodes {
+          let (v, g) = dense_gradient(h, &x);
+          jac.push(
+            dependent
+              .iter()
+              .map(|&c| reduced(&g, free[c]))
+              .collect::<Vec<_>>(),
+          );
+          rhs.push(-v);
+        }
+        let step = solve_dense_linear_system(&jac, &rhs)?;
+        if !step.iter().all(|d| d.is_finite()) {
+          return None;
+        }
+        let mut small = true;
+        for (yk, d) in y.iter_mut().zip(&step) {
+          small &= d.abs() <= 1e-14 * yk.abs().max(1.0);
+          *yk += d;
+        }
+        if small {
+          for (k, &c) in dependent.iter().enumerate() {
+            w[c] = y[k];
+          }
+          return Some((linear_point(&w), y));
+        }
+      }
+      None
+    };
+  let full_point =
+    |z: &[f64]| full_point_from(z, &anchor.borrow()).map(|(x, _)| x);
   let objective = compile_numeric(f, &vars)?;
   let ineq_nodes: Vec<NumNode> = ineqs
     .iter()
@@ -16724,18 +16843,22 @@ fn find_minimum_linear_equalities(
   // logarithm than an outside one).
   let feasible = |x: &[f64]| ineq_nodes.iter().all(|g| g.eval(x) > 0.0);
   let phi = |z: &[f64]| -> f64 {
-    let x = full_point(z);
+    let Some(x) = full_point(z) else {
+      return f64::INFINITY;
+    };
     if !feasible(&x) {
       return f64::INFINITY;
     }
     let v = sign * objective.eval(&x);
     if v.is_finite() { v } else { f64::INFINITY }
   };
-  let mut z: Vec<f64> = free.iter().map(|&c| start[c]).collect();
+  let mut z: Vec<f64> = search.iter().map(|&c| w0[c]).collect();
   // Phase one: walk into the feasible region when the start lies outside.
   if !phi(&z).is_finite() {
     let violation = |zz: &[f64]| -> f64 {
-      let x = full_point(zz);
+      let Some(x) = full_point(zz) else {
+        return 1e6 * ineq_nodes.len().max(1) as f64;
+      };
       ineq_nodes
         .iter()
         .map(|g| {
@@ -16770,20 +16893,38 @@ fn find_minimum_linear_equalities(
       compile_numeric(&d, &vars).filter(|node| !node.has_fallback())
     })
     .collect();
+  // With dependent variables, the implicit function theorem: the
+  // multipliers solve J_y^T lambda = grad_y f and the gradient along a
+  // search variable is its own partial less lambda . J_z.
   let exact_grad = |zz: &[f64]| -> Option<Vec<f64>> {
-    let parts = partials.as_ref()?;
-    let x = full_point(zz);
-    let gx: Vec<f64> = parts.iter().map(|p| sign * p.eval(&x)).collect();
-    let g: Vec<f64> = free
-      .iter()
-      .map(|&c| {
-        let mut v = gx[c];
-        for (r, &pc) in pivots.iter().enumerate() {
-          v -= a[r][c] * gx[pc];
+    let x = full_point(zz)?;
+    let gx: Vec<f64> = match partials.as_ref() {
+      Some(parts) => parts.iter().map(|p| sign * p.eval(&x)).collect(),
+      None if k_nl > 0 => dense_gradient(&objective, &x)
+        .1
+        .iter()
+        .map(|d| sign * d)
+        .collect(),
+      None => return None,
+    };
+    let mut g: Vec<f64> =
+      search.iter().map(|&c| reduced(&gx, free[c])).collect();
+    if k_nl > 0 {
+      let hx: Vec<Vec<f64>> =
+        nl_nodes.iter().map(|h| dense_gradient(h, &x).1).collect();
+      let jac_t: Vec<Vec<f64>> = dependent
+        .iter()
+        .map(|&c| hx.iter().map(|gh| reduced(gh, free[c])).collect())
+        .collect();
+      let gy: Vec<f64> =
+        dependent.iter().map(|&c| reduced(&gx, free[c])).collect();
+      let lambda = solve_dense_linear_system(&jac_t, &gy)?;
+      for (gk, &c) in g.iter_mut().zip(&search) {
+        for (l, gh) in lambda.iter().zip(&hx) {
+          *gk -= l * reduced(gh, free[c]);
         }
-        v
-      })
-      .collect();
+      }
+    }
     g.iter().all(|v| v.is_finite()).then_some(g)
   };
   let grad = |zz: &[f64]| -> Vec<f64> {
@@ -16842,6 +16983,10 @@ fn find_minimum_linear_equalities(
         t *= 0.5;
       }
       let Some((znew, fnew)) = accepted else { break };
+      let solved = full_point_from(&znew, &anchor.borrow());
+      if let Some((_, y)) = solved {
+        *anchor.borrow_mut() = y;
+      }
       let gnew = grad(&znew);
       let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
       let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
@@ -16869,7 +17014,7 @@ fn find_minimum_linear_equalities(
       }
     }
   }
-  let x = full_point(&z);
+  let x = full_point(&z)?;
   let value = objective.eval(&x);
   if !value.is_finite() {
     return None;
@@ -19542,6 +19687,11 @@ pub(crate) enum NumNode {
   Sqrt(Box<Self>),
   Ln(Box<Self>),
   Binary(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
+  // `Re`, `Im`, `Abs`, … of a subexpression: while the argument stays
+  // real, the function applied to its value; once it leaves the reals
+  // (machine arithmetic gives NaN, e.g. `Log` of a negative number), the
+  // whole call through the `Fallback` node, in complex arithmetic.
+  RealOr(fn(f64) -> f64, Box<Self>, Box<Self>),
   // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
   // distribution's CDF/PDF), evaluated via the full AST evaluator with the
   // current point substituted in. Isolating just this piece — rather than
@@ -19567,6 +19717,8 @@ impl NumNode {
       | Self::Div(a, b)
       | Self::Pow(a, b)
       | Self::Binary(_, a, b) => a.has_fallback() || b.has_fallback(),
+      // The fallback only stands in for complex intermediate values.
+      Self::RealOr(_, a, _) => a.has_fallback(),
       Self::Fallback(..) => true,
     }
   }
@@ -19608,6 +19760,14 @@ impl NumNode {
       Self::Sqrt(a) => a.eval_plain(point).sqrt(),
       Self::Ln(a) => a.eval_plain(point).ln(),
       Self::Binary(f, a, b) => f(a.eval_plain(point), b.eval_plain(point)),
+      Self::RealOr(f, a, whole) => {
+        let v = a.eval_plain(point);
+        if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          f(v)
+        }
+      }
       Self::Fallback(..) => self.eval_fallback(point),
     }
   }
@@ -19717,6 +19877,14 @@ impl NumNode {
         let db = numeric_derivative(&|t| f(av, t), bv);
         (f(av, bv), axpy(da, &ag, db, &bg))
       }
+      Self::RealOr(f, a, whole) => {
+        let (av, ag) = a.eval_dual(point);
+        if av.is_nan() {
+          whole.eval_dual(point)
+        } else {
+          (f(av), scale(numeric_derivative(f, av), ag))
+        }
+      }
       Self::Fallback(..) => {
         let v = self.eval_fallback(point);
         let grad = (0..point.len())
@@ -19760,6 +19928,14 @@ impl NumNode {
         a.eval_wide(point).to_f64(),
         b.eval_wide(point).to_f64(),
       )),
+      Self::RealOr(f, a, whole) => {
+        let v = a.eval_wide(point).to_f64();
+        WideFloat::new(if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          f(v)
+        })
+      }
       Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
     }
   }
@@ -19957,6 +20133,17 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
             Box::new(compile_numeric(&args[0], vars)?),
           ))
         };
+      let real_or =
+        |f: fn(f64) -> f64, args: &crate::ExprList| -> Option<NumNode> {
+          Some(NumNode::RealOr(
+            f,
+            Box::new(compile_numeric(&args[0], vars)?),
+            Box::new(NumNode::Fallback(
+              std::rc::Rc::new(expr.clone()),
+              std::rc::Rc::from(vars.to_vec()),
+            )),
+          ))
+        };
       match name.as_str() {
         "Plus" => {
           Some(NumNode::Add(args.iter().map(&c).collect::<Option<_>>()?))
@@ -19997,7 +20184,9 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Sinh" => unary(f64::sinh, args),
         "Cosh" => unary(f64::cosh, args),
         "Tanh" => unary(f64::tanh, args),
-        "Abs" => unary(f64::abs, args),
+        "Re" | "Conjugate" if args.len() == 1 => real_or(|x| x, args),
+        "Im" if args.len() == 1 => real_or(|_| 0.0, args),
+        "Abs" if args.len() == 1 => real_or(f64::abs, args),
         "Sign" => unary(f64::signum, args),
         "Erf" => {
           unary(crate::functions::math_ast::numeric_utils::erf_f64, args)
@@ -21723,5 +21912,24 @@ mod tests {
     assert_eq!(node.eval(&[800.0]), 0.0);
     // A plain machine result is untouched.
     assert_eq!(node.eval(&[1.0]), 1.0 - (-1.0f64).exp());
+  }
+
+  #[test]
+  fn compiled_real_part_compiles_and_handles_complex_values() {
+    // Re[Log[x]] + Abs[Sqrt[x]]: real arithmetic while x > 0; for x < 0
+    // the call is evaluated in complex arithmetic (Log[2] and Sqrt[2]).
+    let expr =
+      crate::syntax::string_to_expr("Re[Log[x]] + Abs[Sqrt[x]] + Im[x]")
+        .unwrap();
+    let node = super::compile_numeric(&expr, &["x".to_string()]).unwrap();
+    assert!(!node.has_fallback());
+    let at_e = node.eval(&[std::f64::consts::E]);
+    assert!((at_e - (1.0 + std::f64::consts::E.sqrt())).abs() < 1e-15);
+    let at_minus_two = node.eval(&[-2.0]);
+    let expected = 2.0f64.ln() + 2.0f64.sqrt();
+    assert!(
+      (at_minus_two - expected).abs() < 1e-14,
+      "{at_minus_two} vs {expected}"
+    );
   }
 }
