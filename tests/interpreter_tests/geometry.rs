@@ -9893,3 +9893,137 @@ mod find_curve_path {
     );
   }
 }
+
+mod planar_finite_elements {
+  use super::*;
+
+  const DIRICHLET: &str = "{-Laplacian[u[x, y], {x, y}], \
+     DirichletCondition[u[x, y] == 0, True]}";
+
+  #[test]
+  fn discretize_region_gives_a_mesh_region() {
+    assert_eq!(
+      interpret("Head[DiscretizeRegion[Annulus[{0, 0}, {1/2, 1}]]]").unwrap(),
+      "MeshRegion"
+    );
+  }
+
+  #[test]
+  fn discretize_region_of_polygon_covers_it() {
+    assert_eq!(
+      interpret(
+        "m = DiscretizeRegion[Polygon[{{1, 0}, {2, 0}, {2, 2}, {0, 2}, \
+         {0, 1}, {1, 1}}]]; {RegionMember[m, {1.5, 0.5}], \
+         RegionMember[m, {0.5, 0.5}], RegionMember[m, {0.5, 1.5}]}"
+      )
+      .unwrap(),
+      "{True, False, True}"
+    );
+  }
+
+  #[test]
+  fn discretize_region_unsupported_stays_unevaluated() {
+    assert_eq!(
+      interpret("DiscretizeRegion[x]").unwrap(),
+      "DiscretizeRegion[x]"
+    );
+  }
+
+  #[test]
+  fn region_member_of_ring_shaped_regions() {
+    assert_eq!(
+      interpret(
+        "{RegionMember[Annulus[{0, 0}, {1/2, 1}], {0.7, 0}], \
+         RegionMember[Annulus[{0, 0}, {1/2, 1}], {0.2, 0}], \
+         RegionMember[DiskSegment[{0, 0}, 1, {0, Pi}], {0.1, 0.2}], \
+         RegionMember[DiskSegment[{0, 0}, 1, {0, Pi}], {0.1, -0.2}], \
+         RegionMember[RegularPolygon[5], {0, 0}], \
+         RegionMember[Parallelepiped[{0, 0}, {{1, 0}, {1, 1}}], {1.5, 0.5}]}"
+      )
+      .unwrap(),
+      "{True, False, True, False, True, True}"
+    );
+  }
+
+  #[test]
+  fn unit_square_eigenvalues() {
+    // Exact values are 2 Pi^2, 5 Pi^2, 5 Pi^2, 8 Pi^2.
+    assert_eq!(
+      interpret(&format!(
+        "Round[NDEigenvalues[{{{DIRICHLET}}}[[1]], u[x, y], \
+         Element[{{x, y}}, Rectangle[{{0, 0}}]], 4] / Pi^2, 0.1]"
+      ))
+      .unwrap(),
+      "{2., 5., 5., 7.9}"
+    );
+  }
+
+  #[test]
+  fn unit_disk_first_eigenvalue_and_function() {
+    // The first zero of BesselJ[0, x] squared, and the normalized peak
+    // 1 / (Sqrt[Pi] BesselJ[1, j01]).
+    assert_eq!(
+      interpret(&format!(
+        "{{vals, funs}} = NDEigensystem[{DIRICHLET}, u[x, y], \
+         Element[{{x, y}}, Disk[]], 2]; \
+         {{Abs[vals[[1]] - 5.7832] < 0.1, Abs[(funs[[1]] /. {{x -> 0., y -> 0.}}) - 1.0868] < 0.05, \
+         Length[funs]}}"
+      ))
+      .unwrap(),
+      "{True, True, 2}"
+    );
+  }
+
+  #[test]
+  fn eigenfunction_is_defined_inside_only() {
+    assert_eq!(
+      interpret(&format!(
+        "{{vals, funs}} = NDEigensystem[{DIRICHLET}, u[x, y], \
+         Element[{{x, y}}, Rectangle[{{0, 0}}]], 1]; \
+         {{NumberQ[funs[[1]] /. {{x -> 0.5, y -> 0.5}}], \
+         NumberQ[funs[[1]] /. {{x -> 3., y -> 0.5}}]}}"
+      ))
+      .unwrap(),
+      "{True, False}"
+    );
+  }
+
+  #[test]
+  fn eigenvalue_of_l_shape() {
+    // The classic L-shaped membrane: 9.6397…
+    assert_eq!(
+      interpret(&format!(
+        "Abs[NDEigenvalues[{DIRICHLET}, u[x, y], Element[{{x, y}}, \
+         Polygon[{{{{1, 0}}, {{2, 0}}, {{2, 2}}, {{0, 2}}, {{0, 1}}, {{1, 1}}}}]], 1][[1]] - 9.6397] < 0.1"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn plot3d_over_an_eigenfunction_of_a_discretized_region() {
+    assert_eq!(
+      interpret(&format!(
+        "\\[CapitalOmega] = DiscretizeRegion[Annulus[{{0, 0}}, {{1/2, 1}}]]; \
+         {{vals, funs}} = NDEigensystem[{DIRICHLET}, u[x, y], \
+         Element[{{x, y}}, \\[CapitalOmega]], 3]; \
+         Head[Plot3D[Part[funs, 2], Element[{{x, y}}, \\[CapitalOmega]], \
+         PlotPoints -> 12]]"
+      ))
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
+  #[test]
+  fn contour_plot_over_a_region_domain() {
+    assert_eq!(
+      interpret(
+        "Head[ContourPlot[x y, Element[{x, y}, Annulus[]], PlotPoints -> 12]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+}

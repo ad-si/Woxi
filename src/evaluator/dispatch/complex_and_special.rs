@@ -6578,6 +6578,15 @@ fn compute_region_member(
       };
       boolean(inside)
     }
+    "Annulus" | "RegularPolygon" | "DiskSegment" | "Parallelepiped"
+      if pt.len() == 2 =>
+    {
+      match crate::functions::fem2d::ring_region_member(region, (pt[0], pt[1]))
+      {
+        Some(inside) => boolean(inside),
+        None => unevaluated(),
+      }
+    }
     "Rectangle" | "Cuboid" => {
       // Defaults: Rectangle[] = {0,…}..{1,…}; Rectangle[c] = c..c+1.
       let (lo, hi) = match (args.first(), args.get(1)) {
