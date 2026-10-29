@@ -8726,6 +8726,11 @@ pub(crate) fn frame_explicit_ticks(
   let explicit = |spec: Option<&Expr>| match spec {
     Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
     Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
+    // A spec that still has to be worked out (`Table[{j, …}, {j, 0, 1, .2}]`)
+    // is read once evaluated; a bare keyword keeps the automatic ticks.
+    Some(e @ (Expr::FunctionCall { .. } | Expr::CurriedCall { .. })) => {
+      parse_explicit_ticks(e).map(Some)
+    }
     _ => None,
   };
   (explicit(bottom), explicit(left))
