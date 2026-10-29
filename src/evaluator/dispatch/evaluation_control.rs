@@ -393,7 +393,12 @@ pub fn dispatch_evaluation_control(
     | "PoissonProcess"
     | "BinomialProcess"
     | "BernoulliProcess"
-    | "WhiteNoiseProcess" => {
+    | "WhiteNoiseProcess"
+    | "ARProcess"
+    | "MAProcess"
+    | "ARIMAProcess"
+    | "SARMAProcess"
+    | "SARIMAProcess" => {
       return Some(Ok(unevaluated(name, args)));
     }
     // RandomFunction[proc, {t0, t1, dt}] simulates one realization of the

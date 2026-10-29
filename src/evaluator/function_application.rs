@@ -1956,6 +1956,15 @@ pub fn apply_curried_call(
     {
       crate::functions::timeseries_ast::apply_time_series(func, &args[0])
     }
+    Expr::FunctionCall { name, .. }
+      if name == "TemporalData"
+        && args.len() == 1
+        && crate::functions::timeseries_ast::temporal_paths(func).is_some() =>
+    {
+      crate::functions::timeseries_ast::apply_multi_path_temporal_data(
+        func, &args[0],
+      )
+    }
     Expr::FunctionCall {
       name,
       args: func_args,

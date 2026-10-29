@@ -803,7 +803,7 @@ ExclusionsStyle,Option for styling exclusion lines in plots,✅,none,6.0,769
 ConjugateTranspose,Returns the conjugate transpose of a matrix,✅,pure,5.1,770
 NullSpace,Returns the null space of a matrix,✅,pure,1.0,771
 ImageAdjust,Auto-adjusts image contrast and brightness — an optional {c b} pair or {c b gamma} triple applies gamma correction then brightness then contrast,✅,pure,7.0,772
-RandomFunction,Simulates one realization of a random process (WienerProcess; OrnsteinUhlenbeckProcess; PoissonProcess; DiscreteMarkovProcess) at given sample times as a TemporalData object,✅,io,9.0,773
+RandomFunction,Simulates realizations of a random process (WienerProcess; OrnsteinUhlenbeckProcess; PoissonProcess; DiscreteMarkovProcess; WhiteNoiseProcess; the ARMA family) at given sample times as a TemporalData object,✅,io,9.0,773
 SplineDegree,Option for the degree of spline interpolation,✅,none,7.0,774
 FilledCurve,Filled curve graphics primitive,✅,none,8.0,775
 MinorPlanetData,,🚫,,10.0,776
@@ -1619,7 +1619,7 @@ Compress,Compresses an expression to a string,✅,pure,6.0,1611
 CompressedData,Holds a compressed expression and evaluates to the original on use,✅,pure,9.0,1612
 PolarAxes,Polar axes option,,unevaluated,7.0,1611
 PolynomialGCD,Greatest common divisor of polynomials,✅,pure,2.0,1611
-ARProcess,Autoregressive process,,unevaluated,9.0,1614
+ARProcess,Autoregressive process,✅,unevaluated,9.0,1614
 DiscreteWaveletTransform,Discrete wavelet transform giving a DiscreteWaveletData object,✅,pure,8.0,1614
 SystemDialogInput,System dialog input,,unevaluated,6.0,1614
 Commonest,Returns the most common elements in a list,✅,pure,6.0,1617
@@ -2177,7 +2177,7 @@ ImageSizeMultipliers,Option for scaling image display size,🚫,None,6.0,2179
 IntervalIntersection,Computes the intersection of intervals,✅,pure,3.0,2179
 NotebookLocate,Locates and selects a cell or object in an open notebook,🚫,None,3.0,2179
 SunPosition,Azimuth/altitude of the Sun for a location and time (equatorial via CelestialSystem option),✅,contextual,10.0,2179
-MAProcess,Represents a moving-average time series process,🚫,None,9.0,2181
+MAProcess,Moving-average time series process,✅,unevaluated,9.0,2181
 QRDecomposition,Computes the QR decomposition of a matrix,✅,None,2.0,2181
 QuantityArray,Represents an array of quantities with units,🚫,None,10.1,2184
 SetStreamPosition,Sets the current position in an open stream,✅,io,2.0,2184
@@ -2426,7 +2426,7 @@ QueueProperties,queueing theory,🚫,None,9.0,2435
 Byte,Symbol for byte type in BinaryRead/BinaryWrite,✅,pure,1.0,2438
 FeatureSpacePlot,ML visualization,🚫,None,11.1,2438
 TakeSmallest,Takes the n smallest elements from a list; supports the operator form TakeSmallest[n][list],✅,pure,10.1,2438
-ARIMAProcess,time series model,🚫,None,9.0,2442
+ARIMAProcess,Autoregressive integrated moving-average process,✅,unevaluated,9.0,2442
 ChoiceDialog,,🚫,,6.0,2442
 SystemsModelFeedbackConnect,,🚫,,8.0,2442
 TimeSeriesThread,Applies a function to the values several series share at each time stamp,✅,pure,10.0,2442
@@ -2741,7 +2741,7 @@ AbsArgPlot,,🚫,,12.0,2762
 BulletGauge,,🚫,,9.0,2762
 LeftArrow,left arrow symbol,✅,Symbolic,3.0,2762
 ReplicateLayer,,🚫,,11.1,2762
-SARIMAProcess,,🚫,,9.0,2762
+SARIMAProcess,Seasonal autoregressive integrated moving-average process,✅,unevaluated,9.0,2762
 Yesterday,Returns a DateObject representing the previous calendar day,✅,contextual,10.0,2762
 Encrypt,,🚫,,10.1,2767
 ImageChannels,Returns the number of channels in an image,✅,pure,7.0,2767
@@ -2842,7 +2842,7 @@ GeoLabels,,🚫,,10.0,2867
 HankelTransform,,🚫,,11.1,2867
 MixedMagnitude,Magnitude list paired with MixedUnit inside Quantity (inert canonical form),✅,pure,10.4,2867
 NonNegativeIntegers,Domain of non-negative integers,✅,pure,12.0,2867
-SARMAProcess,,🚫,,9.0,2867
+SARMAProcess,Seasonal autoregressive moving-average process,✅,unevaluated,9.0,2867
 ThermometerGauge,Display a value on a thermometer scale as a Graphics gauge,✅,pure,9.0,2867
 TransformationClass,,🚫,,10.0,2867
 UndirectedGraphQ,True if all edges are undirected,✅,1,8.0,2867
@@ -3343,7 +3343,7 @@ ObservableModelQ,,,,8.0,3389
 Permanent,Permanent of a square matrix,✅,pure,10.2,3389
 PlaneCurveData,,🚫,,10.0,3389
 WaveletBestBasis,Entropy-optimal basis selection for wavelet packet data,✅,pure,8.0,3389
-WeakStationarity,,,,9.0,3389
+WeakStationarity,Whether an ARMA-family process is weakly stationary,✅,pure,9.0,3389
 Contexts,Lists known contexts; optional string pattern with * wildcards filters the result,✅,pure,2.0,3402
 CoordinateBoundingBoxArray,Grid of coordinate tuples over a bounding box given as corner points; supports steps and Into[n] divisions and offsets,✅,pure,10.1,3402
 CopyDirectory,,,,2.0,3402
