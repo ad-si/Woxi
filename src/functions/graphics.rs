@@ -18224,6 +18224,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       button_cell_svg(args)
     }
+    // A bare `Trigger[Dynamic[var], range]` cell draws as its play button.
+    Expr::FunctionCall { name, args }
+      if name == "Trigger" && args.len() >= 2 =>
+    {
+      button_plate_svg("▶")
+    }
     // A bare `PopupMenu[Dynamic[var], items, …]` cell (a puzzle board's
     // fill-in squares) shows the item `var` currently holds — blank while
     // nothing is chosen — instead of its source text.
@@ -23908,6 +23914,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Button" if args.len() >= 2 => {
         return Some(button_cell_svg(&args));
       }
+      // A `Trigger[Dynamic[var], {from, to}]` control item is drawn as its
+      // play button (its sweep needs a live widget).
+      "Trigger" if args.len() >= 2 => return Some(button_plate_svg("▶")),
       // Likewise a `PopupMenu[Dynamic[var], items, …]` item shows the choice
       // `var` holds rather than its source text.
       "PopupMenu" if args.len() >= 2 => {
@@ -36763,6 +36772,15 @@ fn display_expr_to_node(
       // `lval`.
       "Manipulator" | "Slider" | "VerticalSlider" if args.len() >= 2 => {
         match slider_node(args, Vec::new(), name == "VerticalSlider") {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      // `Trigger[Dynamic[lval], {from, to}[, speed]]` written inside a
+      // display element: the play button sweeps `lval` over its range, so
+      // draw it as a slider over that range (the speed only paces playback).
+      "Trigger" if args.len() >= 2 => {
+        match slider_node(&args[..2], Vec::new(), false) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }

@@ -2155,6 +2155,26 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_bare_trigger_in_layout_renders_as_play_button() {
+    // A `Trigger[Dynamic[v], {from, to}]` control drawn as a layout item
+    // printed its raw source text instead of a play button.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Column[{Row[{\"a\", Trigger[Dynamic[t], {0, 4}]}], Trigger[Dynamic[u], {1, 0.25}]}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("Column with Triggers should render");
+    assert!(
+      !svg.contains("Trigger["),
+      "must not fall back to raw Trigger[…] source text:\n{svg}"
+    );
+    assert!(
+      svg.matches("▶").count() == 2,
+      "each Trigger must draw as a play button:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_tableform_decimal_alignment_lines_up_dots() {
     // `TableAlignments -> "."` must line up the numbers on their decimal
     // point. Each cell is start-anchored in the SVG, so the dot's x-position
