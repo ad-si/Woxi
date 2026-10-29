@@ -8946,6 +8946,33 @@ mod split_with_test {
 mod first_position {
   use super::*;
 
+  // HoldRest holds only the default: the pattern, predicate and level are
+  // evaluated, and the default only when it is returned.
+  #[test]
+  fn only_the_default_is_held() {
+    assert_eq!(
+      interpret("n = 3; FirstPosition[{1, 2, 3}, n]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(interpret("n = 3; FirstCase[{1, 2, 3}, n]").unwrap(), "3");
+    assert_eq!(
+      interpret(
+        "n = 2; FirstPosition[{{1, 2}, {3, 4}}, n + 1, Missing[], {n}]"
+      )
+      .unwrap(),
+      "{2, 1}"
+    );
+    let r = interpret_with_stdout(
+      "{FirstPosition[{1, 2, 3}, 7, Print[\"d\"]; 0], \
+       FirstCase[{1, 2, 3}, 7, Print[\"y\"]; 0], \
+       SelectFirst[{1, 2}, # > 5 &, Print[\"z\"]; 1], \
+       FirstCase[{1, 2, 3}, 2, Print[\"never\"]; 0]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{0, 0, 1, 2}");
+    assert_eq!(r.stdout, "d\ny\nz\n");
+  }
+
   #[test]
   fn simple() {
     assert_eq!(interpret("FirstPosition[{a, b, c, d}, c]").unwrap(), "{3}");

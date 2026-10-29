@@ -1681,6 +1681,36 @@ fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+/// `FirstPosition`, `FirstCase` and `SelectFirst` are `HoldRest` only so
+/// that their default (the third argument) is evaluated just when it is
+/// returned; every other argument is evaluated up front, as in Wolfram.
+fn with_held_default(
+  args: &[Expr],
+  f: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let pending = Expr::Identifier("Internal`FirstDefaultPending".to_string());
+  let mut prepared = Vec::with_capacity(args.len());
+  for (i, arg) in args.iter().enumerate() {
+    prepared.push(match i {
+      0 => arg.clone(),
+      2 => pending.clone(),
+      _ => crate::evaluator::evaluate_expr_to_expr(arg)?,
+    });
+  }
+  let result = f(&prepared)?;
+  if matches!(&result, Expr::Identifier(n) if n == "Internal`FirstDefaultPending")
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&args[2]);
+  }
+  // An unevaluated call echoes the default as written.
+  Ok(match args.get(2) {
+    Some(default) => crate::functions::polynomial_ast::solve::substitute_expr(
+      &result, &pending, default,
+    ),
+    None => result,
+  })
+}
+
 pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
@@ -1838,7 +1868,7 @@ pub fn dispatch_list_operations(
       }));
     }
     "SelectFirst" if args.len() >= 2 && args.len() <= 3 => {
-      return Some(list_helpers_ast::select_first_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::select_first_ast));
     }
     "DuplicateFreeQ" if args.len() == 1 => {
       if let Expr::List(items) = &args[0] {
@@ -2356,13 +2386,13 @@ pub fn dispatch_list_operations(
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
     "FirstCase" if args.len() >= 2 && args.len() <= 4 => {
-      return Some(list_helpers_ast::first_case_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::first_case_ast));
     }
     "Position" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::position_unified_ast(args));
     }
     "FirstPosition" if args.len() >= 2 => {
-      return Some(list_helpers_ast::first_position_ast(args));
+      return Some(with_held_default(args, list_helpers_ast::first_position_ast));
     }
     "MapIndexed" if args.len() == 2 => {
       return Some(list_helpers_ast::map_indexed_ast(&args[0], &args[1]));

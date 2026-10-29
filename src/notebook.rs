@@ -1697,6 +1697,25 @@ fn partial_derivative_vars(s: &str) -> Option<String> {
 /// (`RowBox[{"2", "400"}]`); a `#` prefix needs a space instead, for
 /// named-slot syntax. A number followed by a letter (`2x`) already reads
 /// as a product.
+/// Whether two adjacent row parts are the pieces of one word whose middle a
+/// `StyleBox` restyles: a bare word token next to a `StyleBox` around a bare
+/// word token, with no space token between them.
+fn styling_splits_word(prev: &str, part: &str) -> bool {
+  let word = |s: &str| -> Option<String> {
+    let t = s.trim().strip_prefix('"')?.strip_suffix('"')?;
+    (!t.is_empty() && t.chars().all(char::is_alphanumeric))
+      .then(|| t.to_string())
+  };
+  let styled = |s: &str| {
+    positional_box_args("StyleBox", s)
+      .and_then(|args| args.first().and_then(|a| word(a)))
+  };
+  match (word(prev), styled(part), styled(prev), word(part)) {
+    (Some(_), Some(_), _, _) | (_, _, Some(_), Some(_)) => true,
+    _ => false,
+  }
+}
+
 fn push_juxtaposed(result: &mut String, piece: &str) {
   let piece_starts_alpha =
     piece.chars().next().is_some_and(char::is_alphabetic);
@@ -2174,6 +2193,13 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
       && parts[i - 1].trim().starts_with("RowBox[")
     {
       result.push(' ');
+    }
+    // A word split by styling part of it (`RowBox[{"Ke", StyleBox["t1",
+    // FontColor -> …]}]`) is still one word to the FrontEnd: `Ket1`.
+    if i > 0 && styling_splits_word(&parts[i - 1], part) {
+      result.push_str(&piece);
+      i += 1;
+      continue;
     }
     push_juxtaposed(&mut result, &piece);
     i += 1;
@@ -6513,6 +6539,14 @@ Cell["Chapter 2", "Chapter"]
     // Juxtaposed with the rest of a row, like any other factor.
     let s = r#"BoxData[RowBox[{"2", RowBox[{"\[LeftBracketingBar]", "x", "\[RightBracketingBar]"}]}]]"#;
     assert_eq!(extract_cell_content(s), "2Abs[x]");
+  }
+
+  /// Restyling part of a word does not split it: the FrontEnd reads
+  /// `RowBox[{"Ke", StyleBox["t1", …]}]` as the one symbol `Ket1`.
+  #[test]
+  fn test_style_box_inside_word_keeps_word() {
+    let s = r#"BoxData[RowBox[{"Module", "[", RowBox[{RowBox[{"{", RowBox[{StyleBox[RowBox[{"Ke", StyleBox["t1", FontColor->GrayLevel[0]]}]], ",", "Ket2"}], "}"}], ",", "1"}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Module[{Ket1,Ket2},1]");
   }
 
   /// A two-row, one-column `GridBox` in bare parentheses reads back as the
