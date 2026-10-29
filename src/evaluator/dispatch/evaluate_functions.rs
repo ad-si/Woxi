@@ -5101,6 +5101,9 @@ fn evaluate_function_call_ast_inner(
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
   }
+  if name == "DiscretizeRegion" && !args.is_empty() {
+    return crate::functions::fem2d::discretize_region_ast(args);
+  }
   if name == "VoronoiMesh" && (1..=2).contains(&args.len()) {
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }

@@ -514,6 +514,43 @@ pub fn mesh_bounds(mesh: &Mesh) -> Option<Expr> {
 /// `RegionMember` for a mesh region: inside when any of its cells holds the
 /// point.
 pub fn mesh_member(mesh: &Mesh, point: &Expr) -> Option<Expr> {
+  // A numeric point in a mesh of triangles needs no evaluator round trip
+  // per cell.
+  if let Expr::List(xy) = point
+    && let [x, y] = xy.as_slice()
+    && let (Some(x), Some(y)) = (
+      crate::functions::math_ast::try_eval_to_f64(x),
+      crate::functions::math_ast::try_eval_to_f64(y),
+    )
+    && !mesh.boundary
+    && !mesh.cells[2].is_empty()
+    && mesh.cells[2].iter().all(|c| c.len() == 3)
+    && let Some(triangles) = mesh.cells[2]
+      .iter()
+      .map(|c| {
+        let p = |i: usize| match mesh.coordinates.get(c[i] - 1)? {
+          Expr::List(v) if v.len() == 2 => Some((
+            crate::functions::math_ast::try_eval_to_f64(&v[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&v[1])?,
+          )),
+          _ => None,
+        };
+        Some([p(0)?, p(1)?, p(2)?])
+      })
+      .collect::<Option<Vec<_>>>()
+  {
+    const SLACK: f64 = 1e-10;
+    let found = triangles.iter().any(|[a, b, c]| {
+      let det = (b.1 - c.1) * (a.0 - c.0) + (c.0 - b.0) * (a.1 - c.1);
+      if det == 0.0 {
+        return false;
+      }
+      let l1 = ((b.1 - c.1) * (x - c.0) + (c.0 - b.0) * (y - c.1)) / det;
+      let l2 = ((c.1 - a.1) * (x - c.0) + (a.0 - c.0) * (y - c.1)) / det;
+      l1 >= -SLACK && l2 >= -SLACK && 1.0 - l1 - l2 >= -SLACK
+    });
+    return Some(bool_expr(found));
+  }
   let polygons = mesh.polygons();
   if polygons.is_empty() {
     return None;

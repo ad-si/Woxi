@@ -532,6 +532,9 @@ fn solve(
 
 /// `NDEigensystem[…]`: `{eigenvalues, eigenfunctions}`.
 pub fn nd_eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = crate::functions::fem2d::nd_eigensystem_2d(args)? {
+    return Ok(result);
+  }
   let Some((problem, applied, x, count)) = read_problem(args)? else {
     return Ok(crate::helpers::unevaluated("NDEigensystem", args));
   };
@@ -568,6 +571,9 @@ pub fn nd_eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// `NDEigenvalues[…]`: the eigenvalues alone.
 pub fn nd_eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = crate::functions::fem2d::nd_eigenvalues_2d(args)? {
+    return Ok(result);
+  }
   let Some((problem, _, _, count)) = read_problem(args)? else {
     return Ok(crate::helpers::unevaluated("NDEigenvalues", args));
   };
