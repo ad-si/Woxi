@@ -23662,3 +23662,63 @@ mod find_root_compiled_system {
     );
   }
 }
+
+mod solve_symbolic_root_forms {
+  use super::*;
+
+  // A polynomial with symbolic coefficients that factors is solved factor
+  // by factor; linear roots come over one denominator.
+  #[test]
+  fn factored_and_linear_roots() {
+    assert_eq!(
+      interpret("Solve[(x - b) (x - a) == 0, x]").unwrap(),
+      "{{x -> a}, {x -> b}}"
+    );
+    assert_eq!(
+      interpret("Solve[p x^2 - x + 1 - p == 0, x]").unwrap(),
+      "{{x -> 1}, {x -> (1 - p)/p}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 - (1 + a) x^2 + a x == 0, x]").unwrap(),
+      "{{x -> 0}, {x -> 1}, {x -> a}}"
+    );
+    assert_eq!(
+      interpret("Solve[x == a + 1/b, x]").unwrap(),
+      "{{x -> (1 + a*b)/b}}"
+    );
+  }
+
+  // Roots of monomials take their whole powers out, a negative radicand
+  // under a square root giving I.
+  #[test]
+  fn monomial_roots_split() {
+    assert_eq!(
+      interpret("Solve[x^2 + a^2 b == 0, x]").unwrap(),
+      "{{x -> -I*a*Sqrt[b]}, {x -> I*a*Sqrt[b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == a/b, x]").unwrap(),
+      "{{x -> -(Sqrt[a]/Sqrt[b])}, {x -> Sqrt[a]/Sqrt[b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 - a^4 == 0, x]").unwrap(),
+      "{{x -> -a}, {x -> -I*a}, {x -> I*a}, {x -> a}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == a^3 b, x]").unwrap(),
+      "{{x -> a*b^(1/3)}, {x -> -((-1)^(1/3)*a*b^(1/3))}, {x -> (-1)^(2/3)*a*b^(1/3)}}"
+    );
+  }
+
+  // The relation symbols of an Inequality are no unknowns.
+  #[test]
+  fn inequality_relations_are_not_variables() {
+    assert_eq!(
+      interpret(
+        "NSolve[{50.*Sin[x] == 48.31*Sin[0.08726646259971638 - 1.*x], Inequality[0, LessEqual, x, Less, Pi]}]"
+      )
+      .unwrap(),
+      "{{x -> 0.04288267713792277}}"
+    );
+  }
+}

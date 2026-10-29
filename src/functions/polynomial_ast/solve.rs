@@ -10,8 +10,125 @@ use crate::{ENV, StoredValue};
 
 /// In Solve context, simplify Sqrt[expr^(2n)] → expr^n since ± handles the sign.
 /// Also simplifies products containing such terms.
+/// `Sqrt[c s1^e1 s2^e2 …]` of a monomial taken apart the way Solve
+/// reports roots: the even powers of the symbols come out
+/// (`Sqrt[a^2 b] → a Sqrt[b]`) and a negative coefficient becomes a factor
+/// `I` (`Sqrt[-a] → I Sqrt[a]`). `None` for anything but such a monomial.
+fn split_monomial_sqrt(arg: &Expr) -> Option<Expr> {
+  split_monomial_root(arg, 2)
+}
+
+/// The `n`th-root counterpart of [`split_monomial_sqrt`]: whole `n`th
+/// powers of the symbols come out (`(a^3 b)^(1/3) → a b^(1/3)`). Only a
+/// square root turns a negative coefficient into `I`; for a higher root
+/// that is `None`.
+fn split_monomial_root(arg: &Expr, n: i128) -> Option<Expr> {
+  fn factors(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().for_each(|a| factors(a, out));
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        factors(left, out);
+        factors(right, out);
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        out.push(Expr::Integer(-1));
+        factors(operand, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut parts = Vec::new();
+  factors(arg, &mut parts);
+  let mut coefficient = Expr::Integer(1);
+  let mut outside = Vec::new();
+  let mut inside = Vec::new();
+  let mut inside_denominator = Vec::new();
+  for part in parts {
+    if crate::functions::predicate_ast::is_numeric_q(&part)
+      && try_eval_to_f64(&part).is_some()
+    {
+      coefficient = times2(coefficient, part);
+      continue;
+    }
+    let (base, exponent) = match &part {
+      Expr::Identifier(_) => (part.clone(), 1),
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(left.as_ref(), Expr::Identifier(_)) => match right.as_ref()
+      {
+        Expr::Integer(n) if *n != 0 => (*left.clone(), *n),
+        _ => return None,
+      },
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(args[0], Expr::Identifier(_)) =>
+      {
+        match &args[1] {
+          Expr::Integer(n) if *n != 0 => (args[0].clone(), *n),
+          _ => return None,
+        }
+      }
+      _ => return None,
+    };
+    // Whole multiples of n come out; the rest stays under the root, in the
+    // denominator for a negative power (`Sqrt[a/b]` is `Sqrt[a]/Sqrt[b]`).
+    let whole = exponent / n;
+    if whole != 0 {
+      outside.push(pow2(base.clone(), Expr::Integer(whole)));
+    }
+    let rest = exponent % n;
+    if rest > 0 {
+      inside.push(pow2(base, Expr::Integer(rest)));
+    } else if rest < 0 {
+      inside_denominator.push(pow2(base, Expr::Integer(-rest)));
+    }
+  }
+  if outside.is_empty() && inside.is_empty() && inside_denominator.is_empty() {
+    return None;
+  }
+  let c = try_eval_to_f64(
+    &crate::evaluator::evaluate_expr_to_expr(&coefficient).ok()?,
+  )?;
+  let mut result = outside;
+  if c < 0.0 {
+    if n != 2 {
+      return None;
+    }
+    result.push(Expr::Identifier("I".to_string()));
+    coefficient = negate_expr(&coefficient);
+  }
+  let root = |e: Expr| {
+    if n == 2 {
+      make_sqrt(e)
+    } else {
+      pow2(e, make_rational(1, n))
+    }
+  };
+  result.push(root(times2(coefficient, times(inside))));
+  if !inside_denominator.is_empty() {
+    result.push(pow2(root(times(inside_denominator)), Expr::Integer(-1)));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&times(result)).ok()
+}
+
 fn strip_sqrt_square(expr: Expr) -> Expr {
   match &expr {
+    // Sqrt[c s^e …] of a monomial: even powers out, a negative sign as I.
+    e if is_sqrt(e).is_some_and(|arg| split_monomial_sqrt(arg).is_some()) => {
+      split_monomial_sqrt(is_sqrt(e).unwrap()).unwrap()
+    }
     // Sqrt[base^(2n)] → base^n
     e if is_sqrt(e).is_some() => {
       let sqrt_arg = is_sqrt(e).unwrap();
@@ -190,6 +307,65 @@ fn has_radical(expr: &Expr) -> bool {
 ///
 /// `NSolve[equation]` with the variable left out solves for whatever the
 /// equation contains, the way `Solve[equation]` does.
+/// The polynomial `Σ coeffs[k] var^k`.
+fn build_poly_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
+  plus(
+    coeffs
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !matches!(c, Expr::Integer(0)))
+      .map(|(k, c)| {
+        times(vec![c.clone(), pow(id_expr(var), Expr::Integer(k as i128))])
+      })
+      .collect(),
+  )
+}
+
+/// Solve `poly == 0` for `var` factor by factor when `FactorList` splits it
+/// into two or more factors in `var`; `None` when it does not split.
+fn solve_by_factor_list(
+  poly: &Expr,
+  var: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let factors = crate::evaluator::evaluate_function_call_ast(
+    "FactorList",
+    &[crate::evaluator::evaluate_expr_to_expr(poly)?],
+  )?;
+  let Expr::List(factors) = &factors else {
+    return Ok(None);
+  };
+  let mut in_var: Vec<(Expr, i128)> = Vec::new();
+  for f in factors {
+    let Expr::List(pair) = f else { return Ok(None) };
+    let [factor, Expr::Integer(m)] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if !is_constant_wrt(factor, var) {
+      in_var.push((factor.clone(), *m));
+    }
+  }
+  if in_var.len() < 2 && in_var.iter().all(|(_, m)| *m == 1) {
+    return Ok(None);
+  }
+  let mut all = Vec::new();
+  for (factor, multiplicity) in in_var {
+    let eq = Expr::Comparison {
+      operands: vec![factor, Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let solved = solve_ast(&[eq, args[1].clone()])?;
+    let Expr::List(sols) = &solved else {
+      return Ok(None);
+    };
+    for _ in 0..multiplicity {
+      all.extend(sols.iter().cloned());
+    }
+  }
+  sort_solutions(&mut all);
+  Ok(Some(Expr::List(all.into())))
+}
+
 /// `Solve`/`NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to
 /// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`,
 /// and gives the first root in its domain. The root is located by a scan of the
@@ -2041,6 +2217,13 @@ fn collect_solve_var_exprs(expr: &Expr, out: &mut Vec<Expr>) {
     }
     Expr::Comparison { operands, .. } => {
       for e in operands {
+        collect_solve_var_exprs(e, out);
+      }
+    }
+    // `Inequality[a, Less, x, LessEqual, b]`: the relation symbols between
+    // the operands are no unknowns.
+    Expr::FunctionCall { name, args } if name == "Inequality" => {
+      for e in args.iter().step_by(2) {
         collect_solve_var_exprs(e, out);
       }
     }
@@ -5525,6 +5708,25 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A polynomial with symbolic coefficients that factors over the rationals
+  // is solved factor by factor, each root as often as its factor occurs:
+  // `(x - b)(x - a) == 0` gives `x -> a` and `x -> b`, not the quadratic
+  // formula's radicals of a perfect square.
+  // (A pure power a x^n + c keeps its own roots-of-unity form below.)
+  let pure_power =
+    (1..degree as usize).all(|i| matches!(&coeffs[i], Expr::Integer(0)));
+  if degree >= 2
+    && !pure_power
+    && coeffs.iter().any(|c| {
+      !crate::functions::predicate_ast::is_numeric_q(c)
+        && !matches!(c, Expr::Integer(_))
+    })
+    && let Some(result) =
+      solve_by_factor_list(&build_poly_from_coeffs(&coeffs, var), var, args)?
+  {
+    return Ok(result);
+  }
+
   match degree {
     0 => {
       // No variable present — check if constant is zero
@@ -5541,9 +5743,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let a = &coeffs[1]; // coefficient of x
       let neg_b = negate_expr(b);
       let solution = simplify(solve_divide(&neg_b, a));
-      // Run the user-level Simplify so forms like -((1 - z)/2) collapse
-      // to (-1 + z)/2, matching wolframscript's canonical output.
-      let solution = crate::functions::polynomial_ast::simplify_ast(
+      // Put the root over one denominator, as wolframscript does: forms
+      // like -((1 - z)/2) become (-1 + z)/2 and a + 1/b becomes
+      // (1 + a b)/b.
+      let solution = crate::evaluator::evaluate_function_call_ast(
+        "Together",
         std::slice::from_ref(&solution),
       )
       .unwrap_or(solution);
@@ -5839,7 +6043,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           (negate_expr(c), Expr::Integer(*a_int))
         };
-        let sqrt_numer = {
+        let monomial_root =
+          crate::evaluator::evaluate_expr_to_expr(&numer_under_sqrt)
+            .ok()
+            .and_then(|m| split_monomial_sqrt(&m));
+        let sqrt_numer = if let Some(root) = monomial_root {
+          root
+        } else {
           let raw =
             crate::functions::sqrt_ast(std::slice::from_ref(&numer_under_sqrt))
               .unwrap_or_else(|_| make_sqrt(numer_under_sqrt));
@@ -5860,6 +6070,22 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sol_neg = negate_expr(&sol_pos);
         return Ok(Expr::List(
           vec![make_rule(sol_neg), make_rule(sol_pos)].into(),
+        ));
+      }
+
+      // b = 0 with a symbolic leading coefficient: x^2 == -c/a, whose root
+      // splits like any monomial's (`b x^2 == a` gives ±Sqrt[a]/Sqrt[b]).
+      if matches!(b, Expr::Integer(0))
+        && let Ok(value) = crate::evaluator::evaluate_expr_to_expr(
+          &solve_divide(&negate_expr(c), a),
+        )
+        && let Some(root) = split_monomial_sqrt(&value)
+      {
+        let negative =
+          crate::evaluator::evaluate_expr_to_expr(&negate_expr(&root))
+            .unwrap_or_else(|_| negate_expr(&root));
+        return Ok(Expr::List(
+          vec![make_rule(negative), make_rule(root)].into(),
         ));
       }
 
@@ -5960,7 +6186,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             );
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
-          let val_root = if n % 2 == 1 && negative_val {
+          let monomial_root = (!negative_val)
+            .then(|| split_monomial_root(&val, n))
+            .flatten();
+          let val_root = if let Some(r) = monomial_root {
+            r
+          } else if n % 2 == 1 && negative_val {
             let magnitude =
               crate::evaluator::evaluate_expr_to_expr(&negate_expr(&val))
                 .unwrap_or_else(|_| negate_expr(&val));

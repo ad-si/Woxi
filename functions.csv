@@ -2250,7 +2250,7 @@ FileNameSetter,UI file picker,🚫,None,6.0,2254
 FindLinearRecurrence,Finds a minimal linear recurrence for a sequence,✅,None,7.0,2254
 StateResponse,Control systems,🚫,None,8.0,2254
 FullRegion,Geometric region,🚫,None,10.0,2260
-PairedBarChart,Chart visualization,🚫,None,8.0,2260
+PairedBarChart,Two bar series drawn back to back as horizontal bars,✅,pure,8.0,2260
 Path,Graph theory path,🚫,None,4.0,2260
 PoissonProcess,Poisson counting process with Poisson time slices,✅,unevaluated,9.0,2260
 UnitaryMatrixQ,Tests whether a matrix is unitary,✅,None,10.0,2260
@@ -2606,7 +2606,7 @@ ImageCorners,,🚫,,9.0,2625
 Inpaint,Fill masked image pixels from their surroundings by diffusion,✅,pure,8.0,2625
 KernelObject,,🚫,,7.0,2625
 ListVectorPlot3D,,🚫,,7.0,2625
-PairedHistogram,,🚫,,8.0,2625
+PairedHistogram,Two histograms over common bins drawn back to back,✅,pure,8.0,2625
 SequenceLastLayer,,🚫,,11.1,2625
 SquaresR,Number of representations as sum of squares,✅,none,6.0,2625
 CellObject,,🚫,,9.0,2632

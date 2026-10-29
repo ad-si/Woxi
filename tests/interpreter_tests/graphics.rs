@@ -43213,3 +43213,29 @@ mod cayley_graph {
     );
   }
 }
+
+mod paired_charts {
+  use super::*;
+
+  // The first series extends left of a central gap, the second right.
+  #[test]
+  fn back_to_back_bars() {
+    assert_eq!(
+      interpret(
+        "Cases[First[PairedBarChart[{1, 2, 3}, {4, 5, 6}]], Rectangle[a_, b_] :> {a[[1]], b[[1]]}, Infinity]"
+      )
+      .unwrap(),
+      "{{-1.45, -0.44999999999999996}, {-2.45, -0.44999999999999996}, \
+       {-3.45, -0.44999999999999996}, {0.44999999999999996, 4.45}, \
+       {0.44999999999999996, 5.45}, {0.44999999999999996, 6.45}}"
+    );
+    // Histograms share the bins of the joined data.
+    assert_eq!(
+      interpret(
+        "Cases[First[PairedHistogram[{1, 2, 2, 3, 3, 3}, {1, 1, 2, 4}]], Rectangle[a_, b_] :> {a[[2]], b[[2]]}, Infinity]"
+      )
+      .unwrap(),
+      "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
+    );
+  }
+}
