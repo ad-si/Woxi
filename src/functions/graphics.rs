@@ -24935,7 +24935,8 @@ fn framed_box_to_svg(
     ));
     // Embed child SVG
     svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
+      view_box_attr(child_svg)
     ));
     // Strip outer <svg> and </svg> tags from child to embed its content
     let inner_content = strip_svg_wrapper(child_svg);
@@ -25063,7 +25064,8 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
     ));
     // Embed child SVG.
     svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\">\n"
+      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
+      view_box_attr(child_svg)
     ));
     svg.push_str(strip_svg_wrapper(child_svg));
     svg.push_str("</svg>\n");
@@ -25120,6 +25122,19 @@ pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
     .and_then(|s| s.parse::<f64>().ok())
     .unwrap_or(30.0);
   (w, h)
+}
+
+/// ` viewBox="…"` for a nested `<svg>` that embeds `child`'s content: a
+/// plot draws in a coordinate space larger than its display size, so the
+/// embedding element needs the child's viewBox to show all of it. Empty when
+/// the child declares none.
+fn view_box_attr(child: &str) -> String {
+  parse_svg_dimensions(child).map_or_else(String::new, |p| {
+    format!(
+      " viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\"",
+      p.view_box
+    )
+  })
 }
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
@@ -25638,8 +25653,10 @@ pub fn row_with_framed_to_svg(items: &[Expr]) -> Option<String> {
         // Embed pre-rendered Framed SVG, vertically centered
         let ey = (total_h - cell.height) / 2.0;
         svg.push_str(&format!(
-          "<svg x=\"{x:.1}\" y=\"{ey:.1}\" width=\"{:.1}\" height=\"{:.1}\">\n",
-          cell.width, cell.height
+          "<svg x=\"{x:.1}\" y=\"{ey:.1}\" width=\"{:.1}\" height=\"{:.1}\"{}>\n",
+          cell.width,
+          cell.height,
+          view_box_attr(child_svg)
         ));
         svg.push_str(strip_svg_wrapper(child_svg));
         svg.push_str("</svg>\n");
