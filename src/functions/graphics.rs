@@ -4276,7 +4276,7 @@ fn is_box_display_wrapper(name: &str, args: &[Expr]) -> bool {
 /// the start of the next line, so every line is well-formed markup that
 /// keeps the styling it was inside. An empty line becomes a no-break space
 /// so it still takes up a line of height.
-fn split_markup_lines(markup: &str) -> Vec<String> {
+pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
   let mut lines: Vec<String> = Vec::new();
   let mut current = String::new();
   let mut has_text = false;

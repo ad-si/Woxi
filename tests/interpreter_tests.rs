@@ -4328,6 +4328,19 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics3d_text_keeps_every_line_of_multiline_string() {
+    // Regression: a `Text["a\nb", pos]` in Graphics3D painted only its
+    // first line.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics3D[Text[\"top\\nbottom\", {0, 0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">top</tspan>"), "first line lost: {svg}");
+    assert!(svg.contains(">bottom</tspan>"), "second line lost: {svg}");
+  }
+
+  #[test]
   fn test_invisible_in_row_plot_label_paints_nothing() {
     // `PlotLabel -> Row[{"text", Invisible[Framed[""]]}]` — a Demonstration
     // pads a label with an invisible item to hold its height steady.
