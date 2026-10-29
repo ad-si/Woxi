@@ -450,6 +450,32 @@ pub fn dispatch_predicate_functions(
     "PalindromeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::palindrome_q_ast(args));
     }
+    // SquareFreeQ[poly, x]: no repeated factor in x — the gcd of poly and
+    // its derivative in x is free of x.
+    "SquareFreeQ" if args.len() == 2 => {
+      let x = &args[1];
+      let derivative = match crate::evaluator::evaluate_function_call_ast(
+        "D",
+        &[args[0].clone(), x.clone()],
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      let gcd = match crate::evaluator::evaluate_function_call_ast(
+        "PolynomialGCD",
+        &[args[0].clone(), derivative],
+      ) {
+        Ok(Expr::FunctionCall { ref name, .. }) if name == "PolynomialGCD" => {
+          return Some(Ok(unevaluated("SquareFreeQ", args)));
+        }
+        Ok(g) => g,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "FreeQ",
+        &[gcd, x.clone()],
+      ));
+    }
     "SquareFreeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::square_free_q_ast(args));
     }
@@ -804,6 +830,14 @@ pub fn dispatch_predicate_functions(
     }
     "Head" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::head_ast(args));
+    }
+    // Head[expr, h] wraps the head in h before it is evaluated.
+    "Head" if args.len() == 2 => {
+      return Some(
+        crate::functions::predicate_ast::head_ast(&args[..1]).and_then(|hd| {
+          crate::evaluator::apply_function_to_arg(&args[1], &hd)
+        }),
+      );
     }
     "Length" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::length_ast(args));

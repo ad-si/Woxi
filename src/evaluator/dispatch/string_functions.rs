@@ -26,7 +26,7 @@ pub fn dispatch_string_functions(
     "Compress" if args.len() == 1 => {
       return Some(crate::functions::string_ast::compress_ast(args));
     }
-    "Uncompress" if args.len() == 1 => {
+    "Uncompress" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::uncompress_ast(args));
     }
     "CompressedData" => {

@@ -209,23 +209,43 @@ pub(crate) fn resolve_numeric_steps(
     });
   }
 
-  let min_num = crate::functions::math_ast::try_eval_to_f64(&min_expr)
-    .ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Do: iterator bound must be an integer".into(),
-      )
-    })?;
-  let max_num = crate::functions::math_ast::try_eval_to_f64(max_expr)
-    .ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Do: iterator bound must be an integer".into(),
-      )
-    })?;
+  let bound_error = || {
+    InterpreterError::EvaluationError(
+      "Do: iterator bound must be an integer".into(),
+    )
+  };
   let step_num =
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
-      .ok_or_else(|| {
-        InterpreterError::EvaluationError("Do: step must be an integer".into())
-      })?;
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr);
+  let min_num = crate::functions::math_ast::try_eval_to_f64(&min_expr);
+  let max_num =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(max_expr);
+  let (min_num, max_num, step_num) = match (min_num, max_num, step_num) {
+    (Some(lo), Some(hi), Some(step)) => (lo, hi, step),
+    (Some(_), Some(_), None) => {
+      return Err(InterpreterError::EvaluationError(
+        "Do: step must be an integer".into(),
+      ));
+    }
+    // Symbolic bounds iterate as long as their span is a number of steps:
+    // {n, x, x + 3 y, y} visits x, x + y, x + 2 y, x + 3 y.
+    _ => {
+      let span = crate::evaluator::evaluate_function_call_ast(
+        "Together",
+        &[crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Divide,
+          left: Box::new(Expr::BinaryOp {
+            op: crate::syntax::BinaryOperator::Minus,
+            left: Box::new(max_expr.clone()),
+            right: Box::new(min_expr.clone()),
+          }),
+          right: Box::new(step_expr.clone()),
+        })?],
+      )?;
+      let count = crate::functions::math_ast::try_eval_to_f64(&span)
+        .ok_or_else(bound_error)?;
+      (0.0, count, 1.0)
+    }
+  };
   if step_num == 0.0 {
     return Err(InterpreterError::EvaluationError(
       "Do: step cannot be zero".into(),
@@ -280,9 +300,14 @@ pub(crate) fn for_each_numeric_step(
       // As many values as Range gives: rounding in (max - min)/step must
       // neither add nor drop the last one, at any magnitude (a slack of
       // machine epsilon ran a step of 10^-20 a million times).
-      let count =
-        super::construction::range_step_count((max_num - min_num) / step_num)
-          + 1;
+      // An infinite bound ({k, Infinity}) runs until Break or Return.
+      let ratio = (max_num - min_num) / step_num;
+      let unbounded = ratio == f64::INFINITY;
+      let count = if unbounded {
+        i128::MAX
+      } else {
+        super::construction::range_step_count(ratio) + 1
+      };
       let mut k: i128 = 0;
       loop {
         if k >= count {
@@ -304,7 +329,7 @@ pub(crate) fn for_each_numeric_step(
           return Ok(());
         }
         k += 1;
-        if k > 1_000_000 {
+        if !unbounded && k > 1_000_000 {
           return Err(InterpreterError::EvaluationError(
             "Do: iterator exceeded maximum iterations".into(),
           ));

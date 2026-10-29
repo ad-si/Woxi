@@ -1489,6 +1489,7 @@ Thumbnail,Thumbnail image wrapper,✅,pure,7.0,1475
 Ellipsoid,Ellipsoid geometric region,✅,pure,10.0,1476
 TransformedRegion,Apply transformation to a geometric region,✅,pure,10.0,1477
 GroupOrbits,Orbits of a group action,✅,pure,8.0,1480
+GroupSupport,Points moved by some element of a permutation group,✅,pure,8.0,
 RegionBounds,Bounding box of a region,✅,pure,10.0,1480
 SawtoothWave,Periodic sawtooth wave function,✅,pure,7.0,1480
 DigitBlock,Option for the NumberForm family giving the digits per block; the separators a full field would carry also widen a padded field,✅,pure,1.0,1481

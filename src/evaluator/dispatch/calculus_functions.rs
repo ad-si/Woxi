@@ -703,6 +703,20 @@ pub fn dispatch_calculus_functions(
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }
+    // DSolve[eqns] / DSolveValue[eqns]: the unknown functions and their
+    // independent variables are read off the derivatives in the equations.
+    "DSolve" | "DSolveValue" if args.len() == 1 => {
+      return Some(match dsolve_unknowns(&args[0]) {
+        Ok(Some((funcs, vars))) => {
+          crate::evaluator::evaluate_function_call_ast(
+            name,
+            &[args[0].clone(), funcs, vars],
+          )
+        }
+        Ok(None) => Ok(unevaluated(name, args)),
+        Err(e) => Err(e),
+      });
+    }
     "DSolve" if args.len() == 3 => {
       return Some(crate::functions::ode_ast::dsolve_ast(args));
     }
@@ -6882,4 +6896,63 @@ fn single_argument_definition(name: &str) -> Option<Expr> {
     &params[0],
     &Expr::Slot(1),
   ))
+}
+
+/// The unknown functions of a differential equation (or list of them) and
+/// their independent variables, as the second and third arguments of the
+/// three-argument `DSolve`: `y[x]` and `x` for one function of one variable,
+/// `{y[x], z[x]}` and `x` for a system, `u[x, t]` and `{x, t}` for a PDE.
+/// `None` when no derivative `f'[v]` of an unknown function appears, or the
+/// functions do not share their variables.
+fn dsolve_unknowns(
+  eqns: &Expr,
+) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let rule = crate::syntax::string_to_expr(
+    "Derivative[__][f_Symbol][v__Symbol] :> {f, {v}}",
+  )?;
+  let found = crate::evaluator::evaluate_function_call_ast(
+    "Cases",
+    &[eqns.clone(), rule, id_expr("Infinity")],
+  )?;
+  let found =
+    crate::evaluator::evaluate_function_call_ast("DeleteDuplicates", &[found])?;
+  let Expr::List(pairs) = &found else {
+    return Ok(None);
+  };
+  let mut funcs: Vec<Expr> = Vec::new();
+  let mut vars: Option<Vec<Expr>> = None;
+  for pair in pairs {
+    let Expr::List(fv) = pair else {
+      return Ok(None);
+    };
+    let (Some(Expr::Identifier(f)), Some(Expr::List(v))) =
+      (fv.first(), fv.get(1))
+    else {
+      return Ok(None);
+    };
+    let key = |vs: &[Expr]| vs.iter().map(expr_to_string).collect::<Vec<_>>();
+    match &vars {
+      Some(existing) if key(existing) != key(v) => return Ok(None),
+      _ => vars = Some(v.to_vec()),
+    }
+    let applied = call(f, v.to_vec());
+    let shown = expr_to_string(&applied);
+    if !funcs.iter().any(|g| expr_to_string(g) == shown) {
+      funcs.push(applied);
+    }
+  }
+  let Some(vars) = vars else {
+    return Ok(None);
+  };
+  let funcs = if funcs.len() == 1 {
+    funcs.remove(0)
+  } else {
+    Expr::List(funcs.into())
+  };
+  let vars = if vars.len() == 1 {
+    vars[0].clone()
+  } else {
+    Expr::List(vars.into())
+  };
+  Ok(Some((funcs, vars)))
 }

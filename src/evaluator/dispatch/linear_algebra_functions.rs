@@ -480,6 +480,36 @@ pub fn dispatch_linear_algebra_functions(
     "BoxMatrix" | "DiamondMatrix" if args.len() == 2 => {
       return structuring_element_in_width(name, &args[0], &args[1], args);
     }
+    // DiagonalMatrix[…, TargetStructure -> "Dense" | "Sparse" | Automatic]
+    "DiagonalMatrix"
+      if (2..=4).contains(&args.len())
+        && matches!(&args[args.len() - 1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TargetStructure")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[args.len() - 1] else {
+        return None;
+      };
+      let sparse = match replacement.as_ref() {
+        Expr::String(s) if s == "Dense" => false,
+        Expr::Identifier(s) if s == "Automatic" => false,
+        Expr::String(s) if s == "Sparse" => true,
+        _ => return Some(Ok(unevaluated("DiagonalMatrix", args))),
+      };
+      let dense =
+        match crate::functions::linear_algebra_ast::diagonal_matrix_ast(
+          &args[..args.len() - 1],
+        ) {
+          Ok(d) => d,
+          Err(e) => return Some(Err(e)),
+        };
+      if !sparse || !matches!(dense, Expr::List(_)) {
+        return Some(Ok(dense));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "SparseArray",
+        &[dense],
+      ));
+    }
     "DiagonalMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(
         args,
@@ -932,6 +962,34 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::conjugate_transpose_ast(args),
       );
     }
+    // ConjugateTranspose[a, perm] is Conjugate[Transpose[a, perm]].
+    "ConjugateTranspose" if args.len() == 2 => {
+      return Some(
+        match crate::evaluator::evaluate_function_call_ast("Transpose", args) {
+          Ok(Expr::FunctionCall { ref name, .. }) if name == "Transpose" => {
+            Ok(unevaluated("ConjugateTranspose", args))
+          }
+          Ok(t) => {
+            crate::evaluator::evaluate_function_call_ast("Conjugate", &[t])
+          }
+          Err(e) => Err(e),
+        },
+      );
+    }
+    // Fit[{m, v}] — the least-squares coefficients for design matrix m and
+    // response vector v.
+    "Fit"
+      if args.len() == 1
+        && matches!(&args[0], Expr::List(mv) if mv.len() == 2) =>
+    {
+      let Expr::List(mv) = &args[0] else {
+        return None;
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "LeastSquares",
+        &[mv[0].clone(), mv[1].clone()],
+      ));
+    }
     "DesignMatrix" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::design_matrix_ast(
         args,
@@ -1293,6 +1351,24 @@ pub fn dispatch_linear_algebra_functions(
         "MatrixLog",
         "Log",
       ));
+    }
+    // MatrixPower[m, n, v] is MatrixPower[m, n] . v.
+    "MatrixPower" if args.len() == 3 => {
+      return Some(
+        match dispatch_linear_algebra_functions("MatrixPower", &args[..2]) {
+          Some(Ok(Expr::FunctionCall { ref name, .. }))
+            if name == "MatrixPower" =>
+          {
+            Ok(unevaluated("MatrixPower", args))
+          }
+          Some(Ok(p)) => crate::evaluator::evaluate_function_call_ast(
+            "Dot",
+            &[p, args[2].clone()],
+          ),
+          Some(Err(e)) => Err(e),
+          None => Ok(unevaluated("MatrixPower", args)),
+        },
+      );
     }
     "MatrixPower" if args.len() == 2 => {
       // Validate the matrix independently of the exponent: a non-square or

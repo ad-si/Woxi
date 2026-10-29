@@ -6627,3 +6627,103 @@ fn contains_inexact_real_log(expr: &Expr) -> bool {
     _ => false,
   }
 }
+
+/// Values of the inverse circular/hyperbolic functions and of the complex
+/// component functions at the infinities (`ArcSin[Infinity]` is
+/// `-I Infinity`, `Re[ComplexInfinity]` is `Indeterminate`, …), and of the
+/// two-argument `ArcTan` with one infinite coordinate.
+pub fn infinite_argument_value(name: &str, args: &[Expr]) -> Option<Expr> {
+  if !matches!(
+    name,
+    "ArcTan"
+      | "ArcSin"
+      | "ArcCos"
+      | "ArcSec"
+      | "ArcCsc"
+      | "ArcCot"
+      | "ArcCoth"
+      | "ArcCsch"
+      | "ArcTanh"
+      | "Arg"
+      | "Re"
+      | "Im"
+      | "Conjugate"
+  ) {
+    return None;
+  }
+  #[derive(PartialEq)]
+  enum Inf {
+    Pos,
+    Neg,
+    Complex,
+  }
+  let classify = |e: &Expr| match e {
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+      Some(Inf::Pos)
+    }
+    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+      Some(Inf::Complex)
+    }
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      match args.as_slice() {
+        [] => Some(Inf::Complex),
+        [Expr::Integer(1)] => Some(Inf::Pos),
+        [Expr::Integer(-1)] => Some(Inf::Neg),
+        _ => None,
+      }
+    }
+    // -Infinity in its other stored forms (Times[-1, Infinity], …).
+    Expr::List(_) | Expr::Association(_) | Expr::String(_) => None,
+    _ => match crate::syntax::expr_to_string(e).as_str() {
+      "Infinity" => Some(Inf::Pos),
+      "-Infinity" => Some(Inf::Neg),
+      "ComplexInfinity" => Some(Inf::Complex),
+      _ => None,
+    },
+  };
+  let value = |s: &str| {
+    crate::syntax::string_to_expr(s)
+      .and_then(|e| crate::evaluator::evaluate_expr_to_expr(&e))
+      .ok()
+  };
+  if name == "ArcTan" && args.len() == 2 {
+    // ArcTan[x, y] with exactly one infinite real coordinate.
+    let real_sign = |e: &Expr| {
+      crate::functions::math_ast::try_eval_to_f64(e)
+        .filter(|v| v.is_finite())
+        .map(|v| v.partial_cmp(&0.0))
+    };
+    return match (classify(&args[0]), classify(&args[1])) {
+      (Some(Inf::Pos), None) => real_sign(&args[1]).map(|_| Expr::Integer(0)),
+      (Some(Inf::Neg), None) => match real_sign(&args[1])? {
+        Some(std::cmp::Ordering::Less) => value("-Pi"),
+        Some(_) => value("Pi"),
+        None => None,
+      },
+      (None, Some(Inf::Pos)) => real_sign(&args[0]).and_then(|_| value("Pi/2")),
+      (None, Some(Inf::Neg)) => {
+        real_sign(&args[0]).and_then(|_| value("-Pi/2"))
+      }
+      _ => None,
+    };
+  }
+  if args.len() != 1 {
+    return None;
+  }
+  let inf = classify(&args[0])?;
+  let result = match (name, inf) {
+    ("ArcSin", Inf::Pos) | ("ArcCos", Inf::Neg) => "-I Infinity",
+    ("ArcSin", Inf::Neg) | ("ArcCos", Inf::Pos) => "I Infinity",
+    ("ArcSin" | "ArcCos", Inf::Complex) => "ComplexInfinity",
+    ("ArcSec", _) => "Pi/2",
+    ("ArcCsc" | "ArcCot" | "ArcCoth" | "ArcCsch", Inf::Complex) => "0",
+    ("ArcTanh", Inf::Pos) => "-I Pi/2",
+    ("ArcTanh", Inf::Neg) => "I Pi/2",
+    ("Arg", Inf::Pos) => "0",
+    ("Arg", Inf::Neg) => "Pi",
+    ("Re" | "Im", Inf::Complex) => "Indeterminate",
+    ("Conjugate", Inf::Complex) => "ComplexInfinity",
+    _ => return None,
+  };
+  value(result)
+}

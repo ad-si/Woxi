@@ -986,7 +986,12 @@ pub fn comparator_keeps_order(
   let verdict = crate::functions::list_helpers_ast::apply_func_to_two_args(
     comparator, a, b,
   )?;
-  Ok(!matches!(&verdict, Expr::Identifier(s) if s == "False"))
+  // An ordering function may answer like Order: -1 (like False) puts b
+  // first, 1 and 0 keep the pair as it is.
+  Ok(
+    !matches!(&verdict, Expr::Identifier(s) if s == "False")
+      && !matches!(&verdict, Expr::Integer(-1)),
+  )
 }
 
 pub fn ordering_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -202,6 +202,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `NSolve[eqns, n]` with a number in the variable slot is the legacy
     // precision form, solving for the variables the equations contain.
     let precision_at = match args.len() {
+      4 if is_precision_spec(&args[3]) => Some(3),
       3 if is_precision_spec(&args[2]) => Some(2),
       2 if is_precision_spec(&args[1]) => Some(1),
       _ => None,

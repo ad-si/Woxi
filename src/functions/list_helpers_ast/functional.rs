@@ -1029,6 +1029,18 @@ pub fn apply_at_level_ast(
   expr: &Expr,
   level_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  apply_at_level_heads_ast(func, expr, level_spec, false)
+}
+
+/// Apply[f, expr, levelspec, Heads -> h]: with `heads` true, compound heads
+/// are parts too (one level below their expression), so the heads reached at
+/// the given levels are replaced as well.
+pub fn apply_at_level_heads_ast(
+  func: &Expr,
+  expr: &Expr,
+  level_spec: &Expr,
+  heads: bool,
+) -> Result<Expr, InterpreterError> {
   // Parse level spec. For the integer form, `Apply[f, expr, n]` is
   // equivalent to `Apply[f, expr, {1, n}]` — levels 1 through n — not
   // {0, n} as Woxi previously assumed. Negative bounds are kept as they are:
@@ -1058,7 +1070,7 @@ pub fn apply_at_level_ast(
     _ => (1, 1),
   };
 
-  apply_at_level_recursive(func, expr, 0, min_level, max_level)
+  apply_at_level_recursive(func, expr, 0, min_level, max_level, heads)
 }
 
 /// Mathematica-style Depth: atoms have depth 1, compound expressions are
@@ -1088,6 +1100,7 @@ fn apply_at_level_recursive(
   current_level: usize,
   min_level: i128,
   max_level: i128,
+  heads: bool,
 ) -> Result<Expr, InterpreterError> {
   // Normalize BinaryOp / UnaryOp into a FunctionCall so Apply can descend
   // into Plus/Times/Power and other operators that the parser sometimes
@@ -1152,11 +1165,24 @@ fn apply_at_level_recursive(
           current_level + 1,
           min_level,
           max_level,
+          heads,
         )
       })
       .collect::<Result<Vec<_>, _>>()?
   } else {
     items.clone()
+  };
+  // With Heads -> True a compound head is descended into like a part.
+  let curried_head = match curried_head {
+    Some(head) if heads && descend => Some(Box::new(apply_at_level_recursive(
+      func,
+      &head,
+      current_level + 1,
+      min_level,
+      max_level,
+      heads,
+    )?)),
+    other => other,
   };
 
   // A child whose head became `Sequence` splices into its parent, exactly as
@@ -1697,6 +1723,26 @@ pub fn inner_ast(
   list2: &Expr,
   g: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Two expressions with the same non-List head are contracted over their
+  // arguments: Inner[f, h[a, b], h[c, d], g] is g[f[a, c], f[b, d]].
+  if let (
+    Expr::FunctionCall { name: h1, args: a1 },
+    Expr::FunctionCall { name: h2, args: a2 },
+  ) = (list1, list2)
+    && h1 == h2
+    && a1.len() == a2.len()
+    && !a1
+      .iter()
+      .chain(a2.iter())
+      .any(|e| matches!(e, Expr::FunctionCall { name, .. } if name == h1))
+  {
+    let products = a1
+      .iter()
+      .zip(a2.iter())
+      .map(|(x, y)| apply_func_to_two_args(f, x, y))
+      .collect::<Result<Vec<_>, _>>()?;
+    return apply_func_to_n_args(g, &products);
+  }
   match inner_recursive(f, list1, list2, g) {
     Err(InterpreterError::EvaluationError(msg))
       if msg.contains("incompatible dimensions") =>

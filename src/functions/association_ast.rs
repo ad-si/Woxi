@@ -357,6 +357,11 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(bool_expr(false))
     }
+    // So is a single rule: KeyExistsQ["a" -> 1, "a"] is True.
+    rule if extract_rule_key(rule).is_some() => {
+      let k = extract_rule_key(rule).unwrap_or(Expr::Integer(0));
+      Ok(bool_expr(expr_to_string(&k) == key_cmp))
+    }
     other => {
       // Unlike its siblings, KeyExistsQ answers False after the message.
       invalid_subject_message(

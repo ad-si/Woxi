@@ -2590,18 +2590,39 @@ pub fn dispatch_io_functions(
       });
     }
     #[cfg(not(target_arch = "wasm32"))]
-    "ParentDirectory" if args.is_empty() || args.len() == 1 => {
-      let base = if args.is_empty() {
-        crate::vfs::current_dir()
-      } else if let Expr::String(s) = &args[0] {
-        s.clone()
-      } else {
-        return Some(Ok(unevaluated("ParentDirectory", args)));
+    // ParentDirectory[], ParentDirectory[dir], ParentDirectory[dir, n] (n
+    // levels up); a File[dir] gives a File.
+    "ParentDirectory" if args.len() <= 2 => {
+      let (base, as_file) = match args.first() {
+        None => (crate::vfs::current_dir(), false),
+        Some(Expr::String(s)) => (s.clone(), false),
+        Some(Expr::FunctionCall { name, args: fa })
+          if name == "File" && matches!(fa.as_slice(), [Expr::String(_)]) =>
+        {
+          let Expr::String(s) = &fa[0] else {
+            return None;
+          };
+          (s.clone(), true)
+        }
+        _ => return Some(Ok(unevaluated("ParentDirectory", args))),
       };
-      let parent = std::path::Path::new(&base)
-        .parent()
-        .map_or_else(|| base.clone(), |p| p.to_string_lossy().into_owned());
-      return Some(Ok(Expr::String(parent)));
+      let levels = match args.get(1) {
+        None => 1,
+        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+        _ => return Some(Ok(unevaluated("ParentDirectory", args))),
+      };
+      let mut parent = base;
+      for _ in 0..levels {
+        parent = std::path::Path::new(&parent)
+          .parent()
+          .map_or_else(|| parent.clone(), |p| p.to_string_lossy().into_owned());
+      }
+      let parent = Expr::String(parent);
+      return Some(Ok(if as_file {
+        call1("File", parent)
+      } else {
+        parent
+      }));
     }
     // DirectoryName["path"] or DirectoryName["path", n]
     "DirectoryName" if args.len() == 1 || args.len() == 2 => {

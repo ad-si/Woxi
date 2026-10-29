@@ -2260,6 +2260,14 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(10)
   };
 
+  // FromDigits["XVII", "Roman"] reads a Roman numeral.
+  if args.len() == 2
+    && matches!(&args[0], Expr::String(_))
+    && matches!(&args[1], Expr::String(b) if b == "Roman")
+  {
+    return from_roman_numeral_ast(&args[..1]);
+  }
+
   // MixedRadix base: `FromDigits[{d0, ..., d_{n-1}}, MixedRadix[{r0, ..., r_{m-1}}]]`.
   // Each digit's weight is the running product of radices consumed from the
   // right (the last digit has weight 1, the next 1*r_{m-1}, then *r_{m-2}, …).
