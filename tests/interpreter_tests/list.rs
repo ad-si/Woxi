@@ -537,6 +537,24 @@ mod table_with_step {
       "{a, a + n, a + 2*n, a + 3*n, a + 4*n, a + 5*n}"
     );
   }
+
+  #[test]
+  fn table_symbolic_bounds_with_real_count() {
+    // A symbolic range whose count (max - min)/step is any real number runs
+    // Floor[count] + 1 times, and not at all when the count is negative.
+    assert_eq!(
+      interpret("Table[t, {t, Pi + s, 3.4557519189487724 + s, Pi/50}]")
+        .unwrap(),
+      "{Pi + s, (51*Pi)/50 + s, (26*Pi)/25 + s, (53*Pi)/50 + s, (27*Pi)/25 + s, (11*Pi)/10 + s}"
+    );
+    assert_eq!(
+      interpret(
+        "{Table[t, {t, a, a + 2.5}], Table[t, {t, a, a - 2.5, -1}], Table[t, {t, a + 1, a}]}"
+      )
+      .unwrap(),
+      "{{a, 1 + a, 2 + a}, {a, -1 + a, -2 + a}, {}}"
+    );
+  }
 }
 
 mod union_sorting {
