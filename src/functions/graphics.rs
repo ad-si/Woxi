@@ -4543,6 +4543,23 @@ fn graphics_text_content(expr: &Expr) -> String {
         name == "Overscript",
       )
     }
+    // `OverBar[x]`, `OverHat[x]`, … are the one-argument spellings of the
+    // same accent over `x`.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "OverBar" | "OverHat" | "OverTilde" | "OverDot" | "OverVector"
+      ) && args.len() == 1 =>
+    {
+      let mark = match name.as_str() {
+        "OverBar" => "_",
+        "OverHat" => "^",
+        "OverTilde" => "~",
+        "OverDot" => ".",
+        _ => "\u{21C0}",
+      };
+      accent_text(&graphics_text_content(&args[0]), mark, true)
+    }
     // `Column[{a, b, …}]` stacks its items, one line each — the label's
     // text carries the line breaks the renderer lays out.
     Expr::FunctionCall { name, args }
@@ -14266,6 +14283,23 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // base and pulled back over it — inline `tspan`s share one baseline,
         // so true 2-D stacking isn't expressible, but for the single-letter
         // bases these accents dress (σ, x, y, ρ) the overlap reads right.
+        // `OverHat[x]`, `OverTilde[x]`, `OverDot[x]`, `OverVector[x]` — the
+        // accent shorthands typeset as `Overscript[x, accent]`.
+        "OverHat" | "OverTilde" | "OverDot" | "OverVector"
+          if args.len() == 1 =>
+        {
+          let mark = match name.as_str() {
+            "OverHat" => "^",
+            "OverTilde" => "~",
+            "OverDot" => ".",
+            _ => "\u{21C0}",
+          };
+          expr_to_svg_markup(&Expr::FunctionCall {
+            name: "Overscript".to_string(),
+            args: vec![args[0].clone(), Expr::String(mark.to_string())].into(),
+          })
+        }
+
         "Overscript" | "Underscript" if args.len() == 2 => {
           let base_markup = expr_to_svg_markup(&args[0]);
           let accent_markup = expr_to_svg_markup(&args[1]);
@@ -14717,7 +14751,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // OverBar/UnderBar draw their accent as a zero-width line over the
       // content; Overscript/Underscript's accent overlaps the base the same
       // way `expr_to_svg_markup` draws it (see that function's comment).
-      "OverBar" | "UnderBar" if args.len() == 1 => {
+      "OverBar" | "UnderBar" | "OverHat" | "OverTilde" | "OverDot"
+      | "OverVector"
+        if args.len() == 1 =>
+      {
         estimate_display_width(&args[0])
       }
       "Overscript" | "Underscript" if args.len() == 2 => {
@@ -15754,7 +15791,7 @@ fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
     ("...", true) => ('\u{20DB}', false),
     ("^" | "\u{02C6}", true) => ('\u{0302}', false),
     ("~" | "\u{02DC}", true) => ('\u{0303}', false),
-    ("\u{2192}", true) => ('\u{20D7}', false),
+    ("\u{2192}" | "\u{21C0}", true) => ('\u{20D7}', false),
     _ => return None,
   })
 }
@@ -23834,6 +23871,18 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Style" | "StyleForm" => {
         if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
           return nested_layout_svg(&inner);
+        }
+        // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
+        // off first (typesetting each item of the layout traditionally), so
+        // the style reaches the layout's items the same way.
+        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+          if n == "TraditionalForm")
+        {
+          let unwrapped = unwrap_display_wrappers(&args[0]);
+          if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
+          {
+            return nested_layout_svg(&inner);
+          }
         }
         // Not a Row/Column/Grid/TextGrid to push the style into — a
         // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],

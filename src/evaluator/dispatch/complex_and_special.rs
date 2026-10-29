@@ -5395,6 +5395,27 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       padded_form_box(name, args).unwrap()
     }
+    // A number-display form around another one (`NumberForm[NumberForm[x, 3],
+    // {3, 2}]`, what a helper `nf[n_] := NumberForm[n, {3, 2}]` makes of an
+    // already formatted number) typesets as the text the formatter yields.
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if matches!(args.first(),
+        Some(Expr::FunctionCall { name: n, .. })
+          if matches!(n.as_str(), "NumberForm" | "ScientificForm"
+            | "EngineeringForm" | "PaddedForm" | "AccountingForm"))
+        && padded_form_box(name, args).is_some() =>
+    {
+      padded_form_box(name, args).unwrap()
+    }
+    // An exact rational is left as it is by the number-display forms
+    // (`NumberForm[287/50, 3]` stays `287/50`), so it typesets as the fraction.
+    "NumberForm" | "ScientificForm" | "EngineeringForm" | "PaddedForm"
+    | "AccountingForm"
+      if matches!(args.first(),
+        Some(Expr::FunctionCall { name: n, .. }) if n == "Rational") =>
+    {
+      tf(&args[0])
+    }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {
@@ -5750,6 +5771,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         "UnderscriptBox"
       };
       tf_box(box_name, vec![tf(&args[0]), tf_string("_")])
+    }
+    // `OverHat[x]`, `OverTilde[x]`, `OverDot[x]` and `OverVector[x]` are the
+    // other accent shorthands: an `OverscriptBox` over the accent mark, with
+    // the vector arrow as `\[RightVector]`.
+    "OverHat" | "OverTilde" | "OverDot" | "OverVector" if args.len() == 1 => {
+      let mark = match name {
+        "OverHat" => "^",
+        "OverTilde" => "~",
+        "OverDot" => ".",
+        _ => "\u{21C0}",
+      };
+      tf_box("OverscriptBox", vec![tf(&args[0]), tf_string(mark)])
+    }
+    // `AngleBracket[a, b]` is typeset as `〈a, b〉`.
+    "AngleBracket" if !args.is_empty() => {
+      tf_enclosed("\u{2329}", args.iter().map(tf), "\u{232A}")
     }
     // A single-order derivative arrives flattened: `f''[x]` is held as
     // `Derivative[2, f, x]`, so the order leads, the differentiated function
