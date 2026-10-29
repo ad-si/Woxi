@@ -471,6 +471,39 @@ mod polyhedron_data_tests {
     );
   }
 
+  // `PolyhedronData[]` is the entity list too, and an index or a span
+  // picks from it.
+  #[test]
+  fn polyhedron_data_without_arguments_and_by_position() {
+    assert_eq!(
+      interpret("PolyhedronData[] === PolyhedronData[All]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PolyhedronData[;;28] === Take[PolyhedronData[All], 28]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PolyhedronData[3] === PolyhedronData[All][[3]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PolyhedronData[100000]").unwrap(),
+      "PolyhedronData[100000]"
+    );
+    // A union with a class stays a flat list of entities, as the Studio's
+    // `Control` over such a list needs.
+    assert_eq!(
+      interpret(
+        "Head[Union[PolyhedronData[\"Platonic\"], \
+         Intersection[PolyhedronData[\"Archimedean\"], PolyhedronData[;;28]]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
   // `"Faces"` is the vertex coordinates and the face index lists in one
   // `GraphicsComplex`, which is how a scene picks a solid apart: `[[1]]`
   // are the corners, `[[2, 1]]` the faces that index into them.
