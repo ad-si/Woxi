@@ -1710,10 +1710,10 @@ fn styling_splits_word(prev: &str, part: &str) -> bool {
     positional_box_args("StyleBox", s)
       .and_then(|args| args.first().and_then(|a| word(a)))
   };
-  match (word(prev), styled(part), styled(prev), word(part)) {
-    (Some(_), Some(_), _, _) | (_, _, Some(_), Some(_)) => true,
-    _ => false,
-  }
+  matches!(
+    (word(prev), styled(part), styled(prev), word(part)),
+    (Some(_), Some(_), _, _) | (_, _, Some(_), Some(_))
+  )
 }
 
 fn push_juxtaposed(result: &mut String, piece: &str) {

@@ -5091,7 +5091,9 @@ fn complex_machine_eigenvectors(
     if norm <= 1e-300 || !norm.is_finite() {
       return false;
     }
-    v.iter_mut().for_each(|c| *c = (c.0 / norm, c.1 / norm));
+    for c in v.iter_mut() {
+      *c = (c.0 / norm, c.1 / norm);
+    }
     true
   };
   let mut found: Vec<(C, Vec<C>)> = Vec::with_capacity(n);
