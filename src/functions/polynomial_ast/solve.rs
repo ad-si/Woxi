@@ -16530,6 +16530,124 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
   }
 }
 
+/// Quasi-Newton (BFGS) minimization of `phi` from `z0` with gradient
+/// `grad` and a backtracking (Armijo) line search; `phi` is infinite
+/// wherever a point is not allowed, which the line search then avoids.
+/// `on_accept` sees every accepted point. The first step moves no
+/// coordinate by more than a tenth of its own size (or 0.1 near zero): a
+/// raw gradient step can be arbitrarily long and land on a far plateau the
+/// search never climbs back from. A full step accepted outright is
+/// extended while it keeps improving, and the first update takes the
+/// Shanno–Phua scale `s.y / y.y`.
+fn bfgs_minimize(
+  phi: &dyn Fn(&[f64]) -> f64,
+  grad: &dyn Fn(&[f64]) -> Vec<f64>,
+  mut z: Vec<f64>,
+  max_iter: usize,
+  on_accept: &mut dyn FnMut(&[f64]),
+) -> Vec<f64> {
+  let m = z.len();
+  let mut fz = phi(&z);
+  let mut g = grad(&z);
+  let first_scale = z
+    .iter()
+    .zip(&g)
+    .filter(|(_, gi)| gi.abs() > 0.0)
+    .map(|(zi, gi)| 0.1 * zi.abs().max(1.0) / gi.abs())
+    .fold(1.0f64, f64::min);
+  let mut hinv: Vec<Vec<f64>> = (0..m)
+    .map(|i| {
+      (0..m)
+        .map(|j| if i == j { first_scale } else { 0.0 })
+        .collect()
+    })
+    .collect();
+  let mut updated = false;
+  for _ in 0..max_iter {
+    let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if gnorm < 1e-10 * fz.abs().max(1.0) {
+      break;
+    }
+    let dir: Vec<f64> = (0..m)
+      .map(|i| -(0..m).map(|j| hinv[i][j] * g[j]).sum::<f64>())
+      .collect();
+    let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+    let dir = if slope < 0.0 {
+      dir
+    } else {
+      g.iter().map(|v| -v).collect()
+    };
+    let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
+    let mut t = 1.0;
+    let mut accepted = None;
+    for _ in 0..60 {
+      let trial: Vec<f64> =
+        z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+      let ft = phi(&trial);
+      if ft.is_finite() && ft <= fz + 1e-4 * t * slope {
+        accepted = Some((trial, ft));
+        break;
+      }
+      t *= 0.5;
+    }
+    let Some((mut znew, mut fnew)) = accepted else {
+      break;
+    };
+    if t == 1.0 {
+      for _ in 0..20 {
+        t *= 2.0;
+        let trial: Vec<f64> =
+          z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
+        let ft = phi(&trial);
+        if ft.is_finite() && ft < fnew && ft <= fz + 1e-4 * t * slope {
+          znew = trial;
+          fnew = ft;
+        } else {
+          break;
+        }
+      }
+    }
+    on_accept(&znew);
+    let gnew = grad(&znew);
+    let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
+    let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
+    let sy: f64 = s_vec.iter().zip(&y_vec).map(|(a, b)| a * b).sum();
+    if sy > 1e-14 {
+      if !updated {
+        let yy: f64 = y_vec.iter().map(|v| v * v).sum();
+        if yy > 0.0 {
+          for (i, row) in hinv.iter_mut().enumerate() {
+            for (j, v) in row.iter_mut().enumerate() {
+              *v = if i == j { sy / yy } else { 0.0 };
+            }
+          }
+        }
+        updated = true;
+      }
+      // H <- (I - rho s y^T) H (I - rho y s^T) + rho s s^T
+      let rho = 1.0 / sy;
+      let hy: Vec<f64> = (0..m)
+        .map(|i| (0..m).map(|j| hinv[i][j] * y_vec[j]).sum())
+        .collect();
+      let yhy: f64 = y_vec.iter().zip(&hy).map(|(a, b)| a * b).sum();
+      for i in 0..m {
+        for j in 0..m {
+          hinv[i][j] += (1.0 + rho * yhy) * rho * s_vec[i] * s_vec[j]
+            - rho * (hy[i] * s_vec[j] + s_vec[i] * hy[j]);
+        }
+      }
+    }
+    let converged = (fz - fnew).abs() <= 1e-15 * fz.abs().max(1.0);
+    z = znew;
+    fz = fnew;
+    g = gnew;
+    if converged {
+      break;
+    }
+  }
+  z
+}
+
 /// Whether `e` is a polynomial in `vars` of total degree at most `max`.
 fn polynomial_degree_at_most(e: &Expr, vars: &[String], max: i64) -> bool {
   let var_list =
@@ -17007,119 +17125,15 @@ fn find_minimum_local_constrained(
       .collect()
   };
   if m > 0 {
-    let mut hinv: Vec<Vec<f64>> = (0..m)
-      .map(|i| (0..m).map(|j| f64::from(u8::from(i == j))).collect())
-      .collect();
-    let mut fz = phi(&z);
-    let mut g = grad(&z);
-    // The first step moves no coordinate by more than a tenth of its own
-    // size (or 0.1 near zero): a raw gradient step can be arbitrarily long
-    // and land on a far plateau the search never climbs back from.
-    let first_scale = z
-      .iter()
-      .zip(&g)
-      .filter(|(_, gi)| gi.abs() > 0.0)
-      .map(|(zi, gi)| 0.1 * zi.abs().max(1.0) / gi.abs())
-      .fold(1.0f64, f64::min);
-    for row in &mut hinv {
-      for v in row.iter_mut() {
-        *v *= first_scale;
-      }
-    }
-    let mut updated = false;
-    for _ in 0..500 {
-      let gnorm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
-      if gnorm < 1e-10 * fz.abs().max(1.0) {
-        break;
-      }
-      let dir: Vec<f64> = (0..m)
-        .map(|i| -(0..m).map(|j| hinv[i][j] * g[j]).sum::<f64>())
-        .collect();
-      let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
-      let dir = if slope < 0.0 {
-        dir
-      } else {
-        g.iter().map(|v| -v).collect()
-      };
-      let slope: f64 = dir.iter().zip(&g).map(|(d, gi)| d * gi).sum();
-      let mut t = 1.0;
-      let mut accepted = None;
-      for _ in 0..60 {
-        let trial: Vec<f64> =
-          z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
-        let ft = phi(&trial);
-        if ft.is_finite() && ft <= fz + 1e-4 * t * slope {
-          accepted = Some((trial, ft));
-          break;
-        }
-        t *= 0.5;
-      }
-      let Some((mut znew, mut fnew)) = accepted else {
-        break;
-      };
-      // A full step that was accepted outright may be too short (a
-      // gradient step where the curvature is not yet known): keep doubling
-      // while the objective keeps dropping.
-      if t == 1.0 {
-        for _ in 0..20 {
-          t *= 2.0;
-          let trial: Vec<f64> =
-            z.iter().zip(&dir).map(|(zi, di)| zi + t * di).collect();
-          let ft = phi(&trial);
-          if ft.is_finite() && ft < fnew && ft <= fz + 1e-4 * t * slope {
-            znew = trial;
-            fnew = ft;
-          } else {
-            break;
-          }
-        }
-      }
-      let solved = full_point_from(&znew, &anchor.borrow());
+    z = bfgs_minimize(&phi, &grad, z, 500, &mut |znew: &[f64]| {
+      let solved = full_point_from(znew, &anchor.borrow());
       if let Some((x, y)) = solved {
         *anchor.borrow_mut() = y;
         if monitorable {
           steps.borrow_mut().push(x);
         }
       }
-      let gnew = grad(&znew);
-      let s_vec: Vec<f64> = znew.iter().zip(&z).map(|(a, b)| a - b).collect();
-      let y_vec: Vec<f64> = gnew.iter().zip(&g).map(|(a, b)| a - b).collect();
-      let sy: f64 = s_vec.iter().zip(&y_vec).map(|(a, b)| a * b).sum();
-      if sy > 1e-14 {
-        // Before the first update the initial matrix takes the scale the
-        // step has measured (Shanno–Phua): s.y / y.y.
-        if !updated {
-          let yy: f64 = y_vec.iter().map(|v| v * v).sum();
-          if yy > 0.0 {
-            for (i, row) in hinv.iter_mut().enumerate() {
-              for (j, v) in row.iter_mut().enumerate() {
-                *v = if i == j { sy / yy } else { 0.0 };
-              }
-            }
-          }
-          updated = true;
-        }
-        // H <- (I - rho s y^T) H (I - rho y s^T) + rho s s^T
-        let rho = 1.0 / sy;
-        let hy: Vec<f64> = (0..m)
-          .map(|i| (0..m).map(|j| hinv[i][j] * y_vec[j]).sum())
-          .collect();
-        let yhy: f64 = y_vec.iter().zip(&hy).map(|(a, b)| a * b).sum();
-        for i in 0..m {
-          for j in 0..m {
-            hinv[i][j] += (1.0 + rho * yhy) * rho * s_vec[i] * s_vec[j]
-              - rho * (hy[i] * s_vec[j] + s_vec[i] * hy[j]);
-          }
-        }
-      }
-      let converged = (fz - fnew).abs() <= 1e-15 * fz.abs().max(1.0);
-      z = znew;
-      fz = fnew;
-      g = gnew;
-      if converged {
-        break;
-      }
-    }
+    });
   }
   let x = full_point(&z)?;
   let value = objective.eval(&x);
@@ -17654,9 +17668,21 @@ pub fn find_minimum_ast(
   // case below already falls back from, a failure here falls back the same
   // way — the derivative-free branch never touches `grad_exprs`/
   // `hess_exprs`, so leaving them empty is safe.
+  // With many variables the symbolic Hessian (n^2 derivatives of what is
+  // often a large sum) costs far more than the search itself: an objective
+  // that compiles is minimized by BFGS — wolframscript's default
+  // quasi-Newton method — on forward-mode gradients instead.
+  let compiled_objective = if n >= 8 && bounds.iter().all(Option::is_none) {
+    compile_numeric(f, &vars).filter(|node| !node.has_fallback())
+  } else {
+    None
+  };
   let mut grad_exprs: Vec<Expr> = Vec::with_capacity(n);
   let mut hess_exprs: Vec<Vec<Expr>> = Vec::new();
   let symbolic_derivatives: Option<()> = (|| {
+    if compiled_objective.is_some() {
+      return None;
+    }
     for var in &vars {
       let deriv =
         crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
@@ -17805,7 +17831,23 @@ pub fn find_minimum_ast(
     ));
   };
 
-  if !symbolic_works {
+  if let Some(node) = &compiled_objective {
+    let phi = |z: &[f64]| -> f64 {
+      fire_step_monitor(evaluation_monitor, &vars, z);
+      let v = sign * node.eval(z);
+      if v.is_finite() { v } else { f64::INFINITY }
+    };
+    let grad = |z: &[f64]| -> Vec<f64> {
+      let mut g = vec![0.0; n];
+      for (k, d) in node.eval_dual(z).1 {
+        g[k] = sign * d;
+      }
+      g
+    };
+    x = bfgs_minimize(&phi, &grad, x, max_iter, &mut |z: &[f64]| {
+      fire_step_monitor(step_monitor, &vars, z);
+    });
+  } else if !symbolic_works {
     // `f` isn't symbolically differentiable — most commonly a call to a
     // `_?NumericQ`-guarded user function, the standard idiom for a
     // least-squares objective built from `NDSolve`/`ReplaceAll` that

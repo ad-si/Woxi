@@ -21927,6 +21927,25 @@ mod constrained_numeric_optimization {
     );
   }
 
+  // Eight or more variables: BFGS on forward-mode gradients of the
+  // compiled objective instead of n^2 symbolic second derivatives
+  // (Demonstration RegularizedLogisticRegression's 28-parameter fit spent
+  // over a minute differentiating; wolframscript takes 0.1 s).
+  #[test]
+  fn many_variables_quasi_newton() {
+    assert_eq!(
+      interpret(
+        "vars = Table[Symbol[\"x\" <> ToString[i]], {i, 10}]; \
+         r = FindMinimum[Total[Cosh[vars - Range[10]/10]] + (x1 - x2)^2 + \
+         Log[1 + Exp[x3 x4]], Thread[{vars, 0}]]; \
+         Round[10^6 {r[[1]], vars /. r[[2]]}]"
+      )
+      .unwrap(),
+      "{10733757, {139998, 160002, 130496, 333382, 500000, 600000, 700000, \
+       800000, 900000, 1000000}}"
+    );
+  }
+
   // Inequalities alone also get the local search from the starting values
   // (Demonstration AmericanCappedCallOptionsWithExponentialCap's
   // FindMaximum went to a global search that ended at L -> 60042 instead
