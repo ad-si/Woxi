@@ -1739,6 +1739,20 @@ mod roman_numeral {
 mod from_digits {
   use super::*;
 
+  // A final sublist of {digits, e} recurs; any other sublist is a digit.
+  #[test]
+  fn recurring_digits() {
+    assert_eq!(
+      interpret(
+        "{FromDigits[{{5, 4, {8, 5, 7, 1, 4, 2}}, 0}], FromDigits[{{1, {3}}, 1}], \
+         FromDigits[{{{0}}, 0}], FromDigits[{{{0}, 9, 1, 2, {0}}, 0}], \
+         FromDigits[RealDigits[1/7, 2], 2], FromDigits[{{{1, 2}}, -2}]}"
+      )
+      .unwrap(),
+      "{96/175, 4/3, 0, {57/625}, 1/7, 1/825}"
+    );
+  }
+
   #[test]
   fn base_10() {
     assert_eq!(interpret("FromDigits[{1, 2, 3}]").unwrap(), "123");
@@ -3059,6 +3073,21 @@ mod jacobi_symbol {
 
 mod real_digits {
   use super::*;
+
+  // A pure fraction's digits start at its first nonzero digit, the leading
+  // zeros going into the exponent, and its period is counted from there.
+  #[test]
+  fn rational_leading_zeros_in_exponent() {
+    assert_eq!(
+      interpret(
+        "{RealDigits[1/7, 2], RealDigits[1/12], RealDigits[1/300], RealDigits[1/70], \
+         RealDigits[1/6, 2], RealDigits[3/1000]}"
+      )
+      .unwrap(),
+      "{{{{1, 0, 0}}, -2}, {{8, {3}}, -1}, {{{3}}, -2}, \
+       {{{1, 4, 2, 8, 5, 7}}, -1}, {{{1, 0}}, -2}, {{3}, -2}}"
+    );
+  }
 
   // An inexact zero sits where the smallest machine number would, and has
   // no digits to report; from a given position a zero is all zeros.

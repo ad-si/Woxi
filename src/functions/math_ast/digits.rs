@@ -1734,6 +1734,15 @@ fn real_digits_rational_base(
     int_digits.reverse();
   }
 
+  // A pure fraction starts at its first nonzero digit: the leading zeros
+  // are the (negative) exponent, not digits, and the recurring block is
+  // counted from there (RealDigits[1/7, 2] is {{{1, 0, 0}}, -2}).
+  if int_part == 0 {
+    for _ in 0..(-exponent) {
+      remainder *= base;
+    }
+  }
+
   // Now do long division for the fractional part
   // Track remainder -> position for cycle detection
   let mut digits: Vec<i128> = int_digits;
@@ -2413,6 +2422,49 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       results.push(from_digits_ast(&call_args)?);
     }
     return Ok(Expr::List(results.into()));
+  }
+
+  // {digits, e} with a recurring block (RealDigits of a rational): a final
+  // sublist {r1, …, rk} repeats forever, adding
+  // FromDigits[{r1, …, rk}] b^(e - m)/(b^k - 1) after the m plain digits.
+  // A sublist anywhere else is just a (list-valued) digit, as in
+  // wolframscript: FromDigits[{{{0}, 9, 1, 2, {0}}, 0}] is {57/625}.
+  if items.len() == 2
+    && let (Expr::List(digits), Some(exp)) =
+      (&items[0], expr_to_i128(&items[1]))
+    && digits.iter().any(|d| matches!(d, Expr::List(_)))
+  {
+    let b = Expr::Integer(base);
+    let (plain, recurring) = match digits.last() {
+      Some(Expr::List(block)) => (&digits[..digits.len() - 1], Some(block)),
+      _ => (&digits[..], None),
+    };
+    let mut terms: Vec<Expr> = plain
+      .iter()
+      .enumerate()
+      .map(|(i, d)| {
+        times(vec![
+          d.clone(),
+          pow(b.clone(), Expr::Integer(exp - 1 - i as i128)),
+        ])
+      })
+      .collect();
+    if let Some(block) = recurring {
+      let m = plain.len() as i128;
+      let k = block.len() as i128;
+      let value = from_digits_ast(&[Expr::List(block.clone()), b.clone()])?;
+      if k > 0 {
+        terms.push(times(vec![
+          value,
+          pow(b.clone(), Expr::Integer(exp - m)),
+          pow(
+            plus(vec![pow(b.clone(), Expr::Integer(k)), Expr::Integer(-1)]),
+            Expr::Integer(-1),
+          ),
+        ]));
+      }
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&plus(terms));
   }
 
   // Handle {digit_list, exponent} form (output of RealDigits)
