@@ -3489,9 +3489,9 @@ fn evaluate_expr_to_expr_uncached(
           if has_user_rules {
             return evaluate_function_call_ast("And", &[left_val, right_val]);
           }
-          return crate::functions::boolean_ast::and_ast(&[
+          return Ok(crate::functions::boolean_ast::and_of_evaluated(&[
             left_val, right_val,
-          ]);
+          ]));
         }
         BinaryOperator::Or => {
           let left_val = evaluate_expr_to_expr(left)?;
@@ -3504,7 +3504,9 @@ fn evaluate_expr_to_expr_uncached(
           if has_user_rules {
             return evaluate_function_call_ast("Or", &[left_val, right_val]);
           }
-          return crate::functions::boolean_ast::or_ast(&[left_val, right_val]);
+          return Ok(crate::functions::boolean_ast::or_of_evaluated(&[
+            left_val, right_val,
+          ]));
         }
         BinaryOperator::StringJoin => {
           // StringJoin is Flat: evaluate the whole `a <> b <> c` chain as one
