@@ -769,6 +769,9 @@ pub fn dispatch_plotting(
         Ok,
       ))
     }
+    "SmoothHistogram" if !args.is_empty() => {
+      Some(crate::functions::field_plot::smooth_histogram_ast(args))
+    }
     "SmoothDensityHistogram" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::smooth_density_histogram_ast(args)
     })),

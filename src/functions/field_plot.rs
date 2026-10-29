@@ -4635,6 +4635,116 @@ fn nearest_node_grid(
     .collect()
 }
 
+/// SmoothHistogram[data] / SmoothHistogram[{data1, …}, bw, dfun, opts] —
+/// the line plot of each dataset's `SmoothKernelDistribution` (bandwidth
+/// `bw`, Silverman's rule by default) as its PDF, or the "CDF", "SF" or "HF"
+/// named by `dfun`, from about 3.35 bandwidths below the smallest datum to as
+/// many above the largest (where Wolfram's own range ends, measured on
+/// several datasets; its exact cut is where the estimate becomes negligible).
+pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("SmoothHistogram", args));
+  let (positional, options): (Vec<&Expr>, Vec<&Expr>) = args
+    .iter()
+    .partition(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+  let Some(Expr::List(items)) = positional.first() else {
+    return unchanged();
+  };
+  let numbers = |items: &[Expr]| -> Option<Vec<f64>> {
+    items
+      .iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect()
+  };
+  let datasets: Vec<(Expr, Vec<f64>)> =
+    if items.iter().all(|i| matches!(i, Expr::List(_))) {
+      let mut sets = Vec::new();
+      for item in items {
+        let Expr::List(inner) = item else {
+          unreachable!()
+        };
+        match numbers(inner) {
+          Some(v) if v.len() >= 2 => sets.push((item.clone(), v)),
+          _ => return unchanged(),
+        }
+      }
+      sets
+    } else {
+      match numbers(items) {
+        Some(v) if v.len() >= 2 => vec![(positional[0].clone(), v)],
+        _ => return unchanged(),
+      }
+    };
+  if datasets.is_empty() {
+    return unchanged();
+  }
+  let bandwidth = match positional.get(1) {
+    None => None,
+    Some(Expr::Identifier(a)) if a == "Automatic" => None,
+    Some(e) => match crate::functions::math_ast::try_eval_to_f64(e) {
+      Some(h) if h > 0.0 => Some(h),
+      _ => return unchanged(),
+    },
+  };
+  let dfun = match positional.get(2) {
+    None => "PDF",
+    Some(Expr::String(f)) => match f.as_str() {
+      "PDF" => "PDF",
+      "CDF" => "CDF",
+      "SF" => "SurvivalFunction",
+      "HF" => "HazardFunction",
+      _ => return unchanged(),
+    },
+    Some(_) => return unchanged(),
+  };
+  let var = Expr::Identifier("SmoothHistogram$x".to_string());
+  let mut lo = f64::INFINITY;
+  let mut hi = f64::NEG_INFINITY;
+  let mut curves = Vec::with_capacity(datasets.len());
+  for (data, values) in &datasets {
+    let h = bandwidth.unwrap_or_else(|| {
+      crate::functions::math_ast::silverman_bandwidth(values)
+    });
+    let (min, max) = values
+      .iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+        (a.min(v), b.max(v))
+      });
+    lo = lo.min(min - 3.35 * h);
+    hi = hi.max(max + 3.35 * h);
+    let mut dist_args = vec![data.clone()];
+    if let Some(h) = bandwidth {
+      dist_args.push(Expr::Real(h));
+    }
+    curves.push(call(
+      dfun,
+      vec![call("SmoothKernelDistribution", dist_args), var.clone()],
+    ));
+  }
+  if !(lo < hi) {
+    return unchanged();
+  }
+  let body = if curves.len() == 1 {
+    curves.pop().unwrap()
+  } else {
+    Expr::List(curves.into())
+  };
+  let mut plot_args = vec![
+    body,
+    Expr::List(vec![var, Expr::Real(lo), Expr::Real(hi)].into()),
+  ];
+  plot_args.extend(options.into_iter().cloned());
+  if !plot_args.iter().any(|a| {
+    crate::functions::graphics::option_name_value(a)
+      .is_some_and(|(name, _)| name == "PlotRange")
+  }) {
+    plot_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+      replacement: Box::new(Expr::Identifier("All".to_string())),
+    });
+  }
+  crate::evaluator::evaluate_function_call_ast("Plot", &plot_args)
+}
+
 /// SmoothDensityHistogram[{{x1, y1}, …}, bspec, "PDF", opts] — a density
 /// plot of the data's Gaussian kernel density estimate. The bandwidth is
 /// Silverman's rule in each coordinate unless `bspec` gives one bandwidth

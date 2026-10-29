@@ -1217,7 +1217,7 @@ HighlightImage,Draws graphics marks over an image in pixel coordinates,✅,pure,
 Subgraph,Induced subgraph on given vertices (keeps the given vertex order),✅,pure,8.0,1197
 FindClusters,Partitions data into clusters,✅,unevaluated,6.0,1198
 OpenWrite,Opens a file for writing,✅,effectful,1.0,1199
-SmoothHistogram,,🚫,,8.0,1200
+SmoothHistogram,Line plot of a kernel density estimate of data,✅,pure,8.0,1200
 Manipulator,Manipulator control element (stays symbolic in script mode),✅,unevaluated,6.0,1201
 EndOfString,Represents the end of a string in string patterns,✅,1,5.1,1202
 ParallelMap,Applies a function in parallel to each element,✅,1,7.0,1204
@@ -2297,7 +2297,7 @@ RandomSeeding,random options,🚫,None,11.2,2305
 SemanticInterpretation,natural language processing,🚫,None,10.0,2305
 ShowCellLabel,notebook UI option,🚫,None,3.0,2305
 WordSeparators,text processing option,🚫,None,2.0,2305
-ClockGauge,dynamic gauge display,🚫,None,9.0,2311
+ClockGauge,Analog clock face showing a time of day as a Graphics gauge,✅,pure,9.0,2311
 DeleteDirectory,file system operation,✅,None,2.0,2311
 FunctionPeriod,symbolic period analysis (complex),🚫,None,10.0,2311
 MathieuCPrime,Derivative of the even Mathieu function with characteristic value a and parameter q,✅,pure,3.0,2311
@@ -2380,7 +2380,7 @@ FromSphericalCoordinates,Converts spherical coordinates to Cartesian,✅,None,10
 IntervalSlider,Interval slider control (stays symbolic in script mode),✅,unevaluated,10.0,2389
 PunctuationCharacter,String pattern matching a single punctuation character,✅,pure,10.3,2389
 TransformedProcess,stochastic process,🚫,None,10.0,2389
-CayleyGraph,group theory graph,🚫,None,8.0,2394
+CayleyGraph,Directed graph of a group: an edge per generator multiplying each element,✅,pure,8.0,2394
 CellFrameMargins,notebook styling,🚫,None,3.0,2394
 ChromaticityPlot,color visualization,🚫,None,10.0,2394
 GeoPositionXYZ,geographic coordinates,🚫,None,7.0,2394

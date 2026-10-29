@@ -4667,6 +4667,48 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // CayleyGraph[group, opts…] — vertex i is the i-th of GroupElements, with
+  // an edge i -> j for each generator g where element j = element i · g
+  // (PermutationProduct), generator by generator, as wolframscript lists
+  // them.
+  if name == "CayleyGraph" && !args.is_empty() {
+    let elements = evaluate_function_call_ast("GroupElements", &args[..1])?;
+    let generators = evaluate_function_call_ast("GroupGenerators", &args[..1])?;
+    let (Expr::List(elements), Expr::List(generators)) =
+      (&elements, &generators)
+    else {
+      return Ok(unevaluated(name, args));
+    };
+    let index: std::collections::HashMap<String, usize> = elements
+      .iter()
+      .enumerate()
+      .map(|(i, e)| (expr_to_string(e), i + 1))
+      .collect();
+    let mut edges = Vec::with_capacity(elements.len() * generators.len());
+    for (i, element) in elements.iter().enumerate() {
+      for generator in generators {
+        let product = evaluate_function_call_ast(
+          "PermutationProduct",
+          &[element.clone(), generator.clone()],
+        )?;
+        let Some(&j) = index.get(&expr_to_string(&product)) else {
+          return Ok(unevaluated(name, args));
+        };
+        edges.push(call(
+          "DirectedEdge",
+          vec![Expr::Integer(i as i128 + 1), Expr::Integer(j as i128)],
+        ));
+      }
+    }
+    let vertices: Vec<Expr> = (1..=elements.len())
+      .map(|k| Expr::Integer(k as i128))
+      .collect();
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    graph_args.extend(args[1..].iter().cloned());
+    return evaluate_function_call_ast("Graph", &graph_args);
+  }
+
   // PetersenGraph[] / PetersenGraph[n, k] / PetersenGraph[n, k, opts…] —
   // the generalized Petersen graph GP(n, k). wolframscript labels the
   // k-jump ring 1..n, the plain cycle n+1..2n, with spokes i—(n+i), and
@@ -4981,6 +5023,101 @@ fn evaluate_function_call_ast_inner(
         ),
       ));
     }
+    let mut graphics_args = vec![Expr::List(primitives.into())];
+    graphics_args.extend(gauge_options(args));
+    return Ok(call("Graphics", graphics_args));
+  }
+
+  // ClockGauge[{h, m, s}] / ClockGauge[DateObject[…]] / ClockGauge[secs] /
+  // ClockGauge[] → an analog clock face: the dial, a tick per hour and the
+  // hour, minute and second hands for that time of day.
+  if name == "ClockGauge" {
+    let positional: Vec<&Expr> = args
+      .iter()
+      .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .collect();
+    let num = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
+    let time_of = |list: &Expr| -> Option<(f64, f64, f64)> {
+      match list {
+        Expr::List(d) if d.len() >= 6 => {
+          Some((num(&d[3])?, num(&d[4])?, num(&d[5])?))
+        }
+        _ => None,
+      }
+    };
+    let hms: Option<(f64, f64, f64)> = match positional.first() {
+      None => time_of(&crate::evaluator::evaluate_function_call_ast(
+        "DateList",
+        &[],
+      )?),
+      Some(Expr::List(t)) if (1..=3).contains(&t.len()) => {
+        let get = |i: usize| t.get(i).map_or(Some(0.0), num);
+        match (get(0), get(1), get(2)) {
+          (Some(h), Some(m), Some(sec)) => Some((h, m, sec)),
+          _ => None,
+        }
+      }
+      Some(date @ Expr::FunctionCall { name: d, .. }) if d == "DateObject" => {
+        time_of(&crate::evaluator::evaluate_function_call_ast(
+          "DateList",
+          &[(*date).clone()],
+        )?)
+      }
+      Some(e) => num(e).map(|secs| {
+        let secs = secs.rem_euclid(86400.0);
+        (
+          (secs / 3600.0).floor(),
+          ((secs % 3600.0) / 60.0).floor(),
+          secs % 60.0,
+        )
+      }),
+    };
+    let Some((h, m, sec)) = hms else {
+      return Ok(unevaluated(name, args));
+    };
+    let pt =
+      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+    // Clock angles run clockwise from 12 o'clock.
+    let at = |turns: f64, r: f64| {
+      let a = std::f64::consts::FRAC_PI_2 - turns * std::f64::consts::TAU;
+      pt(r * a.cos(), r * a.sin())
+    };
+    let mut primitives: Vec<Expr> =
+      vec![call("Circle", vec![pt(0.0, 0.0), Expr::Real(1.0)])];
+    for k in 0..12 {
+      let turns = f64::from(k) / 12.0;
+      primitives.push(call1(
+        "Line",
+        Expr::List(vec![at(turns, 0.88), at(turns, 0.98)].into()),
+      ));
+      let label = if k == 0 { 12 } else { k };
+      primitives.push(call(
+        "Text",
+        vec![Expr::Integer(i128::from(label)), at(turns, 0.75)],
+      ));
+    }
+    let seconds_total = sec + 60.0 * m + 3600.0 * h;
+    let hand = |turns: f64, r: f64, thickness: f64| {
+      Expr::List(
+        vec![
+          call1("AbsoluteThickness", Expr::Real(thickness)),
+          call1("Line", Expr::List(vec![pt(0.0, 0.0), at(turns, r)].into())),
+        ]
+        .into(),
+      )
+    };
+    primitives.push(hand((seconds_total / 43200.0).rem_euclid(1.0), 0.5, 4.0));
+    primitives.push(hand((seconds_total / 3600.0).rem_euclid(1.0), 0.8, 3.0));
+    primitives.push(Expr::List(
+      vec![
+        call(
+          "RGBColor",
+          vec![Expr::Integer(1), Expr::Integer(0), Expr::Integer(0)],
+        ),
+        hand((seconds_total / 60.0).rem_euclid(1.0), 0.85, 1.0),
+      ]
+      .into(),
+    ));
     let mut graphics_args = vec![Expr::List(primitives.into())];
     graphics_args.extend(gauge_options(args));
     return Ok(call("Graphics", graphics_args));

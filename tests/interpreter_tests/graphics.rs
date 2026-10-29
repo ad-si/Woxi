@@ -43167,3 +43167,49 @@ mod graphics3d_inset_scene {
     assert!(svg.contains("<polygon"), "{svg}");
   }
 }
+
+mod smooth_histogram {
+  use super::*;
+
+  // A line plot of the data's kernel density estimate, one curve per
+  // dataset, reaching past the data on both sides.
+  #[test]
+  fn plots_the_kernel_density() {
+    assert_eq!(
+      interpret("Head[SmoothHistogram[{1., 2., 3.5, 2.2}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "Head[SmoothHistogram[{{1., 2., 3.5, 2.2}, {3, 4, 5}}, 0.5, \"CDF\", PlotStyle -> Red]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "pts = Cases[First[SmoothHistogram[{1., 2., 3.5, 2.2}]], Line[p_] :> p, Infinity][[1]]; \
+         {pts[[1, 1]] < 0, pts[[-1, 1]] > 5}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+}
+
+mod cayley_graph {
+  use super::*;
+
+  #[test]
+  fn edges_multiply_by_each_generator() {
+    assert_eq!(
+      interpret("List @@@ EdgeList[CayleyGraph[SymmetricGroup[3]]]").unwrap(),
+      "{{1, 3}, {1, 4}, {2, 4}, {2, 3}, {3, 1}, {3, 6}, {4, 2}, {4, 5}, \
+       {5, 6}, {5, 1}, {6, 5}, {6, 2}}"
+    );
+    assert_eq!(
+      interpret("VertexCount[CayleyGraph[AbelianGroup[{4, 3}]]]").unwrap(),
+      "12"
+    );
+  }
+}
