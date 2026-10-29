@@ -16561,6 +16561,10 @@ fn find_minimum_indexed_variables(
   )
 }
 
+/// Largest variable count for which `FindMinimum` builds the Hessian
+/// symbolically; beyond it the Hessian is differenced from the gradient.
+const SYMBOLIC_HESSIAN_MAX_VARS: usize = 6;
+
 pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
@@ -16798,6 +16802,13 @@ pub fn find_minimum_ast(
         crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
       grad_exprs.push(simplify(deriv));
     }
+    // The symbolic Hessian has n² entries, each differentiating an already
+    // large gradient; past a handful of variables that cost explodes (a
+    // 28-parameter regression objective never finishes), so the Newton step
+    // below differences the symbolic gradient numerically instead.
+    if n > SYMBOLIC_HESSIAN_MAX_VARS {
+      return Some(());
+    }
     for i in 0..n {
       let mut row = Vec::new();
       for j in 0..n {
@@ -16866,7 +16877,9 @@ pub fn find_minimum_ast(
   // differentiable.
   let symbolic_works = symbolic_derivatives.is_some()
     && (0..n).all(|i| eval_at(&grad_exprs[i], &x).is_ok())
-    && (0..n).all(|i| (0..n).all(|j| eval_at(&hess_exprs[i][j], &x).is_ok()));
+    && hess_exprs
+      .iter()
+      .all(|row| row.iter().all(|h| eval_at(h, &x).is_ok()));
 
   // Pre-flight: if f doesn't reduce to a real number at the starting
   // point (e.g. contains an unbound symbol like phi[x]), emit
@@ -17056,9 +17069,29 @@ pub fn find_minimum_ast(
 
       // Signed Hessian
       let mut hess = vec![vec![0.0; n]; n];
-      for (i, row) in hess.iter_mut().enumerate() {
-        for (j, h) in row.iter_mut().enumerate() {
-          *h = eval_at(&hess_exprs[i][j], &x)? * sign;
+      if hess_exprs.is_empty() {
+        // Forward differences of the symbolic gradient, symmetrised.
+        for j in 0..n {
+          let step = 1e-6 * (1.0 + x[j].abs());
+          let mut shifted = x.clone();
+          shifted[j] += step;
+          for (i, row) in hess.iter_mut().enumerate() {
+            let g = eval_at(&grad_exprs[i], &shifted)? * sign;
+            row[j] = (g - grad[i]) / step;
+          }
+        }
+        for i in 0..n {
+          for j in 0..i {
+            let avg = 0.5 * (hess[i][j] + hess[j][i]);
+            hess[i][j] = avg;
+            hess[j][i] = avg;
+          }
+        }
+      } else {
+        for (i, row) in hess.iter_mut().enumerate() {
+          for (j, h) in row.iter_mut().enumerate() {
+            *h = eval_at(&hess_exprs[i][j], &x)? * sign;
+          }
         }
       }
 

@@ -18566,6 +18566,15 @@ mod cases {
       r#"{9., {x -> 0., y -> 0.}}"#,
     );
   }
+  // Past a handful of variables the Hessian is differenced from the symbolic
+  // gradient instead of being built symbolically (n² second derivatives).
+  #[test]
+  fn find_minimum_many_coupled_variables() {
+    assert_case(
+      r#"r = FindMinimum[(a-1)^2+(b-2)^2+(c-3)^2+(d-4)^2+(e-5)^2+(f-6)^2+(g-7)^2+(h-8)^2+(a+b+c+d+e+f+g+h)^2, {{a,0},{b,0},{c,0},{d,0},{e,0},{f,0},{g,0},{h,0}}]; {Round[r[[1]], 0.001], Round[r[[2, All, 2]], 0.001]}"#,
+      "{144., {-3., -2., -1., 0., 1., 2., 3., 4.}}",
+    );
+  }
   #[test]
   fn find_minimum_1() {
     assert_case(r#"FindMinimum[(x-3)^2+2., {x, 1}]"#, r#"{2., {x -> 3.}}"#);
