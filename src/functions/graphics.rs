@@ -28996,9 +28996,25 @@ fn collect_body_locator_pane_vars(
 /// its argument, so the call inside is evaluated here (under the caller's
 /// scoped bindings) and the result searched like a body. Same result shape
 /// as [`collect_body_locator_pane_vars`].
+///
+/// Only a `Dynamic` that calls such a helper (or wraps a `LocatorPane`) is
+/// evaluated: a caption like `Dynamic[Last[minmax]]` is not run before the
+/// body has set `minmax`.
 fn collect_display_locator_pane_vars(
   expr: &Expr,
 ) -> Vec<(String, Option<Expr>, Expr)> {
+  fn may_yield_locator_pane(expr: &Expr) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        name == "LocatorPane"
+          || !crate::evaluator::functions::is_builtin_symbol(name)
+          || args.iter().any(may_yield_locator_pane)
+      }
+      Expr::List(items) => items.iter().any(may_yield_locator_pane),
+      Expr::CompoundExpr(items) => items.iter().any(may_yield_locator_pane),
+      _ => false,
+    }
+  }
   fn walk(expr: &Expr, found: &mut Vec<(String, Option<Expr>, Expr)>) {
     match expr {
       Expr::FunctionCall { name, args } => {
@@ -29006,6 +29022,7 @@ fn collect_display_locator_pane_vars(
           && let Some(inner @ Expr::FunctionCall { name: head, .. }) =
             args.first()
           && head != "LocatorPane"
+          && may_yield_locator_pane(inner)
           && let Ok(evaluated) = evaluate_expr_to_expr(inner)
         {
           for item in collect_body_locator_pane_vars(&evaluated) {

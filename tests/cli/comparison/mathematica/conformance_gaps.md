@@ -4921,6 +4921,24 @@ choice among ties follows its `LinearProgramming` simplex/branch-and-bound.
 Reverse-index DFS fits some probes and max-count others, and the two
 contradict.
 
+### `FindHamiltonianCycle[g, k]` enumeration order
+
+```sh
+wolframscript -code 'FindHamiltonianCycle[Graph[{1<->2,2<->3,3<->4,4<->1,1<->3,2<->4}], All]'
+# {{1<->3, 3<->2, 2<->4, 4<->1}, {1<->2, 2<->3, 3<->4, 4<->1}, {1<->2, 2<->4, 4<->3, 3<->1}}
+woxi eval 'FindHamiltonianCycle[Graph[{1<->2,2<->3,3<->4,4<->1,1<->3,2<->4}], All]'
+# {{1<->2, 2<->3, 3<->4, 4<->1}, {1<->2, 2<->4, 4<->3, 3<->1}, {1<->3, 3<->2, 2<->4, 4<->1}}
+```
+
+The set of cycles, their orientation and their count match (12 for
+`CompleteGraph[5]`, 60 for `CompleteGraph[6]`), and `k = 1` is the
+single-argument cycle on both sides; Woxi lists them in lexicographic DFS
+order. WL's order is not lexicographic in any reading tried: on
+`CompleteGraph[5]` it groups by last vertex descending (5, 4, 3), then by
+second vertex descending, but the third vertex ascends in some groups and
+descends in others. With `k` below the total, Woxi's first `k` are therefore
+a different subset.
+
 ### Vertex order within a component
 
 `ConnectedComponents` on an **undirected** graph: `Graph[{1<->2, 3<->4}]` gives

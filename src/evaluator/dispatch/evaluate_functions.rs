@@ -5621,8 +5621,9 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);
   }
 
-  // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle, or {}
-  if name == "FindHamiltonianCycle" && args.len() == 1 {
+  // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle,
+  // or {}; FindHamiltonianCycle[graph, k | All] → up to k of them.
+  if name == "FindHamiltonianCycle" && matches!(args.len(), 1 | 2) {
     return crate::functions::graph::find_hamiltonian_cycle_ast(args);
   }
 
