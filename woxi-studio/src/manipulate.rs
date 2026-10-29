@@ -5371,4 +5371,36 @@ mod mapped_layout_tests {
     assert!(names.contains(&"r") && names.contains(&"c"), "{names:?}");
     assert!(state.graphics_handle.is_some(), "the graphic should render");
   }
+
+  /// A choice label written as `StringForm["1``", Style[1/2, Tiny]]` shows the
+  /// filled template, not the call's source.
+  #[test]
+  fn choice_label_fills_string_form_slots() {
+    let code = r#"Manipulate[n,
+      {{n, 5, "n"}, {5 -> StringForm["``", Style[1/2, Tiny]],
+        9 -> StringForm["1``", Style[1/2, Tiny]]}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("discrete control");
+    assert_eq!(labels, vec!["1/2", "11/2"]);
+  }
+
+  /// `SpanFromLeft` in a display `Grid` is layout, not a cell to draw.
+  #[test]
+  fn display_grid_span_marker_draws_nothing() {
+    let node = build_manipulate_display(
+      r#"Grid[{{"performance", SpanFromLeft}, {"quality", "x"}}]"#,
+      &[],
+    );
+    assert!(!format!("{node:?}").contains("SpanFromLeft"), "{node:?}");
+  }
 }
