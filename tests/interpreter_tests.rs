@@ -949,6 +949,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_pane_place_layout_no_vsform_warning() {
+    // A saved Manipulate keeps a hand-built control layout as
+    // `Pane[Column[{Manipulate`Place[1], …}], opts]`, each `Place[n]`
+    // standing for the nth declared control. Like `Pane[Column[{Control…}]]`
+    // it is a layout container, not a malformed variable specification, so
+    // no `Manipulate::vsform` message may be emitted.
+    clear_state();
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        "Manipulate[x + y, {{{{x, 1, \"x\"}}, 0, 5}}, {{{{y, 2, \"y\"}}, 0, 5}}, \
+         Pane[Column[{{{place}[1], {place}[2]}}], ImageSize -> {{240, 300}}]]"
+      );
+      let r = interpret_with_stdout(&code).unwrap();
+      assert!(
+        !r.warnings.iter().any(|w| w.contains("Manipulate::vsform")),
+        "unexpected Manipulate::vsform warning for {place}: {:?}",
+        r.warnings
+      );
+    }
+  }
+
+  #[test]
   fn test_manipulate_echo_normalizes_control_specs() {
     // A bare control type echoes as the `ControlType -> …` option it stands
     // for, and a spec giving nothing else gets that type's default values.
