@@ -770,10 +770,33 @@ pub fn apply_postfix_ast(
 }
 
 /// Apply a function to an argument (helper for Map, Postfix, etc.)
+fn is_sequence_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence")
+}
+
+/// `args` with every `Sequence[…]` replaced by its elements.
+fn splice_sequence_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::FunctionCall { name, args: inner } if name == "Sequence" => {
+        out.extend(inner.iter().cloned());
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  out
+}
+
 pub fn apply_function_to_arg(
   func: &Expr,
   arg: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  if matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+    && is_sequence_call(arg)
+  {
+    return apply_curried_call(func, std::slice::from_ref(arg));
+  }
   match func {
     Expr::Identifier(name) => {
       // Check if this identifier is a variable holding another function/value.
@@ -1612,6 +1635,14 @@ pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // A pure function's arguments are spliced like any call's:
+  // `f[0, Sequence @@ {1, 2, 3}]` fills four parameters.
+  if matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+    && args.iter().any(is_sequence_call)
+  {
+    let spliced = splice_sequence_args(args);
+    return apply_curried_call(func, &spliced);
+  }
   if let Some(result) = try_apply_curry(func, args) {
     return result;
   }
