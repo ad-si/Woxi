@@ -2417,7 +2417,10 @@ fn collect_primitives(
       }) && !matches!(
         name.as_str(),
         "Dynamic" | "Style" | "EventHandler"
-      ) =>
+      )
+        // A user function handed `Dynamic[…]` arguments matches on them as
+        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
+        && crate::evaluator::functions::is_builtin_symbol(name) =>
     {
       let released: Vec<Expr> = args
         .iter()
