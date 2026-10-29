@@ -212,6 +212,34 @@ mod table_with_list_iterator {
 mod table_do_raw_iterator {
   use super::*;
 
+  // A compound expression is a valid iterator variable, as in Wolfram.
+  #[test]
+  fn compound_iterator_variables() {
+    assert_eq!(interpret("Table[f[1]^2, {f[1], 3}]").unwrap(), "{1, 4, 9}");
+    assert_eq!(
+      interpret(
+        "Table[Subscript[x, 1] + Subscript[x, 2], {Subscript[x, 1], 2}, \
+         {Subscript[x, 2], Subscript[x, 1]}]"
+      )
+      .unwrap(),
+      "{{2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("Sum[Subscript[x, 1], {Subscript[x, 1], 4}]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Product[Subscript[x, 1], {Subscript[x, 1], 4}]").unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret_with_stdout("Do[Print[Subscript[y, 1]], {Subscript[y, 1], 2}]")
+        .unwrap()
+        .stdout,
+      "1\n2\n"
+    );
+  }
+
   // A non-symbol iterator (a raw object where the iterator variable belongs)
   // emits <func>::itraw and stays unevaluated, rather than raising an error.
   #[test]

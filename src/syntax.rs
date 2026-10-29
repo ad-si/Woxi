@@ -5845,10 +5845,11 @@ fn base_operator_precedence(op: &str) -> u8 {
     "\\[DoubleRightTee]" | "\u{22A8}" => 15, // DoubleRightTee (⊨, right-assoc, same level)
     "\\[LeftTee]" | "\u{22A3}" => 15, // LeftTee (⊣, left-assoc, same level)
     "\\[DoubleLeftTee]" | "\u{2AE4}" => 15, // DoubleLeftTee (⫤, left-assoc, same level)
-    // wolframscript: \[Function] is lower than Set, Condition, and Rule —
-    // the right operand absorbs y, y = 1, y /; z, y -> 1. Place at TagSet
-    // level so its rhs stays maximally permissive.
-    "\\[Function]" | "\u{F4A1}" | "|->" => 3,
+    // wolframscript: \[Function] binds looser than Condition and Rule but
+    // tighter than Set on its left (`a = x ↦ y` is `a = (x ↦ y)`, `a -> x ↦
+    // y` is `(a -> x) ↦ y`), while its right operand absorbs everything down
+    // to Set (`x ↦ y = 1`, `x ↦ y -> 1`) — see build_expr_with_precedence.
+    "\\[Function]" | "\u{F4A1}" | "|->" => 9,
     "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "\\[LongEqual]"
     | "\u{F7D9}" | "!=" | "\u{2260}" | "\\[NotEqual]" | "<" | "<="
     | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">" | ">=" | "\u{2265}"
@@ -6079,6 +6080,13 @@ fn build_expr_with_precedence(
     } else {
       prec + 1
     };
+    // The body of `x ↦ body` extends down to (and including) assignments.
+    let next_min_prec =
+      if matches!(assoc_op_str, "\\[Function]" | "\u{F4A1}" | "|->") {
+        operator_precedence("=")
+      } else {
+        next_min_prec
+      };
     // `op_NEG`: the negation owns everything that binds tighter than unary
     // minus, whatever `op` itself is — `a ** -b ** c` is
     // `a ** -(b ** c)` and `a ^ -b ** c` is `a ^ -(b ** c)`.

@@ -7959,6 +7959,28 @@ mod cases {
     assert_case(r#"(x \[Function] x^2)[5]"#, r#"25"#);
   }
   #[test]
+  fn function_arrow_versus_assignment() {
+    // Set binds looser than \[Function] on its left, so `f = x ↦ body`
+    // assigns the function; the body still absorbs an assignment.
+    assert_case(
+      r#"FullForm[Hold[f = x \[Function] {Sin[x], Cos[x]}]]"#,
+      r#"FullForm[Hold[f = Function[x, {Sin[x], Cos[x]}]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a = x \[Function] y = 1]]"#,
+      r#"FullForm[Hold[a = Function[x, y = 1]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a -> x \[Function] y]]"#,
+      r#"FullForm[Hold[Function[a -> x, y]]]"#,
+    );
+    assert_case(
+      r#"FullForm[Hold[a \[Function] b \[Function] c]]"#,
+      r#"FullForm[Hold[Function[a, Function[b, c]]]]"#,
+    );
+    assert_case(r#"f = x |-> x + 1; f[2]"#, r#"3"#);
+  }
+  #[test]
   fn function_arrow_ascii() {
     // `|->` is the ASCII spelling of the \[Function] operator.
     assert_case(r#"x |-> x^2"#, r#"Function[x, x^2]"#);

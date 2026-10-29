@@ -925,6 +925,46 @@ mod rescale {
 mod bin_counts {
   use super::*;
 
+  // `{min, max}` is `{min, max, 1}`.
+  #[test]
+  fn min_max_spec_has_unit_bins() {
+    assert_eq!(
+      interpret("BinCounts[{1, 2, 3, 4, 5, 7, 7, 8, 8, 9, 12}, {1, 13}]")
+        .unwrap(),
+      "{1, 1, 1, 1, 1, 0, 2, 2, 1, 0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("BinCounts[{1, 2.5, 3}, {0.5, 3}]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("BinLists[{1, 2.5, 3}, {0, 3}]").unwrap(),
+      "{{}, {1}, {2.5}}"
+    );
+  }
+
+  // Data without a single number is no vector to bin.
+  #[test]
+  fn no_numeric_data() {
+    for (code, head) in [
+      ("BinCounts[{}, 2]", "BinCounts"),
+      ("BinCounts[x, 1]", "BinCounts"),
+      ("BinLists[{}, {0, 3, 1}]", "BinLists"),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert!(
+        r.warnings
+          .iter()
+          .any(|w| w.starts_with(&format!("{head}::vectmat:"))),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+    // Non-numeric elements among numbers are skipped.
+    assert_eq!(interpret("BinCounts[{1, a, 2}, 1]").unwrap(), "{0, 1, 1}");
+  }
+
   // A bin width that is not positive gets `::step` and the call stays
   // unevaluated; it used to stop the evaluation.
   #[test]

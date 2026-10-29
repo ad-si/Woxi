@@ -944,6 +944,12 @@ fn evaluate_expr_to_expr_early_dispatch(
         vec![Expr::Real(median), last_result].into(),
       )));
     }
+    "Sum" | "ParallelSum" | "Product" | "ParallelProduct" | "NSum"
+    | "NProduct"
+      if let Some(rewritten) = rename_compound_iterators(args) =>
+    {
+      return Ok(Some(evaluate_expr_to_expr(&call(name, rewritten))?));
+    }
     "Sum" | "ParallelSum" if args.len() >= 2 => {
       let prepared = prepare_iterating_function_args(args)?;
       return Ok(Some(crate::functions::list_helpers_ast::sum_ast(
@@ -967,6 +973,41 @@ fn evaluate_expr_to_expr_early_dispatch(
     _ => {}
   }
   Ok(None)
+}
+
+/// An iterator variable may be any compound expression, not just a symbol:
+/// `Table[Subscript[x, 1]^2, {Subscript[x, 1], 3}]`. Rename each such
+/// iterator of an iterating function's `args` (body first) to a fresh symbol
+/// throughout the body and the later iterators; `None` when every iterator
+/// is already a symbol.
+pub fn rename_compound_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
+  let compound_var = |it: &Expr| match it {
+    Expr::List(items)
+      if items.len() >= 2 && matches!(items[0], Expr::FunctionCall { .. }) =>
+    {
+      Some(items[0].clone())
+    }
+    _ => None,
+  };
+  if args.len() < 2 || !args[1..].iter().any(|it| compound_var(it).is_some()) {
+    return None;
+  }
+  let mut rewritten = args.to_vec();
+  for i in 1..rewritten.len() {
+    let Some(var) = compound_var(&rewritten[i]) else {
+      continue;
+    };
+    let fresh =
+      Expr::Identifier(crate::functions::scoping::unique_symbol("iterator"));
+    let substitute = |e: &Expr| {
+      crate::functions::polynomial_ast::solve::substitute_expr(e, &var, &fresh)
+    };
+    rewritten[0] = substitute(&rewritten[0]);
+    for spec in &mut rewritten[i..] {
+      *spec = substitute(spec);
+    }
+  }
+  Some(rewritten)
 }
 
 /// Whether an expression is a valid rules slot for ReplaceAll /

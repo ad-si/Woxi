@@ -1180,6 +1180,16 @@ mod cases {
     );
   }
 
+  // A built-in whose option defaults Woxi does not tabulate accepts the
+  // options it is given instead of reporting each one unknown.
+  #[test]
+  fn set_options_on_untabulated_builtin() {
+    assert_case(
+      r#"SetOptions[ParametricPlot3D, Boxed -> False]; Options[ParametricPlot3D, Boxed]"#,
+      r#"{Boxed -> False}"#,
+    );
+  }
+
   #[test]
   fn set_options_rejects_bad_arguments() {
     use woxi::interpret_with_stdout;

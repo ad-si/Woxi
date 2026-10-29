@@ -15597,3 +15597,39 @@ mod form_wrappers_take_extra_arguments_silently {
     assert_eq!(decoded(r#""a\\:043e""#), "{97, 92, 58, 48, 52, 51, 101}");
   }
 }
+
+mod to_string_character_encoding {
+  use super::*;
+
+  // Under InputForm, CharacterEncoding -> None/"ASCII" escapes non-ASCII
+  // characters by name; "UTF8" spells them as their bytes.
+  #[test]
+  fn encodings() {
+    assert_eq!(
+      interpret(
+        r#"ToCharacterCode[ToString["\:00e1", InputForm, CharacterEncoding -> None]]"#
+      )
+      .unwrap(),
+      "{34, 92, 91, 65, 65, 99, 117, 116, 101, 93, 34}"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringTake[ToString["\:03b1", InputForm, CharacterEncoding -> "ASCII"], {2, -2}]"#
+      )
+      .unwrap(),
+      r"\[Alpha]"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToCharacterCode[ToString["\:00e1", InputForm, CharacterEncoding -> "UTF8"]]"#
+      )
+      .unwrap(),
+      "{34, 195, 161, 34}"
+    );
+    // Other options are accepted and leave the text alone.
+    assert_eq!(
+      interpret("ToString[x^2, InputForm, PageWidth -> 10]").unwrap(),
+      "x^2"
+    );
+  }
+}
