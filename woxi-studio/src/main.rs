@@ -5160,15 +5160,14 @@ fn render_graphics_output<'a>(
       img_widget = img_widget.opacity(0.3_f32);
     }
     container(img_widget).padding(PAD).into()
-  } else if let Some(ref handle) = editor.graphics_handle {
+  } else {
+    let handle = editor.graphics_handle.as_ref()?;
     let mut svg_widget =
       svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
     if stale {
       svg_widget = svg_widget.opacity(0.3_f32);
     }
     container(svg_widget).padding(PAD).into()
-  } else {
-    return None;
   };
   let picture = if editor.sound.as_ref().is_some_and(|a| a.embedded) {
     use woxi::functions::music_plot::{
@@ -5553,7 +5552,7 @@ fn is_dynamic_box_dump(output: &str) -> bool {
 /// and errors are discarded — the cells keep their stored outputs until
 /// the user explicitly evaluates them.
 fn evaluate_pending_initialization(pending: &mut Vec<String>) {
-  let cells: Vec<String> = pending.drain(..).collect();
+  let cells: Vec<String> = std::mem::take(pending);
   for code in woxi::notebook::join_continuation_cells(&cells) {
     for stmt in woxi::split_into_statements(&code) {
       manipulate::trace_evaluation(&stmt);
@@ -5641,16 +5640,13 @@ fn instantiate_stored_manipulate(
   // Built without a first render: the saved control values applied below
   // decide what is drawn, and rendering the source defaults first would be
   // thrown away (it is also the slowest part of opening a notebook).
-  let Some(mut state) =
-    manipulate::ManipulateState::from_expr_unrendered(&expr).or_else(|| {
+  let mut state = manipulate::ManipulateState::from_expr_unrendered(&expr)
+    .or_else(|| {
       let rebuilt =
         woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
       let rebuilt_expr = woxi::interpret_to_expr(&rebuilt).ok()?;
       manipulate::ManipulateState::from_expr_unrendered(&rebuilt_expr)
-    })
-  else {
-    return None;
-  };
+    })?;
   // A control whose choices come from a notebook variable that never
   // resolved here (`{{s, 4}, Labels, ControlType -> Setter}` with `Labels`
   // built by a cell that errors or reads differently outside the author's
@@ -16112,10 +16108,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   #[test]
   fn display_manipulator_in_event_handler_writes_back_and_runs_actions() {
     use woxi::functions::graphics::DisplayNode;
-    fn sliders(
-      node: &DisplayNode,
-      out: &mut Vec<(String, f64, f64, f64, bool, Vec<String>)>,
-    ) {
+    type SliderRow = (String, f64, f64, f64, bool, Vec<String>);
+    fn sliders(node: &DisplayNode, out: &mut Vec<SliderRow>) {
       match node {
         DisplayNode::Slider {
           target,
@@ -30851,6 +30845,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   ///    already drew it as a plate) fell back to printing its literal,
   ///    unevaluated source text — so the board's cells would have shown
   ///    `Button[1, Set[chosen, 1]]`-style text, not a numbered button.
+  ///
   /// A third, independent regression in the same notebook: the *title*
   /// screen (`TableForm[Framed[…], …]`, a non-list `display`) rendered as
   /// raw `TableForm[Framed[…], …]` source text too — `TableForm[expr]` for
@@ -33588,7 +33583,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
     for poly in svg.split("<polygon points=\"").skip(1) {
       let pts = poly.split('"').next().unwrap();
-      for c in pts.split(|ch| ch == ' ' || ch == ',') {
+      for c in pts.split([' ', ',']) {
         let v: f64 = c.parse().unwrap();
         assert!((-1.0..=361.0).contains(&v), "polygon spills out: {v}");
       }
