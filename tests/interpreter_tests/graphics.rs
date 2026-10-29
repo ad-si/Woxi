@@ -13794,6 +13794,43 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.matches("<polyline").count() >= 4, "{svg}");
     }
 
+    /// `ColorFunction` paints each cell of a two-parameter region in the
+    /// opaque color the function gives at the cell's centre.
+    #[test]
+    fn parametric_plot_two_parameters_color_function() {
+      let svg = export_svg(
+        "ParametricPlot[{u, v}, {u, -1, 1}, {v, -1, 1}, \
+         ColorFunction -> Function[{x, y}, CMYKColor[UnitStep[x], \
+         UnitStep[y], 0, 0]], ColorFunctionScaling -> False, \
+         Mesh -> None, PlotPoints -> 4]",
+      );
+      for color in [
+        "rgb(255,255,255)",
+        "rgb(0,255,255)",
+        "rgb(255,0,255)",
+        "rgb(0,0,255)",
+      ] {
+        assert!(svg.contains(color), "{color} missing: {svg}");
+      }
+      assert!(!svg.contains("fill-opacity=\"0.3\""), "{svg}");
+    }
+
+    /// `PlotPoints -> {nu, nv}` (also as an expression such as `k*{4, 4}`)
+    /// sets the grid of a two-parameter region.
+    #[test]
+    fn parametric_plot_two_parameters_plot_points_list() {
+      let cells = |pp: &str| {
+        export_svg(&format!(
+          "ParametricPlot[{{u, v}}, {{u, 0, 1}}, {{v, 0, 1}}, \
+           PlotPoints -> {pp}]"
+        ))
+        .matches("<polygon")
+        .count()
+      };
+      assert_eq!(cells("{4, 4}"), 9);
+      assert_eq!(cells("2*{3, 3}"), 25);
+    }
+
     /// A strongly curved parametrization (`u^2`) on a coarse `PlotPoints`
     /// grid used to give jagged quads spanning several wing lobes;
     /// `MaxRecursion` now refines the bent cells, while a linear map and
