@@ -7862,6 +7862,16 @@ mod cases {
     );
   }
 
+  /// A held `Exp[…]` raised to a power is parenthesised in TraditionalForm,
+  /// otherwise `(ⅇ^x)^n` reads as `ⅇ^x^n`.
+  #[test]
+  fn traditional_form_power_of_exp_is_parenthesised() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[Exp[x]^n]]]"#,
+      r#"TagBox[FormBox[TagBox[SuperscriptBox[RowBox[{(, SuperscriptBox[ⅇ, x], )}], n], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
   /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
   #[test]
