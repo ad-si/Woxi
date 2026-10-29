@@ -2827,6 +2827,27 @@ mod linear_solve {
     );
   }
 
+  // Over-determined machine-number systems are consistent up to rounding noise.
+  #[test]
+  fn linear_solve_rectangular_machine_tolerance() {
+    assert_eq!(
+      interpret("LinearSolve[{{1., 2}, {3, 4}, {5, 6}}, {3, 7, 11}]").unwrap(),
+      "{1., 1.}"
+    );
+    assert_eq!(
+      interpret(
+        "m = {{0.1, 0.2}, {0.3, 0.4}, {0.7, 0.9}}; x = {0.3, 0.7}; \
+         Max[Abs[m . LinearSolve[m, m . x] - m . x]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]").unwrap(),
+      "{1., 0., 0.}"
+    );
+  }
+
   // Machine-number systems (real or complex) take the numeric LU path.
   #[test]
   fn linear_solve_machine_real_and_complex() {

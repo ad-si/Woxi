@@ -7057,6 +7057,81 @@ pub fn levi_civita_tensor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build_tensor(n, 0, &mut indices))
 }
 
+/// Solve a rectangular system whose entries are real numbers (at least one
+/// inexact) by Gaussian elimination in machine arithmetic. Pivots and the
+/// consistency of the surplus equations are judged against a tolerance
+/// relative to the largest entry, so rounding noise in an over-determined
+/// but consistent system does not make it "inconsistent". Free variables are
+/// set to 0. `None` unless the data is purely real machine numbers; the inner
+/// `None` means the system has no solution.
+fn linear_solve_rectangular_machine(
+  matrix: &[Vec<Expr>],
+  b: &[Expr],
+  ncols: usize,
+) -> Option<Option<Vec<f64>>> {
+  use crate::functions::math_ast::numeric_utils::try_extract_complex_f64;
+  let mut inexact = false;
+  let mut m: Vec<Vec<f64>> = Vec::with_capacity(matrix.len());
+  for (row, bi) in matrix.iter().zip(b) {
+    let mut r = Vec::with_capacity(ncols + 1);
+    for e in row.iter().chain(std::iter::once(bi)) {
+      inexact |= matches!(e, Expr::Real(_));
+      let (re, im) = match e {
+        Expr::Real(x) => (*x, 0.0),
+        Expr::Integer(i) => (*i as f64, 0.0),
+        other => try_extract_complex_f64(other)?,
+      };
+      if im != 0.0 || !re.is_finite() {
+        return None;
+      }
+      r.push(re);
+    }
+    m.push(r);
+  }
+  if !inexact {
+    return None;
+  }
+  let scale = m.iter().flatten().fold(0.0_f64, |acc, v| acc.max(v.abs()));
+  let tol = scale * 1e-10;
+  let nrows = m.len();
+  let mut pivots: Vec<(usize, usize)> = Vec::new();
+  let mut pivot_row = 0;
+  for col in 0..ncols {
+    if pivot_row >= nrows {
+      break;
+    }
+    let best = (pivot_row..nrows)
+      .max_by(|&r1, &r2| m[r1][col].abs().total_cmp(&m[r2][col].abs()))?;
+    if m[best][col].abs() <= tol {
+      continue;
+    }
+    m.swap(pivot_row, best);
+    let pivot = m[pivot_row][col];
+    for row in 0..nrows {
+      if row == pivot_row {
+        continue;
+      }
+      let factor = m[row][col] / pivot;
+      if factor != 0.0 {
+        for j in col..=ncols {
+          let sub = factor * m[pivot_row][j];
+          m[row][j] -= sub;
+        }
+      }
+    }
+    pivots.push((pivot_row, col));
+    pivot_row += 1;
+  }
+  if m[pivot_row..].iter().any(|r| r[ncols].abs() > tol) {
+    return Some(None);
+  }
+  let mut x = vec![0.0; ncols];
+  for (row, col) in pivots {
+    x[col] = m[row][ncols] / m[row][col];
+  }
+  Some(Some(x))
+}
+
 /// LinearSolve[m, b] — solves the matrix equation m.x = b for x.
 /// Uses Gaussian elimination with exact rational arithmetic.
 /// Solve a rectangular (non-square) linear system `A x = b` via the reduced
@@ -7514,6 +7589,20 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "LinearSolve::lslc: Coefficient matrix and target vector(s) or matrix do not have the same dimensions.",
       );
       return Ok(unevaluated("LinearSolve", args));
+    }
+    match linear_solve_rectangular_machine(&matrix, &b, ncols) {
+      Some(Some(x)) => {
+        return Ok(Expr::List(
+          x.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+        ));
+      }
+      Some(None) => {
+        crate::emit_message(
+          "LinearSolve::nosol: Linear equation encountered that has no solution.",
+        );
+        return Ok(unevaluated("LinearSolve", args));
+      }
+      None => {}
     }
     return Ok(linear_solve_rectangular(&matrix, &b, ncols, args));
   }
