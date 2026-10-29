@@ -124,6 +124,10 @@ pub fn nest_ast(
   let mut result = init.clone();
   for _ in 0..n {
     result = apply_func_ast(func, &result)?;
+    // Each value is read back by the next step, often several times over
+    // (`{#[[1]] + 1, … #[[3]] …} &`): shared, its large parts are copied as
+    // pointers and re-evaluated once, as for a stored variable.
+    crate::evaluator::share_large_lists(&mut result, 0);
   }
 
   Ok(result)
@@ -146,6 +150,8 @@ pub fn nest_list_ast(
   let mut current = init.clone();
   for _ in 0..n {
     current = apply_func_ast(func, &current)?;
+    // Shared, as in `nest_ast`.
+    crate::evaluator::share_large_lists(&mut current, 0);
     results.push(current.clone());
   }
 

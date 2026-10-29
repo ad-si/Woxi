@@ -17092,6 +17092,20 @@ mod cases {
       r#"{{1}, {5}}"#,
     );
   }
+  // Values carried between NestList/Nest steps are shared (cheap to copy
+  // and re-evaluate); results must not change, including when a step reads
+  // a large previous value several times or a symbol changes in between.
+  #[test]
+  fn nest_list_shared_steps() {
+    assert_case(
+      r#"Last[NestList[{#[[1]] + 1, Append[#[[2]], Length[#[[2]]]], Total[#[[2]]]} &, {0, Range[20], 0}, 3]]"#,
+      r#"{3, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 20, 21, 22}, 251}"#,
+    );
+    assert_case(
+      r#"k = 0; Nest[(k++; Append[#, a + k]) &, Table[a, {20}], 2][[-3 ;;]]"#,
+      r#"{a, 1 + a, 2 + a}"#,
+    );
+  }
   #[test]
   fn nest_list_1() {
     assert_case(
