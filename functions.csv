@@ -6371,6 +6371,8 @@ GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as 
 GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
+Combinatorica`FromOrderedPairs,Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding,✅,pure,6.0,
+Combinatorica`SetGraphOptions,Sets options on vertices or edges or the whole of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
 Combinatorica`NextPermutation,The permutation following a list in lexicographic order (the last wraps to the sorted list),✅,pure,6.0,
 Combinatorica`Josephus,Round in which each of n people in a circle is eliminated when every m-th one goes,✅,pure,6.0,

@@ -10105,10 +10105,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format_percent_form(&args[0], form);
       }
       // Graph[vertices, edges, opts...] — wolframscript prints the
-      // summary `Graph[<n>, <m>]` (vertex count, edge count).
+      // summary `Graph[<n>, <m>]` (vertex count, edge count). A
+      // Combinatorica graph (shown as `Graph` with its package on the
+      // context path) lists its edges as `{{u, v}}` lists and prints in full.
       if name == "Graph"
         && args.len() >= 2
         && let (Expr::List(verts), Expr::List(edges)) = (&args[0], &args[1])
+        && !edges.iter().any(|e| matches!(e, Expr::List(_)))
       {
         return format!("Graph[<{}>, <{}>]", verts.len(), edges.len());
       }

@@ -394,10 +394,13 @@ pub fn display_name(full_name: &str) -> String {
   // The short name is enough wherever reading it back names this very
   // symbol: the first context on `$ContextPath` that has it, or — when none
   // does — the current context, where reading the name would create it.
+  // The symbol being printed exists by definition, even when Woxi made it
+  // without the symbol table (a package emulated natively, such as
+  // `Combinatorica`Graph`).
   let read_back = crate::current_context_path()
     .into_iter()
     .map(|ctx| key_for(&ctx, bare))
-    .find(|key| symbol_exists(key))
+    .find(|key| key == full_name || symbol_exists(key))
     .unwrap_or_else(|| key_for(&crate::current_context(), bare));
   if read_back == full_name {
     bare.to_string()

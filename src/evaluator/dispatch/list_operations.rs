@@ -3159,6 +3159,8 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
     }
     "Combinatorica`FromUnorderedPairs"
+    | "Combinatorica`FromOrderedPairs"
+    | "Combinatorica`SetGraphOptions"
     | "Combinatorica`V"
     | "Combinatorica`ToAdjacencyLists"
     | "Combinatorica`ConnectedComponents"

@@ -11569,6 +11569,37 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_ordered_pairs_and_graph_options() {
+    // Vertex k sits at angle 2 Pi k/n, chopped to exact zeros; a directed
+    // graph carries EdgeDirection -> True and an asymmetric matrix. With the
+    // package on $ContextPath the graph prints (and reads back) as `Graph`.
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; g = FromOrderedPairs[{{1, 2}, {2, 4}}]; \
+         {InputForm[g], ToAdjacencyMatrix[g], \
+          ToAdjacencyMatrix[ToExpression[ToString[g, InputForm]]]}"
+      )
+      .unwrap(),
+      "{InputForm[Graph[{{{1, 2}}, {{2, 4}}}, {{{0, 1.}}, {{-1., 0}}, {{0, -1.}}, \
+       {{1., 0}}}, EdgeDirection -> True]], {{0, 1, 0, 0}, {0, 0, 0, 1}, \
+       {0, 0, 0, 0}, {0, 0, 0, 0}}, {{0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 0}, \
+       {0, 0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; \
+         InputForm[SetGraphOptions[FromOrderedPairs[{{1, 2}, {2, 3}, {3, 1}}], \
+           {1, 2, VertexColor -> Black}]]"
+      )
+      .unwrap(),
+      "InputForm[Graph[{{{1, 2}}, {{2, 3}}, {{3, 1}}}, \
+       {{{-0.49999999999999983, 0.8660254037844387}, VertexColor -> GrayLevel[0]}, \
+       {{-0.5000000000000004, -0.8660254037844384}, VertexColor -> GrayLevel[0]}, \
+       {{1., 0}}}, EdgeDirection -> True]]"
+    );
+  }
+
+  #[test]
   fn combinatorica_graph_traversal() {
     // A graph from unordered pairs: two components, a path 1-3-6 hanging off
     // the triangle 1-2-3.

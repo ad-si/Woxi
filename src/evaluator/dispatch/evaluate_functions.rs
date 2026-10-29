@@ -1238,6 +1238,19 @@ fn evaluate_function_call_ast_inner(
     "NextPermutation" if combinatorica_active() => {
       "Combinatorica`NextPermutation"
     }
+    // A Combinatorica graph printed with its package on the path reads back
+    // as `Graph[{{{u, v}}, …}, {{{x, y}}, …}, …]`: edges given as lists, which
+    // the built-in Graph never takes.
+    "Graph"
+      if combinatorica_active()
+        && args.len() >= 2
+        && matches!(&args[0], Expr::List(edges)
+          if edges.iter().all(|e| matches!(e, Expr::List(_))))
+        && matches!(&args[1], Expr::List(vs)
+          if vs.iter().all(|v| matches!(v, Expr::List(_)))) =>
+    {
+      "Combinatorica`Graph"
+    }
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
     "StableMarriage" if combinatorica_active() => {
       "Combinatorica`StableMarriage"
@@ -1252,7 +1265,10 @@ fn evaluate_function_call_ast_inner(
     "DihedralGroup" if combinatorica_active() => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active() => "Combinatorica`Backtrack",
     "Josephus" if combinatorica_active() => "Combinatorica`Josephus",
-    "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
+    "FromUnorderedPairs"
+    | "FromOrderedPairs"
+    | "ToAdjacencyLists"
+    | "BreadthFirstTraversal"
       if combinatorica_active() =>
     {
       combinatorica_graph_name(name)
@@ -1288,6 +1304,7 @@ fn evaluate_function_call_ast_inner(
     | "ShortestPath"
     | "ShowGraph"
     | "ShowLabeledGraph"
+    | "SetGraphOptions"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -14261,6 +14278,8 @@ fn unwrap_condition_guards(
 fn combinatorica_graph_name(name: &str) -> &'static str {
   match name {
     "FromUnorderedPairs" => "Combinatorica`FromUnorderedPairs",
+    "FromOrderedPairs" => "Combinatorica`FromOrderedPairs",
+    "SetGraphOptions" => "Combinatorica`SetGraphOptions",
     "ToAdjacencyLists" => "Combinatorica`ToAdjacencyLists",
     "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
     "V" => "Combinatorica`V",
