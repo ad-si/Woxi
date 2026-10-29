@@ -15903,6 +15903,23 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         .first()
         .map(|a| box_expr_to_plain_in(a, spaced))
         .unwrap_or_default(),
+      // A grid of boxes (a matrix in `TraditionalForm`) is drawn as lines:
+      // one per row, its cells spaced apart.
+      "GridBox" if !args.is_empty() => match &args[0] {
+        Expr::List(rows) => rows
+          .iter()
+          .map(|row| match row {
+            Expr::List(cells) => cells
+              .iter()
+              .map(|c| box_expr_to_plain_in(c, spaced))
+              .collect::<Vec<_>>()
+              .join("  "),
+            other => box_expr_to_plain_in(other, spaced),
+          })
+          .collect::<Vec<_>>()
+          .join("\n"),
+        other => box_expr_to_plain_in(other, spaced),
+      },
       // A row template draws its parts; a string part (`"\"abc\""`, as box
       // text writes it) as its text.
       "TemplateBox" if args.len() == 2 => match &args[0] {
