@@ -2810,6 +2810,20 @@ a large probe; Woxi's exact behaviour is arguably the better one.
 
 Unevaluated.
 
+### `FinancialDerivative` of an American option is unimplemented
+
+Only European calls and puts (Black–Scholes–Merton price and Greeks) are
+there; an `{"American", …}` contract stays unevaluated, so its
+`"CriticalValue"` feeds a symbolic bound into the optimization that follows
+(Demonstrations GeskeJohnsonMethod,
+MaximizingABermudanPutWithTwoEarlyExerciseTemporalPoints).
+WL prices these on a finite-difference grid (`"GridSize" -> {1000, Automatic}`):
+
+```sh
+wolframscript -code 'FinancialDerivative[{"American", "Put"}, {"StrikePrice" -> 45., "Expiration" -> 3.}, {"InterestRate" -> 0.07, "Volatility" -> 0.3, "CurrentPrice" -> 40., "Dividend" -> 0.}, "CriticalValue", "GridSize" -> {1000, Automatic}]'
+# 30.855855855855857
+```
+
 
 ## Linear algebra
 
