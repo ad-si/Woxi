@@ -87,7 +87,7 @@ pub fn erlang_gamma_dargs(
 /// The 1-based argument positions a distribution requires to be strictly
 /// positive. Read off wolframscript, which reports `<Dist>::posprm` naming
 /// the first offending one and refuses to compute with it.
-fn positive_param_positions(name: &str) -> &'static [usize] {
+pub(crate) fn positive_param_positions(name: &str) -> &'static [usize] {
   match name {
     "BetaDistribution" | "GammaDistribution" | "WeibullDistribution" => &[1, 2],
     "NormalDistribution" | "LogNormalDistribution" | "CauchyDistribution" => {

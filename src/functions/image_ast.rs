@@ -5624,6 +5624,50 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // RandomImage[dist, …]: pixel values drawn from a distribution.
+  if let Some(dist @ Expr::FunctionCall { name, .. }) = args.first()
+    && name.ends_with("Distribution")
+  {
+    let (w, h) = if args.len() == 2 {
+      let Some(dimensions) = positive_image_dimensions("RandomImage", &args[1])
+      else {
+        return Ok(unevaluated("RandomImage", args));
+      };
+      dimensions
+    } else {
+      (150u32, 150u32)
+    };
+    let len = (w as usize) * (h as usize);
+    // RandomVariate's own complaints are not this call's: it reports bddist.
+    crate::push_quiet();
+    let sample = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "RandomVariate".to_string(),
+      args: vec![dist.clone(), Expr::Integer(len as i128)].into(),
+    });
+    crate::pop_quiet();
+    let data: Option<Vec<f64>> = match &sample {
+      Ok(Expr::List(values)) if values.len() == len => {
+        values.iter().map(try_eval_to_f64).collect()
+      }
+      _ => None,
+    };
+    let Some(data) = data else {
+      crate::emit_message(&format!(
+        "RandomImage::bddist: The specified random distribution {} should generate a real number or a list of real numbers.",
+        expr_to_string(dist)
+      ));
+      return Ok(unevaluated("RandomImage", args));
+    };
+    return Ok(Expr::Image {
+      color_space: None,
+      display_size: None,
+      width: w,
+      height: h,
+      channels: 1,
+      data: Arc::new(data),
+      image_type: ImageType::Real32,
+    });
+  }
   // RandomImage[] → 150x150, [0,1]
   // RandomImage[max] / RandomImage[{min, max}] → 150x150
   // RandomImage[…, {w, h}] → w×h

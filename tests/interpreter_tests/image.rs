@@ -4846,6 +4846,33 @@ mod image_advanced {
   }
 
   #[test]
+  fn random_image_from_a_distribution() {
+    // Pixel values drawn from the distribution (Demonstration
+    // ComputationOfRadiativeTransfer); this stopped the evaluation with
+    // "Image: expected a number".
+    assert_eq!(
+      interpret(
+        "img = RandomImage[UniformDistribution[{0, 5.}], {40, 30}]; \
+         {ImageDimensions[img], ImageType[img], 1 < Max[ImageData[img]] <= 5}"
+      )
+      .unwrap(),
+      "{{40, 30}, Real32, True}"
+    );
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "RandomImage[PoissonDistribution[x], {2, 2}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "RandomImage[PoissonDistribution[x], {2, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "RandomImage::bddist: The specified random distribution PoissonDistribution[x] should generate a real number or a list of real numbers."
+      ]
+    );
+  }
+
+  #[test]
   fn random_image_with_size() {
     clear_state();
     let result = interpret("ImageDimensions[RandomImage[1, {10, 5}]]").unwrap();

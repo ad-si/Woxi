@@ -9332,6 +9332,52 @@ mod quantile_by_cdf_bisection {
   }
 }
 
+mod random_variate_parameter_messages {
+  use super::*;
+
+  // A parameter that is no number is reported, under RandomVariate or the
+  // distribution's own name as wolframscript does, and the call stays
+  // unevaluated; these used to stop the evaluation outright.
+  #[test]
+  fn symbolic_parameters() {
+    for (code, message) in [
+      (
+        "RandomVariate[NormalDistribution[m, 1]]",
+        "RandomVariate::realprm: Parameter m at position 1 in NormalDistribution[m, 1] is expected to be real.",
+      ),
+      (
+        "RandomVariate[NormalDistribution[m, s]]",
+        "RandomVariate::posprm: Parameter s at position 2 in NormalDistribution[m, s] is expected to be positive.",
+      ),
+      (
+        "RandomVariate[PoissonDistribution[x]]",
+        "RandomVariate::posprm: Parameter x at position 1 in PoissonDistribution[x] is expected to be positive.",
+      ),
+      (
+        "RandomVariate[GammaDistribution[a, 2]]",
+        "GammaDistribution::posprm: Parameter a at position 1 in GammaDistribution[a, 2] is expected to be positive.",
+      ),
+      (
+        "RandomVariate[BinomialDistribution[n, 0.3]]",
+        "BinomialDistribution::nnintprm: Parameter n at position 1 in BinomialDistribution[n, 0.3] is expected to be a non-negative integer.",
+      ),
+      (
+        "RandomVariate[BernoulliDistribution[p]]",
+        "BernoulliDistribution::probprm: Parameter p at position 1 in BernoulliDistribution[p] is expected to be between 0 and 1 inclusive.",
+      ),
+      (
+        "RandomVariate[UniformDistribution[{a, 1}]]",
+        "RandomVariate::unifr: -- Message text not found -- (UniformDistribution[{a, 1}])",
+      ),
+    ] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert_eq!(r.warnings, vec![message.to_string()], "{code}");
+    }
+  }
+}
+
 mod random_variate_infinite_support {
   use super::*;
 

@@ -1534,12 +1534,78 @@ fn matrix_ensemble_sampler<'a>(
 
 /// RandomVariate[dist] or RandomVariate[dist, n]
 /// Supports UniformDistribution[{min, max}] and NormalDistribution[mu, sigma]
+/// A distribution with a parameter that is no number (or a scale that is
+/// not positive) cannot be sampled: report the first such parameter the
+/// way wolframscript does — under `RandomVariate` for some distributions
+/// and the distribution's own name for others — and leave the call
+/// unevaluated. Parameters that must be positive are checked before
+/// location parameters.
+fn reject_symbolic_variate_params(dist: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = dist else {
+    return false;
+  };
+  let numeric = |e: &Expr| try_eval_to_f64(e).is_some();
+  let head = match name.as_str() {
+    "NormalDistribution"
+    | "ExponentialDistribution"
+    | "PoissonDistribution"
+    | "BetaDistribution"
+    | "ChiSquareDistribution"
+    | "StudentTDistribution" => "RandomVariate",
+    other => other,
+  };
+  let report = |tag: &str, pos: usize, what: &str| {
+    crate::emit_message(&format!(
+      "{head}::{tag}: Parameter {} at position {pos} in {} is expected to be {what}.",
+      expr_to_string(&args[pos - 1]),
+      expr_to_string(dist),
+    ));
+    true
+  };
+  for &pos in
+    crate::functions::math_ast::distributions::positive_param_positions(name)
+  {
+    if args
+      .get(pos - 1)
+      .is_some_and(|a| try_eval_to_f64(a).is_none_or(|v| v <= 0.0))
+    {
+      return report("posprm", pos, "positive");
+    }
+  }
+  match name.as_str() {
+    "NormalDistribution" | "LogNormalDistribution" | "CauchyDistribution"
+      if args.len() == 2 && !numeric(&args[0]) =>
+    {
+      report("realprm", 1, "real")
+    }
+    "BinomialDistribution" if args.len() == 2 && !numeric(&args[0]) => {
+      report("nnintprm", 1, "a non-negative integer")
+    }
+    "BinomialDistribution" if args.len() == 2 && !numeric(&args[1]) => {
+      report("probprm", 2, "between 0 and 1 inclusive")
+    }
+    "BernoulliDistribution" if args.len() == 1 && !numeric(&args[0]) => {
+      report("probprm", 1, "between 0 and 1 inclusive")
+    }
+    "UniformDistribution" if matches!(args.as_slice(), [Expr::List(b)] if b.len() == 2 && !b.iter().all(numeric)) =>
+    {
+      crate::emit_message(&format!(
+        "RandomVariate::unifr: -- Message text not found -- ({})",
+        expr_to_string(dist)
+      ));
+      true
+    }
+    _ => false,
+  }
+}
+
 pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &*integral_dims(args);
   if let Some(dist) = args.first()
-    && crate::functions::math_ast::distributions::reject_bad_distribution_params(
-      dist,
-    )
+    && (reject_symbolic_variate_params(dist)
+      || crate::functions::math_ast::distributions::reject_bad_distribution_params(
+        dist,
+      ))
   {
     return Ok(unevaluated("RandomVariate", args));
   }
