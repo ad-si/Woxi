@@ -3289,6 +3289,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   // so they display like in a Wolfram notebook.
   // CLI mode preserves wrappers to match wolframscript behavior.
   let is_visual = VISUAL_MODE.with(|v| *v.borrow());
+  // A notebook shows a number format as its formatted digits, also when it
+  // sits inside a list or a `Text`/`Pane`.
+  let shown_expr = if is_visual {
+    std::borrow::Cow::Owned(resolve_number_forms(shown_expr.as_ref()))
+  } else {
+    shown_expr
+  };
   let output_text = if is_visual {
     match shown_expr.as_ref() {
       syntax::Expr::FunctionCall { name, args }
@@ -3318,6 +3325,33 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
     "\0".to_string()
   } else {
     output_text
+  }
+}
+
+/// Replace every `NumberForm`/`PaddedForm`/`AccountingForm` nested in `expr`
+/// by its formatted number, leaving whatever cannot be formatted untouched.
+fn resolve_number_forms(expr: &syntax::Expr) -> syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args } => {
+      if matches!(
+        name.as_str(),
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+      ) && !args.is_empty()
+        && let Some(text) =
+          functions::string_ast::number_form_family_to_string(name, args)
+        && !text.contains('\n')
+      {
+        return syntax::Expr::Identifier(text);
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(resolve_number_forms).collect(),
+      }
+    }
+    syntax::Expr::List(items) => {
+      syntax::Expr::List(items.iter().map(resolve_number_forms).collect())
+    }
+    _ => expr.clone(),
   }
 }
 

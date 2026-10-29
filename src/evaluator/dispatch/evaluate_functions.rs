@@ -2800,6 +2800,30 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // A number format around a `Style` formats the styled content and keeps
+  // the style: `NumberForm[Style[x, Red], {4, 2}]` is `Style[NumberForm[x,
+  // {4, 2}], Red]`.
+  if matches!(
+    name,
+    "NumberForm"
+      | "PaddedForm"
+      | "AccountingForm"
+      | "ScientificForm"
+      | "EngineeringForm"
+  ) && let Some(Expr::FunctionCall {
+    name: style_name,
+    args: style_args,
+  }) = args.first()
+    && style_name == "Style"
+    && !style_args.is_empty()
+  {
+    let mut form_args = vec![style_args[0].clone()];
+    form_args.extend(args[1..].iter().cloned());
+    let mut new_args = vec![call(name, form_args)];
+    new_args.extend(style_args[1..].iter().cloned());
+    return evaluate_expr_to_expr(&call("Style", new_args));
+  }
+
   // MessageName[sym, tag] — fall back to built-in message templates when
   // the user has not installed their own DownValue. Wolfram returns the
   // template text; without this, e.g. `General::argr` would stay
