@@ -2326,6 +2326,20 @@ mod insert {
   use super::*;
 
   #[test]
+  fn insert_with_no_positions_and_empty_path() {
+    // `{}` lists no positions, so nothing is inserted; `{{}}` names the
+    // empty path, where nothing can be inserted (Insert::ins).
+    assert_eq!(
+      interpret("Insert[{3, 3, 3}, \" \", {}]").unwrap(),
+      "{3, 3, 3}"
+    );
+    assert_eq!(
+      interpret("Insert[{a, b}, x, {{}}]").unwrap(),
+      "Insert[{a, b}, x, {{}}]"
+    );
+  }
+
+  #[test]
   fn insert_positive() {
     assert_eq!(
       interpret("Insert[{a, b, c, d}, x, 2]").unwrap(),

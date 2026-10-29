@@ -1268,6 +1268,8 @@ pub fn insert_ast(
   //   {p1, ..., pk}  one nested path
   //   {{...}, ...}   several paths
   let paths: Vec<Vec<i128>> = match pos {
+    // No positions: nothing is inserted.
+    Expr::List(inner) if inner.is_empty() => return Ok(list.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) => {
       vec![vec![expr_to_i128(pos).unwrap()]]
     }
@@ -1284,6 +1286,14 @@ pub fn insert_ast(
           sub_items.iter().map(expr_to_i128).collect();
         match path {
           Some(p) if !p.is_empty() => ps.push(p),
+          // An empty path is a position, just not one to insert at.
+          Some(_) => {
+            crate::emit_message(&format!(
+              "Insert::ins: Cannot insert at position {{}} in {}",
+              crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+            ));
+            return Ok(unevaluated());
+          }
           _ => {
             crate::emit_message(&format!(
               "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
