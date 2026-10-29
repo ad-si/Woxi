@@ -5962,6 +5962,22 @@ mod tagged_rule_reachability {
     );
   }
 
+  // A held argument's list pattern with a call element matches the call
+  // as written, without evaluating it.
+  #[test]
+  fn held_list_pattern_with_call_element() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Attributes[children] = HoldAll; children[{x__}] := 1/(Length[{x}] - 1); \
+         Attributes[couple] = HoldAll; couple[{p1_, children[{x__}]}] := {x}; \
+         {couple[{1, children[{a, b}]}], (couple[{1, children[#]}] &)[{a, b, c}]}"
+      )
+      .unwrap(),
+      "{{a, b}, {a, b, c}}"
+    );
+  }
+
   // `lhs /; test ^:= rhs` attaches to the tags of `lhs`, and a blank
   // restricted to a head names that head (`v_cv`, `r_cv?q`).
   #[test]

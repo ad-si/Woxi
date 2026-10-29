@@ -1430,6 +1430,18 @@ fn contains_pattern_test(expr: &Expr) -> bool {
 /// stored as written rather than evaluated: with `q` HoldFirst, `q[n] := 2`
 /// defines `q[n]`, not `q[3]`, and `Steps[Int[e_, x_]] := …` keeps the
 /// `Int[…]` pattern even though `Int` has rules of that shape.
+/// A pattern element that is a call of an ordinary head holding patterns
+/// (`children[{x__}]`), as opposed to a blank or a literal.
+fn is_call_pattern(p: &Expr) -> bool {
+  matches!(p, Expr::FunctionCall { name, .. }
+  if !matches!(
+    name.as_str(),
+    "Pattern" | "Blank" | "BlankSequence" | "BlankNullSequence"
+      | "PatternTest" | "Condition" | "Optional" | "Alternatives"
+      | "Except" | "Repeated" | "RepeatedNull" | "HoldPattern" | "Verbatim"
+  )) && crate::evaluator::pattern_matching::contains_pattern(p)
+}
+
 pub(crate) fn lhs_slot_is_held(head: &str, index: usize) -> bool {
   use crate::evaluator::Attributes as A;
   let has = |attr: u32| {
@@ -2492,6 +2504,10 @@ fn downvalue_arg_info(
             || crate::evaluator::pattern_matching::is_optional_slot(p)
             || is_options_or_repeated_element(p)
             || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
+            // A held argument keeps its parts unevaluated; reading a call
+            // like `children[{x__}]` back out of it through Part would
+            // evaluate it.
+            || (lhs_slot_is_held(func_name, i) && is_call_pattern(p))
         }) =>
       {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
