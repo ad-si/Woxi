@@ -17082,7 +17082,7 @@ pub fn find_minimum_ast(
         }
         for i in 0..n {
           for j in 0..i {
-            let avg = 0.5 * (hess[i][j] + hess[j][i]);
+            let avg = f64::midpoint(hess[i][j], hess[j][i]);
             hess[i][j] = avg;
             hess[j][i] = avg;
           }
