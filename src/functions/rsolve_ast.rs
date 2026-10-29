@@ -2032,9 +2032,10 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated()),
   };
 
-  // Extract equations from first arg
+  // Extract equations from first arg: a list of them, or a conjunction.
   let equations = match &args[0] {
     Expr::List(eqs) => eqs.clone(),
+    Expr::FunctionCall { name, args: eqs } if name == "And" => eqs.clone(),
     _ => return Ok(unevaluated()),
   };
 

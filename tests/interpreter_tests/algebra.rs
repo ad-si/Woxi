@@ -9922,6 +9922,25 @@ mod reduce {
 mod nsolve {
   use super::*;
 
+  // An InterpolatingFunction is inverted: the first root in its domain,
+  // with NSolve::ifun.
+  #[test]
+  fn interpolating_function_root() {
+    let r = interpret_with_stdout(
+      "f = Interpolation[Table[{t, 3 - t^2}, {t, 0, 2, 0.1}]]; NSolve[f[t] == 0, t]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{t -> 1.7320508075688772}}");
+    assert!(r.warnings.iter().any(|w| w.starts_with("NSolve::ifun:")));
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{t, Sin[t]}, {t, 0, 7, 0.1}]]; NSolve[f[t] == 0.5, t]"
+      )
+      .unwrap(),
+      "{{t -> 0.5235997548400227}}"
+    );
+  }
+
   #[test]
   fn linear_equation() {
     assert_eq!(interpret("NSolve[x - 5 == 0, x]").unwrap(), "{{x -> 5.}}");

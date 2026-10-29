@@ -1129,3 +1129,45 @@ mod audio_normalize_reverse_pad {
     );
   }
 }
+
+mod periodogram_array {
+  use super::*;
+
+  #[test]
+  fn plain_partitioned_and_windowed() {
+    assert_eq!(
+      interpret("PeriodogramArray[{1, 2, 3, 1}]").unwrap(),
+      "{12.25, 1.25, 0.25, 1.25}"
+    );
+    assert_eq!(
+      interpret("PeriodogramArray[{1, 2, 3, 1, 4}, 2]").unwrap(),
+      "{6.25, 1.25}"
+    );
+    assert_eq!(
+      interpret("PeriodogramArray[{1, 2, 3, 1}, 4, 4, {1, 2, 1, 1}]").unwrap(),
+      "{11.571428571428571, 1.857142857142857, 0.14285714285714285, \
+       1.857142857142857}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[PeriodogramArray[{1, 2, 3, 1}, 4, 4, HannWindow], 0.001]"
+      )
+      .unwrap(),
+      "{12.5, 6.5, 0.5, 6.5}"
+    );
+    assert_eq!(
+      interpret("PeriodogramArray[{1, 2, 3, 1}, FourierParameters -> {1, -1}]")
+        .unwrap(),
+      "{49., 5., 1., 5.}"
+    );
+    // Exact input is numericized; a matrix gives the 2D periodogram.
+    assert_eq!(
+      interpret("PeriodogramArray[{(1 + Sqrt[5])/2, 1, 2, 1}][[1]]").unwrap(),
+      "7.890576474687264"
+    );
+    assert_eq!(
+      interpret("PeriodogramArray[{{1, 2}, {3, 4}}]").unwrap(),
+      "{{25., 1.}, {4., 0.}}"
+    );
+  }
+}

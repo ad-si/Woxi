@@ -1681,6 +1681,34 @@ fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
   }
 }
 
+fn contains_sparse_array(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => true,
+    Expr::List(items) => items.iter().any(contains_sparse_array),
+    _ => false,
+  }
+}
+
+/// `e` with every SparseArray inside its lists replaced by its dense form.
+fn densify_nested_sparse_arrays(e: &Expr) -> Result<Expr, InterpreterError> {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+      crate::evaluator::evaluate_function_call_ast(
+        "Normal",
+        std::slice::from_ref(e),
+      )
+    }
+    Expr::List(items) => Ok(Expr::List(
+      items
+        .iter()
+        .map(densify_nested_sparse_arrays)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    )),
+    other => Ok(other.clone()),
+  }
+}
+
 /// `FirstPosition`, `FirstCase` and `SelectFirst` are `HoldRest` only so
 /// that their default (the third argument) is evaluated just when it is
 /// returned; every other argument is evaluated up front, as in Wolfram.
@@ -1750,6 +1778,32 @@ pub fn dispatch_list_operations(
     && let Some(result) =
       list_helpers_ast::sparse_array_take(sa_args, &args[1..])
   {
+    return Some(result);
+  }
+
+  // A list of SparseArray blocks (`ArrayFlatten[{{s, s}, {s, s}}]`,
+  // `Flatten[{{s, s}}, {{1, 3}, {2, 4}}]`) is an array like any other: its
+  // blocks are densified first, and a glued block array is sparse again.
+  if matches!(name, "Flatten" | "ArrayFlatten")
+    && let Some(Expr::List(items)) = args.first()
+    && items.iter().any(contains_sparse_array)
+  {
+    let dense = match densify_nested_sparse_arrays(&args[0]) {
+      Ok(d) => d,
+      Err(e) => return Some(Err(e)),
+    };
+    let mut new_args = args.to_vec();
+    new_args[0] = dense;
+    let result = dispatch_list_operations(name, &new_args)?;
+    if name == "ArrayFlatten" {
+      return Some(result.and_then(|r| {
+        if matches!(&r, Expr::List(_)) {
+          crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
+        } else {
+          Ok(r)
+        }
+      }));
+    }
     return Some(result);
   }
 
@@ -2878,7 +2932,12 @@ pub fn dispatch_list_operations(
       }
       if let Some(n) = positive_machine(&args[1]) {
         let d = if args.len() >= 3 {
-          if let Some(d) = positive_machine(&args[2]) {
+          // A one-dimensional offset may be given as the list `{d}`.
+          let offset = match &args[2] {
+            Expr::List(ds) if ds.len() == 1 => positive_machine(&ds[0]),
+            e => positive_machine(e),
+          };
+          if let Some(d) = offset {
             Some(d)
           } else {
             ilsmp(3);
@@ -5510,6 +5569,14 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::split_by_ast(&args[1], &args[0]));
     }
     "Extract" if args.len() == 2 || args.len() == 3 => {
+      // Rendered graphics extract from their symbolic form, as Part does.
+      if let Some(symbolic) =
+        crate::evaluator::part_extraction::graphics_symbolic_form(&args[0])
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = symbolic;
+        return Some(list_helpers_ast::extract_unified_ast(&new_args));
+      }
       return Some(
         list_helpers_ast::extract_unified_ast(args)
           .and_then(|r| evaluate_if_unheld(name, &args[0], r)),

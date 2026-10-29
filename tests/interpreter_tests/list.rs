@@ -4002,6 +4002,16 @@ mod complement {
 mod partition {
   use super::*;
 
+  // A one-dimensional offset may be written as the one-element list {d}.
+  #[test]
+  fn offset_as_one_element_list() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4}, 2, {1}]").unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}}"
+    );
+    assert_eq!(interpret("Partition[{}, 2, {1}]").unwrap(), "{}");
+  }
+
   #[test]
   fn basic() {
     assert_eq!(
@@ -14536,6 +14546,61 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // A Listable function of a lone SparseArray maps over its stored values
+  // and its background, keeping the pattern.
+  // Lists of SparseArray blocks flatten like dense arrays.
+  #[test]
+  fn flatten_and_array_flatten_of_sparse_blocks() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {2, 2}]; \
+         Flatten[{{s, s}, {s, s}}, {{1, 3}, {2, 4}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 0, 1}, {2, 0, 2, 0}, {0, 1, 0, 1}, {2, 0, 2, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {2, 2}]; \
+         ArrayFlatten[{{s, s}, {s, s}}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {4, 4}, 0, {1, {{0, 2, 4, 6, 8}, \
+       {{2}, {4}, {1}, {3}, {2}, {4}, {1}, {3}}}, {1, 1, 2, 2, 1, 1, 2, 2}}]"
+    );
+  }
+
+  // Part indexes the array a SparseArray stands for, All included, and an
+  // array part is a SparseArray again.
+  #[test]
+  fn part_of_sparse_array() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {3, 3}]; \
+         {s[[All, 2]], s[[1 ;; 2]], s[[2, 1]]}"
+      )
+      .unwrap(),
+      "{SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {1}}], \
+       SparseArray[Automatic, {2, 3}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {1, 2}}], 2}"
+    );
+  }
+
+  #[test]
+  fn listable_function_of_sparse_array() {
+    assert_eq!(
+      interpret("Conjugate[SparseArray[{{1, 2} -> 1.5 + I}, {2, 2}]]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{2}}}, {1.5 - 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1. + I}, {2, 2}]; \
+         Normal[DiagonalMatrix[{-1., -1.}] + s + Transpose[Conjugate[s]]]"
+      )
+      .unwrap(),
+      "{{-1., 1. + 1.*I}, {1. - 1.*I, -1.}}"
+    );
+  }
+
   // `{} -> v` names no positions (IntegerTorusMapsAppliedToLetterforms).
   #[test]
   fn empty_position_list() {
@@ -20828,6 +20893,19 @@ mod level_specs_and_messages {
 mod extract_specs_and_messages {
   use super::*;
 
+  // A plot extracts from its symbolic Graphics form, as Part does.
+  #[test]
+  fn extract_from_graphics() {
+    assert_eq!(
+      interpret("Head[Extract[Plot[x, {x, 0, 1}], 1]]").unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret("Extract[Graphics[{Point[{0, 0}]}], {1, 1}]").unwrap(),
+      "Point[{0, 0}]"
+    );
+  }
+
   #[test]
   fn key_and_string_paths() {
     // Regression: Key paths returned unevaluated Part expressions
@@ -23958,6 +24036,19 @@ mod atomic_numbers_have_no_parts {
 /// it was.
 mod part_assignment_failures {
   use super::*;
+
+  // An operator form has parts like any call: a rule's right side, a sum's
+  // terms, an equation's sides.
+  #[test]
+  fn assigning_into_operator_forms() {
+    assert_eq!(
+      interpret("tt = {a -> 1, b -> 2}; tt[[2, 2]] = 0; tt").unwrap(),
+      "{a -> 1, b -> 0}"
+    );
+    assert_eq!(interpret("r = x -> y; r[[1]] = z; r").unwrap(), "z -> y");
+    assert_eq!(interpret("e = a + b; e[[2]] = c; e").unwrap(), "a + c");
+    assert_eq!(interpret("q = a == b; q[[1]] = 5; q").unwrap(), "5 == b");
+  }
 
   // A value rather than a variable at the base of a part assignment —
   // `#` filled in by a pure function (Demonstration

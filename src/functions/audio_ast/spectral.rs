@@ -6,7 +6,7 @@ use base64::Engine;
 use super::data::parse_audio;
 use super::*;
 use crate::functions::math_ast::numerical::{
-  fft_pow2_in_place, fourier_result_to_expr,
+  dft_core, fft_pow2_in_place, fourier_result_to_expr,
 };
 use crate::functions::math_ast::try_eval_to_f64;
 
@@ -503,6 +503,167 @@ pub fn cepstrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     raster_svg(&matrix, xs.len() as f64, n_bins as f64, "", "")
   };
   Ok(crate::graphics_result(svg))
+}
+
+// ---------------------------------------------------------------------------
+// PeriodogramArray
+// ---------------------------------------------------------------------------
+
+/// PeriodogramArray[list] / [list, n] / [list, n, d] / [list, n, d, w] —
+/// the squared magnitudes of the discrete Fourier transform, averaged over
+/// the length-`n` partitions at offset `d` (only whole ones), each weighted
+/// by the window `w` (a window function sampled on [-1/2, 1/2], or a list of
+/// weights): |Σ w x e^(2πi b j k/n)|² / Σ|w|² · n^a with
+/// `FourierParameters -> {a, b}` (default {0, 1}). A matrix gives the 2D
+/// periodogram.
+pub fn periodogram_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("PeriodogramArray", args));
+  let (positional, options): (Vec<&Expr>, Vec<&Expr>) = args
+    .iter()
+    .partition(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+  let (mut param_a, mut param_b) = (0.0, 1.0);
+  for opt in options {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FourierParameters")
+      && let Expr::List(ab) = replacement.as_ref()
+      && let [a, b] = ab.as_slice()
+      && let (Some(a), Some(b)) = (try_eval_to_f64(a), try_eval_to_f64(b))
+    {
+      param_a = a;
+      param_b = b;
+    }
+  }
+  let Some(Expr::List(items)) = positional.first() else {
+    return unchanged();
+  };
+  let complex = |e: &Expr| {
+    crate::functions::math_ast::try_extract_complex_float(e)
+      .or_else(|| try_eval_to_f64(e).map(|x| (x, 0.0)))
+  };
+  let power = |(re, im): (f64, f64)| re * re + im * im;
+
+  // A matrix: the 2D periodogram of the whole array.
+  if positional.len() == 1
+    && items.iter().all(|r| matches!(r, Expr::List(_)))
+    && !items.is_empty()
+  {
+    let rows: Vec<Vec<(f64, f64)>> = match items
+      .iter()
+      .map(|r| match r {
+        Expr::List(r) => r.iter().map(complex).collect::<Option<Vec<_>>>(),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()
+    {
+      Some(rows) => rows,
+      None => return unchanged(),
+    };
+    let cols = rows[0].len();
+    if cols == 0 || rows.iter().any(|r| r.len() != cols) {
+      return unchanged();
+    }
+    let row_dft: Vec<Vec<(f64, f64)>> = rows
+      .iter()
+      .map(|r| dft_core(r, 1.0, param_b, false))
+      .collect();
+    let mut out = vec![vec![0.0; cols]; rows.len()];
+    for c in 0..cols {
+      let column: Vec<(f64, f64)> = row_dft.iter().map(|r| r[c]).collect();
+      for (r, v) in dft_core(&column, 1.0, param_b, false)
+        .into_iter()
+        .enumerate()
+      {
+        let total = (rows.len() * cols) as f64;
+        out[r][c] = power(v) / total * total.powf(param_a);
+      }
+    }
+    return Ok(Expr::List(
+      out
+        .into_iter()
+        .map(|r| Expr::List(r.into_iter().map(Expr::Real).collect()))
+        .collect(),
+    ));
+  }
+
+  let Some(xs) = items.iter().map(complex).collect::<Option<Vec<_>>>() else {
+    return unchanged();
+  };
+  if xs.is_empty() {
+    return unchanged();
+  }
+  let count = |e: Option<&&Expr>, default: usize| -> Option<usize> {
+    match e {
+      None => Some(default),
+      Some(Expr::Integer(k)) if *k >= 1 => usize::try_from(*k).ok(),
+      _ => None,
+    }
+  };
+  let Some(n) = count(positional.get(1), xs.len()) else {
+    return unchanged();
+  };
+  let Some(d) = count(positional.get(2), n) else {
+    return unchanged();
+  };
+  if n > xs.len() {
+    return unchanged();
+  }
+  let weights: Vec<f64> = match positional.get(3) {
+    None => vec![1.0; n],
+    Some(Expr::List(w)) => {
+      match w.iter().map(try_eval_to_f64).collect::<Option<Vec<_>>>() {
+        Some(w) if w.len() == n => w,
+        _ => return unchanged(),
+      }
+    }
+    Some(f) => {
+      let mut w = Vec::with_capacity(n);
+      for j in 0..n {
+        let x = if n == 1 {
+          0.0
+        } else {
+          j as f64 / (n - 1) as f64 - 0.5
+        };
+        let v = crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new((*f).clone()),
+          args: vec![Expr::Real(x)],
+        })?;
+        match try_eval_to_f64(&v) {
+          Some(v) => w.push(v),
+          None => return unchanged(),
+        }
+      }
+      w
+    }
+  };
+  let norm: f64 = weights.iter().map(|w| w * w).sum();
+  if norm == 0.0 {
+    return unchanged();
+  }
+  let mut sums = vec![0.0; n];
+  let mut parts = 0usize;
+  let mut start = 0;
+  while start + n <= xs.len() {
+    let frame: Vec<(f64, f64)> = xs[start..start + n]
+      .iter()
+      .zip(&weights)
+      .map(|(&(re, im), w)| (re * w, im * w))
+      .collect();
+    for (k, v) in dft_core(&frame, 1.0, param_b, false)
+      .into_iter()
+      .enumerate()
+    {
+      sums[k] += power(v);
+    }
+    parts += 1;
+    start += d;
+  }
+  let scale = (n as f64).powf(param_a) / norm / parts as f64;
+  Ok(Expr::List(
+    sums.into_iter().map(|p| Expr::Real(p * scale)).collect(),
+  ))
 }
 
 // ---------------------------------------------------------------------------
