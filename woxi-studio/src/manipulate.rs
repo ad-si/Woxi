@@ -397,7 +397,22 @@ pub fn button_regions_of(svg: &str) -> Vec<ButtonRegion> {
   fn walk(group: &usvg::Group, out: &mut Vec<ButtonRegion>) {
     for node in group.children() {
       match node {
-        usvg::Node::Group(g) => walk(g, out),
+        usvg::Node::Group(g) => {
+          // An `EventHandler`-wrapped shape: the group's own box is the
+          // clickable area.
+          if let Some(action) = button_action_from_hit_id(g.id()) {
+            let r = g.abs_bounding_box();
+            out.push(ButtonRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              action,
+            });
+          } else {
+            walk(g, out)
+          }
+        }
         usvg::Node::Path(p) => {
           if let Some(action) = button_action_from_hit_id(p.id()) {
             let r = p.abs_bounding_box();
@@ -4716,6 +4731,47 @@ mod tests {
   /// Demonstration): every enabled cell must be a pressable region of the
   /// picture, pressing one runs that cell's own action on the widget state,
   /// and a cell whose `Enabled` condition turns false stops being pressable.
+  #[test]
+  fn event_handler_shapes_in_graphics_are_clickable_regions() {
+    let code = r#"Manipulate[
+      Graphics[
+        Table[
+          With[{n = n},
+            EventHandler[
+              Dynamic[{shade[[n]], Rectangle[{n, 0}, {n + 1, 1}]}],
+              {"MouseClicked" :> (shade[[n]] = Red)}]],
+          {n, 4}],
+        ImageSize -> 200],
+      {{shade, Table[White, {4}]}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(state.button_regions.len(), 4, "one region per shape");
+    let mut xs: Vec<i32> =
+      state.button_regions.iter().map(|r| r.x as i32).collect();
+    xs.sort();
+    xs.dedup();
+    assert_eq!(xs.len(), 4, "shapes must not share a region: {xs:?}");
+
+    // Clicking a shape runs its own handler.
+    let region = state
+      .button_regions
+      .iter()
+      .find(|r| r.action.contains("shade[[3]]"))
+      .expect("handler of the third shape")
+      .clone();
+    state.apply_button_action(&region.action);
+    let shade = &state
+      .state
+      .iter()
+      .find(|(name, _)| name == "shade")
+      .expect("shade state")
+      .1;
+    assert!(shade.contains("RGBColor[1, 0, 0]"), "{shade}");
+  }
+
   #[test]
   fn graphics_grid_button_cells_are_pressable_regions() {
     let code = r#"Manipulate[

@@ -19615,6 +19615,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">hi<"), "the content shows: {svg}");
     }
 
+    // `EventHandler[shape, "MouseClicked" :> action]` inside a picture draws
+    // `shape`, and records the action on a group around it so a live widget
+    // can make the shape clickable. The rules may come bare or in a list.
+    #[test]
+    fn an_event_handler_shape_records_its_click_action() {
+      for rules in [
+        "\"MouseClicked\" :> (hit = 7)",
+        "{\"MouseClicked\" :> (hit = 7)}",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Red, EventHandler[Rectangle[{{0, 0}}, {{1, 1}}], {rules}]}}]"
+        ));
+        assert!(svg.contains("<rect"), "the shape is drawn: {svg}");
+        assert_eq!(svg.matches("id=\"woxi-btn-").count(), 1, "{svg}");
+        assert!(!svg.contains("EventHandler"), "not the source: {svg}");
+      }
+      // Without a click rule the shape is plain.
+      let plain = export_svg(
+        "Graphics[EventHandler[Rectangle[{0, 0}, {1, 1}], \"MouseEntered\" :> (hit = 1)]]",
+      );
+      assert!(!plain.contains("woxi-btn-"), "{plain}");
+    }
+
     // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,
     // which the picture itself does not carry — this is how a Demonstration
     // lets you draw on a grid. It used to export as the call written out.

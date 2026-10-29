@@ -767,6 +767,13 @@ impl BBox {
 
 #[derive(Debug, Clone)]
 enum Primitive {
+  /// Opens a `<g>` carrying the hex-encoded action of an
+  /// `EventHandler[prim, "MouseClicked" :> action]`; the primitives up to
+  /// the matching [`Primitive::ClickGroupEnd`] are its clickable shape.
+  ClickGroupStart {
+    hex: String,
+  },
+  ClickGroupEnd,
   PointSingle {
     x: f64,
     y: f64,
@@ -971,6 +978,7 @@ impl Primitive {
       | Self::BezierCurvePrim { style, .. }
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
+      Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
       | Self::InsetGraphic { .. } => None,
@@ -2406,7 +2414,10 @@ fn collect_primitives(
       if args.iter().any(|a| {
         matches!(a, Expr::FunctionCall { name, args }
           if name == "Dynamic" && args.len() == 1)
-      }) && !matches!(name.as_str(), "Dynamic" | "Style") =>
+      }) && !matches!(
+        name.as_str(),
+        "Dynamic" | "Style" | "EventHandler"
+      ) =>
     {
       let released: Vec<Expr> = args
         .iter()
@@ -2780,6 +2791,45 @@ fn collect_primitives(
             collect_primitives(&inner, style, prims, errors);
           } else {
             crate::truncate_captured_graphics(captured);
+          }
+        }
+        // `EventHandler[g, "MouseClicked" :> action, …]` draws `g`. Its click
+        // action is recorded on a group around `g`'s shapes (see
+        // `BUTTON_HIT_ID_PREFIX`), so a live widget makes `g` clickable.
+        "EventHandler" if args.len() >= 2 => {
+          let mut events: Vec<&Expr> = Vec::new();
+          for ev in &args[1..] {
+            match ev {
+              Expr::List(items) => events.extend(items.iter()),
+              other => events.push(other),
+            }
+          }
+          let action = events.into_iter().find_map(|ev| match ev {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if matches!(
+              pattern.as_ref(),
+              Expr::String(e) if e == "MouseClicked"
+            ) =>
+            {
+              Some(crate::syntax::expr_to_source_form(replacement))
+            }
+            _ => None,
+          });
+          match action {
+            Some(action) => {
+              let hex: String =
+                action.bytes().map(|b| format!("{b:02x}")).collect();
+              prims.push(Primitive::ClickGroupStart { hex });
+              collect_primitives(&args[0], style, prims, errors);
+              prims.push(Primitive::ClickGroupEnd);
+            }
+            None => collect_primitives(&args[0], style, prims, errors),
           }
         }
         // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
@@ -6737,6 +6787,7 @@ fn include_arc_extent(
 fn primitive_bbox(prim: &Primitive) -> BBox {
   let mut bb = BBox::empty();
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
     Primitive::PointSingle { x, y, .. } => {
       bb.include_point(*x, *y);
     }
@@ -7058,6 +7109,9 @@ fn rotate_primitive(
   // Rotate a direction vector (no translation).
   let rv = |x: f64, y: f64| (x * cos - y * sin, x * sin + y * cos);
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -7371,6 +7425,9 @@ fn rotate_primitive(
 fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
   let tp = |x: f64, y: f64| (x + dx, y + dy);
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -7620,6 +7677,9 @@ fn scale_primitive(
     }
   };
   match prim {
+    Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
+      prim.clone()
+    }
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -9323,6 +9383,10 @@ fn render_primitive(
   out: &mut String,
 ) {
   match prim {
+    Primitive::ClickGroupStart { hex } => {
+      out.push_str(&format!("<g id=\"{BUTTON_HIT_ID_PREFIX}{hex}\">\n"));
+    }
+    Primitive::ClickGroupEnd => out.push_str("</g>\n"),
     // The inset is embedded whole, centred on its anchor — at its own
     // natural size, unless `Inset[…]` gave an explicit `size` (in this
     // picture's data coordinates), which is only convertible to pixels now
@@ -10671,6 +10735,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
 
   for prim in primitives {
     match prim {
+      Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {}
       Primitive::PointSingle { x, y, style } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::point_box(*x, *y));
