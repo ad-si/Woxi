@@ -42753,3 +42753,16 @@ mod stacked_text_and_scientific_form_labels {
     assert!(svg.contains("×10<tspan baseline-shift=\"super\""), "{svg}");
   }
 }
+
+mod traditional_form_matrix_text {
+  use super::*;
+
+  /// A `TraditionalForm` matrix in a `Text` label keeps one line per row
+  /// instead of running all its entries together.
+  #[test]
+  fn text_matrix_has_one_line_per_row() {
+    let svg = export_svg("Graphics[Text[TraditionalForm[{{a, b}, {c, d}}]]]");
+    assert!(svg.contains(">(a  b</tspan>"), "{svg}");
+    assert!(svg.contains(">c  d)</tspan>"), "{svg}");
+  }
+}
