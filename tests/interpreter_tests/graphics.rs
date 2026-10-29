@@ -24022,6 +24022,35 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn image_part_reaches_pixel_data() {
+    clear_state();
+    // `img[[1]]` is the pixel array, `img[[2]]` the image type.
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]").unwrap(),
+      "{{0, 255}, {255, 0}}"
+    );
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1, 2]]").unwrap(),
+      "{255, 0}"
+    );
+    assert_eq!(
+      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[2]]").unwrap(),
+      "Byte"
+    );
+    // Part on a rasterized graphic feeds ordinary list functions.
+    assert_eq!(
+      interpret(
+        "Dimensions[Rasterize[Graphics[{Disk[]}], ImageSize -> 10][[1]]]"
+      )
+      .unwrap(),
+      interpret(
+        "Dimensions[ImageData[Rasterize[Graphics[{Disk[]}], ImageSize -> 10], \"Byte\"]]"
+      )
+      .unwrap()
+    );
+  }
+
+  #[test]
   fn image_of_graphics_rasterizes() {
     clear_state();
     // ImageSize only affects display, not the pixel data.
