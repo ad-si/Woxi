@@ -469,6 +469,13 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(first) = args.first()
+    && contains_inequality_call(first)
+  {
+    let mut normalized = args.to_vec();
+    normalized[0] = super::reduce::inequalities_to_comparisons(first);
+    return nsolve_ast(&normalized);
+  }
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
   // `NSolve[poly, x]` is `NSolve[poly == 0, x]`, and a trailing precision
@@ -2751,7 +2758,32 @@ pub(crate) fn with_generalized_variables(
   }))
 }
 
+/// Whether `Inequality[…]` (the FullForm of a mixed chained comparison)
+/// occurs among the constraints.
+fn contains_inequality_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, .. } if name == "Inequality" => true,
+    Expr::List(items) => items.iter().any(contains_inequality_call),
+    Expr::FunctionCall { name, args } if name == "And" => {
+      args.iter().any(contains_inequality_call)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => contains_inequality_call(left) || contains_inequality_call(right),
+    _ => false,
+  }
+}
+
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(first) = args.first()
+    && contains_inequality_call(first)
+  {
+    let mut normalized = args.to_vec();
+    normalized[0] = super::reduce::inequalities_to_comparisons(first);
+    return solve_ast(&normalized);
+  }
   if let Some(result) = solve_interpolating_function("Solve", args) {
     return Ok(result);
   }

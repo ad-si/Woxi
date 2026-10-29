@@ -1534,6 +1534,24 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### `Together` does not pull a sign out of a numerator led by a negative kernel
+
+```sh
+wolframscript -code 'ToString[{Together[(-a^n + b)/z], Together[(-E^a + b)/z], Together[(-a + b)/z], Together[(-a^n + b)/2]}, InputForm]'
+# {-((a^n - b)/z), -((-b + E^a)/z), (-a + b)/z, (-a^n + b)/2}
+woxi eval '{Together[(-a^n + b)/z], Together[(-E^a + b)/z], Together[(-a + b)/z], Together[(-a^n + b)/2]}'
+# {(-a^n + b)/z, (-E^a + b)/z, (-a + b)/z, (-a^n + b)/2}
+```
+
+With a non-numeric denominator, wolframscript makes the coefficient of the
+numerator's leading transcendental kernel (`a^n`, `E^a`; not an algebraic
+`Sqrt[a]`) positive and puts the `-1` outside; plain polynomial numerators
+and purely numeric denominators are left alone. `(a^n - b^n)/z` stays put
+while `(-a^n + b^n)/z` flips, so the first kernel in canonical order leads.
+This is what makes `RSolve[{a[n+2] == q a[n+1] + s a[n], a[0] == 0,
+a[1] == 1}, a[n], n]` come out as `(-(q - S)^n + (q + S)^n)/(2^n*S)`
+instead of `-(((q - S)^n - (q + S)^n)/(2^n*S))`.
+
 ### A quotient with a symbolic negative exponent is split, not held
 
 ```sh

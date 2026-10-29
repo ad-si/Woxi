@@ -23797,4 +23797,72 @@ mod rsolve_symbolic_constant_coefficients {
       "{{f[k] -> (-1 + ((1 - p)/p)^k)/(-1 + ((1 - p)/p)^n)}}"
     );
   }
+
+  // A constant inhomogeneity: A n^m with m the multiplicity of the root 1.
+  #[test]
+  fn constant_inhomogeneity() {
+    assert_eq!(
+      interpret("RSolve[a[n + 1] == q a[n] + c, a[n], n]").unwrap(),
+      "{{a[n] -> (c*q^n*(1 - q^(-n)))/(-1 + q) + q^(-1 + n)*C[1]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 3 a[n + 1] - 2 a[n] + c, a[n], n]")
+        .unwrap(),
+      "{{a[n] -> -(c*n) + C[1] + 2^n*C[2]}}"
+    );
+    assert_eq!(
+      interpret("RSolve[a[n + 2] == 2 a[n + 1] - a[n] + c, a[n], n]").unwrap(),
+      "{{a[n] -> (c*n^2)/2 + C[1] + n*C[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[a[n + 3] == 3 a[n + 2] - 3 a[n + 1] + a[n] + c, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> (c*n^3)/6 + C[1] + n*C[2] + n^2*C[3]}}"
+    );
+    assert_eq!(
+      interpret(
+        "RSolve[{a[n + 2] == 2 a[n + 1] - a[n] + c, a[0] == 0, a[1] == 1}, a[n], n]"
+      )
+      .unwrap(),
+      "{{a[n] -> (2*n - c*n + c*n^2)/2}}"
+    );
+  }
+
+  // The combined boundary-value solution keeps its denominator factored.
+  #[test]
+  fn boundary_values_with_inhomogeneity() {
+    assert_eq!(
+      interpret(
+        "RSolve[{g[0] == 0, g[n] == 0, g[k] == (1 - p) (1 + g[k - 1]) + p (1 + g[k + 1])}, g[k], k]"
+      )
+      .unwrap(),
+      "{{g[k] -> -((-k + n - n*((1 - p)/p)^k + k*((1 - p)/p)^n)/((-1 + ((1 - p)/p)^n)*(-1 + 2*p)))}}"
+    );
+  }
+}
+
+mod solve_inequality_constraints {
+  use super::*;
+
+  // Inequality[…] (a mixed chained comparison) restricts the solutions.
+  #[test]
+  fn mixed_chained_comparison() {
+    assert_eq!(
+      interpret("Solve[{x^2 == 2, Inequality[0, Less, x, LessEqual, 3]}, x]")
+        .unwrap(),
+      "{{x -> Sqrt[2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^3 == x && Inequality[-1, Less, x, LessEqual, 1], x]")
+        .unwrap(),
+      "{{x -> 0}, {x -> 1}}"
+    );
+    assert_eq!(
+      interpret("NSolve[x^2 == 2 && Inequality[0, Less, x, LessEqual, 3], x]")
+        .unwrap(),
+      "{{x -> 1.4142135623730951}}"
+    );
+  }
 }

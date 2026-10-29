@@ -304,15 +304,20 @@ fn solve_symbolic_const_coeff_linear(
     &[minus2(
       expanded,
       plus(
-        (lo..=hi)
-          .zip(&coefficients)
-          .map(|(k, c)| times2(c.clone(), placeholder(k)))
+        std::iter::once(rest.clone())
+          .chain(
+            (lo..=hi)
+              .zip(&coefficients)
+              .map(|(k, c)| times2(c.clone(), placeholder(k))),
+          )
           .collect(),
       ),
     )],
   )
   .ok()?;
-  if !matches!(rest, Expr::Integer(0)) || !matches!(check, Expr::Integer(0)) {
+  // The equation must be linear in the terms; a constant inhomogeneity
+  // (free of n) is allowed.
+  if !matches!(check, Expr::Integer(0)) || !free(&rest) {
     return None;
   }
   let r = id_expr("r$RSolve");
@@ -364,6 +369,53 @@ fn solve_symbolic_const_coeff_linear(
   }
   let n = id_expr(var_name);
   let mut terms = Vec::new();
+  // A constant inhomogeneity `rest` has the particular solution A n^m,
+  // m the multiplicity of the characteristic root 1.
+  if !matches!(rest, Expr::Integer(0)) {
+    let m: i128 = roots
+      .iter()
+      .filter(|(root, _)| matches!(root, Expr::Integer(1)))
+      .map(|(_, m)| *m)
+      .sum();
+    // P(E) n^m = P^(m)(1) for P the characteristic polynomial with the
+    // root 1 of multiplicity m, so A = -rest/P(1) for m = 0 and
+    // rest/(-P^(m)(1)) otherwise: the arrangement wolframscript's own
+    // answers come in (c/(1 - q - s), -(k/(-1 + 2 p))).
+    let falling =
+      |k: i128, m: i128| -> i128 { (0..m).map(|j| k - j).product() };
+    let derivative_at_one = evaluate_function_call_ast(
+      "Expand",
+      &[plus(
+        coefficients
+          .iter()
+          .enumerate()
+          .map(|(i, c)| times2(Expr::Integer(falling(i as i128, m)), c.clone()))
+          .collect(),
+      )],
+    )
+    .ok()?;
+    if matches!(derivative_at_one, Expr::Integer(0)) {
+      return None;
+    }
+    let amplitude = if m == 0 {
+      evaluate_expr_to_expr(&div2(
+        negate_expr(rest.clone()),
+        derivative_at_one.clone(),
+      ))
+      .ok()?
+    } else {
+      let negated = evaluate_function_call_ast(
+        "Expand",
+        &[negate_expr(derivative_at_one.clone())],
+      )
+      .ok()?;
+      evaluate_expr_to_expr(&div2(rest.clone(), negated)).ok()?
+    };
+    if !free(&amplitude) {
+      return None;
+    }
+    terms.push(times2(amplitude, pow(n.clone(), Expr::Integer(m))));
+  }
   let mut constant = 1;
   for (root, m) in &roots {
     for j in 0..*m {
@@ -410,7 +462,20 @@ fn solve_symbolic_const_coeff_linear(
   let particular =
     evaluate_expr_to_expr(&call("ReplaceAll", vec![general, first.clone()]))
       .ok()?;
-  evaluate_function_call_ast("Together", &[particular]).ok()
+  // wolframscript factors the common denominator of the combined solution:
+  // -(num/((-1 + q^n)*(-1 + 2 p))), not num/(-1 + 2 p + q^n - 2 p q^n).
+  let combined = evaluate_function_call_ast("Together", &[particular]).ok()?;
+  let numerator =
+    evaluate_function_call_ast("Numerator", std::slice::from_ref(&combined))
+      .ok()?;
+  let denominator =
+    evaluate_function_call_ast("Denominator", std::slice::from_ref(&combined))
+      .ok()?;
+  if matches!(denominator, Expr::Integer(_)) {
+    return Some(combined);
+  }
+  let factored = evaluate_function_call_ast("Factor", &[denominator]).ok()?;
+  evaluate_expr_to_expr(&div2(numerator, factored)).ok()
 }
 
 /// Collect every offset `k` at which `func[var + k]` occurs in `expr`,
