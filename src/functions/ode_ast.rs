@@ -12054,8 +12054,42 @@ fn evaluate_grid_interpolating_function(
     }
   }
 
+  // Only the cells of the interpolation window take part: reading the whole
+  // grid into machine numbers on every call made each evaluation cost as
+  // much as the grid is large. A window spanning its whole sub-axis is the
+  // one the full grid would pick, so the value is unchanged.
+  let sub_axes: Vec<Vec<f64>> = axes
+    .iter()
+    .zip(&windows)
+    .map(|(axis, &(start, end))| axis[start..end].to_vec())
+    .collect();
+  fn slice_values(e: &Expr, windows: &[(usize, usize)]) -> Option<Expr> {
+    let Some((&(start, end), rest)) = windows.split_first() else {
+      return Some(e.clone());
+    };
+    let Expr::List(items) = e else { return None };
+    if end > items.len() {
+      return None;
+    }
+    Some(Expr::List(
+      (start..end)
+        .map(|i| slice_values(&items[i], rest))
+        .collect::<Option<Vec<_>>>()?
+        .into(),
+    ))
+  }
+  let derivative_free = derivative.iter().all(|&d| d == 0);
+  let window_values = if derivative_free {
+    slice_values(values, &windows)
+  } else {
+    None
+  };
+  let (grid_axes, grid_values) = match &window_values {
+    Some(v) => (sub_axes, v),
+    None => (axes, values),
+  };
   let grid = NumericGrid::new(
-    axes,
+    grid_axes,
     orders
       .iter()
       .map(|o| match o {
@@ -12064,7 +12098,7 @@ fn evaluate_grid_interpolating_function(
       })
       .collect(),
     derivative.to_vec(),
-    values,
+    grid_values,
   )
   .ok_or_else(|| {
     InterpreterError::EvaluationError(
