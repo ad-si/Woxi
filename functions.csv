@@ -3475,7 +3475,7 @@ GeoDistanceList,,🚫,,10.4,3537
 InverseFourierCosTransform,Inverse Fourier cosine transform (the cosine transform is an involution),✅,pure,4.0,3537
 LessLess,Operator without built-in meaning displayed infix,✅,pure,3.0,3537
 LongestCommonSubsequencePositions,Returns the {start end} spans of the longest contiguous common subsequence in two strings or lists,✅,pure,10.2,3537
-PeriodogramArray,,🚫,,9.0,3537
+PeriodogramArray,Squared magnitudes of the discrete Fourier transform averaged over partitions,✅,pure,9.0,3537
 PoleZeroMarkers,,,,8.0,3537
 ReverseGraph,Graph with every directed edge reversed; edges emitted in vertex-position order like wolframscript,✅,pure,8.0,3537
 SemialgebraicComponentInstances,,,,6.0,3537

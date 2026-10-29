@@ -190,6 +190,119 @@ fn has_radical(expr: &Expr) -> bool {
 ///
 /// `NSolve[equation]` with the variable left out solves for whatever the
 /// equation contains, the way `Solve[equation]` does.
+/// `Solve`/`NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to
+/// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`,
+/// and gives the first root in its domain. The root is located by a scan of the
+/// domain for a sign change and refined by bisection.
+fn solve_interpolating_function(
+  head: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  fn domain_of(e: &Expr) -> Option<(f64, f64)> {
+    if let Expr::CurriedCall { func, .. } = e
+      && let Expr::FunctionCall { name, args } = func.as_ref()
+      && name == "InterpolatingFunction"
+      && let Some(Expr::List(dom)) = args.first()
+      && let Some(Expr::List(ab)) = dom.first()
+      && let [a, b] = ab.as_slice()
+    {
+      return Some((try_eval_to_f64(a)?, try_eval_to_f64(b)?));
+    }
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .find_map(domain_of)
+  }
+  let [eq, var] = args else {
+    return Ok(None);
+  };
+  let Expr::Identifier(var_name) = var else {
+    return Ok(None);
+  };
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return Ok(None);
+  };
+  if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+    return Ok(None);
+  }
+  let Some((lo, hi)) = domain_of(eq) else {
+    return Ok(None);
+  };
+  if !(lo < hi) {
+    return Ok(None);
+  }
+  let difference = Expr::BinaryOp {
+    op: BinaryOperator::Minus,
+    left: Box::new(operands[0].clone()),
+    right: Box::new(operands[1].clone()),
+  };
+  let g = |t: f64| -> Option<f64> {
+    let at =
+      crate::syntax::substitute_variable(&difference, var_name, &Expr::Real(t));
+    try_eval_to_f64(&crate::evaluator::evaluate_expr_to_expr(&at).ok()?)
+  };
+  crate::emit_message(&format!(
+    "{head}::ifun: Inverse functions are being used by {head}, so some solutions may not be found; use Reduce for complete solution information."
+  ));
+  const SAMPLES: usize = 2000;
+  let mut prev_t = lo;
+  let Some(mut prev) = g(lo) else {
+    return Ok(None);
+  };
+  let mut root = (prev == 0.0).then_some(lo);
+  for i in 1..=SAMPLES {
+    if root.is_some() {
+      break;
+    }
+    let t = lo + (hi - lo) * i as f64 / SAMPLES as f64;
+    let Some(v) = g(t) else {
+      return Ok(None);
+    };
+    if v == 0.0 {
+      root = Some(t);
+    } else if v.signum() != prev.signum() {
+      let (mut a, mut b, mut fa) = (prev_t, t, prev);
+      for _ in 0..200 {
+        let m = f64::midpoint(a, b);
+        let Some(fm) = g(m) else {
+          return Ok(None);
+        };
+        if fm == 0.0 || (b - a) <= f64::EPSILON * m.abs().max(1.0) {
+          a = m;
+          b = m;
+          break;
+        }
+        if fm.signum() == fa.signum() {
+          a = m;
+          fa = fm;
+        } else {
+          b = m;
+        }
+      }
+      root = Some(f64::midpoint(a, b));
+    }
+    prev_t = t;
+    prev = v;
+  }
+  Ok(Some(Expr::List(
+    root
+      .map(|t| {
+        Expr::List(
+          vec![Expr::Rule {
+            pattern: Box::new(var.clone()),
+            replacement: Box::new(Expr::Real(t)),
+          }]
+          .into(),
+        )
+      })
+      .into_iter()
+      .collect(),
+  )))
+}
+
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
@@ -221,6 +334,9 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args
     }
   };
+  if let Some(result) = solve_interpolating_function("NSolve", args)? {
+    return Ok(result);
+  }
   // `NSolve[eqns]` solves for the variables `Solve[eqns]` would pick.
   if args.len() == 1
     && !matches!(&args[0], Expr::Identifier(s) if s == "True" || s == "False")
@@ -2464,6 +2580,9 @@ pub(crate) fn with_generalized_variables(
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = solve_interpolating_function("Solve", args)? {
+    return Ok(result);
+  }
   let solved = solve_ast_exact_parts(args)?;
   Ok(numericize_inexact_components(args, solved))
 }

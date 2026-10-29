@@ -1334,3 +1334,47 @@ mod function_rule_neighborhood_shape {
     );
   }
 }
+
+mod cellular_automaton_offset_blocks {
+  use super::*;
+
+  // A one-element window `{i}` is the single cell at offset i.
+  #[test]
+  fn single_cell_window() {
+    assert_eq!(
+      interpret(
+        "{CellularAutomaton[204, {1, 0, 0, 0, 0}, {{1}, {0}}], \
+          CellularAutomaton[204, {0, 1, 0, 0, 0}, {{1}, {1}}], \
+          CellularAutomaton[204, {{1, 0, 0}, 0}, {{1}, {-1}}], \
+          CellularAutomaton[30, {{1}, 0}, {{2}, {0}}]}"
+      )
+      .unwrap(),
+      "{{{1}}, {{1}}, {{0}}, {{0}}}"
+    );
+  }
+
+  // `{{{aspec, {off}}, …}, bspec}` lays the blocks out at their offsets on
+  // the background, for numbered and function rules alike.
+  #[test]
+  fn blocks_at_offsets() {
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{{{1}, {3}}, {{1, 1}, {-2}}}, 0}, 2]")
+        .unwrap(),
+      "{{0, 0, 1, 1, 0, 0, 0, 1, 0, 0}, {0, 1, 1, 0, 1, 0, 1, 1, 1, 0}, \
+       {1, 1, 0, 0, 1, 0, 1, 0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, {{{{1, 1}, {0}}, {{1}, {1}}}, 0}, 2]")
+        .unwrap(),
+      "{{0, 0, 1, 1, 0, 0}, {0, 1, 1, 0, 1, 0}, {1, 1, 0, 0, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{Mod[Total[#], 2] &, {}, 1}, \
+         {{{{1, 1}, {-2}}, {{1}, {3}}}, 0}, 1]"
+      )
+      .unwrap(),
+      "{{0, 1, 1, 0, 0, 0, 1, 0}, {1, 0, 0, 1, 0, 1, 1, 1}}"
+    );
+  }
+}

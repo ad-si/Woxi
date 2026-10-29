@@ -247,6 +247,25 @@ pub fn apply_part_indices(
     }
     return Ok(part);
   }
+  // A SparseArray, likewise, indexes the dense array it stands for — `All`
+  // included — and an array part of it is a SparseArray again.
+  if let Expr::FunctionCall { name, args: sa } = expr
+    && name == "SparseArray"
+    && sa.len() == 4
+    && indices.len() > 1
+  {
+    let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
+    if matches!(&dense, Expr::List(_)) {
+      let part = apply_part_indices(&dense, indices)?;
+      if matches!(part, Expr::List(_)) {
+        return crate::evaluator::evaluate_function_call_ast(
+          "SparseArray",
+          &[part],
+        );
+      }
+      return Ok(part);
+    }
+  }
   let idx = &indices[0];
   let rest = &indices[1..];
   if matches!(idx, Expr::Identifier(s) if s == "All") {
@@ -814,7 +833,14 @@ fn extract_part_ast_rest(
   {
     let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
     if matches!(&dense, Expr::List(_)) {
-      return extract_part_ast(&dense, index);
+      let part = extract_part_ast(&dense, index)?;
+      if matches!(part, Expr::List(_)) {
+        return crate::evaluator::evaluate_function_call_ast(
+          "SparseArray",
+          &[part],
+        );
+      }
+      return Ok(part);
     }
   }
 

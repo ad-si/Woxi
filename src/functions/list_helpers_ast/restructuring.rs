@@ -208,100 +208,194 @@ pub fn partition_ast(
   Ok(wrap(results))
 }
 
+/// Partition[tensor, {n1, …}, {d1, …}, align, pad] — blocks of size
+/// `n1 × n2 × …` at offsets `d1, d2, …`, the dimensions handled
+/// independently. Without `align` only whole blocks inside the tensor are
+/// made; `align` (`k`, `{kL, kR}`, or one such pair per dimension, as in
+/// the one-dimensional form) lets blocks overhang, filled cyclically from
+/// the tensor itself or, when given, from `pad` (an element, or an array
+/// repeated cyclically).
 pub fn partition_multi_dim_ast(
   expr: &Expr,
   sizes: &[i128],
   offsets: &[i128],
+  align: Option<&Expr>,
+  pad: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  fn partition_one_dim(list: &Expr, n: usize, d: usize) -> Option<Vec<Expr>> {
-    let Expr::List(items) = list else { return None };
-    let mut chunks: Vec<Expr> = Vec::new();
-    let mut i = 0;
-    while i + n <= items.len() {
-      chunks.push(Expr::List(items[i..i + n].to_vec().into()));
-      i += d;
-    }
-    Some(chunks)
-  }
-
-  fn recurse(list: &Expr, sizes: &[usize], offsets: &[usize]) -> Option<Expr> {
-    if sizes.is_empty() {
-      return Some(list.clone());
-    }
-    let outer = partition_one_dim(list, sizes[0], offsets[0])?;
-    let rest_sizes = &sizes[1..];
-    let rest_offsets = &offsets[1..];
-    if rest_sizes.is_empty() {
-      return Some(Expr::List(outer.into()));
-    }
-    // Each outer chunk is a List whose elements we must partition along the
-    // remaining axes and then transpose so the next-axis partitioning
-    // happens at the right level.
-    let mut recurred: Vec<Vec<Expr>> = Vec::new();
-    for chunk in &outer {
-      // chunk is `Expr::List(rows)`; we want to partition each row's
-      // deeper dimensions, then reassemble.
-      let Expr::List(rows) = chunk else { return None };
-      let per_row: Option<Vec<Expr>> = rows
-        .iter()
-        .map(|r| recurse(r, rest_sizes, rest_offsets))
-        .collect();
-      let per_row = per_row?;
-      recurred.push(per_row);
-    }
-    // `recurred` is indexed [outer_block][row_within_block] and each entry
-    // is the tensor of sub-partitions from recurse. We need to transpose to
-    // group by the next-axis block position.
-    // Each per_row[row_within_block] is a List of `n_2`-sized blocks along
-    // dim 2, then further partitioned below. We treat each per_row as the
-    // inner partition for that "row slot", then assemble outer-axis-first.
-    //
-    // For the 2-dim case, per_row[r] = List of column-blocks. We want
-    // outer[i] = (i-th block) = List of column-blocks, where each column
-    // block itself is List of rows (size n_1). Essentially pivot so columns
-    // vary in the inner axis.
-    //
-    // The simplest reconstruction: for each outer block, build a List of
-    // items where the k-th item is taken from per_row[*][k].
-    let mut result_outer: Vec<Expr> = Vec::new();
-    for per_row in &recurred {
-      // Number of inner blocks per row (uniform). Assume well-formed input.
-      let inner_count = match per_row.first() {
-        Some(Expr::List(v)) => v.len(),
-        _ => return None,
-      };
-      let mut inner_blocks: Vec<Expr> = Vec::with_capacity(inner_count);
-      for k in 0..inner_count {
-        let mut gathered: Vec<Expr> = Vec::with_capacity(per_row.len());
-        for row in per_row {
-          if let Expr::List(items) = row
-            && let Some(item) = items.get(k)
-          {
-            gathered.push(item.clone());
-          } else {
-            return None;
-          }
-        }
-        inner_blocks.push(Expr::List(gathered.into()));
-      }
-      result_outer.push(Expr::List(inner_blocks.into()));
-    }
-    Some(Expr::List(result_outer.into()))
-  }
-
-  let sizes_u: Vec<usize> = sizes.iter().map(|&x| x as usize).collect();
-  let offsets_u: Vec<usize> = offsets.iter().map(|&x| x as usize).collect();
-  if let Some(r) = recurse(expr, &sizes_u, &offsets_u) {
-    Ok(r)
-  } else {
-    let mut call_args = vec![expr.clone()];
-    call_args.push(Expr::List(
-      sizes.iter().map(|&x| Expr::Integer(x)).collect(),
-    ));
-    call_args.push(Expr::List(
-      offsets.iter().map(|&x| Expr::Integer(x)).collect(),
-    ));
+  let unevaluated = || {
+    let mut call_args = vec![
+      expr.clone(),
+      Expr::List(sizes.iter().map(|&x| Expr::Integer(x)).collect()),
+      Expr::List(offsets.iter().map(|&x| Expr::Integer(x)).collect()),
+    ];
+    call_args.extend(align.cloned());
+    call_args.extend(pad.cloned());
     Ok(call("Partition", call_args))
+  };
+  let rank = sizes.len();
+  // The tensor's dimensions along the partitioned levels.
+  let mut dims: Vec<usize> = Vec::with_capacity(rank);
+  let mut cursor = expr;
+  for _ in 0..rank {
+    let Expr::List(items) = cursor else {
+      return unevaluated();
+    };
+    dims.push(items.len());
+    match items.first() {
+      Some(first) => cursor = first,
+      None => break,
+    }
+  }
+  if dims.len() < rank || dims.contains(&0) {
+    return Ok(Expr::List(vec![].into()));
+  }
+  let int = |e: &Expr| super::utilities::expr_to_i128(e);
+  // (kL, kR) per dimension.
+  let pair = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::List(kk) if kk.len() == 2 => Some((int(&kk[0])?, int(&kk[1])?)),
+      other => int(other).map(|k| (k, k)),
+    }
+  };
+  let aligns: Vec<(i128, i128)> = match align {
+    None => vec![(1, -1); rank],
+    Some(Expr::List(per_dim))
+      if per_dim.len() == rank
+        && rank != 2
+        && per_dim.iter().all(|e| matches!(e, Expr::List(_))) =>
+    {
+      match per_dim.iter().map(pair).collect::<Option<Vec<_>>>() {
+        Some(v) => v,
+        None => return unevaluated(),
+      }
+    }
+    // `{{kL1, kL2, …}, {kR1, kR2, …}}`.
+    Some(Expr::List(lr))
+      if lr.len() == 2
+        && lr
+          .iter()
+          .all(|e| matches!(e, Expr::List(v) if v.len() == rank)) =>
+    {
+      let (Expr::List(ls), Expr::List(rs)) = (&lr[0], &lr[1]) else {
+        unreachable!()
+      };
+      match ls
+        .iter()
+        .zip(rs.iter())
+        .map(|(l, r)| Some((int(l)?, int(r)?)))
+        .collect::<Option<Vec<_>>>()
+      {
+        Some(v) => v,
+        None => return unevaluated(),
+      }
+    }
+    Some(e) => match pair(e) {
+      Some(p) => vec![p; rank],
+      None => return unevaluated(),
+    },
+  };
+  let cyclic = align.is_some() && pad.is_none();
+  if matches!(pad, Some(Expr::List(p)) if p.is_empty()) {
+    return unevaluated();
+  }
+  // The virtual start positions of the blocks along each dimension.
+  let starts: Vec<Vec<isize>> = (0..rank)
+    .map(|k| {
+      let (n, d, len) =
+        (sizes[k] as isize, offsets[k] as isize, dims[k] as isize);
+      let (kl, kr) = (aligns[k].0 as isize, aligns[k].1 as isize);
+      let first = if kl > 0 { -(kl - 1) } else { -(n + kl) };
+      let end_pos = if kr > 0 { kr - 1 } else { n + kr };
+      let last = len - 1 - end_pos;
+      let mut v = Vec::new();
+      let mut s = first;
+      while s <= last {
+        v.push(s);
+        s += d;
+      }
+      v
+    })
+    .collect();
+  // The element at a virtual position, wrapped or padded when outside.
+  let element = |pos: &[isize]| -> Option<Expr> {
+    let inside = pos
+      .iter()
+      .zip(&dims)
+      .all(|(&p, &n)| p >= 0 && (p as usize) < n);
+    let (source, idx): (&Expr, Vec<usize>) = if inside {
+      (expr, pos.iter().map(|&p| p as usize).collect())
+    } else if cyclic {
+      (
+        expr,
+        pos
+          .iter()
+          .zip(&dims)
+          .map(|(&p, &n)| p.rem_euclid(n as isize) as usize)
+          .collect(),
+      )
+    } else {
+      match pad? {
+        Expr::List(_) => {
+          // An array of padding repeats along every dimension.
+          let mut cur = pad?;
+          for &p in pos {
+            let Expr::List(items) = cur else {
+              return Some(cur.clone());
+            };
+            cur = &items[p.rem_euclid(items.len() as isize) as usize];
+          }
+          return Some(cur.clone());
+        }
+        single => return Some(single.clone()),
+      }
+    };
+    let mut cur = source;
+    for i in idx {
+      let Expr::List(items) = cur else { return None };
+      cur = items.get(i)?;
+    }
+    Some(cur.clone())
+  };
+  // Blocks first (one level per dimension), then each block's elements.
+  fn build_block(
+    starts: &[isize],
+    sizes: &[i128],
+    prefix: &mut Vec<isize>,
+    element: &dyn Fn(&[isize]) -> Option<Expr>,
+  ) -> Option<Expr> {
+    let k = prefix.len();
+    if k == starts.len() {
+      return element(prefix);
+    }
+    let mut items = Vec::with_capacity(sizes[k] as usize);
+    for j in 0..sizes[k] as isize {
+      prefix.push(starts[k] + j);
+      items.push(build_block(starts, sizes, prefix, element)?);
+      prefix.pop();
+    }
+    Some(Expr::List(items.into()))
+  }
+  fn build_grid(
+    all_starts: &[Vec<isize>],
+    sizes: &[i128],
+    chosen: &mut Vec<isize>,
+    element: &dyn Fn(&[isize]) -> Option<Expr>,
+  ) -> Option<Expr> {
+    let k = chosen.len();
+    if k == all_starts.len() {
+      return build_block(chosen, sizes, &mut Vec::new(), element);
+    }
+    let mut items = Vec::with_capacity(all_starts[k].len());
+    for &s in &all_starts[k] {
+      chosen.push(s);
+      items.push(build_grid(all_starts, sizes, chosen, element)?);
+      chosen.pop();
+    }
+    Some(Expr::List(items.into()))
+  }
+  match build_grid(&starts, sizes, &mut Vec::new(), &element) {
+    Some(r) => Ok(r),
+    None => unevaluated(),
   }
 }
 
@@ -1870,10 +1964,18 @@ pub fn pad_ast(fname: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Length specification: a machine integer or a list of them.
+  // `Automatic` within the list stands for the ragged maximum at its level.
+  let ragged = ragged_dims(subject);
   let (spec, spec_is_list): (Vec<i128>, bool) = match &args[1] {
     Expr::List(items) => {
-      if let Some(ns) =
-        items.iter().map(strict_int).collect::<Option<Vec<i128>>>()
+      if let Some(ns) = items
+        .iter()
+        .enumerate()
+        .map(|(level, e)| match e {
+          Expr::Identifier(s) if s == "Automatic" => ragged.get(level).copied(),
+          _ => strict_int(e),
+        })
+        .collect::<Option<Vec<i128>>>()
       {
         (ns, true)
       } else {

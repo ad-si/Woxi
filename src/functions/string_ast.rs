@@ -4995,10 +4995,70 @@ fn strip_hold_form(e: &Expr) -> Expr {
 }
 
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Trailing options other than FormatType (CharacterEncoding, PageWidth,
+  // …) are taken off; only CharacterEncoding changes the text.
+  let option_name = |a: &Expr| match a {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) | Expr::String(n) if n != "FormatType" => {
+          Some(n.clone())
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let mut positional = args.len();
+  while positional > 1 && option_name(&args[positional - 1]).is_some() {
+    positional -= 1;
+  }
+  let encoding = args[positional..].iter().find_map(|a| match a {
+    Expr::Rule { replacement, .. }
+      if option_name(a).as_deref() == Some("CharacterEncoding") =>
+    {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  });
   // A few heads print differently under ToString than in the bare
   // script-mode echo (`MessageName` is the one that matters); the renderers
   // tell the two apart by this flag.
-  crate::syntax::rendering_for_to_string(|| to_string_ast_inner(args))
+  let result = crate::syntax::rendering_for_to_string(|| {
+    to_string_ast_inner(&args[..positional])
+  })?;
+  let input_form =
+    matches!(args.get(1), Some(Expr::Identifier(f)) if f == "InputForm");
+  Ok(match (&result, encoding) {
+    (Expr::String(text), Some(encoding)) => {
+      Expr::String(encode_to_string_text(text, &encoding, input_form))
+    }
+    _ => result,
+  })
+}
+
+/// Apply ToString's CharacterEncoding to the rendered `text`. Under
+/// InputForm, None, "ASCII" and "PrintableASCII" spell every non-ASCII
+/// character as its `\[Name]` (or `\:xxxx`) escape; "UTF8" spells it as
+/// its UTF-8 bytes, one character each.
+fn encode_to_string_text(
+  text: &str,
+  encoding: &Expr,
+  input_form: bool,
+) -> String {
+  let name = match encoding {
+    Expr::Identifier(n) | Expr::String(n) => n.as_str(),
+    _ => return text.to_string(),
+  };
+  match name {
+    "None" | "ASCII" | "PrintableASCII" if input_form => {
+      crate::syntax::ascii_character_escapes(text).into_owned()
+    }
+    "UTF8" | "UTF-8" => text
+      .bytes()
+      .map(|b| char::from_u32(b as u32).unwrap_or('?'))
+      .collect(),
+    _ => text.to_string(),
+  }
 }
 
 fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {

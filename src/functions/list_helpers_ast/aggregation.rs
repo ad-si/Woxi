@@ -1578,173 +1578,70 @@ fn bin_counts_nd(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(build(&specs, &counts, &mut offset))
 }
 
-/// BinCounts[data, {min, max, dx}] - count data points in equal-width bins
-/// Bins are [min, min+dx), [min+dx, min+2dx), ..., [max-dx, max)
+/// BinCounts[data, spec] — the number of data points in each bin of
+/// [`bin_lists_1d`]; more than one spec counts in several dimensions.
 pub fn bin_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() > 2 {
     return bin_counts_nd(args);
   }
   let Expr::List(data) = &args[0] else {
+    vectmat_message("BinCounts");
     return Ok(unevaluated("BinCounts", args));
   };
-
-  // Extract numeric values from data, skip non-numeric
-  let values: Vec<f64> = data.iter().filter_map(numeric_expr_to_f64).collect();
-
-  let (min_val, max_val, dx) = if args.len() == 1 {
-    // BinCounts[data] - default dx=1, aligned to integer boundaries
-    if values.is_empty() {
-      return Ok(Expr::List(vec![].into()));
-    }
-    let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
-    let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let dx = 1.0;
-    let mut lo = (data_min / dx).floor() * dx;
-    if (data_min - lo).abs() < 1e-12 {
-      lo -= dx;
-    }
-    let mut hi = (data_max / dx).ceil() * dx;
-    if (data_max - hi).abs() < 1e-12 {
-      hi += dx;
-    }
-    (lo, hi, dx)
-  } else if args.len() == 2 {
-    match &args[1] {
-      // BinCounts[data, dx]
-      Expr::Integer(dx_int) => {
-        if values.is_empty() {
-          return Ok(Expr::List(vec![].into()));
-        }
-        let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let dx = *dx_int as f64;
-        let mut lo = (data_min / dx).floor() * dx;
-        if (data_min - lo).abs() < 1e-12 {
-          lo -= dx;
-        }
-        let mut hi = (data_max / dx).ceil() * dx;
-        if (data_max - hi).abs() < 1e-12 {
-          hi += dx;
-        }
-        (lo, hi, dx)
-      }
-      Expr::Real(dx_f) => {
-        if values.is_empty() {
-          return Ok(Expr::List(vec![].into()));
-        }
-        let data_min = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let data_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let dx = *dx_f;
-        let mut lo = (data_min / dx).floor() * dx;
-        if (data_min - lo).abs() < 1e-12 {
-          lo -= dx;
-        }
-        let mut hi = (data_max / dx).ceil() * dx;
-        if (data_max - hi).abs() < 1e-12 {
-          hi += dx;
-        }
-        (lo, hi, dx)
-      }
-      // BinCounts[data, {{e1, e2, ..., en}}] — explicit bin-edge form.
-      // Bins are [e_i, e_{i+1}); the result has length n-1.
-      Expr::List(outer)
-        if outer.len() == 1
-          && matches!(&outer[0], Expr::List(edges) if edges.len() >= 2) =>
-      {
-        let Expr::List(edges) = &outer[0] else {
-          unreachable!()
-        };
-        let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
-        for e in edges {
-          let Some(v) = edge_to_f64(e) else {
-            return Ok(unevaluated("BinCounts", args));
-          };
-          numeric_edges.push(v);
-        }
-        let mut counts = vec![0i128; numeric_edges.len() - 1];
-        for &v in &values {
-          for i in 0..(numeric_edges.len() - 1) {
-            if numeric_edges[i] <= v && v < numeric_edges[i + 1] {
-              counts[i] += 1;
-              break;
-            }
-          }
-        }
-        let counts_exprs: Vec<Expr> =
-          counts.into_iter().map(Expr::Integer).collect();
-        return Ok(Expr::List(counts_exprs.into()));
-      }
-      // BinCounts[data, {min, max, dx}]
-      Expr::List(spec) if spec.len() == 3 => {
-        let Some(min_v) = numeric_expr_to_f64(&spec[0]) else {
-          return Ok(unevaluated("BinCounts", args));
-        };
-        let Some(max_v) = numeric_expr_to_f64(&spec[1]) else {
-          return Ok(unevaluated("BinCounts", args));
-        };
-        let Some(dx) = numeric_expr_to_f64(&spec[2]) else {
-          return Ok(unevaluated("BinCounts", args));
-        };
-        (min_v, max_v, dx)
-      }
-      _ => {
-        return Ok(unevaluated("BinCounts", args));
-      }
-    }
-  } else {
-    return Ok(unevaluated("BinCounts", args));
-  };
-
-  if dx <= 0.0 {
-    bin_step_message("BinCounts", dx);
-    return Ok(unevaluated("BinCounts", args));
-  }
-
-  // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
-  // are produced; a trailing partial range (e.g. {0, 10, 3} leaves [9, 10])
-  // is dropped, and out-of-range values are not capped into the last bin.
-  let num_bins = ((max_val - min_val) / dx + 1e-9).floor().max(0.0) as usize;
-  let mut counts = vec![0i128; num_bins];
-
-  for &v in &values {
-    if v < min_val {
-      continue;
-    }
-    let idx = ((v - min_val) / dx).floor();
-    if idx >= 0.0 && (idx as usize) < num_bins {
-      counts[idx as usize] += 1;
-    }
-  }
-
-  Ok(Expr::List(counts.into_iter().map(Expr::Integer).collect()))
+  Ok(match bin_lists_1d("BinCounts", data, args.get(1)) {
+    Some(bins) => Expr::List(
+      bins
+        .into_iter()
+        .map(|b| Expr::Integer(b.len() as i128))
+        .collect(),
+    ),
+    None => unevaluated("BinCounts", args),
+  })
 }
 
-/// BinLists[data, {min, max, dx}] - group data points into equal-width bins
-/// Returns lists of elements per bin instead of counts
+/// BinLists[data, spec] — the data points of each bin of [`bin_lists_1d`].
 pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(data) = &args[0] else {
-    crate::emit_message(
-      "BinLists::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns.",
-    );
+    vectmat_message("BinLists");
     return Ok(unevaluated("BinLists", args));
   };
+  Ok(match bin_lists_1d("BinLists", data, args.get(1)) {
+    Some(bins) => {
+      Expr::List(bins.into_iter().map(|b| Expr::List(b.into())).collect())
+    }
+    None => unevaluated("BinLists", args),
+  })
+}
 
-  // Extract numeric values paired with original expressions
+fn vectmat_message(head: &str) {
+  crate::emit_message(&format!(
+    "{head}::vectmat: The first argument is expected to be a unit-compatible vector or a matrix with unit-compatible columns."
+  ));
+}
+
+/// Sort the numeric elements of `data` into the bins of `spec`: no spec or a
+/// bare width `dx` gives `dx`-wide bins aligned to multiples of `dx` covering
+/// the data; `{min, max}` unit-width and `{min, max, dx}` `dx`-wide bins from
+/// `min` (only whole bins inside `[min, max]`); `{{e1, …, en}}` the bins
+/// `[e_i, e_(i+1))`. Values outside every bin are dropped. `None` for a spec
+/// that is not one of these or data without a number (after reporting
+/// either).
+fn bin_lists_1d(
+  head: &str,
+  data: &[Expr],
+  spec: Option<&Expr>,
+) -> Option<Vec<Vec<Expr>>> {
   let values: Vec<(f64, &Expr)> = data
     .iter()
     .filter_map(|e| numeric_expr_to_f64(e).map(|v| (v, e)))
     .collect();
-
-  let (min_val, max_val, dx) = if args.len() == 1 {
-    if values.is_empty() {
-      return Ok(Expr::List(vec![].into()));
-    }
+  // Bins of width dx aligned to multiples of dx, covering the data.
+  let covering = |dx: f64| -> Option<(f64, f64, f64)> {
     let data_min = values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
     let data_max = values
       .iter()
       .map(|(v, _)| *v)
       .fold(f64::NEG_INFINITY, f64::max);
-    let dx = 1.0;
     let mut lo = (data_min / dx).floor() * dx;
     if (data_min - lo).abs() < 1e-12 {
       lo -= dx;
@@ -1753,103 +1650,50 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if (data_max - hi).abs() < 1e-12 {
       hi += dx;
     }
-    (lo, hi, dx)
-  } else if args.len() == 2 {
-    match &args[1] {
-      Expr::Integer(dx_int) => {
-        if values.is_empty() {
-          return Ok(Expr::List(vec![].into()));
+    Some((lo, hi, dx))
+  };
+  if values.is_empty() {
+    vectmat_message(head);
+    return None;
+  }
+  let (min_val, max_val, dx) = match spec {
+    None => covering(1.0)?,
+    Some(Expr::Integer(dx)) => covering(*dx as f64)?,
+    Some(Expr::Real(dx)) => covering(*dx)?,
+    Some(Expr::List(outer))
+      if outer.len() == 1
+        && matches!(&outer[0], Expr::List(edges) if edges.len() >= 2) =>
+    {
+      let Expr::List(edges) = &outer[0] else {
+        unreachable!()
+      };
+      let edges: Vec<f64> =
+        edges.iter().map(edge_to_f64).collect::<Option<_>>()?;
+      let mut bins = vec![Vec::new(); edges.len() - 1];
+      for (v, expr) in &values {
+        if let Some(i) =
+          (0..edges.len() - 1).find(|&i| edges[i] <= *v && *v < edges[i + 1])
+        {
+          bins[i].push((*expr).clone());
         }
-        let data_min =
-          values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
-        let data_max = values
-          .iter()
-          .map(|(v, _)| *v)
-          .fold(f64::NEG_INFINITY, f64::max);
-        let dx = *dx_int as f64;
-        let mut lo = (data_min / dx).floor() * dx;
-        if (data_min - lo).abs() < 1e-12 {
-          lo -= dx;
-        }
-        let mut hi = (data_max / dx).ceil() * dx;
-        if (data_max - hi).abs() < 1e-12 {
-          hi += dx;
-        }
-        (lo, hi, dx)
       }
-      Expr::Real(dx_f) => {
-        if values.is_empty() {
-          return Ok(Expr::List(vec![].into()));
-        }
-        let data_min =
-          values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
-        let data_max = values
-          .iter()
-          .map(|(v, _)| *v)
-          .fold(f64::NEG_INFINITY, f64::max);
-        let dx = *dx_f;
-        let mut lo = (data_min / dx).floor() * dx;
-        if (data_min - lo).abs() < 1e-12 {
-          lo -= dx;
-        }
-        let mut hi = (data_max / dx).ceil() * dx;
-        if (data_max - hi).abs() < 1e-12 {
-          hi += dx;
-        }
-        (lo, hi, dx)
-      }
-      // BinLists[data, {{e1, e2, ..., en}}] — explicit bin-edge form.
-      Expr::List(outer)
-        if outer.len() == 1
-          && matches!(&outer[0], Expr::List(edges) if edges.len() >= 2) =>
-      {
-        let Expr::List(edges) = &outer[0] else {
-          unreachable!()
-        };
-        let mut numeric_edges: Vec<f64> = Vec::with_capacity(edges.len());
-        for e in edges {
-          let Some(v) = edge_to_f64(e) else {
-            return Ok(unevaluated("BinLists", args));
-          };
-          numeric_edges.push(v);
-        }
-        let mut bins: Vec<Vec<Expr>> =
-          (0..numeric_edges.len() - 1).map(|_| Vec::new()).collect();
-        for (v, expr) in &values {
-          for i in 0..(numeric_edges.len() - 1) {
-            if numeric_edges[i] <= *v && *v < numeric_edges[i + 1] {
-              bins[i].push((*expr).clone());
-              break;
-            }
-          }
-        }
-        let result_exprs: Vec<Expr> =
-          bins.into_iter().map(|b| Expr::List(b.into())).collect();
-        return Ok(Expr::List(result_exprs.into()));
-      }
-      Expr::List(spec) if spec.len() == 3 => {
-        let Some(min_v) = numeric_expr_to_f64(&spec[0]) else {
-          return Ok(unevaluated("BinLists", args));
-        };
-        let Some(max_v) = numeric_expr_to_f64(&spec[1]) else {
-          return Ok(unevaluated("BinLists", args));
-        };
-        let Some(dx) = numeric_expr_to_f64(&spec[2]) else {
-          return Ok(unevaluated("BinLists", args));
-        };
-        (min_v, max_v, dx)
-      }
-      _ => {
-        return Ok(unevaluated("BinLists", args));
-      }
+      return Some(bins);
     }
-  } else {
-    return Ok(unevaluated("BinLists", args));
+    Some(Expr::List(spec)) if spec.len() == 2 || spec.len() == 3 => {
+      let min_v = numeric_expr_to_f64(&spec[0])?;
+      let max_v = numeric_expr_to_f64(&spec[1])?;
+      let dx = match spec.get(2) {
+        Some(dx) => numeric_expr_to_f64(dx)?,
+        None => 1.0,
+      };
+      (min_v, max_v, dx)
+    }
+    _ => return None,
   };
 
   if dx <= 0.0 {
-    bin_step_message("BinLists", dx);
-    return Ok(unevaluated("BinLists", args));
+    bin_step_message(head, dx);
+    return None;
   }
 
   // Only whole bins [min + i*dx, min + (i+1)*dx) that fit within [min, max]
@@ -1857,7 +1701,6 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is dropped. Values outside any bin are not capped into the last one.
   let num_bins = ((max_val - min_val) / dx + 1e-9).floor().max(0.0) as usize;
   let mut bins: Vec<Vec<Expr>> = vec![Vec::new(); num_bins];
-
   for &(v, expr) in &values {
     if v < min_val {
       continue;
@@ -1867,10 +1710,7 @@ pub fn bin_lists_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       bins[idx as usize].push(expr.clone());
     }
   }
-
-  Ok(Expr::List(
-    bins.into_iter().map(|v| Expr::List(v.into())).collect(),
-  ))
+  Some(bins)
 }
 
 /// Round a positive value to the nearest "nice" number (1, 2, 5, 10, 20, 50, …)

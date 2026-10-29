@@ -212,6 +212,34 @@ mod table_with_list_iterator {
 mod table_do_raw_iterator {
   use super::*;
 
+  // A compound expression is a valid iterator variable, as in Wolfram.
+  #[test]
+  fn compound_iterator_variables() {
+    assert_eq!(interpret("Table[f[1]^2, {f[1], 3}]").unwrap(), "{1, 4, 9}");
+    assert_eq!(
+      interpret(
+        "Table[Subscript[x, 1] + Subscript[x, 2], {Subscript[x, 1], 2}, \
+         {Subscript[x, 2], Subscript[x, 1]}]"
+      )
+      .unwrap(),
+      "{{2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("Sum[Subscript[x, 1], {Subscript[x, 1], 4}]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("Product[Subscript[x, 1], {Subscript[x, 1], 4}]").unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret_with_stdout("Do[Print[Subscript[y, 1]], {Subscript[y, 1], 2}]")
+        .unwrap()
+        .stdout,
+      "1\n2\n"
+    );
+  }
+
   // A non-symbol iterator (a raw object where the iterator variable belongs)
   // emits <func>::itraw and stays unevaluated, rather than raising an error.
   #[test]
@@ -3973,6 +4001,35 @@ mod complement {
 
 mod partition {
   use super::*;
+
+  // Blocks of a matrix may overhang, wrapping cyclically or padding.
+  #[test]
+  fn multi_dimensional_overhang() {
+    assert_eq!(
+      interpret("Partition[{{1, 2}, {3, 4}}, {2, 2}, 1, -1]").unwrap(),
+      "{{{{4, 3}, {2, 1}}, {{3, 4}, {1, 2}}}, {{{2, 1}, {4, 3}}, {{1, 2}, {3, 4}}}}"
+    );
+    assert_eq!(
+      interpret("Partition[{{1}}, {2, 2}, 1, -1]").unwrap(),
+      "{{{{1, 1}, {1, 1}}}}"
+    );
+    assert_eq!(
+      interpret("Partition[{{1, 2, 3}, {4, 5, 6}}, {2, 2}, 1, {1, 1}, x]")
+        .unwrap(),
+      "{{{{1, 2}, {4, 5}}, {{2, 3}, {5, 6}}, {{3, x}, {6, x}}}, \
+       {{{4, 5}, {x, x}}, {{5, 6}, {x, x}}, {{6, x}, {x, x}}}}"
+    );
+  }
+
+  // A one-dimensional offset may be written as the one-element list {d}.
+  #[test]
+  fn offset_as_one_element_list() {
+    assert_eq!(
+      interpret("Partition[{1, 2, 3, 4}, 2, {1}]").unwrap(),
+      "{{1, 2}, {2, 3}, {3, 4}}"
+    );
+    assert_eq!(interpret("Partition[{}, 2, {1}]").unwrap(), "{}");
+  }
 
   #[test]
   fn basic() {
@@ -8917,6 +8974,33 @@ mod split_with_test {
 
 mod first_position {
   use super::*;
+
+  // HoldRest holds only the default: the pattern, predicate and level are
+  // evaluated, and the default only when it is returned.
+  #[test]
+  fn only_the_default_is_held() {
+    assert_eq!(
+      interpret("n = 3; FirstPosition[{1, 2, 3}, n]").unwrap(),
+      "{3}"
+    );
+    assert_eq!(interpret("n = 3; FirstCase[{1, 2, 3}, n]").unwrap(), "3");
+    assert_eq!(
+      interpret(
+        "n = 2; FirstPosition[{{1, 2}, {3, 4}}, n + 1, Missing[], {n}]"
+      )
+      .unwrap(),
+      "{2, 1}"
+    );
+    let r = interpret_with_stdout(
+      "{FirstPosition[{1, 2, 3}, 7, Print[\"d\"]; 0], \
+       FirstCase[{1, 2, 3}, 7, Print[\"y\"]; 0], \
+       SelectFirst[{1, 2}, # > 5 &, Print[\"z\"]; 1], \
+       FirstCase[{1, 2, 3}, 2, Print[\"never\"]; 0]}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{0, 0, 1, 2}");
+    assert_eq!(r.stdout, "d\ny\nz\n");
+  }
 
   #[test]
   fn simple() {
@@ -14481,6 +14565,99 @@ mod array_reshape {
 mod sparse_array_list_ops {
   use super::*;
 
+  // A Listable function of a lone SparseArray maps over its stored values
+  // and its background, keeping the pattern.
+  // Lists of SparseArray blocks flatten like dense arrays.
+  #[test]
+  fn flatten_and_array_flatten_of_sparse_blocks() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {2, 2}]; \
+         Flatten[{{s, s}, {s, s}}, {{1, 3}, {2, 4}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 0, 1}, {2, 0, 2, 0}, {0, 1, 0, 1}, {2, 0, 2, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {2, 2}]; \
+         ArrayFlatten[{{s, s}, {s, s}}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {4, 4}, 0, {1, {{0, 2, 4, 6, 8}, \
+       {{2}, {4}, {1}, {3}, {2}, {4}, {1}, {3}}}, {1, 1, 2, 2, 1, 1, 2, 2}}]"
+    );
+  }
+
+  #[test]
+  fn join_sparse_arrays_at_a_level() {
+    assert_eq!(
+      interpret("a = SparseArray[{{1, 2} -> 1}, {2, 2}]; Join[a, a, 2]")
+        .unwrap(),
+      "SparseArray[Automatic, {2, 4}, 0, {1, {{0, 2, 2}, {{2}, {4}}}, {1, 1}}]"
+    );
+  }
+
+  // A Band takes a vector only as far as it reaches, a matrix as one block
+  // at the band's start, and a list of matrices as a block diagonal.
+  #[test]
+  fn band_with_vectors_and_blocks() {
+    assert_eq!(
+      interpret("Normal[SparseArray[Band[{1, 1}] -> {a, b}, {3, 3}]]").unwrap(),
+      "{{a, 0, 0}, {0, b, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> {{1, 2}, {3, 4}}}, {3, 3}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 0}, {3, 4, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 1}] -> {{{1, 1}, {1, 1}}, {{2, 2}, {2, 2}}}}, {4, 4}]]"
+      )
+      .unwrap(),
+      "{{1, 1, 0, 0}, {1, 1, 0, 0}, {0, 0, 2, 2}, {0, 0, 2, 2}}"
+    );
+    assert_eq!(
+      interpret("ArrayFlatten[SparseArray[{{1, 1, 1, 1} -> 1}, {2, 2, 1, 1}]]")
+        .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{1}}}, {1}}]"
+    );
+  }
+
+  // Part indexes the array a SparseArray stands for, All included, and an
+  // array part is a SparseArray again.
+  #[test]
+  fn part_of_sparse_array() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1, {2, 1} -> 2}, {3, 3}]; \
+         {s[[All, 2]], s[[1 ;; 2]], s[[2, 1]]}"
+      )
+      .unwrap(),
+      "{SparseArray[Automatic, {3}, 0, {1, {{0, 1}, {{1}}}, {1}}], \
+       SparseArray[Automatic, {2, 3}, 0, {1, {{0, 1, 2}, {{2}, {1}}}, {1, 2}}], 2}"
+    );
+  }
+
+  #[test]
+  fn listable_function_of_sparse_array() {
+    assert_eq!(
+      interpret("Conjugate[SparseArray[{{1, 2} -> 1.5 + I}, {2, 2}]]").unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 1}, {{2}}}, {1.5 - 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1. + I}, {2, 2}]; \
+         Normal[DiagonalMatrix[{-1., -1.}] + s + Transpose[Conjugate[s]]]"
+      )
+      .unwrap(),
+      "{{-1., 1. + 1.*I}, {1. - 1.*I, -1.}}"
+    );
+  }
+
   // `{} -> v` names no positions (IntegerTorusMapsAppliedToLetterforms).
   #[test]
   fn empty_position_list() {
@@ -19621,6 +19798,23 @@ mod map_at_specs_and_messages {
 mod pad_left_right_specs_and_messages {
   use super::*;
 
+  // `Automatic` in the length list is the ragged maximum at that level.
+  #[test]
+  fn automatic_level_in_length_list() {
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3}}, {Automatic, 3}]").unwrap(),
+      "{{1, 2, 0}, {3, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("PadLeft[{{1, 2}, {3}}, {Automatic, 3}, x]").unwrap(),
+      "{{x, 1, 2}, {x, x, 3}}"
+    );
+    assert_eq!(
+      interpret("PadRight[{{1, 2}, {3, 4, 5, 6}}, {3, Automatic}]").unwrap(),
+      "{{1, 2, 0, 0}, {3, 4, 5, 6}, {0, 0, 0, 0}}"
+    );
+  }
+
   #[test]
   fn negative_length_pads_opposite_side() {
     // Regression: negative n used to return {}
@@ -20755,6 +20949,19 @@ mod level_specs_and_messages {
 
 mod extract_specs_and_messages {
   use super::*;
+
+  // A plot extracts from its symbolic Graphics form, as Part does.
+  #[test]
+  fn extract_from_graphics() {
+    assert_eq!(
+      interpret("Head[Extract[Plot[x, {x, 0, 1}], 1]]").unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret("Extract[Graphics[{Point[{0, 0}]}], {1, 1}]").unwrap(),
+      "Point[{0, 0}]"
+    );
+  }
 
   #[test]
   fn key_and_string_paths() {
@@ -23886,6 +24093,19 @@ mod atomic_numbers_have_no_parts {
 /// it was.
 mod part_assignment_failures {
   use super::*;
+
+  // An operator form has parts like any call: a rule's right side, a sum's
+  // terms, an equation's sides.
+  #[test]
+  fn assigning_into_operator_forms() {
+    assert_eq!(
+      interpret("tt = {a -> 1, b -> 2}; tt[[2, 2]] = 0; tt").unwrap(),
+      "{a -> 1, b -> 0}"
+    );
+    assert_eq!(interpret("r = x -> y; r[[1]] = z; r").unwrap(), "z -> y");
+    assert_eq!(interpret("e = a + b; e[[2]] = c; e").unwrap(), "a + c");
+    assert_eq!(interpret("q = a == b; q[[1]] = 5; q").unwrap(), "5 == b");
+  }
 
   // A value rather than a variable at the base of a part assignment —
   // `#` filled in by a pure function (Demonstration

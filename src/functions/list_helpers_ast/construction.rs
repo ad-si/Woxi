@@ -2125,14 +2125,70 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
         })
         .min()
         .unwrap_or(0);
-      // `v` supplies one value per band position (in order) when it's a
-      // list of the right length; otherwise every position gets `v` itself
-      // (`Band[{i,j}] -> c` broadcasts the scalar `c` along the band).
-      let per_position_value: Option<&crate::ExprList> =
-        match replacement.as_ref() {
-          Expr::List(vals) if vals.len() == steps_possible => Some(vals),
+      // A matrix value is one block with its corner at the band's start,
+      // and a list of matrices the blocks of a block-diagonal band, each
+      // starting where the previous one ends.
+      let matrix_of = |e: &Expr| -> Option<Vec<Vec<Expr>>> {
+        let Expr::List(rows) = e else { return None };
+        let rows: Vec<Vec<Expr>> = rows
+          .iter()
+          .map(|r| match r {
+            Expr::List(c) if !c.iter().any(|x| matches!(x, Expr::List(_))) => {
+              Some(c.to_vec())
+            }
+            _ => None,
+          })
+          .collect::<Option<_>>()?;
+        (!rows.is_empty() && rows.iter().all(|r| r.len() == rows[0].len()))
+          .then_some(rows)
+      };
+      if dims.len() == 2 {
+        let blocks: Option<Vec<Vec<Vec<Expr>>>> = match replacement.as_ref() {
+          v if matrix_of(v).is_some() => matrix_of(v).map(|m| vec![m]),
+          Expr::List(items) if !items.is_empty() => {
+            items.iter().map(matrix_of).collect()
+          }
           _ => None,
         };
+        if let Some(blocks) = blocks {
+          let (mut r0, mut c0) = (start[0], start[1]);
+          for block in blocks {
+            for (i, row) in block.iter().enumerate() {
+              for (j, v) in row.iter().enumerate() {
+                let (r, c) = (r0 + i, c0 + j);
+                if r <= end[0] && c <= end[1] {
+                  expanded.push(rule_expr(
+                    Expr::List(
+                      vec![Expr::Integer(r as i128), Expr::Integer(c as i128)]
+                        .into(),
+                    ),
+                    v.clone(),
+                  ));
+                }
+              }
+            }
+            r0 += block.len();
+            c0 += block[0].len();
+          }
+          continue;
+        }
+      }
+      // `v` supplies one value per band position (in order) when it's a
+      // vector — only as far as it reaches; otherwise every position gets
+      // `v` itself (`Band[{i,j}] -> c` broadcasts the scalar `c`).
+      let per_position_value: Option<&crate::ExprList> =
+        match replacement.as_ref() {
+          Expr::List(vals)
+            if !vals.iter().any(|v| matches!(v, Expr::List(_))) =>
+          {
+            Some(vals)
+          }
+          _ => None,
+        };
+      let steps_possible = match per_position_value {
+        Some(vals) => steps_possible.min(vals.len()),
+        None => steps_possible,
+      };
       for k in 0..steps_possible {
         let pos: Vec<Expr> = start
           .iter()

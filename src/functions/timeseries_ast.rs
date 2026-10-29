@@ -894,8 +894,7 @@ fn one_realization(proc: &Expr, tspec: &Expr) -> Option<Vec<Expr>> {
   for _ in 0..n_steps {
     let this_step = dt.min(t1 - t);
     let (mean, sd) = step_params(x, this_step)?;
-    let v = sample_normal(mean, sd)?;
-    x = v;
+    x = sample_normal(mean, sd)?;
     t += this_step;
     pairs.push(Expr::List(vec![Expr::Real(t), Expr::Real(x)].into()));
   }

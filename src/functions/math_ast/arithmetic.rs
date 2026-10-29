@@ -15580,7 +15580,7 @@ fn try_bigfloat_power(
 
   let base_prec = match base {
     Expr::BigFloat(_, p) if *p > 0.0 => *p,
-    _ => return None,
+    _ => return exact_base_bigfloat_power(base, exp),
   };
   let exp_val = exponent_f64(exp)?;
   if exp_val == 0.0 {
@@ -15648,6 +15648,70 @@ fn try_bigfloat_power(
     Err(e) => return Some(Err(e)),
   };
   Some(Ok(Expr::BigFloat(result_str, result_prec)))
+}
+
+/// An exact positive number raised to an arbitrary-precision exponent:
+/// `10^0.5`20` is a number whose precision is the exponent's less the digits
+/// `y Log[x]` magnifies its error by, as in Wolfram.
+fn exact_base_bigfloat_power(
+  base: &Expr,
+  exp: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  use astro_float::{Consts, RoundingMode};
+  let Expr::BigFloat(_, exp_prec) = exp else {
+    return None;
+  };
+  // `E^y` is `Exp[y]`, handled on its own.
+  if *exp_prec <= 0.0
+    || matches!(base, Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+    || crate::functions::math_ast::contains_inexact_real(base)
+    || !crate::functions::predicate_ast::is_numeric_q(base)
+  {
+    return None;
+  }
+  let x = try_eval_to_f64(base).filter(|x| *x > 0.0 && *x != 1.0)?;
+  let y = exponent_f64(exp)?;
+  // A rational base is exact; any other numeric base is first numericized
+  // at the exponent's precision, so its own error adds `y` to the factor.
+  let rational = matches!(base, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(base, Expr::FunctionCall { name, .. } if name == "Rational");
+  let magnification = (y * x.ln()).abs() + if rational { 0.0 } else { y.abs() };
+  if magnification == 0.0 || !magnification.is_finite() {
+    return None;
+  }
+  let result_prec = exp_prec - magnification.log10();
+  let rm = RoundingMode::ToEven;
+  let bits = nominal_bits(exp_prec.max(result_prec).ceil() as usize + 10);
+  let mut cc = match Consts::new() {
+    Ok(c) => c,
+    Err(e) => {
+      return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
+    }
+  };
+  let base_digits = if rational {
+    exp_prec.max(result_prec) + 10.0
+  } else {
+    *exp_prec
+  };
+  let base_n =
+    match crate::functions::math_ast::n_eval_arbitrary(base, base_digits) {
+      Ok(b) => b,
+      Err(e) => return Some(Err(e)),
+    };
+  let base_bf = match expr_to_bigfloat(&base_n, bits, rm, &mut cc) {
+    Ok(b) => b,
+    Err(e) => return Some(Err(e)),
+  };
+  let exp_bf = match expr_to_bigfloat(exp, bits, rm, &mut cc) {
+    Ok(e) => e,
+    Err(e) => return Some(Err(e)),
+  };
+  let result = base_bf.pow(&exp_bf, bits, rm, &mut cc);
+  let digits = wl_fraction_digits(&result, result_prec);
+  Some(
+    bigfloat_to_string(&result, Some(digits), rm, &mut cc)
+      .map(|s| Expr::BigFloat(s, result_prec)),
+  )
 }
 
 /// `(-a)^p` for an arbitrary-precision `a > 0` and a real non-integer `p`:

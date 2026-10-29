@@ -3169,6 +3169,38 @@ mod linear_solve {
 mod eigenvectors {
   use super::*;
 
+  // A machine matrix with complex entries: unit vectors whose first
+  // largest component is real, in Eigenvalues' order.
+  #[test]
+  fn complex_machine_matrix() {
+    assert_eq!(
+      interpret(
+        "Round[10^4 Eigenvectors[N[{{1, 2 I, 0}, {I, 1, 3}, {0, 1 - I, 2}}]]]"
+      )
+      .unwrap(),
+      "{{-2652 + 4510*I, 5932 + 1015*I, 6033}, \
+       {7209, 4752 + 3613*I, -3175 - 1522*I}, \
+       {9299, -2340 + 693*I, 233 - 2742*I}}"
+    );
+    assert_eq!(
+      interpret("Round[10^4 Eigenvectors[N[{{1, I}, {I, 1}}/Sqrt[2]]]]")
+        .unwrap(),
+      "{{7071, -7071}, {7071, 7071}}"
+    );
+    // A repeated eigenvalue of a unitary matrix still gets a full basis.
+    assert_eq!(
+      interpret(
+        "w = N[{{1, 1, 1, 1}, {1, -1, 1, -1}, {1, 1, -1, -1}, {1, -1, -1, 1}}/2]; \
+         u = w . DiagonalMatrix[Exp[-I {0, 1, 1, 2}]] . w; \
+         {vals, vecs} = Eigensystem[u]; \
+         {Chop[Table[Norm[u . vecs[[k]] - vals[[k]] vecs[[k]]], {k, 4}]], \
+          MatrixRank[vecs]}"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0}, 4}"
+    );
+  }
+
   // Eigenvalues that are `Root` objects: each vector is the null space of
   // m - λ I with its entries RootReduced, in Wolfram's eigenvalue order.
   #[test]
