@@ -21742,6 +21742,31 @@ mod filling_style {
 mod list_plot_3d {
   use super::*;
 
+  // Data that is no list gets `::arrayerr` (outside the plot's own Quiet)
+  // and the call stays unevaluated; it used to stop the evaluation.
+  #[test]
+  fn non_array_data() {
+    for (code, message) in [
+      (
+        "ListPlot3D[foo]",
+        "ListPlot3D::arrayerr: foo must be a valid array or a list of valid arrays.",
+      ),
+      (
+        "ListDensityPlot[foo]",
+        "ListDensityPlot::arrayerr: foo must be a valid array.",
+      ),
+      (
+        "ListContourPlot[foo]",
+        "ListContourPlot::arrayerr: foo must be a valid array.",
+      ),
+    ] {
+      clear_state();
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code);
+      assert_eq!(r.warnings, vec![message.to_string()]);
+    }
+  }
+
   #[test]
   fn list_plot3d_explicit_coords() {
     clear_state();
@@ -27328,6 +27353,24 @@ mod find_spanning_tree {
 
 mod parametric_plot3d {
   use super::*;
+
+  // A body that is a curve only once the variable is a number — the parts
+  // of a `Piecewise` of points, flattened (Demonstration
+  // WrappingACurveAroundASphere) — is read off at each sample; it used to
+  // stop with "first argument must be {fx, fy, fz}".
+  #[test]
+  fn body_shaped_only_at_numbers() {
+    assert_eq!(
+      interpret(
+        "w[x_] := Piecewise[{{{Sin[x], x}, x > 0.5}, {{x, -1}, x <= 0.5}}]; \
+         p = First[Cases[ParametricPlot3D[With[{temp = w[t]}, \
+         Flatten@{AngleVector[{temp[[1]], t}], temp[[2]] + 1}], {t, 0, 1}], \
+         Line[q_] :> q, Infinity]]; {First[p], Last[p]}"
+      )
+      .unwrap(),
+      "{{0., 0., 0.}, {0.4546487134128409, 0.7080734182735712, 2.}}"
+    );
+  }
 
   // A 1-D plot body is compiled once too; side effects in it still run
   // per sample, through the evaluator leaves.

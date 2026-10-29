@@ -13978,7 +13978,14 @@ fn resolve_parametric_triples_raw(
       let resolved =
         crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
       match unwrap_singleton_list(&resolved) {
-        Expr::List(items) => resolve_items(items),
+        // A symbolic list that is no curve can still be one once the
+        // variables are numbers (a `Piecewise` of points, whose `Part`s and
+        // `Flatten` only make sense for a chosen piece): read the body off
+        // at each sample, as the probe in
+        // `resolve_one_parametric_item_to_curves` decides.
+        Expr::List(items) => resolve_items(items).or_else(|e| {
+          resolve_one_parametric_item_to_curves(other, shadow_vars).ok_or(e)
+        }),
         // The body only yields a point once `u`/`v` are numeric (e.g. a
         // `BSplineFunction` surface `f[u, v]`), so read the components off
         // the evaluated body at each sample with `Part`.

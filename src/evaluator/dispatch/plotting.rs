@@ -15,6 +15,25 @@ fn quiet_plot(
   result
 }
 
+/// Data that is no list at all for an array plot: `head::arrayerr`
+/// (issued outside the plot's own `Quiet`) and the call left unevaluated.
+/// `more` extends the message for heads that also take a list of arrays.
+fn not_an_array(name: &str, args: &[Expr], more: &str) -> Option<Expr> {
+  if matches!(args[0], Expr::List(_)) {
+    return None;
+  }
+  let data = crate::evaluator::evaluate_expr_to_expr(&args[0])
+    .unwrap_or_else(|_| args[0].clone());
+  if matches!(data, Expr::List(_)) {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "{name}::arrayerr: {} must be a valid array{more}.",
+    expr_to_string(&data)
+  ));
+  Some(unevaluated(name, args))
+}
+
 /// A plot range limit that is not a number (`Plot[f, {x, a, 1}]` with `a`
 /// unset) is `head::plln` with the call left unevaluated, as in
 /// wolframscript, not an aborted evaluation.
@@ -372,9 +391,12 @@ pub fn dispatch_plotting(
     "DropShadowing" => {
       Some(crate::functions::graphics::drop_shadowing_ast(args))
     }
-    "ListPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::plot3d::list_plot3d_ast(args)
-    })),
+    "ListPlot3D" if !args.is_empty() => Some(
+      not_an_array(name, args, " or a list of valid arrays").map_or_else(
+        || quiet_plot(|| crate::functions::plot3d::list_plot3d_ast(args)),
+        Ok,
+      ),
+    ),
     "ListPointPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_point_plot3d_ast(args)
     })),
@@ -708,18 +730,32 @@ pub fn dispatch_plotting(
     "VectorDensityPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::vector_density_plot_ast(args)
     })),
-    "ListDensityPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::field_plot::list_density_plot_ast(args)
-    })),
+    "ListDensityPlot" if !args.is_empty() => {
+      Some(not_an_array(name, args, "").map_or_else(
+        || {
+          quiet_plot(|| {
+            crate::functions::field_plot::list_density_plot_ast(args)
+          })
+        },
+        Ok,
+      ))
+    }
     "SmoothDensityHistogram" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::smooth_density_histogram_ast(args)
     })),
     "ReliefPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::relief_plot_ast(args)
     })),
-    "ListContourPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::field_plot::list_contour_plot_ast(args)
-    })),
+    "ListContourPlot" if !args.is_empty() => {
+      Some(not_an_array(name, args, "").map_or_else(
+        || {
+          quiet_plot(|| {
+            crate::functions::field_plot::list_contour_plot_ast(args)
+          })
+        },
+        Ok,
+      ))
+    }
     "ArrayPlot" if !args.is_empty() => Some(
       match crate::functions::field_plot::array_plot_argument_error(args) {
         Some(unevaluated) => Ok(unevaluated),

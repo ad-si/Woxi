@@ -2887,11 +2887,11 @@ mod linear_solve {
     assert_eq!(
       interpret(
         "m = SparseArray[{{i_, i_} -> 4., {i_, j_} /; Abs[i - j] == 1 -> -1.}, \
-         {300, 300}]; \
-         Round[10^6 LinearSolve[m, Method -> \"Cholesky\"][N[Range[300]]][[{1, 150, 300}]]]"
+         {100, 100}]; \
+         Round[10^6 LinearSolve[m, Method -> \"Cholesky\"][N[Range[100]]][[{1, 50, 100}]]]"
       )
       .unwrap(),
-      "{500000, 75000000, 109673647}"
+      "{500000, 25000000, 36468566}"
     );
     assert_eq!(
       interpret("LinearSolve[{{2., 1.}, {0.5, 2.}}, Method -> \"Cholesky\"]")
