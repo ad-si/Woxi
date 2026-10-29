@@ -11911,6 +11911,20 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_next_permutation() {
+    // Lexicographic successor in canonical order; the last one wraps.
+    assert_eq!(
+      interpret(
+        "{Combinatorica`NextPermutation[{1, 2, 3}], Combinatorica`NextPermutation[{1, 3, 2}], \
+         Combinatorica`NextPermutation[{3, 2, 1}], Combinatorica`NextPermutation[{2, 1, 1}], \
+         Combinatorica`NextPermutation[{b, a, c}], Combinatorica`NextPermutation[{}]}"
+      )
+      .unwrap(),
+      "{{1, 3, 2}, {2, 1, 3}, {1, 2, 3}, {1, 1, 2}, {b, c, a}, {}}"
+    );
+  }
+
+  #[test]
   fn combinatorica_derangements_count_matches_subfactorial() {
     // A derangement is a permutation with no fixed point; Subfactorial[n]
     // (already implemented) counts exactly how many there are, so the two

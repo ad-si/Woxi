@@ -3125,6 +3125,9 @@ pub fn dispatch_list_operations(
     "Combinatorica`Partitions" if args.len() == 1 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
+    "Combinatorica`NextPermutation" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_next_permutation_ast(args));
+    }
     "Combinatorica`Permutations" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_permutations_ast(args));
     }

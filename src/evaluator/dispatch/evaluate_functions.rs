@@ -1235,6 +1235,9 @@ fn evaluate_function_call_ast_inner(
     "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active() => "Combinatorica`Derangements",
+    "NextPermutation" if combinatorica_active() => {
+      "Combinatorica`NextPermutation"
+    }
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
     "StableMarriage" if combinatorica_active() => {
       "Combinatorica`StableMarriage"
@@ -3102,6 +3105,35 @@ fn evaluate_function_call_ast_inner(
           }
         }
         return Ok(rebuild(result));
+      }
+      // Permute[expr, group] — one permuted expression per group element,
+      // in GroupElements order, each reading position i from position g(i).
+      if let Expr::FunctionCall { name: gname, .. } = &args[1]
+        && gname.ends_with("Group")
+        && let Ok(Expr::List(ref elements)) =
+          evaluate_function_call_ast("GroupElements", &[args[1].clone()])
+      {
+        let n = Expr::Integer(list.len() as i128);
+        let mut out = Vec::with_capacity(elements.len());
+        for g in elements {
+          let Ok(Expr::List(ref images)) = evaluate_function_call_ast(
+            "PermutationList",
+            &[g.clone(), n.clone()],
+          ) else {
+            return Ok(unevaluated(name, args));
+          };
+          let mut permuted = Vec::with_capacity(list.len());
+          for i in images {
+            match expr_to_i128(i) {
+              Some(k) if k >= 1 && (k as usize) <= list.len() => {
+                permuted.push(list[k as usize - 1].clone());
+              }
+              _ => return Ok(unevaluated(name, args)),
+            }
+          }
+          out.push(rebuild(permuted));
+        }
+        return Ok(Expr::List(out.into()));
       }
       // Permute[expr, Cycles[{...}]] — cycle notation
       if let Expr::FunctionCall {
