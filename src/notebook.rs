@@ -1458,17 +1458,6 @@ fn piecewise_from_grid_box(grid: &str) -> Option<String> {
   })
 }
 
-/// `Binomial[n, k]` from the `GridBox[{{n}, {k}}]` a stacked binomial
-/// coefficient is typeset as; `None` for any other grid shape.
-fn binomial_from_grid_box(grid: &str) -> Option<String> {
-  let (top, bottom) = stacked_pair_of_grid_box(grid)?;
-  Some(format!(
-    "Binomial[{}, {}]",
-    extract_cell_content(&top),
-    extract_cell_content(&bottom)
-  ))
-}
-
 /// The two entries of a two-row, one-column `GridBox[{{top}, {bottom}}]`;
 /// `None` for any other grid shape.
 fn stacked_pair_of_grid_box(grid: &str) -> Option<(String, String)> {
@@ -2004,18 +1993,6 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
     {
       push_juxtaposed(&mut result, &piecewise);
       i += 2;
-      continue;
-    }
-    // `( GridBox[{{n}, {k}}] )` — a two-row, one-column grid in bare
-    // parentheses (no invisible matrix markers) is the stacked binomial
-    // coefficient typeset form of `Binomial[n, k]`.
-    if i + 2 < parts.len()
-      && is_bare_char(part, '(')
-      && is_bare_char(parts[i + 2].trim(), ')')
-      && let Some(binomial) = binomial_from_grid_box(parts[i + 1].trim())
-    {
-      push_juxtaposed(&mut result, &binomial);
-      i += 3;
       continue;
     }
     // `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
@@ -6538,23 +6515,17 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "2Abs[x]");
   }
 
-  /// A two-row, one-column `GridBox` in bare parentheses is the stacked
-  /// binomial coefficient — `Binomial[n, k]`, not the column-vector list
-  /// `{{n}, {k}}` it used to come back as.
+  /// A two-row, one-column `GridBox` in bare parentheses reads back as the
+  /// column matrix `{{n}, {k}}`, as `ToExpression` gives it — not as
+  /// `Binomial[n, k]`, which would break code that builds a column vector
+  /// this way (`g = (GridBox[{{a}, {b}}]); LinearSolve[m, g]`).
   #[test]
-  fn test_stacked_grid_in_parens_becomes_binomial() {
-    let s = r#"BoxData[RowBox[{"(", GridBox[{{"n"}, {RowBox[{"\[LeftFloor]", FractionBox["n", "2"], "\[RightFloor]"}]}}], ")"}]]"#;
-    assert!(
-      extract_cell_content(s).starts_with("Binomial[n, "),
-      "{}",
-      extract_cell_content(s)
-    );
+  fn test_stacked_grid_in_parens_is_column_matrix() {
     let s = r#"BoxData[RowBox[{"(", GridBox[{{"a"}, {"b"}}], ")"}]]"#;
-    assert_eq!(extract_cell_content(s), "Binomial[a, b]");
-    // Juxtaposed with the rest of a row, like any other factor.
+    assert_eq!(extract_cell_content(s), "({{a}, {b}})");
     let s =
       r#"BoxData[RowBox[{"2", RowBox[{"(", GridBox[{{"a"}, {"b"}}], ")"}]}]]"#;
-    assert_eq!(extract_cell_content(s), "2Binomial[a, b]");
+    assert_eq!(extract_cell_content(s), "2({{a}, {b}})");
   }
 
   /// A symbol immediately followed by a parenthesised, comma-separated
