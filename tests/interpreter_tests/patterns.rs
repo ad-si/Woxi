@@ -4314,6 +4314,22 @@ mod optional_explicit_form {
 mod pattern_sequence {
   use super::*;
 
+  // In a definition's list argument a PatternSequence (plain or tested)
+  // spans its elements.
+  #[test]
+  fn pattern_sequence_in_definition_list_argument() {
+    assert_eq!(
+      interpret(
+        "tpSeq[{PatternSequence[u_, v_]?(VectorQ[#, NumericQ] &)}] := {u, v}; \
+         tpSeq[a_?(VectorQ[#, NumericQ] &)] := axis[a]; \
+         gSeq[{PatternSequence[a_, b_]}] := a + b; \
+         {tpSeq[{{1, 0, 0}, {0, 1, 0}}], tpSeq[{1, 2, 3}], tpSeq[{x, y}], gSeq[{1, 2}]}"
+      )
+      .unwrap(),
+      "{{{1, 0, 0}, {0, 1, 0}}, axis[{1, 2, 3}], tpSeq[{x, y}], 3}"
+    );
+  }
+
   // A test on a PatternSequence applies to each element it matches.
   #[test]
   fn tested_pattern_sequence() {
