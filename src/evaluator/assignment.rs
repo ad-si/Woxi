@@ -6040,11 +6040,27 @@ pub fn tag_set_delayed_ast(
     // pattern itself and binds its variables.
     let is_wrapped_pattern = matches!(arg, Expr::FunctionCall { name, .. }
       if crate::evaluator::pattern_matching::is_pattern_construct_head(name));
+    // The argument is taken apart by position, which only fits plain `x_`
+    // arguments: a sequence (`Move[l_, args___]`), a head (`x_Integer`), a
+    // test or a literal is matched by the structural path below.
+    let destructurable = |inner: &[Expr]| {
+      inner.iter().all(|a| {
+        let plain_form = match a {
+          Expr::Pattern { .. } => true,
+          Expr::Identifier(name) => name.contains('_'),
+          Expr::FunctionCall { name, .. } => name == "Pattern",
+          _ => false,
+        };
+        plain_form
+          && matches!(extract_pattern_info(a), (ref n, None, 1) if !n.is_empty())
+      })
+    };
     if let Expr::FunctionCall {
       name: arg_func_name,
       args: inner_args,
     } = arg
       && !is_wrapped_pattern
+      && destructurable(inner_args)
     {
       let param_name = format!("_up{i}");
       heads.push(Some(arg_func_name.clone()));

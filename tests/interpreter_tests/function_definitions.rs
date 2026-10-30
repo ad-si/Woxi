@@ -6727,3 +6727,32 @@ mod scoping_capture_avoidance {
     );
   }
 }
+
+mod upvalue_argument_patterns {
+  use super::*;
+
+  #[test]
+  fn a_sequence_pattern_matches_no_arguments() {
+    // `args___` was counted as one argument: `0.5 Move[1]` stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "Move /: l_ Move[l1_, args___] := Move[l l1, args]; \
+         {0.5 Move[1], 0.5 Move[1, 2], x Move[3]}"
+      )
+      .unwrap(),
+      "{Move[0.5], Move[0.5, 2], Move[3*x]}"
+    );
+  }
+
+  #[test]
+  fn literal_and_headed_arguments_are_checked() {
+    assert_eq!(
+      interpret("g /: f[g[1, x_]] := {x}; {f[g[1, 2]], f[g[3, 2]]}").unwrap(),
+      "{{2}, f[g[3, 2]]}"
+    );
+    assert_eq!(
+      interpret("h /: f[h[x_Integer]] := {x}; {f[h[1]], f[h[a]]}").unwrap(),
+      "{{1}, f[h[a]]}"
+    );
+  }
+}
