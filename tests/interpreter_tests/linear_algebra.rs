@@ -12303,3 +12303,48 @@ mod complex_eigen_order {
     );
   }
 }
+
+mod coordinate_transform_data {
+  use super::*;
+
+  #[test]
+  fn mapping_functions() {
+    assert_eq!(
+      interpret(
+        "ToString[CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\"], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Cos[#1[[2]]]*#1[[1]], Sin[#1[[2]]]*#1[[1]]} & "
+    );
+    assert_eq!(
+      interpret(
+        "ToString[CoordinateTransformData[\"Cartesian\" -> \"Polar\", \"Mapping\"], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Sqrt[#1[[1]]^2 + #1[[2]]^2], ArcTan[#1[[1]], #1[[2]]]} & "
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\"][{2, Pi/3}]"
+      )
+      .unwrap(),
+      "{1, Sqrt[3]}"
+    );
+  }
+
+  #[test]
+  fn at_a_point() {
+    assert_eq!(
+      interpret(
+        "{CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\", {r, t}], \
+         CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"MappingJacobian\", {r, t}], \
+         CoordinateTransformData[\"Spherical\" -> \"Cartesian\", \
+         \"MappingJacobianDeterminant\", {r, t, p}]}"
+      )
+      .unwrap(),
+      "{{r*Cos[t], r*Sin[t]}, {{Cos[t], -(r*Sin[t])}, {Sin[t], r*Cos[t]}}, r^2*Sin[t]}"
+    );
+  }
+}

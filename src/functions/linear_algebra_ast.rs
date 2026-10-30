@@ -14942,6 +14942,120 @@ pub fn coordinate_transform_ast(
   Ok(Expr::List(evaluated.into()))
 }
 
+/// CoordinateTransformData[src -> dst, property] and
+/// CoordinateTransformData[src -> dst, property, pt] for the coordinate
+/// systems of `CoordinateTransform`: "Mapping" (the transform itself),
+/// "MappingJacobian" and "MappingJacobianDeterminant". Without a point the
+/// property is a pure function of the coordinate list.
+pub fn coordinate_transform_data_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("CoordinateTransformData", args));
+  if args.len() != 2 && args.len() != 3 {
+    return unevaluated();
+  }
+  let (
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+    Expr::String(property),
+  ) = (&args[0], &args[1])
+  else {
+    return unevaluated();
+  };
+  let dimension = |system: &Expr| match system {
+    Expr::String(s) if s == "Polar" => Some(2),
+    Expr::String(s) if s == "Spherical" || s == "Cylindrical" => Some(3),
+    _ => None,
+  };
+  let Some(n) = dimension(pattern).or_else(|| dimension(replacement)) else {
+    return unevaluated();
+  };
+  // The coordinates the property is computed in: fresh symbols, bound to
+  // the given point or to the slots of a pure function afterwards.
+  let symbols: Vec<Expr> = (1..=n)
+    .map(|i| Expr::Identifier(format!("CoordinateTransformData`x$${i}")))
+    .collect();
+  let point = Expr::List(symbols.clone().into());
+  let mapping = coordinate_transform_ast(&[args[0].clone(), point.clone()])?;
+  if !matches!(mapping, Expr::List(_)) {
+    return unevaluated();
+  }
+  let jacobian = || {
+    evaluate_expr_to_expr(&call(
+      "D",
+      vec![mapping.clone(), Expr::List(vec![point.clone()].into())],
+    ))
+  };
+  let value = match property.as_str() {
+    "Mapping" => mapping.clone(),
+    "MappingJacobian" => jacobian()?,
+    "MappingJacobianDeterminant" => evaluate_expr_to_expr(&call(
+      "Simplify",
+      vec![call("Det", vec![jacobian()?])],
+    ))?,
+    _ => return unevaluated(),
+  };
+  let bind = |values: &[Expr]| -> Result<Expr, InterpreterError> {
+    let mut bound = value.clone();
+    for (sym, v) in symbols.iter().zip(values) {
+      bound = crate::functions::polynomial_ast::solve::substitute_expr(
+        &bound, sym, v,
+      );
+    }
+    evaluate_expr_to_expr(&bound)
+  };
+  match args.get(2) {
+    Some(Expr::List(pt)) if pt.len() == n => bind(pt),
+    Some(_) => unevaluated(),
+    None => {
+      let slots: Vec<Expr> = (1..=n)
+        .map(|i| Expr::Part {
+          expr: Box::new(Expr::Slot(1)),
+          index: Box::new(Expr::Integer(i as i128)),
+        })
+        .collect();
+      // wolframscript's stored functions keep each product's coordinate
+      // factors last: `{Cos[#1[[2]]]*#1[[1]], Sin[#1[[2]]]*#1[[1]]} &`.
+      fn coordinates_last(e: &Expr) -> Expr {
+        let is_coordinate = |f: &Expr| matches!(f, Expr::Part { expr, .. } if matches!(expr.as_ref(), Expr::Slot(1)));
+        match e {
+          Expr::FunctionCall { name, args } if name == "Times" => {
+            let mut factors: Vec<Expr> =
+              args.iter().map(coordinates_last).collect();
+            factors.sort_by_key(is_coordinate);
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: factors.into(),
+            }
+          }
+          Expr::FunctionCall { name, args } => Expr::FunctionCall {
+            name: name.clone(),
+            args: args.iter().map(coordinates_last).collect(),
+          },
+          Expr::List(items) => {
+            Expr::List(items.iter().map(coordinates_last).collect())
+          }
+          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+            op: *op,
+            left: Box::new(coordinates_last(left)),
+            right: Box::new(coordinates_last(right)),
+          },
+          Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+            op: *op,
+            operand: Box::new(coordinates_last(operand)),
+          },
+          _ => e.clone(),
+        }
+      }
+      Ok(Expr::Function {
+        body: Box::new(coordinates_last(&bind(&slots)?)),
+      })
+    }
+  }
+}
+
 /// HermiteDecomposition[m] — {u, h} with u unimodular, u.m == h, and h in
 /// row Hermite normal form (positive pivots, entries above each pivot
 /// reduced into [0, pivot)). Integer matrices only; anything else stays
