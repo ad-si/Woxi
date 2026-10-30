@@ -1548,6 +1548,22 @@ modified Gram–Schmidt or Householder QR in plain `f64`; wolframscript's
 LAPACK-backed routines sum in another order, so a few coordinates differ in
 the last place. Signs and zero vectors match.
 
+### `TraditionalForm` orders the terms of a sum its own way
+
+```sh
+wolframscript -code 'ToBoxes[#, TraditionalForm] & /@ {1 + x + x^2, 3 Cos[x] + Sin[x], -x + y, Pi + x, a + b + c, x + y^2}'
+# x^2 + x + 1, sin(x) + 3 cos(x), y - x, x + π, a + b + c, x + y^2
+woxi eval 'ToBoxes[#, TraditionalForm] & /@ {1 + x + x^2, 3 Cos[x] + Sin[x], -x + y, Pi + x, a + b + c, x + y^2}'
+# keeps the StandardForm order: 1 + x + x^2, 3 cos(x) + sin(x), -x + y, π + x, …
+```
+
+wolframscript puts a univariate polynomial in descending powers, numeric
+constants last and a positive term first, yet leaves `a + b + c` and
+`x + y^2` alone and puts `sin` before `cos`; no single rule fits all of
+these. It matters wherever a TraditionalForm string is used as a key (a
+control value saved as `ToString[f, TraditionalForm]`, as in the Newton's
+Method Demonstration).
+
 ### `CirclePoints[n.]` differs in last digits
 
 ```sh
