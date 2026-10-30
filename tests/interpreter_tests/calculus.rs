@@ -9146,6 +9146,22 @@ mod ndsolve {
     );
   }
 
+  // A closed-form eliminated unknown next to a numerically eliminated one
+  // keeps its values on the whole grid when its solution reads no highest
+  // derivative (the solve for those is skipped at the grid points).
+  #[test]
+  fn eliminated_and_implicit_unknowns_share_the_grid() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{x'[t] == -x[t] + a[t], a[t] == 2 x[t], \
+         y[t]^3 + y[t] == x[t], x[0] == 1}, {x, a, y}, {t, 0, 1}]]; \
+         Round[10^4 {x[1.], a[1.], y[1.], y[0.5]} /. sol]"
+      )
+      .unwrap(),
+      "{27183, 54366, 11595, 9057}"
+    );
+  }
+
   // A complex-valued system is solved as the real system of its parts
   // (HarmonicElectricFieldAppliedToAParticleInAnInfiniteSquareWell).
   #[test]
@@ -24479,6 +24495,23 @@ mod dsolve_single_variable_pde {
       )
       .unwrap(),
       "Function[{x, y}, -1/2*(x^2*y) + C[1][y]]"
+    );
+  }
+}
+
+mod ndsolve_initial_value_from_solution_list {
+  use super::*;
+
+  // `v[0] == (v /. sol)` with `sol` a list of rule lists yields `v[0] == {x}`;
+  // the one-element list must still act as the initial value.
+  #[test]
+  fn singleton_list_initial_values() {
+    assert_eq!(
+      interpret(
+        "sol = {{v -> 2., h -> 3.}}; s = NDSolve[{v'[t] == -v[t], h'[t] == 0, v[0] == (v /. sol), h[0] == (h /. sol)}, {v[t], h[t]}, {t, 0, 1}]; Round[(h[t] /. s[[1]] /. t -> 1), 0.01]"
+      )
+      .unwrap(),
+      "3."
     );
   }
 }

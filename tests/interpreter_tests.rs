@@ -1282,6 +1282,30 @@ mod interpreter_tests {
     assert!(r.result.contains("readout"), "Epilog text was dropped");
   }
 
+  /// A `Transparent` entry of `PlotStyle` hides its curve, and a
+  /// `Transparent`-styled epilog label is drawn with zero fill opacity —
+  /// the placeholder idiom `If[flag, curve, Transparent]` relies on both.
+  #[test]
+  fn test_transparent_plot_style_and_epilog_text_are_invisible() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[Plot[{x, 2 x}, {x, 0, 1}, \
+       PlotStyle -> {Transparent, Blue}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(r.result.matches("<polyline").count(), 1);
+    assert!(r.result.contains("#0000FF"));
+    let r = interpret_with_stdout(
+      "ExportString[Plot[x, {x, 0, 1}, Epilog -> \
+       {Inset[Style[\"w\", Transparent, 12], {0.5, 0.5}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      r.result.contains("fill-opacity=\"0.000\">w<"),
+      "Transparent epilog text must not draw opaque"
+    );
+  }
+
   /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
   /// *computes* a picture) shows that picture, not the symbolic call.
   #[test]
