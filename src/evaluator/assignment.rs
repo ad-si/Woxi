@@ -4742,18 +4742,51 @@ pub fn set_delayed_ast(
       // `SetDelayed`, unlike `Set`, which returns its right-hand side.
       return Ok(fail_expr());
     }
-    // If a `/; cond` clause was stripped from the LHS (or RHS), wrap the
-    // body in `Condition[body, cond]` so the lookup can re-check the
-    // guard at access time and skip the rule when it fails (matching
-    // Wolfram's `a /; b > 0 := 3` semantics).
-    let stored_body = match body_condition {
-      Some(cond) => call("Condition", vec![body.clone(), cond.clone()]),
-      None => body.clone(),
+    // A `/; cond` clause (from the LHS or the RHS) makes a conditional own
+    // value, `Condition[body, cond]`, re-checked at every access. A symbol
+    // keeps all of them, in the order they were given (one with the same
+    // condition is replaced), ahead of its unconditional value:
+    // `x := {}; x := {1} /; c == 1; x := {2} /; c == 2` tries the two
+    // guards and falls back to `{}`. See `conditional_own_values`.
+    let existing = ENV.with(|e| match e.borrow().get(var_name) {
+      Some(StoredValue::ExprVal(v)) => Some(v.clone()),
+      _ => None,
+    });
+    let (mut rules, mut fallback) = match existing.as_ref() {
+      Some(v) => match conditional_own_values(v) {
+        Some((rules, fallback)) => (rules, fallback),
+        None if is_condition_call(v) => (vec![v.clone()], None),
+        None => (Vec::new(), Some(v.clone())),
+      },
+      None => (Vec::new(), None),
+    };
+    match body_condition {
+      Some(cond) => {
+        let rule = call("Condition", vec![body.clone(), cond.clone()]);
+        let key = expr_to_string(cond);
+        match rules.iter_mut().find(|r| {
+          matches!(r, Expr::FunctionCall { args, .. }
+            if expr_to_string(&args[1]) == key)
+        }) {
+          Some(slot) => *slot = rule,
+          None => rules.push(rule),
+        }
+      }
+      None => fallback = Some(body.clone()),
+    }
+    let stored = if rules.is_empty() {
+      fallback.unwrap_or_else(|| body.clone())
+    } else if rules.len() == 1 && fallback.is_none() {
+      rules.remove(0)
+    } else {
+      let mut args = vec![Expr::List(rules.into())];
+      args.extend(fallback);
+      call(CONDITIONAL_OWN_VALUES, args)
     };
     // Store the unevaluated body — it will be re-evaluated each time the symbol is accessed
     ENV.with(|e| {
       e.borrow_mut()
-        .insert(var_name.clone(), StoredValue::ExprVal(stored_body))
+        .insert(var_name.clone(), StoredValue::ExprVal(stored))
     });
     return Ok(null_expr());
   }
@@ -4800,6 +4833,35 @@ pub fn set_delayed_ast(
 
   // Fallback: return symbolic form
   Ok(call("SetDelayed", vec![lhs.clone(), body.clone()]))
+}
+
+/// The head a symbol's own value is stored under when it has more than one
+/// rule: `Internal`ConditionalOwnValues[{Condition[b1, c1], …}, fallback]`,
+/// the conditional rules in the order they are tried and the optional
+/// unconditional value.
+pub(crate) const CONDITIONAL_OWN_VALUES: &str = "Internal`ConditionalOwnValues";
+
+/// The conditional rules and the fallback of a stored own value written
+/// with `CONDITIONAL_OWN_VALUES`.
+pub(crate) fn conditional_own_values(
+  stored: &Expr,
+) -> Option<(Vec<Expr>, Option<Expr>)> {
+  match stored {
+    Expr::FunctionCall { name, args }
+      if name == CONDITIONAL_OWN_VALUES && !args.is_empty() =>
+    {
+      let Expr::List(rules) = &args[0] else {
+        return None;
+      };
+      Some((rules.to_vec(), args.get(1).cloned()))
+    }
+    _ => None,
+  }
+}
+
+fn is_condition_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if name == "Condition" && args.len() == 2)
 }
 
 /// Add the SubValue rule `lhs :> body` (`f[a][b] := …`) to `rules`.

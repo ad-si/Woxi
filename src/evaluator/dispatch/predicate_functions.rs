@@ -948,13 +948,21 @@ pub fn dispatch_predicate_functions(
       if let Expr::Identifier(name) = &args[0] {
         let value_expr = crate::lookup_env_as_expr(name);
         if let Some(v) = value_expr {
-          return Some(Ok(Expr::List(
-            vec![rule_delayed_expr(
+          let rule = |body: Expr| {
+            rule_delayed_expr(
               call1("HoldPattern", Expr::Identifier(name.clone())),
-              v,
-            )]
-            .into(),
-          )));
+              body,
+            )
+          };
+          // Conditional own values come first, the unconditional one last.
+          let values =
+            match crate::evaluator::assignment::conditional_own_values(&v) {
+              Some((rules, fallback)) => {
+                rules.into_iter().chain(fallback).collect()
+              }
+              None => vec![v],
+            };
+          return Some(Ok(Expr::List(values.into_iter().map(rule).collect())));
         }
       }
       return Some(Ok(Expr::List(vec![].into())));

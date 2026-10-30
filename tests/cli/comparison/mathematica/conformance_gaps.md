@@ -6347,3 +6347,11 @@ The values are equal, but the elimination leaves a different quotient, so
 wolframscript's interior-point solution carries solver noise
 (`{1.0000000003499416, 1.0000000000555387}` for an optimum of `{1, 1}`);
 Woxi solves exactly and converts, giving `{1., 1.}`.
+
+## A conditional `:=` after a `=` value keeps the `=` value
+
+wolframscript drops a symbol's `Set` value when a conditional own value is
+added (`w = 5; w := {1} /; c == 1` leaves only the conditional rule, so `w`
+stays `w` when the test fails), but keeps an unconditional `:=` value as the
+fallback. Woxi does not record whether a symbol's value came from `=` or
+`:=`, so it keeps either one as the fallback (`w` evaluates to `5`).
