@@ -6689,35 +6689,60 @@ pub fn order_monomial_vs_sum(
 }
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
-  // `#n` orders as the `Slot[n]` call it is (`a*#1`, `f[x]*#1`), so slots
-  // take part in the sort in that form and are put back afterwards.
-  let has_slot = symbolic_args
-    .iter()
-    .any(|e| matches!(e, Expr::Slot(_) | Expr::SlotSequence(_)));
-  if has_slot {
-    for e in symbolic_args.iter_mut() {
-      if let Some(c) =
-        crate::functions::list_helpers_ast::sorting::slot_as_call(e)
-      {
-        *e = c;
+  // `#n` and `a[[i]]` order as the `Slot[n]` / `Part[a, i]` calls they are
+  // (`a*#1`, `f[x]*#1`, `b*a[[1]]`), so they take part in the sort in that
+  // form and are put back afterwards.
+  fn has_special(e: &Expr) -> bool {
+    match e {
+      Expr::Slot(_) | Expr::SlotSequence(_) | Expr::Part { .. } => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(has_special),
+      Expr::BinaryOp { left, right, .. } => {
+        has_special(left) || has_special(right)
       }
+      Expr::UnaryOp { operand, .. } => has_special(operand),
+      _ => false,
     }
   }
-  sort_symbolic_factors_inner(symbolic_args);
-  if has_slot {
-    for e in symbolic_args.iter_mut() {
-      if let Expr::FunctionCall { name, args } = e
-        && args.len() == 1
-        && let Expr::Integer(n) = &args[0]
-        && *n >= 0
-      {
-        match name.as_str() {
-          "Slot" => *e = Expr::Slot(*n as usize),
-          "SlotSequence" => *e = Expr::SlotSequence(*n as usize),
-          _ => {}
-        }
-      }
+  fn as_calls(e: &Expr) -> Expr {
+    if let Some(c) =
+      crate::functions::list_helpers_ast::sorting::slot_as_call(e)
+    {
+      return match &c {
+        Expr::FunctionCall { name, args } => Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(as_calls).collect(),
+        },
+        _ => c,
+      };
     }
+    match e {
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(as_calls).collect(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(as_calls(left)),
+        right: Box::new(as_calls(right)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(as_calls(operand)),
+      },
+      _ => e.clone(),
+    }
+  }
+  if !symbolic_args.iter().any(has_special) {
+    sort_symbolic_factors_inner(symbolic_args);
+    return;
+  }
+  let mut keyed: Vec<(Expr, Expr)> = symbolic_args
+    .iter()
+    .map(|e| (as_calls(e), e.clone()))
+    .collect();
+  keyed.sort_by(|a, b| times_factor_order(&a.0, &b.0));
+  for (slot, (_, original)) in symbolic_args.iter_mut().zip(keyed) {
+    *slot = original;
   }
 }
 

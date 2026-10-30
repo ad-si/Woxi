@@ -14392,3 +14392,23 @@ mod machine_real_ordering_tolerance {
     );
   }
 }
+
+mod part_expressions_order_as_calls {
+  use super::*;
+
+  // `a[[i]]` orders as the call `Part[a, i]`: after symbols and calls
+  // with an earlier head.
+  #[test]
+  fn sort_order_and_times() {
+    assert_eq!(
+      interpret(
+        "Quiet[{Sort[{a[[1]], b, z, f[a], Cos[a]}], Order[a[[1]], f[a]], \
+         z a[[1]], b Sqrt[a[[1]]], a[[1]]^2 b, a[[1]] Cos[a[[2]]], \
+         a[[2]] f[x], b + a[[1]]}]"
+      )
+      .unwrap(),
+      "{{b, z, Cos[a], f[a], a[[1]]}, -1, z*a[[1]], b*Sqrt[a[[1]]], \
+       b*a[[1]]^2, Cos[a[[2]]]*a[[1]], f[x]*a[[2]], b + a[[1]]}"
+    );
+  }
+}

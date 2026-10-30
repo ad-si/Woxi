@@ -198,6 +198,18 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
     Expr::SlotSequence(n) => {
       Some(call("SlotSequence", vec![Expr::Integer(*n as i128)]))
     }
+    // `a[[i, j]]` orders as the call `Part[a, i, j]` (after `f[a]`).
+    Expr::Part { .. } => {
+      let mut indices = Vec::new();
+      let mut inner = e;
+      while let Expr::Part { expr, index } = inner {
+        indices.push(index.as_ref().clone());
+        inner = expr;
+      }
+      indices.push(inner.clone());
+      indices.reverse();
+      Some(call("Part", indices))
+    }
     _ => None,
   }
 }
