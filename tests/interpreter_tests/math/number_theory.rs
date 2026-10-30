@@ -3757,11 +3757,10 @@ mod factorial2 {
     // wolframscript:
     //   SeriesData[x, 0, {1, (-EulerGamma + Log[2])/2,
     //                     (6 (EulerGamma - Log[2])^2 + Pi^2 (1 + Log[64] - 6 Log[Pi]))/48}, 0, 3, 1]
-    // Woxi's Plus canonicalisation reorders the numerator terms.
     assert_eq!(
       interpret("Series[x!!, {x, 0, 2}]").unwrap(),
       "SeriesData[x, 0, {1, (-EulerGamma + Log[2])/2, \
-       (Pi^2*(1 + Log[64] - 6*Log[Pi]) + 6*(EulerGamma - Log[2])^2)/48}, 0, 3, 1]"
+       (6*(EulerGamma - Log[2])^2 + Pi^2*(1 + Log[64] - 6*Log[Pi]))/48}, 0, 3, 1]"
     );
   }
 

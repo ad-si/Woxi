@@ -2379,7 +2379,7 @@ DoubleLongLeftRightArrow,symbol notation,✅,None,3.0,2380
 InverseGammaRegularized,Inverse of the regularized upper incomplete gamma function Q(a z),✅,pure,3.0,2380
 MultivariateTDistribution,probability distribution,🚫,None,8.0,2380
 PartitionsQ,Number of partitions of n into distinct parts,✅,pure,1.0,2380
-BatesDistribution,probability distribution,🚫,None,8.0,2383
+BatesDistribution,Distribution of the mean of n uniform variates with Mean and Variance and piecewise PDF and CDF for integer n,✅,pure,8.0,2383
 SetSelectedNotebook,notebook UI,🚫,None,3.0,2383
 WaveletMapIndexed,Applies a function to wavelet coefficient arrays with their indices,✅,pure,8.0,2383
 ChineseRemainder,Solves a system of modular congruences (optional third argument gives the smallest solution >= d),✅,pure,6.0,2389
@@ -3752,7 +3752,7 @@ CloudSubmit,,🚫,,10.2,3823
 ControllerManipulate,Manipulate driven by an external controller (stays symbolic in script mode),✅,unevaluated,6.0,3823
 CreateIntermediateDirectories,,,,6.0,3823
 DateWithinQ,True when the second date lies within the first date's half-open calendar span,✅,pure,11.1,3823
-DavisDistribution,,,,8.0,3823
+DavisDistribution,Davis distribution with Mean and Variance and PDF,✅,pure,8.0,3823
 Deletable,,,,3.0,3823
 FindKPlex,,,,9.0,3823
 FromRomanNumeral,Integer value of a roman numeral string (pairwise subtractive),✅,pure,10.2,3823
@@ -3792,7 +3792,7 @@ CosineWindow,Cosine window Cos[Pi x] on [-1/2 1/2] (radical values at exact grid
 GrammarRules,,🚫,,10.0,3862
 GraphAutomorphismGroup,,,,10.0,3862
 InverseSpectrogram,,🚫,,12.0,3862
-KDistribution,,,,8.0,3862
+KDistribution,K distribution with Mean and Variance and BesselK PDF and CDF,✅,pure,8.0,3862
 KVertexConnectedComponents,,,,10.0,3862
 PermutationListQ,True if list is a valid permutation,✅,1,8.0,3862
 QPolyGamma,,,,7.0,3862
@@ -3893,7 +3893,7 @@ DoubleBracketingBar,Inert typeset form of double bars around its content,✅,pur
 EdgeContract,Contract an edge of a graph merging its two endpoints into one vertex,✅,pure,10.0,3972
 EvaluationElements,,,,8.0,3972
 FindKClique,,,,9.0,3972
-FisherZDistribution,,,,8.0,3972
+FisherZDistribution,Fisher z distribution with hypergeometric Mean and Variance and PDF and CDF,✅,pure,8.0,3972
 GeogravityModelData,,🚫,,10.1,3972
 HeatTransferValue,,,,12.2,3972
 Interrupt,Interrupts evaluation,✅,effectful,2.0,3972

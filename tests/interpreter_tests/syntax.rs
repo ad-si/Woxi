@@ -14231,3 +14231,28 @@ mod replace_all_list_operand_with_operator {
     );
   }
 }
+
+// Canonical order of powers of sums against symbols, sums and calls.
+mod power_of_sum_order {
+  use super::*;
+
+  #[test]
+  fn plus_and_times_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{x^2 - 3 (x - 1/3)^2, x^2 + (x + 1)^2, 8/3 (x - 1) + 16 (1 - x)^2, \
+         (x - 1) + (1 - x)^2, x + 1/(1 + Pi), Sort[{-1 + x, (1 - x)^2}]}"
+      )
+      .unwrap(),
+      "{-3*(-1/3 + x)^2 + x^2, x^2 + (1 + x)^2, 16*(1 - x)^2 + (8*(-1 + x))/3, \
+       -1 + (1 - x)^2 + x, (1 + Pi)^(-1) + x, {(1 - x)^2, -1 + x}}"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[{1/(Gamma[n] Zeta[n]), 1/(Sin[n] h[n]), 1/(Gamma[n] f[n])}]]")
+        .unwrap(),
+      "List[Times[Power[Gamma[n], -1], Power[Zeta[n], -1]], Times[Csc[n], Power[h[n], -1]], \
+       Times[Power[f[n], -1], Power[Gamma[n], -1]]]"
+    );
+  }
+}
