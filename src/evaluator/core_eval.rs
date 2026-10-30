@@ -853,6 +853,23 @@ fn evaluate_expr_to_expr_early_dispatch(
 ) -> Result<Option<Expr>, InterpreterError> {
   match name {
     "Protect" | "Unprotect" | "Condition" | "MessageName" | "Attributes" => {
+      // These hold their arguments, but `Evaluate[e]` still evaluates.
+      if args.iter().any(|a| {
+        matches!(a, Expr::FunctionCall { name, args } if name == "Evaluate" && args.len() == 1)
+      }) {
+        let mut evaluated = Vec::with_capacity(args.len());
+        for a in args {
+          match a {
+            Expr::FunctionCall { name, args: inner }
+              if name == "Evaluate" && inner.len() == 1 =>
+            {
+              evaluated.push(evaluate_expr_to_expr(&inner[0])?);
+            }
+            other => evaluated.push(other.clone()),
+          }
+        }
+        return Ok(Some(evaluate_function_call_ast(name, &evaluated)?));
+      }
       return Ok(Some(evaluate_function_call_ast(name, args)?));
     }
     #[cfg(not(target_arch = "wasm32"))]

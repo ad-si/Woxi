@@ -7,11 +7,59 @@ pub fn to_radicals_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ToRadicals expects 1 argument".into(),
     ));
   }
-  to_radicals_inner(&args[0])
+  // Cubics -> False / Quartics -> False keep roots of polynomials of that
+  // degree as Root objects.
+  let mut keep = RootDegrees::default();
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+    {
+      let off =
+        matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False");
+      match name.as_str() {
+        "Cubics" => keep.cubics = off,
+        "Quartics" => keep.quartics = off,
+        _ => {}
+      }
+    }
+  }
+  to_radicals_inner(&args[0], keep)
 }
 
-fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
+#[derive(Clone, Copy, Default)]
+struct RootDegrees {
+  cubics: bool,
+  quartics: bool,
+}
+
+fn root_degree(func: &Expr) -> Option<usize> {
+  let Expr::Function { body } = func else {
+    return None;
+  };
+  extract_poly_coefficients(body)?.len().checked_sub(1)
+}
+
+fn to_radicals_inner(
+  expr: &Expr,
+  keep: RootDegrees,
+) -> Result<Expr, InterpreterError> {
+  let recurse = |e: &Expr| to_radicals_inner(e, keep);
   match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Root"
+        && (args.len() == 2 || args.len() == 3)
+        && (keep.cubics || keep.quartics)
+        && match root_degree(&args[0]) {
+          Some(3) => keep.cubics,
+          Some(4) => keep.quartics,
+          _ => false,
+        } =>
+    {
+      Ok(expr.clone())
+    }
     // Root[f&, k] or Root[f&, k, type] — evaluate to get the radical form.
     // Wolfram canonicalises 2-arg Root to a 3-arg form with type 0; treat
     // both shapes the same here.
@@ -34,10 +82,8 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     // Recurse into function calls
     Expr::FunctionCall { name, args } => {
-      let new_args: Vec<Expr> = args
-        .iter()
-        .map(to_radicals_inner)
-        .collect::<Result<Vec<_>, _>>()?;
+      let new_args: Vec<Expr> =
+        args.iter().map(recurse).collect::<Result<Vec<_>, _>>()?;
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
@@ -45,21 +91,19 @@ fn to_radicals_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     // Recurse into lists
     Expr::List(items) => {
-      let new_items: Vec<Expr> = items
-        .iter()
-        .map(to_radicals_inner)
-        .collect::<Result<Vec<_>, _>>()?;
+      let new_items: Vec<Expr> =
+        items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?;
       Ok(Expr::List(new_items.into()))
     }
     // Recurse into binary ops
     Expr::BinaryOp { op, left, right } => {
-      let l = to_radicals_inner(left)?;
-      let r = to_radicals_inner(right)?;
+      let l = recurse(left)?;
+      let r = recurse(right)?;
       crate::evaluator::evaluate_expr_to_expr(&binop(*op, l, r))
     }
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => {
-      let o = to_radicals_inner(operand)?;
+      let o = recurse(operand)?;
       crate::evaluator::evaluate_expr_to_expr(&Expr::UnaryOp {
         op: *op,
         operand: Box::new(o),
