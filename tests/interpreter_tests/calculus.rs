@@ -24583,3 +24583,47 @@ mod ndsolve_events_on_both_legs {
     );
   }
 }
+
+mod piecewise_arithmetic_folding {
+  use super::*;
+
+  #[test]
+  fn piecewise_expand_folds_interval_pieces() {
+    assert_eq!(
+      interpret(
+        "ToString[{PiecewiseExpand[x Piecewise[{{1, x > 0}}, 0]], \
+         PiecewiseExpand[x Piecewise[{{1, x > 0}}, 0] + Piecewise[{{2, x < 0}}, 0]], \
+         PiecewiseExpand[Piecewise[{{1, x < 1}}, 2] + Piecewise[{{3, x > 2}}, 5]], \
+         PiecewiseExpand[Piecewise[{{x, 0 < x <= 1}}, 0]^2], \
+         PiecewiseExpand[Piecewise[{{1, x == 1}}, 0] + Piecewise[{{1, x >= 1}}, 0]]}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Piecewise[{{x, x > 0}}, 0], Piecewise[{{2, x < 0}, {x, x > 0}}, 0], \
+       Piecewise[{{5, x > 2}, {6, x < 1}}, 7], \
+       Piecewise[{{x^2, Inequality[0, Less, x, LessEqual, 1]}}, 0], \
+       Piecewise[{{1, x > 1}, {2, x == 1}}, 0]}"
+    );
+  }
+
+  #[test]
+  fn simplify_folds_and_simplifies_each_piece() {
+    assert_eq!(
+      interpret(
+        "ToString[Simplify[u^2 Piecewise[{{1, 0 <= u < 1}}, 0] + \
+         4 Piecewise[{{1, 1 <= u < 2}}, 0] - 4 u Piecewise[{{1, 1 <= u < 2}}, 0] + \
+         u^2 Piecewise[{{1, 1 <= u < 2}}, 0]], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{(-2 + u)^2, Inequality[1, LessEqual, u, Less, 2]}, \
+       {u^2, Inequality[0, LessEqual, u, Less, 1]}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Simplify[-((-1 + u) Piecewise[{{1, 0 <= u < 1}}, 0])], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{1 - u, Inequality[0, LessEqual, u, Less, 1]}}, 0]"
+    );
+  }
+}
