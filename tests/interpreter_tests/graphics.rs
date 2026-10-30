@@ -1133,6 +1133,20 @@ mod graphics {
       }
     }
 
+    /// A fraction in a graphics `Inset` is typeset compactly around a bar
+    /// line, not as three full-height lines of text.
+    #[test]
+    fn a_graphics_inset_fraction_is_stacked_around_a_bar() {
+      let svg = export_svg(
+        "Graphics[{Inset[Style[1/7, 18], {1, 1}]}, \
+         PlotRange -> {{0, 2}, {0, 2}}]",
+      );
+      assert!(svg.contains(">1</text>"), "{svg}");
+      assert!(svg.contains(">7</text>"), "{svg}");
+      assert!(svg.contains("<line "), "{svg}");
+      assert!(!svg.contains("<tspan"), "{svg}");
+    }
+
     /// A string or scripted-string `Inset` in a plot's `Epilog` is a text
     /// label like `Text`: no quote marks around the strings.
     #[test]
