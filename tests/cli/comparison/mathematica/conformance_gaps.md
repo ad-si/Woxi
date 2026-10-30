@@ -6321,7 +6321,7 @@ Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.
 
 ## Exact `Eigenvectors` with quadratic-surd components: unreduced form
 
-```
+```sh
 wolframscript -code 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
 # {{-((-1 - Sqrt[5])/(3 + Sqrt[5])), 1, 1, 1}, {-1, 0, 1, 1}, {-((1 - Sqrt[5])/(-3 + Sqrt[5])), 1, 1, 1}, {0, 0, 0, 1}}
 woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'

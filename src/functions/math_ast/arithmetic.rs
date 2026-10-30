@@ -6766,12 +6766,18 @@ pub fn order_monomial_vs_sum(
 }
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
-  // `#n` and `a[[i]]` order as the `Slot[n]` / `Part[a, i]` calls they are
-  // (`a*#1`, `f[x]*#1`, `b*a[[1]]`), so they take part in the sort in that
-  // form and are put back afterwards.
+  // `#n`, `a[[i]]`, `a -> b` and `a == b` order as the `Slot[n]` /
+  // `Part[a, i]` / `Rule[a, b]` / `Equal[a, b]` calls they are (`a*#1`,
+  // `f[x]*#1`, `b*a[[1]]`, `x*(a == b)`), so they take part in the sort in
+  // that form and are put back afterwards.
   fn has_special(e: &Expr) -> bool {
     match e {
-      Expr::Slot(_) | Expr::SlotSequence(_) | Expr::Part { .. } => true,
+      Expr::Slot(_)
+      | Expr::SlotSequence(_)
+      | Expr::Part { .. }
+      | Expr::Rule { .. }
+      | Expr::RuleDelayed { .. }
+      | Expr::Comparison { .. } => true,
       Expr::FunctionCall { args, .. } => args.iter().any(has_special),
       Expr::BinaryOp { left, right, .. } => {
         has_special(left) || has_special(right)
@@ -6781,9 +6787,10 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     }
   }
   fn as_calls(e: &Expr) -> Expr {
-    if let Some(c) =
-      crate::functions::list_helpers_ast::sorting::slot_as_call(e)
-    {
+    use crate::functions::list_helpers_ast::sorting::{
+      rule_as_call, slot_as_call,
+    };
+    if let Some(c) = slot_as_call(e).or_else(|| rule_as_call(e)) {
       return match &c {
         Expr::FunctionCall { name, args } => Expr::FunctionCall {
           name: name.clone(),

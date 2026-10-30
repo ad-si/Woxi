@@ -601,8 +601,8 @@ TildeInfix = { "~" ~ !"~" ~ (BaseFunctionCall | Identifier) ~ "~" ~ !"~" }
 // This avoids redundant parsing by checking for special operators after the main parse
 // Postfix application (//) has lowest precedence and can follow any expression form
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
-ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
-ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
+ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^" | ConditionOp) | ConditionExpr) }
+ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^" | ConditionOp) | ConditionExpr) }
 // Repeated (..) and RepeatedNull (...) are postfix pattern operators
 // "..." must be tried before ".." since PEG is ordered-choice
 RepeatedNullSuffix = { "..." }
