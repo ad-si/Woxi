@@ -6370,3 +6370,27 @@ fallback. Woxi does not record whether a symbol's value came from `=` or
 - `Root::invrt` is reported when the refined root is more than 10^-6
   (relative) away from `x0`; wolframscript's exact threshold is somewhere
   between 1.6*10^-7 and 4.8*10^-6 for the cases probed.
+
+## FindGeometricTransform: last digits and noisy perspective fits
+
+The transforms agree with wolframscript to about 1e-9, but not in the last
+digits (wolframscript's exact-fit error is `2.29*^-15` where Woxi's is a
+different tiny number). With more than four noisy plane points the
+default (perspective) fit is Woxi's linear least-squares homography, which
+need not be the minimizer wolframscript reports.
+
+## Bates, Davis and Fisher z distributions
+
+- The linear `1 - x` term of an upper `CDF[BatesDistribution[…]]` piece is
+  written `c (-1 + x)` by Woxi; wolframscript does so for
+  `BatesDistribution[4]` and `BatesDistribution[3, {-1, 2}]` but writes
+  `-(4*(1 - x))/9` for `BatesDistribution[2, {-1, 2}]`.
+- `BatesDistribution` with a symbolic `n` or interval keeps PDF/CDF
+  unevaluated (wolframscript does the same for symbolic `n`, but gives a
+  form for a symbolic interval with numeric `n`).
+- `Quantile[DavisDistribution[…], p]` stays unevaluated: its CDF has no
+  closed form (wolframscript leaves the symbolic CDF too, but inverts it
+  numerically).
+- In `Mean[FisherZDistribution[n, m]]` Woxi orders the factor
+  `n^2*(m/n)^(n/2)`; wolframscript writes `(m/n)^(n/2)*n^2`.
+- Numeric PDF/CDF/Quantile values can differ in the last digit.

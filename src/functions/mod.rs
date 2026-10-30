@@ -48,6 +48,7 @@ pub mod function_range_ast;
 pub mod geo_math;
 pub mod geographics;
 pub mod geometric_test_ast;
+pub mod geometric_transform;
 pub mod graph;
 pub mod graph_data;
 pub mod graphics;

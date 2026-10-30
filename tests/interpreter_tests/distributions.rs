@@ -9736,3 +9736,43 @@ mod kernel_mixture_distribution {
     );
   }
 }
+
+// Bates, K, Davis and Fisher z distributions in wolframscript's forms.
+mod bates_k_davis_fisher_z {
+  use super::*;
+
+  #[test]
+  fn bates_pieces() {
+    clear_state();
+    assert_eq!(
+      interpret("{Mean[BatesDistribution[n, {a, c}]], Variance[BatesDistribution[n]], PDF[BatesDistribution[3], x]}")
+        .unwrap(),
+      "{(a + c)/2, 1/(12*n), Piecewise[{{0, x < 0}, {(27*x^2)/2, Inequality[0, LessEqual, x, Less, 1/3]}, \
+{(27*(-3*(-1/3 + x)^2 + x^2))/2, Inequality[1/3, LessEqual, x, Less, 2/3]}, {(27*(1 - x)^2)/2, 2/3 <= x <= 1}}, 0]}"
+    );
+    assert_eq!(
+      interpret("{CDF[BatesDistribution[3], x], PDF[BatesDistribution[1, {-1, 2}], x], CDF[BatesDistribution[3], 1/3]}")
+        .unwrap(),
+      "{Piecewise[{{0, x < 0}, {(9*x^3)/2, Inequality[0, LessEqual, x, Less, 1/3]}, \
+{1/2 - (9*x)/2 + (27*x^2)/2 - 9*x^3, Inequality[1/3, LessEqual, x, Less, 2/3]}, \
+{1 - (9*(1 - x)^3)/2, 2/3 <= x <= 1}}, 1], Piecewise[{{1/3, -1 <= x <= 2}}, 0], 1/6}"
+    );
+  }
+
+  #[test]
+  fn k_davis_fisher_z() {
+    clear_state();
+    assert_eq!(
+      interpret("{Mean[KDistribution[v, w]], PDF[KDistribution[v, w], x], Mean[DavisDistribution[b, n, m]], CDF[FisherZDistribution[n, m], x]}")
+        .unwrap(),
+      "{(Sqrt[Pi]*Sqrt[w/v]*Pochhammer[v, 1/2])/2, \
+Piecewise[{{(4*(v/w)^((1 + v)/2)*x^v*BesselK[-1 + v, 2*Sqrt[v/w]*x])/Gamma[v], x > 0}}, 0], \
+Piecewise[{{m + (b*Zeta[-1 + n])/((-1 + n)*Zeta[n]), n > 2}}, Indeterminate], \
+BetaRegularized[(E^(2*x)*n)/(m + E^(2*x)*n), n/2, m/2]}"
+    );
+    assert_eq!(
+      interpret("Round[10^10 N[{Mean[FisherZDistribution[2, 1]], Variance[FisherZDistribution[2, 1]]}]]").unwrap(),
+      "{3465735903, 16449340668}"
+    );
+  }
+}

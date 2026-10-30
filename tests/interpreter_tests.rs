@@ -4850,6 +4850,19 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_list_plot_drops_points_outside_plot_range() {
+    // Dots above/below an explicit `PlotRange` were pinned to the frame
+    // edge; Wolfram clips them, so only in-range dots are drawn.
+    clear_state();
+    let svg = interpret(
+      "ExportString[ListPlot[{1, 5, 2, 9, 3}, \
+         PlotRange -> {All, {0, 4}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+  }
+
+  #[test]
   fn test_axes_label_letter_script_is_typeset() {
     // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
     // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.

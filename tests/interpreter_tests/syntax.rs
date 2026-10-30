@@ -12,6 +12,26 @@ mod errors {
   }
 }
 
+mod superscript_digit_in_symbol_names {
+  use super::*;
+
+  #[test]
+  fn superscript_two_continues_a_symbol() {
+    // `ϵ²` is one symbol, not `ϵ` followed by a stray character: a
+    // Demonstration defines `ϵ²[a_, b_, c_] := ...` this way.
+    assert_eq!(
+      interpret("ϵ²[a_, b_, c_] := (3 b^2 - 8 a c)/(48 a^2); ϵ²[1, 2, 3]")
+        .unwrap(),
+      "-1/4"
+    );
+  }
+
+  #[test]
+  fn other_latin_superscript_digits() {
+    assert_eq!(interpret("x³ = 5; x¹ = 2; x³ + x¹").unwrap(), "7");
+  }
+}
+
 mod dollar_in_symbol_names {
   use super::*;
 
@@ -14208,6 +14228,31 @@ mod replace_all_list_operand_with_operator {
     assert_eq!(
       interpret("Sort[{x, a == b, f[a]}]").unwrap(),
       "{x, a == b, f[a]}"
+    );
+  }
+}
+
+// Canonical order of powers of sums against symbols, sums and calls.
+mod power_of_sum_order {
+  use super::*;
+
+  #[test]
+  fn plus_and_times_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{x^2 - 3 (x - 1/3)^2, x^2 + (x + 1)^2, 8/3 (x - 1) + 16 (1 - x)^2, \
+         (x - 1) + (1 - x)^2, x + 1/(1 + Pi), Sort[{-1 + x, (1 - x)^2}]}"
+      )
+      .unwrap(),
+      "{-3*(-1/3 + x)^2 + x^2, x^2 + (1 + x)^2, 16*(1 - x)^2 + (8*(-1 + x))/3, \
+       -1 + (1 - x)^2 + x, (1 + Pi)^(-1) + x, {(1 - x)^2, -1 + x}}"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[{1/(Gamma[n] Zeta[n]), 1/(Sin[n] h[n]), 1/(Gamma[n] f[n])}]]")
+        .unwrap(),
+      "List[Times[Power[Gamma[n], -1], Power[Zeta[n], -1]], Times[Csc[n], Power[h[n], -1]], \
+       Times[Power[f[n], -1], Power[Gamma[n], -1]]]"
     );
   }
 }

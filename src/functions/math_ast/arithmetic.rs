@@ -3319,6 +3319,84 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       return ord;
     }
   }
+  // The same power of a symbol and of a sum order by their bases, as
+  // `Order` does: `-3*(-1/3 + x)^2 + x^2` but `x^2 + (1 + x)^2`.
+  {
+    let ((_, fa), (_, fb)) = (wl_coeff_and_factors(a), wl_coeff_and_factors(b));
+    if let ([pa], [pb]) = (fa.as_slice(), fb.as_slice()) {
+      let ((base_a, exp_a), (base_b, exp_b)) =
+        (wl_base_exp(pa), wl_base_exp(pb));
+      let is_sum = |e: &Expr| {
+        matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+          || matches!(
+            e,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          )
+      };
+      // Only for sums in that same symbol, raised to positive integer powers.
+      let shares = |sym: &Expr, sum: &Expr| match sym {
+        Expr::Identifier(_) => {
+          crate::functions::polynomial_ast::solve::expr_contains_expr(sum, sym)
+        }
+        _ => false,
+      };
+      let positive_power = |e: &Expr| matches!(e, Expr::Integer(k) if *k >= 1);
+      let symbol_and_sum = positive_power(&exp_a)
+        && positive_power(&exp_b)
+        && ((matches!(base_a, Expr::Identifier(_))
+          && is_sum(base_b)
+          && shares(base_a, base_b))
+          || (matches!(base_b, Expr::Identifier(_))
+            && is_sum(base_a)
+            && shares(base_b, base_a)));
+      if symbol_and_sum
+        && !matches!(exp_a.as_ref(), Expr::Integer(1))
+        && crate::evaluator::pattern_matching::expr_equal(&exp_a, &exp_b)
+      {
+        let ord = wl_arg_order(base_a, base_b);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
+      // A power of a sum against a symbol or a sum: `Order` decides it, by
+      // the power's base (`-1 + (1 - x)^2 + x`).
+      let power_of_sum = |base: &Expr, exp: &Expr| {
+        is_sum(base) && matches!(exp, Expr::Integer(k) if *k >= 2)
+      };
+      let plain = |base: &Expr, exp: &Expr| {
+        matches!(exp, Expr::Integer(1))
+          && (matches!(base, Expr::Identifier(_)) || is_sum(base))
+      };
+      let common_variable = |p: &Expr, q: &Expr| {
+        let vars = |e: &Expr| -> Vec<String> {
+          match crate::evaluator::evaluate_function_call_ast(
+            "Variables",
+            std::slice::from_ref(e),
+          ) {
+            Ok(Expr::List(ref vs)) => {
+              vs.iter().map(crate::syntax::expr_to_string).collect()
+            }
+            _ => Vec::new(),
+          }
+        };
+        let vp = vars(p);
+        vars(q).iter().any(|v| vp.contains(v))
+      };
+      if ((power_of_sum(base_a, &exp_a) && plain(base_b, &exp_b))
+        || (power_of_sum(base_b, &exp_b) && plain(base_a, &exp_a)))
+        && common_variable(base_a, base_b)
+      {
+        let ord =
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(pa, pb);
+        if ord != std::cmp::Ordering::Equal {
+          return ord;
+        }
+      }
+    }
+  }
   // Two real numeric terms (`E`, `Sqrt[8 + E^2]`) are in canonical order:
   // `-E + Sqrt[8 + E^2]`, `Pi + Sqrt[2 + Pi]`, `Sqrt[2] + Pi`.
   // Kept to small terms: canonical_cmp of two large numeric sums (the
@@ -7006,9 +7084,21 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // `Erf[x]*LogGamma[x]`. Without this they fall into the priority buckets
   // below, which only coincidentally agree with the head order — every head
   // outside the transcendental list sorted first, however late its name.
-  if let (Some(na), Some(nb)) = (plain_call_head(a), plain_call_head(b))
+  // A power of a call orders by that call, its base: `Gamma[n]^-1 h[n]^-1`,
+  // `Csc[n] h[n]^-1`.
+  let call_head = |e: &Expr| -> Option<String> {
+    plain_call_head(e).map(str::to_string).or_else(|| {
+      let (base, _) = wl_base_exp(e);
+      if std::ptr::eq(base, e) {
+        return None;
+      }
+      plain_call_head(base).map(str::to_string)
+    })
+  };
+  if let (Some(na), Some(nb)) = (call_head(a), call_head(b))
     && na != nb
   {
+    let (na, nb) = (na.as_str(), nb.as_str());
     // wolfram_string_order returns 1 when the first name comes first.
     let ord = crate::functions::list_helpers_ast::wolfram_string_order(na, nb);
     if ord > 0 {

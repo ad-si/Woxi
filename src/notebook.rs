@@ -3174,6 +3174,10 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // The Unicode prime (U+2032) is not a valid InputForm operator, so
     // map it to the ASCII apostrophe to keep the cell evaluable.
     "Prime" => "'",
+    // `\[LeftAssociation]`/`\[RightAssociation]` are the typeset forms of
+    // the association delimiters `<|` and `|>`.
+    "LeftAssociation" => "<|",
+    "RightAssociation" => "|>",
     "NotEqual" => "!=",
     "LessEqual" => "<=",
     "GreaterEqual" => ">=",
@@ -9443,6 +9447,19 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn typeset_association_delimiters_convert_to_ascii() {
+    // The FrontEnd encodes `<|a -> 1|>` as `\[LeftAssociation]` …
+    // `\[RightAssociation]` (private-use U+F113/U+F114) inside RowBox.
+    let boxes = r#"RowBox[{"assoc", "=", RowBox[{"\[LeftAssociation]", RowBox[{RowBox[{"\"k\"", "\[Rule]", "1"}], ",", RowBox[{"\"m\"", "\[Rule]", RowBox[{"\[LeftAssociation]", RowBox[{"\"n\"", "\[Rule]", "2"}], "\[RightAssociation]"}]}]}], "\[RightAssociation]"}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(expr_src.contains("<|"), "got: {expr_src:?}");
+    let result = crate::interpret(&format!("{expr_src}; assoc[\"m\"][\"n\"]"))
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(result, "2");
   }
 
   #[test]

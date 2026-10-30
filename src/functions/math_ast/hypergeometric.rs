@@ -571,6 +571,14 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if z_val.abs() >= 1.0 && a_vals.len() > b_vals.len() + 1 {
       return Ok(unevaluated("HypergeometricPFQ", args));
     }
+    // Outside the unit disk the series diverges for p = q + 1: continue it
+    // analytically, or leave the call alone.
+    if z_val.abs() > 1.0 && a_vals.len() == b_vals.len() + 1 {
+      return Ok(match pfq_continued(&a_vals, &b_vals, z_val) {
+        Some(v) if v.is_finite() => Expr::Real(v),
+        _ => unevaluated("HypergeometricPFQ", args),
+      });
+    }
     let result = hypergeometric_pfq_numeric(&a_vals, &b_vals, z_val);
     if result.is_infinite() {
       return Ok(id_expr("Infinity"));
@@ -579,6 +587,78 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(unevaluated("HypergeometricPFQ", args))
+}
+
+/// pFq(a; b; z) with p = q + 1 for real z < -1 (where it is real): 2F1 by
+/// its own continuation, higher orders by Euler's integral
+///   pFq(a; b; z) = Γ(b_j)/(Γ(a_i) Γ(b_j - a_i))
+///       ∫_0^1 t^(a_i - 1) (1 - t)^(b_j - a_i - 1) p-1Fq-1(a'; b'; z t) dt
+/// for a pair with b_j > a_i > 0, evaluated by tanh-sinh quadrature (which
+/// copes with the endpoint singularities). None when no such pair exists.
+fn pfq_continued(a: &[f64], b: &[f64], z: f64) -> Option<f64> {
+  if z >= 1.0 {
+    return None;
+  }
+  if a.len() == 2 && b.len() == 1 {
+    return Some(hypergeometric2f1(a[0], a[1], b[0], z));
+  }
+  if a.len() < 2 || a.len() != b.len() + 1 {
+    return None;
+  }
+  let (i, j) = (0..a.len())
+    .flat_map(|i| (0..b.len()).map(move |j| (i, j)))
+    .find(|&(i, j)| a[i] > 0.0 && b[j] > a[i])?;
+  let (ai, bj) = (a[i], b[j]);
+  let a_rest: Vec<f64> = a
+    .iter()
+    .enumerate()
+    .filter(|(k, _)| *k != i)
+    .map(|(_, v)| *v)
+    .collect();
+  let b_rest: Vec<f64> = b
+    .iter()
+    .enumerate()
+    .filter(|(k, _)| *k != j)
+    .map(|(_, v)| *v)
+    .collect();
+  let inner = |t: f64| -> Option<f64> {
+    let zt = z * t;
+    if zt.abs() < 0.9 {
+      Some(hypergeometric_pfq_numeric(&a_rest, &b_rest, zt))
+    } else {
+      pfq_continued(&a_rest, &b_rest, zt)
+    }
+  };
+  // tanh-sinh on (0, 1): t = (1 + tanh(π/2 sinh u))/2.
+  let h = 1.0 / 32.0;
+  let mut sum = 0.0;
+  let mut k: i64 = -(6.0 / h) as i64;
+  while (k as f64) * h <= 6.0 {
+    let u = k as f64 * h;
+    let s = std::f64::consts::FRAC_PI_2 * u.sinh();
+    let c = std::f64::consts::FRAC_PI_2 * u.cosh();
+    let ch = s.cosh();
+    // t and 1 - t without cancellation.
+    let e = (-2.0 * s.abs()).exp();
+    let small = e / (1.0 + e);
+    let (t, one_minus) = if s >= 0.0 {
+      (1.0 - small, small)
+    } else {
+      (small, 1.0 - small)
+    };
+    k += 1;
+    if t <= 0.0 || one_minus <= 0.0 {
+      continue;
+    }
+    let weight = 0.5 * c / (ch * ch);
+    let integrand =
+      t.powf(ai - 1.0) * one_minus.powf(bj - ai - 1.0) * inner(t)?;
+    if integrand.is_finite() {
+      sum += weight * integrand;
+    }
+  }
+  let norm = gamma_fn(bj) / (gamma_fn(ai) * gamma_fn(bj - ai));
+  Some(norm * sum * h)
 }
 
 /// Compute generalized hypergeometric function pFq numerically via series

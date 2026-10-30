@@ -709,6 +709,39 @@ mod elliptic_complex_arguments {
   }
 
   #[test]
+  fn elliptic_e_complex_amplitude_approaches_real_value() {
+    assert_eq!(
+      interpret(
+        "Round[Re[EllipticE[0.7 + 0.000001 I, 0.3]] - EllipticE[0.7, 0.3], 10^-6]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn elliptic_e_complex_amplitude() {
+    assert_eq!(
+      interpret(
+        "{Round[Re[#], 10^-6], Round[Im[#], 10^-6]} &[EllipticE[1.2 + 0.5 I, 0.3]]"
+      )
+      .unwrap(),
+      "{574251/500000, 106169/250000}"
+    );
+  }
+
+  #[test]
+  fn elliptic_e_past_branch_point_is_complex() {
+    assert_eq!(
+      interpret(
+        "{Round[Re[#], 10^-6], Round[Im[#], 10^-6]} &[EllipticE[1.2, 1.5]]"
+      )
+      .unwrap(),
+      "{716313/1000000, 46303/500000}"
+    );
+  }
+
+  #[test]
   fn elliptic_f_complex_amplitude_from_arcsin() {
     assert_eq!(
       interpret(

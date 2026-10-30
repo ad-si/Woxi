@@ -2133,6 +2133,13 @@ pub fn dispatch_linear_algebra_functions(
           .map(|m| call1("TransformationFunction", m)),
       );
     }
+    "FindGeometricTransform" if args.len() >= 2 => {
+      return Some(
+        crate::functions::geometric_transform::find_geometric_transform_ast(
+          args,
+        ),
+      );
+    }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
     // RotationTransform[angle, {cx, cy}] → rotation about point {cx, cy}
     // RotationTransform[angle, {x, y, z}, {px, py, pz}] → 3D rotation about
