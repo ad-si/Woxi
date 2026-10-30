@@ -295,6 +295,7 @@ static PROPERTIES: &[&str] = &[
   "AlexanderBriggsList",
   "AlexanderBriggsNotation",
   "CrossingNumber",
+  "Image",
   "ImageData",
   "Name",
   "SpaceCurve",
@@ -370,6 +371,10 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match (property.as_str(), knot) {
         ("SpaceCurve", _) => space_curve(knot).unwrap_or_else(unevaluated),
         ("ImageData", _) => image_data(knot).map_or_else(unevaluated, Ok),
+        ("Image", _) => match image_data(knot) {
+          Some(mesh) => Ok(call1("Graphics3D", mesh)),
+          None => unevaluated(),
+        },
         ("CrossingNumber", _) => Ok(crossing_number(knot)),
         ("AlexanderBriggsList", Knot::Table(n, k)) => Ok(pair(n, k)),
         ("AlexanderBriggsNotation", Knot::Table(n, k)) => {

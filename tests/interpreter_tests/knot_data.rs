@@ -207,6 +207,24 @@ mod knot_data_tests {
     );
   }
 
+  // KnotData[name, "Image"] is the Graphics3D of that tube mesh, for
+  // table knots and torus knots alike.
+  #[test]
+  fn knot_data_image_is_graphics3d() {
+    assert_eq!(
+      interpret(r#"Head[KnotData["Trefoil", "Image"]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[KnotData[{"TorusKnot", {3, 5}}, "Image"]]"#).unwrap(),
+      "Graphics3D"
+    );
+    assert_eq!(
+      interpret(r#"Head[First[KnotData[{5, 1}, "Image"]]]"#).unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
   // The mesh is a tube swept around the space curve: each ring of points
   // around one cross-section is centered exactly on that point of the
   // curve (the ring's offsets from center are evenly spaced around a
