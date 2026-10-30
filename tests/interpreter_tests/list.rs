@@ -25451,3 +25451,21 @@ mod ordering_sequence_spec {
     );
   }
 }
+
+mod stored_nearest_function {
+  use super::*;
+
+  // A NearestFunction object as wolframscript stores it in a notebook
+  // records its construction in a trailing Hold[Nearest[…]].
+  #[test]
+  fn applies_the_recorded_nearest() {
+    assert_eq!(
+      interpret(
+        "f = NearestFunction[1, {3, 1}, 1, {1, 2, 3}, Automatic, \
+         Hold[Nearest[{1, 2, 3} -> {a, b, c}]]]; {f[2.2], f[2.6, 2]}"
+      )
+      .unwrap(),
+      "{{b}, {c, b}}"
+    );
+  }
+}

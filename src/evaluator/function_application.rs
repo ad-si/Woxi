@@ -930,6 +930,14 @@ pub fn apply_function_to_arg(
         new_args.extend(args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
+      // A wolframscript NearestFunction[…, Hold[Nearest[spec…]]] (as stored
+      // in a notebook) is the NearestFunction of its recorded construction.
+      if let Some(nearest) = recorded_nearest(name, args) {
+        return evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new(nearest),
+          args: vec![arg.clone()],
+        });
+      }
       // Nearest[data, opts…] is a NearestFunction; applying it forwards to the
       // direct form: Nearest[data, opts…][x] -> Nearest[data, x, opts…].
       if name == "Nearest" && is_nearest_function_head(args) {
@@ -2897,6 +2905,12 @@ pub fn apply_curried_call(
         new_args.extend(func_args.iter().cloned());
         return evaluate_function_call_ast("Nearest", &new_args);
       }
+      if let Some(nearest) = recorded_nearest(name, func_args) {
+        return evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new(nearest),
+          args: args.to_vec(),
+        });
+      }
       // Nearest[data] is a NearestFunction; applying it forwards to the direct
       // form: Nearest[data][x] -> Nearest[data, x], and
       // Nearest[data][x, n] -> Nearest[data, x, n].
@@ -4011,4 +4025,24 @@ pub(crate) fn is_nearest_function_head(args: &[Expr]) -> bool {
         || matches!(a, Expr::FunctionCall { name, args }
           if (name == "Rule" || name == "RuleDelayed") && args.len() == 2)
     })
+}
+
+/// The `Nearest[spec…]` a wolframscript `NearestFunction[…]` object records
+/// as its last argument, `Hold[Nearest[spec…]]`.
+fn recorded_nearest(name: &str, args: &[Expr]) -> Option<Expr> {
+  if name != "NearestFunction" {
+    return None;
+  }
+  match args.last()? {
+    Expr::FunctionCall {
+      name: hold,
+      args: held,
+    } if hold == "Hold"
+      && held.len() == 1
+      && matches!(&held[0], Expr::FunctionCall { name, .. } if name == "Nearest") =>
+    {
+      Some(held[0].clone())
+    }
+    _ => None,
+  }
 }
