@@ -362,8 +362,41 @@ fn pattern_specificity_score(
   if is_literal {
     return 0;
   }
-  // Use the maximum blank_type as primary score (higher = less specific)
-  let max_blank = blank_types.iter().copied().max().unwrap_or(1) as u32;
+  // Use the maximum blank_type as primary score (higher = less specific),
+  // counting the blanks nested inside structural argument patterns too:
+  // `f[{x_, y__}]` is more general than `f[{x_, y_, z_}]`, as in Wolfram.
+  fn nested_max_blank(e: &Expr) -> u8 {
+    let own = match e {
+      Expr::Pattern { blank_type, .. } => *blank_type,
+      Expr::FunctionCall { name, .. } if name == "BlankSequence" => 2,
+      Expr::FunctionCall { name, .. } if name == "BlankNullSequence" => 3,
+      // A list pattern with a sequence element (`{x_, y__}`) is stored as
+      // a minimum length, `Length[_lp] >= n`.
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operators.first()
+        == Some(&crate::syntax::ComparisonOp::GreaterEqual)
+        && matches!(operands.first(),
+          Some(Expr::FunctionCall { name, .. }) if name == "Length") =>
+      {
+        2
+      }
+      _ => 0,
+    };
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .map(nested_max_blank)
+      .fold(own, u8::max)
+  }
+  let nested = conditions
+    .iter()
+    .flatten()
+    .map(nested_max_blank)
+    .max()
+    .unwrap_or(0);
+  let max_blank =
+    blank_types.iter().copied().max().unwrap_or(1).max(nested) as u32;
   // Head constraints make a pattern more specific (subtract 1 for each)
   let head_bonus = heads.iter().filter(|h| h.is_some()).count() as u32;
   // Each stored constraint clause makes the rule more specific. A plain guard
@@ -613,7 +646,6 @@ fn structural_subsumes(a: &[Expr], b: &[Expr]) -> Option<bool> {
     return None;
   }
   let frozen_a = freeze_patterns(a)?;
-  let frozen_b = freeze_patterns(b)?;
   let as_call = |args: &[Expr]| call("Woxi`RuleShape", args.to_vec());
   let b_covers_a = crate::evaluator::pattern_matching::match_pattern(
     &as_call(&frozen_a),
@@ -623,12 +655,108 @@ fn structural_subsumes(a: &[Expr], b: &[Expr]) -> Option<bool> {
   if !b_covers_a {
     return None;
   }
+  let Some(frozen_b) = freeze_patterns(b) else {
+    // `b` has a sequence blank, which no single frozen symbol stands for.
+    // Its instances with one and with two elements per sequence still show
+    // when `a` cannot cover it: `f[x_, y_, z_]` is strictly more specific
+    // than `f[x_, y__]`, which also takes `f[x, y]`.
+    for k in 1..=2 {
+      let instance = freeze_sequences(b, k)?;
+      if crate::evaluator::pattern_matching::match_pattern(
+        &as_call(&instance),
+        &as_call(a),
+      )
+      .is_none()
+      {
+        return Some(true);
+      }
+    }
+    return None;
+  };
   let a_covers_b = crate::evaluator::pattern_matching::match_pattern(
     &as_call(&frozen_b),
     &as_call(a),
   )
   .is_some();
   Some(!a_covers_b)
+}
+
+/// The patterns frozen as in [`freeze_patterns`], with every sequence blank
+/// standing for `k` arguments (`y__` becomes `y1, …, yk`).
+fn freeze_sequences(patterns: &[Expr], k: usize) -> Option<Vec<Expr>> {
+  fn splice(e: Expr) -> Expr {
+    match &e {
+      Expr::FunctionCall { name, args } => {
+        let name = name.clone();
+        let mut out = Vec::with_capacity(args.len());
+        for a in args.iter().cloned().map(splice) {
+          match &a {
+            Expr::FunctionCall {
+              name: s,
+              args: inner,
+            } if s == "Sequence" => {
+              out.extend(inner.iter().cloned());
+            }
+            _ => out.push(a),
+          }
+        }
+        Expr::FunctionCall {
+          name,
+          args: out.into(),
+        }
+      }
+      Expr::List(items) => {
+        let mut out = Vec::with_capacity(items.len());
+        for a in items.iter().cloned().map(splice) {
+          match &a {
+            Expr::FunctionCall {
+              name: s,
+              args: inner,
+            } if s == "Sequence" => {
+              out.extend(inner.iter().cloned());
+            }
+            _ => out.push(a),
+          }
+        }
+        Expr::List(out.into())
+      }
+      _ => e,
+    }
+  }
+  let counter = std::cell::Cell::new(0usize);
+  let expanded: Vec<Expr> = patterns
+    .iter()
+    .map(|p| {
+      crate::functions::string_ast::map_expr_tree(p, &|node: &Expr| {
+        let name = match node {
+          Expr::Pattern {
+            name, blank_type, ..
+          } if *blank_type > 1 => name.clone(),
+          Expr::FunctionCall { name: h, .. }
+            if h == "BlankSequence" || h == "BlankNullSequence" =>
+          {
+            String::new()
+          }
+          _ => return None,
+        };
+        counter.set(counter.get() + 1);
+        let base = if name.is_empty() {
+          format!("seq{}", counter.get())
+        } else {
+          name
+        };
+        Some(Expr::FunctionCall {
+          name: "Sequence".to_string(),
+          args: (1..=k)
+            .map(|i| Expr::Identifier(format!("Woxi`Frozen`{base}{i}")))
+            .collect::<Vec<_>>()
+            .into(),
+        })
+      })
+    })
+    .map(splice)
+    .collect();
+  freeze_patterns(&expanded)
 }
 
 /// The patterns with every pattern variable replaced by a symbol of its own,
@@ -914,6 +1042,19 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
     // A list-element `MatchQ[Part[_lp, i], pat]` guard only adds specificity
     // when `pat` actually constrains (literal / head / nested); a bare-blank
     // guard is always True and is emitted purely to preserve the name.
+    // The trailing sequence's `MatchQ[Drop[_lp, k], {pat}]` constrains
+    // exactly when `pat` does.
+    Expr::FunctionCall { name, args }
+      if name == "MatchQ"
+        && args.len() == 2
+        && matches!(&args[0], Expr::FunctionCall { name: d, .. } if d == "Drop")
+        && matches!(&args[1], Expr::List(items) if items.len() == 1) =>
+    {
+      let Expr::List(items) = &args[1] else {
+        unreachable!()
+      };
+      u32::from(element_needs_match_check(&items[0]))
+    }
     Expr::FunctionCall { name, args }
       if name == "MatchQ" && args.len() == 2 =>
     {
@@ -2504,6 +2645,14 @@ fn downvalue_arg_info(
             || crate::evaluator::pattern_matching::is_optional_slot(p)
             || is_options_or_repeated_element(p)
             || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
+            // A PatternSequence element (tested or named) spans several
+            // elements, which the per-element Part accessors cannot express.
+            || matches!(p, Expr::FunctionCall { name, args }
+              if name == "PatternSequence"
+                || ((name == "PatternTest" || name == "Pattern")
+                  && args.iter().any(|a| matches!(a,
+                    Expr::FunctionCall { name: inner, .. }
+                      if inner == "PatternSequence"))))
             // A held argument keeps its parts unevaluated; reading a call
             // like `children[{x__}]` back out of it through Part would
             // evaluate it.
@@ -4976,7 +5125,10 @@ fn build_list_pattern_match(
         Expr::PatternTest { .. } => true,
         other => extract_pattern_info(other).1.is_some(),
       };
-      if constrained {
+      // A named one is kept on record too (always True when unconstrained,
+      // like the bare-blank element guards below), so `DownValues` can show
+      // `{x_, y__}` rather than an anonymous `__`.
+      if constrained || !extract_pattern_info(pat).0.is_empty() {
         rule_conds.push(call(
           "MatchQ",
           vec![
@@ -5202,8 +5354,22 @@ fn reconstruct_list_param(
   let mut fixed = true;
   let mut elem_pats: Vec<(usize, Expr)> = Vec::new();
   let mut guards: Vec<Expr> = Vec::new();
+  // The trailing sequence element, recorded as `MatchQ[Drop[lp, k], {pat}]`.
+  let mut tail: Option<(i128, Expr)> = None;
   for c in clauses {
     match c {
+      Expr::FunctionCall { name, args }
+        if name == "MatchQ"
+          && args.len() == 2
+          && let Expr::FunctionCall { name: d, args: dargs } = &args[0]
+          && d == "Drop"
+          && matches!(dargs.first(), Some(Expr::Identifier(id)) if id == param)
+          && let Some(Expr::Integer(k)) = dargs.get(1)
+          && let Expr::List(items) = &args[1]
+          && items.len() == 1 =>
+      {
+        tail = Some((*k, items[0].clone()));
+      }
       Expr::Comparison {
         operands,
         operators,
@@ -5271,7 +5437,16 @@ fn reconstruct_list_param(
       });
     }
   }
-  if !fixed {
+  if let Some((k, pat)) = tail {
+    let (name, _, _) = extract_pattern_info(&pat);
+    if !name.is_empty() {
+      part_names.push((
+        list_element_accessor(&id_expr(param), k as usize, true),
+        name,
+      ));
+    }
+    elems.push(pat);
+  } else if !fixed {
     let bt = if length == Some(n_fixed as i128 + 1) {
       2
     } else {

@@ -5133,7 +5133,7 @@ fn collect_3d_primitives(
             }
           }
         }
-        "Polygon" if !args.is_empty() => {
+        "Polygon" | "Triangle" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             let mut style = style.clone();
             style.texture_coords = parse_texture_coords3d(&args[1..])
@@ -11068,17 +11068,13 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `f == c` (or a list of such equations) plots the zero contour of
   // `f - c`; a bare expression is its own zero contour.
   let bodies: Vec<Expr> = match body {
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| {
-          crate::functions::field_plot::equation_zero_body(i).is_some()
-        }) =>
-    {
-      items
-        .iter()
-        .filter_map(crate::functions::field_plot::equation_zero_body)
-        .collect()
-    }
+    Expr::List(items) if !items.is_empty() => items
+      .iter()
+      .map(|i| {
+        crate::functions::field_plot::equation_zero_body(i)
+          .unwrap_or_else(|| i.clone())
+      })
+      .collect(),
     other => vec![
       crate::functions::field_plot::equation_zero_body(other)
         .unwrap_or_else(|| other.clone()),

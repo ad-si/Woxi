@@ -445,6 +445,27 @@ pub(super) fn reduce_bounded_integer_box(
       }
     }
   }
+  // A product of the variables equal to a nonzero integer, `x y == 6`,
+  // bounds every factor by that integer's size: a divisor of it.
+  for p in polys.iter().filter(|p| p.is_equation) {
+    let Some(terms) = &p.exact else { continue };
+    let (constant, monomials): (Vec<_>, Vec<_>) =
+      terms.iter().partition(|(e, _)| e.iter().all(|&k| k == 0));
+    let c: i128 = constant.iter().map(|(_, c)| *c).sum();
+    if let [(exps, coeff)] = monomials.as_slice()
+      && c != 0
+      && *coeff != 0
+      && c % coeff == 0
+    {
+      let bound = (c / coeff).unsigned_abs() as f64;
+      for (b, &e) in boxes.iter_mut().zip(exps.iter()) {
+        if e > 0 {
+          b.lo = b.lo.max(-bound);
+          b.hi = b.hi.min(bound);
+        }
+      }
+    }
+  }
   for _ in 0..50 {
     let mut changed = false;
     for p in &polys {
@@ -457,31 +478,70 @@ pub(super) fn reduce_bounded_integer_box(
       break;
     }
   }
-  let mut count = 1.0;
   for b in &boxes {
     if !(b.lo.is_finite() && b.hi.is_finite()) {
       return None;
     }
-    count *= b.hi - b.lo + 1.0;
-  }
-  if count > MAX_POINTS {
-    return None;
   }
   let exact_eqs: Vec<&Vec<(Vec<u32>, i128)>> = polys
     .iter()
     .filter(|p| p.is_equation)
     .filter_map(|p| p.exact.as_ref())
     .collect();
+  // An exact equation of degree one or two in the last variable gives that
+  // variable's values outright once the others are fixed, so only the
+  // others are enumerated (`x^2 + y^2 + z^2 == 29^2` walks 59^2 points,
+  // not 59^3).
+  let last = vars.len() - 1;
+  let solver = exact_eqs.iter().copied().find(|t| {
+    let deg = t.iter().map(|(e, _)| e[last]).max().unwrap_or(0);
+    (1..=2).contains(&deg)
+  });
+  let mut count = 1.0;
+  for (k, b) in boxes.iter().enumerate() {
+    if k == last && solver.is_some() {
+      continue;
+    }
+    count *= b.hi - b.lo + 1.0;
+  }
+  if count > MAX_POINTS {
+    return None;
+  }
 
   let lo: Vec<i128> = boxes.iter().map(|b| b.lo as i128).collect();
   let hi: Vec<i128> = boxes.iter().map(|b| b.hi as i128).collect();
   let mut point = lo.clone();
   let mut solutions = Vec::new();
   loop {
-    if exact_eqs
-      .iter()
-      .all(|t| eval_exact(t, &point).is_none_or(|v| v == 0))
-    {
+    // The last variable's candidate values at this point of the others.
+    let candidates: Vec<i128> = match solver {
+      Some(terms) => {
+        let mut coeffs = [0i128; 3];
+        for (exps, c) in terms {
+          let mut t = *c;
+          for (k, &e) in exps.iter().enumerate() {
+            if k == last {
+              continue;
+            }
+            for _ in 0..e {
+              t = t.checked_mul(point[k])?;
+            }
+          }
+          let slot = &mut coeffs[exps[last] as usize];
+          *slot = slot.checked_add(t)?;
+        }
+        integer_roots(coeffs[2], coeffs[1], coeffs[0], lo[last], hi[last])?
+      }
+      None => (lo[last]..=hi[last]).collect(),
+    };
+    for x in candidates {
+      point[last] = x;
+      if !exact_eqs
+        .iter()
+        .all(|t| eval_exact(t, &point).is_none_or(|v| v == 0))
+      {
+        continue;
+      }
       let mut e = cond.clone();
       for (v, x) in vars.iter().zip(&point) {
         e = crate::functions::plot::substitute_var(&e, v, &Expr::Integer(*x));
@@ -497,8 +557,9 @@ pub(super) fn reduce_bounded_integer_box(
         Err(e) => return Some(Err(e)),
       }
     }
-    // Next point, last variable fastest (lexicographic order).
-    let mut k = vars.len();
+    // Next point of the other variables, the last of them fastest
+    // (lexicographic order).
+    let mut k = last;
     loop {
       if k == 0 {
         return Some(Ok(solutions_expr(vars, &solutions)));
@@ -511,6 +572,54 @@ pub(super) fn reduce_bounded_integer_box(
       }
     }
   }
+}
+
+/// The integer roots of `a x^2 + b x + c` in `[lo, hi]`, ascending; every
+/// integer there when the polynomial vanishes identically. None on
+/// overflow.
+fn integer_roots(
+  a: i128,
+  b: i128,
+  c: i128,
+  lo: i128,
+  hi: i128,
+) -> Option<Vec<i128>> {
+  let in_range = |x: i128| (lo..=hi).contains(&x);
+  if a == 0 {
+    if b == 0 {
+      return Some(if c == 0 { (lo..=hi).collect() } else { vec![] });
+    }
+    return Some(if c % b == 0 && in_range(-c / b) {
+      vec![-c / b]
+    } else {
+      vec![]
+    });
+  }
+  let disc = b
+    .checked_mul(b)?
+    .checked_sub(a.checked_mul(c)?.checked_mul(4)?)?;
+  if disc < 0 {
+    return Some(vec![]);
+  }
+  let mut s = (disc as f64).sqrt() as i128;
+  while s * s > disc {
+    s -= 1;
+  }
+  while (s + 1) * (s + 1) <= disc {
+    s += 1;
+  }
+  if s * s != disc {
+    return Some(vec![]);
+  }
+  let mut roots: Vec<i128> = [-b - s, -b + s]
+    .into_iter()
+    .filter(|n| n % (2 * a) == 0)
+    .map(|n| n / (2 * a))
+    .filter(|x| in_range(*x))
+    .collect();
+  roots.sort_unstable();
+  roots.dedup();
+  Some(roots)
 }
 
 fn solutions_expr(vars: &[String], solutions: &[Vec<i128>]) -> Expr {

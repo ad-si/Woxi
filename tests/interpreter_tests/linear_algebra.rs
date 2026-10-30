@@ -1877,8 +1877,8 @@ mod eigenvalues {
   fn float_matrix_with_complex_pair() {
     let m = "{{0, 0.7, 2.2, 2, 0.2}, {0.4, 0, 0, 0, 0}, {0, 0.7, 0, 0, 0}, \
              {0, 0, 0.8, 0, 0}, {0, 0, 0, 0.3, 0}}";
-    // All five eigenvalues come back; the sum is the trace (0), the
-    // dominant one is real and positive, and one conjugate pair is complex.
+    // All five eigenvalues come back; the sum is the trace (0) and the
+    // dominant one is real and positive.
     assert_eq!(
       interpret(&format!("Length[Eigenvalues[{m}]]")).unwrap(),
       "5"
@@ -1887,9 +1887,11 @@ mod eigenvalues {
       interpret(&format!("Abs[Total[Eigenvalues[{m}]]] < 10^-12")).unwrap(),
       "True"
     );
+    // Every eigenvalue is a machine complex (`1.10… + 0.*I` included), as
+    // in wolframscript.
     assert_eq!(
       interpret(&format!("Count[Eigenvalues[{m}], _Complex]")).unwrap(),
-      "2"
+      "5"
     );
     // Every eigenpair satisfies m.v == λ v.
     assert_eq!(
@@ -2824,6 +2826,27 @@ mod linear_solve {
     assert_eq!(
       interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}]").unwrap(),
       "{-4, 9/2}"
+    );
+  }
+
+  // Over-determined machine-number systems are consistent up to rounding noise.
+  #[test]
+  fn linear_solve_rectangular_machine_tolerance() {
+    assert_eq!(
+      interpret("LinearSolve[{{1., 2}, {3, 4}, {5, 6}}, {3, 7, 11}]").unwrap(),
+      "{1., 1.}"
+    );
+    assert_eq!(
+      interpret(
+        "m = {{0.1, 0.2}, {0.3, 0.4}, {0.7, 0.9}}; x = {0.3, 0.7}; \
+         Max[Abs[m . LinearSolve[m, m . x] - m . x]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]").unwrap(),
+      "{1., 0., 0.}"
     );
   }
 
@@ -8921,6 +8944,47 @@ mod linear_fractional_transform {
 mod orthogonalize {
   use super::*;
 
+  // Machine vectors are orthogonalized numerically (zeros come out as 0.);
+  // the Method option picks the algorithm, Householder giving its own
+  // signs. Digits may differ from wolframscript in the last place.
+  #[test]
+  fn machine_vectors_and_methods() {
+    assert_eq!(
+      interpret("Orthogonalize[{{1., 1, 0}, {2, 2, 0}, {0, 0, 1}}]").unwrap(),
+      "{{0.7071067811865475, 0.7071067811865475, 0.}, {0., 0., 0.}, {0., 0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sign[Chop[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}, Method -> \"Householder\"]]]"
+      )
+      .unwrap(),
+      "{{-1, -1, 0}, {1, -1, -1}, {1, -1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "m = {{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}; \
+         Chop[# . Transpose[#] - IdentityMatrix[3] & /@ \
+           {Orthogonalize[m, Method -> \"GramSchmidt\"], \
+            Orthogonalize[m, Method -> \"ModifiedGramSchmidt\"], \
+            Orthogonalize[m, Method -> \"Reorthogonalization\"]}, 10^-12]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}, \
+       {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret("Orthogonalize[{{1, 1}, {0, 1}}, Method -> \"Foo\"]").unwrap(),
+      "Orthogonalize[{{1, 1}, {0, 1}}, Method -> Foo]"
+    );
+    assert_eq!(
+      interpret(
+        "Orthogonalize[{{1, 2}, {3, 4}}, Method -> \"Reorthogonalization\"]"
+      )
+      .unwrap(),
+      "{{1/Sqrt[5], 2/Sqrt[5]}, {2/Sqrt[5], -(1/Sqrt[5])}}"
+    );
+  }
+
   #[test]
   fn already_orthogonal_pair() {
     assert_eq!(
@@ -11785,11 +11849,29 @@ mod array_domains {
   use super::*;
 
   #[test]
+  fn element_of_vector_and_matrix_domains() {
+    // Shape first, then every entry in the domain; Vectors[n] means
+    // Complexes and Matrices carries its (empty) symmetry list.
+    assert_eq!(
+      interpret(
+        "{Element[{0, 0, 0}, Vectors[3, Reals]], Element[{1, I}, Vectors[2, Reals]], \
+          Element[{1, 2}, Vectors[3, Reals]], Element[{a, 1}, Vectors[2, Reals]], \
+          Element[{{1, 2}, {3, 4}}, Matrices[{2, 2}, Reals]], \
+          Element[{{1}, {2, 3}}, Matrices[{2, 2}]], Element[x, Vectors[3]], \
+          Element[Sqrt[6], PositiveReals], Element[Pi - 4, NegativeReals]}"
+      )
+      .unwrap(),
+      "{True, False, False, Element[a, Reals], True, False, \
+       Element[x, Vectors[3, Complexes]], True, True}"
+    );
+  }
+
+  #[test]
   fn vectors_and_matrices_domains_stay_inert_without_warning() {
     use woxi::interpret_with_stdout;
     assert_eq!(interpret("Vectors[3, Reals]").unwrap(), "Vectors[3, Reals]");
     let r = interpret_with_stdout("Matrices[{2, 3}, Integers]").unwrap();
-    assert_eq!(r.result, "Matrices[{2, 3}, Integers]");
+    assert_eq!(r.result, "Matrices[{2, 3}, Integers, {}]");
     assert!(
       !r.warnings.iter().any(|w| w.contains("not yet implemented")),
       "{:?}",

@@ -6014,6 +6014,27 @@ mod nested_condition_guards {
 mod definition_order_by_subsumption {
   use super::*;
 
+  /// A sequence blank nested in an argument makes the rule more general
+  /// than one with single blanks in its place, whatever the definition
+  /// order; a list pattern's trailing sequence keeps its name for display.
+  #[test]
+  fn nested_sequence_blanks_order_after_single_blanks() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sq1[f[x_, y__]] := 1; sq1[f[x_, y_, z_]] := 2; \
+         sq2[{x_, y__}] := {y}; sq2[{x_, y_, z_}] := 2; \
+         sq3[Dynamic[{a_, b_, c__}]] := 1; sq3[Dynamic[{{a_, b_}, c_, d_}]] := 2; \
+         {DownValues[sq1], DownValues[sq2], sq2[{1, 2, 3, 4}], \
+          sq3[Dynamic[{{1, 2}, 3, 4}]]}"
+      )
+      .unwrap(),
+      "{{HoldPattern[sq1[f[x_, y_, z_]]] :> 2, HoldPattern[sq1[f[x_, y__]]] :> 1}, \
+       {HoldPattern[sq2[{x_, y_, z_}]] :> 2, HoldPattern[sq2[{x_, y__}]] :> {y}}, \
+       {2, 3, 4}, 2}"
+    );
+  }
+
   /// A bare pattern is parenthesized wherever it is the operand of an infix
   /// operator, in `InputForm` as well as in the printed form — the two
   /// renderers used to disagree about a `Plus` term. Verified against

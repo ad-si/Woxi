@@ -22718,6 +22718,31 @@ mod nsolve_mixed_precision {
 mod reduce_bounded_integers {
   use super::*;
 
+  // An equation of degree at most two in the last variable is solved for
+  // it, so a sphere of radius 29 needs only 59^2 points; a product equal
+  // to a nonzero integer bounds its factors by its divisors.
+  #[test]
+  fn last_variable_solved_and_divisor_bounds() {
+    assert_eq!(
+      interpret(
+        "{Length[Reduce[x^2 + y^2 + z^2 == 841, {x, y, z}, Integers]], \
+          Length[Reduce[x^2 + y^2 + z^2 == 29^2, {x, y}, Integers]]}"
+      )
+      .unwrap(),
+      "{174, 174}"
+    );
+    assert_eq!(
+      interpret("Reduce[x y == 6 && x > 0, {x, y}, Integers]").unwrap(),
+      "(x == 1 && y == 6) || (x == 2 && y == 3) || (x == 3 && y == 2) || \
+       (x == 6 && y == 1)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 y == 12, {x, y}, Integers]").unwrap(),
+      "(x == -2 && y == 3) || (x == -1 && y == 12) || (x == 1 && y == 12) || \
+       (x == 2 && y == 3)"
+    );
+  }
+
   #[test]
   fn domain_alone_reduces_over_all_variables() {
     assert_eq!(
@@ -23846,6 +23871,31 @@ mod rsolve_symbolic_constant_coefficients {
 mod solve_inequality_constraints {
   use super::*;
 
+  // A polynomial system whose equations factor is solved branch by branch;
+  // an inconsistent branch (Gröbner basis {1}) contributes nothing.
+  #[test]
+  fn polynomial_system_split_on_factors() {
+    assert_eq!(
+      interpret(
+        "q = (-3 + 8 v1^2 - 5 v1^4 - 10 v1 v2 + 4 v1^3 v2 - 5 v1^2 v2^2 + 4 v1 v2^3 - \
+         5 v1^2 v3^2 + 4 v1 v2 v3^2)/3; \
+         Solve[{(v1 - v2) (v1 + v2) (-4 + v1^2 + v2^2 + v3^2) == 0, q == 0, \
+           v1^2 + v2^2 + v3^2 == 1}, {v1, v2, v3}]"
+      )
+      .unwrap(),
+      "{{v1 -> -I, v2 -> -I, v3 -> -Sqrt[3]}, {v1 -> -I, v2 -> -I, v3 -> Sqrt[3]}, \
+       {v1 -> I, v2 -> I, v3 -> -Sqrt[3]}, {v1 -> I, v2 -> I, v3 -> Sqrt[3]}, \
+       {v1 -> -(1/Sqrt[3]), v2 -> 1/Sqrt[3], v3 -> -(1/Sqrt[3])}, \
+       {v1 -> -(1/Sqrt[3]), v2 -> 1/Sqrt[3], v3 -> 1/Sqrt[3]}, \
+       {v1 -> 1/Sqrt[3], v2 -> -(1/Sqrt[3]), v3 -> -(1/Sqrt[3])}, \
+       {v1 -> 1/Sqrt[3], v2 -> -(1/Sqrt[3]), v3 -> 1/Sqrt[3]}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 4, x^2 + y^2 == 1}, {x, y}]").unwrap(),
+      "{}"
+    );
+  }
+
   // Inequality[…] (a mixed chained comparison) restricts the solutions.
   #[test]
   fn mixed_chained_comparison() {
@@ -23863,6 +23913,27 @@ mod solve_inequality_constraints {
       interpret("NSolve[x^2 == 2 && Inequality[0, Less, x, LessEqual, 3], x]")
         .unwrap(),
       "{{x -> 1.4142135623730951}}"
+    );
+  }
+}
+
+mod nminimize_non_numeric_objective {
+  use super::*;
+
+  // An objective that is never a number is NMinimize::nnum and the call
+  // stays unevaluated (wolframscript reports it at a random probe point).
+  #[test]
+  fn nnum_message_and_unevaluated() {
+    let out =
+      woxi::interpret_with_stdout("NMaximize[{f[r], 0 < r < 1}, r]").unwrap();
+    assert_eq!(out.result, "NMaximize[{f[r], 0 < r < 1}, r]");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("NMaximize::nnum")),
+      "{:?}",
+      out.warnings
     );
   }
 }

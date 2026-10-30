@@ -12428,6 +12428,24 @@ mod bigfloat_trig {
   mod real_integer_power_chains {
     use super::*;
 
+    // An exact half-integer exponent: x^(n + 1/2) = x^n Sqrt[x] and
+    // x^-(n + 1/2) = (1/x^n)(1/Sqrt[x]), for machine reals and for N of
+    // exact radicals alike.
+    #[test]
+    fn half_integer_exponent_is_power_times_square_root() {
+      assert_eq!(
+        interpret(
+          "InputForm[{3.^(-1/2), 3.^(-5/2), 2.^(-1/2), 1.5^(-1/2), \
+           N[3^(-1/2)], N[3/Sqrt[2]], N[3^(-5/2)], (-2.)^(-1/2), 7.^(-1/3)}]"
+        )
+        .unwrap(),
+        "InputForm[{0.5773502691896258, 0.06415002990995843, \
+         0.7071067811865475, 0.8164965809277261, 0.5773502691896258, \
+         2.1213203435596424, 0.06415002990995843, 0. - 0.7071067811865475*I, \
+         0.5227579585747102}]"
+      );
+    }
+
     #[test]
     fn negative_exponent_uses_reciprocal_of_positive_power() {
       // libm pow gives 0.017834349827242368 — one ULP off. Found by

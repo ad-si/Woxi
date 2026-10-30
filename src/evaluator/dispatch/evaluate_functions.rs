@@ -1221,6 +1221,9 @@ fn evaluate_function_call_ast_inner(
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
+    "ConvexHullArea" if computational_geometry_active() => {
+      "ComputationalGeometry`ConvexHullArea"
+    }
     "DelaunayTriangulation" | "DiagramPlot" | "VoronoiDiagram"
       if computational_geometry_active() =>
     {
@@ -1235,6 +1238,22 @@ fn evaluate_function_call_ast_inner(
     "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active() => "Combinatorica`Derangements",
+    "NextPermutation" if combinatorica_active() => {
+      "Combinatorica`NextPermutation"
+    }
+    // A Combinatorica graph printed with its package on the path reads back
+    // as `Graph[{{{u, v}}, …}, {{{x, y}}, …}, …]`: edges given as lists, which
+    // the built-in Graph never takes.
+    "Graph"
+      if combinatorica_active()
+        && args.len() >= 2
+        && matches!(&args[0], Expr::List(edges)
+          if edges.iter().all(|e| matches!(e, Expr::List(_))))
+        && matches!(&args[1], Expr::List(vs)
+          if vs.iter().all(|v| matches!(v, Expr::List(_)))) =>
+    {
+      "Combinatorica`Graph"
+    }
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
     "StableMarriage" if combinatorica_active() => {
       "Combinatorica`StableMarriage"
@@ -1249,7 +1268,10 @@ fn evaluate_function_call_ast_inner(
     "DihedralGroup" if combinatorica_active() => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active() => "Combinatorica`Backtrack",
     "Josephus" if combinatorica_active() => "Combinatorica`Josephus",
-    "FromUnorderedPairs" | "ToAdjacencyLists" | "BreadthFirstTraversal"
+    "FromUnorderedPairs"
+    | "FromOrderedPairs"
+    | "ToAdjacencyLists"
+    | "BreadthFirstTraversal"
       if combinatorica_active() =>
     {
       combinatorica_graph_name(name)
@@ -1285,6 +1307,7 @@ fn evaluate_function_call_ast_inner(
     | "ShortestPath"
     | "ShowGraph"
     | "ShowLabeledGraph"
+    | "SetGraphOptions"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -3102,6 +3125,35 @@ fn evaluate_function_call_ast_inner(
           }
         }
         return Ok(rebuild(result));
+      }
+      // Permute[expr, group] — one permuted expression per group element,
+      // in GroupElements order, each reading position i from position g(i).
+      if let Expr::FunctionCall { name: gname, .. } = &args[1]
+        && gname.ends_with("Group")
+        && let Ok(Expr::List(ref elements)) =
+          evaluate_function_call_ast("GroupElements", &[args[1].clone()])
+      {
+        let n = Expr::Integer(list.len() as i128);
+        let mut out = Vec::with_capacity(elements.len());
+        for g in elements {
+          let Ok(Expr::List(ref images)) = evaluate_function_call_ast(
+            "PermutationList",
+            &[g.clone(), n.clone()],
+          ) else {
+            return Ok(unevaluated(name, args));
+          };
+          let mut permuted = Vec::with_capacity(list.len());
+          for i in images {
+            match expr_to_i128(i) {
+              Some(k) if k >= 1 && (k as usize) <= list.len() => {
+                permuted.push(list[k as usize - 1].clone());
+              }
+              _ => return Ok(unevaluated(name, args)),
+            }
+          }
+          out.push(rebuild(permuted));
+        }
+        return Ok(Expr::List(out.into()));
       }
       // Permute[expr, Cycles[{...}]] — cycle notation
       if let Expr::FunctionCall {
@@ -5283,6 +5335,52 @@ fn evaluate_function_call_ast_inner(
   if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
     return crate::functions::convex_hull::convex_hull_indices_ast(args);
   }
+  // ComputationalGeometry`ConvexHullArea[pts]: the shoelace area of the
+  // hull, exact for exact points.
+  if name == "ComputationalGeometry`ConvexHullArea"
+    && let [Expr::List(points)] = args
+  {
+    let hull = crate::functions::convex_hull::convex_hull_indices_ast(args)?;
+    let Expr::List(indices) = &hull else {
+      return Ok(unevaluated(name, args));
+    };
+    let corners: Vec<Expr> = indices
+      .iter()
+      .filter_map(|i| {
+        expr_to_i128(i).and_then(|k| points.get(k as usize - 1).cloned())
+      })
+      .collect();
+    if corners.len() < 3 {
+      return Ok(Expr::Integer(0));
+    }
+    let coord = |p: &Expr, k: usize| match p {
+      Expr::List(c) if c.len() == 2 => Some(c[k].clone()),
+      _ => None,
+    };
+    let mut terms = Vec::with_capacity(corners.len());
+    for (j, p) in corners.iter().enumerate() {
+      let next = &corners[(j + 1) % corners.len()];
+      let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+        (coord(p, 0), coord(p, 1), coord(next, 0), coord(next, 1))
+      else {
+        return Ok(unevaluated(name, args));
+      };
+      terms.push(call(
+        "Subtract",
+        vec![call("Times", vec![x1, y2]), call("Times", vec![x2, y1])],
+      ));
+    }
+    return evaluate_expr_to_expr(&call(
+      "Times",
+      vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+        call("Abs", vec![call("Plus", terms)]),
+      ],
+    ));
+  }
 
   if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_triangulation_ast(args);
@@ -5616,6 +5714,35 @@ fn evaluate_function_call_ast_inner(
   // FindShortestTour[points[, s, t], opts] → {length, order}
   if name == "FindShortestTour" {
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);
+  }
+
+  // The domains `Vectors[n]` and `Matrices[{m, n}]` default to Complexes,
+  // and a matrix domain carries its (empty) symmetry list.
+  if name == "Vectors" && args.len() == 1 {
+    return Ok(call(
+      "Vectors",
+      vec![args[0].clone(), Expr::Identifier("Complexes".to_string())],
+    ));
+  }
+  if name == "Matrices"
+    && matches!(args.len(), 1 | 2)
+    && let Expr::List(dims) = &args[0]
+  {
+    if dims.len() != 2 {
+      crate::emit_message(&format!(
+        "Matrices::rankl: The list {} of dimensions for a matrix must have length 2.",
+        expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(name, args));
+    }
+    let domain = args
+      .get(1)
+      .cloned()
+      .unwrap_or_else(|| Expr::Identifier("Complexes".to_string()));
+    return Ok(call(
+      "Matrices",
+      vec![args[0].clone(), domain, Expr::List(vec![].into())],
+    ));
   }
 
   // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle,
@@ -10903,6 +11030,19 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // TimeValue[s, i] — the present value, TimeValue[s, i, 0].
+  if name == "TimeValue" && args.len() == 2 {
+    let result = evaluate_function_call_ast(
+      "TimeValue",
+      &[args[0].clone(), args[1].clone(), Expr::Integer(0)],
+    )?;
+    if matches!(&result, Expr::FunctionCall { name, .. } if name == "TimeValue")
+    {
+      return Ok(unevaluated("TimeValue", args));
+    }
+    return Ok(result);
+  }
+
   // TimeValue[s, i, t] — time value of a present sum s at interest rate
   // i (per period) for t periods. Future value (t > 0) or present value
   // (t < 0): result = s * (1 + i)^t.
@@ -11584,6 +11724,31 @@ fn evaluate_function_call_ast_inner(
       "{name}::argr: {name} called with 1 argument; 2 arguments are expected."
     ));
     return Ok(unevaluated(name, args));
+  }
+  // Erosion / Dilation [array, r, Padding -> c]: the array is extended by
+  // r cells of value c on every side before filtering, then cropped back.
+  if matches!(name, "Erosion" | "Dilation")
+    && args.len() == 3
+    && matches!(&args[0], Expr::List(_))
+    && let Expr::Integer(r) = &args[1]
+    && *r >= 0
+    && let Expr::Rule {
+      pattern,
+      replacement,
+    } = &args[2]
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Padding")
+    && matches!(replacement.as_ref(), Expr::Integer(_) | Expr::Real(_))
+  {
+    let padded = evaluate_function_call_ast(
+      "ArrayPad",
+      &[args[0].clone(), args[1].clone(), (**replacement).clone()],
+    )?;
+    if let Some(filtered) = morphological_op(name, &padded, &args[1]) {
+      return evaluate_function_call_ast(
+        "ArrayPad",
+        &[filtered?, Expr::Integer(-*r)],
+      );
+    }
   }
   if matches!(name, "Opening" | "Closing" | "Erosion" | "Dilation")
     && args.len() == 2
@@ -14191,6 +14356,8 @@ fn unwrap_condition_guards(
 fn combinatorica_graph_name(name: &str) -> &'static str {
   match name {
     "FromUnorderedPairs" => "Combinatorica`FromUnorderedPairs",
+    "FromOrderedPairs" => "Combinatorica`FromOrderedPairs",
+    "SetGraphOptions" => "Combinatorica`SetGraphOptions",
     "ToAdjacencyLists" => "Combinatorica`ToAdjacencyLists",
     "BreadthFirstTraversal" => "Combinatorica`BreadthFirstTraversal",
     "V" => "Combinatorica`V",

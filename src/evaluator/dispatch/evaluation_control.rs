@@ -857,6 +857,28 @@ pub fn dispatch_evaluation_control(
         }
       }
     }
+    // NumericArray[list, type, "ClipAndCoerce" | "ClipAndRound"]: values
+    // outside the type's range are clipped to it; "ClipAndRound" also
+    // rounds reals to the nearest integer for an integer type.
+    "NumericArray"
+      if args.len() == 3
+        && matches!(&args[1], Expr::String(_))
+        && matches!(&args[2], Expr::String(m) if m == "ClipAndCoerce" || m == "ClipAndRound") =>
+    {
+      let (Expr::String(ty), Expr::String(method)) = (&args[1], &args[2])
+      else {
+        return None;
+      };
+      let Some(data) =
+        clip_numeric_array_data(&args[0], ty, method == "ClipAndRound")
+      else {
+        return Some(Ok(unevaluated("NumericArray", args)));
+      };
+      return Some(Ok(call(
+        "NumericArray",
+        vec![data, Expr::String(ty.clone())],
+      )));
+    }
     // CensoredDistribution[{min, max}, dist] — censored distribution
     "CensoredDistribution" if args.len() == 2 => {
       // Evaluate the underlying distribution to normalize it
@@ -865,6 +887,26 @@ pub fn dispatch_evaluation_control(
       let bounds = crate::evaluator::evaluate_expr_to_expr(&args[0])
         .unwrap_or_else(|_| args[0].clone());
       return Some(Ok(call("CensoredDistribution", vec![bounds, dist])));
+    }
+    // Names["pattern", IgnoreCase -> True | False]
+    "Names"
+      if args.len() == 2
+        && let Expr::String(pattern) = &args[0]
+        && let Expr::Rule {
+          pattern: opt,
+          replacement,
+        } = &args[1]
+        && matches!(opt.as_ref(), Expr::Identifier(n) if n == "IgnoreCase")
+        && let Expr::Identifier(flag) = replacement.as_ref()
+        && (flag == "True" || flag == "False") =>
+    {
+      let names = crate::evaluator::contexts::names_matching_case(
+        pattern,
+        flag == "True",
+      );
+      return Some(Ok(Expr::List(
+        names.into_iter().map(Expr::String).collect(),
+      )));
     }
     "Names" if args.len() <= 1 => {
       // Include both user-defined names and built-in function names
@@ -898,6 +940,32 @@ pub fn dispatch_evaluation_control(
         )));
       }
       return Some(Ok(Expr::List(vec![].into())));
+    }
+    // ValueQ[expr, Method -> m]: "TrialEvaluation" asks whether evaluating
+    // expr changes it; "SymbolDefinitionsPresent" is the default test.
+    "ValueQ"
+      if args.len() == 2
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
+        && let Expr::String(method) = replacement.as_ref()
+        && matches!(
+          method.as_str(),
+          "TrialEvaluation" | "SymbolDefinitionsPresent"
+        ) =>
+    {
+      if method == "SymbolDefinitionsPresent" {
+        return dispatch_evaluation_control("ValueQ", &args[..1]);
+      }
+      let evaluated = match evaluate_expr_to_expr(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(bool_expr(
+        !crate::evaluator::pattern_matching::expr_equal(&args[0], &evaluated),
+      )));
     }
     "ValueQ" if args.len() == 1 => {
       // ValueQ[head[args...]] is True iff `head` has any OwnValues or
@@ -1316,4 +1384,72 @@ fn validate_distribution_params(name: &str, args: &[Expr]) -> bool {
       known.contains(&name) || name.ends_with("Distribution")
     }
   }
+}
+
+/// The payload of `NumericArray[data, ty, "Clip…"]`: every number clipped
+/// to the range of `ty` and stored as that type stores it (integers for the
+/// integer types, single- or double-precision reals for the real ones).
+/// Reals become integers only when `round` is set. `None` for an unknown
+/// type or a non-numeric element.
+fn clip_numeric_array_data(data: &Expr, ty: &str, round: bool) -> Option<Expr> {
+  let int_range: Option<(i128, i128)> = match ty {
+    "UnsignedInteger8" => Some((0, u8::MAX as i128)),
+    "UnsignedInteger16" => Some((0, u16::MAX as i128)),
+    "UnsignedInteger32" => Some((0, u32::MAX as i128)),
+    "UnsignedInteger64" => Some((0, u64::MAX as i128)),
+    "Integer8" => Some((i8::MIN as i128, i8::MAX as i128)),
+    "Integer16" => Some((i16::MIN as i128, i16::MAX as i128)),
+    "Integer32" => Some((i32::MIN as i128, i32::MAX as i128)),
+    "Integer64" => Some((i64::MIN as i128, i64::MAX as i128)),
+    "Real32" | "Real64" => None,
+    _ => return None,
+  };
+  fn walk(
+    e: &Expr,
+    int_range: Option<(i128, i128)>,
+    single: bool,
+    round: bool,
+  ) -> Option<Expr> {
+    if let Expr::List(items) = e {
+      let out: Option<Vec<Expr>> = items
+        .iter()
+        .map(|x| walk(x, int_range, single, round))
+        .collect();
+      return Some(Expr::List(out?.into()));
+    }
+    if let Some((lo, hi)) = int_range {
+      let n: i128 = match e {
+        Expr::Integer(n) => *n,
+        Expr::BigInteger(b) => {
+          use num_traits::Signed;
+          if b.is_negative() { lo } else { hi }
+        }
+        Expr::Real(f) if round && f.is_finite() => {
+          let r = f.round_ties_even();
+          if r < lo as f64 {
+            lo
+          } else if r > hi as f64 {
+            hi
+          } else {
+            r as i128
+          }
+        }
+        _ => return None,
+      };
+      Some(Expr::Integer(n.clamp(lo, hi)))
+    } else {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      if v.is_nan() {
+        return None;
+      }
+      let max = if single { f32::MAX as f64 } else { f64::MAX };
+      let clipped = v.clamp(-max, max);
+      Some(Expr::Real(if single {
+        clipped as f32 as f64
+      } else {
+        clipped
+      }))
+    }
+  }
+  walk(data, int_range, ty == "Real32", round)
 }

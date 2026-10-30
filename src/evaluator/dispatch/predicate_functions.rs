@@ -452,6 +452,39 @@ pub fn dispatch_predicate_functions(
     "PalindromeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::palindrome_q_ast(args));
     }
+    // PalindromeQ[s, IgnoreCase -> …, IgnoreDiacritics -> …]: the string is
+    // normalized first, then tested as usual.
+    "PalindromeQ" if args.len() > 1 => {
+      let (pos, opts) = super::split_trailing_options(args);
+      if pos.len() != 1 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let mut subject = pos[0].clone();
+      for (opt, value) in &opts {
+        let on = match value {
+          Expr::Identifier(v) if v == "True" => true,
+          Expr::Identifier(v) if v == "False" => false,
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
+        let transform = match opt.as_str() {
+          "IgnoreCase" => "ToLowerCase",
+          "IgnoreDiacritics" => "RemoveDiacritics",
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
+        if on && matches!(subject, Expr::String(_)) {
+          subject = match crate::evaluator::evaluate_function_call_ast(
+            transform,
+            &[subject],
+          ) {
+            Ok(e) => e,
+            Err(e) => return Some(Err(e)),
+          };
+        }
+      }
+      return Some(crate::functions::predicate_ast::palindrome_q_ast(&[
+        subject,
+      ]));
+    }
     // SquareFreeQ[poly, x]: no repeated factor in x — the gcd of poly and
     // its derivative in x is free of x.
     "SquareFreeQ" if args.len() == 2 => {
@@ -604,6 +637,30 @@ pub fn dispatch_predicate_functions(
       // For Unique[], format is $nnn (just $counter)
       return Some(Ok(Expr::Identifier(sym_name)));
     }
+    // Unique[x, attrs] - like Unique[x], then the new symbol(s) get attrs.
+    "Unique" if args.len() == 2 => {
+      let syms = match crate::evaluator::evaluate_function_call_ast(
+        "Unique",
+        &args[..1],
+      ) {
+        Ok(s) => s,
+        Err(e) => return Some(Err(e)),
+      };
+      let targets: Vec<Expr> = match &syms {
+        Expr::Identifier(_) => vec![syms.clone()],
+        Expr::List(items) => items.to_vec(),
+        _ => return Some(Ok(syms)),
+      };
+      for t in targets {
+        if let Err(e) = crate::evaluator::evaluate_function_call_ast(
+          "SetAttributes",
+          &[t, args[1].clone()],
+        ) {
+          return Some(Err(e));
+        }
+      }
+      return Some(Ok(syms));
+    }
     "Unique" if args.len() == 1 => {
       match &args[0] {
         Expr::Identifier(name) => {
@@ -700,7 +757,7 @@ pub fn dispatch_predicate_functions(
     "SimplePolygonQ" if args.len() == 1 => {
       return crate::functions::geometric_test_ast::simple_polygon_q_ast(args);
     }
-    "CompositeQ" if args.len() == 1 => {
+    "CompositeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }
     "PrimePowerQ" if args.len() == 1 => {
@@ -817,6 +874,33 @@ pub fn dispatch_predicate_functions(
     "DuplicateFreeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::duplicate_free_q_ast(args));
     }
+    // PossibleZeroQ[expr, Method -> m, Assumptions -> a]: the method only
+    // chooses how zero is recognized; an expression that simplifies to 0
+    // under the assumptions is zero.
+    "PossibleZeroQ"
+      if args.len() >= 2
+        && super::split_trailing_options(args).0.len() == 1
+        && super::split_trailing_options(args)
+          .1
+          .iter()
+          .all(|(o, _)| o == "Method" || o == "Assumptions") =>
+    {
+      let (pos, opts) = super::split_trailing_options(args);
+      for (opt, value) in &opts {
+        if opt == "Assumptions" {
+          let simplified = crate::evaluator::evaluate_function_call_ast(
+            "Simplify",
+            &[pos[0].clone(), value.clone()],
+          );
+          if matches!(simplified, Ok(Expr::Integer(0))) {
+            return Some(Ok(bool_expr(true)));
+          }
+        }
+      }
+      return Some(crate::functions::predicate_ast::possible_zero_q_ast(
+        &pos[..1],
+      ));
+    }
     "PossibleZeroQ" => {
       if args.len() != 1 {
         crate::emit_message(&format!(
@@ -844,7 +928,7 @@ pub fn dispatch_predicate_functions(
     "Length" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::length_ast(args));
     }
-    "Depth" if args.len() == 1 => {
+    "Depth" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::depth_ast(args));
     }
     "LeafCount" if args.len() == 1 => {
@@ -1872,6 +1956,18 @@ pub fn dispatch_predicate_functions(
     // Construct - creates function call f[a][b] etc.
     "Construct" if !args.is_empty() => {
       return Some(crate::functions::predicate_ast::construct_ast(args));
+    }
+    // NameQ[name, ResolveContextAliases -> b]: Woxi defines no context
+    // aliases, so resolving them changes nothing.
+    "NameQ"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(o), Expr::Identifier(v), _))
+            if o == "ResolveContextAliases" && (v == "True" || v == "False")
+        ) =>
+    {
+      return dispatch_predicate_functions(name, &args[..1]);
     }
     // NameQ["name"] - check if a symbol with that name exists
     "NameQ" if args.len() == 1 => {
