@@ -14222,4 +14222,56 @@ mod exact_base_bigfloat_exponent {
     );
     assert_eq!(interpret("RealDigits[10^0.5`20][[2]]").unwrap(), "1");
   }
+
+  mod infinite_sum_with_step {
+    use super::*;
+
+    #[test]
+    fn unit_step_matches_plain_infinite_sum() {
+      assert_eq!(
+        interpret("Sum[x^n/n!, {n, 1, Infinity, 1}]").unwrap(),
+        "-1 + E^x"
+      );
+      assert_eq!(
+        interpret("Sum[1/n^2, {n, 1, Infinity, 1}]").unwrap(),
+        "Pi^2/6"
+      );
+    }
+
+    #[test]
+    fn step_two_reindexes() {
+      assert_eq!(
+        interpret("Sum[x^n/n!, {n, 0, Infinity, 2}]").unwrap(),
+        "Cosh[x]"
+      );
+      assert_eq!(
+        interpret("Sum[x^n/n!, {n, 1, Infinity, 2}]").unwrap(),
+        "Sinh[x]"
+      );
+    }
+
+    #[test]
+    fn unsolvable_stays_unevaluated_without_range_message() {
+      assert_eq!(
+        interpret("Sum[x^n/n, {n, 2, Infinity, 2}]").unwrap(),
+        "Sum[x^n/n, {n, 2, Infinity, 2}]"
+      );
+    }
+
+    #[test]
+    fn user_defined_term_function_in_infinite_sum() {
+      assert_eq!(
+        interpret("c[2, n_] := 1/n!; Sum[c[2, n] x^n, {n, 1, Infinity}]")
+          .unwrap(),
+        "-1 + E^x"
+      );
+      assert_eq!(
+        interpret(
+          "c[2, n_] := 1/n!; Normal[Series[Sum[c[2, n] xx^n, {n, 1, Infinity, 2}], {xx, 0, 5}]]"
+        )
+        .unwrap(),
+        "xx + xx^3/6 + xx^5/120"
+      );
+    }
+  }
 }
