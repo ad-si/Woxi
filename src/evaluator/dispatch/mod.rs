@@ -44,3 +44,33 @@ pub use predicate_functions::*;
 pub use quantity_functions::*;
 pub use string_functions::*;
 pub use structural::*;
+
+/// Split a call's arguments into the positional ones and the trailing
+/// `name -> value` options (symbol or string names), in their given order.
+pub(crate) fn split_trailing_options(
+  args: &[Expr],
+) -> (&[Expr], Vec<(String, Expr)>) {
+  let mut split = args.len();
+  let mut opts = Vec::new();
+  while split > 0 {
+    let (lhs, rhs) = match &args[split - 1] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => break,
+    };
+    let name = match lhs {
+      Expr::Identifier(s) | Expr::String(s) => s.clone(),
+      _ => break,
+    };
+    opts.push((name, rhs.clone()));
+    split -= 1;
+  }
+  opts.reverse();
+  (&args[..split], opts)
+}

@@ -795,7 +795,6 @@ pub fn sort_by_ast(list: &Expr, func: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-///// Ordering[list] / Ordering[list, n] / Ordering[list, n, p]
 /// PositionLargest[list] / PositionSmallest[list]: the 1-based positions of all
 /// occurrences of the maximum (resp. minimum) element of a numeric list, in
 /// ascending order. Non-numeric lists are left unevaluated. (The 2-argument
@@ -815,6 +814,58 @@ pub fn position_extreme_ast(
   };
   if items.is_empty() {
     return unevaluated();
+  }
+  // `PositionLargest[list, n, p]` orders the elements with the ordering
+  // function p (p[a, b] is 1 when a sorts before b, 0 when they tie).
+  if let Some(p) = args.get(2) {
+    let order = |a: &Expr, b: &Expr| -> Result<i128, InterpreterError> {
+      let r = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Apply".to_string(),
+        args: vec![p.clone(), Expr::List(vec![a.clone(), b.clone()].into())]
+          .into(),
+      })?;
+      Ok(match r {
+        Expr::Integer(k) => k,
+        Expr::Identifier(ref t) if t == "True" => 1,
+        Expr::Identifier(ref t) if t == "False" => -1,
+        _ => 0,
+      })
+    };
+    // Distinct values (ties under p) with their ascending positions.
+    let mut groups: Vec<(Expr, Vec<Expr>)> = Vec::new();
+    for (i, it) in items.iter().enumerate() {
+      let pos = Expr::Integer((i + 1) as i128);
+      let mut found = None;
+      for (gi, (g, _)) in groups.iter().enumerate() {
+        if order(g, it)? == 0 {
+          found = Some(gi);
+          break;
+        }
+      }
+      match found {
+        Some(gi) => groups[gi].1.push(pos),
+        None => groups.push((it.clone(), vec![pos])),
+      }
+    }
+    // Insertion sort ascending under p (the comparisons may fail).
+    let mut sorted: Vec<(Expr, Vec<Expr>)> = Vec::with_capacity(groups.len());
+    for g in groups {
+      let mut at = sorted.len();
+      for (k, (h, _)) in sorted.iter().enumerate() {
+        if order(&g.0, h)? > 0 {
+          at = k;
+          break;
+        }
+      }
+      sorted.insert(at, g);
+    }
+    let groups: Vec<Vec<Expr>> = sorted.into_iter().map(|(_, ps)| ps).collect();
+    let n = match &args[1] {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      Expr::Identifier(s) if s == "Automatic" => None,
+      _ => return unevaluated(),
+    };
+    return Ok(keep_extreme_groups(&groups, n, largest));
   }
   let mut vals = Vec::with_capacity(items.len());
   for it in items {
@@ -856,32 +907,8 @@ pub fn position_extreme_ast(
     groups.sort_by(|a, b| {
       a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut kept: Vec<Vec<Expr>> = if largest {
-      // The n largest, then reversed at both levels — wolframscript builds
-      // the ascending grouping and reverses the whole structure, so the
-      // positions inside each sublist come out descending too. Asking for a
-      // single value takes the same path as the one-argument form, which
-      // leaves those positions ascending.
-      let start = groups.len().saturating_sub(n);
-      groups[start..]
-        .iter()
-        .map(|(_, ps)| {
-          if n == 1 {
-            ps.clone()
-          } else {
-            ps.iter().rev().cloned().collect()
-          }
-        })
-        .collect()
-    } else {
-      groups.iter().take(n).map(|(_, ps)| ps.clone()).collect()
-    };
-    if largest {
-      kept.reverse();
-    }
-    return Ok(Expr::List(
-      kept.into_iter().map(|ps| Expr::List(ps.into())).collect(),
-    ));
+    let groups: Vec<Vec<Expr>> = groups.into_iter().map(|(_, ps)| ps).collect();
+    return Ok(keep_extreme_groups(&groups, Some(n), largest));
   }
 
   let target = if largest {
@@ -896,6 +923,47 @@ pub fn position_extreme_ast(
     .map(|(i, _)| Expr::Integer((i + 1) as i128))
     .collect();
   Ok(Expr::List(positions.into()))
+}
+
+/// The n extreme groups of positions, given the groups in ascending order of
+/// value. `None` asks for the single extreme value, its positions flat.
+fn keep_extreme_groups(
+  groups: &[Vec<Expr>],
+  n: Option<usize>,
+  largest: bool,
+) -> Expr {
+  let Some(n) = n else {
+    let g = if largest {
+      groups.last()
+    } else {
+      groups.first()
+    };
+    return Expr::List(g.cloned().unwrap_or_default().into());
+  };
+  let mut kept: Vec<Vec<Expr>> = if largest {
+    // The n largest, then reversed at both levels — wolframscript builds
+    // the ascending grouping and reverses the whole structure, so the
+    // positions inside each sublist come out descending too. Asking for a
+    // single value takes the same path as the one-argument form, which
+    // leaves those positions ascending.
+    let start = groups.len().saturating_sub(n);
+    groups[start..]
+      .iter()
+      .map(|ps| {
+        if n == 1 {
+          ps.clone()
+        } else {
+          ps.iter().rev().cloned().collect()
+        }
+      })
+      .collect()
+  } else {
+    groups.iter().take(n).cloned().collect()
+  };
+  if largest {
+    kept.reverse();
+  }
+  Expr::List(kept.into_iter().map(|ps| Expr::List(ps.into())).collect())
 }
 
 /// Apply the position-count argument of `Ordering` / `OrderingBy` to the full

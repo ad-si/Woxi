@@ -2477,12 +2477,15 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// AdjacencyMatrix, so Normal[...] agrees with wolframscript.)
 pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PermutationMatrix", args));
-  if args.len() != 1 {
-    return unevaluated();
-  }
+  // PermutationMatrix[perm, n] pads perm with fixed points to length n.
+  let size = match args {
+    [_] => None,
+    [_, Expr::Integer(n)] if *n >= 0 => Some(*n as usize),
+    _ => return unevaluated(),
+  };
   // Accept a permutation list directly, or convert a Cycles object via
   // PermutationList.
-  let perm_list = match &args[0] {
+  let mut perm_list = match &args[0] {
     Expr::List(items) => items.iter().cloned().collect::<Vec<_>>(),
     cycles @ Expr::FunctionCall { name, .. } if name == "Cycles" => {
       let converted = crate::evaluator::evaluate_expr_to_expr(&call(
@@ -2496,6 +2499,14 @@ pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => return unevaluated(),
   };
+  if let Some(size) = size {
+    if size < perm_list.len() {
+      return unevaluated();
+    }
+    for k in perm_list.len()..size {
+      perm_list.push(Expr::Integer(k as i128 + 1));
+    }
+  }
   // Every entry must be an integer in 1..=n and no two the same, or the
   // matrix would have a repeated column. wolframscript reports nothing
   // for a list that is not a permutation, it just declines.
@@ -2675,15 +2686,20 @@ pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Woxi returns the dense matrix, so Normal[...] agrees with wolframscript.)
 pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("VandermondeMatrix", args));
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
   let points: Vec<Expr> = match &args[0] {
     Expr::List(p) if !p.is_empty() => p.iter().cloned().collect(),
     _ => return unevaluated(),
   };
-  let n = points.len();
-  let mut matrix = Vec::with_capacity(n);
+  // VandermondeMatrix[v, m]: m columns (powers 0 .. m-1).
+  let n = match args.get(1) {
+    None => points.len(),
+    Some(Expr::Integer(m)) if *m >= 1 => *m as usize,
+    Some(_) => return unevaluated(),
+  };
+  let mut matrix = Vec::with_capacity(points.len());
   for x in &points {
     let mut row = Vec::with_capacity(n);
     for j in 0..n {
@@ -14904,28 +14920,58 @@ fn la_mod_inv(a: i128, m: i128) -> i128 {
   old_s.rem_euclid(m)
 }
 
-/// Fraction-free integer determinant (Bareiss).
-fn la_int_det(mat: &[Vec<i128>]) -> i128 {
+/// `a * b mod m` for reduced operands, without i128 overflow.
+fn la_mul_mod(a: i128, b: i128, m: i128) -> i128 {
+  if let Some(p) = a.checked_mul(b) {
+    p.rem_euclid(m)
+  } else {
+    use num_bigint::BigInt;
+    use num_traits::ToPrimitive;
+    let p = (BigInt::from(a) * BigInt::from(b)) % BigInt::from(m);
+    p.to_i128().unwrap_or(0).rem_euclid(m)
+  }
+}
+
+/// Determinant over Z/m (any modulus m >= 1) by Euclidean row reduction,
+/// which needs no inverses and keeps every entry in [0, m).
+fn la_det_mod(mat: &[Vec<i128>], modulus: i128) -> i128 {
   let n = mat.len();
-  let mut m: Vec<Vec<i128>> = mat.to_vec();
-  let mut sign = 1i128;
-  let mut prev = 1i128;
+  let mut m: Vec<Vec<i128>> = mat
+    .iter()
+    .map(|r| r.iter().map(|c| c.rem_euclid(modulus)).collect())
+    .collect();
+  let mut det = 1i128 % modulus;
   for k in 0..n {
-    if m[k][k] == 0 {
-      let Some(pr) = (k + 1..n).find(|&r| m[r][k] != 0) else {
+    loop {
+      // Smallest nonzero entry of column k (rows k..) becomes the pivot.
+      let Some(pr) = (k..n).filter(|&r| m[r][k] != 0).min_by_key(|&r| m[r][k])
+      else {
         return 0;
       };
-      m.swap(k, pr);
-      sign = -sign;
-    }
-    for i in (k + 1)..n {
-      for j in (k + 1)..n {
-        m[i][j] = (m[i][j] * m[k][k] - m[i][k] * m[k][j]) / prev;
+      if pr != k {
+        m.swap(k, pr);
+        det = (modulus - det) % modulus;
+      }
+      let mut done = true;
+      for i in (k + 1)..n {
+        if m[i][k] != 0 {
+          let q = m[i][k] / m[k][k];
+          for j in k..n {
+            let t = la_mul_mod(q, m[k][j], modulus);
+            m[i][j] = (m[i][j] - t).rem_euclid(modulus);
+          }
+          if m[i][k] != 0 {
+            done = false;
+          }
+        }
+      }
+      if done {
+        break;
       }
     }
-    prev = m[k][k];
+    det = la_mul_mod(det, m[k][k], modulus);
   }
-  sign * m[n - 1][n - 1]
+  det
 }
 
 fn la_matrix_expr(rows: &[Vec<i128>]) -> Expr {
@@ -14980,13 +15026,14 @@ fn la_rref(mat: &mut [Vec<i128>], m: i128) -> Option<Vec<usize>> {
     mat.swap(rank, pr);
     let inv = la_mod_inv(mat[rank][col], m);
     for j in 0..cols {
-      mat[rank][j] = (mat[rank][j] * inv).rem_euclid(m);
+      mat[rank][j] = la_mul_mod(mat[rank][j], inv, m);
     }
     for r in 0..rows {
       if r != rank && mat[r][col] != 0 {
         let f = mat[r][col];
         for j in 0..cols {
-          mat[r][j] = (mat[r][j] - f * mat[rank][j]).rem_euclid(m);
+          mat[r][j] =
+            (mat[r][j] - la_mul_mod(f, mat[rank][j], m)).rem_euclid(m);
         }
       }
     }
@@ -15015,7 +15062,7 @@ pub fn det_modulus_ast(
     ));
     return Ok(la_unevaluated("Det", args));
   }
-  Ok(Expr::Integer(la_int_det(&mat).rem_euclid(m)))
+  Ok(Expr::Integer(la_det_mod(&mat, m)))
 }
 
 /// Inverse[m, Modulus -> p] via the adjugate, which works for any
@@ -15035,7 +15082,7 @@ pub fn inverse_modulus_ast(
     .iter()
     .map(|r| r.iter().map(|c| c.rem_euclid(m)).collect())
     .collect();
-  let det = la_int_det(&reduced).rem_euclid(m);
+  let det = la_det_mod(&reduced, m);
   let g = gcd_i128(det, m);
   if g != 1 {
     if la_is_prime(m) {
@@ -15068,11 +15115,11 @@ pub fn inverse_modulus_ast(
             .collect()
         })
         .collect();
-      let mut cof = if n == 1 { 1 } else { la_int_det(&minor) };
+      let mut cof = if n == 1 { 1 } else { la_det_mod(&minor, m) };
       if (i + j) % 2 == 1 {
         cof = -cof;
       }
-      out[j][i] = (cof.rem_euclid(m) * inv_det).rem_euclid(m);
+      out[j][i] = la_mul_mod(cof.rem_euclid(m), inv_det, m);
     }
   }
   Ok(la_matrix_expr(&out))
@@ -15284,6 +15331,84 @@ fn sg_outer(rows: &[f64], cols: &[f64]) -> Expr {
       .collect::<Vec<_>>()
       .into(),
   )
+}
+
+/// The exact 1D Savitzky–Golay smoothing kernel of radius `r` and degree `k`
+/// (WorkingPrecision -> Infinity): the first row of (AᵀA)⁻¹Aᵀ for the
+/// Vandermonde matrix A[i][p] = (i - r)^p, computed with exact rationals.
+fn sg_kernel_exact(r: usize, k: usize) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as eval;
+  let m = 2 * r + 1;
+  let ncols = (k + 1).min(m);
+  let offs: Vec<i128> = (0..m).map(|i| i as i128 - r as i128).collect();
+  let int_list =
+    |v: Vec<i128>| Expr::List(v.into_iter().map(Expr::Integer).collect());
+  let vander = Expr::List(
+    offs
+      .iter()
+      .map(|&o| int_list((0..ncols).map(|p| o.pow(p as u32)).collect()))
+      .collect(),
+  );
+  let normal = Expr::List(
+    (0..ncols)
+      .map(|p| {
+        int_list(
+          (0..ncols)
+            .map(|q| offs.iter().map(|&o| o.pow((p + q) as u32)).sum())
+            .collect(),
+        )
+      })
+      .collect(),
+  );
+  let e0 = int_list((0..ncols).map(|p| i128::from(p == 0)).collect());
+  let coeffs = eval("LinearSolve", &[normal, e0])?;
+  eval("Dot", &[vander, coeffs])
+}
+
+/// SavitzkyGolayMatrix[spec, k, WorkingPrecision -> Infinity] — the exact
+/// kernel for the same specifications as savitzky_golay_matrix_ast.
+pub fn savitzky_golay_matrix_exact_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("SavitzkyGolayMatrix", args));
+  let as_int = |e: &Expr| -> Option<usize> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    }
+  };
+  let outer = |a: Expr, b: Expr| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Outer",
+      &[Expr::Identifier("Times".to_string()), a, b],
+    )
+  };
+  match (&args[0], &args[1]) {
+    (Expr::List(rs), kexpr) if rs.len() == 1 => {
+      let (Some(r), Some(k)) = (as_int(&rs[0]), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      sg_kernel_exact(r, k)
+    }
+    (Expr::List(rs), Expr::List(ks)) if rs.len() == 2 && ks.len() == 2 => {
+      let (Some(r1), Some(r2), Some(k1), Some(k2)) = (
+        as_int(&rs[0]),
+        as_int(&rs[1]),
+        as_int(&ks[0]),
+        as_int(&ks[1]),
+      ) else {
+        return unevaluated();
+      };
+      outer(sg_kernel_exact(r1, k1)?, sg_kernel_exact(r2, k2)?)
+    }
+    (rexpr, kexpr) => {
+      let (Some(r), Some(k)) = (as_int(rexpr), as_int(kexpr)) else {
+        return unevaluated();
+      };
+      let ker = sg_kernel_exact(r, k)?;
+      outer(ker.clone(), ker)
+    }
+  }
 }
 
 /// SavitzkyGolayMatrix[{r}, k] — the 1D smoothing kernel (a vector).

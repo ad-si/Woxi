@@ -139,6 +139,41 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   Ok(Expr::Association(pairs))
 }
 
+/// Counts[list, {e1, e2, …}]: an association keyed by the ei, in the order
+/// given, with the number of times each occurs in list (0 when absent).
+/// Elements of list not among the ei are not counted.
+pub fn counts_with_keys_ast(
+  list: &Expr,
+  keys: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let items: Vec<Expr> = match list {
+    Expr::List(items) => items.to_vec(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    _ => return Ok(call("Counts", vec![list.clone(), keys.clone()])),
+  };
+  let Expr::List(keys) = keys else {
+    return Ok(call("Counts", vec![list.clone(), keys.clone()]));
+  };
+  use std::collections::HashMap;
+  let mut index: HashMap<String, usize> = HashMap::new();
+  let mut pairs: Vec<(Expr, Expr)> = Vec::new();
+  for k in keys {
+    let ks = expr_to_string(k);
+    if let std::collections::hash_map::Entry::Vacant(e) = index.entry(ks) {
+      e.insert(pairs.len());
+      pairs.push((k.clone(), Expr::Integer(0)));
+    }
+  }
+  for item in &items {
+    if let Some(&i) = index.get(&expr_to_string(item))
+      && let Expr::Integer(n) = &mut pairs[i].1
+    {
+      *n += 1;
+    }
+  }
+  Ok(Expr::Association(pairs))
+}
+
 /// AST-based DeleteDuplicates: remove duplicate elements.
 /// DeleteDuplicates[{a, b, a, c, b}] -> {a, b, c}
 /// DeleteDuplicates[list, test] uses `test[a, b]` to decide if `b`
@@ -1076,6 +1111,62 @@ pub fn symmetric_difference_ast(
 
   if lists.is_empty() {
     return Ok(Expr::List(vec![].into()));
+  }
+
+  // A trailing `SameTest -> f` decides which elements are the same: keep
+  // the elements that f matches in an odd number of the lists.
+  if let Some(Expr::Rule {
+    pattern,
+    replacement,
+  }) = lists.last()
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "SameTest")
+  {
+    let test = replacement.as_ref();
+    let lists = &lists[..lists.len() - 1];
+    let mut slices: Vec<&[Expr]> = Vec::with_capacity(lists.len());
+    for l in lists {
+      let Expr::List(items) = l else {
+        return Ok(unevaluated("SymmetricDifference", lists));
+      };
+      slices.push(items);
+    }
+    let same = |a: &Expr, b: &Expr| -> Result<bool, InterpreterError> {
+      Ok(matches!(
+        apply_func_to_two_args(test, a, b)?,
+        Expr::Identifier(ref s) if s == "True"
+      ))
+    };
+    let mut kept: Vec<Expr> = Vec::new();
+    for (k, items) in slices.iter().enumerate() {
+      for item in *items {
+        let mut count = 1;
+        for (m, other) in slices.iter().enumerate() {
+          if m == k {
+            continue;
+          }
+          for o in *other {
+            if same(item, o)? {
+              count += 1;
+              break;
+            }
+          }
+        }
+        if count % 2 == 1 {
+          kept.push(item.clone());
+        }
+      }
+    }
+    sort_canonical(&mut kept);
+    let mut reps: Vec<Expr> = Vec::new();
+    'dedup: for item in kept {
+      for rep in &reps {
+        if same(&item, rep)? {
+          continue 'dedup;
+        }
+      }
+      reps.push(item);
+    }
+    return Ok(Expr::List(reps.into()));
   }
 
   // Count how many lists contain each element (dedup within each list)

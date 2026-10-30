@@ -445,6 +445,12 @@ pub fn known_symbols() -> Vec<(String, String)> {
 ///
 /// `Names`, `Protect` and `Unprotect` all select names this way.
 pub fn names_matching(pattern: &str) -> Vec<String> {
+  names_matching_case(pattern, false)
+}
+
+/// `names_matching`, optionally ignoring the case of the symbol names
+/// (Names[…, IgnoreCase -> True]).
+pub fn names_matching_case(pattern: &str, ignore_case: bool) -> Vec<String> {
   let pattern = &expand_alias(pattern);
   let (context_pattern, name_pattern) = match pattern.rfind('`') {
     Some(last) => (
@@ -462,8 +468,13 @@ pub fn names_matching(pattern: &str) -> Vec<String> {
         .replace('@', "[a-z]+")
     ))
   };
+  let name_regex = if ignore_case {
+    to_regex(&format!("(?i){name_pattern}"))
+  } else {
+    to_regex(&name_pattern)
+  };
   let (Ok(name_re), Some(context_re)) = (
-    to_regex(&name_pattern),
+    name_regex,
     match &context_pattern {
       None => Some(None),
       Some(ctx) => to_regex(ctx).ok().map(Some),

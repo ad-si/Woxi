@@ -3787,7 +3787,7 @@ declared signatures:
 Counting the required and optional slots (skipping anything with
 `OptionsPattern` or a `BlankSequence`, which are unbounded) and comparing
 against Woxi's declared maximum turns up every documented argument form that
-is missing. The sweep originally found 80; the 66 below are what is left.
+is missing. The sweep originally found 80; the 61 below are what is left.
 
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
@@ -3795,11 +3795,9 @@ answer, which makes them safe but individually invisible.
 
 | Function | Woxi | WL up to | `ArgumentsPattern` |
 | --- | --- | --- | --- |
-| `AbsoluteCorrelation` | 1–2 | 3 | `{_, _., _.}` |
 | `AiryAiZero` | 1–1 | 2 | `{_, _.}` |
 | `AiryBiZero` | 1–1 | 2 | `{_, _.}` |
 | `AngerJ` | 2–2 | 3 | `{_, _, _.}` |
-| `AngleBisector` | 1–1 | 2 | `{{_, _, _}, _.}` |
 | `ArcCurvature` | 2–2 | 3 | `{{__}, _, _.}` |
 | `BesselYZero` | 2–2 | 3 | `{_, _, _.}` |
 | `BooleanMaxterms` | 2–2 | 3 | `{_, _., _.}` |
@@ -3815,7 +3813,6 @@ answer, which makes them safe but individually invisible.
 | `Covariance` | 1–2 | 3 | `{_, _., _.}` |
 | `DigitCount` | 1–3 | 4 | `{_, _., _., _.}` |
 | `DigitSum` | 1–2 | 3 | `{_, _., _.}` |
-| `EulerAngles` | 1–1 | 2 | `{_, Optional[{_, _, _}]}` |
 | `FindLinearRecurrence` | 1–1 | 2 | `{_, _.}` |
 | `FrenetSerretSystem` | 2–2 | 3 | `{{__}, _, _.}` |
 | `GammaDistribution` | 2–2 | 4 | `{_, _, _., _.}` |
@@ -3842,13 +3839,11 @@ answer, which makes them safe but individually invisible.
 | `MaximalBy` | 1–3 | 4 | `{_, _., _., _.}` |
 | `MeijerG` | 3–3 | 4 | `{{{___}, {___}}, {{___}, {___}}, _, _.}` |
 | `MinimalBy` | 1–3 | 4 | `{_, _., _., _.}` |
-| `MultipleHarmonicNumber` | 1–2 | 3 | `{_, Optional[{__}], Optional[{__, _}]}` |
 | `NotebookDirectory` | 0–0 | 1 | `{_.}` |
 | `ParentDirectory` | 0–1 | 2 | `{_., _.}` |
 | `PerfectNumber` | 1–1 | 2 | `{_, _.}` |
 | `PolyLog` | 2–2 | 3 | `{_, _, _.}` |
 | `PositionLargest` | 1–2 | 3 | `{_, _., _.}` |
-| `PositionSmallest` | 1–2 | 3 | `{_, _., _.}` |
 | `Precedence` | 1–1 | 2 | `{_, _.}` |
 | `QuantityQ` | 1–1 | 2 | `{_, _.}` |
 | `RiceDistribution` | 2–2 | 3 | `{_, _, _.}` |
@@ -3869,10 +3864,11 @@ Notes on the ones already looked at:
   gives the same answer as without `x`), so there may be nothing to match.
 - `Counts[list, n]`: wolframscript rejects a non-list second argument with
   `Counts::invl`, so the slot is not a useful form either.
-- `PositionLargest` / `PositionSmallest`: the remaining slot is an
-  *orderfun*, but wolframscript rejects `Greater` and `Less` there with
-  `::nord3` (it wants an `Order`-style comparison returning ±1/0), and
-  `Order` itself is the default — so there is little behaviour to match.
+- `PositionLargest`: the remaining slot is an *orderfun*, but
+  wolframscript rejects `Greater` and `Less` there with `::nord3` (it wants
+  an `Order`-style comparison returning ±1/0). `PositionSmallest[list, n, p]`
+  is implemented for such comparisons (e.g. `AlphabeticOrder`); `Greater` /
+  `Less` stay unevaluated without the `::nord3` message.
 - The generalized distribution constructors (`GammaDistribution` 2→4,
   `InverseGammaDistribution` 2→4, `GompertzMakehamDistribution` 2→4,
   `RiceDistribution` 2→3, `InverseGaussianDistribution` 2→3,

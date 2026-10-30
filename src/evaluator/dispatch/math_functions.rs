@@ -715,7 +715,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "ListFourierSequenceTransform" if args.len() == 2 => {
+    "ListFourierSequenceTransform" if args.len() == 2 || args.len() == 3 => {
       return Some(
         crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
       );
@@ -1091,6 +1091,31 @@ pub fn dispatch_math_functions(
     "RootMeanSquare" if args.len() == 1 => {
       return Some(crate::functions::math_ast::root_mean_square_ast(args));
     }
+    // Covariance[dist, i, j] / Correlation[dist, i, j]: the (i, j) entry
+    // of the distribution's covariance / correlation matrix.
+    "Covariance" | "Correlation"
+      if args.len() == 3 && matches!(args[0], Expr::FunctionCall { .. }) =>
+    {
+      let (Some(i), Some(j)) = (expr_to_i128(&args[1]), expr_to_i128(&args[2]))
+      else {
+        return None;
+      };
+      let m =
+        match crate::evaluator::evaluate_function_call_ast(name, &args[..1]) {
+          Ok(m) => m,
+          Err(e) => return Some(Err(e)),
+        };
+      if let Expr::List(rows) = &m
+        && i >= 1
+        && (i as usize) <= rows.len()
+        && let Expr::List(row) = &rows[i as usize - 1]
+        && j >= 1
+        && (j as usize) <= row.len()
+      {
+        return Some(Ok(row[j as usize - 1].clone()));
+      }
+      return None;
+    }
     "Covariance" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
@@ -1105,11 +1130,48 @@ pub fn dispatch_math_functions(
     "CovarianceFunction" if args.len() == 3 => {
       return Some(crate::functions::math_ast::covariance_function_ast(args));
     }
+    // AbsoluteCorrelation[dist] = E[X Xᵀ] = Covariance[dist] + μ μᵀ, and
+    // AbsoluteCorrelation[dist, i, j] is its (i, j) entry.
+    "AbsoluteCorrelation"
+      if (args.len() == 1 || args.len() == 3)
+        && matches!(&args[0], Expr::FunctionCall { name, .. }
+          if name.ends_with("Distribution")) =>
+    {
+      let eval = |e: Expr| evaluate_expr_to_expr(&e);
+      let (cov, mean) = match (
+        eval(call1("Covariance", args[0].clone())),
+        eval(call1("Mean", args[0].clone())),
+      ) {
+        (Ok(c), Ok(m)) => (c, m),
+        (Err(e), _) | (_, Err(e)) => return Some(Err(e)),
+      };
+      let (Expr::List(_), Expr::List(_)) = (&cov, &mean) else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let full = call(
+        "Plus",
+        vec![
+          cov,
+          call("Outer", vec![id_expr("Times"), mean.clone(), mean]),
+        ],
+      );
+      let wanted = if args.len() == 3 {
+        call("Part", vec![full, args[1].clone(), args[2].clone()])
+      } else {
+        full
+      };
+      return Some(eval(wanted));
+    }
     "AbsoluteCorrelation" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::absolute_correlation_ast(args));
     }
     "Correlation" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::correlation_ast(args));
+    }
+    // SpearmanRho[m] / KendallTau[m]: the matrix of the coefficients
+    // between every pair of columns of m.
+    "SpearmanRho" | "KendallTau" if args.len() == 1 => {
+      return Some(pairwise_column_statistic(name, &args[0]));
     }
     "SpearmanRho" if args.len() == 2 => {
       return Some(crate::functions::math_ast::spearman_rho_ast(args));
@@ -1445,6 +1507,25 @@ pub fn dispatch_math_functions(
     "SphericalHarmonicY" if args.len() == 4 => {
       return Some(crate::functions::math_ast::spherical_harmonic_y_ast(args));
     }
+    // LegendreQ[n, m, a, z] — type 1 is the default LegendreQ[n, m, z];
+    // other types (and unevaluated type-1 calls) stay as they are.
+    "LegendreQ" if args.len() == 4 => {
+      if matches!(&args[2], Expr::Integer(1)) {
+        return Some(
+          match crate::functions::math_ast::legendre_q_ast(&[
+            args[0].clone(),
+            args[1].clone(),
+            args[3].clone(),
+          ]) {
+            Ok(Expr::FunctionCall { ref name, .. }) if name == "LegendreQ" => {
+              Ok(unevaluated("LegendreQ", args))
+            }
+            other => other,
+          },
+        );
+      }
+      return Some(Ok(unevaluated("LegendreQ", args)));
+    }
     "LegendreQ" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::legendre_q_ast(args));
     }
@@ -1654,6 +1735,23 @@ pub fn dispatch_math_functions(
     }
     "BesselK" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_k_ast(args));
+    }
+    // EllipticThetaPrime[a, q] — EllipticThetaPrime[a, 0, q].
+    "EllipticThetaPrime" if args.len() == 2 => {
+      return Some(
+        match crate::functions::math_ast::elliptic_theta_prime_ast(&[
+          args[0].clone(),
+          Expr::Integer(0),
+          args[1].clone(),
+        ]) {
+          Ok(Expr::FunctionCall { ref name, .. })
+            if name == "EllipticThetaPrime" =>
+          {
+            Ok(unevaluated("EllipticThetaPrime", args))
+          }
+          other => other,
+        },
+      );
     }
     "EllipticThetaPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::elliptic_theta_prime_ast(args));
@@ -1912,6 +2010,20 @@ pub fn dispatch_math_functions(
     }
     "RandomPermutation" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_permutation_ast(args));
+    }
+    // WorkingPrecision -> MachinePrecision is the default precision.
+    "RandomVariate"
+      if (2..=3).contains(&args.len())
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(n), Expr::Identifier(v), _))
+            if n == "WorkingPrecision" && v == "MachinePrecision"
+        ) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "RandomVariate",
+        &args[..args.len() - 1],
+      ));
     }
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_variate_ast(args));
@@ -2594,6 +2706,43 @@ pub fn dispatch_math_functions(
     "FactorInteger" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::factor_integer_ast(args));
     }
+    // PrimeOmega / PrimeNu [n, GaussianIntegers -> True]: count the
+    // Gaussian prime factors (with / without multiplicity), ignoring units.
+    "PrimeOmega" | "PrimeNu"
+      if args.len() == 2
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GaussianIntegers")
+        && let Expr::Identifier(flag) = replacement.as_ref()
+        && (flag == "True" || flag == "False") =>
+    {
+      if flag == "False" {
+        return dispatch_math_functions(name, &args[..1]);
+      }
+      let factors = match crate::functions::math_ast::factor_integer_ast(args) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut count: i128 = 0;
+      for pair in pairs {
+        let Expr::List(p) = pair else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let (Some(base), Some(Expr::Integer(e))) = (p.first(), p.get(1)) else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        if matches!(expr_to_string(base).as_str(), "1" | "-1" | "I" | "-I") {
+          continue;
+        }
+        count += if name == "PrimeOmega" { *e } else { 1 };
+      }
+      return Some(Ok(Expr::Integer(count)));
+    }
     "PrimeOmega" if args.len() == 1 => {
       return Some(crate::functions::math_ast::prime_omega_ast(args));
     }
@@ -2755,6 +2904,55 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Integer(if total % 2 == 0 { 1 } else { -1 })));
         }
       }
+    }
+    // LiouvilleLambda[n, GaussianIntegers -> True]: (-1)^k for the number k
+    // of Gaussian prime factors of n counted with multiplicity (units
+    // excluded).
+    "LiouvilleLambda"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "GaussianIntegers")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True" || v == "False")) =>
+    {
+      let gaussian = matches!(&args[1], Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"));
+      if !gaussian {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "LiouvilleLambda",
+          &args[..1],
+        ));
+      }
+      if matches!(&args[0], Expr::Integer(0)) {
+        return Some(Ok(Expr::Integer(0)));
+      }
+      let factors = match crate::evaluator::evaluate_function_call_ast(
+        "FactorInteger",
+        args,
+      ) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut total: i128 = 0;
+      for pair in pairs {
+        let Expr::List(pe) = pair else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let (Some(factor), Some(Expr::Integer(k))) = (pe.first(), pe.get(1))
+        else {
+          return Some(Ok(unevaluated(name, args)));
+        };
+        let unit = crate::evaluator::evaluate_function_call_ast(
+          "Abs",
+          std::slice::from_ref(factor),
+        );
+        if !matches!(unit, Ok(Expr::Integer(1))) {
+          total += k;
+        }
+      }
+      return Some(Ok(Expr::Integer(if total % 2 == 0 { 1 } else { -1 })));
     }
     "EulerPhi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::euler_phi_ast(args));
@@ -2958,15 +3156,16 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::rationalize_ast(args));
     }
     // NumeratorDenominator[e] = {Numerator[e], Denominator[e]}
-    "NumeratorDenominator" if args.len() == 1 => {
-      let num = crate::evaluator::evaluate_function_call_ast(
-        "Numerator",
-        std::slice::from_ref(&args[0]),
-      );
-      let den = crate::evaluator::evaluate_function_call_ast(
-        "Denominator",
-        std::slice::from_ref(&args[0]),
-      );
+    // NumeratorDenominator[e, Trig -> b] passes the option on to both.
+    "NumeratorDenominator"
+      if args.len() == 1
+        || (args.len() == 2
+          && matches!(&args[1], Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Trig"))) =>
+    {
+      let num = crate::evaluator::evaluate_function_call_ast("Numerator", args);
+      let den =
+        crate::evaluator::evaluate_function_call_ast("Denominator", args);
       return match (num, den) {
         (Ok(n), Ok(d)) => Some(Ok(Expr::List(vec![n, d].into()))),
         (Err(e), _) | (_, Err(e)) => Some(Err(e)),
@@ -3276,6 +3475,34 @@ pub fn dispatch_math_functions(
     "PowerExpand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::power_expand_ast(args));
     }
+    // Variables[expr, Modulus -> p]: the variables left once the
+    // coefficients are reduced modulo p.
+    "Variables"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Modulus")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[1] else {
+        return None;
+      };
+      let reduced = match replacement.as_ref() {
+        Expr::Integer(0) => args[0].clone(),
+        Expr::Integer(p) if *p > 0 => {
+          match crate::evaluator::evaluate_function_call_ast(
+            "PolynomialMod",
+            &[args[0].clone(), Expr::Integer(*p)],
+          ) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        _ => return None,
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Variables",
+        &[reduced],
+      ));
+    }
     "Variables" if args.len() == 1 => {
       return Some(crate::functions::math_ast::variables_ast(args));
     }
@@ -3291,7 +3518,7 @@ pub fn dispatch_math_functions(
     "DigitCount" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::digit_count_ast(args));
     }
-    "DigitSum" if !args.is_empty() && args.len() <= 2 => {
+    "DigitSum" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::digit_sum_ast(args));
     }
     "ThueMorse" if args.len() == 1 => {
@@ -3373,7 +3600,7 @@ pub fn dispatch_math_functions(
     "HyperHarmonicNumber" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::math_ast::hyper_harmonic_number_ast(args));
     }
-    "MultipleHarmonicNumber" if args.len() == 1 || args.len() == 2 => {
+    "MultipleHarmonicNumber" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::math_ast::multiple_harmonic_number_ast(
         args,
       ));
@@ -4217,16 +4444,28 @@ pub fn dispatch_math_functions(
         crate::functions::image_ast::NeighborhoodRange::RoundedUp,
       ));
     }
-    "Upsample" if args.len() == 2 => {
-      // Upsample[list, n] — insert n-1 zeros between each element
+    "Upsample" if args.len() == 2 || args.len() == 3 => {
+      // Upsample[list, n] — insert n-1 zeros after each element;
+      // Upsample[list, n, offset] — each element sits at position offset
+      // (1..n) of its block of n.
       if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
-        let n = n as usize;
-        if n > 0 {
-          let mut result = Vec::new();
+        let offset = match args.get(2) {
+          None => Some(1),
+          Some(o) => expr_to_i128(o),
+        };
+        if let Some(offset) = offset
+          && n > 0
+          && (1..=n).contains(&offset)
+        {
+          let (n, offset) = (n as usize, offset as usize);
+          let mut result = Vec::with_capacity(elems.len() * n);
           for elem in elems {
-            result.push(elem.clone());
-            for _ in 1..n {
-              result.push(Expr::Integer(0));
+            for i in 1..=n {
+              result.push(if i == offset {
+                elem.clone()
+              } else {
+                Expr::Integer(0)
+              });
             }
           }
           return Some(Ok(Expr::List(result.into())));
@@ -4243,65 +4482,62 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    "EulerAngles" if args.len() == 1 => {
-      // EulerAngles[matrix] — extract ZYZ Euler angles from 3x3 rotation matrix
-      // For ZYZ convention: R = Rz(alpha) Ry(beta) Rz(gamma)
-      // beta = ArcCos[R33], alpha = ArcTan[-R23, R13], gamma = ArcTan[R32, R31]
-      if let Expr::List(rows) = &args[0]
-        && rows.len() == 3
-      {
-        let matrix: Vec<Vec<Expr>> = rows
-          .iter()
-          .filter_map(|r| match r {
-            Expr::List(cols) if cols.len() == 3 => Some(cols.to_vec()),
-            _ => None,
-          })
-          .collect();
-        if matrix.len() == 3 {
-          // Use numeric approach: evaluate elements
-          let get = |i: usize, j: usize| -> f64 {
-            match &matrix[i][j] {
-              Expr::Integer(v) => *v as f64,
-              Expr::Real(v) => *v,
-              _ => {
-                if let Ok(Expr::Real(v)) =
-                  evaluate_expr_to_expr(&call1("N", matrix[i][j].clone()))
-                {
-                  v
-                } else {
-                  0.0
-                }
-              }
+    // EulerAngles[m] / EulerAngles[m, {a, b, c}]: angles {α, β, γ} with
+    // m == EulerMatrix[{α, β, γ}, {a, b, c}] (default {3, 2, 3}).
+    "EulerAngles" if args.len() == 1 || args.len() == 2 => {
+      let seq = match args.get(1) {
+        None => [3usize, 2, 3],
+        Some(Expr::List(axes)) if axes.len() == 3 => {
+          let mut out = [0usize; 3];
+          for (o, a) in out.iter_mut().zip(axes.iter()) {
+            match a {
+              Expr::Integer(k @ 1..=3) => *o = *k as usize,
+              _ => return None,
             }
+          }
+          if out[0] == out[1] || out[1] == out[2] {
+            return None;
+          }
+          out
+        }
+        _ => return None,
+      };
+      let Expr::List(rows) = &args[0] else {
+        return None;
+      };
+      if rows.len() != 3 {
+        return None;
+      }
+      let mut r = [[0f64; 3]; 3];
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(cols) = row else { return None };
+        if cols.len() != 3 {
+          return None;
+        }
+        for (j, c) in cols.iter().enumerate() {
+          r[i][j] = match c {
+            Expr::Integer(v) => *v as f64,
+            Expr::Real(v) => *v,
+            other => match evaluate_expr_to_expr(&call1("N", other.clone())) {
+              Ok(Expr::Real(v)) => v,
+              Ok(Expr::Integer(v)) => v as f64,
+              _ => return None,
+            },
           };
-          let r33 = get(2, 2);
-          let beta = r33.acos();
-          let (alpha, gamma) = if beta.abs() < 1e-10 {
-            // beta ≈ 0: gimbal lock, alpha + gamma = atan2(R21, R11)
-            let ag = get(1, 0).atan2(get(0, 0));
-            (ag, 0.0)
-          } else if (beta - std::f64::consts::PI).abs() < 1e-10 {
-            // beta ≈ pi: alpha - gamma = atan2(R21, -R11)
-            let ag = get(1, 0).atan2(-get(0, 0));
-            (ag, 0.0)
-          } else {
-            let alpha = (-get(1, 2)).atan2(get(0, 2));
-            let gamma = get(2, 1).atan2(get(2, 0));
-            (alpha, gamma)
-          };
-          // Convert back to exact if close to simple values
-          let to_expr = |v: f64| -> Expr {
-            if v.abs() < 1e-14 {
-              Expr::Integer(0)
-            } else {
-              Expr::Real(v)
-            }
-          };
-          return Some(Ok(Expr::List(
-            vec![to_expr(alpha), to_expr(beta), to_expr(gamma)].into(),
-          )));
         }
       }
+      let (alpha, beta, gamma) = euler_angles_from_matrix(&r, seq);
+      // Values that vanish come back as an exact 0.
+      let to_expr = |v: f64| -> Expr {
+        if v.abs() < 1e-14 {
+          Expr::Integer(0)
+        } else {
+          Expr::Real(v)
+        }
+      };
+      return Some(Ok(Expr::List(
+        vec![to_expr(alpha), to_expr(beta), to_expr(gamma)].into(),
+      )));
     }
     // KroneckerSymbol[a, n] — generalized Jacobi symbol
     "KroneckerSymbol" if args.len() == 2 => {
@@ -4681,19 +4917,59 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::Integer(result_str.parse().unwrap_or(0))));
       }
     }
-    // AlphabeticOrder[s1, s2] — 1 if s1 < s2, -1 if s1 > s2, 0 if equal
-    "AlphabeticOrder" if args.len() == 2 => {
+    // AlphabeticOrder[] and AlphabeticOrder[lang] are operator forms.
+    "AlphabeticOrder" if args.len() <= 1 => {
+      return Some(Ok(unevaluated("AlphabeticOrder", args)));
+    }
+    // AlphabeticOrder[s1, s2] — 1 if s1 < s2, -1 if s1 > s2, 0 if equal;
+    // AlphabeticOrder[s1, s2, lang] uses the alphabet of `lang`.
+    "AlphabeticOrder" if args.len() == 2 || args.len() == 3 => {
       if let (Expr::String(s1), Expr::String(s2)) = (&args[0], &args[1]) {
-        let s1_lower = s1.to_lowercase();
-        let s2_lower = s2.to_lowercase();
-        let result = match s1_lower.cmp(&s2_lower) {
+        // A language other than English orders letters by its alphabet
+        // (Alphabet[lang]); a letter outside it sorts with its base letter,
+        // the diacritic only breaking ties.
+        let alphabet: Option<Vec<char>> = match args.get(2) {
+          None => None,
+          Some(Expr::String(lang)) if lang == "English" => None,
+          Some(Expr::String(lang)) => {
+            match crate::functions::string_ast::language_alphabet(lang) {
+              Some(a) => Some(a),
+              None => return Some(Ok(unevaluated("AlphabeticOrder", args))),
+            }
+          }
+          Some(_) => return Some(Ok(unevaluated("AlphabeticOrder", args))),
+        };
+        let primary_key = |s: &str| -> Vec<(u8, u32)> {
+          s.to_lowercase()
+            .chars()
+            .map(|c| {
+              let Some(alphabet) = &alphabet else {
+                return (1, c as u32);
+              };
+              let base = || {
+                crate::functions::string_ast::strip_diacritics(&c.to_string())
+                  .chars()
+                  .next()
+                  .unwrap_or(c)
+              };
+              match alphabet.iter().position(|&a| a == c) {
+                Some(i) => (1, i as u32),
+                None => match alphabet.iter().position(|&a| a == base()) {
+                  Some(i) => (1, i as u32),
+                  None => (0, c as u32),
+                },
+              }
+            })
+            .collect()
+        };
+        let ord = primary_key(s1)
+          .cmp(&primary_key(s2))
+          .then_with(|| s1.to_lowercase().cmp(&s2.to_lowercase()))
+          .then_with(|| s1.cmp(s2));
+        let result = match ord {
           std::cmp::Ordering::Less => 1,
           std::cmp::Ordering::Greater => -1,
-          std::cmp::Ordering::Equal => match s1.cmp(s2) {
-            std::cmp::Ordering::Less => 1,
-            std::cmp::Ordering::Greater => -1,
-            std::cmp::Ordering::Equal => 0,
-          },
+          std::cmp::Ordering::Equal => 0,
         };
         return Some(Ok(Expr::Integer(result)));
       }
@@ -5038,14 +5314,14 @@ pub fn dispatch_math_functions(
     }
     // CoordinateBoundsArray[{{xmin,xmax},…}, spec, offsets] — grid of
     // coordinate tuples; spec is a step, per-dimension steps, or Into[n].
-    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 3 => {
+    "CoordinateBoundsArray" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::coordinate_bounds_array_ast(
         args,
       ));
     }
     // CoordinateBoundingBoxArray[{mins, maxs}, spec, offsets] — the same
     // grid written with the two corner points.
-    "CoordinateBoundingBoxArray" if !args.is_empty() && args.len() <= 3 => {
+    "CoordinateBoundingBoxArray" if !args.is_empty() && args.len() <= 4 => {
       return Some(
         crate::functions::math_ast::coordinate_bounding_box_array_ast(args),
       );
@@ -7534,4 +7810,114 @@ fn modulus_option(opt: &Expr) -> Option<i128> {
     }
     _ => None,
   }
+}
+
+/// Angles (α, β, γ) with R = R_a(α).R_b(β).R_c(γ) for the axis sequence
+/// {a, b, c} (1-based), where R_k(θ) is the rotation by θ about axis k.
+/// Proper sequences (a == c) give β in [0, π]; Tait–Bryan sequences give β
+/// in [-π/2, π/2]. At a gimbal lock γ is taken as 0.
+fn euler_angles_from_matrix(
+  r: &[[f64; 3]; 3],
+  seq: [usize; 3],
+) -> (f64, f64, f64) {
+  let (a, b, c) = (seq[0] - 1, seq[1] - 1, seq[2] - 1);
+  // The index of the axis other than i and j, and the sign of e_i × e_j
+  // relative to it.
+  let other = |i: usize, j: usize| 3 - i - j;
+  let cross_sign = |i: usize, j: usize| -> f64 {
+    if (j + 3 - i) % 3 == 1 { 1.0 } else { -1.0 }
+  };
+  const EPS: f64 = 1e-10;
+  if a == c {
+    // d = e_b × e_a = sd e_k; e_a × d = sd (e_a × e_k).
+    let k = other(a, b);
+    let sd = cross_sign(b, a);
+    let w = k; // d axis
+    let q = b; // e_a × e_k is ±e_b
+    let sq = sd * cross_sign(a, k);
+    // R e_a components along d and e_a × d.
+    let col_d = sd * r[w][a];
+    let col_q = sq * r[q][a];
+    let beta = r[a][a].clamp(-1.0, 1.0).acos();
+    if beta.sin().abs() < EPS {
+      // R d = cos α d + sin α (e_a × d), negated when β = π.
+      let flip = if r[a][a] < 0.0 { -1.0 } else { 1.0 };
+      let rd_d = sd * sd * r[w][w];
+      let rd_q = sq * sd * r[q][w];
+      return ((flip * rd_q).atan2(flip * rd_d), beta, 0.0);
+    }
+    let alpha = col_q.atan2(col_d);
+    // Row a: R^T e_a = cos β e_a − sin β cos γ d + sin β sin γ (e_a × d).
+    let row_d = sd * r[a][w];
+    let row_q = sq * r[a][q];
+    let gamma = row_q.atan2(-row_d);
+    (alpha, beta, gamma)
+  } else {
+    let s = cross_sign(b, c); // e_b × e_c = s e_a
+    let beta = (s * r[a][c]).clamp(-1.0, 1.0).asin();
+    if beta.cos().abs() < EPS {
+      let alpha = (s * r[c][b]).atan2(r[b][b]);
+      return (alpha, beta, 0.0);
+    }
+    let alpha = (-s * r[b][c]).atan2(r[c][c]);
+    let gamma = (-s * r[a][b]).atan2(r[a][a]);
+    (alpha, beta, gamma)
+  }
+}
+
+/// `name[m]` for a matrix m: the matrix whose (i, j) entry is
+/// `name[column i, column j]`. A SparseArray is expanded first; anything
+/// that is not a rectangular matrix stays unevaluated.
+fn pairwise_column_statistic(
+  name: &str,
+  m: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let dense = if matches!(m, Expr::FunctionCall { name: h, .. } if h == "SparseArray")
+  {
+    crate::evaluator::evaluate_expr_to_expr(&call1("Normal", m.clone()))?
+  } else {
+    m.clone()
+  };
+  let uneval = || Ok(call1(name, m.clone()));
+  let Expr::List(rows) = &dense else {
+    return uneval();
+  };
+  let mut width = None;
+  for row in rows {
+    let Expr::List(r) = row else {
+      return uneval();
+    };
+    if r.is_empty() || width.is_some_and(|w| w != r.len()) {
+      return uneval();
+    }
+    width = Some(r.len());
+  }
+  let Some(width) = width else {
+    return uneval();
+  };
+  let columns: Vec<Expr> = (0..width)
+    .map(|j| {
+      Expr::List(
+        rows
+          .iter()
+          .map(|row| match row {
+            Expr::List(r) => r[j].clone(),
+            _ => unreachable!(),
+          })
+          .collect(),
+      )
+    })
+    .collect();
+  let mut out = Vec::with_capacity(width);
+  for ci in &columns {
+    let mut row = Vec::with_capacity(width);
+    for cj in &columns {
+      row.push(crate::evaluator::evaluate_expr_to_expr(&call(
+        name,
+        vec![ci.clone(), cj.clone()],
+      ))?);
+    }
+    out.push(Expr::List(row.into()));
+  }
+  Ok(Expr::List(out.into()))
 }

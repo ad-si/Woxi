@@ -1896,6 +1896,26 @@ pub fn dispatch_list_operations(
     "MapAll" if args.len() == 2 => {
       return Some(map_all_ast(&args[0], &args[1]));
     }
+    // MapAll[f, expr, Heads -> h] is Map[f, expr, {0, Infinity}, Heads -> h].
+    "MapAll" if args.len() == 3 => {
+      let heads = match crate::functions::expr_form::rule_parts(&args[2]) {
+        Some((Expr::Identifier(lhs), Expr::Identifier(rhs), _))
+          if lhs == "Heads" && (rhs == "True" || rhs == "False") =>
+        {
+          rhs == "True"
+        }
+        _ => return Some(Ok(unevaluated("MapAll", args))),
+      };
+      if !heads {
+        return Some(map_all_ast(&args[0], &args[1]));
+      }
+      let levels = Expr::List(
+        vec![Expr::Integer(0), Expr::Identifier("Infinity".to_string())].into(),
+      );
+      return Some(list_helpers_ast::map_with_level_heads_ast(
+        &args[0], &args[1], &levels, true,
+      ));
+    }
     "MapAt" if args.len() == 3 => {
       return Some(list_helpers_ast::map_at_ast(&args[0], &args[1], &args[2]));
     }
@@ -1957,6 +1977,49 @@ pub fn dispatch_list_operations(
         }
         return Some(Ok(bool_expr(true)));
       }
+    }
+    // TakeList[list, seqs1, seqs2, ...] — split at level 1 by seqs1, then
+    // split every element of each resulting sublist by seqs2, ...
+    "TakeList" if args.len() > 2 => {
+      let outer = match evaluate_function_call_ast(
+        "TakeList",
+        &[args[0].clone(), args[1].clone()],
+      ) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(groups) = &outer else {
+        return Some(Ok(unevaluated("TakeList", args)));
+      };
+      let mut new_groups = Vec::with_capacity(groups.len());
+      for group in groups {
+        let (head, elems) = match group {
+          Expr::List(xs) => (None, xs),
+          Expr::FunctionCall { name, args: xs } => (Some(name.clone()), xs),
+          _ => return Some(Ok(unevaluated("TakeList", args))),
+        };
+        let mut new_elems = Vec::with_capacity(elems.len());
+        for elem in elems {
+          let mut inner_args = Vec::with_capacity(args.len() - 1);
+          inner_args.push(elem.clone());
+          inner_args.extend(args[2..].iter().cloned());
+          match evaluate_function_call_ast("TakeList", &inner_args) {
+            Ok(Expr::FunctionCall { ref name, .. }) if name == "TakeList" => {
+              return Some(Ok(unevaluated("TakeList", args)));
+            }
+            Ok(r) => new_elems.push(r),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        new_groups.push(match head {
+          None => Expr::List(new_elems.into()),
+          Some(name) => Expr::FunctionCall {
+            name,
+            args: new_elems.into(),
+          },
+        });
+      }
+      return Some(Ok(Expr::List(new_groups.into())));
     }
     "TakeList" if args.len() == 2 => {
       // Pull the children of args[0] and remember its head so each sublist
@@ -2382,10 +2445,10 @@ pub fn dispatch_list_operations(
     "Ordering" if !args.is_empty() && args.len() <= 3 => {
       return Some(list_helpers_ast::ordering_ast(args));
     }
-    "PositionLargest" if args.len() == 1 || args.len() == 2 => {
+    "PositionLargest" if (1..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::position_extreme_ast(args, true));
     }
-    "PositionSmallest" if args.len() == 1 || args.len() == 2 => {
+    "PositionSmallest" if (1..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::position_extreme_ast(args, false));
     }
     "OrderingBy" if (2..=4).contains(&args.len()) => {
@@ -2473,10 +2536,13 @@ pub fn dispatch_list_operations(
     "Counts" if args.len() == 1 => {
       return Some(list_helpers_ast::counts_ast(&args[0]));
     }
+    "Counts" if args.len() == 2 => {
+      return Some(list_helpers_ast::counts_with_keys_ast(&args[0], &args[1]));
+    }
     "BinCounts" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_counts_ast(args));
     }
-    "BinLists" if !args.is_empty() && args.len() <= 2 => {
+    "BinLists" if !args.is_empty() => {
       return Some(list_helpers_ast::bin_lists_ast(args));
     }
     "HistogramList" if !args.is_empty() && args.len() <= 3 => {
@@ -3199,6 +3265,24 @@ pub fn dispatch_list_operations(
     }
     "Subsequences" if !args.is_empty() && args.len() <= 2 => {
       return Some(list_helpers_ast::subsequences_ast(args));
+    }
+    // Subsequences[list, nspec, s]: only the first s subsequences.
+    "Subsequences" if args.len() == 3 => {
+      let Expr::Integer(limit) = &args[2] else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      if *limit < 0 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let limit = *limit as usize;
+      return Some(list_helpers_ast::subsequences_ast(&args[..2]).map(|r| {
+        match r {
+          Expr::List(ref items) if items.len() > limit => {
+            Expr::List(items[..limit].to_vec().into())
+          }
+          other => other,
+        }
+      }));
     }
     "Groupings" if args.len() == 2 => {
       return Some(list_helpers_ast::groupings_ast(args));
@@ -3933,6 +4017,38 @@ pub fn dispatch_list_operations(
     }
     "Scan" if args.len() == 2 => {
       return Some(list_helpers_ast::scan_ast(&args[0], &args[1]));
+    }
+    // Scan[f, expr, Heads -> h] and Scan[f, expr, levelspec, Heads -> h]
+    // visit the parts Level[expr, levelspec, Heads -> h] lists.
+    "Scan"
+      if (args.len() == 3 || args.len() == 4)
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(lhs), _, _)) if lhs == "Heads"
+        ) =>
+    {
+      let levelspec = if args.len() == 4 {
+        args[2].clone()
+      } else {
+        Expr::List(vec![Expr::Integer(1)].into())
+      };
+      let level_call = Expr::FunctionCall {
+        name: "Level".to_string(),
+        args: vec![args[1].clone(), levelspec, args[args.len() - 1].clone()]
+          .into(),
+      };
+      return Some(match evaluate_expr_to_expr(&level_call) {
+        Ok(Expr::List(ref items)) => {
+          for item in items {
+            if let Err(e) = list_helpers_ast::apply_func_ast(&args[0], item) {
+              return Some(Err(e));
+            }
+          }
+          Ok(Expr::Identifier("Null".to_string()))
+        }
+        Ok(_) => Ok(unevaluated("Scan", args)),
+        Err(e) => Err(e),
+      });
     }
     "Scan" if args.len() == 3 => {
       return Some(list_helpers_ast::scan_levelspec_ast(
@@ -4997,6 +5113,25 @@ pub fn dispatch_list_operations(
     "ComapApply" if args.len() == 2 => {
       return Some(list_helpers_ast::comap_apply_ast(&args[0], &args[1]));
     }
+    // ComapApply[funs, args, Heads -> True] also applies the head of funs.
+    "ComapApply"
+      if args.len() == 3
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[2]),
+          Some((Expr::Identifier(lhs), _, _)) if lhs == "Heads"
+        ) =>
+    {
+      let applier = Expr::Function {
+        body: Box::new(Expr::FunctionCall {
+          name: "Apply".to_string(),
+          args: vec![Expr::Slot(1), args[1].clone()].into(),
+        }),
+      };
+      return Some(evaluate_function_call_ast(
+        "Map",
+        &[applier, args[0].clone(), args[2].clone()],
+      ));
+    }
     "Operate" if args.len() == 2 || args.len() == 3 => {
       let p = &args[0];
       let expr = &args[1];
@@ -5448,7 +5583,7 @@ pub fn dispatch_list_operations(
     "For" if args.len() == 3 || args.len() == 4 => {
       return Some(for_ast(args));
     }
-    "DeleteCases" if args.len() >= 2 && args.len() <= 4 => {
+    "DeleteCases" if args.len() >= 2 && args.len() <= 5 => {
       return Some(list_helpers_ast::delete_cases_unified_ast(args));
     }
     "MinMax" if args.len() == 1 || args.len() == 2 => {
@@ -5602,10 +5737,10 @@ pub fn dispatch_list_operations(
         &args[0], &args[1], &args[2],
       ));
     }
-    "FindRepeat" if args.len() == 1 || args.len() == 2 => {
+    "FindRepeat" if (1..=3).contains(&args.len()) => {
       return Some(list_helpers_ast::find_repeat_ast(args));
     }
-    "FindTransientRepeat" if args.len() == 2 => {
+    "FindTransientRepeat" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::find_transient_repeat_ast(args));
     }
     "Apply" if args.len() == 2 => {
@@ -5954,6 +6089,25 @@ pub fn dispatch_list_operations(
       };
       return Some(list_helpers_ast::inner_ast(
         &args[0], &moved, &args[2], &args[3],
+      ));
+    }
+    // ReplacePart[expr, rules, Heads -> h]: True lets position patterns
+    // reach the heads (position 0).
+    "ReplacePart"
+      if args.len() == 3
+        && matches!(&args[2], Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")) =>
+    {
+      let Expr::Rule { replacement, .. } = &args[2] else {
+        return None;
+      };
+      let heads = match replacement.as_ref() {
+        Expr::Identifier(b) if b == "True" => true,
+        Expr::Identifier(b) if b == "False" || b == "Automatic" => false,
+        _ => return None,
+      };
+      return Some(list_helpers_ast::replace_part_heads_ast(
+        &args[0], &args[1], heads,
       ));
     }
     "ReplacePart" if args.len() == 2 => {
@@ -7026,8 +7180,23 @@ pub fn dispatch_list_operations(
     // the LHS list length) are enumerated in lexicographic order and matched
     // greedily, consuming their positions. The RHS is emitted at the smallest
     // position of each matched subset.
-    "SubsetReplace" if args.len() == 2 => {
+    // SubsetReplace[list, rules, n] performs at most n replacements.
+    "SubsetReplace" if args.len() == 2 || args.len() == 3 => {
       let unevaluated = || unevaluated("SubsetReplace", args);
+      let max_replacements: usize = match args.get(2) {
+        None => usize::MAX,
+        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+        Some(Expr::Identifier(s)) if s == "Infinity" => usize::MAX,
+        Some(Expr::FunctionCall { name, args: a })
+          if name == "DirectedInfinity"
+            && a.len() == 1
+            && matches!(a[0], Expr::Integer(1)) =>
+        {
+          usize::MAX
+        }
+        Some(_) => return Some(Ok(unevaluated())),
+      };
+      let mut replacements_done: usize = 0;
       let Expr::List(list) = &args[0] else {
         crate::emit_message(&format!(
           "SubsetReplace::list: List expected at position 1 in {}.",
@@ -7065,6 +7234,9 @@ pub fn dispatch_list_operations(
       let mut replacement_at: Vec<Option<Expr>> = vec![None; n];
 
       for rule in &rules {
+        if replacements_done >= max_replacements {
+          break;
+        }
         let k = rule.sub.len();
         // Variable-length and zero-length list patterns are unsupported here;
         // a fixed k-element subset is required.
@@ -7110,6 +7282,10 @@ pub fn dispatch_list_operations(
                 replacement_at[combo[0]] = Some(replaced);
                 for &idx in &combo {
                   consumed[idx] = true;
+                }
+                replacements_done += 1;
+                if replacements_done >= max_replacements {
+                  break;
                 }
               }
             }
