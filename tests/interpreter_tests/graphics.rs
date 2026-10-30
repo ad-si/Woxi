@@ -17650,6 +17650,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot3d_vector_points_count() {
+      // `VectorPoints -> n` samples n points across each axis: 4^3 arrows.
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 4]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 64);
+    }
+
+    #[test]
+    fn vector_plot3d_color_function() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 3, ColorFunction -> Function[Blue]]",
+      );
+      assert!(svg.contains("rgb(0,0,255)"));
+      assert!(!svg.contains("rgb(250,50,100)"));
+    }
+
+    #[test]
     fn vector_plot3d_curl() {
       insta::assert_snapshot!(export_svg(
         "VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
