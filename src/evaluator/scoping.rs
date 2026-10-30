@@ -1648,6 +1648,11 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
 /// is `Hold[f[t$_] = D[a$n[t$], t$]]`. Constructs that mention no local
 /// are left as written.
 pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
+  // Nothing to shield where no local is mentioned; the copy keeps shared
+  // lists shared.
+  if !mentions_any_symbol(expr, locals) {
+    return expr.clone();
+  }
   // An inner Module/With/Block counts as reached only through its body:
   // a local in an initializer is substituted outside the inner scope.
   // A rule or definition is reached through its right side or a condition
@@ -1851,6 +1856,7 @@ fn collect_pattern_names(expr: &Expr, out: &mut Vec<String>) {
 
 fn mentions_any_symbol(expr: &Expr, names: &[String]) -> bool {
   match expr {
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => false,
     Expr::Identifier(n) => names.contains(n),
     Expr::FunctionCall { name, .. } if names.contains(name) => true,
     _ => crate::syntax::expr_children(expr)

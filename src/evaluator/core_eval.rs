@@ -197,6 +197,13 @@ pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
   }
 }
 
+/// A shared list (a large OwnValue) whose elements are inert data: it holds
+/// no symbols, slots or calls to evaluate, and is answered in O(1) after
+/// the first time.
+pub(crate) fn is_shared_inert_list(items: &crate::ExprList) -> bool {
+  items.is_shared() && is_inert_list(items)
+}
+
 /// `is_inert_data` of a list's elements, memoized on shared lists so a
 /// symbol holding a large array answers in O(1) on every lookup.
 fn is_inert_list(items: &crate::ExprList) -> bool {

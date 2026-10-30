@@ -15968,6 +15968,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
     Expr::CurriedCall { func, args } => {
       contains_slot_zero(func) || args.iter().any(contains_slot_zero)
     }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => false,
     Expr::List(items) => items.iter().any(contains_slot_zero),
     Expr::BinaryOp { left, right, .. } => {
       contains_slot_zero(left) || contains_slot_zero(right)
@@ -16022,6 +16023,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
 /// function application to emit Function::slot1 / Function::slota messages.
 pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
   match expr {
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       if let Expr::String(key) = &args[0] {
         out.push(key.clone());
@@ -16218,6 +16220,11 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       } else {
         call0("Sequence")
       }
+    }
+    // Shared inert data (a large numeric array) holds no slots: its O(1)
+    // clone stands for itself.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => {
       Expr::List(substitute_slots_expand(items, values).into())
@@ -17255,9 +17262,16 @@ fn substitute_variables_impl(
     Expr::Identifier(name) | Expr::Constant(name) => {
       for &(var_name, value) in bindings {
         if name == var_name {
-          return value.clone();
+          // A large array goes in shared, so the copies the body makes of
+          // it (a pure function called once per element) are O(1).
+          let mut value = value.clone();
+          crate::evaluator::share_large_lists(&mut value, 0);
+          return value;
         }
       }
+      expr.clone()
+    }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
       expr.clone()
     }
     Expr::List(items) => {
