@@ -1664,7 +1664,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "UpperCaseQ" => Some((1, 1)),
     "UpperTriangularize" => Some((1, 2)),
     "UpperTriangularMatrixQ" => Some((1, 2)),
-    "Upsample" => Some((2, 3)),
+    "Upsample" => Some((2, 4)),
     "UpValues" => Some((1, 1)),
     "URLBuild" => Some((1, 2)),
     "URLParse" => Some((1, 2)),

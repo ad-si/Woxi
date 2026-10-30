@@ -750,6 +750,44 @@ pub fn dispatch_predicate_functions(
     "CompositeQ" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::composite_q_ast(args));
     }
+    // PrimePowerQ[n, GaussianIntegers -> True]: n is a unit times a power
+    // of a single Gaussian prime (5 = (2 + I) (2 - I) is not; 3 and 2 =
+    // -I (1 + I)^2 are).
+    "PrimePowerQ"
+      if args.len() == 2
+        && matches!(&args[1], Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "GaussianIntegers")
+            && matches!(replacement.as_ref(), Expr::Identifier(t) if t == "True")) =>
+    {
+      if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_))
+        && !crate::functions::predicate_ast::is_complex_number(&args[0])
+      {
+        return Some(Ok(bool_expr(false)));
+      }
+      let factors = match crate::evaluator::evaluate_function_call_ast(
+        "FactorInteger",
+        args,
+      ) {
+        Ok(f) => f,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(pairs) = &factors else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      // Units (±1, ±I) appear as factors of their own.
+      let is_unit = |e: &Expr| {
+        matches!(e, Expr::Integer(1 | -1))
+          || matches!(e, Expr::Identifier(i) if i == "I")
+          || crate::syntax::expr_to_string(e) == "-I"
+      };
+      let primes = pairs
+        .iter()
+        .filter(
+          |p| matches!(p, Expr::List(pe) if !pe.is_empty() && !is_unit(&pe[0])),
+        )
+        .count();
+      return Some(Ok(bool_expr(primes == 1)));
+    }
     "PrimePowerQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::prime_power_q_ast(args));
     }

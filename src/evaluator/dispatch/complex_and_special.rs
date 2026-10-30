@@ -117,6 +117,18 @@ pub fn dispatch_complex_and_special(
     "UnitBox" if args.len() == 1 => {
       return Some(crate::functions::math_ast::unit_box_ast(args));
     }
+    // HeavisidePi and HeavisideLambda are even: F[-x] is F[x].
+    "HeavisidePi" | "HeavisideLambda"
+      if args.len() == 1
+        && !crate::functions::predicate_ast::is_numeric_q(&args[0])
+        && let Some(positive) =
+          crate::functions::math_ast::try_extract_negated(&args[0]) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name,
+        &[positive],
+      ));
+    }
     "HeavisidePi" if args.len() == 1 => {
       return Some(crate::functions::math_ast::heaviside_pi_ast(args));
     }

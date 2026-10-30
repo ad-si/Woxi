@@ -500,11 +500,72 @@ pub fn dispatch_string_functions(
     "WordFrequency" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::word_frequency_ast(args));
     }
+    // NumericalSort sorts any head's arguments, and an association by its
+    // values (keeping each key with its value).
+    "NumericalSort"
+      if args.len() == 1
+        && matches!(
+          &args[0],
+          Expr::FunctionCall { .. } | Expr::Association(_)
+        ) =>
+    {
+      let (items, head) = match &args[0] {
+        Expr::FunctionCall { name, args: items } => {
+          (Expr::List(items.clone()), Some(name.clone()))
+        }
+        Expr::Association(pairs) => (
+          Expr::List(
+            pairs
+              .iter()
+              .map(|(k, v)| Expr::List(vec![v.clone(), k.clone()].into()))
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+          None,
+        ),
+        _ => unreachable!(),
+      };
+      // An association's {value, key} pairs sort on their value first.
+      let sorted = match crate::evaluator::evaluate_function_call_ast(
+        "NumericalSort",
+        &[items],
+      ) {
+        Ok(Expr::List(ref sorted)) => sorted.clone(),
+        Ok(_) => return Some(Ok(unevaluated(name, args))),
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(Ok(match head {
+        Some(h) => Expr::FunctionCall {
+          name: h,
+          args: sorted,
+        },
+        None => Expr::Association(
+          sorted
+            .iter()
+            .filter_map(|p| match p {
+              Expr::List(vk) if vk.len() == 2 => {
+                Some((vk[1].clone(), vk[0].clone()))
+              }
+              _ => None,
+            })
+            .collect(),
+        ),
+      }));
+    }
     "NumericalSort" if args.len() == 1 => {
       if let Expr::List(ref elems) = args[0] {
         // The real value of an expression, evaluating constants and exact
         // forms (Pi, Sqrt[2], 1/3, …) via N; None for non-numeric atoms.
         fn num_val(e: &Expr) -> Option<f64> {
+          match e {
+            Expr::Identifier(i) if i == "Infinity" => {
+              return Some(f64::INFINITY);
+            }
+            _ if crate::functions::math_ast::is_neg_infinity(e) => {
+              return Some(f64::NEG_INFINITY);
+            }
+            _ => {}
+          }
           if let Some(v) = crate::functions::math_ast::expr_to_f64(e) {
             return Some(v);
           }

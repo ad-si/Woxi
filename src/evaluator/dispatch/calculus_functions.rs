@@ -885,6 +885,28 @@ pub fn dispatch_calculus_functions(
     "ArcCurvature" if args.len() == 2 => {
       return Some(crate::functions::calculus_ast::arc_curvature_ast(args));
     }
+    // DifferenceDelta[f, s1, s2, …] differences in each variable in turn
+    // (the operators commute).
+    "DifferenceDelta"
+      if args.len() >= 3
+        && !args.iter().any(|a| matches!(a, Expr::Rule { .. })) =>
+    {
+      let mut result = args[0].clone();
+      for spec in &args[1..] {
+        result = match crate::functions::calculus_ast::difference_delta_ast(&[
+          result,
+          spec.clone(),
+        ]) {
+          Ok(r) => r,
+          Err(e) => return Some(Err(e)),
+        };
+        if matches!(&result, Expr::FunctionCall { name: h, .. } if h == "DifferenceDelta")
+        {
+          return Some(Ok(unevaluated(name, args)));
+        }
+      }
+      return Some(Ok(result));
+    }
     "DifferenceDelta" if !args.is_empty() => {
       return Some(crate::functions::calculus_ast::difference_delta_ast(args));
     }
@@ -917,6 +939,39 @@ pub fn dispatch_calculus_functions(
       return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
         "Cancel",
         call("Refine", vec![quotient, opts[0].1.clone()]),
+      )));
+    }
+    // DifferenceQuotient[f, {x, n, h}, {y, m, k}, …]: the n-th difference
+    // in x with step h, and so on for each variable, over h^n k^m ….
+    "DifferenceQuotient"
+      if args.len() >= 2
+        && args[1..].iter().all(|a| matches!(a, Expr::List(items) if items.len() == 2 || items.len() == 3))
+        && (args.len() >= 3 || matches!(&args[1], Expr::List(items) if items.len() == 3)) =>
+    {
+      let mut deltas = vec![args[0].clone()];
+      let mut divisor = Vec::new();
+      for spec in &args[1..] {
+        let Expr::List(items) = spec else {
+          return None;
+        };
+        let (n, h) = match items.len() {
+          2 => (Expr::Integer(1), items[1].clone()),
+          _ => (items[1].clone(), items[2].clone()),
+        };
+        deltas.push(Expr::List(vec![items[0].clone(), n.clone(), h.clone()].into()));
+        divisor.push(call("Power", vec![h, n]));
+      }
+      let delta =
+        match crate::evaluator::evaluate_function_call_ast("DifferenceDelta", &deltas) {
+          Ok(d) => d,
+          Err(e) => return Some(Err(e)),
+        };
+      if matches!(&delta, Expr::FunctionCall { name: h, .. } if h == "DifferenceDelta") {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+        "Times",
+        vec![delta, call("Power", vec![call("Times", divisor), Expr::Integer(-1)])],
       )));
     }
     "DifferenceQuotient" if !args.is_empty() => {
