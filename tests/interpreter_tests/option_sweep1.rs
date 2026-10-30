@@ -104,6 +104,12 @@ mod url_character_encoding {
   }
 
   #[test]
+  fn decode_keeps_an_encoded_plus() {
+    assert_eq!(interpret("URLDecode[\"a%2Bb+c\"]").unwrap(), "a+b c");
+    assert_eq!(interpret("URLDecode[URLEncode[\"1+1\"]]").unwrap(), "1+1");
+  }
+
+  #[test]
   fn encode_latin1() {
     assert_eq!(
       interpret("URLEncode[\"Eötvös\", CharacterEncoding -> \"ISOLatin1\"]")

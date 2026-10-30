@@ -15676,9 +15676,10 @@ pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let charset = charset.unwrap_or(ByteCharset::Utf8);
   fn decode(e: &Expr, charset: ByteCharset) -> Option<Expr> {
     match e {
-      Expr::String(s) => Some(Expr::String(
-        percent_decode_with(s, charset).replace('+', " "),
-      )),
+      Expr::String(s) => Some(Expr::String(percent_decode_with(
+        &s.replace('+', " "),
+        charset,
+      ))),
       Expr::List(items) => Some(Expr::List(
         items
           .iter()
