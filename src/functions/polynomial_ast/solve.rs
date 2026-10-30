@@ -14245,6 +14245,17 @@ fn minimize_ast_inner(
     }
   }
 
+  if vars.len() == 1
+    && let Some(result) = optimize_parametric_quadratic(
+      &objective,
+      &constraints,
+      &vars[0],
+      maximize,
+    )?
+  {
+    return Ok(result);
+  }
+
   let result = if constraints.is_empty() {
     // Unconstrained
     if vars.len() == 1 {
@@ -14269,6 +14280,136 @@ fn minimize_ast_inner(
     return Ok(result);
   }
   Ok(result)
+}
+
+/// The optimum of a quadratic in `var` whose coefficients hold parameters:
+/// `C + B var + A var^2` has its extremum `Together[C - B^2/(4 A)]` at
+/// `var -> Together[-B/(2 A)]` when `A` has the bounding sign (negative for
+/// a maximum). Without constraints that sign must be numeric; parameter
+/// constraints (free of `var`) must imply it, and the answer then holds
+/// under them: `{Piecewise[{{max, cond}}, -Infinity], {var ->
+/// Piecewise[{{x*, cond}}, Indeterminate]}}`. `None` for anything else.
+fn optimize_parametric_quadratic(
+  objective: &Expr,
+  constraints: &[Expr],
+  var: &str,
+  maximize: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::functions::polynomial_ast::eliminate::contains_var;
+  if !contains_var(objective, var)
+    || constraints.iter().any(|c| contains_var(c, var))
+  {
+    return Ok(None);
+  }
+  let x = Expr::Identifier(var.to_string());
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  // Only an objective with parameters: a purely numeric one is the
+  // ordinary solver's.
+  let others = eval(&call(
+    "DeleteCases",
+    vec![call("Variables", vec![objective.clone()]), x.clone()],
+  ))?;
+  if matches!(&others, Expr::List(v) if v.is_empty()) {
+    return Ok(None);
+  }
+  if !matches!(
+    eval(&call("PolynomialQ", vec![objective.clone(), x.clone()]))?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let coefficient_list =
+    eval(&call("CoefficientList", vec![objective.clone(), x.clone()]))?;
+  let Expr::List(coeffs) = &coefficient_list else {
+    return Ok(None);
+  };
+  if coeffs.len() != 3 {
+    return Ok(None);
+  }
+  let (c, b, a) = (&coeffs[0], &coeffs[1], &coeffs[2]);
+  let bounding_sign = call(
+    if maximize { "Less" } else { "Greater" },
+    vec![a.clone(), Expr::Integer(0)],
+  );
+  let condition = match constraints {
+    [] => None,
+    [one] => Some(one.clone()),
+    _ => Some(call("And", constraints.to_vec())),
+  };
+  let sign_holds = match &condition {
+    None => eval(&bounding_sign)?,
+    Some(cond) => eval(&call("Simplify", vec![bounding_sign, cond.clone()]))?,
+  };
+  if !matches!(sign_holds, Expr::Identifier(ref t) if t == "True") {
+    return Ok(None);
+  }
+  let int = Expr::Integer;
+  let pow = |e: &Expr, k: i128| call("Power", vec![e.clone(), int(k)]);
+  // C - B^2/(4 A) and -B/(2 A).
+  let value = eval(&call(
+    "Together",
+    vec![call(
+      "Plus",
+      vec![
+        c.clone(),
+        call(
+          "Times",
+          vec![
+            int(-1),
+            pow(b, 2),
+            pow(&call("Times", vec![int(4), a.clone()]), -1),
+          ],
+        ),
+      ],
+    )],
+  ))?;
+  let optimizer = eval(&call(
+    "Together",
+    vec![call(
+      "Times",
+      vec![
+        int(-1),
+        b.clone(),
+        pow(&call("Times", vec![int(2), a.clone()]), -1),
+      ],
+    )],
+  ))?;
+  let (value, optimizer) = match condition {
+    None => (value, optimizer),
+    Some(cond) => {
+      let unbounded = if maximize {
+        eval(&crate::syntax::string_to_expr("-Infinity")?)?
+      } else {
+        id_expr("Infinity")
+      };
+      let piecewise = |e: Expr, otherwise: Expr| {
+        call(
+          "Piecewise",
+          vec![
+            Expr::List(vec![Expr::List(vec![e, cond.clone()].into())].into()),
+            otherwise,
+          ],
+        )
+      };
+      (
+        piecewise(value, unbounded),
+        piecewise(optimizer, id_expr("Indeterminate")),
+      )
+    }
+  };
+  Ok(Some(Expr::List(
+    vec![
+      value,
+      Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(x),
+          replacement: Box::new(optimizer),
+        }]
+        .into(),
+      ),
+    ]
+    .into(),
+  )))
 }
 
 /// Return the first entry in the variable specification that is not a valid
