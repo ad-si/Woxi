@@ -408,18 +408,51 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     [Expr::String(name), Expr::List(spec)]
       if spec.len() == 2
-        && matches!(&spec[0], Expr::String(p) if p == "Shape") =>
+        && matches!(&spec[0], Expr::String(p) if p == "Shape" || p == "Polygon") =>
     {
-      let shape = match (&spec[1], name.as_str()) {
-        (Expr::List(pc), n) if pc.len() == 2 => {
-          let country = (n != "World").then_some(n);
+      let polygon = matches!(&spec[0], Expr::String(p) if p == "Polygon");
+      let country = (name != "World").then_some(name.as_str());
+      // `{prop, {projection, {lat, lon}}}`, or a bare projection name that
+      // is centered on the origin.
+      let shape = match &spec[1] {
+        Expr::List(pc) if pc.len() == 2 => {
           crate::functions::map_projection::country_shape(
             country, &pc[0], &pc[1],
           )
         }
+        proj @ Expr::String(_) => {
+          crate::functions::map_projection::country_shape(
+            country,
+            proj,
+            &Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          )
+        }
         _ => None,
       };
-      Ok(shape.unwrap_or_else(|| unevaluated("CountryData", args)))
+      Ok(match shape {
+        // "Polygon" is the bare projected polygon, "Shape" the Graphics.
+        Some(Expr::FunctionCall { args: ref g, .. })
+          if polygon && g.len() == 1 =>
+        {
+          match &g[0] {
+            Expr::List(polys) => {
+              let rings: Vec<Expr> = polys
+                .iter()
+                .filter_map(|p| match p {
+                  Expr::FunctionCall { name, args } if name == "Polygon" => {
+                    args.first().cloned()
+                  }
+                  _ => None,
+                })
+                .collect();
+              call("Polygon", vec![Expr::List(rings.into())])
+            }
+            _ => unevaluated("CountryData", args),
+          }
+        }
+        Some(g) => g,
+        None => unevaluated("CountryData", args),
+      })
     }
     _ => Ok(unevaluated("CountryData", args)),
   }
