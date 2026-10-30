@@ -35479,6 +35479,24 @@ fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
         ..Default::default()
       }],
     },
+    // A list label (`{x1, y1} -> {"\!\(\*SubscriptBox[\(x\), \(1\)]\)", …}`)
+    // typesets as the braced list, each element laid out like a label of its
+    // own so inline boxes inside its strings are not shown as source.
+    Expr::List(items) if !items.is_empty() => {
+      let plain = |text: &str| LabelRun {
+        text: text.to_string(),
+        ..Default::default()
+      };
+      let mut runs = vec![plain("{")];
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          runs.push(plain(", "));
+        }
+        runs.extend(discrete_choice_label_runs(item));
+      }
+      runs.push(plain("}"));
+      runs
+    }
     other => {
       let runs = manipulate_label_runs(other, false);
       let flat = flatten_label_runs(&runs);
@@ -40266,6 +40284,24 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["left side", "right"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice whose label is a list of strings carrying inline boxes
+  /// (`\!\(\*SubscriptBox[…]\)`) typesets as the braced list with the boxes
+  /// laid out, not as `DisplayForm[SubscriptBox[…]]` source.
+  #[test]
+  fn list_choice_labels_typeset_inline_boxes() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, {a, b}, \"\"}, \
+       {{a, b} -> {\"\\!\\(\\*SubscriptBox[\\(x\\), \\(1\\)]\\)(t)\", \"y\"}, \
+        {b, a} -> {\"z\"}}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["{x₁(t), y}", "{z}"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
