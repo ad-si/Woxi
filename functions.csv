@@ -846,6 +846,13 @@ SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
 ComputationalGeometry`ConvexHull,Legacy package function: counter-clockwise indices of the convex hull corners of a 2D point set (bare ConvexHull after loading the package),✅,pure,1.0,814
+Polytopes`Vertices,Legacy package function: vertices of a regular polygon on the unit circle,✅,pure,2.0,814
+Polytopes`NumberOfVertices,Legacy package function: number of vertices of a regular polygon,✅,pure,2.0,814
+Polytopes`NumberOfEdges,Legacy package function: number of edges of a regular polygon,✅,pure,2.0,814
+Polytopes`NumberOfFaces,Legacy package function: number of faces of a regular polygon,✅,pure,2.0,814
+Polytopes`Faces,Legacy package function: the vertex indices of a regular polygon's face,✅,pure,2.0,814
+Polytopes`InscribedRadius,Legacy package function: inradius of a regular polygon with unit edges,✅,pure,2.0,814
+Polytopes`CircumscribedRadius,Legacy package function: circumradius of a regular polygon with unit edges,✅,pure,2.0,814
 ComputationalGeometry`ConvexHullArea,Legacy package function: area of the convex hull of a 2D point set (exact for exact points),✅,pure,1.0,814
 ComputationalGeometry`DelaunayTriangulation,Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set,✅,pure,5.0,814
 ComputationalGeometry`DiagramPlot,Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices),✅,pure,5.0,814

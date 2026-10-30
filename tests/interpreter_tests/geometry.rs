@@ -10047,3 +10047,25 @@ mod planar_finite_elements {
     );
   }
 }
+
+mod polytopes_package {
+  use super::*;
+
+  // The legacy Polytopes` package: polygon vertices on the unit circle,
+  // radii for unit edge length.
+  #[test]
+  fn regular_polygons() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Polytopes`\"]]; \
+         {NumberOfVertices[Pentagon], NumberOfFaces[Pentagon], InscribedRadius[Square], \
+          CircumscribedRadius[Square], Faces[Square], Vertices[Digon], Vertices[Square], \
+          Vertices[Heptagon][[1]], Vertices[Triangle]}"
+      )
+      .unwrap(),
+      "{5, 1, 1/2, 1/Sqrt[2], {1, 2, 3, 4}, {{-1, 0}, {1, 0}}, \
+       {{0, 1}, {-1, 0}, {0, -1}, {1, 0}}, {Sin[(3*Pi)/14], Cos[(3*Pi)/14]}, \
+       {{-1/2, Sqrt[3]/2}, {-1/2, -1/2*Sqrt[3]}, {1, 0}}}"
+    );
+  }
+}
