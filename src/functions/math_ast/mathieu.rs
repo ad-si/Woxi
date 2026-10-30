@@ -47,6 +47,79 @@ fn integrate_mathieu(
   y0: f64,
   yp0: f64,
 ) -> (f64, f64) {
+  // Beyond one period the equation's π-periodicity takes over: with Φ the
+  // fundamental matrix and M = Φ(π), Φ(kπ + r) = Φ(r) M^k, so only the
+  // remainder r ∈ [0, π) is integrated (a plot along z = 35 + 3x no longer
+  // integrates thirty-odd periods per point).
+  let pi = std::f64::consts::PI;
+  if z_target.abs() > pi {
+    let k = (z_target / pi).floor();
+    let r = z_target - k * pi;
+    let m = mathieu_monodromy(a, q);
+    let mut power = if k >= 0.0 {
+      m
+    } else {
+      // det M = 1 (the Wronskian), so the inverse is the adjugate.
+      [[m[1][1], -m[0][1]], [-m[1][0], m[0][0]]]
+    };
+    let mut n = k.abs() as u64;
+    let (mut v0, mut v1) = (y0, yp0);
+    while n > 0 {
+      if n & 1 == 1 {
+        (v0, v1) = (
+          power[0][0] * v0 + power[0][1] * v1,
+          power[1][0] * v0 + power[1][1] * v1,
+        );
+      }
+      power = [
+        [
+          power[0][0] * power[0][0] + power[0][1] * power[1][0],
+          power[0][0] * power[0][1] + power[0][1] * power[1][1],
+        ],
+        [
+          power[1][0] * power[0][0] + power[1][1] * power[1][0],
+          power[1][0] * power[0][1] + power[1][1] * power[1][1],
+        ],
+      ];
+      n >>= 1;
+    }
+    return integrate_mathieu_span(a, q, r, v0, v1);
+  }
+  integrate_mathieu_span(a, q, z_target, y0, yp0)
+}
+
+/// The monodromy matrix Φ(π) of the Mathieu ODE, cached per `(a, q)`.
+fn mathieu_monodromy(a: f64, q: f64) -> [[f64; 2]; 2] {
+  thread_local! {
+    static CACHE: std::cell::RefCell<std::collections::HashMap<(u64, u64), [[f64; 2]; 2]>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  let key = (a.to_bits(), q.to_bits());
+  if let Some(m) = CACHE.with(|c| c.borrow().get(&key).copied()) {
+    return m;
+  }
+  let pi = std::f64::consts::PI;
+  let (y1, y1p) = integrate_mathieu_span(a, q, pi, 1.0, 0.0);
+  let (y2, y2p) = integrate_mathieu_span(a, q, pi, 0.0, 1.0);
+  let m = [[y1, y2], [y1p, y2p]];
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() > 256 {
+      c.clear();
+    }
+    c.insert(key, m);
+  });
+  m
+}
+
+/// RK4 over `[0, z_target]` (either sign).
+fn integrate_mathieu_span(
+  a: f64,
+  q: f64,
+  z_target: f64,
+  y0: f64,
+  yp0: f64,
+) -> (f64, f64) {
   if z_target == 0.0 {
     return (y0, yp0);
   }

@@ -12121,3 +12121,22 @@ mod mathieu_characteristic_exponent {
     );
   }
 }
+
+mod mathieu_far_arguments {
+  use super::*;
+
+  // Many periods out the value comes from the monodromy matrix, and must
+  // agree with integrating the whole way (and with the even/odd symmetry).
+  #[test]
+  fn periodicity_reduction_matches_direct_values() {
+    assert_eq!(
+      interpret(
+        "{Abs[MathieuC[1.5, 0.5, 10.3] + 0.40015261803607666] < 10^-8, \
+          Abs[MathieuC[1.5, 0.5, -10.3] - MathieuC[1.5, 0.5, 10.3]] < 10^-10, \
+          Abs[MathieuS[2., 1., 35.7] + 2.09255549736036] < 10^-7}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+}
