@@ -47,6 +47,19 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(s) => {
       return polylog_integer_s(*s, z_expr, args);
     }
+    Expr::Real(sf)
+      if sf.fract() != 0.0
+        && let Some(z) = try_extract_complex_float(z_expr)
+        && (z.1 != 0.0 || z.0 < -0.5)
+        && let Some((re, im)) = polylog_complex(*sf, z) =>
+    {
+      // A complex argument, or one near -1 where the power series stops
+      // converging fast enough.
+      if z.1 == 0.0 {
+        return Ok(Expr::Real(re));
+      }
+      return Ok(build_complex_float_expr(re, im));
+    }
     Expr::Real(sf) => {
       // A machine-real order numericizes the whole call, so the argument may be
       // any exact numeric (an integer, a Rational such as 1/2, or a constant
@@ -504,4 +517,62 @@ fn gauss_legendre_nodes(n: usize) -> (Vec<f64>, Vec<f64>) {
     ws[i] = 2.0 / ((1.0 - x * x) * dp * dp);
   }
   (xs, ws)
+}
+
+/// Li_s(z) for a real non-integer order `s` and complex `z` with |z| ≤ 1:
+/// the power series near the origin, and otherwise the expansion in
+/// μ = Log[z],  Li_s(e^μ) = Γ(1-s) (-μ)^(s-1) + Σ_k ζ(s-k) μ^k / k!,
+/// which converges for |μ| < 2π and so covers the unit circle.
+pub(crate) fn polylog_complex(s: f64, z: (f64, f64)) -> Option<(f64, f64)> {
+  type C = (f64, f64);
+  let mul = |a: C, b: C| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+  let r = z.0.hypot(z.1);
+  if s.fract() == 0.0 || r > 1.0 + 1e-12 {
+    return None;
+  }
+  if r <= 0.5 {
+    let mut sum = (0.0, 0.0);
+    let mut zk = z;
+    for k in 1..=200 {
+      let term = mul(zk, ((k as f64).powf(-s), 0.0));
+      sum = (sum.0 + term.0, sum.1 + term.1);
+      if term.0.hypot(term.1) <= 1e-17 * sum.0.hypot(sum.1).max(1e-300) {
+        break;
+      }
+      zk = mul(zk, z);
+    }
+    return Some(sum);
+  }
+  let mu: C = (r.ln(), z.1.atan2(z.0));
+  if mu.0.hypot(mu.1) > 5.0 {
+    return None;
+  }
+  // Γ(1-s) (-μ)^(s-1) with the principal power.
+  let neg_mu = (-mu.0, -mu.1);
+  let (m, arg) = (neg_mu.0.hypot(neg_mu.1), neg_mu.1.atan2(neg_mu.0));
+  let mag = super::gamma::gamma_fn(1.0 - s) * m.powf(s - 1.0);
+  let mut sum = (mag * ((s - 1.0) * arg).cos(), mag * ((s - 1.0) * arg).sin());
+  let mut mu_k: C = (1.0, 0.0);
+  let mut factorial = 1.0;
+  // ζ(s - k) is nearly zero close to the trivial zeros, so one small term
+  // does not mean convergence: stop after several in a row.
+  let mut small = 0;
+  for k in 0..400 {
+    if k > 0 {
+      mu_k = mul(mu_k, mu);
+      factorial *= k as f64;
+    }
+    let zeta = super::zeta_functions::zeta_real_f64(s - k as f64);
+    let term = (zeta * mu_k.0 / factorial, zeta * mu_k.1 / factorial);
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    if term.0.hypot(term.1) <= 1e-17 * sum.0.hypot(sum.1).max(1e-300) {
+      small += 1;
+      if small >= 4 {
+        break;
+      }
+    } else {
+      small = 0;
+    }
+  }
+  Some(sum)
 }

@@ -12208,3 +12208,68 @@ mod weierstrass_lattice_functions {
     );
   }
 }
+
+mod polylog_lerch_complex_arguments {
+  use super::*;
+
+  fn close(expr: &str, re: f64, im: f64) {
+    let v = interpret(&format!("N[{{Re[#], Im[#]}} &[{expr}]]")).unwrap();
+    let parts: Vec<f64> = v
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|x| x.replace("*^", "e").parse().unwrap())
+      .collect();
+    let scale = re.hypot(im).max(1.0);
+    assert!(
+      (parts[0] - re).abs() < 1e-12 * scale
+        && (parts[1] - im).abs() < 1e-12 * scale,
+      "{expr}: {v}"
+    );
+  }
+
+  // Reference values from mpmath (wolframscript agrees to ~1e-14).
+  #[test]
+  fn values_on_and_inside_the_unit_circle() {
+    close(
+      "PolyLog[-1.854, E^(-0.3 I)]",
+      -12.402851626058885,
+      53.10485006880921,
+    );
+    close(
+      "PolyLog[1.5, E^(0.3 I)]",
+      1.2487962571120703,
+      0.934945270107861,
+    );
+    close(
+      "PolyLog[2.5, 0.5 + 0.3 I]",
+      0.523950175203273,
+      0.36898656713130795,
+    );
+    close("PolyLog[-0.5, -1.]", -0.380104812609684, 0.0);
+    close(
+      "LerchPhi[E^(-0.3 I), -1.854, 2]",
+      -41.177105554677366,
+      36.53062706027606,
+    );
+    close(
+      "LerchPhi[0.9 I, 2.5, 2]",
+      0.15687608480228643,
+      0.047915274495755965,
+    );
+    close("HurwitzLerchPhi[0.5, -1.854, 0]", 4.985616136507103, 0.0);
+  }
+
+  #[test]
+  fn hurwitz_lerch_zero_shift() {
+    assert_eq!(
+      interpret("HurwitzLerchPhi[0.5, 2.5, 0]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn zeta_at_negative_reals() {
+    close("Zeta[-20.854]", -229.14097821944622, 0.0);
+    close("Zeta[-40.5] / 10^15", -5.530487585144642, 0.0);
+  }
+}

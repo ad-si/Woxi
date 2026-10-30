@@ -727,7 +727,18 @@ fn zeta_negative_odd(abs_n: usize) -> Option<Expr> {
 /// Compute Zeta(s) numerically for real s using Euler-Maclaurin formula.
 /// Machine `Zeta[s]` at a real `s`: rounded from the arbitrary-precision
 /// Euler–Maclaurin sum, falling back to [`zeta_numeric`].
-fn zeta_real_f64(s: f64) -> f64 {
+pub(crate) fn zeta_real_f64(s: f64) -> f64 {
+  // A negative argument goes through the reflection formula
+  // ζ(s) = 2^s π^(s-1) sin(πs/2) Γ(1-s) ζ(1-s), whose ζ(1-s) is well inside
+  // the half-plane where the sum converges fast.
+  if s < 0.0 && s.fract() != 0.0 {
+    use std::f64::consts::PI;
+    return 2.0_f64.powf(s)
+      * PI.powf(s - 1.0)
+      * (PI * s / 2.0).sin()
+      * gamma_fn(1.0 - s)
+      * zeta_real_f64(1.0 - s);
+  }
   crate::functions::math_ast::hurwitz_zeta_f64(s, 1.0, false)
     .unwrap_or_else(|| zeta_numeric(s))
 }
@@ -1434,6 +1445,43 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A complex argument on or inside the unit circle with a whole-number
+  // shift a ≥ 0 reduces to the polylogarithm:
+  // Φ(z, s, a) = z^-a (Li_s(z) - Σ_{n=1}^{a-1} z^n/n^s), Φ(z, s, 0) = Li_s(z).
+  if (contains_float(z) || contains_float(s) || contains_float(a))
+    && let (Some(zc), Some(sf), Some(af)) = (
+      try_extract_complex_float(z),
+      try_eval_to_f64(s),
+      try_eval_to_f64(a),
+    )
+    && zc.1 != 0.0
+    && af >= 0.0
+    && af.fract() == 0.0
+    && af <= 64.0
+    && let Some(li) = crate::functions::math_ast::polylog_complex(sf, zc)
+  {
+    type C = (f64, f64);
+    let mul = |x: C, y: C| (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0);
+    let k = af as usize;
+    let mut value = li;
+    let mut zn: C = (1.0, 0.0);
+    for n in 1..k {
+      zn = mul(zn, zc);
+      let w = (n as f64).powf(-sf);
+      value = (value.0 - zn.0 * w, value.1 - zn.1 * w);
+    }
+    if k >= 1 {
+      // Divide by z^a.
+      let za = mul(zn, zc);
+      let d = za.0 * za.0 + za.1 * za.1;
+      value = (
+        (value.0 * za.0 + value.1 * za.1) / d,
+        (value.1 * za.0 - value.0 * za.1) / d,
+      );
+    }
+    return Ok(build_complex_float_expr(value.0, value.1));
+  }
+
   // Symbolic: return unevaluated
   Ok(unevaluated("LerchPhi", args))
 }
@@ -1447,9 +1495,11 @@ pub fn hurwitz_lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return symbolic();
   }
-  // A non-positive integer third argument makes the k = -a term diverge.
+  // A non-positive integer third argument makes the k = -a term 0^-s,
+  // which diverges for s > 0 and vanishes for s < 0 (leaving LerchPhi).
   if let Expr::Integer(a) = &args[2]
     && *a <= 0
+    && !try_eval_to_f64(&args[1]).is_some_and(|s| s < 0.0)
   {
     return Ok(id_expr("ComplexInfinity"));
   }
