@@ -846,6 +846,7 @@ SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
 ComputationalGeometry`ConvexHull,Legacy package function: counter-clockwise indices of the convex hull corners of a 2D point set (bare ConvexHull after loading the package),✅,pure,1.0,814
+ComputationalGeometry`ConvexHullArea,Legacy package function: area of the convex hull of a 2D point set (exact for exact points),✅,pure,1.0,814
 ComputationalGeometry`DelaunayTriangulation,Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set,✅,pure,5.0,814
 ComputationalGeometry`DiagramPlot,Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices),✅,pure,5.0,814
 ComputationalGeometry`VoronoiDiagram,Legacy package function: {vertices; cells} of the Voronoi diagram of a 2D point set with Ray[origin; direction] entries for unbounded edges,✅,pure,5.0,814
@@ -3712,7 +3713,7 @@ FindVertexCover,,,,8.0,3785
 ImageFeatureTrack,,🚫,,9.0,3785
 KendallTau,Kendall rank-correlation coefficient of two lists,✅,pure,9.0,3785
 LogMultinormalDistribution,,,,9.0,3785
-MathieuCharacteristicExponent,,,,3.0,3785
+MathieuCharacteristicExponent,"Floquet characteristic exponent of the Mathieu equation for real machine a and q (exact Sqrt[a] at q = 0)",✅,pure,3.0,3785
 NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10.0,3785
 PageBreakAbove,,🚫,,3.0,3785
 ReverseBiorthogonalSplineWavelet,Biorthogonal spline wavelet with primal and dual filters swapped,✅,pure,8.0,3785
@@ -6371,7 +6372,10 @@ GraphUtilities`GraphPath,Shortest path between two vertices of a graph given as 
 GraphUtilities`HamiltonianCycles,Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported),🚧,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance],✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding,✅,pure,6.0,
+Combinatorica`FromOrderedPairs,Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding,✅,pure,6.0,
+Combinatorica`SetGraphOptions,Sets options on vertices or edges or the whole of a Combinatorica graph,✅,pure,6.0,
 Combinatorica`StableMarriage,Man-optimal stable matching from men's and women's preference lists (Gale-Shapley),✅,pure,6.0,
+Combinatorica`NextPermutation,The permutation following a list in lexicographic order (the last wraps to the sorted list),✅,pure,6.0,
 Combinatorica`Josephus,Round in which each of n people in a circle is eliminated when every m-th one goes,✅,pure,6.0,
 Combinatorica`SymmetricGroup,All permutations of Range[n] as the elements of the symmetric group,✅,pure,6.0,
 Combinatorica`AlternatingGroup,The even permutations of Range[n] as the elements of the alternating group,✅,pure,6.0,

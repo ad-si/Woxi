@@ -1228,6 +1228,21 @@ mod dimension_mismatch_returns_unevaluated {
 mod named_function_arity_check {
   use super::*;
 
+  // Sequence arguments are spliced before the parameters are filled, as
+  // for any call.
+  #[test]
+  fn sequence_arguments_are_spliced() {
+    assert_eq!(
+      interpret(
+        "f = Function[{t, a, b, c}, {t, a, b, c}]; \
+         {f[0, Sequence @@ {1, 2, 3}], With[{p = {1, 2, 3}}, f[0, Sequence @@ p]], \
+          Function[{a, b}, a + b][Sequence @@ {1, 2}], (#2 &)[Sequence @@ {1, 2}]}"
+      )
+      .unwrap(),
+      "{{0, 1, 2, 3}, {0, 1, 2, 3}, 3, 2}"
+    );
+  }
+
   #[test]
   fn too_few_args_returns_unevaluated() {
     // Function[{x, y}, body] called with 1 argument should not partially bind
