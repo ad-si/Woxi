@@ -12273,3 +12273,41 @@ mod polylog_lerch_complex_arguments {
     close("Zeta[-40.5] / 10^15", -5.530487585144642, 0.0);
   }
 }
+
+mod erfc_machine_accuracy {
+  use super::*;
+
+  // Correctly rounded values (40-digit references).
+  #[test]
+  fn erfc_and_inverses_to_the_last_bit() {
+    assert_eq!(
+      interpret(
+        "ToString[{Erfc[1.], Erfc[2.5], Erfc[1.1630871536766743], \
+         InverseErf[0.9], InverseErfc[0.1], InverseErfc[1.9]}, InputForm]"
+      )
+      .unwrap(),
+      "{0.15729920705028513, 0.0004069520174449589, 0.09999999999999995, \
+       1.1630871536766743, 1.163087153676674, -1.1630871536766738}"
+    );
+  }
+
+  #[test]
+  fn normal_quantile_with_symbolic_parameters() {
+    assert_eq!(
+      interpret(
+        "ToString[{Quantile[NormalDistribution[m, s], 0.95], \
+         Quantile[NormalDistribution[m, s], 0.5]}, InputForm]"
+      )
+      .unwrap(),
+      "{m + 1.6448536269514724*s, 0. + m}"
+    );
+    assert_eq!(
+      interpret(
+        "{μ, σ} /. First[Solve[Quantile[NormalDistribution[μ, σ], 0.5] == 5 && \
+         Quantile[NormalDistribution[μ, σ], 0.95] == 5.004166666666666, {μ, σ}]]"
+      )
+      .unwrap(),
+      "{5., 0.002533153466298894}"
+    );
+  }
+}
