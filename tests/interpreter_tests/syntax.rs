@@ -4416,6 +4416,20 @@ mod complex_symbol {
     assert_eq!(interpret("Head[3 + 4 I]").unwrap(), "Complex");
   }
 
+  // A machine complex keeps its head when its imaginary part is zero:
+  // `1. + 0.*I` is Complex[1., 0.], while an exact zero drops the I.
+  #[test]
+  fn machine_zero_imaginary_part_is_complex() {
+    assert_eq!(
+      interpret(
+        "{Head[0.*I], Head[1. + 0.*I], Head[Complex[1, 0.]], Head[Complex[1., 0]], \
+         MatchQ[{1 + I, 0. + I, 0 + 0.*I, 1 + 0.*I}, {__Complex}]}"
+      )
+      .unwrap(),
+      "{Complex, Complex, Complex, Real, True}"
+    );
+  }
+
   #[test]
   fn complex_attributes() {
     assert_eq!(interpret("Attributes[Complex]").unwrap(), "{Protected}");
@@ -8694,7 +8708,7 @@ mod batch_inert_symbols_2 {
     );
     assert_eq!(
       interpret("Around[UniformDistribution[{0, 1}]]").unwrap(),
-      "Around[0.5, 0.28867513459481287]"
+      "Around[0.5, 0.2886751345948129]"
     );
     assert_eq!(
       interpret("Around[PoissonDistribution[4]]").unwrap(),
@@ -14098,6 +14112,44 @@ mod large_literal_data {
       interpret(&src).unwrap(),
       "{{200, 5}, {15/16, 1, 1 + 2*I, RGBColor[1, 0, 0], x}, \
        {Rational, Integer, Complex, RGBColor, Symbol}}"
+    );
+  }
+}
+
+mod right_nested_operator_display {
+  use super::*;
+
+  // `/.` and `//.` group to the left and assignments to the right, so the
+  // other nesting keeps its parentheses; printed code must re-read the same.
+  #[test]
+  fn parentheses_kept_where_grouping_differs() {
+    assert_eq!(
+      interpret(
+        "Hold[(a /. b) /. c, a /. (b /. c), a //. (b //. c), (a := b) := c, \
+         (a = b) := c, a = (b = c)]"
+      )
+      .unwrap(),
+      "Hold[a /. b /. c, a /. (b /. c), a //. (b //. c), (a := b) := c, \
+       (a = b) := c, a = b = c]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[(a := b) = c, a ~~ (b ~~ c)], InputForm]")
+        .unwrap(),
+      "Hold[(a := b) = c, a~~(b~~c)]"
+    );
+  }
+
+  // StringExpression is Flat: a parenthesized operand stays nested when
+  // held and flattens on evaluation.
+  #[test]
+  fn string_expression_is_flat() {
+    assert_eq!(
+      interpret(
+        "{Hold[a ~~ (b ~~ c)], a ~~ (b ~~ c), Attributes[StringExpression]}"
+      )
+      .unwrap(),
+      "{Hold[StringExpression[a, StringExpression[b, c]]], \
+       StringExpression[a, b, c], {Flat, OneIdentity, Protected}}"
     );
   }
 }

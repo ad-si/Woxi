@@ -183,6 +183,7 @@ fn build_array(
   ranges: &[(Num, Num)],
   spec: Option<&Expr>,
   offsets: Option<&Expr>,
+  padding: Option<&Expr>,
   emit_offs: &dyn Fn(&Expr),
 ) -> Option<Expr> {
   let k = ranges.len();
@@ -212,10 +213,22 @@ fn build_array(
 
   // Offsets shift each dimension by (offset mod step), relative to the
   // lower bound. Invalid offsets emit ::offs and stay unevaluated.
+  // `Center` puts the points half a step in, at the cell centers.
+  let to_offset = |e: &Expr, step: Num| -> Option<Num> {
+    match e {
+      Expr::Identifier(c) if c == "Center" => Some(div_int(step, 2)),
+      _ => to_num(e),
+    }
+  };
   let offs: Vec<Num> = match offsets {
     None => (0..k).map(|_| Num::Exact(0, 1)).collect(),
     Some(Expr::List(items)) if items.len() == k => {
-      if let Some(v) = items.iter().map(to_num).collect::<Option<Vec<_>>>() {
+      if let Some(v) = items
+        .iter()
+        .zip(&steps)
+        .map(|(e, &st)| to_offset(e, st))
+        .collect::<Option<Vec<_>>>()
+      {
         v
       } else {
         emit_offs(offsets.unwrap());
@@ -223,14 +236,54 @@ fn build_array(
       }
     }
     Some(e) => {
-      if let Some(v) = to_num(e) {
-        (0..k).map(|_| v).collect()
+      if let Some(v) = steps
+        .iter()
+        .map(|&st| to_offset(e, st))
+        .collect::<Option<Vec<_>>>()
+      {
+        v
       } else {
         emit_offs(e);
         return None;
       }
     }
   };
+
+  // Padding: `k` extra steps on both sides of every dimension, or per
+  // dimension `k` / `{klow, khigh}`; a negative count trims instead.
+  let pad_pair = |e: &Expr| -> Option<(i128, i128)> {
+    match e {
+      Expr::Integer(n) => Some((*n, *n)),
+      Expr::List(lh) if lh.len() == 2 => match (&lh[0], &lh[1]) {
+        (Expr::Integer(l), Expr::Integer(h)) => Some((*l, *h)),
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let pads: Vec<(i128, i128)> = match padding {
+    None => vec![(0, 0); k],
+    Some(Expr::Integer(n)) => vec![(*n, *n); k],
+    Some(Expr::List(items)) if items.len() == k => {
+      items.iter().map(pad_pair).collect::<Option<Vec<_>>>()?
+    }
+    Some(_) => return None,
+  };
+  let scale = |step: Num, n: i128| -> Num {
+    combine(
+      step,
+      Num::Exact(n, 1),
+      |p1, q1, p2, q2| Some((p1.checked_mul(p2)?, q1 * q2)),
+      |x, y| x * y,
+    )
+  };
+  let ranges: Vec<(Num, Num)> = ranges
+    .iter()
+    .zip(steps.iter().zip(&pads))
+    .map(|(&(lo, hi), (&step, &(pl, ph)))| {
+      (sub(lo, scale(step, pl)), add(hi, scale(step, ph)))
+    })
+    .collect();
 
   // Values per dimension: min + (off mod step) + k*step, up to max.
   // A non-positive step gives an empty grid ({}), like wolframscript.
@@ -279,7 +332,7 @@ pub fn coordinate_bounds_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CoordinateBoundsArray", args));
-  if args.is_empty() || args.len() > 3 {
+  if args.is_empty() || args.len() > 4 {
     return unevaluated();
   }
   let ranges: Option<Vec<(Num, Num)>> = match &args[0] {
@@ -301,7 +354,7 @@ pub fn coordinate_bounds_array_ast(
     ));
     return unevaluated();
   };
-  match build_array(&ranges, args.get(1), args.get(2), &|off| {
+  match build_array(&ranges, args.get(1), args.get(2), args.get(3), &|off| {
     crate::emit_message(&format!(
       "CoordinateBoundsArray::offs: Invalid offset specification {}.",
       expr_to_output(off)
@@ -317,7 +370,7 @@ pub fn coordinate_bounding_box_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CoordinateBoundingBoxArray", args));
-  if args.is_empty() || args.len() > 3 {
+  if args.is_empty() || args.len() > 4 {
     return unevaluated();
   }
   let ranges: Option<Vec<(Num, Num)>> = match &args[0] {
@@ -344,7 +397,7 @@ pub fn coordinate_bounding_box_array_ast(
     ));
     return unevaluated();
   };
-  match build_array(&ranges, args.get(1), args.get(2), &|off| {
+  match build_array(&ranges, args.get(1), args.get(2), args.get(3), &|off| {
     crate::emit_message(&format!(
       "CoordinateBoundingBoxArray::offs: Invalid offset specification {}.",
       expr_to_output(off)

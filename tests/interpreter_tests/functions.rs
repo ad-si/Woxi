@@ -3264,6 +3264,24 @@ mod unit_vector {
 mod permute {
   use super::*;
 
+  // A group gives one permuted list per element, in GroupElements order.
+  #[test]
+  fn group_form() {
+    assert_eq!(
+      interpret("Permute[{d, c, b, a}, CyclicGroup[4]]").unwrap(),
+      "{{d, c, b, a}, {c, b, a, d}, {b, a, d, c}, {a, d, c, b}}"
+    );
+    assert_eq!(
+      interpret("Permute[{a, b, c, d}, DihedralGroup[4]]").unwrap(),
+      "{{a, b, c, d}, {a, d, c, b}, {b, a, d, c}, {b, c, d, a}, \
+       {c, b, a, d}, {c, d, a, b}, {d, a, b, c}, {d, c, b, a}}"
+    );
+    assert_eq!(
+      interpret("Permute[f[1, 2, 3], AlternatingGroup[3]]").unwrap(),
+      "{f[1, 2, 3], f[2, 3, 1], f[3, 1, 2]}"
+    );
+  }
+
   #[test]
   fn list_form() {
     assert_eq!(
