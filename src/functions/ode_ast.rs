@@ -2870,6 +2870,23 @@ enum PdeBoundaryFn {
 /// first dimension must match it regardless of which domain plays which
 /// solving role. Returns `Ok(None)` when the equations don't fit this role
 /// assignment.
+/// Whether a PDE solver keeps the current time row besides its regular
+/// stride: once the state has moved by more than 1% of its initial scale
+/// since the last kept row (bounded to 1000 rows), so a fast early
+/// transient — a decaying mode — is sampled densely enough to interpolate.
+fn pde_row_moved(
+  state: &[f64],
+  last_kept: &[f64],
+  scale: f64,
+  rows: usize,
+) -> bool {
+  rows < 1000
+    && state
+      .iter()
+      .zip(last_kept)
+      .any(|(a, b)| (a - b).abs() > 0.01 * scale)
+}
+
 fn try_solve_pde_system(
   eq_items: &[Expr],
   u_names: &[String],
@@ -3441,6 +3458,11 @@ fn try_solve_pde_system(
   for (i, row) in full0.iter().enumerate() {
     state.extend(row[free_lo[i]..=free_hi[i]].iter().copied());
   }
+  let scale = state
+    .iter()
+    .fold(0.0_f64, |m, v| m.max(v.abs()))
+    .max(1e-300);
+  let mut last_kept = state.clone();
   let mut t = t_dom.min;
   for step in 0..n_steps {
     let k1 = derivative(t, &state)?;
@@ -3470,11 +3492,15 @@ fn try_solve_pde_system(
       t_dom.min + (step + 1) as f64 * dt
     };
     let is_last = step + 1 == n_steps;
-    if (step + 1) % stride == 0 || is_last {
+    if (step + 1) % stride == 0
+      || is_last
+      || pde_row_moved(&state, &last_kept, scale, ts.len())
+    {
       for (i, g) in grids.iter_mut().enumerate() {
         g.push(full_of(i, &state, t)?);
       }
       ts.push(t);
+      last_kept.clone_from(&state);
     }
   }
 
@@ -4266,6 +4292,11 @@ fn try_solve_hyperbolic_pde(
     t_dom.min,
   )?];
   let mut state = state0;
+  let scale = state
+    .iter()
+    .fold(0.0_f64, |m, v| m.max(v.abs()))
+    .max(1e-300);
+  let mut last_kept = state.clone();
   let mut t = t_dom.min;
   for step in 0..n_steps {
     let k1 = derivative(t, &state)?;
@@ -4295,7 +4326,11 @@ fn try_solve_hyperbolic_pde(
       t_dom.min + (step + 1) as f64 * dt
     };
     let is_last = step + 1 == n_steps;
-    if (step + 1) % stride == 0 || is_last {
+    if (step + 1) % stride == 0
+      || is_last
+      || pde_row_moved(&state, &last_kept, scale, ts.len())
+    {
+      last_kept.clone_from(&state);
       grid.push(reconstruct_pde_profile(
         &state[..free_len],
         free_lo,

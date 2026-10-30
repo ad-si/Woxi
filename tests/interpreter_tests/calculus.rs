@@ -24482,3 +24482,23 @@ mod dsolve_single_variable_pde {
     );
   }
 }
+
+mod ndsolve_pde_early_transient {
+  use super::*;
+
+  // A fast-decaying mode is sampled densely in time, so values early on are
+  // not linear interpolations across a coarse row spacing
+  // (exact: Exp[-4 Pi^2 t]; wolframscript 0.6741 at t = 0.01).
+  #[test]
+  fn decaying_mode_is_resolved() {
+    assert_eq!(
+      interpret(
+        "v2 = NDSolveValue[{D[v[x, t], t] == D[v[x, t], x, x], v[x, 0] == Sin[2 Pi x], \
+         v[0, t] == 0, v[1, t] == 0}, v, {x, 0, 1}, {t, 0, 1}]; \
+         Abs[v2[0.25, #] - Exp[-4 Pi^2 #]] < 0.002 & /@ {0.001, 0.005, 0.01, 0.02}"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+  }
+}
