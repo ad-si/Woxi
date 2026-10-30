@@ -1648,7 +1648,9 @@ fn bin_points_nd(
 /// Nest row-major `items` one level per entry of `dims`.
 fn nest_bins(items: &mut impl Iterator<Item = Expr>, dims: &[usize]) -> Expr {
   match dims.split_first() {
-    None => items.next().unwrap_or(Expr::List(Default::default())),
+    None => items
+      .next()
+      .unwrap_or(Expr::List(crate::ExprList::default())),
     Some((&n, rest)) => Expr::List(
       (0..n)
         .map(|_| nest_bins(items, rest))
