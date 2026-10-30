@@ -13905,10 +13905,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       if real_part == 0.0 {
         return Ok(times2(Expr::Real(imag_part), id_expr("I")));
       }
-      return Ok(plus2(
-        Expr::Real(real_part),
-        times2(Expr::Real(imag_part), id_expr("I")),
-      ));
+      return Ok(build_complex_float_expr(real_part, imag_part));
     }
   }
 
