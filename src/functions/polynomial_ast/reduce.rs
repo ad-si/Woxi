@@ -28,6 +28,21 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return result;
   }
+  // A list of inequalities is their conjunction: `Reduce[{p, q}, x]` is
+  // `Reduce[p && q, x]`. Lists holding equations keep their dedicated
+  // elimination path.
+  if let Some(Expr::List(items)) = args.first()
+    && items.len() >= 2
+    && items.iter().all(|item| {
+      matches!(item, Expr::Comparison { operators, .. }
+        if operators.iter().all(|op| !matches!(op, ComparisonOp::Equal)))
+    })
+  {
+    let conjunction = items.iter().cloned().reduce(and2).unwrap();
+    let mut rewritten = args.to_vec();
+    rewritten[0] = conjunction;
+    return reduce_ast(&rewritten);
+  }
   // `a == b == c` is `a == b && b == c`.
   if let Some(first) = args.first() {
     let expanded = super::solve::expand_chained_equalities(first);

@@ -6396,6 +6396,22 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
+  // A list of conditions is their conjunction, so it reduces exactly like
+  // the `&&` form instead of staying an unevaluated `Reduce`.
+  #[test]
+  fn reduce_list_of_conditions_is_a_conjunction() {
+    assert_eq!(
+      interpret("Reduce[{b >= 1/2, c >= 1/2, b + c <= 2}, {b, c}, Reals]")
+        .unwrap(),
+      interpret("Reduce[b >= 1/2 && c >= 1/2 && b + c <= 2, {b, c}, Reals]")
+        .unwrap()
+    );
+    assert_eq!(
+      interpret("Reduce[{b + c <= 2, b >= 0}, {b, c}, Reals]").unwrap(),
+      interpret("Reduce[b + c <= 2 && b >= 0, {b, c}, Reals]").unwrap()
+    );
+  }
+
   #[test]
   fn solve_negated_reciprocal_root() {
     assert_eq!(
