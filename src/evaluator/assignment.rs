@@ -4245,6 +4245,24 @@ pub fn set_delayed_ast(
   {
     return result;
   }
+  // `{l1, l2, …} := {r1, r2, …}` defines each pair (unevaluated, so the
+  // right-hand side must be written as a list of the same length).
+  if let Expr::List(targets) = lhs {
+    if let Expr::List(values) = body
+      && values.len() == targets.len()
+    {
+      for (target, value) in targets.iter().zip(values.iter()) {
+        set_delayed_ast(target, value)?;
+      }
+      return Ok(null_expr());
+    }
+    crate::emit_message(&format!(
+      "SetDelayed::shape: Lists {} and {} are not the same shape.",
+      expr_to_string(lhs),
+      expr_to_string(body)
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
   // `N[target, …] := body` is an NValue of the target's symbol; the body
   // is evaluated each time the rule fires.
   if let Expr::FunctionCall {

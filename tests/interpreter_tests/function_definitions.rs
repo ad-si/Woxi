@@ -6629,3 +6629,37 @@ mod function_head_and_compound_printing {
     );
   }
 }
+
+mod list_set_delayed {
+  use super::*;
+
+  #[test]
+  fn threads_over_written_lists() {
+    clear_state();
+    assert_eq!(
+      interpret("{f[x_], g[x_]} := {x^2, x^3}; {f[2], g[2]}").unwrap(),
+      "{4, 8}"
+    );
+    assert_eq!(interpret("{a, b} := {1, 2}; {a, b}").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn shape_mismatch() {
+    clear_state();
+    let out = woxi::interpret_with_stdout("{p, q} := {1, 2, 3}").unwrap();
+    assert_eq!(out.result, "$Failed");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("SetDelayed::shape")),
+      "{:?}",
+      out.warnings
+    );
+    // The right-hand side is not evaluated to find a list.
+    assert_eq!(
+      interpret("v = {1, 2}; Quiet[{r, s} := v]; {r, s}").unwrap(),
+      "{r, s}"
+    );
+  }
+}

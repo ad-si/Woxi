@@ -25431,3 +25431,23 @@ mod random_prime_big_bounds {
     );
   }
 }
+
+mod ordering_sequence_spec {
+  use super::*;
+
+  #[test]
+  fn sequence_specs_take_from_the_ordering() {
+    assert_eq!(
+      interpret(
+        "{Ordering[{5, 1, 4, 2, 3}, {2, 4}], Ordering[{5, 1, 4, 2, 3}, {-3, -1}], \
+         Ordering[{5, 1, 4, 2, 3}, {2, 4, 2}], Ordering[{1., 2., 3.}, {2, 2}]}"
+      )
+      .unwrap(),
+      "{{4, 5, 3}, {5, 3, 1}, {4, 3}, {2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Ordering[{5, 1, 4, 2, 3}, {4, 2}]]").unwrap(),
+      "Ordering[{5, 1, 4, 2, 3}, {4, 2}]"
+    );
+  }
+}
