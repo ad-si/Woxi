@@ -1238,6 +1238,35 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
+      // ColorData["HTML" | "Legacy", "ColorRules"]: every name -> colour,
+      // in table order.
+      if let (Expr::String(scheme), Expr::String(property)) =
+        (&args[0], &args[1])
+        && property == "ColorRules"
+      {
+        let names: Option<Vec<&str>> = match scheme.as_str() {
+          "HTML" => Some(HTML_COLORS.iter().map(|c| c.0).collect()),
+          "Legacy" => Some(LEGACY_COLORS.iter().map(|c| c.0).collect()),
+          _ => None,
+        };
+        if let Some(names) = names {
+          let mut rules = Vec::with_capacity(names.len());
+          for name in names {
+            let color = match crate::evaluator::evaluate_function_call_ast(
+              "ColorData",
+              &[args[0].clone(), str_expr(name)],
+            ) {
+              Ok(c) => c,
+              Err(e) => return Some(Err(e)),
+            };
+            rules.push(Expr::Rule {
+              pattern: Box::new(str_expr(name)),
+              replacement: Box::new(color),
+            });
+          }
+          return Some(Ok(Expr::List(rules.into())));
+        }
+      }
       // ColorData["Legacy", name]: the old `Graphics`Colors`` palette, which
       // is a different table from the CSS one — see `LEGACY_COLORS`.
       if let (Expr::String(scheme), Expr::String(color_name)) =

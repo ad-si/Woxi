@@ -43545,3 +43545,22 @@ mod smooth_histogram_3d {
     );
   }
 }
+
+mod named_color_rules {
+  use super::*;
+
+  #[test]
+  fn html_and_legacy_color_rules() {
+    assert_eq!(
+      interpret(
+        "r = ColorData[\"HTML\", \"ColorRules\"]; \
+         {Length[r], r[[1]], r[[-1]], Length[ColorData[\"Legacy\", \"ColorRules\"]], \
+         ColorData[\"Legacy\", \"ColorRules\"][[1]]}"
+      )
+      .unwrap(),
+      "{140, AliceBlue -> RGBColor[0.9411764705882353, 0.9725490196078431, 1.], \
+       YellowGreen -> RGBColor[0.6039215686274509, 0.803921568627451, \
+       0.19607843137254902], 193, AliceBlue -> RGBColor[0.941206, 0.972503, 1.]}"
+    );
+  }
+}
