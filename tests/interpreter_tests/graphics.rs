@@ -26103,6 +26103,40 @@ mod regular_polygon {
   use super::*;
 
   #[test]
+  fn radius_and_count_only() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[RegularPolygon[0.5, 5]], \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn radius_with_first_vertex_angle() {
+    // The first vertex sits at angle 0, i.e. on the right-hand edge.
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[RegularPolygon[{0, 0}, {1, 0}, 4], PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"], \"<polygon points=\\\"360.00,180.00\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn font_color_in_styled_text_inset() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[Inset[Style[Text[\"ab\"], FontColor -> White, FontSize -> 20], {0, 0}]], \"SVG\"], \"fill=\\\"rgb(255,255,255)\\\" font-size=\\\"20\\\"\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn pentagon() {
     insta::assert_snapshot!(export_svg("Graphics[RegularPolygon[5]]"));
   }
