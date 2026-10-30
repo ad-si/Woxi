@@ -5133,7 +5133,7 @@ fn collect_3d_primitives(
             }
           }
         }
-        "Polygon" if !args.is_empty() => {
+        "Polygon" | "Triangle" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             let mut style = style.clone();
             style.texture_coords = parse_texture_coords3d(&args[1..])
