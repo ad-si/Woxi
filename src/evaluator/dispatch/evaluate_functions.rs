@@ -745,6 +745,37 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "HypothesisTesting`" {
+    // A bare `MeanCI` read after the package is loaded is the package's.
+    for name in [
+      "ChiSquareCI",
+      "ChiSquarePValue",
+      "EqualVariances",
+      "FRatioCI",
+      "FRatioPValue",
+      "FullReport",
+      "KnownVariance",
+      "MeanCI",
+      "MeanDifferenceCI",
+      "MeanDifferenceTest",
+      "MeanTest",
+      "NormalCI",
+      "NormalPValue",
+      "OneSidedPValue",
+      "StudentTCI",
+      "StudentTPValue",
+      "TwoSided",
+      "TwoSidedPValue",
+      "VarianceCI",
+      "VarianceRatioCI",
+      "VarianceRatioTest",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!(
+        "HypothesisTesting`{name}"
+      ));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Combinatorica`" {
     // Combinatorica has no values to pre-create (its functions are ordinary
     // dispatch entries, not symbol-table lookups), but putting it on

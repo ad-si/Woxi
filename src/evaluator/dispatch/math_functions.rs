@@ -908,6 +908,25 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "HypothesisTesting`MeanDifferenceCI"
+    | "HypothesisTesting`StudentTCI"
+    | "HypothesisTesting`NormalCI"
+    | "HypothesisTesting`ChiSquareCI"
+    | "HypothesisTesting`FRatioCI"
+    | "HypothesisTesting`VarianceCI"
+    | "HypothesisTesting`VarianceRatioCI" => {
+      return Some(crate::functions::math_ast::hypothesis_testing_ci_ast(
+        name, args,
+      ));
+    }
+    "HypothesisTesting`NormalPValue"
+    | "HypothesisTesting`StudentTPValue"
+    | "HypothesisTesting`ChiSquarePValue"
+    | "HypothesisTesting`FRatioPValue" => {
+      return Some(crate::functions::math_ast::hypothesis_testing_p_value_ast(
+        name, args,
+      ));
+    }
     "HypothesisTesting`MeanDifferenceTest" => {
       return Some(
         crate::functions::math_ast::hypothesis_testing_mean_difference_test_ast(

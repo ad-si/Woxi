@@ -9734,3 +9734,201 @@ fn numeric_columns(elems: &[Expr]) -> Option<Vec<Vec<Expr>>> {
 fn args_fraction(args: &[Expr]) -> Expr {
   args.get(1).cloned().unwrap_or(Expr::Integer(0))
 }
+
+/// A quantile of the named distribution (evaluated through `Quantile`).
+fn legacy_quantile(dist: Expr, p: f64) -> Option<f64> {
+  let q = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Quantile",
+    vec![dist, Expr::Real(p)],
+  ))
+  .ok()?;
+  try_eval_to_f64(&q)
+}
+
+/// `{lo, hi}` as a machine-number interval.
+fn legacy_interval(lo: f64, hi: f64) -> Expr {
+  Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+}
+
+/// The `HypothesisTesting`` confidence intervals besides `MeanCI`:
+/// `StudentTCI[mean, se, dof]`, `NormalCI[mean, sd]`, `ChiSquareCI[var,
+/// dof]`, `FRatioCI[ratio, n1, n2]`, `VarianceCI[data]`,
+/// `VarianceRatioCI[data1, data2]` and `MeanDifferenceCI[data1, data2]`
+/// (Welch's interval unless `EqualVariances -> True`, normal under
+/// `KnownVariance`), each at `ConfidenceLevel` (0.95 by default).
+pub fn hypothesis_testing_ci_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated(name, args));
+  let short = name.trim_start_matches("HypothesisTesting`");
+  let positional = args
+    .iter()
+    .take_while(|a| crate::functions::expr_form::rule_parts(a).is_none())
+    .count();
+  let Some(options) = parse_legacy_options(&args[positional..], true) else {
+    return unevaluated_call();
+  };
+  let level = options.confidence_level.unwrap_or(0.95);
+  let (lo_p, hi_p) = ((1.0 - level) / 2.0, 1.0 - (1.0 - level) / 2.0);
+  let num = |i: usize| args.get(i).and_then(try_eval_to_f64);
+  let sample = |i: usize| match args.get(i).and_then(legacy_test_samples) {
+    Some((s, false)) if s[0].len() >= 2 => Some(s[0].clone()),
+    _ => None,
+  };
+  let student = |mean: f64, se: f64, dof: f64| {
+    let t =
+      legacy_quantile(call1("StudentTDistribution", Expr::Real(dof)), hi_p)?;
+    Some(legacy_interval(mean - se * t, mean + se * t))
+  };
+  let normal = |mean: f64, sd: f64| {
+    let z = legacy_quantile(
+      call(
+        "NormalDistribution",
+        vec![Expr::Integer(0), Expr::Integer(1)],
+      ),
+      hi_p,
+    )?;
+    Some(legacy_interval(mean - sd * z, mean + sd * z))
+  };
+  let chi_square = |var: f64, dof: f64| {
+    let dist = || call1("ChiSquareDistribution", Expr::Real(dof));
+    let (q_hi, q_lo) = (
+      legacy_quantile(dist(), hi_p)?,
+      legacy_quantile(dist(), lo_p)?,
+    );
+    Some(legacy_interval(dof * var / q_hi, dof * var / q_lo))
+  };
+  let f_ratio = |ratio: f64, n1: f64, n2: f64| {
+    let dist =
+      || call("FRatioDistribution", vec![Expr::Real(n1), Expr::Real(n2)]);
+    let (q_hi, q_lo) = (
+      legacy_quantile(dist(), hi_p)?,
+      legacy_quantile(dist(), lo_p)?,
+    );
+    Some(legacy_interval(ratio / q_hi, ratio / q_lo))
+  };
+  let result = match (short, positional) {
+    ("StudentTCI", 3) => student(
+      num(0).unwrap_or(f64::NAN),
+      num(1).unwrap_or(f64::NAN),
+      num(2).unwrap_or(f64::NAN),
+    ),
+    ("NormalCI", 2) => {
+      normal(num(0).unwrap_or(f64::NAN), num(1).unwrap_or(f64::NAN))
+    }
+    ("ChiSquareCI", 2) => {
+      chi_square(num(0).unwrap_or(f64::NAN), num(1).unwrap_or(f64::NAN))
+    }
+    ("FRatioCI", 3) => f_ratio(
+      num(0).unwrap_or(f64::NAN),
+      num(1).unwrap_or(f64::NAN),
+      num(2).unwrap_or(f64::NAN),
+    ),
+    ("VarianceCI", 1) => sample(0)
+      .and_then(|s| chi_square(sample_variance(&s), s.len() as f64 - 1.0)),
+    ("VarianceRatioCI", 2) => match (sample(0), sample(1)) {
+      (Some(a), Some(b)) => f_ratio(
+        sample_variance(&a) / sample_variance(&b),
+        a.len() as f64 - 1.0,
+        b.len() as f64 - 1.0,
+      ),
+      _ => None,
+    },
+    ("MeanDifferenceCI", 2) => match (sample(0), sample(1)) {
+      (Some(a), Some(b)) => {
+        let (n1, n2) = (a.len() as f64, b.len() as f64);
+        let diff = sample_mean(&a) - sample_mean(&b);
+        match &options.known_variance {
+          Some(known) => {
+            let (v1, v2) = match known.as_slice() {
+              [v] => (*v, *v),
+              [v1, v2] => (*v1, *v2),
+              _ => return unevaluated_call(),
+            };
+            normal(diff, (v1 / n1 + v2 / n2).sqrt())
+          }
+          None if options.equal_variances => {
+            let pooled = ((n1 - 1.0) * sample_variance(&a)
+              + (n2 - 1.0) * sample_variance(&b))
+              / (n1 + n2 - 2.0);
+            student(
+              diff,
+              (pooled * (1.0 / n1 + 1.0 / n2)).sqrt(),
+              n1 + n2 - 2.0,
+            )
+          }
+          None => {
+            let (_, dof) = two_sample_t_test(&a, &b, 0.0);
+            let se =
+              (sample_variance(&a) / n1 + sample_variance(&b) / n2).sqrt();
+            student(diff, se, dof)
+          }
+        }
+      }
+      _ => None,
+    },
+    _ => None,
+  };
+  match result {
+    Some(interval) => Ok(interval),
+    None => unevaluated_call(),
+  }
+}
+
+/// The `HypothesisTesting`` p-value functions `NormalPValue[x]`,
+/// `StudentTPValue[x, dof]`, `ChiSquarePValue[x, dof]` and
+/// `FRatioPValue[x, n1, n2]`: the smaller tail probability at `x`, as
+/// `OneSidedPValue -> p`, or twice it as `TwoSidedPValue -> 2 p` under
+/// `TwoSided -> True`.
+pub fn hypothesis_testing_p_value_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated(name, args));
+  let short = name.trim_start_matches("HypothesisTesting`");
+  let positional = args
+    .iter()
+    .take_while(|a| crate::functions::expr_form::rule_parts(a).is_none())
+    .count();
+  let Some(options) = parse_legacy_options(&args[positional..], false) else {
+    return unevaluated_call();
+  };
+  let nums: Option<Vec<f64>> =
+    args[..positional].iter().map(try_eval_to_f64).collect();
+  let Some(nums) = nums else {
+    return unevaluated_call();
+  };
+  let dist = match (short, nums.as_slice()) {
+    ("NormalPValue", [_]) => call(
+      "NormalDistribution",
+      vec![Expr::Integer(0), Expr::Integer(1)],
+    ),
+    ("StudentTPValue", [_, dof]) => {
+      call1("StudentTDistribution", Expr::Real(*dof))
+    }
+    ("ChiSquarePValue", [_, dof]) => {
+      call1("ChiSquareDistribution", Expr::Real(*dof))
+    }
+    ("FRatioPValue", [_, n1, n2]) => {
+      call("FRatioDistribution", vec![Expr::Real(*n1), Expr::Real(*n2)])
+    }
+    _ => return unevaluated_call(),
+  };
+  let cdf = crate::evaluator::evaluate_expr_to_expr(&call(
+    "CDF",
+    vec![dist, Expr::Real(nums[0])],
+  ))?;
+  let Some(cdf) = try_eval_to_f64(&cdf) else {
+    return unevaluated_call();
+  };
+  let p = cdf.min(1.0 - cdf);
+  Ok(legacy_rule(
+    if options.two_sided {
+      "HypothesisTesting`TwoSidedPValue"
+    } else {
+      "HypothesisTesting`OneSidedPValue"
+    },
+    legacy_p_value_expr(Some(p), options.two_sided),
+  ))
+}
