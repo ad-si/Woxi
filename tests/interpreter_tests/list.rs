@@ -25469,3 +25469,24 @@ mod stored_nearest_function {
     );
   }
 }
+
+// The canonical comparator is a total order even for machine NaN (which a
+// failed numeric search can leave behind): sorting such a list must not
+// panic with "comparison does not implement a total order".
+#[test]
+fn canonical_order_is_total_with_nan() {
+  use woxi::syntax::Expr;
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let mut items: Vec<Expr> = (0..60)
+    .map(|i| {
+      if i % 7 == 3 {
+        pair(f64::NAN, f64::NAN)
+      } else {
+        pair(4.0 + (i * 37 % 23) as f64 / 10.0, 0.5 + (i % 5) as f64)
+      }
+    })
+    .collect();
+  items.sort_by(woxi::functions::list_helpers_ast::sorting::canonical_cmp);
+  assert_eq!(items.len(), 60);
+}

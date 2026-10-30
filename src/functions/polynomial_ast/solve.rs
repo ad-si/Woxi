@@ -18956,6 +18956,29 @@ pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
+  // A search that ran into a non-number reports it as Indeterminate, never
+  // as a machine NaN (which no comparison can order).
+  fn nan_free(e: &Expr) -> Expr {
+    match e {
+      Expr::Real(f) if f.is_nan() => Expr::Identifier("Indeterminate".into()),
+      Expr::List(items) => Expr::List(items.iter().map(nan_free).collect()),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(nan_free(replacement)),
+      },
+      other => other.clone(),
+    }
+  }
+  find_minimum_inner(args, maximize).map(|r| nan_free(&r))
+}
+
+fn find_minimum_inner(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
   let func_name = if maximize {
     "FindMaximum"
   } else {

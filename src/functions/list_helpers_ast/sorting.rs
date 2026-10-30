@@ -309,7 +309,11 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   match (a_num, b_num) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
       // Both numeric: compare by real part first, then imaginary part
-      match a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal) {
+      match if a_re == b_re {
+        std::cmp::Ordering::Equal
+      } else {
+        a_re.total_cmp(&b_re)
+      } {
         std::cmp::Ordering::Equal => {
           // Same real part: pure reals (im=0) come first
           if a_im == 0.0 && b_im != 0.0 {
@@ -318,7 +322,11 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if a_im != 0.0 && b_im == 0.0 {
             return std::cmp::Ordering::Greater;
           }
-          match a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal) {
+          match if a_im == b_im {
+            std::cmp::Ordering::Equal
+          } else {
+            a_im.total_cmp(&b_im)
+          } {
             std::cmp::Ordering::Equal => {
               // Numerically equal number atoms tie-break by type:
               // Integer before Real before Rational. wolframscript:
