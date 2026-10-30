@@ -14480,3 +14480,24 @@ mod complex_coefficient_folding {
     );
   }
 }
+
+mod sums_ordered_by_complex_constant {
+  use super::*;
+
+  // A complex constant is one number: sums differing only in it order by
+  // its real part, then its imaginary part.
+  #[test]
+  fn factors_of_a_product() {
+    assert_eq!(
+      interpret(
+        "ToString[{(1 + I + s) (1 - I + s) (2 - I + s), \
+         ((0.092 + 0.038 I) + s) ((0.038 - 0.092 I) + s) ((0.092 - 0.038 I) + s) \
+         ((0.038 + 0.092 I) + s)}, InputForm]"
+      )
+      .unwrap(),
+      "{((1 - I) + s)*((1 + I) + s)*((2 - I) + s), \
+       ((0.038 - 0.092*I) + s)*((0.038 + 0.092*I) + s)*((0.092 - 0.038*I) + s)*\
+       ((0.092 + 0.038*I) + s)}"
+    );
+  }
+}

@@ -6844,7 +6844,54 @@ fn same_head_args_order(aa: &[Expr], ab: &[Expr]) -> std::cmp::Ordering {
 
 /// Canonical order of two symbolic factors of a product, the order
 /// `Times` sorts them into.
+/// A sum's numeric (possibly complex) constant, as machine numbers, and its
+/// other terms.
+fn sum_constant_and_rest(e: &Expr) -> Option<((f64, f64), Vec<&Expr>)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Plus" {
+    return None;
+  }
+  let (mut re, mut im) = (0.0, 0.0);
+  let mut rest = Vec::new();
+  let mut any_constant = false;
+  for t in args {
+    let numeric =
+      matches!(t, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+        || matches!(t, Expr::FunctionCall { name, .. } if name == "Rational")
+        || crate::functions::predicate_ast::is_complex_number(t);
+    if numeric && let Some((r, i)) = try_extract_complex_float(t) {
+      re += r;
+      im += i;
+      any_constant = true;
+    } else {
+      rest.push(t);
+    }
+  }
+  (any_constant && !rest.is_empty()).then_some(((re, im), rest))
+}
+
 pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Sums that differ only in their numeric constant (a complex number is a
+  // single number to wolframscript, though Woxi spreads `1 - I` over the
+  // sum): by that number, real part first — `((1 - I) + s)*((1 + I) + s)*
+  // ((2 - I) + s)`.
+  if let (Some((ca, ra)), Some((cb, rb))) =
+    (sum_constant_and_rest(a), sum_constant_and_rest(b))
+    && ra.len() == rb.len()
+    && ra
+      .iter()
+      .zip(&rb)
+      .all(|(x, y)| crate::evaluator::pattern_matching::expr_equal(x, y))
+    && let Some(ord) = ca
+      .0
+      .partial_cmp(&cb.0)
+      .filter(|o| o.is_ne())
+      .or_else(|| ca.1.partial_cmp(&cb.1).filter(|o| o.is_ne()))
+  {
+    return ord;
+  }
   // Two calls of the same head without built-in meaning: none of the
   // special cases below concern them, and they end up comparing argument
   // by argument.
