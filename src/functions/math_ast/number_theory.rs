@@ -5346,17 +5346,17 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// BitAnd[n1, n2, ...] - bitwise AND
 pub fn bit_and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  bitwise_op("BitAnd", args, |a, b| a & b, -1, Some(0), false)
+  Ok(bitwise_op("BitAnd", args, |a, b| a & b, -1, Some(0), false))
 }
 
 /// BitOr[n1, n2, ...] - bitwise OR
 pub fn bit_or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  bitwise_op("BitOr", args, |a, b| a | b, 0, Some(-1), false)
+  Ok(bitwise_op("BitOr", args, |a, b| a | b, 0, Some(-1), false))
 }
 
 /// BitXor[n1, n2, ...] - bitwise XOR
 pub fn bit_xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  bitwise_op("BitXor", args, |a, b| a ^ b, 0, None, true)
+  Ok(bitwise_op("BitXor", args, |a, b| a ^ b, 0, None, true))
 }
 
 /// The Flat, Orderless bitwise operations: the integer arguments combine
@@ -5372,10 +5372,10 @@ fn bitwise_op(
   identity: i128,
   absorbing: Option<i128>,
   cancel_pairs: bool,
-) -> Result<Expr, InterpreterError> {
+) -> Expr {
   // OneIdentity: a single argument returns itself (numeric or symbolic).
   if args.len() == 1 {
-    return Ok(args[0].clone());
+    return args[0].clone();
   }
   let mut number: Option<BigInt> = None;
   let mut symbols: Vec<Expr> = Vec::new();
@@ -5393,19 +5393,19 @@ fn bitwise_op(
       {
         symbols.push(arg.clone());
       }
-      _ => return Ok(unevaluated(name, args)),
+      _ => return unevaluated(name, args),
     }
   }
   if symbols.is_empty() {
-    return Ok(match number {
+    return match number {
       Some(n) => bigint_to_expr(n),
       None => Expr::Integer(identity),
-    });
+    };
   }
   if let (Some(n), Some(a)) = (&number, absorbing)
     && *n == BigInt::from(a)
   {
-    return Ok(Expr::Integer(a));
+    return Expr::Integer(a);
   }
   symbols.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
   let mut reduced: Vec<Expr> = Vec::with_capacity(symbols.len());
@@ -5428,11 +5428,11 @@ fn bitwise_op(
     out.push(bigint_to_expr(n));
   }
   out.extend(reduced);
-  Ok(match out.len() {
+  match out.len() {
     0 => Expr::Integer(identity),
     1 => out.pop().unwrap(),
     _ => unevaluated(name, &out),
-  })
+  }
 }
 
 /// BitNot[n] - bitwise NOT (complement)

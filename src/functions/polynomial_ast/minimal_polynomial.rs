@@ -3031,26 +3031,6 @@ fn quadratic_class_number(d: i128) -> i128 {
   }
 }
 
-#[cfg(test)]
-mod eval_poly_rational_tests {
-  use super::*;
-
-  // A high-degree candidate root no longer overflows i128.
-  #[test]
-  fn high_degree_does_not_overflow() {
-    let coeffs = vec![1i128; 61];
-    assert_ne!(
-      eval_poly_rational(&coeffs, 7, 3),
-      num_bigint::BigInt::from(0)
-    );
-    // x - 1/2 at 1/2 is a root.
-    assert_eq!(
-      eval_poly_rational(&[-1, 2], 1, 2),
-      num_bigint::BigInt::from(0)
-    );
-  }
-}
-
 /// NumberFieldFundamentalUnits[a] — the fundamental units of the ring of
 /// integers of Q(a), each as `AlgebraicNumber[a, {c0, c1, …}]`. A rational
 /// `a` or an imaginary quadratic field has none (`{}`); a real quadratic
@@ -3400,5 +3380,25 @@ pub fn expand_algebraic_numbers(e: &Expr) -> Option<Expr> {
         })
     }
     _ => None,
+  }
+}
+
+#[cfg(test)]
+mod eval_poly_rational_tests {
+  use super::*;
+
+  // A high-degree candidate root no longer overflows i128.
+  #[test]
+  fn high_degree_does_not_overflow() {
+    let coeffs = vec![1i128; 61];
+    assert_ne!(
+      eval_poly_rational(&coeffs, 7, 3),
+      num_bigint::BigInt::from(0)
+    );
+    // x - 1/2 at 1/2 is a root.
+    assert_eq!(
+      eval_poly_rational(&[-1, 2], 1, 2),
+      num_bigint::BigInt::from(0)
+    );
   }
 }

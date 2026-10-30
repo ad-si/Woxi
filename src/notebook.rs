@@ -4057,7 +4057,7 @@ fn substitute_saved_references(
       i += 1;
     }
     let word: String = chars[start..i].iter().collect();
-    last_word = word.clone();
+    last_word.clone_from(&word);
     let has_suffix =
       chars.get(i) == Some(&'$') && chars.get(i + 1) == Some(&'$');
     let held = heads.iter().any(|h| HOLDING.contains(&h.as_str()));
