@@ -14458,7 +14458,7 @@ mod complex_coefficient_folding {
          2.5 (1 + I) x, 1/2 (1 - I)/Sqrt[2], 3 (1 - I)/Sqrt[2]}, InputForm]"
       )
       .unwrap(),
-      "{(2 + 2*I)*x, (1/2 + I/2)*x, (2*I)*x, I/2*x, 2*x, (2.5 + 2.5*I)*x, \
+      "{(2 + 2*I)*x, (1/2 + I/2)*x, (2*I)*x, (I/2)*x, 2*x, (2.5 + 2.5*I)*x, \
        (1/2 - I/2)/Sqrt[2], (3 - 3*I)/Sqrt[2]}"
     );
   }

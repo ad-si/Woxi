@@ -15203,7 +15203,10 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       for arg in args.iter().skip(1) {
         // Check for negation patterns
-        if let Expr::UnaryOp {
+        if let Some(positive) = negated_complex_coefficient_term(arg) {
+          result.push_str(" - ");
+          result.push_str(&expr_to_input_form(&positive));
+        } else if let Expr::UnaryOp {
           op: UnaryOperator::Minus,
           operand,
         } = arg
