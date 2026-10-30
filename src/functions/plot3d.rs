@@ -8759,12 +8759,76 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
+  let svg = with_prolog_epilog(svg, &args[1..], svg_width, svg_height);
   // A `PlotLabel` sets a title above the finished picture. `args[1..]` are
   // the options; `args[0]` is the content, which may itself be a `Rule`
   // (`Graphics3D[a -> b]` draws nothing but is legal) and must not be read
   // as one.
   let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
   Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
+/// `Prolog -> g` / `Epilog -> g` on a `Graphics3D`: 2-D primitives drawn
+/// under / over the finished 3-D picture. They live in the picture's scaled
+/// coordinates, `{0, 0}` the lower-left corner and `{1, 1}` the upper-right,
+/// so each is rendered as a 2-D `Graphics` over that unit square and nested
+/// into the picture as an `<svg>` of the same size.
+fn with_prolog_epilog(
+  svg: String,
+  opts: &[Expr],
+  width: u32,
+  height: u32,
+) -> String {
+  let layer = |name: &str| -> Option<String> {
+    let content = opts.iter().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })?;
+    let unit = Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into());
+    let rule = |k: &str, v: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(k.to_string())),
+      replacement: Box::new(v),
+    };
+    let overlay = crate::functions::graphics::graphics_ast(&[
+      content,
+      rule("PlotRange", Expr::List(vec![unit.clone(), unit].into())),
+      rule("PlotRangePadding", Expr::Identifier("None".to_string())),
+      rule(
+        "ImageSize",
+        Expr::List(
+          vec![
+            Expr::Integer(i128::from(width)),
+            Expr::Integer(i128::from(height)),
+          ]
+          .into(),
+        ),
+      ),
+      rule("Background", Expr::Identifier("None".to_string())),
+    ])
+    .ok()?;
+    match &overlay {
+      Expr::Graphics { svg, .. } => Some(svg.clone()),
+      _ => None,
+    }
+  };
+  let mut svg = svg;
+  if let Some(under) = layer("Prolog")
+    && let Some(start) = svg.find("<rect ")
+    && let Some(len) = svg[start..].find("/>")
+  {
+    svg.insert_str(start + len + 2, &format!("\n{under}"));
+  }
+  if let Some(over) = layer("Epilog")
+    && let Some(end) = svg.rfind("</svg>")
+  {
+    svg.insert_str(end, &format!("{over}\n"));
+  }
+  svg
 }
 
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
