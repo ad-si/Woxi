@@ -2444,6 +2444,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Non-integer bounds or step, e.g. {k, 0.5, 2, 0.5} or {k, 0, 1, 1/4}:
       // the iterator values are exactly those of `Range`.
       if items.len() == 4
+        && !matches!(&items[2], Expr::Identifier(s) if s == "Infinity")
         && (expr_to_i128(&items[1]).is_none()
           || expr_to_i128(&items[2]).is_none()
           || expr_to_i128(&items[3]).is_none())
@@ -2463,6 +2464,40 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return plus_all(&terms);
       }
 
+      // Infinite range with an explicit integer step, {i, min, Infinity, s}:
+      // the unit step is the plain infinite sum, and a larger step reindexes
+      // i = min + s j over {j, 0, Infinity}.
+      if items.len() == 4
+        && matches!(&items[2], Expr::Identifier(s) if s == "Infinity")
+        && let (Some(min), Some(step)) =
+          (expr_to_i128(&items[1]), expr_to_i128(&items[3]))
+        && step >= 1
+      {
+        let iter = |lo: i128, v: Expr| {
+          Expr::List(crate::ExprList::from(vec![
+            Expr::Identifier(var_name.clone()),
+            Expr::Integer(lo),
+            v,
+          ]))
+        };
+        let inf = Expr::Identifier("Infinity".to_string());
+        if step == 1 {
+          return sum_ast(&[body.clone(), iter(min, inf)]);
+        }
+        let index = plus2(
+          Expr::Integer(min),
+          times2(Expr::Integer(step), Expr::Identifier(var_name.clone())),
+        );
+        let reindexed =
+          crate::syntax::substitute_variable(body, &var_name, &index);
+        let result = sum_ast(&[reindexed.clone(), iter(0, inf.clone())])?;
+        // Keep the original form when the reindexed series has no closed form.
+        if matches!(&result, Expr::FunctionCall { name, .. } if name == "Sum") {
+          return Ok(unevaluated("Sum", args));
+        }
+        return Ok(result);
+      }
+
       // Check for infinite sum: {i, min, Infinity}
       if items.len() == 3
         && let Expr::Identifier(s) = &items[2]
@@ -2470,6 +2505,16 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let min_val = expr_to_i128(&items[1]).unwrap_or(1);
         if let Some(result) = try_infinite_sum(body, &var_name, min_val)? {
+          return Ok(result);
+        }
+        // The held body may use user-defined functions of the index, e.g.
+        // c[2, n] with c[2, n_] := 1/n!; retry on its evaluated form.
+        if let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(body)
+          && crate::syntax::expr_to_string(&evaluated)
+            != crate::syntax::expr_to_string(body)
+          && let Some(result) =
+            try_infinite_sum(&evaluated, &var_name, min_val)?
+        {
           return Ok(result);
         }
         // Sum of an exact zero term is 0 (wolframscript agrees).
