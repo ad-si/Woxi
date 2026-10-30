@@ -11663,6 +11663,33 @@ fn pixel_size_option(opts: &[Expr]) -> Option<Expr> {
 /// Converts a Graphics, Grid, or other visual expression to a raster image.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Rasterize[expr, elem, opts]: the element of the rasterization to give.
+  if let Some(Expr::String(elem)) = args.get(1) {
+    let mut rest = vec![args[0].clone()];
+    rest.extend(args[2..].iter().cloned());
+    let image = || rasterize_ast(&rest);
+    let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+    return match elem.as_str() {
+      "Image" => image(),
+      // The colour channels as bytes.
+      "Data" => eval(call(
+        "ImageData",
+        vec![
+          call("RemoveAlphaChannel", vec![image()?]),
+          Expr::String("Byte".into()),
+        ],
+      )),
+      "RasterSize" => eval(call("ImageDimensions", vec![image()?])),
+      _ => {
+        crate::emit_message(&format!(
+          "Rasterize::elmntavl: \"{elem}\" is not an available element. \
+           Possible elements include \"BoundingBox\", \"Data\", \
+           \"Graphics\", \"RasterSize\", \"Regions\", and \"Image\"."
+        ));
+        Ok(Expr::Identifier("$Failed".into()))
+      }
+    };
+  }
   // If input is already an image, return it directly
   if let Expr::Image { .. } = &args[0] {
     return Ok(args[0].clone());

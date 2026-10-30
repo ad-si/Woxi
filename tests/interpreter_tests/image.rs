@@ -9435,6 +9435,32 @@ mod rasterize_any_expression {
     );
   }
 
+  // Rasterize[expr, elem] gives one element of the rasterization: the
+  // image, its RGB bytes, or its size.
+  #[test]
+  fn rasterize_elements() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graphics[Disk[], ImageSize -> 20]; \
+         {Head[Rasterize[g, \"Image\"]], \
+          Dimensions[Rasterize[g, \"Data\"]] == Append[Reverse[Rasterize[g, \"RasterSize\"]], 3], \
+          Union[Head /@ Flatten[Rasterize[g, \"Data\"]]], \
+          Rasterize[g, \"RasterSize\"] == ImageDimensions[Rasterize[g]]}"
+      )
+      .unwrap(),
+      "{Image, True, {Integer}, True}"
+    );
+    let r =
+      interpret_with_stdout("Rasterize[Graphics[Disk[]], \"Foo\"]").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("Rasterize::elmntavl"))
+    );
+  }
+
   // A graphic where an image is expected is rasterized first.
   #[test]
   fn image_functions_accept_graphics() {

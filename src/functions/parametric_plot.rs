@@ -783,7 +783,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 
   // `ColorFunction -> f` colors the curve along its length by `f[x, y, t]`:
-  // draw it as runs of constant color, one series per run.
+  // draw it as runs of constant color, one series per run. A `Show` merge
+  // gets the coloured runs, since the parameter `f` needs is gone by then.
+  let mut colored_runs: Option<(Vec<Vec<(f64, f64)>>, Vec<SeriesStyle>)> = None;
   let svg = if let Some(cf) = plot_opts.color_function.take() {
     let (runs, colors, owners) = color_function_series(
       &all_points,
@@ -814,7 +816,8 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect();
     let svg = generate_svg_with_filling(&runs, x_range, y_range, &plot_opts);
-    plot_opts.plot_style = base;
+    colored_runs =
+      Some((runs, std::mem::replace(&mut plot_opts.plot_style, base)));
     plot_opts.color_function = Some(cf);
     svg?
   } else {
@@ -825,16 +828,28 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // with other graphics (re-rendering the curves as Line primitives). The
   // style goes with them: a curve merged by `Show` keeps the colour and
   // weight `PlotStyle` gave it, as it does when drawn on its own.
+  let mut options = crate::functions::plot::explicit_options(args);
+  let (points, styles) = match &colored_runs {
+    Some((runs, styles)) => {
+      options.retain(|o| {
+        !matches!(o, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n)
+            if n == "ColorFunction" || n == "ColorFunctionScaling"))
+      });
+      (runs, styles)
+    }
+    None => (&all_points, &plot_opts.plot_style),
+  };
   let source = build_plot_source(
-    &all_points,
-    &plot_opts.plot_style,
+    points,
+    styles,
     x_range,
     y_range,
     (plot_opts.svg_width, plot_opts.svg_height),
     &[false],
     plot_opts.filling,
     plot_opts.filling_style,
-    crate::functions::plot::explicit_options(args),
+    options,
   );
   Ok(crate::graphics_result_with_source(svg, source))
 }

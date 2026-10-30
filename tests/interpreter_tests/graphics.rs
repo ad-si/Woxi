@@ -13948,6 +13948,23 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       );
     }
 
+    // A curve coloured by a `ColorFunction` of (x, y, t) merges as its
+    // coloured runs: re-rendering used to call the function with only
+    // (x, y) (Function::fpct) and lose the gradient.
+    #[test]
+    fn show_merges_color_function_parametric_curve() {
+      clear_state();
+      let r = interpret_with_stdout(
+        "p = ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2}, \
+         ColorFunction -> Function[{x, y, s}, Hue[s]]]; \
+         s = ExportString[Show[p, p], \"SVG\"]; \
+         Length[Union[StringCases[s, RegularExpression[\"stroke=\\\"#[0-9A-F]{6}\\\"\"]]]] > 10",
+      )
+      .unwrap();
+      assert_eq!(r.result, "True");
+      assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped
