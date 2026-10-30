@@ -788,6 +788,44 @@ mod image_core {
       interpret("img = Image[{{0, 0.5, 1}}]; ImageDimensions[img]").unwrap();
     assert_eq!(result, "{3, 1}");
   }
+
+  // Any other angle: the whole-pixel bounding box, each pixel sampling the
+  // source under its centre scaled to the exact box, black outside.
+  #[test]
+  fn image_rotate_arbitrary_angle() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{1.}}], 15 Degree]]").unwrap(),
+      "{{1., 1.}, {1., 1.}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{1., 1., 1., 1.}}], 30 Degree]]")
+        .unwrap(),
+      "{{0., 0., 0., 1.}, {0., 1., 1., 0.}, {1., 0., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[ConstantArray[1., {3, 3}]], 30 Degree]]"
+      )
+      .unwrap(),
+      "{{0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}, {1., 1., 1., 1., 1.}, \
+{0., 1., 1., 1., 0.}, {0., 0., 1., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{0., 1.}, {0.5, 0.25}}], Pi/4]]")
+        .unwrap(),
+      "{{0., 1., 0.}, {0., 0.25, 0.25}, {0., 0.5, 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[ConstantArray[1., {4, 5}]], 15 Degree]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 1., 1., 0.}, {1., 1., 1., 1., 1., 0.}, \
+{1., 1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1., 1.}, \
+{0., 1., 1., 1., 1., 1.}, {0., 1., 1., 0., 0., 0.}}"
+    );
+  }
 }
 
 mod image_processing {

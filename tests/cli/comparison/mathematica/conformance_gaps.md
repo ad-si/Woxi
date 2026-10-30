@@ -6294,3 +6294,12 @@ is `((4 s^2)/9)/((1/3 + …)(1/3 + …))` in Woxi and `(4 s^2)/((1 + … + 3 s^2
 highpass multiplies each factor by a unit). Lowpass models, machine-number
 models and the filtered values match. `ToDiscreteTimeModel` of a machine
 model agrees with WL to the last one or two digits.
+
+## ImageRotate: exact pixel-corner ties at an arbitrary angle
+
+`ImageRotate` at an angle that is not a right angle samples the source pixel
+under each output pixel centre. When that point falls exactly on a source
+pixel corner (the canvas centre of an even-sized image on an odd canvas),
+wolframscript's choice depends on its transform's rounding noise:
+`ImageRotate[Image[{{1, 0}, {0, 1}}, "Byte"], 1]` has a `0` in the centre,
+Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.

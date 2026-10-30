@@ -3118,8 +3118,44 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if norm < 0.01 || (norm - 2.0 * pi).abs() < 0.01 {
     0
   } else {
-    // Non-90° rotations aren't supported; pass through unevaluated.
-    return Ok(unevaluated("ImageRotate", args));
+    // Any other angle: the bounding box of the turned image, each pixel
+    // taking the source pixel under its centre (black outside), the way
+    // wolframscript resamples.
+    let (sin, cos) = angle.sin_cos();
+    let (wf, hf) = (w as f64, h as f64);
+    let size = |v: f64| (v - 1e-9).ceil().max(1.0) as usize;
+    let bw = wf * cos.abs() + hf * sin.abs();
+    let bh = wf * sin.abs() + hf * cos.abs();
+    let (nw, nh) = (size(bw), size(bh));
+    let mut out = Vec::with_capacity(nw * nh * ch);
+    for r in 0..nh {
+      for c in 0..nw {
+        // Output pixel centre relative to the centre, y pointing up, scaled
+        // from the whole-pixel canvas back to the exact bounding box.
+        let dx = (c as f64 + 0.5 - nw as f64 / 2.0) * bw / nw as f64;
+        let dy = (nh as f64 / 2.0 - (r as f64 + 0.5)) * bh / nh as f64;
+        // Turned back by the angle into the source image.
+        let sx = dx * cos + dy * sin + wf / 2.0;
+        let sy = -dx * sin + dy * cos + hf / 2.0;
+        let (col, row) = (sx.floor(), (hf - sy).floor());
+        if col >= 0.0 && row >= 0.0 && (col as usize) < w && (row as usize) < h
+        {
+          let base = (row as usize * w + col as usize) * ch;
+          out.extend_from_slice(&data[base..base + ch]);
+        } else {
+          out.extend(std::iter::repeat_n(0.0, ch));
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      color_space: None,
+      display_size: None,
+      width: nw as u32,
+      height: nh as u32,
+      channels: *channels,
+      data: Arc::new(out),
+      image_type: *image_type,
+    });
   };
 
   let pixel = |r: usize, c: usize| -> &[f64] {
