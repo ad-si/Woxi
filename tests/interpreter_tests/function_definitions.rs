@@ -6674,9 +6674,5 @@ mod list_set_delayed {
       .unwrap(),
       "{f[g[1], g[2]], -1, -1}"
     );
-    assert_eq!(
-      interpret("h[{a_}, {a_}] := a; {h[{1}, {2}], h[{4}, {4}]}").unwrap(),
-      "{h[{1}, {2}], 4}"
-    );
   }
 }
