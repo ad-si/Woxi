@@ -8422,6 +8422,35 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // y'' + (α + β Cos[ω x + φ]) y == 0 is Mathieu's equation in
+  // z = (ω x + φ)/2; machine numbers make the parameters machine numbers.
+  #[test]
+  fn mathieu_equation() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + (2 + 3 Cos[2 x]) y[x] == 0, y, x]").unwrap(),
+      "{{y -> Function[{x}, C[1]*MathieuC[2, -3/2, x] + C[2]*MathieuS[2, -3/2, x]]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] + (a - 2 q Cos[2 x]) y[x] == 0, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> C[1]*MathieuC[a, q, x] + C[2]*MathieuS[a, q, x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] + (1 + Cos[x]) y[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*MathieuC[4, -2, x/2] + C[2]*MathieuS[4, -2, x/2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[DSolve[(Pi^2*y[x]*(1 + 0.21*Cos[70 + 2*Pi*x]))/(19600*l^2) + \
+         y''[x]/19600 == 0, y, x]]"
+      )
+      .unwrap(),
+      "InputForm[{{y -> Function[{x}, C[1]*MathieuC[1./l^2, -0.105/l^2, \
+       (70. + 6.283185307179586*x)/2] + C[2]*MathieuS[1./l^2, -0.105/l^2, \
+       (70. + 6.283185307179586*x)/2]]}}]"
+    );
+  }
+
   // Second-order constant coefficients that are symbols: wolframscript's
   // forms (trigonometric for a pair ±I s, exponentials otherwise). These
   // stopped the evaluation with "cannot convert k to a numeric value"

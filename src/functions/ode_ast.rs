@@ -558,6 +558,14 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse the ODE: extract lhs == rhs, move everything to lhs - rhs = 0
   let ode_normalized = normalize_equation(&ode_expr)?;
 
+  // `y'' + (α + β Cos[ω x + φ]) y == 0` is Mathieu's equation.
+  if initial_conditions.is_empty()
+    && let Some(solution) =
+      dsolve_mathieu_equation(&ode_normalized, &y_name, &x_name)
+  {
+    return Ok(build_dsolve_result(solution, y_name, x_name, function_form));
+  }
+
   // Collect terms: classify each additive term by derivative order
   // A product such as `k*(a - y[x] + f[x])` hides the linear terms inside a
   // parenthesised sum, so retry on the expanded form before giving up.
@@ -664,6 +672,165 @@ fn function_form_rule(y_name: String, x_name: String, solution: Expr) -> Expr {
 /// Wrap a solved right-hand side as `{{y[x] -> sol}}`, or
 /// `{{y -> Function[{x}, sol]}}` when the caller asked for `y` rather than
 /// `y[x]`.
+/// The general solution of `c y'' + P y == 0` (`expr` its left side) when
+/// `P/c = α + β Cos[ω x + φ]`: with `z = (ω x + φ)/2` it is Mathieu's
+/// equation `y_zz + (a − 2 q Cos[2z]) y == 0`, `a = 4α/ω²`, `q = −2β/ω²`,
+/// solved by `C[1] MathieuC[a, q, z] + C[2] MathieuS[a, q, z]`. Machine
+/// numbers in the equation make the parameters machine numbers too.
+fn dsolve_mathieu_equation(
+  expr: &Expr,
+  y_name: &str,
+  x_name: &str,
+) -> Option<Expr> {
+  use crate::evaluator::evaluate_function_call_ast as call_ast;
+  let x = Expr::Identifier(x_name.to_string());
+  let y_of_x = Expr::FunctionCall {
+    name: y_name.to_string(),
+    args: vec![x.clone()].into(),
+  };
+  let deriv = |k: usize| {
+    crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::string_to_expr(&format!(
+        "Derivative[{k}][{y_name}][{x_name}]"
+      ))
+      .ok()?,
+    )
+    .ok()
+  };
+  let (y1, y2) = (deriv(1)?, deriv(2)?);
+  let expanded = call_ast("Expand", std::slice::from_ref(expr)).ok()?;
+  let c2 = call_ast("Coefficient", &[expanded.clone(), y2.clone()]).ok()?;
+  let c1 = call_ast("Coefficient", &[expanded.clone(), y1.clone()]).ok()?;
+  let c0 = call_ast("Coefficient", &[expanded.clone(), y_of_x.clone()]).ok()?;
+  if matches!(c2, Expr::Integer(0)) || !matches!(c1, Expr::Integer(0)) {
+    return None;
+  }
+  // Nothing else: the equation is homogeneous in y.
+  let rest = call_ast(
+    "Expand",
+    &[call_ast(
+      "Subtract",
+      &[
+        expanded,
+        call_ast(
+          "Plus",
+          &[
+            call_ast("Times", &[c2.clone(), y2]).ok()?,
+            call_ast("Times", &[c0.clone(), y_of_x.clone()]).ok()?,
+          ],
+        )
+        .ok()?,
+      ],
+    )
+    .ok()?],
+  )
+  .ok()?;
+  if !matches!(rest, Expr::Integer(0) | Expr::Real(_))
+    || matches!(rest, Expr::Real(r) if r != 0.0)
+  {
+    return None;
+  }
+  let inexact = crate::functions::math_ast::contains_inexact_real(expr);
+  let mut p =
+    call_ast("Expand", &[call_ast("Divide", &[c0, c2]).ok()?]).ok()?;
+  // Machine numbers in the equation: its constants are numericized first,
+  // and the parameters follow from them (`a` comes out as `1./l^2`).
+  if inexact {
+    p = call_ast("Expand", &[call_ast("N", &[p]).ok()?]).ok()?;
+  }
+  if mentions_head(&p, y_name) {
+    return None;
+  }
+  // The single Cos[θ] with θ = ω x + φ.
+  fn cosines(e: &Expr, x: &str, out: &mut Vec<Expr>) {
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Cos"
+      && args.len() == 1
+      && crate::functions::polynomial_ast::contains_var(&args[0], x)
+    {
+      if !out.iter().any(|o| exprs_match(o, &args[0])) {
+        out.push(args[0].clone());
+      }
+      return;
+    }
+    for c in expr_children(e) {
+      cosines(c, x, out);
+    }
+  }
+  let mut found = Vec::new();
+  cosines(&p, x_name, &mut found);
+  let [theta] = found.as_slice() else {
+    return None;
+  };
+  let cos_theta = Expr::FunctionCall {
+    name: "Cos".to_string(),
+    args: vec![theta.clone()].into(),
+  };
+  let omega = call_ast("D", &[theta.clone(), x.clone()]).ok()?;
+  if crate::functions::polynomial_ast::contains_var(&omega, x_name)
+    || matches!(omega, Expr::Integer(0))
+  {
+    return None;
+  }
+  let beta = call_ast("Coefficient", &[p.clone(), cos_theta.clone()]).ok()?;
+  let alpha = call_ast(
+    "Expand",
+    &[call_ast(
+      "Subtract",
+      &[p, call_ast("Times", &[beta.clone(), cos_theta]).ok()?],
+    )
+    .ok()?],
+  )
+  .ok()?;
+  if crate::functions::polynomial_ast::contains_var(&alpha, x_name)
+    || crate::functions::polynomial_ast::contains_var(&beta, x_name)
+  {
+    return None;
+  }
+  let omega2 = call_ast("Power", &[omega, Expr::Integer(2)]).ok()?;
+  let simplify = |e: Expr| {
+    if inexact {
+      Some(e)
+    } else {
+      call_ast("Simplify", &[e]).ok()
+    }
+  };
+  let a = simplify(
+    call_ast(
+      "Divide",
+      &[
+        call_ast("Times", &[Expr::Integer(4), alpha]).ok()?,
+        omega2.clone(),
+      ],
+    )
+    .ok()?,
+  )?;
+  let q = simplify(
+    call_ast(
+      "Divide",
+      &[call_ast("Times", &[Expr::Integer(-2), beta]).ok()?, omega2],
+    )
+    .ok()?,
+  )?;
+  let z = call_ast("Divide", &[theta.clone(), Expr::Integer(2)]).ok()?;
+  let c = |i: i128| Expr::FunctionCall {
+    name: "C".to_string(),
+    args: vec![Expr::Integer(i)].into(),
+  };
+  let mathieu = |name: &str| Expr::FunctionCall {
+    name: name.to_string(),
+    args: vec![a.clone(), q.clone(), z.clone()].into(),
+  };
+  call_ast(
+    "Plus",
+    &[
+      call_ast("Times", &[c(1), mathieu("MathieuC")]).ok()?,
+      call_ast("Times", &[c(2), mathieu("MathieuS")]).ok()?,
+    ],
+  )
+  .ok()
+}
+
 fn build_dsolve_result(
   solution: Expr,
   y_name: String,
