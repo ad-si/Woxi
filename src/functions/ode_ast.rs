@@ -13744,10 +13744,10 @@ fn evaluate_interpolating_function_values(
       }
     } else {
       let x_expr = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
+      // A spline extrapolates outside the data without a message
+      // (wolframscript gives `InterpolatingFunction::dmval` only for the
+      // local-polynomial methods).
       if let Ok(x) = interp_value_to_f64(&x_expr) {
-        if outside_interpolation_domain(x, sp.xs[0], sp.xs[sp.xs.len() - 1]) {
-          emit_dmval(std::slice::from_ref(&x_expr));
-        }
         return Ok(Expr::Real(sp.eval(x, derivative_order)));
       }
     }
