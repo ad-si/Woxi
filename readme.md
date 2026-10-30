@@ -114,6 +114,10 @@ On macOS, `make install` additionally builds the Woxi Studio notebook editor
 and installs it as a `.app` bundle at `/Applications/Woxi Studio.app`,
 registered with Launch Services so that `.nb`, `.wl`, and `.wls` files appear
 under Finder's "Open With…" menu.
+On Linux, `make install-linux-desktop` installs Woxi Studio together with
+a desktop entry and icon under `~/.local/share`.
+Its windows use `woxi-studio` as X11 `WM_CLASS` and Wayland app id,
+so docks and launchers can associate them with the desktop entry.
 
 
 ## Usage
