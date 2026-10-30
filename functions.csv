@@ -3712,7 +3712,7 @@ FindVertexCover,,,,8.0,3785
 ImageFeatureTrack,,🚫,,9.0,3785
 KendallTau,Kendall rank-correlation coefficient of two lists,✅,pure,9.0,3785
 LogMultinormalDistribution,,,,9.0,3785
-MathieuCharacteristicExponent,,,,3.0,3785
+MathieuCharacteristicExponent,"Floquet characteristic exponent of the Mathieu equation for real machine a and q (exact Sqrt[a] at q = 0)",✅,pure,3.0,3785
 NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10.0,3785
 PageBreakAbove,,🚫,,3.0,3785
 ReverseBiorthogonalSplineWavelet,Biorthogonal spline wavelet with primal and dual filters swapped,✅,pure,8.0,3785

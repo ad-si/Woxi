@@ -12090,3 +12090,34 @@ mod bessel_family_machine_accuracy {
     );
   }
 }
+
+mod mathieu_characteristic_exponent {
+  use super::*;
+
+  // The Floquet exponent: real and non-negative in a stable band, k + iμ
+  // in an unstable one; exact Sqrt[a] at q = 0. Machine values agree with
+  // wolframscript to about 1e-12.
+  #[test]
+  fn bands_and_exact_values() {
+    assert_eq!(
+      interpret(
+        "Round[{MathieuCharacteristicExponent[36., -3.78], \
+          MathieuCharacteristicExponent[1.5, 0.5], \
+          MathieuCharacteristicExponent[0.5, 1.], \
+          MathieuCharacteristicExponent[-1., 1.], \
+          MathieuCharacteristicExponent[30., 20.]}, 10.^-10]"
+      )
+      .unwrap(),
+      "{5.9827894399, 1.0818404486, 1. + 0.4742242561*I, 0. + 0.8442462228000001*I, \
+       5. + 0.5762111561000001*I}"
+    );
+    assert_eq!(
+      interpret(
+        "{MathieuCharacteristicExponent[2, 0], MathieuCharacteristicExponent[-4, 0], \
+          MathieuCharacteristicExponent[1/2, 1]}"
+      )
+      .unwrap(),
+      "{Sqrt[2], 2*I, MathieuCharacteristicExponent[1/2, 1]}"
+    );
+  }
+}

@@ -332,3 +332,155 @@ pub fn mathieu_characteristic_b_ast(
     args,
   ))
 }
+
+/// The rotation number of the Mathieu ODE: the mean rate at which the
+/// Prüfer angle φ of a solution (`y = r sin φ`, `y' = r cos φ`, so
+/// `φ' = cos²φ + p sin²φ` with `p = a − 2q cos 2z`) turns, over `periods`
+/// periods of π. It equals the real part of the characteristic exponent to
+/// within `1/periods`.
+fn mathieu_rotation_number(a: f64, q: f64, periods: usize) -> f64 {
+  let per_period = 400.0 * ((a.abs() + 2.0 * q.abs()).sqrt() + 1.0);
+  let n = (per_period as usize).max(200) * periods;
+  let span = std::f64::consts::PI * periods as f64;
+  let h = span / n as f64;
+  let f = |z: f64, phi: f64| {
+    let p = a - 2.0 * q * (2.0 * z).cos();
+    let (s, c) = phi.sin_cos();
+    c * c + p * s * s
+  };
+  let (mut phi, mut z) = (0.0, 0.0);
+  for _ in 0..n {
+    let k1 = f(z, phi);
+    let k2 = f(z + h / 2.0, phi + h * k1 / 2.0);
+    let k3 = f(z + h / 2.0, phi + h * k2 / 2.0);
+    let k4 = f(z + h, phi + h * k3);
+    phi += h * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0;
+    z += h;
+  }
+  phi / span
+}
+
+/// Half the monodromy trace, `(y₁(π) + y₂'(π))/2`, of the Mathieu ODE.
+/// The potential is even, so it is `2 y₁(π/2) y₂'(π/2) − 1` (the
+/// Wronskian is 1); each half-period integration is a fine-stepped RK4.
+fn mathieu_half_trace(a: f64, q: f64) -> f64 {
+  let half = std::f64::consts::FRAC_PI_2;
+  let omega = (a.abs() + 2.0 * q.abs()).sqrt() + 1.0;
+  let n = ((3000.0 * omega) as usize).clamp(2000, 200_000);
+  let rk = |steps: usize, y0: f64, yp0: f64| -> (f64, f64) {
+    let h = half / steps as f64;
+    let f = |z: f64, y: f64| -(a - 2.0 * q * (2.0 * z).cos()) * y;
+    let (mut y, mut yp) = (y0, yp0);
+    for i in 0..steps {
+      // The node itself, not a running sum, keeps the step points exact.
+      let z = i as f64 * h;
+      let k1y = yp;
+      let k1p = f(z, y);
+      let k2y = yp + h * k1p / 2.0;
+      let k2p = f(z + h / 2.0, y + h * k1y / 2.0);
+      let k3y = yp + h * k2p / 2.0;
+      let k3p = f(z + h / 2.0, y + h * k2y / 2.0);
+      let k4y = yp + h * k3p;
+      let k4p = f(z + h, y + h * k3y);
+      y += h * (k1y + 2.0 * k2y + 2.0 * k3y + k4y) / 6.0;
+      yp += h * (k1p + 2.0 * k2p + 2.0 * k3p + k4p) / 6.0;
+    }
+    (y, yp)
+  };
+  let trace_at = |steps: usize| {
+    let (y1, _) = rk(steps, 1.0, 0.0);
+    let (_, y2p) = rk(steps, 0.0, 1.0);
+    2.0 * y1 * y2p - 1.0
+  };
+  let coarse = trace_at(n);
+  let fine = trace_at(2 * n);
+  (16.0 * fine - coarse) / 15.0
+}
+
+/// `MathieuCharacteristicExponent[a, q]` for real machine `a` and `q`: the
+/// Floquet exponent ν with `cos πν = (y₁(π) + y₂'(π))/2` from the
+/// fundamental solutions, as `(Re ν, Im ν)`. A stable `(a, q)` has a real
+/// ν ≥ 0, picked among `2m ± θ` by the rotation number; an unstable one
+/// is `k + iμ`, its integer part `k` of the parity the trace's sign gives.
+pub fn mathieu_characteristic_exponent(a: f64, q: f64) -> (f64, f64) {
+  let pi = std::f64::consts::PI;
+  let half_trace = mathieu_half_trace(a, q);
+  if half_trace.abs() <= 1.0 {
+    let theta = half_trace.acos() / pi;
+    let gap = theta.min(1.0 - theta).max(1e-3);
+    let periods = ((4.0 / gap).ceil() as usize).clamp(8, 400);
+    let estimate = mathieu_rotation_number(a, q, periods);
+    // Candidates 2m ± θ around the estimate.
+    let m = (estimate / 2.0).round();
+    let nu = [
+      2.0 * m - theta,
+      2.0 * m + theta,
+      2.0 * m + 2.0 - theta,
+      2.0 * m - 2.0 + theta,
+    ]
+    .into_iter()
+    .filter(|v| *v >= 0.0)
+    .min_by(|x, y| (x - estimate).abs().total_cmp(&(y - estimate).abs()))
+    .unwrap_or(theta);
+    (nu, 0.0)
+  } else {
+    let mu = half_trace.abs().acosh() / pi;
+    let estimate = mathieu_rotation_number(a, q, 8);
+    // Even k for a positive trace, odd for a negative one.
+    let parity = if half_trace > 0.0 { 0.0 } else { 1.0 };
+    let k = 2.0 * ((estimate - parity) / 2.0).round() + parity;
+    (k.max(parity), mu)
+  }
+}
+
+pub fn mathieu_characteristic_exponent_ast(args: &[Expr]) -> Expr {
+  let unevaluated =
+    || crate::helpers::unevaluated("MathieuCharacteristicExponent", args);
+  let [a_e, q_e] = args else {
+    return unevaluated();
+  };
+  // q = 0: the exponent is Sqrt[a] exactly (I Sqrt[-a] for a < 0).
+  if matches!(q_e, Expr::Integer(0))
+    && !crate::functions::math_ast::contains_inexact_real(a_e)
+    && let Some(a) = try_real_f64(a_e)
+  {
+    let root = crate::evaluator::evaluate_function_call_ast(
+      "Sqrt",
+      std::slice::from_ref(a_e),
+    );
+    if a >= 0.0 {
+      return root.unwrap_or_else(|_| unevaluated());
+    }
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[
+        Expr::Identifier("I".to_string()),
+        crate::evaluator::evaluate_function_call_ast(
+          "Sqrt",
+          &[crate::evaluator::evaluate_function_call_ast(
+            "Minus",
+            std::slice::from_ref(a_e),
+          )
+          .unwrap_or_else(|_| unevaluated())],
+        )
+        .unwrap_or_else(|_| unevaluated()),
+      ],
+    )
+    .unwrap_or_else(|_| unevaluated());
+  }
+  // Otherwise a machine number with real parameters.
+  if !(crate::functions::math_ast::contains_inexact_real(a_e)
+    || crate::functions::math_ast::contains_inexact_real(q_e))
+  {
+    return unevaluated();
+  }
+  let (Some(a), Some(q)) = (try_real_f64(a_e), try_real_f64(q_e)) else {
+    return unevaluated();
+  };
+  let (re, im) = mathieu_characteristic_exponent(a, q);
+  if im == 0.0 {
+    Expr::Real(re)
+  } else {
+    crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+  }
+}

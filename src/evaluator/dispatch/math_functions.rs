@@ -1318,6 +1318,11 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    "MathieuCharacteristicExponent" if args.len() == 2 => {
+      return Some(Ok(
+        crate::functions::math_ast::mathieu_characteristic_exponent_ast(args),
+      ));
+    }
     "MathieuC" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_c_ast(args));
     }
