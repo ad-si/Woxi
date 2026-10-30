@@ -10015,3 +10015,22 @@ mod image_compose_porter_duff {
     );
   }
 }
+
+mod commonest_filter_on_images {
+  use super::*;
+
+  #[test]
+  fn filters_each_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[CommonestFilter[Image[{{0.1, 0.2, 0.2}, {0.3, 0.2, 0.1}, \
+         {0.1, 0.1, 0.3}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.20000000298023224, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.10000000149011612}}"
+    );
+  }
+}
