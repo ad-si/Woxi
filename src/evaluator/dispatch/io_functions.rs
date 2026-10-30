@@ -2827,7 +2827,21 @@ pub fn dispatch_io_functions(
       };
       return Some(Ok(Expr::String(url_build_from_parts(entries))));
     }
-    "URLBuild" if args.len() == 1 || args.len() == 2 => {
+    "URLBuild" if args.len() == 1 || args.len() == 2 || args.len() == 3 => {
+      // `CharacterEncoding -> enc` picks the bytes the query is
+      // percent-encoded with.
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      let Ok(charset) =
+        crate::functions::string_ast::character_encoding_option(&opts)
+      else {
+        return Some(Ok(unevaluated("URLBuild", all_args)));
+      };
+      let charset =
+        charset.unwrap_or(crate::functions::string_ast::ByteCharset::Utf8);
+      if args.is_empty() || args.len() > 2 {
+        return Some(Ok(unevaluated("URLBuild", all_args)));
+      }
       // URLBuild["url"] => "url"
       // URLBuild[{"base", "path1", ...}] => "base/path1/..."
       // URLBuild[{"base", ...}, {"key" -> "val", ...}] => "base/...?key=val&..."
@@ -2902,9 +2916,17 @@ pub fn dispatch_io_functions(
             if i > 0 {
               url.push('&');
             }
-            url.push_str(key);
+            url.push_str(
+              &crate::functions::string_ast::url_query_component_with(
+                key, charset,
+              ),
+            );
             url.push('=');
-            url.push_str(val);
+            url.push_str(
+              &crate::functions::string_ast::url_query_component_with(
+                val, charset,
+              ),
+            );
           }
         }
       }

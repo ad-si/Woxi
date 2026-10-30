@@ -218,7 +218,202 @@ fn reorder_factored_product(result: Expr) -> Expr {
     .expect("non-empty factor list")
 }
 
+/// Whether `opt` asks for factoring over the Gaussian rationals:
+/// `GaussianIntegers -> True` or `Extension -> I`.
+fn is_gaussian_option(opt: &Expr) -> bool {
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+  else {
+    return false;
+  };
+  match (pattern.as_ref(), replacement.as_ref()) {
+    (Expr::Identifier(n), Expr::Identifier(v)) if n == "GaussianIntegers" => {
+      v == "True"
+    }
+    (Expr::Identifier(n), Expr::Identifier(v)) if n == "Extension" => v == "I",
+    (Expr::Identifier(n), Expr::List(items)) if n == "Extension" => {
+      matches!(items.as_slice(), [Expr::Identifier(v)] if v == "I")
+    }
+    _ => false,
+  }
+}
+
+/// The factorization of a univariate polynomial with rational coefficients
+/// over the Gaussian rationals Q(I), as its numeric content and its
+/// irreducible factors with multiplicities. Each irreducible factor over Q
+/// is split by Trager's algorithm: for a shift s with a squarefree norm
+/// r(x) = Res_y(g(x - s y), y^2 + 1), the factors of g over Q(I) are
+/// gcd(g(x), r_j(x + s I)) for the irreducible factors r_j of r over Q.
+/// Only monic factors over Q are split (their factors over Z[I] are monic
+/// too); anything else gives `None`.
+fn gaussian_factor_list(
+  poly: &Expr,
+) -> Result<Option<(Vec<Expr>, Vec<(Expr, Expr)>)>, InterpreterError> {
+  let ev = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_expr_to_expr(&call(name, args))
+  };
+  let vars = ev("Variables", vec![poly.clone()])?;
+  let var = match &vars {
+    Expr::List(v) if v.len() == 1 && matches!(&v[0], Expr::Identifier(_)) => {
+      v[0].clone()
+    }
+    _ => return Ok(None),
+  };
+  if !matches!(ev("PolynomialQ", vec![poly.clone(), var.clone()])?,
+    Expr::Identifier(ref t) if t == "True")
+    || contains_complex(poly)
+  {
+    return Ok(None);
+  }
+  let Expr::List(ref pairs) = ev("FactorList", vec![poly.clone()])? else {
+    return Ok(None);
+  };
+  let degree = |e: &Expr| -> Result<Option<i128>, InterpreterError> {
+    Ok(crate::functions::math_ast::expr_to_i128(&ev(
+      "Exponent",
+      vec![e.clone(), var.clone()],
+    )?))
+  };
+  let y = Expr::Identifier("Woxi`gauss$y".to_string());
+  let mut constants = Vec::new();
+  let mut factors = Vec::new();
+  for pair in pairs {
+    let Expr::List(fe) = pair else {
+      return Ok(None);
+    };
+    let [g, e] = fe.as_slice() else {
+      return Ok(None);
+    };
+    let Some(deg) = degree(g)? else {
+      return Ok(None);
+    };
+    if deg == 0 {
+      constants.push(pair.clone());
+      continue;
+    }
+    if deg == 1 {
+      factors.push((g.clone(), e.clone()));
+      continue;
+    }
+    let lead = ev(
+      "Coefficient",
+      vec![g.clone(), var.clone(), Expr::Integer(deg)],
+    )?;
+    if !matches!(lead, Expr::Integer(1)) {
+      return Ok(None);
+    }
+    let mut split = None;
+    for shift in [1, -1, 2, -2, 3, -3] {
+      // r(x) = Res_y(g(x - s y), y^2 + 1)
+      let shifted = crate::syntax::substitute_variable(
+        g,
+        &expr_to_string(&var),
+        &plus2(var.clone(), times2(Expr::Integer(-shift), y.clone())),
+      );
+      let norm = ev(
+        "Expand",
+        vec![call(
+          "Resultant",
+          vec![
+            shifted,
+            plus2(pow2(y.clone(), Expr::Integer(2)), Expr::Integer(1)),
+            y.clone(),
+          ],
+        )],
+      )?;
+      let derivative = ev("D", vec![norm.clone(), var.clone()])?;
+      let common = ev("PolynomialGCD", vec![norm.clone(), derivative])?;
+      if degree(&common)? != Some(0) {
+        continue;
+      }
+      let Expr::List(ref norm_factors) = ev("FactorList", vec![norm])? else {
+        return Ok(None);
+      };
+      let mut parts = Vec::new();
+      for nf in norm_factors {
+        let Expr::List(nfe) = nf else {
+          return Ok(None);
+        };
+        if degree(&nfe[0])? == Some(0) {
+          continue;
+        }
+        // h = gcd(g(x), r_j(x + s I)), made monic.
+        let back = ev(
+          "Expand",
+          vec![crate::syntax::substitute_variable(
+            &nfe[0],
+            &expr_to_string(&var),
+            &plus2(
+              var.clone(),
+              times2(Expr::Integer(shift), Expr::Identifier("I".to_string())),
+            ),
+          )],
+        )?;
+        let h = ev("PolynomialGCD", vec![g.clone(), back])?;
+        let Some(hd) = degree(&h)? else {
+          return Ok(None);
+        };
+        let hl = ev(
+          "Coefficient",
+          vec![h.clone(), var.clone(), Expr::Integer(hd)],
+        )?;
+        let monic = ev("Expand", vec![times2(h, pow2(hl, Expr::Integer(-1)))])?;
+        parts.push((monic, hd));
+      }
+      if parts.iter().map(|(_, d)| d).sum::<i128>() != deg {
+        return Ok(None);
+      }
+      // In the canonical order Times puts them in (-I + x before I + x).
+      parts.sort_by(|(a, _), (b, _)| {
+        crate::functions::list_helpers_ast::canonical_cmp(a, b)
+      });
+      split = Some(parts);
+      break;
+    }
+    let Some(parts) = split else {
+      return Ok(None);
+    };
+    for (h, _) in parts {
+      factors.push((h, e.clone()));
+    }
+  }
+  Ok(Some((constants, factors)))
+}
+
+/// Whether `e` contains the imaginary unit or a complex number.
+fn contains_complex(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(s) => s == "I",
+    Expr::FunctionCall { name, args } => {
+      name == "Complex" || args.iter().any(contains_complex)
+    }
+    Expr::List(items) => items.iter().any(contains_complex),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_complex(left) || contains_complex(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_complex(operand),
+    _ => false,
+  }
+}
+
 fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Factor[poly, GaussianIntegers -> True] factors over Q(I).
+  if args.len() == 2 && is_gaussian_option(&args[1]) {
+    let Some((constants, factors)) = gaussian_factor_list(&args[0])? else {
+      return Ok(unevaluated("Factor", args));
+    };
+    let mut product: Vec<Expr> = constants
+      .iter()
+      .filter_map(|c| match c {
+        Expr::List(ce) => Some(pow2(ce[0].clone(), ce[1].clone())),
+        _ => None,
+      })
+      .collect();
+    product.extend(factors.into_iter().map(|(h, e)| pow2(h, e)));
+    return crate::evaluator::evaluate_expr_to_expr(&times(product));
+  }
   // Factor[poly, Modulus -> p] factors over GF(p); inputs the modular
   // engine cannot handle (multivariate, symbolic) stay unevaluated.
   if args.len() == 2 {
@@ -1361,6 +1556,18 @@ fn lagrange_interpolate_integer(xs: &[i128], ys: &[i128]) -> Option<Vec<i128>> {
 
 /// FactorList[poly] - list irreducible factors of a polynomial with exponents
 pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 && is_gaussian_option(&args[1]) {
+    let Some((constants, factors)) = gaussian_factor_list(&args[0])? else {
+      return Ok(unevaluated("FactorList", args));
+    };
+    let mut out = constants;
+    out.extend(
+      factors
+        .into_iter()
+        .map(|(h, e)| Expr::List(vec![h, e].into())),
+    );
+    return Ok(Expr::List(out.into()));
+  }
   if args.len() == 2 {
     if let Some(p) = extract_modulus_option(&args[1]) {
       return match super::factor_list_modulus(&args[0], p)? {

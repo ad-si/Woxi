@@ -3243,6 +3243,19 @@ fn factor_integer_bigint(n: &BigInt) -> Expr {
 // IntegerPartitions[n, kspec, {d1, d2, ...}] — using only given elements
 // kspec can be All (equivalent to no constraint)
 pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A negative count -m gives the last m partitions.
+  if let Some(Expr::Integer(m)) = args.get(3)
+    && *m < 0
+  {
+    let all = integer_partitions_ast(&args[..3])?;
+    let Expr::List(parts) = &all else {
+      return Ok(unevaluated("IntegerPartitions", args));
+    };
+    let skip = parts.len().saturating_sub(m.unsigned_abs() as usize);
+    return Ok(Expr::List(
+      parts.iter().skip(skip).cloned().collect::<Vec<_>>().into(),
+    ));
+  }
   // Parse n
   let Some(n) = expr_to_i128(&args[0]) else {
     return Ok(unevaluated("IntegerPartitions", args));
@@ -3887,31 +3900,36 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Compute sigma_p(n) = sum of p-th powers of divisors, where p = |order|.
+  // The powers soon outgrow machine integers (DivisorSigma[2, 10^30]), so
+  // the sum is a big integer.
   let p = order.unsigned_abs() as u32;
-  let mut sum: u128 = 0;
+  let power = |d: u128| num_bigint::BigInt::from(d).pow(p);
+  let mut sum = num_bigint::BigInt::zero();
   if let Some(divs) = divisors_u128(n) {
     for d in divs {
-      sum += d.pow(p);
+      sum += power(d);
     }
   } else {
     // Fallback: O(√n) trial division.
     let sqrt_n = (n as f64).sqrt() as u128;
     for i in 1..=sqrt_n {
       if n % i == 0 {
-        sum += i.pow(p);
+        sum += power(i);
         if i != n / i {
-          sum += (n / i).pow(p);
+          sum += power(n / i);
         }
       }
     }
   }
 
   if order >= 0 {
-    Ok(Expr::Integer(sum as i128))
+    Ok(bigint_to_expr(sum))
   } else {
     // Negative order: divide by n^p to get the exact rational sigma_p(n)/n^p.
-    let denom = n.pow(p);
-    Ok(make_rational(sum as i128, denom as i128))
+    crate::evaluator::evaluate_function_call_ast(
+      "Rational",
+      &[bigint_to_expr(sum), bigint_to_expr(power(n))],
+    )
   }
 }
 
@@ -5103,9 +5121,23 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("NextPrime", args));
   }
 
+  // A non-integer x: the primes after x are those after Floor[x], the
+  // primes before it those before Ceiling[x] (NextPrime[7/2] is 5).
   let n = match &args[0] {
     Expr::Integer(n) => *n,
+    Expr::Real(f) if k < 0 => f.ceil() as i128,
     Expr::Real(f) => f.floor() as i128,
+    Expr::FunctionCall { name, args: ra }
+      if name == "Rational" && ra.len() == 2 =>
+    {
+      match (&ra[0], &ra[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) if *q > 0 => {
+          let floor = p.div_euclid(*q);
+          if k < 0 { floor + 1 } else { floor }
+        }
+        _ => return Ok(unevaluated("NextPrime", args)),
+      }
+    }
     _ => {
       return Ok(unevaluated("NextPrime", args));
     }
@@ -5314,83 +5346,93 @@ pub fn bit_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// BitAnd[n1, n2, ...] - bitwise AND
 pub fn bit_and_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // OneIdentity: a single argument returns itself (numeric or symbolic).
-  if args.len() == 1 {
-    return Ok(args[0].clone());
-  }
-  let mut result: Option<BigInt> = None;
-  for arg in args {
-    match expr_to_bigint(arg) {
-      Some(n) => {
-        result = Some(match result {
-          Some(r) => r & &n,
-          None => n,
-        });
-      }
-      None => {
-        return Ok(unevaluated("BitAnd", args));
-      }
-    }
-  }
-  match result {
-    Some(n) => Ok(bigint_to_expr(n)),
-    // BitAnd[] is the identity for AND: -1 (all bits set).
-    None => Ok(Expr::Integer(-1)),
-  }
+  bitwise_op("BitAnd", args, |a, b| a & b, -1, Some(0), false)
 }
 
 /// BitOr[n1, n2, ...] - bitwise OR
 pub fn bit_or_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // OneIdentity: a single argument returns itself (numeric or symbolic).
-  if args.len() == 1 {
-    return Ok(args[0].clone());
-  }
-  let mut result: Option<BigInt> = None;
-  for arg in args {
-    match expr_to_bigint(arg) {
-      Some(n) => {
-        result = Some(match result {
-          Some(r) => r | &n,
-          None => n,
-        });
-      }
-      None => {
-        return Ok(unevaluated("BitOr", args));
-      }
-    }
-  }
-  match result {
-    Some(n) => Ok(bigint_to_expr(n)),
-    // BitOr[] is the identity for OR: 0.
-    None => Ok(Expr::Integer(0)),
-  }
+  bitwise_op("BitOr", args, |a, b| a | b, 0, Some(-1), false)
 }
 
 /// BitXor[n1, n2, ...] - bitwise XOR
 pub fn bit_xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  bitwise_op("BitXor", args, |a, b| a ^ b, 0, None, true)
+}
+
+/// The Flat, Orderless bitwise operations: the integer arguments combine
+/// into one, the symbolic ones are sorted, and a repeated symbol is
+/// absorbed (`BitAnd[x, y, y, x]` is `BitAnd[x, y]`) or, for BitXor,
+/// cancels in pairs (`BitXor[x, y, y, x]` is 0). The identity (-1 for
+/// AND, 0 for OR and XOR) drops out and an absorbing element (0 for AND,
+/// -1 for OR) is the whole result.
+fn bitwise_op(
+  name: &str,
+  args: &[Expr],
+  op: fn(BigInt, &BigInt) -> BigInt,
+  identity: i128,
+  absorbing: Option<i128>,
+  cancel_pairs: bool,
+) -> Result<Expr, InterpreterError> {
   // OneIdentity: a single argument returns itself (numeric or symbolic).
   if args.len() == 1 {
     return Ok(args[0].clone());
   }
-  let mut result: Option<BigInt> = None;
+  let mut number: Option<BigInt> = None;
+  let mut symbols: Vec<Expr> = Vec::new();
   for arg in args {
-    match expr_to_bigint(arg) {
-      Some(n) => {
-        result = Some(match result {
-          Some(r) => r ^ &n,
+    match arg {
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        let n = expr_to_bigint(arg).unwrap_or_default();
+        number = Some(match number {
+          Some(r) => op(r, &n),
           None => n,
         });
       }
-      None => {
-        return Ok(unevaluated("BitXor", args));
+      Expr::Identifier(_) | Expr::FunctionCall { .. }
+        if !crate::functions::predicate_ast::is_numeric_q(arg) =>
+      {
+        symbols.push(arg.clone());
       }
+      _ => return Ok(unevaluated(name, args)),
     }
   }
-  match result {
-    Some(n) => Ok(bigint_to_expr(n)),
-    // BitXor[] is the identity for XOR: 0.
-    None => Ok(Expr::Integer(0)),
+  if symbols.is_empty() {
+    return Ok(match number {
+      Some(n) => bigint_to_expr(n),
+      None => Expr::Integer(identity),
+    });
   }
+  if let (Some(n), Some(a)) = (&number, absorbing)
+    && *n == BigInt::from(a)
+  {
+    return Ok(Expr::Integer(a));
+  }
+  symbols.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
+  let mut reduced: Vec<Expr> = Vec::with_capacity(symbols.len());
+  for sym in symbols {
+    let same = reduced
+      .last()
+      .is_some_and(|last| expr_to_string(last) == expr_to_string(&sym));
+    match (same, cancel_pairs) {
+      (true, true) => {
+        reduced.pop();
+      }
+      (true, false) => {}
+      (false, _) => reduced.push(sym),
+    }
+  }
+  let mut out: Vec<Expr> = Vec::new();
+  if let Some(n) = number
+    && n != BigInt::from(identity)
+  {
+    out.push(bigint_to_expr(n));
+  }
+  out.extend(reduced);
+  Ok(match out.len() {
+    0 => Expr::Integer(identity),
+    1 => out.pop().unwrap(),
+    _ => unevaluated(name, &out),
+  })
 }
 
 /// BitNot[n] - bitwise NOT (complement)

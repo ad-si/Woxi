@@ -983,6 +983,15 @@ fn evaluate_function_call_ast_inner(
 ) -> Result<Expr, InterpreterError> {
   use crate::functions::list_helpers_ast;
 
+  // Throw[value] / Throw[value, tag] reached with evaluated arguments (as
+  // `Throw /@ {a, b}` applies it) throws just like the written call.
+  if name == "Throw" && (1..=2).contains(&args.len()) {
+    return Err(InterpreterError::ThrowValue(
+      Box::new(args[0].clone()),
+      args.get(1).map(|t| Box::new(t.clone())),
+    ));
+  }
+
   // Big numeric arrays (simulation grids) are combined elementwise in one
   // pass instead of threading the Listable head over every element.
   if let Some(op) = match name {
@@ -10797,6 +10806,67 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // DeleteMissing[list, levelspec] drops the Missing elements at levels 1
+  // through levelspec; DeleteMissing[list, levelspec, n] drops the
+  // elements there that contain a Missing at depth up to n within them.
+  if name == "DeleteMissing"
+    && (args.len() == 2 || args.len() == 3)
+    && matches!(&args[0], Expr::List(_) | Expr::Association(_))
+  {
+    let depth = |e: &Expr| -> Option<i128> {
+      match e {
+        Expr::Identifier(i) if i == "Infinity" => Some(i128::MAX),
+        Expr::Integer(n) if *n >= 0 => Some(*n),
+        _ => None,
+      }
+    };
+    let (Some(levels), Some(within)) =
+      (depth(&args[1]), args.get(2).map_or(Some(0), &depth))
+    else {
+      return Ok(unevaluated(name, args));
+    };
+    fn is_missing(e: &Expr) -> bool {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Missing")
+    }
+    fn has_missing(e: &Expr, within: i128) -> bool {
+      is_missing(e)
+        || within > 0
+          && match e {
+            Expr::List(items) => {
+              items.iter().any(|i| has_missing(i, within - 1))
+            }
+            Expr::Association(pairs) => {
+              pairs.iter().any(|(_, v)| has_missing(v, within - 1))
+            }
+            _ => false,
+          }
+    }
+    fn prune(e: &Expr, levels: i128, within: i128) -> Expr {
+      if levels <= 0 {
+        return e.clone();
+      }
+      match e {
+        Expr::List(items) => Expr::List(
+          items
+            .iter()
+            .filter(|i| !has_missing(i, within))
+            .map(|i| prune(i, levels - 1, within))
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+        Expr::Association(pairs) => Expr::Association(
+          pairs
+            .iter()
+            .filter(|(_, v)| !has_missing(v, within))
+            .map(|(k, v)| (k.clone(), prune(v, levels - 1, within)))
+            .collect(),
+        ),
+        other => other.clone(),
+      }
+    }
+    return Ok(prune(&args[0], levels, within));
+  }
+
   // DeleteMissing[list] — remove Missing[] elements from a list
   if name == "DeleteMissing" && args.len() == 1 {
     match &args[0] {
@@ -11894,10 +11964,18 @@ fn evaluate_function_call_ast_inner(
     return Ok(bool_expr(false));
   }
 
-  // FirstCase[x, y] returns Missing["NotFound"] when x is not a list
+  // FirstCase[x, y] returns Missing["NotFound"] when x is an atom
   if name == "FirstCase"
     && args.len() == 2
-    && !matches!(&args[0], Expr::List(_))
+    && matches!(
+      &args[0],
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)
+        | Expr::Identifier(_)
+    )
   {
     return Ok(call1("Missing", str_expr("NotFound")));
   }

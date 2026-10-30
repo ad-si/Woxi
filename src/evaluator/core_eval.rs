@@ -2908,10 +2908,37 @@ fn evaluate_expr_to_expr_uncached(
         {
           return evaluate_expr_to_expr(&args[0]);
         }
-        // Special handling for CheckAbort[expr, failexpr]
-        if name == "CheckAbort" && args.len() == 2 {
+        // Special handling for CheckAbort[expr, failexpr] and
+        // CheckAbort[expr, failexpr, PropagateAborts -> p]: with
+        // PropagateAborts -> True the abort continues past CheckAbort after
+        // failexpr is evaluated. The default Automatic absorbs an Abort[]
+        // like False does (only interactive interrupts propagate then).
+        let propagate = match args.get(2) {
+          None => Some(false),
+          Some(Expr::Rule {
+            pattern,
+            replacement,
+          }) if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PropagateAborts") => {
+            match replacement.as_ref() {
+              Expr::Identifier(v) if v == "True" => Some(true),
+              Expr::Identifier(v) if v == "False" || v == "Automatic" => {
+                Some(false)
+              }
+              _ => None,
+            }
+          }
+          _ => None,
+        };
+        if name == "CheckAbort"
+          && (args.len() == 2 || args.len() == 3)
+          && let Some(propagate) = propagate
+        {
           match evaluate_expr_to_expr(&args[0]) {
             Ok(result) => return Ok(result),
+            Err(InterpreterError::Abort) if propagate => {
+              evaluate_expr_to_expr(&args[1])?;
+              return Err(InterpreterError::Abort);
+            }
             Err(InterpreterError::Abort) => {
               return Err(InterpreterError::TailCall(Box::new(
                 args[1].clone(),

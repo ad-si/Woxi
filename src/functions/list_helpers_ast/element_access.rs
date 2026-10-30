@@ -1070,6 +1070,22 @@ pub fn drop_multi_ast(
   rows: &Expr,
   cols: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // Any other head is dropped from the same way, on its argument list, and
+  // only the finished expression is evaluated: `Drop[(a + b + c) (t + u +
+  // v) (x + y + z), 2, 2]` keeps `Times[Plus[z]]`, which is z.
+  if let Expr::FunctionCall { name, args } = list
+    && name != "SparseArray"
+  {
+    if let Expr::List(parts) =
+      &drop_multi_ast(&Expr::List(args.clone()), rows, cols)?
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: parts.clone(),
+      });
+    }
+    return Ok(call("Drop", vec![list.clone(), rows.clone(), cols.clone()]));
+  }
   // First apply row dropping
   let after_rows = if matches!(rows, Expr::Identifier(s) if s == "None") {
     list.clone()
@@ -1211,7 +1227,8 @@ pub fn insert_ast(
   // Association subject: the inserted element must be a `key -> value` rule,
   // and the position (an integer or `Key[k]`) gives where the new pair is
   // placed. Integer `n` inserts before the n-th entry (negatives count from
-  // the end, -1 = after the last); `Key[k]` inserts before key `k`.
+  // the end, -1 = after the last); `Key[k]` (or a string key) inserts
+  // before key `k`.
   if let Expr::Association(pairs) = list {
     let kv = match elem {
       Expr::Rule {
@@ -1248,6 +1265,10 @@ pub fn insert_ast(
         let ks = expr_to_string(&args[0]);
         pairs.iter().position(|(k, _)| expr_to_string(k) == ks)
       }
+      // A string position names a key, as it does in Part.
+      Expr::String(key) => pairs
+        .iter()
+        .position(|(k, _)| matches!(k, Expr::String(s) if s == key)),
       _ => None,
     };
     if let Some(i) = idx {

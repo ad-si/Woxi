@@ -5059,11 +5059,35 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ArcCoth[x] - Inverse hyperbolic cotangent
+/// `inverse[z]` for a machine complex `z` (nonzero imaginary part) is
+/// `forward[1/z]`: ArcCot[z] = ArcTan[1/z], ArcCoth[z] = ArcTanh[1/z],
+/// ArcSech[z] = ArcCosh[1/z] and ArcCsch[z] = ArcSinh[1/z].
+fn inexact_complex_via_reciprocal(
+  forward: &str,
+  z: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (re, im) = inexact_complex_argument(z)?;
+  if im == 0.0 {
+    return None;
+  }
+  let norm = re * re + im * im;
+  Some(
+    crate::evaluator::evaluate_function_call_ast(
+      "Complex",
+      &[Expr::Real(re / norm), Expr::Real(-im / norm)],
+    )
+    .and_then(|w| crate::evaluator::evaluate_function_call_ast(forward, &[w])),
+  )
+}
+
 pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "ArcCoth expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = inexact_complex_via_reciprocal("ArcTanh", &args[0]) {
+    return r;
   }
   // ArcCoth[±Infinity] = 0.
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity")
@@ -5158,6 +5182,9 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcSech expects 1 argument".into(),
     ));
   }
+  if let Some(r) = inexact_complex_via_reciprocal("ArcCosh", &args[0]) {
+    return r;
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(id_expr("Infinity")),
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
@@ -5188,6 +5215,9 @@ pub fn arccot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcCot expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = inexact_complex_via_reciprocal("ArcTan", &args[0]) {
+    return r;
   }
   if let Some(folded) = fold_inverse_of_forward("ArcCot", &args[0]) {
     return Ok(folded);
@@ -5349,6 +5379,9 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcCsch expects 1 argument".into(),
     ));
+  }
+  if let Some(r) = inexact_complex_via_reciprocal("ArcSinh", &args[0]) {
+    return r;
   }
   let x = &args[0];
   if let Expr::Integer(0) = x {

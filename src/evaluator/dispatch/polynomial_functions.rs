@@ -462,7 +462,7 @@ pub fn dispatch_polynomial_functions(
     "Eliminate" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::eliminate_ast(args));
     }
-    "Resultant" if args.len() == 3 || args.len() == 4 => {
+    "Resultant" if (3..=5).contains(&args.len()) => {
       return Some(crate::functions::polynomial_ast::resultant_ast(args));
     }
     "Discriminant" if args.len() == 2 || args.len() == 3 => {

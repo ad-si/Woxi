@@ -275,24 +275,62 @@ pub fn select_first_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// FirstCase[list, pattern] — returns first match or Missing["NotFound"]
 /// FirstCase[list, pattern, default] — returns first match or default
 /// FirstCase[list, pattern :> rhs] — returns rhs with bindings from first match
+/// Whether `e` is an atom, a list or an association — anything else is a
+/// compound expression whose parts FirstCase searches like a list's.
+fn is_atom_or_list(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::List(_)
+      | Expr::Association(_)
+  )
+}
+
+/// Whether `e` is a `Heads -> …` option.
+fn is_heads_option(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+    if matches!(pattern.as_ref(), Expr::Identifier(h) if h == "Heads"))
+}
+
 pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let list = &args[0];
   let pattern = &args[1];
 
-  // 4-argument form FirstCase[expr, patt, default, levelspec]: the first
-  // element matching `patt` at the given levels (or `default`). Delegate the
-  // level traversal to Cases and take its first result.
-  if args.len() == 4 {
-    let cases = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Cases",
-      vec![list.clone(), pattern.clone(), args[3].clone()],
-    ))?;
+  // FirstCase[expr, patt, default, levelspec, Heads -> …]: the first element
+  // matching `patt` at the given levels (by default {1}), or `default`. A
+  // levelspec, a `Heads` option or a non-list expression delegates the level
+  // traversal to Cases and takes its first result.
+  let n_opts = args[2..]
+    .iter()
+    .rev()
+    .take_while(|a| is_heads_option(a))
+    .count();
+  let (positional, opts) = args.split_at(args.len() - n_opts);
+  if positional.len() == 4 || !opts.is_empty() || !is_atom_or_list(list) {
+    let levelspec = positional
+      .get(3)
+      .cloned()
+      .unwrap_or_else(|| Expr::List(vec![Expr::Integer(1)].into()));
+    let mut cases_args = vec![list.clone(), pattern.clone(), levelspec];
+    cases_args.extend(opts.iter().cloned());
+    let cases =
+      crate::evaluator::evaluate_expr_to_expr(&call("Cases", cases_args))?;
     if let Expr::List(matches) = &cases
       && let Some(first) = matches.first()
     {
       return Ok(first.clone());
     }
-    return Ok(args[2].clone());
+    return Ok(
+      positional
+        .get(2)
+        .cloned()
+        .unwrap_or_else(|| call1("Missing", str_expr("NotFound"))),
+    );
   }
 
   let default = if args.len() >= 3 {
@@ -1867,17 +1905,24 @@ pub fn first_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "FirstPosition expects at least 2 arguments".into(),
     ));
   }
-  let default = if args.len() >= 3 {
-    args[2].clone()
+  // Trailing `Heads -> …` options are Position's too.
+  let n_opts = args[2..]
+    .iter()
+    .rev()
+    .take_while(|a| is_heads_option(a))
+    .count();
+  let (positional, opts) = args.split_at(args.len() - n_opts);
+  let default = if positional.len() >= 3 {
+    positional[2].clone()
   } else {
     call1("Missing", str_expr("NotFound"))
   };
   let mut position_args = vec![args[0].clone(), args[1].clone()];
-  if args.len() >= 4 {
-    position_args.push(args[3].clone());
+  if positional.len() >= 4 {
+    position_args.push(positional[3].clone());
   }
-  // Any trailing options (Heads -> …) are Position's too.
-  position_args.extend(args.iter().skip(4).cloned());
+  position_args.extend(positional.iter().skip(4).cloned());
+  position_args.extend(opts.iter().cloned());
   match position_unified_ast(&position_args)? {
     Expr::List(ref found) => Ok(found.first().cloned().unwrap_or(default)),
     // Position left itself unevaluated (a malformed level spec, say).

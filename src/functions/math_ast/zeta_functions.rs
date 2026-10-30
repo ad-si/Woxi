@@ -1211,23 +1211,21 @@ fn polygamma_digamma_integer(z: usize) -> Expr {
     // H_0 = 0, so result is -EulerGamma
     return times2(Expr::Integer(-1), euler);
   }
-  // Compute H_{z-1} = Σ_{k=1}^{z-1} 1/k as rational
-  let (h_num, h_den) = harmonic_rational(z - 1);
-  let h_expr = make_rational(h_num, h_den);
-  minus2(h_expr, euler)
+  // H_{z-1} = Σ_{k=1}^{z-1} 1/k, exact for any z (it soon outgrows i128).
+  match harmonic_number(z - 1, 1) {
+    Some(h) => minus2(h, euler),
+    None => call("PolyGamma", vec![Expr::Integer(z as i128)]),
+  }
 }
 
-/// Compute H_n = 1 + 1/2 + ... + 1/n as (numerator, denominator)
-fn harmonic_rational(n: usize) -> (i128, i128) {
-  let mut num: i128 = 0;
-  let mut den: i128 = 1;
-  for k in 1..=n {
-    // num/den + 1/k = (num*k + den) / (den*k)
-    num = num * (k as i128) + den;
-    den *= k as i128;
-    (num, den) = rat_reduce(num, den);
-  }
-  (num, den)
+/// The exact generalized harmonic number Σ_{k=1}^{n} 1/k^r.
+fn harmonic_number(n: usize, r: usize) -> Option<Expr> {
+  crate::evaluator::evaluate_function_call_ast(
+    "HarmonicNumber",
+    &[Expr::Integer(n as i128), Expr::Integer(r as i128)],
+  )
+  .ok()
+  .filter(|h| !matches!(h, Expr::FunctionCall { name, .. } if name == "HarmonicNumber"))
 }
 
 /// Build exact PolyGamma[n, z] for odd n >= 1 and positive integer z.
@@ -1248,11 +1246,15 @@ fn polygamma_odd_integer(n: usize, z: usize) -> Option<Expr> {
     return polygamma_multiply_zeta_by_nfact(n + 1, nfact);
   }
 
-  // Compute partial sum = Σ_{k=1}^{z-1} 1/k^{n+1}
-  let (ps_num, ps_den) = partial_sum_powers(z - 1, n + 1)?;
+  // Partial sum Σ_{k=1}^{z-1} 1/k^{n+1}, exact for any z.
+  let partial_sum = harmonic_number(z - 1, n + 1)?;
 
   // Inner expression: Plus[-partial_sum, zeta(n+1)]
-  let neg_ps = make_rational(-ps_num, ps_den);
+  let neg_ps = crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[Expr::Integer(-1), partial_sum],
+  )
+  .ok()?;
   let inner = plus(vec![neg_ps, zeta_expr]);
 
   if nfact == 1 {
@@ -1301,19 +1303,6 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
       Expr::Integer(den),
     ))
   }
-}
-
-/// Compute Σ_{k=1}^{n} 1/k^power as (numerator, denominator)
-fn partial_sum_powers(n: usize, power: usize) -> Option<(i128, i128)> {
-  let mut sum_n: i128 = 0;
-  let mut sum_d: i128 = 1;
-  for k in 1..=n {
-    let k_pow = (k as i128).checked_pow(power as u32)?;
-    let new_n = sum_n.checked_mul(k_pow)?.checked_add(sum_d)?;
-    let new_d = sum_d.checked_mul(k_pow)?;
-    (sum_n, sum_d) = rat_reduce(new_n, new_d);
-  }
-  Some((sum_n, sum_d))
 }
 
 // ─── Number Theory Functions ─────────────────────────────────────

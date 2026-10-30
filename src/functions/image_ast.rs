@@ -55,7 +55,25 @@ pub fn expr_to_dynamic_image(
       let rgba = image::RgbaImage::from_raw(width, height, buf).unwrap();
       image::DynamicImage::ImageRgba8(rgba)
     }
-    _ => unreachable!(),
+    2 => {
+      let buf: Vec<u8> = data
+        .iter()
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let la = image::GrayAlphaImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageLumaA8(la)
+    }
+    // An image with more channels (a multispectral one) shows its first
+    // three as red, green and blue.
+    n => {
+      let buf: Vec<u8> = data
+        .chunks(n as usize)
+        .flat_map(|px| px[..3].iter())
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let rgb = image::RgbImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageRgb8(rgb)
+    }
   }
 }
 

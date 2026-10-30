@@ -1287,6 +1287,7 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "Cases"
       | "DeleteCases"
       | "Position"
+      | "FirstPosition"
       | "FreeQ"
       | "MatchQ"
       | "Count"

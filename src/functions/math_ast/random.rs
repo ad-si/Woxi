@@ -614,6 +614,11 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   };
+  // A bound beyond the machine range (10^1000 + 10^1000 I) has no machine
+  // sample to draw.
+  if ![re_lo, re_hi, im_lo, im_hi].iter().all(|b| b.is_finite()) {
+    return Ok(unevaluated("RandomComplex", args));
+  }
 
   fn draw_one(
     rng: &mut dyn rand::Rng,
