@@ -4429,7 +4429,31 @@ fn machine_conjugate_pair_upper_first(matrix: &[Vec<Expr>], eigs: &mut [Expr]) {
   }
 }
 
+/// `{m}` — a one-element list holding a square matrix — is that matrix to
+/// the eigen functions (the one-matrix case of the `{m, a}` form).
+fn unwrap_single_matrix_list(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(outer) = args.first()? else {
+    return None;
+  };
+  let [inner @ Expr::List(rows)] = outer.as_slice() else {
+    return None;
+  };
+  if rows.is_empty()
+    || !rows
+      .iter()
+      .all(|r| matches!(r, Expr::List(c) if c.len() == rows.len()))
+  {
+    return None;
+  }
+  let mut new_args = vec![inner.clone()];
+  new_args.extend(args[1..].iter().cloned());
+  Some(new_args)
+}
+
 pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigenvalues_ast(&inner);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigenvalues expects exactly 1 argument".into(),
@@ -5161,6 +5185,9 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Eigenvectors[matrix] - eigenvectors of a square matrix
 pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigenvectors_ast(&inner);
+  }
   eigenvectors_impl(args, None)
 }
 
@@ -7963,6 +7990,9 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Eigensystem[matrix] - returns {eigenvalues, eigenvectors}
 pub fn eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigensystem_ast(&inner);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigensystem expects exactly 1 argument".into(),

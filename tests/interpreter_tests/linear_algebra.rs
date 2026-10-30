@@ -12393,3 +12393,19 @@ mod complex_eigenvectors_of_real_machine_matrices {
     );
   }
 }
+
+mod eigen_functions_of_a_single_matrix_list {
+  use super::*;
+
+  #[test]
+  fn list_of_one_matrix_is_the_matrix() {
+    assert_eq!(
+      interpret(
+        "{Eigenvalues[{{{1, 0}, {0, 2}}}], Eigenvectors[{{{1, 0}, {0, 2}}}], \
+         Eigenvalues[{{{1, 0}, {0, 2}}}, 1], Eigensystem[{{{1, 0}, {0, 2}}}]}"
+      )
+      .unwrap(),
+      "{{2, 1}, {{0, 1}, {1, 0}}, {2}, {{2, 1}, {{0, 1}, {1, 0}}}}"
+    );
+  }
+}
