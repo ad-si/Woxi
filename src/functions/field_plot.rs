@@ -4720,7 +4720,8 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![call("SmoothKernelDistribution", dist_args), var.clone()],
     ));
   }
-  if !(lo < hi) {
+  // `lo < hi` is false for NaN too, so compare through `partial_cmp`.
+  if lo.partial_cmp(&hi) != Some(std::cmp::Ordering::Less) {
     return unchanged();
   }
   let body = if curves.len() == 1 {
