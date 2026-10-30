@@ -270,6 +270,25 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_scalar_plot_range_clips_both_axes() {
+      // A bare `PlotRange -> r` is the square `{{-r, r}, {-r, r}}`, so a
+      // curve running off to infinity (a conic at eccentricity 1 has a pole
+      // at t = Pi) is clipped instead of flattening the picture.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t]/(1 + Cos[t]), Sin[t]/(1 + Cos[t])}, \
+           {t, 0, 2 Pi}, PlotRange -> 5, ImageSize -> {450, 450}]",
+      );
+      assert!(svg.contains("<svg width=\"450\" height=\"450\""));
+    }
+
+    #[test]
+    fn polar_plot_scalar_plot_range_clips_both_axes() {
+      let svg =
+        export_svg("PolarPlot[1/(1 + Cos[t]), {t, 0, 2 Pi}, PlotRange -> 5]");
+      assert!(svg.contains("<svg width=\"360\" height=\"360\""));
+    }
+
+    #[test]
     fn parametric_plot_call_slots_each_return_a_point() {
       // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
       // are not literal pairs but each yields a point per sample, so the
