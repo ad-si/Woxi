@@ -225,7 +225,7 @@ AxesOrigin,Option specifying the origin point for plot axes,✅,none,2.0,166
 Grid,Displays data in a grid layout; ToString renders the matrix as an aligned text grid (left-aligned columns padded to the widest cell with three-space separators and a blank line between rows) like TableForm,✅,pure,6.0,167
 Cases,Returns elements matching a pattern,✅,pure,1.0,168
 ListLinePlot,Plots data as a line graph,✅,pure,6.0,169
-Graphics3D,Creates a 3D graphics object,✅,pure,1.0,170
+Graphics3D,Creates a 3D graphics object (Prolog and Epilog draw 2D overlays in scaled coordinates),✅,pure,1.0,170
 NumericQ,Tests if expression has a numeric value,✅,pure,3.0,172
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,173
 Column,Displays elements in a vertical column,✅,pure,6.0,174
@@ -274,7 +274,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
+ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the Atoms element colours (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227

@@ -43305,3 +43305,44 @@ mod word_cloud_text {
     assert!(!svg.contains(">the<"), "{svg}");
   }
 }
+
+mod graphics3d_overlay_and_atom_colors {
+  use super::*;
+
+  // Epilog/Prolog on a Graphics3D are 2-D primitives over/under the picture,
+  // in scaled coordinates.
+  #[test]
+  fn epilog_and_prolog_draw_on_a_3d_picture() {
+    let svg = export_svg(
+      "Graphics3D[Sphere[], Epilog -> Inset[\"EpilogLabel\", {Left, Bottom}, {Left, Bottom}]]",
+    );
+    assert!(svg.contains(">EpilogLabel<"), "{svg}");
+    let svg = export_svg(
+      "Graphics3D[Sphere[], Prolog -> Text[\"PrologLabel\", {0.5, 0.5}]]",
+    );
+    assert!(svg.contains(">PrologLabel<"), "{svg}");
+    assert!(!export_svg("Graphics3D[Sphere[]]").contains("Label"));
+  }
+
+  // ColorData["Atoms", element] by symbol or atomic number.
+  #[test]
+  fn atoms_color_scheme() {
+    assert_eq!(
+      interpret("ColorData[\"Atoms\", \"O\"] == ColorData[\"Atoms\", 8]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Round[List @@ ColorData[\"Atoms\", \"O\"] * 255]").unwrap(),
+      "{255, 13, 13}"
+    );
+    assert_eq!(
+      interpret("Round[List @@ ColorData[\"Atoms\", \"H\"] * 255]").unwrap(),
+      "{255, 255, 255}"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Atoms\", \"Xx\"]").unwrap(),
+      "ColorData[Atoms, Xx]"
+    );
+  }
+}
