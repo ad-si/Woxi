@@ -6454,6 +6454,46 @@ mod lhs_argument_collapses_to_literal {
   }
 }
 
+mod lhs_argument_evaluates_to_pattern {
+  use super::*;
+
+  #[test]
+  fn symbol_holding_a_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = Pattern[a, Blank[]]; k[p] = 7; k2[{p, 2}] = 8; \
+         {k[3], k2[{3, 2}], k2[{3, 1}]}"
+      )
+      .unwrap(),
+      "{7, 8, k2[{3, 1}]}"
+    );
+  }
+
+  #[test]
+  fn computed_nested_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = Partition[{a, b, c, d}, 2]; \
+         h[Map[Pattern[#, Blank[]] &, s, {2}]] = a + d; \
+         {h[{{1, 2}, {3, 4}}], DownValues[h]}"
+      )
+      .unwrap(),
+      "{5, {HoldPattern[h[{{a_, b_}, {c_, d_}}]] :> a + d}}"
+    );
+  }
+
+  #[test]
+  fn literal_argument_is_evaluated_once() {
+    clear_state();
+    assert_eq!(
+      interpret("i = 0; f[i++] = 1; {i, DownValues[f]}").unwrap(),
+      "{1, {HoldPattern[f[0]] :> 1}}"
+    );
+  }
+}
+
 mod nested_part_parsing {
   use super::*;
 
