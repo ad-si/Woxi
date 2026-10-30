@@ -110,6 +110,14 @@ mod url_character_encoding {
   }
 
   #[test]
+  fn build_keeps_its_options_when_unevaluated() {
+    assert_eq!(
+      interpret("URLBuild[123, CharacterEncoding -> \"ISOLatin1\"]").unwrap(),
+      "URLBuild[123, CharacterEncoding -> ISOLatin1]"
+    );
+  }
+
+  #[test]
   fn encode_latin1() {
     assert_eq!(
       interpret("URLEncode[\"Eötvös\", CharacterEncoding -> \"ISOLatin1\"]")

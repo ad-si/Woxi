@@ -2858,7 +2858,7 @@ pub fn dispatch_io_functions(
           strs
         }
         _ => {
-          return Some(Ok(unevaluated("URLBuild", args)));
+          return Some(Ok(unevaluated("URLBuild", all_args)));
         }
       };
 

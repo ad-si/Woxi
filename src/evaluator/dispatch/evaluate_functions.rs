@@ -10821,7 +10821,7 @@ fn evaluate_function_call_ast_inner(
       }
     };
     let (Some(levels), Some(within)) =
-      (depth(&args[1]), args.get(2).map_or(Some(0), &depth))
+      (depth(&args[1]), args.get(2).map_or(Some(0), depth))
     else {
       return Ok(unevaluated(name, args));
     };
