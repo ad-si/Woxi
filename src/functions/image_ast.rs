@@ -7743,48 +7743,93 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type: ImageType::Byte,
     });
   }
-  // A grayscale image is colored pixel by pixel: the value of each pixel,
-  // already in [0, 1], is fed to the explicit `ColorFunction`.
+  // An image is colored through a lookup table, the way wolframscript
+  // does it: a colour image is taken to grayscale, values are clipped to
+  // [0, 1], and a pixel x takes the table entry i = min(floor(1024 x),
+  // 1023) (for an integer image type its raw integer value). The table
+  // runs up to imax, the largest entry used, and is filled in full, after
+  // probing the function at 0, 1/2 and 1 twice; entry i is the
+  // `ColorFunction` at i/imax (i/1023 with `ColorFunctionScaling ->
+  // False`). The result is an RGB byte image.
   if let Expr::Image {
-    width,
-    height,
-    channels: 1,
-    data,
+    channels,
     image_type,
     ..
   } = &args[0]
     && let Some(cf) = option_value(&args[1..], "ColorFunction")
       .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"))
   {
-    let mut cache: Vec<(u64, (f64, f64, f64))> = Vec::new();
-    let mut out: Vec<f64> = Vec::with_capacity(data.len() * 3);
-    for v in data.iter() {
-      let key = v.to_bits();
-      let rgb = if let Some((_, rgb)) = cache.iter().find(|(k, _)| *k == key) {
-        *rgb
+    let gray = if *channels == 1 {
+      args[0].clone()
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "ColorConvert",
+        vec![args[0].clone(), Expr::String("Grayscale".into())],
+      ))?
+    };
+    let Expr::Image {
+      width,
+      height,
+      channels: 1,
+      data,
+      ..
+    } = &gray
+    else {
+      return Ok(unevaluated("Colorize", args));
+    };
+    let scaled = !matches!(
+      option_value(&args[1..], "ColorFunctionScaling"),
+      Some(Expr::Identifier(n)) if n == "False"
+    );
+    let integer_range = match image_type {
+      ImageType::Bit => Some(1.0),
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    let index = |v: f64| match integer_range {
+      Some(range) => (v.clamp(0.0, 1.0) * range).round() as usize,
+      None => ((v.clamp(0.0, 1.0) * 1024.0).floor() as usize).min(1023),
+    };
+    let imax = data.iter().map(|&v| index(v)).max().unwrap_or(0);
+    let to_byte = |c: f64| {
+      if c <= 0.0 {
+        0.0
       } else {
-        let (r, g, b) = colorize_label(0, v.clamp(0.0, 1.0), Some(cf));
-        let q = |c: f64| {
-          if *image_type == ImageType::Byte {
-            ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
-          } else {
-            c
-          }
+        ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
+      }
+    };
+    for _ in 0..2 {
+      for t in [0.0, 0.5, 1.0] {
+        colorize_label(0, t, Some(cf));
+      }
+    }
+    let table: Vec<(f64, f64, f64)> = (0..=imax)
+      .map(|i| {
+        let t = if !scaled {
+          i as f64 * (1.0 / 1023.0)
+        } else if imax == 0 {
+          0.0
+        } else {
+          i as f64 * (1.0 / imax as f64)
         };
-        let rgb = (q(r), q(g), q(b));
-        cache.push((key, rgb));
-        rgb
-      };
-      out.extend([rgb.0, rgb.1, rgb.2]);
+        let (r, g, b) = colorize_label(0, t, Some(cf));
+        (to_byte(r), to_byte(g), to_byte(b))
+      })
+      .collect();
+    let mut out: Vec<f64> = Vec::with_capacity(data.len() * 3);
+    for &v in data.iter() {
+      let (r, g, b) = table[index(v)];
+      out.extend([r, g, b]);
     }
     return Ok(Expr::Image {
-      color_space: None,
+      color_space: Some("RGB"),
       display_size: None,
       width: *width,
       height: *height,
       channels: 3,
       data: Arc::new(out),
-      image_type: *image_type,
+      image_type: ImageType::Byte,
     });
   }
   let is_image = matches!(&args[0], Expr::Image { .. });

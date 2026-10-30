@@ -5822,6 +5822,13 @@ proportions differ from wolframscript. Named edge shapes other than
   scheme rather than Wolfram's exact colors.
 - `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
   not yet implemented) falls back to a gray ramp.
+- On an image, a pixel at exactly 5/8, 6/8 or 7/8 lands one table entry
+  (one byte) above wolframscript's: `Colorize[Image[{{0.75, 1.}}],
+  ColorFunction -> (RGBColor[#, #, #] &)]` gives byte 192, wolframscript
+  191. No index rule that fits these also fits a dense sweep of other
+  values, where `min(floor(1024 x), 1023)` matches.
+- On an integer-type image with no `ColorFunction` (label colouring)
+  `Colorize` stays unevaluated.
 
 ## PolyhedronData["BilinskiDodecahedron", ...]
 
