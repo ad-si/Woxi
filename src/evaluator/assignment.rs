@@ -6049,13 +6049,32 @@ pub fn tag_set_delayed_ast(
       let param_name = format!("_up{i}");
       heads.push(Some(arg_func_name.clone()));
 
+      // A `x__` / `x___` operand soaks up a run of arguments, so the
+      // call only needs a minimum length and the operands after it count
+      // from the end.
+      let seq_pos = inner_args.iter().position(|a| {
+        matches!(a, Expr::Pattern { .. } | Expr::Identifier(_))
+          && extract_pattern_info(a).2 >= 2
+      });
+      let inner_count = inner_args.len();
+
       if inner_args.is_empty() {
         conditions.push(None);
+      } else if let Some(sp) = seq_pos {
+        let required = inner_count - 1
+          + usize::from(extract_pattern_info(&inner_args[sp]).2 == 2);
+        conditions.push(Some(Expr::Comparison {
+          operands: vec![
+            call1("Length", Expr::Identifier(param_name.clone())),
+            Expr::Integer(required as i128),
+          ],
+          operators: vec![ComparisonOp::GreaterEqual],
+        }));
       } else {
         conditions.push(Some(Expr::Comparison {
           operands: vec![
             call1("Length", Expr::Identifier(param_name.clone())),
-            Expr::Integer(inner_args.len() as i128),
+            Expr::Integer(inner_count as i128),
           ],
           operators: vec![ComparisonOp::SameQ],
         }));
@@ -6065,13 +6084,42 @@ pub fn tag_set_delayed_ast(
         let (pat_name, _pat_head, _blank_type) =
           extract_pattern_info(inner_arg);
         if !pat_name.is_empty() {
-          let part_expr = call(
-            "Part",
-            vec![
-              Expr::Identifier(param_name.clone()),
-              Expr::Integer((j + 1) as i128),
-            ],
-          );
+          let up = Expr::Identifier(param_name.clone());
+          let part_expr = match seq_pos {
+            Some(sp) if j == sp => call(
+              "Apply",
+              vec![
+                Expr::Identifier("Sequence".to_string()),
+                call(
+                  "Take",
+                  vec![
+                    up,
+                    Expr::List(
+                      vec![
+                        Expr::Integer((j + 1) as i128),
+                        call(
+                          "Plus",
+                          vec![
+                            call1(
+                              "Length",
+                              Expr::Identifier(param_name.clone()),
+                            ),
+                            Expr::Integer(-((inner_count - 1 - j) as i128)),
+                          ],
+                        ),
+                      ]
+                      .into(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Some(sp) if j > sp => call(
+              "Part",
+              vec![up, Expr::Integer(-((inner_count - j) as i128))],
+            ),
+            _ => call("Part", vec![up, Expr::Integer((j + 1) as i128)]),
+          };
           // If this pattern variable was already seen, add a SameQ
           // condition to ensure both occurrences match the same value.
           if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
