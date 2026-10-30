@@ -9946,3 +9946,20 @@ mod alpha_channel_functions {
     );
   }
 }
+
+mod color_combine_with_alpha {
+  use super::*;
+
+  #[test]
+  fn one_extra_channel_is_alpha() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.5, 1.}}]; c = ColorCombine[{i, i, i, i}, \"RGB\"]; \
+         {ImageChannels[c], ImageColorSpace[c], ImageData[AlphaChannel[c]]}"
+      )
+      .unwrap(),
+      "{4, RGB, {{0.5, 1.}}}"
+    );
+  }
+}

@@ -9707,8 +9707,10 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let total: usize = inputs.iter().map(|&(.., ch, _, _)| ch).sum();
+  // One channel more than the space needs is an alpha channel.
   if let Some((name, want)) = color_space
     && total != want
+    && total != want + 1
   {
     crate::emit_message(&format!(
       "ColorCombine::imgcsmis: The specified color space {name} and the number of channels {total} are not compatible."
