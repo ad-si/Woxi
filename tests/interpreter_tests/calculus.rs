@@ -24548,3 +24548,38 @@ mod spline_extrapolation_is_silent {
     assert!(out.warnings.is_empty(), "{:?}", out.warnings);
   }
 }
+
+mod ndsolve_events_on_both_legs {
+  use super::*;
+
+  // An interior initial point integrates backward first, then forward;
+  // both legs locate their events.
+  #[test]
+  fn state_and_time_events_backward_then_forward() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{x''[s] == -x[s], x[0] == 1, x'[0] == 0, \
+         WhenEvent[x'[s] == 0, Sow[s]]}, x, {s, -7, 7}]]; Round[r[[2, 1]], 10.^-6]"
+      )
+      .unwrap(),
+      "{-3.141593, -6.283185, 3.141593, 6.283185}"
+    );
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[Mod[t, 1] == 0, \
+         Sow[{t, x[t]}]]}, x, {t, -2.5, 2.5}]]; r[[2, 1]]"
+      )
+      .unwrap(),
+      "{{-1., -1.}, {-2., -2.}, {1., 1.}, {2., 2.}}"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x''[s] == -x[s], x[0] == 1, x'[0] == 0, \
+         WhenEvent[x'[s] == 0, \"StopIntegration\"]}, x, {s, -7, 7}]; \
+         Round[(x /. First[s])[\"Domain\"], 10.^-6]"
+      )
+      .unwrap(),
+      "{{-3.141593, 3.141593}}"
+    );
+  }
+}

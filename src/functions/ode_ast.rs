@@ -6321,9 +6321,10 @@ fn ndsolve_system(
           x_min,
           x_max_resolved,
         );
-        // Integrate forward from x0 to x_max, then (if x0 is interior)
-        // backward from x0 to x_min; events are only located on the
-        // forward leg, matching the direction NDSolve integrates first.
+        // Integrate (if x0 is interior) backward from x0 to x_min, then
+        // forward from x0 to x_max, locating events on both legs in that
+        // order — wolframscript sows `{-Pi, -2 Pi, Pi, 2 Pi}` for the turning
+        // points of a cosine on {s, -7, 7}.
         //
         // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
         // here with an event present (the domain parsing above rejects it
@@ -6331,6 +6332,40 @@ fn ndsolve_system(
         // size sized to the whole domain, the way the finite case picks
         // one, has no domain length to size itself from, so it's searched
         // for instead.
+        let backward = if x0 - x_min > 1e-12 {
+          // An infinite `x_max_resolved` leaves no whole-domain length to
+          // size a step from (unlike the finite case, which reuses the
+          // forward leg's own step); the backward leg's own span, from
+          // `x0` down to `x_min`, is always finite, so it's sized off that
+          // instead.
+          let h_back = if x_max_resolved.is_finite() {
+            (x_max_resolved - x_min) / n_steps as f64
+          } else {
+            (x0 - x_min) / n_steps as f64
+          };
+          let leg = integrate_leg(
+            &residuals,
+            &funcs,
+            &state_offset,
+            init_state.clone(),
+            x0,
+            x_min,
+            -h_back,
+            event_fn.as_ref(),
+            event.and_then(|e| e.action.as_ref()),
+            &time_events,
+            event_ctx,
+            x_name,
+            cached_mass_matrix.as_ref(),
+          )?;
+          let Some(leg) = leg else {
+            return Ok(None);
+          };
+          leg
+        } else {
+          Vec::new()
+        };
+
         let forward = if x_max_resolved.is_finite() {
           let h = (x_max_resolved - x_min) / n_steps as f64;
           integrate_leg(
@@ -6365,40 +6400,6 @@ fn ndsolve_system(
         let Some(forward) = forward else {
           return Ok(None);
         };
-        let backward = if x0 - x_min > 1e-12 {
-          // An infinite `x_max_resolved` leaves no whole-domain length to
-          // size a step from (unlike the finite case, which reuses the
-          // forward leg's own step); the backward leg's own span, from
-          // `x0` down to `x_min`, is always finite, so it's sized off that
-          // instead.
-          let h_back = if x_max_resolved.is_finite() {
-            (x_max_resolved - x_min) / n_steps as f64
-          } else {
-            (x0 - x_min) / n_steps as f64
-          };
-          let leg = integrate_leg(
-            &residuals,
-            &funcs,
-            &state_offset,
-            init_state,
-            x0,
-            x_min,
-            -h_back,
-            None,
-            None,
-            &[],
-            StateEventCtx::none(),
-            x_name,
-            cached_mass_matrix.as_ref(),
-          )?;
-          let Some(leg) = leg else {
-            return Ok(None);
-          };
-          leg
-        } else {
-          Vec::new()
-        };
-
         // Combined, ascending in x. The backward leg is (x0, x0-h, …);
         // reverse it and drop its first point (x0, present in the forward
         // leg too).
@@ -7661,12 +7662,18 @@ fn integrate_leg(
             _ => lo = mid,
           }
         }
-        if earliest.as_ref().is_none_or(|(t, _, _)| x + hi < *t) {
+        // "Earliest" along the leg's direction (a backward leg runs down).
+        let dir = h.signum();
+        if earliest
+          .as_ref()
+          .is_none_or(|(t, _, _)| dir * (x + hi) < dir * *t)
+        {
           earliest = Some((x + hi, hi_state, ei));
         }
       }
       if let Some((te, state_at, ei)) = earliest {
-        points.extend(refined.drain(..).filter(|(xr, _)| *xr < te));
+        let dir = h.signum();
+        points.extend(refined.drain(..).filter(|(xr, _)| dir * *xr < dir * te));
         let outcome = state_events.events[ei].run(
           te,
           &state_at,
@@ -7680,7 +7687,8 @@ fn integrate_leg(
           return Ok(Some(points));
         }
         // Carry on from the event with the (possibly reset) state.
-        new_state = if new_x - te > f64::EPSILON * new_x.abs().max(1.0) {
+        new_state = if dir * (new_x - te) > f64::EPSILON * new_x.abs().max(1.0)
+        {
           match rk4_system_step(
             residuals,
             funcs,
@@ -7715,10 +7723,23 @@ fn integrate_leg(
       // Fire every periodic action whose time falls in (x, new_x], in
       // time order, with the state interpolated to that time.
       let mut due: Vec<(f64, usize)> = Vec::new();
-      for (ei, ev) in time_events.iter().enumerate() {
-        ev.times_in(x, new_x, &mut |t| due.push((t, ei)));
+      if new_x >= x {
+        for (ei, ev) in time_events.iter().enumerate() {
+          ev.times_in(x, new_x, &mut |t| due.push((t, ei)));
+        }
+        due.sort_by(|a, b| a.0.total_cmp(&b.0));
+      } else {
+        // A backward leg meets the times in [new_x, x), latest first.
+        let slack = 1e-12 * (1.0 + x.abs());
+        for (ei, ev) in time_events.iter().enumerate() {
+          ev.times_in(new_x - 2.0 * slack, x, &mut |t| {
+            if t < x - slack {
+              due.push((t, ei));
+            }
+          });
+        }
+        due.sort_by(|a, b| b.0.total_cmp(&a.0));
       }
-      due.sort_by(|a, b| a.0.total_cmp(&b.0));
       for (te, ei) in due {
         let state_at = if (new_x - te).abs() <= f64::EPSILON * new_x.abs() {
           new_state.clone()
