@@ -9299,6 +9299,28 @@ pub(crate) fn parse_image_size(
     Expr::List(items) if items.len() == 1 => {
       parse_image_size(&items[0], def_w, def_h)
     }
+    // `{{wmin, wmax}, {hmin, hmax}}`: the default size within those
+    // ranges, keeping the aspect ratio where the ranges allow.
+    Expr::List(items)
+      if items.len() == 2
+        && items
+          .iter()
+          .all(|e| matches!(e, Expr::List(r) if r.len() == 2)) =>
+    {
+      let range = |e: &Expr| -> Option<(f64, f64)> {
+        let Expr::List(r) = e else { return None };
+        let lo = crate::functions::math_ast::try_eval_to_f64(&r[0])?;
+        let hi = crate::functions::math_ast::try_eval_to_f64(&r[1])?;
+        (lo > 0.0 && hi >= lo).then_some((lo, hi))
+      };
+      let (wr, hr) = (range(&items[0])?, range(&items[1])?);
+      let mut w = (def_w as f64).clamp(wr.0, wr.1);
+      let h = (w * aspect).clamp(hr.0, hr.1);
+      if (h - w * aspect).abs() > 0.5 {
+        w = (h / aspect).clamp(wr.0, wr.1);
+      }
+      Some((w.round() as u32, h.round() as u32, false))
+    }
     // `{w, h}` fixes both dimensions; `Automatic` in either slot leaves
     // that one to follow from the other and the default aspect, which is
     // how a Demonstration sizes a row of plots by height alone.

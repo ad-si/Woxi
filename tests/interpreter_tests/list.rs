@@ -25407,3 +25407,47 @@ mod numeric_array_list_operations {
     );
   }
 }
+
+mod random_prime_big_bounds {
+  use super::*;
+
+  #[test]
+  fn bounds_past_machine_integers() {
+    assert_eq!(
+      interpret(
+        "r = RandomPrime[{10^49, 10^50}, 2]; \
+         {Length[r], And @@ PrimeQ[r], And @@ (10^49 <= # <= 10^50 & /@ r)}"
+      )
+      .unwrap(),
+      "{2, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "p = RandomPrime[10^45]; \
+         {PrimeQ[p], p < 10^45, Dimensions[RandomPrime[{10^40, 10^41}, {2, 3}]]}"
+      )
+      .unwrap(),
+      "{True, True, {2, 3}}"
+    );
+  }
+}
+
+mod ordering_sequence_spec {
+  use super::*;
+
+  #[test]
+  fn sequence_specs_take_from_the_ordering() {
+    assert_eq!(
+      interpret(
+        "{Ordering[{5, 1, 4, 2, 3}, {2, 4}], Ordering[{5, 1, 4, 2, 3}, {-3, -1}], \
+         Ordering[{5, 1, 4, 2, 3}, {2, 4, 2}], Ordering[{1., 2., 3.}, {2, 2}]}"
+      )
+      .unwrap(),
+      "{{4, 5, 3}, {5, 3, 1}, {4, 3}, {2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Ordering[{5, 1, 4, 2, 3}, {4, 2}]]").unwrap(),
+      "Ordering[{5, 1, 4, 2, 3}, {4, 2}]"
+    );
+  }
+}

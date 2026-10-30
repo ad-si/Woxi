@@ -8047,6 +8047,115 @@ fn product_factors_of(expr: &Expr) -> Vec<Expr> {
   out
 }
 
+/// The base (positive integer or fraction, as numerator and denominator) and
+/// fractional exponent of a numeric radical factor like `Sqrt[7/3]` or
+/// `5^(-1/5)`.
+fn numeric_radical_parts(f: &Expr) -> Option<(u128, u128, Expr)> {
+  let (base, exp) = extract_base_exponent_ref(f);
+  if !matches!(exp.as_ref(), Expr::FunctionCall { name, args }
+    if name == "Rational" && args.len() == 2)
+  {
+    return None;
+  }
+  let (n, d) = match base.as_ref() {
+    Expr::Integer(n) if *n > 1 => (*n as u128, 1),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
+          (*n as u128, *d as u128)
+        }
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  Some((n, d, exp.into_owned()))
+}
+
+/// The prime factorization of `n`, or `None` past trial-division range.
+fn small_prime_factors(mut n: u128) -> Option<Vec<(u128, i128)>> {
+  let mut out = Vec::new();
+  let mut p = 2u128;
+  while p * p <= n {
+    if p > 1_000_000 {
+      return None;
+    }
+    let mut k = 0;
+    while n.is_multiple_of(p) {
+      n /= p;
+      k += 1;
+    }
+    if k > 0 {
+      out.push((p, k));
+    }
+    p += if p == 2 { 1 } else { 2 };
+  }
+  if n > 1 {
+    out.push((n, 1));
+  }
+  Some(out)
+}
+
+/// Numeric radicals of different exponents that share a prime split into
+/// prime powers so the shared prime's exponents add up, as wolframscript
+/// does: `Sqrt[7/3] 3^(-1/5)` is `Sqrt[7]/3^(7/10)`, `Sqrt[6] 2^(1/3)` is
+/// `2^(5/6) Sqrt[3]`. Radicals with the same exponent are merged elsewhere.
+fn split_shared_prime_radicals(
+  args: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let radicals: Vec<(usize, u128, u128, Expr)> = args
+    .iter()
+    .enumerate()
+    .filter_map(|(i, f)| numeric_radical_parts(f).map(|(n, d, e)| (i, n, d, e)))
+    .collect();
+  if radicals.len() < 2 {
+    return Ok(args);
+  }
+  let gcd = |mut a: u128, mut b: u128| {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a
+  };
+  let mut split = vec![false; args.len()];
+  for (a, (i, ni, di, ei)) in radicals.iter().enumerate() {
+    for (j, nj, dj, ej) in &radicals[a + 1..] {
+      let shares = gcd(ni * di, nj * dj) > 1;
+      if shares && expr_to_string(ei) != expr_to_string(ej) {
+        split[*i] = true;
+        split[*j] = true;
+      }
+    }
+  }
+  if !split.iter().any(|s| *s) {
+    return Ok(args);
+  }
+  let mut out = Vec::with_capacity(args.len() + 2);
+  for (i, f) in args.into_iter().enumerate() {
+    let Some((n, d, exp)) =
+      split[i].then(|| numeric_radical_parts(&f)).flatten()
+    else {
+      out.push(f);
+      continue;
+    };
+    let (Some(num_primes), Some(den_primes)) =
+      (small_prime_factors(n), small_prime_factors(d))
+    else {
+      out.push(f);
+      continue;
+    };
+    for (primes, sign) in [(num_primes, 1), (den_primes, -1)] {
+      for (p, k) in primes {
+        let e = multiply_exponents(&exp, &Expr::Integer(sign * k));
+        out.push(power_two(&Expr::Integer(p as i128), &e)?);
+      }
+    }
+  }
+  Ok(out)
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   combine_like_bases_depth(args, 0)
 }
@@ -8064,6 +8173,11 @@ fn combine_like_bases_depth(
   if args.len() <= 1 {
     return Ok(args);
   }
+  let args = if depth == 0 {
+    split_shared_prime_radicals(args)?
+  } else {
+    args
+  };
   let args = combine_reciprocal_trig(args)?;
   let args = combine_trig_pairs(args);
   if args.len() <= 1 {
@@ -10654,13 +10768,26 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Try to combine integer coefficient with same-base power in symbolic args.
-  // Only absorb one factor of the base so the result stays in canonical form:
+  // Try to combine the coefficient's numerator with a same-base power with
+  // a negative exponent in symbolic args. Only absorb one factor of the base
+  // so the result stays in canonical form:
   // E.g. 2 * 2^(-1/2) → 1 * 2^(1/2) = Sqrt[2]
   // E.g. -2 * 2^(-1/2) → -1 * Sqrt[2]
   // E.g. 4 * 2^(-1/2) → 2 * Sqrt[2]  (absorb one factor of 2)
-  if let Expr::Integer(c) = &coeff {
-    let cv = *c;
+  // E.g. (90/67) * 5^(-1/5) → (18/67) * 5^(4/5)
+  let coeff_parts = match &coeff {
+    Expr::Integer(c) => Some((*c, 1i128)),
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Rational" && rargs.len() == 2 =>
+    {
+      match (&rargs[0], &rargs[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  if let Some((cv, cd)) = coeff_parts {
     let abs_cv = cv.unsigned_abs();
     if abs_cv > 1 {
       for i in 0..symbolic_args.len() {
@@ -10695,7 +10822,54 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             let sign = if cv < 0 { -1i128 } else { 1i128 };
             let remainder = (abs_cv / bv as u128) as i128;
-            coeff = Expr::Integer(sign * remainder);
+            coeff = make_rational(sign * remainder, cd);
+            break;
+          }
+          // A composite base sharing only some primes with the coefficient
+          // splits off the shared part, which absorbs one factor:
+          // 10/6^(1/5) → 5*2^(4/5)/3^(1/5). Square roots are left to the
+          // radicand merge below (2/Sqrt[30] is Sqrt[2/15]).
+          let root_beyond_square = matches!(&exp, Expr::FunctionCall { name, args: rargs }
+            if name == "Rational" && rargs.len() == 2
+              && !matches!(&rargs[1], Expr::Integer(2)));
+          let shared = if bv <= 1 || !exp_is_negative || !root_beyond_square {
+            1
+          } else {
+            let (mut rest, mut part) = (bv as u128, 1u128);
+            let mut p = 2u128;
+            while p * p <= rest {
+              if rest % p == 0 {
+                let mut pk = 1u128;
+                while rest % p == 0 {
+                  rest /= p;
+                  pk *= p;
+                }
+                if abs_cv % p == 0 {
+                  part *= pk;
+                }
+              }
+              p += 1;
+            }
+            if rest > 1 && abs_cv % rest == 0 {
+              part *= rest;
+            }
+            part
+          };
+          if bv > 1
+            && exp_is_negative
+            && root_beyond_square
+            && shared > 1
+            && shared < bv as u128
+            && abs_cv % shared == 0
+          {
+            let new_exp = plus_ast(&[Expr::Integer(1), exp.clone()])?;
+            let other = Expr::Integer(bv / shared as i128);
+            let shared_part = Expr::Integer(shared as i128);
+            let replaced =
+              vec![power_two(&shared_part, &new_exp)?, power_two(&other, exp)?];
+            symbolic_args.splice(i..=i, replaced);
+            let sign = if cv < 0 { -1i128 } else { 1i128 };
+            coeff = make_rational(sign * (abs_cv / shared) as i128, cd);
             break;
           }
         }
@@ -11117,6 +11291,17 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       Expr::Real(re / y),
       times2(Expr::Real(im / y), id_expr("I")),
     ));
+  }
+  // A machine real over an exact number divides once by the divisor's
+  // machine value (`Divide[7., 10]` is `0.7`), where `7./10` multiplies by
+  // the rounded reciprocal.
+  if let Expr::Real(x) = a
+    && (matches!(b, Expr::Integer(_))
+      || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational"))
+    && let Some(y) = expr_to_num(b)
+    && y != 0.0
+  {
+    return Some(Expr::Real(x / y));
   }
   let Expr::Real(y) = b else { return None };
   if *y == 0.0 {
@@ -11769,21 +11954,28 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if y == 0.0 {
       Ok(divide_by_zero_result(a))
     } else {
-      // Wolfram evaluates division a/b as Times[a, Power[b, -1]]. When the
-      // denominator is an exact number (Integer/Rational) its reciprocal is an
-      // exact rational, so the product is single-rounded — identical to a
-      // direct IEEE division (e.g. CentralMoment's sum/n). But when the
-      // denominator is inexact — a machine Real, or an irrational constant like
-      // Pi or Sqrt[2] whose reciprocal must itself be rounded to a machine real
-      // first — the reciprocal introduces a second rounding, landing one ULP
-      // away from `x / y` for roughly half of all operand pairs. Mirror that
-      // multiply-by-reciprocal so results match wolframscript byte-for-byte
-      // (e.g. 15.9/Pi, 13.52.../84.75...) without perturbing exact-denominator
-      // divisions.
-      let den_is_exact = matches!(b, Expr::Integer(_))
-        || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational");
-      if den_is_exact {
-        Ok(Expr::Real(x / y))
+      // Wolfram evaluates division a/b as Times[a, Power[b, -1]], so the
+      // product is taken with the reciprocal rounded to a machine real:
+      // `x/10` with `x = 7.` is `7. * 0.1 = 0.7000000000000001`, one ULP
+      // from the direct division (only `Divide[x, 10]` divides directly).
+      // An exact denominator's reciprocal is the exact rational 1/b, rounded
+      // once. An inexact denominator — a machine Real, or an irrational
+      // constant like Pi or Sqrt[2] — has its reciprocal rounded the same way
+      // (e.g. 15.9/Pi, 13.52.../84.75...).
+      let exact_reciprocal = match b {
+        Expr::Integer(n) => Some(1.0 / *n as f64),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(p), Expr::Integer(q)) => Some(*q as f64 / *p as f64),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      if let Some(r) = exact_reciprocal {
+        Ok(Expr::Real(x * r))
       } else if matches!(a, Expr::Real(_))
         && !contains_real(b)
         && let Some(r) = real_over_exact_quotient(x, b)
@@ -15151,7 +15343,8 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
   let head = if is_max { "Max" } else { "Min" };
   let identity = || {
     if is_max {
-      id_expr("-Infinity")
+      // The evaluated `-Infinity`, not a symbol spelled that way.
+      times2(Expr::Integer(-1), id_expr("Infinity"))
     } else {
       id_expr("Infinity")
     }

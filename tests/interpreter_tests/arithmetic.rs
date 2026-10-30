@@ -7172,6 +7172,12 @@ mod min_max_identity {
   fn max_zero_args() {
     // Max[] is the identity element: -Infinity
     assert_eq!(interpret("Max[]").unwrap(), "-Infinity");
+    // It is the real -Infinity: it compares and is SameQ to it.
+    assert_eq!(
+      interpret("{Max[{}] <= 6, Max[] === -Infinity, Max[Flatten[{}]] < 0}")
+        .unwrap(),
+      "{True, True, True}"
+    );
   }
 
   #[test]
@@ -14307,5 +14313,82 @@ mod exact_base_bigfloat_exponent {
         "xx + xx^3/6 + xx^5/120"
       );
     }
+  }
+}
+
+mod machine_real_over_exact {
+  use super::*;
+
+  #[test]
+  fn slash_multiplies_by_the_rounded_reciprocal() {
+    // `x/10` is `Times[x, 1/10]`: 7. * 0.1, one ULP above 0.7.
+    assert_eq!(
+      interpret("x = 7.; z = 10; ToString[InputForm[{x/z, 7./10}]]").unwrap(),
+      "{0.7000000000000001, 0.7000000000000001}"
+    );
+    assert_eq!(
+      interpret("d = 0.4330127018922194; ToString[InputForm[{2 d/49, d/49}]]")
+        .unwrap(),
+      "{0.017673987832335484, 0.008836993916167742}"
+    );
+    assert_eq!(
+      interpret("x = 7.; ToString[InputForm[x/(3/7)]]").unwrap(),
+      "16.333333333333336"
+    );
+  }
+
+  #[test]
+  fn divide_head_divides_directly() {
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[{Divide[7., 10], Divide[0.4330127018922194, 49], \
+         Divide[7., 3/7]}]]"
+      )
+      .unwrap(),
+      "{0.7, 0.008836993916167744, 16.333333333333336}"
+    );
+  }
+}
+
+mod machine_real_ordering_tolerance {
+  use super::*;
+
+  #[test]
+  fn ordering_uses_equal_tolerance() {
+    // Reals that are `Equal` are neither less nor greater than each other.
+    assert_eq!(
+      interpret(
+        "a = 0.14062500000000006; b = 0.140625; \
+         {a > b, a >= b, a < b, a <= b, b < a, Greater[a, b, 0]}"
+      )
+      .unwrap(),
+      "{False, True, False, True, False, False}"
+    );
+  }
+
+  #[test]
+  fn tolerance_is_seven_bits() {
+    assert_eq!(
+      interpret("{1 + 2^-44. > 1, 1 + 2^-45. > 1, 1 + 2^-46. > 1}").unwrap(),
+      "{True, True, False}"
+    );
+  }
+
+  #[test]
+  fn exact_operands_compare_exactly() {
+    assert_eq!(interpret("1 + 10^-17 > 1").unwrap(), "True");
+  }
+
+  #[test]
+  fn inequality_shares_the_tolerance() {
+    assert_eq!(
+      interpret(
+        "a = 0.14062500000000006; b = 0.140625; \
+         {Inequality[a, Greater, b], Inequality[a, LessEqual, b, Less, 1], \
+         Inequality[a, Equal, b], Inequality[1, Equal, 1 + 10^-17]}"
+      )
+      .unwrap(),
+      "{False, True, True, False}"
+    );
   }
 }

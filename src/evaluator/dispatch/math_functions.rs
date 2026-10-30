@@ -796,6 +796,17 @@ pub fn dispatch_math_functions(
           if dn == "DataDistribution" && da.len() == 4) =>
     {
       if let Expr::FunctionCall { args: da, .. } = &args[0] {
+        if let Some(moments) =
+          crate::functions::math_ast::kernel_mixture_mean_variance(da)
+        {
+          return Some(moments.and_then(|(mean, variance)| match name {
+            "Mean" => Ok(mean),
+            "Variance" => Ok(variance),
+            _ => {
+              crate::evaluator::evaluate_expr_to_expr(&call1("Sqrt", variance))
+            }
+          }));
+        }
         let mean = crate::functions::math_ast::data_distribution_moment(da, 1);
         match (name, mean) {
           ("Mean", Some(m)) => return Some(Ok(m)),
@@ -853,6 +864,11 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::List(out.into())));
       }
       return None;
+    }
+    "KernelMixtureDistribution" => {
+      return Some(
+        crate::functions::math_ast::kernel_mixture_distribution_ast(args),
+      );
     }
     "EmpiricalDistribution" if args.len() == 1 => {
       return Some(crate::functions::math_ast::empirical_distribution_ast(

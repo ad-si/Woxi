@@ -246,6 +246,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "PieCharts",
   "PlotLegends",
   "PolyhedronOperations",
+  "Polytopes",
   "PrimalityProving",
   "Quaternions",
   "RegressionCommon",

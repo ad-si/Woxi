@@ -983,6 +983,16 @@ fn limit_ordering(
   if matches!(count, Expr::Identifier(n) if n == "All") {
     return Some(ordering);
   }
+  // A sequence specification `{m, n}` / `{m, n, s}` is Take's.
+  if matches!(count, Expr::List(_)) {
+    return match crate::evaluator::evaluate_function_call_ast(
+      "Take",
+      &[Expr::List(ordering.into()), count.clone()],
+    ) {
+      Ok(Expr::List(ref items)) => Some(items.to_vec()),
+      _ => None,
+    };
+  }
   let Some(n) = expr_to_i128(count) else {
     return Some(ordering);
   };

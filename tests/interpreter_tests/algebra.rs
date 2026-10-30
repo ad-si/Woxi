@@ -23959,3 +23959,76 @@ mod nminimize_non_numeric_objective {
     );
   }
 }
+
+mod parametric_quadratic_optimization {
+  use super::*;
+
+  #[test]
+  fn numeric_leading_coefficient() {
+    assert_eq!(
+      interpret("Maximize[-x^2 + b x, x]").unwrap(),
+      "{b^2/4, {x -> b/2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[(x - p)^2 + q, x]").unwrap(),
+      "{q, {x -> p}}"
+    );
+  }
+
+  #[test]
+  fn constraint_fixes_the_sign() {
+    assert_eq!(
+      interpret("ToString[Maximize[{a x^2 + b x, a < -1}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{-1/4*b^2/a, a < -1}}, -Infinity], \
+       {x -> Piecewise[{{-1/2*b/a, a < -1}}, Indeterminate]}}"
+    );
+    assert_eq!(
+      interpret("ToString[Minimize[{a x^2 + b x + c, a > 0}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{(-b^2 + 4*a*c)/(4*a), a > 0}}, Infinity], \
+       {x -> Piecewise[{{-1/2*b/a, a > 0}}, Indeterminate]}}"
+    );
+    assert_eq!(
+      interpret("ToString[Maximize[{-x^2 + b x, b > 0}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{b^2/4, b > 0}}, -Infinity], \
+       {x -> Piecewise[{{b/2, b > 0}}, Indeterminate]}}"
+    );
+  }
+
+  #[test]
+  fn coefficients_with_other_variables() {
+    assert_eq!(
+      interpret(
+        "ToString[Maximize[{a + b x + c x^2 + d y + e x y + f y^2, c < 0}, x], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Piecewise[{{(-b^2 + 4*a*c + 4*c*d*y - 2*b*e*y - e^2*y^2 + 4*c*f*y^2)/(4*c), \
+       c < 0}}, -Infinity], {x -> Piecewise[{{(-b - e*y)/(2*c), c < 0}}, \
+       Indeterminate]}}"
+    );
+  }
+}
+
+mod linear_programming_none_bounds {
+  use super::*;
+
+  // A bound specification of None leaves every variable unbounded.
+  #[test]
+  fn none_frees_every_variable() {
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{0, 0, -1}, {{-1, -1, -1}, {1, -1, -1}, {0, 1, -1}}, \
+         {-1, -1, -1}, None]"
+      )
+      .unwrap(),
+      "{0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, -1}, {{1, 1}}, {1}, None]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+  }
+}

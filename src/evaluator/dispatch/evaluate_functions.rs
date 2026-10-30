@@ -718,6 +718,33 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     // `$ContextPath`.
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "Polytopes`" {
+    // Its functions are dispatch entries on the names it exports, active
+    // while it is on `$ContextPath`; the symbols are created so a bare
+    // `Pentagon` read afterwards is `Polytopes`Pentagon`. (`Triangle` and
+    // `Square` stay the System symbols.)
+    for name in [
+      "CircumscribedRadius",
+      "Decagon",
+      "Digon",
+      "Dodecagon",
+      "Faces",
+      "Heptagon",
+      "Hexagon",
+      "InscribedRadius",
+      "Nonagon",
+      "NumberOfEdges",
+      "NumberOfFaces",
+      "NumberOfVertices",
+      "Octagon",
+      "Pentagon",
+      "Undecagon",
+      "Vertices",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("Polytopes`{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Combinatorica`" {
     // Combinatorica has no values to pre-create (its functions are ordinary
     // dispatch entries, not symbol-table lookups), but putting it on
@@ -5714,6 +5741,95 @@ fn evaluate_function_call_ast_inner(
   // FindShortestTour[points[, s, t], opts] → {length, order}
   if name == "FindShortestTour" {
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);
+  }
+
+  // The legacy `Polytopes`` package: regular polygons with their vertices
+  // on the unit circle (`Vertices`), and radii for unit edge length.
+  // `Triangle` is shadowed by `System`Triangle`, so the package never
+  // reaches it in wolframscript either.
+  let name = name.strip_prefix("Polytopes`").unwrap_or(name);
+  if matches!(
+    name,
+    "Vertices"
+      | "NumberOfVertices"
+      | "NumberOfEdges"
+      | "NumberOfFaces"
+      | "Faces"
+      | "InscribedRadius"
+      | "CircumscribedRadius"
+  ) && crate::context_path_contains("Polytopes`")
+    && let [Expr::Identifier(poly)] = args
+    && let Some(n) = polytopes_polygon_sides(poly)
+  {
+    let n_e = Expr::Integer(n);
+    let pi_over_n = call(
+      "Times",
+      vec![
+        Expr::Identifier("Pi".to_string()),
+        call("Power", vec![n_e.clone(), Expr::Integer(-1)]),
+      ],
+    );
+    let value = match name {
+      "Vertices" => call(
+        "Table",
+        vec![
+          Expr::List(
+            vec![
+              call(
+                "Cos",
+                vec![call(
+                  "Times",
+                  vec![
+                    Expr::Integer(2),
+                    Expr::Identifier("k$poly".to_string()),
+                    pi_over_n.clone(),
+                  ],
+                )],
+              ),
+              call(
+                "Sin",
+                vec![call(
+                  "Times",
+                  vec![
+                    Expr::Integer(2),
+                    Expr::Identifier("k$poly".to_string()),
+                    pi_over_n.clone(),
+                  ],
+                )],
+              ),
+            ]
+            .into(),
+          ),
+          Expr::List(
+            vec![Expr::Identifier("k$poly".to_string()), n_e.clone()].into(),
+          ),
+        ],
+      ),
+      "NumberOfVertices" | "NumberOfEdges" => n_e,
+      "NumberOfFaces" => Expr::Integer(1),
+      "Faces" => call("Range", vec![n_e]),
+      "InscribedRadius" => call(
+        "Power",
+        vec![
+          call(
+            "Times",
+            vec![Expr::Integer(2), call("Tan", vec![pi_over_n])],
+          ),
+          Expr::Integer(-1),
+        ],
+      ),
+      _ => call(
+        "Power",
+        vec![
+          call(
+            "Times",
+            vec![Expr::Integer(2), call("Sin", vec![pi_over_n])],
+          ),
+          Expr::Integer(-1),
+        ],
+      ),
+    };
+    return evaluate_expr_to_expr(&value);
   }
 
   // The domains `Vectors[n]` and `Matrices[{m, n}]` default to Complexes,
@@ -12183,6 +12299,9 @@ fn evaluate_function_call_ast_inner(
         | "SampledSoundFunction"
         // A kernel density estimate: PDF, CDF, Mean and Variance read it.
         | "SmoothKernelDistribution"
+        // The container Empirical-, Histogram- and KernelMixtureDistribution
+        // evaluate to, read by PDF, CDF, Quantile and the moments.
+        | "DataDistribution"
     )
   {
     let args_str = args
@@ -15218,4 +15337,23 @@ fn apply_user_overloads_to_subsets(
     }
   }
   Ok(None)
+}
+
+/// The number of sides of a `Polytopes`` polygon symbol (bare or qualified).
+fn polytopes_polygon_sides(symbol: &str) -> Option<i128> {
+  let bare = symbol.strip_prefix("Polytopes`").unwrap_or(symbol);
+  Some(match bare {
+    "Digon" => 2,
+    "Triangle" => 3,
+    "Square" => 4,
+    "Pentagon" => 5,
+    "Hexagon" => 6,
+    "Heptagon" => 7,
+    "Octagon" => 8,
+    "Nonagon" => 9,
+    "Decagon" => 10,
+    "Undecagon" => 11,
+    "Dodecagon" => 12,
+    _ => return None,
+  })
 }

@@ -61,7 +61,46 @@ fn main() -> iced::Result {
     .theme(|state: &WoxiStudio| state.theme.clone())
     .default_font(Font::MONOSPACE)
     .exit_on_close_request(false)
+    .window(window_settings())
     .run()
+}
+
+/// Application id used as the X11 `WM_CLASS` and the Wayland `app_id`.
+/// Matches the basename of `woxi-studio/linux/woxi-studio.desktop`
+/// so desktop environments can associate windows with the launcher.
+#[cfg(target_os = "linux")]
+const APPLICATION_ID: &str = "woxi-studio";
+
+fn window_settings() -> iced::window::Settings {
+  iced::window::Settings {
+    #[cfg(target_os = "linux")]
+    platform_specific: iced::window::settings::PlatformSpecific {
+      application_id: String::from(APPLICATION_ID),
+      ..Default::default()
+    },
+    ..Default::default()
+  }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod window_settings_tests {
+  use super::*;
+
+  /// Without an application id the X11 `WM_CLASS` and the Wayland
+  /// `app_id` are empty, so docks cannot pin windows to the launcher.
+  #[test]
+  fn application_id_is_set_and_matches_desktop_entry() {
+    let settings = window_settings();
+    assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
+
+    let desktop = include_str!("../linux/woxi-studio.desktop");
+    assert!(
+      desktop
+        .lines()
+        .any(|l| l == format!("StartupWMClass={APPLICATION_ID}")),
+      "desktop entry must declare StartupWMClass={APPLICATION_ID}"
+    );
+  }
 }
 
 // ── Application State ───────────────────────────────────────────────

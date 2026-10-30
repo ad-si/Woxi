@@ -9656,3 +9656,83 @@ mod formal_moments {
     );
   }
 }
+
+mod kernel_mixture_distribution {
+  use super::*;
+
+  #[test]
+  fn container_and_silverman_bandwidth() {
+    assert_eq!(
+      interpret("ToString[KernelMixtureDistribution[{4, 1, 2}], InputForm]")
+        .unwrap(),
+      "DataDistribution[\"KernelMixture\", {1/3, \"Gaussian\", {1, 2, 4}, \
+       (3*3^(3/10)*Sqrt[7])/10}, 1, 3]"
+    );
+    // The interquartile spread when it is the smaller one.
+    assert_eq!(
+      interpret("KernelMixtureDistribution[{1, 2, 3, 4, 5}][[2, 4]]").unwrap(),
+      "(18*5^(4/5))/67"
+    );
+    // Never below half the smallest gap between distinct values.
+    assert_eq!(
+      interpret(
+        "KernelMixtureDistribution[#][[2, 4]] & /@ \
+         {{54, 55, 55, 54, 53}, {10, 20, 20, 30, 30, 30}, {1., 1., 1., 2.}}"
+      )
+      .unwrap(),
+      "{1/2, 5, 0.5}"
+    );
+    // Machine data gets a machine bandwidth; an explicit one is kept.
+    assert_eq!(
+      interpret(
+        "{KernelMixtureDistribution[{1.5, 2, 3, 4, 10}][[2, 4]], \
+         KernelMixtureDistribution[{1, 2, 4}, 1/2][[2, 4]]}"
+      )
+      .unwrap(),
+      "{0.973584622850636, 1/2}"
+    );
+  }
+
+  #[test]
+  fn pdf_and_cdf() {
+    assert_eq!(
+      interpret(
+        "ToString[PDF[KernelMixtureDistribution[{54, 55, 55, 54, 53}], x], \
+         InputForm]"
+      )
+      .unwrap(),
+      "(2*(Sqrt[2/Pi]/E^(2*(-55 + x)^2) + Sqrt[2/Pi]/E^(2*(-54 + x)^2) + \
+       1/(E^(2*(-53 + x)^2)*Sqrt[2*Pi])))/5"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[CDF[KernelMixtureDistribution[{54, 55, 55, 54, 55, 53, 54, \
+         55, 55, 53}], 54], InputForm]"
+      )
+      .unwrap(),
+      "(3/2 + Erfc[-Sqrt[2]] + (5*Erfc[Sqrt[2]])/2)/10"
+    );
+  }
+
+  #[test]
+  fn quantile_and_moments() {
+    assert_eq!(
+      interpret(
+        "k = KernelMixtureDistribution[{54, 55, 55, 54, 55, 53, 54, 55, 55, \
+         53}]; {InverseCDF[k, 0.25], Quantile[k, 0.25]}"
+      )
+      .unwrap(),
+      "{53.63127441429717, 53.63127441429717}"
+    );
+    assert_eq!(
+      interpret(
+        "{Mean[KernelMixtureDistribution[{1, 2, 4}]], \
+         Variance[KernelMixtureDistribution[{54, 55, 55, 54, 53}]], \
+         Variance[KernelMixtureDistribution[{1, 2, 3, 4, 5}, 1/3]], \
+         Mean[KernelMixtureDistribution[{1., 2, 4}]]}"
+      )
+      .unwrap(),
+      "{7/3, 81/100, 19/9, 2.3333333333333335}"
+    );
+  }
+}
