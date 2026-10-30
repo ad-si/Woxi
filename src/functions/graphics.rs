@@ -2277,6 +2277,15 @@ fn apply_text_style_rule(
       }
       None => false,
     },
+    // `FontColor -> c` colors the text itself, whatever color directive
+    // was in force before.
+    "FontColor" => match parse_color(replacement) {
+      Some(color) => {
+        style.color = color;
+        true
+      }
+      None => false,
+    },
     "FontFamily" => match replacement {
       Expr::String(s) => {
         style.font_family.clone_from(s);
@@ -2624,7 +2633,7 @@ fn collect_primitives(
         "Inset" if !args.is_empty() => {
           // `Inset[graphic, pos, …]` draws a picture inside this one; any
           // other object (a string, a number) is placed like `Text`.
-          if let Some(text) = text_primitive_inset(args) {
+          if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
           } else {
             match inset_primitives(args, errors) {
@@ -4065,17 +4074,34 @@ fn parse_regular_polygon(
   prims: &mut Vec<Primitive>,
 ) {
   // RegularPolygon[n] — unit circumradius at origin
+  // RegularPolygon[r, n] — circumradius r at origin
   // RegularPolygon[{cx, cy}, r, n] — at center with circumradius r
-  let (cx, cy, r, n) = match args.len() {
+  // RegularPolygon[{cx, cy}, {r, θ}, n] — first vertex at angle θ
+  let radius_spec = |e: &Expr| -> (f64, f64) {
+    if let Expr::List(items) = e
+      && items.len() == 2
+      && let (Some(r), Some(t)) =
+        (expr_to_f64(&items[0]), expr_to_f64(&items[1]))
+    {
+      return (r, t);
+    }
+    (expr_to_f64(e).unwrap_or(1.0), std::f64::consts::FRAC_PI_2)
+  };
+  let (cx, cy, r, theta, n) = match args.len() {
     1 => {
       let n = expr_to_f64(&args[0]).unwrap_or(0.0) as usize;
-      (0.0, 0.0, 1.0, n)
+      (0.0, 0.0, 1.0, std::f64::consts::FRAC_PI_2, n)
+    }
+    2 => {
+      let (r, theta) = radius_spec(&args[0]);
+      let n = expr_to_f64(&args[1]).unwrap_or(0.0) as usize;
+      (0.0, 0.0, r, theta, n)
     }
     3 => {
       let center = expr_to_point(&args[0]).unwrap_or((0.0, 0.0));
-      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
+      let (r, theta) = radius_spec(&args[1]);
       let n = expr_to_f64(&args[2]).unwrap_or(0.0) as usize;
-      (center.0, center.1, r, n)
+      (center.0, center.1, r, theta, n)
     }
     _ => return,
   };
@@ -4085,8 +4111,7 @@ fn parse_regular_polygon(
   // Generate vertices starting from top (Pi/2), going counterclockwise
   let pts: Vec<(f64, f64)> = (0..n)
     .map(|k| {
-      let angle = std::f64::consts::FRAC_PI_2
-        + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
+      let angle = theta + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
       (cx + r * angle.cos(), cy + r * angle.sin())
     })
     .collect();
@@ -5469,6 +5494,30 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     return Some(call("Text", vec![targs[0].clone(), pos.clone()]));
   }
   None
+}
+
+/// `Inset[Style[Text[obj], dirs…], pos]` is `Style[Text[obj, pos], dirs…]`:
+/// like `text_primitive_inset`, but the `Style` wrappers around the `Text`
+/// are kept so their font directives still reach the label.
+fn styled_text_inset(args: &[Expr]) -> Option<Expr> {
+  fn rewrap(e: &Expr, pos: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args: sargs }
+        if is_style_wrapper(name) && !sargs.is_empty() =>
+      {
+        let mut new_args = sargs.to_vec();
+        new_args[0] = rewrap(&sargs[0], pos)?;
+        Some(call(name, new_args))
+      }
+      Expr::FunctionCall { name, args: targs }
+        if name == "Text" && targs.len() == 1 =>
+      {
+        Some(call("Text", vec![targs[0].clone(), pos.clone()]))
+      }
+      _ => None,
+    }
+  }
+  rewrap(args.first()?, args.get(1)?)
 }
 
 /// A `Grid` whose look cannot be had from flattened cell text — merged
