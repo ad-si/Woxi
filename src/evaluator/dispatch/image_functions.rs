@@ -1084,6 +1084,25 @@ pub fn dispatch_image_functions(
     "ColorSeparate" if args.len() == 1 => {
       return Some(crate::functions::image_ast::color_separate_ast(args));
     }
+    // ColorSeparate[image, space]: the channels of the image in that space.
+    "ColorSeparate"
+      if args.len() == 2
+        && matches!(&args[0], Expr::Image { .. })
+        && matches!(&args[1], Expr::String(_)) =>
+    {
+      let converted = match crate::evaluator::evaluate_function_call_ast(
+        "ColorConvert",
+        args,
+      ) {
+        Ok(c) => c,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(converted, Expr::Image { .. }) {
+        return Some(crate::functions::image_ast::color_separate_ast(&[
+          converted,
+        ]));
+      }
+    }
     "Colorize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::colorize_ast(args));
     }

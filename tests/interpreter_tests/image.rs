@@ -9963,3 +9963,21 @@ mod color_combine_with_alpha {
     );
   }
 }
+
+mod color_separate_in_a_space {
+  use super::*;
+
+  #[test]
+  fn separates_after_converting() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{1, 0, 0.5}, {0, 1, 0}}}]; \
+         {ImageData /@ ColorSeparate[i, \"RGB\"], ImageData /@ ColorSeparate[i, \"HSB\"]}"
+      )
+      .unwrap(),
+      "{{{{1., 0.}}, {{0., 1.}}, {{0.5, 0.}}}, \
+       {{{0.9166666865348816, 0.3333333432674408}}, {{1., 1.}}, {{1., 1.}}}}"
+    );
+  }
+}
