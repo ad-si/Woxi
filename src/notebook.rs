@@ -3996,17 +3996,58 @@ fn resolve_saved_variable_references(
 /// list defines with that variable's value — bare when the whole value is
 /// the reference (`n$$ = nDef$$`), parenthesized when it sits inside a
 /// larger expression (`t$$ = 0.75/f$$`) so operator precedence survives.
-/// Tokens naming no saved variable are left untouched.
+/// Tokens naming no saved variable are left untouched, and a reference
+/// inside a holding head (`Dynamic[… on$$ = False …]`) is not a value but
+/// the variable itself, so it becomes the plain name (`on`).
 fn substitute_saved_references(
   value: &str,
   lookup: &dyn Fn(&str) -> Option<String>,
 ) -> String {
+  const HOLDING: [&str; 7] = [
+    "Dynamic",
+    "Hold",
+    "HoldForm",
+    "HoldComplete",
+    "Unevaluated",
+    "Function",
+    "RuleDelayed",
+  ];
   let chars: Vec<char> = value.chars().collect();
   let is_word = |c: char| c.is_alphanumeric();
   let mut out = String::new();
+  // The heads of the brackets open at this point, and the word just read.
+  let mut heads: Vec<String> = Vec::new();
+  let mut last_word = String::new();
   let mut i = 0;
   while i < chars.len() {
+    if chars[i] == '"' {
+      // Copy a string literal through untouched.
+      out.push('"');
+      i += 1;
+      while i < chars.len() && chars[i] != '"' {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+          out.push(chars[i]);
+          i += 1;
+        }
+        out.push(chars[i]);
+        i += 1;
+      }
+      if i < chars.len() {
+        out.push('"');
+        i += 1;
+      }
+      last_word.clear();
+      continue;
+    }
     if !is_word(chars[i]) || (i > 0 && is_word(chars[i - 1])) {
+      match chars[i] {
+        '[' => heads.push(std::mem::take(&mut last_word)),
+        ']' => {
+          heads.pop();
+        }
+        c if !c.is_whitespace() => last_word.clear(),
+        _ => {}
+      }
       out.push(chars[i]);
       i += 1;
       continue;
@@ -4016,9 +4057,15 @@ fn substitute_saved_references(
       i += 1;
     }
     let word: String = chars[start..i].iter().collect();
+    last_word = word.clone();
     let has_suffix =
       chars.get(i) == Some(&'$') && chars.get(i + 1) == Some(&'$');
+    let held = heads.iter().any(|h| HOLDING.contains(&h.as_str()));
     match has_suffix.then(|| lookup(&word)).flatten() {
+      Some(_) if held => {
+        i += 2;
+        out.push_str(&word);
+      }
       Some(resolved) => {
         i += 2;
         let whole = start == 0 && i == chars.len();
@@ -8431,6 +8478,31 @@ yf4GL4DwC5VA4w
     assert_eq!(
       extract_saved_manipulate_variables(dump),
       vec![("n".to_string(), "33.".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_keeps_held_references() {
+    // A reference to another variable is replaced by its saved value only
+    // where it is evaluated; inside `Dynamic[…]` it is the variable itself.
+    // Regression: `on$$ = False` inside a saved Dynamic became
+    // `False = False` (Set::wrsym) in HowDoorbellsWork.
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 0.7, \
+      $CellContext`t$$ = 0.75/$CellContext`x$$, \
+      $CellContext`obj$$ = {Dynamic[If[$CellContext`x$$ < 0.69, 1, \
+      $CellContext`on$$ = False; \"x$$\"]], $CellContext`x$$}, \
+      $CellContext`on$$ = False}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("x".to_string(), "0.7".to_string()),
+        ("t".to_string(), "0.75/0.7".to_string()),
+        (
+          "obj".to_string(),
+          "{Dynamic[If[x < 0.69, 1, on = False; \"x$$\"]], 0.7}".to_string()
+        ),
+        ("on".to_string(), "False".to_string()),
+      ]
     );
   }
 

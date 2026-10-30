@@ -1781,6 +1781,65 @@ pub fn dispatch_list_operations(
       ));
     }
   }
+  // These walk the level-1 parts of their list argument; a SparseArray's
+  // are its elements or rows, as `Part` gives them (`First[s]` is a sparse
+  // row). Deeper level specs see the dense array.
+  let list_position = match name {
+    "First" | "Last" | "Select" | "Accumulate" => Some(0),
+    "MapIndexed" if args.len() == 2 => Some(1),
+    _ => None,
+  };
+  if let Some(k) = list_position
+    && let Some(parts) =
+      args.get(k).and_then(list_helpers_ast::sparse_array_parts)
+  {
+    let mut new_args = args.to_vec();
+    new_args[k] = Expr::List(parts.into());
+    return Some(crate::evaluator::evaluate_function_call_ast(
+      name, &new_args,
+    ));
+  }
+  if matches!(name, "Map" | "MapIndexed")
+    && args.len() == 3
+    && let Some(dense) = list_helpers_ast::densify_sparse_array(&args[1])
+  {
+    let mut new_args = args.to_vec();
+    new_args[1] = dense;
+    return Some(crate::evaluator::evaluate_function_call_ast(
+      name, &new_args,
+    ));
+  }
+  // `Thread[f[…, s, …]]` threads over a SparseArray's parts.
+  if name == "Thread"
+    && let Some(Expr::FunctionCall {
+      name: head,
+      args: inner,
+    }) = args.first()
+    && inner
+      .iter()
+      .any(|a| list_helpers_ast::sparse_array_background(a).is_some())
+  {
+    let threaded: Option<Vec<Expr>> = inner
+      .iter()
+      .map(|a| {
+        if list_helpers_ast::sparse_array_background(a).is_some() {
+          list_helpers_ast::sparse_array_parts(a).map(|p| Expr::List(p.into()))
+        } else {
+          Some(a.clone())
+        }
+      })
+      .collect();
+    if let Some(threaded) = threaded {
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::FunctionCall {
+        name: head.clone(),
+        args: threaded.into(),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name, &new_args,
+      ));
+    }
+  }
   // The set-membership predicates compare associations by their VALUES as sets
   // (like SubsetQ/DisjointQ), and either argument may be a list or association.
   // Convert association operands to their value lists and retry.
@@ -5840,6 +5899,23 @@ pub fn dispatch_list_operations(
     }
     "FindTransientRepeat" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::find_transient_repeat_ast(args));
+    }
+    // At a level below the top, a SparseArray is the dense array.
+    "Apply" | "MapApply"
+      if (args.len() > 2 || (name == "MapApply" && args.len() == 2))
+        && list_helpers_ast::sparse_array_background(&args[1]).is_some() =>
+    {
+      let Some(dense) = list_helpers_ast::densify_sparse_array(&args[1]) else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut new_args = args.to_vec();
+      new_args[1] = dense;
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: new_args.into(),
+        },
+      ));
     }
     "Apply" if args.len() == 2 => {
       return Some(list_helpers_ast::apply_ast(&args[0], &args[1]));

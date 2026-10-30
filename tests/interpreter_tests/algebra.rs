@@ -206,6 +206,39 @@ mod exponent {
 mod coefficient {
   use super::*;
 
+  // A factor that depends on the variable other than as a power of it
+  // (`3^x`, `E^x`, `(1 + x)^x`, `Sin[x]`) belongs to the coefficient, while
+  // `x^(1/2)` or `x^y` match no integer power. Exponentials used to vanish,
+  // so `Solve[3^x + 5^x == 8 x, x]` claimed `x -> 0`.
+  #[test]
+  fn non_polynomial_factors_are_coefficients() {
+    assert_eq!(
+      interpret(
+        "{Coefficient[x 3^x + 2^x, x], Coefficient[3^x + x^-1, x, -1], \
+         Coefficient[(1 + x)^x, x, 0], Coefficient[x^(1/2) + 2, x, 0], \
+         Coefficient[x^y + 1, x, 0], Coefficient[E^x x^2, x, 2], \
+         CoefficientList[Sin[x] x^2 + 3^x, x], CoefficientList[x 2^x + 1, x]}"
+      )
+      .unwrap(),
+      "{3^x, 1, (1 + x)^x, 2, 1, E^x, {3^x, 0, Sin[x]}, {1, 2^x}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Exponent[3^x x^2 + x, x], Exponent[E^x x + 1, x], \
+         Exponent[E^(2 x) x, x], Exponent[3^x + x^2, x], Exponent[E^x, x]}"
+      )
+      .unwrap(),
+      "{2, 1, 1, Exponent[3^x + x^2, x], Exponent[E^x, x]}"
+    );
+    assert_eq!(
+      interpret(
+        "{Solve[3^x + 5^x == 8 x, x], Solve[2^x + 4^x == 6, x, Reals]}"
+      )
+      .unwrap(),
+      "{Solve[3^x + 5^x == 8*x, x], {{x -> 1}}}"
+    );
+  }
+
   #[test]
   fn quadratic_coefficients() {
     assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 2]").unwrap(), "1");
@@ -23454,8 +23487,69 @@ mod solve_exponentials {
   #[test]
   fn unsolved_keeps_its_domain() {
     assert_eq!(
-      interpret("Quiet[Solve[2^x + 3^x == 5, x, Reals]]").unwrap(),
-      "Solve[2^x + 3^x == 5, x, Reals]"
+      interpret("Quiet[Solve[2^x + Sin[x] == 5, x, Reals]]").unwrap(),
+      "Solve[2^x + Sin[x] == 5, x, Reals]"
+    );
+  }
+
+  // Over the reals an exponential polynomial's roots are isolated: exact
+  // where a small rational is one, `Root[{f, x0}]` otherwise, with `N` the
+  // correctly rounded root.
+  #[test]
+  fn exponential_polynomial_real_roots() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], \
+         Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], \
+         N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}"
+      )
+      .unwrap(),
+      "{{{x -> 1}}, {{x -> Root[{-10 + 2^#1 + 3^#1 & , 1.7292555589818597}]}}, \
+       {{x -> 1}, {x -> Root[{3^#1 + 5^#1 - 8*#1 & , 0.4874846052754014}]}}, \
+       {}, {1.605524844424328}}"
+    );
+  }
+
+  // Over the reals a non-real Lambert solution is dropped and no `ifun` is
+  // reported.
+  #[test]
+  fn reals_drop_complex_product_log() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "{Solve[x^2 E^x == 1, x, Reals], Solve[x E^x == -1, x, Reals], \
+       Solve[x E^x == -1/4, x, Reals]}",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "{{{x -> 2*ProductLog[1/2]}}, {}, \
+       {{x -> ProductLog[-1/4]}, {x -> ProductLog[-1, -1/4]}}}"
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // Root[{f, x0}] stands for the root of f near x0; a pattern is left
+  // alone, and anything else is not a root specification.
+  #[test]
+  fn transcendental_root_objects() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{N[Root[{Cos[#] - # &, 0.7390851332151607}]], \
+         MatchQ[Root[{Cos[#] - # &, 0.7390851332151607}], Root[_]], Root[x_]}"
+      )
+      .unwrap(),
+      "{0.7390851332151607, True, Root[x_]}"
+    );
+    let r =
+      interpret_with_stdout("Root[{Cos[#] - # &, 0.74}]; Root[x]").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Root::invrt: 0.7400000000000000 is not equal to a root of Cos[#1] - #1 & .",
+        "Root::trsp: Nonpolynomial root specification x is not a list with two elements."
+      ]
     );
   }
 
@@ -23574,6 +23668,36 @@ mod solve_disjunction {
       interpret("LinearProgramming[{1, 1}, SparseArray[{{1, 2}, {3, 1}}], {{4, 1}, {6, 1}}]")
         .unwrap(),
       "{8/5, 6/5}"
+    );
+  }
+
+  /// `DualLinearProgramming` gives the primal solution and the duals of the
+  /// constraints (sign by relation) and of the lower and upper bounds.
+  #[test]
+  fn dual_linear_programming() {
+    assert_eq!(
+      interpret(
+        "{DualLinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}], \
+         DualLinearProgramming[{1, 2}, {{1, 1}, {1, -1}}, {{2, 0}, {1, -1}}], \
+         DualLinearProgramming[{-1, -1}, {{1, 2}}, {{4, -1}}, {{0, 3}, {0, 3}}], \
+         DualLinearProgramming[{1, 1}, {{1, -1}, {1, 1}}, {0, 2}, {-Infinity, 0}], \
+         DualLinearProgramming[{2, 3}, SparseArray[{{1, 1}}], {1}, {{1/2, 1}, {0, Infinity}}]}"
+      )
+      .unwrap(),
+      "{{{1, 1}, {2/5, 1/5}, {0, 0}, {0, 0}}, {{3/2, 1/2}, {3/2, -1/2}, {0, 0}, {0, 0}}, \
+       {{3, 1/2}, {-1/2}, {0, 0}, {1/2, 0}}, {{1, 1}, {0, 1}, {0, 0}, {0, 0}}, \
+       {{1, 0}, {2}, {0, 1}, {0, 0}}}"
+    );
+    let r = interpret_with_stdout(
+      "DualLinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, \
+       Method -> \"InteriorPoint\"]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{1., 1.}, {0.4, 0.2}, {0., 0.}, {0., 0.}}");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("DualLinearProgramming::lpipp"))
     );
   }
 

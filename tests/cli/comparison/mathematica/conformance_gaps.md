@@ -5824,6 +5824,13 @@ proportions differ from wolframscript. Named edge shapes other than
   scheme rather than Wolfram's exact colors.
 - `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
   not yet implemented) falls back to a gray ramp.
+- On an image, a pixel at exactly 5/8, 6/8 or 7/8 lands one table entry
+  (one byte) above wolframscript's: `Colorize[Image[{{0.75, 1.}}],
+  ColorFunction -> (RGBColor[#, #, #] &)]` gives byte 192, wolframscript
+  191. No index rule that fits these also fits a dense sweep of other
+  values, where `min(floor(1024 x), 1023)` matches.
+- On an integer-type image with no `ColorFunction` (label colouring)
+  `Colorize` stays unevaluated.
 
 ## PolyhedronData["BilinskiDodecahedron", ...]
 
@@ -6296,3 +6303,70 @@ is `((4 s^2)/9)/((1/3 + …)(1/3 + …))` in Woxi and `(4 s^2)/((1 + … + 3 s^2
 highpass multiplies each factor by a unit). Lowpass models, machine-number
 models and the filtered values match. `ToDiscreteTimeModel` of a machine
 model agrees with WL to the last one or two digits.
+
+### `Short` only truncates integers
+
+`Short[expr]` / `Short[expr, n]` on a list, sum or other compound
+expression is returned unchanged instead of eliding the middle as
+`<<k>>`, so `Panel[Short[Range[100]]]` in a `Manipulate` shows every
+element. Only the digits of an over-long integer are shortened
+(`shorten_for_display` in `src/functions/graphics.rs`).
+
+## ImageRotate: exact pixel-corner ties at an arbitrary angle
+
+`ImageRotate` at an angle that is not a right angle samples the source pixel
+under each output pixel centre. When that point falls exactly on a source
+pixel corner (the canvas centre of an even-sized image on an odd canvas),
+wolframscript's choice depends on its transform's rounding noise:
+`ImageRotate[Image[{{1, 0}, {0, 1}}, "Byte"], 1]` has a `0` in the centre,
+Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.
+
+## Exact `Eigenvectors` with quadratic-surd components: unreduced form
+
+```sh
+wolframscript -code 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
+# {{-((-1 - Sqrt[5])/(3 + Sqrt[5])), 1, 1, 1}, {-1, 0, 1, 1}, {-((1 - Sqrt[5])/(-3 + Sqrt[5])), 1, 1, 1}, {0, 0, 0, 1}}
+woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
+# {{(7 + 3*Sqrt[5])/(11 + 5*Sqrt[5]), 1, 1, 1}, {-1, 0, 1, 1}, {(7 - 3*Sqrt[5])/(11 - 5*Sqrt[5]), 1, 1, 1}, {0, 0, 0, 1}}
+```
+
+The values are equal, but the elimination leaves a different quotient, so
+`N` of the two differs in the last digits.
+
+## SparseArray: internal entry order of sums, `Select` keeping sparsity
+
+- `Plus @@ SparseArray[{{1, 2}, {0, 5}}]` equals wolframscript's value, but
+  wolframscript stores the sum's entries in a different order
+  (`{{2}, {1}}` with values `{7, 1}`, Woxi `{{1}, {2}}` with `{1, 7}`), so the
+  `InputForm`s differ.
+- `Select[sparse, pred]` returns a dense list; wolframscript keeps a
+  SparseArray when the background passes `pred`.
+- `Fold`, `FoldList`, `Sort` and `Union` of a SparseArray emit `::normal` and
+  stay unevaluated in wolframscript; Woxi does not reject them.
+
+## DualLinearProgramming with `Method -> "InteriorPoint"`
+
+wolframscript's interior-point solution carries solver noise
+(`{1.0000000003499416, 1.0000000000555387}` for an optimum of `{1, 1}`);
+Woxi solves exactly and converts, giving `{1., 1.}`.
+
+## A conditional `:=` after a `=` value keeps the `=` value
+
+wolframscript drops a symbol's `Set` value when a conditional own value is
+added (`w = 5; w := {1} /; c == 1` leaves only the conditional rule, so `w`
+stays `w` when the test fails), but keeps an unconditional `:=` value as the
+fallback. Woxi does not record whether a symbol's value came from `=` or
+`:=`, so it keeps either one as the fallback (`w` evaluates to `5`).
+
+## Transcendental `Root[{f, x0}]` objects
+
+- wolframscript stores `x0` as an arbitrary-precision number of about 20
+  digits (`1.7292555589818595724706451954508223956`20.53`); Woxi keeps the
+  correctly rounded machine number (`1.7292555589818597`).
+- For an equation with negative exponents wolframscript first rewrites `f`
+  (`2/2^t + 2/3^t == 1` gives `-2 - 2*E^(Log[2]*#1 - Log[3]*#1) +
+  E^(-(Log[3]*#1) + (Log[2] + Log[3])*#1) &`); Woxi uses `lhs - rhs`
+  (`-1 + 2^(1 - #1) + 2/3^#1 &`). The roots agree.
+- `Root::invrt` is reported when the refined root is more than 10^-6
+  (relative) away from `x0`; wolframscript's exact threshold is somewhere
+  between 1.6*10^-7 and 4.8*10^-6 for the cases probed.

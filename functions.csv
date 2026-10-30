@@ -1446,7 +1446,7 @@ Accuracy,Returns the number of accurate decimal digits,✅,pure,1.0,1422
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4.0,1422
 Tetrahedron,Symbolic tetrahedron geometric region; stays unevaluated and is consumed by region functions (Volume/RegionMeasure/RegionCentroid/…),✅,unevaluated,10.0,1424
 ArcLength,Arc length of a geometric region or of a parameterized curve,✅,pure,10.0,1426
-SetAlphaChannel,Set image alpha channel,🚫,io,8.0,1426
+SetAlphaChannel,Set image alpha channel (opaque or a number or a grayscale image),✅,pure,8.0,1426
 CreateDialog,Create a dialog window,🚫,io,6.0,1427
 MinimalPolynomial,Computes the minimal polynomial of an algebraic number over the rationals,✅,pure,6.0,1428
 SynchronousInitialization,Notebook synchronous initialization,🚫,io,6.0,1429
@@ -2201,7 +2201,7 @@ SkewNormalDistribution,Skew normal distribution with location m scale s and shap
 Sunset,Sunset time for a location and day (next sunset without a date; UTC-based DateObject),✅,contextual,10.0,2193
 HankelH2,Hankel function of the second kind,✅,pure,6.0,2197
 LinkObject,Represents a MathLink or WSTP connection to an external process,🚫,None,3.0,2197
-RemoveAlphaChannel,Removes the alpha transparency channel from an image,🚫,None,8.0,2197
+RemoveAlphaChannel,Removes the alpha transparency channel from an image (optionally compositing over a color),✅,pure,8.0,2197
 WaveletScalogram,Scalogram plot of discrete or continuous wavelet data,✅,graphics,8.0,2197
 ProbabilityPlot,Creates a probability plot for assessing data distribution fit,🚫,None,8.0,2198
 Gradient,Symbolic gradient operator,🚫,None,2.2,2203
@@ -2246,7 +2246,7 @@ NotebookFileName,Notebook UI,🚫,None,7.0,2240
 AppearanceRules,UI styling,🚫,None,10.0,2243
 LowerCaseQ,Tests if a string consists entirely of lowercase letters,✅,pure,2.0,2243
 StationaryWaveletTransform,Undecimated (a trous) stationary wavelet transform,✅,pure,8.0,2243
-AlgebraicNumber,Algebraic number theory,🚫,None,6.0,2246
+AlgebraicNumber,An element c0 + c1 θ + … of a number field kept symbolic and read by N and RootReduce and ToRadicals,✅,pure,6.0,2246
 DateHistogram,Date visualization,🚫,None,10.2,2246
 DirectedGraph,Directed version of a graph with each undirected edge as two arcs,✅,pure,8.0,2246
 BooleanRegion,Region built by combining regions with a Boolean function,✅,pure,10.0,2251
@@ -3087,7 +3087,7 @@ SatisfiabilityInstances,Satisfying assignments of a Boolean expression in BDD pa
 StandbyDistribution,Lifetime distribution of a cold standby system of components,✅,none,9.0,3108
 SummationLayer,,🚫,,11.0,3108
 Typed,,,,12.0,3108
-AlphaChannel,,🚫,,8.0,3121
+AlphaChannel,Alpha channel of an image as a grayscale image,✅,pure,8.0,3121
 AutoDelete,,,,3.0,3121
 CellProlog,,🚫,,6.0,3121
 ConnectedGraphComponents,Return connected components as subgraphs,✅,pure,10.4,3121
@@ -4189,7 +4189,7 @@ FunctionMonotonicity,,,,12.2,4291
 GainPhaseMargins,,,,8.0,4291
 GeoVisibleRegionBoundary,,🚫,,10.0,4291
 GroupCentralizer,,,,8.0,4291
-NumberFieldFundamentalUnits,,,,6.0,4291
+NumberFieldFundamentalUnits,Fundamental units of the ring of integers of a rational or quadratic number field as AlgebraicNumber objects,✅,pure,6.0,4291
 NumericArray,Typed numeric array with auto-detected element type,✅,pure,12.0,4291
 RawArray,Legacy typed raw array (as embedded in CompressedData image payloads),✅,pure,10.0,
 NuttallWindow,Nuttall 4-term cosine-sum window on [-1/2 1/2] (exactly 0 at the edges),✅,pure,9.0,4291
@@ -6420,3 +6420,4 @@ HypothesisTesting`NormalPValue,Legacy normal p-value as an OneSidedPValue (or Tw
 HypothesisTesting`StudentTPValue,Legacy Student t p-value as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
 HypothesisTesting`ChiSquarePValue,Legacy chi-square p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
 HypothesisTesting`FRatioPValue,Legacy F-ratio p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
+DualLinearProgramming,Solves a linear program and its dual giving the primal solution and the dual variables of the constraints and of the lower and upper bounds,✅,pure,6.0,

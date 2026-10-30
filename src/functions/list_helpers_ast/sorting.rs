@@ -214,9 +214,18 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
   }
 }
 
-/// `a -> b` and `a :> b` order as the `Rule`/`RuleDelayed` calls they are.
-fn rule_as_call(e: &Expr) -> Option<Expr> {
+/// `a -> b` and `a :> b` order as the `Rule`/`RuleDelayed` calls they are,
+/// and `a == b`, `a < b <= c` as their `Equal`/`Inequality` calls.
+pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
   match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      Some(call(&head, args))
+    }
     Expr::Rule {
       pattern,
       replacement,

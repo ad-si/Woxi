@@ -13599,6 +13599,14 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
   let flip_first = |first: &Expr| match first {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
     Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      match args.as_slice() {
+        [Expr::Integer(n), d @ Expr::Integer(_)] if *n < 0 => {
+          Some(unevaluated("Rational", &[Expr::Integer(-n), d.clone()]))
+        }
+        _ => None,
+      }
+    }
     _ => None,
   };
   let (first, rest): (&Expr, &[Expr]) = match arg {

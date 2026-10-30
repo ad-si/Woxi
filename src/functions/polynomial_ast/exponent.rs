@@ -280,8 +280,9 @@ fn term_power_of(term: &Expr, var: &str) -> Option<Expr> {
       left,
       right,
     } => {
+      // `b^f(x)` has no degree in `x` (Exponent stays unevaluated).
       if is_constant_wrt(left, var) {
-        Some(Expr::Integer(0))
+        None
       } else if is_constant_wrt(right, var)
         && matches!(left.as_ref(), Expr::Identifier(n) if n == var)
       {
@@ -292,7 +293,7 @@ fn term_power_of(term: &Expr, var: &str) -> Option<Expr> {
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       if is_constant_wrt(&args[0], var) {
-        Some(Expr::Integer(0))
+        None
       } else if is_constant_wrt(&args[1], var)
         && matches!(&args[0], Expr::Identifier(n) if n == var)
       {
@@ -305,18 +306,9 @@ fn term_power_of(term: &Expr, var: &str) -> Option<Expr> {
       op: BinaryOperator::Times,
       left,
       right,
-    } => {
-      let l = term_power_of(left, var)?;
-      let r = term_power_of(right, var)?;
-      Some(add_exponents(l, r))
-    }
+    } => product_power_of(&[left.as_ref(), right.as_ref()], var),
     Expr::FunctionCall { name, args } if name == "Times" => {
-      let mut acc = Expr::Integer(0);
-      for a in args {
-        let p = term_power_of(a, var)?;
-        acc = add_exponents(acc, p);
-      }
-      Some(acc)
+      product_power_of(&args.iter().collect::<Vec<_>>(), var)
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -324,6 +316,34 @@ fn term_power_of(term: &Expr, var: &str) -> Option<Expr> {
     } => term_power_of(operand, var),
     _ => None,
   }
+}
+
+/// The power of `var` in a product. An exponential factor (`3^x`, `E^x`)
+/// counts as degree 0 next to a power of `var` (`Exponent[E^x x^2, x]` is
+/// 2), but a product of nothing else has no degree.
+fn product_power_of(factors: &[&Expr], var: &str) -> Option<Expr> {
+  let is_exponential = |f: &Expr| match f {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => is_constant_wrt(left, var) && !is_constant_wrt(right, var),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_constant_wrt(&args[0], var) && !is_constant_wrt(&args[1], var)
+    }
+    _ => false,
+  };
+  let rest: Vec<&&Expr> =
+    factors.iter().filter(|f| !is_exponential(f)).collect();
+  if rest.len() < factors.len() && rest.iter().all(|f| is_constant_wrt(f, var))
+  {
+    return None;
+  }
+  let mut acc = Expr::Integer(0);
+  for f in rest {
+    acc = add_exponents(acc, term_power_of(f, var)?);
+  }
+  Some(acc)
 }
 
 fn add_exponents(a: Expr, b: Expr) -> Expr {
@@ -379,8 +399,9 @@ fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
         let r = max_power(right, var)?;
         Some(l.add(r))
       }
+      // `b^f(x)` (the variable in an exponent) has no degree.
       BinaryOperator::Power => {
-        if is_constant_wrt(left, var) {
+        if is_constant_wrt(left, var) && is_constant_wrt(right, var) {
           Some(Rat::zero())
         } else if is_constant_wrt(right, var) {
           let exp = expr_to_rat(right)?;
@@ -425,7 +446,7 @@ fn max_power(expr: &Expr, var: &str) -> Option<Rat> {
         Some(s)
       }
       "Power" if args.len() == 2 => {
-        if is_constant_wrt(&args[0], var) {
+        if is_constant_wrt(&args[0], var) && is_constant_wrt(&args[1], var) {
           Some(Rat::zero())
         } else if is_constant_wrt(&args[1], var) {
           let exp = expr_to_rat(&args[1])?;
@@ -582,8 +603,9 @@ fn min_power(expr: &Expr, var: &str) -> Option<Rat> {
         let r = min_power(right, var)?;
         Some(l.add(r))
       }
+      // `b^f(x)` (the variable in an exponent) has no degree.
       BinaryOperator::Power => {
-        if is_constant_wrt(left, var) {
+        if is_constant_wrt(left, var) && is_constant_wrt(right, var) {
           Some(Rat::zero())
         } else if is_constant_wrt(right, var) {
           let exp = expr_to_rat(right)?;
@@ -632,7 +654,7 @@ fn min_power(expr: &Expr, var: &str) -> Option<Rat> {
         Some(s)
       }
       "Power" if args.len() == 2 => {
-        if is_constant_wrt(&args[0], var) {
+        if is_constant_wrt(&args[0], var) && is_constant_wrt(&args[1], var) {
           Some(Rat::zero())
         } else if is_constant_wrt(&args[1], var) {
           let exp = expr_to_rat(&args[1])?;

@@ -1329,6 +1329,27 @@ fn evaluate_expr_to_expr_uncached(
           // fixpoint and re-evaluating is wasted work (plus risks
           // quadratic blowup for growing lists like `k = {k, 1}`).
           StoredValue::ExprVal(e) => {
+            // Several conditional own values: the first whose guard holds
+            // gives the value, else the unconditional one, else the symbol.
+            if let Some((rules, fallback)) =
+              crate::evaluator::assignment::conditional_own_values(&e)
+            {
+              for rule in &rules {
+                if let Expr::FunctionCall { args, .. } = rule
+                  && args.len() == 2
+                  && matches!(
+                    evaluate_expr_to_expr(&args[1]),
+                    Ok(Expr::Identifier(ref s)) if s == "True"
+                  )
+                {
+                  return evaluate_expr_to_expr(&args[0]);
+                }
+              }
+              return match fallback {
+                Some(v) => evaluate_expr_to_expr(&v),
+                None => Ok(Expr::Identifier(name.clone())),
+              };
+            }
             // `a /; cond := body` stored the OwnValue as
             // `Condition[body, cond]` so the guard can be re-checked at
             // lookup time. Evaluate the test; if it isn't True the rule

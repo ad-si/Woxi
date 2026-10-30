@@ -4262,4 +4262,17 @@ mod grid_item_style_tests {
       assert!(vb[2] >= w, "viewBox {vb:?} narrower than width {w}");
     }
   }
+
+  #[test]
+  fn test_svg_negative_rational_term_is_subtracted() {
+    // A negative rational coefficient in a sum is a subtraction, not a
+    // literal `+ -5 x^2/2`.
+    let svg = woxi::interpret(
+      r#"ExportString[Grid[{{Panel[3 x - (5 x^2)/2 + 3 x^3 - y/3]}}], "SVG"]"#,
+    )
+    .expect("interpret should succeed");
+    assert!(!svg.contains("+ -"), "unexpected '+ -' in {svg}");
+    assert!(svg.contains("- 5 x"), "missing '- 5 x' in {svg}");
+    assert!(svg.contains("- y/3"), "missing '- y/3' in {svg}");
+  }
 }

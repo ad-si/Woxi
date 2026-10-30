@@ -11151,6 +11151,12 @@ fn evaluate_function_call_ast_inner(
         _ => {}
       }
     }
+    // Arithmetic over interval Piecewise parts folds into one Piecewise.
+    if let Some(folded) =
+      crate::functions::piecewise_combine::fold_piecewise(&args[0])?
+    {
+      return refined(folded);
+    }
     // For functions that can't be expanded into Piecewise form,
     // return the argument unchanged (not wrapped in PiecewiseExpand).
     return refined(args[0].clone());
@@ -12459,6 +12465,9 @@ fn evaluate_function_call_ast_inner(
         // The container Empirical-, Histogram- and KernelMixtureDistribution
         // evaluate to, read by PDF, CDF, Quantile and the moments.
         | "DataDistribution"
+        // An element of a number field, c0 + c1 θ + …; N, RootReduce and
+        // ToRadicals read it.
+        | "AlgebraicNumber"
     )
   {
     let args_str = args

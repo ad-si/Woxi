@@ -878,6 +878,30 @@ fn nest_while_history(
   Ok(history)
 }
 
+/// The level-1 parts of a canonical SparseArray, as `Part` gives them: the
+/// elements of a vector, the rows (themselves SparseArrays) of a matrix.
+pub fn sparse_array_parts(expr: &Expr) -> Option<Vec<Expr>> {
+  super::sparse_array_background(expr)?;
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let Some(Expr::List(dims)) = args.get(1) else {
+    return None;
+  };
+  let Some(Expr::Integer(n)) = dims.first() else {
+    return None;
+  };
+  (1..=*n)
+    .map(|i| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Part".to_string(),
+        args: vec![expr.clone(), Expr::Integer(i)].into(),
+      })
+      .ok()
+    })
+    .collect()
+}
+
 /// Extract the children of any expression in Wolfram canonical form.
 /// Returns None for atomic expressions (Integer, Real, String, Symbol).
 pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
@@ -888,6 +912,10 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   // A tree is an atom too.
   if crate::functions::predicate_ast::is_fully_atomic_object(expr) {
     return None;
+  }
+  // A SparseArray's parts are its rows: `Plus @@ s` adds the rows.
+  if super::sparse_array_background(expr).is_some() {
+    return sparse_array_parts(expr);
   }
   match expr {
     Expr::List(items) => Some(items.to_vec()),

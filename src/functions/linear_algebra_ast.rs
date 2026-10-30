@@ -1606,9 +1606,13 @@ pub fn array_dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Whether a `Vec<Vec<Expr>>` from `expr_to_matrix` is a nonempty square
-/// matrix (every row has length equal to the number of rows).
+/// matrix (every row has length equal to the number of rows, and no entry
+/// is itself a list).
 pub fn is_nonempty_square(m: &[Vec<Expr>]) -> bool {
-  !m.is_empty() && m.iter().all(|row| row.len() == m.len())
+  !m.is_empty()
+    && m.iter().all(|row| {
+      row.len() == m.len() && row.iter().all(|e| !matches!(e, Expr::List(_)))
+    })
 }
 
 /// Whether `arg` should trigger a `::matsq` message — a concrete non-matrix
@@ -4429,7 +4433,31 @@ fn machine_conjugate_pair_upper_first(matrix: &[Vec<Expr>], eigs: &mut [Expr]) {
   }
 }
 
+/// `{m}` — a one-element list holding a square matrix — is that matrix to
+/// the eigen functions (the one-matrix case of the `{m, a}` form).
+fn unwrap_single_matrix_list(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(outer) = args.first()? else {
+    return None;
+  };
+  let [inner @ Expr::List(rows)] = outer.as_slice() else {
+    return None;
+  };
+  if rows.is_empty()
+    || !rows
+      .iter()
+      .all(|r| matches!(r, Expr::List(c) if c.len() == rows.len()))
+  {
+    return None;
+  }
+  let mut new_args = vec![inner.clone()];
+  new_args.extend(args[1..].iter().cloned());
+  Some(new_args)
+}
+
 pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigenvalues_ast(&inner);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigenvalues expects exactly 1 argument".into(),
@@ -5029,89 +5057,134 @@ fn make_root_exprs(coeffs: &[i128]) -> Vec<Expr> {
     .collect()
 }
 
-/// Eigenvalues[matrix, k] — the k eigenvalues of largest absolute value
-/// (k > 0 takes the first k of Eigenvalues[matrix]; k < 0 takes the last |k|,
-/// i.e. the smallest), mirroring Take. |k| greater than the matrix dimension
-/// emits Eigenvalues::take and stays unevaluated, matching wolframscript.
+/// The count argument of `Eigenvalues`, `Eigenvectors` and `Eigensystem`: a
+/// Take-style sequence spec `n`, `-n`, `{n}`, `{-n}`, `{m, n}` or
+/// `{m, n, s}` (integer-valued reals count too), as the written first and
+/// last positions and the step.
+fn eigen_seq_spec(spec: &Expr) -> Option<(i128, i128, i128)> {
+  let int = |e: &Expr| match e {
+    Expr::Integer(k) => Some(*k),
+    Expr::Real(r) if r.fract() == 0.0 && r.abs() < 1e15 => Some(*r as i128),
+    _ => None,
+  };
+  match spec {
+    Expr::List(items) => match items.as_slice() {
+      [k] => int(k).map(|k| (k, k, 1)),
+      [m, n] => Some((int(m)?, int(n)?, 1)),
+      [m, n, st] => Some((int(m)?, int(n)?, int(st)?)).filter(|t| t.2 != 0),
+      _ => None,
+    },
+    _ => int(spec).map(|k| if k >= 0 { (1, k, 1) } else { (k, -1, 1) }),
+  }
+}
+
+/// The checks `head[matrix, spec]` makes before computing anything: the
+/// matrix (`::matsq`), then the spec (`::seqs`). Returns the arguments
+/// (a `{m}` matrix unwrapped) and the spec, or the unevaluated call.
+fn eigen_count_args(
+  head: &str,
+  args: &[Expr],
+) -> Result<(Vec<Expr>, (i128, i128, i128)), Expr> {
+  let args = unwrap_single_matrix_list(args).unwrap_or_else(|| args.to_vec());
+  let square =
+    matches!(expr_to_matrix(&args[0]), Some(m) if is_nonempty_square(&m));
+  if !square && is_matsq_subject(&args[0]) {
+    return Err(matsq_unevaluated(head, &args));
+  }
+  let Some(spec) = eigen_seq_spec(&args[1]) else {
+    crate::emit_message(&format!(
+      "{head}::seqs: Sequence specification (+n, -n, {{+n}}, {{-n}}, {{m, n}} \
+       or {{m, n, s}}) expected at position 2 in {}.",
+      crate::syntax::format_expr(
+        &unevaluated(head, &args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Err(unevaluated(head, &args));
+  };
+  Ok((args, spec))
+}
+
+/// The items a spec takes out of `total`, as Take would, or None (after
+/// `head::take`, naming `what`) when it reaches past them.
+fn eigen_take_indices(
+  head: &str,
+  what: &str,
+  (lo, hi, step): (i128, i128, i128),
+  total: usize,
+) -> Option<Vec<usize>> {
+  let n = total as i128;
+  let resolve = |i: i128| if i < 0 { n + 1 + i } else { i };
+  let (from, to) = (resolve(lo), resolve(hi));
+  let valid = if step > 0 {
+    (1..=n + 1).contains(&from) && (0..=n).contains(&to)
+  } else {
+    (0..=n).contains(&from) && (1..=n + 1).contains(&to)
+  };
+  if !valid {
+    crate::emit_message(&format!(
+      "{head}::take: Cannot take {what} {lo} through {hi} out of the total of {n} {what}."
+    ));
+    return None;
+  }
+  let mut out = Vec::new();
+  let mut i = from;
+  while (step > 0 && i <= to) || (step < 0 && i >= to) {
+    out.push((i - 1) as usize);
+    i += step;
+  }
+  Some(out)
+}
+
+fn pick(items: &[Expr], indices: &[usize]) -> Expr {
+  Expr::List(indices.iter().map(|&i| items[i].clone()).collect())
+}
+
+/// Eigenvalues[matrix, spec] — Take[Eigenvalues[matrix], spec]; a spec past
+/// the eigenvalues emits Eigenvalues::take and stays unevaluated.
 pub fn eigenvalues_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("Eigenvalues", args));
-  // Only an integer count is handled; other specs stay unevaluated.
-  let k = match &args[1] {
-    Expr::Integer(k) => *k,
-    _ => return unevaluated(),
+  let (args, spec) = match eigen_count_args("Eigenvalues", args) {
+    Ok(parts) => parts,
+    Err(held) => return Ok(held),
   };
-  let all = eigenvalues_ast(&args[0..1])?;
-  let Expr::List(items) = &all else {
-    return unevaluated();
+  let Expr::List(items) = &eigenvalues_ast(&args[0..1])? else {
+    return Ok(unevaluated("Eigenvalues", &args));
   };
-  let n = items.len() as i128;
-  if k.abs() > n {
-    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
-    crate::emit_message(&format!(
-      "Eigenvalues::take: Cannot take eigenvalues {lo} through {hi} out of the total of {n} eigenvalues."
-    ));
-    return unevaluated();
-  }
-  let taken: Vec<Expr> = if k >= 0 {
-    items.iter().take(k as usize).cloned().collect()
-  } else {
-    items
-      .iter()
-      .skip(items.len() - k.unsigned_abs() as usize)
-      .cloned()
-      .collect()
-  };
-  Ok(Expr::List(taken.into()))
+  Ok(
+    match eigen_take_indices("Eigenvalues", "eigenvalues", spec, items.len()) {
+      Some(indices) => pick(items, &indices),
+      None => unevaluated("Eigenvalues", &args),
+    },
+  )
 }
 
-/// Take the first `k` items (k >= 0) or the last `|k|` (k < 0), mirroring Take.
-fn eigen_take_slice(items: &[Expr], k: i128) -> Vec<Expr> {
-  if k >= 0 {
-    items.iter().take(k as usize).cloned().collect()
-  } else {
-    items
-      .iter()
-      .skip(items.len() - k.unsigned_abs() as usize)
-      .cloned()
-      .collect()
-  }
-}
-
-/// Eigenvectors[matrix, k] — the eigenvectors for the k largest-magnitude
-/// eigenvalues (k < 0 takes the last |k|), like Take. |k| greater than the
-/// matrix dimension emits Eigenvectors::take and stays unevaluated.
+/// Eigenvectors[matrix, spec] — Take[Eigenvectors[matrix], spec].
 pub fn eigenvectors_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("Eigenvectors", args));
-  let k = match &args[1] {
-    Expr::Integer(k) => *k,
-    _ => return unevaluated(),
+  let (args, spec) = match eigen_count_args("Eigenvectors", args) {
+    Ok(parts) => parts,
+    Err(held) => return Ok(held),
   };
-  let all = eigenvectors_ast(&args[0..1])?;
-  let Expr::List(items) = &all else {
-    return unevaluated();
+  let Expr::List(items) = &eigenvectors_ast(&args[0..1])? else {
+    return Ok(unevaluated("Eigenvectors", &args));
   };
-  let n = items.len() as i128;
-  if k.abs() > n {
-    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
-    crate::emit_message(&format!(
-      "Eigenvectors::take: Cannot take eigenvectors {lo} through {hi} out of the total of {n} eigenvectors."
-    ));
-    return unevaluated();
-  }
-  Ok(Expr::List(eigen_take_slice(items, k).into()))
+  Ok(
+    match eigen_take_indices("Eigenvectors", "eigenvectors", spec, items.len())
+    {
+      Some(indices) => pick(items, &indices),
+      None => unevaluated("Eigenvectors", &args),
+    },
+  )
 }
 
-/// Eigensystem[matrix, k] — {values, vectors} for the k largest-magnitude
-/// eigenvalues, like Take applied to each. |k| greater than the matrix
-/// dimension emits Eigensystem::take and stays unevaluated.
+/// Eigensystem[matrix, spec] — {values, vectors}, each taken by the spec.
 pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("Eigensystem", args));
-  let k = match &args[1] {
-    Expr::Integer(k) => *k,
-    _ => return unevaluated(),
+  let (args, spec) = match eigen_count_args("Eigensystem", args) {
+    Ok(parts) => parts,
+    Err(held) => return Ok(held),
   };
   // The first k only: the exact path computes no more vectors than asked.
-  if k > 0
+  if let (1, k, 1) = spec
+    && k > 0
     && let Ok(Expr::List(vals)) = &eigenvalues_ast(&args[0..1])
     && k as usize <= vals.len()
     && let Ok(Expr::List(vecs)) =
@@ -5120,7 +5193,7 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::List(
       vec![
-        Expr::List(eigen_take_slice(vals, k).into()),
+        Expr::List(vals[..k as usize].to_vec().into()),
         Expr::List(vecs.clone()),
       ]
       .into(),
@@ -5128,39 +5201,34 @@ pub fn eigensystem_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let all = eigensystem_ast(&args[0..1])?;
   let (vals, vecs) = match &all {
-    Expr::List(parts)
-      if parts.len() == 2
-        && matches!(&parts[0], Expr::List(_))
-        && matches!(&parts[1], Expr::List(_)) =>
-    {
-      match (&parts[0], &parts[1]) {
-        (Expr::List(vl), Expr::List(vc)) => (vl, vc),
-        _ => unreachable!(),
-      }
-    }
-    _ => return unevaluated(),
+    Expr::List(parts) => match parts.as_slice() {
+      [Expr::List(vl), Expr::List(vc)] => (vl, vc),
+      _ => return Ok(unevaluated("Eigensystem", &args)),
+    },
+    _ => return Ok(unevaluated("Eigensystem", &args)),
   };
-  let n = vals.len() as i128;
-  if k.abs() > n {
-    let (lo, hi) = if k >= 0 { (1, k) } else { (k, -1) };
-    crate::emit_message(&format!(
-      "Eigensystem::take: Cannot take eigenvectors and eigenvalues {lo} through {hi} out of the total of {n} eigenvectors and eigenvalues."
-    ));
-    return unevaluated();
-  }
-  Ok(Expr::List(
-    vec![
-      Expr::List(eigen_take_slice(vals, k).into()),
-      Expr::List(eigen_take_slice(vecs, k).into()),
-    ]
-    .into(),
-  ))
+  Ok(
+    match eigen_take_indices(
+      "Eigensystem",
+      "eigenvectors and eigenvalues",
+      spec,
+      vals.len(),
+    ) {
+      Some(indices) => {
+        Expr::List(vec![pick(vals, &indices), pick(vecs, &indices)].into())
+      }
+      None => unevaluated("Eigensystem", &args),
+    },
+  )
 }
 
 // ─── Eigenvectors ───────────────────────────────────────────────────────
 
 /// Eigenvectors[matrix] - eigenvectors of a square matrix
 pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigenvectors_ast(&inner);
+  }
   eigenvectors_impl(args, None)
 }
 
@@ -5232,7 +5300,15 @@ fn eigenvectors_impl(
     {
       return Ok(result);
     }
-    return Ok(numeric_eigenvectors(&matrix, n));
+    let real_vectors = numeric_eigenvectors(&matrix, n);
+    // A real matrix with complex eigenvalues has complex eigenvectors,
+    // found the way a complex matrix's are.
+    if matches!(&real_vectors, Expr::List(v) if v.len() < n)
+      && let Some(result) = complex_machine_eigenvectors(args, &matrix, true)
+    {
+      return Ok(result);
+    }
+    return Ok(real_vectors);
   }
 
   // Try integer matrix path
@@ -5267,7 +5343,7 @@ fn eigenvectors_impl(
     return Ok(result);
   }
 
-  if let Some(result) = complex_machine_eigenvectors(args, &matrix) {
+  if let Some(result) = complex_machine_eigenvectors(args, &matrix, false) {
     return Ok(result);
   }
 
@@ -5283,16 +5359,19 @@ fn eigenvectors_impl(
 fn complex_machine_eigenvectors(
   args: &[Expr],
   matrix: &[Vec<Expr>],
+  real_entries_allowed: bool,
 ) -> Option<Expr> {
   type C = (f64, f64);
   let n = matrix.len();
-  if !matrix.iter().flatten().any(|c| {
-    crate::functions::math_ast::try_extract_complex_float(c)
-      .is_some_and(|(_, im)| im != 0.0)
-  }) || !matrix
-    .iter()
-    .flatten()
-    .any(crate::functions::math_ast::contains_inexact_real)
+  if !(real_entries_allowed
+    || matrix.iter().flatten().any(|c| {
+      crate::functions::math_ast::try_extract_complex_float(c)
+        .is_some_and(|(_, im)| im != 0.0)
+    }))
+    || !matrix
+      .iter()
+      .flatten()
+      .any(crate::functions::math_ast::contains_inexact_real)
   {
     return None;
   }
@@ -5423,7 +5502,12 @@ fn complex_machine_eigenvectors(
       rotated
         .iter()
         .map(|&(re, im)| {
-          crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+          // Rounding noise in a unit vector (a part ~1e-17) is zero.
+          let chop = |x: f64| if x.abs() < 1e-14 { 0.0 } else { x };
+          crate::functions::math_ast::build_complex_float_expr_keep_real(
+            chop(re),
+            chop(im),
+          )
         })
         .collect(),
     ));
@@ -7947,6 +8031,9 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Eigensystem[matrix] - returns {eigenvalues, eigenvectors}
 pub fn eigensystem_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(inner) = unwrap_single_matrix_list(args) {
+    return eigensystem_ast(&inner);
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Eigensystem expects exactly 1 argument".into(),

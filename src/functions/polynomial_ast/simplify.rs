@@ -4742,11 +4742,30 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // on the list as a whole — that way `Simplify[LeastSquares[...]]` collapses
   // each component to its canonical form just like `Simplify[component]`.
   if let Expr::List(items) = &args[0] {
-    let simplified_items: Vec<Expr> =
-      items.iter().map(simplify_expr_with_together).collect();
+    let simplified_items: Vec<Expr> = items
+      .iter()
+      .map(|item| {
+        match crate::functions::piecewise_combine::fold_piecewise(item) {
+          Ok(Some(folded)) => simplify_piecewise_values(&folded, true),
+          _ => simplify_expr_with_together(item),
+        }
+      })
+      .collect();
     let assumed =
       apply_active_assumptions(&Expr::List(simplified_items.into()));
     return Ok(assumed);
+  }
+  // Arithmetic over interval Piecewise parts folds into one Piecewise
+  // whose values are simplified and listed in canonical order.
+  if let Some(folded) =
+    crate::functions::piecewise_combine::fold_piecewise(&args[0])?
+  {
+    return Ok(simplify_piecewise_values(&folded, true));
+  }
+  // A Piecewise simplifies case by case.
+  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Piecewise")
+  {
+    return Ok(simplify_piecewise_values(&args[0], false));
   }
   let simplified = simplify_expr_with_together(&args[0]);
   let assumed = apply_active_assumptions(&simplified);
@@ -11935,4 +11954,41 @@ fn build_outer_result(
 
   // Evaluate to canonical form
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
+}
+
+/// `Piecewise[{{v1, c1}, …}, d]` with each value and the default simplified
+/// (in canonical order of the simplified values when `sort`).
+fn simplify_piecewise_values(pw: &Expr, sort: bool) -> Expr {
+  let Expr::FunctionCall { name, args } = pw else {
+    return pw.clone();
+  };
+  if name != "Piecewise" || args.is_empty() {
+    return pw.clone();
+  }
+  let Expr::List(cases) = &args[0] else {
+    return pw.clone();
+  };
+  let simplify = |e: &Expr| {
+    simplify_ast(std::slice::from_ref(e)).unwrap_or_else(|_| e.clone())
+  };
+  let mut new_cases: Vec<Expr> = Vec::with_capacity(cases.len());
+  for case in cases {
+    match case {
+      Expr::List(pair) if pair.len() == 2 => new_cases
+        .push(Expr::List(vec![simplify(&pair[0]), pair[1].clone()].into())),
+      other => new_cases.push(other.clone()),
+    }
+  }
+  if sort {
+    new_cases.sort_by(|a, b| match (a, b) {
+      (Expr::List(a), Expr::List(b)) => {
+        crate::functions::list_helpers_ast::sorting::canonical_cmp(&a[0], &b[0])
+      }
+      _ => std::cmp::Ordering::Equal,
+    });
+  }
+  let mut new_args = vec![Expr::List(new_cases.into())];
+  new_args.extend(args[1..].iter().map(simplify));
+  crate::evaluator::evaluate_expr_to_expr(&call("Piecewise", new_args))
+    .unwrap_or_else(|_| pw.clone())
 }

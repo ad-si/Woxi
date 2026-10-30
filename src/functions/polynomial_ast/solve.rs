@@ -2883,7 +2883,246 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(result);
   }
   let solved = solve_ast_exact_parts(args)?;
+  if matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let Some(roots) = solve_exponential_polynomial_reals(args)
+  {
+    return Ok(roots);
+  }
   Ok(numericize_inexact_components(args, solved))
+}
+
+/// One term `c x^k E^(a x)` of an exponential polynomial in `x`.
+struct ExpTerm {
+  c: f64,
+  k: i32,
+  a: f64,
+}
+
+/// The terms of `f` as an exponential polynomial `Σ c x^k E^(a x)` in
+/// `var` (`3^x` is `E^(Log[3] x)`), or None when `f` has another shape or
+/// no exponential at all.
+fn exponential_polynomial_terms(f: &Expr, var: &str) -> Option<Vec<ExpTerm>> {
+  let to_f64 = crate::functions::math_ast::try_eval_to_f64;
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let mut terms = Vec::new();
+  for term in collect_additive_terms(&expand_and_combine(f)) {
+    let (sign, body) = match &term {
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => (-1.0, operand.as_ref().clone()),
+      _ => (1.0, term.clone()),
+    };
+    let mut t = ExpTerm {
+      c: sign,
+      k: 0,
+      a: 0.0,
+    };
+    for factor in extract_times_factors(&body) {
+      if is_constant_wrt(&factor, var) {
+        t.c *= to_f64(&factor)?;
+        continue;
+      }
+      if matches!(&factor, Expr::Identifier(n) if n == var) {
+        t.k += 1;
+        continue;
+      }
+      let (b, e) = match &factor {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          (args[0].clone(), args[1].clone())
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => (left.as_ref().clone(), right.as_ref().clone()),
+        _ => return None,
+      };
+      if matches!(&b, Expr::Identifier(n) if n == var) {
+        match e {
+          Expr::Integer(n) if (1..=64).contains(&n) => t.k += n as i32,
+          _ => return None,
+        }
+        continue;
+      }
+      let base = to_f64(&b).filter(|v| *v > 0.0 && is_constant_wrt(&b, var))?;
+      // The exponent has to be affine in `var`.
+      let slope = eval(call("D", vec![e.clone(), id_expr(var)]))?;
+      let slope = to_f64(&slope)?;
+      let offset = to_f64(&eval(substitute_expr(
+        &e,
+        &id_expr(var),
+        &Expr::Integer(0),
+      ))?)?;
+      let rebuilt = eval(minus2(
+        e.clone(),
+        plus2(times2(Expr::Real(slope), id_expr(var)), Expr::Real(offset)),
+      ))?;
+      if !to_f64(&rebuilt).is_some_and(|v| v.abs() < 1e-12) {
+        return None;
+      }
+      t.c *= base.powf(offset);
+      t.a += slope * base.ln();
+    }
+    terms.push(t);
+  }
+  terms.iter().any(|t| t.a != 0.0).then_some(terms)
+}
+
+fn exponential_polynomial_value(terms: &[ExpTerm], x: f64) -> f64 {
+  terms
+    .iter()
+    .map(|t| t.c * x.powi(t.k) * (t.a * x).exp())
+    .sum()
+}
+
+/// The real roots of an exponential polynomial: past a bound `L` one term
+/// dominates the rest on each side, so every root lies in [-L, L], where a
+/// fine sampling finds the sign changes and bisection the roots.
+fn exponential_polynomial_real_roots(terms: &[ExpTerm]) -> Option<Vec<f64>> {
+  // The term that dominates as x -> +Infinity (largest rate, then largest
+  // power) or -Infinity (smallest rate, then largest power).
+  let dominant = |right: bool| {
+    terms
+      .iter()
+      .enumerate()
+      .filter(|(_, t)| t.c != 0.0)
+      .max_by(|(_, p), (_, q)| {
+        let (pa, qa) = if right { (p.a, q.a) } else { (-p.a, -q.a) };
+        pa.total_cmp(&qa).then(p.k.cmp(&q.k))
+      })
+      .map(|(i, _)| i)
+  };
+  let dominates = |i: usize, x: f64| {
+    let term = |t: &ExpTerm| (t.c * x.powi(t.k) * (t.a * x).exp()).abs();
+    let others: f64 = terms
+      .iter()
+      .enumerate()
+      .filter(|(j, _)| *j != i)
+      .map(|(_, t)| term(t))
+      .sum();
+    term(&terms[i]) > 2.0 * others
+  };
+  let (right, left) = (dominant(true)?, dominant(false)?);
+  let mut bound = 1.0f64;
+  while !(dominates(right, bound) && dominates(left, -bound)) {
+    bound *= 2.0;
+    if bound > 4096.0 {
+      return None;
+    }
+  }
+  let f = |x: f64| exponential_polynomial_value(terms, x);
+  let n = 20_000;
+  let step = 2.0 * bound / n as f64;
+  let mut roots: Vec<f64> = Vec::new();
+  let mut prev = (-bound, f(-bound));
+  for i in 1..=n {
+    let x = -bound + step * i as f64;
+    let y = f(x);
+    if y == 0.0 {
+      roots.push(x);
+    } else if prev.1 != 0.0 && (prev.1 < 0.0) != (y < 0.0) {
+      let (mut lo, mut hi) = (prev.0, x);
+      let lo_negative = prev.1 < 0.0;
+      for _ in 0..200 {
+        let mid = f64::midpoint(lo, hi);
+        if mid == lo || mid == hi {
+          break;
+        }
+        if (f(mid) < 0.0) == lo_negative {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+      roots.push(f64::midpoint(lo, hi));
+    }
+    prev = (x, y);
+  }
+  Some(roots)
+}
+
+/// `Solve[lhs == rhs, x, Reals]` for an exponential polynomial: its real
+/// roots, exact where a small rational is one, otherwise as
+/// `Root[{f, x0}]` with `f` the pure function `lhs - rhs` — as wolframscript
+/// gives `Solve[2^x + 3^x == 10, x, Reals]`.
+fn solve_exponential_polynomial_reals(args: &[Expr]) -> Option<Expr> {
+  let [equation, variable, domain] = args else {
+    return None;
+  };
+  if !matches!(domain, Expr::Identifier(d) if d == "Reals") {
+    return None;
+  }
+  let var = match variable {
+    Expr::Identifier(v) => v.clone(),
+    Expr::List(vs) => match vs.as_slice() {
+      [Expr::Identifier(v)] => v.clone(),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = equation
+  else {
+    return None;
+  };
+  if operators.as_slice() != [ComparisonOp::Equal] || operands.len() != 2 {
+    return None;
+  }
+  let f = crate::evaluator::evaluate_expr_to_expr(&minus2(
+    operands[0].clone(),
+    operands[1].clone(),
+  ))
+  .ok()?;
+  let terms = exponential_polynomial_terms(&f, &var)?;
+  let roots = exponential_polynomial_real_roots(&terms)?;
+  let x = id_expr(&var);
+  let body = substitute_expr(&f, &x, &Expr::Slot(1));
+  let function = Expr::Function {
+    body: Box::new(body),
+  };
+  let mut solutions: Vec<Expr> = Vec::with_capacity(roots.len());
+  for r in roots {
+    // A small rational that is a root exactly is given as itself.
+    let exact = (1..=6).find_map(|q: i128| {
+      let p = (r * q as f64).round();
+      if (p / q as f64 - r).abs() > 1e-9 * r.abs().max(1.0) {
+        return None;
+      }
+      let candidate = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Rational",
+        vec![Expr::Integer(p as i128), Expr::Integer(q)],
+      ))
+      .ok()?;
+      let value = crate::evaluator::evaluate_expr_to_expr(&substitute_expr(
+        &f, &x, &candidate,
+      ))
+      .ok()?;
+      matches!(value, Expr::Integer(0)).then_some(candidate)
+    });
+    let value = exact.unwrap_or_else(|| {
+      // The bisection's root, polished at a higher working precision.
+      let x0 = transcendental_root_value(&function, &Expr::Real(r))
+        .unwrap_or(Expr::Real(r));
+      call("Root", vec![Expr::List(vec![function.clone(), x0].into())])
+    });
+    solutions.push(Expr::List(
+      vec![Expr::Rule {
+        pattern: Box::new(x.clone()),
+        replacement: Box::new(value),
+      }]
+      .into(),
+    ));
+  }
+  crate::evaluator::evaluate_function_call_ast(
+    "Sort",
+    &[Expr::List(solutions.into())],
+  )
+  .ok()
 }
 
 /// A variable tied, through the equations it shares with others, to an
@@ -5125,7 +5364,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If another domain is specified, solve without domain first, then filter.
   // Non-affine integer equations also use this established algebraic path.
   if let Some(ref dom) = domain {
-    let base_solutions = solve_ast(&args[..2])?;
+    // Over the reals the solutions found are all there are: wolframscript
+    // reports no use of inverse functions.
+    let base_solutions = {
+      let _quiet = SuppressIfun::new(dom == "Reals");
+      let outer = IFUN_SWALLOWED.with(std::cell::Cell::get);
+      let solved = solve_ast(&args[..2]);
+      IFUN_SWALLOWED.with(|w| w.set(outer));
+      solved?
+    };
     if matches!(&base_solutions, Expr::FunctionCall { name, .. } if name == "Solve")
     {
       return Ok(unevaluated("Solve", args));
@@ -5136,7 +5383,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let filtered: Vec<Expr> = solutions
           .iter()
           .map(real_member_of_imaginary_family)
-          .filter(|sol| !contains_complex(sol) && !has_nonreal_root_value(sol))
+          .filter(|sol| {
+            !contains_complex(sol)
+              && !has_nonreal_root_value(sol)
+              && !has_numerically_nonreal_value(sol)
+          })
           .collect();
         return Ok(Expr::List(filtered.into()));
       }
@@ -5752,8 +6003,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Find maximum degree
   let Some(degree) = max_power_int(&expanded, var) else {
-    // Non-polynomial: try factoring out common fractional-power sub-expressions
+    // Non-polynomial: try factoring out common fractional-power
+    // sub-expressions, then a polynomial in an exponential (`b^x` has no
+    // degree in x).
     if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
+    }
+    if let Some(result) = try_solve_exponential_polynomial(&expanded, var) {
       return result;
     }
     return Ok(unevaluated("Solve", args));
@@ -9456,9 +9712,7 @@ fn try_solve_lambert(
       solutions.push(Expr::List(vec![rule_expr(x.clone(), sol)].into()));
     }
   }
-  crate::emit_message(
-    "Solve::ifun: Inverse functions are being used by Solve, so some solutions may not be found; use Reduce for complete solution information.",
-  );
+  report_inverse_function_use();
   Ok(Some(Expr::List(solutions.into())))
 }
 
@@ -11570,7 +11824,111 @@ fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
   Some(plus(terms))
 }
 
+/// The root `Root[{f, x0}]` stands for: `f`'s zero found by `FindRoot` from
+/// `x0`, as a machine number, or None when it cannot be found.
+pub fn transcendental_root_value(f: &Expr, x0: &Expr) -> Option<Expr> {
+  let t = Expr::Identifier("Internal`RootVariable".to_string());
+  let applied = crate::evaluator::apply_function_to_arg(f, &t).ok()?;
+  let found = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Quiet",
+    vec![call(
+      "FindRoot",
+      vec![
+        call("Equal", vec![applied.clone(), Expr::Integer(0)]),
+        Expr::List(vec![t.clone(), call("N", vec![x0.clone()])].into()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("WorkingPrecision".into())),
+          replacement: Box::new(Expr::Integer(30)),
+        },
+      ],
+    )],
+  ))
+  .ok()?;
+  let Expr::List(rules) = &found else {
+    return None;
+  };
+  let Some(Expr::Rule { replacement, .. }) = rules.first() else {
+    return None;
+  };
+  crate::functions::math_ast::try_eval_to_f64(replacement)?;
+  // A few Newton steps at 40 digits make the machine root correctly
+  // rounded.
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let derivative = eval(call("D", vec![applied.clone(), t.clone()]))?;
+  let step = call(
+    "Plus",
+    vec![
+      t.clone(),
+      call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          applied.clone(),
+          call("Power", vec![derivative, Expr::Integer(-1)]),
+        ],
+      ),
+    ],
+  );
+  let mut x = eval(call(
+    "SetPrecision",
+    vec![replacement.as_ref().clone(), Expr::Integer(40)],
+  ))?;
+  for _ in 0..4 {
+    x = eval(call(
+      "N",
+      vec![substitute_expr(&step, &t, &x), Expr::Integer(40)],
+    ))?;
+  }
+  crate::functions::math_ast::try_eval_to_f64(&x).map(Expr::Real)
+}
+
+/// `Root[{f, x0}]` — the root of the transcendental function `f` that the
+/// approximation `x0` identifies; it stays as written, and `N` gives the
+/// root. An `x0` too far from a root (the refined root moves by more than
+/// 10^-6 relative) is reported (`::invrt`), anything but such a pair is
+/// not a root specification (`::trsp`), and a pattern (`Root[_]`) is left
+/// alone.
+fn transcendental_root_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  let held = || Ok(call("Root", vec![arg.clone()]));
+  let Expr::List(spec) = arg else {
+    if !crate::evaluator::pattern_matching::contains_pattern(arg) {
+      crate::emit_message(&format!(
+        "Root::trsp: Nonpolynomial root specification {} is not a list with \
+         two elements.",
+        crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output)
+      ));
+    }
+    return held();
+  };
+  let [f, x0] = spec.as_slice() else {
+    return held();
+  };
+  let Some(guess) = crate::functions::math_ast::try_eval_to_f64(x0) else {
+    return held();
+  };
+  let close = transcendental_root_value(f, x0)
+    .and_then(|r| crate::functions::math_ast::try_eval_to_f64(&r))
+    .is_some_and(|r| (r - guess).abs() <= 1e-6 * r.abs().max(1.0));
+  if !close {
+    let shown = crate::evaluator::evaluate_expr_to_expr(&call(
+      "ToString",
+      vec![call("SetPrecision", vec![x0.clone(), Expr::Integer(16)])],
+    ))?;
+    let Expr::String(ref shown) = shown else {
+      return held();
+    };
+    crate::emit_message(&format!(
+      "Root::invrt: {shown} is not equal to a root of {}.",
+      crate::syntax::format_expr(f, crate::syntax::ExprForm::Output)
+    ));
+  }
+  held()
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let [arg] = args {
+    return transcendental_root_ast(arg);
+  }
   // A `Root[…]` is re-evaluated whenever an expression holding it is, and
   // canonicalizing it factors its polynomial; the outcome only depends on
   // the arguments. A call that reported a message is not remembered, so
@@ -23195,6 +23553,35 @@ fn is_rational_expr(expr: &Expr) -> bool {
 }
 
 /// Check if all values in a solution are real (not complex)
+/// Whether a solution assigns a numeric value that is not real, such as
+/// `2 ProductLog[-1/2]` (the principal Lambert W below -1/E is complex).
+fn has_numerically_nonreal_value(sol: &Expr) -> bool {
+  let Expr::List(rules) = sol else {
+    return false;
+  };
+  rules.iter().any(|rule| {
+    let Expr::Rule { replacement, .. } = rule else {
+      return false;
+    };
+    let numeric = matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "NumericQ",
+        std::slice::from_ref(replacement.as_ref()),
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    );
+    if !numeric {
+      return false;
+    }
+    let im = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Im",
+      vec![call("N", vec![replacement.as_ref().clone()])],
+    ));
+    matches!(im, Ok(ref v) if crate::functions::math_ast::try_eval_to_f64(v)
+      .is_some_and(|i| i.abs() > 1e-10))
+  })
+}
+
 fn solution_is_real(sol: &Expr) -> bool {
   if let Expr::List(rules) = sol {
     rules.iter().all(|rule| {
