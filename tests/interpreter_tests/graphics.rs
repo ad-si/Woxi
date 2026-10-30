@@ -21353,6 +21353,18 @@ mod matrix_form {
   }
 
   #[test]
+  fn svg_export_of_argumentless_head_does_not_panic() {
+    clear_state();
+    for code in [
+      "ExportString[f[], \"SVG\"]",
+      "ExportString[Style[], \"SVG\"]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().result;
+      assert!(svg.contains("<svg"), "{code}: {svg}");
+    }
+  }
+
+  #[test]
   fn matrix_in_text_inside_grid_row_is_drawn() {
     clear_state();
     let svg = interpret_with_stdout(
