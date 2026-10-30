@@ -3174,6 +3174,10 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     // The Unicode prime (U+2032) is not a valid InputForm operator, so
     // map it to the ASCII apostrophe to keep the cell evaluable.
     "Prime" => "'",
+    // `\[LeftAssociation]`/`\[RightAssociation]` are the typeset forms of
+    // the association delimiters `<|` and `|>`.
+    "LeftAssociation" => "<|",
+    "RightAssociation" => "|>",
     "NotEqual" => "!=",
     "LessEqual" => "<=",
     "GreaterEqual" => ">=",
@@ -3996,17 +4000,58 @@ fn resolve_saved_variable_references(
 /// list defines with that variable's value — bare when the whole value is
 /// the reference (`n$$ = nDef$$`), parenthesized when it sits inside a
 /// larger expression (`t$$ = 0.75/f$$`) so operator precedence survives.
-/// Tokens naming no saved variable are left untouched.
+/// Tokens naming no saved variable are left untouched, and a reference
+/// inside a holding head (`Dynamic[… on$$ = False …]`) is not a value but
+/// the variable itself, so it becomes the plain name (`on`).
 fn substitute_saved_references(
   value: &str,
   lookup: &dyn Fn(&str) -> Option<String>,
 ) -> String {
+  const HOLDING: [&str; 7] = [
+    "Dynamic",
+    "Hold",
+    "HoldForm",
+    "HoldComplete",
+    "Unevaluated",
+    "Function",
+    "RuleDelayed",
+  ];
   let chars: Vec<char> = value.chars().collect();
   let is_word = |c: char| c.is_alphanumeric();
   let mut out = String::new();
+  // The heads of the brackets open at this point, and the word just read.
+  let mut heads: Vec<String> = Vec::new();
+  let mut last_word = String::new();
   let mut i = 0;
   while i < chars.len() {
+    if chars[i] == '"' {
+      // Copy a string literal through untouched.
+      out.push('"');
+      i += 1;
+      while i < chars.len() && chars[i] != '"' {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+          out.push(chars[i]);
+          i += 1;
+        }
+        out.push(chars[i]);
+        i += 1;
+      }
+      if i < chars.len() {
+        out.push('"');
+        i += 1;
+      }
+      last_word.clear();
+      continue;
+    }
     if !is_word(chars[i]) || (i > 0 && is_word(chars[i - 1])) {
+      match chars[i] {
+        '[' => heads.push(std::mem::take(&mut last_word)),
+        ']' => {
+          heads.pop();
+        }
+        c if !c.is_whitespace() => last_word.clear(),
+        _ => {}
+      }
       out.push(chars[i]);
       i += 1;
       continue;
@@ -4016,9 +4061,15 @@ fn substitute_saved_references(
       i += 1;
     }
     let word: String = chars[start..i].iter().collect();
+    last_word.clone_from(&word);
     let has_suffix =
       chars.get(i) == Some(&'$') && chars.get(i + 1) == Some(&'$');
+    let held = heads.iter().any(|h| HOLDING.contains(&h.as_str()));
     match has_suffix.then(|| lookup(&word)).flatten() {
+      Some(_) if held => {
+        i += 2;
+        out.push_str(&word);
+      }
       Some(resolved) => {
         i += 2;
         let whole = start == 0 && i == chars.len();
@@ -8435,6 +8486,31 @@ yf4GL4DwC5VA4w
   }
 
   #[test]
+  fn test_extract_saved_manipulate_variables_keeps_held_references() {
+    // A reference to another variable is replaced by its saved value only
+    // where it is evaluated; inside `Dynamic[…]` it is the variable itself.
+    // Regression: `on$$ = False` inside a saved Dynamic became
+    // `False = False` (Set::wrsym) in HowDoorbellsWork.
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 0.7, \
+      $CellContext`t$$ = 0.75/$CellContext`x$$, \
+      $CellContext`obj$$ = {Dynamic[If[$CellContext`x$$ < 0.69, 1, \
+      $CellContext`on$$ = False; \"x$$\"]], $CellContext`x$$}, \
+      $CellContext`on$$ = False}, DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![
+        ("x".to_string(), "0.7".to_string()),
+        ("t".to_string(), "0.75/0.7".to_string()),
+        (
+          "obj".to_string(),
+          "{Dynamic[If[x < 0.69, 1, on = False; \"x$$\"]], 0.7}".to_string()
+        ),
+        ("on".to_string(), "False".to_string()),
+      ]
+    );
+  }
+
+  #[test]
   fn test_extract_saved_manipulate_variables_decodes_named_characters_in_strings()
    {
     // A saved string choice written with a named character
@@ -9371,6 +9447,19 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn typeset_association_delimiters_convert_to_ascii() {
+    // The FrontEnd encodes `<|a -> 1|>` as `\[LeftAssociation]` …
+    // `\[RightAssociation]` (private-use U+F113/U+F114) inside RowBox.
+    let boxes = r#"RowBox[{"assoc", "=", RowBox[{"\[LeftAssociation]", RowBox[{RowBox[{"\"k\"", "\[Rule]", "1"}], ",", RowBox[{"\"m\"", "\[Rule]", RowBox[{"\[LeftAssociation]", RowBox[{"\"n\"", "\[Rule]", "2"}], "\[RightAssociation]"}]}]}], "\[RightAssociation]"}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(expr_src.contains("<|"), "got: {expr_src:?}");
+    let result = crate::interpret(&format!("{expr_src}; assoc[\"m\"][\"n\"]"))
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(result, "2");
   }
 
   #[test]

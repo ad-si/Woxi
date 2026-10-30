@@ -12,6 +12,26 @@ mod errors {
   }
 }
 
+mod superscript_digit_in_symbol_names {
+  use super::*;
+
+  #[test]
+  fn superscript_two_continues_a_symbol() {
+    // `ϵ²` is one symbol, not `ϵ` followed by a stray character: a
+    // Demonstration defines `ϵ²[a_, b_, c_] := ...` this way.
+    assert_eq!(
+      interpret("ϵ²[a_, b_, c_] := (3 b^2 - 8 a c)/(48 a^2); ϵ²[1, 2, 3]")
+        .unwrap(),
+      "-1/4"
+    );
+  }
+
+  #[test]
+  fn other_latin_superscript_digits() {
+    assert_eq!(interpret("x³ = 5; x¹ = 2; x³ + x¹").unwrap(), "7");
+  }
+}
+
 mod dollar_in_symbol_names {
   use super::*;
 
@@ -14150,6 +14170,89 @@ mod right_nested_operator_display {
       .unwrap(),
       "{Hold[StringExpression[a, StringExpression[b, c]]], \
        StringExpression[a, b, c], {Flat, OneIdentity, Protected}}"
+    );
+  }
+}
+
+// A list right after `/.` or `//.` is only the whole rule operand when no
+// operator follows it: `x /. {…}/100` divides the list first.
+mod replace_all_list_operand_with_operator {
+  use super::*;
+
+  #[test]
+  fn list_operand_followed_by_operator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{x /. {x -> 2} // f, x /. {x -> y} /. {y -> 3}, x /. {x -> 2}.{1}, \
+         {x /. {x -> 2}, 5}, x /. {x -> 2} -> 7, Quiet[x /. {x -> 2} + 1]}"
+      )
+      .unwrap(),
+      "{f[2], 3, 2, {2, 5}, x, x /. {1 + (x -> 2)}}"
+    );
+    assert_eq!(
+      interpret("Quiet[f[a] /. {a -> 1}/100]").unwrap(),
+      "f[a] /. {(a -> 1)/100}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[{-(a -> 1)/2, 3 (a -> 1)/2, (a == b)/2, (a -> 1) x/2}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{-1/2*(a -> 1), (3*(a -> 1))/2, (a == b)/2, (x*(a -> 1))/2}"
+    );
+    assert_eq!(
+      interpret("Quiet[x //. {x -> 2}*3]").unwrap(),
+      "x //. {3*(x -> 2)}"
+    );
+  }
+
+  // A factor or divisor that binds looser than `+` is parenthesized, and
+  // comparisons and rules sort after symbols as the calls they are.
+  #[test]
+  fn loose_factors_are_parenthesized() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[{2 (a -> 1), 2 (a :> 1), 2 (a == b), 2 (a && b), \
+         2 (a | b), -(a -> b), x/(a -> b), 2 (a <-> b), 2 (a <= b < c), \
+         2 x (a == b) y, x (a -> b), 2 (a_), 2 Not[a]}, InputForm]"
+      )
+      .unwrap(),
+      "{2*(a -> 1), 2*(a :> 1), 2*(a == b), 2*(a && b), 2*(a | b), \
+       -(a -> b), x/(a -> b), 2*(a <-> b), \
+       2*Inequality[a, LessEqual, b, Less, c], 2*x*y*(a == b), \
+       x*(a -> b), 2*(a_), 2*( !a)}"
+    );
+    assert_eq!(
+      interpret("Sort[{x, a == b, f[a]}]").unwrap(),
+      "{x, a == b, f[a]}"
+    );
+  }
+}
+
+// Canonical order of powers of sums against symbols, sums and calls.
+mod power_of_sum_order {
+  use super::*;
+
+  #[test]
+  fn plus_and_times_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{x^2 - 3 (x - 1/3)^2, x^2 + (x + 1)^2, 8/3 (x - 1) + 16 (1 - x)^2, \
+         (x - 1) + (1 - x)^2, x + 1/(1 + Pi), Sort[{-1 + x, (1 - x)^2}]}"
+      )
+      .unwrap(),
+      "{-3*(-1/3 + x)^2 + x^2, x^2 + (1 + x)^2, 16*(1 - x)^2 + (8*(-1 + x))/3, \
+       -1 + (1 - x)^2 + x, (1 + Pi)^(-1) + x, {(1 - x)^2, -1 + x}}"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[{1/(Gamma[n] Zeta[n]), 1/(Sin[n] h[n]), 1/(Gamma[n] f[n])}]]")
+        .unwrap(),
+      "List[Times[Power[Gamma[n], -1], Power[Zeta[n], -1]], Times[Csc[n], Power[h[n], -1]], \
+       Times[Power[f[n], -1], Power[Gamma[n], -1]]]"
     );
   }
 }

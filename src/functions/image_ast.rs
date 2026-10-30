@@ -55,7 +55,25 @@ pub fn expr_to_dynamic_image(
       let rgba = image::RgbaImage::from_raw(width, height, buf).unwrap();
       image::DynamicImage::ImageRgba8(rgba)
     }
-    _ => unreachable!(),
+    2 => {
+      let buf: Vec<u8> = data
+        .iter()
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let la = image::GrayAlphaImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageLumaA8(la)
+    }
+    // An image with more channels (a multispectral one) shows its first
+    // three as red, green and blue.
+    n => {
+      let buf: Vec<u8> = data
+        .chunks(n as usize)
+        .flat_map(|px| px[..3].iter())
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let rgb = image::RgbImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageRgb8(rgb)
+    }
   }
 }
 
@@ -7743,48 +7761,93 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       image_type: ImageType::Byte,
     });
   }
-  // A grayscale image is colored pixel by pixel: the value of each pixel,
-  // already in [0, 1], is fed to the explicit `ColorFunction`.
+  // An image is colored through a lookup table, the way wolframscript
+  // does it: a colour image is taken to grayscale, values are clipped to
+  // [0, 1], and a pixel x takes the table entry i = min(floor(1024 x),
+  // 1023) (for an integer image type its raw integer value). The table
+  // runs up to imax, the largest entry used, and is filled in full, after
+  // probing the function at 0, 1/2 and 1 twice; entry i is the
+  // `ColorFunction` at i/imax (i/1023 with `ColorFunctionScaling ->
+  // False`). The result is an RGB byte image.
   if let Expr::Image {
-    width,
-    height,
-    channels: 1,
-    data,
+    channels,
     image_type,
     ..
   } = &args[0]
     && let Some(cf) = option_value(&args[1..], "ColorFunction")
       .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"))
   {
-    let mut cache: Vec<(u64, (f64, f64, f64))> = Vec::new();
-    let mut out: Vec<f64> = Vec::with_capacity(data.len() * 3);
-    for v in data.iter() {
-      let key = v.to_bits();
-      let rgb = if let Some((_, rgb)) = cache.iter().find(|(k, _)| *k == key) {
-        *rgb
+    let gray = if *channels == 1 {
+      args[0].clone()
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "ColorConvert",
+        vec![args[0].clone(), Expr::String("Grayscale".into())],
+      ))?
+    };
+    let Expr::Image {
+      width,
+      height,
+      channels: 1,
+      data,
+      ..
+    } = &gray
+    else {
+      return Ok(unevaluated("Colorize", args));
+    };
+    let scaled = !matches!(
+      option_value(&args[1..], "ColorFunctionScaling"),
+      Some(Expr::Identifier(n)) if n == "False"
+    );
+    let integer_range = match image_type {
+      ImageType::Bit => Some(1.0),
+      ImageType::Byte => Some(255.0),
+      ImageType::Bit16 => Some(65535.0),
+      _ => None,
+    };
+    let index = |v: f64| match integer_range {
+      Some(range) => (v.clamp(0.0, 1.0) * range).round() as usize,
+      None => ((v.clamp(0.0, 1.0) * 1024.0).floor() as usize).min(1023),
+    };
+    let imax = data.iter().map(|&v| index(v)).max().unwrap_or(0);
+    let to_byte = |c: f64| {
+      if c <= 0.0 {
+        0.0
       } else {
-        let (r, g, b) = colorize_label(0, v.clamp(0.0, 1.0), Some(cf));
-        let q = |c: f64| {
-          if *image_type == ImageType::Byte {
-            ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
-          } else {
-            c
-          }
+        ((c * 256.0).ceil() - 1.0).clamp(0.0, 255.0) / 255.0
+      }
+    };
+    for _ in 0..2 {
+      for t in [0.0, 0.5, 1.0] {
+        colorize_label(0, t, Some(cf));
+      }
+    }
+    let table: Vec<(f64, f64, f64)> = (0..=imax)
+      .map(|i| {
+        let t = if !scaled {
+          i as f64 * (1.0 / 1023.0)
+        } else if imax == 0 {
+          0.0
+        } else {
+          i as f64 * (1.0 / imax as f64)
         };
-        let rgb = (q(r), q(g), q(b));
-        cache.push((key, rgb));
-        rgb
-      };
-      out.extend([rgb.0, rgb.1, rgb.2]);
+        let (r, g, b) = colorize_label(0, t, Some(cf));
+        (to_byte(r), to_byte(g), to_byte(b))
+      })
+      .collect();
+    let mut out: Vec<f64> = Vec::with_capacity(data.len() * 3);
+    for &v in data.iter() {
+      let (r, g, b) = table[index(v)];
+      out.extend([r, g, b]);
     }
     return Ok(Expr::Image {
-      color_space: None,
+      color_space: Some("RGB"),
       display_size: None,
       width: *width,
       height: *height,
       channels: 3,
       data: Arc::new(out),
-      image_type: *image_type,
+      image_type: ImageType::Byte,
     });
   }
   let is_image = matches!(&args[0], Expr::Image { .. });
@@ -8801,6 +8864,9 @@ pub fn delete_small_components_ast(
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
+  if matches!(&args[0], Expr::Image { .. }) {
+    return delete_small_image_components(args);
+  }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
   };
@@ -8865,6 +8931,17 @@ pub fn component_measurements_ast(
   let unevaluated = || Ok(unevaluated("ComponentMeasurements", args));
   if args.len() != 2 {
     return unevaluated();
+  }
+  // An image is measured through its morphological components.
+  if matches!(&args[0], Expr::Image { .. }) {
+    let labels = crate::evaluator::evaluate_expr_to_expr(&call(
+      "MorphologicalComponents",
+      vec![args[0].clone()],
+    ))?;
+    if !matches!(labels, Expr::List(_)) {
+      return unevaluated();
+    }
+    return component_measurements_ast(&[labels, args[1].clone()]);
   }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
@@ -8933,6 +9010,10 @@ pub fn component_measurements_ast(
       "LabelCount" => Some(Expr::Integer(label_count as i128)),
       "Count" => Some(Expr::Integer(count as i128)),
       "Area" => Some(Expr::Real(count as f64)),
+      // The radius of the disk with the same area.
+      "EquivalentDiskRadius" => {
+        Some(Expr::Real((count as f64 / std::f64::consts::PI).sqrt()))
+      }
       "Label" => Some(Expr::Integer(label)),
       _ => None,
     }
@@ -11618,6 +11699,33 @@ fn pixel_size_option(opts: &[Expr]) -> Option<Expr> {
 /// Converts a Graphics, Grid, or other visual expression to a raster image.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Rasterize[expr, elem, opts]: the element of the rasterization to give.
+  if let Some(Expr::String(elem)) = args.get(1) {
+    let mut rest = vec![args[0].clone()];
+    rest.extend(args[2..].iter().cloned());
+    let image = || rasterize_ast(&rest);
+    let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+    return match elem.as_str() {
+      "Image" => image(),
+      // The colour channels as bytes.
+      "Data" => eval(call(
+        "ImageData",
+        vec![
+          call("RemoveAlphaChannel", vec![image()?]),
+          Expr::String("Byte".into()),
+        ],
+      )),
+      "RasterSize" => eval(call("ImageDimensions", vec![image()?])),
+      _ => {
+        crate::emit_message(&format!(
+          "Rasterize::elmntavl: \"{elem}\" is not an available element. \
+           Possible elements include \"BoundingBox\", \"Data\", \
+           \"Graphics\", \"RasterSize\", \"Regions\", and \"Image\"."
+        ));
+        Ok(Expr::Identifier("$Failed".into()))
+      }
+    };
+  }
   // If input is already an image, return it directly
   if let Expr::Image { .. } = &args[0] {
     return Ok(args[0].clone());
@@ -14367,13 +14475,30 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let alpha = |i: usize| -> Option<f64> {
     match args.get(1) {
       None => Some(1.0),
+      // An alpha image of another size sits centred on the image, zero
+      // outside it.
       Some(Expr::Image {
         width: aw,
         height: ah,
         channels: ac,
         data: ad,
         ..
-      }) if aw == width && ah == height => Some(ad[i * (*ac as usize)]),
+      }) => {
+        let (w, h) = (*width as i64, *height as i64);
+        let (aw, ah) = (*aw as i64, *ah as i64);
+        // Offsets from the bottom-left corner, rounded half to even.
+        let half_even = |d: i64| (d as f64 / 2.0).round_ties_even() as i64;
+        let bottom = half_even(h - ah);
+        let top = h - ah - bottom;
+        let left = half_even(w - aw);
+        let (r, c) = ((i as i64) / w, (i as i64) % w);
+        let (ar, acol) = (r - top, c - left);
+        Some(if (0..ah).contains(&ar) && (0..aw).contains(&acol) {
+          ad[((ar * aw + acol) as usize) * (*ac as usize)]
+        } else {
+          0.0
+        })
+      }
       Some(v) => {
         // A real alpha is stored in single precision.
         crate::functions::math_ast::try_eval_to_f64(v).map(|a| a as f32 as f64)
@@ -14397,4 +14522,98 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     color_space: space,
     display_size: *display_size,
   })
+}
+
+/// DeleteSmallComponents[image] / DeleteSmallComponents[image, n]: the
+/// image with its small morphological components set to background — those
+/// of at most `n` pixels, or by default those smaller than the mean
+/// component size.
+fn delete_small_image_components(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let held = || Ok(unevaluated("DeleteSmallComponents", args));
+  if args.is_empty() || args.len() > 2 {
+    return held();
+  }
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    Some(_) => return held(),
+  };
+  let labels_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+    "MorphologicalComponents",
+    vec![args[0].clone()],
+  ))?;
+  let Expr::List(rows) = &labels_expr else {
+    return held();
+  };
+  let labels: Vec<Vec<i128>> = match rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(cs) => cs
+        .iter()
+        .map(|c| match c {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>(),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()
+  {
+    Some(l) => l,
+    None => return held(),
+  };
+  let mut counts: std::collections::BTreeMap<i128, usize> =
+    std::collections::BTreeMap::new();
+  for &l in labels.iter().flatten() {
+    if l != 0 {
+      *counts.entry(l).or_default() += 1;
+    }
+  }
+  if counts.is_empty() {
+    return Ok(args[0].clone());
+  }
+  let mean = counts.values().sum::<usize>() as f64 / counts.len() as f64;
+  let removed = |l: i128| {
+    l != 0
+      && match limit {
+        Some(n) => counts[&l] <= n,
+        None => (counts[&l] as f64) < mean,
+      }
+  };
+  match &args[0] {
+    Expr::Image {
+      color_space,
+      display_size,
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    } => {
+      let (w, ch) = (*width as usize, *channels as usize);
+      let mut out = data.as_ref().clone();
+      for (r, row) in labels.iter().enumerate() {
+        for (c, &l) in row.iter().enumerate() {
+          if removed(l) {
+            let base = (r * w + c) * ch;
+            for v in &mut out[base..base + ch] {
+              *v = 0.0;
+            }
+          }
+        }
+      }
+      Ok(Expr::Image {
+        color_space: *color_space,
+        display_size: *display_size,
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: Arc::new(out),
+        image_type: *image_type,
+      })
+    }
+    _ => held(),
+  }
 }

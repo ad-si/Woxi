@@ -659,6 +659,20 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => pdf_gamma(dargs, x),
     "BetaDistribution" => pdf_beta(dargs, x),
     "KumaraswamyDistribution" => pdf_kumaraswamy(dargs, x),
+    "BatesDistribution" => Ok(
+      bates_piecewise(dargs, &x, false)
+        .unwrap_or_else(|| unevaluated("PDF", args)),
+    ),
+    "KDistribution" => Ok(
+      k_distribution(dargs, Some(x), false)
+        .unwrap_or_else(|| unevaluated("PDF", args)),
+    ),
+    "DavisDistribution" => {
+      Ok(davis_pdf(dargs, x).unwrap_or_else(|| unevaluated("PDF", args)))
+    }
+    "FisherZDistribution" => {
+      Ok(fisher_z(dargs, x, false).unwrap_or_else(|| unevaluated("PDF", args)))
+    }
     "PowerDistribution" => pdf_power(dargs, x),
     "PERTDistribution" => pdf_pert(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
@@ -1609,6 +1623,10 @@ fn quantile_continuous_by_bisection(
       | "LevyDistribution"
       | "InverseGaussianDistribution"
       | "KumaraswamyDistribution"
+      | "BatesDistribution"
+      | "KDistribution"
+      | "DavisDistribution"
+      | "FisherZDistribution"
       | "FrechetDistribution"
       | "LogLogisticDistribution"
       | "WignerSemicircleDistribution"
@@ -2488,6 +2506,17 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "GammaDistribution" => cdf_gamma(dargs, x),
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
+    "BatesDistribution" => Ok(
+      bates_piecewise(dargs, &x, true)
+        .unwrap_or_else(|| unevaluated("CDF", args)),
+    ),
+    "KDistribution" => Ok(
+      k_distribution(dargs, Some(x), true)
+        .unwrap_or_else(|| unevaluated("CDF", args)),
+    ),
+    "FisherZDistribution" => {
+      Ok(fisher_z(dargs, x, true).unwrap_or_else(|| unevaluated("CDF", args)))
+    }
     "PowerDistribution" => cdf_power(dargs, x),
     "PERTDistribution" => cdf_pert(dargs, x),
     "ExpGammaDistribution" => cdf_expgamma(dargs, x),
@@ -4715,6 +4744,26 @@ pub fn distribution_mean_variance(
       &erlang_gamma_dargs(dargs)?,
     ),
     "CoxianDistribution" => coxian_mean_variance(dargs),
+    "BatesDistribution" => bates_mean_variance(dargs).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "BatesDistribution: unsupported specification".into(),
+      )
+    }),
+    "KDistribution" => k_mean_variance(dargs).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "KDistribution: unsupported specification".into(),
+      )
+    }),
+    "FisherZDistribution" => fisher_z_mean_variance(dargs).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "FisherZDistribution: unsupported specification".into(),
+      )
+    }),
+    "DavisDistribution" => davis_mean_variance(dargs).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "DavisDistribution: unsupported specification".into(),
+      )
+    }),
     "VonMisesDistribution" => {
       let Some(()) = vonmises_checked(dargs) else {
         return Err(InterpreterError::EvaluationError(
@@ -18692,4 +18741,457 @@ pub(crate) fn kernel_mixture_quantile(dargs: &[Expr], q: f64) -> Option<Expr> {
     }
   }
   Some(Expr::Real(f64::midpoint(lo, hi)))
+}
+
+/// The positive integer `n` and the interval `{a, c}` of a
+/// `BatesDistribution[n]` / `BatesDistribution[n, {a, c}]` whose `n` is an
+/// explicit integer, the case its piecewise PDF and CDF are written for.
+fn bates_parts(dargs: &[Expr]) -> Option<(i128, Expr, Expr)> {
+  let n = match dargs.first()? {
+    Expr::Integer(n) if *n >= 1 && *n <= 40 => *n,
+    _ => return None,
+  };
+  match dargs.get(1) {
+    None => Some((n, int(0), int(1))),
+    Some(Expr::List(ac)) if ac.len() == 2 => {
+      crate::functions::math_ast::try_eval_to_f64(&ac[0])?;
+      crate::functions::math_ast::try_eval_to_f64(&ac[1])?;
+      Some((n, ac[0].clone(), ac[1].clone()))
+    }
+    _ => None,
+  }
+}
+
+/// PDF (`cdf == false`) or CDF of a Bates distribution: the scaled
+/// Irwin–Hall pieces on the n subintervals of [a, c]. The lower half
+/// (subinterval k < n/2) is written in `x - b_j`, the upper half in
+/// `t_j - x`, as wolframscript gives them; the CDF pieces are expanded in
+/// `x` below the middle and in `1 - x` above it.
+fn bates_piecewise(dargs: &[Expr], x: &Expr, cdf: bool) -> Option<Expr> {
+  let (n, a, c) = bates_parts(dargs)?;
+  let ev = |e: Expr| eval(&e).ok();
+  let width = ev(minus2(c.clone(), a.clone()))?;
+  // Breakpoints a + j (c - a)/n.
+  let point =
+    |j: i128| ev(plus2(a.clone(), times2(make_rational(j, n), width.clone())));
+  let binomial = |j: i128| call("Binomial", vec![int(n), int(j)]);
+  let sign = |j: i128| if j % 2 == 0 { int(1) } else { int(-1) };
+  let power = if cdf { n } else { n - 1 };
+  let factorial_term = call("Factorial", vec![int(power)]);
+  let coefficient = ev(times2(
+    pow2(int(n), int(n)),
+    pow2(times2(factorial_term, pow2(width.clone(), int(n))), int(-1)),
+  ))?;
+  let inequality = |lo: Expr, hi: Expr| {
+    call(
+      "Inequality",
+      vec![
+        lo,
+        Expr::Identifier("LessEqual".into()),
+        x.clone(),
+        Expr::Identifier("Less".into()),
+        hi,
+      ],
+    )
+  };
+  if n == 1 {
+    let cond = comparison3(
+      a.clone(),
+      ComparisonOp::LessEqual,
+      x.clone(),
+      ComparisonOp::LessEqual,
+      c.clone(),
+    );
+    return ev(if cdf {
+      piecewise(
+        vec![
+          (int(0), comparison(x.clone(), ComparisonOp::Less, a.clone())),
+          (
+            call(
+              "Expand",
+              vec![times2(minus2(x.clone(), a.clone()), pow2(width, int(-1)))],
+            ),
+            cond,
+          ),
+        ],
+        int(1),
+      )
+    } else {
+      piecewise(vec![(pow2(width, int(-1)), cond)], int(0))
+    });
+  }
+  let u = id("Woxi`BatesU");
+  let mut pieces =
+    vec![(int(0), comparison(x.clone(), ComparisonOp::Less, a.clone()))];
+  for k in 0..n {
+    let lower = 2 * k < n;
+    let terms: Vec<Expr> = if lower {
+      (0..=k)
+        .map(|j| {
+          Some(times2(
+            times2(sign(j), binomial(j)),
+            pow2(minus2(x.clone(), point(j)?), int(power)),
+          ))
+        })
+        .collect::<Option<_>>()?
+    } else {
+      (0..n - k)
+        .map(|j| {
+          Some(times2(
+            times2(sign(j), binomial(j)),
+            pow2(minus2(point(n - j)?, x.clone()), int(power)),
+          ))
+        })
+        .collect::<Option<_>>()?
+    };
+    let sum = call("Plus", terms);
+    let value = if !cdf {
+      times2(coefficient.clone(), sum)
+    } else if lower {
+      call("Expand", vec![times2(coefficient.clone(), sum)])
+    } else {
+      // 1 - (the sum), as a polynomial in 1 - x.
+      let poly = ev(call(
+        "Expand",
+        vec![minus2(int(1), times2(coefficient.clone(), sum))],
+      ))?;
+      let in_u = ev(call(
+        "CoefficientList",
+        vec![
+          crate::functions::polynomial_ast::solve::substitute_expr(
+            &poly,
+            x,
+            &minus2(int(1), u.clone()),
+          ),
+          u.clone(),
+        ],
+      ))?;
+      let Expr::List(cs) = &in_u else { return None };
+      // c0 + c1 (1 - x) + c2 (1 - x)^2 + …, the linear term written
+      // -c1 (-1 + x) as wolframscript has it.
+      let terms: Vec<Expr> = cs
+        .iter()
+        .enumerate()
+        .map(|(k, ck)| match k {
+          0 => ck.clone(),
+          1 => times2(times2(int(-1), ck.clone()), plus2(int(-1), x.clone())),
+          _ => {
+            times2(ck.clone(), pow2(minus2(int(1), x.clone()), int(k as i128)))
+          }
+        })
+        .collect();
+      ev(call("Plus", terms))?
+    };
+    let cond = if k == n - 1 {
+      comparison3(
+        point(k)?,
+        ComparisonOp::LessEqual,
+        x.clone(),
+        ComparisonOp::LessEqual,
+        c.clone(),
+      )
+    } else {
+      inequality(point(k)?, point(k + 1)?)
+    };
+    pieces.push((value, cond));
+  }
+  ev(piecewise(pieces, int(i128::from(cdf))))
+}
+
+fn id(name: &str) -> Expr {
+  Expr::Identifier(name.to_string())
+}
+
+/// Mean and Variance of BatesDistribution[n] / [n, {a, c}]:
+/// (a + c)/2 and (a - c)^2/(12 n).
+fn bates_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  let n = dargs.first()?.clone();
+  let (a, c) = match dargs.get(1) {
+    None => (int(0), int(1)),
+    Some(Expr::List(ac)) if ac.len() == 2 => (ac[0].clone(), ac[1].clone()),
+    _ => return None,
+  };
+  let mean =
+    eval(&times2(make_rational(1, 2), plus2(a.clone(), c.clone()))).ok()?;
+  let var = eval(&times2(
+    pow2(minus2(a, c), int(2)),
+    pow2(times2(int(12), n), int(-1)),
+  ))
+  .ok()?;
+  Some((mean, var))
+}
+
+/// KDistribution[v, w]: PDF 4 (v/w)^((1+v)/2) x^v BesselK[v-1, 2 Sqrt[v/w] x]
+/// / Gamma[v] and CDF 1 - 2 (v/w)^(v/2) x^v BesselK[v, 2 Sqrt[v/w] x]
+/// / Gamma[v] on x > 0; Mean Sqrt[Pi] Sqrt[w/v] Pochhammer[v, 1/2]/2 and
+/// Variance w (1 - Pi Pochhammer[v, 1/2]^2/(4 v)).
+fn k_distribution(dargs: &[Expr], x: Option<Expr>, cdf: bool) -> Option<Expr> {
+  let [v, w] = dargs else { return None };
+  let ratio = times2(v.clone(), pow2(w.clone(), int(-1)));
+  let x = x?;
+  let argument = times2(times2(int(2), sqrt(ratio.clone())), x.clone());
+  let value = if cdf {
+    minus2(
+      int(1),
+      times2(
+        times2(
+          times2(
+            int(2),
+            pow2(ratio.clone(), times2(make_rational(1, 2), v.clone())),
+          ),
+          pow2(x.clone(), v.clone()),
+        ),
+        times2(
+          call("BesselK", vec![v.clone(), argument]),
+          pow2(gamma(v.clone()), int(-1)),
+        ),
+      ),
+    )
+  } else {
+    times2(
+      times2(
+        times2(
+          int(4),
+          pow2(ratio, times2(make_rational(1, 2), plus2(int(1), v.clone()))),
+        ),
+        pow2(x.clone(), v.clone()),
+      ),
+      times2(
+        call("BesselK", vec![plus2(int(-1), v.clone()), argument]),
+        pow2(gamma(v.clone()), int(-1)),
+      ),
+    )
+  };
+  eval(&piecewise(
+    vec![(value, comparison(x, ComparisonOp::Greater, int(0)))],
+    int(0),
+  ))
+  .ok()
+}
+
+fn k_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  let [v, w] = dargs else { return None };
+  let poch = call("Pochhammer", vec![v.clone(), make_rational(1, 2)]);
+  let mean = times2(
+    make_rational(1, 2),
+    times2(
+      times2(
+        sqrt(pi()),
+        sqrt(times2(w.clone(), pow2(v.clone(), int(-1)))),
+      ),
+      poch.clone(),
+    ),
+  );
+  let var = times2(
+    w.clone(),
+    minus2(
+      int(1),
+      times2(
+        times2(pi(), pow2(poch, int(2))),
+        pow2(times2(int(4), v.clone()), int(-1)),
+      ),
+    ),
+  );
+  Some((eval(&mean).ok()?, eval(&var).ok()?))
+}
+
+/// DavisDistribution[b, n, m]: PDF b^n (x - m)^(-1-n) / ((E^(b/(x-m)) - 1)
+/// Gamma[n] Zeta[n]) on x > m; Mean m + b Zeta[n-1]/((n-1) Zeta[n]) for
+/// n > 2 and the Variance for n > 3, Indeterminate otherwise.
+fn davis_pdf(dargs: &[Expr], x: Expr) -> Option<Expr> {
+  let [b, n, m] = dargs else { return None };
+  let shifted = minus2(x.clone(), m.clone());
+  let value = times2(
+    times2(
+      pow2(b.clone(), n.clone()),
+      pow2(shifted.clone(), minus2(int(-1), n.clone())),
+    ),
+    pow2(
+      times2(
+        times2(
+          plus2(
+            int(-1),
+            pow2(e(), times2(b.clone(), pow2(shifted, int(-1)))),
+          ),
+          gamma(n.clone()),
+        ),
+        call("Zeta", vec![n.clone()]),
+      ),
+      int(-1),
+    ),
+  );
+  eval(&piecewise(
+    vec![(value, comparison(x, ComparisonOp::Greater, m.clone()))],
+    int(0),
+  ))
+  .ok()
+}
+
+fn davis_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  let [b, n, m] = dargs else { return None };
+  let zeta = |k: i128| call("Zeta", vec![plus2(int(k), n.clone())]);
+  let mean = plus2(
+    m.clone(),
+    times2(
+      times2(b.clone(), zeta(-1)),
+      pow2(times2(plus2(int(-1), n.clone()), zeta(0)), int(-1)),
+    ),
+  );
+  let var = times2(
+    times2(
+      pow2(b.clone(), int(2)),
+      plus2(
+        times2(minus2(int(2), n.clone()), pow2(zeta(-1), int(2))),
+        times2(times2(plus2(int(-1), n.clone()), zeta(-2)), zeta(0)),
+      ),
+    ),
+    pow2(
+      times2(
+        times2(
+          plus2(int(-2), n.clone()),
+          pow2(plus2(int(-1), n.clone()), int(2)),
+        ),
+        pow2(zeta(0), int(2)),
+      ),
+      int(-1),
+    ),
+  );
+  let guarded = |value: Expr, bound: i128| {
+    eval(&piecewise(
+      vec![(
+        value,
+        comparison(n.clone(), ComparisonOp::Greater, int(bound)),
+      )],
+      indeterminate(),
+    ))
+  };
+  Some((guarded(mean, 2).ok()?, guarded(var, 3).ok()?))
+}
+
+/// FisherZDistribution[n, m]: PDF 2 E^(n x) m^(m/2) n^(n/2)
+/// (m + E^(2x) n)^(-(m+n)/2) / Beta[n/2, m/2] and CDF BetaRegularized[
+/// E^(2x) n/(m + E^(2x) n), n/2, m/2].
+fn fisher_z(dargs: &[Expr], x: Expr, cdf: bool) -> Option<Expr> {
+  let [n, m] = dargs else { return None };
+  let half = |e: &Expr| times2(make_rational(1, 2), e.clone());
+  let grown = times2(pow2(e(), times2(int(2), x.clone())), n.clone());
+  let value = if cdf {
+    call(
+      "BetaRegularized",
+      vec![
+        times2(grown.clone(), pow2(plus2(m.clone(), grown), int(-1))),
+        half(n),
+        half(m),
+      ],
+    )
+  } else {
+    times2(
+      times2(
+        times2(int(2), pow2(e(), times2(n.clone(), x))),
+        times2(pow2(m.clone(), half(m)), pow2(n.clone(), half(n))),
+      ),
+      times2(
+        pow2(
+          plus2(m.clone(), grown),
+          times2(make_rational(-1, 2), plus2(m.clone(), n.clone())),
+        ),
+        pow2(call("Beta", vec![half(n), half(m)]), int(-1)),
+      ),
+    )
+  };
+  eval(&value).ok()
+}
+
+fn make_rational(n: i128, d: i128) -> Expr {
+  eval(&call("Rational", vec![int(n), int(d)]))
+    .unwrap_or_else(|_| call("Rational", vec![int(n), int(d)]))
+}
+
+/// Mean and Variance of FisherZDistribution[n, m] in wolframscript's
+/// hypergeometric form.
+fn fisher_z_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
+  let [n, m] = dargs else { return None };
+  let half = |e: &Expr| times2(make_rational(1, 2), e.clone());
+  let hyp = |a: Vec<Expr>, b: Vec<Expr>, z: Expr| {
+    call(
+      "HypergeometricPFQ",
+      vec![Expr::List(a.into()), Expr::List(b.into()), z],
+    )
+  };
+  let (hn, hm) = (half(n), half(m));
+  let one_plus = |e: &Expr| plus2(int(1), e.clone());
+  let sum_half = plus2(hm.clone(), hn.clone());
+  let m_over_n = times2(m.clone(), pow2(n.clone(), int(-1)));
+  let n_over_m = times2(n.clone(), pow2(m.clone(), int(-1)));
+  let beta = call("Beta", vec![hn.clone(), hm.clone()]);
+  // A = 2 (m/n)^(m/2) 3F2[{m/2, m/2, (m+n)/2}, {1+m/2, 1+m/2}, -m/n] / m^2
+  //   - 2 3F2[{(m+n)/2, n/2, n/2}, {1+n/2, 1+n/2}, -n/m] / ((m/n)^(n/2) n^2)
+  let first = times2(
+    times2(int(2), pow2(m_over_n.clone(), hm.clone())),
+    times2(
+      hyp(
+        vec![hm.clone(), hm.clone(), sum_half.clone()],
+        vec![one_plus(&hm), one_plus(&hm)],
+        times2(int(-1), m_over_n.clone()),
+      ),
+      pow2(m.clone(), int(-2)),
+    ),
+  );
+  let second = times2(
+    int(-2),
+    times2(
+      hyp(
+        vec![sum_half.clone(), hn.clone(), hn.clone()],
+        vec![one_plus(&hn), one_plus(&hn)],
+        times2(int(-1), n_over_m.clone()),
+      ),
+      pow2(
+        times2(pow2(m_over_n.clone(), hn.clone()), pow2(n.clone(), int(2))),
+        int(-1),
+      ),
+    ),
+  );
+  let a = plus2(first, second);
+  let mean = times2(a.clone(), pow2(beta.clone(), int(-1)));
+  // Raw second moment: 4 m^(m/2) n^(n/2) (n^(-(m+n)/2) 4F3[…, -m/n]/m^3
+  //   + m^(-(m+n)/2) 4F3[…, -n/m]/n^3) / Beta.
+  let neg_sum = times2(make_rational(-1, 2), plus2(m.clone(), n.clone()));
+  let raw2 = times2(
+    times2(
+      times2(int(4), pow2(m.clone(), hm.clone())),
+      pow2(n.clone(), hn.clone()),
+    ),
+    times2(
+      plus2(
+        times2(
+          times2(
+            pow2(n.clone(), neg_sum.clone()),
+            hyp(
+              vec![hm.clone(), hm.clone(), hm.clone(), sum_half.clone()],
+              vec![one_plus(&hm), one_plus(&hm), one_plus(&hm)],
+              times2(int(-1), m_over_n),
+            ),
+          ),
+          pow2(m.clone(), int(-3)),
+        ),
+        times2(
+          times2(
+            pow2(m.clone(), neg_sum),
+            hyp(
+              vec![sum_half, hn.clone(), hn.clone(), hn.clone()],
+              vec![one_plus(&hn), one_plus(&hn), one_plus(&hn)],
+              times2(int(-1), n_over_m),
+            ),
+          ),
+          pow2(n.clone(), int(-3)),
+        ),
+      ),
+      pow2(beta.clone(), int(-1)),
+    ),
+  );
+  let var = plus2(
+    times2(int(-1), times2(pow2(a, int(2)), pow2(beta, int(-2)))),
+    raw2,
+  );
+  Some((eval(&mean).ok()?, eval(&var).ok()?))
 }

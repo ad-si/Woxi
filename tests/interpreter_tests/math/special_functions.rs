@@ -12311,3 +12311,24 @@ mod erfc_machine_accuracy {
     );
   }
 }
+
+// Outside the unit disk a p = q + 1 hypergeometric series diverges: its
+// value comes from 2F1's continuation or Euler's integral, never from the
+// divergent sum.
+mod hypergeometric_pfq_continuation {
+  use super::*;
+
+  #[test]
+  fn beyond_the_unit_disk() {
+    assert_eq!(
+      interpret(
+        "Round[10^12 N[{HypergeometricPFQ[{3/2, 1, 1}, {2, 2}, -2], \
+         HypergeometricPFQ[{1/2, 1}, {3/2}, -4], \
+         HypergeometricPFQ[{1, 1, 1, 3/2}, {2, 2, 2}, -2], \
+         HypergeometricPFQ[{1, 2, 3}, {4, 5}, -10]}]]"
+      )
+      .unwrap(),
+      "{623810716365, 553574358897, 771422268773, 307114116921}"
+    );
+  }
+}

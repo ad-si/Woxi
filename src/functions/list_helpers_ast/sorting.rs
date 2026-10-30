@@ -214,9 +214,18 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
   }
 }
 
-/// `a -> b` and `a :> b` order as the `Rule`/`RuleDelayed` calls they are.
-fn rule_as_call(e: &Expr) -> Option<Expr> {
+/// `a -> b` and `a :> b` order as the `Rule`/`RuleDelayed` calls they are,
+/// and `a == b`, `a < b <= c` as their `Equal`/`Inequality` calls.
+pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
   match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let (head, args) =
+        crate::syntax::comparison_head_and_args(operands, operators);
+      Some(call(&head, args))
+    }
     Expr::Rule {
       pattern,
       replacement,
@@ -475,6 +484,34 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if ord != std::cmp::Ordering::Equal {
             return ord;
           }
+        }
+      }
+      // A power of a sum against another sum compares its base with that
+      // sum, the power last on a tie: Sort[{(1 - x)^2, -1 + x}] keeps the
+      // power first, as 1 - x orders before -1 + x.
+      {
+        let sum_base = |e: &Expr| {
+          power_parts(e)
+            .and_then(|(base, _)| sum_terms_list(&base).map(|_| base))
+        };
+        match (sum_base(a), sum_base(b)) {
+          (Some(base), None) if sum_terms_list(b).is_some() => {
+            let ord = canonical_cmp(&base, b);
+            return if ord == std::cmp::Ordering::Equal {
+              std::cmp::Ordering::Greater
+            } else {
+              ord
+            };
+          }
+          (None, Some(base)) if sum_terms_list(a).is_some() => {
+            let ord = canonical_cmp(a, &base);
+            return if ord == std::cmp::Ordering::Equal {
+              std::cmp::Ordering::Less
+            } else {
+              ord
+            };
+          }
+          _ => {}
         }
       }
       // Additive expressions (sums) hold a class-based place in canonical
@@ -1706,6 +1743,37 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       a_inf.as_ref().unwrap_or(a),
       b_inf.as_ref().unwrap_or(b),
     );
+  }
+
+  // A power of a sum against another sum compares its base with that sum
+  // (the power last on a tie): Sort[{(1 - x)^2, -1 + x}] keeps the power
+  // first, since 1 - x orders before -1 + x.
+  {
+    let is_sum = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+    };
+    let sum_power_base = |e: &Expr| -> Option<Expr> {
+      let (base, _) = power_parts(e)?;
+      is_sum(&base).then_some(base)
+    };
+    match (sum_power_base(a), sum_power_base(b)) {
+      (Some(base), None) if is_sum(b) => {
+        let r = compare_exprs(&base, b);
+        return if r != 0 { r } else { -1 };
+      }
+      (None, Some(base)) if is_sum(a) => {
+        let r = compare_exprs(a, &base);
+        return if r != 0 { r } else { 1 };
+      }
+      _ => {}
+    }
   }
 
   // Two Lists: Wolfram's canonical order compares expressions with the same

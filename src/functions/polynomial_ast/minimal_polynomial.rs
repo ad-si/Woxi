@@ -143,6 +143,39 @@ pub fn root_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let alpha = &args[0];
 
+  // A list, or any expression that is not itself a number, has its parts
+  // reduced: RootReduce[{3/2 + Sqrt[13]/2}] is {(3 + Sqrt[13])/2}.
+  let is_numeric = |e: &Expr| {
+    matches!(
+      crate::evaluator::evaluate_function_call_ast("NumericQ", std::slice::from_ref(e)),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+  };
+  match alpha {
+    Expr::List(items) => {
+      return Ok(Expr::List(
+        items
+          .iter()
+          .map(|i| root_reduce_ast(std::slice::from_ref(i)))
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      ));
+    }
+    Expr::FunctionCall { name, args: inner }
+      if !is_numeric(alpha) && name != "Root" && !inner.is_empty() =>
+    {
+      let reduced = inner
+        .iter()
+        .map(|i| root_reduce_ast(std::slice::from_ref(i)))
+        .collect::<Result<Vec<_>, _>>()?;
+      return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: reduced.into(),
+      });
+    }
+    _ => {}
+  }
+
   // Rationals reduce to themselves; an existing Root object is already reduced.
   match alpha {
     Expr::Integer(_) | Expr::BigInteger(_) => return Ok(alpha.clone()),
@@ -2995,6 +3028,358 @@ fn quadratic_class_number(d: i128) -> i128 {
     cycles
   } else {
     cycles / 2
+  }
+}
+
+/// NumberFieldFundamentalUnits[a] — the fundamental units of the ring of
+/// integers of Q(a), each as `AlgebraicNumber[a, {c0, c1, …}]`. A rational
+/// `a` or an imaginary quadratic field has none (`{}`); a real quadratic
+/// field has one, the smallest unit greater than 1 for the root of `a`'s
+/// minimal polynomial with +Sqrt[D]. Higher degrees stay unevaluated.
+pub fn number_field_fundamental_units_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let held = || Ok(unevaluated("NumberFieldFundamentalUnits", args));
+  let [a] = args else {
+    return held();
+  };
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let var = id_expr("NumberFieldFundamentalUnits$x");
+  let mp = minimal_polynomial_core(&[a.clone(), var.clone()])?;
+  if matches!(&mp, Expr::FunctionCall { name, .. } if name == "MinimalPolynomial")
+  {
+    return held();
+  }
+  let coefficients = ev(&call("CoefficientList", vec![mp, var]))?;
+  let Expr::List(cs) = &coefficients else {
+    return held();
+  };
+  let rat = |e: &Expr| -> Option<(BigInt, BigInt)> {
+    match e {
+      Expr::Integer(n) => Some((BigInt::from(*n), BigInt::from(1))),
+      Expr::BigInteger(n) => Some((n.clone(), BigInt::from(1))),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        let part = |x: &Expr| match x {
+          Expr::Integer(n) => Some(BigInt::from(*n)),
+          Expr::BigInteger(n) => Some(n.clone()),
+          _ => None,
+        };
+        Some((part(&args[0])?, part(&args[1])?))
+      }
+      _ => None,
+    }
+  };
+  match cs.len() {
+    2 => return Ok(Expr::List(Vec::new().into())),
+    3 => {}
+    _ => return held(),
+  }
+  // a is a root of c2 x^2 + c1 x + c0: a = r + s Sqrt[D], D squarefree.
+  let (Some(c0), Some(c1), Some(c2)) = (rat(&cs[0]), rat(&cs[1]), rat(&cs[2]))
+  else {
+    return held();
+  };
+  // As fractions over a common denominator: the discriminant
+  // c1^2 - 4 c2 c0 and r = -c1/(2 c2).
+  let to_rational = |n: BigInt, d: BigInt| -> Result<Expr, InterpreterError> {
+    ev(&call(
+      "Rational",
+      vec![
+        crate::functions::math_ast::bigint_to_expr(n),
+        crate::functions::math_ast::bigint_to_expr(d),
+      ],
+    ))
+  };
+  let c1q = to_rational(c1.0.clone(), c1.1.clone())?;
+  let c2q = to_rational(c2.0.clone(), c2.1.clone())?;
+  let c0q = to_rational(c0.0.clone(), c0.1.clone())?;
+  let disc = ev(&call(
+    "Plus",
+    vec![
+      call("Power", vec![c1q.clone(), Expr::Integer(2)]),
+      call("Times", vec![Expr::Integer(-4), c2q.clone(), c0q]),
+    ],
+  ))?;
+  let Some((dn, dd)) = rat(&disc) else {
+    return held();
+  };
+  // disc = dn/dd = (dn dd)/dd^2; D is the squarefree part of dn dd.
+  let Some(product) = i128::try_from(&dn * &dd).ok() else {
+    return held();
+  };
+  if product < 0 {
+    return Ok(Expr::List(Vec::new().into()));
+  }
+  let squarefree = {
+    let mut n = product;
+    let mut d: i128 = 1;
+    let mut p: i128 = 2;
+    while p * p <= n {
+      let mut count = 0;
+      while n % p == 0 {
+        n /= p;
+        count += 1;
+      }
+      if count % 2 == 1 {
+        d *= p;
+      }
+      p += 1;
+    }
+    d * n
+  };
+  let Some(unit) = real_quadratic_fundamental_unit(squarefree) else {
+    return held();
+  };
+  // r and |s| from the minimal polynomial; the sign of s from a's value.
+  let r = ev(&call(
+    "Times",
+    vec![
+      Expr::Integer(-1),
+      c1q,
+      call(
+        "Power",
+        vec![
+          call("Times", vec![Expr::Integer(2), c2q.clone()]),
+          Expr::Integer(-1),
+        ],
+      ),
+    ],
+  ))?;
+  let s_abs = ev(&call(
+    "Sqrt",
+    vec![call(
+      "Times",
+      vec![
+        disc,
+        call(
+          "Power",
+          vec![
+            call(
+              "Times",
+              vec![
+                Expr::Integer(4),
+                Expr::Integer(squarefree),
+                call("Power", vec![c2q, Expr::Integer(2)]),
+              ],
+            ),
+            Expr::Integer(-1),
+          ],
+        ),
+      ],
+    )],
+  ))?;
+  // wolframscript reads the coefficients against the root with +Sqrt[D]
+  // whichever root `a` is: the unit of (1 - Sqrt[21])/3 comes out as the
+  // conjugate (5 - Sqrt[21])/2.
+  let s = s_abs;
+  // u = A + B Sqrt[D] = (A - B r/s) + (B/s) a.
+  let (ua, ub) = (
+    to_rational(unit.0.0, unit.0.1)?,
+    to_rational(unit.1.0, unit.1.1)?,
+  );
+  let c1_out = ev(&call(
+    "Times",
+    vec![
+      ub.clone(),
+      call("Power", vec![s.clone(), Expr::Integer(-1)]),
+    ],
+  ))?;
+  let c0_out = ev(&call(
+    "Plus",
+    vec![
+      ua,
+      call("Times", vec![Expr::Integer(-1), c1_out.clone(), r.clone()]),
+    ],
+  ))?;
+  // The generator is taken to its smallest integer multiple k a that is an
+  // algebraic integer (trace 2 k r and norm k^2 (r^2 - D s^2) integral), as
+  // wolframscript writes it: (1 - Sqrt[21])/3 becomes 1 - Sqrt[21].
+  let is_integer =
+    |e: &Expr| matches!(e, Expr::Integer(_) | Expr::BigInteger(_));
+  let mut k: i128 = 1;
+  while k < 10_000 {
+    let trace = ev(&call("Times", vec![Expr::Integer(2 * k), r.clone()]))?;
+    let norm = ev(&call(
+      "Times",
+      vec![
+        Expr::Integer(k * k),
+        call(
+          "Plus",
+          vec![
+            call("Power", vec![r.clone(), Expr::Integer(2)]),
+            call(
+              "Times",
+              vec![
+                Expr::Integer(-squarefree),
+                call("Power", vec![s.clone(), Expr::Integer(2)]),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ))?;
+    if is_integer(&trace) && is_integer(&norm) {
+      break;
+    }
+    k += 1;
+  }
+  let generator = ev(&call("Times", vec![Expr::Integer(k), a.clone()]))?;
+  let c1_out = ev(&call(
+    "Times",
+    vec![
+      c1_out,
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(k)]),
+    ],
+  ))?;
+  Ok(Expr::List(
+    vec![call(
+      "AlgebraicNumber",
+      vec![generator, Expr::List(vec![c0_out, c1_out].into())],
+    )]
+    .into(),
+  ))
+}
+
+/// The fundamental unit `A + B Sqrt[d]` (A, B > 0 rationals, as numerator
+/// and denominator) of the real quadratic field Q(Sqrt[d]), d squarefree:
+/// the least solution of the Pell equation x^2 - d y^2 = ±1 from the
+/// continued fraction of Sqrt[d], or, when d = 1 (mod 4) and that unit is
+/// the cube of a half-integral one, its cube root (a + b Sqrt[d])/2.
+#[allow(clippy::type_complexity)]
+fn real_quadratic_fundamental_unit(
+  d: i128,
+) -> Option<((BigInt, BigInt), (BigInt, BigInt))> {
+  use num_traits::{One, Signed, Zero};
+  if d < 2 {
+    return None;
+  }
+  let a0 = {
+    let mut r = (d as f64).sqrt() as i128;
+    while r * r > d {
+      r -= 1;
+    }
+    while (r + 1) * (r + 1) <= d {
+      r += 1;
+    }
+    r
+  };
+  let big_d = BigInt::from(d);
+  let (mut m, mut den, mut a) = (0i128, 1i128, a0);
+  let (mut p_prev, mut p) = (BigInt::one(), BigInt::from(a0));
+  let (mut q_prev, mut q) = (BigInt::zero(), BigInt::one());
+  let mut steps = 0;
+  while (&p * &p - &big_d * &q * &q).abs() != BigInt::one() {
+    m = den * a - m;
+    den = (d - m * m) / den;
+    a = (a0 + m) / den;
+    let p_next = BigInt::from(a) * &p + &p_prev;
+    let q_next = BigInt::from(a) * &q + &q_prev;
+    (p_prev, p, q_prev, q) = (p, p_next, q, q_next);
+    steps += 1;
+    if steps > 100_000 {
+      return None;
+    }
+  }
+  let one = BigInt::one();
+  if d % 4 == 1 {
+    // A unit (a + b Sqrt[d])/2 whose cube is p + q Sqrt[d] has trace a with
+    // a^3 - 3 n a = 2 p, n = p^2 - d q^2 its norm.
+    let n = &p * &p - &big_d * &q * &q;
+    let trace = BigInt::from(2) * &p;
+    let mut root = trace.cbrt();
+    for _ in 0..3 {
+      let f = &root * &root * &root - BigInt::from(3) * &n * &root - &trace;
+      if f.is_zero() {
+        break;
+      }
+      root += if f.is_negative() {
+        one.clone()
+      } else {
+        -one.clone()
+      };
+    }
+    let f = &root * &root * &root - BigInt::from(3) * &n * &root - &trace;
+    if f.is_zero() && root.is_positive() {
+      let b2 = &root * &root - BigInt::from(4) * &n;
+      if (&b2 % &big_d).is_zero() {
+        let b2 = b2 / &big_d;
+        let b = b2.sqrt();
+        if &b * &b == b2 && b.is_positive() && (&root % 2) != BigInt::zero() {
+          let two = BigInt::from(2);
+          return Some(((root, two.clone()), (b, two)));
+        }
+      }
+    }
+  }
+  Some(((p, one.clone()), (q, one)))
+}
+
+/// The number `AlgebraicNumber[θ, {c0, c1, …}]` stands for, `c0 + c1 θ +
+/// …`, or None for anything else.
+pub fn algebraic_number_value(e: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "AlgebraicNumber" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(cs) = &args[1] else {
+    return None;
+  };
+  let terms: Vec<Expr> = cs
+    .iter()
+    .enumerate()
+    .map(|(i, c)| {
+      call(
+        "Times",
+        vec![
+          c.clone(),
+          call("Power", vec![args[0].clone(), Expr::Integer(i as i128)]),
+        ],
+      )
+    })
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms)).ok()
+}
+
+/// `e` with every `AlgebraicNumber` inside it replaced by the number it
+/// stands for, or None when it holds none.
+pub fn expand_algebraic_numbers(e: &Expr) -> Option<Expr> {
+  if let Some(v) = algebraic_number_value(e) {
+    return Some(v);
+  }
+  match e {
+    Expr::List(items) => {
+      let mapped: Vec<Option<Expr>> =
+        items.iter().map(expand_algebraic_numbers).collect();
+      mapped.iter().any(Option::is_some).then(|| {
+        Expr::List(
+          mapped
+            .into_iter()
+            .zip(items.iter())
+            .map(|(m, orig)| m.unwrap_or_else(|| orig.clone()))
+            .collect(),
+        )
+      })
+    }
+    Expr::FunctionCall { name, args } => {
+      let mapped: Vec<Option<Expr>> =
+        args.iter().map(expand_algebraic_numbers).collect();
+      mapped
+        .iter()
+        .any(Option::is_some)
+        .then(|| Expr::FunctionCall {
+          name: name.clone(),
+          args: mapped
+            .into_iter()
+            .zip(args.iter())
+            .map(|(m, orig)| m.unwrap_or_else(|| orig.clone()))
+            .collect(),
+        })
+    }
+    _ => None,
   }
 }
 

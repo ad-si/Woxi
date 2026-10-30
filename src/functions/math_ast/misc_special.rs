@@ -2895,58 +2895,43 @@ pub fn ramanujan_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if n <= 0 {
         return Ok(Expr::Integer(0));
       }
-      let n = n as usize;
-      let tau = ramanujan_tau_compute(n);
-      Ok(Expr::Integer(tau))
+      Ok(bigint_to_expr(ramanujan_tau_big(n as usize)))
     }
     _ => Ok(unevaluated("RamanujanTau", args)),
   }
 }
 
-/// Compute τ(n) by expanding q * ∏_{k=1}^{n} (1-q^k)^24 as a power series
-/// and extracting the coefficient of q^n.
+/// τ(n) as a machine integer (it fits for every n a series is taken to).
 pub(crate) fn ramanujan_tau_compute(n: usize) -> i128 {
-  // We need coefficients of q * ∏(1-q^k)^24 up to q^n
-  // Start with polynomial [1] (constant 1), multiply by (1-q^k)^24
-  // for k = 1, 2, ..., n, tracking coefficients up to degree n-1
-  // (since the final result has an extra factor of q, shifting by 1).
-  //
-  // Actually: Δ(q) = q * ∏_{k≥1} (1-q^k)^24
-  // So coeff of q^n in Δ = coeff of q^{n-1} in ∏_{k≥1} (1-q^k)^24
+  use num_traits::ToPrimitive;
+  ramanujan_tau_big(n).to_i128().unwrap_or(0)
+}
 
-  let target = n - 1; // We need the (n-1)th coeff of the product
-  let mut coeffs = vec![0i128; target + 1];
-  coeffs[0] = 1;
-
-  // Multiply by (1-q^k)^24 for k = 1..n
-  // (1-q^k)^24 = Σ_{j=0}^{24} C(24,j) (-1)^j q^{jk}
-  let binom24: Vec<i128> = (0..=24)
-    .map(|j| {
-      let mut c: i128 = 1;
-      for i in 0..j {
-        c = c * (24 - i as i128) / (i as i128 + 1);
-      }
-      if j % 2 == 1 { -c } else { c }
-    })
-    .collect();
-
-  for k in 1..=n {
-    // Multiply coeffs by (1-q^k)^24
-    // Process in place from high to low degree
-    for i in (0..=target).rev() {
-      let mut sum = 0i128;
-      for (j, &bj) in binom24.iter().enumerate().skip(1) {
-        let deg = j * k;
-        if deg > i {
-          break;
-        }
-        sum += bj * coeffs[i - deg];
-      }
-      coeffs[i] += sum;
+/// τ(n) exactly, from Ramanujan's identity
+/// 756 τ(n) = 65 σ11(n) + 691 σ5(n) − 252·691 Σ_{k=1}^{n−1} σ5(k) σ5(n−k),
+/// with big integers throughout: expanding q ∏ (1 − q^k)^24 instead
+/// overflows machine integers in its intermediate coefficients long before
+/// τ(n) itself does.
+fn ramanujan_tau_big(n: usize) -> num_bigint::BigInt {
+  use num_bigint::BigInt;
+  // σ5(k) for k < n by a divisor sieve.
+  let mut sigma5 = vec![BigInt::from(0); n];
+  for d in 1..n {
+    let d5 = BigInt::from(d).pow(5);
+    for m in (d..n).step_by(d) {
+      sigma5[m] += &d5;
     }
   }
-
-  coeffs[target]
+  let mut convolution = BigInt::from(0);
+  for k in 1..n {
+    convolution += &sigma5[k] * &sigma5[n - k];
+  }
+  let (mut s5, mut s11) = (BigInt::from(0), BigInt::from(0));
+  for d in (1..=n).filter(|d| n.is_multiple_of(*d)) {
+    s5 += BigInt::from(d).pow(5);
+    s11 += BigInt::from(d).pow(11);
+  }
+  (s11 * 65 + s5 * 691 - convolution * (252 * 691)) / 756
 }
 
 /// PowersRepresentations[n, k, p] gives all representations of n as a sum of

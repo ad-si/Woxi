@@ -130,6 +130,17 @@ fn extremal_by_count(name: &str, args: &[Expr]) -> Result<i128, Expr> {
     Expr::Integer(_) | Expr::BigInteger(_) => {
       expr_to_i128(arg3).filter(|k| *k >= 0)
     }
+    // UpTo[n] asks for n elements, or all there are when there are fewer.
+    Expr::FunctionCall { name: up, args: ua }
+      if up == "UpTo" && ua.len() == 1 =>
+    {
+      let len = match &args[0] {
+        Expr::List(items) => items.len() as i128,
+        Expr::Association(pairs) => pairs.len() as i128,
+        _ => i128::MAX,
+      };
+      expr_to_i128(&ua[0]).filter(|k| *k >= 0).map(|k| k.min(len))
+    }
     _ => None,
   };
   if let Some(n) = valid {
@@ -1718,10 +1729,14 @@ fn with_held_default(
 ) -> Result<Expr, InterpreterError> {
   let pending = Expr::Identifier("Internal`FirstDefaultPending".to_string());
   let mut prepared = Vec::with_capacity(args.len());
+  // A `Heads -> …` option in the third slot is not a default.
+  let holds_default = !matches!(args.get(2),
+    Some(Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. })
+      if matches!(pattern.as_ref(), Expr::Identifier(h) if h == "Heads"));
   for (i, arg) in args.iter().enumerate() {
     prepared.push(match i {
       0 => arg.clone(),
-      2 => pending.clone(),
+      2 if holds_default => pending.clone(),
       _ => crate::evaluator::evaluate_expr_to_expr(arg)?,
     });
   }
@@ -1732,10 +1747,12 @@ fn with_held_default(
   }
   // An unevaluated call echoes the default as written.
   Ok(match args.get(2) {
-    Some(default) => crate::functions::polynomial_ast::solve::substitute_expr(
-      &result, &pending, default,
-    ),
-    None => result,
+    Some(default) if holds_default => {
+      crate::functions::polynomial_ast::solve::substitute_expr(
+        &result, &pending, default,
+      )
+    }
+    _ => result,
   })
 }
 
@@ -1743,6 +1760,86 @@ pub fn dispatch_list_operations(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // The parallel functions' options (Method, DistributedContexts,
+  // ProgressReporting) only steer how the work is spread over parallel
+  // kernels, which never changes the result; Woxi evaluates sequentially.
+  if (name.starts_with("Parallel") || matches!(name, "Parallelize" | "WaitAll"))
+    && args.len() > 1
+  {
+    let (positional, opts) = super::split_trailing_options(args);
+    if !opts.is_empty()
+      && !positional.is_empty()
+      && opts.iter().all(|(o, _)| {
+        matches!(
+          o.as_str(),
+          "Method" | "DistributedContexts" | "ProgressReporting"
+        )
+      })
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name, positional,
+      ));
+    }
+  }
+  // These walk the level-1 parts of their list argument; a SparseArray's
+  // are its elements or rows, as `Part` gives them (`First[s]` is a sparse
+  // row). Deeper level specs see the dense array.
+  let list_position = match name {
+    "First" | "Last" | "Select" | "Accumulate" => Some(0),
+    "MapIndexed" if args.len() == 2 => Some(1),
+    _ => None,
+  };
+  if let Some(k) = list_position
+    && let Some(parts) =
+      args.get(k).and_then(list_helpers_ast::sparse_array_parts)
+  {
+    let mut new_args = args.to_vec();
+    new_args[k] = Expr::List(parts.into());
+    return Some(crate::evaluator::evaluate_function_call_ast(
+      name, &new_args,
+    ));
+  }
+  if matches!(name, "Map" | "MapIndexed")
+    && args.len() == 3
+    && let Some(dense) = list_helpers_ast::densify_sparse_array(&args[1])
+  {
+    let mut new_args = args.to_vec();
+    new_args[1] = dense;
+    return Some(crate::evaluator::evaluate_function_call_ast(
+      name, &new_args,
+    ));
+  }
+  // `Thread[f[…, s, …]]` threads over a SparseArray's parts.
+  if name == "Thread"
+    && let Some(Expr::FunctionCall {
+      name: head,
+      args: inner,
+    }) = args.first()
+    && inner
+      .iter()
+      .any(|a| list_helpers_ast::sparse_array_background(a).is_some())
+  {
+    let threaded: Option<Vec<Expr>> = inner
+      .iter()
+      .map(|a| {
+        if list_helpers_ast::sparse_array_background(a).is_some() {
+          list_helpers_ast::sparse_array_parts(a).map(|p| Expr::List(p.into()))
+        } else {
+          Some(a.clone())
+        }
+      })
+      .collect();
+    if let Some(threaded) = threaded {
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::FunctionCall {
+        name: head.clone(),
+        args: threaded.into(),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name, &new_args,
+      ));
+    }
+  }
   // The set-membership predicates compare associations by their VALUES as sets
   // (like SubsetQ/DisjointQ), and either argument may be a list or association.
   // Convert association operands to their value lists and retry.
@@ -2505,7 +2602,7 @@ pub fn dispatch_list_operations(
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]
     // FirstCase[list, pattern :> rhs] or FirstCase[list, pattern :> rhs, default]
-    "FirstCase" if args.len() >= 2 && args.len() <= 4 => {
+    "FirstCase" if args.len() >= 2 && args.len() <= 5 => {
       return Some(with_held_default(args, list_helpers_ast::first_case_ast));
     }
     "Position" if args.len() >= 2 && args.len() <= 5 => {
@@ -2675,6 +2772,19 @@ pub fn dispatch_list_operations(
         };
       }
       return Some(Ok(Expr::Integer(result)));
+    }
+    // OrderedQ[h[e1, e2, …]] tests the arguments of any head, and an
+    // association's values.
+    "OrderedQ"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { .. } | Expr::Association(_)) =>
+    {
+      let elems: Vec<Expr> = match &args[0] {
+        Expr::FunctionCall { args: items, .. } => items.to_vec(),
+        Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+        _ => unreachable!(),
+      };
+      return Some(list_helpers_ast::ordered_q_ast(&[Expr::List(elems.into())]));
     }
     "OrderedQ" if args.len() == 1 => {
       return Some(list_helpers_ast::ordered_q_ast(args));
@@ -5587,6 +5697,7 @@ pub fn dispatch_list_operations(
     "Parallelize" | "WaitAll" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));
     }
+
     // ParallelDo has no real parallel kernels in Woxi, so it evaluates
     // sequentially exactly like Do (matching the rest of the Parallel*
     // family, which are implemented as their sequential counterparts).
@@ -5789,6 +5900,23 @@ pub fn dispatch_list_operations(
     "FindTransientRepeat" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::find_transient_repeat_ast(args));
     }
+    // At a level below the top, a SparseArray is the dense array.
+    "Apply" | "MapApply"
+      if (args.len() > 2 || (name == "MapApply" && args.len() == 2))
+        && list_helpers_ast::sparse_array_background(&args[1]).is_some() =>
+    {
+      let Some(dense) = list_helpers_ast::densify_sparse_array(&args[1]) else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut new_args = args.to_vec();
+      new_args[1] = dense;
+      return Some(crate::evaluator::evaluate_expr_to_expr(
+        &Expr::FunctionCall {
+          name: name.to_string(),
+          args: new_args.into(),
+        },
+      ));
+    }
     "Apply" if args.len() == 2 => {
       return Some(list_helpers_ast::apply_ast(&args[0], &args[1]));
     }
@@ -5825,6 +5953,23 @@ pub fn dispatch_list_operations(
           &args[0], &args[1],
         ),
       );
+    }
+    // MapApply[f, expr, Heads -> True|False] is Apply[f, expr, {1}, Heads ->
+    // …]: with Heads -> True the head's arguments are replaced as well.
+    "MapApply" if args.len() == 3 => {
+      if let Expr::Rule { pattern, .. } = &args[2]
+        && matches!(pattern.as_ref(), Expr::Identifier(h) if h == "Heads")
+      {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "Apply",
+          &[
+            args[0].clone(),
+            args[1].clone(),
+            Expr::List(vec![Expr::Integer(1)].into()),
+            args[2].clone(),
+          ],
+        ));
+      }
     }
     "Identity" if args.len() == 1 => {
       return Some(list_helpers_ast::identity_ast(&args[0]));

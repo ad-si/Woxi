@@ -2794,7 +2794,10 @@ pub fn boolean_function_expr(k: i128, vars: &[Expr]) -> Expr {
 /// True as 1. `k` is taken two's-complement, which is what makes
 /// `BooleanFunction[-1, n]` the constant True.
 pub fn truth_table_from_index(k: i128, n: usize) -> Vec<bool> {
-  (0..(1usize << n)).map(|i| (k >> i) & 1 == 1).collect()
+  // Bits past the 128 of `k` repeat its sign bit, as two's complement does.
+  (0..(1usize << n))
+    .map(|i| (k >> i.min(127)) & 1 == 1)
+    .collect()
 }
 
 /// One node of a reduced ordered binary decision diagram: the variable it

@@ -1047,6 +1047,67 @@ mod image_processing {
     );
   }
 
+  // An image goes through a lookup table: entry min(floor(1024 x), 1023),
+  // the function at i/imax, bytes ceil(256 c) - 1; colour images go to
+  // grayscale first, integer image types index by their raw values.
+  #[test]
+  fn colorize_image_lookup_table() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = Colorize[Image[{{0.05, 0.1, 0.25, 0.5, 0.9, 1.}}], \
+         ColorFunction -> (RGBColor[#, #, #] &)]; \
+         {ImageType[c], ImageColorSpace[c], ImageData[c, \"Byte\"][[1, All, 1]]}"
+      )
+      .unwrap(),
+      "{Byte, RGB, {12, 25, 64, 128, 230, 255}}"
+    );
+    // Scaled by the largest value: 0.3 of 0.6 is the middle of the gradient.
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[Image[{{0.3, 0.6}, {0.2, 0.4}}], \
+         ColorFunction -> \"ThermometerColors\"], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{220, 228, 210}, {136, 21, 42}}, {{171, 208, 239}, {229, 189, 156}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[Image[{{0.3, 0.6}}], ColorFunction -> \
+         (RGBColor[#, #, #] &), ColorFunctionScaling -> False], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{76, 76, 76}, {153, 153, 153}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[Image[{{{0., 0.2, 0.4}, {1., 0.5, 0.25}}, \
+         {{0.3, 0.3, 0.3}, {0.9, 0.1, 0.6}}}], \
+         ColorFunction -> \"ThermometerColors\"], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{141, 181, 242}, {136, 21, 42}}, {{217, 229, 214}, {232, 201, 166}}}"
+    );
+    // The table is filled in full after probing 0, 1/2 and 1 twice.
+    assert_eq!(
+      interpret(
+        "seen = {}; Colorize[Image[{{0.3, 0.6}}], ColorFunction -> \
+         ((AppendTo[seen, #]; RGBColor[#, #, #]) &)]; \
+         {Length[seen], Take[seen, 8]}"
+      )
+      .unwrap(),
+      "{621, {0., 0.5, 1., 0., 0.5, 1., 0., 0.0016286644951140066}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[Image[{{0.2, 0.4, 1.}}, \"Byte\"], \
+         ColorFunction -> \"ThermometerColors\"], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{41, 30, 203}, {41, 30, 203}, {136, 21, 42}}}"
+    );
+  }
+
   #[test]
   fn colorize_non_matrix_returns_unevaluated() {
     clear_state();
@@ -7270,6 +7331,37 @@ mod morphological_image_input {
 mod component_measurements {
   use super::*;
 
+  // An image is measured through its morphological components, and
+  // DeleteSmallComponents on an image drops those smaller than the mean
+  // component size (or of at most n pixels).
+  #[test]
+  fn image_components_and_small_component_removal() {
+    assert_eq!(
+      interpret(
+        "img = Image[{{1,1,0,0},{1,1,0,1},{0,0,0,1},{1,0,0,1}}]; \
+         {ComponentMeasurements[img, \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img], \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img, 3], \"Count\"], \
+          ImageType[DeleteSmallComponents[Image[{{1, 1, 0, 1}}, \"Bit\"]]], \
+          DeleteSmallComponents[{{1, 0, 2, 2, 2}}]}"
+      )
+      .unwrap(),
+      "{{1 -> 4, 2 -> 3, 3 -> 1}, {1 -> 4, 2 -> 3}, {1 -> 4}, Bit, {{1, 0, 2, 2, 2}}}"
+    );
+  }
+
+  // "EquivalentDiskRadius": the radius of the disk of the component's area.
+  #[test]
+  fn equivalent_disk_radius() {
+    assert_eq!(
+      interpret(
+        "ComponentMeasurements[{{1,1,0,0},{1,1,0,2},{0,0,0,2},{3,0,0,2}}, \"EquivalentDiskRadius\"]"
+      )
+      .unwrap(),
+      "{1 -> 1.1283791670955126, 2 -> 0.9772050238058398, 3 -> 0.5641895835477563}"
+    );
+  }
+
   // Each distinct nonzero value is a component; "Count" gives the pixel count
   // per label as a label -> count rule list.
   #[test]
@@ -9371,6 +9463,49 @@ mod rasterize_any_expression {
     assert_eq!(
       interpret("{ImageChannels[Rasterize[Graphics[Disk[]]]], ImageColorSpace[Rasterize[Graphics[Disk[]]]]}").unwrap(),
       "{3, RGB}"
+    );
+  }
+
+  // An alpha image of another size is centred (offsets rounded half to
+  // even from the bottom left); a graphic is rasterized at its size.
+  #[test]
+  fn set_alpha_channel_centres_other_sizes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = Image[{{1, 0}, {1, 1}}]; \
+         {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], \
+          ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], \
+          ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0., 0.}, {0., 1., 0., 0.}, {0., 1., 1., 0.}}, {{0.25, 0.75}, {1., 1.}}, {2, 2}}"
+    );
+  }
+
+  // Rasterize[expr, elem] gives one element of the rasterization: the
+  // image, its RGB bytes, or its size.
+  #[test]
+  fn rasterize_elements() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Graphics[Disk[], ImageSize -> 20]; \
+         {Head[Rasterize[g, \"Image\"]], \
+          Dimensions[Rasterize[g, \"Data\"]] == Append[Reverse[Rasterize[g, \"RasterSize\"]], 3], \
+          Union[Head /@ Flatten[Rasterize[g, \"Data\"]]], \
+          Rasterize[g, \"RasterSize\"] == ImageDimensions[Rasterize[g]]}"
+      )
+      .unwrap(),
+      "{Image, True, {Integer}, True}"
+    );
+    let r =
+      interpret_with_stdout("Rasterize[Graphics[Disk[]], \"Foo\"]").unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("Rasterize::elmntavl"))
     );
   }
 

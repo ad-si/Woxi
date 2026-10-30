@@ -286,9 +286,12 @@ NamedCharIdentifier = @{ NamedCharBase ~ (NamedCharBase | ASCII_ALPHANUMERIC | L
 // BEL, TAB, LF, FF and CR): a notebook can carry a stray `\.1c` after a
 // string, which reads as a symbol.
 ControlLetter = _{ '\u{00}'..'\u{06}' | "\u{08}" | "\u{0B}" | '\u{0E}'..'\u{1F}' }
+// The Latin-1 superscript digits (`²`, `³`, `¹`) continue a symbol name, as in
+// a Demonstration's `\[Epsilon]\.b2[a_, b_, c_] := ...`.
+LatinSuperscriptDigit = _{ "\u{00B2}" | "\u{00B3}" | "\u{00B9}" }
 Identifier = @{
   ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
-  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | ControlLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | ControlLetter | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
+  | ((ASCII_ALPHA | LETTER | PrivateUseLetter | ControlLetter | "_" | "$") ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | ControlLetter | LatinSuperscriptDigit | "_" | "$" | NamedCharBase)* ~ ("`" ~ (ASCII_ALPHA | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase) ~ (ASCII_ALPHANUMERIC | LETTER | PrivateUseLetter | "_" | "$" | NamedCharBase)*)*)
 }
 String = @{ "\"" ~ ("\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | (!"\"" ~ !"\\" ~ ANY) | ("\\" ~ ANY))* ~ "\"" }
 
@@ -601,8 +604,8 @@ TildeInfix = { "~" ~ !"~" ~ (BaseFunctionCall | Identifier) ~ "~" ~ !"~" }
 // This avoids redundant parsing by checking for special operators after the main parse
 // Postfix application (//) has lowest precedence and can follow any expression form
 // ReplaceAll (/.) and ReplaceRepeated (//.) can appear after operator chains: x = y /. rules
-ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
-ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^") | ConditionExpr) }
+ReplaceAllSuffix = { "/." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^" | ConditionOp) | ConditionExpr) }
+ReplaceRepeatedSuffix = { "//." ~ (&HasRuleOperator ~ ReplacementRule | List ~ !("[" | "^" | ConditionOp) | ConditionExpr) }
 // Repeated (..) and RepeatedNull (...) are postfix pattern operators
 // "..." must be tried before ".." since PEG is ordered-choice
 RepeatedNullSuffix = { "..." }

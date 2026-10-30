@@ -1581,6 +1581,37 @@ mod ownvalues {
     assert_eq!(interpret("OwnValues[x]").unwrap(), "{}");
   }
 
+  // Conditional own values accumulate in order (one with the same condition
+  // is replaced) ahead of the unconditional `:=` value, which is the
+  // fallback; a later `=` replaces them all.
+  #[test]
+  fn several_conditional_ownvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = 2; x := {}; x := {1} /; c == 1; x := {2} /; c == 2; \
+         x := {3} /; c == 3; {x, c = 5; x, OwnValues[x]}"
+      )
+      .unwrap(),
+      "{{2}, {}, {HoldPattern[x] :> {1} /; c == 1, HoldPattern[x] :> {2} /; c == 2, \
+       HoldPattern[x] :> {3} /; c == 3, HoldPattern[x] :> {}}}"
+    );
+    assert_eq!(
+      interpret(
+        "y := {1} /; c == 1; y := {2} /; c == 1; x = 7; {OwnValues[y], OwnValues[x]}"
+      )
+      .unwrap(),
+      "{{HoldPattern[y] :> {2} /; c == 1}, {HoldPattern[x] :> 7}}"
+    );
+    assert_eq!(
+      interpret(
+        "Module[{y}, y := {}; y := {1} /; c == 5; y := {2} /; c == 2; y]"
+      )
+      .unwrap(),
+      "{1}"
+    );
+  }
+
   #[test]
   fn conditional_ownvalue_skipped_when_test_fails() {
     // `a /; b > 0 := 3` only fires when `b > 0` evaluates to True. With
@@ -6673,6 +6704,26 @@ mod list_set_delayed {
       )
       .unwrap(),
       "{f[g[1], g[2]], -1, -1}"
+    );
+  }
+}
+
+// A definition's local variable that also occurs in an argument value is
+// renamed, so the argument's symbol is not captured.
+mod scoping_capture_avoidance {
+  use super::*;
+
+  #[test]
+  fn locals_do_not_capture_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] := Module[{a}, a = x; a]; g[x_] := Module[{a}, {x, a}]; \
+         k[x_] := With[{a = 1}, {x, a}]; \
+         {f[a[1]], First[g[a]], k[a], First[ReplaceAll[h[a], h[x_] :> Module[{a}, {x, a}]]]}"
+      )
+      .unwrap(),
+      "{a[1], a, {a, 1}, a}"
     );
   }
 }

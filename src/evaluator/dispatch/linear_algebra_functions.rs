@@ -403,6 +403,19 @@ pub fn dispatch_linear_algebra_functions(
         &args[..2],
       ));
     }
+    // `Tolerance -> t` and `Method -> …` steer only how a numerically
+    // rank-deficient matrix is handled; the minimum-norm solution below
+    // is what they converge to.
+    "LeastSquares"
+      if args.len() == 3
+        && (option_rule_value(&args[2], "Tolerance").is_some()
+          || option_rule_value(&args[2], "Method").is_some()) =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..2],
+      ));
+    }
     "LeastSquares" if args.len() == 2 => {
       // LeastSquares[A, b] = Inverse[A^H . A] . A^H . b when A has full
       // column rank, with A^H the conjugate transpose (a plain transpose
@@ -1095,6 +1108,17 @@ pub fn dispatch_linear_algebra_functions(
       new_args.extend(args[1..].iter().cloned());
       return Some(crate::evaluator::evaluate_function_call_ast(
         name, &new_args,
+      ));
+    }
+    // `Method -> …` (Arnoldi, Banded, Direct, FEAST, …) picks only the
+    // algorithm that finds the eigenvalues, never their values.
+    "Eigenvalues" | "Eigenvectors" | "Eigensystem"
+      if (2..=3).contains(&args.len())
+        && option_rule_value(&args[args.len() - 1], "Method").is_some() =>
+    {
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..args.len() - 1],
       ));
     }
     "Eigenvalues" if args.len() == 1 => {
@@ -2107,6 +2131,13 @@ pub fn dispatch_linear_algebra_functions(
       return Some(
         crate::evaluator::evaluate_function_call_ast("N", args)
           .map(|m| call1("TransformationFunction", m)),
+      );
+    }
+    "FindGeometricTransform" if args.len() >= 2 => {
+      return Some(
+        crate::functions::geometric_transform::find_geometric_transform_ast(
+          args,
+        ),
       );
     }
     // RotationTransform[angle] → TransformationFunction[2D rotation matrix in homogeneous coords]
@@ -3159,6 +3190,8 @@ pub fn dispatch_linear_algebra_functions(
     // Tolerance -> t only affects approximate entries; for a matrix of
     // exact entries the test is the plain one.
     "HermitianMatrixQ"
+    | "AntihermitianMatrixQ"
+    | "AntisymmetricMatrixQ"
     | "NegativeSemidefiniteMatrixQ"
     | "IndefiniteMatrixQ"
     | "SymmetricMatrixQ"

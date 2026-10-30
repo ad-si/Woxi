@@ -843,6 +843,35 @@ pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // SetAlphaChannel[graphic, alpha] rasterizes the graphic at the alpha
+  // image's size.
+  if name == "SetAlphaChannel"
+    && args.len() == 2
+    && let Expr::Image { width, height, .. } = &args[1]
+    && (matches!(&args[0], Expr::Graphics { .. })
+      || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graphics"))
+  {
+    let size = Expr::List(
+      vec![
+        Expr::Integer(*width as i128),
+        Expr::Integer(*height as i128),
+      ]
+      .into(),
+    );
+    let raster = crate::evaluator::evaluate_function_call_ast(
+      "Rasterize",
+      &[
+        args[0].clone(),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("RasterSize".into())),
+          replacement: Box::new(size),
+        },
+      ],
+    );
+    if let Ok(img @ Expr::Image { .. }) = raster {
+      return dispatch_image_functions(name, &[img, args[1].clone()]);
+    }
+  }
   // A graphic where an image is expected is rasterized first, as in
   // Wolfram: ColorNegate[Graphics[…]] is an Image.
   let positions = image_argument_positions(name, args.len());

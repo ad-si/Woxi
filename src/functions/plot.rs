@@ -9662,9 +9662,12 @@ where
   // A point far outside the plot range is never visible, and mapping it to
   // a pixel overflows the backend's integer coordinates (an extrapolated
   // 10^300 against PlotRange -> {-0.05, 1.05} panicked).
+  // A dot beyond the plot range is not drawn at all (Wolfram clips it
+  // rather than pinning it to the frame edge); the tolerance keeps dots
+  // sitting exactly on the boundary.
   let near = |v: f64, lo: f64, hi: f64| {
     let span = (hi - lo).abs().max(f64::MIN_POSITIVE);
-    v >= lo - 1e5 * span && v <= hi + 1e5 * span
+    v >= lo - 1e-9 * span && v <= hi + 1e-9 * span
   };
   let finite_pts: Vec<(f64, f64)> = points
     .iter()

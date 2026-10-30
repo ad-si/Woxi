@@ -9078,6 +9078,7 @@ fn format_times_with_denominator(
           ..
         }
       )
+      || is_looser_than_times_infix(e)
   };
   let denom_str = if denom_exprs.len() == 1 {
     let s = formatter(&denom_exprs[0]);
@@ -9577,6 +9578,12 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       BinaryOperator::Times | BinaryOperator::Divide => 33,
       BinaryOperator::Power => 48,
     }),
+    // A chain of differing operators prints as an `Inequality[…]` call.
+    Expr::Comparison { operators, .. }
+      if operators.windows(2).any(|w| w[0] != w[1]) =>
+    {
+      None
+    }
     Expr::Comparison { .. } => Some(21),
     Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(12),
     Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => Some(7),
@@ -9619,6 +9626,7 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "And" if args.len() >= 2 => Some(18),
       "Alternatives" if args.len() >= 2 => Some(27),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
+      "TwoWayRule" if args.len() == 2 => Some(21),
       // `/;` and `:` print infix and sit just above `->`, so both need
       // parens inside anything tighter: `a == (x_ /; y)`, `a == (b:c)`.
       "Condition" if args.len() == 2 => Some(13),
@@ -11297,7 +11305,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   op: BinaryOperator::Plus | BinaryOperator::Minus,
                   ..
                 }
-              ) {
+              )
+              || is_looser_than_times_infix(&args[1])
+            {
               format!("({inner})")
             } else {
               inner
@@ -11313,7 +11323,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: BinaryOperator::Plus | BinaryOperator::Minus,
                 ..
               }
-            ) {
+            )
+            || is_looser_than_times_infix(&args[1])
+          {
             format!("({inner})")
           } else {
             inner
@@ -11395,7 +11407,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 op: BinaryOperator::Plus | BinaryOperator::Minus,
                 ..
               }
-            ) {
+            )
+            || is_looser_than_times_infix(&args[1])
+          {
             format!("({inner})")
           } else {
             inner
@@ -11508,7 +11522,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               && rargs2.len() >= 2
               && !rargs2.iter().any(is_denominator_factor)
           } else {
-            false
+            is_looser_than_times_infix(&rest)
           };
           let formatted = if needs_parens {
             format!("({rest_str})")
@@ -11650,7 +11664,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 // doesn't get pulled into the unary-minus expression:
                 // `-(0 & )` rather than `-0 & ` (which would parse as
                 // `Function[-0]`).
-                || matches!(&args[1], Expr::Function { .. })));
+                || matches!(&args[1], Expr::Function { .. })))
+            // A lone factor looser than `*` is parenthesized already.
+            && !(args.len() == 2 && is_looser_than_times_infix(&args[1]));
           if needs_neg_parens {
             return format!("-({rest})");
           }
@@ -11796,6 +11812,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                         ..
                       }
                     )
+                    || is_looser_than_times_infix(e)
                 };
                 let denom_str = if denom_exprs.len() == 1 {
                   let s = fmt(&denom_exprs[0]);
@@ -12203,6 +12220,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           )
+          || is_looser_than_times_infix(&args[1])
           || matches!(&args[1], Expr::Integer(n) if *n < 0)
           || matches!(&args[1], Expr::Real(f) if *f < 0.0)
           || prints_as_negation(&args[1])
@@ -16406,7 +16424,9 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
     Expr::Identifier(name) => {
       out.insert(name.clone());
     }
-    Expr::FunctionCall { args, .. } => {
+    // A call's head is a symbol of the value too: `a[1]` mentions `a`.
+    Expr::FunctionCall { name, args } => {
+      out.insert(name.clone());
       for a in args {
         collect_identifier_names(a, out);
       }
@@ -17329,6 +17349,41 @@ fn substitute_variables_impl(
         && matches!(args[0], Expr::List(_))
       {
         return substitute_into_scoping_construct(name, args, bindings);
+      }
+      // A local name that is no pattern slot but occurs in a value being
+      // substituted is still alpha-renamed to `name$`, so the value's symbol
+      // is not captured: `f[x_] := Module[{a}, {x, a}]` gives `f[a]` =
+      // `{a, a$123}`.
+      if template
+        && matches!(name.as_str(), "With" | "Module" | "DynamicModule")
+        && args.len() >= 2
+        && matches!(args[0], Expr::List(_))
+      {
+        let spec_count = if name == "With" { args.len() - 1 } else { 1 };
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> = args[..spec_count]
+          .iter()
+          .flat_map(scoping_binder_names)
+          .filter(|b| {
+            value_names.contains(b.as_str())
+              && !bindings.iter().any(|(slot, _)| slot == b)
+          })
+          .map(|b| (b.clone(), format!("{b}$")))
+          .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
       }
       let new_args: Vec<Expr> = substitute_parts(args, bindings, template);
       // Check if the function name itself is being substituted
@@ -18333,6 +18388,10 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
       "Star" | "CirclePlus" | "CircleMinus" | "Tilde" | "Subset" | "LeftArrow"
         | "DotEqual" | "PlusMinus" | "MinusPlus"
     ))
+    // Everything that binds looser than `+` (`->`, `==`, `&&`, `|`, `/.`,
+    // `!`, `&`, …) and a bare pattern: `2*(a -> 1)`, `2*(a_)`.
+    || printed_infix_precedence(e).is_some_and(|p| p < 30)
+    || is_bare_pattern(e)
 }
 
 /// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),

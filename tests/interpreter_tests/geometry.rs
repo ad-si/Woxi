@@ -10090,3 +10090,33 @@ mod mesh_cells_by_location {
     );
   }
 }
+
+// FindGeometricTransform[to, from]: the best map of `from` onto `to` in the
+// requested class (least squares / Procrustes) and its mean residual;
+// Automatic is perspective for four plane points, affine for three.
+mod find_geometric_transform {
+  use super::*;
+
+  #[test]
+  fn transformation_classes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = {{0,0},{1,0},{0,1},{1,1}}; \
+         n = (RotationTransform[0.3][#] + {1, 2} & /@ p) + {{0.01,0},{0,-0.02},{0.03,0},{0,0}}; \
+         Round[10^6 ({#[[1]], #[[2, 1]]} & /@ {FindGeometricTransform[n, p, TransformationClass -> \"Affine\"], \
+          FindGeometricTransform[n, p, TransformationClass -> \"Rigid\"], \
+          FindGeometricTransform[n, p, TransformationClass -> \"Similarity\"]})]"
+      )
+      .unwrap(),
+      "{{7071, {{935336, -285520, 1015000}, {285520, 965336, 1995000}, {0, 0, 1000000}}}, \
+{13029, {{957710, -287735, 1004921}, {287735, 957710, 1997706}, {0, 0, 1000000}}}, \
+{11677, {{950336, -285520, 1007500}, {285520, 950336, 2002500}, {0, 0, 1000000}}}}"
+    );
+    assert_eq!(
+      interpret("Round[10^9 Last[FindGeometricTransform[n, p]][{0.5, 0.5}]]")
+        .unwrap(),
+      "{1333122465, 2621991030}"
+    );
+  }
+}

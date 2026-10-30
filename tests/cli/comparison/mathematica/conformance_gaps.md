@@ -1770,9 +1770,11 @@ anything about `Simplify` itself.
 
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
-Recognized as valid options but the call stays unevaluated; WL factors
-`x^2+1` into `(-I + x)*(I + x)`. Same for `FactorList` and
-`IrreduciblePolynomialQ`. Composite-modulus `LinearSolve`, n-ary modular
+`GaussianIntegers -> True` (and `Extension -> I`) factors univariate
+rational polynomials whose irreducible factors over Q are monic;
+non-monic splitting factors, multivariate input, other extensions
+(`Extension -> Sqrt[2]`, whose sign normalization is unverified) and
+`Trig` stay unevaluated. `IrreduciblePolynomialQ` ignores the options. Composite-modulus `LinearSolve`, n-ary modular
 `PolynomialLCM` and composite-modulus `GroebnerBasis` are also left
 unevaluated (prime moduli work).
 
@@ -5822,6 +5824,13 @@ proportions differ from wolframscript. Named edge shapes other than
   scheme rather than Wolfram's exact colors.
 - `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
   not yet implemented) falls back to a gray ramp.
+- On an image, a pixel at exactly 5/8, 6/8 or 7/8 lands one table entry
+  (one byte) above wolframscript's: `Colorize[Image[{{0.75, 1.}}],
+  ColorFunction -> (RGBColor[#, #, #] &)]` gives byte 192, wolframscript
+  191. No index rule that fits these also fits a dense sweep of other
+  values, where `min(floor(1024 x), 1023)` matches.
+- On an integer-type image with no `ColorFunction` (label colouring)
+  `Colorize` stays unevaluated.
 
 ## PolyhedronData["BilinskiDodecahedron", ...]
 
@@ -6314,7 +6323,7 @@ Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.
 
 ## Exact `Eigenvectors` with quadratic-surd components: unreduced form
 
-```
+```sh
 wolframscript -code 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
 # {{-((-1 - Sqrt[5])/(3 + Sqrt[5])), 1, 1, 1}, {-1, 0, 1, 1}, {-((1 - Sqrt[5])/(-3 + Sqrt[5])), 1, 1, 1}, {0, 0, 0, 1}}
 woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
@@ -6336,3 +6345,65 @@ h[{1}, {2}]
 List argument patterns are decomposed into per-element accessors, which
 bind each name independently, so the repeated `a` never has to agree
 (nested calls such as `f[g[i_], g[i_]]` are checked correctly).
+
+## SparseArray: internal entry order of sums, `Select` keeping sparsity
+
+- `Plus @@ SparseArray[{{1, 2}, {0, 5}}]` equals wolframscript's value, but
+  wolframscript stores the sum's entries in a different order
+  (`{{2}, {1}}` with values `{7, 1}`, Woxi `{{1}, {2}}` with `{1, 7}`), so the
+  `InputForm`s differ.
+- `Select[sparse, pred]` returns a dense list; wolframscript keeps a
+  SparseArray when the background passes `pred`.
+- `Fold`, `FoldList`, `Sort` and `Union` of a SparseArray emit `::normal` and
+  stay unevaluated in wolframscript; Woxi does not reject them.
+
+## DualLinearProgramming with `Method -> "InteriorPoint"`
+
+wolframscript's interior-point solution carries solver noise
+(`{1.0000000003499416, 1.0000000000555387}` for an optimum of `{1, 1}`);
+Woxi solves exactly and converts, giving `{1., 1.}`.
+
+## A conditional `:=` after a `=` value keeps the `=` value
+
+wolframscript drops a symbol's `Set` value when a conditional own value is
+added (`w = 5; w := {1} /; c == 1` leaves only the conditional rule, so `w`
+stays `w` when the test fails), but keeps an unconditional `:=` value as the
+fallback. Woxi does not record whether a symbol's value came from `=` or
+`:=`, so it keeps either one as the fallback (`w` evaluates to `5`).
+
+## Transcendental `Root[{f, x0}]` objects
+
+- wolframscript stores `x0` as an arbitrary-precision number of about 20
+  digits (`1.7292555589818595724706451954508223956`20.53`); Woxi keeps the
+  correctly rounded machine number (`1.7292555589818597`).
+- For an equation with negative exponents wolframscript first rewrites `f`
+  (`2/2^t + 2/3^t == 1` gives `-2 - 2*E^(Log[2]*#1 - Log[3]*#1) +
+  E^(-(Log[3]*#1) + (Log[2] + Log[3])*#1) &`); Woxi uses `lhs - rhs`
+  (`-1 + 2^(1 - #1) + 2/3^#1 &`). The roots agree.
+- `Root::invrt` is reported when the refined root is more than 10^-6
+  (relative) away from `x0`; wolframscript's exact threshold is somewhere
+  between 1.6*10^-7 and 4.8*10^-6 for the cases probed.
+
+## FindGeometricTransform: last digits and noisy perspective fits
+
+The transforms agree with wolframscript to about 1e-9, but not in the last
+digits (wolframscript's exact-fit error is `2.29*^-15` where Woxi's is a
+different tiny number). With more than four noisy plane points the
+default (perspective) fit is Woxi's linear least-squares homography, which
+need not be the minimizer wolframscript reports.
+
+## Bates, Davis and Fisher z distributions
+
+- The linear `1 - x` term of an upper `CDF[BatesDistribution[…]]` piece is
+  written `c (-1 + x)` by Woxi; wolframscript does so for
+  `BatesDistribution[4]` and `BatesDistribution[3, {-1, 2}]` but writes
+  `-(4*(1 - x))/9` for `BatesDistribution[2, {-1, 2}]`.
+- `BatesDistribution` with a symbolic `n` or interval keeps PDF/CDF
+  unevaluated (wolframscript does the same for symbolic `n`, but gives a
+  form for a symbolic interval with numeric `n`).
+- `Quantile[DavisDistribution[…], p]` stays unevaluated: its CDF has no
+  closed form (wolframscript leaves the symbolic CDF too, but inverts it
+  numerically).
+- In `Mean[FisherZDistribution[n, m]]` Woxi orders the factor
+  `n^2*(m/n)^(n/2)`; wolframscript writes `(m/n)^(n/2)*n^2`.
+- Numeric PDF/CDF/Quantile values can differ in the last digit.

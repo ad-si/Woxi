@@ -1251,3 +1251,148 @@ pub fn linear_optimization_ast(
   }
   Ok(result)
 }
+
+/// DualLinearProgramming[c, m, b, l] — `{x, y, z, w}`: `x` solves the
+/// primal `LinearProgramming[c, m, b, l]`, and `y`, `z`, `w` the dual
+/// problem, maximize `b.y + l.z - u.w` subject to `y.m + z - w == c`, where
+/// `y[[i]]` is non-negative for a `>=` row, non-positive for a `<=` row and
+/// free for an `==` row, and `z[[j]]` (`w[[j]]`) is non-negative when the
+/// variable has a finite lower (upper) bound and zero otherwise. The dual is
+/// solved by the same simplex as the primal. `Method -> "InteriorPoint"`
+/// gives machine numbers.
+pub fn dual_linear_programming_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let held = || Ok(unevaluated("DualLinearProgramming", args));
+  let (positional, options): (Vec<&Expr>, Vec<&Expr>) =
+    args.iter().partition(|a| !matches!(a, Expr::Rule { .. }));
+  if !(3..=4).contains(&positional.len()) {
+    return held();
+  }
+  let dense: Vec<Expr> = positional
+    .iter()
+    .map(|a| {
+      crate::functions::list_helpers_ast::densify_sparse_array(a)
+        .unwrap_or_else(|| (*a).clone())
+    })
+    .collect();
+  let (Expr::List(c), Expr::List(m), Expr::List(b)) =
+    (&dense[0], &dense[1], &dense[2])
+  else {
+    return held();
+  };
+  let (n, k) = (c.len(), m.len());
+  if n == 0 || k == 0 || b.len() != k {
+    return held();
+  }
+  let Ok(bounds) = (match dense.get(3) {
+    Some(l) => parse_bounds(l, n),
+    None => Ok(vec![(Bound::Finite(Rat::zero()), Bound::PosInf); n]),
+  }) else {
+    return held();
+  };
+  let x = linear_programming_ast(&dense)?;
+  if !matches!(&x, Expr::List(_)) {
+    return held();
+  }
+
+  let infinity = Expr::Identifier("Infinity".to_string());
+  let neg_infinity = call("DirectedInfinity", vec![Expr::Integer(-1)]);
+  let zero = Expr::Integer(0);
+  let negate = |e: &Expr| call("Times", vec![Expr::Integer(-1), e.clone()]);
+  let pair =
+    |lo: &Expr, hi: &Expr| Expr::List(vec![lo.clone(), hi.clone()].into());
+  let mut objective: Vec<Expr> = Vec::with_capacity(k + 2 * n);
+  let mut var_bounds: Vec<Expr> = Vec::with_capacity(k + 2 * n);
+  for item in b {
+    let (value, sign) = match item {
+      Expr::List(p) if p.len() == 2 => match expr_to_rat(&p[1]) {
+        Some(s) => (p[0].clone(), s),
+        None => return held(),
+      },
+      v => (v.clone(), Rat::one()),
+    };
+    objective.push(negate(&value));
+    var_bounds.push(if sign.is_zero() {
+      pair(&neg_infinity, &infinity)
+    } else if sign.is_negative() {
+      pair(&neg_infinity, &zero)
+    } else {
+      pair(&zero, &infinity)
+    });
+  }
+  for (lo, _) in &bounds {
+    if let Bound::Finite(r) = lo {
+      objective.push(r.neg().to_expr());
+      var_bounds.push(pair(&zero, &infinity));
+    } else {
+      objective.push(zero.clone());
+      var_bounds.push(pair(&zero, &zero));
+    }
+  }
+  for (_, hi) in &bounds {
+    if let Bound::Finite(r) = hi {
+      objective.push(r.to_expr());
+      var_bounds.push(pair(&zero, &infinity));
+    } else {
+      objective.push(zero.clone());
+      var_bounds.push(pair(&zero, &zero));
+    }
+  }
+  // One equality row per primal variable: column j of m, then +z_j, -w_j.
+  let mut rows: Vec<Expr> = Vec::with_capacity(n);
+  for j in 0..n {
+    let mut row: Vec<Expr> = Vec::with_capacity(k + 2 * n);
+    for r in m {
+      let Expr::List(entries) = r else {
+        return held();
+      };
+      let Some(e) = entries.get(j) else {
+        return held();
+      };
+      row.push(e.clone());
+    }
+    row.extend((0..n).map(|i| Expr::Integer(i128::from(i == j))));
+    row.extend((0..n).map(|i| Expr::Integer(-i128::from(i == j))));
+    rows.push(Expr::List(row.into()));
+  }
+  let rhs: Vec<Expr> = c.iter().map(|cj| pair(cj, &Expr::Integer(0))).collect();
+  let evaluated = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let dual = linear_programming_ast(&[
+    evaluated(Expr::List(objective.into()))?,
+    Expr::List(rows.into()),
+    Expr::List(rhs.into()),
+    evaluated(Expr::List(var_bounds.into()))?,
+  ])?;
+  let Expr::List(ref dual) = dual else {
+    return held();
+  };
+  let result = Expr::List(
+    vec![
+      x,
+      Expr::List(dual[..k].to_vec().into()),
+      Expr::List(dual[k..k + n].to_vec().into()),
+      Expr::List(dual[k + n..].to_vec().into()),
+    ]
+    .into(),
+  );
+  let interior_point = options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Method")
+        && matches!(replacement.as_ref(), Expr::String(s) if s == "InteriorPoint"))
+  });
+  if interior_point {
+    // Its interior-point solution of an exact problem is a machine one.
+    let exact = |e: &Expr| !crate::syntax::contains_inexact(e);
+    if dense.iter().take(3).all(exact) {
+      crate::emit_message(
+        "DualLinearProgramming::lpipp: Warning: Method -> InteriorPoint \
+         specified for non-machine-precision problem. A machine-precision \
+         result will be given. If a non-machine-precision result is needed, \
+         set the option to Method -> Simplex.",
+      );
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&call("N", vec![result]));
+  }
+  Ok(result)
+}
