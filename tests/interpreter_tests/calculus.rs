@@ -9146,6 +9146,22 @@ mod ndsolve {
     );
   }
 
+  // A closed-form eliminated unknown next to a numerically eliminated one
+  // keeps its values on the whole grid when its solution reads no highest
+  // derivative (the solve for those is skipped at the grid points).
+  #[test]
+  fn eliminated_and_implicit_unknowns_share_the_grid() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{x'[t] == -x[t] + a[t], a[t] == 2 x[t], \
+         y[t]^3 + y[t] == x[t], x[0] == 1}, {x, a, y}, {t, 0, 1}]]; \
+         Round[10^4 {x[1.], a[1.], y[1.], y[0.5]} /. sol]"
+      )
+      .unwrap(),
+      "{27183, 54366, 11595, 9057}"
+    );
+  }
+
   // A complex-valued system is solved as the real system of its parts
   // (HarmonicElectricFieldAppliedToAParticleInAnInfiniteSquareWell).
   #[test]
