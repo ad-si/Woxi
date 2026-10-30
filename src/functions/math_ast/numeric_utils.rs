@@ -40,6 +40,19 @@ pub fn expr_to_num(expr: &Expr) -> Option<f64> {
 ///   an odd bit length and a binary digit while it has an even bit length
 ///   (squaring the half-power when the digit is 0),
 /// - negative exponents are the reciprocal of the positive power.
+/// A positive machine real to the half-integer power `p/2` (`p` odd), as
+/// wolframscript computes it: x^(n + 1/2) is x^n Sqrt[x] and x^-(n + 1/2)
+/// is (1/x^n)(1/Sqrt[x]) — `3.^(-1/2)` is 0.5773502691896258, one ULP off
+/// libm's pow.
+pub fn machine_half_power(x: f64, p: i128) -> f64 {
+  let xn = wolfram_powi(x, (p.abs() - 1) / 2);
+  if p > 0 {
+    xn * x.sqrt()
+  } else {
+    (1.0 / xn) * (1.0 / x.sqrt())
+  }
+}
+
 pub fn wolfram_powi(x: f64, n: i128) -> f64 {
   if n == 0 {
     return 1.0;
@@ -433,6 +446,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           }
         }
         BinaryOperator::Power => {
+          if l > 0.0
+            && let Expr::FunctionCall { name, args } = right.as_ref()
+            && name == "Rational"
+            && let [Expr::Integer(p), Expr::Integer(2)] = args.as_slice()
+          {
+            return Some(machine_half_power(l, *p));
+          }
           let result = l.powf(r);
           if result.is_nan() { None } else { Some(result) }
         }
@@ -646,6 +666,13 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         .and_then(|v| if v > 0.0 { Some(v.log2()) } else { None }),
       "Power" if args.len() == 2 => {
         let b = try_eval_to_f64(&args[0])?;
+        if b > 0.0
+          && let Expr::FunctionCall { name: r, args: ra } = &args[1]
+          && r == "Rational"
+          && let [Expr::Integer(p), Expr::Integer(2)] = ra.as_slice()
+        {
+          return Some(machine_half_power(b, *p));
+        }
         let e = try_eval_to_f64(&args[1])?;
         let result = b.powf(e);
         if result.is_nan() { None } else { Some(result) }

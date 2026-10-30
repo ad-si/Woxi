@@ -36,14 +36,20 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
       // parser maps it to y only, which fits plots of one dependent
       // variable but would leave the x range jumping between animation
       // frames here).
-      if name == "PlotRange"
-        && overrides.x.is_none()
-        && let Expr::List(items) = replacement
-        && items.len() == 2
-        && !matches!(&items[0], Expr::List(_))
-        && !matches!(&items[1], Expr::List(_))
-      {
-        overrides.x = overrides.y;
+      // A bare `PlotRange -> r` is likewise the square `{{-r, r}, {-r, r}}`.
+      if name == "PlotRange" && overrides.x.is_none() {
+        let scalar_pair = matches!(replacement, Expr::List(items)
+          if items.len() == 2
+            && !matches!(&items[0], Expr::List(_))
+            && !matches!(&items[1], Expr::List(_)));
+        let scalar = try_eval_to_f64(
+          &evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone()),
+        )
+        .is_some_and(|r| r > 0.0);
+        if scalar_pair || scalar {
+          overrides.x = overrides.y;
+        }
       }
     }
   }

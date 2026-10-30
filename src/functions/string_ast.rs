@@ -9929,14 +9929,53 @@ pub fn apply_string_template(
   template: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let tmpl = match template {
-    Expr::String(s) => s.clone(),
-    _ => {
-      return Ok(Expr::CurriedCall {
-        func: Box::new(call1("StringTemplate", template.clone())),
-        args: args.to_vec(),
-      });
+  apply_string_template_with(template, &[], args)
+}
+
+/// The value of option `name` among a template's trailing option rules.
+fn template_option<'a>(opts: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  opts.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
     }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// Apply `f` to `x` and evaluate.
+fn apply_and_evaluate(f: &Expr, x: Expr) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Apply",
+    vec![f.clone(), Expr::List(vec![x].into())],
+  ))
+}
+
+/// StringTemplate[template, opts][args…]: `InsertionFunction -> f` maps
+/// each inserted value through f, and `CombinerFunction -> c` is applied to
+/// the list of literal fragments and inserted values (default: StringJoin).
+pub fn apply_string_template_with(
+  template: &Expr,
+  opts: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let insertion = template_option(opts, "InsertionFunction");
+  let combiner = template_option(opts, "CombinerFunction");
+  let tmpl = if let Expr::String(s) = template {
+    s.clone()
+  } else {
+    let mut head = vec![template.clone()];
+    head.extend(opts.iter().cloned());
+    return Ok(Expr::CurriedCall {
+      func: Box::new(call("StringTemplate", head)),
+      args: args.to_vec(),
+    });
   };
 
   // Named bindings from a single association argument.
@@ -9957,6 +9996,8 @@ pub fn apply_string_template(
   let tmpl = expand_expression_slots(&tmpl, args)?;
   let chars: Vec<char> = tmpl.chars().collect();
   let mut result = String::new();
+  // Fragments, once an InsertionFunction makes the pieces non-strings.
+  let mut pieces: Vec<Expr> = Vec::new();
   let mut i = 0;
   let mut seq: usize = 0;
   while i < chars.len() {
@@ -9976,7 +10017,15 @@ pub fn apply_string_template(
         named.get(&content)
       };
       if let Some(v) = value {
-        result.push_str(&expr_to_output(v));
+        match insertion {
+          Some(f) => {
+            if !result.is_empty() {
+              pieces.push(Expr::String(std::mem::take(&mut result)));
+            }
+            pieces.push(apply_and_evaluate(f, v.clone())?);
+          }
+          None => result.push_str(&expr_to_output(v)),
+        }
       }
       // Unfilled slots contribute nothing.
       i = close + 1;
@@ -9985,7 +10034,24 @@ pub fn apply_string_template(
     result.push(chars[i]);
     i += 1;
   }
-  Ok(Expr::String(result))
+  if insertion.is_none() && combiner.is_none() {
+    return Ok(Expr::String(result));
+  }
+  if !result.is_empty() {
+    pieces.push(Expr::String(result));
+  }
+  match combiner {
+    Some(c) => apply_and_evaluate(c, Expr::List(pieces.into())),
+    None => Ok(Expr::String(
+      pieces
+        .iter()
+        .map(|p| match p {
+          Expr::String(s) => s.clone(),
+          other => expr_to_output(other),
+        })
+        .collect(),
+    )),
+  }
 }
 
 /// ToExpression[s] / ToExpression[s, form] / ToExpression[s, form, h]
@@ -11975,65 +12041,122 @@ fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
   }
 }
 
+/// Options of NeedlemanWunschSimilarity / SmithWatermanSimilarity:
+/// `GapPenalty -> g` (a real number, default 1) and `IgnoreCase -> True|False`.
+/// Returns `None` for any other option or value.
+fn alignment_similarity_options(opts: &[Expr]) -> Option<(f64, bool)> {
+  let mut gap = 1.0;
+  let mut ignore_case = false;
+  for opt in opts {
+    let (Expr::Identifier(name), value, _) =
+      crate::functions::expr_form::rule_parts(opt)?
+    else {
+      return None;
+    };
+    match name.as_str() {
+      "GapPenalty" => gap = crate::functions::math_ast::try_eval_to_f64(value)?,
+      "IgnoreCase" => {
+        ignore_case = match value {
+          Expr::Identifier(v) if v == "True" => true,
+          Expr::Identifier(v) if v == "False" => false,
+          _ => return None,
+        }
+      }
+      _ => return None,
+    }
+  }
+  Some((gap, ignore_case))
+}
+
+/// The tokens of both alignment arguments, lower-cased for IgnoreCase.
+fn alignment_token_pair(
+  args: &[Expr],
+  ignore_case: bool,
+) -> (Vec<String>, Vec<String>) {
+  let tokens = |e: &Expr| {
+    let t = alignment_tokens(e);
+    if ignore_case && matches!(e, Expr::String(_)) {
+      t.into_iter().map(|c| c.to_lowercase()).collect()
+    } else {
+      t
+    }
+  };
+  (tokens(&args[0]), tokens(&args[1]))
+}
+
 /// NeedlemanWunschSimilarity[s1, s2] - global sequence-alignment score with the
 /// default scoring (match +1, mismatch -1, gap penalty 1). When one input is
-/// empty, wolframscript returns the length of the other.
+/// empty, wolframscript returns the length of the other. The options
+/// GapPenalty and IgnoreCase are supported.
 pub fn needleman_wunsch_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  let Some((gap, ignore_case)) =
+    alignment_similarity_options(args.get(2..).unwrap_or(&[]))
+  else {
+    return Ok(unevaluated("NeedlemanWunschSimilarity", args));
+  };
+  if args.len() < 2 {
     return Ok(unevaluated("NeedlemanWunschSimilarity", args));
   }
-  let a = alignment_tokens(&args[0]);
-  let b = alignment_tokens(&args[1]);
+  let (a, b) = alignment_token_pair(args, ignore_case);
   let (n, m) = (a.len(), b.len());
   if n == 0 || m == 0 {
+    // Only the default gap penalty's empty-input value is known.
+    if gap != 1.0 {
+      return Ok(unevaluated("NeedlemanWunschSimilarity", args));
+    }
     return Ok(Expr::Real(n.max(m) as f64));
   }
-  let mut dp = vec![vec![0i64; m + 1]; n + 1];
+  let mut dp = vec![vec![0f64; m + 1]; n + 1];
   for (i, row) in dp.iter_mut().enumerate() {
-    row[0] = -(i as i64);
+    row[0] = -(i as f64) * gap;
   }
   for j in 0..=m {
-    dp[0][j] = -(j as i64);
+    dp[0][j] = -(j as f64) * gap;
   }
   for i in 1..=n {
     for j in 1..=m {
-      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      let s = if a[i - 1] == b[j - 1] { 1.0 } else { -1.0 };
       dp[i][j] = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - 1)
-        .max(dp[i][j - 1] - 1);
+        .max(dp[i - 1][j] - gap)
+        .max(dp[i][j - 1] - gap);
     }
   }
-  Ok(Expr::Real(dp[n][m] as f64))
+  Ok(Expr::Real(dp[n][m]))
 }
 
 /// SmithWatermanSimilarity[s1, s2] - local sequence-alignment score with the
 /// default scoring (match +1, mismatch -1, gap penalty 1). Cell scores are
-/// floored at 0 and the result is the maximum cell value.
+/// floored at 0 and the result is the maximum cell value. The options
+/// GapPenalty and IgnoreCase are supported.
 pub fn smith_waterman_similarity_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  let Some((gap, ignore_case)) =
+    alignment_similarity_options(args.get(2..).unwrap_or(&[]))
+  else {
+    return Ok(unevaluated("SmithWatermanSimilarity", args));
+  };
+  if args.len() < 2 {
     return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
-  let a = alignment_tokens(&args[0]);
-  let b = alignment_tokens(&args[1]);
+  let (a, b) = alignment_token_pair(args, ignore_case);
   let (n, m) = (a.len(), b.len());
-  let mut dp = vec![vec![0i64; m + 1]; n + 1];
-  let mut best = 0i64;
+  let mut dp = vec![vec![0f64; m + 1]; n + 1];
+  let mut best = 0f64;
   for i in 1..=n {
     for j in 1..=m {
-      let s = if a[i - 1] == b[j - 1] { 1 } else { -1 };
+      let s = if a[i - 1] == b[j - 1] { 1.0 } else { -1.0 };
       let v = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - 1)
-        .max(dp[i][j - 1] - 1)
-        .max(0);
+        .max(dp[i - 1][j] - gap)
+        .max(dp[i][j - 1] - gap)
+        .max(0.0);
       dp[i][j] = v;
       best = best.max(v);
     }
   }
-  Ok(Expr::Real(best as f64))
+  Ok(Expr::Real(best))
 }
 
 /// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also
@@ -13290,9 +13413,71 @@ pub fn remove_diacritics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let s = expr_to_str(&args[0]);
+  Ok(Expr::String(strip_diacritics(&s)))
+}
+
+/// Remove the diacritics of every character: NFD-decompose, then drop the
+/// combining marks (Unicode category Mn).
+pub fn strip_diacritics(s: &str) -> String {
   use unicode_normalization::UnicodeNormalization;
-  // NFD decompose, then filter out combining marks (Unicode category Mn)
-  let result: String = s.nfd().filter(|c| !is_combining_mark(*c)).collect();
+  s.nfd().filter(|c| !is_combining_mark(*c)).collect()
+}
+
+/// The lower-case letters of `Alphabet[lang]`, or `None` for a language
+/// without a known alphabet.
+pub fn language_alphabet(lang: &str) -> Option<Vec<char>> {
+  let letters = crate::evaluator::evaluate_function_call_ast(
+    "Alphabet",
+    &[Expr::String(lang.to_string())],
+  )
+  .ok()?;
+  let Expr::List(items) = &letters else {
+    return None;
+  };
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::String(l) = item else {
+      return None;
+    };
+    let mut chars = l.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+      return None;
+    };
+    out.push(c);
+  }
+  if out.is_empty() { None } else { Some(out) }
+}
+
+/// RemoveDiacritics[s, Language -> lang]: letters of the language's own
+/// alphabet (such as the Spanish ñ) keep their marks.
+pub fn remove_diacritics_language_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let lang = match crate::functions::expr_form::rule_parts(&args[1]) {
+    Some((Expr::Identifier(opt), Expr::String(lang), _))
+      if opt == "Language" =>
+    {
+      lang
+    }
+    _ => return Ok(unevaluated("RemoveDiacritics", args)),
+  };
+  let Expr::String(s) = &args[0] else {
+    return Ok(unevaluated("RemoveDiacritics", args));
+  };
+  let Some(alphabet) = language_alphabet(lang) else {
+    return Ok(unevaluated("RemoveDiacritics", args));
+  };
+  let result: String = s
+    .chars()
+    .map(|c| {
+      let in_alphabet = c.to_lowercase().all(|l| alphabet.contains(&l));
+      if in_alphabet {
+        c.to_string()
+      } else {
+        strip_diacritics(&c.to_string())
+      }
+    })
+    .collect();
   Ok(Expr::String(result))
 }
 
@@ -17270,6 +17455,17 @@ fn expand_template_parts(
       "TemplateSlot" if parts.len() == 1 => {
         match template_slot_value(&parts[0], args) {
           Some(value) => one(value),
+          None => one(expr.clone()),
+        }
+      }
+      // TemplateSlot[key, InsertionFunction -> f]: the value goes through f.
+      "TemplateSlot"
+        if parts.len() > 1
+          && let Some(f) =
+            template_option(&parts[1..], "InsertionFunction") =>
+      {
+        match template_slot_value(&parts[0], args) {
+          Some(value) => one(apply_and_evaluate(f, value)?),
           None => one(expr.clone()),
         }
       }

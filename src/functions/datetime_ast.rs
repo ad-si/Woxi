@@ -4647,11 +4647,27 @@ pub fn date_select_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return unevaluated(),
   };
 
+  // A named slot in the criterion (`#Month`, `#Day`, …) reads that
+  // property of the date: rewrite `Slot["p"]` to `DateValue[#, "p"]`.
+  let crit = crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+    expr: Box::new(args[1].clone()),
+    rules: Box::new(Expr::RuleDelayed {
+      pattern: Box::new(call1(
+        "Slot",
+        Expr::Pattern {
+          name: "k".to_string(),
+          head: Some("String".to_string()),
+          blank_type: 1,
+        },
+      )),
+      replacement: Box::new(call(
+        "DateValue",
+        vec![Expr::Slot(1), Expr::Identifier("k".to_string())],
+      )),
+    }),
+  })?;
   // Filtering is exactly Select.
-  crate::evaluator::evaluate_expr_to_expr(&call(
-    "Select",
-    vec![list, args[1].clone()],
-  ))
+  crate::evaluator::evaluate_expr_to_expr(&call("Select", vec![list, crit]))
 }
 
 /// DateOverlapsQ[date1, date2] — True when the calendar spans of two
@@ -4797,6 +4813,63 @@ pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// since noon on -4714-11-24, proleptic Gregorian). Exact input gives
 /// exact time components (integer seconds when whole); Real input gives a
 /// Real seconds component. Non-numeric arguments emit ::arg.
+/// FromJulianDate["type", jd, TimeZone -> tz] and FromJulianDate[jd,
+/// TimeZone -> tz]: a modified ("Modified", JD − 2400000.5) or reduced
+/// ("Reduced", JD − 2400000) Julian date is shifted back to a Julian date,
+/// and the date is given in time zone tz (hours ahead of UT).
+pub fn from_julian_date_general_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("FromJulianDate", args));
+  let (pos, opts) = crate::evaluator::dispatch::split_trailing_options(args);
+  let (offset, jd) = match pos {
+    [jd] => (Expr::Integer(0), jd),
+    [Expr::String(t), jd] => match t.as_str() {
+      "Julian" => (Expr::Integer(0), jd),
+      "Modified" => (
+        call("Rational", vec![Expr::Integer(4800001), Expr::Integer(2)]),
+        jd,
+      ),
+      "Reduced" => (Expr::Integer(2400000), jd),
+      _ => return unevaluated(),
+    },
+    _ => return unevaluated(),
+  };
+  let mut tz: Option<Expr> = None;
+  for (name, value) in &opts {
+    match name.as_str() {
+      "TimeZone" if matches!(value, Expr::Integer(_) | Expr::Real(_)) => {
+        tz = Some(value.clone());
+      }
+      _ => return unevaluated(),
+    }
+  }
+  let mut shifted = vec![jd.clone(), offset];
+  if let Some(z) = &tz {
+    shifted.push(times(vec![
+      z.clone(),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(24)]),
+    ]));
+  }
+  let jd = crate::evaluator::evaluate_expr_to_expr(&plus(shifted))?;
+  let result = from_julian_date_ast(std::slice::from_ref(&jd))?;
+  match (&result, tz) {
+    (Expr::FunctionCall { name, args: dargs }, Some(z))
+      if name == "DateObject" && dargs.len() == 4 =>
+    {
+      let mut dargs = dargs.to_vec();
+      dargs[3] = Expr::Real(
+        crate::functions::math_ast::try_eval_to_f64(&z).unwrap_or(0.0),
+      );
+      Ok(call("DateObject", dargs))
+    }
+    (Expr::FunctionCall { name, .. }, _) if name == "FromJulianDate" => {
+      unevaluated()
+    }
+    _ => Ok(result.clone()),
+  }
+}
+
 pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("FromJulianDate", args));
   if args.len() != 1 {

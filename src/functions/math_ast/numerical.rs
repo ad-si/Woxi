@@ -6674,9 +6674,15 @@ fn compute_champernowne(
 pub fn list_fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("ListFourierSequenceTransform", args));
   }
+  // ListFourierSequenceTransform[list, ω, n0]: list starts at index n0.
+  let shift: i128 = match args.get(2) {
+    None => 0,
+    Some(Expr::Integer(n)) => *n,
+    Some(_) => return Ok(unevaluated("ListFourierSequenceTransform", args)),
+  };
 
   let Expr::List(list) = &args[0] else {
     return Ok(unevaluated("ListFourierSequenceTransform", args));
@@ -6696,13 +6702,14 @@ pub fn list_fourier_sequence_transform_ast(
     if matches!(coeff, Expr::Integer(0)) {
       continue;
     }
+    let k = k as i128 + shift;
 
     if k == 0 {
       // E^0 = 1, so just add the coefficient
       terms.push(coeff.clone());
     } else {
       // a_k * E^(-I * omega * k)
-      let k_expr = Expr::Integer(k as i128);
+      let k_expr = Expr::Integer(k);
       // -I * omega * k
       let exponent =
         times(vec![Expr::Integer(-1), id_expr("I"), omega.clone(), k_expr]);

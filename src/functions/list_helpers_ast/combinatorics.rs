@@ -265,6 +265,35 @@ pub fn combinatorica_permutations_ast(
   permutations_ast(&[Expr::List(items.into())])
 }
 
+/// `Combinatorica\`NextPermutation[l]` — the permutation following `l` in
+/// lexicographic (canonical) order; the last one wraps around to the sorted
+/// list, as in Combinatorica.
+pub fn combinatorica_next_permutation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use std::cmp::Ordering::Less;
+  let [Expr::List(items)] = args else {
+    return Ok(unevaluated("Combinatorica`NextPermutation", args));
+  };
+  let mut v: Vec<Expr> = items.to_vec();
+  let cmp = super::sorting::canonical_cmp;
+  // The rightmost ascent i, then the rightmost element above v[i].
+  let Some(i) = (0..v.len().saturating_sub(1))
+    .rev()
+    .find(|&i| cmp(&v[i], &v[i + 1]) == Less)
+  else {
+    v.sort_by(cmp);
+    return Ok(Expr::List(v.into()));
+  };
+  let j = (i + 1..v.len())
+    .rev()
+    .find(|&j| cmp(&v[i], &v[j]) == Less)
+    .unwrap();
+  v.swap(i, j);
+  v[i + 1..].reverse();
+  Ok(Expr::List(v.into()))
+}
+
 /// `Combinatorica\`Derangements[l]` / `Combinatorica\`Derangements[n]` — all
 /// permutations of `l` (or of `Range[n]`) that leave no element in its
 /// original position, in the same order `Combinatorica\`Permutations`

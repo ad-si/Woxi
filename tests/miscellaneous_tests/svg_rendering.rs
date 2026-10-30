@@ -2287,6 +2287,22 @@ mod tests {
     }
 
     #[test]
+    fn labeled_graphic_with_a_label_per_side() {
+      // `Labeled[g, {l1, l2}, {Top, Bottom}]` sets each label at its own
+      // side of the picture instead of writing the call out as text.
+      let svg = svg_of(
+        "Labeled[Graphics[{Circle[]}], \
+         {Text[Row[{\"top\", 1}]], \"below\"}, {Top, Bottom}]",
+      );
+      assert!(!svg.contains("Labeled"), "must not export as source: {svg}");
+      assert!(!svg.contains("Text["), "must not export as source: {svg}");
+      let top = svg.find("top").expect("top label");
+      let below = svg.find("below").expect("bottom label");
+      let circle = svg.find("<ellipse").expect("the circle");
+      assert!(top < circle && circle < below, "label order: {svg}");
+    }
+
+    #[test]
     fn styled_layout_keeps_its_layout_when_exported() {
       // `Style[Row[…], …]` shows the row, styled — not the source of the
       // call. A Demonstration captions its plot this way, and the caption
