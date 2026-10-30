@@ -416,6 +416,27 @@ mod country_data_tests {
   }
 
   #[test]
+  fn country_data_bare_projection_name() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "CountryData[\"Belgium\", {\"Shape\", \"Mercator\"}] === \
+         CountryData[\"Belgium\", {\"Shape\", {\"Mercator\", {0, 0}}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "p = CountryData[\"Japan\", {\"Polygon\", \"Equirectangular\"}]; \
+         {Head[p], Head[p[[1]]], MatchQ[p[[1, 1, 1]], {_Real, _Real}]}"
+      )
+      .unwrap(),
+      "{Polygon, List, True}"
+    );
+  }
+
+  #[test]
   fn country_data_shape_projections() {
     clear_state();
     // Every projection yields a Graphics of polygons.
