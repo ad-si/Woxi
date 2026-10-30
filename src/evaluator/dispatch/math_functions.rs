@@ -5090,6 +5090,48 @@ pub fn dispatch_math_functions(
         return Some(evaluate_expr_to_expr(&result));
       }
     }
+    // MultiplySides / DivideSides [rel, expr, Assumptions -> cond]: the
+    // assumptions decide the sign of expr, so an inequality is reversed for
+    // a negative expr and an equation needs no `expr != 0` guard.
+    "MultiplySides" | "DivideSides"
+      if args.len() == 3
+        && let Some((Expr::Identifier(o), assumptions, _)) =
+          crate::functions::expr_form::rule_parts(&args[2])
+        && o == "Assumptions" =>
+    {
+      let factor = &args[1];
+      let holds = |op: ComparisonOp| {
+        let test = Expr::Comparison {
+          operands: vec![factor.clone(), Expr::Integer(0)],
+          operators: vec![op],
+        };
+        matches!(
+          evaluate_expr_to_expr(&call(
+            "Refine",
+            vec![test, assumptions.clone()]
+          )),
+          Ok(Expr::Identifier(ref t)) if t == "True"
+        )
+      };
+      let negative = if holds(ComparisonOp::Greater) {
+        false
+      } else if holds(ComparisonOp::Less) {
+        true
+      } else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let multiplier = if name == "DivideSides" {
+        pow(factor.clone(), Expr::Integer(-1))
+      } else {
+        factor.clone()
+      };
+      let scaled = apply_to_sides(&args[0], &multiplier, "Times")?;
+      return Some(evaluate_expr_to_expr(&if negative {
+        reverse_inequality(scaled)
+      } else {
+        scaled
+      }));
+    }
     // MultiplySides[rel, expr] — multiply both sides by expr
     "MultiplySides" if args.len() == 2 => {
       if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Multiply) {
@@ -5101,7 +5143,8 @@ pub fn dispatch_math_functions(
         return None;
       }
       if let Some(result) = apply_to_sides(&args[0], &args[1], "Times")
-        && let Ok(scaled) = evaluate_expr_to_expr(&result)
+        && let Ok(scaled) =
+          evaluate_expr_to_expr(&reverse_if_negative(result, &args[1]))
       {
         return Some(guard_equation_scale(&args[0], &args[1], scaled));
       }
@@ -5116,7 +5159,8 @@ pub fn dispatch_math_functions(
       }
       let inv = pow(args[1].clone(), Expr::Integer(-1));
       if let Some(result) = apply_to_sides(&args[0], &inv, "Times")
-        && let Ok(scaled) = evaluate_expr_to_expr(&result)
+        && let Ok(scaled) =
+          evaluate_expr_to_expr(&reverse_if_negative(result, &args[1]))
       {
         return Some(guard_equation_scale(&args[0], &args[1], scaled));
       }
@@ -7495,6 +7539,37 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
     })
   } else {
     None
+  }
+}
+
+/// Swap the direction of every inequality operator of a relation.
+fn reverse_inequality(relation: Expr) -> Expr {
+  match &relation {
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.clone(),
+      operators: operators
+        .iter()
+        .map(|op| match *op {
+          ComparisonOp::Less => ComparisonOp::Greater,
+          ComparisonOp::Greater => ComparisonOp::Less,
+          ComparisonOp::LessEqual => ComparisonOp::GreaterEqual,
+          ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
+          other => other,
+        })
+        .collect(),
+    },
+    _ => relation,
+  }
+}
+
+/// Scaling both sides of an inequality by a negative number reverses it.
+fn reverse_if_negative(scaled: Expr, factor: &Expr) -> Expr {
+  match crate::functions::math_ast::try_eval_to_f64(factor) {
+    Some(v) if v < 0.0 => reverse_inequality(scaled),
+    _ => scaled,
   }
 }
 

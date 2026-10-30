@@ -1632,10 +1632,13 @@ fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
 ///
 /// Returns solutions as `x == val1 || x == val2 || ...`
 pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "Roots expects exactly 2 arguments".into(),
+      "Roots expects at least 2 arguments".into(),
     ));
+  }
+  if args.len() > 2 {
+    return roots_with_options(args);
   }
 
   let var = match &args[1] {
@@ -1702,6 +1705,98 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Solve returned unevaluated
     _ => Ok(unevaluated("Roots", args)),
   }
+}
+
+/// `Roots[eqn, var, opts]` with the options `Modulus`, `Multiplicity`,
+/// `Cubics` and `Quartics`. Any other option leaves the call unevaluated.
+fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::expr_form::rule_parts;
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let mut modulus: i128 = 0;
+  let mut multiplicity: Option<usize> = None;
+  let mut radical_degrees: Vec<i128> = Vec::new();
+  for opt in &args[2..] {
+    let Some((Expr::Identifier(name), value, _)) = rule_parts(opt) else {
+      return Ok(unevaluated("Roots", args));
+    };
+    match (name.as_str(), value) {
+      ("Modulus", Expr::Integer(n)) if *n >= 0 => modulus = *n,
+      ("Multiplicity", Expr::Integer(k)) if *k >= 1 => {
+        multiplicity = Some(*k as usize);
+      }
+      ("Multiplicity", Expr::Identifier(i)) if i == "Infinity" => {}
+      ("Cubics" | "Quartics", Expr::Identifier(b))
+        if b == "True" || b == "False" =>
+      {
+        if b == "True" {
+          radical_degrees.push(if name == "Cubics" { 3 } else { 4 });
+        }
+      }
+      _ => return Ok(unevaluated("Roots", args)),
+    }
+  }
+
+  if modulus > 0 {
+    return eval(call(
+      "Reduce",
+      vec![
+        args[0].clone(),
+        args[1].clone(),
+        rule_expr(Expr::Identifier("Modulus".into()), Expr::Integer(modulus)),
+      ],
+    ));
+  }
+
+  let result = roots_ast(&args[..2])?;
+  let mut conditions: Vec<Expr> = match &result {
+    Expr::FunctionCall { name, args: cs } if name == "Or" => cs.to_vec(),
+    Expr::Comparison { .. } => vec![result.clone()],
+    _ => return Ok(result),
+  };
+
+  // Root objects of the requested degrees are written out in radicals.
+  if !radical_degrees.is_empty() {
+    for c in &mut conditions {
+      if let Expr::Comparison { operands, .. } = c
+        && let Some(value) = operands.get_mut(1)
+        && let Expr::FunctionCall { name, args: rargs } = &*value
+        && name == "Root"
+        && let Some(Expr::Function { body }) = rargs.first()
+        && let Ok(Expr::Integer(deg)) =
+          eval(call("Exponent", vec![*body.clone(), Expr::Slot(1)]))
+        && radical_degrees.contains(&deg)
+      {
+        *value = eval(call1("ToRadicals", value.clone()))?;
+      }
+    }
+  }
+
+  // At most `k` copies of each repeated root.
+  if let Some(k) = multiplicity {
+    let mut kept: Vec<(Expr, usize)> = Vec::new();
+    conditions.retain(|c| {
+      match kept
+        .iter_mut()
+        .find(|(e, _)| crate::evaluator::pattern_matching::expr_equal(e, c))
+      {
+        Some((_, n)) if *n >= k => false,
+        Some((_, n)) => {
+          *n += 1;
+          true
+        }
+        None => {
+          kept.push((c.clone(), 1));
+          true
+        }
+      }
+    });
+  }
+
+  Ok(if conditions.len() == 1 {
+    conditions.into_iter().next().unwrap()
+  } else {
+    call("Or", conditions)
+  })
 }
 
 /// NRoots[equation, var] — numerical roots of a polynomial equation.

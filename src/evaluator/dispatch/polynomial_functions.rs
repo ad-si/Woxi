@@ -98,8 +98,96 @@ pub fn dispatch_polynomial_functions(
     "Expand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::expand_ast(args));
     }
+    // Decompose[poly, x, Modulus -> p]: the decomposition of poly reduced
+    // modulo p, with each component reduced as well. A decomposition that
+    // does not survive the reduction leaves the reduced polynomial whole.
+    "Decompose"
+      if args.len() == 3
+        && let Some(p) =
+          crate::functions::linear_algebra_ast::extract_modulus_option_la(
+            &args[2],
+          ) =>
+    {
+      if p == 0 {
+        return dispatch_polynomial_functions(name, &args[..2]);
+      }
+      let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+      let reduce =
+        |e: Expr| eval(call("PolynomialMod", vec![e, Expr::Integer(p)]));
+      let reduced = match reduce(args[0].clone()) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+      };
+      let whole = Expr::List(vec![reduced.clone()].into());
+      let parts =
+        match eval(call("Decompose", vec![reduced.clone(), args[1].clone()])) {
+          Ok(Expr::List(ref parts)) => parts.to_vec(),
+          Ok(_) => return Some(Ok(unevaluated(name, args))),
+          Err(e) => return Some(Err(e)),
+        };
+      let Ok(parts) =
+        parts.into_iter().map(reduce).collect::<Result<Vec<_>, _>>()
+      else {
+        return Some(Ok(whole));
+      };
+      // Every component must still have degree at least 2, and composing
+      // them must give back the reduced polynomial.
+      let degree_ok = parts.iter().all(|q| {
+        matches!(
+          eval(call("Exponent", vec![q.clone(), args[1].clone()])),
+          Ok(Expr::Integer(d)) if d >= 2
+        )
+      });
+      let mut composed = args[1].clone();
+      for q in parts.iter().rev() {
+        composed = call(
+          "ReplaceAll",
+          vec![
+            q.clone(),
+            Expr::Rule {
+              pattern: Box::new(args[1].clone()),
+              replacement: Box::new(composed),
+            },
+          ],
+        );
+      }
+      let same = matches!(
+        reduce(call("Subtract", vec![call1("Expand", composed), reduced])),
+        Ok(Expr::Integer(0))
+      );
+      return Some(Ok(if degree_ok && same {
+        Expr::List(parts.into())
+      } else {
+        whole
+      }));
+    }
     "Decompose" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::decompose_ast(args));
+    }
+    // `Trig -> True|False` as the last option of the algebraic
+    // transformations. With False (the default) the option is dropped; with
+    // True the trigonometric functions are treated as rational functions of
+    // Sin and Cos.
+    "Factor"
+    | "FactorList"
+    | "FactorSquareFree"
+    | "FactorSquareFreeList"
+    | "Together"
+    | "Cancel"
+      if args.len() >= 2
+        && let Some((Expr::Identifier(o), Expr::Identifier(v), false)) =
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1])
+        && o == "Trig"
+        && (v == "True" || v == "False") =>
+    {
+      let rest = &args[..args.len() - 1];
+      if v == "False" {
+        return Some(crate::evaluator::evaluate_function_call_ast(name, rest));
+      }
+      if rest.len() != 1 {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      return Some(trig_rational_transform(name, &rest[0]));
     }
     "Factor" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::factor_ast(args));
@@ -291,7 +379,7 @@ pub fn dispatch_polynomial_functions(
     "SolveAlways" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::solve_always_ast(args));
     }
-    "Roots" if args.len() == 2 => {
+    "Roots" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::roots_ast(args));
     }
     "NRoots" if args.len() == 2 => {
@@ -845,7 +933,7 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
-    "PolynomialMod" if args.len() == 2 => {
+    "PolynomialMod" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::polynomial_mod_ast(args));
     }
     "InterpolatingPolynomial" if args.len() == 2 => {
@@ -1150,6 +1238,59 @@ fn univariate_roots_mod(
   }
   combined.sort_unstable();
   Some(combined)
+}
+
+/// `name[expr, Trig -> True]`. The factoring functions factor with
+/// `TrigFactor`; `Together` and `Cancel` expand multiple angles and work on
+/// the expression as a rational function of `Sin[a]` and `Cos[a]`.
+fn trig_rational_transform(
+  name: &str,
+  expr: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  match name {
+    "Factor" | "FactorSquareFree" => eval(call1("TrigFactor", expr.clone())),
+    "FactorList" | "FactorSquareFreeList" => {
+      let factored = eval(call1("TrigFactor", expr.clone()))?;
+      eval(call1(name, factored))
+    }
+    _ => {
+      // Sin and Cos become the inert heads below, so that 1/Sin[x] does not
+      // turn back into Csc[x] before the rational operation.
+      let (s, c) = ("TrigSin$Inert", "TrigCos$Inert");
+      let a = || Expr::Identifier("a".into());
+      let pat = || Expr::Pattern {
+        name: "a".into(),
+        head: None,
+        blank_type: 1,
+      };
+      let sin = || call(s, vec![a()]);
+      let cos = || call(c, vec![a()]);
+      let inv = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
+      let rule = |head: &str, rhs: Expr| Expr::RuleDelayed {
+        pattern: Box::new(call(head, vec![pat()])),
+        replacement: Box::new(rhs),
+      };
+      let to_inert = Expr::List(
+        vec![
+          rule("Sin", sin()),
+          rule("Cos", cos()),
+          rule("Tan", call("Times", vec![sin(), inv(cos())])),
+          rule("Cot", call("Times", vec![cos(), inv(sin())])),
+          rule("Sec", inv(cos())),
+          rule("Csc", inv(sin())),
+        ]
+        .into(),
+      );
+      let back = Expr::List(
+        vec![rule(s, call1("Sin", a())), rule(c, call1("Cos", a()))].into(),
+      );
+      let expanded = eval(call1("TrigExpand", expr.clone()))?;
+      let inert = eval(call("ReplaceAll", vec![expanded, to_inert]))?;
+      let combined = eval(call1(name, inert))?;
+      eval(call("ReplaceAll", vec![combined, back]))
+    }
+  }
 }
 
 /// The inverse of `a` modulo `m` (gcd 1), or `None`.
