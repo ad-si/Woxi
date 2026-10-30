@@ -23916,3 +23916,24 @@ mod solve_inequality_constraints {
     );
   }
 }
+
+mod nminimize_non_numeric_objective {
+  use super::*;
+
+  // An objective that is never a number is NMinimize::nnum and the call
+  // stays unevaluated (wolframscript reports it at a random probe point).
+  #[test]
+  fn nnum_message_and_unevaluated() {
+    let out =
+      woxi::interpret_with_stdout("NMaximize[{f[r], 0 < r < 1}, r]").unwrap();
+    assert_eq!(out.result, "NMaximize[{f[r], 0 < r < 1}, r]");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("NMaximize::nnum")),
+      "{:?}",
+      out.warnings
+    );
+  }
+}

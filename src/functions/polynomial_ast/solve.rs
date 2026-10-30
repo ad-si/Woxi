@@ -19728,6 +19728,51 @@ pub fn nminimize_ast(
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
   let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  match nminimize_ast_checked(args, maximize) {
+    // An objective that never evaluates to a number (an undefined `f[r]`)
+    // is NMinimize::nnum and the call stays as it is, not a hard error.
+    Err(InterpreterError::EvaluationError(msg))
+      if msg.contains("evaluate expression numerically") =>
+    {
+      let vars = match args.get(1) {
+        Some(Expr::List(v)) => v.to_vec(),
+        Some(v) => vec![v.clone()],
+        None => vec![],
+      };
+      let objective = match args.first() {
+        Some(Expr::List(items)) if !items.is_empty() => items[0].clone(),
+        Some(o) => o.clone(),
+        None => Expr::Integer(0),
+      };
+      let probe: Vec<Expr> = vars.iter().map(|_| Expr::Real(0.5)).collect();
+      let mut value = objective;
+      for (v, p) in vars.iter().zip(&probe) {
+        if let Expr::Identifier(name) = v {
+          value = crate::syntax::substitute_variable(&value, name, p);
+        }
+      }
+      if maximize {
+        value = negate_expr(&value);
+      }
+      let value =
+        crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value);
+      crate::emit_message(&format!(
+        "{func_name}::nnum: The function value {} is not a number at {} = {}.",
+        expr_to_string(&value),
+        expr_to_string(&Expr::List(vars.clone().into())),
+        expr_to_string(&Expr::List(probe.into()))
+      ));
+      Ok(unevaluated(func_name, args))
+    }
+    other => other,
+  }
+}
+
+fn nminimize_ast_checked(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  let func_name = if maximize { "NMaximize" } else { "NMinimize" };
   // Trailing `opt -> value` arguments are accepted (and, apart from a
   // monitor's `noopmon` report, ignored) rather than rejected on arity.
   let (positional, opts) = args.split_at(args.len().min(2));
