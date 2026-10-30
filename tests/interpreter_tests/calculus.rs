@@ -24453,3 +24453,20 @@ mod dsolve_single_variable_pde {
     );
   }
 }
+
+mod ndsolve_initial_value_from_solution_list {
+  use super::*;
+
+  // `v[0] == (v /. sol)` with `sol` a list of rule lists yields `v[0] == {x}`;
+  // the one-element list must still act as the initial value.
+  #[test]
+  fn singleton_list_initial_values() {
+    assert_eq!(
+      interpret(
+        "sol = {{v -> 2., h -> 3.}}; s = NDSolve[{v'[t] == -v[t], h'[t] == 0, v[0] == (v /. sol), h[0] == (h /. sol)}, {v[t], h[t]}, {t, 0, 1}]; Round[(h[t] /. s[[1]] /. t -> 1), 0.01]"
+      )
+      .unwrap(),
+      "3."
+    );
+  }
+}
