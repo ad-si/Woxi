@@ -6693,6 +6693,19 @@ mod list_set_delayed {
       "{r, s}"
     );
   }
+
+  #[test]
+  fn repeated_name_across_nested_patterns() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[g[i_Integer], g[i_Integer]] := -1; \
+         {f[g[1], g[2]], f[g[1], g[1]], f[g[3], g[3]]}"
+      )
+      .unwrap(),
+      "{f[g[1], g[2]], -1, -1}"
+    );
+  }
 }
 
 // A definition's local variable that also occurs in an argument value is

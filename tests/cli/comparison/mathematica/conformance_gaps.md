@@ -6333,6 +6333,19 @@ woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}
 The values are equal, but the elimination leaves a different quotient, so
 `N` of the two differs in the last digits.
 
+### A name repeated across list arguments is not checked for equality
+
+```wolfram
+h[{a_}, {a_}] := a;
+h[{1}, {2}]
+# Woxi:         1
+# wolframscript: h[{1}, {2}]
+```
+
+List argument patterns are decomposed into per-element accessors, which
+bind each name independently, so the repeated `a` never has to agree
+(nested calls such as `f[g[i_], g[i_]]` are checked correctly).
+
 ## SparseArray: internal entry order of sums, `Select` keeping sparsity
 
 - `Plus @@ SparseArray[{{1, 2}, {0, 5}}]` equals wolframscript's value, but

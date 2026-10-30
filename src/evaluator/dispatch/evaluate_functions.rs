@@ -14924,7 +14924,15 @@ fn apply_user_overloads(
                     conditions_met = false;
                     break;
                   }
-                  structural_bindings.extend(bindings);
+                  // A name repeated across structural slots (`f[g[i_], g[i_]]`)
+                  // must take the same value in each.
+                  if !crate::evaluator::pattern_matching::merge_bindings(
+                    &mut structural_bindings,
+                    bindings,
+                  ) {
+                    conditions_met = false;
+                    break;
+                  }
                 } else {
                   conditions_met = false;
                   break;
@@ -15265,7 +15273,15 @@ fn apply_user_overloads(
                       conditions_met = false;
                       break;
                     }
-                    structural_bindings.extend(bindings);
+                    // A name repeated across structural slots (`f[g[i_], g[i_]]`)
+                    // must take the same value in each.
+                    if !crate::evaluator::pattern_matching::merge_bindings(
+                      &mut structural_bindings,
+                      bindings,
+                    ) {
+                      conditions_met = false;
+                      break;
+                    }
                   } else {
                     conditions_met = false;
                     break;
