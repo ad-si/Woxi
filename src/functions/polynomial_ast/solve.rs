@@ -5752,8 +5752,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Find maximum degree
   let Some(degree) = max_power_int(&expanded, var) else {
-    // Non-polynomial: try factoring out common fractional-power sub-expressions
+    // Non-polynomial: try factoring out common fractional-power
+    // sub-expressions, then a polynomial in an exponential (`b^x` has no
+    // degree in x).
     if let Some(result) = try_solve_factoring_powers(&expanded, var, args) {
+      return result;
+    }
+    if let Some(result) = try_solve_exponential_polynomial(&expanded, var) {
       return result;
     }
     return Ok(unevaluated("Solve", args));
@@ -11570,7 +11575,82 @@ fn primitive_root_polynomial(poly: &Expr, var: &str) -> Option<Expr> {
   Some(plus(terms))
 }
 
+/// The root `Root[{f, x0}]` stands for: `f`'s zero found by `FindRoot` from
+/// `x0`, as a machine number, or None when it cannot be found.
+pub fn transcendental_root_value(f: &Expr, x0: &Expr) -> Option<Expr> {
+  let t = Expr::Identifier("Internal`RootVariable".to_string());
+  let applied = crate::evaluator::apply_function_to_arg(f, &t).ok()?;
+  let found = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Quiet",
+    vec![call(
+      "FindRoot",
+      vec![
+        call("Equal", vec![applied, Expr::Integer(0)]),
+        Expr::List(vec![t.clone(), call("N", vec![x0.clone()])].into()),
+      ],
+    )],
+  ))
+  .ok()?;
+  let Expr::List(rules) = &found else {
+    return None;
+  };
+  match rules.first() {
+    Some(Expr::Rule { replacement, .. })
+      if crate::functions::math_ast::try_eval_to_f64(replacement).is_some() =>
+    {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }
+}
+
+/// `Root[{f, x0}]` — the root of the transcendental function `f` that the
+/// approximation `x0` identifies; it stays as written, and `N` gives the
+/// root. An `x0` too far from a root (the refined root moves by more than
+/// 10^-6 relative) is reported (`::invrt`), anything but such a pair is
+/// not a root specification (`::trsp`), and a pattern (`Root[_]`) is left
+/// alone.
+fn transcendental_root_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
+  let held = || Ok(call("Root", vec![arg.clone()]));
+  let Expr::List(spec) = arg else {
+    if !crate::evaluator::pattern_matching::contains_pattern(arg) {
+      crate::emit_message(&format!(
+        "Root::trsp: Nonpolynomial root specification {} is not a list with \
+         two elements.",
+        crate::syntax::format_expr(arg, crate::syntax::ExprForm::Output)
+      ));
+    }
+    return held();
+  };
+  let [f, x0] = spec.as_slice() else {
+    return held();
+  };
+  let Some(guess) = crate::functions::math_ast::try_eval_to_f64(x0) else {
+    return held();
+  };
+  let close = transcendental_root_value(f, x0)
+    .and_then(|r| crate::functions::math_ast::try_eval_to_f64(&r))
+    .is_some_and(|r| (r - guess).abs() <= 1e-6 * r.abs().max(1.0));
+  if !close {
+    let shown = crate::evaluator::evaluate_expr_to_expr(&call(
+      "ToString",
+      vec![call("SetPrecision", vec![x0.clone(), Expr::Integer(16)])],
+    ))?;
+    let Expr::String(ref shown) = shown else {
+      return held();
+    };
+    crate::emit_message(&format!(
+      "Root::invrt: {shown} is not equal to a root of {}.",
+      crate::syntax::format_expr(f, crate::syntax::ExprForm::Output)
+    ));
+  }
+  held()
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let [arg] = args {
+    return transcendental_root_ast(arg);
+  }
   // A `Root[…]` is re-evaluated whenever an expression holding it is, and
   // canonicalizing it factors its polynomial; the outcome only depends on
   // the arguments. A call that reported a message is not remembered, so

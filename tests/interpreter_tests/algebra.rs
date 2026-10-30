@@ -206,6 +206,39 @@ mod exponent {
 mod coefficient {
   use super::*;
 
+  // A factor that depends on the variable other than as a power of it
+  // (`3^x`, `E^x`, `(1 + x)^x`, `Sin[x]`) belongs to the coefficient, while
+  // `x^(1/2)` or `x^y` match no integer power. Exponentials used to vanish,
+  // so `Solve[3^x + 5^x == 8 x, x]` claimed `x -> 0`.
+  #[test]
+  fn non_polynomial_factors_are_coefficients() {
+    assert_eq!(
+      interpret(
+        "{Coefficient[x 3^x + 2^x, x], Coefficient[3^x + x^-1, x, -1], \
+         Coefficient[(1 + x)^x, x, 0], Coefficient[x^(1/2) + 2, x, 0], \
+         Coefficient[x^y + 1, x, 0], Coefficient[E^x x^2, x, 2], \
+         CoefficientList[Sin[x] x^2 + 3^x, x], CoefficientList[x 2^x + 1, x]}"
+      )
+      .unwrap(),
+      "{3^x, 1, (1 + x)^x, 2, 1, E^x, {3^x, 0, Sin[x]}, {1, 2^x}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Exponent[3^x x^2 + x, x], Exponent[E^x x + 1, x], \
+         Exponent[E^(2 x) x, x], Exponent[3^x + x^2, x], Exponent[E^x, x]}"
+      )
+      .unwrap(),
+      "{2, 1, 1, Exponent[3^x + x^2, x], Exponent[E^x, x]}"
+    );
+    assert_eq!(
+      interpret(
+        "{Solve[3^x + 5^x == 8 x, x], Solve[2^x + 4^x == 6, x, Reals]}"
+      )
+      .unwrap(),
+      "{Solve[3^x + 5^x == 8*x, x], {{x -> 1}}}"
+    );
+  }
+
   #[test]
   fn quadratic_coefficients() {
     assert_eq!(interpret("Coefficient[x^2 + 3*x + 2, x, 2]").unwrap(), "1");

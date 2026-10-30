@@ -231,6 +231,15 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
           args: vec![args[0].clone(), args[1].clone(), point].into(),
         });
       }
+      // Root[{f, x0}] — the transcendental root near x0.
+      if name == "Root"
+        && let [Expr::List(spec)] = args.as_slice()
+        && let [f, x0] = spec.as_slice()
+        && let Some(r) =
+          crate::functions::polynomial_ast::transcendental_root_value(f, x0)
+      {
+        return Ok(r);
+      }
       // Root[poly &, k] / Root[poly &, k, 0] — the k-th root numerically.
       if name == "Root"
         && (args.len() == 2 || args.len() == 3)

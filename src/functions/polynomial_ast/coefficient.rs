@@ -647,8 +647,17 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Expand and combine the expression first
   let expanded = expand_and_combine(&normalized);
 
-  // Find the degree
-  let Some(degree) = max_power_int(&expanded, var) else {
+  // Find the degree. A factor that depends on `var` other than as a power
+  // of it (`3^x`, `Sin[x]`) is part of a coefficient, as in `Coefficient`:
+  // CoefficientList[Sin[x] x^2 + 3^x, x] is {3^x, 0, Sin[x]}.
+  let Some(degree) = max_power_int(&expanded, var).or_else(|| {
+    let powers: Vec<i128> = collect_additive_terms(&expanded)
+      .iter()
+      .map(|t| term_var_power_and_coeff(t, var).0)
+      .collect();
+    (!powers.iter().any(|&p| p < 0))
+      .then(|| powers.into_iter().max().unwrap_or(0))
+  }) else {
     return Ok(unevaluated("CoefficientList", args));
   };
 
@@ -779,6 +788,32 @@ pub fn extract_coefficient_of_power(
   }
 }
 
+/// The power reported for a factor that is no integer power of the
+/// variable (`x^(1/2)`, `x^y`, `1/(1 + x)`): far from any power asked for,
+/// even after a product adds a few powers to it.
+pub const NON_POWER: i128 = i128::MIN / 4;
+
+/// How a factor `base^exponent` depends on `var`: an integer power of it, a
+/// coefficient (an exponential `3^x`, `E^x` or `(1 + x)^x`, which Wolfram's
+/// `Coefficient` treats like `Sin[x]`), or `NON_POWER`.
+fn power_factor_power(
+  term: &Expr,
+  base: &Expr,
+  exponent: &Expr,
+  var: &str,
+) -> (i128, Expr) {
+  if matches!(base, Expr::Identifier(n) if n == var) {
+    return match exponent {
+      Expr::Integer(n) => (*n, Expr::Integer(1)),
+      _ => (NON_POWER, term.clone()),
+    };
+  }
+  if is_constant_wrt(base, var) || !is_constant_wrt(exponent, var) {
+    return (0, term.clone());
+  }
+  (NON_POWER, term.clone())
+}
+
 /// Decompose a multiplicative term into (power_of_var, coefficient).
 /// E.g. 3*x^2 → (2, 3); a*x → (1, a); 5 → (0, 5); x → (1, 1)
 pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
@@ -799,21 +834,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
       op: BinaryOperator::Power,
       left,
       right,
-    } => {
-      if let Expr::Identifier(name) = left.as_ref()
-        && name == var
-        && let Expr::Integer(n) = right.as_ref()
-      {
-        return (*n, Expr::Integer(1));
-      }
-      // Check if the whole thing is constant w.r.t. var
-      if is_constant_wrt(term, var) {
-        (0, term.clone())
-      } else {
-        // Complex expression — try to factor out var powers
-        (-1, term.clone()) // sentinel: won't match any requested power
-      }
-    }
+    } => power_factor_power(term, left, right, var),
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -868,7 +889,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
       if is_constant_wrt(term, var) {
         (0, term.clone())
       } else {
-        (-1, term.clone())
+        (NON_POWER, term.clone())
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -887,17 +908,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
         (total_power, coeff)
       }
       "Power" if args.len() == 2 => {
-        if let Expr::Identifier(name) = &args[0]
-          && name == var
-          && let Expr::Integer(n) = &args[1]
-        {
-          return (*n, Expr::Integer(1));
-        }
-        if is_constant_wrt(term, var) {
-          (0, term.clone())
-        } else {
-          (-1, term.clone())
-        }
+        power_factor_power(term, &args[0], &args[1], var)
       }
       _ => {
         // Non-algebraic functions (Sin, Cos, etc.) are treated as coefficients
@@ -911,7 +922,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
       if is_constant_wrt(term, var) {
         (0, term.clone())
       } else {
-        (-1, term.clone())
+        (NON_POWER, term.clone())
       }
     }
   }

@@ -1320,7 +1320,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "RightComposition" => Some((0, usize::MAX)),
     "RomanNumeral" => Some((1, 1)),
     "FromRomanNumeral" => Some((1, 1)),
-    "Root" => Some((2, 3)),
+    "Root" => Some((1, 3)),
     "RootReduce" => Some((1, 1)),
     "NumberFieldSignature" => Some((1, 3)),
     "RootMeanSquare" => Some((1, 1)),
