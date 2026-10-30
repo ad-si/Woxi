@@ -1747,7 +1747,6 @@ fn real_digits_rational_base(
 
   // The exponent already accounts for the zeros right after the point,
   // so they are not digits of the result.
-  let mut cycle_start = cycle_start;
   if integer_part == 0 && exponent < 0 {
     let skip = ((-exponent) as usize).min(digits.len());
     digits.drain(..skip);
