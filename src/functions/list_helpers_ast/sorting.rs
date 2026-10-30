@@ -198,6 +198,18 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
     Expr::SlotSequence(n) => {
       Some(call("SlotSequence", vec![Expr::Integer(*n as i128)]))
     }
+    // `a[[i, j]]` orders as the call `Part[a, i, j]` (after `f[a]`).
+    Expr::Part { .. } => {
+      let mut indices = Vec::new();
+      let mut inner = e;
+      while let Expr::Part { expr, index } = inner {
+        indices.push(index.as_ref().clone());
+        inner = expr;
+      }
+      indices.push(inner.clone());
+      indices.reverse();
+      Some(call("Part", indices))
+    }
     _ => None,
   }
 }
@@ -982,6 +994,16 @@ fn limit_ordering(
   };
   if matches!(count, Expr::Identifier(n) if n == "All") {
     return Some(ordering);
+  }
+  // A sequence specification `{m, n}` / `{m, n, s}` is Take's.
+  if matches!(count, Expr::List(_)) {
+    return match crate::evaluator::evaluate_function_call_ast(
+      "Take",
+      &[Expr::List(ordering.into()), count.clone()],
+    ) {
+      Ok(Expr::List(ref items)) => Some(items.to_vec()),
+      _ => None,
+    };
   }
   let Some(n) = expr_to_i128(count) else {
     return Some(ordering);

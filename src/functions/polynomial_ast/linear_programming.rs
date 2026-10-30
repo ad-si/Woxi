@@ -363,6 +363,10 @@ fn parse_bounds(l: &Expr, n: usize) -> Result<Vec<(Bound, Bound)>, BoundError> {
         return Err(BoundError::Rank);
       }
     }
+    // `None`: every variable is unbounded.
+    Expr::Identifier(none) if none == "None" => {
+      vec![(Bound::NegInf, Bound::PosInf); n]
+    }
     // A scalar lower bound shared by every variable.
     scalar => match parse_bound(scalar) {
       Some(lo) => vec![(lo, Bound::PosInf); n],

@@ -6454,6 +6454,46 @@ mod lhs_argument_collapses_to_literal {
   }
 }
 
+mod lhs_argument_evaluates_to_pattern {
+  use super::*;
+
+  #[test]
+  fn symbol_holding_a_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = Pattern[a, Blank[]]; k[p] = 7; k2[{p, 2}] = 8; \
+         {k[3], k2[{3, 2}], k2[{3, 1}]}"
+      )
+      .unwrap(),
+      "{7, 8, k2[{3, 1}]}"
+    );
+  }
+
+  #[test]
+  fn computed_nested_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = Partition[{a, b, c, d}, 2]; \
+         h[Map[Pattern[#, Blank[]] &, s, {2}]] = a + d; \
+         {h[{{1, 2}, {3, 4}}], DownValues[h]}"
+      )
+      .unwrap(),
+      "{5, {HoldPattern[h[{{a_, b_}, {c_, d_}}]] :> a + d}}"
+    );
+  }
+
+  #[test]
+  fn literal_argument_is_evaluated_once() {
+    clear_state();
+    assert_eq!(
+      interpret("i = 0; f[i++] = 1; {i, DownValues[f]}").unwrap(),
+      "{1, {HoldPattern[f[0]] :> 1}}"
+    );
+  }
+}
+
 mod nested_part_parsing {
   use super::*;
 
@@ -6586,6 +6626,40 @@ mod function_head_and_compound_printing {
       interpret("f[x_] := CompoundExpression[y = x, y + 1]; DownValues[f]")
         .unwrap(),
       "{HoldPattern[f[x_]] :> (y = x; y + 1)}"
+    );
+  }
+}
+
+mod list_set_delayed {
+  use super::*;
+
+  #[test]
+  fn threads_over_written_lists() {
+    clear_state();
+    assert_eq!(
+      interpret("{f[x_], g[x_]} := {x^2, x^3}; {f[2], g[2]}").unwrap(),
+      "{4, 8}"
+    );
+    assert_eq!(interpret("{a, b} := {1, 2}; {a, b}").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn shape_mismatch() {
+    clear_state();
+    let out = woxi::interpret_with_stdout("{p, q} := {1, 2, 3}").unwrap();
+    assert_eq!(out.result, "$Failed");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("SetDelayed::shape")),
+      "{:?}",
+      out.warnings
+    );
+    // The right-hand side is not evaluated to find a list.
+    assert_eq!(
+      interpret("v = {1, 2}; Quiet[{r, s} := v]; {r, s}").unwrap(),
+      "{r, s}"
     );
   }
 }

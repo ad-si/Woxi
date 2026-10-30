@@ -11603,12 +11603,13 @@ mod join_non_list {
       interpret(
         "Quiet[Get[\"Combinatorica`\"]]; \
          InputForm[SetGraphOptions[FromOrderedPairs[{{1, 2}, {2, 3}, {3, 1}}], \
-           {1, 2, VertexColor -> Black}]]"
+           {1, 2, VertexColor -> Black}] /. x_Real :> N[Round[x, 10^-12]]]"
       )
       .unwrap(),
+      // Rounded: the last digit of `cos` differs between libm builds.
       "InputForm[Graph[{{{1, 2}}, {{2, 3}}, {{3, 1}}}, \
-       {{{-0.49999999999999983, 0.8660254037844387}, VertexColor -> GrayLevel[0]}, \
-       {{-0.5000000000000004, -0.8660254037844384}, VertexColor -> GrayLevel[0]}, \
+       {{{-0.5, 0.866025403784}, VertexColor -> GrayLevel[0]}, \
+       {{-0.5, -0.866025403784}, VertexColor -> GrayLevel[0]}, \
        {{1., 0}}}, EdgeDirection -> True]]"
     );
   }
@@ -25403,6 +25404,68 @@ mod numeric_array_list_operations {
       "{{1, 2, 3}, {4, 5, 6, 7, 8, 9, 10}, NumericArray, 55, 10, 10, 2, \
        {2, 3, 4}, 2, NumericArray, {2, 5}, {{1, 4}, {2, 5}, {3, 6}}, \
        {5, 7, 9}, 20, NumericArray[<1,3>, Integer32]}"
+    );
+  }
+}
+
+mod random_prime_big_bounds {
+  use super::*;
+
+  #[test]
+  fn bounds_past_machine_integers() {
+    assert_eq!(
+      interpret(
+        "r = RandomPrime[{10^49, 10^50}, 2]; \
+         {Length[r], And @@ PrimeQ[r], And @@ (10^49 <= # <= 10^50 & /@ r)}"
+      )
+      .unwrap(),
+      "{2, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "p = RandomPrime[10^45]; \
+         {PrimeQ[p], p < 10^45, Dimensions[RandomPrime[{10^40, 10^41}, {2, 3}]]}"
+      )
+      .unwrap(),
+      "{True, True, {2, 3}}"
+    );
+  }
+}
+
+mod ordering_sequence_spec {
+  use super::*;
+
+  #[test]
+  fn sequence_specs_take_from_the_ordering() {
+    assert_eq!(
+      interpret(
+        "{Ordering[{5, 1, 4, 2, 3}, {2, 4}], Ordering[{5, 1, 4, 2, 3}, {-3, -1}], \
+         Ordering[{5, 1, 4, 2, 3}, {2, 4, 2}], Ordering[{1., 2., 3.}, {2, 2}]}"
+      )
+      .unwrap(),
+      "{{4, 5, 3}, {5, 3, 1}, {4, 3}, {2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Ordering[{5, 1, 4, 2, 3}, {4, 2}]]").unwrap(),
+      "Ordering[{5, 1, 4, 2, 3}, {4, 2}]"
+    );
+  }
+}
+
+mod stored_nearest_function {
+  use super::*;
+
+  // A NearestFunction object as wolframscript stores it in a notebook
+  // records its construction in a trailing Hold[Nearest[…]].
+  #[test]
+  fn applies_the_recorded_nearest() {
+    assert_eq!(
+      interpret(
+        "f = NearestFunction[1, {3, 1}, 1, {1, 2, 3}, Automatic, \
+         Hold[Nearest[{1, 2, 3} -> {a, b, c}]]]; {f[2.2], f[2.6, 2]}"
+      )
+      .unwrap(),
+      "{{b}, {c, b}}"
     );
   }
 }

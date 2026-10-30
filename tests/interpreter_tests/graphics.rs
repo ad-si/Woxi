@@ -210,6 +210,23 @@ mod graphics {
     }
 
     #[test]
+    fn texture_repeats_for_coordinates_outside_unit_square() {
+      let tiles = |coords: &str| {
+        let svg = interpret(&format!(
+          "ExportString[Graphics[{{Texture[Image[{{{{{{0.5, 0.5, 0.5}}, \
+             {{0.6, 0.6, 0.6}}}}, {{{{0.7, 0.7, 0.7}}, {{0.8, 0.8, 0.8}}}}}}]], \
+             Polygon[{{{{0, 0}}, {{1, 0}}, {{1, 3}}, {{0, 3}}}}, \
+             VertexTextureCoordinates -> {coords}]}}], \"SVG\"]"
+        ))
+        .unwrap();
+        svg.matches("<use ").count()
+      };
+      assert_eq!(tiles("{{0, 0}, {1, 0}, {1, 1}, {0, 1}}"), 1);
+      assert_eq!(tiles("{{0, 0}, {1, 0}, {1, 3}, {0, 3}}"), 3);
+      assert_eq!(tiles("{{0, 0}, {2, 0}, {2, 3}, {0, 3}}"), 6);
+    }
+
+    #[test]
     fn graphics3d_with_texture_directive() {
       assert_eq!(
         interpret(
@@ -43464,5 +43481,104 @@ mod word_cloud_text {
     let svg = export_svg("WordCloud[\"the cat and the hat sat on the cat\"]");
     assert!(svg.contains(">cat<"), "{svg}");
     assert!(!svg.contains(">the<"), "{svg}");
+  }
+}
+
+mod graphics3d_overlay_and_atom_colors {
+  use super::*;
+
+  // Epilog/Prolog on a Graphics3D are 2-D primitives over/under the picture,
+  // in scaled coordinates.
+  #[test]
+  fn epilog_and_prolog_draw_on_a_3d_picture() {
+    let svg = export_svg(
+      "Graphics3D[Sphere[], Epilog -> Inset[\"EpilogLabel\", {Left, Bottom}, {Left, Bottom}]]",
+    );
+    assert!(svg.contains(">EpilogLabel<"), "{svg}");
+    let svg = export_svg(
+      "Graphics3D[Sphere[], Prolog -> Text[\"PrologLabel\", {0.5, 0.5}]]",
+    );
+    assert!(svg.contains(">PrologLabel<"), "{svg}");
+    assert!(!export_svg("Graphics3D[Sphere[]]").contains("Label"));
+  }
+
+  // ColorData["Atoms", element] by symbol or atomic number.
+  #[test]
+  fn atoms_color_scheme() {
+    assert_eq!(
+      interpret("ColorData[\"Atoms\", \"O\"] == ColorData[\"Atoms\", 8]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Round[List @@ ColorData[\"Atoms\", \"O\"] * 255]").unwrap(),
+      "{255, 13, 13}"
+    );
+    assert_eq!(
+      interpret("Round[List @@ ColorData[\"Atoms\", \"H\"] * 255]").unwrap(),
+      "{255, 255, 255}"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Atoms\", \"Xx\"]").unwrap(),
+      "ColorData[Atoms, Xx]"
+    );
+  }
+}
+
+mod image_size_ranges {
+  use super::*;
+
+  // ImageSize -> {{wmin, wmax}, {hmin, hmax}} picks a size within the
+  // ranges (a degenerate range fixes it).
+  #[test]
+  fn degenerate_ranges_fix_the_size() {
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Graphics[{White, Disk[]}, PlotRange -> {{-1, 1}, {-1, 1}}, \
+         ImageSize -> {{246, 246}, {246, 246}}, Background -> Black]]]"
+      )
+      .unwrap(),
+      "{246, 246}"
+    );
+  }
+}
+
+mod smooth_histogram_3d {
+  use super::*;
+
+  #[test]
+  fn kernel_density_surface() {
+    assert_eq!(
+      interpret(
+        "Head[SmoothHistogram3D[{{1, 2}, {2, 3}, {3, 1}, {2.5, 2}}, 0.5, \
+         PlotRange -> All]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    // Not 2D numeric data: stays unevaluated.
+    assert_eq!(
+      interpret("SmoothHistogram3D[{a, b}]").unwrap(),
+      "SmoothHistogram3D[{a, b}]"
+    );
+  }
+}
+
+mod named_color_rules {
+  use super::*;
+
+  #[test]
+  fn html_and_legacy_color_rules() {
+    assert_eq!(
+      interpret(
+        "r = ColorData[\"HTML\", \"ColorRules\"]; \
+         {Length[r], r[[1]], r[[-1]], Length[ColorData[\"Legacy\", \"ColorRules\"]], \
+         ColorData[\"Legacy\", \"ColorRules\"][[1]]}"
+      )
+      .unwrap(),
+      "{140, AliceBlue -> RGBColor[0.9411764705882353, 0.9725490196078431, 1.], \
+       YellowGreen -> RGBColor[0.6039215686274509, 0.803921568627451, \
+       0.19607843137254902], 193, AliceBlue -> RGBColor[0.941206, 0.972503, 1.]}"
+    );
   }
 }

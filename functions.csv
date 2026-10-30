@@ -225,7 +225,7 @@ AxesOrigin,Option specifying the origin point for plot axes,✅,none,2.0,166
 Grid,Displays data in a grid layout; ToString renders the matrix as an aligned text grid (left-aligned columns padded to the widest cell with three-space separators and a blank line between rows) like TableForm,✅,pure,6.0,167
 Cases,Returns elements matching a pattern,✅,pure,1.0,168
 ListLinePlot,Plots data as a line graph,✅,pure,6.0,169
-Graphics3D,Creates a 3D graphics object,✅,pure,1.0,170
+Graphics3D,Creates a 3D graphics object (Prolog and Epilog draw 2D overlays in scaled coordinates),✅,pure,1.0,170
 NumericQ,Tests if expression has a numeric value,✅,pure,3.0,172
 FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,173
 Column,Displays elements in a vertical column,✅,pure,6.0,174
@@ -274,7 +274,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
+ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the Atoms element colours (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -846,6 +846,13 @@ SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
 ComputationalGeometry`ConvexHull,Legacy package function: counter-clockwise indices of the convex hull corners of a 2D point set (bare ConvexHull after loading the package),✅,pure,1.0,814
+Polytopes`Vertices,Legacy package function: vertices of a regular polygon on the unit circle,✅,pure,2.0,814
+Polytopes`NumberOfVertices,Legacy package function: number of vertices of a regular polygon,✅,pure,2.0,814
+Polytopes`NumberOfEdges,Legacy package function: number of edges of a regular polygon,✅,pure,2.0,814
+Polytopes`NumberOfFaces,Legacy package function: number of faces of a regular polygon,✅,pure,2.0,814
+Polytopes`Faces,Legacy package function: the vertex indices of a regular polygon's face,✅,pure,2.0,814
+Polytopes`InscribedRadius,Legacy package function: inradius of a regular polygon with unit edges,✅,pure,2.0,814
+Polytopes`CircumscribedRadius,Legacy package function: circumradius of a regular polygon with unit edges,✅,pure,2.0,814
 ComputationalGeometry`ConvexHullArea,Legacy package function: area of the convex hull of a 2D point set (exact for exact points),✅,pure,1.0,814
 ComputationalGeometry`DelaunayTriangulation,Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set,✅,pure,5.0,814
 ComputationalGeometry`DiagramPlot,Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices),✅,pure,5.0,814
@@ -1783,7 +1790,7 @@ GaussianMatrix,Discrete Gaussian matrix of radius r with standard deviation sigm
 NumberSigns,Option for NumberForm giving the strings to use for negative and positive number signs,✅,pure,2.0,1779
 TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
-WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781
+WeierstrassZeta,Weierstrass zeta function (numeric for machine arguments incl. complex),✅,pure,3.0,1781
 CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
 DateValue,Extracts a named component or property of a date such as its week quarter name or name initials,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
@@ -1848,11 +1855,11 @@ StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 i
 DynamicWrapper,Dynamic wrapper (stays symbolic in script mode),✅,unevaluated,8.0,1846
 PolarTicks,Polar ticks option,,unevaluated,7.0,1846
 BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
-CoordinateTransformData,,🚫,,9.0,1849
+CoordinateTransformData,Mapping and Jacobian of the Polar/Spherical/Cylindrical/Cartesian coordinate transforms,✅,pure,9.0,1849
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
-WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
+WeierstrassSigma,Weierstrass sigma function (numeric for machine arguments incl. complex),✅,pure,3.0,1852
 StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
 MetaInformation,Meta information option,,unevaluated,9.0,1855
@@ -2350,7 +2357,7 @@ FindProcessParameters,stochastic process fitting,🚫,None,9.0,2360
 KirchhoffMatrix,Builds the Kirchhoff (Laplacian) matrix of a graph,✅,none,8.0,2360
 ListPlay,Plays a list of amplitude levels as a sound,✅,None,2.0,2360
 Audio`Waveform,Synthesizes a periodic waveform (Audio`Sinusoid Triangle Square Sawtooth) of given frequency and duration as an Audio object,✅,pure,11.0,2360
-SmoothHistogram3D,3D visualization,🚫,None,8.0,2360
+SmoothHistogram3D,Surface of a 2D Gaussian kernel density estimate of data,✅,pure,8.0,2360
 SyntaxQ,Test if a string is valid Wolfram Language syntax,✅,1,2.0,2360
 SurfaceArea,Total boundary area of a 3D solid region,✅,pure,12.0,2361
 CloudPut,cloud storage,🚫,None,10.0,2367
@@ -2401,7 +2408,7 @@ ToeplitzMatrix,Generate a Toeplitz matrix from a list (symmetric) or from a firs
 FromCoefficientRules,Builds a polynomial from a list of exponent-vector to coefficient rules,✅,pure,7.0,2411
 ImageMesh,image to mesh,🚫,None,11.0,2411
 ReliabilityDistribution,Lifetime distribution of a coherent system built from a Boolean structure function over independent component distributions,✅,pure,9.0,2411
-KernelMixtureDistribution,probability distribution,🚫,None,8.0,2413
+KernelMixtureDistribution,Gaussian kernel mixture of univariate data (DataDistribution container; PDF/CDF/Quantile/Mean/Variance),✅,pure,8.0,2413
 WordCounts,Counts word occurrences in a string (surrounding punctuation stripped); two-arg form counts word n-grams keyed by word lists,✅,None,10.1,2413
 AutoAction,UI interaction,🚫,None,6.0,2421
 ByteOrdering,binary data option,🚫,None,5.2,2421
@@ -3511,7 +3518,7 @@ UnsetShared,,,,7.0,3566
 VonMisesDistribution,Von Mises circular distribution,✅,pure,8.0,3566
 AbortKernels,,🚫,,7.0,3578
 CloudSymbol,,🚫,,10.0,3578
-DataDistribution,,,,8.0,3578
+DataDistribution,Data distribution container produced by Empirical- Histogram- and KernelMixtureDistribution,✅,pure,8.0,3578
 DoubleRightArrow,Operator without built-in meaning displayed infix,✅,pure,3.0,3578
 FeedbackLinearize,,🚫,,10.0,3578
 FunctionInjective,,,,12.2,3578
@@ -3586,7 +3593,7 @@ HilbertFilter,,,,9.0,3656
 HoytDistribution,Hoyt fading amplitude distribution,✅,pure,8.0,3656
 LCHColor,,,,10.0,3656
 LocationEquivalenceTest,,,,8.0,3656
-NearestFunction,,,,6.0,3656
+NearestFunction,Nearest-element function object (applying it runs the Nearest it records),✅,pure,6.0,3656
 PairedZTest,,,,8.0,3656
 PolygonalNumber,Gives the nth r-gonal polygonal number,✅,pure,10.4,3656
 ReliefImage,,🚫,,8.0,3656

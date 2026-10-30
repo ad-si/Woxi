@@ -3264,6 +3264,38 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Ok(simplify(times2(df, deriv_expr)))
           }
         }
+        // Weierstrass functions of u with fixed invariants g = {g2, g3}:
+        //   ℘' is WeierstrassPPrime, ℘'' = 6℘² - g2/2, ζ' = -℘, σ' = σζ.
+        "WeierstrassP" | "WeierstrassPPrime" | "WeierstrassZeta"
+        | "WeierstrassSigma"
+          if args.len() == 2
+            && matches!(&args[1], Expr::List(g) if g.len() == 2)
+            && is_constant_wrt(&args[1], var) =>
+        {
+          let du = differentiate(&args[0], var)?;
+          if matches!(du, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let wp = || call("WeierstrassP", args.to_vec());
+          let derivative = match name.as_str() {
+            "WeierstrassP" => call("WeierstrassPPrime", args.to_vec()),
+            "WeierstrassPPrime" => {
+              let Expr::List(g) = &args[1] else {
+                unreachable!()
+              };
+              plus(vec![
+                times2(Expr::Integer(6), pow2(wp(), Expr::Integer(2))),
+                times2(make_rational(-1, 2), g[0].clone()),
+              ])
+            }
+            "WeierstrassZeta" => times2(Expr::Integer(-1), wp()),
+            _ => times2(
+              call("WeierstrassSigma", args.to_vec()),
+              call("WeierstrassZeta", args.to_vec()),
+            ),
+          };
+          crate::evaluator::evaluate_expr_to_expr(&times2(du, derivative))
+        }
         // Cylinder-function derivatives w.r.t. the argument z:
         //   D[BesselJ/Y/HankelH1/HankelH2[n,z], z] = (F[n-1,z] - F[n+1,z]) / 2
         //   D[BesselI[n,z], z]                    = (I[n-1,z] + I[n+1,z]) / 2

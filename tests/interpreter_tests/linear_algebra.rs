@@ -640,6 +640,30 @@ mod inverse {
   }
 
   #[test]
+  fn inverse_triangular_symbolic() {
+    assert_eq!(
+      interpret("Inverse[{{1, x, z}, {0, 1, w}, {0, 0, 1}}]").unwrap(),
+      "{{1, -x, w*x - z}, {0, 1, -w}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("Inverse[{{2, 0}, {y, 3}}]").unwrap(),
+      "{{1/2, 0}, {-1/6*y, 1/3}}"
+    );
+  }
+
+  #[test]
+  fn inverse_large_symbolic_triangular_is_fast() {
+    assert_eq!(
+      interpret(
+        "m = Table[If[j > i, 1, 0], {i, 15}, {j, 15}]; \
+         Expand[(a m) . Inverse[IdentityMatrix[15] - b a m]][[1, 3]]"
+      )
+      .unwrap(),
+      "a + a^2*b"
+    );
+  }
+
+  #[test]
   fn inverse_2x2() {
     assert_eq!(
       interpret("Inverse[{{1, 2}, {3, 4}}]").unwrap(),
@@ -12300,6 +12324,51 @@ mod complex_eigen_order {
       )
       .unwrap(),
       "{{1., 1., 1., 1.}, {0. + 1.*I, 0. - 1.*I, -1., 1.}}"
+    );
+  }
+}
+
+mod coordinate_transform_data {
+  use super::*;
+
+  #[test]
+  fn mapping_functions() {
+    assert_eq!(
+      interpret(
+        "ToString[CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\"], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Cos[#1[[2]]]*#1[[1]], Sin[#1[[2]]]*#1[[1]]} & "
+    );
+    assert_eq!(
+      interpret(
+        "ToString[CoordinateTransformData[\"Cartesian\" -> \"Polar\", \"Mapping\"], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Sqrt[#1[[1]]^2 + #1[[2]]^2], ArcTan[#1[[1]], #1[[2]]]} & "
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\"][{2, Pi/3}]"
+      )
+      .unwrap(),
+      "{1, Sqrt[3]}"
+    );
+  }
+
+  #[test]
+  fn at_a_point() {
+    assert_eq!(
+      interpret(
+        "{CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"Mapping\", {r, t}], \
+         CoordinateTransformData[\"Polar\" -> \"Cartesian\", \"MappingJacobian\", {r, t}], \
+         CoordinateTransformData[\"Spherical\" -> \"Cartesian\", \
+         \"MappingJacobianDeterminant\", {r, t, p}]}"
+      )
+      .unwrap(),
+      "{{r*Cos[t], r*Sin[t]}, {{Cos[t], -(r*Sin[t])}, {Sin[t], r*Cos[t]}}, r^2*Sin[t]}"
     );
   }
 }

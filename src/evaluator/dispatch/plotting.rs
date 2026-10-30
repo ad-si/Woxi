@@ -820,6 +820,9 @@ pub fn dispatch_plotting(
     "SmoothDensityHistogram" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::smooth_density_histogram_ast(args)
     })),
+    "SmoothHistogram3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::field_plot::smooth_histogram_3d_ast(args)
+    })),
     "ReliefPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::relief_plot_ast(args)
     })),

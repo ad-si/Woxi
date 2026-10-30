@@ -1849,10 +1849,10 @@ mod machine_real_division {
     assert_eq!(interpret("Divide[15.9, Pi]").unwrap(), "5.0611271903222725");
   }
 
-  // Dividing by an exact Integer/Rational is Times[a, Rational[..]] — an exact
-  // reciprocal, so the product is single-rounded (identical to direct division).
-  // The reciprocal-multiply rule must NOT touch these (regression: CentralMoment,
-  // Kurtosis, Skewness and AbsoluteCorrelation all divide by an integer count).
+  // Dividing by an exact Integer/Rational is Times[a, Rational[..]], whose
+  // reciprocal is rounded (`7./10` is 0.7000000000000001; 15.9/3 happens to
+  // agree with the direct division). CentralMoment, Kurtosis, Skewness and
+  // AbsoluteCorrelation divide by their integer count directly, like Mean.
   #[test]
   fn real_over_exact_denominator_stays_direct() {
     assert_eq!(interpret("15.9/3").unwrap(), "5.3");
@@ -2009,6 +2009,54 @@ mod power_of_power_branch_rules {
     assert_eq!(
       interpret("ToString[Sqrt[Pi E^x], InputForm]").unwrap(),
       "Sqrt[E^x]*Sqrt[Pi]"
+    );
+  }
+}
+
+mod numeric_radical_products {
+  use super::*;
+
+  #[test]
+  fn rational_coefficient_numerator_absorbs_a_base_factor() {
+    assert_eq!(
+      interpret(
+        "ToString[{90/67 5^(-1/5), 5/7 5^(-1/5), 3/2 3^(-1/2) 3^(-1/5)}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{(18*5^(4/5))/67, 5^(4/5)/7, 3^(3/10)/2}"
+    );
+  }
+
+  #[test]
+  fn composite_base_splits_off_the_shared_part() {
+    assert_eq!(
+      interpret(
+        "ToString[{10/6^(1/5), 225/10^(1/5), 2/30^(1/3), 5/(7 10^(1/5)), \
+         12/6^(1/5)}, InputForm]"
+      )
+      .unwrap(),
+      "{(5*2^(4/5))/3^(1/5), (45*5^(4/5))/2^(1/5), 2^(2/3)/15^(1/3), \
+       5^(4/5)/(7*2^(1/5)), 2*6^(4/5)}"
+    );
+  }
+
+  #[test]
+  fn radicals_sharing_a_prime_merge_it() {
+    assert_eq!(
+      interpret(
+        "ToString[{Sqrt[7/3] 3^(1/5), Sqrt[2/3] 2^(1/3), Sqrt[6] 2^(1/3), \
+         6^(1/3) 10^(1/5), 9/10 Sqrt[7/3] 3^(-1/5)}, InputForm]"
+      )
+      .unwrap(),
+      "{Sqrt[7]/3^(3/10), 2^(5/6)/Sqrt[3], 2^(5/6)*Sqrt[3], \
+       2^(8/15)*3^(1/3)*5^(1/5), (3*3^(3/10)*Sqrt[7])/10}"
+    );
+    // Without a shared prime the factors stay as they are.
+    assert_eq!(
+      interpret("ToString[{Sqrt[6] 5^(1/5), Sqrt[3/7] 5^(1/5)}, InputForm]")
+        .unwrap(),
+      "{5^(1/5)*Sqrt[6], Sqrt[3/7]*5^(1/5)}"
     );
   }
 }

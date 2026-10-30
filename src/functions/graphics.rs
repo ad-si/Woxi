@@ -8260,9 +8260,48 @@ fn emit_textured_polygon(
       tex.width, tex.height, tex.png_b64
     ));
   }
+  // Texture coordinates outside [0, 1] repeat the image, so lay one copy
+  // per integer cell the coordinates span (capped to keep the SVG small).
+  let (u_lo, u_hi) = tex
+    .coords
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(u, _)| {
+      (lo.min(u), hi.max(u))
+    });
+  let (v_lo, v_hi) = tex
+    .coords
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(_, v)| {
+      (lo.min(v), hi.max(v))
+    });
+  let (i0, i1) = (
+    u_lo.floor() as i64,
+    (u_hi.ceil() as i64).max(u_lo.floor() as i64 + 1),
+  );
+  let (j0, j1) = (
+    v_lo.floor() as i64,
+    (v_hi.ceil() as i64).max(v_lo.floor() as i64 + 1),
+  );
+  let mut uses = String::new();
+  if (i1 - i0) * (j1 - j0) <= 400 {
+    for ti in i0..i1 {
+      for tj in j0..j1 {
+        let (tx, ty) = (ti as f64 * w, -(tj as f64) * h);
+        uses.push_str(&format!(
+          "<use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {:.4} {:.4})\"/>",
+          e + a * tx + c * ty,
+          f + b * tx + d * ty
+        ));
+      }
+    }
+  } else {
+    uses.push_str(&format!(
+      "<use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/>"
+    ));
+  }
   let clip_id = format!("{tex_id}c{}", out.len());
   out.push_str(&format!(
-    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\"><use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">{uses}</g>\n",
     screen_pts.join(" ")
   ));
   if !stroke_attr.is_empty() {
@@ -13169,9 +13208,18 @@ pub(crate) fn group_digits_str(s: &str) -> String {
 pub fn layout_to_svg(layout: &BoxLayout, fill: &str) -> String {
   let width = layout.width.ceil().max(1.0) as usize;
   let height = layout.height.ceil().max(1.0) as usize;
+  // Radicals, fraction bars, brackets and frames are stroked with
+  // `currentColor`, so pin `color` to the text color too. Without it a
+  // standalone rasterizer (Woxi Studio) resolves `currentColor` to black,
+  // which makes those strokes vanish on a dark background.
+  let color = if fill == "currentColor" {
+    String::new()
+  } else {
+    format!(" color=\"{fill}\"")
+  };
   format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\">\
-     <g fill=\"{fill}\" stroke=\"{fill}\">{}</g>\
+     <g fill=\"{fill}\" stroke=\"{fill}\"{color}>{}</g>\
      </svg>",
     layout.elements,
   )
@@ -35479,6 +35527,24 @@ fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
         ..Default::default()
       }],
     },
+    // A list label (`{x1, y1} -> {"\!\(\*SubscriptBox[\(x\), \(1\)]\)", …}`)
+    // typesets as the braced list, each element laid out like a label of its
+    // own so inline boxes inside its strings are not shown as source.
+    Expr::List(items) if !items.is_empty() => {
+      let plain = |text: &str| LabelRun {
+        text: text.to_string(),
+        ..Default::default()
+      };
+      let mut runs = vec![plain("{")];
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          runs.push(plain(", "));
+        }
+        runs.extend(discrete_choice_label_runs(item));
+      }
+      runs.push(plain("}"));
+      runs
+    }
     other => {
       let runs = manipulate_label_runs(other, false);
       let flat = flatten_label_runs(&runs);
@@ -40266,6 +40332,24 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["left side", "right"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice whose label is a list of strings carrying inline boxes
+  /// (`\!\(\*SubscriptBox[…]\)`) typesets as the braced list with the boxes
+  /// laid out, not as `DisplayForm[SubscriptBox[…]]` source.
+  #[test]
+  fn list_choice_labels_typeset_inline_boxes() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, {a, b}, \"\"}, \
+       {{a, b} -> {\"\\!\\(\\*SubscriptBox[\\(x\\), \\(1\\)]\\)(t)\", \"y\"}, \
+        {b, a} -> {\"z\"}}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["{x₁(t), y}", "{z}"]);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

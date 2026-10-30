@@ -24,6 +24,13 @@ $ wo 'Solve[6 - x - x^2 == 0, x]'
 {{x -> -3}, {x -> 2}}
 ```
 
+A repeated root is listed once per multiplicity:
+
+```scrut
+$ wo 'Solve[x^3 + 3 x^2 + 3 x + 1 == 0, x]'
+{{x -> -1}, {x -> -1}, {x -> -1}}
+```
+
 `x^n == c` is solved in radicals, the roots being the real root times the
 `n`-th roots of unity:
 

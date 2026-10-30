@@ -2332,6 +2332,56 @@ mod replace_list {
     );
   }
 
+  // An Orderless (but not Flat) head enumerates every assignment of its
+  // arguments to the pattern slots, not just the first one (issue #1999).
+  #[test]
+  fn orderless_non_flat_enumerates_all_assignments() {
+    assert_eq!(
+      interpret(
+        "SetAttributes[g, Orderless]; ReplaceList[g[a, b], g[x_, y_] :> {x, y}]"
+      )
+      .unwrap(),
+      "{{a, b}, {b, a}}"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[g, Orderless]; \
+         ReplaceList[g[a, b, c], g[x_, y_, z__] :> {x, y}]"
+      )
+      .unwrap(),
+      "{{a, b}, {a, c}, {b, a}, {b, c}, {c, a}, {c, b}}"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[g, Orderless]; \
+         Length[ReplaceList[g[a, b, c, d, e], g[x_, y_, z__] :> {x, y}]]"
+      )
+      .unwrap(),
+      "20"
+    );
+  }
+
+  #[test]
+  fn orderless_non_flat_sequence_splits_and_limit() {
+    assert_eq!(
+      interpret(
+        "SetAttributes[g, Orderless]; \
+         ReplaceList[g[a, b, c], g[x__, y__] :> {{x}, {y}}]"
+      )
+      .unwrap(),
+      "{{{a}, {b, c}}, {{b}, {a, c}}, {{c}, {a, b}}, \
+       {{a, b}, {c}}, {{a, c}, {b}}, {{b, c}, {a}}}"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[g, Orderless]; \
+         ReplaceList[g[a, b, c], g[x_, y_, z__] :> {x, y}, 2]"
+      )
+      .unwrap(),
+      "{{a, b}, {a, c}}"
+    );
+  }
+
   // The Flat-partition enumerator must also fire for RuleDelayed (:>), not
   // just Rule (->). Previously a `:>` rule fell through to the single
   // whole-expression match and returned only the first split.

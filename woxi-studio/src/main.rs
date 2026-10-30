@@ -61,7 +61,46 @@ fn main() -> iced::Result {
     .theme(|state: &WoxiStudio| state.theme.clone())
     .default_font(Font::MONOSPACE)
     .exit_on_close_request(false)
+    .window(window_settings())
     .run()
+}
+
+/// Application id used as the X11 `WM_CLASS` and the Wayland `app_id`.
+/// Matches the basename of `woxi-studio/linux/woxi-studio.desktop`
+/// so desktop environments can associate windows with the launcher.
+#[cfg(target_os = "linux")]
+const APPLICATION_ID: &str = "woxi-studio";
+
+fn window_settings() -> iced::window::Settings {
+  iced::window::Settings {
+    #[cfg(target_os = "linux")]
+    platform_specific: iced::window::settings::PlatformSpecific {
+      application_id: String::from(APPLICATION_ID),
+      ..Default::default()
+    },
+    ..Default::default()
+  }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod window_settings_tests {
+  use super::*;
+
+  /// Without an application id the X11 `WM_CLASS` and the Wayland
+  /// `app_id` are empty, so docks cannot pin windows to the launcher.
+  #[test]
+  fn application_id_is_set_and_matches_desktop_entry() {
+    let settings = window_settings();
+    assert_eq!(settings.platform_specific.application_id, APPLICATION_ID);
+
+    let desktop = include_str!("../linux/woxi-studio.desktop");
+    assert!(
+      desktop
+        .lines()
+        .any(|l| l == format!("StartupWMClass={APPLICATION_ID}")),
+      "desktop entry must declare StartupWMClass={APPLICATION_ID}"
+    );
+  }
 }
 
 // ── Application State ───────────────────────────────────────────────
@@ -494,9 +533,11 @@ impl WoxiStudio {
           // Load the same embedded fallbacks used by the command-line
           // rasterizer/PDF exporter so that in-UI graphics render with a
           // consistent typeface even on systems with no system fonts.
+          // The Mono font is a static Regular instance: usvg would draw the
+          // variable font's ExtraLight default instance.
           db.load_font_data(
             include_bytes!(
-              "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
+              "../../resources/AtkinsonHyperlegibleMono-Regular.ttf"
             )
             .to_vec(),
           );
@@ -5399,14 +5440,35 @@ fn rasterize_svg(
   let handle = iced::widget::image::Handle::from_rgba(
     physical_w,
     physical_h,
-    pixmap.take(),
+    straight_alpha_rgba(&pixmap),
   );
   Some((handle, logical_w, logical_h))
+}
+
+/// The pixels of a tiny-skia pixmap as straight-alpha RGBA bytes.
+///
+/// tiny-skia stores premultiplied colors, but iced's image `Handle::from_rgba`
+/// expects straight alpha. Passing the premultiplied buffer applies the alpha
+/// twice, so the anti-aliased edges of thin glyphs — most of the pixels of
+/// small typeset text — come out far too transparent, leaving light text on a
+/// dark background nearly invisible.
+fn straight_alpha_rgba(pixmap: &tiny_skia::Pixmap) -> Vec<u8> {
+  pixmap
+    .pixels()
+    .iter()
+    .flat_map(|p| {
+      let c = p.demultiply();
+      [c.red(), c.green(), c.blue(), c.alpha()]
+    })
+    .collect()
 }
 
 /// Build the result-output element from pre-rasterized typeset SVG images,
 /// stacked one per result statement. Each image is displayed at its logical
 /// (unscaled) size so it stays crisp on HiDPI, matching the graphics output.
+/// A result wider than the cell scrolls horizontally instead of being shrunk
+/// to fit, which would make long results (e.g. lists of `Root` objects)
+/// unreadably small.
 fn output_images_element<'a>(
   images: &'a [(iced::widget::image::Handle, u32, u32)],
   stale: bool,
@@ -5419,7 +5481,13 @@ fn output_images_element<'a>(
     if stale {
       img = img.opacity(0.3_f32);
     }
-    col = col.push(container(img).padding(6));
+    // A thin floating scrollbar that fits in the bottom padding, so it never
+    // covers the result.
+    let scrollbar = scrollable::Scrollbar::new().width(4).scroller_width(4);
+    col = col.push(
+      scrollable(container(img).padding(6))
+        .direction(scrollable::Direction::Horizontal(scrollbar)),
+    );
   }
   col.into()
 }
@@ -7166,10 +7234,8 @@ fn encode_svg_as_png(
 fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
-    include_bytes!(
-      "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
-    )
-    .to_vec(),
+    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
     include_bytes!(
@@ -7487,10 +7553,8 @@ async fn export_pdf(
   // Convert SVG to PDF via svg2pdf
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
-    include_bytes!(
-      "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
-    )
-    .to_vec(),
+    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
     include_bytes!(
@@ -16768,6 +16832,79 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     assert_eq!(editor.output_images.len(), 1);
     assert!(editor.output_svgs[0].contains(">10<"));
     assert!(!editor.output_svgs[0].contains(">10000<"));
+  }
+
+  #[test]
+  fn rasterized_pixels_are_straight_alpha() {
+    // iced's `Handle::from_rgba` takes straight alpha; tiny-skia stores
+    // premultiplied colors. A half-transparent white must stay white.
+    let mut pixmap = tiny_skia::Pixmap::new(1, 1).unwrap();
+    pixmap.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 128));
+    assert_eq!(straight_alpha_rgba(&pixmap), vec![255, 255, 255, 128]);
+  }
+
+  #[test]
+  fn dark_mode_typeset_output_has_only_light_pixels() {
+    // Regression test for typeset outputs being (nearly) invisible in dark
+    // mode: the radical was stroked black (`currentColor` unresolved) and
+    // anti-aliased glyph pixels were darkened by premultiplied alpha.
+    let mut db = resvg::usvg::fontdb::Database::new();
+    db.load_font_data(
+      include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+        .to_vec(),
+    );
+    db.set_monospace_family("Atkinson Hyperlegible Mono");
+    let fontdb = Arc::new(db);
+    let mut editor = blank_editor();
+    evaluate_cell_statements(&mut editor, "Sqrt[x]", true, 1.0, &fontdb);
+    assert!(editor.output_all_svg);
+    let tree = resvg::usvg::Tree::from_str(
+      &editor.output_svgs[0],
+      &resvg::usvg::Options {
+        fontdb: fontdb.clone(),
+        ..Default::default()
+      },
+    )
+    .unwrap();
+    let size = tree.size();
+    let mut pixmap = tiny_skia::Pixmap::new(
+      size.width().ceil() as u32,
+      size.height().ceil() as u32,
+    )
+    .unwrap();
+    resvg::render(
+      &tree,
+      tiny_skia::Transform::identity(),
+      &mut pixmap.as_mut(),
+    );
+    let rgba = straight_alpha_rgba(&pixmap);
+    let visible: Vec<&[u8]> = rgba.chunks(4).filter(|p| p[3] > 0).collect();
+    assert!(!visible.is_empty(), "output should draw something");
+    assert!(
+      visible
+        .iter()
+        .all(|p| p[0] > 150 && p[1] > 150 && p[2] > 150),
+      "every drawn pixel should use the light dark-theme text color"
+    );
+  }
+
+  #[test]
+  fn embedded_mono_font_is_regular_weight() {
+    // usvg draws a variable font's default instance; the embedded Mono font
+    // must therefore be a static Regular instance, not the ExtraLight default.
+    let mut db = resvg::usvg::fontdb::Database::new();
+    db.load_font_data(
+      include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+        .to_vec(),
+    );
+    let face = db.faces().next().unwrap();
+    assert_eq!(face.weight, resvg::usvg::fontdb::Weight::NORMAL);
+    assert!(
+      face
+        .families
+        .iter()
+        .any(|(name, _)| name == "Atkinson Hyperlegible Mono")
+    );
   }
 
   #[test]

@@ -6268,6 +6268,29 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
+  // Regression (issue #1908): a polynomial that factors into a single
+  // repeated factor (`(1 + x)^3`) is solved through that factor instead of
+  // falling back to `Root` objects.
+  #[test]
+  fn solve_perfect_power_polynomial() {
+    assert_eq!(
+      interpret("Solve[x^3 + 3 x^2 + 3 x + 1 == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> -1}, {x -> -1}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 - 8 x^3 + 24 x^2 - 32 x + 16 == 0, x]").unwrap(),
+      "{{x -> 2}, {x -> 2}, {x -> 2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 (x - 3)^3 == 0, x]").unwrap(),
+      "{{x -> 3}, {x -> 3}, {x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 + 1)^2 == 0, x]").unwrap(),
+      "{{x -> -I}, {x -> -I}, {x -> I}, {x -> I}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(
@@ -23918,7 +23941,6 @@ mod solve_inequality_constraints {
 }
 
 mod nminimize_non_numeric_objective {
-  use super::*;
 
   // An objective that is never a number is NMinimize::nnum and the call
   // stays unevaluated (wolframscript reports it at a random probe point).
@@ -23934,6 +23956,79 @@ mod nminimize_non_numeric_objective {
         .any(|w| w.starts_with("NMaximize::nnum")),
       "{:?}",
       out.warnings
+    );
+  }
+}
+
+mod parametric_quadratic_optimization {
+  use super::*;
+
+  #[test]
+  fn numeric_leading_coefficient() {
+    assert_eq!(
+      interpret("Maximize[-x^2 + b x, x]").unwrap(),
+      "{b^2/4, {x -> b/2}}"
+    );
+    assert_eq!(
+      interpret("Minimize[(x - p)^2 + q, x]").unwrap(),
+      "{q, {x -> p}}"
+    );
+  }
+
+  #[test]
+  fn constraint_fixes_the_sign() {
+    assert_eq!(
+      interpret("ToString[Maximize[{a x^2 + b x, a < -1}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{-1/4*b^2/a, a < -1}}, -Infinity], \
+       {x -> Piecewise[{{-1/2*b/a, a < -1}}, Indeterminate]}}"
+    );
+    assert_eq!(
+      interpret("ToString[Minimize[{a x^2 + b x + c, a > 0}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{(-b^2 + 4*a*c)/(4*a), a > 0}}, Infinity], \
+       {x -> Piecewise[{{-1/2*b/a, a > 0}}, Indeterminate]}}"
+    );
+    assert_eq!(
+      interpret("ToString[Maximize[{-x^2 + b x, b > 0}, x], InputForm]")
+        .unwrap(),
+      "{Piecewise[{{b^2/4, b > 0}}, -Infinity], \
+       {x -> Piecewise[{{b/2, b > 0}}, Indeterminate]}}"
+    );
+  }
+
+  #[test]
+  fn coefficients_with_other_variables() {
+    assert_eq!(
+      interpret(
+        "ToString[Maximize[{a + b x + c x^2 + d y + e x y + f y^2, c < 0}, x], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Piecewise[{{(-b^2 + 4*a*c + 4*c*d*y - 2*b*e*y - e^2*y^2 + 4*c*f*y^2)/(4*c), \
+       c < 0}}, -Infinity], {x -> Piecewise[{{(-b - e*y)/(2*c), c < 0}}, \
+       Indeterminate]}}"
+    );
+  }
+}
+
+mod linear_programming_none_bounds {
+  use super::*;
+
+  // A bound specification of None leaves every variable unbounded.
+  #[test]
+  fn none_frees_every_variable() {
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{0, 0, -1}, {{-1, -1, -1}, {1, -1, -1}, {0, 1, -1}}, \
+         {-1, -1, -1}, None]"
+      )
+      .unwrap(),
+      "{0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, -1}, {{1, 1}}, {1}, None]").unwrap(),
+      "{Indeterminate, Indeterminate}"
     );
   }
 }

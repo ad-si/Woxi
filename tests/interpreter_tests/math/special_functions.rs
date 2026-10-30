@@ -12140,3 +12140,71 @@ mod mathieu_far_arguments {
     );
   }
 }
+
+mod weierstrass_lattice_functions {
+  use super::*;
+
+  fn close(expr: &str, re: f64, im: f64) {
+    let v = interpret(&format!("N[{{Re[#], Im[#]}} &[{expr}]]")).unwrap();
+    let parts: Vec<f64> = v
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|x| x.replace("*^", "e").parse().unwrap())
+      .collect();
+    let scale = re.hypot(im).max(1.0);
+    assert!(
+      (parts[0] - re).abs() < 1e-12 * scale
+        && (parts[1] - im).abs() < 1e-12 * scale,
+      "{expr}: {v}"
+    );
+  }
+
+  // Reference values from wolframscript.
+  #[test]
+  fn complex_arguments_and_invariants() {
+    close(
+      "WeierstrassZeta[0.5 + 0.3 I, {189.07272012923406, 2.0717571555122493*^-13}]",
+      1.570796326794897,
+      -1.4455597450768478,
+    );
+    close(
+      "WeierstrassZeta[3.7 - 2.1 I, {2. - I, 0.5 + 3 I}]",
+      2.5333746756259723,
+      0.89005179973646,
+    );
+    close(
+      "WeierstrassSigma[1.2 + 0.4 I, {2. - I, 0.5 + 3 I}]",
+      1.2039585480452035,
+      0.3815817926697936,
+    );
+    close(
+      "WeierstrassPPrime[0.5 + 0.3 I, {1. + I, 2.}]",
+      0.5256795401598635,
+      10.210993564823921,
+    );
+    close("WeierstrassZeta[1.5, {1., 2.}]", 0.49214540663758793, 0.0);
+    close("WeierstrassSigma[1.5, {1., 2.}]", 1.427335763094739, 0.0);
+  }
+
+  #[test]
+  fn origin_and_exact_arguments() {
+    assert_eq!(
+      interpret("Quiet[{WeierstrassZeta[0., {1., 2.}], WeierstrassSigma[0, {a, b}], WeierstrassZeta[1, {1, 2}]}]")
+        .unwrap(),
+      "{ComplexInfinity, 0, WeierstrassZeta[1, {1, 2}]}"
+    );
+  }
+
+  #[test]
+  fn derivatives() {
+    assert_eq!(
+      interpret(
+        "{D[WeierstrassZeta[3 x, {a, b}], x], D[WeierstrassSigma[x, {a, b}], x], \
+         D[WeierstrassP[x, {a, b}], x], D[WeierstrassPPrime[x, {a, b}], x]}"
+      )
+      .unwrap(),
+      "{-3*WeierstrassP[3*x, {a, b}], WeierstrassSigma[x, {a, b}]*WeierstrassZeta[x, {a, b}], \
+       WeierstrassPPrime[x, {a, b}], -1/2*a + 6*WeierstrassP[x, {a, b}]^2}"
+    );
+  }
+}

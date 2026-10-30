@@ -1238,6 +1238,35 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
+      // ColorData["HTML" | "Legacy", "ColorRules"]: every name -> colour,
+      // in table order.
+      if let (Expr::String(scheme), Expr::String(property)) =
+        (&args[0], &args[1])
+        && property == "ColorRules"
+      {
+        let names: Option<Vec<&str>> = match scheme.as_str() {
+          "HTML" => Some(HTML_COLORS.iter().map(|c| c.0).collect()),
+          "Legacy" => Some(LEGACY_COLORS.iter().map(|c| c.0).collect()),
+          _ => None,
+        };
+        if let Some(names) = names {
+          let mut rules = Vec::with_capacity(names.len());
+          for name in names {
+            let color = match crate::evaluator::evaluate_function_call_ast(
+              "ColorData",
+              &[args[0].clone(), str_expr(name)],
+            ) {
+              Ok(c) => c,
+              Err(e) => return Some(Err(e)),
+            };
+            rules.push(Expr::Rule {
+              pattern: Box::new(str_expr(name)),
+              replacement: Box::new(color),
+            });
+          }
+          return Some(Ok(Expr::List(rules.into())));
+        }
+      }
       // ColorData["Legacy", name]: the old `Graphics`Colors`` palette, which
       // is a different table from the CSS one — see `LEGACY_COLORS`.
       if let (Expr::String(scheme), Expr::String(color_name)) =
@@ -1246,6 +1275,17 @@ pub fn dispatch_image_functions(
         && let Some(color) = legacy_named_color(color_name)
       {
         return Some(Ok(color));
+      }
+      // ColorData["Atoms", element]: the colour an element is drawn in a
+      // molecular model, looked up by symbol or atomic number.
+      if let Expr::String(scheme) = &args[0]
+        && scheme == "Atoms"
+        && let Some((r, g, b)) = atom_color(&args[1])
+      {
+        return Some(Ok(call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        )));
       }
       // ColorData["HTML", name]: the named CSS colour.
       if let (Expr::String(scheme), Expr::String(color_name)) =
@@ -2972,6 +3012,63 @@ const LEGACY_COLORS: &[(&str, f64, f64, f64, u8)] = &[
   ("YellowOchre", 0.889996, 0.509995, 0.089999, 0b000),
   ("Zinc", 0.990005, 0.97, 1.0, 0b000),
 ];
+
+/// Element symbols in atomic-number order with their `"Atoms"` colour
+/// (the usual CPK/Jmol molecular-model palette), as 0xRRGGBB.
+const ATOM_COLORS: [(&str, u32); 36] = [
+  ("H", 0xFFFFFF),
+  ("He", 0xD9FFFF),
+  ("Li", 0xCC80FF),
+  ("Be", 0xC2FF00),
+  ("B", 0xFFB5B5),
+  ("C", 0x909090),
+  ("N", 0x3050F8),
+  ("O", 0xFF0D0D),
+  ("F", 0x90E050),
+  ("Ne", 0xB3E3F5),
+  ("Na", 0xAB5CF2),
+  ("Mg", 0x8AFF00),
+  ("Al", 0xBFA6A6),
+  ("Si", 0xF0C8A0),
+  ("P", 0xFF8000),
+  ("S", 0xFFFF30),
+  ("Cl", 0x1FF01F),
+  ("Ar", 0x80D1E3),
+  ("K", 0x8F40D4),
+  ("Ca", 0x3DFF00),
+  ("Sc", 0xE6E6E6),
+  ("Ti", 0xBFC2C7),
+  ("V", 0xA6A6AB),
+  ("Cr", 0x8A99C7),
+  ("Mn", 0x9C7AC7),
+  ("Fe", 0xE06633),
+  ("Co", 0xF090A0),
+  ("Ni", 0x50D050),
+  ("Cu", 0xC88033),
+  ("Zn", 0x7D80B0),
+  ("Ga", 0xC28F8F),
+  ("Ge", 0x668F8F),
+  ("As", 0xBD80E3),
+  ("Se", 0xFFA100),
+  ("Br", 0xA62929),
+  ("Kr", 0x5CB8D1),
+];
+
+/// `ColorData["Atoms", element]` → the element's colour channels in 0–1, for
+/// an element given by symbol (`"O"`) or atomic number (`8`).
+fn atom_color(element: &Expr) -> Option<(f64, f64, f64)> {
+  let rgb = match element {
+    Expr::String(sym) => ATOM_COLORS.iter().find(|(s, _)| s == sym)?.1,
+    Expr::Integer(z) => {
+      ATOM_COLORS
+        .get(usize::try_from(*z).ok()?.checked_sub(1)?)?
+        .1
+    }
+    _ => return None,
+  };
+  let channel = |shift: u32| f64::from((rgb >> shift) & 0xFF) / 255.0;
+  Some((channel(16), channel(8), channel(0)))
+}
 
 /// `ColorData["Legacy", name]` → the named legacy colour as an `RGBColor`,
 /// with each channel already exact-or-inexact as wolframscript stores it.

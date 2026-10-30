@@ -1247,6 +1247,27 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg"));
   }
 
+  /// A locator `Appearance` picture with a numeric `ImageSize` is that many
+  /// pixels across, not as many data units as its own coordinates span.
+  #[test]
+  fn test_locator_pane_appearance_image_size_is_in_pixels() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[LocatorPane[{{0, 0}}, \
+       Graphics[{}, PlotRange -> {{-5, 5}, {-5, 5}}, ImageSize -> 360], \
+       Appearance -> Graphics[Disk[], ImageSize -> 12]], \"SVG\"]",
+    )
+    .unwrap();
+    let svg = r.result;
+    let rx: f64 = svg
+      .split("rx=\"")
+      .nth(1)
+      .and_then(|t| t.split('"').next())
+      .and_then(|v| v.parse().ok())
+      .unwrap_or_else(|| panic!("no ellipse marker in: {svg}"));
+    assert!(rx > 3.0 && rx < 9.0, "marker radius {rx} px: {svg}");
+  }
+
   /// A `LocatorPane` over `Show[plot, …]` keeps the `Epilog` of the first
   /// plot: the locator markers are appended to it instead of replacing it.
   #[test]
@@ -2262,6 +2283,32 @@ mod interpreter_tests {
       assert!(
         (dp - first).abs() < 1e-6,
         "decimal points must line up; got {dot_positions:?}\n{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_output_svg_pins_current_color_to_text_color() {
+    // Regression (issue #1908): radicals, fraction bars and brackets are
+    // stroked with `currentColor`. Outside a browser (Woxi Studio rasterizes
+    // the SVG) nothing sets `color`, so `currentColor` became black and the
+    // strokes vanished on a dark background. The root group must set `color`
+    // to the same text color as its `fill`.
+    clear_state();
+    for dark in [false, true] {
+      woxi::set_dark_mode(dark);
+      let r = interpret_with_stdout("Sqrt[x]/2").unwrap();
+      woxi::set_dark_mode(false);
+      let svg = r.output_svg.expect("expected output SVG");
+      assert!(svg.contains("currentColor"), "SVG: {svg}");
+      let fill = svg
+        .split("<g fill=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("root group fill");
+      assert!(
+        svg.contains(&format!("color=\"{fill}\"")),
+        "root group must set color to {fill}:\n{svg}"
       );
     }
   }

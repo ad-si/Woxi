@@ -1127,7 +1127,7 @@ fn theta_constants(r: f64, phi: f64) -> (C, C, C) {
 /// Im(τ) > 0 (swap the two if not), nome q = e^{iπτ}, and the theta constants:
 ///     e₁ = c(θ₃⁴+θ₄⁴)/3,  e₂ = c(θ₂⁴−θ₄⁴)/3,  e₃ = −c(θ₂⁴+θ₃⁴)/3,
 /// with c = (π/(2ω₁))², then g₂ = 2(e₁²+e₂²+e₃²), g₃ = 4 e₁ e₂ e₃.
-fn weierstrass_invariants_numeric(w1: C, w2: C) -> Option<(C, C)> {
+pub(crate) fn weierstrass_invariants_numeric(w1: C, w2: C) -> Option<(C, C)> {
   let pi = std::f64::consts::PI;
   let (mut a, mut b) = (w1, w2);
   let mut tau = cdiv(b, a);

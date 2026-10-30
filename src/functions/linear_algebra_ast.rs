@@ -2316,6 +2316,15 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A triangular polynomial matrix with exact-number diagonal: solve by
+  // substitution, which stays polynomial where the adjugate's n^2
+  // symbolic determinants blow up.
+  if is_polynomial_matrix(&matrix)
+    && let Some(inv) = triangular_polynomial_inverse(&matrix)
+  {
+    return Ok(matrix_to_expr(inv));
+  }
+
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
   let det_is_zero = matches!(&det, Expr::Integer(0))
@@ -2386,6 +2395,64 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(matrix_to_expr(result))
+}
+
+/// The inverse of an upper- or lower-triangular matrix whose diagonal
+/// entries are all nonzero exact numbers, by back substitution with every
+/// entry expanded; `None` when the matrix has another shape.
+fn triangular_polynomial_inverse(m: &[Vec<Expr>]) -> Option<Vec<Vec<Expr>>> {
+  let n = m.len();
+  let exact_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !(0..n).all(|i| exact_number(&m[i][i]) && !is_zero_expr(&m[i][i])) {
+    return None;
+  }
+  let upper = (0..n).all(|i| (0..i).all(|j| is_zero_expr(&m[i][j])));
+  let lower = (0..n).all(|i| (i + 1..n).all(|j| is_zero_expr(&m[i][j])));
+  if !upper && !lower {
+    return None;
+  }
+  // Work on the upper-triangular form; a lower one is solved transposed.
+  let u: Vec<Vec<Expr>> = if upper {
+    m.to_vec()
+  } else {
+    (0..n)
+      .map(|i| (0..n).map(|j| m[j][i].clone()).collect())
+      .collect()
+  };
+  let expand = |e: Expr| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&e),
+    )
+    .unwrap_or(e)
+  };
+  let mut x = vec![vec![Expr::Integer(0); n]; n];
+  for j in 0..n {
+    x[j][j] = eval_divide(&Expr::Integer(1), &u[j][j]);
+    for i in (0..j).rev() {
+      let mut sum = Expr::Integer(0);
+      for k in i + 1..=j {
+        if is_zero_expr(&u[i][k]) || is_zero_expr(&x[k][j]) {
+          continue;
+        }
+        sum = eval_add(&sum, &eval_mul(&u[i][k], &x[k][j]));
+      }
+      let neg = eval_sub(&Expr::Integer(0), &sum);
+      x[i][j] = expand(eval_divide(&neg, &u[i][i]));
+    }
+  }
+  if upper {
+    Some(x)
+  } else {
+    Some(
+      (0..n)
+        .map(|i| (0..n).map(|j| x[j][i].clone()).collect())
+        .collect(),
+    )
+  }
 }
 
 /// The inverse of a complex machine matrix by Gauss–Jordan elimination
@@ -14940,6 +15007,120 @@ pub fn coordinate_transform_ast(
     evaluated.push(evaluate_expr_to_expr(&c)?);
   }
   Ok(Expr::List(evaluated.into()))
+}
+
+/// CoordinateTransformData[src -> dst, property] and
+/// CoordinateTransformData[src -> dst, property, pt] for the coordinate
+/// systems of `CoordinateTransform`: "Mapping" (the transform itself),
+/// "MappingJacobian" and "MappingJacobianDeterminant". Without a point the
+/// property is a pure function of the coordinate list.
+pub fn coordinate_transform_data_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("CoordinateTransformData", args));
+  if args.len() != 2 && args.len() != 3 {
+    return unevaluated();
+  }
+  let (
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+    Expr::String(property),
+  ) = (&args[0], &args[1])
+  else {
+    return unevaluated();
+  };
+  let dimension = |system: &Expr| match system {
+    Expr::String(s) if s == "Polar" => Some(2),
+    Expr::String(s) if s == "Spherical" || s == "Cylindrical" => Some(3),
+    _ => None,
+  };
+  let Some(n) = dimension(pattern).or_else(|| dimension(replacement)) else {
+    return unevaluated();
+  };
+  // The coordinates the property is computed in: fresh symbols, bound to
+  // the given point or to the slots of a pure function afterwards.
+  let symbols: Vec<Expr> = (1..=n)
+    .map(|i| Expr::Identifier(format!("CoordinateTransformData`x$${i}")))
+    .collect();
+  let point = Expr::List(symbols.clone().into());
+  let mapping = coordinate_transform_ast(&[args[0].clone(), point.clone()])?;
+  if !matches!(mapping, Expr::List(_)) {
+    return unevaluated();
+  }
+  let jacobian = || {
+    evaluate_expr_to_expr(&call(
+      "D",
+      vec![mapping.clone(), Expr::List(vec![point.clone()].into())],
+    ))
+  };
+  let value = match property.as_str() {
+    "Mapping" => mapping.clone(),
+    "MappingJacobian" => jacobian()?,
+    "MappingJacobianDeterminant" => evaluate_expr_to_expr(&call(
+      "Simplify",
+      vec![call("Det", vec![jacobian()?])],
+    ))?,
+    _ => return unevaluated(),
+  };
+  let bind = |values: &[Expr]| -> Result<Expr, InterpreterError> {
+    let mut bound = value.clone();
+    for (sym, v) in symbols.iter().zip(values) {
+      bound = crate::functions::polynomial_ast::solve::substitute_expr(
+        &bound, sym, v,
+      );
+    }
+    evaluate_expr_to_expr(&bound)
+  };
+  match args.get(2) {
+    Some(Expr::List(pt)) if pt.len() == n => bind(pt),
+    Some(_) => unevaluated(),
+    None => {
+      let slots: Vec<Expr> = (1..=n)
+        .map(|i| Expr::Part {
+          expr: Box::new(Expr::Slot(1)),
+          index: Box::new(Expr::Integer(i as i128)),
+        })
+        .collect();
+      // wolframscript's stored functions keep each product's coordinate
+      // factors last: `{Cos[#1[[2]]]*#1[[1]], Sin[#1[[2]]]*#1[[1]]} &`.
+      fn coordinates_last(e: &Expr) -> Expr {
+        let is_coordinate = |f: &Expr| matches!(f, Expr::Part { expr, .. } if matches!(expr.as_ref(), Expr::Slot(1)));
+        match e {
+          Expr::FunctionCall { name, args } if name == "Times" => {
+            let mut factors: Vec<Expr> =
+              args.iter().map(coordinates_last).collect();
+            factors.sort_by_key(is_coordinate);
+            Expr::FunctionCall {
+              name: name.clone(),
+              args: factors.into(),
+            }
+          }
+          Expr::FunctionCall { name, args } => Expr::FunctionCall {
+            name: name.clone(),
+            args: args.iter().map(coordinates_last).collect(),
+          },
+          Expr::List(items) => {
+            Expr::List(items.iter().map(coordinates_last).collect())
+          }
+          Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+            op: *op,
+            left: Box::new(coordinates_last(left)),
+            right: Box::new(coordinates_last(right)),
+          },
+          Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+            op: *op,
+            operand: Box::new(coordinates_last(operand)),
+          },
+          _ => e.clone(),
+        }
+      }
+      Ok(Expr::Function {
+        body: Box::new(coordinates_last(&bind(&slots)?)),
+      })
+    }
+  }
 }
 
 /// HermiteDecomposition[m] — {u, h} with u unimodular, u.m == h, and h in

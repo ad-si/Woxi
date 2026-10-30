@@ -1,3 +1,4 @@
+use super::weierstrass_lattice::{WeierstrassKind, weierstrass_complex};
 #[allow(unused_imports)]
 use super::*;
 
@@ -52,6 +53,9 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = weierstrass_p_numeric(u_f, g2_f, g3_f);
     return Ok(Expr::Real(result));
   }
+  if let Some(value) = complex_weierstrass(WeierstrassKind::P, u, g2, g3) {
+    return Ok(value);
+  }
 
   // Symbolic: return unevaluated
   Ok(unevaluated("WeierstrassP", args))
@@ -91,6 +95,9 @@ pub fn weierstrass_p_prime_ast(
   {
     let result = weierstrass_p_prime_numeric(u_f, g2_f, g3_f);
     return Ok(Expr::Real(result));
+  }
+  if let Some(value) = complex_weierstrass(WeierstrassKind::PPrime, u, g2, g3) {
+    return Ok(value);
   }
 
   // Symbolic: return unevaluated
@@ -335,4 +342,64 @@ fn inverse_weierstrass_p_with_prime(p: f64, pp: f64, g2: f64, g3: f64) -> f64 {
   }
 
   u
+}
+
+/// A Weierstrass function at a machine-number point with machine invariants
+/// (real or complex), through the lattice's theta function. `None` unless
+/// some argument is inexact and all are numbers. Real arguments give a real
+/// result.
+fn complex_weierstrass(
+  kind: WeierstrassKind,
+  u: &Expr,
+  g2: &Expr,
+  g3: &Expr,
+) -> Option<Expr> {
+  if !any_inexact(&[u, g2, g3]) {
+    return None;
+  }
+  let (z, a, b) = (
+    try_extract_complex_float(u)?,
+    try_extract_complex_float(g2)?,
+    try_extract_complex_float(g3)?,
+  );
+  let (re, im) = weierstrass_complex(kind, z, a, b)?;
+  if z.1 == 0.0 && a.1 == 0.0 && b.1 == 0.0 {
+    return Some(Expr::Real(re));
+  }
+  Some(build_complex_float_expr(re, im))
+}
+
+/// WeierstrassZeta[u, {g2, g3}] and WeierstrassSigma[u, {g2, g3}] — numeric
+/// for machine-number arguments, symbolic otherwise (`u = 0` gives the
+/// exact 0).
+pub fn weierstrass_zeta_sigma_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let (g2, g3) = match &args[1] {
+    Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+    _ => return Ok(unevaluated(name, args)),
+  };
+  let kind = if name == "WeierstrassZeta" {
+    WeierstrassKind::Zeta
+  } else {
+    WeierstrassKind::Sigma
+  };
+  // ζ has its pole 1/u at the origin, where σ vanishes.
+  if is_expr_zero(&args[0]) {
+    return match kind {
+      WeierstrassKind::Zeta => {
+        crate::evaluator::evaluate_expr_to_expr(&pow2(
+          args[0].clone(),
+          Expr::Integer(-1),
+        ))?;
+        Ok(id_expr("ComplexInfinity"))
+      }
+      _ => Ok(args[0].clone()),
+    };
+  }
+  if let Some(value) = complex_weierstrass(kind, &args[0], g2, g3) {
+    return Ok(value);
+  }
+  Ok(unevaluated(name, args))
 }

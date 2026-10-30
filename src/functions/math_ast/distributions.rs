@@ -602,6 +602,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "MultinormalDistribution" => pdf_multinormal(dargs, &x),
     "ProductDistribution" => Ok(pdf_product_distribution(dargs, &x)),
     "DataDistribution" => match histogram_pdf_cdf(dargs, &x, false)
+      .or_else(|| kernel_mixture_pdf_cdf(dargs, &x, false))
       .or_else(|| data_distribution_pdf_cdf(dargs, &x, false).map(Ok))
     {
       Some(v) => v,
@@ -933,6 +934,12 @@ pub fn quantile_distribution_closed_form(
   match dist_name {
     // Empirical DataDistribution: the smallest support value whose
     // cumulative weight reaches q (inclusive)
+    "DataDistribution" if kernel_mixture_parts(dargs).is_some() => {
+      if is_exact_q {
+        return None;
+      }
+      kernel_mixture_quantile(dargs, q_num)
+    }
     "DataDistribution" => {
       let (weights, values) = empirical_points(dargs)?;
       let mut cum = 0.0;
@@ -2449,6 +2456,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "SkewNormalDistribution" => cdf_skew_normal(dargs, x),
     "NormalDistribution" => cdf_normal(dargs, x),
     "DataDistribution" => match histogram_pdf_cdf(dargs, &x, true)
+      .or_else(|| kernel_mixture_pdf_cdf(dargs, &x, true))
       .or_else(|| data_distribution_pdf_cdf(dargs, &x, true).map(Ok))
     {
       Some(v) => v,
@@ -18356,4 +18364,327 @@ fn smooth_kernel_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
   let mean = data.iter().sum::<f64>() / n;
   let var = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n + h * h;
   Some((Expr::Real(mean), Expr::Real(var)))
+}
+
+/// The automatic bandwidth of `KernelMixtureDistribution[data]` and its
+/// square, both exact for exact data: Silverman's rule
+/// `0.9 Min[σ, IQR/1.34] n^(-1/5)` (σ alone when the IQR vanishes, 1 when σ
+/// does too), but never below half the smallest gap between distinct data
+/// values. The square is the rule's own `0.81 spread^2 n^(-2/5)`, which is
+/// the form wolframscript's `Variance` carries.
+fn kernel_mixture_bandwidth(sorted: &[Expr]) -> Option<(Expr, Expr)> {
+  let n = sorted.len();
+  let values: Vec<f64> =
+    sorted.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
+  let int = |k: i128| Expr::Integer(k);
+  let list = Expr::List(sorted.to_vec().into());
+  let quantile =
+    |p: f64| sorted[((n as f64 * p).ceil() as usize).clamp(1, n) - 1].clone();
+  let iqr = eval(&minus2(quantile(0.75), quantile(0.25))).ok()?;
+  let variance = eval(&call1("Variance", list)).ok()?;
+  // spread^2: the sample variance, or (IQR/1.34)^2 when that is smaller.
+  let iqr_spread_squared =
+    eval(&pow2(times2(iqr.clone(), make_rational(50, 67)), int(2))).ok()?;
+  let spread_squared = match (try_eval_to_f64(&iqr), try_eval_to_f64(&variance))
+  {
+    (Some(q), Some(v)) if q > 0.0 && (q * 50.0 / 67.0).powi(2) < v => {
+      iqr_spread_squared
+    }
+    (_, Some(v)) if v > 0.0 => variance.clone(),
+    _ => int(1),
+  };
+  if sorted
+    .iter()
+    .any(crate::functions::math_ast::contains_inexact_real)
+  {
+    // Machine data: wolframscript's machine product, spread n^(-1/5) 0.9.
+    let spread = try_eval_to_f64(&spread_squared)?.sqrt();
+    let spread = match (try_eval_to_f64(&iqr), try_eval_to_f64(&variance)) {
+      (Some(q), Some(v)) if q > 0.0 && (q * 50.0 / 67.0).powi(2) < v => {
+        q * (50.0 / 67.0)
+      }
+      _ => spread,
+    };
+    let h = spread * (n as f64).powf(-0.2) * 0.9;
+    let min_gap = values
+      .windows(2)
+      .map(|w| w[1] - w[0])
+      .filter(|d| *d > 0.0)
+      .fold(f64::INFINITY, f64::min);
+    let h = if min_gap.is_finite() {
+      h.max(min_gap / 2.0)
+    } else {
+      h
+    };
+    return Some((Expr::Real(h), Expr::Real(h * h)));
+  }
+  let rule = |power: i128| -> Option<Expr> {
+    // (9/10)^power spread^power n^(-power/5)
+    eval(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![
+        make_rational(9i128.pow(power as u32), 10i128.pow(power as u32)),
+        pow2(spread_squared.clone(), make_rational(power, 2)),
+        pow2(int(n as i128), make_rational(-power, 5)),
+      ]
+      .into(),
+    })
+    .ok()
+  };
+  let (h, h2) = (rule(1)?, rule(2)?);
+  let min_gap = values
+    .windows(2)
+    .map(|w| w[1] - w[0])
+    .filter(|d| *d > 0.0)
+    .fold(f64::INFINITY, f64::min);
+  if min_gap.is_finite() && try_eval_to_f64(&h)? < min_gap / 2.0 {
+    let gaps = sorted.windows(2).find(|w| {
+      try_eval_to_f64(&w[1])
+        .zip(try_eval_to_f64(&w[0]))
+        .is_some_and(|(b, a)| b - a == min_gap)
+    })?;
+    let half_gap = eval(&times2(
+      minus2(gaps[1].clone(), gaps[0].clone()),
+      make_rational(1, 2),
+    ))
+    .ok()?;
+    let squared = eval(&pow2(half_gap.clone(), int(2))).ok()?;
+    return Some((half_gap, squared));
+  }
+  Some((h, h2))
+}
+
+/// `KernelMixtureDistribution[data]` / `KernelMixtureDistribution[data, h]`
+/// with the (default) Gaussian kernel — wolframscript's container
+/// `DataDistribution["KernelMixture", {1/n, "Gaussian", sorted data, h}, 1,
+/// n]`, the equal-weight mixture of normal kernels of width `h` centred on
+/// the data.
+pub fn kernel_mixture_distribution_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("KernelMixtureDistribution", args));
+  if args.is_empty() || args.len() > 3 {
+    return unevaluated();
+  }
+  let Expr::List(items) = &args[0] else {
+    return unevaluated();
+  };
+  if items.len() < 2 {
+    return unevaluated();
+  }
+  let mut keyed: Vec<(f64, Expr)> = Vec::with_capacity(items.len());
+  for item in items {
+    match try_eval_to_f64(item) {
+      Some(v) if v.is_finite() => keyed.push((v, item.clone())),
+      _ => return unevaluated(),
+    }
+  }
+  if !matches!(args.get(2), None | Some(Expr::String(_)))
+    || matches!(args.get(2), Some(Expr::String(k)) if k != "Gaussian")
+  {
+    return unevaluated();
+  }
+  keyed.sort_by(|a, b| a.0.total_cmp(&b.0));
+  let sorted: Vec<Expr> = keyed.into_iter().map(|(_, e)| e).collect();
+  let h = match args.get(1) {
+    None => None,
+    Some(Expr::Identifier(s)) if s == "Automatic" => None,
+    Some(Expr::String(s)) if s == "Silverman" => None,
+    Some(h) if try_eval_to_f64(h).is_some_and(|v| v > 0.0) => Some(h.clone()),
+    Some(_) => return unevaluated(),
+  };
+  let h = match h {
+    Some(h) => h,
+    None => match kernel_mixture_bandwidth(&sorted) {
+      Some((h, _)) => h,
+      None => return unevaluated(),
+    },
+  };
+  let n = sorted.len() as i128;
+  let inexact = sorted
+    .iter()
+    .any(crate::functions::math_ast::contains_inexact_real);
+
+  let weight = if inexact {
+    Expr::Real(1.0 / n as f64)
+  } else {
+    make_rational(1, n)
+  };
+  Ok(call(
+    "DataDistribution",
+    vec![
+      str_expr("KernelMixture"),
+      Expr::List(
+        vec![weight, str_expr("Gaussian"), Expr::List(sorted.into()), h].into(),
+      ),
+      Expr::Integer(1),
+      Expr::Integer(n),
+    ],
+  ))
+}
+
+/// The weight, sorted data and bandwidth of a Gaussian
+/// `DataDistribution["KernelMixture", …]`.
+fn kernel_mixture_parts(dargs: &[Expr]) -> Option<(&Expr, &[Expr], &Expr)> {
+  if dargs.len() != 4
+    || !matches!(&dargs[0], Expr::String(s) if s == "KernelMixture")
+  {
+    return None;
+  }
+  let Expr::List(inner) = &dargs[1] else {
+    return None;
+  };
+  match inner.as_slice() {
+    [w, Expr::String(k), Expr::List(data), h] if k == "Gaussian" => {
+      Some((w, data.as_slice(), h))
+    }
+    _ => None,
+  }
+}
+
+/// The distinct data values with their multiplicities, in data order.
+fn kernel_mixture_atoms(data: &[Expr]) -> Vec<(Expr, i128)> {
+  let mut atoms: Vec<(Expr, i128)> = Vec::new();
+  for v in data {
+    match atoms.last_mut() {
+      Some((last, count))
+        if crate::evaluator::pattern_matching::expr_equal(last, v) =>
+      {
+        *count += 1;
+      }
+      _ => atoms.push((v.clone(), 1)),
+    }
+  }
+  atoms
+}
+
+/// PDF or CDF of a Gaussian kernel mixture:
+/// `w/h Σ c_i φ((x - v_i)/h)` and `w Σ c_i Erfc[-(x - v_i)/(√2 h)]/2`.
+pub(crate) fn kernel_mixture_pdf_cdf(
+  dargs: &[Expr],
+  x: &Expr,
+  cumulative: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let (w, data, h) = kernel_mixture_parts(dargs)?;
+  let int = Expr::Integer;
+  let terms: Vec<Expr> = kernel_mixture_atoms(data)
+    .into_iter()
+    .map(|(v, c)| {
+      let offset = plus(vec![x.clone(), times2(int(-1), v)]);
+      let kernel = if cumulative {
+        times2(
+          make_rational(1, 2),
+          call1(
+            "Erfc",
+            times2(
+              times2(
+                int(-1),
+                pow2(times2(call1("Sqrt", int(2)), h.clone()), int(-1)),
+              ),
+              offset,
+            ),
+          ),
+        )
+      } else {
+        times2(
+          pow2(call1("Sqrt", times2(int(2), id_expr("Pi"))), int(-1)),
+          call1(
+            "Exp",
+            times2(
+              times2(
+                int(-1),
+                pow2(times2(int(2), pow2(h.clone(), int(2))), int(-1)),
+              ),
+              pow2(offset, int(2)),
+            ),
+          ),
+        )
+      };
+      times2(int(c), kernel)
+    })
+    .collect();
+  let scale = if cumulative {
+    w.clone()
+  } else {
+    times2(w.clone(), pow2(h.clone(), int(-1)))
+  };
+  Some(eval(&times2(scale, plus(terms))))
+}
+
+/// Mean and variance of a Gaussian kernel mixture: the data's mean, and its
+/// population variance plus the bandwidth squared (the bandwidth rule's own
+/// square for an automatic bandwidth).
+pub(crate) fn kernel_mixture_mean_variance(
+  dargs: &[Expr],
+) -> Option<Result<(Expr, Expr), InterpreterError>> {
+  let (w, data, h) = kernel_mixture_parts(dargs)?;
+  Some((|| {
+    let int = Expr::Integer;
+    let _ = w;
+    let n = int(data.len() as i128);
+    let mean = eval(&call("Divide", vec![plus(data.to_vec()), n.clone()]))?;
+    // The population variance, as the sample variance's (n - 1)/n.
+    let count = data.len() as i128;
+    let _ = n;
+    let population_variance = eval(&times2(
+      call1("Variance", Expr::List(data.to_vec().into())),
+      make_rational(count - 1, count),
+    ))?;
+    let h2 = match kernel_mixture_bandwidth(data) {
+      Some((rule_h, rule_h2))
+        if crate::evaluator::pattern_matching::expr_equal(&rule_h, h) =>
+      {
+        rule_h2
+      }
+      _ => eval(&pow2(h.clone(), int(2)))?,
+    };
+    let variance =
+      eval(&call1("Together", plus(vec![population_variance, h2])))?;
+    Ok((mean, variance))
+  })())
+}
+
+/// Quantile of a Gaussian kernel mixture at a machine probability: the
+/// point where the (increasing) CDF reaches `q`, bisected to the last bit.
+pub(crate) fn kernel_mixture_quantile(dargs: &[Expr], q: f64) -> Option<Expr> {
+  let (_, data, h) = kernel_mixture_parts(dargs)?;
+  if !(0.0..=1.0).contains(&q) {
+    return None;
+  }
+  let values: Vec<f64> =
+    data.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
+  let h = try_eval_to_f64(h)?;
+  if q == 0.0 {
+    return Some(times2(Expr::Integer(-1), id_expr("Infinity")));
+  }
+  if q == 1.0 {
+    return Some(id_expr("Infinity"));
+  }
+  let n = values.len() as f64;
+  let cdf = |x: f64| {
+    values
+      .iter()
+      .map(|v| 0.5 * erfc_f64(-(x - v) / (2f64.sqrt() * h)))
+      .sum::<f64>()
+      / n
+  };
+  let (mut lo, mut hi) = (values[0] - h, values[values.len() - 1] + h);
+  while cdf(lo) > q {
+    lo -= 2.0 * (hi - lo);
+  }
+  while cdf(hi) < q {
+    hi += 2.0 * (hi - lo);
+  }
+  for _ in 0..200 {
+    let mid = f64::midpoint(lo, hi);
+    if mid <= lo || mid >= hi {
+      break;
+    }
+    if cdf(mid) < q {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  Some(Expr::Real(f64::midpoint(lo, hi)))
 }

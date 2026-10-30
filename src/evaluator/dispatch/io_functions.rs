@@ -5304,6 +5304,48 @@ fn locator_marker(
 ) -> Option<Expr> {
   let translate =
     |prims: &Expr| call("Translate", vec![prims.clone(), point.clone()]);
+  // An `Appearance` picture with a numeric `ImageSize -> n` is `n` pixels
+  // across whatever the pane's coordinates are, so its primitives are scaled
+  // about their own centre to that fraction of the pane (taken as 360 pixels
+  // across `span`) before being moved to the locator.
+  let sized = |g: &Expr, prims: Expr| -> Expr {
+    let Expr::FunctionCall { name, args } = g else {
+      return translate(&prims);
+    };
+    let pixels = args.iter().skip(1).find_map(|o| match o {
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") =>
+      {
+        crate::functions::math_ast::try_eval_to_f64(replacement)
+      }
+      _ => None,
+    });
+    let range = crate::functions::graphics::absolute_plot_range(g);
+    match (name == "Graphics", pixels, range) {
+      (true, Some(n), Some(((x0, x1), (y0, y1)))) if n > 0.0 => {
+        let extent = (x1 - x0).abs().max((y1 - y0).abs());
+        if extent <= 0.0 {
+          return translate(&prims);
+        }
+        let k = n * span / 360.0 / extent;
+        let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+        let centre = Expr::List(vec![num(cx), num(cy)].into());
+        let scaled = call("Scale", vec![prims, num(k), centre]);
+        // Move the (scaled-in-place) marker's centre onto the locator.
+        call(
+          "Translate",
+          vec![
+            scaled,
+            call(
+              "Plus",
+              vec![point.clone(), Expr::List(vec![num(-cx), num(-cy)].into())],
+            ),
+          ],
+        )
+      }
+      _ => translate(&prims),
+    }
+  };
   // The primitives of an `Appearance` picture: `Graphics[prims, opts…]`
   // contributes `prims`; anything else is drawn as given.
   let primitives = |g: &Expr| match g {
@@ -5317,9 +5359,10 @@ fn locator_marker(
   match appearance {
     Some(Expr::Identifier(n)) if n == "None" => None,
     Some(Expr::List(items)) if !items.is_empty() => {
-      Some(translate(&primitives(&items[index % items.len()])))
+      let g = &items[index % items.len()];
+      Some(sized(g, primitives(g)))
     }
-    Some(single) => Some(translate(&primitives(single))),
+    Some(single) => Some(sized(single, primitives(single))),
     None => {
       let r = span * 0.015;
       let arm = span * 0.03;
@@ -7389,10 +7432,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   // set_sans_serif_family() etc. must come *after* it.
   fontdb.load_system_fonts();
   fontdb.load_font_data(
-    include_bytes!(
-      "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
-    )
-    .to_vec(),
+    include_bytes!("../../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
     include_bytes!(

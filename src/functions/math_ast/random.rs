@@ -2779,6 +2779,9 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       (2i128, *imax)
     }
+    Expr::BigInteger(imax) if imax.sign() == num_bigint::Sign::Plus => {
+      return Ok(random_big_prime(&num_bigint::BigInt::from(2), imax, args));
+    }
     Expr::Real(_) => {
       crate::emit_message(&format!(
         "RandomPrime::intp: {} is not a positive integer.",
@@ -2791,6 +2794,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for it in items {
         match it {
           Expr::Integer(b) if *b >= 1 => {}
+          Expr::BigInteger(b) if b.sign() == num_bigint::Sign::Plus => {}
           Expr::Integer(_) | Expr::Real(_) => {
             crate::emit_message(&format!(
               "RandomPrime::intp: {} is not a positive integer.",
@@ -2806,7 +2810,16 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // wolframscript orders the bounds, so {5, 2} samples from [2, 5].
         ((*a).min(*b), (*a).max(*b))
       } else {
-        return uneval();
+        // Bounds past i128 sample from the BigInteger range.
+        let big = |e: &Expr| crate::functions::math_ast::expr_to_bigint(e);
+        let (Some(a), Some(b)) = (big(&items[0]), big(&items[1])) else {
+          return uneval();
+        };
+        return Ok(random_big_prime(
+          &a.clone().min(b.clone()),
+          &a.max(b),
+          args,
+        ));
       }
     }
     _ => return uneval(),
@@ -2915,6 +2928,74 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(reshape_into_dims(results, &dims))
     }
   }
+}
+
+/// `RandomPrime[{min, max}, dims]` for BigInteger bounds: uniform candidates
+/// in the range, kept when prime. The interval is assumed to hold primes,
+/// which every range this wide does.
+fn random_big_prime(
+  min: &num_bigint::BigInt,
+  max: &num_bigint::BigInt,
+  args: &[Expr],
+) -> Expr {
+  use num_bigint::BigInt;
+  use rand::RngExt;
+  let span = max - min + BigInt::from(1);
+  let bits = span.bits();
+  let draw = || -> BigInt {
+    crate::with_rng(|rng| {
+      loop {
+        let words = bits.div_ceil(64) as usize;
+        let mut digits: Vec<u64> = (0..words).map(|_| rng.random()).collect();
+        let extra = words as u64 * 64 - bits;
+        if extra > 0
+          && let Some(top) = digits.last_mut()
+        {
+          *top >>= extra;
+        }
+        let v = BigInt::from(num_bigint::BigUint::from_slice(
+          &digits
+            .iter()
+            .flat_map(|d| [*d as u32, (*d >> 32) as u32])
+            .collect::<Vec<u32>>(),
+        ));
+        if v < span {
+          return min + v;
+        }
+      }
+    })
+  };
+  let prime = || loop {
+    let candidate = draw();
+    if crate::functions::math_ast::is_prime_bigint(&candidate) {
+      return crate::functions::math_ast::bigint_to_expr(candidate);
+    }
+  };
+  let dims: Vec<i128> = match args.get(1) {
+    None => return prime(),
+    Some(Expr::Integer(n)) if *n > 0 => vec![*n],
+    Some(Expr::List(ds))
+      if !ds.is_empty()
+        && ds.iter().all(|d| matches!(d, Expr::Integer(n) if *n > 0)) =>
+    {
+      ds.iter()
+        .map(|d| if let Expr::Integer(n) = d { *n } else { 0 })
+        .collect()
+    }
+    _ => return unevaluated("RandomPrime", args),
+  };
+  fn nested(dims: &[i128], prime: &dyn Fn() -> Expr) -> Expr {
+    match dims.split_first() {
+      None => prime(),
+      Some((n, rest)) => Expr::List(
+        (0..*n)
+          .map(|_| nested(rest, prime))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    }
+  }
+  nested(&dims, &prime)
 }
 
 /// Collect all primes in [min, max] (for small ranges)

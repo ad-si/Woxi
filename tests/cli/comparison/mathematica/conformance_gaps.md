@@ -922,8 +922,11 @@ and introduces new divergences wherever WL is itself inexact.
 `Variance[{1., 2., 3.}]` is `1.` in Woxi and `1.0000000000000002` in WL, whose
 accumulation matches none of the textbook formulas (`Σ(x-m)²/(n-1)`,
 `(Σx² − n m²)/(n-1)`, `(n Σx² − (Σx)²)/(n(n-1))`, mean-of-squared-deviations
-scaled, or Welford). Affects `Variance`, `Correlation`, `Kurtosis`, `Cumulant`
-and `Variance` of an `Audio`. **Not reproducible.**
+scaled, or Welford; also not compensated or exactly rounded — a 40-sample
+battery found every candidate off by up to 3 ULPs). Affects `Variance`,
+`Correlation`, `Kurtosis`, `Cumulant`, `Variance` of an `Audio`, and the
+machine bandwidth and `Variance` of a `KernelMixtureDistribution` of machine
+data (built on the sample standard deviation). **Not reproducible.**
 
 `PageRankCentrality[CycleGraph[4]]` is `{0.25000000000000006, …}` against WL's
 clean `{0.25, …}` — power-iteration noise in the same class.
@@ -6248,3 +6251,36 @@ differ. Hemispheric projections (`"Orthographic"`) drop the vertices on the
 far side instead of clipping the outline at the horizon, and the conic
 projections use fixed standard parallels (`"Albers"`) or the center
 latitude (`"LambertConic"`, `"Bonne"`).
+
+### Numeric radicals without a shared prime: WL splits some rational bases
+
+`Sqrt[7/3] 5^(1/5)` is `(5^(1/5)*Sqrt[7])/Sqrt[3]` in WL but stays
+`Sqrt[7/3]*5^(1/5)` in Woxi, and likewise `(7/3)^(1/3) 5^(1/5)`. WL does not
+split `Sqrt[3/7] 5^(1/5)`, `(2/3)^(1/3) 5^(1/5)` or `Sqrt[7/3] 5^(1/5) x`, so
+the rule (it seems to depend on the base being above 1 and the product being
+purely numeric) is not pinned down. Radicals that share a prime are merged
+like WL (`Sqrt[7/3] 3^(1/5)` is `Sqrt[7]/3^(3/10)`).
+
+### `KernelMixtureDistribution` exact `Variance` and display
+
+- `Variance[KernelMixtureDistribution[{1, 2, 4}]]` is
+  `(7*(200 + 81*3^(3/5)))/900` in Woxi and the equal
+  `(7*(243 + 200*3^(2/5)))/(900*3^(2/5))` in WL, whose bandwidth square keeps
+  `3^(2/5)` in the denominator — evaluated alone, WL's own
+  `189/(100 3^(2/5))` absorbs the 3 just like Woxi. Interval-rule bandwidths
+  (`{1, 2, 3, 4, 5}`) match.
+- `CDF[KernelMixtureDistribution[{1, 2, 4}], 3.]` is `0.6550092996714579`
+  in Woxi (and in WL's own `N[CDF[…, 3]]`) but `0.6550092996714578` in WL.
+- WL's `InputForm` prints the container's tags unquoted
+  (`DataDistribution[KernelMixture, {1/3, Gaussian, …}, 1, 3]`); Woxi keeps
+  them as strings, like the `"Empirical"` and `"Histogram"` containers.
+
+
+### Weierstrass functions at machine precision: last digits and imaginary noise
+
+Woxi evaluates `WeierstrassZeta`, `WeierstrassSigma` and complex
+`WeierstrassP`/`WeierstrassPPrime` through the lattice's theta function; the
+values agree with WL to about 14 significant digits, not to the last bit.
+For real arguments WL attaches a rounding-noise imaginary part
+(`WeierstrassZeta[1.5, {1., 2.}]` is `0.49214540663758793 +
+4.6454696025598575*^-17*I`), where Woxi returns the real `0.492145406637588`.
