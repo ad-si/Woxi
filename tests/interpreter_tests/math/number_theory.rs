@@ -6930,6 +6930,45 @@ mod bessel_real_contagion {
   }
 }
 
+// The fundamental unit of a real quadratic field (Pell, with the cube-root
+// step for d = 1 mod 4), against the root with +Sqrt[d] and an integral
+// generator; imaginary fields and Q have none.
+mod number_field_fundamental_units {
+  use super::*;
+
+  #[test]
+  fn quadratic_fields() {
+    assert_eq!(
+      interpret(
+        "NumberFieldFundamentalUnits /@ {Sqrt[13], Sqrt[2], Sqrt[7], \
+         Sqrt[94], Sqrt[-3], Sqrt[12], 3 + 2 Sqrt[5], Sqrt[1621], \
+         (1 - Sqrt[21])/3, 5}"
+      )
+      .unwrap(),
+      "{{AlgebraicNumber[Sqrt[13], {3/2, 1/2}]}, {AlgebraicNumber[Sqrt[2], {1, 1}]}, \
+       {AlgebraicNumber[Sqrt[7], {8, 3}]}, {AlgebraicNumber[Sqrt[94], {2143295, 221064}]}, \
+       {}, {AlgebraicNumber[2*Sqrt[3], {2, 1/2}]}, \
+       {AlgebraicNumber[3 + 2*Sqrt[5], {-1/4, 1/4}]}, \
+       {AlgebraicNumber[Sqrt[1621], {4823622127875/2, 119806883557/2}]}, \
+       {AlgebraicNumber[1 - Sqrt[21], {2, 1/2}]}, {}}"
+    );
+  }
+
+  #[test]
+  fn algebraic_number_values() {
+    assert_eq!(
+      interpret(
+        "u = AlgebraicNumber[Sqrt[13], {3/2, 1/2}]; \
+         {RootReduce[{u}], N[u], ToRadicals[u], RootReduce[1/RootReduce[u]], \
+          RootReduce[f[3/2 + Sqrt[13]/2]]}"
+      )
+      .unwrap(),
+      "{{(3 + Sqrt[13])/2}, 3.302775637731995, 3/2 + Sqrt[13]/2, \
+       (-3 + Sqrt[13])/2, f[(3 + Sqrt[13])/2]}"
+    );
+  }
+}
+
 mod number_field_class_number {
   use super::*;
 

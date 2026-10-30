@@ -12387,6 +12387,9 @@ fn evaluate_function_call_ast_inner(
         // The container Empirical-, Histogram- and KernelMixtureDistribution
         // evaluate to, read by PDF, CDF, Quantile and the moments.
         | "DataDistribution"
+        // An element of a number field, c0 + c1 θ + …; N, RootReduce and
+        // ToRadicals read it.
+        | "AlgebraicNumber"
     )
   {
     let args_str = args

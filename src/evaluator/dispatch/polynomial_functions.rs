@@ -388,6 +388,23 @@ pub fn dispatch_polynomial_functions(
     "Root" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::polynomial_ast::root_ast(args));
     }
+    // An `AlgebraicNumber` is the number it stands for, c0 + c1 θ + ….
+    "RootReduce" | "ToRadicals"
+      if !args.is_empty()
+        && let Some(expanded) =
+          crate::functions::polynomial_ast::expand_algebraic_numbers(
+            &args[0],
+          ) =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = expanded;
+      if name == "ToRadicals" {
+        return Some(Ok(new_args.remove(0)));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        name, &new_args,
+      ));
+    }
     "RootReduce" if args.len() == 1 => {
       return Some(crate::functions::polynomial_ast::root_reduce_ast(args));
     }
@@ -944,6 +961,13 @@ pub fn dispatch_polynomial_functions(
     "InterpolatingPolynomial" if args.len() == 2 => {
       return Some(
         crate::functions::polynomial_ast::interpolating_polynomial_ast(args),
+      );
+    }
+    "NumberFieldFundamentalUnits" if args.len() == 1 => {
+      return Some(
+        crate::functions::polynomial_ast::number_field_fundamental_units_ast(
+          args,
+        ),
       );
     }
     "NumberFieldClassNumber" if args.len() == 1 => {

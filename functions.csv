@@ -2246,7 +2246,7 @@ NotebookFileName,Notebook UI,🚫,None,7.0,2240
 AppearanceRules,UI styling,🚫,None,10.0,2243
 LowerCaseQ,Tests if a string consists entirely of lowercase letters,✅,pure,2.0,2243
 StationaryWaveletTransform,Undecimated (a trous) stationary wavelet transform,✅,pure,8.0,2243
-AlgebraicNumber,Algebraic number theory,🚫,None,6.0,2246
+AlgebraicNumber,An element c0 + c1 θ + … of a number field kept symbolic and read by N and RootReduce and ToRadicals,✅,pure,6.0,2246
 DateHistogram,Date visualization,🚫,None,10.2,2246
 DirectedGraph,Directed version of a graph with each undirected edge as two arcs,✅,pure,8.0,2246
 BooleanRegion,Region built by combining regions with a Boolean function,✅,pure,10.0,2251
@@ -4189,7 +4189,7 @@ FunctionMonotonicity,,,,12.2,4291
 GainPhaseMargins,,,,8.0,4291
 GeoVisibleRegionBoundary,,🚫,,10.0,4291
 GroupCentralizer,,,,8.0,4291
-NumberFieldFundamentalUnits,,,,6.0,4291
+NumberFieldFundamentalUnits,Fundamental units of the ring of integers of a rational or quadratic number field as AlgebraicNumber objects,✅,pure,6.0,4291
 NumericArray,Typed numeric array with auto-detected element type,✅,pure,12.0,4291
 RawArray,Legacy typed raw array (as embedded in CompressedData image payloads),✅,pure,10.0,
 NuttallWindow,Nuttall 4-term cosine-sum window on [-1/2 1/2] (exactly 0 at the edges),✅,pure,9.0,4291
