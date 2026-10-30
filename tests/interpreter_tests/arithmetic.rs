@@ -7687,6 +7687,22 @@ mod real_digits_base {
   }
 
   #[test]
+  fn rational_with_leading_fractional_zeros() {
+    // The zeros after the point live in the exponent, not in the digits.
+    assert_eq!(
+      interpret("RealDigits[3/70]").unwrap(),
+      "{{{4, 2, 8, 5, 7, 1}}, -1}"
+    );
+    assert_eq!(
+      interpret("RealDigits[1/70]").unwrap(),
+      "{{{1, 4, 2, 8, 5, 7}}, -1}"
+    );
+    assert_eq!(interpret("RealDigits[1/12]").unwrap(), "{{8, {3}}, -1}");
+    assert_eq!(interpret("RealDigits[1/300]").unwrap(), "{{{3}}, -2}");
+    assert_eq!(interpret("RealDigits[1/80]").unwrap(), "{{1, 2, 5}, -1}");
+  }
+
+  #[test]
   fn base_6_terminating() {
     assert_eq!(interpret("RealDigits[3/2, 6]").unwrap(), "{{1, 3}, 1}");
   }
