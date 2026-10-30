@@ -24156,3 +24156,41 @@ mod linear_programming_none_bounds {
     );
   }
 }
+
+mod reduce_parameters_in_equations {
+  use super::*;
+
+  #[test]
+  fn a_parameter_is_no_unknown_of_the_system() {
+    // `a` sits in the equations but is not solved for: it gave `{}`.
+    assert_eq!(
+      interpret(
+        "Sort[{ex, ey, ez} /. Solve[{ey == ez a, ex + ez == 0, \
+         ex^2 + ey^2 + ez^2 == 1}, {ex, ey, ez}] /. a -> 2]"
+      )
+      .unwrap(),
+      "{{-(1/Sqrt[6]), Sqrt[2/3], 1/Sqrt[6]}, {1/Sqrt[6], -Sqrt[2/3], -(1/Sqrt[6])}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Round[10^6 N[{ex, ey, ez} /. Solve[ey nz - ez ny == 0 && \
+         ex^2 + ey^2 + ez^2 == r^2 && ex nx + ey ny + ez nz == 0, \
+         {ex, ey, ez}] /. {nx -> 1, ny -> 2, nz -> 3, r -> 1}]]]"
+      )
+      .unwrap(),
+      "{{-963624, 148250, 222375}, {963624, -148250, -222375}}"
+    );
+  }
+
+  #[test]
+  fn a_parameter_under_an_inequality_is_eliminated_after_the_unknowns() {
+    // It was solved for `a` in terms of `ex`.
+    assert_eq!(
+      interpret(
+        "FreeQ[Reduce[ex^2 + 2 a^2 ex^2 == 1 && a != 0, {ex}], a == _]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
