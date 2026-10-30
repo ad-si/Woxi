@@ -6302,3 +6302,24 @@ expression is returned unchanged instead of eliding the middle as
 `<<k>>`, so `Panel[Short[Range[100]]]` in a `Manipulate` shows every
 element. Only the digits of an over-long integer are shortened
 (`shorten_for_display` in `src/functions/graphics.rs`).
+
+## ImageRotate: exact pixel-corner ties at an arbitrary angle
+
+`ImageRotate` at an angle that is not a right angle samples the source pixel
+under each output pixel centre. When that point falls exactly on a source
+pixel corner (the canvas centre of an even-sized image on an odd canvas),
+wolframscript's choice depends on its transform's rounding noise:
+`ImageRotate[Image[{{1, 0}, {0, 1}}, "Byte"], 1]` has a `0` in the centre,
+Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.
+
+## Exact `Eigenvectors` with quadratic-surd components: unreduced form
+
+```
+wolframscript -code 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
+# {{-((-1 - Sqrt[5])/(3 + Sqrt[5])), 1, 1, 1}, {-1, 0, 1, 1}, {-((1 - Sqrt[5])/(-3 + Sqrt[5])), 1, 1, 1}, {0, 0, 0, 1}}
+woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}]'
+# {{(7 + 3*Sqrt[5])/(11 + 5*Sqrt[5]), 1, 1, 1}, {-1, 0, 1, 1}, {(7 - 3*Sqrt[5])/(11 - 5*Sqrt[5]), 1, 1, 1}, {0, 0, 0, 1}}
+```
+
+The values are equal, but the elimination leaves a different quotient, so
+`N` of the two differs in the last digits.

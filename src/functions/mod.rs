@@ -84,6 +84,7 @@ pub mod parametric_plot;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pdf_import;
 pub mod periodic_table_plot;
+pub mod piecewise_combine;
 pub mod plot;
 pub mod plot3d;
 pub mod plot_axes;

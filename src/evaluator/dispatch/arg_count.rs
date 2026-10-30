@@ -737,7 +737,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "ImageChannels" => Some((1, 1)),
     "ImageCollage" => Some((1, 3)),
     "ImageColorSpace" => Some((1, 1)),
-    "ImageCompose" => Some((2, 4)),
+    "ImageCompose" => Some((2, 5)),
     "ImageCrop" => Some((1, usize::MAX)),
     "ImageData" => Some((1, 2)),
     "Image3DSlices" => Some((1, 3)),

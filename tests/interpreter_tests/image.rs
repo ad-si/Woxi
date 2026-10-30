@@ -788,6 +788,44 @@ mod image_core {
       interpret("img = Image[{{0, 0.5, 1}}]; ImageDimensions[img]").unwrap();
     assert_eq!(result, "{3, 1}");
   }
+
+  // Any other angle: the whole-pixel bounding box, each pixel sampling the
+  // source under its centre scaled to the exact box, black outside.
+  #[test]
+  fn image_rotate_arbitrary_angle() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{1.}}], 15 Degree]]").unwrap(),
+      "{{1., 1.}, {1., 1.}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{1., 1., 1., 1.}}], 30 Degree]]")
+        .unwrap(),
+      "{{0., 0., 0., 1.}, {0., 1., 1., 0.}, {1., 0., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[ConstantArray[1., {3, 3}]], 30 Degree]]"
+      )
+      .unwrap(),
+      "{{0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}, {1., 1., 1., 1., 1.}, \
+{0., 1., 1., 1., 0.}, {0., 0., 1., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret("ImageData[ImageRotate[Image[{{0., 1.}, {0.5, 0.25}}], Pi/4]]")
+        .unwrap(),
+      "{{0., 1., 0.}, {0., 0.25, 0.25}, {0., 0.5, 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageRotate[Image[ConstantArray[1., {4, 5}]], 15 Degree]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 1., 1., 0.}, {1., 1., 1., 1., 1., 0.}, \
+{1., 1., 1., 1., 1., 1.}, {1., 1., 1., 1., 1., 1.}, \
+{0., 1., 1., 1., 1., 1.}, {0., 1., 1., 0., 0., 0.}}"
+    );
+  }
 }
 
 mod image_processing {
@@ -9275,7 +9313,7 @@ mod image_size_option {
     clear_state();
     assert_eq!(
       interpret("ColorData[\"WebSafe\", \"#99CC00\"]").unwrap(),
-      "RGBColor[0.6, 0.8, 0]"
+      "RGBColor[0.6, 0.8, 0.]"
     );
     assert_eq!(
       interpret("ColorData[\"WebSafe\"][\"#3399CC\"]").unwrap(),
@@ -9920,6 +9958,117 @@ mod image_lines {
       )
       .unwrap(),
       "Image"
+    );
+  }
+}
+
+mod alpha_channel_functions {
+  use super::*;
+
+  #[test]
+  fn alpha_remove_and_set() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{1, 0, 0, 0.5}, {0, 1, 0, 1}}}, ColorSpace -> \"RGB\"]; \
+         j = Image[{{{1, 0.5}, {0, 1}}}]; \
+         {ImageData[RemoveAlphaChannel[i]], ImageData[RemoveAlphaChannel[i, White]], \
+         ImageData[AlphaChannel[i]], ImageData[AlphaChannel[j]], \
+         ImageData[RemoveAlphaChannel[j]], ImageType[RemoveAlphaChannel[i]], \
+         ImageColorSpace[SetAlphaChannel[Image[{{1, 0}}]]], \
+         ImageData[SetAlphaChannel[Image[{{1, 0}}], 0.5]]}"
+      )
+      .unwrap(),
+      "{{{{1., 0., 0.}, {0., 1., 0.}}}, {{{1., 0.5, 0.5}, {0., 1., 0.}}}, {{0.5, 1.}}, \
+       {{1., 1.}}, {{{1., 0.5}, {0., 1.}}}, Real32, Grayscale, {{{1., 0.5}, {0., 0.5}}}}"
+    );
+  }
+}
+
+mod color_combine_with_alpha {
+  use super::*;
+
+  #[test]
+  fn one_extra_channel_is_alpha() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.5, 1.}}]; c = ColorCombine[{i, i, i, i}, \"RGB\"]; \
+         {ImageChannels[c], ImageColorSpace[c], ImageData[AlphaChannel[c]]}"
+      )
+      .unwrap(),
+      "{4, RGB, {{0.5, 1.}}}"
+    );
+  }
+}
+
+mod color_separate_in_a_space {
+  use super::*;
+
+  #[test]
+  fn separates_after_converting() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{1, 0, 0.5}, {0, 1, 0}}}]; \
+         {ImageData /@ ColorSeparate[i, \"RGB\"], ImageData /@ ColorSeparate[i, \"HSB\"]}"
+      )
+      .unwrap(),
+      "{{{{1., 0.}}, {{0., 1.}}, {{0.5, 0.}}}, \
+       {{{0.9166666865348816, 0.3333333432674408}}, {{1., 1.}}, {{1., 1.}}}}"
+    );
+  }
+}
+
+mod image_compose_porter_duff {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn operator_weights_and_alpha() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{0.2, 0.5}}}, ColorSpace -> \"Grayscale\"]; \
+         o = Image[{{{0.6, 0.4}}}, ColorSpace -> \"Grayscale\"]; \
+         Table[ImageData[ImageCompose[i, o, Center, Center, v]], \
+         {v, {{1, 0, 0}, {0, 1, 0}, {1, 1, 1}, {1, 1, 0}}}]"
+      )
+      .unwrap(),
+      "{{{{0.6000000238418579, 0.20000000298023224}}}, \
+       {{{0.20000000298023224, 0.30000001192092896}}}, \
+       {{{0.4285714328289032, 0.699999988079071}}}, {{{0.36000001430511475, 0.5}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "o = Image[{{{0.6, 0.4}}}, ColorSpace -> \"Grayscale\"]; \
+         {ImageData[ImageCompose[Image[{{0.2}}], Image[{{0.6}}], Center, Center, {1, 0, 0}]], \
+         ImageData[ImageCompose[Image[{{0.2, 0.4}}], Image[{{0.6}}], Scaled[{0.25, 0.5}]]], \
+         ImageData[ImageCompose[Image[{{0.2, 0.4}}], o]], \
+         ImageType[ImageCompose[Image[{{0, 1}}, \"Byte\"], Image[{{0.6}}]]]}"
+      )
+      .unwrap(),
+      "{{{0.}}, {{0.6000000238418579, 0.4000000059604645}}, \
+       {{{0.20000000298023224, 1.}, {0.48000001907348633, 1.}}}, Real32}"
+    );
+  }
+}
+
+mod commonest_filter_on_images {
+  use super::*;
+
+  #[test]
+  fn filters_each_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[CommonestFilter[Image[{{0.1, 0.2, 0.2}, {0.3, 0.2, 0.1}, \
+         {0.1, 0.1, 0.3}}], 1]]"
+      )
+      .unwrap(),
+      "{{0.20000000298023224, 0.20000000298023224, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
+       {0.10000000149011612, 0.10000000149011612, 0.10000000149011612}}"
     );
   }
 }

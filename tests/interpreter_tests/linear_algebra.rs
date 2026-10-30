@@ -2315,6 +2315,60 @@ mod eigenvalues {
     );
   }
 
+  // The count is any Take sequence spec; integer-valued reals count too.
+  #[test]
+  fn eigen_count_takes_sequence_specs() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = {{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}; {Eigenvalues[m, {2}], \
+         Eigenvalues[m, {1, 2}], Eigenvectors[m, {-2}], \
+         Eigensystem[m, {1, 3, 2}], Eigenvalues[m, 2.], \
+         Eigenvalues[m, {-1, 1, -1}], Eigenvalues[m, {4, 3}], \
+         Eigenvalues[m, 0]}"
+      )
+      .unwrap(),
+      "{{2}, {3, 2}, {{0, 1, 0}}, {{3, 1}, {{0, 0, 1}, {1, 0, 0}}}, {3, 2}, \
+       {1, 2, 3}, {}, {}}"
+    );
+    assert_eq!(
+      interpret("Eigensystem[m, {2, 7}]").unwrap(),
+      "Eigensystem[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, {2, 7}]"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "Eigensystem::take: Cannot take eigenvectors and eigenvalues 2 through \
+       7 out of the total of 3 eigenvectors and eigenvalues."
+    )));
+    assert_eq!(
+      interpret("Eigenvalues[m, x]").unwrap(),
+      "Eigenvalues[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, x]"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "Eigenvalues::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} \
+       or {m, n, s}) expected at position 2"
+    )));
+  }
+
+  // A matrix whose entries are lists is not a matrix: the matrix is checked
+  // before the count.
+  #[test]
+  fn eigen_non_scalar_entries_emit_matsq() {
+    clear_state();
+    for (call, head) in [
+      ("Eigenvectors[{{0, {1}}, {0, 0}}]", "Eigenvectors"),
+      ("Eigenvectors[{{0., {1.}}, {0., 0.}}, 2.]", "Eigenvectors"),
+      ("Eigensystem[{{1, {0}}, {0, 2}}, x]", "Eigensystem"),
+    ] {
+      assert_eq!(interpret(call).unwrap(), call);
+      assert!(
+        woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.starts_with(&format!("{head}::matsq: Argument"))),
+        "{call}"
+      );
+    }
+  }
+
   #[test]
   fn diagonalization_identity() {
     // With T = Transpose[Eigenvectors[A]], Inverse[T] . A . T should equal
@@ -12369,6 +12423,43 @@ mod coordinate_transform_data {
       )
       .unwrap(),
       "{{r*Cos[t], r*Sin[t]}, {{Cos[t], -(r*Sin[t])}, {Sin[t], r*Cos[t]}}, r^2*Sin[t]}"
+    );
+  }
+}
+
+mod complex_eigenvectors_of_real_machine_matrices {
+  use super::*;
+
+  #[test]
+  fn unit_vectors_with_real_largest_component() {
+    assert_eq!(
+      interpret(
+        "Round[Eigenvectors[{{0.5, -0.75}, {0.1, 0.5}}], 10.^-12] == \
+         Round[{{0.9393364366277243, -0.34299717028501764 I}, \
+         {0.9393364366277243, 0.34299717028501764 I}}, 10.^-12]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Length /@ Eigensystem[{{0, -1.}, {1, 0}}]").unwrap(),
+      "{2, 2}"
+    );
+  }
+}
+
+mod eigen_functions_of_a_single_matrix_list {
+  use super::*;
+
+  #[test]
+  fn list_of_one_matrix_is_the_matrix() {
+    assert_eq!(
+      interpret(
+        "{Eigenvalues[{{{1, 0}, {0, 2}}}], Eigenvectors[{{{1, 0}, {0, 2}}}], \
+         Eigenvalues[{{{1, 0}, {0, 2}}}, 1], Eigensystem[{{{1, 0}, {0, 2}}}]}"
+      )
+      .unwrap(),
+      "{{2, 1}, {{0, 1}, {1, 0}}, {2}, {{2, 1}, {{0, 1}, {1, 0}}}}"
     );
   }
 }

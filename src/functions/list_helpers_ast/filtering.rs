@@ -2538,6 +2538,59 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
+  // An image is filtered channel by channel, as a matrix of its values.
+  if let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    color_space,
+    display_size,
+  } = &args[0]
+  {
+    let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+    let mut out = vec![0.0; w * h * ch];
+    for c in 0..ch {
+      let matrix = Expr::List(
+        (0..h)
+          .map(|y| {
+            Expr::List(
+              (0..w)
+                .map(|x| Expr::Real(data[(y * w + x) * ch + c]))
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      );
+      let filtered = commonest_filter_ast(&[matrix, args[1].clone()])?;
+      let Expr::List(rows) = &filtered else {
+        return Ok(unevaluated(args));
+      };
+      for (y, row) in rows.iter().enumerate() {
+        let Expr::List(cells) = row else {
+          return Ok(unevaluated(args));
+        };
+        for (x, v) in cells.iter().enumerate() {
+          let Expr::Real(v) = v else {
+            return Ok(unevaluated(args));
+          };
+          out[(y * w + x) * ch + c] = *v;
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      width: *width,
+      height: *height,
+      channels: *channels,
+      data: std::sync::Arc::new(out),
+      image_type: *image_type,
+      color_space: *color_space,
+      display_size: *display_size,
+    });
+  }
   let Expr::List(items) = &args[0] else {
     crate::emit_message(&format!(
       "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",

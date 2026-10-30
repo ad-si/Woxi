@@ -5212,6 +5212,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     {
       true
     }
+    // `Invisible[picture]` keeps the picture's room and paints nothing; the
+    // grid layout draws it blank (see `grid_cell_graphic`).
+    Expr::FunctionCall { name, args }
+      if name == "Invisible"
+        && args.len() == 1
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      true
+    }
     // `Pane` and `Deploy` are transparent here: their own arms export what
     // they wrap. A `Framed` picture is drawn and framed by its own
     // renderer, so it counts as a picture too.
@@ -6633,6 +6642,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_text_svg(expr)
       }
+    }
+    // `Invisible[picture]` is drawn at the picture's size with nothing
+    // painted, so a layout keeps its shape.
+    Expr::FunctionCall { name, args }
+      if name == "Invisible"
+        && args.len() == 1
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      crate::functions::graphics::hide_svg_content(&expr_to_svg(&args[0]))
+        .unwrap_or_default()
     }
     // Legended[graphics, legend]: a `BarLegend` (optionally `Placed`) is
     // drawn right of the graphics, its bar 5/8 of their height, as Wolfram

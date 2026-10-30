@@ -11081,6 +11081,12 @@ fn evaluate_function_call_ast_inner(
         _ => {}
       }
     }
+    // Arithmetic over interval Piecewise parts folds into one Piecewise.
+    if let Some(folded) =
+      crate::functions::piecewise_combine::fold_piecewise(&args[0])?
+    {
+      return refined(folded);
+    }
     // For functions that can't be expanded into Piecewise form,
     // return the argument unchanged (not wrapped in PiecewiseExpand).
     return refined(args[0].clone());

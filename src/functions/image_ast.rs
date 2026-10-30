@@ -3118,8 +3118,44 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else if norm < 0.01 || (norm - 2.0 * pi).abs() < 0.01 {
     0
   } else {
-    // Non-90° rotations aren't supported; pass through unevaluated.
-    return Ok(unevaluated("ImageRotate", args));
+    // Any other angle: the bounding box of the turned image, each pixel
+    // taking the source pixel under its centre (black outside), the way
+    // wolframscript resamples.
+    let (sin, cos) = angle.sin_cos();
+    let (wf, hf) = (w as f64, h as f64);
+    let size = |v: f64| (v - 1e-9).ceil().max(1.0) as usize;
+    let bw = wf * cos.abs() + hf * sin.abs();
+    let bh = wf * sin.abs() + hf * cos.abs();
+    let (nw, nh) = (size(bw), size(bh));
+    let mut out = Vec::with_capacity(nw * nh * ch);
+    for r in 0..nh {
+      for c in 0..nw {
+        // Output pixel centre relative to the centre, y pointing up, scaled
+        // from the whole-pixel canvas back to the exact bounding box.
+        let dx = (c as f64 + 0.5 - nw as f64 / 2.0) * bw / nw as f64;
+        let dy = (nh as f64 / 2.0 - (r as f64 + 0.5)) * bh / nh as f64;
+        // Turned back by the angle into the source image.
+        let sx = dx * cos + dy * sin + wf / 2.0;
+        let sy = -dx * sin + dy * cos + hf / 2.0;
+        let (col, row) = (sx.floor(), (hf - sy).floor());
+        if col >= 0.0 && row >= 0.0 && (col as usize) < w && (row as usize) < h
+        {
+          let base = (row as usize * w + col as usize) * ch;
+          out.extend_from_slice(&data[base..base + ch]);
+        } else {
+          out.extend(std::iter::repeat_n(0.0, ch));
+        }
+      }
+    }
+    return Ok(Expr::Image {
+      color_space: None,
+      display_size: None,
+      width: nw as u32,
+      height: nh as u32,
+      channels: *channels,
+      data: Arc::new(out),
+      image_type: *image_type,
+    });
   };
 
   let pixel = |r: usize, c: usize| -> &[f64] {
@@ -5218,6 +5254,19 @@ fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
     }
   };
   match spec {
+    // Scaled[{sx, sy}]: fractions of the image's width and height.
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      let Expr::List(p) = &args[0] else {
+        return None;
+      };
+      if p.len() != 2 {
+        return None;
+      }
+      let f = crate::functions::math_ast::try_eval_to_f64;
+      Some((f(&p[0])? * w, f(&p[1])? * h))
+    }
     Expr::List(p) if p.len() == 2 => Some((
       axis(&p[0], w, "Left", "Right")?,
       axis(&p[1], h, "Bottom", "Top")?,
@@ -5235,11 +5284,25 @@ fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
 }
 
 pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 4 {
+  if args.len() < 2 || args.len() > 5 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCompose expects 2 to 4 arguments".into(),
+      "ImageCompose expects 2 to 5 arguments".into(),
     ));
   }
+  // ImageCompose[image, overlay, pos, opos, {a, b, c}]: the Porter–Duff
+  // weights of the overlay-only, image-only and overlapping parts; the
+  // default {1, 1, 1} draws the overlay over the image.
+  let operator = match args.get(4) {
+    None => (1.0, 1.0, 1.0),
+    Some(Expr::List(w)) if w.len() == 3 => {
+      let f = crate::functions::math_ast::try_eval_to_f64;
+      match (f(&w[0]), f(&w[1]), f(&w[2])) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => return Ok(unevaluated("ImageCompose", args)),
+      }
+    }
+    Some(_) => return Ok(unevaluated("ImageCompose", args)),
+  };
 
   // Parse the overlay spec: either an Image, or {Image, α}.
   let (overlay_expr, alpha) = match &args[1] {
@@ -5289,19 +5352,20 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (
     Expr::Image {
-      color_space: _,
+      color_space: cs1,
       display_size: _,
       width: w1,
       height: h1,
       channels: ch1,
       data: data1,
-      image_type,
+      image_type: _,
     },
     Expr::Image {
       width: w2,
       height: h2,
       channels: ch2,
       data: data2,
+      color_space: cs2,
       ..
     },
   ) = (base, overlay_expr)
@@ -5338,46 +5402,85 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     offset_y = (bh as f64 - (py - qy) - oh as f64).round() as i64;
   }
 
-  // Output starts as a copy of the background; overlapping pixels are
-  // replaced (or alpha-blended) using the overlay's channels.
-  let mut out: Vec<f64> = data1.as_ref().clone();
-  for oy in 0..oh {
-    let by = oy + offset_y;
-    if by < 0 || by >= bh {
-      continue;
-    }
-    for ox in 0..ow {
-      let bx = ox + offset_x;
-      if bx < 0 || bx >= bw {
-        continue;
-      }
+  // Porter–Duff compositing on the colour channels: with image and overlay
+  // opacities αi, αo, the result has opacity a αo (1 - αi) + b αi (1 - αo)
+  // + c αi αo, and the colours weighted the same way (the overlap showing
+  // the overlay). A {image, α} overlay is faded by α. An image without an
+  // alpha channel keeps none; its pixels are the premultiplied result.
+  let base_alpha = has_alpha_channel(*ch1, *cs1);
+  let over_alpha = has_alpha_channel(*ch2, *cs2);
+  let bcolors = if base_alpha { bch - 1 } else { bch };
+  let ocolors = if over_alpha { och - 1 } else { och };
+  // An overlay with an alpha channel gives the result one too.
+  let out_alpha = base_alpha || over_alpha;
+  let out_ch = bcolors + usize::from(out_alpha);
+  let (wa, wb, wc) = operator;
+  let fade = alpha.unwrap_or(1.0);
+  // Pixel values are single-precision; the arithmetic is done on them in
+  // double precision and the result rounded back, as wolframscript does.
+  let px = |v: f64| v as f32 as f64;
+  let n = (bw * bh) as usize;
+  let mut out: Vec<f64> = Vec::with_capacity(n * out_ch);
+  for by in 0..bh {
+    for bx in 0..bw {
       let base_idx = (by as usize * *w1 as usize + bx as usize) * bch;
-      let over_idx = (oy as usize * *w2 as usize + ox as usize) * och;
-      for c in 0..bch {
-        // Map the overlay's channel: if the overlay has fewer channels
-        // (e.g. grayscale into RGB), broadcast the single value.
-        let ov = if c < och {
-          data2[over_idx + c]
+      let (ox, oy) = (bx - offset_x, by - offset_y);
+      let over_idx = ((0..ow).contains(&ox) && (0..oh).contains(&oy))
+        .then(|| (oy as usize * *w2 as usize + ox as usize) * och);
+      let ai = if base_alpha {
+        px(data1[base_idx + bch - 1])
+      } else {
+        1.0
+      };
+      let ao = match over_idx {
+        Some(i) => {
+          (if over_alpha {
+            px(data2[i + och - 1])
+          } else {
+            1.0
+          }) * fade
+        }
+        None => 0.0,
+      };
+      let ar = wa * ao * (1.0 - ai) + wb * ai * (1.0 - ao) + wc * ai * ao;
+      for c in 0..bcolors {
+        let ci = px(data1[base_idx + c]);
+        let co = match over_idx {
+          Some(i) => px(data2[i + c.min(ocolors - 1)]),
+          None => 0.0,
+        };
+        let premult = wa * co * ao * (1.0 - ai)
+          + wb * ci * ai * (1.0 - ao)
+          + wc * co * ai * ao;
+        let value = if out_alpha {
+          if ar > 0.0 { premult / ar } else { 0.0 }
         } else {
-          data2[over_idx + (och - 1)]
+          premult
         };
-        let bg = out[base_idx + c];
-        out[base_idx + c] = match alpha {
-          Some(a) => (1.0 - a) * bg + a * ov,
-          None => ov,
-        };
+        out.push(px(value));
+      }
+      if out_alpha {
+        out.push(px(ar));
       }
     }
   }
 
   Ok(Expr::Image {
-    color_space: None,
+    color_space: if out_alpha {
+      cs1.or(*cs2).or(match bcolors {
+        1 => Some("Grayscale"),
+        3 => Some("RGB"),
+        _ => None,
+      })
+    } else {
+      *cs1
+    },
     display_size: None,
     width: *w1,
     height: *h1,
-    channels: *ch1,
+    channels: out_ch as u8,
     data: Arc::new(out),
-    image_type: *image_type,
+    image_type: ImageType::Real32,
   })
 }
 
@@ -9707,8 +9810,10 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let total: usize = inputs.iter().map(|&(.., ch, _, _)| ch).sum();
+  // One channel more than the space needs is an alpha channel.
   if let Some((name, want)) = color_space
     && total != want
+    && total != want + 1
   {
     crate::emit_message(&format!(
       "ColorCombine::imgcsmis: The specified color space {name} and the number of channels {total} are not compatible."
@@ -14122,4 +14227,174 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   Ok(Expr::List(lines.into()))
+}
+
+/// The number of colour channels of a colour space, `None` when the space
+/// is unknown (an `Automatic` image has no alpha channel to tell apart).
+fn color_space_channels(space: Option<&str>) -> Option<u8> {
+  match space? {
+    "Grayscale" => Some(1),
+    "CMYK" => Some(4),
+    _ => Some(3),
+  }
+}
+
+/// Whether the image's last channel is an alpha channel: one past what its
+/// (explicit) colour space needs.
+fn has_alpha_channel(channels: u8, space: Option<&str>) -> bool {
+  color_space_channels(space).is_some_and(|n| channels == n + 1)
+}
+
+/// AlphaChannel[image]: the opacity of each pixel as a one-channel image
+/// (all ones for an image without an alpha channel).
+pub fn alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("AlphaChannel", args));
+  };
+  let ch = *channels as usize;
+  let n = (*width as usize) * (*height as usize);
+  let alpha: Vec<f64> = if has_alpha_channel(*channels, *color_space) {
+    (0..n).map(|i| data[i * ch + ch - 1]).collect()
+  } else {
+    vec![1.0; n]
+  };
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: 1,
+    data: std::sync::Arc::new(alpha),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: None,
+    display_size: None,
+  })
+}
+
+/// RemoveAlphaChannel[image] drops the alpha channel;
+/// RemoveAlphaChannel[image, color] first composites the image over a
+/// background of that colour. An image without one is returned as is.
+pub fn remove_alpha_channel_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    display_size,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("RemoveAlphaChannel", args));
+  };
+  if !has_alpha_channel(*channels, *color_space) {
+    return Ok(args[0].clone());
+  }
+  let ch = *channels as usize;
+  let colors = ch - 1;
+  let background: Option<Vec<f64>> = match args.get(1) {
+    None => None,
+    Some(c) => {
+      let Some(col) = crate::functions::graphics::parse_color(c) else {
+        return Ok(unevaluated("RemoveAlphaChannel", args));
+      };
+      Some(if colors == 1 {
+        vec![0.299 * col.r + 0.587 * col.g + 0.114 * col.b]
+      } else {
+        vec![col.r, col.g, col.b]
+      })
+    }
+  };
+  let n = (*width as usize) * (*height as usize);
+  let mut out = Vec::with_capacity(n * colors);
+  for i in 0..n {
+    let px = &data[i * ch..(i + 1) * ch];
+    let a = px[ch - 1];
+    for k in 0..colors {
+      out.push(match &background {
+        Some(bg) => px[k] * a + bg.get(k).copied().unwrap_or(0.0) * (1.0 - a),
+        None => px[k],
+      });
+    }
+  }
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: colors as u8,
+    data: std::sync::Arc::new(out),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: *color_space,
+    display_size: *display_size,
+  })
+}
+
+/// SetAlphaChannel[image] gives the image an opaque alpha channel;
+/// SetAlphaChannel[image, a] one with opacity `a` (a number, or a
+/// grayscale image of the same size). An existing alpha channel is replaced.
+pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    display_size,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("SetAlphaChannel", args));
+  };
+  let ch = *channels as usize;
+  let colors = if has_alpha_channel(*channels, *color_space) {
+    ch - 1
+  } else {
+    ch
+  };
+  let space = color_space.or(match colors {
+    1 => Some("Grayscale"),
+    3 => Some("RGB"),
+    _ => None,
+  });
+  let n = (*width as usize) * (*height as usize);
+  let alpha = |i: usize| -> Option<f64> {
+    match args.get(1) {
+      None => Some(1.0),
+      Some(Expr::Image {
+        width: aw,
+        height: ah,
+        channels: ac,
+        data: ad,
+        ..
+      }) if aw == width && ah == height => Some(ad[i * (*ac as usize)]),
+      Some(v) => {
+        // A real alpha is stored in single precision.
+        crate::functions::math_ast::try_eval_to_f64(v).map(|a| a as f32 as f64)
+      }
+    }
+  };
+  let mut out = Vec::with_capacity(n * (colors + 1));
+  for i in 0..n {
+    out.extend_from_slice(&data[i * ch..i * ch + colors]);
+    match alpha(i) {
+      Some(a) => out.push(a),
+      None => return Ok(unevaluated("SetAlphaChannel", args)),
+    }
+  }
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: (colors + 1) as u8,
+    data: std::sync::Arc::new(out),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: space,
+    display_size: *display_size,
+  })
 }
