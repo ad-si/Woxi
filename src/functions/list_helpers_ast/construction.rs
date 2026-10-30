@@ -2890,7 +2890,9 @@ fn sparse_rules_with_background(data: &Expr) -> Option<(Expr, Option<Expr>)> {
         (Expr::List(keys), Expr::List(vals))
           if keys.len() == vals.len()
             && !keys.is_empty()
-            && keys.iter().all(|k| matches!(k, Expr::List(_))) =>
+            && (keys.iter().all(|k| matches!(k, Expr::List(_)))
+              // `{i1, i2, …} -> {v1, v2, …}` threads over vector positions.
+              || keys.iter().all(|k| matches!(k, Expr::Integer(_)))) =>
         {
           changed = true;
           keys
@@ -2979,6 +2981,17 @@ pub fn sparse_array_normalize_ast(
     return sparse_array_normalize_ast(&rewritten);
   }
 
+  // With explicit dimensions, a `{pos1, pos2, …} -> values` rule expands
+  // into its rule list the same way.
+  if args.len() >= 2
+    && matches!(&args[0], Expr::Rule { .. })
+    && let Some((rules, None)) = sparse_rules_with_background(&args[0])
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = rules;
+    return sparse_array_normalize_ast(&rewritten);
+  }
+
   // A single dimension `n` for rank-r positions means `{n, n, …}`.
   if args.len() >= 2
     && matches!(&args[1], Expr::Integer(_))
@@ -2987,19 +3000,6 @@ pub fn sparse_array_normalize_ast(
   {
     let mut rewritten = args.to_vec();
     rewritten[1] = Expr::List(vec![args[1].clone(); rank].into());
-    return sparse_array_normalize_ast(&rewritten);
-  }
-
-  // With explicit dimensions, a `{pos1, pos2, …} -> values` rule expands
-  // into its rule list the same way.
-  if args.len() >= 2
-    && matches!(&args[0], Expr::Rule { pattern, .. }
-      if matches!(pattern.as_ref(), Expr::List(keys)
-        if !keys.is_empty() && keys.iter().all(|k| matches!(k, Expr::List(_)))))
-    && let Some((rules, None)) = sparse_rules_with_background(&args[0])
-  {
-    let mut rewritten = args.to_vec();
-    rewritten[0] = rules;
     return sparse_array_normalize_ast(&rewritten);
   }
 

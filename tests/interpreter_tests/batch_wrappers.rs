@@ -11349,6 +11349,19 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // Integer positions paired with a value list are vector positions; with a
+  // single value they are one matrix position.
+  #[test]
+  fn sparse_array_integer_positions_paired_with_values() {
+    assert_eq!(
+      interpret(
+        "{Normal[SparseArray[{3} -> {1}]], Normal[SparseArray[{3, 1} -> {5, 6}, 4]], Normal[SparseArray[{3, 1} -> 7]]}"
+      )
+      .unwrap(),
+      "{{0, 0, 1}, {6, 0, 5, 0}, {{0}, {0}, {7}}}"
+    );
+  }
+
   // A `{_, _}` rule matches every position: it sets the background, and
   // the rules after it neither take effect nor size the array.
   #[test]

@@ -2315,6 +2315,60 @@ mod eigenvalues {
     );
   }
 
+  // The count is any Take sequence spec; integer-valued reals count too.
+  #[test]
+  fn eigen_count_takes_sequence_specs() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = {{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}; {Eigenvalues[m, {2}], \
+         Eigenvalues[m, {1, 2}], Eigenvectors[m, {-2}], \
+         Eigensystem[m, {1, 3, 2}], Eigenvalues[m, 2.], \
+         Eigenvalues[m, {-1, 1, -1}], Eigenvalues[m, {4, 3}], \
+         Eigenvalues[m, 0]}"
+      )
+      .unwrap(),
+      "{{2}, {3, 2}, {{0, 1, 0}}, {{3, 1}, {{0, 0, 1}, {1, 0, 0}}}, {3, 2}, \
+       {1, 2, 3}, {}, {}}"
+    );
+    assert_eq!(
+      interpret("Eigensystem[m, {2, 7}]").unwrap(),
+      "Eigensystem[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, {2, 7}]"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "Eigensystem::take: Cannot take eigenvectors and eigenvalues 2 through \
+       7 out of the total of 3 eigenvectors and eigenvalues."
+    )));
+    assert_eq!(
+      interpret("Eigenvalues[m, x]").unwrap(),
+      "Eigenvalues[{{1, 0, 0}, {0, 2, 0}, {0, 0, 3}}, x]"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "Eigenvalues::seqs: Sequence specification (+n, -n, {+n}, {-n}, {m, n} \
+       or {m, n, s}) expected at position 2"
+    )));
+  }
+
+  // A matrix whose entries are lists is not a matrix: the matrix is checked
+  // before the count.
+  #[test]
+  fn eigen_non_scalar_entries_emit_matsq() {
+    clear_state();
+    for (call, head) in [
+      ("Eigenvectors[{{0, {1}}, {0, 0}}]", "Eigenvectors"),
+      ("Eigenvectors[{{0., {1.}}, {0., 0.}}, 2.]", "Eigenvectors"),
+      ("Eigensystem[{{1, {0}}, {0, 2}}, x]", "Eigensystem"),
+    ] {
+      assert_eq!(interpret(call).unwrap(), call);
+      assert!(
+        woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.starts_with(&format!("{head}::matsq: Argument"))),
+        "{call}"
+      );
+    }
+  }
+
   #[test]
   fn diagonalization_identity() {
     // With T = Transpose[Eigenvectors[A]], Inverse[T] . A . T should equal
