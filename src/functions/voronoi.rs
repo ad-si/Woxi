@@ -154,8 +154,14 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // For each site, build the Voronoi cell
   let mut all_voronoi_verts: Vec<(f64, f64)> = Vec::new();
-  let mut vert_map: std::collections::HashMap<u128, usize> =
-    std::collections::HashMap::new();
+  // Cells meet at vertices computed separately for each of them (a
+  // circumcenter, or a clip against the bounding box), which can differ in
+  // the last bits: merge those within a tolerance of the sites' extent.
+  let span = all_pts
+    .iter()
+    .flat_map(|&(x, y)| [x.abs(), y.abs()])
+    .fold(1.0f64, f64::max);
+  let mut vertices = VertexIndex::new(1e-9 * span);
   let mut cells: Vec<Vec<usize>> = Vec::new();
 
   for site_idx in 0..n {
@@ -233,25 +239,60 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cell_polygon = ensure_ccw(cell_polygon);
 
     // Register vertices
-    let cell_indices: Vec<usize> = cell_polygon
+    let mut cell_indices: Vec<usize> = cell_polygon
       .iter()
-      .map(|&(x, y)| {
-        let key = point_key(x, y);
-        if let Some(&idx) = vert_map.get(&key) {
-          idx
-        } else {
-          let idx = all_voronoi_verts.len() + 1; // 1-indexed
-          all_voronoi_verts.push((x, y));
-          vert_map.insert(key, idx);
-          idx
-        }
-      })
+      .map(|&p| vertices.index(p, &mut all_voronoi_verts))
       .collect();
+    // Merged vertices can leave a repeated corner behind.
+    cell_indices.dedup();
+    while cell_indices.len() > 1 && cell_indices.first() == cell_indices.last()
+    {
+      cell_indices.pop();
+    }
 
     cells.push(cell_indices);
   }
 
   Ok(build_mesh_region(&all_voronoi_verts, &cells))
+}
+
+/// 1-based vertex numbers for points, merging points within `eps` of an
+/// earlier one.
+struct VertexIndex {
+  eps: f64,
+  grid: std::collections::HashMap<(i64, i64), Vec<usize>>,
+}
+
+impl VertexIndex {
+  fn new(eps: f64) -> Self {
+    VertexIndex {
+      eps,
+      grid: std::collections::HashMap::new(),
+    }
+  }
+
+  fn index(&mut self, p: (f64, f64), verts: &mut Vec<(f64, f64)>) -> usize {
+    let cell = (
+      (p.0 / self.eps).floor() as i64,
+      (p.1 / self.eps).floor() as i64,
+    );
+    for dx in -1..=1 {
+      for dy in -1..=1 {
+        if let Some(list) = self.grid.get(&(cell.0 + dx, cell.1 + dy)) {
+          for &idx in list {
+            let q = verts[idx - 1];
+            if (q.0 - p.0).abs() <= self.eps && (q.1 - p.1).abs() <= self.eps {
+              return idx;
+            }
+          }
+        }
+      }
+    }
+    verts.push(p);
+    let idx = verts.len();
+    self.grid.entry(cell).or_default().push(idx);
+    idx
+  }
 }
 
 fn are_collinear(sites: &[(f64, f64)]) -> bool {

@@ -168,6 +168,69 @@ impl Mesh {
     Some(loop_indices)
   }
 
+  /// The distinct sides of the 2-cells, in the order they first appear.
+  fn face_edges(&self) -> Vec<[usize; 2]> {
+    let mut seen = std::collections::HashSet::new();
+    let mut edges = Vec::new();
+    for face in &self.cells[2] {
+      for i in 0..face.len() {
+        let (a, b) = (face[i], face[(i + 1) % face.len()]);
+        if seen.insert(if a <= b { (a, b) } else { (b, a) }) {
+          edges.push([a, b]);
+        }
+      }
+    }
+    edges
+  }
+
+  /// The cells of dimension `d` that lie on the boundary ("Boundary") or
+  /// do not touch it at all ("Interior"), as index expressions. A cell
+  /// touches the boundary through any of its vertices.
+  pub fn cells_by_location(
+    &self,
+    d: usize,
+    interior: bool,
+  ) -> Option<Vec<Expr>> {
+    let boundary_edges = self.boundary_edges();
+    let on_boundary: std::collections::HashSet<usize> =
+      boundary_edges.iter().flatten().copied().collect();
+    let edge_set: std::collections::HashSet<(usize, usize)> = boundary_edges
+      .iter()
+      .map(|&[a, b]| if a <= b { (a, b) } else { (b, a) })
+      .collect();
+    let cells = self.cell_expressions(d)?;
+    let indices_of = |cell: &Expr| -> Option<Vec<usize>> {
+      let Expr::FunctionCall { args, .. } = cell else {
+        return None;
+      };
+      match &args[0] {
+        Expr::Integer(i) => Some(vec![*i as usize]),
+        other => index_list(other),
+      }
+    };
+    let mut out = Vec::new();
+    for cell in cells {
+      let idx = indices_of(&cell)?;
+      let keep = if interior {
+        idx.iter().all(|i| !on_boundary.contains(i))
+      } else {
+        match d {
+          0 => on_boundary.contains(&idx[0]),
+          1 => {
+            let (a, b) = (idx[0], idx[1]);
+            edge_set.contains(&if a <= b { (a, b) } else { (b, a) })
+          }
+          // The boundary of a region of faces has no 2-cells.
+          _ => false,
+        }
+      };
+      if keep {
+        out.push(cell);
+      }
+    }
+    Some(out)
+  }
+
   /// The edges of the region that belong to exactly one 2-cell — its
   /// boundary. A boundary mesh already lists them.
   fn boundary_edges(&self) -> Vec<[usize; 2]> {
@@ -210,6 +273,23 @@ impl Mesh {
       return Some(
         (1..=self.coordinates.len())
           .map(|i| call1("Point", Expr::Integer(i as i128)))
+          .collect(),
+      );
+    }
+    // A mesh of faces has the faces' sides as its 1-cells, each once.
+    if d == 1 && self.cells[1].is_empty() && !self.cells[2].is_empty() {
+      return Some(
+        self
+          .face_edges()
+          .into_iter()
+          .map(|[a, b]| {
+            call1(
+              "Line",
+              Expr::List(
+                vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
+              ),
+            )
+          })
           .collect(),
       );
     }
@@ -589,6 +669,52 @@ pub fn mesh_accessor_ast(
   match name {
     "MeshCoordinates" if args.len() == 1 => {
       Ok(Expr::List(mesh.coordinates.clone().into()))
+    }
+    "MeshCells" | "MeshPrimitives"
+      if args.len() == 2
+        && let Expr::List(spec) = &args[1]
+        && let [d, Expr::String(location)] = spec.as_slice()
+        && (location == "Interior" || location == "Boundary") =>
+    {
+      let Some(d) = dimension(Some(d)) else {
+        return Ok(original());
+      };
+      let Some(cells) = mesh.cells_by_location(d, location == "Interior")
+      else {
+        return Ok(original());
+      };
+      if name == "MeshCells" {
+        return Ok(Expr::List(cells.into()));
+      }
+      let mut out = Vec::with_capacity(cells.len());
+      for cell in cells {
+        let Expr::FunctionCall {
+          name: head,
+          args: cargs,
+        } = &cell
+        else {
+          return Ok(original());
+        };
+        let indices = match &cargs[0] {
+          Expr::Integer(i) => vec![*i as usize],
+          other => match index_list(other) {
+            Some(i) => i,
+            None => return Ok(original()),
+          },
+        };
+        let Some(pts) = mesh.points(&indices) else {
+          return Ok(original());
+        };
+        out.push(call1(
+          head,
+          if d == 0 {
+            pts[0].clone()
+          } else {
+            Expr::List(pts.into())
+          },
+        ));
+      }
+      Ok(Expr::List(out.into()))
     }
     "MeshCells" if args.len() == 2 => {
       match dimension(args.get(1)).and_then(|d| mesh.cell_expressions(d)) {
