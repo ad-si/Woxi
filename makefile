@@ -363,6 +363,21 @@ install-macos-app: macos-app
 	@echo "Installed $(APP_BUNDLE)"
 
 
+# Install Woxi Studio on Linux together with a desktop entry and icon.
+# The entry's StartupWMClass matches the application id set in
+# woxi-studio/src/main.rs, so docks can pin running windows to it.
+XDG_DATA_HOME ?= $(HOME)/.local/share
+
+.PHONY: install-linux-desktop
+install-linux-desktop:
+	cargo install --path woxi-studio
+	install -Dm644 woxi-studio/linux/woxi-studio.desktop \
+		"$(XDG_DATA_HOME)/applications/woxi-studio.desktop"
+	install -Dm644 images/favicon.png \
+		"$(XDG_DATA_HOME)/icons/hicolor/192x192/apps/woxi-studio.png"
+	@echo "Installed woxi-studio.desktop to $(XDG_DATA_HOME)/applications"
+
+
 # Inputs that, when changed, require the playground WASM bundle to be rebuilt.
 # Mirrors the CI cache key in publish-book.yml (src/**, Cargo.{toml,lock}) plus
 # build.rs, which also feeds the wasm32 compile.
