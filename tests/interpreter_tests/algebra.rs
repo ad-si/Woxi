@@ -23918,7 +23918,6 @@ mod solve_inequality_constraints {
 }
 
 mod nminimize_non_numeric_objective {
-  use super::*;
 
   // An objective that is never a number is NMinimize::nnum and the call
   // stays unevaluated (wolframscript reports it at a random probe point).

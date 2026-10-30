@@ -3077,7 +3077,9 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     let mut parts = Vec::new();
-    eqs.iter().for_each(|eq| equations(eq, &mut parts));
+    for eq in eqs {
+      equations(eq, &mut parts);
+    }
     let nonlinear = parts.iter().any(|eq| {
       let g = match eq {
         Expr::Comparison { operands, .. } if operands.len() == 2 => {
