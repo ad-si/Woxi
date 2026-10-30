@@ -599,6 +599,72 @@ fn template_box_interpretation(args: &[String]) -> Option<String> {
   Some(extract_cell_content(value))
 }
 
+/// The visible text of the HTML page held by an `EmbeddedHTML["…"]` box
+/// part. Markup, scripts and styles are dropped, common entities are decoded
+/// and an `<img>` is shown as `[Image: alt-or-file-name]`, since the page
+/// itself cannot be rendered.
+fn embedded_html_text(part: &str) -> Option<String> {
+  let rest = &part[part.find("EmbeddedHTML[")? + "EmbeddedHTML[".len()..];
+  let (body, _) = find_matching_bracket(rest).ok()?;
+  let literal = body.trim().strip_prefix('"')?.strip_suffix('"')?;
+  let html = unescape_string(&literal.replace("\\\n", ""));
+
+  let mut out = String::new();
+  let mut i = 0;
+  while i < html.len() {
+    let Some(lt) = html[i..].find('<') else {
+      out.push_str(&html[i..]);
+      break;
+    };
+    out.push_str(&html[i..i + lt]);
+    i += lt;
+    let Some(gt) = html[i..].find('>') else { break };
+    let tag = &html[i + 1..i + gt];
+    let name = tag
+      .trim_start_matches('/')
+      .split(|c: char| c.is_whitespace() || c == '/')
+      .next()
+      .unwrap_or("")
+      .to_ascii_lowercase();
+    i += gt + 1;
+    match name.as_str() {
+      "script" | "style" if !tag.starts_with('/') => {
+        let close = format!("</{name}");
+        i = html[i..]
+          .to_ascii_lowercase()
+          .find(&close)
+          .and_then(|c| html[i + c..].find('>').map(|g| i + c + g + 1))
+          .unwrap_or(html.len());
+      }
+      "img" => {
+        let attr = |key: &str| {
+          let at = tag.find(&format!("{key}=\""))? + key.len() + 2;
+          let end = tag[at..].find('"')?;
+          Some(tag[at..at + end].trim().to_string())
+        };
+        let label = attr("alt").filter(|a| !a.is_empty()).or_else(|| {
+          attr("src").map(|s| s.rsplit('/').next().unwrap_or("").to_string())
+        });
+        out.push_str(&format!("[Image: {}]\n", label.unwrap_or_default()));
+      }
+      "br" | "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" => out.push('\n'),
+      _ => {}
+    }
+  }
+  let out = out
+    .replace("&nbsp;", " ")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&amp;", "&");
+  let lines: Vec<&str> = out
+    .lines()
+    .map(str::trim)
+    .filter(|l| !l.is_empty())
+    .collect();
+  Some(lines.join("\n"))
+}
+
 fn template_box_parts(first_arg: &str) -> Vec<&str> {
   let first = first_arg.trim();
   let inner = first
@@ -825,6 +891,14 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       && !is_checkbox_row
     {
       return Some(row_template_source(tag, &parts));
+    }
+    // A Demonstration's cloud-compatible snapshot slideshow is stored as
+    // `TemplateBox[{InterpretationBox[Null, EmbeddedHTML["<html…>"]], …},
+    // "EmbeddedHTML"]`. Show the page's visible text rather than its markup.
+    if tag == "EmbeddedHTML"
+      && let Some(text) = parts.first().and_then(|p| embedded_html_text(p))
+    {
+      return Some(text);
     }
     // Fallback: first positional argument is the displayed value.
     if let Some(first_part) = parts.first() {
@@ -5368,6 +5442,18 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn embedded_html_cell_shows_visible_text() {
+    let nb = parse_notebook(
+      "Notebook[{Cell[BoxData[TemplateBox[{InterpretationBox[Null, EmbeddedHTML[\"<html><head><style>p{}</style></head><body><p>Hi &amp; bye</p><img src=\\\"http://x/a/Snap-1.png\\\" /><script>f();</script></body></html>\"]], TagBox[\"x\", Short]}, \"EmbeddedHTML\"]], \"Text\"]}]",
+    )
+    .unwrap();
+    let CellEntry::Single(cell) = &nb.cells[0] else {
+      panic!("expected a single cell")
+    };
+    assert_eq!(cell.content, "Hi & bye\n[Image: Snap-1.png]");
+  }
+
   #[test]
   fn strip_cell_context_prefix_drops_numbered_cell_contexts() {
     assert_eq!(

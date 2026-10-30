@@ -2645,6 +2645,14 @@ fn downvalue_arg_info(
             || crate::evaluator::pattern_matching::is_optional_slot(p)
             || is_options_or_repeated_element(p)
             || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
+            // A PatternSequence element (tested or named) spans several
+            // elements, which the per-element Part accessors cannot express.
+            || matches!(p, Expr::FunctionCall { name, args }
+              if name == "PatternSequence"
+                || ((name == "PatternTest" || name == "Pattern")
+                  && args.iter().any(|a| matches!(a,
+                    Expr::FunctionCall { name: inner, .. }
+                      if inner == "PatternSequence"))))
             // A held argument keeps its parts unevaluated; reading a call
             // like `children[{x__}]` back out of it through Part would
             // evaluate it.

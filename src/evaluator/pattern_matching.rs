@@ -4083,10 +4083,10 @@ fn acts_as_sequence(pattern: &Expr) -> bool {
     return true;
   }
   matches!(pattern, Expr::FunctionCall { name, args }
-    if name == "Pattern"
+    if (name == "Pattern" || name == "PatternTest")
       && args.len() == 2
-      && matches!(&args[1], Expr::FunctionCall { name: inner, .. }
-        if inner == "PatternSequence"))
+      && matches!(&args[usize::from(name == "Pattern")],
+        Expr::FunctionCall { name: inner, .. } if inner == "PatternSequence"))
 }
 
 /// All permutations of `0..n`, the identity first, in lexicographic order.
@@ -4396,6 +4396,44 @@ fn match_args_with_sequences(
       }
     }
     return None;
+  }
+
+  // `PatternSequence[p1, …, pk]?test` consumes k arguments matching p1, …,
+  // pk, and the test has to hold for each of them, as for `__?test`.
+  if let Expr::FunctionCall { name, args } = pat
+    && name == "PatternTest"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: seq_name,
+      args: seq_pats,
+    } = &args[0]
+    && seq_name == "PatternSequence"
+  {
+    let k = seq_pats.len();
+    if expr_args.len() < k {
+      return None;
+    }
+    let mut bindings: Vec<(String, Expr)> = vec![];
+    for (arg, p) in expr_args[..k].iter().zip(seq_pats.iter()) {
+      let b = match_pattern(arg, p)?;
+      if !merge_bindings(&mut bindings, b) {
+        return None;
+      }
+      let verdict =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: Box::new(args[1].clone()),
+          args: vec![arg.clone()],
+        })
+        .ok()?;
+      if !matches!(verdict, Expr::Identifier(ref t) if t == "True") {
+        return None;
+      }
+    }
+    let rest = match_args_with_sequences(&expr_args[k..], rest_pats)?;
+    if !merge_bindings(&mut bindings, rest) {
+      return None;
+    }
+    return Some(bindings);
   }
 
   // `x : PatternSequence[p1, …, pk]` consumes exactly k arguments — matching
