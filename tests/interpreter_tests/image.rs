@@ -9275,7 +9275,7 @@ mod image_size_option {
     clear_state();
     assert_eq!(
       interpret("ColorData[\"WebSafe\", \"#99CC00\"]").unwrap(),
-      "RGBColor[0.6, 0.8, 0]"
+      "RGBColor[0.6, 0.8, 0.]"
     );
     assert_eq!(
       interpret("ColorData[\"WebSafe\"][\"#3399CC\"]").unwrap(),

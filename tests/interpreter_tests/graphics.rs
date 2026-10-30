@@ -43621,3 +43621,22 @@ mod image_size_width_with_axes {
     assert!(!svg.contains(">-5<") && !svg.contains(">15<"), "{svg}");
   }
 }
+
+mod more_named_color_schemes {
+  use super::*;
+
+  #[test]
+  fn crayola_websafe_geologic_ages() {
+    assert_eq!(
+      interpret(
+        "{ColorData[\"Named\"], ColorData[\"Crayola\", \"Almond\"], \
+         ColorData[\"WebSafe\", \"#663300\"], ColorData[\"GeologicAges\", \"Llandovery\"], \
+         Length /@ (ColorData[#, \"ColorRules\"] & /@ {\"Crayola\", \"WebSafe\", \"GeologicAges\"})}"
+      )
+      .unwrap(),
+      "{{Atoms, Crayola, GeologicAges, HTML, Legacy, WebSafe}, \
+       RGBColor[0.9372549019607843, 0.8705882352941177, 0.803921568627451], \
+       RGBColor[0.4, 0.2, 0.], RGBColor[0.596078, 0.345098, 0.658824], {134, 216, 70}}"
+    );
+  }
+}
