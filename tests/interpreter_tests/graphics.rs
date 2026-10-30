@@ -20364,6 +20364,22 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // A `TraditionalForm` around a styled `Text@Grid[…]` in a grid cell inside
+  // a `Column` draws the table, not the `Grid[{{…}}]` source text.
+  #[test]
+  fn traditional_form_of_styled_text_grid_in_column_draws_the_table() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{Grid[{{1, TraditionalForm[Style[Text@Grid[{{\"left\", \"right\"}}, \
+         Frame -> All], 12]]}}], Graphics[Disk[]]}, Center]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    assert!(!svg.contains("Grid["), "table source leaked into: {svg}");
+    assert!(svg.contains("left") && svg.contains("right"), "{svg}");
+  }
+
   // The same item with a size directive still draws the table.
   #[test]
   fn column_item_styled_text_grid_draws_the_table() {

@@ -23336,9 +23336,18 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   // has no quotes around it — and one carrying `\!\(\*…\)` box notation
   // typesets from there, so it is never handed to the traditional box
   // builder (which would print it quoted, box source and all).
+  // `TraditionalForm[Style[Text@Grid[…], 12]]` styles a layout, so like the
+  // bare layout it is left for the layout renderer.
+  let styles_a_layout = matches!(&current, Expr::FunctionCall { name, args }
+    if name == "Style"
+      && args.first().is_some_and(|a| matches!(
+        &unwrap_display_wrappers(a),
+        Expr::FunctionCall { name, .. }
+          if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))));
   if traditional
     && !matches!(&current, Expr::String(_))
     && !crate::evaluator::lays_out_a_graphic(&current)
+    && !styles_a_layout
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
