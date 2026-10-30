@@ -3014,6 +3014,22 @@ mod delaunay_mesh {
 mod computational_geometry_convex_hull {
   use super::*;
 
+  // The hull's area: exact for exact points, a machine number otherwise,
+  // 0 for a degenerate hull.
+  #[test]
+  fn convex_hull_area() {
+    assert_eq!(
+      interpret(
+        "Get[\"ComputationalGeometry`\"]; \
+         InputForm[{ConvexHullArea[{{0,0},{1,0},{1,1},{0,1},{1/2,1/2}}], \
+           ConvexHullArea[{{0.,0},{2,0},{0,3}}], ConvexHullArea[{{0,0},{1,1}}], \
+           ComputationalGeometry`ConvexHullArea[{{0,0},{3,0},{1,2},{1,1}}]}]"
+      )
+      .unwrap(),
+      "InputForm[{1, 3., 0, 3}]"
+    );
+  }
+
   // Indices of the strict corners, counter-clockwise from the leftmost one.
   #[test]
   fn qualified_name() {

@@ -1221,6 +1221,9 @@ fn evaluate_function_call_ast_inner(
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
+    "ConvexHullArea" if computational_geometry_active() => {
+      "ComputationalGeometry`ConvexHullArea"
+    }
     "DelaunayTriangulation" | "DiagramPlot" | "VoronoiDiagram"
       if computational_geometry_active() =>
     {
@@ -5331,6 +5334,52 @@ fn evaluate_function_call_ast_inner(
   // corners, counter-clockwise.
   if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
     return crate::functions::convex_hull::convex_hull_indices_ast(args);
+  }
+  // ComputationalGeometry`ConvexHullArea[pts]: the shoelace area of the
+  // hull, exact for exact points.
+  if name == "ComputationalGeometry`ConvexHullArea"
+    && let [Expr::List(points)] = args
+  {
+    let hull = crate::functions::convex_hull::convex_hull_indices_ast(args)?;
+    let Expr::List(indices) = &hull else {
+      return Ok(unevaluated(name, args));
+    };
+    let corners: Vec<Expr> = indices
+      .iter()
+      .filter_map(|i| {
+        expr_to_i128(i).and_then(|k| points.get(k as usize - 1).cloned())
+      })
+      .collect();
+    if corners.len() < 3 {
+      return Ok(Expr::Integer(0));
+    }
+    let coord = |p: &Expr, k: usize| match p {
+      Expr::List(c) if c.len() == 2 => Some(c[k].clone()),
+      _ => None,
+    };
+    let mut terms = Vec::with_capacity(corners.len());
+    for (j, p) in corners.iter().enumerate() {
+      let next = &corners[(j + 1) % corners.len()];
+      let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+        (coord(p, 0), coord(p, 1), coord(next, 0), coord(next, 1))
+      else {
+        return Ok(unevaluated(name, args));
+      };
+      terms.push(call(
+        "Subtract",
+        vec![call("Times", vec![x1, y2]), call("Times", vec![x2, y1])],
+      ));
+    }
+    return evaluate_expr_to_expr(&call(
+      "Times",
+      vec![
+        Expr::FunctionCall {
+          name: "Rational".to_string(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        },
+        call("Abs", vec![call("Plus", terms)]),
+      ],
+    ));
   }
 
   if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
