@@ -6268,6 +6268,29 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
+  // Regression (issue #1908): a polynomial that factors into a single
+  // repeated factor (`(1 + x)^3`) is solved through that factor instead of
+  // falling back to `Root` objects.
+  #[test]
+  fn solve_perfect_power_polynomial() {
+    assert_eq!(
+      interpret("Solve[x^3 + 3 x^2 + 3 x + 1 == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> -1}, {x -> -1}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^4 - 8 x^3 + 24 x^2 - 32 x + 16 == 0, x]").unwrap(),
+      "{{x -> 2}, {x -> 2}, {x -> 2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 (x - 3)^3 == 0, x]").unwrap(),
+      "{{x -> 3}, {x -> 3}, {x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 + 1)^2 == 0, x]").unwrap(),
+      "{{x -> -I}, {x -> -I}, {x -> I}, {x -> I}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(

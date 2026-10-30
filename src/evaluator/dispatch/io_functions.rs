@@ -7432,10 +7432,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   // set_sans_serif_family() etc. must come *after* it.
   fontdb.load_system_fonts();
   fontdb.load_font_data(
-    include_bytes!(
-      "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
-    )
-    .to_vec(),
+    include_bytes!("../../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
     include_bytes!(

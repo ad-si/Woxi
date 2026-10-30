@@ -2288,6 +2288,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_output_svg_pins_current_color_to_text_color() {
+    // Regression (issue #1908): radicals, fraction bars and brackets are
+    // stroked with `currentColor`. Outside a browser (Woxi Studio rasterizes
+    // the SVG) nothing sets `color`, so `currentColor` became black and the
+    // strokes vanished on a dark background. The root group must set `color`
+    // to the same text color as its `fill`.
+    clear_state();
+    for dark in [false, true] {
+      woxi::set_dark_mode(dark);
+      let r = interpret_with_stdout("Sqrt[x]/2").unwrap();
+      woxi::set_dark_mode(false);
+      let svg = r.output_svg.expect("expected output SVG");
+      assert!(svg.contains("currentColor"), "SVG: {svg}");
+      let fill = svg
+        .split("<g fill=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("root group fill");
+      assert!(
+        svg.contains(&format!("color=\"{fill}\"")),
+        "root group must set color to {fill}:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
   fn test_real_output_svg_has_no_precision_backtick() {
     // Regression: the playground/Studio SVG for results containing machine
     // Reals (e.g. `NMinimize[(x-1)^2, x]` → `{0., {x -> 1.}}`) must not show

@@ -6363,11 +6363,22 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           std::slice::from_ref(&expanded),
         )
       {
-        let factors = extract_times_factors(&factored);
-        if factors.len() > 1 {
-          // Solve each factor separately
+        // Split repeated factors `base^n` into their base and multiplicity,
+        // so a pure power like `(1 + x)^3` is solved through its base too.
+        let factors: Vec<(Expr, usize)> = extract_times_factors(&factored)
+          .into_iter()
+          .map(|factor| match power_base_exponent(&factor) {
+            Some((base, Expr::Integer(n))) if *n >= 2 && *n <= 64 => {
+              (base.clone(), *n as usize)
+            }
+            _ => (factor, 1),
+          })
+          .collect();
+        if factors.len() > 1 || factors.iter().any(|(_, n)| *n > 1) {
+          // Solve each factor separately, repeating each root by the
+          // multiplicity of its factor
           let mut all_solutions: Vec<Expr> = Vec::new();
-          for factor in &factors {
+          for (factor, multiplicity) in &factors {
             if is_constant_wrt(factor, var) {
               continue; // Skip constant factors
             }
@@ -6378,7 +6389,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if let Ok(Expr::List(ref sols)) =
               solve_ast(&[factor_eq, args[1].clone()])
             {
-              all_solutions.extend(sols.iter().cloned());
+              for _ in 0..*multiplicity {
+                all_solutions.extend(sols.iter().cloned());
+              }
             }
           }
           if !all_solutions.is_empty() {
@@ -7646,6 +7659,21 @@ fn contains_complex(expr: &Expr) -> bool {
 }
 
 /// Extract multiplicative factors from a Times expression (FunctionCall or BinaryOp).
+/// The `(base, exponent)` of a `Power` expression in either representation.
+fn power_base_exponent(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left, right)),
+    _ => None,
+  }
+}
+
 fn extract_times_factors(expr: &Expr) -> Vec<Expr> {
   match expr {
     Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
