@@ -14412,3 +14412,19 @@ mod part_expressions_order_as_calls {
     );
   }
 }
+
+mod machine_zero_divisor_message {
+  #[test]
+  fn shows_the_machine_zero() {
+    let out = woxi::interpret_with_stdout("1/0.").unwrap();
+    assert_eq!(out.result, "ComplexInfinity");
+    assert!(
+      out
+        .warnings
+        .iter()
+        .any(|w| w.contains("--") && w.ends_with("0.")),
+      "{:?}",
+      out.warnings
+    );
+  }
+}
