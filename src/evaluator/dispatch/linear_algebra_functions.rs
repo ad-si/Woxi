@@ -250,6 +250,54 @@ pub fn dispatch_linear_algebra_functions(
     "Det" if args.len() == 1 => {
       return Some(crate::functions::linear_algebra_ast::det_ast(args));
     }
+    // Tolerance -> t on a real matrix: Gaussian elimination that takes
+    // every candidate pivot of magnitude at most t to be zero.
+    "RowReduce" | "MatrixRank"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(n), _, _)) if n == "Tolerance"
+        ) =>
+    {
+      let (_, tol, _) = crate::functions::expr_form::rule_parts(&args[1])?;
+      if matches!(tol, Expr::Identifier(a) if a == "Automatic")
+        || !contains_approximate_number(&args[0])
+      {
+        return dispatch_linear_algebra_functions(name, &args[..1]);
+      }
+      let t =
+        crate::functions::math_ast::try_eval_to_f64(tol).filter(|t| *t >= 0.0);
+      let rows: Option<Vec<Vec<f64>>> = match &args[0] {
+        Expr::List(rows) => rows
+          .iter()
+          .map(|r| match r {
+            Expr::List(xs) => xs
+              .iter()
+              .map(crate::functions::math_ast::try_eval_to_f64)
+              .collect(),
+            _ => None,
+          })
+          .collect(),
+        _ => None,
+      };
+      let (Some(t), Some(rows)) = (t, rows) else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      if rows.is_empty() || rows.iter().any(|r| r.len() != rows[0].len()) {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let (rref, rank) = row_reduce_with_tolerance(rows, t);
+      return Some(Ok(if name == "MatrixRank" {
+        Expr::Integer(rank as i128)
+      } else {
+        Expr::List(
+          rref
+            .into_iter()
+            .map(|r| Expr::List(r.into_iter().map(Expr::Real).collect()))
+            .collect(),
+        )
+      }));
+    }
     // Modulus -> m variants (Modulus -> 0 means ordinary arithmetic).
     "Det" | "Inverse" | "RowReduce" | "NullSpace" | "MatrixRank"
       if args.len() == 2 =>
@@ -809,8 +857,16 @@ pub fn dispatch_linear_algebra_functions(
       }
       let mut tolerance: Option<f64> = None;
       let mut same_test: Option<Expr> = None;
+      let mut normalized = true;
       for (opt, value) in &opts {
         match opt.as_str() {
+          // `Normalized -> False` only asks for mutually orthogonal columns.
+          "Normalized" if name != "NormalMatrixQ" => match value {
+            Expr::Identifier(b) if b == "True" || b == "False" => {
+              normalized = b == "True";
+            }
+            _ => return Some(Ok(unevaluated(name, args))),
+          },
           "Tolerance" => match value {
             Expr::Identifier(a) if a == "Automatic" => {}
             v => match crate::functions::math_ast::try_eval_to_f64(v) {
@@ -848,11 +904,19 @@ pub fn dispatch_linear_algebra_functions(
           eval(call("Dot", vec![m.clone(), transposed.clone()])),
           eval(call("Dot", vec![transposed, m.clone()])),
         )
-      } else {
+      } else if normalized {
         (
           eval(call("Dot", vec![transposed, m.clone()])),
           eval(call1("IdentityMatrix", Expr::Integer(n as i128))),
         )
+      } else {
+        let product = match eval(call("Dot", vec![transposed, m.clone()])) {
+          Ok(p) => p,
+          Err(e) => return Some(Err(e)),
+        };
+        let diagonal =
+          eval(call1("DiagonalMatrix", call1("Diagonal", product.clone())));
+        (Ok(product), diagonal)
       };
       let (a, b) = match pair {
         (Ok(a), Ok(b)) => (a, b),
@@ -2747,9 +2811,9 @@ pub fn dispatch_linear_algebra_functions(
       else {
         return Some(Ok(unevaluated(name, args)));
       };
-      let all =
-        match crate::functions::linear_algebra_ast::singular_value_list_ast(
+      let all = match crate::functions::linear_algebra_ast::singular_value_list_with_tolerance(
           &pos[..1],
+          Some(tol),
         ) {
           Ok(Expr::List(ref values)) => values.to_vec(),
           Ok(_) => return Some(Ok(unevaluated(name, args))),
@@ -3109,6 +3173,82 @@ pub fn dispatch_linear_algebra_functions(
         && !contains_approximate_number(&args[0]) =>
     {
       return dispatch_linear_algebra_functions(name, &args[..1]);
+    }
+    // For an approximate matrix, `Tolerance -> t` takes every eigenvalue λ
+    // of the Hermitian part with |λ| <= t |λmax| to be zero.
+    "NegativeSemidefiniteMatrixQ"
+    | "IndefiniteMatrixQ"
+    | "PositiveSemidefiniteMatrixQ"
+      if args.len() == 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[1]),
+          Some((Expr::Identifier(n), _, _)) if n == "Tolerance"
+        ) =>
+    {
+      let (_, tol, _) = crate::functions::expr_form::rule_parts(&args[1])?;
+      if matches!(tol, Expr::Identifier(a) if a == "Automatic") {
+        return dispatch_linear_algebra_functions(name, &args[..1]);
+      }
+      let Some(t) =
+        crate::functions::math_ast::try_eval_to_f64(tol).filter(|t| *t >= 0.0)
+      else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let square = matches!(&args[0], Expr::List(rows) if !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(c) if c.len() == rows.len())));
+      if !square {
+        return Some(Ok(bool_expr(false)));
+      }
+      let hermitian_part = call(
+        "Times",
+        vec![
+          Expr::Real(0.5),
+          call(
+            "Plus",
+            vec![
+              args[0].clone(),
+              call1("ConjugateTranspose", args[0].clone()),
+            ],
+          ),
+        ],
+      );
+      let eigenvalues = match evaluate_expr_to_expr(&call1(
+        "Eigenvalues",
+        call1("N", hermitian_part),
+      )) {
+        Ok(Expr::List(ref vs)) => vs.to_vec(),
+        Ok(_) => return Some(Ok(unevaluated(name, args))),
+        Err(e) => return Some(Err(e)),
+      };
+      let Some(values) = eigenvalues
+        .iter()
+        .map(|v| {
+          crate::functions::list_helpers_ast::expr_to_complex_parts(v)
+            .map(|(re, _)| re)
+        })
+        .collect::<Option<Vec<f64>>>()
+      else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let largest = values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+      let signs: Vec<i8> = values
+        .iter()
+        .map(|v| {
+          if v.abs() <= t * largest {
+            0
+          } else if *v > 0.0 {
+            1
+          } else {
+            -1
+          }
+        })
+        .collect();
+      let result = match name {
+        "PositiveSemidefiniteMatrixQ" => signs.iter().all(|s| *s >= 0),
+        "NegativeSemidefiniteMatrixQ" => signs.iter().all(|s| *s <= 0),
+        _ => signs.contains(&1) && signs.contains(&-1),
+      };
+      return Some(Ok(bool_expr(result)));
     }
     "HermitianMatrixQ" if args.len() == 1 => {
       // Hermitian: M == ConjugateTranspose[M]
@@ -5719,6 +5859,52 @@ fn matrix_q_with_same_test(
 /// Whether two matrices agree entry by entry: by `same_test[x, y]` giving
 /// True when one is given; otherwise within `tolerance` for numeric entries
 /// (and exactly, after simplifying their difference, for the others).
+/// Reduced row echelon form of a real matrix by Gauss–Jordan elimination
+/// with partial pivoting, where a pivot candidate of magnitude at most `tol`
+/// counts as zero. Returns the reduced matrix and its rank.
+fn row_reduce_with_tolerance(
+  mut m: Vec<Vec<f64>>,
+  tol: f64,
+) -> (Vec<Vec<f64>>, usize) {
+  let (nrows, ncols) = (m.len(), m.first().map_or(0, Vec::len));
+  let mut rank = 0;
+  for col in 0..ncols {
+    if rank == nrows {
+      break;
+    }
+    let (best, magnitude) = (rank..nrows)
+      .map(|r| (r, m[r][col].abs()))
+      .fold((rank, -1.0), |acc, x| if x.1 > acc.1 { x } else { acc });
+    if magnitude <= tol {
+      for row in m.iter_mut().skip(rank) {
+        row[col] = 0.0;
+      }
+      continue;
+    }
+    m.swap(rank, best);
+    let pivot = m[rank][col];
+    for x in &mut m[rank] {
+      *x /= pivot;
+    }
+    m[rank][col] = 1.0;
+    let pivot_row = m[rank].clone();
+    for (r, row) in m.iter_mut().enumerate() {
+      if r == rank {
+        continue;
+      }
+      let factor = row[col];
+      if factor != 0.0 {
+        for (x, p) in row.iter_mut().zip(&pivot_row) {
+          *x -= factor * p;
+        }
+        row[col] = 0.0;
+      }
+    }
+    rank += 1;
+  }
+  (m, rank)
+}
+
 fn matrices_agree(
   a: &Expr,
   b: &Expr,

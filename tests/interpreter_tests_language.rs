@@ -34,6 +34,7 @@ mod interpreter_tests {
   mod function_definitions;
   mod interpret_to_expr_api;
   mod machine_specific;
+  mod option_sweep0;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;

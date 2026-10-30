@@ -888,21 +888,33 @@ pub fn dispatch_evaluation_control(
         .unwrap_or_else(|_| args[0].clone());
       return Some(Ok(call("CensoredDistribution", vec![bounds, dist])));
     }
-    // Names["pattern", IgnoreCase -> True | False]
-    "Names"
-      if args.len() == 2
-        && let Expr::String(pattern) = &args[0]
-        && let Expr::Rule {
-          pattern: opt,
-          replacement,
-        } = &args[1]
-        && matches!(opt.as_ref(), Expr::Identifier(n) if n == "IgnoreCase")
-        && let Expr::Identifier(flag) = replacement.as_ref()
-        && (flag == "True" || flag == "False") =>
-    {
-      let names = crate::evaluator::contexts::names_matching_case(
+    // Names["pattern", opts] with IgnoreCase -> True | False and
+    // ResolveContextAliases -> True | False.
+    "Names" if args.len() >= 2 && matches!(&args[0], Expr::String(_)) => {
+      let Expr::String(pattern) = &args[0] else {
+        return None;
+      };
+      let mut ignore_case = false;
+      let mut resolve_aliases = true;
+      for opt in &args[1..] {
+        match crate::functions::expr_form::rule_parts(opt) {
+          Some((Expr::Identifier(n), Expr::Identifier(flag), _))
+            if (flag == "True" || flag == "False")
+              && (n == "IgnoreCase" || n == "ResolveContextAliases") =>
+          {
+            if n == "IgnoreCase" {
+              ignore_case = flag == "True";
+            } else {
+              resolve_aliases = flag == "True";
+            }
+          }
+          _ => return Some(Ok(unevaluated("Names", args))),
+        }
+      }
+      let names = crate::evaluator::contexts::names_matching_with(
         pattern,
-        flag == "True",
+        ignore_case,
+        resolve_aliases,
       );
       return Some(Ok(Expr::List(
         names.into_iter().map(Expr::String).collect(),

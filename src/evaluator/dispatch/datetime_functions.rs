@@ -144,13 +144,13 @@ pub fn dispatch_datetime_functions(
     "MoonPhase" if args.len() <= 2 => {
       return Some(crate::functions::astronomy_ast::moon_phase_ast(args));
     }
-    "NewMoon" if args.len() <= 1 => {
+    "NewMoon" => {
       return Some(crate::functions::astronomy_ast::new_moon_ast(args));
     }
-    "FullMoon" if args.len() <= 1 => {
+    "FullMoon" => {
       return Some(crate::functions::astronomy_ast::full_moon_ast(args));
     }
-    "MoonPhaseDate" if args.len() <= 2 => {
+    "MoonPhaseDate" => {
       return Some(crate::functions::astronomy_ast::moon_phase_date_ast(args));
     }
     "SunPosition" if args.len() <= 3 => {

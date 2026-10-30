@@ -3891,8 +3891,9 @@ fn matrix_to_i128(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<i128>>> {
 /// Faddeev-LeVerrier algorithm: compute integer coefficients of the
 /// characteristic polynomial det(λI - A) = λ^n + c_{n-1}*λ^{n-1} + ... + c_0.
 ///
-/// Returns coefficients [c_0, c_1, ..., c_{n-1}, 1] (ascending powers).
-fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
+/// Returns coefficients [c_0, c_1, ..., c_{n-1}, 1] (ascending powers), or
+/// `None` when an intermediate value overflows `i128`.
+fn char_poly_coefficients(a: &[Vec<i128>]) -> Option<Vec<i128>> {
   let n = a.len();
   // M starts as A, c[n] = 1 (monic)
   let mut coeffs = vec![0i128; n + 1];
@@ -3903,7 +3904,7 @@ fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
 
   for k in 1..=n {
     // c_{n-k} = -Tr(M_k) / k
-    let trace: i128 = (0..n).map(|i| m[i][i]).sum();
+    let trace = (0..n).try_fold(0i128, |s, i| s.checked_add(m[i][i]))?;
     coeffs[n - k] = -trace / k as i128;
 
     if k < n {
@@ -3912,14 +3913,15 @@ fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
       // First add c*I to M_k
       let mut temp = m.clone();
       for i in 0..n {
-        temp[i][i] += c;
+        temp[i][i] = temp[i][i].checked_add(c)?;
       }
       // Then multiply: M_{k+1} = A * temp
       let mut new_m = vec![vec![0i128; n]; n];
       for i in 0..n {
         for j in 0..n {
           for p in 0..n {
-            new_m[i][j] += a[i][p] * temp[p][j];
+            new_m[i][j] =
+              new_m[i][j].checked_add(a[i][p].checked_mul(temp[p][j])?)?;
           }
         }
       }
@@ -3927,7 +3929,7 @@ fn char_poly_coefficients(a: &[Vec<i128>]) -> Vec<i128> {
     }
   }
 
-  coeffs
+  Some(coeffs)
 }
 
 /// BigInt Faddeev–LeVerrier: ascending coefficients of the monic
@@ -4457,8 +4459,9 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Try integer matrix path
-  if let Some(int_matrix) = matrix_to_i128(&matrix) {
-    let coeffs = char_poly_coefficients(&int_matrix);
+  if let Some(int_matrix) = matrix_to_i128(&matrix)
+    && let Some(coeffs) = char_poly_coefficients(&int_matrix)
+  {
     let mut eigenvalues = find_polynomial_roots(&coeffs);
     sort_eigenvalues(&mut eigenvalues);
     return Ok(Expr::List(eigenvalues.into()));
@@ -4468,8 +4471,9 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // integer matrix (eigenvalues scale linearly), find the scaled roots
   // exactly, and divide back — keeping 1/2 exact instead of leaking the
   // float 0.5 from the numeric 2×2 path.
-  if let Some((int_matrix, scale)) = matrix_to_scaled_i128(&matrix) {
-    let coeffs = char_poly_coefficients(&int_matrix);
+  if let Some((int_matrix, scale)) = matrix_to_scaled_i128(&matrix)
+    && let Some(coeffs) = char_poly_coefficients(&int_matrix)
+  {
     let mut scaled_roots = find_polynomial_roots(&coeffs);
     // Root objects cannot be rescaled into wolframscript's form; fall
     // through to the generic paths instead.
@@ -5560,7 +5564,9 @@ fn integer_eigenvectors(
   n: usize,
   wanted: Option<usize>,
 ) -> Expr {
-  let coeffs = char_poly_coefficients(int_matrix);
+  let Some(coeffs) = char_poly_coefficients(int_matrix) else {
+    return unevaluated("Eigenvectors", &[matrix_to_expr(matrix.to_vec())]);
+  };
   let mut eigenvalues = find_polynomial_roots(&coeffs);
   sort_eigenvalues(&mut eigenvalues);
 
@@ -12013,6 +12019,17 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn jacobi_svd(
   a: &[Vec<f64>],
 ) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>)> {
+  // wolframscript's rank tolerance: 100 $MachineEpsilon relative to the
+  // largest singular value, whatever the size.
+  jacobi_svd_with_tolerance(a, 100.0 * f64::EPSILON)
+}
+
+/// `jacobi_svd` where singular values below `rel_tol` times the largest one
+/// are set to zero.
+fn jacobi_svd_with_tolerance(
+  a: &[Vec<f64>],
+  rel_tol: f64,
+) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>)> {
   let m = a.len();
   let n = a.first()?.len();
   if n == 0 {
@@ -12022,7 +12039,7 @@ fn jacobi_svd(
     // A' = V Σ' U'.
     let at: Vec<Vec<f64>> =
       (0..n).map(|j| (0..m).map(|i| a[i][j]).collect()).collect();
-    let (u, sigma, v) = jacobi_svd(&at)?;
+    let (u, sigma, v) = jacobi_svd_with_tolerance(&at, rel_tol)?;
     let sigma_t = (0..m)
       .map(|i| (0..n).map(|j| sigma[j][i]).collect())
       .collect();
@@ -12076,9 +12093,7 @@ fn jacobi_svd(
   let mut order: Vec<usize> = (0..n).collect();
   let norms: Vec<f64> = w.iter().map(|c| dot(c, c).sqrt()).collect();
   order.sort_by(|&i, &j| norms[j].total_cmp(&norms[i]));
-  // wolframscript's rank tolerance: 100 $MachineEpsilon relative to the
-  // largest singular value, whatever the size.
-  let tol = norms.iter().copied().fold(0.0, f64::max) * 100.0 * f64::EPSILON;
+  let tol = norms.iter().copied().fold(0.0, f64::max) * rel_tol;
   let mut ucols: Vec<Vec<f64>> = Vec::with_capacity(m);
   let mut vout: Vec<Vec<f64>> = Vec::with_capacity(n);
   let mut sig: Vec<f64> = Vec::with_capacity(n);
@@ -13079,6 +13094,16 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn singular_value_list_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  singular_value_list_with_tolerance(args, None)
+}
+
+/// `SingularValueList[m]` / `SingularValueList[m, k]`, keeping the singular
+/// values of a machine matrix down to `rel_tol` times the largest one (the
+/// default tolerance when `None`).
+pub fn singular_value_list_with_tolerance(
+  args: &[Expr],
+  rel_tol: Option<f64>,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("SingularValueList", args);
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated(args));
@@ -13145,7 +13170,8 @@ pub fn singular_value_list_ast(
     .collect();
   if has_real
     && let Some(a) = matrix.as_deref().and_then(machine_real_matrix)
-    && let Some((_, sigma, _)) = jacobi_svd(&a)
+    && let Some((_, sigma, _)) =
+      jacobi_svd_with_tolerance(&a, rel_tol.unwrap_or(100.0 * f64::EPSILON))
   {
     return Ok(take_values(
       (0..nrows.min(ncols))

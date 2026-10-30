@@ -2132,7 +2132,13 @@ pub fn find_repeat_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let arg = &args[0];
   let min_reps: i128 = if args.len() >= 2 {
-    match expr_to_i128(&args[1]) {
+    // `{n}` is the one-level form of `n`: the elements at level 1 (whole
+    // rows of a matrix) repeat at least n times.
+    let count = match &args[1] {
+      Expr::List(spec) if spec.len() == 1 => &spec[0],
+      other => other,
+    };
+    match expr_to_i128(count) {
       Some(n) if n >= 1 => n,
       _ => {
         return Ok(unevaluated("FindRepeat", all_args));

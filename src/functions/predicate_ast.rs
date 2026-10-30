@@ -2446,13 +2446,24 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// LeafCount[expr] - counts the number of atoms in the expression tree (including heads)
 pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "LeafCount expects exactly 1 argument".into(),
-    ));
-  }
-
-  fn count_leaves(expr: &Expr) -> i128 {
+  // LeafCount[expr, Heads -> False] leaves out the heads.
+  let heads = match args {
+    [_] => true,
+    [_, opt] => match crate::functions::expr_form::rule_parts(opt) {
+      Some((Expr::Identifier(n), Expr::Identifier(v), _))
+        if n == "Heads" && (v == "True" || v == "False") =>
+      {
+        v == "True"
+      }
+      _ => return Ok(crate::helpers::unevaluated("LeafCount", args)),
+    },
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        "LeafCount expects 1 argument and an optional Heads option".into(),
+      ));
+    }
+  };
+  fn count_leaves(expr: &Expr, heads: bool) -> i128 {
     // A packed array object, a tree or a dataset is a single leaf.
     if is_atomic_traversal_object(expr) {
       return 1;
@@ -2464,26 +2475,30 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return match crate::evaluator::part_extraction::graphics_symbolic_form(
         expr,
       ) {
-        Some(symbolic) => count_leaves(&symbolic),
+        Some(symbolic) => count_leaves(&symbolic, heads),
         None => 1,
       };
     }
     match expr {
       // CurriedCall f[a,b][x,y]: head expression contributes its own leaves; no extra 1
       Expr::CurriedCall { func, args } => {
-        count_leaves(func) + args.iter().map(count_leaves).sum::<i128>()
+        let head = if heads { count_leaves(func, heads) } else { 0 };
+        head + args.iter().map(|a| count_leaves(a, heads)).sum::<i128>()
       }
       // Association: 1 for the head plus the values' leaves — the keys and
       // the Rule wrappers are not parts of an association.
       Expr::Association(items) => {
-        1 + items
-          .iter()
-          .map(|(_, v)| match v {
-            // A delayed entry stores the whole `k :> v` as its value.
-            Expr::RuleDelayed { replacement, .. } => count_leaves(replacement),
-            _ => count_leaves(v),
-          })
-          .sum::<i128>()
+        heads as i128
+          + items
+            .iter()
+            .map(|(_, v)| match v {
+              // A delayed entry stores the whole `k :> v` as its value.
+              Expr::RuleDelayed { replacement, .. } => {
+                count_leaves(replacement, heads)
+              }
+              _ => count_leaves(v, heads),
+            })
+            .sum::<i128>()
       }
       // Everything else counts its canonical FullForm tree: `a - b` is
       // Plus[a, Times[-1, b]], `a == b` is Equal[a, b], `x_` is
@@ -2493,14 +2508,18 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match decompose_expr(expr) {
           ExprForm::Atom(_) => 1,
           ExprForm::Composite { children, .. } => {
-            1 + children.iter().map(count_leaves).sum::<i128>()
+            heads as i128
+              + children
+                .iter()
+                .map(|c| count_leaves(c, heads))
+                .sum::<i128>()
           }
         }
       }
     }
   }
 
-  Ok(Expr::Integer(count_leaves(&args[0])))
+  Ok(Expr::Integer(count_leaves(&args[0], heads)))
 }
 
 /// ByteCount[expr] - gives the number of bytes used internally to store expr

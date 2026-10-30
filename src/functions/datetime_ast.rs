@@ -929,6 +929,37 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(now());
   }
 
+  // AbsoluteTime[date, TimeZone -> tz] reads the date in zone tz.
+  if let [date, opt] = args
+    && let Some((Expr::Identifier(o), zone, _)) =
+      crate::functions::expr_form::rule_parts(opt)
+    && o == "TimeZone"
+  {
+    let unevaluated = || Ok(unevaluated("AbsoluteTime", args));
+    let zone = crate::evaluator::evaluate_expr_to_expr(zone)?;
+    let date = crate::evaluator::evaluate_expr_to_expr(date)?;
+    let absolute = absolute_time_ast(std::slice::from_ref(&date))?;
+    let Some(seconds) = try_eval_to_f64(&absolute) else {
+      return unevaluated();
+    };
+    let Some(local) = local_time_zone_hours() else {
+      return unevaluated();
+    };
+    let Some(offset) = extract_date_components(&date)
+      .and_then(|c| zone_offset_hours(&zone, &c, true))
+    else {
+      return unevaluated();
+    };
+    let shifted = seconds - (offset - local) * 3600.0;
+    return Ok(
+      if matches!(absolute, Expr::Integer(_)) && shifted.fract() == 0.0 {
+        Expr::Integer(shifted as i128)
+      } else {
+        Expr::Real(shifted)
+      },
+    );
+  }
+
   if args.len() != 1 {
     return Ok(unevaluated("AbsoluteTime", args));
   }
@@ -1029,6 +1060,15 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// The value of `$TimeZone` in hours.
+fn local_time_zone_hours() -> Option<f64> {
+  let local = crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
+    "$TimeZone".to_string(),
+  ))
+  .ok()?;
+  try_eval_to_f64(&local)
+}
+
 /// DateList[n] — convert absolute seconds to {y,m,d,h,min,sec.}
 /// DateList[{y,m,d,...}] — normalize a date list
 /// DateList["string"] — parse a date string
@@ -1043,12 +1083,7 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let date = date_list_ast(rest)?;
     let target = crate::evaluator::evaluate_expr_to_expr(replacement)?;
-    let local = crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(
-      "$TimeZone".to_string(),
-    ))?;
-    let (Some(target), Some(local)) =
-      (try_eval_to_f64(&target), try_eval_to_f64(&local))
-    else {
+    let Some(local) = local_time_zone_hours() else {
       return Ok(unevaluated("DateList", args));
     };
     if !matches!(date, Expr::List(_)) {
@@ -1056,6 +1091,13 @@ pub fn date_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let absolute = absolute_time_ast(&[date])?;
     let Some(seconds) = try_eval_to_f64(&absolute) else {
+      return Ok(unevaluated("DateList", args));
+    };
+    // A named zone's offset is the one in force at that instant (in UTC).
+    let utc = date_list_ast(&[Expr::Real(seconds - local * 3600.0)])?;
+    let Some(target) = extract_date_components(&utc)
+      .and_then(|c| zone_offset_hours(&target, &c, false))
+    else {
       return Ok(unevaluated("DateList", args));
     };
     return date_list_ast(&[Expr::Real(seconds + (target - local) * 3600.0)]);

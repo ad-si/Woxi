@@ -454,7 +454,22 @@ pub fn names_matching(pattern: &str) -> Vec<String> {
 /// `names_matching`, optionally ignoring the case of the symbol names
 /// (Names[…, IgnoreCase -> True]).
 pub fn names_matching_case(pattern: &str, ignore_case: bool) -> Vec<String> {
-  let pattern = &expand_alias(pattern);
+  names_matching_with(pattern, ignore_case, true)
+}
+
+/// `names_matching_case`, where a context alias in the pattern stands for
+/// its context only when `resolve_aliases` is set
+/// (Names[…, ResolveContextAliases -> False] takes it literally).
+pub fn names_matching_with(
+  pattern: &str,
+  ignore_case: bool,
+  resolve_aliases: bool,
+) -> Vec<String> {
+  let pattern = &if resolve_aliases {
+    expand_alias(pattern)
+  } else {
+    pattern.to_string()
+  };
   let (context_pattern, name_pattern) = match pattern.rfind('`') {
     Some(last) => (
       Some(pattern[..=last].to_string()),

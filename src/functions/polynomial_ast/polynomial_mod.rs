@@ -11,6 +11,21 @@ use crate::evaluator::evaluate_expr_to_expr;
 /// 10, which vanishes mod 5) and `PolynomialMod[7, {5, 3}]` is 0 (the
 /// integers generate everything).
 pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // PolynomialMod[poly, m, Modulus -> p] reduces modulo p as well, like
+  // PolynomialMod[poly, {m, p}].
+  if args.len() == 3
+    && let Some((Expr::Identifier(o), value, false)) =
+      crate::functions::expr_form::rule_parts(&args[2])
+    && o == "Modulus"
+    && matches!(value, Expr::Integer(p) if *p >= 0)
+  {
+    let mut moduli = match &args[1] {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
+    };
+    moduli.push(value.clone());
+    return polynomial_mod_ast(&[args[0].clone(), Expr::List(moduli.into())]);
+  }
   if args.len() != 2 {
     return Ok(unevaluated("PolynomialMod", args));
   }
@@ -60,6 +75,29 @@ pub fn polynomial_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let Some(var) = var_list.first() else {
       return Ok(unevaluated("PolynomialMod", args));
     };
+    // With an integer modulus too, divide over the integers mod it, where
+    // a leading coefficient like the 2 of `2 x - 1` is invertible.
+    if numeric_gcd > 1 {
+      let modular = crate::evaluator::evaluate_function_call_ast(
+        "PolynomialRemainder",
+        &[
+          result.clone(),
+          modulus.clone(),
+          var.clone(),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("Modulus".into())),
+            replacement: Box::new(Expr::Integer(numeric_gcd)),
+          },
+        ],
+      );
+      if let Ok(modular) = modular
+        && !matches!(&modular, Expr::FunctionCall { name, .. }
+          if name == "PolynomialRemainder")
+      {
+        result = modular;
+        continue;
+      }
+    }
     result = crate::evaluator::evaluate_function_call_ast(
       "PolynomialRemainder",
       &[result, modulus.clone(), var.clone()],

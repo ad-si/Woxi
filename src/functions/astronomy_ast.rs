@@ -734,6 +734,19 @@ fn next_phase_jd(jd: f64, phase: Phase) -> f64 {
   }
 }
 
+/// The Julian date (UTC) of the last occurrence of `phase` before `jd`.
+fn previous_phase_jd(jd: f64, phase: Phase) -> f64 {
+  let year = jd_to_decimal_year(jd);
+  let mut k = ((year - 2000.0) * 12.3685).floor() + 2.0;
+  loop {
+    let jd_event = jde_to_jd_utc(phase_jde(k, phase));
+    if jd_event < jd {
+      return jd_event;
+    }
+    k -= 1.0;
+  }
+}
+
 // ─── Illuminated fraction (Meeus ch. 48) ────────────────────────────
 
 /// Illuminated fraction of the Moon's disk and the signed elongation
@@ -1186,37 +1199,121 @@ pub fn full_moon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(next_phase_function("FullMoon", Phase::Full, args))
 }
 
-fn next_phase_function(name: &str, phase: Phase, args: &[Expr]) -> Expr {
-  let jd = match args {
+/// The options of NewMoon, FullMoon and MoonPhaseDate.
+struct MoonPhaseOptions {
+  /// Search after (1) or before (-1) the date.
+  direction: i8,
+  /// The zone the resulting DateObject is expressed in, in hours.
+  time_zone: f64,
+  /// Give only the day of the event.
+  day_granularity: bool,
+}
+
+impl MoonPhaseOptions {
+  fn phase_jd(&self, jd: f64, phase: Phase) -> f64 {
+    if self.direction < 0 {
+      previous_phase_jd(jd, phase)
+    } else {
+      next_phase_jd(jd, phase)
+    }
+  }
+
+  fn date_object(&self, jd: f64) -> Expr {
+    let instant = date_object_instant(jd + self.time_zone / 24.0);
+    let Expr::FunctionCall { args, .. } = &instant else {
+      return instant;
+    };
+    let mut parts = args.to_vec();
+    if self.day_granularity
+      && let Expr::List(components) = &parts[0]
+    {
+      parts[0] = Expr::List(components[..3].to_vec().into());
+      parts[1] = str_expr("Day");
+    }
+    parts[3] = Expr::Real(self.time_zone);
+    call("DateObject", parts)
+  }
+}
+
+/// Split trailing `TimeDirection`, `TimeZone`, `DateGranularity` and `Method`
+/// options off the positional arguments. `None` for any other option or an
+/// unsupported value.
+fn split_moon_phase_options(
+  args: &[Expr],
+) -> Option<(Vec<Expr>, MoonPhaseOptions)> {
+  let mut options = MoonPhaseOptions {
+    direction: 1,
+    time_zone: 0.0,
+    day_granularity: false,
+  };
+  let mut positional = Vec::new();
+  for arg in args {
+    let Some((Expr::Identifier(name), value, _)) =
+      crate::functions::expr_form::rule_parts(arg)
+    else {
+      positional.push(arg.clone());
+      continue;
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(value).ok()?;
+    match (name.as_str(), &value) {
+      ("TimeDirection", Expr::Integer(d)) if *d == 1 || *d == -1 => {
+        options.direction = *d as i8;
+      }
+      ("TimeZone", zone) => {
+        options.time_zone = crate::functions::math_ast::try_eval_to_f64(zone)?;
+      }
+      ("DateGranularity", Expr::String(g)) if g == "Day" || g == "Instant" => {
+        options.day_granularity = g == "Day";
+      }
+      // The phases are computed from the ecliptic longitudes of the Sun and
+      // the Moon.
+      ("Method", Expr::String(m)) if m == "EclipticLongitude" => {}
+      _ => return None,
+    }
+  }
+  Some((positional, options))
+}
+
+fn next_phase_function(name: &str, phase: Phase, all_args: &[Expr]) -> Expr {
+  let Some((args, options)) = split_moon_phase_options(all_args) else {
+    return unevaluated(name, all_args);
+  };
+  let jd = match args.as_slice() {
     [] => now_jd(),
     [date] => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return unevaluated(name, args),
+      None => return unevaluated(name, all_args),
     },
-    _ => return unevaluated(name, args),
+    _ => return unevaluated(name, all_args),
   };
-  date_object_instant(next_phase_jd(jd, phase))
+  options.date_object(options.phase_jd(jd, phase))
 }
 
 /// MoonPhaseDate[] / MoonPhaseDate[date] / MoonPhaseDate[date, phase] —
 /// the date of the next principal lunar phase after `date` (default:
 /// now); with a phase (string or MoonPhase entity), the next occurrence
 /// of that phase.
-pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn moon_phase_date_ast(
+  all_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Some((args, options)) = split_moon_phase_options(all_args) else {
+    return Ok(unevaluated("MoonPhaseDate", all_args));
+  };
+  let args = args.as_slice();
   let (date_arg, phase_arg) = match args {
     [] => (None, None),
     // A lone argument is always read as a phase spec (as in Wolfram): a
     // date-only call has no phase to look for and stays unevaluated.
     [one] if phase_from_expr(one).is_some() => (None, Some(one)),
-    [_] => return Ok(unevaluated("MoonPhaseDate", args)),
+    [_] => return Ok(unevaluated("MoonPhaseDate", all_args)),
     [date, phase] => (Some(date), Some(phase)),
-    _ => return Ok(unevaluated("MoonPhaseDate", args)),
+    _ => return Ok(unevaluated("MoonPhaseDate", all_args)),
   };
   let jd = match date_arg {
     None => now_jd(),
     Some(date) => match parse_date_arg(date) {
       Some(jd) => jd,
-      None => return Ok(unevaluated("MoonPhaseDate", args)),
+      None => return Ok(unevaluated("MoonPhaseDate", all_args)),
     },
   };
   let result = match phase_arg {
@@ -1229,15 +1326,19 @@ pub fn moon_phase_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Phase::LastQuarter,
       ]
       .into_iter()
-      .map(|p| next_phase_jd(jd, p))
-      .fold(f64::INFINITY, f64::min)
+      .map(|p| options.phase_jd(jd, p))
+      .fold(None, |best: Option<f64>, t| match best {
+        Some(b) if (t - jd).abs() >= (b - jd).abs() => Some(b),
+        _ => Some(t),
+      })
+      .unwrap_or(jd)
     }
     Some(p) => match phase_from_expr(p) {
-      Some(phase) => next_phase_jd(jd, phase),
-      None => return Ok(unevaluated("MoonPhaseDate", args)),
+      Some(phase) => options.phase_jd(jd, phase),
+      None => return Ok(unevaluated("MoonPhaseDate", all_args)),
     },
   };
-  Ok(date_object_instant(result))
+  Ok(options.date_object(result))
 }
 
 /// A phase spec: "New"/"NewMoon", "FirstQuarter", "Full"/"FullMoon",

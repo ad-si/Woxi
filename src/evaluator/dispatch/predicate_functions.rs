@@ -921,7 +921,7 @@ pub fn dispatch_predicate_functions(
     "Depth" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::depth_ast(args));
     }
-    "LeafCount" if args.len() == 1 => {
+    "LeafCount" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::predicate_ast::leaf_count_ast(args));
     }
     "ByteCount" if args.len() == 1 => {
@@ -1514,11 +1514,29 @@ pub fn dispatch_predicate_functions(
         known_contexts().into_iter().map(Expr::String).collect(),
       )));
     }
-    "Contexts" if args.len() == 1 => {
+    // Contexts["pattern", ResolveContextAliases -> False] matches an alias
+    // in the pattern literally.
+    "Contexts"
+      if args.len() == 1
+        || args.len() == 2
+          && matches!(
+            crate::functions::expr_form::rule_parts(&args[1]),
+            Some((Expr::Identifier(o), Expr::Identifier(flag), _))
+              if o == "ResolveContextAliases"
+                && (flag == "True" || flag == "False")
+          ) =>
+    {
+      let resolve_aliases = !matches!(
+        args.get(1).and_then(crate::functions::expr_form::rule_parts),
+        Some((_, Expr::Identifier(flag), _)) if flag == "False"
+      );
       let pattern = match &args[0] {
         // A pattern may name a context by its `$ContextAliases` alias, which
         // stands in for the context's real name here as everywhere else.
-        Expr::String(s) => crate::evaluator::contexts::expand_alias(s),
+        Expr::String(s) if resolve_aliases => {
+          crate::evaluator::contexts::expand_alias(s)
+        }
+        Expr::String(s) => s.clone(),
         _ => {
           return Some(Ok(unevaluated("Contexts", args)));
         }

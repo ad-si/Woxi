@@ -3251,6 +3251,47 @@ pub fn dispatch_list_operations(
     "SubsetPosition" if args.len() == 2 => {
       return Some(list_helpers_ast::subset_position_ast(&args[0], &args[1]));
     }
+    // Overlaps -> False keeps only the position lists that share no
+    // position with one found earlier.
+    "SubsetPosition"
+      if args.len() == 3
+        && let Some((Expr::Identifier(o), Expr::Identifier(v), _)) =
+          crate::functions::expr_form::rule_parts(&args[2])
+        && o == "Overlaps"
+        && (v == "True" || v == "False") =>
+    {
+      let all = list_helpers_ast::subset_position_ast(&args[0], &args[1]);
+      if v == "True" {
+        return Some(all);
+      }
+      let found = match &all {
+        Ok(Expr::List(found)) => found.to_vec(),
+        _ => return Some(all),
+      };
+      let mut used: Vec<i128> = Vec::new();
+      let mut kept: Vec<Expr> = Vec::new();
+      for positions in &found {
+        let Expr::List(ps) = positions else {
+          return Some(all);
+        };
+        let Some(ps) = ps
+          .iter()
+          .map(|p| match p {
+            Expr::Integer(i) => Some(*i),
+            _ => None,
+          })
+          .collect::<Option<Vec<i128>>>()
+        else {
+          return Some(all);
+        };
+        if ps.iter().any(|p| used.contains(p)) {
+          continue;
+        }
+        used.extend(ps);
+        kept.push(positions.clone());
+      }
+      return Some(Ok(Expr::List(kept.into())));
+    }
     "SubsetCases" if args.len() == 2 || args.len() == 3 => {
       let max_count = if args.len() == 3 {
         match &args[2] {

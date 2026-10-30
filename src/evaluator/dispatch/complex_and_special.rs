@@ -1834,7 +1834,24 @@ pub fn dispatch_complex_and_special(
     // Inactivate[expr] wraps every head H in `expr` with Inactive[H];
     // Inactivate[expr, h] only wraps heads named `h`. The first argument is
     // held (HoldFirst), so e.g. Inactivate[1 + 1] = Inactive[Plus][1, 1].
-    "Inactivate" if args.len() == 1 || args.len() == 2 => {
+    "Inactivate" if !args.is_empty() => {
+      // A trailing `Heads -> False` leaves compound heads like the `f[x]`
+      // of `f[x][y]` alone.
+      let all_args = args;
+      let mut args = args;
+      let mut heads = true;
+      if let Some(last) = args.last()
+        && let Some((Expr::Identifier(o), Expr::Identifier(v), _)) =
+          crate::functions::expr_form::rule_parts(last)
+        && o == "Heads"
+        && (v == "True" || v == "False")
+      {
+        heads = v == "True";
+        args = &args[..args.len() - 1];
+      }
+      if args.is_empty() || args.len() > 2 {
+        return Some(Ok(unevaluated("Inactivate", all_args)));
+      }
       let filter: Option<String> = if args.len() == 2 {
         match &args[1] {
           Expr::Identifier(h) => Some(h.clone()),
@@ -1847,7 +1864,10 @@ pub fn dispatch_complex_and_special(
       } else {
         None
       };
-      return Some(Ok(inactivate_expr(&args[0], filter.as_deref())));
+      INACTIVATE_HEADS.with(|h| h.set(heads));
+      let result = inactivate_expr(&args[0], filter.as_deref());
+      INACTIVATE_HEADS.with(|h| h.set(true));
+      return Some(Ok(result));
     }
     // Form wrappers -- keep as wrappers (matching wolframscript OutputForm behavior)
     "MathMLForm" | "StandardForm" | "InputForm" if !args.is_empty() => {
@@ -6450,6 +6470,13 @@ fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&str>) {
   }
 }
 
+thread_local! {
+  /// Whether `inactivate_expr` descends into compound heads (the `Heads`
+  /// option of `Inactivate`).
+  static INACTIVATE_HEADS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(true) };
+}
+
 /// Recursively replace each head `H` in `expr` with `Inactive[H]`, the inverse
 /// of `activate_expr`. Operators are mapped to their full-form heads (`+`→Plus,
 /// `-a`→Times[-1,a], `a/b`→Times[a,Power[b,-1]], …). `List` is left structural.
@@ -6542,7 +6569,11 @@ fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
       make_inactive_head(name, args.iter().map(&inact).collect(), wants(name))
     }
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(inact(func)),
+      func: Box::new(if INACTIVATE_HEADS.with(std::cell::Cell::get) {
+        inact(func)
+      } else {
+        func.as_ref().clone()
+      }),
       args: args.iter().map(&inact).collect(),
     },
     // Atoms (numbers, symbols, strings) are returned unchanged.
