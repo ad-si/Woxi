@@ -11661,6 +11661,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // picture, so the height follows from the width left over after the
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
       Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
+      // A width alone keeps the data's shape, so the height follows from
+      // the width left over after the margins rather than losing the
+      // margins' height from a height fitted to the full width (which
+      // padded the plot range until the shapes agreed again).
+      None if !size_names_height && !aspect_ratio_full => {
+        (w, (w * svg_h / svg_w).round().max(1.0))
+      }
       _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
     }
   } else {
