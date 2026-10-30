@@ -40,6 +40,7 @@ pub fn expr_to_num(expr: &Expr) -> Option<f64> {
 ///   an odd bit length and a binary digit while it has an even bit length
 ///   (squaring the half-power when the digit is 0),
 /// - negative exponents are the reciprocal of the positive power.
+///
 /// A positive machine real to the half-integer power `p/2` (`p` odd), as
 /// wolframscript computes it: x^(n + 1/2) is x^n Sqrt[x] and x^-(n + 1/2)
 /// is (1/x^n)(1/Sqrt[x]) — `3.^(-1/2)` is 0.5773502691896258, one ULP off
