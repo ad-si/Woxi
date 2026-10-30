@@ -18383,6 +18383,19 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
 /// The rendered SVG of a grid cell that is a graphic, and its natural
 /// size. `Grid` lays such a cell out as a picture instead of printing the
 /// expression's text form.
+/// The same SVG with everything inside its root element made transparent,
+/// so it keeps its footprint but paints nothing (`Invisible[graphic]`).
+pub(crate) fn hide_svg_content(svg: &str) -> Option<String> {
+  let open_end = svg.find('>')? + 1;
+  let close = svg.rfind("</svg>")?;
+  Some(format!(
+    "{}<g opacity=\"0\">{}</g>{}",
+    &svg[..open_end],
+    &svg[open_end..close],
+    &svg[close..]
+  ))
+}
+
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   if let Some(svg) = traditional_inline_box_cell_svg(cell) {
     return parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h));
@@ -18418,6 +18431,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       if is_style_wrapper(name) && !args.is_empty() =>
     {
       return grid_cell_graphic(&args[0]);
+    }
+    // `Invisible[graphic]` keeps the picture's footprint but paints
+    // nothing: lay the graphic out as usual with its content hidden.
+    Expr::FunctionCall { name, args }
+      if name == "Invisible" && args.len() == 1 =>
+    {
+      let (svg, w, h) = grid_cell_graphic(&args[0])?;
+      let hidden = hide_svg_content(&svg)?;
+      return Some((hidden, w, h));
     }
     // A cell may be the unevaluated call that draws the picture: only the
     // rendering path turns `Graphics[…]` into a rendered graphic, so ask

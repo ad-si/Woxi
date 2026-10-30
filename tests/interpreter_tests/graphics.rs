@@ -39775,6 +39775,28 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn grid_invisible_graphic_keeps_its_size_and_paints_nothing() {
+    // `Invisible[Graphics[…]]` beside a visible picture in a column holds
+    // the picture's footprint; it must not be measured as source text.
+    let svg = interpret(
+      r#"g = Graphics[Disk[], ImageSize -> 30]; ExportString[Grid[{{"a", g}, {"b", Invisible[g]}}, Frame -> All], "SVG"]"#,
+    )
+    .unwrap();
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!(width < 100.0, "{svg}");
+    assert!(svg.contains("<g opacity=\"0\">"), "{svg}");
+    assert!(!svg.contains("Invisible"), "{svg}");
+  }
+
+  #[test]
   fn grid_background_accepts_index_rules_for_rows() {
     let svg = interpret(
       r#"ExportString[Grid[{{"a"}, {"b"}, {"c"}}, Background -> {Automatic, {1 -> Gray, 3 -> Gray}}], "SVG"]"#,
