@@ -12,6 +12,19 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   if crate::functions::predicate_ast::is_fully_atomic_object(list) {
     return Ok(list.clone());
   }
+  // A function applied many times shares the large arrays in its body
+  // once, so no call copies them (`(Extract[data, #] &) /@ positions`).
+  let shared_func;
+  let func = if matches!(list, Expr::List(items) if items.len() > 1)
+    && matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+  {
+    let mut f = func.clone();
+    crate::evaluator::share_large_lists(&mut f, 0);
+    shared_func = f;
+    &shared_func
+  } else {
+    func
+  };
   match list {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items

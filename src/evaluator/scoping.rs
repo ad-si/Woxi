@@ -1257,8 +1257,11 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let local_names: Vec<String> =
     bindings.iter().map(|(name, _)| name.clone()).collect();
   let shielded = shield_nested_scopes(body_expr, &local_names);
-  let substituted =
+  let mut substituted =
     crate::syntax::substitute_variables(&shielded, &binding_refs);
+  // Large arrays in the body are shared, so the loops and functions that
+  // copy it (Table, Map) copy pointers.
+  share_large_lists(&mut substituted, 0);
 
   // Evaluate the substituted body. Like Module and Block, With leaves a
   // Return that reaches its boundary standing as `Return[val]`.

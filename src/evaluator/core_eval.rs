@@ -259,6 +259,45 @@ pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
       }
       return;
     }
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+      if depth < 64 {
+        share_large_lists(body, depth + 1);
+      }
+      return;
+    }
+    // Operator nodes (`f /@ list`, `f @@ x`, `e /. r`, `a[[i]]`, `a; b`).
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      if depth < 64 {
+        share_large_lists(func, depth + 1);
+        share_large_lists(list, depth + 1);
+      }
+      return;
+    }
+    Expr::ReplaceAll { expr: e, rules }
+    | Expr::ReplaceRepeated { expr: e, rules } => {
+      if depth < 64 {
+        share_large_lists(e, depth + 1);
+        share_large_lists(rules, depth + 1);
+      }
+      return;
+    }
+    Expr::Part { expr: e, index } => {
+      if depth < 64 {
+        share_large_lists(e, depth + 1);
+        share_large_lists(index, depth + 1);
+      }
+      return;
+    }
+    Expr::CompoundExpr(items) => {
+      if depth < 64 {
+        for item in items.iter_mut() {
+          share_large_lists(item, depth + 1);
+        }
+      }
+      return;
+    }
     Expr::UnaryOp { operand, .. } => {
       if depth < 64 {
         share_large_lists(operand, depth + 1);
