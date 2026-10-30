@@ -11516,12 +11516,14 @@ fn format_infy_fraction_2d(prefix: &str, num: &str, denom: &str) -> String {
 /// for the reciprocal `1/0` sub-expression (rendered as a 2D fraction) and
 /// returns ComplexInfinity — or Indeterminate for `0/0`, with an additional
 /// Infinity::indet message naming the dividend (`0` or `0.`).
-fn divide_by_zero_result(a: &Expr) -> Expr {
-  crate::emit_message(
-    "                                 1\n\
-     Power::infy: Infinite expression - encountered.\n\
-     \x20                                0",
-  );
+fn divide_by_zero_result(a: &Expr, divisor: &Expr) -> Expr {
+  // A machine zero divisor shows as `0.` under the fraction bar.
+  let zero = if contains_real(divisor) { "0." } else { "0" };
+  crate::emit_message(&format_infy_fraction_2d(
+    "Power::infy: Infinite expression ",
+    "1",
+    zero,
+  ));
   let a_is_zero =
     matches!(a, Expr::Integer(0)) || matches!(a, Expr::Real(z) if *z == 0.0);
   if a_is_zero {
@@ -11717,7 +11719,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   // (Integer, Real, Rational, symbolic). Handled uniformly here so reals no
   // longer raise a hard "Division by zero" error.
   if b_is_zero {
-    return Ok(divide_by_zero_result(a));
+    return Ok(divide_by_zero_result(a, b));
   }
 
   // For two integers, keep as Rational (fraction)
@@ -11732,7 +11734,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if let (Some(numer), Some(denom)) = (a_big, b_big) {
       use num_traits::Zero;
       if denom.is_zero() {
-        return Ok(divide_by_zero_result(a));
+        return Ok(divide_by_zero_result(a, b));
       }
       let (rn, rd) = rat_reduce_bigint(&numer, &denom);
       if rd == BigInt::from(1) {
@@ -11916,7 +11918,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if let (Some(n), Some(d)) = (a_n.checked_mul(b_d), a_d.checked_mul(b_n)) {
       if d == 0 {
         // A zero rational divisor: same as x/0.
-        return Ok(divide_by_zero_result(a));
+        return Ok(divide_by_zero_result(a, b));
       }
       return Ok(make_rational(n, d));
     }
@@ -11924,7 +11926,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     let numer = BigInt::from(a_n) * BigInt::from(b_d);
     let denom = BigInt::from(a_d) * BigInt::from(b_n);
     if denom.is_zero() {
-      return Ok(divide_by_zero_result(a));
+      return Ok(divide_by_zero_result(a, b));
     }
     let (rn, rd) = rat_reduce_bigint(&numer, &denom);
     if rd == BigInt::from(1) {
@@ -11977,7 +11979,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   };
   if let (Some(x), Some(y)) = (eval_fn(a), eval_fn(b)) {
     if y == 0.0 {
-      Ok(divide_by_zero_result(a))
+      Ok(divide_by_zero_result(a, b))
     } else {
       // Wolfram evaluates division a/b as Times[a, Power[b, -1]], so the
       // product is taken with the reciprocal rounded to a machine real:
