@@ -6392,3 +6392,10 @@ need not be the minimizer wolframscript reports.
 - In `Mean[FisherZDistribution[n, m]]` Woxi orders the factor
   `n^2*(m/n)^(n/2)`; wolframscript writes `(m/n)^(n/2)*n^2`.
 - Numeric PDF/CDF/Quantile values can differ in the last digit.
+
+## Text with a Row of Style-sized labels
+
+- `Graphics[Text[Row[{Style["12", Bold, 54], …}], pos]]` draws the row at the
+  default font size: the `Style` sizes inside a `Row` passed to `Text` are
+  not applied, so a barcode's printed digits come out much smaller than in
+  wolframscript.
