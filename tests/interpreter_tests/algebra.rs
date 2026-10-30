@@ -23988,3 +23988,24 @@ mod parametric_quadratic_optimization {
     );
   }
 }
+
+mod linear_programming_none_bounds {
+  use super::*;
+
+  // A bound specification of None leaves every variable unbounded.
+  #[test]
+  fn none_frees_every_variable() {
+    assert_eq!(
+      interpret(
+        "LinearProgramming[{0, 0, -1}, {{-1, -1, -1}, {1, -1, -1}, {0, 1, -1}}, \
+         {-1, -1, -1}, None]"
+      )
+      .unwrap(),
+      "{0, 0, 1}"
+    );
+    assert_eq!(
+      interpret("LinearProgramming[{1, -1}, {{1, 1}}, {1}, None]").unwrap(),
+      "{Indeterminate, Indeterminate}"
+    );
+  }
+}
