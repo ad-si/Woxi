@@ -221,7 +221,23 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_numeric_eval {
       let phi = phi_val.unwrap();
       let m = m_val.unwrap();
-      return Ok(Expr::Real(elliptic_e_incomplete(phi, m)));
+      let e = elliptic_e_incomplete(phi, m);
+      if !e.is_nan() {
+        return Ok(Expr::Real(e));
+      }
+      let (re, im) = elliptic_e_complex((phi, 0.0), (m, 0.0));
+      return Ok(build_complex_float_expr(re, im));
+    }
+
+    // Machine-complex amplitude and/or parameter.
+    if (expr_is_inexact(phi_expr) || expr_is_inexact(m_expr))
+      && let (Some(phi), Some(m)) = (
+        try_extract_complex_float(phi_expr),
+        try_extract_complex_float(m_expr),
+      )
+    {
+      let (re, im) = elliptic_e_complex(phi, m);
+      return Ok(build_complex_float_expr(re, im));
     }
 
     return Ok(unevaluated("EllipticE", args));
@@ -501,9 +517,21 @@ fn c_recip(a: C64) -> C64 {
 }
 
 /// F(phi, m) for complex phi and m: integrates 1/Sqrt[1 - m Sin[t]^2] along
-/// the straight segment from 0 to phi (Simpson's rule). The square root
-/// branch is followed continuously so the path may leave the real axis.
+/// the straight segment from 0 to phi.
 fn elliptic_f_complex(phi: C64, m: C64) -> C64 {
+  elliptic_segment_integral(phi, m, true)
+}
+
+/// E(phi, m) for complex phi and m: integrates Sqrt[1 - m Sin[t]^2] along
+/// the straight segment from 0 to phi.
+fn elliptic_e_complex(phi: C64, m: C64) -> C64 {
+  elliptic_segment_integral(phi, m, false)
+}
+
+/// Integrates `Sqrt[1 - m Sin[t]^2]` (or its reciprocal) along the straight
+/// segment from 0 to phi (Simpson's rule). The square root branch is
+/// followed continuously so the path may leave the real axis.
+fn elliptic_segment_integral(phi: C64, m: C64, reciprocal: bool) -> C64 {
   let n = 2000usize;
   let mut prev: Option<C64> = None;
   let mut f = |t: f64| -> C64 {
@@ -519,7 +547,7 @@ fn elliptic_f_complex(phi: C64, m: C64) -> C64 {
       }
     }
     prev = Some(root);
-    c_recip(root)
+    if reciprocal { c_recip(root) } else { root }
   };
   let h = 1.0 / n as f64;
   let mut sum = f(0.0);
