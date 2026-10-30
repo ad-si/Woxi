@@ -15151,7 +15151,8 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
   let head = if is_max { "Max" } else { "Min" };
   let identity = || {
     if is_max {
-      id_expr("-Infinity")
+      // The evaluated `-Infinity`, not a symbol spelled that way.
+      times2(Expr::Integer(-1), id_expr("Infinity"))
     } else {
       id_expr("Infinity")
     }

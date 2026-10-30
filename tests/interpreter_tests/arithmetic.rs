@@ -7172,6 +7172,12 @@ mod min_max_identity {
   fn max_zero_args() {
     // Max[] is the identity element: -Infinity
     assert_eq!(interpret("Max[]").unwrap(), "-Infinity");
+    // It is the real -Infinity: it compares and is SameQ to it.
+    assert_eq!(
+      interpret("{Max[{}] <= 6, Max[] === -Infinity, Max[Flatten[{}]] < 0}")
+        .unwrap(),
+      "{True, True, True}"
+    );
   }
 
   #[test]
