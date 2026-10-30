@@ -1247,6 +1247,27 @@ mod interpreter_tests {
     assert!(svg.starts_with("<svg"));
   }
 
+  /// A locator `Appearance` picture with a numeric `ImageSize` is that many
+  /// pixels across, not as many data units as its own coordinates span.
+  #[test]
+  fn test_locator_pane_appearance_image_size_is_in_pixels() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[LocatorPane[{{0, 0}}, \
+       Graphics[{}, PlotRange -> {{-5, 5}, {-5, 5}}, ImageSize -> 360], \
+       Appearance -> Graphics[Disk[], ImageSize -> 12]], \"SVG\"]",
+    )
+    .unwrap();
+    let svg = r.result;
+    let rx: f64 = svg
+      .split("rx=\"")
+      .nth(1)
+      .and_then(|t| t.split('"').next())
+      .and_then(|v| v.parse().ok())
+      .unwrap_or_else(|| panic!("no ellipse marker in: {svg}"));
+    assert!(rx > 3.0 && rx < 9.0, "marker radius {rx} px: {svg}");
+  }
+
   /// A `LocatorPane` over `Show[plot, …]` keeps the `Epilog` of the first
   /// plot: the locator markers are appended to it instead of replacing it.
   #[test]

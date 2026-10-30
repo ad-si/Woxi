@@ -11603,12 +11603,13 @@ mod join_non_list {
       interpret(
         "Quiet[Get[\"Combinatorica`\"]]; \
          InputForm[SetGraphOptions[FromOrderedPairs[{{1, 2}, {2, 3}, {3, 1}}], \
-           {1, 2, VertexColor -> Black}]]"
+           {1, 2, VertexColor -> Black}] /. x_Real :> N[Round[x, 10^-12]]]"
       )
       .unwrap(),
+      // Rounded: the last digit of `cos` differs between libm builds.
       "InputForm[Graph[{{{1, 2}}, {{2, 3}}, {{3, 1}}}, \
-       {{{-0.49999999999999983, 0.8660254037844387}, VertexColor -> GrayLevel[0]}, \
-       {{-0.5000000000000004, -0.8660254037844384}, VertexColor -> GrayLevel[0]}, \
+       {{{-0.5, 0.866025403784}, VertexColor -> GrayLevel[0]}, \
+       {{-0.5, -0.866025403784}, VertexColor -> GrayLevel[0]}, \
        {{1., 0}}}, EdgeDirection -> True]]"
     );
   }
