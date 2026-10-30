@@ -943,7 +943,7 @@ ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,
 StringFreeQ,Tests if a string is free of a pattern,✅,pure,5.1,903
 Log2,Returns the base-2 logarithm of a number,✅,pure,7.0,904
 ProductLog,Lambert W function; principal branch and the real branch k=-1 (two-argument form),✅,pure,3.0,905
-KnotData,Knots of the Rolfsen table by {n k} or standard name and torus knots by winding numbers {p q}: CrossingNumber / AlexanderBriggsList / AlexanderBriggsNotation / StandardName / Name; SpaceCurve / ImageData for the trefoil and torus knots only,🚧,pure,6.0,906
+KnotData,Knots of the Rolfsen table by {n k} or standard name and torus knots by winding numbers {p q}: CrossingNumber / AlexanderBriggsList / AlexanderBriggsNotation / StandardName / Name; SpaceCurve / Image / ImageData for the trefoil and torus knots only,🚧,pure,6.0,906
 Invisible,Displays as blank space with the same size as its content,✅,unevaluated,6.0,907
 StyleData,,🚫,,3.0,908
 NestWhile,Applies a function repeatedly while a condition holds,✅,pure,4.0,909
@@ -6409,3 +6409,14 @@ Combinatorica`ShortestPath,Shortest vertex path between two vertices of a Combin
 ToColor,Converts a color directive to RGBColor GrayLevel Hue CMYKColor or another color space head,✅,pure,2.0,
 LinearRegression`Regress,Legacy least-squares fit with a literal basis returning RegressionCommon` rules for ParameterTable and RSquared,✅,pure,6.0,
 BarCharts`GeneralizedBarChart,Legacy package bar chart from {position height width} triples drawn as rectangles,✅,pure,6.0,
+HypothesisTesting`MeanDifferenceCI,Legacy confidence interval for a difference of means (Welch unless EqualVariances -> True; normal under KnownVariance),✅,pure,1.0,
+HypothesisTesting`StudentTCI,Legacy Student t confidence interval from a mean and standard error and degrees of freedom,✅,pure,1.0,
+HypothesisTesting`NormalCI,Legacy normal confidence interval from a mean and standard deviation,✅,pure,1.0,
+HypothesisTesting`ChiSquareCI,Legacy chi-square confidence interval for a variance from its estimate and degrees of freedom,✅,pure,1.0,
+HypothesisTesting`FRatioCI,Legacy F-ratio confidence interval for a variance ratio,✅,pure,1.0,
+HypothesisTesting`VarianceCI,Legacy confidence interval for the variance of data,✅,pure,1.0,
+HypothesisTesting`VarianceRatioCI,Legacy confidence interval for the ratio of two data variances,✅,pure,1.0,
+HypothesisTesting`NormalPValue,Legacy normal p-value as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
+HypothesisTesting`StudentTPValue,Legacy Student t p-value as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
+HypothesisTesting`ChiSquarePValue,Legacy chi-square p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
+HypothesisTesting`FRatioPValue,Legacy F-ratio p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,

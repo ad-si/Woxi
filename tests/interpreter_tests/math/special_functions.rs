@@ -12164,7 +12164,7 @@ mod weierstrass_lattice_functions {
   fn complex_arguments_and_invariants() {
     close(
       "WeierstrassZeta[0.5 + 0.3 I, {189.07272012923406, 2.0717571555122493*^-13}]",
-      1.570796326794897,
+      std::f64::consts::FRAC_PI_2,
       -1.4455597450768478,
     );
     close(
@@ -12205,6 +12205,109 @@ mod weierstrass_lattice_functions {
       .unwrap(),
       "{-3*WeierstrassP[3*x, {a, b}], WeierstrassSigma[x, {a, b}]*WeierstrassZeta[x, {a, b}], \
        WeierstrassPPrime[x, {a, b}], -1/2*a + 6*WeierstrassP[x, {a, b}]^2}"
+    );
+  }
+}
+
+mod polylog_lerch_complex_arguments {
+  use super::*;
+
+  fn close(expr: &str, re: f64, im: f64) {
+    let v = interpret(&format!("N[{{Re[#], Im[#]}} &[{expr}]]")).unwrap();
+    let parts: Vec<f64> = v
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|x| x.replace("*^", "e").parse().unwrap())
+      .collect();
+    let scale = re.hypot(im).max(1.0);
+    assert!(
+      (parts[0] - re).abs() < 1e-12 * scale
+        && (parts[1] - im).abs() < 1e-12 * scale,
+      "{expr}: {v}"
+    );
+  }
+
+  // Reference values from mpmath (wolframscript agrees to ~1e-14).
+  #[test]
+  fn values_on_and_inside_the_unit_circle() {
+    close(
+      "PolyLog[-1.854, E^(-0.3 I)]",
+      -12.402851626058885,
+      53.10485006880921,
+    );
+    close(
+      "PolyLog[1.5, E^(0.3 I)]",
+      1.2487962571120703,
+      0.934945270107861,
+    );
+    close(
+      "PolyLog[2.5, 0.5 + 0.3 I]",
+      0.523950175203273,
+      0.36898656713130795,
+    );
+    close("PolyLog[-0.5, -1.]", -0.380104812609684, 0.0);
+    close(
+      "LerchPhi[E^(-0.3 I), -1.854, 2]",
+      -41.177105554677366,
+      36.53062706027606,
+    );
+    close(
+      "LerchPhi[0.9 I, 2.5, 2]",
+      0.15687608480228643,
+      0.047915274495755965,
+    );
+    close("HurwitzLerchPhi[0.5, -1.854, 0]", 4.985616136507103, 0.0);
+  }
+
+  #[test]
+  fn hurwitz_lerch_zero_shift() {
+    assert_eq!(
+      interpret("HurwitzLerchPhi[0.5, 2.5, 0]").unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  #[test]
+  fn zeta_at_negative_reals() {
+    close("Zeta[-20.854]", -229.14097821944622, 0.0);
+    close("Zeta[-40.5] / 10^15", -5.530487585144642, 0.0);
+  }
+}
+
+mod erfc_machine_accuracy {
+  use super::*;
+
+  // Correctly rounded values (40-digit references).
+  #[test]
+  fn erfc_and_inverses_to_the_last_bit() {
+    assert_eq!(
+      interpret(
+        "ToString[{Erfc[1.], Erfc[2.5], Erfc[1.1630871536766743], \
+         InverseErf[0.9], InverseErfc[0.1], InverseErfc[1.9]}, InputForm]"
+      )
+      .unwrap(),
+      "{0.15729920705028513, 0.0004069520174449589, 0.09999999999999995, \
+       1.1630871536766743, 1.163087153676674, -1.1630871536766738}"
+    );
+  }
+
+  #[test]
+  fn normal_quantile_with_symbolic_parameters() {
+    assert_eq!(
+      interpret(
+        "ToString[{Quantile[NormalDistribution[m, s], 0.95], \
+         Quantile[NormalDistribution[m, s], 0.5]}, InputForm]"
+      )
+      .unwrap(),
+      "{m + 1.6448536269514724*s, 0. + m}"
+    );
+    assert_eq!(
+      interpret(
+        "{μ, σ} /. First[Solve[Quantile[NormalDistribution[μ, σ], 0.5] == 5 && \
+         Quantile[NormalDistribution[μ, σ], 0.95] == 5.004166666666666, {μ, σ}]]"
+      )
+      .unwrap(),
+      "{5., 0.002533153466298894}"
     );
   }
 }

@@ -7019,8 +7019,8 @@ mod polylog_real_below_unit_disk {
   #[test]
   fn fractional_order_is_real_and_continuous_at_minus_one() {
     // Li_s(-1) = -(1 - 2^(1-s)) Zeta[s]
-    approx("PolyLog[1.5, -1.]", -0.765146524662909);
-    approx("PolyLog[3/2, -2.]", -1.2813803831594726);
+    approx("PolyLog[1.5, -1.]", -0.7651470246254077);
+    approx("PolyLog[3/2, -2.]", -1.2813803831603274);
   }
 
   #[test]

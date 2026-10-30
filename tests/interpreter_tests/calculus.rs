@@ -24535,3 +24535,16 @@ mod ndsolve_pde_early_transient {
     );
   }
 }
+
+mod spline_extrapolation_is_silent {
+  #[test]
+  fn no_dmval_outside_the_data() {
+    let out = woxi::interpret_with_stdout(
+      "f = Interpolation[{{0.1, 0.07}, {0.3, 0.24}, {0.5, 0.5}, {0.7, 0.76}, \
+       {0.9, 0.93}}, Method -> \"Spline\"]; Round[{f[0.95], f[0.05]}, 10.^-12]",
+    )
+    .unwrap();
+    assert_eq!(out.result, "{0.947890625, 0.052109375}");
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+  }
+}

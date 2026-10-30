@@ -10069,3 +10069,24 @@ mod polytopes_package {
     );
   }
 }
+
+mod mesh_cells_by_location {
+  use super::*;
+
+  #[test]
+  fn voronoi_interior_and_boundary_cells() {
+    // Counts from wolframscript; the mesh's shared vertices are merged even
+    // where the cells computed them a few ulps apart.
+    assert_eq!(
+      interpret(
+        "pts = Flatten[Table[{i + If[OddQ[j], 0.5, 0], j Sqrt[3]/2.}, {i, 0, 4}, \
+         {j, 0, 4}], 1]; v = VoronoiMesh[pts]; \
+         Table[{Length[MeshPrimitives[v, {d, \"Interior\"}]], \
+         Length[MeshPrimitives[v, {d, \"Boundary\"}]], Length[MeshCells[v, d]]}, \
+         {d, 0, 2}]"
+      )
+      .unwrap(),
+      "{{35, 17, 52}, {46, 17, 76}, {12, 0, 25}}"
+    );
+  }
+}

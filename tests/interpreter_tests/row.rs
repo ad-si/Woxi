@@ -566,3 +566,21 @@ fn pane_item_of_row_in_grid_cell_shows_content() {
   assert!(!svg.contains("Pane"), "pane source leaked: {svg}");
   assert!(svg.contains("0.74463"), "readout missing: {svg}");
 }
+
+mod dynamic_release_in_frames {
+  use super::*;
+
+  // A Dynamic inside a Panel is shown (and evaluated) in document order,
+  // after its Initialization; a later Dynamic reads what it set.
+  #[test]
+  fn panel_dynamic_runs_before_later_dynamics() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Clear[a, b, sel]; Column[{Panel[Dynamic[a = {sel}, Initialization :> (sel = 7)]], \
+       Dynamic[First[a]]}]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.graphics.unwrap().contains(">7</text>"));
+  }
+}

@@ -1134,11 +1134,16 @@ pub fn quantile_distribution_closed_form(
       } else {
         (dargs[0].clone(), dargs[1].clone())
       };
-      if is_exact_q {
-        if q_num == 0.0 {
+      // Symbolic parameters keep the closed form even at a machine
+      // probability: Quantile[NormalDistribution[m, s], 0.95] is
+      // m + 1.6448536269514724 s (and the median 0. + m).
+      let symbolic_parameters =
+        try_eval_to_f64(&m).is_none() || try_eval_to_f64(&s).is_none();
+      if is_exact_q || symbolic_parameters {
+        if is_exact_q && q_num == 0.0 {
           return Some(neg_infinity());
         }
-        if q_num == 1.0 {
+        if is_exact_q && q_num == 1.0 {
           return Some(infinity());
         }
         // InverseErfc[1] = 0: the median is exactly m

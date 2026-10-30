@@ -2939,8 +2939,7 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > 0.0 && *f < 2.0 {
-        // InverseErfc[x] = InverseErf[1 - x]
-        Ok(Expr::Real(inverse_erf_f64(1.0 - *f)))
+        Ok(Expr::Real(inverse_erfc_f64(*f)))
       } else if *f == 0.0 {
         Ok(id_expr("Infinity"))
       } else if *f == 2.0 {

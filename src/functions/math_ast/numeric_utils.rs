@@ -213,7 +213,7 @@ pub fn erfc_cf(x: f64) -> f64 {
   let mut d = 0.0;
   let tiny = 1e-30;
 
-  for n in 1..200 {
+  for n in 1..5000 {
     let a_n = n as f64 * 0.5;
     let b_n = x;
     d = b_n + a_n * d;
@@ -227,18 +227,33 @@ pub fn erfc_cf(x: f64) -> f64 {
     d = 1.0 / d;
     let delta = c * d;
     f *= delta;
-    if (delta - 1.0).abs() < 1e-15 {
+    if (delta - 1.0).abs() <= f64::EPSILON / 4.0 {
       break;
     }
   }
 
-  (-x * x).exp() / (f * std::f64::consts::PI.sqrt())
+  exp_neg_square(x) / (f * std::f64::consts::PI.sqrt())
+}
+
+/// e^(-x²) without the rounding of x² itself: x is split into a 26-bit
+/// head h (whose square is exact) and the rest, and e^(-x²) is
+/// e^(-h²) e^(-(x - h)(x + h)).
+fn exp_neg_square(x: f64) -> f64 {
+  let h = f64::from_bits(x.to_bits() & !((1u64 << 26) - 1));
+  (-h * h).exp() * (-(x - h) * (x + h)).exp()
 }
 
 /// Complementary error function erfc(x) = 1 - erf(x), accurate for all x >= 0.
 /// For x >= 1 the continued fraction (erfc_cf) is used directly — there
 /// `1 - erf(x)` would lose precision to cancellation since erf(x) is near 1.
 pub fn erfc_f64(x: f64) -> f64 {
+  // Where 1 - erf(x) cancels and the continued fraction converges slowly,
+  // the value comes from the arbitrary-precision core.
+  if (0.25..27.0).contains(&x)
+    && let Some(v) = super::numerical::erfc_f64_accurate(x)
+  {
+    return v;
+  }
   if x >= 1.0 {
     erfc_cf(x)
   } else {
@@ -280,9 +295,15 @@ pub fn inverse_erf_f64(x: f64) -> f64 {
 
   // Newton-Raphson refinement: f(y) = erf(y) - x = 0
   // f'(y) = 2/sqrt(pi) * exp(-y^2)
+  // Past x = 1/2 the residual is taken as (1 - x) - erfc(y): 1 - x is exact
+  // there, and erfc(y) keeps its relative accuracy where erf(y) is near 1.
   let target = sign * x;
   for _ in 0..10 {
-    let err = erf_f64(result) - x;
+    let err = if x > 0.5 {
+      (1.0 - x) - erfc_f64(result)
+    } else {
+      erf_f64(result) - x
+    };
     let deriv = 2.0 / std::f64::consts::PI.sqrt() * (-result * result).exp();
     if deriv.abs() < 1e-300 {
       break;
@@ -295,6 +316,38 @@ pub fn inverse_erf_f64(x: f64) -> f64 {
   }
 
   if target < 0.0 { -result } else { result }
+}
+
+/// InverseErfc[x] for 0 < x < 2: the root of erfc(y) = x by Newton's
+/// method on erfc itself (accurate for small x), with x > 1 reflected as
+/// -InverseErfc[2 - x], as wolframscript does.
+pub fn inverse_erfc_f64(x: f64) -> f64 {
+  if x == 1.0 {
+    return 0.0;
+  }
+  if x > 1.0 {
+    return -inverse_erfc_f64(2.0 - x);
+  }
+  if x <= 0.0 {
+    return f64::INFINITY;
+  }
+  let mut y = inverse_erf_f64(1.0 - x);
+  if !y.is_finite() {
+    // erf(y) rounds to 1 here: start from the asymptotic sqrt(-log x).
+    y = (-x.ln()).sqrt();
+  }
+  for _ in 0..20 {
+    let deriv = -2.0 / std::f64::consts::PI.sqrt() * (-y * y).exp();
+    if deriv == 0.0 {
+      break;
+    }
+    let step = (erfc_f64(y) - x) / deriv;
+    y -= step;
+    if step.abs() <= 1e-17 * y.abs().max(1e-300) {
+      break;
+    }
+  }
+  y
 }
 
 /// Compute the imaginary error function erfi(x) using the Taylor series.

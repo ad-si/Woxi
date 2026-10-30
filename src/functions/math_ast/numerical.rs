@@ -6057,6 +6057,18 @@ fn bigfloat_erfc(
   }
 }
 
+/// Machine `Erfc[x]` for 0.25 ≤ x < 27, rounded from the arbitrary-precision
+/// value: worked out at 160 bits, since below x = 4 it is 1 - erf(x) and
+/// that subtraction cancels up to ~30 of them.
+pub(crate) fn erfc_f64_accurate(x: f64) -> Option<f64> {
+  use astro_float::{BigFloat, RoundingMode};
+  with_thread_consts(|cc| {
+    let z = BigFloat::from_f64(x, 160);
+    let r = bigfloat_erfc(&z, 160, RoundingMode::ToEven, cc);
+    bigfloat_to_f64_approx(&r)
+  })
+}
+
 /// Compute erfi(x) with arbitrary precision.
 /// erfi(x) = (2/sqrt(pi)) * sum_{n=0}^{inf} x^(2n+1) / (n! * (2n+1))
 /// Unlike erf, the terms do NOT alternate in sign.

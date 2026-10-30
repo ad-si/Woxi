@@ -42305,6 +42305,24 @@ mod rectangle_chart {
   use super::*;
 
   #[test]
+  fn frame_replaces_axes_and_numeric_bottom_ticks() {
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, Frame -> True], HoldPattern[Axes -> a_] :> a, Infinity]"
+      )
+      .unwrap(),
+      "{False}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCount[ExportString[RectangleChart[{{1, 2}, {1, 3}}, Frame -> {{True, None}, {True, None}}, ChartLabels -> {\"a\", \"b\"}, PlotRange -> {0, 4}], \"SVG\"], \"<text\"]"
+      )
+      .unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
   fn rectangles_stand_side_by_side() {
     assert_eq!(
       interpret(
@@ -43562,5 +43580,22 @@ mod named_color_rules {
        YellowGreen -> RGBColor[0.6039215686274509, 0.803921568627451, \
        0.19607843137254902], 193, AliceBlue -> RGBColor[0.941206, 0.972503, 1.]}"
     );
+  }
+}
+
+mod image_size_width_with_axes {
+  use super::*;
+
+  #[test]
+  fn explicit_plot_range_is_not_padded_by_axis_margins() {
+    // A width-only ImageSize keeps the data's shape in the drawing area that
+    // is left once the axes took their margins, so the ticks follow the
+    // requested PlotRange instead of a widened one.
+    let svg = export_svg(
+      "Graphics[{Rectangle[{0, 0}, {7, 1}]}, \
+       PlotRange -> {{0, 11.9}, {0, 1.89}}, ImageSize -> 250, Axes -> True]",
+    );
+    assert!(svg.contains(">10<"), "{svg}");
+    assert!(!svg.contains(">-5<") && !svg.contains(">15<"), "{svg}");
   }
 }

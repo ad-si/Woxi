@@ -5180,11 +5180,19 @@ fn button_plate_svg_sized(label: &str, w: f64, h: f64) -> String {
 
 /// The value a `Dynamic[x, …]` control is showing: `x` evaluated. Any other
 /// expression is its own value.
-fn dynamic_current_value(expr: &Expr) -> Expr {
+pub(crate) fn dynamic_current_value(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && !args.is_empty() =>
     {
+      // `Initialization -> init` runs before the content is first shown.
+      for opt in &args[1..] {
+        if let Some((key, value)) = option_kv(opt)
+          && key == "Initialization"
+        {
+          let _ = evaluate_expr_to_expr(value);
+        }
+      }
       evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone())
     }
     other => other.clone(),
@@ -11653,6 +11661,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // picture, so the height follows from the width left over after the
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
       Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
+      // A width alone keeps the data's shape, so the height follows from
+      // the width left over after the margins rather than losing the
+      // margins' height from a height fitted to the full width (which
+      // padded the plot range until the shapes agreed again).
+      None if !size_names_height && !aspect_ratio_full => {
+        (w, (w * svg_h / svg_w).round().max(1.0))
+      }
       _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
     }
   } else {

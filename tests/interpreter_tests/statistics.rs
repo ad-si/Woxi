@@ -11949,3 +11949,58 @@ mod smooth_kernel_distribution {
     );
   }
 }
+
+mod hypothesis_testing_intervals_and_p_values {
+  use super::*;
+
+  // Reference values from wolframscript, rounded past the last-digit noise.
+  #[test]
+  fn confidence_intervals() {
+    // Loaded in its own input: names are resolved when an input is read.
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "a = {-0.22, -0.35, 0.87, 0.48, -0.36}; \
+         b = {0.80, -0.41, 1.02, 0.89, 0.63}; Round[{ChiSquareCI[0.5, 4], \
+         FRatioCI[1.2, 4, 5], StudentTCI[0.1, 0.3, 4], NormalCI[0.1, 0.3], \
+         VarianceCI[a, ConfidenceLevel -> 0.9], VarianceRatioCI[a, b], \
+         MeanDifferenceCI[a, b], MeanDifferenceCI[a, b, EqualVariances -> True], \
+         MeanDifferenceCI[a, b, KnownVariance -> {1, 1}]}, 10^-9]"
+      )
+      .unwrap(),
+      interpret(
+        "Round[{{0.1794802592043649, 4.128660991071336}, \
+         {0.16242806675699892, 11.237364978969941}, \
+         {-0.7329335315593382, 0.9329335315593381}, \
+         {-0.4879891953620161, 0.6879891953620161}, \
+         {0.13201473135924793, 1.7623180371130671}, \
+         {0.09875601884999356, 9.109945908591378}, \
+         {-1.3292202421959058, 0.32522024219590573}, \
+         {-1.3291196771137446, 0.32511967711374423}, \
+         {-1.7415900646091234, 0.737590064609123}}, 10^-9]"
+      )
+      .unwrap()
+    );
+  }
+
+  #[test]
+  fn p_values() {
+    interpret("Needs[\"HypothesisTesting`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "Round[{OneSidedPValue /. NormalPValue[-1.2], \
+         OneSidedPValue /. StudentTPValue[1.2, 4], \
+         OneSidedPValue /. ChiSquarePValue[3.1, 4], \
+         OneSidedPValue /. ChiSquarePValue[10.1, 4], \
+         OneSidedPValue /. FRatioPValue[1.7, 4, 5], \
+         TwoSidedPValue /. StudentTPValue[1.2, 4, TwoSided -> True]}, 10^-12]"
+      )
+      .unwrap(),
+      interpret(
+        "Round[{0.11506967022170829, 0.14817569665617672, 0.45876766674180525, \
+         0.038776467349851115, 0.2852531658123313, 0.29635139331235344}, 10^-12]"
+      )
+      .unwrap()
+    );
+  }
+}
