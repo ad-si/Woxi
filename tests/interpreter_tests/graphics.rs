@@ -43284,3 +43284,24 @@ mod plot_range_spec_evaluated {
     );
   }
 }
+
+mod word_cloud_text {
+  use super::*;
+
+  // A string is text: its words, stopwords deleted, make the cloud; a
+  // non-list expression is a single item.
+  #[test]
+  fn text_and_single_item() {
+    assert_eq!(
+      interpret(
+        "{Head[WordCloud[\"the cat and the hat sat on the mat with the cat\"]], \
+         Head[WordCloud[foo[1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    let svg = export_svg("WordCloud[\"the cat and the hat sat on the cat\"]");
+    assert!(svg.contains(">cat<"), "{svg}");
+    assert!(!svg.contains(">the<"), "{svg}");
+  }
+}
