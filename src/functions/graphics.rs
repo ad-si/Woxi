@@ -2551,6 +2551,18 @@ fn collect_primitives(
                 None => parse_text(args, style, prims),
               }
             }
+            // `Text[Grid[…]]` is a table set at the anchor — with its
+            // merged cells, dividers and backgrounds — not its flattened
+            // cell text.
+            Expr::FunctionCall { name, args: gargs }
+              if name == "Grid"
+                && matches!(gargs.first(), Some(Expr::List(_))) =>
+            {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
             _ => parse_text(args, style, prims),
           }
         }
@@ -5655,9 +5667,10 @@ fn inset_primitives(
     // A boxed or laid-out display holding a picture — the framed legend of
     // swatches a Demonstration insets into its plot — is composed to its own
     // picture and embedded whole, rather than printed as source text.
-    call @ Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
-        && crate::evaluator::lays_out_a_graphic(call) =>
+    call @ Expr::FunctionCall { name, args: call_args }
+      if (matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
+        && crate::evaluator::lays_out_a_graphic(call))
+        || (name == "Grid" && matches!(call_args.first(), Some(Expr::List(_)))) =>
     {
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)

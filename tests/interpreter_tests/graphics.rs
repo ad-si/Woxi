@@ -2791,6 +2791,23 @@ mod graphics {
     }
 
     #[test]
+    fn text_grid_with_merged_cells_is_a_table() {
+      // Regression: `Text[Grid[{{"", SpanFromLeft, …}, …}, Dividers -> All],
+      // pos]` in a `Graphics` printed the flattened cell text, including the
+      // literal `SpanFromLeft`/`SpanFromAbove` placeholders, with no dividers
+      // or backgrounds.
+      let svg = export_svg(
+        "Graphics[Text[Grid[{{\"\", SpanFromLeft, \"top\", SpanFromLeft}, \
+         {\"side\", \"a\", \"b\", \"c\"}, {SpanFromAbove, \"d\", \"e\", \"f\"}}, \
+         Dividers -> All, Background -> {None, None, {{2, 2} -> Red}}], {0, 0}]]",
+      );
+      assert!(!svg.contains("SpanFrom"), "{svg}");
+      assert!(svg.contains("<line"), "{svg}");
+      assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+      assert!(svg.contains(">top<") && svg.contains(">side<"), "{svg}");
+    }
+
+    #[test]
     fn number_form_of_nested_list_is_typeset() {
       // Regression: `NumberForm[matrix, {3, 2}]` (a Manipulate readout of a
       // 2x2 matrix) printed the raw `NumberForm[{{…}}, {3, 2}]` call because
