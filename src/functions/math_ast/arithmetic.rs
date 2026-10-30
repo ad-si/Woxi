@@ -14075,7 +14075,26 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // A machine-real base with an exact Integer exponent must use
     // wolframscript's multiplication chains rather than libm pow — the
     // two round differently in the last ULP.
-    let result = if let (true, Expr::Integer(e)) = (has_real, exp) {
+    // A machine real to an exact half-integer power: see
+    // `machine_half_power`.
+    let half_power = match exp {
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && has_real && a > 0.0 =>
+      {
+        match args.as_slice() {
+          [Expr::Integer(p), Expr::Integer(2)] => Some(
+            crate::functions::math_ast::numeric_utils::machine_half_power(
+              a, *p,
+            ),
+          ),
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    let result = if let Some(v) = half_power {
+      v
+    } else if let (true, Expr::Integer(e)) = (has_real, exp) {
       wolfram_powi(a, *e)
     } else {
       a.powf(b)
@@ -14084,7 +14103,19 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // Negative base with fractional exponent: use complex arithmetic
       // (-x)^r = x^r * e^(i*pi*r) = x^r * (cos(pi*r) + i*sin(pi*r))
       let pos_base = a.abs();
-      let magnitude = pos_base.powf(b);
+      let magnitude = match exp {
+        Expr::FunctionCall { name, args } if name == "Rational" => {
+          match args.as_slice() {
+            [Expr::Integer(p), Expr::Integer(2)] => {
+              crate::functions::math_ast::numeric_utils::machine_half_power(
+                pos_base, *p,
+              )
+            }
+            _ => pos_base.powf(b),
+          }
+        }
+        _ => pos_base.powf(b),
+      };
       let angle = std::f64::consts::PI * b;
       let re = magnitude * angle.cos();
       let im = magnitude * angle.sin();

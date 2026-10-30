@@ -3200,7 +3200,7 @@ pub fn dispatch_io_functions(
     //
     // Returns a List of Integers in 0..255. Returns {} on EOF.
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryReadList" if (1..=2).contains(&args.len()) => {
+    "BinaryReadList" if (1..=3).contains(&args.len()) => {
       let path = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => match io_stream_path(&args[0]) {
@@ -3210,19 +3210,26 @@ pub fn dispatch_io_functions(
           }
         },
       };
-      let form = if args.len() == 2 {
+      let form = if args.len() >= 2 {
         args[1].clone()
       } else {
         str_expr("Byte")
       };
-      // Only "Byte" is supported; other forms fall through unevaluated so
-      // callers see the same behaviour as for BinaryRead.
-      match &form {
-        Expr::String(s) if s == "Byte" => {}
+      // "Byte" and "Character8" are supported; other forms fall through
+      // unevaluated so callers see the same behaviour as for BinaryRead.
+      let as_chars = match &form {
+        Expr::String(s) if s == "Byte" => false,
+        Expr::String(s) if s == "Character8" => true,
         _ => {
           return Some(Ok(unevaluated("BinaryReadList", args)));
         }
-      }
+      };
+      // BinaryReadList[src, type, n] reads at most n objects.
+      let limit = match args.get(2) {
+        None => usize::MAX,
+        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+        Some(_) => return Some(Ok(unevaluated("BinaryReadList", args))),
+      };
       let bytes = match io_binary_bytes(&args[0], &path) {
         Ok(b) => b,
         Err(e) => {
@@ -3233,7 +3240,15 @@ pub fn dispatch_io_functions(
       };
       let out: Vec<Expr> = bytes
         .into_iter()
-        .map(|b| Expr::Integer(b as i128))
+        .take(limit)
+        .map(|b| {
+          if as_chars {
+            // Character8 is a raw byte as a 1-char (Latin-1) string.
+            Expr::String((b as char).to_string())
+          } else {
+            Expr::Integer(b as i128)
+          }
+        })
         .collect();
       return Some(Ok(Expr::List(out.into())));
     }

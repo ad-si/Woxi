@@ -9356,6 +9356,11 @@ fn parse_one_series_style(expr: &Expr) -> SeriesStyle {
 fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   // Try as a color first
   if let Some(c) = parse_color(expr) {
+    // A translucent colour (`Transparent`, `RGBColor[r, g, b, a]`) fades the
+    // curve by its alpha.
+    if c.a < 1.0 {
+      style.opacity = Some(c.a);
+    }
     style.color = Some(c);
     return;
   }

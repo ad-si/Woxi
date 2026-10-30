@@ -5158,6 +5158,25 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract list of strings from first argument
   let data = evaluate_expr_to_expr(&args[0])?;
+  // A string is the text its words come from, stopwords deleted; any other
+  // non-list is a single item.
+  let data = match &data {
+    Expr::String(_) => {
+      let kept = crate::evaluator::evaluate_function_call_ast(
+        "DeleteStopwords",
+        std::slice::from_ref(&data),
+      )?;
+      crate::evaluator::evaluate_function_call_ast(
+        "ToLowerCase",
+        &[crate::evaluator::evaluate_function_call_ast(
+          "TextWords",
+          &[kept],
+        )?],
+      )?
+    }
+    Expr::List(_) => data,
+    other => Expr::List(vec![other.clone()].into()),
+  };
   let Expr::List(items) = &data else {
     return Err(InterpreterError::EvaluationError(
       "WordCloud: first argument must be a list".into(),

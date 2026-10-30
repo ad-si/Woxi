@@ -253,6 +253,51 @@ pub fn dispatch_plotting(
     expanded[1] = Expr::List(vec![items[0].clone(), low, half].into());
     return dispatch_plotting(name, &expanded);
   }
+  // A range spec held by the plot (all of them are HoldAll) that is not
+  // written as a list is evaluated to the one it names:
+  // `Plot[f, range /. settings]` with `range` a stored `{x, 0, 2}`.
+  if matches!(
+    name,
+    "Plot"
+      | "LogPlot"
+      | "LogLinearPlot"
+      | "LogLogPlot"
+      | "ParametricPlot"
+      | "PolarPlot"
+      | "Plot3D"
+      | "ContourPlot"
+      | "DensityPlot"
+      | "ParametricPlot3D"
+      | "RegionPlot"
+  ) && args.len() >= 2
+  {
+    let is_option =
+      |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+    // Only options after the function: no range at all.
+    if is_option(&args[1]) && name == "Plot" {
+      crate::emit_message(&format!(
+        "{name}::argr: {name} called with 1 argument; 2 arguments are expected."
+      ));
+      return Some(Ok(call(name, args.to_vec())));
+    }
+    let mut expanded = args.to_vec();
+    let mut changed = false;
+    for spec in expanded.iter_mut().skip(1) {
+      if is_option(spec) {
+        break;
+      }
+      if !matches!(spec, Expr::List(_))
+        && let Ok(value @ Expr::List(_)) =
+          crate::evaluator::evaluate_expr_to_expr(spec)
+      {
+        *spec = value;
+        changed = true;
+      }
+    }
+    if changed {
+      return dispatch_plotting(name, &expanded);
+    }
+  }
   // A complex plot's two corners must differ in both their real and their
   // imaginary part, or they span no rectangle.
   if matches!(name, "ComplexPlot" | "ComplexPlot3D")

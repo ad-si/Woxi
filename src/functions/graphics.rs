@@ -2417,7 +2417,10 @@ fn collect_primitives(
       }) && !matches!(
         name.as_str(),
         "Dynamic" | "Style" | "EventHandler"
-      ) =>
+      )
+        // A user function handed `Dynamic[…]` arguments matches on them as
+        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
+        && crate::evaluator::functions::is_builtin_symbol(name) =>
     {
       let released: Vec<Expr> = args
         .iter()
@@ -2546,6 +2549,17 @@ fn collect_primitives(
           // object's `-Graphics-`/`-Image-` short form as literal text.
           match peel_style_wrapper(&args[0]) {
             Expr::Graphics { .. } | Expr::Image { .. } => {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
+            // `Text[Grid[…]]` is a table set at the anchor — with its
+            // merged cells, dividers and backgrounds — not its flattened
+            // cell text.
+            Expr::FunctionCall { name, args: gargs }
+              if name == "Grid" && grid_needs_table_layout(gargs) =>
+            {
               match inset_primitives(args, errors) {
                 Some(inner) => prims.extend(inner),
                 None => parse_text(args, style, prims),
@@ -5457,6 +5471,25 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
   None
 }
 
+/// A `Grid` whose look cannot be had from flattened cell text — merged
+/// cells (`SpanFromLeft`/`SpanFromAbove`) or `Dividers`/`Background`/`Frame`
+/// options — so it is laid out as a table rather than set as text lines.
+fn grid_needs_table_layout(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  let has_span = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(is_span_marker),
+    _ => false,
+  });
+  let has_chrome = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n)
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+  });
+  has_span || has_chrome
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -5655,9 +5688,12 @@ fn inset_primitives(
     // A boxed or laid-out display holding a picture — the framed legend of
     // swatches a Demonstration insets into its plot — is composed to its own
     // picture and embedded whole, rather than printed as source text.
-    call @ Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
-        && crate::evaluator::lays_out_a_graphic(call) =>
+    call @ Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if (matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
+      && crate::evaluator::lays_out_a_graphic(call))
+      || (name == "Grid" && grid_needs_table_layout(call_args)) =>
     {
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
@@ -26145,14 +26181,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // action rather than binding a variable, so it is not a variable spec
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
-      Expr::FunctionCall { name, args: inner }
-        if (name == "Pane" || name == "Labeled")
-          && inner.first().is_some_and(|c| {
-            expr_contains_call(c, &["Control"]) || annotation_contains_place(c)
-          }) =>
-      {
-        out_args.push(spec.clone());
-      }
+      // The full set wolframscript accepts, whatever they wrap (probed
+      // head by head: `Manipulate[x, h[1], {x, 0, 1}]`); a bare control
+      // such as `Slider[Dynamic[x]]` or an unknown head is a vsform.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -26171,6 +26202,22 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "OpenerView"
             | "Tooltip"
             | "ExpressionCell"
+            | "Labeled"
+            | "Pane"
+            | "Framed"
+            | "Mouseover"
+            | "Deploy"
+            | "Annotation"
+            | "Hyperlink"
+            | "Magnify"
+            | "Rotate"
+            | "Invisible"
+            | "Multicolumn"
+            | "FlipView"
+            | "SlideView"
+            | "MenuView"
+            | "StatusArea"
+            | "PopupView"
         ) =>
       {
         out_args.push(spec.clone());
