@@ -25407,3 +25407,27 @@ mod numeric_array_list_operations {
     );
   }
 }
+
+mod random_prime_big_bounds {
+  use super::*;
+
+  #[test]
+  fn bounds_past_machine_integers() {
+    assert_eq!(
+      interpret(
+        "r = RandomPrime[{10^49, 10^50}, 2]; \
+         {Length[r], And @@ PrimeQ[r], And @@ (10^49 <= # <= 10^50 & /@ r)}"
+      )
+      .unwrap(),
+      "{2, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "p = RandomPrime[10^45]; \
+         {PrimeQ[p], p < 10^45, Dimensions[RandomPrime[{10^40, 10^41}, {2, 3}]]}"
+      )
+      .unwrap(),
+      "{True, True, {2, 3}}"
+    );
+  }
+}
