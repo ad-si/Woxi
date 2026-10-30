@@ -1741,7 +1741,7 @@ BarnesG,Barnes G-function (double gamma function),✅,pure,7.0,1727
 URL,URL wrapper (stays symbolic),✅,unevaluated,11.0,1727
 Between,Tests if a value is between bounds,✅,pure,10.3,1728
 Deployed,Deployed option,,unevaluated,6.0,1730
-FindGeometricTransform,Find geometric transformation,,unevaluated,8.0,1730
+FindGeometricTransform,Best translation or rigid or similarity or affine or perspective map of one point set onto another with its mean residual,✅,pure,8.0,1730
 DirichletDistribution,Dirichlet distribution over the probability simplex (Mean/Variance/Covariance/StandardDeviation/PDF),✅,pure,8.0,1733
 StringDelete,Deletes all occurrences of a substring or string pattern; supports the one-argument operator form,✅,pure,10.1,1733
 RiemannSiegelTheta,Riemann-Siegel theta function on the critical line for real numeric arguments,✅,pure,2.0,1734

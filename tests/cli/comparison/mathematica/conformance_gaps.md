@@ -6368,3 +6368,11 @@ fallback. Woxi does not record whether a symbol's value came from `=` or
 - `Root::invrt` is reported when the refined root is more than 10^-6
   (relative) away from `x0`; wolframscript's exact threshold is somewhere
   between 1.6*10^-7 and 4.8*10^-6 for the cases probed.
+
+## FindGeometricTransform: last digits and noisy perspective fits
+
+The transforms agree with wolframscript to about 1e-9, but not in the last
+digits (wolframscript's exact-fit error is `2.29*^-15` where Woxi's is a
+different tiny number). With more than four noisy plane points the
+default (perspective) fit is Woxi's linear least-squares homography, which
+need not be the minimizer wolframscript reports.
