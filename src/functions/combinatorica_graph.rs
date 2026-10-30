@@ -16,6 +16,8 @@ const GRAPH: &str = "Combinatorica`Graph";
 struct CGraph {
   n: usize,
   edges: Vec<(usize, usize)>,
+  /// `EdgeDirection -> True`: each edge runs from its first vertex only.
+  directed: bool,
 }
 
 impl CGraph {
@@ -49,7 +51,9 @@ impl CGraph {
         }
       })
       .collect::<Option<Vec<_>>>()?;
-    Some(CGraph { n, edges })
+    let directed = option(&args[2..], "EdgeDirection")
+      .is_some_and(|d| matches!(d, Expr::Identifier(t) if t == "True"));
+    Some(CGraph { n, edges, directed })
   }
 
   /// Sorted, duplicate-free neighbour lists.
@@ -57,7 +61,7 @@ impl CGraph {
     let mut adj = vec![Vec::new(); self.n];
     for &(u, v) in &self.edges {
       adj[u].push(v);
-      if u != v {
+      if u != v && !self.directed {
         adj[v].push(u);
       }
     }
@@ -286,12 +290,41 @@ fn from_unordered_pairs(args: &[Expr]) -> Option<Expr> {
   edges.sort_unstable();
   edges.dedup();
   let n = edges.iter().map(|&(_, b)| b).max().unwrap_or(0);
-  Some(circular_graph(n, edges))
+  Some(circular_graph(n, edges, false))
 }
 
-/// The Combinatorica graph on vertices `1..n`, drawn on a circle, with the
-/// given (1-based, ordered) edges.
-fn circular_graph(n: i128, edges: Vec<(i128, i128)>) -> Expr {
+/// `FromOrderedPairs[pairs]`: the directed graph with one edge per pair, in
+/// the order given, on the vertices up to the largest one named.
+fn from_ordered_pairs(args: &[Expr]) -> Option<Expr> {
+  let [Expr::List(pairs)] = args else {
+    return None;
+  };
+  let mut edges: Vec<(i128, i128)> = Vec::new();
+  for pair in pairs {
+    let Expr::List(p) = pair else { return None };
+    match p.as_slice() {
+      [Expr::Integer(a), Expr::Integer(b)] if *a >= 1 && *b >= 1 => {
+        edges.push((*a, *b));
+      }
+      _ => return None,
+    }
+  }
+  let n = edges.iter().map(|&(a, b)| a.max(b)).max().unwrap_or(0);
+  Some(circular_graph(n, edges, true))
+}
+
+/// The Combinatorica graph on vertices `1..n`, drawn on a circle with
+/// vertex `k` at angle `2 Pi k/n` (Combinatorica's `CircularEmbedding`,
+/// coordinates chopped so `Cos[2 Pi]`'s sine is an exact 0), with the given
+/// (1-based, ordered) edges.
+fn circular_graph(n: i128, edges: Vec<(i128, i128)>, directed: bool) -> Expr {
+  let chop = |x: f64| {
+    if x.abs() < 1e-10 {
+      Expr::Integer(0)
+    } else {
+      Expr::Real(x)
+    }
+  };
   let edge_list = edges
     .into_iter()
     .map(|(a, b)| {
@@ -301,21 +334,106 @@ fn circular_graph(n: i128, edges: Vec<(i128, i128)>) -> Expr {
       )
     })
     .collect::<Vec<_>>();
-  let vertex_list = (0..n)
+  let vertex_list = (1..=n)
     .map(|k| {
       let t = 2.0 * std::f64::consts::PI * k as f64 / n as f64;
       Expr::List(
-        vec![Expr::List(
-          vec![Expr::Real(t.cos()), Expr::Real(t.sin())].into(),
-        )]
-        .into(),
+        vec![Expr::List(vec![chop(t.cos()), chop(t.sin())].into())].into(),
       )
     })
     .collect::<Vec<_>>();
-  crate::helpers::call(
-    GRAPH,
-    vec![Expr::List(edge_list.into()), Expr::List(vertex_list.into())],
-  )
+  let mut parts =
+    vec![Expr::List(edge_list.into()), Expr::List(vertex_list.into())];
+  if directed {
+    parts.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("EdgeDirection".to_string())),
+      replacement: Box::new(Expr::Identifier("True".to_string())),
+    });
+  }
+  crate::helpers::call(GRAPH, parts)
+}
+
+/// `SetGraphOptions[g, {v1, v2, …, opts}]` sets options on those vertices,
+/// `SetGraphOptions[g, {{{u, v}, …}, opts}]`-style edge lists on those
+/// edges, and bare rules `SetGraphOptions[g, opts]` on the graph itself.
+/// A new option replaces one of the same name.
+fn set_graph_options(args: &[Expr]) -> Option<Expr> {
+  let (graph, specs) = args.split_first()?;
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  if name != GRAPH || gargs.len() < 2 {
+    return None;
+  }
+  let is_rule = |e: &Expr| {
+    crate::evaluator::dispatch::list_operations::as_rule(e).is_some()
+  };
+  let rule_name = |e: &Expr| {
+    crate::evaluator::dispatch::list_operations::as_rule(e)
+      .map(|(k, _)| crate::syntax::expr_to_string(k))
+  };
+  // `items` with `opts` merged in, replacing same-named options.
+  let merge = |items: &[Expr], opts: &[Expr]| -> Vec<Expr> {
+    let mut out: Vec<Expr> = items
+      .iter()
+      .filter(|i| {
+        !opts
+          .iter()
+          .any(|o| rule_name(o).is_some() && rule_name(o) == rule_name(i))
+      })
+      .cloned()
+      .collect();
+    out.extend(opts.iter().cloned());
+    out
+  };
+  let (Expr::List(edges), Expr::List(vertices)) = (&gargs[0], &gargs[1]) else {
+    return None;
+  };
+  let mut edges = edges.to_vec();
+  let mut vertices = vertices.to_vec();
+  let mut graph_opts = gargs[2..].to_vec();
+  for spec in specs {
+    match spec {
+      Expr::List(items) => {
+        let split = items.iter().position(is_rule).unwrap_or(items.len());
+        let (targets, opts) = items.split_at(split);
+        for t in targets {
+          match t {
+            Expr::Integer(k) if *k >= 1 && (*k as usize) <= vertices.len() => {
+              let Expr::List(parts) = &vertices[*k as usize - 1] else {
+                return None;
+              };
+              let (head, rest) = parts.split_first()?;
+              let mut v = vec![head.clone()];
+              v.extend(merge(rest, opts));
+              vertices[*k as usize - 1] = Expr::List(v.into());
+            }
+            Expr::List(pair) if pair.len() == 2 => {
+              for e in &mut edges {
+                let Expr::List(parts) = &*e else { return None };
+                let (head, rest) = parts.split_first()?;
+                if crate::syntax::expr_to_string(head)
+                  == crate::syntax::expr_to_string(t)
+                {
+                  let mut v = vec![head.clone()];
+                  v.extend(merge(rest, opts));
+                  *e = Expr::List(v.into());
+                }
+              }
+            }
+            _ => return None,
+          }
+        }
+      }
+      rule if is_rule(rule) => {
+        graph_opts = merge(&graph_opts, std::slice::from_ref(rule));
+      }
+      _ => return None,
+    }
+  }
+  let mut parts = vec![Expr::List(edges.into()), Expr::List(vertices.into())];
+  parts.extend(graph_opts);
+  Some(crate::helpers::call(GRAPH, parts))
 }
 
 /// `RandomGraph[n, p]`: each of the `n (n - 1)/2` vertex pairs is an edge
@@ -339,7 +457,7 @@ fn random_graph(args: &[Expr]) -> Option<Expr> {
       }
     }
   });
-  Some(circular_graph(*n, edges))
+  Some(circular_graph(*n, edges, false))
 }
 
 /// Dispatches the `Combinatorica\`` graph functions. `None` leaves the call
@@ -357,6 +475,12 @@ pub fn combinatorica_graph_ast(
 fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   if name == "Combinatorica`FromUnorderedPairs" {
     return from_unordered_pairs(args);
+  }
+  if name == "Combinatorica`FromOrderedPairs" {
+    return from_ordered_pairs(args);
+  }
+  if name == "Combinatorica`SetGraphOptions" {
+    return set_graph_options(args);
   }
   if name == "Combinatorica`RandomGraph" {
     return random_graph(args);
@@ -404,7 +528,7 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
       let mut m = vec![vec![0i128; g.n]; g.n];
       for &(a, b) in &g.edges {
         m[a][b] += 1;
-        if a != b {
+        if a != b && !g.directed {
           m[b][a] += 1;
         }
       }
@@ -547,7 +671,32 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
   let (Expr::List(edges), Expr::List(vertices)) = (&gargs[0], &gargs[1]) else {
     return None;
   };
-  let gopts = &gargs[2..];
+  // The graph's own options, overridden by the call's Combinatorica ones;
+  // the call's other options (ImageSize, …) go on to Graphics.
+  const OWN: [&str; 9] = [
+    "EdgeStyle",
+    "VertexStyle",
+    "VertexNumber",
+    "VertexNumberPosition",
+    "VertexNumberColor",
+    "VertexColor",
+    "EdgeColor",
+    "EdgeDirection",
+    "VertexLabel",
+  ];
+  let own = |o: &Expr| {
+    crate::evaluator::dispatch::list_operations::as_rule(o)
+      .is_some_and(|(k, _)| OWN.iter().any(|n| symbol_is(k, n)))
+  };
+  let mut gopts: Vec<Expr> = extra.iter().filter(|o| own(o)).cloned().collect();
+  gopts.extend(gargs[2..].iter().cloned());
+  let gopts = &gopts[..];
+  let extra: Vec<Expr> = extra.iter().filter(|o| !own(o)).cloned().collect();
+  let labeled = labeled
+    || option(gopts, "VertexNumber")
+      .is_some_and(|v| matches!(v, Expr::Identifier(t) if t == "True"));
+  let directed = option(gopts, "EdgeDirection")
+    .is_some_and(|d| matches!(d, Expr::Identifier(t) if t == "True"));
   let coords = vertices
     .iter()
     .map(|v| {
@@ -570,10 +719,12 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
   let pad = 0.1 * span;
 
   let mut prims: Vec<Expr> = Vec::new();
-  let thin = option(gopts, "EdgeStyle")
-    .is_some_and(|s| matches!(s, Expr::Identifier(n) if n == "Thin"));
-  if thin {
-    prims.push(Expr::Identifier("Thin".to_string()));
+  // An edge style that is a graphics directive (Thin, Arrowheads[…], a
+  // colour) applies to every edge.
+  if let Some(style) = option(gopts, "EdgeStyle")
+    && !matches!(style, Expr::Identifier(n) if n == "Normal")
+  {
+    prims.push(style.clone());
   }
   for edge in edges {
     let Expr::List(parts) = edge else { return None };
@@ -588,7 +739,7 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
       coords.get((*v as usize).checked_sub(1)?)?,
     );
     let line = crate::helpers::call(
-      "Line",
+      if directed { "Arrow" } else { "Line" },
       vec![Expr::List(vec![pt(ux, uy), pt(vx, vy)].into())],
     );
     match option(&parts[1..], "EdgeColor") {
@@ -606,9 +757,12 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
     }
     _ => 0.03 * span,
   };
+  let centered = option(gopts, "VertexNumberPosition")
+    .is_some_and(|p| matches!(p, Expr::Identifier(c) if c == "Center"));
   let (dx, dy) = option(gopts, "VertexNumberPosition")
     .and_then(real_pair)
     .unwrap_or((0.0, 0.0));
+  let label_color = option(gopts, "VertexNumberColor").cloned();
   for (i, (v, &(x, y))) in vertices.iter().zip(&coords).enumerate() {
     let Expr::List(parts) = v else { return None };
     let disk = crate::helpers::call("Disk", vec![pt(x, y), Expr::Real(radius)]);
@@ -617,13 +771,18 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
       None => prims.push(disk),
     }
     if labeled {
-      prims.push(crate::helpers::call(
+      let lift = if centered { 0.0 } else { 2.0 * radius };
+      let text = crate::helpers::call(
         "Text",
         vec![
           Expr::Integer(i as i128 + 1),
-          pt(x + dx * span, y + dy * span + 2.0 * radius),
+          pt(x + dx * span, y + dy * span + lift),
         ],
-      ));
+      );
+      match &label_color {
+        Some(c) => prims.push(Expr::List(vec![c.clone(), text].into())),
+        None => prims.push(text),
+      }
     }
   }
 

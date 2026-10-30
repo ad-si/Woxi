@@ -1147,10 +1147,20 @@ pub fn prime_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///     rationals — is composite (e.g. `CompositeQ[6.5]`, `CompositeQ[1/2]`,
 ///     and even `CompositeQ[1.0]` are all True).
 pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "CompositeQ expects exactly 1 argument".into(),
+      "CompositeQ expects 1 or 2 arguments".into(),
     ));
+  }
+  // CompositeQ[n, GaussianIntegers -> g]: the option selects the primality
+  // test, exactly as in PrimeQ.
+  if args.len() == 2
+    && !matches!(
+      crate::functions::expr_form::rule_parts(&args[1]),
+      Some((Expr::Identifier(n), _, _)) if n == "GaussianIntegers"
+    )
+  {
+    return Ok(unevaluated("CompositeQ", args));
   }
 
   // Primes (including Gaussian primes) are never composite.
@@ -1158,7 +1168,7 @@ pub fn composite_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(false));
   }
   // Only explicit numbers can be composite.
-  if !matches!(&number_q_ast(args)?, Expr::Identifier(s) if s == "True") {
+  if !matches!(&number_q_ast(&args[..1])?, Expr::Identifier(s) if s == "True") {
     return Ok(bool_expr(false));
   }
   // Exact real integers: composite iff |n| > 1 (excludes 0 and ±1).
@@ -2016,9 +2026,15 @@ pub fn is_complex_number(expr: &Expr) -> bool {
   // actually contains a Real / BigFloat literal — symbolic constants like
   // Pi or E should keep Times[Pi, I] as a Times expression, not coerce to
   // a float complex.
+  // A machine imaginary part that is zero still makes a complex number
+  // when the `I` is written out: `1. + 0.*I` is Complex[1., 0.].
+  fn mentions_i(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(n) if n == "I")
+      || crate::syntax::expr_children(e).into_iter().any(mentions_i)
+  }
   if contains_real_literal(expr)
     && let Some((_, im)) = super::math_ast::try_extract_complex_float(expr)
-    && im != 0.0
+    && (im != 0.0 || mentions_i(expr))
   {
     return true;
   }
@@ -2317,13 +2333,26 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Depth[expr] - Returns the depth of an expression
 pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
-      "Depth expects exactly 1 argument".into(),
+      "Depth expects 1 or 2 arguments".into(),
     ));
   }
+  // Depth[expr, Heads -> True] also counts the depth of compound heads.
+  let heads = match args.get(1) {
+    None => false,
+    Some(opt) => match crate::functions::expr_form::rule_parts(opt) {
+      Some((Expr::Identifier(lhs), rhs, _)) if lhs == "Heads" => match rhs {
+        Expr::Identifier(s) if s == "True" => true,
+        Expr::Identifier(s) if s == "False" => false,
+        _ => return Ok(unevaluated("Depth", args)),
+      },
+      _ => return Ok(unevaluated("Depth", args)),
+    },
+  };
 
-  fn calc_depth(expr: &Expr) -> i128 {
+  fn calc_depth(expr: &Expr, heads: bool) -> i128 {
+    let calc_depth = |e: &Expr| calc_depth(e, heads);
     // Rational and Complex numbers are atoms with depth 1.
     if is_complex_number(expr)
       || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
@@ -2364,13 +2393,30 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(items) => {
         1 + items.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
       }
+      // A name such as "f[a]" stands for a compound head.
+      Expr::FunctionCall { name, args } if heads && name.contains('[') => {
+        let head_depth = crate::syntax::string_to_expr(name)
+          .map_or(NO_PARTS, |h| calc_depth(&h));
+        1 + args
+          .iter()
+          .map(calc_depth)
+          .max()
+          .unwrap_or(NO_PARTS)
+          .max(head_depth)
+      }
       Expr::FunctionCall { args, .. } => {
         1 + args.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
       }
       // Depth counts positive-index parts only; the head (part 0) is
       // ignored, so only the arguments contribute.
-      Expr::CurriedCall { args, .. } => {
-        1 + args.iter().map(calc_depth).max().unwrap_or(NO_PARTS)
+      Expr::CurriedCall { func, args } => {
+        let head_depth = if heads { calc_depth(func) } else { NO_PARTS };
+        1 + args
+          .iter()
+          .map(calc_depth)
+          .max()
+          .unwrap_or(NO_PARTS)
+          .max(head_depth)
       }
       Expr::Association(items) => {
         1 + items
@@ -2395,7 +2441,7 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Integer(calc_depth(&args[0])))
+  Ok(Expr::Integer(calc_depth(&args[0], heads)))
 }
 
 /// LeafCount[expr] - counts the number of atoms in the expression tree (including heads)

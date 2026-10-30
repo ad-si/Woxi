@@ -270,6 +270,25 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_scalar_plot_range_clips_both_axes() {
+      // A bare `PlotRange -> r` is the square `{{-r, r}, {-r, r}}`, so a
+      // curve running off to infinity (a conic at eccentricity 1 has a pole
+      // at t = Pi) is clipped instead of flattening the picture.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t]/(1 + Cos[t]), Sin[t]/(1 + Cos[t])}, \
+           {t, 0, 2 Pi}, PlotRange -> 5, ImageSize -> {450, 450}]",
+      );
+      assert!(svg.contains("<svg width=\"450\" height=\"450\""));
+    }
+
+    #[test]
+    fn polar_plot_scalar_plot_range_clips_both_axes() {
+      let svg =
+        export_svg("PolarPlot[1/(1 + Cos[t]), {t, 0, 2 Pi}, PlotRange -> 5]");
+      assert!(svg.contains("<svg width=\"360\" height=\"360\""));
+    }
+
+    #[test]
     fn parametric_plot_call_slots_each_return_a_point() {
       // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
       // are not literal pairs but each yields a point per sample, so the
@@ -26398,6 +26417,31 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn list_of_bare_expressions_plots_each_zero_contour() {
+    // `{f, g}` without `==` draws the zero contour of every entry, exactly
+    // like the equivalent list of equations.
+    assert_eq!(
+      interpret(
+        "ExportString[ContourPlot3D[{x^2 + y^2 + z^2 - 1, z - 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"] === \
+         ExportString[ContourPlot3D[{x^2 + y^2 + z^2 == 1, z == 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ContourPlot3D[{x^2 + y^2 - 4 z, \
+         z + 3.9}, {x, -4, 4}, {y, -4, 4}, {z, -4, 4}, Contours -> {0}], \
+         \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn indirect_equation_body_matches_the_direct_one() {
     // `b = f == c; ContourPlot3D[b, …]` is the equation `b` names, not a
     // bare expression whose zero contour is plotted.
@@ -28983,6 +29027,28 @@ mod manipulate {
   fn single_arg_echoes() {
     // Lenient: Manipulate[x^2] echoes itself without erroring.
     assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
+  }
+
+  /// Layout wrappers (`Labeled`, `Pane`, `Framed`, `Rotate`, …) are valid
+  /// Manipulate arguments whatever they wrap; a bare control or an unknown
+  /// head is a vsform, as in wolframscript.
+  #[test]
+  fn layout_wrappers_are_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x, Labeled[foo, \"lbl\"], {x, 0, 1}]; \
+       Manipulate[x, Framed[Slider[Dynamic[x]]], {x, 0, 1}]; \
+       Manipulate[x, Rotate[a, 1], {x, 0, 1}]; \
+       Manipulate[x, Slider[Dynamic[x]], {x, 0, 1}];",
+    )
+    .unwrap();
+    let warnings = out.warnings.join("\n");
+    assert!(!warnings.contains("Labeled"), "{warnings}");
+    assert!(!warnings.contains("Framed"), "{warnings}");
+    assert!(!warnings.contains("Rotate"), "{warnings}");
+    assert!(
+      warnings.contains("Manipulate argument Slider[Dynamic[x]]"),
+      "{warnings}"
+    );
   }
 
   #[test]
@@ -43254,5 +43320,49 @@ mod paired_charts {
       .unwrap(),
       "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
     );
+  }
+}
+
+mod plot_range_spec_evaluated {
+  use super::*;
+
+  // A range written as an expression that evaluates to {x, xmin, xmax}
+  // (a stored list, a replacement) is used as that range; Plot with no
+  // range at all is Plot::argr and stays unevaluated.
+  #[test]
+  fn computed_range_spec() {
+    assert_eq!(
+      interpret(
+        "r = {x, 0, 1}; in = {xRange -> {x, 0, 2}}; \
+         {Head[Plot[x^2, r]], Head[Plot[x^2, xRange /. in]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    assert_eq!(
+      interpret("Head[Plot[{1, 2, 3}, ImageSize -> 100]]").unwrap(),
+      "Plot"
+    );
+  }
+}
+
+mod word_cloud_text {
+  use super::*;
+
+  // A string is text: its words, stopwords deleted, make the cloud; a
+  // non-list expression is a single item.
+  #[test]
+  fn text_and_single_item() {
+    assert_eq!(
+      interpret(
+        "{Head[WordCloud[\"the cat and the hat sat on the mat with the cat\"]], \
+         Head[WordCloud[foo[1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    let svg = export_svg("WordCloud[\"the cat and the hat sat on the cat\"]");
+    assert!(svg.contains(">cat<"), "{svg}");
+    assert!(!svg.contains(">the<"), "{svg}");
   }
 }

@@ -2417,7 +2417,10 @@ fn collect_primitives(
       }) && !matches!(
         name.as_str(),
         "Dynamic" | "Style" | "EventHandler"
-      ) =>
+      )
+        // A user function handed `Dynamic[…]` arguments matches on them as
+        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
+        && crate::evaluator::functions::is_builtin_symbol(name) =>
     {
       let released: Vec<Expr> = args
         .iter()
@@ -26178,14 +26181,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // action rather than binding a variable, so it is not a variable spec
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
-      Expr::FunctionCall { name, args: inner }
-        if (name == "Pane" || name == "Labeled")
-          && inner.first().is_some_and(|c| {
-            expr_contains_call(c, &["Control"]) || annotation_contains_place(c)
-          }) =>
-      {
-        out_args.push(spec.clone());
-      }
+      // The full set wolframscript accepts, whatever they wrap (probed
+      // head by head: `Manipulate[x, h[1], {x, 0, 1}]`); a bare control
+      // such as `Slider[Dynamic[x]]` or an unknown head is a vsform.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -26204,6 +26202,22 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "OpenerView"
             | "Tooltip"
             | "ExpressionCell"
+            | "Labeled"
+            | "Pane"
+            | "Framed"
+            | "Mouseover"
+            | "Deploy"
+            | "Annotation"
+            | "Hyperlink"
+            | "Magnify"
+            | "Rotate"
+            | "Invisible"
+            | "Multicolumn"
+            | "FlipView"
+            | "SlideView"
+            | "MenuView"
+            | "StatusArea"
+            | "PopupView"
         ) =>
       {
         out_args.push(spec.clone());

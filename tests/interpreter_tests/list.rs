@@ -2326,6 +2326,20 @@ mod insert {
   use super::*;
 
   #[test]
+  fn insert_with_no_positions_and_empty_path() {
+    // `{}` lists no positions, so nothing is inserted; `{{}}` names the
+    // empty path, where nothing can be inserted (Insert::ins).
+    assert_eq!(
+      interpret("Insert[{3, 3, 3}, \" \", {}]").unwrap(),
+      "{3, 3, 3}"
+    );
+    assert_eq!(
+      interpret("Insert[{a, b}, x, {{}}]").unwrap(),
+      "Insert[{a, b}, x, {{}}]"
+    );
+  }
+
+  #[test]
   fn insert_positive() {
     assert_eq!(
       interpret("Insert[{a, b, c, d}, x, 2]").unwrap(),
@@ -11569,6 +11583,37 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_ordered_pairs_and_graph_options() {
+    // Vertex k sits at angle 2 Pi k/n, chopped to exact zeros; a directed
+    // graph carries EdgeDirection -> True and an asymmetric matrix. With the
+    // package on $ContextPath the graph prints (and reads back) as `Graph`.
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; g = FromOrderedPairs[{{1, 2}, {2, 4}}]; \
+         {InputForm[g], ToAdjacencyMatrix[g], \
+          ToAdjacencyMatrix[ToExpression[ToString[g, InputForm]]]}"
+      )
+      .unwrap(),
+      "{InputForm[Graph[{{{1, 2}}, {{2, 4}}}, {{{0, 1.}}, {{-1., 0}}, {{0, -1.}}, \
+       {{1., 0}}}, EdgeDirection -> True]], {{0, 1, 0, 0}, {0, 0, 0, 1}, \
+       {0, 0, 0, 0}, {0, 0, 0, 0}}, {{0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 0}, \
+       {0, 0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Combinatorica`\"]]; \
+         InputForm[SetGraphOptions[FromOrderedPairs[{{1, 2}, {2, 3}, {3, 1}}], \
+           {1, 2, VertexColor -> Black}]]"
+      )
+      .unwrap(),
+      "InputForm[Graph[{{{1, 2}}, {{2, 3}}, {{3, 1}}}, \
+       {{{-0.49999999999999983, 0.8660254037844387}, VertexColor -> GrayLevel[0]}, \
+       {{-0.5000000000000004, -0.8660254037844384}, VertexColor -> GrayLevel[0]}, \
+       {{1., 0}}}, EdgeDirection -> True]]"
+    );
+  }
+
+  #[test]
   fn combinatorica_graph_traversal() {
     // A graph from unordered pairs: two components, a path 1-3-6 hanging off
     // the triangle 1-2-3.
@@ -11907,6 +11952,20 @@ mod join_non_list {
     assert_eq!(
       interpret("Combinatorica`Permutations[x]").unwrap(),
       "Combinatorica`Permutations[x]"
+    );
+  }
+
+  #[test]
+  fn combinatorica_next_permutation() {
+    // Lexicographic successor in canonical order; the last one wraps.
+    assert_eq!(
+      interpret(
+        "{Combinatorica`NextPermutation[{1, 2, 3}], Combinatorica`NextPermutation[{1, 3, 2}], \
+         Combinatorica`NextPermutation[{3, 2, 1}], Combinatorica`NextPermutation[{2, 1, 1}], \
+         Combinatorica`NextPermutation[{b, a, c}], Combinatorica`NextPermutation[{}]}"
+      )
+      .unwrap(),
+      "{{1, 3, 2}, {2, 1, 3}, {1, 2, 3}, {1, 1, 2}, {b, c, a}, {}}"
     );
   }
 
@@ -17045,6 +17104,20 @@ mod cases {
     assert_case(
       r#"{{1, 3}, {5, 7}}[[All, 1]]; Take[{{1, 3}, {5, 7}}, All, {1}]"#,
       r#"{{1}, {5}}"#,
+    );
+  }
+  // Values carried between NestList/Nest steps are shared (cheap to copy
+  // and re-evaluate); results must not change, including when a step reads
+  // a large previous value several times or a symbol changes in between.
+  #[test]
+  fn nest_list_shared_steps() {
+    assert_case(
+      r#"Last[NestList[{#[[1]] + 1, Append[#[[2]], Length[#[[2]]]], Total[#[[2]]]} &, {0, Range[20], 0}, 3]]"#,
+      r#"{3, {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 20, 21, 22}, 251}"#,
+    );
+    assert_case(
+      r#"k = 0; Nest[(k++; Append[#, a + k]) &, Table[a, {20}], 2][[-3 ;;]]"#,
+      r#"{a, 1 + a, 2 + a}"#,
     );
   }
   #[test]

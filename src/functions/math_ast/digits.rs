@@ -71,12 +71,22 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DigitSum[n] - sum of digits in base 10
 /// DigitSum[n, b] - sum of digits in base b
+/// DigitSum[n, b, k] - sum of the k-th powers of the base-b digits
 pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
-      "DigitSum expects 1 or 2 arguments".into(),
+      "DigitSum expects 1 to 3 arguments".into(),
     ));
   }
+  // The power each digit is raised to (1 unless a third argument is given).
+  let power: u32 = match args.get(2) {
+    None => 1,
+    Some(Expr::Integer(k)) if *k >= 0 && *k <= u32::MAX as i128 => *k as u32,
+    Some(_) => return Ok(unevaluated("DigitSum", args)),
+  };
+  let add_digit = |sum: &mut BigInt, d: BigInt| {
+    *sum += if power == 1 { d } else { d.pow(power) };
+  };
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
     None => {
@@ -112,15 +122,17 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if val.is_zero() {
         break;
       }
-      sum += &val % b;
+      add_digit(&mut sum, &val % b);
       val /= b;
     }
     // Any remaining value is the overflow digit (no base constraint).
-    sum += val;
+    if !val.is_zero() {
+      add_digit(&mut sum, val);
+    }
     return Ok(bigint_to_expr(sum));
   }
 
-  let base = if args.len() == 2 {
+  let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {
       Some(b) if b >= 2 => b,
       _ => {
@@ -137,7 +149,7 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
   while !val.is_zero() {
-    sum += &val % &big_base;
+    add_digit(&mut sum, &val % &big_base);
     val /= &big_base;
   }
   Ok(bigint_to_expr(sum))
@@ -1722,6 +1734,15 @@ fn real_digits_rational_base(
     int_digits.reverse();
   }
 
+  // A pure fraction starts at its first nonzero digit: the leading zeros
+  // are the (negative) exponent, not digits, and the recurring block is
+  // counted from there (RealDigits[1/7, 2] is {{{1, 0, 0}}, -2}).
+  if int_part == 0 {
+    for _ in 0..(-exponent) {
+      remainder *= base;
+    }
+  }
+
   // Now do long division for the fractional part
   // Track remainder -> position for cycle detection
   let mut digits: Vec<i128> = int_digits;
@@ -1768,6 +1789,78 @@ fn real_digits_rational_base(
 
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
 /// Returns {digit_list, exponent}.
+/// `RealDigits[x, b, n]` for an exact positive `x` and a non-integer real
+/// base `b` (`GoldenRatio`, `Pi`): the greedy expansion — each digit the
+/// largest multiple of the place value that fits — worked out at a precision
+/// well beyond the requested digits, so an exact finite expansion
+/// (`3 = φ^1 + φ^-2`) ends in exact zeros. None for anything else.
+fn real_digits_irrational_base(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let n = expr_to_i128(&args[2]).filter(|n| (1..=1000).contains(n))? as usize;
+  let x = &args[0];
+  if !crate::functions::predicate_ast::is_numeric_q(x)
+    || crate::functions::math_ast::contains_inexact_real(x)
+    || !try_eval_to_f64(x).is_some_and(|v| v > 0.0)
+  {
+    return None;
+  }
+  let prec = Expr::Integer(n as i128 + 60);
+  let num = |e: Expr| {
+    crate::evaluator::evaluate_function_call_ast("N", &[e, prec.clone()]).ok()
+  };
+  let eval = |name: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &a).ok()
+  };
+  let b = num(args[1].clone())?;
+  let mut rest = num(x.clone())?;
+  // Exponent: the number of base-b places before the point.
+  let log = eval("Log", vec![b.clone(), rest.clone()])?;
+  let mut exponent = expr_to_i128(&eval("Floor", vec![log])?)? + 1;
+  // The floating logarithm can be one off at an exact power.
+  let place = |k: i128| eval("Power", vec![b.clone(), Expr::Integer(k)]);
+  let ge = |a: &Expr, c: &Expr| {
+    matches!(
+      eval("GreaterEqual", vec![a.clone(), c.clone()]),
+      Some(Expr::Identifier(ref t)) if t == "True"
+    )
+  };
+  if ge(&rest, &place(exponent)?) {
+    exponent += 1;
+  } else if !ge(&rest, &place(exponent - 1)?) {
+    exponent -= 1;
+  }
+  let tiny = num(Expr::FunctionCall {
+    name: "Power".to_string(),
+    args: vec![Expr::Integer(10), Expr::Integer(-(n as i128) - 40)].into(),
+  })?;
+  let mut digits = Vec::with_capacity(n);
+  for k in 1..=n {
+    let pv = place(exponent - k as i128)?;
+    if !ge(&rest, &eval("Times", vec![tiny.clone(), pv.clone()])?) {
+      digits.push(Expr::Integer(0));
+      continue;
+    }
+    let ratio = eval("Divide", vec![rest.clone(), pv.clone()])?;
+    // A remainder within rounding of a whole place counts as that place.
+    let d = expr_to_i128(&eval(
+      "Floor",
+      vec![eval("Plus", vec![ratio, tiny.clone()])?],
+    )?)?;
+    rest = eval(
+      "Subtract",
+      vec![rest, eval("Times", vec![Expr::Integer(d), pv])?],
+    )?;
+    if !ge(&rest, &Expr::Integer(0)) {
+      rest = Expr::Integer(0);
+    }
+    digits.push(Expr::Integer(d));
+  }
+  Some(Ok(Expr::List(
+    vec![Expr::List(digits.into()), Expr::Integer(exponent)].into(),
+  )))
+}
+
 pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
@@ -1802,6 +1895,13 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               crate::syntax::ExprForm::Output
             )
           ));
+        }
+        if numeric
+          && above_one
+          && args.len() == 3
+          && let Some(digits) = real_digits_irrational_base(args)
+        {
+          return digits;
         }
         return unevaluated_call();
       }
@@ -2401,6 +2501,49 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       results.push(from_digits_ast(&call_args)?);
     }
     return Ok(Expr::List(results.into()));
+  }
+
+  // {digits, e} with a recurring block (RealDigits of a rational): a final
+  // sublist {r1, …, rk} repeats forever, adding
+  // FromDigits[{r1, …, rk}] b^(e - m)/(b^k - 1) after the m plain digits.
+  // A sublist anywhere else is just a (list-valued) digit, as in
+  // wolframscript: FromDigits[{{{0}, 9, 1, 2, {0}}, 0}] is {57/625}.
+  if items.len() == 2
+    && let (Expr::List(digits), Some(exp)) =
+      (&items[0], expr_to_i128(&items[1]))
+    && digits.iter().any(|d| matches!(d, Expr::List(_)))
+  {
+    let b = Expr::Integer(base);
+    let (plain, recurring) = match digits.last() {
+      Some(Expr::List(block)) => (&digits[..digits.len() - 1], Some(block)),
+      _ => (&digits[..], None),
+    };
+    let mut terms: Vec<Expr> = plain
+      .iter()
+      .enumerate()
+      .map(|(i, d)| {
+        times(vec![
+          d.clone(),
+          pow(b.clone(), Expr::Integer(exp - 1 - i as i128)),
+        ])
+      })
+      .collect();
+    if let Some(block) = recurring {
+      let m = plain.len() as i128;
+      let k = block.len() as i128;
+      let value = from_digits_ast(&[Expr::List(block.clone()), b.clone()])?;
+      if k > 0 {
+        terms.push(times(vec![
+          value,
+          pow(b.clone(), Expr::Integer(exp - m)),
+          pow(
+            plus(vec![pow(b.clone(), Expr::Integer(k)), Expr::Integer(-1)]),
+            Expr::Integer(-1),
+          ),
+        ]));
+      }
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&plus(terms));
   }
 
   // Handle {digit_list, exponent} form (output of RealDigits)

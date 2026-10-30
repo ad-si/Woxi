@@ -4720,7 +4720,7 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![call("SmoothKernelDistribution", dist_args), var.clone()],
     ));
   }
-  // `lo < hi` is false for NaN too, so compare through `partial_cmp`.
+  // Not an increasing range, NaN bounds included.
   if lo.partial_cmp(&hi) != Some(std::cmp::Ordering::Less) {
     return unchanged();
   }

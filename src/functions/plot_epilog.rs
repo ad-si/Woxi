@@ -791,7 +791,13 @@ fn render_item(
             styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
               * area.scale;
           let fill = match styled.as_ref().and_then(|s| s.color) {
-            Some(c) => format!("fill=\"{}\"", c.to_svg_rgb()),
+            // A translucent colour (`Transparent` placeholder text, say)
+            // keeps its alpha instead of drawing opaque.
+            Some(c) => EpilogStyle {
+              color: c,
+              ..style.clone()
+            }
+            .fill_attrs(),
             None => style.fill_attrs(),
           };
           let (mut px, mut py) = (area.px(x), area.py(y));
