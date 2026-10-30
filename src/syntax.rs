@@ -11927,7 +11927,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
         let mut result = fmt_plus_term(&args[0]);
         for arg in args.iter().skip(1) {
-          if let Expr::UnaryOp {
+          if let Some(positive) = negated_complex_coefficient_term(arg) {
+            // `x + (-1 - 2 I) y` is written `x - (1 + 2 I) y`.
+            result.push_str(" - ");
+            result.push_str(&fmt_plus_term(&positive));
+          } else if let Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand,
           } = arg
@@ -18046,7 +18050,44 @@ fn negated_negative_integer(e: &Expr) -> Option<Expr> {
   }
 }
 
+/// A product led by a complex number with a negative real part, negated
+/// (`(-1 - 2 I) y` → `(1 + 2 I) y`): a sum shows such a term subtracted.
+fn negated_complex_coefficient_term(term: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = term else {
+    return None;
+  };
+  if name != "Times" || args.len() < 2 {
+    return None;
+  }
+  let lead = &args[0];
+  // A complex number a + b I is a sum of its parts.
+  let is_sum = matches!(lead, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      lead,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ..
+      }
+    );
+  if !is_sum || !crate::functions::predicate_ast::is_complex_number(lead) {
+    return None;
+  }
+  let (re, im) = crate::functions::math_ast::try_extract_complex_float(lead)?;
+  if re >= 0.0 || im == 0.0 {
+    return None;
+  }
+  let negated =
+    crate::functions::math_ast::times_ast(&[Expr::Integer(-1), lead.clone()])
+      .ok()?;
+  let mut factors = vec![negated];
+  factors.extend(args[1..].iter().cloned());
+  Some(times(factors))
+}
+
 fn extract_sign_for_plus(expr: &Expr) -> (&'static str, Expr) {
+  if let Some(positive) = negated_complex_coefficient_term(expr) {
+    return (" - ", positive);
+  }
   match expr {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,

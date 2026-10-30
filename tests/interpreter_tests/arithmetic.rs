@@ -14446,3 +14446,37 @@ mod complex_coefficients_combine {
     );
   }
 }
+
+mod complex_coefficient_folding {
+  use super::*;
+
+  #[test]
+  fn numeric_factors_fold_into_the_complex_coefficient() {
+    assert_eq!(
+      interpret(
+        "ToString[{2 (1 + I) x, (1 + I) x/2, 2 I x, I x/2, (1 + I) (1 - I) x, \
+         2.5 (1 + I) x, 1/2 (1 - I)/Sqrt[2], 3 (1 - I)/Sqrt[2]}, InputForm]"
+      )
+      .unwrap(),
+      "{(2 + 2*I)*x, (1/2 + I/2)*x, (2*I)*x, I/2*x, 2*x, (2.5 + 2.5*I)*x, \
+       (1/2 - I/2)/Sqrt[2], (3 - 3*I)/Sqrt[2]}"
+    );
+  }
+
+  #[test]
+  fn negative_real_part_terms_print_subtracted() {
+    assert_eq!(
+      interpret(
+        "ToString[{x + (-1 - 2 I) y, x + (-1 + 2 I) y, x + (1 - 2 I) y, \
+         x + (-1.5 - 2 I) y, 1 - (1 + 2 I)/Sqrt[5]}, InputForm]"
+      )
+      .unwrap(),
+      "{x - (1 + 2*I)*y, x - (1 - 2*I)*y, x + (1 - 2*I)*y, \
+       x - (1.5 + 2.*I)*y, 1 - (1 + 2*I)/Sqrt[5]}"
+    );
+    assert_eq!(
+      interpret("ToString[x + (-1 - 2 I) y]").unwrap(),
+      "x - (1 + 2 I) y"
+    );
+  }
+}

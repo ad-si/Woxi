@@ -9282,6 +9282,9 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(indeterminate) = zero_times_infinity(args) {
     return Ok(indeterminate);
   }
+  if let Some(product) = fold_complex_coefficient(args)? {
+    return Ok(product);
+  }
   if let Some(product) =
     super::canonical_polynomial::canonical_monomial_product(args)
   {
@@ -9309,6 +9312,61 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return bigfloat_times(&promoted);
   }
   Ok(flip_unit_negative_rational_product(product))
+}
+
+/// A complex number among other numeric factors of a symbolic product folds
+/// with them into one coefficient, as in wolframscript: `2 (1 + I) x` is
+/// `(2 + 2 I) x` and `(1 - I)/(2 Sqrt[2])` is `(1/2 - I/2)/Sqrt[2]`.
+fn fold_complex_coefficient(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_nonreal_complex = |e: &Expr| {
+    crate::functions::predicate_ast::is_complex_number(e)
+      && !matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      && !matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let is_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+      || is_nonreal_complex(e)
+  };
+  let mut factors: Vec<&Expr> = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::FunctionCall { name, args: inner } if name == "Times" => {
+        factors.extend(inner.iter());
+      }
+      other => factors.push(other),
+    }
+  }
+  let numbers: Vec<Expr> = factors
+    .iter()
+    .filter(|f| is_number(f))
+    .map(|f| (*f).clone())
+    .collect();
+  if numbers.len() < 2
+    || numbers.len() == factors.len()
+    || !numbers.iter().any(is_nonreal_complex)
+  {
+    return Ok(None);
+  }
+  let coefficient = times_ast(&numbers)?;
+  // Only a product that came out one number replaces its factors (`2 I`
+  // with the symbol `I` stays a product).
+  if matches!(&coefficient, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      &coefficient,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    )
+  {
+    return Ok(None);
+  }
+  let mut rest = vec![coefficient];
+  rest.extend(factors.into_iter().filter(|f| !is_number(f)).cloned());
+  times_ast(&rest).map(Some)
 }
 
 /// A zero (exact or machine) times an infinity is Indeterminate, reported
