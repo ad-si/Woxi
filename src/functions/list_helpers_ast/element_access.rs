@@ -1268,6 +1268,8 @@ pub fn insert_ast(
   //   {p1, ..., pk}  one nested path
   //   {{...}, ...}   several paths
   let paths: Vec<Vec<i128>> = match pos {
+    // No positions: nothing is inserted.
+    Expr::List(inner) if inner.is_empty() => return Ok(list.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) => {
       vec![vec![expr_to_i128(pos).unwrap()]]
     }
@@ -1284,6 +1286,14 @@ pub fn insert_ast(
           sub_items.iter().map(expr_to_i128).collect();
         match path {
           Some(p) if !p.is_empty() => ps.push(p),
+          // An empty path is a position, just not one to insert at.
+          Some(_) => {
+            crate::emit_message(&format!(
+              "Insert::ins: Cannot insert at position {{}} in {}",
+              crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+            ));
+            return Ok(unevaluated());
+          }
           _ => {
             crate::emit_message(&format!(
               "Insert::psl: Position specification {} in {} is not a machine-sized integer or a list of machine-sized integers.",
@@ -1834,6 +1844,16 @@ pub fn replace_part_ast(
   expr: &Expr,
   rule: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  replace_part_heads_ast(expr, rule, false)
+}
+
+/// `ReplacePart[expr, rules, Heads -> heads]`: with `heads` true, position
+/// patterns also match the head positions (index 0).
+pub fn replace_part_heads_ast(
+  expr: &Expr,
+  rule: &Expr,
+  heads: bool,
+) -> Result<Expr, InterpreterError> {
   // Normalize the rule spec into an ordered list of (lhs, rhs, delayed)
   let as_rule = |r: &Expr| -> Option<(Expr, Expr, bool)> {
     crate::functions::expr_form::rule_parts(r)
@@ -1959,6 +1979,7 @@ pub fn replace_part_ast(
     whole: &[(Expr, usize)],
     rules: &[(Expr, Expr, bool)],
     max_depth: usize,
+    heads: bool,
   ) -> Result<Expr, InterpreterError> {
     let (items, head): (Vec<Expr>, Option<String>) = match parts_and_head(expr)
     {
@@ -1975,18 +1996,40 @@ pub fn replace_part_ast(
       }
       let mut all_match = true;
       for (comp, &(p_idx, p_len)) in comps.iter().zip(path.iter()) {
-        if let Comp::Index(n) = comp {
-          let norm = if *n >= 0 { *n } else { p_len + *n + 1 };
-          if norm != p_idx {
+        match comp {
+          Comp::Index(n) => {
+            let norm = if *n >= 0 { *n } else { p_len + *n + 1 };
+            if norm != p_idx {
+              all_match = false;
+              break;
+            }
+          }
+          // Patterns over head positions are only tried with Heads -> True.
+          Comp::Pattern(pat)
+            if heads
+              && crate::evaluator::pattern_matching::match_pattern(
+                &Expr::Integer(p_idx),
+                pat,
+              )
+              .is_some() => {}
+          Comp::Pattern(_) => {
             all_match = false;
             break;
           }
-        } else {
-          all_match = false; // patterns over head positions: unsupported
-          break;
         }
       }
-      if all_match && matches!(comps.last(), Some(Comp::Index(0))) {
+      let head_comp = match comps.last() {
+        Some(Comp::Index(0)) => true,
+        Some(Comp::Pattern(pat)) if heads => {
+          crate::evaluator::pattern_matching::match_pattern(
+            &Expr::Integer(0),
+            pat,
+          )
+          .is_some()
+        }
+        _ => false,
+      };
+      if all_match && head_comp {
         let (_, rhs, _) = &rules[*ri];
         let value = crate::evaluator::evaluate_expr_to_expr(rhs)?;
         if let Expr::Identifier(h) = &value {
@@ -2087,7 +2130,8 @@ pub fn replace_part_ast(
       }
       // No rule applies here: recurse if deeper matchers exist
       if path.len() < max_depth {
-        let replaced = walk(item, path, matchers, whole, rules, max_depth)?;
+        let replaced =
+          walk(item, path, matchers, whole, rules, max_depth, heads)?;
         out.push(replaced);
       } else {
         out.push(item.clone());
@@ -2107,7 +2151,15 @@ pub fn replace_part_ast(
     // Atomic subjects come back unchanged
     return Ok(expr.clone());
   }
-  walk(expr, &mut Vec::new(), &matchers, &whole, &rules, max_depth)
+  walk(
+    expr,
+    &mut Vec::new(),
+    &matchers,
+    &whole,
+    &rules,
+    max_depth,
+    heads,
+  )
 }
 
 pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

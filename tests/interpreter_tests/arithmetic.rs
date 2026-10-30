@@ -7687,6 +7687,22 @@ mod real_digits_base {
   }
 
   #[test]
+  fn rational_with_leading_fractional_zeros() {
+    // The zeros after the point live in the exponent, not in the digits.
+    assert_eq!(
+      interpret("RealDigits[3/70]").unwrap(),
+      "{{{4, 2, 8, 5, 7, 1}}, -1}"
+    );
+    assert_eq!(
+      interpret("RealDigits[1/70]").unwrap(),
+      "{{{1, 4, 2, 8, 5, 7}}, -1}"
+    );
+    assert_eq!(interpret("RealDigits[1/12]").unwrap(), "{{8, {3}}, -1}");
+    assert_eq!(interpret("RealDigits[1/300]").unwrap(), "{{{3}}, -2}");
+    assert_eq!(interpret("RealDigits[1/80]").unwrap(), "{{1, 2, 5}, -1}");
+  }
+
+  #[test]
   fn base_6_terminating() {
     assert_eq!(interpret("RealDigits[3/2, 6]").unwrap(), "{{1, 3}, 1}");
   }
@@ -12411,6 +12427,24 @@ mod bigfloat_trig {
   // the last ULP. Every expected value below is wolframscript's exact output.
   mod real_integer_power_chains {
     use super::*;
+
+    // An exact half-integer exponent: x^(n + 1/2) = x^n Sqrt[x] and
+    // x^-(n + 1/2) = (1/x^n)(1/Sqrt[x]), for machine reals and for N of
+    // exact radicals alike.
+    #[test]
+    fn half_integer_exponent_is_power_times_square_root() {
+      assert_eq!(
+        interpret(
+          "InputForm[{3.^(-1/2), 3.^(-5/2), 2.^(-1/2), 1.5^(-1/2), \
+           N[3^(-1/2)], N[3/Sqrt[2]], N[3^(-5/2)], (-2.)^(-1/2), 7.^(-1/3)}]"
+        )
+        .unwrap(),
+        "InputForm[{0.5773502691896258, 0.06415002990995843, \
+         0.7071067811865475, 0.8164965809277261, 0.5773502691896258, \
+         2.1213203435596424, 0.06415002990995843, 0. - 0.7071067811865475*I, \
+         0.5227579585747102}]"
+      );
+    }
 
     #[test]
     fn negative_exponent_uses_reciprocal_of_positive_power() {

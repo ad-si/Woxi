@@ -54,6 +54,34 @@ pub fn dispatch_boolean_functions(
     "BooleanMinterms" if args.len() == 2 => {
       return Some(crate::functions::boolean_minterms_ast(args));
     }
+    // BooleanMinterms[k, vars, form] / BooleanMaxterms[k, vars, form]: the
+    // terms combined in the given form. The minterms already are a DNF and
+    // the maxterms a CNF; any other form converts the expression.
+    "BooleanMinterms" | "BooleanMaxterms"
+      if args.len() == 3 && matches!(&args[2], Expr::String(_)) =>
+    {
+      let terms = crate::evaluator::evaluate_expr_to_expr(&call(
+        name,
+        args[..2].to_vec(),
+      ));
+      let native = if name == "BooleanMinterms" {
+        ["DNF", "SOP"]
+      } else {
+        ["CNF", "POS"]
+      };
+      return Some(terms.and_then(|t| match &args[2] {
+        Expr::String(f) if native.contains(&f.as_str()) => Ok(t),
+        _ => crate::evaluator::evaluate_expr_to_expr(&call(
+          "BooleanConvert",
+          vec![t, args[2].clone()],
+        )),
+      }));
+    }
+    // A bare BooleanMinterms[spec] / BooleanMaxterms[spec] is the inert
+    // representation of a Boolean function.
+    "BooleanMinterms" | "BooleanMaxterms" if args.len() == 1 => {
+      return Some(Ok(unevaluated(name, args)));
+    }
     "BooleanVariables" if args.len() == 1 => {
       return Some(crate::functions::boolean_variables_ast(args));
     }

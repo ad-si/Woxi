@@ -270,6 +270,25 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_scalar_plot_range_clips_both_axes() {
+      // A bare `PlotRange -> r` is the square `{{-r, r}, {-r, r}}`, so a
+      // curve running off to infinity (a conic at eccentricity 1 has a pole
+      // at t = Pi) is clipped instead of flattening the picture.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t]/(1 + Cos[t]), Sin[t]/(1 + Cos[t])}, \
+           {t, 0, 2 Pi}, PlotRange -> 5, ImageSize -> {450, 450}]",
+      );
+      assert!(svg.contains("<svg width=\"450\" height=\"450\""));
+    }
+
+    #[test]
+    fn polar_plot_scalar_plot_range_clips_both_axes() {
+      let svg =
+        export_svg("PolarPlot[1/(1 + Cos[t]), {t, 0, 2 Pi}, PlotRange -> 5]");
+      assert!(svg.contains("<svg width=\"360\" height=\"360\""));
+    }
+
+    #[test]
     fn parametric_plot_call_slots_each_return_a_point() {
       // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
       // are not literal pairs but each yields a point per sample, so the
@@ -1131,6 +1150,20 @@ mod graphics {
           "a tenth across the picture, got {x} for {range}"
         );
       }
+    }
+
+    /// A fraction in a graphics `Inset` is typeset compactly around a bar
+    /// line, not as three full-height lines of text.
+    #[test]
+    fn a_graphics_inset_fraction_is_stacked_around_a_bar() {
+      let svg = export_svg(
+        "Graphics[{Inset[Style[1/7, 18], {1, 1}]}, \
+         PlotRange -> {{0, 2}, {0, 2}}]",
+      );
+      assert!(svg.contains(">1</text>"), "{svg}");
+      assert!(svg.contains(">7</text>"), "{svg}");
+      assert!(svg.contains("<line "), "{svg}");
+      assert!(!svg.contains("<tspan"), "{svg}");
     }
 
     /// A string or scripted-string `Inset` in a plot's `Epilog` is a text
@@ -2788,6 +2821,23 @@ mod graphics {
       );
       assert!(svg.contains("13.3") || svg.contains("13.2"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
+    }
+
+    #[test]
+    fn text_grid_with_merged_cells_is_a_table() {
+      // Regression: `Text[Grid[{{"", SpanFromLeft, …}, …}, Dividers -> All],
+      // pos]` in a `Graphics` printed the flattened cell text, including the
+      // literal `SpanFromLeft`/`SpanFromAbove` placeholders, with no dividers
+      // or backgrounds.
+      let svg = export_svg(
+        "Graphics[Text[Grid[{{\"\", SpanFromLeft, \"top\", SpanFromLeft}, \
+         {\"side\", \"a\", \"b\", \"c\"}, {SpanFromAbove, \"d\", \"e\", \"f\"}}, \
+         Dividers -> All, Background -> {None, None, {{2, 2} -> Red}}], {0, 0}]]",
+      );
+      assert!(!svg.contains("SpanFrom"), "{svg}");
+      assert!(svg.contains("<line"), "{svg}");
+      assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+      assert!(svg.contains(">top<") && svg.contains(">side<"), "{svg}");
     }
 
     #[test]
@@ -6971,6 +7021,24 @@ mod plot3d {
           "Graphics3D[{{Translate[{tri}, {{{{0,0,0}},{{0,0,2}}}}]}}]"
         ))
       );
+    }
+
+    /// `Triangle[{p1, p2, p3}]` is a filled primitive in 3D just like
+    /// `Polygon`. Regression: it was dropped, leaving an empty drawing.
+    #[test]
+    fn graphics3d_triangle_draws_like_polygon() {
+      let pts = "{{0,0,0},{1,0,0},{0,1,1}}";
+      for wrap in [
+        "{}",
+        "{GeometricTransformation[{}, TranslationTransform[{1,2,3}]]}",
+      ] {
+        let scene = |head: &str| {
+          let body = format!("{head}[{pts}]");
+          export_svg(&format!("Graphics3D[{}]", wrap.replace("{}", &body)))
+        };
+        assert!(scene("Triangle").contains("<polygon"));
+        assert_eq!(scene("Triangle"), scene("Polygon"));
+      }
     }
 
     /// `Scale[g, s]` without a centre scales `g` about the centre of its
@@ -20364,6 +20432,22 @@ mod pane_wrapper_display {
     assert!(svg.contains("<svg x="), "expected embedded graphic");
   }
 
+  // A `TraditionalForm` around a styled `Text@Grid[…]` in a grid cell inside
+  // a `Column` draws the table, not the `Grid[{{…}}]` source text.
+  #[test]
+  fn traditional_form_of_styled_text_grid_in_column_draws_the_table() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{Grid[{{1, TraditionalForm[Style[Text@Grid[{{\"left\", \"right\"}}, \
+         Frame -> All], 12]]}}], Graphics[Disk[]]}, Center]",
+    )
+    .unwrap()
+    .graphics
+    .expect("column should render");
+    assert!(!svg.contains("Grid["), "table source leaked into: {svg}");
+    assert!(svg.contains("left") && svg.contains("right"), "{svg}");
+  }
+
   // The same item with a size directive still draws the table.
   #[test]
   fn column_item_styled_text_grid_draws_the_table() {
@@ -26103,6 +26187,40 @@ mod regular_polygon {
   use super::*;
 
   #[test]
+  fn radius_and_count_only() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[RegularPolygon[0.5, 5]], \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn radius_with_first_vertex_angle() {
+    // The first vertex sits at angle 0, i.e. on the right-hand edge.
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[RegularPolygon[{0, 0}, {1, 0}, 4], PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"], \"<polygon points=\\\"360.00,180.00\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn font_color_in_styled_text_inset() {
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[Graphics[Inset[Style[Text[\"ab\"], FontColor -> White, FontSize -> 20], {0, 0}]], \"SVG\"], \"fill=\\\"rgb(255,255,255)\\\" font-size=\\\"20\\\"\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn pentagon() {
     insta::assert_snapshot!(export_svg("Graphics[RegularPolygon[5]]"));
   }
@@ -26377,6 +26495,31 @@ mod contour_plot_3d {
       )
       .unwrap(),
       "{GraphicsComplex, True, True, VertexNormals}"
+    );
+  }
+
+  #[test]
+  fn list_of_bare_expressions_plots_each_zero_contour() {
+    // `{f, g}` without `==` draws the zero contour of every entry, exactly
+    // like the equivalent list of equations.
+    assert_eq!(
+      interpret(
+        "ExportString[ContourPlot3D[{x^2 + y^2 + z^2 - 1, z - 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"] === \
+         ExportString[ContourPlot3D[{x^2 + y^2 + z^2 == 1, z == 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ContourPlot3D[{x^2 + y^2 - 4 z, \
+         z + 3.9}, {x, -4, 4}, {y, -4, 4}, {z, -4, 4}, Contours -> {0}], \
+         \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
@@ -28966,6 +29109,28 @@ mod manipulate {
   fn single_arg_echoes() {
     // Lenient: Manipulate[x^2] echoes itself without erroring.
     assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
+  }
+
+  /// Layout wrappers (`Labeled`, `Pane`, `Framed`, `Rotate`, …) are valid
+  /// Manipulate arguments whatever they wrap; a bare control or an unknown
+  /// head is a vsform, as in wolframscript.
+  #[test]
+  fn layout_wrappers_are_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x, Labeled[foo, \"lbl\"], {x, 0, 1}]; \
+       Manipulate[x, Framed[Slider[Dynamic[x]]], {x, 0, 1}]; \
+       Manipulate[x, Rotate[a, 1], {x, 0, 1}]; \
+       Manipulate[x, Slider[Dynamic[x]], {x, 0, 1}];",
+    )
+    .unwrap();
+    let warnings = out.warnings.join("\n");
+    assert!(!warnings.contains("Labeled"), "{warnings}");
+    assert!(!warnings.contains("Framed"), "{warnings}");
+    assert!(!warnings.contains("Rotate"), "{warnings}");
+    assert!(
+      warnings.contains("Manipulate argument Slider[Dynamic[x]]"),
+      "{warnings}"
+    );
   }
 
   #[test]
@@ -43237,5 +43402,49 @@ mod paired_charts {
       .unwrap(),
       "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
     );
+  }
+}
+
+mod plot_range_spec_evaluated {
+  use super::*;
+
+  // A range written as an expression that evaluates to {x, xmin, xmax}
+  // (a stored list, a replacement) is used as that range; Plot with no
+  // range at all is Plot::argr and stays unevaluated.
+  #[test]
+  fn computed_range_spec() {
+    assert_eq!(
+      interpret(
+        "r = {x, 0, 1}; in = {xRange -> {x, 0, 2}}; \
+         {Head[Plot[x^2, r]], Head[Plot[x^2, xRange /. in]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    assert_eq!(
+      interpret("Head[Plot[{1, 2, 3}, ImageSize -> 100]]").unwrap(),
+      "Plot"
+    );
+  }
+}
+
+mod word_cloud_text {
+  use super::*;
+
+  // A string is text: its words, stopwords deleted, make the cloud; a
+  // non-list expression is a single item.
+  #[test]
+  fn text_and_single_item() {
+    assert_eq!(
+      interpret(
+        "{Head[WordCloud[\"the cat and the hat sat on the mat with the cat\"]], \
+         Head[WordCloud[foo[1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    let svg = export_svg("WordCloud[\"the cat and the hat sat on the cat\"]");
+    assert!(svg.contains(">cat<"), "{svg}");
+    assert!(!svg.contains(">the<"), "{svg}");
   }
 }

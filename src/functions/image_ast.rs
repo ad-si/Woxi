@@ -12742,8 +12742,28 @@ fn cmc_distance(
 /// negative (wolframscript-verified, including that zeros neither mark
 /// nor trigger). Arrays give a binary SparseArray; a single-channel image
 /// gives a binary ("Bit") image.
-pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(unevaluated("CrossingDetect", args));
+pub fn crossing_detect_ast(
+  all_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || Ok(unevaluated("CrossingDetect", all_args));
+  // CornerNeighbors -> False (or None) uses only the 4 edge neighbors.
+  let mut corners = true;
+  let mut n_args = all_args.len();
+  while n_args > 1
+    && let Some((Expr::Identifier(opt), value, _)) =
+      crate::functions::expr_form::rule_parts(&all_args[n_args - 1])
+  {
+    if opt != "CornerNeighbors" {
+      return unevaluated();
+    }
+    corners = match value {
+      Expr::Identifier(v) if v == "True" || v == "Automatic" => true,
+      Expr::Identifier(v) if v == "False" || v == "None" => false,
+      _ => return unevaluated(),
+    };
+    n_args -= 1;
+  }
+  let args = &all_args[..n_args];
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
@@ -12767,7 +12787,7 @@ pub fn crossing_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         'search: for dr in -1i64..=1 {
           for dc in -1i64..=1 {
-            if dr == 0 && dc == 0 {
+            if (dr == 0 && dc == 0) || (!corners && dr != 0 && dc != 0) {
               continue;
             }
             let (nr, nc) = (r as i64 + dr, c as i64 + dc);

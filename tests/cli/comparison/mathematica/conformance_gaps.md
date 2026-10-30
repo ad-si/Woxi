@@ -1534,6 +1534,51 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### Machine `Orthogonalize` differs in last digits
+
+```sh
+wolframscript -code 'InputForm[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}]]'
+# {{0.4472135954999579, 0.8944271909999159, 0.}, {-0.13187609467915742, 0.06593804733957871, 0.9890707100936806}, {0.8846517369293829, -0.44232586846469146, 0.14744195615489716}}
+woxi eval 'InputForm[Orthogonalize[{{1., 2, 0}, {0, 1, 3}, {1, 0, 1}}]]'
+# … 0.0659380473395787 …, -0.4423258684646914 …
+```
+
+Woxi runs Gram–Schmidt (twice for the default `Reorthogonalization`),
+modified Gram–Schmidt or Householder QR in plain `f64`; wolframscript's
+LAPACK-backed routines sum in another order, so a few coordinates differ in
+the last place. Signs and zero vectors match.
+
+### `TraditionalForm` orders the terms of a sum its own way
+
+```sh
+wolframscript -code 'ToBoxes[#, TraditionalForm] & /@ {1 + x + x^2, 3 Cos[x] + Sin[x], -x + y, Pi + x, a + b + c, x + y^2}'
+# x^2 + x + 1, sin(x) + 3 cos(x), y - x, x + π, a + b + c, x + y^2
+woxi eval 'ToBoxes[#, TraditionalForm] & /@ {1 + x + x^2, 3 Cos[x] + Sin[x], -x + y, Pi + x, a + b + c, x + y^2}'
+# keeps the StandardForm order: 1 + x + x^2, 3 cos(x) + sin(x), -x + y, π + x, …
+```
+
+wolframscript puts a univariate polynomial in descending powers, numeric
+constants last and a positive term first, yet leaves `a + b + c` and
+`x + y^2` alone and puts `sin` before `cos`; no single rule fits all of
+these. It matters wherever a TraditionalForm string is used as a key (a
+control value saved as `ToString[f, TraditionalForm]`, as in the Newton's
+Method Demonstration).
+
+### `CirclePoints[n.]` differs in last digits
+
+```sh
+wolframscript -code 'InputForm[CirclePoints[4.]]'
+# {{0.7071067811865476, -0.7071067811865475}, {0.7071067811865476, 0.7071067811865475}, {-0.7071067811865475, 0.7071067811865476}, {-0.7071067811865477, -0.7071067811865475}}
+woxi eval 'InputForm[CirclePoints[4.]]'
+# {{0.7071067811865475, -0.7071067811865475}, … every coordinate ±0.7071067811865475}
+```
+
+Woxi numericizes the exact points. wolframscript takes `Cos`/`Sin` of machine
+angles starting at `-Pi/2 + Pi/n` in steps of `2 Pi/n`; a fused
+multiply-add `k step + start` reproduces 97 of the 108 points for
+`n = 8 … 16`, plain accumulation and `start + k step` fewer, so the exact
+angle sequence is not decoded.
+
 ### `Together` does not pull a sign out of a numerator led by a negative kernel
 
 ```sh
@@ -3787,7 +3832,7 @@ declared signatures:
 Counting the required and optional slots (skipping anything with
 `OptionsPattern` or a `BlankSequence`, which are unbounded) and comparing
 against Woxi's declared maximum turns up every documented argument form that
-is missing. The sweep originally found 80; the 66 below are what is left.
+is missing. The sweep originally found 80; the 61 below are what is left.
 
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
@@ -3795,11 +3840,9 @@ answer, which makes them safe but individually invisible.
 
 | Function | Woxi | WL up to | `ArgumentsPattern` |
 | --- | --- | --- | --- |
-| `AbsoluteCorrelation` | 1–2 | 3 | `{_, _., _.}` |
 | `AiryAiZero` | 1–1 | 2 | `{_, _.}` |
 | `AiryBiZero` | 1–1 | 2 | `{_, _.}` |
 | `AngerJ` | 2–2 | 3 | `{_, _, _.}` |
-| `AngleBisector` | 1–1 | 2 | `{{_, _, _}, _.}` |
 | `ArcCurvature` | 2–2 | 3 | `{{__}, _, _.}` |
 | `BesselYZero` | 2–2 | 3 | `{_, _, _.}` |
 | `BooleanMaxterms` | 2–2 | 3 | `{_, _., _.}` |
@@ -3815,7 +3858,6 @@ answer, which makes them safe but individually invisible.
 | `Covariance` | 1–2 | 3 | `{_, _., _.}` |
 | `DigitCount` | 1–3 | 4 | `{_, _., _., _.}` |
 | `DigitSum` | 1–2 | 3 | `{_, _., _.}` |
-| `EulerAngles` | 1–1 | 2 | `{_, Optional[{_, _, _}]}` |
 | `FindLinearRecurrence` | 1–1 | 2 | `{_, _.}` |
 | `FrenetSerretSystem` | 2–2 | 3 | `{{__}, _, _.}` |
 | `GammaDistribution` | 2–2 | 4 | `{_, _, _., _.}` |
@@ -3842,13 +3884,11 @@ answer, which makes them safe but individually invisible.
 | `MaximalBy` | 1–3 | 4 | `{_, _., _., _.}` |
 | `MeijerG` | 3–3 | 4 | `{{{___}, {___}}, {{___}, {___}}, _, _.}` |
 | `MinimalBy` | 1–3 | 4 | `{_, _., _., _.}` |
-| `MultipleHarmonicNumber` | 1–2 | 3 | `{_, Optional[{__}], Optional[{__, _}]}` |
 | `NotebookDirectory` | 0–0 | 1 | `{_.}` |
 | `ParentDirectory` | 0–1 | 2 | `{_., _.}` |
 | `PerfectNumber` | 1–1 | 2 | `{_, _.}` |
 | `PolyLog` | 2–2 | 3 | `{_, _, _.}` |
 | `PositionLargest` | 1–2 | 3 | `{_, _., _.}` |
-| `PositionSmallest` | 1–2 | 3 | `{_, _., _.}` |
 | `Precedence` | 1–1 | 2 | `{_, _.}` |
 | `QuantityQ` | 1–1 | 2 | `{_, _.}` |
 | `RiceDistribution` | 2–2 | 3 | `{_, _, _.}` |
@@ -3869,10 +3909,11 @@ Notes on the ones already looked at:
   gives the same answer as without `x`), so there may be nothing to match.
 - `Counts[list, n]`: wolframscript rejects a non-list second argument with
   `Counts::invl`, so the slot is not a useful form either.
-- `PositionLargest` / `PositionSmallest`: the remaining slot is an
-  *orderfun*, but wolframscript rejects `Greater` and `Less` there with
-  `::nord3` (it wants an `Order`-style comparison returning ±1/0), and
-  `Order` itself is the default — so there is little behaviour to match.
+- `PositionLargest`: the remaining slot is an *orderfun*, but
+  wolframscript rejects `Greater` and `Less` there with `::nord3` (it wants
+  an `Order`-style comparison returning ±1/0). `PositionSmallest[list, n, p]`
+  is implemented for such comparisons (e.g. `AlphabeticOrder`); `Greater` /
+  `Less` stay unevaluated without the `::nord3` message.
 - The generalized distribution constructors (`GammaDistribution` 2→4,
   `InverseGammaDistribution` 2→4, `GompertzMakehamDistribution` 2→4,
   `RiceDistribution` 2→3, `InverseGaussianDistribution` 2→3,

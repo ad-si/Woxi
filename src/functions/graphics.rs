@@ -2277,6 +2277,15 @@ fn apply_text_style_rule(
       }
       None => false,
     },
+    // `FontColor -> c` colors the text itself, whatever color directive
+    // was in force before.
+    "FontColor" => match parse_color(replacement) {
+      Some(color) => {
+        style.color = color;
+        true
+      }
+      None => false,
+    },
     "FontFamily" => match replacement {
       Expr::String(s) => {
         style.font_family.clone_from(s);
@@ -2417,7 +2426,10 @@ fn collect_primitives(
       }) && !matches!(
         name.as_str(),
         "Dynamic" | "Style" | "EventHandler"
-      ) =>
+      )
+        // A user function handed `Dynamic[…]` arguments matches on them as
+        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
+        && crate::evaluator::functions::is_builtin_symbol(name) =>
     {
       let released: Vec<Expr> = args
         .iter()
@@ -2551,6 +2563,17 @@ fn collect_primitives(
                 None => parse_text(args, style, prims),
               }
             }
+            // `Text[Grid[…]]` is a table set at the anchor — with its
+            // merged cells, dividers and backgrounds — not its flattened
+            // cell text.
+            Expr::FunctionCall { name, args: gargs }
+              if name == "Grid" && grid_needs_table_layout(gargs) =>
+            {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
             _ => parse_text(args, style, prims),
           }
         }
@@ -2610,7 +2633,7 @@ fn collect_primitives(
         "Inset" if !args.is_empty() => {
           // `Inset[graphic, pos, …]` draws a picture inside this one; any
           // other object (a string, a number) is placed like `Text`.
-          if let Some(text) = text_primitive_inset(args) {
+          if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
           } else {
             match inset_primitives(args, errors) {
@@ -4051,17 +4074,34 @@ fn parse_regular_polygon(
   prims: &mut Vec<Primitive>,
 ) {
   // RegularPolygon[n] — unit circumradius at origin
+  // RegularPolygon[r, n] — circumradius r at origin
   // RegularPolygon[{cx, cy}, r, n] — at center with circumradius r
-  let (cx, cy, r, n) = match args.len() {
+  // RegularPolygon[{cx, cy}, {r, θ}, n] — first vertex at angle θ
+  let radius_spec = |e: &Expr| -> (f64, f64) {
+    if let Expr::List(items) = e
+      && items.len() == 2
+      && let (Some(r), Some(t)) =
+        (expr_to_f64(&items[0]), expr_to_f64(&items[1]))
+    {
+      return (r, t);
+    }
+    (expr_to_f64(e).unwrap_or(1.0), std::f64::consts::FRAC_PI_2)
+  };
+  let (cx, cy, r, theta, n) = match args.len() {
     1 => {
       let n = expr_to_f64(&args[0]).unwrap_or(0.0) as usize;
-      (0.0, 0.0, 1.0, n)
+      (0.0, 0.0, 1.0, std::f64::consts::FRAC_PI_2, n)
+    }
+    2 => {
+      let (r, theta) = radius_spec(&args[0]);
+      let n = expr_to_f64(&args[1]).unwrap_or(0.0) as usize;
+      (0.0, 0.0, r, theta, n)
     }
     3 => {
       let center = expr_to_point(&args[0]).unwrap_or((0.0, 0.0));
-      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
+      let (r, theta) = radius_spec(&args[1]);
       let n = expr_to_f64(&args[2]).unwrap_or(0.0) as usize;
-      (center.0, center.1, r, n)
+      (center.0, center.1, r, theta, n)
     }
     _ => return,
   };
@@ -4071,8 +4111,7 @@ fn parse_regular_polygon(
   // Generate vertices starting from top (Pi/2), going counterclockwise
   let pts: Vec<(f64, f64)> = (0..n)
     .map(|k| {
-      let angle = std::f64::consts::FRAC_PI_2
-        + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
+      let angle = theta + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
       (cx + r * angle.cos(), cy + r * angle.sin())
     })
     .collect();
@@ -5457,6 +5496,49 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
   None
 }
 
+/// `Inset[Style[Text[obj], dirs…], pos]` is `Style[Text[obj, pos], dirs…]`:
+/// like `text_primitive_inset`, but the `Style` wrappers around the `Text`
+/// are kept so their font directives still reach the label.
+fn styled_text_inset(args: &[Expr]) -> Option<Expr> {
+  fn rewrap(e: &Expr, pos: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args: sargs }
+        if is_style_wrapper(name) && !sargs.is_empty() =>
+      {
+        let mut new_args = sargs.to_vec();
+        new_args[0] = rewrap(&sargs[0], pos)?;
+        Some(call(name, new_args))
+      }
+      Expr::FunctionCall { name, args: targs }
+        if name == "Text" && targs.len() == 1 =>
+      {
+        Some(call("Text", vec![targs[0].clone(), pos.clone()]))
+      }
+      _ => None,
+    }
+  }
+  rewrap(args.first()?, args.get(1)?)
+}
+
+/// A `Grid` whose look cannot be had from flattened cell text — merged
+/// cells (`SpanFromLeft`/`SpanFromAbove`) or `Dividers`/`Background`/`Frame`
+/// options — so it is laid out as a table rather than set as text lines.
+fn grid_needs_table_layout(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  let has_span = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(is_span_marker),
+    _ => false,
+  });
+  let has_chrome = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n)
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+  });
+  has_span || has_chrome
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -5655,9 +5737,12 @@ fn inset_primitives(
     // A boxed or laid-out display holding a picture — the framed legend of
     // swatches a Demonstration insets into its plot — is composed to its own
     // picture and embedded whole, rather than printed as source text.
-    call @ Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
-        && crate::evaluator::lays_out_a_graphic(call) =>
+    call @ Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if (matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
+      && crate::evaluator::lays_out_a_graphic(call))
+      || (name == "Grid" && grid_needs_table_layout(call_args)) =>
     {
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
@@ -10213,7 +10298,40 @@ fn render_primitive(
         format!(" font-family=\"{}\"", svg_escape(&style.font_family))
       };
 
-      if text.contains('\n') {
+      let fraction_lines: Option<Vec<&str>> = {
+        let lines: Vec<&str> = text.split('\n').collect();
+        (lines.len() == 3
+          && !lines[1].is_empty()
+          && lines[1].trim().chars().all(|c| c == '-')
+          && !lines[0].trim().is_empty()
+          && !lines[2].trim().is_empty())
+        .then_some(lines)
+      };
+      if let Some(lines) = fraction_lines {
+        // A stacked fraction is typeset compactly: numerator and
+        // denominator close to a bar, not three full text lines apart.
+        let (num, den) = (lines[0].trim(), lines[2].trim());
+        let widest = num.chars().count().max(den.chars().count()) as f64;
+        let bar_half = widest * fs * 0.55 / 2.0 + fs * 0.15;
+        let gap = fs * 0.6;
+        let fill = color.to_svg_rgb();
+        out.push_str(&format!("<g{rotate_attr}>"));
+        for (line, y) in [(num, sy - gap), (den, sy + gap)] {
+          out.push_str(&format!(
+            "<text x=\"{sx:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>",
+            style.font_weight,
+            style.font_style,
+            color.opacity_attr(),
+            svg_escape(line),
+          ));
+        }
+        out.push_str(&format!(
+          "<line x1=\"{:.2}\" y1=\"{sy:.2}\" x2=\"{:.2}\" y2=\"{sy:.2}\" stroke=\"{fill}\" stroke-width=\"{:.2}\"/></g>\n",
+          sx - bar_half,
+          sx + bar_half,
+          (fs / 18.0).max(0.5),
+        ));
+      } else if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
         // Left/right-aligned lines hang from the block's edge, half of its
@@ -23336,9 +23454,18 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   // has no quotes around it — and one carrying `\!\(\*…\)` box notation
   // typesets from there, so it is never handed to the traditional box
   // builder (which would print it quoted, box source and all).
+  // `TraditionalForm[Style[Text@Grid[…], 12]]` styles a layout, so like the
+  // bare layout it is left for the layout renderer.
+  let styles_a_layout = matches!(&current, Expr::FunctionCall { name, args }
+    if name == "Style"
+      && args.first().is_some_and(|a| matches!(
+        &unwrap_display_wrappers(a),
+        Expr::FunctionCall { name, .. }
+          if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))));
   if traditional
     && !matches!(&current, Expr::String(_))
     && !crate::evaluator::lays_out_a_graphic(&current)
+    && !styles_a_layout
     && !matches!(&current, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
@@ -26145,14 +26272,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // action rather than binding a variable, so it is not a variable spec
       // either (a Demonstration's "choose a motif" menu is commonly written
       // this way).
-      Expr::FunctionCall { name, args: inner }
-        if (name == "Pane" || name == "Labeled")
-          && inner.first().is_some_and(|c| {
-            expr_contains_call(c, &["Control"]) || annotation_contains_place(c)
-          }) =>
-      {
-        out_args.push(spec.clone());
-      }
+      // The full set wolframscript accepts, whatever they wrap (probed
+      // head by head: `Manipulate[x, h[1], {x, 0, 1}]`); a bare control
+      // such as `Slider[Dynamic[x]]` or an unknown head is a vsform.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -26171,6 +26293,22 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "OpenerView"
             | "Tooltip"
             | "ExpressionCell"
+            | "Labeled"
+            | "Pane"
+            | "Framed"
+            | "Mouseover"
+            | "Deploy"
+            | "Annotation"
+            | "Hyperlink"
+            | "Magnify"
+            | "Rotate"
+            | "Invisible"
+            | "Multicolumn"
+            | "FlipView"
+            | "SlideView"
+            | "MenuView"
+            | "StatusArea"
+            | "PopupView"
         ) =>
       {
         out_args.push(spec.clone());

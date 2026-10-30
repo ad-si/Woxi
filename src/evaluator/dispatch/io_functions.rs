@@ -3200,7 +3200,7 @@ pub fn dispatch_io_functions(
     //
     // Returns a List of Integers in 0..255. Returns {} on EOF.
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryReadList" if (1..=2).contains(&args.len()) => {
+    "BinaryReadList" if (1..=3).contains(&args.len()) => {
       let path = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => match io_stream_path(&args[0]) {
@@ -3210,19 +3210,26 @@ pub fn dispatch_io_functions(
           }
         },
       };
-      let form = if args.len() == 2 {
+      let form = if args.len() >= 2 {
         args[1].clone()
       } else {
         str_expr("Byte")
       };
-      // Only "Byte" is supported; other forms fall through unevaluated so
-      // callers see the same behaviour as for BinaryRead.
-      match &form {
-        Expr::String(s) if s == "Byte" => {}
+      // "Byte" and "Character8" are supported; other forms fall through
+      // unevaluated so callers see the same behaviour as for BinaryRead.
+      let as_chars = match &form {
+        Expr::String(s) if s == "Byte" => false,
+        Expr::String(s) if s == "Character8" => true,
         _ => {
           return Some(Ok(unevaluated("BinaryReadList", args)));
         }
-      }
+      };
+      // BinaryReadList[src, type, n] reads at most n objects.
+      let limit = match args.get(2) {
+        None => usize::MAX,
+        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
+        Some(_) => return Some(Ok(unevaluated("BinaryReadList", args))),
+      };
       let bytes = match io_binary_bytes(&args[0], &path) {
         Ok(b) => b,
         Err(e) => {
@@ -3233,7 +3240,15 @@ pub fn dispatch_io_functions(
       };
       let out: Vec<Expr> = bytes
         .into_iter()
-        .map(|b| Expr::Integer(b as i128))
+        .take(limit)
+        .map(|b| {
+          if as_chars {
+            // Character8 is a raw byte as a 1-char (Latin-1) string.
+            Expr::String((b as char).to_string())
+          } else {
+            Expr::Integer(b as i128)
+          }
+        })
         .collect();
       return Some(Ok(Expr::List(out.into())));
     }
@@ -6372,6 +6387,38 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_to_svg(&args[0])
       };
+      // `Labeled[g, {l1, l2, …}, {p1, p2, …}]` sets each label at its own
+      // side; same-side labels stack into one cell of a 3x3 layout.
+      if let (Expr::List(labels), Some(Expr::List(positions))) =
+        (&args[1], args.get(2))
+        && labels.len() == positions.len()
+      {
+        let mut sides: [Vec<Vec<String>>; 4] = Default::default();
+        for (label, position) in labels.iter().zip(positions.iter()) {
+          let side = match position {
+            Expr::Identifier(p) if p == "Top" => 0,
+            Expr::Identifier(p) if p == "Left" => 1,
+            Expr::Identifier(p) if p == "Right" => 2,
+            _ => 3,
+          };
+          sides[side].push(vec![expr_to_svg(&unquoted_display_string(label))]);
+        }
+        let side_cell = |rows: &Vec<Vec<String>>| -> String {
+          match rows.len() {
+            0 => String::new(),
+            1 => rows[0][0].clone(),
+            _ => crate::functions::graphics::combine_graphics_svgs(rows)
+              .unwrap_or_default(),
+          }
+        };
+        let rows = vec![
+          vec![String::new(), side_cell(&sides[0]), String::new()],
+          vec![side_cell(&sides[1]), content, side_cell(&sides[2])],
+          vec![String::new(), side_cell(&sides[3]), String::new()],
+        ];
+        return crate::functions::graphics::combine_graphics_svgs(&rows)
+          .unwrap_or_else(|| expr_text_svg(expr));
+      }
       // A label is shown as text, so a string one loses its quotes.
       let label = expr_to_svg(&unquoted_display_string(&args[1]));
       let position = match args.get(2) {
