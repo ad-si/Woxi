@@ -210,6 +210,23 @@ mod graphics {
     }
 
     #[test]
+    fn texture_repeats_for_coordinates_outside_unit_square() {
+      let tiles = |coords: &str| {
+        let svg = interpret(&format!(
+          "ExportString[Graphics[{{Texture[Image[{{{{{{0.5, 0.5, 0.5}}, \
+             {{0.6, 0.6, 0.6}}}}, {{{{0.7, 0.7, 0.7}}, {{0.8, 0.8, 0.8}}}}}}]], \
+             Polygon[{{{{0, 0}}, {{1, 0}}, {{1, 3}}, {{0, 3}}}}, \
+             VertexTextureCoordinates -> {coords}]}}], \"SVG\"]"
+        ))
+        .unwrap();
+        svg.matches("<use ").count()
+      };
+      assert_eq!(tiles("{{0, 0}, {1, 0}, {1, 1}, {0, 1}}"), 1);
+      assert_eq!(tiles("{{0, 0}, {1, 0}, {1, 3}, {0, 3}}"), 3);
+      assert_eq!(tiles("{{0, 0}, {2, 0}, {2, 3}, {0, 3}}"), 6);
+    }
+
+    #[test]
     fn graphics3d_with_texture_directive() {
       assert_eq!(
         interpret(

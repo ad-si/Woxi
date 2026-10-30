@@ -8260,9 +8260,48 @@ fn emit_textured_polygon(
       tex.width, tex.height, tex.png_b64
     ));
   }
+  // Texture coordinates outside [0, 1] repeat the image, so lay one copy
+  // per integer cell the coordinates span (capped to keep the SVG small).
+  let (u_lo, u_hi) = tex
+    .coords
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(u, _)| {
+      (lo.min(u), hi.max(u))
+    });
+  let (v_lo, v_hi) = tex
+    .coords
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(_, v)| {
+      (lo.min(v), hi.max(v))
+    });
+  let (i0, i1) = (
+    u_lo.floor() as i64,
+    (u_hi.ceil() as i64).max(u_lo.floor() as i64 + 1),
+  );
+  let (j0, j1) = (
+    v_lo.floor() as i64,
+    (v_hi.ceil() as i64).max(v_lo.floor() as i64 + 1),
+  );
+  let mut uses = String::new();
+  if (i1 - i0) * (j1 - j0) <= 400 {
+    for ti in i0..i1 {
+      for tj in j0..j1 {
+        let (tx, ty) = (ti as f64 * w, -(tj as f64) * h);
+        uses.push_str(&format!(
+          "<use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {:.4} {:.4})\"/>",
+          e + a * tx + c * ty,
+          f + b * tx + d * ty
+        ));
+      }
+    }
+  } else {
+    uses.push_str(&format!(
+      "<use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/>"
+    ));
+  }
   let clip_id = format!("{tex_id}c{}", out.len());
   out.push_str(&format!(
-    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\"><use href=\"#{tex_id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    "<clipPath id=\"{clip_id}\"><polygon points=\"{}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">{uses}</g>\n",
     screen_pts.join(" ")
   ));
   if !stroke_attr.is_empty() {
