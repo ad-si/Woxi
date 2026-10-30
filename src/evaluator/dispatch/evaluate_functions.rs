@@ -12299,6 +12299,9 @@ fn evaluate_function_call_ast_inner(
         | "SampledSoundFunction"
         // A kernel density estimate: PDF, CDF, Mean and Variance read it.
         | "SmoothKernelDistribution"
+        // The container Empirical-, Histogram- and KernelMixtureDistribution
+        // evaluate to, read by PDF, CDF, Quantile and the moments.
+        | "DataDistribution"
     )
   {
     let args_str = args
