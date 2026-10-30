@@ -4314,6 +4314,21 @@ mod optional_explicit_form {
 mod pattern_sequence {
   use super::*;
 
+  // A test on a PatternSequence applies to each element it matches.
+  #[test]
+  fn tested_pattern_sequence() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[{1, 2}, {PatternSequence[_, _]?IntegerQ}], \
+          MatchQ[{1, x}, {PatternSequence[_, _]?IntegerQ}], \
+          MatchQ[{1, 2, 3}, {PatternSequence[_, _]?IntegerQ, _}], \
+          {1, 2} /. {PatternSequence[a_, b_]?IntegerQ} :> a + b}"
+      )
+      .unwrap(),
+      "{True, False, True, 3}"
+    );
+  }
+
   #[test]
   fn splices_into_the_enclosing_arguments() {
     assert_eq!(
