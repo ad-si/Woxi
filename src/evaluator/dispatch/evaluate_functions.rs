@@ -5716,6 +5716,35 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);
   }
 
+  // The domains `Vectors[n]` and `Matrices[{m, n}]` default to Complexes,
+  // and a matrix domain carries its (empty) symmetry list.
+  if name == "Vectors" && args.len() == 1 {
+    return Ok(call(
+      "Vectors",
+      vec![args[0].clone(), Expr::Identifier("Complexes".to_string())],
+    ));
+  }
+  if name == "Matrices"
+    && matches!(args.len(), 1 | 2)
+    && let Expr::List(dims) = &args[0]
+  {
+    if dims.len() != 2 {
+      crate::emit_message(&format!(
+        "Matrices::rankl: The list {} of dimensions for a matrix must have length 2.",
+        expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(name, args));
+    }
+    let domain = args
+      .get(1)
+      .cloned()
+      .unwrap_or_else(|| Expr::Identifier("Complexes".to_string()));
+    return Ok(call(
+      "Matrices",
+      vec![args[0].clone(), domain, Expr::List(vec![].into())],
+    ));
+  }
+
   // FindHamiltonianCycle[graph] → length-1 list with one Hamiltonian cycle,
   // or {}; FindHamiltonianCycle[graph, k | All] → up to k of them.
   if name == "FindHamiltonianCycle" && matches!(args.len(), 1 | 2) {

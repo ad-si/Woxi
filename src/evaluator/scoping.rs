@@ -753,6 +753,55 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
 
 /// Element[x, domain] - Test or assert domain membership
 pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
+  // `Vectors[n, dom]` and `Matrices[{m, n}, dom]`: a list of that shape
+  // whose entries lie in `dom` (Complexes when not given).
+  if let Expr::FunctionCall { name, args } = domain
+    && (name == "Vectors" || name == "Matrices")
+    && matches!(args.len(), 1..=3)
+  {
+    let inner = args
+      .get(1)
+      .cloned()
+      .unwrap_or_else(|| Expr::Identifier("Complexes".to_string()));
+    let Expr::List(rows) = x else {
+      return Ok(call("Element", vec![x.clone(), domain.clone()]));
+    };
+    let entries: Option<Vec<Expr>> = if name == "Vectors" {
+      let n = match &args[0] {
+        Expr::Integer(n) => Some(*n),
+        _ => None,
+      };
+      (n.is_none_or(|n| rows.len() as i128 == n)
+        && !rows.iter().any(|r| matches!(r, Expr::List(_))))
+      .then(|| rows.to_vec())
+    } else {
+      let dims: Option<(i128, i128)> = match &args[0] {
+        Expr::List(d) => match d.as_slice() {
+          [Expr::Integer(m), Expr::Integer(n)] => Some((*m, *n)),
+          _ => None,
+        },
+        _ => None,
+      };
+      let mut flat = Vec::new();
+      let mut ok = dims.is_none_or(|(m, _)| rows.len() as i128 == m);
+      for r in rows {
+        match r {
+          Expr::List(cells)
+            if dims.is_none_or(|(_, n)| cells.len() as i128 == n)
+              && !cells.iter().any(|c| matches!(c, Expr::List(_))) =>
+          {
+            flat.extend(cells.iter().cloned());
+          }
+          _ => ok = false,
+        }
+      }
+      ok.then_some(flat)
+    };
+    return match entries {
+      None => Ok(bool_expr(false)),
+      Some(e) => element_ast(&Expr::List(e.into()), &inner),
+    };
+  }
   let domain_name = match domain {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -864,6 +913,26 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   match is_member_of_domain(x, domain_name) {
     Some(true) => Ok(bool_expr(true)),
     Some(false) => Ok(bool_expr(false)),
+    // An exact real number of known sign (`Sqrt[6]`, `Pi - 3`) settles the
+    // sign-restricted real domains.
+    None
+      if matches!(
+        domain_name,
+        "PositiveReals"
+          | "NegativeReals"
+          | "NonNegativeReals"
+          | "NonPositiveReals"
+      ) && is_member_of_domain(x, "Reals") == Some(true)
+        && crate::functions::predicate_ast::is_numeric_q(x) =>
+    {
+      match crate::functions::math_ast::try_eval_to_f64(x) {
+        Some(v) if v != 0.0 => Ok(bool_expr(match domain_name {
+          "PositiveReals" | "NonNegativeReals" => v > 0.0,
+          _ => v < 0.0,
+        })),
+        _ => Ok(call("Element", vec![x.clone(), domain.clone()])),
+      }
+    }
     None => Ok(call("Element", vec![x.clone(), domain.clone()])),
   }
 }

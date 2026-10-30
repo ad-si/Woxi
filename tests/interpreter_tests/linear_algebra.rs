@@ -11828,11 +11828,29 @@ mod array_domains {
   use super::*;
 
   #[test]
+  fn element_of_vector_and_matrix_domains() {
+    // Shape first, then every entry in the domain; Vectors[n] means
+    // Complexes and Matrices carries its (empty) symmetry list.
+    assert_eq!(
+      interpret(
+        "{Element[{0, 0, 0}, Vectors[3, Reals]], Element[{1, I}, Vectors[2, Reals]], \
+          Element[{1, 2}, Vectors[3, Reals]], Element[{a, 1}, Vectors[2, Reals]], \
+          Element[{{1, 2}, {3, 4}}, Matrices[{2, 2}, Reals]], \
+          Element[{{1}, {2, 3}}, Matrices[{2, 2}]], Element[x, Vectors[3]], \
+          Element[Sqrt[6], PositiveReals], Element[Pi - 4, NegativeReals]}"
+      )
+      .unwrap(),
+      "{True, False, False, Element[a, Reals], True, False, \
+       Element[x, Vectors[3, Complexes]], True, True}"
+    );
+  }
+
+  #[test]
   fn vectors_and_matrices_domains_stay_inert_without_warning() {
     use woxi::interpret_with_stdout;
     assert_eq!(interpret("Vectors[3, Reals]").unwrap(), "Vectors[3, Reals]");
     let r = interpret_with_stdout("Matrices[{2, 3}, Integers]").unwrap();
-    assert_eq!(r.result, "Matrices[{2, 3}, Integers]");
+    assert_eq!(r.result, "Matrices[{2, 3}, Integers, {}]");
     assert!(
       !r.warnings.iter().any(|w| w.contains("not yet implemented")),
       "{:?}",
