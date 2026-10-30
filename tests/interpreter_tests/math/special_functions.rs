@@ -12164,7 +12164,7 @@ mod weierstrass_lattice_functions {
   fn complex_arguments_and_invariants() {
     close(
       "WeierstrassZeta[0.5 + 0.3 I, {189.07272012923406, 2.0717571555122493*^-13}]",
-      1.570796326794897,
+      std::f64::consts::FRAC_PI_2,
       -1.4455597450768478,
     );
     close(
