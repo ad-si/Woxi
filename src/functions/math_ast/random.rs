@@ -2780,7 +2780,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (2i128, *imax)
     }
     Expr::BigInteger(imax) if imax.sign() == num_bigint::Sign::Plus => {
-      return random_big_prime(num_bigint::BigInt::from(2), imax.clone(), args);
+      return Ok(random_big_prime(&num_bigint::BigInt::from(2), imax, args));
     }
     Expr::Real(_) => {
       crate::emit_message(&format!(
@@ -2815,7 +2815,11 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (Some(a), Some(b)) = (big(&items[0]), big(&items[1])) else {
           return uneval();
         };
-        return random_big_prime(a.clone().min(b.clone()), a.max(b), args);
+        return Ok(random_big_prime(
+          &a.clone().min(b.clone()),
+          &a.max(b),
+          args,
+        ));
       }
     }
     _ => return uneval(),
@@ -2930,13 +2934,13 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// in the range, kept when prime. The interval is assumed to hold primes,
 /// which every range this wide does.
 fn random_big_prime(
-  min: num_bigint::BigInt,
-  max: num_bigint::BigInt,
+  min: &num_bigint::BigInt,
+  max: &num_bigint::BigInt,
   args: &[Expr],
-) -> Result<Expr, InterpreterError> {
+) -> Expr {
   use num_bigint::BigInt;
   use rand::RngExt;
-  let span = &max - &min + BigInt::from(1);
+  let span = max - min + BigInt::from(1);
   let bits = span.bits();
   let draw = || -> BigInt {
     crate::with_rng(|rng| {
@@ -2956,7 +2960,7 @@ fn random_big_prime(
             .collect::<Vec<u32>>(),
         ));
         if v < span {
-          return &min + v;
+          return min + v;
         }
       }
     })
@@ -2968,7 +2972,7 @@ fn random_big_prime(
     }
   };
   let dims: Vec<i128> = match args.get(1) {
-    None => return Ok(prime()),
+    None => return prime(),
     Some(Expr::Integer(n)) if *n > 0 => vec![*n],
     Some(Expr::List(ds))
       if !ds.is_empty()
@@ -2978,7 +2982,7 @@ fn random_big_prime(
         .map(|d| if let Expr::Integer(n) = d { *n } else { 0 })
         .collect()
     }
-    _ => return Ok(unevaluated("RandomPrime", args)),
+    _ => return unevaluated("RandomPrime", args),
   };
   fn nested(dims: &[i128], prime: &dyn Fn() -> Expr) -> Expr {
     match dims.split_first() {
@@ -2991,7 +2995,7 @@ fn random_big_prime(
       ),
     }
   }
-  Ok(nested(&dims, &prime))
+  nested(&dims, &prime)
 }
 
 /// Collect all primes in [min, max] (for small ranges)

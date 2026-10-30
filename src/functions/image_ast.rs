@@ -11418,20 +11418,20 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 ///   sans-serif / serif fallback; its Latin + Latin-Extended coverage is
 ///   more than enough for tick labels, axis labels, titles, and similar
 ///   plot chrome, and it was literally designed for on-screen legibility.
-/// - **Atkinson Hyperlegible Mono** (OFL, variable-weight) as the
-///   monospace fallback. One file covers every weight from Thin to
-///   ExtraBold, and it shares the same hyperlegible design language as
-///   its proportional sibling.
+/// - **Atkinson Hyperlegible Mono** (OFL) as the monospace fallback; it
+///   shares the same hyperlegible design language as its proportional
+///   sibling. This is a static Regular instance of the variable font:
+///   usvg ignores font variations and draws a variable font's default
+///   instance, which for the Mono font is ExtraLight — too thin to read
+///   at typeset-output sizes.
 ///
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
 fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
-    include_bytes!(
-      "../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
-    )
-    .to_vec(),
+    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
   );
   fontdb.load_font_data(
     include_bytes!(

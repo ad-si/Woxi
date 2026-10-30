@@ -13208,9 +13208,18 @@ pub(crate) fn group_digits_str(s: &str) -> String {
 pub fn layout_to_svg(layout: &BoxLayout, fill: &str) -> String {
   let width = layout.width.ceil().max(1.0) as usize;
   let height = layout.height.ceil().max(1.0) as usize;
+  // Radicals, fraction bars, brackets and frames are stroked with
+  // `currentColor`, so pin `color` to the text color too. Without it a
+  // standalone rasterizer (Woxi Studio) resolves `currentColor` to black,
+  // which makes those strokes vanish on a dark background.
+  let color = if fill == "currentColor" {
+    String::new()
+  } else {
+    format!(" color=\"{fill}\"")
+  };
   format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\">\
-     <g fill=\"{fill}\" stroke=\"{fill}\">{}</g>\
+     <g fill=\"{fill}\" stroke=\"{fill}\"{color}>{}</g>\
      </svg>",
     layout.elements,
   )
