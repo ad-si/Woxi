@@ -6295,6 +6295,14 @@ highpass multiplies each factor by a unit). Lowpass models, machine-number
 models and the filtered values match. `ToDiscreteTimeModel` of a machine
 model agrees with WL to the last one or two digits.
 
+### `Short` only truncates integers
+
+`Short[expr]` / `Short[expr, n]` on a list, sum or other compound
+expression is returned unchanged instead of eliding the middle as
+`<<k>>`, so `Panel[Short[Range[100]]]` in a `Manipulate` shows every
+element. Only the digits of an over-long integer are shortened
+(`shorten_for_display` in `src/functions/graphics.rs`).
+
 ## ImageRotate: exact pixel-corner ties at an arbitrary angle
 
 `ImageRotate` at an angle that is not a right angle samples the source pixel
