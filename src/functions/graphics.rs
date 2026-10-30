@@ -10298,7 +10298,40 @@ fn render_primitive(
         format!(" font-family=\"{}\"", svg_escape(&style.font_family))
       };
 
-      if text.contains('\n') {
+      let fraction_lines: Option<Vec<&str>> = {
+        let lines: Vec<&str> = text.split('\n').collect();
+        (lines.len() == 3
+          && !lines[1].is_empty()
+          && lines[1].trim().chars().all(|c| c == '-')
+          && !lines[0].trim().is_empty()
+          && !lines[2].trim().is_empty())
+        .then_some(lines)
+      };
+      if let Some(lines) = fraction_lines {
+        // A stacked fraction is typeset compactly: numerator and
+        // denominator close to a bar, not three full text lines apart.
+        let (num, den) = (lines[0].trim(), lines[2].trim());
+        let widest = num.chars().count().max(den.chars().count()) as f64;
+        let bar_half = widest * fs * 0.55 / 2.0 + fs * 0.15;
+        let gap = fs * 0.6;
+        let fill = color.to_svg_rgb();
+        out.push_str(&format!("<g{rotate_attr}>"));
+        for (line, y) in [(num, sy - gap), (den, sy + gap)] {
+          out.push_str(&format!(
+            "<text x=\"{sx:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>",
+            style.font_weight,
+            style.font_style,
+            color.opacity_attr(),
+            svg_escape(line),
+          ));
+        }
+        out.push_str(&format!(
+          "<line x1=\"{:.2}\" y1=\"{sy:.2}\" x2=\"{:.2}\" y2=\"{sy:.2}\" stroke=\"{fill}\" stroke-width=\"{:.2}\"/></g>\n",
+          sx - bar_half,
+          sx + bar_half,
+          (fs / 18.0).max(0.5),
+        ));
+      } else if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
         // Left/right-aligned lines hang from the block's edge, half of its
