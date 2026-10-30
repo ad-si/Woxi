@@ -1248,6 +1248,11 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    "ButterworthFilterModel" if !args.is_empty() => {
+      return Some(
+        crate::functions::control_systems::butterworth_filter_model_ast(args),
+      );
+    }
     "ToDiscreteTimeModel" if args.len() >= 2 => {
       return Some(
         crate::functions::control_systems::to_discrete_time_model_ast(args),

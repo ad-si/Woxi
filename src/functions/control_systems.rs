@@ -1282,12 +1282,14 @@ fn convert_model(
       };
       let new_num = ev(&call("Times", vec![factor.clone(), new_num]))?;
       let new_den = ev(&call("Times", vec![factor, new_den]))?;
-      num_row.push(if expand_numerator {
+      let new_num = if expand_numerator {
         ev(&call("Expand", vec![new_num]))?
       } else {
         new_num
-      });
-      den_row.push(ev(&call("Expand", vec![new_den]))?);
+      };
+      let new_den = ev(&call("Expand", vec![new_den]))?;
+      num_row.push(drop_imaginary_noise(&new_num)?);
+      den_row.push(drop_imaginary_noise(&new_den)?);
     }
     nums.push(Expr::List(num_row.into()));
     dens.push(Expr::List(den_row.into()));
@@ -1298,6 +1300,73 @@ fn convert_model(
   ];
   args.extend(opts);
   Ok(Some(call("TransferFunctionModel", args)))
+}
+
+/// A polynomial whose machine complex coefficients have only rounding noise
+/// for imaginary parts (conjugate pole pairs expanded) gets real ones: an
+/// imaginary part below 1e-12 of the largest coefficient is dropped.
+fn drop_imaginary_noise(e: &Expr) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{
+    contains_inexact_real, try_extract_complex_float,
+  };
+  let is_machine_number = |e: &Expr| {
+    matches!(e, Expr::Real(_))
+      || (crate::functions::predicate_ast::is_complex_number(e)
+        && contains_inexact_real(e))
+  };
+  fn largest(e: &Expr, is_num: &dyn Fn(&Expr) -> bool, acc: &mut f64) {
+    if is_num(e) {
+      if let Some((re, im)) = try_extract_complex_float(e) {
+        *acc = acc.max(re.hypot(im));
+      }
+      return;
+    }
+    match e {
+      Expr::FunctionCall { args, .. } => {
+        args.iter().for_each(|a| largest(a, is_num, acc));
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        largest(left, is_num, acc);
+        largest(right, is_num, acc);
+      }
+      Expr::UnaryOp { operand, .. } => largest(operand, is_num, acc),
+      _ => {}
+    }
+  }
+  fn strip(e: &Expr, is_num: &dyn Fn(&Expr) -> bool, tol: f64) -> Expr {
+    if is_num(e) {
+      return match try_extract_complex_float(e) {
+        Some((re, im)) if im != 0.0 && im.abs() <= tol => Expr::Real(re),
+        Some((re, im)) if im == 0.0 && !matches!(e, Expr::Real(_)) => {
+          Expr::Real(re)
+        }
+        _ => e.clone(),
+      };
+    }
+    match e {
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| strip(a, is_num, tol)).collect(),
+      },
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(strip(left, is_num, tol)),
+        right: Box::new(strip(right, is_num, tol)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(strip(operand, is_num, tol)),
+      },
+      _ => e.clone(),
+    }
+  }
+  let mut max = 0.0f64;
+  largest(e, &is_machine_number, &mut max);
+  if max == 0.0 {
+    return Ok(e.clone());
+  }
+  let stripped = strip(e, &is_machine_number, 1e-12 * max);
+  ev(&stripped)
 }
 
 fn sampling_rule(value: Expr) -> Expr {
@@ -1536,4 +1605,183 @@ fn discrete_response(
     ));
   }
   Ok(Some(Expr::List(outputs.into())))
+}
+
+/// ButterworthFilterModel[spec] / ButterworthFilterModel[spec, var] — the
+/// Butterworth filter as a TransferFunctionModel. `spec` is an order `n`
+/// (lowpass with unit cutoff, in machine numbers), `{n, ωc}`,
+/// `{"Lowpass" | "Highpass", n, ωc}` or `{"Bandpass" | "Bandstop", n,
+/// {ω1, ω2}}`. With the normalized poles' negatives u_k on the unit circle:
+/// lowpass ωc^n/Π(s + ωc u_k), highpass s^n/Π(s + ωc/u_k), bandpass
+/// (B s)^n/Π(s² + B u_k s + ω0²) and bandstop (s² + ω0²)^n/Π(s² + (B/u_k) s
+/// + ω0²), where B = ω2 - ω1 and ω0² = ω1 ω2.
+pub fn butterworth_filter_model_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated("ButterworthFilterModel", args));
+  if args.is_empty() || args.len() > 2 {
+    return unevaluated_call();
+  }
+  let order = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 && *n <= 64 => Some(*n),
+    _ => None,
+  };
+  let (kind, n, cutoff, numeric) = match &args[0] {
+    spec @ Expr::Integer(_) => match order(spec) {
+      Some(n) => ("Lowpass", n, Expr::Integer(1), true),
+      None => return unevaluated_call(),
+    },
+    Expr::List(items) => match items.as_slice() {
+      [n, wc] if order(n).is_some() => {
+        ("Lowpass", order(n).unwrap(), wc.clone(), false)
+      }
+      [Expr::String(kind), n, wc] if order(n).is_some() => {
+        match kind.as_str() {
+          "Lowpass" | "Highpass" | "Bandpass" | "Bandstop" => {}
+          _ => return unevaluated_call(),
+        }
+        (kind.as_str(), order(n).unwrap(), wc.clone(), false)
+      }
+      _ => return unevaluated_call(),
+    },
+    _ => return unevaluated_call(),
+  };
+  // Machine cutoffs take the poles as machine numbers too.
+  let numeric =
+    numeric || crate::functions::math_ast::contains_inexact_real(&cutoff);
+  let band = matches!(kind, "Bandpass" | "Bandstop");
+  if band != matches!(&cutoff, Expr::List(w) if w.len() == 2) {
+    return unevaluated_call();
+  }
+  let var = match args.get(1) {
+    Some(v @ Expr::Identifier(_)) => v.clone(),
+    Some(_) => return unevaluated_call(),
+    None => crate::syntax::string_to_expr("\\[FormalS]")?,
+  };
+  let int = Expr::Integer;
+  let pow = |b: Expr, e: i128| call("Power", vec![b, int(e)]);
+  // u_k = -Exp[I Pi (2k + n - 1)/(2n)], k = 1..n.
+  let mut us = Vec::with_capacity(n as usize);
+  for k in 1..=n {
+    let u = call1_(
+      "ComplexExpand",
+      call(
+        "Times",
+        vec![
+          int(-1),
+          call1_(
+            "Exp",
+            call(
+              "Times",
+              vec![
+                Expr::Identifier("I".into()),
+                Expr::Constant("Pi".into()),
+                crate::functions::math_ast::make_rational(2 * k + n - 1, 2 * n),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    let u = ev(&u)?;
+    us.push(if numeric { ev(&call1_("N", u))? } else { u });
+  }
+  let product = |factor: &dyn Fn(&Expr) -> Expr| {
+    call("Times", us.iter().map(factor).collect())
+  };
+  let s2 = || pow(var.clone(), 2);
+  let (num, den) = match kind {
+    "Lowpass" => {
+      let gain = ev(&pow(cutoff.clone(), n))?;
+      let gain = if numeric {
+        ev(&call1_("N", gain))?
+      } else {
+        gain
+      };
+      let num = ev(&call1_("Numerator", gain.clone()))?;
+      let scale = ev(&call1_("Denominator", gain))?;
+      let den = call(
+        "Times",
+        vec![
+          scale,
+          product(&|u| {
+            call(
+              "Plus",
+              vec![var.clone(), call("Times", vec![cutoff.clone(), u.clone()])],
+            )
+          }),
+        ],
+      );
+      (num, den)
+    }
+    "Highpass" => (
+      pow(var.clone(), n),
+      product(&|u| {
+        call(
+          "Plus",
+          vec![
+            var.clone(),
+            call("Times", vec![cutoff.clone(), pow(u.clone(), -1)]),
+          ],
+        )
+      }),
+    ),
+    _ => {
+      let Expr::List(w) = &cutoff else {
+        unreachable!()
+      };
+      let b = ev(&call(
+        "Plus",
+        vec![w[1].clone(), call("Times", vec![int(-1), w[0].clone()])],
+      ))?;
+      let w0sq = ev(&call("Times", vec![w[0].clone(), w[1].clone()]))?;
+      if kind == "Bandpass" {
+        (
+          pow(call("Times", vec![b.clone(), var.clone()]), n),
+          product(&|u| {
+            call(
+              "Plus",
+              vec![
+                w0sq.clone(),
+                call("Times", vec![b.clone(), u.clone(), var.clone()]),
+                s2(),
+              ],
+            )
+          }),
+        )
+      } else {
+        (
+          pow(call("Plus", vec![w0sq.clone(), s2()]), n),
+          product(&|u| {
+            call(
+              "Plus",
+              vec![
+                w0sq.clone(),
+                call("Times", vec![b.clone(), pow(u.clone(), -1), var.clone()]),
+                s2(),
+              ],
+            )
+          }),
+        )
+      }
+    }
+  };
+  let (num, den) = (ev(&num)?, ev(&den)?);
+  Ok(call(
+    "TransferFunctionModel",
+    vec![
+      Expr::List(
+        vec![
+          Expr::List(vec![Expr::List(vec![num].into())].into()),
+          Expr::List(vec![Expr::List(vec![den].into())].into()),
+        ]
+        .into(),
+      ),
+      var,
+    ],
+  ))
+}
+
+fn call1_(name: &str, arg: Expr) -> Expr {
+  call(name, vec![arg])
 }

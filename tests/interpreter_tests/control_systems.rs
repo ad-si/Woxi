@@ -257,3 +257,64 @@ mod discrete_time {
     );
   }
 }
+
+mod butterworth_filter_model {
+  use super::*;
+
+  #[test]
+  fn lowpass_forms() {
+    assert_eq!(
+      interpret(
+        "ToString[ButterworthFilterModel[{\"Lowpass\", 2, 1/2}, s], InputForm]"
+      )
+      .unwrap(),
+      "TransferFunctionModel[{{{1}}, {{4*((1/2 - I/2)/Sqrt[2] + s)*((1/2 + I/2)/Sqrt[2] + s)}}}, s]"
+    );
+    assert_eq!(
+      interpret("ToString[ButterworthFilterModel[{3, 1}, s], InputForm]")
+        .unwrap(),
+      "TransferFunctionModel[{{{1}}, {{(1 + s)*(1/2 - (I/2)*Sqrt[3] + s)*(1/2 + (I/2)*Sqrt[3] + s)}}}, s]"
+    );
+    // An order alone, or a machine cutoff, gives machine poles.
+    assert_eq!(
+      interpret("ToString[ButterworthFilterModel[3, s], InputForm]").unwrap(),
+      "TransferFunctionModel[{{{1.}}, {{((0.5 - 0.8660254037844386*I) + s)*((0.5 + 0.8660254037844386*I) + s)*(1. + s)}}}, s]"
+    );
+    assert_eq!(
+      interpret("ToString[ButterworthFilterModel[{2, 3.}, s], InputForm]")
+        .unwrap(),
+      "TransferFunctionModel[{{{9.}}, {{((2.1213203435596424 - 2.1213203435596424*I) + s)*((2.1213203435596424 + 2.1213203435596424*I) + s)}}}, s]"
+    );
+  }
+
+  #[test]
+  fn band_and_highpass() {
+    assert_eq!(
+      interpret(
+        "ToString[{ButterworthFilterModel[{\"Bandpass\", 1, {1, 2}}, s], \
+         ButterworthFilterModel[{\"Bandstop\", 1, {1, 2}}, s], \
+         ButterworthFilterModel[{\"Highpass\", 1, 2}, s]}, InputForm]"
+      )
+      .unwrap(),
+      "{TransferFunctionModel[{{{s}}, {{2 + s + s^2}}}, s], \
+       TransferFunctionModel[{{{2 + s^2}}, {{2 + s + s^2}}}, s], \
+       TransferFunctionModel[{{{s}}, {{2 + s}}}, s]}"
+    );
+  }
+
+  #[test]
+  fn filtering_through_the_discrete_model() {
+    let out = interpret(
+      "RecurrenceFilter[ToDiscreteTimeModel[ButterworthFilterModel[{\"Lowpass\", 2, 0.1}], 1], \
+       {1., 2., 3., 0., 1.}] - {0.0023294587455862043, 0.013648084664160481, \
+       0.04198370836105142, 0.0848299038411495, 0.1305574850083571}",
+    )
+    .unwrap();
+    let max: f64 = out
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|x| x.replace("*^", "e").parse::<f64>().unwrap().abs())
+      .fold(0.0, f64::max);
+    assert!(max < 1e-15, "{out}");
+  }
+}

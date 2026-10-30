@@ -6284,3 +6284,13 @@ values agree with WL to about 14 significant digits, not to the last bit.
 For real arguments WL attaches a rounding-noise imaginary part
 (`WeierstrassZeta[1.5, {1., 2.}]` is `0.49214540663758793 +
 4.6454696025598575*^-17*I`), where Woxi returns the real `0.492145406637588`.
+
+### `ButterworthFilterModel`: exact highpass and bandpass normalization
+
+The exact highpass and band filters are the same transfer functions as WL's
+but scaled differently: `ButterworthFilterModel[{"Bandpass", 2, {1/3, 1}}]`
+is `((4 s^2)/9)/((1/3 + …)(1/3 + …))` in Woxi and `(4 s^2)/((1 + … + 3 s^2)
+(1 + … + 3 s^2))` in WL, which clears each factor's denominators (and for a
+highpass multiplies each factor by a unit). Lowpass models, machine-number
+models and the filtered values match. `ToDiscreteTimeModel` of a machine
+model agrees with WL to the last one or two digits.

@@ -4295,6 +4295,51 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // RecurrenceFilter[tf, data] for a single-input single-output sampled
+  // TransferFunctionModel n(z)/d(z): the recurrence of its coefficients in
+  // powers of z^-1, {{a0, …, an}, {b0, …, bn}} from the highest power down.
+  if name == "RecurrenceFilter"
+    && args.len() == 2
+    && let Expr::FunctionCall {
+      name: model,
+      args: margs,
+    } = &args[0]
+    && model == "TransferFunctionModel"
+    && margs.len() >= 2
+    && let Expr::List(parts) = &margs[0]
+    && parts.len() == 2
+    && let (Expr::List(nums), Expr::List(dens)) = (&parts[0], &parts[1])
+    && let ([Expr::List(num_row)], [Expr::List(den_row)]) =
+      (nums.as_slice(), dens.as_slice())
+    && let ([num], [den]) = (num_row.as_slice(), den_row.as_slice())
+  {
+    let var = margs[1].clone();
+    let coefficients = |p: &Expr| -> Result<Vec<Expr>, InterpreterError> {
+      let list = crate::evaluator::evaluate_function_call_ast(
+        "CoefficientList",
+        &[p.clone(), var.clone()],
+      )?;
+      Ok(match &list {
+        Expr::List(c) => c.to_vec(),
+        _ => Vec::new(),
+      })
+    };
+    let (n_coeffs, d_coeffs) = (coefficients(num)?, coefficients(den)?);
+    if !d_coeffs.is_empty() && n_coeffs.len() <= d_coeffs.len() {
+      let order = d_coeffs.len();
+      let a: Vec<Expr> = d_coeffs.into_iter().rev().collect();
+      let mut b: Vec<Expr> = vec![Expr::Integer(0); order - n_coeffs.len()];
+      b.extend(n_coeffs.into_iter().rev());
+      return crate::evaluator::evaluate_function_call_ast(
+        "RecurrenceFilter",
+        &[
+          Expr::List(vec![Expr::List(a.into()), Expr::List(b.into())].into()),
+          args[1].clone(),
+        ],
+      );
+    }
+  }
+
   // RecurrenceFilter[{{a0, a1, ...}, {b0, b1, ...}}, data] → IIR filter
   if name == "RecurrenceFilter"
     && args.len() == 2
