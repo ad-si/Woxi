@@ -888,9 +888,39 @@ pub fn ndsolve_ast_with_head(
     .iter()
     .map(total_derivative_to_derivative)
     .map(|e| expand_defined_derivatives(&e))
+    .map(|e| unwrap_singleton_equation_sides(&e))
     .collect();
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+/// Rewrite `lhs == {rhs}` (or `{lhs} == rhs`) — an initial value taken from
+/// a solution list, as in `v[0] == (v /. sol)` — to `lhs == rhs`, so the
+/// one-element list does not hide the condition from the solver.
+fn unwrap_singleton_equation_sides(expr: &Expr) -> Expr {
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && let [ComparisonOp::Equal] = operators.as_slice()
+    && let [a, b] = operands.as_slice()
+  {
+    let single = |e: &Expr| match e {
+      Expr::List(items) if items.len() == 1 => Some(items[0].clone()),
+      _ => None,
+    };
+    let is_list = |e: &Expr| matches!(e, Expr::List(_));
+    let (a2, b2) = match (single(a), single(b)) {
+      (Some(x), None) if !is_list(b) => (x, b.clone()),
+      (None, Some(y)) if !is_list(a) => (a.clone(), y),
+      _ => (a.clone(), b.clone()),
+    };
+    return Expr::Comparison {
+      operands: vec![a2, b2],
+      operators: operators.clone(),
+    };
+  }
+  map_children(expr, &unwrap_singleton_equation_sides)
 }
 
 /// Rewrite `Derivative[n][g[i]][v]` — the derivative of an indexed function
