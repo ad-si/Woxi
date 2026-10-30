@@ -6694,3 +6694,23 @@ mod list_set_delayed {
     );
   }
 }
+
+// A definition's local variable that also occurs in an argument value is
+// renamed, so the argument's symbol is not captured.
+mod scoping_capture_avoidance {
+  use super::*;
+
+  #[test]
+  fn locals_do_not_capture_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[x_] := Module[{a}, a = x; a]; g[x_] := Module[{a}, {x, a}]; \
+         k[x_] := With[{a = 1}, {x, a}]; \
+         {f[a[1]], First[g[a]], k[a], First[ReplaceAll[h[a], h[x_] :> Module[{a}, {x, a}]]]}"
+      )
+      .unwrap(),
+      "{a[1], a, {a, 1}, a}"
+    );
+  }
+}

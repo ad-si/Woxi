@@ -16424,7 +16424,9 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
     Expr::Identifier(name) => {
       out.insert(name.clone());
     }
-    Expr::FunctionCall { args, .. } => {
+    // A call's head is a symbol of the value too: `a[1]` mentions `a`.
+    Expr::FunctionCall { name, args } => {
+      out.insert(name.clone());
       for a in args {
         collect_identifier_names(a, out);
       }
@@ -17347,6 +17349,41 @@ fn substitute_variables_impl(
         && matches!(args[0], Expr::List(_))
       {
         return substitute_into_scoping_construct(name, args, bindings);
+      }
+      // A local name that is no pattern slot but occurs in a value being
+      // substituted is still alpha-renamed to `name$`, so the value's symbol
+      // is not captured: `f[x_] := Module[{a}, {x, a}]` gives `f[a]` =
+      // `{a, a$123}`.
+      if template
+        && matches!(name.as_str(), "With" | "Module" | "DynamicModule")
+        && args.len() >= 2
+        && matches!(args[0], Expr::List(_))
+      {
+        let spec_count = if name == "With" { args.len() - 1 } else { 1 };
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> = args[..spec_count]
+          .iter()
+          .flat_map(scoping_binder_names)
+          .filter(|b| {
+            value_names.contains(b.as_str())
+              && !bindings.iter().any(|(slot, _)| slot == b)
+          })
+          .map(|b| (b.clone(), format!("{b}$")))
+          .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
       }
       let new_args: Vec<Expr> = substitute_parts(args, bindings, template);
       // Check if the function name itself is being substituted

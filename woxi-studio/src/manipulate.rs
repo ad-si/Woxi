@@ -2208,6 +2208,24 @@ mod tests {
     );
   }
 
+  /// A hidden `ControlType -> None` variable is bound when Initialization
+  /// runs, also when a control's spec depends on what Initialization sets
+  /// (`Control[{{n, top/4}, 2^Range[4, k]}]` with `top = 2^k` there).
+  #[test]
+  fn initialization_sees_hidden_control_used_by_control_specs() {
+    let code = r#"Manipulate[
+      Length[data] + n,
+      Row[{Control[{{n, top/4}, 2^Range[4, k], ControlType -> Setter}]}],
+      {{k, 6}, ControlType -> None},
+      Initialization :> (top = 2^k; data = Range[top])]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("80"));
+  }
+
   /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
   /// body is printed back to text for every re-evaluation, and without the
   /// parentheses the option became `(Epilog -> list) /. rule`, so the

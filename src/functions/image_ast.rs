@@ -8846,6 +8846,9 @@ pub fn delete_small_components_ast(
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
+  if matches!(&args[0], Expr::Image { .. }) {
+    return delete_small_image_components(args);
+  }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
   };
@@ -8910,6 +8913,17 @@ pub fn component_measurements_ast(
   let unevaluated = || Ok(unevaluated("ComponentMeasurements", args));
   if args.len() != 2 {
     return unevaluated();
+  }
+  // An image is measured through its morphological components.
+  if matches!(&args[0], Expr::Image { .. }) {
+    let labels = crate::evaluator::evaluate_expr_to_expr(&call(
+      "MorphologicalComponents",
+      vec![args[0].clone()],
+    ))?;
+    if !matches!(labels, Expr::List(_)) {
+      return unevaluated();
+    }
+    return component_measurements_ast(&[labels, args[1].clone()]);
   }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
@@ -8978,6 +8992,10 @@ pub fn component_measurements_ast(
       "LabelCount" => Some(Expr::Integer(label_count as i128)),
       "Count" => Some(Expr::Integer(count as i128)),
       "Area" => Some(Expr::Real(count as f64)),
+      // The radius of the disk with the same area.
+      "EquivalentDiskRadius" => {
+        Some(Expr::Real((count as f64 / std::f64::consts::PI).sqrt()))
+      }
       "Label" => Some(Expr::Integer(label)),
       _ => None,
     }
@@ -14439,13 +14457,30 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let alpha = |i: usize| -> Option<f64> {
     match args.get(1) {
       None => Some(1.0),
+      // An alpha image of another size sits centred on the image, zero
+      // outside it.
       Some(Expr::Image {
         width: aw,
         height: ah,
         channels: ac,
         data: ad,
         ..
-      }) if aw == width && ah == height => Some(ad[i * (*ac as usize)]),
+      }) => {
+        let (w, h) = (*width as i64, *height as i64);
+        let (aw, ah) = (*aw as i64, *ah as i64);
+        // Offsets from the bottom-left corner, rounded half to even.
+        let half_even = |d: i64| (d as f64 / 2.0).round_ties_even() as i64;
+        let bottom = half_even(h - ah);
+        let top = h - ah - bottom;
+        let left = half_even(w - aw);
+        let (r, c) = ((i as i64) / w, (i as i64) % w);
+        let (ar, acol) = (r - top, c - left);
+        Some(if (0..ah).contains(&ar) && (0..aw).contains(&acol) {
+          ad[((ar * aw + acol) as usize) * (*ac as usize)]
+        } else {
+          0.0
+        })
+      }
       Some(v) => {
         // A real alpha is stored in single precision.
         crate::functions::math_ast::try_eval_to_f64(v).map(|a| a as f32 as f64)
@@ -14469,4 +14504,98 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     color_space: space,
     display_size: *display_size,
   })
+}
+
+/// DeleteSmallComponents[image] / DeleteSmallComponents[image, n]: the
+/// image with its small morphological components set to background — those
+/// of at most `n` pixels, or by default those smaller than the mean
+/// component size.
+fn delete_small_image_components(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let held = || Ok(unevaluated("DeleteSmallComponents", args));
+  if args.is_empty() || args.len() > 2 {
+    return held();
+  }
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    Some(_) => return held(),
+  };
+  let labels_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+    "MorphologicalComponents",
+    vec![args[0].clone()],
+  ))?;
+  let Expr::List(rows) = &labels_expr else {
+    return held();
+  };
+  let labels: Vec<Vec<i128>> = match rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(cs) => cs
+        .iter()
+        .map(|c| match c {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>(),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()
+  {
+    Some(l) => l,
+    None => return held(),
+  };
+  let mut counts: std::collections::BTreeMap<i128, usize> =
+    std::collections::BTreeMap::new();
+  for &l in labels.iter().flatten() {
+    if l != 0 {
+      *counts.entry(l).or_default() += 1;
+    }
+  }
+  if counts.is_empty() {
+    return Ok(args[0].clone());
+  }
+  let mean = counts.values().sum::<usize>() as f64 / counts.len() as f64;
+  let removed = |l: i128| {
+    l != 0
+      && match limit {
+        Some(n) => counts[&l] <= n,
+        None => (counts[&l] as f64) < mean,
+      }
+  };
+  match &args[0] {
+    Expr::Image {
+      color_space,
+      display_size,
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    } => {
+      let (w, ch) = (*width as usize, *channels as usize);
+      let mut out = data.as_ref().clone();
+      for (r, row) in labels.iter().enumerate() {
+        for (c, &l) in row.iter().enumerate() {
+          if removed(l) {
+            let base = (r * w + c) * ch;
+            for v in &mut out[base..base + ch] {
+              *v = 0.0;
+            }
+          }
+        }
+      }
+      Ok(Expr::Image {
+        color_space: *color_space,
+        display_size: *display_size,
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: Arc::new(out),
+        image_type: *image_type,
+      })
+    }
+    _ => held(),
+  }
 }

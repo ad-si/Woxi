@@ -7331,6 +7331,37 @@ mod morphological_image_input {
 mod component_measurements {
   use super::*;
 
+  // An image is measured through its morphological components, and
+  // DeleteSmallComponents on an image drops those smaller than the mean
+  // component size (or of at most n pixels).
+  #[test]
+  fn image_components_and_small_component_removal() {
+    assert_eq!(
+      interpret(
+        "img = Image[{{1,1,0,0},{1,1,0,1},{0,0,0,1},{1,0,0,1}}]; \
+         {ComponentMeasurements[img, \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img], \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img, 3], \"Count\"], \
+          ImageType[DeleteSmallComponents[Image[{{1, 1, 0, 1}}, \"Bit\"]]], \
+          DeleteSmallComponents[{{1, 0, 2, 2, 2}}]}"
+      )
+      .unwrap(),
+      "{{1 -> 4, 2 -> 3, 3 -> 1}, {1 -> 4, 2 -> 3}, {1 -> 4}, Bit, {{1, 0, 2, 2, 2}}}"
+    );
+  }
+
+  // "EquivalentDiskRadius": the radius of the disk of the component's area.
+  #[test]
+  fn equivalent_disk_radius() {
+    assert_eq!(
+      interpret(
+        "ComponentMeasurements[{{1,1,0,0},{1,1,0,2},{0,0,0,2},{3,0,0,2}}, \"EquivalentDiskRadius\"]"
+      )
+      .unwrap(),
+      "{1 -> 1.1283791670955126, 2 -> 0.9772050238058398, 3 -> 0.5641895835477563}"
+    );
+  }
+
   // Each distinct nonzero value is a component; "Count" gives the pixel count
   // per label as a label -> count rule list.
   #[test]
@@ -9432,6 +9463,23 @@ mod rasterize_any_expression {
     assert_eq!(
       interpret("{ImageChannels[Rasterize[Graphics[Disk[]]]], ImageColorSpace[Rasterize[Graphics[Disk[]]]]}").unwrap(),
       "{3, RGB}"
+    );
+  }
+
+  // An alpha image of another size is centred (offsets rounded half to
+  // even from the bottom left); a graphic is rasterized at its size.
+  #[test]
+  fn set_alpha_channel_centres_other_sizes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = Image[{{1, 0}, {1, 1}}]; \
+         {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], \
+          ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], \
+          ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0., 0.}, {0., 1., 0., 0.}, {0., 1., 1., 0.}}, {{0.25, 0.75}, {1., 1.}}, {2, 2}}"
     );
   }
 
