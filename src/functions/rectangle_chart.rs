@@ -272,7 +272,7 @@ pub fn rectangle_chart_ast(
     ));
   }
 
-  let mut opts = passthrough;
+  let mut opts = passthrough.clone();
   if three_d {
     if !has.contains("Axes") {
       opts.push(rule("Axes", Expr::Identifier("True".into())));
@@ -281,13 +281,34 @@ pub fn rectangle_chart_ast(
       opts.push(rule("Boxed", Expr::Identifier("False".into())));
     }
   } else {
+    // A frame replaces the value axis, and its bottom edge is labelled by
+    // the `ChartLabels` rather than by numeric ticks.
+    let framed = passthrough.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Frame")
+          && !matches!(replacement.as_ref(),
+            Expr::Identifier(v) if v == "False" || v == "None"))
+    });
     if !has.contains("Axes") {
+      let flag =
+        |on: bool| Expr::Identifier(if on { "True" } else { "False" }.into());
       opts.push(rule(
         "Axes",
+        if framed {
+          flag(false)
+        } else {
+          Expr::List(vec![flag(false), flag(true)].into())
+        },
+      ));
+    }
+    if framed && !has.contains("FrameTicks") {
+      let ident = |s: &str| Expr::Identifier(s.into());
+      opts.push(rule(
+        "FrameTicks",
         Expr::List(
           vec![
-            Expr::Identifier("False".into()),
-            Expr::Identifier("True".into()),
+            Expr::List(vec![ident("Automatic"), ident("Automatic")].into()),
+            Expr::List(vec![ident("None"), ident("None")].into()),
           ]
           .into(),
         ),
