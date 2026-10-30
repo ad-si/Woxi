@@ -220,7 +220,7 @@ mod knot_data_tests {
       "Graphics3D"
     );
     assert_eq!(
-      interpret(r#"Head[First[KnotData[{5, 1}, "Image"]]]"#).unwrap(),
+      interpret(r#"Head[First[First[KnotData[{5, 1}, "Image"]]]]"#).unwrap(),
       "GraphicsComplex"
     );
   }
