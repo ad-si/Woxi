@@ -6973,6 +6973,24 @@ mod plot3d {
       );
     }
 
+    /// `Triangle[{p1, p2, p3}]` is a filled primitive in 3D just like
+    /// `Polygon`. Regression: it was dropped, leaving an empty drawing.
+    #[test]
+    fn graphics3d_triangle_draws_like_polygon() {
+      let pts = "{{0,0,0},{1,0,0},{0,1,1}}";
+      for wrap in [
+        "{}",
+        "{GeometricTransformation[{}, TranslationTransform[{1,2,3}]]}",
+      ] {
+        let scene = |head: &str| {
+          let body = format!("{head}[{pts}]");
+          export_svg(&format!("Graphics3D[{}]", wrap.replace("{}", &body)))
+        };
+        assert!(scene("Triangle").contains("<polygon"));
+        assert_eq!(scene("Triangle"), scene("Polygon"));
+      }
+    }
+
     /// `Scale[g, s]` without a centre scales `g` about the centre of its
     /// own bounding box, so the content stays where it is and only changes
     /// size. Regression: the 3D path scaled about the origin, which
