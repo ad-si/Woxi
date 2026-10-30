@@ -4754,9 +4754,30 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn smooth_density_histogram_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  smooth_density_surface("SmoothDensityHistogram", args, list_density_plot_ast)
+}
+
+/// SmoothHistogram3D[{{x1, y1}, …}, bspec, "PDF", opts] — the same kernel
+/// density estimate as `SmoothDensityHistogram`, as a surface through
+/// ListPlot3D.
+pub fn smooth_histogram_3d_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  smooth_density_surface("SmoothHistogram3D", args, |plot_args| {
+    crate::evaluator::evaluate_function_call_ast("ListPlot3D", plot_args)
+  })
+}
+
+/// The Gaussian kernel density estimate of 2D data sampled on a grid, as
+/// `{x, y, density}` triples handed to `render` with the remaining options.
+fn smooth_density_surface(
+  head: &str,
+  args: &[Expr],
+  render: impl Fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(Expr::FunctionCall {
-      name: "SmoothDensityHistogram".to_string(),
+      name: head.to_string(),
       args: args.to_vec().into(),
     })
   };
@@ -4851,7 +4872,7 @@ pub fn smooth_density_histogram_ast(
   }
   let mut plot_args = vec![Expr::List(triples.into())];
   plot_args.extend(options);
-  list_density_plot_ast(&plot_args)
+  render(&plot_args)
 }
 
 /// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is

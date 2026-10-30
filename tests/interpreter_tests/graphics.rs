@@ -43524,3 +43524,24 @@ mod image_size_ranges {
     );
   }
 }
+
+mod smooth_histogram_3d {
+  use super::*;
+
+  #[test]
+  fn kernel_density_surface() {
+    assert_eq!(
+      interpret(
+        "Head[SmoothHistogram3D[{{1, 2}, {2, 3}, {3, 1}, {2.5, 2}}, 0.5, \
+         PlotRange -> All]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    // Not 2D numeric data: stays unevaluated.
+    assert_eq!(
+      interpret("SmoothHistogram3D[{a, b}]").unwrap(),
+      "SmoothHistogram3D[{a, b}]"
+    );
+  }
+}
