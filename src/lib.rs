@@ -2103,8 +2103,8 @@ pub fn packages_list() -> Vec<String> {
 /// joined spelling, or — for arguments holding machine reals — the key of an
 /// entry whose arguments are `SameQ` to them, since `SameQ` lets machine
 /// reals differ in their last bits (`f[0.30000000000000004] = 1; f[0.3]`).
-pub fn memo_key(
-  cache: &HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>,
+pub fn memo_key<S: std::hash::BuildHasher>(
+  cache: &HashMap<String, (Vec<syntax::Expr>, syntax::Expr), S>,
   args: &[syntax::Expr],
 ) -> String {
   fn has_real(e: &syntax::Expr) -> bool {
