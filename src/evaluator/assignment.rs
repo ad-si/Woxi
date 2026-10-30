@@ -2598,13 +2598,14 @@ fn downvalue_arg_info(
     // computes a pattern defines that pattern: `p = x_; f[p] = …` is
     // `f[x_] = …`, and `f[Map[Pattern[#, _] &, {a, b}]] = …` is
     // `f[{a_, b_}] = …`. Any other value is a literal for the arms below.
+    let kept_literal = matches!(arg, Expr::Identifier(name) if name.contains('_'))
+      || (exempt_default_slot0 && func_name == "Default" && i == 0)
+      || crate::evaluator::pattern_matching::contains_pattern(arg)
+      || lhs_slot_is_held(func_name, i);
     let evaluated = if matches!(
       arg,
       Expr::Identifier(_) | Expr::FunctionCall { .. } | Expr::List(_)
-    ) && !matches!(arg, Expr::Identifier(name) if name.contains('_'))
-      && !(exempt_default_slot0 && func_name == "Default" && i == 0)
-      && !crate::evaluator::pattern_matching::contains_pattern(arg)
-      && !lhs_slot_is_held(func_name, i)
+    ) && !kept_literal
     {
       Some(evaluate_expr_to_expr(arg)?)
     } else {
