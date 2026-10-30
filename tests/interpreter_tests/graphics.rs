@@ -26381,6 +26381,31 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn list_of_bare_expressions_plots_each_zero_contour() {
+    // `{f, g}` without `==` draws the zero contour of every entry, exactly
+    // like the equivalent list of equations.
+    assert_eq!(
+      interpret(
+        "ExportString[ContourPlot3D[{x^2 + y^2 + z^2 - 1, z - 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"] === \
+         ExportString[ContourPlot3D[{x^2 + y^2 + z^2 == 1, z == 0.5}, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[ExportString[ContourPlot3D[{x^2 + y^2 - 4 z, \
+         z + 3.9}, {x, -4, 4}, {y, -4, 4}, {z, -4, 4}, Contours -> {0}], \
+         \"SVG\"], \"<polygon\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn indirect_equation_body_matches_the_direct_one() {
     // `b = f == c; ContourPlot3D[b, …]` is the equation `b` names, not a
     // bare expression whose zero contour is plotted.
