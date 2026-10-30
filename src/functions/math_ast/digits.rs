@@ -1766,14 +1766,6 @@ fn real_digits_rational_base(
     digits.push(digit);
   }
 
-  // The exponent already accounts for the zeros right after the point,
-  // so they are not digits of the result.
-  if integer_part == 0 && exponent < 0 {
-    let skip = ((-exponent) as usize).min(digits.len());
-    digits.drain(..skip);
-    cycle_start = cycle_start.map(|pos| pos.saturating_sub(skip));
-  }
-
   // Build the result
   if let Some(cycle_pos) = cycle_start {
     let non_repeating: Vec<Expr> = digits[..cycle_pos]
