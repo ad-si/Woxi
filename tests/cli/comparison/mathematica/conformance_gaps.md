@@ -6294,3 +6294,11 @@ is `((4 s^2)/9)/((1/3 + …)(1/3 + …))` in Woxi and `(4 s^2)/((1 + … + 3 s^2
 highpass multiplies each factor by a unit). Lowpass models, machine-number
 models and the filtered values match. `ToDiscreteTimeModel` of a machine
 model agrees with WL to the last one or two digits.
+
+### `Short` only truncates integers
+
+`Short[expr]` / `Short[expr, n]` on a list, sum or other compound
+expression is returned unchanged instead of eliding the middle as
+`<<k>>`, so `Panel[Short[Range[100]]]` in a `Manipulate` shows every
+element. Only the digits of an over-long integer are shortened
+(`shorten_for_display` in `src/functions/graphics.rs`).
