@@ -12372,3 +12372,24 @@ mod coordinate_transform_data {
     );
   }
 }
+
+mod complex_eigenvectors_of_real_machine_matrices {
+  use super::*;
+
+  #[test]
+  fn unit_vectors_with_real_largest_component() {
+    assert_eq!(
+      interpret(
+        "Round[Eigenvectors[{{0.5, -0.75}, {0.1, 0.5}}], 10.^-12] == \
+         Round[{{0.9393364366277243, -0.34299717028501764 I}, \
+         {0.9393364366277243, 0.34299717028501764 I}}, 10.^-12]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Length /@ Eigensystem[{{0, -1.}, {1, 0}}]").unwrap(),
+      "{2, 2}"
+    );
+  }
+}

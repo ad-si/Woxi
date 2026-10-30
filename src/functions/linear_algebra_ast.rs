@@ -5232,7 +5232,15 @@ fn eigenvectors_impl(
     {
       return Ok(result);
     }
-    return Ok(numeric_eigenvectors(&matrix, n));
+    let real_vectors = numeric_eigenvectors(&matrix, n);
+    // A real matrix with complex eigenvalues has complex eigenvectors,
+    // found the way a complex matrix's are.
+    if matches!(&real_vectors, Expr::List(v) if v.len() < n)
+      && let Some(result) = complex_machine_eigenvectors(args, &matrix, true)
+    {
+      return Ok(result);
+    }
+    return Ok(real_vectors);
   }
 
   // Try integer matrix path
@@ -5267,7 +5275,7 @@ fn eigenvectors_impl(
     return Ok(result);
   }
 
-  if let Some(result) = complex_machine_eigenvectors(args, &matrix) {
+  if let Some(result) = complex_machine_eigenvectors(args, &matrix, false) {
     return Ok(result);
   }
 
@@ -5283,16 +5291,19 @@ fn eigenvectors_impl(
 fn complex_machine_eigenvectors(
   args: &[Expr],
   matrix: &[Vec<Expr>],
+  real_entries_allowed: bool,
 ) -> Option<Expr> {
   type C = (f64, f64);
   let n = matrix.len();
-  if !matrix.iter().flatten().any(|c| {
-    crate::functions::math_ast::try_extract_complex_float(c)
-      .is_some_and(|(_, im)| im != 0.0)
-  }) || !matrix
-    .iter()
-    .flatten()
-    .any(crate::functions::math_ast::contains_inexact_real)
+  if !(real_entries_allowed
+    || matrix.iter().flatten().any(|c| {
+      crate::functions::math_ast::try_extract_complex_float(c)
+        .is_some_and(|(_, im)| im != 0.0)
+    }))
+    || !matrix
+      .iter()
+      .flatten()
+      .any(crate::functions::math_ast::contains_inexact_real)
   {
     return None;
   }
@@ -5423,7 +5434,12 @@ fn complex_machine_eigenvectors(
       rotated
         .iter()
         .map(|&(re, im)| {
-          crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+          // Rounding noise in a unit vector (a part ~1e-17) is zero.
+          let chop = |x: f64| if x.abs() < 1e-14 { 0.0 } else { x };
+          crate::functions::math_ast::build_complex_float_expr_keep_real(
+            chop(re),
+            chop(im),
+          )
         })
         .collect(),
     ));
