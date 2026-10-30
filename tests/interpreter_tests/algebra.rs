@@ -23487,8 +23487,69 @@ mod solve_exponentials {
   #[test]
   fn unsolved_keeps_its_domain() {
     assert_eq!(
-      interpret("Quiet[Solve[2^x + 3^x == 5, x, Reals]]").unwrap(),
-      "Solve[2^x + 3^x == 5, x, Reals]"
+      interpret("Quiet[Solve[2^x + Sin[x] == 5, x, Reals]]").unwrap(),
+      "Solve[2^x + Sin[x] == 5, x, Reals]"
+    );
+  }
+
+  // Over the reals an exponential polynomial's roots are isolated: exact
+  // where a small rational is one, `Root[{f, x0}]` otherwise, with `N` the
+  // correctly rounded root.
+  #[test]
+  fn exponential_polynomial_real_roots() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], \
+         Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], \
+         N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}"
+      )
+      .unwrap(),
+      "{{{x -> 1}}, {{x -> Root[{-10 + 2^#1 + 3^#1 & , 1.7292555589818597}]}}, \
+       {{x -> 1}, {x -> Root[{3^#1 + 5^#1 - 8*#1 & , 0.4874846052754014}]}}, \
+       {}, {1.605524844424328}}"
+    );
+  }
+
+  // Over the reals a non-real Lambert solution is dropped and no `ifun` is
+  // reported.
+  #[test]
+  fn reals_drop_complex_product_log() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "{Solve[x^2 E^x == 1, x, Reals], Solve[x E^x == -1, x, Reals], \
+       Solve[x E^x == -1/4, x, Reals]}",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "{{{x -> 2*ProductLog[1/2]}}, {}, \
+       {{x -> ProductLog[-1/4]}, {x -> ProductLog[-1, -1/4]}}}"
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  // Root[{f, x0}] stands for the root of f near x0; a pattern is left
+  // alone, and anything else is not a root specification.
+  #[test]
+  fn transcendental_root_objects() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{N[Root[{Cos[#] - # &, 0.7390851332151607}]], \
+         MatchQ[Root[{Cos[#] - # &, 0.7390851332151607}], Root[_]], Root[x_]}"
+      )
+      .unwrap(),
+      "{0.7390851332151607, True, Root[x_]}"
+    );
+    let r =
+      interpret_with_stdout("Root[{Cos[#] - # &, 0.74}]; Root[x]").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Root::invrt: 0.7400000000000000 is not equal to a root of Cos[#1] - #1 & .",
+        "Root::trsp: Nonpolynomial root specification x is not a list with two elements."
+      ]
     );
   }
 

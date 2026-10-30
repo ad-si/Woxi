@@ -6355,3 +6355,16 @@ added (`w = 5; w := {1} /; c == 1` leaves only the conditional rule, so `w`
 stays `w` when the test fails), but keeps an unconditional `:=` value as the
 fallback. Woxi does not record whether a symbol's value came from `=` or
 `:=`, so it keeps either one as the fallback (`w` evaluates to `5`).
+
+## Transcendental `Root[{f, x0}]` objects
+
+- wolframscript stores `x0` as an arbitrary-precision number of about 20
+  digits (`1.7292555589818595724706451954508223956`20.53`); Woxi keeps the
+  correctly rounded machine number (`1.7292555589818597`).
+- For an equation with negative exponents wolframscript first rewrites `f`
+  (`2/2^t + 2/3^t == 1` gives `-2 - 2*E^(Log[2]*#1 - Log[3]*#1) +
+  E^(-(Log[3]*#1) + (Log[2] + Log[3])*#1) &`); Woxi uses `lhs - rhs`
+  (`-1 + 2^(1 - #1) + 2/3^#1 &`). The roots agree.
+- `Root::invrt` is reported when the refined root is more than 10^-6
+  (relative) away from `x0`; wolframscript's exact threshold is somewhere
+  between 1.6*10^-7 and 4.8*10^-6 for the cases probed.
