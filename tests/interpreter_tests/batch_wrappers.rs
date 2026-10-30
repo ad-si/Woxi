@@ -11349,6 +11349,60 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // An array-valued band places a block at its start (tiled over the box
+  // when the band names its end); a lower-rank block's extra axes advance
+  // with all of its levels.
+  #[test]
+  fn sparse_array_array_valued_bands() {
+    assert_eq!(
+      interpret(
+        "{Normal[SparseArray[{Band[{1, 2, 1, 1}] -> {{{{1, 2}, {3, 4}}}}}]], \
+         Normal[SparseArray[Band[{1, 1}, {3, 3}] -> {{1, 2}, {3, 4}}]], \
+         Normal[SparseArray[Band[{1, 1}, {4, 4}] -> {{{1}}, {{2, 3}}}, {4, 4}]], \
+         Normal[SparseArray[{Band[{1, 1, 1, 1}] -> {{{5, 6}}}, Band[{2, 2, 1, 1}] -> {{{7, 8}}}}]], \
+         Normal[SparseArray[{Band[{1, 1, 1}] -> {{1, 2}, {3, 4}}}]]}"
+      )
+      .unwrap(),
+      "{{{{{0, 0}, {0, 0}}, {{1, 2}, {3, 4}}}}, {{1, 2, 1}, {3, 4, 3}, {1, 2, 1}}, \
+       {{1, 0, 0, 0}, {0, 2, 3, 0}, {0, 0, 0, 1}, {0, 0, 0, 0}}, \
+       {{{{5, 0}, {0, 6}}, {{0, 0}, {0, 0}}}, {{{0, 0}, {0, 0}}, {{7, 0}, {0, 8}}}}, \
+       {{{1, 0, 0}, {0, 2, 0}}, {{0, 3, 0}, {0, 0, 4}}}}"
+    );
+    let r = interpret_with_stdout(
+      "Normal[SparseArray[Band[{2, 2}] -> {{1, 2}, {3, 4}}, {2, 2}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{0, 0}, {0, 1}}");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("SparseArray::bndtr"))
+    );
+  }
+
+  // A SparseArray's level-1 parts are its elements or (sparse) rows, as Part
+  // gives them; a list of SparseArrays builds one array.
+  #[test]
+  fn sparse_array_level_one_parts() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2, 0}, {0, 3, 4}}]; v = SparseArray[{0, 5, 0, 7}]; \
+         Normal /@ {Plus @@ s, Apply[List, s], First[s], Last[v], \
+         MapIndexed[f, s], Select[v, # > 1 &], Accumulate[v], Thread[f[v]], \
+         Map[f, s, {2}], Apply[Plus, s, {1}], \
+         SparseArray[{SparseArray[{1, 0}], SparseArray[{0, 2}]}]}"
+      )
+      .unwrap(),
+      "{{1, 5, 4}, {{1, 2, 0}, {0, 3, 4}}, {1, 2, 0}, 7, \
+       {f[{1, 2, 0}, {1}], f[{0, 3, 4}, {2}]}, {5, 7}, {0, 5, 5, 12}, {f[0], f[5], f[0], f[7]}, \
+       {{f[1], f[2], f[0]}, {f[0], f[3], f[4]}}, {3, 7}, {{1, 0}, {0, 2}}}"
+    );
+    assert_eq!(
+      interpret("Head /@ {First[s], MapIndexed[f, s][[1, 1]]}").unwrap(),
+      "{SparseArray, SparseArray}"
+    );
+  }
+
   // Integer positions paired with a value list are vector positions; with a
   // single value they are one matrix position.
   #[test]

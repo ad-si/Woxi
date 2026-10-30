@@ -23577,6 +23577,36 @@ mod solve_disjunction {
     );
   }
 
+  /// `DualLinearProgramming` gives the primal solution and the duals of the
+  /// constraints (sign by relation) and of the lower and upper bounds.
+  #[test]
+  fn dual_linear_programming() {
+    assert_eq!(
+      interpret(
+        "{DualLinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}], \
+         DualLinearProgramming[{1, 2}, {{1, 1}, {1, -1}}, {{2, 0}, {1, -1}}], \
+         DualLinearProgramming[{-1, -1}, {{1, 2}}, {{4, -1}}, {{0, 3}, {0, 3}}], \
+         DualLinearProgramming[{1, 1}, {{1, -1}, {1, 1}}, {0, 2}, {-Infinity, 0}], \
+         DualLinearProgramming[{2, 3}, SparseArray[{{1, 1}}], {1}, {{1/2, 1}, {0, Infinity}}]}"
+      )
+      .unwrap(),
+      "{{{1, 1}, {2/5, 1/5}, {0, 0}, {0, 0}}, {{3/2, 1/2}, {3/2, -1/2}, {0, 0}, {0, 0}}, \
+       {{3, 1/2}, {-1/2}, {0, 0}, {1/2, 0}}, {{1, 1}, {0, 1}, {0, 0}, {0, 0}}, \
+       {{1, 0}, {2}, {0, 1}, {0, 0}}}"
+    );
+    let r = interpret_with_stdout(
+      "DualLinearProgramming[{1, 1}, {{1, 2}, {3, 1}}, {3, 4}, \
+       Method -> \"InteriorPoint\"]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{1., 1.}, {0.4, 0.2}, {0., 0.}, {0., 0.}}");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("DualLinearProgramming::lpipp"))
+    );
+  }
+
   /// `LinearOptimization` in matrix form solves the same problem as
   /// `LinearProgramming` over free variables.
   #[test]

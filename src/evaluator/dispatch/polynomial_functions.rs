@@ -577,6 +577,11 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
+    "DualLinearProgramming" if args.len() >= 3 => {
+      return Some(
+        crate::functions::polynomial_ast::dual_linear_programming_ast(args),
+      );
+    }
     "LinearProgramming" if (3..=5).contains(&args.len()) => {
       return Some(crate::functions::polynomial_ast::linear_programming_ast(
         args,

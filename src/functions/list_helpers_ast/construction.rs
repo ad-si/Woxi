@@ -2076,6 +2076,17 @@ fn infer_dims_from_band_rules(data: &Expr) -> Option<Vec<usize>> {
           }
           _ => return None,
         }
+      } else if start.len() >= 2
+        && let Some(blocks) = band_blocks(replacement, start.len())
+      {
+        let mut end = start.clone();
+        for (shape, _) in &blocks {
+          let extent = band_block_extent(shape, start.len());
+          for (e, &n) in end.iter_mut().zip(&extent) {
+            *e += n as i128;
+          }
+        }
+        end.iter().map(|e| e - 1).collect()
       } else if let Expr::List(vals) = replacement.as_ref() {
         let len = vals.len() as i128;
         start.iter().map(|&s| s + len - 1).collect()
@@ -2107,6 +2118,51 @@ fn infer_dims_from_band_rules(data: &Expr) -> Option<Vec<usize>> {
     }
   }
   Some(max_pos)
+}
+
+/// The blocks of an array-valued band of rank `rank`, with their shapes: an
+/// array of rank 2 … `rank` is one block, a list of them a block-diagonal
+/// run. A block of lower rank spreads over the extra axes as
+/// `band_block_extent` describes.
+fn band_blocks(value: &Expr, rank: usize) -> Option<Vec<(Vec<usize>, &Expr)>> {
+  let block = |e: &Expr| {
+    dense_shape(e)
+      .filter(|shape| (2..=rank).contains(&shape.len()) && !shape.contains(&0))
+  };
+  if let Some(shape) = block(value) {
+    return Some(vec![(shape, value)]);
+  }
+  let Expr::List(items) = value else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  items
+    .iter()
+    .map(|item| block(item).map(|shape| (shape, item)))
+    .collect()
+}
+
+/// The extent of a band block of `shape` over all `rank` axes. The block's
+/// q levels span the first q axes, and every further axis advances with
+/// all of them: `Band[{1, 1, 1}] -> {{1, 2}, {3, 4}}` puts 3 at {2, 1, 2}
+/// and 4 at {2, 2, 3}.
+fn band_block_extent(shape: &[usize], rank: usize) -> Vec<usize> {
+  let diagonal = shape.iter().map(|n| n - 1).sum::<usize>() + 1;
+  (0..rank)
+    .map(|i| shape.get(i).copied().unwrap_or(diagonal))
+    .collect()
+}
+
+/// The 0-based offset over all `rank` axes of the block element at the
+/// 1-based `index` (see `band_block_extent`).
+fn band_block_offset(index: &[i128], rank: usize) -> Vec<usize> {
+  let offsets: Vec<usize> = index.iter().map(|&i| i as usize - 1).collect();
+  let diagonal: usize = offsets.iter().sum();
+  (0..rank)
+    .map(|i| offsets.get(i).copied().unwrap_or(diagonal))
+    .collect()
 }
 
 /// Expand `Band[{i, j}, ...] -> v` rules into concrete `{i+k, j+k} -> v`
@@ -2157,53 +2213,119 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
         })
         .min()
         .unwrap_or(0);
-      // A matrix value is one block with its corner at the band's start,
-      // and a list of matrices the blocks of a block-diagonal band, each
-      // starting where the previous one ends.
-      let matrix_of = |e: &Expr| -> Option<Vec<Vec<Expr>>> {
-        let Expr::List(rows) = e else { return None };
-        let rows: Vec<Vec<Expr>> = rows
-          .iter()
-          .map(|r| match r {
-            Expr::List(c) if !c.iter().any(|x| matches!(x, Expr::List(_))) => {
-              Some(c.to_vec())
-            }
-            _ => None,
-          })
-          .collect::<Option<_>>()?;
-        (!rows.is_empty() && rows.iter().all(|r| r.len() == rows[0].len()))
-          .then_some(rows)
-      };
-      if dims.len() == 2 {
-        let blocks: Option<Vec<Vec<Vec<Expr>>>> = match replacement.as_ref() {
-          v if matrix_of(v).is_some() => matrix_of(v).map(|m| vec![m]),
-          Expr::List(items) if !items.is_empty() => {
-            items.iter().map(matrix_of).collect()
-          }
-          _ => None,
+      // An array value of the band's rank is one block with its corner at
+      // the band's start — tiled over the whole start…end box when the band
+      // names its end — and a list of them the blocks of a block-diagonal
+      // band, each starting where the previous one ends, cycling until the
+      // named end. A block reaching past the box is cut (`::bndtr`).
+      if dims.len() >= 2
+        && let Some(blocks) = band_blocks(replacement, dims.len())
+      {
+        let push = |expanded: &mut Vec<Expr>, pos: &[usize], v: Expr| {
+          expanded.push(rule_expr(
+            Expr::List(pos.iter().map(|&p| Expr::Integer(p as i128)).collect()),
+            v,
+          ));
         };
-        if let Some(blocks) = blocks {
-          let (mut r0, mut c0) = (start[0], start[1]);
-          for block in blocks {
-            for (i, row) in block.iter().enumerate() {
-              for (j, v) in row.iter().enumerate() {
-                let (r, c) = (r0 + i, c0 + j);
-                if r <= end[0] && c <= end[1] {
-                  expanded.push(rule_expr(
-                    Expr::List(
-                      vec![Expr::Integer(r as i128), Expr::Integer(c as i128)]
-                        .into(),
-                    ),
-                    v.clone(),
-                  ));
-                }
+        let explicit_end = args.len() >= 2;
+        let single = matches!(blocks.as_slice(), [(_, b)] if std::ptr::eq(*b, replacement.as_ref()));
+        if single {
+          let (shape, block) = &blocks[0];
+          let shape = band_block_extent(shape, start.len());
+          let span: Vec<usize> = start
+            .iter()
+            .zip(&end)
+            .map(|(s, e)| (e + 1).saturating_sub(*s))
+            .collect();
+          if shape.iter().zip(&span).any(|(n, m)| n > m) {
+            let ints = |v: &[usize]| {
+              Expr::List(v.iter().map(|&x| Expr::Integer(x as i128)).collect())
+            };
+            let band = Expr::FunctionCall {
+              name: "Band".to_string(),
+              args: vec![ints(&start), ints(&end), ints(&vec![1; start.len()])]
+                .into(),
+            };
+            crate::emit_message(&format!(
+              "SparseArray::bndtr: There are insufficient positions available \
+               in the {} to fit all the values {} so some of the values will \
+               be omitted in the specification {}.",
+              crate::syntax::format_expr(
+                &band,
+                crate::syntax::ExprForm::Output
+              ),
+              crate::syntax::format_expr(
+                block,
+                crate::syntax::ExprForm::Output
+              ),
+              crate::syntax::format_expr(
+                &rule_expr(band.clone(), (*block).clone()),
+                crate::syntax::ExprForm::Output
+              ),
+            ));
+          }
+          let mut entries = Vec::new();
+          collect_dense_rules(block, &mut Vec::new(), &mut entries, "\u{0}");
+          let reps: Vec<usize> = shape
+            .iter()
+            .zip(&span)
+            .map(|(n, m)| if explicit_end { m.div_ceil(*n) } else { 1 })
+            .collect();
+          let total: usize = reps.iter().product();
+          for r in 0..total {
+            let mut rest = r;
+            let tile: Vec<usize> = reps
+              .iter()
+              .rev()
+              .map(|n| {
+                let t = rest % n;
+                rest /= n;
+                t
+              })
+              .collect::<Vec<_>>()
+              .into_iter()
+              .rev()
+              .collect();
+            for (index, v) in &entries {
+              let offset = band_block_offset(index, start.len());
+              let pos: Vec<usize> = (0..start.len())
+                .map(|k| start[k] + tile[k] * shape[k] + offset[k])
+                .collect();
+              if pos.iter().zip(&end).all(|(p, e)| p <= e) {
+                push(&mut expanded, &pos, v.clone());
               }
             }
-            r0 += block.len();
-            c0 += block[0].len();
           }
           continue;
         }
+        let mut corner = start.clone();
+        'cycle: loop {
+          for (shape, block) in &blocks {
+            if corner.iter().zip(&end).any(|(c, e)| c > e) {
+              break 'cycle;
+            }
+            let mut entries = Vec::new();
+            collect_dense_rules(block, &mut Vec::new(), &mut entries, "\u{0}");
+            for (index, v) in entries {
+              let pos: Vec<usize> = corner
+                .iter()
+                .zip(band_block_offset(&index, corner.len()))
+                .map(|(&c, o)| c + o)
+                .collect();
+              if pos.iter().zip(&end).all(|(p, e)| p <= e) {
+                push(&mut expanded, &pos, v);
+              }
+            }
+            let extent = band_block_extent(shape, corner.len());
+            for (c, n) in corner.iter_mut().zip(&extent) {
+              *c += n;
+            }
+          }
+          if !explicit_end {
+            break;
+          }
+        }
+        continue;
       }
       // `v` supplies one value per band position (in order) when it's a
       // vector — only as far as it reaches; otherwise every position gets
@@ -2860,6 +2982,18 @@ fn parse_sparse_data(
     return None;
   }
 
+  // A list of SparseArrays (`SparseArray[{s1, s2}]`) is the array of their
+  // dense forms.
+  fn densify_items(e: &Expr) -> Expr {
+    match e {
+      Expr::List(items) => {
+        Expr::List(items.iter().map(densify_items).collect())
+      }
+      other => densify_sparse_array(other).unwrap_or_else(|| other.clone()),
+    }
+  }
+  let densified = densify_items(data);
+  let data = &densified;
   // Dense nested list: must be rectangular.
   let shape = dense_shape(data)?;
   let default_str = expr_to_string(default);

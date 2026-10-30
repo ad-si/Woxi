@@ -6330,3 +6330,20 @@ woxi eval 'Eigenvectors[{{0, 0, 1, 0}, {1, 0, 1, 0}, {1, 1, 0, 0}, {1, 1, 0, 0}}
 
 The values are equal, but the elimination leaves a different quotient, so
 `N` of the two differs in the last digits.
+
+## SparseArray: internal entry order of sums, `Select` keeping sparsity
+
+- `Plus @@ SparseArray[{{1, 2}, {0, 5}}]` equals wolframscript's value, but
+  wolframscript stores the sum's entries in a different order
+  (`{{2}, {1}}` with values `{7, 1}`, Woxi `{{1}, {2}}` with `{1, 7}`), so the
+  `InputForm`s differ.
+- `Select[sparse, pred]` returns a dense list; wolframscript keeps a
+  SparseArray when the background passes `pred`.
+- `Fold`, `FoldList`, `Sort` and `Union` of a SparseArray emit `::normal` and
+  stay unevaluated in wolframscript; Woxi does not reject them.
+
+## DualLinearProgramming with `Method -> "InteriorPoint"`
+
+wolframscript's interior-point solution carries solver noise
+(`{1.0000000003499416, 1.0000000000555387}` for an optimum of `{1, 1}`);
+Woxi solves exactly and converts, giving `{1., 1.}`.

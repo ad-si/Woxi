@@ -6420,3 +6420,4 @@ HypothesisTesting`NormalPValue,Legacy normal p-value as an OneSidedPValue (or Tw
 HypothesisTesting`StudentTPValue,Legacy Student t p-value as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
 HypothesisTesting`ChiSquarePValue,Legacy chi-square p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
 HypothesisTesting`FRatioPValue,Legacy F-ratio p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule,✅,pure,1.0,
+DualLinearProgramming,Solves a linear program and its dual giving the primal solution and the dual variables of the constraints and of the lower and upper bounds,✅,pure,6.0,
