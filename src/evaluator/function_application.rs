@@ -770,10 +770,33 @@ pub fn apply_postfix_ast(
 }
 
 /// Apply a function to an argument (helper for Map, Postfix, etc.)
+fn is_sequence_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence")
+}
+
+/// `args` with every `Sequence[…]` replaced by its elements.
+fn splice_sequence_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::FunctionCall { name, args: inner } if name == "Sequence" => {
+        out.extend(inner.iter().cloned());
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  out
+}
+
 pub fn apply_function_to_arg(
   func: &Expr,
   arg: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  if matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+    && is_sequence_call(arg)
+  {
+    return apply_curried_call(func, std::slice::from_ref(arg));
+  }
   match func {
     Expr::Identifier(name) => {
       // Check if this identifier is a variable holding another function/value.
@@ -1277,8 +1300,13 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "GatherBy"
       | "SplitBy"
       | "DeleteDuplicatesBy"
+      | "CountDistinctBy"
       | "KeyExistsQ"
+      | "KeyMemberQ"
+      | "ReverseSortBy"
       | "ReplaceList"
+      | "AllSameBy"
+      | "DateSelect"
   )
 }
 
@@ -1607,6 +1635,14 @@ pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // A pure function's arguments are spliced like any call's:
+  // `f[0, Sequence @@ {1, 2, 3}]` fills four parameters.
+  if matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+    && args.iter().any(is_sequence_call)
+  {
+    let spliced = splice_sequence_args(args);
+    return apply_curried_call(func, &spliced);
+  }
   if let Some(result) = try_apply_curry(func, args) {
     return result;
   }
@@ -1687,9 +1723,18 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "StringTemplate" && func_args.len() == 1 => {
-      // StringTemplate[template][args…] — fill the template's slots.
-      crate::functions::string_ast::apply_string_template(&func_args[0], args)
+    } if name == "StringTemplate"
+      && !func_args.is_empty()
+      && func_args[1..]
+        .iter()
+        .all(|o| matches!(o, Expr::Rule { .. } | Expr::RuleDelayed { .. })) =>
+    {
+      // StringTemplate[template, opts…][args…] — fill the template's slots.
+      crate::functions::string_ast::apply_string_template_with(
+        &func_args[0],
+        &func_args[1..],
+        args,
+      )
     }
     Expr::FunctionCall {
       name,
@@ -2867,6 +2912,13 @@ pub fn apply_curried_call(
           result, name, func_args, args,
         ));
       }
+      // AlphabeticOrder[][s1, s2] and AlphabeticOrder[lang][s1, s2] ->
+      // AlphabeticOrder[s1, s2] / AlphabeticOrder[s1, s2, lang].
+      if name == "AlphabeticOrder" && func_args.len() <= 1 && args.len() == 2 {
+        let mut new_args = args.to_vec();
+        new_args.extend(func_args.iter().cloned());
+        return evaluate_function_call_ast(name, &new_args);
+      }
       if is_subject_first_operator(name)
         && func_args.len() == 1
         && args.len() == 1
@@ -3180,6 +3232,7 @@ pub fn apply_curried_call(
           | "Apply"
           | "Map"
           | "MapIndexed"
+          | "MapApply"
           | "MapThread"
           | "Scan"
           | "Append"

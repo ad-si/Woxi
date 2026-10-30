@@ -8422,6 +8422,35 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  // y'' + (α + β Cos[ω x + φ]) y == 0 is Mathieu's equation in
+  // z = (ω x + φ)/2; machine numbers make the parameters machine numbers.
+  #[test]
+  fn mathieu_equation() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + (2 + 3 Cos[2 x]) y[x] == 0, y, x]").unwrap(),
+      "{{y -> Function[{x}, C[1]*MathieuC[2, -3/2, x] + C[2]*MathieuS[2, -3/2, x]]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] + (a - 2 q Cos[2 x]) y[x] == 0, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> C[1]*MathieuC[a, q, x] + C[2]*MathieuS[a, q, x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[x] + (1 + Cos[x]) y[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*MathieuC[4, -2, x/2] + C[2]*MathieuS[4, -2, x/2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[DSolve[(Pi^2*y[x]*(1 + 0.21*Cos[70 + 2*Pi*x]))/(19600*l^2) + \
+         y''[x]/19600 == 0, y, x]]"
+      )
+      .unwrap(),
+      "InputForm[{{y -> Function[{x}, C[1]*MathieuC[1./l^2, -0.105/l^2, \
+       (70. + 6.283185307179586*x)/2] + C[2]*MathieuS[1./l^2, -0.105/l^2, \
+       (70. + 6.283185307179586*x)/2]]}}]"
+    );
+  }
+
   // Second-order constant coefficients that are symbols: wolframscript's
   // forms (trigonometric for a pair ±I s, exponentials otherwise). These
   // stopped the evaluation with "cannot convert k to a numeric value"
@@ -24466,6 +24495,26 @@ mod dsolve_single_variable_pde {
       )
       .unwrap(),
       "Function[{x, y}, -1/2*(x^2*y) + C[1][y]]"
+    );
+  }
+}
+
+mod ndsolve_pde_early_transient {
+  use super::*;
+
+  // A fast-decaying mode is sampled densely in time, so values early on are
+  // not linear interpolations across a coarse row spacing
+  // (exact: Exp[-4 Pi^2 t]; wolframscript 0.6741 at t = 0.01).
+  #[test]
+  fn decaying_mode_is_resolved() {
+    assert_eq!(
+      interpret(
+        "v2 = NDSolveValue[{D[v[x, t], t] == D[v[x, t], x, x], v[x, 0] == Sin[2 Pi x], \
+         v[0, t] == 0, v[1, t] == 0}, v, {x, 0, 1}, {t, 0, 1}]; \
+         Abs[v2[0.25, #] - Exp[-4 Pi^2 #]] < 0.002 & /@ {0.001, 0.005, 0.01, 0.02}"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
     );
   }
 }

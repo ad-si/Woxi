@@ -961,6 +961,9 @@ fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
 }
 
 fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
+  if let Some(power) = refine_power_of_exp(expr, info) {
+    return power;
+  }
   if let Some(rooted) = refine_reciprocal_root(expr, info, assumption) {
     return rooted;
   }
@@ -1196,6 +1199,35 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       right: outer_exp,
     } if extract_rational_1_over(outer_exp).is_some() => {
       let m = extract_rational_1_over(outer_exp).unwrap();
+      // (E^a)^(1/m) → E^(a/m) for real a (E^a is then positive).
+      let exp_power = match outer_base.as_ref() {
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } if matches!(left.as_ref(), Expr::Constant(c) | Expr::Identifier(c) if c == "E") => {
+          Some(right.as_ref().clone())
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E") =>
+        {
+          Some(args[1].clone())
+        }
+        _ => None,
+      };
+      if let Some(a) = exp_power
+        && is_known_real(&a, info)
+      {
+        let reduced = crate::evaluator::evaluate_expr_to_expr(&pow(
+          Expr::Constant("E".to_string()),
+          times(vec![a, make_rational(1, m)]),
+        ));
+        if let Ok(r) = reduced {
+          return r;
+        }
+      }
       if let Expr::BinaryOp {
         op: BinaryOperator::Power,
         left: base,
@@ -1781,6 +1813,39 @@ fn has_root(expr: &Expr) -> bool {
 /// (b^n)^(p/q) → b^(n p/q) for a provably positive base b and an integer
 /// n p/q: the real power law holds for every positive base, so
 /// ((1 + x)^4)^(-1/2) → (1 + x)^(-2) for x > 0.
+/// (E^u)^r → E^(u r) for a real u and a rational r: E^u is then positive,
+/// so Sqrt[E^(-t/5)] is E^(-t/10) for real t.
+fn refine_power_of_exp(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let parts = |e: &Expr| -> Option<(Expr, Expr)> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref().clone(), right.as_ref().clone())),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      _ => None,
+    }
+  };
+  let (outer_base, outer_exp) = parts(expr)?;
+  rational_parts_of(&outer_exp)?;
+  let (base, inner_exp) = parts(&outer_base)?;
+  if !matches!(&base, Expr::Constant(e) | Expr::Identifier(e) if e == "E")
+    || !is_real_under_assumptions(&inner_exp, info)
+  {
+    return None;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&pow2(
+    base,
+    times2(inner_exp, outer_exp),
+  ))
+  .ok()
+}
+
 fn refine_positive_base_root(
   expr: &Expr,
   info: &AssumptionInfo,
@@ -1986,6 +2051,13 @@ fn simplify_abs_with_signs(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
         None
       }
     }
+    // A sum whose terms all have one sign.
+    Expr::FunctionCall { name, .. } if name == "Plus" => {
+      match get_sign(expr, info)? {
+        s if s >= 0 => Some(expr.clone()),
+        _ => Some(neg1(expr.clone())),
+      }
+    }
     // For products: Abs[a * b] = Abs[a] * Abs[b], then simplify each
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -2136,6 +2208,60 @@ fn get_sign(expr: &Expr, info: &AssumptionInfo) -> Option<i8> {
       } else {
         Some(0)
       }
+    }
+    // A sum of terms of one sign has that sign.
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      let signs: Option<Vec<i8>> =
+        args.iter().map(|a| get_sign(a, info)).collect();
+      let signs = signs?;
+      if signs.iter().all(|&s| s >= 0) {
+        Some(i8::from(signs.iter().any(|&s| s > 0)))
+      } else if signs.iter().all(|&s| s <= 0) {
+        Some(-1)
+      } else {
+        None
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => get_sign(
+      &Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: vec![left.as_ref().clone(), right.as_ref().clone()].into(),
+      },
+      info,
+    ),
+    // An even power of a real is non-negative (counted as positive here);
+    // otherwise the base's sign to the power.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(_)) => {
+      let Expr::Integer(n) = right.as_ref() else {
+        return None;
+      };
+      if n % 2 == 0 && is_known_real(left, info) {
+        return Some(1);
+      }
+      let bs = get_sign(left, info)?;
+      Some(if n % 2 == 0 { bs * bs } else { bs })
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut result: i8 = 1;
+      for a in args {
+        result *= get_sign(a, info)?;
+      }
+      Some(result)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(_)) =>
+    {
+      get_sign(&pow2(args[0].clone(), args[1].clone()), info)
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -6533,8 +6659,24 @@ fn simplify_with_assumptions(expr: &Expr, opts: &Expr, full: bool) -> Expr {
 
   // Apply refinement using the combined assumption.
   let info = extract_assumption_info(&combined);
-  let result =
+  let mut result =
     normalize_refined_arith(&refine_expr(&simplified, &info, &combined));
+
+  // The refinement can expose new simplifications (`Conjugate[Cos[x]]` →
+  // `Cos[x]` for real x leaves `Cos[x]^2 + Sin[x]^2`): simplify once more,
+  // keeping that only when it is smaller.
+  if expr_to_string(&result) != expr_to_string(&simplified)
+    && let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(&result)
+  {
+    let again = if full {
+      full_simplify_expr_with_together(&evaluated)
+    } else {
+      simplify_expr_with_together(&evaluated)
+    };
+    if leaf_count(&again) < leaf_count(&result) {
+      result = again;
+    }
+  }
 
   // Restore previous $Assumptions
   crate::ENV.with(|e| {

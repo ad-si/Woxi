@@ -28968,6 +28968,28 @@ mod manipulate {
     assert_eq!(interpret("Manipulate[x^2]").unwrap(), "Manipulate[x^2]");
   }
 
+  /// Layout wrappers (`Labeled`, `Pane`, `Framed`, `Rotate`, …) are valid
+  /// Manipulate arguments whatever they wrap; a bare control or an unknown
+  /// head is a vsform, as in wolframscript.
+  #[test]
+  fn layout_wrappers_are_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x, Labeled[foo, \"lbl\"], {x, 0, 1}]; \
+       Manipulate[x, Framed[Slider[Dynamic[x]]], {x, 0, 1}]; \
+       Manipulate[x, Rotate[a, 1], {x, 0, 1}]; \
+       Manipulate[x, Slider[Dynamic[x]], {x, 0, 1}];",
+    )
+    .unwrap();
+    let warnings = out.warnings.join("\n");
+    assert!(!warnings.contains("Labeled"), "{warnings}");
+    assert!(!warnings.contains("Framed"), "{warnings}");
+    assert!(!warnings.contains("Rotate"), "{warnings}");
+    assert!(
+      warnings.contains("Manipulate argument Slider[Dynamic[x]]"),
+      "{warnings}"
+    );
+  }
+
   #[test]
   fn initialization_option_is_not_vsform() {
     // Regression: `Initialization :> …` is a Manipulate option, not a
@@ -43237,5 +43259,49 @@ mod paired_charts {
       .unwrap(),
       "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
     );
+  }
+}
+
+mod plot_range_spec_evaluated {
+  use super::*;
+
+  // A range written as an expression that evaluates to {x, xmin, xmax}
+  // (a stored list, a replacement) is used as that range; Plot with no
+  // range at all is Plot::argr and stays unevaluated.
+  #[test]
+  fn computed_range_spec() {
+    assert_eq!(
+      interpret(
+        "r = {x, 0, 1}; in = {xRange -> {x, 0, 2}}; \
+         {Head[Plot[x^2, r]], Head[Plot[x^2, xRange /. in]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    assert_eq!(
+      interpret("Head[Plot[{1, 2, 3}, ImageSize -> 100]]").unwrap(),
+      "Plot"
+    );
+  }
+}
+
+mod word_cloud_text {
+  use super::*;
+
+  // A string is text: its words, stopwords deleted, make the cloud; a
+  // non-list expression is a single item.
+  #[test]
+  fn text_and_single_item() {
+    assert_eq!(
+      interpret(
+        "{Head[WordCloud[\"the cat and the hat sat on the mat with the cat\"]], \
+         Head[WordCloud[foo[1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Graphics}"
+    );
+    let svg = export_svg("WordCloud[\"the cat and the hat sat on the cat\"]");
+    assert!(svg.contains(">cat<"), "{svg}");
+    assert!(!svg.contains(">the<"), "{svg}");
   }
 }

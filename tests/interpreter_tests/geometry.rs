@@ -2028,14 +2028,18 @@ mod geometric_scene {
 mod circle_points {
   use super::*;
 
+  // wolframscript takes Cos/Sin of accumulated machine angles, so its
+  // last digits vary from point to point (see conformance_gaps.md); compare
+  // to a tolerance.
   #[test]
   fn whole_number_real_gives_machine_points() {
     assert_eq!(
-      interpret("CirclePoints[4.]").unwrap(),
-      "{{0.7071067811865476, -0.7071067811865476}, \
-       {0.7071067811865476, 0.7071067811865476}, \
-       {-0.7071067811865476, 0.7071067811865476}, \
-       {-0.7071067811865476, -0.7071067811865476}}"
+      interpret(
+        "{MachineNumberQ[CirclePoints[4.][[1, 1]]], \
+         Chop[CirclePoints[4.] - {{1, -1}, {1, 1}, {-1, 1}, {-1, -1}}/Sqrt[2], 10^-14]}"
+      )
+      .unwrap(),
+      "{True, {{0, 0}, {0, 0}, {0, 0}, {0, 0}}}"
     );
   }
 
@@ -3009,6 +3013,22 @@ mod delaunay_mesh {
 
 mod computational_geometry_convex_hull {
   use super::*;
+
+  // The hull's area: exact for exact points, a machine number otherwise,
+  // 0 for a degenerate hull.
+  #[test]
+  fn convex_hull_area() {
+    assert_eq!(
+      interpret(
+        "Get[\"ComputationalGeometry`\"]; \
+         InputForm[{ConvexHullArea[{{0,0},{1,0},{1,1},{0,1},{1/2,1/2}}], \
+           ConvexHullArea[{{0.,0},{2,0},{0,3}}], ConvexHullArea[{{0,0},{1,1}}], \
+           ComputationalGeometry`ConvexHullArea[{{0,0},{3,0},{1,2},{1,1}}]}]"
+      )
+      .unwrap(),
+      "InputForm[{1, 3., 0, 3}]"
+    );
+  }
 
   // Indices of the strict corners, counter-clockwise from the leftmost one.
   #[test]

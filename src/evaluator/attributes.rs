@@ -951,7 +951,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     "Attributes" => A::HoldAll | A::Listable | A::Protected,
 
     // Flat + OneIdentity + Protected
-    "Join" | "StringJoin" => A::Flat | A::OneIdentity | A::Protected,
+    "Join" | "StringJoin" | "StringExpression" => A::Flat | A::OneIdentity | A::Protected,
     "Union" | "Intersection" => {
       A::Flat | A::OneIdentity | A::Protected | A::ReadProtected
     }
