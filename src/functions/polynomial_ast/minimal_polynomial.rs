@@ -50,7 +50,11 @@ pub fn minimal_polynomial_core(
       // construction can return a perfect power (e.g. (x^2+2)^2 for the
       // complex product I*Sqrt[2], where no real numeric value was available
       // to pick the irreducible factor); reduce it to the square-free part.
-      let coeffs = make_square_free(&coeffs);
+      // The pairwise resultant composition can also return a reducible
+      // annihilating polynomial (degree 8 for Sqrt[2] + Sqrt[3] +
+      // 3 (1 + Sqrt[2]), whose minimal polynomial has degree 4); keep the
+      // irreducible factor alpha satisfies.
+      let coeffs = refine_minimal_coeffs(alpha, &make_square_free(&coeffs));
       let poly = coeffs_to_expr(&coeffs, &var);
       let simplified = crate::evaluator::evaluate_expr_to_expr(&poly)?;
       Ok(simplified)
@@ -2225,7 +2229,7 @@ fn algebraic_minpoly(
   expr: &Expr,
 ) -> Result<Option<Vec<i128>>, InterpreterError> {
   if let Some(coeffs) = compute_minpoly_coeffs(expr)? {
-    let coeffs = make_square_free(&coeffs);
+    let coeffs = refine_minimal_coeffs(expr, &make_square_free(&coeffs));
     if coeffs.len() >= 2 {
       return Ok(Some(coeffs));
     }
@@ -2284,6 +2288,50 @@ pub fn algebraic_number_trace_ast(
     Expr::Integer(-c[n - 1]),
     Expr::Integer(c[n]),
   ))
+}
+
+/// AlgebraicNumberTrace / AlgebraicNumberNorm [a, Extension -> θ]: the
+/// trace or norm of a over the field K = Q(θ), which is the one over Q(a)
+/// taken [K : Q(a)] times (summed or multiplied). Requires a ∈ K.
+pub fn algebraic_number_trace_norm_in_field(
+  head: &str,
+  args: &[Expr],
+  theta: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let (Some(ca), Some(ct)) =
+    (algebraic_minpoly(&args[0])?, algebraic_minpoly(theta)?)
+  else {
+    return Ok(unevaluated(head, args));
+  };
+  let (deg_a, deg_k) = (ca.len() - 1, ct.len() - 1);
+  if deg_k % deg_a != 0 {
+    return Ok(unevaluated(head, args));
+  }
+  // a ∈ Q(θ) exactly when θ + c a generates no larger field (checked for a
+  // few c, which avoids an accidental drop in degree).
+  if deg_a > 1 {
+    for c in 1..=3 {
+      let sum = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+        theta.clone(),
+        times(vec![Expr::Integer(c), args[0].clone()]),
+      ]))?;
+      match algebraic_minpoly(&sum)? {
+        Some(cs) if cs.len() - 1 <= deg_k => {}
+        _ => return Ok(unevaluated(head, args)),
+      }
+    }
+  }
+  let m = (deg_k / deg_a) as i128;
+  let base = if head == "AlgebraicNumberTrace" {
+    algebraic_number_trace_ast(&args[..1])?
+  } else {
+    algebraic_number_norm_ast(&args[..1])?
+  };
+  crate::evaluator::evaluate_expr_to_expr(&if head == "AlgebraicNumberTrace" {
+    times(vec![Expr::Integer(m), base])
+  } else {
+    pow(base, Expr::Integer(m))
+  })
 }
 
 /// AlgebraicNumberDenominator[a] — the smallest positive integer d such
