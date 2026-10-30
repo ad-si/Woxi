@@ -4482,6 +4482,20 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       return styled;
     }
   }
+  // A frame around a `Dynamic` shows the dynamic's current value, which the
+  // front end computes when the frame is drawn — in document order, so a
+  // later `Dynamic` may read what this one sets.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && matches!(name.as_str(), "Panel" | "Framed")
+    && matches!(args.first(), Some(syntax::Expr::FunctionCall { name: d, .. }) if d == "Dynamic")
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = render_inline_display_wrapper(&args[0]);
+    return render_inline_display_wrapper(&syntax::Expr::FunctionCall {
+      name: name.clone(),
+      args: new_args.into(),
+    });
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
@@ -4532,14 +4546,13 @@ fn render_dynamic_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if name == "Dynamic" && !args.is_empty() =>
     {
       // Dynamic is HoldFirst: its content arrives unevaluated. Release
-      // the hold; on error keep the symbolic form rather than failing
-      // the whole rendering pipeline.
-      match evaluator::evaluate_expr_to_expr(&args[0]) {
-        // The released content is displayed like any other result, so a
-        // `Dynamic[Tooltip[Graphics[…], tip]]` shows its picture.
-        Ok(inner) => render_visual_display_pipeline(&inner),
-        Err(_) => expr,
-      }
+      // the hold (after its `Initialization`); the released content is
+      // displayed like any other result, so a
+      // `Dynamic[Tooltip[Graphics[…], tip]]` shows its picture.
+      let _ = args;
+      render_visual_display_pipeline(
+        &functions::graphics::dynamic_current_value(&expr),
+      )
     }
     _ => expr,
   }
