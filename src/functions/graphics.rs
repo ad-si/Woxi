@@ -2554,6 +2554,17 @@ fn collect_primitives(
                 None => parse_text(args, style, prims),
               }
             }
+            // `Text[Grid[…]]` is a table set at the anchor — with its
+            // merged cells, dividers and backgrounds — not its flattened
+            // cell text.
+            Expr::FunctionCall { name, args: gargs }
+              if name == "Grid" && grid_needs_table_layout(gargs) =>
+            {
+              match inset_primitives(args, errors) {
+                Some(inner) => prims.extend(inner),
+                None => parse_text(args, style, prims),
+              }
+            }
             _ => parse_text(args, style, prims),
           }
         }
@@ -5460,6 +5471,25 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
   None
 }
 
+/// A `Grid` whose look cannot be had from flattened cell text — merged
+/// cells (`SpanFromLeft`/`SpanFromAbove`) or `Dividers`/`Background`/`Frame`
+/// options — so it is laid out as a table rather than set as text lines.
+fn grid_needs_table_layout(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  let has_span = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(is_span_marker),
+    _ => false,
+  });
+  let has_chrome = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n)
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+  });
+  has_span || has_chrome
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -5658,9 +5688,12 @@ fn inset_primitives(
     // A boxed or laid-out display holding a picture — the framed legend of
     // swatches a Demonstration insets into its plot — is composed to its own
     // picture and embedded whole, rather than printed as source text.
-    call @ Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
-        && crate::evaluator::lays_out_a_graphic(call) =>
+    call @ Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if (matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
+      && crate::evaluator::lays_out_a_graphic(call))
+      || (name == "Grid" && grid_needs_table_layout(call_args)) =>
     {
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
