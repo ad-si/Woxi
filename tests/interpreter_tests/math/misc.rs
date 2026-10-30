@@ -1849,10 +1849,10 @@ mod machine_real_division {
     assert_eq!(interpret("Divide[15.9, Pi]").unwrap(), "5.0611271903222725");
   }
 
-  // Dividing by an exact Integer/Rational is Times[a, Rational[..]] — an exact
-  // reciprocal, so the product is single-rounded (identical to direct division).
-  // The reciprocal-multiply rule must NOT touch these (regression: CentralMoment,
-  // Kurtosis, Skewness and AbsoluteCorrelation all divide by an integer count).
+  // Dividing by an exact Integer/Rational is Times[a, Rational[..]], whose
+  // reciprocal is rounded (`7./10` is 0.7000000000000001; 15.9/3 happens to
+  // agree with the direct division). CentralMoment, Kurtosis, Skewness and
+  // AbsoluteCorrelation divide by their integer count directly, like Mean.
   #[test]
   fn real_over_exact_denominator_stays_direct() {
     assert_eq!(interpret("15.9/3").unwrap(), "5.3");

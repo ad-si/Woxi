@@ -3866,10 +3866,19 @@ fn evaluate_expr_to_expr_uncached(
             (Some(o), ComparisonOp::GreaterEqual) => {
               !matches!(o, std::cmp::Ordering::Less)
             }
-            (None, ComparisonOp::Less) => w[0].1 < w[1].1,
-            (None, ComparisonOp::LessEqual) => w[0].1 <= w[1].1,
-            (None, ComparisonOp::Greater) => w[0].1 > w[1].1,
-            (None, ComparisonOp::GreaterEqual) => w[0].1 >= w[1].1,
+            (None, _) => {
+              let (l, r) = (w[0].1, w[1].1);
+              let tol_eq = || {
+                machine_tolerant_equal(&values[w[0].0], &values[w[1].0], l, r)
+              };
+              match op {
+                ComparisonOp::Less => l < r && !tol_eq(),
+                ComparisonOp::LessEqual => l <= r || tol_eq(),
+                ComparisonOp::Greater => l > r && !tol_eq(),
+                ComparisonOp::GreaterEqual => l >= r || tol_eq(),
+                _ => true,
+              }
+            }
             _ => true,
           };
           if !ok {
@@ -4183,7 +4192,9 @@ fn evaluate_expr_to_expr_uncached(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l < r
+              let tol_eq =
+                |l: f64, r: f64| machine_tolerant_equal(left, right, l, r);
+              l < r && !tol_eq(l, r)
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -4204,7 +4215,9 @@ fn evaluate_expr_to_expr_uncached(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l <= r
+              let tol_eq =
+                |l: f64, r: f64| machine_tolerant_equal(left, right, l, r);
+              l <= r || tol_eq(l, r)
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -4224,7 +4237,9 @@ fn evaluate_expr_to_expr_uncached(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l > r
+              let tol_eq =
+                |l: f64, r: f64| machine_tolerant_equal(left, right, l, r);
+              l > r && !tol_eq(l, r)
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -4244,7 +4259,9 @@ fn evaluate_expr_to_expr_uncached(
             } else if let (Some(l), Some(r)) =
               (try_eval_to_f64(left), try_eval_to_f64(right))
             {
-              l >= r
+              let tol_eq =
+                |l: f64, r: f64| machine_tolerant_equal(left, right, l, r);
+              l >= r || tol_eq(l, r)
             } else if let Some(ord) =
               crate::functions::quantity_ast::try_quantity_compare(left, right)
             {
@@ -5406,6 +5423,27 @@ fn interval_numeric_bounds(expr: &Expr) -> Option<(f64, f64)> {
     let v = to_f64(expr)?;
     Some((v, v))
   }
+}
+
+/// Whether two numbers an ordering comparison sees as `l` and `r` count as
+/// equal: `Less`/`Greater` on a machine real use `Equal`'s tolerance, so
+/// `0.14062500000000006 > 0.140625` is `False` (and `>=` is `True`). Exact
+/// operands compare exactly.
+fn machine_tolerant_equal(left: &Expr, right: &Expr, l: f64, r: f64) -> bool {
+  if !(crate::functions::math_ast::numeric_utils::contains_inexact_real(left)
+    || crate::functions::math_ast::numeric_utils::contains_inexact_real(right))
+  {
+    return false;
+  }
+  // Only operands within a few ULPs can be `Equal`; skip the call otherwise.
+  if l == r || (l - r).abs() > l.abs().max(r.abs()) * 2f64.powi(-40) {
+    return l == r;
+  }
+  let pair = [left.clone(), right.clone()];
+  matches!(
+    crate::functions::boolean_ast::equal_ast(&pair),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
 }
 
 /// Compare two values when at least one is an Interval, following Wolfram:
