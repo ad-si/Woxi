@@ -946,6 +946,15 @@ pub fn dispatch_image_functions(
         args,
       ));
     }
+    "AlphaChannel" if args.len() == 1 => {
+      return Some(crate::functions::image_ast::alpha_channel_ast(args));
+    }
+    "RemoveAlphaChannel" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::remove_alpha_channel_ast(args));
+    }
+    "SetAlphaChannel" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::image_ast::set_alpha_channel_ast(args));
+    }
     "ImageColorSpace" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_color_space_ast(args));
     }

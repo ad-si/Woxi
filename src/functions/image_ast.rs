@@ -14123,3 +14123,173 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   Ok(Expr::List(lines.into()))
 }
+
+/// The number of colour channels of a colour space, `None` when the space
+/// is unknown (an `Automatic` image has no alpha channel to tell apart).
+fn color_space_channels(space: Option<&str>) -> Option<u8> {
+  match space? {
+    "Grayscale" => Some(1),
+    "CMYK" => Some(4),
+    _ => Some(3),
+  }
+}
+
+/// Whether the image's last channel is an alpha channel: one past what its
+/// (explicit) colour space needs.
+fn has_alpha_channel(channels: u8, space: Option<&str>) -> bool {
+  color_space_channels(space).is_some_and(|n| channels == n + 1)
+}
+
+/// AlphaChannel[image]: the opacity of each pixel as a one-channel image
+/// (all ones for an image without an alpha channel).
+pub fn alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("AlphaChannel", args));
+  };
+  let ch = *channels as usize;
+  let n = (*width as usize) * (*height as usize);
+  let alpha: Vec<f64> = if has_alpha_channel(*channels, *color_space) {
+    (0..n).map(|i| data[i * ch + ch - 1]).collect()
+  } else {
+    vec![1.0; n]
+  };
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: 1,
+    data: std::sync::Arc::new(alpha),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: None,
+    display_size: None,
+  })
+}
+
+/// RemoveAlphaChannel[image] drops the alpha channel;
+/// RemoveAlphaChannel[image, color] first composites the image over a
+/// background of that colour. An image without one is returned as is.
+pub fn remove_alpha_channel_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    display_size,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("RemoveAlphaChannel", args));
+  };
+  if !has_alpha_channel(*channels, *color_space) {
+    return Ok(args[0].clone());
+  }
+  let ch = *channels as usize;
+  let colors = ch - 1;
+  let background: Option<Vec<f64>> = match args.get(1) {
+    None => None,
+    Some(c) => {
+      let Some(col) = crate::functions::graphics::parse_color(c) else {
+        return Ok(unevaluated("RemoveAlphaChannel", args));
+      };
+      Some(if colors == 1 {
+        vec![0.299 * col.r + 0.587 * col.g + 0.114 * col.b]
+      } else {
+        vec![col.r, col.g, col.b]
+      })
+    }
+  };
+  let n = (*width as usize) * (*height as usize);
+  let mut out = Vec::with_capacity(n * colors);
+  for i in 0..n {
+    let px = &data[i * ch..(i + 1) * ch];
+    let a = px[ch - 1];
+    for k in 0..colors {
+      out.push(match &background {
+        Some(bg) => px[k] * a + bg.get(k).copied().unwrap_or(0.0) * (1.0 - a),
+        None => px[k],
+      });
+    }
+  }
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: colors as u8,
+    data: std::sync::Arc::new(out),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: *color_space,
+    display_size: *display_size,
+  })
+}
+
+/// SetAlphaChannel[image] gives the image an opaque alpha channel;
+/// SetAlphaChannel[image, a] one with opacity `a` (a number, or a
+/// grayscale image of the same size). An existing alpha channel is replaced.
+pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    color_space,
+    display_size,
+    ..
+  } = &args[0]
+  else {
+    return Ok(unevaluated("SetAlphaChannel", args));
+  };
+  let ch = *channels as usize;
+  let colors = if has_alpha_channel(*channels, *color_space) {
+    ch - 1
+  } else {
+    ch
+  };
+  let space = color_space.or(match colors {
+    1 => Some("Grayscale"),
+    3 => Some("RGB"),
+    _ => None,
+  });
+  let n = (*width as usize) * (*height as usize);
+  let alpha = |i: usize| -> Option<f64> {
+    match args.get(1) {
+      None => Some(1.0),
+      Some(Expr::Image {
+        width: aw,
+        height: ah,
+        channels: ac,
+        data: ad,
+        ..
+      }) if aw == width && ah == height => Some(ad[i * (*ac as usize)]),
+      Some(v) => {
+        // A real alpha is stored in single precision.
+        crate::functions::math_ast::try_eval_to_f64(v).map(|a| a as f32 as f64)
+      }
+    }
+  };
+  let mut out = Vec::with_capacity(n * (colors + 1));
+  for i in 0..n {
+    out.extend_from_slice(&data[i * ch..i * ch + colors]);
+    match alpha(i) {
+      Some(a) => out.push(a),
+      None => return Ok(unevaluated("SetAlphaChannel", args)),
+    }
+  }
+  Ok(Expr::Image {
+    width: *width,
+    height: *height,
+    channels: (colors + 1) as u8,
+    data: std::sync::Arc::new(out),
+    image_type: crate::syntax::ImageType::Real32,
+    color_space: space,
+    display_size: *display_size,
+  })
+}

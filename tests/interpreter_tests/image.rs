@@ -9923,3 +9923,26 @@ mod image_lines {
     );
   }
 }
+
+mod alpha_channel_functions {
+  use super::*;
+
+  #[test]
+  fn alpha_remove_and_set() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{1, 0, 0, 0.5}, {0, 1, 0, 1}}}, ColorSpace -> \"RGB\"]; \
+         j = Image[{{{1, 0.5}, {0, 1}}}]; \
+         {ImageData[RemoveAlphaChannel[i]], ImageData[RemoveAlphaChannel[i, White]], \
+         ImageData[AlphaChannel[i]], ImageData[AlphaChannel[j]], \
+         ImageData[RemoveAlphaChannel[j]], ImageType[RemoveAlphaChannel[i]], \
+         ImageColorSpace[SetAlphaChannel[Image[{{1, 0}}]]], \
+         ImageData[SetAlphaChannel[Image[{{1, 0}}], 0.5]]}"
+      )
+      .unwrap(),
+      "{{{{1., 0., 0.}, {0., 1., 0.}}}, {{{1., 0.5, 0.5}, {0., 1., 0.}}}, {{0.5, 1.}}, \
+       {{1., 1.}}, {{{1., 0.5}, {0., 1.}}}, Real32, Grayscale, {{{1., 0.5}, {0., 0.5}}}}"
+    );
+  }
+}
