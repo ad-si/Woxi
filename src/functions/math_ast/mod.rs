@@ -44,6 +44,7 @@ mod statistics;
 mod triangles;
 mod trigonometric;
 mod weierstrass;
+mod weierstrass_lattice;
 mod zeta_functions;
 
 pub use airy::*;

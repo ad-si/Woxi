@@ -6275,3 +6275,12 @@ like WL (`Sqrt[7/3] 3^(1/5)` is `Sqrt[7]/3^(3/10)`).
   (`DataDistribution[KernelMixture, {1/3, Gaussian, …}, 1, 3]`); Woxi keeps
   them as strings, like the `"Empirical"` and `"Histogram"` containers.
 
+
+### Weierstrass functions at machine precision: last digits and imaginary noise
+
+Woxi evaluates `WeierstrassZeta`, `WeierstrassSigma` and complex
+`WeierstrassP`/`WeierstrassPPrime` through the lattice's theta function; the
+values agree with WL to about 14 significant digits, not to the last bit.
+For real arguments WL attaches a rounding-noise imaginary part
+(`WeierstrassZeta[1.5, {1., 2.}]` is `0.49214540663758793 +
+4.6454696025598575*^-17*I`), where Woxi returns the real `0.492145406637588`.

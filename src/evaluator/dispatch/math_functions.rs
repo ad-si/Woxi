@@ -1803,6 +1803,11 @@ pub fn dispatch_math_functions(
     "WeierstrassPPrime" if args.len() == 2 => {
       return Some(crate::functions::math_ast::weierstrass_p_prime_ast(args));
     }
+    "WeierstrassZeta" | "WeierstrassSigma" if args.len() == 2 => {
+      return Some(crate::functions::math_ast::weierstrass_zeta_sigma_ast(
+        name, args,
+      ));
+    }
     "InverseWeierstrassP" if args.len() == 2 => {
       return Some(crate::functions::math_ast::inverse_weierstrass_p_ast(args));
     }

@@ -1790,7 +1790,7 @@ GaussianMatrix,Discrete Gaussian matrix of radius r with standard deviation sigm
 NumberSigns,Option for NumberForm giving the strings to use for negative and positive number signs,✅,pure,2.0,1779
 TextRecognize,Recognize text in image,✅,unevaluated,8.0,1779
 LeviCivitaTensor,Levi-Civita totally antisymmetric tensor,✅,pure,7.0,1781
-WeierstrassZeta,Weierstrass zeta function,,unevaluated,3.0,1781
+WeierstrassZeta,Weierstrass zeta function (numeric for machine arguments incl. complex),✅,pure,3.0,1781
 CatalanNumber,Returns the nth Catalan number,✅,pure,6.0,1788
 DateValue,Extracts a named component or property of a date such as its week quarter name or name initials,✅,pure,10.0,1788
 DensityPlot3D,3D density plot,,unevaluated,10.2,1788
@@ -1859,7 +1859,7 @@ CoordinateTransformData,Mapping and Jacobian of the Polar/Spherical/Cylindrical/
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
 MathieuC,Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
-WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
+WeierstrassSigma,Weierstrass sigma function (numeric for machine arguments incl. complex),✅,pure,3.0,1852
 StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
 MetaInformation,Meta information option,,unevaluated,9.0,1855
