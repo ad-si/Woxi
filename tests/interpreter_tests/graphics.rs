@@ -43657,3 +43657,22 @@ mod more_named_color_schemes {
     );
   }
 }
+
+// Insert and Delete edit a rendered graphic through its symbolic form, as
+// Part and Append do.
+mod edit_rendered_graphics {
+  use super::*;
+
+  #[test]
+  fn insert_and_delete() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = Show[Graphics3D[Sphere[]], Graphics3D[Cuboid[]], Boxed -> False]; \
+         {Head[Insert[s, Red, {1, 1}]], Insert[s, Red, {1, 1}][[1]], Delete[s, {1, 1}][[1]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {RGBColor[1, 0, 0], Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}, {Cuboid[{0, 0, 0}]}}"
+    );
+  }
+}

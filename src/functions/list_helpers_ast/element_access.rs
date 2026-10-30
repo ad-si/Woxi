@@ -1224,6 +1224,16 @@ pub fn insert_ast(
   let unevaluated =
     || call("Insert", vec![list.clone(), elem.clone(), pos.clone()]);
 
+  // A rendered graphic is `Graphics[…]`/`Graphics3D[…]` underneath:
+  // inserting (a style, say) edits that form and renders it again.
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(list)
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&insert_ast(
+      &symbolic, elem, pos,
+    )?);
+  }
+
   // Association subject: the inserted element must be a `key -> value` rule,
   // and the position (an integer or `Key[k]`) gives where the new pair is
   // placed. Integer `n` inserts before the n-th entry (negatives count from
@@ -2188,6 +2198,15 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Delete expects exactly 2 arguments".into(),
     ));
+  }
+  // A rendered graphic is edited through its symbolic form.
+  if let Some(symbolic) =
+    crate::evaluator::part_extraction::graphics_symbolic_form(&args[0])
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&delete_ast(&[
+      symbolic,
+      args[1].clone(),
+    ])?);
   }
 
   // Association subject: positions are integer indices, `Key[k]`, bare keys,
