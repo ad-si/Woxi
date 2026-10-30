@@ -131,50 +131,40 @@ pub fn dispatch_predicate_functions(
   match name {
     // Inequality[a, Less, b, Less, c, ...] - evaluate chained comparisons
     "Inequality" if args.len() >= 3 && args.len() % 2 == 1 => {
-      let comparison_op = |op_name: &str| -> Option<fn(f64, f64) -> bool> {
+      let comparison_op = |op_name: &str| -> Option<ComparisonOp> {
         match op_name {
-          "Less" => Some(|a: f64, b: f64| a < b),
-          "LessEqual" => Some(|a: f64, b: f64| a <= b),
-          "Greater" => Some(|a: f64, b: f64| a > b),
-          "GreaterEqual" => Some(|a: f64, b: f64| a >= b),
-          "Equal" => Some(|a: f64, b: f64| (a - b).abs() < f64::EPSILON),
+          "Less" => Some(ComparisonOp::Less),
+          "LessEqual" => Some(ComparisonOp::LessEqual),
+          "Greater" => Some(ComparisonOp::Greater),
+          "GreaterEqual" => Some(ComparisonOp::GreaterEqual),
+          "Equal" => Some(ComparisonOp::Equal),
           _ => None,
         }
       };
-      // Try to evaluate all numeric values
-      let mut all_numeric = true;
-      let mut values: Vec<f64> = Vec::new();
-      let mut ops: Vec<fn(f64, f64) -> bool> = Vec::new();
-      for (idx, arg) in args.iter().enumerate() {
+      // A chain of numbers is decided by the comparison evaluator, which
+      // owns the exact and machine-tolerance rules.
+      let mut operands: Vec<Expr> = Vec::new();
+      let mut ops: Vec<ComparisonOp> = Vec::new();
+      let all_numeric = args.iter().enumerate().all(|(idx, arg)| {
         if idx % 2 == 0 {
-          // Value position
-          if let Some(f) = crate::functions::math_ast::try_eval_to_f64(arg) {
-            values.push(f);
-          } else {
-            all_numeric = false;
-            break;
-          }
+          operands.push(arg.clone());
+          crate::functions::math_ast::try_eval_to_f64(arg).is_some()
+        } else if let Expr::Identifier(op_name) = arg
+          && let Some(op) = comparison_op(op_name)
+        {
+          ops.push(op);
+          true
         } else {
-          // Operator position
-          if let Expr::Identifier(op_name) = arg {
-            if let Some(op) = comparison_op(op_name) {
-              ops.push(op);
-            } else {
-              all_numeric = false;
-              break;
-            }
-          } else {
-            all_numeric = false;
-            break;
-          }
+          false
         }
-      }
-      if all_numeric && ops.len() + 1 == values.len() {
-        let result = ops
-          .iter()
-          .zip(values.windows(2))
-          .all(|(op, pair)| op(pair[0], pair[1]));
-        return Some(Ok(bool_expr(result)));
+      });
+      if all_numeric {
+        return Some(crate::evaluator::evaluate_expr_to_expr(
+          &Expr::Comparison {
+            operands,
+            operators: ops,
+          },
+        ));
       }
       // For mixed-direction chains (e.g. `Greater` with `LessEqual`, or
       // any NotEqual mixed in), split into pairwise `&&` — wolframscript's

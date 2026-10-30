@@ -3637,10 +3637,11 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     terms.push(val);
   }
 
-  // Sum and divide by n
+  // Sum and divide by n, as one division like Mean (`Divide`, not the
+  // reciprocal product `/` takes for a machine real).
   let sum_expr = plus(terms);
   let sum_val = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
-  let result = div2(sum_val, Expr::Integer(n as i128));
+  let result = call("Divide", vec![sum_val, Expr::Integer(n as i128)]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 

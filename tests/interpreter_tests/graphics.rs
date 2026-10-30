@@ -43489,3 +43489,21 @@ mod graphics3d_overlay_and_atom_colors {
     );
   }
 }
+
+mod image_size_ranges {
+  use super::*;
+
+  // ImageSize -> {{wmin, wmax}, {hmin, hmax}} picks a size within the
+  // ranges (a degenerate range fixes it).
+  #[test]
+  fn degenerate_ranges_fix_the_size() {
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Graphics[{White, Disk[]}, PlotRange -> {{-1, 1}, {-1, 1}}, \
+         ImageSize -> {{246, 246}, {246, 246}}, Background -> Black]]]"
+      )
+      .unwrap(),
+      "{246, 246}"
+    );
+  }
+}

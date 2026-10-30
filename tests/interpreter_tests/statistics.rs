@@ -1055,6 +1055,34 @@ mod bin_counts {
   }
 
   #[test]
+  fn multidimensional_bins_take_every_one_dimensional_spec() {
+    // Explicit edges (with infinite ends), {min, max} and a bare width.
+    let data = "d = {{0, 55}, {0.6, 54}, {1.7, 53}, {2.1, 52}, {36, 42}}; ";
+    assert_eq!(
+      interpret(&format!(
+        "{data}BinCounts[d, {{{{0, 2}}}}, {{{{-Infinity, Infinity}}}}]"
+      ))
+      .unwrap(),
+      "{{3}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{data}BinLists[d, {{{{0, 2}}}}, {{{{-Infinity, Infinity}}}}]"
+      ))
+      .unwrap(),
+      "{{{{0, 55}, {0.6, 54}, {1.7, 53}}}}"
+    );
+    assert_eq!(
+      interpret(&format!("{data}BinCounts[d, {{0, 3}}, {{50, 56}}]")).unwrap(),
+      "{{0, 0, 0, 0, 1, 1}, {0, 0, 0, 1, 0, 0}, {0, 0, 1, 0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret(&format!("{data}Dimensions[BinCounts[d, 2, 5]]")).unwrap(),
+      "{20, 4}"
+    );
+  }
+
+  #[test]
   fn bin_counts_values_at_boundaries() {
     // 5 goes in [5,10), 10 is excluded from [0,10)
     assert_eq!(
