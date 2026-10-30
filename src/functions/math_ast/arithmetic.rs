@@ -1762,6 +1762,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // e.g. E + E → 2*E, 3*x + 2*x → 5*x
     let collected =
       collect_like_terms(&combine_bigfloat_coefficients(symbolic_args));
+    let collected = combine_complex_coefficients(collected)?;
 
     // Sort symbolic terms: polynomial-like terms first, then transcendental functions
     // This gives Mathematica-like ordering where x^2 comes before Sin[x].
@@ -2349,6 +2350,82 @@ fn combine_bigfloat_coefficients(terms: Vec<Expr>) -> Vec<Expr> {
       }
     })
     .collect()
+}
+
+/// Like terms whose coefficients are complex numbers combine into one term
+/// with the complex sum as its coefficient, as in wolframscript:
+/// `x + I x` is `(1 + I) x` and `1/Sqrt[2] - I/Sqrt[2]` is `(1 - I)/Sqrt[2]`.
+/// `collect_like_terms` keeps `I` with the base, so it never sees these.
+fn combine_complex_coefficients(
+  terms: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let is_number = |f: &Expr| {
+    matches!(f, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+      || matches!(f, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
+      || crate::functions::predicate_ast::is_complex_number(f)
+  };
+  let is_complex = |f: &Expr| {
+    crate::functions::predicate_ast::is_complex_number(f)
+      && !matches!(f, Expr::Integer(_) | Expr::Real(_))
+      && !matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  // (coefficient factors, the rest)
+  let split = |t: &Expr| -> (Vec<Expr>, Vec<Expr>) {
+    match t {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        let (numbers, rest): (Vec<Expr>, Vec<Expr>) =
+          args.iter().cloned().partition(|f| is_number(f));
+        (numbers, rest)
+      }
+      _ => (Vec::new(), vec![t.clone()]),
+    }
+  };
+  let parts: Vec<(Vec<Expr>, Vec<Expr>)> = terms.iter().map(split).collect();
+  if !parts.iter().any(|(c, _)| c.iter().any(is_complex)) {
+    return Ok(terms);
+  }
+  // Group by the rest; keep the first position of each group.
+  let mut groups: Vec<(String, Vec<Expr>, Vec<usize>)> = Vec::new();
+  for (i, (_, rest)) in parts.iter().enumerate() {
+    if rest.is_empty() {
+      groups.push((String::new(), Vec::new(), vec![i]));
+      continue;
+    }
+    let key = rest
+      .iter()
+      .map(expr_to_string)
+      .collect::<Vec<_>>()
+      .join("\u{1}");
+    match groups.iter_mut().find(|g| !g.0.is_empty() && g.0 == key) {
+      Some(g) => g.2.push(i),
+      None => groups.push((key, rest.clone(), vec![i])),
+    }
+  }
+  let mut out = Vec::with_capacity(terms.len());
+  for (_, rest, members) in groups {
+    let any_complex =
+      members.iter().any(|&i| parts[i].0.iter().any(is_complex));
+    if members.len() < 2 || !any_complex {
+      out.extend(members.iter().map(|&i| terms[i].clone()));
+      continue;
+    }
+    let coefficients: Vec<Expr> = members
+      .iter()
+      .map(|&i| match parts[i].0.as_slice() {
+        [] => Ok(Expr::Integer(1)),
+        [one] => Ok(one.clone()),
+        many => times_ast(many),
+      })
+      .collect::<Result<_, _>>()?;
+    let sum = plus_ast(&coefficients)?;
+    if matches!(sum, Expr::Integer(0)) {
+      continue;
+    }
+    let mut factors = vec![sum];
+    factors.extend(rest);
+    out.push(times_ast(&factors)?);
+  }
+  Ok(out)
 }
 
 fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {

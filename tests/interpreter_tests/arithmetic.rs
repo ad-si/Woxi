@@ -14428,3 +14428,21 @@ mod machine_zero_divisor_message {
     );
   }
 }
+
+mod complex_coefficients_combine {
+  use super::*;
+
+  #[test]
+  fn like_terms_with_complex_coefficients() {
+    assert_eq!(
+      interpret(
+        "ToString[{1/Sqrt[2] - I/Sqrt[2], 2/Sqrt[3] + I/Sqrt[3], \
+         3 Sqrt[2] + 2 I Sqrt[2], x + I x, Pi + I Pi, x + I x - I x, \
+         2 x + I y, 1 + I + x + I x}, InputForm]"
+      )
+      .unwrap(),
+      "{(1 - I)/Sqrt[2], (2 + I)/Sqrt[3], (3 + 2*I)*Sqrt[2], (1 + I)*x, \
+       (1 + I)*Pi, x, 2*x + I*y, (1 + I) + (1 + I)*x}"
+    );
+  }
+}
