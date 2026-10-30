@@ -1936,6 +1936,36 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return r;
   }
 
+  // Exact numeric quantities beyond the rationals (2 Pi, Sqrt[6]): a is
+  // divisible by b when a/b is an integer. A quotient that does not reduce
+  // to a rational is decided only when its value is not near an integer.
+  let symbolic = |e: &Expr| matches!(classify(e), Exact::Symbolic);
+  if (symbolic(&args[0]) || symbolic(&args[1]))
+    && args.iter().all(|a| {
+      is_numeric_q(a) && !crate::functions::math_ast::contains_float(a)
+    })
+  {
+    let quotient =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![
+          args[0].clone(),
+          Expr::FunctionCall {
+            name: "Power".to_string(),
+            args: vec![args[1].clone(), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      })?;
+    return Ok(match classify(&quotient) {
+      Exact::Rational(n, d) => bool_expr((n % d).is_zero()),
+      _ => match crate::functions::math_ast::try_eval_to_f64(&quotient) {
+        Some(q) if (q - q.round()).abs() > 1e-8 => bool_expr(false),
+        _ => unevaluated(),
+      },
+    });
+  }
+
   // wolframscript reports the FIRST non-exact argument.
   let (na, da) = match classify(&args[0]) {
     Exact::Rational(n, d) => (n, d),

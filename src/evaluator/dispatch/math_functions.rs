@@ -479,6 +479,11 @@ pub fn dispatch_math_functions(
     }
     "RealAbs" if args.len() == 1 => {
       // RealAbs is same as Abs for real-valued arguments
+      if matches!(&args[0], Expr::Identifier(i) if i == "Infinity")
+        || crate::functions::math_ast::is_neg_infinity(&args[0])
+      {
+        return Some(Ok(Expr::Identifier("Infinity".to_string())));
+      }
       match &args[0] {
         Expr::Real(f) => return Some(Ok(Expr::Real(f.abs()))),
         Expr::Integer(n) => return Some(Ok(Expr::Integer(n.abs()))),
@@ -2251,6 +2256,10 @@ pub fn dispatch_math_functions(
         [seed, Expr::Rule { pattern, .. }] if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
           std::slice::from_ref(seed)
         }
+        // `SeedRandom[Method -> m]` reseeds from the time, like `SeedRandom[]`.
+        [Expr::Rule { pattern, .. }] if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
+          &[]
+        }
         _ => args,
       };
       return Some(crate::functions::math_ast::seed_random_ast(positional));
@@ -3732,6 +3741,26 @@ pub fn dispatch_math_functions(
     }
     "TrigReduce" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_reduce_ast(args));
+    }
+    // The wave functions thread over a list of points: SquareWave[{0.4,
+    // 1.2}] and SquareWave[{min, max}, {0.4, 1.2}] are lists of values.
+    "SquareWave" | "TriangleWave" | "SawtoothWave"
+      if (args.len() == 1 || args.len() == 2)
+        && matches!(args.last(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(points)) = args.last() else {
+        return None;
+      };
+      let mut out = Vec::with_capacity(points.len());
+      for point in points {
+        let mut point_args = args.to_vec();
+        *point_args.last_mut().unwrap() = point.clone();
+        match crate::evaluator::evaluate_function_call_ast(name, &point_args) {
+          Ok(v) => out.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      return Some(Ok(Expr::List(out.into())));
     }
     "SquareWave" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::square_wave_ast(args));

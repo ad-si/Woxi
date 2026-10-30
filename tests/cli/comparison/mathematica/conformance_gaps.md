@@ -1770,9 +1770,11 @@ anything about `Simplify` itself.
 
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
-Recognized as valid options but the call stays unevaluated; WL factors
-`x^2+1` into `(-I + x)*(I + x)`. Same for `FactorList` and
-`IrreduciblePolynomialQ`. Composite-modulus `LinearSolve`, n-ary modular
+`GaussianIntegers -> True` (and `Extension -> I`) factors univariate
+rational polynomials whose irreducible factors over Q are monic;
+non-monic splitting factors, multivariate input, other extensions
+(`Extension -> Sqrt[2]`, whose sign normalization is unverified) and
+`Trig` stay unevaluated. `IrreduciblePolynomialQ` ignores the options. Composite-modulus `LinearSolve`, n-ary modular
 `PolynomialLCM` and composite-modulus `GroebnerBasis` are also left
 unevaluated (prime moduli work).
 

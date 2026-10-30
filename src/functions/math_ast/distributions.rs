@@ -660,7 +660,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => pdf_beta(dargs, x),
     "KumaraswamyDistribution" => pdf_kumaraswamy(dargs, x),
     "BatesDistribution" => Ok(
-      bates_piecewise(dargs, x, false)
+      bates_piecewise(dargs, &x, false)
         .unwrap_or_else(|| unevaluated("PDF", args)),
     ),
     "KDistribution" => Ok(
@@ -2507,7 +2507,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "BetaDistribution" => cdf_beta(dargs, x),
     "KumaraswamyDistribution" => cdf_kumaraswamy(dargs, x),
     "BatesDistribution" => Ok(
-      bates_piecewise(dargs, x, true)
+      bates_piecewise(dargs, &x, true)
         .unwrap_or_else(|| unevaluated("CDF", args)),
     ),
     "KDistribution" => Ok(
@@ -18767,7 +18767,7 @@ fn bates_parts(dargs: &[Expr]) -> Option<(i128, Expr, Expr)> {
 /// (subinterval k < n/2) is written in `x - b_j`, the upper half in
 /// `t_j - x`, as wolframscript gives them; the CDF pieces are expanded in
 /// `x` below the middle and in `1 - x` above it.
-fn bates_piecewise(dargs: &[Expr], x: Expr, cdf: bool) -> Option<Expr> {
+fn bates_piecewise(dargs: &[Expr], x: &Expr, cdf: bool) -> Option<Expr> {
   let (n, a, c) = bates_parts(dargs)?;
   let ev = |e: Expr| eval(&e).ok();
   let width = ev(minus2(c.clone(), a.clone()))?;
@@ -18860,7 +18860,7 @@ fn bates_piecewise(dargs: &[Expr], x: Expr, cdf: bool) -> Option<Expr> {
         vec![
           crate::functions::polynomial_ast::solve::substitute_expr(
             &poly,
-            &x,
+            x,
             &minus2(int(1), u.clone()),
           ),
           u.clone(),
