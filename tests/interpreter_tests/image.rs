@@ -9981,3 +9981,37 @@ mod color_separate_in_a_space {
     );
   }
 }
+
+mod image_compose_porter_duff {
+  use super::*;
+
+  // Values from wolframscript.
+  #[test]
+  fn operator_weights_and_alpha() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{0.2, 0.5}}}, ColorSpace -> \"Grayscale\"]; \
+         o = Image[{{{0.6, 0.4}}}, ColorSpace -> \"Grayscale\"]; \
+         Table[ImageData[ImageCompose[i, o, Center, Center, v]], \
+         {v, {{1, 0, 0}, {0, 1, 0}, {1, 1, 1}, {1, 1, 0}}}]"
+      )
+      .unwrap(),
+      "{{{{0.6000000238418579, 0.20000000298023224}}}, \
+       {{{0.20000000298023224, 0.30000001192092896}}}, \
+       {{{0.4285714328289032, 0.699999988079071}}}, {{{0.36000001430511475, 0.5}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "o = Image[{{{0.6, 0.4}}}, ColorSpace -> \"Grayscale\"]; \
+         {ImageData[ImageCompose[Image[{{0.2}}], Image[{{0.6}}], Center, Center, {1, 0, 0}]], \
+         ImageData[ImageCompose[Image[{{0.2, 0.4}}], Image[{{0.6}}], Scaled[{0.25, 0.5}]]], \
+         ImageData[ImageCompose[Image[{{0.2, 0.4}}], o]], \
+         ImageType[ImageCompose[Image[{{0, 1}}, \"Byte\"], Image[{{0.6}}]]]}"
+      )
+      .unwrap(),
+      "{{{0.}}, {{0.6000000238418579, 0.4000000059604645}}, \
+       {{{0.20000000298023224, 1.}, {0.48000001907348633, 1.}}}, Real32}"
+    );
+  }
+}

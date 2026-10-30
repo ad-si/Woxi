@@ -5218,6 +5218,19 @@ fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
     }
   };
   match spec {
+    // Scaled[{sx, sy}]: fractions of the image's width and height.
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      let Expr::List(p) = &args[0] else {
+        return None;
+      };
+      if p.len() != 2 {
+        return None;
+      }
+      let f = crate::functions::math_ast::try_eval_to_f64;
+      Some((f(&p[0])? * w, f(&p[1])? * h))
+    }
     Expr::List(p) if p.len() == 2 => Some((
       axis(&p[0], w, "Left", "Right")?,
       axis(&p[1], h, "Bottom", "Top")?,
@@ -5235,11 +5248,25 @@ fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
 }
 
 pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 4 {
+  if args.len() < 2 || args.len() > 5 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCompose expects 2 to 4 arguments".into(),
+      "ImageCompose expects 2 to 5 arguments".into(),
     ));
   }
+  // ImageCompose[image, overlay, pos, opos, {a, b, c}]: the Porter–Duff
+  // weights of the overlay-only, image-only and overlapping parts; the
+  // default {1, 1, 1} draws the overlay over the image.
+  let operator = match args.get(4) {
+    None => (1.0, 1.0, 1.0),
+    Some(Expr::List(w)) if w.len() == 3 => {
+      let f = crate::functions::math_ast::try_eval_to_f64;
+      match (f(&w[0]), f(&w[1]), f(&w[2])) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => return Ok(unevaluated("ImageCompose", args)),
+      }
+    }
+    Some(_) => return Ok(unevaluated("ImageCompose", args)),
+  };
 
   // Parse the overlay spec: either an Image, or {Image, α}.
   let (overlay_expr, alpha) = match &args[1] {
@@ -5289,19 +5316,20 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (
     Expr::Image {
-      color_space: _,
+      color_space: cs1,
       display_size: _,
       width: w1,
       height: h1,
       channels: ch1,
       data: data1,
-      image_type,
+      image_type: _,
     },
     Expr::Image {
       width: w2,
       height: h2,
       channels: ch2,
       data: data2,
+      color_space: cs2,
       ..
     },
   ) = (base, overlay_expr)
@@ -5338,46 +5366,85 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     offset_y = (bh as f64 - (py - qy) - oh as f64).round() as i64;
   }
 
-  // Output starts as a copy of the background; overlapping pixels are
-  // replaced (or alpha-blended) using the overlay's channels.
-  let mut out: Vec<f64> = data1.as_ref().clone();
-  for oy in 0..oh {
-    let by = oy + offset_y;
-    if by < 0 || by >= bh {
-      continue;
-    }
-    for ox in 0..ow {
-      let bx = ox + offset_x;
-      if bx < 0 || bx >= bw {
-        continue;
-      }
+  // Porter–Duff compositing on the colour channels: with image and overlay
+  // opacities αi, αo, the result has opacity a αo (1 - αi) + b αi (1 - αo)
+  // + c αi αo, and the colours weighted the same way (the overlap showing
+  // the overlay). A {image, α} overlay is faded by α. An image without an
+  // alpha channel keeps none; its pixels are the premultiplied result.
+  let base_alpha = has_alpha_channel(*ch1, *cs1);
+  let over_alpha = has_alpha_channel(*ch2, *cs2);
+  let bcolors = if base_alpha { bch - 1 } else { bch };
+  let ocolors = if over_alpha { och - 1 } else { och };
+  // An overlay with an alpha channel gives the result one too.
+  let out_alpha = base_alpha || over_alpha;
+  let out_ch = bcolors + usize::from(out_alpha);
+  let (wa, wb, wc) = operator;
+  let fade = alpha.unwrap_or(1.0);
+  // Pixel values are single-precision; the arithmetic is done on them in
+  // double precision and the result rounded back, as wolframscript does.
+  let px = |v: f64| v as f32 as f64;
+  let n = (bw * bh) as usize;
+  let mut out: Vec<f64> = Vec::with_capacity(n * out_ch);
+  for by in 0..bh {
+    for bx in 0..bw {
       let base_idx = (by as usize * *w1 as usize + bx as usize) * bch;
-      let over_idx = (oy as usize * *w2 as usize + ox as usize) * och;
-      for c in 0..bch {
-        // Map the overlay's channel: if the overlay has fewer channels
-        // (e.g. grayscale into RGB), broadcast the single value.
-        let ov = if c < och {
-          data2[over_idx + c]
+      let (ox, oy) = (bx - offset_x, by - offset_y);
+      let over_idx = ((0..ow).contains(&ox) && (0..oh).contains(&oy))
+        .then(|| (oy as usize * *w2 as usize + ox as usize) * och);
+      let ai = if base_alpha {
+        px(data1[base_idx + bch - 1])
+      } else {
+        1.0
+      };
+      let ao = match over_idx {
+        Some(i) => {
+          (if over_alpha {
+            px(data2[i + och - 1])
+          } else {
+            1.0
+          }) * fade
+        }
+        None => 0.0,
+      };
+      let ar = wa * ao * (1.0 - ai) + wb * ai * (1.0 - ao) + wc * ai * ao;
+      for c in 0..bcolors {
+        let ci = px(data1[base_idx + c]);
+        let co = match over_idx {
+          Some(i) => px(data2[i + c.min(ocolors - 1)]),
+          None => 0.0,
+        };
+        let premult = wa * co * ao * (1.0 - ai)
+          + wb * ci * ai * (1.0 - ao)
+          + wc * co * ai * ao;
+        let value = if out_alpha {
+          if ar > 0.0 { premult / ar } else { 0.0 }
         } else {
-          data2[over_idx + (och - 1)]
+          premult
         };
-        let bg = out[base_idx + c];
-        out[base_idx + c] = match alpha {
-          Some(a) => (1.0 - a) * bg + a * ov,
-          None => ov,
-        };
+        out.push(px(value));
+      }
+      if out_alpha {
+        out.push(px(ar));
       }
     }
   }
 
   Ok(Expr::Image {
-    color_space: None,
+    color_space: if out_alpha {
+      cs1.or(*cs2).or(match bcolors {
+        1 => Some("Grayscale"),
+        3 => Some("RGB"),
+        _ => None,
+      })
+    } else {
+      *cs1
+    },
     display_size: None,
     width: *w1,
     height: *h1,
-    channels: *ch1,
+    channels: out_ch as u8,
     data: Arc::new(out),
-    image_type: *image_type,
+    image_type: ImageType::Real32,
   })
 }
 

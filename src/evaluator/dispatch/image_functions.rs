@@ -1614,7 +1614,7 @@ pub fn dispatch_image_functions(
         return Some(Ok(f));
       }
     }
-    "ImageCompose" if (2..=4).contains(&args.len()) => {
+    "ImageCompose" if (2..=5).contains(&args.len()) => {
       return Some(crate::functions::image_ast::image_compose_ast(args));
     }
     "ImageAdd" if args.len() >= 2 => {
