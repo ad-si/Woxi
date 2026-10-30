@@ -12,6 +12,26 @@ mod errors {
   }
 }
 
+mod superscript_digit_in_symbol_names {
+  use super::*;
+
+  #[test]
+  fn superscript_two_continues_a_symbol() {
+    // `ϵ²` is one symbol, not `ϵ` followed by a stray character: a
+    // Demonstration defines `ϵ²[a_, b_, c_] := ...` this way.
+    assert_eq!(
+      interpret("ϵ²[a_, b_, c_] := (3 b^2 - 8 a c)/(48 a^2); ϵ²[1, 2, 3]")
+        .unwrap(),
+      "-1/4"
+    );
+  }
+
+  #[test]
+  fn other_latin_superscript_digits() {
+    assert_eq!(interpret("x³ = 5; x¹ = 2; x³ + x¹").unwrap(), "7");
+  }
+}
+
 mod dollar_in_symbol_names {
   use super::*;
 
