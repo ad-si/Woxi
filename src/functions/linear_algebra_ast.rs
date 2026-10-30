@@ -2316,6 +2316,15 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A triangular polynomial matrix with exact-number diagonal: solve by
+  // substitution, which stays polynomial where the adjugate's n^2
+  // symbolic determinants blow up.
+  if is_polynomial_matrix(&matrix)
+    && let Some(inv) = triangular_polynomial_inverse(&matrix)
+  {
+    return Ok(matrix_to_expr(inv));
+  }
+
   // Try integer matrix inverse via adjugate method
   let det = determinant(&matrix);
   let det_is_zero = matches!(&det, Expr::Integer(0))
@@ -2386,6 +2395,64 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(matrix_to_expr(result))
+}
+
+/// The inverse of an upper- or lower-triangular matrix whose diagonal
+/// entries are all nonzero exact numbers, by back substitution with every
+/// entry expanded; `None` when the matrix has another shape.
+fn triangular_polynomial_inverse(m: &[Vec<Expr>]) -> Option<Vec<Vec<Expr>>> {
+  let n = m.len();
+  let exact_number = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if !(0..n).all(|i| exact_number(&m[i][i]) && !is_zero_expr(&m[i][i])) {
+    return None;
+  }
+  let upper = (0..n).all(|i| (0..i).all(|j| is_zero_expr(&m[i][j])));
+  let lower = (0..n).all(|i| (i + 1..n).all(|j| is_zero_expr(&m[i][j])));
+  if !upper && !lower {
+    return None;
+  }
+  // Work on the upper-triangular form; a lower one is solved transposed.
+  let u: Vec<Vec<Expr>> = if upper {
+    m.to_vec()
+  } else {
+    (0..n)
+      .map(|i| (0..n).map(|j| m[j][i].clone()).collect())
+      .collect()
+  };
+  let expand = |e: Expr| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&e),
+    )
+    .unwrap_or(e)
+  };
+  let mut x = vec![vec![Expr::Integer(0); n]; n];
+  for j in 0..n {
+    x[j][j] = eval_divide(&Expr::Integer(1), &u[j][j]);
+    for i in (0..j).rev() {
+      let mut sum = Expr::Integer(0);
+      for k in i + 1..=j {
+        if is_zero_expr(&u[i][k]) || is_zero_expr(&x[k][j]) {
+          continue;
+        }
+        sum = eval_add(&sum, &eval_mul(&u[i][k], &x[k][j]));
+      }
+      let neg = eval_sub(&Expr::Integer(0), &sum);
+      x[i][j] = expand(eval_divide(&neg, &u[i][i]));
+    }
+  }
+  if upper {
+    Some(x)
+  } else {
+    Some(
+      (0..n)
+        .map(|i| (0..n).map(|j| x[j][i].clone()).collect())
+        .collect(),
+    )
+  }
 }
 
 /// The inverse of a complex machine matrix by Gauss–Jordan elimination
