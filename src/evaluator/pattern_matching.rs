@@ -1732,6 +1732,90 @@ pub fn enumerate_flat_partition_matches(
   out
 }
 
+/// Enumerate all matches of an `Orderless` (but not `Flat`) head for
+/// `ReplaceList`. Every pattern argument takes a disjoint subset of
+/// `expr_args` (all arguments must be consumed); a subset keeps the
+/// arguments' canonical order, so a sequence pattern like `z__` binds each
+/// set of leftover arguments only once. Emits bindings in Wolfram's order:
+/// size tuples in lex order, then subsets by combinations in lex order.
+pub fn enumerate_orderless_matches(
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+) -> Vec<Vec<(String, Expr)>> {
+  let n = expr_args.len();
+  let k = pat_args.len();
+  let mut out: Vec<Vec<(String, Expr)>> = Vec::new();
+  if k == 0 {
+    return out;
+  }
+  // Each slot takes 1 element unless it is a sequence pattern.
+  let bounds: Vec<(usize, usize)> = pat_args
+    .iter()
+    .map(|p| match get_sequence_info(p) {
+      Some(info) => (info.min_count, info.max_count.unwrap_or(n)),
+      None => (1, 1),
+    })
+    .collect();
+  let mut size_tuples: Vec<Vec<usize>> = Vec::new();
+  fn sizes_rec(
+    bounds: &[(usize, usize)],
+    remaining: usize,
+    cur: &mut Vec<usize>,
+    acc: &mut Vec<Vec<usize>>,
+  ) {
+    if cur.len() == bounds.len() {
+      if remaining == 0 {
+        acc.push(cur.clone());
+      }
+      return;
+    }
+    let (lo, hi) = bounds[cur.len()];
+    for s in lo..=hi.min(remaining) {
+      cur.push(s);
+      sizes_rec(bounds, remaining - s, cur, acc);
+      cur.pop();
+    }
+  }
+  sizes_rec(&bounds, n, &mut Vec::new(), &mut size_tuples);
+  let indices: Vec<usize> = (0..n).collect();
+  for sizes in size_tuples {
+    enumerate_partitions_with_sizes(
+      &indices,
+      &sizes,
+      0,
+      &mut Vec::new(),
+      &mut |groups: &[Vec<usize>]| {
+        let mut bindings: Vec<(String, Expr)> = Vec::new();
+        for (pi, group) in groups.iter().enumerate() {
+          // Matching `{elems...}` against `{pat}` handles single and
+          // sequence patterns (with heads, tests and conditions) uniformly.
+          let elems = Expr::List(
+            group
+              .iter()
+              .map(|&i| expr_args[i].clone())
+              .collect::<Vec<_>>()
+              .into(),
+          );
+          let pat = Expr::List(vec![pat_args[pi].clone()].into());
+          push_match_context(&bindings);
+          let r = match_pattern(&elems, &pat);
+          pop_match_context();
+          match r {
+            Some(b) => {
+              if !merge_bindings(&mut bindings, b) {
+                return;
+              }
+            }
+            None => return,
+          }
+        }
+        out.push(bindings);
+      },
+    );
+  }
+  out
+}
+
 /// All size tuples (s_1, ..., s_k) with s_i >= 1 summing to n, in lex order.
 fn size_tuples_lex(n: usize, k: usize) -> Vec<Vec<usize>> {
   if k == 0 {

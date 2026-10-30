@@ -1154,6 +1154,35 @@ pub fn dispatch_complex_and_special(
               }
               return Some(Ok(Expr::List(results.into())));
             }
+          } else if crate::evaluator::listable::is_builtin_orderless(&expr_head)
+            || crate::func_attrs_contains(&expr_head, Attributes::Orderless)
+          {
+            // Orderless without Flat: every assignment of the arguments to
+            // the pattern slots, e.g. `g[x_, y_]` on `g[a, b]` gives both
+            // `{a, b}` and `{b, a}`.
+            let all_bindings =
+              crate::evaluator::pattern_matching::enumerate_orderless_matches(
+                &pat_fargs,
+                &expr_fargs,
+              );
+            let mut results: Vec<Expr> = Vec::new();
+            for bindings in all_bindings {
+              let evaluated = match crate::evaluator::pattern_matching::instantiate_replacement(
+                replacement,
+                &bindings,
+              ) {
+                Ok(Some(r)) => r,
+                Ok(None) => continue,
+                Err(e) => return Some(Err(e)),
+              };
+              results.push(evaluated);
+              if let Some(n) = max_matches
+                && results.len() as i128 >= n
+              {
+                break;
+              }
+            }
+            return Some(Ok(Expr::List(results.into())));
           }
         }
       }
