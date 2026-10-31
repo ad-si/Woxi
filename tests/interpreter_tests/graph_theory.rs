@@ -8862,3 +8862,37 @@ mod canonical_graph {
     );
   }
 }
+
+mod degree_and_spatial_graph_distributions {
+  use super::*;
+
+  #[test]
+  fn a_degree_sequence_is_realized_by_a_simple_graph() {
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[DegreeGraphDistribution[{2, 3, 2, 3, 2}]]; \
+         {VertexDegree[g], SimpleGraphQ[g]}"
+      )
+      .unwrap(),
+      "{{2, 3, 2, 3, 2}, True}"
+    );
+    assert_eq!(
+      interpret("RandomGraph[DegreeGraphDistribution[{1, 1, 1}]]").unwrap(),
+      "RandomGraph[DegreeGraphDistribution[{1, 1, 1}]]"
+    );
+  }
+
+  #[test]
+  fn spatial_graphs_join_points_within_the_radius() {
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[SpatialGraphDistribution[20, 0.3]]; \
+         c = GraphEmbedding[g]; \
+         {VertexCount[g], Length[c], \
+          AllTrue[EdgeList[g], Norm[c[[#[[1]]]] - c[[#[[2]]]]] <= 0.3 &]}"
+      )
+      .unwrap(),
+      "{20, 20, True}"
+    );
+  }
+}

@@ -2048,7 +2048,7 @@ Spectrogram,Plot the magnitude of the short-time Fourier transform (time vs freq
 DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036
 RootLocusPlot,Root locus plot for control systems,🚫,,8.0,2036
 UndirectedGraph,Gives the graph with every edge undirected and duplicates dropped,✅,pure,8.0,2038
-DegreeGraphDistribution,Degree-based graph distribution,🚫,,8.0,2039
+DegreeGraphDistribution,Random simple graphs with a given degree sequence (recognised by RandomGraph),✅,pure,8.0,2039
 NyquistPlot,Nyquist stability plot,✅,pure,8.0,2040
 FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
 VertexInDegree,Number of incoming edges per vertex of a graph or edge list,✅,none,8.0,2042
@@ -2829,7 +2829,7 @@ UniformPolyhedron,,🚫,,12.0,2837
 ControllableModelQ,,🚫,,8.0,2842
 KeyUnion,Extends associations to have the union of all keys with Missing for absent keys,✅,pure,10.0,2842
 LinkProtocol,,🚫,,3.0,2842
-SpatialGraphDistribution,Spatial random graph distribution,,unevaluated,9.0,2842
+SpatialGraphDistribution,Random geometric graphs on the unit square (recognised by RandomGraph),✅,pure,9.0,2842
 UnderoverscriptBoxOptions,,🚫,,4.0,2842
 BooleanQ,Tests if an expression is True or False,✅,pure,10.0,2845
 IndependentUnit,Represents a user-defined independent unit,✅,pure,9.0,2845
