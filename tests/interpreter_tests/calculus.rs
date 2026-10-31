@@ -10464,6 +10464,22 @@ mod ndsolve {
     );
   }
 
+  // A stiff system the fixed RK4 steps cannot take goes on with adaptive
+  // steps, its state events located on their points — also after an event
+  // already fired on the fixed steps.
+  #[test]
+  fn when_event_on_a_stiff_system() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{y'[t] == -100000 (y[t] - Cos[t]), y[0] == 1, \
+         WhenEvent[y[t] == 0.5, Sow[t]]}, y, {t, 0, 3}]]; \
+         {Round[r[[2]], 0.001], Round[y[2] /. r[[1, 1]], 0.0001]}"
+      )
+      .unwrap(),
+      "{{{1.047}}, -0.4161}"
+    );
+  }
+
   #[test]
   fn when_event_periodic_action_samples_state() {
     // `WhenEvent[Mod[t, p] == 0, Sow[…]]` fires at every multiple of `p`
