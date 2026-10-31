@@ -11575,17 +11575,14 @@ fn piecewise_condition_bound_lists(
       piecewise_condition_bound_lists(c, var, lowers, uppers)?;
       continue;
     }
-    match piecewise_condition_bounds(c, var) {
-      Some((l, h)) => {
-        lowers.extend(l);
-        uppers.extend(h);
-      }
+    if let Some((l, h)) = piecewise_condition_bounds(c, var) {
+      lowers.extend(l);
+      uppers.extend(h);
+    } else {
       // Symbolic bounds that cannot be intersected yet.
-      None => {
-        let (l, h) = linear_comparison_bounds(c, var)?;
-        lowers.extend(l);
-        uppers.extend(h);
-      }
+      let (l, h) = linear_comparison_bounds(c, var)?;
+      lowers.extend(l);
+      uppers.extend(h);
     }
   }
   Some(())
