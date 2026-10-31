@@ -144,8 +144,113 @@ pub fn region_rings(region: &Expr) -> Option<Vec<Ring>> {
         (o.0 + v2.0, o.1 + v2.1),
       ]])
     }
+    ("ImplicitRegion", [condition, Expr::List(vars)]) if vars.len() == 2 => {
+      linear_implicit_polygon(condition, &vars[0], &vars[1]).map(|r| vec![r])
+    }
     _ => None,
   }
+}
+
+/// The bounded polygon an `ImplicitRegion` of linear inequalities in two
+/// variables describes (`0 <= -y <= 1 && 0 <= -x + y <= 1`): the half-planes
+/// clip a large square one by one. None for any other condition, or an
+/// unbounded or empty region.
+fn linear_implicit_polygon(
+  condition: &Expr,
+  x: &Expr,
+  y: &Expr,
+) -> Option<Ring> {
+  // Each constraint as `a x + b y + c <= 0`.
+  fn collect(e: &Expr, out: &mut Vec<(Expr, Expr, bool)>) -> Option<()> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "And" => {
+        for a in args {
+          collect(a, out)?;
+        }
+        Some(())
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::And,
+        left,
+        right,
+      } => {
+        collect(left, out)?;
+        collect(right, out)
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } => {
+        for (i, op) in operators.iter().enumerate() {
+          let (l, r) = (operands[i].clone(), operands[i + 1].clone());
+          match op {
+            crate::syntax::ComparisonOp::LessEqual
+            | crate::syntax::ComparisonOp::Less => out.push((l, r, true)),
+            crate::syntax::ComparisonOp::GreaterEqual
+            | crate::syntax::ComparisonOp::Greater => {
+              out.push((r, l, true));
+            }
+            _ => return None,
+          }
+        }
+        Some(())
+      }
+      _ => None,
+    }
+  }
+  let mut constraints = Vec::new();
+  collect(condition, &mut constraints)?;
+  let (Expr::Identifier(xn), Expr::Identifier(yn)) = (x, y) else {
+    return None;
+  };
+  let value_at = |e: &Expr, px: f64, py: f64| -> Option<f64> {
+    let s = crate::syntax::substitute_variable(e, xn, &Expr::Real(px));
+    let s = crate::syntax::substitute_variable(&s, yn, &Expr::Real(py));
+    try_eval_to_f64(&crate::evaluator::evaluate_expr_to_expr(&s).ok()?)
+  };
+  let mut planes: Vec<(f64, f64, f64)> = Vec::new();
+  for (l, r, _) in &constraints {
+    let f =
+      |px: f64, py: f64| Some(value_at(l, px, py)? - value_at(r, px, py)?);
+    let c = f(0.0, 0.0)?;
+    let a = f(1.0, 0.0)? - c;
+    let b = f(0.0, 1.0)? - c;
+    // Linear: the plane through three points predicts a fourth.
+    let check = f(2.0, -3.0)?;
+    if (check - (2.0 * a - 3.0 * b + c)).abs() > 1e-9 * (1.0 + check.abs()) {
+      return None;
+    }
+    planes.push((a, b, c));
+  }
+  const BIG: f64 = 1e6;
+  let mut ring: Ring = vec![(-BIG, -BIG), (BIG, -BIG), (BIG, BIG), (-BIG, BIG)];
+  for (a, b, c) in planes {
+    let side = |p: P| a * p.0 + b * p.1 + c;
+    let mut clipped: Ring = Vec::new();
+    for i in 0..ring.len() {
+      let (p, q) = (ring[i], ring[(i + 1) % ring.len()]);
+      let (sp, sq) = (side(p), side(q));
+      if sp <= 0.0 {
+        clipped.push(p);
+      }
+      if (sp < 0.0 && sq > 0.0) || (sp > 0.0 && sq < 0.0) {
+        let t = sp / (sp - sq);
+        clipped.push((p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)));
+      }
+    }
+    ring = clipped;
+    if ring.len() < 3 {
+      return None;
+    }
+  }
+  // A vertex left on the big square means the region is unbounded.
+  if ring
+    .iter()
+    .any(|p| p.0.abs() >= BIG * 0.5 || p.1.abs() >= BIG * 0.5)
+  {
+    return None;
+  }
+  Some(ring)
 }
 
 fn rect(p: P, q: P) -> Ring {

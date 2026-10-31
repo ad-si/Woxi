@@ -1098,11 +1098,21 @@ pub fn dispatch_linear_algebra_functions(
         ]
         .into(),
       };
-      let reduced = match crate::evaluator::evaluate_expr_to_expr(&reduced) {
+      crate::push_quiet();
+      let attempt = crate::evaluator::evaluate_expr_to_expr(&reduced);
+      crate::pop_quiet();
+      let reduced = match attempt {
         Ok(r) if !matches!(&r, Expr::FunctionCall { name, .. } if name == "Dot") => {
           r
         }
-        _ => return Some(Ok(crate::helpers::unevaluated(name, args))),
+        _ => {
+          if let Some(result) = singular_pencil_eigen(name, args) {
+            return Some(Ok(result));
+          }
+          // Re-run loudly for the message wolframscript gives.
+          let _ = crate::evaluator::evaluate_expr_to_expr(&reduced);
+          return Some(Ok(crate::helpers::unevaluated(name, args)));
+        }
       };
       let mut new_args = vec![reduced];
       new_args.extend(args[1..].iter().cloned());
@@ -6024,4 +6034,78 @@ fn contains_approximate_number(e: &Expr) -> bool {
     Expr::UnaryOp { operand, .. } => contains_approximate_number(operand),
     _ => false,
   }
+}
+
+/// A numeric pencil `{a, b}` whose `b` is singular but `a` is not: the
+/// eigenvalues `λ` of `a v == λ b v` are the reciprocals of those of
+/// `Inverse[a] . b`, with `Infinity` for its zero eigenvalues, ordered by
+/// decreasing size (`Infinity` first) as wolframscript gives them.
+fn singular_pencil_eigen(name: &str, args: &[Expr]) -> Option<Expr> {
+  let (a, b) = matrix_pencil(&args[0])?;
+  if !crate::functions::math_ast::contains_inexact_real(&args[0]) {
+    return None;
+  }
+  let reduced = Expr::FunctionCall {
+    name: "Dot".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "Inverse".to_string(),
+        args: vec![a].into(),
+      },
+      b,
+    ]
+    .into(),
+  };
+  crate::push_quiet();
+  let system =
+    crate::evaluator::evaluate_expr_to_expr(&reduced).and_then(|m| {
+      crate::evaluator::evaluate_function_call_ast("Eigensystem", &[m])
+    });
+  crate::pop_quiet();
+  let Ok(Expr::List(ref parts)) = system else {
+    return None;
+  };
+  let [Expr::List(mus), Expr::List(vectors)] = parts.as_slice() else {
+    return None;
+  };
+  let magnitude = |e: &Expr| {
+    crate::functions::math_ast::try_extract_complex_float(e)
+      .map(|(re, im)| re.hypot(im))
+      .or_else(|| crate::functions::math_ast::try_eval_to_f64(e).map(f64::abs))
+  };
+  let largest = mus.iter().filter_map(magnitude).fold(0.0f64, f64::max);
+  let mut pairs: Vec<(f64, Expr, Expr)> = Vec::new();
+  for (mu, v) in mus.iter().zip(vectors.iter()) {
+    let m = magnitude(mu)?;
+    if m <= 1e-12 * largest.max(1e-300) {
+      pairs.push((
+        f64::INFINITY,
+        Expr::Identifier("Infinity".into()),
+        v.clone(),
+      ));
+    } else {
+      let lambda =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![mu.clone(), Expr::Integer(-1)].into(),
+        })
+        .ok()?;
+      pairs.push((1.0 / m, lambda, v.clone()));
+    }
+  }
+  pairs.sort_by(|x, y| y.0.total_cmp(&x.0));
+  if let Some(k) = args.get(1) {
+    let Expr::Integer(k) = k else { return None };
+    let k = (*k as usize).min(pairs.len());
+    pairs.truncate(k);
+  }
+  let values: Vec<Expr> = pairs.iter().map(|p| p.1.clone()).collect();
+  let vecs: Vec<Expr> = pairs.iter().map(|p| p.2.clone()).collect();
+  Some(match name {
+    "Eigenvalues" => Expr::List(values.into()),
+    "Eigenvectors" => Expr::List(vecs.into()),
+    _ => Expr::List(
+      vec![Expr::List(values.into()), Expr::List(vecs.into())].into(),
+    ),
+  })
 }

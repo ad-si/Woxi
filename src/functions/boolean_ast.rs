@@ -1569,7 +1569,58 @@ pub fn logical_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let expr = evaluate_expr_to_expr(&args[0])?;
+  let expr = expand_series_equations(&expr)?;
   Ok(normalize_not(&to_dnf(&expr)))
+}
+
+/// `lhs == rhs` with a series on either side is the conjunction of its
+/// coefficient equations: every coefficient of `lhs - rhs` vanishes
+/// (`LogicalExpand[Series[f[x], {x, 0, 1}] == 0]` is
+/// `f[0] == 0 && f'[0] == 0`).
+fn expand_series_equations(expr: &Expr) -> Result<Expr, InterpreterError> {
+  let is_series = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6);
+  match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.as_slice() == [ComparisonOp::Equal]
+      && (is_series(&operands[0]) || is_series(&operands[1])) =>
+    {
+      let difference = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Subtract".to_string(),
+        args: vec![operands[0].clone(), operands[1].clone()].into(),
+      })?;
+      let Expr::FunctionCall { name, args } = &difference else {
+        return Ok(expr.clone());
+      };
+      let (true, Expr::List(coeffs)) = (name == "SeriesData", &args[2]) else {
+        return Ok(expr.clone());
+      };
+      let equations: Vec<Expr> = coeffs
+        .iter()
+        .map(|c| Expr::Comparison {
+          operands: vec![c.clone(), Expr::Integer(0)],
+          operators: vec![ComparisonOp::Equal],
+        })
+        .collect();
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "And".to_string(),
+        args: equations.into(),
+      })
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not" | "Xor" | "Implies") =>
+    {
+      let mapped: Result<Vec<Expr>, InterpreterError> =
+        args.iter().map(expand_series_equations).collect();
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: name.clone(),
+        args: mapped?.into(),
+      })
+    }
+    _ => Ok(expr.clone()),
+  }
 }
 
 /// Recursively convert FunctionCall("Not", [x]) to UnaryOp(Not, x)
