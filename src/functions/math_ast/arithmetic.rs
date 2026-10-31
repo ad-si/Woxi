@@ -10765,6 +10765,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(product);
     }
+    if let Some(product) =
+      absorb_coefficient_into_roots(&coeff_expr, &symbolic_args)?
+    {
+      return Ok(product);
+    }
     sort_symbolic_factors(&mut symbolic_args);
     if let Some(merged) =
       merge_coefficient_into_radical(&coeff_expr, &symbolic_args)?
@@ -11316,6 +11321,10 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(product);
   }
+  if let Some(product) = absorb_coefficient_into_roots(&coeff, &symbolic_args)?
+  {
+    return Ok(product);
+  }
 
   // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
   if symbolic_args.is_empty() {
@@ -11386,6 +11395,160 @@ fn coefficient_radical_parts(
   n_in /= &m;
   d_in *= &m;
   (x, n_in, y, d_in)
+}
+
+/// A rational coefficient sharing a prime with a numeric root beyond the
+/// square root (`6^(1/3)/2`, `4 (3/2)^(1/3)`) is merged prime by prime, as
+/// wolframscript does: the prime's total exponent `E` (the coefficient's
+/// integer power plus the root's fraction) splits into `trunc(E)`, kept in
+/// the coefficient, and the fraction `E - trunc(E)`, kept as the root:
+///   6^(1/3)/2 → 3^(1/3)/2^(2/3)     4/2^(1/3)      → 2 2^(2/3)
+///   12^(1/3)/6 → 1/(2^(1/3) 3^(2/3)) (3/2)^(1/3)/2 → (3/2)^(1/3)/2
+/// A root whose shared primes already have the coefficient's sign, like
+/// `2 6^(1/3)`, stays as it is. Returns the rebuilt product, or `None` when
+/// nothing changes.
+fn absorb_coefficient_into_roots(
+  coeff: &Expr,
+  symbolic_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let (cn, cd) = match coeff {
+    Expr::Integer(n) if *n != 0 => (*n, 1i128),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n != 0 && *d > 0 => (*n, *d),
+        _ => return Ok(None),
+      }
+    }
+    _ => return Ok(None),
+  };
+  // The roots: their positions and their primes' fractional exponents.
+  let mut roots: Vec<usize> = Vec::new();
+  let mut fractions: Vec<(u128, i128, i128)> = Vec::new(); // (p, num, den)
+  let add =
+    |fractions: &mut Vec<(u128, i128, i128)>, p: u128, n: i128, d: i128| {
+      if let Some(entry) = fractions.iter_mut().find(|(q, _, _)| *q == p) {
+        let num = entry.1 * d + n * entry.2;
+        let den = entry.2 * d;
+        let g =
+          crate::functions::math_ast::numeric_utils::gcd_i128(num.abs(), den)
+            .max(1);
+        *entry = (p, num / g, den / g);
+      } else {
+        fractions.push((p, n, d));
+      }
+    };
+  for (i, f) in symbolic_args.iter().enumerate() {
+    let Some((bn, bd, exp)) = numeric_radical_parts(f) else {
+      continue;
+    };
+    let Expr::FunctionCall { args: ea, .. } = &exp else {
+      continue;
+    };
+    let (Expr::Integer(en), Expr::Integer(ed)) = (&ea[0], &ea[1]) else {
+      continue;
+    };
+    if *ed < 3 || en.abs() >= *ed {
+      continue;
+    }
+    let (Some(num_primes), Some(den_primes)) =
+      (small_prime_factors(bn), small_prime_factors(bd))
+    else {
+      return Ok(None);
+    };
+    roots.push(i);
+    for (p, k) in num_primes {
+      add(&mut fractions, p, en * k, *ed);
+    }
+    for (p, k) in den_primes {
+      add(&mut fractions, p, -en * k, *ed);
+    }
+  }
+  if roots.is_empty() {
+    return Ok(None);
+  }
+  let (Some(cn_primes), Some(cd_primes)) = (
+    small_prime_factors(cn.unsigned_abs()),
+    small_prime_factors(cd as u128),
+  ) else {
+    return Ok(None);
+  };
+  let coeff_power = |p: u128| -> i128 {
+    cn_primes
+      .iter()
+      .find(|(q, _)| *q == p)
+      .map_or(0, |(_, k)| *k)
+      - cd_primes
+        .iter()
+        .find(|(q, _)| *q == p)
+        .map_or(0, |(_, k)| *k)
+  };
+  // Nothing to do unless a shared prime has opposite signs (or the root
+  // spans a whole power).
+  let changes = fractions.iter().any(|&(p, n, d)| {
+    let k = coeff_power(p);
+    n != 0 && k != 0 && ((k > 0) != (n > 0) || n.abs() >= d)
+  });
+  if !changes {
+    return Ok(None);
+  }
+  // Rebuild: the coefficient with every root prime's truncated total, and
+  // one root per prime for the fractions.
+  let mut num = cn.signum();
+  let mut den: i128 = 1;
+  let mut powers: Vec<(u128, i128)> = Vec::new();
+  for &(p, k) in &cn_primes {
+    powers.push((p, k));
+  }
+  for &(p, k) in &cd_primes {
+    powers.push((p, -k));
+  }
+  let mut rebuilt: Vec<Expr> = Vec::new();
+  for &(p, n, d) in &fractions {
+    let k = coeff_power(p);
+    // E = k + n/d = (k d + n)/d, truncated toward zero.
+    let total = k * d + n;
+    let whole = total / d;
+    let frac = total - whole * d;
+    powers.retain(|(q, _)| *q != p);
+    powers.push((p, whole));
+    if frac != 0 {
+      let g =
+        crate::functions::math_ast::numeric_utils::gcd_i128(frac.abs(), d)
+          .max(1);
+      rebuilt.push(power_two(
+        &Expr::Integer(p as i128),
+        &make_rational(frac / g, d / g),
+      )?);
+    }
+  }
+  for (p, k) in powers {
+    let Some(pk) = (p as i128).checked_pow(k.unsigned_abs() as u32) else {
+      return Ok(None);
+    };
+    if k > 0 {
+      let Some(n) = num.checked_mul(pk) else {
+        return Ok(None);
+      };
+      num = n;
+    } else if k < 0 {
+      let Some(d) = den.checked_mul(pk) else {
+        return Ok(None);
+      };
+      den = d;
+    }
+  }
+  let mut factors = vec![make_rational(num, den)];
+  factors.extend(rebuilt);
+  factors.extend(
+    symbolic_args
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| !roots.contains(i))
+      .map(|(_, f)| f.clone()),
+  );
+  times_ast(&factors).map(Some)
 }
 
 /// Final-pass canonicalization: a rational coefficient times a square root
