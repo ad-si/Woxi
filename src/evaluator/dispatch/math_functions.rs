@@ -1159,6 +1159,24 @@ pub fn dispatch_math_functions(
     "Covariance" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::covariance_ast(args));
     }
+    // CovarianceFunction[proc, h] of a weakly stationary process is its
+    // covariance between times 0 and h.
+    "CovarianceFunction"
+      if args.len() == 2
+        && matches!(&args[0], Expr::FunctionCall { name, .. }
+          if matches!(name.as_str(), "ARMAProcess" | "ARProcess" | "MAProcess"))
+        && matches!(&args[1], Expr::Integer(_)) =>
+    {
+      let result = crate::functions::math_ast::covariance_function_ast(&[
+        args[0].clone(),
+        Expr::Integer(0),
+        args[1].clone(),
+      ]);
+      if !matches!(&result, Ok(Expr::FunctionCall { name, .. }) if name == "CovarianceFunction")
+      {
+        return Some(result);
+      }
+    }
     "CovarianceFunction" if args.len() == 2 => {
       // Sample autocovariance of a numeric time series at an integer lag.
       if let Some(result) =

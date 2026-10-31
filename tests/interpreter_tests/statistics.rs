@@ -8047,6 +8047,32 @@ mod cases {
 mod arma_covariance_function {
   use super::*;
 
+  // Numeric ARMA(p, q) of any order at an integer lag, from the linear
+  // system for γ(0…p) (wolframscript-verified values;
+  // ThreeAlternativesToTheLikelihoodMaximization).
+  #[test]
+  fn arma_covariance_any_order() {
+    assert_eq!(
+      interpret(
+        "Table[CovarianceFunction[ARMAProcess[{1/2, 1/5}, {1/3, 1/7}, 1], h], {h, 0, 4}]"
+      )
+      .unwrap(),
+      "{154715/51597, 503495/206388, 810007/412776, 1212803/825552, 1329149/1179360}"
+    );
+    assert_eq!(
+      interpret("Table[CovarianceFunction[ARMAProcess[{}, {1/3, 1/7}, 2], h], {h, 0, 3}]")
+        .unwrap(),
+      "{998/441, 16/21, 2/7, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^10 CovarianceFunction[ARMAProcess[{0.5, -0.2}, {0.3}, 1.5], 2, 5]]"
+      )
+      .unwrap(),
+      "-1818277311"
+    );
+  }
+
   #[test]
   fn ar1_zero_mean() {
     // CovarianceFunction[ARMAProcess[{a}, {}, σ²], s, t]

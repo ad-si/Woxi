@@ -7372,8 +7372,89 @@ fn arma_covariance(proc: &Expr, s: &Expr, t: &Expr) -> Option<Expr> {
     (1, 0) => Some(cov_ar1(&ar[0], &sigma2, s, t)),
     (0, 1) => Some(cov_ma1(&ma[0], &sigma2, s, t)),
     (1, 1) => Some(cov_arma11(&ar[0], &ma[0], &sigma2, s, t)),
-    _ => None,
+    _ => arma_covariance_at_lag(&ar, &ma, &sigma2, s, t),
   }
+}
+
+/// The autocovariance γ(|t - s|) of a stationary ARMA(p, q) process with
+/// numeric coefficients at integer times. With the MA(∞) weights
+/// ψ_0 = 1, ψ_k = b_k + Σ a_i ψ_{k-i}, the lags h = 0…p satisfy
+///   γ(h) - Σ_i a_i γ(|h - i|) = v Σ_{j=h}^{q} b_j ψ_{j-h}   (b_0 = 1),
+/// a linear system for γ(0…p); later lags follow by the same recurrence.
+fn arma_covariance_at_lag(
+  ar: &[Expr],
+  ma: &[Expr],
+  v: &Expr,
+  s: &Expr,
+  t: &Expr,
+) -> Option<Expr> {
+  let (Expr::Integer(s), Expr::Integer(t)) = (s, t) else {
+    return None;
+  };
+  let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+  if !ar.iter().chain(ma).all(numeric) || !numeric(v) {
+    return None;
+  }
+  let lag = (t - s).unsigned_abs() as usize;
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let (p, q) = (ar.len(), ma.len());
+  // b_0 = 1, b_1…b_q.
+  let b = |j: usize| -> Expr {
+    if j == 0 {
+      Expr::Integer(1)
+    } else {
+      ma.get(j - 1).cloned().unwrap_or(Expr::Integer(0))
+    }
+  };
+  let mut psi: Vec<Expr> = Vec::with_capacity(q + 1);
+  for k in 0..=q {
+    let mut terms = vec![b(k)];
+    for i in 1..=k.min(p) {
+      terms.push(times2(ar[i - 1].clone(), psi[k - i].clone()));
+    }
+    psi.push(eval(plus(terms))?);
+  }
+  let rhs = |h: usize| -> Option<Expr> {
+    if h > q {
+      return Some(Expr::Integer(0));
+    }
+    let terms: Vec<Expr> =
+      (h..=q).map(|j| times2(b(j), psi[j - h].clone())).collect();
+    eval(times2(v.clone(), plus(terms)))
+  };
+  // γ(0…p) from the linear system.
+  let mut rows = Vec::with_capacity(p + 1);
+  let mut rhs_vec = Vec::with_capacity(p + 1);
+  for h in 0..=p {
+    let mut row = vec![Expr::Integer(0); p + 1];
+    row[h] = Expr::Integer(1);
+    for i in 1..=p {
+      let m = h.abs_diff(i);
+      row[m] = eval(minus2(row[m].clone(), ar[i - 1].clone()))?;
+    }
+    rows.push(Expr::List(row.into()));
+    rhs_vec.push(rhs(h)?);
+  }
+  let solved = eval(call(
+    "LinearSolve",
+    vec![Expr::List(rows.into()), Expr::List(rhs_vec.into())],
+  ))?;
+  let Expr::List(ref gamma) = solved else {
+    return None;
+  };
+  let mut gamma: Vec<Expr> = gamma.to_vec();
+  if gamma.len() != p + 1 {
+    return None;
+  }
+  while gamma.len() <= lag {
+    let h = gamma.len();
+    let mut terms = vec![rhs(h)?];
+    for i in 1..=p {
+      terms.push(times2(ar[i - 1].clone(), gamma[h - i].clone()));
+    }
+    gamma.push(eval(plus(terms))?);
+  }
+  Some(gamma[lag].clone())
 }
 
 /// Evaluate `e` once so Times/Divide chains collapse into the canonical

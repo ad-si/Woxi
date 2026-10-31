@@ -1234,6 +1234,22 @@ place, so it cannot hold the arbitrary-precision range limits. A literal
 exponent outside `i32` is read as 0, which silently changes the value.
 `$MinMachineNumber` and `$MaxMachineNumber` agree.
 
+### CovarianceFunction of a concrete ARMA(1, 1) past lag 1
+
+```sh
+wolframscript -code 'CovarianceFunction[ARMAProcess[{1/2}, {3/10}, 2], 3]'   # 259/300
+woxi eval 'CovarianceFunction[ARMAProcess[{1/2}, {3/10}, 2], 3]'             # 46/75
+```
+
+Woxi gives the textbook value `a^(h-1) (a + b) (1 + a b) v/(1 - a^2)`, which is
+also what WL's own symbolic `CovarianceFunction[ARMAProcess[{a}, {b}, v], h]`
+gives with these numbers substituted; WL's result for concrete parameters
+differs from lag 2 on. Other orders agree exactly (an ARMA(2, 2) checked to
+lag 4). For a nearly nonstationary machine process the value agrees to
+about 8 digits only: WL's 1.2819544533776392*^8 against Woxi's
+1.2819544632769972*^8 for `ARMAProcess[{1.997…, -0.997…}, {0.268…}, 1]`,
+whose exact value is 1.28195445098…*^8.
+
 ### Guard digits of small arbitrary-precision numbers
 
 WL shows the decimal digits of its binary value, which is rounded to whole
