@@ -1704,6 +1704,11 @@ fn inverse_laplace_time_shift(
     .map(|(_, a)| a.clone())
     .collect();
   let rest = crate::evaluator::evaluate_expr_to_expr(&times(rest))?;
+  // A constant times the shift is a shifted DiracDelta, which the plain
+  // rules give without a step factor.
+  if !depends_on(&rest, s) {
+    return Ok(None);
+  }
   let g = inverse_laplace_transform(&rest, &id_expr(s), &id_expr(t))?;
   if matches!(&g, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
   {
