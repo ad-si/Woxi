@@ -25368,6 +25368,21 @@ mod combinatorica_random_graph {
   }
 
   #[test]
+  fn combinatorica_from_cycles_and_permutation_with_cycle() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {FromCycles[{{3, 1, 2}, {5, 4}}], FromCycles[{{a, b}, {c}}], \
+          PermutationWithCycle[8, {3, 6}], PermutationWithCycle[5, {2, 4, 5}], \
+          PermutationWithCycle[4, {}], ToCycles[FromCycles[{{1, 4, 2}, {3}}]]}"
+      )
+      .unwrap(),
+      "{{2, 3, 1, 5, 4}, {b, a, c}, {1, 2, 6, 4, 5, 3, 7, 8}, {1, 4, 3, 5, 2}, \
+       {1, 2, 3, 4}, {{4, 2, 1}, {3}}}"
+    );
+  }
+
+  #[test]
   fn exact_random_graph_has_exactly_e_distinct_edges() {
     assert_eq!(
       interpret(

@@ -7370,6 +7370,36 @@ mod directed_predicates_undirected_graph_and_hamiltonian_path {
     );
   }
 
+  // UndirectedGraph lists the edges vertex by vertex, in-edges from later
+  // vertices before out-edges; an undirected graph comes back as it was.
+  #[test]
+  fn undirected_graph_edge_order() {
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[{EdgeList[UndirectedGraph[Graph[{3 <-> 1, 2 <-> 1, 1 <-> 2}]]], \
+          EdgeList[UndirectedGraph[Graph[{3 -> 1, 2 -> 1, 1 -> 1, 1 -> 2}]]], \
+          EdgeList[UndirectedGraph[Graph[{3 -> 1, 2 <-> 1, 1 -> 3}]]], \
+          EdgeList[UndirectedGraph[Graph[{c -> a, b -> a, a -> d}]]], \
+          EdgeList[UndirectedGraph[Graph[{3 -> 1, 2 -> 1, 1 -> 3, 3 -> 2}]]]}]]"
+      )
+      .unwrap(),
+      "{{UndirectedEdge[3, 1], UndirectedEdge[2, 1], UndirectedEdge[1, 2]}, \
+       {UndirectedEdge[3, 1], UndirectedEdge[1, 2], UndirectedEdge[1, 1]}, \
+       {UndirectedEdge[3, 1], UndirectedEdge[1, 2]}, \
+       {UndirectedEdge[c, a], UndirectedEdge[a, b], UndirectedEdge[a, d]}, \
+       {UndirectedEdge[3, 1], UndirectedEdge[3, 2], UndirectedEdge[1, 2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[EdgeList[UndirectedGraph[Graph[Range[6], {1 -> 6, 4 -> 1, \
+           2 -> 1, 1 -> 3, 5 -> 2, 2 -> 4}]]]]]"
+      )
+      .unwrap(),
+      "{UndirectedEdge[1, 2], UndirectedEdge[1, 4], UndirectedEdge[1, 3], \
+       UndirectedEdge[1, 6], UndirectedEdge[2, 5], UndirectedEdge[2, 4]}"
+    );
+  }
+
   // UndirectedGraph drops the directions and the duplicates they leave.
   #[test]
   fn undirected_graph() {
@@ -8327,6 +8357,75 @@ mod graph_utilities_package {
       )
       .unwrap(),
       "{{1, 2, 3, 4}, 4}"
+    );
+  }
+
+  // The package's search: depth first from the first vertex, each vertex
+  // trying its in-neighbours (ascending) and then its out-neighbours (in the
+  // order the rules give them); a symmetric graph as stored. Every cycle is
+  // found once per orientation.
+  #[test]
+  fn hamiltonian_cycles_follow_the_package_search_order() {
+    clear_state();
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "r = {1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3, 2 -> 4}; \
+         {HamiltonianCycles[r], HamiltonianCycles[r, 2], HamiltonianCycles[r, All]}"
+      )
+      .unwrap(),
+      "{{{1, 4, 2, 3}}, {{1, 4, 2, 3}, {1, 4, 3, 2}}, {{1, 4, 2, 3}, {1, 4, 3, 2}, \
+       {1, 2, 3, 4}, {1, 2, 4, 3}, {1, 3, 2, 4}, {1, 3, 4, 2}}}"
+    );
+    assert_eq!(
+      interpret(
+        "{HamiltonianCycles[{3 -> 1, 1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}, All], \
+          HamiltonianCycles[{a -> b, b -> c, c -> a, c -> d, d -> a}, All], \
+          HamiltonianCycles[{1 -> 2, 2 -> 3}], \
+          HamiltonianCycles[{{0, 1, 1}, {1, 0, 1}, {1, 1, 0}}, All], \
+          HamiltonianCycles[CycleGraph[5], All], \
+          HamiltonianCycles[Graph[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 4, 4 -> 2}], All]}"
+      )
+      .unwrap(),
+      "{{{3, 2, 1, 4}, {3, 4, 1, 2}}, {{a, d, c, b}, {a, b, c, d}}, {}, \
+       {{1, 2, 3}, {1, 3, 2}}, {{1, 2, 3, 4, 5}, {1, 5, 4, 3, 2}}, \
+       {{1, 3, 2, 4}, {1, 4, 2, 3}}}"
+    );
+    // The search starts at the first vertex of the rules (2) and takes the
+    // out-neighbours in rule order (2 -> 1 comes before any other).
+    assert_eq!(
+      interpret(
+        "HamiltonianCycles[{2 -> 1, 3 -> 2, 1 -> 3, 1 -> 5, 4 -> 1, 5 -> 4, \
+           5 -> 2, 3 -> 4}, All]"
+      )
+      .unwrap(),
+      "{{2, 3, 1, 4, 5}, {2, 3, 4, 5, 1}, {2, 3, 4, 1, 5}, {2, 5, 1, 4, 3}, \
+       {2, 5, 4, 3, 1}, {2, 5, 4, 1, 3}, {2, 1, 3, 4, 5}, {2, 1, 5, 4, 3}}"
+    );
+  }
+
+  // The cycle is the first in search order even where that order runs into
+  // long dead ends; the search prunes them (each remaining vertex needs two
+  // open neighbours and the rest must be biconnected) without reordering.
+  #[test]
+  fn hamiltonian_cycles_of_large_polyhedra_match_the_package() {
+    clear_state();
+    interpret("Needs[\"GraphUtilities`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "Take[First[HamiltonianCycles[Rule @@@ \
+           PolyhedronData[\"SnubDodecahedron\", \"EdgeIndices\"]]], 20]"
+      )
+      .unwrap(),
+      "{1, 5, 3, 9, 17, 25, 19, 35, 33, 32, 26, 2, 6, 4, 10, 18, 56, 60, 23, 21}"
+    );
+    assert_eq!(
+      interpret(
+        "Take[First[HamiltonianCycles[Rule @@@ \
+           PolyhedronData[\"GreatRhombicosidodecahedron\", \"EdgeIndices\"]]], {21, 30}]"
+      )
+      .unwrap(),
+      "{77, 95, 109, 101, 105, 107, 103, 111, 97, 79}"
     );
   }
 

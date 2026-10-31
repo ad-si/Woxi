@@ -3278,6 +3278,14 @@ pub fn dispatch_list_operations(
     "Combinatorica`RandomSubset" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_random_subset_ast(args));
     }
+    "Combinatorica`FromCycles" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_from_cycles_ast(args));
+    }
+    "Combinatorica`PermutationWithCycle" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_permutation_with_cycle_ast(
+        args,
+      ));
+    }
     "Combinatorica`ToCycles" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_to_cycles_ast(args));
     }

@@ -1488,6 +1488,62 @@ pub fn combinatorica_random_subset_ast(
   ))
 }
 
+/// `Combinatorica\`FromCycles[{c1, c2, …}]`: the permutation sending each
+/// cycle element to the next one, built the way the package does it —
+/// `Map[Last, Sort[Transpose[Map[Flatten, {Map[RotateRight, cyc], cyc}]]]]`
+/// — so any elements (not only `1..n`) are paired up the same way.
+pub fn combinatorica_from_cycles_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let [cycles @ Expr::List(_)] = args else {
+    return Ok(unevaluated("Combinatorica`FromCycles", args));
+  };
+  let call = crate::helpers::call;
+  let id = crate::helpers::id_expr;
+  let paired = call(
+    "Map",
+    vec![
+      id("Flatten"),
+      Expr::List(
+        vec![
+          call("Map", vec![id("RotateRight"), cycles.clone()]),
+          cycles.clone(),
+        ]
+        .into(),
+      ),
+    ],
+  );
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Map",
+    vec![id("Last"), call1("Sort", call1("Transpose", paired))],
+  ))
+}
+
+/// `Combinatorica\`PermutationWithCycle[n, {i, j, …}]`: the size-n
+/// permutation with that cycle and every other point fixed,
+/// `FromCycles[Append[{#} & /@ Complement[Range[n], l], l]]`.
+pub fn combinatorica_permutation_with_cycle_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let [Expr::Integer(n), cycle @ Expr::List(_)] = args else {
+    return Ok(unevaluated("Combinatorica`PermutationWithCycle", args));
+  };
+  let call = crate::helpers::call;
+  let rest = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Complement",
+    vec![call1("Range", Expr::Integer(*n)), cycle.clone()],
+  ))?;
+  let Expr::List(rest) = &rest else {
+    return Ok(unevaluated("Combinatorica`PermutationWithCycle", args));
+  };
+  let mut cycles: Vec<Expr> = rest
+    .iter()
+    .map(|e| Expr::List(vec![e.clone()].into()))
+    .collect();
+  cycles.push(cycle.clone());
+  combinatorica_from_cycles_ast(&[Expr::List(cycles.into())])
+}
+
 /// `Combinatorica\`ToCycles[p]` — the cycles of the permutation `p`, each
 /// started from its smallest unvisited point `i` and written
 /// `{p[i], p[p[i]], …, i}`.

@@ -784,6 +784,48 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "GraphUtilities`" {
+    // Its exports that are not System symbols; read after loading, a bare
+    // `HamiltonianCycles` is `GraphUtilities\`HamiltonianCycles`.
+    for name in [
+      "Aggressive",
+      "Bicomponents",
+      "CommunityModularity",
+      "CommunityStructureAssignment",
+      "CommunityStructurePartition",
+      "ExpressionTreePlot",
+      "GraphCoordinates",
+      "GraphCoordinates3D",
+      "GraphEdit",
+      "GraphPath",
+      "HamiltonianCycles",
+      "LineScaledCoordinate",
+      "LinkRankMatrix",
+      "LinkRanks",
+      "MaximalBipartiteMatching",
+      "MaximalIndependentEdgeSet",
+      "MaximalIndependentVertexSet",
+      "MinCut",
+      "MinimumBandwidthOrdering",
+      "NeighborhoodSubgraph",
+      "NeighborhoodVertices",
+      "PageRanks",
+      "PageRankVector",
+      "Parent",
+      "PseudoDiameter",
+      "RecursionMethod",
+      "RefinementMethod",
+      "RemoveSinks",
+      "StrongComponents",
+      "TeleportProbability",
+      "ToCombinatoricaGraph",
+      "WeakComponents",
+      "Weighted",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "VectorFieldPlots`" {
     // A bare `VectorFieldPlot` read after the package is loaded is the
     // package's; its functions dispatch on the qualified names.
@@ -1276,45 +1318,20 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // `GraphUtilities`HamiltonianCycles[rules]` lists Hamiltonian cycles of the
-  // undirected graph given by a list of rules, each as a vertex sequence.
-  // Delegates to `FindHamiltonianCycle`, so only one cycle is reported.
-  if name == "GraphUtilities`HamiltonianCycles"
-    && args.len() == 1
-    && let Expr::List(rules) = &args[0]
-    && rules.iter().all(|r| {
-      matches!(r, Expr::Rule { .. })
-        || matches!(r, Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2)
-    })
+  // `GraphUtilities\`HamiltonianCycles[g]` / `HamiltonianCycles[g, n | All]`:
+  // up to n (default 1) Hamiltonian cycles of a rule list, `Graph`,
+  // Combinatorica graph or adjacency matrix, each as a vertex sequence from
+  // the first vertex.
+  if name == "GraphUtilities`HamiltonianCycles" && (1..=2).contains(&args.len())
   {
-    let edges = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Apply",
-      vec![
-        id_expr("UndirectedEdge"),
-        args[0].clone(),
-        Expr::List(vec![Expr::Integer(1)].into()),
-      ],
-    ))?;
-    let graph = crate::evaluator::evaluate_expr_to_expr(&call1("Graph", edges))?;
-    let cycles = crate::evaluator::evaluate_expr_to_expr(&call1(
-      "FindHamiltonianCycle",
-      graph,
-    ))?;
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Map",
-      vec![
-        Expr::Function {
-          body: Box::new(call(
-            "Map",
-            vec![
-              id_expr("First"),
-              Expr::Slot(1),
-            ],
-          )),
-        },
-        cycles,
-      ],
-    ));
+    let limit = match args.get(1) {
+      None => Some(1),
+      Some(Expr::Identifier(a)) if a == "All" => None,
+      Some(Expr::Integer(k)) if *k > 0 => Some(*k as usize),
+      Some(_) => return Ok(unevaluated(name, args)),
+    };
+    return hamiltonian_cycles(&args[0], limit)
+      .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
   }
 
   // Read only by the arms below that need them, so other calls skip the
@@ -1340,6 +1357,9 @@ fn evaluate_function_call_ast_inner(
       "Combinatorica`ShortestPath"
     }
     "GraphPath" if graph_utilities_active() => "GraphUtilities`GraphPath",
+    "HamiltonianCycles" if graph_utilities_active() => {
+      "GraphUtilities`HamiltonianCycles"
+    }
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
@@ -1378,6 +1398,10 @@ fn evaluate_function_call_ast_inner(
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
     "RandomSubset" if combinatorica_active() => "Combinatorica`RandomSubset",
     "ToCycles" if combinatorica_active() => "Combinatorica`ToCycles",
+    "FromCycles" if combinatorica_active() => "Combinatorica`FromCycles",
+    "PermutationWithCycle" if combinatorica_active() => {
+      "Combinatorica`PermutationWithCycle"
+    }
     "Orbits" if combinatorica_active() => "Combinatorica`Orbits",
     "OrbitRepresentatives" if combinatorica_active() => {
       "Combinatorica`OrbitRepresentatives"
@@ -15770,9 +15794,15 @@ fn flatten_rule_args(args: &[Expr]) -> Option<Vec<Expr>> {
 
 /// The weak components of a graph for `GraphUtilities\`WeakComponents`;
 /// `None` when the argument is not a graph.
-fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
+/// The vertices (in `VertexList` order) and edges of a graph given as a rule
+/// list, a `Graph` or a Combinatorica graph, as the legacy graph packages
+/// read them: each edge `(u, v, directed)`.
+#[allow(clippy::type_complexity)]
+fn package_graph(
+  g: &Expr,
+) -> Result<Option<(Vec<Expr>, Vec<(Expr, Expr, bool)>)>, InterpreterError> {
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
-  let (vertices, edges): (Vec<Expr>, Vec<(Expr, Expr)>) = match g {
+  Ok(Some(match g {
     Expr::FunctionCall { name, .. } if name == "Combinatorica`Graph" => {
       let n = eval(call1("Combinatorica`V", g.clone()))?;
       let Expr::Integer(n) = n else { return Ok(None) };
@@ -15785,7 +15815,7 @@ fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
         .iter()
         .filter_map(|p| match p {
           Expr::List(uv) if uv.len() == 2 => {
-            Some((uv[0].clone(), uv[1].clone()))
+            Some((uv[0].clone(), uv[1].clone(), false))
           }
           _ => None,
         })
@@ -15811,17 +15841,23 @@ fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
             if (name == "DirectedEdge" || name == "UndirectedEdge")
               && args.len() >= 2 =>
           {
-            Some((args[0].clone(), args[1].clone()))
+            Some((args[0].clone(), args[1].clone(), name == "DirectedEdge"))
           }
           Expr::Rule {
             pattern,
             replacement,
-          } => Some(((**pattern).clone(), (**replacement).clone())),
+          } => Some(((**pattern).clone(), (**replacement).clone(), true)),
           _ => None,
         })
         .collect();
       (vs.to_vec(), edges)
     }
+  }))
+}
+
+fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let Some((vertices, edges)) = package_graph(g)? else {
+    return Ok(None);
   };
   let key = crate::syntax::expr_to_string;
   let index: std::collections::HashMap<String, usize> = vertices
@@ -15843,7 +15879,7 @@ fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
     }
     r
   }
-  for (u, v) in &edges {
+  for (u, v, _) in &edges {
     if let (Some(&a), Some(&b)) = (index.get(&key(u)), index.get(&key(v))) {
       let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
       if ra != rb {
@@ -15864,5 +15900,263 @@ fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
       .into_iter()
       .map(|(_, m)| Expr::List(m.into()))
       .collect(),
+  )))
+}
+
+/// The Hamiltonian-cycle search behind `GraphUtilities\`HamiltonianCycles`:
+/// a depth-first search from the first vertex over the symmetrized adjacency
+/// matrix — in a directed graph each vertex tries its in-neighbours
+/// (ascending), then its out-neighbours, a vertex only once — stopping after
+/// `limit` cycles. A cycle is found once per orientation. The out-neighbours
+/// of a rule list come in the order its rules give them (the package's sparse
+/// matrix keeps that order); those of a `Graph`, Combinatorica graph or
+/// matrix ascend.
+fn hamiltonian_cycles(
+  g: &Expr,
+  limit: Option<usize>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_matrix = |rows: &[Expr]| {
+    !rows.is_empty()
+      && rows
+        .iter()
+        .all(|r| matches!(r, Expr::List(c) if c.len() == rows.len()))
+  };
+  let (vertices, arcs): (Vec<Expr>, Vec<(usize, usize)>) = match g {
+    Expr::List(rows) if is_matrix(rows) => {
+      let mut arcs = Vec::new();
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(row) = row else {
+          return Ok(None);
+        };
+        for (j, x) in row.iter().enumerate() {
+          let zero = matches!(x, Expr::Integer(0))
+            || matches!(x, Expr::Real(r) if *r == 0.0);
+          if !zero {
+            arcs.push((i, j));
+          }
+        }
+      }
+      ((1..=rows.len() as i128).map(Expr::Integer).collect(), arcs)
+    }
+    _ => {
+      let Some((vertices, edges)) = package_graph(g)? else {
+        return Ok(None);
+      };
+      let key = crate::syntax::expr_to_string;
+      let index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (key(v), i))
+        .collect();
+      let mut arcs = Vec::new();
+      for (u, v, directed) in &edges {
+        let (Some(&a), Some(&b)) = (index.get(&key(u)), index.get(&key(v)))
+        else {
+          return Ok(None);
+        };
+        arcs.push((a, b));
+        if !directed {
+          arcs.push((b, a));
+        }
+      }
+      (vertices, arcs)
+    }
+  };
+  let rule_order = matches!(g, Expr::List(rows) if !is_matrix(rows));
+  let n = vertices.len();
+  if n == 0 {
+    return Ok(Some(Expr::List(vec![].into())));
+  }
+  let mut ins = vec![Vec::new(); n];
+  let mut outs = vec![Vec::new(); n];
+  for &(a, b) in &arcs {
+    if a != b {
+      outs[a].push(b);
+      ins[b].push(a);
+    }
+  }
+  // A structurally symmetric matrix is searched as stored; any other is
+  // first made symmetric as `Transpose[m] + m`, whose rows list the
+  // transpose's (ascending) entries before the matrix's own.
+  let symmetric = arcs.iter().all(|&(a, b)| a == b || outs[b].contains(&a));
+  let adj: Vec<Vec<usize>> = (0..n)
+    .map(|v| {
+      let (mut i, mut o) = (ins[v].clone(), outs[v].clone());
+      i.sort_unstable();
+      if !rule_order {
+        o.sort_unstable();
+      }
+      if symmetric {
+        i.clear();
+      }
+      let mut list = Vec::new();
+      for w in i.into_iter().chain(o) {
+        if !list.contains(&w) {
+          list.push(w);
+        }
+      }
+      list
+    })
+    .collect();
+  fn search(
+    adj: &[Vec<usize>],
+    path: &mut Vec<usize>,
+    on_path: &mut [bool],
+    limit: Option<usize>,
+    found: &mut Vec<Vec<usize>>,
+  ) {
+    let last = path[path.len() - 1];
+    if path.len() == adj.len() {
+      if adj[last].contains(&path[0]) {
+        found.push(path.clone());
+      }
+      return;
+    }
+    if !completable(adj, path, on_path) {
+      return;
+    }
+    for &w in &adj[last] {
+      if limit.is_some_and(|l| found.len() >= l) {
+        return;
+      }
+      if !on_path[w] {
+        on_path[w] = true;
+        path.push(w);
+        search(adj, path, on_path, limit, found);
+        path.pop();
+        on_path[w] = false;
+      }
+    }
+  }
+  // Whether the path can still close into a Hamiltonian cycle: with two or
+  // more vertices left, each needs two neighbours among the remaining
+  // vertices and the path's ends, and the remaining vertices must hang
+  // together off the path's last vertex. Only dead branches are cut, so the
+  // cycles still come out in search order.
+  fn completable(adj: &[Vec<usize>], path: &[usize], on_path: &[bool]) -> bool {
+    let (start, last) = (path[0], path[path.len() - 1]);
+    let left = adj.len() - path.len();
+    if left < 2 {
+      return true;
+    }
+    // A vertex left with exactly two ways in or out must use both edges.
+    // Another remaining vertex can take two such forced edges, but the
+    // path's last vertex has one edge left to give (to the next vertex) and
+    // its first vertex one (to the final vertex).
+    let mut forced = vec![0u8; adj.len()];
+    let mut open_ns: Vec<usize> = Vec::with_capacity(3);
+    for (w, ns) in adj.iter().enumerate() {
+      if on_path[w] {
+        continue;
+      }
+      open_ns.clear();
+      for &x in ns {
+        if !on_path[x] || x == last || x == start {
+          open_ns.push(x);
+          if open_ns.len() > 2 {
+            break;
+          }
+        }
+      }
+      match open_ns.len() {
+        0 | 1 => return false,
+        2 => {
+          for &x in &open_ns {
+            forced[x] += 1;
+            let cap = if (x == last || x == start) && last != start {
+              1
+            } else {
+              2
+            };
+            if forced[x] > cap {
+              return false;
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    two_connected(adj, on_path, start, last, left)
+  }
+  // The rest of the cycle is a path from `last` through every remaining
+  // vertex to `start`, which exists only if those vertices together with the
+  // two ends — joined by an extra edge `last`–`start` — are connected with no
+  // cut vertex. Tarjan's lowpoint search, iterative.
+  fn two_connected(
+    adj: &[Vec<usize>],
+    on_path: &[bool],
+    start: usize,
+    last: usize,
+    left: usize,
+  ) -> bool {
+    let n = adj.len();
+    let inside = |x: usize| !on_path[x] || x == start || x == last;
+    let neighbours = |v: usize| {
+      adj[v].iter().copied().filter(move |&x| inside(x)).chain(
+        (v == last && last != start)
+          .then_some(start)
+          .into_iter()
+          .chain((v == start && last != start).then_some(last)),
+      )
+    };
+    let size = left + if last == start { 1 } else { 2 };
+    let mut disc = vec![usize::MAX; n];
+    let mut low = vec![0usize; n];
+    let mut parent = vec![usize::MAX; n];
+    let mut time = 0;
+    disc[last] = 0;
+    low[last] = 0;
+    time += 1;
+    let mut root_children = 0;
+    let mut stack: Vec<(usize, Vec<usize>, usize)> =
+      vec![(last, neighbours(last).collect(), 0)];
+    while let Some((v, ns, i)) = stack.last_mut() {
+      let v = *v;
+      if *i < ns.len() {
+        let w = ns[*i];
+        *i += 1;
+        if disc[w] == usize::MAX {
+          parent[w] = v;
+          disc[w] = time;
+          low[w] = time;
+          time += 1;
+          if v == last {
+            root_children += 1;
+          }
+          let wn: Vec<usize> = neighbours(w).collect();
+          stack.push((w, wn, 0));
+        } else if w != parent[v] {
+          low[v] = low[v].min(disc[w]);
+        }
+      } else {
+        stack.pop();
+        let p = parent[v];
+        if p != usize::MAX {
+          low[p] = low[p].min(low[v]);
+          if p != last && low[v] >= disc[p] {
+            return false;
+          }
+        }
+      }
+    }
+    time == size && (size < 3 || root_children < 2)
+  }
+  let mut found = Vec::new();
+  let mut on_path = vec![false; n];
+  on_path[0] = true;
+  search(&adj, &mut vec![0], &mut on_path, limit, &mut found);
+  Ok(Some(Expr::List(
+    found
+      .into_iter()
+      .map(|c| {
+        Expr::List(
+          c.into_iter()
+            .map(|i| vertices[i].clone())
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
   )))
 }

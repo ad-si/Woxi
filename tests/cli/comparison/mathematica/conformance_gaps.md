@@ -6098,12 +6098,15 @@ builds its message popup from `StringTake[ExampleData[{"Text", #}], 5000]`, so
 its chart shows the letter frequencies of the generated English text — close
 to, but not the same as, the original's.
 
-### `GraphUtilities`HamiltonianCycles` reports a single cycle
+### `HamiltonianCycles` of an `UndirectedGraph[…]` result
 
-Wolfram lists every Hamiltonian cycle of the graph. Woxi delegates to
-`FindHamiltonianCycle` and returns a one-element list, so `First[...]` (as in
-the `Hamiltonian Tours on Polyhedra` Demonstration) works, but `Length[...]`
-and later elements differ. The cycle chosen may also differ from Wolfram's.
+`GraphUtilities`HamiltonianCycles` searches the graph's sparse adjacency matrix
+in its stored order. `UndirectedGraph[g]` of a directed `g` keeps, in Wolfram,
+the storage order of `Transpose[m] + m` — every vertex's in-neighbours of `g`
+before its out-neighbours — while a `Graph` built from the same edges is stored
+ascending. Woxi's graphs carry no storage order, so it searches the
+`UndirectedGraph` result ascending and can report other cycles first (the same
+set with `All`).
 
 ### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
 
