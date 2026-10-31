@@ -4187,7 +4187,14 @@ pub(crate) fn number_form_fixed_parts(
       rounded.log10().floor() as i64
     };
     if m >= 6 || m <= -6 {
-      let formatted = format!("{v:.prec$e}", prec = f as usize);
+      // The mantissa shows `n` significant digits, padded with zeros out to
+      // `f` decimals (`NumberForm[1.2345*^20, {3, 3}]` is 1.230 × 10^20).
+      let shown = if rounded.is_finite() && rounded != 0.0 {
+        rounded.copysign(*v)
+      } else {
+        *v
+      };
+      let formatted = format!("{shown:.prec$e}", prec = f as usize);
       let (mantissa, exp_raw) = formatted.split_once('e')?;
       let exp: i64 = exp_raw.parse().ok()?;
       let mantissa = if f == 0 {

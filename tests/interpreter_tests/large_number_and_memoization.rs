@@ -255,3 +255,43 @@ mod large_number_and_memoization {
     }
   }
 }
+
+// A large array substituted into a pure function by `With` stays shared:
+// mapping that function used to copy and walk the whole array on every
+// call (11 s for 2500 calls on a 300x300 matrix).
+mod with_keeps_large_arrays_shared {
+  use super::*;
+
+  #[test]
+  fn mapped_pure_function_over_large_array() {
+    clear_state();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "data = Table[N[i + j], {i, 300}, {j, 300}]; \
+         f[imgData_] := With[{idx = Tuples[Range[50], 2]}, Total[(Extract[imgData, #] &) /@ idx]]; \
+         f[data]"
+      )
+      .unwrap(),
+      "127500."
+    );
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+
+  // The same inside a Table nested in With, through the `/@` operator node.
+  #[test]
+  fn table_in_with_over_large_array() {
+    clear_state();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "data = Table[N[i + j], {i, 300}, {j, 300}]; \
+         g[imgData_] := With[{n = 40}, Table[Total[(Extract[imgData, #] &) /@ {{r, c}, {c, r}}], {r, n}, {c, n}]]; \
+         Total[g[data], 2]"
+      )
+      .unwrap(),
+      "131200."
+    );
+    assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  }
+}

@@ -2419,14 +2419,12 @@ fn collect_primitives(
     // as the line those points make. `Dynamic` is HoldFirst, so the content
     // arrives unexpanded and has to be released here; without this the
     // primitive reads as malformed and the whole picture becomes an error box.
+    // The `Dynamic` may also sit deeper inside the argument
+    // (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`): every one reads as its value
+    // and the argument is evaluated again with the values in place.
     Expr::FunctionCall { name, args }
-      if args.iter().any(|a| {
-        matches!(a, Expr::FunctionCall { name, args }
-          if name == "Dynamic" && args.len() == 1)
-      }) && !matches!(
-        name.as_str(),
-        "Dynamic" | "Style" | "EventHandler"
-      )
+      if args.iter().any(contains_dynamic)
+        && !matches!(name.as_str(), "Dynamic" | "Style" | "EventHandler")
         // A user function handed `Dynamic[…]` arguments matches on them as
         // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
         && crate::evaluator::functions::is_builtin_symbol(name) =>
@@ -2439,6 +2437,10 @@ fn collect_primitives(
           {
             crate::evaluator::evaluate_expr_to_expr(&inner[0])
               .unwrap_or_else(|_| a.clone())
+          }
+          other if contains_dynamic(other) => {
+            let value = release_dynamics(other);
+            crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
           }
           other => other.clone(),
         })
@@ -5200,7 +5202,7 @@ pub(crate) fn dynamic_current_value(expr: &Expr) -> Expr {
 }
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
-fn contains_dynamic(expr: &Expr) -> bool {
+pub(crate) fn contains_dynamic(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if name == "Dynamic" && !args.is_empty())
     || crate::syntax::expr_children(expr)
@@ -5210,7 +5212,7 @@ fn contains_dynamic(expr: &Expr) -> bool {
 
 /// `expr` with every `Dynamic[x, …]` replaced by the current value of `x`.
 /// The rest stays unevaluated, so a `HoldForm` keeps its written shape.
-fn release_dynamics(expr: &Expr) -> Expr {
+pub(crate) fn release_dynamics(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && !args.is_empty() =>
@@ -11477,8 +11479,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the clip rectangle below.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
   let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
-  // A frame under `ImageSize -> {w, h}` with an automatic aspect ratio
-  // hugs the data instead: the frame keeps the shape of the plot range and
+  // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
+  // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centred in the requested size, rather than the range being
   // widened until the frame fills it. `AspectRatio -> Full` is the
   // opposite request: the frame fills the whole size given.
@@ -11486,7 +11488,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && size_names_height
     && aspect_ratio.is_none()
     && !aspect_ratio_full
-    && frame_edges.iter().any(|&e| e);
+    && (axes.0 || axes.1 || frame_edges.iter().any(|&e| e));
   if !aspect_ratio_full && !fit_frame_to_data {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
@@ -14650,6 +14652,31 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             "<tspan fill-opacity=\"0\">{}</tspan>",
             expr_to_svg_markup(&args[0])
           )
+        }
+
+        // `MatrixForm[{{…}, {…}}]` in a single-line label: a `<text>` run has
+        // no room for the stacked grid, so set it as a parenthesized,
+        // row-wise listing (`(a b; c d)`) with every entry typeset, instead
+        // of printing the wrapper's own source.
+        "MatrixForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::List(rows)
+              if !rows.is_empty()
+                && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+        {
+          let Expr::List(rows) = &args[0] else { unreachable!() };
+          let rendered: Vec<String> = rows
+            .iter()
+            .map(|r| {
+              let Expr::List(cells) = r else { unreachable!() };
+              cells
+                .iter()
+                .map(expr_to_svg_markup)
+                .collect::<Vec<_>>()
+                .join(" ")
+            })
+            .collect();
+          format!("({})", rendered.join("; "))
         }
 
         // Rotate[content, angle] — a Demonstration's idiom for a vertical
@@ -27355,6 +27382,126 @@ pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
   })
 }
 
+/// Whether a held `Manipulate[…]`/`Animate[…]` carries
+/// `SaveDefinitions -> True`.
+pub fn manipulate_saves_definitions(expr: &Expr) -> bool {
+  let expr = peel_manipulate_wrapper(expr);
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  (name == "Manipulate" || name == "Animate")
+    && args.iter().skip(1).any(|spec| {
+      matches!(
+        spec,
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SaveDefinitions")
+            && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True")
+      )
+    })
+}
+
+/// The symbol an assignment `lhs = …` / `lhs := …` defines: the head of
+/// `f[x_]`, `f[a][b]` or `f[x_] /; test`, the argument of `Options[f]`,
+/// `Attributes[f]` and the like, or the symbol itself.
+fn assigned_symbol(lhs: &Expr) -> Option<&str> {
+  match lhs {
+    Expr::Identifier(s) => Some(s),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Condition"
+          | "HoldPattern"
+          | "Options"
+          | "Attributes"
+          | "Default"
+          | "Format"
+          | "N"
+          | "MessageName"
+      ) && !args.is_empty() =>
+    {
+      assigned_symbol(&args[0])
+    }
+    Expr::FunctionCall { name, .. } => Some(name),
+    Expr::CurriedCall { func, .. } => assigned_symbol(func),
+    _ => None,
+  }
+}
+
+/// The definition statements of `code` (a CompoundExpression or list of
+/// them, possibly nested), each with the symbol it defines.
+fn definitions_in(code: &Expr, out: &mut Vec<(String, Expr)>) {
+  match code {
+    Expr::CompoundExpr(items) => {
+      for item in items {
+        definitions_in(item, out);
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        definitions_in(item, out);
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Set" | "SetDelayed" | "TagSet" | "TagSetDelayed"
+      ) && args.len() >= 2 =>
+    {
+      let lhs = if name.starts_with("Tag") {
+        &args[1]
+      } else {
+        &args[0]
+      };
+      if let Some(sym) = assigned_symbol(lhs) {
+        out.push((sym.to_string(), code.clone()));
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Of a `SaveDefinitions -> True` Manipulate's stored initialization, the
+/// saved definitions its live `Initialization` option does not make itself:
+/// the stored copy repeats that option's code, so running all of it would
+/// run the live code twice, and in a different order (a definition ahead
+/// of the `Get` that loads the package it calls). Each comes with the
+/// symbol it defines. An empty list when the Manipulate has no live
+/// `Initialization`.
+pub fn saved_definitions_beyond_initialization(
+  manipulate: &Expr,
+  stored: &Expr,
+) -> Vec<(String, Expr)> {
+  let expr = peel_manipulate_wrapper(manipulate);
+  let Expr::FunctionCall { args, .. } = expr else {
+    return Vec::new();
+  };
+  let mut live = Vec::new();
+  for spec in args.iter().skip(1) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && is_initialization_option(pattern, replacement)
+    {
+      definitions_in(replacement, &mut live);
+    }
+  }
+  let mut saved = Vec::new();
+  definitions_in(stored, &mut saved);
+  // A package's symbols (`` ComputationalGeometry`DelaunayTriangulation ``)
+  // are its own to define when the live code loads it.
+  saved
+    .into_iter()
+    .filter(|(sym, _)| {
+      !sym.contains('`') && !live.iter().any(|(l, _)| l == sym)
+    })
+    .collect()
+}
+
 /// `Initialization :> code`, or `SynchronousInitialization :> code` with
 /// code rather than the Boolean switch: both are run when the Manipulate
 /// is set up (NonadiabaticTubularReactorWithNegligibleMassDispersion keeps
@@ -32978,6 +33125,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
             ..Default::default()
           }]
         }
+      }
+      // `Invisible[expr]` keeps the room `expr` takes but draws nothing, so a
+      // label such as `Row[{"a", Invisible[1/2]}]` reads as `a` followed by
+      // blank space rather than the wrapper's source. Plain text has no
+      // transparent fill, so each character becomes a space of its own.
+      "Invisible" if args.len() == 1 => {
+        let mut runs = manipulate_label_runs(&args[0], italic);
+        for run in &mut runs {
+          run.text = run.text.chars().map(|_| ' ').collect();
+        }
+        runs
       }
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying

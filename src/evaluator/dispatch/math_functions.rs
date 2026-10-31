@@ -6438,9 +6438,9 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       if args.is_empty() {
         return None;
       }
-      let (mut acc_re, mut acc_im) = split_real_imag(&args[0])?;
+      let (mut acc_re, mut acc_im) = split_term_real_imag(&args[0]);
       for arg in &args[1..] {
-        let (rr, ri) = split_real_imag(arg)?;
+        let (rr, ri) = split_term_real_imag(arg);
         // (acc_re + acc_im*I) * (rr + ri*I)
         let new_re = ce_simplify(minus2(
           times2(acc_re.clone(), rr.clone()),
@@ -6458,13 +6458,9 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let mut real_parts = Vec::new();
       let mut imag_parts = Vec::new();
       for arg in args {
-        if let Some((r, i)) = split_real_imag(arg) {
-          real_parts.push(r);
-          imag_parts.push(i);
-        } else {
-          real_parts.push(arg.clone());
-          imag_parts.push(Expr::Integer(0));
-        }
+        let (r, i) = split_term_real_imag(arg);
+        real_parts.push(r);
+        imag_parts.push(i);
       }
       let real = if real_parts.len() == 1 {
         real_parts.remove(0)
@@ -6547,6 +6543,17 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       let (re, im) = split_real_imag(&args[0])?;
       is_expr_zero(&im).then(|| (call1(name, re), Expr::Integer(0)))
     }
+    // The logarithm of a non-negative real (`Log[x^2 + y^2]`, the modulus
+    // term of ComplexExpand's own `Log` rule) is real.
+    Expr::FunctionCall { name, args }
+      if name == "Log"
+        && args.len() == 1
+        && is_manifestly_nonnegative(&args[0])
+        && split_real_imag(&args[0])
+          .is_some_and(|(_, im)| is_expr_zero(&im)) =>
+    {
+      Some((expr.clone(), Expr::Integer(0)))
+    }
     // A Rational is a real-valued atom (e.g. the 3/2 in `(3*I)/2`).
     Expr::FunctionCall { name, .. } if name == "Rational" => {
       Some((expr.clone(), Expr::Integer(0)))
@@ -6589,6 +6596,56 @@ fn split_real_imag(expr: &Expr) -> Option<(Expr, Expr)> {
       Some((other.clone(), Expr::Integer(0)))
     }
     _ => None,
+  }
+}
+
+/// The parts of a term or factor of a `Plus`/`Times`: split directly, or
+/// after expanding it (`Csc[a + I b]` becomes a quotient of real and
+/// imaginary parts), else kept as `Re[e]` and `Im[e]` — wolframscript's
+/// `ComplexExpand[Re[x + Gamma[x]]]` is `x + Re[Gamma[x]]`.
+fn split_term_real_imag(expr: &Expr) -> (Expr, Expr) {
+  thread_local! {
+    // An expansion's own terms are not expanded again: the rules are not a
+    // fixpoint (`Log[x]` → `Log[x^2]/2 + I Arg[x]` → `Log[(x^2)^2]/4 …`).
+    static EXPANDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  }
+  if let Some(parts) = split_real_imag(expr) {
+    return parts;
+  }
+  if !EXPANDING.with(|e| e.replace(true)) {
+    let expanded = complex_expand_recursive(expr);
+    let parts =
+      if crate::evaluator::pattern_matching::expr_equal(&expanded, expr) {
+        None
+      } else {
+        split_real_imag(&expanded)
+      };
+    EXPANDING.with(|e| e.set(false));
+    if let Some(parts) = parts {
+      return parts;
+    }
+  }
+  (call1("Re", expr.clone()), call1("Im", expr.clone()))
+}
+
+/// Whether a real-valued `e` is manifestly non-negative: a non-negative
+/// number, an even power, or a sum or product of such.
+fn is_manifestly_nonnegative(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n >= 0,
+    Expr::Real(v) => *v >= 0.0,
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(&args[1], Expr::Integer(n) if n % 2 == 0)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } => matches!(right.as_ref(), Expr::Integer(n) if n % 2 == 0),
+    Expr::FunctionCall { name, args } if name == "Plus" || name == "Times" => {
+      args.iter().all(is_manifestly_nonnegative)
+    }
+    _ => false,
   }
 }
 

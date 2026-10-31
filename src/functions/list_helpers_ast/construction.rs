@@ -307,6 +307,11 @@ pub fn table_ast(
   body: &Expr,
   iter_spec: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // The body is substituted once per iteration: its large arrays are
+  // shared first, so those substitutions copy pointers, not arrays.
+  let mut shared_body = body.clone();
+  crate::evaluator::share_large_lists(&mut shared_body, 0);
+  let body = &shared_body;
   // A bare (non-list) iterator spec may be a symbol or expression that
   // evaluates to a repeat count (`Table[x, n]`, `Table[x, 2 + 3]`), not just
   // a literal integer. Resolve it before dispatching so the arms below only

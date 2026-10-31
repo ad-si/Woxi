@@ -87,8 +87,14 @@ pub fn erlang_gamma_dargs(
 /// The 1-based argument positions a distribution requires to be strictly
 /// positive. Read off wolframscript, which reports `<Dist>::posprm` naming
 /// the first offending one and refuses to compute with it.
-pub(crate) fn positive_param_positions(name: &str) -> &'static [usize] {
+/// The location–scale `StudentTDistribution[μ, σ, ν]` (`arity` 3) requires
+/// σ and ν, not μ, to be positive.
+pub(crate) fn positive_param_positions_for(
+  name: &str,
+  arity: usize,
+) -> &'static [usize] {
   match name {
+    "StudentTDistribution" if arity == 3 => &[2, 3],
     "BetaDistribution" | "GammaDistribution" | "WeibullDistribution" => &[1, 2],
     "NormalDistribution" | "LogNormalDistribution" | "CauchyDistribution" => {
       &[2]
@@ -111,7 +117,7 @@ pub(crate) fn reject_bad_distribution_params(dist: &Expr) -> bool {
   let Expr::FunctionCall { name, args } = dist else {
     return false;
   };
-  for &pos in positive_param_positions(name) {
+  for &pos in positive_param_positions_for(name, args.len()) {
     let Some(arg) = args.get(pos - 1) else {
       continue;
     };
@@ -1096,6 +1102,58 @@ pub fn quantile_distribution_closed_form(
       ))
       .ok()
     }
+    // Quantile[MaxStableDistribution[μ, σ, ξ], q] =
+    //   μ - σ (1 - (-Log[q])^-ξ)/ξ   (μ - σ Log[-Log[q]] for ξ = 0),
+    // and for MinStableDistribution the mirror image in 1 - q:
+    //   μ + σ (1 - (-Log[1 - q])^-ξ)/ξ   (μ + σ Log[-Log[1 - q]] for ξ = 0).
+    "MaxStableDistribution" | "MinStableDistribution" if dargs.len() == 3 => {
+      let xi = try_eval_to_f64(&dargs[2])?;
+      let is_max = dist_name == "MaxStableDistribution";
+      if is_exact_q && (q_num == 0.0 || q_num == 1.0) {
+        // The support ends at μ ∓ σ/ξ on the bounded side.
+        let bounded = if is_max {
+          (q_num == 0.0 && xi > 0.0) || (q_num == 1.0 && xi < 0.0)
+        } else {
+          (q_num == 0.0 && xi < 0.0) || (q_num == 1.0 && xi > 0.0)
+        };
+        if bounded {
+          let edge = div2(dargs[1].clone(), dargs[2].clone());
+          return eval(&if is_max {
+            minus2(dargs[0].clone(), edge)
+          } else {
+            plus2(dargs[0].clone(), edge)
+          })
+          .ok();
+        }
+        return Some(if q_num == 0.0 {
+          neg_infinity()
+        } else {
+          infinity()
+        });
+      }
+      let (mu, sigma) = (dargs[0].clone(), dargs[1].clone());
+      let inner = if is_max { q.clone() } else { one_minus_q() };
+      let body = if xi == 0.0 {
+        times2(sigma, log(neg(log(inner))))
+      } else {
+        div2(
+          times2(
+            sigma,
+            minus2(
+              int(1),
+              call("Power", vec![neg(log(inner)), neg(dargs[2].clone())]),
+            ),
+          ),
+          dargs[2].clone(),
+        )
+      };
+      eval(&if is_max {
+        minus2(mu, body)
+      } else {
+        plus2(mu, body)
+      })
+      .ok()
+    }
     // Quantile[GumbelDistribution[μ, β], q] = μ + β Log[-Log[1 - q]]
     "GumbelDistribution" if dargs.len() == 2 => {
       if is_exact_q {
@@ -1269,6 +1327,18 @@ pub fn quantile_distribution_closed_form(
     // symbolic nu splits it into Sqrt[nu] Sqrt[...]. (The location/scale form
     // StudentTDistribution[mu, sigma, nu] is not yet a recognized distribution
     // in Woxi, so it is intentionally not handled here.)
+    // The location–scale form at a machine probability: μ + σ times the
+    // standard quantile. (An exact q has a Root-object form in wolframscript.)
+    "StudentTDistribution"
+      if dargs.len() == 3 && matches!(q, Expr::Real(_)) =>
+    {
+      let standard = quantile_distribution_closed_form(
+        dist_name,
+        std::slice::from_ref(&dargs[2]),
+        q,
+      )?;
+      eval(&plus2(dargs[0].clone(), times2(dargs[1].clone(), standard))).ok()
+    }
     "StudentTDistribution" if dargs.len() == 1 => {
       let nu = dargs[0].clone();
       expr_to_num(&nu)?;

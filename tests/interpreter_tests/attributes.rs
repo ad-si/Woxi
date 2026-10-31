@@ -2535,3 +2535,39 @@ mod listable_builtins_from_wolframscript {
     );
   }
 }
+
+// An upvalue whose tagged call has a `x__` / `x___` operand must match calls
+// of any length the sequence allows, and splice the matched run back in.
+mod upvalue_sequence_operands {
+  use super::*;
+
+  #[test]
+  fn null_sequence_matches_zero_and_more_operands() {
+    clear_state();
+    assert_eq!(
+      interpret("mv /: k_ mv[a_, rest___] := mv[k a, rest]; {2 mv[3], 2 mv[3, 4], 2 mv[3, 4, 5]}").unwrap(),
+      "{mv[6], mv[6, 4], mv[6, 4, 5]}"
+    );
+  }
+
+  #[test]
+  fn sequence_needs_at_least_one_operand() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "mv /: k_ mv[a_, rest__] := {a, rest, k}; {2 mv[3], 2 mv[3, 4, 5]}"
+      )
+      .unwrap(),
+      "{2*mv[3], {3, 4, 5, 2}}"
+    );
+  }
+
+  #[test]
+  fn operands_after_the_sequence_count_from_the_end() {
+    clear_state();
+    assert_eq!(
+      interpret("mv /: k_ mv[a_, mid__, z_] := {a, mid, z, k}; {2 mv[1, 2], 2 mv[1, 2, 3, 4]}").unwrap(),
+      "{2*mv[1, 2], {1, 2, 3, 4, 2}}"
+    );
+  }
+}

@@ -15633,3 +15633,20 @@ mod to_string_character_encoding {
     );
   }
 }
+
+mod number_form_scientific_mantissa {
+  use super::*;
+
+  #[test]
+  fn the_mantissa_keeps_n_significant_digits_padded_to_f_decimals() {
+    // The mantissa showed f decimals of the unrounded value (1.234).
+    assert_eq!(
+      interpret("ToString[NumberForm[1.2345*10^20, {3, 3}]]").unwrap(),
+      "          20\n1.230 × 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[-1.2345*10^20, {5, 2}]]").unwrap(),
+      "          20\n-1.23 × 10"
+    );
+  }
+}

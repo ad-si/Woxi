@@ -6217,6 +6217,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     ));
   }
+  // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
+  // …]` redraws the grid at the size and shape it was plotted with.
+  for opt in &args[1..] {
+    if let Expr::Rule { pattern, .. } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n)
+        if n == "ImageSize" || n == "AspectRatio")
+    {
+      structure_args.push(opt.clone());
+    }
+  }
   let structure = call("Graphics", structure_args);
   Ok(crate::graphics_result_with_structure(buf, structure))
 }

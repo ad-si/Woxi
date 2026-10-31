@@ -444,6 +444,66 @@ fn try_series_data_times(
       _ => None,
     })
     .collect();
+  // One series times factors that depend on its variable (`f''[x]`,
+  // `Sin[x]`): each such factor is expanded to the series' order first, as
+  // wolframscript does, and the product is taken of the series.
+  if series_indices.len() == 1 {
+    let only_idx = series_indices[0];
+    let Expr::FunctionCall { args: sa, .. } = &args[only_idx] else {
+      return Ok(None);
+    };
+    let (Expr::Identifier(var_name), Expr::Integer(nmax), Expr::Integer(1)) =
+      (&sa[0], &sa[4], &sa[5])
+    else {
+      return Ok(None);
+    };
+    // At Infinity a factor such as `E^(-x^2)` has no power series; the
+    // product stays as it is.
+    if crate::functions::math_ast::try_eval_to_f64(&sa[1]).is_none() {
+      return Ok(None);
+    }
+    let dependent: Vec<usize> = (0..args.len())
+      .filter(|&i| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(&args[i], var_name)
+      })
+      .collect();
+    if dependent.is_empty() {
+      return Ok(None);
+    }
+    let mut lifted: Vec<Expr> = args.to_vec();
+    let expand = |e: &Expr, order: i128| {
+      crate::evaluator::evaluate_function_call_ast(
+        "Series",
+        &[
+          e.clone(),
+          Expr::List(
+            vec![sa[0].clone(), sa[1].clone(), Expr::Integer(order)].into(),
+          ),
+        ],
+      )
+    };
+    for i in dependent {
+      let mut series = expand(&args[i], nmax - 1)?;
+      // A factor vanishing to order v at the centre carries the product v
+      // orders further, so it is expanded that much further too
+      // (`Series[f[x], {x, 0, 3}] Sin[x]` is good to O[x]^5).
+      if let Expr::FunctionCall { name, args: fa } = &series
+        && name == "SeriesData"
+        && let Expr::Integer(v) = &fa[3]
+        && *v > 0
+      {
+        series = expand(&args[i], nmax - 1 + v)?;
+      }
+      if !matches!(&series, Expr::FunctionCall { name, .. } if name == "SeriesData")
+      {
+        return Ok(None);
+      }
+      lifted[i] = series;
+    }
+    return crate::evaluator::evaluate_function_call_ast("Times", &lifted)
+      .map(Some);
+  }
   if series_indices.len() < 2 {
     return Ok(None);
   }
@@ -2694,6 +2754,12 @@ fn has_transcendental_subexpr(e: &Expr) -> bool {
   }
 }
 
+/// Whether a symbol name starting with `c` can be a variable: a letter,
+/// or one of the formal letters (`\[FormalX]`, private use U+F800–U+F8FF).
+fn starts_variable_name(c: char) -> bool {
+  c.is_alphabetic() || ('\u{F800}'..='\u{F8FF}').contains(&c)
+}
+
 fn extract_earliest_variable(e: &Expr) -> Option<String> {
   match e {
     Expr::Identifier(s)
@@ -2715,18 +2781,23 @@ fn extract_earliest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_earliest_variable).min()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_earliest_variable)
+      .min_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_earliest_variable(left);
       let r = extract_earliest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_le() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -2766,7 +2837,7 @@ fn collect_free_vars(e: &Expr) -> std::collections::BTreeSet<String> {
             | "GoldenRatio"
             | "Degree"
             | "Catalan"
-        ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+        ) && s.chars().next().is_some_and(starts_variable_name) =>
       {
         vars.insert(s.clone());
       }
@@ -2810,18 +2881,23 @@ fn extract_latest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_latest_variable).max()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_latest_variable)
+      .max_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_latest_variable(left);
       let r = extract_latest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a >= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_ge() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -3297,6 +3373,17 @@ fn symbolic_power(e: &Expr) -> Option<(&Expr, &Expr)> {
   expr_to_f64(exp).is_none().then_some((base, exp))
 }
 
+/// Two variable names in the order a sum lists them: by character, except
+/// that the formal letters (`\[FormalX]`, private use U+F800–U+F8FF) come
+/// before every other character, as in `Sort`.
+fn plus_var_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let key = |c: char| match c {
+    '\u{F800}'..='\u{F8FF}' => c as u32 - 0xF800,
+    other => other as u32 + 0x100,
+  };
+  a.chars().map(key).cmp(b.chars().map(key))
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3546,7 +3633,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let av = extract_earliest_variable(a);
       let bv = extract_earliest_variable(b);
       if let (Some(av), Some(bv)) = (av, bv) {
-        let cmp = av.cmp(&bv);
+        let cmp = plus_var_name_cmp(&av, &bv);
         if cmp != std::cmp::Ordering::Equal {
           return cmp;
         }
@@ -3608,11 +3695,11 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       _ => {}
     }
     // Sort each term's pairs by variable name descending
-    va.sort_by(|x, y| y.0.cmp(&x.0));
-    vb.sort_by(|x, y| y.0.cmp(&x.0));
+    va.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
+    vb.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
     // Compare pair-by-pair: variable ascending, then exponent ascending
     for (ap, bp) in va.iter().zip(vb.iter()) {
-      let cmp = ap.0.cmp(&bp.0);
+      let cmp = plus_var_name_cmp(&ap.0, &bp.0);
       if cmp != std::cmp::Ordering::Equal {
         return cmp;
       }
@@ -3738,7 +3825,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let pair_earliest = extract_earliest_variable(&pair_base);
         let none_latest = extract_latest_variable(&none_base);
         if let (Some(pv), Some(nlv)) = (&pair_earliest, &none_latest) {
-          if nlv > pv {
+          if plus_var_name_cmp(nlv, pv).is_gt() {
             // Non-pair has a later variable → monomial first
             return if a_has_pairs {
               std::cmp::Ordering::Less
@@ -3757,7 +3844,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
         let none_earliest = extract_earliest_variable(&none_base);
         if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest)
-          && nv < pv
+          && plus_var_name_cmp(nv, pv).is_lt()
         {
           // All non-pair variables < monomial's → non-pair first
           return if a_has_pairs {
@@ -10678,6 +10765,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(product);
     }
+    if let Some(product) =
+      absorb_coefficient_into_roots(&coeff_expr, &symbolic_args)?
+    {
+      return Ok(product);
+    }
     sort_symbolic_factors(&mut symbolic_args);
     if let Some(merged) =
       merge_coefficient_into_radical(&coeff_expr, &symbolic_args)?
@@ -11229,6 +11321,10 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(product);
   }
+  if let Some(product) = absorb_coefficient_into_roots(&coeff, &symbolic_args)?
+  {
+    return Ok(product);
+  }
 
   // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
   if symbolic_args.is_empty() {
@@ -11299,6 +11395,160 @@ fn coefficient_radical_parts(
   n_in /= &m;
   d_in *= &m;
   (x, n_in, y, d_in)
+}
+
+/// A rational coefficient sharing a prime with a numeric root beyond the
+/// square root (`6^(1/3)/2`, `4 (3/2)^(1/3)`) is merged prime by prime, as
+/// wolframscript does: the prime's total exponent `E` (the coefficient's
+/// integer power plus the root's fraction) splits into `trunc(E)`, kept in
+/// the coefficient, and the fraction `E - trunc(E)`, kept as the root:
+///   6^(1/3)/2 → 3^(1/3)/2^(2/3)     4/2^(1/3)      → 2 2^(2/3)
+///   12^(1/3)/6 → 1/(2^(1/3) 3^(2/3)) (3/2)^(1/3)/2 → (3/2)^(1/3)/2
+/// A root whose shared primes already have the coefficient's sign, like
+/// `2 6^(1/3)`, stays as it is. Returns the rebuilt product, or `None` when
+/// nothing changes.
+fn absorb_coefficient_into_roots(
+  coeff: &Expr,
+  symbolic_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let (cn, cd) = match coeff {
+    Expr::Integer(n) if *n != 0 => (*n, 1i128),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n != 0 && *d > 0 => (*n, *d),
+        _ => return Ok(None),
+      }
+    }
+    _ => return Ok(None),
+  };
+  // The roots: their positions and their primes' fractional exponents.
+  let mut roots: Vec<usize> = Vec::new();
+  let mut fractions: Vec<(u128, i128, i128)> = Vec::new(); // (p, num, den)
+  let add =
+    |fractions: &mut Vec<(u128, i128, i128)>, p: u128, n: i128, d: i128| {
+      if let Some(entry) = fractions.iter_mut().find(|(q, _, _)| *q == p) {
+        let num = entry.1 * d + n * entry.2;
+        let den = entry.2 * d;
+        let g =
+          crate::functions::math_ast::numeric_utils::gcd_i128(num.abs(), den)
+            .max(1);
+        *entry = (p, num / g, den / g);
+      } else {
+        fractions.push((p, n, d));
+      }
+    };
+  for (i, f) in symbolic_args.iter().enumerate() {
+    let Some((bn, bd, exp)) = numeric_radical_parts(f) else {
+      continue;
+    };
+    let Expr::FunctionCall { args: ea, .. } = &exp else {
+      continue;
+    };
+    let (Expr::Integer(en), Expr::Integer(ed)) = (&ea[0], &ea[1]) else {
+      continue;
+    };
+    if *ed < 3 || en.abs() >= *ed {
+      continue;
+    }
+    let (Some(num_primes), Some(den_primes)) =
+      (small_prime_factors(bn), small_prime_factors(bd))
+    else {
+      return Ok(None);
+    };
+    roots.push(i);
+    for (p, k) in num_primes {
+      add(&mut fractions, p, en * k, *ed);
+    }
+    for (p, k) in den_primes {
+      add(&mut fractions, p, -en * k, *ed);
+    }
+  }
+  if roots.is_empty() {
+    return Ok(None);
+  }
+  let (Some(cn_primes), Some(cd_primes)) = (
+    small_prime_factors(cn.unsigned_abs()),
+    small_prime_factors(cd as u128),
+  ) else {
+    return Ok(None);
+  };
+  let coeff_power = |p: u128| -> i128 {
+    cn_primes
+      .iter()
+      .find(|(q, _)| *q == p)
+      .map_or(0, |(_, k)| *k)
+      - cd_primes
+        .iter()
+        .find(|(q, _)| *q == p)
+        .map_or(0, |(_, k)| *k)
+  };
+  // Nothing to do unless a shared prime has opposite signs (or the root
+  // spans a whole power).
+  let changes = fractions.iter().any(|&(p, n, d)| {
+    let k = coeff_power(p);
+    n != 0 && k != 0 && ((k > 0) != (n > 0) || n.abs() >= d)
+  });
+  if !changes {
+    return Ok(None);
+  }
+  // Rebuild: the coefficient with every root prime's truncated total, and
+  // one root per prime for the fractions.
+  let mut num = cn.signum();
+  let mut den: i128 = 1;
+  let mut powers: Vec<(u128, i128)> = Vec::new();
+  for &(p, k) in &cn_primes {
+    powers.push((p, k));
+  }
+  for &(p, k) in &cd_primes {
+    powers.push((p, -k));
+  }
+  let mut rebuilt: Vec<Expr> = Vec::new();
+  for &(p, n, d) in &fractions {
+    let k = coeff_power(p);
+    // E = k + n/d = (k d + n)/d, truncated toward zero.
+    let total = k * d + n;
+    let whole = total / d;
+    let frac = total - whole * d;
+    powers.retain(|(q, _)| *q != p);
+    powers.push((p, whole));
+    if frac != 0 {
+      let g =
+        crate::functions::math_ast::numeric_utils::gcd_i128(frac.abs(), d)
+          .max(1);
+      rebuilt.push(power_two(
+        &Expr::Integer(p as i128),
+        &make_rational(frac / g, d / g),
+      )?);
+    }
+  }
+  for (p, k) in powers {
+    let Some(pk) = (p as i128).checked_pow(k.unsigned_abs() as u32) else {
+      return Ok(None);
+    };
+    if k > 0 {
+      let Some(n) = num.checked_mul(pk) else {
+        return Ok(None);
+      };
+      num = n;
+    } else if k < 0 {
+      let Some(d) = den.checked_mul(pk) else {
+        return Ok(None);
+      };
+      den = d;
+    }
+  }
+  let mut factors = vec![make_rational(num, den)];
+  factors.extend(rebuilt);
+  factors.extend(
+    symbolic_args
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| !roots.contains(i))
+      .map(|(_, f)| f.clone()),
+  );
+  times_ast(&factors).map(Some)
 }
 
 /// Final-pass canonicalization: a rational coefficient times a square root

@@ -2987,7 +2987,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       call1("Out", Expr::Integer(n))
     }
     Rule::Constant | Rule::UnsignedConstant => {
-      Expr::Constant(pair.as_str().trim().to_string())
+      // The span can swallow a trailing `(* … *)` comment that the implicit
+      // COMMENT rule consumed after the name, so cut at the name's end.
+      let text = pair.as_str().trim();
+      let end = text
+        .char_indices()
+        .find(|(i, c)| *i > 0 && !c.is_ascii_alphanumeric())
+        .map_or(text.len(), |(i, _)| i);
+      Expr::Constant(text[..end].to_string())
     }
     Rule::BaseFunctionCall => {
       let src_start = pair.as_span().start();
@@ -15968,6 +15975,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
     Expr::CurriedCall { func, args } => {
       contains_slot_zero(func) || args.iter().any(contains_slot_zero)
     }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => false,
     Expr::List(items) => items.iter().any(contains_slot_zero),
     Expr::BinaryOp { left, right, .. } => {
       contains_slot_zero(left) || contains_slot_zero(right)
@@ -16022,6 +16030,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
 /// function application to emit Function::slot1 / Function::slota messages.
 pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
   match expr {
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       if let Expr::String(key) = &args[0] {
         out.push(key.clone());
@@ -16218,6 +16227,11 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       } else {
         call0("Sequence")
       }
+    }
+    // Shared inert data (a large numeric array) holds no slots: its O(1)
+    // clone stands for itself.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => {
       Expr::List(substitute_slots_expand(items, values).into())
@@ -17255,9 +17269,16 @@ fn substitute_variables_impl(
     Expr::Identifier(name) | Expr::Constant(name) => {
       for &(var_name, value) in bindings {
         if name == var_name {
-          return value.clone();
+          // A large array goes in shared, so the copies the body makes of
+          // it (a pure function called once per element) are O(1).
+          let mut value = value.clone();
+          crate::evaluator::share_large_lists(&mut value, 0);
+          return value;
         }
       }
+      expr.clone()
+    }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
       expr.clone()
     }
     Expr::List(items) => {
@@ -17373,6 +17394,39 @@ fn substitute_variables_impl(
           })
           .map(|b| (b.clone(), format!("{b}$")))
           .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
+      }
+      // A definition's pattern variables are binders too: one that occurs
+      // in a value being substituted is renamed to `name$` first, so the
+      // value keeps its own symbol (`g[vl_] := (f[x_] = e /. vl[[1]] -> x)`
+      // called as `g[{x}]` must leave the argument's `x` alone).
+      if template
+        && matches!(name.as_str(), "Set" | "SetDelayed")
+        && args.len() == 2
+      {
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> =
+          crate::evaluator::pattern_variable_names(&args[0])
+            .into_iter()
+            .filter(|b| {
+              value_names.contains(b.as_str())
+                && !bindings.iter().any(|(slot, _)| slot == b)
+            })
+            .map(|b| (b.clone(), format!("{b}$")))
+            .collect();
         if !renames.is_empty() {
           let renamed: Vec<Expr> = args
             .iter()

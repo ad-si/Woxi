@@ -6693,6 +6693,19 @@ mod list_set_delayed {
       "{r, s}"
     );
   }
+
+  #[test]
+  fn repeated_name_across_nested_patterns() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[g[i_Integer], g[i_Integer]] := -1; \
+         {f[g[1], g[2]], f[g[1], g[1]], f[g[3], g[3]]}"
+      )
+      .unwrap(),
+      "{f[g[1], g[2]], -1, -1}"
+    );
+  }
 }
 
 // A definition's local variable that also occurs in an argument value is
@@ -6711,6 +6724,112 @@ mod scoping_capture_avoidance {
       )
       .unwrap(),
       "{a[1], a, {a, 1}, a}"
+    );
+  }
+}
+
+mod upvalue_argument_patterns {
+  use super::*;
+
+  #[test]
+  fn a_sequence_pattern_matches_no_arguments() {
+    // `args___` was counted as one argument: `0.5 Move[1]` stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "Move /: l_ Move[l1_, args___] := Move[l l1, args]; \
+         {0.5 Move[1], 0.5 Move[1, 2], x Move[3]}"
+      )
+      .unwrap(),
+      "{Move[0.5], Move[0.5, 2], Move[3*x]}"
+    );
+  }
+
+  #[test]
+  fn literal_and_headed_arguments_are_checked() {
+    assert_eq!(
+      interpret("g /: f[g[1, x_]] := {x}; {f[g[1, 2]], f[g[3, 2]]}").unwrap(),
+      "{{2}, f[g[3, 2]]}"
+    );
+    assert_eq!(
+      interpret("h /: f[h[x_Integer]] := {x}; {f[h[1]], f[h[a]]}").unwrap(),
+      "{{1}, f[h[a]]}"
+    );
+  }
+}
+
+mod set_with_a_left_hand_side_condition {
+  use super::*;
+
+  #[test]
+  fn the_conditional_rule_is_kept_beside_the_unconditional_one() {
+    // `/; p == 1/2` was dropped and the value overwrote `f[n_, p_] = 1`.
+    assert_eq!(
+      interpret(
+        "f[n_, p_] = 1; f[n_, p_] /; p == 1/2 = 2; \
+         {f[1, 0.5], f[1, 0.3], Length[DownValues[f]]}"
+      )
+      .unwrap(),
+      "{2, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn the_value_is_computed_at_definition_time() {
+    assert_eq!(
+      interpret("k = 3; g[p_] /; p > 0 = k p; k = 5; {g[2], g[-2]}").unwrap(),
+      "{6, g[-2]}"
+    );
+  }
+}
+
+mod options_pattern_with_symbol_defaults {
+  use super::*;
+
+  #[test]
+  fn a_list_of_symbols_supplies_their_options() {
+    // `OptionsPattern[{land, Graphics3D}]` took the two symbols as rules
+    // and every unset OptionValue came back as its own name.
+    assert_eq!(
+      interpret(
+        "Options[land] = {coordinates -> \"automatic\", sm -> 1}; \
+         land[n_, OptionsPattern[{land, Graphics3D}]] := \
+         {OptionValue[coordinates], OptionValue[sm], OptionValue[Boxed]}; \
+         land[1, sm -> 2]"
+      )
+      .unwrap(),
+      "{automatic, 2, True}"
+    );
+  }
+
+  #[test]
+  fn another_functions_options_are_read_when_the_rule_applies() {
+    assert_eq!(
+      interpret(
+        "Options[g] = {a -> 1}; f[OptionsPattern[g]] := OptionValue[a]; \
+         Options[g] = {a -> 5}; {f[], f[a -> 2]}"
+      )
+      .unwrap(),
+      "{5, 2}"
+    );
+  }
+}
+
+mod definition_pattern_variables_avoid_capture {
+  use super::*;
+
+  #[test]
+  fn an_argument_symbol_is_not_captured_by_an_inner_definition() {
+    // The inner `x_` captured the argument's `x`, so `f[a]` stayed `x^2`.
+    assert_eq!(
+      interpret(
+        "g[vl_] := Module[{f, e}, e = x^2; f[x_] = e /. {vl[[1]] -> x}; f[a]]; g[{x}]"
+      )
+      .unwrap(),
+      "a^2"
+    );
+    assert_eq!(
+      interpret("h[v_] := (k[x_] := x + v); h[x]; k[2]").unwrap(),
+      "2 + x"
     );
   }
 }

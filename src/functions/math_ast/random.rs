@@ -1837,7 +1837,10 @@ fn reject_symbolic_variate_params(dist: &Expr) -> bool {
     true
   };
   for &pos in
-    crate::functions::math_ast::distributions::positive_param_positions(name)
+    crate::functions::math_ast::distributions::positive_param_positions_for(
+      name,
+      args.len(),
+    )
   {
     if args
       .get(pos - 1)
@@ -1981,6 +1984,56 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
       )),
     };
+  }
+
+  // OrderDistribution[{dist, n}, k]: the k-th smallest of n draws of dist.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && name == "OrderDistribution"
+    && let [Expr::List(spec), Expr::Integer(k)] = dargs.as_slice()
+    && let [base, Expr::Integer(m)] = spec.as_slice()
+    && *k >= 1
+    && *k <= *m
+  {
+    let (m, k) = (*m, *k as usize);
+    let one = || -> Result<Option<Expr>, InterpreterError> {
+      let sample = random_variate_ast(&[base.clone(), Expr::Integer(m)])?;
+      let Expr::List(ref draws) = sample else {
+        return Ok(None);
+      };
+      let mut values: Vec<(f64, Expr)> = Vec::with_capacity(draws.len());
+      for d in draws {
+        let Some(v) = crate::functions::math_ast::try_eval_to_f64(d) else {
+          return Ok(None);
+        };
+        values.push((v, d.clone()));
+      }
+      values.sort_by(|a, b| a.0.total_cmp(&b.0));
+      Ok(values.get(k - 1).map(|p| p.1.clone()))
+    };
+    let draw_all =
+      |count: usize| -> Result<Option<Vec<Expr>>, InterpreterError> {
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          match one()? {
+            Some(v) => out.push(v),
+            None => return Ok(None),
+          }
+        }
+        Ok(Some(out))
+      };
+    match n {
+      None => {
+        if let Some(v) = one()? {
+          return Ok(v);
+        }
+      }
+      Some(count) => {
+        if let Some(vs) = draw_all(count)? {
+          return Ok(Expr::List(vs.into()));
+        }
+      }
+    }
+    return Ok(unevaluated("RandomVariate", args));
   }
 
   // Local helpers for the distributions added below.
@@ -3138,6 +3191,84 @@ fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {
   edges
 }
 
+/// Erdős–Gallai: whether a degree sequence is that of a simple graph.
+fn is_graphical(degrees: &[usize]) -> bool {
+  let mut d = degrees.to_vec();
+  d.sort_unstable_by(|a, b| b.cmp(a));
+  if d.iter().sum::<usize>() % 2 == 1 {
+    return false;
+  }
+  let n = d.len();
+  for k in 1..=n {
+    let left: usize = d[..k].iter().sum();
+    let right: usize =
+      k * (k - 1) + d[k..].iter().map(|&x| x.min(k)).sum::<usize>();
+    if left > right {
+      return false;
+    }
+  }
+  true
+}
+
+/// A simple graph with the given (graphical) degree sequence: Havel–Hakimi,
+/// then random double-edge swaps that keep every degree and the graph simple.
+fn degree_sequence_edges(degrees: &[usize]) -> Vec<(usize, usize)> {
+  use rand::RngExt;
+  let n = degrees.len();
+  let mut remaining: Vec<(usize, usize)> = degrees
+    .iter()
+    .enumerate()
+    .map(|(v, &d)| (d, v + 1))
+    .collect();
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  loop {
+    remaining.sort_unstable_by(|a, b| b.cmp(a));
+    let Some(&(d, v)) = remaining.first() else {
+      break;
+    };
+    if d == 0 {
+      break;
+    }
+    for item in remaining.iter_mut().skip(1).take(d) {
+      item.0 -= 1;
+      edges.push((v.min(item.1), v.max(item.1)));
+    }
+    remaining[0].0 = 0;
+  }
+  let key = |a: usize, b: usize| (a.min(b), a.max(b));
+  let mut present: std::collections::HashSet<(usize, usize)> =
+    edges.iter().copied().collect();
+  let m = edges.len();
+  if m >= 2 && n >= 4 {
+    crate::with_rng(|rng| {
+      for _ in 0..10 * m {
+        let i = rng.random_range(0..m);
+        let j = rng.random_range(0..m);
+        if i == j {
+          continue;
+        }
+        let ((a, b), (c, d)) = (edges[i], edges[j]);
+        let (a, b) = if rng.random_bool(0.5) { (a, b) } else { (b, a) };
+        // a-b, c-d  →  a-c, b-d
+        if a == c || a == d || b == c || b == d {
+          continue;
+        }
+        let (e1, e2) = (key(a, c), key(b, d));
+        if present.contains(&e1) || present.contains(&e2) {
+          continue;
+        }
+        present.remove(&edges[i]);
+        present.remove(&edges[j]);
+        present.insert(e1);
+        present.insert(e2);
+        edges[i] = e1;
+        edges[j] = e2;
+      }
+    });
+  }
+  edges
+}
+
 /// RandomGraph[{n, m}] — undirected graph with n vertices and m random edges.
 /// RandomGraph[gdist] — a graph drawn from a random graph distribution.
 /// RandomGraph[spec, k] — list of k such graphs.
@@ -3172,6 +3303,76 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Each spec becomes a vertex count plus a sampler for one edge set.
   type Sampler = Box<dyn Fn() -> Vec<(usize, usize)>>;
+  // SpatialGraphDistribution[n, r]: n uniform points in the unit square,
+  // joined when they are within r; the points are the vertex coordinates.
+  let spatial = match positional[0] {
+    Expr::FunctionCall { name, args: d }
+      if name == "SpatialGraphDistribution" && d.len() >= 2 =>
+    {
+      let (Some(n), Some(r)) = (count(&d[0]), try_eval_to_f64(&d[1])) else {
+        return Ok(unevaluated());
+      };
+      if r <= 0.0 {
+        return Ok(unevaluated());
+      }
+      Some((n, r))
+    }
+    _ => None,
+  };
+  if let Some((n, r)) = spatial {
+    let k = match positional.get(1) {
+      None => None,
+      Some(e) => match count(e) {
+        Some(k) => Some(k),
+        None => return Ok(unevaluated()),
+      },
+    };
+    let one = || {
+      let points: Vec<(f64, f64)> = crate::with_rng(|rng| {
+        (0..n)
+          .map(|_| (rng.random::<f64>(), rng.random::<f64>()))
+          .collect()
+      });
+      let mut edges = Vec::new();
+      for i in 0..n {
+        for j in (i + 1)..n {
+          let (dx, dy) = (points[i].0 - points[j].0, points[i].1 - points[j].1);
+          if dx.hypot(dy) <= r {
+            edges.push(call(
+              "UndirectedEdge",
+              vec![Expr::Integer(i as i128 + 1), Expr::Integer(j as i128 + 1)],
+            ));
+          }
+        }
+      }
+      let coords: Vec<Expr> = points
+        .iter()
+        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+        .collect();
+      let mut opts = vec![Expr::Rule {
+        pattern: Box::new(Expr::Identifier("VertexCoordinates".into())),
+        replacement: Box::new(Expr::List(coords.into())),
+      }];
+      opts.extend(options.iter().cloned());
+      call(
+        "Graph",
+        vec![
+          Expr::List(
+            (1..=n)
+              .map(|v| Expr::Integer(v as i128))
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+          Expr::List(edges.into()),
+          Expr::List(opts.into()),
+        ],
+      )
+    };
+    return Ok(match k {
+      None => one(),
+      Some(k) => Expr::List((0..k).map(|_| one()).collect::<Vec<_>>().into()),
+    });
+  }
   let (n, sample): (usize, Sampler) = match positional[0] {
     Expr::List(items) if items.len() == 2 => {
       let (Some(n), Some(m)) = (count(&items[0]), count(&items[1])) else {
@@ -3221,6 +3422,25 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(unevaluated());
         }
         (n, Box::new(move || barabasi_albert_edges(n, k)))
+      }
+      // A random simple graph with the given degree sequence: a
+      // Havel–Hakimi realization shuffled by degree-preserving edge swaps.
+      ("DegreeGraphDistribution", 1) => {
+        let degrees: Option<Vec<usize>> = match &d[0] {
+          Expr::List(ds) => ds.iter().map(count).collect(),
+          _ => None,
+        };
+        let Some(degrees) = degrees.filter(|ds| is_graphical(ds)) else {
+          crate::emit_message(&format!(
+            "DegreeGraphDistribution::args: {} called with invalid parameters.",
+            crate::syntax::expr_to_string(&unevaluated())
+          ));
+          return Ok(unevaluated());
+        };
+        (
+          degrees.len(),
+          Box::new(move || degree_sequence_edges(&degrees)),
+        )
       }
       ("WattsStrogatzGraphDistribution", 2 | 3) => {
         let k = if d.len() == 3 { count(&d[2]) } else { Some(2) };

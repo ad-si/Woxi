@@ -205,4 +205,30 @@ mod evaluation_reuse {
       );
     }
   }
+
+  mod machine_real_symbol {
+    use super::*;
+
+    #[test]
+    fn small_real_keeps_its_value() {
+      clear_state();
+      assert_eq!(
+        interpret("w = 632.8*^-9; {w == 6.328*^-7, Head[w], w*2}").unwrap(),
+        "{True, Real, 1.2656*^-6}"
+      );
+    }
+
+    #[test]
+    fn small_real_is_not_reparsed_on_each_read() {
+      clear_state();
+      interpret("w = 632.8*^-9; h = 2.49*^-3;").unwrap();
+      let start = std::time::Instant::now();
+      interpret("Do[h/w, {20000}]").unwrap();
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_secs() < 2,
+        "20000 reads of a small real took {elapsed:?}"
+      );
+    }
+  }
 }

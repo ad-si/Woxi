@@ -15073,6 +15073,18 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list is expanded element by element: `Series[{Sin[x], Cos[x]}, …]`
+  // is a list of two series.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      let mut item_args = args.to_vec();
+      item_args[0] = item.clone();
+      out.push(series_ast(&item_args)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
   // Extract options (e.g., Assumptions -> x > 0) from remaining args
   let mut option_args = Vec::new();
   let mut spec_args = Vec::new();

@@ -516,6 +516,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return nsolve_ast(&[args[0].clone(), vars]);
   }
+  // An unknown that is a call (`f''[0]`, `a[1]`) is solved for as a fresh
+  // symbol: numericizing the equations would turn its `0` into `0.`.
+  if let Some(result) = with_generalized_variables(args, nsolve_ast) {
+    return result;
+  }
   // A system of several equations with machine coefficients is solved the
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
@@ -1832,9 +1837,11 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       minus2(fargs[0].clone(), fargs[1].clone())
     }
-    _ => {
+    // A bare polynomial stands for `poly == 0`, as in wolframscript.
+    Expr::Comparison { .. } => {
       return Ok(unevaluated("NRoots", args));
     }
+    poly => poly.clone(),
   };
 
   let unevaluated = || unevaluated("NRoots", args);
@@ -1875,8 +1882,56 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
 
+  // A repeated root stalls Durand-Kerner a few digits short. With exact
+  // coefficients the square-free factors are solved one by one instead,
+  // each root repeated by the multiplicity of its factor.
+  let square_free =
+    (!crate::functions::math_ast::contains_inexact_real(&expanded))
+      .then(|| {
+        crate::evaluator::evaluate_function_call_ast(
+          "FactorSquareFreeList",
+          std::slice::from_ref(&expanded),
+        )
+        .ok()
+      })
+      .flatten();
+  let mut factored: Option<Vec<(f64, f64)>> = None;
+  if let Some(Expr::List(ref factors)) = square_free
+    && factors.iter().any(|f| {
+      matches!(f, Expr::List(pair) if pair.len() == 2
+        && matches!(&pair[1], Expr::Integer(m) if *m > 1)
+        && !is_constant_wrt(&pair[0], &var))
+    })
+  {
+    let mut all = Vec::new();
+    for f in factors {
+      let Expr::List(pair) = f else {
+        all.clear();
+        break;
+      };
+      let (Some(factor), Some(Expr::Integer(m))) = (pair.first(), pair.get(1))
+      else {
+        all.clear();
+        break;
+      };
+      if is_constant_wrt(factor, &var) {
+        continue;
+      }
+      let Some(c) = polynomial_f64_coefficients(factor, &var) else {
+        all.clear();
+        break;
+      };
+      let roots = durand_kerner_roots(&c);
+      for _ in 0..*m {
+        all.extend(roots.iter().copied());
+      }
+    }
+    if all.len() == degree {
+      factored = Some(all);
+    }
+  }
   // Durand-Kerner finds all roots simultaneously.
-  let roots = durand_kerner_roots(&coeffs);
+  let roots = factored.unwrap_or_else(|| durand_kerner_roots(&coeffs));
 
   // Sort by (Re, Im) ascending.
   let mut roots = roots;
@@ -1904,6 +1959,23 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(conds.into_iter().next().unwrap());
   }
   Ok(call("Or", conds))
+}
+
+/// The coefficients of a polynomial in `var` as f64 (index = degree), or
+/// None when one is not a number.
+fn polynomial_f64_coefficients(poly: &Expr, var: &str) -> Option<Vec<f64>> {
+  let expanded = expand_and_combine(poly);
+  let degree = max_power_int(&expanded, var).filter(|d| *d >= 1)? as usize;
+  let terms = collect_additive_terms(&expanded);
+  let mut coeffs = vec![0.0f64; degree + 1];
+  for (d, slot) in coeffs.iter_mut().enumerate() {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        *slot += try_eval_to_f64(&simplify(c))?;
+      }
+    }
+  }
+  Some(coeffs)
 }
 
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
@@ -2314,6 +2386,19 @@ fn collect_solve_var_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       if !args.is_empty()
         && (name == "Subscript" && matches!(&args[0], Expr::Identifier(_))
           || !crate::evaluator::functions::is_builtin_symbol(name)) =>
+    {
+      push(expr.clone(), out);
+    }
+    // A derivative value (`f''[0]`, held as `Derivative[2, f, 0]` once
+    // evaluated) is one unknown, as an undefined function's value is.
+    Expr::FunctionCall { name, args }
+      if name == "Derivative" && args.len() >= 3 =>
+    {
+      push(expr.clone(), out);
+    }
+    Expr::CurriedCall { func, .. }
+      if matches!(func.as_ref(), Expr::CurriedCall { func: inner, .. }
+        if matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")) =>
     {
       push(expr.clone(), out);
     }
@@ -3507,6 +3592,38 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(isolated) = solve_by_isolating_power(eq, var)
   {
     return Ok(isolated);
+  }
+  // A polynomial equation with inexact coefficients that stayed unsolved
+  // (a cubic in a parameter) is solved exactly and numericized, as
+  // wolframscript does.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let [
+      eq @ Expr::Comparison { operands, .. },
+      var @ Expr::Identifier(_),
+    ] = args
+    && operands.len() == 2
+    && !in_nsolve()
+    && crate::functions::math_ast::contains_inexact_real(eq)
+    && !has_radical(eq)
+    && matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[plus(vec![operands[0].clone(), neg(operands[1].clone())]), var.clone()],
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+    && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      &[eq.clone(), Expr::Integer(0)],
+    )
+    && !crate::functions::math_ast::contains_inexact_real(&exact)
+    && let Ok(exact_result @ Expr::List(_)) =
+      solve_ast_entry(&[exact, var.clone()])
+  {
+    crate::emit_message(
+      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+    );
+    return crate::evaluator::evaluate_function_call_ast("N", &[exact_result]);
   }
   Ok(result)
 }
@@ -5983,7 +6100,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if super::eliminate::contains_var(&denominator, var) {
         expand_and_combine(&numerator)
       } else {
-        expanded_raw
+        expanded_raw.clone()
       }
     }
   };
@@ -6750,6 +6867,35 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::List(all_solutions.into()));
           }
         }
+      }
+      // A cubic with symbolic coefficients has Cardano's radicals, in the
+      // order wolframscript lists them.
+      if degree == 3
+        && coeffs
+          .iter()
+          .any(|c| !crate::functions::predicate_ast::is_numeric_q(c))
+        && !coeffs
+          .iter()
+          .any(crate::functions::predicate_ast::contains_real_literal)
+        && solve_by_isolating_power(&args[0], var).is_none()
+        && let Some(roots) = symbolic_cubic_roots(
+          // The coefficients as written, before denominators were cleared:
+          // wolframscript's radicals are in terms of those.
+          &match crate::evaluator::evaluate_function_call_ast(
+            "CoefficientList",
+            &[expanded_raw.clone(), id_expr(var)],
+          ) {
+            Ok(Expr::List(ref raw))
+              if raw.len() == 4
+                && raw.iter().all(|c| is_constant_wrt(c, var)) =>
+            {
+              raw.to_vec()
+            }
+            _ => coeffs.clone(),
+          },
+        )
+      {
+        return Ok(Expr::List(roots.into_iter().map(make_rule).collect()));
       }
       // Machine-precision coefficients: wolframscript never answers those
       // with `Root[…]` objects, it solves them numerically. So a cubic like
@@ -12744,7 +12890,6 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let deriv_expr =
     crate::functions::calculus_ast::differentiate_expr(&func, &var)
       .ok()
-      .map(simplify)
       .filter(|d| !contains_unevaluated_d(d));
 
   // Newton's method, damped: a step that makes |f| worse is halved until it
@@ -12756,8 +12901,9 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let tol = 1e-15;
   let mut x = x0;
   let mut converged = false;
+  let mut settled: Vec<(usize, f64)> = Vec::new();
 
-  for _ in 0..max_iter {
+  for k in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
     if fx.abs() < tol {
       converged = true;
@@ -12829,6 +12975,22 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // instead would move the answer off the one wolframscript reports.
     if (trial - x).abs() <= f64::EPSILON * x.abs().max(1.0) {
       converged = true;
+    }
+    // Once settled the iteration only jitters the last digits, and each
+    // iterate is a pure function of the previous one, so the sequence is
+    // eventually periodic. Detect the period and jump to the iterate the
+    // remaining iterations would end on instead of evaluating them all.
+    if converged && step_monitor.is_none() {
+      settled.push((k, x));
+      if let Some(m) = settled
+        .iter()
+        .position(|(_, s)| s.to_bits() == trial.to_bits())
+      {
+        let start = settled[m].0;
+        let period = k + 1 - start;
+        x = settled[m + (max_iter - start) % period].1;
+        break;
+      }
     }
     x = trial;
     fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
@@ -13226,6 +13388,13 @@ fn find_root_complex_newton(
         "FindRoot: derivative is zero, cannot converge".into(),
       ));
     };
+    // A step below the last bit of the iterate means it has settled even
+    // though the residual's rounding noise stays above `tol`.
+    if cabs(sr, si) <= f64::EPSILON * cabs(re, im).max(1.0) {
+      re -= sr;
+      im -= si;
+      break;
+    }
     // Damped like the real iteration: a step that makes |f| worse (or
     // leaves the function's domain) is halved until it does not.
     let current = cabs(fr, fi);
@@ -14951,11 +15120,27 @@ fn minimize_parse_vars_full(
 pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   // Only a node shaped like `from` can equal it; spelling every node out as
   // a string made the walk quadratic for large systems.
+  fn name_of(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::Identifier(n) | Expr::Constant(n) => Some(n.as_str()),
+      _ => None,
+    }
+  }
   let may_match = match (expr, from) {
     (
       Expr::FunctionCall { name: a, args: x },
       Expr::FunctionCall { name: b, args: y },
     ) => a == b && x.len() == y.len(),
+    // A symbol only equals a symbol of that name.
+    (_, Expr::Identifier(_) | Expr::Constant(_)) => {
+      if name_of(expr) == name_of(from) {
+        return to.clone();
+      }
+      false
+    }
+    (Expr::List(_), _) | (_, Expr::List(_)) => {
+      matches!((expr, from), (Expr::List(_), Expr::List(_)))
+    }
     _ => true,
   };
   if may_match && expr_to_string(expr) == expr_to_string(from) {
@@ -15843,7 +16028,16 @@ fn minimize_find_critical_points_1d(
 }
 
 /// Numerically find critical points of f using Newton's method with multiple starts.
+/// Newton's method from a few starts on `f'`. Its probes may land where the
+/// objective is singular; that is no message of the optimization's.
 fn minimize_find_critical_points_numerical(
+  f: &Expr,
+  var: &str,
+) -> Result<Vec<Expr>, InterpreterError> {
+  quietly(|| minimize_find_critical_points_newton(f, var))
+}
+
+fn minimize_find_critical_points_newton(
   f: &Expr,
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
@@ -17322,7 +17516,9 @@ fn minimize_constrained_1d(
   let mut best_f = f64::INFINITY;
   let mut best_x_f64 = candidates[0];
   for &cx in &candidates {
-    let fx = find_root_eval_at(f, var, cx).unwrap_or(f64::INFINITY);
+    // A bound can be a singular point of the objective; its value there
+    // just loses the comparison.
+    let fx = quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
     if fx < best_f {
       best_f = fx;
       best_x_f64 = cx;
@@ -18956,6 +19152,144 @@ pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
+  // A search that ran into a non-number reports it as Indeterminate, never
+  // as a machine NaN (which no comparison can order).
+  fn nan_free(e: &Expr) -> Expr {
+    match e {
+      Expr::Real(f) if f.is_nan() => Expr::Identifier("Indeterminate".into()),
+      Expr::List(items) => Expr::List(items.iter().map(nan_free).collect()),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(nan_free(replacement)),
+      },
+      other => other.clone(),
+    }
+  }
+  find_minimum_inner(args, maximize).map(|r| nan_free(&r))
+}
+
+/// A local minimum of `f` near the starting values `a` and `b`: the
+/// golden-section point between them brackets one when it lies below both,
+/// otherwise the bracket is grown downhill from the lower start; Brent's
+/// parabolic/golden-section search then narrows it. None when no finite
+/// bracket turns up.
+fn two_point_brent_minimum(
+  f: impl Fn(f64) -> f64,
+  a: f64,
+  b: f64,
+) -> Option<f64> {
+  const GOLD: f64 = 1.618_033_988_749_895;
+  const CGOLD: f64 = 0.381_966_011_250_105;
+  let (fa, fb) = (f(a), f(b));
+  let m = a + CGOLD * (b - a);
+  let fm = f(m);
+  let (mut ax, bx, mut cx);
+  if fm < fa && fm < fb {
+    (ax, bx, cx) = (a, m, b);
+  } else {
+    // Downhill from the higher start towards (and past) the lower one.
+    let (mut p, mut fp, mut q, mut fq) = if fb <= fa {
+      (a, fa, b, fb)
+    } else {
+      (b, fb, a, fa)
+    };
+    let mut r = q + GOLD * (q - p);
+    let mut fr = f(r);
+    let mut steps = 0;
+    while fr < fq {
+      (p, fp, q, fq) = (q, fq, r, fr);
+      r = q + GOLD * (q - p);
+      fr = f(r);
+      steps += 1;
+      if steps > 100 || !r.is_finite() {
+        return None;
+      }
+    }
+    let _ = fp;
+    (ax, bx, cx) = (p, q, r);
+  }
+  if !f(bx).is_finite() {
+    return None;
+  }
+  // Brent's method on the bracket (ax, bx, cx).
+  if ax > cx {
+    std::mem::swap(&mut ax, &mut cx);
+  }
+  let (mut lo, mut hi) = (ax, cx);
+  let (mut x, mut w, mut v) = (bx, bx, bx);
+  let (mut fx, mut fw, mut fv) = (f(bx), f(bx), f(bx));
+  let (mut d, mut e) = (0.0f64, 0.0f64);
+  for _ in 0..200 {
+    let xm = f64::midpoint(lo, hi);
+    let tol1 = 1.0e-10 * x.abs() + 1.0e-20;
+    let tol2 = 2.0 * tol1;
+    if (x - xm).abs() <= tol2 - 0.5 * (hi - lo) {
+      break;
+    }
+    let mut golden = true;
+    if e.abs() > tol1 {
+      let r = (x - w) * (fx - fv);
+      let mut q = (x - v) * (fx - fw);
+      let mut p = (x - v) * q - (x - w) * r;
+      q = 2.0 * (q - r);
+      if q > 0.0 {
+        p = -p;
+      }
+      q = q.abs();
+      let etemp = e;
+      e = d;
+      if p.abs() < (0.5 * q * etemp).abs()
+        && p > q * (lo - x)
+        && p < q * (hi - x)
+      {
+        d = p / q;
+        let u = x + d;
+        if u - lo < tol2 || hi - u < tol2 {
+          d = tol1.copysign(xm - x);
+        }
+        golden = false;
+      }
+    }
+    if golden {
+      e = if x >= xm { lo - x } else { hi - x };
+      d = CGOLD * e;
+    }
+    let u = if d.abs() >= tol1 {
+      x + d
+    } else {
+      x + tol1.copysign(d)
+    };
+    let fu = f(u);
+    if fu <= fx {
+      if u >= x {
+        lo = x;
+      } else {
+        hi = x;
+      }
+      (v, fv, w, fw, x, fx) = (w, fw, x, fx, u, fu);
+    } else {
+      if u < x {
+        lo = u;
+      } else {
+        hi = u;
+      }
+      if fu <= fw || w == x {
+        (v, fv, w, fw) = (w, fw, u, fu);
+      } else if fu <= fv || v == x || v == w {
+        (v, fv) = (u, fu);
+      }
+    }
+  }
+  fx.is_finite().then_some(x)
+}
+
+fn find_minimum_inner(
+  args: &[Expr],
+  maximize: bool,
+) -> Result<Expr, InterpreterError> {
   let func_name = if maximize {
     "FindMaximum"
   } else {
@@ -19105,6 +19439,33 @@ pub fn find_minimum_ast(
   } else {
     args[1].clone()
   };
+
+  // `{x, x0, x1}` names two starting values for a derivative-free search:
+  // bracket a minimum from them and narrow it with Brent's method, then let
+  // the search below polish it from there. Started from x0 alone, a point
+  // where the objective is flat or not differentiable (`Abs[BesselJ[1, x]]`
+  // at 0) would stay put.
+  if let Expr::List(items) = &combined_spec
+    && let [Expr::Identifier(var), x0, x1] = items.as_slice()
+    && let (Ok(x0v), Ok(x1v)) =
+      (find_root_eval_number(x0), find_root_eval_number(x1))
+    && x0v != x1v
+  {
+    let sign = if maximize { -1.0 } else { 1.0 };
+    let objective = |x: f64| {
+      quietly(|| find_root_eval_at(f, var, x))
+        .ok()
+        .filter(|v| v.is_finite())
+        .map_or(f64::INFINITY, |v| sign * v)
+    };
+    if let Some(best) = two_point_brent_minimum(objective, x0v, x1v) {
+      let mut polished = args.to_vec();
+      polished[1] = Expr::List(
+        vec![Expr::Identifier(var.clone()), Expr::Real(best)].into(),
+      );
+      return find_minimum_inner(&polished, maximize);
+    }
+  }
 
   // Parse variables and starting points: x, {x, y}, {x, x0}, {x, x0, xmin,
   // xmax} or {{x, x0}, {y, y0}} (each pair optionally carrying its own
@@ -23753,6 +24114,183 @@ fn solve_with_eliminated(
     out.push(Expr::List(rules.into()));
   }
   Some(Ok(Expr::List(out.into())))
+}
+
+/// The roots of the cubic `a x^3 + b x^2 + c x + d` with symbolic
+/// coefficients, in wolframscript's Cardano form: with
+/// `Δ0 = 3 a c - b^2`, `Δ1 = -2 b^3 + 9 a b c - 27 a^2 d` and
+/// `C = (Δ1 + Sqrt[4 Δ0^3 + Δ1^2])^(1/3)`,
+///
+/// ```text
+/// x1 = -b/(3 a) - 2^(1/3) Δ0/(3 a C) + C/(3 2^(1/3) a)
+/// x2 = -b/(3 a) + (1 + I Sqrt[3]) Δ0/(3 2^(2/3) a C) - (1 - I Sqrt[3]) C/(6 2^(1/3) a)
+/// ```
+///
+/// and `x3` the conjugate of `x2`'s units. A discriminant whose expansion
+/// has an integer content `k > 1` is written `Sqrt[k] Sqrt[rest]`
+/// (`Sqrt[3] Sqrt[4 p^3 + 27 q^2]` for `x^3 + p x + q`), and an integer
+/// factor `g` common to `Δ1` and that radical comes out of the cube root
+/// as `g^(1/3)`.
+fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let parse = |s: &str| crate::syntax::string_to_expr(s).ok();
+  let fill = |template: &str, values: &[(&str, &Expr)]| -> Option<Expr> {
+    let mut e = parse(template)?;
+    for (name, value) in values {
+      e = crate::syntax::substitute_variable(&e, name, value);
+    }
+    eval(e)
+  };
+  let [d, c, b, a] = coeffs else {
+    return None;
+  };
+  let abcd = [
+    ("Solve$a", a),
+    ("Solve$b", b),
+    ("Solve$c", c),
+    ("Solve$d", d),
+  ];
+  let d0 = fill("Expand[3 Solve$a Solve$c - Solve$b^2]", &abcd)?;
+  let d1 = fill(
+    "Expand[-2 Solve$b^3 + 9 Solve$a Solve$b Solve$c - 27 Solve$a^2 Solve$d]",
+    &abcd,
+  )?;
+  // The integer content of an expanded polynomial and what is left.
+  let integer_content = |e: &Expr| -> Option<(i128, Expr)> {
+    let expanded = eval(call("Expand", vec![e.clone()]))?;
+    let list = crate::functions::polynomial_ast::factor::factor_terms_list_ast(
+      std::slice::from_ref(&expanded),
+    )
+    .ok()?;
+    let Expr::List(ref parts) = list else {
+      return None;
+    };
+    match parts.as_slice() {
+      [Expr::Integer(k), rest @ ..] if !rest.is_empty() => {
+        let rest = if rest.len() == 1 {
+          rest[0].clone()
+        } else {
+          eval(call("Times", rest.to_vec()))?
+        };
+        Some((*k, rest))
+      }
+      _ => None,
+    }
+  };
+  // A shifted perfect cube plus a constant (Δ0 == 0): the radical is Δ1
+  // itself and the Δ0 terms vanish, x = -b/(3 a) + ω^k (2 Δ1)^(1/3)/(3 a).
+  if matches!(d0, Expr::Integer(0)) {
+    // The integer content leaves the cube root: (54 (1 - c))^(1/3) is
+    // 3 2^(1/3) (1 - c)^(1/3).
+    let twice = fill("2 Solve$q", &[("Solve$q", &d1)])?;
+    let cube = match integer_content(&twice) {
+      Some((k, rest)) if k.abs() > 1 => fill(
+        "Solve$k^(1/3) Solve$r^(1/3)",
+        &[
+          ("Solve$k", &Expr::Integer(k.abs())),
+          (
+            "Solve$r",
+            &eval(call("Times", vec![Expr::Integer(k.signum()), rest]))?,
+          ),
+        ],
+      )?,
+      _ => fill("Solve$x^(1/3)", &[("Solve$x", &twice)])?,
+    };
+    let values = [("Solve$a", a), ("Solve$b", b), ("Solve$C", &cube)];
+    return [
+      "-Solve$b/(3 Solve$a) + Solve$C/(3 2^(1/3) Solve$a)",
+      "-Solve$b/(3 Solve$a) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+      "-Solve$b/(3 Solve$a) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    ]
+    .iter()
+    .map(|t| fill(t, &values))
+    .collect();
+  }
+  let disc = fill(
+    "4 Solve$p^3 + Solve$q^2",
+    &[("Solve$p", &d0), ("Solve$q", &d1)],
+  )?;
+
+  // wolframscript expands the discriminant unless that makes it clearly
+  // bigger (more than two leaves: `4 (-b^2 + 3 a c)^3 + (…)^2` stays as
+  // it is, `32 + (7 - 27 c)^2` becomes `27 (3 - 14 c + 27 c^2)`).
+  let leaves = |e: &Expr| -> Option<i128> {
+    match eval(call("LeafCount", vec![e.clone()]))? {
+      Expr::Integer(n) => Some(n),
+      _ => None,
+    }
+  };
+  let expanded_disc = eval(call("Expand", vec![disc.clone()]))?;
+  let expand = leaves(&expanded_disc)? - leaves(&disc)? <= 2;
+  let content = if expand { integer_content(&disc) } else { None };
+  let (radical, radical_scale) = match content {
+    Some((k, rest)) if k.abs() > 1 => {
+      // Sqrt[k] = m Sqrt[s] with s squarefree.
+      let k_abs = k.unsigned_abs();
+      let mut m: u128 = 1;
+      let mut s = k_abs;
+      let mut f: u128 = 2;
+      while f * f <= s {
+        while s % (f * f) == 0 {
+          s /= f * f;
+          m *= f;
+        }
+        f += 1;
+      }
+      let rest = if k < 0 {
+        eval(call("Times", vec![Expr::Integer(-1), rest]))?
+      } else {
+        rest
+      };
+      (
+        eval(call(
+          "Times",
+          vec![
+            call("Sqrt", vec![Expr::Integer(s as i128)]),
+            call("Sqrt", vec![rest]),
+          ],
+        ))?,
+        m as i128,
+      )
+    }
+    _ if expand => (call("Sqrt", vec![expanded_disc]), 1),
+    _ => (call("Sqrt", vec![disc.clone()]), 1),
+  };
+  // A factor common to Δ1 and the radical's integer scale.
+  let g = match integer_content(&d1) {
+    Some((k, _)) => gcd_i128(k.abs(), radical_scale),
+    None => match &d1 {
+      Expr::Integer(n) => gcd_i128(n.abs(), radical_scale),
+      _ => 1,
+    },
+  };
+  let inner = fill(
+    "Expand[Solve$q / Solve$g] + (Solve$m / Solve$g) Solve$r",
+    &[
+      ("Solve$q", &d1),
+      ("Solve$g", &Expr::Integer(g)),
+      ("Solve$m", &Expr::Integer(radical_scale)),
+      ("Solve$r", &radical),
+    ],
+  )?;
+  let cube = fill(
+    "Solve$g^(1/3) Solve$x^(1/3)",
+    &[("Solve$g", &Expr::Integer(g)), ("Solve$x", &inner)],
+  )?;
+  let values = [
+    ("Solve$a", a),
+    ("Solve$b", b),
+    ("Solve$p", &d0),
+    ("Solve$C", &cube),
+  ];
+  [
+    "-Solve$b/(3 Solve$a) - 2^(1/3) Solve$p/(3 Solve$a Solve$C) + Solve$C/(3 2^(1/3) Solve$a)",
+    "-Solve$b/(3 Solve$a) + (1 + I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    "-Solve$b/(3 Solve$a) + (1 - I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+  ]
+  .iter()
+  .map(|t| fill(t, &values))
+  .collect()
 }
 
 #[cfg(test)]

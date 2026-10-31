@@ -2184,6 +2184,46 @@ fn parse_vector_points3d(expr: &Expr) -> Option<Vec<(f64, f64, f64)>> {
   Some(pts)
 }
 
+/// `VectorPoints -> n`: `n` sample points across every axis; returned as the
+/// number of grid intervals (`n - 1`).
+fn parse_vector_points_count3d(expr: &Expr) -> Option<usize> {
+  let n = try_eval_to_f64(&evaluate_expr_to_expr(expr).ok()?)?;
+  (n >= 2.0).then(|| n.round() as usize - 1)
+}
+
+/// A `ColorFunction` option: a named gradient or an arbitrary function.
+enum ColorFn {
+  Named(String),
+  Expr(Expr),
+}
+
+impl ColorFn {
+  /// The color for a magnitude `t` scaled to `[0, 1]`.
+  fn color(&self, t: f64) -> (u8, u8, u8) {
+    match self {
+      ColorFn::Named(name) => {
+        crate::functions::field_plot::apply_named_color_function(name, t)
+      }
+      ColorFn::Expr(f) => {
+        let call = Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![Expr::Real(t)],
+        };
+        evaluate_expr_to_expr(&call)
+          .ok()
+          .and_then(|r| parse_color(&r))
+          .map_or((0, 0, 0), |c| {
+            (
+              (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            )
+          })
+      }
+    }
+  }
+}
+
 /// Evaluate a 3-component vector field {vx, vy, vz} at (x, y, z).
 fn evaluate_vector3d(
   body: &Expr,
@@ -2241,6 +2281,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vector_markers = "Arrow"; // "Arrow" or "Tube"
   let mut vector_points: Option<Vec<(f64, f64, f64)>> = None;
   let mut vector_scale: Option<f64> = None;
+  let mut vector_grid: Option<usize> = None;
+  let mut color_function: Option<ColorFn> = None;
   let mut vector_styles: Vec<Option<VecStyleSpec>> = vec![None; bodies.len()];
 
   for opt in &args[4..] {
@@ -2282,6 +2324,22 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "VectorPoints" => {
           if let Some(pts) = parse_vector_points3d(replacement) {
             vector_points = Some(pts);
+          } else if let Some(n) = parse_vector_points_count3d(replacement) {
+            vector_grid = Some(n);
+          }
+        }
+        // `ColorFunction -> f`: colors a single field's arrows by their
+        // magnitude, scaled to 0–1 (a named gradient or a pure function).
+        "ColorFunction" => {
+          if let Some(s) =
+            crate::functions::field_plot::color_function_scheme_name(
+              replacement,
+            )
+          {
+            color_function = Some(ColorFn::Named(s));
+          } else if !matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Automatic" || v == "None")
+          {
+            color_function = Some(ColorFn::Expr((**replacement).clone()));
           }
         }
         // `VectorScale -> s` (or `{smax, …}`, of which only the leading
@@ -2314,7 +2372,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let grid_n = VECTOR3D_GRID;
+  let grid_n = vector_grid.unwrap_or(VECTOR3D_GRID);
   let x_step = (x_max - x_min) / grid_n as f64;
   let y_step = (y_max - y_min) / grid_n as f64;
   let z_step = (z_max - z_min) / grid_n as f64;
@@ -2482,6 +2540,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let color = style.and_then(|st| st.color).unwrap_or_else(|| {
       if num_fields > 1 {
         PLOT_COLORS[s.field_idx % PLOT_COLORS.len()]
+      } else if let Some(cf) = &color_function {
+        cf.color((s.mag / max_mag).clamp(0.0, 1.0))
       } else {
         let t = (s.mag / max_mag).clamp(0.0, 1.0);
         (
@@ -4708,7 +4768,7 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 }
 
 /// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
-/// (`Polygon`/`Line`/`Point`/`Arrow`/`Tube` arguments) with the coordinates they
+/// (`Polygon`/`Line`/`Point`/`Arrow`/`Tube`/`Sphere` arguments) with the coordinates they
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one colour per point) each
@@ -4813,10 +4873,11 @@ fn resolve_complex_indices(
       }
     }
     Expr::FunctionCall { name, args }
-      if matches!(
+      if (matches!(
         name.as_str(),
         "Polygon" | "Line" | "Point" | "Arrow" | "Tube"
-      ) && !args.is_empty() =>
+      ) || name == "Sphere")
+        && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
       new_args[0] = substitute(&args[0], points);
@@ -12562,6 +12623,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `TextureCoordinateFunction -> f`: maps a facet to the point of a
   // `Texture` image painted there.
   let mut texture_fn: Option<Expr> = None;
+  // `ColorFunction -> f`: colours each facet by
+  // `f[x, y, z, theta, phi, r]`. With `ColorFunctionScaling` (the default)
+  // x, y, z and the angles arrive rescaled to 0..1 over their ranges.
+  let mut color_fn: Option<Expr> = None;
+  let mut color_scaling = true;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -12575,6 +12641,15 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "TextureCoordinateFunction" => {
           texture_fn = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "ColorFunction" => {
+          color_fn = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "ColorFunctionScaling" => {
+          color_scaling = !matches!(
+            replacement.as_ref(),
+            Expr::Identifier(n) if n == "False"
+          );
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -12922,6 +12997,70 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   };
+  // `ColorFunction`: the colour of every facet, from `f` at the facet's
+  // centroid and its centre in parameter space.
+  let facet_colors: Vec<Vec<Option<(u8, u8, u8)>>> = surface_tris
+    .iter()
+    .enumerate()
+    .map(|(surface_idx, tris)| {
+      let Some(cf) = &color_fn else {
+        return vec![None; tris.len()];
+      };
+      let unit = |v: f64, lo: f64, range: f64| {
+        if range.abs() < 1e-15 {
+          0.0
+        } else {
+          (v - lo) / range
+        }
+      };
+      tris
+        .iter()
+        .enumerate()
+        .map(|(tri_idx, tri)| {
+          let (theta, phi) = surface_tri_params[surface_idx][tri_idx];
+          let c = [
+            (tri[0].x + tri[1].x + tri[2].x) / 3.0,
+            (tri[0].y + tri[1].y + tri[2].y) / 3.0,
+            (tri[0].z + tri[1].z + tri[2].z) / 3.0,
+          ];
+          let r = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+          let call_args = if color_scaling {
+            [
+              unit(c[0], x_min, x_range_v),
+              unit(c[1], y_min, y_range_v),
+              unit(c[2], z_min, z_range_v),
+              unit(theta, theta_min, theta_range),
+              unit(phi, phi_min, phi_range),
+              r,
+            ]
+          } else {
+            [c[0], c[1], c[2], theta, phi, r]
+          };
+          let mut value = evaluate_expr_to_expr(&Expr::CurriedCall {
+            func: Box::new(cf.clone()),
+            args: call_args.iter().map(|a| Expr::Real(*a)).collect(),
+          })
+          .ok()?;
+          if let Expr::List(channels) = &value
+            && channels.len() == 3
+            && channels.iter().all(|ch| try_eval_to_f64(ch).is_some())
+          {
+            value = Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: channels.clone(),
+            };
+          }
+          crate::functions::graphics::parse_color(&value).map(|col| {
+            (
+              (col.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (col.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (col.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            )
+          })
+        })
+        .collect()
+    })
+    .collect();
   // The `Texture[…]` of the `PlotStyle`, carried into the symbolic structure.
   let texture_expr: Option<Expr> = plot_style_expr.and_then(find_texture_expr);
 
@@ -13000,24 +13139,61 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         })
         .collect();
-      let polygon_expr = call1(
-        "Polygon",
-        Expr::List(
-          tri_indices
-            .iter()
-            .map(|tri| {
-              Expr::List(
-                tri
-                  .iter()
-                  .map(|&idx| Expr::Integer(idx as i128 + 1))
-                  .collect::<Vec<_>>()
-                  .into(),
-              )
-            })
-            .collect::<Vec<_>>()
-            .into(),
-        ),
-      );
+      let polygon_of = |tris: &[[usize; 3]]| {
+        call1(
+          "Polygon",
+          Expr::List(
+            tris
+              .iter()
+              .map(|tri| {
+                Expr::List(
+                  tri
+                    .iter()
+                    .map(|&idx| Expr::Integer(idx as i128 + 1))
+                    .collect::<Vec<_>>()
+                    .into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+        )
+      };
+      // A `ColorFunction` colours facets individually: consecutive facets
+      // of one colour share a coloured `Polygon`.
+      let colors = &facet_colors[surface_idx];
+      let polygon_expr = if colors.iter().any(Option::is_some) {
+        let mut runs: Vec<Expr> = Vec::new();
+        let mut start = 0;
+        while start < tri_indices.len() {
+          let mut end = start + 1;
+          while end < tri_indices.len() && colors[end] == colors[start] {
+            end += 1;
+          }
+          let polygon = polygon_of(&tri_indices[start..end]);
+          runs.push(match colors[start] {
+            Some((r, g, b)) => Expr::List(
+              vec![
+                call(
+                  "RGBColor",
+                  vec![
+                    Expr::Real(r as f64 / 255.0),
+                    Expr::Real(g as f64 / 255.0),
+                    Expr::Real(b as f64 / 255.0),
+                  ],
+                ),
+                polygon,
+              ]
+              .into(),
+            ),
+            None => polygon,
+          });
+          start = end;
+        }
+        Expr::List(runs.into())
+      } else {
+        polygon_of(&tri_indices)
+      };
       // A `PlotStyle` colour wraps the whole surface's polygons; with no
       // style given this is the bare polygon list, unchanged from before
       // multi-surface support existed.
@@ -13169,10 +13345,18 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (u, v) = texture_uv(centroid, theta, phi)?;
         texture_color(tex, u, v)
       });
-      let (color, opacity) = match (style, textured) {
+      let base_color = facet_colors[surface_idx][tri_idx].or(textured);
+      let (color, opacity) = match (style, base_color) {
         (Some(s), Some(base)) => {
           let mut painted = s.clone();
           painted.color = Some(base);
+          shade_facet(default_color, Some(&painted), normal, view_dir)
+        }
+        (None, Some(base)) => {
+          let painted = StyleState3D {
+            color: Some(base),
+            ..StyleState3D::default()
+          };
           shade_facet(default_color, Some(&painted), normal, view_dir)
         }
         _ => shade_facet(default_color, style, normal, view_dir),

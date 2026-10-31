@@ -6396,6 +6396,22 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
+  // A list of conditions is their conjunction, so it reduces exactly like
+  // the `&&` form instead of staying an unevaluated `Reduce`.
+  #[test]
+  fn reduce_list_of_conditions_is_a_conjunction() {
+    assert_eq!(
+      interpret("Reduce[{b >= 1/2, c >= 1/2, b + c <= 2}, {b, c}, Reals]")
+        .unwrap(),
+      interpret("Reduce[b >= 1/2 && c >= 1/2 && b + c <= 2, {b, c}, Reals]")
+        .unwrap()
+    );
+    assert_eq!(
+      interpret("Reduce[{b + c <= 2, b >= 0}, {b, c}, Reals]").unwrap(),
+      interpret("Reduce[b + c <= 2 && b >= 0, {b, c}, Reals]").unwrap()
+    );
+  }
+
   #[test]
   fn solve_negated_reciprocal_root() {
     assert_eq!(
@@ -23332,6 +23348,64 @@ mod reduce_vanishing_coefficient_branch {
   }
 }
 
+// A cubic with symbolic coefficients is solved by Cardano's formula in
+// wolframscript's form (Δ0 = 3 a c - b^2, Δ1 = -2 b^3 + 9 a b c - 27 a^2 d,
+// C = (Δ1 + Sqrt[4 Δ0^3 + Δ1^2])^(1/3)).
+mod solve_symbolic_cubic {
+  use super::*;
+
+  #[test]
+  fn cardano_forms() {
+    assert_eq!(
+      interpret("Solve[z^3 + p z + q == 0, z]").unwrap(),
+      "{{z -> -(((2/3)^(1/3)*p)/(-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3)) + (-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3)/(2^(1/3)*3^(2/3))}, {z -> ((1 + I*Sqrt[3])*p)/(2^(2/3)*3^(1/3)*(-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3)) - ((1 - I*Sqrt[3])*(-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3))/(2*2^(1/3)*3^(2/3))}, {z -> ((1 - I*Sqrt[3])*p)/(2^(2/3)*3^(1/3)*(-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3)) - ((1 + I*Sqrt[3])*(-9*q + Sqrt[3]*Sqrt[4*p^3 + 27*q^2])^(1/3))/(2*2^(1/3)*3^(2/3))}}"
+    );
+    assert_eq!(
+      interpret("Solve[z^3 + c z + 1 == 0, z]").unwrap(),
+      "{{z -> -(((2/3)^(1/3)*c)/(-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3)) + (-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3)/(2^(1/3)*3^(2/3))}, {z -> ((1 + I*Sqrt[3])*c)/(2^(2/3)*3^(1/3)*(-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3)) - ((1 - I*Sqrt[3])*(-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3))/(2*2^(1/3)*3^(2/3))}, {z -> ((1 - I*Sqrt[3])*c)/(2^(2/3)*3^(1/3)*(-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3)) - ((1 + I*Sqrt[3])*(-9 + Sqrt[3]*Sqrt[27 + 4*c^3])^(1/3))/(2*2^(1/3)*3^(2/3))}}"
+    );
+    assert_eq!(
+      interpret("Solve[z^3 + a z + b + 1 == 0, z]").unwrap(),
+      "{{z -> -(((2/3)^(1/3)*a)/(-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3)) + (-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3)/(2^(1/3)*3^(2/3))}, {z -> ((1 + I*Sqrt[3])*a)/(2^(2/3)*3^(1/3)*(-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3)) - ((1 - I*Sqrt[3])*(-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3))/(2*2^(1/3)*3^(2/3))}, {z -> ((1 - I*Sqrt[3])*a)/(2^(2/3)*3^(1/3)*(-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3)) - ((1 + I*Sqrt[3])*(-9 - 9*b + Sqrt[3]*Sqrt[27 + 4*a^3 + 54*b + 27*b^2])^(1/3))/(2*2^(1/3)*3^(2/3))}}"
+    );
+    assert_eq!(
+      interpret("Solve[z^3 + 3 z^2 + 3 z + c == 0, z]").unwrap(),
+      "{{z -> -1 + (1 - c)^(1/3)}, {z -> -1 - ((1 - I*Sqrt[3])*(1 - c)^(1/3))/2}, {z -> -1 - ((1 + I*Sqrt[3])*(1 - c)^(1/3))/2}}"
+    );
+  }
+
+  // Every root of a battery of parametric cubics checks out numerically.
+  #[test]
+  fn roots_satisfy_the_cubic() {
+    assert_eq!(
+      interpret(
+        "polys = {a z^3 + b z^2 + c z + d, z^3 - z^2 + c, 2 z^3 + c z^2 + 1, \
+         z^3 - z^2 + a z - b/2, z^3 + a z^2 + b, z^3 + z^2 + z + c, \
+         a z^3 + z + 1, z^3 + a z^2 + z + 1, z^3 + 3 z^2 + a, \
+         z^3 + (a + 1) z + 1}; \
+         vals = {a -> 1.3, b -> -0.7, c -> 2.1, d -> 0.4}; \
+         Union[Table[Max[Abs[(poly /. vals) /. (Solve[poly == 0, z] /. vals)]] \
+         < 10^-9, {poly, polys}]]"
+      )
+      .unwrap(),
+      "{True}"
+    );
+  }
+
+  // Inexact coefficients: the exact system is solved and numericized.
+  #[test]
+  fn inexact_coefficients_are_rationalized() {
+    let r = interpret_with_stdout(
+      "sol = Solve[z^3 - z^2 + a z - 0.5 b == 0, z]; \
+       {Length[sol], Max[Abs[(z^3 - z^2 + a z - 0.5 b /. {a -> 0.3, b -> 0.2}) \
+         /. (sol /. {a -> 0.3, b -> 0.2})]] < 10^-9}",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{3, True}");
+    assert!(r.warnings.iter().any(|w| w.starts_with("Solve::ratnz")));
+  }
+}
+
 // A variable occurring once, inside a power of a linear expression, is
 // isolated instead of expanding a polynomial with symbolic coefficients
 // (which left these unevaluated).
@@ -24153,6 +24227,85 @@ mod linear_programming_none_bounds {
     assert_eq!(
       interpret("LinearProgramming[{1, -1}, {{1, 1}}, {1}, None]").unwrap(),
       "{Indeterminate, Indeterminate}"
+    );
+  }
+}
+
+mod reduce_parameters_in_equations {
+  use super::*;
+
+  #[test]
+  fn a_parameter_is_no_unknown_of_the_system() {
+    // `a` sits in the equations but is not solved for: it gave `{}`.
+    assert_eq!(
+      interpret(
+        "Sort[{ex, ey, ez} /. Solve[{ey == ez a, ex + ez == 0, \
+         ex^2 + ey^2 + ez^2 == 1}, {ex, ey, ez}] /. a -> 2]"
+      )
+      .unwrap(),
+      "{{-(1/Sqrt[6]), Sqrt[2/3], 1/Sqrt[6]}, {1/Sqrt[6], -Sqrt[2/3], -(1/Sqrt[6])}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Round[10^6 N[{ex, ey, ez} /. Solve[ey nz - ez ny == 0 && \
+         ex^2 + ey^2 + ez^2 == r^2 && ex nx + ey ny + ez nz == 0, \
+         {ex, ey, ez}] /. {nx -> 1, ny -> 2, nz -> 3, r -> 1}]]]"
+      )
+      .unwrap(),
+      "{{-963624, 148250, 222375}, {963624, -148250, -222375}}"
+    );
+  }
+
+  #[test]
+  fn a_parameter_under_an_inequality_is_eliminated_after_the_unknowns() {
+    // It was solved for `a` in terms of `ex`.
+    assert_eq!(
+      interpret(
+        "FreeQ[Reduce[ex^2 + 2 a^2 ex^2 == 1 && a != 0, {ex}], a == _]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod nroots_bare_polynomial_and_repeated_roots {
+  use super::*;
+
+  #[test]
+  fn a_bare_polynomial_means_poly_equals_zero() {
+    // It stayed unevaluated, so `Part[NRoots[…], All, 2]` failed.
+    assert_eq!(
+      interpret("List @@ Part[NRoots[z^3 - 2 z + 1, z], All, 2]").unwrap(),
+      "{-1.618033988749895, 0.6180339887498949, 1.}"
+    );
+  }
+
+  #[test]
+  fn repeated_roots_come_out_exactly_repeated() {
+    // Durand-Kerner stalled near the triple root: 1.0000008 - 1.6*^-6 I.
+    assert_eq!(
+      interpret("NRoots[(z - 1)^3 (z^2 + 1) == 0, z]").unwrap(),
+      "z == 0. - 1.*I || z == 0. + 1.*I || z == 1. || z == 1. || z == 1."
+    );
+  }
+}
+
+mod solve_substitution_of_symbols {
+  use super::*;
+
+  #[test]
+  fn symbols_substitute_by_name_in_large_expressions() {
+    // Substituting a symbol spelled every node of the expression out as a
+    // string; a chain of 40 equations solves quickly and correctly.
+    assert_eq!(
+      interpret(
+        "vars = Table[x[i], {i, 40}]; \
+         eqs = Join[{x[1] == 1}, Table[x[i] == x[i - 1] + i, {i, 2, 40}]]; \
+         x[40] /. First[Solve[eqs, vars]]"
+      )
+      .unwrap(),
+      "820"
     );
   }
 }

@@ -5672,11 +5672,15 @@ fn instantiate_stored_manipulate(
   // duplicate rule (its Module locals shadow differently in FullForm).
   // Only fall back to the stored copy when the live source truly has none
   // of its own.
-  let has_own_initialization = woxi::parse_to_expr(&statements[0])
-    .ok()
-    .is_some_and(|parsed| {
-      woxi::functions::graphics::manipulate_has_own_initialization(&parsed)
-    });
+  //
+  // `SaveDefinitions -> True` is the exception: the stored copy then also
+  // holds the saved definitions of the helpers the body calls, which the
+  // live `Initialization` (`Initialization :> {patp := pattern1}`) knows
+  // nothing about. Those — and only those — are run from the stored copy.
+  let parsed_source = woxi::parse_to_expr(&statements[0]).ok();
+  let has_own_initialization = parsed_source.as_ref().is_some_and(|parsed| {
+    woxi::functions::graphics::manipulate_has_own_initialization(parsed)
+  });
   // The names the dump's saved initialization kept in the DynamicModule's
   // private `$CellContext`` lived there, isolated from anything of the same
   // name elsewhere, including a built-in a later Wolfram Language version
@@ -5693,12 +5697,45 @@ fn instantiate_stored_manipulate(
     manipulate::trace_evaluation(&unprotect);
     let _ = woxi::interpret(&unprotect);
   }
-  if !has_own_initialization
-    && let Some(init) =
-      woxi::notebook::extract_saved_initialization(stored_output)
+  if let Some(init) =
+    woxi::notebook::extract_saved_initialization(stored_output)
   {
-    manipulate::trace_evaluation(&init);
-    let _ = woxi::interpret(&init);
+    if !has_own_initialization {
+      manipulate::trace_evaluation(&init);
+      let _ = woxi::interpret(&init);
+    } else if let Some(parsed) = parsed_source.as_ref()
+      && woxi::functions::graphics::manipulate_saves_definitions(parsed)
+      && let Ok(stored) = woxi::parse_to_expr(&init)
+    {
+      // A symbol the notebook's own cells already define keeps those
+      // definitions: the stored copy can hold stale ones from the author's
+      // session that would be added beside them.
+      let defined = |sym: &str| {
+        woxi::interpret(&format!(
+          "Length[DownValues[{sym}]] + Length[OwnValues[{sym}]] +            Length[SubValues[{sym}]] + Length[UpValues[{sym}]] > 0"
+        ))
+        .is_ok_and(|r| r == "True")
+      };
+      let saved =
+        woxi::functions::graphics::saved_definitions_beyond_initialization(
+          parsed, &stored,
+        );
+      // Decided up front: a symbol's first saved rule must not make its
+      // second one look like an existing definition.
+      let mut already: Vec<String> = Vec::new();
+      for (sym, _) in &saved {
+        if !already.contains(sym) && defined(sym) {
+          already.push(sym.clone());
+        }
+      }
+      for (sym, def) in saved {
+        if already.contains(&sym) {
+          continue;
+        }
+        manipulate::trace_evaluation(&woxi::syntax::expr_to_string(&def));
+        let _ = woxi::evaluator::evaluate_expr_to_expr(&def);
+      }
+    }
   }
   manipulate::trace_evaluation(&statements[0]);
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
@@ -8285,6 +8322,29 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
       other => panic!("expected a continuous control, got {other:?}"),
     }
+  }
+
+  /// With its own `Initialization` a `SaveDefinitions -> True` Manipulate
+  /// still needs the saved definitions that option does not make: here
+  /// `swapped` lives only in the dump (HexLifeHexagonalCellularAutomata).
+  /// A symbol the live option defines, or one already defined, is not
+  /// taken from the dump.
+  #[test]
+  fn instantiate_stored_manipulate_runs_saved_definitions_beside_own_init() {
+    woxi::clear_state();
+    woxi::interpret("known[x_] := 100 x").unwrap();
+    let code = "Manipulate[{swapped[n], start, known[1]}, {{n, 2}, 1, 5, 1}, \
+      Initialization :> (start = 7), SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`n$$ = 2}, \
+      DynamicBox[…],\n\
+      Initialization:>({$CellContext`swapped[Pattern[$CellContext`x, \
+      Blank[]]] := 10 $CellContext`x, $CellContext`start = 1, \
+      $CellContext`known[Pattern[$CellContext`x, Blank[]]] := -1}; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("{20, 7, 100}"));
   }
 
   /// A `SaveDefinitions -> True` dump writes `n_?OddQ` / `n_?EvenQ` in

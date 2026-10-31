@@ -1197,6 +1197,18 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A `Dynamic[x]` inside a plot `Epilog` `Text` label shows the current
+    /// value of `x`, not the held `Dynamic[x]` call.
+    #[test]
+    fn a_plot_epilog_text_shows_the_value_of_a_dynamic() {
+      let svg = export_svg(
+        "m = 7; Plot[x, {x, 0, 1}, Epilog -> {\
+         Text[Row[{\"m = \", Dynamic[m]}], {0.5, 0.5}]}]",
+      );
+      assert!(svg.contains(">m = 7</text>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
     /// Inline `\!\(\*SubscriptBox[...]\)` box notation in a plot's text
     /// (an `Epilog` `Text`, styled or not, or a `PlotLabel`) typesets to
     /// real sub/superscripts instead of dropping the script.
@@ -1234,6 +1246,19 @@ mod graphics {
          Dynamic[zq + 1]}], {0, 0}]]",
       );
       assert!(svg.contains(">zzn: 41, 42</text>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
+    /// A `Dynamic[x]` nested inside a primitive's argument expression
+    /// (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`) reads as the value of `x`, so
+    /// the line is drawn instead of being dropped.
+    #[test]
+    fn a_dynamic_inside_a_primitive_argument_expression_is_drawn() {
+      let svg = export_svg(
+        "zu = {1, 0}; zv = {0, 1}; Graphics[{Line[{-5 Dynamic[zu], \
+         5 Dynamic[zu] + 2 Dynamic[zv]}]}, PlotRange -> 6]",
+      );
+      assert!(svg.contains("<line") || svg.contains("<polyline"), "{svg}");
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
 
@@ -2898,6 +2923,22 @@ mod graphics {
       );
       assert_eq!(inset.matches("<path").count(), 3, "{inset}");
       assert!(!inset.contains("-Graphics-"), "{inset}");
+    }
+
+    #[test]
+    fn pie_chart_of_association_of_quantities_draws_labelled_slices() {
+      // Regression: an Association (and `Quantity` values) was rejected with
+      // `PieChart::ldata`. Slices take the values; `ChartLabels -> Automatic`
+      // uses the keys.
+      let svg = export_svg(
+        "PieChart[<|\"Fat\" -> Quantity[2., \"Grams\"], \"Carbs\" -> Quantity[3., \"Grams\"], \"Protein\" -> Quantity[5., \"Grams\"]|>, ChartLabels -> Automatic]",
+      );
+      assert_eq!(svg.matches("<path").count(), 3, "{svg}");
+      for key in ["Fat", "Carbs", "Protein"] {
+        assert!(svg.contains(&format!(">{key}<")), "{key}: {svg}");
+      }
+      let plain = export_svg("PieChart[<|\"a\" -> 3, \"b\" -> 5|>]");
+      assert_eq!(plain.matches("<path").count(), 2, "{plain}");
     }
 
     #[test]
@@ -5657,6 +5698,26 @@ mod plot3d {
       }
 
       #[test]
+      fn color_function_colors_each_facet_from_six_arguments() {
+        // `ColorFunction` receives `{x, y, z, theta, phi, r}` per facet; the
+        // colours reach both the symbolic form and the rendered SVG.
+        let code = "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 9, ColorFunctionScaling -> False, ColorFunction -> Function[{x, y, z, t, p, r}, If[z > 0, RGBColor[1, 0, 0], RGBColor[0, 0, 1]]]]";
+        assert_eq!(
+          interpret(&format!(
+            "Union[Cases[{code}, RGBColor[_Real, _Real, _Real], Infinity]]"
+          ))
+          .unwrap(),
+          "{RGBColor[0., 0., 1.], RGBColor[1., 0., 0.]}"
+        );
+        let svg = export_svg(code);
+
+        let plain = export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 9]",
+        );
+        assert_ne!(svg, plain);
+      }
+
+      #[test]
       fn indexed_definition_radius_matches_inline_expression() {
         // The radial function is held, so a definition such as `rad[1]` must
         // be resolved (once) to the same surface as the inline expression.
@@ -6961,6 +7022,25 @@ mod plot3d {
       )
       .unwrap();
       assert!(indexed.contains("<line") || indexed.contains("<path"));
+      assert_eq!(indexed, explicit);
+    }
+
+    // A `Sphere` inside a GraphicsComplex takes its centre as a vertex
+    // index (the radius may be a one-element list), so it must draw exactly
+    // like the same sphere on explicit coordinates instead of collapsing
+    // onto the origin.
+    #[test]
+    fn graphics3d_complex_sphere_resolves_vertex_indices() {
+      let indexed = interpret(
+        "ExportString[Graphics3D[GraphicsComplex[{{0,0,0},{1,2,3}}, \
+         {Sphere[2, 0.3], Sphere[{1, 2}, 0.1]}]], \"SVG\"]",
+      )
+      .unwrap();
+      let explicit = interpret(
+        "ExportString[Graphics3D[{Sphere[{1,2,3}, 0.3], \
+         Sphere[{{0,0,0},{1,2,3}}, 0.1]}], \"SVG\"]",
+      )
+      .unwrap();
       assert_eq!(indexed, explicit);
     }
 
@@ -10187,6 +10267,23 @@ mod plot3d {
         .parse()
         .unwrap();
       assert!(y >= 0.0, "title starts above the image: {line}");
+    }
+
+    /// Axes under `ImageSize -> {w, h}` keep the shape of the plot range, like
+    /// a frame does, instead of widening the range until it fills the size:
+    /// no tick is labelled beyond the requested range.
+    #[test]
+    fn axes_under_a_fixed_image_size_do_not_extend_the_plot_range() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {20, 3}}]}, Axes -> True, \
+         PlotRange -> {{-2, 10}, {0, 10}}, ImageSize -> {500, 300}]",
+      );
+      let labels: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.contains("text-anchor=\"middle\""))
+        .filter_map(|l| l.split('>').nth(1)?.split('<').next())
+        .collect();
+      assert_eq!(labels, ["-2", "2", "4", "6", "8", "10"]);
     }
 
     /// Every label of a tick set carries the decimals its spacing needs, so
@@ -17650,6 +17747,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot3d_vector_points_count() {
+      // `VectorPoints -> n` samples n points across each axis: 4^3 arrows.
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 4]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 64);
+    }
+
+    #[test]
+    fn vector_plot3d_color_function() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 3, ColorFunction -> Function[Blue]]",
+      );
+      assert!(svg.contains("rgb(0,0,255)"));
+      assert!(!svg.contains("rgb(250,50,100)"));
+    }
+
+    #[test]
     fn vector_plot3d_curl() {
       insta::assert_snapshot!(export_svg(
         "VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
@@ -21350,6 +21465,18 @@ mod matrix_form {
       !svg.contains('\t'),
       "cells must not be tab-separated: {svg}"
     );
+  }
+
+  #[test]
+  fn svg_export_of_argumentless_head_does_not_panic() {
+    clear_state();
+    for code in [
+      "ExportString[f[], \"SVG\"]",
+      "ExportString[Style[], \"SVG\"]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().result;
+      assert!(svg.contains("<svg"), "{code}: {svg}");
+    }
   }
 
   #[test]
@@ -43654,6 +43781,74 @@ mod more_named_color_schemes {
       "{{Atoms, Crayola, GeologicAges, HTML, Legacy, WebSafe}, \
        RGBColor[0.9372549019607843, 0.8705882352941177, 0.803921568627451], \
        RGBColor[0.4, 0.2, 0.], RGBColor[0.596078, 0.345098, 0.658824], {134, 216, 70}}"
+    );
+  }
+}
+
+// Insert and Delete edit a rendered graphic through its symbolic form, as
+// Part and Append do.
+mod edit_rendered_graphics {
+  use super::*;
+
+  #[test]
+  fn insert_and_delete() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = Show[Graphics3D[Sphere[]], Graphics3D[Cuboid[]], Boxed -> False]; \
+         {Head[Insert[s, Red, {1, 1}]], Insert[s, Red, {1, 1}][[1]], Delete[s, {1, 1}][[1]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {RGBColor[1, 0, 0], Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}, {Cuboid[{0, 0, 0}]}}"
+    );
+  }
+}
+
+mod bspline_function_spline_knots {
+  use super::*;
+
+  #[test]
+  fn explicit_knots_fix_the_degree_and_domain() {
+    // SplineKnots made BSplineFunction stay unevaluated.
+    assert_eq!(
+      interpret(
+        "{BSplineFunction[{{{0,0,0},{0,1,0},{0,2,0}},{{1,0,0},{1,1,1},{1,2,0}},\
+         {{2,0,0},{2,1,0},{2,2,0}}}, SplineKnots -> {{0,0,0,1,1,1},{0,0,0,1,1,1}}][0.5, 0.5], \
+         BSplineFunction[{{0,0},{1,1},{2,0},{3,1}}, SplineKnots -> {0,0,0,0.5,1,1,1}][0.25]}"
+      )
+      .unwrap(),
+      "{{1., 1., 0.25}, {0.875, 0.625}}"
+    );
+  }
+}
+
+mod show_array_plot_sizing {
+  use super::*;
+
+  #[test]
+  fn show_keeps_array_plot_image_size_and_aspect_ratio() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{0, 1, 0, 1, 1, 0}}, Frame -> False, \
+       AspectRatio -> 0.8, ImageSize -> 500], \
+       Graphics[Text[\"hi\", {3, 0.03}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"500\" height=\"400\""),
+      "Got: {svg}"
+    );
+  }
+
+  #[test]
+  fn show_keeps_array_plot_options_for_any_size() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{1, 0, 1}}, AspectRatio -> 0.5, \
+       ImageSize -> 300], Graphics[Point[{1, 0}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"300\" height=\"150\""),
+      "Got: {svg}"
     );
   }
 }

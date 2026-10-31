@@ -831,6 +831,33 @@ mod arithmetic {
     fn norm_p3() {
       assert_eq!(interpret("Norm[{1, 2, 3, 4}, 3]").unwrap(), "10^(2/3)");
     }
+
+    // A rational coefficient sharing a prime with a root merges prime by
+    // prime: the total exponent's whole part stays in the coefficient
+    // (truncated toward zero), its fraction in the root.
+    #[test]
+    fn coefficient_merges_into_root_by_prime() {
+      for (input, expected) in [
+        ("3^(1/3)/(3 2^(1/3))", "1/(2^(1/3)*3^(2/3))"),
+        ("6^(1/3)/2", "3^(1/3)/2^(2/3)"),
+        ("2 (3/2)^(1/3)", "2^(2/3)*3^(1/3)"),
+        ("(2/3)^(1/3)/2", "1/(2^(2/3)*3^(1/3))"),
+        ("4/2^(1/3)", "2*2^(2/3)"),
+        ("8/2^(2/3)", "4*2^(1/3)"),
+        ("6/(2^(1/3) 3^(1/3))", "6^(2/3)"),
+        ("6 (2/3)^(1/4)", "2*2^(1/4)*3^(3/4)"),
+        ("10 (2/5)^(1/3)", "2*2^(1/3)*5^(2/3)"),
+        ("12^(1/3)/6", "1/(2^(1/3)*3^(2/3))"),
+        ("x 2^(1/3)/2", "x/2^(2/3)"),
+        ("4 (3/2)^(1/3)", "2*2^(2/3)*3^(1/3)"),
+        // Shared primes with the coefficient's sign stay put.
+        ("2 6^(1/3)", "2*6^(1/3)"),
+        ("(3/2)^(1/3)/2", "(3/2)^(1/3)/2"),
+        ("2 3^(1/3) 5^(1/3)", "2*15^(1/3)"),
+      ] {
+        assert_eq!(interpret(input).unwrap(), expected, "{input}");
+      }
+    }
   }
 }
 
@@ -14498,6 +14525,18 @@ mod sums_ordered_by_complex_constant {
       "{((1 - I) + s)*((1 + I) + s)*((2 - I) + s), \
        ((0.038 - 0.092*I) + s)*((0.038 + 0.092*I) + s)*((0.092 - 0.038*I) + s)*\
        ((0.092 + 0.038*I) + s)}"
+    );
+  }
+}
+
+mod n_of_pure_function {
+  use super::*;
+
+  #[test]
+  fn n_reaches_the_numbers_in_the_body() {
+    assert_eq!(
+      interpret("{N[FoldList[Plus, 0, #] &], N[f[1, #] &]}").unwrap(),
+      "{FoldList[Plus, 0., #1] & , f[1., #1] & }"
     );
   }
 }
