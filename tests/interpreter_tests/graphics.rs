@@ -18754,6 +18754,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Regression: the modulus of a complex `Root[…]` (e.g. from
+    /// `Abs[Eigenvalues[…]]`) was not numeric, so its cell was left blank.
+    #[test]
+    fn list_density_plot_abs_of_complex_root() {
+      let exact = export_svg(
+        "ListDensityPlot[{{1, Abs[Root[1 + 2 #^2 + #^3 &, 2]], 3}, {2, 1, 2}}]",
+      );
+      let numeric = export_svg(
+        "ListDensityPlot[{{1, N[Abs[Root[1 + 2 #^2 + #^3 &, 2]]], 3}, {2, 1, 2}}]",
+      );
+      assert_eq!(exact, numeric);
+    }
+
     /// Regression: `DataRange` on matrix data was ignored, so the axes
     /// showed the 1-based column / row indices instead of the given
     /// coordinates.

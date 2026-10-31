@@ -451,6 +451,37 @@ pub fn bigfloat_digits_are_zero(digits: &str) -> bool {
     .all(|c| c == '0' || c == '.')
 }
 
+/// `|Root[f, k]|` for a non-real root, which has no single real value but
+/// does have a real modulus.
+fn complex_root_modulus(expr: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Root" || !(args.len() == 2 || args.len() == 3) {
+    return None;
+  }
+  let value = super::numerical::root_n_eval(&args[0], &args[1])?;
+  let Expr::FunctionCall {
+    name: plus,
+    args: terms,
+  } = &value
+  else {
+    return None;
+  };
+  if plus != "Plus" {
+    return None;
+  }
+  let (Some(Expr::Real(re)), Some(Expr::FunctionCall { args: im, .. })) =
+    (terms.first(), terms.get(1))
+  else {
+    return None;
+  };
+  match im.first() {
+    Some(Expr::Real(im)) => Some(re.hypot(*im)),
+    _ => None,
+  }
+}
+
 pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
@@ -680,7 +711,9 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         v.is_finite().then_some(v)
       }
       "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sqrt),
-      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::abs),
+      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0])
+        .map(f64::abs)
+        .or_else(|| complex_root_modulus(&args[0])),
       "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::exp),
       "Erf" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erf_f64),
       "Erfc" if args.len() == 1 => {
