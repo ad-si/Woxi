@@ -25490,3 +25490,26 @@ fn canonical_order_is_total_with_nan() {
   items.sort_by(woxi::functions::list_helpers_ast::sorting::canonical_cmp);
   assert_eq!(items.len(), 60);
 }
+
+mod array_pad_named_schemes {
+  use super::*;
+
+  #[test]
+  fn fixed_and_reversed_and_multidimensional() {
+    // "Fixed" and "Reversed" padded with the strings themselves, and the
+    // schemes only took flat lists.
+    assert_eq!(
+      interpret(
+        "{ArrayPad[{0., 0.5, 1.}, 3, \"Fixed\"], ArrayPad[{1, 2, 3}, 1, \"Reversed\"], \
+         ArrayPad[{{1, 2}, {3, 4}}, 1, \"Fixed\"], \
+         ArrayPad[{{1, 2}, {3, 4}}, {{1, 0}, {0, 2}}, \"Periodic\"], \
+         ArrayPad[{1, 2, 3}, 5, \"Reflected\"]}"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, {1, 1, 2, 3, 3}, \
+       {{1, 1, 2, 2}, {1, 1, 2, 2}, {3, 3, 4, 4}, {3, 3, 4, 4}}, \
+       {{3, 4, 3, 4}, {1, 2, 1, 2}, {3, 4, 3, 4}}, \
+       {2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2}}"
+    );
+  }
+}
