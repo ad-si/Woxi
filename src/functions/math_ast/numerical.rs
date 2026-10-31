@@ -600,7 +600,7 @@ pub fn machine_power_out_of_range(
   a: f64,
   b: f64,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, Consts, RoundingMode};
+  use astro_float::{BigFloat, RoundingMode};
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
     return None;
   }
@@ -613,20 +613,37 @@ pub fn machine_power_out_of_range(
   let result_prec =
     MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10();
   let bits = nominal_bits(MACHINE_PRECISION_DIGITS.ceil() as usize);
-  let mut cc = match Consts::new() {
-    Ok(c) => c,
-    Err(e) => {
-      return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
+  let computed = with_astro_consts(|cc| {
+    let base = BigFloat::from_f64(a, bits);
+    let exponent = BigFloat::from_f64(b, bits);
+    let result = base.pow(&exponent, bits, rm, cc);
+    let digits = wl_fraction_digits(&result, result_prec);
+    bigfloat_to_string(&result, Some(digits), rm, cc)
+      .map(|s| Expr::BigFloat(s, result_prec))
+  });
+  Some(computed.and_then(|r| r))
+}
+
+/// Run `f` with this thread's astro-float constants cache, built once:
+/// building it per call cost far more than the arithmetic it serves (every
+/// promoted machine power of a plot's samples built one).
+pub(crate) fn with_astro_consts<R>(
+  f: impl FnOnce(&mut astro_float::Consts) -> R,
+) -> Result<R, InterpreterError> {
+  thread_local! {
+    static CONSTS: std::cell::RefCell<Option<astro_float::Consts>> =
+      const { std::cell::RefCell::new(None) };
+  }
+  CONSTS.with(|slot| {
+    let mut slot = slot.borrow_mut();
+    if slot.is_none() {
+      *slot = Some(
+        astro_float::Consts::new()
+          .map_err(|e| InterpreterError::EvaluationError(format!("{e}")))?,
+      );
     }
-  };
-  let base = BigFloat::from_f64(a, bits);
-  let exponent = BigFloat::from_f64(b, bits);
-  let result = base.pow(&exponent, bits, rm, &mut cc);
-  let digits = wl_fraction_digits(&result, result_prec);
-  Some(
-    bigfloat_to_string(&result, Some(digits), rm, &mut cc)
-      .map(|s| Expr::BigFloat(s, result_prec)),
-  )
+    Ok(f(slot.as_mut().unwrap()))
+  })
 }
 
 /// `Exp[x]` for a precision-tagged BigFloat `x`. Computes e^x in astro-float
