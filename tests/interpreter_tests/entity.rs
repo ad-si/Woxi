@@ -416,6 +416,29 @@ mod country_data_tests {
   }
 
   #[test]
+  fn country_data_schematic_coordinates() {
+    clear_state();
+    // A list of landmasses, each a list of {lat, lon} points.
+    assert_eq!(
+      interpret(
+        "c = CountryData[\"Japan\", \"SchematicCoordinates\"]; \
+         {Head[c], MatchQ[c[[1, 1]], {_Real, _Real}], \
+          Depth[c], 24 < c[[1, 1, 1]] < 46}"
+      )
+      .unwrap(),
+      "{List, True, 4, True}"
+    );
+    assert_eq!(
+      interpret(
+        "Map[Length, CountryData[\"Belgium\", \"SchematicCoordinates\"]] \
+         === {Length[CountryData[\"Belgium\", \"Polygon\"][[1]]]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn country_data_bare_projection_name() {
     clear_state();
     assert_eq!(

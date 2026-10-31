@@ -351,6 +351,14 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       .unwrap_or_else(|| missing("NotAvailable", property)),
     );
   }
+  if property == "SchematicCoordinates" {
+    return Some(
+      crate::functions::geographics::country_schematic_coordinates(
+        country.canonical,
+      )
+      .unwrap_or_else(|| missing("NotAvailable", property)),
+    );
+  }
   Some(match property {
     "Population" => {
       make_quantity(Expr::Integer(country.population as i128), "People")

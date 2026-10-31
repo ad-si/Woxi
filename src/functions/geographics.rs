@@ -168,6 +168,28 @@ pub fn country_schematic_polygon(canonical: &str) -> Option<Expr> {
   }
 }
 
+/// `CountryData[name, "SchematicCoordinates"]` — the outline of each landmass
+/// of the country as a list of `{lat, lon}` point lists.
+pub fn country_schematic_coordinates(canonical: &str) -> Option<Expr> {
+  let polys = country_polygons(canonical)?;
+  let rings: Vec<Expr> = polys
+    .iter()
+    .filter_map(|p| p.first())
+    .map(|ring| {
+      let pts: Vec<Expr> = ring
+        .iter()
+        .map(|&(lon, lat)| {
+          Expr::List(
+            vec![Expr::Real(lat as f64), Expr::Real(lon as f64)].into(),
+          )
+        })
+        .collect();
+      Expr::List(pts.into())
+    })
+    .collect();
+  (!rings.is_empty()).then(|| Expr::List(rings.into()))
+}
+
 // ── Cartographic colors (light "Default"-style basemap) ───────────────────
 
 const OCEAN_FILL: &str = "rgb(214,232,245)";
