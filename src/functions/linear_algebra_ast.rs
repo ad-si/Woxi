@@ -4834,7 +4834,7 @@ fn independent_index_groups(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<usize>>> {
   for i in 0..n {
     let r = find(&mut group, i);
     if let Some(k) = roots.iter().position(|&x| x == r) {
-      groups[k].push(i)
+      groups[k].push(i);
     } else {
       roots.push(r);
       groups.push(vec![i]);
