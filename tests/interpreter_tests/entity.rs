@@ -439,6 +439,22 @@ mod country_data_tests {
   }
 
   #[test]
+  fn country_data_world_and_antarctica_schematic_coordinates() {
+    clear_state();
+    // The world is every landmass; Antarctica lies entirely south of -60°.
+    assert_eq!(
+      interpret(
+        "w = CountryData[\"World\", \"SchematicCoordinates\"]; \
+         a = CountryData[\"Antarctica\", \"SchematicCoordinates\"]; \
+         {Head[w], Length[w] > 100, MatchQ[w[[1, 1]], {_Real, _Real}], \
+          Max[a[[All, All, 1]] /. l_List :> Max[l]] < -60}"
+      )
+      .unwrap(),
+      "{List, True, True, True}"
+    );
+  }
+
+  #[test]
   fn country_data_bare_projection_name() {
     clear_state();
     assert_eq!(

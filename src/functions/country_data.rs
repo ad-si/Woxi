@@ -328,6 +328,16 @@ fn missing(reason: &str, name: &str) -> Expr {
 /// Returns `None` only when the country itself is unknown, so the caller can
 /// fall back to its own handling; an unknown *property* returns `Missing`.
 pub fn country_property(name: &str, property: &str) -> Option<Expr> {
+  if name == "World" && property == "SchematicCoordinates" {
+    return Some(
+      crate::functions::geographics::world_schematic_coordinates()
+        .unwrap_or_else(|| missing("NotAvailable", property)),
+    );
+  }
+  if property == "SchematicCoordinates" && lookup(name).is_none() {
+    // Territories outside the sovereign list (e.g. Antarctica).
+    return crate::functions::geographics::country_schematic_coordinates(name);
+  }
   let country = lookup(name)?;
   if let Some(lang) = property.strip_suffix("Speaking")
     && let Some(countries) = LANGUAGE_COUNTRIES

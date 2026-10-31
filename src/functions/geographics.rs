@@ -122,7 +122,15 @@ fn fixup_ne_name(ne: &str) -> &str {
 /// the same canonical country as `query`. Returns `None` for unknown names or
 /// non-sovereign territories not in the knowledge base.
 fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
-  let canon = crate::functions::country_data::canonical_name(query)?;
+  // Natural Earth entries outside the sovereign-country list (Antarctica)
+  // are matched by their own name.
+  let Some(canon) = crate::functions::country_data::canonical_name(query)
+  else {
+    return world_countries()
+      .iter()
+      .find(|c| c.name.eq_ignore_ascii_case(query))
+      .map(|c| c.polygons.as_slice());
+  };
   world_countries().iter().find_map(|c| {
     let ne_canon =
       crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))?;
@@ -171,9 +179,19 @@ pub fn country_schematic_polygon(canonical: &str) -> Option<Expr> {
 /// `CountryData[name, "SchematicCoordinates"]` — the outline of each landmass
 /// of the country as a list of `{lat, lon}` point lists.
 pub fn country_schematic_coordinates(canonical: &str) -> Option<Expr> {
-  let polys = country_polygons(canonical)?;
+  schematic_coordinates(country_polygons(canonical)?.iter())
+}
+
+/// `CountryData["World", "SchematicCoordinates"]` — the outlines of every
+/// landmass on the map.
+pub fn world_schematic_coordinates() -> Option<Expr> {
+  schematic_coordinates(world_polygons())
+}
+
+fn schematic_coordinates<'a>(
+  polys: impl Iterator<Item = &'a Polygon>,
+) -> Option<Expr> {
   let rings: Vec<Expr> = polys
-    .iter()
     .filter_map(|p| p.first())
     .map(|ring| {
       let pts: Vec<Expr> = ring
