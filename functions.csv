@@ -6429,3 +6429,8 @@ Combinatorica`ToCycles,"The cycles of a permutation list; each started from its 
 Combinatorica`Orbits,"The orbits of the elements of a list under a group of permutations acting by Permute",✅,pure,6.0,
 Combinatorica`OrbitRepresentatives,"One representative (the first) of each orbit of the elements of a list under a group of permutations",✅,pure,6.0,
 GraphUtilities`WeakComponents,"Weakly connected components of a rule list or Graph or Combinatorica graph in vertex order",✅,pure,6.0,
+VectorFieldPlots`VectorFieldPlot,"Legacy package function: arrows of a vector field sampled on a grid as Graphics",✅,pure,6.0,
+VectorFieldPlots`ListVectorFieldPlot,"Legacy package function: arrows from {base vector} pairs or a matrix of vectors as Graphics",✅,pure,6.0,
+VectorFieldPlots`GradientFieldPlot,"Legacy package function: the gradient field of a scalar function as arrows",✅,pure,6.0,
+VectorFieldPlots`HamiltonianFieldPlot,"Legacy package function: the Hamiltonian field of a scalar function as arrows",✅,pure,6.0,
+VectorFieldPlots`PolyaFieldPlot,"Legacy package function: the Polya field {Re[f] -Im[f]} of a complex function as log-scaled arrows",✅,pure,6.0,

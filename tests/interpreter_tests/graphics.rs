@@ -17973,17 +17973,70 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    // Demonstrations from before `ListVectorPlot` existed (Wolfram Language
-    // 9) load `VectorFieldPlots`` and call its qualified
-    // `ListVectorFieldPlot` — same data shape, so it draws the same picture
-    // as the modern name instead of being silently dropped by `Show`.
+    // Demonstrations from before `VectorPlot` existed (Wolfram Language 6–8)
+    // load `VectorFieldPlots`` and take its plots apart by position, so they
+    // are the package's `Graphics[{Thickness[Small], Arrowheads[0.02],
+    // {{colors…, Arrow[{base, tip}] | Point[base]}, …}}, opts]`: the longest
+    // arrow is `ScaleFactor` long (by default the smaller grid step).
     #[test]
-    fn legacy_list_vector_field_plot_matches_list_vector_plot() {
+    fn legacy_vector_field_plots_follow_the_package() {
+      let run = |code: &str| {
+        interpret(&format!("Quiet[Get[\"VectorFieldPlots`\"]]\n{code}"))
+          .unwrap()
+      };
       assert_eq!(
-        export_svg(
-          "VectorFieldPlots`ListVectorFieldPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}]"
+        run(
+          "InputForm[VectorFieldPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
+             PlotPoints -> 3][[1, 3, ;; 3]]]"
         ),
-        export_svg("ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}]")
+        "InputForm[{{Point[{0., 0.}]}, \
+         {Arrow[{{0., 0.5}, {0., 0.6767766952966369}}]}, \
+         {Arrow[{{0., 1.}, {0., 1.3535533905932737}}]}}]"
+      );
+      assert_eq!(
+        run(
+          "InputForm[ListVectorFieldPlot[{{{1, 0}, {0, 0}}, {{2, 3}, {4, 5}}}, \
+             ColorFunction -> Hue][[1]]]"
+        ),
+        "InputForm[{Thickness[Small], Arrowheads[0.02], \
+         {{Hue[0.], Point[{1., 0.}]}, {Hue[1.], Arrow[{{2., 3.}, {6., 8.}}]}}}]"
+      );
+      // A matrix of vectors sits on the integer grid, first row on top.
+      assert_eq!(
+        run(
+          "InputForm[ListVectorFieldPlot[{{{1, 0}, {0, 1}}, {{2, 2}, {1, 1}}}][[1, 3]]]"
+        ),
+        "InputForm[{{Arrow[{{1., 0.}, {1., 1.}}]}, {Arrow[{{2., 2.}, {3., 3.}}]}}]"
+      );
+      assert_eq!(
+        run(
+          "InputForm[HamiltonianFieldPlot[x y, {x, 0, 1}, {y, 0, 1}, \
+             PlotPoints -> 2, MaxArrowLength -> 1.2][[1, 3]]]"
+        ),
+        "InputForm[{{Point[{0., 0.}]}, \
+         {Arrow[{{0., 1.}, {0., 0.29289321881345254}}]}, \
+         {Arrow[{{1., 0.}, {1.7071067811865475, 0.}}]}}]"
+      );
+      // PolyaFieldPlot scales magnitudes by Log[# + 1] &.
+      assert_eq!(
+        run(
+          "InputForm[PolyaFieldPlot[z^2 /. z -> x + I y, {x, 0, 1}, {y, 0, 1}, \
+             PlotPoints -> 2][[1, 3]]]"
+        ),
+        "InputForm[{{Point[{0., 0.}]}, \
+         {Arrow[{{0., 1.}, {-0.6309297535714573, 1.}}]}, \
+         {Arrow[{{1., 0.}, {1.6309297535714573, 0.}}]}, \
+         {Arrow[{{1., 1.}, {1., 0.}}]}}]"
+      );
+      assert_eq!(
+        run(
+          "{Length[VectorFieldPlot[{Sin[x], Cos[y]}, {x, 0, Pi}, {y, 0, Pi}][[1, 3]]], \
+             VectorFieldPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, PlotPoints -> {2, 3}, \
+               ScaleFactor -> 2][[1, 3, -1]], \
+             Context[VectorFieldPlot], Attributes[VectorFieldPlot]}"
+        ),
+        "{225, {Arrow[{{1., 1.}, {2.414213562373095, 2.414213562373095}}]}, \
+         VectorFieldPlots`, {HoldFirst}}"
       );
     }
 
@@ -32445,6 +32498,28 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     assert_eq!(spec.controls.len(), 1);
     assert_eq!(spec.controls[0].name(), "x");
+  }
+
+  /// A control sized by a `Pane[Control[…], width]` inside a `Column` of
+  /// the control area is registered like an unwrapped one; otherwise its
+  /// variable stays unbound and every control spec that depends on it fails.
+  #[test]
+  fn pane_wrapped_controls_flatten_into_the_control_panel() {
+    let expr = interpret_to_expr(
+      "Manipulate[{w, j}, Column[{Style[\"chains\", 16], \
+       Pane[Control[{{w, 6, \"w\"}, Range[3, 15], ControlType -> Setter}], \
+       170]}], Control[{{j, 1}, Range[w], Setter}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .filter(|n| !n.is_empty())
+      .collect();
+    // (The unnamed entry is the "chains" heading.)
+    assert_eq!(names, ["w", "j"]);
   }
 
   /// Each `PaneSelector` pane's controls are collected into the one flat

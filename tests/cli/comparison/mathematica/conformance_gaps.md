@@ -4503,6 +4503,19 @@ Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.
 
+### Legacy `VectorFieldPlots`` plots carry fewer options
+
+The package's `Graphics` gets `FilterRules[{opts, Options[ListVectorFieldPlot]},
+Options[Graphics]]`: the caller's options followed by every default of
+`Developer`GraphicsOptions[]` (twice over from `VectorFieldPlot`). Woxi keeps
+the caller's options and appends only `AspectRatio -> Automatic` and
+`PlotRange -> All`, the two defaults the package changes. The primitives — what
+notebooks take apart with `[[1, 3]]` — are identical; only
+`InputForm[plot]`'s option tail differs.
+
+Loading the package also prints `General::obspkg` in wolframscript; Woxi
+loads it silently.
+
 ### The default plot style is not Wolfram's
 
 Every Woxi plot draws its first curve in `#5E81B5` at 1.5 px. Wolfram draws it

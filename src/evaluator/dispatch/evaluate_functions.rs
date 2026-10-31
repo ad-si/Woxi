@@ -784,6 +784,14 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "VectorFieldPlots`" {
+    // A bare `VectorFieldPlot` read after the package is loaded is the
+    // package's; its functions dispatch on the qualified names.
+    for name in crate::functions::vector_field_plots::EXPORTS {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "HypothesisTesting`" {
     // A bare `MeanCI` read after the package is loaded is the package's.
     for name in [
@@ -1347,7 +1355,6 @@ fn evaluate_function_call_ast_inner(
         _ => "ComputationalGeometry`DelaunayTriangulation",
       }
     }
-    "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
@@ -5900,6 +5907,12 @@ fn evaluate_function_call_ast_inner(
 
   if name == "FindCurvePath" {
     return crate::functions::shortest_tour::find_curve_path_ast(args);
+  }
+
+  if let Some(result) =
+    crate::functions::vector_field_plots::vector_field_plots_ast(name, args)
+  {
+    return result;
   }
 
   // FindShortestTour[points[, s, t], opts] → {length, order}

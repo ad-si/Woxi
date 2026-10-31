@@ -785,6 +785,12 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // HoldAll + Locked + Protected
     "Remove" => A::HoldAll | A::Locked | A::Protected,
 
+    // The legacy package's samplers hold the field they sample (and are
+    // not Protected).
+    "VectorFieldPlots`VectorFieldPlot" | "VectorFieldPlots`PolyaFieldPlot" => {
+      A::HoldFirst
+    }
+
     // HoldFirst + Protected + ReadProtected
     "MessageName" | "Increment" | "Decrement" | "PreIncrement"
     | "PreDecrement" | "Unset"
