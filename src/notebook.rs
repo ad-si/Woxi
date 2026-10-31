@@ -2464,10 +2464,13 @@ fn render_text_element(s: &str) -> String {
       None => parts
         .first()
         .filter(|c| {
-          c.trim().strip_prefix("BoxData[").is_some_and(|r| {
+          let c = c.trim();
+          c.strip_prefix("BoxData[").is_some_and(|r| {
             let r = r.trim_start();
             r.starts_with("Cell[") || r.starts_with("FormBox[")
-          })
+          }) || c
+            .strip_prefix("TextData[")
+            .is_some_and(|r| r.trim_start().starts_with("Cell["))
         })
         .map(|c| render_inline_math_content(c.trim()))
         .unwrap_or_default(),
@@ -7079,6 +7082,28 @@ Cell["Chapter 2", "Chapter"]
     assert!(!out.contains("TextData"), "raw cell source leaked: {out}");
     assert!(out.contains("Q(u)"), "{out}");
     assert!(out.trim_end().ends_with(','), "{out}");
+  }
+
+  #[test]
+  fn test_extract_display_formula_unstyled_textdata_wrapper() {
+    // The FrontEnd also wraps the inline formula in an *unstyled*
+    // `Cell[TextData[Cell[…, "InlineMath"]]]` before the trailing
+    // punctuation; that wrapper must not swallow the formula.
+    let s = r#"BoxData[
+ FormBox[
+  RowBox[{Cell[TextData[Cell[BoxData[
+    FormBox[
+     RowBox[{
+      SubscriptBox["X", "tot"], "=", 
+      SubscriptBox["X", 
+       StyleBox["S", FontSlant->"Plain"]]}], TraditionalForm]], "InlineMath",
+    ExpressionUUID->"11111111-1111-1111-1111-111111111111"]],ExpressionUUID->
+    "22222222-2222-2222-2222-222222222222"], "."}], TraditionalForm]]"#;
+    let out = extract_cell_content(s);
+    assert!(!out.contains("Cell["), "raw cell source leaked: {out}");
+    assert!(out.contains("X_tot"), "{out}");
+    assert!(out.contains("X_S"), "{out}");
+    assert!(out.trim_end().ends_with('.'), "{out}");
   }
 
   #[test]
