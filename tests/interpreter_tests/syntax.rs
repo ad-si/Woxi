@@ -8292,6 +8292,22 @@ mod line_continuation {
   }
 
   #[test]
+  fn trailing_comment_after_constant_is_not_part_of_it() {
+    // The comment after `Pi`/`E`/`Degree` must not be glued onto the
+    // constant's name, which kept `0.5/Pi (* c *)` from evaluating.
+    assert_eq!(interpret("0.5/Pi (* c *)").unwrap(), "0.15915494309189535");
+    assert_eq!(interpret("(2. E (* c *))").unwrap(), "5.43656365691809");
+    assert_eq!(
+      interpret("2.5 E^(0.5/Pi (* c *))").unwrap(),
+      "2.9312990160500503"
+    );
+    assert_eq!(
+      interpret("30. Degree(* c *)").unwrap(),
+      "0.5235987755982988"
+    );
+  }
+
+  #[test]
   fn comment_between_semicolons_is_no_span() {
     // `a;(* c *);` ends in two statement separators, not in a `;;` Span
     // that would swallow the next line.
