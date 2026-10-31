@@ -11765,16 +11765,42 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_matches_lexicographic_order() {
-    // Combinatorica`UnrankPermutation[r, l] gives the r-th permutation of
-    // `l` in lexicographic order, 1-indexed (r runs from 1 through
-    // Length[l]!, so the sequence below must line up with what
-    // `Permutations` itself already produces in lexicographic order).
+    // Combinatorica`UnrankPermutation[r, l] gives the permutation of `l`
+    // of rank r in lexicographic order, counting from 0, so the ranks 0
+    // through Length[l]! - 1 line up with `Permutations`.
     assert_eq!(
       interpret(
-        "Table[Combinatorica`UnrankPermutation[r, {1, 2, 3}], {r, 1, 6}]"
+        "Table[Combinatorica`UnrankPermutation[r, {1, 2, 3}], {r, 0, 5}]"
       )
       .unwrap(),
       interpret("Permutations[{1, 2, 3}]").unwrap()
+    );
+  }
+
+  // Orbits under a permutation group acting by Permute (the images of the
+  // first element left, the rest in Complement's order), their
+  // representatives, cycles of a permutation, random subsets.
+  #[test]
+  fn combinatorica_orbits_cycles_and_random_subsets() {
+    assert_eq!(
+      interpret(
+        "x = {{1, 1, 1}, {1, 1, 0}, {1, 0, 1}, {1, 0, 0}, {0, 1, 1}, {0, 1, 0}, {0, 0, 1}, {0, 0, 0}}; \
+         {Combinatorica`OrbitRepresentatives[{{1, 2, 3}, {3, 2, 1}}, x], \
+          Combinatorica`Orbits[{{1, 2, 3}, {3, 2, 1}}, x]}"
+      )
+      .unwrap(),
+      "{{{1, 1, 1}, {0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1}, {1, 0, 1}}, \
+       {{{1, 1, 1}, {1, 1, 1}}, {{0, 0, 0}, {0, 0, 0}}, {{0, 0, 1}, {1, 0, 0}}, \
+       {{0, 1, 0}, {0, 1, 0}}, {{0, 1, 1}, {1, 1, 0}}, {{1, 0, 1}, {1, 0, 1}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Combinatorica`ToCycles[{2, 3, 1, 5, 4, 6}], \
+          Combinatorica`ToCycles[Combinatorica`UnrankPermutation[500, {1, 2, 3, 4, 5, 6, 7, 8, 9}]], \
+          SubsetQ[{a, b, c, d}, Combinatorica`RandomSubset[{a, b, c, d}]]}"
+      )
+      .unwrap(),
+      "{{{2, 3, 1}, {5, 4}, {6}}, {{1}, {2}, {3}, {8, 5, 4}, {9, 7, 6}}, True}"
     );
   }
 
@@ -11858,23 +11884,19 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_boundaries() {
+    // Ranks count from 0 and wrap modulo Length[l]!.
     assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[1, {1, 2, 3}]").unwrap(),
-      "{1, 2, 3}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[6, {1, 2, 3}]").unwrap(),
-      "{3, 2, 1}"
-    );
-    // Out of the valid 1..Length[l]! range, the call stays symbolic rather
-    // than silently wrapping or erroring.
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[0, {1, 2, 3}]").unwrap(),
-      "Combinatorica`UnrankPermutation[0, {1, 2, 3}]"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[7, {1, 2, 3}]").unwrap(),
-      "Combinatorica`UnrankPermutation[7, {1, 2, 3}]"
+      interpret(
+        "{Combinatorica`UnrankPermutation[0, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[5, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[6, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[-1, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[1, {a, b, c}], \
+          Combinatorica`UnrankPermutation[500, Range[9]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {3, 2, 1}, {1, 2, 3}, {3, 2, 1}, {a, c, b}, \
+       {1, 2, 3, 8, 4, 9, 6, 5, 7}}"
     );
   }
 
@@ -11883,11 +11905,11 @@ mod join_non_list {
     // UnrankPermutation[r, n] for an integer n is UnrankPermutation[r, Range[n]].
     assert_eq!(
       interpret("Combinatorica`UnrankPermutation[1, 4]").unwrap(),
-      "{1, 2, 3, 4}"
+      "{1, 2, 4, 3}"
     );
     assert_eq!(
       interpret("Combinatorica`UnrankPermutation[24, 4]").unwrap(),
-      "{4, 3, 2, 1}"
+      "{1, 2, 3, 4}"
     );
   }
 
@@ -11906,21 +11928,17 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_handles_large_factorial_rank() {
-    // The rank can exceed machine-integer range (12! = 479001600) — the
-    // last permutation at exactly n! must still resolve, and one past it
-    // must stay symbolic rather than silently wrapping.
+    // The rank can exceed machine-integer range (30! does); n! - 1 is the
+    // reverse, and ranks wrap modulo n!.
     assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[12!, Range[12]]").unwrap(),
-      "{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[1, Range[12]]").unwrap(),
-      "{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[12! + 1, Range[12]]").unwrap(),
-      "Combinatorica`UnrankPermutation[479001601, {1, 2, 3, 4, 5, 6, 7, 8, 9, \
-       10, 11, 12}]"
+      interpret(
+        "{Combinatorica`UnrankPermutation[12! - 1, Range[12]], \
+          Combinatorica`UnrankPermutation[12! + 1, Range[12]], \
+          Combinatorica`UnrankPermutation[30!, Range[30]] == Range[30]}"
+      )
+      .unwrap(),
+      "{{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}, \
+       {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 11}, True}"
     );
   }
 

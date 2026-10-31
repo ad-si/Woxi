@@ -182,14 +182,12 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Combinatorica\`UnrankPermutation[r, l]` / `Combinatorica\`UnrankPermutation[r, n]`
-/// — the legacy Combinatorica package's permutation unranking: the `r`-th
-/// permutation of `l` (or of `Range[n]`) in lexicographic order, where `r`
-/// runs from 1 (the list itself) to `Length[l]!` (its reverse) and each
-/// factorial-number-system digit of `r - 1` selects how many of the
-/// still-unused elements, taken in `l`'s own order, to skip before picking
-/// the next one. A non-list/non-integer second argument or an `r` outside
-/// `1..Length[l]!` is left symbolic, matching that Combinatorica itself only
-/// defines the function on that domain.
+/// — the legacy Combinatorica package's permutation unranking: the
+/// permutation of `l` (or of `Range[n]`) of rank `r` in lexicographic order,
+/// counting from 0 (the list itself) and taking `r` modulo `Length[l]!`
+/// (so `Length[l]! - 1`, or -1, is its reverse). Each factorial-number-system
+/// digit of the rank selects how many of the still-unused elements, taken in
+/// `l`'s own order, to skip before picking the next one.
 pub fn combinatorica_unrank_permutation_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -201,8 +199,8 @@ pub fn combinatorica_unrank_permutation_ast(
   }
 
   let rank = match &args[0] {
-    Expr::Integer(r) if *r >= 1 => BigInt::from(*r),
-    Expr::BigInteger(r) if r.sign() == Sign::Plus => r.clone(),
+    Expr::Integer(r) => BigInt::from(*r),
+    Expr::BigInteger(r) => r.clone(),
     _ => return Ok(original()),
   };
 
@@ -217,13 +215,11 @@ pub fn combinatorica_unrank_permutation_ast(
   for k in 2..=n {
     n_factorial *= k as u64;
   }
-  if rank > n_factorial {
-    return Ok(original());
-  }
+  let rank = ((rank % &n_factorial) + &n_factorial) % &n_factorial;
 
   let mut remaining = items;
   let mut result = Vec::with_capacity(n);
-  let mut rem_rank = rank - 1;
+  let mut rem_rank = rank;
   for i in 0..n {
     let remaining_len = n - i;
     let mut weight = BigInt::from(1u32);
@@ -1466,6 +1462,122 @@ pub fn combinatorica_random_k_subset_ast(
   Ok(Expr::List(
     picked.into_iter().map(|i| items[i].clone()).collect(),
   ))
+}
+
+/// `Combinatorica\`RandomSubset[l]` — a uniformly random subset of `l` (or
+/// of `Range[l]` for an integer), kept in `l`'s own order.
+pub fn combinatorica_random_subset_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let items: Vec<Expr> = match args {
+    [Expr::List(items)] => items.to_vec(),
+    [Expr::Integer(n)] if *n >= 0 => (1..=*n).map(Expr::Integer).collect(),
+    _ => return Ok(unevaluated("Combinatorica`RandomSubset", args)),
+  };
+  let keep: Vec<bool> = crate::with_rng(|rng| {
+    use rand::RngExt;
+    (0..items.len()).map(|_| rng.random_bool(0.5)).collect()
+  });
+  Ok(Expr::List(
+    items
+      .into_iter()
+      .zip(keep)
+      .filter(|(_, k)| *k)
+      .map(|(e, _)| e)
+      .collect(),
+  ))
+}
+
+/// `Combinatorica\`ToCycles[p]` — the cycles of the permutation `p`, each
+/// started from its smallest unvisited point `i` and written
+/// `{p[i], p[p[i]], …, i}`.
+pub fn combinatorica_to_cycles_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Combinatorica`ToCycles", args);
+  let [Expr::List(items)] = args else {
+    return Ok(original());
+  };
+  let n = items.len();
+  let perm: Option<Vec<usize>> = items
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(k) if *k >= 1 && (*k as usize) <= n => {
+        Some(*k as usize - 1)
+      }
+      _ => None,
+    })
+    .collect();
+  let Some(perm) = perm else {
+    return Ok(original());
+  };
+  let mut seen = vec![false; n];
+  let mut cycles = Vec::new();
+  for start in 0..n {
+    if seen[start] {
+      continue;
+    }
+    let mut cycle = Vec::new();
+    let mut j = perm[start];
+    loop {
+      if seen[j] {
+        return Ok(original());
+      }
+      seen[j] = true;
+      cycle.push(Expr::Integer(j as i128 + 1));
+      if j == start {
+        break;
+      }
+      j = perm[j];
+    }
+    cycles.push(Expr::List(cycle.into()));
+  }
+  Ok(Expr::List(cycles.into()))
+}
+
+/// `Combinatorica\`Orbits[g, x]` — the orbits of the elements of `x` under
+/// the permutation group `g` acting by `Permute` (`e[[p]]`): each orbit is
+/// the images of the first element left, and the elements are taken in the
+/// order `Complement` leaves them. `OrbitRepresentatives` is the first of
+/// each orbit.
+pub fn combinatorica_orbits_ast(
+  args: &[Expr],
+  representatives: bool,
+) -> Result<Expr, InterpreterError> {
+  let head = if representatives {
+    "Combinatorica`OrbitRepresentatives"
+  } else {
+    "Combinatorica`Orbits"
+  };
+  let [Expr::List(group), Expr::List(x)] = args else {
+    return Ok(unevaluated(head, args));
+  };
+  let mut rest: Vec<Expr> = x.to_vec();
+  let mut out = Vec::new();
+  while !rest.is_empty() {
+    let first = rest[0].clone();
+    let mut orbit = Vec::with_capacity(group.len());
+    for g in group {
+      orbit.push(crate::evaluator::evaluate_function_call_ast(
+        "Part",
+        &[first.clone(), g.clone()],
+      )?);
+    }
+    let remaining = crate::evaluator::evaluate_function_call_ast(
+      "Complement",
+      &[Expr::List(rest.into()), Expr::List(orbit.clone().into())],
+    )?;
+    let Expr::List(ref remaining) = remaining else {
+      return Ok(unevaluated(head, args));
+    };
+    rest = remaining.to_vec();
+    out.push(if representatives {
+      first
+    } else {
+      Expr::List(orbit.into())
+    });
+  }
+  Ok(Expr::List(out.into()))
 }
 
 /// `Combinatorica\`KSetPartitions[l, k]` — the partitions of `l` (or of

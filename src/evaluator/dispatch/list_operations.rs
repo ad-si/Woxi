@@ -3275,6 +3275,18 @@ pub fn dispatch_list_operations(
     "Combinatorica`StableMarriage" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_stable_marriage_ast(args));
     }
+    "Combinatorica`RandomSubset" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_random_subset_ast(args));
+    }
+    "Combinatorica`ToCycles" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_to_cycles_ast(args));
+    }
+    "Combinatorica`Orbits" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_orbits_ast(args, false));
+    }
+    "Combinatorica`OrbitRepresentatives" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_orbits_ast(args, true));
+    }
     "Combinatorica`RandomKSubset" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_random_k_subset_ast(args));
     }

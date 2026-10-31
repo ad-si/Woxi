@@ -6421,3 +6421,7 @@ HypothesisTesting`StudentTPValue,"Legacy Student t p-value as an OneSidedPValue 
 HypothesisTesting`ChiSquarePValue,"Legacy chi-square p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule",✅,pure,1.0,
 HypothesisTesting`FRatioPValue,"Legacy F-ratio p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule",✅,pure,1.0,
 DualLinearProgramming,"Solves a linear program and its dual giving the primal solution and the dual variables of the constraints and of the lower and upper bounds",✅,pure,6.0,
+Combinatorica`RandomSubset,"A uniformly random subset of a list (or of Range[n]) in the list's order",✅,pure,6.0,
+Combinatorica`ToCycles,"The cycles of a permutation list; each started from its smallest unvisited point",✅,pure,6.0,
+Combinatorica`Orbits,"The orbits of the elements of a list under a group of permutations acting by Permute",✅,pure,6.0,
+Combinatorica`OrbitRepresentatives,"One representative (the first) of each orbit of the elements of a list under a group of permutations",✅,pure,6.0,
