@@ -2433,6 +2433,10 @@ fn set_part_sparse(
   value: &Expr,
 ) -> Result<(), InterpreterError> {
   use crate::functions::{densify_sparse_array, sparse_array_background};
+  if let Some(sparse) = set_part_sparse_in_place(expr, indices, value) {
+    *expr = sparse;
+    return Ok(());
+  }
   let (Some(mut dense), Some(background)) =
     (densify_sparse_array(expr), sparse_array_background(expr))
   else {
@@ -2448,6 +2452,124 @@ fn set_part_sparse(
     *expr = sparse;
   }
   Ok(())
+}
+
+/// `sa[[i, j…]] = v` on a canonical `SparseArray` with an integer or
+/// integer-span index per dimension, done on the stored entries alone: the
+/// array is never densified (an 8192 × 8192 preconditioner would be 67
+/// million elements). `None` for anything else, which the dense path does.
+fn set_part_sparse_in_place(
+  expr: &Expr,
+  indices: &[Expr],
+  value: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { args, .. } = expr else {
+    return None;
+  };
+  let [Expr::Identifier(auto), Expr::List(dims), background, csr] =
+    args.as_slice()
+  else {
+    return None;
+  };
+  if auto != "Automatic" || dims.len() != indices.len() {
+    return None;
+  }
+  let dims: Vec<usize> = dims
+    .iter()
+    .map(|d| match d {
+      Expr::Integer(n) if *n > 0 => Some(*n as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  // The positions each index selects, and whether it is a single one.
+  let position = |k: &Expr, len: usize| -> Option<usize> {
+    let Expr::Integer(k) = k else { return None };
+    let k = if *k < 0 { len as i128 + 1 + *k } else { *k };
+    (1..=len as i128).contains(&k).then_some(k as usize)
+  };
+  let mut axes: Vec<(Vec<usize>, bool)> = Vec::with_capacity(dims.len());
+  for (index, &len) in indices.iter().zip(&dims) {
+    match index {
+      Expr::Integer(_) => axes.push((vec![position(index, len)?], true)),
+      Expr::Identifier(a) if a == "All" => {
+        axes.push(((1..=len).collect(), false));
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Span" && args.len() == 2 =>
+      {
+        let from = position(&args[0], len)?;
+        let to = match &args[1] {
+          Expr::Identifier(a) if a == "All" => len,
+          other => position(other, len)?,
+        };
+        if to < from {
+          return None;
+        }
+        axes.push(((from..=to).collect(), false));
+      }
+      _ => return None,
+    }
+  }
+  let mut entries: std::collections::BTreeMap<Vec<usize>, Expr> =
+    crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, csr)
+      .into_iter()
+      .map(|(pos, v)| (pos.into_iter().map(|p| p as usize).collect(), v))
+      .collect();
+  let background_str = crate::syntax::expr_to_string(background);
+  // The value at one combination of the selected positions: indexed along
+  // the spanned axes when it is a list of their shape, else broadcast.
+  fn value_at(value: &Expr, picks: &[usize]) -> Option<Expr> {
+    let mut v = value;
+    for &i in picks {
+      match v {
+        Expr::List(items) => v = items.get(i)?,
+        _ => return Some(v.clone()),
+      }
+    }
+    Some(v.clone())
+  }
+  let mut counters = vec![0usize; axes.len()];
+  loop {
+    let pos: Vec<usize> = axes
+      .iter()
+      .zip(&counters)
+      .map(|((ps, _), &c)| ps[c])
+      .collect();
+    let picks: Vec<usize> = axes
+      .iter()
+      .zip(&counters)
+      .filter(|((_, single), _)| !single)
+      .map(|(_, &c)| c)
+      .collect();
+    let v = value_at(value, &picks)?;
+    if matches!(v, Expr::List(_)) {
+      // A value deeper than the selection: leave it to the dense path.
+      return None;
+    }
+    if crate::syntax::expr_to_string(&v) == background_str {
+      entries.remove(&pos);
+    } else {
+      entries.insert(pos, v);
+    }
+    // Next combination, last axis fastest.
+    let mut axis = axes.len();
+    loop {
+      if axis == 0 {
+        let entries: Vec<(Vec<usize>, Expr)> = entries.into_iter().collect();
+        return Some(
+          crate::evaluator::dispatch::list_operations::build_sparse_array_csr(
+            &dims, background, &entries,
+          ),
+        );
+      }
+      axis -= 1;
+      counters[axis] += 1;
+      if counters[axis] < axes[axis].0.len() {
+        break;
+      }
+      counters[axis] = 0;
+    }
+  }
 }
 
 /// Report a Part assignment that could not be carried out, the way

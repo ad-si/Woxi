@@ -1912,6 +1912,32 @@ pub fn dispatch_list_operations(
   // the operation on the dense elements, then re-wrap the list result as a
   // SparseArray. Without this the operation would mangle the SparseArray's
   // internal representation instead of its elements.
+  // A matrix SparseArray transposes on its stored entries; densifying an
+  // 8192 x 8192 array for it would take gigabytes.
+  if name == "Transpose"
+    && args.len() == 1
+    && let Expr::FunctionCall { name: h, args: sa } = &args[0]
+    && h == "SparseArray"
+    && let [Expr::Identifier(auto), Expr::List(dims), background, csr] =
+      sa.as_slice()
+    && auto == "Automatic"
+    && let [Expr::Integer(r), Expr::Integer(c)] = dims.as_slice()
+    && *r > 0
+    && *c > 0
+  {
+    let dims = [*r as usize, *c as usize];
+    let entries: Vec<(Vec<usize>, Expr)> =
+      list_helpers_ast::sparse_array_extract_rules(&dims, csr)
+        .into_iter()
+        .map(|(pos, v)| (vec![pos[1] as usize, pos[0] as usize], v))
+        .collect();
+    return Some(Ok(build_sparse_array_csr(
+      &[dims[1], dims[0]],
+      background,
+      &entries,
+    )));
+  }
+
   if matches!(
     name,
     "Take"

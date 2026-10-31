@@ -11529,6 +11529,37 @@ mod sparse_array_arithmetic {
     );
   }
 
+  // Part assignment, Transpose and matrix-vector Dot work on the stored
+  // entries (wolframscript-verified results).
+  #[test]
+  fn sparse_operations_on_stored_entries() {
+    assert_eq!(
+      interpret(
+        "g = SparseArray[{Band[{1, 1}] -> 1., Band[{2, 1}] -> 2.}, {5, 5}]; \
+         g[[3, 1 ;; 3]] = {5., 6., 7.}; g[[-1, -1]] = 0; \
+         g[[2 ;; 3, 4 ;; 5]] = {{a, b}, {c, d}}; g[[1, All]] = 9; Normal[g]"
+      )
+      .unwrap(),
+      "{{9, 9, 9, 9, 9}, {2., 1., 0, a, b}, {5., 6., 7., c, d}, {0, 0, 2., 1., 0}, {0, 0, 0, 2., 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = SparseArray[{{1, 2} -> 3, {3, 1} -> x, {2, 4} -> 5.}, {3, 4}]; \
+         Normal[Transpose[g]] === Transpose[Normal[g]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "g = SparseArray[{{1, 2} -> 3, {3, 1} -> 2, {3, 3} -> 1.5}, {3, 3}]; \
+         {g . {1., 2., 3.}, g . {1, 2, 3}, {1., 2., 3.} . g, g . {a, b, c}}"
+      )
+      .unwrap(),
+      "{{6., 0., 6.5}, {6., 0., 6.5}, {6., 3., 4.5}, {3.*b, 0, 2.*a + 1.5*c}}"
+    );
+  }
+
   #[test]
   fn chained_sparse_arithmetic() {
     assert_eq!(

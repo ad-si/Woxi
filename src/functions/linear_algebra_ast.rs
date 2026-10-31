@@ -1113,11 +1113,123 @@ fn cauchy_dense(x: &[Expr], y: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(rows.into()))
 }
 
+/// A matrix SparseArray with background 0 dotted with a vector (either
+/// side), computed from the stored entries alone. The result is a plain
+/// list, as in wolframscript; a row with no entries is `0.` where the
+/// product is machine arithmetic and `0` otherwise.
+fn sparse_matrix_vector_dot(
+  a: &Expr,
+  b: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let matrix_parts =
+    |e: &Expr| -> Option<([usize; 2], Vec<(Vec<i128>, Expr)>)> {
+      let Expr::FunctionCall { name, args } = e else {
+        return None;
+      };
+      let [
+        Expr::Identifier(auto),
+        Expr::List(dims),
+        Expr::Integer(0),
+        csr,
+      ] = args.as_slice()
+      else {
+        return None;
+      };
+      if name != "SparseArray" || auto != "Automatic" {
+        return None;
+      }
+      let [Expr::Integer(r), Expr::Integer(c)] = dims.as_slice() else {
+        return None;
+      };
+      let dims = [usize::try_from(*r).ok()?, usize::try_from(*c).ok()?];
+      let entries =
+        crate::functions::list_helpers_ast::sparse_array_extract_rules(
+          &dims, csr,
+        );
+      Some((dims, entries))
+    };
+  let vector = |e: &Expr| -> Option<Vec<Expr>> {
+    match e {
+      Expr::List(items)
+        if items.iter().all(|x| !matches!(x, Expr::List(_))) =>
+      {
+        Some(items.to_vec())
+      }
+      _ => None,
+    }
+  };
+  // (matrix, vector, matrix on the left)
+  let (dims, entries, v, left) =
+    if let (Some((d, en)), Some(v)) = (matrix_parts(a), vector(b)) {
+      (d, en, v, true)
+    } else if let (Some(v), Some((d, en))) = (vector(a), matrix_parts(b)) {
+      (d, en, v, false)
+    } else {
+      return None;
+    };
+  let (out_len, inner) = if left {
+    (dims[0], dims[1])
+  } else {
+    (dims[1], dims[0])
+  };
+  if v.len() != inner {
+    return None;
+  }
+  // One machine real among the stored values makes them all machine reals
+  // (a packed real array in wolframscript).
+  let real_matrix = entries.iter().any(|(_, v)| matches!(v, Expr::Real(_)));
+  let to_real = |v: Expr| -> Expr {
+    if real_matrix
+      && let Some(x) = crate::functions::math_ast::try_eval_to_f64(&v)
+      && !matches!(v, Expr::Real(_))
+      && crate::functions::predicate_ast::is_numeric_q(&v)
+    {
+      Expr::Real(x)
+    } else {
+      v
+    }
+  };
+  let mut terms: Vec<Vec<Expr>> = vec![Vec::new(); out_len];
+  for (pos, val) in entries {
+    let val = to_real(val);
+    let (row, col) = (pos[0] as usize - 1, pos[1] as usize - 1);
+    let (out, k) = if left { (row, col) } else { (col, row) };
+    terms[out]
+      .push(crate::functions::math_ast::times_ast(&[val, v[k].clone()]).ok()?);
+  }
+  let numeric_vector = v
+    .iter()
+    .all(|x| matches!(x, Expr::Real(_) | Expr::Integer(_)));
+  let zero = if numeric_vector
+    && (real_matrix || v.iter().any(|x| matches!(x, Expr::Real(_))))
+  {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
+  let mut out = Vec::with_capacity(out_len);
+  for t in terms {
+    out.push(match t.len() {
+      0 => zero.clone(),
+      1 => t.into_iter().next().unwrap(),
+      _ => match crate::functions::math_ast::plus_ast(&t) {
+        Ok(x) => x,
+        Err(e) => return Some(Err(e)),
+      },
+    });
+  }
+  Some(Ok(Expr::List(out.into())))
+}
+
 pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
       "Dot expects exactly 2 arguments".into(),
     ));
+  }
+
+  if let Some(product) = sparse_matrix_vector_dot(&args[0], &args[1]) {
+    return product;
   }
 
   // Densify any SparseArray or structured-matrix operand to its Normal
