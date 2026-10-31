@@ -6024,6 +6024,10 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::undirected_graph_ast(args);
   }
 
+  if name == "CanonicalGraph" && args.len() == 1 {
+    return crate::functions::graph::canonical_graph_ast(args);
+  }
+
   if name == "SimpleGraph" && args.len() == 1 {
     return crate::functions::graph::simple_graph_ast(args);
   }

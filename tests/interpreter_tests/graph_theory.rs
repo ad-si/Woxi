@@ -8826,3 +8826,39 @@ mod simple_graph {
     );
   }
 }
+
+mod canonical_graph {
+  use super::*;
+
+  #[test]
+  fn relabels_by_refined_degree_as_wolfram_does() {
+    assert_eq!(
+      interpret(
+        "EdgeList[CanonicalGraph[#]] & /@ {Graph[{a <-> b, a <-> c, a <-> d}], \
+         Graph[{1 <-> 2, 1 <-> 3, 1 <-> 4, 4 <-> 5}], CycleGraph[5], \
+         Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3}]}"
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 4, 2 \u{f3d4} 4, 3 \u{f3d4} 4}, \
+       {1 \u{f3d4} 4, 2 \u{f3d4} 5, 3 \u{f3d4} 5, 4 \u{f3d4} 5}, \
+       {1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 5, 4 \u{f3d4} 5}, \
+       {1 \u{f3d4} 3, 1 \u{f3d4} 4, 2 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 4}}"
+    );
+    assert_eq!(
+      interpret("EdgeList[CanonicalGraph[Graph[{1 -> 2, 2 -> 3}]]]").unwrap(),
+      "{2 \u{f3d5} 3, 3 \u{f3d5} 1}"
+    );
+  }
+
+  #[test]
+  fn isomorphic_graphs_become_identical() {
+    assert_eq!(
+      interpret(
+        "CanonicalGraph[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4}]] === \
+         CanonicalGraph[Graph[{c <-> a, b <-> d, a <-> d}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

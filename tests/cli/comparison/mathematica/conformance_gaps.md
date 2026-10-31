@@ -6436,3 +6436,19 @@ leaves it as is for others (`Parallelogram[{0, 0}, {{-1, -1}, {-1, 0}}]` gives
 the same `0 <= -y <= 1 && 0 <= -x + y <= 1` in both). The regions are equal.
 Only boxes, balls (round or axis-aligned ellipsoids) and parallelepipeds are
 converted; other regions stay unevaluated.
+
+## `CanonicalGraph` of a highly symmetric graph labels differently
+
+```sh
+wolframscript -code 'EdgeList[CanonicalGraph[PetersenGraph[]]][[;; 3]]'
+# {1 <-> 3, 1 <-> 4, 1 <-> 7}
+woxi eval 'EdgeList[CanonicalGraph[PetersenGraph[]]][[;; 3]]'
+# {1 <-> 2, 1 <-> 3, 1 <-> 4}
+```
+
+Woxi orders vertices by their refined degree colouring and settles the ties
+left over with the lexicographically smallest edge list. That reproduces
+wolframscript's labels for graphs that degree refinement separates (paths,
+stars, trees, cycles, complete bipartite graphs) but not for vertex-transitive
+ones, where wolframscript's tie-breaking rule is unknown. Isomorphic graphs
+still come out identical in Woxi.

@@ -3402,7 +3402,7 @@ SystemsModelParallelConnect,,🚫,,8.0,3440
 UnsavedVariables,,,,8.0,3440
 VertexConnectivity,Minimum vertex cut size (s-t form uses vertex-disjoint paths),✅,pure,9.0,3440
 BiorthogonalSplineWavelet,Biorthogonal spline wavelet family with exact rational filters,✅,pure,8.0,3462
-CanonicalGraph,,,,10.0,3462
+CanonicalGraph,Relabels a graph so that isomorphic graphs become identical,✅,pure,10.0,3462
 ComposeSeries,Composes power series by substituting one series into another,✅,pure,1.0,3462
 ConstantRegionQ,,,,10.0,3462
 ConvectionPDETerm,,,,12.2,3462
