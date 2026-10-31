@@ -42286,6 +42286,10 @@ mod grid_cell_labeled_layout {
         r#"{Head[Plot[x, {x, 0, 1}][[2]]], Head[ListPlot[{1, 2, 3}][[2]]], Head[ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 1}][[2]]]}"#,
         "{List, List, List}",
       );
+      assert_case(
+        r#"Map[Length, {ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}], DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}], RegionPlot[x > y, {x, 0, 1}, {y, 0, 1}], Plot3D[x + y, {x, 0, 1}, {y, 0, 1}], BarChart[{1, 2}]}]"#,
+        "{2, 2, 2, 2, 2}",
+      );
     }
 
     #[test]

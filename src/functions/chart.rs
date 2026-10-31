@@ -2146,7 +2146,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &opts.epilog,
   )?;
   let structure = bar_chart_structure(&groups, &opts, args);
-  Ok(crate::graphics_result_with_structure(svg, structure))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// PairedBarChart[left, right, opts] and PairedHistogram[left, right,
@@ -2798,7 +2798,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::graphics_result(svg));
   }
   let structure = call1("Graphics", Expr::List(slice_prims.into()));
-  Ok(crate::graphics_result_with_structure(svg, structure))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// SVG for one pie-slice label, placed along the slice's mid-angle according

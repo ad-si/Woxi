@@ -2321,7 +2321,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_min, y_max),
     true,
   );
-  let graphic = crate::graphics_result_with_structure(svg, structure);
+  let graphic = crate::plot_result_with_structure(svg, structure);
   if !opts.bar_legend {
     return Ok(graphic);
   }
@@ -2763,7 +2763,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result_with_structure(svg, structure))
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// The `ContourStyle -> …` option items of a ContourPlot call (a single
@@ -3196,7 +3196,10 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Keep the primitives on the rendering so `RegionPlot[…][[1]]` reaches
   // the region's geometry and `Show` can merge it with other layers.
   if let Expr::Graphics { structure, .. } = &mut result {
-    *structure = Some(Box::new(call("Graphics", graphics_args)));
+    *structure = Some(Box::new(crate::plot_option_list(call(
+      "Graphics",
+      graphics_args,
+    ))));
   }
   Ok(result)
 }
@@ -3894,7 +3897,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result_with_structure(
+  Ok(crate::plot_result_with_structure(
     svg,
     call1("Graphics", Expr::List(primitives.into())),
   ))
@@ -4002,7 +4005,7 @@ pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result_with_structure(
+  Ok(crate::plot_result_with_structure(
     svg,
     call1("Graphics", Expr::List(primitives.into())),
   ))
@@ -4054,7 +4057,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_epilog_primitives(&mut svg, &area, &epilog);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result_with_structure(
+  Ok(crate::plot_result_with_structure(
     svg,
     call1("Graphics", Expr::List(primitives.into())),
   ))
@@ -4519,7 +4522,7 @@ pub fn vector_density_plot_ast(
   );
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result_with_structure(
+  Ok(crate::plot_result_with_structure(
     svg,
     call1("Graphics", Expr::List(primitives.into())),
   ))

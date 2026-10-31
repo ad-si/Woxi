@@ -1351,6 +1351,44 @@ pub fn graphics3d_result_with_structure(
   }
 }
 
+/// A plot's rendering with its symbolic form `Graphics[prims, {opts}]`:
+/// the options a plot builder splices in (`Graphics[prims, o₁, o₂, …]`)
+/// form one list, as in Wolfram's plots, whose part 2 is that list.
+pub fn plot_result_with_structure(
+  svg: String,
+  structure: syntax::Expr,
+) -> syntax::Expr {
+  graphics_result_with_structure(svg, plot_option_list(structure))
+}
+
+/// `plot_result_with_structure` for a 3D plot.
+pub fn plot3d_result_with_structure(
+  svg: String,
+  structure: syntax::Expr,
+) -> syntax::Expr {
+  graphics3d_result_with_structure(svg, plot_option_list(structure))
+}
+
+pub(crate) fn plot_option_list(structure: syntax::Expr) -> syntax::Expr {
+  use syntax::Expr;
+  match structure {
+    Expr::FunctionCall { ref name, ref args }
+      if (name == "Graphics" || name == "Graphics3D")
+        && !args.is_empty()
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), Expr::List(args[1..].to_vec().into())]
+          .into(),
+      }
+    }
+    other => other,
+  }
+}
+
 /// Gets the last captured graphics content (backward compatible)
 pub fn get_captured_graphics() -> Option<String> {
   CAPTURED_GRAPHICS.with(|buffer| buffer.borrow().last().cloned())

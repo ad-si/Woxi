@@ -985,7 +985,10 @@ fn parametric_region_ast(
   // together with the other layers of a composite figure instead of
   // dropping it for having no plot data.
   if let Expr::Graphics { structure, .. } = &mut result {
-    *structure = Some(Box::new(call("Graphics", graphics_args)));
+    *structure = Some(Box::new(crate::plot_option_list(call(
+      "Graphics",
+      graphics_args,
+    ))));
   }
   Ok(result)
 }

@@ -1372,7 +1372,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2826,7 +2826,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
   let structure = call1("Graphics3D", Expr::List(structure_items.into()));
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 // ── Graphics3D implementation ────────────────────────────────────────
@@ -9797,7 +9797,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   structure_args.extend(args[1..].iter().cloned());
   let structure = call("Graphics3D", structure_args);
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 // ── RevolutionPlot3D implementation ──────────────────────────────────
@@ -10421,7 +10421,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 fn parse_iterator_generic(
@@ -10989,7 +10989,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graphics3D", structure_args)
   };
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 // ── ContourPlot3D implementation ─────────────────────────────────────
@@ -11716,7 +11716,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graphics3D", structure_args)
   };
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 // ── ListPointPlot3D implementation ───────────────────────────────────
@@ -12023,7 +12023,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graphics3D", structure_args)
   };
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 fn parse_xyz_points(items: &[Expr]) -> Vec<(f64, f64, f64)> {
@@ -13462,7 +13462,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 /// DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -15208,7 +15208,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result_with_structure(svg, structure))
+  Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
 #[cfg(test)]

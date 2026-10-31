@@ -17414,8 +17414,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(sargs[0].clone());
           if graphic_count == 1 {
+            // A plot's options are one list, `Graphics[prims, {opts}]`.
             for opt in sargs.iter().skip(1) {
-              merge_option(&mut merged_options, opt);
+              match opt {
+                Expr::List(opts) => {
+                  for o in opts {
+                    merge_option(&mut merged_options, o);
+                  }
+                }
+                _ => merge_option(&mut merged_options, opt),
+              }
             }
           }
         } else if let Some(src) = source {
