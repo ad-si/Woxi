@@ -8078,6 +8078,25 @@ mod cases {
       r#"{Sqrt[(3*(95 + Sqrt[8881]))/2], Sqrt[(3*(95 - Sqrt[8881]))/2]}"#,
     );
   }
+  // Rows of ~1e-160 entries made the Jacobi sweeps never converge (the
+  // product of two column norms underflowed), and the Gram-matrix fallback
+  // returned a spurious tiny complex value; noise columns of a
+  // rank-deficient matrix are not rotated forever either.
+  #[test]
+  fn singular_value_list_tiny_rows() {
+    assert_case(
+      r#"Round[SingularValueList[{{1., 2., 3.}, {3., 4., 1.}, {1.*^-160, 2.*^-160, 1.*^-161}, {5.*^-161, 3.*^-160, 2.*^-160}}], 10.^-12]"#,
+      r#"{5.935616750745, 2.183678957235}"#,
+    );
+    assert_case(
+      r#"Round[SingularValueList[{{1., 2., 0.}, {3., 4., 1.*^-155}, {5., 7., 0.}}], 10.^-12]"#,
+      r#"{10.191428257097, 0.367137685944}"#,
+    );
+    assert_case(
+      r#"m = Table[N[Sin[i + j] + Cos[i j]/10], {i, 19}, {j, 16}]; m[[17 ;; 19]] *= 10.^-155; Length[SingularValueList[m]]"#,
+      r#"16"#,
+    );
+  }
   #[test]
   fn singular_value_list_rank_one() {
     assert_case(r#"SingularValueList[{{1, 1}, {1, 1}}]"#, r#"{2}"#);

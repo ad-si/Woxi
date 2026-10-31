@@ -12514,6 +12514,13 @@ fn jacobi_svd_with_tolerance(
   let dot =
     |x: &[f64], y: &[f64]| x.iter().zip(y).map(|(p, q)| p * q).sum::<f64>();
   let mut converged = false;
+  // Two columns of rounding noise (what a rank-deficient matrix's extra
+  // columns become) stay noise under rotation: their correlation is below
+  // the noise floor of the largest column and is left alone.
+  let noise_floor = {
+    let largest = w.iter().map(|c| dot(c, c)).fold(0.0, f64::max);
+    f64::EPSILON * f64::EPSILON * largest
+  };
   for _sweep in 0..60 {
     let mut rotated = false;
     for p in 0..n {
@@ -12521,7 +12528,11 @@ fn jacobi_svd_with_tolerance(
         let alpha = dot(&w[p], &w[p]);
         let beta = dot(&w[q], &w[q]);
         let gamma = dot(&w[p], &w[q]);
-        if gamma.abs() <= 1e-15 * (alpha * beta).sqrt() || gamma == 0.0 {
+        // Square roots taken apart: `alpha * beta` underflows to zero for
+        // columns of ~1e-160 entries, and the pair then never converged.
+        if gamma.abs() <= 1e-15 * alpha.sqrt() * beta.sqrt()
+          || gamma.abs() <= noise_floor
+        {
           continue;
         }
         rotated = true;
