@@ -6097,6 +6097,20 @@ mod expand_threading {
   }
 
   // ─── Exact fifth/tenth-angle trig values ──────────────────────────
+  // Folded first-octant forms are reused across calls (they were parsed
+  // from their spelling every time), and stay the same.
+  #[test]
+  fn repeated_exact_trig_forms() {
+    assert_eq!(
+      interpret(
+        "{Table[Sin[k Pi/7], {k, 0, 3}], Cos[(3 Pi)/14], Table[Cos[k Pi/12], {k, 1, 5}], \
+         Length[Union[Table[Sin[(k Pi)/7], {k, 2000}]]]}"
+      )
+      .unwrap(),
+      "{{0, Sin[Pi/7], Cos[(3*Pi)/14], Cos[Pi/14]}, Cos[(3*Pi)/14], \
+       {(1 + Sqrt[3])/(2*Sqrt[2]), Sqrt[3]/2, 1/Sqrt[2], 1/2, (-1 + Sqrt[3])/(2*Sqrt[2])}, 7}"
+    );
+  }
   #[test]
   fn cos_fifth_angles() {
     assert_eq!(interpret("Cos[Pi/5]").unwrap(), "(1 + Sqrt[5])/4");

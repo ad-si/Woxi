@@ -416,8 +416,24 @@ fn try_trig_pi_phase(
 /// Exact Sin value for k*Pi/n. Returns None if no simple exact form.
 /// Parse a fixed trig closed-form literal into an `Expr`. The argument is a
 /// constant Wolfram expression, so parsing never fails at runtime.
+/// Parsed once per spelling: a plot of `Sin[k Pi/n]` values asked for the
+/// same few literals at every sample.
 fn lit(s: &str) -> Expr {
-  crate::syntax::string_to_expr(s).expect("valid trig literal")
+  thread_local! {
+    static PARSED: std::cell::RefCell<std::collections::HashMap<String, Expr>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  if let Some(e) = PARSED.with(|m| m.borrow().get(s).cloned()) {
+    return e;
+  }
+  let e = crate::syntax::string_to_expr(s).expect("valid trig literal");
+  PARSED.with(|m| {
+    let mut m = m.borrow_mut();
+    if m.len() < 4096 {
+      m.insert(s.to_string(), e.clone());
+    }
+  });
+  e
 }
 
 /// Build `head[m*Pi/d]` (e.g. `Cos[Pi/14]`, `Sin[(3*Pi)/16]`).
