@@ -5685,6 +5685,26 @@ mod plot3d {
       }
 
       #[test]
+      fn color_function_colors_each_facet_from_six_arguments() {
+        // `ColorFunction` receives `{x, y, z, theta, phi, r}` per facet; the
+        // colours reach both the symbolic form and the rendered SVG.
+        let code = "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 9, ColorFunctionScaling -> False, ColorFunction -> Function[{x, y, z, t, p, r}, If[z > 0, RGBColor[1, 0, 0], RGBColor[0, 0, 1]]]]";
+        assert_eq!(
+          interpret(&format!(
+            "Union[Cases[{code}, RGBColor[_Real, _Real, _Real], Infinity]]"
+          ))
+          .unwrap(),
+          "{RGBColor[0., 0., 1.], RGBColor[1., 0., 0.]}"
+        );
+        let svg = export_svg(code);
+
+        let plain = export_svg(
+          "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 9]",
+        );
+        assert_ne!(svg, plain);
+      }
+
+      #[test]
       fn indexed_definition_radius_matches_inline_expression() {
         // The radial function is held, so a definition such as `rad[1]` must
         // be resolved (once) to the same surface as the inline expression.
