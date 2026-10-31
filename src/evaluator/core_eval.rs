@@ -1881,6 +1881,12 @@ fn evaluate_expr_to_expr_uncached(
               return Ok(result);
             }
           }
+          // `Evaluate[lhs] := rhs` assigns to what `lhs` evaluates to
+          // (`Evaluate[Symbol["x"]] := 1` defines `x`).
+          if let Some([inner]) = evaluate_wrapper_args(&args[0]) {
+            let lhs = evaluate_expr_to_expr(inner)?;
+            return set_delayed_ast(&lhs, &args[1]);
+          }
           return set_delayed_ast(&args[0], &args[1]);
         }
         // Special handling for TagSetDelayed - stores upvalue definitions

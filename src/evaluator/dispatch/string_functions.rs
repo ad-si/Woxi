@@ -129,11 +129,13 @@ pub fn dispatch_string_functions(
         _ => crate::functions::code_parser::code_parse(source, convention),
       }));
     }
-    // MakeExpression[string] parses to a held expression, equivalent to
-    // ToExpression[string, InputForm, HoldComplete]. Only the string form is
-    // handled; box-expression input is left unevaluated.
-    "MakeExpression" if args.len() == 1 => {
-      if let Expr::String(_) = &args[0] {
+    // MakeExpression[input] parses to a held expression, equivalent to
+    // ToExpression[input, InputForm, HoldComplete]: a string, or boxes read
+    // as the source they typeset.
+    "MakeExpression" if args.len() == 1 || args.len() == 2 => {
+      if matches!(&args[0], Expr::String(_))
+        || matches!(&args[0], Expr::FunctionCall { name, .. } if name.ends_with("Box"))
+      {
         let te_args = vec![
           args[0].clone(),
           id_expr("InputForm"),

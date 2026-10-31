@@ -6371,6 +6371,41 @@ mod make_expression {
     );
   }
 
+  // Boxes are read as the source they typeset, by MakeExpression (with a
+  // form argument too) and ToExpression alike.
+  #[test]
+  fn boxes_are_read_as_their_source() {
+    assert_eq!(
+      interpret(
+        "{MakeExpression[RowBox[{\"bar\"}], StandardForm], \
+         MakeExpression[\"bar\", StandardForm], \
+         MakeExpression[RowBox[{\"1\", \"+\", \"x\"}], StandardForm], \
+         MakeExpression[RowBox[{\"f\", \"[\", \"x\", \"]\"}], StandardForm], \
+         ToExpression[RowBox[{\"1\", \"+\", \"2\"}]], \
+         ToExpression[SuperscriptBox[\"x\", \"2\"]], \
+         ToExpression[FractionBox[\"1\", \"3\"]]}"
+      )
+      .unwrap(),
+      "{HoldComplete[bar], HoldComplete[bar], HoldComplete[1 + x], \
+       HoldComplete[f[x]], 3, x^2, 1/3}"
+    );
+  }
+
+  // `Evaluate[lhs] := rhs` assigns to what `lhs` evaluates to.
+  #[test]
+  fn evaluate_on_the_left_of_set_delayed() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = x; Evaluate[a] := 5; s = \"foo\"; Evaluate[Symbol[s]] := 7; \
+         Evaluate[First[MakeExpression[RowBox[{\"bar\"}], StandardForm]]] := 8; \
+         {x, foo, bar}"
+      )
+      .unwrap(),
+      "{5, 7, 8}"
+    );
+  }
+
   // The parsed expression is held, so an assignment inside it does not fire.
   #[test]
   fn assignment_is_held() {
