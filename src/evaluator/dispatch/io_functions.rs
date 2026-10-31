@@ -6191,6 +6191,19 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
 
 /// The `{width, height}` of a `Pane[content, {w, h}]` or
 /// `Pane[content, ImageSize -> {w, h}]` call.
+/// Whether a `Pane` states `ImageSizeAction -> "ShrinkToFit"`: content
+/// larger than the box is scaled down to fit it instead of being clipped.
+pub(crate) fn pane_shrinks_to_fit(options: &[Expr]) -> bool {
+  options.iter().any(|opt| {
+    matches!(
+      opt,
+      Expr::Rule { pattern, replacement }
+        if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSizeAction")
+          && matches!(&**replacement, Expr::String(s) if s == "ShrinkToFit")
+    )
+  })
+}
+
 pub(crate) fn pane_fixed_size(args: &[Expr]) -> Option<Vec<Expr>> {
   let pair = |e: &Expr| match e {
     Expr::List(size) if size.len() == 2 => Some(size.to_vec()),
@@ -6313,6 +6326,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
                 crate::functions::graphics::pane_picture_is_auto_sized(
                   wrapped.as_ref().unwrap_or(&args[0]),
                 ),
+                pane_shrinks_to_fit(&args[1..]),
               )
             }
             _ => inner_svg,
