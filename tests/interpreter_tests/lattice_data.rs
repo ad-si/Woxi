@@ -40,6 +40,18 @@ mod lattice_data_tests {
     );
   }
 
+  // The generating vectors (GeneralizedWatermanPolyhedra).
+  #[test]
+  fn basis() {
+    assert_eq!(
+      interpret(
+        r#"{Head[LatticeData["SimpleCubic", "Basis"]], Normal[LatticeData["SimpleCubic", "Basis"]], LatticeData["BodyCenteredCubic", "Basis"], LatticeData["FaceCenteredCubic", "Basis"]}"#
+      )
+      .unwrap(),
+      "{SparseArray, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, {{2, 0, 0}, {0, 2, 0}, {1, 1, 1}}, {{-1, -1, 0}, {1, -1, 0}, {0, 1, -1}}}"
+    );
+  }
+
   #[test]
   fn unknown_lattice_stays_unevaluated() {
     assert_eq!(

@@ -98,6 +98,18 @@ pub fn lattice_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => 12,
     })),
     "Name" => Ok(Expr::String(lattice.to_string())),
+    // Generating vectors, as wolframscript lists them (the simple cubic
+    // identity as a SparseArray).
+    "Basis" => {
+      let src = match lattice {
+        "SimpleCubic" => "SparseArray[IdentityMatrix[3]]",
+        "BodyCenteredCubic" => "{{2, 0, 0}, {0, 2, 0}, {1, 1, 1}}",
+        _ => "{{-1, -1, 0}, {1, -1, 0}, {0, 1, -1}}",
+      };
+      crate::evaluator::evaluate_expr_to_expr(
+        &crate::functions::string_ast::parse_program_to_expr(src)?,
+      )
+    }
     "LatticePoints" | "UnitCellPoints" => {
       let src = format!(
         "{{{}}}",

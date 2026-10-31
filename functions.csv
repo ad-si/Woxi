@@ -1471,7 +1471,7 @@ FunctionInterpolation,"Create interpolating function by sampling an expression",
 AccountingForm,"Display numbers in accounting notation (negatives in brackets); takes the NumberForm precision specs and options; the closing bracket takes a field column of its own",✅,pure,2.0,1451
 Before,"Symbolic temporal ordering wrapper",✅,pure,3.0,1451
 ComplexityFunction,"Option for specifying complexity measure in Simplify",✅,pure,3.0,1451
-LatticeData,"Unit cell image (Graphics3D) and properties (CoordinationNumber; Name; LatticePoints) of the cubic lattices SimpleCubic or BodyCenteredCubic or FaceCenteredCubic (also SC or BCC or FCC)",🚧,pure,6.0,1451
+LatticeData,"Unit cell image (Graphics3D) and properties (CoordinationNumber; Name; LatticePoints; Basis) of the cubic lattices SimpleCubic or BodyCenteredCubic or FaceCenteredCubic (also SC or BCC or FCC)",🚧,pure,6.0,1451
 CompilationOptions,"Option for specifying compilation settings",✅,pure,8.0,1452
 AbsoluteDashing,"Graphics directive for absolute dash pattern",✅,pure,2.0,1455
 DataReversed,"Option for reversing data in plots",✅,pure,6.0,1455
