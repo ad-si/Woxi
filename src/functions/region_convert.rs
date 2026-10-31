@@ -22,8 +22,8 @@ fn coords(e: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
-fn eval(e: Expr) -> Option<Expr> {
-  crate::evaluator::evaluate_expr_to_expr(&e).ok()
+fn eval(e: &Expr) -> Option<Expr> {
+  crate::evaluator::evaluate_expr_to_expr(e).ok()
 }
 
 fn cmp(operands: Vec<Expr>, op: ComparisonOp) -> Expr {
@@ -44,7 +44,7 @@ fn and_all(parts: Vec<Expr>) -> Expr {
   }
 }
 
-fn implicit(condition: Expr, vars: Vec<Expr>) -> Option<Expr> {
+fn implicit(condition: &Expr, vars: Vec<Expr>) -> Option<Expr> {
   Some(Expr::FunctionCall {
     name: "ImplicitRegion".to_string(),
     args: vec![eval(condition)?, Expr::List(vars.into())].into(),
@@ -59,11 +59,11 @@ fn box_region(p: &[Expr], q: &[Expr]) -> Option<Expr> {
   let vars = formal_vars(p.len())?;
   let mut parts = Vec::new();
   for ((a, b), v) in p.iter().zip(q).zip(&vars) {
-    let lo = eval(call("Min", vec![a.clone(), b.clone()]))?;
-    let hi = eval(call("Max", vec![a.clone(), b.clone()]))?;
+    let lo = eval(&call("Min", vec![a.clone(), b.clone()]))?;
+    let hi = eval(&call("Max", vec![a.clone(), b.clone()]))?;
     parts.push(cmp(vec![lo, v.clone(), hi], ComparisonOp::LessEqual));
   }
-  implicit(and_all(parts), vars)
+  implicit(&and_all(parts), vars)
 }
 
 /// `Σ (x_i - c_i)^2 / r_i^2 <= 1` with the denominators cleared:
@@ -118,7 +118,7 @@ fn ball_region(center: &[Expr], radii: &[Expr]) -> Option<Expr> {
       ComparisonOp::LessEqual,
     )
   };
-  implicit(condition, vars)
+  implicit(&condition, vars)
 }
 
 /// The parallelepiped `o + Σ t_i v_i`, `0 <= t_i <= 1`: the coefficients
@@ -129,9 +129,11 @@ fn parallelepiped_region(origin: &[Expr], vectors: &[Expr]) -> Option<Expr> {
     return None;
   }
   let vars = formal_vars(n)?;
-  let columns =
-    eval(call("Transpose", vec![Expr::List(vectors.to_vec().into())]))?;
-  let inverse = eval(call("Inverse", vec![columns]))?;
+  let columns = eval(&call(
+    "Transpose",
+    vec![Expr::List(vectors.to_vec().into())],
+  ))?;
+  let inverse = eval(&call("Inverse", vec![columns]))?;
   if !matches!(inverse, Expr::List(_)) {
     return None;
   }
@@ -145,7 +147,7 @@ fn parallelepiped_region(origin: &[Expr], vectors: &[Expr]) -> Option<Expr> {
       )
     })
     .collect();
-  let t = eval(call(
+  let t = eval(&call(
     "Expand",
     vec![call("Dot", vec![inverse, Expr::List(shifted.into())])],
   ))?;
@@ -161,7 +163,7 @@ fn parallelepiped_region(origin: &[Expr], vectors: &[Expr]) -> Option<Expr> {
       )
     })
     .collect();
-  implicit(and_all(parts), vars)
+  implicit(&and_all(parts), vars)
 }
 
 fn implicit_form(region: &Expr) -> Option<Expr> {

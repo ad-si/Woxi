@@ -24116,71 +24116,6 @@ fn solve_with_eliminated(
   Some(Ok(Expr::List(out.into())))
 }
 
-#[cfg(test)]
-mod tests {
-  use super::NumNode;
-
-  fn exp_of_var() -> NumNode {
-    NumNode::Exp(Box::new(NumNode::Var(0)))
-  }
-
-  #[test]
-  fn compiled_eval_survives_intermediate_overflow() {
-    // E^800 * 1e-300 is finite although E^800 is not a machine number.
-    let node = NumNode::Mul(vec![exp_of_var(), NumNode::Const(1e-300)]);
-    let v = node.eval(&[800.0]);
-    let expected = 300.0f64.mul_add(-std::f64::consts::LN_10, 800.0).exp();
-    assert!((v / expected - 1.0).abs() < 1e-12, "{v} vs {expected}");
-    // Sums, quotients and integer powers stay in the wide range too.
-    let node = NumNode::Div(
-      Box::new(NumNode::Pow(
-        Box::new(NumNode::Add(vec![exp_of_var(), exp_of_var()])),
-        Box::new(NumNode::Const(2.0)),
-      )),
-      Box::new(NumNode::Exp(Box::new(NumNode::Const(1599.0)))),
-    );
-    let v = node.eval(&[800.0]);
-    assert!((v / (4.0 * std::f64::consts::E) - 1.0).abs() < 1e-12, "{v}");
-  }
-
-  #[test]
-  fn compiled_eval_flushes_underflow_like_machine_arithmetic() {
-    // Wolfram: Exp[800.] (Exp[-800.] - Exp[-801.]) is 0., not 0.63.
-    let shifted = |c: f64| {
-      NumNode::Exp(Box::new(NumNode::Add(vec![
-        NumNode::Neg(Box::new(NumNode::Var(0))),
-        NumNode::Const(c),
-      ])))
-    };
-    let node = NumNode::Mul(vec![
-      exp_of_var(),
-      NumNode::Sub(Box::new(shifted(0.0)), Box::new(shifted(-1.0))),
-    ]);
-    assert_eq!(node.eval(&[800.0]), 0.0);
-    // A plain machine result is untouched.
-    assert_eq!(node.eval(&[1.0]), 1.0 - (-1.0f64).exp());
-  }
-
-  #[test]
-  fn compiled_real_part_compiles_and_handles_complex_values() {
-    // Re[Log[x]] + Abs[Sqrt[x]]: real arithmetic while x > 0; for x < 0
-    // the call is evaluated in complex arithmetic (Log[2] and Sqrt[2]).
-    let expr =
-      crate::syntax::string_to_expr("Re[Log[x]] + Abs[Sqrt[x]] + Im[x]")
-        .unwrap();
-    let node = super::compile_numeric(&expr, &["x".to_string()]).unwrap();
-    assert!(!node.has_fallback());
-    let at_e = node.eval(&[std::f64::consts::E]);
-    assert!((at_e - (1.0 + std::f64::consts::E.sqrt())).abs() < 1e-15);
-    let at_minus_two = node.eval(&[-2.0]);
-    let expected = 2.0f64.ln() + 2.0f64.sqrt();
-    assert!(
-      (at_minus_two - expected).abs() < 1e-14,
-      "{at_minus_two} vs {expected}"
-    );
-  }
-}
-
 /// The roots of the cubic `a x^3 + b x^2 + c x + d` with symbolic
 /// coefficients, in wolframscript's Cardano form: with
 /// `Δ0 = 3 a c - b^2`, `Δ1 = -2 b^3 + 9 a b c - 27 a^2 d` and
@@ -24356,4 +24291,69 @@ fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
   .iter()
   .map(|t| fill(t, &values))
   .collect()
+}
+
+#[cfg(test)]
+mod tests {
+  use super::NumNode;
+
+  fn exp_of_var() -> NumNode {
+    NumNode::Exp(Box::new(NumNode::Var(0)))
+  }
+
+  #[test]
+  fn compiled_eval_survives_intermediate_overflow() {
+    // E^800 * 1e-300 is finite although E^800 is not a machine number.
+    let node = NumNode::Mul(vec![exp_of_var(), NumNode::Const(1e-300)]);
+    let v = node.eval(&[800.0]);
+    let expected = 300.0f64.mul_add(-std::f64::consts::LN_10, 800.0).exp();
+    assert!((v / expected - 1.0).abs() < 1e-12, "{v} vs {expected}");
+    // Sums, quotients and integer powers stay in the wide range too.
+    let node = NumNode::Div(
+      Box::new(NumNode::Pow(
+        Box::new(NumNode::Add(vec![exp_of_var(), exp_of_var()])),
+        Box::new(NumNode::Const(2.0)),
+      )),
+      Box::new(NumNode::Exp(Box::new(NumNode::Const(1599.0)))),
+    );
+    let v = node.eval(&[800.0]);
+    assert!((v / (4.0 * std::f64::consts::E) - 1.0).abs() < 1e-12, "{v}");
+  }
+
+  #[test]
+  fn compiled_eval_flushes_underflow_like_machine_arithmetic() {
+    // Wolfram: Exp[800.] (Exp[-800.] - Exp[-801.]) is 0., not 0.63.
+    let shifted = |c: f64| {
+      NumNode::Exp(Box::new(NumNode::Add(vec![
+        NumNode::Neg(Box::new(NumNode::Var(0))),
+        NumNode::Const(c),
+      ])))
+    };
+    let node = NumNode::Mul(vec![
+      exp_of_var(),
+      NumNode::Sub(Box::new(shifted(0.0)), Box::new(shifted(-1.0))),
+    ]);
+    assert_eq!(node.eval(&[800.0]), 0.0);
+    // A plain machine result is untouched.
+    assert_eq!(node.eval(&[1.0]), 1.0 - (-1.0f64).exp());
+  }
+
+  #[test]
+  fn compiled_real_part_compiles_and_handles_complex_values() {
+    // Re[Log[x]] + Abs[Sqrt[x]]: real arithmetic while x > 0; for x < 0
+    // the call is evaluated in complex arithmetic (Log[2] and Sqrt[2]).
+    let expr =
+      crate::syntax::string_to_expr("Re[Log[x]] + Abs[Sqrt[x]] + Im[x]")
+        .unwrap();
+    let node = super::compile_numeric(&expr, &["x".to_string()]).unwrap();
+    assert!(!node.has_fallback());
+    let at_e = node.eval(&[std::f64::consts::E]);
+    assert!((at_e - (1.0 + std::f64::consts::E.sqrt())).abs() < 1e-15);
+    let at_minus_two = node.eval(&[-2.0]);
+    let expected = 2.0f64.ln() + 2.0f64.sqrt();
+    assert!(
+      (at_minus_two - expected).abs() < 1e-14,
+      "{at_minus_two} vs {expected}"
+    );
+  }
 }

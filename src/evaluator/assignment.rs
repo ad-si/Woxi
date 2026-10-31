@@ -3342,15 +3342,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // `f[x_] /; test = value` is a rule of its own, tried before the
   // unconditional `f[x_] = …` and kept apart from it: the value is computed
   // now and stored as the conditional rule's body.
-  if lhs_condition.is_some()
+  if let Some(lhs_condition) = lhs_condition
     && matches!(lhs, Expr::FunctionCall { name, .. }
       if !matches!(name.as_str(), "Condition" | "Pattern" | "HoldPattern"))
   {
     let value = evaluate_expr_to_expr(rhs)?;
-    let conditional = call(
-      "Condition",
-      vec![lhs.clone(), lhs_condition.unwrap().clone()],
-    );
+    let conditional =
+      call("Condition", vec![lhs.clone(), lhs_condition.clone()]);
     set_delayed_ast(&conditional, &value)?;
     return Ok(value);
   }
