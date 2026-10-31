@@ -18986,6 +18986,121 @@ pub fn find_minimum_ast(
   find_minimum_inner(args, maximize).map(|r| nan_free(&r))
 }
 
+/// A local minimum of `f` near the starting values `a` and `b`: the
+/// golden-section point between them brackets one when it lies below both,
+/// otherwise the bracket is grown downhill from the lower start; Brent's
+/// parabolic/golden-section search then narrows it. None when no finite
+/// bracket turns up.
+fn two_point_brent_minimum(
+  f: impl Fn(f64) -> f64,
+  a: f64,
+  b: f64,
+) -> Option<f64> {
+  const GOLD: f64 = 1.618_033_988_749_895;
+  const CGOLD: f64 = 0.381_966_011_250_105;
+  let (fa, fb) = (f(a), f(b));
+  let m = a + CGOLD * (b - a);
+  let fm = f(m);
+  let (mut ax, bx, mut cx);
+  if fm < fa && fm < fb {
+    (ax, bx, cx) = (a, m, b);
+  } else {
+    // Downhill from the higher start towards (and past) the lower one.
+    let (mut p, mut fp, mut q, mut fq) = if fb <= fa {
+      (a, fa, b, fb)
+    } else {
+      (b, fb, a, fa)
+    };
+    let mut r = q + GOLD * (q - p);
+    let mut fr = f(r);
+    let mut steps = 0;
+    while fr < fq {
+      (p, fp, q, fq) = (q, fq, r, fr);
+      r = q + GOLD * (q - p);
+      fr = f(r);
+      steps += 1;
+      if steps > 100 || !r.is_finite() {
+        return None;
+      }
+    }
+    let _ = fp;
+    (ax, bx, cx) = (p, q, r);
+  }
+  if !f(bx).is_finite() {
+    return None;
+  }
+  // Brent's method on the bracket (ax, bx, cx).
+  if ax > cx {
+    std::mem::swap(&mut ax, &mut cx);
+  }
+  let (mut lo, mut hi) = (ax, cx);
+  let (mut x, mut w, mut v) = (bx, bx, bx);
+  let (mut fx, mut fw, mut fv) = (f(bx), f(bx), f(bx));
+  let (mut d, mut e) = (0.0f64, 0.0f64);
+  for _ in 0..200 {
+    let xm = f64::midpoint(lo, hi);
+    let tol1 = 1.0e-10 * x.abs() + 1.0e-20;
+    let tol2 = 2.0 * tol1;
+    if (x - xm).abs() <= tol2 - 0.5 * (hi - lo) {
+      break;
+    }
+    let mut golden = true;
+    if e.abs() > tol1 {
+      let r = (x - w) * (fx - fv);
+      let mut q = (x - v) * (fx - fw);
+      let mut p = (x - v) * q - (x - w) * r;
+      q = 2.0 * (q - r);
+      if q > 0.0 {
+        p = -p;
+      }
+      q = q.abs();
+      let etemp = e;
+      e = d;
+      if p.abs() < (0.5 * q * etemp).abs()
+        && p > q * (lo - x)
+        && p < q * (hi - x)
+      {
+        d = p / q;
+        let u = x + d;
+        if u - lo < tol2 || hi - u < tol2 {
+          d = tol1.copysign(xm - x);
+        }
+        golden = false;
+      }
+    }
+    if golden {
+      e = if x >= xm { lo - x } else { hi - x };
+      d = CGOLD * e;
+    }
+    let u = if d.abs() >= tol1 {
+      x + d
+    } else {
+      x + tol1.copysign(d)
+    };
+    let fu = f(u);
+    if fu <= fx {
+      if u >= x {
+        lo = x;
+      } else {
+        hi = x;
+      }
+      (v, fv, w, fw, x, fx) = (w, fw, x, fx, u, fu);
+    } else {
+      if u < x {
+        lo = u;
+      } else {
+        hi = u;
+      }
+      if fu <= fw || w == x {
+        (v, fv, w, fw) = (w, fw, u, fu);
+      } else if fu <= fv || v == x || v == w {
+        (v, fv) = (u, fu);
+      }
+    }
+  }
+  fx.is_finite().then_some(x)
+}
+
 fn find_minimum_inner(
   args: &[Expr],
   maximize: bool,
@@ -19139,6 +19254,33 @@ fn find_minimum_inner(
   } else {
     args[1].clone()
   };
+
+  // `{x, x0, x1}` names two starting values for a derivative-free search:
+  // bracket a minimum from them and narrow it with Brent's method, then let
+  // the search below polish it from there. Started from x0 alone, a point
+  // where the objective is flat or not differentiable (`Abs[BesselJ[1, x]]`
+  // at 0) would stay put.
+  if let Expr::List(items) = &combined_spec
+    && let [Expr::Identifier(var), x0, x1] = items.as_slice()
+    && let (Ok(x0v), Ok(x1v)) =
+      (find_root_eval_number(x0), find_root_eval_number(x1))
+    && x0v != x1v
+  {
+    let sign = if maximize { -1.0 } else { 1.0 };
+    let objective = |x: f64| {
+      quietly(|| find_root_eval_at(f, var, x))
+        .ok()
+        .filter(|v| v.is_finite())
+        .map_or(f64::INFINITY, |v| sign * v)
+    };
+    if let Some(best) = two_point_brent_minimum(objective, x0v, x1v) {
+      let mut polished = args.to_vec();
+      polished[1] = Expr::List(
+        vec![Expr::Identifier(var.clone()), Expr::Real(best)].into(),
+      );
+      return find_minimum_inner(&polished, maximize);
+    }
+  }
 
   // Parse variables and starting points: x, {x, y}, {x, x0}, {x, x0, xmin,
   // xmax} or {{x, x0}, {y, y0}} (each pair optionally carrying its own

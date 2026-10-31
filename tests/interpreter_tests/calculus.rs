@@ -24649,3 +24649,25 @@ mod maximize_probes_are_quiet {
     );
   }
 }
+
+mod find_minimum_two_starting_values {
+  use super::*;
+
+  #[test]
+  fn a_non_differentiable_start_is_left_behind() {
+    // `{x, x0, x1}` searched from x0 alone, where `Abs[BesselJ[1, x]]` is
+    // 0 and flat, and reported the maximum 0. there.
+    assert_eq!(
+      interpret(
+        "Round[10^6 {First[#], x /. Last[#]}] &[\
+         FindMaximum[Abs[BesselJ[1, x]], {x, 0, 3.8317}]]"
+      )
+      .unwrap(),
+      "{581865, 1841184}"
+    );
+    assert_eq!(
+      interpret("FindMinimum[Abs[x - 0.3], {x, 0, 1}]").unwrap(),
+      "{0., {x -> 0.3}}"
+    );
+  }
+}
