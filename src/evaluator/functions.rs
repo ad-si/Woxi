@@ -115,6 +115,17 @@ pub struct BuiltinFunctionInfo {
   pub description: &'static str,
 }
 
+/// Strip RFC 4180 quoting from a CSV field and collapse doubled quotes.
+fn unquote_csv_field(field: &'static str) -> &'static str {
+  match field.strip_prefix('"').and_then(|f| f.strip_suffix('"')) {
+    Some(inner) if inner.contains("\"\"") => {
+      Box::leak(inner.replace("\"\"", "\"").into_boxed_str())
+    }
+    Some(inner) => inner,
+    None => field,
+  }
+}
+
 /// Registry of all function info from functions.csv.
 static BUILTIN_FUNCTION_INFO: LazyLock<
   HashMap<&'static str, BuiltinFunctionInfo>,
@@ -123,10 +134,15 @@ static BUILTIN_FUNCTION_INFO: LazyLock<
     .lines()
     .skip(1)
     .filter_map(|line| {
-      let fields: Vec<&str> = line.splitn(5, ',').collect();
-      let name = fields.first()?.trim();
-      let description = fields.get(1).unwrap_or(&"").trim();
-      let effect_level = fields.get(3).unwrap_or(&"").trim();
+      // Columns: name,description,status,effect_level,version,rank. The
+      // description may be quoted (RFC 4180) and contain commas, so read the
+      // four trailing columns from the right.
+      let fields: Vec<&str> = line.rsplitn(5, ',').collect();
+      let head = fields.last()?;
+      let (name, description) = head.split_once(',').unwrap_or((head, ""));
+      let name = name.trim();
+      let description = unquote_csv_field(description.trim());
+      let effect_level = fields.get(2).unwrap_or(&"").trim();
       if name.is_empty() || name == "-----" {
         return None;
       }
