@@ -14652,6 +14652,31 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           )
         }
 
+        // `MatrixForm[{{…}, {…}}]` in a single-line label: a `<text>` run has
+        // no room for the stacked grid, so set it as a parenthesized,
+        // row-wise listing (`(a b; c d)`) with every entry typeset, instead
+        // of printing the wrapper's own source.
+        "MatrixForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::List(rows)
+              if !rows.is_empty()
+                && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+        {
+          let Expr::List(rows) = &args[0] else { unreachable!() };
+          let rendered: Vec<String> = rows
+            .iter()
+            .map(|r| {
+              let Expr::List(cells) = r else { unreachable!() };
+              cells
+                .iter()
+                .map(expr_to_svg_markup)
+                .collect::<Vec<_>>()
+                .join(" ")
+            })
+            .collect();
+          format!("({})", rendered.join("; "))
+        }
+
         // Rotate[content, angle] — a Demonstration's idiom for a vertical
         // axis label (`Rotate["concentration", Pi/2]`). The label renderer
         // here has no notion of a rotated run of text, so this typesets
@@ -33098,6 +33123,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
             ..Default::default()
           }]
         }
+      }
+      // `Invisible[expr]` keeps the room `expr` takes but draws nothing, so a
+      // label such as `Row[{"a", Invisible[1/2]}]` reads as `a` followed by
+      // blank space rather than the wrapper's source. Plain text has no
+      // transparent fill, so each character becomes a space of its own.
+      "Invisible" if args.len() == 1 => {
+        let mut runs = manipulate_label_runs(&args[0], italic);
+        for run in &mut runs {
+          run.text = run.text.chars().map(|_| ' ').collect();
+        }
+        runs
       }
       // Style[expr, dir…] — render `expr`, turning italic on if any directive
       // asks for it (bare `Italic` or `FontSlant -> "Italic"`), and applying

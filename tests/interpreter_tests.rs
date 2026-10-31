@@ -4399,6 +4399,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_control_label_invisible_is_blank_space_not_source() {
+    // A slider label `Row[{Style["a", Italic], Invisible[1/2]}]` shows the
+    // `a` followed by blank room, never the wrapper's own source.
+    clear_state();
+    let runs = woxi::functions::graphics::manipulate_eval_label_code(
+      "Row[{Style[\"a\", Italic], Invisible[1/2]}]",
+    )
+    .unwrap();
+    let text = woxi::functions::graphics::manipulate_label_text(&runs);
+    assert!(!text.contains("Invisible"), "wrapper leaked: {text:?}");
+    assert!(text.starts_with('a'), "visible part lost: {text:?}");
+    assert!(text.trim_end() == "a", "hidden part was painted: {text:?}");
+  }
+
+  #[test]
+  fn test_plot_label_matrix_form_typesets_entries_not_source() {
+    // A `PlotLabel` is one `<text>` line; `MatrixForm[{{…}}]` in it must
+    // typeset its entries rather than print the wrapper's source.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{}, PlotLabel -> Row[{MatrixForm[{{a, b}, {c, d}}], Invisible[MatrixForm[{{1, 0}, {0, 1}}]]}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("MatrixForm"),
+      "MatrixForm leaked as literal text: {svg}"
+    );
+    assert!(svg.contains("(a b; c d)"), "matrix entries missing: {svg}");
+  }
+
+  #[test]
   fn test_graphics3d_text_keeps_every_line_of_multiline_string() {
     // Regression: a `Text["a\nb", pos]` in Graphics3D painted only its
     // first line.
