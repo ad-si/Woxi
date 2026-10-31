@@ -3171,6 +3171,17 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### SameQ of reals nested more than 256 levels deep
+
+```sh
+wolframscript -code 'Nest[f, 1., 300] === Nest[f, 1.0000000000000002, 300]'   # True
+woxi eval 'Nest[f, 1., 300] === Nest[f, 1.0000000000000002, 300]'             # False
+```
+
+SameQ identifies machine reals one unit in the last place apart anywhere in
+an expression, but Woxi's structural comparison stops at depth 256 (to stay
+off the stack limit) and calls deeper differently-spelled reals different.
+
 ### A held `Infinity` is not the symbol
 
 ```sh

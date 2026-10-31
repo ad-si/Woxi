@@ -289,41 +289,68 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// SameQ[expr1, expr2] - Tests whether expressions are identical
 pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // SameQ[] and SameQ[x] return True (vacuously true)
-  if args.len() < 2 {
-    return Ok(bool_expr(true));
-  }
+  // SameQ[] and SameQ[x] return True (vacuously true). SameQ is not
+  // HoldAll, so its arguments are already evaluated by the time this runs.
+  Ok(bool_expr(
+    args.len() < 2 || args[1..].iter().all(|arg| same_q_pair(&args[0], arg)),
+  ))
+}
 
-  // SameQ is not HoldAll, so its arguments are already evaluated by the time
-  // this runs — re-evaluating them is redundant and, for deeply nested
-  // arguments (e.g. comparing the steps of NestWhileList[f, x, UnsameQ, 2]),
-  // turns each comparison into a costly re-traversal.
-  let first = &args[0];
-  // The display form plus the identity of anything it summarises (a
-  // Graph's `Graph[<v>, <e>]`, nested images and graphics).
+/// The one SameQ test, also behind `===` and `=!=`: the display form plus
+/// the identity of anything it summarises (a Graph's `Graph[<v>, <e>]`,
+/// nested images and graphics) must agree, up to machine reals SameQ
+/// identifies. Images and graphics, which all display as the same
+/// placeholder, compare their content.
+pub fn same_q_pair(a: &Expr, b: &Expr) -> bool {
+  if matches!(a, Expr::Image { .. } | Expr::Graphics { .. })
+    || matches!(b, Expr::Image { .. } | Expr::Graphics { .. })
+  {
+    return crate::evaluator::pattern_matching::expr_equal(a, b);
+  }
   let identity =
     |e: &Expr| expr_to_string(e) + &crate::syntax::graphics_identity_suffix(e);
-  let first_str = identity(first);
+  identity(a) == identity(b) || same_with_tolerant_reals(a, b)
+}
 
-  for arg in args.iter().skip(1) {
-    // `expr_to_string` reports every `Image[…]` as the same `-Image-`
-    // display placeholder, so the string fast path below would treat any
-    // two images as SameQ regardless of their pixel data. Compare the
-    // actual raster content instead whenever either side is an image.
-    if matches!(first, Expr::Image { .. } | Expr::Graphics { .. })
-      || matches!(arg, Expr::Image { .. } | Expr::Graphics { .. })
-    {
-      if !crate::evaluator::pattern_matching::expr_equal(first, arg) {
-        return Ok(bool_expr(false));
-      }
-      continue;
+/// Whether `a` and `b` are the same expression up to machine reals that
+/// SameQ identifies (one unit in the last place apart, or a tagged real
+/// that rounds alike): `{0.30000000000000004} === {0.3}` is True.
+pub fn same_with_tolerant_reals(a: &Expr, b: &Expr) -> bool {
+  // Bounded depth: the spellings already differ, so past it the
+  // expressions count as different rather than risking the stack.
+  fn go(a: &Expr, b: &Expr, depth: usize) -> bool {
+    if depth > 256 {
+      return false;
     }
-    let val_str = identity(arg);
-    if val_str != first_str && !same_q_real_bigfloat(first, arg) {
-      return Ok(bool_expr(false));
+    let all = |x: &[Expr], y: &[Expr]| {
+      x.len() == y.len() && x.iter().zip(y).all(|(p, q)| go(p, q, depth + 1))
+    };
+    match (a, b) {
+      (
+        Expr::Real(_) | Expr::BigFloat(..),
+        Expr::Real(_) | Expr::BigFloat(..),
+      ) => expr_to_string(a) == expr_to_string(b) || same_q_real_bigfloat(a, b),
+      (Expr::List(x), Expr::List(y)) => all(x, y),
+      (
+        Expr::FunctionCall { name: m, args: x },
+        Expr::FunctionCall { name: n, args: y },
+      ) => m == n && all(x, y),
+      (
+        Expr::Rule {
+          pattern: p1,
+          replacement: r1,
+        },
+        Expr::Rule {
+          pattern: p2,
+          replacement: r2,
+        },
+      ) => go(p1, p2, depth + 1) && go(r1, r2, depth + 1),
+      // Anything else (and a mix of forms) is the same exactly when it is
+      // spelled the same.
+      _ => expr_to_string(a) == expr_to_string(b),
     }
   }
-  Ok(bool_expr(true))
+  go(a, b, 0)
 }
 
 /// SameQ between two floating-point operands. Matches wolframscript's
@@ -417,32 +444,11 @@ fn within_one_ulp(a: f64, b: f64) -> bool {
 
 /// UnsameQ[expr1, expr2] - Tests whether expressions are not identical
 pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // UnsameQ[] and UnsameQ[x] return True (vacuously true)
-  if args.len() < 2 {
-    return Ok(bool_expr(true));
-  }
-
-  // UnsameQ is not HoldAll: arguments arrive already evaluated, so just take
-  // their string forms (re-evaluating deep arguments is needlessly expensive).
-  //
-  // `expr_to_string` reports every `Image[…]` as the same `-Image-` display
-  // placeholder, so that string fast path would treat any two images as
-  // identical regardless of their pixel data — compare those pairs
-  // structurally instead.
-  let strs: Vec<String> = args.iter().map(expr_to_string).collect();
-
-  // UnsameQ is True only if ALL pairs are different
-  for i in 0..strs.len() {
-    for j in (i + 1)..strs.len() {
-      let same =
-        if matches!(args[i], Expr::Image { .. } | Expr::Graphics { .. })
-          || matches!(args[j], Expr::Image { .. } | Expr::Graphics { .. })
-        {
-          crate::evaluator::pattern_matching::expr_equal(&args[i], &args[j])
-        } else {
-          strs[i] == strs[j]
-        };
-      if same {
+  // UnsameQ[] and UnsameQ[x] return True (vacuously true); otherwise every
+  // pair must differ.
+  for i in 0..args.len() {
+    for j in (i + 1)..args.len() {
+      if same_q_pair(&args[i], &args[j]) {
         return Ok(bool_expr(false));
       }
     }

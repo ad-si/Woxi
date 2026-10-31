@@ -4165,26 +4165,7 @@ fn evaluate_expr_to_expr_uncached(
         };
         let result = match op {
           ComparisonOp::SameQ => {
-            // SameQ tests structural identity, not numeric equality.
-            // Integer[1] !== Real[1.] even though they are numerically equal.
-            // Special case: a machine-precision Real and a BigFloat with
-            // a precision tag inside the machine-precision band collapse
-            // to the same f64 — Wolfram treats them as SameQ.
-            //
-            // `expr_to_string` reports every `Image[…]` as the same
-            // `-Image-` display placeholder, so the string fast path
-            // would treat any two images as SameQ regardless of their
-            // pixel data — compare the actual raster content instead.
-            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
-              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
-            {
-              crate::evaluator::pattern_matching::expr_equal(left, right)
-            } else {
-              identical(left, right)
-                || crate::functions::boolean_ast::same_q_real_bigfloat(
-                  left, right,
-                )
-            }
+            crate::functions::boolean_ast::same_q_pair(left, right)
           }
           ComparisonOp::Equal => {
             // `expr_to_string` reports every `Image[…]` as the same
@@ -4257,16 +4238,7 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
           ComparisonOp::UnsameQ => {
-            // UnsameQ tests structural non-identity, not numeric inequality.
-            // See the SameQ arm above: images all share the `-Image-`
-            // display placeholder, so compare pixel data instead.
-            if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })
-              || matches!(right, Expr::Image { .. } | Expr::Graphics { .. })
-            {
-              !crate::evaluator::pattern_matching::expr_equal(left, right)
-            } else {
-              !identical(left, right)
-            }
+            !crate::functions::boolean_ast::same_q_pair(left, right)
           }
           ComparisonOp::NotEqual => {
             if matches!(left, Expr::Image { .. } | Expr::Graphics { .. })

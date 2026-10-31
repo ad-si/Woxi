@@ -5155,6 +5155,39 @@ mod symbolic_equal {
   // SameQ/UnsameQ compare deeply nested expressions without overflowing the
   // stack. Regression: comparing Nest[f, x, 5000] used to crash with a
   // stack overflow because the formatter (expr_to_string) was not stack-safe.
+  // Machine reals inside an expression are identified up to one unit in the
+  // last place, as top-level ones are; `===`, `=!=`, SameQ, UnsameQ and the
+  // memoized-definition lookup share the one test.
+  #[test]
+  fn same_q_nested_machine_reals() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g[{0.30000000000000004}] = 1; {g[{0.3}], {0.30000000000000004, x} === {0.3, x}, \
+         {0.3, x} === {0.3, y}, f[x, 1.] === f[x, 1.0000000000000002], \
+         {{1., 2}} === {{1.0000000000000002, 2}}, {1.} === {1.0000000000000004}, \
+         {1} === {1.}, SameQ[{0.3}, {0.30000000000000004}], \
+         UnsameQ[{0.3}, {0.30000000000000004}], 1. =!= 1.0000000000000002}"
+      )
+      .unwrap(),
+      "{1, True, False, True, True, False, False, True, False, False}"
+    );
+  }
+
+  // Thousands of memoized values with a machine-real argument: a new one
+  // is matched against the others by spelling, not by SameQ on each.
+  #[test]
+  fn many_memoized_real_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Do[h[{i, i + 1}, 0.85] = i, {i, 3000}]; {h[{7, 8}, 0.85], h[{7, 8}, 0.8500000000000001], h[{7, 8}, 0.9]}"
+      )
+      .unwrap(),
+      "{7, 7, h[{7, 8}, 0.9]}"
+    );
+  }
+
   #[test]
   fn same_q_deeply_nested_no_overflow() {
     // Depth 600 is comfortably past the old ~500-deep stack-overflow point

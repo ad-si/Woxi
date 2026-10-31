@@ -2145,29 +2145,34 @@ pub fn memo_key<S: std::hash::BuildHasher>(
   cache: &HashMap<String, (Vec<syntax::Expr>, syntax::Expr), S>,
   args: &[syntax::Expr],
 ) -> String {
-  fn has_real(e: &syntax::Expr) -> bool {
-    matches!(e, syntax::Expr::Real(_))
-      || syntax::expr_children(e).into_iter().any(has_real)
-  }
-  let key = args
-    .iter()
-    .map(syntax::expr_to_string)
-    .collect::<Vec<_>>()
-    .join("\u{1}");
-  if cache.contains_key(&key) || !args.iter().any(has_real) {
+  let parts: Vec<String> = args.iter().map(syntax::expr_to_string).collect();
+  let key = parts.join("\u{1}");
+  // Only an argument holding a machine (or tagged) real can be SameQ to one
+  // spelled differently; any other argument is SameQ exactly when its
+  // spelling is the same. So only entries spelled alike in the other
+  // positions are candidates, and their spellings are compared, not the
+  // whole stored arguments.
+  let real_at: Vec<bool> = args.iter().map(syntax::contains_inexact).collect();
+  if cache.contains_key(&key) || !real_at.iter().any(|&r| r) {
     return key;
   }
-  let same = |a: &syntax::Expr, b: &syntax::Expr| {
-    matches!(
-      functions::boolean_ast::same_q_ast(&[a.clone(), b.clone()]),
-      Ok(syntax::Expr::Identifier(ref t)) if t == "True"
-    )
-  };
   cache
     .iter()
-    .find(|(_, (stored, _))| {
+    .find(|(k, (stored, _))| {
       stored.len() == args.len()
-        && stored.iter().zip(args).all(|(s, a)| same(s, a))
+        && k.split('\u{1}').count() == parts.len()
+        && k
+          .split('\u{1}')
+          .zip(&parts)
+          .zip(&real_at)
+          .zip(stored.iter().zip(args))
+          .all(|(((kp, p), &real), (s, a))| {
+            if real {
+              kp == p || functions::boolean_ast::same_with_tolerant_reals(s, a)
+            } else {
+              kp == p
+            }
+          })
     })
     .map(|(k, _)| k.clone())
     .unwrap_or(key)
