@@ -321,10 +321,25 @@ impl ControlState {
           *overflow = Some(form);
         }
       }
-      ControlState::Slider2D { x, y, .. } => {
+      ControlState::Slider2D {
+        x,
+        y,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
         if let Some((a, b)) = as_pair(&expr) {
           *x = a;
           *y = b;
+          // A locator can be dragged anywhere in the picture, so a restored
+          // position outside the range derived from the initial value must
+          // stay reachable instead of being clamped away.
+          *x_min = x_min.min(a);
+          *x_max = x_max.max(a);
+          *y_min = y_min.min(b);
+          *y_max = y_max.max(b);
         }
       }
       ControlState::IntervalSlider { low, high, .. } => {
@@ -2788,6 +2803,35 @@ mod tests {
     )]);
     assert_eq!(state.error, None);
     assert!(state.graphics_handle.is_some(), "saved picture is shown");
+  }
+
+  /// A saved locator position outside the range derived from its initial
+  /// value stays reachable: the 2D slider's range grows to include it.
+  #[test]
+  fn saved_locator_position_outside_range_widens_slider() {
+    let code = r#"Manipulate[
+      Graphics[Point[pt]],
+      {{pt, {1, 1}}, Locator}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.apply_saved_variables(&[("pt".to_string(), "{-30, 50}".to_string())]);
+    let Some(ControlState::Slider2D {
+      x,
+      y,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    }) = state.controls.first()
+    else {
+      panic!("expected a 2D slider");
+    };
+    assert_eq!((*x, *y), (-30.0, 50.0));
+    assert!(*x_min <= -30.0 && *x_max >= 1.0);
+    assert!(*y_min <= 0.0 && *y_max >= 50.0);
   }
 
   /// A body that caches a rendered plot in hidden state (recomputing it only
