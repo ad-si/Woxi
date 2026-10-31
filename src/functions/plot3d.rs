@@ -11017,6 +11017,14 @@ const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
 /// diagonal-preserving decomposition used by marching tetrahedra.
 const TETRA_RING: [usize; 6] = [1, 2, 3, 7, 4, 5];
 
+thread_local! {
+  /// [`evaluate_scalar_3d`]'s compiled body: (address of the body, its
+  /// compiled form if it compiles without fallbacks).
+  static CONTOUR3D_COMPILED: std::cell::RefCell<
+    Option<(usize, Option<crate::functions::polynomial_ast::solve::NumNode>)>,
+  > = const { std::cell::RefCell::new(None) };
+}
+
 fn evaluate_scalar_3d(
   body: &Expr,
   xvar: &str,
@@ -11026,6 +11034,25 @@ fn evaluate_scalar_3d(
   yval: f64,
   zval: f64,
 ) -> Option<f64> {
+  // The body compiled once per plot (keyed by its address, the cache being
+  // cleared when a plot starts) — a contour surface is sampled at tens of
+  // thousands of points.
+  let key = std::ptr::from_ref::<Expr>(body) as usize;
+  let compiled = CONTOUR3D_COMPILED.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.as_ref().is_none_or(|(k, _)| *k != key) {
+      let vars = [xvar.to_string(), yvar.to_string(), zvar.to_string()];
+      let node =
+        crate::functions::polynomial_ast::solve::compile_numeric(body, &vars)
+          .filter(|n| !n.has_fallback());
+      *c = Some((key, node));
+    }
+    c.as_ref()
+      .and_then(|(_, n)| n.as_ref().map(|n| n.eval(&[xval, yval, zval])))
+  });
+  if let Some(v) = compiled {
+    return v.is_finite().then_some(v);
+  }
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let sub3 = substitute_var(&sub2, zvar, &Expr::Real(zval));
@@ -11173,6 +11200,7 @@ fn replace_canvas_background(svg: &str, (r, g, b): (u8, u8, u8)) -> String {
 /// `== c`, is its own zero contour). A list of equations draws each
 /// surface together, as `ContourStyle` colours them.
 pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  CONTOUR3D_COMPILED.with(|c| *c.borrow_mut() = None);
   if args.len() < 4 {
     return Err(InterpreterError::EvaluationError(
       "ContourPlot3D requires at least 4 arguments: ContourPlot3D[f == c, {x,xmin,xmax}, {y,ymin,ymax}, {z,zmin,zmax}]".into(),
@@ -11327,8 +11355,12 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let default_color = (0x5E_u8, 0x81_u8, 0xB5_u8);
   let mut all_triangles: Vec<Triangle> = Vec::new();
-  let mut point_exprs: Vec<Expr> = Vec::new();
-  let mut normal_exprs: Vec<Expr> = Vec::new();
+  // The surfaces' vertices, shared between the triangles that meet at them
+  // (keyed by their exact coordinates), with accumulated face normals.
+  let mut points: Vec<[f64; 3]> = Vec::new();
+  let mut normals: Vec<[f64; 3]> = Vec::new();
+  let mut point_index: std::collections::HashMap<[u64; 3], usize> =
+    std::collections::HashMap::new();
   let mut content: Vec<Expr> = Vec::new();
   let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
 
@@ -11395,6 +11427,8 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         break;
       }
       for &level in &levels {
+        // This level's triangles, as one Polygon of vertex-index triples.
+        let mut level_triangles: Vec<[usize; 3]> = Vec::new();
         for i in 0..n {
           for j in 0..n {
             for k in 0..n {
@@ -11497,50 +11531,22 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   });
 
                   // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
-                  let base = point_exprs.len();
-                  for p in &tri_world {
-                    point_exprs.push(Expr::List(
-                      vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)]
-                        .into(),
-                    ));
-                  }
                   let wn =
                     triangle_normal(tri_world[0], tri_world[1], tri_world[2]);
-                  for _ in 0..3 {
-                    normal_exprs.push(Expr::List(
-                      vec![
-                        Expr::Real(wn[0]),
-                        Expr::Real(wn[1]),
-                        Expr::Real(wn[2]),
-                      ]
-                      .into(),
-                    ));
-                  }
-                  content.push(Expr::List(
-                    {
-                      let mut item = vec![color_directive.clone()];
-                      // A translucent surface stays translucent when its
-                      // primitives are merged into another graphic.
-                      if let Some(st) = style
-                        && st.opacity < 1.0
-                      {
-                        item.push(call1("Opacity", Expr::Real(st.opacity)));
-                      }
-                      item.push(call1(
-                        "Polygon",
-                        Expr::List(
-                          vec![
-                            Expr::Integer(base as i128 + 1),
-                            Expr::Integer(base as i128 + 2),
-                            Expr::Integer(base as i128 + 3),
-                          ]
-                          .into(),
-                        ),
-                      ));
-                      item
+                  let mut tri = [0usize; 3];
+                  for (slot, p) in tri.iter_mut().zip(&tri_world) {
+                    let key = [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+                    let idx = *point_index.entry(key).or_insert_with(|| {
+                      points.push([p.x, p.y, p.z]);
+                      normals.push([0.0; 3]);
+                      points.len() - 1
+                    });
+                    for d in 0..3 {
+                      normals[idx][d] += wn[d];
                     }
-                    .into(),
-                  ));
+                    *slot = idx;
+                  }
+                  level_triangles.push(tri);
                 });
                 if refine
                   && !emitted
@@ -11599,9 +11605,45 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
+        if !level_triangles.is_empty() {
+          let mut item = vec![color_directive.clone()];
+          // A translucent surface stays translucent when its primitives
+          // are merged into another graphic.
+          if let Some(st) = style
+            && st.opacity < 1.0
+          {
+            item.push(call1("Opacity", Expr::Real(st.opacity)));
+          }
+          item.push(call1(
+            "Polygon",
+            Expr::List(
+              level_triangles
+                .iter()
+                .map(|t| {
+                  Expr::List(
+                    t.iter().map(|&v| Expr::Integer(v as i128 + 1)).collect(),
+                  )
+                })
+                .collect(),
+            ),
+          ));
+          content.push(Expr::List(item.into()));
+        }
       }
     }
   }
+  let point_exprs: Vec<Expr> = points
+    .iter()
+    .map(|p| Expr::List(p.iter().map(|&c| Expr::Real(c)).collect()))
+    .collect();
+  let normal_exprs: Vec<Expr> = normals
+    .iter()
+    .map(|nv| {
+      let len = (nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]).sqrt();
+      let len = if len > 0.0 { len } else { 1.0 };
+      Expr::List(nv.iter().map(|&c| Expr::Real(c / len)).collect())
+    })
+    .collect();
 
   if all_triangles.is_empty() {
     return Err(InterpreterError::EvaluationError(

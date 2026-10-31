@@ -26704,6 +26704,25 @@ mod contour_plot_3d {
     );
   }
 
+  // Triangles share their vertices, and each contour level is one Polygon
+  // of index triples, as in the FrontEnd's output (3DFieldOfCuboidalMagnet
+  // ran out of memory with a copy of every vertex per triangle).
+  #[test]
+  fn contour_surface_shares_vertices() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = First[ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Contours -> {0.25, 0.64}, PlotPoints -> 10]]; \
+         tris = Cases[c[[2]], Polygon[t_] :> t, Infinity]; \
+         {Length[tris], 3 Total[Length /@ tris] > 2 Length[c[[1]]], \
+          Max[Flatten[tris]] == Length[c[[1]]]}"
+      )
+      .unwrap(),
+      "{2, True, True}"
+    );
+  }
+
   #[test]
   fn list_of_bare_expressions_plots_each_zero_contour() {
     // `{f, g}` without `==` draws the zero contour of every entry, exactly
