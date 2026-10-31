@@ -10120,3 +10120,65 @@ mod find_geometric_transform {
     );
   }
 }
+
+mod region_convert_implicit {
+  use super::*;
+
+  #[test]
+  fn boxes_and_balls_in_the_formal_variables() {
+    assert_eq!(
+      interpret(
+        "{RegionConvert[Rectangle[{1, 2}, {3, 5}], \"Implicit\"], \
+         RegionConvert[Disk[{1, 2}, 3], \"Implicit\"], \
+         RegionConvert[Disk[{0, 0}, {2, 3}], \"Implicit\"], \
+         RegionConvert[Ball[{1, 0, 0}, 2], \"Implicit\"]} /. \
+         {\\[FormalX] -> X, \\[FormalY] -> Y, \\[FormalZ] -> Z}"
+      )
+      .unwrap(),
+      "{ImplicitRegion[1 <= X <= 3 && 2 <= Y <= 5, {X, Y}], \
+       ImplicitRegion[(-1 + X)^2 + (-2 + Y)^2 <= 9, {X, Y}], \
+       ImplicitRegion[9*X^2 + 4*Y^2 <= 36, {X, Y}], \
+       ImplicitRegion[(-1 + X)^2 + Y^2 + Z^2 <= 4, {X, Y, Z}]}"
+    );
+  }
+
+  #[test]
+  fn a_parallelogram_discretizes_through_its_implicit_form() {
+    // RegionConvert was unimplemented, and DiscretizeRegion took no
+    // ImplicitRegion.
+    assert_eq!(
+      interpret(
+        "Round[10^6 Area[DiscretizeRegion[RegionConvert[\
+         Parallelogram[{0, 0}, {{-1, -1}, {-1, 0}}], \"Implicit\"]]]]"
+      )
+      .unwrap(),
+      "1000000"
+    );
+  }
+}
+
+mod formal_letter_order {
+  use super::*;
+
+  #[test]
+  fn formal_letters_sort_before_other_symbols() {
+    assert_eq!(
+      interpret(
+        "Sort[{\\[FormalY], \\[FormalX], b, a}] /. \
+         {\\[FormalX] -> \"X\", \\[FormalY] -> \"Y\"}"
+      )
+      .unwrap(),
+      "{X, Y, a, b}"
+    );
+    // A sum orders them as Sort does: (-1 + x)^2 first.
+    assert_eq!(
+      interpret(
+        "ToString[InputForm[\\[FormalY]^2 + (-1 + \\[FormalX])^2]] == \
+         ToString[InputForm[(-1 + \\[FormalX])^2]] <> \" + \" <> \
+         ToString[InputForm[\\[FormalY]^2]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}

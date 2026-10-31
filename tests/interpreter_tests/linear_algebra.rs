@@ -12463,3 +12463,48 @@ mod eigen_functions_of_a_single_matrix_list {
     );
   }
 }
+
+mod n_of_sparse_array {
+  use super::*;
+
+  #[test]
+  fn n_numericizes_only_the_background_and_values() {
+    // N reached the dimensions and the index structure, so every Part
+    // read 0. off the broken array.
+    assert_eq!(
+      interpret(
+        "s = N[SparseArray[{{1, 1} -> 2, {2, 2} -> 1/3}, {2, 2}]]; \
+         {InputForm[s], s[[2, 2]], Normal[s]}"
+      )
+      .unwrap(),
+      "{InputForm[SparseArray[Automatic, {2, 2}, 0., {1, {{0, 1, 2}, {{1}, {2}}}, \
+       {2., 0.3333333333333333}}]], 0.3333333333333333, {{2., 0.}, {0., 0.3333333333333333}}}"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[N[SparseArray[{{1, 1} -> 2, {2, 2} -> 1/3}, {2, 2}], 20]]"
+      )
+      .unwrap(),
+      "InputForm[SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, \
+       {2.`20., 0.33333333333333333333333333333333333333`20.}}]]"
+    );
+  }
+}
+
+mod generalized_eigen_singular_b {
+  use super::*;
+
+  #[test]
+  fn a_singular_b_gives_infinite_eigenvalues() {
+    // Inverse[b] failed with Inverse::sing and the call stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "{First[Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]], \
+         Round[10^6 Eigenvalues[{{{2., 1}, {1, 3.}}, {{1., 0}, {0, 0}}}] /. \
+         Infinity -> 0]}"
+      )
+      .unwrap(),
+      "{{Infinity, 1.}, {0, 1666667}}"
+    );
+  }
+}
