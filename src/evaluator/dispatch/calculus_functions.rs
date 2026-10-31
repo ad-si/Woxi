@@ -6888,6 +6888,9 @@ fn invert_pure_function(body: &Expr) -> Option<Expr> {
     crate::syntax::substitute_slots(body, std::slice::from_ref(&x_expr));
 
   // Build `Equal[body_x, y]` and solve for x.
+  // The body is evaluated first so that symbols with values (e.g. a
+  // parameter set outside the function) take part as their values.
+  let body_x = crate::evaluator::evaluate_expr_to_expr(&body_x).ok()?;
   let eq = call("Equal", vec![body_x, y_expr.clone()]);
   let solve_result =
     crate::functions::polynomial_ast::solve_ast(&[eq, x_expr.clone()]).ok()?;

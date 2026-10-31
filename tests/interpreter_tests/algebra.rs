@@ -17475,6 +17475,25 @@ mod cases {
     );
   }
 
+  // A parameter with a value inside the inverted function takes part as
+  // that value, without any spurious messages.
+  #[test]
+  fn inverse_function_with_valued_parameter() {
+    for input in [
+      "cy = 0.25; InverseFunction[((1 - cy)/2 - #/2) &][z]",
+      "cy = 0.25; f[r_] := (1 - cy)/2 - r/2; InverseFunction[f][z]",
+    ] {
+      woxi::clear_state();
+      assert_eq!(woxi::interpret(input).unwrap(), "0.75 - 2*z", "{input}");
+      assert!(
+        !woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.contains("Power::infy")),
+        "{input}"
+      );
+    }
+  }
+
   // A function without definitions is inverted symbolically, the value
   // taking the place of the argument that holds the unknown.
   #[test]
