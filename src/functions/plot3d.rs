@@ -15561,3 +15561,42 @@ mod tick_values_tests {
     assert_eq!(tick_values(0.0, 10.0), vec![0.0, 2.5, 5.0, 7.5, 10.0]);
   }
 }
+
+/// `AbsoluteOptions[g, PlotRange]` of a 3D graphic: an explicit
+/// `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` as given, otherwise the
+/// bounding box of its primitives.
+pub fn absolute_plot_range_3d(g: &Expr) -> Option<[(f64, f64); 3]> {
+  let (content, options): (Expr, Vec<Expr>) = match g {
+    Expr::Graphics {
+      is_3d: true,
+      structure: Some(structure),
+      ..
+    } => return absolute_plot_range_3d(structure),
+    Expr::FunctionCall { name, args }
+      if name == "Graphics3D" && !args.is_empty() =>
+    {
+      (args[0].clone(), args[1..].to_vec())
+    }
+    _ => return None,
+  };
+  for opt in &options {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
+      && let Some(ranges) = parse_axis_ranges(replacement)
+    {
+      return Some(ranges);
+    }
+  }
+  let content = evaluate_expr_to_expr(&content).ok()?;
+  let mut prims = Vec::new();
+  let mut style3d = StyleState3D::default();
+  collect_3d_primitives(&content, &mut style3d, &mut prims);
+  let bounds = primitives_bounds(&prims);
+  bounds
+    .iter()
+    .all(|(lo, hi)| lo.is_finite() && hi.is_finite())
+    .then_some(bounds)
+}

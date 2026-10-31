@@ -25933,6 +25933,23 @@ mod blend {
     );
   }
 
+  // A 3D graphic's plot range: its primitives' bounding box, or the
+  // explicit `PlotRange` (LinkedElectricAndMagneticFields).
+  #[test]
+  fn absolute_options_plot_range_3d() {
+    assert_eq!(
+      interpret("AbsoluteOptions[Graphics3D[{Sphere[]}], PlotRange]").unwrap(),
+      "{PlotRange -> {{-1., 1.}, {-1., 1.}, {-1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteOptions[Graphics3D[{Sphere[]}, PlotRange -> {{0, 1}, {0, 2}, {0, 3}}], PlotRange]"
+      )
+      .unwrap(),
+      "{PlotRange -> {{0., 1.}, {0., 2.}, {0., 3.}}}"
+    );
+  }
+
   // The effective plot range of a graphic, before padding.
   #[test]
   fn absolute_options_plot_range() {

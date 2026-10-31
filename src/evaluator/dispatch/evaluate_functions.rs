@@ -2798,11 +2798,13 @@ fn evaluate_function_call_ast_inner(
   // value it was given.
   if name == "AbsoluteOptions"
     && args.len() == 2
-    && matches!(&args[0], Expr::Graphics { is_3d: false, .. })
+    && matches!(&args[0], Expr::Graphics { .. })
     || name == "AbsoluteOptions"
       && args.len() == 2
-      && matches!(&args[0], Expr::FunctionCall { name: g, .. } if g == "Graphics")
+      && matches!(&args[0], Expr::FunctionCall { name: g, .. } if g == "Graphics" || g == "Graphics3D")
   {
+    let is_3d = matches!(&args[0], Expr::Graphics { is_3d: true, .. })
+      || matches!(&args[0], Expr::FunctionCall { name: g, .. } if g == "Graphics3D");
     let names: Vec<Expr> = match &args[1] {
       Expr::List(items) => items.to_vec(),
       other => vec![other.clone()],
@@ -2815,6 +2817,22 @@ fn evaluate_function_call_ast_inner(
     let mut rules = Vec::new();
     for opt in names {
       if matches!(&opt, Expr::Identifier(n) if n == "PlotRange") {
+        if is_3d {
+          if let Some(range) =
+            crate::functions::plot3d::absolute_plot_range_3d(&args[0])
+          {
+            let pair = |(a, b): (f64, f64)| {
+              Expr::List(vec![Expr::Real(a), Expr::Real(b)].into())
+            };
+            rules.push(Expr::Rule {
+              pattern: Box::new(opt.clone()),
+              replacement: Box::new(Expr::List(
+                range.iter().map(|r| pair(*r)).collect(),
+              )),
+            });
+          }
+          continue;
+        }
         if let Some(range) =
           crate::functions::graphics::absolute_plot_range(&args[0])
         {
