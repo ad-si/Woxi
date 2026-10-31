@@ -25513,3 +25513,35 @@ mod array_pad_named_schemes {
     );
   }
 }
+
+mod map_results_splice_like_a_list {
+  use super::*;
+
+  #[test]
+  fn sequence_and_unevaluated_results() {
+    // The mapped results stayed as `Sequence[1, 1]` and `Unevaluated[…]`
+    // elements; evaluating the list splices and unwraps them.
+    assert_eq!(
+      interpret(
+        "g[x_] := Sequence[x, x]; \
+         {Map[g, {1, 2}], \
+          Map[If[# == 1, Unevaluated[Sequence[]], #] &, {1, 2}], \
+          Map[If[# == 1, Unevaluated[1 + 1], #] &, {1, 2}], \
+          Map[If[# == 0, Unevaluated[Sequence[]], #] &, {{1, 0}, {0, 2}}, {2}], \
+          MapIndexed[If[#1 === 0, Unevaluated[Sequence[]], {#1, #2}] &, {1, 0, 2}], \
+          MapIndexed[If[#1 === 0, Unevaluated[Sequence[]], {#1, #2}] &, {{1, 0}, {0, 2}}, {2}]}"
+      )
+      .unwrap(),
+      "{{1, 1, 2, 2}, {2}, {2, 2}, {{1}, {2}}, {{1, {1}}, {2, {3}}}, \
+       {{{1, {1, 1}}}, {{2, {2, 2}}}}}"
+    );
+  }
+
+  #[test]
+  fn an_unevaluated_body_keeps_its_wrapper() {
+    assert_eq!(
+      interpret("Length[Map[Unevaluated[Sequence[]] &, {1, 2}]]").unwrap(),
+      "2"
+    );
+  }
+}
