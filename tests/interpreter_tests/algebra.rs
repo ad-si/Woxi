@@ -24216,3 +24216,22 @@ mod nroots_bare_polynomial_and_repeated_roots {
     );
   }
 }
+
+mod solve_substitution_of_symbols {
+  use super::*;
+
+  #[test]
+  fn symbols_substitute_by_name_in_large_expressions() {
+    // Substituting a symbol spelled every node of the expression out as a
+    // string; a chain of 40 equations solves quickly and correctly.
+    assert_eq!(
+      interpret(
+        "vars = Table[x[i], {i, 40}]; \
+         eqs = Join[{x[1] == 1}, Table[x[i] == x[i - 1] + i, {i, 2, 40}]]; \
+         x[40] /. First[Solve[eqs, vars]]"
+      )
+      .unwrap(),
+      "820"
+    );
+  }
+}

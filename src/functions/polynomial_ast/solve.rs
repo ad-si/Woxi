@@ -15043,11 +15043,27 @@ fn minimize_parse_vars_full(
 pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   // Only a node shaped like `from` can equal it; spelling every node out as
   // a string made the walk quadratic for large systems.
+  fn name_of(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::Identifier(n) | Expr::Constant(n) => Some(n.as_str()),
+      _ => None,
+    }
+  }
   let may_match = match (expr, from) {
     (
       Expr::FunctionCall { name: a, args: x },
       Expr::FunctionCall { name: b, args: y },
     ) => a == b && x.len() == y.len(),
+    // A symbol only equals a symbol of that name.
+    (_, Expr::Identifier(_) | Expr::Constant(_)) => {
+      if name_of(expr) == name_of(from) {
+        return to.clone();
+      }
+      false
+    }
+    (Expr::List(_), _) | (_, Expr::List(_)) => {
+      matches!((expr, from), (Expr::List(_), Expr::List(_)))
+    }
     _ => true,
   };
   if may_match && expr_to_string(expr) == expr_to_string(from) {
