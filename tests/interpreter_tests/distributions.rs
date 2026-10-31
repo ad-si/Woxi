@@ -9798,3 +9798,21 @@ mod extreme_value_quantiles {
     );
   }
 }
+
+mod order_distribution_sampling {
+  use super::*;
+
+  #[test]
+  fn draws_the_kth_smallest_of_n_samples() {
+    // RandomVariate stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "r = RandomVariate[OrderDistribution[{NormalDistribution[0, 1], 50}, 50], 500]; \
+         {Length[r], 1.5 < Mean[r] < 3.5, \
+          0 <= RandomVariate[OrderDistribution[{UniformDistribution[], 5}, 1]] <= 1}"
+      )
+      .unwrap(),
+      "{500, True, True}"
+    );
+  }
+}

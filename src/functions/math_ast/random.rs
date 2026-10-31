@@ -1983,6 +1983,56 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
+  // OrderDistribution[{dist, n}, k]: the k-th smallest of n draws of dist.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && name == "OrderDistribution"
+    && let [Expr::List(spec), Expr::Integer(k)] = dargs.as_slice()
+    && let [base, Expr::Integer(m)] = spec.as_slice()
+    && *k >= 1
+    && *k <= *m
+  {
+    let (m, k) = (*m, *k as usize);
+    let one = || -> Result<Option<Expr>, InterpreterError> {
+      let sample = random_variate_ast(&[base.clone(), Expr::Integer(m)])?;
+      let Expr::List(ref draws) = sample else {
+        return Ok(None);
+      };
+      let mut values: Vec<(f64, Expr)> = Vec::with_capacity(draws.len());
+      for d in draws {
+        let Some(v) = crate::functions::math_ast::try_eval_to_f64(d) else {
+          return Ok(None);
+        };
+        values.push((v, d.clone()));
+      }
+      values.sort_by(|a, b| a.0.total_cmp(&b.0));
+      Ok(values.get(k - 1).map(|p| p.1.clone()))
+    };
+    let draw_all =
+      |count: usize| -> Result<Option<Vec<Expr>>, InterpreterError> {
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+          match one()? {
+            Some(v) => out.push(v),
+            None => return Ok(None),
+          }
+        }
+        Ok(Some(out))
+      };
+    match n {
+      None => {
+        if let Some(v) = one()? {
+          return Ok(v);
+        }
+      }
+      Some(count) => {
+        if let Some(vs) = draw_all(count)? {
+          return Ok(Expr::List(vs.into()));
+        }
+      }
+    }
+    return Ok(unevaluated("RandomVariate", args));
+  }
+
   // Local helpers for the distributions added below.
   fn sample_poisson(lambda: f64) -> Result<i128, InterpreterError> {
     use rand_distr::{Distribution, Poisson};
