@@ -976,8 +976,15 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     }
     let mut args = split_args(head, s)?;
     // Drop trailing display options (`MultilineFunction -> None`, …) so the
-    // positional-argument matches below see the box's real arity.
-    args.retain(|a| !is_option_arg(a));
+    // positional-argument matches below see the box's real arity. An
+    // `InterpretationBox`'s value may itself be a rule (`"a" -> 1`), so its
+    // first two arguments always stay.
+    let positional = if head == "InterpretationBox" { 2 } else { 0 };
+    let mut index = 0;
+    args.retain(|a| {
+      index += 1;
+      index <= positional || !is_option_arg(a)
+    });
     // A bare string operand (`FractionBox["x", X
     // symbol name, so it reads as code: the private-use letter keeps its
     // code point instead of becoming the Unicode glyph a prose cell draws.
@@ -9284,6 +9291,27 @@ Cell[BoxData[
     assert_eq!(content, "table={{1, 2, 3}, {4, 5}}");
     assert_eq!(
       crate::interpret(&format!("{content};Length[table]")).unwrap(),
+      "2"
+    );
+  }
+
+  /// A list of rules as an `InterpretationBox`'s meaning (an iconized
+  /// `{"Mercury" -> …, …}`): each rule is a value, not a display option to
+  /// drop (HowOldWouldYouBeOnAnotherPlanetOrPluto).
+  #[test]
+  fn test_interpretation_box_rule_list_meaning() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"v", "=",
+  InterpretationBox["d", {"a" -> 1, "b" -> 2}, Selectable->False]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let content = match &parsed.cells[0] {
+      CellEntry::Single(cell) => cell.content.clone(),
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    };
+    assert_eq!(
+      crate::interpret(&format!("{content}; \"b\" /. v")).unwrap(),
       "2"
     );
   }
