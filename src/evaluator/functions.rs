@@ -26,9 +26,11 @@ static IMPLEMENTATION_STATUS: LazyLock<
     .lines()
     .skip(1)
     .filter_map(|line| {
-      let fields: Vec<&str> = line.splitn(4, ',').collect();
-      let name = fields.first()?.trim();
-      let status = fields.get(2).unwrap_or(&"").trim();
+      // The description may contain (quoted) commas, so read the four
+      // trailing columns from the right.
+      let fields: Vec<&str> = line.rsplitn(5, ',').collect();
+      let name = fields.last()?.split(',').next()?.trim();
+      let status = fields.get(3).unwrap_or(&"").trim();
       if name.is_empty() || name == "-----" {
         return None;
       }

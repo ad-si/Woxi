@@ -2020,14 +2020,39 @@ mod unimplemented_warnings {
   /// - Every unmarked function that IS dispatched by the evaluator
   ///   must be flagged (catches forgetting to mark a new function as ✅)
   #[test]
+  fn functions_csv_is_valid_rfc4180() {
+    // Every row must have 6 columns once quoted fields are honoured.
+    for (i, line) in include_str!("../../functions.csv").lines().enumerate() {
+      let mut in_quotes = false;
+      let mut commas = 0;
+      for c in line.chars() {
+        match c {
+          '"' => in_quotes = !in_quotes,
+          ',' if !in_quotes => commas += 1,
+          _ => {}
+        }
+      }
+      assert!(
+        !in_quotes,
+        "functions.csv line {}: unbalanced quotes",
+        i + 1
+      );
+      assert_eq!(commas, 5, "functions.csv line {}: bad column count", i + 1);
+    }
+  }
+
+  #[test]
   fn functions_csv_consistent_with_evaluator() {
     let csv = include_str!("../../functions.csv");
     let mut marked: Vec<String> = Vec::new();
     let mut unmarked: Vec<String> = Vec::new();
 
     for line in csv.lines().skip(1) {
-      let cols: Vec<&str> = line.split(',').collect();
-      let name = match cols.first() {
+      // Descriptions may contain commas, so the four trailing columns
+      // (status, effect level, version, rank) are read from the right.
+      let mut cols: Vec<&str> = line.rsplitn(5, ',').collect();
+      cols.reverse();
+      let name = match cols.first().and_then(|c| c.split(',').next()) {
         Some(n) => n.trim().to_string(),
         None => continue,
       };
@@ -2035,7 +2060,7 @@ mod unimplemented_warnings {
         continue;
       }
       // CSV format: name,description,implementation status,effect_level
-      let status = cols.get(2).unwrap_or(&"").trim();
+      let status = cols.get(1).unwrap_or(&"").trim();
       if status == "✅" || status == "🚧" {
         marked.push(name);
       } else {
