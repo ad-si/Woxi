@@ -3326,7 +3326,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   }
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
   // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
-  let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
+  let (lhs, lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
     && name == "Condition"
     && args.len() == 2
   {
@@ -3334,6 +3334,21 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   } else {
     (lhs, None)
   };
+  // `f[x_] /; test = value` is a rule of its own, tried before the
+  // unconditional `f[x_] = …` and kept apart from it: the value is computed
+  // now and stored as the conditional rule's body.
+  if lhs_condition.is_some()
+    && matches!(lhs, Expr::FunctionCall { name, .. }
+      if !matches!(name.as_str(), "Condition" | "Pattern" | "HoldPattern"))
+  {
+    let value = evaluate_expr_to_expr(rhs)?;
+    let conditional = call(
+      "Condition",
+      vec![lhs.clone(), lhs_condition.unwrap().clone()],
+    );
+    set_delayed_ast(&conditional, &value)?;
+    return Ok(value);
+  }
 
   // Assigning `$ContextAliases`, whole or by key, re-checks the mapping the
   // way the Wolfram Language does — the warnings belong after the assignment

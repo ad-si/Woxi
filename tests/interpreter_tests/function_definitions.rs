@@ -6756,3 +6756,28 @@ mod upvalue_argument_patterns {
     );
   }
 }
+
+mod set_with_a_left_hand_side_condition {
+  use super::*;
+
+  #[test]
+  fn the_conditional_rule_is_kept_beside_the_unconditional_one() {
+    // `/; p == 1/2` was dropped and the value overwrote `f[n_, p_] = 1`.
+    assert_eq!(
+      interpret(
+        "f[n_, p_] = 1; f[n_, p_] /; p == 1/2 = 2; \
+         {f[1, 0.5], f[1, 0.3], Length[DownValues[f]]}"
+      )
+      .unwrap(),
+      "{2, 1, 2}"
+    );
+  }
+
+  #[test]
+  fn the_value_is_computed_at_definition_time() {
+    assert_eq!(
+      interpret("k = 3; g[p_] /; p > 0 = k p; k = 5; {g[2], g[-2]}").unwrap(),
+      "{6, g[-2]}"
+    );
+  }
+}

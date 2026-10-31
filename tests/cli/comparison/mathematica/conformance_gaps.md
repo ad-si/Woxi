@@ -6396,3 +6396,15 @@ need not be the minimizer wolframscript reports.
 - In `Mean[FisherZDistribution[n, m]]` Woxi orders the factor
   `n^2*(m/n)^(n/2)`; wolframscript writes `(m/n)^(n/2)*n^2`.
 - Numeric PDF/CDF/Quantile values can differ in the last digit.
+
+## A left-hand-side `/;` guard is printed on the right-hand side
+
+```sh
+wolframscript -code 'f[p_] /; p == 1/2 := 2; DownValues[f]'
+# {HoldPattern[f[p_] /; p == 1/2] :> 2}
+woxi eval 'f[p_] /; p == 1/2 := 2; DownValues[f]'
+# {HoldPattern[f[p_]] :> 2 /; p == 1/2}
+```
+
+A rule stores its guard in a trailing condition slot whichever side it was
+written on. The two forms match the same calls; only the printed rule differs.
