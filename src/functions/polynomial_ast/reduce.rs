@@ -28,6 +28,21 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return result;
   }
+  // A list of inequalities is their conjunction: `Reduce[{p, q}, x]` is
+  // `Reduce[p && q, x]`. Lists holding equations keep their dedicated
+  // elimination path.
+  if let Some(Expr::List(items)) = args.first()
+    && items.len() >= 2
+    && items.iter().all(|item| {
+      matches!(item, Expr::Comparison { operators, .. }
+        if operators.iter().all(|op| !matches!(op, ComparisonOp::Equal)))
+    })
+  {
+    let conjunction = items.iter().cloned().reduce(and2).unwrap();
+    let mut rewritten = args.to_vec();
+    rewritten[0] = conjunction;
+    return reduce_ast(&rewritten);
+  }
   // `a == b == c` is `a == b && b == c`.
   if let Some(first) = args.first() {
     let expanded = super::solve::expand_chained_equalities(first);
@@ -2205,6 +2220,23 @@ fn reduce_and(
   groups.sort_by_key(|(_, group_vars)| {
     i32::from(group_vars.iter().any(|v| vars.contains(v)))
   });
+  // In a group of equations that mentions a named variable, the unnamed
+  // ones are parameters the named ones are solved in terms of, no unknowns
+  // of their own (`ey == a ez && ...` is no equation for `a`). Under an
+  // inequality they are eliminated too, but after the named ones
+  // (`Reduce[(1 + 2 a^2) x^2 == 1 && a != 0, x]` solves for `x`).
+  for (group, group_vars) in &mut groups {
+    if !group_vars.iter().any(|v| vars.contains(v)) {
+      continue;
+    }
+    let all_equations = group
+      .iter()
+      .all(|c| matches!(extract_comparison(c), Some((_, _, CompOp::Equal))));
+    if all_equations {
+      group_vars.retain(|v| vars.contains(v));
+    }
+    group_vars.sort_by_key(|v| vars.iter().position(|w| w == v));
+  }
   // A constraint with no variables at all has no group of its own to be
   // reduced over, so leave the whole conjunction to the path below.
   let splits = groups.iter().all(|(_, group_vars)| !group_vars.is_empty())

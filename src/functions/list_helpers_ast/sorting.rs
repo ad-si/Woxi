@@ -309,7 +309,11 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   match (a_num, b_num) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
       // Both numeric: compare by real part first, then imaginary part
-      match a_re.partial_cmp(&b_re).unwrap_or(std::cmp::Ordering::Equal) {
+      match if a_re == b_re {
+        std::cmp::Ordering::Equal
+      } else {
+        a_re.total_cmp(&b_re)
+      } {
         std::cmp::Ordering::Equal => {
           // Same real part: pure reals (im=0) come first
           if a_im == 0.0 && b_im != 0.0 {
@@ -318,7 +322,11 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if a_im != 0.0 && b_im == 0.0 {
             return std::cmp::Ordering::Greater;
           }
-          match a_im.partial_cmp(&b_im).unwrap_or(std::cmp::Ordering::Equal) {
+          match if a_im == b_im {
+            std::cmp::Ordering::Equal
+          } else {
+            a_im.total_cmp(&b_im)
+          } {
             std::cmp::Ordering::Equal => {
               // Numerically equal number atoms tie-break by type:
               // Integer before Real before Rational. wolframscript:
@@ -2642,6 +2650,10 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
       'æ' | 'Æ' => 0x110000 + 30,
       'ø' | 'Ø' => 0x110000 + 31,
       'ñ' | 'Ñ' => 0x100000 + ('n' as u32) + 1,
+      // The formal letters (`\[FormalX]`, private use U+F800–U+F8FF) come
+      // before every other character, among themselves by code point:
+      // Sort[{a, \[FormalY], \[FormalX]}] = {\[FormalX], \[FormalY], a}.
+      '\u{F800}'..='\u{F8FF}' => c as u32 - 0xF800,
       other => other as u32,
     }
   }
