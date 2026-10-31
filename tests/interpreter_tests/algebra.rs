@@ -23415,6 +23415,22 @@ mod solve_symbolic_cubic {
     );
   }
 
+  // A system with a cubic in which one equation fixes an unknown: the value
+  // is substituted and the rest solved (EstimatingConditionalExpectations).
+  #[test]
+  fn system_with_a_defined_unknown() {
+    assert_eq!(
+      interpret("Solve[{u == x, v == y^3}, {x, y}]").unwrap(),
+      "{{x -> u, y -> v^(1/3)}, {x -> u, y -> -((-1)^(1/3)*v^(1/3))}, \
+       {x -> u, y -> (-1)^(2/3)*v^(1/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[{u == x, v == (1 + x + y)^3}, {x, y}]").unwrap(),
+      "{{x -> u, y -> -1 - u + v^(1/3)}, {x -> u, y -> -1 - u - ((1 - I*Sqrt[3])*v^(1/3))/2}, \
+       {x -> u, y -> -1 - u - ((1 + I*Sqrt[3])*v^(1/3))/2}}"
+    );
+  }
+
   // Every root of a battery of parametric cubics checks out numerically.
   #[test]
   fn roots_satisfy_the_cubic() {

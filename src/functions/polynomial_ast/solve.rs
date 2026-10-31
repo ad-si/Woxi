@@ -5613,6 +5613,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .any(|v| max_degree_of_var(e, v).unwrap_or(0) >= 3)
         })
       {
+        // An equation that just names an unknown's value (`u == x`, the
+        // other side free of the unknowns) is substituted into the rest,
+        // which is solved on its own.
+        if let Some(result) = solve_with_defined_unknown(eqs, &var_names)? {
+          return Ok(result);
+        }
         return Ok(unevaluated("Solve", args));
       }
       // Fall back to Reduce's multi-variable elimination for nonlinear systems
@@ -20182,6 +20188,94 @@ fn eliminate_machine_numbers(
     })
     .collect();
   Some((reduced, pivot_cols))
+}
+
+/// A system in which one equation is `x == value` (either way round) with
+/// `value` free of every unknown: the value is substituted into the other
+/// equations, they are solved for the remaining unknowns, and `x -> value`
+/// joins each of their solutions in the order the unknowns were given.
+/// `Ok(None)` when no equation is such a definition or the rest stays
+/// unsolved.
+fn solve_with_defined_unknown(
+  eqs: &[Expr],
+  var_names: &[String],
+) -> Result<Option<Expr>, InterpreterError> {
+  if eqs.len() < 2 || var_names.len() < 2 {
+    return Ok(None);
+  }
+  let free_of_unknowns = |e: &Expr| {
+    var_names
+      .iter()
+      .all(|v| crate::functions::calculus_ast::is_constant_wrt(e, v))
+  };
+  let definition = eqs.iter().enumerate().find_map(|(i, eq)| {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      return None;
+    };
+    if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+      return None;
+    }
+    [(&operands[0], &operands[1]), (&operands[1], &operands[0])]
+      .into_iter()
+      .find_map(|(side, value)| match side {
+        Expr::Identifier(v)
+          if var_names.contains(v) && free_of_unknowns(value) =>
+        {
+          Some((i, v.clone(), value.clone()))
+        }
+        _ => None,
+      })
+  });
+  let Some((index, var, value)) = definition else {
+    return Ok(None);
+  };
+  let rule = rule_expr(id_expr(&var), value.clone());
+  let rest: Vec<Expr> = eqs
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != index)
+    .map(|(_, eq)| {
+      crate::evaluator::evaluate_function_call_ast(
+        "ReplaceAll",
+        &[eq.clone(), rule.clone()],
+      )
+    })
+    .collect::<Result<_, _>>()?;
+  let others: Vec<String> =
+    var_names.iter().filter(|v| **v != var).cloned().collect();
+  let (eq_arg, var_arg) = if rest.len() == 1 && others.len() == 1 {
+    (rest[0].clone(), id_expr(&others[0]))
+  } else {
+    (
+      Expr::List(rest.into()),
+      Expr::List(others.iter().map(|v| id_expr(v)).collect()),
+    )
+  };
+  let Expr::List(ref solutions) = solve_ast(&[eq_arg, var_arg])? else {
+    return Ok(None);
+  };
+  let position = |e: &Expr| match e {
+    Expr::Rule { pattern, .. } => match pattern.as_ref() {
+      Expr::Identifier(n) => var_names.iter().position(|v| v == n),
+      _ => None,
+    },
+    _ => None,
+  };
+  let mut combined = Vec::with_capacity(solutions.len());
+  for solution in solutions {
+    let Expr::List(rules) = solution else {
+      return Ok(None);
+    };
+    let mut all: Vec<Expr> = rules.to_vec();
+    all.push(rule.clone());
+    all.sort_by_key(|r| position(r).unwrap_or(usize::MAX));
+    combined.push(Expr::List(all.into()));
+  }
+  Ok(Some(Expr::List(combined.into())))
 }
 
 /// Solve a system of linear equations using symbolic Gaussian elimination.

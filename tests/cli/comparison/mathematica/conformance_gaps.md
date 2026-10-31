@@ -1176,6 +1176,36 @@ woxi eval 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
 these sums before the monomial; `Order[2 Pi C[1], Pi + 2 Pi C[1]]` is `1`
 in both. Solve's trig families sort with their own key for this reason.
 
+### Piecewise integrals with parametric bounds under assumptions
+
+```sh
+wolframscript -code 'Integrate[Piecewise[{{1, 0 <= u <= 1}}, 0], {u, 0, w}, Assumptions -> w > 0]'
+# Piecewise[{{1, w > 1}}, w]
+woxi eval 'Integrate[Piecewise[{{1, 0 <= u <= 1}}, 0], {u, 0, w}, Assumptions -> w > 0]'
+# Piecewise[{{1, w > 1}, {w, Inequality[0, Less, w, LessEqual, 1]}}, 0]
+```
+
+The values agree for every `w > 0`, but WL folds the last piece into the
+default using the assumption. The binding bounds at a tie (a numeric lower
+bound and a symbolic upper bound win) and the order of the pieces (highest
+parameter range first) are fitted to wolframscript's results for intervals
+linear in one parameter. Nonlinear bounds (`u <= v^(1/3) - 1`) give
+`Root` objects in WL and radicals in Woxi.
+
+### Isolated powers of a linear expression
+
+```sh
+wolframscript -code 'Solve[(1 + y)^2 == c, y]'   # {{y -> -1 - Sqrt[c]}, {y -> -1 + Sqrt[c]}}
+woxi eval 'Solve[(1 + y)^2 == c, y]'             # {{y -> (-2 - 2*Sqrt[c])/2}, {y -> (-2 + 2*Sqrt[c])/2}}
+wolframscript -code 'Solve[(a + b y)^3 == v, y]' # {{y -> (-a + v^(1/3))/b}, …}
+woxi eval 'Solve[(a + b y)^3 == v, y]'           # {{y -> -(a/b) + (b^6*v)^(1/3)/b^3}, …}
+```
+
+WL isolates the power and takes the root of the other side, simplified as
+if the base were positive. Its fifth powers come back as `Root` objects and
+its sixth powers as nested radicals. Woxi solves cubes by Cardano's formula
+and the other degrees with roots of unity.
+
 ### NDSolve returns a complex solution as two real interpolations
 
 ```sh

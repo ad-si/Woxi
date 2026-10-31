@@ -24882,3 +24882,57 @@ mod sum_reads_index_dependent_symbols {
     );
   }
 }
+
+/// Piecewise integrands whose intervals end at parameters: each binding
+/// pair of bounds gives one piece of the answer (wolframscript-verified).
+mod integrate_piecewise_parametric_bounds {
+  use super::*;
+
+  #[test]
+  fn interval_ends_at_parameters() {
+    for (input, expected) in [
+      (
+        "Integrate[Piecewise[{{1, w - 2 <= u <= w - 1}}, 0], {u, -Infinity, Infinity}]",
+        "1",
+      ),
+      (
+        "Integrate[Piecewise[{{1, 0 <= u <= w}}, 0], {u, -Infinity, Infinity}]",
+        "Piecewise[{{w, w > 0}}, 0]",
+      ),
+      (
+        "Integrate[Piecewise[{{1, 0 <= u <= 1 && u <= w}}, 0], {u, -Infinity, Infinity}]",
+        "Piecewise[{{1, w > 1}, {w, Inequality[0, Less, w, LessEqual, 1]}}, 0]",
+      ),
+      (
+        "Integrate[Piecewise[{{1, 0 <= u <= 1 && w - 2 <= u <= w - 1}}, 0], {u, -Infinity, Infinity}]",
+        "Piecewise[{{3 - w, Inequality[2, Less, w, Less, 3]}, {-1 + w, Inequality[1, Less, w, LessEqual, 2]}}, 0]",
+      ),
+      (
+        "Integrate[Piecewise[{{u, 0 <= u <= w}}, 0], {u, -Infinity, Infinity}]",
+        "Piecewise[{{w^2/2, w > 0}}, 0]",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("InputForm[{input}]")).unwrap(),
+        format!("InputForm[{expected}]"),
+        "{input}"
+      );
+    }
+  }
+
+  // A symbolic integration limit may be complex: the integral stays.
+  #[test]
+  fn symbolic_limit_stays_unevaluated() {
+    let r = interpret_with_stdout(
+      "Integrate[Piecewise[{{1, 0 <= u <= 1}}, 0], {u, 0, w}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "Integrate[Piecewise[{{1, 0 <= u <= 1}}, 0], {u, 0, w}]"
+    );
+    assert!(r.warnings.iter().any(|w| w.starts_with(
+      "Integrate::pwrl: Unable to prove that integration limits {0, w} are real."
+    )));
+  }
+}

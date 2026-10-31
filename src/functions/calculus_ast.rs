@@ -11488,6 +11488,34 @@ fn try_piecewise_definite_integral(
   let bound_f64 = |e: &Expr| -> Option<f64> {
     crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
   };
+  // A symbolic limit may be complex: without assumptions wolframscript
+  // leaves the integral as it is.
+  let symbolic_limits: Vec<Expr> = [lo, hi]
+    .into_iter()
+    .filter(|b| bound_f64(b).is_none_or(f64::is_finite))
+    .cloned()
+    .collect();
+  if symbolic_limits.iter().any(|b| bound_f64(b).is_none())
+    && matches!(
+      crate::evaluator::evaluate_expr_to_expr(&id_expr("$Assumptions")),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+  {
+    crate::emit_message(&format!(
+      "Integrate::pwrl: Unable to prove that integration limits {} are real. Adding assumptions may help.",
+      crate::syntax::expr_to_string(&Expr::List(symbolic_limits.into()))
+    ));
+    return Some(call(
+      "Integrate",
+      vec![
+        integrand.clone(),
+        Expr::List(vec![id_expr(var), lo.clone(), hi.clone()].into()),
+      ],
+    ));
+  }
+  if let Some(result) = parametric_piecewise_integral(pieces, var, lo, hi) {
+    return result;
+  }
   let mut terms: Vec<Expr> = Vec::new();
   for piece in pieces {
     let (val, cond) = match piece {
@@ -11523,6 +11551,245 @@ fn try_piecewise_definite_integral(
   }
   let sum = plus(terms);
   Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}
+
+/// Every lower and every upper bound a Piecewise condition puts on `var`,
+/// without deciding which is tighter (they may involve parameters).
+fn piecewise_condition_bound_lists(
+  cond: &Expr,
+  var: &str,
+  lowers: &mut Vec<Expr>,
+  uppers: &mut Vec<Expr>,
+) -> Option<()> {
+  let conjuncts: Vec<&Expr> = match cond {
+    Expr::FunctionCall { name, args } if name == "And" => args.iter().collect(),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    other => vec![other],
+  };
+  for c in conjuncts {
+    if conjuncts_nest(c) {
+      piecewise_condition_bound_lists(c, var, lowers, uppers)?;
+      continue;
+    }
+    let (l, h) = piecewise_condition_bounds(c, var)?;
+    lowers.extend(l);
+    uppers.extend(h);
+  }
+  Some(())
+}
+
+fn conjuncts_nest(c: &Expr) -> bool {
+  matches!(c, Expr::FunctionCall { name, .. } if name == "And")
+    || matches!(
+      c,
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        ..
+      }
+    )
+}
+
+/// The definite integral of a zero-default Piecewise whose intervals have
+/// parameters as endpoints (`0 <= x <= 1 && x <= w`). For each piece the
+/// interval runs from the largest lower bound to the smallest upper one;
+/// every choice of those two gives the antiderivative's difference under
+/// the condition that makes them the tightest (an earlier bound wins a
+/// tie) and that leaves the interval nonempty, reduced in the parameters.
+/// `None` when every endpoint is numeric (the plain path handles that) or
+/// the shape is not understood; `Some(None)` when it is but cannot be done.
+fn parametric_piecewise_integral(
+  pieces: &[Expr],
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Option<Expr>> {
+  let numeric =
+    |e: &Expr| crate::functions::math_ast::try_eval_to_f64_with_infinity(e);
+  let mut pieces_bounds = Vec::with_capacity(pieces.len());
+  let mut any_symbolic = false;
+  for piece in pieces {
+    let Expr::List(p) = piece else {
+      return None;
+    };
+    let [val, cond] = p.as_slice() else {
+      return None;
+    };
+    let (mut lowers, mut uppers) = (Vec::new(), Vec::new());
+    piecewise_condition_bound_lists(cond, var, &mut lowers, &mut uppers)?;
+    lowers.push(lo.clone());
+    uppers.push(hi.clone());
+    if lowers.iter().chain(&uppers).any(|b| numeric(b).is_none()) {
+      any_symbolic = true;
+    }
+    pieces_bounds.push((val.clone(), lowers, uppers));
+  }
+  if !any_symbolic {
+    return None;
+  }
+  // The parameters, for reducing the conditions.
+  let mut params: Vec<Expr> = Vec::new();
+  for (_, lowers, uppers) in &pieces_bounds {
+    for b in lowers.iter().chain(uppers) {
+      if let Ok(Expr::List(ref vs)) =
+        crate::evaluator::evaluate_function_call_ast(
+          "Variables",
+          std::slice::from_ref(b),
+        )
+      {
+        for v in vs {
+          if !params.iter().any(|p| {
+            crate::syntax::expr_to_string(p) == crate::syntax::expr_to_string(v)
+          }) {
+            params.push(v.clone());
+          }
+        }
+      }
+    }
+  }
+  if params.is_empty() {
+    return Some(None);
+  }
+  let cmp = |a: &Expr, op: ComparisonOp, b: &Expr| Expr::Comparison {
+    operands: vec![a.clone(), b.clone()],
+    operators: vec![op],
+  };
+  // Infinite endpoints never bind; numeric ones fold into one.
+  let fold = |bounds: &[Expr], lower: bool| -> Vec<Expr> {
+    let mut out: Vec<Expr> = Vec::new();
+    let mut best: Option<(f64, Expr)> = None;
+    for b in bounds {
+      match numeric(b) {
+        Some(v) if v.is_infinite() => {}
+        Some(v) => {
+          if best
+            .as_ref()
+            .is_none_or(|(w, _)| if lower { v > *w } else { v < *w })
+          {
+            best = Some((v, b.clone()));
+          }
+        }
+        None => out.push(b.clone()),
+      }
+    }
+    if let Some((_, b)) = best {
+      out.insert(0, b);
+    }
+    out
+  };
+  let mut result_pieces: Vec<Expr> = Vec::new();
+  for (val, lowers, uppers) in &pieces_bounds {
+    let (ls, us) = (fold(lowers, true), fold(uppers, false));
+    if ls.is_empty() || us.is_empty() {
+      // An unbounded side: only a zero value integrates to something finite.
+      return Some(None);
+    }
+    for (i, l) in ls.iter().enumerate() {
+      for (j, u) in us.iter().enumerate() {
+        // At a tie the numeric lower bound and the symbolic upper bound
+        // bind (between two symbolic bounds, the earlier one).
+        let is_num = |e: &Expr| numeric(e).is_some();
+        let mut conds: Vec<Expr> = Vec::new();
+        for (k, other) in ls.iter().enumerate() {
+          if k != i {
+            let wins_tie = match (is_num(l), is_num(other)) {
+              (true, false) => true,
+              (false, true) => false,
+              _ => i < k,
+            };
+            conds.push(cmp(
+              l,
+              if wins_tie {
+                ComparisonOp::GreaterEqual
+              } else {
+                ComparisonOp::Greater
+              },
+              other,
+            ));
+          }
+        }
+        for (k, other) in us.iter().enumerate() {
+          if k != j {
+            let wins_tie = match (is_num(u), is_num(other)) {
+              (false, true) => true,
+              (true, false) => false,
+              _ => j < k,
+            };
+            conds.push(cmp(
+              u,
+              if wins_tie {
+                ComparisonOp::LessEqual
+              } else {
+                ComparisonOp::Less
+              },
+              other,
+            ));
+          }
+        }
+        conds.push(cmp(l, ComparisonOp::Less, u));
+        let reduced = crate::evaluator::evaluate_function_call_ast(
+          "Reduce",
+          &[call("And", conds), Expr::List(params.clone().into())],
+        )
+        .ok()?;
+        if matches!(&reduced, Expr::Identifier(f) if f == "False") {
+          continue;
+        }
+        if expr_mentions_head(&reduced, "Reduce") {
+          return Some(None);
+        }
+        let value = integrate_ast(&[
+          val.clone(),
+          Expr::List(vec![id_expr(var), l.clone(), u.clone()].into()),
+        ])
+        .ok()?;
+        if expr_mentions_head(&value, "Integrate") {
+          return Some(None);
+        }
+        result_pieces.push(Expr::List(vec![value, reduced].into()));
+      }
+    }
+  }
+  if result_pieces.is_empty() {
+    return Some(Some(Expr::Integer(0)));
+  }
+  // Listed from the highest parameter range down, as wolframscript does:
+  // by the condition's lower end, numerically.
+  let lower_end = |piece: &Expr| -> f64 {
+    let Expr::List(p) = piece else {
+      return f64::NEG_INFINITY;
+    };
+    let mut best = f64::NEG_INFINITY;
+    let mut visit = |e: &Expr| {
+      if let Expr::Comparison { operands, .. } = e {
+        for o in operands {
+          if let Some(v) = numeric(o) {
+            best = best.max(v);
+          }
+        }
+      }
+    };
+    match &p[1] {
+      Expr::FunctionCall { name, args } if name == "Inequality" => {
+        if let Some(v) = args.first().and_then(numeric) {
+          best = v;
+        }
+      }
+      other => visit(other),
+    }
+    best
+  };
+  result_pieces.sort_by(|a, b| lower_end(b).total_cmp(&lower_end(a)));
+  let pw = call(
+    "Piecewise",
+    vec![Expr::List(result_pieces.into()), Expr::Integer(0)],
+  );
+  Some(Some(
+    crate::evaluator::evaluate_expr_to_expr(&pw).unwrap_or(pw),
+  ))
 }
 
 /// Resolve a Piecewise condition into a list of disjoint intervals for `var`.
