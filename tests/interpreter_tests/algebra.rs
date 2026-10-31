@@ -23868,6 +23868,38 @@ mod solve_disjunction {
     );
   }
 
+  // Linear branches keep their order — a written disjunction its own, one
+  // inside a conjunction `LogicalExpand`'s — while a polynomial disjunction
+  // is sorted.
+  #[test]
+  fn linear_branches_keep_their_order() {
+    for (input, expected) in [
+      ("Solve[x == 2 || x == 1, x]", "{{x -> 2}, {x -> 1}}"),
+      (
+        "Solve[(y == 3 && x == 2) || (y == 1 && x == 1), {x, y}]",
+        "{{x -> 2, y -> 3}, {x -> 1, y -> 1}}",
+      ),
+      (
+        "Solve[x + y == 3 && (x == 2 || x == 1), {x, y}]",
+        "{{x -> 1, y -> 2}, {x -> 2, y -> 1}}",
+      ),
+      (
+        "Solve[x + y == 3 && (x - y == 7 || x - y == 1), {x, y}]",
+        "{{x -> 2, y -> 1}, {x -> 5, y -> -2}}",
+      ),
+      (
+        "Solve[8 w + 2 x + y + 4 z == 0 && ((-x - y == 1 && w == 0 && z == 0) || (-x - z == 1 && w == 0 && y == 0) || (-w - x == 1 && y == 0 && z == 0)), {x, y, z, w}]",
+        "{{x -> 1, y -> -2, z -> 0, w -> 0}, {x -> -2, y -> 0, z -> 1, w -> 0}, {x -> -4/3, y -> 0, z -> 0, w -> 1/3}}",
+      ),
+      (
+        "Solve[x == 5 || x^2 == 1, x]",
+        "{{x -> -1}, {x -> 1}, {x -> 5}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn svars_reported_once() {
     let r = interpret_with_stdout("Solve[i == 1 || j == 30, {i, j}]").unwrap();

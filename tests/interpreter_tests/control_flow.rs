@@ -2656,6 +2656,41 @@ mod logical_expand {
     );
   }
 
+  // The expansion is left in canonical order (literals within each
+  // conjunction, then the conjunctions), with subsumed conjunctions absorbed
+  // and ones differing in one complemented literal merged.
+  #[test]
+  fn canonical_order_absorption_and_merging() {
+    for (input, expected) in [
+      ("(b || a) && c", "(a && c) || (b && c)"),
+      ("c && (b || a)", "(a && c) || (b && c)"),
+      ("z && y && x", "x && y && z"),
+      ("z || y || x", "x || y || z"),
+      (
+        "(x > 1 || x < -1) && y == 2",
+        "(y == 2 && x > 1) || (y == 2 && x < -1)",
+      ),
+      ("a && (a || b)", "a"),
+      ("(a && b) || c", "c || (a && b)"),
+      ("(a || !a) && b", "b"),
+      ("(a && b) || (a && b && c) || d", "d || (a && b)"),
+      (
+        "(f[x] || g[1]) && 2 > y",
+        "(f[x] && 2 > y) || (g[1] && 2 > y)",
+      ),
+      (
+        "x + y == 3 && (x == 2 || x == 1)",
+        "(x == 1 && x + y == 3) || (x == 2 && x + y == 3)",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("LogicalExpand[{input}]")).unwrap(),
+        expected,
+        "{input}"
+      );
+    }
+  }
+
   #[test]
   fn distribute_and_over_or() {
     assert_eq!(

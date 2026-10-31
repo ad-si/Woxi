@@ -3367,13 +3367,20 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // branch: `x == 1 || x == 2`, `(x == -1 || x == 2) && x + 1 != 0`.
   if args.len() == 2
     && contains_or(&args[0])
-    && let Ok(expanded) = crate::evaluator::evaluate_expr_to_expr(&call1(
-      "LogicalExpand",
-      args[0].clone(),
-    ))
-    && let Some(branches) = or_operands(&expanded)
+    && let Some(branches) = or_operands(&args[0]).or_else(|| {
+      // A disjunction inside a conjunction is expanded, its disjuncts in
+      // `LogicalExpand`'s order; a written one keeps its own.
+      crate::evaluator::evaluate_expr_to_expr(&call1(
+        "LogicalExpand",
+        args[0].clone(),
+      ))
+      .ok()
+      .and_then(|expanded| or_operands(&expanded))
+    })
   {
     let mut solutions: Vec<Expr> = Vec::new();
+    let branches_linear =
+      branches.iter().all(|b| equations_linear_in(b, &args[1]));
     // The branches report no svars of their own; the disjunction does, once.
     let depth = SOLVE_DEPTH.with(|d| {
       let v = d.get();
@@ -3404,7 +3411,11 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => return Ok(unevaluated("Solve", args)),
       }
     }
-    sort_solutions(&mut solutions);
+    // Linear branches keep the order of `LogicalExpand`'s disjuncts, as in
+    // wolframscript; solutions of a polynomial disjunction are sorted.
+    if !branches_linear {
+      sort_solutions(&mut solutions);
+    }
     if depth == 0
       && !in_nsolve()
       && let Expr::List(requested) = &args[1]
@@ -3645,6 +3656,60 @@ fn contains_or(e: &Expr) -> bool {
     } => contains_or(left) || contains_or(right),
     _ => false,
   }
+}
+
+/// Whether every equation of the conjunction `branch` is linear (or
+/// constant) in the variables `vars`.
+fn equations_linear_in(branch: &Expr, vars: &Expr) -> bool {
+  let parts: Vec<Expr> = match branch {
+    Expr::FunctionCall { name, args } if name == "And" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  let var_list = match vars {
+    Expr::List(_) => vars.clone(),
+    other => Expr::List(vec![other.clone()].into()),
+  };
+  parts.iter().all(|p| {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = p
+    else {
+      return false;
+    };
+    let ([lhs, rhs], [ComparisonOp::Equal]) =
+      (operands.as_slice(), operators.as_slice())
+    else {
+      return false;
+    };
+    let Ok(Expr::List(ref rules)) =
+      crate::evaluator::evaluate_function_call_ast(
+        "CoefficientRules",
+        &[
+          call("Subtract", vec![lhs.clone(), rhs.clone()]),
+          var_list.clone(),
+        ],
+      )
+    else {
+      return false;
+    };
+    rules.iter().all(|r| match r {
+      Expr::Rule { pattern, .. } => match pattern.as_ref() {
+        Expr::List(exps) => {
+          exps
+            .iter()
+            .map(|e| match e {
+              Expr::Integer(k) => *k,
+              _ => i128::MAX / 4,
+            })
+            .sum::<i128>()
+            <= 1
+        }
+        _ => false,
+      },
+      _ => false,
+    })
+  })
 }
 
 /// The disjuncts of an `Or`.

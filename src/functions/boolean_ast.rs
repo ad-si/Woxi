@@ -1570,7 +1570,144 @@ pub fn logical_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let expr = evaluate_expr_to_expr(&args[0])?;
   let expr = expand_series_equations(&expr)?;
-  Ok(normalize_not(&to_dnf(&expr)))
+  Ok(normalize_not(&simplify_sorted_dnf(&to_dnf(&expr))))
+}
+
+/// A DNF the way `LogicalExpand` leaves it: contradictory conjunctions and
+/// `True` literals dropped, conjunctions that differ in one complemented
+/// literal merged (`(a && b) || (!a && b)` is `b`), subsumed ones absorbed,
+/// and the literals of each conjunction and the conjunctions themselves in
+/// canonical order.
+fn simplify_sorted_dnf(expr: &Expr) -> Expr {
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let clauses: Vec<Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Or" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  // Each conjunction as its literals keyed by (atom text, polarity).
+  type Clause = BTreeMap<String, (bool, Expr)>;
+  let mut sets: Vec<Clause> = Vec::new();
+  'clauses: for clause in &clauses {
+    let parts: Vec<Expr> = match clause {
+      Expr::FunctionCall { name, args } if name == "And" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut lits = Clause::new();
+    for p in &parts {
+      match p {
+        Expr::Identifier(t) if t == "True" => continue,
+        Expr::Identifier(f) if f == "False" => continue 'clauses,
+        _ => {}
+      }
+      let (key, positive, atom) = dnf_literal(p);
+      match lits.get(&key) {
+        Some((existing, _)) if *existing != positive => continue 'clauses,
+        _ => {
+          lits.insert(key, (positive, atom));
+        }
+      }
+    }
+    if lits.is_empty() {
+      return bool_expr(true);
+    }
+    let same = |a: &Clause| {
+      a.len() == lits.len()
+        && a
+          .iter()
+          .all(|(k, v)| lits.get(k).is_some_and(|w| w.0 == v.0))
+    };
+    if !sets.iter().any(same) {
+      sets.push(lits);
+    }
+  }
+  if sets.is_empty() {
+    return bool_expr(false);
+  }
+  loop {
+    let mut changed = false;
+    // Absorption: drop a conjunction that contains another.
+    let mut i = 0;
+    while i < sets.len() {
+      let absorbed = (0..sets.len()).any(|j| {
+        j != i
+          && sets[j].len() <= sets[i].len()
+          && sets[j]
+            .iter()
+            .all(|(k, v)| sets[i].get(k).is_some_and(|w| w.0 == v.0))
+          && (sets[j].len() < sets[i].len() || j < i)
+      });
+      if absorbed {
+        sets.remove(i);
+        changed = true;
+      } else {
+        i += 1;
+      }
+    }
+    // Merging: two conjunctions alike but for one complemented literal.
+    'merge: for i in 0..sets.len() {
+      for j in i + 1..sets.len() {
+        if sets[i].len() != sets[j].len() || sets[i].keys().ne(sets[j].keys()) {
+          continue;
+        }
+        let differing: Vec<&String> = sets[i]
+          .iter()
+          .filter(|(k, v)| sets[j][*k].0 != v.0)
+          .map(|(k, _)| k)
+          .collect();
+        if let [key] = differing.as_slice() {
+          let key = (*key).clone();
+          let mut merged = sets[i].clone();
+          merged.remove(&key);
+          if merged.is_empty() {
+            return bool_expr(true);
+          }
+          sets.remove(j);
+          sets[i] = merged;
+          changed = true;
+          break 'merge;
+        }
+      }
+    }
+    if !changed {
+      break;
+    }
+  }
+  let mut conjunctions: Vec<Expr> = sets
+    .into_iter()
+    .map(|lits| {
+      let mut parts: Vec<Expr> = lits
+        .into_values()
+        .map(|(positive, atom)| {
+          if positive {
+            atom
+          } else {
+            Expr::FunctionCall {
+              name: "Not".into(),
+              args: vec![atom].into(),
+            }
+          }
+        })
+        .collect();
+      parts.sort_by(canonical_cmp);
+      if parts.len() == 1 {
+        parts.pop().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".into(),
+          args: parts.into(),
+        }
+      }
+    })
+    .collect();
+  conjunctions.sort_by(canonical_cmp);
+  if conjunctions.len() == 1 {
+    conjunctions.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Or".into(),
+      args: conjunctions.into(),
+    }
+  }
 }
 
 /// `lhs == rhs` with a series on either side is the conjunction of its

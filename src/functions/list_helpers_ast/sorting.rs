@@ -405,6 +405,24 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
       }
 
+      // An expression with a compound head (`h[a][1]`, `Derivative[1][f]`)
+      // orders after every other kind: Sort[{h[a][1], x, {1}, "s", Sin[x]}]
+      // puts it last.
+      // (`Derivative[1][f][x]` is held flat, as `Derivative[1, f, x]`.)
+      let compound_head = |e: &Expr| match e {
+        Expr::CurriedCall { .. } => true,
+        Expr::FunctionCall { name, args } => {
+          name == "Derivative"
+            && args.iter().any(|a| !matches!(a, Expr::Integer(_)))
+        }
+        _ => false,
+      };
+      match (compound_head(a), compound_head(b)) {
+        (true, false) => return std::cmp::Ordering::Greater,
+        (false, true) => return std::cmp::Ordering::Less,
+        _ => {}
+      }
+
       // Powers of integer or rational bases order by base then exponent,
       // ascending (Sort[{Sqrt[11], Sqrt[2]}] = {Sqrt[2], Sqrt[11]},
       // Sort[{Sqrt[3], Sqrt[5/3]}] = {Sqrt[5/3], Sqrt[3]}); the

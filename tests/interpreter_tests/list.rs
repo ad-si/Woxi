@@ -3297,6 +3297,24 @@ mod map_at {
 mod sort_by {
   use super::*;
 
+  // An expression with a compound head (`h[a][1]`, `Derivative[1][f]`)
+  // orders after every other kind.
+  #[test]
+  fn compound_heads_sort_last() {
+    assert_eq!(
+      interpret(
+        "{Sort[{h[a][1], a[1], b[1], z[1]}], Sort[{a[b][c], b[c], a[c]}], \
+         Sort[{h[a], h[a][1], h[1]}], Sort[{Derivative[1][f], f, g[0]}], \
+         Sort[{h[a][1], x + y, x^2, {1}, \"s\", Sin[x]}], \
+         Sort[{Derivative[1][f][0], f[0], g[0], Derivative[2][f][0]/2}]}"
+      )
+      .unwrap(),
+      "{{a[1], b[1], z[1], h[a][1]}, {a[c], b[c], a[b][c]}, {h[1], h[a], h[a][1]}, \
+       {f, g[0], Derivative[1][f]}, {s, x^2, x + y, {1}, Sin[x], h[a][1]}, \
+       {f[0], g[0], Derivative[1][f][0], Derivative[2][f][0]/2}}"
+    );
+  }
+
   #[test]
   fn sort_by_abs() {
     assert_eq!(
