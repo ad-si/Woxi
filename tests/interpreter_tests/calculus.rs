@@ -7219,6 +7219,24 @@ mod find_minimum {
   }
 
   #[test]
+  fn find_root_settled_iteration_matches_monitored_run() {
+    // A residual whose rounding error exceeds the tolerance never reaches
+    // |f| < tol; the settled iteration is skipped ahead, which must land on
+    // the same root as the full run that a StepMonitor forces.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[T_] := Exp[31.233 - 1090.44/T - 3.30115 Log[T] + 4.05692*10^-5 T^2]; \
+         a = T /. FindRoot[f[T] == 101.325, {T, 90}]; \
+         b = T /. FindRoot[f[T] == 101.325, {T, 90}, StepMonitor :> Null]; \
+         {a == b, Abs[f[a] - 101.325] < 10^-10}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
   fn multivariate_find_root_step_monitor_sees_variables_through_a_list() {
     // The monitor reaches the variables via `vars`; each firing sees the
     // iterate as a point, and the last one is the solution.

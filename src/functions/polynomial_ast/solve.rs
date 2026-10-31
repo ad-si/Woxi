@@ -12829,7 +12829,6 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let deriv_expr =
     crate::functions::calculus_ast::differentiate_expr(&func, &var)
       .ok()
-      .map(simplify)
       .filter(|d| !contains_unevaluated_d(d));
 
   // Newton's method, damped: a step that makes |f| worse is halved until it
@@ -12841,8 +12840,9 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let tol = 1e-15;
   let mut x = x0;
   let mut converged = false;
+  let mut settled: Vec<(usize, f64)> = Vec::new();
 
-  for _ in 0..max_iter {
+  for k in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
     if fx.abs() < tol {
       converged = true;
@@ -12914,6 +12914,22 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // instead would move the answer off the one wolframscript reports.
     if (trial - x).abs() <= f64::EPSILON * x.abs().max(1.0) {
       converged = true;
+    }
+    // Once settled the iteration only jitters the last digits, and each
+    // iterate is a pure function of the previous one, so the sequence is
+    // eventually periodic. Detect the period and jump to the iterate the
+    // remaining iterations would end on instead of evaluating them all.
+    if converged && step_monitor.is_none() {
+      settled.push((k, x));
+      if let Some(m) = settled
+        .iter()
+        .position(|(_, s)| s.to_bits() == trial.to_bits())
+      {
+        let start = settled[m].0;
+        let period = k + 1 - start;
+        x = settled[m + (max_iter - start) % period].1;
+        break;
+      }
     }
     x = trial;
     fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
