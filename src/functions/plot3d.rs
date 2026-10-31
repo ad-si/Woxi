@@ -2184,6 +2184,46 @@ fn parse_vector_points3d(expr: &Expr) -> Option<Vec<(f64, f64, f64)>> {
   Some(pts)
 }
 
+/// `VectorPoints -> n`: `n` sample points across every axis; returned as the
+/// number of grid intervals (`n - 1`).
+fn parse_vector_points_count3d(expr: &Expr) -> Option<usize> {
+  let n = try_eval_to_f64(&evaluate_expr_to_expr(expr).ok()?)?;
+  (n >= 2.0).then(|| n.round() as usize - 1)
+}
+
+/// A `ColorFunction` option: a named gradient or an arbitrary function.
+enum ColorFn {
+  Named(String),
+  Expr(Expr),
+}
+
+impl ColorFn {
+  /// The color for a magnitude `t` scaled to `[0, 1]`.
+  fn color(&self, t: f64) -> (u8, u8, u8) {
+    match self {
+      ColorFn::Named(name) => {
+        crate::functions::field_plot::apply_named_color_function(name, t)
+      }
+      ColorFn::Expr(f) => {
+        let call = Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![Expr::Real(t)],
+        };
+        evaluate_expr_to_expr(&call)
+          .ok()
+          .and_then(|r| parse_color(&r))
+          .map_or((0, 0, 0), |c| {
+            (
+              (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+              (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+            )
+          })
+      }
+    }
+  }
+}
+
 /// Evaluate a 3-component vector field {vx, vy, vz} at (x, y, z).
 fn evaluate_vector3d(
   body: &Expr,
@@ -2241,6 +2281,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vector_markers = "Arrow"; // "Arrow" or "Tube"
   let mut vector_points: Option<Vec<(f64, f64, f64)>> = None;
   let mut vector_scale: Option<f64> = None;
+  let mut vector_grid: Option<usize> = None;
+  let mut color_function: Option<ColorFn> = None;
   let mut vector_styles: Vec<Option<VecStyleSpec>> = vec![None; bodies.len()];
 
   for opt in &args[4..] {
@@ -2282,6 +2324,22 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "VectorPoints" => {
           if let Some(pts) = parse_vector_points3d(replacement) {
             vector_points = Some(pts);
+          } else if let Some(n) = parse_vector_points_count3d(replacement) {
+            vector_grid = Some(n);
+          }
+        }
+        // `ColorFunction -> f`: colors a single field's arrows by their
+        // magnitude, scaled to 0–1 (a named gradient or a pure function).
+        "ColorFunction" => {
+          if let Some(s) =
+            crate::functions::field_plot::color_function_scheme_name(
+              replacement,
+            )
+          {
+            color_function = Some(ColorFn::Named(s));
+          } else if !matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Automatic" || v == "None")
+          {
+            color_function = Some(ColorFn::Expr((**replacement).clone()));
           }
         }
         // `VectorScale -> s` (or `{smax, …}`, of which only the leading
@@ -2314,7 +2372,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let grid_n = VECTOR3D_GRID;
+  let grid_n = vector_grid.unwrap_or(VECTOR3D_GRID);
   let x_step = (x_max - x_min) / grid_n as f64;
   let y_step = (y_max - y_min) / grid_n as f64;
   let z_step = (z_max - z_min) / grid_n as f64;
@@ -2482,6 +2540,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let color = style.and_then(|st| st.color).unwrap_or_else(|| {
       if num_fields > 1 {
         PLOT_COLORS[s.field_idx % PLOT_COLORS.len()]
+      } else if let Some(cf) = &color_function {
+        cf.color((s.mag / max_mag).clamp(0.0, 1.0))
       } else {
         let t = (s.mag / max_mag).clamp(0.0, 1.0);
         (

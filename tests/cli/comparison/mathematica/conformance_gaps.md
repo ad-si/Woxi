@@ -4214,20 +4214,20 @@ woxi eval 'Options[f[1, 2], Axes]'             # Options[f[1, 2]]
 A list of option names is not accepted either — `Options[g, {Axes, PlotRange}]`
 gives `{}` where WL answers both.
 
-### Rasterize with an unknown element aborts the whole script
+### Rasterize "BoundingBox" and "RasterSize" use Woxi's own layout
 
 ```sh
-wolframscript -code 'Print[ToString[Rasterize[x, "Text"], InputForm]]; Print["after"]'
-# Rasterize::elmntavl: "Text" is not an available element. Possible elements
-# include "BoundingBox", "Data", "Graphics", "RasterSize", "Regions", and "Image".
-# $Failed
-# after
-woxi eval 'Print[Rasterize[x, "Text"]]; Print["after"]'
-# Error: Evaluation error: Rasterize: unsupported expression type
+wolframscript -code 'Rasterize[Style["abg", FontSize -> 12], "BoundingBox"]'
+# {21, 15, 11}
+woxi eval 'Rasterize[Style["abg", FontSize -> 12], "BoundingBox"]'
+# {22, 22, 17}
 ```
 
-The hard error kills the run, so nothing after it evaluates. `Rasterize`
-should emit `Rasterize::elmntavl` and return `$Failed`.
+The sizes come from Woxi's SVG layout, so text and formulas measure
+differently from the front end. The baseline is approximated: half the
+height for graphics (WL: 182 of 359 for `Graphics[Disk[]]`) and three
+quarters for everything else. WL's "RasterSize" is also at twice the
+resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
 
 ### Twenty-two heads raise a hard error for a bad first argument
 
@@ -4788,25 +4788,14 @@ More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
 systemic across `ImageTake`, `ImagePartition` and `DistanceTransform`.
 
-### FindThreshold is unimplemented and its return convention is unclear
+### FindThreshold implements only the default method
 
-```sh
-wolframscript -code 'FindThreshold[Image[{{0., 1.}}]]'   # 0.498046875
-woxi eval 'FindThreshold[Image[{{0., 1.}}]]'
-# FindThreshold[-Image-] is a built-in Wolfram Language function not yet implemented in Woxi.
-```
-
-The Otsu machinery already exists — `EdgeDetect` uses it, and for the gradient
-images it is applied to it reproduces wolframscript exactly: bin into 256 bins
-spanning `[min, max]`, maximise the between-cluster variance, and return
-`min + k (max - min)/256` for the winning bin index `k`.
-
-What blocks exposing it as `FindThreshold` is that the reported value is not
-always on that grid. `FindThreshold[Image[{{0., 1.}}]]` is `0.498046875`, which
-is `127.5/256` — a bin *centre*, where the gradient cases return a bin *edge*.
-Other probes give `0.4988281324331183` for `{{0.2, 0.8}}` but an exact `0.25`
-for `{{0.25, 0.5, 0.75}}`, so the parity is inconsistent across inputs. This
-also blocks the one-argument (Otsu-default) form of `MorphologicalBinarize`.
+`FindThreshold[image]` and `FindThreshold[data]` follow the default
+"Cluster" method (Otsu): real levels in 256 bins over their own range,
+integer levels on their raw values, the first maximizing bin as the threshold,
+the midpoint when only two levels occur, and `1.` for a constant image. The
+one-argument `MorphologicalBinarize` uses the same split binned on `[0, 1]`.
+`Method` options are not supported.
 
 ### EdgeDetect keeps a whole flat gradient plateau
 
@@ -6407,3 +6396,80 @@ need not be the minimizer wolframscript reports.
 - In `Mean[FisherZDistribution[n, m]]` Woxi orders the factor
   `n^2*(m/n)^(n/2)`; wolframscript writes `(m/n)^(n/2)*n^2`.
 - Numeric PDF/CDF/Quantile values can differ in the last digit.
+
+## A left-hand-side `/;` guard is printed on the right-hand side
+
+```sh
+wolframscript -code 'f[p_] /; p == 1/2 := 2; DownValues[f]'
+# {HoldPattern[f[p_] /; p == 1/2] :> 2}
+woxi eval 'f[p_] /; p == 1/2 := 2; DownValues[f]'
+# {HoldPattern[f[p_]] :> 2 /; p == 1/2}
+```
+
+A rule stores its guard in a trailing condition slot whichever side it was
+written on. The two forms match the same calls; only the printed rule differs.
+
+## Maximize of `(1 - x)/(Log[1/x] + 1)` on `[0, 1]` is numeric, not `ProductLog`
+
+```sh
+wolframscript -code 'Maximize[{(1 - x)/(Log[x^(-1)] + 1), 0 <= x <= 1}, x]'
+# {(1 - E^(2 + ProductLog[-1, -E^(-2)]))/(-1 - ProductLog[-1, -E^(-2)]), {x -> E^(2 + ProductLog[-1, -E^(-2)])}}
+woxi eval 'Maximize[{(1 - x)/(Log[x^(-1)] + 1), 0 <= x <= 1}, x]'
+# {0.3178444328993727, {x -> 0.31784443289937303}}
+```
+
+The critical point solves `Log[1/x] + x == 0`-type equations that Woxi's
+Solve does not invert to `ProductLog`, so the optimizer falls back to Newton.
+
+## `RegionConvert[…, "Implicit"]` of a parallelogram is not reduced
+
+```sh
+wolframscript -code 'RegionConvert[Parallelogram[{1, 2}, {{1, 0}, {1, 1}}], "Implicit"] /. {\[FormalX] -> x, \[FormalY] -> y}'
+# ImplicitRegion[x <= y && 1 + x >= y && Inequality[2, LessEqual, y, LessEqual, 3], {x, y}]
+woxi eval 'RegionConvert[Parallelogram[{1, 2}, {{1, 0}, {1, 1}}], "Implicit"] /. {\[FormalX] -> x, \[FormalY] -> y}'
+# ImplicitRegion[0 <= 1 + x - y <= 1 && 0 <= -2 + y <= 1, {x, y}]
+```
+
+Woxi bounds the parallelogram's coordinates `t = Inverse[{v1, v2}ᵀ] . (x - o)`
+between 0 and 1. wolframscript reduces that system further for some vectors and
+leaves it as is for others (`Parallelogram[{0, 0}, {{-1, -1}, {-1, 0}}]` gives
+the same `0 <= -y <= 1 && 0 <= -x + y <= 1` in both). The regions are equal.
+Only boxes, balls (round or axis-aligned ellipsoids) and parallelepipeds are
+converted; other regions stay unevaluated.
+
+## `CanonicalGraph` of a highly symmetric graph labels differently
+
+```sh
+wolframscript -code 'EdgeList[CanonicalGraph[PetersenGraph[]]][[;; 3]]'
+# {1 <-> 3, 1 <-> 4, 1 <-> 7}
+woxi eval 'EdgeList[CanonicalGraph[PetersenGraph[]]][[;; 3]]'
+# {1 <-> 2, 1 <-> 3, 1 <-> 4}
+```
+
+Woxi orders vertices by their refined degree colouring and settles the ties
+left over with the lexicographically smallest edge list. That reproduces
+wolframscript's labels for graphs that degree refinement separates (paths,
+stars, trees, cycles, complete bipartite graphs) but not for vertex-transitive
+ones, where wolframscript's tie-breaking rule is unknown. Isomorphic graphs
+still come out identical in Woxi.
+
+## Generalized eigenvectors with a singular `b` can differ in sign
+
+```sh
+wolframscript -code 'Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]'
+# {{Infinity, 1.}, {{0., 1.}, {1., 0.}}}
+woxi eval 'Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]'
+# {{Infinity, 1.}, {{0., -1.}, {-1., 0.}}}
+```
+
+With `b` singular Woxi takes the eigenpairs of `Inverse[a] . b` and inverts
+the eigenvalues (`Infinity` for its zero ones). The eigenvalues agree, but the
+vectors keep that reduced problem's sign choice and the finite eigenvalues can
+differ in the last bit.
+
+## Text with a Row of Style-sized labels
+
+- `Graphics[Text[Row[{Style["12", Bold, 54], …}], pos]]` draws the row at the
+  default font size: the `Style` sizes inside a `Row` passed to `Text` are
+  not applied, so a barcode's printed digits come out much smaller than in
+  wolframscript.

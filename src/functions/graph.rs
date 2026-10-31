@@ -3366,6 +3366,260 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Graph", graph_args))
 }
 
+/// Refine a vertex colouring: each vertex's new colour is the rank of
+/// (old colour, sorted colours of its out-neighbours, sorted colours of its
+/// in-neighbours) among all vertices, until the partition stops splitting.
+fn refine_colors(colors: &mut [usize], out: &[Vec<usize>], inn: &[Vec<usize>]) {
+  loop {
+    let keys: Vec<(usize, Vec<usize>, Vec<usize>)> = (0..colors.len())
+      .map(|v| {
+        let mut o: Vec<usize> = out[v].iter().map(|&w| colors[w]).collect();
+        let mut i: Vec<usize> = inn[v].iter().map(|&w| colors[w]).collect();
+        o.sort_unstable();
+        i.sort_unstable();
+        (colors[v], o, i)
+      })
+      .collect();
+    let mut distinct: Vec<&(usize, Vec<usize>, Vec<usize>)> =
+      keys.iter().collect();
+    distinct.sort();
+    distinct.dedup();
+    let new: Vec<usize> = keys
+      .iter()
+      .map(|k| distinct.binary_search(&k).unwrap_or(0))
+      .collect();
+    let before = colors
+      .iter()
+      .collect::<std::collections::BTreeSet<_>>()
+      .len();
+    colors.copy_from_slice(&new);
+    if distinct.len() == before {
+      return;
+    }
+  }
+}
+
+/// CanonicalGraph[g] — g relabelled 1, 2, …, n so that isomorphic graphs
+/// come out identical. Vertices are ordered by their refined degree
+/// colouring (lower degree first; for a directed graph a sink before a
+/// source), and the ties left over are settled by an individualize-and-
+/// refine search for the lexicographically smallest edge list.
+pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("CanonicalGraph", args);
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return Ok(unevaluated());
+  };
+  let n = vertices.len();
+  let key = |e: &Expr| expr_to_string(e);
+  let index: HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  let mut directed = None;
+  for e in &raw_edges {
+    let (a, b, d) = match fc_unwrap_edge(e) {
+      Expr::FunctionCall { name, args: ea } if ea.len() == 2 => {
+        (&ea[0], &ea[1], name == "DirectedEdge")
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => return Ok(unevaluated()),
+    };
+    if *directed.get_or_insert(d) != d {
+      return Ok(unevaluated());
+    }
+    let (Some(&ia), Some(&ib)) = (index.get(&key(a)), index.get(&key(b)))
+    else {
+      return Ok(unevaluated());
+    };
+    edges.push((ia, ib));
+  }
+  let directed = directed.unwrap_or(false);
+  let mut out = vec![Vec::new(); n];
+  let mut inn = vec![Vec::new(); n];
+  for &(a, b) in &edges {
+    out[a].push(b);
+    inn[b].push(a);
+    if !directed {
+      out[b].push(a);
+      inn[a].push(b);
+    }
+  }
+  // Initial colour: degree, and for a directed graph out-degree next.
+  let mut colors: Vec<usize> = {
+    let keys: Vec<(usize, usize)> = (0..n)
+      .map(|v| {
+        if directed {
+          (out[v].len() + inn[v].len(), out[v].len())
+        } else {
+          (out[v].len(), 0)
+        }
+      })
+      .collect();
+    let mut distinct = keys.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    keys
+      .iter()
+      .map(|k| distinct.binary_search(k).unwrap_or(0))
+      .collect()
+  };
+  refine_colors(&mut colors, &out, &inn);
+
+  let relabelled = |labels: &[usize]| -> Vec<(usize, usize)> {
+    let mut es: Vec<(usize, usize)> = edges
+      .iter()
+      .map(|&(a, b)| {
+        let (la, lb) = (labels[a], labels[b]);
+        if directed || la <= lb {
+          (la, lb)
+        } else {
+          (lb, la)
+        }
+      })
+      .collect();
+    es.sort_unstable();
+    es
+  };
+  // Depth-first individualization: split the first cell of more than one
+  // vertex on each of its members in turn, keeping the smallest edge list.
+  let mut best: Option<(Vec<(usize, usize)>, Vec<usize>)> = None;
+  let mut budget = 20_000usize;
+  fn search(
+    colors: Vec<usize>,
+    out: &[Vec<usize>],
+    inn: &[Vec<usize>],
+    relabelled: &dyn Fn(&[usize]) -> Vec<(usize, usize)>,
+    best: &mut Option<(Vec<(usize, usize)>, Vec<usize>)>,
+    budget: &mut usize,
+  ) {
+    if *budget == 0 {
+      return;
+    }
+    *budget -= 1;
+    let n = colors.len();
+    let mut counts = vec![0usize; n];
+    for &c in &colors {
+      counts[c] += 1;
+    }
+    let Some(cell) = (0..n).find(|&c| counts[c] > 1) else {
+      let candidate = relabelled(&colors);
+      if best.as_ref().is_none_or(|(b, _)| candidate < *b) {
+        *best = Some((candidate, colors));
+      }
+      return;
+    };
+    for v in (0..n).filter(|&v| colors[v] == cell) {
+      // `v` takes the cell's first label; the rest of the cell shifts up.
+      let mut split: Vec<usize> = colors
+        .iter()
+        .enumerate()
+        .map(|(w, &c)| {
+          if c > cell || (c == cell && w != v) {
+            2 * c + 1
+          } else {
+            2 * c
+          }
+        })
+        .collect();
+      let mut distinct = split.clone();
+      distinct.sort_unstable();
+      distinct.dedup();
+      for c in &mut split {
+        *c = distinct.binary_search(c).unwrap_or(0);
+      }
+      refine_colors(&mut split, out, inn);
+      search(split, out, inn, relabelled, best, budget);
+      if *budget == 0 {
+        return;
+      }
+    }
+  }
+  search(colors, &out, &inn, &relabelled, &mut best, &mut budget);
+  let Some((edge_list, _)) = best else {
+    return Ok(unevaluated());
+  };
+  let head = if directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  let label = |i: usize| Expr::Integer(i as i128 + 1);
+  let edge_exprs: Vec<Expr> = edge_list
+    .iter()
+    .map(|&(a, b)| call(head, vec![label(a), label(b)]))
+    .collect();
+  crate::evaluator::evaluate_function_call_ast(
+    "Graph",
+    &[
+      Expr::List((0..n).map(label).collect::<Vec<_>>().into()),
+      Expr::List(edge_exprs.into()),
+    ],
+  )
+}
+
+/// SimpleGraph[g] / SimpleGraph[{edges}] — the graph without self-loops
+/// and with every multiple edge kept once (directed edges in opposite
+/// directions are distinct), keeping the vertices and options.
+pub fn simple_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("SimpleGraph", args);
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return Ok(unevaluated());
+  };
+  let extra: Vec<Expr> = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() > 2 =>
+    {
+      gargs[2..].to_vec()
+    }
+    _ => Vec::new(),
+  };
+  let key = |e: &Expr| expr_to_string(e);
+  let mut seen: Vec<(String, String, bool)> = Vec::new();
+  let mut out: Vec<Expr> = Vec::new();
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (a, b, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        (&eargs[0], &eargs[1], name == "DirectedEdge")
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => return Ok(unevaluated()),
+    };
+    let (ka, kb) = (key(a), key(b));
+    if ka == kb {
+      continue;
+    }
+    let id = if directed || ka < kb {
+      (ka, kb, directed)
+    } else {
+      (kb, ka, directed)
+    };
+    if seen.contains(&id) {
+      continue;
+    }
+    seen.push(id);
+    out.push(inner.clone());
+  }
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(out.into())];
+  graph_args.extend(extra);
+  crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
+}
+
 pub fn find_hamiltonian_cycle_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {

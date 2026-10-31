@@ -101,6 +101,7 @@ pub mod random_point;
 pub mod rectangle_chart;
 pub mod regex_engine;
 pub mod region;
+pub mod region_convert;
 pub mod resolve_ast;
 pub mod resource_function_ast;
 pub mod root_ast;
