@@ -17229,6 +17229,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(result, "{True, True}", "result: {result}");
     }
 
+    /// The equation form is `Graphics[prims, {opts}]` like wolframscript's,
+    /// so `Graphics[g[[1]], g[[2]]]` rebuilds it (there was no part 2).
+    #[test]
+    fn contour_plot_equation_has_option_list_part() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[x^2 + y^2 == 4, {x, -3, 3}, {y, -3, 3}, \
+           ContourStyle -> Thick]; {Length[g], Head[g[[1]]], Head[g[[2]]], \
+           Head[Graphics[g[[1]], g[[2]]]]}"
+        )
+        .unwrap(),
+        "{2, List, List, Graphics}"
+      );
+    }
+
     /// `Mesh -> n` grid lines must stop at the same `RegionFunction`
     /// boundary as the contour bands/lines, not spill across the whole
     /// rectangular domain.
@@ -42259,8 +42274,17 @@ mod grid_cell_labeled_layout {
     #[test]
     fn append_option_to_plot_keeps_its_epilog() {
       assert_case(
-        r#"Cases[Append[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}, Epilog -> {Red, Point[{0, 0}]}], PlotLabel -> "a"], _Rule]"#,
-        "{Epilog -> {RGBColor[1, 0, 0], Point[{0, 0}]}, PlotLabel -> a}",
+        r#"g = Append[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}, Epilog -> {Red, Point[{0, 0}]}], PlotLabel -> "a"]; {Cases[g, _Rule], Cases[g, (Epilog -> e_) :> e, {2}], Length[g]}"#,
+        "{{PlotLabel -> a}, {{RGBColor[1, 0, 0], Point[{0, 0}]}}, 3}",
+      );
+    }
+
+    // A plot is `Graphics[prims, {opts}]`: part 2 is its option list.
+    #[test]
+    fn plot_part_two_is_its_option_list() {
+      assert_case(
+        r#"{Head[Plot[x, {x, 0, 1}][[2]]], Head[ListPlot[{1, 2, 3}][[2]]], Head[ParametricPlot[{Sin[t], Cos[t]}, {t, 0, 1}][[2]]]}"#,
+        "{List, List, List}",
       );
     }
 

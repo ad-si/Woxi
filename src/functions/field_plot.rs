@@ -2964,10 +2964,6 @@ fn contour_plot_equations(
       structure_items.push(call1("Line", Expr::List(points.into())));
     }
   }
-  let structure = call1(
-    "Graphics",
-    Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
-  );
   // A contour plot is framed and has no axes unless asked otherwise, so a
   // `Show` of several of them (`Frame -> False` or not) must not grow the
   // axes that `Show` otherwise gives a plot.
@@ -2984,6 +2980,15 @@ fn contour_plot_equations(
   if !has(&source_options, "Frame") {
     source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   }
+  // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
+  // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot).
+  let structure = call(
+    "Graphics",
+    vec![
+      Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
+      Expr::List(source_options.clone().into()),
+    ],
+  );
   let source = crate::syntax::PlotSource {
     series,
     x_range: (x_min, x_max),

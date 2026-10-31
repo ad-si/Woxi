@@ -740,18 +740,21 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     // `Append[plot, PlotLabel -> …]` — and redrawing keeps them. Options that
     // only steer sampling or styling (`MaxRecursion`, `PlotStyle`, …) were
     // already applied to the curves.
-    let mut args = vec![Expr::List(series.into())];
-    args.extend(
-      source
-        .options
-        .iter()
-        .filter(|opt| {
-          crate::functions::graphics::option_name_value(opt)
-            .is_some_and(|(name, _)| GRAPHICS_PLOT_OPTIONS.contains(&name))
-        })
-        .cloned(),
-    );
-    return Some(call("Graphics", args));
+    // They form one list, as in Wolfram's `Graphics[prims, {opts}]`: part 2
+    // of a plot is its option list.
+    let options: Vec<Expr> = source
+      .options
+      .iter()
+      .filter(|opt| {
+        crate::functions::graphics::option_name_value(opt)
+          .is_some_and(|(name, _)| GRAPHICS_PLOT_OPTIONS.contains(&name))
+      })
+      .cloned()
+      .collect();
+    return Some(call(
+      "Graphics",
+      vec![Expr::List(series.into()), Expr::List(options.into())],
+    ));
   }
   None
 }
