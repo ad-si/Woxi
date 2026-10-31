@@ -3713,8 +3713,14 @@ pub fn subdivide_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for i in 0..=n_val {
         let mut point = Vec::with_capacity(dim);
         for d in 0..dim {
-          let val =
-            subdivide_scalar_at(&xmin_items[d], &xmax_items[d], i, n_val)?;
+          // The end points are the given vectors themselves.
+          let val = if i == 0 {
+            xmin_items[d].clone()
+          } else if i == n_val {
+            xmax_items[d].clone()
+          } else {
+            subdivide_scalar_at(&xmin_items[d], &xmax_items[d], i, n_val)?
+          };
           point.push(val);
         }
         result_items.push(Expr::List(point.into()));
@@ -3740,6 +3746,19 @@ fn subdivide_scalar_at(
   n: i128,
 ) -> Result<Expr, InterpreterError> {
   use crate::evaluator::evaluate_expr_to_expr;
+
+  // Machine endpoints: wolframscript's `a (1 - t) + b t` with
+  // `t = i (1/n)`, the first product fused — reproducing its last digits
+  // (`Subdivide[-7., 0, 21]` has -2.3333333333333335, not …33).
+  if (matches!(xmin, Expr::Real(_)) || matches!(xmax, Expr::Real(_)))
+    && let (Some(a), Some(b)) = (
+      crate::functions::math_ast::try_eval_to_f64(xmin),
+      crate::functions::math_ast::try_eval_to_f64(xmax),
+    )
+  {
+    let t = i as f64 * (1.0 / n as f64);
+    return Ok(Expr::Real(a.mul_add(1.0 - t, b * t)));
+  }
 
   if i == 0 {
     return Ok(xmin.clone());

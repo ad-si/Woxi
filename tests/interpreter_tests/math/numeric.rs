@@ -2123,6 +2123,26 @@ mod cases {
 mod subdivide {
   use super::*;
 
+  // Machine endpoints use wolframscript's `a (1 - t) + b t` with
+  // `t = k (1/n)`, so the floats agree to the last digit
+  // (NonparametricAdditiveModeling looks one up with Position).
+  #[test]
+  fn subdivide_machine_floats() {
+    assert_eq!(
+      interpret("InputForm[Subdivide[-7., 0, 21][[{12, 15, 16, 20, 22}]]]")
+        .unwrap(),
+      "InputForm[{-3.333333333333334, -2.3333333333333335, -2.000000000000001, -0.6666666666666674, 0.}]"
+    );
+    assert_eq!(
+      interpret("InputForm[Subdivide[-9., 2., 33][[{7, 16, 28}]]]").unwrap(),
+      "InputForm[{-6.999999999999999, -3.9999999999999996, 5.551115123125783*^-16}]"
+    );
+    assert_eq!(
+      interpret("InputForm[Subdivide[{0., 1.}, {2, 3.5}, 4]]").unwrap(),
+      "InputForm[{{0., 1.}, {0.5, 1.625}, {1., 2.25}, {1.5, 2.875}, {2, 3.5}}]"
+    );
+  }
+
   #[test]
   fn valid_forms() {
     // One-, two- and three-argument forms.
