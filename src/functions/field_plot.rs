@@ -2060,9 +2060,98 @@ fn render_contour_lines_styled(
 /// other graphics. It keeps the call's options too, so the merged picture is
 /// still drawn on the axes and range the plot asked for, and spells out the
 /// plot's own defaults where `Graphics` differs: framed, and square.
+/// The primitives of a contour plot's symbolic form, in data coordinates:
+/// the shaded bands, then the `mesh` lines, the `ContourStyle` directives
+/// (`style`) and one `Line` per contour chain, then the level labels — so
+/// `plot[[1]]` can be re-embedded in an outer `Graphics[…]` the way
+/// Wolfram's GraphicsComplex form allows. `grid[i][j]` holds the value at
+/// the i-th x and j-th y node of an even lattice over the ranges.
+#[allow(clippy::too_many_arguments)]
+fn contour_structure_items(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  opts: &DensityContourOptions,
+  style: Vec<Expr>,
+  mesh: Vec<Expr>,
+) -> Vec<Expr> {
+  let mut structure_items: Vec<Expr> = Vec::new();
+  // The shaded bands go underneath, in their own list so their colours do
+  // not leak onto the mesh and contour lines drawn over them.
+  if opts.contour_shading {
+    let bands = contour_band_primitives(
+      grid,
+      levels,
+      v_min,
+      v_max,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      opts.color_function.as_deref(),
+      opts.cf_expr(),
+    );
+    if !bands.is_empty() {
+      structure_items.push(Expr::List(bands.into()));
+    }
+  }
+  // Mesh lines next, in their own list so their grey does not leak onto
+  // the contours drawn after them.
+  structure_items.extend(mesh);
+  structure_items.extend(style);
+  let cols = grid.len();
+  let rows = grid.first().map_or(0, Vec::len);
+  if cols < 2 || rows < 2 {
+    return structure_items;
+  }
+  let step_x = (x_max - x_min) / (cols - 1) as f64;
+  let step_y = (y_max - y_min) / (rows - 1) as f64;
+  // Endpoint snapping must stay proportional to the range (the pixel
+  // callers use 16.0 on a ~400px canvas).
+  let span = (x_max - x_min).abs().max((y_max - y_min).abs());
+  let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
+  for &level in levels {
+    // `plot_y0 = y_max` with a negated cell height turns the screen-space
+    // (top-down) y mapping into the plain data-space one.
+    let segments =
+      marching_squares_segments(grid, level, x_min, y_max, step_x, -step_y);
+    for chain in chain_segments_scaled(&segments, key_scale) {
+      let points: Vec<Expr> = chain
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+        .collect();
+      structure_items.push(call1("Line", Expr::List(points.into())));
+    }
+  }
+  // The level labels travel with the plot, so a `Show` that layers
+  // other graphics over it keeps them.
+  if opts.contour_labels {
+    let labels: Vec<Expr> =
+      contour_label_points(grid, levels, x_min, y_max, step_x, -step_y)
+        .into_iter()
+        .map(|(level, (x, y))| {
+          call(
+            "Text",
+            vec![
+              Expr::Real(level),
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+            ],
+          )
+        })
+        .collect();
+    if !labels.is_empty() {
+      structure_items.push(Expr::List(labels.into()));
+    }
+  }
+  structure_items
+}
+
 /// Wrap a contour plot's primitives into the `GraphicsComplex[pts, …]`
 /// Wolfram returns: every `Line` of coordinate pairs (at any list depth)
-/// becomes a `Line` of 1-based indices into one shared point table, so
+/// becomes a `Line` of 1-based indices into one shared point table, and a
+/// level label `Text[value, {x, y}]` a `Text[value, index]`, so
 /// `Cases[plot, _GraphicsComplex, ∞]` and `pts[[First[line]]]` work as in
 /// Wolfram and `Normal` recovers the coordinates.
 fn contour_graphics_complex(items: &[Expr]) -> Expr {
@@ -2104,6 +2193,16 @@ fn contour_graphics_complex(items: &[Expr]) -> Expr {
           })
           .collect();
         call1("Line", Expr::List(ids.into()))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Text" && args.len() == 2 && coords(&args[1]).is_some() =>
+      {
+        let (x, y) = coords(&args[1]).unwrap();
+        let id = *seen.entry((x.to_bits(), y.to_bits())).or_insert_with(|| {
+          pts.push(args[1].clone());
+          pts.len() as i128
+        });
+        call("Text", vec![args[0].clone(), Expr::Integer(id)])
       }
       _ => e.clone(),
     }
@@ -2604,79 +2703,18 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &grid,
   );
 
-  // Data-space contour polylines for the symbolic `structure`, so
-  // `ContourPlot[…][[1]]` yields primitives (with the ContourStyle
-  // directives) that can be re-embedded in an outer `Graphics[…]` the way
-  // Wolfram's GraphicsComplex form allows.
-  let mut structure_items: Vec<Expr> = Vec::new();
-  // The shaded bands go underneath, in their own list so their colours do
-  // not leak onto the mesh and contour lines drawn over them.
-  if opts.contour_shading {
-    let bands = contour_band_primitives(
-      &grid,
-      &levels,
-      v_min,
-      v_max,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      opts.color_function.as_deref(),
-      opts.cf_expr(),
-    );
-    if !bands.is_empty() {
-      structure_items.push(Expr::List(bands.into()));
-    }
-  }
-  // Mesh lines next, in their own list so their grey does not leak onto
-  // the contours drawn after them.
-  structure_items.extend(mesh_structure_items(
-    &mesh_grids,
+  let mesh_items =
+    mesh_structure_items(&mesh_grids, (x_min, x_max), (y_min, y_max));
+  let structure_items = contour_structure_items(
+    &grid,
+    &levels,
+    (v_min, v_max),
     (x_min, x_max),
     (y_min, y_max),
-  ));
-  structure_items.extend(contour_style_directives(args, 3));
-  {
-    let step_x = (x_max - x_min) / FIELD_GRID as f64;
-    let step_y = (y_max - y_min) / FIELD_GRID as f64;
-    // Endpoint snapping must stay proportional to the range (the pixel
-    // callers use 16.0 on a ~400px canvas).
-    let span = (x_max - x_min).abs().max((y_max - y_min).abs());
-    let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
-    for &level in &levels {
-      // `plot_y0 = y_max` with a negated cell height turns the screen-space
-      // (top-down) y mapping into the plain data-space one.
-      let segments =
-        marching_squares_segments(&grid, level, x_min, y_max, step_x, -step_y);
-      for chain in chain_segments_scaled(&segments, key_scale) {
-        let points: Vec<Expr> = chain
-          .iter()
-          .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-          .collect();
-        structure_items.push(call1("Line", Expr::List(points.into())));
-      }
-    }
-    // The level labels travel with the plot, so a `Show` that layers
-    // other graphics over it keeps them.
-    if opts.contour_labels {
-      let labels: Vec<Expr> =
-        contour_label_points(&grid, &levels, x_min, y_max, step_x, -step_y)
-          .into_iter()
-          .map(|(level, (x, y))| {
-            call(
-              "Text",
-              vec![
-                Expr::String(crate::functions::plot::format_tick(level)),
-                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-              ],
-            )
-          })
-          .collect();
-      if !labels.is_empty() {
-        structure_items.push(Expr::List(labels.into()));
-      }
-    }
-  }
+    &opts,
+    contour_style_directives(args, 3),
+    mesh_items.into_iter().collect(),
+  );
   let structure = field_plot_structure(
     vec![contour_graphics_complex(&structure_items)],
     args,
@@ -5422,7 +5460,24 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  let structure_items = contour_structure_items(
+    &grid,
+    &levels,
+    (v_min, v_max),
+    (x_min, x_max),
+    (y_min, y_max),
+    &opts,
+    contour_style_directives(args, 1),
+    Vec::new(),
+  );
+  let structure = field_plot_structure(
+    vec![contour_graphics_complex(&structure_items)],
+    args,
+    (x_min, x_max),
+    (y_min, y_max),
+    false,
+  );
+  Ok(crate::plot_result_with_structure(svg, structure))
 }
 
 /// A cell in an ArrayPlot matrix: either a numeric value or an explicit color.

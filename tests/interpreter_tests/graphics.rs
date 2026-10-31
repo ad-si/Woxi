@@ -37847,6 +37847,27 @@ mod color_data_indexed {
     );
   }
 
+  // ListContourPlot carries the same symbolic form: its contour lines index
+  // into the complex's points, and its level labels (`Text[value, index]`)
+  // point into the same table.
+  #[test]
+  fn list_contour_plot_lines_and_labels_live_in_graphics_complex() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ListContourPlot[Table[x^2 + y^2, {y, -2, 2, 0.25}, {x, -2, 2, 0.25}], \
+           DataRange -> {{-2, 2}, {-2, 2}}, Contours -> {1}, ContourLabels -> All]; \
+         pts = First[Cases[p, g_GraphicsComplex :> First[g], Infinity]]; \
+         lines = Cases[p, Line[l_] :> l, Infinity]; \
+         labels = Cases[p, _Text, Infinity]; \
+         {MatrixQ[pts], Length[lines], Max[Abs[Norm /@ pts[[lines[[1]]]] - 1]] < 0.05, \
+          Length[labels] > 0, labels[[1, 1]], IntegerQ[labels[[1, 2]]]}"
+      )
+      .unwrap(),
+      "{True, 1, True, True, 1., True}"
+    );
+  }
+
   // Like Wolfram, a ContourPlot holds its curves in a
   // `GraphicsComplex[pts, {… Line[indices] …}]`: the Demonstrations idiom
   // `pts = First[Cases[plot, x_GraphicsComplex :> First[x], Infinity]]`
