@@ -13226,6 +13226,13 @@ fn find_root_complex_newton(
         "FindRoot: derivative is zero, cannot converge".into(),
       ));
     };
+    // A step below the last bit of the iterate means it has settled even
+    // though the residual's rounding noise stays above `tol`.
+    if cabs(sr, si) <= f64::EPSILON * cabs(re, im).max(1.0) {
+      re -= sr;
+      im -= si;
+      break;
+    }
     // Damped like the real iteration: a step that makes |f| worse (or
     // leaves the function's domain) is halved until it does not.
     let current = cabs(fr, fi);

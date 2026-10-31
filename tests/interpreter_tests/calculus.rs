@@ -24671,3 +24671,25 @@ mod find_minimum_two_starting_values {
     );
   }
 }
+
+mod find_root_complex_newton_settles {
+  use super::*;
+
+  #[test]
+  fn a_settled_complex_iterate_is_no_convergence_failure() {
+    // The start is outside the real domain of Sqrt, so the search runs
+    // complex; its residual noise never got under 1e-15 and it reported
+    // FindRoot::cvmit at the root.
+    let r = interpret_with_stdout(
+      "Round[10^10 Re[qa /. FindRoot[-qa Cot[qa/2] == Sqrt[20. - qa^2], \
+       {qa, 1.9 Pi}]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "40341412373");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+}
