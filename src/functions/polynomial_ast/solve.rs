@@ -1832,9 +1832,11 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       minus2(fargs[0].clone(), fargs[1].clone())
     }
-    _ => {
+    // A bare polynomial stands for `poly == 0`, as in wolframscript.
+    Expr::Comparison { .. } => {
       return Ok(unevaluated("NRoots", args));
     }
+    poly => poly.clone(),
   };
 
   let unevaluated = || unevaluated("NRoots", args);
@@ -1875,8 +1877,56 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
 
+  // A repeated root stalls Durand-Kerner a few digits short. With exact
+  // coefficients the square-free factors are solved one by one instead,
+  // each root repeated by the multiplicity of its factor.
+  let square_free =
+    (!crate::functions::math_ast::contains_inexact_real(&expanded))
+      .then(|| {
+        crate::evaluator::evaluate_function_call_ast(
+          "FactorSquareFreeList",
+          std::slice::from_ref(&expanded),
+        )
+        .ok()
+      })
+      .flatten();
+  let mut factored: Option<Vec<(f64, f64)>> = None;
+  if let Some(Expr::List(ref factors)) = square_free
+    && factors.iter().any(|f| {
+      matches!(f, Expr::List(pair) if pair.len() == 2
+        && matches!(&pair[1], Expr::Integer(m) if *m > 1)
+        && !is_constant_wrt(&pair[0], &var))
+    })
+  {
+    let mut all = Vec::new();
+    for f in factors {
+      let Expr::List(pair) = f else {
+        all.clear();
+        break;
+      };
+      let (Some(factor), Some(Expr::Integer(m))) = (pair.first(), pair.get(1))
+      else {
+        all.clear();
+        break;
+      };
+      if is_constant_wrt(factor, &var) {
+        continue;
+      }
+      let Some(c) = polynomial_f64_coefficients(factor, &var) else {
+        all.clear();
+        break;
+      };
+      let roots = durand_kerner_roots(&c);
+      for _ in 0..*m {
+        all.extend(roots.iter().copied());
+      }
+    }
+    if all.len() == degree {
+      factored = Some(all);
+    }
+  }
   // Durand-Kerner finds all roots simultaneously.
-  let roots = durand_kerner_roots(&coeffs);
+  let roots = factored.unwrap_or_else(|| durand_kerner_roots(&coeffs));
 
   // Sort by (Re, Im) ascending.
   let mut roots = roots;
@@ -1904,6 +1954,23 @@ pub fn nroots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(conds.into_iter().next().unwrap());
   }
   Ok(call("Or", conds))
+}
+
+/// The coefficients of a polynomial in `var` as f64 (index = degree), or
+/// None when one is not a number.
+fn polynomial_f64_coefficients(poly: &Expr, var: &str) -> Option<Vec<f64>> {
+  let expanded = expand_and_combine(poly);
+  let degree = max_power_int(&expanded, var).filter(|d| *d >= 1)? as usize;
+  let terms = collect_additive_terms(&expanded);
+  let mut coeffs = vec![0.0f64; degree + 1];
+  for (d, slot) in coeffs.iter_mut().enumerate() {
+    for term in &terms {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        *slot += try_eval_to_f64(&simplify(c))?;
+      }
+    }
+  }
+  Some(coeffs)
 }
 
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using

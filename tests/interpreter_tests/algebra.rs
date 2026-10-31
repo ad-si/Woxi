@@ -24194,3 +24194,25 @@ mod reduce_parameters_in_equations {
     );
   }
 }
+
+mod nroots_bare_polynomial_and_repeated_roots {
+  use super::*;
+
+  #[test]
+  fn a_bare_polynomial_means_poly_equals_zero() {
+    // It stayed unevaluated, so `Part[NRoots[…], All, 2]` failed.
+    assert_eq!(
+      interpret("List @@ Part[NRoots[z^3 - 2 z + 1, z], All, 2]").unwrap(),
+      "{-1.618033988749895, 0.6180339887498949, 1.}"
+    );
+  }
+
+  #[test]
+  fn repeated_roots_come_out_exactly_repeated() {
+    // Durand-Kerner stalled near the triple root: 1.0000008 - 1.6*^-6 I.
+    assert_eq!(
+      interpret("NRoots[(z - 1)^3 (z^2 + 1) == 0, z]").unwrap(),
+      "z == 0. - 1.*I || z == 0. + 1.*I || z == 1. || z == 1. || z == 1."
+    );
+  }
+}
