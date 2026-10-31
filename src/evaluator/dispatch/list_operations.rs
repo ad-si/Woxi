@@ -3696,7 +3696,11 @@ pub fn dispatch_list_operations(
         // in canonical Plus order (most-negative exponent first, matching
         // wolframscript). For a finite center the natural low-to-high build
         // order is already canonical, so keep it to avoid disturbing it.
-        if is_infinity {
+        // So does a series with machine coefficients, whose `0.` terms and
+        // negative reals the evaluated sum folds and signs (`2. - 3.*x^2`).
+        if is_infinity
+          || coeffs.iter().any(|c| matches!(c, Expr::Real(_)))
+        {
           let plus = plus(terms);
           return Some(evaluate_expr_to_expr(&plus));
         }

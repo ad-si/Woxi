@@ -516,6 +516,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return nsolve_ast(&[args[0].clone(), vars]);
   }
+  // An unknown that is a call (`f''[0]`, `a[1]`) is solved for as a fresh
+  // symbol: numericizing the equations would turn its `0` into `0.`.
+  if let Some(result) = with_generalized_variables(args, nsolve_ast) {
+    return result;
+  }
   // A system of several equations with machine coefficients is solved the
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
@@ -2381,6 +2386,19 @@ fn collect_solve_var_exprs(expr: &Expr, out: &mut Vec<Expr>) {
       if !args.is_empty()
         && (name == "Subscript" && matches!(&args[0], Expr::Identifier(_))
           || !crate::evaluator::functions::is_builtin_symbol(name)) =>
+    {
+      push(expr.clone(), out);
+    }
+    // A derivative value (`f''[0]`, held as `Derivative[2, f, 0]` once
+    // evaluated) is one unknown, as an undefined function's value is.
+    Expr::FunctionCall { name, args }
+      if name == "Derivative" && args.len() >= 3 =>
+    {
+      push(expr.clone(), out);
+    }
+    Expr::CurriedCall { func, .. }
+      if matches!(func.as_ref(), Expr::CurriedCall { func: inner, .. }
+        if matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")) =>
     {
       push(expr.clone(), out);
     }

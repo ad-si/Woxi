@@ -444,6 +444,66 @@ fn try_series_data_times(
       _ => None,
     })
     .collect();
+  // One series times factors that depend on its variable (`f''[x]`,
+  // `Sin[x]`): each such factor is expanded to the series' order first, as
+  // wolframscript does, and the product is taken of the series.
+  if series_indices.len() == 1 {
+    let only_idx = series_indices[0];
+    let Expr::FunctionCall { args: sa, .. } = &args[only_idx] else {
+      return Ok(None);
+    };
+    let (Expr::Identifier(var_name), Expr::Integer(nmax), Expr::Integer(1)) =
+      (&sa[0], &sa[4], &sa[5])
+    else {
+      return Ok(None);
+    };
+    // At Infinity a factor such as `E^(-x^2)` has no power series; the
+    // product stays as it is.
+    if crate::functions::math_ast::try_eval_to_f64(&sa[1]).is_none() {
+      return Ok(None);
+    }
+    let dependent: Vec<usize> = (0..args.len())
+      .filter(|&i| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(&args[i], var_name)
+      })
+      .collect();
+    if dependent.is_empty() {
+      return Ok(None);
+    }
+    let mut lifted: Vec<Expr> = args.to_vec();
+    let expand = |e: &Expr, order: i128| {
+      crate::evaluator::evaluate_function_call_ast(
+        "Series",
+        &[
+          e.clone(),
+          Expr::List(
+            vec![sa[0].clone(), sa[1].clone(), Expr::Integer(order)].into(),
+          ),
+        ],
+      )
+    };
+    for i in dependent {
+      let mut series = expand(&args[i], nmax - 1)?;
+      // A factor vanishing to order v at the centre carries the product v
+      // orders further, so it is expanded that much further too
+      // (`Series[f[x], {x, 0, 3}] Sin[x]` is good to O[x]^5).
+      if let Expr::FunctionCall { name, args: fa } = &series
+        && name == "SeriesData"
+        && let Expr::Integer(v) = &fa[3]
+        && *v > 0
+      {
+        series = expand(&args[i], nmax - 1 + v)?;
+      }
+      if !matches!(&series, Expr::FunctionCall { name, .. } if name == "SeriesData")
+      {
+        return Ok(None);
+      }
+      lifted[i] = series;
+    }
+    return crate::evaluator::evaluate_function_call_ast("Times", &lifted)
+      .map(Some);
+  }
   if series_indices.len() < 2 {
     return Ok(None);
   }

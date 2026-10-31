@@ -24693,3 +24693,71 @@ mod find_root_complex_newton_settles {
     );
   }
 }
+
+mod series_of_unknown_functions {
+  use super::*;
+
+  #[test]
+  fn a_series_times_an_x_dependent_factor_expands_the_factor() {
+    // It stayed `SeriesData[…]*Derivative[2][f][x]`.
+    assert_eq!(
+      interpret("Series[f[x], {x, 0, 1}] Derivative[2][f][x]").unwrap(),
+      "SeriesData[x, 0, {f[0]*Derivative[2][f][0], \
+       Derivative[1][f][0]*Derivative[2][f][0] + f[0]*Derivative[3][f][0]}, 0, 2, 1]"
+    );
+    assert_eq!(
+      interpret("Series[f[x], {x, 0, 3}] Sin[x]").unwrap(),
+      "SeriesData[x, 0, {f[0], Derivative[1][f][0], -1/6*f[0] + Derivative[2][f][0]/2, \
+       -1/6*Derivative[1][f][0] + Derivative[3][f][0]/6}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_threads_over_a_list() {
+    assert_eq!(
+      interpret("Series[{Sin[x], Cos[x]}, {x, 0, 2}]").unwrap(),
+      "{SeriesData[x, 0, {1}, 1, 3, 1], SeriesData[x, 0, {1, 0, -1/2}, 0, 3, 1]}"
+    );
+  }
+
+  #[test]
+  fn logical_expand_splits_a_series_equation_into_coefficients() {
+    assert_eq!(
+      interpret(
+        "{LogicalExpand[Series[f[x], {x, 0, 2}] == 0], \
+         LogicalExpand[Series[Sin[x], {x, 0, 4}] == x]}"
+      )
+      .unwrap(),
+      "{f[0] == 0 && Derivative[1][f][0] == 0 && Derivative[2][f][0]/2 == 0, False}"
+    );
+  }
+
+  #[test]
+  fn derivative_values_are_unknowns_of_solve_and_nsolve() {
+    assert_eq!(
+      interpret(
+        "Solve[12 + 2 Derivative[2][f][0] == 0 && \
+         Derivative[2][f][0] + 2 Derivative[3][f][0] == 0]"
+      )
+      .unwrap(),
+      "{{Derivative[2][f][0] -> -6, Derivative[3][f][0] -> 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "NSolve[12. + 2. Derivative[2][f][0] == 0 && \
+         Derivative[2][f][0] + 2. Derivative[3][f][0] == 0]"
+      )
+      .unwrap(),
+      "{{Derivative[2][f][0] -> -6., Derivative[3][f][0] -> 3.}}"
+    );
+  }
+
+  #[test]
+  fn normal_of_a_machine_series_folds_its_zero_terms() {
+    assert_eq!(
+      interpret("Normal[SeriesData[x, 0, {2., 0., -3., 0.5}, 0, 4, 1]]")
+        .unwrap(),
+      "2. - 3.*x^2 + 0.5*x^3"
+    );
+  }
+}
