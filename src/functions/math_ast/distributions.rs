@@ -87,8 +87,14 @@ pub fn erlang_gamma_dargs(
 /// The 1-based argument positions a distribution requires to be strictly
 /// positive. Read off wolframscript, which reports `<Dist>::posprm` naming
 /// the first offending one and refuses to compute with it.
-pub(crate) fn positive_param_positions(name: &str) -> &'static [usize] {
+/// The location–scale `StudentTDistribution[μ, σ, ν]` (`arity` 3) requires
+/// σ and ν, not μ, to be positive.
+pub(crate) fn positive_param_positions_for(
+  name: &str,
+  arity: usize,
+) -> &'static [usize] {
   match name {
+    "StudentTDistribution" if arity == 3 => &[2, 3],
     "BetaDistribution" | "GammaDistribution" | "WeibullDistribution" => &[1, 2],
     "NormalDistribution" | "LogNormalDistribution" | "CauchyDistribution" => {
       &[2]
@@ -111,7 +117,7 @@ pub(crate) fn reject_bad_distribution_params(dist: &Expr) -> bool {
   let Expr::FunctionCall { name, args } = dist else {
     return false;
   };
-  for &pos in positive_param_positions(name) {
+  for &pos in positive_param_positions_for(name, args.len()) {
     let Some(arg) = args.get(pos - 1) else {
       continue;
     };
@@ -1321,6 +1327,18 @@ pub fn quantile_distribution_closed_form(
     // symbolic nu splits it into Sqrt[nu] Sqrt[...]. (The location/scale form
     // StudentTDistribution[mu, sigma, nu] is not yet a recognized distribution
     // in Woxi, so it is intentionally not handled here.)
+    // The location–scale form at a machine probability: μ + σ times the
+    // standard quantile. (An exact q has a Root-object form in wolframscript.)
+    "StudentTDistribution"
+      if dargs.len() == 3 && matches!(q, Expr::Real(_)) =>
+    {
+      let standard = quantile_distribution_closed_form(
+        dist_name,
+        std::slice::from_ref(&dargs[2]),
+        q,
+      )?;
+      eval(&plus2(dargs[0].clone(), times2(dargs[1].clone(), standard))).ok()
+    }
     "StudentTDistribution" if dargs.len() == 1 => {
       let nu = dargs[0].clone();
       expr_to_num(&nu)?;

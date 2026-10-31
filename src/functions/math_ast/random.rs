@@ -1837,7 +1837,10 @@ fn reject_symbolic_variate_params(dist: &Expr) -> bool {
     true
   };
   for &pos in
-    crate::functions::math_ast::distributions::positive_param_positions(name)
+    crate::functions::math_ast::distributions::positive_param_positions_for(
+      name,
+      args.len(),
+    )
   {
     if args
       .get(pos - 1)

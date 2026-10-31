@@ -9816,3 +9816,21 @@ mod order_distribution_sampling {
     );
   }
 }
+
+mod student_t_location_scale {
+  use super::*;
+
+  #[test]
+  fn quantile_and_parameter_checks() {
+    // The location was checked as if it were the degrees of freedom, and
+    // the three-argument quantile stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "{Quantile[StudentTDistribution[0, 1, 3], 0.5], \
+         Round[10^6 InverseCDF[StudentTDistribution[1, 2, 4], 0.01]]}"
+      )
+      .unwrap(),
+      "{0, -6493895}"
+    );
+  }
+}
