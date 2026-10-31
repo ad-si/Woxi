@@ -5505,6 +5505,19 @@ mod part_upto {
     );
   }
 
+  // An open span end is reported as -1, as wolframscript writes it.
+  #[test]
+  fn open_span_end_in_message() {
+    for input in ["{1, 2, 3}[[5 ;;]]", "{1, 2, 3}[[5 ;; All ;; 2]]"] {
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(
+        r.warnings,
+        vec!["Part::take: Cannot take positions 5 through -1 in {1, 2, 3}."],
+        "{input}"
+      );
+    }
+  }
+
   #[test]
   fn span_endpoint_past_the_start() {
     let r = interpret_with_stdout("{a, b, c, d}[[3 ;; UpTo[1]]]").unwrap();
@@ -25558,6 +25571,47 @@ mod map_results_splice_like_a_list {
     assert_eq!(
       interpret("Length[Map[Unevaluated[Sequence[]] &, {1, 2}]]").unwrap(),
       "2"
+    );
+  }
+}
+
+/// Linear feedback shift registers (PatternsFromDeBruijnSequences); every
+/// sequence wolframscript-verified.
+mod shift_register_sequence {
+  use super::*;
+
+  #[test]
+  fn characteristic_polynomials() {
+    assert_eq!(
+      interpret("ShiftRegisterSequence[1 + x + x^4, Modulus -> 2]").unwrap(),
+      "{0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret("ShiftRegisterSequence[2 + x + x^2, Modulus -> 3]").unwrap(),
+      "{0, 1, 2, 2, 0, 2, 1, 1}"
+    );
+    assert_eq!(
+      interpret("ShiftRegisterSequence[1 + x + x^4, 20]").unwrap(),
+      "{0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0}"
+    );
+  }
+
+  // The default polynomial of a degree is the binary primitive one with
+  // the fewest terms and the first exponents.
+  #[test]
+  fn default_polynomials() {
+    assert_eq!(
+      interpret("ShiftRegisterSequence /@ {2, 3}").unwrap(),
+      "{{0, 1, 1}, {0, 0, 1, 0, 1, 1, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "{ShiftRegisterSequence[5] === ShiftRegisterSequence[1 + x^2 + x^5], \
+         ShiftRegisterSequence[8] === ShiftRegisterSequence[1 + x + x^2 + x^7 + x^8], \
+         ShiftRegisterSequence[16] === ShiftRegisterSequence[1 + x + x^3 + x^12 + x^16]}"
+      )
+      .unwrap(),
+      "{True, True, True}"
     );
   }
 }

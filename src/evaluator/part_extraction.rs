@@ -143,6 +143,13 @@ fn extract_span_from_items(
   } else {
     return Ok(part_take_unevaluated(expr, index));
   };
+  // An open end is reported as `-1`, as wolframscript writes it:
+  // `{1, 2, 3}[[5 ;;]]` cannot take positions 5 through -1.
+  let end_shown = if matches!(end_expr, Expr::Identifier(s) if s == "All") {
+    -1
+  } else {
+    end_raw
+  };
 
   let start = if let Some(v) = normalize_span_pos(start_raw, len) {
     v
@@ -152,7 +159,7 @@ fn extract_span_from_items(
     // below (end == start - 1) then yields the empty list.
     len + 1
   } else {
-    part_take_warn(expr, start_raw, end_raw);
+    part_take_warn(expr, start_raw, end_shown);
     return Ok(part_take_unevaluated(expr, index));
   };
   let end = if let Some(v) = normalize_span_pos(end_raw, len) {
@@ -168,7 +175,7 @@ fn extract_span_from_items(
     if e == start - 1 {
       e
     } else {
-      part_take_warn(expr, start_raw, end_raw);
+      part_take_warn(expr, start_raw, end_shown);
       return Ok(part_take_unevaluated(expr, index));
     }
   };
@@ -182,7 +189,7 @@ fn extract_span_from_items(
       let empty = rebuild(Vec::new());
       return crate::evaluator::evaluate_expr_to_expr(&empty);
     }
-    part_take_warn(expr, start_raw, end_raw);
+    part_take_warn(expr, start_raw, end_shown);
     return Ok(part_take_unevaluated(expr, index));
   }
 

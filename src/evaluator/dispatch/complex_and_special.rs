@@ -1606,6 +1606,11 @@ pub fn dispatch_complex_and_special(
         args,
       ));
     }
+    "ShiftRegisterSequence" if !args.is_empty() => {
+      return Some(
+        crate::functions::shift_register::shift_register_sequence_ast(args),
+      );
+    }
     "RegionConvert" if args.len() == 2 => {
       return Some(crate::functions::region_convert::region_convert_ast(args));
     }

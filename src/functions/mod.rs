@@ -108,6 +108,7 @@ pub mod root_ast;
 pub mod rsolve_ast;
 pub mod rule_plot;
 pub mod scoping;
+pub mod shift_register;
 pub mod shortest_tour;
 pub mod socket_ast;
 pub mod sound;
