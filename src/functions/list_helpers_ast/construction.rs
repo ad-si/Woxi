@@ -3110,6 +3110,24 @@ pub fn sparse_array_normalize_ast(
     return Ok(unevaluated("SparseArray", args));
   }
 
+  // No rules with explicit dimensions: the empty array is built directly,
+  // never as a dense list (`SparseArray[{}, {8192, 8192}]`).
+  if (2..=3).contains(&args.len())
+    && matches!(&args[0], Expr::List(rules) if rules.is_empty())
+    && let Some(dims) = parse_sparse_dims(&args[1])
+    && !dims.is_empty()
+    && dims.iter().all(|&d| d > 0)
+  {
+    let default = args.get(2).cloned().unwrap_or(Expr::Integer(0));
+    return Ok(
+      crate::evaluator::dispatch::list_operations::build_sparse_array_csr(
+        &dims,
+        &default,
+        &[],
+      ),
+    );
+  }
+
   // `{} -> v` names no positions: no rules at all.
   if args.len() >= 2
     && matches!(&args[0], Expr::Rule { pattern, .. }

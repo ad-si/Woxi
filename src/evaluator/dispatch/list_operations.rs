@@ -10826,7 +10826,13 @@ pub(crate) fn dense_to_sparse_array_with_default(
   let default_str = expr_to_string(default);
   let mut entries: Vec<(Vec<usize>, Expr)> = Vec::new();
   let mut idx_buf: Vec<usize> = Vec::with_capacity(dims.len());
-  collect_non_default_entries(expr, &mut idx_buf, &mut entries, &default_str);
+  collect_non_default_entries(
+    expr,
+    &mut idx_buf,
+    &mut entries,
+    default,
+    &default_str,
+  );
   Some(build_sparse_array_csr(&dims, default, &entries))
 }
 
@@ -10858,25 +10864,31 @@ fn collect_non_default_entries(
   expr: &Expr,
   idx: &mut Vec<usize>,
   out: &mut Vec<(Vec<usize>, Expr)>,
+  default: &Expr,
   default_str: &str,
 ) {
-  match expr {
-    Expr::List(items) => {
-      for (i, it) in items.iter().enumerate() {
-        idx.push(i + 1);
-        collect_non_default_entries(it, idx, out, default_str);
-        idx.pop();
-      }
+  if let Expr::List(items) = expr {
+    for (i, it) in items.iter().enumerate() {
+      idx.push(i + 1);
+      collect_non_default_entries(it, idx, out, default, default_str);
+      idx.pop();
     }
-    _ => {
-      if expr_to_string(expr) != default_str {
-        out.push((idx.clone(), expr.clone()));
-      }
+  } else {
+    // Numbers against an integer default are told apart without printing
+    // them (the printed comparison dominated large dense arrays): an
+    // integer by value, and a machine real never prints as an integer.
+    let is_default = match (expr, default) {
+      (Expr::Integer(a), Expr::Integer(b)) => a == b,
+      (Expr::Real(_), Expr::Integer(_)) => false,
+      _ => expr_to_string(expr) == default_str,
+    };
+    if !is_default {
+      out.push((idx.clone(), expr.clone()));
     }
   }
 }
 
-fn build_sparse_array_csr(
+pub(crate) fn build_sparse_array_csr(
   dims: &[usize],
   default: &Expr,
   entries: &[(Vec<usize>, Expr)],

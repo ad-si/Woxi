@@ -11512,6 +11512,23 @@ mod sparse_array_arithmetic {
     );
   }
 
+  // An empty array of any size is built without densifying
+  // (EstimatingACenteredMatern1Process allocates 8192 x 8192 ones).
+  #[test]
+  fn empty_sparse_array_of_large_dimensions() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{}, {8192, 8192}]; {Dimensions[s], s[[5, 7]]}"
+      )
+      .unwrap(),
+      "{{8192, 8192}, 0}"
+    );
+    assert_eq!(
+      interpret("InputForm[SparseArray[{}, {2, 2}, 5]]").unwrap(),
+      "InputForm[SparseArray[Automatic, {2, 2}, 5, {1, {{0, 0, 0}, {}}, {}}]]"
+    );
+  }
+
   #[test]
   fn chained_sparse_arithmetic() {
     assert_eq!(
