@@ -9191,6 +9191,15 @@ mod ndsolve {
       .unwrap(),
       "540302 - 841471*I"
     );
+    // A right-hand side whose parts need expanding (BohmTrajectories).
+    assert_eq!(
+      interpret(
+        "Round[10^4 (q[1] /. First[NDSolve[{q'[t] == E^(I t) Csc[q[t]], \
+         q[0] == 2}, q, {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "26648 + 8826*I"
+    );
   }
 
   // A WhenEvent on an implicit curve stops it where the condition turns

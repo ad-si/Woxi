@@ -9541,6 +9541,36 @@ mod complex_expand {
     );
   }
 
+  // A term of a sum or product is expanded before it is split, and one
+  // that does not split keeps `Re`/`Im` rather than passing for real.
+  #[test]
+  fn sum_terms_expand_or_keep_re_im() {
+    assert_eq!(
+      interpret("ComplexExpand[Re[x + Csc[x + I y]]]").unwrap(),
+      "x - (2*Cosh[y]*Sin[x])/(Cos[2*x] - Cosh[2*y])"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[x + Gamma[x]]]").unwrap(),
+      "x + Re[Gamma[x]]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Im[x + Gamma[x]]]").unwrap(),
+      "Im[Gamma[x]]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[(x + Gamma[x]) y]]").unwrap(),
+      "x*y + y*Re[Gamma[x]]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Sin[x + Gamma[x]]]").unwrap(),
+      "Cosh[Im[Gamma[x]]]*Sin[x + Re[Gamma[x]]] + I*Cos[x + Re[Gamma[x]]]*Sinh[Im[Gamma[x]]]"
+    );
+    assert_eq!(
+      interpret("ComplexExpand[Re[x + Log[x + I y]]]").unwrap(),
+      "x + Log[x^2 + y^2]/2"
+    );
+  }
+
   // The quotient trig and hyperbolic functions expand for real arguments
   // too (differential fuzzer, seed 20261011; wolframscript-verified).
   #[test]
