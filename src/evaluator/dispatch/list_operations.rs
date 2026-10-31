@@ -3696,7 +3696,11 @@ pub fn dispatch_list_operations(
         // in canonical Plus order (most-negative exponent first, matching
         // wolframscript). For a finite center the natural low-to-high build
         // order is already canonical, so keep it to avoid disturbing it.
-        if is_infinity {
+        // So does a series with machine coefficients, whose `0.` terms and
+        // negative reals the evaluated sum folds and signs (`2. - 3.*x^2`).
+        if is_infinity
+          || coeffs.iter().any(|c| matches!(c, Expr::Real(_)))
+        {
           let plus = plus(terms);
           return Some(evaluate_expr_to_expr(&plus));
         }
@@ -8644,40 +8648,89 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
   let unevaluated = || unevaluated("ArrayPad", args);
-  // Named padding schemes ("Periodic", "Reflected") for a one-dimensional flat
-  // list: ArrayPad[{1,2,3}, 2, "Periodic"] extends the list cyclically on both
-  // sides; "Reflected" reflects it at the boundaries.
-  if let Expr::List(items) = arr
-    && !items.is_empty()
-    && items.iter().all(|e| !matches!(e, Expr::List(_)))
-    && let Expr::String(scheme) = &pad_val
-    && matches!(scheme.as_str(), "Periodic" | "Cyclic" | "Reflected")
+  // Named padding schemes: the array is extended along each padded
+  // dimension by indexing back into it — "Periodic" (or "Cyclic") wraps
+  // around, "Reflected" mirrors about the edge element, "Reversed" mirrors
+  // including it, "Fixed" repeats the edge element.
+  if let Expr::String(scheme) = &pad_val
+    && matches!(
+      scheme.as_str(),
+      "Periodic" | "Cyclic" | "Reflected" | "Reversed" | "Fixed"
+    )
   {
-    let (left, right) = match &args[1] {
-      Expr::Integer(n) if *n >= 0 => (*n, *n),
-      Expr::List(lr) if lr.len() == 2 => match (&lr[0], &lr[1]) {
-        (Expr::Integer(l), Expr::Integer(r)) if *l >= 0 && *r >= 0 => (*l, *r),
-        _ => return Ok(unevaluated()),
-      },
+    let rank = match crate::evaluator::evaluate_function_call_ast(
+      "ArrayDepth",
+      std::slice::from_ref(arr),
+    ) {
+      Ok(Expr::Integer(r)) if r >= 1 => r as usize,
       _ => return Ok(unevaluated()),
     };
-    let len = items.len() as i128;
-    // "Cyclic" is an alias for "Periodic".
-    let at = |v: i128| -> Expr {
-      let idx = if scheme == "Periodic" || scheme == "Cyclic" {
-        v.rem_euclid(len)
-      } else if len == 1 {
-        0
-      } else {
-        let period = 2 * (len - 1);
-        let j = v.rem_euclid(period);
-        if j < len { j } else { 2 * (len - 1) - j }
-      };
-      items[idx as usize].clone()
+    let pair = |e: &Expr| match e {
+      Expr::Integer(n) if *n >= 0 => Some((*n, *n)),
+      Expr::List(lr) if lr.len() == 2 => match (&lr[0], &lr[1]) {
+        (Expr::Integer(l), Expr::Integer(r)) if *l >= 0 && *r >= 0 => {
+          Some((*l, *r))
+        }
+        _ => None,
+      },
+      Expr::List(one) if one.len() == 1 => match &one[0] {
+        Expr::Integer(n) if *n >= 0 => Some((*n, *n)),
+        _ => None,
+      },
+      _ => None,
     };
-    let total = left + len + right;
-    let result: Vec<Expr> = (0..total).map(|p| at(p - left)).collect();
-    return Ok(Expr::List(result.into()));
+    let specs: Vec<(i128, i128)> = match &args[1] {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+      {
+        match items.iter().map(pair).collect::<Option<Vec<_>>>() {
+          Some(v) => v,
+          None => return Ok(unevaluated()),
+        }
+      }
+      other => match pair(other) {
+        Some(p) => vec![p; rank],
+        None => return Ok(unevaluated()),
+      },
+    };
+    fn pad(e: &Expr, specs: &[(i128, i128)], scheme: &str) -> Option<Expr> {
+      let Some(&(left, right)) = specs.first() else {
+        return Some(e.clone());
+      };
+      let Expr::List(items) = e else {
+        return Some(e.clone());
+      };
+      let inner: Vec<Expr> = items
+        .iter()
+        .map(|i| pad(i, &specs[1..], scheme))
+        .collect::<Option<_>>()?;
+      let len = inner.len() as i128;
+      if len == 0 {
+        return None;
+      }
+      let index = |v: i128| -> i128 {
+        match scheme {
+          "Periodic" | "Cyclic" => v.rem_euclid(len),
+          "Fixed" => v.clamp(0, len - 1),
+          "Reversed" => {
+            let j = v.rem_euclid(2 * len);
+            if j < len { j } else { 2 * len - 1 - j }
+          }
+          _ if len == 1 => 0,
+          _ => {
+            let period = 2 * (len - 1);
+            let j = v.rem_euclid(period);
+            if j < len { j } else { period - j }
+          }
+        }
+      };
+      let out: Vec<Expr> = (0..left + len + right)
+        .map(|p| inner[index(p - left) as usize].clone())
+        .collect();
+      Some(Expr::List(out.into()))
+    }
+    return Ok(pad(arr, &specs, scheme).unwrap_or_else(unevaluated));
   }
   // Try per-dimension form: {{m1, n1}, {m2, n2}, ...} or {{m1}, {m2}, ...}
   // where the spec list has length equal to the array's rank.

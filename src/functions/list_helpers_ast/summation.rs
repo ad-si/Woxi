@@ -987,6 +987,9 @@ fn outer_iteration_values(specs: &[Expr]) -> Option<(String, Vec<Expr>)> {
 }
 
 pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = expand_index_dependent_symbols(args) {
+    return product_ast(&expanded);
+  }
   // Trailing options are not iterators; none of Product's change the answer
   // here, so they are accepted and dropped.
   {
@@ -2192,7 +2195,77 @@ fn plus_all(terms: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// The iteration variables of a Sum/Product call's iterator specs.
+fn iteration_variable_names(args: &[Expr]) -> Vec<String> {
+  args
+    .get(1..)
+    .unwrap_or_default()
+    .iter()
+    .filter_map(|spec| match spec {
+      Expr::List(items) => match items.first() {
+        Some(Expr::Identifier(var)) => Some(var.clone()),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect()
+}
+
+/// A summand evaluates with its indices bound, so a symbol whose value
+/// mentions an index (`r = n^2; Sum[r, {n, 3}]`) means that value. The
+/// summand is handled by substituting the indices, which cannot reach into
+/// such a symbol: those symbols are replaced by their values first (read
+/// with the indices localized, like Block).
+fn expand_index_dependent_symbols(args: &[Expr]) -> Option<Vec<Expr>> {
+  let vars = iteration_variable_names(args);
+  if vars.is_empty() || args.is_empty() {
+    return None;
+  }
+  let mut names = std::collections::HashSet::new();
+  crate::syntax::collect_identifier_names(&args[0], &mut names);
+  names.retain(|n| !vars.contains(n));
+  if names.is_empty() {
+    return None;
+  }
+  use crate::evaluator::symbol_values::{
+    restore_symbol_values, take_symbol_values,
+  };
+  let saved: Vec<_> = vars.iter().map(|v| take_symbol_values(v)).collect();
+  let mut replacements: Vec<(String, Expr)> = Vec::new();
+  for name in names {
+    let has_value = crate::ENV.with(|e| e.borrow().contains_key(&name));
+    if !has_value {
+      continue;
+    }
+    let Ok(value) =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(name.clone()))
+    else {
+      continue;
+    };
+    if vars
+      .iter()
+      .any(|v| crate::functions::polynomial_ast::contains_var(&value, v))
+    {
+      replacements.push((name, value));
+    }
+  }
+  for values in saved.into_iter().rev() {
+    restore_symbol_values(values);
+  }
+  if replacements.is_empty() {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  for (name, value) in &replacements {
+    new_args[0] = crate::syntax::substitute_variable(&new_args[0], name, value);
+  }
+  Some(new_args)
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = expand_index_dependent_symbols(args) {
+    return sum_ast(&expanded);
+  }
   let result = sum_ast_unevaluated_body(args)?;
   // A sum that does not close is all-or-nothing in wolframscript: the call
   // comes back as written — every iterator spec (`{j, n}` stays `{j, n}`) and

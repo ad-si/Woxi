@@ -25469,3 +25469,79 @@ mod stored_nearest_function {
     );
   }
 }
+
+// The canonical comparator is a total order even for machine NaN (which a
+// failed numeric search can leave behind): sorting such a list must not
+// panic with "comparison does not implement a total order".
+#[test]
+fn canonical_order_is_total_with_nan() {
+  use woxi::syntax::Expr;
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let mut items: Vec<Expr> = (0..60)
+    .map(|i| {
+      if i % 7 == 3 {
+        pair(f64::NAN, f64::NAN)
+      } else {
+        pair(4.0 + (i * 37 % 23) as f64 / 10.0, 0.5 + (i % 5) as f64)
+      }
+    })
+    .collect();
+  items.sort_by(woxi::functions::list_helpers_ast::sorting::canonical_cmp);
+  assert_eq!(items.len(), 60);
+}
+
+mod array_pad_named_schemes {
+  use super::*;
+
+  #[test]
+  fn fixed_and_reversed_and_multidimensional() {
+    // "Fixed" and "Reversed" padded with the strings themselves, and the
+    // schemes only took flat lists.
+    assert_eq!(
+      interpret(
+        "{ArrayPad[{0., 0.5, 1.}, 3, \"Fixed\"], ArrayPad[{1, 2, 3}, 1, \"Reversed\"], \
+         ArrayPad[{{1, 2}, {3, 4}}, 1, \"Fixed\"], \
+         ArrayPad[{{1, 2}, {3, 4}}, {{1, 0}, {0, 2}}, \"Periodic\"], \
+         ArrayPad[{1, 2, 3}, 5, \"Reflected\"]}"
+      )
+      .unwrap(),
+      "{{0., 0., 0., 0., 0.5, 1., 1., 1., 1.}, {1, 1, 2, 3, 3}, \
+       {{1, 1, 2, 2}, {1, 1, 2, 2}, {3, 3, 4, 4}, {3, 3, 4, 4}}, \
+       {{3, 4, 3, 4}, {1, 2, 1, 2}, {3, 4, 3, 4}}, \
+       {2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 2}}"
+    );
+  }
+}
+
+mod map_results_splice_like_a_list {
+  use super::*;
+
+  #[test]
+  fn sequence_and_unevaluated_results() {
+    // The mapped results stayed as `Sequence[1, 1]` and `Unevaluated[…]`
+    // elements; evaluating the list splices and unwraps them.
+    assert_eq!(
+      interpret(
+        "g[x_] := Sequence[x, x]; \
+         {Map[g, {1, 2}], \
+          Map[If[# == 1, Unevaluated[Sequence[]], #] &, {1, 2}], \
+          Map[If[# == 1, Unevaluated[1 + 1], #] &, {1, 2}], \
+          Map[If[# == 0, Unevaluated[Sequence[]], #] &, {{1, 0}, {0, 2}}, {2}], \
+          MapIndexed[If[#1 === 0, Unevaluated[Sequence[]], {#1, #2}] &, {1, 0, 2}], \
+          MapIndexed[If[#1 === 0, Unevaluated[Sequence[]], {#1, #2}] &, {{1, 0}, {0, 2}}, {2}]}"
+      )
+      .unwrap(),
+      "{{1, 1, 2, 2}, {2}, {2, 2}, {{1}, {2}}, {{1, {1}}, {2, {3}}}, \
+       {{{1, {1, 1}}}, {{2, {2, 2}}}}}"
+    );
+  }
+
+  #[test]
+  fn an_unevaluated_body_keeps_its_wrapper() {
+    assert_eq!(
+      interpret("Length[Map[Unevaluated[Sequence[]] &, {1, 2}]]").unwrap(),
+      "2"
+    );
+  }
+}

@@ -14501,3 +14501,15 @@ mod sums_ordered_by_complex_constant {
     );
   }
 }
+
+mod n_of_pure_function {
+  use super::*;
+
+  #[test]
+  fn n_reaches_the_numbers_in_the_body() {
+    assert_eq!(
+      interpret("{N[FoldList[Plus, 0, #] &], N[f[1, #] &]}").unwrap(),
+      "{FoldList[Plus, 0., #1] & , f[1., #1] & }"
+    );
+  }
+}

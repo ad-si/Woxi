@@ -444,6 +444,66 @@ fn try_series_data_times(
       _ => None,
     })
     .collect();
+  // One series times factors that depend on its variable (`f''[x]`,
+  // `Sin[x]`): each such factor is expanded to the series' order first, as
+  // wolframscript does, and the product is taken of the series.
+  if series_indices.len() == 1 {
+    let only_idx = series_indices[0];
+    let Expr::FunctionCall { args: sa, .. } = &args[only_idx] else {
+      return Ok(None);
+    };
+    let (Expr::Identifier(var_name), Expr::Integer(nmax), Expr::Integer(1)) =
+      (&sa[0], &sa[4], &sa[5])
+    else {
+      return Ok(None);
+    };
+    // At Infinity a factor such as `E^(-x^2)` has no power series; the
+    // product stays as it is.
+    if crate::functions::math_ast::try_eval_to_f64(&sa[1]).is_none() {
+      return Ok(None);
+    }
+    let dependent: Vec<usize> = (0..args.len())
+      .filter(|&i| {
+        i != only_idx
+          && crate::functions::polynomial_ast::contains_var(&args[i], var_name)
+      })
+      .collect();
+    if dependent.is_empty() {
+      return Ok(None);
+    }
+    let mut lifted: Vec<Expr> = args.to_vec();
+    let expand = |e: &Expr, order: i128| {
+      crate::evaluator::evaluate_function_call_ast(
+        "Series",
+        &[
+          e.clone(),
+          Expr::List(
+            vec![sa[0].clone(), sa[1].clone(), Expr::Integer(order)].into(),
+          ),
+        ],
+      )
+    };
+    for i in dependent {
+      let mut series = expand(&args[i], nmax - 1)?;
+      // A factor vanishing to order v at the centre carries the product v
+      // orders further, so it is expanded that much further too
+      // (`Series[f[x], {x, 0, 3}] Sin[x]` is good to O[x]^5).
+      if let Expr::FunctionCall { name, args: fa } = &series
+        && name == "SeriesData"
+        && let Expr::Integer(v) = &fa[3]
+        && *v > 0
+      {
+        series = expand(&args[i], nmax - 1 + v)?;
+      }
+      if !matches!(&series, Expr::FunctionCall { name, .. } if name == "SeriesData")
+      {
+        return Ok(None);
+      }
+      lifted[i] = series;
+    }
+    return crate::evaluator::evaluate_function_call_ast("Times", &lifted)
+      .map(Some);
+  }
   if series_indices.len() < 2 {
     return Ok(None);
   }
@@ -2694,6 +2754,12 @@ fn has_transcendental_subexpr(e: &Expr) -> bool {
   }
 }
 
+/// Whether a symbol name starting with `c` can be a variable: a letter,
+/// or one of the formal letters (`\[FormalX]`, private use U+F800–U+F8FF).
+fn starts_variable_name(c: char) -> bool {
+  c.is_alphabetic() || ('\u{F800}'..='\u{F8FF}').contains(&c)
+}
+
 fn extract_earliest_variable(e: &Expr) -> Option<String> {
   match e {
     Expr::Identifier(s)
@@ -2715,18 +2781,23 @@ fn extract_earliest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_earliest_variable).min()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_earliest_variable)
+      .min_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_earliest_variable(left);
       let r = extract_earliest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_le() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -2766,7 +2837,7 @@ fn collect_free_vars(e: &Expr) -> std::collections::BTreeSet<String> {
             | "GoldenRatio"
             | "Degree"
             | "Catalan"
-        ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+        ) && s.chars().next().is_some_and(starts_variable_name) =>
       {
         vars.insert(s.clone());
       }
@@ -2810,18 +2881,23 @@ fn extract_latest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_latest_variable).max()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_latest_variable)
+      .max_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_latest_variable(left);
       let r = extract_latest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a >= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_ge() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -3297,6 +3373,17 @@ fn symbolic_power(e: &Expr) -> Option<(&Expr, &Expr)> {
   expr_to_f64(exp).is_none().then_some((base, exp))
 }
 
+/// Two variable names in the order a sum lists them: by character, except
+/// that the formal letters (`\[FormalX]`, private use U+F800–U+F8FF) come
+/// before every other character, as in `Sort`.
+fn plus_var_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let key = |c: char| match c {
+    '\u{F800}'..='\u{F8FF}' => c as u32 - 0xF800,
+    other => other as u32 + 0x100,
+  };
+  a.chars().map(key).cmp(b.chars().map(key))
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3546,7 +3633,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let av = extract_earliest_variable(a);
       let bv = extract_earliest_variable(b);
       if let (Some(av), Some(bv)) = (av, bv) {
-        let cmp = av.cmp(&bv);
+        let cmp = plus_var_name_cmp(&av, &bv);
         if cmp != std::cmp::Ordering::Equal {
           return cmp;
         }
@@ -3608,11 +3695,11 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       _ => {}
     }
     // Sort each term's pairs by variable name descending
-    va.sort_by(|x, y| y.0.cmp(&x.0));
-    vb.sort_by(|x, y| y.0.cmp(&x.0));
+    va.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
+    vb.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
     // Compare pair-by-pair: variable ascending, then exponent ascending
     for (ap, bp) in va.iter().zip(vb.iter()) {
-      let cmp = ap.0.cmp(&bp.0);
+      let cmp = plus_var_name_cmp(&ap.0, &bp.0);
       if cmp != std::cmp::Ordering::Equal {
         return cmp;
       }
@@ -3738,7 +3825,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let pair_earliest = extract_earliest_variable(&pair_base);
         let none_latest = extract_latest_variable(&none_base);
         if let (Some(pv), Some(nlv)) = (&pair_earliest, &none_latest) {
-          if nlv > pv {
+          if plus_var_name_cmp(nlv, pv).is_gt() {
             // Non-pair has a later variable → monomial first
             return if a_has_pairs {
               std::cmp::Ordering::Less
@@ -3757,7 +3844,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
         let none_earliest = extract_earliest_variable(&none_base);
         if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest)
-          && nv < pv
+          && plus_var_name_cmp(nv, pv).is_lt()
         {
           // All non-pair variables < monomial's → non-pair first
           return if a_has_pairs {

@@ -3,6 +3,44 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
+/// The elements of `{f[a], f[b], …}` once the list itself is evaluated: a
+/// `Sequence[…]` result splices into the list and an `Unevaluated[x]`
+/// result evaluates to `x` (`If[c, Unevaluated[Sequence[]], …]` drops an
+/// element). A pure function whose body is literally `Unevaluated[…]` keeps
+/// the wrapper, as wolframscript does.
+pub(crate) fn splice_mapped_results(
+  func: &Expr,
+  results: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let keeps_unevaluated = matches!(func, Expr::Function { body } | Expr::NamedFunction { body, .. }
+    if matches!(body.as_ref(), Expr::FunctionCall { name, args } if name == "Unevaluated" && args.len() == 1));
+  let needs_work = results.iter().any(|r| {
+    matches!(r, Expr::FunctionCall { name, .. }
+      if name == "Sequence" || (name == "Unevaluated" && !keeps_unevaluated))
+  });
+  if !needs_work {
+    return Ok(results);
+  }
+  let mut out = Vec::with_capacity(results.len());
+  for r in results {
+    let r = match r {
+      Expr::FunctionCall { ref name, ref args }
+        if name == "Unevaluated" && args.len() == 1 && !keeps_unevaluated =>
+      {
+        crate::evaluator::evaluate_expr_to_expr(&args[0])?
+      }
+      other => other,
+    };
+    match r {
+      Expr::FunctionCall { ref name, ref args } if name == "Sequence" => {
+        out.extend(args.iter().cloned());
+      }
+      other => out.push(other),
+    }
+  }
+  Ok(out)
+}
+
 /// AST-based Map: apply function to each element of a list or association.
 /// Map[f, {a, b, c}] -> {f[a], f[b], f[c]}
 /// Map[f, <|a -> 1, b -> 2|>] -> <|a -> f[1], b -> f[2]|>
@@ -12,6 +50,19 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   if crate::functions::predicate_ast::is_fully_atomic_object(list) {
     return Ok(list.clone());
   }
+  // A function applied many times shares the large arrays in its body
+  // once, so no call copies them (`(Extract[data, #] &) /@ positions`).
+  let shared_func;
+  let func = if matches!(list, Expr::List(items) if items.len() > 1)
+    && matches!(func, Expr::Function { .. } | Expr::NamedFunction { .. })
+  {
+    let mut f = func.clone();
+    crate::evaluator::share_large_lists(&mut f, 0);
+    shared_func = f;
+    &shared_func
+  } else {
+    func
+  };
   match list {
     Expr::List(items) => {
       let results: Result<Vec<Expr>, _> = items
@@ -20,7 +71,7 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
         .collect();
       let results: Vec<Expr> =
         results?.into_iter().filter(|e| !is_nothing(e)).collect();
-      Ok(Expr::List(results.into()))
+      Ok(Expr::List(splice_mapped_results(func, results)?.into()))
     }
     Expr::Association(items) => {
       // Map over association applies function to values only. When the value
@@ -432,7 +483,7 @@ fn map_at_depth(
     }
     Expr::List(items) => {
       let mapped: Result<Vec<Expr>, _> = items.iter().map(recurse).collect();
-      Expr::List(mapped?.into())
+      Expr::List(splice_mapped_results(func, mapped?)?.into())
     }
     Expr::FunctionCall { name, args } => {
       let mapped: Result<Vec<Expr>, _> = args.iter().map(recurse).collect();
@@ -1095,7 +1146,7 @@ pub fn map_indexed_ast(
     None => {
       let results: Vec<Expr> =
         results?.into_iter().filter(|e| !is_nothing(e)).collect();
-      Ok(Expr::List(results.into()))
+      Ok(Expr::List(splice_mapped_results(func, results)?.into()))
     }
     Some(h) => Ok(Expr::FunctionCall {
       name: h.clone(),
@@ -1383,7 +1434,7 @@ fn map_indexed_at_depth(
       .collect();
     let mapped = mapped?;
     let result = if is_list {
-      Expr::List(mapped.into())
+      Expr::List(splice_mapped_results(func, mapped)?.into())
     } else if let Expr::FunctionCall { name, .. } = expr {
       Expr::FunctionCall {
         name: name.clone(),

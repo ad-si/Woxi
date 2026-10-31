@@ -24627,3 +24627,191 @@ mod piecewise_arithmetic_folding {
     );
   }
 }
+
+mod maximize_probes_are_quiet {
+  use super::*;
+
+  #[test]
+  fn a_singular_endpoint_raises_no_message() {
+    // The critical-point search probed x = 0, where Log[1/x] is infinite,
+    // and printed Power::infy and Infinity::indet.
+    // wolframscript's optimizer stops at x -> 0.3178444329467181.
+    let r = interpret_with_stdout(
+      "Round[10^8 {First[#], x /. Last[#]}] &[\
+       Maximize[{(1 - x)/(Log[x^(-1)] + 1.), 0 <= x <= 1}, x]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{31784443, 31784443}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+}
+
+mod find_minimum_two_starting_values {
+  use super::*;
+
+  #[test]
+  fn a_non_differentiable_start_is_left_behind() {
+    // `{x, x0, x1}` searched from x0 alone, where `Abs[BesselJ[1, x]]` is
+    // 0 and flat, and reported the maximum 0. there.
+    assert_eq!(
+      interpret(
+        "Round[10^6 {First[#], x /. Last[#]}] &[\
+         FindMaximum[Abs[BesselJ[1, x]], {x, 0, 3.8317}]]"
+      )
+      .unwrap(),
+      "{581865, 1841184}"
+    );
+    assert_eq!(
+      interpret("FindMinimum[Abs[x - 0.3], {x, 0, 1}]").unwrap(),
+      "{0., {x -> 0.3}}"
+    );
+  }
+}
+
+mod find_root_complex_newton_settles {
+  use super::*;
+
+  #[test]
+  fn a_settled_complex_iterate_is_no_convergence_failure() {
+    // The start is outside the real domain of Sqrt, so the search runs
+    // complex; its residual noise never got under 1e-15 and it reported
+    // FindRoot::cvmit at the root.
+    let r = interpret_with_stdout(
+      "Round[10^10 Re[qa /. FindRoot[-qa Cot[qa/2] == Sqrt[20. - qa^2], \
+       {qa, 1.9 Pi}]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "40341412373");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+}
+
+mod series_of_unknown_functions {
+  use super::*;
+
+  #[test]
+  fn a_series_times_an_x_dependent_factor_expands_the_factor() {
+    // It stayed `SeriesData[…]*Derivative[2][f][x]`.
+    assert_eq!(
+      interpret("Series[f[x], {x, 0, 1}] Derivative[2][f][x]").unwrap(),
+      "SeriesData[x, 0, {f[0]*Derivative[2][f][0], \
+       Derivative[1][f][0]*Derivative[2][f][0] + f[0]*Derivative[3][f][0]}, 0, 2, 1]"
+    );
+    assert_eq!(
+      interpret("Series[f[x], {x, 0, 3}] Sin[x]").unwrap(),
+      "SeriesData[x, 0, {f[0], Derivative[1][f][0], -1/6*f[0] + Derivative[2][f][0]/2, \
+       -1/6*Derivative[1][f][0] + Derivative[3][f][0]/6}, 1, 5, 1]"
+    );
+  }
+
+  #[test]
+  fn series_threads_over_a_list() {
+    assert_eq!(
+      interpret("Series[{Sin[x], Cos[x]}, {x, 0, 2}]").unwrap(),
+      "{SeriesData[x, 0, {1}, 1, 3, 1], SeriesData[x, 0, {1, 0, -1/2}, 0, 3, 1]}"
+    );
+  }
+
+  #[test]
+  fn logical_expand_splits_a_series_equation_into_coefficients() {
+    assert_eq!(
+      interpret(
+        "{LogicalExpand[Series[f[x], {x, 0, 2}] == 0], \
+         LogicalExpand[Series[Sin[x], {x, 0, 4}] == x]}"
+      )
+      .unwrap(),
+      "{f[0] == 0 && Derivative[1][f][0] == 0 && Derivative[2][f][0]/2 == 0, False}"
+    );
+  }
+
+  #[test]
+  fn derivative_values_are_unknowns_of_solve_and_nsolve() {
+    assert_eq!(
+      interpret(
+        "Solve[12 + 2 Derivative[2][f][0] == 0 && \
+         Derivative[2][f][0] + 2 Derivative[3][f][0] == 0]"
+      )
+      .unwrap(),
+      "{{Derivative[2][f][0] -> -6, Derivative[3][f][0] -> 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "NSolve[12. + 2. Derivative[2][f][0] == 0 && \
+         Derivative[2][f][0] + 2. Derivative[3][f][0] == 0]"
+      )
+      .unwrap(),
+      "{{Derivative[2][f][0] -> -6., Derivative[3][f][0] -> 3.}}"
+    );
+  }
+
+  #[test]
+  fn normal_of_a_machine_series_folds_its_zero_terms() {
+    assert_eq!(
+      interpret("Normal[SeriesData[x, 0, {2., 0., -3., 0.5}, 0, 4, 1]]")
+        .unwrap(),
+      "2. - 3.*x^2 + 0.5*x^3"
+    );
+  }
+}
+
+mod when_event_condition_list {
+  use super::*;
+
+  #[test]
+  fn any_condition_of_a_list_fires_the_action() {
+    // The list form was ignored, so the ball fell through the floor.
+    assert_eq!(
+      interpret(
+        "s = NDSolveValue[{y[0] == 0, y'[0] == 0, y''[t] == -9.81, \
+         WhenEvent[{y[t] == -20, y[t] == 10}, y'[t] -> -y'[t]]}, y, {t, 0, 5}]; \
+         Round[10^4 {s[2.5], s[4.]}]"
+      )
+      .unwrap(),
+      "{-116108, -73}"
+    );
+  }
+}
+
+mod inverse_laplace_time_shift {
+  use super::*;
+
+  #[test]
+  fn a_delay_factor_shifts_and_switches_on_the_original() {
+    assert_eq!(
+      interpret(
+        "{InverseLaplaceTransform[(s^(-1)*Exp[-(1.2*s)])/(2.2*s + 1), s, t], \
+         InverseLaplaceTransform[Exp[-2 s]/(s (3 s + 1)), s, t], \
+         InverseLaplaceTransform[Exp[-2 s]/s, s, t], \
+         InverseLaplaceTransform[Exp[-s]/(s^2 + 1), s, t]}"
+      )
+      .unwrap(),
+      "{(1. - 1.7253924734665358/E^(0.45454545454545453*t))*HeavisideTheta[-1.2 + t], \
+       (1 - E^(2/3 - t/3))*HeavisideTheta[-2 + t], HeavisideTheta[-2 + t], \
+       -(HeavisideTheta[-1 + t]*Sin[1 - t])}"
+    );
+  }
+}
+
+mod sum_reads_index_dependent_symbols {
+  use super::*;
+
+  #[test]
+  fn a_symbol_whose_value_mentions_the_index() {
+    // The symbol was left as a constant: Sum[r, {n, 1, 3}] gave 3*n^2.
+    assert_eq!(
+      interpret(
+        "r = n^2; {Sum[r, {n, 1, 3}], Product[r, {n, 1, 3}], Sum[r, {n, 1, k}]}"
+      )
+      .unwrap(),
+      "{14, 36, (k*(1 + k)*(1 + 2*k))/6}"
+    );
+  }
+}

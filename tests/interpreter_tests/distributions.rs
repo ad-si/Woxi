@@ -9776,3 +9776,61 @@ BetaRegularized[(E^(2*x)*n)/(m + E^(2*x)*n), n/2, m/2]}"
     );
   }
 }
+
+mod extreme_value_quantiles {
+  use super::*;
+
+  #[test]
+  fn max_and_min_stable_quantiles() {
+    assert_eq!(
+      interpret(
+        "{InverseCDF[MinStableDistribution[1, 1, 0.5], 0.01], \
+         InverseCDF[MaxStableDistribution[1, 1, 0.5], 0.3], \
+         InverseCDF[MaxStableDistribution[1, 2, 1/2], 1/3], \
+         InverseCDF[MinStableDistribution[1, 2, 0], 0.3], \
+         Quantile[MaxStableDistribution[1, 2, 1/2], 0], \
+         Quantile[MinStableDistribution[1, 2, 1/2], 1], \
+         Quantile[MaxStableDistribution[1, 2, 0], 1]}"
+      )
+      .unwrap(),
+      "{-16.949853380255412, 0.8227271272272625, 1 - 4*(1 - 1/Sqrt[Log[3]]), \
+       -1.0618608663174456, -3, 5, Infinity}"
+    );
+  }
+}
+
+mod order_distribution_sampling {
+  use super::*;
+
+  #[test]
+  fn draws_the_kth_smallest_of_n_samples() {
+    // RandomVariate stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "r = RandomVariate[OrderDistribution[{NormalDistribution[0, 1], 50}, 50], 500]; \
+         {Length[r], 1.5 < Mean[r] < 3.5, \
+          0 <= RandomVariate[OrderDistribution[{UniformDistribution[], 5}, 1]] <= 1}"
+      )
+      .unwrap(),
+      "{500, True, True}"
+    );
+  }
+}
+
+mod student_t_location_scale {
+  use super::*;
+
+  #[test]
+  fn quantile_and_parameter_checks() {
+    // The location was checked as if it were the degrees of freedom, and
+    // the three-argument quantile stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "{Quantile[StudentTDistribution[0, 1, 3], 0.5], \
+         Round[10^6 InverseCDF[StudentTDistribution[1, 2, 4], 0.01]]}"
+      )
+      .unwrap(),
+      "{0, -6493895}"
+    );
+  }
+}

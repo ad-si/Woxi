@@ -1631,6 +1631,9 @@ fn inverse_laplace_transform(
   let normalized = normalize_to_func_calls(expr);
   let normalized =
     crate::evaluator::evaluate_expr_to_expr(&normalized).unwrap_or(normalized);
+  if let Some(result) = inverse_laplace_time_shift(&normalized, s, t)? {
+    return Ok(result);
+  }
   if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else {
@@ -1639,6 +1642,134 @@ fn inverse_laplace_transform(
       vec![expr.clone(), s_expr.clone(), t_expr.clone()],
     ))
   }
+}
+
+/// The second shift theorem: `E^(-a s) G(s)` with `a > 0` transforms to
+/// `g(t - a) HeavisideTheta[t - a]`, `g` the transform of `G`. The shifted
+/// exponentials have their exponents expanded, a machine constant part
+/// pulled out as a factor (`E^(2/3 - t/3)`, `1.72539/E^(0.454545 t)`).
+fn inverse_laplace_time_shift(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return Ok(None);
+  };
+  if name != "Times" {
+    return Ok(None);
+  }
+  let is_e =
+    |b: &Expr| matches!(b, Expr::Constant(n) | Expr::Identifier(n) if n == "E");
+  let mut shift: Option<(usize, Expr)> = None;
+  let power_parts = |f: &Expr| -> Option<(Expr, Expr)> {
+    match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref().clone(), right.as_ref().clone())),
+      _ => None,
+    }
+  };
+  for (i, f) in args.iter().enumerate() {
+    if let Some((base, exponent)) = power_parts(f)
+      && is_e(&base)
+      && let pa = [base, exponent]
+      && let Some(k) = extract_linear_coeff(&pa[1], s)
+      && crate::functions::math_ast::try_eval_to_f64(&k)
+        .is_some_and(|v| v < 0.0)
+      && crate::evaluator::evaluate_expr_to_expr(&crate::helpers::minus2(
+        pa[1].clone(),
+        times(vec![k.clone(), id_expr(s)]),
+      ))
+      .is_ok_and(|r| matches!(r, Expr::Integer(0)))
+    {
+      shift = Some((i, k));
+      break;
+    }
+  }
+  let Some((index, k)) = shift else {
+    return Ok(None);
+  };
+  let rest: Vec<Expr> = args
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != index)
+    .map(|(_, a)| a.clone())
+    .collect();
+  let rest = crate::evaluator::evaluate_expr_to_expr(&times(rest))?;
+  // A constant times the shift is a shifted DiracDelta, which the plain
+  // rules give without a step factor.
+  if !depends_on(&rest, s) {
+    return Ok(None);
+  }
+  let g = inverse_laplace_transform(&rest, &id_expr(s), &id_expr(t))?;
+  if matches!(&g, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
+  {
+    return Ok(None);
+  }
+  // t - a with a = -k.
+  let shifted_t = plus(vec![id_expr(t), k]);
+  let shifted = crate::syntax::substitute_variable(&g, t, &shifted_t);
+  let shifted = crate::evaluator::evaluate_expr_to_expr(&shifted)?;
+  fn expand_exponents(e: &Expr) -> Expr {
+    let mapped = crate::syntax::map_children(e, &expand_exponents);
+    let parts = match &mapped {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some(vec![args[0].clone(), args[1].clone()])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some(vec![left.as_ref().clone(), right.as_ref().clone()]),
+      _ => None,
+    };
+    if let Some(args) = parts
+      && matches!(&args[0], Expr::Constant(n) | Expr::Identifier(n) if n == "E")
+    {
+      let expanded = crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        std::slice::from_ref(&args[1]),
+      )
+      .unwrap_or_else(|_| args[1].clone());
+      // A machine constant term of the exponent becomes a numeric factor.
+      if let Expr::FunctionCall {
+        name: pn,
+        args: terms,
+      } = &expanded
+        && pn == "Plus"
+        && let Some(pos) = terms.iter().position(|t| matches!(t, Expr::Real(_)))
+      {
+        let constant = terms[pos].clone();
+        let others: Vec<Expr> = terms
+          .iter()
+          .enumerate()
+          .filter(|(i, _)| *i != pos)
+          .map(|(_, t)| t.clone())
+          .collect();
+        return times(vec![
+          call("Exp", vec![constant]),
+          pow(args[0].clone(), plus(others)),
+        ]);
+      }
+      return pow(args[0].clone(), expanded);
+    }
+    mapped
+  }
+  let result = times(vec![
+    expand_exponents(&shifted),
+    call1("HeavisideTheta", shifted_t),
+  ]);
+  crate::evaluator::evaluate_expr_to_expr(&result).map(Some)
 }
 
 /// Two-variable inverse Laplace transform L^-1_{p, q}[F](x, y).

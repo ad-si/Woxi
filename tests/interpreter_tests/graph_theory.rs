@@ -8792,3 +8792,107 @@ mod graph_coordinates_3d {
     );
   }
 }
+
+mod simple_graph {
+  use super::*;
+
+  #[test]
+  fn drops_self_loops_and_repeated_edges() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 1, 1 -> 1, 2 -> 3, 2 -> 3}]; \
+         {EdgeList[SimpleGraph[g]], \
+         EdgeList[SimpleGraph[Graph[{1 <-> 2, 2 <-> 1, 3 <-> 3, 2 <-> 3}]]], \
+         VertexList[SimpleGraph[Graph[{1 <-> 1, 2 <-> 3}]]], \
+         EdgeList[SimpleGraph[{1 <-> 2, 1 <-> 2}]]}"
+      )
+      .unwrap(),
+      "{{1 \u{f3d5} 2, 2 \u{f3d5} 1, 2 \u{f3d5} 3}, {1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1, 2, 3}, {1 \u{f3d4} 2}}"
+    );
+  }
+
+  #[test]
+  fn conversions_take_graph_options() {
+    // UndirectedGraph[g, {opts}] stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3}]; \
+         {Head[UndirectedGraph[g, {VertexSize -> 3}]], \
+         Options[SimpleGraph[UndirectedGraph[g, {VertexSize -> 3}]], VertexSize], \
+         Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2], VertexSize]}"
+      )
+      .unwrap(),
+      "{Graph, {VertexSize -> 3}, {VertexSize -> 2}}"
+    );
+  }
+}
+
+mod canonical_graph {
+  use super::*;
+
+  #[test]
+  fn relabels_by_refined_degree_as_wolfram_does() {
+    assert_eq!(
+      interpret(
+        "EdgeList[CanonicalGraph[#]] & /@ {Graph[{a <-> b, a <-> c, a <-> d}], \
+         Graph[{1 <-> 2, 1 <-> 3, 1 <-> 4, 4 <-> 5}], CycleGraph[5], \
+         Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3}]}"
+      )
+      .unwrap(),
+      "{{1 \u{f3d4} 4, 2 \u{f3d4} 4, 3 \u{f3d4} 4}, \
+       {1 \u{f3d4} 4, 2 \u{f3d4} 5, 3 \u{f3d4} 5, 4 \u{f3d4} 5}, \
+       {1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 5, 4 \u{f3d4} 5}, \
+       {1 \u{f3d4} 3, 1 \u{f3d4} 4, 2 \u{f3d4} 3, 2 \u{f3d4} 4, 3 \u{f3d4} 4}}"
+    );
+    assert_eq!(
+      interpret("EdgeList[CanonicalGraph[Graph[{1 -> 2, 2 -> 3}]]]").unwrap(),
+      "{2 \u{f3d5} 3, 3 \u{f3d5} 1}"
+    );
+  }
+
+  #[test]
+  fn isomorphic_graphs_become_identical() {
+    assert_eq!(
+      interpret(
+        "CanonicalGraph[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4}]] === \
+         CanonicalGraph[Graph[{c <-> a, b <-> d, a <-> d}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod degree_and_spatial_graph_distributions {
+  use super::*;
+
+  #[test]
+  fn a_degree_sequence_is_realized_by_a_simple_graph() {
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[DegreeGraphDistribution[{2, 3, 2, 3, 2}]]; \
+         {VertexDegree[g], SimpleGraphQ[g]}"
+      )
+      .unwrap(),
+      "{{2, 3, 2, 3, 2}, True}"
+    );
+    assert_eq!(
+      interpret("RandomGraph[DegreeGraphDistribution[{1, 1, 1}]]").unwrap(),
+      "RandomGraph[DegreeGraphDistribution[{1, 1, 1}]]"
+    );
+  }
+
+  #[test]
+  fn spatial_graphs_join_points_within_the_radius() {
+    assert_eq!(
+      interpret(
+        "g = RandomGraph[SpatialGraphDistribution[20, 0.3]]; \
+         c = GraphEmbedding[g]; \
+         {VertexCount[g], Length[c], \
+          AllTrue[EdgeList[g], Norm[c[[#[[1]]]] - c[[#[[2]]]]] <= 0.3 &]}"
+      )
+      .unwrap(),
+      "{20, 20, True}"
+    );
+  }
+}

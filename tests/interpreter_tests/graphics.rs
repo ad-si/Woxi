@@ -17666,6 +17666,24 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot3d_vector_points_count() {
+      // `VectorPoints -> n` samples n points across each axis: 4^3 arrows.
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 4]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 64);
+    }
+
+    #[test]
+    fn vector_plot3d_color_function() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 3, ColorFunction -> Function[Blue]]",
+      );
+      assert!(svg.contains("rgb(0,0,255)"));
+      assert!(!svg.contains("rgb(250,50,100)"));
+    }
+
+    #[test]
     fn vector_plot3d_curl() {
       insta::assert_snapshot!(export_svg(
         "VectorPlot3D[{-y, x, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
@@ -21366,6 +21384,18 @@ mod matrix_form {
       !svg.contains('\t'),
       "cells must not be tab-separated: {svg}"
     );
+  }
+
+  #[test]
+  fn svg_export_of_argumentless_head_does_not_panic() {
+    clear_state();
+    for code in [
+      "ExportString[f[], \"SVG\"]",
+      "ExportString[Style[], \"SVG\"]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().result;
+      assert!(svg.contains("<svg"), "{code}: {svg}");
+    }
   }
 
   #[test]
@@ -43689,6 +43719,55 @@ mod edit_rendered_graphics {
       )
       .unwrap(),
       "{Graphics3D, {RGBColor[1, 0, 0], Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}, {Cuboid[{0, 0, 0}]}}"
+    );
+  }
+}
+
+mod bspline_function_spline_knots {
+  use super::*;
+
+  #[test]
+  fn explicit_knots_fix_the_degree_and_domain() {
+    // SplineKnots made BSplineFunction stay unevaluated.
+    assert_eq!(
+      interpret(
+        "{BSplineFunction[{{{0,0,0},{0,1,0},{0,2,0}},{{1,0,0},{1,1,1},{1,2,0}},\
+         {{2,0,0},{2,1,0},{2,2,0}}}, SplineKnots -> {{0,0,0,1,1,1},{0,0,0,1,1,1}}][0.5, 0.5], \
+         BSplineFunction[{{0,0},{1,1},{2,0},{3,1}}, SplineKnots -> {0,0,0,0.5,1,1,1}][0.25]}"
+      )
+      .unwrap(),
+      "{{1., 1., 0.25}, {0.875, 0.625}}"
+    );
+  }
+}
+
+mod show_array_plot_sizing {
+  use super::*;
+
+  #[test]
+  fn show_keeps_array_plot_image_size_and_aspect_ratio() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{0, 1, 0, 1, 1, 0}}, Frame -> False, \
+       AspectRatio -> 0.8, ImageSize -> 500], \
+       Graphics[Text[\"hi\", {3, 0.03}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"500\" height=\"400\""),
+      "Got: {svg}"
+    );
+  }
+
+  #[test]
+  fn show_keeps_array_plot_options_for_any_size() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{1, 0, 1}}, AspectRatio -> 0.5, \
+       ImageSize -> 300], Graphics[Point[{1, 0}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"300\" height=\"150\""),
+      "Got: {svg}"
     );
   }
 }

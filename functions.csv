@@ -2034,7 +2034,7 @@ NMaxValue,Numerical maximum value optimization (numerical optimization),✅,,7.0
 UnitSimplify,Simplify physical units (unit system),🚫,,9.0,2020
 AirTemperatureData,,🚫,,10.0,2024
 ListVectorPlot,Creates a vector field plot from a list of {position vector} pairs,✅,pure,7.0,2024
-OrderDistribution,Order statistics distribution (complex statistics),🚫,,8.0,2024
+OrderDistribution,Order statistic distribution (sampled by RandomVariate),✅,pure,8.0,2024
 TracePrint,Print all sub-expressions used during an evaluation indented by depth,✅,effectful,2.0,2025
 Circumsphere,Circumsphere of a simplex (computational geometry),✅,pure,10.0,2026
 AnyTrue,Checks if any element in a list is true,✅,pure,10.0,2031
@@ -2048,7 +2048,7 @@ Spectrogram,Plot the magnitude of the short-time Fourier transform (time vs freq
 DateTicksFormat,Date format for plot tick labels,🚫,,6.0,2036
 RootLocusPlot,Root locus plot for control systems,🚫,,8.0,2036
 UndirectedGraph,Gives the graph with every edge undirected and duplicates dropped,✅,pure,8.0,2038
-DegreeGraphDistribution,Degree-based graph distribution,🚫,,8.0,2039
+DegreeGraphDistribution,Random simple graphs with a given degree sequence (recognised by RandomGraph),✅,pure,8.0,2039
 NyquistPlot,Nyquist stability plot,✅,pure,8.0,2040
 FlattenLayer,Neural network flatten layer,🚫,,11.0,2042
 VertexInDegree,Number of incoming edges per vertex of a graph or edge list,✅,none,8.0,2042
@@ -2230,7 +2230,7 @@ PermutationList,Permutation list from cycle notation or a permutation list,✅,p
 EmbeddedHTML,Web embedding,🚫,None,10.0,2225
 MittagLefflerE,Mittag-Leffler function E_alpha(z) or E_{alpha beta}(z) summed via Sum[z^k/Gamma[alpha k + beta]],✅,pure,9.0,2225
 NProduct,Numerical product of a sequence,✅,none,1.0,2229
-SimpleGraph,Graph construction,🚫,None,8.0,2229
+SimpleGraph,Graph without self-loops and with each multiple edge kept once,✅,pure,8.0,2229
 Threshold,Replaces array values below a threshold with zero,✅,pure,8.0,2229
 Hexahedron,Symbolic hexahedron (8 corners); stays unevaluated and is drawn as six faces in Graphics3D,✅,unevaluated,10.0,2233
 Nand,Logical NAND,✅,pure,4.1,2233
@@ -2829,7 +2829,7 @@ UniformPolyhedron,,🚫,,12.0,2837
 ControllableModelQ,,🚫,,8.0,2842
 KeyUnion,Extends associations to have the union of all keys with Missing for absent keys,✅,pure,10.0,2842
 LinkProtocol,,🚫,,3.0,2842
-SpatialGraphDistribution,Spatial random graph distribution,,unevaluated,9.0,2842
+SpatialGraphDistribution,Random geometric graphs on the unit square (recognised by RandomGraph),✅,pure,9.0,2842
 UnderoverscriptBoxOptions,,🚫,,4.0,2842
 BooleanQ,Tests if an expression is True or False,✅,pure,10.0,2845
 IndependentUnit,Represents a user-defined independent unit,✅,pure,9.0,2845
@@ -3196,7 +3196,7 @@ PowerDistribution,Continuous distribution with PDF a k^a x^(a-1) on support (0 1
 TopologicalSort,Topological ordering of a directed acyclic graph's vertices (tie-break among independent vertices differs from WL; see conformance_gaps.md),✅,pure,8.0,3224
 DynamicUpdating,,🚫,,6.0,3233
 EvaluatorNames,,🚫,,4.0,3233
-FindThreshold,,,,8.0,3233
+FindThreshold,Otsu threshold of an image or data,✅,pure,8.0,3233
 GaugeFrameStyle,,🚫,,9.0,3233
 GeoBoundingBox,,🚫,,10.0,3233
 GlobalClusteringCoefficient,Fraction of connected triples that close into triangles,✅,pure,9.0,3233
@@ -3402,7 +3402,7 @@ SystemsModelParallelConnect,,🚫,,8.0,3440
 UnsavedVariables,,,,8.0,3440
 VertexConnectivity,Minimum vertex cut size (s-t form uses vertex-disjoint paths),✅,pure,9.0,3440
 BiorthogonalSplineWavelet,Biorthogonal spline wavelet family with exact rational filters,✅,pure,8.0,3462
-CanonicalGraph,,,,10.0,3462
+CanonicalGraph,Relabels a graph so that isomorphic graphs become identical,✅,pure,10.0,3462
 ComposeSeries,Composes power series by substituting one series into another,✅,pure,1.0,3462
 ConstantRegionQ,,,,10.0,3462
 ConvectionPDETerm,,,,12.2,3462
@@ -5930,7 +5930,7 @@ RecalibrationFunction,,🚫,,12.3,
 ReconstructionMesh,,🚫,,13.1,
 ReferenceAltitude,,,,14.1,
 RegionCongruent,,,,13.0,
-RegionConvert,,,,12.3,
+RegionConvert,Converts a region to its ImplicitRegion form for boxes and balls and parallelepipeds,✅,pure,12.3,
 RegionDilation,,,,12.3,
 RegionErosion,,,,12.3,
 RegionFarthestDistance,,,,13.3,
