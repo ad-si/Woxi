@@ -6070,11 +6070,28 @@ fn complex_expand_ast(expr: &Expr) -> Expr {
   // Distribute products and integer powers of sums, matching wolframscript:
   // ComplexExpand[(x+1)^2] = 1 + 2 x + x^2, and hence
   // ComplexExpand[Abs[x+1]^2] = 1 + 2 x + x^2 (via Abs[x+1] = Sqrt[(x+1)^2]).
-  crate::evaluator::evaluate_function_call_ast(
-    "Expand",
-    std::slice::from_ref(&folded),
-  )
-  .unwrap_or(folded)
+  let expand = |e: &Expr| {
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(e),
+    )
+    .unwrap_or_else(|_| e.clone())
+  };
+  let expanded = expand(&folded);
+  // The result reads `re + I*(im)`, the imaginary terms gathered under one
+  // factor of I: ComplexExpand[(x + I)^3] is -3 x + x^3 + I (-1 + 3 x^2).
+  if let Some((re, im)) = split_real_imag(&expanded)
+    && !matches!(im, Expr::Integer(0))
+    && !contains_explicit_i(&re)
+    && !contains_explicit_i(&im)
+  {
+    let (re, im) = (expand(&re), expand(&im));
+    let regrouped = plus2(re, times2(id_expr("I"), im));
+    if let Ok(e) = crate::evaluator::evaluate_expr_to_expr(&regrouped) {
+      return e;
+    }
+  }
+  expanded
 }
 
 /// Like `complex_expand_ast` but additionally distributes products via
@@ -6983,6 +7000,21 @@ fn reciprocal_trig_parts(
   })
 }
 
+/// `base^k` for a negative integer `k`, over the conjugate when `base` has
+/// an imaginary part.
+fn complex_reciprocal_power(base: &Expr, k: &Expr) -> Expr {
+  let base = complex_expand_recursive(base);
+  if let (Some((re, im)), Expr::Integer(k)) = (split_real_imag(&base), k)
+    && !matches!(im, Expr::Integer(0))
+  {
+    let n = Expr::Integer(-*k);
+    let conj = minus2(re.clone(), times2(id_expr("I"), im.clone()));
+    let norm = plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2)));
+    return ce_simplify(div2(pow2(conj, n.clone()), pow2(norm, n)));
+  }
+  pow2(base, k.clone())
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -7131,6 +7163,22 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         name: name.clone(),
         args: args.iter().map(complex_expand_recursive).collect(),
       }
+    }
+    // A negative integer power of a complex quantity is taken over the
+    // conjugate: 1/(a + I b)^n = (a - I b)^n/(a^2 + b^2)^n.
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(k) if *k < 0) =>
+    {
+      complex_reciprocal_power(&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(k) if *k < 0) => {
+      complex_reciprocal_power(left, right)
     }
     // Handle base^(a + I*b) for a positive real-valued base:
     //   base^(a + I*b) = base^a * (Cos[b*Log[base]] + I*Sin[b*Log[base]])

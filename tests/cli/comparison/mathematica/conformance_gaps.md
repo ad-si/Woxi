@@ -328,6 +328,20 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
+### A coefficient times a sum of calls sorts before a lone call
+
+```sh
+wolframscript -code 'Cos[x] + 2 (Sin[x] + Sin[2 x])'        # Cos[x] + 2*(Sin[x] + Sin[2*x])
+woxi eval 'Cos[x] + 2 (Sin[x] + Sin[2 x])'                  # 2*(Sin[x] + Sin[2*x]) + Cos[x]
+wolframscript -code 'a/(a^2 + b^2) - 2 b/(a^2 + b^2)'       # a/(a^2 + b^2) - (2*b)/(a^2 + b^2)
+woxi eval 'a/(a^2 + b^2) - 2 b/(a^2 + b^2)'                 # (-2*b)/(a^2 + b^2) + a/(a^2 + b^2)
+```
+
+Plus puts a multiple of a sum of calls ahead of a call, and orders two
+quotients over the same denominator by their coefficient before their
+numerator. `Sort` agrees with wolframscript on the stripped terms. It shows
+in `ComplexExpand` (`I*(Sin[x] + Sin[2*x]) + Cos[x]`).
+
 ### `WaveletPsi[MexicanHatWavelet[1], t]` keeps the polynomial factor's sign
 
 ```sh

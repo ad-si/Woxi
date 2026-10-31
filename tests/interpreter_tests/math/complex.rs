@@ -482,6 +482,29 @@ mod re_tests {
     assert_eq!(interpret("Re[E^(I*x)]").unwrap(), "Re[E^(I*x)]");
   }
 
+  // A negative power of a complex quantity is taken over its conjugate, and
+  // the imaginary terms of the result gather under one factor of I.
+  #[test]
+  fn complex_expand_reciprocals_and_imaginary_grouping() {
+    for (input, expected) in [
+      ("ComplexExpand[2/(-1 - I Sqrt[3])]", "-1/2 + I/2*Sqrt[3]"),
+      ("ComplexExpand[1/(1 + I Sqrt[2])]", "1/3 - I/3*Sqrt[2]"),
+      (
+        "ComplexExpand[(3 + I)/(2 - I Sqrt[5])]",
+        "2/3 - Sqrt[5]/9 + I*(2/9 + Sqrt[5]/3)",
+      ),
+      (
+        "ComplexExpand[(-1 - I*Sqrt[3])/(-1 + I*Sqrt[3])]",
+        "-1/2 + I/2*Sqrt[3]",
+      ),
+      ("ComplexExpand[1/(x + I)]", "-I/(1 + x^2) + x/(1 + x^2)"),
+      ("ComplexExpand[(x + I)^3]", "-3*x + x^3 + I*(-1 + 3*x^2)"),
+      ("ComplexExpand[(1 + I) (a + I b)]", "a - b + I*(a + b)"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   #[test]
   fn complex_expand_exp_negative_and_rational() {
     // ComplexExpand now decomposes negated and rational imaginary exponents.
