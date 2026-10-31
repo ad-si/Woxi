@@ -3593,6 +3593,38 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(isolated);
   }
+  // A polynomial equation with inexact coefficients that stayed unsolved
+  // (a cubic in a parameter) is solved exactly and numericized, as
+  // wolframscript does.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let [
+      eq @ Expr::Comparison { operands, .. },
+      var @ Expr::Identifier(_),
+    ] = args
+    && operands.len() == 2
+    && !in_nsolve()
+    && crate::functions::math_ast::contains_inexact_real(eq)
+    && !has_radical(eq)
+    && matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "PolynomialQ",
+        &[plus(vec![operands[0].clone(), neg(operands[1].clone())]), var.clone()],
+      ),
+      Ok(Expr::Identifier(ref t)) if t == "True"
+    )
+    && let Ok(exact) = crate::evaluator::evaluate_function_call_ast(
+      "Rationalize",
+      &[eq.clone(), Expr::Integer(0)],
+    )
+    && !crate::functions::math_ast::contains_inexact_real(&exact)
+    && let Ok(exact_result @ Expr::List(_)) =
+      solve_ast_entry(&[exact, var.clone()])
+  {
+    crate::emit_message(
+      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+    );
+    return crate::evaluator::evaluate_function_call_ast("N", &[exact_result]);
+  }
   Ok(result)
 }
 
@@ -6068,7 +6100,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if super::eliminate::contains_var(&denominator, var) {
         expand_and_combine(&numerator)
       } else {
-        expanded_raw
+        expanded_raw.clone()
       }
     }
   };
@@ -6835,6 +6867,35 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             return Ok(Expr::List(all_solutions.into()));
           }
         }
+      }
+      // A cubic with symbolic coefficients has Cardano's radicals, in the
+      // order wolframscript lists them.
+      if degree == 3
+        && coeffs
+          .iter()
+          .any(|c| !crate::functions::predicate_ast::is_numeric_q(c))
+        && !coeffs
+          .iter()
+          .any(crate::functions::predicate_ast::contains_real_literal)
+        && solve_by_isolating_power(&args[0], var).is_none()
+        && let Some(roots) = symbolic_cubic_roots(
+          // The coefficients as written, before denominators were cleared:
+          // wolframscript's radicals are in terms of those.
+          &match crate::evaluator::evaluate_function_call_ast(
+            "CoefficientList",
+            &[expanded_raw.clone(), id_expr(var)],
+          ) {
+            Ok(Expr::List(ref raw))
+              if raw.len() == 4
+                && raw.iter().all(|c| is_constant_wrt(c, var)) =>
+            {
+              raw.to_vec()
+            }
+            _ => coeffs.clone(),
+          },
+        )
+      {
+        return Ok(Expr::List(roots.into_iter().map(make_rule).collect()));
       }
       // Machine-precision coefficients: wolframscript never answers those
       // with `Root[…]` objects, it solves them numerically. So a cubic like
@@ -24118,4 +24179,181 @@ mod tests {
       "{at_minus_two} vs {expected}"
     );
   }
+}
+
+/// The roots of the cubic `a x^3 + b x^2 + c x + d` with symbolic
+/// coefficients, in wolframscript's Cardano form: with
+/// `Δ0 = 3 a c - b^2`, `Δ1 = -2 b^3 + 9 a b c - 27 a^2 d` and
+/// `C = (Δ1 + Sqrt[4 Δ0^3 + Δ1^2])^(1/3)`,
+///
+/// ```text
+/// x1 = -b/(3 a) - 2^(1/3) Δ0/(3 a C) + C/(3 2^(1/3) a)
+/// x2 = -b/(3 a) + (1 + I Sqrt[3]) Δ0/(3 2^(2/3) a C) - (1 - I Sqrt[3]) C/(6 2^(1/3) a)
+/// ```
+///
+/// and `x3` the conjugate of `x2`'s units. A discriminant whose expansion
+/// has an integer content `k > 1` is written `Sqrt[k] Sqrt[rest]`
+/// (`Sqrt[3] Sqrt[4 p^3 + 27 q^2]` for `x^3 + p x + q`), and an integer
+/// factor `g` common to `Δ1` and that radical comes out of the cube root
+/// as `g^(1/3)`.
+fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let parse = |s: &str| crate::syntax::string_to_expr(s).ok();
+  let fill = |template: &str, values: &[(&str, &Expr)]| -> Option<Expr> {
+    let mut e = parse(template)?;
+    for (name, value) in values {
+      e = crate::syntax::substitute_variable(&e, name, value);
+    }
+    eval(e)
+  };
+  let [d, c, b, a] = coeffs else {
+    return None;
+  };
+  let abcd = [
+    ("Solve$a", a),
+    ("Solve$b", b),
+    ("Solve$c", c),
+    ("Solve$d", d),
+  ];
+  let d0 = fill("Expand[3 Solve$a Solve$c - Solve$b^2]", &abcd)?;
+  let d1 = fill(
+    "Expand[-2 Solve$b^3 + 9 Solve$a Solve$b Solve$c - 27 Solve$a^2 Solve$d]",
+    &abcd,
+  )?;
+  // The integer content of an expanded polynomial and what is left.
+  let integer_content = |e: &Expr| -> Option<(i128, Expr)> {
+    let expanded = eval(call("Expand", vec![e.clone()]))?;
+    let list = crate::functions::polynomial_ast::factor::factor_terms_list_ast(
+      std::slice::from_ref(&expanded),
+    )
+    .ok()?;
+    let Expr::List(ref parts) = list else {
+      return None;
+    };
+    match parts.as_slice() {
+      [Expr::Integer(k), rest @ ..] if !rest.is_empty() => {
+        let rest = if rest.len() == 1 {
+          rest[0].clone()
+        } else {
+          eval(call("Times", rest.to_vec()))?
+        };
+        Some((*k, rest))
+      }
+      _ => None,
+    }
+  };
+  // A shifted perfect cube plus a constant (Δ0 == 0): the radical is Δ1
+  // itself and the Δ0 terms vanish, x = -b/(3 a) + ω^k (2 Δ1)^(1/3)/(3 a).
+  if matches!(d0, Expr::Integer(0)) {
+    // The integer content leaves the cube root: (54 (1 - c))^(1/3) is
+    // 3 2^(1/3) (1 - c)^(1/3).
+    let twice = fill("2 Solve$q", &[("Solve$q", &d1)])?;
+    let cube = match integer_content(&twice) {
+      Some((k, rest)) if k.abs() > 1 => fill(
+        "Solve$k^(1/3) Solve$r^(1/3)",
+        &[
+          ("Solve$k", &Expr::Integer(k.abs())),
+          (
+            "Solve$r",
+            &eval(call("Times", vec![Expr::Integer(k.signum()), rest]))?,
+          ),
+        ],
+      )?,
+      _ => fill("Solve$x^(1/3)", &[("Solve$x", &twice)])?,
+    };
+    let values = [("Solve$a", a), ("Solve$b", b), ("Solve$C", &cube)];
+    return [
+      "-Solve$b/(3 Solve$a) + Solve$C/(3 2^(1/3) Solve$a)",
+      "-Solve$b/(3 Solve$a) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+      "-Solve$b/(3 Solve$a) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    ]
+    .iter()
+    .map(|t| fill(t, &values))
+    .collect();
+  }
+  let disc = fill(
+    "4 Solve$p^3 + Solve$q^2",
+    &[("Solve$p", &d0), ("Solve$q", &d1)],
+  )?;
+
+  // wolframscript expands the discriminant unless that makes it clearly
+  // bigger (more than two leaves: `4 (-b^2 + 3 a c)^3 + (…)^2` stays as
+  // it is, `32 + (7 - 27 c)^2` becomes `27 (3 - 14 c + 27 c^2)`).
+  let leaves = |e: &Expr| -> Option<i128> {
+    match eval(call("LeafCount", vec![e.clone()]))? {
+      Expr::Integer(n) => Some(n),
+      _ => None,
+    }
+  };
+  let expanded_disc = eval(call("Expand", vec![disc.clone()]))?;
+  let expand = leaves(&expanded_disc)? - leaves(&disc)? <= 2;
+  let content = if expand { integer_content(&disc) } else { None };
+  let (radical, radical_scale) = match content {
+    Some((k, rest)) if k.abs() > 1 => {
+      // Sqrt[k] = m Sqrt[s] with s squarefree.
+      let k_abs = k.unsigned_abs();
+      let mut m: u128 = 1;
+      let mut s = k_abs;
+      let mut f: u128 = 2;
+      while f * f <= s {
+        while s % (f * f) == 0 {
+          s /= f * f;
+          m *= f;
+        }
+        f += 1;
+      }
+      let rest = if k < 0 {
+        eval(call("Times", vec![Expr::Integer(-1), rest]))?
+      } else {
+        rest
+      };
+      (
+        eval(call(
+          "Times",
+          vec![
+            call("Sqrt", vec![Expr::Integer(s as i128)]),
+            call("Sqrt", vec![rest]),
+          ],
+        ))?,
+        m as i128,
+      )
+    }
+    _ if expand => (call("Sqrt", vec![expanded_disc]), 1),
+    _ => (call("Sqrt", vec![disc.clone()]), 1),
+  };
+  // A factor common to Δ1 and the radical's integer scale.
+  let g = match integer_content(&d1) {
+    Some((k, _)) => gcd_i128(k.abs(), radical_scale),
+    None => match &d1 {
+      Expr::Integer(n) => gcd_i128(n.abs(), radical_scale),
+      _ => 1,
+    },
+  };
+  let inner = fill(
+    "Expand[Solve$q / Solve$g] + (Solve$m / Solve$g) Solve$r",
+    &[
+      ("Solve$q", &d1),
+      ("Solve$g", &Expr::Integer(g)),
+      ("Solve$m", &Expr::Integer(radical_scale)),
+      ("Solve$r", &radical),
+    ],
+  )?;
+  let cube = fill(
+    "Solve$g^(1/3) Solve$x^(1/3)",
+    &[("Solve$g", &Expr::Integer(g)), ("Solve$x", &inner)],
+  )?;
+  let values = [
+    ("Solve$a", a),
+    ("Solve$b", b),
+    ("Solve$p", &d0),
+    ("Solve$C", &cube),
+  ];
+  [
+    "-Solve$b/(3 Solve$a) - 2^(1/3) Solve$p/(3 Solve$a Solve$C) + Solve$C/(3 2^(1/3) Solve$a)",
+    "-Solve$b/(3 Solve$a) + (1 + I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    "-Solve$b/(3 Solve$a) + (1 - I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+  ]
+  .iter()
+  .map(|t| fill(t, &values))
+  .collect()
 }

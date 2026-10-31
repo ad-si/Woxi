@@ -868,23 +868,22 @@ pub fn ndsolve_ast_with_head(
   head: &str,
 ) -> Result<Expr, InterpreterError> {
   // Options may come wrapped in a list (`NDSolve[eqns, u, {t, 0, 1},
-  // {MaxSteps -> 100}]`); splice such a list into the trailing options so it
-  // is not taken for a fourth (PDE) domain.
+  // {MaxSteps -> 100}]`, or a symbol holding one); splice such a list into
+  // the trailing options so it is not taken for a fourth (PDE) domain.
   let is_rule =
     |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
-  let mut spliced: Vec<Expr> = Vec::with_capacity(args.len());
-  for (i, a) in args.iter().enumerate() {
-    match a {
+  let mut evaluated: Vec<Expr> = Vec::with_capacity(args.len());
+  for (i, a) in evaluate_ndsolve_args(args)?.into_iter().enumerate() {
+    match &a {
       Expr::List(items)
         if i >= 3 && !items.is_empty() && items.iter().all(is_rule) =>
       {
-        spliced.extend(items.iter().cloned());
+        evaluated.extend(items.iter().cloned());
       }
-      other => spliced.push(other.clone()),
+      _ => evaluated.push(a),
     }
   }
-  let args = &spliced[..];
-  let evaluated: Vec<Expr> = evaluate_ndsolve_args(args)?
+  let evaluated: Vec<Expr> = evaluated
     .iter()
     .map(total_derivative_to_derivative)
     .map(|e| expand_defined_derivatives(&e))

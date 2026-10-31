@@ -23211,6 +23211,16 @@ mod ndsolve_option_lists_and_nested_equations {
       .unwrap(),
       "List"
     );
+    // A symbol holding the list, as `Sequence @ opts` leaves it
+    // (ChaoticMotionOfADampedDrivenPendulum).
+    assert_eq!(
+      interpret(
+        "opts = {MaxSteps -> Infinity, AccuracyGoal -> 4}; \
+         Head[NDSolve[{y'[t] == 1, y[0] == 1}, y, {t, 0, 1}, Sequence @ opts]]"
+      )
+      .unwrap(),
+      "List"
+    );
   }
 
   #[test]

@@ -365,6 +365,40 @@ and a curried call after the plain call with the same head. The `Plus`
 comparator has both rules (`h[a + b] + h[c]`, `f[x] + f[x][y]`); the `Sort`
 comparator still orders by expression class first.
 
+### Cardano roots of a parametric cubic: term order and a shared denominator
+
+```sh
+wolframscript -code 'Solve[z^3 + a z^2 + b == 0, z][[1]]'
+# {z -> (-a + (2^(1/3)*a^2)/(…)^(1/3) + (…)^(1/3)/2^(1/3))/3}
+woxi eval 'Solve[z^3 + a z^2 + b == 0, z][[1]]'
+# {z -> -1/3*a + (2^(1/3)*a^2)/(3*(…)^(1/3)) + (…)^(1/3)/(3*2^(1/3))}
+
+wolframscript -code 'Solve[a z^3 + b z^2 + c z + d == 0, z][[1]]'
+# {z -> -1/3*b/a - (2^(1/3)*(-b^2 + 3*a*c))/(3*a*C) + C/(3*2^(1/3)*a)}
+woxi eval 'Solve[a z^3 + b z^2 + c z + d == 0, z][[1]]'
+# {z -> -1/3*b/a + C/(3*2^(1/3)*a) - (2^(1/3)*(-b^2 + 3*a*c))/(3*a*C)}
+```
+
+The roots are the same (`solve_symbolic_cubic` in
+`tests/interpreter_tests/algebra.rs` checks them numerically). Two things
+differ. Some first roots WL writes over one denominator (`z^3 - z^2 + c`,
+`2 z^3 + c z^2 + 1`, `z^3 + a z^2 + b`), and no rule for which ones has been
+found yet. And the `Plus` comparator orders `p X^(-1/3)` after `X^(1/3)` when
+the sum `X` mentions `p`, where WL compares the product from its last
+factor (`X^(-1/3)` before `X^(1/3)`). It also orders a compound numeric factor
+(`Sqrt[3]`, `2 + I`, `1 + I Sqrt[3]`) as a factor rather than as a coefficient:
+
+```sh
+wolframscript -code 'InputForm[(1 + c)^(1/3) + Sqrt[3]/(1 + c)^(1/3)]'  # Sqrt[3]/(1 + c)^(1/3) + (1 + c)^(1/3)
+woxi eval 'InputForm[(1 + c)^(1/3) + Sqrt[3]/(1 + c)^(1/3)]'            # (1 + c)^(1/3) + Sqrt[3]/(1 + c)^(1/3)
+wolframscript -code 'InputForm[x^2 + (1 + Sqrt[3]) x]'                  # (1 + Sqrt[3])*x + x^2
+woxi eval 'InputForm[x^2 + (1 + Sqrt[3]) x]'                            # x^2 + (1 + Sqrt[3])*x
+```
+
+The discriminant is written expanded (with its integer content outside the
+root) unless that makes it more than two leaves larger, a threshold fitted
+to thirteen WL cubics.
+
 ### Two rational-function arguments of the same head
 
 ```sh
@@ -1142,18 +1176,18 @@ woxi eval 'Sort[{Pi + 2 Pi C[1], 2 Pi C[1], -Pi/3 + 2 Pi C[1]}]'
 these sums before the monomial; `Order[2 Pi C[1], Pi + 2 Pi C[1]]` is `1`
 in both. Solve's trig families sort with their own key for this reason.
 
-### NDSolve does not integrate complex-valued equations
+### NDSolve returns a complex solution as two real interpolations
 
 ```sh
 wolframscript -code 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
-# {{x -> InterpolatingFunction[{{0., 1.}}, …]}} with complex values
+# {{x -> InterpolatingFunction[{{0., 1.}}, <>]}} with complex values
 woxi eval 'NDSolve[{x'"'"'[t] == I x[t], x[0] == 1}, x, {t, 0, 1}]'
-# unevaluated
+# {{x -> Function[{NDSolve$z}, InterpolatingFunction[…][NDSolve$z] + I InterpolatingFunction[…][NDSolve$z]]}}
 ```
 
-Woxi's integrator carries a real state vector; a right-hand side written
-with `I` is only accepted when it is real along the trajectory
-(`Sqrt[2 + I x[t]] Sqrt[2 - I x[t]]`).
+Woxi's integrator carries a real state vector, so a complex system is
+solved as the real system of its parts (`ComplexExpand` of each equation)
+and recombined. The values agree; the shape of the solution does not.
 
 ### Guard digits of small arbitrary-precision numbers
 
