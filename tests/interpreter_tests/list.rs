@@ -11804,6 +11804,20 @@ mod join_non_list {
     );
   }
 
+  // Weak components, each in vertex-list order, ordered by first vertex.
+  #[test]
+  fn graph_utilities_weak_components() {
+    assert_eq!(
+      interpret(
+        "{GraphUtilities`WeakComponents[{1 -> 2, 3 -> 4, 4 -> 5, 6 -> 6, 2 -> 1}], \
+          GraphUtilities`WeakComponents[Graph[{1 -> 2, 3 -> 4, 5 -> 3, 7 -> 6}]], \
+          GraphUtilities`WeakComponents[Combinatorica`FromUnorderedPairs[{{1, 2}, {3, 4}, {4, 5}}]]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {3, 4, 5}, {6}}, {{1, 2}, {3, 4, 5}, {7, 6}}, {{1, 2}, {3, 4, 5}}}"
+    );
+  }
+
   // With the package loaded, the bare names reach the package's functions.
   #[test]
   fn combinatorica_bare_names_after_needs() {

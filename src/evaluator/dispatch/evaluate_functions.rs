@@ -1156,6 +1156,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
+  // `GraphUtilities\`WeakComponents[g]`: the weakly connected components,
+  // each in vertex-list order, ordered by their first vertex — of a rule
+  // list, a `Graph` or a Combinatorica graph.
+  if name == "GraphUtilities`WeakComponents" && args.len() == 1 {
+    return weak_components(&args[0])
+      .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
+  }
+
   // `GraphUtilities\`GraphCoordinates[rules]` / `GraphCoordinates3D[rules]`:
   // one position per vertex, in `VertexList` order.
   if let Some(short) = name.strip_prefix("GraphUtilities`")
@@ -15738,4 +15746,103 @@ fn flatten_rule_args(args: &[Expr]) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// The weak components of a graph for `GraphUtilities\`WeakComponents`;
+/// `None` when the argument is not a graph.
+fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let (vertices, edges): (Vec<Expr>, Vec<(Expr, Expr)>) = match g {
+    Expr::FunctionCall { name, .. } if name == "Combinatorica`Graph" => {
+      let n = eval(call1("Combinatorica`V", g.clone()))?;
+      let Expr::Integer(n) = n else { return Ok(None) };
+      let Expr::List(ref pairs) =
+        eval(call1("Combinatorica`ToUnorderedPairs", g.clone()))?
+      else {
+        return Ok(None);
+      };
+      let edges = pairs
+        .iter()
+        .filter_map(|p| match p {
+          Expr::List(uv) if uv.len() == 2 => {
+            Some((uv[0].clone(), uv[1].clone()))
+          }
+          _ => None,
+        })
+        .collect();
+      ((1..=n).map(Expr::Integer).collect(), edges)
+    }
+    _ => {
+      let graph = match g {
+        Expr::List(_) => eval(call1("Graph", g.clone()))?,
+        other => other.clone(),
+      };
+      let pair = (
+        eval(call1("VertexList", graph.clone()))?,
+        eval(call1("EdgeList", graph))?,
+      );
+      let (Expr::List(vs), Expr::List(es)) = &pair else {
+        return Ok(None);
+      };
+      let edges = es
+        .iter()
+        .filter_map(|e| match e {
+          Expr::FunctionCall { name, args }
+            if (name == "DirectedEdge" || name == "UndirectedEdge")
+              && args.len() >= 2 =>
+          {
+            Some((args[0].clone(), args[1].clone()))
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some(((**pattern).clone(), (**replacement).clone())),
+          _ => None,
+        })
+        .collect();
+      (vs.to_vec(), edges)
+    }
+  };
+  let key = crate::syntax::expr_to_string;
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let mut parent: Vec<usize> = (0..vertices.len()).collect();
+  fn find(p: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while p[r] != r {
+      r = p[r];
+    }
+    let mut j = i;
+    while p[j] != r {
+      let next = p[j];
+      p[j] = r;
+      j = next;
+    }
+    r
+  }
+  for (u, v) in &edges {
+    if let (Some(&a), Some(&b)) = (index.get(&key(u)), index.get(&key(v))) {
+      let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+      if ra != rb {
+        parent[ra.max(rb)] = ra.min(rb);
+      }
+    }
+  }
+  let mut groups: Vec<(usize, Vec<Expr>)> = Vec::new();
+  for (i, v) in vertices.iter().enumerate() {
+    let r = find(&mut parent, i);
+    match groups.iter_mut().find(|(root, _)| *root == r) {
+      Some((_, members)) => members.push(v.clone()),
+      None => groups.push((r, vec![v.clone()])),
+    }
+  }
+  Ok(Some(Expr::List(
+    groups
+      .into_iter()
+      .map(|(_, m)| Expr::List(m.into()))
+      .collect(),
+  )))
 }

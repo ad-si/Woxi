@@ -6425,3 +6425,4 @@ Combinatorica`RandomSubset,"A uniformly random subset of a list (or of Range[n])
 Combinatorica`ToCycles,"The cycles of a permutation list; each started from its smallest unvisited point",✅,pure,6.0,
 Combinatorica`Orbits,"The orbits of the elements of a list under a group of permutations acting by Permute",✅,pure,6.0,
 Combinatorica`OrbitRepresentatives,"One representative (the first) of each orbit of the elements of a list under a group of permutations",✅,pure,6.0,
+GraphUtilities`WeakComponents,"Weakly connected components of a rule list or Graph or Combinatorica graph in vertex order",✅,pure,6.0,
