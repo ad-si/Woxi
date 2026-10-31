@@ -3088,6 +3088,24 @@ mod collect_tests {
   }
 }
 
+// Together over an integer denominator gives the canonical product, which
+// sorts and compares like the same quotient typed in.
+mod together_integer_denominator_form {
+  use super::*;
+
+  #[test]
+  fn rational_coefficient_times_sum() {
+    assert_eq!(
+      interpret("ToString[FullForm[Together[1/2 - w^2/2]]]").unwrap(),
+      "Times[Rational[1, 2], Plus[1, Times[-1, Power[w, 2]]]]"
+    );
+    assert_eq!(
+      interpret("Ordering[{Together[1/2 - w^2/2], (3*w^2)/2}]").unwrap(),
+      "{2, 1}"
+    );
+  }
+}
+
 mod together {
   use super::*;
 

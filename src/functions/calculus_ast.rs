@@ -11575,9 +11575,18 @@ fn piecewise_condition_bound_lists(
       piecewise_condition_bound_lists(c, var, lowers, uppers)?;
       continue;
     }
-    let (l, h) = piecewise_condition_bounds(c, var)?;
-    lowers.extend(l);
-    uppers.extend(h);
+    match piecewise_condition_bounds(c, var) {
+      Some((l, h)) => {
+        lowers.extend(l);
+        uppers.extend(h);
+      }
+      // Symbolic bounds that cannot be intersected yet.
+      None => {
+        let (l, h) = linear_comparison_bounds(c, var)?;
+        lowers.extend(l);
+        uppers.extend(h);
+      }
+    }
   }
   Some(())
 }
@@ -11657,28 +11666,27 @@ fn parametric_piecewise_integral(
     operands: vec![a.clone(), b.clone()],
     operators: vec![op],
   };
-  // Infinite endpoints never bind; numeric ones fold into one.
+  // Infinite endpoints never bind; numeric ones fold into the tightest,
+  // which keeps its place in the list.
   let fold = |bounds: &[Expr], lower: bool| -> Vec<Expr> {
-    let mut out: Vec<Expr> = Vec::new();
-    let mut best: Option<(f64, Expr)> = None;
-    for b in bounds {
-      match numeric(b) {
-        Some(v) if v.is_infinite() => {}
-        Some(v) => {
-          if best
-            .as_ref()
-            .is_none_or(|(w, _)| if lower { v > *w } else { v < *w })
-          {
-            best = Some((v, b.clone()));
-          }
-        }
-        None => out.push(b.clone()),
+    let mut best: Option<(f64, usize)> = None;
+    for (i, b) in bounds.iter().enumerate() {
+      if let Some(v) = numeric(b)
+        && v.is_finite()
+        && best.is_none_or(|(w, _)| if lower { v > w } else { v < w })
+      {
+        best = Some((v, i));
       }
     }
-    if let Some((_, b)) = best {
-      out.insert(0, b);
-    }
-    out
+    bounds
+      .iter()
+      .enumerate()
+      .filter(|(i, b)| match numeric(b) {
+        Some(_) => best.is_some_and(|(_, j)| j == *i),
+        None => true,
+      })
+      .map(|(_, b)| b.clone())
+      .collect()
   };
   let mut result_pieces: Vec<Expr> = Vec::new();
   for (val, lowers, uppers) in &pieces_bounds {
@@ -11689,8 +11697,9 @@ fn parametric_piecewise_integral(
     }
     for (i, l) in ls.iter().enumerate() {
       for (j, u) in us.iter().enumerate() {
-        // At a tie the numeric lower bound and the symbolic upper bound
-        // bind (between two symbolic bounds, the earlier one).
+        // At a tie a numeric lower bound binds (between two symbolic ones
+        // the first), and the last upper bound, the integration limits
+        // counting as written after the condition.
         let is_num = |e: &Expr| numeric(e).is_some();
         let mut conds: Vec<Expr> = Vec::new();
         for (k, other) in ls.iter().enumerate() {
@@ -11713,14 +11722,9 @@ fn parametric_piecewise_integral(
         }
         for (k, other) in us.iter().enumerate() {
           if k != j {
-            let wins_tie = match (is_num(u), is_num(other)) {
-              (false, true) => true,
-              (true, false) => false,
-              _ => j < k,
-            };
             conds.push(cmp(
               u,
-              if wins_tie {
+              if j > k {
                 ComparisonOp::LessEqual
               } else {
                 ComparisonOp::Less
@@ -11749,6 +11753,12 @@ fn parametric_piecewise_integral(
         if expr_mentions_head(&value, "Integrate") {
           return Some(None);
         }
+        // Over one denominator: `(1 - w^2)/2`, not `1/2 - w^2/2`.
+        let value = crate::evaluator::evaluate_function_call_ast(
+          "Together",
+          std::slice::from_ref(&value),
+        )
+        .unwrap_or(value);
         result_pieces.push(Expr::List(vec![value, reduced].into()));
       }
     }
@@ -11756,33 +11766,29 @@ fn parametric_piecewise_integral(
   if result_pieces.is_empty() {
     return Some(Some(Expr::Integer(0)));
   }
-  // Listed from the highest parameter range down, as wolframscript does:
-  // by the condition's lower end, numerically.
-  let lower_end = |piece: &Expr| -> f64 {
-    let Expr::List(p) = piece else {
-      return f64::NEG_INFINITY;
-    };
-    let mut best = f64::NEG_INFINITY;
-    let mut visit = |e: &Expr| {
-      if let Expr::Comparison { operands, .. } = e {
-        for o in operands {
-          if let Some(v) = numeric(o) {
-            best = best.max(v);
-          }
-        }
-      }
-    };
-    match &p[1] {
-      Expr::FunctionCall { name, args } if name == "Inequality" => {
-        if let Some(v) = args.first().and_then(numeric) {
-          best = v;
-        }
-      }
-      other => visit(other),
-    }
-    best
+  // Listed in the canonical order of their values, as wolframscript does
+  // (`1` before `w`, `3 - w` before `-1 + w`).
+  let value_of = |piece: &Expr| match piece {
+    Expr::List(p) => p[0].clone(),
+    other => other.clone(),
   };
-  result_pieces.sort_by(|a, b| lower_end(b).total_cmp(&lower_end(a)));
+  if let Ok(Expr::List(ref order)) =
+    crate::evaluator::evaluate_function_call_ast(
+      "Ordering",
+      &[Expr::List(result_pieces.iter().map(value_of).collect())],
+    )
+  {
+    let sorted: Option<Vec<Expr>> = order
+      .iter()
+      .map(|k| match k {
+        Expr::Integer(k) => result_pieces.get(*k as usize - 1).cloned(),
+        _ => None,
+      })
+      .collect();
+    if let Some(sorted) = sorted {
+      result_pieces = sorted;
+    }
+  }
   let pw = call(
     "Piecewise",
     vec![Expr::List(result_pieces.into()), Expr::Integer(0)],
@@ -11932,8 +11938,100 @@ fn piecewise_condition_bounds(
         intersect_bound(h1, h2, false)?,
       ))
     }
+    // Comparisons in which `var` appears linearly (`0 <= 2 - x <= 1`).
+    Expr::Comparison { .. } => {
+      let (lowers, uppers) = linear_comparison_bounds(cond, var)?;
+      let mut lo: Option<Expr> = None;
+      let mut hi: Option<Expr> = None;
+      for l in lowers {
+        lo = intersect_bound(lo, Some(l), true)?;
+      }
+      for h in uppers {
+        hi = intersect_bound(hi, Some(h), false)?;
+      }
+      Some((lo, hi))
+    }
     _ => None,
   }
+}
+
+/// The lower and upper bounds on `var` of a (possibly chained) comparison
+/// in which `var` appears linearly with a numeric coefficient: each link
+/// `l op r` is `c var + d op 0`, so `var op -d/c` (flipped for `c < 0`).
+fn linear_comparison_bounds(
+  cond: &Expr,
+  var: &str,
+) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = cond
+  else {
+    return None;
+  };
+  let eval = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &args).ok()
+  };
+  let (mut lowers, mut uppers) = (Vec::new(), Vec::new());
+  for (k, op) in operators.iter().enumerate() {
+    let less = matches!(op, ComparisonOp::Less | ComparisonOp::LessEqual);
+    let greater =
+      matches!(op, ComparisonOp::Greater | ComparisonOp::GreaterEqual);
+    if !less && !greater {
+      return None;
+    }
+    let d = eval(
+      "Expand",
+      vec![call(
+        "Subtract",
+        vec![operands[k].clone(), operands[k + 1].clone()],
+      )],
+    )?;
+    if !matches!(
+      eval("Exponent", vec![d.clone(), id_expr(var)])?,
+      Expr::Integer(1)
+    ) {
+      return None;
+    }
+    let c = eval(
+      "Coefficient",
+      vec![d.clone(), id_expr(var), Expr::Integer(1)],
+    )?;
+    let cv = crate::functions::math_ast::try_eval_to_f64(&c)?;
+    if cv == 0.0 {
+      return None;
+    }
+    let rest = eval(
+      "Expand",
+      vec![call(
+        "Subtract",
+        vec![d.clone(), times2(c.clone(), id_expr(var))],
+      )],
+    )?;
+    if !is_constant_wrt(&rest, var) {
+      return None;
+    }
+    // Expanded, so the bound is a canonical sum (`Together` may hand back a
+    // raw quotient).
+    let bound = eval(
+      "Expand",
+      vec![call(
+        "Times",
+        vec![
+          Expr::Integer(-1),
+          rest,
+          call("Power", vec![c, Expr::Integer(-1)]),
+        ],
+      )],
+    )?;
+    // `c var + d < 0`: an upper bound for positive `c`.
+    if less == (cv > 0.0) {
+      uppers.push(bound);
+    } else {
+      lowers.push(bound);
+    }
+  }
+  Some((lowers, uppers))
 }
 
 /// Negate a numeric bound expression (`c` -> `-c`), keeping integers exact.

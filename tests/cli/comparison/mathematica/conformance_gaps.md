@@ -1186,9 +1186,10 @@ woxi eval 'Integrate[Piecewise[{{1, 0 <= u <= 1}}, 0], {u, 0, w}, Assumptions ->
 ```
 
 The values agree for every `w > 0`, but WL folds the last piece into the
-default using the assumption. The binding bounds at a tie (a numeric lower
-bound and a symbolic upper bound win) and the order of the pieces (highest
-parameter range first) are fitted to wolframscript's results for intervals
+default using the assumption. Which bound binds at a tie (a numeric lower
+bound, else the first; the last upper bound, with the integration limits
+counted after the condition) and the order of the pieces (the `Sort` order
+of their values) are fitted to wolframscript's results for intervals
 linear in one parameter. Nonlinear bounds (`u <= v^(1/3) - 1`) give
 `Root` objects in WL and radicals in Woxi.
 

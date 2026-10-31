@@ -94,6 +94,22 @@ fn order_numerator_factors(expr: &Expr) -> Expr {
     return expr.clone();
   }
   match crate::evaluator::evaluate_expr_to_expr(&num) {
+    // Over a plain integer the quotient is canonically the rational
+    // coefficient times the sum, `Times[1/2, 1 - w^2]` (which still reads
+    // `(1 - w^2)/2`): built raw it would sort and compare unlike the same
+    // expression typed in.
+    Ok(ordered)
+      if is_sum(&ordered) && matches!(&den, Expr::Integer(d) if *d > 1) =>
+    {
+      let Expr::Integer(d) = den else {
+        unreachable!()
+      };
+      crate::functions::math_ast::times_ast(&[
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(d)]),
+        ordered,
+      ])
+      .unwrap_or_else(|_| expr.clone())
+    }
     Ok(ordered) if is_sum(&ordered) => div2(ordered, den),
     _ => expr.clone(),
   }

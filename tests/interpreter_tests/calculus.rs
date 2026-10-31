@@ -24911,6 +24911,23 @@ mod integrate_piecewise_parametric_bounds {
         "Integrate[Piecewise[{{u, 0 <= u <= w}}, 0], {u, -Infinity, Infinity}]",
         "Piecewise[{{w^2/2, w > 0}}, 0]",
       ),
+      // The variable appearing linearly in a condition.
+      (
+        "Integrate[Piecewise[{{1, 0 <= -1 - u + w <= 1}}, 0], {u, -Infinity, Infinity}]",
+        "1",
+      ),
+      (
+        "Integrate[Piecewise[{{1, 2 u <= w}}, 0], {u, 0, 1}]",
+        "Piecewise[{{1, w >= 2}, {w/2, Inequality[0, Less, w, Less, 2]}}, 0]",
+      ),
+      (
+        "Integrate[Piecewise[{{1, w <= u}}, 0], {u, 0, 1}]",
+        "Piecewise[{{1, w <= 0}, {1 - w, Inequality[0, Less, w, Less, 1]}}, 0]",
+      ),
+      (
+        "Integrate[Piecewise[{{u, w <= u <= 2 w}}, 0], {u, 0, 1}]",
+        "Piecewise[{{(3*w^2)/2, Inequality[0, Less, w, Less, 1/2]}, {(1 - w^2)/2, Inequality[1/2, LessEqual, w, Less, 1]}}, 0]",
+      ),
     ] {
       assert_eq!(
         interpret(&format!("InputForm[{input}]")).unwrap(),
