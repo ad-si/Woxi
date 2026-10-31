@@ -15201,14 +15201,35 @@ fn minimize_parse_vars_full(
 
 /// Recursively replace every occurrence of `from` with `to` in `expr`.
 pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
-  // Only a node shaped like `from` can equal it; spelling every node out as
-  // a string made the walk quadratic for large systems.
+  // `from` is spelled out once; a node is spelled out only when its shape
+  // can equal `from` (spelling every node made the walk quadratic for large
+  // systems).
+  let from_str = std::cell::OnceCell::new();
+  substitute_expr_with(expr, from, to, &from_str)
+}
+
+fn substitute_expr_with(
+  expr: &Expr,
+  from: &Expr,
+  to: &Expr,
+  from_str: &std::cell::OnceCell<String>,
+) -> Expr {
   fn name_of(e: &Expr) -> Option<&str> {
     match e {
       Expr::Identifier(n) | Expr::Constant(n) => Some(n.as_str()),
       _ => None,
     }
   }
+  let number = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)
+    )
+  };
   let may_match = match (expr, from) {
     (
       Expr::FunctionCall { name: a, args: x },
@@ -15224,48 +15245,46 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
     (Expr::List(_), _) | (_, Expr::List(_)) => {
       matches!((expr, from), (Expr::List(_), Expr::List(_)))
     }
+    // A number or string only spells like another one.
+    (e, f) if number(e) || number(f) => number(e) && number(f),
+    // A call with a compound head spells like a flat call only for the
+    // flat-held `Derivative[n, f, x]`.
+    (Expr::FunctionCall { name, .. }, Expr::CurriedCall { .. })
+    | (Expr::CurriedCall { .. }, Expr::FunctionCall { name, .. }) => {
+      name == "Derivative"
+    }
     _ => true,
   };
-  if may_match && expr_to_string(expr) == expr_to_string(from) {
+  if may_match
+    && expr_to_string(expr) == *from_str.get_or_init(|| expr_to_string(from))
+  {
     return to.clone();
   }
+  let sub = |e: &Expr| substitute_expr_with(e, from, to, from_str);
   match expr {
-    Expr::List(items) => {
-      Expr::List(items.iter().map(|e| substitute_expr(e, from, to)).collect())
+    Expr::List(items) => Expr::List(items.iter().map(sub).collect()),
+    Expr::FunctionCall { name, args } => {
+      call(name.as_str(), args.iter().map(sub).collect())
     }
-    Expr::FunctionCall { name, args } => call(
-      name.as_str(),
-      args.iter().map(|e| substitute_expr(e, from, to)).collect(),
-    ),
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      substitute_expr(left, from, to),
-      substitute_expr(right, from, to),
-    ),
+    Expr::BinaryOp { op, left, right } => binop(*op, sub(left), sub(right)),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(substitute_expr(operand, from, to)),
+      operand: Box::new(sub(operand)),
     },
     Expr::Comparison {
       operands,
       operators,
     } => Expr::Comparison {
-      operands: operands
-        .iter()
-        .map(|e| substitute_expr(e, from, to))
-        .collect(),
+      operands: operands.iter().map(sub).collect(),
       operators: operators.clone(),
     },
     Expr::Rule {
       pattern,
       replacement,
-    } => rule_expr(
-      substitute_expr(pattern, from, to),
-      substitute_expr(replacement, from, to),
-    ),
+    } => rule_expr(sub(pattern), sub(replacement)),
     Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(substitute_expr(func, from, to)),
-      args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
+      func: Box::new(sub(func)),
+      args: args.iter().map(sub).collect(),
     },
     _ => expr.clone(),
   }
