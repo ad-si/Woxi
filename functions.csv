@@ -274,7 +274,7 @@ While,Evaluates an expression repeatedly while a condition is true,✅,pure,1.0,
 FrameLabel,Axis labels for framed charts (alias for AxesLabel),✅,pure,2.0,221
 FindRoot,Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds,✅,pure,1.0,222
 Image,Constructs an image from pixel data,✅,pure,7.0,223
-ColorData,Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData["WebSafe"]["#99CC00"]) and the pre-v6 Legacy palette; the Atoms element colours (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties,✅,pure,6.0,224
+ColorData,"Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Legacy palette; the Atoms element colours (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties",✅,pure,6.0,224
 Binomial,Returns the binomial coefficient,✅,pure,1.0,225
 Which,Evaluates conditions and returns the value for the first true one,✅,pure,1.0,226
 Replace,Applies transformation rules to an expression,✅,pure,1.0,227
@@ -420,7 +420,7 @@ Most,Returns the list without its last element,✅,pure,5.0,379
 StringReplace,Replaces occurrences of substrings in a string; RegularExpression backreferences expand before a delayed replacement is evaluated,✅,pure,2.0,380
 ControlType,Option for specifying the type of control in Manipulate,✅,pure,6.0,381
 Pick,Picks elements from a list based on a selector,✅,pure,5.1,382
-Interpolation,Constructs an interpolation of data — 1-D {x y} pairs/values or {{x} f f' ...} rows with derivatives (Hermite) or n-D {x1 ... xn f} rows or {{x1 ... xn} f} pairs tiling a complete grid (scalar complex or vector values) and Method -> "Spline" interpolating B-splines (an exact query point over exact data gives an exact value; outside the data range the boundary piece is extrapolated),✅,pure,2.0,383
+Interpolation,"Constructs an interpolation of data — 1-D {x y} pairs/values or {{x} f f' ...} rows with derivatives (Hermite) or n-D {x1 ... xn f} rows or {{x1 ... xn} f} pairs tiling a complete grid (scalar complex or vector values) and Method -> ""Spline"" interpolating B-splines (an exact query point over exact data gives an exact value; outside the data range the boundary piece is extrapolated)",✅,pure,2.0,383
 HoldPattern,Keeps a pattern from evaluating while staying transparent to matching and to replacement rules,✅,pure,3.0,384
 Top,Symbol for top alignment,✅,pure,1.0,385
 HypergeometricPFQ,Generalized hypergeometric function pFq,✅,pure,3.0,386
@@ -453,7 +453,7 @@ Control,Represents a standalone interactive control such as a slider or popup me
 WorkingPrecision,Option for numerical precision,✅,pure,1.0,412
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
 Complement,Returns elements in first list or association not in the others,✅,pure,1.0,414
-Dashing,"Sets line dashing in graphics; Dashing[None] and Dashing[{}] go back to solid strokes",✅,pure,1.0,416
+Dashing,Sets line dashing in graphics; Dashing[None] and Dashing[{}] go back to solid strokes,✅,pure,1.0,416
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7.0,416
 Animate,Animated version of an expression (stays symbolic in script mode),✅,unevaluated,6.0,417
 Contours,Option specifying contour levels in contour plots,✅,none,2.0,418
@@ -1848,7 +1848,7 @@ WatershedComponents,Label the basins of an image treated as a height field; wate
 ViewCenter,Option specifying the point of the displayed box a 3D camera looks at,✅,pure,2.0,1838
 FileType,Returns the type of a file (File Directory or None),✅,filesystem,2.0,1842
 FourierSinSeries,Fourier sine series,,unevaluated,7.0,1842
-MathieuCharacteristicA,"Characteristic value a_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,1842
+MathieuCharacteristicA,Characteristic value a_r(q) of the Mathieu equation for integer r (machine-precision q),✅,pure,3.0,1842
 QuantilePlot,Plots dataset quantiles against standard normal quantiles (or against a second dataset) with a reference line,✅,pure,8.0,1842
 ResourceObject,Resource object,,unevaluated,11.0,1844
 StieltjesGamma,Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10),✅,pure,3.0,1844
@@ -1968,7 +1968,7 @@ URLBuild,Builds a URL from a path list or from an association of URLParse compon
 CellGroup,Notebook structure element for grouping cells,🚫,,6.0,1954
 MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,✅,none,8.0,1954
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1.0,1954
-BooleanFunction,Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction["BDD" -> ...] object and BooleanFunction[k n vars] writes it out in those variables,✅,pure,7.0,1956
+BooleanFunction,"Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction[""BDD"" -> ...] object and BooleanFunction[k n vars] writes it out in those variables",✅,pure,7.0,1956
 ViewVector,3D graphics option placing a perspective camera at a position and optionally its target,✅,pure,6.0,1956
 MathieuS,Odd Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2.0,1960
@@ -2135,7 +2135,7 @@ GroupOrder,Order of a group,✅,pure,8.0,2129
 QueueingProcess,Queueing theory process,🚫,,9.0,2129
 RegionProduct,Cartesian product of regions — named as a box cylinder prism or parallelotope where one exists,✅,pure,10.0,2129
 TrackingFunction,Tracking callback option,✅,none,10.0,2129
-MathieuCharacteristicB,"Characteristic value b_r(q) of the Mathieu equation for integer r (machine-precision q)",✅,pure,3.0,2131
+MathieuCharacteristicB,Characteristic value b_r(q) of the Mathieu equation for integer r (machine-precision q),✅,pure,3.0,2131
 PowerRange,List of values from xmin by successive multiplication while their magnitude stays within xmax,✅,pure,10.0,2131
 ParentDirectory,Parent directory path,✅,none,2.0,2132
 MatrixFunction,Apply a scalar function to a square matrix via its eigenvalues,✅,pure,9.0,2134
@@ -2497,7 +2497,7 @@ HilbertMatrix,Generate a Hilbert matrix of given size,✅,1,6.0,2503
 MenuSortingValue,,🚫,,8.0,2503
 Messages,Returns the messages associated with a symbol,✅,pure,1.0,2503
 MorphologicalPerimeter,Binary image of foreground pixels touching the background,✅,pure,7.0,2503
-BooleanMinimize,Find the minimal sum-of-products (or with "CNF" product-of-sums) Boolean expression; terms are ordered by their literal pattern,✅,pure,7.0,2509
+BooleanMinimize,"Find the minimal sum-of-products (or with ""CNF"" product-of-sums) Boolean expression; terms are ordered by their literal pattern",✅,pure,7.0,2509
 ChiDistribution,represents a chi distribution with n degrees of freedom,✅,none,6.0,2509
 CloudPublish,,🚫,,10.2,2509
 Glaisher,Glaisher-Kinkelin constant,✅,none,4.0,2509
@@ -3185,7 +3185,7 @@ ReverseSortBy,Sorts in reverse order by a criterion function with an optional or
 RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
 UsingFrontEnd,,🚫,,7.0,3215
 ZeroTest,Option for testing zero equivalence,✅,pure,1.0,3215
-BooleanMinterms,Disjunction of minterms from True/False rows or indices (descending index order); an integer variable count gives the BooleanFunction["BDD" -> ...] object,✅,pure,7.0,3224
+BooleanMinterms,"Disjunction of minterms from True/False rows or indices (descending index order); an integer variable count gives the BooleanFunction[""BDD"" -> ...] object",✅,pure,7.0,3224
 CrossingDetect,Marks zero crossings in an array or image as a binary result,✅,pure,8.0,3224
 DateFunction,,,,6.0,3224
 DateObjectQ,True if the expression is a well-formed DateObject,✅,pure,10.0,3224
@@ -3231,7 +3231,7 @@ FactorTermsList,factors out a common numerical factor from a polynomial,✅,none
 HiddenMarkovProcess,,🚫,,10.0,3265
 InterpolationPoints,,,,8.0,3265
 QuadraticOptimization,,,,12.0,3265
-SampledSoundFunction,"Sound primitive that plays f[1] through f[n] as samples at the given rate",✅,pure,2.0,3265
+SampledSoundFunction,Sound primitive that plays f[1] through f[n] as samples at the given rate,✅,pure,2.0,3265
 StringExtract,Extracts fields (by position or span) split by whitespace or chained delimiter rules,✅,pure,10.1,3265
 Tilde,Symbolic tilde relation operator with Unicode display,✅,pure,3.0,3265
 BrownianBridgeProcess,Brownian bridge process with Normal time slices,✅,unevaluated,9.0,3280
@@ -3720,7 +3720,7 @@ FindVertexCover,,,,8.0,3785
 ImageFeatureTrack,,🚫,,9.0,3785
 KendallTau,Kendall rank-correlation coefficient of two lists,✅,pure,9.0,3785
 LogMultinormalDistribution,,,,9.0,3785
-MathieuCharacteristicExponent,"Floquet characteristic exponent of the Mathieu equation for real machine a and q (exact Sqrt[a] at q = 0)",✅,pure,3.0,3785
+MathieuCharacteristicExponent,Floquet characteristic exponent of the Mathieu equation for real machine a and q (exact Sqrt[a] at q = 0),✅,pure,3.0,3785
 NegativeSemidefiniteMatrixQ,Test whether a matrix is negative semidefinite,✅,none,10.0,3785
 PageBreakAbove,,🚫,,3.0,3785
 ReverseBiorthogonalSplineWavelet,Biorthogonal spline wavelet with primal and dual filters swapped,✅,pure,8.0,3785
@@ -4049,7 +4049,7 @@ FractionBoxOptions,,🚫,,4.0,4138
 FrontEndEventActions,,🚫,,6.0,4138
 HannPoissonWindow,,,,9.0,4138
 JordanModelDecomposition,,,,8.0,4138
-KendallTauTest,"Two-sided p-value of Kendall's tau for two paired samples (normal approximation with tie correction)",✅,pure,9.0,4138
+KendallTauTest,Two-sided p-value of Kendall's tau for two paired samples (normal approximation with tie correction),✅,pure,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
 ParametricFunction,Represents a function of numeric parameters returned by ParametricNDSolve (inert until all parameters are numeric),✅,none,9.0,4138
@@ -4143,7 +4143,7 @@ StringRotateRight,Rotates characters in a string to the right,✅,pure,9.0,4225
 TrainingProgressFunction,,🚫,,11.1,4225
 TransferFunctionCancel,,🚫,,8.0,4225
 AsymptoticRSolveValue,,,,12.0,4262
-BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms); an integer variable count gives the BooleanFunction["BDD" -> ...] object,✅,pure,7.0,4262
+BooleanMaxterms,"Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms); an integer variable count gives the BooleanFunction[""BDD"" -> ...] object",✅,pure,7.0,4262
 CalendarData,,🚫,,9.0,4262
 CauchyWindow,Cauchy window 1/(1+(2 alpha x)^2) on [-1/2 1/2] (default alpha 3; exact rationals),✅,pure,9.0,4262
 ClearCookies,,🚫,,11.0,4262
@@ -6367,7 +6367,7 @@ $Urgent,,🚫,stateful,1.0,
 $Version,The version of the Woxi kernel,✅,pure,1.0,
 $VersionNumber,The version number of the Woxi kernel,✅,pure,2.0,
 EdgeRenderingFunction,Option giving the function that draws each edge of a GraphPlot (GraphPlot's older name for EdgeShapeFunction),✅,none,6.0,
-InterpolatingFunctionDomain,Gives the domain over which an InterpolatingFunction is defined (same as its "Domain" property),✅,pure,12.0,
+InterpolatingFunctionDomain,"Gives the domain over which an InterpolatingFunction is defined (same as its ""Domain"" property)",✅,pure,12.0,
 VertexLabeling,GraphPlot's legacy option for turning each vertex's name into a label (predates Graph's VertexLabels),✅,none,6.0,
 GraphUtilities`ExpressionTreePlot,Plots an expression tree as Graphics with one Line segment per parent-child edge,✅,pure,6.0,
 GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of rules as vertex -> rank rules,✅,pure,8.0,

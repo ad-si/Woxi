@@ -126,6 +126,10 @@ static BUILTIN_FUNCTION_INFO: LazyLock<
       let fields: Vec<&str> = line.splitn(5, ',').collect();
       let name = fields.first()?.trim();
       let description = fields.get(1).unwrap_or(&"").trim();
+      let description = description
+        .strip_prefix('"')
+        .and_then(|d| d.strip_suffix('"'))
+        .unwrap_or(description);
       let effect_level = fields.get(3).unwrap_or(&"").trim();
       if name.is_empty() || name == "-----" {
         return None;
