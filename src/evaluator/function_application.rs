@@ -1405,12 +1405,27 @@ fn try_sub_value_curried_match(
     }
   };
   let head = outer_head?;
-  let rules = crate::evaluator::assignment::SUB_VALUES
-    .with(|m| m.borrow().get(&head).cloned())?;
   let actual = Expr::CurriedCall {
     func: Box::new(func.clone()),
     args: args.to_vec(),
   };
+  // Only the rules that can match are copied out: a pattern-free left-hand
+  // side with a different atom where the call has one cannot, and a
+  // thousand `Subscript[x, i, j][t] = …` definitions were each copied and
+  // matched on every call.
+  let rules: Vec<(Expr, Expr)> = crate::evaluator::assignment::SUB_VALUES
+    .with(|m| {
+      m.borrow().get(&head).map(|rules| {
+        rules
+          .iter()
+          .filter(|(lhs, _)| {
+            !literal_atoms_differ(&actual, lhs)
+              || crate::evaluator::pattern_matching::contains_pattern(lhs)
+          })
+          .cloned()
+          .collect()
+      })
+    })?;
   for (lhs, body) in &rules {
     if let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
@@ -1468,6 +1483,43 @@ fn try_sub_value_curried_match(
     }
   }
   None
+}
+
+/// Whether two curried calls `f[a…][b…]…` of the same shape hold different
+/// atoms (numbers, strings, symbols) in some argument position: then a
+/// pattern-free one cannot match the other.
+pub(crate) fn literal_atoms_differ(a: &Expr, b: &Expr) -> bool {
+  fn atom(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::Integer(_) | Expr::String(_) | Expr::Identifier(_) | Expr::Real(_)
+    )
+  }
+  fn args_differ(x: &[Expr], y: &[Expr]) -> bool {
+    x.len() == y.len()
+      && x.iter().zip(y).any(|(p, q)| {
+        atom(p)
+          && atom(q)
+          && !match (p, q) {
+            (Expr::Integer(x), Expr::Integer(y)) => x == y,
+            (Expr::Real(x), Expr::Real(y)) => x == y,
+            (Expr::String(x), Expr::String(y))
+            | (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
+            _ => false,
+          }
+      })
+  }
+  match (a, b) {
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) => args_differ(a1, a2) || literal_atoms_differ(f1, f2),
+    (
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
+    ) => n1 == n2 && args_differ(a1, a2),
+    _ => false,
+  }
 }
 
 /// Nest `funcs` around `args` in the order given and evaluate the result.

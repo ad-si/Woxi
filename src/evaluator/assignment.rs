@@ -5030,8 +5030,12 @@ fn install_sub_value(
   crate::evaluator::core_eval::share_large_lists(&mut body, 0);
   let lhs_str = expr_to_string(&lhs);
   let condition = rhs_condition(&body);
+  // Atoms that differ in place tell two left-hand sides apart without
+  // printing every stored one.
   if let Some(idx) = rules.iter().position(|(l, b)| {
-    expr_to_string(l) == lhs_str && rhs_condition(b) == condition
+    !crate::evaluator::function_application::literal_atoms_differ(&lhs, l)
+      && expr_to_string(l) == lhs_str
+      && rhs_condition(b) == condition
   }) {
     rules[idx] = (lhs, body);
     return;
@@ -5043,7 +5047,12 @@ fn install_sub_value(
         Some(g) => condition.as_ref() == Some(&g),
         None => true,
       };
+      // A pattern-free rule with other atoms in place covers nothing new.
+      let disjoint =
+        crate::evaluator::function_application::literal_atoms_differ(&lhs, l)
+          && !crate::evaluator::pattern_matching::contains_pattern(l);
       guard_kept
+        && !disjoint
         && curried_argument_groups(l).is_some_and(|old_groups| {
           match structural_subsumes(new_groups, &old_groups) {
             Some(true) => true,

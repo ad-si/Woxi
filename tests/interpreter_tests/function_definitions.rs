@@ -1571,6 +1571,29 @@ mod subvalues {
   fn subvalues_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("SubValues[f]").unwrap(), "{}");
   }
+
+  // Thousands of pattern-free `Subscript[x, i, j][t] = …` definitions: a
+  // rule with other atoms in place is neither copied nor matched when one
+  // is looked up or installed (each definition used to scan all the others
+  // with the pattern matcher).
+  #[test]
+  fn many_literal_subvalues() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Do[Subscript[X, 2, j][t] = 1 - Subscript[X, 1, j][t], {j, 0, 4000}];          {Subscript[X, 2, 7][t], Subscript[X, 2, 7][s], Length[SubValues[Subscript]]}"
+      )
+      .unwrap(),
+      "{1 - Subscript[X, 1, 7][t], Subscript[X, 2, 7][s], 4001}"
+    );
+    assert_eq!(
+      interpret(
+        "g[a_][b_] := a + b; g[1][2] = 10; {g[1][2], g[2][2], g[1][3]}"
+      )
+      .unwrap(),
+      "{10, 4, 4}"
+    );
+  }
 }
 
 mod ownvalues {
