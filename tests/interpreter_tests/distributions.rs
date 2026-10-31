@@ -9776,3 +9776,25 @@ BetaRegularized[(E^(2*x)*n)/(m + E^(2*x)*n), n/2, m/2]}"
     );
   }
 }
+
+mod extreme_value_quantiles {
+  use super::*;
+
+  #[test]
+  fn max_and_min_stable_quantiles() {
+    assert_eq!(
+      interpret(
+        "{InverseCDF[MinStableDistribution[1, 1, 0.5], 0.01], \
+         InverseCDF[MaxStableDistribution[1, 1, 0.5], 0.3], \
+         InverseCDF[MaxStableDistribution[1, 2, 1/2], 1/3], \
+         InverseCDF[MinStableDistribution[1, 2, 0], 0.3], \
+         Quantile[MaxStableDistribution[1, 2, 1/2], 0], \
+         Quantile[MinStableDistribution[1, 2, 1/2], 1], \
+         Quantile[MaxStableDistribution[1, 2, 0], 1]}"
+      )
+      .unwrap(),
+      "{-16.949853380255412, 0.8227271272272625, 1 - 4*(1 - 1/Sqrt[Log[3]]), \
+       -1.0618608663174456, -3, 5, Infinity}"
+    );
+  }
+}
