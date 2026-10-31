@@ -12507,4 +12507,42 @@ mod generalized_eigen_singular_b {
       "{{Infinity, 1.}, {0, 1666667}}"
     );
   }
+
+  /// Regression: exact complex matrices of size ≥ 3 (permuted block
+  /// diagonal, like Gell-Mann matrices) left `Eigenvalues`, `Eigenvectors`
+  /// and `MatrixExp` unevaluated, and a symbolic scale factor was dropped
+  /// from the unevaluated `Eigenvectors` result.
+  #[test]
+  fn exact_complex_permuted_block_eigensystem() {
+    assert_eq!(
+      interpret("Eigenvalues[{{0, 0, -I}, {0, 0, 0}, {I, 0, 0}}]").unwrap(),
+      "{-1, 1, 0}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{0, 0, -I}, {0, 0, 0}, {I, 0, 0}}]").unwrap(),
+      "{{I, 0, 1}, {-I, 0, 1}, {0, 1, 0}}"
+    );
+    // Every eigenpair satisfies m.v == λ v.
+    assert_eq!(
+      interpret(
+        "m = {{0, 0, 0}, {0, 0, -I}, {0, I, 0}}; \
+         Table[m . Eigenvectors[m][[k]] - Eigenvalues[m][[k]] \
+         Eigenvectors[m][[k]], {k, 3}] == ConstantArray[0, {3, 3}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Simplify[MatrixExp[I t {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}}] /. t -> 0]"
+      )
+      .unwrap(),
+      "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
+    );
+    // A scale factor must not be dropped when the result is unresolved.
+    assert_eq!(
+      interpret("Eigenvectors[t {{a, b, c}, {d, e, f}, {g, h, k}}]").unwrap(),
+      "Eigenvectors[{{a*t, b*t, c*t}, {d*t, e*t, f*t}, {g*t, h*t, k*t}}]"
+    );
+  }
 }

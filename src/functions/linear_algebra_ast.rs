@@ -4768,14 +4768,79 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut items = items_ref.clone();
       items.push(matrix[2][2].clone());
-      items = sort_with_canonical(items.to_vec()).into();
-      return Ok(Expr::List(items));
+      let mut items = items.to_vec();
+      if items.iter().all(is_real_numeric_value) {
+        sort_eigenvalues(&mut items);
+      } else {
+        items = sort_with_canonical(items);
+      }
+      return Ok(Expr::List(items.into()));
     }
+  }
+
+  // Matrices whose nonzero pattern splits into independent index groups
+  // (a permuted block-diagonal matrix): the eigenvalues of each block
+  // together.
+  if n >= 3
+    && let Some(groups) = independent_index_groups(&matrix)
+  {
+    let mut all: Vec<Expr> = Vec::with_capacity(n);
+    for g in &groups {
+      let block: Vec<Vec<Expr>> = g
+        .iter()
+        .map(|&i| g.iter().map(|&j| matrix[i][j].clone()).collect())
+        .collect();
+      match &eigenvalues_ast(&[matrix_to_expr(block)])? {
+        Expr::List(vs) => all.extend(vs.iter().cloned()),
+        _ => return Ok(unevaluated("Eigenvalues", args)),
+      }
+    }
+    if all.iter().all(is_real_numeric_value) {
+      sort_eigenvalues(&mut all);
+    } else {
+      all = sort_with_canonical(all);
+    }
+    return Ok(Expr::List(all.into()));
   }
 
   // Return unevaluated for matrices we can't yet handle (defective, complex
   // eigenvalues for floats, larger non-integer matrices, etc.).
   Ok(unevaluated("Eigenvalues", args))
+}
+
+/// Connected components of the graph whose edges are the nonzero entries of
+/// a square matrix, as sorted index groups; `None` when it is connected.
+fn independent_index_groups(matrix: &[Vec<Expr>]) -> Option<Vec<Vec<usize>>> {
+  let n = matrix.len();
+  let mut group: Vec<usize> = (0..n).collect();
+  fn find(g: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while g[r] != r {
+      r = g[r];
+    }
+    g[i] = r;
+    r
+  }
+  for i in 0..n {
+    for j in 0..n {
+      if i != j && !is_zero_expr(&matrix[i][j]) {
+        let (a, b) = (find(&mut group, i), find(&mut group, j));
+        group[a] = b;
+      }
+    }
+  }
+  let mut groups: Vec<Vec<usize>> = Vec::new();
+  let mut roots: Vec<usize> = Vec::new();
+  for i in 0..n {
+    let r = find(&mut group, i);
+    if let Some(k) = roots.iter().position(|&x| x == r) {
+      groups[k].push(i);
+    } else {
+      roots.push(r);
+      groups.push(vec![i]);
+    }
+  }
+  (groups.len() > 1).then_some(groups)
 }
 
 /// Detect a symbolic 2×2 rotation matrix `[[a, b], [-b, a]]` and return
@@ -5261,7 +5326,14 @@ fn eigenvectors_impl(
 
   // A common symbolic factor doesn't change the eigenvectors.
   if let Some((_, numeric)) = split_symbolic_scale(&matrix) {
-    return eigenvectors_ast(&[matrix_to_expr(numeric)]);
+    let result = eigenvectors_ast(&[matrix_to_expr(numeric)])?;
+    // An unresolved inner call must not leak the scale-stripped matrix.
+    return Ok(match &result {
+      Expr::FunctionCall { name, .. } if name == "Eigenvectors" => {
+        unevaluated("Eigenvectors", args)
+      }
+      _ => result,
+    });
   }
 
   // Check if matrix is numeric (at least one Real entry)
@@ -5347,7 +5419,67 @@ fn eigenvectors_impl(
     return Ok(result);
   }
 
+  if n >= 3
+    && let Some(result) = exact_nullspace_eigenvectors(args, &matrix)?
+  {
+    return Ok(result);
+  }
+
   Ok(unevaluated("Eigenvectors", args))
+}
+
+/// Eigenvectors of an exact matrix whose `Eigenvalues` resolve: for every
+/// distinct eigenvalue `l` the null space of `A - l I`, zero-padded up to the
+/// eigenvalue's multiplicity (defective eigenvalues get zero vectors, as in
+/// the Wolfram Language). `None` when the eigenvalues stay unresolved.
+fn exact_nullspace_eigenvectors(
+  args: &[Expr],
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Expr>, InterpreterError> {
+  let n = matrix.len();
+  if matrix.iter().flatten().any(|e| {
+    crate::functions::math_ast::contains_inexact_real(e)
+      || expr_to_gq(e).is_none()
+  }) {
+    return Ok(None);
+  }
+  let values = match &eigenvalues_ast(args)? {
+    Expr::List(vs) if vs.len() == n => vs.clone(),
+    _ => return Ok(None),
+  };
+  let mat_expr = matrix_to_expr(matrix.to_vec());
+  let identity =
+    evaluate_expr_to_expr(&call1("IdentityMatrix", Expr::Integer(n as i128)))?;
+  let mut out: Vec<Expr> = Vec::with_capacity(n);
+  let mut seen: Vec<String> = Vec::new();
+  for l in &values {
+    let key = expr_to_string(l);
+    if seen.contains(&key) {
+      continue;
+    }
+    seen.push(key.clone());
+    let multiplicity =
+      values.iter().filter(|v| expr_to_string(v) == key).count();
+    let shifted = evaluate_expr_to_expr(&call(
+      "Subtract",
+      vec![
+        mat_expr.clone(),
+        call("Times", vec![l.clone(), identity.clone()]),
+      ],
+    ))?;
+    let null = evaluate_expr_to_expr(&call1("NullSpace", shifted))?;
+    let Expr::List(vecs) = &null else {
+      return Ok(None);
+    };
+    if vecs.len() > multiplicity {
+      return Ok(None);
+    }
+    out.extend(vecs.iter().cloned());
+    for _ in vecs.len()..multiplicity {
+      out.push(Expr::List(vec![Expr::Integer(0); n].into()));
+    }
+  }
+  Ok(Some(Expr::List(out.into())))
 }
 
 /// Eigenvectors of a machine matrix with complex entries, one per eigenvalue

@@ -3032,6 +3032,10 @@ integer-result cases match. `MatrixExp` on complex/rotation matrices is
 value-correct but Woxi simplifies to `Cos`/`Sin` where WL 15 keeps `E^±I`
 combinations.
 
+`MatrixExp[I t m]` for a symbolic `t` and an exact 3×3 Hermitian `m` (e.g. a
+Gell-Mann matrix) now evaluates, but stays in the `(1 + E^(2 I t))/(2 E^(I t))`
+form because `Simplify` does not fold it to `Cos[t]`/`I Sin[t]`.
+
 ### `FourierDCTMatrix` for n ≥ 5
 
 Values agree to ~15 digits; the radical **display** diverges — WL canonicalizes
