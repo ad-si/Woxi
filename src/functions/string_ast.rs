@@ -10101,6 +10101,18 @@ pub fn to_expression_ast_as(
     }
     return Ok(interpreted);
   }
+  // Typesetting boxes (SqrtBox["x"], SuperscriptBox["x", "3"], RowBox[…])
+  // read as the input text they stand for.
+  if matches!(&args[0], Expr::FunctionCall { name, .. } if box_input_head(name))
+    && let Some(text) = boxes_to_input(&args[0])
+  {
+    let mut text_args = vec![Expr::String(text)];
+    if let Some(h) = args.get(2) {
+      text_args.push(Expr::Identifier("InputForm".to_string()));
+      text_args.push(h.clone());
+    }
+    return to_expression_ast_as(&text_args, message_symbol);
+  }
   let s = expr_to_str(&args[0]);
   // Empty (or whitespace-only) input is Null, not a value.
   if s.trim().is_empty() {
@@ -10153,6 +10165,74 @@ pub fn to_expression_ast_as(
     }
     None => parse_and_evaluate_program(&s),
   }
+}
+
+/// Box heads `boxes_to_input` reads.
+fn box_input_head(name: &str) -> bool {
+  matches!(
+    name,
+    "RowBox"
+      | "SqrtBox"
+      | "RadicalBox"
+      | "FractionBox"
+      | "SuperscriptBox"
+      | "SubscriptBox"
+      | "SubsuperscriptBox"
+      | "OverscriptBox"
+      | "UnderscriptBox"
+      | "UnderoverscriptBox"
+  )
+}
+
+/// The input text a box expression stands for: `SqrtBox["x"]` is
+/// `Sqrt[(x)]`, `SuperscriptBox["x", "3"]` is `Power[(x),(3)]`, and a
+/// `RowBox` joins its parts. `None` for a box this does not read.
+fn boxes_to_input(e: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = e else {
+    return match e {
+      Expr::String(s) => Some(s.clone()),
+      _ => None,
+    };
+  };
+  let parts: Vec<String> = match name.as_str() {
+    "RowBox" => {
+      let [Expr::List(items)] = args.as_slice() else {
+        return None;
+      };
+      return items
+        .iter()
+        .map(boxes_to_input)
+        .collect::<Option<Vec<_>>>()
+        .map(|p| p.concat());
+    }
+    _ => args
+      .iter()
+      .map(boxes_to_input)
+      .collect::<Option<Vec<_>>>()?,
+  };
+  let call = |head: &str, ps: &[String]| {
+    format!(
+      "{head}[{}]",
+      ps.iter()
+        .map(|p| format!("({p})"))
+        .collect::<Vec<_>>()
+        .join(",")
+    )
+  };
+  Some(match (name.as_str(), parts.as_slice()) {
+    ("SqrtBox", [_]) => call("Sqrt", &parts),
+    ("RadicalBox", [a, n]) => format!("Power[({a}),1/({n})]"),
+    ("FractionBox", [a, b]) => format!("(({a})/({b}))"),
+    ("SuperscriptBox", [_, _]) => call("Power", &parts),
+    ("SubscriptBox", [_, _]) => call("Subscript", &parts),
+    ("SubsuperscriptBox", [a, b, c]) => {
+      format!("Power[Subscript[({a}),({b})],({c})]")
+    }
+    ("OverscriptBox", [_, _]) => call("Overscript", &parts),
+    ("UnderscriptBox", [_, _]) => call("Underscript", &parts),
+    ("UnderoverscriptBox", [_, _, _]) => call("Underoverscript", &parts),
+    _ => return None,
+  })
 }
 
 /// Parse `src` as a Wolfram program and return the (unevaluated) expression
@@ -12738,6 +12818,18 @@ pub fn string_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       per_string.push(string_part_ast(&[item.clone(), args[1].clone()])?);
     }
     return Ok(Expr::List(per_string.into()));
+  }
+  // A span (`1 ;; 6`, `-1 ;; 1 ;; -2`) picks the characters Part picks
+  // from the list of them.
+  if matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Span")
+    && let Expr::String(_) = &args[0]
+  {
+    let chars =
+      crate::evaluator::evaluate_function_call_ast("Characters", &args[..1])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Part",
+      &[chars, args[1].clone()],
+    );
   }
   let s = expr_to_str(&args[0]);
   let chars: Vec<char> = s.chars().collect();

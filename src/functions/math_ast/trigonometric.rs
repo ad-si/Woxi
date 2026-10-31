@@ -4338,7 +4338,7 @@ fn try_split_real_imag(expr: &Expr) -> Option<(Expr, (i128, i128))> {
 /// Try to extract a "negated" form of an expression.
 /// Returns Some(positive_expr) if the expression looks negative
 /// (negative integer, negative rational, unary minus, Times[-1, x]).
-fn try_extract_negated(expr: &Expr) -> Option<Expr> {
+pub(crate) fn try_extract_negated(expr: &Expr) -> Option<Expr> {
   match expr {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
     Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
