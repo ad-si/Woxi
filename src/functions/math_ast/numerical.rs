@@ -85,6 +85,13 @@ fn n_eval_arbitrary_precision_form(
       .collect();
     return Ok(Expr::List(results?.into()));
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(sparse) = n_sparse_array(name, args, |e| {
+      n_eval_arbitrary_precision_form(e, precision)
+    })
+  {
+    return sparse;
+  }
   n_eval_arbitrary(expr, precision)
 }
 
@@ -138,6 +145,40 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(value)
 }
 
+/// `N` of a `SparseArray[Automatic, dims, background, {1, {rowptr, cols},
+/// values}]` reaches only its background and values: the dimensions and
+/// the index structure stay integers.
+fn n_sparse_array(
+  name: &str,
+  args: &[Expr],
+  n: impl Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Option<Result<Expr, InterpreterError>> {
+  if name != "SparseArray" || args.len() != 4 {
+    return None;
+  }
+  let Expr::List(parts) = &args[3] else {
+    return None;
+  };
+  if parts.len() != 3 {
+    return None;
+  }
+  let build = || -> Result<Expr, InterpreterError> {
+    let mut new_parts = parts.to_vec();
+    new_parts[2] = n(&parts[2])?;
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![
+        args[0].clone(),
+        args[1].clone(),
+        n(&args[2])?,
+        Expr::List(new_parts.into()),
+      ]
+      .into(),
+    })
+  };
+  Some(build())
+}
+
 fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
@@ -160,6 +201,9 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
     )),
     Expr::FunctionCall { name, args } => {
+      if let Some(sparse) = n_sparse_array(name, args, n_eval) {
+        return sparse;
+      }
       if let Some(value) = user_n_value(expr, None)? {
         return n_eval(&value);
       }
