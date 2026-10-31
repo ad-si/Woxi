@@ -11633,6 +11633,22 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_graph_matches_graph_head_pattern() {
+    // With the package loaded a graph answers to the bare `Graph` head, in
+    // `MatchQ` and in the typed argument of a definition.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = Combinatorica`FromUnorderedPairs[{{1,2},{2,3}}]; \
+         first[h_Graph, l_] := l[[1]]; \
+         {MatchQ[g, _Graph], MatchQ[g, _Integer], first[g, {4, 5}]}"
+      )
+      .unwrap(),
+      "{True, False, 4}"
+    );
+  }
+
+  #[test]
   fn combinatorica_isomorphism_and_degrees() {
     assert_eq!(
       interpret(

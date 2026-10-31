@@ -475,9 +475,12 @@ fn distribute_args_to_params_impl(
       let seq_args = &args[..count];
       // Check head constraint
       if let Some(h) = head
-        && !seq_args
-          .iter()
-          .all(|a| crate::evaluator::pattern_matching::get_expr_head(a) == *h)
+        && !seq_args.iter().all(|a| {
+          crate::evaluator::pattern_matching::head_constraint_matches(
+            &crate::evaluator::pattern_matching::get_expr_head(a),
+            h,
+          )
+        })
       {
         continue;
       }
@@ -524,7 +527,10 @@ fn distribute_args_to_params_impl(
     }
     // Check head constraint
     if let Some(h) = head
-      && crate::evaluator::pattern_matching::get_expr_head(&args[0]) != *h
+      && !crate::evaluator::pattern_matching::head_constraint_matches(
+        &crate::evaluator::pattern_matching::get_expr_head(&args[0]),
+        h,
+      )
     {
       return None;
     }
@@ -15218,7 +15224,10 @@ fn apply_user_overloads(
           let mut head_ok = true;
           for (i, arg) in perm_args.iter().enumerate() {
             if let Some(head) = &param_heads[i]
-              && get_expr_head(arg) != *head
+              && !crate::evaluator::pattern_matching::head_constraint_matches(
+                &get_expr_head(arg),
+                head,
+              )
             {
               head_ok = false;
               break;
@@ -15251,7 +15260,7 @@ fn apply_user_overloads(
               // `f[t, {…}]` has to skip `p` rather than force `{…}` into it.
               let arg_fits = |arg: &Expr| {
                 if let Some(head) = &param_heads[i]
-                  && get_expr_head(arg) != *head
+                  && !crate::evaluator::pattern_matching::head_constraint_matches(&get_expr_head(arg), head)
                 {
                   return false;
                 }
@@ -15285,7 +15294,7 @@ fn apply_user_overloads(
                 defaults_used += 1;
               } else if arg_idx < perm_args.len() {
                 if let Some(head) = &param_heads[i]
-                  && get_expr_head(&perm_args[arg_idx]) != *head
+                  && !crate::evaluator::pattern_matching::head_constraint_matches(&get_expr_head(&perm_args[arg_idx]), head)
                 {
                   break;
                 }
@@ -15294,7 +15303,10 @@ fn apply_user_overloads(
               }
             } else if arg_idx < perm_args.len() {
               if let Some(head) = &param_heads[i]
-                && get_expr_head(&perm_args[arg_idx]) != *head
+                && !crate::evaluator::pattern_matching::head_constraint_matches(
+                  &get_expr_head(&perm_args[arg_idx]),
+                  head,
+                )
               {
                 break;
               }

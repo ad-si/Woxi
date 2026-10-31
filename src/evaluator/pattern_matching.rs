@@ -5379,7 +5379,7 @@ fn match_pattern_impl(
       // Check head constraint if present
       if let Some(h) = head {
         let expr_head = get_expr_head(expr);
-        if expr_head != *h {
+        if !head_constraint_matches(&expr_head, h) {
           return None;
         }
       }
@@ -5397,7 +5397,7 @@ fn match_pattern_impl(
       // When a value is present, PatternOptional matches like a regular Pattern
       if let Some(h) = head {
         let expr_head = get_expr_head(expr);
-        if expr_head != *h {
+        if !head_constraint_matches(&expr_head, h) {
           return None;
         }
       }
@@ -5410,7 +5410,7 @@ fn match_pattern_impl(
       // Check head constraint first
       if let Some(h) = head {
         let expr_head = get_expr_head(expr);
-        if expr_head != *h {
+        if !head_constraint_matches(&expr_head, h) {
           return None;
         }
       }
@@ -5458,7 +5458,11 @@ fn match_pattern_impl(
       1 => {
         if let Expr::Identifier(h) = &args[0] {
           let expr_head = get_expr_head(expr);
-          if expr_head == *h { Some(vec![]) } else { None }
+          if head_constraint_matches(&expr_head, h) {
+            Some(vec![])
+          } else {
+            None
+          }
         } else {
           None
         }
@@ -5490,7 +5494,7 @@ fn match_pattern_impl(
       // Head-constrained blank: _Head matches expressions with head Head
       let head = &name[1..];
       let expr_head = get_expr_head(expr);
-      if expr_head == head {
+      if head_constraint_matches(&expr_head, head) {
         Some(vec![])
       } else {
         None
@@ -6169,6 +6173,20 @@ fn complex_atom_canonical(expr: &Expr) -> Option<Expr> {
   let part =
     |head: &str| evaluate_expr_to_expr(&call1(head, expr.clone())).ok();
   Some(call("Complex", vec![part("Re")?, part("Im")?]))
+}
+
+/// Whether an expression with head `expr_head` satisfies a `_h` head
+/// constraint. With the Combinatorica package loaded its graphs are
+/// `Combinatorica\`Graph[…]` objects that answer to the bare name, so
+/// `g_Graph` accepts them.
+pub(crate) fn head_constraint_matches(
+  expr_head: &str,
+  constraint: &str,
+) -> bool {
+  expr_head == constraint
+    || (constraint == "Graph"
+      && expr_head == "Combinatorica`Graph"
+      && crate::context_path_contains("Combinatorica`"))
 }
 
 pub fn get_expr_head(expr: &Expr) -> String {
