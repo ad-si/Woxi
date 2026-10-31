@@ -12123,6 +12123,38 @@ mod array_domains {
 mod sparse_array_part_set_and_inverse {
   use super::*;
 
+  // Parts are taken from the stored entries: a row of a 5000×5000 array
+  // used to build all 25 million elements first.
+  #[test]
+  fn part_extraction_on_stored_entries() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 1} -> 1, {2, 3} -> 5, {4, 2} -> 7, {3, 3} -> x}, {4, 3}]; \
+         {s[[2, 3]], s[[1, 2]], s[[-1, -2]], Normal /@ {s[[2]], s[[All, 3]], \
+         s[[{4, 2, 2}]], s[[{1, 4}, {2, 1}]], s[[;; , 2 ;; 3]], s[[1 ;; -1 ;; 2]]}}"
+      )
+      .unwrap(),
+      "{5, 0, 7, {{0, 0, 5}, {0, 5, x, 0}, {{0, 7, 0}, {0, 0, 5}, {0, 0, 5}}, \
+       {{0, 1}, {7, 0}}, {{0, 0}, {0, 5}, {0, x}, {7, 0}}, {{1, 0, 0}, {0, 0, x}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "t = SparseArray[{{1, 1} -> 1., {2, 2} -> 2.}, {3, 3}, 9.]; \
+         {t[[1, 2]], InputForm[t[[2]]]}"
+      )
+      .unwrap(),
+      "{9., InputForm[SparseArray[Automatic, {3}, 9., {1, {{0, 1}, {{2}}}, {2.}}]]}"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 1} -> 1., {5000, 5000} -> 2., {2, 3} -> 5.}, {5000, 5000}]; \
+         {s[[2, 3]], Normal[s[[1, 1 ;; 3]]], Length[s[[All, 3]]]}"
+      )
+      .unwrap(),
+      "{5., {1., 0, 0}, 5000}"
+    );
+  }
+
   #[test]
   fn part_assignment_keeps_sparse_array() {
     assert_eq!(

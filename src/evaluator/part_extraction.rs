@@ -260,6 +260,14 @@ pub fn apply_part_indices(
     && name == "SparseArray"
     && sa.len() == 4
     && indices.len() > 1
+    && let Some(part) = sparse_array_part(sa, indices)
+  {
+    return part;
+  }
+  if let Expr::FunctionCall { name, args: sa } = expr
+    && name == "SparseArray"
+    && sa.len() == 4
+    && indices.len() > 1
   {
     let dense = crate::functions::list_helpers_ast::sparse_array_ast(sa)?;
     if matches!(&dense, Expr::List(_)) {
@@ -829,6 +837,147 @@ fn series_fill_polygon(
   Some(polygon)
 }
 
+/// A part of `SparseArray[Automatic, dims, background, data]` taken from its
+/// stored entries, without building the dense array: each index is an
+/// integer (from the end when negative), `All`, a `Span` of integers or a
+/// list of integers. `None` for anything else or a position out of range,
+/// which the dense route reports.
+fn sparse_array_part(
+  sa: &[Expr],
+  indices: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let [Expr::Identifier(auto), Expr::List(dims), background, data] = sa else {
+    return None;
+  };
+  if auto != "Automatic" || indices.len() > dims.len() {
+    return None;
+  }
+  let dims: Vec<usize> = dims
+    .iter()
+    .map(|d| match d {
+      Expr::Integer(k) if *k >= 0 => Some(*k as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  // 0-based positions an index selects; `None` inside for a scalar index.
+  let resolve = |k: i128, len: usize| -> Option<usize> {
+    let len = len as i128;
+    let k = if k < 0 { len + k + 1 } else { k };
+    (1..=len).contains(&k).then(|| (k - 1) as usize)
+  };
+  let mut selections: Vec<(bool, Vec<usize>)> = Vec::with_capacity(dims.len());
+  for (d, &len) in dims.iter().enumerate() {
+    let Some(spec) = indices.get(d) else {
+      selections.push((true, (0..len).collect()));
+      continue;
+    };
+    let sel = match spec {
+      Expr::Integer(k) => (false, vec![resolve(*k, len)?]),
+      Expr::Identifier(a) if a == "All" => (true, (0..len).collect()),
+      Expr::List(ks) => (
+        true,
+        ks.iter()
+          .map(|k| match k {
+            Expr::Integer(k) => resolve(*k, len),
+            _ => None,
+          })
+          .collect::<Option<_>>()?,
+      ),
+      Expr::FunctionCall { name, args }
+        if name == "Span" && (2..=3).contains(&args.len()) =>
+      {
+        let bound = |e: &Expr, default: usize| -> Option<usize> {
+          match e {
+            Expr::Identifier(a) if a == "All" => Some(default),
+            Expr::Integer(k) => resolve(*k, len),
+            _ => None,
+          }
+        };
+        let start = bound(&args[0], 0)?;
+        let end = bound(&args[1], len.checked_sub(1)?)?;
+        let step = match args.get(2) {
+          None => 1,
+          Some(Expr::Integer(st)) if *st > 0 => *st as usize,
+          _ => return None,
+        };
+        if end + 1 < start {
+          return None;
+        }
+        (true, (start..=end).step_by(step).collect())
+      }
+      _ => return None,
+    };
+    selections.push(sel);
+  }
+  // Every selected original index → its places in the result.
+  let places: Vec<std::collections::HashMap<usize, Vec<usize>>> = selections
+    .iter()
+    .map(|(_, sel)| {
+      let mut m: std::collections::HashMap<usize, Vec<usize>> =
+        std::collections::HashMap::new();
+      for (out, &i) in sel.iter().enumerate() {
+        m.entry(i).or_default().push(out);
+      }
+      m
+    })
+    .collect();
+  let new_dims: Vec<usize> = selections
+    .iter()
+    .filter(|(kept, _)| *kept)
+    .map(|(_, sel)| sel.len())
+    .collect();
+  let entries =
+    crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, data);
+  let mut rules: Vec<Expr> = Vec::new();
+  for (pos, value) in entries {
+    let mut outs: Vec<Vec<usize>> = vec![Vec::new()];
+    let mut hit = true;
+    for (d, &p) in pos.iter().enumerate() {
+      let Some(targets) = places[d].get(&((p - 1) as usize)) else {
+        hit = false;
+        break;
+      };
+      if selections[d].0 {
+        outs = outs
+          .into_iter()
+          .flat_map(|o| {
+            targets.iter().map(move |t| {
+              let mut o = o.clone();
+              o.push(*t);
+              o
+            })
+          })
+          .collect();
+      }
+    }
+    if !hit {
+      continue;
+    }
+    if new_dims.is_empty() {
+      return Some(Ok(value));
+    }
+    for o in outs {
+      rules.push(Expr::Rule {
+        pattern: Box::new(Expr::List(
+          o.iter().map(|i| Expr::Integer(*i as i128 + 1)).collect(),
+        )),
+        replacement: Box::new(value.clone()),
+      });
+    }
+  }
+  if new_dims.is_empty() {
+    return Some(Ok(background.clone()));
+  }
+  Some(crate::evaluator::evaluate_function_call_ast(
+    "SparseArray",
+    &[
+      Expr::List(rules.into()),
+      Expr::List(new_dims.iter().map(|d| Expr::Integer(*d as i128)).collect()),
+      background.clone(),
+    ],
+  ))
+}
+
 /// The rest of `extract_part_ast`, after the graphics and Tree atoms have
 /// been handled.
 fn extract_part_ast_rest(
@@ -841,6 +990,13 @@ fn extract_part_ast_rest(
   // a higher-rank SparseArray would be treated as an ordinary expression and
   // Part would wrongly index into its stored {Automatic, dims, default, data}
   // arguments (e.g. [[2, 2]] returning the second dimension).
+  if let Expr::FunctionCall { name, args: sa } = expr
+    && name == "SparseArray"
+    && sa.len() == 4
+    && let Some(part) = sparse_array_part(sa, std::slice::from_ref(index))
+  {
+    return part;
+  }
   if let Expr::FunctionCall { name, args: sa } = expr
     && name == "SparseArray"
     && sa.len() == 4
