@@ -23393,6 +23393,28 @@ mod solve_symbolic_cubic {
     );
   }
 
+  // A shifted cube (Δ0 = 0): the cube root of 2 Δ1 with its integer
+  // content outside, and a negative leading coefficient negated away.
+  #[test]
+  fn shifted_cubes() {
+    assert_eq!(
+      interpret("Solve[(a + y)^3 == v, y]").unwrap(),
+      "{{y -> -a + v^(1/3)}, {y -> -a - ((1 - I*Sqrt[3])*v^(1/3))/2}, {y -> -a - ((1 + I*Sqrt[3])*v^(1/3))/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[(y + 1)^3 == c + 1, y]").unwrap(),
+      "{{y -> -1 + (1 + c)^(1/3)}, {y -> -1 - ((1 - I*Sqrt[3])*(1 + c)^(1/3))/2}, {y -> -1 - ((1 + I*Sqrt[3])*(1 + c)^(1/3))/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[(1 + y)^3 == 2 c, y]").unwrap(),
+      "{{y -> -1 + 2^(1/3)*c^(1/3)}, {y -> -1 - ((1 - I*Sqrt[3])*c^(1/3))/2^(2/3)}, {y -> -1 - ((1 + I*Sqrt[3])*c^(1/3))/2^(2/3)}}"
+    );
+    assert_eq!(
+      interpret("Solve[v == (1 + u + y)^3, y]").unwrap(),
+      "{{y -> -1 - u + v^(1/3)}, {y -> -1 - u - ((1 - I*Sqrt[3])*v^(1/3))/2}, {y -> -1 - u - ((1 + I*Sqrt[3])*v^(1/3))/2}}"
+    );
+  }
+
   // Every root of a battery of parametric cubics checks out numerically.
   #[test]
   fn roots_satisfy_the_cubic() {
@@ -23450,8 +23472,8 @@ mod solve_isolated_power {
   fn shifted_cube() {
     assert_eq!(
       interpret("Solve[(1 + y)^3 == c, y]").unwrap(),
-      "{{y -> -1 + c^(1/3)}, {y -> -1 - (-1)^(1/3)*c^(1/3)}, \
-       {y -> -1 + (-1)^(2/3)*c^(1/3)}}"
+      "{{y -> -1 + c^(1/3)}, {y -> -1 - ((1 - I*Sqrt[3])*c^(1/3))/2}, \
+       {y -> -1 - ((1 + I*Sqrt[3])*c^(1/3))/2}}"
     );
   }
 

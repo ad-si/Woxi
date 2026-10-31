@@ -6882,7 +6882,6 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && !coeffs
           .iter()
           .any(crate::functions::predicate_ast::contains_real_literal)
-        && solve_by_isolating_power(&args[0], var).is_none()
         && let Some(roots) = symbolic_cubic_roots(
           // The coefficients as written, before denominators were cleared:
           // wolframscript's radicals are in terms of those.
@@ -24154,6 +24153,28 @@ fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
     }
     eval(e)
   };
+  // A negative leading number is negated away (`v == (1 + y)^3` is
+  // solved as `(1 + y)^3 - v`).
+  let negated: Vec<Expr>;
+  let coeffs = if let Some(lead) = coeffs.last()
+    && let Some(v) = crate::functions::math_ast::try_eval_to_f64(&match lead {
+      Expr::FunctionCall { name, args }
+        if name == "Times" && !args.is_empty() =>
+      {
+        args[0].clone()
+      }
+      other => other.clone(),
+    })
+    && v < 0.0
+  {
+    negated = coeffs
+      .iter()
+      .map(|c| eval(call("Times", vec![Expr::Integer(-1), c.clone()])))
+      .collect::<Option<_>>()?;
+    negated.as_slice()
+  } else {
+    coeffs
+  };
   let [d, c, b, a] = coeffs else {
     return None;
   };
@@ -24211,9 +24232,9 @@ fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
     };
     let values = [("Solve$a", a), ("Solve$b", b), ("Solve$C", &cube)];
     return [
-      "-Solve$b/(3 Solve$a) + Solve$C/(3 2^(1/3) Solve$a)",
-      "-Solve$b/(3 Solve$a) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
-      "-Solve$b/(3 Solve$a) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+      "Expand[-Solve$b/(3 Solve$a)] + Solve$C/(3 2^(1/3) Solve$a)",
+      "Expand[-Solve$b/(3 Solve$a)] - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+      "Expand[-Solve$b/(3 Solve$a)] - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
     ]
     .iter()
     .map(|t| fill(t, &values))
@@ -24297,9 +24318,9 @@ fn symbolic_cubic_roots(coeffs: &[Expr]) -> Option<Vec<Expr>> {
     ("Solve$C", &cube),
   ];
   [
-    "-Solve$b/(3 Solve$a) - 2^(1/3) Solve$p/(3 Solve$a Solve$C) + Solve$C/(3 2^(1/3) Solve$a)",
-    "-Solve$b/(3 Solve$a) + (1 + I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
-    "-Solve$b/(3 Solve$a) + (1 - I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    "Expand[-Solve$b/(3 Solve$a)] - 2^(1/3) Solve$p/(3 Solve$a Solve$C) + Solve$C/(3 2^(1/3) Solve$a)",
+    "Expand[-Solve$b/(3 Solve$a)] + (1 + I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 - I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
+    "Expand[-Solve$b/(3 Solve$a)] + (1 - I Sqrt[3]) Solve$p/(3 2^(2/3) Solve$a Solve$C) - (1 + I Sqrt[3]) Solve$C/(6 2^(1/3) Solve$a)",
   ]
   .iter()
   .map(|t| fill(t, &values))
