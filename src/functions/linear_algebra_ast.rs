@@ -1117,37 +1117,39 @@ fn cauchy_dense(x: &[Expr], y: &[Expr]) -> Result<Expr, InterpreterError> {
 /// side), computed from the stored entries alone. The result is a plain
 /// list, as in wolframscript; a row with no entries is `0.` where the
 /// product is machine arithmetic and `0` otherwise.
+/// The dimensions and stored `(position, value)` entries of a rank-2
+/// `SparseArray[Automatic, {r, c}, 0, …]`.
+fn sparse_matrix_parts(
+  e: &Expr,
+) -> Option<([usize; 2], Vec<(Vec<i128>, Expr)>)> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  let [Expr::Identifier(auto), Expr::List(dims), background, csr] =
+    args.as_slice()
+  else {
+    return None;
+  };
+  if name != "SparseArray"
+    || auto != "Automatic"
+    || !matches!(background, Expr::Integer(0))
+  {
+    return None;
+  }
+  let [Expr::Integer(r), Expr::Integer(c)] = dims.as_slice() else {
+    return None;
+  };
+  let dims = [usize::try_from(*r).ok()?, usize::try_from(*c).ok()?];
+  let entries =
+    crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, csr);
+  Some((dims, entries))
+}
+
 fn sparse_matrix_vector_dot(
   a: &Expr,
   b: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let matrix_parts =
-    |e: &Expr| -> Option<([usize; 2], Vec<(Vec<i128>, Expr)>)> {
-      let Expr::FunctionCall { name, args } = e else {
-        return None;
-      };
-      let [
-        Expr::Identifier(auto),
-        Expr::List(dims),
-        Expr::Integer(0),
-        csr,
-      ] = args.as_slice()
-      else {
-        return None;
-      };
-      if name != "SparseArray" || auto != "Automatic" {
-        return None;
-      }
-      let [Expr::Integer(r), Expr::Integer(c)] = dims.as_slice() else {
-        return None;
-      };
-      let dims = [usize::try_from(*r).ok()?, usize::try_from(*c).ok()?];
-      let entries =
-        crate::functions::list_helpers_ast::sparse_array_extract_rules(
-          &dims, csr,
-        );
-      Some((dims, entries))
-    };
+  let matrix_parts = sparse_matrix_parts;
   let vector = |e: &Expr| -> Option<Vec<Expr>> {
     match e {
       Expr::List(items)
@@ -8154,6 +8156,262 @@ fn linear_solve_machine_columns(
     x
   };
   Some(solution)
+}
+
+/// `LinearSolve[sparse, b]` for a large machine-number sparse matrix,
+/// without densifying it: the unknowns are renumbered by reverse
+/// Cuthill-McKee to bring the nonzeros near the diagonal, and the banded
+/// system is factored by Gaussian elimination with partial pivoting (the
+/// LAPACK `gbsv` scheme). `None` for small, exact, symbolic or singular
+/// systems and for ones whose band stays too wide, which the dense solver
+/// handles.
+pub(crate) fn sparse_linear_solve(a: &Expr, b: &Expr) -> Option<Expr> {
+  // A machine sparse matrix has the background `0.`; it reads like `0`.
+  let a = match a {
+    Expr::FunctionCall { name, args }
+      if name == "SparseArray"
+        && args.len() == 4
+        && matches!(&args[2], Expr::Real(z) if *z == 0.0) =>
+    {
+      let mut args = args.to_vec();
+      args[2] = Expr::Integer(0);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    other => other.clone(),
+  };
+  let ([n, m], entries) = sparse_matrix_parts(&a)?;
+  if n != m || n < 100 {
+    return None;
+  }
+  // A sparse right-hand side is read as the vector it stands for.
+  let dense_b;
+  let b = if matches!(b, Expr::FunctionCall { name, .. } if name == "SparseArray")
+  {
+    dense_b =
+      crate::evaluator::evaluate_expr_to_expr(&call1("Normal", b.clone()))
+        .ok()?;
+    &dense_b
+  } else {
+    b
+  };
+  let Expr::List(rhs) = b else { return None };
+  if rhs.len() != n {
+    return None;
+  }
+  let machine = entries.iter().any(|(_, v)| matches!(v, Expr::Real(_)))
+    || rhs.iter().any(|v| matches!(v, Expr::Real(_)));
+  if !machine {
+    return None;
+  }
+  let number = |v: &Expr| match v {
+    Expr::Real(x) => Some(*x),
+    Expr::Integer(k) => Some(*k as f64),
+    other
+      if crate::functions::predicate_ast::is_numeric_q(other)
+        && !contains_imaginary_unit(other) =>
+    {
+      crate::functions::math_ast::try_eval_to_f64(other)
+    }
+    _ => None,
+  };
+  let rhs: Vec<f64> = rhs.iter().map(number).collect::<Option<_>>()?;
+  let mut triplets: Vec<(usize, usize, f64)> =
+    Vec::with_capacity(entries.len());
+  for (pos, v) in &entries {
+    let x = number(v)?;
+    if x != 0.0 {
+      triplets.push((pos[0] as usize - 1, pos[1] as usize - 1, x));
+    }
+  }
+  // Equations are first matched to unknowns (a maximum bipartite matching
+  // by augmenting paths), so every unknown's own equation sits on the
+  // diagonal; a system written in any order then has a pattern that a
+  // symmetric renumbering can bring near the diagonal.
+  let mut cols_of_row: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(i, j, _) in &triplets {
+    cols_of_row[i].push(j);
+  }
+  let mut row_of_col: Vec<Option<usize>> = vec![None; n];
+  let mut col_of_row: Vec<Option<usize>> = vec![None; n];
+  // Cheap pass: a free column straight away.
+  for i in 0..n {
+    if let Some(&j) = cols_of_row[i].iter().find(|&&j| row_of_col[j].is_none())
+    {
+      row_of_col[j] = Some(i);
+      col_of_row[i] = Some(j);
+    }
+  }
+  for start in 0..n {
+    if col_of_row[start].is_some() {
+      continue;
+    }
+    // Depth-first search for an augmenting path, iteratively.
+    let mut visited = vec![false; n];
+    let mut stack: Vec<(usize, usize)> = vec![(start, 0)];
+    let mut path: Vec<(usize, usize)> = Vec::new();
+    let mut found = false;
+    while let Some(&mut (row, ref mut next)) = stack.last_mut() {
+      if *next >= cols_of_row[row].len() {
+        stack.pop();
+        path.pop();
+        continue;
+      }
+      let col = cols_of_row[row][*next];
+      *next += 1;
+      if visited[col] {
+        continue;
+      }
+      visited[col] = true;
+      path.push((row, col));
+      match row_of_col[col] {
+        None => {
+          found = true;
+          break;
+        }
+        Some(other) => stack.push((other, 0)),
+      }
+    }
+    if !found {
+      return None;
+    }
+    // `path` holds the edge out of every open frame, the last to a free
+    // unknown: each row along it takes the next unknown.
+    for &(row, col) in &path {
+      row_of_col[col] = Some(row);
+      col_of_row[row] = Some(col);
+    }
+  }
+  // Row `i` of the system is moved to the place of its matched unknown.
+  let triplets: Vec<(usize, usize, f64)> = triplets
+    .into_iter()
+    .map(|(i, j, x)| (col_of_row[i].unwrap(), j, x))
+    .collect();
+  let rhs: Vec<f64> = {
+    let mut r = vec![0.0; n];
+    for (i, v) in rhs.iter().enumerate() {
+      r[col_of_row[i].unwrap()] = *v;
+    }
+    r
+  };
+  // Reverse Cuthill-McKee on the symmetrized pattern.
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(i, j, _) in &triplets {
+    if i != j {
+      adj[i].push(j);
+      adj[j].push(i);
+    }
+  }
+  for list in &mut adj {
+    list.sort_unstable();
+    list.dedup();
+  }
+  let mut order: Vec<usize> = Vec::with_capacity(n);
+  let mut seen = vec![false; n];
+  let mut by_degree: Vec<usize> = (0..n).collect();
+  by_degree.sort_by_key(|&v| adj[v].len());
+  for &start in &by_degree {
+    if seen[start] {
+      continue;
+    }
+    seen[start] = true;
+    let mut head = order.len();
+    order.push(start);
+    while head < order.len() {
+      let v = order[head];
+      head += 1;
+      let mut next: Vec<usize> =
+        adj[v].iter().copied().filter(|&u| !seen[u]).collect();
+      next.sort_by_key(|&u| adj[u].len());
+      for u in next {
+        seen[u] = true;
+        order.push(u);
+      }
+    }
+  }
+  order.reverse();
+  let mut position = vec![0usize; n];
+  for (new, &old) in order.iter().enumerate() {
+    position[old] = new;
+  }
+  let (mut kl, mut ku) = (0usize, 0usize);
+  for &(i, j, _) in &triplets {
+    let (pi, pj) = (position[i], position[j]);
+    if pi > pj {
+      kl = kl.max(pi - pj);
+    } else {
+      ku = ku.max(pj - pi);
+    }
+  }
+  // Row interchanges widen the upper band by `kl`.
+  let width = 2 * kl + ku + 1;
+  if width.checked_mul(n)? > 40_000_000 {
+    return None;
+  }
+  // Row `r` holds columns `r - kl ..= r + kl + ku` (absolute, by position).
+  let mut band = vec![0.0f64; width * n];
+  let at = |r: usize, c: usize| -> Option<usize> {
+    let lo = r as isize - kl as isize;
+    let off = c as isize - lo;
+    (off >= 0 && (off as usize) < width).then(|| r * width + off as usize)
+  };
+  for &(i, j, x) in &triplets {
+    let k = at(position[i], position[j])?;
+    band[k] += x;
+  }
+  let mut y: Vec<f64> = vec![0.0; n];
+  for (i, v) in rhs.iter().enumerate() {
+    y[position[i]] = *v;
+  }
+  for k in 0..n {
+    let last = (k + kl).min(n - 1);
+    let p = (k..=last).max_by(|&r1, &r2| {
+      band[at(r1, k).unwrap()]
+        .abs()
+        .total_cmp(&band[at(r2, k).unwrap()].abs())
+    })?;
+    let pivot = band[at(p, k).unwrap()];
+    if pivot == 0.0 || !pivot.is_finite() {
+      return None;
+    }
+    let hi = (k + kl + ku).min(n - 1);
+    if p != k {
+      for c in k..=hi {
+        let (a1, a2) = (at(k, c).unwrap(), at(p, c)?);
+        band.swap(a1, a2);
+      }
+      y.swap(k, p);
+    }
+    for r in k + 1..=last {
+      let idx = at(r, k).unwrap();
+      let factor = band[idx] / pivot;
+      if factor == 0.0 {
+        continue;
+      }
+      band[idx] = 0.0;
+      for c in k + 1..=hi {
+        let src = band[at(k, c).unwrap()];
+        if src != 0.0 {
+          band[at(r, c)?] -= factor * src;
+        }
+      }
+      y[r] -= factor * y[k];
+    }
+  }
+  let mut x = vec![0.0f64; n];
+  for k in (0..n).rev() {
+    let hi = (k + kl + ku).min(n - 1);
+    let mut sum = y[k];
+    for c in k + 1..=hi {
+      sum -= band[at(k, c).unwrap()] * x[c];
+    }
+    x[k] = sum / band[at(k, k).unwrap()];
+  }
+  Some(Expr::List(
+    (0..n).map(|i| Expr::Real(x[position[i]])).collect(),
+  ))
 }
 
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

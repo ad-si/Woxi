@@ -114,6 +114,15 @@ pub fn dispatch_linear_algebra_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // A large machine sparse system is solved without densifying it.
+  if name == "LinearSolve"
+    && args.len() == 2
+    && let Some(x) = crate::functions::linear_algebra_ast::sparse_linear_solve(
+      &args[0], &args[1],
+    )
+  {
+    return Some(Ok(x));
+  }
   // Several matrix routines below only understand dense nested lists. When a
   // SparseArray is passed, densify it to its Normal form and retry, matching
   // Wolfram (compare the Dot handling in dot_ast).

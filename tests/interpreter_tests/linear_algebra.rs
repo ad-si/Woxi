@@ -2941,6 +2941,30 @@ mod linear_solve {
     );
   }
 
+  // A large machine sparse system is solved without densifying it: the
+  // equations are matched to the unknowns, renumbered by reverse
+  // Cuthill-McKee and factored as a banded matrix (a 5000-unknown Stokes
+  // system took 5 GB). The rows are given in scrambled order.
+  #[test]
+  fn linear_solve_large_sparse_machine_system() {
+    assert_eq!(
+      interpret(
+        "n = 60; idx[i_, j_] := (i - 1) n + j; \
+         rules = Flatten[Table[{{idx[i, j], idx[i, j]} -> 4.1, \
+           If[i > 1, {idx[i, j], idx[i - 1, j]} -> -1., Nothing], \
+           If[i < n, {idx[i, j], idx[i + 1, j]} -> -1.2, Nothing], \
+           If[j > 1, {idx[i, j], idx[i, j - 1]} -> -0.9, Nothing], \
+           If[j < n, {idx[i, j], idx[i, j + 1]} -> -1., Nothing]}, {i, n}, {j, n}]]; \
+         perm = Mod[37 Range[n^2], n^2] + 1; \
+         rules = rules /. ({r_, c_} -> v_) :> ({perm[[r]], c} -> v); \
+         A = SparseArray[rules, {n^2, n^2}]; b = N[Table[Sin[k], {k, n^2}]][[perm]]; \
+         x = LinearSolve[A, b]; {Length[x], Max[Abs[A . x - b]] < 10^-12}"
+      )
+      .unwrap(),
+      "{3600, True}"
+    );
+  }
+
   // Machine-number systems (real or complex) take the numeric LU path.
   #[test]
   fn linear_solve_machine_real_and_complex() {
