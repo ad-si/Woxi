@@ -1694,8 +1694,14 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
     } => rule_reached(pattern, replacement),
     _ => mentions_any_symbol(expr, locals),
   };
+  // Block scopes dynamically: its variables are the global symbols
+  // themselves, so a Module around it never renames them
+  // (`Module[{m}, Block[{a}, {a -> m}]]` is `{a -> 1}` for `m = 1`).
+  let dynamic =
+    matches!(expr, Expr::FunctionCall { name, .. } if name == "Block");
   if let Some(bound) = scope_bound_names(expr)
     && reached
+    && !dynamic
   {
     let rename_all = |e: &Expr| {
       let mut e = e.clone();
