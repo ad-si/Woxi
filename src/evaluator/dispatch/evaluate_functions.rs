@@ -571,12 +571,45 @@ fn collect_option_bindings(
       .unwrap_or_default()
   };
 
-  // Build default bindings
+  // Build default bindings. A symbol among the defaults
+  // (`OptionsPattern[{f, Graphics3D}]`) stands for its current Options; an
+  // earlier source of an option wins over a later one.
   let mut bindings: Vec<(String, Expr)> = Vec::new();
-  for rule in &defaults {
-    if let Some((key, val)) = extract_rule_pair(rule) {
-      bindings.push((key, val));
+  fn add_defaults(rule: &Expr, bindings: &mut Vec<(String, Expr)>) {
+    match rule {
+      Expr::Identifier(sym) => {
+        let options = crate::FUNC_OPTIONS
+          .with(|m| m.borrow().get(sym).cloned())
+          .or_else(|| {
+            match crate::evaluator::evaluate_function_call_ast(
+              "Options",
+              &[Expr::Identifier(sym.clone())],
+            ) {
+              Ok(Expr::List(ref items)) => Some(items.to_vec()),
+              _ => None,
+            }
+          })
+          .unwrap_or_default();
+        for o in &options {
+          add_defaults(o, bindings);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          add_defaults(item, bindings);
+        }
+      }
+      _ => {
+        if let Some((key, val)) = extract_rule_pair(rule)
+          && !bindings.iter().any(|(k, _)| *k == key)
+        {
+          bindings.push((key, val));
+        }
+      }
     }
+  }
+  for rule in &defaults {
+    add_defaults(rule, &mut bindings);
   }
 
   // Extract explicit options from the argument. Wolfram accepts a

@@ -6781,3 +6781,35 @@ mod set_with_a_left_hand_side_condition {
     );
   }
 }
+
+mod options_pattern_with_symbol_defaults {
+  use super::*;
+
+  #[test]
+  fn a_list_of_symbols_supplies_their_options() {
+    // `OptionsPattern[{land, Graphics3D}]` took the two symbols as rules
+    // and every unset OptionValue came back as its own name.
+    assert_eq!(
+      interpret(
+        "Options[land] = {coordinates -> \"automatic\", sm -> 1}; \
+         land[n_, OptionsPattern[{land, Graphics3D}]] := \
+         {OptionValue[coordinates], OptionValue[sm], OptionValue[Boxed]}; \
+         land[1, sm -> 2]"
+      )
+      .unwrap(),
+      "{automatic, 2, True}"
+    );
+  }
+
+  #[test]
+  fn another_functions_options_are_read_when_the_rule_applies() {
+    assert_eq!(
+      interpret(
+        "Options[g] = {a -> 1}; f[OptionsPattern[g]] := OptionValue[a]; \
+         Options[g] = {a -> 5}; {f[], f[a -> 2]}"
+      )
+      .unwrap(),
+      "{5, 2}"
+    );
+  }
+}

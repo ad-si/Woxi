@@ -3037,7 +3037,12 @@ fn part_assignment_rhs(
 fn inline_option_defaults(spec: &Expr) -> Option<Vec<Expr>> {
   match spec {
     Expr::List(rules) => Some(rules.to_vec()),
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![spec.clone()]),
+    // A symbol names the function whose Options are the defaults
+    // (`OptionsPattern[Plot]` in some other function's definition); they
+    // are looked up when the rule is applied.
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Identifier(_) => {
+      Some(vec![spec.clone()])
+    }
     _ => None,
   }
 }
