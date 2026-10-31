@@ -1685,6 +1685,22 @@ mod graphics {
       ));
     }
 
+    /// `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` on `LogPlot` used to drop
+    /// the x part and show the whole plotted domain.
+    #[test]
+    fn log_plots_honor_the_x_part_of_plot_range() {
+      for plot in ["LogPlot"] {
+        let svg = export_svg(&format!(
+          "{plot}[t + 1, {{t, 1, 400}}, PlotRange -> {{{{1, 100}}, {{1, 500}}}}]"
+        ));
+        assert!(svg.contains(">100<"), "{plot}: {svg}");
+        assert!(
+          !svg.contains(">200<") && !svg.contains(">400<"),
+          "{plot}: {svg}"
+        );
+      }
+    }
+
     /// A dashed curve on a log axis used to loop forever: the per-dash
     /// fallback never advanced past a named (absolute-pixel) dash length.
     /// It now goes through the same single `stroke-dasharray` polyline as
