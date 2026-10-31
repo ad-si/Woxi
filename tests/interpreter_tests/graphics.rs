@@ -6992,6 +6992,25 @@ mod plot3d {
       assert_eq!(indexed, explicit);
     }
 
+    // A `Sphere` inside a GraphicsComplex takes its centre as a vertex
+    // index (the radius may be a one-element list), so it must draw exactly
+    // like the same sphere on explicit coordinates instead of collapsing
+    // onto the origin.
+    #[test]
+    fn graphics3d_complex_sphere_resolves_vertex_indices() {
+      let indexed = interpret(
+        "ExportString[Graphics3D[GraphicsComplex[{{0,0,0},{1,2,3}}, \
+         {Sphere[2, 0.3], Sphere[{1, 2}, 0.1]}]], \"SVG\"]",
+      )
+      .unwrap();
+      let explicit = interpret(
+        "ExportString[Graphics3D[{Sphere[{1,2,3}, 0.3], \
+         Sphere[{{0,0,0},{1,2,3}}, 0.1]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(indexed, explicit);
+    }
+
     // GraphicsComplex primitives resolve their 1-based vertex indices,
     // for both single- and multi-polygon/line forms.
     #[test]
