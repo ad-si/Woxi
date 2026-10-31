@@ -22845,6 +22845,39 @@ mod nsolve_mixed_precision {
 mod reduce_bounded_integers {
   use super::*;
 
+  // Every factor of a polynomial equal to a nonzero integer is one of its
+  // divisors; linear factors that determine the variables bound each of
+  // them (x - y and x + y bound x and y).
+  #[test]
+  fn factor_divisor_bounds() {
+    assert_eq!(
+      interpret("Reduce[x^2 - y^2 == 15, {x, y}, Integers]").unwrap(),
+      "(x == -8 && y == -7) || (x == -8 && y == 7) || (x == -4 && y == -1) || \
+       (x == -4 && y == 1) || (x == 4 && y == -1) || (x == 4 && y == 1) || \
+       (x == 8 && y == -7) || (x == 8 && y == 7)"
+    );
+    assert_eq!(
+      interpret("Reduce[x y + x == 6, {x, y}, Integers]").unwrap(),
+      "(x == -6 && y == -2) || (x == -3 && y == -3) || (x == -2 && y == -4) || \
+       (x == -1 && y == -7) || (x == 1 && y == 5) || (x == 2 && y == 2) || \
+       (x == 3 && y == 1) || (x == 6 && y == 0)"
+    );
+    assert_eq!(
+      interpret("Reduce[x^2 - 4 y^2 == 7, {x, y}, Integers]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[r (m^2 - n^2) == 60 && (m | n | r) \\[Element] Integers && m > n > 0, {m, n}, Integers]"
+      )
+      .unwrap(),
+      "(r == 1 && m == 8 && n == 2) || (r == 1 && m == 16 && n == 14) || \
+       (r == 3 && m == 6 && n == 4) || (r == 4 && m == 4 && n == 1) || \
+       (r == 4 && m == 8 && n == 7) || (r == 5 && m == 4 && n == 2) || \
+       (r == 12 && m == 3 && n == 2) || (r == 20 && m == 2 && n == 1)"
+    );
+  }
+
   // An equation of degree at most two in the last variable is solved for
   // it, so a sphere of radius 29 needs only 59^2 points; a product equal
   // to a nonzero integer bounds its factors by its divisors.

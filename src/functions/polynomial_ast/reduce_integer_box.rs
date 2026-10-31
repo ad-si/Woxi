@@ -416,6 +416,127 @@ fn eval_exact(terms: &[(Vec<u32>, i128)], point: &[i128]) -> Option<i128> {
   Some(sum)
 }
 
+/// Linear factors `a·x + b` that each lie in `[-bound, bound]` and together
+/// determine every variable bound each one: `x = A⁻¹ (L - b)`, so
+/// `x^2 - y^2 == 15` confines `x` and `y` through `x - y` and `x + y`.
+fn linear_factor_box(
+  factors: &[Expr],
+  bound: f64,
+  vars: &[String],
+  boxes: &mut [Interval],
+) {
+  let n = vars.len();
+  let mut rows: Vec<(Vec<f64>, f64)> = Vec::new();
+  for f in factors {
+    let eq = Expr::Comparison {
+      operands: vec![f.clone(), Expr::Integer(0)],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let Some(pc) = poly_constraint(&eq, vars) else {
+      continue;
+    };
+    let mut a = vec![0.0; n];
+    let mut b = 0.0;
+    let mut linear = true;
+    for (exps, c) in &pc.terms {
+      match exps.iter().sum::<u32>() {
+        0 => b += c,
+        1 => a[exps.iter().position(|&e| e == 1).unwrap()] += c,
+        _ => linear = false,
+      }
+    }
+    if linear {
+      rows.push((a, b));
+    }
+  }
+  // n independent rows, picked greedily, then A⁻¹ by Gauss-Jordan.
+  let mut chosen: Vec<(Vec<f64>, f64)> = Vec::new();
+  for row in rows {
+    let mut candidate = chosen.clone();
+    candidate.push(row.clone());
+    if rank(&candidate.iter().map(|r| r.0.clone()).collect::<Vec<_>>())
+      == candidate.len()
+    {
+      chosen = candidate;
+    }
+    if chosen.len() == n {
+      break;
+    }
+  }
+  if chosen.len() < n {
+    return;
+  }
+  let mut aug: Vec<Vec<f64>> = chosen
+    .iter()
+    .enumerate()
+    .map(|(i, (a, _))| {
+      let mut r = a.clone();
+      r.extend((0..n).map(|j| if i == j { 1.0 } else { 0.0 }));
+      r
+    })
+    .collect();
+  for col in 0..n {
+    let Some(p) =
+      (col..n).max_by(|&i, &j| aug[i][col].abs().total_cmp(&aug[j][col].abs()))
+    else {
+      return;
+    };
+    if aug[p][col] == 0.0 {
+      return;
+    }
+    aug.swap(col, p);
+    let pivot = aug[col][col];
+    for v in &mut aug[col] {
+      *v /= pivot;
+    }
+    for r in 0..n {
+      if r != col {
+        let factor = aug[r][col];
+        if factor != 0.0 {
+          for k in 0..2 * n {
+            aug[r][k] -= factor * aug[col][k];
+          }
+        }
+      }
+    }
+  }
+  for (j, b) in boxes.iter_mut().enumerate() {
+    let inv = &aug[j][n..];
+    let center: f64 = -inv
+      .iter()
+      .zip(&chosen)
+      .map(|(w, (_, c))| w * c)
+      .sum::<f64>();
+    let radius: f64 = bound * inv.iter().map(|w| w.abs()).sum::<f64>();
+    b.lo = b.lo.max((center - radius - 1e-9).ceil());
+    b.hi = b.hi.min((center + radius + 1e-9).floor());
+  }
+}
+
+/// The rank of a small matrix, by Gaussian elimination.
+fn rank(rows: &[Vec<f64>]) -> usize {
+  let mut m: Vec<Vec<f64>> = rows.to_vec();
+  let cols = m.first().map_or(0, Vec::len);
+  let mut r = 0;
+  for c in 0..cols {
+    let Some(p) = (r..m.len()).find(|&i| m[i][c].abs() > 1e-12) else {
+      continue;
+    };
+    m.swap(r, p);
+    for i in r + 1..m.len() {
+      let f = m[i][c] / m[r][c];
+      for k in c..cols {
+        m[i][k] -= f * m[r][k];
+      }
+    }
+    r += 1;
+    if r == m.len() {
+      break;
+    }
+  }
+  r
+}
+
 /// `Reduce[cond, vars, Integers]` by enumeration when `cond` bounds every
 /// variable to a small box; `None` when it does not.
 pub(super) fn reduce_bounded_integer_box(
@@ -466,6 +587,91 @@ pub(super) fn reduce_bounded_integer_box(
       }
     }
   }
+  // More generally every factor of a polynomial equal to a nonzero
+  // integer, `r (m - n) (m + n) == 60`, is a divisor of it and lies within
+  // its size.
+  let mut factor_bounds = Vec::new();
+  for p in polys.iter().filter(|p| p.is_equation) {
+    let Some(terms) = &p.exact else { continue };
+    let (constant, monomials): (Vec<_>, Vec<_>) =
+      terms.iter().partition(|(e, _)| e.iter().all(|&k| k == 0));
+    let c: i128 = constant.iter().map(|(_, c)| *c).sum();
+    if c == 0 || monomials.len() < 2 {
+      continue;
+    }
+    let poly = Expr::FunctionCall {
+      name: "Plus".into(),
+      args: monomials
+        .iter()
+        .map(|(exps, coeff)| {
+          let mut factors = vec![Expr::Integer(*coeff)];
+          for (v, &e) in vars.iter().zip(exps.iter()) {
+            if e > 0 {
+              factors.push(Expr::FunctionCall {
+                name: "Power".into(),
+                args: vec![
+                  Expr::Identifier(v.clone()),
+                  Expr::Integer(e as i128),
+                ]
+                .into(),
+              });
+            }
+          }
+          Expr::FunctionCall {
+            name: "Times".into(),
+            args: factors.into(),
+          }
+        })
+        .collect(),
+    };
+    let Ok(Expr::List(ref factor_list)) =
+      evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "FactorList".into(),
+        args: vec![poly].into(),
+      })
+    else {
+      continue;
+    };
+    let mut content: i128 = 1;
+    let mut polynomial_factors = Vec::new();
+    for pair in factor_list {
+      match pair {
+        Expr::List(fe) => match fe.as_slice() {
+          [Expr::Integer(k), Expr::Integer(e)] if *e >= 0 => {
+            match k.checked_pow(*e as u32) {
+              Some(v) => content = content.saturating_mul(v),
+              None => content = 0,
+            }
+          }
+          [f, Expr::Integer(e)] if *e > 0 => polynomial_factors.push(f.clone()),
+          _ => {
+            content = 0;
+          }
+        },
+        _ => content = 0,
+      }
+    }
+    if polynomial_factors.len() < 2 || content == 0 || c % content != 0 {
+      continue;
+    }
+    let bound = (c / content).unsigned_abs() as i128;
+    linear_factor_box(&polynomial_factors, bound as f64, vars, &mut boxes);
+    for f in polynomial_factors {
+      for (op, side) in [
+        (ComparisonOp::GreaterEqual, -bound),
+        (ComparisonOp::LessEqual, bound),
+      ] {
+        let constraint = Expr::Comparison {
+          operands: vec![f.clone(), Expr::Integer(side)],
+          operators: vec![op],
+        };
+        if let Some(pc) = poly_constraint(&constraint, vars) {
+          factor_bounds.push(pc);
+        }
+      }
+    }
+  }
+  polys.extend(factor_bounds);
   for _ in 0..50 {
     let mut changed = false;
     for p in &polys {
