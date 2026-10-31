@@ -10444,6 +10444,26 @@ mod ndsolve {
     );
   }
 
+  // `lhs == rhs && cond` is a crossing of the equation taken only where the
+  // rest holds (as a plain condition it was true at no sampled point and
+  // never fired).
+  #[test]
+  fn when_event_guarded_crossing() {
+    assert_eq!(
+      interpret(
+        "{Round[Reap[NDSolve[{y'[t] == z[t], z'[t] == -y[t], y[0] == 1, z[0] == 0, \
+         WhenEvent[z[t] == 0 && t > 2, Sow[t]]}, {y, z}, {t, 0, 7}]][[2]], 0.001], \
+         Round[Reap[NDSolve[{y'[t] == z[t], z'[t] == -y[t], y[0] == 1, z[0] == 0, \
+         WhenEvent[z[t] == 0 && t > 4, Sow[t]]}, {y, z}, {t, 0, 7}]][[2]], 0.001], \
+         Round[Reap[NDSolve[{x[1]'[t] == x[2][t], x[2]'[t] == -x[1][t], x[1][0] == 1, \
+         x[2][0] == 0, WhenEvent[x[1]'[t] == 0 && t > 2, Sow[t]]}, {x[1][t], x[2][t]}, \
+         {t, 0, 4}]][[2]], 0.001]}"
+      )
+      .unwrap(),
+      "{{{3.142, 6.283}}, {{6.283}}, {{3.142}}}"
+    );
+  }
+
   #[test]
   fn when_event_periodic_action_samples_state() {
     // `WhenEvent[Mod[t, p] == 0, Sow[…]]` fires at every multiple of `p`

@@ -7343,6 +7343,9 @@ enum StateTrigger {
 /// `f[x] -> value` in it names the state component it resets.
 struct StateEvent {
   trigger: StateTrigger,
+  /// The other conjuncts of `lhs == rhs && cond`, checked when the
+  /// crossing happens (over the state placeholders).
+  guard: Option<Expr>,
   action: Expr,
   active: std::cell::Cell<bool>,
 }
@@ -7360,7 +7363,47 @@ impl StateEvent {
     x_name: &str,
     var_names: &[String],
   ) -> Self {
-    let trigger = match as_equal_pair(&raw.condition) {
+    // `lhs == rhs && cond`: a crossing of the equation, taken only where the
+    // rest of the conjunction holds (an equation alone is true on a set of
+    // measure zero, so as a plain condition it would never fire).
+    let conjuncts: Vec<Expr> = match &raw.condition {
+      Expr::FunctionCall { name, args } if name == "And" => args.to_vec(),
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => vec![(**left).clone(), (**right).clone()],
+      _ => Vec::new(),
+    };
+    let equations: Vec<usize> = conjuncts
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| as_equal_pair(c).is_some())
+      .map(|(i, _)| i)
+      .collect();
+    let (condition, guard) = if let [ei] = equations.as_slice() {
+      let rest: Vec<Expr> = conjuncts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i != ei)
+        .map(|(_, c)| c.clone())
+        .collect();
+      let guard = if rest.len() == 1 {
+        rest.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: rest.into(),
+        }
+      };
+      (
+        conjuncts[*ei].clone(),
+        Some(substitute_function_values(&guard, funcs, x_name)),
+      )
+    } else {
+      (raw.condition.clone(), None)
+    };
+    let trigger = match as_equal_pair(&condition) {
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -7377,13 +7420,12 @@ impl StateEvent {
         StateTrigger::Crossing(NumFn::new(rewritten, var_names))
       }
       None => StateTrigger::Condition(substitute_function_values(
-        &raw.condition,
-        funcs,
-        x_name,
+        &condition, funcs, x_name,
       )),
     };
     StateEvent {
       trigger,
+      guard,
       action: raw.action,
       active: std::cell::Cell::new(true),
     }
@@ -7413,6 +7455,18 @@ impl StateEvent {
         }
       }
     }
+  }
+
+  /// Whether the event's guard (if any) holds at `(x, state)`.
+  fn guard_holds(&self, x: f64, state: &[f64], var_names: &[String]) -> bool {
+    let Some(guard) = &self.guard else {
+      return true;
+    };
+    let g = substitute_state(guard, var_names, x, state);
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&g),
+      Ok(Expr::Identifier(ref b)) if b == "True"
+    )
   }
 
   /// Whether moving from trigger value `prev` to `next` fires the event.
@@ -7779,6 +7833,9 @@ fn integrate_leg(
             }
             _ => lo = mid,
           }
+        }
+        if !ev.guard_holds(x + hi, &hi_state, state_events.var_names) {
+          continue;
         }
         // "Earliest" along the leg's direction (a backward leg runs down).
         let dir = h.signum();
