@@ -6099,7 +6099,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if super::eliminate::contains_var(&denominator, var) {
         expand_and_combine(&numerator)
       } else {
-        expanded_raw.clone()
+        expanded_raw
       }
     }
   };
@@ -6841,7 +6841,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => (factor, 1),
           })
           .collect();
-        if factors.len() > 1 || factors.iter().any(|(_, n)| *n > 1) {
+        // Only a real factorization: one non-constant factor alongside
+        // constants is the polynomial itself, rescaled.
+        let varying = factors
+          .iter()
+          .filter(|(factor, _)| !is_constant_wrt(factor, var))
+          .count();
+        if varying > 1 || factors.iter().any(|(_, n)| *n > 1) {
           // Solve each factor separately, repeating each root by the
           // multiplicity of its factor
           let mut all_solutions: Vec<Expr> = Vec::new();
@@ -6880,15 +6886,23 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let Some(roots) = symbolic_cubic_roots(
           // The coefficients as written, before denominators were cleared:
           // wolframscript's radicals are in terms of those.
-          &match crate::evaluator::evaluate_function_call_ast(
-            "CoefficientList",
-            &[expanded_raw.clone(), id_expr(var)],
-          ) {
-            Ok(Expr::List(ref raw))
-              if raw.len() == 4
-                && raw.iter().all(|c| is_constant_wrt(c, var)) =>
-            {
-              raw.to_vec()
+          &match &args[0] {
+            Expr::Comparison { operands, .. } if operands.len() == 2 => {
+              match crate::evaluator::evaluate_function_call_ast(
+                "CoefficientList",
+                &[
+                  plus(vec![operands[0].clone(), neg(operands[1].clone())]),
+                  id_expr(var),
+                ],
+              ) {
+                Ok(Expr::List(ref raw))
+                  if raw.len() == 4
+                    && raw.iter().all(|c| is_constant_wrt(c, var)) =>
+                {
+                  raw.to_vec()
+                }
+                _ => coeffs.clone(),
+              }
             }
             _ => coeffs.clone(),
           },

@@ -23411,6 +23411,21 @@ mod solve_symbolic_cubic {
     );
   }
 
+  // Many-digit coefficients keep wolframscript's root order: the cubic is
+  // not re-solved through a rescaled copy of itself.
+  #[test]
+  fn root_order_with_many_digit_coefficients() {
+    assert_eq!(
+      interpret(
+        "k = 6969103999999999/10^16; \
+         r = Z /. Solve[Z^3 - Z^2 + (43/100 (1 + k (1 - Sqrt[T]))^2/T^2) Z - c == 0, Z]; \
+         Round[Re[N[r /. {c -> 1/50, T -> 6/5}, 20]], 10^-6]"
+      )
+      .unwrap(),
+      "{128867/200000, 76827/500000, 202011/1000000}"
+    );
+  }
+
   // Inexact coefficients: the exact system is solved and numericized.
   #[test]
   fn inexact_coefficients_are_rationalized() {
