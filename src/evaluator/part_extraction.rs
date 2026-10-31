@@ -369,14 +369,18 @@ thread_local! {
 
 /// Remember that `var_name`'s value was rebuilt by a Part assignment.
 pub fn note_part_assigned(var_name: &str) {
-  PART_ASSIGNED.with(|set| set.borrow_mut().insert(var_name.to_string()));
+  PART_ASSIGNED.with(|set| {
+    set
+      .borrow_mut_own_value(var_name)
+      .insert(var_name.to_string())
+  });
 }
 
 /// Forget it again — the symbol has just been given a whole new value, which
 /// arrived evaluated.
 pub fn forget_part_assigned(var_name: &str) {
   PART_ASSIGNED.with(|set| {
-    let mut set = set.borrow_mut();
+    let mut set = set.borrow_mut_own_value(var_name);
     if !set.is_empty() {
       set.remove(var_name);
     }

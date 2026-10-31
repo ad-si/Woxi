@@ -1233,7 +1233,9 @@ fn evaluate_reusing_fixed_point(
   items: &crate::ExprList,
 ) -> Result<Expr, InterpreterError> {
   let epoch = crate::epoch::current_epoch();
-  if items.evaluated_at() == epoch {
+  let protected_epoch = crate::epoch::current_protected_epoch();
+  let mark = items.evaluated_at();
+  if mark == epoch || mark == protected_epoch {
     return Ok(expr.clone());
   }
   let effects = crate::epoch::side_effect_count();
@@ -1242,11 +1244,52 @@ fn evaluate_reusing_fixed_point(
     && crate::epoch::side_effect_count() == effects
     && identical_exprs(&result, expr)
   {
-    items.mark_evaluated(epoch);
+    // Only protected symbols: no assignment to an unprotected one can
+    // change what it evaluates to.
+    items.mark_evaluated(if mentions_only_protected_symbols(expr) {
+      protected_epoch
+    } else {
+      epoch
+    });
     // The input, not the equal result, so the mark travels with it.
     return Ok(expr.clone());
   }
   Ok(result)
+}
+
+/// Whether every symbol `expr` mentions, heads included, is protected, and
+/// it is built only from numbers, strings, symbols, lists, calls and
+/// operators.
+fn mentions_only_protected_symbols(expr: &Expr) -> bool {
+  fn go(e: &Expr, seen: &mut Vec<String>) -> bool {
+    let mut check = |name: &String| {
+      seen.contains(name)
+        || !name.starts_with('$')
+          && crate::evaluator::pattern_matching::is_symbol_protected(name)
+          && {
+            seen.push(name.clone());
+            true
+          }
+    };
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_) => true,
+      Expr::Identifier(name) | Expr::Constant(name) => check(name),
+      Expr::List(items) => items.iter().all(|i| go(i, seen)),
+      Expr::FunctionCall { name, args } => {
+        check(name) && args.iter().all(|a| go(a, seen))
+      }
+      // Operators stand for built-in, protected heads.
+      Expr::BinaryOp { left, right, .. } => go(left, seen) && go(right, seen),
+      Expr::UnaryOp { operand, .. } => go(operand, seen),
+      Expr::Comparison { operands, .. } => operands.iter().all(|o| go(o, seen)),
+      _ => false,
+    }
+  }
+  go(expr, &mut Vec::new())
 }
 
 /// Whether `a` and `b` are the same expression in every detail that could
@@ -1896,7 +1939,7 @@ fn evaluate_expr_to_expr_uncached(
             let new_val =
               evaluate_expr_to_expr(&plus2(current_val.clone(), delta))?;
             ENV.with(|e| {
-              e.borrow_mut().insert(
+              e.borrow_mut_own_value(var_name).insert(
                 var_name.clone(),
                 StoredValue::Raw(expr_to_string(&new_val)),
               );
@@ -2168,7 +2211,7 @@ fn evaluate_expr_to_expr_uncached(
                 &current_val,
               )?;
             ENV.with(|e| {
-              e.borrow_mut().insert(
+              e.borrow_mut_own_value(var_name).insert(
                 var_name.clone(),
                 StoredValue::ExprVal(new_val.clone()),
               );
@@ -2242,7 +2285,7 @@ fn evaluate_expr_to_expr_uncached(
             let rhs = evaluate_expr_to_expr(&args[1])?;
             let new_val = evaluate_expr_to_expr(&binop(op, current_val, rhs))?;
             ENV.with(|e| {
-              e.borrow_mut().insert(
+              e.borrow_mut_own_value(var_name).insert(
                 var_name.clone(),
                 StoredValue::ExprVal(new_val.clone()),
               );
@@ -2532,7 +2575,7 @@ fn evaluate_expr_to_expr_uncached(
           // updated list as an Expr in place, so the loop is amortized
           // O(n).
           ENV.with(|e| {
-            e.borrow_mut()
+            e.borrow_mut_own_value(var_name)
               .insert(var_name.clone(), StoredValue::ExprVal(new_val.clone()));
           });
           if var_name == "$BoxForms"
@@ -2621,7 +2664,7 @@ fn evaluate_expr_to_expr_uncached(
             _ => unreachable!(),
           };
           ENV.with(|e| {
-            e.borrow_mut()
+            e.borrow_mut_own_value(var_name)
               .insert(var_name.clone(), StoredValue::Association(pairs));
           });
           return Ok(new_val);
@@ -2676,7 +2719,7 @@ fn evaluate_expr_to_expr_uncached(
             _ => unreachable!(),
           };
           ENV.with(|e| {
-            e.borrow_mut()
+            e.borrow_mut_own_value(var_name)
               .insert(var_name.clone(), StoredValue::Association(pairs));
           });
           return Ok(new_val);

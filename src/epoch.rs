@@ -28,6 +28,7 @@ fn fresh_epoch() -> u64 {
 
 thread_local! {
   static EPOCH: Cell<u64> = Cell::new(fresh_epoch());
+  static PROTECTED_EPOCH: Cell<u64> = Cell::new(fresh_epoch());
 }
 
 /// The current epoch. Never 0, which marks a list as never verified.
@@ -35,10 +36,30 @@ pub fn current_epoch() -> u64 {
   EPOCH.with(Cell::get)
 }
 
+/// The epoch of everything but the own values of unprotected symbols. An
+/// expression that mentions only protected symbols (numbers and built-in
+/// functions, say) evaluates the same however those values change, so a
+/// fixed point verified at this epoch stays one across the assignments of
+/// a loop around it.
+pub fn current_protected_epoch() -> u64 {
+  PROTECTED_EPOCH.with(Cell::get)
+}
+
 /// Record that evaluation-relevant state changed (or a side effect
 /// happened), invalidating every result verified so far.
 pub fn bump_epoch() {
   EPOCH.with(|e| e.set(fresh_epoch()));
+  PROTECTED_EPOCH.with(|e| e.set(fresh_epoch()));
+}
+
+/// Record that the own value of the symbol `name` changed: only results
+/// that could mention it are invalidated when it is unprotected.
+pub fn bump_epoch_for_own_value(name: &str) {
+  if crate::evaluator::pattern_matching::is_symbol_protected(name) {
+    bump_epoch();
+  } else {
+    EPOCH.with(|e| e.set(fresh_epoch()));
+  }
 }
 
 /// A `RefCell` for state that evaluation reads. Every mutable borrow
@@ -66,6 +87,13 @@ impl<T> EpochCell<T> {
   pub fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError> {
     bump_epoch();
     self.0.try_borrow_mut()
+  }
+
+  /// A mutable borrow for a change to the own value of the symbol `name`
+  /// alone (see [`bump_epoch_for_own_value`]).
+  pub fn borrow_mut_own_value(&self, name: &str) -> RefMut<'_, T> {
+    bump_epoch_for_own_value(name);
+    self.0.borrow_mut()
   }
 
   /// A mutable borrow that does not advance the epoch, for changes that

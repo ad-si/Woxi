@@ -2641,7 +2641,8 @@ fn product_factors(base: &[Expr]) -> &[Expr] {
 /// A factor from the class of expressions whose printed forms differ
 /// whenever they differ structurally: symbols outside any context,
 /// non-negative integers, calls with a plain (non-built-in) head of such
-/// arguments, and integer powers of symbols and such calls. Like terms over
+/// arguments, integer powers of symbols and such calls, and rational powers
+/// of positive rationals (`Sqrt[13]`, `1/Sqrt[21/230]`). Like terms over
 /// these bases can be grouped structurally instead of by printed form.
 fn prints_injectively(e: &Expr) -> bool {
   fn atom_or_call(e: &Expr) -> bool {
@@ -2658,9 +2659,21 @@ fn prints_injectively(e: &Expr) -> bool {
   match e {
     Expr::Identifier(_) | Expr::FunctionCall { .. } if atom_or_call(e) => true,
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      !matches!(&args[0], Expr::Integer(_))
+      let positive_rational = |e: &Expr| match e {
+        Expr::Integer(n) => *n > 0,
+        Expr::FunctionCall { name, args } if name == "Rational" => {
+          matches!(args.as_slice(), [Expr::Integer(p), Expr::Integer(q)] if *p > 0 && *q > 1)
+        }
+        _ => false,
+      };
+      let radical = positive_rational(&args[0])
+        && matches!(&args[1], Expr::FunctionCall { name, args }
+          if name == "Rational"
+            && matches!(args.as_slice(), [Expr::Integer(_), Expr::Integer(q)] if *q > 1));
+      let integer_power = !matches!(&args[0], Expr::Integer(_))
         && atom_or_call(&args[0])
-        && matches!(&args[1], Expr::Integer(n) if *n >= 2)
+        && matches!(&args[1], Expr::Integer(n) if *n >= 2);
+      integer_power || radical
     }
     _ => false,
   }

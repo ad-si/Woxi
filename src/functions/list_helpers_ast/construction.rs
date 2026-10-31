@@ -396,7 +396,7 @@ pub fn table_ast(
       let prev = if substitute {
         None
       } else {
-        crate::ENV.with(|e| e.borrow_mut().remove(&var_name))
+        crate::ENV.with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name))
       };
       let result =
         table_over_iterator(body, &var_name, items, iter_spec, substitute);
@@ -1276,7 +1276,7 @@ fn body_uses_var_as_function_head(body: &Expr, var_name: &str) -> bool {
 /// iteration.
 fn bind_loop_var(var_name: &str, value: Expr) {
   crate::ENV.with(|e| {
-    let mut env = e.borrow_mut();
+    let mut env = e.borrow_mut_own_value(var_name);
     if let Some(slot) = env.get_mut(var_name) {
       *slot = crate::StoredValue::ExprVal(value);
     } else {
@@ -1289,7 +1289,7 @@ fn bind_loop_var(var_name: &str, value: Expr) {
 /// the slot if the variable was previously unbound).
 fn restore_loop_var(var_name: &str, prev: Option<crate::StoredValue>) {
   crate::ENV.with(|e| {
-    let mut env = e.borrow_mut();
+    let mut env = e.borrow_mut_own_value(var_name);
     if let Some(v) = prev {
       env.insert(var_name.to_string(), v);
     } else {
@@ -1384,7 +1384,8 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         {
           let s_expr = crate::evaluator::evaluate_expr_to_expr(&head_args[0])?;
           if let Expr::String(ref s) = s_expr {
-            let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+            let prev = crate::ENV
+              .with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name));
             let mut early_return: Option<Expr> = None;
             let mut error: Option<InterpreterError> = None;
             let mut buf = [0u8; 4];
@@ -1428,7 +1429,8 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           // cost O(1) by resolving `var_name` through the normal
           // identifier-lookup path.
           if !needs_substitute {
-            let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+            let prev = crate::ENV
+              .with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name));
             let mut early_return: Option<Expr> = None;
             let mut error: Option<InterpreterError> = None;
             for item in list_items {
@@ -1518,7 +1520,8 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(null_expr());
       }
       // ENV-binding fast path.
-      let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      let prev = crate::ENV
+        .with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name));
       let mut early_return: Option<Expr> = None;
       let result = super::utilities::for_each_numeric_step(
         min_expr,
@@ -1526,7 +1529,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         step_expr,
         |current| {
           crate::ENV.with(|e| {
-            e.borrow_mut()
+            e.borrow_mut_own_value(&var_name)
               .insert(var_name.clone(), crate::StoredValue::ExprVal(current));
           });
           match crate::evaluator::evaluate_expr_to_expr(body) {
@@ -1542,7 +1545,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         },
       );
       crate::ENV.with(|e| {
-        let mut env = e.borrow_mut();
+        let mut env = e.borrow_mut_own_value(&var_name);
         if let Some(v) = prev {
           env.insert(var_name.clone(), v);
         } else {
@@ -1664,7 +1667,8 @@ where
       if items.len() == 2 {
         let val_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         if let Expr::List(list_items) = &val_expr {
-          let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+          let prev = crate::ENV
+            .with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name));
           let mut err: Option<InterpreterError> = None;
           for (i, item) in list_items.iter().enumerate() {
             bind_loop_var(&var_name, item.clone());
@@ -1699,7 +1703,8 @@ where
         (min_expr, max_expr, step_expr)
       };
 
-      let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
+      let prev = crate::ENV
+        .with(|e| e.borrow_mut_own_value(&var_name).remove(&var_name));
       let mut err: Option<InterpreterError> = None;
       let mut idx = 0usize;
       let result = super::utilities::for_each_numeric_step(
@@ -1708,7 +1713,7 @@ where
         step_expr,
         |current| {
           crate::ENV.with(|e| {
-            e.borrow_mut()
+            e.borrow_mut_own_value(&var_name)
               .insert(var_name.clone(), crate::StoredValue::ExprVal(current));
           });
           let r = step(idx);

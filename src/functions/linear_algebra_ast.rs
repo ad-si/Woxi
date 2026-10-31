@@ -1531,24 +1531,51 @@ fn machine_complex_dot(a: &Expr, b: &Expr) -> Option<Expr> {
 /// same products in. `None` when either operand holds anything but machine
 /// reals, or the shapes do not fit.
 fn machine_dot(a: &Expr, b: &Expr) -> Option<Expr> {
-  fn reals(e: &Expr) -> Option<Vec<f64>> {
+  // Exact numbers multiply in machine arithmetic once a machine real takes
+  // part (`{1, Sqrt[2]} . {1.5, 2.}` is a machine number in wolframscript).
+  fn has_real(e: &Expr) -> bool {
     match e {
-      Expr::List(items) => items
-        .iter()
-        .map(|x| match x {
-          Expr::Real(r) => Some(*r),
-          _ => None,
-        })
-        .collect(),
-      _ => None,
+      Expr::Real(_) => true,
+      Expr::List(items) => items.iter().any(|x| match x {
+        Expr::Real(_) => true,
+        Expr::List(row) => row.iter().any(|y| matches!(y, Expr::Real(_))),
+        _ => false,
+      }),
+      _ => false,
     }
   }
-  fn matrix(e: &Expr) -> Option<Vec<Vec<f64>>> {
+  let mixed = has_real(a) || has_real(b);
+  let scalar = |x: &Expr| -> Option<f64> {
+    match x {
+      Expr::Real(r) => Some(*r),
+      Expr::Integer(n) if mixed => Some(*n as f64),
+      Expr::List(_) => None,
+      other
+        if mixed && crate::functions::predicate_ast::is_numeric_q(other) =>
+      {
+        // Compiled arithmetic first: the general numericizer is slow on the
+        // large exact entries a normalized exact data matrix has.
+        crate::functions::polynomial_ast::solve::compile_numeric(other, &[])
+          .filter(|n| !n.has_fallback())
+          .map(|n| n.eval(&[]))
+          .or_else(|| crate::functions::math_ast::try_eval_to_f64(other))
+          .filter(|v| v.is_finite())
+      }
+      _ => None,
+    }
+  };
+  let reals = |e: &Expr| -> Option<Vec<f64>> {
+    match e {
+      Expr::List(items) => items.iter().map(scalar).collect(),
+      _ => None,
+    }
+  };
+  let matrix = |e: &Expr| -> Option<Vec<Vec<f64>>> {
     let Expr::List(rows) = e else { return None };
     let m: Vec<Vec<f64>> = rows.iter().map(reals).collect::<Option<_>>()?;
     let width = m.first()?.len();
     (width > 0 && m.iter().all(|r| r.len() == width)).then_some(m)
-  }
+  };
   let dot = |x: &mut dyn Iterator<Item = f64>| -> f64 {
     let first = x.next().unwrap_or(0.0);
     x.fold(first, |acc, v| acc + v)
@@ -12242,6 +12269,10 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let m = matrix[0].len(); // cols
 
+  if let Some(a) = machine_real_matrix(&matrix) {
+    return Ok(householder_qr(a));
+  }
+
   // Complex matrices need the Hermitian inner product Σ Conjugate[aₖ]·bₖ
   // (a plain dot product made ‖(1, I)‖² = 0 and produced ComplexInfinity
   // garbage) and the returned q rows are conjugated so that
@@ -12274,18 +12305,28 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cols.push(col);
   }
 
-  // Modified Gram-Schmidt
+  // Modified Gram-Schmidt. A column in the span of the earlier ones
+  // (orthogonalized to zero) adds no row to Q or R; an all-zero matrix
+  // gives Q = {e1} and a zero row of R, as in wolframscript.
   let mut u: Vec<Vec<Expr>> = cols.clone();
   let mut q: Vec<Vec<Expr>> = Vec::with_capacity(n);
-  let mut r_entries: Vec<Vec<Expr>> = vec![vec![Expr::Integer(0); m]; n.min(m)];
+  let mut r_entries: Vec<Vec<Expr>> = Vec::with_capacity(n.min(m));
 
-  for i in 0..n.min(m) {
+  for i in 0..m {
+    if q.len() == n {
+      break;
+    }
     // Compute norm of u[i]
     let norm_sq = dot(&u[i], &u[i])?;
+    if matches!(norm_sq, Expr::Integer(0)) {
+      continue;
+    }
     let norm = eval_expr(&make_sqrt(norm_sq.clone()))?;
 
-    // R[i][i] = norm
-    r_entries[i][i] = norm.clone();
+    // R[row][i] = norm
+    r_entries.push(vec![Expr::Integer(0); m]);
+    let row = r_entries.len() - 1;
+    r_entries[row][i] = norm.clone();
 
     // Q[i] = u[i] / norm
     let mut qi = Vec::with_capacity(n);
@@ -12303,8 +12344,8 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // the later norms as unsimplified nested radicals.
     for j in (i + 1)..m {
       let unum = dot(&u[i], &u[j])?;
-      // R[i][j] = q_i·u_j = (u_i·u_j)/‖u_i‖ — one exact division.
-      r_entries[i][j] = eval_expr(&div2(unum.clone(), norm.clone()))?;
+      // R[row][j] = q_i·u_j = (u_i·u_j)/‖u_i‖ — one exact division.
+      r_entries[row][j] = eval_expr(&div2(unum.clone(), norm.clone()))?;
       let coeff = eval_expr(&div2(unum, norm_sq.clone()))?;
       for k in 0..n {
         u[j][k] = eval_expr(&minus2(
@@ -12313,6 +12354,11 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ))?;
       }
     }
+  }
+
+  if q.is_empty() {
+    q.push((0..n).map(|k| Expr::Integer((k == 0) as i128)).collect());
+    r_entries.push(vec![Expr::Integer(0); m]);
   }
 
   // Build Q^T (rows of Q^T = the qi vectors, conjugated for complex input
@@ -12340,6 +12386,89 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   Ok(Expr::List(vec![qt_expr, r_expr].into()))
+}
+
+/// `{Q, R}` of a machine-real matrix by Householder reflections, LAPACK's
+/// `dgeqr2` + `dorg2r`: each reflector maps its column onto
+/// `-Sign[a_ii] ‖x‖ e_1` (none for an already-reduced column), and Q has
+/// `Min[rows, cols]` orthonormal rows, rank-deficient matrices included.
+fn householder_qr(mut a: Vec<Vec<f64>>) -> Expr {
+  let rows = a.len();
+  let cols = a[0].len();
+  let k = rows.min(cols);
+  let mut tau = vec![0.0; k];
+  // Apply I - t v v' (v = (1, a[i+1..][i])) to a[i..][c0..cend].
+  let reflect = |a: &mut Vec<Vec<f64>>,
+                 v: &[f64],
+                 t: f64,
+                 i: usize,
+                 c0: usize,
+                 cend: usize| {
+    if t == 0.0 {
+      return;
+    }
+    for c in c0..cend {
+      let w: f64 = (i..rows).map(|r| v[r - i] * a[r][c]).sum();
+      for r in i..rows {
+        a[r][c] -= t * v[r - i] * w;
+      }
+    }
+  };
+  for i in 0..k {
+    let alpha = a[i][i];
+    let xnorm = (i + 1..rows).map(|r| a[r][i] * a[r][i]).sum::<f64>().sqrt();
+    if xnorm != 0.0 {
+      let beta = -alpha.hypot(xnorm).copysign(alpha);
+      tau[i] = (beta - alpha) / beta;
+      let scale = 1.0 / (alpha - beta);
+      for row in a.iter_mut().skip(i + 1) {
+        row[i] *= scale;
+      }
+      a[i][i] = beta;
+    }
+    if i + 1 < cols {
+      let v: Vec<f64> = std::iter::once(1.0)
+        .chain((i + 1..rows).map(|r| a[r][i]))
+        .collect();
+      reflect(&mut a, &v, tau[i], i, i + 1, cols);
+    }
+  }
+  let r: Vec<Vec<f64>> = (0..k)
+    .map(|i| {
+      (0..cols)
+        .map(|j| if j >= i { a[i][j] } else { 0.0 })
+        .collect()
+    })
+    .collect();
+  // dorg2r: accumulate Q (rows × k) in place from the reflectors.
+  let mut q: Vec<Vec<f64>> = (0..rows)
+    .map(|r| (0..k).map(|c| if r > c { a[r][c] } else { 0.0 }).collect())
+    .collect();
+  for i in (0..k).rev() {
+    if i + 1 < k {
+      q[i][i] = 1.0;
+      let v: Vec<f64> = (i..rows).map(|r| q[r][i]).collect();
+      reflect(&mut q, &v, tau[i], i, i + 1, k);
+    }
+    for row in q.iter_mut().skip(i + 1) {
+      row[i] *= -tau[i];
+    }
+    q[i][i] = 1.0 - tau[i];
+    for row in q.iter_mut().take(i) {
+      row[i] = 0.0;
+    }
+  }
+  let to_expr = |m: Vec<Vec<f64>>| {
+    Expr::List(
+      m.into_iter()
+        .map(|row| Expr::List(row.into_iter().map(Expr::Real).collect()))
+        .collect(),
+    )
+  };
+  let qt: Vec<Vec<f64>> = (0..k)
+    .map(|c| (0..rows).map(|r| q[r][c]).collect())
+    .collect();
+  Expr::List(vec![to_expr(qt), to_expr(r)].into())
 }
 
 /// Full singular value decomposition `{U, Σ, V}` (`A = U.Σ.V'`, U m×m,

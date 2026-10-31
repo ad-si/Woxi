@@ -866,6 +866,24 @@ mod arithmetic {
 /// name (case-insensitive, like symbols), then from the last factor of a
 /// product by that call's arguments, its exponent, and only then by the
 /// remaining factors. Every expectation is wolframscript-verified.
+mod plus_radical_like_terms {
+  use super::*;
+
+  // Terms over rational powers of rationals group structurally (without
+  // printing every base); a Dot of two exact 20×19 matrices of radicals
+  // spent nearly all its time printing them.
+  #[test]
+  fn radical_bases_combine() {
+    assert_eq!(
+      interpret(
+        "Sqrt[2] + 3 Sqrt[2] + 5^(1/3) - 5^(1/3) + 2/Sqrt[7] + 1/Sqrt[7] + x Sqrt[3] + y Sqrt[3]"
+      )
+      .unwrap(),
+      "4*Sqrt[2] + 3/Sqrt[7] + Sqrt[3]*x + Sqrt[3]*y"
+    );
+  }
+}
+
 mod plus_call_led_ordering {
   use super::*;
 

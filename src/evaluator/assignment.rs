@@ -3596,7 +3596,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         })
         .collect();
       ENV.with(|e| {
-        e.borrow_mut()
+        e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::Association(pairs))
       });
     } else if let Some((re, im)) =
@@ -3608,7 +3608,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // evaluate to, without re-parsing that text on every read — which
       // dominated complex iteration loops.
       ENV.with(|e| {
-        e.borrow_mut().insert(
+        e.borrow_mut_own_value(var_name).insert(
           var_name.clone(),
           StoredValue::ExprVal(
             crate::functions::math_ast::normalized_machine_complex(re, im),
@@ -3636,7 +3636,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
-        e.borrow_mut()
+        e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::ExprVal(stored))
       });
     } else {
@@ -3648,7 +3648,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         other => expr_to_string(other),
       };
       ENV.with(|e| {
-        e.borrow_mut()
+        e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::Raw(stored))
       });
     }

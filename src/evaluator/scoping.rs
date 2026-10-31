@@ -228,7 +228,10 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // cleanup — and definitions or closures escaping the Module keep
       // working, like Wolfram's Temporary module variables.
       let value = crate::evaluator::assignment::own_value_expr(&value);
-      ENV.with(|e| e.borrow_mut().insert(fresh, StoredValue::ExprVal(value)));
+      ENV.with(|e| {
+        e.borrow_mut_own_value(&fresh)
+          .insert(fresh.clone(), StoredValue::ExprVal(value))
+      });
     }
   }
   let body_expr = &body_owned;

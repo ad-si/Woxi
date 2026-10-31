@@ -3,6 +3,19 @@ use super::*;
 mod dot {
   use super::*;
 
+  // Exact numeric entries multiply in machine arithmetic once either
+  // operand holds a machine real; a symbolic entry keeps the general path.
+  #[test]
+  fn exact_numbers_with_machine_reals() {
+    assert_eq!(
+      interpret(
+        "InputForm[{{0, 0} . {1.5, 2.}, {1, 2} . {1.5, 2.}, {{1, 2}, {0, 0}} . {1.5, 2.}, {Sqrt[2], Pi} . {1., 1.}, {Sqrt[2], x} . {1., 1.}, {{1/2, E}} . {{1.}, {2.}}, {1, 2} . {3, 4}, {{1, 2}} . {{1.5}, {2}}}]"
+      )
+      .unwrap(),
+      "InputForm[{0., 5.5, {5.5, 0.}, 4.555806215962888, 1.4142135623730951 + 1.*x, {{5.93656365691809}}, 11, {{5.5}}}]"
+    );
+  }
+
   #[test]
   fn vector_dot_product() {
     assert_eq!(interpret("Dot[{1, 2, 3}, {4, 5, 6}]").unwrap(), "32");
@@ -7951,6 +7964,49 @@ mod cases {
     assert_case(
       r#"QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}]"#,
       r#"{{{1/Sqrt[35], 3/Sqrt[35], Sqrt[5/7]}, {13/Sqrt[210], 2*Sqrt[2/105], -Sqrt[5/42]}}, {{Sqrt[35], 44/Sqrt[35]}, {0, 2*Sqrt[6/35]}}}"#,
+    );
+  }
+  // A column in the span of the earlier ones adds no row to Q or R.
+  #[test]
+  fn qr_decomposition_exact_rank_deficient() {
+    assert_case(
+      r#"QRDecomposition[{{1, 1}, {1, 1}}]"#,
+      r#"{{{1/Sqrt[2], 1/Sqrt[2]}}, {{Sqrt[2], Sqrt[2]}}}"#,
+    );
+    assert_case(
+      r#"QRDecomposition[{{0, 1}, {0, 1}}]"#,
+      r#"{{{1/Sqrt[2], 1/Sqrt[2]}}, {{0, Sqrt[2]}}}"#,
+    );
+    assert_case(
+      r#"QRDecomposition[{{1, 2, 3}, {2, 4, 5}, {3, 6, 7}}]"#,
+      r#"{{{1/Sqrt[14], Sqrt[2/7], 3/Sqrt[14]}, {4/Sqrt[21], 1/Sqrt[21], -2/Sqrt[21]}}, {{Sqrt[14], 2*Sqrt[14], 17*Sqrt[2/7]}, {0, 0, Sqrt[3/7]}}}"#,
+    );
+    assert_case(
+      r#"QRDecomposition[{{0, 0}, {0, 0}}]"#,
+      r#"{{{1, 0}}, {{0, 0}}}"#,
+    );
+  }
+  // Machine matrices are factored by Householder reflections (LAPACK's
+  // signs: R's diagonal is -Sign[a_ii] times the column norm), so a
+  // rank-deficient one still gets Min[rows, cols] orthonormal Q rows
+  // instead of Indeterminate ones.
+  #[test]
+  fn qr_decomposition_machine_householder() {
+    assert_case(
+      r#"QRDecomposition[{{1., 0.}, {0., 0.}}]"#,
+      r#"{{{1., 0.}, {0., 1.}}, {{1., 0.}, {0., 0.}}}"#,
+    );
+    assert_case(
+      r#"QRDecomposition[{{0., 0.}, {0., 0.}}]"#,
+      r#"{{{1., 0.}, {0., 1.}}, {{0., 0.}, {0., 0.}}}"#,
+    );
+    assert_case(
+      r#"{q, r} = QRDecomposition[{{1., 2.}, {3., 4.}, {5., 6.}}]; {Round[{q, r}, 10.^-12], Dimensions /@ {q, r}}"#,
+      r#"{{{{-0.16903085094599998, -0.5070925528369999, -0.845154254729}, {0.8970852271449999, 0.276026223737, -0.345032779671}}, {{-5.9160797831, -7.437357441611}, {0., 0.828078671211}}}, {{2, 3}, {2, 2}}}"#,
+    );
+    assert_case(
+      r#"{q, r} = QRDecomposition[{{1., 2., 0., 0.}, {3., 4., 0., 0.}, {5., 6., 0., 0.}, {7., 8., 0., 0.}}]; {Chop[q . Transpose[q] - IdentityMatrix[4]], Chop[Transpose[q] . r - {{1., 2., 0., 0.}, {3., 4., 0., 0.}, {5., 6., 0., 0.}, {7., 8., 0., 0.}}], Round[Diagonal[r], 10.^-9]}"#,
+      r#"{{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}, {-9.16515139, -0.975900073, 0., 0.}}"#,
     );
   }
   // Complex matrices use the Hermitian inner product and conjugated q

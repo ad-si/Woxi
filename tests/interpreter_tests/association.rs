@@ -1823,6 +1823,39 @@ mod stored_value_access {
       "{300, 30000.}"
     );
   }
+
+  // A stored value that evaluates to itself and mentions only protected
+  // symbols is not evaluated again after an assignment to an unrelated
+  // variable: reading a 100×100 table of radicals in a loop that assigns
+  // took ~0.13 s per read in debug builds.
+  #[test]
+  fn protected_only_fixed_point_survives_assignments() {
+    assert_eq!(
+      interpret(
+        "Z = Table[Sqrt[i] + Log[j], {i, 100}, {j, 100}]; Do[x = i; Z, {i, 300}]; {x, Z[[2, 3]]}"
+      )
+      .unwrap(),
+      "{300, Sqrt[2] + Log[3]}"
+    );
+  }
+
+  // ...but one mentioning an unprotected symbol sees its new value, and a
+  // protected one changed after Unprotect is seen too.
+  #[test]
+  fn fixed_point_reuse_tracks_mentioned_symbols() {
+    assert_eq!(
+      interpret("W = Table[Sqrt[i] + k, {i, 300}]; W; k = 5; W[[1 ;; 2]]")
+        .unwrap(),
+      "{6, 5 + Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret(
+        "Z = Table[g[i], {i, 300}]; Protect[g]; Z; Unprotect[g]; g = h; Protect[g]; Z[[1 ;; 2]]"
+      )
+      .unwrap(),
+      "{h[1], h[2]}"
+    );
+  }
 }
 
 mod cases {
