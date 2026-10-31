@@ -6452,3 +6452,17 @@ wolframscript's labels for graphs that degree refinement separates (paths,
 stars, trees, cycles, complete bipartite graphs) but not for vertex-transitive
 ones, where wolframscript's tie-breaking rule is unknown. Isomorphic graphs
 still come out identical in Woxi.
+
+## Generalized eigenvectors with a singular `b` can differ in sign
+
+```sh
+wolframscript -code 'Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]'
+# {{Infinity, 1.}, {{0., 1.}, {1., 0.}}}
+woxi eval 'Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]'
+# {{Infinity, 1.}, {{0., -1.}, {-1., 0.}}}
+```
+
+With `b` singular Woxi takes the eigenpairs of `Inverse[a] . b` and inverts
+the eigenvalues (`Infinity` for its zero ones). The eigenvalues agree, but the
+vectors keep that reduced problem's sign choice and the finite eigenvalues can
+differ in the last bit.

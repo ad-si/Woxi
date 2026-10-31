@@ -12490,3 +12490,21 @@ mod n_of_sparse_array {
     );
   }
 }
+
+mod generalized_eigen_singular_b {
+  use super::*;
+
+  #[test]
+  fn a_singular_b_gives_infinite_eigenvalues() {
+    // Inverse[b] failed with Inverse::sing and the call stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "{First[Eigensystem[{{{1., 0}, {0, 2.}}, {{1., 0}, {0, 0}}}]], \
+         Round[10^6 Eigenvalues[{{{2., 1}, {1, 3.}}, {{1., 0}, {0, 0}}}] /. \
+         Infinity -> 0]}"
+      )
+      .unwrap(),
+      "{{Infinity, 1.}, {0, 1666667}}"
+    );
+  }
+}
