@@ -12092,27 +12092,37 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Levenshtein distance with one row of the table kept.
+  fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.iter().enumerate() {
+      let mut diagonal = row[0];
+      row[0] = i + 1;
+      for (j, y) in b.iter().enumerate() {
+        let above = row[j + 1];
+        row[j + 1] = (above + 1)
+          .min(row[j] + 1)
+          .min(diagonal + usize::from(x != y));
+        diagonal = above;
+      }
+    }
+    row[b.len()]
+  }
+  // Two strings compare character by character (Nearest over a word list
+  // asks this for every word).
+  if let (Expr::String(x), Expr::String(y)) = (&args[0], &args[1]) {
+    let chars = |s: &str| -> std::vec::Vec<char> {
+      if ignore_case {
+        s.to_lowercase().chars().collect()
+      } else {
+        s.chars().collect()
+      }
+    };
+    return Ok(Expr::Integer(levenshtein(&chars(x), &chars(y)) as i128));
+  }
   let a = to_tokens(&args[0], ignore_case);
   let b = to_tokens(&args[1], ignore_case);
-  let n = a.len();
-  let m = b.len();
-
-  let mut dp = vec![vec![0usize; m + 1]; n + 1];
-  for i in 0..=n {
-    dp[i][0] = i;
-  }
-  for j in 0..=m {
-    dp[0][j] = j;
-  }
-  for i in 1..=n {
-    for j in 1..=m {
-      let cost = usize::from(a[i - 1] != b[j - 1]);
-      dp[i][j] = (dp[i - 1][j] + 1)
-        .min(dp[i][j - 1] + 1)
-        .min(dp[i - 1][j - 1] + cost);
-    }
-  }
-  Ok(Expr::Integer(dp[n][m] as i128))
+  Ok(Expr::Integer(levenshtein(&a, &b) as i128))
 }
 
 /// Tokenize an alignment argument: a string into its characters, a list into

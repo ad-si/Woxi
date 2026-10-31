@@ -10357,6 +10357,19 @@ mod cases {
       r#"1"#,
     );
   }
+  // Strings compare by characters with one table row; Nearest over a word
+  // list asks for one distance per word.
+  #[test]
+  fn edit_distance_strings_and_nearest_over_many_words() {
+    assert_case(
+      r#"{EditDistance["kitten", "sitting"], EditDistance["Abc", "abc", IgnoreCase -> True], EditDistance[{1, 2, 3}, {1, 3}], EditDistance["", "abc"], EditDistance["abc", ""]}"#,
+      r#"{3, 0, 1, 3, 3}"#,
+    );
+    assert_case(
+      r#"words = Table[StringJoin[FromCharacterCode /@ (97 + Mod[{3 i, 7 i^2, 11 i, 13 i^3, i}, 26])], {i, 20000}]; r = Nearest[words, "hello"]; {Length[r], Take[r, 3]}"#,
+      r#"{2308, {dhlnb, hprnl, quyao}}"#,
+    );
+  }
   #[test]
   fn edit_distance_1() {
     assert_case(r#"EditDistance["kitten", "kitchen"]"#, r#"2"#);
