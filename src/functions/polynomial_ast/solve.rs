@@ -15843,7 +15843,16 @@ fn minimize_find_critical_points_1d(
 }
 
 /// Numerically find critical points of f using Newton's method with multiple starts.
+/// Newton's method from a few starts on `f'`. Its probes may land where the
+/// objective is singular; that is no message of the optimization's.
 fn minimize_find_critical_points_numerical(
+  f: &Expr,
+  var: &str,
+) -> Result<Vec<Expr>, InterpreterError> {
+  quietly(|| minimize_find_critical_points_newton(f, var))
+}
+
+fn minimize_find_critical_points_newton(
   f: &Expr,
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
@@ -17322,7 +17331,9 @@ fn minimize_constrained_1d(
   let mut best_f = f64::INFINITY;
   let mut best_x_f64 = candidates[0];
   for &cx in &candidates {
-    let fx = find_root_eval_at(f, var, cx).unwrap_or(f64::INFINITY);
+    // A bound can be a singular point of the objective; its value there
+    // just loses the comparison.
+    let fx = quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
     if fx < best_f {
       best_f = fx;
       best_x_f64 = cx;

@@ -6408,3 +6408,15 @@ woxi eval 'f[p_] /; p == 1/2 := 2; DownValues[f]'
 
 A rule stores its guard in a trailing condition slot whichever side it was
 written on. The two forms match the same calls; only the printed rule differs.
+
+## Maximize of `(1 - x)/(Log[1/x] + 1)` on `[0, 1]` is numeric, not `ProductLog`
+
+```sh
+wolframscript -code 'Maximize[{(1 - x)/(Log[x^(-1)] + 1), 0 <= x <= 1}, x]'
+# {(1 - E^(2 + ProductLog[-1, -E^(-2)]))/(-1 - ProductLog[-1, -E^(-2)]), {x -> E^(2 + ProductLog[-1, -E^(-2)])}}
+woxi eval 'Maximize[{(1 - x)/(Log[x^(-1)] + 1), 0 <= x <= 1}, x]'
+# {0.3178444328993727, {x -> 0.31784443289937303}}
+```
+
+The critical point solves `Log[1/x] + x == 0`-type equations that Woxi's
+Solve does not invert to `ProductLog`, so the optimizer falls back to Newton.

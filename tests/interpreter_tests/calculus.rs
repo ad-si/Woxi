@@ -24627,3 +24627,25 @@ mod piecewise_arithmetic_folding {
     );
   }
 }
+
+mod maximize_probes_are_quiet {
+  use super::*;
+
+  #[test]
+  fn a_singular_endpoint_raises_no_message() {
+    // The critical-point search probed x = 0, where Log[1/x] is infinite,
+    // and printed Power::infy and Infinity::indet.
+    // wolframscript's optimizer stops at x -> 0.3178444329467181.
+    let r = interpret_with_stdout(
+      "Round[10^8 {First[#], x /. Last[#]}] &[\
+       Maximize[{(1 - x)/(Log[x^(-1)] + 1.), 0 <= x <= 1}, x]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{31784443, 31784443}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+}
