@@ -12123,6 +12123,21 @@ mod array_domains {
 mod sparse_array_part_set_and_inverse {
   use super::*;
 
+  // One element or one row is read from its row of the compressed storage:
+  // reading every element of a 300×300 array one at a time scanned all the
+  // stored entries for each.
+  #[test]
+  fn element_by_element_reads() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[Table[{i, Mod[7 i, 300] + 1} -> i, {i, 300}], {300, 300}]; \
+         Total[Table[s[[i, j]], {i, 300}, {j, 300}], 2]"
+      )
+      .unwrap(),
+      "45150"
+    );
+  }
+
   // Parts are taken from the stored entries: a row of a 5000×5000 array
   // used to build all 25 million elements first.
   #[test]

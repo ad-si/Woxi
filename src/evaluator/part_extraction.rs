@@ -865,15 +865,24 @@ fn sparse_array_part(
     let k = if k < 0 { len + k + 1 } else { k };
     (1..=len).contains(&k).then(|| (k - 1) as usize)
   };
+  // (kept in the result, selected indices); a whole dimension is kept as
+  // is without listing its indices (`full[d]`).
   let mut selections: Vec<(bool, Vec<usize>)> = Vec::with_capacity(dims.len());
+  let mut full: Vec<bool> = Vec::with_capacity(dims.len());
   for (d, &len) in dims.iter().enumerate() {
-    let Some(spec) = indices.get(d) else {
-      selections.push((true, (0..len).collect()));
-      continue;
+    let whole = match indices.get(d) {
+      None => true,
+      Some(Expr::Identifier(a)) => a == "All",
+      _ => false,
     };
+    full.push(whole);
+    if whole {
+      selections.push((true, Vec::new()));
+      continue;
+    }
+    let spec = &indices[d];
     let sel = match spec {
       Expr::Integer(k) => (false, vec![resolve(*k, len)?]),
-      Expr::Identifier(a) if a == "All" => (true, (0..len).collect()),
       Expr::List(ks) => (
         true,
         ks.iter()
@@ -909,31 +918,114 @@ fn sparse_array_part(
     };
     selections.push(sel);
   }
+  // A single element is read from its row of the compressed storage
+  // (`{1, {rowPointers, columnIndices}, values}`) without listing the rest.
+  if selections.iter().all(|(kept, _)| !kept)
+    && let Expr::List(storage) = data
+    && let [Expr::Integer(1), Expr::List(structure), Expr::List(values)] =
+      storage.as_slice()
+    && let [Expr::List(row_ptr), Expr::List(columns)] = structure.as_slice()
+  {
+    let target: Vec<usize> = selections.iter().map(|(_, sel)| sel[0]).collect();
+    let (row, rest) = if dims.len() == 1 {
+      (0, &target[..])
+    } else {
+      (target[0], &target[1..])
+    };
+    let bound = |i: usize| match row_ptr.get(i) {
+      Some(Expr::Integer(k)) if *k >= 0 => Some(*k as usize),
+      _ => None,
+    };
+    if let (Some(lo), Some(hi)) = (bound(row), bound(row + 1)) {
+      for e in lo..hi.min(columns.len()).min(values.len()) {
+        let Expr::List(cols) = &columns[e] else { break };
+        if cols.len() == rest.len()
+          && cols
+            .iter()
+            .zip(rest)
+            .all(|(c, &t)| matches!(c, Expr::Integer(k) if *k == t as i128 + 1))
+        {
+          return Some(Ok(values[e].clone()));
+        }
+      }
+      return Some(Ok(background.clone()));
+    }
+  }
   // Every selected original index → its places in the result.
   let places: Vec<std::collections::HashMap<usize, Vec<usize>>> = selections
     .iter()
-    .map(|(_, sel)| {
+    .zip(&full)
+    .map(|((_, sel), &whole)| {
       let mut m: std::collections::HashMap<usize, Vec<usize>> =
         std::collections::HashMap::new();
-      for (out, &i) in sel.iter().enumerate() {
-        m.entry(i).or_default().push(out);
+      if !whole {
+        for (out, &i) in sel.iter().enumerate() {
+          m.entry(i).or_default().push(out);
+        }
       }
       m
     })
     .collect();
   let new_dims: Vec<usize> = selections
     .iter()
-    .filter(|(kept, _)| *kept)
-    .map(|(_, sel)| sel.len())
+    .zip(&full)
+    .zip(&dims)
+    .filter(|(((kept, _), _), _)| *kept)
+    .map(|(((_, sel), &whole), &len)| if whole { len } else { sel.len() })
     .collect();
-  let entries =
-    crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, data);
+  // With the first index fixed, only that row's entries are read.
+  let row_entries = || -> Option<Vec<(Vec<i128>, Expr)>> {
+    if dims.len() < 2 || selections[0].0 {
+      return None;
+    }
+    let Expr::List(storage) = data else {
+      return None;
+    };
+    let [Expr::Integer(1), Expr::List(structure), Expr::List(values)] =
+      storage.as_slice()
+    else {
+      return None;
+    };
+    let [Expr::List(row_ptr), Expr::List(columns)] = structure.as_slice()
+    else {
+      return None;
+    };
+    let row = selections[0].1[0];
+    let bound = |i: usize| match row_ptr.get(i) {
+      Some(Expr::Integer(k)) if *k >= 0 => Some(*k as usize),
+      _ => None,
+    };
+    let (lo, hi) = (bound(row)?, bound(row + 1)?);
+    (lo..hi)
+      .map(|e| {
+        let Expr::List(cols) = columns.get(e)? else {
+          return None;
+        };
+        let mut pos = vec![row as i128 + 1];
+        for c in cols {
+          match c {
+            Expr::Integer(k) => pos.push(*k),
+            _ => return None,
+          }
+        }
+        Some((pos, values.get(e)?.clone()))
+      })
+      .collect()
+  };
+  let entries = row_entries().unwrap_or_else(|| {
+    crate::functions::list_helpers_ast::sparse_array_extract_rules(&dims, data)
+  });
   let mut rules: Vec<Expr> = Vec::new();
   for (pos, value) in entries {
     let mut outs: Vec<Vec<usize>> = vec![Vec::new()];
     let mut hit = true;
     for (d, &p) in pos.iter().enumerate() {
-      let Some(targets) = places[d].get(&((p - 1) as usize)) else {
+      let own = [(p - 1) as usize];
+      let targets: &[usize] = if full[d] {
+        &own
+      } else if let Some(t) = places[d].get(&((p - 1) as usize)) {
+        t
+      } else {
         hit = false;
         break;
       };
