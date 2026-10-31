@@ -287,8 +287,6 @@ fn from_unordered_pairs(args: &[Expr]) -> Option<Expr> {
       _ => return None,
     }
   }
-  edges.sort_unstable();
-  edges.dedup();
   let n = edges.iter().map(|&(_, b)| b).max().unwrap_or(0);
   Some(circular_graph(n, edges, false))
 }
@@ -311,6 +309,74 @@ fn from_ordered_pairs(args: &[Expr]) -> Option<Expr> {
   }
   let n = edges.iter().map(|&(a, b)| a.max(b)).max().unwrap_or(0);
   Some(circular_graph(n, edges, true))
+}
+
+/// `DeleteEdges[g, {u, v}]` / `DeleteEdges[g, {{u1, v1}, …}]`: `g` with one
+/// edge per named pair removed, scanning the edges in order (either
+/// orientation names an edge of an undirected graph); with a trailing `All`
+/// every edge joining a named pair goes. Pairs naming no edge are ignored.
+fn delete_edges(args: &[Expr]) -> Option<Expr> {
+  let (graph, spec, all) = match args {
+    [g, s] => (g, s, false),
+    [g, s, Expr::Identifier(flag)] if flag == "All" => (g, s, true),
+    _ => return None,
+  };
+  let g = CGraph::parse(graph)?;
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let pair = |e: &Expr| match e {
+    Expr::List(p) => match p.as_slice() {
+      [Expr::Integer(a), Expr::Integer(b)] => Some((*a, *b)),
+      _ => None,
+    },
+    _ => None,
+  };
+  let mut wanted: Vec<Option<(i128, i128)>> = match pair(spec) {
+    Some(p) => vec![Some(p)],
+    None => items
+      .iter()
+      .map(|e| pair(e).map(Some))
+      .collect::<Option<_>>()?,
+  };
+  if !g.directed {
+    let reversed: Vec<_> =
+      wanted.iter().map(|p| p.map(|(a, b)| (b, a))).collect();
+    wanted.extend(reversed);
+  }
+  let keep: Vec<bool> = g
+    .edges
+    .iter()
+    .map(|&(u, v)| {
+      let edge = (u as i128 + 1, v as i128 + 1);
+      match wanted.iter().position(|p| *p == Some(edge)) {
+        Some(i) => {
+          if !all {
+            wanted[i] = None;
+          }
+          false
+        }
+        None => true,
+      }
+    })
+    .collect();
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  let Expr::List(edges) = &gargs[0] else {
+    return None;
+  };
+  let mut parts = gargs.to_vec();
+  parts[0] = Expr::List(
+    edges
+      .iter()
+      .zip(keep)
+      .filter(|(_, k)| *k)
+      .map(|(e, _)| e.clone())
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  Some(crate::helpers::call(name, parts))
 }
 
 /// The Combinatorica graph on vertices `1..n`, drawn on a circle with
@@ -353,86 +419,171 @@ fn circular_graph(n: i128, edges: Vec<(i128, i128)>, directed: bool) -> Expr {
   crate::helpers::call(GRAPH, parts)
 }
 
-/// `SetGraphOptions[g, {v1, v2, …, opts}]` sets options on those vertices,
-/// `SetGraphOptions[g, {{{u, v}, …}, opts}]`-style edge lists on those
-/// edges, and bare rules `SetGraphOptions[g, opts]` on the graph itself.
-/// A new option replaces one of the same name.
+/// `SetGraphOptions[g, spec]` / `SetGraphOptions[g, {spec1, spec2, …}]`
+/// with each spec `{v1, v2, …, opts}` (vertices) or `{{u1, v1}, …, opts}`
+/// (edges), then an optional `All` / `One` flag and graph options. A vertex
+/// or edge takes the options of the first spec naming it (with `One` each
+/// named edge occurrence is used up by the first edge it matches); the
+/// pairs of an undirected graph and of its edge specs are sorted first.
+/// Options merge as Combinatorica's `Merge` does: a new value replaces the
+/// old one in place, new names are appended.
 fn set_graph_options(args: &[Expr]) -> Option<Expr> {
-  let (graph, specs) = args.split_first()?;
+  let (graph, rest) = args.split_first()?;
   let Expr::FunctionCall { name, args: gargs } = graph else {
     return None;
   };
   if name != GRAPH || gargs.len() < 2 {
     return None;
   }
-  let is_rule = |e: &Expr| {
-    crate::evaluator::dispatch::list_operations::as_rule(e).is_some()
+  let as_rule = crate::evaluator::dispatch::list_operations::as_rule;
+  let is_rule = |e: &Expr| as_rule(e).is_some();
+  let (spec, rest) = match rest.split_first() {
+    Some((Expr::List(l), rest)) => (l.to_vec(), rest),
+    _ => (Vec::new(), rest),
   };
-  let rule_name = |e: &Expr| {
-    crate::evaluator::dispatch::list_operations::as_rule(e)
-      .map(|(k, _)| crate::syntax::expr_to_string(k))
+  let (one, opts) = match rest.split_first() {
+    Some((Expr::Identifier(f), rest)) if f == "One" => (true, rest),
+    Some((Expr::Identifier(_), rest)) => (false, rest),
+    _ => (false, rest),
   };
-  // `items` with `opts` merged in, replacing same-named options.
-  let merge = |items: &[Expr], opts: &[Expr]| -> Vec<Expr> {
-    let mut out: Vec<Expr> = items
+  if !opts.iter().all(is_rule) {
+    return None;
+  }
+  let pair = |e: &Expr| match e {
+    Expr::List(p) => match p.as_slice() {
+      [Expr::Integer(a), Expr::Integer(b)] => Some((*a, *b)),
+      _ => None,
+    },
+    _ => None,
+  };
+  // `{targets.., opts}` split into its targets and options, if it has the
+  // shape `target..` followed by `opts___` (at least one target).
+  let split =
+    |items: &[Expr], vertex: bool| -> Option<(Vec<Expr>, Vec<Expr>)> {
+      let k = items.iter().position(is_rule).unwrap_or(items.len());
+      let (targets, rest) = items.split_at(k);
+      let shaped = !targets.is_empty()
+        && targets.iter().all(|t| {
+          if vertex {
+            matches!(t, Expr::Integer(_))
+          } else {
+            pair(t).is_some()
+          }
+        })
+        && rest.iter().all(is_rule);
+      shaped.then(|| (targets.to_vec(), rest.to_vec()))
+    };
+  let specs: Vec<Expr> =
+    if split(&spec, true).is_some() || split(&spec, false).is_some() {
+      vec![Expr::List(spec.into())]
+    } else {
+      spec
+    };
+  let key =
+    |e: &Expr| as_rule(e).map(|(k, _)| crate::syntax::expr_to_string(k));
+  let merge = |old: &[Expr], new: &[Expr]| -> Vec<Expr> {
+    let mut out: Vec<Expr> = old
       .iter()
-      .filter(|i| {
-        !opts
+      .map(|o| {
+        new
           .iter()
-          .any(|o| rule_name(o).is_some() && rule_name(o) == rule_name(i))
+          .find(|n| key(n).is_some() && key(n) == key(o))
+          .unwrap_or(o)
+          .clone()
       })
-      .cloned()
       .collect();
-    out.extend(opts.iter().cloned());
+    out.extend(
+      new
+        .iter()
+        .filter(|n| !old.iter().any(|o| key(o).is_some() && key(o) == key(n)))
+        .cloned(),
+    );
     out
   };
+  let directed = option(&gargs[2..], "EdgeDirection")
+    .is_some_and(|d| matches!(d, Expr::Identifier(t) if t == "True"))
+    || option(opts, "EdgeDirection")
+      .is_some_and(|d| matches!(d, Expr::Identifier(t) if t == "True"));
+  let sorted = |p: (i128, i128)| {
+    if directed {
+      p
+    } else {
+      (p.0.min(p.1), p.0.max(p.1))
+    }
+  };
+  let to_pair = |(a, b): (i128, i128)| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let mut vertex_specs: Vec<(Vec<i128>, Vec<Expr>)> = Vec::new();
+  let mut edge_specs: Vec<(Vec<Option<(i128, i128)>>, Vec<Expr>)> = Vec::new();
+  for s in &specs {
+    let Expr::List(items) = s else { continue };
+    if let Some((targets, o)) =
+      split(items, true).filter(|(_, o)| !o.is_empty())
+    {
+      let vs = targets
+        .iter()
+        .map(|t| match t {
+          Expr::Integer(i) => *i,
+          _ => 0,
+        })
+        .collect();
+      vertex_specs.push((vs, o));
+    } else if let Some((targets, o)) =
+      split(items, false).filter(|(_, o)| !o.is_empty())
+    {
+      let es = targets.iter().map(|t| pair(t).map(sorted)).collect();
+      edge_specs.push((es, o));
+    }
+  }
   let (Expr::List(edges), Expr::List(vertices)) = (&gargs[0], &gargs[1]) else {
     return None;
   };
-  let mut edges = edges.to_vec();
-  let mut vertices = vertices.to_vec();
-  let mut graph_opts = gargs[2..].to_vec();
-  for spec in specs {
-    match spec {
-      Expr::List(items) => {
-        let split = items.iter().position(is_rule).unwrap_or(items.len());
-        let (targets, opts) = items.split_at(split);
-        for t in targets {
-          match t {
-            Expr::Integer(k) if *k >= 1 && (*k as usize) <= vertices.len() => {
-              let Expr::List(parts) = &vertices[*k as usize - 1] else {
-                return None;
-              };
-              let (head, rest) = parts.split_first()?;
-              let mut v = vec![head.clone()];
-              v.extend(merge(rest, opts));
-              vertices[*k as usize - 1] = Expr::List(v.into());
-            }
-            Expr::List(pair) if pair.len() == 2 => {
-              for e in &mut edges {
-                let Expr::List(parts) = &*e else { return None };
-                let (head, rest) = parts.split_first()?;
-                if crate::syntax::expr_to_string(head)
-                  == crate::syntax::expr_to_string(t)
-                {
-                  let mut v = vec![head.clone()];
-                  v.extend(merge(rest, opts));
-                  *e = Expr::List(v.into());
-                }
-              }
-            }
-            _ => return None,
-          }
+  let mut new_edges = Vec::with_capacity(edges.len());
+  for e in edges {
+    let Expr::List(parts) = e else { return None };
+    let (head, rest) = parts.split_first()?;
+    let head = match pair(head) {
+      Some(p) => to_pair(sorted(p)),
+      None => head.clone(),
+    };
+    let found = pair(&head).and_then(|p| {
+      edge_specs.iter().enumerate().find_map(|(si, (es, _))| {
+        es.iter().position(|q| *q == Some(p)).map(|qi| (si, qi))
+      })
+    });
+    let mut v = vec![head];
+    match found {
+      Some((si, qi)) => {
+        v.extend(merge(rest, &edge_specs[si].1));
+        if one {
+          edge_specs[si].0[qi] = None;
         }
       }
-      rule if is_rule(rule) => {
-        graph_opts = merge(&graph_opts, std::slice::from_ref(rule));
+      None => v.extend(rest.iter().cloned()),
+    }
+    new_edges.push(Expr::List(v.into()));
+  }
+  let mut new_vertices = Vec::with_capacity(vertices.len());
+  for (i, vx) in vertices.iter().enumerate() {
+    let found = vertex_specs
+      .iter()
+      .find(|(vs, _)| vs.contains(&(i as i128 + 1)));
+    match (found, vx) {
+      (Some((_, o)), Expr::List(parts)) => {
+        let (head, rest) = parts.split_first()?;
+        let mut v = vec![head.clone()];
+        v.extend(merge(rest, o));
+        new_vertices.push(Expr::List(v.into()));
       }
-      _ => return None,
+      _ => new_vertices.push(vx.clone()),
     }
   }
-  let mut parts = vec![Expr::List(edges.into()), Expr::List(vertices.into())];
-  parts.extend(graph_opts);
+  let mut parts = vec![
+    Expr::List(new_edges.into()),
+    Expr::List(new_vertices.into()),
+  ];
+  parts.extend(merge(&gargs[2..], opts));
   Some(crate::helpers::call(GRAPH, parts))
 }
 
@@ -460,6 +611,32 @@ fn random_graph(args: &[Expr]) -> Option<Expr> {
   Some(circular_graph(*n, edges, false))
 }
 
+/// `ExactRandomGraph[n, e]`: `e` distinct edges among `n` vertices, chosen
+/// uniformly at random, on the circular embedding.
+fn exact_random_graph(args: &[Expr]) -> Option<Expr> {
+  use rand::seq::index::sample;
+  let [Expr::Integer(n), Expr::Integer(e)] = args else {
+    return None;
+  };
+  if *n < 0 || *n > 2000 || *e < 0 {
+    return None;
+  }
+  let pairs: Vec<(i128, i128)> = (1..=*n)
+    .flat_map(|a| (a + 1..=*n).map(move |b| (a, b)))
+    .collect();
+  if *e as usize > pairs.len() {
+    return None;
+  }
+  let mut picked =
+    crate::with_rng(|rng| sample(rng, pairs.len(), *e as usize).into_vec());
+  picked.sort_unstable();
+  Some(circular_graph(
+    *n,
+    picked.into_iter().map(|i| pairs[i]).collect(),
+    false,
+  ))
+}
+
 /// Dispatches the `Combinatorica\`` graph functions. `None` leaves the call
 /// unevaluated (wrong argument shapes, or not a Combinatorica graph).
 pub fn combinatorica_graph_ast(
@@ -484,6 +661,12 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   if name == "Combinatorica`RandomGraph" {
     return random_graph(args);
+  }
+  if name == "Combinatorica`ExactRandomGraph" {
+    return exact_random_graph(args);
+  }
+  if name == "Combinatorica`DeleteEdges" {
+    return delete_edges(args);
   }
   if name == "Combinatorica`ShowGraph" {
     return show_graph(args, false);
@@ -609,6 +792,59 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
         .collect::<Vec<_>>()
         .into(),
     )),
+    // Shortest-path lengths between all vertex pairs: Floyd–Warshall over
+    // the `EdgeWeight`s (1 by default) in machine reals, as Combinatorica's
+    // compiled kernel runs it, with integral lengths turned back into
+    // integers (its `Zap`) and Infinity where no path joins two vertices.
+    ("Combinatorica`AllPairsShortestPath", 1) => {
+      let Expr::FunctionCall { args: gargs, .. } = &args[0] else {
+        return None;
+      };
+      let Expr::List(raw_edges) = &gargs[0] else {
+        return None;
+      };
+      let mut d = vec![vec![f64::INFINITY; g.n]; g.n];
+      for (i, row) in d.iter_mut().enumerate() {
+        row[i] = 0.0;
+      }
+      for (&(u, v), raw) in g.edges.iter().zip(raw_edges.iter()) {
+        let Expr::List(parts) = raw else { return None };
+        let w = match option(&parts[1..], "EdgeWeight") {
+          Some(w) => crate::functions::math_ast::try_eval_to_f64(w)?,
+          None => 1.0,
+        };
+        if u != v {
+          d[u][v] = d[u][v].min(w);
+          if !g.directed {
+            d[v][u] = d[v][u].min(w);
+          }
+        }
+      }
+      for k in 0..g.n {
+        for i in 0..g.n {
+          for j in 0..g.n {
+            d[i][j] = d[i][j].min(d[i][k] + d[k][j]);
+          }
+        }
+      }
+      let zap = |x: f64| {
+        if x.is_infinite() {
+          Expr::Identifier("Infinity".to_string())
+        } else if (x.round() - x).abs() < 1e-10 {
+          Expr::Integer(x.round() as i128)
+        } else {
+          Expr::Real(x)
+        }
+      };
+      Some(Expr::List(
+        d.into_iter()
+          .map(|row| {
+            Expr::List(row.into_iter().map(zap).collect::<Vec<_>>().into())
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ))
+    }
     ("Combinatorica`ShortestPath", 3) => {
       let start = vertex_arg(&g, &args[1])?;
       let end = vertex_arg(&g, &args[2])?;

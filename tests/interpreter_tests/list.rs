@@ -11706,7 +11706,7 @@ mod join_non_list {
             {{1,2},{2,3},{3,4},{4,1}}]]}"
       )
       .unwrap(),
-      "{{{1, 2}, {1, 4}, {2, 3}, {3, 4}}, 0., 1., True}"
+      "{{{1, 2}, {2, 3}, {3, 4}, {1, 4}}, 0., 1., True}"
     );
   }
 
@@ -25299,6 +25299,84 @@ mod combinatorica_random_graph {
       )
       .unwrap(),
       "{{0, 1, 2, Infinity, Infinity}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_delete_edges_and_all_pairs_shortest_path() {
+    // FromUnorderedPairs keeps duplicate pairs in their given order.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = FromUnorderedPairs[{{3, 1}, {1, 2}, {1, 2}, {2, 3}, {4, 5}}]; \
+         {Edges[g], Edges[DeleteEdges[g, {2, 1}]], \
+          Edges[DeleteEdges[g, {{1, 2}, {5, 4}}]], \
+          Edges[DeleteEdges[g, {1, 2}, All]], V[DeleteEdges[g, {1, 2}]]}"
+      )
+      .unwrap(),
+      "{{{1, 3}, {1, 2}, {1, 2}, {2, 3}, {4, 5}}, \
+       {{1, 3}, {1, 2}, {2, 3}, {4, 5}}, {{1, 3}, {1, 2}, {2, 3}}, \
+       {{1, 3}, {2, 3}, {4, 5}}, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {AllPairsShortestPath[FromUnorderedPairs[{{1, 2}, {2, 3}, {4, 5}}]], \
+          AllPairsShortestPath[FromOrderedPairs[{{1, 2}, {2, 3}}]], \
+          Edges[DeleteEdges[FromOrderedPairs[{{1, 2}, {2, 3}}], {2, 1}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1, 2, Infinity, Infinity}, {1, 0, 1, Infinity, Infinity}, \
+       {2, 1, 0, Infinity, Infinity}, {Infinity, Infinity, Infinity, 0, 1}, \
+       {Infinity, Infinity, Infinity, 1, 0}}, \
+       {{0, 1, 2}, {Infinity, 0, 1}, {Infinity, Infinity, 0}}, \
+       {{1, 2}, {2, 3}}}"
+    );
+    // Weighted: machine-real lengths, integral ones back as integers.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = SetGraphOptions[FromUnorderedPairs[{{1, 2}, {2, 3}, {1, 3}}], \
+           {{{1, 3}, EdgeWeight -> 5}, {{2, 1}, EdgeWeight -> 3/2}}]; \
+         {g[[1]], AllPairsShortestPath[g]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, EdgeWeight -> 3/2}, {{2, 3}}, {{1, 3}, EdgeWeight -> 5}}, \
+       {{0, 1.5, 2.5}, {1.5, 0, 1}, {2.5, 1, 0}}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_set_graph_options_spec_lists() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = FromUnorderedPairs[{{1, 2}, {1, 2}, {2, 3}}]; \
+         h = SetGraphOptions[g, {{1, 2}, EdgeWeight -> 4, EdgeColor -> Red}]; \
+         {SetGraphOptions[g, {{2, 1}, EdgeColor -> Red}, One][[1]], \
+          SetGraphOptions[h, {{1, 2}, EdgeColor -> Blue, EdgeLabel -> 1}][[1, 1]], \
+          SetGraphOptions[g, {{{3, 2}, EdgeWeight -> 2}, {2, VertexColor -> Red}}, \
+            EdgeStyle -> Thick][[{1, 3}]], \
+          SetGraphOptions[g, {2, VertexColor -> Red}][[2, 2, 2]]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, EdgeColor -> RGBColor[1, 0, 0]}, {{1, 2}}, {{2, 3}}}, \
+       {{1, 2}, EdgeWeight -> 4, EdgeColor -> RGBColor[0, 0, 1], EdgeLabel -> 1}, \
+       Graph[{{{1, 2}}, {{1, 2}}, {{2, 3}, EdgeWeight -> 2}}, EdgeStyle -> Thickness[Large]], \
+       VertexColor -> RGBColor[1, 0, 0]}"
+    );
+  }
+
+  #[test]
+  fn exact_random_graph_has_exactly_e_distinct_edges() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = ExactRandomGraph[10, 10]; \
+         {V[g], M[g], Length[Union[Sort /@ Edges[g]]], \
+          M[ExactRandomGraph[5, 10]], M[ExactRandomGraph[5, 0]]}"
+      )
+      .unwrap(),
+      "{10, 10, 10, 10, 0}"
     );
   }
 

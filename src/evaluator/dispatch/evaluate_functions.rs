@@ -1406,6 +1406,9 @@ fn evaluate_function_call_ast_inner(
     {
       "Combinatorica`RandomGraph"
     }
+    "ExactRandomGraph" if combinatorica_active() => {
+      "Combinatorica`ExactRandomGraph"
+    }
     "KSubsets" if combinatorica_active() => "Combinatorica`KSubsets",
     "KSetPartitions" if combinatorica_active() => {
       "Combinatorica`KSetPartitions"
@@ -1431,6 +1434,8 @@ fn evaluate_function_call_ast_inner(
     | "ShowGraph"
     | "ShowLabeledGraph"
     | "SetGraphOptions"
+    | "DeleteEdges"
+    | "AllPairsShortestPath"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -14845,6 +14850,8 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "M" => "Combinatorica`M",
     "ShowGraph" => "Combinatorica`ShowGraph",
     "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
+    "DeleteEdges" => "Combinatorica`DeleteEdges",
+    "AllPairsShortestPath" => "Combinatorica`AllPairsShortestPath",
     _ => "Combinatorica`ShortestPath",
   }
 }
