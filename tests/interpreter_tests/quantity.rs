@@ -1205,6 +1205,23 @@ fn unit_convert_with_abbreviation_target() {
   );
 }
 
+// ─── StandardAccelerationOfGravity ────────────────────────────────────────
+
+#[test]
+fn unit_convert_standard_gravity() {
+  // 9.80665 m/s^2 by definition (AsimovsLadderOfPhysicalConstants).
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"StandardAccelerationOfGravity\"]]")
+      .unwrap(),
+    "Quantity[196133/20000, Meters/Seconds^2]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1., \"StandardAccelerationOfGravity\"]]")
+      .unwrap(),
+    "Quantity[9.80665, Meters/Seconds^2]"
+  );
+}
+
 // ─── SpeedOfLight ─────────────────────────────────────────────────────────
 
 #[test]

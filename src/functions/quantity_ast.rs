@@ -850,6 +850,11 @@ fn resolve_compound_constant(
       (801088317, 5000000000000000000000000000),
       vec![("Amperes".to_string(), 1), ("Seconds".to_string(), 1)],
     )),
+    // Standard gravity, 9.80665 m/s^2 by definition.
+    "StandardAccelerationOfGravity" => Some((
+      (196133, 20000),
+      vec![("Meters".to_string(), 1), ("Seconds".to_string(), -2)],
+    )),
     _ => None,
   }
 }
