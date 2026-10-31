@@ -3583,11 +3583,14 @@ fn evaluate_expr_to_expr_uncached(
                   },
                 )));
               }
+              // (A delayed `p := Association[…]` yields an association,
+              // which is applied as one.)
               if matches!(
                 head_value,
                 Expr::Function { .. }
                   | Expr::NamedFunction { .. }
                   | Expr::FunctionCall { .. }
+                  | Expr::Association(_)
               ) {
                 // For Function[{params}, body, attrs] with HoldAll/HoldFirst/
                 // HoldRest, suppress argument evaluation so the function body

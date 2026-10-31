@@ -1620,6 +1620,21 @@ mod subvalues {
 mod ownvalues {
   use super::*;
 
+  // A delayed own value that evaluates to an association is applied as one
+  // (a topological sort keyed its lookups on `pred := Association[…]`).
+  #[test]
+  fn delayed_association_value_as_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p := Association[{\"a\" -> 1}]; {p[\"a\"], p[\"b\"], Map[p[#] &, {\"a\"}], \
+         Module[{q}, q := Association[Map[# -> 2 &, {\"x\"}]]; q[\"x\"]]}"
+      )
+      .unwrap(),
+      "{1, Missing[KeyAbsent, b], {1}, 2}"
+    );
+  }
+
   #[test]
   fn ownvalues_of_undefined_symbol_is_empty_list() {
     assert_eq!(interpret("OwnValues[x]").unwrap(), "{}");
