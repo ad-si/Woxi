@@ -3604,7 +3604,6 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && operands.len() == 2
     && !in_nsolve()
     && crate::functions::math_ast::contains_inexact_real(eq)
-    && !has_radical(eq)
     && matches!(
       crate::evaluator::evaluate_function_call_ast(
         "PolynomialQ",
