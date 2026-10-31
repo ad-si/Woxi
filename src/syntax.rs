@@ -2987,7 +2987,14 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       call1("Out", Expr::Integer(n))
     }
     Rule::Constant | Rule::UnsignedConstant => {
-      Expr::Constant(pair.as_str().trim().to_string())
+      // The span can swallow a trailing `(* … *)` comment that the implicit
+      // COMMENT rule consumed after the name, so cut at the name's end.
+      let text = pair.as_str().trim();
+      let end = text
+        .char_indices()
+        .find(|(i, c)| *i > 0 && !c.is_ascii_alphanumeric())
+        .map_or(text.len(), |(i, _)| i);
+      Expr::Constant(text[..end].to_string())
     }
     Rule::BaseFunctionCall => {
       let src_start = pair.as_span().start();
