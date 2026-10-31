@@ -2901,6 +2901,22 @@ mod graphics {
     }
 
     #[test]
+    fn pie_chart_of_association_of_quantities_draws_labelled_slices() {
+      // Regression: an Association (and `Quantity` values) was rejected with
+      // `PieChart::ldata`. Slices take the values; `ChartLabels -> Automatic`
+      // uses the keys.
+      let svg = export_svg(
+        "PieChart[<|\"Fat\" -> Quantity[2., \"Grams\"], \"Carbs\" -> Quantity[3., \"Grams\"], \"Protein\" -> Quantity[5., \"Grams\"]|>, ChartLabels -> Automatic]",
+      );
+      assert_eq!(svg.matches("<path").count(), 3, "{svg}");
+      for key in ["Fat", "Carbs", "Protein"] {
+        assert!(svg.contains(&format!(">{key}<")), "{key}: {svg}");
+      }
+      let plain = export_svg("PieChart[<|\"a\" -> 3, \"b\" -> 5|>]");
+      assert_eq!(plain.matches("<path").count(), 2, "{plain}");
+    }
+
+    #[test]
     fn text_with_italic_and_color() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Text[Style[\"Strahl\", 11, Italic, Blue], {10, 0.7}]}]"
