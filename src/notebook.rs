@@ -2364,15 +2364,15 @@ fn box_part_source(part: &str) -> String {
     // to the ASCII operator `>=` the way a bare `"\[GreaterEqual]"`
     // element between two operands does.
     if inner.starts_with("\\\"") {
-      string_literal_source(inner)
+      canonical_linear_syntax(&string_literal_source(inner))
     } else if inner.starts_with("\\<") && inner.ends_with("\\>") {
       // `\<…\>` is the linear-syntax spelling of a string literal's
       // quotes (`"\<surface 1\>"` is the string `"surface 1"`), so the
       // element is a string literal just like `"\"…\""`.
-      format!(
+      canonical_linear_syntax(&format!(
         "\"{}\"",
         escape_unescaped_quotes(&unescape_code_string(inner))
-      )
+      ))
     } else {
       unescape_code_string(inner)
     }
@@ -3277,6 +3277,96 @@ fn string_literal_source(inner: &str) -> String {
     }
     _ => value,
   }
+}
+
+/// The front end's spelling of the linear syntax (`\!\(…\)`) inside a
+/// string literal, which is what the kernel receives: a group mixing a plain
+/// token with nested groups has each token grouped too — `\(4\(-\)\)` is
+/// sent as `\(\(4\)\(-\)\)`. A control's saved value carries that spelling,
+/// so the literal has to as well for the two strings to be equal.
+fn canonical_linear_syntax(src: &str) -> String {
+  if !src.contains("\\!\\(") {
+    return src.to_string();
+  }
+  enum Node {
+    Text(String),
+    Group(Vec<Node>),
+  }
+  let chars: Vec<char> = src.chars().collect();
+  let mut stack: Vec<Vec<Node>> = vec![Vec::new()];
+  let push_text = |stack: &mut Vec<Vec<Node>>, t: &str| {
+    let top = stack.last_mut().unwrap();
+    if let Some(Node::Text(prev)) = top.last_mut() {
+      prev.push_str(t);
+    } else {
+      top.push(Node::Text(t.to_string()));
+    }
+  };
+  let mut i = 0;
+  while i < chars.len() {
+    match (chars[i], chars.get(i + 1)) {
+      ('\\', Some('(')) => {
+        stack.push(Vec::new());
+        i += 2;
+      }
+      ('\\', Some(')')) => {
+        if stack.len() < 2 {
+          return src.to_string();
+        }
+        let group = stack.pop().unwrap();
+        stack.last_mut().unwrap().push(Node::Group(group));
+        i += 2;
+      }
+      ('\\', Some(&c)) => {
+        push_text(&mut stack, &format!("\\{c}"));
+        i += 2;
+      }
+      (c, _) => {
+        push_text(&mut stack, &c.to_string());
+        i += 1;
+      }
+    }
+  }
+  if stack.len() != 1 {
+    return src.to_string();
+  }
+  let simple = |t: &str| {
+    t.chars().all(|c| c.is_alphanumeric() || c == '.') || matches!(t, "+" | "-")
+  };
+  fn write(nodes: &[Node], simple: &dyn Fn(&str) -> bool, out: &mut String) {
+    for n in nodes {
+      match n {
+        Node::Text(t) => out.push_str(t),
+        Node::Group(children) => {
+          let has_group = children.iter().any(|c| matches!(c, Node::Group(_)));
+          let texts: Vec<&str> = children
+            .iter()
+            .filter_map(|c| match c {
+              Node::Text(t) => Some(t.as_str()),
+              _ => None,
+            })
+            .collect();
+          let wrap =
+            has_group && !texts.is_empty() && texts.iter().all(|t| simple(t));
+          out.push_str("\\(");
+          for c in children {
+            match c {
+              Node::Text(t) if wrap => {
+                out.push_str("\\(");
+                out.push_str(t);
+                out.push_str("\\)");
+              }
+              other => write(std::slice::from_ref(other), simple, out),
+            }
+          }
+          out.push_str("\\)");
+        }
+      }
+    }
+  }
+  let mut out = String::with_capacity(src.len() + 8);
+  write(&stack[0], &simple, &mut out);
+  out
 }
 
 /// Escape every `"` in `body` that isn't already preceded by a backslash.
@@ -6392,6 +6482,25 @@ Cell["Chapter 2", "Chapter"]
     // subscript's digits for alignment. It unescapes to one plain space.
     assert_eq!(unescape_string(r"a\ b"), "a b");
     assert_eq!(unescape_string(r"2\ \ \ "), "2   ");
+  }
+
+  #[test]
+  fn linear_syntax_in_string_literals_takes_the_front_end_spelling() {
+    // A plain token next to a nested group is grouped too.
+    assert_eq!(
+      canonical_linear_syntax(
+        r#""\!\(\*SuperscriptBox[\(Fe\), \(2\(+\)\)]\)/Fe(s)""#
+      ),
+      r#""\!\(\*SuperscriptBox[\(Fe\), \(\(2\)\(+\)\)]\)/Fe(s)""#
+    );
+    // Single tokens, box heads and text outside the boxes stay as written.
+    for s in [
+      r#""2\!\(\*SubscriptBox[\(H\), \(2\)]\)O""#,
+      r#""\!\(\*SubscriptBox[\()\), \(6\)]\)""#,
+      r#""plain (s) text""#,
+    ] {
+      assert_eq!(canonical_linear_syntax(s), s);
+    }
   }
 
   #[test]
