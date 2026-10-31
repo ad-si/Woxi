@@ -6466,3 +6466,10 @@ With `b` singular Woxi takes the eigenpairs of `Inverse[a] . b` and inverts
 the eigenvalues (`Infinity` for its zero ones). The eigenvalues agree, but the
 vectors keep that reduced problem's sign choice and the finite eigenvalues can
 differ in the last bit.
+
+## Text with a Row of Style-sized labels
+
+- `Graphics[Text[Row[{Style["12", Bold, 54], …}], pos]]` draws the row at the
+  default font size: the `Style` sizes inside a `Row` passed to `Text` are
+  not applied, so a barcode's printed digits come out much smaller than in
+  wolframscript.

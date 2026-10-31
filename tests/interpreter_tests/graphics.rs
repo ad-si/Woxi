@@ -43694,3 +43694,34 @@ mod bspline_function_spline_knots {
     );
   }
 }
+
+mod show_array_plot_sizing {
+  use super::*;
+
+  #[test]
+  fn show_keeps_array_plot_image_size_and_aspect_ratio() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{0, 1, 0, 1, 1, 0}}, Frame -> False, \
+       AspectRatio -> 0.8, ImageSize -> 500], \
+       Graphics[Text[\"hi\", {3, 0.03}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"500\" height=\"400\""),
+      "Got: {svg}"
+    );
+  }
+
+  #[test]
+  fn show_keeps_array_plot_options_for_any_size() {
+    let svg = interpret(
+      "ExportString[Show[ArrayPlot[{{1, 0, 1}}, AspectRatio -> 0.5, \
+       ImageSize -> 300], Graphics[Point[{1, 0}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<svg width=\"300\" height=\"150\""),
+      "Got: {svg}"
+    );
+  }
+}
