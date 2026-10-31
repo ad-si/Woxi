@@ -3500,11 +3500,13 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       Expr::Identifier(_)
         | Expr::Integer(_)
         | Expr::BigInteger(_)
-        | Expr::Real(_)
         | Expr::BigFloat(_, _)
         | Expr::Constant(_)
     ) {
       // Store every compound value as ExprVal for a faithful roundtrip.
+      // A machine real is kept as a value too: its text (`6.328*^-7`) is
+      // not a literal the reader's fast path takes, so every read of the
+      // symbol went through the full parser.
       // Text does not survive one: rules lose parentheses (`(p /; c) :> b`
       // would reparse as `Condition[p, RuleDelayed[c, b]]`), and a rendered
       // graphic inside an unevaluated `Part` prints as `-Graphics-`, which
