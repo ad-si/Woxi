@@ -766,6 +766,17 @@ fn render_item(
         ));
       }
       "Text" if !args.is_empty() => {
+        // A `Dynamic[x]` inside the label (`Row[{"n = ", Dynamic[n]}]`)
+        // shows the current value of `x`, as in `Graphics`.
+        let released;
+        let args = if crate::functions::graphics::contains_dynamic(&args[0]) {
+          let mut owned = args.to_vec();
+          owned[0] = crate::functions::graphics::release_dynamics(&args[0]);
+          released = owned;
+          released.as_slice()
+        } else {
+          args
+        };
         // `Text[label]` sits at the origin, as in `Graphics`.
         let anchor = match args.get(1) {
           Some(pos) => anchor2(pos, area),

@@ -1197,6 +1197,18 @@ mod graphics {
       assert!(!svg.contains("&quot;"), "no quoted strings: {svg}");
     }
 
+    /// A `Dynamic[x]` inside a plot `Epilog` `Text` label shows the current
+    /// value of `x`, not the held `Dynamic[x]` call.
+    #[test]
+    fn a_plot_epilog_text_shows_the_value_of_a_dynamic() {
+      let svg = export_svg(
+        "m = 7; Plot[x, {x, 0, 1}, Epilog -> {\
+         Text[Row[{\"m = \", Dynamic[m]}], {0.5, 0.5}]}]",
+      );
+      assert!(svg.contains(">m = 7</text>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
     /// Inline `\!\(\*SubscriptBox[...]\)` box notation in a plot's text
     /// (an `Epilog` `Text`, styled or not, or a `PlotLabel`) typesets to
     /// real sub/superscripts instead of dropping the script.

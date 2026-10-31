@@ -5200,7 +5200,7 @@ pub(crate) fn dynamic_current_value(expr: &Expr) -> Expr {
 }
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
-fn contains_dynamic(expr: &Expr) -> bool {
+pub(crate) fn contains_dynamic(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if name == "Dynamic" && !args.is_empty())
     || crate::syntax::expr_children(expr)
@@ -5210,7 +5210,7 @@ fn contains_dynamic(expr: &Expr) -> bool {
 
 /// `expr` with every `Dynamic[x, …]` replaced by the current value of `x`.
 /// The rest stays unevaluated, so a `HoldForm` keeps its written shape.
-fn release_dynamics(expr: &Expr) -> Expr {
+pub(crate) fn release_dynamics(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && !args.is_empty() =>
