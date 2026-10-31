@@ -1317,6 +1317,25 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
+    // DirichletCharacter threads over a list of arguments n.
+    "DirichletCharacter"
+      if args.len() == 3 && matches!(&args[2], Expr::List(_)) =>
+    {
+      let Expr::List(ns) = &args[2] else {
+        return None;
+      };
+      let mut out = Vec::with_capacity(ns.len());
+      for n in ns {
+        match crate::evaluator::evaluate_function_call_ast(
+          name,
+          &[args[0].clone(), args[1].clone(), n.clone()],
+        ) {
+          Ok(v) => out.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      return Some(Ok(Expr::List(out.into())));
+    }
     "DirichletCharacter" if args.len() == 3 => {
       return Some(crate::functions::dirichlet_ast::dirichlet_character_ast(
         args,
@@ -3493,6 +3512,18 @@ pub fn dispatch_math_functions(
     "BitXor" => {
       return Some(crate::functions::math_ast::bit_xor_ast(args));
     }
+    // BitNot is an involution: BitNot[BitNot[x]] is x.
+    "BitNot"
+      if args.len() == 1
+        && let Expr::FunctionCall {
+          name: inner,
+          args: ia,
+        } = &args[0]
+        && inner == "BitNot"
+        && ia.len() == 1 =>
+    {
+      return Some(Ok(ia[0].clone()));
+    }
     "BitNot" if args.len() == 1 => {
       return Some(crate::functions::math_ast::bit_not_ast(args));
     }
@@ -4518,10 +4549,12 @@ pub fn dispatch_math_functions(
         crate::functions::image_ast::NeighborhoodRange::RoundedUp,
       ));
     }
-    "Upsample" if args.len() == 2 || args.len() == 3 => {
+    "Upsample" if (2..=4).contains(&args.len()) => {
       // Upsample[list, n] — insert n-1 zeros after each element;
       // Upsample[list, n, offset] — each element sits at position offset
-      // (1..n) of its block of n.
+      // (1..n) of its block of n; Upsample[list, n, offset, padding] fills
+      // the rest with padding instead of 0.
+      let padding = args.get(3).cloned().unwrap_or(Expr::Integer(0));
       if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
         let offset = match args.get(2) {
           None => Some(1),
@@ -4538,7 +4571,7 @@ pub fn dispatch_math_functions(
               result.push(if i == offset {
                 elem.clone()
               } else {
-                Expr::Integer(0)
+                padding.clone()
               });
             }
           }

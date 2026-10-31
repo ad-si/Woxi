@@ -4039,6 +4039,35 @@ pub fn dispatch_list_operations(
         args[0].clone(),
       ]));
     }
+    // PowerRange[a, b, r] with symbolic values: a, a r, a r^2, … up to the
+    // power that equals b exactly (PowerRange[a, a^10, a] is {a, …, a^10}).
+    "PowerRange"
+      if args.len() == 3
+        && args
+          .iter()
+          .any(|a| !crate::functions::predicate_ast::is_numeric_q(a)) =>
+    {
+      let target = expr_to_string(&args[1]);
+      let mut terms = Vec::new();
+      for k in 0..=1000i128 {
+        let term = match crate::evaluator::evaluate_expr_to_expr(&call(
+          "Times",
+          vec![
+            args[0].clone(),
+            call("Power", vec![args[2].clone(), Expr::Integer(k)]),
+          ],
+        )) {
+          Ok(t) => t,
+          Err(e) => return Some(Err(e)),
+        };
+        let done = expr_to_string(&term) == target;
+        terms.push(term);
+        if done {
+          return Some(Ok(Expr::List(terms.into())));
+        }
+      }
+      return Some(Ok(unevaluated(name, args)));
+    }
     "PowerRange" if args.len() == 2 || args.len() == 3 => {
       return Some(list_helpers_ast::power_range_ast(args));
     }
@@ -6526,70 +6555,43 @@ pub fn dispatch_list_operations(
     // FoldPairList[f, x, list] — fold with pair output {emit, newState}.
     // FoldPairList[f, x, list, g] emits g applied to the whole {emit, newState}
     // pair instead of just the first element.
-    "FoldPairList" if args.len() == 3 || args.len() == 4 => {
-      if let Expr::List(ref elems) = args[2] {
-        let f = &args[0];
-        let g = if args.len() == 4 {
-          Some(&args[3])
-        } else {
-          None
-        };
-        let mut state = args[1].clone();
-        let mut results = Vec::new();
-        for elem in elems {
-          // Apply f[state, elem] — build function call expression
-          let applied = match f {
-            Expr::Function { body } => crate::syntax::substitute_slots(
-              body,
-              &[state.clone(), elem.clone()],
-            ),
-            Expr::Identifier(fname) => Expr::FunctionCall {
-              name: fname.clone(),
-              args: vec![state.clone(), elem.clone()].into(),
-            },
-            _ => Expr::FunctionCall {
-              name: expr_to_string(f),
-              args: vec![state.clone(), elem.clone()].into(),
-            },
+    // FoldPairList[f, y0, list] / FoldPairList[f, y0, list, g]: f[y, e]
+    // gives {emitted, next y}; the 4-argument form emits g[{emitted, y}].
+    // The elements may come from any head, as with Fold.
+    "FoldPairList"
+      if (args.len() == 3 || args.len() == 4)
+        && matches!(&args[2], Expr::List(_) | Expr::FunctionCall { .. }) =>
+    {
+      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) = &args[2]
+      else {
+        return None;
+      };
+      let mut state = args[1].clone();
+      let mut results = Vec::new();
+      for elem in elems {
+        let result =
+          match list_helpers_ast::apply_func_to_two_args(&args[0], &state, elem)
+          {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
           };
-          let result = crate::evaluator::evaluate_expr_to_expr(&applied)
-            .unwrap_or(applied);
-          if let Expr::List(ref pair) = result {
-            if pair.len() == 2 {
-              let pair_expr = result.clone();
-              // Emit g[pair] for the 4-argument form, else the first element.
-              let emitted = match g {
-                Some(g) => {
-                  let g_applied = match g {
-                    Expr::Function { body } => crate::syntax::substitute_slots(
-                      body,
-                      std::slice::from_ref(&pair_expr),
-                    ),
-                    Expr::Identifier(gname) => Expr::FunctionCall {
-                      name: gname.clone(),
-                      args: vec![pair_expr.clone()].into(),
-                    },
-                    _ => Expr::FunctionCall {
-                      name: expr_to_string(g),
-                      args: vec![pair_expr.clone()].into(),
-                    },
-                  };
-                  crate::evaluator::evaluate_expr_to_expr(&g_applied)
-                    .unwrap_or(g_applied)
-                }
-                None => pair[0].clone(),
-              };
-              results.push(emitted);
-              state = pair[1].clone();
-            } else {
-              return Some(Ok(result));
-            }
-          } else {
-            return Some(Ok(result));
-          }
+        let Expr::List(pair) = &result else {
+          return Some(Ok(result));
+        };
+        if pair.len() != 2 {
+          return Some(Ok(result));
         }
-        return Some(Ok(Expr::List(results.into())));
+        let emitted = match args.get(3) {
+          Some(g) => match list_helpers_ast::apply_func_ast(g, &result) {
+            Ok(r) => r,
+            Err(e) => return Some(Err(e)),
+          },
+          None => pair[0].clone(),
+        };
+        results.push(emitted);
+        state = pair[1].clone();
       }
+      return Some(Ok(Expr::List(results.into())));
     }
     // JoinAcross[list1, list2, key] — join associations on a common key
     "JoinAcross" if args.len() == 3 => {
@@ -6620,8 +6622,11 @@ pub fn dispatch_list_operations(
     // under that sameness test, which is not a transitive grouping:
     // CountDistinct[{1, 2, 3, 4, 5}, Abs[#1 - #2] < 2 &] is 3, not 1.
     "CountDistinct" if args.len() == 1 || args.len() == 2 => {
+      // Any head's arguments count (CountDistinct[Hold[1 + 2, 2 + 1]]).
       let elems: Option<Vec<Expr>> = match &args[0] {
-        Expr::List(elems) => Some(elems.to_vec()),
+        Expr::List(elems) | Expr::FunctionCall { args: elems, .. } => {
+          Some(elems.to_vec())
+        }
         Expr::Association(pairs) => {
           Some(pairs.iter().map(|(_, v)| v.clone()).collect())
         }

@@ -10611,6 +10611,21 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // FileBaseName[File[path]] and FileExtension[File[path]] name the file
+  // the same way the bare path does.
+  if matches!(name, "FileBaseName" | "FileExtension")
+    && let [
+      Expr::FunctionCall {
+        name: file,
+        args: fa,
+      },
+    ] = args
+    && file == "File"
+    && let [path @ Expr::String(_)] = fa.as_slice()
+  {
+    return evaluate_function_call_ast(name, std::slice::from_ref(path));
+  }
+
   // FileBaseName[path] — get file name without extension
   if name == "FileBaseName"
     && args.len() == 1
