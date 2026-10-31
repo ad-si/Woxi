@@ -6813,3 +6813,23 @@ mod options_pattern_with_symbol_defaults {
     );
   }
 }
+
+mod definition_pattern_variables_avoid_capture {
+  use super::*;
+
+  #[test]
+  fn an_argument_symbol_is_not_captured_by_an_inner_definition() {
+    // The inner `x_` captured the argument's `x`, so `f[a]` stayed `x^2`.
+    assert_eq!(
+      interpret(
+        "g[vl_] := Module[{f, e}, e = x^2; f[x_] = e /. {vl[[1]] -> x}; f[a]]; g[{x}]"
+      )
+      .unwrap(),
+      "a^2"
+    );
+    assert_eq!(
+      interpret("h[v_] := (k[x_] := x + v); h[x]; k[2]").unwrap(),
+      "2 + x"
+    );
+  }
+}

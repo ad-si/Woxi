@@ -17399,6 +17399,39 @@ fn substitute_variables_impl(
           return call(name, substitute_parts(&renamed, bindings, template));
         }
       }
+      // A definition's pattern variables are binders too: one that occurs
+      // in a value being substituted is renamed to `name$` first, so the
+      // value keeps its own symbol (`g[vl_] := (f[x_] = e /. vl[[1]] -> x)`
+      // called as `g[{x}]` must leave the argument's `x` alone).
+      if template
+        && matches!(name.as_str(), "Set" | "SetDelayed")
+        && args.len() == 2
+      {
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> =
+          crate::evaluator::pattern_variable_names(&args[0])
+            .into_iter()
+            .filter(|b| {
+              value_names.contains(b.as_str())
+                && !bindings.iter().any(|(slot, _)| slot == b)
+            })
+            .map(|b| (b.clone(), format!("{b}$")))
+            .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
+      }
       let new_args: Vec<Expr> = substitute_parts(args, bindings, template);
       // Check if the function name itself is being substituted
       for &(var_name, value) in bindings {
