@@ -43676,3 +43676,21 @@ mod edit_rendered_graphics {
     );
   }
 }
+
+mod bspline_function_spline_knots {
+  use super::*;
+
+  #[test]
+  fn explicit_knots_fix_the_degree_and_domain() {
+    // SplineKnots made BSplineFunction stay unevaluated.
+    assert_eq!(
+      interpret(
+        "{BSplineFunction[{{{0,0,0},{0,1,0},{0,2,0}},{{1,0,0},{1,1,1},{1,2,0}},\
+         {{2,0,0},{2,1,0},{2,2,0}}}, SplineKnots -> {{0,0,0,1,1,1},{0,0,0,1,1,1}}][0.5, 0.5], \
+         BSplineFunction[{{0,0},{1,1},{2,0},{3,1}}, SplineKnots -> {0,0,0,0.5,1,1,1}][0.25]}"
+      )
+      .unwrap(),
+      "{{1., 1., 0.25}, {0.875, 0.625}}"
+    );
+  }
+}

@@ -179,6 +179,17 @@ fn n_sparse_array(
   Some(build())
 }
 
+/// `expr` with every numeric subexpression free of slots and symbols
+/// numericized and everything else left unevaluated.
+fn n_held_numbers(expr: &Expr) -> Expr {
+  let numeric = matches!(expr, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational");
+  if numeric && let Ok(v) = n_eval(expr) {
+    return v;
+  }
+  crate::syntax::map_children(expr, &n_held_numbers)
+}
+
 fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
@@ -197,6 +208,11 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
       Ok(Expr::List(results?.into()))
     }
+    // A pure function's body is held, so N reaches only its numbers:
+    // `N[FoldList[Plus, 0, #] &]` is `FoldList[Plus, 0., #] &`.
+    Expr::Function { body } => Ok(Expr::Function {
+      body: Box::new(n_held_numbers(body)),
+    }),
     Expr::BigInteger(n) => Ok(Expr::Real(
       n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
     )),
