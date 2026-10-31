@@ -2419,14 +2419,12 @@ fn collect_primitives(
     // as the line those points make. `Dynamic` is HoldFirst, so the content
     // arrives unexpanded and has to be released here; without this the
     // primitive reads as malformed and the whole picture becomes an error box.
+    // The `Dynamic` may also sit deeper inside the argument
+    // (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`): every one reads as its value
+    // and the argument is evaluated again with the values in place.
     Expr::FunctionCall { name, args }
-      if args.iter().any(|a| {
-        matches!(a, Expr::FunctionCall { name, args }
-          if name == "Dynamic" && args.len() == 1)
-      }) && !matches!(
-        name.as_str(),
-        "Dynamic" | "Style" | "EventHandler"
-      )
+      if args.iter().any(contains_dynamic)
+        && !matches!(name.as_str(), "Dynamic" | "Style" | "EventHandler")
         // A user function handed `Dynamic[…]` arguments matches on them as
         // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
         && crate::evaluator::functions::is_builtin_symbol(name) =>
@@ -2439,6 +2437,10 @@ fn collect_primitives(
           {
             crate::evaluator::evaluate_expr_to_expr(&inner[0])
               .unwrap_or_else(|_| a.clone())
+          }
+          other if contains_dynamic(other) => {
+            let value = release_dynamics(other);
+            crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
           }
           other => other.clone(),
         })

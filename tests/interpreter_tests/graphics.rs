@@ -1249,6 +1249,19 @@ mod graphics {
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
 
+    /// A `Dynamic[x]` nested inside a primitive's argument expression
+    /// (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`) reads as the value of `x`, so
+    /// the line is drawn instead of being dropped.
+    #[test]
+    fn a_dynamic_inside_a_primitive_argument_expression_is_drawn() {
+      let svg = export_svg(
+        "zu = {1, 0}; zv = {0, 1}; Graphics[{Line[{-5 Dynamic[zu], \
+         5 Dynamic[zu] + 2 Dynamic[zv]}]}, PlotRange -> 6]",
+      );
+      assert!(svg.contains("<line") || svg.contains("<polyline"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
     /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
     /// as it does in `Graphics`, instead of being dropped.
     #[test]
