@@ -10217,6 +10217,23 @@ mod plot3d {
       assert!(y >= 0.0, "title starts above the image: {line}");
     }
 
+    /// Axes under `ImageSize -> {w, h}` keep the shape of the plot range, like
+    /// a frame does, instead of widening the range until it fills the size:
+    /// no tick is labelled beyond the requested range.
+    #[test]
+    fn axes_under_a_fixed_image_size_do_not_extend_the_plot_range() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {20, 3}}]}, Axes -> True, \
+         PlotRange -> {{-2, 10}, {0, 10}}, ImageSize -> {500, 300}]",
+      );
+      let labels: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.contains("text-anchor=\"middle\""))
+        .filter_map(|l| l.split('>').nth(1)?.split('<').next())
+        .collect();
+      assert_eq!(labels, ["-2", "2", "4", "6", "8", "10"]);
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.

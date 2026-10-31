@@ -11477,8 +11477,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the clip rectangle below.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
   let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
-  // A frame under `ImageSize -> {w, h}` with an automatic aspect ratio
-  // hugs the data instead: the frame keeps the shape of the plot range and
+  // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
+  // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centred in the requested size, rather than the range being
   // widened until the frame fills it. `AspectRatio -> Full` is the
   // opposite request: the frame fills the whole size given.
@@ -11486,7 +11486,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && size_names_height
     && aspect_ratio.is_none()
     && !aspect_ratio_full
-    && frame_edges.iter().any(|&e| e);
+    && (axes.0 || axes.1 || frame_edges.iter().any(|&e| e));
   if !aspect_ratio_full && !fit_frame_to_data {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
