@@ -11804,6 +11804,20 @@ mod join_non_list {
     );
   }
 
+  // With the package loaded, the bare names reach the package's functions.
+  #[test]
+  fn combinatorica_bare_names_after_needs() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; {ToCycles[{2, 1, 3}], \
+         OrbitRepresentatives[{{1, 2}, {2, 1}}, {{1, 2}, {2, 1}, {1, 1}}], \
+         UnrankPermutation[1, {a, b, c}], Length[RandomSubset[{a}]] <= 1}"
+      )
+      .unwrap(),
+      "{{{2, 1}, {3}}, {{1, 2}, {1, 1}}, {a, c, b}, True}"
+    );
+  }
+
   #[test]
   fn combinatorica_random_permutation_is_a_list_permutation() {
     // Unlike the built-in (which returns a Cycles object), the package's

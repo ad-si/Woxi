@@ -1361,6 +1361,15 @@ fn evaluate_function_call_ast_inner(
       "Combinatorica`Graph"
     }
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
+    "RandomSubset" if combinatorica_active() => "Combinatorica`RandomSubset",
+    "ToCycles" if combinatorica_active() => "Combinatorica`ToCycles",
+    "Orbits" if combinatorica_active() => "Combinatorica`Orbits",
+    "OrbitRepresentatives" if combinatorica_active() => {
+      "Combinatorica`OrbitRepresentatives"
+    }
+    "UnrankPermutation" if combinatorica_active() => {
+      "Combinatorica`UnrankPermutation"
+    }
     "StableMarriage" if combinatorica_active() => {
       "Combinatorica`StableMarriage"
     }
