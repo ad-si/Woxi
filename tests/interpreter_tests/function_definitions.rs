@@ -1594,6 +1594,27 @@ mod subvalues {
       "{10, 4, 4}"
     );
   }
+
+  // A rule with patterns is passed over when one of its literal atoms
+  // differs from the call's in an argument list that lines up position by
+  // position — and only then (sequence patterns, optional arguments and
+  // Orderless heads still go to the matcher).
+  #[test]
+  fn patterned_subvalues_ruled_out_by_literal_atoms() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[P, 8][x_] = 1 - 72 x; g[x___, 2, y___][z_] := {x, y, z}; \
+         h[a_, 1][b_] := a + b; SetAttributes[o, Orderless]; o[1, a_][b_] := {a, b}; \
+         k[a_ : 1, 2][b_] := {a, b}; \
+         {Subscript[P, 8][2], Subscript[T, 2][t], g[2, 5, 7][1], g[1, 2][3], g[1, 3][3], \
+          h[5, 1][2], h[5, 2][2], o[z, 1][2], o[3, 1][2], k[2][3], k[5, 2][3]}"
+      )
+      .unwrap(),
+      "{-143, Subscript[T, 2][t], {5, 7, 1}, {1, 3}, g[1, 3][3], 7, h[5, 2][2], \
+       {z, 2}, {3, 2}, {1, 3}, {5, 3}}"
+    );
+  }
 }
 
 mod ownvalues {
