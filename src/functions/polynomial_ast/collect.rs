@@ -13,6 +13,20 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list is collected element by element (wolframscript:
+  // `Collect[{1 + 2 t, 3 t^2}, t]` is `{1 + 2 t, 3 t^2}`).
+  if let Expr::List(items) = &args[0] {
+    let collected = items
+      .iter()
+      .map(|item| {
+        let mut call = args.to_vec();
+        call[0] = item.clone();
+        collect_ast(&call)
+      })
+      .collect::<Result<Vec<_>, _>>()?;
+    return Ok(Expr::List(collected.into()));
+  }
+
   // Extract optional head function (3rd argument)
   let head = if args.len() == 3 {
     Some(&args[2])

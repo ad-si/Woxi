@@ -2950,6 +2950,24 @@ mod expand_all {
 mod collect_tests {
   use super::*;
 
+  // A list is collected element by element
+  // (CurvatureExtremaForConstrainedBezierCurves).
+  #[test]
+  fn collect_threads_over_a_list() {
+    assert_eq!(
+      interpret("Collect[{1 + 2 t, 3 t^2}, t]").unwrap(),
+      "{1 + 2*t, 3*t^2}"
+    );
+    assert_eq!(
+      interpret("Collect[{0.7 + 2.3 t, 1.5 t^2}, t]").unwrap(),
+      "{0.7 + 2.3*t, 1.5*t^2}"
+    );
+    assert_eq!(
+      interpret("Collect[{a x + b x, x^2 + c x^2}, x, Simplify]").unwrap(),
+      "{(a + b)*x, (1 + c)*x^2}"
+    );
+  }
+
   #[test]
   fn collect_basic() {
     assert_eq!(interpret("Collect[x*y + x*z, x]").unwrap(), "x*(y + z)");
