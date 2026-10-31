@@ -1418,10 +1418,7 @@ fn try_sub_value_curried_match(
       m.borrow().get(&head).map(|rules| {
         rules
           .iter()
-          .filter(|(lhs, _)| {
-            !literal_atoms_differ(&actual, lhs)
-              || crate::evaluator::pattern_matching::contains_pattern(lhs)
-          })
+          .filter(|(lhs, _)| !literal_atoms_rule_out(&actual, lhs))
           .cloned()
           .collect()
       })
@@ -1518,6 +1515,82 @@ pub(crate) fn literal_atoms_differ(a: &Expr, b: &Expr) -> bool {
       Expr::FunctionCall { name: n1, args: a1 },
       Expr::FunctionCall { name: n2, args: a2 },
     ) => n1 == n2 && args_differ(a1, a2),
+    _ => false,
+  }
+}
+
+/// Whether a rule with left-hand side `lhs` (patterns allowed) cannot match
+/// the curried call `actual` because a literal atom of `lhs` sits where
+/// `actual` holds a different one. Only argument lists that line up
+/// position by position count: none of a lhs's arguments may stand for a
+/// sequence (or be optional), and the head may not be Orderless or Flat.
+pub(crate) fn literal_atoms_rule_out(actual: &Expr, lhs: &Expr) -> bool {
+  fn sequence_like(e: &Expr) -> bool {
+    match e {
+      Expr::Pattern { blank_type, .. }
+      | Expr::PatternTest { blank_type, .. } => *blank_type != 1,
+      Expr::PatternOptional { .. } => true,
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "BlankSequence"
+        | "BlankNullSequence"
+        | "Repeated"
+        | "RepeatedNull"
+        | "PatternSequence"
+        | "Optional"
+        | "Alternatives"
+        | "OrderlessPatternSequence"
+        | "Longest"
+        | "Shortest" => true,
+        "Pattern" | "Condition" | "PatternTest" => {
+          args.first().is_some_and(sequence_like)
+        }
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+  fn atom(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::Integer(_) | Expr::String(_) | Expr::Identifier(_) | Expr::Real(_)
+    )
+  }
+  fn same_atom(p: &Expr, q: &Expr) -> bool {
+    match (p, q) {
+      (Expr::Integer(x), Expr::Integer(y)) => x == y,
+      (Expr::Real(x), Expr::Real(y)) => x == y,
+      (Expr::String(x), Expr::String(y))
+      | (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
+      _ => false,
+    }
+  }
+  fn args_rule_out(actual: &[Expr], lhs: &[Expr]) -> bool {
+    actual.len() == lhs.len()
+      && !lhs.iter().any(sequence_like)
+      && actual
+        .iter()
+        .zip(lhs)
+        .any(|(p, q)| atom(p) && atom(q) && !same_atom(p, q))
+  }
+  match (actual, lhs) {
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) => args_rule_out(a1, a2) || literal_atoms_rule_out(f1, f2),
+    (
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
+    ) => {
+      n1 == n2
+        && !crate::evaluator::listable::is_builtin_orderless(n1)
+        && !crate::evaluator::listable::is_builtin_flat(n1)
+        && !crate::func_attrs_contains(
+          n1,
+          crate::evaluator::Attributes::Orderless,
+        )
+        && !crate::func_attrs_contains(n1, crate::evaluator::Attributes::Flat)
+        && args_rule_out(a1, a2)
+    }
     _ => false,
   }
 }
