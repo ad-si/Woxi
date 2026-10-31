@@ -9499,6 +9499,18 @@ mod rasterize_any_expression {
       .unwrap(),
       "{Image, True, {Integer}, True}"
     );
+    // "BoundingBox": {width, height, baseline from the top}; a graphic's
+    // baseline is its centre, text's lies below the middle.
+    assert_eq!(
+      interpret(
+        "{b1 = Rasterize[Graphics[Disk[]], \"BoundingBox\"], \
+          b2 = Rasterize[Style[\"abg\", FontSize -> 72], \"BoundingBox\"]}; \
+         {Length /@ {b1, b2}, Most[b1], b1[[3]] == Ceiling[b1[[2]]/2], \
+          b2[[2]]/2 < b2[[3]] < b2[[2]]}"
+      )
+      .unwrap(),
+      "{{3, 3}, {360, 360}, True, True}"
+    );
     let r =
       interpret_with_stdout("Rasterize[Graphics[Disk[]], \"Foo\"]").unwrap();
     assert_eq!(r.result, "$Failed");

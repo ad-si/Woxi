@@ -11815,6 +11815,31 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )),
       "RasterSize" => eval(call("ImageDimensions", vec![image()?])),
+      // {width, height, baseline}: the extent in printer's points and the
+      // baseline's distance from the top. Graphics sit on their centre
+      // (BaselinePosition -> Axis); a line of text or a formula on its
+      // ascent, three quarters of the line height.
+      "BoundingBox" => {
+        let Expr::Image { width, height, .. } = rasterize_ast(&rest)? else {
+          return Ok(Expr::Identifier("$Failed".into()));
+        };
+        let graphic = matches!(&args[0], Expr::Graphics { .. })
+          || matches!(&args[0], Expr::FunctionCall { name, .. }
+            if name == "Graphics" || name == "Graphics3D");
+        let baseline = if graphic {
+          height.div_ceil(2)
+        } else {
+          (0.75 * height as f64).round() as u32
+        };
+        Ok(Expr::List(
+          vec![
+            Expr::Integer(width as i128),
+            Expr::Integer(height as i128),
+            Expr::Integer(baseline as i128),
+          ]
+          .into(),
+        ))
+      }
       _ => {
         crate::emit_message(&format!(
           "Rasterize::elmntavl: \"{elem}\" is not an available element. \

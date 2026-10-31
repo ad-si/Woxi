@@ -4214,20 +4214,20 @@ woxi eval 'Options[f[1, 2], Axes]'             # Options[f[1, 2]]
 A list of option names is not accepted either — `Options[g, {Axes, PlotRange}]`
 gives `{}` where WL answers both.
 
-### Rasterize with an unknown element aborts the whole script
+### Rasterize "BoundingBox" and "RasterSize" use Woxi's own layout
 
 ```sh
-wolframscript -code 'Print[ToString[Rasterize[x, "Text"], InputForm]]; Print["after"]'
-# Rasterize::elmntavl: "Text" is not an available element. Possible elements
-# include "BoundingBox", "Data", "Graphics", "RasterSize", "Regions", and "Image".
-# $Failed
-# after
-woxi eval 'Print[Rasterize[x, "Text"]]; Print["after"]'
-# Error: Evaluation error: Rasterize: unsupported expression type
+wolframscript -code 'Rasterize[Style["abg", FontSize -> 12], "BoundingBox"]'
+# {21, 15, 11}
+woxi eval 'Rasterize[Style["abg", FontSize -> 12], "BoundingBox"]'
+# {22, 22, 17}
 ```
 
-The hard error kills the run, so nothing after it evaluates. `Rasterize`
-should emit `Rasterize::elmntavl` and return `$Failed`.
+The sizes come from Woxi's SVG layout, so text and formulas measure
+differently from the front end. The baseline is approximated: half the
+height for graphics (WL: 182 of 359 for `Graphics[Disk[]]`) and three
+quarters for everything else. WL's "RasterSize" is also at twice the
+resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
 
 ### Twenty-two heads raise a hard error for a bad first argument
 
