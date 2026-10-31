@@ -5168,3 +5168,25 @@ mod nested_scope_renaming {
     assert!(out.ends_with("}, x + y]]"), "{out}");
   }
 }
+
+mod module_keeps_block_variables {
+  use super::*;
+
+  #[test]
+  fn a_block_inside_a_module_keeps_its_global_names() {
+    // The Block's `a` was renamed `a$`, so `{a, b} /. FindRoot[…]` found
+    // no rule for `a`.
+    assert_eq!(
+      interpret("Module[{m}, m = 1; Block[{a}, {a -> m}]]").unwrap(),
+      "{a -> 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Module[{m, s}, m = 2; s = Block[{a}, FindRoot[a^2 == m, {a, 1}]]; \
+         Round[10^6 (a /. s)]]"
+      )
+      .unwrap(),
+      "1414214"
+    );
+  }
+}

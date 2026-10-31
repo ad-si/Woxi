@@ -571,12 +571,45 @@ fn collect_option_bindings(
       .unwrap_or_default()
   };
 
-  // Build default bindings
+  // Build default bindings. A symbol among the defaults
+  // (`OptionsPattern[{f, Graphics3D}]`) stands for its current Options; an
+  // earlier source of an option wins over a later one.
   let mut bindings: Vec<(String, Expr)> = Vec::new();
-  for rule in &defaults {
-    if let Some((key, val)) = extract_rule_pair(rule) {
-      bindings.push((key, val));
+  fn add_defaults(rule: &Expr, bindings: &mut Vec<(String, Expr)>) {
+    match rule {
+      Expr::Identifier(sym) => {
+        let options = crate::FUNC_OPTIONS
+          .with(|m| m.borrow().get(sym).cloned())
+          .or_else(|| {
+            match crate::evaluator::evaluate_function_call_ast(
+              "Options",
+              &[Expr::Identifier(sym.clone())],
+            ) {
+              Ok(Expr::List(ref items)) => Some(items.to_vec()),
+              _ => None,
+            }
+          })
+          .unwrap_or_default();
+        for o in &options {
+          add_defaults(o, bindings);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          add_defaults(item, bindings);
+        }
+      }
+      _ => {
+        if let Some((key, val)) = extract_rule_pair(rule)
+          && !bindings.iter().any(|(k, _)| *k == key)
+        {
+          bindings.push((key, val));
+        }
+      }
     }
+  }
+  for rule in &defaults {
+    add_defaults(rule, &mut bindings);
   }
 
   // Extract explicit options from the argument. Wolfram accepts a
@@ -5989,6 +6022,27 @@ fn evaluate_function_call_ast_inner(
   // UndirectedGraph[graph] → the same graph with undirected, deduplicated edges
   if name == "UndirectedGraph" && args.len() == 1 {
     return crate::functions::graph::undirected_graph_ast(args);
+  }
+
+  if name == "CanonicalGraph" && args.len() == 1 {
+    return crate::functions::graph::canonical_graph_ast(args);
+  }
+
+  if name == "SimpleGraph" && args.len() == 1 {
+    return crate::functions::graph::simple_graph_ast(args);
+  }
+
+  // DirectedGraph[g, opts…] / UndirectedGraph[g, opts…]: the converted graph
+  // with the options set on it, as `Graph[converted, opts…]` does. A list
+  // of rules counts as its rules.
+  if matches!(name, "DirectedGraph" | "UndirectedGraph" | "SimpleGraph")
+    && args.len() >= 2
+    && let Some(opts) = flatten_rule_args(&args[1..])
+  {
+    let converted = evaluate_function_call_ast(name, &args[..1])?;
+    let mut graph_args = vec![converted];
+    graph_args.extend(opts);
+    return evaluate_function_call_ast("Graph", &graph_args);
   }
 
   // FindHamiltonianPath[graph] / [graph, s, t] → one Hamiltonian path
@@ -14282,6 +14336,7 @@ fn build_bspline_function(top: &[Expr], rest: &[Expr]) -> Option<Expr> {
   };
   let mut degree_opt: Option<&Expr> = None;
   let mut closed_opt: Option<&Expr> = None;
+  let mut knots_opt: Option<&Expr> = None;
   for opt in opts {
     let Expr::Rule {
       pattern,
@@ -14296,6 +14351,9 @@ fn build_bspline_function(top: &[Expr], rest: &[Expr]) -> Option<Expr> {
       }
       Expr::Identifier(n) if n == "SplineClosed" => {
         closed_opt = Some(replacement);
+      }
+      Expr::Identifier(n) if n == "SplineKnots" => {
+        knots_opt = Some(replacement);
       }
       Expr::Identifier(n) if n == "Method" => {}
       _ => return None,
@@ -14326,9 +14384,51 @@ fn build_bspline_function(top: &[Expr], rest: &[Expr]) -> Option<Expr> {
     None => vec![false; dim],
   };
 
+  // `SplineKnots -> {k1, k2}` (one numeric knot vector per direction, or a
+  // bare vector for a curve) fixes the knots, and with them the degree:
+  // `len - n - 1` for `n` control points.
+  let explicit_knots: Option<Vec<Vec<f64>>> = match knots_opt {
+    None => None,
+    Some(Expr::String(s)) if s == "Clamped" => None,
+    Some(v) => {
+      let numeric = |e: &Expr| -> Option<Vec<f64>> {
+        match e {
+          Expr::List(ks) => ks
+            .iter()
+            .map(crate::functions::math_ast::try_eval_to_f64)
+            .collect(),
+          _ => None,
+        }
+      };
+      let per_dim = match (dim, v) {
+        (1, e) => vec![numeric(e)?],
+        (_, Expr::List(items)) if items.len() == dim => {
+          items.iter().map(numeric).collect::<Option<Vec<_>>>()?
+        }
+        _ => return None,
+      };
+      Some(per_dim)
+    }
+  };
+  if explicit_knots.is_some() && closed.iter().any(|c| *c) {
+    return None;
+  }
+
   if dim == 1 {
     if !top.iter().all(is_value) {
       return None;
+    }
+    if let Some(ks) = &explicit_knots {
+      let n = top.len();
+      let p = ks[0].len().checked_sub(n + 1)?;
+      let values: Vec<Expr> = top.iter().map(bspline_value_to_real).collect();
+      return Some(bspline_structured(
+        1,
+        &[p],
+        &closed,
+        &[Expr::List(values.into())],
+        &[ks[0].clone()],
+      ));
     }
     let n = top.len();
     let p = if closed[0] {
@@ -14366,6 +14466,28 @@ fn build_bspline_function(top: &[Expr], rest: &[Expr]) -> Option<Expr> {
   let n_v = rows[0].len();
   if rows.iter().any(|r| r.len() != n_v) {
     return None;
+  }
+  if let Some(ks) = &explicit_knots {
+    let p_u = ks[0].len().checked_sub(n_u + 1)?;
+    let p_v = ks[1].len().checked_sub(n_v + 1)?;
+    let grid: Vec<Expr> = rows
+      .iter()
+      .map(|r| {
+        Expr::List(
+          r.iter()
+            .map(bspline_value_to_real)
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect();
+    return Some(bspline_structured(
+      2,
+      &[p_u, p_v],
+      &closed,
+      &[Expr::List(grid.into())],
+      &[ks[0].clone(), ks[1].clone()],
+    ));
   }
   let p_u = if closed[0] {
     degrees[0].min(n_u)
@@ -14414,9 +14536,19 @@ fn bspline_structured(
   net: &[Expr],
   knots: &[Vec<f64>],
 ) -> Expr {
+  // The parameter domain runs from knot `p` to knot `n` of each direction
+  // (`{0., 1.}` for the default knots).
   let ranges: Expr = Expr::List(
     (0..dim)
-      .map(|_| Expr::List(vec![Expr::Real(0.0), Expr::Real(1.0)].into()))
+      .map(|d| {
+        let k = &knots[d];
+        let n = k.len().saturating_sub(degrees[d] + 1);
+        let (lo, hi) = match (k.get(degrees[d]), k.get(n)) {
+          (Some(&lo), Some(&hi)) => (lo, hi),
+          _ => (0.0, 1.0),
+        };
+        Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+      })
       .collect(),
   );
   let degree_list: Expr =
@@ -15538,4 +15670,18 @@ fn polytopes_polygon_sides(symbol: &str) -> Option<i128> {
     "Dodecagon" => 12,
     _ => return None,
   })
+}
+
+/// Option arguments as one flat list of rules — lists of rules are spliced
+/// in — or None when one of them is not a rule.
+fn flatten_rule_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let mut out = Vec::new();
+  for a in args {
+    match a {
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => out.push(a.clone()),
+      Expr::List(items) => out.extend(flatten_rule_args(items)?),
+      _ => return None,
+    }
+  }
+  Some(out)
 }

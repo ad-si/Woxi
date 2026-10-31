@@ -3037,7 +3037,12 @@ fn part_assignment_rhs(
 fn inline_option_defaults(spec: &Expr) -> Option<Vec<Expr>> {
   match spec {
     Expr::List(rules) => Some(rules.to_vec()),
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(vec![spec.clone()]),
+    // A symbol names the function whose Options are the defaults
+    // (`OptionsPattern[Plot]` in some other function's definition); they
+    // are looked up when the rule is applied.
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Identifier(_) => {
+      Some(vec![spec.clone()])
+    }
     _ => None,
   }
 }
@@ -3326,7 +3331,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   }
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
   // Set[Condition[f[x_], test], body]. Extract the pattern and condition.
-  let (lhs, _lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
+  let (lhs, lhs_condition) = if let Expr::FunctionCall { name, args } = lhs
     && name == "Condition"
     && args.len() == 2
   {
@@ -3334,6 +3339,21 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   } else {
     (lhs, None)
   };
+  // `f[x_] /; test = value` is a rule of its own, tried before the
+  // unconditional `f[x_] = …` and kept apart from it: the value is computed
+  // now and stored as the conditional rule's body.
+  if lhs_condition.is_some()
+    && matches!(lhs, Expr::FunctionCall { name, .. }
+      if !matches!(name.as_str(), "Condition" | "Pattern" | "HoldPattern"))
+  {
+    let value = evaluate_expr_to_expr(rhs)?;
+    let conditional = call(
+      "Condition",
+      vec![lhs.clone(), lhs_condition.unwrap().clone()],
+    );
+    set_delayed_ast(&conditional, &value)?;
+    return Ok(value);
+  }
 
   // Assigning `$ContextAliases`, whole or by key, re-checks the mapping the
   // way the Wolfram Language does — the warnings belong after the assignment
@@ -6040,11 +6060,27 @@ pub fn tag_set_delayed_ast(
     // pattern itself and binds its variables.
     let is_wrapped_pattern = matches!(arg, Expr::FunctionCall { name, .. }
       if crate::evaluator::pattern_matching::is_pattern_construct_head(name));
+    // The argument is taken apart by position, which only fits plain `x_`
+    // arguments: a sequence (`Move[l_, args___]`), a head (`x_Integer`), a
+    // test or a literal is matched by the structural path below.
+    let destructurable = |inner: &[Expr]| {
+      inner.iter().all(|a| {
+        let plain_form = match a {
+          Expr::Pattern { .. } => true,
+          Expr::Identifier(name) => name.contains('_'),
+          Expr::FunctionCall { name, .. } => name == "Pattern",
+          _ => false,
+        };
+        plain_form
+          && matches!(extract_pattern_info(a), (ref n, None, 1) if !n.is_empty())
+      })
+    };
     if let Expr::FunctionCall {
       name: arg_func_name,
       args: inner_args,
     } = arg
       && !is_wrapped_pattern
+      && destructurable(inner_args)
     {
       let param_name = format!("_up{i}");
       heads.push(Some(arg_func_name.clone()));
