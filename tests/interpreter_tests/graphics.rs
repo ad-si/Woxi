@@ -17260,6 +17260,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(result, "{True, True}", "result: {result}");
     }
 
+    /// `BoundaryStyle` outlines the edge a `RegionFunction` cuts out of a
+    /// `ContourPlot`; without it no boundary is drawn.
+    #[test]
+    fn contour_plot_boundary_style_outlines_the_region() {
+      let plot = |opts: &str| {
+        export_svg(&format!(
+          "ContourPlot[x^2 + y^2, {{x, -1, 1}}, {{y, -1, 1}}, \
+           RegionFunction -> Function[{{x, y, z}}, x^2 + y^2 < 0.5]{opts}]"
+        ))
+      };
+      let red = "stroke=\"rgb(255,0,0)\"";
+      assert!(plot(", BoundaryStyle -> Red").contains(red));
+      assert!(!plot("").contains(red));
+      assert!(!plot(", BoundaryStyle -> None").contains(red));
+    }
+
     /// `ContourStyle` colours and thickens the contour lines. Both the
     /// function form and the equation form draw through it — the equation
     /// form is how a Demonstration draws a stability boundary.
