@@ -26740,6 +26740,29 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn background_option_evaluates_its_color_expression() {
+    // The 3D plot heads hold their arguments, so a `Background` built from
+    // variables (as a Manipulate control would supply) must be evaluated
+    // before it is read as a colour.
+    for call in [
+      "p = 0.5; ParametricPlot3D[{u, v, 0}, {u, 0, 1}, {v, 0, 1}, \
+       Background -> RGBColor[p, p, p], PlotPoints -> 3]",
+      "p = 0.5; ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 1}, \
+       Background -> RGBColor[p, p, p]]",
+      "p = 0.5; Plot3D[x y, {x, -1, 1}, {y, -1, 1}, \
+       Background -> RGBColor[p, p, p], PlotPoints -> 5]",
+      "p = 0.5; ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Background -> RGBColor[p, p, p], PlotPoints -> 5]",
+    ] {
+      let svg = export_svg(call);
+      assert!(
+        svg.contains("fill=\"rgb(128,128,128)\"/>"),
+        "{call}: backdrop must be gray"
+      );
+    }
+  }
+
+  #[test]
   fn shown_plane_keeps_its_opacity_and_is_cut_to_the_plot_range() {
     // A translucent `ContourPlot3D` plane merged by `Show` into a
     // `Graphics3D` with a fixed `PlotRange` stays translucent and is
