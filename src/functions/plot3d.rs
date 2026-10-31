@@ -4828,8 +4828,11 @@ fn resolve_complex_indices(
         && (colors.is_some() || tex.is_some()) =>
     {
       let facet = |indices: &Expr| -> Expr {
-        let mut new_args = args.to_vec();
-        new_args[0] = substitute(indices, points);
+        // Not `args.to_vec()`: that copied every facet's indices for each
+        // facet.
+        let mut new_args = Vec::with_capacity(args.len() + 1);
+        new_args.push(substitute(indices, points));
+        new_args.extend(args[1..].iter().cloned());
         if let Some(tex) = tex
           && let Expr::List(items) = indices
         {

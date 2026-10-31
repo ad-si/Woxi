@@ -26191,6 +26191,21 @@ mod blend {
 mod graphics_complex {
   use super::*;
 
+  // A vertex-coloured 3D complex resolves each facet without copying the
+  // whole facet list for it (quadratic in the facet count for the meshes
+  // a notebook stores).
+  #[test]
+  fn vertex_colored_3d_facets() {
+    let svg = export_svg(
+      "n = 30; pts = Flatten[Table[{i, j, Sin[i j/100.]}, {i, n}, {j, n}], 1]; \
+       idx[i_, j_] := (i - 1) n + j; \
+       polys = Flatten[Table[{idx[i, j], idx[i + 1, j], idx[i + 1, j + 1], idx[i, j + 1]}, {i, n - 1}, {j, n - 1}], 1]; \
+       cols = Table[RGBColor[k/n^2, 0, 0], {k, n^2}]; \
+       Graphics3D[GraphicsComplex[pts, Polygon[polys], VertexColors -> cols]]",
+    );
+    assert_eq!(svg.matches("<polygon").count(), 1682);
+  }
+
   #[test]
   fn polygon_with_indices() {
     insta::assert_snapshot!(export_svg(
