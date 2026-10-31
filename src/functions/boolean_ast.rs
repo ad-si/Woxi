@@ -1570,7 +1570,139 @@ pub fn logical_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let expr = evaluate_expr_to_expr(&args[0])?;
   let expr = expand_series_equations(&expr)?;
+  let expr = expand_equations(&expr);
   Ok(normalize_not(&simplify_sorted_dnf(&to_dnf(&expr))))
+}
+
+/// Equations as `LogicalExpand` leaves them: list equations threaded
+/// elementwise (`{x, y} == {1, 2}` is `x == 1 && y == 2`, lists of other
+/// lengths are never equal), every side of a chain `a == b == c` equated
+/// to the canonically least one, which goes on the right (`1 == a` is
+/// `a == 1`, `x == y == 1` is `x == 1 && y == 1`); `!=` likewise.
+fn expand_equations(expr: &Expr) -> Expr {
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  fn chain(operands: &[Expr]) -> Expr {
+    if operands.iter().all(|o| matches!(o, Expr::List(_))) {
+      let lists: Vec<&crate::ExprList> = operands
+        .iter()
+        .map(|o| match o {
+          Expr::List(items) => items,
+          _ => unreachable!(),
+        })
+        .collect();
+      let len = lists[0].len();
+      if lists.iter().any(|l| l.len() != len) {
+        return bool_expr(false);
+      }
+      let parts: Vec<Expr> = (0..len)
+        .map(|i| {
+          let column: Vec<Expr> = lists.iter().map(|l| l[i].clone()).collect();
+          chain(&column)
+        })
+        .collect();
+      return Expr::FunctionCall {
+        name: "And".into(),
+        args: parts.into(),
+      };
+    }
+    let least = operands
+      .iter()
+      .min_by(|a, b| canonical_cmp(a, b))
+      .unwrap()
+      .clone();
+    let mut parts: Vec<Expr> = Vec::new();
+    let mut skipped = false;
+    for o in operands {
+      if !skipped && canonical_cmp(o, &least) == std::cmp::Ordering::Equal {
+        skipped = true;
+        continue;
+      }
+      parts.push(Expr::Comparison {
+        operands: vec![o.clone(), least.clone()],
+        operators: vec![ComparisonOp::Equal],
+      });
+    }
+    match parts.len() {
+      0 => bool_expr(true),
+      1 => parts.pop().unwrap(),
+      _ => Expr::FunctionCall {
+        name: "And".into(),
+        args: parts.into(),
+      },
+    }
+  }
+  fn unequal(a: &Expr, b: &Expr) -> Expr {
+    if let (Expr::List(xs), Expr::List(ys)) = (a, b) {
+      if xs.len() != ys.len() {
+        return bool_expr(true);
+      }
+      return Expr::FunctionCall {
+        name: "Or".into(),
+        args: xs
+          .iter()
+          .zip(ys.iter())
+          .map(|(x, y)| unequal(x, y))
+          .collect(),
+      };
+    }
+    let (l, r) = if canonical_cmp(a, b) == std::cmp::Ordering::Less {
+      (b, a)
+    } else {
+      (a, b)
+    };
+    Expr::Comparison {
+      operands: vec![l.clone(), r.clone()],
+      operators: vec![ComparisonOp::NotEqual],
+    }
+  }
+  match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() >= 2
+      && operators.iter().all(|o| *o == ComparisonOp::Equal) =>
+    {
+      chain(operands)
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::NotEqual => {
+      unequal(&operands[0], &operands[1])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "And"
+          | "Or"
+          | "Not"
+          | "Xor"
+          | "Implies"
+          | "Equivalent"
+          | "Nand"
+          | "Nor"
+      ) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(expand_equations).collect(),
+      }
+    }
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(expand_equations(operand)),
+    },
+    Expr::BinaryOp { op, left, right }
+      if matches!(op, BinaryOperator::And | BinaryOperator::Or) =>
+    {
+      Expr::BinaryOp {
+        op: *op,
+        left: Box::new(expand_equations(left)),
+        right: Box::new(expand_equations(right)),
+      }
+    }
+    other => other.clone(),
+  }
 }
 
 /// A DNF the way `LogicalExpand` leaves it: contradictory conjunctions and

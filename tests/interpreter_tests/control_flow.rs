@@ -2682,6 +2682,22 @@ mod logical_expand {
         "x + y == 3 && (x == 2 || x == 1)",
         "(x == 1 && x + y == 3) || (x == 2 && x + y == 3)",
       ),
+      // Equations: lists threaded, chains equated to the least side, which
+      // goes on the right.
+      ("{x, y} != {1, 2}", "x != 1 || y != 2"),
+      ("{x, y} == {1, 2, 3}", "False"),
+      ("{x, {y, z}} == {1, {2, 3}}", "x == 1 && y == 2 && z == 3"),
+      (
+        "{x, y} == {1, 2} == {a, b}",
+        "a == 1 && b == 2 && x == 1 && y == 2",
+      ),
+      ("x == y == z", "y == x && z == x"),
+      ("d == c == b == a", "b == a && c == a && d == a"),
+      ("1 == a && b == 2", "a == 1 && b == 2"),
+      ("x + 1 == y", "y == 1 + x"),
+      ("f[x] == g[x]", "g[x] == f[x]"),
+      ("1 < x", "1 < x"),
+      ("{x, y} == {1, 2} || z == 3", "(x == 1 && y == 2) || z == 3"),
     ] {
       assert_eq!(
         interpret(&format!("LogicalExpand[{input}]")).unwrap(),
