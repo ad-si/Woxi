@@ -1507,7 +1507,39 @@ pub fn coefficient_arrays_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   subs.sort_by_key(|(form, _)| std::cmp::Reverse(expr_to_string(form).len()));
+  // Calls (`u[i, j]`) are looked up in one walk, outermost first, instead
+  // of one walk of every polynomial per form.
+  let all_calls = subs
+    .iter()
+    .all(|(form, _)| matches!(form, Expr::FunctionCall { .. }));
+  let table: std::collections::HashMap<String, Expr> = subs
+    .iter()
+    .map(|(form, sym)| (expr_to_string(form), sym.clone()))
+    .collect();
+  let heads: std::collections::HashSet<&str> = subs
+    .iter()
+    .filter_map(|(form, _)| match form {
+      Expr::FunctionCall { name, .. } => Some(name.as_str()),
+      _ => None,
+    })
+    .collect();
+  fn substitute_forms(
+    e: &Expr,
+    table: &std::collections::HashMap<String, Expr>,
+    heads: &std::collections::HashSet<&str>,
+  ) -> Expr {
+    if let Expr::FunctionCall { name, .. } = e
+      && heads.contains(name.as_str())
+      && let Some(sym) = table.get(&expr_to_string(e))
+    {
+      return sym.clone();
+    }
+    crate::syntax::map_children(e, &|c| substitute_forms(c, table, heads))
+  }
   let abstract_forms = |e: &Expr| {
+    if all_calls {
+      return substitute_forms(e, &table, &heads);
+    }
     subs.iter().fold(e.clone(), |acc, (form, sym)| {
       super::solve::substitute_expr(&acc, form, sym)
     })
@@ -1575,28 +1607,126 @@ fn coefficient_array_entries(
   poly: &Expr,
   vars: &[String],
 ) -> Result<Option<Vec<(usize, Vec<usize>, Expr)>>, InterpreterError> {
+  use std::collections::HashMap;
   let expanded = super::expand::expand_and_combine(poly);
   let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
-  let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
-  for term in &collect_additive_terms(&expanded) {
-    let mut remaining = crate::evaluator::evaluate_expr_to_expr(term)?;
-    let mut indices = Vec::new();
-    for (i, var) in vars.iter().enumerate() {
-      let power = term_power_of_var(&remaining, var);
-      if power < 0 {
-        return Ok(None);
+  // Each monomial is read factor by factor against a table of the
+  // variables, instead of asking every term about every variable (a linear
+  // system in a thousand unknowns asked a million questions per equation).
+  let index: HashMap<&str, usize> = vars
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (v.as_str(), i))
+    .collect();
+  fn mentions_var(e: &Expr, index: &HashMap<&str, usize>) -> bool {
+    match e {
+      Expr::Identifier(name) => index.contains_key(name.as_str()),
+      Expr::FunctionCall { name, args } => {
+        index.contains_key(name.as_str())
+          || args.iter().any(|a| mentions_var(a, index))
       }
-      let (_, coeff) = term_var_power_and_coeff(&remaining, var);
-      remaining = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
-      indices.extend(std::iter::repeat_n(i + 1, power as usize));
+      Expr::List(items) => items.iter().any(|a| mentions_var(a, index)),
+      Expr::BinaryOp { left, right, .. } => {
+        mentions_var(left, index) || mentions_var(right, index)
+      }
+      Expr::UnaryOp { operand, .. } => mentions_var(operand, index),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => mentions_var(pattern, index) || mentions_var(replacement, index),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|a| mentions_var(a, index))
+      }
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_)
+      | Expr::Constant(_) => false,
+      // Anything else is checked the general way.
+      other => index.keys().any(|v| !is_constant_wrt(other, v)),
     }
-    if vars.iter().any(|var| !is_constant_wrt(&remaining, var)) {
+  }
+  fn factors_of(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          factors_of(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        factors_of(left, out);
+        factors_of(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  // The variable a factor is a positive integer power of.
+  let var_power = |f: &Expr| -> Option<(usize, i128)> {
+    match f {
+      Expr::Identifier(name) => index.get(name.as_str()).map(|&i| (i, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Identifier(b), Expr::Integer(k)) if *k > 0 => {
+            index.get(b.as_str()).map(|&i| (i, *k))
+          }
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Identifier(b), Expr::Integer(k)) if *k > 0 => {
+          index.get(b.as_str()).map(|&i| (i, *k))
+        }
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let mut entries: Vec<(usize, Vec<usize>, Expr)> = Vec::new();
+  let mut position: HashMap<Vec<usize>, usize> = HashMap::new();
+  for term in &collect_additive_terms(&expanded) {
+    let term = crate::evaluator::evaluate_expr_to_expr(term)?;
+    let mut factors = Vec::new();
+    factors_of(&term, &mut factors);
+    let mut indices = Vec::new();
+    let mut rest = Vec::new();
+    for f in factors {
+      match var_power(&f) {
+        Some((i, k)) => indices.extend(std::iter::repeat_n(i + 1, k as usize)),
+        None => rest.push(f),
+      }
+    }
+    indices.sort_unstable();
+    let coeff = match rest.len() {
+      0 => Expr::Integer(1),
+      1 => rest.pop().unwrap(),
+      _ => crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Times".into(),
+        args: rest.into(),
+      })?,
+    };
+    if mentions_var(&coeff, &index) {
       return Ok(None);
     }
-    if let Some(existing) = entries.iter_mut().find(|(_, i, _)| *i == indices) {
-      existing.2 = add_exprs(&existing.2, &remaining);
+    if let Some(&at) = position.get(&indices) {
+      entries[at].2 = add_exprs(&entries[at].2, &coeff);
     } else {
-      entries.push((indices.len(), indices, remaining));
+      position.insert(indices.clone(), entries.len());
+      entries.push((indices.len(), indices, coeff));
     }
   }
   for entry in &mut entries {

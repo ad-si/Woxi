@@ -8147,6 +8147,16 @@ mod cases {
       r#"{{-1, 0}, {{1, 1}, {1, -1}}}"#,
     );
   }
+  // A linear system in 1600 generalized unknowns: the variables are
+  // abstracted in one walk and each monomial is read against a table of
+  // them (asking every term about every variable took minutes).
+  #[test]
+  fn coefficient_arrays_large_generalized_system() {
+    assert_case(
+      r#"vars = Flatten[Table[u[i, j], {i, 40}, {j, 40}]]; eqs = Flatten[Table[u[i, j] - (u[Mod[i, 40] + 1, j] + u[i, Mod[j, 40] + 1])/4 == i - j, {i, 40}, {j, 40}]]; ca = CoefficientArrays[eqs, vars]; {Dimensions /@ ca, ca[[1, 2]], ca[[2, 1, 1]], ca[[2, 1, 2]], ca[[2, 1, 41]], ca[[2, 1, 3]], Total[ca[[2]], 2]}"#,
+      r#"{{{1600}, {1600, 1600}}, 1, 1, -1/4, -1/4, 0, 800}"#,
+    );
+  }
   #[test]
   fn coefficient_arrays_single_equation() {
     assert_case(
