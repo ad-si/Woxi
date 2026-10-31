@@ -11582,9 +11582,12 @@ fn log_scale_plot_ast(
     .map(|(x, _)| *x)
     .collect();
 
-  let x_min_display = finite_xs.iter().copied().fold(f64::INFINITY, f64::min);
-  let x_max_display =
-    finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let (x_min_display, x_max_display) = overrides.x.unwrap_or_else(|| {
+    (
+      finite_xs.iter().copied().fold(f64::INFINITY, f64::min),
+      finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    )
+  });
   let y_data_min = finite_ys.iter().copied().fold(f64::INFINITY, f64::min);
   let y_data_max = finite_ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   let (y_data_min, y_data_max) = if log_y {
