@@ -7524,9 +7524,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "Background" => {
-          if let Some(color) =
-            crate::functions::graphics::parse_color(replacement)
-          {
+          if let Some(color) = parse_background_color(replacement) {
             let r = (color.r.clamp(0.0, 1.0) * 255.0).round() as u8;
             let g = (color.g.clamp(0.0, 1.0) * 255.0).round() as u8;
             let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -9020,6 +9018,16 @@ fn plot_label_styled(
   None
 }
 
+/// Parse a `Background -> colour` value. The 3D plotting heads hold their
+/// arguments, so the value may still be an unevaluated expression such as
+/// `RGBColor[r, g, b]` over control variables; evaluate it first.
+fn parse_background_color(
+  expr: &Expr,
+) -> Option<crate::functions::graphics::Color> {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  crate::functions::graphics::parse_color(&val)
+}
+
 /// Repaint the picture's backdrop (the first `<rect>` the 3-D renderers
 /// emit) with an explicit `Background -> color` option.
 fn with_background_option(svg: String, opts: &[Expr]) -> String {
@@ -9028,7 +9036,7 @@ fn with_background_option(svg: String, opts: &[Expr]) -> String {
       pattern,
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
-      crate::functions::graphics::parse_color(replacement)
+      parse_background_color(replacement)
     }
     _ => None,
   });
@@ -9092,7 +9100,7 @@ fn with_plot_label(
         pattern,
         replacement,
       } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
-        crate::functions::graphics::parse_color(replacement)
+        parse_background_color(replacement)
       }
       _ => None,
     }).map_or_else(|| {
@@ -11250,11 +11258,10 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           styles = parse_plot_style_3d(replacement, bodies.len());
         }
         Expr::Identifier(name) if name == "Background" => {
-          background = crate::functions::graphics::parse_color(replacement)
-            .map(|c| {
-              let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-              (q(c.r), q(c.g), q(c.b))
-            });
+          background = parse_background_color(replacement).map(|c| {
+            let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+            (q(c.r), q(c.g), q(c.b))
+          });
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {
@@ -12699,8 +12706,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
           if !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None")
-            && let Some(color) =
-              crate::functions::graphics::parse_color(replacement)
+            && let Some(color) = parse_background_color(replacement)
           {
             boundary_color = Some((
               (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
