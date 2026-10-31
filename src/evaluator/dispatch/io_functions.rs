@@ -7146,13 +7146,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Style"
         && args.len() >= 2
-        && matches!(
+        && (matches!(
           &args[0],
           Expr::FunctionCall { name: inner, args: inner_args }
           if (inner == "TableForm" || inner == "MatrixForm")
             && !inner_args.is_empty()
-        )
-        || is_traditional_matrix_form(&args[0]) =>
+        ) || is_traditional_matrix_form(&args[0])) =>
     {
       if let Some(svg) = styled_tableform_svg(&args[0], &args[1..]) {
         svg
