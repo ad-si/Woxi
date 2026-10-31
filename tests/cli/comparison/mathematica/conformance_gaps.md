@@ -4788,25 +4788,14 @@ More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
 systemic across `ImageTake`, `ImagePartition` and `DistanceTransform`.
 
-### FindThreshold is unimplemented and its return convention is unclear
+### FindThreshold implements only the default method
 
-```sh
-wolframscript -code 'FindThreshold[Image[{{0., 1.}}]]'   # 0.498046875
-woxi eval 'FindThreshold[Image[{{0., 1.}}]]'
-# FindThreshold[-Image-] is a built-in Wolfram Language function not yet implemented in Woxi.
-```
-
-The Otsu machinery already exists — `EdgeDetect` uses it, and for the gradient
-images it is applied to it reproduces wolframscript exactly: bin into 256 bins
-spanning `[min, max]`, maximise the between-cluster variance, and return
-`min + k (max - min)/256` for the winning bin index `k`.
-
-What blocks exposing it as `FindThreshold` is that the reported value is not
-always on that grid. `FindThreshold[Image[{{0., 1.}}]]` is `0.498046875`, which
-is `127.5/256` — a bin *centre*, where the gradient cases return a bin *edge*.
-Other probes give `0.4988281324331183` for `{{0.2, 0.8}}` but an exact `0.25`
-for `{{0.25, 0.5, 0.75}}`, so the parity is inconsistent across inputs. This
-also blocks the one-argument (Otsu-default) form of `MorphologicalBinarize`.
+`FindThreshold[image]` and `FindThreshold[data]` follow the default
+"Cluster" method (Otsu): real levels in 256 bins over their own range,
+integer levels on their raw values, the first maximizing bin as the threshold,
+the midpoint when only two levels occur, and `1.` for a constant image. The
+one-argument `MorphologicalBinarize` uses the same split binned on `[0, 1]`.
+`Method` options are not supported.
 
 ### EdgeDetect keeps a whole flat gradient plateau
 

@@ -3196,7 +3196,7 @@ PowerDistribution,Continuous distribution with PDF a k^a x^(a-1) on support (0 1
 TopologicalSort,Topological ordering of a directed acyclic graph's vertices (tie-break among independent vertices differs from WL; see conformance_gaps.md),✅,pure,8.0,3224
 DynamicUpdating,,🚫,,6.0,3233
 EvaluatorNames,,🚫,,4.0,3233
-FindThreshold,,,,8.0,3233
+FindThreshold,Otsu threshold of an image or data,✅,pure,8.0,3233
 GaugeFrameStyle,,🚫,,9.0,3233
 GeoBoundingBox,,🚫,,10.0,3233
 GlobalClusteringCoefficient,Fraction of connected triples that close into triangles,✅,pure,9.0,3233
