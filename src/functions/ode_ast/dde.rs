@@ -334,18 +334,23 @@ pub(super) fn ndsolve_dde(
     .map(|(end, e)| (end, NumFn::new(e, std::slice::from_ref(t_name))))
     .collect();
 
-  // The solution starts where the histories end.
+  // The solution follows the histories to where they end and is integrated
+  // from there: a history reaching past the domain's start (`f[t /; t <= 1]`
+  // on `{t, 0, 10}`) is the solution on that stretch, as in wolframscript.
   let start = history_fns[0].0;
-  if history_fns.iter().any(|(end, _)| *end != start) || start != t0 {
+  if history_fns.iter().any(|(end, _)| *end != start)
+    || start < t0
+    || start >= t1
+  {
     return Ok(None);
   }
   let mut y0 = Vec::with_capacity(nf);
   for (_, f) in &history_fns {
-    y0.push(f.eval(&[t0])?);
+    y0.push(f.eval(&[start])?);
   }
 
   // Step size: fine enough that the shortest delay spans several steps.
-  let span = t1 - t0;
+  let span = t1 - start;
   let min_delay = refs.iter().map(|r| r.delay).fold(f64::INFINITY, f64::min);
   let steps = if min_delay.is_finite() {
     (span / (min_delay / 4.0)).ceil().clamp(1000.0, 20000.0) as usize
@@ -359,7 +364,7 @@ pub(super) fn ndsolve_dde(
                 r: &DelayedRef|
    -> Result<f64, InterpreterError> {
     let s = t - r.delay;
-    if s <= t0 {
+    if s <= start {
       history_fns[r.func].1.eval(&[s])
     } else {
       Ok(traj.value(r.func, s))
@@ -379,7 +384,7 @@ pub(super) fn ndsolve_dde(
   };
 
   let mut traj = Trajectory {
-    ts: vec![t0],
+    ts: vec![start],
     ys: vec![y0],
     ds: Vec::new(),
   };
@@ -400,7 +405,12 @@ pub(super) fn ndsolve_dde(
     if next.iter().any(|v| !v.is_finite()) {
       return Ok(None);
     }
-    traj.ts.push(t + h);
+    // Node times from the step count, so the last one is `t1` exactly.
+    traj.ts.push(if n + 1 == steps {
+      t1
+    } else {
+      start + (n + 1) as f64 * h
+    });
     traj.ys.push(next);
   }
   let last_t = *traj.ts.last().unwrap();
@@ -411,18 +421,20 @@ pub(super) fn ndsolve_dde(
   let domain = Expr::List(
     vec![Expr::List(vec![Expr::Real(t0), Expr::Real(last_t)].into())].into(),
   );
+  // The stretch the histories cover, sampled at the integration step.
+  let history_nodes = ((start - t0) / h).ceil() as usize;
   let mut rules: Vec<Expr> = Vec::with_capacity(nf);
   for (fi, f) in funcs.iter().enumerate() {
-    let data = Expr::List(
-      traj
-        .ts
-        .iter()
-        .zip(&traj.ys)
-        .map(|(t, y)| {
-          Expr::List(vec![Expr::Real(*t), Expr::Real(y[fi])].into())
-        })
-        .collect(),
-    );
+    let mut rows = Vec::with_capacity(history_nodes + traj.ts.len());
+    for k in 0..history_nodes {
+      let t = t0 + (start - t0) * k as f64 / history_nodes as f64;
+      let v = history_fns[fi].1.eval(&[t])?;
+      rows.push(Expr::List(vec![Expr::Real(t), Expr::Real(v)].into()));
+    }
+    rows.extend(traj.ts.iter().zip(&traj.ys).map(|(t, y)| {
+      Expr::List(vec![Expr::Real(*t), Expr::Real(y[fi])].into())
+    }));
+    let data = Expr::List(rows.into());
     let interp = call(
       "InterpolatingFunction",
       vec![

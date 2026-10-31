@@ -22025,6 +22025,20 @@ mod ndsolve_delay_equations {
        Round[{u[2], v[2]} /. First[s], 10^-3]";
     assert_eq!(interpret(code).unwrap(), "{1, 2}");
   }
+
+  /// A history reaching past the domain's start is the solution up to its
+  /// end, and the equation takes over from there; the domain is still the
+  /// one asked for (DiffusionThroughAMembrane).
+  #[test]
+  fn history_past_the_start() {
+    let code = "s = First[NDSolve[{x'[t] == -x[t - 1], \
+       x[t /; t <= 1/2] == 1 + t}, x, {t, 0, 5}]]; \
+       {x[\"Domain\"] /. s, Round[x[{0, 1/4, 1/2, 3/2, 5/2}] /. s, 10^-4]}";
+    assert_eq!(
+      interpret(code).unwrap(),
+      "{{{0., 5.}}, {1, 5/4, 3/2, 1/2, -5833/10000}}"
+    );
+  }
 }
 
 mod integrate_piecewise_disjunction {
