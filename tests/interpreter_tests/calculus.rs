@@ -23218,6 +23218,20 @@ mod fit_options_and_variable_lists {
 mod ndsolve_option_lists_and_nested_equations {
   use super::*;
 
+  // A domain with more points spans the smallest to the largest of them
+  // (KuramotoModelForPhaseLockingOfCoupledOscillators).
+  #[test]
+  fn domain_with_more_points() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x'[t] == -x[t], x[0] == 1}, x, {t, 1, 0, 3}]]; \
+         {x[\"Domain\"] /. s, Round[10^4 x[1.5] /. s]}"
+      )
+      .unwrap(),
+      "{{{0., 3.}}, 2231}"
+    );
+  }
+
   #[test]
   fn options_given_as_a_list() {
     assert_eq!(
@@ -24951,5 +24965,33 @@ mod integrate_piecewise_parametric_bounds {
     assert!(r.warnings.iter().any(|w| w.starts_with(
       "Integrate::pwrl: Unable to prove that integration limits {0, w} are real."
     )));
+  }
+}
+
+/// Sum and Product bind their index dynamically, like Block: a nested
+/// construct iterating over the same name keeps its own variable
+/// (KuramotoModelForPhaseLockingOfCoupledOscillators).
+mod sum_index_inside_nested_iterators {
+  use super::*;
+
+  #[test]
+  fn inner_iterator_keeps_its_variable() {
+    for (input, expected) in [
+      ("Sum[Table[f[i], {i, 1, 2}][[i]], {i, 1, 2}]", "f[1] + f[2]"),
+      (
+        "Sum[Evaluate[Table[f[i], {i, 1, 2}]][[i]], {i, 1, 2}]",
+        "f[1] + f[2]",
+      ),
+      (
+        "Product[Table[f[i], {i, 1, 2}][[i]], {i, 1, 2}]",
+        "f[1]*f[2]",
+      ),
+      ("Sum[Sum[i, {i, 1, 3}], {i, 1, 2}]", "12"),
+      // The inner bound still reads the outer index.
+      ("Sum[Sum[i, {i, 1, i}], {i, 1, 3}]", "10"),
+      ("Sum[Sum[j, {j, 1, i}], {i, 1, 3}]", "10"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 }

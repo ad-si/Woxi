@@ -953,7 +953,7 @@ fn substitute_into_spec(
   var: &str,
   value: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let substituted = crate::syntax::substitute_variable(spec, var, value);
+  let substituted = crate::syntax::substitute_index_variable(spec, var, value);
   let Expr::List(items) = &substituted else {
     return Ok(substituted);
   };
@@ -1027,7 +1027,9 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut acc = Expr::Integer(1);
       for value in values {
         let mut inner = Vec::with_capacity(args.len() - 1);
-        inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
+        inner.push(crate::syntax::substitute_index_variable(
+          &args[0], &var, &value,
+        ));
         for spec in &args[2..] {
           inner.push(substitute_into_spec(spec, &var, &value)?);
         }
@@ -1091,7 +1093,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let mut product = 1.0;
             for item in list_items {
               let substituted =
-                crate::syntax::substitute_variable(body, &var_name, item);
+                crate::syntax::substitute_index_variable(body, &var_name, item);
               let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
               if let Some(n) = expr_to_f64(&val) {
                 product *= n;
@@ -1323,7 +1325,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             {
               // c = body with var -> 1.
               let c = crate::evaluator::evaluate_expr_to_expr(
-                &crate::syntax::substitute_variable(
+                &crate::syntax::substitute_index_variable(
                   body,
                   &var_name,
                   &Expr::Integer(1),
@@ -1464,7 +1466,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut values: Vec<Expr> = Vec::new();
         let mut i = min;
         while (step > 0 && i <= max) || (step < 0 && i >= max) {
-          let substituted = crate::syntax::substitute_variable(
+          let substituted = crate::syntax::substitute_index_variable(
             body,
             &var_name,
             &Expr::Integer(i),
@@ -1669,8 +1671,11 @@ fn summand_numeric_value(expr: &Expr) -> Option<f64> {
 /// early factors changes the story entirely).
 fn product_early_terms_clean(body: &Expr, var: &str, n0: i128) -> bool {
   for k in 0..5 {
-    let substituted =
-      crate::syntax::substitute_variable(body, var, &Expr::Integer(n0 + k));
+    let substituted = crate::syntax::substitute_index_variable(
+      body,
+      var,
+      &Expr::Integer(n0 + k),
+    );
     let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&substituted)
     else {
       return false;
@@ -1956,7 +1961,8 @@ fn regularized_infinite_sum(
   // value for it and seeing whether anything changed is exact, where a substring
   // search on the printed form would trip over a name like `Sin` containing `n`.
   let mentions_var = |e: &Expr| {
-    let probe = crate::syntax::substitute_variable(e, var, &Expr::Integer(0));
+    let probe =
+      crate::syntax::substitute_index_variable(e, var, &Expr::Integer(0));
     expr_to_string(&probe) != expr_to_string(e)
   };
   if coefficients.iter().any(mentions_var) {
@@ -1994,14 +2000,14 @@ fn regularized_infinite_sum(
   if from < 1 {
     for n in from..1 {
       let term = crate::evaluator::evaluate_expr_to_expr(
-        &crate::syntax::substitute_variable(body, var, &Expr::Integer(n)),
+        &crate::syntax::substitute_index_variable(body, var, &Expr::Integer(n)),
       )?;
       result = crate::functions::math_ast::plus_ast(&[result, term])?;
     }
   } else {
     for n in 1..from {
       let term = crate::evaluator::evaluate_expr_to_expr(
-        &crate::syntax::substitute_variable(body, var, &Expr::Integer(n)),
+        &crate::syntax::substitute_index_variable(body, var, &Expr::Integer(n)),
       )?;
       let negated = crate::evaluator::evaluate_expr_to_expr(&neg(term))?;
       result = crate::functions::math_ast::plus_ast(&[result, negated])?;
@@ -2257,7 +2263,8 @@ fn expand_index_dependent_symbols(args: &[Expr]) -> Option<Vec<Expr>> {
   }
   let mut new_args = args.to_vec();
   for (name, value) in &replacements {
-    new_args[0] = crate::syntax::substitute_variable(&new_args[0], name, value);
+    new_args[0] =
+      crate::syntax::substitute_index_variable(&new_args[0], name, value);
   }
   Some(new_args)
 }
@@ -2379,7 +2386,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let fresh_name = format!("$sum_indef_{var_name}_$");
     let fresh = Expr::Identifier(fresh_name.clone());
     let body_in_fresh =
-      crate::syntax::substitute_variable(&args[0], var_name, &fresh);
+      crate::syntax::substitute_index_variable(&args[0], var_name, &fresh);
     // Upper bound: var - 1, built as `(-1) + var` for canonical Plus form.
     let upper =
       plus(vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())]);
@@ -2400,7 +2407,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ) {
       return Ok(unevaluated("Sum", args));
     }
-    let inner_sum = crate::syntax::substitute_variable(
+    let inner_sum = crate::syntax::substitute_index_variable(
       &inner_sum_raw,
       &fresh_name,
       &Expr::Identifier(var_name.clone()),
@@ -2412,8 +2419,11 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `Sum[1/i, i]` closes to `PolyGamma[0, i]`, matching wolframscript,
     // which is exactly `inner_sum` alone) — so a non-finite f(0) is dropped
     // rather than poisoning the whole result through `Plus`.
-    let f_at_zero =
-      crate::syntax::substitute_variable(&args[0], var_name, &Expr::Integer(0));
+    let f_at_zero = crate::syntax::substitute_index_variable(
+      &args[0],
+      var_name,
+      &Expr::Integer(0),
+    );
     let f_at_zero_eval = crate::evaluator::evaluate_expr_to_expr(&f_at_zero)?;
     if is_nonfinite_boundary_value(&f_at_zero_eval) {
       return Ok(inner_sum);
@@ -2429,7 +2439,9 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut terms = Vec::with_capacity(values.len());
       for value in values {
         let mut inner = Vec::with_capacity(args.len() - 1);
-        inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
+        inner.push(crate::syntax::substitute_index_variable(
+          &args[0], &var, &value,
+        ));
         for spec in &args[2..] {
           inner.push(substitute_into_spec(spec, &var, &value)?);
         }
@@ -2498,7 +2510,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let mut terms = Vec::with_capacity(list_items.len());
           for item in list_items {
             let substituted =
-              crate::syntax::substitute_variable(body, &var_name, item);
+              crate::syntax::substitute_index_variable(body, &var_name, item);
             terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
           }
           return plus_all(&terms);
@@ -2531,7 +2543,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut terms = Vec::with_capacity(values.len());
         for value in values {
           let substituted =
-            crate::syntax::substitute_variable(body, &var_name, value);
+            crate::syntax::substitute_index_variable(body, &var_name, value);
           terms.push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
         }
         return plus_all(&terms);
@@ -2562,7 +2574,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
           times2(Expr::Integer(step), Expr::Identifier(var_name.clone())),
         );
         let reindexed =
-          crate::syntax::substitute_variable(body, &var_name, &index);
+          crate::syntax::substitute_index_variable(body, &var_name, &index);
         let result = sum_ast(&[reindexed.clone(), iter(0, inf.clone())])?;
         // Keep the original form when the reindexed series has no closed form.
         if matches!(&result, Expr::FunctionCall { name, .. } if name == "Sum") {
@@ -2671,7 +2683,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
             times2(s.clone(), Expr::Identifier(var_name.clone())),
           );
           let reindexed =
-            crate::syntax::substitute_variable(body, &var_name, &index);
+            crate::syntax::substitute_index_variable(body, &var_name, &index);
           return sum_ast(&[
             reindexed,
             Expr::List(crate::ExprList::from(vec![
@@ -2702,8 +2714,9 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 } else {
                   Expr::Real(i)
                 };
-              let substituted =
-                crate::syntax::substitute_variable(body, &var_name, &sub_val);
+              let substituted = crate::syntax::substitute_index_variable(
+                body, &var_name, &sub_val,
+              );
               terms
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
               i += 1.0;
@@ -2745,8 +2758,9 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   Expr::Integer(j),
                 ))?
               };
-              let substituted =
-                crate::syntax::substitute_variable(body, &var_name, &iter_val);
+              let substituted = crate::syntax::substitute_index_variable(
+                body, &var_name, &iter_val,
+              );
               terms
                 .push(crate::evaluator::evaluate_expr_to_expr(&substituted)?);
             }
@@ -2862,7 +2876,7 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut terms = Vec::new();
       let mut i = min;
       while if step > 0 { i <= max } else { i >= max } {
-        let substituted = crate::syntax::substitute_variable(
+        let substituted = crate::syntax::substitute_index_variable(
           body,
           &var_name,
           &Expr::Integer(i),
@@ -3285,7 +3299,7 @@ fn try_symbolic_sum(
       // so at `k = n` it gives `S(n) - r = (n+1) q(n)` without an explicit
       // `S(n)` recomputation, and (used below) `(S(n)-r)/(n+1) = q(n)`.
       let q_of_n = crate::evaluator::evaluate_expr_to_expr(
-        &crate::syntax::substitute_variable(&q_of_k, var_name, max_expr),
+        &crate::syntax::substitute_index_variable(&q_of_k, var_name, max_expr),
       )?;
       let n_plus_1 = plus2(max_expr.clone(), Expr::Integer(1));
       // wolframscript states this identity with the *shifted* harmonic
@@ -3481,8 +3495,11 @@ fn is_leibniz_body(body: &Expr, var_name: &str) -> bool {
     (4, 1.0 / 9.0),
   ];
   for (k, exp_val) in &expected {
-    let substituted =
-      crate::syntax::substitute_variable(body, var_name, &Expr::Integer(*k));
+    let substituted = crate::syntax::substitute_index_variable(
+      body,
+      var_name,
+      &Expr::Integer(*k),
+    );
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&substituted) {
       if let Some(val) = crate::functions::math_ast::try_eval_to_f64(&result) {
         if (val - exp_val).abs() > 1e-12 {
@@ -4851,8 +4868,11 @@ fn try_infinite_sum(
     if let Some(tail_sum) = try_infinite_sum(body, var_name, 1)? {
       let mut acc = tail_sum;
       for k in min..1 {
-        let substituted =
-          crate::syntax::substitute_variable(body, var_name, &Expr::Integer(k));
+        let substituted = crate::syntax::substitute_index_variable(
+          body,
+          var_name,
+          &Expr::Integer(k),
+        );
         let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
         acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
       }
@@ -4882,8 +4902,11 @@ fn try_infinite_sum(
     if let Some(base_sum) = try_infinite_sum(body, var_name, 1)? {
       let mut acc = base_sum;
       for k in 1..min {
-        let substituted =
-          crate::syntax::substitute_variable(body, var_name, &Expr::Integer(k));
+        let substituted = crate::syntax::substitute_index_variable(
+          body,
+          var_name,
+          &Expr::Integer(k),
+        );
         let val = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
         let neg =
           crate::functions::math_ast::times_ast(&[Expr::Integer(-1), val])?;
@@ -4991,7 +5014,7 @@ fn collect_factors(
 /// `(coeff, const)`. Determined by evaluating at var = 0, 1, 2.
 fn linear_in_var(e: &Expr, var: &str) -> Option<(i128, i128)> {
   let at = |v: i128| -> Option<i128> {
-    let s = crate::syntax::substitute_variable(e, var, &Expr::Integer(v));
+    let s = crate::syntax::substitute_index_variable(e, var, &Expr::Integer(v));
     match crate::evaluator::evaluate_expr_to_expr(&s).ok()? {
       Expr::Integer(n) => Some(n),
       _ => None,

@@ -16496,6 +16496,78 @@ pub fn substitute_variable(expr: &Expr, var_name: &str, value: &Expr) -> Expr {
   substitute_variables(expr, &[(var_name, value)])
 }
 
+/// Substitute an iteration index the way `Sum` and `Product` bind it:
+/// dynamically, as `Block` does, so a nested construct that iterates over
+/// the same name localizes it again. `Sum[Table[f[i], {i, 2}][[i]], {i, 2}]`
+/// leaves the inner `Table`'s `i` alone (its bounds still read the outer
+/// one), where plain substitution would make its iterator `{1, 2}`.
+pub fn substitute_index_variable(
+  expr: &Expr,
+  var_name: &str,
+  value: &Expr,
+) -> Expr {
+  let placeholder = format!("{var_name}$index$shadowed");
+  let shielded = shield_rebound_index(expr, var_name, &placeholder);
+  let substituted = substitute_variable(&shielded, var_name, value);
+  rename_symbol(&substituted, &placeholder, var_name)
+}
+
+/// Heads whose iterator specs (`{i, …}` after the first argument) bind
+/// their variable for the body and for later iterators.
+const ITERATING_HEADS: &[&str] = &[
+  "Table",
+  "Sum",
+  "Product",
+  "Do",
+  "NSum",
+  "NProduct",
+  "ParallelTable",
+  "ParallelSum",
+  "ParallelProduct",
+  "ParallelDo",
+];
+
+fn shield_rebound_index(
+  expr: &Expr,
+  var_name: &str,
+  placeholder: &str,
+) -> Expr {
+  if let Expr::FunctionCall { name, args } = expr
+    && ITERATING_HEADS.contains(&name.as_str())
+    && args.len() >= 2
+    && let Some(k) = args[1..].iter().position(|spec| {
+      matches!(spec, Expr::List(items)
+        if matches!(items.first(), Some(Expr::Identifier(v)) if v == var_name))
+    })
+  {
+    let k = k + 1;
+    let mut new_args: Vec<Expr> = Vec::with_capacity(args.len());
+    new_args.push(rename_symbol(&args[0], var_name, placeholder));
+    for (j, spec) in args.iter().enumerate().skip(1) {
+      new_args.push(if j < k {
+        shield_rebound_index(spec, var_name, placeholder)
+      } else if j == k {
+        let Expr::List(items) = spec else {
+          unreachable!()
+        };
+        let mut items = items.to_vec();
+        items[0] = Expr::Identifier(placeholder.to_string());
+        for item in items.iter_mut().skip(1) {
+          *item = shield_rebound_index(item, var_name, placeholder);
+        }
+        Expr::List(items.into())
+      } else {
+        rename_symbol(spec, var_name, placeholder)
+      });
+    }
+    return Expr::FunctionCall {
+      name: name.clone(),
+      args: new_args.into(),
+    };
+  }
+  map_children(expr, &|c| shield_rebound_index(c, var_name, placeholder))
+}
+
 /// Rename every occurrence of a symbol — including function-call heads,
 /// which stay plain FunctionCalls under the new name — used by Module's
 /// lexical renaming of its local variables.

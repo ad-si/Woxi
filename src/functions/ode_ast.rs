@@ -883,6 +883,28 @@ pub fn ndsolve_ast_with_head(
       _ => evaluated.push(a),
     }
   }
+  // A domain listing more points (`{t, 0, 5, 1}`) spans the smallest to the
+  // largest of them, as in wolframscript.
+  let spanned = match evaluated.get(2) {
+    Some(Expr::List(domain))
+      if domain.len() > 3
+        && matches!(domain.first(), Some(Expr::Identifier(_))) =>
+    {
+      domain[1..]
+        .iter()
+        .map(|p| nval_to_f64(p).map(|v| (v, p.clone())))
+        .collect::<Option<Vec<_>>>()
+        .map(|points| {
+          let lo = points.iter().min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
+          let hi = points.iter().max_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
+          Expr::List(vec![domain[0].clone(), lo.1.clone(), hi.1.clone()].into())
+        })
+    }
+    _ => None,
+  };
+  if let Some(domain) = spanned {
+    evaluated[2] = domain;
+  }
   let evaluated: Vec<Expr> = evaluated
     .iter()
     .map(total_derivative_to_derivative)
