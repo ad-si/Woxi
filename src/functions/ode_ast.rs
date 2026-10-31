@@ -1519,6 +1519,70 @@ fn ndsolve_vector_unknowns(
   };
   let mut eqs = Vec::new();
   flatten_eq_list(&args[0], &mut eqs);
+
+  // A vector unknown asked for applied (`swan[t]`) is solved as the bare
+  // function, and its rule comes back applied: `swan[t] -> IF[…][t]`.
+  if let Expr::List(domain) = &args[2]
+    && let Some(Expr::Identifier(t)) = domain.first()
+  {
+    let applied: Vec<String> = unknowns
+      .iter()
+      .filter_map(|u| match u {
+        Expr::FunctionCall { name, args: fargs }
+          if matches!(fargs.as_slice(), [Expr::Identifier(a)] if a == t)
+            && vector_unknown_dimension(&eqs, name).is_some() =>
+        {
+          Some(name.clone())
+        }
+        _ => None,
+      })
+      .collect();
+    if !applied.is_empty() {
+      let bare = |u: &Expr| match u {
+        Expr::FunctionCall { name, .. } if applied.contains(name) => {
+          Expr::Identifier(name.clone())
+        }
+        other => other.clone(),
+      };
+      let mut bare_args = args.to_vec();
+      bare_args[1] = match &args[1] {
+        Expr::List(items) => Expr::List(items.iter().map(bare).collect()),
+        single => bare(single),
+      };
+      let Some(Expr::List(ref solutions)) =
+        ndsolve_vector_unknowns(&bare_args, n_pos)?
+      else {
+        return Ok(None);
+      };
+      let var = Expr::Identifier(t.clone());
+      let applied_rule = |r: &Expr| match r {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if applied.contains(n)) => {
+          rule_expr(
+            call(&expr_to_string(pattern), vec![var.clone()]),
+            Expr::CurriedCall {
+              func: replacement.clone(),
+              args: vec![var.clone()],
+            },
+          )
+        }
+        other => other.clone(),
+      };
+      return Ok(Some(Expr::List(
+        solutions
+          .iter()
+          .map(|sol| match sol {
+            Expr::List(rules) => {
+              Expr::List(rules.iter().map(applied_rule).collect())
+            }
+            other => other.clone(),
+          })
+          .collect(),
+      )));
+    }
+  }
   let mut vecs: Vec<VectorUnknown> = Vec::new();
   for u in &unknowns {
     if let Expr::Identifier(name) = u

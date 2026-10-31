@@ -22633,6 +22633,22 @@ mod integrate_negative_scaled_power {
       "1414"
     );
   }
+
+  #[test]
+  fn ndsolve_vector_unknown_asked_for_applied() {
+    // `swan[t]` as the unknown: the rule comes back applied
+    // (FlyingToTheMoon).
+    assert_eq!(
+      interpret(
+        "M[(t_)?NumericQ] := {Cos[2 Pi t/27.3], Sin[2 Pi t/27.3]}; \
+         sol = NDSolve[{swan'[t] == 0.15 (M[t] - swan[t])/Norm[M[t] - swan[t]], \
+         swan[0] == {0.0167, 0}}, swan[t], {t, 0, 18.}]; \
+         {Head[sol[[1, 1, 1]]], Round[1000 (swan[t] /. First[sol] /. t -> 5.)]}"
+      )
+      .unwrap(),
+      "{swan, {486, 458}}"
+    );
+  }
 }
 
 mod linear_programs_in_minimize {
