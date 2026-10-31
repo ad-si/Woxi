@@ -24779,3 +24779,23 @@ mod when_event_condition_list {
     );
   }
 }
+
+mod inverse_laplace_time_shift {
+  use super::*;
+
+  #[test]
+  fn a_delay_factor_shifts_and_switches_on_the_original() {
+    assert_eq!(
+      interpret(
+        "{InverseLaplaceTransform[(s^(-1)*Exp[-(1.2*s)])/(2.2*s + 1), s, t], \
+         InverseLaplaceTransform[Exp[-2 s]/(s (3 s + 1)), s, t], \
+         InverseLaplaceTransform[Exp[-2 s]/s, s, t], \
+         InverseLaplaceTransform[Exp[-s]/(s^2 + 1), s, t]}"
+      )
+      .unwrap(),
+      "{(1. - 1.7253924734665358/E^(0.45454545454545453*t))*HeavisideTheta[-1.2 + t], \
+       (1 - E^(2/3 - t/3))*HeavisideTheta[-2 + t], HeavisideTheta[-2 + t], \
+       -(HeavisideTheta[-1 + t]*Sin[1 - t])}"
+    );
+  }
+}
