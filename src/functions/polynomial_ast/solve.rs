@@ -19181,7 +19181,7 @@ fn two_point_brent_minimum(
   a: f64,
   b: f64,
 ) -> Option<f64> {
-  const GOLD: f64 = 1.618_033_988_749_895;
+  const GOLD: f64 = std::f64::consts::GOLDEN_RATIO;
   const CGOLD: f64 = 0.381_966_011_250_105;
   let (fa, fb) = (f(a), f(b));
   let m = a + CGOLD * (b - a);
