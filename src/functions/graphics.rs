@@ -25829,6 +25829,7 @@ pub(crate) fn clip_svg_to_pane_box(
   height: f64,
   align: Option<(f64, f64)>,
   auto_sized: bool,
+  shrink_to_fit: bool,
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
@@ -25855,6 +25856,12 @@ pub(crate) fn clip_svg_to_pane_box(
     shrink_scalable_svg(svg, natural_w, natural_h, width, height, auto_sized)
   {
     return scaled;
+  }
+  // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
+  // the box (keeping its aspect ratio) instead of cutting it off.
+  if shrink_to_fit && natural_w > 0.0 && natural_h > 0.0 {
+    let scale = (width / natural_w).min(height / natural_h);
+    return resize_svg_root(svg, natural_w * scale, natural_h * scale);
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");

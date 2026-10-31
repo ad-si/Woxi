@@ -4608,14 +4608,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
   let expr = pane_box
-    .and_then(|(w, _, _)| {
+    .and_then(|(w, _, _, _)| {
       evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)
     })
     .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
-    .and_then(|(w, _, _)| {
+    .and_then(|(w, _, _, _)| {
       functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
         functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
       })
@@ -4624,7 +4624,7 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // An automatically sized tree wider than the box is squeezed to its width
   // rather than clipped.
   let expr = pane_box
-    .and_then(|(w, _, _)| {
+    .and_then(|(w, _, _, _)| {
       functions::graphics::fit_tree_to_pane_width(&expr, w, &|c| {
         functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
       })
@@ -4655,13 +4655,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let result = render_highlighted_if_needed(expr);
 
   match (pane_box, &result) {
-    (Some((w, h, align)), syntax::Expr::Graphics { svg, .. }) => {
+    (Some((w, h, align, shrink)), syntax::Expr::Graphics { svg, .. }) => {
       let clipped = functions::graphics::clip_svg_to_pane_box(
         svg,
         w,
         h,
         align,
         functions::graphics::pane_picture_is_auto_sized(&result),
+        shrink,
       );
       let mut clipped_result = result.clone();
       if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
@@ -4734,7 +4735,7 @@ fn unwrap_tooltips(mut expr: syntax::Expr) -> syntax::Expr {
 /// other Pane shape.
 fn pane_fixed_size(
   expr: &syntax::Expr,
-) -> Option<(f64, f64, Option<(f64, f64)>)> {
+) -> Option<(f64, f64, Option<(f64, f64)>, bool)> {
   let mut current = expr;
   loop {
     let syntax::Expr::FunctionCall { name, args } = current else {
@@ -4757,6 +4758,7 @@ fn pane_fixed_size(
           w,
           h,
           evaluator::dispatch::io_functions::pane_alignment(&args[1..]),
+          evaluator::dispatch::io_functions::pane_shrinks_to_fit(&args[1..]),
         ));
       }
       _ => return None,

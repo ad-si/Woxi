@@ -41491,6 +41491,23 @@ fn pane_shrinks_automatically_sized_picture_to_fit() {
 }
 
 #[test]
+fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
+  // Regression: `ImageSizeAction -> "ShrinkToFit"` on a fixed-size `Pane`
+  // must scale wide content down to the box, not cut it off at the edge.
+  let long = "Row[{\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \" = \", \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}]";
+  let shrunk = export_svg(&format!(
+    "Pane[Style[Column[{{{long}}}], 20], {{300, 200}}, \
+     ImageSizeAction -> \"ShrinkToFit\"]"
+  ));
+  assert!(!shrunk.contains("paneClip"), "{shrunk}");
+  assert!(shrunk.contains("<svg width=\"300.0\""), "{shrunk}");
+  let clipped = export_svg(&format!(
+    "Pane[Style[Column[{{{long}}}], 20], {{300, 200}}]"
+  ));
+  assert!(clipped.contains("paneClip"), "{clipped}");
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
