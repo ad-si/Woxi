@@ -3553,7 +3553,7 @@ fn nested_list_dims(expr: &Expr) -> Option<Expr> {
 fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
   fn walk(
     e: &Expr,
-    bg: &Expr,
+    bg: &str,
     path: &mut Vec<usize>,
     out: &mut Vec<Vec<usize>>,
   ) {
@@ -3565,12 +3565,17 @@ fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
       }
       return;
     }
-    if expr_to_string(e) != expr_to_string(bg) {
+    if expr_to_string(e) != bg {
       out.push(path.clone());
     }
   }
   let mut out = Vec::new();
-  walk(dense, background, &mut Vec::new(), &mut out);
+  walk(
+    dense,
+    &expr_to_string(background),
+    &mut Vec::new(),
+    &mut out,
+  );
   out
 }
 
@@ -3627,28 +3632,43 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
 
   // The union of the operands' stored positions: anywhere every operand sits
   // at its background, the result sits at the result background too.
-  let mut paths: Vec<Vec<usize>> = Vec::new();
+  // (A sorted set: a linear membership test made this quadratic in the
+  // number of stored entries.)
+  let mut paths: std::collections::BTreeSet<Vec<usize>> =
+    std::collections::BTreeSet::new();
   for (dense, bg) in dense_args.iter().zip(background_args.iter()) {
     let Some(dense) = dense else { continue };
-    for path in sparse_stored_paths(dense, bg) {
-      if !paths.contains(&path) {
-        paths.push(path);
-      }
-    }
+    paths.extend(sparse_stored_paths(dense, bg));
   }
-  paths.sort();
 
-  let mut rules = Vec::with_capacity(paths.len());
-  for path in paths {
-    let mut operands = Vec::with_capacity(args.len());
-    for (dense, bg) in dense_args.iter().zip(background_args.iter()) {
-      operands.push(match dense {
-        Some(d) => nested_list_at(d, &path)?,
-        None => bg.clone(),
-      });
+  // One evaluation over the lists of stored values (the head threads over
+  // them, a scalar operand broadcasting), not one per position.
+  let paths: Vec<Vec<usize>> = paths.into_iter().collect();
+  let mut operands = Vec::with_capacity(args.len());
+  for (dense, bg) in dense_args.iter().zip(background_args.iter()) {
+    operands.push(match dense {
+      Some(d) => Expr::List(
+        paths
+          .iter()
+          .map(|path| nested_list_at(d, path))
+          .collect::<Option<Vec<_>>>()?
+          .into(),
+      ),
+      None => bg.clone(),
+    });
+  }
+  let values = if paths.is_empty() {
+    Vec::new()
+  } else {
+    match apply(operands)? {
+      Expr::List(ref values) if values.len() == paths.len() => values.to_vec(),
+      _ => return None,
     }
-    let value = apply(operands)?;
-    if expr_to_string(&value) == expr_to_string(&background) {
+  };
+  let background_str = expr_to_string(&background);
+  let mut rules = Vec::with_capacity(paths.len());
+  for (path, value) in paths.into_iter().zip(values) {
+    if expr_to_string(&value) == background_str {
       continue;
     }
     rules.push(rule_expr(

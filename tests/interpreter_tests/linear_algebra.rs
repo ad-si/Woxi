@@ -11497,6 +11497,21 @@ mod sparse_array_arithmetic {
     );
   }
 
+  // A large, mostly filled SparseArray: the result matches the dense
+  // computation (LowPassAndHighPassFilteringOfImages used to time out on
+  // the quadratic stored-position bookkeeping).
+  #[test]
+  fn arithmetic_on_a_large_sparse_array() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[Table[i + j, {i, 60}, {j, 60}]]; \
+         {Normal[2^s] == 2^Normal[s], Normal[s + 1] == Normal[s] + 1}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   #[test]
   fn chained_sparse_arithmetic() {
     assert_eq!(
