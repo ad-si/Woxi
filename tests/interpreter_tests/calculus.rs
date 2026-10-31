@@ -24761,3 +24761,21 @@ mod series_of_unknown_functions {
     );
   }
 }
+
+mod when_event_condition_list {
+  use super::*;
+
+  #[test]
+  fn any_condition_of_a_list_fires_the_action() {
+    // The list form was ignored, so the ball fell through the floor.
+    assert_eq!(
+      interpret(
+        "s = NDSolveValue[{y[0] == 0, y'[0] == 0, y''[t] == -9.81, \
+         WhenEvent[{y[t] == -20, y[t] == 10}, y'[t] -> -y'[t]]}, y, {t, 0, 5}]; \
+         Round[10^4 {s[2.5], s[4.]}]"
+      )
+      .unwrap(),
+      "{-116108, -73}"
+    );
+  }
+}
