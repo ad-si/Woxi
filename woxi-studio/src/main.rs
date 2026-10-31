@@ -5767,6 +5767,7 @@ fn instantiate_stored_manipulate(
   {
     state = rebuilt_state;
   }
+  repair_degenerate_ranges(&mut state, stored_output);
   // The live source's own spec defaults may be stale — the dump's
   // "Variables" clause is whatever the widget's controls actually sat at
   // when the file was last saved (see `apply_saved_variables`).
@@ -5778,6 +5779,67 @@ fn instantiate_stored_manipulate(
     state.apply_saved_variables(&saved_vars);
   }
   Some(state)
+}
+
+/// A slider bounded by something the live source cannot resolve here —
+/// `{n, 1, Length[data], 50}` where `data` only existed in the author's
+/// session, so the bound evaluates to `0` — ends up with a range narrower
+/// than its own step. The dump's "Specifications" hold the bounds the
+/// widget really had, so such a control takes its range from there.
+fn repair_degenerate_ranges(
+  state: &mut manipulate::ManipulateState,
+  stored_output: &str,
+) {
+  let degenerate = |c: &manipulate::ControlState| {
+    matches!(c, manipulate::ControlState::Continuous { min, max, step, .. }
+      if *step > (*max - *min).abs())
+  };
+  if !state.controls.iter().any(degenerate) {
+    return;
+  }
+  let Some(rebuilt) =
+    woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)
+  else {
+    return;
+  };
+  let Ok(rebuilt_expr) = woxi::interpret_to_expr(&rebuilt) else {
+    return;
+  };
+  let Some(rebuilt_state) =
+    manipulate::ManipulateState::from_expr_unrendered(&rebuilt_expr)
+  else {
+    return;
+  };
+  for control in state.controls.iter_mut().filter(|c| degenerate(c)) {
+    let Some(replacement) = rebuilt_state
+      .controls
+      .iter()
+      .find(|r| r.name() == control.name() && !degenerate(r))
+    else {
+      continue;
+    };
+    if let (
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        step,
+        current,
+        ..
+      },
+      manipulate::ControlState::Continuous {
+        min: r_min,
+        max: r_max,
+        step: r_step,
+        ..
+      },
+    ) = (&mut *control, replacement)
+    {
+      *min = *r_min;
+      *max = *r_max;
+      *step = *r_step;
+      *current = current.clamp(*min, *max);
+    }
+  }
 }
 
 /// The editor of a cell holding a stored widget dump, showing the widget
@@ -8281,6 +8343,29 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       state.graphics_handle.is_some(),
       "the Bessel surface must render as a picture"
     );
+  }
+
+  /// Regression: a control bounded by a symbol only the author's session
+  /// defined (`Length[scratchList]`) resolved to a range narrower than its
+  /// own step (`0..1` stepping by 50). The saved "Specifications" hold the
+  /// real bounds, so the slider must take its range from them.
+  #[test]
+  fn instantiate_stored_manipulate_repairs_unresolved_slider_bound() {
+    let code = "Manipulate[k, {{k, 1}, 1, Length[scratchList], 50}]";
+    let stored = "DynamicModuleBox[{$CellContext`k$$ = 1}, \
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm, \
+      \"Variables\" :> {$CellContext`k$$ = 1}, \
+      \"Body\" :> $CellContext`k$$, \
+      \"Specifications\" :> {{{$CellContext`k$$, 1}, 1, 600, 50}}, \
+      \"Options\" :> {}], DynamicModuleValues:>{}]]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { min, max, step, .. } => {
+        assert_eq!((*min, *max, *step), (1.0, 600.0, 50.0));
+      }
+      other => panic!("expected a slider, got {other:?}"),
+    }
   }
 
   /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
