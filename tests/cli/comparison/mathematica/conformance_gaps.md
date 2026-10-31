@@ -6420,3 +6420,19 @@ woxi eval 'Maximize[{(1 - x)/(Log[x^(-1)] + 1), 0 <= x <= 1}, x]'
 
 The critical point solves `Log[1/x] + x == 0`-type equations that Woxi's
 Solve does not invert to `ProductLog`, so the optimizer falls back to Newton.
+
+## `RegionConvert[…, "Implicit"]` of a parallelogram is not reduced
+
+```sh
+wolframscript -code 'RegionConvert[Parallelogram[{1, 2}, {{1, 0}, {1, 1}}], "Implicit"] /. {\[FormalX] -> x, \[FormalY] -> y}'
+# ImplicitRegion[x <= y && 1 + x >= y && Inequality[2, LessEqual, y, LessEqual, 3], {x, y}]
+woxi eval 'RegionConvert[Parallelogram[{1, 2}, {{1, 0}, {1, 1}}], "Implicit"] /. {\[FormalX] -> x, \[FormalY] -> y}'
+# ImplicitRegion[0 <= 1 + x - y <= 1 && 0 <= -2 + y <= 1, {x, y}]
+```
+
+Woxi bounds the parallelogram's coordinates `t = Inverse[{v1, v2}ᵀ] . (x - o)`
+between 0 and 1. wolframscript reduces that system further for some vectors and
+leaves it as is for others (`Parallelogram[{0, 0}, {{-1, -1}, {-1, 0}}]` gives
+the same `0 <= -y <= 1 && 0 <= -x + y <= 1` in both). The regions are equal.
+Only boxes, balls (round or axis-aligned ellipsoids) and parallelepipeds are
+converted; other regions stay unevaluated.

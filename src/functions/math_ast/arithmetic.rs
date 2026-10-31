@@ -2694,6 +2694,12 @@ fn has_transcendental_subexpr(e: &Expr) -> bool {
   }
 }
 
+/// Whether a symbol name starting with `c` can be a variable: a letter,
+/// or one of the formal letters (`\[FormalX]`, private use U+F800–U+F8FF).
+fn starts_variable_name(c: char) -> bool {
+  c.is_alphabetic() || ('\u{F800}'..='\u{F8FF}').contains(&c)
+}
+
 fn extract_earliest_variable(e: &Expr) -> Option<String> {
   match e {
     Expr::Identifier(s)
@@ -2715,18 +2721,23 @@ fn extract_earliest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_earliest_variable).min()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_earliest_variable)
+      .min_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_earliest_variable(left);
       let r = extract_earliest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_le() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -2766,7 +2777,7 @@ fn collect_free_vars(e: &Expr) -> std::collections::BTreeSet<String> {
             | "GoldenRatio"
             | "Degree"
             | "Catalan"
-        ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+        ) && s.chars().next().is_some_and(starts_variable_name) =>
       {
         vars.insert(s.clone());
       }
@@ -2810,18 +2821,23 @@ fn extract_latest_variable(e: &Expr) -> Option<String> {
           | "GoldenRatio"
           | "Degree"
           | "Catalan"
-      ) && s.chars().next().is_some_and(char::is_alphabetic) =>
+      ) && s.chars().next().is_some_and(starts_variable_name) =>
     {
       Some(s.clone())
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().filter_map(extract_latest_variable).max()
-    }
+    Expr::FunctionCall { args, .. } => args
+      .iter()
+      .filter_map(extract_latest_variable)
+      .max_by(|a, b| plus_var_name_cmp(a, b)),
     Expr::BinaryOp { left, right, .. } => {
       let l = extract_latest_variable(left);
       let r = extract_latest_variable(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a >= b { a } else { b }),
+        (Some(a), Some(b)) => Some(if plus_var_name_cmp(&a, &b).is_ge() {
+          a
+        } else {
+          b
+        }),
         (Some(a), None) => Some(a),
         (None, Some(b)) => Some(b),
         (None, None) => None,
@@ -3297,6 +3313,17 @@ fn symbolic_power(e: &Expr) -> Option<(&Expr, &Expr)> {
   expr_to_f64(exp).is_none().then_some((base, exp))
 }
 
+/// Two variable names in the order a sum lists them: by character, except
+/// that the formal letters (`\[FormalX]`, private use U+F800–U+F8FF) come
+/// before every other character, as in `Sort`.
+fn plus_var_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let key = |c: char| match c {
+    '\u{F800}'..='\u{F8FF}' => c as u32 - 0xF800,
+    other => other as u32 + 0x100,
+  };
+  a.chars().map(key).cmp(b.chars().map(key))
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3546,7 +3573,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let av = extract_earliest_variable(a);
       let bv = extract_earliest_variable(b);
       if let (Some(av), Some(bv)) = (av, bv) {
-        let cmp = av.cmp(&bv);
+        let cmp = plus_var_name_cmp(&av, &bv);
         if cmp != std::cmp::Ordering::Equal {
           return cmp;
         }
@@ -3608,11 +3635,11 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       _ => {}
     }
     // Sort each term's pairs by variable name descending
-    va.sort_by(|x, y| y.0.cmp(&x.0));
-    vb.sort_by(|x, y| y.0.cmp(&x.0));
+    va.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
+    vb.sort_by(|x, y| plus_var_name_cmp(&y.0, &x.0));
     // Compare pair-by-pair: variable ascending, then exponent ascending
     for (ap, bp) in va.iter().zip(vb.iter()) {
-      let cmp = ap.0.cmp(&bp.0);
+      let cmp = plus_var_name_cmp(&ap.0, &bp.0);
       if cmp != std::cmp::Ordering::Equal {
         return cmp;
       }
@@ -3738,7 +3765,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let pair_earliest = extract_earliest_variable(&pair_base);
         let none_latest = extract_latest_variable(&none_base);
         if let (Some(pv), Some(nlv)) = (&pair_earliest, &none_latest) {
-          if nlv > pv {
+          if plus_var_name_cmp(nlv, pv).is_gt() {
             // Non-pair has a later variable → monomial first
             return if a_has_pairs {
               std::cmp::Ordering::Less
@@ -3757,7 +3784,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         }
         let none_earliest = extract_earliest_variable(&none_base);
         if let (Some(pv), Some(nv)) = (&pair_earliest, &none_earliest)
-          && nv < pv
+          && plus_var_name_cmp(nv, pv).is_lt()
         {
           // All non-pair variables < monomial's → non-pair first
           return if a_has_pairs {

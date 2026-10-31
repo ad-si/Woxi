@@ -2650,6 +2650,10 @@ pub fn wolfram_string_order(a: &str, b: &str) -> i64 {
       'æ' | 'Æ' => 0x110000 + 30,
       'ø' | 'Ø' => 0x110000 + 31,
       'ñ' | 'Ñ' => 0x100000 + ('n' as u32) + 1,
+      // The formal letters (`\[FormalX]`, private use U+F800–U+F8FF) come
+      // before every other character, among themselves by code point:
+      // Sort[{a, \[FormalY], \[FormalX]}] = {\[FormalX], \[FormalY], a}.
+      '\u{F800}'..='\u{F8FF}' => c as u32 - 0xF800,
       other => other as u32,
     }
   }

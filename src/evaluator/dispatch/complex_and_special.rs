@@ -1594,6 +1594,9 @@ pub fn dispatch_complex_and_special(
         args,
       ));
     }
+    "RegionConvert" if args.len() == 2 => {
+      return Some(crate::functions::region_convert::region_convert_ast(args));
+    }
     "RegionMember" if args.len() == 2 => {
       return Some(compute_region_member(
         strip_region_wrapper(&args[0]),
