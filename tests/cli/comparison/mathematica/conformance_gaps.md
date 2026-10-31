@@ -1220,6 +1220,20 @@ Woxi's integrator carries a real state vector, so a complex system is
 solved as the real system of its parts (`ComplexExpand` of each equation)
 and recombined. The values agree; the shape of the solution does not.
 
+### `$MinNumber`, `$MaxNumber` and exponents past 32 bits
+
+```sh
+wolframscript -code '{$MinNumber, 1.5`20*^-4000000000}'
+# {6.22968824967532196119819746965503015872`15.954589770191005*^-1355718576299610, 1.5`20.*^-4000000000}
+woxi eval '{$MinNumber, 1.5`20*^-4000000000}'
+# {$MinNumber, 1.5`20.}
+```
+
+A Woxi `BigFloat` keeps its digits with the decimal point shifted into
+place, so it cannot hold the arbitrary-precision range limits. A literal
+exponent outside `i32` is read as 0, which silently changes the value.
+`$MinMachineNumber` and `$MaxMachineNumber` agree.
+
 ### Guard digits of small arbitrary-precision numbers
 
 WL shows the decimal digits of its binary value, which is rounded to whole
