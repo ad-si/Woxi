@@ -14540,3 +14540,53 @@ mod n_of_pure_function {
     );
   }
 }
+
+/// Exact numbers past machine size inside sums, products and powers
+/// (the exact Cardano roots of a cubic with many-digit coefficients).
+mod big_exact_numbers_with_other_terms {
+  use super::*;
+
+  // An integer constant past i64 no longer stops the other terms from
+  // combining and ordering.
+  #[test]
+  fn sum_with_a_big_constant_combines_like_terms() {
+    assert_eq!(
+      interpret("8*10^20 + 16 Sqrt[30] + 3 Sqrt[30]").unwrap(),
+      "800000000000000000000 + 19*Sqrt[30]"
+    );
+    assert_eq!(
+      interpret("8*10^20 + 16*10^20 y + 3*10^20 y").unwrap(),
+      "800000000000000000000 + 1900000000000000000000*y"
+    );
+    assert_eq!(
+      interpret("y + 8*10^20 + x").unwrap(),
+      "800000000000000000000 + x + y"
+    );
+    assert_eq!(
+      interpret("10^30 + x - x").unwrap(),
+      "1000000000000000000000000000000"
+    );
+  }
+
+  #[test]
+  fn big_integer_times_machine_complex() {
+    assert_eq!(interpret("10^69 (2. + 1. I)").unwrap(), "2.*^69 + 1.*^69*I");
+    assert_eq!(
+      interpret("10^69 (2. + 1. I)^-1").unwrap(),
+      "4.0000000000000003*^68 - 2.0000000000000001*^68*I"
+    );
+  }
+
+  // The parts of a machine complex power are kept relative to its size.
+  #[test]
+  fn complex_power_of_a_huge_base() {
+    assert_eq!(
+      interpret("(-2.3*^102 + 6.4*^101 I)^(-1/3)").unwrap(),
+      "4.31116271357176*^-35 - 6.115253273584332*^-35*I"
+    );
+    assert_eq!(
+      interpret("(-2.3*^200 + 6.4*^199 I)^(-1/3)").unwrap(),
+      "9.288118504490939*^-68 - 1.317491379094105*^-67*I"
+    );
+  }
+}

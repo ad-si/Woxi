@@ -1483,15 +1483,24 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(bigint_to_expr(big_sum));
     }
 
-    let mut final_args: Vec<Expr> = Vec::new();
-    if big_sum != BigInt::from(0) {
-      final_args.push(bigint_to_expr(big_sum));
+    // The other terms combine and order among themselves like in any sum;
+    // the integer leads.
+    let rest = plus_ast(&symbolic_args)?;
+    if big_sum == BigInt::from(0) {
+      return Ok(rest);
     }
-    final_args.extend(symbolic_args);
-    if final_args.len() == 1 {
-      return Ok(final_args.remove(0));
-    }
-    return Ok(plus(final_args));
+    let constant = bigint_to_expr(big_sum);
+    return Ok(match rest {
+      Expr::FunctionCall { ref name, ref args } if name == "Plus" => {
+        let mut final_args = vec![constant];
+        final_args.extend(args.iter().cloned());
+        plus(final_args)
+      }
+      other if is_numeric_literal_part(&other) => {
+        return plus_ast(&[constant, other]);
+      }
+      other => plus(vec![constant, other]),
+    });
   }
 
   // Classify arguments: exact (Integer/Rational), real (Real), bigfloat, or symbolic
@@ -12941,6 +12950,23 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   })
 }
 
+/// `(a + b I)^(c + d I)` in machine arithmetic, as `exp(w log z)` with
+/// `log z = ln|z| + i arg(z)` (`z` nonzero). A part that is rounding noise
+/// next to the result's size comes back as `0.`; the threshold is relative,
+/// so `z^(-1/3)` of a huge `z` keeps its tiny parts.
+fn machine_complex_powf(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+  let ln_abs = a.hypot(b).ln();
+  let arg_z = b.atan2(a);
+  let re_exp = c * ln_abs - d * arg_z;
+  let im_exp = d * ln_abs + c * arg_z;
+  let mag = re_exp.exp();
+  let re = mag * im_exp.cos();
+  let im = mag * im_exp.sin();
+  let re = if re.abs() < 1e-15 * mag { 0.0 } else { re };
+  let im = if im.abs() < 1e-15 * mag { 0.0 } else { im };
+  (re, im)
+}
+
 pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Power[] = 1, Power[x] = x, and Power[a, b, c, ...] folds right-
   // associatively to a^(b^(c^...)) (e.g. Power[2, 3, 2] = 2^(3^2) = 512).
@@ -13173,7 +13199,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && let Some((c, d)) = try_extract_complex_float(exp)
   {
     // z^w = exp(w * log z), with log z = ln|z| + i*arg(z).
-    let abs_z = (a * a + b * b).sqrt();
+    let abs_z = a.hypot(b);
     // The machine complex zero: `0. + 0.*I` for a positive real part of
     // the exponent, ComplexInfinity (with Power::infy) for a negative one.
     if abs_z == 0.0 {
@@ -13190,15 +13216,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(id_expr("Indeterminate"));
     }
     if abs_z != 0.0 {
-      let ln_abs = abs_z.ln();
-      let arg_z = b.atan2(a);
-      let re_exp = c * ln_abs - d * arg_z;
-      let im_exp = d * ln_abs + c * arg_z;
-      let mag = re_exp.exp();
-      let re = mag * im_exp.cos();
-      let im = mag * im_exp.sin();
-      let re = if re.abs() < 1e-15 { 0.0 } else { re };
-      let im = if im.abs() < 1e-15 { 0.0 } else { im };
+      let (re, im) = machine_complex_powf(a, b, c, d);
       // A machine complex result keeps both parts (`0. + 2.*I`).
       return Ok(build_complex_float_expr_keep_real(re, im));
     }
@@ -14864,9 +14882,17 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       let angle = std::f64::consts::PI * b;
       let re = magnitude * angle.cos();
       let im = magnitude * angle.sin();
-      // Round near-zero components to avoid floating-point noise
-      let re = if re.abs() < 1e-15 { 0.0 } else { re };
-      let im = if im.abs() < 1e-15 { 0.0 } else { im };
+      // Round components that are noise next to the result's size.
+      let re = if re.abs() < 1e-15 * magnitude {
+        0.0
+      } else {
+        re
+      };
+      let im = if im.abs() < 1e-15 * magnitude {
+        0.0
+      } else {
+        im
+      };
       if im == 0.0 {
         Ok(Expr::Real(re))
       } else {
@@ -14930,8 +14956,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       || contains_imaginary_unit(exp))
       && (contains_real(base) || contains_real(exp))
     {
-      // log(z) = ln|z| + i*arg(z)
-      let abs_z = (a * a + b * b).sqrt();
+      // log(z) = ln|z| + i*arg(z); `hypot` stays finite for parts past
+      // 1e154, whose squares overflow.
+      let abs_z = a.hypot(b);
       if abs_z == 0.0 {
         // 0^w with complex w: return 0 if Re(w)>0, else Indeterminate
         return if c > 0.0 {
@@ -14940,19 +14967,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           Ok(id_expr("Indeterminate"))
         };
       }
-      let ln_abs = abs_z.ln();
-      let arg_z = b.atan2(a);
-      // w * log(z) = (c + di)(ln|z| + i*arg(z))
-      //            = (c*ln|z| - d*arg(z)) + i*(d*ln|z| + c*arg(z))
-      let re_exp = c * ln_abs - d * arg_z;
-      let im_exp = d * ln_abs + c * arg_z;
-      // exp(re_exp + i*im_exp) = e^re_exp * (cos(im_exp) + i*sin(im_exp))
-      let mag = re_exp.exp();
-      let re = mag * im_exp.cos();
-      let im = mag * im_exp.sin();
-      // Round near-zero components to avoid floating-point noise
-      let re = if re.abs() < 1e-15 { 0.0 } else { re };
-      let im = if im.abs() < 1e-15 { 0.0 } else { im };
+      let (re, im) = machine_complex_powf(a, b, c, d);
       return Ok(machine_complex_result(re, im));
     }
     Ok(pow2(base.clone(), exp.clone()))

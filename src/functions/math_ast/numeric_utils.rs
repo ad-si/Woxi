@@ -1728,6 +1728,9 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
       Some((0.0, 1.0))
     }
     Expr::Integer(n) => Some((*n as f64, 0.0)),
+    Expr::BigInteger(n) => {
+      Some((big_rational_to_f64(n, &BigInt::from(1))?, 0.0))
+    }
     Expr::Real(f) => Some((*f, 0.0)),
     Expr::BigFloat(digits, _) => Some((digits.parse::<f64>().ok()?, 0.0)),
     // `Pi`/`E` surface as `Expr::Constant` when built directly but as a
@@ -1750,10 +1753,18 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      if let (Expr::Integer(n), Expr::Integer(d)) = (&args[0], &args[1]) {
-        Some((*n as f64 / *d as f64, 0.0))
-      } else {
-        None
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => {
+          Some((*n as f64 / *d as f64, 0.0))
+        }
+        // Parts past i128 (the coefficients of an exact Cardano root).
+        (n, d) => Some((
+          big_rational_to_f64(
+            &crate::functions::math_ast::expr_to_bigint(n)?,
+            &crate::functions::math_ast::expr_to_bigint(d)?,
+          )?,
+          0.0,
+        )),
       }
     }
     Expr::UnaryOp {
