@@ -27355,6 +27355,126 @@ pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
   })
 }
 
+/// Whether a held `Manipulate[…]`/`Animate[…]` carries
+/// `SaveDefinitions -> True`.
+pub fn manipulate_saves_definitions(expr: &Expr) -> bool {
+  let expr = peel_manipulate_wrapper(expr);
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  (name == "Manipulate" || name == "Animate")
+    && args.iter().skip(1).any(|spec| {
+      matches!(
+        spec,
+        Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SaveDefinitions")
+            && matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True")
+      )
+    })
+}
+
+/// The symbol an assignment `lhs = …` / `lhs := …` defines: the head of
+/// `f[x_]`, `f[a][b]` or `f[x_] /; test`, the argument of `Options[f]`,
+/// `Attributes[f]` and the like, or the symbol itself.
+fn assigned_symbol(lhs: &Expr) -> Option<&str> {
+  match lhs {
+    Expr::Identifier(s) => Some(s),
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Condition"
+          | "HoldPattern"
+          | "Options"
+          | "Attributes"
+          | "Default"
+          | "Format"
+          | "N"
+          | "MessageName"
+      ) && !args.is_empty() =>
+    {
+      assigned_symbol(&args[0])
+    }
+    Expr::FunctionCall { name, .. } => Some(name),
+    Expr::CurriedCall { func, .. } => assigned_symbol(func),
+    _ => None,
+  }
+}
+
+/// The definition statements of `code` (a CompoundExpression or list of
+/// them, possibly nested), each with the symbol it defines.
+fn definitions_in(code: &Expr, out: &mut Vec<(String, Expr)>) {
+  match code {
+    Expr::CompoundExpr(items) => {
+      for item in items {
+        definitions_in(item, out);
+      }
+    }
+    Expr::List(items) => {
+      for item in items {
+        definitions_in(item, out);
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Set" | "SetDelayed" | "TagSet" | "TagSetDelayed"
+      ) && args.len() >= 2 =>
+    {
+      let lhs = if name.starts_with("Tag") {
+        &args[1]
+      } else {
+        &args[0]
+      };
+      if let Some(sym) = assigned_symbol(lhs) {
+        out.push((sym.to_string(), code.clone()));
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Of a `SaveDefinitions -> True` Manipulate's stored initialization, the
+/// saved definitions its live `Initialization` option does not make itself:
+/// the stored copy repeats that option's code, so running all of it would
+/// run the live code twice, and in a different order (a definition ahead
+/// of the `Get` that loads the package it calls). Each comes with the
+/// symbol it defines. An empty list when the Manipulate has no live
+/// `Initialization`.
+pub fn saved_definitions_beyond_initialization(
+  manipulate: &Expr,
+  stored: &Expr,
+) -> Vec<(String, Expr)> {
+  let expr = peel_manipulate_wrapper(manipulate);
+  let Expr::FunctionCall { args, .. } = expr else {
+    return Vec::new();
+  };
+  let mut live = Vec::new();
+  for spec in args.iter().skip(1) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && is_initialization_option(pattern, replacement)
+    {
+      definitions_in(replacement, &mut live);
+    }
+  }
+  let mut saved = Vec::new();
+  definitions_in(stored, &mut saved);
+  // A package's symbols (`` ComputationalGeometry`DelaunayTriangulation ``)
+  // are its own to define when the live code loads it.
+  saved
+    .into_iter()
+    .filter(|(sym, _)| {
+      !sym.contains('`') && !live.iter().any(|(l, _)| l == sym)
+    })
+    .collect()
+}
+
 /// `Initialization :> code`, or `SynchronousInitialization :> code` with
 /// code rather than the Boolean switch: both are run when the Manipulate
 /// is set up (NonadiabaticTubularReactorWithNegligibleMassDispersion keeps

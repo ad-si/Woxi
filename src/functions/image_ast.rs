@@ -55,7 +55,25 @@ pub fn expr_to_dynamic_image(
       let rgba = image::RgbaImage::from_raw(width, height, buf).unwrap();
       image::DynamicImage::ImageRgba8(rgba)
     }
-    _ => unreachable!(),
+    2 => {
+      let buf: Vec<u8> = data
+        .iter()
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let la = image::GrayAlphaImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageLumaA8(la)
+    }
+    // An image with more channels (a multispectral one) shows its first
+    // three as red, green and blue.
+    n => {
+      let buf: Vec<u8> = data
+        .chunks(n as usize)
+        .flat_map(|px| px[..3].iter())
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect();
+      let rgb = image::RgbImage::from_raw(width, height, buf).unwrap();
+      image::DynamicImage::ImageRgb8(rgb)
+    }
   }
 }
 
@@ -4236,53 +4254,13 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-/// The threshold `FindThreshold` picks: bin the values into 256 bins
-/// spanning `[min, max]`, choose the split that maximises the variance
-/// between the two clusters, and report the low edge of the last bin
-/// below the split. Reproduces wolframscript's value exactly, so
-/// `EdgeDetect` keeps the same edges it does.
+/// The threshold `FindThreshold` picks for the gradient magnitudes, so
+/// `EdgeDetect` keeps the same edges wolframscript does.
 fn cluster_variance_threshold(values: &[f64]) -> f64 {
-  const BINS: usize = 256;
-  let (min, max) = values
-    .iter()
-    .fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-  if max <= min {
-    return min.max(0.0);
+  match otsu_threshold(values, ImageType::Real64, false) {
+    Some(t) => crate::functions::math_ast::try_eval_to_f64(&t).unwrap_or(0.0),
+    None => values.first().map_or(0.0, |v| v.max(0.0)),
   }
-  let width = (max - min) / BINS as f64;
-
-  let mut histogram = [0.0_f64; BINS];
-  for &value in values {
-    let bin = (((value - min) / width) as usize).min(BINS - 1);
-    histogram[bin] += 1.0;
-  }
-
-  let total: f64 = values.len() as f64;
-  let moment: f64 = histogram
-    .iter()
-    .enumerate()
-    .map(|(bin, count)| bin as f64 * count)
-    .sum();
-  let (mut below, mut moment_below) = (0.0_f64, 0.0_f64);
-  let (mut best_variance, mut best_bin) = (-1.0_f64, 0_usize);
-  for (bin, &count) in histogram.iter().enumerate() {
-    below += count;
-    if below == 0.0 {
-      continue;
-    }
-    let above = total - below;
-    if above == 0.0 {
-      break;
-    }
-    moment_below += bin as f64 * count;
-    let difference = moment_below / below - (moment - moment_below) / above;
-    let variance = below * above * difference * difference;
-    if variance > best_variance {
-      best_variance = variance;
-      best_bin = bin;
-    }
-  }
-  min + best_bin as f64 * width
 }
 
 /// Quantize gradient direction to one of 4 axes and return (dy, dx) neighbor offset.
@@ -8556,13 +8534,142 @@ pub fn morphological_graph_ast(
   crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
 }
 
+/// The pixel levels FindThreshold bins: one value per pixel (the channel
+/// mean of a multichannel one), with the image type.
+fn threshold_levels(data: &[f64], channels: usize, ty: ImageType) -> Vec<f64> {
+  data
+    .chunks(channels.max(1))
+    .map(|px| {
+      let px = if channels >= 3 { &px[..3] } else { &px[..1] };
+      if ty == ImageType::Real64 {
+        px.iter().sum::<f64>() / px.len() as f64
+      } else {
+        let sum: f32 = px.iter().map(|&v| v as f32).sum();
+        (sum / px.len() as f32) as f64
+      }
+    })
+    .collect()
+}
+
+/// FindThreshold's default "Cluster" method: Otsu's between-class variance
+/// maximization over a histogram. An integer image is binned on its raw
+/// levels (256 for Byte, 65536 for Bit16); a real one in 256 bins spanning
+/// its own range. The first bin that maximizes the variance closes the
+/// lower class and is the threshold; when only two levels occur it is the
+/// one midway between them, and a constant image gives 1.
+pub fn find_threshold_value(
+  data: &[f64],
+  channels: usize,
+  ty: ImageType,
+) -> Expr {
+  let levels = threshold_levels(data, channels, ty);
+  otsu_threshold(&levels, ty, false).unwrap_or(Expr::Real(1.0))
+}
+
+/// Otsu's threshold of `levels` (see `find_threshold_value`), or None when
+/// they are all equal. `unit_bins` bins real levels on [0, 1] instead of
+/// their own range (MorphologicalBinarize's default).
+fn otsu_threshold(
+  levels: &[f64],
+  ty: ImageType,
+  unit_bins: bool,
+) -> Option<Expr> {
+  let (lo, hi) = levels
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+      (a.min(v), b.max(v))
+    });
+  if levels.is_empty() || lo >= hi {
+    return None;
+  }
+  let max_level = match ty {
+    ImageType::Bit => Some(1.0),
+    ImageType::Byte => Some(255.0),
+    ImageType::Bit16 => Some(65535.0),
+    ImageType::Real32 | ImageType::Real64 => None,
+  };
+  let (lo, hi) = if unit_bins { (0.0, 1.0) } else { (lo, hi) };
+  let (bins, width) = match max_level {
+    Some(m) => (m as usize + 1, 1.0 / m),
+    None => (256, (hi - lo) / 256.0),
+  };
+  let bin_of = |v: f64| match max_level {
+    Some(m) => (v * m).round().clamp(0.0, m) as usize,
+    None => (((v - lo) / width).max(0.0) as usize).min(bins - 1),
+  };
+  let value_of = |k: f64| match max_level {
+    Some(_) => k * width,
+    None => lo + k * width,
+  };
+  let mut counts = vec![0.0f64; bins];
+  for &v in levels {
+    counts[bin_of(v)] += 1.0;
+  }
+  let occupied: Vec<usize> = (0..bins).filter(|&k| counts[k] > 0.0).collect();
+  if let [a, b] = occupied.as_slice() {
+    if ty == ImageType::Bit {
+      return Some(Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+      });
+    }
+    return Some(Expr::Real(value_of((*a + *b) as f64 / 2.0)));
+  }
+  let total = levels.len() as f64;
+  let moment: f64 = (0..bins).map(|k| k as f64 * counts[k]).sum();
+  let (mut below, mut moment_below) = (0.0, 0.0);
+  let (mut best_variance, mut best_bin) = (-1.0f64, 0usize);
+  for (k, &count) in counts.iter().enumerate() {
+    below += count;
+    moment_below += k as f64 * count;
+    let above = total - below;
+    if below == 0.0 || above == 0.0 {
+      continue;
+    }
+    let difference = moment_below / below - (moment - moment_below) / above;
+    let variance = below * above * difference * difference;
+    if variance > best_variance {
+      best_variance = variance;
+      best_bin = k;
+    }
+  }
+  Some(Expr::Real(value_of(best_bin as f64)))
+}
+
+/// FindThreshold[image] / FindThreshold[data] with the default method.
+pub fn find_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match &args[0] {
+    Expr::Image {
+      channels,
+      data,
+      image_type,
+      ..
+    } => Ok(find_threshold_value(data, *channels as usize, *image_type)),
+    other => {
+      let mut values = Vec::new();
+      fn collect(e: &Expr, out: &mut Vec<f64>) -> bool {
+        match e {
+          Expr::List(items) => items.iter().all(|i| collect(i, out)),
+          _ => crate::functions::math_ast::try_eval_to_f64(e)
+            .map(|v| out.push(v))
+            .is_some(),
+        }
+      }
+      if matches!(other, Expr::List(_)) && collect(other, &mut values) {
+        return Ok(find_threshold_value(&values, 1, ImageType::Real32));
+      }
+      Ok(unevaluated("FindThreshold", args))
+    }
+  }
+}
+
 /// MorphologicalBinarize[img, {t1, t2}] / [img, t] — hysteresis
 /// binarization: pixels strictly above t2 seed regions that grow through
 /// 8-connected pixels strictly above t1. A scalar t means {0.8 t, t},
 /// a one-element list {t} means {t, t}. Multichannel pixels compare on
 /// their channel MEAN (f32; unlike DistanceTransform's luminance).
-/// The parameterless Otsu-default form is deliberately not implemented
-/// (FindThreshold's iterative binning is WS-internal).
+/// Without thresholds, t is Otsu's threshold of the image binned on [0, 1]
+/// (FindThreshold bins it on its own range).
 pub fn morphological_binarize_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -8572,6 +8679,7 @@ pub fn morphological_binarize_ast(
     height,
     channels,
     ref data,
+    image_type,
     ..
   } = args[0]
   else {
@@ -8582,7 +8690,16 @@ pub fn morphological_binarize_ast(
     return Ok(unevaluated());
   };
   let num = crate::functions::math_ast::try_eval_to_f64;
-  let thresholds = match &args[1] {
+  let default_threshold;
+  let spec = if let Some(spec) = args.get(1) {
+    spec
+  } else {
+    let levels = threshold_levels(data, channels as usize, image_type);
+    default_threshold =
+      otsu_threshold(&levels, image_type, true).unwrap_or(Expr::Real(1.0));
+    &default_threshold
+  };
+  let thresholds = match spec {
     Expr::List(ts) if ts.len() == 1 => num(&ts[0]).map(|t| (t, t)),
     Expr::List(ts) if ts.len() == 2 => num(&ts[0]).zip(num(&ts[1])),
     Expr::List(_) => None,
@@ -8591,7 +8708,7 @@ pub fn morphological_binarize_ast(
   let Some((t1, t2)) = thresholds else {
     crate::emit_message(&format!(
       "MorphologicalBinarize::bdarg2: Invalid threshold specification {}.",
-      expr_to_string(&args[1])
+      expr_to_string(spec)
     ));
     return Ok(unevaluated());
   };
@@ -8846,6 +8963,9 @@ pub fn delete_small_components_ast(
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
+  if matches!(&args[0], Expr::Image { .. }) {
+    return delete_small_image_components(args);
+  }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
   };
@@ -8910,6 +9030,17 @@ pub fn component_measurements_ast(
   let unevaluated = || Ok(unevaluated("ComponentMeasurements", args));
   if args.len() != 2 {
     return unevaluated();
+  }
+  // An image is measured through its morphological components.
+  if matches!(&args[0], Expr::Image { .. }) {
+    let labels = crate::evaluator::evaluate_expr_to_expr(&call(
+      "MorphologicalComponents",
+      vec![args[0].clone()],
+    ))?;
+    if !matches!(labels, Expr::List(_)) {
+      return unevaluated();
+    }
+    return component_measurements_ast(&[labels, args[1].clone()]);
   }
   let Expr::List(rows) = &args[0] else {
     return unevaluated();
@@ -8978,6 +9109,10 @@ pub fn component_measurements_ast(
       "LabelCount" => Some(Expr::Integer(label_count as i128)),
       "Count" => Some(Expr::Integer(count as i128)),
       "Area" => Some(Expr::Real(count as f64)),
+      // The radius of the disk with the same area.
+      "EquivalentDiskRadius" => {
+        Some(Expr::Real((count as f64 / std::f64::consts::PI).sqrt()))
+      }
       "Label" => Some(Expr::Integer(label)),
       _ => None,
     }
@@ -11680,6 +11815,31 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )),
       "RasterSize" => eval(call("ImageDimensions", vec![image()?])),
+      // {width, height, baseline}: the extent in printer's points and the
+      // baseline's distance from the top. Graphics sit on their centre
+      // (BaselinePosition -> Axis); a line of text or a formula on its
+      // ascent, three quarters of the line height.
+      "BoundingBox" => {
+        let Expr::Image { width, height, .. } = rasterize_ast(&rest)? else {
+          return Ok(Expr::Identifier("$Failed".into()));
+        };
+        let graphic = matches!(&args[0], Expr::Graphics { .. })
+          || matches!(&args[0], Expr::FunctionCall { name, .. }
+            if name == "Graphics" || name == "Graphics3D");
+        let baseline = if graphic {
+          height.div_ceil(2)
+        } else {
+          (0.75 * height as f64).round() as u32
+        };
+        Ok(Expr::List(
+          vec![
+            Expr::Integer(width as i128),
+            Expr::Integer(height as i128),
+            Expr::Integer(baseline as i128),
+          ]
+          .into(),
+        ))
+      }
       _ => {
         crate::emit_message(&format!(
           "Rasterize::elmntavl: \"{elem}\" is not an available element. \
@@ -14439,13 +14599,30 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let alpha = |i: usize| -> Option<f64> {
     match args.get(1) {
       None => Some(1.0),
+      // An alpha image of another size sits centred on the image, zero
+      // outside it.
       Some(Expr::Image {
         width: aw,
         height: ah,
         channels: ac,
         data: ad,
         ..
-      }) if aw == width && ah == height => Some(ad[i * (*ac as usize)]),
+      }) => {
+        let (w, h) = (*width as i64, *height as i64);
+        let (aw, ah) = (*aw as i64, *ah as i64);
+        // Offsets from the bottom-left corner, rounded half to even.
+        let half_even = |d: i64| (d as f64 / 2.0).round_ties_even() as i64;
+        let bottom = half_even(h - ah);
+        let top = h - ah - bottom;
+        let left = half_even(w - aw);
+        let (r, c) = ((i as i64) / w, (i as i64) % w);
+        let (ar, acol) = (r - top, c - left);
+        Some(if (0..ah).contains(&ar) && (0..aw).contains(&acol) {
+          ad[((ar * aw + acol) as usize) * (*ac as usize)]
+        } else {
+          0.0
+        })
+      }
       Some(v) => {
         // A real alpha is stored in single precision.
         crate::functions::math_ast::try_eval_to_f64(v).map(|a| a as f32 as f64)
@@ -14469,4 +14646,98 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     color_space: space,
     display_size: *display_size,
   })
+}
+
+/// DeleteSmallComponents[image] / DeleteSmallComponents[image, n]: the
+/// image with its small morphological components set to background — those
+/// of at most `n` pixels, or by default those smaller than the mean
+/// component size.
+fn delete_small_image_components(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let held = || Ok(unevaluated("DeleteSmallComponents", args));
+  if args.is_empty() || args.len() > 2 {
+    return held();
+  }
+  let limit = match args.get(1) {
+    None => None,
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    Some(_) => return held(),
+  };
+  let labels_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+    "MorphologicalComponents",
+    vec![args[0].clone()],
+  ))?;
+  let Expr::List(rows) = &labels_expr else {
+    return held();
+  };
+  let labels: Vec<Vec<i128>> = match rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(cs) => cs
+        .iter()
+        .map(|c| match c {
+          Expr::Integer(n) => Some(*n),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>(),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()
+  {
+    Some(l) => l,
+    None => return held(),
+  };
+  let mut counts: std::collections::BTreeMap<i128, usize> =
+    std::collections::BTreeMap::new();
+  for &l in labels.iter().flatten() {
+    if l != 0 {
+      *counts.entry(l).or_default() += 1;
+    }
+  }
+  if counts.is_empty() {
+    return Ok(args[0].clone());
+  }
+  let mean = counts.values().sum::<usize>() as f64 / counts.len() as f64;
+  let removed = |l: i128| {
+    l != 0
+      && match limit {
+        Some(n) => counts[&l] <= n,
+        None => (counts[&l] as f64) < mean,
+      }
+  };
+  match &args[0] {
+    Expr::Image {
+      color_space,
+      display_size,
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+    } => {
+      let (w, ch) = (*width as usize, *channels as usize);
+      let mut out = data.as_ref().clone();
+      for (r, row) in labels.iter().enumerate() {
+        for (c, &l) in row.iter().enumerate() {
+          if removed(l) {
+            let base = (r * w + c) * ch;
+            for v in &mut out[base..base + ch] {
+              *v = 0.0;
+            }
+          }
+        }
+      }
+      Ok(Expr::Image {
+        color_space: *color_space,
+        display_size: *display_size,
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: Arc::new(out),
+        image_type: *image_type,
+      })
+    }
+    _ => held(),
+  }
 }

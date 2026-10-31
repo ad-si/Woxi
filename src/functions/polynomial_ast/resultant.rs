@@ -8,6 +8,17 @@ use crate::functions::math_ast::expr_to_i128;
 /// The resultant is the determinant of the Sylvester matrix built from
 /// the coefficients of the two polynomials.
 pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Method -> …` only picks the algorithm (subresultants, Sylvester or
+  // Bezout matrix, modular), never the value.
+  if let Some(i) = args.iter().position(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method"))
+  }) && i >= 3
+  {
+    let mut rest = args.to_vec();
+    rest.remove(i);
+    return resultant_ast(&rest);
+  }
   // A `Modulus -> p` option reduces the (symbolically computed) resultant's
   // coefficients modulo p: the resultant is a polynomial in the input
   // coefficients, so reduction commutes with its computation.

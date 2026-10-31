@@ -7331,6 +7331,37 @@ mod morphological_image_input {
 mod component_measurements {
   use super::*;
 
+  // An image is measured through its morphological components, and
+  // DeleteSmallComponents on an image drops those smaller than the mean
+  // component size (or of at most n pixels).
+  #[test]
+  fn image_components_and_small_component_removal() {
+    assert_eq!(
+      interpret(
+        "img = Image[{{1,1,0,0},{1,1,0,1},{0,0,0,1},{1,0,0,1}}]; \
+         {ComponentMeasurements[img, \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img], \"Count\"], \
+          ComponentMeasurements[DeleteSmallComponents[img, 3], \"Count\"], \
+          ImageType[DeleteSmallComponents[Image[{{1, 1, 0, 1}}, \"Bit\"]]], \
+          DeleteSmallComponents[{{1, 0, 2, 2, 2}}]}"
+      )
+      .unwrap(),
+      "{{1 -> 4, 2 -> 3, 3 -> 1}, {1 -> 4, 2 -> 3}, {1 -> 4}, Bit, {{1, 0, 2, 2, 2}}}"
+    );
+  }
+
+  // "EquivalentDiskRadius": the radius of the disk of the component's area.
+  #[test]
+  fn equivalent_disk_radius() {
+    assert_eq!(
+      interpret(
+        "ComponentMeasurements[{{1,1,0,0},{1,1,0,2},{0,0,0,2},{3,0,0,2}}, \"EquivalentDiskRadius\"]"
+      )
+      .unwrap(),
+      "{1 -> 1.1283791670955126, 2 -> 0.9772050238058398, 3 -> 0.5641895835477563}"
+    );
+  }
+
   // Each distinct nonzero value is a component; "Count" gives the pixel count
   // per label as a label -> count rule list.
   #[test]
@@ -9435,6 +9466,23 @@ mod rasterize_any_expression {
     );
   }
 
+  // An alpha image of another size is centred (offsets rounded half to
+  // even from the bottom left); a graphic is rasterized at its size.
+  #[test]
+  fn set_alpha_channel_centres_other_sizes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "m = Image[{{1, 0}, {1, 1}}]; \
+         {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], \
+          ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], \
+          ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0., 0.}, {0., 1., 0., 0.}, {0., 1., 1., 0.}}, {{0.25, 0.75}, {1., 1.}}, {2, 2}}"
+    );
+  }
+
   // Rasterize[expr, elem] gives one element of the rasterization: the
   // image, its RGB bytes, or its size.
   #[test]
@@ -9450,6 +9498,18 @@ mod rasterize_any_expression {
       )
       .unwrap(),
       "{Image, True, {Integer}, True}"
+    );
+    // "BoundingBox": {width, height, baseline from the top}; a graphic's
+    // baseline is its centre, text's lies below the middle.
+    assert_eq!(
+      interpret(
+        "{b1 = Rasterize[Graphics[Disk[]], \"BoundingBox\"], \
+          b2 = Rasterize[Style[\"abg\", FontSize -> 72], \"BoundingBox\"]}; \
+         {Length /@ {b1, b2}, Most[b1], b1[[3]] == Ceiling[b1[[2]]/2], \
+          b2[[2]]/2 < b2[[3]] < b2[[2]]}"
+      )
+      .unwrap(),
+      "{{3, 3}, {360, 360}, True, True}"
     );
     let r =
       interpret_with_stdout("Rasterize[Graphics[Disk[]], \"Foo\"]").unwrap();
@@ -10156,6 +10216,70 @@ mod commonest_filter_on_images {
       "{{0.20000000298023224, 0.20000000298023224, 0.20000000298023224}, \
        {0.10000000149011612, 0.10000000149011612, 0.20000000298023224}, \
        {0.10000000149011612, 0.10000000149011612, 0.10000000149011612}}"
+    );
+  }
+}
+
+mod find_threshold {
+  use super::*;
+
+  #[test]
+  fn real_images_bin_on_their_own_range() {
+    assert_eq!(
+      interpret(
+        "InputForm /@ {FindThreshold[Image[{{0.1, 0.2, 0.9}}]], \
+         FindThreshold[Image[{{0.25, 0.5, 0.76}}]], \
+         FindThreshold[Image[{{0., 0.01, 0.99, 1.}}]], \
+         FindThreshold[Image[{{0.1, 0.2, 0.9}}, \"Real64\"]], \
+         FindThreshold[{0.1, 0.2, 0.9}]}"
+      )
+      .unwrap(),
+      "{InputForm[0.19999999832361937], InputForm[0.4990234328433871], \
+       InputForm[0.0078125], InputForm[0.2], InputForm[0.19999999832361937]}"
+    );
+  }
+
+  #[test]
+  fn two_levels_split_midway_and_a_constant_image_gives_one() {
+    assert_eq!(
+      interpret(
+        "InputForm /@ {FindThreshold[Image[{{0., 1.}}]], \
+         FindThreshold[Image[{{0.2, 0.3}}]], FindThreshold[Image[{{0.3, 0.3}}]], \
+         FindThreshold[Image[{{10, 200}}, \"Byte\"]], \
+         FindThreshold[Image[{{0, 1, 1}}, \"Bit\"]]}"
+      )
+      .unwrap(),
+      "{InputForm[0.498046875], InputForm[0.2498046949331183], InputForm[1.], \
+       InputForm[0.4117647058823529], InputForm[1/2]}"
+    );
+  }
+
+  #[test]
+  fn integer_images_bin_on_their_raw_levels() {
+    assert_eq!(
+      interpret(
+        "InputForm /@ {FindThreshold[Image[{{50, 60, 200}}, \"Byte\"]], \
+         FindThreshold[Image[{{1000, 2000, 60000}}, \"Bit16\"]]}"
+      )
+      .unwrap(),
+      "{InputForm[0.23529411764705882], InputForm[0.030518043793392843]}"
+    );
+  }
+
+  #[test]
+  fn morphological_binarize_defaults_to_otsu_on_the_unit_range() {
+    // Binned on [0, 1] the default threshold differs from FindThreshold's
+    // (binned on [0, 0.87]), and so do the pixels it keeps.
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.14, 0.09, 0.05, 0.01}, {0.87, 0.11, 0., 0.82}, \
+         {0.07, 0.43, 0.05, 0.08}}]; \
+         {ImageData[MorphologicalBinarize[i]], \
+         ImageData[MorphologicalBinarize[i, FindThreshold[i]]]}"
+      )
+      .unwrap(),
+      "{{{1, 0, 0, 0}, {1, 1, 0, 1}, {0, 1, 0, 0}}, \
+       {{1, 0, 0, 0}, {1, 0, 0, 1}, {0, 1, 0, 0}}}"
     );
   }
 }

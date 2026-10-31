@@ -85,6 +85,13 @@ fn n_eval_arbitrary_precision_form(
       .collect();
     return Ok(Expr::List(results?.into()));
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(sparse) = n_sparse_array(name, args, |e| {
+      n_eval_arbitrary_precision_form(e, precision)
+    })
+  {
+    return sparse;
+  }
   n_eval_arbitrary(expr, precision)
 }
 
@@ -138,6 +145,51 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   Ok(value)
 }
 
+/// `N` of a `SparseArray[Automatic, dims, background, {1, {rowptr, cols},
+/// values}]` reaches only its background and values: the dimensions and
+/// the index structure stay integers.
+fn n_sparse_array(
+  name: &str,
+  args: &[Expr],
+  n: impl Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Option<Result<Expr, InterpreterError>> {
+  if name != "SparseArray" || args.len() != 4 {
+    return None;
+  }
+  let Expr::List(parts) = &args[3] else {
+    return None;
+  };
+  if parts.len() != 3 {
+    return None;
+  }
+  let build = || -> Result<Expr, InterpreterError> {
+    let mut new_parts = parts.to_vec();
+    new_parts[2] = n(&parts[2])?;
+    Ok(Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![
+        args[0].clone(),
+        args[1].clone(),
+        n(&args[2])?,
+        Expr::List(new_parts.into()),
+      ]
+      .into(),
+    })
+  };
+  Some(build())
+}
+
+/// `expr` with every numeric subexpression free of slots and symbols
+/// numericized and everything else left unevaluated.
+fn n_held_numbers(expr: &Expr) -> Expr {
+  let numeric = matches!(expr, Expr::Integer(_) | Expr::BigInteger(_))
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational");
+  if numeric && let Ok(v) = n_eval(expr) {
+    return v;
+  }
+  crate::syntax::map_children(expr, &n_held_numbers)
+}
+
 fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok(Expr::Real(*n as f64)),
@@ -156,10 +208,18 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       let results: Result<Vec<Expr>, _> = items.iter().map(n_eval).collect();
       Ok(Expr::List(results?.into()))
     }
+    // A pure function's body is held, so N reaches only its numbers:
+    // `N[FoldList[Plus, 0, #] &]` is `FoldList[Plus, 0., #] &`.
+    Expr::Function { body } => Ok(Expr::Function {
+      body: Box::new(n_held_numbers(body)),
+    }),
     Expr::BigInteger(n) => Ok(Expr::Real(
       n.to_string().parse::<f64>().unwrap_or(f64::INFINITY),
     )),
     Expr::FunctionCall { name, args } => {
+      if let Some(sparse) = n_sparse_array(name, args, n_eval) {
+        return sparse;
+      }
       if let Some(value) = user_n_value(expr, None)? {
         return n_eval(&value);
       }
@@ -4608,9 +4668,14 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse the third argument: n, {n}, or {nmin, nmax}
   let (total_n, range) = match &args[2] {
-    Expr::Integer(n) => (*n as usize, None),
+    Expr::Integer(n) if *n >= 0 => (*n as usize, None),
     Expr::List(items) if items.len() == 1 => {
       if let Some(n) = expr_to_i128(&items[0]) {
+        if n < 1 {
+          return linear_recurrence_backward(&kernel[..], &init[..], n, n).map(
+            |r| r.unwrap_or_else(|| unevaluated("LinearRecurrence", args)),
+          );
+        }
         (n as usize, Some((n as usize, n as usize)))
       } else {
         return Ok(unevaluated("LinearRecurrence", args));
@@ -4619,7 +4684,17 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 2 => {
       if let (Some(nmin), Some(nmax)) =
         (expr_to_i128(&items[0]), expr_to_i128(&items[1]))
+        && nmin <= nmax
       {
+        if nmin < 1 {
+          return linear_recurrence_backward(
+            &kernel[..],
+            &init[..],
+            nmin,
+            nmax,
+          )
+          .map(|r| r.unwrap_or_else(|| unevaluated("LinearRecurrence", args)));
+        }
         (nmax as usize, Some((nmin as usize, nmax as usize)))
       } else {
         return Ok(unevaluated("LinearRecurrence", args));
@@ -4649,6 +4724,51 @@ pub fn linear_recurrence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => Ok(Expr::List(seq[..total_n].to_vec().into())),
     Some((nmin, nmax)) => Ok(Expr::List(seq[nmin - 1..nmax].to_vec().into())),
   }
+}
+
+/// LinearRecurrence[ker, init, {nmin, nmax}] with nmin < 1: the terms before
+/// the initial values solve the recurrence for its oldest term,
+/// a[n - k] = (a[n] - Σ_{i<k} ker[i] a[n - i]) / ker[k], which needs a
+/// nonzero last kernel entry.
+fn linear_recurrence_backward(
+  kernel: &[Expr],
+  init: &[Expr],
+  nmin: i128,
+  nmax: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let k = kernel.len();
+  if k == 0 || init.len() < k || is_expr_zero(&kernel[k - 1]) {
+    return Ok(None);
+  }
+  // seq[j] holds a[first + j].
+  let mut seq: std::collections::VecDeque<Expr> =
+    init.iter().cloned().collect();
+  let mut first: i128 = 1;
+  while first > nmin {
+    let mut rest = Expr::Integer(0);
+    for i in 1..k {
+      rest = plus2(rest, times2(kernel[i - 1].clone(), seq[k - 1 - i].clone()));
+    }
+    let older = crate::evaluator::evaluate_expr_to_expr(&times2(
+      plus2(seq[k - 1].clone(), times2(Expr::Integer(-1), rest)),
+      pow2(kernel[k - 1].clone(), Expr::Integer(-1)),
+    ))?;
+    seq.push_front(older);
+    first -= 1;
+  }
+  while (seq.len() as i128) < nmax - first + 1 {
+    let mut next = Expr::Integer(0);
+    for (i, coeff) in kernel.iter().enumerate() {
+      let idx = seq.len() - 1 - i;
+      next = plus2(next, times2(coeff.clone(), seq[idx].clone()));
+    }
+    seq.push_back(crate::evaluator::evaluate_expr_to_expr(&next)?);
+  }
+  let from = (nmin - first) as usize;
+  let to = (nmax - first) as usize;
+  Ok(Some(Expr::List(
+    seq.range(from..=to).cloned().collect::<Vec<_>>().into(),
+  )))
 }
 
 /// EuclideanDistance[u, v] - Euclidean distance between two points

@@ -4187,7 +4187,14 @@ pub(crate) fn number_form_fixed_parts(
       rounded.log10().floor() as i64
     };
     if m >= 6 || m <= -6 {
-      let formatted = format!("{v:.prec$e}", prec = f as usize);
+      // The mantissa shows `n` significant digits, padded with zeros out to
+      // `f` decimals (`NumberForm[1.2345*^20, {3, 3}]` is 1.230 × 10^20).
+      let shown = if rounded.is_finite() && rounded != 0.0 {
+        rounded.copysign(*v)
+      } else {
+        *v
+      };
+      let formatted = format!("{shown:.prec$e}", prec = f as usize);
       let (mantissa, exp_raw) = formatted.split_once('e')?;
       let exp: i64 = exp_raw.parse().ok()?;
       let mantissa = if f == 0 {
@@ -15627,42 +15634,74 @@ pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// URLEncode[string] - percent-encode a string for use in URLs
 pub fn url_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-  match &evaluated {
-    Expr::String(s) => Ok(Expr::String(percent_encode(s))),
-    Expr::Integer(n) => Ok(Expr::String(n.to_string())),
-    Expr::Real(f) => Ok(Expr::String(format!("{f}"))),
-    Expr::BigFloat(digits, _) => Ok(Expr::String(digits.clone())),
-    Expr::Identifier(id) if id == "None" => Ok(Expr::String(String::new())),
+  let (positional, opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  let (Ok(charset), [arg]) = (character_encoding_option(&opts), positional)
+  else {
+    return Ok(unevaluated("URLEncode", args));
+  };
+  url_encode_with(arg, charset.unwrap_or(ByteCharset::Utf8))
+    .map(|r| r.unwrap_or_else(|| unevaluated("URLEncode", args)))
+}
+
+fn url_encode_with(
+  arg: &Expr,
+  charset: ByteCharset,
+) -> Result<Option<Expr>, InterpreterError> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
+  Ok(Some(match &evaluated {
+    Expr::String(s) => Expr::String(percent_encode_with(s, charset)),
+    Expr::Integer(n) => Expr::String(n.to_string()),
+    Expr::Real(f) => Expr::String(format!("{f}")),
+    Expr::BigFloat(digits, _) => Expr::String(digits.clone()),
+    Expr::Identifier(id) if id == "None" => Expr::String(String::new()),
     Expr::FunctionCall { name, .. } if name == "Missing" => {
-      Ok(Expr::String(String::new()))
+      Expr::String(String::new())
     }
     Expr::List(items) => {
       // Thread over lists
-      let encoded: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| url_encode_ast(std::slice::from_ref(item)))
-        .collect();
-      Ok(Expr::List(encoded?.into()))
+      let mut encoded = Vec::with_capacity(items.len());
+      for item in items {
+        encoded.push(url_encode_with(item, charset)?.unwrap_or_else(|| {
+          unevaluated("URLEncode", std::slice::from_ref(item))
+        }));
+      }
+      Expr::List(encoded.into())
     }
-    _ => Ok(unevaluated("URLEncode", args)),
-  }
+    _ => return Ok(None),
+  }))
 }
 
 /// URLDecode[string] - decode a percent-encoded URL string
 pub fn url_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-  match &evaluated {
-    Expr::String(s) => Ok(Expr::String(percent_decode(s))),
-    Expr::List(items) => {
-      let decoded: Result<Vec<Expr>, _> = items
-        .iter()
-        .map(|item| url_decode_ast(std::slice::from_ref(item)))
-        .collect();
-      Ok(Expr::List(decoded?.into()))
+  let (positional, opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  let (Ok(charset), [arg]) = (character_encoding_option(&opts), positional)
+  else {
+    return Ok(unevaluated("URLDecode", args));
+  };
+  let charset = charset.unwrap_or(ByteCharset::Utf8);
+  fn decode(e: &Expr, charset: ByteCharset) -> Option<Expr> {
+    match e {
+      Expr::String(s) => Some(Expr::String(percent_decode_with(
+        &s.replace('+', " "),
+        charset,
+      ))),
+      Expr::List(items) => Some(Expr::List(
+        items
+          .iter()
+          .map(|item| decode(item, charset))
+          .collect::<Option<Vec<_>>>()?
+          .into(),
+      )),
+      _ => None,
     }
-    _ => Ok(unevaluated("URLDecode", args)),
   }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
+  Ok(
+    decode(&evaluated, charset)
+      .unwrap_or_else(|| unevaluated("URLDecode", args)),
+  )
 }
 
 /// Render a query key/value to its string form before percent-encoding.
@@ -15677,23 +15716,40 @@ fn query_stringify(e: &Expr) -> String {
   }
 }
 
-/// Percent-encode a query component, using "+" for spaces (as URLQueryEncode
-/// does, unlike URLEncode which emits "%20").
-fn query_encode_component(s: &str) -> String {
-  percent_encode(s).replace("%20", "+")
+/// A query key or value encoded the way URLQueryEncode does (spaces as `+`,
+/// unlike URLEncode which emits "%20").
+pub fn url_query_component(s: &str) -> String {
+  url_query_component_with(s, ByteCharset::Utf8)
 }
 
-/// A query key or value encoded the way URLQueryEncode does (spaces as `+`).
-pub fn url_query_component(s: &str) -> String {
-  query_encode_component(s)
+/// A query key or value encoded like `url_query_component`, with the bytes of
+/// the given character encoding.
+pub(crate) fn url_query_component_with(
+  s: &str,
+  charset: ByteCharset,
+) -> String {
+  percent_encode_with(s, charset).replace("%20", "+")
 }
 
 /// URLQueryEncode[assoc | {rules...}] - build a URL query string.
 pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  let (positional, mut opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  // `SortQueries -> True` orders the pairs by key, `RemoveEmptyQueries ->
+  // True` drops the ones whose value is empty.
+  let mut flag = |name: &str| -> Option<bool> {
+    let i = opts.iter().position(|(o, _)| o == name)?;
+    let (_, v) = opts.remove(i);
+    Some(matches!(v, Expr::Identifier(ref t) if t == "True"))
+  };
+  let sort_queries = flag("SortQueries").unwrap_or(false);
+  let remove_empty = flag("RemoveEmptyQueries").unwrap_or(false);
+  let (Ok(charset), [arg]) = (character_encoding_option(&opts), positional)
+  else {
     return Ok(unevaluated("URLQueryEncode", args));
-  }
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  };
+  let charset = charset.unwrap_or(ByteCharset::Utf8);
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
 
   // Collect the key/value pairs from either an Association or a list of rules.
   let pairs: Vec<(Expr, Expr)> = match &evaluated {
@@ -15718,13 +15774,27 @@ pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated("URLQueryEncode", args)),
   };
 
+  let mut pairs = pairs;
+  if remove_empty {
+    pairs.retain(|(_, v)| !matches!(v, Expr::String(s) if s.is_empty()));
+  }
+  if sort_queries {
+    pairs.sort_by(|(a, _), (b, _)| {
+      // wolfram_string_order is 1 when a comes first, -1 when b does.
+      crate::functions::list_helpers_ast::wolfram_string_order(
+        &query_stringify(b),
+        &query_stringify(a),
+      )
+      .cmp(&0)
+    });
+  }
   let encoded = pairs
     .iter()
     .map(|(k, v)| {
       format!(
         "{}={}",
-        query_encode_component(&query_stringify(k)),
-        query_encode_component(&query_stringify(v))
+        url_query_component_with(&query_stringify(k), charset),
+        url_query_component_with(&query_stringify(v), charset)
       )
     })
     .collect::<Vec<_>>()
@@ -15760,9 +15830,124 @@ pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(rules.into()))
 }
 
-fn percent_encode(s: &str) -> String {
+/// The Mac OS Roman characters of the bytes 0x80–0xFF.
+const MACINTOSH_ROMAN_HIGH: [char; 128] = [
+  'Ä', 'Å', 'Ç', 'É', 'Ñ', 'Ö', 'Ü', 'á', 'à', 'â', 'ä', 'ã', 'å', 'ç', 'é',
+  'è', 'ê', 'ë', 'í', 'ì', 'î', 'ï', 'ñ', 'ó', 'ò', 'ô', 'ö', 'õ', 'ú', 'ù',
+  'û', 'ü', '†', '°', '¢', '£', '§', '•', '¶', 'ß', '®', '©', '™', '´', '¨',
+  '≠', 'Æ', 'Ø', '∞', '±', '≤', '≥', '¥', 'µ', '∂', '∑', '∏', 'π', '∫', 'ª',
+  'º', 'Ω', 'æ', 'ø', '¿', '¡', '¬', '√', 'ƒ', '≈', '∆', '«', '»', '…',
+  '\u{a0}', 'À', 'Ã', 'Õ', 'Œ', 'œ', '–', '—', '“', '”', '‘', '’', '÷', '◊',
+  'ÿ', 'Ÿ', '⁄', '€', '‹', '›', 'ﬁ', 'ﬂ', '‡', '·', '‚', '„', '‰', 'Â', 'Ê',
+  'Á', 'Ë', 'È', 'Í', 'Î', 'Ï', 'Ì', 'Ó', 'Ô', '\u{f8ff}', 'Ò', 'Ú', 'Û', 'Ù',
+  'ı', 'ˆ', '˜', '¯', '˘', '˙', '˚', '¸', '˝', '˛', 'ˇ',
+];
+
+/// The Windows-1252 characters of the bytes 0x80–0x9F (the rest of the
+/// code page agrees with ISO Latin-1).
+const WINDOWS_ANSI_C1: [char; 32] = [
+  '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ',
+  '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜',
+  '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
+];
+
+/// A single-byte character encoding, as named by `CharacterEncoding`.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum ByteCharset {
+  Utf8,
+  Latin1,
+  Ascii,
+  MacintoshRoman,
+  WindowsAnsi,
+}
+
+impl ByteCharset {
+  /// The encoding a `CharacterEncoding` value names, if it is one of these.
+  pub(crate) fn from_name(name: &str) -> Option<Self> {
+    Some(match name {
+      "UTF-8" | "UTF8" => Self::Utf8,
+      "ISOLatin1" | "ISO8859-1" => Self::Latin1,
+      "ASCII" | "PrintableASCII" => Self::Ascii,
+      "MacintoshRoman" => Self::MacintoshRoman,
+      "WindowsANSI" => Self::WindowsAnsi,
+      _ => return None,
+    })
+  }
+
+  /// The bytes of `c`, falling back to UTF-8 for a character the encoding
+  /// has no byte for.
+  fn encode_char(self, c: char, out: &mut Vec<u8>) {
+    let code = c as u32;
+    let byte = match self {
+      Self::Utf8 => None,
+      _ if code < 0x80 => Some(code as u8),
+      Self::Latin1 if code < 0x100 => Some(code as u8),
+      Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH
+        .iter()
+        .position(|&m| m == c)
+        .map(|i| 0x80 + i as u8),
+      Self::WindowsAnsi => WINDOWS_ANSI_C1
+        .iter()
+        .position(|&m| m == c)
+        .map(|i| 0x80 + i as u8)
+        .or_else(|| (0xA0..0x100).contains(&code).then_some(code as u8)),
+      _ => None,
+    };
+    if let Some(b) = byte {
+      out.push(b);
+    } else {
+      let mut buf = [0u8; 4];
+      out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+  }
+
+  pub(crate) fn encode(self, s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      self.encode_char(c, &mut out);
+    }
+    out
+  }
+
+  pub(crate) fn decode(self, bytes: &[u8]) -> String {
+    let high = |b: u8| -> char {
+      match self {
+        Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH[(b - 0x80) as usize],
+        Self::WindowsAnsi if b < 0xA0 => WINDOWS_ANSI_C1[(b - 0x80) as usize],
+        _ => b as char,
+      }
+    };
+    match self {
+      Self::Utf8 => String::from_utf8_lossy(bytes).to_string(),
+      _ => bytes
+        .iter()
+        .map(|&b| if b < 0x80 { b as char } else { high(b) })
+        .collect(),
+    }
+  }
+}
+
+/// The `CharacterEncoding` option among trailing options: `Ok(None)` when it
+/// is absent, `Err(())` when an option is not CharacterEncoding or names an
+/// unsupported encoding.
+pub(crate) fn character_encoding_option(
+  opts: &[(String, Expr)],
+) -> Result<Option<ByteCharset>, ()> {
+  let mut found = None;
+  for (name, value) in opts {
+    match (name.as_str(), value) {
+      ("CharacterEncoding", Expr::String(enc)) => {
+        found = Some(ByteCharset::from_name(enc).ok_or(())?);
+      }
+      _ => return Err(()),
+    }
+  }
+  Ok(found)
+}
+
+fn percent_encode_with(s: &str, charset: ByteCharset) -> String {
   let mut result = String::with_capacity(s.len() * 3);
-  for byte in s.as_bytes() {
+  for byte in &charset.encode(s) {
     match *byte {
       // Unreserved characters (RFC 3986): ALPHA / DIGIT / "-" / "." / "_" / "~"
       b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
@@ -15778,6 +15963,10 @@ fn percent_encode(s: &str) -> String {
 }
 
 pub(crate) fn percent_decode(s: &str) -> String {
+  percent_decode_with(s, ByteCharset::Utf8)
+}
+
+fn percent_decode_with(s: &str, charset: ByteCharset) -> String {
   let mut result = Vec::new();
   let bytes = s.as_bytes();
   let mut i = 0;
@@ -15793,7 +15982,7 @@ pub(crate) fn percent_decode(s: &str) -> String {
     result.push(bytes[i]);
     i += 1;
   }
-  String::from_utf8_lossy(&result).to_string()
+  charset.decode(&result)
 }
 
 /// StringToByteArray[string] - convert a string to a ByteArray (UTF-8 encoding)

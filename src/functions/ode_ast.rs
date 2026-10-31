@@ -5629,6 +5629,17 @@ fn ndsolve_system(
     if let Expr::FunctionCall { name, args: wargs } = &eq
       && name == "WhenEvent"
     {
+      // `WhenEvent[{c1, c2, …}, action]` fires on any of the conditions:
+      // one event per condition, all with the same action.
+      if let [Expr::List(conds), action] = wargs.as_slice() {
+        for c in conds {
+          raw_state_events.push(RawStateEvent {
+            condition: c.clone(),
+            action: action.clone(),
+          });
+        }
+        continue;
+      }
       match parse_periodic_when_event(wargs, x_name) {
         Some(ev) => raw_time_events.push(ev),
         None if wargs.len() == 2 => raw_state_events.push(RawStateEvent {

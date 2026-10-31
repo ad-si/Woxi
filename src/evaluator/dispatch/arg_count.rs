@@ -563,7 +563,8 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "FindSequenceFunction" => Some((1, 2)),
     "First" => Some((1, 2)),
     "FirstCase" => Some((1, 4)),
-    "FirstPosition" => Some((2, usize::MAX)),
+    // FirstPosition[pattern] is the operator form.
+    "FirstPosition" => Some((1, usize::MAX)),
     "Fit" => Some((1, 3)),
     "FixedPoint" => Some((2, usize::MAX)),
     "FixedPointList" => Some((2, usize::MAX)),
@@ -1310,8 +1311,8 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Resultant" => Some((3, 4)),
     "Reverse" => Some((1, 2)),
     "ReverseGraph" => Some((1, 2)),
-    "DirectedGraph" => Some((1, 1)),
-    "UndirectedGraph" => Some((1, 1)),
+    "DirectedGraph" => Some((1, usize::MAX)),
+    "UndirectedGraph" => Some((1, usize::MAX)),
     "FindHamiltonianPath" => Some((1, 3)),
     "ReverseSort" => Some((1, 2)),
     "ReverseSortBy" => Some((1, 3)),
@@ -1761,7 +1762,13 @@ pub fn check_arg_count(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   if let Some(counts) = discrete_arg_counts(name) {
-    let n = args.len();
+    // Trailing options (`AccuracyGoal -> 8`, …) are not arguments.
+    let n = args.len()
+      - args[1.min(args.len())..]
+        .iter()
+        .rev()
+        .take_while(|a| is_option_arg(a))
+        .count();
     if counts.contains(&n) {
       return None;
     }

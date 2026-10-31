@@ -15968,6 +15968,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
     Expr::CurriedCall { func, args } => {
       contains_slot_zero(func) || args.iter().any(contains_slot_zero)
     }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => false,
     Expr::List(items) => items.iter().any(contains_slot_zero),
     Expr::BinaryOp { left, right, .. } => {
       contains_slot_zero(left) || contains_slot_zero(right)
@@ -16022,6 +16023,7 @@ pub fn contains_slot_zero(expr: &Expr) -> bool {
 /// function application to emit Function::slot1 / Function::slota messages.
 pub fn collect_named_slot_keys(expr: &Expr, out: &mut Vec<String>) {
   match expr {
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::FunctionCall { name, args } if name == "Slot" && args.len() == 1 => {
       if let Expr::String(key) = &args[0] {
         out.push(key.clone());
@@ -16218,6 +16220,11 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       } else {
         call0("Sequence")
       }
+    }
+    // Shared inert data (a large numeric array) holds no slots: its O(1)
+    // clone stands for itself.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => {
       Expr::List(substitute_slots_expand(items, values).into())
@@ -16424,7 +16431,9 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
     Expr::Identifier(name) => {
       out.insert(name.clone());
     }
-    Expr::FunctionCall { args, .. } => {
+    // A call's head is a symbol of the value too: `a[1]` mentions `a`.
+    Expr::FunctionCall { name, args } => {
+      out.insert(name.clone());
       for a in args {
         collect_identifier_names(a, out);
       }
@@ -17253,9 +17262,16 @@ fn substitute_variables_impl(
     Expr::Identifier(name) | Expr::Constant(name) => {
       for &(var_name, value) in bindings {
         if name == var_name {
-          return value.clone();
+          // A large array goes in shared, so the copies the body makes of
+          // it (a pure function called once per element) are O(1).
+          let mut value = value.clone();
+          crate::evaluator::share_large_lists(&mut value, 0);
+          return value;
         }
       }
+      expr.clone()
+    }
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
       expr.clone()
     }
     Expr::List(items) => {
@@ -17347,6 +17363,74 @@ fn substitute_variables_impl(
         && matches!(args[0], Expr::List(_))
       {
         return substitute_into_scoping_construct(name, args, bindings);
+      }
+      // A local name that is no pattern slot but occurs in a value being
+      // substituted is still alpha-renamed to `name$`, so the value's symbol
+      // is not captured: `f[x_] := Module[{a}, {x, a}]` gives `f[a]` =
+      // `{a, a$123}`.
+      if template
+        && matches!(name.as_str(), "With" | "Module" | "DynamicModule")
+        && args.len() >= 2
+        && matches!(args[0], Expr::List(_))
+      {
+        let spec_count = if name == "With" { args.len() - 1 } else { 1 };
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> = args[..spec_count]
+          .iter()
+          .flat_map(scoping_binder_names)
+          .filter(|b| {
+            value_names.contains(b.as_str())
+              && !bindings.iter().any(|(slot, _)| slot == b)
+          })
+          .map(|b| (b.clone(), format!("{b}$")))
+          .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
+      }
+      // A definition's pattern variables are binders too: one that occurs
+      // in a value being substituted is renamed to `name$` first, so the
+      // value keeps its own symbol (`g[vl_] := (f[x_] = e /. vl[[1]] -> x)`
+      // called as `g[{x}]` must leave the argument's `x` alone).
+      if template
+        && matches!(name.as_str(), "Set" | "SetDelayed")
+        && args.len() == 2
+      {
+        let mut value_names = std::collections::HashSet::new();
+        for (_, value) in bindings {
+          collect_identifier_names(value, &mut value_names);
+        }
+        let renames: Vec<(String, String)> =
+          crate::evaluator::pattern_variable_names(&args[0])
+            .into_iter()
+            .filter(|b| {
+              value_names.contains(b.as_str())
+                && !bindings.iter().any(|(slot, _)| slot == b)
+            })
+            .map(|b| (b.clone(), format!("{b}$")))
+            .collect();
+        if !renames.is_empty() {
+          let renamed: Vec<Expr> = args
+            .iter()
+            .map(|a| {
+              renames
+                .iter()
+                .fold(a.clone(), |e, (old, new)| rename_symbol(&e, old, new))
+            })
+            .collect();
+          return call(name, substitute_parts(&renamed, bindings, template));
+        }
       }
       let new_args: Vec<Expr> = substitute_parts(args, bindings, template);
       // Check if the function name itself is being substituted

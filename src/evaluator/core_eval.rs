@@ -197,6 +197,13 @@ pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
   }
 }
 
+/// A shared list (a large OwnValue) whose elements are inert data: it holds
+/// no symbols, slots or calls to evaluate, and is answered in O(1) after
+/// the first time.
+pub(crate) fn is_shared_inert_list(items: &crate::ExprList) -> bool {
+  items.is_shared() && is_inert_list(items)
+}
+
 /// `is_inert_data` of a list's elements, memoized on shared lists so a
 /// symbol holding a large array answers in O(1) on every lookup.
 fn is_inert_list(items: &crate::ExprList) -> bool {
@@ -249,6 +256,45 @@ pub(crate) fn share_large_lists(expr: &mut Expr, depth: usize) {
       if depth < 64 {
         share_large_lists(left, depth + 1);
         share_large_lists(right, depth + 1);
+      }
+      return;
+    }
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+      if depth < 64 {
+        share_large_lists(body, depth + 1);
+      }
+      return;
+    }
+    // Operator nodes (`f /@ list`, `f @@ x`, `e /. r`, `a[[i]]`, `a; b`).
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => {
+      if depth < 64 {
+        share_large_lists(func, depth + 1);
+        share_large_lists(list, depth + 1);
+      }
+      return;
+    }
+    Expr::ReplaceAll { expr: e, rules }
+    | Expr::ReplaceRepeated { expr: e, rules } => {
+      if depth < 64 {
+        share_large_lists(e, depth + 1);
+        share_large_lists(rules, depth + 1);
+      }
+      return;
+    }
+    Expr::Part { expr: e, index } => {
+      if depth < 64 {
+        share_large_lists(e, depth + 1);
+        share_large_lists(index, depth + 1);
+      }
+      return;
+    }
+    Expr::CompoundExpr(items) => {
+      if depth < 64 {
+        for item in items.iter_mut() {
+          share_large_lists(item, depth + 1);
+        }
       }
       return;
     }
@@ -2929,10 +2975,37 @@ fn evaluate_expr_to_expr_uncached(
         {
           return evaluate_expr_to_expr(&args[0]);
         }
-        // Special handling for CheckAbort[expr, failexpr]
-        if name == "CheckAbort" && args.len() == 2 {
+        // Special handling for CheckAbort[expr, failexpr] and
+        // CheckAbort[expr, failexpr, PropagateAborts -> p]: with
+        // PropagateAborts -> True the abort continues past CheckAbort after
+        // failexpr is evaluated. The default Automatic absorbs an Abort[]
+        // like False does (only interactive interrupts propagate then).
+        let propagate = match args.get(2) {
+          None => Some(false),
+          Some(Expr::Rule {
+            pattern,
+            replacement,
+          }) if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PropagateAborts") => {
+            match replacement.as_ref() {
+              Expr::Identifier(v) if v == "True" => Some(true),
+              Expr::Identifier(v) if v == "False" || v == "Automatic" => {
+                Some(false)
+              }
+              _ => None,
+            }
+          }
+          _ => None,
+        };
+        if name == "CheckAbort"
+          && (args.len() == 2 || args.len() == 3)
+          && let Some(propagate) = propagate
+        {
           match evaluate_expr_to_expr(&args[0]) {
             Ok(result) => return Ok(result),
+            Err(InterpreterError::Abort) if propagate => {
+              evaluate_expr_to_expr(&args[1])?;
+              return Err(InterpreterError::Abort);
+            }
             Err(InterpreterError::Abort) => {
               return Err(InterpreterError::TailCall(Box::new(
                 args[1].clone(),

@@ -1233,13 +1233,14 @@ pub fn dispatch_complex_and_special(
               if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Heads")
                  && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
         });
+      let rules = unwrap_dispatch(&args[1]);
       if crate::evaluator::core_eval::reject_invalid_replace_rules(
-        "Replace", &args[1],
+        "Replace", rules,
       ) {
         return Some(Ok(unevaluated("Replace", args)));
       }
       return Some(
-        apply_replace_with_level_ast(&args[0], &args[1], &args[2], heads_on)
+        apply_replace_with_level_ast(&args[0], rules, &args[2], heads_on)
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }
@@ -1489,6 +1490,28 @@ pub fn dispatch_complex_and_special(
           .unwrap_or_else(|| unevaluated(name, args)),
       ));
     }
+    // Area[…, opts] and Volume[…, opts]: the goals and precision options
+    // (AccuracyGoal, PrecisionGoal, WorkingPrecision, PerformanceGoal,
+    // Assumptions) steer only how a numerical answer is found, so an exact
+    // measure is the same with or without them.
+    "Area" | "Volume"
+      if args.len() > 1
+        && matches!(args.last(), Some(Expr::Rule { pattern, .. })
+          if matches!(pattern.as_ref(), Expr::Identifier(_))) =>
+    {
+      let (positional, _) = super::split_trailing_options(args);
+      if positional.is_empty() {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let result =
+        crate::evaluator::evaluate_function_call_ast(name, positional);
+      return Some(match result {
+        Ok(Expr::FunctionCall { name: ref head, .. }) if head == name => {
+          Ok(unevaluated(name, args))
+        }
+        other => other,
+      });
+    }
     // Area[region] — compute the area of a geometric region
     "Area" if args.len() == 1 => {
       return Some(compute_area(strip_region_wrapper(&args[0])));
@@ -1570,6 +1593,9 @@ pub fn dispatch_complex_and_special(
         strip_region_wrapper(&args[0]),
         args,
       ));
+    }
+    "RegionConvert" if args.len() == 2 => {
+      return Some(crate::functions::region_convert::region_convert_ast(args));
     }
     "RegionMember" if args.len() == 2 => {
       return Some(compute_region_member(

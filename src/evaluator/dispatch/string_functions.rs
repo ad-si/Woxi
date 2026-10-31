@@ -546,13 +546,13 @@ pub fn dispatch_string_functions(
         return Some(Ok(Expr::Integer(count as i128)));
       }
     }
-    "URLEncode" if args.len() == 1 => {
+    "URLEncode" if !args.is_empty() => {
       return Some(crate::functions::string_ast::url_encode_ast(args));
     }
-    "URLDecode" if args.len() == 1 => {
+    "URLDecode" if !args.is_empty() => {
       return Some(crate::functions::string_ast::url_decode_ast(args));
     }
-    "URLQueryEncode" if args.len() == 1 => {
+    "URLQueryEncode" if !args.is_empty() => {
       return Some(crate::functions::string_ast::url_query_encode_ast(args));
     }
     "URLQueryDecode" if args.len() == 1 => {

@@ -14247,8 +14247,8 @@ fn try_series_quotient(
 ) -> Option<Expr> {
   // Expand numerator and denominator to a generous order so the long-division
   // recurrence has enough terms even after the leading powers cancel.
-  let guard: i128 = 8;
-  let make_args = |f: &Expr| {
+  let mut guard: i128 = 8;
+  let make_args = |f: &Expr, guard: i128| {
     vec![
       f.clone(),
       Expr::List(
@@ -14260,10 +14260,22 @@ fn try_series_quotient(
   // A numerator that is no plain power series (Stirling's E^(…) factor)
   // rules the quotient out before the denominator's series, which can be
   // costly, is computed.
-  let num_s = series_ast(&make_args(num)).ok()?;
-  let num_map = series_coeff_map(&num_s, var_name)?;
-  let den_s = series_ast(&make_args(den)).ok()?;
-  let den_map = series_coeff_map(&den_s, var_name)?;
+  let num_s = series_ast(&make_args(num, guard)).ok()?;
+  let mut num_map = series_coeff_map(&num_s, var_name)?;
+  let mut den_s = series_ast(&make_args(den, guard)).ok()?;
+  let mut den_map = series_coeff_map(&den_s, var_name)?;
+  // A denominator vanishing to a high order (x^10 for `Series[1/x^10, {x,
+  // 0, 0}]`) needs a deeper expansion before its leading term shows; the
+  // numerator then has to reach as deep.
+  while den_map.is_empty() && guard < 128 {
+    guard *= 2;
+    den_s = series_ast(&make_args(den, guard)).ok()?;
+    den_map = series_coeff_map(&den_s, var_name)?;
+    if !den_map.is_empty() {
+      let num_s = series_ast(&make_args(num, guard)).ok()?;
+      num_map = series_coeff_map(&num_s, var_name)?;
+    }
+  }
 
   // Valuations (lowest nonzero power) of numerator and denominator.
   let m = *den_map.keys().next()?; // denominator must be nonzero
@@ -14794,6 +14806,11 @@ fn try_fast_series(
       if !matches!(&args[0], Expr::Identifier(v) if v == var_name) {
         return None;
       }
+      // The tables are machine rationals: a negative order, or one high
+      // enough to overflow them, takes the general path instead.
+      if !(0..=20).contains(&order) {
+        return None;
+      }
       let n = order as usize;
       match name.as_str() {
         "Tan" => Some((tan_series_coeffs(n), 0)),
@@ -15056,6 +15073,18 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list is expanded element by element: `Series[{Sin[x], Cos[x]}, …]`
+  // is a list of two series.
+  if let Expr::List(items) = &args[0] {
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+      let mut item_args = args.to_vec();
+      item_args[0] = item.clone();
+      out.push(series_ast(&item_args)?);
+    }
+    return Ok(Expr::List(out.into()));
+  }
+
   // Extract options (e.g., Assumptions -> x > 0) from remaining args
   let mut option_args = Vec::new();
   let mut spec_args = Vec::new();
@@ -15102,6 +15131,38 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("Series", args));
     }
   };
+
+  // A negative order keeps only the principal part up to x^order: expand to
+  // order 0 (every pole term is there) and cut the series back to the
+  // next exponent past x^order.
+  if order < 0 {
+    let mut at_zero = args.to_vec();
+    at_zero[1] =
+      Expr::List(vec![id_expr(&var_name), x0.clone(), Expr::Integer(0)].into());
+    let series = series_ast(&at_zero)?;
+    if let Expr::FunctionCall { name, args: sd } = &series
+      && name == "SeriesData"
+      && sd.len() == 6
+      && let (Expr::List(coeffs), Expr::Integer(nmin), Expr::Integer(den)) =
+        (&sd[2], &sd[3], &sd[5])
+    {
+      let nmax = order * den + 1;
+      let kept: Vec<Expr> = coeffs
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| nmin + (*i as i128) < nmax)
+        .map(|(_, c)| c.clone())
+        .collect();
+      // With no term left the series is the bare order term at its
+      // valuation, as for a positive order (see empty_series_at_valuation).
+      let nmax = if kept.is_empty() { *nmin } else { nmax };
+      let mut sd = sd.to_vec();
+      sd[2] = Expr::List(kept.into());
+      sd[4] = Expr::Integer(nmax);
+      return crate::evaluator::evaluate_expr_to_expr(&call("SeriesData", sd));
+    }
+    return Ok(unevaluated("Series", args));
+  }
 
   // Series[f, {x, Infinity, n}] expands in powers of 1/x. Substituting
   // x -> 1/t turns it into an ordinary expansion about t == 0, and the
