@@ -6024,6 +6024,23 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::graph::undirected_graph_ast(args);
   }
 
+  if name == "SimpleGraph" && args.len() == 1 {
+    return crate::functions::graph::simple_graph_ast(args);
+  }
+
+  // DirectedGraph[g, opts…] / UndirectedGraph[g, opts…]: the converted graph
+  // with the options set on it, as `Graph[converted, opts…]` does. A list
+  // of rules counts as its rules.
+  if matches!(name, "DirectedGraph" | "UndirectedGraph" | "SimpleGraph")
+    && args.len() >= 2
+    && let Some(opts) = flatten_rule_args(&args[1..])
+  {
+    let converted = evaluate_function_call_ast(name, &args[..1])?;
+    let mut graph_args = vec![converted];
+    graph_args.extend(opts);
+    return evaluate_function_call_ast("Graph", &graph_args);
+  }
+
   // FindHamiltonianPath[graph] / [graph, s, t] → one Hamiltonian path
   if name == "FindHamiltonianPath" && (args.len() == 1 || args.len() == 3) {
     return crate::functions::graph::find_hamiltonian_path_ast(args);
@@ -15571,4 +15588,18 @@ fn polytopes_polygon_sides(symbol: &str) -> Option<i128> {
     "Dodecagon" => 12,
     _ => return None,
   })
+}
+
+/// Option arguments as one flat list of rules — lists of rules are spliced
+/// in — or None when one of them is not a rule.
+fn flatten_rule_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let mut out = Vec::new();
+  for a in args {
+    match a {
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => out.push(a.clone()),
+      Expr::List(items) => out.extend(flatten_rule_args(items)?),
+      _ => return None,
+    }
+  }
+  Some(out)
 }

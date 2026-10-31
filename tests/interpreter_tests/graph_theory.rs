@@ -8792,3 +8792,37 @@ mod graph_coordinates_3d {
     );
   }
 }
+
+mod simple_graph {
+  use super::*;
+
+  #[test]
+  fn drops_self_loops_and_repeated_edges() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 1, 1 -> 1, 2 -> 3, 2 -> 3}]; \
+         {EdgeList[SimpleGraph[g]], \
+         EdgeList[SimpleGraph[Graph[{1 <-> 2, 2 <-> 1, 3 <-> 3, 2 <-> 3}]]], \
+         VertexList[SimpleGraph[Graph[{1 <-> 1, 2 <-> 3}]]], \
+         EdgeList[SimpleGraph[{1 <-> 2, 1 <-> 2}]]}"
+      )
+      .unwrap(),
+      "{{1 \u{f3d5} 2, 2 \u{f3d5} 1, 2 \u{f3d5} 3}, {1 \u{f3d4} 2, 2 \u{f3d4} 3}, {1, 2, 3}, {1 \u{f3d4} 2}}"
+    );
+  }
+
+  #[test]
+  fn conversions_take_graph_options() {
+    // UndirectedGraph[g, {opts}] stayed unevaluated.
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 2 -> 3}]; \
+         {Head[UndirectedGraph[g, {VertexSize -> 3}]], \
+         Options[SimpleGraph[UndirectedGraph[g, {VertexSize -> 3}]], VertexSize], \
+         Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2], VertexSize]}"
+      )
+      .unwrap(),
+      "{Graph, {VertexSize -> 3}, {VertexSize -> 2}}"
+    );
+  }
+}

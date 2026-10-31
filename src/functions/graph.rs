@@ -3366,6 +3366,61 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Graph", graph_args))
 }
 
+/// SimpleGraph[g] / SimpleGraph[{edges}] — the graph without self-loops
+/// and with every multiple edge kept once (directed edges in opposite
+/// directions are distinct), keeping the vertices and options.
+pub fn simple_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("SimpleGraph", args);
+  if args.len() != 1 {
+    return Ok(unevaluated());
+  }
+  let Some((vertices, raw_edges)) = fc_parse_input(&args[0]) else {
+    return Ok(unevaluated());
+  };
+  let extra: Vec<Expr> = match &args[0] {
+    Expr::FunctionCall { name, args: gargs }
+      if name == "Graph" && gargs.len() > 2 =>
+    {
+      gargs[2..].to_vec()
+    }
+    _ => Vec::new(),
+  };
+  let key = |e: &Expr| expr_to_string(e);
+  let mut seen: Vec<(String, String, bool)> = Vec::new();
+  let mut out: Vec<Expr> = Vec::new();
+  for e in &raw_edges {
+    let inner = fc_unwrap_edge(e);
+    let (a, b, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        (&eargs[0], &eargs[1], name == "DirectedEdge")
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref(), true),
+      _ => return Ok(unevaluated()),
+    };
+    let (ka, kb) = (key(a), key(b));
+    if ka == kb {
+      continue;
+    }
+    let id = if directed || ka < kb {
+      (ka, kb, directed)
+    } else {
+      (kb, ka, directed)
+    };
+    if seen.contains(&id) {
+      continue;
+    }
+    seen.push(id);
+    out.push(inner.clone());
+  }
+  let mut graph_args =
+    vec![Expr::List(vertices.into()), Expr::List(out.into())];
+  graph_args.extend(extra);
+  crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
+}
+
 pub fn find_hamiltonian_cycle_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
