@@ -9379,9 +9379,16 @@ fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
       }
     }
     _ => {
-      let av = expr_to_f64(a)?;
-      let bv = expr_to_f64(b)?;
-      Some((av - bv).abs())
+      if let (Some(av), Some(bv)) = (expr_to_f64(a), expr_to_f64(b)) {
+        return Some((av - bv).abs());
+      }
+      // Complex numbers are as far apart as their difference is long.
+      let complex = |e: &Expr| {
+        crate::functions::math_ast::numeric_utils::try_extract_complex_f64(e)
+          .or_else(|| expr_to_f64(e).map(|x| (x, 0.0)))
+      };
+      let ((ar, ai), (br, bi)) = (complex(a)?, complex(b)?);
+      Some((ar - br).hypot(ai - bi))
     }
   }
 }

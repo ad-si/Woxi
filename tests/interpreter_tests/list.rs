@@ -17402,6 +17402,14 @@ mod cases {
       r#"MatrixForm[{{a[1, 1], a[1, 2], a[1, 3]}, {a[2, 1], a[2, 2], a[2, 3]}, {a[3, 1], a[3, 2], a[3, 3]}, {a[4, 1], a[4, 2], a[4, 3]}}]"#,
     );
   }
+  // Complex numbers are as far apart as their difference is long.
+  #[test]
+  fn nearest_complex_numbers() {
+    assert_case(
+      r#"{Nearest[{1. + 0.*I, 0.9 + 0.*I, -0.3 + 0.7*I}, 1], Nearest[{1 + I, 2, 3 I}, 2.5 I]}"#,
+      r#"{{1. + 0.*I}, {3*I}}"#,
+    );
+  }
   #[test]
   fn nearest_1() {
     assert_case(r#"Nearest[{5, 2.5, 10, 11, 15, 8.5, 14}, 12]"#, r#"{11}"#);

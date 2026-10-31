@@ -6065,7 +6065,17 @@ fn algebraic_eigenvectors(
       .or_else(|| try_eval_to_f64(&value).map(|re| (re, 0.0)))?;
     keyed.push((parts, lambda.clone()));
   }
+  // Radical eigenvalues (`(-1 + I Sqrt[3])/2`) keep `Eigenvalues`' order.
+  let has_root = eigenvalues.iter().any(|l| {
+    crate::functions::polynomial_ast::solve::expr_contains_expr(
+      l,
+      &Expr::Identifier("Root".into()),
+    ) || expr_to_string(l).contains("Root[")
+  });
   keyed.sort_by(|((ar, ai), _), ((br, bi), _)| {
+    if !has_root {
+      return std::cmp::Ordering::Equal;
+    }
     let (abs_a, abs_b) = (ar.hypot(*ai), br.hypot(*bi));
     let close = |x: f64, y: f64| (x - y).abs() <= 1e-10 * x.abs().max(1.0);
     let (real_a, real_b) = (ai.abs() <= 1e-12, bi.abs() <= 1e-12);

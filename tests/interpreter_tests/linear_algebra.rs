@@ -7398,6 +7398,15 @@ mod cases {
       r#"{5, 5}"#,
     );
   }
+  // Radical eigenvalues: each eigenvector is paired with its eigenvalue
+  // (the real ones came after the complex ones).
+  #[test]
+  fn eigenvectors_follow_radical_eigenvalue_order() {
+    assert_case(
+      r#"m = {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}; {vals, vecs} = Eigensystem[m]; {Take[Eigenvectors[m], 2], Simplify[MapThread[m . #2 - #1 #2 &, {vals, vecs}]]}"#,
+      r#"{{{0, 1, 1, 1}, {1, 0, 0, 0}}, {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}"#,
+    );
+  }
   #[test]
   fn eigenvectors_1() {
     assert_case(
