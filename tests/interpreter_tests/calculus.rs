@@ -24799,3 +24799,19 @@ mod inverse_laplace_time_shift {
     );
   }
 }
+
+mod sum_reads_index_dependent_symbols {
+  use super::*;
+
+  #[test]
+  fn a_symbol_whose_value_mentions_the_index() {
+    // The symbol was left as a constant: Sum[r, {n, 1, 3}] gave 3*n^2.
+    assert_eq!(
+      interpret(
+        "r = n^2; {Sum[r, {n, 1, 3}], Product[r, {n, 1, 3}], Sum[r, {n, 1, k}]}"
+      )
+      .unwrap(),
+      "{14, 36, (k*(1 + k)*(1 + 2*k))/6}"
+    );
+  }
+}
