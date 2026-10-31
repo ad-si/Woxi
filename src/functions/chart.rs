@@ -70,6 +70,12 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
     {
       chart_datum_value(&args[0])
     }
+    // A `Quantity[magnitude, unit]` plots as its magnitude.
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      chart_datum_value(&args[0])
+    }
     _ => try_eval_to_f64(e),
   }
 }
@@ -2467,6 +2473,33 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
 /// concentric rings, one ring per sublist, innermost first — matching
 /// the multi-dataset convention used by Wolfram's PieChart.
 pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An Association plots its values as slices, labelled by its keys.
+  let assoc = match evaluate_expr_to_expr(&args[0]) {
+    Ok(Expr::Association(ref pairs)) => Some(pairs.clone()),
+    _ => None,
+  };
+  if let Some(pairs) = assoc {
+    let keys: Vec<Expr> = pairs.iter().map(|(k, _)| k.clone()).collect();
+    let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
+    let mut new_args = vec![Expr::List(values.into())];
+    for opt in &args[1..] {
+      match opt {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ChartLabels")
+          && matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic") =>
+        {
+          new_args.push(Expr::Rule {
+            pattern: pattern.clone(),
+            replacement: Box::new(Expr::List(keys.clone().into())),
+          });
+        }
+        _ => new_args.push(opt.clone()),
+      }
+    }
+    return pie_chart_ast(&new_args);
+  }
   let Ok(rows) = extract_pie_rows(&args[0]) else {
     return Ok(invalid_dataset("PieChart", args));
   };
