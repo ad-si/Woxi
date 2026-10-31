@@ -5317,6 +5317,10 @@ fn find_algebraic_constraint(
   odes: &[Expr],
   funcs: &[SysFunc],
 ) -> Option<(usize, usize, Expr)> {
+  let orders: Vec<std::collections::HashMap<String, usize>> =
+    odes.iter().map(derivative_orders).collect();
+  let never_differentiated =
+    |name: &str| orders.iter().all(|o| o.get(name).is_none_or(|&k| k == 0));
   for (ei, eq) in odes.iter().enumerate() {
     // An equation already solved for an unknown no equation differentiates
     // (`F0[t] == 1 + Kp (2 - h[t]) - Kp τd h'[t]`) is substituted as it
@@ -5327,21 +5331,23 @@ fn find_algebraic_constraint(
           && args.len() == 1
           && let Some(fi) = funcs.iter().position(|f| &f.name == name)
           && !expr_mentions_function(rhs, name)
-          && odes.iter().all(|o| max_derivative_order(o, name) == 0)
+          && never_differentiated(name)
         {
           return Some((ei, fi, rhs.clone()));
         }
       }
     }
-    if funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0) {
+    if funcs
+      .iter()
+      .any(|f| orders[ei].get(&f.name).is_some_and(|&k| k > 0))
+    {
       continue;
     }
     // The unknown this constraint defines is one it mentions that no
     // equation ever differentiates — the others in it are dynamic
     // variables the solution is written in terms of.
     let Some(fi) = funcs.iter().enumerate().position(|(_, f)| {
-      expr_mentions_function(eq, &f.name)
-        && odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
+      expr_mentions_function(eq, &f.name) && never_differentiated(&f.name)
     }) else {
       continue;
     };
@@ -5399,19 +5405,22 @@ fn find_numeric_constraints(
   odes: &[Expr],
   funcs: &[SysFunc],
 ) -> Option<(Vec<usize>, Vec<usize>)> {
-  let algebraic: Vec<usize> = odes
-    .iter()
-    .enumerate()
-    .filter(|(_, eq)| {
-      !funcs.iter().any(|f| max_derivative_order(eq, &f.name) > 0)
+  let orders: Vec<std::collections::HashMap<String, usize>> =
+    odes.iter().map(derivative_orders).collect();
+  let algebraic: Vec<usize> = (0..odes.len())
+    .filter(|&i| {
+      !funcs
+        .iter()
+        .any(|f| orders[i].get(&f.name).is_some_and(|&k| k > 0))
     })
-    .map(|(i, _)| i)
     .collect();
   let free: Vec<usize> = funcs
     .iter()
     .enumerate()
     .filter(|(_, f)| {
-      odes.iter().all(|o| max_derivative_order(o, &f.name) == 0)
+      orders
+        .iter()
+        .all(|o| o.get(&f.name).is_none_or(|&k| k == 0))
         && algebraic
           .iter()
           .any(|&ei| expr_mentions_function(&odes[ei], &f.name))
@@ -5875,11 +5884,19 @@ fn ndsolve_system(
   // -x[t]`) determines no unknown on its own; its time derivative
   // (`y'[t] == 2 x[t] x'[t]`) is the differential equation the integrator
   // needs. The initial conditions already satisfy the constraint.
-  let differentiated: Vec<String> = funcs
-    .iter()
-    .filter(|f| odes.iter().any(|o| max_derivative_order(o, &f.name) > 0))
-    .map(|f| f.name.clone())
-    .collect();
+  let differentiated: Vec<String> = {
+    let orders: Vec<std::collections::HashMap<String, usize>> =
+      odes.iter().map(derivative_orders).collect();
+    funcs
+      .iter()
+      .filter(|f| {
+        orders
+          .iter()
+          .any(|o| o.get(&f.name).is_some_and(|&k| k > 0))
+      })
+      .map(|f| f.name.clone())
+      .collect()
+  };
   for ode in &mut odes {
     let mentioned: Vec<&SysFunc> = funcs
       .iter()
@@ -5900,7 +5917,12 @@ fn ndsolve_system(
     // `x'[t] == y[t]` mentions only `y` as a call) is no constraint.
     if mentioned.is_empty()
       || !mentioned.iter().all(at_variable)
-      || funcs.iter().any(|f| max_derivative_order(ode, &f.name) > 0)
+      || {
+        let own = derivative_orders(ode);
+        funcs
+          .iter()
+          .any(|f| own.get(&f.name).is_some_and(|&k| k > 0))
+      }
       || mentioned.iter().any(|f| !differentiated.contains(&f.name))
     {
       continue;
@@ -8475,6 +8497,61 @@ fn placeholder_name(fname: &str, k: usize) -> String {
 /// Highest derivative order of `fname` appearing anywhere in `expr`
 /// (`fname[x]` counts as order 0 only if a derivative also appears —
 /// order is the max over `Derivative[k][fname][…]` occurrences).
+/// The highest derivative order of every function differentiated in
+/// `expr` (`Derivative[k][f][x]` in its flat and curried forms), in one walk
+/// — asking `max_derivative_order` per unknown and equation made the
+/// constraint search cubic in the size of a large system.
+fn derivative_orders(expr: &Expr) -> std::collections::HashMap<String, usize> {
+  fn go(e: &Expr, out: &mut std::collections::HashMap<String, usize>) {
+    let mut note = |name: &str, n: &i128| {
+      let order = (*n).max(0) as usize;
+      let slot = out.entry(name.to_string()).or_insert(0);
+      *slot = (*slot).max(order);
+    };
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Derivative" && args.len() == 3 =>
+      {
+        if let (Expr::Integer(n), Expr::Identifier(f)) = (&args[0], &args[1]) {
+          note(f, n);
+        }
+      }
+      Expr::CurriedCall { func, args } if args.len() == 1 => {
+        match func.as_ref() {
+          Expr::FunctionCall { name, args: d }
+            if name == "Derivative" && d.len() == 2 =>
+          {
+            if let (Expr::Integer(n), Expr::Identifier(f)) = (&d[0], &d[1]) {
+              note(f, n);
+            }
+          }
+          Expr::CurriedCall {
+            func: inner,
+            args: inner_args,
+          } if inner_args.len() == 1 => {
+            if let (Expr::FunctionCall { name, args: d }, Expr::Identifier(f)) =
+              (inner.as_ref(), &inner_args[0])
+              && name == "Derivative"
+              && d.len() == 1
+              && let Expr::Integer(n) = &d[0]
+            {
+              note(f, n);
+            }
+          }
+          _ => {}
+        }
+      }
+      _ => {}
+    }
+    for child in expr_children(e) {
+      go(child, out);
+    }
+  }
+  let mut out = std::collections::HashMap::new();
+  go(expr, &mut out);
+  out
+}
+
 fn max_derivative_order(expr: &Expr, fname: &str) -> usize {
   let mut max = 0;
   if let Some((order, _)) = extract_derivative_order_and_point(expr, fname) {

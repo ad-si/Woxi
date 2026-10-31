@@ -9462,6 +9462,25 @@ mod ndsolve {
     );
   }
 
+  /// Many constraints among many unknowns: which unknowns are differentiated
+  /// is read off every equation once (it was asked per equation, unknown
+  /// and equation again). x'[t] == -x + 1 from x(0) = 0 gives 1 - 2/E for
+  /// the second unknown at 1.
+  #[test]
+  fn many_algebraic_constraints() {
+    assert_eq!(
+      interpret(
+        "n = 120; eqs = Join[Table[x[i]'[t] == -x[i][t] + y[i][t], {i, n}], \
+         Table[y[i][t] == If[i > 1, x[i - 1][t], 1], {i, n}]]; \
+         ics = Table[x[i][0] == 0, {i, n}]; \
+         sol = NDSolve[Join[eqs, ics], Join[Table[x[i], {i, n}], Table[y[i], {i, n}]], {t, 0, 1}]; \
+         Round[x[2][1] /. sol[[1]], 10.^-6]"
+      )
+      .unwrap(),
+      "0.264241"
+    );
+  }
+
   /// An algebraic constraint that determines one unknown explicitly is
   /// eliminated — the constraint is solved for it, substituted into the
   /// remaining equations, and the unknown rebuilt from the solution
