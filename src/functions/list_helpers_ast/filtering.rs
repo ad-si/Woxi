@@ -1323,8 +1323,9 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
   let subject = graphic_form.as_ref().unwrap_or(&positional[0]);
+  // Unlike `Cases`, `Count` takes no transformation rule: a rule is a
+  // pattern for rules (`Count[sol, _ -> 1]` counts the rules with value 1).
   let pattern = &positional[1];
-  let (match_pat, replacement) = extract_rule_parts(pattern);
 
   let strict_int = |e: &Expr| -> Option<i64> {
     match e {
@@ -1379,15 +1380,7 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut out: Vec<Expr> = Vec::new();
   cases_visit(
-    subject,
-    match_pat,
-    replacement,
-    0,
-    &mut out,
-    min_level,
-    max_level,
-    heads,
-    None,
+    subject, pattern, None, 0, &mut out, min_level, max_level, heads, None,
   )?;
   Ok(Expr::Integer(out.len() as i128))
 }
