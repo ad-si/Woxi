@@ -32382,6 +32382,82 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   })
 }
 
+/// Attempt to extract a `ManipulateSpec` from a held `SlideView[{s1, …, sn}]`
+/// or `SlideView[{s1, …, sn}, i]` expression: a widget that shows one slide
+/// at a time, starting on slide `i` (default 1), with a slide picker above
+/// it (`ControlPlacement -> Top`). The picker binds the slide number and the
+/// body picks that element, like `Manipulate[{s1, …}[[k]], {k, Range[n]}]`.
+/// Returns `None` when the first argument is not a non-empty list literal.
+pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "SlideView" {
+    return None;
+  }
+  let slides = match args.first() {
+    Some(Expr::List(items)) if !items.is_empty() => items,
+    _ => return None,
+  };
+  let n = slides.len();
+  // A start slide outside 1..n (or a `Dynamic[…]` one) starts on the first.
+  let initial_index = match args.get(1) {
+    Some(Expr::Integer(i)) if (1..=n as i128).contains(i) => *i as usize - 1,
+    _ => 0,
+  };
+  // A name no slide content can clash with: the slides are evaluated
+  // inside the `Block` that binds it.
+  let var = "slideViewIndex$".to_string();
+  let list_code = crate::syntax::expr_to_source_form(&args[0]);
+  let values: Vec<String> = (1..=n).map(|k| k.to_string()).collect();
+  let control = ManipulateControl::Discrete {
+    name: var.clone(),
+    value_label_svgs: vec![None; n],
+    value_label_runs: values
+      .iter()
+      .map(|v| {
+        vec![LabelRun {
+          text: v.clone(),
+          ..Default::default()
+        }]
+      })
+      .collect(),
+    value_labels: values.clone(),
+    values,
+    initial_index,
+    initial_overflow: None,
+    label: String::new(),
+    label_runs: Vec::new(),
+    popup: false,
+    setter_bar: false,
+    slider: false,
+    vertical: false,
+  };
+  Some(ManipulateSpec {
+    module_locals: Vec::new(),
+    body_code: format!("Part[{list_code}, {var}]"),
+    controls: vec![control],
+    state: Vec::new(),
+    displays: Vec::new(),
+    initialization: None,
+    control_enabled: Vec::new(),
+    control_visible: Vec::new(),
+    dynamic_bounds: Vec::new(),
+    dynamic_values: Vec::new(),
+    dynamic_labels: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
+    animation_var: None,
+    animated: false,
+    animation_running: false,
+    appearance_none: false,
+    tracked_symbols: None,
+    tracking: Vec::new(),
+    control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
+    bookmarks: Vec::new(),
+  })
+}
+
 /// Attempt to extract a `ManipulateSpec` from a held `Animator[…]` expression.
 /// `Animator` is a standalone auto-playing control: it sweeps a value over a
 /// range and (like `Control`) displays the bound variable so its effect is

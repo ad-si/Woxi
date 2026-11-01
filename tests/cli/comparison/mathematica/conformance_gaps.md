@@ -306,6 +306,22 @@ Smaller TraditionalForm typesetter differences, all in representation:
 `StyleBox["x", RGBColor[1, 0, 0], StripOnInput -> False]`. The TraditionalForm
 builder learned both; the StandardForm one has not.
 
+### StandardForm boxes: inline exponent fractions, `I`, logical operands of a sum
+
+```sh
+wolframscript -code 'InputForm[ToBoxes[x^(3/2)]]'   # SuperscriptBox[x, RowBox[{3, /, 2}]]
+woxi eval 'InputForm[ToBoxes[x^(3/2)]]'             # SuperscriptBox[x, FractionBox[3, 2]]
+```
+
+A quotient in an exponent (`x^(a/b)`, `E^(x/2)`) is written inline with `/`
+by WL and as a `FractionBox` by Woxi. The imaginary unit boxes as `"I"`
+rather than `\[ImaginaryI]` (`U+F74E`), and the odd shape WL gives an
+inexact complex coefficient's parts (a trailing `" "` token after the real
+part) is not reproduced. A logical operand of a sum is
+not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
+&&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
+operands themselves are parenthesized by precedence).
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -2899,11 +2915,6 @@ must build the common denominator internally — but `LaguerreL[1, 1/2, x]` stay
 `3/2 - x` rather than `(3 - 2*x)/2`, so it is not a plain `Together` either.
 Integer second arguments match.
 
-### `ArcCot[Interval[…]]` is unevaluated
-
-WL converts endpoints to `ArcTan` form *inside* the interval (`ArcCot[2]` →
-`ArcTan[1/2]`), which differs from its own scalar `ArcCot[2]`.
-
 ### `WignerD[{1,0,0}, Pi/2]`
 
 Gives `2.22e-16` instead of an exact 0.
@@ -4032,7 +4043,14 @@ precedence, which is worse than the parse error.
 ### `(a|b)|c` loses its grouping
 
 Explicit parentheses should give `Length` 2 (nested) in WL; Woxi's parser
-produces the same flat 3-argument form as `a|b|c`.
+produces the same flat 3-argument form as `a|b|c`. The same holds for every
+flattened operator chain built from `BinaryOp` nodes: `Hold[a + (b + c)]` is
+`Plus[a, b, c]` (WL `Plus[a, Plus[b, c]]`), `Hold[(a b) c]` is
+`Times[a, b, c]`, and `MakeBoxes[-(x y)]` boxes as `-x y` where WL keeps
+`RowBox[{"-", RowBox[{"(", …, ")"}]}]` — the parse tree does not record the
+parentheses, and box formation merges a unary minus into its product
+operand because Factor-style results built with `neg1(product)` stand for
+the flat evaluated `Times[-1, …]`.
 
 ### Parse-time messages do not exist
 
@@ -6809,3 +6827,22 @@ images), so they are not implemented yet:
   supported.
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
+
+## String functions on a circular `BioSequence` across the wrap point
+
+String functions accept linear `"DNA"`/`"RNA"` and circular
+`"CircularDNA"`/`"CircularRNA"` sequences, but `StringReplace` and
+`StringDelete` stay unevaluated on a circular sequence when a match wraps
+around from the last letter to the first, because the rotation Wolfram picks
+for the result is not recoverable from the documented examples:
+
+```sh
+wolframscript -code 'StringReplace[BioSequence["CircularDNA", "GTTGGCTTG"], "GGN" -> "A"]'
+# BioSequence["CircularDNA", "TATAT"]
+wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "GGY"]'
+# BioSequence["CircularDNA", "T"]
+```
+
+Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
+other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
+`StringReverse`, …) are not handled either.
