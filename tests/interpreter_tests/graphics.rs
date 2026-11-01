@@ -11668,6 +11668,16 @@ mod plot3d {
     }
 
     #[test]
+    fn show_keeps_the_plot_legends_of_the_first_plot() {
+      // Showing several plots together keeps the first plot's legend.
+      let svg = export_svg(
+        r#"Show[Plot[x, {x, 0, 1}, PlotLegends -> {"first"}],
+          Plot[x^2, {x, 0, 1}, Filling -> Axis]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+    }
+
+    #[test]
     fn plot_legends_line_legend_names_the_series() {
       // `LineLegend[{labels}, opts]` labels the curves like a plain list.
       let plain = export_svg(
