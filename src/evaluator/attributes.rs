@@ -927,6 +927,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // NHoldAll + Protected
     "SlotSequence" => A::NHoldAll | A::Protected,
 
+    // NHoldAll + Protected + ReadProtected
+    "DifferenceRoot" => A::NHoldAll | A::Protected | A::ReadProtected,
+
     // Listable + NHoldFirst + NumericFunction + Protected
     "EllipticTheta" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,
 

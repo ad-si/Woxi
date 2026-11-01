@@ -37,6 +37,7 @@ pub mod dataset_ast;
 pub mod datetime_ast;
 pub mod delaunay;
 pub mod dendrogram;
+pub mod difference_root;
 pub mod dirichlet_ast;
 pub mod element_data;
 pub mod entity_ast;

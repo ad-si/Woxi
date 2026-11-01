@@ -2926,6 +2926,19 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "DifferenceRoot" && func_args.len() == 1 => Ok(
+      crate::functions::difference_root::apply_difference_root(
+        &func_args[0],
+        args,
+      )
+      .unwrap_or_else(|| Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      }),
+    ),
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "BSplineFunction" && func_args.len() == 9 => {
       // BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
       // knots, ...][params] — evaluate the spline at the given parameters.

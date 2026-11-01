@@ -673,6 +673,25 @@ combined fractions further than Woxi does (collecting in `x` with factored
 coefficients), so Woxi keeps a sum of quotients where WL prints one fraction —
 `Together` alone matches exactly on the same inputs.
 
+### `Simplify` expands factored denominators that wolframscript keeps
+
+```sh
+wolframscript -code '{Simplify[1/(x (1 + y))], Simplify[(a + b)/(e^2 (2 + p)^2)], Simplify[1/(e (1 + p) (2 + p))]}'
+# {1/(x*(1 + y)), (a + b)/(e^2*(2 + p)^2), 1/(e*(2 + 3*p + p^2))}
+woxi eval '{Simplify[1/(x (1 + y))], Simplify[(a + b)/(e^2 (2 + p)^2)], Simplify[1/(e (1 + p) (2 + p))]}'
+# {(x + x*y)^(-1), (a + b)/(4*e^2 + 4*e^2*p + e^2*p^2), (2*e + 3*e*p + e*p^2)^(-1)}
+```
+
+`simplify_division` works on the expanded numerator and denominator and only
+restores a `(sum)^n` denominator afterwards. WL is not simply cost-minimal
+here: `(x + x*y)^(-1)` has the lower `SimplifyCount` (8 against 11), yet
+`Simplify[1/(x (1 + y))]` keeps the factored input. It expands only some
+denominators: `1/((1 + x) (2 + y))` becomes `(2 + 2*x + y + x*y)^(-1)`, and
+`x/(y (1 + y))` becomes `x/(y + y^2)`. Which candidates WL generates is not
+decoded. `Together`, `Cancel`, `ExpandDenominator` and `Factor` all match on
+these inputs. `DifferenceRoot` values with symbolic parameters go through
+`Simplify` and inherit this gap.
+
 ### `Simplify` can be pathologically slow
 
 `Simplify[(z+1)*(1/(z+1) + PolyGamma[0,2] + (z+1)*(PolyGamma[0,2]^2 + PolyGamma[1,2]))/(z+1)]`
@@ -1654,6 +1673,21 @@ multiples of one symbol (`E^(-t) + E^(-2*t)` needs `E^(2*t)`, never
 numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
+
+### `Together` of an exponential sum sometimes factors the numerator in WL
+
+```sh
+wolframscript -code 'Together[1/2 E^(-t) - E^(-2 t) + 1/2 E^(-3 t)]'
+# (-1 + E^t)^2/(2*E^(3*t))
+woxi eval 'Together[1/2 E^(-t) - E^(-2 t) + 1/2 E^(-3 t)]'
+# (1 - 2*E^t + E^(2*t))/(2*E^(3*t))
+```
+
+The same sum in a plain variable stays expanded in wolframscript
+(`Together[1/(2x) - 1/x^2 + 1/(2x^3)]` is `(1 - 2*x + x^2)/(2*x^3)`), and
+so does `Together[E^(-t) - 3 E^(-2 t) + 2 E^(-3 t)]`
+(`(2 - 3*E^t + E^(2*t))/E^(3*t)`). The rule that picks the factored form is
+not decoded. `Simplify` matches, through its exponential-regrouping candidate.
 
 ### Machine `Orthogonalize` differs in last digits
 
