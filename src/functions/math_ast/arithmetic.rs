@@ -1030,6 +1030,16 @@ pub(crate) fn image_arithmetic_rounded(
 
 /// Wolfram's machine fold of `args` (see `machine_tree_fold`) when every
 /// one is a machine real and the sum is finite.
+/// Sum of machine reals in `Plus`'s balanced tree order, so callers that
+/// fold big numeric vectors directly in `f64` (statistics on 10^7 samples)
+/// agree bit-for-bit with evaluating `Plus` over the same terms.
+pub fn machine_real_total(xs: &[f64]) -> f64 {
+  if xs.is_empty() {
+    return 0.0;
+  }
+  machine_tree_fold(xs, |a, b| a + b)
+}
+
 fn machine_real_sum(args: &[Expr]) -> Option<f64> {
   let reals: Vec<f64> = args
     .iter()

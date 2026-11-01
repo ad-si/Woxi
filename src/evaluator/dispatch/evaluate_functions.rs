@@ -11526,6 +11526,34 @@ fn evaluate_function_call_ast_inner(
       ));
       return Ok(unevaluated(name, args));
     }
+    // Machine-real data with a plain window size: each window's sum is
+    // folded directly in f64 (in Plus's order), skipping the per-window
+    // Times/Plus expressions.
+    if matches!(&args[1], Expr::Integer(_))
+      && let Some(xs) = items
+        .iter()
+        .map(|e| match e {
+          Expr::Real(x) => Some(*x),
+          _ => None,
+        })
+        .collect::<Option<Vec<f64>>>()
+    {
+      let mut result = Vec::with_capacity(n - r + 1);
+      for w in xs.windows(r) {
+        let sum = crate::functions::math_ast::machine_real_total(w);
+        if !sum.is_finite() {
+          result.clear();
+          break;
+        }
+        result.push(evaluate_expr_to_expr(&div2(
+          Expr::Real(sum),
+          divisor.clone(),
+        ))?);
+      }
+      if result.len() == n - r + 1 {
+        return Ok(Expr::List(result.into()));
+      }
+    }
     let mut result = Vec::with_capacity(n - r + 1);
     for i in 0..=(n - r) {
       // Build Sum[w_j * items[i + j]] for j = 0..r, then divide by divisor.

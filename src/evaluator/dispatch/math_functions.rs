@@ -331,13 +331,30 @@ pub fn dispatch_math_functions(
         if items.is_empty() {
           return Some(Ok(unevaluated("Quartiles", args)));
         }
-        // Sort numerically
-        let mut sorted = items.clone();
-        sorted.sort_by(|a, b| {
-          let fa = crate::functions::math_ast::try_eval_to_f64(a);
-          let fb = crate::functions::math_ast::try_eval_to_f64(b);
-          fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Sort numerically. Machine reals (e.g. 10^7 RandomReal samples)
+        // sort as plain f64s rather than re-converting both operands on
+        // every comparison.
+        let sorted: Vec<Expr> = if let Some(mut xs) = items
+          .iter()
+          .map(|e| match e {
+            Expr::Real(r) => Some(*r),
+            _ => None,
+          })
+          .collect::<Option<Vec<f64>>>()
+        {
+          xs.sort_unstable_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          xs.into_iter().map(Expr::Real).collect()
+        } else {
+          let mut sorted = items.to_vec();
+          sorted.sort_by(|a, b| {
+            let fa = crate::functions::math_ast::try_eval_to_f64(a);
+            let fb = crate::functions::math_ast::try_eval_to_f64(b);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          sorted
+        };
         let n = sorted.len() as i128;
         // Machine-real inputs must yield machine-real quartiles, not exact
         // rationals (e.g. Quartiles[{1., 2., 3., 4., 5.}] → {1.75, 3., 4.25}).

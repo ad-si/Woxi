@@ -7071,6 +7071,29 @@ Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
 
+## Parameter sweep 5 (performance): still slow or not implemented
+
+These reference-page examples still time out or diverge in Woxi:
+
+- `PrimePi[10^15]`: prime counting uses Lucy's O(n^(3/4)) method up to
+  10^14 (`PrimePi[10^13]` takes ~9 s in release); a Meissel–Lehmer/LMO
+  algorithm is needed for 10^15 and beyond.
+- `Expand[(x + y + z)^1000] // Length` gives the right `501501` but takes
+  ~11 s: the multinomial expansion itself is quick, building and evaluating
+  half a million big-coefficient `Times` terms is not.
+- `MaxMemoryUsed[expr]` reports Woxi's own peak growth (about ten times
+  wolframscript's `80000208` for `Range[10^7]`, since every element is a full
+  expression node).
+- `FiniteField` is not implemented, so `MatrixPower`/`LinearSolve` over
+  `FiniteField[29, 4]` stay symbolic.
+- `PermutationMatrix[perm]` returns a dense matrix where wolframscript
+  returns a sparse `StructuredArray`, so `ByteCount` of a large one is slow
+  and large.
+- `NSolve`/`Solve`/`FindInstance` with `MaxRoots` on degree-10^6 polynomials,
+  real-root isolation of sparse degree-10^6 polynomials over `Reals`, the
+  slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
+  four-variable knapsack equation, `ReliefPlot` of a 301×301 table and
+  `Plot3D`/`Graphics3D` with `Texture` are not addressed.
 ## Parameter sweep 5 (options): known divergences and open items
 
 - `NSum[1/((k - 20)^2 + 1), {k, 0, ∞}]` is `3.09286` in wolframscript: with
