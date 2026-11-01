@@ -15253,6 +15253,12 @@ fn substitute_expr_with(
     | (Expr::CurriedCall { .. }, Expr::FunctionCall { name, .. }) => {
       name == "Derivative"
     }
+    // A curried call `T[1][t]` spells like a curried call with as many
+    // arguments only (or the flat `Derivative` above).
+    (Expr::CurriedCall { args: a, .. }, Expr::CurriedCall { args: b, .. }) => {
+      a.len() == b.len()
+    }
+    (_, Expr::CurriedCall { .. }) => false,
     _ => true,
   };
   if may_match

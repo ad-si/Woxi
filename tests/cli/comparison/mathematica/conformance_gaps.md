@@ -2192,6 +2192,24 @@ the Newton-solved algebraic ones does not compile. Because `sol` then holds
 the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /. sol, …]`
 reruns it at every sample and times out.
 
+Status 2026-11-01. Columns without an energy balance now solve
+(SolventSwapDistillation, TernaryBatchRectification, the residue-curve
+models): the stiff Rosenbrock fallback runs when the right-hand side Newton
+solves the stage temperatures. DistillationOfAnEthanolWaterMixture is still
+open. Its temperatures are fixed by the bubble-point equations and also
+differentiated in the energy balances (`T[0]'[t]`, `T[0]` not even listed as
+an unknown), which makes it a higher-index DAE. WL reduces the index and
+computes consistent initial values (`NDSolve::ivres`).
+
+Two experiments, both reverted:
+- Cancelling terms in the algebraic equations after the explicit
+  eliminations exposes the overall balance `-10 + B[t] + Di[t] == 0`. Woxi
+  had assigned it to `V2`, an unknown it no longer contains.
+- Letting the stiff fallback run with order-0 unknowns then integrates. But
+  from the inconsistent start it drifts away from WL's steady state
+  (`x[1][50]` 0.0666 against 0.8375), so the result is wrong rather than
+  missing.
+
 ### `NDSolve` uses a fixed grid
 
 Woxi integrates on 1000 nominal RK4 steps with bisection refinement;
