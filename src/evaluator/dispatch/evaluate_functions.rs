@@ -3561,6 +3561,22 @@ fn evaluate_function_call_ast_inner(
   // notation. PermutationCycles[perm, h] applies the head `h` to the list of
   // every cycle, fixed points included (`h[{{1, 2}, {3}}]`).
   if name == "PermutationCycles" && (args.len() == 1 || args.len() == 2) {
+    // A permutation already in cyclic form (Cycles canonicalizes itself) is
+    // returned as it is; with a head it goes through its permutation list.
+    if matches!(&args[0], Expr::FunctionCall { name: h, .. } if h == "Cycles") {
+      if args.len() == 1 {
+        return Ok(args[0].clone());
+      }
+      let list =
+        evaluate_expr_to_expr(&call1("PermutationList", args[0].clone()))?;
+      if matches!(&list, Expr::List(_)) {
+        return evaluate_expr_to_expr(&call(
+          "PermutationCycles",
+          vec![list, args[1].clone()],
+        ));
+      }
+      return Ok(unevaluated(name, args));
+    }
     let with_singletons = args.len() == 2;
     // A list has to be a genuine permutation of 1..n; a repeat used to be
     // read as the identity.

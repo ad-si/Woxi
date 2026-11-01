@@ -7284,3 +7284,45 @@ Verified against the reference pages, but not (fully) implemented:
   `PlotLabels -> Placed[…, pos]` and `QuantityArray` data are not handled.
 - `ListFitPlot` examples built on `ResourceData`, `FinancialData` or
   `AirTemperatureData` cannot be fetched.
+## Parameter sweep 5 (long tail, batch 2): known divergences and unverified forms
+
+`HornerForm[p, {y, x}]` has the right nesting, but Woxi's canonical
+`Times`/`Plus` ordering prints it differently:
+
+```sh
+wolframscript -code 'HornerForm[x y + 2 x^2 y + 2 x y^2 + 4 x^2 y^2, {y, x}]'
+# y (x (1 + 2 x) + x (2 + 4 x) y)
+woxi eval 'HornerForm[x y + 2 x^2 y + 2 x y^2 + 4 x^2 y^2, {y, x}]'
+# (x*(2 + 4*x)*y + x*(1 + 2*x))*y
+```
+
+Not implemented, because the documented output could not be reproduced
+from a stated rule or needs missing machinery:
+
+- `BooleanConvert[expr, form, cond]`: Wolfram does not minimize. The page's
+  `BooleanConvert[Xor[x, y, z], "DNF", x && (y || z)]` is
+  `(y && z) || (!y && !z)`, while minimization under the condition gives
+  `y && z`.
+- The clause order of `BooleanCountingFunction[{2, 3}, {a, b, c, d, e},
+  "CNF"]` differs from Woxi's `BooleanConvert` CNF order.
+- `Arg`/`Sign` of `Around`: Wolfram keeps `Derivative[1][Arg][-1.1]`
+  unevaluated in the uncertainty, which Woxi evaluates to `0.`.
+- `RealDigits[5.635, 10, Automatic, -15]` (`{{0, 0}, -14}`) and
+  `RealDigits[5.635, 10, 20, -15]` (one `0`, then `Indeterminate`s) are not
+  consistent with one precision cut-off.
+- `CoprimeQ[5, 7, GaussianIntegers -> True]` is `False` on the reference page
+  although 5 and 7 have no common Gaussian prime factor.
+- `LeviCivitaTensor[d, SymmetrizedArray]` (`SymmetrizedArray` is not
+  implemented), `Circumsphere[Octahedron[]]` (`PolyhedronCoordinates` is not
+  implemented), `MultiplicativeOrder[a]` (finite fields),
+  `EffectiveInterest[{p1 -> r1, …}]` (term-structure interpolation),
+  `FunctionRange[…, Complexes]`, the coordinate-chart forms of
+  `FrenetSerretSystem` and `ArcCurvature`, `SyntaxQ[…, TeXForm]` and
+  `Root[{f, x0}]`.
+- `AbsoluteTime["05/10/1"]` (an ambiguous date, with `AbsoluteTime::ambig`).
+- `AbsoluteTime[{"05/06/22", {"Day", "Month", "YearShort"}}]` is the integer
+  `3863376000` on the current reference page, but Woxi keeps the machine
+  real `3.863376*^9` that its earlier wolframscript-verified tests record.
+- Arbitrary-precision numbers print with all their guard digits in Woxi
+  (`N[Pi^10, {Infinity, 5}]` is `93648.0474760830209737167`9.97…`), where
+  wolframscript prints only the significant ones (`93648.0475`).

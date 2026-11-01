@@ -14,6 +14,22 @@ pub fn horner_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let expr = &args[0];
 
+  // A list of variables: Horner form in the first, with every coefficient
+  // in Horner form in the rest.
+  if let Some(Expr::List(vs)) = args.get(1) {
+    let Some(names) = vs
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<String>>>()
+    else {
+      return Ok(unevaluated("HornerForm", args));
+    };
+    return horner_form_vars(expr, &names);
+  }
+
   // Determine the variable
   let var_name = if args.len() == 2 {
     // Explicit variable
@@ -50,6 +66,36 @@ pub fn horner_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   horner_form_expr(expr, &var_name)
+}
+
+/// Horner form with respect to `vars[0]`, the coefficients of its powers in
+/// Horner form with respect to the remaining variables.
+fn horner_form_vars(
+  expr: &Expr,
+  vars: &[String],
+) -> Result<Expr, InterpreterError> {
+  let Some((var, rest)) = vars.split_first() else {
+    return crate::evaluator::evaluate_expr_to_expr(expr);
+  };
+  let expanded = expand_and_combine(expr);
+  let degree = max_power_int(&expanded, var).unwrap_or(0).max(0);
+  let mut coeffs = Vec::new();
+  for power in 0..=degree {
+    let coeff =
+      coefficient_ast(&[expanded.clone(), id_expr(var), Expr::Integer(power)])?;
+    let coeff = crate::evaluator::evaluate_expr_to_expr(&coeff)?;
+    coeffs.push(horner_form_vars(&coeff, rest)?);
+  }
+  let mut result = coeffs[degree as usize].clone();
+  for i in (0..degree as usize).rev() {
+    let times_part = times2(id_expr(var), result);
+    result = if matches!(&coeffs[i], Expr::Integer(0)) {
+      times_part
+    } else {
+      plus2(coeffs[i].clone(), times_part)
+    };
+  }
+  crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
 /// Apply Horner form to a polynomial expression with respect to `var`.

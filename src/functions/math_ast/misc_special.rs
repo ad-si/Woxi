@@ -3277,6 +3277,29 @@ fn powers_rep_search(
 /// is (1 + p*r)^(1/p) - 1; the limit at p = 0 is E^r - 1 (continuous
 /// compounding). Listable in `r`.
 pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // EffectiveInterest[{r1, …, rn}]: the compound average growth rate of the
+  // schedule, (Product[1 + ri])^(1/n) - 1.
+  if let [Expr::List(rates)] = args
+    && !rates.is_empty()
+    && !rates
+      .iter()
+      .any(|r| matches!(r, Expr::List(_) | Expr::Rule { .. }))
+  {
+    let product = times(
+      rates
+        .iter()
+        .map(|r| plus(vec![Expr::Integer(1), r.clone()]))
+        .collect(),
+    );
+    let root = pow(
+      product,
+      crate::functions::math_ast::make_rational(1, rates.len() as i128),
+    );
+    return crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+      Expr::Integer(-1),
+      root,
+    ]));
+  }
   if args.len() != 2 {
     return Ok(unevaluated("EffectiveInterest", args));
   }

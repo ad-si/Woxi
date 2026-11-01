@@ -1787,6 +1787,36 @@ fn poly_square_free_q(expr: &Expr) -> Option<bool> {
   Some(is_true(&call("FreeQ", vec![gcd, var])?))
 }
 
+/// SquareFreeQ of a polynomial in several variables: true when the GCD of
+/// the polynomial and all its partial derivatives involves none of them.
+fn multivariate_square_free_q(
+  p: &Expr,
+) -> Result<Option<bool>, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as ev;
+  let vars_expr = ev("Variables", std::slice::from_ref(p))?;
+  let Expr::List(vars) = &vars_expr else {
+    return Ok(None);
+  };
+  if vars.len() < 2 {
+    return Ok(None);
+  }
+  let poly = ev("PolynomialQ", &[p.clone(), Expr::List(vars.clone())])?;
+  if !matches!(&poly, Expr::Identifier(t) if t == "True") {
+    return Ok(None);
+  }
+  let mut gcd_args = vec![p.clone()];
+  for v in vars {
+    gcd_args.push(ev("D", &[p.clone(), v.clone()])?);
+  }
+  let g = ev("PolynomialGCD", &gcd_args)?;
+  if matches!(&g, Expr::FunctionCall { name, .. } if name == "PolynomialGCD") {
+    return Ok(None);
+  }
+  let any_var = crate::helpers::call("Alternatives", vars.to_vec());
+  let free = ev("FreeQ", &[g, any_var])?;
+  Ok(Some(matches!(&free, Expr::Identifier(t) if t == "True")))
+}
+
 pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1841,12 +1871,27 @@ pub fn square_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(bool_expr(true))
     }
-    // Univariate polynomials: square-free via gcd(p, p'). Falls back to
-    // unevaluated for multivariate/non-polynomial expressions.
-    other => match poly_square_free_q(other) {
-      Some(b) => Ok(bool_expr(b)),
-      None => Ok(unevaluated("SquareFreeQ", args)),
-    },
+    // Univariate polynomials: square-free via gcd(p, p'). A multivariate
+    // polynomial is square free when it has no common factor with all its
+    // partial derivatives.
+    other => {
+      if let Some((re, im)) =
+        crate::functions::math_ast::expr_to_gaussian_int(other)
+        && im != 0
+      {
+        return Ok(
+          crate::functions::math_ast::gaussian_square_free((re, im))
+            .map_or_else(|| unevaluated("SquareFreeQ", args), bool_expr),
+        );
+      }
+      match poly_square_free_q(other) {
+        Some(b) => Ok(bool_expr(b)),
+        None => Ok(
+          multivariate_square_free_q(other)?
+            .map_or_else(|| unevaluated("SquareFreeQ", args), bool_expr),
+        ),
+      }
+    }
   }
 }
 

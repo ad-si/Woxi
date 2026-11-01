@@ -4133,19 +4133,33 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // cannot process (matching wolframscript, which leaves it symbolic).
   let unevaluated = || Ok(unevaluated("DistanceMatrix", args));
 
-  if args.is_empty() || args.len() > 2 {
+  // DistanceMatrix[u] or DistanceMatrix[u, v], then options.
+  let positional = args
+    .iter()
+    .take_while(|a| !matches!(a, Expr::Rule { .. }))
+    .count();
+  if !(1..=2).contains(&positional) || args.len() > positional + 1 {
     return unevaluated();
   }
-
-  let points = match &args[0] {
-    Expr::List(items) => items.clone(),
-    _ => return unevaluated(),
+  let as_list = |e: &Expr| match e {
+    Expr::List(items) => Some(items.to_vec()),
+    _ => None,
+  };
+  let Some(us) = as_list(&args[0]) else {
+    return unevaluated();
+  };
+  let vs = match args.get(1).filter(|_| positional == 2) {
+    Some(v) => match as_list(v) {
+      Some(v) => Some(v),
+      None => return unevaluated(),
+    },
+    None => None,
   };
 
-  // Determine the distance function: default EuclideanDistance, or the
-  // replacement of an optional `DistanceFunction -> f` rule.
-  let mut dist_fn = id_expr("EuclideanDistance");
-  if let Some(opt) = args.get(1) {
+  // The distance function: the replacement of a `DistanceFunction -> f`
+  // rule, or the default for the kind of data.
+  let mut dist_fn = None;
+  if let Some(opt) = args.get(positional) {
     match opt {
       Expr::Rule {
         pattern,
@@ -4155,28 +4169,91 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "DistanceFunction"
       ) =>
       {
-        dist_fn = (**replacement).clone();
+        dist_fn = Some((**replacement).clone());
       }
       _ => return unevaluated(),
     }
   }
+  let dist_fn = if let Some(f) = dist_fn {
+    f
+  } else {
+    let all: Vec<&Expr> = us.iter().chain(vs.iter().flatten()).collect();
+    id_expr(default_distance_function(&all))
+  };
 
-  let n = points.len();
-  let mut rows: Vec<Expr> = Vec::with_capacity(n);
-  for i in 0..n {
-    let mut row: Vec<Expr> = Vec::with_capacity(n);
-    for j in 0..n {
-      if i == j {
-        row.push(Expr::Integer(0));
-        continue;
+  // Every u against every v.
+  let rows: Vec<Expr> = if let Some(vs) = &vs {
+    us.iter()
+      .map(|u| {
+        vs.iter()
+          .map(|v| apply_func_to_two_args(&dist_fn, u, v))
+          .collect::<Result<Vec<_>, _>>()
+          .map(|r| Expr::List(r.into()))
+      })
+      .collect::<Result<_, _>>()?
+  } else {
+    let n = us.len();
+    // The diagonal is zero, a machine zero for machine-number data.
+    let zero = if us.iter().any(crate::syntax::contains_inexact) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    };
+    let mut rows = Vec::with_capacity(n);
+    for i in 0..n {
+      let mut row: Vec<Expr> = Vec::with_capacity(n);
+      for j in 0..n {
+        if i == j {
+          row.push(zero.clone());
+          continue;
+        }
+        row.push(apply_func_to_two_args(&dist_fn, &us[i], &us[j])?);
       }
-      let dist = apply_func_to_two_args(&dist_fn, &points[i], &points[j])?;
-      row.push(dist);
+      rows.push(Expr::List(row.into()));
     }
-    rows.push(Expr::List(row.into()));
-  }
+    rows
+  };
 
   Ok(Expr::List(rows.into()))
+}
+
+/// DistanceMatrix's default distance for its data: EditDistance for strings
+/// and for nominal sequences of different lengths, HammingDistance for
+/// nominal vectors of one length, WarpingDistance for numerical sequences
+/// of different lengths, and EuclideanDistance otherwise.
+fn default_distance_function(items: &[&Expr]) -> &'static str {
+  if !items.is_empty() && items.iter().all(|e| matches!(e, Expr::String(_))) {
+    return "EditDistance";
+  }
+  let lists: Option<Vec<&[Expr]>> = items
+    .iter()
+    .map(|e| match e {
+      Expr::List(v) => Some(v.as_slice()),
+      _ => None,
+    })
+    .collect();
+  let Some(lists) = lists.filter(|l| !l.is_empty()) else {
+    return "EuclideanDistance";
+  };
+  let ragged = lists.iter().any(|l| l.len() != lists[0].len());
+  let all_strings = lists
+    .iter()
+    .all(|l| l.iter().all(|e| matches!(e, Expr::String(_))));
+  if all_strings {
+    return if ragged {
+      "EditDistance"
+    } else {
+      "HammingDistance"
+    };
+  }
+  let all_numeric = lists.iter().all(|l| {
+    l.iter()
+      .all(|e| crate::functions::math_ast::try_eval_to_f64(e).is_some())
+  });
+  if all_numeric && ragged {
+    return "WarpingDistance";
+  }
+  "EuclideanDistance"
 }
 
 /// Answer a `SparseArray[…]["property"]` query. Returns `None` for an

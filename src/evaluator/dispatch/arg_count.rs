@@ -130,7 +130,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "BandpassFilter" => Some((2, 4)),
     "BandstopFilter" => Some((2, 4)),
     "BellB" => Some((1, 2)),
-    "BellY" => Some((3, 3)),
+    "BellY" => Some((1, 3)),
     "BernoulliB" => Some((1, 2)),
     "BernoulliDistribution" => Some((1, 1)),
     "BesselI" => Some((2, 2)),
@@ -401,7 +401,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "DictionaryLookup" => Some((0, 2)),
     "DictionaryWordQ" => Some((1, 1)),
     "Differences" => Some((1, 3)),
-    "DigitCount" => Some((1, 3)),
+    "DigitCount" => Some((1, 4)),
     "DigitQ" => Some((1, 1)),
     "DigitSum" => Some((1, 3)),
     "ThueMorse" => Some((1, 1)),
@@ -459,7 +459,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "ImageLines" => Some((1, usize::MAX)),
     "DamerauLevenshteinDistance" => Some((2, 3)),
     "EditDistance" => Some((2, 3)),
-    "EffectiveInterest" => Some((2, 2)),
+    "EffectiveInterest" => Some((1, 2)),
     "Eigensystem" => Some((1, 2)),
     "Eigenvalues" => Some((1, 2)),
     "Eigenvectors" => Some((1, 2)),
@@ -494,7 +494,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "InverseBetaRegularized" => Some((3, 4)),
     "InverseErfc" => Some((1, 1)),
     "EuclideanDistance" => Some((2, 2)),
-    "DistanceMatrix" => Some((1, 2)),
+    "DistanceMatrix" => Some((1, 3)),
     "EulerAngles" => Some((1, 2)),
     "EulerE" => Some((1, 2)),
     "EulerMatrix" => Some((1, 2)),
@@ -1755,6 +1755,7 @@ fn discrete_arg_counts(name: &str) -> Option<&'static [usize]> {
   match name {
     "Area" => Some(&[1, 3, 4]),
     "Volume" => Some(&[1, 4, 5]),
+    "BellY" => Some(&[1, 3]),
     _ => None,
   }
 }
