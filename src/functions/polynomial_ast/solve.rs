@@ -12983,6 +12983,63 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &arg1_owned
   };
 
+  // An equation that is still a computation (`a == h /. sol`, which is
+  // `(a == h) /. sol`) or a nested equation list is evaluated once with the
+  // unknowns held symbolic, as Wolfram does, and the list flattened.
+  if let Expr::List(eqs) = &args[0]
+    && eqs
+      .iter()
+      .any(|e| matches!(e, Expr::List(_) | Expr::ReplaceAll { .. }))
+  {
+    let mut vars: Vec<String> = Vec::new();
+    let mut add_spec = |spec: &Expr| {
+      if let Expr::List(items) = spec
+        && let Some(Expr::Identifier(name) | Expr::FunctionCall { name, .. }) =
+          items.first()
+        && !vars.contains(name)
+      {
+        vars.push(name.clone());
+      }
+    };
+    match arg1 {
+      Expr::List(specs) if specs.iter().all(|s| matches!(s, Expr::List(_))) => {
+        specs.iter().for_each(&mut add_spec);
+      }
+      spec => add_spec(spec),
+    }
+    args[2..]
+      .iter()
+      .filter(|a| matches!(a, Expr::List(_)))
+      .for_each(&mut add_spec);
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Block",
+      vec![
+        Expr::List(vars.into_iter().map(Expr::Identifier).collect()),
+        // Held on the way out, or a global value of an unknown would
+        // replace it once the Block is left.
+        call("Hold", vec![call("Evaluate", vec![args[0].clone()])]),
+      ],
+    ))?;
+    if let Expr::FunctionCall { name, args: held } = &evaluated
+      && name == "Hold"
+      && let [Expr::List(items)] = held.as_slice()
+    {
+      let mut flat = Vec::new();
+      let mut stack: Vec<&Expr> = items.iter().rev().collect();
+      while let Some(e) = stack.pop() {
+        match e {
+          Expr::List(inner) => stack.extend(inner.iter().rev()),
+          other => flat.push(other.clone()),
+        }
+      }
+      if flat.iter().all(|e| !matches!(e, Expr::ReplaceAll { .. })) {
+        let mut new_args = args.to_vec();
+        new_args[0] = Expr::List(flat.into());
+        return find_root_ast(&new_args);
+      }
+    }
+  }
+
   // `FindRoot[f, {x0}]`: a root of the function `f` itself, from the
   // starting value x0, reported as `{x}` (no variable to name).
   if let Expr::List(start) = arg1

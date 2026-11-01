@@ -11659,6 +11659,26 @@ mod find_root {
     assert!(result.result.starts_with("{T -> 9"), "{}", result.result);
   }
 
+  /// `a == h /. sol` is `(a == h) /. sol`: the equation is still a
+  /// computation, which with a nested rule list gives a nested equation
+  /// list. Both are evaluated with the unknowns symbolic and flattened; they
+  /// used to report FindRoot::nlnum.
+  #[test]
+  fn equations_given_as_computations() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y == h /. {{h -> 50.}}, x - y == 0}, {x, 1}, {y, 1}]"
+      )
+      .unwrap(),
+      "{x -> 25., y -> 25.}"
+    );
+    assert_eq!(
+      interpret("FindRoot[{{x + y == 50.}, x - y == 0}, {{x, 1}, {y, 1}}]")
+        .unwrap(),
+      "{x -> 25., y -> 25.}"
+    );
+  }
+
   #[test]
   fn quadratic_larger_start() {
     assert_eq!(
