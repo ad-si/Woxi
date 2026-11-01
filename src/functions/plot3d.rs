@@ -13941,6 +13941,22 @@ fn parametric_plot3d_curve_ast(
       // collect_3d_primitives picks up nested colors/Thickness/etc.
       let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
       prim_items.push(call1("Directive", style.clone()));
+    } else if color_function.is_none() {
+      // Without `PlotStyle`, each curve takes the next color of the
+      // default plot palette (blue first) rather than plain gray.
+      let (r, g, b) = crate::functions::plot::PLOT_COLORS
+        [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
+      prim_items.push(call1(
+        "Directive",
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
+          ],
+        ),
+      ));
     }
     let mut current_segment: Vec<Expr> = Vec::new();
     let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {

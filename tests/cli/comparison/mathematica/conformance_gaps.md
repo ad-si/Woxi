@@ -2185,12 +2185,12 @@ leaves the region the equations are defined on.
 A distillation-column model (Housam Binous's Demonstrations: holdup balances
 with `T[i]'[t]` and `y[i]'[t]` terms, vapor-liquid equilibria, and flows
 `L[t]`, `V[t]`, `D[t]` that only appear algebraically) returns `NDSolve`
-unevaluated. Index reduction (differentiating an algebraic equation whose
-unknowns are all differentiated elsewhere) and initial values for algebraic
-unknowns are handled, but an equation combining differentiated unknowns with
-the Newton-solved algebraic ones does not compile. Because `sol` then holds
-the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /. sol, …]`
-reruns it at every sample and times out.
+unevaluated when an equation combines differentiated unknowns with the
+Newton-solved algebraic ones in a way that does not compile; because `sol`
+then holds the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /.
+sol, …]` reruns it at every sample and times out. A solvent-swap variant of
+the model (10 stages, `t` up to 20000) now integrates — the stiff Rosenbrock
+fallback also takes legs with algebraic unknowns — but takes about a minute.
 
 Status 2026-11-01. Columns without an energy balance now solve
 (SolventSwapDistillation, TernaryBatchRectification, the residue-curve
