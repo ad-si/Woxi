@@ -764,6 +764,18 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
 }
 
 /// Element[x, domain] - Test or assert domain membership
+/// `a | b | c` as the one flat `Alternatives[a, b, c]` it evaluates to (a
+/// single alternative stands alone). A nested binary chain would be as deep
+/// as the list is long, and re-evaluating `Element` over a 1600-variable list
+/// (`Thread[vars \[Element] Integers]` in an integer program) then exceeds
+/// `$RecursionLimit`.
+fn flat_alternatives(mut alts: Vec<Expr>) -> Expr {
+  if alts.len() == 1 {
+    return alts.pop().unwrap();
+  }
+  call("Alternatives", alts)
+}
+
 pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   // `Vectors[n, dom]` and `Matrices[{m, n}, dom]`: a list of that shape
   // whose entries lie in `dom` (Complexes when not given).
@@ -861,12 +873,10 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     if remaining.is_empty() {
       return Ok(bool_expr(true));
     }
-    // Rebuild Alternatives from remaining
-    let alt_expr = remaining
-      .into_iter()
-      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
-      .unwrap();
-    return Ok(call("Element", vec![alt_expr, domain.clone()]));
+    return Ok(call(
+      "Element",
+      vec![flat_alternatives(remaining), domain.clone()],
+    ));
   }
 
   // Handle lists: Element[{a, b, c}, dom] → Element[a | b | c, dom]
@@ -875,12 +885,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(bool_expr(true));
     }
     // Convert list to Alternatives and recurse
-    let alt_expr = items
-      .iter()
-      .cloned()
-      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
-      .unwrap();
-    return element_ast(&alt_expr, domain);
+    return element_ast(&flat_alternatives(items.to_vec()), domain);
   }
 
   // Element[Plus[a, b, c, ...], Reals] / Integers / Rationals: drop any
