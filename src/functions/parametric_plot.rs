@@ -774,15 +774,15 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &fy_storage
           };
         adaptive_samples(
-          |t| match {
+          |t| {
             fire_monitor(t);
-            (
+            match (
               evaluate_at_point(fx, &var_name, t),
               evaluate_at_point(fy, &var_name, t),
-            )
-          } {
-            (Some(x), Some(y)) => Some(vec![(x, y)]),
-            _ => None,
+            ) {
+              (Some(x), Some(y)) => Some(vec![(x, y)]),
+              _ => None,
+            }
           },
           t_min,
           t_max,
