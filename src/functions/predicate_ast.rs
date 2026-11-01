@@ -1753,7 +1753,7 @@ fn multivariate_square_free_q(
   p: &Expr,
 ) -> Result<Option<bool>, InterpreterError> {
   use crate::evaluator::evaluate_function_call_ast as ev;
-  let vars_expr = ev("Variables", &[p.clone()])?;
+  let vars_expr = ev("Variables", std::slice::from_ref(p))?;
   let Expr::List(vars) = &vars_expr else {
     return Ok(None);
   };
@@ -1765,7 +1765,7 @@ fn multivariate_square_free_q(
     return Ok(None);
   }
   let mut gcd_args = vec![p.clone()];
-  for v in vars.iter() {
+  for v in vars {
     gcd_args.push(ev("D", &[p.clone(), v.clone()])?);
   }
   let g = ev("PolynomialGCD", &gcd_args)?;

@@ -2955,16 +2955,16 @@ fn inverse_erf_bigfloat(
   // Quadratic convergence from ~15 correct digits.
   let steps = ((prec / 15.0).log2().ceil().max(0.0) as usize) + 2;
   for _ in 0..steps {
-    let residual = call(
-      "Subtract",
-      vec![call1(f, x.clone()), target.clone()],
-    );
+    let residual = call("Subtract", vec![call1(f, x.clone()), target.clone()]);
     let step = call(
       "Times",
       vec![
         Expr::Integer(sign),
         residual,
-        call("Divide", vec![call1("Sqrt", Expr::Constant("Pi".into())), Expr::Integer(2)]),
+        call(
+          "Divide",
+          vec![call1("Sqrt", Expr::Constant("Pi".into())), Expr::Integer(2)],
+        ),
         call1("Exp", call("Power", vec![x.clone(), Expr::Integer(2)])),
       ],
     );
@@ -5771,14 +5771,19 @@ pub fn inverse_gudermannian_ast(
         _ => None,
       };
       let z = match prec {
-        Some(p) => ev(&call("SetPrecision", vec![z.clone(), Expr::Real(p + 10.0)]))?,
+        Some(p) => {
+          ev(&call("SetPrecision", vec![z.clone(), Expr::Real(p + 10.0)]))?
+        }
         None => z.clone(),
       };
       let arg = call(
         "Plus",
         vec![
           call("Divide", vec![z, Expr::Integer(2)]),
-          call("Divide", vec![Expr::Constant("Pi".into()), Expr::Integer(4)]),
+          call(
+            "Divide",
+            vec![Expr::Constant("Pi".into()), Expr::Integer(4)],
+          ),
         ],
       );
       let value = ev(&call1("Log", call1("Tan", arg)))?;

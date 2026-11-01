@@ -20,19 +20,25 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // carries the accuracy-limited precision tag 5.5228… rather than 6.
     if let Expr::List(spec) = &args[1]
       && spec.len() == 2
-      && let (Some(p), Some(a)) =
-        (try_eval_to_f64(&spec[0]), try_eval_to_f64(&spec[1]))
+      && let Some(p) = match &spec[0] {
+        Expr::Identifier(i) if i == "Infinity" => Some(f64::INFINITY),
+        other => try_eval_to_f64(other),
+      }
+      && let Some(a) = try_eval_to_f64(&spec[1])
       && p > 0.0
-      && a > 0.0
+      && (a > 0.0 || p.is_infinite())
     {
       let magnitude = try_eval_to_f64(&args[0]).map(f64::abs).or_else(|| {
         try_extract_complex_float(&args[0]).map(|(re, im)| re.hypot(im))
       });
+      // {Infinity, a}: as much precision as accuracy a needs.
       let effective = match magnitude {
         Some(m) if m > 0.0 => p.min(a + m.log10()),
         _ => p,
       };
-      return n_eval_arbitrary(&args[0], effective);
+      if effective.is_finite() && effective > 0.0 {
+        return n_eval_arbitrary(&args[0], effective);
+      }
     }
     // N[expr, precision] — arbitrary-precision evaluation. Precision
     // can be a numeric expression (e.g. N[Pi, Pi] uses ≈3.14159… as
@@ -5709,13 +5715,12 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Real(re)
     }
   };
-  fn nest(
-    leaves: &mut dyn Iterator<Item = Expr>,
-    dims: &[usize],
-  ) -> Expr {
+  fn nest(leaves: &mut dyn Iterator<Item = Expr>, dims: &[usize]) -> Expr {
     match dims {
       [] => leaves.next().unwrap_or(Expr::Integer(0)),
-      [d, rest @ ..] => Expr::List((0..*d).map(|_| nest(leaves, rest)).collect()),
+      [d, rest @ ..] => {
+        Expr::List((0..*d).map(|_| nest(leaves, rest)).collect())
+      }
     }
   }
   let mut leaves = data.iter().map(leaf);

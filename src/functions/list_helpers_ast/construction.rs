@@ -4152,12 +4152,11 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return unevaluated(),
     }
   }
-  let dist_fn = match dist_fn {
-    Some(f) => f,
-    None => {
-      let all: Vec<&Expr> = us.iter().chain(vs.iter().flatten()).collect();
-      id_expr(default_distance_function(&all))
-    }
+  let dist_fn = if let Some(f) = dist_fn {
+    f
+  } else {
+    let all: Vec<&Expr> = us.iter().chain(vs.iter().flatten()).collect();
+    id_expr(default_distance_function(&all))
   };
 
   let rows: Vec<Expr> = match &vs {
@@ -4221,7 +4220,11 @@ fn default_distance_function(items: &[&Expr]) -> &'static str {
     .iter()
     .all(|l| l.iter().all(|e| matches!(e, Expr::String(_))));
   if all_strings {
-    return if ragged { "EditDistance" } else { "HammingDistance" };
+    return if ragged {
+      "EditDistance"
+    } else {
+      "HammingDistance"
+    };
   }
   let all_numeric = lists.iter().all(|l| {
     l.iter()

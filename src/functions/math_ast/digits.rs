@@ -2705,7 +2705,10 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return uneval();
     };
     let reversed: Vec<Expr> = ds.iter().rev().cloned().collect();
-    return ev("FromDigits", &[Expr::List(reversed.into()), args[1].clone()]);
+    return ev(
+      "FromDigits",
+      &[Expr::List(reversed.into()), args[1].clone()],
+    );
   }
 
   let base = if args.len() >= 2 {

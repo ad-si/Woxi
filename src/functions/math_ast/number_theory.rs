@@ -241,8 +241,8 @@ fn gaussian_inverse(a: (i128, i128), m: (i128, i128)) -> Option<(i128, i128)> {
   match r0 {
     (1, 0) => Some(s0),
     (-1, 0) => Some((-s0.0, -s0.1)),
-    (0, 1) => Some((s0.1, -s0.0)),   // s0 / i = -i s0
-    (0, -1) => Some((-s0.1, s0.0)),  // s0 / -i = i s0
+    (0, 1) => Some((s0.1, -s0.0)), // s0 / i = -i s0
+    (0, -1) => Some((-s0.1, s0.0)), // s0 / -i = i s0
     _ => None,
   }
 }
@@ -5553,9 +5553,10 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Gaussian integers: the extended Euclidean algorithm over Z[i], reduced
   // with Mod (which rounds the Gaussian quotient).
-  if let (Some(a), Some(m)) =
-    (expr_to_gaussian_int(&args[0]), expr_to_gaussian_int(&args[1]))
-    && (a.1 != 0 || m.1 != 0)
+  if let (Some(a), Some(m)) = (
+    expr_to_gaussian_int(&args[0]),
+    expr_to_gaussian_int(&args[1]),
+  ) && (a.1 != 0 || m.1 != 0)
     && m != (0, 0)
   {
     let Some(inv) = gaussian_inverse(a, m) else {
@@ -6574,9 +6575,14 @@ fn bell_y_composition(
         if matches!(outer, Expr::Integer(0)) {
           continue;
         }
-        terms.push(crate::helpers::times2(outer, bell_y_composition(n, j, rest)?));
+        terms.push(crate::helpers::times2(
+          outer,
+          bell_y_composition(n, j, rest)?,
+        ));
       }
-      crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call("Plus", terms))
+      crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+        "Plus", terms,
+      ))
     }
   }
 }

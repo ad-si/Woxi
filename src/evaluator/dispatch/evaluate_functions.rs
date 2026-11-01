@@ -3561,7 +3561,8 @@ fn evaluate_function_call_ast_inner(
       if args.len() == 1 {
         return Ok(args[0].clone());
       }
-      let list = evaluate_expr_to_expr(&call1("PermutationList", args[0].clone()))?;
+      let list =
+        evaluate_expr_to_expr(&call1("PermutationList", args[0].clone()))?;
       if matches!(&list, Expr::List(_)) {
         return evaluate_expr_to_expr(&call(
           "PermutationCycles",

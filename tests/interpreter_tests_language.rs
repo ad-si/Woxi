@@ -51,6 +51,7 @@ mod interpreter_tests {
   mod option_sweep4_options;
   mod option_sweep4_plots;
   mod option_sweep4_special;
+  mod option_sweep5_misc2;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;
