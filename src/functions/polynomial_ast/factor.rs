@@ -218,39 +218,187 @@ fn reorder_factored_product(result: Expr) -> Expr {
     .expect("non-empty factor list")
 }
 
-/// Whether `opt` asks for factoring over the Gaussian rationals:
-/// `GaussianIntegers -> True` or `Extension -> I`.
-fn is_gaussian_option(opt: &Expr) -> bool {
+/// The quadratic field an option asks to factor over, as the integer d of
+/// Q(Sqrt[d]): `GaussianIntegers -> True` or `Extension -> I` give d = -1,
+/// and `Extension -> Sqrt[d]` (or `{Sqrt[d]}`) with a squarefree integer
+/// d >= 2 gives d.
+fn quadratic_extension_option(opt: &Expr) -> Option<i128> {
   let Expr::Rule {
     pattern,
     replacement,
   } = opt
   else {
-    return false;
+    return None;
   };
-  match (pattern.as_ref(), replacement.as_ref()) {
+  let generator = match (pattern.as_ref(), replacement.as_ref()) {
     (Expr::Identifier(n), Expr::Identifier(v)) if n == "GaussianIntegers" => {
-      v == "True"
+      return (v == "True").then_some(-1);
     }
-    (Expr::Identifier(n), Expr::Identifier(v)) if n == "Extension" => v == "I",
     (Expr::Identifier(n), Expr::List(items)) if n == "Extension" => {
-      matches!(items.as_slice(), [Expr::Identifier(v)] if v == "I")
+      match items.as_slice() {
+        [g] => g,
+        _ => return None,
+      }
     }
-    _ => false,
+    (Expr::Identifier(n), g) if n == "Extension" => g,
+    _ => return None,
+  };
+  if matches!(generator, Expr::Identifier(v) if v == "I") {
+    return Some(-1);
+  }
+  // Sqrt[d]: its square is an integer d >= 2 and Sqrt[d] evaluates back to
+  // the generator itself (so d is squarefree).
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let Ok(Expr::Integer(d)) = ev(&pow2(generator.clone(), Expr::Integer(2)))
+  else {
+    return None;
+  };
+  if !(2..=1 << 40).contains(&d) {
+    return None;
+  }
+  let root = ev(&call1("Sqrt", Expr::Integer(d))).ok()?;
+  (expr_to_string(&root) == expr_to_string(generator)
+    && !matches!(root, Expr::Integer(_)))
+  .then_some(d)
+}
+
+/// Exact arithmetic in a quadratic field Q(Sqrt[d]): an element a + b Sqrt[d]
+/// is a pair of rationals, each a (numerator, positive denominator) pair in
+/// lowest terms.
+mod quadratic_field {
+  use num_bigint::BigInt;
+  use num_traits::{One, Signed, Zero};
+
+  pub(super) type Rat = (BigInt, BigInt);
+  pub(super) type Elt = (Rat, Rat);
+  /// A polynomial over the field, lowest degree first, without trailing
+  /// zeros.
+  pub(super) type Poly = Vec<Elt>;
+
+  pub(super) fn rat(n: BigInt, d: BigInt) -> Rat {
+    let g = crate::functions::math_ast::gcd_bigint(&n, &d);
+    let (mut n, mut d) = if g.is_zero() {
+      (n, d)
+    } else {
+      (n / &g, d / &g)
+    };
+    if d.is_negative() {
+      n = -n;
+      d = -d;
+    }
+    (n, d)
+  }
+  fn radd(a: &Rat, b: &Rat) -> Rat {
+    rat(&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1)
+  }
+  fn rmul(a: &Rat, b: &Rat) -> Rat {
+    rat(&a.0 * &b.0, &a.1 * &b.1)
+  }
+  fn rneg(a: &Rat) -> Rat {
+    (-&a.0, a.1.clone())
+  }
+  pub(super) fn zero() -> Elt {
+    (
+      (BigInt::zero(), BigInt::one()),
+      (BigInt::zero(), BigInt::one()),
+    )
+  }
+  pub(super) fn is_zero(a: &Elt) -> bool {
+    a.0.0.is_zero() && a.1.0.is_zero()
+  }
+  pub(super) fn add(a: &Elt, b: &Elt) -> Elt {
+    (radd(&a.0, &b.0), radd(&a.1, &b.1))
+  }
+  pub(super) fn neg(a: &Elt) -> Elt {
+    (rneg(&a.0), rneg(&a.1))
+  }
+  pub(super) fn mul(d: i128, a: &Elt, b: &Elt) -> Elt {
+    let dd = (BigInt::from(d), BigInt::one());
+    (
+      radd(&rmul(&a.0, &b.0), &rmul(&dd, &rmul(&a.1, &b.1))),
+      radd(&rmul(&a.0, &b.1), &rmul(&a.1, &b.0)),
+    )
+  }
+  /// 1/a = (a0 - a1 Sqrt[d]) / (a0^2 - d a1^2); a must be nonzero.
+  pub(super) fn inv(d: i128, a: &Elt) -> Elt {
+    let dd = (BigInt::from(d), BigInt::one());
+    let norm = radd(&rmul(&a.0, &a.0), &rneg(&rmul(&dd, &rmul(&a.1, &a.1))));
+    let ninv = rat(norm.1, norm.0);
+    (rmul(&a.0, &ninv), rneg(&rmul(&a.1, &ninv)))
+  }
+  fn trim(mut p: Poly) -> Poly {
+    while p.last().is_some_and(is_zero) {
+      p.pop();
+    }
+    p
+  }
+  /// The remainder of a divided by the nonzero b.
+  fn rem(d: i128, a: &Poly, b: &Poly) -> Poly {
+    let mut r = trim(a.clone());
+    let lead_inv = inv(d, b.last().expect("nonzero divisor"));
+    while r.len() >= b.len() && !r.is_empty() {
+      let shift = r.len() - b.len();
+      let q = mul(d, r.last().unwrap(), &lead_inv);
+      for (i, c) in b.iter().enumerate() {
+        r[i + shift] = add(&r[i + shift], &neg(&mul(d, &q, c)));
+      }
+      r = trim(r);
+    }
+    r
+  }
+  /// The monic greatest common divisor of two polynomials.
+  pub(super) fn gcd(d: i128, a: &Poly, b: &Poly) -> Poly {
+    let (mut a, mut b) = (trim(a.clone()), trim(b.clone()));
+    while !b.is_empty() {
+      let r = rem(d, &a, &b);
+      a = b;
+      b = r;
+    }
+    match a.last() {
+      Some(lead) => {
+        let li = inv(d, lead);
+        a.iter().map(|c| mul(d, c, &li)).collect()
+      }
+      None => a,
+    }
+  }
+  /// p(x + c) by Horner's rule.
+  pub(super) fn shift(d: i128, p: &Poly, c: &Elt) -> Poly {
+    let mut out: Poly = Vec::new();
+    for coeff in p.iter().rev() {
+      // out = out * (x + c) + coeff
+      let mut next = vec![zero(); out.len() + 1];
+      for (i, o) in out.iter().enumerate() {
+        next[i + 1] = add(&next[i + 1], o);
+        next[i] = add(&next[i], &mul(d, o, c));
+      }
+      next[0] = add(&next[0], coeff);
+      out = next;
+    }
+    trim(out)
   }
 }
 
 /// The factorization of a univariate polynomial with rational coefficients
-/// over the Gaussian rationals Q(I), as its numeric content and its
-/// irreducible factors with multiplicities. Each irreducible factor over Q
-/// is split by Trager's algorithm: for a shift s with a squarefree norm
-/// r(x) = Res_y(g(x - s y), y^2 + 1), the factors of g over Q(I) are
-/// gcd(g(x), r_j(x + s I)) for the irreducible factors r_j of r over Q.
-/// Only monic factors over Q are split (their factors over Z[I] are monic
-/// too); anything else gives `None`.
-fn gaussian_factor_list(
+/// over the quadratic field Q(Sqrt[d]) (d = -1 is the Gaussian rationals
+/// Q(I)), as its numeric content and its irreducible factors with
+/// multiplicities. Each irreducible factor over Q is split by Trager's
+/// algorithm: for a shift s with a squarefree norm
+/// r(x) = Res_y(g(x - s y), y^2 - d), the factors of g over Q(Sqrt[d]) are
+/// gcd(g(x), r_j(x + s Sqrt[d])) for the irreducible factors r_j of r over Q.
+/// Only monic factors over Q are split (their factors over the ring of
+/// integers are monic too); anything else gives `None`.
+///
+/// Over a real field each factor h = A(x) + Sqrt[d] B(x) is negated (with
+/// the sign moved into the content) when the leading coefficient of B is
+/// negative, as wolframscript does: Factor[x^2 - 2, Extension -> Sqrt[2]] is
+/// -(Sqrt[2] - x) (Sqrt[2] + x).
+fn quadratic_extension_factor_list(
   poly: &Expr,
+  d: i128,
 ) -> Result<Option<(Vec<Expr>, Vec<(Expr, Expr)>)>, InterpreterError> {
+  use num_traits::{One, Signed, Zero};
+  use quadratic_field as qf;
   let ev = |name: &str, args: Vec<Expr>| {
     crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };
@@ -264,21 +412,66 @@ fn gaussian_factor_list(
   if !matches!(ev("PolynomialQ", vec![poly.clone(), var.clone()])?,
     Expr::Identifier(ref t) if t == "True")
     || contains_complex(poly)
+    || contains_sqrt(poly)
   {
     return Ok(None);
   }
   let Expr::List(ref pairs) = ev("FactorList", vec![poly.clone()])? else {
     return Ok(None);
   };
-  let degree = |e: &Expr| -> Result<Option<i128>, InterpreterError> {
-    Ok(crate::functions::math_ast::expr_to_i128(&ev(
-      "Exponent",
-      vec![e.clone(), var.clone()],
-    )?))
+  // Rational coefficients of a polynomial in var, lowest degree first.
+  let rational_poly = |e: &Expr| -> Result<Option<qf::Poly>, InterpreterError> {
+    let Expr::List(ref cs) =
+      ev("CoefficientList", vec![e.clone(), var.clone()])?
+    else {
+      return Ok(None);
+    };
+    let mut out = Vec::with_capacity(cs.len());
+    for c in cs {
+      let Some((n, den)) = crate::functions::math_ast::expr_to_big_rational(c)
+      else {
+        return Ok(None);
+      };
+      out.push((
+        qf::rat(n, den),
+        (num_bigint::BigInt::zero(), num_bigint::BigInt::one()),
+      ));
+    }
+    Ok(Some(out))
   };
-  let y = Expr::Identifier("Woxi`gauss$y".to_string());
+  let rat_expr = |r: &qf::Rat| -> Expr {
+    if r.1.is_one() {
+      bigint_to_expr(r.0.clone())
+    } else {
+      call(
+        "Rational",
+        vec![bigint_to_expr(r.0.clone()), bigint_to_expr(r.1.clone())],
+      )
+    }
+  };
+  let generator = if d == -1 {
+    Expr::Identifier("I".to_string())
+  } else {
+    call1("Sqrt", Expr::Integer(d))
+  };
+  let to_expr = |p: &qf::Poly| -> Result<Expr, InterpreterError> {
+    let terms: Vec<Expr> = p
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !qf::is_zero(c))
+      .map(|(k, (a, b))| {
+        times2(
+          plus2(rat_expr(a), times2(rat_expr(b), generator.clone())),
+          pow2(var.clone(), Expr::Integer(k as i128)),
+        )
+      })
+      .collect();
+    ev("Expand", vec![plus(terms)])
+  };
+  let y = Expr::Identifier("Woxi`quadext$y".to_string());
   let mut constants = Vec::new();
   let mut factors = Vec::new();
+  let mut sign_flips = 0u32;
   for pair in pairs {
     let Expr::List(fe) = pair else {
       return Ok(None);
@@ -286,10 +479,11 @@ fn gaussian_factor_list(
     let [g, e] = fe.as_slice() else {
       return Ok(None);
     };
-    let Some(deg) = degree(g)? else {
+    let Some(g_poly) = rational_poly(g)? else {
       return Ok(None);
     };
-    if deg == 0 {
+    let deg = g_poly.len() as i128 - 1;
+    if deg <= 0 {
       constants.push(pair.clone());
       continue;
     }
@@ -297,16 +491,13 @@ fn gaussian_factor_list(
       factors.push((g.clone(), e.clone()));
       continue;
     }
-    let lead = ev(
-      "Coefficient",
-      vec![g.clone(), var.clone(), Expr::Integer(deg)],
-    )?;
-    if !matches!(lead, Expr::Integer(1)) {
+    if !(g_poly[deg as usize].0.0.is_one() && g_poly[deg as usize].0.1.is_one())
+    {
       return Ok(None);
     }
     let mut split = None;
     for shift in [1, -1, 2, -2, 3, -3] {
-      // r(x) = Res_y(g(x - s y), y^2 + 1)
+      // r(x) = Res_y(g(x - s y), y^2 - d)
       let shifted = crate::syntax::substitute_variable(
         g,
         &expr_to_string(&var),
@@ -318,55 +509,56 @@ fn gaussian_factor_list(
           "Resultant",
           vec![
             shifted,
-            plus2(pow2(y.clone(), Expr::Integer(2)), Expr::Integer(1)),
+            plus2(pow2(y.clone(), Expr::Integer(2)), Expr::Integer(-d)),
             y.clone(),
           ],
         )],
       )?;
       let derivative = ev("D", vec![norm.clone(), var.clone()])?;
       let common = ev("PolynomialGCD", vec![norm.clone(), derivative])?;
-      if degree(&common)? != Some(0) {
+      if !matches!(ev("Exponent", vec![common, var.clone()])?, Expr::Integer(0))
+      {
         continue;
       }
       let Expr::List(ref norm_factors) = ev("FactorList", vec![norm])? else {
         return Ok(None);
       };
+      let shift_elt: qf::Elt = (
+        (num_bigint::BigInt::zero(), num_bigint::BigInt::one()),
+        (num_bigint::BigInt::from(shift), num_bigint::BigInt::one()),
+      );
       let mut parts = Vec::new();
       for nf in norm_factors {
         let Expr::List(nfe) = nf else {
           return Ok(None);
         };
-        if degree(&nfe[0])? == Some(0) {
-          continue;
-        }
-        // h = gcd(g(x), r_j(x + s I)), made monic.
-        let back = ev(
-          "Expand",
-          vec![crate::syntax::substitute_variable(
-            &nfe[0],
-            &expr_to_string(&var),
-            &plus2(
-              var.clone(),
-              times2(Expr::Integer(shift), Expr::Identifier("I".to_string())),
-            ),
-          )],
-        )?;
-        let h = ev("PolynomialGCD", vec![g.clone(), back])?;
-        let Some(hd) = degree(&h)? else {
+        let Some(r_poly) = rational_poly(&nfe[0])? else {
           return Ok(None);
         };
-        let hl = ev(
-          "Coefficient",
-          vec![h.clone(), var.clone(), Expr::Integer(hd)],
-        )?;
-        let monic = ev("Expand", vec![times2(h, pow2(hl, Expr::Integer(-1)))])?;
-        parts.push((monic, hd));
+        if r_poly.len() <= 1 {
+          continue;
+        }
+        // h = gcd(g(x), r_j(x + s Sqrt[d])), monic.
+        let back = qf::shift(d, &r_poly, &shift_elt);
+        let mut h = qf::gcd(d, &g_poly, &back);
+        let hd = h.len() as i128 - 1;
+        // Over a real field: negate when the Sqrt[d] part's leading
+        // coefficient is negative.
+        let mut negated = false;
+        if d > 0
+          && let Some(b_lead) = h.iter().rev().find(|c| !c.1.0.is_zero())
+          && b_lead.1.0.is_negative()
+        {
+          h = h.iter().map(qf::neg).collect();
+          negated = true;
+        }
+        parts.push((to_expr(&h)?, hd, negated));
       }
-      if parts.iter().map(|(_, d)| d).sum::<i128>() != deg {
+      if parts.iter().map(|(_, d, _)| d).sum::<i128>() != deg {
         return Ok(None);
       }
       // In the canonical order Times puts them in (-I + x before I + x).
-      parts.sort_by(|(a, _), (b, _)| {
+      parts.sort_by(|(a, _, _), (b, _, _)| {
         crate::functions::list_helpers_ast::canonical_cmp(a, b)
       });
       split = Some(parts);
@@ -375,11 +567,39 @@ fn gaussian_factor_list(
     let Some(parts) = split else {
       return Ok(None);
     };
-    for (h, _) in parts {
+    for (h, _, negated) in parts {
+      if negated && matches!(e, Expr::Integer(k) if k % 2 != 0) {
+        sign_flips += 1;
+      }
       factors.push((h, e.clone()));
     }
   }
+  if sign_flips % 2 == 1 {
+    constants.insert(
+      0,
+      Expr::List(vec![Expr::Integer(-1), Expr::Integer(1)].into()),
+    );
+  }
   Ok(Some((constants, factors)))
+}
+
+/// Whether `e` contains a square root (an algebraic number such as Sqrt[2]).
+fn contains_sqrt(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      (name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::FunctionCall { name: r, .. } if r == "Rational"))
+        || name == "Sqrt"
+        || args.iter().any(contains_sqrt)
+    }
+    Expr::List(items) => items.iter().any(contains_sqrt),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_sqrt(left) || contains_sqrt(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_sqrt(operand),
+    _ => false,
+  }
 }
 
 /// Whether `e` contains the imaginary unit or a complex number.
@@ -399,9 +619,14 @@ fn contains_complex(e: &Expr) -> bool {
 }
 
 fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Factor[poly, GaussianIntegers -> True] factors over Q(I).
-  if args.len() == 2 && is_gaussian_option(&args[1]) {
-    let Some((constants, factors)) = gaussian_factor_list(&args[0])? else {
+  // Factor[poly, GaussianIntegers -> True] factors over Q(I), and
+  // Factor[poly, Extension -> Sqrt[d]] over Q(Sqrt[d]).
+  if args.len() == 2
+    && let Some(d) = quadratic_extension_option(&args[1])
+  {
+    let Some((constants, factors)) =
+      quadratic_extension_factor_list(&args[0], d)?
+    else {
       return Ok(unevaluated("Factor", args));
     };
     let mut product: Vec<Expr> = constants
@@ -1556,8 +1781,12 @@ fn lagrange_interpolate_integer(xs: &[i128], ys: &[i128]) -> Option<Vec<i128>> {
 
 /// FactorList[poly] - list irreducible factors of a polynomial with exponents
 pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() == 2 && is_gaussian_option(&args[1]) {
-    let Some((constants, factors)) = gaussian_factor_list(&args[0])? else {
+  // Over Q(Sqrt[d]) with d > 0 the FactorList sign convention is unverified,
+  // so only the Gaussian rationals are handled.
+  if args.len() == 2 && quadratic_extension_option(&args[1]) == Some(-1) {
+    let Some((constants, factors)) =
+      quadratic_extension_factor_list(&args[0], -1)?
+    else {
       return Ok(unevaluated("FactorList", args));
     };
     let mut out = constants;

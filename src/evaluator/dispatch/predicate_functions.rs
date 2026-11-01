@@ -2538,6 +2538,10 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("GeneratedParameters", id("C")),
       make_rule("Method", id("Automatic")),
     ],
+    "LerchPhi" => vec![
+      make_rule("DoublyInfinite", id("False")),
+      make_rule("IncludeSingularTerm", id("False")),
+    ],
     "Factor" => vec![
       make_rule("Extension", id("None")),
       make_rule("GaussianIntegers", id("False")),

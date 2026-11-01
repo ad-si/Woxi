@@ -1696,7 +1696,7 @@ pub fn dispatch_math_functions(
     "BarnesG" if args.len() == 1 => {
       return Some(crate::functions::math_ast::barnes_g_ast(args));
     }
-    "LerchPhi" if args.len() == 3 => {
+    "LerchPhi" if args.len() >= 3 => {
       return Some(crate::functions::math_ast::lerch_phi_ast(args));
     }
     "HurwitzLerchPhi" if args.len() == 3 => {
@@ -1987,7 +1987,7 @@ pub fn dispatch_math_functions(
     "HypergeometricPFQ" if args.len() == 3 => {
       return Some(crate::functions::math_ast::hypergeometric_pfq_ast(args));
     }
-    "MeijerG" if args.len() == 3 => {
+    "MeijerG" if args.len() == 3 || args.len() == 4 => {
       return Some(crate::functions::math_ast::meijer_g_ast(args));
     }
     "HypergeometricPFQRegularized" if args.len() == 3 => {
@@ -3697,7 +3697,7 @@ pub fn dispatch_math_functions(
     "FrobeniusSolve" if (2..=3).contains(&args.len()) => {
       return Some(crate::functions::math_ast::frobenius_solve_ast(args));
     }
-    "HarmonicNumber" if !args.is_empty() && args.len() <= 2 => {
+    "HarmonicNumber" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::harmonic_number_ast(args));
     }
     "AlternatingHarmonicNumber" if !args.is_empty() && args.len() <= 3 => {

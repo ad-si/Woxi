@@ -598,7 +598,43 @@ fn expr_list_to_f64_vec(list: &[Expr]) -> Option<Vec<f64>> {
 
 /// MeijerG[{{a1,...,an}, {an+1,...,ap}}, {{b1,...,bm}, {bm+1,...,bq}}, z]
 /// Meijer G-function
+/// MeijerG[alist, blist, z, r] - the generalized Meijer G-function, whose
+/// Mellin-Barnes integrand uses Gamma functions of r s. Substituting t = r s
+/// gives MeijerG[alist, blist, z^(1/r)] for a positive real z and r > 0; a
+/// list z is threaded over. Other arguments stay unevaluated.
+fn meijer_g_scaled(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (alist, blist, z, r) = (&args[0], &args[1], &args[2], &args[3]);
+  if let Expr::List(zs) = z {
+    return zs
+      .iter()
+      .map(|zi| {
+        meijer_g_scaled(&[alist.clone(), blist.clone(), zi.clone(), r.clone()])
+      })
+      .collect::<Result<Vec<_>, _>>()
+      .map(|v| Expr::List(v.into()));
+  }
+  if matches!(r, Expr::Integer(1)) {
+    return meijer_g_ast(&args[..3]);
+  }
+  let positive = |e: &Expr| try_eval_to_f64(e).is_some_and(|v| v > 0.0);
+  if !positive(r) || !positive(z) {
+    return Ok(unevaluated("MeijerG", args));
+  }
+  let w = crate::evaluator::evaluate_expr_to_expr(&pow2(
+    z.clone(),
+    div2(Expr::Integer(1), r.clone()),
+  ))?;
+  let result = meijer_g_ast(&[alist.clone(), blist.clone(), w])?;
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "MeijerG") {
+    return Ok(unevaluated("MeijerG", args));
+  }
+  Ok(result)
+}
+
 pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 4 {
+    return meijer_g_scaled(args);
+  }
   if args.len() != 3 {
     return Ok(unevaluated("MeijerG", args));
   }
