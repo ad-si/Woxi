@@ -3,11 +3,10 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, Mesh, PLOT_COLORS,
-  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
-  apply_filling_option, apply_plot_theme, build_plot_source,
-  generate_scatter_svg_with_options, generate_svg_with_filling,
-  parse_image_size, parse_plot_legends, parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, PLOT_COLORS, PlotOptions,
+  SeriesStyle, adjust_y_range_for_filling_opts, apply_filling_option,
+  apply_plot_theme, build_plot_source, generate_scatter_svg_with_options,
+  generate_svg_with_filling, parse_image_size, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 
@@ -1017,7 +1016,13 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "Prolog"
         | "AxesOrigin"
         | "ColorFunction"
-        | "ColorFunctionScaling" => {
+        | "ColorFunctionScaling"
+        | "AxesStyle"
+        | "TicksStyle"
+        | "FrameStyle"
+        | "MeshStyle"
+        | "PlotLabels"
+        | "PlotLegends" => {
           let mut overrides =
             crate::functions::plot::PlotRangeOverrides::default();
           crate::functions::plot::apply_common_plot_option(
@@ -1049,11 +1054,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             // A bare position places every point label on that side.
             opts.point_label_position = Some(pos.clone());
           }
-        }
-        "PlotLegends" => {
-          let (labels, _auto, _expressions, _pos) =
-            parse_plot_legends(replacement);
-          opts.plot_legends = labels;
         }
         "FrameTicksStyle" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -1150,9 +1150,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           _ => {}
         },
         "Mesh" => match replacement {
-          Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
-          Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
-          Expr::Integer(n) if *n > 0 => opts.mesh = Mesh::Count(*n as usize),
           Expr::List(per_function) => {
             if let Some(Expr::List(levels)) = per_function.first() {
               out.mesh_levels =
@@ -1160,7 +1157,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
               out.mesh_levels.sort_by(f64::total_cmp);
             }
           }
-          _ => {}
+          _ => {
+            crate::functions::plot::apply_common_plot_option(
+              name,
+              replacement,
+              opts,
+              &mut crate::functions::plot::PlotRangeOverrides::default(),
+            );
+          }
         },
         "MeshFunctions" => {
           if let Expr::List(items) = replacement {

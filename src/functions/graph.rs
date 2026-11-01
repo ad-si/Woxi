@@ -5730,6 +5730,62 @@ pub fn find_minimum_cost_flow_ast(
   if args.len() != 3 {
     return Ok(unevaluated(args));
   }
+  // A plain directed graph (no EdgeCapacity/EdgeCost/weights) is the
+  // cost matrix with a unit-cost arc per edge: parallel edges merge and
+  // self-loops are ignored, as documented. The source and target are
+  // vertices, mapped to their vertex-list positions.
+  if let Expr::FunctionCall { name, args: gargs } = &args[0]
+    && name == "Graph"
+  {
+    let (Some(Expr::List(vertices)), Some(Expr::List(edges))) =
+      (gargs.first(), gargs.get(1))
+    else {
+      return Ok(unevaluated(args));
+    };
+    if gargs.len() != 2 || vertices.is_empty() {
+      return Ok(unevaluated(args));
+    }
+    let keys: Vec<String> = vertices.iter().map(expr_to_string).collect();
+    let pos = |e: &Expr| {
+      let k = expr_to_string(e);
+      keys.iter().position(|x| *x == k)
+    };
+    let n = vertices.len();
+    let mut matrix = vec![vec![Expr::Integer(0); n]; n];
+    for edge in edges {
+      match edge {
+        Expr::FunctionCall { name, args: ea }
+          if name == "DirectedEdge" && ea.len() == 2 =>
+        {
+          let (Some(a), Some(b)) = (pos(&ea[0]), pos(&ea[1])) else {
+            return Ok(unevaluated(args));
+          };
+          matrix[a][b] = Expr::Integer(1);
+        }
+        _ => return Ok(unevaluated(args)),
+      }
+    }
+    let (Some(src), Some(dst)) = (pos(&args[1]), pos(&args[2])) else {
+      return Ok(unevaluated(args));
+    };
+    let result = find_minimum_cost_flow_ast(&[
+      Expr::List(
+        matrix
+          .into_iter()
+          .map(|r| Expr::List(r.into()))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+      Expr::Integer(src as i128 + 1),
+      Expr::Integer(dst as i128 + 1),
+    ])?;
+    return Ok(match result {
+      Expr::FunctionCall { ref name, .. } if name == "FindMinimumCostFlow" => {
+        unevaluated(args)
+      }
+      other => other,
+    });
+  }
   let matrix = match &args[0] {
     Expr::List(rows) if !rows.is_empty() => rows,
     _ => return Ok(unevaluated(args)),
@@ -8616,19 +8672,26 @@ pub fn graph_accessor_ast(
   };
   let vkeys: Vec<String> = vertices.iter().map(expr_to_string).collect();
   let n = vkeys.len();
+  // Directed edges count for adjacency/incidence in either direction
+  // (AdjacencyList[{1 -> 3, 2 -> 1, …}, 1] is {3, 2, …}); `directed`
+  // remembers the orientation for EdgeIndex.
   let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edge_exprs.len());
+  let mut directed: Vec<bool> = Vec::with_capacity(edge_exprs.len());
   for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
       args: eargs,
     } = e
-      && ename == "UndirectedEdge"
+      && (ename == "UndirectedEdge" || ename == "DirectedEdge")
       && eargs.len() == 2
     {
       let a = vkeys.iter().position(|k| *k == expr_to_string(&eargs[0]));
       let b = vkeys.iter().position(|k| *k == expr_to_string(&eargs[1]));
       match (a, b) {
-        (Some(a), Some(b)) => pairs.push((a, b)),
+        (Some(a), Some(b)) => {
+          pairs.push((a, b));
+          directed.push(ename == "DirectedEdge");
+        }
         _ => return Ok(unevaluated()),
       }
     } else {
@@ -8714,23 +8777,36 @@ pub fn graph_accessor_ast(
     ("EdgeIndex", 2) => {
       // The edge may be given as UndirectedEdge or TwoWayRule, in
       // either endpoint order
+      // either endpoint order; a DirectedEdge or Rule only matches a
+      // directed edge of the same orientation
       let endpoints = match &args[1] {
         Expr::FunctionCall {
           name: ename,
           args: eargs,
-        } if (ename == "UndirectedEdge" || ename == "TwoWayRule")
+        } if (ename == "UndirectedEdge"
+          || ename == "TwoWayRule"
+          || ename == "DirectedEdge")
           && eargs.len() == 2 =>
         {
-          Some((expr_to_string(&eargs[0]), expr_to_string(&eargs[1])))
+          Some((
+            expr_to_string(&eargs[0]),
+            expr_to_string(&eargs[1]),
+            ename == "DirectedEdge",
+          ))
         }
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => Some((expr_to_string(pattern), expr_to_string(replacement), true)),
         _ => None,
       };
-      let found = endpoints.as_ref().and_then(|(x, y)| {
+      let found = endpoints.as_ref().and_then(|(x, y, want_directed)| {
         let xi = vkeys.iter().position(|k| k == x)?;
         let yi = vkeys.iter().position(|k| k == y)?;
-        pairs
-          .iter()
-          .position(|&(a, b)| (a == xi && b == yi) || (a == yi && b == xi))
+        pairs.iter().zip(directed.iter()).position(|(&(a, b), &d)| {
+          d == *want_directed
+            && ((a == xi && b == yi) || (!d && a == yi && b == xi))
+        })
       });
       if let Some(i) = found {
         Ok(Expr::Integer((i + 1) as i128))

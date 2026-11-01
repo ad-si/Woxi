@@ -600,6 +600,11 @@ pub(crate) struct ChartOptions {
   /// finished chart. Coordinates are the chart's own: the first bar group is
   /// centred at `x = 1`, values run along `y`.
   pub epilog: Vec<Expr>,
+  /// `ColorFunction -> f`: colours each element by `f` of its value.
+  pub color_function: Option<Expr>,
+  /// `ColorFunctionScaling -> False` hands `f` the raw values instead of
+  /// values rescaled to 0..1.
+  pub color_function_scaling: bool,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -1777,6 +1782,39 @@ pub(crate) fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
   }
 }
 
+/// With `ColorFunction -> f` and no explicit `ChartStyle`, colour each chart
+/// element by `f` of its value — rescaled to 0..1 over the values unless
+/// `ColorFunctionScaling -> False`. `values` holds one value per element, in
+/// the order `chart_style` colours them.
+pub(crate) fn apply_color_function(opts: &mut ChartOptions, values: &[f64]) {
+  let Some(cf) = opts.color_function.clone() else {
+    return;
+  };
+  if !opts.chart_style.is_empty() || values.is_empty() {
+    return;
+  }
+  let lo = values.iter().copied().fold(f64::INFINITY, f64::min);
+  let hi = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let colors: Option<Vec<Color>> = values
+    .iter()
+    .map(|&v| {
+      crate::functions::plot::color_function_rgb(
+        &cf,
+        opts.color_function_scaling,
+        (v, 0.0),
+        (lo, hi, 0.0, 0.0),
+      )
+      .map(|(r, g, b)| {
+        Color::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0)
+      })
+    })
+    .collect();
+  if let Some(colors) = colors {
+    opts.chart_style = colors;
+    opts.chart_style_scheme = None;
+  }
+}
+
 /// Parse options from chart arguments.
 /// The `Plot*` names are the current spellings of the `Chart*` options.
 pub(crate) fn chart_option_alias(name: &str) -> &str {
@@ -1813,6 +1851,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks: true,
     stacked: false,
     epilog: Vec::new(),
+    color_function: None,
+    color_function_scaling: true,
   };
   for opt in &args[1..] {
     if let Some((name, replacement)) =
@@ -1994,6 +2034,16 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           if let Expr::Identifier(side) = replacement {
             opts.bar_origin_left = matches!(side.as_str(), "Left" | "Right");
           }
+        }
+        "ColorFunction" => {
+          opts.color_function = match replacement {
+            Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
+            other => Some(other.clone()),
+          };
+        }
+        "ColorFunctionScaling" => {
+          opts.color_function_scaling =
+            !matches!(replacement, Expr::Identifier(v) if v == "False");
         }
         "LabelingFunction" => {
           // Stored unevaluated (it's a pure function applied per value).
@@ -2295,6 +2345,12 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     groups.len()
   };
+  // A function colours the bars of a flat list, one per value.
+  if bars_per_group <= 1 {
+    let values: Vec<f64> =
+      groups.iter().filter_map(|g| g.first().copied()).collect();
+    apply_color_function(&mut opts, &values);
+  }
   apply_color_scheme(&mut opts, color_count);
 
   // LabelingFunction -> f produces a label drawn at each bar's end.
@@ -2368,9 +2424,80 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.stacked,
     opts.ticks,
     &opts.epilog,
+    &bar_chart_look(args),
   )?;
   let structure = bar_chart_structure(&groups, &opts, args);
   Ok(crate::plot_result_with_structure(svg, structure))
+}
+
+/// The `Axes`, `AxesStyle`, `Frame`, `FrameStyle`, `BarSpacing` and
+/// `AspectRatio` options of a `BarChart` call.
+fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
+  use crate::functions::plot::{
+    BarChartLook, RESOLUTION_SCALE, parse_style_directives,
+  };
+  let mut look = BarChartLook::default();
+  let paint = |v: &Expr| {
+    let st = parse_style_directives(v)?;
+    let color = st.color.map(|c| {
+      let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+      plotters::style::RGBColor(ch(c.r), ch(c.g), ch(c.b))
+    });
+    let width = st
+      .thickness
+      .map(|t| ((t * RESOLUTION_SCALE as f64).round() as u32).max(1));
+    Some((color, width))
+  };
+  for opt in &args[1..] {
+    let Some((name, value)) =
+      crate::functions::graphics::option_name_value(opt)
+    else {
+      continue;
+    };
+    let value =
+      evaluate_expr_to_expr(&value).unwrap_or_else(|_| (*value).clone());
+    match name {
+      "Axes" => {
+        if let Some((x, y)) = crate::functions::plot::parse_axes_option(&value)
+        {
+          look.axes = x || y;
+        }
+      }
+      "AxesStyle" => {
+        if let Some((c, w)) = paint(&value) {
+          look.axes_color = c;
+          look.axes_width = w;
+        }
+      }
+      "Frame" => {
+        look.frame =
+          matches!(&value, Expr::Identifier(v) if v == "True" || v == "All");
+      }
+      "FrameStyle" => {
+        if let Some((c, w)) = paint(&value) {
+          look.frame_color = c;
+          look.frame_width = w;
+        }
+      }
+      "BarSpacing" => {
+        // `{s, sg}` spaces bars within a group by `s` and groups by `sg`;
+        // the groups' spacing is what the layout draws.
+        let between = match &value {
+          Expr::List(items) if items.len() == 2 => &items[1],
+          other => other,
+        };
+        look.bar_spacing = match between {
+          Expr::Identifier(v) if v == "None" => Some(0.0),
+          other => try_eval_to_f64(other),
+        };
+      }
+      "AspectRatio" => {
+        look.aspect_ratio = try_eval_to_f64(&value).filter(|r| *r > 0.0);
+      }
+      _ => {}
+    }
+  }
+  look
 }
 
 /// PairedBarChart[left, right, opts] and PairedHistogram[left, right,
@@ -2501,7 +2628,8 @@ fn bar_chart_structure(
   opts: &ChartOptions,
   args: &[Expr],
 ) -> Expr {
-  let gap = 0.1;
+  let gap =
+    crate::functions::plot::bar_group_gap(bar_chart_look(args).bar_spacing);
   let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
   let mut prims: Vec<Expr> = Vec::new();
   for (gi, group) in groups.iter().enumerate() {
@@ -2713,6 +2841,9 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per slice,
   // sized to the widest ring.
   let color_count = rows.iter().map(Vec::len).max().unwrap_or(1);
+  if let [row] = rows.as_slice() {
+    apply_color_function(&mut opts, row);
+  }
   apply_color_scheme(&mut opts, color_count);
   // wolframscript renders PieChart with AspectRatio 1 (square) — the default
   // is 360x360 and a single-number `ImageSize -> n` still yields an n x n
