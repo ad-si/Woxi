@@ -17201,6 +17201,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A nested function list counts as its flattened functions, and a
+    /// function list without explicit `Contours` gets automatic levels for
+    /// each function; both used to yield an opaque, primitive-less plot.
+    #[test]
+    fn contour_plot_nested_function_list_and_automatic_levels() {
+      assert_eq!(
+        interpret(
+          "Head[First[ContourPlot[{{x^2 - y^2, 2 x y}, {x, y}}, {x, -4, 4}, \
+           {y, -4, 4}, Contours -> {0}, ContourShading -> None]]]"
+        )
+        .unwrap(),
+        "List"
+      );
+      let lines = interpret(
+        "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}], _Line, \
+         Infinity]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      assert!(
+        lines >= 10,
+        "expected level lines of both functions: {lines}"
+      );
+    }
+
     /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows
     /// up at the origin) used to dominate the raw min/max of the grid
     /// samples, which fed both the color scale and the automatic contour

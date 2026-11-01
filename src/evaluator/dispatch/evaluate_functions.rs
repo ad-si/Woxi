@@ -5324,6 +5324,56 @@ fn evaluate_function_call_ast_inner(
         });
         return Ok(unevaluated(name, args));
       }
+      // A plain `GraphPlot` (no styling, labelling or rendering options)
+      // evaluates to Wolfram's symbolic GraphicsComplex picture.
+      let option_name = |o: &Expr| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          match pattern.as_ref() {
+            Expr::Identifier(n) => Some(n.clone()),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let directed_option = forwarded[1..].iter().find_map(|o| match o {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DirectedEdges") => {
+          Some(matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True"))
+        }
+        _ => None,
+      });
+      if name == "GraphPlot"
+        && let Expr::FunctionCall {
+          name: en,
+          args: eargs,
+        } = &evaluated
+        && en == "Graph"
+        && eargs.len() >= 2
+        && let Expr::List(edges) = &eargs[1]
+        && eargs[2..].iter().chain(&forwarded[1..]).all(|o| {
+          matches!(
+            option_name(o).as_deref(),
+            Some("GraphLayout" | "DirectedEdges" | "VertexCoordinates")
+          )
+        })
+      {
+        // Rules given directly plot undirected unless `DirectedEdges ->
+        // True`; a Graph object keeps its own directedness.
+        let directed = directed_option.unwrap_or_else(|| {
+          matches!(&args[0], Expr::FunctionCall { name: gn, .. } if gn == "Graph")
+            && edges.iter().any(|e| {
+              crate::functions::graph::edge_endpoints(e)
+                .is_some_and(|(_, _, d)| d)
+            })
+        });
+        let plot = crate::functions::graph::graph_plot_ast(eargs, directed)?;
+        if matches!(&plot, Expr::FunctionCall { name: pn, .. } if pn == "Graphics")
+        {
+          return Ok(plot);
+        }
+      }
       if let Expr::FunctionCall {
         name: en,
         args: eargs,

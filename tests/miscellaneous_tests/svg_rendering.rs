@@ -3683,12 +3683,24 @@ mod tests {
         r#"GraphPlot[{1 -> 2, 2 -> 3},
            VertexRenderingFunction -> (Disk[#, 0.05] &)]"#,
       );
-      let defaults = circle_centres(&plain);
-      let points = circle_centres(&drawn);
+      // The two pictures pad differently around different marker sizes, so
+      // the centres are compared within each drawing's own bounding box.
+      let normalized = |pts: Vec<(f64, f64)>| {
+        let (x0, x1, y0, y1) = pts.iter().fold(
+          (f64::MAX, f64::MIN, f64::MAX, f64::MIN),
+          |(a, b, c, d), &(x, y)| (a.min(x), b.max(x), c.min(y), d.max(y)),
+        );
+        pts
+          .into_iter()
+          .map(|(x, y)| ((x - x0) / (x1 - x0), (y - y0) / (y1 - y0)))
+          .collect::<Vec<_>>()
+      };
+      let defaults = normalized(circle_centres(&plain));
+      let points = normalized(circle_centres(&drawn));
       assert_eq!(points.len(), defaults.len(), "{drawn}");
       for (p, d) in points.iter().zip(&defaults) {
         assert!(
-          (p.0 - d.0).abs() < 3.0 && (p.1 - d.1).abs() < 3.0,
+          (p.0 - d.0).abs() < 0.01 && (p.1 - d.1).abs() < 0.01,
           "the function draws at the vertex's own position: {points:?} vs {defaults:?}"
         );
       }

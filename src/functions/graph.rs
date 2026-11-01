@@ -342,9 +342,178 @@ pub(crate) fn split_graph_operands(
   }
 }
 
+/// The symbolic picture a plain `GraphPlot[…]` evaluates to in Wolfram:
+/// `Graphics[GraphicsComplex[coords, {edges, vertices}], {FormatType ->
+/// TraditionalForm, FrameTicks -> None}]`, with the edges as one indexed
+/// `Arrow` and every vertex as an indexed `Disk`. Demonstrations take it
+/// apart (`GraphPlot[g][[1, 1]]` for the vertex positions), so the shape
+/// matters, not just the picture. `None` when an edge names an unknown
+/// vertex or the coordinates do not cover every vertex.
+pub fn legacy_graph_plot(
+  vertices: &[Expr],
+  edges: &[Expr],
+  coords: &[(f64, f64)],
+  directed: bool,
+) -> Option<Expr> {
+  if coords.len() != vertices.len() || vertices.is_empty() {
+    return None;
+  }
+  let index_of = |v: &Expr| {
+    let key = crate::syntax::expr_to_string(v);
+    vertices
+      .iter()
+      .position(|u| crate::syntax::expr_to_string(u) == key)
+  };
+  let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(edges.len());
+  for e in edges {
+    let (a, b, _) = edge_endpoints(e)?;
+    let (i, j) = (index_of(&a)? + 1, index_of(&b)? + 1);
+    pairs.push(if directed {
+      (i, j)
+    } else {
+      (i.min(j), i.max(j))
+    });
+  }
+  if !directed {
+    pairs.sort_unstable();
+  }
+  // The marker radius scales with the drawing: 71/6280 of its larger
+  // extent (Wolfram's value for a two-vertex path of length 2 is 71/3140).
+  let extent = |f: fn(&(f64, f64)) -> f64| {
+    let (lo, hi) = coords
+      .iter()
+      .map(f)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      });
+    hi - lo
+  };
+  let size = extent(|p| p.0).max(extent(|p| p.1));
+  let radius = Expr::Real(if size > 0.0 {
+    size * 71.0 / 6280.0
+  } else {
+    71.0 / 3140.0
+  });
+  let pair = |&(i, j): &(usize, usize)| {
+    Expr::List(vec![Expr::Integer(i as i128), Expr::Integer(j as i128)].into())
+  };
+  let edge_style = crate::helpers::call(
+    "Directive",
+    vec![
+      crate::helpers::call1("Opacity", Expr::Real(0.7)),
+      crate::helpers::call(
+        "Hue",
+        vec![Expr::Real(0.6), Expr::Real(0.7), Expr::Real(0.7)],
+      ),
+      crate::helpers::call1("CapForm", Expr::String("Round".to_string())),
+    ],
+  );
+  let arrow =
+    |spec: Expr| crate::helpers::call("Arrow", vec![spec, radius.clone()]);
+  let edge_group = if directed {
+    let spec = match pairs.as_slice() {
+      [single] => pair(single),
+      _ => Expr::List(pairs.iter().map(pair).collect()),
+    };
+    vec![
+      crate::helpers::call1(
+        "Arrowheads",
+        Expr::Identifier("Medium".to_string()),
+      ),
+      edge_style,
+      arrow(spec),
+    ]
+  } else {
+    vec![
+      edge_style,
+      crate::helpers::call1("Arrowheads", Expr::Real(0.0)),
+      Expr::List(
+        vec![arrow(Expr::List(pairs.iter().map(pair).collect()))].into(),
+      ),
+    ]
+  };
+  let mut vertex_group = vec![crate::helpers::call(
+    "Directive",
+    vec![
+      crate::helpers::call(
+        "Hue",
+        vec![Expr::Real(0.6), Expr::Real(0.5), Expr::Real(1.0)],
+      ),
+      crate::helpers::call1(
+        "EdgeForm",
+        crate::helpers::call(
+          "Directive",
+          vec![
+            crate::helpers::call1("GrayLevel", Expr::Integer(0)),
+            crate::helpers::call1("Opacity", Expr::Real(0.7)),
+          ],
+        ),
+      ),
+    ],
+  )];
+  vertex_group.extend((1..=vertices.len()).map(|i| {
+    crate::helpers::call("Disk", vec![Expr::Integer(i as i128), radius.clone()])
+  }));
+  let points: Vec<Expr> = coords
+    .iter()
+    .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+    .collect();
+  let complex = crate::helpers::call(
+    "GraphicsComplex",
+    vec![
+      Expr::List(points.into()),
+      Expr::List(
+        vec![
+          Expr::List(edge_group.into()),
+          Expr::List(vertex_group.into()),
+        ]
+        .into(),
+      ),
+    ],
+  );
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(k.to_string())),
+    replacement: Box::new(v),
+  };
+  Some(crate::helpers::call(
+    "Graphics",
+    vec![
+      complex,
+      Expr::List(
+        vec![
+          rule(
+            "FormatType",
+            Expr::Identifier("TraditionalForm".to_string()),
+          ),
+          rule("FrameTicks", Expr::Identifier("None".to_string())),
+        ]
+        .into(),
+      ),
+    ],
+  ))
+}
+
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graph_render(args, None)
+}
+
+/// `GraphPlot`'s symbolic picture of a Graph (see [`legacy_graph_plot`]),
+/// laid out exactly as [`graph_ast`] would draw it.
+pub fn graph_plot_ast(
+  args: &[Expr],
+  directed: bool,
+) -> Result<Expr, InterpreterError> {
+  graph_render(args, Some(directed))
+}
+
+/// `legacy_plot` asks for `GraphPlot`'s GraphicsComplex form (with the
+/// edge directedness it should show) instead of the rendered graph.
+fn graph_render(
+  args: &[Expr],
+  legacy_plot: Option<bool>,
+) -> Result<Expr, InterpreterError> {
   // A `Graph` restored via `Uncompress[Compress[…]]` packs every option
   // into one trailing list argument (`Graph[verts, edges, {opt1, opt2,
   // …}]`) instead of the public constructor's variadic trailing rules
@@ -743,6 +912,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => compute_layout(&graph),
     }
   };
+  if let Some(directed) = legacy_plot
+    && let Some(plot) =
+      legacy_graph_plot(&vertices, &raw_edges, &positions, directed)
+  {
+    return Ok(plot);
+  }
 
   // Compute base radius for vertices. Kept deliberately small so labels
   // and edges remain legible; a border is drawn around each vertex so the
