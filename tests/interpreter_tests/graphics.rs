@@ -195,6 +195,22 @@ mod graphics {
     }
 
     #[test]
+    fn text_with_offset_position_is_shifted_in_screen_points() {
+      let plain = export_svg(
+        "Graphics[{Text[\"a\", {20, -1.5}, {-1, 0}]}, PlotRange -> {{15, 24}, {-5, 0}}]",
+      );
+      let shifted = export_svg(
+        "Graphics[{Text[\"a\", Offset[{22, 0}, {20, -1.5}], {-1, 0}]}, PlotRange -> {{15, 24}, {-5, 0}}]",
+      );
+      let x_of = |svg: &str| -> f64 {
+        let i = svg.find("<text x=\"").unwrap() + 9;
+        let j = svg[i..].find('"').unwrap();
+        svg[i..i + j].parse().unwrap()
+      };
+      assert!((x_of(&shifted) - x_of(&plain) - 22.0).abs() < 0.02);
+    }
+
+    #[test]
     fn graphics_with_texture_directive() {
       // Texture[image] is a graphics directive — Graphics with it inside
       // should evaluate to the standard -Graphics- placeholder, not
