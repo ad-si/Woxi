@@ -5154,6 +5154,20 @@ mod nintegrate {
   // An iterated integral of a smooth integrand gets enough evaluations for
   // every inner integral: the shared budget used to run out partway, and
   // the remaining inner integrals came back short.
+  // The range is split where an Abs/Sign/step argument linear in the
+  // variable changes sign, so a singularity there is an endpoint.
+  #[test]
+  fn splits_at_zeros_of_abs_arguments() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[1/Sqrt[Abs[0.3 - y]], {y, 0, 1}] - (2 Sqrt[0.3] + 2 Sqrt[0.7])] < 10^-7, \
+          Abs[NIntegrate[1/Sqrt[Abs[x - y]], {x, 0, 1}, {y, 0, 1}] - 8/3] < 10^-6}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   #[test]
   fn iterated_smooth_integrals_are_accurate() {
     assert_eq!(

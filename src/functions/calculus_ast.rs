@@ -16718,7 +16718,39 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
       _ => {}
     }
   }
+  // The zero of an argument linear in `var` (`Abs[0.3 - y]`): where `Abs`,
+  // `Sign` or a step switches, and where an integrand like
+  // `1/Sqrt[Abs[0.3 - y]]` is singular.
+  fn linear_root(arg: &Expr, var: &str) -> Option<f64> {
+    let at = |x: f64| {
+      crate::functions::math_ast::try_eval_to_f64(
+        &crate::evaluator::evaluate_expr_to_expr(
+          &crate::syntax::substitute_variable(arg, var, &Expr::Real(x)),
+        )
+        .ok()?,
+      )
+    };
+    let (f0, f1, fh) = (at(0.0)?, at(1.0)?, at(0.5)?);
+    let slope = f1 - f0;
+    if slope == 0.0
+      || (fh - f64::midpoint(f0, f1)).abs()
+        > 1e-12 * (1.0 + f0.abs() + f1.abs())
+    {
+      return None;
+    }
+    Some(-f0 / slope)
+  }
   fn walk(e: &Expr, var: &str, out: &mut Vec<f64>) {
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(
+        name.as_str(),
+        "Abs" | "RealAbs" | "Sign" | "UnitStep" | "HeavisideTheta" | "Ramp"
+      )
+      && args.len() == 1
+      && let Some(root) = linear_root(&args[0], var)
+    {
+      out.push(root);
+    }
     if let Expr::FunctionCall { name, args } = e
       && name == "Piecewise"
       && let Some(Expr::List(cases)) = args.first()
