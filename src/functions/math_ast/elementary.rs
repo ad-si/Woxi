@@ -3825,6 +3825,17 @@ fn nice_step_rational(raw: f64) -> Option<(i128, i128)> {
   Some((sn, sd))
 }
 
+/// The step for divisions that are shortest in base `base`: the power of
+/// `base` nearest (on a log scale) to the raw step.
+fn base_power_step(raw: f64, base: i128) -> Option<(i128, i128)> {
+  if !(raw.is_finite() && raw > 0.0) || base < 2 {
+    return None;
+  }
+  let k = (raw.ln() / (base as f64).ln()).round() as i32;
+  let p = base.checked_pow(k.unsigned_abs())?;
+  Some(if k >= 0 { (p, 1) } else { (1, p) })
+}
+
 fn rat_to_f64((n, d): (i128, i128)) -> f64 {
   n as f64 / d as f64
 }
@@ -3879,9 +3890,11 @@ fn find_divisions_step(
   max: (i128, i128),
   n: i128,
   dx: Option<(i128, i128)>,
+  base: i128,
 ) -> Option<(i128, i128)> {
   let raw = (rat_to_f64(max) - rat_to_f64(min)) / n as f64;
   match dx {
+    None if base != 10 => base_power_step(raw, base),
     None => nice_step_rational(raw),
     Some((dn, dd)) => {
       let units = raw * dd as f64 / dn as f64;
@@ -3900,7 +3913,7 @@ fn nested_divisions(
   max: (i128, i128),
   counts: &[i128],
 ) -> Option<Vec<Expr>> {
-  let step = find_divisions_step(min, max, counts[0], None)?;
+  let step = find_divisions_step(min, max, counts[0], None, 10)?;
   let major = division_points(min, max, step)?;
   let mut levels = vec![Expr::List(
     major.iter().map(|&(n, d)| make_rational(n, d)).collect(),
@@ -3930,9 +3943,15 @@ fn nested_divisions(
 /// Non-numeric endpoints stay unevaluated.
 pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("FindDivisions", args));
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return unevaluated();
   }
+  // FindDivisions[range, n, k]: numbers shortest in base k.
+  let base = match args.get(2) {
+    None => 10,
+    Some(Expr::Integer(k)) if *k >= 2 => *k,
+    Some(_) => return unevaluated(),
+  };
   let range = match &args[0] {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => items,
     _ => return unevaluated(),
@@ -3943,6 +3962,37 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
   let (min, max) = (rat_reduce(min.0, min.1), rat_reduce(max.0, max.1));
+
+  // A symbolic spacing unit such as Pi: the divisions are integer multiples
+  // of it, chosen in units of dx.
+  if range.len() == 3
+    && expr_to_rational(&range[2]).is_none()
+    && let Expr::Integer(n) = &args[1]
+    && *n > 0
+    && base == 10
+    && let Some(d) = try_eval_to_f64(&range[2])
+    && d > 0.0
+  {
+    let (lo, hi) = (rat_to_f64(min) / d, rat_to_f64(max) / d);
+    let Some(nice) = nice_step_rational((hi - lo) / *n as f64) else {
+      return unevaluated();
+    };
+    let m = round_half_even_min1(nice) as f64;
+    let (first, last) = ((lo / m).floor() as i128, (hi / m).ceil() as i128);
+    if last < first || last - first > 100_000 {
+      return unevaluated();
+    }
+    let m = m as i128;
+    return (first..=last)
+      .map(|i| {
+        crate::evaluator::evaluate_expr_to_expr(&crate::helpers::times(vec![
+          Expr::Integer(i * m),
+          range[2].clone(),
+        ]))
+      })
+      .collect::<Result<Vec<_>, _>>()
+      .map(|pts| Expr::List(pts.into()));
+  }
 
   // Optional spacing unit dx (the 3-element range form). Must be positive.
   let dx = if range.len() == 3 {
@@ -3956,7 +4006,7 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   match &args[1] {
     Expr::Integer(n) if *n > 0 => {
-      let Some(step) = find_divisions_step(min, max, *n, dx) else {
+      let Some(step) = find_divisions_step(min, max, *n, dx, base) else {
         return unevaluated();
       };
       let Some(pts) = division_points(min, max, step) else {
@@ -3968,7 +4018,7 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Nested subdivision counts {n1, n2, ...}. The dx spacing constraint is not
     // combined with nested counts (leave that form unevaluated).
-    Expr::List(counts) if dx.is_none() && !counts.is_empty() => {
+    Expr::List(counts) if dx.is_none() && base == 10 && !counts.is_empty() => {
       let mut ns = Vec::with_capacity(counts.len());
       for c in counts {
         match c {

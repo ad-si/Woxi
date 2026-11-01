@@ -12467,66 +12467,36 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Evaluate the data argument
-  let evaled_data = evaluate_expr_to_expr(&args[0])?;
+  // Evaluate the data argument; `Quantity` data plots as its magnitudes.
+  let evaled_data = crate::functions::chart::strip_quantities(
+    &evaluate_expr_to_expr(&args[0])?,
+  );
 
-  // Each dataset is one polyline through its points (in data order).
+  // Each curve is one polyline through its points (in data order), drawn
+  // in the colour of the dataset it belongs to.
   let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
-
-  match &evaled_data {
-    Expr::List(outer) if !outer.is_empty() => {
-      match &outer[0] {
-        Expr::List(inner)
-          if inner.len() == 3 && !matches!(&inner[0], Expr::List(_)) =>
-        {
-          // Single curve: {{x,y,z}, {x,y,z}, ...}
-          let pts = parse_xyz_points(outer);
-          if !pts.is_empty() {
-            datasets.push(pts);
-          }
-        }
-        Expr::List(inner)
-          if !inner.is_empty()
-            && inner.iter().all(|e| !matches!(e, Expr::List(_))) =>
-        {
-          // Matrix of heights: {{z11, z12, ...}, ...}
-          // Each row i becomes a curve through {j+1, i+1, z[i][j]}.
-          for (i, row_expr) in outer.iter().enumerate() {
-            if let Expr::List(row) = row_expr {
-              let mut pts = Vec::new();
-              for (j, val_expr) in row.iter().enumerate() {
-                if let Some(z) = try_eval_to_f64(val_expr)
-                  && z.is_finite()
-                {
-                  pts.push(((j + 1) as f64, (i + 1) as f64, z));
-                }
-              }
-              if !pts.is_empty() {
-                datasets.push(pts);
-              }
-            }
-          }
-        }
-        Expr::List(_) => {
-          // Multiple curves: {{{x,y,z},...}, {{x,y,z},...}, ...}
-          for item in outer {
-            if let Expr::List(inner) = item {
-              let pts = parse_xyz_points(inner);
-              if !pts.is_empty() {
-                datasets.push(pts);
-              }
-            }
-          }
-        }
-        _ => {
-          let pts = parse_xyz_points(outer);
-          if !pts.is_empty() {
-            datasets.push(pts);
-          }
+  let mut curve_colors: Vec<usize> = Vec::new();
+  if let Expr::List(outer) = &evaled_data {
+    // `{m1, m2, …}` of height matrices: each matrix is one dataset, all of
+    // its rows sharing a colour.
+    let is_matrix_of_heights = |e: &Expr| {
+      matches!(e, Expr::List(rows) if !rows.is_empty()
+        && rows.iter().all(|r| matches!(r, Expr::List(vs)
+          if vs.len() != 3 && vs.iter().all(|v| !matches!(v, Expr::List(_))))))
+    };
+    if outer.len() > 1 && outer.iter().all(is_matrix_of_heights) {
+      for (di, m) in outer.iter().enumerate() {
+        for curve in line3d_curves(m) {
+          datasets.push(curve);
+          curve_colors.push(di);
         }
       }
+    } else {
+      for (ci, curve) in line3d_curves(&evaled_data).into_iter().enumerate() {
+        datasets.push(curve);
+        curve_colors.push(ci);
+      }
     }
-    _ => {}
   }
 
   if datasets.is_empty() {
@@ -12603,9 +12573,9 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut segments: Vec<LineSeg3D> = Vec::new();
 
-  for (di, ds) in datasets.iter().enumerate() {
-    let color = crate::functions::plot::PLOT_COLORS
-      [di % crate::functions::plot::PLOT_COLORS.len()];
+  let palette = crate::functions::plot::PLOT_COLORS;
+  for (ds, &di) in datasets.iter().zip(&curve_colors) {
+    let color = palette[di % palette.len()];
     for pair in ds.windows(2) {
       let a = normalize(pair[0].0, pair[0].1, pair[0].2);
       let b = normalize(pair[1].0, pair[1].1, pair[1].2);
@@ -12654,8 +12624,95 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
+  let graphics = crate::graphics3d_result(svg);
 
-  Ok(crate::graphics3d_result(svg))
+  // `PlotLegends -> {l1, l2, …}` names the datasets with a line legend.
+  let legends = args[1..].iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends") => {
+      match evaluate_expr_to_expr(replacement) {
+        Ok(Expr::List(ref labels)) if !labels.is_empty() => Some(labels.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  let Some(labels) = legends else {
+    return Ok(graphics);
+  };
+  let colors: Vec<Expr> = (0..labels.len())
+    .map(|i| {
+      let (r, g, b) = palette[i % palette.len()];
+      Expr::FunctionCall {
+        name: "RGBColor".into(),
+        args: [r, g, b]
+          .iter()
+          .map(|&c| Expr::Real(f64::from(c) / 255.0))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    })
+    .collect();
+  Ok(Expr::FunctionCall {
+    name: "Legended".into(),
+    args: vec![
+      graphics,
+      Expr::FunctionCall {
+        name: "LineLegend".into(),
+        args: vec![Expr::List(colors.into()), Expr::List(labels)].into(),
+      },
+    ]
+    .into(),
+  })
+}
+
+/// The curves of one `ListLinePlot3D` dataset: a list of `{x, y, z}`
+/// points is one curve, a matrix of heights one curve per row (through
+/// `{j, i, z_ij}`), and a list of point lists one curve per list.
+fn line3d_curves(data: &Expr) -> Vec<Vec<(f64, f64, f64)>> {
+  let mut curves = Vec::new();
+  let Expr::List(outer) = data else {
+    return curves;
+  };
+  match outer.first() {
+    Some(Expr::List(inner))
+      if inner.len() == 3 && !matches!(&inner[0], Expr::List(_)) =>
+    {
+      curves.push(parse_xyz_points(outer));
+    }
+    Some(Expr::List(inner))
+      if !inner.is_empty()
+        && inner.iter().all(|e| !matches!(e, Expr::List(_))) =>
+    {
+      for (i, row_expr) in outer.iter().enumerate() {
+        if let Expr::List(row) = row_expr {
+          curves.push(
+            row
+              .iter()
+              .enumerate()
+              .filter_map(|(j, v)| {
+                try_eval_to_f64(v)
+                  .filter(|z| z.is_finite())
+                  .map(|z| ((j + 1) as f64, (i + 1) as f64, z))
+              })
+              .collect(),
+          );
+        }
+      }
+    }
+    Some(Expr::List(_)) => {
+      for item in outer {
+        if let Expr::List(inner) = item {
+          curves.push(parse_xyz_points(inner));
+        }
+      }
+    }
+    _ => curves.push(parse_xyz_points(outer)),
+  }
+  curves.retain(|c| !c.is_empty());
+  curves
 }
 
 #[allow(clippy::too_many_arguments)]
