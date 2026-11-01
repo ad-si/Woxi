@@ -5602,6 +5602,21 @@ mod nintegrate {
   }
 
   #[test]
+  fn parametric_plot_evaluation_monitor_sows_parameter_values() {
+    // EvaluationMonitor :> Sow[t] fires with the parameter bound to each
+    // sampled value, so Reap collects numbers inside the parameter range.
+    clear_state();
+    let r = interpret(
+      "Module[{pts}, pts = Reap[ParametricPlot[{Cos[t], Sin[t]}, \
+       {t, 0, Pi}, EvaluationMonitor :> Sow[t]]][[2, 1]]; \
+       {Length[pts] > 10, VectorQ[pts, NumberQ], Min[pts] >= 0, \
+       Max[pts] <= Pi}]",
+    )
+    .unwrap();
+    assert_eq!(r, "{True, True, True, True}");
+  }
+
+  #[test]
   fn nintegrate_exp_neg_x_squared() {
     // ∫₀¹ e^(-x²) dx ≈ 0.7468241328124271
     assert_approx(
