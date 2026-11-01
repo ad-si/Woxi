@@ -107,10 +107,51 @@ mod arccot {
       "Interval[{ArcTan[1/3], ArcTan[1/2]}]",
     );
   }
+}
+
+mod reciprocal_inverses {
+  use super::*;
 
   #[test]
-  fn span_across_the_jump_stays_unevaluated() {
-    check("ArcCot[Interval[{-1, 1}]]", "ArcCot[Interval[{-1, 1}]]");
+  fn circular_in_reciprocal_form() {
+    check("ArcSec[Interval[{2, 5}]]", "Interval[{Pi/3, ArcCos[1/5]}]");
+    check("ArcCsc[Interval[{1, 5}]]", "Interval[{ArcSin[1/5], Pi/2}]");
+    check(
+      "ArcSecDegrees[Interval[{2, 5}]]",
+      "Interval[{60, ArcCosDegrees[1/5]}]",
+    );
+    check(
+      "ArcCscDegrees[Interval[{1, 5}]]",
+      "Interval[{ArcSinDegrees[1/5], 90}]",
+    );
+  }
+
+  #[test]
+  fn hyperbolic_in_reciprocal_form() {
+    check("ArcCoth[Interval[{1, Coth[5]}]]", "Interval[{5, Infinity}]");
+    check(
+      "ArcCsch[Interval[{-4, Csch[2]}]]",
+      "Interval[{-Infinity, -ArcSinh[1/4]}, {2, Infinity}]",
+    );
+  }
+
+  #[test]
+  fn out_of_domain_stays_unevaluated() {
+    check("ArcSec[Interval[{1/2, 2}]]", "ArcSec[Interval[{1/2, 2}]]");
+    // Regression: a complex endpoint image (`ArcCos[2]`) used to slip in.
+    check("ArcCos[Interval[{1/2, 2}]]", "ArcCos[Interval[{1/2, 2}]]");
+  }
+}
+
+mod inverse_hyperbolic_round_trip {
+  use super::*;
+
+  #[test]
+  fn exact_real_argument_folds() {
+    check("ArcSinh[Sinh[2]]", "2");
+    check("ArcTanh[Tanh[5]]", "5");
+    check("ArcTanh[Tanh[-1/3]]", "-1/3");
+    check("ArcTanh[Tanh[x]]", "ArcTanh[Tanh[x]]");
   }
 }
 
@@ -119,8 +160,8 @@ mod piecewise_monotone {
 
   #[test]
   fn sign() {
-    check("Sign[Interval[{1, 3}]]", "Interval[{1, 1}]");
-    check("Sign[Interval[{-1, 3}]]", "Interval[{-1, 1}]");
+    check("Sign[Interval[{1, 3}]]", "1");
+    check("Sign[Interval[{-3, -1}, {-1/2, -1/4}]]", "-1");
     check("Sign[Interval[{a, b}]]", "Sign[Interval[{a, b}]]");
   }
 
@@ -140,6 +181,12 @@ mod piecewise_monotone {
     check("Re[Interval[{-1, 1}]]", "Interval[{-1, 1}]");
     check("Conjugate[Interval[{-5, 5}]]", "Interval[{-5, 5}]");
     check("Re[Interval[{a, b}]]", "Re[Interval[{a, b}]]");
+  }
+
+  #[test]
+  fn im_and_arg_of_real_interval() {
+    check("Im[Interval[{-1, 1}]]", "0");
+    check("Arg[Interval[{1, 3}]]", "Interval[{0, 0}]");
   }
 }
 
@@ -163,11 +210,24 @@ mod between_interval {
   }
 
   #[test]
-  fn symbolic_stays_unevaluated() {
+  fn unsorted_interval() {
+    check("Between[3, Interval[{5, 2}]]", "True");
+  }
+
+  #[test]
+  fn centered_interval_range() {
+    check("Between[Interval[{3, 4}], CenteredInterval[5, 3]]", "True");
     check(
-      "Between[x, Interval[{a, b}]]",
-      "Between[x, Interval[{a, b}]]",
+      "Between[CenteredInterval[4, 1], CenteredInterval[5, 3]]",
+      "True",
     );
+    check("Between[4, CenteredInterval[5, 2]]", "True");
+    check("Between[1, CenteredInterval[5, 2]]", "False");
+  }
+
+  #[test]
+  fn symbolic_gives_either_order() {
+    check("Between[x, Interval[{a, b}]]", "a <= x <= b || b <= x <= a");
   }
 }
 
@@ -181,6 +241,63 @@ mod interval_member_q_operator {
     check(
       "IntervalMemberQ[Interval[{3, 4}]]",
       "IntervalMemberQ[Interval[{3, 4}]]",
+    );
+  }
+}
+
+mod mixed_centered_interval {
+  use super::*;
+
+  #[test]
+  fn member_q_boxes() {
+    check(
+      "IntervalMemberQ[CenteredInterval[2 + 3I, 1 + I], E + Pi I]",
+      "True",
+    );
+    check(
+      "IntervalMemberQ[CenteredInterval[0, 1 + I], \
+       CenteredInterval[1/2, 1/4 + I/4]]",
+      "True",
+    );
+    check(
+      "IntervalMemberQ[CenteredInterval[1 + I, 2 + 3I], \
+       Interval[{0, 1}, {2, 3}]]",
+      "True",
+    );
+  }
+
+  #[test]
+  fn intersection_takes_real_segment() {
+    check(
+      "IntervalIntersection[Interval[{-2, -1/2}, {1/2, 2}], \
+       CenteredInterval[0, 1 + I]]",
+      "Interval[{-1, -1/2}, {1/2, 1}]",
+    );
+  }
+
+  #[test]
+  fn union_with_real_centered_interval() {
+    check(
+      "IntervalUnion[Interval[{-2, -1/2}, {1, 2}], CenteredInterval[0, 1/2]]",
+      "Interval[{-2, 1/2}, {1, 2}]",
+    );
+  }
+}
+
+mod doc_trig_examples {
+  use super::*;
+
+  #[test]
+  fn exact_spans() {
+    check("Sin[Interval[{-Pi/6, Pi/6}]]", "Interval[{-1/2, 1/2}]");
+    check("SinDegrees[Interval[{-30, 30}]]", "Interval[{-1/2, 1/2}]");
+    check("CosDegrees[Interval[{90, 60}]]", "Interval[{0, 1/2}]");
+    check("TanDegrees[Interval[{0, 30}]]", "Interval[{0, 1/Sqrt[3]}]");
+    check("SecDegrees[Interval[{30, 60}]]", "Interval[{2/Sqrt[3], 2}]");
+    check("CscDegrees[Interval[{30, 60}]]", "Interval[{2/Sqrt[3], 2}]");
+    check(
+      "CotDegrees[Interval[{-45, 45}]]",
+      "Interval[{-Infinity, -1}, {1, Infinity}]",
     );
   }
 }

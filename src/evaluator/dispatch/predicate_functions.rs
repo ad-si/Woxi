@@ -825,24 +825,35 @@ pub fn dispatch_predicate_functions(
     "Between" if args.len() == 2 => {
       use crate::functions::math_ast::try_eval_to_f64;
       let (x, range_expr) = (&args[0], &args[1]);
-      // Between[x, Interval[…]] is membership of the number (or the whole
-      // sub-interval) x in the interval. Only decided when every endpoint
-      // and x are numeric; a symbolic one stays unevaluated.
-      if let Some(spans) =
-        crate::functions::interval_ast::is_interval(range_expr)
-      {
-        let numeric = |e: &Expr| {
-          crate::functions::math_ast::try_eval_to_f64_with_infinity(e).is_some()
-        };
-        let x_numeric = match crate::functions::interval_ast::is_interval(x) {
-          Some(sub) => sub.iter().all(|(lo, hi)| numeric(lo) && numeric(hi)),
-          None => numeric(x),
-        };
-        if x_numeric && spans.iter().all(|(lo, hi)| numeric(lo) && numeric(hi))
-        {
+      // Between[x, Interval[…]] (or a CenteredInterval) is membership of the
+      // number, or the whole sub-interval, x in the interval.
+      if crate::functions::interval_ast::is_interval_like(range_expr) {
+        if crate::functions::interval_ast::member_q_decidable(range_expr, x) {
           return Some(crate::functions::interval_ast::interval_member_q_ast(
             &[range_expr.clone(), x.clone()],
           ));
+        }
+        // Symbolic: x lies between the ends of a span, taken in either order
+        // since a symbolic span's ends cannot be sorted.
+        if let Some(spans) =
+          crate::functions::interval_ast::is_interval(range_expr)
+        {
+          let clauses: Vec<Expr> = spans
+            .iter()
+            .flat_map(|(lo, hi)| {
+              [
+                ((*lo).clone(), (*hi).clone()),
+                ((*hi).clone(), (*lo).clone()),
+              ]
+            })
+            .map(|(lo, hi)| Expr::Comparison {
+              operands: vec![lo, x.clone(), hi],
+              operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+            })
+            .collect();
+          return Some(crate::evaluator::evaluate_expr_to_expr(&call(
+            "Or", clauses,
+          )));
         }
         return Some(Ok(unevaluated("Between", args)));
       }

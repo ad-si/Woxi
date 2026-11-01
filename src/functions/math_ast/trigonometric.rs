@@ -3688,6 +3688,27 @@ fn fold_inverse_of_forward(name: &str, arg: &Expr) -> Option<Expr> {
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 
+/// `ArcSinh[Sinh[u]]` and `ArcTanh[Tanh[u]]` at an exact real `u` fold to
+/// `u`: `Sinh` and `Tanh` are bijections of the real line, so unlike the
+/// circular case there is no range to reduce into. `None` for a symbolic,
+/// inexact or complex argument.
+fn fold_inverse_of_hyperbolic(name: &str, arg: &Expr) -> Option<Expr> {
+  let forward = match name {
+    "ArcSinh" => "Sinh",
+    "ArcTanh" => "Tanh",
+    _ => return None,
+  };
+  let Expr::FunctionCall { name: inner, args } = arg else {
+    return None;
+  };
+  if inner != forward || args.len() != 1 || contains_inexact_real(&args[0]) {
+    return None;
+  }
+  try_eval_to_f64(&args[0])?
+    .is_finite()
+    .then(|| args[0].clone())
+}
+
 pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -4900,6 +4921,9 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ArcSinh expects 1 argument".into(),
     ));
   }
+  if let Some(folded) = fold_inverse_of_hyperbolic("ArcSinh", &args[0]) {
+    return Ok(folded);
+  }
   if let Some(r) = try_complex_inverse_trig("ArcSinh", &args[0]) {
     return r;
   }
@@ -5019,6 +5043,9 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "ArcTanh expects 1 argument".into(),
     ));
+  }
+  if let Some(folded) = fold_inverse_of_hyperbolic("ArcTanh", &args[0]) {
+    return Ok(folded);
   }
   // ArcTanh is monotonic increasing on (-1, 1): map over interval spans.
   if let Some(r) =

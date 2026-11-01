@@ -519,16 +519,47 @@ pub fn interval_function(name: &str, args: &[Expr]) -> Option<Expr> {
   is_interval(x)?;
   match name {
     // Monotonic (non-decreasing or non-increasing) on the whole real line.
-    "Sign" | "UnitStep" | "IntegerPart" | "ArcSinDegrees" | "ArcCosDegrees"
+    "UnitStep" | "IntegerPart" | "ArcSinDegrees" | "ArcCosDegrees"
     | "ArcTanDegrees" => map_monotonic_interval(name, x),
+    "Sign" => sign_interval(x),
     "RealAbs" => abs_interval(x),
     "Re" | "Conjugate" => real_interval_identity(x),
-    "ArcCot" | "ArcCotDegrees" => arccot_interval(name, x),
+    "Im" => {
+      real_interval_identity(x)?;
+      Some(Expr::Integer(0))
+    }
+    "Arg" => arg_interval(x),
+    "ArcCot" | "ArcSec" | "ArcCsc" | "ArcCoth" | "ArcCsch"
+    | "ArcCotDegrees" | "ArcSecDegrees" | "ArcCscDegrees" => {
+      reciprocal_inverse_interval(name, x)
+    }
     "SinDegrees" | "CosDegrees" => trig_interval(name, x),
     "TanDegrees" | "CotDegrees" => tan_cot_interval(name, x),
     "SecDegrees" | "CscDegrees" => sec_csc_interval(name, x),
     _ => None,
   }
+}
+
+/// `Sign[Interval[...]]` of an interval lying on one side of 0 is that side's
+/// sign as a plain number (`Sign[Interval[{1, 3}]]` is `1`, as in
+/// wolframscript). An interval reaching 0 or both sides stays unevaluated.
+fn sign_interval(expr: &Expr) -> Option<Expr> {
+  let mut sign = None;
+  for (a, b) in is_interval(expr)? {
+    let (af, bf) = (expr_to_f64(a)?, expr_to_f64(b)?);
+    let s = if af > 0.0 && bf > 0.0 {
+      1
+    } else if af < 0.0 && bf < 0.0 {
+      -1
+    } else {
+      return None;
+    };
+    if sign.is_some_and(|t| t != s) {
+      return None;
+    }
+    sign = Some(s);
+  }
+  sign.map(Expr::Integer)
 }
 
 /// `Re` / `Conjugate` of an interval of reals is the interval itself.
@@ -540,48 +571,57 @@ fn real_interval_identity(expr: &Expr) -> Option<Expr> {
   Some(expr.clone())
 }
 
-/// `ArcCot[Interval[...]]` (and `ArcCotDegrees`). `ArcCot` is decreasing on
-/// each side of its jump at 0, so a span not straddling 0 maps to its endpoint
-/// images. Like wolframscript, the images are written in `ArcTan[1/x]` form
-/// (`ArcTanDegrees[1/x]` for degrees), with an infinite endpoint giving 0 and
-/// a lower endpoint of 0 giving the right-hand limit a quarter turn. A span
-/// containing 0 anywhere else stays unevaluated.
-fn arccot_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  let arctan = if head == "ArcCotDegrees" {
-    "ArcTanDegrees"
-  } else {
-    "ArcTan"
-  };
-  let image = |e: &Expr, f: f64| -> Option<Expr> {
-    let v = if f.is_infinite() {
-      Expr::Integer(0)
-    } else if f == 0.0 {
-      crate::evaluator::evaluate_function_call_ast(
-        head,
-        std::slice::from_ref(e),
-      )
-      .ok()?
-    } else {
-      let recip = crate::evaluator::evaluate_function_call_ast(
-        "Power",
-        &[e.clone(), Expr::Integer(-1)],
-      )
-      .ok()?;
-      crate::evaluator::evaluate_function_call_ast(arctan, &[recip]).ok()?
-    };
-    expr_to_f64(&v)?;
-    Some(v)
-  };
+/// `Arg[Interval[...]]` over the reals: `0` on `[0, ∞)`, `Pi` on `(-∞, 0)`,
+/// so each span maps to `{0, 0}`, `{Pi, Pi}` or `{0, Pi}`.
+fn arg_interval(expr: &Expr) -> Option<Expr> {
+  let pi = || const_expr("Pi");
   let mut out: Vec<(Expr, Expr)> = Vec::new();
   for (a, b) in is_interval(expr)? {
-    let af = expr_to_f64(a)?;
-    let bf = expr_to_f64(b)?;
-    if af < 0.0 && bf >= 0.0 {
-      return None;
-    }
-    out.push((image(a, af)?, image(b, bf)?));
+    let (af, bf) = (expr_to_f64(a)?, expr_to_f64(b)?);
+    out.push(if af >= 0.0 {
+      (Expr::Integer(0), Expr::Integer(0))
+    } else if bf < 0.0 {
+      (pi(), pi())
+    } else {
+      (Expr::Integer(0), pi())
+    });
   }
   Some(make_interval(normalize_intervals(out)))
+}
+
+/// `ArcCot`, `ArcSec`, `ArcCsc`, `ArcCoth`, `ArcCsch` (and the degree forms)
+/// of an interval are `ArcTan`, `ArcCos`, `ArcSin`, `ArcTanh`, `ArcSinh` of
+/// its reciprocal, which is how wolframscript writes the endpoints
+/// (`ArcSec[Interval[{2, 5}]]` is `Interval[{Pi/3, ArcCos[1/5]}]`). A span
+/// ending at 0 from below stays unevaluated: the functions' value at 0 is the
+/// right-hand limit, which the reciprocal's `-Infinity` end would miss.
+fn reciprocal_inverse_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  let base = match head {
+    "ArcCot" => "ArcTan",
+    "ArcSec" => "ArcCos",
+    "ArcCsc" => "ArcSin",
+    "ArcCoth" => "ArcTanh",
+    "ArcCsch" => "ArcSinh",
+    "ArcCotDegrees" => "ArcTanDegrees",
+    "ArcSecDegrees" => "ArcCosDegrees",
+    "ArcCscDegrees" => "ArcSinDegrees",
+    _ => return None,
+  };
+  for (a, b) in is_interval(expr)? {
+    if expr_to_f64(a)? < 0.0 && expr_to_f64(b)? == 0.0 {
+      return None;
+    }
+  }
+  let recip = crate::evaluator::evaluate_function_call_ast(
+    "Power",
+    &[expr.clone(), Expr::Integer(-1)],
+  )
+  .ok()?;
+  is_interval(&recip)?;
+  let out =
+    crate::evaluator::evaluate_function_call_ast(base, &[recip]).ok()?;
+  is_interval(&out)?;
+  Some(out)
 }
 
 /// Compare two numeric expressions. Returns None if not comparable.
@@ -593,7 +633,9 @@ fn compare_numeric(a: &Expr, b: &Expr) -> Option<Ordering> {
 
 /// Try to convert an expr to f64, handling Infinity, rationals, etc.
 fn expr_to_f64(expr: &Expr) -> Option<f64> {
+  // A NaN (e.g. `ArcCos[2]`, complex) is no real endpoint.
   crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)
+    .filter(|v| !v.is_nan())
 }
 
 /// Compute the numeric minimum of two expressions.
@@ -730,6 +772,23 @@ pub fn interval_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.iter().all(centered_interval_extract_is_some) {
     return Ok(centered_interval_box_op(args, BoxOp::Union));
   }
+  // A real CenteredInterval beside Interval arguments joins as the span
+  // `{c - r, c + r}`; a complex one (a box off the real axis) stays put.
+  if args.iter().any(centered_interval_extract_is_some) {
+    let converted: Option<Vec<Expr>> = args
+      .iter()
+      .map(|a| match centered_real_box(a) {
+        Some(((lo, hi), (ilo, ihi))) => (is_zero_num(&ilo)
+          && is_zero_num(&ihi))
+        .then(|| span_interval(lo, hi)),
+        None => Some(a.clone()),
+      })
+      .collect();
+    return match converted {
+      Some(c) => interval_union_ast(&c),
+      None => Ok(unevaluated("IntervalUnion", args)),
+    };
+  }
   let mut all_spans = Vec::new();
   for arg in args {
     if let Some(spans) = is_interval(arg) {
@@ -757,6 +816,29 @@ pub fn interval_intersection_ast(
   // bounding boxes. If any axis is empty, return Interval[].
   if args.iter().all(centered_interval_extract_is_some) {
     return Ok(centered_interval_box_op(args, BoxOp::Intersection));
+  }
+  // Beside Interval arguments, a CenteredInterval contributes the real
+  // segment of its box: `{Re c - Re r, Re c + Re r}` when the box meets the
+  // real axis, nothing otherwise.
+  if args.iter().any(centered_interval_extract_is_some) {
+    let converted: Vec<Expr> = args
+      .iter()
+      .map(|a| match centered_real_box(a) {
+        Some(((lo, hi), (ilo, ihi))) => {
+          let meets_axis = matches!(
+            (expr_to_f64(&ilo), expr_to_f64(&ihi)),
+            (Some(l), Some(h)) if l <= 0.0 && 0.0 <= h
+          );
+          if meets_axis {
+            span_interval(lo, hi)
+          } else {
+            call0("Interval")
+          }
+        }
+        None => a.clone(),
+      })
+      .collect();
+    return interval_intersection_ast(&converted);
   }
 
   // Start with spans of first argument
@@ -816,6 +898,14 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  if centered_interval_extract_is_some(&args[0])
+    || centered_interval_extract_is_some(&args[1])
+  {
+    return Ok(match box_member_q(&args[0], &args[1]) {
+      Some(b) => bool_expr(b),
+      None => unevaluated("IntervalMemberQ", args),
+    });
+  }
   let Some(spans) = is_interval(&args[0]) else {
     return Ok(unevaluated("IntervalMemberQ", args));
   };
@@ -1455,4 +1545,75 @@ fn eval_divide(num: &Expr, den: &Expr) -> Expr {
   )
   .unwrap_or_else(|_| pow(den.clone(), Expr::Integer(-1)));
   eval_mul(num, &inv)
+}
+
+type RealBox = ((Expr, Expr), (Expr, Expr));
+
+/// `CenteredInterval[c, r]` as its box `((Re lo, Re hi), (Im lo, Im hi))`.
+fn centered_real_box(e: &Expr) -> Option<RealBox> {
+  let ((cr, ci), (rr, ri)) = centered_interval_box(e)?;
+  Some((
+    (eval_sub(&cr, &rr), eval_add(&cr, &rr)),
+    (eval_sub(&ci, &ri), eval_add(&ci, &ri)),
+  ))
+}
+
+fn is_zero_num(e: &Expr) -> bool {
+  expr_to_f64(e) == Some(0.0)
+}
+
+fn span_interval(lo: Expr, hi: Expr) -> Expr {
+  make_interval(vec![(lo, hi)])
+}
+
+/// The boxes (in f64) an interval-like value covers: one per `Interval` span
+/// (on the real axis), the box of a `CenteredInterval`, or the point of a
+/// (possibly complex) number.
+fn value_boxes(e: &Expr) -> Option<Vec<[f64; 4]>> {
+  if let Some(((rl, rh), (il, ih))) = centered_real_box(e) {
+    return Some(vec![[
+      expr_to_f64(&rl)?,
+      expr_to_f64(&rh)?,
+      expr_to_f64(&il)?,
+      expr_to_f64(&ih)?,
+    ]]);
+  }
+  if let Some(spans) = is_interval(e) {
+    return spans
+      .iter()
+      .map(|(a, b)| Some([expr_to_f64(a)?, expr_to_f64(b)?, 0.0, 0.0]))
+      .collect();
+  }
+  let (re, im) = split_real_imag(e)?;
+  let (re, im) = (expr_to_f64(&re)?, expr_to_f64(&im)?);
+  Some(vec![[re, re, im, im]])
+}
+
+/// `IntervalMemberQ` when a `CenteredInterval` is involved: every box of
+/// `x` lies inside some box of `container`. A number can contain nothing.
+fn box_member_q(container: &Expr, x: &Expr) -> Option<bool> {
+  if !centered_interval_extract_is_some(container)
+    && is_interval(container).is_none()
+  {
+    return None;
+  }
+  let outer = value_boxes(container)?;
+  let inner = value_boxes(x)?;
+  Some(inner.iter().all(|i| {
+    outer
+      .iter()
+      .any(|o| o[0] <= i[0] && i[1] <= o[1] && o[2] <= i[2] && i[3] <= o[3])
+  }))
+}
+
+/// Whether `e` is an `Interval` or a `CenteredInterval`.
+pub fn is_interval_like(e: &Expr) -> bool {
+  is_interval(e).is_some() || centered_interval_extract_is_some(e)
+}
+
+/// Whether `IntervalMemberQ[container, x]` is decided by numbers alone:
+/// every endpoint (and `x`) is numeric. A symbolic one makes the `False` it
+/// returns a non-answer for `Between`.
+pub fn member_q_decidable(container: &Expr, x: &Expr) -> bool {
+  value_boxes(container).is_some() && value_boxes(x).is_some()
 }
