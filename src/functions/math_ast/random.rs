@@ -1146,6 +1146,24 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A span of integers `a ;; b` or `a ;; b ;; step` is the list
+  // `Range[a, b, step]` to choose from.
+  if let Expr::FunctionCall { name, args: span } = &args[0]
+    && name == "Span"
+    && (span.len() == 2 || span.len() == 3)
+    && span.iter().all(|e| matches!(e, Expr::Integer(_)))
+  {
+    let range = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Range".to_string(),
+      args: span.clone(),
+    })?;
+    if matches!(&range, Expr::List(items) if !items.is_empty()) {
+      let mut new_args = args.to_vec();
+      new_args[0] = range;
+      return random_choice_ast(&new_args);
+    }
+  }
+
   // Weighted form: RandomChoice[weights -> values, …]. Build a CDF and
   // pick by drawing a uniform u in [0, total) and binary-searching the
   // first prefix sum >= u. Falls back to unevaluated when the rule's
