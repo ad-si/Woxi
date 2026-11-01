@@ -2406,15 +2406,33 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       });
     let Some((name, offset, expr, _)) = solved else {
-      return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
+      return recurrence_table_by_solving(
+        args,
+        &func_names,
+        &var_name,
+        nmin,
+        nmax,
+      );
     };
     if recurrences.insert(name, (offset, expr)).is_some() {
-      return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
+      return recurrence_table_by_solving(
+        args,
+        &func_names,
+        &var_name,
+        nmin,
+        nmax,
+      );
     }
   }
 
   if recurrences.len() != func_names.len() {
-    return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
+    return recurrence_table_by_solving(
+      args,
+      &func_names,
+      &var_name,
+      nmin,
+      nmax,
+    );
   }
 
   // An initial value may be given by another one (`r[1] == r[0]`): resolve

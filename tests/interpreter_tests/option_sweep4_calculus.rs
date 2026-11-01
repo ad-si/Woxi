@@ -199,8 +199,7 @@ mod nested_limits {
       "0"
     );
     assert_eq!(
-      interpret("Limit[ArcTan[y/x], {y -> Infinity, x -> Infinity}]")
-        .unwrap(),
+      interpret("Limit[ArcTan[y/x], {y -> Infinity, x -> Infinity}]").unwrap(),
       "0"
     );
   }
@@ -218,7 +217,10 @@ mod limits_through_branch_cuts {
   // +Infinity there and to -Infinity from the right.
   #[test]
   fn log_over_x_two_sided_is_indeterminate() {
-    assert_eq!(interpret("Limit[Log[x]/x, x -> 0]").unwrap(), "Indeterminate");
+    assert_eq!(
+      interpret("Limit[Log[x]/x, x -> 0]").unwrap(),
+      "Indeterminate"
+    );
     assert_eq!(
       interpret("Limit[Log[x]^2/x, x -> 0]").unwrap(),
       "Indeterminate"
@@ -239,17 +241,13 @@ mod limits_through_branch_cuts {
       "0"
     );
     assert_eq!(interpret("Limit[Log[x]/x, x -> -Infinity]").unwrap(), "0");
-    assert_eq!(
-      interpret("Limit[x^(1/3)/x, x -> -Infinity]").unwrap(),
-      "0"
-    );
+    assert_eq!(interpret("Limit[x^(1/3)/x, x -> -Infinity]").unwrap(), "0");
   }
 
   #[test]
   fn complex_constant_factor() {
     assert_eq!(
-      interpret("Limit[-I Pi/t, t -> 0, Direction -> \"FromAbove\"]")
-        .unwrap(),
+      interpret("Limit[-I Pi/t, t -> 0, Direction -> \"FromAbove\"]").unwrap(),
       "DirectedInfinity[-I]"
     );
     assert_eq!(
@@ -401,8 +399,10 @@ mod nsum_complex {
       "True"
     );
     assert_eq!(
-      interpret("Abs[NSum[I/n^2, {n, 1, 10}] - N[I HarmonicNumber[10, 2]]] < 10^-12")
-        .unwrap(),
+      interpret(
+        "Abs[NSum[I/n^2, {n, 1, 10}] - N[I HarmonicNumber[10, 2]]] < 10^-12"
+      )
+      .unwrap(),
       "True"
     );
   }

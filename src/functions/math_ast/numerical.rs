@@ -5771,11 +5771,12 @@ fn nsum_euler_maclaurin(f: &Expr, var: &str, min: i64) -> Option<(f64, f64)> {
   for (k, c) in COEFFS.iter().enumerate() {
     let times = if k == 0 { 1 } else { 2 };
     for _ in 0..times {
-      derivative = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "D".to_string(),
-        args: vec![derivative, Expr::Identifier(var.to_string())].into(),
-      })
-      .ok()?;
+      derivative =
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "D".to_string(),
+          args: vec![derivative, Expr::Identifier(var.to_string())].into(),
+        })
+        .ok()?;
     }
     let (dre, dim) = complex_value_at(&derivative, var, &at_n)?;
     sum.0 -= c * dre;
@@ -5842,8 +5843,12 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A complex summand (`Log[x]/x^(2 + 2 I)`) is summed as its real and
   // imaginary parts; the summation below works with real terms.
   if inner_ranges.is_empty()
-    && !crate::functions::math_ast::numeric_utils::expr_contains_head(body, "Re")
-    && !crate::functions::math_ast::numeric_utils::expr_contains_head(body, "Im")
+    && !crate::functions::math_ast::numeric_utils::expr_contains_head(
+      body, "Re",
+    )
+    && !crate::functions::math_ast::numeric_utils::expr_contains_head(
+      body, "Im",
+    )
     && (min_val..min_val + 3).any(|i| {
       let sub = substitute_variable(body, &var_name, &Expr::Integer(i as i128));
       matches!(
@@ -5864,9 +5869,17 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       max_val.and_then(|max_val| {
         let mut terms = Vec::new();
         for i in min_val..=max_val {
-          terms.push(complex_value_at(body, &var_name, &Expr::Integer(i as i128))?);
+          terms.push(complex_value_at(
+            body,
+            &var_name,
+            &Expr::Integer(i as i128),
+          )?);
         }
-        Some(terms.iter().fold((0.0, 0.0), |(a, b), (c, d)| (a + c, b + d)))
+        Some(
+          terms
+            .iter()
+            .fold((0.0, 0.0), |(a, b), (c, d)| (a + c, b + d)),
+        )
       })
     };
     let Some((re, im)) = sum else {

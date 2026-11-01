@@ -13188,7 +13188,9 @@ fn reflect_branch_cut_terms(expr: &Expr, var: &str) -> Option<Expr> {
         left,
         right,
       } => (Some(left.as_ref()), Some(right.as_ref())),
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         (Some(&args[0]), Some(&args[1]))
       }
       _ => (None, None),
@@ -13223,7 +13225,9 @@ fn reflect_branch_cut_terms(expr: &Expr, var: &str) -> Option<Expr> {
         left,
         right,
       } => is_var(left) && !matches!(right.as_ref(), Expr::Integer(_)),
-      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
         is_var(&args[0]) && !matches!(&args[1], Expr::Integer(_))
       }
       _ => false,
@@ -13346,8 +13350,7 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return limit_ast(&[collapsed, args[1].clone()]);
     }
     let result = limit_at_infinity(&args[0], &var_name, &point)?;
-    let unresolved =
-      |r: &Expr| matches!(r, Expr::FunctionCall { name, .. } if name == "Limit");
+    let unresolved = |r: &Expr| matches!(r, Expr::FunctionCall { name, .. } if name == "Limit");
     // At -Infinity, Log[x] and x^p (p not an integer) are on their branch
     // cut: with x = -t, t -> Infinity, they are Log[t] + I Pi and
     // (-1)^p t^p.
@@ -13426,7 +13429,10 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Limit[c f] = c Limit[f] for a complex numeric constant c: the
   // strategies below compare real values, so `-I Pi/t` would not resolve.
-  if let Expr::FunctionCall { name, args: factors } = &args[0]
+  if let Expr::FunctionCall {
+    name,
+    args: factors,
+  } = &args[0]
     && name == "Times"
     && let Some(pos) = factors.iter().position(|f| {
       is_numeric_complex_constant(f) && expr_contains_imaginary_unit(f)
@@ -13771,19 +13777,18 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_literal_zero(&point)
         && let Some(reflected) = reflect_branch_cut_terms(&args[0], &var_name)
       {
-        let from_above = |e: Expr, v: String| -> Result<Expr, InterpreterError> {
-          limit_ast(&[
-            e,
-            rule_expr(id_expr(&v), Expr::Integer(0)),
-            rule_expr(
-              id_expr("Direction"),
-              Expr::String("FromAbove".to_string()),
-            ),
-          ])
-        };
-        let unresolved = |r: &Expr| {
-          matches!(r, Expr::FunctionCall { name, .. } if name == "Limit")
-        };
+        let from_above =
+          |e: Expr, v: String| -> Result<Expr, InterpreterError> {
+            limit_ast(&[
+              e,
+              rule_expr(id_expr(&v), Expr::Integer(0)),
+              rule_expr(
+                id_expr("Direction"),
+                Expr::String("FromAbove".to_string()),
+              ),
+            ])
+          };
+        let unresolved = |r: &Expr| matches!(r, Expr::FunctionCall { name, .. } if name == "Limit");
         let right = from_above(args[0].clone(), var_name.clone())?;
         let reflected = crate::evaluator::evaluate_expr_to_expr(&reflected)?;
         let t_name = format!("{var_name}$reflected");
@@ -13803,11 +13808,14 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .map(|term| from_above(term.clone(), t_name.clone()))
               .collect::<Result<Vec<_>, _>>()?;
             if !limits.iter().any(unresolved) {
-              left =
-                crate::evaluator::evaluate_expr_to_expr(&call("Plus", limits.clone()))?;
+              left = crate::evaluator::evaluate_expr_to_expr(&call(
+                "Plus",
+                limits.clone(),
+              ))?;
               // Infinities in different directions: the sum heads the way of
               // the term that dominates every other infinite one.
-              if matches!(&left, Expr::FunctionCall { name, .. } if name == "Plus") {
+              if matches!(&left, Expr::FunctionCall { name, .. } if name == "Plus")
+              {
                 let infinite: Vec<usize> = (0..terms.len())
                   .filter(|&i| !is_finite_limit_value(&limits[i]))
                   .collect();
@@ -13818,7 +13826,10 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
                         "Times",
                         vec![
                           terms[o].clone(),
-                          call("Power", vec![terms[d].clone(), Expr::Integer(-1)]),
+                          call(
+                            "Power",
+                            vec![terms[d].clone(), Expr::Integer(-1)],
+                          ),
                         ],
                       ))
                       .and_then(|ratio| from_above(ratio, t_name.clone()))
@@ -18515,7 +18526,10 @@ fn boole_exact_measure_with_crossings(
           }
         }
         let x = f64::midpoint(lo_b, hi_b);
-        if !crossings.iter().any(|&y: &f64| (y - x).abs() <= span * 1e-12) {
+        if !crossings
+          .iter()
+          .any(|&y: &f64| (y - x).abs() <= span * 1e-12)
+        {
           crossings.push(x);
         }
       }
@@ -18583,7 +18597,10 @@ fn exclusion_points(eq: &Expr, var: &str, lo: f64, hi: f64) -> Vec<f64> {
   };
   let g = call(
     "Plus",
-    vec![lhs.clone(), call("Times", vec![Expr::Integer(-1), rhs.clone()])],
+    vec![
+      lhs.clone(),
+      call("Times", vec![Expr::Integer(-1), rhs.clone()]),
+    ],
   );
   let Some(node) = crate::functions::polynomial_ast::solve::compile_numeric(
     &g,
@@ -18597,7 +18614,11 @@ fn exclusion_points(eq: &Expr, var: &str, lo: f64, hi: f64) -> Vec<f64> {
   let mut points = Vec::new();
   let mut prev = (lo, f(lo));
   for i in 1..=SCAN {
-    let x = if i == SCAN { hi } else { lo + step * f64::from(i) };
+    let x = if i == SCAN {
+      hi
+    } else {
+      lo + step * f64::from(i)
+    };
     let cur = (x, f(x));
     if cur.1 == 0.0 && x < hi {
       points.push(x);
@@ -18654,7 +18675,8 @@ fn integrand_samples_complex(f: &Expr, outer: &Expr, inner: &[Expr]) -> bool {
         .and_then(|e| crate::functions::math_ast::try_eval_to_f64(&e))
         .filter(|v| v.is_finite())
     };
-    let (Some(lo), Some(hi)) = (bound(&items[1]), bound(&items[items.len() - 1]))
+    let (Some(lo), Some(hi)) =
+      (bound(&items[1]), bound(&items[items.len() - 1]))
     else {
       return false;
     };
@@ -18777,7 +18799,9 @@ fn compile_condition(cond: &Expr, var: &str) -> Option<CompiledCondition> {
     } => {
       let sides = operands
         .iter()
-        .map(|o| crate::functions::polynomial_ast::solve::compile_numeric(o, &vars))
+        .map(|o| {
+          crate::functions::polynomial_ast::solve::compile_numeric(o, &vars)
+        })
         .collect::<Option<Vec<_>>>()?;
       Some(CompiledCondition::Compare(sides, operators.clone()))
     }
@@ -18823,7 +18847,9 @@ fn compile_condition(cond: &Expr, var: &str) -> Option<CompiledCondition> {
         };
         let sides = args
           .iter()
-          .map(|o| crate::functions::polynomial_ast::solve::compile_numeric(o, &vars))
+          .map(|o| {
+            crate::functions::polynomial_ast::solve::compile_numeric(o, &vars)
+          })
           .collect::<Option<Vec<_>>>()?;
         Some(CompiledCondition::Compare(sides, vec![op; args.len() - 1]))
       }
@@ -21526,8 +21552,12 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               // since each difference multiplies by the same factor.
               let h = items.get(2).cloned().unwrap_or(Expr::Integer(1));
               if !matches!(items[1], Expr::Integer(_) | Expr::Real(_))
-                && let Some(result) =
-                  symbolic_order_exponential_delta(expr, var.as_str(), &items[1], &h)
+                && let Some(result) = symbolic_order_exponential_delta(
+                  expr,
+                  var.as_str(),
+                  &items[1],
+                  &h,
+                )
               {
                 return crate::evaluator::evaluate_expr_to_expr(&result);
               }

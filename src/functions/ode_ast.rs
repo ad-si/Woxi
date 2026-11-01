@@ -737,17 +737,20 @@ fn dsolve_decoupled_system(
     } else {
       Expr::List(group.into())
     };
-    let solved =
-      match dsolve_ast_inner(&[eqns, item.clone(), Expr::Identifier(x_name.to_string())]) {
-        Ok(Expr::List(ref solutions)) if !solutions.is_empty() => {
-          solutions.to_vec()
-        }
-        Ok(_) | Err(InterpreterError::EvaluationError(_)) => return Ok(None),
-        Err(e) => return Err(e),
-      };
+    let solved = match dsolve_ast_inner(&[
+      eqns,
+      item.clone(),
+      Expr::Identifier(x_name.to_string()),
+    ]) {
+      Ok(Expr::List(ref solutions)) if !solutions.is_empty() => {
+        solutions.to_vec()
+      }
+      Ok(_) | Err(InterpreterError::EvaluationError(_)) => return Ok(None),
+      Err(e) => return Err(e),
+    };
     let max_c = solved.iter().map(max_constant_index).max().unwrap_or(0);
     let mut rules = Vec::new();
-    for solution in solved.iter() {
+    for solution in &solved {
       let Expr::List(rs) = solution else {
         return Ok(None);
       };
@@ -817,9 +820,8 @@ fn dsolve_eliminating_algebraic(
     Expr::List(items) => items.iter().cloned().collect(),
     other => vec![other.clone()],
   };
-  let is_condition = |e: &Expr| {
-    names.iter().any(|n| is_initial_condition(e, n, x_name))
-  };
+  let is_condition =
+    |e: &Expr| names.iter().any(|n| is_initial_condition(e, n, x_name));
   // An unknown that some equation differentiates cannot be eliminated.
   let differentiated = |name: &str| {
     items.iter().any(|e| {
@@ -840,7 +842,8 @@ fn dsolve_eliminating_algebraic(
       if items.iter().any(|e| is_initial_condition(e, name, x_name)) {
         continue;
       }
-      let solved = crate::functions::solve_ast(&[eq.clone(), dep_items[k].clone()])?;
+      let solved =
+        crate::functions::solve_ast(&[eq.clone(), dep_items[k].clone()])?;
       let Expr::List(sols) = &solved else { continue };
       let [Expr::List(rules)] = sols.as_slice() else {
         continue;
@@ -910,7 +913,10 @@ fn dsolve_eliminating_algebraic(
               Expr::Rule {
                 pattern,
                 replacement,
-              } if crate::evaluator::pattern_matching::expr_equal(pattern, d) => {
+              } if crate::evaluator::pattern_matching::expr_equal(
+                pattern, d,
+              ) =>
+              {
                 Some(replacement.as_ref().clone())
               }
               _ => None,
