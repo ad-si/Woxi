@@ -44,6 +44,39 @@ thread_local! {
   static SYMBOLS_BEING_EVALUATED:
     std::cell::RefCell<std::collections::HashSet<String>> =
       std::cell::RefCell::new(std::collections::HashSet::new());
+
+  /// The enclosing abort handlers, innermost last: `true` for an
+  /// `AbortProtect` (which defers an `Abort[]`), `false` for a `CheckAbort`
+  /// (which catches it).
+  static ABORT_HANDLERS: std::cell::RefCell<Vec<bool>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+  /// An `Abort[]` was deferred by an enclosing `AbortProtect`.
+  static ABORT_PENDING: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Keeps an abort handler on `ABORT_HANDLERS` for the evaluation of its body,
+/// popping it however that evaluation ends.
+struct AbortHandlerGuard;
+
+impl AbortHandlerGuard {
+  fn push(protect: bool) -> Self {
+    ABORT_HANDLERS.with(|h| h.borrow_mut().push(protect));
+    AbortHandlerGuard
+  }
+}
+
+impl Drop for AbortHandlerGuard {
+  fn drop(&mut self) {
+    ABORT_HANDLERS.with(|h| {
+      h.borrow_mut().pop();
+    });
+  }
+}
+
+/// Is the innermost enclosing abort handler an `AbortProtect`?
+fn abort_deferred() -> bool {
+  ABORT_HANDLERS.with(|h| h.borrow().last() == Some(&true))
 }
 
 /// Does `expr` mention any Identifier (other than `self_name`) whose
@@ -2957,6 +2990,12 @@ fn evaluate_expr_to_expr_uncached(
 
         // Special handling for Abort[] - abort computation
         if name == "Abort" && args.is_empty() {
+          // Inside AbortProtect the abort waits until the protected
+          // evaluation completes.
+          if abort_deferred() {
+            ABORT_PENDING.with(|p| p.set(true));
+            return Ok(Expr::Identifier("$Aborted".to_string()));
+          }
           return Err(InterpreterError::Abort);
         }
         // Quit[] / Exit[] - terminate the process
@@ -3016,12 +3055,23 @@ fn evaluate_expr_to_expr_uncached(
             }
           }
         }
-        // AbortProtect[expr] evaluates expr and returns its result (the body
-        // runs transparently; the deferred-abort nuance is not modeled).
-        // PreemptProtect[expr] likewise: nothing preempts an evaluation here.
-        if (name == "AbortProtect" || name == "PreemptProtect")
-          && args.len() == 1
-        {
+        // AbortProtect[expr] evaluates expr completely, saving an Abort[]
+        // raised in it (outside a nested CheckAbort) until the evaluation is
+        // done; the abort then continues unless an outer AbortProtect defers
+        // it further.
+        if name == "AbortProtect" && args.len() == 1 {
+          let result = {
+            let _guard = AbortHandlerGuard::push(true);
+            evaluate_expr_to_expr(&args[0])
+          };
+          if ABORT_PENDING.with(std::cell::Cell::get) && !abort_deferred() {
+            ABORT_PENDING.with(|p| p.set(false));
+            return Err(InterpreterError::Abort);
+          }
+          return result;
+        }
+        // PreemptProtect[expr]: nothing preempts an evaluation here.
+        if name == "PreemptProtect" && args.len() == 1 {
           return evaluate_expr_to_expr(&args[0]);
         }
         // Special handling for CheckAbort[expr, failexpr] and
@@ -3049,7 +3099,11 @@ fn evaluate_expr_to_expr_uncached(
           && (args.len() == 2 || args.len() == 3)
           && let Some(propagate) = propagate
         {
-          match evaluate_expr_to_expr(&args[0]) {
+          let body = {
+            let _guard = AbortHandlerGuard::push(false);
+            evaluate_expr_to_expr(&args[0])
+          };
+          match body {
             Ok(result) => return Ok(result),
             Err(InterpreterError::Abort) if propagate => {
               evaluate_expr_to_expr(&args[1])?;

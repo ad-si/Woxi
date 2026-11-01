@@ -4721,6 +4721,9 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = rational_reciprocal_exponent(&args[1]) {
     return power_mod_root_ast(args, n);
   }
+  if let Some(result) = gaussian_power_mod(args)? {
+    return Ok(result);
+  }
   match (
     expr_to_bigint(&args[0]),
     expr_to_bigint(&args[1]),
@@ -4767,6 +4770,56 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(unevaluated("PowerMod", args)),
   }
+}
+
+/// `PowerMod[a, b, m]` for Gaussian integers `a` and `m` (at least one of
+/// them non-real) and an integer `b >= 0`: square-and-multiply with every
+/// product reduced by `Mod`, which picks the same residue as `Mod[a^b, m]`.
+/// `None` for any other arguments.
+fn gaussian_power_mod(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as eval_call;
+  use num_traits::{Signed, Zero};
+  let gaussian =
+    |e: &Expr| -> Result<Option<(BigInt, BigInt)>, InterpreterError> {
+      if !matches!(e, Expr::FunctionCall { .. } | Expr::BinaryOp { .. }) {
+        return Ok(None);
+      }
+      let re = expr_to_bigint(&eval_call("Re", std::slice::from_ref(e))?);
+      let im = expr_to_bigint(&eval_call("Im", std::slice::from_ref(e))?);
+      Ok(re.zip(im))
+    };
+  let parts = |e: &Expr| -> Result<Option<(BigInt, BigInt)>, InterpreterError> {
+    match expr_to_bigint(e) {
+      Some(n) => Ok(Some((n, BigInt::zero()))),
+      None => gaussian(e),
+    }
+  };
+  let Some(exp) = expr_to_bigint(&args[1]) else {
+    return Ok(None);
+  };
+  let (Some(a), Some(m)) = (parts(&args[0])?, parts(&args[2])?) else {
+    return Ok(None);
+  };
+  if (a.1.is_zero() && m.1.is_zero())
+    || exp.is_negative()
+    || (m.0.is_zero() && m.1.is_zero())
+  {
+    return Ok(None);
+  }
+  let modulus = &args[2];
+  let reduce = |x: Expr| eval_call("Mod", &[x, modulus.clone()]);
+  let mut result = reduce(Expr::Integer(1))?;
+  let mut base = reduce(args[0].clone())?;
+  let bits = exp.to_str_radix(2);
+  for (i, bit) in bits.chars().rev().enumerate() {
+    if bit == '1' {
+      result = reduce(eval_call("Times", &[result, base.clone()])?)?;
+    }
+    if i + 1 < bits.len() {
+      base = reduce(eval_call("Times", &[base.clone(), base])?)?;
+    }
+  }
+  Ok(Some(result))
 }
 
 /// If `expr` is a unit fraction 1/n (stored as Rational[1, n]) with n ≥ 2,

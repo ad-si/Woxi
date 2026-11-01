@@ -3343,7 +3343,7 @@ fn canonical_linear_syntax(src: &str) -> String {
             .iter()
             .filter_map(|c| match c {
               Node::Text(t) => Some(t.as_str()),
-              _ => None,
+              Node::Group(_) => None,
             })
             .collect();
           let wrap =

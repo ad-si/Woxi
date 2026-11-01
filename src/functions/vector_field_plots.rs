@@ -117,7 +117,8 @@ fn list_vector_field_plot(
     return Ok(None);
   };
   let Expr::List(items) = data else {
-    return lpvf();
+    lpvf();
+    return Ok(None);
   };
   let is_pair = |e: &Expr| {
     matches!(e, Expr::List(p) if p.len() == 2
@@ -149,7 +150,8 @@ fn list_vector_field_plot(
       }
       out
     } else {
-      return lpvf();
+      lpvf();
+      return Ok(None);
     };
   if pairs.is_empty() {
     return Ok(None);
@@ -157,12 +159,11 @@ fn list_vector_field_plot(
   draw(&pairs, &opts).map(Some)
 }
 
-fn lpvf() -> Result<Option<Expr>, InterpreterError> {
+fn lpvf() {
   crate::emit_message(
     "ListVectorFieldPlot::lpvf: ListVectorFieldPlot requires a rectangular \
      array of vectors or a list of {base, vector} pairs.",
   );
-  Ok(None)
 }
 
 /// The body of the package's `ListVectorFieldPlot`: colors by relative
