@@ -912,11 +912,22 @@ fn graph_render(
       None => compute_layout(&graph),
     }
   };
-  if let Some(directed) = legacy_plot
-    && let Some(plot) =
-      legacy_graph_plot(&vertices, &raw_edges, &positions, directed)
-  {
-    return Ok(plot);
+  if let Some(directed) = legacy_plot {
+    // The picture keeps the caller's own `VertexCoordinates` units.
+    let coords: Vec<(f64, f64)> = positions
+      .iter()
+      .map(|&(x, y)| {
+        (
+          x / coord_scale + coord_centre.0,
+          y / coord_scale + coord_centre.1,
+        )
+      })
+      .collect();
+    if let Some(plot) =
+      legacy_graph_plot(&vertices, &raw_edges, &coords, directed)
+    {
+      return Ok(plot);
+    }
   }
 
   // Compute base radius for vertices. Kept deliberately small so labels

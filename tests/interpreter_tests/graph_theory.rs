@@ -691,6 +691,18 @@ mod graph_plot_graphics_complex {
   }
 
   #[test]
+  fn explicit_coordinates_keep_the_callers_units() {
+    assert_eq!(
+      interpret(
+        "GraphPlot[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {4, 0}, {4, 3}}][[1, 1]]"
+      )
+      .unwrap(),
+      "{{0., 0.}, {4., 0.}, {4., 3.}}"
+    );
+  }
+
+  #[test]
   fn directed_edges_get_medium_arrowheads() {
     assert_eq!(
       interpret(
