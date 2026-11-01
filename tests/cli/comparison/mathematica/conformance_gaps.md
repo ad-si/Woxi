@@ -7050,7 +7050,6 @@ Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
 
-<<<<<<< HEAD
 ## Parameter sweep 5 (performance): still slow or not implemented
 
 These reference-page examples still time out or diverge in Woxi:
@@ -7074,7 +7073,7 @@ These reference-page examples still time out or diverge in Woxi:
   slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
   four-variable knapsack equation, `ReliefPlot` of a 301×301 table and
   `Plot3D`/`Graphics3D` with `Texture` are not addressed.
-=======
+
 ## Parameter sweep 5 (long tail): known divergences and unverified forms
 
 The four-parameter `GompertzMakehamDistribution` CDF has the right value, but
@@ -7156,4 +7155,3 @@ Verified against the reference pages, but not (fully) implemented:
   `PlotLabels -> Placed[…, pos]` and `QuantityArray` data are not handled.
 - `ListFitPlot` examples built on `ResourceData`, `FinancialData` or
   `AirTemperatureData` cannot be fetched.
->>>>>>> origin/main
