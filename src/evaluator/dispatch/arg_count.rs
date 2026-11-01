@@ -1524,7 +1524,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "SimpleGraphQ" => Some((1, 1)),
     "SimplePolygonQ" => Some((1, 1)),
     "FindClique" => Some((1, 3)),
-    "FindIndependentVertexSet" => Some((1, 2)),
+    "FindIndependentVertexSet" => Some((1, 3)),
     "VertexComponent" => Some((2, 2)),
     "VertexInComponent" => Some((2, 3)),
     "VertexOutComponent" => Some((2, 3)),

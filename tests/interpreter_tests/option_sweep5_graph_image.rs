@@ -105,6 +105,26 @@ mod graph_functions_accept_edge_rule_lists {
   }
 }
 
+mod find_independent_vertex_set_forms {
+  use super::*;
+
+  #[test]
+  fn three_argument_form_is_accepted() {
+    // Valid arity (FindIndependentVertexSet[g, nspec, s]); the set order
+    // Wolfram enumerates is not reproducible, so it stays unevaluated
+    // without an argt message.
+    assert_eq!(
+      interpret("Head[FindIndependentVertexSet[CycleGraph[5], Infinity, All]]")
+        .unwrap(),
+      "FindIndependentVertexSet"
+    );
+    assert_eq!(
+      interpret("FindIndependentVertexSet[{1 -> 2, 2 -> 3}]").unwrap(),
+      "{{1, 3}}"
+    );
+  }
+}
+
 mod random_graph_counts {
   use super::*;
 
