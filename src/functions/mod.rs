@@ -18,6 +18,7 @@ pub mod astronomy_ast;
 pub mod audio_ast;
 pub mod biosequence;
 pub mod boolean_ast;
+pub mod bullet_gauge;
 pub mod calculus_ast;
 pub mod caputo_d;
 pub mod cellular_automaton_ast;

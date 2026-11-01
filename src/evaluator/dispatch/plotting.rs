@@ -1003,6 +1003,10 @@ pub fn dispatch_plotting(
       Some(crate::functions::chart::histogram_ast(&new_args))
     }
     // Data that is no list reports `::ldata` (outside the plot's `Quiet`).
+    "BulletGauge" if args.len() >= 3 => Some(
+      crate::functions::bullet_gauge::bullet_gauge_ast(args)
+        .map(|g| g.unwrap_or_else(|| unevaluated(name, args))),
+    ),
     "JuliaSetPlot" if !args.is_empty() => Some(quiet_plot(|| {
       Ok(
         crate::functions::julia_set::julia_set_plot_ast(args)?

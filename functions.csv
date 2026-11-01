@@ -2746,7 +2746,7 @@ SierpinskiMesh,"",🚫,,11.1,2755
 SubsetMap,"Map a function over a subset of a list at flat/deep/span/Part-style positions and recombine",✅,pure,12.0,2755
 XMLObject,"represents an XML object",✅,Symbolic,4.2,2755
 AbsArgPlot,"",🚫,,12.0,2762
-BulletGauge,"",🚫,,9.0,2762
+BulletGauge,"Horizontal bullet graph of values against references and qualitative ranges",✅,pure,9.0,2762
 LeftArrow,"left arrow symbol",✅,Symbolic,3.0,2762
 ReplicateLayer,"",🚫,,11.1,2762
 SARIMAProcess,"Seasonal autoregressive integrated moving-average process",✅,unevaluated,9.0,2762
