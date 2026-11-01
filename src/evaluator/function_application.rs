@@ -284,6 +284,83 @@ fn serialized_real_params(func_args: &[Expr]) -> Vec<bool> {
     .unwrap_or_default()
 }
 
+/// A saved `CompiledFunction[…]` run through the machine evaluator: the
+/// parameters of its embedded `Function[params, body]`, typed by its
+/// `Blank[type]` / `{Blank[type], rank}` argument patterns.
+fn serialized_vm_run(
+  func_args: &[Expr],
+  pure_fn: &Expr,
+  args: &[Expr],
+) -> Option<Expr> {
+  use crate::functions::compile_vm::Ty;
+  let Expr::FunctionCall { name, args: fargs } = pure_fn else {
+    return None;
+  };
+  if name != "Function" || fargs.len() < 2 {
+    return None;
+  }
+  let names: Vec<String> = match &fargs[0] {
+    Expr::Identifier(n) => vec![n.clone()],
+    Expr::List(items) => items
+      .iter()
+      .map(|i| match i {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    _ => return None,
+  };
+  let Some(Expr::List(patterns)) = func_args.get(1) else {
+    return None;
+  };
+  if patterns.len() != names.len() {
+    return None;
+  }
+  let blank = |e: &Expr| -> Option<String> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Blank" => {
+        match args.as_slice() {
+          [Expr::Identifier(t)] => Some(t.clone()),
+          _ => None,
+        }
+      }
+      Expr::Pattern { name, head, .. } if name.is_empty() => head.clone(),
+      Expr::List(items) if items.len() == 2 => match &items[0] {
+        Expr::FunctionCall { name, args } if name == "Blank" => {
+          match args.as_slice() {
+            [Expr::Identifier(t)] => Some(t.clone()),
+            _ => None,
+          }
+        }
+        Expr::Pattern { name, head, .. } if name.is_empty() => head.clone(),
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let mut params = Vec::with_capacity(names.len());
+  let mut real_arg = false;
+  for (n, p) in names.into_iter().zip(patterns.iter()) {
+    let ty = match blank(p)?.as_str() {
+      "Integer" => Ty::Integer,
+      "Real" => {
+        real_arg = true;
+        Ty::Real
+      }
+      "Complex" => Ty::Complex,
+      "True" | "False" => Ty::Boolean,
+      _ => return None,
+    };
+    params.push((n, ty, serialized_spec_rank(p)));
+  }
+  let result = crate::functions::compile_vm::run(&params, &fargs[1], args)?;
+  Some(if real_arg {
+    coerce_to_real(&result)
+  } else {
+    result
+  })
+}
+
 fn serialized_spec_rank(spec: &Expr) -> usize {
   match spec {
     Expr::List(items) if items.len() == 2 => match &items[1] {
@@ -3047,10 +3124,16 @@ pub fn apply_curried_call(
               }
               Ok(Expr::List(results.into()))
             } else {
-              let plain =
-                evaluate_expr_to_expr(&call("Function", fargs[..2].to_vec()))?;
+              let plain = call("Function", fargs[..2].to_vec());
+              if let Some(result) = serialized_vm_run(func_args, &plain, args) {
+                return Ok(result);
+              }
+              let plain = evaluate_expr_to_expr(&plain)?;
               apply_curried_call(&plain, args).map(finish)
             };
+          }
+          if let Some(result) = serialized_vm_run(func_args, pure_fn, args) {
+            return Ok(result);
           }
           let pure_fn = evaluate_expr_to_expr(pure_fn)?;
           apply_curried_call(&pure_fn, args).map(finish)

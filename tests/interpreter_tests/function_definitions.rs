@@ -1250,6 +1250,19 @@ mod compile {
       "{385, {7., 4., 9.}, 55, {2., 0.25, 2.}, {-6, 12}, {1., 2., 3., 4.}, \
        {1. + 0.*I, 2. + 0.*I}, 1}"
     );
+    // A `CompiledFunction` saved in a notebook runs its embedded function
+    // through the machine evaluator too.
+    assert_eq!(
+      interpret(
+        "sc = CompiledFunction[{10, 10., 5724}, {Blank[Complex]}, {{4, 0, 0}}, {}, \
+           {0, 1, 0, 0, 0}, {{1}}, Function[{c}, Module[{num = 1}, FixedPoint[(num++; \
+           0.25 (1 + 4 # - (1 + 2 #) Cos[Pi #])) &, c, 150, \
+           SameTest -> (Re[#]^2 + Im[#]^2 >= 10 Pi &)]; num]], Evaluate]; \
+         {sc[0.3 + 0.2 I], sc[-2. + I]}"
+      )
+      .unwrap(),
+      "{151, 3}"
+    );
     // A fractal grid of a quarter million iterations runs in well under a
     // second of machine arithmetic.
     let start = std::time::Instant::now();
