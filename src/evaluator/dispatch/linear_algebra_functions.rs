@@ -2118,7 +2118,8 @@ pub fn dispatch_linear_algebra_functions(
         && matches!(&args[0], Expr::List(rows) if !rows.is_empty()) =>
     {
       return Some(Ok(
-        triangular_matrix(name, args).unwrap_or_else(|| unevaluated(name, args)),
+        triangular_matrix(name, args)
+          .unwrap_or_else(|| unevaluated(name, args)),
       ));
     }
     "LUDecomposition" if args.len() == 1 => {
@@ -6304,11 +6305,16 @@ fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   let structure = match args.get(1) {
     None => "Structured",
-    Some(Expr::Rule { pattern, replacement })
-      if matches!(pattern.as_ref(), Expr::Identifier(t) if t == "TargetStructure") =>
-    {
+    Some(Expr::Rule {
+      pattern,
+      replacement,
+    }) if matches!(pattern.as_ref(), Expr::Identifier(t) if t == "TargetStructure") => {
       match replacement.as_ref() {
-        Expr::String(s) if s == "Dense" || s == "Sparse" || s == "Structured" => s.as_str(),
+        Expr::String(s)
+          if s == "Dense" || s == "Sparse" || s == "Structured" =>
+        {
+          s.as_str()
+        }
         Expr::Identifier(a) if a == "Automatic" => "Structured",
         _ => return None,
       }
@@ -6317,9 +6323,16 @@ fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
   };
   match structure {
     "Dense" => Some(args[0].clone()),
-    "Sparse" => {
-      crate::evaluator::evaluate_expr_to_expr(&call1("SparseArray", args[0].clone())).ok()
-    }
-    _ => Some(lu_structured_matrix(name, rows.len(), cols, args[0].clone())),
+    "Sparse" => crate::evaluator::evaluate_expr_to_expr(&call1(
+      "SparseArray",
+      args[0].clone(),
+    ))
+    .ok(),
+    _ => Some(lu_structured_matrix(
+      name,
+      rows.len(),
+      cols,
+      args[0].clone(),
+    )),
   }
 }

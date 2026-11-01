@@ -787,8 +787,7 @@ pub fn try_threaded_op(
   }
   // SparseArray operands (bare or threaded) are combined as their dense
   // forms; the result is sparse again when one of them was.
-  let is_sparse =
-    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
   let any_sparse = args
     .iter()
     .any(|a| is_sparse(a) || as_threaded(a).is_some_and(is_sparse));
@@ -809,7 +808,10 @@ pub fn try_threaded_op(
         None => densify(a),
       })
       .collect();
-    if dense.iter().any(|a| is_sparse(a) || as_threaded(a).is_some_and(is_sparse)) {
+    if dense
+      .iter()
+      .any(|a| is_sparse(a) || as_threaded(a).is_some_and(is_sparse))
+    {
       return None;
     }
     return Some(try_threaded_op(&dense, op)?.map(|r| {

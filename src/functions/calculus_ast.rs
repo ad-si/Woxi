@@ -21451,10 +21451,7 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Expr::Identifier(name) = &items[0] {
           specs.push((
             name.clone(),
-            crate::helpers::times(vec![
-              items[1].clone(),
-              items[2].clone(),
-            ]),
+            crate::helpers::times(vec![items[1].clone(), items[2].clone()]),
           ));
         }
       }

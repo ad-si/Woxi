@@ -3050,7 +3050,9 @@ pub fn dispatch_math_functions(
         && im != 0
       {
         return Some(Ok(
-          match crate::functions::math_ast::gaussian_prime_factor_count((re, im)) {
+          match crate::functions::math_ast::gaussian_prime_factor_count((
+            re, im,
+          )) {
             Some(k) => Expr::Integer(if k % 2 == 0 { 1 } else { -1 }),
             None => call1("LiouvilleLambda", args[0].clone()),
           },
@@ -5647,7 +5649,10 @@ pub fn dispatch_math_functions(
       {
         let positive: Vec<Expr> = args
           .iter()
-          .map(|a| crate::functions::math_ast::strip_negation(a).unwrap_or_else(|| a.clone()))
+          .map(|a| {
+            crate::functions::math_ast::strip_negation(a)
+              .unwrap_or_else(|| a.clone())
+          })
           .collect();
         return Some(crate::evaluator::evaluate_function_call_ast(
           "DiracComb",

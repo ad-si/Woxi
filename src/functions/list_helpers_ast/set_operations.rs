@@ -897,7 +897,9 @@ pub fn delete_adjacent_duplicates_ast(
     }
     // Any other nonatomic expression keeps its head.
     Expr::FunctionCall { name, args: items }
-      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(&args[0]) =>
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(
+        &args[0],
+      ) =>
     {
       let keep = run_starts(items)?;
       Ok(Expr::FunctionCall {

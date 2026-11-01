@@ -13,7 +13,10 @@ mod folds {
 
   #[test]
   fn fold_while_operator_form() {
-    check("FoldWhile[Subtract, Positive][12, {1, 2, 3, 4, 5, 6}]", "-3");
+    check(
+      "FoldWhile[Subtract, Positive][12, {1, 2, 3, 4, 5, 6}]",
+      "-3",
+    );
   }
 
   #[test]
@@ -97,7 +100,10 @@ mod strings {
   #[test]
   fn string_extract_forms() {
     check("StringExtract[\"a b c\\nd e f\", 2]", "b");
-    check("StringExtract[\"a,b;c\", \",\" | \";\" -> All]", "{a, b, c}");
+    check(
+      "StringExtract[\"a,b;c\", \",\" | \";\" -> All]",
+      "{a, b, c}",
+    );
   }
 }
 
@@ -210,6 +216,9 @@ mod geometry_and_graphs {
   #[test]
   fn graph_measures_on_rule_lists() {
     check("EdgeConnectivity[{1 <-> 2, 2 <-> 3, 3 <-> 1}]", "2");
-    check("GlobalClusteringCoefficient[{1 <-> 2, 2 <-> 3, 3 <-> 1}]", "1");
+    check(
+      "GlobalClusteringCoefficient[{1 <-> 2, 2 <-> 3, 3 <-> 1}]",
+      "1",
+    );
   }
 }

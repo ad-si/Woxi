@@ -14656,7 +14656,10 @@ fn compute_angle_bisector(
   // Sqrt[2]), which plain Plus evaluation leaves as 2/Sqrt[2].
   // The exterior bisector runs along Normalize[q2 - p] - Normalize[q1 - p].
   let sum = if exterior {
-    plus(vec![normalized_leg(q2), times(vec![Expr::Integer(-1), normalized_leg(q1)])])
+    plus(vec![
+      normalized_leg(q2),
+      times(vec![Expr::Integer(-1), normalized_leg(q1)]),
+    ])
   } else {
     plus(vec![normalized_leg(q1), normalized_leg(q2)])
   };

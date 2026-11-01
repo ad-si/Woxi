@@ -18326,7 +18326,13 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // StringExtract[s, patt -> All] with a pattern separator is
   // StringSplit[s, patt].
-  if let [_, Expr::Rule { pattern, replacement }] = args
+  if let [
+    _,
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+  ] = args
     && !matches!(pattern.as_ref(), Expr::String(_))
     && matches!(replacement.as_ref(), Expr::Identifier(a) if a == "All")
   {
