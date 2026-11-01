@@ -607,6 +607,19 @@ pub fn dispatch_complex_and_special(
     // symbol even when its OwnValue would otherwise replace it. Strip it
     // here before classifying the argument.
     // Legacy "Full" string form is still accepted for backward compatibility.
+    "Information"
+      if args.len() == 2
+        && crate::functions::math_ast::categorical::is_categorical(
+          &args[0],
+        ) =>
+    {
+      return Some(
+        crate::functions::math_ast::categorical::categorical_information(
+          &args[0], &args[1],
+        )
+        .unwrap_or_else(|| Ok(unevaluated("Information", args))),
+      );
+    }
     "Information" if args.len() == 1 || args.len() == 2 => {
       let is_full = args.len() == 2
         && (matches!(&args[1], Expr::String(s) if s == "Full")
@@ -1715,6 +1728,12 @@ pub fn dispatch_complex_and_special(
     }
     "RegionBounds" if args.len() == 1 => {
       return Some(Ok(compute_region_bounds(strip_region_wrapper(&args[0]))));
+    }
+    "RegionBounds" if args.len() == 2 => {
+      return Some(Ok(
+        compute_region_bounds_typed(strip_region_wrapper(&args[0]), &args[1])
+          .unwrap_or_else(|| unevaluated("RegionBounds", args)),
+      ));
     }
     "RegionDimension" if args.len() == 1 => {
       return Some(compute_region_dimension(strip_region_wrapper(&args[0])));
@@ -9107,6 +9126,80 @@ fn compute_region_embedding_dimension(expr: &Expr) -> Expr {
   }
 }
 
+/// The base point and direction vectors of an `InfiniteLine` or
+/// `InfinitePlane`, in either its points form or its point-and-directions
+/// form.
+fn flat_region_parts(
+  name: &str,
+  args: &[Expr],
+) -> Option<(Vec<Expr>, Vec<Vec<Expr>>)> {
+  let as_vec = |e: &Expr| match e {
+    Expr::List(c) if c.iter().all(|x| !matches!(x, Expr::List(_))) => {
+      Some(c.to_vec())
+    }
+    _ => None,
+  };
+  let sub = |a: &[Expr], b: &[Expr]| -> Vec<Expr> {
+    a.iter()
+      .zip(b)
+      .map(|(x, y)| eval_binop("Subtract", x.clone(), y.clone()))
+      .collect()
+  };
+  let (point, dirs) = match (name, args) {
+    ("InfiniteLine", [Expr::List(pts)]) if pts.len() == 2 => {
+      let (p1, p2) = (as_vec(&pts[0])?, as_vec(&pts[1])?);
+      let v = sub(&p2, &p1);
+      (p1, vec![v])
+    }
+    ("InfiniteLine", [p, v]) => (as_vec(p)?, vec![as_vec(v)?]),
+    ("InfinitePlane", [Expr::List(pts)]) if pts.len() == 3 => {
+      let p1 = as_vec(&pts[0])?;
+      let (p2, p3) = (as_vec(&pts[1])?, as_vec(&pts[2])?);
+      let dirs = vec![sub(&p2, &p1), sub(&p3, &p1)];
+      (p1, dirs)
+    }
+    ("InfinitePlane", [p, Expr::List(vs)]) if vs.len() == 2 => (
+      as_vec(p)?,
+      vs.iter().map(as_vec).collect::<Option<Vec<_>>>()?,
+    ),
+    _ => return None,
+  };
+  dirs
+    .iter()
+    .all(|v| v.len() == point.len())
+    .then_some((point, dirs))
+}
+
+/// RegionBounds[region, type]: "Minimal" and "Sufficient" bounds are the
+/// tight ones; "Finite" bounds of an infinite line are those of the two
+/// points defining it.
+fn compute_region_bounds_typed(region: &Expr, kind: &Expr) -> Option<Expr> {
+  let Expr::String(kind) = kind else {
+    return None;
+  };
+  match kind.as_str() {
+    "Minimal" | "Sufficient" => Some(compute_region_bounds(region)),
+    "Finite" => {
+      if let Expr::FunctionCall { name, args } = region
+        && name == "InfiniteLine"
+        && let Some((p, dirs)) = flat_region_parts(name, args)
+      {
+        let q: Vec<Expr> = p
+          .iter()
+          .zip(&dirs[0])
+          .map(|(a, b)| eval_binop("Plus", a.clone(), b.clone()))
+          .collect();
+        return points_bounds(&[Expr::List(p.into()), Expr::List(q.into())]);
+      }
+      // Bounds that are already finite.
+      let b = compute_region_bounds(region);
+      let s = crate::syntax::expr_to_string(&b);
+      (!s.contains("Infinity") && !s.starts_with("RegionBounds[")).then_some(b)
+    }
+    _ => None,
+  }
+}
+
 /// Compute the axis-aligned bounding box of a geometric region as a list of
 /// `{min, max}` pairs, one per dimension.
 fn compute_region_bounds(expr: &Expr) -> Expr {
@@ -9155,12 +9248,42 @@ fn compute_region_bounds(expr: &Expr) -> Expr {
     return Expr::List(bounds.into());
   }
   if let Expr::FunctionCall { name, args } = expr {
-    // Line/Triangle/Polygon[{p1, ..., pk}] — min/max over all vertices.
-    if matches!(name.as_str(), "Line" | "Triangle" | "Polygon")
+    // Line/Triangle/Polygon/Tetrahedron[{p1, ..., pk}] and a set of points
+    // Point[{p1, ..., pk}] — min/max over all vertices.
+    if (matches!(
+      name.as_str(),
+      "Line" | "Triangle" | "Polygon" | "Tetrahedron"
+    ) || (name == "Point"
+      && matches!(&args.first(), Some(Expr::List(pts))
+          if !pts.is_empty() && pts.iter().all(|p| matches!(p, Expr::List(_))))))
       && args.len() == 1
       && let Expr::List(points) = &args[0]
     {
       return points_bounds(points).unwrap_or_else(unevaluated);
+    }
+    // InfiniteLine[{p1, p2}] / InfiniteLine[p, v] / InfinitePlane[{p1, p2,
+    // p3}] / InfinitePlane[p, {v1, v2}]: a coordinate along which some
+    // direction moves is unbounded; the others are fixed at the point's.
+    if let Some((point, dirs)) = flat_region_parts(name, args) {
+      let mut bounds = Vec::with_capacity(point.len());
+      for (d, c) in point.iter().enumerate() {
+        let mut moves = false;
+        for v in &dirs {
+          match crate::functions::math_ast::try_eval_to_f64(&v[d]) {
+            Some(x) if x != 0.0 => moves = true,
+            Some(_) => {}
+            None => return unevaluated(),
+          }
+        }
+        bounds.push(if moves {
+          Expr::List(
+            vec![neg1(id_expr("Infinity")), id_expr("Infinity")].into(),
+          )
+        } else {
+          Expr::List(vec![c.clone(), c.clone()].into())
+        });
+      }
+      return Expr::List(bounds.into());
     }
     // Simplex[n]: the standard n-simplex spans [0, 1] in each of its n
     // coordinates. Simplex[{p0, …, pk}]: the box over its vertices.
@@ -12048,14 +12171,21 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           .collect();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(mid.into()))
       }
-      // Point[{x, y, ...}] — centroid is the point itself
-      "Point" if args.len() == 1 => {
-        if let Expr::List(_) = &args[0] {
-          Ok(args[0].clone())
-        } else {
-          unevaluated()
+      // Point[{x, y, ...}] — centroid is the point itself; a set of
+      // points Point[{p1, p2, ...}] has their mean.
+      "Point" if args.len() == 1 => match &args[0] {
+        Expr::List(pts)
+          if !pts.is_empty()
+            && pts.iter().all(|p| matches!(p, Expr::List(_))) =>
+        {
+          crate::evaluator::evaluate_expr_to_expr(&call1(
+            "Mean",
+            args[0].clone(),
+          ))
         }
-      }
+        Expr::List(_) => Ok(args[0].clone()),
+        _ => unevaluated(),
+      },
       // Disk[{x, y}, r] or Disk[] — centroid is the center
       "Disk" => {
         if args.is_empty() {
@@ -12066,8 +12196,9 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           Ok(args[0].clone())
         }
       }
-      // Ball[{x, y, z}, r] or Ball[] — centroid is the center
-      "Ball" => {
+      // Ball[{x, y, z}, r] or Ball[] — centroid is the center; so is a
+      // Sphere's (its surface is symmetric about the center).
+      "Ball" | "Sphere" => {
         if args.is_empty() {
           Ok(Expr::List(
             vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),

@@ -369,6 +369,13 @@ pub fn reduce_groups_ast(
 /// Closed-form Median for known distributions. Returns None for
 /// distributions whose median Woxi cannot express symbolically.
 fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
+  if let Some(r) =
+    crate::functions::math_ast::extended_distributions::extended_property(
+      "Median", name, dargs, None,
+    )
+  {
+    return r.ok();
+  }
   match name {
     "PowerDistribution" if dargs.len() == 2 => {
       // Median[PowerDistribution[k, a]] = 1/(2^(1/a) k).

@@ -438,12 +438,13 @@ fn lit(s: &str) -> Expr {
 
 /// Build `head[m*Pi/d]` (e.g. `Cos[Pi/14]`, `Sin[(3*Pi)/16]`).
 fn build_trig_angle_call(head: &str, m: i64, d: i64) -> Expr {
-  let angle = if m == 1 {
-    format!("Pi/{d}")
-  } else {
-    format!("({m}*Pi)/{d}")
-  };
-  lit(&format!("{head}[{angle}]"))
+  // Built directly as head[Times[m/d, Pi]] rather than parsed from text:
+  // this runs for every exact angle beyond the first octant, and parsing
+  // made e.g. Array[Sin[2 Pi 1200 #] &, 44100, {0, 1}] take ~25 s.
+  Expr::FunctionCall {
+    name: head.to_string(),
+    args: vec![make_rational_times_pi(m as i128, d as i128)].into(),
+  }
 }
 
 /// Canonical first-octant fallback for a trig function of `k*Pi/n` when there

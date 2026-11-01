@@ -268,6 +268,13 @@ impl AngleVal {
     }
   }
 
+  fn negate(&self) -> Self {
+    match self {
+      Self::Exact(p, q) => Self::Exact(-p, *q),
+      Self::Real(v) => Self::Real(-v),
+    }
+  }
+
   fn abs(&self) -> Self {
     match self {
       Self::Exact(p, q) => Self::Exact(p.abs(), *q),
@@ -324,10 +331,23 @@ fn to_angle(expr: &Expr) -> Option<AngleVal> {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => to_angle(operand).map(|v| match v {
-      AngleVal::Exact(p, q) => AngleVal::Exact(-p, q),
-      AngleVal::Real(x) => AngleVal::Real(-x),
-    }),
+    } => to_angle(operand).map(|v| v.negate()),
+    // An angle quantity: degrees as is, radians converted to degrees.
+    Expr::FunctionCall { name, args }
+      if name == "Quantity"
+        && args.len() == 2
+        && matches!(&args[1], Expr::String(u) if u == "AngularDegrees") =>
+    {
+      to_angle(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Quantity"
+        && args.len() == 2
+        && matches!(&args[1], Expr::String(u) if u == "Radians") =>
+    {
+      let v = crate::functions::math_ast::try_eval_to_f64(&args[0])?;
+      v.is_finite().then(|| AngleVal::Real(v.to_degrees()))
+    }
     _ => {
       let v = crate::functions::math_ast::try_eval_to_f64(expr)?;
       if !v.is_finite() {
@@ -467,25 +487,19 @@ fn parse_dms_string(s: &str) -> Option<AngleVal> {
     sec = take_number(&mut rest)?;
     rest = take_mark(rest, &['"', '″', 's'])?;
   }
-  if matches!(rest, "N" | "S" | "E" | "W") {
-    rest = "";
-  }
-  if !rest.is_empty() {
-    return None;
+  // An optional hemisphere suffix, as a letter or a word (`S`, ` South`);
+  // south and west stand for negative angles.
+  match rest.trim_start() {
+    "" | "N" | "E" | "North" | "East" => {}
+    "S" | "W" | "South" | "West" => negative = !negative,
+    _ => return None,
   }
   let v = AngleVal::from_dms(
     &AngleVal::Exact(deg.0, deg.1),
     &AngleVal::Exact(min.0, min.1),
     &AngleVal::Exact(sec.0, sec.1),
   );
-  Some(if negative {
-    match v {
-      AngleVal::Exact(p, q) => AngleVal::Exact(-p, q),
-      AngleVal::Real(x) => AngleVal::Real(-x),
-    }
-  } else {
-    v
-  })
+  Some(if negative { v.negate() } else { v })
 }
 
 /// DMSString[angle] — format an angle in degrees as a `d°m's"` string.
@@ -503,18 +517,38 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut prec: u32 = 3;
   let mut hemi: Option<(char, char)> = None;
+  // A two-character direction spec such as "NS" or "EW".
+  let parse_hemi = |s: &str| -> Option<(char, char)> {
+    let chars: Vec<char> = s.chars().collect();
+    if let [pos, neg] = chars[..] {
+      Some((pos, neg))
+    } else {
+      crate::emit_message(&format!(
+        "DMSString::form: Invalid formatting specification {s}."
+      ));
+      None
+    }
+  };
   match args.get(1) {
     None => {}
     Some(Expr::Integer(n)) if (0..=27).contains(n) => prec = *n as u32,
-    Some(Expr::String(s)) => {
-      let chars: Vec<char> = s.chars().collect();
-      if let [pos, neg] = chars[..] {
-        hemi = Some((pos, neg));
-      } else {
-        crate::emit_message(&format!(
-          "DMSString::form: Invalid formatting specification {s}."
-        ));
-        return unevaluated();
+    Some(Expr::String(s)) => match parse_hemi(s) {
+      Some(h) => hemi = Some(h),
+      None => return unevaluated(),
+    },
+    // {"XY", n}: both the direction spec and the seconds precision.
+    Some(Expr::List(spec))
+      if matches!(
+        spec.as_slice(),
+        [Expr::String(_), Expr::Integer(n)] if (0..=27).contains(n)
+      ) =>
+    {
+      if let [Expr::String(s), Expr::Integer(n)] = spec.as_slice() {
+        match parse_hemi(s) {
+          Some(h) => hemi = Some(h),
+          None => return unevaluated(),
+        }
+        prec = *n as u32;
       }
     }
     Some(_) => {
@@ -569,6 +603,21 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::String(format_scalar(&AngleVal::from_dms(d, m, s))))
         }
         _ => {
+          // {d, m, s, "X"}: a DMS triple with a hemisphere letter; "S" and
+          // "W" make the (absolute) angle negative.
+          if let [d, m, s, Expr::String(dir)] = items.as_slice()
+            && let (Some(d), Some(m), Some(s)) =
+              (to_angle(d), to_angle(m), to_angle(s))
+            && matches!(dir.as_str(), "N" | "S" | "E" | "W")
+          {
+            let v = AngleVal::from_dms(&d, &m, &s).abs();
+            let v = if matches!(dir.as_str(), "S" | "W") {
+              v.negate()
+            } else {
+              v
+            };
+            return Ok(Expr::String(format_scalar(&v)));
+          }
           crate::emit_message(&format!(
             "DMSString::dms: {} cannot be interpreted as a degree-minute-second list specification.",
             expr_to_output(&args[0])

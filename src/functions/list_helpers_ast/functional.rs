@@ -237,6 +237,103 @@ fn peak_parameter(
   }
 }
 
+/// One peak found by [`peak_runs`]: the 0-based run `start..=end` of equal
+/// values and twice its reported 1-based position.
+pub(crate) struct PeakRun {
+  pub start: usize,
+  pub end: usize,
+  pub twice_pos: usize,
+}
+
+/// The unsmoothed peaks of `vals` (see [`find_peaks_ast`] for the rules)
+/// whose sharpness reaches `sharpness` and whose value reaches `threshold`.
+/// With `padding`, the list is extended on both sides by that constant, so
+/// boundary runs are judged against it like interior ones.
+pub(crate) fn peak_runs(
+  vals: &[f64],
+  sharpness: f64,
+  threshold: f64,
+  padding: Option<f64>,
+) -> Vec<PeakRun> {
+  let n = vals.len();
+  let mut peaks = Vec::new();
+  let mut i = 0usize;
+  while i < n {
+    // Extend a maximal run of equal values [i..=j] (0-based).
+    let mut j = i;
+    while j + 1 < n && vals[j + 1] == vals[i] {
+      j += 1;
+    }
+    let v = vals[i];
+    let len = (j - i + 1) as f64;
+    // The neighbours: real ones, the padding constant, or none at a
+    // boundary.
+    let left = if i > 0 { Some(vals[i - 1]) } else { padding };
+    let right = if j + 1 < n {
+      Some(vals[j + 1])
+    } else {
+      padding
+    };
+    let at_left = left.is_none();
+    let at_right = right.is_none();
+    let left_ok = left.is_none_or(|l| l < v);
+    let right_ok = right.is_none_or(|r| r < v);
+    // `Some((twice the reported position, sharpness))` for a run that can be a
+    // peak at all. A run touching one boundary is reported at that boundary
+    // index and only counts when it is at most two long; one touching both
+    // spans the whole list and is never a peak.
+    let candidate = match (at_left, at_right) {
+      (true, true) => None,
+      (true, false) if j <= 1 => {
+        Some((2, 2.0 * (v - right.unwrap_or(v)) / (len * len)))
+      }
+      (false, true) if i + 2 >= n => {
+        Some((2 * n, 2.0 * (v - left.unwrap_or(v)) / (len * len)))
+      }
+      (true, false) | (false, true) => None,
+      (false, false) => Some((
+        i + 1 + j + 1,
+        ((v - left.unwrap_or(v)) + (v - right.unwrap_or(v))) / len,
+      )),
+    };
+    if let Some((twice_pos, sharp)) = candidate
+      && left_ok
+      && right_ok
+      && sharp >= sharpness
+      && v >= threshold
+    {
+      peaks.push(PeakRun {
+        start: i,
+        end: j,
+        twice_pos,
+      });
+    }
+    i = j + 1;
+  }
+  peaks
+}
+
+/// The value of a `Padding -> p` option among the options `args`:
+/// `Ok(None)` without one, `Err(())` for a padding other than a real
+/// constant or for any other option (none of which is supported).
+pub(crate) fn peak_padding(args: &[Expr]) -> Result<Option<f64>, ()> {
+  let mut padding = None;
+  for a in args {
+    match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Padding") => {
+        padding = Some(
+          crate::functions::math_ast::try_eval_to_f64(replacement).ok_or(())?,
+        );
+      }
+      _ => return Err(()),
+    }
+  }
+  Ok(padding)
+}
+
 /// FindPeaks[list] / FindPeaks[list, s] / FindPeaks[list, s, sharpness] /
 /// FindPeaks[list, s, sharpness, threshold] — the local maxima of a numeric
 /// list.
@@ -269,8 +366,21 @@ fn peak_parameter(
 /// `FindPeaks[GaussianFilter[list, 2.2]]` finds — so such a call is left
 /// unevaluated rather than answered wrongly.
 pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let all_args = args;
+  let positional = args
+    .iter()
+    .take_while(|a| !matches!(a, Expr::Rule { .. }))
+    .count();
+  // A constant `Padding -> p` option; other options are not supported.
+  let Ok(padding) = peak_padding(&args[positional..]) else {
+    return Ok(unevaluated("FindPeaks", args));
+  };
+  let args = &args[..positional];
+  if args.is_empty() {
+    return Ok(unevaluated("FindPeaks", all_args));
+  }
   let list = &args[0];
-  let unevaluated = || unevaluated("FindPeaks", args);
+  let unevaluated = || unevaluated("FindPeaks", all_args);
   let refuse = |tag: &str, what: &str, value: &Expr, position: usize| {
     crate::emit_message(&format!(
       "FindPeaks::{}: The {} {} at position {} should be {}.",
@@ -341,57 +451,19 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
 
-  let n = vals.len();
   let mut peaks: Vec<Expr> = Vec::new();
-  let mut i = 0usize;
-  while i < n {
-    // Extend a maximal run of equal values [i..=j] (0-based).
-    let mut j = i;
-    while j + 1 < n && vals[j + 1] == vals[i] {
-      j += 1;
-    }
-    let v = vals[i];
-    let at_left = i == 0;
-    let at_right = j + 1 == n;
-    let left_ok = at_left || vals[i - 1] < v;
-    let right_ok = at_right || vals[j + 1] < v;
-    let len = (j - i + 1) as f64;
-    // `Some((twice the reported position, sharpness))` for a run that can be a
-    // peak at all. A run touching one boundary is reported at that boundary
-    // index and only counts when it is at most two long; one touching both
-    // spans the whole list and is never a peak.
-    let candidate = match (at_left, at_right) {
-      (true, true) => None,
-      (true, false) if j <= 1 => {
-        Some((2, 2.0 * (v - vals[j + 1]) / (len * len)))
-      }
-      (false, true) if i + 2 >= n => {
-        Some((2 * n, 2.0 * (v - vals[i - 1]) / (len * len)))
-      }
-      (true, false) | (false, true) => None,
-      (false, false) => {
-        Some((i + 1 + j + 1, ((v - vals[i - 1]) + (v - vals[j + 1])) / len))
-      }
+  for run in peak_runs(&vals, sharpness.0, threshold.0, padding) {
+    // `twice_pos` is twice the reported position, so a plateau centred
+    // between two indices keeps its exact half-integer position.
+    let pos = if run.twice_pos % 2 == 0 {
+      Expr::Integer((run.twice_pos / 2) as i128)
+    } else {
+      crate::evaluator::evaluate_expr_to_expr(&div(
+        Expr::Integer(run.twice_pos as i128),
+        Expr::Integer(2),
+      ))?
     };
-    if let Some((twice_pos, sharp)) = candidate
-      && left_ok
-      && right_ok
-      && sharp >= sharpness.0
-      && v >= threshold.0
-    {
-      // `twice_pos` is twice the reported position, so a plateau centred
-      // between two indices keeps its exact half-integer position.
-      let pos = if twice_pos % 2 == 0 {
-        Expr::Integer((twice_pos / 2) as i128)
-      } else {
-        crate::evaluator::evaluate_expr_to_expr(&div(
-          Expr::Integer(twice_pos as i128),
-          Expr::Integer(2),
-        ))?
-      };
-      peaks.push(Expr::List(vec![pos, items[i].clone()].into()));
-    }
-    i = j + 1;
+    peaks.push(Expr::List(vec![pos, items[run.start].clone()].into()));
   }
   Ok(Expr::List(peaks.into()))
 }

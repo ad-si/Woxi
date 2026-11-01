@@ -2721,6 +2721,8 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     ticks: true,
     stacked: false,
     epilog: Vec::new(),
+    color_function: None,
+    color_function_scaling: true,
   }
 }
 
@@ -3593,14 +3595,65 @@ pub fn image_crop_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|v| v.round() as i64)
       })
     };
-    let (Some(target_w), Some(target_h)) = (match &args[1] {
-      Expr::List(size) if size.len() == 2 => {
-        (pixels(&size[0]), pixels(&size[1]))
+    // Each dimension is `d` pixels, `UpTo[d]` (at most d), `{dmin, dmax}`
+    // (the current extent clamped into that range), `Full` (no cropping)
+    // or `Automatic` (follow the other dimension's aspect ratio). A
+    // single spec applies to both dimensions.
+    enum Dim {
+      Exact(i64),
+      Auto,
+    }
+    let dim = |e: &Expr, current: i64| -> Option<Dim> {
+      match e {
+        Expr::Identifier(n) if n == "Full" => Some(Dim::Exact(current)),
+        Expr::Identifier(n) if n == "Automatic" => Some(Dim::Auto),
+        Expr::FunctionCall { name, args: a }
+          if name == "UpTo" && a.len() == 1 =>
+        {
+          pixels(&a[0]).map(|d| Dim::Exact(d.min(current)))
+        }
+        Expr::List(range) if range.len() == 2 => {
+          match (pixels(&range[0]), pixels(&range[1])) {
+            (Some(lo), Some(hi)) if lo <= hi => {
+              Some(Dim::Exact(current.clamp(lo, hi)))
+            }
+            _ => None,
+          }
+        }
+        other => pixels(other).map(Dim::Exact),
       }
-      other => (pixels(other), pixels(other)),
+    };
+    let (w0, h0) = (*width as i64, *height as i64);
+    let (Some(spec_w), Some(spec_h)) = (match &args[1] {
+      Expr::List(size) if size.len() == 2 => {
+        (dim(&size[0], w0), dim(&size[1], h0))
+      }
+      other => (dim(other, w0), dim(other, h0)),
     }) else {
       return echo();
     };
+    let scale = |d: i64, from: i64, to: i64| {
+      if from == 0 {
+        0
+      } else {
+        (d as f64 * to as f64 / from as f64).round() as i64
+      }
+    };
+    let (mut target_w, mut target_h) = match (spec_w, spec_h) {
+      (Dim::Exact(w), Dim::Exact(h)) => (w, h),
+      (Dim::Exact(w), Dim::Auto) => (w, scale(w, w0, h0)),
+      (Dim::Auto, Dim::Exact(h)) => (scale(h, h0, w0), h),
+      (Dim::Auto, Dim::Auto) => (w0, h0),
+    };
+    if target_w < 0 || target_h < 0 {
+      return echo();
+    }
+    // Padding -> None never adds pixels: the result is at most the image.
+    if matches!(padding, Some(Expr::Identifier(n)) if n == "None") {
+      target_w = target_w.min(w0);
+      target_h = target_h.min(h0);
+      padding = None;
+    }
     let (horizontal, vertical) = match args.get(2) {
       Some(spec) => match image_crop_sides(spec) {
         Some(sides) => sides,
@@ -10659,6 +10712,31 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // ImageTake[image3d, slices, rows, cols] (and the shorter forms) takes
+  // the given slices, rows and columns of the voxel array with the same
+  // sequence specifications Take uses (All, n, -n, {n}, {m, n}, …).
+  if let Expr::FunctionCall { name, args: img } = &args[0]
+    && name == "Image3D"
+    && !img.is_empty()
+    && (2..=4).contains(&args.len())
+  {
+    let mut take_args = vec![img[0].clone()];
+    take_args.extend(args[1..].iter().cloned());
+    let taken =
+      crate::evaluator::evaluate_function_call_ast("Take", &take_args)?;
+    if matches!(&taken, Expr::FunctionCall { name, .. } if name == "Take") {
+      return Ok(unevaluated("ImageTake", args));
+    }
+    let mut new_img = vec![taken];
+    new_img.extend(img[1..].iter().cloned());
+    return crate::evaluator::evaluate_function_call_ast("Image3D", &new_img);
+  }
+  if args.len() == 4 {
+    crate::emit_message(
+      "ImageTake::argt: ImageTake called with 4 arguments; 2 or 3 arguments are expected.",
+    );
+    return Ok(unevaluated("ImageTake", args));
+  }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "ImageTake expects 2 or 3 arguments".into(),
@@ -11039,7 +11117,95 @@ fn try_collage_same_shape(items: &[Expr]) -> Option<Expr> {
 /// ImageCollage[{{img1, w1}, ...}] — paired format.
 /// Optional fitting argument: "Fill", "Fit", "Stretch".
 /// Optional size argument: width or {width, height}.
+/// Rewrite ImageCollage's weighted first-argument forms into the
+/// `{{image, weight}, …}` pair list: `{w1, w2, …} -> {img1, img2, …}`,
+/// `w -> {img1, …}` (one weight for all), `{w1 -> img1, …}` and
+/// `<|img1 -> w1, …|>`. A `Scaled[s]` weight is s times the image's own
+/// pixel area. Returns None when the argument is not one of these forms.
+fn image_collage_weighted_pairs(arg: &Expr) -> Option<Expr> {
+  let area = |img: &Expr| match img {
+    Expr::Image { width, height, .. } => Some(*width as f64 * *height as f64),
+    _ => None,
+  };
+  // One weight for one image: a number or Scaled[number]
+  let weight = |w: &Expr, img: &Expr| -> Option<Expr> {
+    let value = match w {
+      Expr::FunctionCall { name, args }
+        if name == "Scaled" && args.len() == 1 =>
+      {
+        crate::functions::math_ast::try_eval_to_f64(&args[0])? * area(img)?
+      }
+      other => {
+        area(img)?;
+        crate::functions::math_ast::try_eval_to_f64(other)?
+      }
+    };
+    Some(Expr::List(vec![img.clone(), Expr::Real(value)].into()))
+  };
+  let pairs: Option<Vec<Expr>> = match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let Expr::List(images) = replacement.as_ref() else {
+        return None;
+      };
+      // Scaled[{s1, s2, …}] spreads over the images like a weight list
+      let weights: Vec<Expr> = match pattern.as_ref() {
+        Expr::List(ws) => ws.to_vec(),
+        Expr::FunctionCall { name, args }
+          if name == "Scaled" && args.len() == 1 =>
+        {
+          match &args[0] {
+            Expr::List(ss) => ss
+              .iter()
+              .map(|s| crate::helpers::call("Scaled", vec![s.clone()]))
+              .collect(),
+            _ => vec![pattern.as_ref().clone(); images.len()],
+          }
+        }
+        single => vec![single.clone(); images.len()],
+      };
+      if weights.len() != images.len() {
+        return None;
+      }
+      weights
+        .iter()
+        .zip(images.iter())
+        .map(|(w, i)| weight(w, i))
+        .collect()
+    }
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|it| matches!(it, Expr::Rule { .. })) =>
+    {
+      items
+        .iter()
+        .map(|it| match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => weight(pattern, replacement),
+          _ => None,
+        })
+        .collect()
+    }
+    Expr::Association(entries) if !entries.is_empty() => {
+      entries.iter().map(|(img, w)| weight(w, img)).collect()
+    }
+    _ => None,
+  };
+  pairs.map(|p| Expr::List(p.into()))
+}
+
 pub fn image_collage_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(first) = args.first()
+    && let Some(pairs) = image_collage_weighted_pairs(first)
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = pairs;
+    return image_collage_ast(&new_args);
+  }
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "ImageCollage expects 1 to 3 arguments".into(),

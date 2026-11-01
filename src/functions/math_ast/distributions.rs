@@ -509,6 +509,12 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let dist = &args[0];
 
+  if let Some(r) =
+    crate::functions::math_ast::categorical::categorical_pdf(dist, &args[1])
+  {
+    return r;
+  }
+
   // PDF[DiscreteMarkovProcess[...][t], x] — the state distribution after
   // t steps, as a Boole sum.
   if args.len() == 2
@@ -534,6 +540,16 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("PDF", args));
     }
   };
+  if let Some(r) =
+    crate::functions::math_ast::extended_distributions::extended_property(
+      "PDF",
+      dist_name,
+      dargs,
+      Some(&args[1]),
+    )
+  {
+    return r;
+  }
 
   // PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x].
   if dist_name == "StationaryDistribution"
@@ -2507,6 +2523,16 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if args.len() == 1 {
     return Ok(unevaluated("CDF", args));
+  }
+  if let Some(r) =
+    crate::functions::math_ast::extended_distributions::extended_property(
+      "CDF",
+      dist_name,
+      dargs,
+      Some(&args[1]),
+    )
+  {
+    return r;
   }
 
   if dist_name == "SmoothKernelDistribution" {

@@ -1992,6 +1992,22 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // Extended parametrizations (generalized gamma, scaled inverse chi-square,
+  // …) sampled through their defining transformations.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && let Some(draw) =
+      crate::functions::math_ast::extended_distributions::extended_sampler(
+        name, dargs,
+      )
+  {
+    return Ok(match n {
+      None => Expr::Real(draw()),
+      Some(count) => {
+        Expr::List((0..count).map(|_| Expr::Real(draw())).collect())
+      }
+    });
+  }
+
   // Random-matrix ensembles and properties derived from them.
   if let Expr::FunctionCall { name, args: dargs } = dist
     && let Some(draw) = matrix_ensemble_sampler(name, dargs)
@@ -2805,19 +2821,14 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    // CategoricalDistribution[{c1, …}, {p1, …}] draws category ci with
-    // weight pi (uniformly when no weights are given).
-    Expr::FunctionCall { name, args: dargs }
-      if name == "CategoricalDistribution"
-        && matches!(dargs.len(), 1 | 2)
-        && matches!(&dargs[0], Expr::List(_)) =>
-    {
-      let spec = match dargs.get(1) {
-        Some(w) => Expr::Rule {
-          pattern: Box::new(w.clone()),
-          replacement: Box::new(dargs[0].clone()),
-        },
-        None => dargs[0].clone(),
+    // CategoricalDistribution[<|"Probabilities" -> …, "Index" -> …|>] draws
+    // a domain element with its probability; symbolic probabilities stay
+    // unevaluated.
+    Expr::FunctionCall { name, .. } if name == "CategoricalDistribution" => {
+      let Some(spec) =
+        crate::functions::math_ast::categorical::categorical_choice_spec(dist)
+      else {
+        return Ok(unevaluated("RandomVariate", args));
       };
       let mut choice_args = vec![spec];
       if let Some(count) = n {
@@ -3219,6 +3230,50 @@ fn barabasi_albert_edges(n: usize, k: usize) -> Vec<(usize, usize)> {
   edges
 }
 
+/// de Solla Price growth: a complete directed graph on the first `k + 1`
+/// vertices (s -> t for t < s), then every further vertex v points to `k`
+/// distinct earlier vertices drawn without replacement with weights
+/// in-degree + `a` — the construction PriceGraphDistribution documents.
+fn price_edges(n: usize, k: usize, a: f64) -> Vec<(usize, usize)> {
+  use rand::RngExt;
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  let seed = (k + 1).min(n);
+  let mut in_degree = vec![0usize; n + 1];
+  for s in 1..=seed {
+    for t in 1..s {
+      edges.push((s, t));
+      in_degree[t] += 1;
+    }
+  }
+  crate::with_rng(|rng| {
+    for v in (seed + 1)..=n {
+      let mut targets: Vec<usize> = Vec::with_capacity(k);
+      for _ in 0..k.min(v - 1) {
+        let weight = |t: usize| in_degree[t] as f64 + a;
+        let total: f64 =
+          (1..v).filter(|t| !targets.contains(t)).map(weight).sum();
+        let mut r = rng.random::<f64>() * total;
+        let mut pick = None;
+        for t in (1..v).filter(|t| !targets.contains(t)) {
+          pick = Some(t);
+          r -= weight(t);
+          if r < 0.0 {
+            break;
+          }
+        }
+        if let Some(t) = pick {
+          targets.push(t);
+        }
+      }
+      for t in targets {
+        edges.push((v, t));
+        in_degree[t] += 1;
+      }
+    }
+  });
+  edges
+}
+
 /// Watts–Strogatz small world: the circulant ring where every vertex is
 /// joined to its `k` nearest neighbours on each side, with every edge's far
 /// endpoint rewired with probability `p` to a uniformly chosen vertex that
@@ -3386,14 +3441,33 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => None,
   };
-  if let Some((n, r)) = spatial {
-    let k = match positional.get(1) {
-      None => None,
-      Some(e) => match count(e) {
-        Some(k) => Some(k),
+  // The optional second argument is a count k (a list of k graphs) or a
+  // shape {n1, n2, …} (an n1×n2×… array of graphs).
+  let shape: Option<Vec<usize>> = match positional.get(1) {
+    None => None,
+    Some(Expr::List(dims)) if !dims.is_empty() => {
+      match dims.iter().map(count).collect::<Option<Vec<_>>>() {
+        Some(dims) => Some(dims),
         None => return Ok(unevaluated()),
-      },
-    };
+      }
+    }
+    Some(e) => match count(e) {
+      Some(k) => Some(vec![k]),
+      None => return Ok(unevaluated()),
+    },
+  };
+  fn graph_array(dims: &[usize], one: &dyn Fn() -> Expr) -> Expr {
+    match dims.split_first() {
+      None => one(),
+      Some((&k, rest)) => Expr::List(
+        (0..k)
+          .map(|_| graph_array(rest, one))
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    }
+  }
+  if let Some((n, r)) = spatial {
     let one = || {
       let points: Vec<(f64, f64)> = crate::with_rng(|rng| {
         (0..n)
@@ -3435,11 +3509,9 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ],
       )
     };
-    return Ok(match k {
-      None => one(),
-      Some(k) => Expr::List((0..k).map(|_| one()).collect::<Vec<_>>().into()),
-    });
+    return Ok(graph_array(shape.as_deref().unwrap_or(&[]), &one));
   }
+  let mut directed = false;
   let (n, sample): (usize, Sampler) = match positional[0] {
     Expr::List(items) if items.len() == 2 => {
       let (Some(n), Some(m)) = (count(&items[0]), count(&items[1])) else {
@@ -3509,6 +3581,32 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Box::new(move || degree_sequence_edges(&degrees)),
         )
       }
+      // PriceGraphDistribution[n, k, a] (directed unless the
+      // distribution carries DirectedEdges -> False)
+      ("PriceGraphDistribution", 3 | 4) => {
+        let (Some(n), Some(k), Some(a)) =
+          (count(&d[0]), count(&d[1]), try_eval_to_f64(&d[2]))
+        else {
+          return Ok(unevaluated());
+        };
+        match d.get(3) {
+          None => directed = true,
+          Some(Expr::Rule {
+            pattern,
+            replacement,
+          }) if matches!(pattern.as_ref(),
+            Expr::Identifier(o) if o == "DirectedEdges") =>
+          {
+            directed = !matches!(replacement.as_ref(),
+              Expr::Identifier(b) if b == "False");
+          }
+          Some(_) => return Ok(unevaluated()),
+        }
+        if k == 0 || a < 0.0 {
+          return Ok(unevaluated());
+        }
+        (n, Box::new(move || price_edges(n, k, a)))
+      }
       ("WattsStrogatzGraphDistribution", 2 | 3) => {
         let k = if d.len() == 3 { count(&d[2]) } else { Some(2) };
         let (Some(n), Some(p), Some(k)) = (count(&d[0]), probability(&d[1]), k)
@@ -3525,14 +3623,6 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated()),
   };
 
-  let k = match positional.get(1) {
-    None => None,
-    Some(e) => match count(e) {
-      Some(k) => Some(k),
-      None => return Ok(unevaluated()),
-    },
-  };
-
   let make_graph = |edges: Vec<(usize, usize)>| -> Expr {
     let vertex_list: Vec<Expr> =
       (1..=n).map(|v| Expr::Integer(v as i128)).collect();
@@ -3540,7 +3630,11 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into_iter()
       .map(|(a, b)| {
         call(
-          "UndirectedEdge",
+          if directed {
+            "DirectedEdge"
+          } else {
+            "UndirectedEdge"
+          },
           vec![Expr::Integer(a as i128), Expr::Integer(b as i128)],
         )
       })
@@ -3553,13 +3647,9 @@ pub fn random_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graph", graph_args)
   };
 
-  match k {
-    None => Ok(make_graph(sample())),
-    Some(k) => {
-      let graphs: Vec<Expr> = (0..k).map(|_| make_graph(sample())).collect();
-      Ok(Expr::List(graphs.into()))
-    }
-  }
+  Ok(graph_array(shape.as_deref().unwrap_or(&[]), &|| {
+    make_graph(sample())
+  }))
 }
 
 /// Deterministically derive a 64-bit seed from a string. The same string

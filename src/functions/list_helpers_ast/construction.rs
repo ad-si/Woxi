@@ -1861,6 +1861,28 @@ fn build_range_indices(
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
+  // Exact rational endpoints: value_i = (an*bd*(n-1-i) + bn*ad*i) /
+  // (ad*bd*(n-1)) in machine integers, without a trip through the
+  // evaluator per sample (Array[f, 44100, {0, 1}] builds 44100 of them).
+  if let (Some((an, ad)), Some((bn, bd))) = (
+    crate::functions::math_ast::expr_to_rational(a),
+    crate::functions::math_ast::expr_to_rational(b),
+  ) {
+    let fast: Option<Vec<Expr>> = (0..n)
+      .map(|i| {
+        let num = an
+          .checked_mul(bd)?
+          .checked_mul(n - 1 - i)?
+          .checked_add(bn.checked_mul(ad)?.checked_mul(i)?)?;
+        let den = ad.checked_mul(bd)?.checked_mul(n - 1)?;
+        let (num, den) = rat_reduce(num, den);
+        Some(crate::functions::math_ast::make_rational(num, den))
+      })
+      .collect();
+    if let Some(values) = fast {
+      return Ok(values);
+    }
+  }
   // value_i = a + i * (b - a) / (n - 1)
   let diff = plus(vec![b.clone(), neg(a.clone())]);
   let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
