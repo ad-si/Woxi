@@ -884,6 +884,16 @@ pub fn position_extreme_ast(
     "PositionSmallest"
   };
   let unevaluated = || Ok(unevaluated(name, args));
+  // An association's values are ranked; positions count its entries.
+  if let Some(Expr::Association(pairs)) = args.first() {
+    let mut list_args = args.to_vec();
+    list_args[0] = Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect());
+    let result = position_extreme_ast(&list_args, largest)?;
+    if matches!(&result, Expr::FunctionCall { name: h, .. } if h == name) {
+      return unevaluated();
+    }
+    return Ok(result);
+  }
   let Some(Expr::List(items)) = args.first() else {
     return unevaluated();
   };
@@ -944,7 +954,15 @@ pub fn position_extreme_ast(
   }
   let mut vals = Vec::with_capacity(items.len());
   for it in items {
-    match crate::functions::math_ast::try_eval_to_f64(it) {
+    // Infinite values rank beyond every number.
+    let value = match it {
+      Expr::Identifier(s) if s == "Infinity" => Some(f64::INFINITY),
+      _ if crate::syntax::expr_to_string(it) == "-Infinity" => {
+        Some(f64::NEG_INFINITY)
+      }
+      _ => crate::functions::math_ast::try_eval_to_f64(it),
+    };
+    match value {
       Some(v) => vals.push(v),
       None => return unevaluated(),
     }

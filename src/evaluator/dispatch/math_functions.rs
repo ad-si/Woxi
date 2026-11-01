@@ -3008,6 +3008,19 @@ pub fn dispatch_math_functions(
           .collect();
         return Some(results.map(|v| Expr::List(v.into())));
       }
+      // A Gaussian integer: (-1)^(number of Gaussian prime factors, with
+      // multiplicity).
+      if let Some((re, im)) =
+        crate::functions::math_ast::expr_to_gaussian_int(&args[0])
+        && im != 0
+      {
+        return Some(Ok(
+          match crate::functions::math_ast::gaussian_prime_factor_count((re, im)) {
+            Some(k) => Expr::Integer(if k % 2 == 0 { 1 } else { -1 }),
+            None => call1("LiouvilleLambda", args[0].clone()),
+          },
+        ));
+      }
       // LiouvilleLambda[n] = (-1)^Omega(n) where Omega counts prime factors with multiplicity
       if let Expr::Integer(n) = &args[0] {
         if *n == 0 {

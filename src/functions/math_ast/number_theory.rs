@@ -247,6 +247,13 @@ fn gaussian_inverse(a: (i128, i128), m: (i128, i128)) -> Option<(i128, i128)> {
   }
 }
 
+/// The number of Gaussian prime factors of a nonzero Gaussian integer,
+/// counted with multiplicity (units excluded).
+pub(crate) fn gaussian_prime_factor_count(z: (i128, i128)) -> Option<i128> {
+  let (_, factors) = gaussian_factorization(z.0, z.1)?;
+  Some(factors.iter().map(|(_, e)| *e).sum())
+}
+
 /// Whether a nonzero Gaussian integer is square free (no repeated prime
 /// factor up to units), or `None` when it cannot be factored.
 pub(crate) fn gaussian_square_free(z: (i128, i128)) -> Option<bool> {
@@ -6411,8 +6418,9 @@ pub fn bit_flip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("BitFlip", args));
     }
     let pos = bit_length as i128 + k;
+    // A position left of the highest set bit leaves n unchanged.
     if pos < 0 {
-      return Ok(unevaluated("BitFlip", args));
+      return Ok(bigint_to_expr(n));
     }
     pos as u64
   };

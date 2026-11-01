@@ -895,6 +895,16 @@ pub fn delete_adjacent_duplicates_ast(
         keep.into_iter().map(|i| pairs[i].clone()).collect(),
       ))
     }
+    // Any other nonatomic expression keeps its head.
+    Expr::FunctionCall { name, args: items }
+      if !crate::functions::list_helpers_ast::sorting::is_atomic_arg(&args[0]) =>
+    {
+      let keep = run_starts(items)?;
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: keep.into_iter().map(|i| items[i].clone()).collect(),
+      })
+    }
     _ => Ok(unevaluated("DeleteAdjacentDuplicates", args)),
   }
 }
@@ -1111,6 +1121,31 @@ pub fn symmetric_difference_ast(
 
   if lists.is_empty() {
     return Ok(Expr::List(vec![].into()));
+  }
+
+  // Expressions with one common head other than List: work on their
+  // elements as lists and give the result that head.
+  if let Some(Expr::FunctionCall { name: head, .. }) = lists.first()
+    && lists.iter().all(|l| {
+      matches!(l, Expr::FunctionCall { name, .. } if name == head)
+        && !crate::functions::list_helpers_ast::sorting::is_atomic_arg(l)
+    })
+  {
+    let as_lists: Vec<Expr> = lists
+      .iter()
+      .map(|l| match l {
+        Expr::FunctionCall { args, .. } => Expr::List(args.clone()),
+        other => other.clone(),
+      })
+      .collect();
+    let result = symmetric_difference_ast(&as_lists)?;
+    return Ok(match &result {
+      Expr::List(items) => Expr::FunctionCall {
+        name: head.clone(),
+        args: items.clone(),
+      },
+      _ => unevaluated("SymmetricDifference", lists),
+    });
   }
 
   // A trailing `SameTest -> f` decides which elements are the same: keep

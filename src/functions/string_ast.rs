@@ -17863,9 +17863,22 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated());
   };
+  // StringExtract[s, patt -> All] with a pattern separator is
+  // StringSplit[s, patt].
+  if let [_, Expr::Rule { pattern, replacement }] = args
+    && !matches!(pattern.as_ref(), Expr::String(_))
+    && matches!(replacement.as_ref(), Expr::Identifier(a) if a == "All")
+  {
+    return crate::evaluator::evaluate_function_call_ast(
+      "StringSplit",
+      &[args[0].clone(), (**pattern).clone()],
+    );
+  }
   // Parse the spec list: each step is (delimiter, positions)
   let parse_pos = |e: &Expr| -> Option<Pos> {
     match e {
+      // All blocks.
+      Expr::Identifier(a) if a == "All" => Some(Pos::Range(1, None)),
       Expr::Integer(n) if *n != 0 => Some(Pos::One(*n as i64)),
       Expr::List(items) => {
         let mut v = Vec::with_capacity(items.len());
@@ -17938,6 +17951,17 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Several bare positions: whitespace separates the lowest level, newlines
+  // the next, and one more newline each level up.
+  if steps.len() > 1 && steps.iter().all(|(d, _)| d.is_none()) {
+    let m = steps.len();
+    for (i, step) in steps.iter_mut().enumerate() {
+      let level = m - 1 - i;
+      if level > 0 {
+        step.0 = Some("\n".repeat(level));
+      }
+    }
+  }
   // Split into fields (default: whitespace runs; explicit delimiter:
   // literal split with empty fields dropped, like StringSplit)
   let split = |text: &str, delim: &Option<String>| -> Vec<String> {
