@@ -7173,3 +7173,16 @@ from a stated rule or needs missing machinery:
 - Arbitrary-precision numbers print with all their guard digits in Woxi
   (`N[Pi^10, {Infinity, 5}]` is `93648.0474760830209737167`9.97…`), where
   wolframscript prints only the significant ones (`93648.0475`).
+- Round-5 long tail, third batch, not implemented (missing machinery or no
+  reproducible documented output): the angle-spec and `Point` forms of
+  `CircularArcThrough`, `CharacterName` name types (no Unicode name
+  database), 2-D `SavitzkyGolayMatrix`, `JordanReduce`, `FrobeniusReduce`,
+  `GroupStabilizer` (Wolfram's generator sets are not canonical),
+  3-argument `IncidenceList`, `Insphere` (needs `PolyhedronCoordinates`),
+  parametric `Perimeter`, `AnglePath3D`, `Latitude`/`Longitude`,
+  `MusicKeySignature`, `TemplateObject` application, `WordFrequency` with
+  alternatives, `Enclose` with tags, `TreeDepth`, `AddSides`/`ApplySides`,
+  `FunctionContinuous`, `CantorStaircase` and the 1-argument
+  `AugmentedSymmetricPolynomial`.
+- `LowerTriangularMatrix[SparseArray[…]]`: Wolfram's stored CSR data keeps
+  the input's insertion order, which Woxi's sorted sparse arrays do not.

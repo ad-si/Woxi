@@ -8289,7 +8289,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated(name, args)));
       };
       let mut points: Vec<i128> = Vec::new();
-      for g in gens.iter() {
+      for g in gens {
         let support = match crate::evaluator::evaluate_function_call_ast(
           "PermutationSupport",
           std::slice::from_ref(g),
@@ -8299,7 +8299,7 @@ pub fn dispatch_list_operations(
         };
         match &support {
           Expr::List(ps) => {
-            for p in ps.iter() {
+            for p in ps {
               match p {
                 Expr::Integer(i) => points.push(*i),
                 _ => return Some(Ok(unevaluated(name, args))),
