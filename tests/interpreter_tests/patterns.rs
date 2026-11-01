@@ -1934,6 +1934,31 @@ mod free_q {
   }
 
   #[test]
+  fn free_q_finds_parts_of_held_operator_forms() {
+    // `a - b` holds as `Plus[a, Times[-1, b]]`, `-x` as `Times[-1, x]`.
+    assert_eq!(interpret("FreeQ[Hold[1 - x], -x]").unwrap(), "False");
+    assert_eq!(
+      interpret("FreeQ[Hold[a - b], Times[-1, b]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("FreeQ[Hold[a - b], _Times]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[Hold[-x], -1]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[Hold[a/b], Power]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[Hold[x^2 + y], x^2]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[Hold[a && b || c], And]").unwrap(), "False");
+  }
+
+  #[test]
+  fn free_q_literal_atoms_match_only_like_atoms() {
+    // Same text, different atoms.
+    assert_eq!(interpret("FreeQ[{\"1\"}, 1]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[{1.}, 1]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[{x}, \"x\"]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[{2 x}, 2]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[{f[x]}, f[x]]").unwrap(), "False");
+  }
+
+  #[test]
   fn free_q_head_list() {
     assert_eq!(interpret("FreeQ[{1,2,3}, List]").unwrap(), "False");
   }

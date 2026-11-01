@@ -3594,10 +3594,36 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if stripped_a.is_some() || stripped_b.is_some() {
     let sa = stripped_a.as_ref().unwrap_or(a);
     let sb = stripped_b.as_ref().unwrap_or(b);
-    // Terms built on a sum (`Sqrt[1 - x^(-2)]`) are left to the rule below:
-    // Woxi's ordering of a reciprocal monomial against a power of a sum does
-    // not yet match Wolfram, and the stripped comparison would surface that.
-    if !is_sum_based(sa) && !is_sum_based(sb) {
+    // Terms built on a sum against a reciprocal (`Sqrt[1 - x^(-2)]` against
+    // `I/x`) are left to the rule below: Woxi's ordering of a reciprocal
+    // monomial against a power of a sum does not yet match Wolfram, and the
+    // stripped comparison would surface that. A plain monomial against a
+    // power of a sum compares as usual: `I z + Sqrt[1 - z^2]`, like
+    // `z + Sqrt[1 - z^2]`.
+    let reciprocal = |e: &Expr| {
+      crate::syntax::expr_to_string(e).contains("^(-")
+        || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    let sum_vs_reciprocal = (is_sum_based(sa) || is_sum_based(sb))
+      && (reciprocal(sa) || reciprocal(sb) || {
+        let (sa_s, sb_s) = (
+          crate::syntax::expr_to_string(sa),
+          crate::syntax::expr_to_string(sb),
+        );
+        sa_s.contains('/') || sb_s.contains('/')
+      });
+    // A bare sum (`I (a + b)`) is likewise left to the rule below.
+    let bare_sum = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+    };
+    if !sum_vs_reciprocal && !bare_sum(sa) && !bare_sum(sb) {
       let cmp = compare_plus_terms(sa, sb);
       if cmp != std::cmp::Ordering::Equal {
         return cmp;

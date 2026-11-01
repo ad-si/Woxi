@@ -47,7 +47,9 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let info = extract_assumption_info(&assumption_expr);
         let result = refine_expr(&args[0], &info, &assumption_expr);
-        return Ok(normalize_refined_arith(&fold_refine_zeros(&result)));
+        return Ok(evaluate_refined(normalize_refined_arith(
+          &fold_refine_zeros(&result),
+        )));
       }
     }
     return Ok(args[0].clone());
@@ -72,7 +74,9 @@ pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Recursively simplify the expression under the assumption
   let result = refine_expr(expr, &info, assumption);
 
-  Ok(normalize_refined_arith(&fold_refine_zeros(&result)))
+  Ok(evaluate_refined(normalize_refined_arith(
+    &fold_refine_zeros(&result),
+  )))
 }
 
 /// Fold the trivial arithmetic identities that assumption substitutions can
@@ -121,6 +125,12 @@ fn fold_refine_zeros(expr: &Expr) -> Expr {
 /// value depends on the assumption/branch (Log, Sqrt, …) are never
 /// re-evaluated. A sum with no like terms to merge is returned untouched so
 /// existing canonical forms are preserved verbatim.
+/// The refined expression re-evaluated, so sums the refinement produced
+/// flatten and combine (`y + (1/2 + x)` → `1/2 + x + y`).
+fn evaluate_refined(e: Expr) -> Expr {
+  crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
+}
+
 fn normalize_refined_arith(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, .. } if name == "Plus" => combine_additive(expr),
@@ -990,6 +1000,35 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
   }
   if let Some(rooted) = refine_sum_root(expr, info, assumption) {
     return rooted;
+  }
+  if let Some(value) = refine_trig_at_half_pi_multiple(expr, info) {
+    return value;
+  }
+  if let Some(value) = refine_at_integer_poles(expr, info) {
+    return value;
+  }
+  if let Some(value) = refine_inverse_trig_on_interval(expr, assumption) {
+    return value;
+  }
+  if let Some(value) = refine_multi_arg_step(expr, info) {
+    return value;
+  }
+  if let Some(value) = refine_gcd_lcm(expr, info) {
+    return value;
+  }
+  if let Some(value) = refine_quotient(expr, info) {
+    return value;
+  }
+  if let Some(value) = refine_unit_shape_outside(expr, assumption) {
+    return value;
+  }
+  // A rounding function of a linear argument that is constant on the
+  // assumed interval.
+  if let Ok(Some(value)) =
+    crate::functions::piecewise_rounding::expand_rounding(expr, assumption)
+    && !matches!(&value, Expr::FunctionCall { name, .. } if name == "Piecewise")
+  {
+    return value;
   }
   match expr {
     // Comparisons: check if they can be resolved under assumptions
@@ -2915,6 +2954,590 @@ fn is_imaginary_unit(expr: &Expr) -> bool {
 
 /// Check if an expression is an integer multiple of Pi.
 /// E.g., k*Pi where k ∈ Integers.
+/// The six trigonometric functions (and their `…Degrees` variants) at an
+/// integer or half-integer multiple of a half turn, `(k + r) Pi` with k a
+/// known integer and r ∈ {0, 1/2}:
+///   Sin → 0 | (-1)^k, Cos → (-1)^k | 0, Tan → 0 | ComplexInfinity,
+///   Cot → ComplexInfinity | 0, Sec → (-1)^k | ComplexInfinity,
+///   Csc → ComplexInfinity | (-1)^k.
+fn refine_trig_at_half_pi_multiple(
+  expr: &Expr,
+  info: &AssumptionInfo,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let (base, half_turn) = match name.as_str() {
+    "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" => {
+      (name.as_str(), Expr::Constant("Pi".into()))
+    }
+    "SinDegrees" | "CosDegrees" | "TanDegrees" | "CotDegrees"
+    | "SecDegrees" | "CscDegrees" => {
+      (name.trim_end_matches("Degrees"), Expr::Integer(180))
+    }
+    _ => return None,
+  };
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  // c = arg / half_turn; it must be free of Pi.
+  let c = eval(call("Expand", vec![div2(args[0].clone(), half_turn)]))?;
+  if crate::syntax::expr_to_string(&c).contains("Pi") {
+    return None;
+  }
+  for half in [false, true] {
+    let k = if half {
+      eval(call(
+        "Expand",
+        vec![plus2(
+          c.clone(),
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        )],
+      ))?
+    } else {
+      c.clone()
+    };
+    if !is_known_integer(&k, info) {
+      continue;
+    }
+    let sign = || {
+      neg_one_integer_power(&k, info)
+        .unwrap_or_else(|| pow2(Expr::Integer(-1), k.clone()))
+    };
+    let infinity = || Expr::Identifier("ComplexInfinity".into());
+    return Some(match (base, half) {
+      ("Sin" | "Tan", false) | ("Cos" | "Cot", true) => Expr::Integer(0),
+      ("Cos" | "Sec", false) | ("Sin" | "Csc", true) => sign(),
+      _ => infinity(),
+    });
+  }
+  None
+}
+
+/// Functions at their poles or zeros on the integers: Gamma[n] is
+/// ComplexInfinity for an integer n <= 0, and Sinc[k Pi] is 0 for a nonzero
+/// integer k.
+fn refine_at_integer_poles(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  match name.as_str() {
+    "Gamma"
+      if is_known_integer(&args[0], info)
+        && is_known_nonpositive(&args[0], info) =>
+    {
+      Some(Expr::Identifier("ComplexInfinity".into()))
+    }
+    "Sinc" => {
+      let c = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Expand",
+        vec![div2(args[0].clone(), Expr::Constant("Pi".into()))],
+      ))
+      .ok()?;
+      if crate::syntax::expr_to_string(&c).contains("Pi")
+        || !is_known_integer(&c, info)
+        || !is_known_nonzero(&c, info)
+      {
+        return None;
+      }
+      Some(Expr::Integer(0))
+    }
+    _ => None,
+  }
+}
+
+/// The step and delta functions of several arguments once the signs of the
+/// arguments are known: UnitStep is 0 when an argument is negative and 1
+/// when all are nonnegative, HeavisideTheta likewise with positive
+/// arguments, DiscreteDelta is 0 when an argument is nonzero, and
+/// KroneckerDelta is 0 when two arguments have different signs.
+fn refine_multi_arg_step(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.is_empty() {
+    return None;
+  }
+  let zero = || Some(Expr::Integer(0));
+  let one = || Some(Expr::Integer(1));
+  let neg = |a: &Expr| is_known_negative_expr(a, info);
+  let pos = |a: &Expr| is_known_positive(a, info);
+  match name.as_str() {
+    "UnitStep" => {
+      if args.iter().any(neg) {
+        zero()
+      } else if args.iter().all(|a| is_known_nonnegative(a, info)) {
+        one()
+      } else {
+        None
+      }
+    }
+    "HeavisideTheta" => {
+      if args.iter().any(neg) {
+        zero()
+      } else if args.iter().all(pos) {
+        one()
+      } else {
+        None
+      }
+    }
+    "DiscreteDelta" => {
+      if args.iter().any(|a| is_known_nonzero(a, info)) {
+        zero()
+      } else {
+        None
+      }
+    }
+    "KroneckerDelta" if args.len() >= 2 => {
+      let differ = |a: &Expr, b: &Expr| {
+        (neg(a) && is_known_nonnegative(b, info))
+          || (pos(a) && is_known_nonpositive(b, info))
+          || (neg(b) && is_known_nonnegative(a, info))
+          || (pos(b) && is_known_nonpositive(a, info))
+      };
+      let any_differ = args
+        .iter()
+        .enumerate()
+        .any(|(i, a)| args[i + 1..].iter().any(|b| differ(a, b)));
+      if any_differ { zero() } else { None }
+    }
+    _ => None,
+  }
+}
+
+/// Whether the assumptions put `e` in the Primes (`e ∈ Primes` or
+/// `{…, e, …} ∈ Primes`).
+fn is_assumed_prime(e: &Expr, info: &AssumptionInfo) -> bool {
+  let key = expr_to_string(e);
+  info.raw_assumptions.iter().any(|a| match a {
+    Expr::FunctionCall { name, args }
+      if name == "Element"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(d) if d == "Primes") =>
+    {
+      extract_element_vars(&args[0]).contains(&key)
+    }
+    _ => false,
+  })
+}
+
+/// `a != b` among the assumptions.
+fn is_assumed_distinct(a: &Expr, b: &Expr, info: &AssumptionInfo) -> bool {
+  let (ka, kb) = (expr_to_string(a), expr_to_string(b));
+  info.raw_assumptions.iter().any(|x| match x {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::NotEqual => {
+      let (s0, s1) =
+        (expr_to_string(&operands[0]), expr_to_string(&operands[1]));
+      (s0 == ka && s1 == kb) || (s0 == kb && s1 == ka)
+    }
+    _ => false,
+  })
+}
+
+/// GCD and LCM of distinct primes (1 and their product), and
+/// LCM[m, n] GCD[m, n] == Abs[m n] for integers m, n.
+fn refine_gcd_lcm(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let distinct_primes = || {
+    args.len() >= 2
+      && args.iter().all(|a| is_assumed_prime(a, info))
+      && args.iter().enumerate().all(|(i, a)| {
+        args[i + 1..]
+          .iter()
+          .all(|b| is_assumed_distinct(a, b, info))
+      })
+  };
+  match name.as_str() {
+    "GCD" if distinct_primes() => Some(Expr::Integer(1)),
+    "LCM" if distinct_primes() => Some(times(args.to_vec())),
+    "Times" => {
+      let key_args = |n: &str| {
+        args.iter().position(|f| {
+          matches!(f, Expr::FunctionCall { name, args } if name == n && args.len() == 2)
+        })
+      };
+      let (gi, li) = (key_args("GCD")?, key_args("LCM")?);
+      let (
+        Expr::FunctionCall { args: ga, .. },
+        Expr::FunctionCall { args: la, .. },
+      ) = (&args[gi], &args[li])
+      else {
+        return None;
+      };
+      if expr_to_string(&Expr::List(ga.clone()))
+        != expr_to_string(&Expr::List(la.clone()))
+        || !ga.iter().all(|a| is_known_integer(a, info))
+      {
+        return None;
+      }
+      let mut rest: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != gi && *i != li)
+        .map(|(_, f)| f.clone())
+        .collect();
+      rest.push(call("Abs", vec![times(ga.to_vec())]));
+      Some(if rest.len() == 1 {
+        rest.pop()?
+      } else {
+        times(rest)
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Quotient[m, d] for an integer d once the integer part of m/d is known:
+///  * m/d itself is an integer (directly, or as an integer combination of an
+///    assumed-integer expression plus an integer) → m/d;
+///  * m = d k + c with k a known integer and c an integer → k + Floor[c/d].
+fn refine_quotient(expr: &Expr, info: &AssumptionInfo) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Quotient" || args.len() != 2 {
+    return None;
+  }
+  let Expr::Integer(d) = args[1] else {
+    return None;
+  };
+  if d == 0 {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let ratio = eval(call(
+    "Expand",
+    vec![div2(args[0].clone(), Expr::Integer(d))],
+  ))?;
+  if is_known_integer(&ratio, info) {
+    return Some(ratio);
+  }
+  // An integer combination c e + j of an assumed-integer expression e.
+  for a in &info.raw_assumptions {
+    let Expr::FunctionCall { name, args: el } = a else {
+      continue;
+    };
+    if name != "Element"
+      || el.len() != 2
+      || !matches!(&el[1], Expr::Identifier(dom) if dom == "Integers")
+      || matches!(el[0], Expr::Identifier(_))
+    {
+      continue;
+    }
+    let e = &el[0];
+    let Some(var) = first_symbol(e) else {
+      continue;
+    };
+    let var = Expr::Identifier(var);
+    let c = eval(call(
+      "Together",
+      vec![div2(
+        call("D", vec![ratio.clone(), var.clone()]),
+        call("D", vec![e.clone(), var.clone()]),
+      )],
+    ))?;
+    if !matches!(c, Expr::Integer(_)) {
+      continue;
+    }
+    let rest = eval(call(
+      "Expand",
+      vec![minus2(ratio.clone(), times2(c.clone(), e.clone()))],
+    ))?;
+    if is_known_integer(&rest, info) {
+      return eval(call("Together", vec![ratio.clone()]));
+    }
+  }
+  // m = d k + c: split the expanded numerator into multiples of d with
+  // integer factors and an integer remainder.
+  let numerator = eval(call("Expand", vec![args[0].clone()]))?;
+  let terms = match &numerator {
+    Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  let mut whole: Vec<Expr> = Vec::new();
+  let mut constant: i128 = 0;
+  for t in terms {
+    if let Expr::Integer(c) = t {
+      constant = constant.checked_add(c)?;
+      continue;
+    }
+    let q = eval(div2(t.clone(), Expr::Integer(d)))?;
+    if !is_known_integer(&q, info) {
+      return None;
+    }
+    whole.push(q);
+  }
+  if whole.is_empty() {
+    return None;
+  }
+  whole.push(Expr::Integer(constant.div_euclid(d)));
+  let sum = eval(call("Plus", whole))?;
+  Some(simplify_expr_with_together(&sum))
+}
+
+/// UnitBox / UnitTriangle with an argument assumed outside the support
+/// (|x| > 1/2, resp. |x| >= 1) vanish.
+fn refine_unit_shape_outside(expr: &Expr, assumption: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let (edge, edge_in) = match name.as_str() {
+    "UnitBox" => (0.5, true),
+    "UnitTriangle" => (1.0, false),
+    _ => return None,
+  };
+  let outside = |a: &Expr| {
+    let Expr::Identifier(v) = a else {
+      return false;
+    };
+    let (lo, hi) = numeric_bounds_of(v, assumption);
+    let below = hi.is_some_and(|(h, closed)| {
+      h < -edge || (h == -edge && !(closed && edge_in))
+    });
+    let above = lo.is_some_and(|(l, closed)| {
+      l > edge || (l == edge && !(closed && edge_in))
+    });
+    below || above
+  };
+  args.iter().any(outside).then_some(Expr::Integer(0))
+}
+
+/// The first symbol (in depth-first order) of an expression.
+fn first_symbol(e: &Expr) -> Option<String> {
+  match e {
+    Expr::Identifier(n) if !matches!(n.as_str(), "Pi" | "E" | "I") => {
+      Some(n.clone())
+    }
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().find_map(first_symbol)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      first_symbol(left).or_else(|| first_symbol(right))
+    }
+    Expr::UnaryOp { operand, .. } => first_symbol(operand),
+    _ => None,
+  }
+}
+
+/// Numeric bounds the assumption puts on the symbol `var`:
+/// (lower, upper), each as (value, attained).
+fn numeric_bounds_of(
+  var: &str,
+  assumption: &Expr,
+) -> (Option<(f64, bool)>, Option<(f64, bool)>) {
+  let mut lo: Option<(f64, bool)> = None;
+  let mut hi: Option<(f64, bool)> = None;
+  let num = |e: &Expr| -> Option<f64> {
+    let n =
+      crate::evaluator::evaluate_expr_to_expr(&call("N", vec![e.clone()]))
+        .ok()?;
+    match n {
+      Expr::Real(f) => Some(f),
+      Expr::Integer(i) => Some(i as f64),
+      _ => None,
+    }
+  };
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+  let mut stack = vec![assumption.clone()];
+  while let Some(a) = stack.pop() {
+    match &a {
+      Expr::FunctionCall { name, args } if name == "And" => {
+        stack.extend(args.iter().cloned());
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == operators.len() + 1 => {
+        for (k, op) in operators.iter().enumerate() {
+          let (l, r) = (&operands[k], &operands[k + 1]);
+          let (small, big, closed) = match op {
+            ComparisonOp::Less => (l, r, false),
+            ComparisonOp::LessEqual => (l, r, true),
+            ComparisonOp::Greater => (r, l, false),
+            ComparisonOp::GreaterEqual => (r, l, true),
+            _ => continue,
+          };
+          if is_var(small) {
+            if let Some(v) = num(big) {
+              hi = Some((v, closed));
+            }
+          } else if is_var(big)
+            && let Some(v) = num(small)
+          {
+            lo = Some((v, closed));
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+  (lo, hi)
+}
+
+/// Whether the assumption confines the symbol `e` to the interval from `a`
+/// to `b` (each end closed when the flag is set).
+fn confined_to(
+  e: &Expr,
+  assumption: &Expr,
+  a: f64,
+  a_closed: bool,
+  b: f64,
+  b_closed: bool,
+) -> bool {
+  let Expr::Identifier(var) = e else {
+    return false;
+  };
+  let (Some((lo, lc)), Some((hi, hc))) = numeric_bounds_of(var, assumption)
+  else {
+    return false;
+  };
+  let eps = 1e-12;
+  let lower_ok = lo > a + eps || ((lo - a).abs() <= eps && (a_closed || !lc));
+  let upper_ok = hi < b - eps || ((hi - b).abs() <= eps && (b_closed || !hc));
+  lower_ok && upper_ok
+}
+
+/// Inverse trigonometric functions of their own trigonometric function, or
+/// of the complementary root, on an interval where they invert:
+///   ArcSin[Sin[z]] → z for -Pi/2 <= z <= Pi/2 (ArcCsc likewise, z != 0),
+///   ArcCos[Cos[z]] → z for 0 <= z <= Pi (ArcSec likewise, z != Pi/2),
+///   ArcCos[Sqrt[1 - x^2]] → ArcSin[x] and ArcSin[Sqrt[1 - x^2]] → ArcCos[x]
+///   for 0 <= x <= 1, ArcSec/ArcCsc of Sqrt[1/(1 - x^2)] likewise, and the
+///   same for the …Degrees variants.
+fn refine_inverse_trig_on_interval(
+  expr: &Expr,
+  assumption: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let (base, degrees) = match name.strip_suffix("Degrees") {
+    Some(b) => (b, true),
+    None => (name.as_str(), false),
+  };
+  if !matches!(base, "ArcSin" | "ArcCos" | "ArcSec" | "ArcCsc") {
+    return None;
+  }
+  let half_pi = std::f64::consts::FRAC_PI_2;
+  // ArcF[F[z]] → z (radian forms only).
+  if !degrees
+    && let Expr::FunctionCall {
+      name: inner,
+      args: inner_args,
+    } = &args[0]
+    && inner_args.len() == 1
+    && inner.as_str() == &base[3..]
+  {
+    let z = &inner_args[0];
+    let inside = match base {
+      "ArcSin" => confined_to(z, assumption, -half_pi, true, half_pi, true),
+      "ArcCsc" => {
+        confined_to(z, assumption, -half_pi, true, 0.0, false)
+          || confined_to(z, assumption, 0.0, false, half_pi, true)
+      }
+      "ArcCos" => confined_to(z, assumption, 0.0, true, 2.0 * half_pi, true),
+      _ => {
+        confined_to(z, assumption, 0.0, true, half_pi, false)
+          || confined_to(z, assumption, half_pi, false, 2.0 * half_pi, true)
+      }
+    };
+    return inside.then(|| z.clone());
+  }
+  // ArcF[Sqrt[1 - x^2]] or ArcF[Sqrt[1/(1 - x^2)]].
+  let root = match &args[0] {
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      &args[0]
+    }
+    other => as_sqrt(other)?,
+  };
+  let (radicand, reciprocal) = match root {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(-1)) =>
+    {
+      (args[0].clone(), true)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => {
+      (left.as_ref().clone(), true)
+    }
+    other => (other.clone(), false),
+  };
+  if reciprocal != matches!(base, "ArcSec" | "ArcCsc") {
+    return None;
+  }
+  // radicand == 1 - x^2
+  let square = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Expand",
+    vec![minus2(Expr::Integer(1), radicand)],
+  ))
+  .ok()?;
+  let x = match &square {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(2)) =>
+    {
+      args[0].clone()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(2)) => left.as_ref().clone(),
+    _ => return None,
+  };
+  if !confined_to(&x, assumption, 0.0, true, 1.0, true) {
+    return None;
+  }
+  let target = match base {
+    "ArcCos" | "ArcSec" => "ArcSin",
+    _ => "ArcCos",
+  };
+  let target = if degrees {
+    format!("{target}Degrees")
+  } else {
+    target.to_string()
+  };
+  Some(call(&target, vec![x]))
+}
+
+/// x != 0 under the assumptions: known positive or negative, or an explicit
+/// `x != 0` (Unequal) assumption.
+fn is_known_nonzero(expr: &Expr, info: &AssumptionInfo) -> bool {
+  if is_known_positive(expr, info) || is_known_negative_expr(expr, info) {
+    return true;
+  }
+  let key = crate::syntax::expr_to_string(expr);
+  info.raw_assumptions.iter().any(|a| match a {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::NotEqual => {
+      let s0 = crate::syntax::expr_to_string(&operands[0]);
+      let s1 = crate::syntax::expr_to_string(&operands[1]);
+      (s0 == key && s1 == "0") || (s1 == key && s0 == "0")
+    }
+    _ => false,
+  })
+}
+
 fn is_integer_multiple_of_pi(expr: &Expr, info: &AssumptionInfo) -> bool {
   extract_pi_integer_coefficient(expr, info).is_some()
 }
@@ -6726,6 +7349,273 @@ fn simplify_call_arguments(
 
 /// Retrieve the current `$Assumptions` from the environment, if any, as an Expr.
 /// Returns None when `$Assumptions` is unset or equals `True`.
+/// Whether `lhs == rhs` becomes an identity once both sides are put through
+/// the rewrites in `normalize_for_identity` (mirror symmetry, parity, …).
+fn sides_agree_after_identities(lhs: &Expr, rhs: &Expr) -> bool {
+  let assumptions = current_assumptions();
+  let info = assumptions.as_ref().map_or_else(
+    || extract_assumption_info(&bool_expr(true)),
+    extract_assumption_info,
+  );
+  let l = normalize_for_identity(lhs, &info);
+  let r = normalize_for_identity(rhs, &info);
+  let (Ok(l), Ok(r)) = (
+    crate::evaluator::evaluate_expr_to_expr(&l),
+    crate::evaluator::evaluate_expr_to_expr(&r),
+  ) else {
+    return false;
+  };
+  let mut diff = super::expand_and_combine(&minus2(l, r));
+  // Integer assumptions settle signs like (-1)^(2 n) == 1.
+  if let Some(assum) = &assumptions {
+    diff = super::expand_and_combine(&refine_expr(&diff, &info, assum));
+  }
+  if matches!(diff, Expr::Integer(0))
+    || is_zero_constant(&simplify_expr_with_together(&diff))
+  {
+    return true;
+  }
+  // Last resort: write special functions out (Sinc[x] → Sin[x]/x,
+  // Haversine[x] → (1 - Cos[x])/2) and reduce the trigonometric powers.
+  let Ok(expanded) = crate::evaluator::evaluate_expr_to_expr(&call(
+    "TrigReduce",
+    vec![call("FunctionExpand", vec![diff])],
+  )) else {
+    return false;
+  };
+  let expanded = super::expand_and_combine(&expanded);
+  matches!(expanded, Expr::Integer(0))
+    || is_zero_constant(&simplify_expr_with_together(&expanded))
+}
+
+/// Functions with the mirror property f(z*) == f(z)* (Schwarz reflection),
+/// as Wolfram's FullSimplify applies it.
+const MIRROR_FUNCTIONS: &[&str] = &[
+  "Sin",
+  "Cos",
+  "Tan",
+  "Cot",
+  "Sec",
+  "Csc",
+  "Sinh",
+  "Cosh",
+  "Tanh",
+  "Coth",
+  "Sech",
+  "Csch",
+  "SinDegrees",
+  "CosDegrees",
+  "TanDegrees",
+  "CotDegrees",
+  "SecDegrees",
+  "CscDegrees",
+  "ArcTan",
+  "ArcCot",
+  "ArcSinh",
+  "ArcCsch",
+  "ArcTanDegrees",
+  "ArcCotDegrees",
+  "Exp",
+  "Gamma",
+  "Beta",
+  "Zeta",
+  "Erf",
+  "Erfc",
+  "Erfi",
+  "LogisticSigmoid",
+  "Haversine",
+  "PascalBinomial",
+];
+
+/// Rewrites used to decide an identity `lhs == rhs`:
+///  * mirror symmetry: Conjugate[f[z, …]] → f[Conjugate[z], …];
+///  * Arg[Conjugate[z]] → -Arg[z] when z is assumed not negative;
+///  * parity of the Bessel functions for an integer order n:
+///    BesselJ[n, -z] → (-1)^n BesselJ[n, z], BesselI likewise, and
+///    BesselY[-n, z] → (-1)^n BesselY[n, z].
+fn normalize_for_identity(expr: &Expr, info: &AssumptionInfo) -> Expr {
+  let expr = match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| normalize_for_identity(a, info))
+        .collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(normalize_for_identity(left, info)),
+      right: Box::new(normalize_for_identity(right, info)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(normalize_for_identity(operand, info)),
+    },
+    other => other.clone(),
+  };
+  let Expr::FunctionCall { name, args } = &expr else {
+    return expr;
+  };
+  match (name.as_str(), args.len()) {
+    ("Conjugate", 1) => conjugate_inward(&args[0]).unwrap_or(expr),
+    ("Arg", 1) => match &args[0] {
+      Expr::FunctionCall {
+        name: inner,
+        args: inner_args,
+      } if inner == "Conjugate"
+        && inner_args.len() == 1
+        && is_known_nonnegative(&inner_args[0], info) =>
+      {
+        neg(call("Arg", vec![inner_args[0].clone()]))
+      }
+      _ => expr,
+    },
+    ("BesselJ" | "BesselI", 2) if is_known_integer(&args[0], info) => {
+      match negated_operand(&args[1]) {
+        Some(z) => times(vec![
+          pow(Expr::Integer(-1), args[0].clone()),
+          call(name, vec![args[0].clone(), z]),
+        ]),
+        None => expr,
+      }
+    }
+    // Mod[a, -b] == -Mod[-a, b].
+    ("Mod", 2) => match negated_operand(&args[1]) {
+      Some(b) => neg(call("Mod", vec![neg(args[0].clone()), b])),
+      None => expr,
+    },
+    // |x^n| == |x|^n for real n.
+    ("Abs", 1) => match &args[0] {
+      Expr::FunctionCall { name: p, args: pa }
+        if p == "Power" && pa.len() == 2 && is_known_real(&pa[1], info) =>
+      {
+        pow(call("Abs", vec![pa[0].clone()]), pa[1].clone())
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if is_known_real(right, info) => pow(
+        call("Abs", vec![left.as_ref().clone()]),
+        right.as_ref().clone(),
+      ),
+      _ => expr,
+    },
+    // Clip is odd.
+    ("Clip", 1) => match negated_operand(&args[0]) {
+      Some(x) => neg(call("Clip", vec![x])),
+      None => expr,
+    },
+    // Ramp[x] == (x + RealAbs[x])/2.
+    ("Ramp", 1) => times(vec![
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      plus(vec![
+        args[0].clone(),
+        call("RealAbs", vec![args[0].clone()]),
+      ]),
+    ]),
+    // The Hankel functions as J ± I Y.
+    (
+      "HankelH1" | "HankelH2" | "SphericalHankelH1" | "SphericalHankelH2",
+      2,
+    ) => {
+      let (j, y) = if name.starts_with("Spherical") {
+        ("SphericalBesselJ", "SphericalBesselY")
+      } else {
+        ("BesselJ", "BesselY")
+      };
+      let sign = if name.ends_with('1') { 1 } else { -1 };
+      plus(vec![
+        call(j, args.to_vec()),
+        times(vec![
+          Expr::Integer(sign),
+          Expr::Identifier("I".into()),
+          call(y, args.to_vec()),
+        ]),
+      ])
+    }
+    ("BesselY", 2) if is_known_integer(&args[0], info) => {
+      match negated_operand(&args[0]) {
+        Some(n) => times(vec![
+          pow(Expr::Integer(-1), n.clone()),
+          call(name, vec![n, args[1].clone()]),
+        ]),
+        None => expr,
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// Conjugate[e] pushed inside: through sums, products, integer powers and
+/// the functions with the mirror property; real numbers drop it.
+fn conjugate_inward(e: &Expr) -> Option<Expr> {
+  let conj = |a: &Expr| {
+    conjugate_inward(a).unwrap_or_else(|| call("Conjugate", vec![a.clone()]))
+  };
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => Some(e.clone()),
+    Expr::Constant(c) if matches!(c.as_str(), "Pi" | "E" | "EulerGamma") => {
+      Some(e.clone())
+    }
+    Expr::FunctionCall { name, .. } if name == "Rational" => Some(e.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Plus"
+        || name == "Times"
+        || MIRROR_FUNCTIONS.contains(&name.as_str()) =>
+    {
+      Some(call(name, args.iter().map(conj).collect()))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(_)) =>
+    {
+      Some(pow(conj(&args[0]), args[1].clone()))
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        BinaryOperator::Plus | BinaryOperator::Minus | BinaryOperator::Times
+      ) || (matches!(op, BinaryOperator::Divide)) =>
+    {
+      Some(Expr::BinaryOp {
+        op: *op,
+        left: Box::new(conj(left)),
+        right: Box::new(conj(right)),
+      })
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(neg1(conj(operand))),
+    _ => None,
+  }
+}
+
+/// `e` when the expression is `-e` (a product with a leading -1).
+fn negated_operand(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(operand.as_ref().clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && matches!(args[0], Expr::Integer(-1)) =>
+    {
+      let rest: Vec<Expr> = args[1..].to_vec();
+      Some(if rest.len() == 1 {
+        rest.into_iter().next().unwrap()
+      } else {
+        times(rest)
+      })
+    }
+    _ => None,
+  }
+}
+
 fn current_assumptions() -> Option<Expr> {
   let assumptions_str = crate::ENV.with(|e| {
     e.borrow().get("$Assumptions").map(|sv| match sv {
@@ -6842,7 +7732,7 @@ fn simplify_with_assumptions(expr: &Expr, opts: &Expr, full: bool) -> Expr {
     }
   });
 
-  result
+  evaluate_refined(result)
 }
 
 /// FullSimplify: more aggressive than Simplify.
@@ -6892,6 +7782,44 @@ fn extract_coeff_inverse_trig(term: &Expr) -> Option<(Expr, String, Expr)> {
 /// ArcTan + ArcCot, which is +-Pi/2 by sign, so it is excluded). Only a bare
 /// two-term sum qualifies, matching wolframscript (which leaves
 /// `ArcSin[x] + ArcCos[x] + z` untouched).
+/// A product with the factors Abs[u] and Sign[u] (u == Abs[u] Sign[u] for
+/// every complex u): the pair collapses to u.
+fn try_abs_times_sign(expr: &Expr) -> Option<Expr> {
+  let factors = collect_times_factors(expr);
+  if factors.len() < 2 {
+    return None;
+  }
+  let arg_of = |f: &Expr, head: &str| match f {
+    Expr::FunctionCall { name, args } if name == head && args.len() == 1 => {
+      Some(expr_to_string(&args[0]))
+    }
+    _ => None,
+  };
+  for (i, f) in factors.iter().enumerate() {
+    let Some(u) = arg_of(f, "Abs") else {
+      continue;
+    };
+    let Some(j) = factors
+      .iter()
+      .position(|g| arg_of(g, "Sign").as_deref() == Some(u.as_str()))
+    else {
+      continue;
+    };
+    let Expr::FunctionCall { args, .. } = f else {
+      continue;
+    };
+    let mut rest: Vec<Expr> = factors
+      .iter()
+      .enumerate()
+      .filter(|(k, _)| *k != i && *k != j)
+      .map(|(_, g)| g.clone())
+      .collect();
+    rest.push(args[0].clone());
+    return crate::evaluator::evaluate_expr_to_expr(&times(rest)).ok();
+  }
+  None
+}
+
 fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
   let terms: Vec<&Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() == 2 => {
@@ -7116,6 +8044,11 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   // ArcSin[u] + ArcCos[u] -> Pi/2 (and the ArcSec/ArcCsc pair).
   if let Some(result) = try_complementary_inverse_trig(expr) {
     return result;
+  }
+
+  // Abs[u] Sign[u] -> u.
+  if let Some(result) = try_abs_times_sign(expr) {
+    return full_simplify_expr(&result);
   }
 
   // Combine Abs quotients/products before other simplification
@@ -8140,6 +9073,61 @@ fn simplify_additive(expr: &Expr) -> Expr {
 }
 
 /// Full simplification: expand, combine like terms, simplify.
+/// Max (resp. Min) without the arguments that differ from another
+/// argument by a nonpositive (resp. nonnegative) constant:
+/// Max[1 - x, x, 1 + x] → Max[1 - x, 1 + x]. None when nothing is dropped.
+fn prune_max_min(is_max: bool, args: &[Expr]) -> Option<Expr> {
+  let n = args.len();
+  let mut keep = vec![true; n];
+  for i in 0..n {
+    for j in 0..n {
+      if i == j || !keep[j] {
+        continue;
+      }
+      // d = args[i] - args[j]; drop i when it never wins against j.
+      let d =
+        super::expand_and_combine(&minus2(args[i].clone(), args[j].clone()));
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(&d) else {
+        continue;
+      };
+      if !contains_symbols(&d) && ((is_max && v < 0.0) || (!is_max && v > 0.0))
+      {
+        keep[i] = false;
+        break;
+      }
+    }
+  }
+  if keep.iter().all(|k| *k) {
+    return None;
+  }
+  let rest: Vec<Expr> = args
+    .iter()
+    .zip(keep)
+    .filter(|(_, k)| *k)
+    .map(|(a, _)| a.clone())
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    if is_max { "Max" } else { "Min" },
+    rest,
+  ))
+  .ok()
+}
+
+/// Whether `e` mentions a symbol (other than the numeric constants).
+fn contains_symbols(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(n) => !matches!(n.as_str(), "Pi" | "E" | "I"),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_symbols)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_symbols(left) || contains_symbols(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_symbols(operand),
+    _ => false,
+  }
+}
+
 pub fn simplify_expr(expr: &Expr) -> Expr {
   let normal = simplify_expr_inner(expr);
   // Converse power-reduction identity: α(1 ∓ Cos[w]) → 2α·Sin/Cos[w/2]^2.
@@ -8163,6 +9151,15 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
 
     // Thread over Lists
     Expr::List(items) => Expr::List(items.iter().map(simplify_expr).collect()),
+
+    // Max/Min drop the arguments another argument dominates by a constant.
+    Expr::FunctionCall { name, args }
+      if (name == "Max" || name == "Min")
+        && args.len() >= 2
+        && let Some(pruned) = prune_max_min(name == "Max", args) =>
+    {
+      pruned
+    }
 
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -8265,6 +9262,8 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
         // over different denominators (e.g. a partial-fraction sum vs its
         // closed form). Combine over a common denominator with the full
         // simplifier and check whether the difference vanishes.
+        bool_expr(true)
+      } else if sides_agree_after_identities(&lhs, &rhs) {
         bool_expr(true)
       } else {
         Expr::Comparison {
