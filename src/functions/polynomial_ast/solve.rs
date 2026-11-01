@@ -10867,7 +10867,7 @@ fn scan_sign_change_roots(f: &dyn Fn(f64) -> Option<f64>) -> Vec<f64> {
     }
     let (mut lo, mut hi, mut flo) = (x0, x1, y0);
     for _ in 0..200 {
-      let mid = 0.5 * (lo + hi);
+      let mid = f64::midpoint(lo, hi);
       let Some(fm) = f(mid) else {
         break;
       };
@@ -10883,7 +10883,7 @@ fn scan_sign_change_roots(f: &dyn Fn(f64) -> Option<f64>) -> Vec<f64> {
         hi = mid;
       }
     }
-    roots.push(0.5 * (lo + hi));
+    roots.push(f64::midpoint(lo, hi));
   }
   if let Some(&(x, y)) = samples.last()
     && y == 0.0
