@@ -5402,7 +5402,7 @@ fn packed_real_array_to_wl_list(dims: &[usize], values: &[f64]) -> String {
 /// `Graphics` itself represents a styled sublist. Anything not recognized
 /// (already-valid syntax like `RGBColor[…]`, bare numbers, option rules)
 /// is recursed into unchanged, in case it nests a `CompressedData` blob.
-fn box_source_to_graphics_expr(s: &str) -> String {
+pub fn box_source_to_graphics_expr(s: &str) -> String {
   let s = s.trim();
 
   if let Some(rest) = s.strip_prefix("CompressedData[\"") {

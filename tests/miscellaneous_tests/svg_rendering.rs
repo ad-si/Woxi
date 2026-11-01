@@ -4275,4 +4275,20 @@ mod grid_item_style_tests {
     assert!(svg.contains("- 5 x"), "missing '- 5 x' in {svg}");
     assert!(svg.contains("- y/3"), "missing '- y/3' in {svg}");
   }
+
+  #[test]
+  fn test_grid_row_cell_with_quotient_stacks_the_fraction() {
+    // A `Row` cell holding a quotient is typeset 2-D (a fraction bar), not
+    // printed as the one-line `2 a b/((a + b)(a + c))` text.
+    let svg = woxi::interpret(
+      r#"ExportString[Grid[{{Row[{2 a b/((a + b) (a + c)), S}]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<line"), "missing fraction bar in {svg}");
+    assert!(!svg.contains("2 a b/"), "fraction printed inline in {svg}");
+    // A `Row` without a quotient keeps its plain text.
+    let plain =
+      woxi::interpret(r#"ExportString[Grid[{{Row[{a, b}]}}], "SVG"]"#).unwrap();
+    assert!(!plain.contains("<line"), "unexpected bar in {plain}");
+  }
 }
