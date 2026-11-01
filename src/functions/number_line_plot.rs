@@ -60,7 +60,9 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Determine the data spec(s).
+  // Determine the data spec(s); `data -> labels` labels the points.
+  let (args, point_labels) = split_number_line_labels(args);
+  let args = args.as_slice();
   let series = parse_number_line_args(args)?;
   if series.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -80,10 +82,62 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Generate SVG
   let svg = render_number_line_svg(
-    &series, x_min, x_max, svg_width, svg_height, full_width,
+    &series,
+    &point_labels,
+    x_min,
+    x_max,
+    svg_width,
+    svg_height,
+    full_width,
   );
 
   Ok(crate::graphics_result(svg))
+}
+
+/// Take the labels off `NumberLinePlot[data -> labels, …]` and turn an
+/// association into its values (one series per value that is a list, or a
+/// single series of scalar values). Returns the arguments with plain data
+/// first, plus `(value, label)` for every labelled point of that data.
+fn split_number_line_labels(args: &[Expr]) -> (Vec<Expr>, Vec<(f64, String)>) {
+  let mut args = args.to_vec();
+  let mut labels = Vec::new();
+  let first =
+    evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+  let first = match &first {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let data =
+        evaluate_expr_to_expr(pattern).unwrap_or_else(|_| *pattern.clone());
+      let names = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| *replacement.clone());
+      if let (Expr::List(values), Expr::List(names)) = (&data, &names) {
+        for (v, name) in values.iter().zip(names.iter()) {
+          if let Some(x) = try_eval_to_f64(v) {
+            let text = match name {
+              Expr::String(t) => t.clone(),
+              other => crate::syntax::format_expr(
+                other,
+                crate::syntax::ExprForm::Output,
+              ),
+            };
+            labels.push((x, text));
+          }
+        }
+      }
+      data
+    }
+    _ => first,
+  };
+  let first = match &first {
+    Expr::Association(pairs) => {
+      Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
+    }
+    _ => first,
+  };
+  args[0] = first;
+  (args, labels)
 }
 
 /// Parse NumberLinePlot arguments into one or more series.
@@ -382,6 +436,7 @@ fn snap_to_nice_value(x: f64) -> f64 {
 /// Render the complete SVG for the NumberLinePlot.
 fn render_number_line_svg(
   series: &[NumberLineData],
+  point_labels: &[(f64, String)],
   x_min: f64,
   x_max: f64,
   svg_width: u32,
@@ -443,6 +498,22 @@ fn render_number_line_svg(
             svg.push_str(&format!(
               "<circle cx=\"{px:.1}\" cy=\"{data_y:.1}\" r=\"{radius:.1}\" fill=\"{color}\"/>\n"
             ));
+          }
+        }
+        // Labels from `data -> labels` sit above their points.
+        if row_idx == 0 {
+          for (v, text) in point_labels {
+            if v.is_finite() {
+              svg.push_str(&format!(
+                "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+                 font-family=\"sans-serif\" font-size=\"{:.0}\" \
+                 fill=\"{label_fill}\">{}</text>\n",
+                x_to_px(*v),
+                data_y - radius - 3.0 * sf,
+                11.0 * sf,
+                crate::functions::graphics::box_string_to_svg(text)
+              ));
+            }
           }
         }
       }

@@ -1396,7 +1396,7 @@ PossibleZeroQ,"Tests if an expression is possibly zero",✅,pure,6.0,1369
 BezierFunction,"Evaluate Bezier curves from control points using de Casteljau algorithm",✅,pure,7.0,1371
 LegendLabel,"Option for specifying legend labels in plots",✅,none,9.0,1371
 BesselJZero,"Compute zeros of the Bessel function J_n using bisection and Newton method",✅,pure,6.0,1375
-DiscretePlot3D,"3D surface plot at discrete integer grid points",✅,none,8.0,1375
+DiscretePlot3D,"3D plot of a function at discrete grid points (stems or bars)",✅,none,8.0,1375
 EllipticThetaPrime,"Derivative of Jacobi theta function with respect to z",✅,pure,3.0,1375
 MonomialList,"Monomials of a polynomial listed in a monomial order (lexicographic by default)",✅,pure,7.0,1375
 ComplexPlot,"Domain coloring visualization of a complex function",✅,pure,12.0,1377

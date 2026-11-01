@@ -515,8 +515,8 @@ pub fn dispatch_plotting(
       // `ListLinePlot[list]` prints the message and leaves the
       // expression symbolic.
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
-        // A TimeSeries / TemporalData or an Association is a valid
-        // (non-List) data source, and so is a display wrapper
+        // A TimeSeries / TemporalData, an Association or labelled
+        // `data -> labels` is a valid (non-List) data source, and so is a display wrapper
         // (`Tooltip`, `Style`, ...) around any of those.
         Ok(evaluated)
           if {
@@ -524,9 +524,12 @@ pub fn dispatch_plotting(
               crate::functions::list_plot::strip_plot_data_display_wrapper(
                 &evaluated,
               );
-            !matches!(stripped, Expr::List(_) | Expr::Association(_))
-              && crate::functions::timeseries_ast::temporal_paths(&stripped)
-                .is_none()
+            // `data -> labels` labels the points.
+            !matches!(
+              stripped,
+              Expr::List(_) | Expr::Association(_) | Expr::Rule { .. }
+            ) && crate::functions::timeseries_ast::temporal_paths(&stripped)
+              .is_none()
           } =>
         {
           crate::emit_message(&format!(
@@ -836,17 +839,18 @@ pub fn dispatch_plotting(
         Ok,
       ))
     }
-    "ArrayPlot" if !args.is_empty() => Some(
-      match crate::functions::field_plot::array_plot_argument_error(args) {
+    "ArrayPlot" | "MatrixPlot" if !args.is_empty() => Some(
+      match crate::functions::field_plot::array_plot_argument_error(name, args)
+      {
         Some(unevaluated) => Ok(unevaluated),
-        None => {
+        None if name == "ArrayPlot" => {
           quiet_plot(|| crate::functions::field_plot::array_plot_ast(args))
+        }
+        None => {
+          quiet_plot(|| crate::functions::field_plot::matrix_plot_ast(args))
         }
       },
     ),
-    "MatrixPlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::field_plot::matrix_plot_ast(args)
-    })),
     "BarChart" if !args.is_empty() => {
       Some(crate::functions::chart::bar_chart_ast(args))
     }

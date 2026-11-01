@@ -810,6 +810,48 @@ enum MeshMode {
 }
 
 /// Implementation of Plot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]
+/// `Plot3D[f, {x, -Infinity, Infinity}, …]`: every iterator with an
+/// infinite limit is folded onto a finite display range, and the matching
+/// map back onto the real line is substituted into `f` — the same
+/// compactification `Plot` uses. `None` when every limit is finite.
+fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
+  let mut new_args = args.to_vec();
+  let mut changed = false;
+  for idx in [1, 2] {
+    let Some(Expr::List(items)) = args.get(idx) else {
+      continue;
+    };
+    let [Expr::Identifier(var), lo, hi] = items.as_slice() else {
+      continue;
+    };
+    let limit = |e: &Expr| {
+      let v = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+      crate::functions::math_ast::try_eval_to_f64_with_infinity(&v)
+    };
+    let (Some(lo), Some(hi)) = (limit(lo), limit(hi)) else {
+      continue;
+    };
+    if lo.is_finite() && hi.is_finite() {
+      continue;
+    }
+    let (d_lo, d_hi, transform) =
+      crate::functions::plot::compactify_plot_range(var, lo, hi).ok()?;
+    if let Some(t) = transform {
+      new_args[0] = crate::syntax::substitute_variable(&new_args[0], var, &t);
+    }
+    new_args[idx] = Expr::List(
+      vec![
+        Expr::Identifier(var.clone()),
+        Expr::Real(d_lo),
+        Expr::Real(d_hi),
+      ]
+      .into(),
+    );
+    changed = true;
+  }
+  changed.then_some(new_args)
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -818,6 +860,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
   }
 
+  if let Some(compact) = compactify_infinite_iterators(args) {
+    return plot3d_ast(&compact);
+  }
   let body = &args[0];
 
   // Parse iterators
@@ -9253,6 +9298,105 @@ fn resample_tensor_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
 /// Accepts two formats:
 /// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — explicit 3D coordinates
 /// - `{{z11,z12,...}, {z21,z22,...}, ...}` — 2D matrix where indices → x,y, values → z
+/// The surfaces of `ListPlot3D[{m1, m2, …}]`: a list of at least two
+/// height matrices (rectangular arrays of scalars). Rows of three numbers
+/// stay a single set of `{x, y, z}` points, as before.
+fn list_plot3d_datasets(data: &Expr) -> Option<Vec<Expr>> {
+  let Expr::List(outer) = data else {
+    return None;
+  };
+  let is_matrix = |e: &Expr| match e {
+    Expr::List(rows) if !rows.is_empty() => {
+      let mut width = None;
+      rows.iter().all(|r| match r {
+        Expr::List(row)
+          if !row.is_empty()
+            && row.iter().all(|v| !matches!(v, Expr::List(_))) =>
+        {
+          *width.get_or_insert(row.len()) == row.len() && row.len() != 3
+        }
+        _ => false,
+      })
+    }
+    _ => false,
+  };
+  (outer.len() >= 2 && outer.iter().all(is_matrix)).then(|| outer.to_vec())
+}
+
+/// `ListPlot3D[{m1, m2, …}, opts]`: every dataset is plotted on its own and
+/// the surfaces are combined with `Show`, each in the colour its
+/// `PlotStyle` entry gives (cycling), or the default plot colours.
+fn list_plot3d_multi(
+  datasets: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let style_items: Vec<Expr> = args[1..]
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
+        Some(plot_style_items(replacement, datasets.len()))
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+  let other_opts: Vec<Expr> = args[1..]
+    .iter()
+    .filter(|opt| {
+      !matches!(opt, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle"))
+    })
+    .cloned()
+    .collect();
+  let mut surfaces = Vec::with_capacity(datasets.len());
+  for (i, data) in datasets.iter().enumerate() {
+    let style = if style_items.is_empty() {
+      let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+      call(
+        "RGBColor",
+        vec![
+          Expr::Real(r as f64 / 255.0),
+          Expr::Real(g as f64 / 255.0),
+          Expr::Real(b as f64 / 255.0),
+        ],
+      )
+    } else {
+      style_items[i % style_items.len()].clone()
+    };
+    let mut sub_args = vec![
+      data.clone(),
+      crate::helpers::rule_expr(Expr::Identifier("PlotStyle".into()), style),
+    ];
+    sub_args.extend(other_opts.iter().cloned());
+    surfaces.push(list_plot3d_ast(&sub_args)?);
+  }
+  // The combined picture keeps a single surface's box and axes unless the
+  // call sets its own.
+  let given = |name: &str| {
+    other_opts.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
+    })
+  };
+  if !given("Axes") {
+    surfaces.push(crate::helpers::rule_expr(
+      Expr::Identifier("Axes".into()),
+      Expr::Identifier("True".into()),
+    ));
+  }
+  if !given("BoxRatios") {
+    surfaces.push(crate::helpers::rule_expr(
+      Expr::Identifier("BoxRatios".into()),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(0.4)].into(),
+      ),
+    ));
+  }
+  evaluate_expr_to_expr(&call("Show", surfaces))
+}
+
 pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = &args[0];
 
@@ -9271,6 +9415,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // same as `Plot3D`.
   let mut z_clip: Option<(f64, f64)> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  // `PlotStyle`: the surface's colour (and opacity, specularity, …); empty
+  // keeps the height gradient.
+  let mut plot_styles: Vec<StyleState3D> = Vec::new();
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -9307,6 +9454,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
         }
+        Expr::Identifier(name) if name == "PlotStyle" => {
+          plot_styles = parse_plot_style_3d(replacement, 1);
+        }
         _ => {}
       }
     }
@@ -9327,6 +9477,18 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Evaluate the data argument
   let evaled_data = evaluate_expr_to_expr(data)?;
+
+  // A list of height matrices is several surfaces, drawn together.
+  if let Some(datasets) = list_plot3d_datasets(&evaled_data) {
+    return list_plot3d_multi(&datasets, args);
+  }
+  let surface_style = plot_style_for_surface(&plot_styles, 0);
+  let view_dir = {
+    let camera = Camera::default();
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
 
   // Determine the data format and build a grid
   let (grid, rows, cols, x_min, x_max, y_min, y_max) = match &evaled_data {
@@ -9565,7 +9727,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           / 3.0;
         let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
+        let (color, opacity) =
+          shade_facet(base_color, surface_style, normal, view_dir);
 
         let p0 = project(v0, &camera);
         let p1 = project(v1, &camera);
@@ -9583,7 +9746,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
-          opacity: 1.0,
+          opacity,
           texture: None,
         });
       }
@@ -9612,7 +9775,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           / 3.0;
         let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
+        let (color, opacity) =
+          shade_facet(base_color, surface_style, normal, view_dir);
 
         let p0 = project(v0, &camera);
         let p1 = project(v1, &camera);
@@ -9630,7 +9794,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           projected: [p0, p1, p2],
           depth: depth(center, &camera),
           color,
-          opacity: 1.0,
+          opacity,
           texture: None,
         });
       }
@@ -9707,6 +9871,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(mesh_mode, MeshMode::All) {
     complex_content.push(call0("EdgeForm"));
   }
+  complex_content.extend(surface_opacity_directive(&plot_styles, 0));
   for i in 0..rows.saturating_sub(1) {
     for j in 0..cols.saturating_sub(1) {
       let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -9727,7 +9892,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
       .sum::<f64>()
         / 4.0;
-      let (cr, cg, cb) = color_at(avg_z_norm);
+      let (cr, cg, cb) = surface_style
+        .and_then(|st| st.color)
+        .unwrap_or_else(|| color_at(avg_z_norm));
       complex_content.push(Expr::List(
         vec![
           call(
@@ -11730,6 +11897,43 @@ struct ScatterPoint {
   sy: f64,
   depth: f64,
   color: (u8, u8, u8),
+  /// Text drawn beside the point (`data -> labels`).
+  label: Option<String>,
+}
+
+/// One `ListPointPlot3D` dataset: a list of `{x, y, z}` triples, or a
+/// matrix of heights `{{z11, z12, …}, …}` placed at x = column and y = row
+/// (both 1-based). `None` when `items` is neither, e.g. a list of datasets.
+fn point_plot3d_dataset(items: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
+  let is_scalar = |e: &Expr| !matches!(e, Expr::List(_));
+  let rows: Vec<&[Expr]> = items
+    .iter()
+    .map(|e| match e {
+      Expr::List(row) if !row.is_empty() && row.iter().all(is_scalar) => {
+        Some(row.as_slice())
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if rows.is_empty() {
+    return None;
+  }
+  // Rows of three numbers are points; any other rectangular array of
+  // scalars is a height matrix.
+  if rows.iter().all(|r| r.len() == 3) {
+    return Some(parse_xyz_points(items));
+  }
+  let mut pts = Vec::new();
+  for (i, row) in rows.iter().enumerate() {
+    for (j, val) in row.iter().enumerate() {
+      if let Some(z) = try_eval_to_f64(val)
+        && z.is_finite()
+      {
+        pts.push(((j + 1) as f64, (i + 1) as f64, z));
+      }
+    }
+  }
+  Some(pts)
 }
 
 pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -11756,72 +11960,56 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Evaluate the data argument
   let evaled_data = evaluate_expr_to_expr(&args[0])?;
+  // `data -> {label1, label2, …}` labels the points of the data in order;
+  // `LabelingFunction -> None` (or `Tooltip`) leaves them unlabelled.
+  let hide_labels = args[1..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LabelingFunction")
+        && matches!(replacement.as_ref(),
+          Expr::Identifier(v) if v == "None" || v == "Tooltip"))
+  });
+  let (evaled_data, point_labels): (Expr, Vec<String>) = match &evaled_data {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let labels = match &evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| *replacement.clone())
+      {
+        Expr::List(items) if !hide_labels => items
+          .iter()
+          .map(|it| match it {
+            Expr::String(s) => s.clone(),
+            other => {
+              crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+            }
+          })
+          .collect(),
+        _ => Vec::new(),
+      };
+      (evaluate_expr_to_expr(pattern)?, labels)
+    }
+    other => (other.clone(), Vec::new()),
+  };
 
-  // Parse data: accept list of {x,y,z} or list of lists of {x,y,z}
+  // Parse data: a list of {x, y, z} triples, a matrix of heights, or a list
+  // of such datasets (each one drawn in its own colour).
   let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
-
-  match &evaled_data {
-    Expr::List(outer) if !outer.is_empty() => {
-      // Check if first element is {x,y,z} or a list of {x,y,z}
-      match &outer[0] {
-        Expr::List(inner)
-          if inner.len() == 3 && !matches!(&inner[0], Expr::List(_)) =>
-        {
-          // Single dataset: {{x,y,z}, {x,y,z}, ...}
-          let pts = parse_xyz_points(outer);
-          if !pts.is_empty() {
-            datasets.push(pts);
-          }
-        }
-        Expr::List(inner)
-          if !inner.is_empty()
-            && inner.iter().all(|e| !matches!(e, Expr::List(_))) =>
-        {
-          // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
-          // x = column index (1-based), y = row index (1-based)
-          let num_rows = outer.len();
-          let num_cols = inner.len();
-          let mut pts = Vec::new();
-          for (i, row_expr) in outer.iter().enumerate() {
-            if let Expr::List(row) = row_expr {
-              for (j, val_expr) in row.iter().enumerate() {
-                if let Some(z) = try_eval_to_f64(val_expr)
-                  && z.is_finite()
-                {
-                  let x = (j + 1) as f64;
-                  let y = (i + 1) as f64;
-                  pts.push((x, y, z));
-                }
-              }
-            }
-          }
-          let _ = (num_rows, num_cols);
-          if !pts.is_empty() {
-            datasets.push(pts);
-          }
-        }
-        Expr::List(_) => {
-          // Multiple datasets: {{{x,y,z},...}, {{x,y,z},...}, ...}
-          for item in outer {
-            if let Expr::List(inner) = item {
-              let pts = parse_xyz_points(inner);
-              if !pts.is_empty() {
-                datasets.push(pts);
-              }
-            }
-          }
-        }
-        _ => {
-          // Try as single dataset anyway
-          let pts = parse_xyz_points(outer);
-          if !pts.is_empty() {
+  if let Expr::List(outer) = &evaled_data {
+    match point_plot3d_dataset(outer) {
+      Some(pts) => datasets.push(pts),
+      None => {
+        for item in outer {
+          if let Expr::List(inner) = item
+            && let Some(pts) = point_plot3d_dataset(inner)
+          {
             datasets.push(pts);
           }
         }
       }
     }
-    _ => {}
   }
+  datasets.retain(|ds| !ds.is_empty());
 
   if datasets.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -11886,7 +12074,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (di, ds) in datasets.iter().enumerate() {
     let base_color = palette[di % palette.len()];
-    for &(x, y, z) in ds {
+    for (pi, &(x, y, z)) in ds.iter().enumerate() {
       let nx = if x_range_v > 1e-15 {
         ((x - x_min) / x_range_v) * 2.0 - 1.0
       } else {
@@ -11914,6 +12102,11 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sy,
         depth: d,
         color: base_color,
+        label: if di == 0 {
+          point_labels.get(pi).cloned()
+        } else {
+          None
+        },
       });
     }
   }
@@ -12202,6 +12395,15 @@ fn generate_scatter_svg(
         sx, sy, radius, r, g, b,
         (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
       ));
+      if let Some(label) = &pt.label {
+        svg.push_str(&format!(
+          "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
+           font-size=\"11\" fill=\"{axis_color}\">{}</text>\n",
+          sx + radius + 2.0,
+          sy - radius - 2.0,
+          crate::functions::graphics::box_string_to_svg(label)
+        ));
+      }
     }
     // Emit remaining box edges (closest to viewer)
     while ei < sorted_edges.len() {
@@ -13468,239 +13670,310 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
-/// DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]
-/// Plots a function at discrete integer points in 3D
-pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() < 3 {
-    return Err(InterpreterError::EvaluationError(
-      "DiscretePlot3D requires at least 3 arguments: DiscretePlot3D[f, {x, xmin, xmax}, {y, ymin, ymax}]".into(),
-    ));
-  }
-
-  let body = &args[0];
-  let (xvar, x_min, x_max) = parse_iterator(&args[1], "first")?;
-  let (yvar, y_min, y_max) = parse_iterator(&args[2], "second")?;
-
-  // Parse options
-  let mut svg_width = DEFAULT_SIZE;
-  let mut svg_height = DEFAULT_SIZE;
-  let mut full_width = false;
-  let mesh_mode = MeshMode::Default;
-  let show_axes = true;
-
-  for opt in &args[3..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(name) = pattern.as_ref()
-      && name == "ImageSize"
-      && let Some((w, h, fw)) =
-        parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
+/// How far a `DiscretePlot3D` bar reaches either side of its point
+/// (`ExtentSize`), as `[x_left, x_right, y_left, y_right]` plus whether
+/// those are fractions of the sampling step (`Full`, `Left`, `Right`,
+/// `Scaled[s]`) rather than plot units (`{{sxl, sxr}, {syl, syr}}`). `None`
+/// draws points instead of bars.
+fn discrete_extent(spec: &Expr) -> Option<([f64; 4], bool)> {
+  let num = |e: &Expr| {
+    try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone()))
+      .filter(|v| v.is_finite() && *v >= 0.0)
+  };
+  match spec {
+    Expr::Identifier(n) if n == "Full" => Some(([0.5; 4], true)),
+    Expr::Identifier(n) if n == "Right" => Some(([0.0, 1.0, 0.0, 1.0], true)),
+    Expr::Identifier(n) if n == "Left" => Some(([1.0, 0.0, 1.0, 0.0], true)),
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
     {
-      svg_width = w;
-      svg_height = h;
-      full_width = fw;
+      num(&args[0]).map(|s| ([s / 2.0; 4], true))
     }
+    Expr::List(axes) if axes.len() == 2 => {
+      let side = |e: &Expr| match e {
+        Expr::List(lr) if lr.len() == 2 => Some((num(&lr[0])?, num(&lr[1])?)),
+        other => num(other).map(|w| (w, w)),
+      };
+      let (xl, xr) = side(&axes[0])?;
+      let (yl, yr) = side(&axes[1])?;
+      Some(([xl, xr, yl, yr], false))
+    }
+    _ => None,
   }
+}
 
-  // Generate grid at integer points
-  let x_start = x_min.ceil() as i64;
-  let x_end = x_max.floor() as i64;
-  let y_start = y_min.ceil() as i64;
-  let y_end = y_max.floor() as i64;
-
-  let nx = (x_end - x_start + 1) as usize;
-  let ny = (y_end - y_start + 1) as usize;
-
-  if nx < 2 || ny < 2 {
-    return Err(InterpreterError::EvaluationError(
-      "DiscretePlot3D: range must contain at least 2 integer points in each dimension".into(),
-    ));
+/// The spacing of the sample coordinates along one axis: the smallest gap
+/// between distinct values (1 for a single value).
+fn sampling_step(mut values: Vec<f64>) -> f64 {
+  values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  values.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+  let step = values
+    .windows(2)
+    .map(|w| w[1] - w[0])
+    .fold(f64::INFINITY, f64::min);
+  if step.is_finite() && step > 0.0 {
+    step
+  } else {
+    1.0
   }
+}
 
-  // Sample at integer points
-  let mut grid = vec![vec![f64::NAN; ny]; nx];
-  let mut z_lo = f64::INFINITY;
-  let mut z_hi = f64::NEG_INFINITY;
-
-  for (i, xi) in (x_start..=x_end).enumerate() {
-    for (j, yj) in (y_start..=y_end).enumerate() {
-      let sub1 = substitute_var(body, &xvar, &Expr::Integer(xi as i128));
-      let sub2 = substitute_var(&sub1, &yvar, &Expr::Integer(yj as i128));
-      if let Ok(result) = evaluate_expr_to_expr(&sub2)
-        && let Some(z) = try_eval_to_f64(&result)
-        && z.is_finite()
-      {
-        grid[i][j] = z;
-        z_lo = z_lo.min(z);
-        z_hi = z_hi.max(z);
+/// A `DiscretePlot3D` function with its own style: `Style[f, sty]` gives
+/// `(f, Some(sty))`; display wrappers (`Tooltip`, `Callout`, `Labeled`,
+/// `PopupWindow`, …) are looked through.
+fn discrete_body_style(body: &Expr) -> (Expr, Option<Expr>) {
+  match body {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Style" if args.len() >= 2 => {
+          let (inner, own) = discrete_body_style(&args[0]);
+          let style = if args.len() == 2 {
+            args[1].clone()
+          } else {
+            Expr::List(args[1..].to_vec().into())
+          };
+          (inner, own.or(Some(style)))
+        }
+        "Tooltip" | "Callout" | "Labeled" | "Legended" | "PopupWindow"
+        | "Annotation" | "Hyperlink" | "Mouseover" | "StatusArea" => {
+          discrete_body_style(&args[0])
+        }
+        _ => (body.clone(), None),
       }
     }
+    _ => (body.clone(), None),
+  }
+}
+
+/// DiscretePlot3D[f, {i, …}, {j, …}] (and a list of functions): the values
+/// of `f` at the iterator points, drawn as points with stems down to the
+/// bottom of the plot (`Filling -> Bottom`), or as cuboid bars with
+/// `ExtentSize`. The iterators take every `Table` form — `{i, n}`,
+/// `{i, min, max}`, `{i, min, max, step}`, `{i, {values…}}` — and the second
+/// may depend on the first. The plot is built as a `Graphics3D` of those
+/// primitives, so the ordinary 3D renderer draws it.
+pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // The functions, each with the style its own `Style` wrapper gives it; a
+  // `Style` around the whole list styles every function without one.
+  let bodies: Vec<(Expr, Option<Expr>)> = {
+    let body = match &args[0] {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Evaluate" && inner.len() == 1 =>
+      {
+        evaluate_expr_to_expr(&inner[0])?
+      }
+      other => other.clone(),
+    };
+    let (body, outer_style) = discrete_body_style(&body);
+    match &body {
+      Expr::List(items) => items
+        .iter()
+        .map(|item| {
+          let (f, own) = discrete_body_style(item);
+          (f, own.or_else(|| outer_style.clone()))
+        })
+        .collect(),
+      _ => vec![(body.clone(), outer_style)],
+    }
+  };
+  let iter_var = |spec: &Expr| match spec {
+    Expr::List(items) => match items.first() {
+      Some(Expr::Identifier(v)) => Some(v.clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  let (Some(ivar), Some(jvar)) = (iter_var(&args[1]), iter_var(&args[2]))
+  else {
+    return Err(InterpreterError::EvaluationError(
+      "DiscretePlot3D: iterators must be {var, …}".into(),
+    ));
+  };
+
+  let mut extent: Option<([f64; 4], bool)> = None;
+  let mut filling: Option<Expr> = Some(Expr::Identifier("Bottom".into()));
+  let mut style_items: Vec<Expr> = Vec::new();
+  let mut graphics_opts: Vec<Expr> = Vec::new();
+  for opt in &args[3..] {
+    let (pattern, replacement) = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      _ => continue,
+    };
+    match pattern {
+      Expr::Identifier(n) if n == "ExtentSize" => {
+        extent = discrete_extent(replacement);
+      }
+      Expr::Identifier(n) if n == "Filling" => {
+        filling = match replacement {
+          Expr::Identifier(v) if v == "None" || v == "False" => None,
+          other => Some(other.clone()),
+        };
+      }
+      Expr::Identifier(n) if n == "PlotStyle" => {
+        style_items = plot_style_items(replacement, bodies.len());
+      }
+      Expr::Identifier(n)
+        if matches!(
+          n.as_str(),
+          "ColorFunction"
+            | "ColorFunctionScaling"
+            | "FillingStyle"
+            | "PlotLegends"
+            | "PlotTheme"
+        ) => {}
+      _ => graphics_opts.push(opt.clone()),
+    }
   }
 
-  if !z_lo.is_finite() || !z_hi.is_finite() {
+  // The {i, j, f} points of every function, from `Table`.
+  let mut datasets: Vec<Vec<(f64, f64, f64)>> =
+    Vec::with_capacity(bodies.len());
+  for (body, _) in &bodies {
+    let table = call(
+      "Table",
+      vec![
+        Expr::List(
+          vec![
+            Expr::Identifier(ivar.clone()),
+            Expr::Identifier(jvar.clone()),
+            body.clone(),
+          ]
+          .into(),
+        ),
+        args[1].clone(),
+        args[2].clone(),
+      ],
+    );
+    let rows = evaluate_expr_to_expr(&table)?;
+    let mut pts = Vec::new();
+    if let Expr::List(rows) = &rows {
+      for row in rows.iter() {
+        if let Expr::List(cells) = row {
+          pts.extend(parse_xyz_points(cells));
+        }
+      }
+    }
+    datasets.push(pts);
+  }
+  let (z_min, z_max) = datasets.iter().flatten().fold(
+    (f64::INFINITY, f64::NEG_INFINITY),
+    |(lo, hi), &(_, _, z)| (lo.min(z), hi.max(z)),
+  );
+  if !z_min.is_finite() {
     return Err(InterpreterError::EvaluationError(
       "DiscretePlot3D: could not compute any finite values".into(),
     ));
   }
-
-  if (z_hi - z_lo).abs() < 1e-15 {
-    z_hi = z_lo + 1.0;
-  }
-
-  let z_range_val = z_hi - z_lo;
-  let camera = Camera::default();
-
-  // Build triangles from the grid
-  let mut all_triangles: Vec<Triangle> = Vec::new();
-
-  for i in 0..nx - 1 {
-    for j in 0..ny - 1 {
-      let z00 = grid[i][j];
-      let z10 = grid[i + 1][j];
-      let z01 = grid[i][j + 1];
-      let z11 = grid[i + 1][j + 1];
-
-      let nx_fn =
-        |ii: usize| -> f64 { (ii as f64 / (nx - 1) as f64) * 2.0 - 1.0 };
-      let ny_fn =
-        |jj: usize| -> f64 { (jj as f64 / (ny - 1) as f64) * 2.0 - 1.0 };
-      let nz = |z: f64| -> f64 {
-        ((z - z_lo) / z_range_val) * 2.0 * Z_SCALE - Z_SCALE
-      };
-
-      // Triangle 1: (i,j), (i+1,j), (i,j+1)
-      if z00.is_finite() && z10.is_finite() && z01.is_finite() {
-        let cz00 = z00.clamp(z_lo, z_hi);
-        let cz10 = z10.clamp(z_lo, z_hi);
-        let cz01 = z01.clamp(z_lo, z_hi);
-
-        let v0 = Point3D {
-          x: nx_fn(i),
-          y: ny_fn(j),
-          z: nz(cz00),
-        };
-        let v1 = Point3D {
-          x: nx_fn(i + 1),
-          y: ny_fn(j),
-          z: nz(cz10),
-        };
-        let v2 = Point3D {
-          x: nx_fn(i),
-          y: ny_fn(j + 1),
-          z: nz(cz01),
-        };
-
-        let avg_z_norm = ((cz00 - z_lo) / z_range_val
-          + (cz10 - z_lo) / z_range_val
-          + (cz01 - z_lo) / z_range_val)
-          / 3.0;
-        let base_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          edge_width: None,
-          projected: [p0, p1, p2],
-          color,
-          depth: depth(center, &camera),
-          opacity: 1.0,
-          texture: None,
-        });
-      }
-
-      // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
-      if z11.is_finite() && z01.is_finite() && z10.is_finite() {
-        let cz11 = z11.clamp(z_lo, z_hi);
-        let cz01 = z01.clamp(z_lo, z_hi);
-        let cz10 = z10.clamp(z_lo, z_hi);
-
-        let v0 = Point3D {
-          x: nx_fn(i + 1),
-          y: ny_fn(j + 1),
-          z: nz(cz11),
-        };
-        let v1 = Point3D {
-          x: nx_fn(i),
-          y: ny_fn(j + 1),
-          z: nz(cz01),
-        };
-        let v2 = Point3D {
-          x: nx_fn(i + 1),
-          y: ny_fn(j),
-          z: nz(cz10),
-        };
-
-        let avg_z_norm = ((cz11 - z_lo) / z_range_val
-          + (cz01 - z_lo) / z_range_val
-          + (cz10 - z_lo) / z_range_val)
-          / 3.0;
-        let base_color = height_color(avg_z_norm);
-        let normal = triangle_normal(v0, v1, v2);
-        let color = apply_lighting(base_color, normal);
-        let p0 = project(v0, &camera);
-        let p1 = project(v1, &camera);
-        let p2 = project(v2, &camera);
-        let center = Point3D {
-          x: (v0.x + v1.x + v2.x) / 3.0,
-          y: (v0.y + v1.y + v2.y) / 3.0,
-          z: (v0.z + v1.z + v2.z) / 3.0,
-        };
-        all_triangles.push(Triangle {
-          boundary: [true; 3],
-          edge_color: None,
-          edge_width: None,
-          projected: [p0, p1, p2],
-          color,
-          depth: depth(center, &camera),
-          opacity: 1.0,
-          texture: None,
-        });
-      }
-    }
-  }
-
-  if all_triangles.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "DiscretePlot3D: no renderable triangles".into(),
-    ));
-  }
-
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
+  // Where stems and bars start: the bottom of the data (`Bottom`), the
+  // xy-plane (`Axis`), or a given height.
+  let base = filling.as_ref().map(|f| match f {
+    Expr::Identifier(v) if v == "Axis" => 0.0,
+    Expr::Identifier(v) if v == "Top" => z_max,
+    other => try_eval_to_f64(other).unwrap_or(z_min),
   });
 
-  let svg = generate_svg(
-    &all_triangles,
-    &[],
-    &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_lo, z_hi),
-    svg_width,
-    svg_height,
-    full_width,
-    mesh_mode,
-    show_axes,
-    [1.0, 1.0, Z_SCALE],
-    &[None, None, None],
-  )?;
-  // A `PlotLabel` sets a title above the finished picture.
-  let svg = with_plot_label(svg, args, svg_width, svg_height);
+  // Bar extents in plot units, scaled by the sampling step when relative.
+  let extent = extent.map(|(e, relative)| {
+    if relative {
+      let all = || datasets.iter().flatten();
+      let dx = sampling_step(all().map(|p| p.0).collect());
+      let dy = sampling_step(all().map(|p| p.1).collect());
+      [e[0] * dx, e[1] * dx, e[2] * dy, e[3] * dy]
+    } else {
+      e
+    }
+  });
+  let num = |v: f64| Expr::Real(v);
+  let triple =
+    |x: f64, y: f64, z: f64| Expr::List(vec![num(x), num(y), num(z)].into());
+  let mut content: Vec<Expr> = Vec::new();
+  for (k, pts) in datasets.iter().enumerate() {
+    let color = if let Some(own) = &bodies[k].1 {
+      own.clone()
+    } else if style_items.is_empty() {
+      let (r, g, b) = PLOT_COLORS[k % PLOT_COLORS.len()];
+      call(
+        "RGBColor",
+        vec![
+          num(r as f64 / 255.0),
+          num(g as f64 / 255.0),
+          num(b as f64 / 255.0),
+        ],
+      )
+    } else {
+      style_items[k % style_items.len()].clone()
+    };
+    let mut group = vec![color];
+    match extent {
+      Some([xl, xr, yl, yr]) => {
+        group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
+        for &(x, y, z) in pts {
+          let bottom = base.unwrap_or(z_min);
+          let (lo, hi) = if z >= bottom {
+            (bottom, z)
+          } else {
+            (z, bottom)
+          };
+          group.push(call(
+            "Cuboid",
+            vec![triple(x - xl, y - yl, lo), triple(x + xr, y + yr, hi)],
+          ));
+        }
+      }
+      None => {
+        group.push(call1("PointSize", num(0.012)));
+        group.push(call1(
+          "Point",
+          Expr::List(pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect()),
+        ));
+        if let Some(bottom) = base {
+          let stems: Vec<Expr> = pts
+            .iter()
+            .map(|&(x, y, z)| {
+              Expr::List(vec![triple(x, y, bottom), triple(x, y, z)].into())
+            })
+            .collect();
+          group.push(Expr::List(
+            vec![
+              call1("Opacity", num(0.5)),
+              call1("Line", Expr::List(stems.into())),
+            ]
+            .into(),
+          ));
+        }
+      }
+    }
+    content.push(Expr::List(group.into()));
+  }
 
-  Ok(crate::graphics3d_result(svg))
+  let has_opt = |name: &str| {
+    graphics_opts.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
+    })
+  };
+  let mut g_args = vec![Expr::List(content.into())];
+  g_args.extend(graphics_opts.iter().cloned());
+  if !has_opt("Axes") {
+    g_args.push(crate::helpers::rule_expr(
+      Expr::Identifier("Axes".into()),
+      Expr::Identifier("True".into()),
+    ));
+  }
+  if !has_opt("BoxRatios") {
+    g_args.push(crate::helpers::rule_expr(
+      Expr::Identifier("BoxRatios".into()),
+      Expr::List(vec![Expr::Integer(1), Expr::Integer(1), num(0.4)].into()),
+    ));
+  }
+  evaluate_expr_to_expr(&call("Graphics3D", g_args))
 }
 
 /// Split a `PlotStyle` value into the `Tube[…]` directive it carries (as
@@ -14442,7 +14715,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
+  // `Legended[curve, label]` curves are plotted as the curves themselves.
+  let unlegend = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Legended" && !args.is_empty() =>
+    {
+      args[0].clone()
+    }
+    other => other.clone(),
+  };
+  let body = &match &unlegend(&args[0]) {
+    Expr::List(items) => Expr::List(items.iter().map(unlegend).collect()),
+    other => other.clone(),
+  };
 
   // Parse the first iterator. If the second argument also parses as an
   // iterator, fall through to the surface (2-iterator) implementation.
