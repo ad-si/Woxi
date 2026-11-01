@@ -63,6 +63,13 @@ fn pattern_head_tag(expr: &Expr) -> Option<String> {
     {
       pattern_head_tag(&args[1])
     }
+    // The FullForm `PatternTest[Pattern[r, Blank[h]], test]` (as a
+    // SaveDefinitions dump writes `r_h?test`) is tagged by `h` too.
+    Expr::FunctionCall { name, args }
+      if (name == "PatternTest" || name == "Condition") && args.len() == 2 =>
+    {
+      pattern_head_tag(&args[0])
+    }
     _ => None,
   }
 }

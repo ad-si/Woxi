@@ -348,3 +348,24 @@ mod unique_fresh_names {
     assert_eq!(result, "{{}, 4}");
   }
 }
+
+mod upset_fullform_pattern_test {
+  use super::*;
+
+  // `r_h?test` written out as `PatternTest[Pattern[r, Blank[h]], test]` (a
+  // SaveDefinitions dump of the potential-flow Demonstrations) still names
+  // the tag `h`; it used to report UpSetDelayed::nosym.
+  #[test]
+  fn fullform_pattern_test_is_tagged_by_its_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "TwoDimQ[_] := True; \
+         UpSetDelayed[ArcTan[PatternTest[Pattern[r, Blank[CV]], TwoDimQ]], at[r]]; \
+         {ArcTan[CV[1, 2]], Length[UpValues[CV]]}"
+      )
+      .unwrap(),
+      "{at[CV[1, 2]], 1}"
+    );
+  }
+}
