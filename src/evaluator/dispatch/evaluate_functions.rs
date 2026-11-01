@@ -5666,13 +5666,25 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
-  // HighlightMesh[mesh, spec] displays the mesh itself; the highlighting
-  // (and the cell labels `Labeled[…]` would add) is not drawn.
+  // HighlightMesh[mesh, spec, opts…] displays the mesh itself; the
+  // highlighting (and the cell labels `Labeled[…]` or `MeshCellLabel` would
+  // add) is not drawn.
   if name == "HighlightMesh"
-    && args.len() == 2
+    && args.len() >= 2
+    && args[2..]
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     && crate::functions::mesh_region::is_mesh_region(&args[0])
   {
     return Ok(args[0].clone());
+  }
+
+  if name == "DiscretizeGraphics"
+    && !args.is_empty()
+    && let Some(mesh) =
+      crate::functions::mesh_region::discretize_graphics_ast(args)
+  {
+    return evaluate_expr_to_expr(&mesh);
   }
 
   if name == "TriangulateMesh" && args.len() == 1 {

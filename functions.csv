@@ -1175,7 +1175,7 @@ Refresh,"Returns its first argument evaluated; the update-interval options only 
 KelvinBer,"Kelvin ber function (real part of BesselJ on a rotated argument)",✅,pure,6.0,1146
 NetTrain,"",🚫,,11.0,1147
 SinIntegral,"Sine integral Si(z)",✅,pure,2.0,1148
-DiscretizeGraphics,"",🚫,,10.0,1149
+DiscretizeGraphics,"MeshRegion of the points lines and polygons of a graphic",✅,pure,10.0,1149
 GroebnerBasis,"Reduced lexicographic Groebner basis over the rationals",✅,pure,2.0,1150
 LegendMarkerSize,"",🚫,,9.0,1151
 Subsuperscript,"Subsuperscript notation wrapper (stays symbolic)",✅,unevaluated,3.0,1152
