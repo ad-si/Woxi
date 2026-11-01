@@ -24840,19 +24840,76 @@ mod dsolve_single_variable_pde {
   }
 }
 
-mod ndsolve_initial_value_from_solution_list {
+mod ndsolve_one_component_vector_unknowns {
   use super::*;
 
-  // `v[0] == (v /. sol)` with `sol` a list of rule lists yields `v[0] == {x}`;
-  // the one-element list must still act as the initial value.
+  // An initial value written as a one-element list (`v[0] == (v /. sol)`
+  // with `sol` a list of rule lists) makes `v` a vector-valued unknown with
+  // one component, as in wolframscript: its values are one-element lists.
   #[test]
-  fn singleton_list_initial_values() {
+  fn singleton_list_initial_value_gives_vector_solution() {
     assert_eq!(
       interpret(
-        "sol = {{v -> 2., h -> 3.}}; s = NDSolve[{v'[t] == -v[t], h'[t] == 0, v[0] == (v /. sol), h[0] == (h /. sol)}, {v[t], h[t]}, {t, 0, 1}]; Round[(h[t] /. s[[1]] /. t -> 1), 0.01]"
+        "s = NDSolve[{x'[t] == -x[t], x[0] == {1.}}, x, {t, 0, 1}]; Round[x[0.5] /. s, 0.0001]"
       )
       .unwrap(),
-      "3."
+      "{{0.6065}}"
+    );
+  }
+
+  // `First[x[t]]` in an event condition picks the component.
+  #[test]
+  fn event_condition_on_component() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t], x[0] == {1.}, WhenEvent[First[x[t]] == 0.5, {Sow[tm = t], \"StopIntegration\"}]}, x, {t, 0, 1}]; Round[{tm, x[\"Domain\"] /. s}, 0.0001]"
+      )
+      .unwrap(),
+      "{0.6931, {{{0., 0.6931}}}}"
+    );
+  }
+
+  // A scalar algebraic unknown next to a one-component vector: `V[t] + M[t]`
+  // is threaded over `M`'s component, `-V[t]` broadcast to it.
+  #[test]
+  fn mixed_with_scalar_algebraic_unknown() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{M'[t] == -V[t], V[t] + M[t] == 2, M[0] == {1.}, V[0] == 1.}, {M, V}, {t, 0, 1}]; Round[{M[0.2], V[0.2]} /. s, 0.0001]"
+      )
+      .unwrap(),
+      "{{{0.7786000000000001}, 1.2214}}"
+    );
+  }
+
+  // The curried `Derivative[1][M][t]` that an evaluated product rule leaves
+  // is split into components too.
+  #[test]
+  fn evaluated_product_rule_derivative() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[M[t] x[t], t] == 0, M'[t] == -x[t] M[t], M[0] == {2.}, x[0] == {1.}}, {M, x}, {t, 0, 1}]; Round[x[0.5] /. s, 0.0001]"
+      )
+      .unwrap(),
+      "{{2.}}"
+    );
+  }
+}
+
+mod ndsolve_event_before_singularity {
+  use super::*;
+
+  // `Sqrt[M[t]]` stops being real once `M` crosses zero; the event at
+  // `M == 0.0001` just before that point must still fire, rather than a
+  // step jumping over it and the integration ending short of it.
+  #[test]
+  fn event_fires_before_the_state_turns_singular() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{M'[t] == -V[t], V[t] + Sqrt[M[t]] == 2, M[0] == 1., V[0] == 1., WhenEvent[M[t] == 0.0001, {tm = t, \"StopIntegration\"}]}, {M, V}, {t, 0, 5}]; Round[tm, 0.0001]"
+      )
+      .unwrap(),
+      "0.7725000000000001"
     );
   }
 }

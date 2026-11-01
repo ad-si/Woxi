@@ -1234,39 +1234,9 @@ pub fn ndsolve_ast_with_head(
     .iter()
     .map(total_derivative_to_derivative)
     .map(|e| expand_defined_derivatives(&e))
-    .map(|e| unwrap_singleton_equation_sides(&e))
     .collect();
   ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head))
-}
-
-/// Rewrite `lhs == {rhs}` (or `{lhs} == rhs`) — an initial value taken from
-/// a solution list, as in `v[0] == (v /. sol)` — to `lhs == rhs`, so the
-/// one-element list does not hide the condition from the solver.
-fn unwrap_singleton_equation_sides(expr: &Expr) -> Expr {
-  if let Expr::Comparison {
-    operands,
-    operators,
-  } = expr
-    && let [ComparisonOp::Equal] = operators.as_slice()
-    && let [a, b] = operands.as_slice()
-  {
-    let single = |e: &Expr| match e {
-      Expr::List(items) if items.len() == 1 => Some(items[0].clone()),
-      _ => None,
-    };
-    let is_list = |e: &Expr| matches!(e, Expr::List(_));
-    let (a2, b2) = match (single(a), single(b)) {
-      (Some(x), None) if !is_list(b) => (x, b.clone()),
-      (None, Some(y)) if !is_list(a) => (a.clone(), y),
-      _ => (a.clone(), b.clone()),
-    };
-    return Expr::Comparison {
-      operands: vec![a2, b2],
-      operators: operators.clone(),
-    };
-  }
-  map_children(expr, &unwrap_singleton_equation_sides)
 }
 
 /// Rewrite `Derivative[n][g[i]][v]` — the derivative of an indexed function
@@ -1814,6 +1784,25 @@ fn expand_vector_unknowns(
     None => Expr::List(v.components.iter().map(make).collect()),
   };
   match expr {
+    // The curried `Derivative[k][f][at]` an evaluated `D[f[t] g[t], t]`
+    // leaves behind.
+    Expr::CurriedCall { .. } => {
+      for v in vecs {
+        if let Some((k, at)) = extract_derivative_order_and_point(expr, &v.name)
+        {
+          let at = expand_vector_unknowns(&at, vecs, pick);
+          return gather(v, &|c| Expr::FunctionCall {
+            name: "Derivative".to_string(),
+            args: vec![
+              Expr::Integer(k as i128),
+              Expr::Identifier(c.clone()),
+              at.clone(),
+            ]
+            .into(),
+          });
+        }
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Derivative" => {
       if let [k, Expr::Identifier(f), at] = args.as_slice()
         && let Some(v) = components_of(f)
@@ -1951,7 +1940,30 @@ fn ndsolve_vector_unknowns(
       scalar_eqs.push(expand_vector_unknowns(eq, &vecs, None));
       continue;
     };
-    let new_lhs = expand_vector_unknowns(lhs, &vecs, None);
+    let mut new_lhs = expand_vector_unknowns(lhs, &vecs, None);
+    // A side that only becomes a list once evaluated (`V[t] + M[t]` with a
+    // scalar `V` and a one-component `M`) is threaded like a written list;
+    // a scalar left side against such a list is broadcast over it.
+    if !matches!(new_lhs, Expr::List(_)) && !calls_user_function(lhs) {
+      if let Ok(evaluated @ Expr::List(_)) =
+        crate::evaluator::evaluate_expr_to_expr(&new_lhs)
+      {
+        new_lhs = evaluated;
+      } else if !calls_user_function(rhs)
+        && let Ok(Expr::List(ref r_items)) =
+          crate::evaluator::evaluate_expr_to_expr(&expand_vector_unknowns(
+            rhs, &vecs, None,
+          ))
+      {
+        for r in r_items {
+          scalar_eqs.push(Expr::Comparison {
+            operands: vec![new_lhs.clone(), r.clone()],
+            operators: vec![ComparisonOp::Equal],
+          });
+        }
+        continue;
+      }
+    }
     let Expr::List(lhs_items) = &new_lhs else {
       scalar_eqs.push(Expr::Comparison {
         operands: vec![new_lhs, expand_vector_unknowns(rhs, &vecs, None)],
@@ -1967,6 +1979,9 @@ fn ndsolve_vector_unknowns(
     // user-defined function is left alone: it may only accept numeric
     // vectors, so it has to be evaluated per step.
     let whole = expand_vector_unknowns(rhs, &vecs, None);
+    // A right-hand side with no vector in it (`M'[t] == -V[t]` for a
+    // one-component `M` and a scalar `V`) is the same for every component.
+    let scalar_rhs = !mentions_list(&whole);
     let whole = match crate::evaluator::evaluate_expr_to_expr(&whole) {
       Ok(evaluated)
         if !calls_user_function(rhs)
@@ -1985,6 +2000,7 @@ fn ndsolve_vector_unknowns(
           Expr::List(items) if items.len() == lhs_items.len() => {
             items[i].clone()
           }
+          _ if scalar_rhs => whole.clone(),
           _ => call("Part", vec![whole.clone(), Expr::Integer(i as i128 + 1)]),
         },
       };
@@ -8224,11 +8240,20 @@ fn integrate_leg(
       }
       Ok(Some(done))
     };
-  for i in 0..n_steps {
-    let new_x = grid(i + 1);
-    let h = new_x - x;
+  // Where a step cannot be taken (the state runs into a singularity inside
+  // it) and events are watched, the leg creeps up to the trouble with ever
+  // shorter steps once an adaptive leg failed too, so an event just before
+  // it — a `WhenEvent` that stops the integration as a tank runs empty —
+  // still fires.
+  let creeps = event_fn.is_some() || !state_events.events.is_empty();
+  let mut adaptive_tried = false;
+  let mut i = 0;
+  while i < n_steps {
+    let target = grid(i + 1);
+    let mut h = target - x;
     let mut refined: Vec<(f64, Vec<f64>)> = Vec::new();
-    let Some(mut new_state) = rk4_step_refined(
+    let mut halvings = 0;
+    let mut stepped = rk4_step_refined(
       residuals,
       funcs,
       state_offset,
@@ -8238,8 +8263,49 @@ fn integrate_leg(
       Refinement::START,
       &mut refined,
       cached_m,
-    )?
-    else {
+    )?;
+    // The step failed even after refinement. A stiff system or a transient
+    // faster than the grid makes RK4 diverge: the leg is integrated again
+    // with adaptive steps (the whole leg without events to locate; with
+    // state events from here, finding them afterwards on the adaptive
+    // points).
+    if stepped.is_none() && can_go_adaptive && !adaptive_tried {
+      adaptive_tried = true;
+      if state_events.events.is_empty() {
+        if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
+          return Ok(Some(leg));
+        }
+      } else if let Some(done) = adaptive_with_events(&mut points, &state, x)? {
+        return Ok(Some(done));
+      }
+    }
+    while stepped.is_none()
+      && creeps
+      && halvings < MAX_CREEP_HALVINGS
+      && x + h / 2.0 != x
+    {
+      h /= 2.0;
+      halvings += 1;
+      refined.clear();
+      stepped = rk4_step_refined(
+        residuals,
+        funcs,
+        state_offset,
+        &state,
+        x,
+        h,
+        Refinement::START,
+        &mut refined,
+        cached_m,
+      )?;
+    }
+    let new_x = if halvings == 0 {
+      i += 1;
+      target
+    } else {
+      x + h
+    };
+    let Some(mut new_state) = stepped else {
       // The step failed even after refinement — typically the trajectory
       // itself diverges to infinity partway through the domain (a shooting
       // guess that isn't yet the true boundary-value solution commonly
@@ -8253,20 +8319,6 @@ fn integrate_leg(
       // returns an `InterpolatingFunction` valid up to where it could
       // integrate instead of failing the whole call (alongside the
       // `NDSolve::ndsz` message it prints at the point stepping stalled).
-      // A stiff system or a transient faster than the grid makes RK4
-      // diverge: without events to locate, the whole leg is integrated
-      // again with adaptive steps.
-      // State events are found afterwards on the adaptive points.
-      if can_go_adaptive {
-        if state_events.events.is_empty() {
-          if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
-            return Ok(Some(leg));
-          }
-        } else if let Some(done) = adaptive_with_events(&mut points, &state, x)?
-        {
-          return Ok(Some(done));
-        }
-      }
       if points.len() > 1 {
         // Named by the independent variable (`At t == 1.002`), as Wolfram
         // reports it.
@@ -8513,6 +8565,10 @@ fn integrate_leg(
 const STEP_REFINE_RTOL: f64 = 1e-7;
 const STEP_REFINE_ATOL: f64 = 1e-9;
 
+/// How many times a failing nominal step is halved while creeping up to a
+/// singularity that a watched event may stop the integration before.
+const MAX_CREEP_HALVINGS: u32 = 30;
+
 /// How far one nominal step may be bisected. A tracer pulse 10^-6 wide in a
 /// domain of length 20 needs ~15 bisections of the 1/1000 nominal step to be
 /// seen at all, and another dozen for its edges to stop costing accuracy.
@@ -8578,8 +8634,9 @@ fn rk4_step_refined(
     return accept(full, out);
   }
 
-  // Two half steps. If either fails the whole step stands — the coarse
-  // result is still the best available.
+  // Two half steps. If either fails the step jumped over a point where the
+  // system cannot be evaluated (its intermediate stages happened to land
+  // on valid values), so the whole step fails too.
   let half = h / 2.0;
   // A half step too small to move `x` cannot be refined any further.
   if x + half == x {
@@ -8588,7 +8645,7 @@ fn rk4_step_refined(
   let Some(mid) =
     rk4_system_step(residuals, funcs, state_offset, state, x, half, cached_m)?
   else {
-    return accept(full, out);
+    return Ok(None);
   };
   let Some(two) = rk4_system_step(
     residuals,
@@ -8600,7 +8657,7 @@ fn rk4_step_refined(
     cached_m,
   )?
   else {
-    return accept(full, out);
+    return Ok(None);
   };
 
   // A non-finite difference means the problem is singular here, not that a
@@ -11973,6 +12030,11 @@ fn calls_user_function(expr: &Expr) -> bool {
     return true;
   }
   expr_children(expr).iter().any(|c| calls_user_function(c))
+}
+
+fn mentions_list(expr: &Expr) -> bool {
+  matches!(expr, Expr::List(_))
+    || expr_children(expr).iter().any(|c| mentions_list(c))
 }
 
 fn mentions_head(expr: &Expr, head: &str) -> bool {
