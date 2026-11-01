@@ -4152,25 +4152,29 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     );
     return Ok(Expr::List(
       vec![
-        lu_structured_matrix("LowerTriangularMatrix", 0, empty.clone()),
-        lu_structured_matrix("UpperTriangularMatrix", 0, empty),
-        lu_structured_matrix("PermutationMatrix", 0, perm_data),
+        lu_structured_matrix("LowerTriangularMatrix", 0, 0, empty.clone()),
+        lu_structured_matrix("UpperTriangularMatrix", 0, 0, empty),
+        lu_structured_matrix("PermutationMatrix", 0, 0, perm_data),
         Expr::Integer(0),
       ]
       .into(),
     ));
   }
 
-  // Extract matrix elements
+  // Extract matrix elements: n rows of `cols` entries each.
+  let cols = match rows.first() {
+    Some(Expr::List(first)) => first.len(),
+    _ => return Ok(call1("LUDecomposition", mat.clone())),
+  };
   let mut matrix: Vec<Vec<Expr>> = Vec::with_capacity(n);
   for row in rows {
-    if let Expr::List(cols) = row {
-      if cols.len() != n {
+    if let Expr::List(entries) = row {
+      if entries.len() != cols {
         return Err(InterpreterError::EvaluationError(
-          "LUDecomposition: matrix must be square".into(),
+          "LUDecomposition: matrix must be rectangular".into(),
         ));
       }
-      matrix.push(cols.to_vec());
+      matrix.push(entries.to_vec());
     } else {
       return Ok(call1("LUDecomposition", mat.clone()));
     }
@@ -4181,6 +4185,15 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
   let numeric = matrix
     .iter()
     .any(|row| row.iter().any(|e| matches!(e, Expr::Real(_))));
+  // A rectangular exact matrix factors as an n×n unit lower-triangular L
+  // times an upper-trapezoidal U of the matrix's own shape. (The condition
+  // number of a rectangular machine matrix is not supported.)
+  if cols != n && numeric {
+    return Err(InterpreterError::EvaluationError(
+      "LUDecomposition: matrix must be square".into(),
+    ));
+  }
+  let steps = n.min(cols);
 
   // Keep the original matrix for the condition-number computation, which must
   // use the input (not the in-place L/U factors).
@@ -4189,7 +4202,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
   // Partial pivoting LU decomposition
   let mut pivots: Vec<usize> = (0..n).collect();
 
-  for k in 0..n {
+  for k in 0..steps {
     // Choose the pivot row. For machine matrices pick the largest magnitude in
     // column k (numerical stability). For exact matrices Wolfram picks the
     // numeric entry of smallest non-zero magnitude (earliest row on ties),
@@ -4249,7 +4262,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
       .unwrap_or(matrix[i][k].clone());
 
       // Update row i: A[i][j] -= L[i][k] * A[k][j] for j > k
-      for j in (k + 1)..n {
+      for j in (k + 1)..cols {
         let product = evaluate_expr_to_expr(&times(vec![
           l_ik.clone(),
           matrix[k][j].clone(),
@@ -4293,24 +4306,22 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
   let mut lower: Vec<Expr> = Vec::with_capacity(n);
   let mut upper: Vec<Expr> = Vec::with_capacity(n);
   for i in 0..n {
-    let mut l_row: Vec<Expr> = Vec::with_capacity(n);
-    let mut u_row: Vec<Expr> = Vec::with_capacity(n);
-    for j in 0..n {
-      match i.cmp(&j) {
-        std::cmp::Ordering::Greater => {
-          l_row.push(matrix[i][j].clone());
-          u_row.push(zero.clone());
+    let l_row: Vec<Expr> = (0..n)
+      .map(|j| match i.cmp(&j) {
+        std::cmp::Ordering::Greater if j < cols => matrix[i][j].clone(),
+        std::cmp::Ordering::Equal => one.clone(),
+        _ => zero.clone(),
+      })
+      .collect();
+    let u_row: Vec<Expr> = (0..cols)
+      .map(|j| {
+        if i > j {
+          zero.clone()
+        } else {
+          matrix[i][j].clone()
         }
-        std::cmp::Ordering::Equal => {
-          l_row.push(one.clone());
-          u_row.push(matrix[i][j].clone());
-        }
-        std::cmp::Ordering::Less => {
-          l_row.push(zero.clone());
-          u_row.push(matrix[i][j].clone());
-        }
-      }
-    }
+      })
+      .collect();
     lower.push(Expr::List(l_row.into()));
     upper.push(Expr::List(u_row.into()));
   }
@@ -4329,20 +4340,20 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::List(
     vec![
-      lu_structured_matrix("LowerTriangularMatrix", n, l_expr),
-      lu_structured_matrix("UpperTriangularMatrix", n, u_expr),
-      lu_structured_matrix("PermutationMatrix", n, perm_data),
+      lu_structured_matrix("LowerTriangularMatrix", n, n, l_expr),
+      lu_structured_matrix("UpperTriangularMatrix", n, cols, u_expr),
+      lu_structured_matrix("PermutationMatrix", n, n, perm_data),
       cond,
     ]
     .into(),
   ))
 }
 
-/// Wrap a payload in `head[StructuredArray`StructuredData[{n, n}, payload]]`,
+/// Wrap a payload in `head[StructuredArray`StructuredData[{r, c}, payload]]`,
 /// the canonical structured-array form Wolfram uses for the LU factors.
-fn lu_structured_matrix(head: &str, n: usize, payload: Expr) -> Expr {
+fn lu_structured_matrix(head: &str, r: usize, c: usize, payload: Expr) -> Expr {
   let dims =
-    Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into());
+    Expr::List(vec![Expr::Integer(r as i128), Expr::Integer(c as i128)].into());
   call1(
     head,
     call("StructuredArray`StructuredData", vec![dims, payload]),
