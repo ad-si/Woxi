@@ -2298,35 +2298,352 @@ fn parse_stringified_derivative_head(
   Some((indices.ok()?, fname.to_string()))
 }
 
-/// In the derivative of a `Piecewise`, each piece boundary becomes a point of
-/// non-differentiability that falls to the `Indeterminate` default, so an
-/// inclusive comparison (`x <= 0`, `x >= 0`) is tightened to its strict form
-/// (`x < 0`, `x > 0`) — matching wolframscript. Only bare two-operand
-/// comparisons are rewritten; compound/other conditions are left untouched.
-fn strip_piecewise_condition_boundary(cond: &Expr) -> Expr {
+/// `D[Piecewise[{{v_i, c_i}, …}, default], var]`, as wolframscript does it.
+///
+/// When every condition is a polynomial inequality in `var` alone, the line
+/// is cut at the conditions' real roots: each open interval between them
+/// takes the derivative of the piece active there (adjacent intervals of
+/// one piece join), and the boundary points fall to the `Indeterminate`
+/// default — `D[Piecewise[{{x, 0 <= x <= 1}}, x^2], x]` is `{{2 x, x < 0},
+/// {1, 0 < x < 1}, {2 x, x > 1}}`. Otherwise (other symbols, transcendental
+/// conditions, equalities) the conditions stay, in their `d op 0` form,
+/// and the default is differentiated too.
+fn differentiate_piecewise(
+  expr: &Expr,
+  args: &[Expr],
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_d = || call("D", vec![expr.clone(), id_expr(var)]);
+  let Expr::List(pieces) = &args[0] else {
+    return Ok(unevaluated_d());
+  };
+  let mut pairs: Vec<(Expr, Expr)> = Vec::with_capacity(pieces.len());
+  for piece in pieces {
+    match piece {
+      Expr::List(pair) if pair.len() == 2 => {
+        pairs.push((pair[0].clone(), pair[1].clone()));
+      }
+      _ => return Ok(unevaluated_d()),
+    }
+  }
+  let default = args.get(1).cloned().unwrap_or(Expr::Integer(0));
+  if let Some(result) =
+    differentiate_piecewise_on_intervals(&pairs, &default, var)?
+  {
+    return Ok(result);
+  }
+  let mut diffed: Vec<Expr> = Vec::with_capacity(pairs.len());
+  for (value, cond) in &pairs {
+    diffed.push(Expr::List(
+      vec![
+        differentiate(value, var)?,
+        normalize_piecewise_condition(cond),
+      ]
+      .into(),
+    ));
+  }
+  let d_default = differentiate(&default, var)?;
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Piecewise",
+    vec![Expr::List(diffed.into()), d_default],
+  ))
+}
+
+/// The atomic comparisons of a condition built with `And`/`Or`/`Not`, or
+/// `None` when it holds anything else (an equation, `Element`, …).
+fn piecewise_condition_comparisons(
+  cond: &Expr,
+  out: &mut Vec<(Expr, Expr)>,
+) -> bool {
   match cond {
     Expr::Comparison {
       operands,
       operators,
-    } if operators.len() == 1 => {
-      let new_op = match operators[0] {
-        ComparisonOp::LessEqual => ComparisonOp::Less,
-        ComparisonOp::GreaterEqual => ComparisonOp::Greater,
-        other => other,
+    } => {
+      if !operators.iter().all(|op| {
+        matches!(
+          op,
+          ComparisonOp::Less
+            | ComparisonOp::LessEqual
+            | ComparisonOp::Greater
+            | ComparisonOp::GreaterEqual
+        )
+      }) {
+        return false;
+      }
+      for w in operands.windows(2) {
+        out.push((w[0].clone(), w[1].clone()));
+      }
+      true
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "And" | "Or" | "Not" => {
+        args.iter().all(|a| piecewise_condition_comparisons(a, out))
+      }
+      "Less" | "LessEqual" | "Greater" | "GreaterEqual" if args.len() >= 2 => {
+        for w in args.windows(2) {
+          out.push((w[0].clone(), w[1].clone()));
+        }
+        true
+      }
+      "Inequality" if args.len() % 2 == 1 && args.len() >= 3 => {
+        let ok = args.iter().skip(1).step_by(2).all(|op| {
+          matches!(op, Expr::Identifier(o)
+            if matches!(o.as_str(), "Less" | "LessEqual" | "Greater" | "GreaterEqual"))
+        });
+        if !ok {
+          return false;
+        }
+        let operands: Vec<&Expr> = args.iter().step_by(2).collect();
+        for w in operands.windows(2) {
+          out.push((w[0].clone(), w[1].clone()));
+        }
+        true
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// The interval form of [`differentiate_piecewise`]; `None` when the
+/// conditions are not polynomial inequalities in `var` alone.
+fn differentiate_piecewise_on_intervals(
+  pairs: &[(Expr, Expr)],
+  default: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let mut comparisons = Vec::new();
+  for (_, cond) in pairs {
+    if !piecewise_condition_comparisons(cond, &mut comparisons) {
+      return Ok(None);
+    }
+  }
+  if !pairs.iter().any(|(_, c)| contains_var(c, var)) {
+    return Ok(None);
+  }
+  // The real roots of every compared difference, sorted.
+  let mut roots: Vec<(f64, Expr)> = Vec::new();
+  for (lhs, rhs) in &comparisons {
+    let diff = eval(call(
+      "Plus",
+      vec![
+        lhs.clone(),
+        call("Times", vec![Expr::Integer(-1), rhs.clone()]),
+      ],
+    ))?;
+    let only_var = match &eval(call("Variables", vec![diff.clone()]))? {
+      Expr::List(vs) => vs
+        .iter()
+        .all(|v| matches!(v, Expr::Identifier(n) if n == var)),
+      _ => false,
+    };
+    if !only_var
+      || !matches!(
+        eval(call("PolynomialQ", vec![diff.clone(), id_expr(var)]))?,
+        Expr::Identifier(ref t) if t == "True"
+      )
+    {
+      return Ok(None);
+    }
+    if !contains_var(&diff, var) {
+      continue;
+    }
+    let solved = eval(call(
+      "Solve",
+      vec![
+        Expr::Comparison {
+          operands: vec![diff, Expr::Integer(0)],
+          operators: vec![ComparisonOp::Equal],
+        },
+        id_expr(var),
+        id_expr("Reals"),
+      ],
+    ))?;
+    let Expr::List(sols) = &solved else {
+      return Ok(None);
+    };
+    for sol in sols {
+      let Expr::List(rules) = sol else {
+        return Ok(None);
       };
-      Expr::Comparison {
-        operands: operands.clone(),
-        operators: vec![new_op],
+      let Some(Expr::Rule { replacement, .. }) = rules.first() else {
+        return Ok(None);
+      };
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(replacement)
+      else {
+        return Ok(None);
+      };
+      if !roots
+        .iter()
+        .any(|(r, _)| (r - v).abs() <= 1e-12 * v.abs().max(1.0))
+      {
+        roots.push((v, (**replacement).clone()));
       }
     }
-    Expr::FunctionCall { name, args } if args.len() == 2 => {
-      let new_name = match name.as_str() {
-        "LessEqual" => "Less",
-        "GreaterEqual" => "Greater",
-        _ => return cond.clone(),
-      };
-      call_expr(new_name, args)
+  }
+  roots.sort_by(|a, b| a.0.total_cmp(&b.0));
+  // A sample point inside each open interval, and the piece active there.
+  let mut samples: Vec<f64> = Vec::with_capacity(roots.len() + 1);
+  if roots.is_empty() {
+    samples.push(0.0);
+  } else {
+    samples.push(roots[0].0 - 1.0);
+    for w in roots.windows(2) {
+      samples.push(f64::midpoint(w[0].0, w[1].0));
     }
+    samples.push(roots[roots.len() - 1].0 + 1.0);
+  }
+  let mut active: Vec<Option<usize>> = Vec::with_capacity(samples.len());
+  for &x in &samples {
+    let mut found = None;
+    for (i, (_, cond)) in pairs.iter().enumerate() {
+      let at = crate::syntax::substitute_variable(cond, var, &Expr::Real(x));
+      match &eval(at)? {
+        Expr::Identifier(t) if t == "True" => {
+          found = Some(i);
+          break;
+        }
+        Expr::Identifier(t) if t == "False" => {}
+        _ => return Ok(None),
+      }
+    }
+    active.push(found);
+  }
+  let derivative_of = |piece: Option<usize>| -> Result<Expr, InterpreterError> {
+    differentiate(piece.map_or(default, |i| &pairs[i].0), var)
+  };
+  // Adjacent intervals of the same piece join.
+  let mut spans: Vec<(Option<usize>, Option<usize>, Option<usize>)> =
+    Vec::new();
+  for (k, piece) in active.iter().enumerate() {
+    let lo = k.checked_sub(1);
+    let hi = (k < roots.len()).then_some(k);
+    match spans.last_mut() {
+      Some((p, _, end)) if p == piece => *end = hi,
+      _ => spans.push((*piece, lo, hi)),
+    }
+  }
+  if spans.len() == 1 {
+    return Ok(Some(derivative_of(spans[0].0)?));
+  }
+  let x = id_expr(var);
+  let mut out: Vec<Expr> = Vec::with_capacity(spans.len());
+  let mut values: Vec<Expr> = Vec::with_capacity(spans.len());
+  for (piece, lo, hi) in &spans {
+    let cond = match (lo, hi) {
+      (None, Some(h)) => Expr::Comparison {
+        operands: vec![x.clone(), roots[*h].1.clone()],
+        operators: vec![ComparisonOp::Less],
+      },
+      (Some(l), None) => Expr::Comparison {
+        operands: vec![x.clone(), roots[*l].1.clone()],
+        operators: vec![ComparisonOp::Greater],
+      },
+      (Some(l), Some(h)) => call(
+        "Inequality",
+        vec![
+          roots[*l].1.clone(),
+          id_expr("Less"),
+          x.clone(),
+          id_expr("Less"),
+          roots[*h].1.clone(),
+        ],
+      ),
+      (None, None) => return Ok(Some(derivative_of(*piece)?)),
+    };
+    let value = derivative_of(*piece)?;
+    values.push(value.clone());
+    out.push(Expr::List(vec![value, cond].into()));
+  }
+  // The same derivative everywhere is just that derivative.
+  if values
+    .windows(2)
+    .all(|w| crate::evaluator::pattern_matching::expr_equal(&w[0], &w[1]))
+  {
+    return Ok(Some(values.swap_remove(0)));
+  }
+  Ok(Some(eval(call(
+    "Piecewise",
+    vec![Expr::List(out.into()), id_expr("Indeterminate")],
+  ))?))
+}
+
+/// A kept `Piecewise` condition in the form wolframscript gives it after
+/// differentiation: a comparison of two non-numeric sides becomes their
+/// difference against 0, negated so that it leads with a positive term
+/// (`y > a` → `a - y < 0`, `x > y^2` → `x - y^2 > 0`). A comparison with a
+/// number (`E^x <= 2`, `Sin[x] > 0`) and other conditions stay as they are.
+fn normalize_piecewise_condition(cond: &Expr) -> Expr {
+  match cond {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 => {
+      let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+      if numeric(&operands[1]) || numeric(&operands[0]) {
+        return cond.clone();
+      }
+      let Ok(diff) = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Plus",
+        vec![
+          operands[0].clone(),
+          call("Times", vec![Expr::Integer(-1), operands[1].clone()]),
+        ],
+      )) else {
+        return cond.clone();
+      };
+      let leads_negative = {
+        let first = match &diff {
+          Expr::FunctionCall { name, args }
+            if name == "Plus" && !args.is_empty() =>
+          {
+            &args[0]
+          }
+          other => other,
+        };
+        match first {
+          Expr::Integer(n) => *n < 0,
+          Expr::Real(f) => *f < 0.0,
+          Expr::FunctionCall { name, args } if name == "Times" => {
+            matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+              || matches!(args.first(), Some(Expr::Real(f)) if *f < 0.0)
+          }
+          Expr::FunctionCall { name, args } if name == "Rational" => {
+            matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+          }
+          _ => false,
+        }
+      };
+      let flip = |op: ComparisonOp| match op {
+        ComparisonOp::Less => ComparisonOp::Greater,
+        ComparisonOp::LessEqual => ComparisonOp::GreaterEqual,
+        ComparisonOp::Greater => ComparisonOp::Less,
+        ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
+        other => other,
+      };
+      let (diff, op) = if leads_negative {
+        (
+          crate::evaluator::evaluate_expr_to_expr(&call(
+            "Times",
+            vec![Expr::Integer(-1), diff.clone()],
+          ))
+          .unwrap_or(diff),
+          flip(operators[0]),
+        )
+      } else {
+        (diff, operators[0])
+      };
+      Expr::Comparison {
+        operands: vec![diff, Expr::Integer(0)],
+        operators: vec![op],
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "And" || name == "Or" => call(
+      name,
+      args.iter().map(normalize_piecewise_condition).collect(),
+    ),
     _ => cond.clone(),
   }
 }
@@ -2653,65 +2970,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           Ok(call("If", out))
         }
-        // `Piecewise[{{v_i, c_i}, …}, default]` differentiates value-by-value:
-        // each piece keeps its condition with the value differentiated, and the
-        // default becomes `Indeterminate` (the derivative is undefined at the
-        // piece boundaries). Without this the generic chain rule emits a
-        // `Derivative[1, 0][Piecewise][…]` mess. This matches wolframscript for
-        // the common multi-piece form whose conditions cover the line except at
-        // isolated boundary points; wolframscript's finer default handling
-        // (keeping D[default] for a single-piece continuous default, or
-        // splitting a discontinuous default region) is not reproduced.
+        // `Piecewise[{{v_i, c_i}, …}, default]`: see `differentiate_piecewise`.
         "Piecewise" if !args.is_empty() => {
-          if let Expr::List(pieces) = &args[0] {
-            // When no condition mentions `var`, the piece boundaries are
-            // independent of it, so the default is differentiated as well
-            // instead of becoming `Indeterminate`.
-            let conditions_free_of_var = pieces.iter().all(|piece| {
-              matches!(piece, Expr::List(pair) if pair.len() == 2
-                && !contains_var(&pair[1], var))
-            });
-            if conditions_free_of_var {
-              let mut diffed_pieces: Vec<Expr> =
-                Vec::with_capacity(pieces.len());
-              for piece in pieces {
-                if let Expr::List(pair) = piece {
-                  diffed_pieces.push(Expr::List(
-                    vec![differentiate(&pair[0], var)?, pair[1].clone()].into(),
-                  ));
-                }
-              }
-              let default = match args.get(1) {
-                Some(d) => differentiate(d, var)?,
-                None => Expr::Integer(0),
-              };
-              return Ok(call(
-                "Piecewise",
-                vec![Expr::List(diffed_pieces.into()), default],
-              ));
-            }
-            let mut diffed_pieces: Vec<Expr> = Vec::with_capacity(pieces.len());
-            for piece in pieces {
-              if let Expr::List(pair) = piece
-                && pair.len() == 2
-              {
-                let dval = differentiate(&pair[0], var)?;
-                diffed_pieces.push(Expr::List(
-                  vec![dval, strip_piecewise_condition_boundary(&pair[1])]
-                    .into(),
-                ));
-              } else {
-                // Unexpected piece shape — fall back to unevaluated D[…].
-                return Ok(call("D", vec![expr.clone(), id_expr(var)]));
-              }
-            }
-            Ok(call(
-              "Piecewise",
-              vec![Expr::List(diffed_pieces.into()), id_expr("Indeterminate")],
-            ))
-          } else {
-            Ok(call("D", vec![expr.clone(), id_expr(var)]))
-          }
+          differentiate_piecewise(expr, args, var)
         }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
         // element-wise through the coefficient list and, when the center

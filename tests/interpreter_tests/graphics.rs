@@ -8288,6 +8288,22 @@ mod plot3d {
       );
     }
 
+    /// Without PlotStyle a curve takes the default palette's first color
+    /// (blue), and a second curve the next one.
+    #[test]
+    fn curve_default_color_is_palette() {
+      let svg = export_svg("ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]");
+      assert!(
+        svg.contains("stroke=\"rgb(94,129,181)\""),
+        "{}",
+        &svg[..300]
+      );
+      let svg2 = export_svg(
+        "ParametricPlot3D[{{Cos[t], Sin[t], t}, {Sin[t], Cos[t], t}}, {t, 0, 6}]",
+      );
+      assert!(svg2.contains("stroke=\"rgb(224,147,44)\""));
+    }
+
     /// Show[] must merge Graphics3D primitives with the line emitted
     /// by ParametricPlot3D's curve form (regression test: previously
     /// the ParametricPlot3D evaluation failed silently and the ring
@@ -11665,6 +11681,16 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {"Sin", "Cos"}]"#
       ));
+    }
+
+    #[test]
+    fn show_keeps_the_plot_legends_of_the_first_plot() {
+      // Showing several plots together keeps the first plot's legend.
+      let svg = export_svg(
+        r#"Show[Plot[x, {x, 0, 1}, PlotLegends -> {"first"}],
+          Plot[x^2, {x, 0, 1}, Filling -> Axis]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
     }
 
     #[test]
@@ -17269,6 +17295,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       )
       .unwrap();
       assert_eq!(result, "{True, True}", "result: {result}");
+    }
+
+    /// `BoundaryStyle` outlines the edge a `RegionFunction` cuts out of a
+    /// `ContourPlot`; without it no boundary is drawn.
+    #[test]
+    fn contour_plot_boundary_style_outlines_the_region() {
+      let plot = |opts: &str| {
+        export_svg(&format!(
+          "ContourPlot[x^2 + y^2, {{x, -1, 1}}, {{y, -1, 1}}, \
+           RegionFunction -> Function[{{x, y, z}}, x^2 + y^2 < 0.5]{opts}]"
+        ))
+      };
+      let red = "stroke=\"rgb(255,0,0)\"";
+      assert!(plot(", BoundaryStyle -> Red").contains(red));
+      assert!(!plot("").contains(red));
+      assert!(!plot(", BoundaryStyle -> None").contains(red));
     }
 
     /// `ContourStyle` colours and thickens the contour lines. Both the
@@ -40330,7 +40372,7 @@ mod grid_text_in_graphics {
     // The curve stops at the PlotRange boundary x = 0.5 instead of
     // running on to x = 1: a clipped line is shorter than an unclipped one.
     let clipped = interpret(
-      r#"Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]"#,
+      r#"Length[Cases[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]], _Line]]"#,
     )
     .unwrap();
     assert_eq!(clipped, "1", "{clipped}");
@@ -44104,5 +44146,19 @@ mod show_array_plot_sizing {
       svg.contains("<svg width=\"300\" height=\"150\""),
       "Got: {svg}"
     );
+  }
+
+  #[test]
+  fn log_plot_nonpositive_plot_range_bound_keeps_decade_labels() {
+    // A zero lower PlotRange bound cannot exist on a log axis; it falls back
+    // to the automatic bound instead of dropping every y tick label.
+    for opts in ["PlotRange -> {{1, 4}, {0, 1}}", "PlotRange -> {0, 1}"] {
+      let svg = interpret(&format!(
+        "ExportString[ListLogPlot[{{1, 0.1, 0.01, 0.001}}, Joined -> True, \
+         Frame -> True, {opts}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.contains("baseline-shift=\"super\""), "Got: {svg}");
+    }
   }
 }

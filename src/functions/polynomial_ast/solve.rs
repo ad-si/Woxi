@@ -10826,6 +10826,12 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
     }
   }
   if roots.is_empty() {
+    // Newton stalls on a residual that is flat away from its root (a
+    // regularized-gamma CDF is ~0 or ~1 almost everywhere). Scan a
+    // log-spaced grid for sign changes and bisect each one instead.
+    roots = scan_sign_change_roots(&eval_at);
+  }
+  if roots.is_empty() {
     return None;
   }
   roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -10835,6 +10841,57 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
       .map(|r| Expr::List(vec![rule_expr(var.clone(), Expr::Real(r))].into()))
       .collect(),
   ))
+}
+
+/// Real roots of `f` found by sampling it on a grid that is dense near zero
+/// and geometric out to ±1e4, then bisecting every sign change.
+fn scan_sign_change_roots(f: &dyn Fn(f64) -> Option<f64>) -> Vec<f64> {
+  let mut grid: Vec<f64> = vec![0.0];
+  for i in 0..=140 {
+    let m = 10f64.powf(-3.0 + 0.05 * i as f64);
+    grid.push(m);
+    grid.push(-m);
+  }
+  grid.sort_by(|a, b| a.partial_cmp(b).unwrap());
+  let samples: Vec<(f64, f64)> =
+    grid.iter().filter_map(|&x| f(x).map(|y| (x, y))).collect();
+  let mut roots = Vec::new();
+  for w in samples.windows(2) {
+    let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+    if y0 == 0.0 {
+      roots.push(x0);
+      continue;
+    }
+    if y0.signum() == y1.signum() || y1 == 0.0 {
+      continue;
+    }
+    let (mut lo, mut hi, mut flo) = (x0, x1, y0);
+    for _ in 0..200 {
+      let mid = f64::midpoint(lo, hi);
+      let Some(fm) = f(mid) else {
+        break;
+      };
+      if fm == 0.0 {
+        lo = mid;
+        hi = mid;
+        break;
+      }
+      if fm.signum() == flo.signum() {
+        lo = mid;
+        flo = fm;
+      } else {
+        hi = mid;
+      }
+    }
+    roots.push(f64::midpoint(lo, hi));
+  }
+  if let Some(&(x, y)) = samples.last()
+    && y == 0.0
+  {
+    roots.push(x);
+  }
+  roots.dedup_by(|a, b| (*a - *b).abs() < 1e-9 * (1.0 + b.abs()));
+  roots
 }
 
 /// `NSolve[{eqn, bounds…}, x]`: one equation in one variable whose

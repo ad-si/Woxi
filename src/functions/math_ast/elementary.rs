@@ -1773,6 +1773,14 @@ pub fn numeric_real_sign(expr: &Expr) -> Option<NumericSign> {
       return Some(sign_of(v));
     }
   }
+  // Numerics cannot separate the value from 0, but an exact rewrite may
+  // prove it is 0 (nested radicals that cancel term by term).
+  if let Ok(t) =
+    crate::functions::polynomial_ast::together_ast(std::slice::from_ref(expr))
+    && matches!(t, Expr::Integer(0))
+  {
+    return Some(NumericSign::Known(0));
+  }
   crate::emit_message(&format!(
     "N::meprec: Internal precision limit $MaxExtraPrecision = 50. reached while evaluating {}.",
     crate::syntax::expr_to_output(expr)
