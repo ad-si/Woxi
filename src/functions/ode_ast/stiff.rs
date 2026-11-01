@@ -225,10 +225,10 @@ pub(super) fn rosenbrock_leg_limited(
 /// Rodas4 (Hairer & Wanner, as tabulated in DifferentialEquations.jl):
 /// γ, the stage times c2..c4, the time-derivative weights d1..d4, the
 /// stage combinations a and the increment couplings C.
-const RODAS_GAMMA: f64 = 0.25;
-const RODAS_C: [f64; 3] = [0.386, 0.21, 0.63];
-const RODAS_D: [f64; 4] = [0.25, -0.1043, 0.1035, -0.0362];
-const RODAS_A: [[f64; 4]; 4] = [
+pub(super) const RODAS_GAMMA: f64 = 0.25;
+pub(super) const RODAS_C: [f64; 3] = [0.386, 0.21, 0.63];
+pub(super) const RODAS_D: [f64; 4] = [0.25, -0.1043, 0.1035, -0.0362];
+pub(super) const RODAS_A: [[f64; 4]; 4] = [
   [1.544, 0.0, 0.0, 0.0],
   [0.9466785280815826, 0.2557011698983284, 0.0, 0.0],
   [
@@ -244,7 +244,7 @@ const RODAS_A: [[f64; 4]; 4] = [
     -0.687886036105895,
   ],
 ];
-const RODAS_CC: [[f64; 5]; 5] = [
+pub(super) const RODAS_CC: [[f64; 5]; 5] = [
   [-5.6688, 0.0, 0.0, 0.0, 0.0],
   [-2.430093356833875, -0.2063599157091915, 0.0, 0.0, 0.0],
   [

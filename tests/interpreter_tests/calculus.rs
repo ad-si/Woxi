@@ -11123,7 +11123,7 @@ mod ndsolve {
     .unwrap();
     assert!(
       result.starts_with("{{u -> InterpolatingFunction[")
-        && result.contains("{1, 1}"),
+        && result.contains("{3, 3}"),
       "Got: {result}"
     );
   }
@@ -11219,20 +11219,28 @@ mod ndsolve {
     assert_eq!(result, "200");
   }
 
-  /// A PDE missing one of its two Dirichlet boundary conditions doesn't
-  /// match the one recognised shape, so the call is left unevaluated —
-  /// the same fallback NDSolve gives any equation system it can't classify
-  /// — rather than panicking or silently returning a wrong answer.
+  /// A PDE missing the boundary condition at one end is still solved, as
+  /// in wolframscript: the end without a condition keeps the PDE itself,
+  /// discretized one-sidedly, and `NDSolve::bcart` warns about it. The
+  /// linear initial profile is then a steady state, as it is in
+  /// wolframscript (`u[1, 1.]` is `0.99999988…` there).
   #[test]
-  fn pde_heat_equation_without_both_boundaries_stays_unevaluated() {
-    let result = interpret(
-      "NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
-       u[t, 0] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+  fn pde_heat_equation_with_one_boundary_condition_warns_and_solves() {
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       Round[{u[1, 0.5], u[1, 1.]} /. sol[[1]], 10^-5]",
     )
     .unwrap();
+    assert_eq!(result.result, "{1/2, 1}");
     assert!(
-      result.starts_with("NDSolve["),
-      "Expected an unevaluated NDSolve, got: {result}"
+      result.warnings.iter().any(|w| w.starts_with(
+        "NDSolve::bcart: Warning: an insufficient number of boundary \
+         conditions have been specified for the direction of independent \
+         variable x."
+      )),
+      "{:?}",
+      result.warnings
     );
   }
 
@@ -11318,8 +11326,10 @@ mod ndsolve {
   /// value (not a derivative) for the reaction term. Since `A`'s own
   /// equation doesn't depend on `B`, solving it standalone through the
   /// single-unknown PDE branch and reading it back out of the two-unknown
-  /// coupled solve must agree exactly: coupling other unknowns in must
-  /// never perturb an unknown whose own equation doesn't reference them.
+  /// coupled solve must agree to the integration tolerance (the coupled
+  /// solve's adaptive steps also follow `B`): coupling other unknowns in
+  /// must never perturb an unknown whose own equation doesn't reference
+  /// them.
   #[test]
   fn pde_coupled_system_matches_a_standalone_solve_of_the_uncoupled_unknown() {
     let coupled = interpret(
@@ -11343,7 +11353,7 @@ mod ndsolve {
     let coupled_val: f64 = coupled.parse().expect("should be a number");
     let alone_val: f64 = alone.parse().expect("should be a number");
     assert!(
-      (coupled_val - alone_val).abs() < 1e-9,
+      (coupled_val - alone_val).abs() < 1e-6,
       "Coupling in Subscript[c, 2] shouldn't change Subscript[c, 1]'s own \
        solution: coupled={coupled_val}, standalone={alone_val}"
     );
@@ -11484,6 +11494,104 @@ mod ndsolve {
     );
   }
 
+  /// A laminar tubular reactor: the evolution variable `z` multiplies its
+  /// derivative by the velocity profile `1 - r^2` (nearly zero at the
+  /// wall), the radial diffusion carries the cylindrical `1/r` term, the
+  /// Arrhenius rate couples both unknowns, and `T` has no condition at
+  /// `r == 10^-6` (one-sided equation there, with `NDSolveValue::bcart`).
+  /// The reference values are wolframscript's (converged with
+  /// `"MinPoints" -> 101`: 0.14940 and 0.025090).
+  #[test]
+  fn pde_laminar_tubular_reactor_matches_wolframscript() {
+    let result = interpret_with_stdout(
+      "eqns = {(1 - r^2) D[c[z, r], z] == 0.001 D[r D[c[z, r], r], r]/r - \
+       2*10^13 Exp[-30.7/(T[z, r] + 1)] c[z, r], (1 - r^2) D[T[z, r], z] == \
+       D[r D[T[z, r], r], r]/r + 5*10^12 Exp[-30.7/(T[z, r] + 1)] c[z, r], \
+       T[0, r] == 0, c[0, r] == 1., T[z, 0.999] == 0, \
+       (D[c[z, r], r] /. r -> 10^-6) == 0, \
+       (D[c[z, r], r] /. r -> 0.999) == 0}; \
+       {u, v} = NDSolveValue[eqns, {T, c}, {z, 0, 1}, {r, 10^-6, 0.999}]; \
+       {Abs[u[0.25, 0.25] - 0.14940] < 10^-3, \
+        Abs[v[0.5, 0.9] - 0.025090] < 5 10^-4}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{True, True}");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("NDSolveValue::bcart:")),
+      "{:?}",
+      result.warnings
+    );
+  }
+
+  /// An unknown evolving without any space derivative (`Tx`, a coolant
+  /// temperature at every radius) next to diffusing ones, a Robin wall
+  /// condition coupling it in, and an unknown the equations never mention
+  /// (`cc`), which comes back as itself. Reference: wolframscript with
+  /// `"MinPoints" -> 51` gives `T[0.405, 0.015] == 385.463`.
+  #[test]
+  fn pde_reactor_with_coolant_ode_and_unused_unknown() {
+    let result = interpret(
+      "eqns = {50 (1 - 100 r^2) D[ca[z, r], z] == \
+       D[r D[ca[z, r], r], r]/(10^9 r) - 2500 Exp[-721.674/T[z, r]] ca[z, r], \
+       50 (1 - 100 r^2) D[cb[z, r], z] == D[r D[cb[z, r], r], r]/(10^9 r) + \
+       2500 Exp[-721.674/T[z, r]] ca[z, r] - 2500 Exp[-1202.79/T[z, r]] cb[z, r], \
+       3.75 (1 - 100 r^2) D[T[z, r], z] == 0.1 D[r D[T[z, r], r], r]/r + \
+       25000 Exp[-721.674/T[z, r]] ca[z, r] + 25000 Exp[-1202.79/T[z, r]] cb[z, r], \
+       D[Tx[z, r], z] == -5 (Tx[z, r] - T[z, r]), T[0, r] == 350., \
+       Tx[0, r] == 350., ca[0, r] == 1, cb[0, r] == 0., \
+       (D[ca[z, r], r] /. r -> 10^-6) == 0, (D[ca[z, r], r] /. r -> 0.1) == 0, \
+       (D[cb[z, r], r] /. r -> 10^-6) == 0, (D[cb[z, r], r] /. r -> 0.1) == 0, \
+       (D[T[z, r], r] /. r -> 10^-6) == 0, \
+       0.1 (D[T[z, r], r] /. r -> 0.1) == -5 (T[z, 0.1] - Tx[z, 0.1])}; \
+       {tr, tx, a, b, cc0} = NDSolveValue[eqns, {T, Tx, ca, cb, cc}, {z, 0, 1}, \
+       {r, 10^-6, 0.1}]; {Abs[tr[0.405, 0.015] - 385.463] < 0.05, cc0}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, cc}");
+  }
+
+  /// Coupled time derivatives (`T_t - 1.44 U_t` in one equation) with
+  /// `NeumannValue` flux conditions at both ends, the one of the second
+  /// equation involving both unknowns' radial derivatives. Reference
+  /// values from wolframscript's finite element solution:
+  /// `T[0.5, 10] == 24.3738`, `U[0.9, 100] == 23.9427`.
+  #[test]
+  fn pde_coupled_time_derivatives_with_neumann_values() {
+    let result = interpret(
+      "{temp, mass} = NDSolveValue[{D[T[r, t], t] - \
+       0.005 D[r D[T[r, t], r], r]/r - 1.44 D[U[r, t], t] == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-34.6154 (T[r, t] - 110) - \
+       0.00323077 (U[r, t] - 8), r == 1], T[r, 0] == 10, D[U[r, t], t] - \
+       0.0005 D[r D[U[r, t], r], r]/r - 5.94595*^-9 D[r D[T[r, t], r], r]/r == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-2 (-34.6154 (T[r, t] - 110) - \
+       0.00323077 (U[r, t] - 8)) - 113.636 (U[r, t] - 8), r == 1], \
+       U[r, 0] == 86}, {T, U}, {r, 10^-6, 1}, {t, 0, 1000}]; \
+       {Abs[temp[0.5, 10] - 24.3738] < 0.01, Abs[mass[0.9, 100] - 23.9427] < 0.01}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
+  /// The Kuramoto–Sivashinsky equation: fourth order in space, nonlinear,
+  /// on a periodic domain (`u[t, -25] == u[t, 25]`). wolframscript gives
+  /// `u[1, 0] == 1.71008` and `u[5, -3] == -6.94246`.
+  #[test]
+  fn pde_kuramoto_sivashinsky_periodic_fourth_order() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] + D[u[t, x], {x, 4}] + \
+       2.5 D[u[t, x], {x, 2}] + u[t, x] D[u[t, x], x] == 0, \
+       u[0, x] == Exp[-(x - 1)^2] + Exp[-(x + 1)^2], u[t, -25] == u[t, 25]}, \
+       u, {t, 0, 5}, {x, -25, 25}]; f = u /. sol[[1]]; \
+       {Abs[f[1, 0] - 1.71008] < 0.005, Abs[f[5, -3] + 6.94246] < 0.01, \
+        f[2, -25] == f[2, 25]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
+  }
+
   /// `DensityPlot` of a PDE solution samples a large grid
   /// `InterpolatingFunction` thousands of times; written as the
   /// one-element list `u[t, x] /. sol` leaves, it must still go through
@@ -11500,6 +11608,7 @@ mod ndsolve {
     assert_eq!(result, "Graphics");
     assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
   }
+
   /// `NDSolve[eqns, u, {t, …}, {x, …}]` where the evolution equation is
   /// *second*-order in time, `Derivative[2, 0][u][t, x] == rhs` — a
   /// hyperbolic (wave-type) PDE — needs an extra initial condition (the

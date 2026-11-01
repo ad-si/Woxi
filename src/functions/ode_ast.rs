@@ -12,6 +12,7 @@ mod complex_ode;
 mod complex_pde;
 mod curve;
 mod dde;
+mod pde_mol;
 mod stiff;
 
 // ─── DSolve ────────────────────────────────────────────────────────────
@@ -1235,8 +1236,23 @@ pub fn ndsolve_ast_with_head(
     .map(total_derivative_to_derivative)
     .map(|e| expand_defined_derivatives(&e))
     .collect();
-  ndsolve_ast_inner(&evaluated)
-    .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+  let previous = NDSOLVE_HEAD.with(|h| h.replace(head.to_string()));
+  let result = ndsolve_ast_inner(&evaluated)
+    .map(|expr| retag_unevaluated(expr, "NDSolve", head));
+  NDSOLVE_HEAD.with(|h| *h.borrow_mut() = previous);
+  result
+}
+
+thread_local! {
+  /// The head (`NDSolve` or `NDSolveValue`) of the call being solved, which
+  /// its messages are issued under.
+  static NDSOLVE_HEAD: std::cell::RefCell<String> =
+    std::cell::RefCell::new("NDSolve".to_string());
+}
+
+/// The head messages of the `NDSolve`-family call being solved carry.
+fn ndsolve_message_head() -> String {
+  NDSOLVE_HEAD.with(|h| h.borrow().clone())
 }
 
 /// Rewrite `Derivative[n][g[i]][v]` — the derivative of an indexed function
@@ -1514,7 +1530,8 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|a| rename_compound_heads(a, &renames))
         .collect()
     };
-    return match ndsolve_pde(&positional) {
+    let mol_options = pde_mol::MolOptions::from_rules(&args[n_pos..]);
+    return match ndsolve_pde(&positional, &mol_options) {
       Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
       Ok(None) => match ndsolve_pde_hyperbolic(&positional) {
         Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
@@ -2228,29 +2245,6 @@ fn as_equal_pair(eq: &Expr) -> Option<(&Expr, &Expr)> {
   }
 }
 
-/// Flatten a product into its individual factors — a left-associative
-/// chain of `Times` `BinaryOp`s (the parser's shape) or the evaluator's own
-/// canonical n-ary `Times[...]` `FunctionCall` (what a coefficient survives
-/// as once the derivative term next to it has been evaluated). A single
-/// non-product expression is its own one-element flattening.
-fn flatten_times(expr: &Expr) -> Vec<Expr> {
-  match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      let mut out = flatten_times(left);
-      out.extend(flatten_times(right));
-      out
-    }
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      args.iter().flat_map(flatten_times).collect()
-    }
-    other => vec![other.clone()],
-  }
-}
-
 /// Whether `expr` contains a call to any of `names` (as a bare function or
 /// under a `Derivative[…]`) anywhere in its tree — used to reject a
 /// coefficient or boundary value that unexpectedly depends on one of the
@@ -2265,73 +2259,6 @@ fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
   expr_children(expr)
     .iter()
     .any(|c| expr_references_any(c, names))
-}
-
-/// Recognise `[coeff *] Derivative[1, 0][u][t, x] == rhs` (or the reverse,
-/// or the coefficient-scaled term on either side) — the evolution equation
-/// of a parabolic PDE, optionally scaled by a coefficient (which may depend
-/// on `x` or `t`, but not on any unknown) multiplying the time-derivative
-/// term, e.g. the local convection velocity in a falling-film transport
-/// equation. Returns `(coeff, rhs)`; `coeff` is the literal `1` when the
-/// term is bare.
-fn try_pde_evolution_term(
-  eq: &Expr,
-  u_name: &str,
-  t_name: &str,
-  x_name: &str,
-  swap: bool,
-) -> Option<(Expr, Expr)> {
-  let (lhs, rhs) = as_equal_pair(eq)?;
-  let is_dudt = |e: &Expr| {
-    matches!(
-      match_pde_term_roles(e, u_name, swap),
-      Some((1, 0, t_arg, x_arg))
-        if matches!(&t_arg, Expr::Identifier(n) if n == t_name)
-          && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
-    )
-  };
-  // `side` is tried as the (possibly coefficient-scaled) time-derivative
-  // term; `other` becomes the raw RHS once `side`'s coefficient is
-  // factored out.
-  let try_side = |side: &Expr, other: &Expr| -> Option<(Expr, Expr)> {
-    if is_dudt(side) {
-      return Some((Expr::Integer(1), other.clone()));
-    }
-    let factors = flatten_times(side);
-    if factors.len() < 2 {
-      return None;
-    }
-    let deriv_at = factors.iter().position(is_dudt)?;
-    let coeff = factors
-      .into_iter()
-      .enumerate()
-      .filter(|(j, _)| *j != deriv_at)
-      .map(|(_, f)| f)
-      .reduce(times2)
-      .unwrap_or(Expr::Integer(1));
-    Some((coeff, other.clone()))
-  };
-  // `u_t - u_xx == 0`: the time-derivative term is one summand of a side
-  // that carries other terms too; those move to the other side.
-  let try_summand = |side: &Expr, other: &Expr| -> Option<(Expr, Expr)> {
-    let terms = flatten_plus_terms(side);
-    if terms.len() < 2 {
-      return None;
-    }
-    let at = terms.iter().position(|t| try_side(t, other).is_some())?;
-    let (coeff, _) = try_side(&terms[at], other)?;
-    let moved = terms
-      .iter()
-      .enumerate()
-      .filter(|(j, _)| *j != at)
-      .map(|(_, t)| neg1(t.clone()))
-      .fold(other.clone(), plus2);
-    Some((coeff, moved))
-  };
-  try_side(lhs, rhs)
-    .or_else(|| try_side(rhs, lhs))
-    .or_else(|| try_summand(lhs, rhs))
-    .or_else(|| try_summand(rhs, lhs))
 }
 
 /// Recognise `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
@@ -2494,114 +2421,6 @@ fn try_pde_periodic_boundary(
     || (at_end(lhs, x_max) && at_end(rhs, x_min))
 }
 
-/// Rewrite every unknown's occurrences in a PDE evolution right-hand side
-/// into the placeholder identifiers `NumFn` compiles the finite-difference
-/// stencil's numeric values into (see `ndsolve_pde`): `u_names[i][t, x]`
-/// becomes `NDSolve$U{i}` for every `i` (bare value — how a reaction term
-/// couples to another unknown), while `self_idx`'s own
-/// `Derivative[0, 1][…][t, x]` and `Derivative[0, 2][…][t, x]` become
-/// `NDSolve$UX`/`NDSolve$UXX`. Returns `None` when some other unknown
-/// appears through a derivative (a coupling shape this solver doesn't
-/// support) or any other construct this rewrite can't place.
-fn rewrite_pde_rhs(
-  expr: &Expr,
-  u_names: &[String],
-  self_idx: usize,
-  t_name: &str,
-  x_name: &str,
-  swap: bool,
-) -> Option<Expr> {
-  for (j, name) in u_names.iter().enumerate() {
-    let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(expr, name, swap)
-    else {
-      continue;
-    };
-    if !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
-      || !matches!(&x_arg, Expr::Identifier(n) if n == x_name)
-    {
-      return None;
-    }
-    let placeholder = if j == self_idx {
-      match (dt, dx) {
-        (0, 0) => Some(format!("NDSolve$U{j}")),
-        (0, 1) => Some("NDSolve$UX".to_string()),
-        (0, 2) => Some("NDSolve$UXX".to_string()),
-        _ => None,
-      }
-    } else {
-      // Coupling to another unknown is only supported through its plain
-      // value, not its derivatives.
-      match (dt, dx) {
-        (0, 0) => Some(format!("NDSolve$U{j}")),
-        _ => None,
-      }
-    };
-    return placeholder.map(Expr::Identifier);
-  }
-  let failed = std::cell::Cell::new(false);
-  let mapped = map_children(expr, &|c| {
-    if failed.get() {
-      return c.clone();
-    }
-    if let Some(r) = rewrite_pde_rhs(c, u_names, self_idx, t_name, x_name, swap)
-    {
-      r
-    } else {
-      failed.set(true);
-      c.clone()
-    }
-  });
-  if failed.get() { None } else { Some(mapped) }
-}
-
-/// Rewrite every unknown's bare occurrence at the boundary point `x0`
-/// (`u_names[j][t_name, x0]`, in whichever argument order `swap` selects)
-/// into the placeholder identifier `NDSolve$U{j}` — how a Neumann boundary
-/// condition's right-hand side couples to the unknowns' own current
-/// boundary values, e.g. a Robin-type flux condition
-/// `Λ Exp[-α (a[0, t] - b[0, t])]` that depends on both species'
-/// concentrations at the electrode surface. The method-of-lines
-/// integrator (`try_solve_pde_system`'s `derivative` closure) evaluates
-/// the compiled result each step from the already-known grid values at
-/// that boundary. Returns `None` when some unknown appears at a point
-/// other than `x0`, or through a derivative — shapes this boundary solver
-/// doesn't attempt.
-fn rewrite_pde_bc_rhs(
-  expr: &Expr,
-  u_names: &[String],
-  t_name: &str,
-  x0: f64,
-  swap: bool,
-) -> Option<Expr> {
-  for (j, name) in u_names.iter().enumerate() {
-    if let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(expr, name, swap)
-    {
-      if dt != 0
-        || dx != 0
-        || !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
-        || !nval_to_f64(&x_arg)
-          .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
-      {
-        return None;
-      }
-      return Some(Expr::Identifier(format!("NDSolve$U{j}")));
-    }
-  }
-  let failed = std::cell::Cell::new(false);
-  let mapped = map_children(expr, &|c| {
-    if failed.get() {
-      return c.clone();
-    }
-    if let Some(r) = rewrite_pde_bc_rhs(c, u_names, t_name, x0, swap) {
-      r
-    } else {
-      failed.set(true);
-      c.clone()
-    }
-  });
-  if failed.get() { None } else { Some(mapped) }
-}
-
 /// The additive terms of `expr` — a `Plus` call or the parser's `+`
 /// `BinaryOp` chain — or `expr` itself as the single term.
 fn flatten_plus_terms(expr: &Expr) -> Vec<Expr> {
@@ -2707,17 +2526,17 @@ fn collapse_identical_if_branches(expr: &Expr) -> Expr {
 }
 
 /// Lower `NeumannValue[g, x == x0]` terms in PDE equations to explicit
-/// Neumann boundary equations. A term `NeumannValue[g, x == x0]` on the
-/// right-hand side of `… - c u_xx … == rest + NeumannValue[…]` is the
-/// natural boundary condition `n·(c ∇u) = g` with `n` the outward normal,
-/// i.e. `c u_x = -g` at the lower end and `c u_x = g` at the upper end of
-/// the space domain. The PDE keeps `rest`. An unknown that has no spatial
-/// derivative at all (a coupled ODE evolving independently at every grid
-/// point) gets a homogeneous Neumann condition at both ends, which the
-/// method-of-lines grid needs but which does not influence it.
+/// boundary equations. A term `NeumannValue[g, x == x0]` on the right-hand
+/// side of `… - Σ_k c_k u_k,xx … == rest + NeumannValue[…]` is the natural
+/// boundary condition `n·(Σ_k c_k ∇u_k) = g` with `n` the outward normal,
+/// i.e. `Σ_k c_k u_k,x = -g` at the lower end and `= g` at the upper end of
+/// the space domain — a flux that may couple several unknowns when the
+/// equation diffuses more than one of them. The PDE keeps `rest`. An end
+/// without any condition keeps the zero natural flux of the finite element
+/// method, which the method-of-lines solver adds itself.
 ///
-/// Returns `None` when there is no `NeumannValue` or it is not in the
-/// supported shape.
+/// Returns the lowered equations and the space variable, or `None` when
+/// there is no `NeumannValue` or it is not in the supported shape.
 fn lower_neumann_values(
   eqs: &[Expr],
   u_names: &[String],
@@ -2727,8 +2546,7 @@ fn lower_neumann_values(
     return None;
   }
   let mut out: Vec<Expr> = Vec::new();
-  let mut x_info: Option<(String, f64, f64)> = None;
-  let mut has_bc = vec![false; u_names.len()];
+  let mut x_info: Option<String> = None;
   for eq in eqs {
     if !mentions_head(eq, "NeumannValue") {
       out.push(eq.clone());
@@ -2760,22 +2578,9 @@ fn lower_neumann_values(
     let rest_expr = if rest.is_empty() {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: rest.into(),
-      }
+      plus(rest)
     };
-    let residual = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        lhs.clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![Expr::Integer(-1), rest_expr.clone()].into(),
-        },
-      ]
-      .into(),
-    };
+    let residual = minus2(lhs.clone(), rest_expr.clone());
     for (g, pred) in nvs {
       let (x_name, x0_expr) = match as_equal_pair(&pred)? {
         (Expr::Identifier(n), v) | (v, Expr::Identifier(n)) => {
@@ -2790,10 +2595,15 @@ fn lower_neumann_values(
       if !is_lo && !is_hi {
         return None;
       }
-      // The unknown whose equation this is, and the coefficient c of its
-      // second space derivative (`-c u_xx` in the residual).
-      let mut found = None;
-      for (i, u) in u_names.iter().enumerate() {
+      if x_info.as_ref().is_some_and(|x| *x != x_name) {
+        return None;
+      }
+      let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
+      let at_x0 =
+        |e: &Expr| crate::syntax::substitute_variable(e, &x_name, &x0_expr);
+      // Σ_k c_k u_k,x at x0, c_k the coefficient of -u_k,xx.
+      let mut flux_terms = Vec::new();
+      for u in u_names {
         let Some(p) = pde_space_position(&residual, u, &x_name) else {
           continue;
         };
@@ -2801,120 +2611,71 @@ fn lower_neumann_values(
         orders[p] = 2;
         let sym = Expr::Identifier("NDSolve$Uxx".to_string());
         let replaced = replace_pde_derivative(&residual, u, &orders, &sym);
-        let coef =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-            name: "D".to_string(),
-            args: vec![replaced, sym.clone()].into(),
-          })
-          .ok()?;
+        let coef = crate::evaluator::evaluate_expr_to_expr(&call(
+          "D",
+          vec![replaced, sym.clone()],
+        ))
+        .ok()?;
         // `D` of a piecewise coefficient leaves `sym*If[cond, 0, 0]`
         // behind; collapse such branches so linearity can be recognised.
         let coef = crate::evaluator::evaluate_expr_to_expr(
           &collapse_identical_if_branches(&coef),
         )
         .ok()?;
-        if !matches!(&coef, Expr::Integer(0))
-          && !expr_contains_ident(&coef, "NDSolve$Uxx")
-        {
-          found = Some((i, p, coef));
-          break;
+        if matches!(&coef, Expr::Integer(0)) {
+          continue;
         }
+        if expr_contains_ident(&coef, "NDSolve$Uxx") {
+          return None;
+        }
+        let mut call_args = vec![Expr::Identifier(t_name.clone()); 2];
+        call_args[p] = x0_expr.clone();
+        let mut d_orders = vec![0i64; 2];
+        d_orders[p] = 1;
+        flux_terms.push(times2(
+          neg1(at_x0(&coef)),
+          pde_derivative_call(u, &d_orders, call_args),
+        ));
       }
-      let (ui, p, coef) = found?;
-      let c = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(-1), coef].into(),
-      })
+      if flux_terms.is_empty() {
+        return None;
+      }
+      let flux =
+        crate::evaluator::evaluate_expr_to_expr(&plus(flux_terms)).ok()?;
+      let value = crate::evaluator::evaluate_expr_to_expr(&times2(
+        Expr::Integer(if is_lo { -1 } else { 1 }),
+        at_x0(&g),
+      ))
       .ok()?;
-      let at_x0 =
-        |e: &Expr| crate::syntax::substitute_variable(e, &x_name, &x0_expr);
-      let flux = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          Expr::Integer(if is_lo { -1 } else { 1 }),
-          at_x0(&g),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![at_x0(&c), Expr::Integer(-1)].into(),
-          },
-        ]
-        .into(),
-      })
-      .ok()?;
-      // The call arguments of the unknown, with the space slot fixed to x0.
-      let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
-      let mut call_args = vec![Expr::Identifier(t_name); 2];
-      call_args[p] = x0_expr.clone();
-      let mut orders = vec![0i64; 2];
-      orders[p] = 1;
       out.push(Expr::Comparison {
-        operands: vec![
-          pde_derivative_call(&u_names[ui], &orders, call_args),
-          flux,
-        ],
+        operands: vec![flux, value],
         operators: vec![ComparisonOp::Equal],
       });
-      has_bc[ui] = true;
-      x_info = Some((x_name, dom.min, dom.max));
+      x_info = Some(x_name);
     }
     out.push(Expr::Comparison {
       operands: vec![lhs.clone(), rest_expr],
       operators: vec![ComparisonOp::Equal],
     });
   }
-  let (x_name, x_min, x_max) = x_info?;
-  let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
-  for (i, u) in u_names.iter().enumerate() {
-    if has_bc[i] {
-      continue;
-    }
-    let p = out.iter().find_map(|e| pde_space_position(e, u, &x_name))?;
-    // A spatially coupled unknown needs boundary conditions of its own.
-    let mut orders = vec![0i64; 2];
-    orders[p] = 1;
-    let probe = Expr::Identifier("NDSolve$Ux".to_string());
-    if out.iter().any(|e| {
-      expr_contains_ident(
-        &replace_pde_derivative(e, u, &orders, &probe),
-        "NDSolve$Ux",
-      )
-    }) {
-      return None;
-    }
-    for x0 in [x_min, x_max] {
-      let mut call_args = vec![Expr::Identifier(t_name.clone()); 2];
-      call_args[p] = Expr::Real(x0);
-      out.push(Expr::Comparison {
-        operands: vec![
-          pde_derivative_call(u, &orders, call_args),
-          Expr::Integer(0),
-        ],
-        operators: vec![ComparisonOp::Equal],
-      });
-    }
-  }
-  Some((out, x_name))
+  Some((out, x_info?))
 }
 
 /// `NDSolve[eqns, u, {v1, v1min, v1max}, {v2, v2min, v2max}]` — one or
-/// several coupled parabolic PDEs in one space dimension (a
-/// diffusion/reaction/convection shape), solved by the method of lines:
-/// the space-like variable is discretized onto a uniform grid, the spatial
-/// derivatives become central finite-difference stencils, and the
-/// resulting ODE system in the time-like variable is integrated with
-/// classical RK4 subject to a diffusive stability bound on the time step.
-/// Each unknown's evolution equation may carry a coefficient (constant or
-/// depending on the space variable) on its time derivative, and may
-/// reference every other unknown's plain value (not its derivatives) for
-/// reaction coupling; each unknown needs exactly one initial condition and
-/// one boundary condition — Dirichlet or Neumann — at each end of the space
-/// domain. Which of the two declared domains plays the time-like
-/// (integrated) role and which plays the space-like (gridded) role isn't
-/// fixed by argument order, so both assignments are tried.
+/// several coupled PDEs first order in one of the variables (the evolution
+/// variable) and of order up to two in the other (four with periodic
+/// ends), solved by the method of lines (`pde_mol::solve_pde_mol`). Which
+/// of the two declared domains plays the evolution role and in which order
+/// the unknowns take their arguments isn't fixed by the call, so every
+/// assignment is tried. A system that fits none of them may still split
+/// into groups of unknowns solved separately (`ndsolve_pde_components`).
 ///
 /// Returns `Ok(None)` when the equations aren't in that shape, so the
 /// caller falls back to leaving the call unevaluated.
-fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
+fn ndsolve_pde(
+  args: &[Expr],
+  opts: &pde_mol::MolOptions,
+) -> Result<Option<Expr>, InterpreterError> {
   let u_names: Vec<String> = match &args[1] {
     Expr::Identifier(name) => vec![name.clone()],
     Expr::List(items) => {
@@ -2948,26 +2709,35 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   // The finite-element form (`NeumannValue`) returns its solutions as
   // functions of the space variable first, then time, like the unknowns'
   // own `u[x, t]` calls, whatever order the domains were declared in.
-  let (eq_items, dim0_dom) =
+  let (eq_items, dim0_dom, natural_flux) =
     match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
       Some((lowered, x_name)) => {
         let dim0 = if dom_a.name == x_name { &dom_a } else { &dom_b };
-        (lowered, dim0.clone())
+        (lowered, dim0.clone(), true)
       }
-      None => (eq_items, dom_a.clone()),
+      None => (eq_items, dom_a.clone(), false),
     };
-  if eq_items.len() != 4 * u_names.len() {
-    return ndsolve_pde_components(args, &u_names, &eq_items, &dom_a, &dom_b);
-  }
 
   for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
     for swap in [false, true] {
-      if let Some(result) = try_solve_pde_system(
-        &eq_items, &u_names, t_dom, x_dom, &dim0_dom, swap,
+      if let Some(result) = pde_mol::solve_pde_mol(
+        &eq_items,
+        &u_names,
+        t_dom,
+        x_dom,
+        &dim0_dom,
+        swap,
+        natural_flux,
+        opts,
       )? {
         return Ok(Some(result));
       }
     }
+  }
+  if u_names.len() > 1 {
+    return ndsolve_pde_components(
+      args, &u_names, &eq_items, &dom_a, &dom_b, opts,
+    );
   }
   Ok(None)
 }
@@ -2976,9 +2746,9 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
 /// a plug-flow model `c[x, y]`, `t[x, y]` that only has an `x` derivative
 /// (so `y` is a mere parameter) next to diffusive models that also have
 /// second `y` derivatives. The unknowns are partitioned into groups that
-/// share equations; a group with four equations per unknown is a regular
-/// evolution PDE system and goes to [`ndsolve_pde`], while a group with no
-/// derivative in the other variable is an ODE in the evolution variable
+/// share equations; a group of fewer unknowns than the whole system goes
+/// back to [`ndsolve_pde`], and a group with no derivative in the other
+/// variable is an ODE in the evolution variable
 /// ([`solve_parameter_ode_group`]). Returns `Ok(None)` if any group fits
 /// neither.
 fn ndsolve_pde_components(
@@ -2987,6 +2757,7 @@ fn ndsolve_pde_components(
   eq_items: &[Expr],
   dom_a: &PdeDomain,
   dom_b: &PdeDomain,
+  opts: &pde_mol::MolOptions,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Union-find over unknowns: equations mentioning several unknowns couple
   // them.
@@ -3035,20 +2806,21 @@ fn ndsolve_pde_components(
       .collect();
     let names: Vec<String> =
       members.iter().map(|&i| u_names[i].clone()).collect();
-    let rules = if eqs.len() == 4 * names.len() {
+    let mut rules = None;
+    if names.len() < u_names.len() {
       let sub_args = [
-        Expr::List(eqs.into()),
+        Expr::List(eqs.clone().into()),
         Expr::List(names.iter().map(|n| Expr::Identifier(n.clone())).collect()),
         args[2].clone(),
         args[3].clone(),
       ];
-      let Some(result) = ndsolve_pde(&sub_args)? else {
-        return Ok(None);
-      };
-      pde_result_rules(&result)
-    } else {
-      solve_parameter_ode_group(args, &names, &eqs, dom_a, dom_b)?
-    };
+      if let Some(result) = ndsolve_pde(&sub_args, opts)? {
+        rules = pde_result_rules(&result);
+      }
+    }
+    if rules.is_none() {
+      rules = solve_parameter_ode_group(args, &names, &eqs, dom_a, dom_b)?;
+    }
     let Some(rules) = rules else {
       return Ok(None);
     };
@@ -3292,21 +3064,6 @@ fn flatten_chained_equalities(items: &[Expr]) -> Vec<Expr> {
   out
 }
 
-/// One unknown's compiled evolution/initial/boundary functions.
-struct PdeUnknown {
-  /// Coefficient on the evolution equation's time-derivative term,
-  /// compiled over `[t_name, x_name]`.
-  coeff_fn: NumFn,
-  /// The evolution equation's right-hand side (before dividing by
-  /// `coeff_fn`), compiled over `["NDSolve$U0", …, "NDSolve$U{n-1}",
-  /// "NDSolve$UX", "NDSolve$UXX", t_name, x_name]`.
-  rhs_fn: NumFn,
-  /// Initial profile, compiled over `[x_name]`.
-  ic_fn: NumFn,
-  bc_lo: PdeBoundaryFn,
-  bc_hi: PdeBoundaryFn,
-}
-
 enum PdeBoundaryFn {
   /// The grid point at this boundary is fixed to `NumFn`'s value each step.
   Dirichlet(NumFn),
@@ -3319,13 +3076,6 @@ enum PdeBoundaryFn {
   Periodic,
 }
 
-/// Attempt to match and solve the coupled PDE system with `t_dom` as the
-/// time-like (integrated) domain and `x_dom` as the space-like (gridded)
-/// one. `dim0_dom` is whichever of the two domains was declared first in
-/// the `NDSolve` call (`args[2]`) — the output `InterpolatingFunction`s'
-/// first dimension must match it regardless of which domain plays which
-/// solving role. Returns `Ok(None)` when the equations don't fit this role
-/// assignment.
 /// Whether a PDE solver keeps the current time row besides its regular
 /// stride: once the state has moved by more than 1% of its initial scale
 /// since the last kept row (bounded to 1000 rows), so a fast early
@@ -3341,672 +3091,6 @@ fn pde_row_moved(
       .iter()
       .zip(last_kept)
       .any(|(a, b)| (a - b).abs() > 0.01 * scale)
-}
-
-fn try_solve_pde_system(
-  eq_items: &[Expr],
-  u_names: &[String],
-  t_dom: &PdeDomain,
-  x_dom: &PdeDomain,
-  dim0_dom: &PdeDomain,
-  swap: bool,
-) -> Result<Option<Expr>, InterpreterError> {
-  let n = u_names.len();
-  let mut claimed = vec![false; eq_items.len()];
-  struct RawSpec {
-    coeff: Expr,
-    rhs: Expr,
-    ic: Expr,
-    bc_lo: PdeBc,
-    bc_hi: PdeBc,
-  }
-
-  /// Try to match `eq` as a linear flux-conservation boundary condition
-  /// shared between several unknowns at the same end of the space domain
-  /// — e.g. `D[a[x, t], x] + dBA D[b[x, t], x] == 0` at `x == 0`, the
-  /// no-accumulation condition tying two coupled species' fluxes at a
-  /// reacting interface — rather than a single unknown's own condition.
-  /// Requires one side of the equation to be identically zero, and every
-  /// unknown referenced besides `target` (at index `target_idx`, not yet
-  /// in `raw_specs`) to already have its own Neumann condition resolved at
-  /// this same end (`raw_specs[j].bc_lo`/`bc_hi`, one entry per unknown
-  /// processed so far). Solving the linear relation for `target`'s flux —
-  /// substituting each other referenced unknown's already-known flux
-  /// expression — yields `target`'s own (derived) Neumann condition.
-  /// Returns `None` when the equation isn't in this shape, or references
-  /// an unknown whose own condition at this end isn't resolved yet.
-  fn try_coupled_flux_bc(
-    eq: &Expr,
-    target_idx: usize,
-    u_names: &[String],
-    raw_specs: &[RawSpec],
-    t_name: &str,
-    x0: f64,
-    at_lo: bool,
-    swap: bool,
-  ) -> Option<PdeBc> {
-    fn is_zero_literal(e: &Expr) -> bool {
-      match e {
-        Expr::Integer(0) => true,
-        Expr::Real(v) => v.abs() < 1e-12,
-        _ => false,
-      }
-    }
-    fn is_one_literal(e: &Expr) -> bool {
-      matches!(e, Expr::Integer(1))
-    }
-    fn neg_expr(e: Expr) -> Expr {
-      if is_zero_literal(&e) {
-        return e;
-      }
-      neg1(e)
-    }
-    fn add_expr(a: Expr, b: Expr) -> Expr {
-      plus2(a, b)
-    }
-    fn mul_expr(coeff: Expr, e: Expr) -> Expr {
-      if is_one_literal(&coeff) {
-        return e;
-      }
-      times2(coeff, e)
-    }
-    fn flatten_additive_signed(
-      expr: &Expr,
-      sign: f64,
-      out: &mut Vec<(f64, Expr)>,
-    ) {
-      match expr {
-        Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left,
-          right,
-        } => {
-          flatten_additive_signed(left, sign, out);
-          flatten_additive_signed(right, sign, out);
-        }
-        Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left,
-          right,
-        } => {
-          flatten_additive_signed(left, sign, out);
-          flatten_additive_signed(right, -sign, out);
-        }
-        Expr::UnaryOp {
-          op: UnaryOperator::Minus,
-          operand,
-        } => {
-          flatten_additive_signed(operand, -sign, out);
-        }
-        Expr::FunctionCall { name, args } if name == "Plus" => {
-          for a in args {
-            flatten_additive_signed(a, sign, out);
-          }
-        }
-        other => out.push((sign, other.clone())),
-      }
-    }
-    /// Match a single additive term as `coeff * D[u_name, x]` (any
-    /// factor order, coefficient 1 when the term is a bare derivative),
-    /// returning `(coeff, t_arg, x_arg)`.
-    fn match_flux_term(
-      term: &Expr,
-      u_name: &str,
-      swap: bool,
-    ) -> Option<(Expr, Expr, Expr)> {
-      let factors = flatten_times(term);
-      let mut deriv: Option<(Expr, Expr)> = None;
-      let mut coeff_factors = Vec::new();
-      for f in &factors {
-        if deriv.is_none()
-          && let Some((dt, dx, t_arg, x_arg)) =
-            match_pde_term_roles(f, u_name, swap)
-          && dt == 0
-          && dx == 1
-        {
-          deriv = Some((t_arg, x_arg));
-        } else {
-          coeff_factors.push(f.clone());
-        }
-      }
-      let (t_arg, x_arg) = deriv?;
-      let coeff = match coeff_factors.len() {
-        0 => Expr::Integer(1),
-        1 => coeff_factors.into_iter().next().unwrap(),
-        _ => times(coeff_factors),
-      };
-      Some((coeff, t_arg, x_arg))
-    }
-
-    let (lhs, rhs) = as_equal_pair(eq)?;
-    let sum_side = if is_zero_literal(lhs) {
-      rhs
-    } else if is_zero_literal(rhs) {
-      lhs
-    } else {
-      return None;
-    };
-    let mut terms = Vec::new();
-    flatten_additive_signed(sum_side, 1.0, &mut terms);
-
-    let mut self_coeff: Option<Expr> = None;
-    let mut other_terms: Vec<Expr> = Vec::new();
-    for (sign, term) in &terms {
-      let mut matched = false;
-      for (j, name) in u_names.iter().enumerate() {
-        let Some((coeff, t_arg, x_arg)) = match_flux_term(term, name, swap)
-        else {
-          continue;
-        };
-        if !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
-          || !nval_to_f64(&x_arg)
-            .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
-        {
-          return None;
-        }
-        let signed_coeff = if *sign > 0.0 { coeff } else { neg_expr(coeff) };
-        if j == target_idx {
-          if self_coeff.is_some() {
-            return None; // the target's own flux appears more than once.
-          }
-          self_coeff = Some(signed_coeff);
-        } else {
-          if j >= raw_specs.len() {
-            return None; // that unknown's own condition isn't resolved yet.
-          }
-          let other_bc = if at_lo {
-            &raw_specs[j].bc_lo
-          } else {
-            &raw_specs[j].bc_hi
-          };
-          let PdeBc::Neumann(other_flux_expr) = other_bc else {
-            return None; // a Dirichlet boundary has no flux to substitute.
-          };
-          other_terms.push(mul_expr(signed_coeff, other_flux_expr.clone()));
-        }
-        matched = true;
-        break;
-      }
-      if !matched {
-        return None; // an unrecognised remainder term — outside this shape.
-      }
-    }
-    let self_coeff = self_coeff?;
-    let numerator = other_terms
-      .into_iter()
-      .reduce(add_expr)
-      .unwrap_or(Expr::Integer(0));
-    let negated = neg_expr(numerator);
-    let derived = if is_one_literal(&self_coeff) {
-      negated
-    } else {
-      div2(negated, self_coeff)
-    };
-    Some(PdeBc::Neumann(derived))
-  }
-
-  let mut raw_specs: Vec<RawSpec> = Vec::with_capacity(n);
-  for name in u_names {
-    let mut coeff_rhs: Option<(Expr, Expr)> = None;
-    let mut ic: Option<Expr> = None;
-    let mut bc_lo: Option<PdeBc> = None;
-    let mut bc_hi: Option<PdeBc> = None;
-    for (idx, eq) in eq_items.iter().enumerate() {
-      if claimed[idx] {
-        continue;
-      }
-      if coeff_rhs.is_none()
-        && let Some((coeff, rhs)) =
-          try_pde_evolution_term(eq, name, &t_dom.name, &x_dom.name, swap)
-        && !expr_references_any(&coeff, u_names)
-      {
-        coeff_rhs = Some((coeff, rhs));
-        claimed[idx] = true;
-        continue;
-      }
-      if ic.is_none()
-        && let Some(rhs) =
-          try_pde_initial_condition(eq, name, &x_dom.name, t_dom.min, swap)
-      {
-        ic = Some(rhs);
-        claimed[idx] = true;
-        continue;
-      }
-      if bc_lo.is_none()
-        && let Some(bc) =
-          try_pde_boundary_condition(eq, name, &t_dom.name, x_dom.min, swap)
-      {
-        bc_lo = Some(bc);
-        claimed[idx] = true;
-        continue;
-      }
-      if bc_hi.is_none()
-        && let Some(bc) =
-          try_pde_boundary_condition(eq, name, &t_dom.name, x_dom.max, swap)
-      {
-        bc_hi = Some(bc);
-        claimed[idx] = true;
-        continue;
-      }
-      if bc_lo.is_none()
-        && let Some(bc) = try_coupled_flux_bc(
-          eq,
-          raw_specs.len(),
-          u_names,
-          &raw_specs,
-          &t_dom.name,
-          x_dom.min,
-          true,
-          swap,
-        )
-      {
-        bc_lo = Some(bc);
-        claimed[idx] = true;
-        continue;
-      }
-      if bc_hi.is_none()
-        && let Some(bc) = try_coupled_flux_bc(
-          eq,
-          raw_specs.len(),
-          u_names,
-          &raw_specs,
-          &t_dom.name,
-          x_dom.max,
-          false,
-          swap,
-        )
-      {
-        bc_hi = Some(bc);
-        claimed[idx] = true;
-      }
-    }
-    let (Some((coeff, rhs)), Some(ic), Some(bc_lo), Some(bc_hi)) =
-      (coeff_rhs, ic, bc_lo, bc_hi)
-    else {
-      return Ok(None);
-    };
-    raw_specs.push(RawSpec {
-      coeff,
-      rhs,
-      ic,
-      bc_lo,
-      bc_hi,
-    });
-  }
-  if claimed.iter().any(|&c| !c) {
-    return Ok(None);
-  }
-
-  let rhs_vars: Vec<String> = (0..n)
-    .map(|j| format!("NDSolve$U{j}"))
-    .chain(["NDSolve$UX".to_string(), "NDSolve$UXX".to_string()])
-    .chain([t_dom.name.clone(), x_dom.name.clone()])
-    .collect();
-  let bc_rhs_vars: Vec<String> = std::iter::once(t_dom.name.clone())
-    .chain((0..n).map(|j| format!("NDSolve$U{j}")))
-    .collect();
-
-  let mut unknowns: Vec<PdeUnknown> = Vec::with_capacity(n);
-  for (i, spec) in raw_specs.into_iter().enumerate() {
-    let Some(rhs_placeholder) =
-      rewrite_pde_rhs(&spec.rhs, u_names, i, &t_dom.name, &x_dom.name, swap)
-    else {
-      return Ok(None);
-    };
-    let coeff_fn =
-      NumFn::new(spec.coeff, &[t_dom.name.clone(), x_dom.name.clone()]);
-    let rhs_fn = NumFn::new(rhs_placeholder, &rhs_vars);
-    let ic_fn = NumFn::new(spec.ic, std::slice::from_ref(&x_dom.name));
-    let bc_lo = match spec.bc_lo {
-      PdeBc::Dirichlet(rhs) => PdeBoundaryFn::Dirichlet(NumFn::new(
-        rhs,
-        std::slice::from_ref(&t_dom.name),
-      )),
-      PdeBc::Neumann(rhs) => {
-        let Some(rewritten) =
-          rewrite_pde_bc_rhs(&rhs, u_names, &t_dom.name, x_dom.min, swap)
-        else {
-          return Ok(None);
-        };
-        PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
-      }
-      // The coupled-system solver doesn't attempt a periodic domain; only
-      // the hyperbolic solver (`compile_hyperbolic_boundary`) does.
-      PdeBc::Periodic => return Ok(None),
-    };
-    let bc_hi = match spec.bc_hi {
-      PdeBc::Dirichlet(rhs) => PdeBoundaryFn::Dirichlet(NumFn::new(
-        rhs,
-        std::slice::from_ref(&t_dom.name),
-      )),
-      PdeBc::Neumann(rhs) => {
-        let Some(rewritten) =
-          rewrite_pde_bc_rhs(&rhs, u_names, &t_dom.name, x_dom.max, swap)
-        else {
-          return Ok(None);
-        };
-        PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
-      }
-      PdeBc::Periodic => return Ok(None),
-    };
-    unknowns.push(PdeUnknown {
-      coeff_fn,
-      rhs_fn,
-      ic_fn,
-      bc_lo,
-      bc_hi,
-    });
-  }
-
-  const N_X: usize = 41;
-  let dx = (x_dom.max - x_dom.min) / (N_X - 1) as f64;
-  let xs: Vec<f64> = (0..N_X).map(|i| x_dom.min + i as f64 * dx).collect();
-
-  // Each unknown's coefficient is floored relative to its own scale over
-  // the domain (rather than to a fixed absolute constant), so a
-  // coefficient that vanishes at a boundary — the no-slip velocity at a
-  // channel wall, say — is regularized to a large but bounded rate there
-  // instead of spiking arbitrarily close to a division by zero.
-  // The coefficient's dominant sign, read off from whichever sampled point
-  // has its largest magnitude — used below instead of a floored-near-zero
-  // sample's own sign, which is floating-point noise (e.g. evaluating to
-  // -1e-15 rather than the mathematically exact 0 at a coefficient's own
-  // zero) and would otherwise flip that grid point's evolution equation
-  // from stable diffusion to unstable anti-diffusion.
-  let (coeff_floors, coeff_signs): (Vec<f64>, Vec<f64>) = unknowns
-    .iter()
-    .map(|u| {
-      let samples: Vec<f64> = xs
-        .iter()
-        .filter_map(|&x| u.coeff_fn.eval(&[t_dom.min, x]).ok())
-        .collect();
-      let peak = samples
-        .iter()
-        .copied()
-        .fold(0.0_f64, |acc, v| acc.max(v.abs()));
-      let sign = samples
-        .iter()
-        .max_by(|a, b| a.abs().total_cmp(&b.abs()))
-        .map_or(1.0, |v| if *v < 0.0 { -1.0 } else { 1.0 });
-      ((peak * 5e-1).max(1e-9), sign)
-    })
-    .collect();
-
-  // The grid index range each unknown integrates directly: a Dirichlet
-  // boundary is fixed via its `NumFn` each step, so it's excluded; a
-  // Neumann boundary has no such formula and is integrated like an
-  // interior point instead.
-  let free_lo: Vec<usize> = unknowns
-    .iter()
-    .map(|u| usize::from(!matches!(u.bc_lo, PdeBoundaryFn::Neumann(_))))
-    .collect();
-  let free_hi: Vec<usize> = unknowns
-    .iter()
-    .map(|u| {
-      if matches!(u.bc_hi, PdeBoundaryFn::Neumann(_)) {
-        N_X - 1
-      } else {
-        N_X - 2
-      }
-    })
-    .collect();
-  let free_len: Vec<usize> =
-    (0..n).map(|i| free_hi[i] + 1 - free_lo[i]).collect();
-  let offset: Vec<usize> = {
-    let mut acc = 0;
-    (0..n)
-      .map(|i| {
-        let o = acc;
-        acc += free_len[i];
-        o
-      })
-      .collect()
-  };
-  let total_len: usize = free_len.iter().sum();
-
-  // Divide a raw evolution RHS by its (possibly floored, see
-  // `coeff_floors` above) coefficient.
-  let scale = |raw: f64, coeff: f64, floor: f64, sign: f64| -> f64 {
-    let denom = if coeff.abs() < floor {
-      sign * floor
-    } else {
-      coeff
-    };
-    raw / denom
-  };
-
-  // Reconstruct unknown `i`'s full `N_X`-point profile from the combined
-  // integrated state, filling any Dirichlet boundary from its `NumFn`.
-  let full_of =
-    |i: usize, state: &[f64], t: f64| -> Result<Vec<f64>, InterpreterError> {
-      let mut full = vec![0.0; N_X];
-      for (k, gi) in (free_lo[i]..=free_hi[i]).enumerate() {
-        full[gi] = state[offset[i] + k];
-      }
-      if let PdeBoundaryFn::Dirichlet(f) = &unknowns[i].bc_lo {
-        full[0] = f.eval(&[t])?;
-      }
-      if let PdeBoundaryFn::Dirichlet(f) = &unknowns[i].bc_hi {
-        full[N_X - 1] = f.eval(&[t])?;
-      }
-      Ok(full)
-    };
-
-  let derivative =
-    |t: f64, state: &[f64]| -> Result<Vec<f64>, InterpreterError> {
-      let fulls: Vec<Vec<f64>> = (0..n)
-        .map(|i| full_of(i, state, t))
-        .collect::<Result<_, _>>()?;
-      let mut out = vec![0.0; total_len];
-      for i in 0..n {
-        for (k, gi) in (free_lo[i]..=free_hi[i]).enumerate() {
-          let (ux, uxx) = if gi == 0 {
-            let PdeBoundaryFn::Neumann(f) = &unknowns[i].bc_lo else {
-              unreachable!("a Dirichlet lo boundary is never a free index")
-            };
-            let bc_args: Vec<f64> = std::iter::once(t)
-              .chain((0..n).map(|k2| fulls[k2][gi]))
-              .collect();
-            let flux = f.eval(&bc_args)?;
-            let ghost = fulls[i][1] - 2.0 * dx * flux;
-            (
-              (fulls[i][1] - ghost) / (2.0 * dx),
-              (fulls[i][1] - 2.0 * fulls[i][0] + ghost) / (dx * dx),
-            )
-          } else if gi == N_X - 1 {
-            let PdeBoundaryFn::Neumann(f) = &unknowns[i].bc_hi else {
-              unreachable!("a Dirichlet hi boundary is never a free index")
-            };
-            let bc_args: Vec<f64> = std::iter::once(t)
-              .chain((0..n).map(|k2| fulls[k2][gi]))
-              .collect();
-            let flux = f.eval(&bc_args)?;
-            let ghost = fulls[i][N_X - 2] + 2.0 * dx * flux;
-            (
-              (ghost - fulls[i][N_X - 2]) / (2.0 * dx),
-              (ghost - 2.0 * fulls[i][N_X - 1] + fulls[i][N_X - 2]) / (dx * dx),
-            )
-          } else {
-            (
-              (fulls[i][gi + 1] - fulls[i][gi - 1]) / (2.0 * dx),
-              (fulls[i][gi + 1] - 2.0 * fulls[i][gi] + fulls[i][gi - 1])
-                / (dx * dx),
-            )
-          };
-          let mut vars: Vec<f64> = (0..n).map(|k2| fulls[k2][gi]).collect();
-          vars.push(ux);
-          vars.push(uxx);
-          vars.push(t);
-          vars.push(xs[gi]);
-          let raw = unknowns[i].rhs_fn.eval(&vars)?;
-          let coeff = unknowns[i].coeff_fn.eval(&[t, xs[gi]])?;
-          let scaled = scale(raw, coeff, coeff_floors[i], coeff_signs[i]);
-          out[offset[i] + k] = scaled;
-        }
-      }
-      Ok(out)
-    };
-
-  let mut full0: Vec<Vec<f64>> = Vec::with_capacity(n);
-  for u in &unknowns {
-    let mut row = Vec::with_capacity(N_X);
-    for &x in &xs {
-      row.push(u.ic_fn.eval(&[x])?);
-    }
-    if let PdeBoundaryFn::Dirichlet(f) = &u.bc_lo {
-      row[0] = f.eval(&[t_dom.min])?;
-    }
-    if let PdeBoundaryFn::Dirichlet(f) = &u.bc_hi {
-      row[N_X - 1] = f.eval(&[t_dom.min])?;
-    }
-    full0.push(row);
-  }
-
-  // Effective diffusivity per unknown, read off its RHS's dependence on
-  // `NDSolve$UXX` (divided by its coefficient), to size a stable explicit
-  // time step (a von Neumann/CFL-type bound). Sampled at every grid point
-  // rather than just the midpoint: a coefficient that varies over the
-  // domain (and especially one that's floored near a vanishing point, see
-  // `coeff_floors` above) can need a far smaller step there than its
-  // domain-average would suggest. Falls back to a small floor when an
-  // unknown's PDE has (almost) no `NDSolve$UXX` dependence at all.
-  let mut dt_stable = f64::INFINITY;
-  for (i, u) in unknowns.iter().enumerate() {
-    for (j, &x) in xs.iter().enumerate() {
-      let mut probe_lo: Vec<f64> = (0..n).map(|k| full0[k][j]).collect();
-      probe_lo.push(0.0);
-      probe_lo.push(0.0);
-      probe_lo.push(t_dom.min);
-      probe_lo.push(x);
-      let mut probe_hi = probe_lo.clone();
-      probe_hi[n + 1] = 1.0;
-      let raw_c_eff =
-        (u.rhs_fn.eval(&probe_hi)? - u.rhs_fn.eval(&probe_lo)?).max(1e-9);
-      let coeff = u.coeff_fn.eval(&[t_dom.min, x])?.abs().max(coeff_floors[i]);
-      let c_eff = (raw_c_eff / coeff).max(1e-9);
-      dt_stable = dt_stable.min(0.4 * dx * dx / c_eff);
-    }
-  }
-  // The diffusive bound alone can leave the boundary conditions' own time
-  // variation (a seasonal `Sin[2 Pi t/period]` forcing, say) badly
-  // undersampled even though the scheme stays numerically stable, so the
-  // step count is also floored well above what a smooth time-dependent
-  // boundary needs to be resolved.
-  const MIN_STEPS: usize = 200;
-  let n_steps = (((t_dom.max - t_dom.min) / dt_stable).ceil() as usize)
-    .clamp(MIN_STEPS, 200_000);
-  let dt = (t_dom.max - t_dom.min) / n_steps as f64;
-
-  // The fine step count above is sized for integration accuracy and
-  // stability, not for how many rows an `InterpolatingFunction` needs to
-  // represent a smooth solution — and every stored row is a separate
-  // heap-allocated list that later gets cloned whole on every lookup (a
-  // `ContourPlot` alone samples on the order of 10,000 points), so only
-  // every `stride`-th step's row is kept, with the true endpoint always
-  // included.
-  const OUTPUT_ROWS: usize = 60;
-  let stride = (n_steps / OUTPUT_ROWS).max(1);
-  let mut grids: Vec<Vec<Vec<f64>>> =
-    (0..n).map(|i| vec![full0[i].clone()]).collect();
-  let mut ts: Vec<f64> = Vec::with_capacity(n_steps / stride + 2);
-  ts.push(t_dom.min);
-  let mut state: Vec<f64> = Vec::with_capacity(total_len);
-  for (i, row) in full0.iter().enumerate() {
-    state.extend(row[free_lo[i]..=free_hi[i]].iter().copied());
-  }
-  let scale = state
-    .iter()
-    .fold(0.0_f64, |m, v| m.max(v.abs()))
-    .max(1e-300);
-  let mut last_kept = state.clone();
-  let mut t = t_dom.min;
-  for step in 0..n_steps {
-    let k1 = derivative(t, &state)?;
-    let s2: Vec<f64> = state
-      .iter()
-      .zip(&k1)
-      .map(|(y, k)| y + 0.5 * dt * k)
-      .collect();
-    let k2 = derivative(t + 0.5 * dt, &s2)?;
-    let s3: Vec<f64> = state
-      .iter()
-      .zip(&k2)
-      .map(|(y, k)| y + 0.5 * dt * k)
-      .collect();
-    let k3 = derivative(t + 0.5 * dt, &s3)?;
-    let s4: Vec<f64> = state.iter().zip(&k3).map(|(y, k)| y + dt * k).collect();
-    let k4 = derivative(t + dt, &s4)?;
-    for idx in 0..state.len() {
-      state[idx] +=
-        dt / 6.0 * (k1[idx] + 2.0 * k2[idx] + 2.0 * k3[idx] + k4[idx]);
-    }
-    // From the step index, not by accumulating `dt`, which ends a few
-    // ulps short of the domain (59.9999999999998 instead of 60.).
-    t = if step + 1 == n_steps {
-      t_dom.max
-    } else {
-      t_dom.min + (step + 1) as f64 * dt
-    };
-    let is_last = step + 1 == n_steps;
-    if (step + 1) % stride == 0
-      || is_last
-      || pde_row_moved(&state, &last_kept, scale, ts.len())
-    {
-      for (i, g) in grids.iter_mut().enumerate() {
-        g.push(full_of(i, &state, t)?);
-      }
-      ts.push(t);
-      last_kept.clone_from(&state);
-    }
-  }
-
-  // The output `InterpolatingFunction`s' first dimension must match
-  // `dim0_dom` — the domain declared first in the `NDSolve` call —
-  // regardless of which domain played the time-like solving role above.
-  let t_is_dim0 = t_dom.name == dim0_dom.name;
-  let (dim0, dim1) = if t_is_dim0 {
-    (t_dom, x_dom)
-  } else {
-    (x_dom, t_dom)
-  };
-  let (dim0_coords, dim1_coords) =
-    if t_is_dim0 { (&ts, &xs) } else { (&xs, &ts) };
-  let domain = Expr::List(
-    vec![
-      Expr::List(vec![Expr::Real(dim0.min), Expr::Real(dim0.max)].into()),
-      Expr::List(vec![Expr::Real(dim1.min), Expr::Real(dim1.max)].into()),
-    ]
-    .into(),
-  );
-  let orders = Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into());
-  let coords = Expr::List(
-    vec![
-      Expr::List(dim0_coords.iter().map(|v| Expr::Real(*v)).collect()),
-      Expr::List(dim1_coords.iter().map(|v| Expr::Real(*v)).collect()),
-    ]
-    .into(),
-  );
-
-  let mut rules = Vec::with_capacity(n);
-  for (i, name) in u_names.iter().enumerate() {
-    let grid = if t_is_dim0 {
-      grids[i].clone()
-    } else {
-      transpose_grid(&grids[i])
-    };
-    let grid_expr = Expr::List(
-      grid
-        .iter()
-        .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
-        .collect(),
-    );
-    let interp = call(
-      "InterpolatingFunction",
-      vec![domain.clone(), grid_expr, orders.clone(), coords.clone()],
-    );
-    rules.push(rule_expr(Expr::Identifier(name.clone()), interp));
-  }
-  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
 }
 
 /// Transpose a rectangular grid of rows into columns — used to reorient a
