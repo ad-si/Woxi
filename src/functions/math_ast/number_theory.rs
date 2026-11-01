@@ -1681,11 +1681,100 @@ fn harmonic_arg_is_inexact(e: &Expr) -> bool {
   }
 }
 
+/// HarmonicNumber[n, r, s] - the generalized harmonic number of order r with
+/// decoration value s, Sum[s^i/i^r, {i, 1, n}].
+///   s = 1 is HarmonicNumber[n, r], and n = Infinity gives PolyLog[r, s].
+///   A non-negative integer n sums the terms: numerically when r or s is
+///   inexact, and expanded for exact arguments with n <= 4 (as the 2-argument
+///   form does), e.g. HarmonicNumber[4, r, s] = s + s^2/2^r + s^3/3^r + s^4/4^r.
+///   Any other numeric n with an inexact argument uses
+///   PolyLog[r, s] - s^(n + 1) LerchPhi[s, r, n + 1].
+fn harmonic_number_decorated(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (n, r, s) = (&args[0], &args[1], &args[2]);
+  let symbolic = || Ok(unevaluated("HarmonicNumber", args));
+  if matches!(s, Expr::Integer(1)) {
+    return crate::evaluator::evaluate_function_call_ast(
+      "HarmonicNumber",
+      &[n.clone(), r.clone()],
+    );
+  }
+  if matches!(n, Expr::Identifier(v) | Expr::Constant(v) if v == "Infinity") {
+    return crate::evaluator::evaluate_function_call_ast(
+      "PolyLog",
+      &[r.clone(), s.clone()],
+    );
+  }
+  let inexact = harmonic_arg_is_inexact(n)
+    || harmonic_arg_is_inexact(r)
+    || harmonic_arg_is_inexact(s);
+  let is_numeric = |e: &Expr| {
+    crate::functions::math_ast::try_extract_complex_float(
+      &crate::evaluator::evaluate_expr_to_expr(&call1("N", e.clone()))
+        .unwrap_or(Expr::Integer(0)),
+    )
+    .is_some()
+  };
+  if let Some(count) = expr_to_i128(n)
+    && matches!(n, Expr::Integer(_))
+    && count >= 0
+  {
+    if count == 0 {
+      return Ok(Expr::Integer(0));
+    }
+    if !(inexact && is_numeric(r) && is_numeric(s) && count <= 100_000)
+      && count > 4
+    {
+      return symbolic();
+    }
+    let terms: Vec<Expr> = (1..=count)
+      .map(|i| {
+        times2(
+          pow2(s.clone(), Expr::Integer(i)),
+          pow2(Expr::Integer(i), neg(r.clone())),
+        )
+      })
+      .collect();
+    let sum = if terms.len() == 1 {
+      terms.into_iter().next().unwrap()
+    } else {
+      plus(terms)
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&sum);
+  }
+  if inexact && is_numeric(n) && is_numeric(r) && is_numeric(s) {
+    let n1 = plus(vec![n.clone(), Expr::Integer(1)]);
+    let value = minus2(
+      call("PolyLog", vec![r.clone(), s.clone()]),
+      times2(
+        pow2(s.clone(), n1.clone()),
+        call("LerchPhi", vec![s.clone(), r.clone(), n1]),
+      ),
+    );
+    let result = crate::evaluator::evaluate_expr_to_expr(&call1("N", value))?;
+    if matches!(result, Expr::Real(_))
+      || crate::functions::math_ast::try_extract_complex_float(&result)
+        .is_some()
+    {
+      return Ok(result);
+    }
+  }
+  symbolic()
+}
+
 pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 3 {
+    return harmonic_number_decorated(args);
+  }
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "HarmonicNumber expects 1 or 2 arguments".into(),
     ));
+  }
+
+  // Order 1 is the ordinary harmonic number: HarmonicNumber[n, 1] is
+  // HarmonicNumber[n].
+  if args.len() == 2 && matches!(args[1], Expr::Integer(1)) {
+    return harmonic_number_ast(&args[..1]);
   }
 
   // Infinity argument: the limiting value of the (generalized) harmonic

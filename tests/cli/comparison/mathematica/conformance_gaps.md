@@ -1932,11 +1932,12 @@ anything about `Simplify` itself.
 
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
-`GaussianIntegers -> True` (and `Extension -> I`) factors univariate
-rational polynomials whose irreducible factors over Q are monic;
-non-monic splitting factors, multivariate input, other extensions
-(`Extension -> Sqrt[2]`, whose sign normalization is unverified) and
-`Trig` stay unevaluated. `IrreduciblePolynomialQ` ignores the options. Composite-modulus `LinearSolve`, n-ary modular
+`GaussianIntegers -> True` (and `Extension -> I` or `Extension -> Sqrt[d]`)
+factors univariate rational polynomials whose irreducible factors over Q are
+monic; non-monic splitting factors, multivariate input, other extensions
+(several generators such as `{Sqrt[3], I}`, higher-degree algebraic numbers,
+`Automatic`) and `Trig` stay unevaluated. `FactorList` takes only the
+Gaussian option: its sign convention over `Q(Sqrt[d])` is unverified. `IrreduciblePolynomialQ` ignores the options. Composite-modulus `LinearSolve`, n-ary modular
 `PolynomialLCM` and composite-modulus `GroebnerBasis` are also left
 unevaluated (prime moduli work).
 
@@ -2889,6 +2890,17 @@ WL converts endpoints to `ArcTan` form *inside* the interval (`ArcCot[2]` →
 ### `WignerD[{1,0,0}, Pi/2]`
 
 Gives `2.22e-16` instead of an exact 0.
+
+### `LerchPhi[…, DoublyInfinite -> True]` returns a real number
+
+```sh
+wolframscript -code 'LerchPhi[1, 2, 0.5, DoublyInfinite -> True]'  # 9.8696 + 0. I
+woxi eval 'LerchPhi[1, 2, 0.5, DoublyInfinite -> True]'             # 9.86960440108936
+```
+
+Woxi adds `LerchPhi[1/z, s, 1 - a]/z` to the one-sided sum, which stays real
+here; wolframscript's value carries a `0.` imaginary part. The doubly
+infinite sum is only evaluated for numeric, inexact arguments.
 
 ### `LerchPhi` outside the unit disc
 
@@ -4056,6 +4068,8 @@ Counting the required and optional slots (skipping anything with
 against Woxi's declared maximum turns up every documented argument form that
 is missing. The sweep originally found 80; the 58 below are what is left.
 
+is missing. The sweep originally found 80; the 59 below are what is left.
+
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
 answer, which makes them safe but individually invisible.
@@ -4085,7 +4099,6 @@ answer, which makes them safe but individually invisible.
 | `GroupOrbits` | 2–2 | 3 | `{_, Optional[{__}], _.}` |
 | `GroupStabilizer` | 2–2 | 3 | `{_, {__}, _.}` |
 | `Groupings` | 2–2 | 3 | `{_, _, _.}` |
-| `HarmonicNumber` | 1–2 | 3 | `{_, _., _.}` |
 | `Head` | 1–1 | 2 | `{_, _.}` |
 | `ImageAdjust` | 1–2 | 4 | `{_, _., Optional[{_, _}], Optional[{_, _}]}` |
 | `Inner` | 3–4 | 5 | `{_, _, _, _., _.}` |
@@ -4102,7 +4115,6 @@ answer, which makes them safe but individually invisible.
 | `ListCorrelate` | 2–6 | 7 | `{_, _, _., _., _., _., _.}` |
 | `Longitude` | 1–1 | 2 | `{_., _.}` |
 | `MaximalBy` | 1–3 | 4 | `{_, _., _., _.}` |
-| `MeijerG` | 3–3 | 4 | `{{{___}, {___}}, {{___}, {___}}, _, _.}` |
 | `MinimalBy` | 1–3 | 4 | `{_, _., _., _.}` |
 | `NotebookDirectory` | 0–0 | 1 | `{_.}` |
 | `ParentDirectory` | 0–1 | 2 | `{_., _.}` |

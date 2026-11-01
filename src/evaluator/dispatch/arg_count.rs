@@ -684,7 +684,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "HankelMatrix" => Some((1, 2)),
     "HarmonicMean" => Some((1, 1)),
     "ContraharmonicMean" => Some((1, 2)),
-    "HarmonicNumber" => Some((1, 2)),
+    "HarmonicNumber" => Some((1, 3)),
     "AlternatingHarmonicNumber" => Some((1, 3)),
     "HyperHarmonicNumber" => Some((2, 4)),
     "MultipleHarmonicNumber" => Some((1, 3)),
@@ -979,7 +979,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "InverseFourierSinTransform" => Some((3, usize::MAX)),
     "InverseFourierCosTransform" => Some((3, usize::MAX)),
     "MedianDeviation" => Some((1, 1)),
-    "MeijerG" => Some((3, 3)),
+    "MeijerG" => Some((3, 4)),
     // The 3rd argument is a levelspec; a trailing `Heads -> True|False`
     // option may follow it.
     "MemberQ" => Some((1, 4)),

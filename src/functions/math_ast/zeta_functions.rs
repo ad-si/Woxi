@@ -1309,6 +1309,9 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
 
 /// LerchPhi[z, s, a] - Lerch transcendent Φ(z, s, a) = Σ_{k=0}^∞ z^k / (k+a)^s
 pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() > 3 {
+    return lerch_phi_with_options(args);
+  }
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "LerchPhi expects exactly 3 arguments".into(),
@@ -1343,6 +1346,36 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1),
       minus2(Expr::Integer(1), z.clone()),
     ));
+  }
+
+  // A non-positive integer a = -n with a positive integer order s (or a
+  // negative one at a rational z, where the result is a rational number): the
+  // singular k = n term is left out, the terms before it are finite and the
+  // tail is a polylogarithm,
+  // LerchPhi[z, s, -n] = Sum[z^k/(n - k)^s, {k, 0, n - 1}] + z^n PolyLog[s, z],
+  // e.g. LerchPhi[2, 3, -4] = 14843/1728 + 16 PolyLog[3, 2].
+  if let (Expr::Integer(a_int), Expr::Integer(s_int)) = (a, s)
+    && *a_int <= 0
+    && *a_int > -1000
+    && (*s_int >= 1
+      || (*s_int < 0
+        && (matches!(z, Expr::Integer(_))
+          || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational"))))
+  {
+    let n = -*a_int;
+    let mut terms: Vec<Expr> = (0..n)
+      .map(|k| {
+        times2(
+          pow2(z.clone(), Expr::Integer(k)),
+          pow2(Expr::Integer(n - k), Expr::Integer(-*s_int)),
+        )
+      })
+      .collect();
+    terms.push(times2(
+      pow2(z.clone(), Expr::Integer(n)),
+      call("PolyLog", vec![s.clone(), z.clone()]),
+    ));
+    return crate::evaluator::evaluate_expr_to_expr(&plus(terms));
   }
 
   // LerchPhi[z, s, 1] = PolyLog[s, z] / z (for z != 0, which the z = 0 case
@@ -1473,6 +1506,100 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Symbolic: return unevaluated
   Ok(unevaluated("LerchPhi", args))
+}
+
+/// LerchPhi[z, s, a, opts] with the options DoublyInfinite and
+/// IncludeSingularTerm (both False by default).
+///   IncludeSingularTerm -> True keeps the k = -a term at a non-positive
+///   integer a: it is infinite for Re[s] > 0 (ComplexInfinity), 1 for s = 0
+///   (so the sum is 1/(1 - z)), indeterminate for Re[s] = 0 otherwise, and 0
+///   for Re[s] < 0 (no change).
+///   DoublyInfinite -> True sums over all integers k, adding
+///   Sum[z^-k/((a - k)^2)^(s/2), {k, 1, Infinity}] = LerchPhi[1/z, s, 1 - a]/z;
+///   this is only evaluated numerically.
+fn lerch_phi_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let symbolic = || Ok(unevaluated("LerchPhi", args));
+  let mut doubly_infinite = false;
+  let mut singular_term = false;
+  for opt in &args[3..] {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return symbolic();
+    };
+    let value = match replacement.as_ref() {
+      Expr::Identifier(v) if v == "True" => true,
+      Expr::Identifier(v) if v == "False" => false,
+      _ => return symbolic(),
+    };
+    match pattern.as_ref() {
+      Expr::Identifier(o) if o == "DoublyInfinite" => doubly_infinite = value,
+      Expr::Identifier(o) if o == "IncludeSingularTerm" => {
+        singular_term = value;
+      }
+      _ => return symbolic(),
+    }
+  }
+  let (z, s, a) = (&args[0], &args[1], &args[2]);
+
+  if singular_term {
+    let a_is_nonpositive_integer = match a {
+      Expr::Integer(n) => *n <= 0,
+      Expr::Real(f) => *f <= 0.0 && f.fract() == 0.0,
+      _ => false,
+    };
+    if a_is_nonpositive_integer {
+      let re_s = try_extract_complex_float(s).map(|(re, _)| re);
+      let s_is_zero = matches!(s, Expr::Integer(0))
+        || matches!(s, Expr::Real(f) if *f == 0.0);
+      match re_s {
+        _ if s_is_zero => {
+          return crate::evaluator::evaluate_expr_to_expr(&div2(
+            Expr::Integer(1),
+            minus2(Expr::Integer(1), z.clone()),
+          ));
+        }
+        Some(re) if re > 0.0 => return Ok(id_expr("ComplexInfinity")),
+        Some(0.0) => return Ok(id_expr("Indeterminate")),
+        Some(_) => {}
+        None => return symbolic(),
+      }
+    }
+  }
+
+  let base = lerch_phi_ast(&args[..3])?;
+  if !doubly_infinite {
+    if matches!(&base, Expr::FunctionCall { name, .. } if name == "LerchPhi") {
+      return symbolic();
+    }
+    return Ok(base);
+  }
+
+  let inexact = contains_float(z) || contains_float(s) || contains_float(a);
+  if !inexact || is_expr_zero(z) {
+    return symbolic();
+  }
+  let reflected = lerch_phi_ast(&[
+    div2(Expr::Integer(1), z.clone()),
+    s.clone(),
+    minus2(Expr::Integer(1), a.clone()),
+  ])?;
+  let total = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    base,
+    div2(reflected, z.clone()),
+  ]))?;
+  if matches!(total, Expr::Real(_))
+    || try_extract_complex_float(&total).is_some()
+  {
+    return Ok(total);
+  }
+  symbolic()
 }
 
 /// HurwitzLerchPhi[z, s, a] - the Hurwitz-Lerch transcendent
