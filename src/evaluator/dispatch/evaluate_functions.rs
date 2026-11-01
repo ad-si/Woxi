@@ -5977,8 +5977,37 @@ fn evaluate_function_call_ast_inner(
     // with options preserved
     if args.len() >= 2
       && matches!(&args[0], Expr::List(_))
-      && matches!(&args[1], Expr::List(_))
+      && let Expr::List(edges) = &args[1]
     {
+      // A rule edge `a -> b` in the explicit edge list is stored as
+      // `DirectedEdge[a, b]`, exactly as in the vertex-less form above.
+      fn rule_to_directed(e: &Expr) -> Expr {
+        match e {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => call(
+            "DirectedEdge",
+            vec![(**pattern).clone(), (**replacement).clone()],
+          ),
+          Expr::FunctionCall { name, args }
+            if name == "Labeled" && args.len() == 2 =>
+          {
+            call("Labeled", vec![rule_to_directed(&args[0]), args[1].clone()])
+          }
+          other => other.clone(),
+        }
+      }
+      if edges.iter().any(|e| {
+        matches!(e, Expr::Rule { .. })
+          || matches!(e, Expr::FunctionCall { name, args }
+            if name == "Labeled" && args.len() == 2
+              && matches!(&args[0], Expr::Rule { .. }))
+      }) {
+        let mut new_args = args.to_vec();
+        new_args[1] = Expr::List(edges.iter().map(rule_to_directed).collect());
+        return Ok(unevaluated(name, &new_args));
+      }
       return Ok(unevaluated(name, args));
     }
 
