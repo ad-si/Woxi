@@ -1711,7 +1711,9 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
       for name in &bound {
         // A name that already ends in `$` is left alone (`x$1` still
         // becomes `x$1$`).
-        if !locals.contains(name) && !name.ends_with('$') {
+        // …unless it is itself one of the locals being substituted: an
+        // inner binding of the same name must still shadow it.
+        if !name.ends_with('$') || locals.contains(name) {
           e = crate::syntax::rename_symbol(&e, name, &format!("{name}$"));
         }
       }
