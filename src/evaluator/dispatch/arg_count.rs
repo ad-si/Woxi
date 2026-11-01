@@ -1218,7 +1218,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "QFactorial" => Some((2, 2)),
     "QGamma" => Some((2, 2)),
     "QPochhammer" => Some((1, 3)),
-    "QRDecomposition" => Some((1, 1)),
+    "QRDecomposition" => Some((1, 2)),
     "SchurDecomposition" => Some((1, 2)),
     "HessenbergDecomposition" => Some((1, 1)),
     "QuadraticIrrationalQ" => Some((1, 1)),

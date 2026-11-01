@@ -613,6 +613,79 @@ pub fn dispatch_linear_algebra_functions(
         _ => Ok(result),
       });
     }
+    // decomposition[m, …, TargetStructure -> "Dense" | "Sparse" |
+    // Automatic]: the plain decomposition with each matrix factor (a list
+    // of lists, a structured matrix or a SparseArray) made a dense list or
+    // a SparseArray; scalars such as LU's condition number stay as they
+    // are. The structured targets ("Structured", "Orthogonal", …) are not
+    // implemented and stay unevaluated.
+    "LUDecomposition"
+    | "QRDecomposition"
+    | "SchurDecomposition"
+    | "HessenbergDecomposition"
+    | "SingularValueDecomposition"
+      if args.len() >= 2
+        && option_rule_value(&args[args.len() - 1], "TargetStructure")
+          .is_some() =>
+    {
+      let target =
+        match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
+          Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
+          Expr::Identifier(s) if s == "Automatic" => "Automatic",
+          _ => return Some(Ok(unevaluated(name, args))),
+        };
+      let result = match crate::evaluator::evaluate_function_call_ast(
+        name,
+        &args[..args.len() - 1],
+      ) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(factors) = &result else {
+        // Unevaluated (not a matrix, …): keep the call as written.
+        return Some(Ok(unevaluated(name, args)));
+      };
+      if target == "Automatic" {
+        return Some(Ok(result));
+      }
+      let is_matrix = |e: &Expr| match e {
+        Expr::List(rows) => {
+          !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))
+        }
+        Expr::FunctionCall { name: h, args: a } => {
+          h == "SparseArray"
+            || matches!(a.first(), Some(Expr::FunctionCall { name: d, .. })
+              if d == "StructuredArray`StructuredData")
+        }
+        _ => false,
+      };
+      let mut converted = Vec::with_capacity(factors.len());
+      for f in factors {
+        if !is_matrix(f) {
+          converted.push(f.clone());
+          continue;
+        }
+        let dense = match crate::evaluator::evaluate_function_call_ast(
+          "Normal",
+          std::slice::from_ref(f),
+        ) {
+          Ok(d) => d,
+          Err(e) => return Some(Err(e)),
+        };
+        converted.push(if target == "Sparse" {
+          match crate::evaluator::evaluate_function_call_ast(
+            "SparseArray",
+            &[dense],
+          ) {
+            Ok(sp) => sp,
+            Err(e) => return Some(Err(e)),
+          }
+        } else {
+          dense
+        });
+      }
+      return Some(Ok(Expr::List(converted.into())));
+    }
     "DiagonalMatrix" if (1..=3).contains(&args.len()) => {
       return Some(crate::functions::linear_algebra_ast::diagonal_matrix_ast(
         args,
@@ -2836,7 +2909,11 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::linear_algebra_ast::schur_decomposition_ast(args),
       );
     }
-    "QRDecomposition" if args.len() == 1 => {
+    "QRDecomposition"
+      if args.len() == 1
+        || (args.len() == 2
+          && matches!(&args[1], Expr::Identifier(f) if f == "Full")) =>
+    {
       return Some(crate::functions::linear_algebra_ast::qr_decomposition_ast(
         args,
       ));

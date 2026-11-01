@@ -3694,6 +3694,90 @@ fn fit_symbolic_responses(
   Ok(Some(evaluate_expr_to_expr(&plus(terms))?))
 }
 
+/// The model-fitting data forms that name the response explicitly, as the
+/// row form `{{x11, …, y1}, …}` the fitters read:
+/// - `{x1 -> y1, …}` and `{{x11, …} -> y1, …}`,
+/// - `{x1, …} -> {y1, …}` and `{{x11, …}, …} -> {y1, …}`,
+/// - `{{v11, v12, …}, …} -> k`, whose `k`-th column is the response.
+///
+/// `None` when `data` is in none of these forms (it is then used as given).
+fn rule_form_fit_data(data: &Expr) -> Option<Expr> {
+  let row = |x: &Expr, y: &Expr| -> Expr {
+    let mut items = match x {
+      Expr::List(xs) => xs.to_vec(),
+      other => vec![other.clone()],
+    };
+    items.push(y.clone());
+    Expr::List(items.into())
+  };
+  match data {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|r| matches!(r, Expr::Rule { .. })) =>
+    {
+      Some(Expr::List(
+        items
+          .iter()
+          .map(|r| match r {
+            Expr::Rule {
+              pattern,
+              replacement,
+            } => row(pattern, replacement),
+            _ => unreachable!(),
+          })
+          .collect(),
+      ))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::List(xs), Expr::List(ys))
+        if !xs.is_empty() && xs.len() == ys.len() =>
+      {
+        Some(Expr::List(
+          xs.iter().zip(ys.iter()).map(|(x, y)| row(x, y)).collect(),
+        ))
+      }
+      (Expr::List(rows), Expr::Integer(k)) if !rows.is_empty() => {
+        let width = match &rows[0] {
+          Expr::List(r) => r.len() as i128,
+          _ => return None,
+        };
+        let k = if *k < 0 { width + k } else { k - 1 };
+        if !(0..width).contains(&k) {
+          return None;
+        }
+        let k = k as usize;
+        rows
+          .iter()
+          .map(|r| match r {
+            Expr::List(items) if items.len() as i128 == width => {
+              let mut out = items.to_vec();
+              let y = out.remove(k);
+              out.push(y);
+              Some(Expr::List(out.into()))
+            }
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()
+          .map(|rows| Expr::List(rows.into()))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// `args` with its data argument (the first) rewritten by
+/// [`rule_form_fit_data`], or `None` when it needs no rewriting.
+fn with_row_fit_data(args: &[Expr]) -> Option<Vec<Expr>> {
+  let rows = rule_form_fit_data(args.first()?)?;
+  let mut out = args.to_vec();
+  out[0] = rows;
+  Some(out)
+}
+
 /// Extract x and y values from Fit data.
 /// Handles both `{y1, y2, ...}` and `{{x1, y1}, {x2, y2}, ...}` forms.
 /// Like `extract_fit_data` but for `n_vars` independent variables: each
@@ -10165,60 +10249,6 @@ fn triangularize_ast(args: &[Expr], upper: bool) -> Expr {
 
 // ─── LinearModelFit ────────────────────────────────────────────────────
 
-/// Model-fit data given as rules — `{x1 -> y1, …}` or
-/// `{x1, x2, …} -> {y1, y2, …}`, where each `xi` is a value or a list of
-/// values — rewritten as the equivalent `{{x1, y1}, …}` rows. `None` when
-/// the data is not in a rule form.
-fn rule_form_fit_data(data: &Expr) -> Option<Expr> {
-  let row = |x: &Expr, y: &Expr| match x {
-    Expr::List(xs) => {
-      let mut r = xs.to_vec();
-      r.push(y.clone());
-      Expr::List(r.into())
-    }
-    _ => Expr::List(vec![x.clone(), y.clone()].into()),
-  };
-  let rows: Vec<Expr> = match data {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => match (pattern.as_ref(), replacement.as_ref()) {
-      (Expr::List(xs), Expr::List(ys))
-        if !xs.is_empty() && xs.len() == ys.len() =>
-      {
-        xs.iter().zip(ys.iter()).map(|(x, y)| row(x, y)).collect()
-      }
-      _ => return None,
-    },
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| matches!(i, Expr::Rule { .. })) =>
-    {
-      items
-        .iter()
-        .map(|i| match i {
-          Expr::Rule {
-            pattern,
-            replacement,
-          } => row(pattern, replacement),
-          _ => unreachable!(),
-        })
-        .collect()
-    }
-    _ => return None,
-  };
-  Some(Expr::List(rows.into()))
-}
-
-/// `args` with rule-form data (see `rule_form_fit_data`) in the first slot
-/// rewritten as data rows.
-fn with_row_fit_data(args: &[Expr]) -> Option<Vec<Expr>> {
-  let rows = rule_form_fit_data(args.first()?)?;
-  let mut new_args = args.to_vec();
-  new_args[0] = rows;
-  Some(new_args)
-}
-
 /// LinearModelFit[data, funs, var] — fits a linear model and returns a FittedModel object.
 ///
 /// The FittedModel can be:
@@ -10226,8 +10256,16 @@ fn with_row_fit_data(args: &[Expr]) -> Option<Vec<Expr>> {
 /// - Queried for properties: `lm["BestFitParameters"]`, `lm["FitResiduals"]`, `lm["RSquared"]`
 /// - Converted with Normal: `Normal[lm]` returns the fitted expression
 pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if let Some(new_args) = with_row_fit_data(args) {
-    return linear_model_fit_ast(&new_args);
+  if args.len() >= 3
+    && let Some(rewritten) = with_row_fit_data(args)
+  {
+    let fitted = linear_model_fit_ast(&rewritten)?;
+    return Ok(match fitted {
+      Expr::FunctionCall { ref name, .. } if name == "LinearModelFit" => {
+        unevaluated("LinearModelFit", args)
+      }
+      other => other,
+    });
   }
   if args.len() < 3 {
     return linear_model_fit_core(args);
@@ -10376,6 +10414,7 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a way not implemented (weights, nominal variables, …) leaves the call
   // unevaluated rather than fitting the wrong model.
   let mut include_constant = true;
+  let mut weights: Option<(Vec<f64>, Expr)> = None;
   for opt in &args[3..] {
     let (Expr::Rule {
       pattern,
@@ -10393,6 +10432,23 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         include_constant =
           !matches!(replacement.as_ref(), Expr::Identifier(b) if b == "False");
       }
+      // `Weights -> {w1, …}`: weighted least squares, the error variance of
+      // the i-th response taken to be σ²/wi. Anything but a list of
+      // positive numbers (a weighting function, …) is left unevaluated.
+      Expr::Identifier(n) if n == "Weights" => match replacement.as_ref() {
+        Expr::Identifier(a) if a == "Automatic" => {}
+        list @ Expr::List(items) => {
+          match items
+            .iter()
+            .map(|w| try_eval_to_f64(w).filter(|w| *w > 0.0))
+            .collect::<Option<Vec<f64>>>()
+          {
+            Some(w) => weights = Some((w, list.clone())),
+            None => return Ok(unevaluated("LinearModelFit", args)),
+          }
+        }
+        _ => return Ok(unevaluated("LinearModelFit", args)),
+      },
       Expr::Identifier(n)
         if matches!(
           n.as_str(),
@@ -10404,6 +10460,7 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => return Ok(unevaluated("LinearModelFit", args)),
     }
   }
+  let all_args = args;
   let args = &args[..3];
 
   // Extract basis functions. Wolfram's `LinearModelFit` prepends the
@@ -10472,6 +10529,12 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Vec::new()
   };
+  if weights.as_ref().is_some_and(|(w, _)| w.len() != n) {
+    return Ok(unevaluated("LinearModelFit", all_args));
+  }
+  let weight_values: Vec<f64> = weights
+    .as_ref()
+    .map_or_else(|| vec![1.0; n], |(w, _)| w.clone());
 
   // Build design matrix A (n×m)
   let mut a_matrix = vec![vec![0.0f64; m]; n];
@@ -10498,8 +10561,25 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Weighted least squares is ordinary least squares on the rows scaled
+  // by the square roots of the weights; every statistic below (residual
+  // and total sums of squares, parameter covariance, ANOVA) is computed on
+  // the scaled problem, while the residuals and predictions are reported
+  // on the original scale.
+  let root_weights: Vec<f64> = weight_values.iter().map(|w| w.sqrt()).collect();
+  let a_scaled: Vec<Vec<f64>> = a_matrix
+    .iter()
+    .zip(&root_weights)
+    .map(|(row, s)| row.iter().map(|v| v * s).collect())
+    .collect();
+  let y_scaled: Vec<f64> = y_vals
+    .iter()
+    .zip(&root_weights)
+    .map(|(y, s)| y * s)
+    .collect();
+
   // Solve via QR decomposition
-  let coeffs = solve_least_squares_qr(&a_matrix, &y_vals)?;
+  let coeffs = solve_least_squares_qr(&a_scaled, &y_scaled)?;
 
   // Compute fitted values and residuals
   let mut fitted_values = Vec::with_capacity(n);
@@ -10510,10 +10590,24 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     residuals.push(y_vals[i] - y_hat);
   }
 
-  // Compute R-squared
-  let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
-  let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
-  let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
+  // Compute R-squared (around the weighted mean of the responses)
+  let weight_total: f64 = weight_values.iter().sum();
+  let y_mean: f64 = y_vals
+    .iter()
+    .zip(&weight_values)
+    .map(|(y, w)| w * y)
+    .sum::<f64>()
+    / weight_total;
+  let ss_tot: f64 = y_vals
+    .iter()
+    .zip(&weight_values)
+    .map(|(y, w)| w * (y - y_mean).powi(2))
+    .sum();
+  let ss_res: f64 = residuals
+    .iter()
+    .zip(&weight_values)
+    .map(|(r, w)| w * r.powi(2))
+    .sum();
   let r_squared = if ss_tot.abs() < 1e-30 {
     1.0
   } else {
@@ -10539,7 +10633,7 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let dof = (n - m) as f64;
       let sigma2 = ss_res / dof;
       let mut xtx = vec![vec![0.0f64; m]; m];
-      for row in &a_matrix {
+      for row in &a_scaled {
         for j in 0..m {
           for k in 0..m {
             xtx[j][k] += row[j] * row[k];
@@ -10578,7 +10672,7 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let constant = basis.iter().position(|b| matches!(b, Expr::Integer(1)));
       let (df_total, ss_total) = match constant {
         Some(_) => (n - 1, ss_tot),
-        None => (n, y_vals.iter().map(|y| y * y).sum::<f64>()),
+        None => (n, y_scaled.iter().map(|y| y * y).sum::<f64>()),
       };
       let df_error = n - m;
       let ms_error = ss_res / df_error as f64;
@@ -10589,19 +10683,19 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|&i| {
             columns
               .iter()
-              .map(|&j| a_matrix.iter().map(|r| r[i] * r[j]).sum())
+              .map(|&j| a_scaled.iter().map(|r| r[i] * r[j]).sum())
               .collect()
           })
           .collect();
         let xty: Vec<f64> = columns
           .iter()
-          .map(|&i| a_matrix.iter().zip(&y_vals).map(|(r, y)| r[i] * y).sum())
+          .map(|&i| a_scaled.iter().zip(&y_scaled).map(|(r, y)| r[i] * y).sum())
           .collect();
         let beta = solve_linear_system(&xtx, &xty)?;
         Some(
-          a_matrix
+          a_scaled
             .iter()
-            .zip(&y_vals)
+            .zip(&y_scaled)
             .map(|(r, y)| {
               let fit: f64 =
                 columns.iter().zip(&beta).map(|(&c, b)| r[c] * b).sum();
@@ -10765,6 +10859,9 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::String(var_names.first().cloned().unwrap_or_default()),
     ),
   ];
+  if let Some((_, given)) = weights {
+    assoc.push((str_expr("Weights"), given));
+  }
 
   // No error degrees of freedom left: wolframscript divides the residual
   // sum of squares by zero. A nonzero one makes every standard error
@@ -11178,12 +11275,18 @@ fn nonlinear_parameter_stats(
 pub fn nonlinear_model_fit_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if let Some(new_args) = with_row_fit_data(args) {
-    return nonlinear_model_fit_ast(&new_args);
-  }
   let uneval = || Ok(unevaluated("NonlinearModelFit", args));
   if args.len() < 4 {
     return uneval();
+  }
+  if let Some(rewritten) = with_row_fit_data(args) {
+    let fitted = nonlinear_model_fit_ast(&rewritten)?;
+    return match fitted {
+      Expr::FunctionCall { ref name, .. } if name == "NonlinearModelFit" => {
+        uneval()
+      }
+      other => Ok(other),
+    };
   }
   let (data, spec, params, var) = (&args[0], &args[1], &args[2], &args[3]);
   // A constrained model is written `{model, cons…}`; the fitted function
@@ -11950,7 +12053,8 @@ fn prediction_bands(
     }
     _ => return None,
   };
-  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let variance =
+    weighted_residual_sum_of_squares(assoc, &residuals)? / (n - p) as f64;
   let mut terms = Vec::new();
   if single {
     terms.push(Expr::Real(variance));
@@ -11993,8 +12097,31 @@ fn prediction_bands(
   .ok()
 }
 
+/// The `Weights` of a weighted fit with `n` data points, all 1 for an
+/// unweighted one; `None` when they do not match the data.
+fn fit_weights(assoc: &[(Expr, Expr)], n: usize) -> Option<Vec<f64>> {
+  match fit_property(assoc, "Weights") {
+    None => Some(vec![1.0; n]),
+    Some(Expr::List(items)) if items.len() == n => {
+      items.iter().map(try_eval_to_f64).collect()
+    }
+    Some(_) => None,
+  }
+}
+
+/// The residual sum of squares of a fit, each squared residual times its
+/// data point's weight.
+fn weighted_residual_sum_of_squares(
+  assoc: &[(Expr, Expr)],
+  residuals: &[f64],
+) -> Option<f64> {
+  let weights = fit_weights(assoc, residuals.len())?;
+  Some(residuals.iter().zip(&weights).map(|(r, w)| w * r * r).sum())
+}
+
 /// The parameter covariance matrix: stored by a nonlinear fit, the
-/// estimated variance times `Inverse[Transpose[X] . X]` for a linear one.
+/// estimated variance times `Inverse[Transpose[X] . W . X]` for a linear
+/// one (`W` the diagonal matrix of the weights).
 fn fit_covariance_matrix(assoc: &[(Expr, Expr)]) -> Option<Vec<Vec<f64>>> {
   let matrix_of = |e: &Expr| -> Option<Vec<Vec<f64>>> {
     let Expr::List(rows) = e else {
@@ -12026,11 +12153,13 @@ fn fit_covariance_matrix(assoc: &[(Expr, Expr)]) -> Option<Vec<Vec<f64>>> {
   if n <= p || residuals.len() != n {
     return None;
   }
-  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let weights = fit_weights(assoc, n)?;
+  let variance =
+    weighted_residual_sum_of_squares(assoc, &residuals)? / (n - p) as f64;
   let xtx: Vec<Vec<f64>> = (0..p)
     .map(|i| {
       (0..p)
-        .map(|j| x.iter().map(|r| r[i] * r[j]).sum())
+        .map(|j| x.iter().zip(&weights).map(|(r, w)| w * r[i] * r[j]).sum())
         .collect()
     })
     .collect();
@@ -12161,7 +12290,9 @@ fn derived_fit_property(assoc: &[(Expr, Expr)], prop: &str) -> Option<Expr> {
   if n <= p {
     return None;
   }
-  let variance = residuals.iter().map(|r| r * r).sum::<f64>() / (n - p) as f64;
+  let weights = fit_weights(assoc, n)?;
+  let variance =
+    weighted_residual_sum_of_squares(assoc, &residuals)? / (n - p) as f64;
   let leverages = || -> Option<Vec<f64>> {
     let Expr::List(rows) = get("DesignMatrix")? else {
       return None;
@@ -12170,11 +12301,11 @@ fn derived_fit_property(assoc: &[(Expr, Expr)], prop: &str) -> Option<Expr> {
     if x.len() != n || x.iter().any(|row| row.len() != p) {
       return None;
     }
-    // (XᵀX)⁻¹ by Gauss–Jordan.
+    // (XᵀWX)⁻¹ by Gauss–Jordan.
     let mut a: Vec<Vec<f64>> = (0..p)
       .map(|i| {
         let mut row: Vec<f64> = (0..p)
-          .map(|j| x.iter().map(|r| r[i] * r[j]).sum())
+          .map(|j| x.iter().zip(&weights).map(|(r, w)| w * r[i] * r[j]).sum())
           .collect();
         row.extend((0..p).map(|j| if i == j { 1.0 } else { 0.0 }));
         row
@@ -12203,10 +12334,11 @@ fn derived_fit_property(assoc: &[(Expr, Expr)], prop: &str) -> Option<Expr> {
     }
     Some(
       x.iter()
-        .map(|row| {
-          (0..p)
+        .zip(&weights)
+        .map(|(row, w)| {
+          w * (0..p)
             .map(|i| (0..p).map(|j| row[i] * a[i][p + j] * row[j]).sum::<f64>())
-            .sum()
+            .sum::<f64>()
         })
         .collect(),
     )
@@ -12221,8 +12353,9 @@ fn derived_fit_property(assoc: &[(Expr, Expr)], prop: &str) -> Option<Expr> {
         residuals
           .iter()
           .zip(&h)
-          .map(|(r, h)| {
-            r * r / (p as f64 * variance) * h / ((1.0 - h) * (1.0 - h))
+          .zip(&weights)
+          .map(|((r, h), w)| {
+            w * r * r / (p as f64 * variance) * h / ((1.0 - h) * (1.0 - h))
           })
           .collect(),
       ))
@@ -12596,9 +12729,11 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let m = matrix[0].len(); // cols
+  // `QRDecomposition[m, Full]`: q square (rows × rows), r of m's shape.
+  let full = args.len() == 2;
 
   if let Some(a) = machine_real_matrix(&matrix) {
-    return Ok(householder_qr(a));
+    return Ok(householder_qr(a, full));
   }
 
   // Complex matrices need the Hermitian inner product Σ Conjugate[aₖ]·bₖ
@@ -12688,6 +12823,12 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     q.push((0..n).map(|k| Expr::Integer((k == 0) as i128)).collect());
     r_entries.push(vec![Expr::Integer(0); m]);
   }
+  // Completing an exact q to a square one would pick a basis of the
+  // orthogonal complement, which is not implemented: only a q that is
+  // square already is the full decomposition.
+  if full && q.len() != n {
+    return Ok(unevaluated("QRDecomposition", args));
+  }
 
   // Build Q^T (rows of Q^T = the qi vectors, conjugated for complex input
   // so that ConjugateTranspose[q].r == m).
@@ -12720,10 +12861,14 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `dgeqr2` + `dorg2r`: each reflector maps its column onto
 /// `-Sign[a_ii] ‖x‖ e_1` (none for an already-reduced column), and Q has
 /// `Min[rows, cols]` orthonormal rows, rank-deficient matrices included.
-fn householder_qr(mut a: Vec<Vec<f64>>) -> Expr {
+/// `full` asks for all `rows` rows of Q (`dorg2r` with as many columns as
+/// rows) and pads R with zero rows to the matrix's shape.
+fn householder_qr(mut a: Vec<Vec<f64>>, full: bool) -> Expr {
   let rows = a.len();
   let cols = a[0].len();
   let k = rows.min(cols);
+  // Columns of Q (rows of the returned q).
+  let q_cols = if full { rows } else { k };
   let mut tau = vec![0.0; k];
   // Apply I - t v v' (v = (1, a[i+1..][i])) to a[i..][c0..cend].
   let reflect = |a: &mut Vec<Vec<f64>>,
@@ -12761,22 +12906,35 @@ fn householder_qr(mut a: Vec<Vec<f64>>) -> Expr {
       reflect(&mut a, &v, tau[i], i, i + 1, cols);
     }
   }
-  let r: Vec<Vec<f64>> = (0..k)
+  let r: Vec<Vec<f64>> = (0..q_cols)
     .map(|i| {
       (0..cols)
-        .map(|j| if j >= i { a[i][j] } else { 0.0 })
+        .map(|j| if i < k && j >= i { a[i][j] } else { 0.0 })
         .collect()
     })
     .collect();
-  // dorg2r: accumulate Q (rows × k) in place from the reflectors.
+  // dorg2r: accumulate Q (rows × q_cols) in place from the reflectors,
+  // the columns past the k-th starting as unit vectors.
   let mut q: Vec<Vec<f64>> = (0..rows)
-    .map(|r| (0..k).map(|c| if r > c { a[r][c] } else { 0.0 }).collect())
+    .map(|r| {
+      (0..q_cols)
+        .map(|c| {
+          if c >= k {
+            (r == c) as u8 as f64
+          } else if r > c {
+            a[r][c]
+          } else {
+            0.0
+          }
+        })
+        .collect()
+    })
     .collect();
   for i in (0..k).rev() {
-    if i + 1 < k {
+    if i + 1 < q_cols {
       q[i][i] = 1.0;
       let v: Vec<f64> = (i..rows).map(|r| q[r][i]).collect();
-      reflect(&mut q, &v, tau[i], i, i + 1, k);
+      reflect(&mut q, &v, tau[i], i, i + 1, q_cols);
     }
     for row in q.iter_mut().skip(i + 1) {
       row[i] *= -tau[i];
@@ -12793,7 +12951,7 @@ fn householder_qr(mut a: Vec<Vec<f64>>) -> Expr {
         .collect(),
     )
   };
-  let qt: Vec<Vec<f64>> = (0..k)
+  let qt: Vec<Vec<f64>> = (0..q_cols)
     .map(|c| (0..rows).map(|r| q[r][c]).collect())
     .collect();
   Expr::List(vec![to_expr(qt), to_expr(r)].into())

@@ -2545,8 +2545,30 @@ keeps, and `Fit[{1,2,3,4},{1,x},x]` gives a clean `0. + 1. x` where WL keeps
 `Fit` with a symbolic data value fits symbolically in wolframscript
 (`Fit[{a, 1, 2}, {1, x}, x]` is linear in `a`); Woxi fails with "could not
 convert data value to a number". `LinearModelFit` gives
-`LinearModelFit::desmat` for such data in both. `LinearModelFit[…, Weights
--> w]` stays unevaluated in Woxi.
+`LinearModelFit::desmat` for such data in both.
+
+`LinearModelFit[…, Weights -> {w1, …}]` fits by weighted least squares and
+weights every statistic of the model the standard way (error variance
+σ²/wi: R² about the weighted mean, Σ wi ri² / (n - p) as the estimated
+variance, Cov = σ² Inverse[Xᵀ W X], weighted leverages and ANOVA); the
+statistics are not yet checked against wolframscript. A weighting function
+(`Weights -> f`) leaves the call unevaluated in Woxi.
+
+### `QRDecomposition[m, Full]` of an exact tall matrix
+
+`QRDecomposition[m, Full]` completes q to a square matrix for a machine
+matrix (the Householder reflectors' full Q, as LAPACK's `dorgqr`), and is
+the plain decomposition when q is square already. Completing an exact q
+needs a basis of the orthogonal complement in wolframscript's form, so
+`QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}, Full]` stays unevaluated in Woxi.
+
+### Decompositions with a structured `TargetStructure`
+
+`TargetStructure -> "Dense" | "Sparse" | Automatic` on `LUDecomposition`,
+`QRDecomposition`, `SchurDecomposition`, `HessenbergDecomposition` and
+`SingularValueDecomposition` turns each matrix factor dense or into a
+`SparseArray`; `"Structured"` and the other structured targets stay
+unevaluated in Woxi.
 
 ### `GeneralizedLinearModelFit` and `LogitModelFit` stop short of the estimate
 
