@@ -814,7 +814,7 @@ WhenEvent,"Specify events in differential equations",✅,none,9.0,780
 Unitize,"Returns 0 for zero and 1 for nonzero values",✅,pure,6.0,781
 TeXForm,"Convert expressions to LaTeX notation — a matrix becomes a parenthesized array; Greek letters carry their macro",✅,pure,1.0,782
 Erfc,"Returns the complementary error function value",✅,pure,2.0,784
-NSum,"Numerical approximation of a sum using polynomial extrapolation",✅,pure,1.0,784
+NSum,"Numerical approximation of a sum using polynomial extrapolation (Euler-Maclaurin for complex summands)",✅,pure,1.0,784
 Legended,"Wrapper to attach a legend to a graphic",✅,none,7.0,785
 RotateRight,"Rotates list elements to the right",✅,pure,1.0,786
 ExportString,"Exports an expression to a string in a given format (CSV/TSV/Table/JSON/Lines/Text/String/SVG and image formats); symbolic XML is written back out as markup",✅,pure,4.0,787
@@ -1396,7 +1396,7 @@ PossibleZeroQ,"Tests if an expression is possibly zero",✅,pure,6.0,1369
 BezierFunction,"Evaluate Bezier curves from control points using de Casteljau algorithm",✅,pure,7.0,1371
 LegendLabel,"Option for specifying legend labels in plots",✅,none,9.0,1371
 BesselJZero,"Compute zeros of the Bessel function J_n using bisection and Newton method",✅,pure,6.0,1375
-DiscretePlot3D,"3D surface plot at discrete integer grid points",✅,none,8.0,1375
+DiscretePlot3D,"3D plot of a function at discrete grid points (stems or bars)",✅,none,8.0,1375
 EllipticThetaPrime,"Derivative of Jacobi theta function with respect to z",✅,pure,3.0,1375
 MonomialList,"Monomials of a polynomial listed in a monomial order (lexicographic by default)",✅,pure,7.0,1375
 ComplexPlot,"Domain coloring visualization of a complex function",✅,pure,12.0,1377
@@ -2377,7 +2377,7 @@ BubbleSizes,"chart option",🚫,None,7.0,2380
 CountRoots,"Count the real roots of a univariate polynomial with multiplicity over the reals or a closed interval",✅,pure,6.0,2380
 DoubleLongLeftRightArrow,"symbol notation",✅,None,3.0,2380
 InverseGammaRegularized,"Inverse of the regularized upper incomplete gamma function Q(a z)",✅,pure,3.0,2380
-MultivariateTDistribution,"probability distribution",🚫,None,8.0,2380
+MultivariateTDistribution,"Represents a multivariate Student t distribution with scale matrix Σ and ν degrees of freedom",✅,pure,8.0,2380
 PartitionsQ,"Number of partitions of n into distinct parts",✅,pure,1.0,2380
 BatesDistribution,"Distribution of the mean of n uniform variates with Mean and Variance and piecewise PDF and CDF for integer n",✅,pure,8.0,2383
 SetSelectedNotebook,"notebook UI",🚫,None,3.0,2383
@@ -2803,7 +2803,7 @@ ImageKeypoints,"",🚫,,8.0,2812
 SectorSpacing,"Option for pie chart sector spacing",✅,pure,7.0,2812
 FindEulerianCycle,"Find an Eulerian cycle traversing every edge once",✅,pure,8.0,2816
 GaborWavelet,"Gabor wavelet of a given frequency (continuous complex family)",✅,pure,8.0,2816
-MultivariateHypergeometricDistribution,"",🚫,,8.0,2816
+MultivariateHypergeometricDistribution,"Represents a multivariate hypergeometric distribution of draws without replacement from an urn with several kinds of balls",✅,pure,8.0,2816
 PolarAxesOrigin,"Option for the origin of polar axes in polar plots",✅,pure,7.0,2816
 HistogramTransform,"Equalize the histogram of an image",✅,pure,9.0,2821
 Image3DSlices,"The 2D slices of a volume along the depth axis (all; one; or a list of them); other slicing directions are not supported",🚧,pure,9.0,2821

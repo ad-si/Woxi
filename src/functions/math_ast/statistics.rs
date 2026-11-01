@@ -941,6 +941,15 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall {
       name: dist_name,
       args: dargs,
+    } if dist_name == "MultivariateHypergeometricDistribution" => {
+      Ok(match multivariate_hypergeometric_mean_variance(dargs)? {
+        Some((mean, _)) => mean,
+        None => unevaluated("Mean", args),
+      })
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
     } if dist_name == "NegativeMultinomialDistribution" => {
       let (mean, _) = negative_multinomial_mean_variance(dargs)?;
       Ok(mean)
@@ -1366,6 +1375,15 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } if dist_name == "MultinomialDistribution" => {
       let (_, variance) = multinomial_mean_variance(dargs)?;
       Ok(variance)
+    }
+    Expr::FunctionCall {
+      name: dist_name,
+      args: dargs,
+    } if dist_name == "MultivariateHypergeometricDistribution" => {
+      Ok(match multivariate_hypergeometric_mean_variance(dargs)? {
+        Some((_, variance)) => variance,
+        None => unevaluated("Variance", args),
+      })
     }
     Expr::FunctionCall {
       name: dist_name,
@@ -2301,6 +2319,50 @@ pub fn covariance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return dirichlet_covariance(dargs);
   }
 
+  // Covariance[MultivariatePoissonDistribution[μ, {μ1, …}]]: the common
+  // term μ is every off-diagonal entry, μ + μi the diagonal.
+  // Covariance[MultinomialDistribution[n, {p1, …}]]: n (pi - pi^2) on the
+  // diagonal and -n pi pj off it.
+  if args.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && matches!(
+      name.as_str(),
+      "MultivariatePoissonDistribution" | "MultinomialDistribution"
+    )
+    && dargs.len() == 2
+    && let Expr::List(params) = &dargs[1]
+    && !params.is_empty()
+  {
+    let poisson = name == "MultivariatePoissonDistribution";
+    let common = &dargs[0];
+    let entry = |i: usize, j: usize| -> Expr {
+      match (poisson, i == j) {
+        (true, true) => plus2(common.clone(), params[i].clone()),
+        (true, false) => common.clone(),
+        (false, true) => times2(
+          common.clone(),
+          plus2(
+            params[i].clone(),
+            neg(pow2(params[i].clone(), Expr::Integer(2))),
+          ),
+        ),
+        (false, false) => times(vec![
+          Expr::Integer(-1),
+          common.clone(),
+          params[i].clone(),
+          params[j].clone(),
+        ]),
+      }
+    };
+    let k = params.len();
+    let matrix = Expr::List(
+      (0..k)
+        .map(|i| Expr::List((0..k).map(|j| entry(i, j)).collect()))
+        .collect(),
+    );
+    return crate::evaluator::evaluate_expr_to_expr(&matrix);
+  }
+
   // Covariance[NegativeMultinomialDistribution[n, {p1, …}]] is the k×k
   // covariance matrix.
   if args.len() == 1
@@ -3047,12 +3109,23 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
   for i in 0..n {
     let mut row = Vec::with_capacity(n);
     for j in 0..n {
-      // Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]
-      let denom = pow(
-        times(vec![cov[i][i].clone(), cov[j][j].clone()]),
-        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-      );
-      let entry = times(vec![cov[i][j].clone(), denom]);
+      // A variable correlates perfectly with itself; otherwise
+      // Cov[i, j] / (Sqrt[Cov[i, i]] Sqrt[Cov[j, j]]).
+      if i == j {
+        row.push(Expr::Integer(1));
+        continue;
+      }
+      let inv_sqrt = |v: &Expr| {
+        pow(
+          v.clone(),
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        )
+      };
+      let entry = times(vec![
+        cov[i][j].clone(),
+        inv_sqrt(&cov[i][i]),
+        inv_sqrt(&cov[j][j]),
+      ]);
       row.push(crate::evaluator::evaluate_expr_to_expr(&entry).ok()?);
     }
     result.push(Expr::List(row.into()));

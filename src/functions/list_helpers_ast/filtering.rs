@@ -1315,7 +1315,14 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if positional.len() < 2 {
     return Ok(original());
   }
-  let subject = &positional[0];
+  // A rendered graphic is counted through its symbolic expression, as
+  // `Cases` searches it.
+  let graphic_form = if let Expr::Graphics { .. } = &positional[0] {
+    crate::evaluator::part_extraction::graphics_symbolic_form(&positional[0])
+  } else {
+    None
+  };
+  let subject = graphic_form.as_ref().unwrap_or(&positional[0]);
   let pattern = &positional[1];
   let (match_pat, replacement) = extract_rule_parts(pattern);
 

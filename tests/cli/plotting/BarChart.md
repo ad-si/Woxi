@@ -23,6 +23,14 @@ $ wo 'Head[BarChart[{1, 2, 3, 4}, ChartStyle -> "Pastel"]]'
 Graphics
 ```
 
+The values of an association are the bar heights; `PlotLabels -> Automatic`
+(the current name of `ChartLabels`) labels the bars with the keys.
+
+```scrut
+$ wo 'Head[BarChart[<|"a" -> 1, "b" -> 2, "c" -> 5|>, PlotLabels -> Automatic]]'
+Graphics
+```
+
 ### Options
 
 - **`BarOrigin`** — `Bottom` (default, vertical) or `Left`/`Right` (horizontal).

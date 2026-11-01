@@ -2129,9 +2129,11 @@ tables.
 
 ### Higher-rank `Curl`
 
-Scalar in 3D, vector in 4D and rank-2 tensor in 3D — the valid higher-rank
-antisymmetric forms — stay unevaluated. WL returns them as `SymmetrizedArray`
-(or a collapsed 0). Needs exterior derivative plus Hodge dual.
+A rank-`n - 1` field in `n` dimensions has a scalar curl, which is computed
+(`(1/(n-1)!) Σ ε[j, i1, …] D[f[[i1, …]], x_j]`). The forms whose curl has
+rank 2 or more — a scalar in 3D or 5D, a vector in 4D — stay unevaluated: WL
+returns them as `SymmetrizedArray[StructuredArray`StructuredData[…,
+Antisymmetric[…]]]` (or a collapsed 0), and Woxi has no `SymmetrizedArray`.
 
 ### A coupled ODE system is solved numerically, so its constants are inexact
 
@@ -4948,6 +4950,31 @@ the two, and `StreamPoints` settings keep Wolfram's proportions to it.
 `DensityPlot[x, {x, 0, 10}, {y, 0, 1}, AspectRatio -> 0.3]` is drawn square
 in Woxi; Wolfram draws it 0.3 times as tall as wide.
 
+### Plot argument forms from the reference pages that are still missing
+
+Found by the round-4 parameter sweep of the plot reference pages; the
+expected pictures come from the reference pages' own examples.
+
+- 3D plots draw no legends: `ParametricPlot3D[{…, Legended[curve, "label"]},
+  …]` draws the curve but no legend, and `PlotLegends` is ignored by the 3D
+  plot functions.
+- `Callout` labels (`PlotLabels -> Callout[Automatic, Above]` in `BarChart`,
+  `PlotLabels -> Callout[Automatic]` in `PieChart`, `LabelingFunction ->
+  Callout` in `ListPointPlot3D`) are drawn as plain labels beside their
+  element, without the leader line.
+- `Histogram[<|"one" -> {…}, "two" -> {…}|>, n, PlotLabels -> Automatic]`
+  draws no dataset labels (`PlotLegends -> Automatic` does draw the legend).
+- `ListPlot3D` of a height matrix numbers its x/y axes from 0, Wolfram from 1.
+- `Tabular` / `Dataset` column selection (`ListPlot[tab -> "col"]`,
+  `NumberLinePlot[tab -> {"a", "b"}]`, `ListPolarPlot[tab -> {"θ", "r"}]`, …)
+  is unsupported, since there is no `Tabular`.
+- Region iterators (`Plot[f, {x} ∈ Line[…]]`, `ParametricPlot[…, {u, r} ∈
+  region]`, `RegionPlot3D[…, {x, y, z} ∈ Ball[…]]`) are unsupported.
+- `LogLogPlot` / `LogLinearPlot` with a lower limit of 0 (`{x, 0, 10}`) are an
+  error; Wolfram plots from just above 0. `ScalingFunctions -> "Reverse"` is
+  not applied to the log plots.
+- `ComplexPlot[f, {z, Infinity}]` (the infinite-plane form) is an error.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a
@@ -6806,6 +6833,87 @@ images), so they are not implemented yet:
   all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
   there is unverified.
 
+## Parameter sweep 4 (ODEs & calculus): open items
+
+Outputs confirmed from the reference pages, not yet matched:
+
+- `DSolve` of a linear system with a symbolic coefficient
+  (`{y'[x] == y[x] - a z[x], z'[x] == y[x] - z[x], y[0] == 1, z[0] == 4}`)
+  and with rational-function coefficients (the Bessel-type
+  `{y' == -4 y/x + 4 z/x, z' == (4/x - x/4) y - 4 z/x}`) stay unevaluated:
+  the system solver works in machine floats. WL gives closed forms in
+  `Sqrt[1 - a]` and in `BesselJ[4, x]/x^4`, `BesselY[4, x]/x^4`.
+- `Limit[RealAbs[x] Tan[y]^2, {x -> 0, y -> Pi/2}]` (y first) stays
+  unevaluated; WL gives `Infinity`. The inner `Limit[c Tan[y]^2, y -> Pi/2]`
+  with a symbolic factor `c` does not resolve.
+- `Integrate[Sqrt[x] Sqrt[1 + x], x]` (WL:
+  `(Sqrt[x] Sqrt[1 + x] (1 + 2 x) - ArcTanh[1/Sqrt[x/(1 + x)]])/4`),
+  `Integrate[Sqrt[x] Sqrt[1 + x] Sqrt[2 + x], x]` (an `EllipticE` form) and
+  `Integrate[BesselJ[2, x]/(1 + x^2), {x, 0, Infinity}]` (WL:
+  `(2 - 3 Pi BesselI[2, 1] + 3 Pi StruveL[2, 1])/6`) stay unevaluated.
+- `FunctionDomain` in several variables handles only nonzero denominators;
+  `FunctionDomain[Beta[a, Sqrt[x]], {a, x}]` and the `Complexes` form
+  `FunctionDomain[BesselJ[x, 1 + Gamma[y]], {x, y}, Complexes]` stay
+  unevaluated.
+- `Curl[u^2 v^2 x^2 y^2 z^2, {u, v, x, y, z}]` needs `SymmetrizedArray`
+  (see "Higher-rank `Curl`").
+- The divergent `NIntegrate[BesselJ[3, y]/x + 1, {x, 0, 5}, {y, 0, 5}]`
+  does not return; the reference page's 1.9431 is the integral of
+  `BesselJ[3, y]/(x + 1)`, which Woxi does compute. Likewise its
+  `{2., -1., -5.}` is for `Log[y]/x^(4/5)`.
+- Nested `NSum[(-1)^n (2/n)^k/k^2, {n, 2, Infinity}, {k, 1, Infinity}]` is
+  right (1.14434) but takes ~45 s.
+- `Integrate[Sinh[x] Cosh[x], x]` gives `Cosh[x]^2/2`; WL's form is
+  unverified.
+
+## Parameter sweep 4 (distributions): known divergences and unverified forms
+
+`Probability` of a compound event in one variable now splits the real line
+into the intervals where the event holds and measures them through the CDF
+(and `Reduce` decides such events the same way). The values agree with the
+reference pages; some printed forms do not:
+
+```sh
+wolframscript -code 'Probability[x^2 > 3 || Abs[x] < 1, x \[Distributed] ExponentialDistribution[λ]]'
+# -E^(-Sqrt[3] λ) (-1 - E^(Sqrt[3] λ) + E^(Sqrt[3] λ) Cosh[λ] - E^(Sqrt[3] λ) Sinh[λ])
+woxi eval 'Probability[x^2 > 3 || Abs[x] < 1, x \[Distributed] ExponentialDistribution[λ]]'
+# 1 - E^(-λ) + E^(-(Sqrt[3]*λ))
+```
+
+- The same for `Probability[(x^2 < 5 && 2 x + 3 < 5) || x^3 + x > 11,
+  x \[Distributed] ExponentialDistribution[2]]`: wolframscript prints
+  `1 - E^-2 + E^-2 Root[-11 + #1 + #1^3 &, 1, 0]`, Woxi the `Together`ed
+  quotient of the same value.
+- Wolfram keeps `-(5 + Sqrt[21])/(2 Sqrt[2])` with the minus outside the sum,
+  Woxi distributes it to `(-5 - Sqrt[21])/(2*Sqrt[2])`. The two evaluate to
+  the same Woxi expression, so the `Probability` results compare `===`.
+- A discrete distribution with a symbolic parameter keeps the CDF's
+  regularized form: `Probability[x <= 3, x \[Distributed] PoissonDistribution[μ]]`
+  is `GammaRegularized[4, μ]` in Woxi, `(1/6) E^-μ (6 + 6 μ + 3 μ^2 + μ^3)` in
+  wolframscript, and `Probability[2 < x < 9, x \[Distributed]
+  BinomialDistribution[10, p]]` stays in `BetaRegularized` form.
+
+Not implemented, because the exact output could not be confirmed (the
+reference pages only plot them):
+
+- `PDF`/`CDF` of `TruncatedDistribution[{2, 3}, TriangularDistribution[{1, 4}]]`
+  and of `ProductDistribution[TriangularDistribution[{2, 4}],
+  TriangularDistribution[{1, 7}]]` at symbolic points (multi-piece
+  `Piecewise` bases), `PDF[CensoredDistribution[…], x]` of a continuous base,
+  and `CDF[CensoredDistribution[{a, b}, d], x]` for a finite `b > a` (only the
+  documented `{a, ∞}` and `{a, a}` shapes are produced).
+- `RandomVariate[QuantityDistribution[…], n]`: wolframscript returns a
+  `QuantityArray[StructuredArray`StructuredData[…]]`, which Woxi does not
+  implement; the single-variate form works.
+- Other families with `Quantity` parameters (`LaplaceDistribution`,
+  `GammaDistribution`, rate parameters such as `ExponentialDistribution`'s):
+  only `NormalDistribution`, `UniformDistribution`, `WeibullDistribution`,
+  `ParetoDistribution` and `RayleighDistribution` are documented to become a
+  `QuantityDistribution`.
+- `Covariance[MultivariateHypergeometricDistribution[…]]`: its documented
+  diagonal is written `n (-n + m1 + m2) (-m2^2 + m2 (m1 + m2))/…`, unlike the
+  `Variance` form, so the construction rule is unclear.
+
 ## `AlphabeticSort` options and most languages are not implemented
 
 - `AlphabeticSort[list, lang]` knows only `"English"`, `"Swedish"` and
@@ -6827,6 +6935,59 @@ images), so they are not implemented yet:
   supported.
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
+
+## Special functions (parameter sweep, round 4)
+
+Confirmed against the Wolfram reference pages, not fixed:
+
+- `Series[f, {x, Infinity, n}]` for `BesselJ`/`BesselY`/`BesselI`/`BesselK`,
+  `LegendreP[1/2, x]`, `ChebyshevT[1/3, x]` and `LaguerreL[1/2, x]` returns
+  wolframscript's asymptotic expansion (e.g. `Series[BesselJ[0, x],
+  {x, Infinity, 3}] // Normal` is a `Cos[Pi/4 - x]`/`Sin[Pi/4 - x]` form
+  with powers of `1/Sqrt[x]`). Woxi leaves these calls unevaluated, since
+  it no longer returns a Taylor series with `BesselJ[0, Infinity]`
+  coefficients.
+- `ZetaZero[k, t]` (the `k`th zero above height `t`, or below it for a
+  negative `k`) is not implemented: `ZetaZero[-1, 5.6]` and
+  `ZetaZero[-2, 15.]` are `0.5 - 14.1347 I` in wolframscript.
+- `BetaRegularized[0, 0, 0]` is `Indeterminate` in wolframscript; Woxi leaves
+  it unevaluated (the value at `z = a = 0` for other `b` is unverified).
+- Machine `Fibonacci[ν, x]` uses the closed form in f64 arithmetic, as the
+  one-argument form does (which matches wolframscript's
+  `Fibonacci[-0.5] = 0.35157758425414287`, one ulp from correct rounding);
+  wolframscript's last digit for `Fibonacci[5.8, 3]` (`283.483` on the
+  reference page) is unverified.
+
+## Parameter sweep 4 (options): confirmed but not implemented
+
+The reference pages give these outputs; Woxi does not produce them yet.
+
+- `PolynomialMod[x^2, 2 x - 1, CoefficientDomain -> Integers]` is `x^2`
+  (integer coefficients are not inverted); Woxi leaves the call unevaluated.
+  How a partial reduction proceeds when the leading coefficient does not
+  divide (e.g. `3 x^2` modulo `2 x - 1`) is unverified.
+- `DiscreteLimit[E^(a n), n -> ∞, Assumptions -> a > 0]` is `∞` (`0` for
+  `a < 0`), and `DiscreteLimit[y^n, n -> ∞, GenerateConditions -> False]` is
+  `∞`. Without options wolframscript gives
+  `ConditionalExpression[Infinity, a > 0]` /
+  `ConditionalExpression[Infinity, Log[y] > 0]`; Woxi gives `E^(a*Infinity)`
+  and `y^Infinity`.
+- `Roots[x^2 - a x + 2 == 0, x, Using -> Roots[a^2 - 5 == 0, a]]` gives the
+  roots for each value of `a`, as `((x == … || x == …) && a == -Sqrt[5]) ||
+  ((…) && a == Sqrt[5])`; Woxi leaves the call unevaluated.
+- `RankDecomposition[m, Tolerance -> t]` of a machine matrix: wolframscript
+  factors a machine matrix with an orthogonal (QR-like) first factor, not as
+  pivot columns times the row-reduced form, so Woxi's machine result differs
+  even without `Tolerance`; the option stays unevaluated.
+- `GeneralizedLinearModelFit` / `LogitModelFit` with `Weights`: the
+  likelihood-based properties (`LogLikelihood`, `AIC`, `BIC`,
+  `NullDeviance`) are left out, since wolframscript's weighted likelihood
+  is unverified. `WorkingPrecision` other than `MachinePrecision` stays
+  unevaluated.
+- `Together[…, Extension -> …]` leaves the reduced denominator factored over
+  the field (verified for the reference examples); `Cancel` gives it expanded,
+  and which form `Cancel` uses when the denominator does not cancel completely
+  is unverified.
 
 ## String functions on a circular `BioSequence` across the wrap point
 

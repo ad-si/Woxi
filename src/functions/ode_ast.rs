@@ -467,7 +467,24 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         other => other.clone(),
       })
       .collect();
-    let solved = dsolve_linear_system(eqns_arg, &items, &x_name)?;
+    // A system whose equations each involve a single unknown splits into
+    // independent ODEs; otherwise the linear-system solver takes it. A
+    // system that solver cannot handle (variable or symbolic coefficients,
+    // non-constant forcing) stays unevaluated.
+    let solved = if let Some(solved) =
+      dsolve_eliminating_algebraic(eqns_arg, &items, &x_name)?
+    {
+      solved
+    } else if let Some(solved) =
+      dsolve_decoupled_system(eqns_arg, &items, &x_name)?
+    {
+      solved
+    } else {
+      match dsolve_linear_system(eqns_arg, &items, &x_name) {
+        Ok(solved) => solved,
+        Err(_) => return Ok(unevaluated("DSolve", args)),
+      }
+    };
     if function_names.is_empty() {
       return Ok(solved);
     }
@@ -655,6 +672,314 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&solution).unwrap_or(solution);
 
   Ok(build_dsolve_result(solution, y_name, x_name, function_form))
+}
+
+/// `DSolve[{eq1, eq2, …}, {y1[x], y2[x], …}, x]` where every equation (and
+/// condition) mentions exactly one of the unknowns: each unknown is solved on
+/// its own, and the constants of the k-th solution are shifted past those of
+/// the earlier ones, so `{y' == x^2 y, z' == 5 z}` gives
+/// `{{y[x] -> E^(x^3/3) C[1], z[x] -> E^(5 x) C[2]}}`. `None` when the
+/// system is coupled or a component cannot be solved.
+fn dsolve_decoupled_system(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut names = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        names.push(name.clone());
+      }
+      _ => return Ok(None),
+    }
+  }
+  if names.len() < 2 {
+    return Ok(None);
+  }
+  let items: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+  let mut groups: Vec<Vec<Expr>> = vec![Vec::new(); names.len()];
+  for item in &items {
+    let mentioned: Vec<usize> = names
+      .iter()
+      .enumerate()
+      .filter(|(_, n)| expr_mentions_function(item, n))
+      .map(|(i, _)| i)
+      .collect();
+    let [only] = mentioned.as_slice() else {
+      return Ok(None);
+    };
+    groups[*only].push(item.clone());
+  }
+  // Each unknown needs exactly one differential equation of its own.
+  for (group, name) in groups.iter().zip(&names) {
+    let odes = group
+      .iter()
+      .filter(|e| !is_initial_condition(e, name, x_name))
+      .count();
+    if odes != 1 || !group.iter().any(contains_derivative) {
+      return Ok(None);
+    }
+  }
+
+  // The solution lists of each component, constants already shifted.
+  let mut offset: i128 = 0;
+  let mut components: Vec<Vec<Expr>> = Vec::new();
+  for (group, item) in groups.into_iter().zip(dep_items) {
+    let eqns = if group.len() == 1 {
+      group[0].clone()
+    } else {
+      Expr::List(group.into())
+    };
+    let solved = match dsolve_ast_inner(&[
+      eqns,
+      item.clone(),
+      Expr::Identifier(x_name.to_string()),
+    ]) {
+      Ok(Expr::List(ref solutions)) if !solutions.is_empty() => {
+        solutions.to_vec()
+      }
+      Ok(_) | Err(InterpreterError::EvaluationError(_)) => return Ok(None),
+      Err(e) => return Err(e),
+    };
+    let max_c = solved.iter().map(max_constant_index).max().unwrap_or(0);
+    let mut rules = Vec::new();
+    for solution in &solved {
+      let Expr::List(rs) = solution else {
+        return Ok(None);
+      };
+      let [rule] = rs.as_slice() else {
+        return Ok(None);
+      };
+      rules.push(shift_constants(rule, offset));
+    }
+    offset += max_c;
+    components.push(rules);
+  }
+
+  // Every combination of the components' solution branches.
+  let mut combined: Vec<Vec<Expr>> = vec![Vec::new()];
+  for rules in components {
+    combined = combined
+      .into_iter()
+      .flat_map(|prefix| {
+        rules.iter().map(move |rule| {
+          let mut next = prefix.clone();
+          next.push(rule.clone());
+          next
+        })
+      })
+      .collect();
+  }
+  let result = Expr::List(
+    combined
+      .into_iter()
+      .map(|rules| Expr::List(rules.into()))
+      .collect(),
+  );
+  Ok(Some(
+    crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
+  ))
+}
+
+/// A differential-algebraic system `DSolve[{y'[x] - 3 z[x] == Sin[x],
+/// y[x] + z[x] == 1/5, …}, {y[x], z[x]}, x]`: an equation free of
+/// derivatives that is linear in an unknown never differentiated anywhere
+/// gives that unknown in terms of the others. It is substituted into the
+/// remaining equations, which are solved for the remaining unknowns, and
+/// the eliminated unknown is recovered from their solution. Each solution
+/// is brought over a common denominator, as wolframscript writes it:
+/// `{{y[x] -> (2 - Cos[x] + 3*Sin[x])/10, z[x] -> (Cos[x] - 3*Sin[x])/10}}`.
+fn dsolve_eliminating_algebraic(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut names = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        names.push(name.clone());
+      }
+      _ => return Ok(None),
+    }
+  }
+  if names.len() < 2 {
+    return Ok(None);
+  }
+  let items: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+  let is_condition =
+    |e: &Expr| names.iter().any(|n| is_initial_condition(e, n, x_name));
+  // An unknown that some equation differentiates cannot be eliminated.
+  let differentiated = |name: &str| {
+    items.iter().any(|e| {
+      contains_derivative(e)
+        && derivative_orders(e).get(name).is_some_and(|&k| k > 0)
+    })
+  };
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  for (eq_index, eq) in items.iter().enumerate() {
+    if contains_derivative(eq) || is_condition(eq) {
+      continue;
+    }
+    for (k, name) in names.iter().enumerate() {
+      if !expr_mentions_function(eq, name) || differentiated(name) {
+        continue;
+      }
+      // A condition on the eliminated unknown would need translating.
+      if items.iter().any(|e| is_initial_condition(e, name, x_name)) {
+        continue;
+      }
+      let solved =
+        crate::functions::solve_ast(&[eq.clone(), dep_items[k].clone()])?;
+      let Expr::List(sols) = &solved else { continue };
+      let [Expr::List(rules)] = sols.as_slice() else {
+        continue;
+      };
+      let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+        continue;
+      };
+      let value = replacement.as_ref().clone();
+      if expr_mentions_function(&value, name) {
+        continue;
+      }
+      let substitution = Expr::Rule {
+        pattern: Box::new(dep_items[k].clone()),
+        replacement: Box::new(value.clone()),
+      };
+      let rest: Vec<Expr> = items
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != eq_index)
+        .map(|(_, e)| {
+          ev(Expr::FunctionCall {
+            name: "ReplaceAll".to_string(),
+            args: vec![e.clone(), substitution.clone()].into(),
+          })
+        })
+        .collect::<Result<_, _>>()?;
+      let remaining: Vec<Expr> = dep_items
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != k)
+        .map(|(_, d)| d.clone())
+        .collect();
+      let sub_dep = if remaining.len() == 1 {
+        remaining[0].clone()
+      } else {
+        Expr::List(remaining.clone().into())
+      };
+      let sub_eqns = if rest.len() == 1 {
+        rest[0].clone()
+      } else {
+        Expr::List(rest.into())
+      };
+      let sub = match dsolve_ast_inner(&[
+        sub_eqns,
+        sub_dep,
+        Expr::Identifier(x_name.to_string()),
+      ]) {
+        Ok(Expr::List(ref sols)) if !sols.is_empty() => sols.to_vec(),
+        Ok(_) | Err(InterpreterError::EvaluationError(_)) => return Ok(None),
+        Err(e) => return Err(e),
+      };
+      let mut solutions = Vec::with_capacity(sub.len());
+      for solution in &sub {
+        let Expr::List(sub_rules) = solution else {
+          return Ok(None);
+        };
+        let eliminated = ev(Expr::FunctionCall {
+          name: "ReplaceAll".to_string(),
+          args: vec![value.clone(), solution.clone()].into(),
+        })?;
+        let mut rules = Vec::with_capacity(dep_items.len());
+        for (i, d) in dep_items.iter().enumerate() {
+          let rhs = if i == k {
+            eliminated.clone()
+          } else {
+            let Some(r) = sub_rules.iter().find_map(|r| match r {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if crate::evaluator::pattern_matching::expr_equal(
+                pattern, d,
+              ) =>
+              {
+                Some(replacement.as_ref().clone())
+              }
+              _ => None,
+            }) else {
+              return Ok(None);
+            };
+            r
+          };
+          let rhs = ev(Expr::FunctionCall {
+            name: "Together".to_string(),
+            args: vec![rhs].into(),
+          })?;
+          rules.push(Expr::Rule {
+            pattern: Box::new(d.clone()),
+            replacement: Box::new(rhs),
+          });
+        }
+        solutions.push(Expr::List(rules.into()));
+      }
+      return Ok(Some(Expr::List(solutions.into())));
+    }
+  }
+  Ok(None)
+}
+
+/// The largest `k` among the constants `C[k]` in `expr` (0 when none).
+fn max_constant_index(expr: &Expr) -> i128 {
+  let own = match expr {
+    Expr::FunctionCall { name, args } if name == "C" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Integer(k) => *k,
+        _ => 0,
+      }
+    }
+    _ => 0,
+  };
+  expr_children(expr)
+    .into_iter()
+    .map(max_constant_index)
+    .fold(own, i128::max)
+}
+
+/// `expr` with every constant `C[k]` renamed to `C[k + offset]`.
+fn shift_constants(expr: &Expr, offset: i128) -> Expr {
+  if offset == 0 {
+    return expr.clone();
+  }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "C"
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(_)) =>
+    {
+      let Expr::Integer(k) = &args[0] else {
+        unreachable!()
+      };
+      Expr::FunctionCall {
+        name: "C".to_string(),
+        args: vec![Expr::Integer(k + offset)].into(),
+      }
+    }
+    _ => crate::syntax::map_children(expr, &|c| shift_constants(c, offset)),
+  }
 }
 
 /// `y -> Function[{x}, sol]`.

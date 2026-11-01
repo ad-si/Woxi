@@ -1570,6 +1570,38 @@ pub fn dispatch_complex_and_special(
     "SurfaceArea" if args.len() == 1 => {
       return Some(compute_surface_area(strip_region_wrapper(&args[0])));
     }
+    // RegionMeasure[…, WorkingPrecision -> p]: the measure evaluated to p
+    // digits (to machine precision for MachinePrecision).
+    "RegionMeasure"
+      if args.len() >= 2
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(n), _, _)) if n == "WorkingPrecision"
+        ) =>
+    {
+      let (_, precision, _) =
+        crate::functions::expr_form::rule_parts(&args[args.len() - 1])?;
+      let precision = precision.clone();
+      let measure = match evaluate_expr_to_expr(&call(
+        "RegionMeasure",
+        args[..args.len() - 1].to_vec(),
+      )) {
+        Ok(m) => m,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&measure, Expr::FunctionCall { name: h, .. } if h == "RegionMeasure")
+      {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let numeric = match &precision {
+        Expr::Identifier(m) if m == "MachinePrecision" => call1("N", measure),
+        Expr::Integer(_) | Expr::Real(_) => {
+          call("N", vec![measure, precision.clone()])
+        }
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      return Some(evaluate_expr_to_expr(&numeric));
+    }
     // RegionMeasure[{x1[u…], …}, {{u, umin, umax}, …}] — the measure of a
     // parametrized region; with a coordinate chart ("Polar", "Cylindrical",
     // …) as third argument the xi are coordinates in that chart.

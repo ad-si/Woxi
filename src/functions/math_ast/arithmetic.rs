@@ -6800,8 +6800,15 @@ fn order_factor_vs_additive(
   // full tie keeping the factor first. All wolframscript-verified:
   // x^2*(1 + x), x^3*(-1 + x^2), (-1 + x)*x^2, x^2*(-1 + x^2),
   // (-2 + x)*x^2, x^2*(-1 + 2*x), (-1/2 + x)*x^2, Pi^2*(-1 + Pi^2).
+  // A plain-symbol exponent (`a^i` against `-1 + a`) flattens the same way:
+  // `(-1 + a)^n*a^i`.
+  let symbol_exponent = fe.is_none()
+    && matches!(
+      extract_base_exponent_ref(factor).1.as_ref(),
+      Expr::Identifier(_)
+    );
   if let Some(v) = sym_var_name(&fb)
-    && fe.is_some_and(|e| e > 0.0)
+    && (fe.is_some_and(|e| e > 0.0) || symbol_exponent)
   {
     let sum_expr = plus(plus_args.to_vec());
     if let Some((sv, coeffs)) = univar_rat_coeffs(&sum_expr)

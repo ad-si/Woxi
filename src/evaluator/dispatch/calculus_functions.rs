@@ -4633,6 +4633,11 @@ fn extract_value_from_solve_result(expr: &Expr) -> Option<Expr> {
 /// Finds the domain of f as a function of x.
 fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let f = &args[0];
+  if let Expr::List(vars) = &args[1]
+    && args.len() == 2
+  {
+    return function_domain_multivariate(f, vars, args);
+  }
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
     _ => {
@@ -4671,6 +4676,67 @@ fn function_domain_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Collect constraints that must hold for expr to be defined.
+/// FunctionDomain[f, {x, y, …}] over the reals for an `f` whose only
+/// restrictions are nonzero denominators: the conjunction of `d != 0`, as
+/// wolframscript gives `x^2 - y^2 != 0` for `(x + y)/(x^2 - y^2)`. Other
+/// restrictions (radicals, logarithms) stay unevaluated.
+fn function_domain_multivariate(
+  f: &Expr,
+  vars: &[Expr],
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut names = Vec::with_capacity(vars.len());
+  for v in vars {
+    match v {
+      Expr::Identifier(name) => names.push(name.as_str()),
+      _ => return Ok(unevaluated("FunctionDomain", args)),
+    }
+  }
+  if names.is_empty() {
+    return Ok(unevaluated("FunctionDomain", args));
+  }
+  // The restrictions on any of the variables, each once.
+  let mut constraints: Vec<Expr> = Vec::new();
+  for name in &names {
+    let mut found = Vec::new();
+    collect_domain_constraints(f, name, &mut found);
+    for c in found {
+      let shown = expr_to_string(&c);
+      if !constraints.iter().any(|d| expr_to_string(d) == shown) {
+        constraints.push(c);
+      }
+    }
+  }
+  // Only polynomial denominators are understood.
+  for c in &constraints {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = c
+    else {
+      return Ok(unevaluated("FunctionDomain", args));
+    };
+    let polynomial = names.iter().all(|n| {
+      crate::functions::polynomial_ast::is_polynomial(&operands[0], n)
+    });
+    if !matches!(operators.as_slice(), [ComparisonOp::NotEqual])
+      || !matches!(operands.get(1), Some(Expr::Integer(0)))
+      || !polynomial
+    {
+      return Ok(unevaluated("FunctionDomain", args));
+    }
+  }
+  if constraints.is_empty() {
+    return Ok(bool_expr(true));
+  }
+  let result = if constraints.len() == 1 {
+    constraints.pop().unwrap()
+  } else {
+    call("And", constraints)
+  };
+  crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
 fn collect_domain_constraints(
   expr: &Expr,
   var: &str,

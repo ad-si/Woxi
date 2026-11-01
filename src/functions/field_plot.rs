@@ -5702,19 +5702,20 @@ fn array_plot_matrix(data: &Expr) -> Option<Vec<Expr>> {
     .then_some(rows)
 }
 
-/// `ArrayPlot::mat` for a first argument that is not a list of lists, which
-/// leaves the call unevaluated. Checked outside the plot's quiet scope so
-/// the message is seen.
-pub fn array_plot_argument_error(args: &[Expr]) -> Option<Expr> {
+/// `head::mat` for a first argument that is not a list of lists, which
+/// leaves the call unevaluated (`ArrayPlot`, and `MatrixPlot`, which draws
+/// through the same grid renderer). Checked outside the plot's quiet scope
+/// so the message is seen.
+pub fn array_plot_argument_error(head: &str, args: &[Expr]) -> Option<Expr> {
   let data = args.first()?;
   if array_plot_matrix(data).is_some() {
     return None;
   }
   crate::emit_message(&format!(
-    "ArrayPlot::mat: Argument {} at position 1 is not a list of lists.",
+    "{head}::mat: Argument {} at position 1 is not a list of lists.",
     crate::syntax::format_expr(data, crate::syntax::ExprForm::Output)
   ));
-  Some(crate::helpers::unevaluated("ArrayPlot", args))
+  Some(crate::helpers::unevaluated(head, args))
 }
 
 /// ArrayPlot[{{v11, ...}, ...}] - grayscale grid from matrix values

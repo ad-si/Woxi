@@ -1110,11 +1110,13 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
 /// element is a `Placed[...]` (e.g. `{values, Placed[days, Center, fn]}`),
 /// in which case the `Placed` element carries the category labels.
 fn find_placed_spec(e: &Expr) -> Option<&Expr> {
+  let placed = |it: &Expr| {
+    matches!(it, Expr::FunctionCall { name, .. }
+      if name == "Placed" || name == "Callout")
+  };
   match e {
-    Expr::FunctionCall { name, .. } if name == "Placed" => Some(e),
-    Expr::List(items) => items.iter().find(
-      |it| matches!(it, Expr::FunctionCall { name, .. } if name == "Placed"),
-    ),
+    _ if placed(e) => Some(e),
+    Expr::List(items) => items.iter().find(|it| placed(it)),
     _ => None,
   }
 }
@@ -1806,6 +1808,14 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
+      // The `Plot*` names are the current spellings of the `Chart*` options.
+      let name = match name {
+        "PlotLabels" => "ChartLabels",
+        "PlotLegends" => "ChartLegends",
+        "PlotStyle" => "ChartStyle",
+        "PlotLayout" => "ChartLayout",
+        other => other,
+      };
       match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -1824,9 +1834,15 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           // function, and pull a rotation out of the styling function so
           // vertical labels (`Rotate[#, Pi/2]`) render rotated.
           let raw = replacement;
-          if let Some(Expr::FunctionCall { args, .. }) = find_placed_spec(raw) {
+          if let Some(Expr::FunctionCall {
+            name: wrapper,
+            args,
+          }) = find_placed_spec(raw)
+          {
+            // `Callout[labels]` puts the labels over the bars.
             let pos_name = match args.get(1) {
               Some(Expr::Identifier(s)) => s.as_str(),
+              _ if wrapper == "Callout" => "Above",
               _ => "",
             };
             opts.chart_label_position = match pos_name {
@@ -2050,8 +2066,150 @@ pub(crate) fn invalid_dataset(head: &str, args: &[Expr]) -> Expr {
   unevaluated(head, args)
 }
 
+/// Rewrite a chart call whose data is an `Association` (or temporal data) into the equivalent
+/// list form. The values become the data — a nested association (or an
+/// association of lists) gives one group / dataset per key — and the keys
+/// fill in every `Automatic` labelling option:
+///
+/// - `ChartLabels -> Automatic` / `PlotLabels -> Automatic` (also inside
+///   `Placed[Automatic, …]` or `Callout[Automatic, …]`) names
+///   the groups by the outer keys; with nested associations it is
+///   `{outerKeys, innerKeys}`.
+/// - `ChartLegends -> Automatic` / `PlotLegends -> Automatic` name the
+///   colours: the inner keys of a nested association (its bars or sectors),
+///   otherwise the keys. With `datasets_legended` (`Histogram`, whose
+///   colours are its datasets) they are always the outer keys.
+///
+/// `TimeSeries` / `TemporalData` data become their values, the time stamps
+/// being ignored. Returns `None` for any other data. Shared by `BarChart`,
+/// `PieChart` and `Histogram`.
+pub(crate) fn chart_data_args(
+  args: &[Expr],
+  datasets_legended: bool,
+) -> Option<Vec<Expr>> {
+  let data = evaluate_expr_to_expr(args.first()?).ok()?;
+  // The time stamps of temporal data are ignored: its values are the data
+  // (one dataset per path).
+  let temporal_values = match &data {
+    Expr::FunctionCall { name, args: targs }
+      if name == "TimeSeries"
+        && targs.len() == 2
+        && matches!(&targs[0], Expr::List(vs)
+          if vs.iter().all(|v| !matches!(v, Expr::List(_)))) =>
+    {
+      Some(targs[0].clone())
+    }
+    other => {
+      crate::functions::timeseries_ast::temporal_paths(other).map(|paths| {
+        let mut lists: Vec<Expr> = paths
+          .into_iter()
+          .map(|p| Expr::List(p.into_iter().map(|(_, v)| v).collect()))
+          .collect();
+        if lists.len() == 1 {
+          lists.remove(0)
+        } else {
+          Expr::List(lists.into())
+        }
+      })
+    }
+  };
+  if let Some(values) = temporal_values {
+    let mut new_args = args.to_vec();
+    new_args[0] = values;
+    return Some(new_args);
+  }
+  let Expr::Association(pairs) = &data else {
+    return None;
+  };
+  let outer_keys: Vec<Expr> = pairs.iter().map(|(k, _)| k.clone()).collect();
+  let nested = !pairs.is_empty()
+    && pairs.iter().all(|(_, v)| matches!(v, Expr::Association(_)));
+  let mut inner_keys: Vec<Expr> = Vec::new();
+  let values: Vec<Expr> = pairs
+    .iter()
+    .map(|(_, v)| match v {
+      Expr::Association(inner) => {
+        for (k, _) in inner {
+          if !inner_keys
+            .iter()
+            .any(|e| crate::evaluator::pattern_matching::expr_equal(e, k))
+          {
+            inner_keys.push(k.clone());
+          }
+        }
+        Expr::List(inner.iter().map(|(_, iv)| iv.clone()).collect())
+      }
+      other => other.clone(),
+    })
+    .collect();
+  let keys_list = |ks: &[Expr]| Expr::List(ks.to_vec().into());
+  let label_keys = if nested {
+    Expr::List(vec![keys_list(&outer_keys), keys_list(&inner_keys)].into())
+  } else {
+    keys_list(&outer_keys)
+  };
+  let legend_keys = if nested && !datasets_legended {
+    keys_list(&inner_keys)
+  } else {
+    keys_list(&outer_keys)
+  };
+  let is_automatic =
+    |e: &Expr| matches!(e, Expr::Identifier(a) if a == "Automatic");
+  let mut new_args = vec![Expr::List(values.into())];
+  for opt in &args[1..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      new_args.push(opt.clone());
+      continue;
+    };
+    let name = match pattern.as_ref() {
+      Expr::Identifier(n) => n.as_str(),
+      _ => "",
+    };
+    let filled = match (name, replacement.as_ref()) {
+      ("ChartLabels" | "PlotLabels", r) if is_automatic(r) => {
+        Some(label_keys.clone())
+      }
+      (
+        "ChartLabels" | "PlotLabels",
+        Expr::FunctionCall {
+          name: wrapper,
+          args: wargs,
+        },
+      ) if (wrapper == "Placed" || wrapper == "Callout")
+        && wargs.first().is_some_and(is_automatic) =>
+      {
+        let mut wargs = wargs.to_vec();
+        wargs[0] = label_keys.clone();
+        Some(Expr::FunctionCall {
+          name: wrapper.clone(),
+          args: wargs.into(),
+        })
+      }
+      ("ChartLegends" | "PlotLegends", r) if is_automatic(r) => {
+        Some(legend_keys.clone())
+      }
+      _ => None,
+    };
+    match filled {
+      Some(r) => new_args.push(Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(r),
+      }),
+      None => new_args.push(opt.clone()),
+    }
+  }
+  Some(new_args)
+}
+
 /// BarChart[{v1, v2, ...}] or BarChart[{{v1, v2}, {v3, v4}, ...}]
 pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(new_args) = chart_data_args(args, false) {
+    return bar_chart_ast(&new_args);
+  }
   let Ok(groups) = extract_grouped_values(&args[0]) else {
     return Ok(invalid_dataset("BarChart", args));
   };
@@ -2473,31 +2631,7 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
 /// concentric rings, one ring per sublist, innermost first — matching
 /// the multi-dataset convention used by Wolfram's PieChart.
 pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // An Association plots its values as slices, labelled by its keys.
-  let assoc = match evaluate_expr_to_expr(&args[0]) {
-    Ok(Expr::Association(ref pairs)) => Some(pairs.clone()),
-    _ => None,
-  };
-  if let Some(pairs) = assoc {
-    let keys: Vec<Expr> = pairs.iter().map(|(k, _)| k.clone()).collect();
-    let values: Vec<Expr> = pairs.iter().map(|(_, v)| v.clone()).collect();
-    let mut new_args = vec![Expr::List(values.into())];
-    for opt in &args[1..] {
-      match opt {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ChartLabels")
-          && matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic") =>
-        {
-          new_args.push(Expr::Rule {
-            pattern: pattern.clone(),
-            replacement: Box::new(Expr::List(keys.clone().into())),
-          });
-        }
-        _ => new_args.push(opt.clone()),
-      }
-    }
+  if let Some(new_args) = chart_data_args(args, false) {
     return pie_chart_ast(&new_args);
   }
   let Ok(rows) = extract_pie_rows(&args[0]) else {
@@ -2540,6 +2674,13 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let (svg_width, full_width) = (opts.svg_width, opts.full_width);
   let svg_height = opts.svg_height + top_margin.round() as u32;
+  // `ChartLegends` / `PlotLegends`: a column of swatches right of the pie,
+  // which keeps its place and size while the frame grows to fit them.
+  let legend_width = if opts.chart_legends.is_empty() {
+    0.0
+  } else {
+    crate::functions::plot::chart_legend_column_width(&opts.chart_legends, 1.0)
+  };
 
   let w = svg_width as f64;
   let h = opts.svg_height as f64;
@@ -2574,9 +2715,36 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let radius =
     (w.min(h) / 2.0) * (147.0 / 180.0) * if has_callout { 0.72 } else { 1.0 };
 
-  let mut svg = svg_header(svg_width, svg_height, full_width);
+  let mut svg = svg_header(
+    svg_width + legend_width.round() as u32,
+    svg_height,
+    full_width,
+  );
   // Label text is collected separately so it draws on top of every wedge.
   let mut labels_svg = String::new();
+  let (_, _, _, legend_fill, _) = crate::functions::plot::plot_theme();
+  let line_height = 22.0;
+  let legend_top =
+    cy - opts.chart_legends.len() as f64 * line_height / 2.0 + 5.0;
+  for (i, label) in opts.chart_legends.iter().enumerate() {
+    let color = if opts.chart_style.is_empty() {
+      PLOT_COLORS[i % PLOT_COLORS.len()]
+    } else {
+      let c = &opts.chart_style[i % opts.chart_style.len()];
+      (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      )
+    };
+    labels_svg.push_str(&crate::functions::plot::chart_legend_entry_svg(
+      label,
+      color,
+      (w + 4.0, legend_top + i as f64 * line_height),
+      1.0,
+      legend_fill,
+    ));
+  }
 
   // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
   // primitives like in Wolfram. Only single-ring pies have a plain `Disk`.
@@ -3958,6 +4126,9 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
 /// or Histogram[{d1, d2, ...}, {{e1, e2, ...}}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(new_args) = chart_data_args(args, true) {
+    return histogram_ast(&new_args);
+  }
   // A flat list `{v1, v2, ...}` is one dataset; a list of lists
   // `{{...}, {...}}` is several datasets drawn overlaid.
   let Ok(datasets) = parse_datasets(&args[0]) else {

@@ -5741,7 +5741,7 @@ StyleDefinitions->"Default.nb"
     use CellStyle::*;
     assert_eq!(slide_ranges(&[]), Vec::<std::ops::Range<usize>>::new());
     // No slide breaks: the whole notebook is one slide.
-    assert_eq!(slide_ranges(&[Title, Text]), [0..2]);
+    assert_eq!(slide_ranges(&[Title, Text]), vec![0..2]);
     // Cells before the first break form a slide of their own.
     assert_eq!(
       slide_ranges(&[Title, SlideShowNavigationBar, Text]),
