@@ -4975,6 +4975,34 @@ expected pictures come from the reference pages' own examples.
   not applied to the log plots.
 - `ComplexPlot[f, {z, Infinity}]` (the infinite-plane form) is an error.
 
+### Styling options that still have no effect
+
+Found by the round-5 parameter sweep of the plot reference pages: each is
+accepted, but the picture is the same as without it.
+
+- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `MeshShading`,
+  `PlotRangeClipping`, `RegionFunction`, `PlotLayout`; `MeshFunctions` is
+  ignored (the mesh is spaced along the curve).
+- `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
+  `LabelingFunction -> f` with a pure function.
+- `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
+  `"Log2"`, `"SignedLog"`), and `ScalingFunctions` on `ParametricPlot`.
+- `Graphics`: `PlotRegion`, `RotateLabel`, `AlignmentPoint`,
+  `BaselinePosition`, `FormatType`; `LabelStyle` sets only the colour.
+- `ParametricPlot`: `BoundaryStyle`, `PlotTheme`.
+- `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
+  `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
+- `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
+  plot.
+- `DensityPlot`, `RegionPlot`: `FrameStyle`.
+- `Histogram`: `BarOrigin`, `ChartLayout -> "Stacked"`,
+  `LabelingFunction`; `ColorFunction` only for a single dataset.
+- `BarChart`: `ChartElementFunction`, `AxesOrigin`, per-axis `Axes ->
+  {x, y}` and `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list.
+- `PieChart`: `PlotTheme`, `ChartElementFunction`.
+- `DiscretePlot`: `ExtentSize`.
+- `Grid`: `ItemSize`.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a
@@ -5277,6 +5305,14 @@ bundled set is a `notent` where WL answers. Only the ~760-entry property list
 is likewise abridged: `GraphData["Properties"]` returns the nine properties
 Woxi answers.
 
+Classes and indexed entities are not bundled either: `GraphData["Connected",
+;; 5]` (the first entries of a class), `GraphData[{6, 125}, "Graph",
+"Labeled"]` (the 125th 6-vertex graph) and the `"SpanningTrees"` property all
+answer `notent`/`notprop`, so reference examples that lay these graphs out with
+`GraphicsGrid`/`GraphicsRow` fail at the `GraphData` call — the grid layout
+itself handles graphs, `Tooltip`-wrapped graphs and ragged
+`Partition[…, UpTo[n]]` rows.
+
 ### Selection among equal optima
 
 `FindVertexCover`, `FindEdgeCover`, `FindVertexCut` and `FindEdgeCut` each pick
@@ -5286,6 +5322,12 @@ maximum independent set, greedy minimum-degree) are each contradicted by
 probes: `CompleteGraph[4]` → `{1,2,3}`, `CycleGraph[6]` → `{2,4,6}` (not
 `{1,3,5}`), `GridGraph[{2,3}]` → `{2,3,6}`. `FindVertexCut[PathGraph[{1..5}]]`
 is `{4}` where `{2}` and `{3}` are equally small. **Not reproducible.**
+
+`FindIndependentVertexSet[g, nspec]` and `FindIndependentVertexSet[g, nspec,
+s]` (e.g. `FindIndependentVertexSet[g, Infinity, All]`, all maximal
+independent sets) stay unevaluated: the reference page lists the sets in an
+order that is neither sorted nor vertex-list order (`{{2, 6, 5}, {2, 3, 5},
+{2, 3, 4}, {1, 4}}`), and that enumeration order is not reproducible.
 
 `KnapsackSolve` is the same shape: value-optimal solutions are easy, but WL's
 choice among ties follows its `LinearProgramming` simplex/branch-and-bound.
@@ -7008,6 +7050,7 @@ Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
 
+<<<<<<< HEAD
 ## Parameter sweep 5 (performance): still slow or not implemented
 
 These reference-page examples still time out or diverge in Woxi:
@@ -7031,3 +7074,86 @@ These reference-page examples still time out or diverge in Woxi:
   slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
   four-variable knapsack equation, `ReliefPlot` of a 301×301 table and
   `Plot3D`/`Graphics3D` with `Texture` are not addressed.
+=======
+## Parameter sweep 5 (long tail): known divergences and unverified forms
+
+The four-parameter `GompertzMakehamDistribution` CDF has the right value, but
+its exponent prints with the terms in a different order (Woxi's `Plus`
+ordering puts `-(t θ λ ξ)` before `(1 - E^(t λ)) ξ`):
+
+```sh
+wolframscript -code 'CDF[GompertzMakehamDistribution[λ, ξ, θ, α], t]'
+# Piecewise[{{1 - E^((1 - E^(t*λ))*ξ - t*θ*λ*ξ - t^2*α*λ^2*ξ), t >= 0}}, 0]
+woxi eval 'CDF[GompertzMakehamDistribution[λ, ξ, θ, α], t]'
+# Piecewise[{{1 - E^(-(t*θ*λ*ξ) - t^2*α*λ^2*ξ + (1 - E^(t*λ))*ξ), t >= 0}}, 0]
+```
+
+`RegionCentroid` of a multi-segment `Line` gives the right value, but
+wolframscript reduces the y coordinate to `1/2` while Woxi leaves the quotient
+(how Wolfram simplifies here is unclear, since it keeps the x quotient):
+
+```sh
+wolframscript -code 'RegionCentroid[Line[{{0, 0}, {1, 1}, {1, 0}}]]'
+# {(1 + 1/Sqrt[2])/(1 + Sqrt[2]), 1/2}
+woxi eval 'RegionCentroid[Line[{{0, 0}, {1, 1}, {1, 0}}]]'
+# {(1 + 1/Sqrt[2])/(1 + Sqrt[2]), (1/2 + 1/Sqrt[2])/(1 + Sqrt[2])}
+```
+
+`FindPeaks` sometimes reports a peak on the first element at position `1/2`
+rather than `1`, for reasons the reference pages do not show
+(`FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 2, 3, 4, 3, 2}, 0, 0]` starts
+with `{1/2, 2}` but the 16-element `FindPeaks[…, 0]` with a final `…, 2, 2, 1}`
+starts with `{1, 2}`). Woxi always reports `{1, 2}`.
+
+Not implemented, because the exact output could not be confirmed or the
+machinery is missing:
+
+- `PeakDetect`/`FindPeaks` at the default or a non-zero scale with three or
+  four arguments, with `Quantity` data or thresholds, with
+  `Padding -> "Fixed"` and other non-constant paddings, and `FindPeaks` with
+  `InterpolationOrder`: they need the scale-space tracking pass. Also the
+  default-scale `PeakDetect[{2, 1, 6, 5, 7, 4}]` is `{0, 0, 0, 0, 1, 0}` in
+  wolframscript but `{1, 0, 1, 0, 1, 0}` in Woxi.
+- `CategoricalDistribution` `"ProbabilityTable"` (needs `Dataset`),
+  `"ProbabilityPlot"` and `"NEntropy"`, `Probability`/`Expectation` over a
+  categorical distribution, `MarginalDistribution` of a uniform categorical
+  distribution, and the class order of an unsorted list of rules (rules are
+  sorted per variable, as the Titanic counts example shows).
+- `CDF[InverseGaussianDistribution[μ, λ, θ], x]` and the moments of the
+  four-parameter `GompertzMakehamDistribution` (no closed forms; both stay
+  unevaluated). `N[Mean[GompertzMakehamDistribution[E, 1, 3, 2]]]` is
+  `0.0748474` in wolframscript.
+- `LUDecomposition` of a rectangular machine-precision matrix (the condition
+  number is not documented for that case).
+- `FindDivisions[{0, 10, {Pi, Pi/4}}, {5, 5}]` (nested divisions with symbolic
+  units) and bases other than 10 with nested counts. For a base `k` other
+  than 10 the step is the power of `k` closest to the raw step, which matches
+  the documented bases 2 and 3 only.
+- `MinimalPolynomial` over a `FiniteField` (`FiniteField` is not implemented).
+- `ImplicitRegion` forms such as `ImplicitRegion[x^3 - x == 0, {x}]` stay
+  unevaluated region objects, as in Wolfram; their measures and centroids are
+  not computed.
+## Parameter sweep 5 (charts & 3-D list plots): open items
+
+Verified against the reference pages, but not (fully) implemented:
+
+- `SectorChart` of several datasets (`{{{a1, r1}, …}, {{a2, r2}, …}}`, also a
+  nested association `<|"group a" -> <|"a" -> {1, 1}, …|>, …|>`) draws no
+  sectors; only one dataset is supported.
+- `ChartLabels` / `PlotLabels` of multi-ring `PieChart3D` / `SectorChart3D`
+  (the ring names) are not drawn; only a single pie/ring is labelled.
+- With an explicit `ChartStyle` list, `PieChart3D` colours its slices in
+  size order rather than data order (the slices are drawn smallest first).
+- `EventData[values, censoring]` is not implemented, so a chart of it prints
+  the "not yet implemented" notice (the chart itself draws the values).
+- `AxesLabel -> Automatic` with `Quantity` data does not show the units on
+  the axes (`ListLinePlot3D`, `RectangleChart`, `RectangleChart3D`); the
+  magnitudes are plotted.
+- `Tabular` data with column specifications (`tabdata -> {"TotalFat", …}`,
+  `tabdata -> {{"n=1"}, …}`) and `ts -> {"a", "b"}` column labels of a
+  multi-component time series are not supported.
+- `TernaryListPlot`: `Labeled` / `Callout` points and datasets,
+  `PlotLabels -> Placed[…, pos]` and `QuantityArray` data are not handled.
+- `ListFitPlot` examples built on `ResourceData`, `FinancialData` or
+  `AirTemperatureData` cannot be fetched.
+>>>>>>> origin/main

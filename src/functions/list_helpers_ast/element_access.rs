@@ -1269,16 +1269,59 @@ pub fn insert_ast(
     )?);
   }
 
-  // A single path through associations (`{1, Key[a]}`, `{"k", 2}`):
-  // descend one component at a time, inserting at the last one.
+  let is_key_comp = |c: &Expr| {
+    matches!(c, Expr::String(_))
+      || matches!(c, Expr::FunctionCall { name, args }
+        if name == "Key" && args.len() == 1)
+  };
+  // Several paths, some through associations (`{{1}, {3, Key[a], 1}}`):
+  // insert at each one, later positions first so that earlier ones still
+  // address the original parts.
+  if let Expr::List(paths) = pos
+    && paths.len() > 1
+    && paths
+      .iter()
+      .all(|p| matches!(p, Expr::List(c) if !c.is_empty()))
+    && paths
+      .iter()
+      .any(|p| matches!(p, Expr::List(c) if c.iter().any(is_key_comp)))
+  {
+    let comps = |p: &Expr| match p {
+      Expr::List(c) => c.to_vec(),
+      _ => vec![],
+    };
+    let mut ordered: Vec<Vec<Expr>> = paths.iter().map(comps).collect();
+    // Integer components order numerically; keys count as equal.
+    ordered.sort_by(|a, b| {
+      for (x, y) in a.iter().zip(b) {
+        if let (Some(x), Some(y)) = (expr_to_i128(x), expr_to_i128(y)) {
+          let ord = x.cmp(&y);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+        }
+      }
+      a.len().cmp(&b.len())
+    });
+    let mut result = list.clone();
+    for path in ordered.iter().rev() {
+      let next = insert_ast(&result, elem, &Expr::List(path.clone().into()))?;
+      if matches!(&next, Expr::FunctionCall { name, .. } if name == "Insert") {
+        return Ok(unevaluated());
+      }
+      result = next;
+    }
+    return Ok(result);
+  }
+
+  // A single path through associations (`{1, Key[a]}`, `{"k", 2}`, or
+  // integer parts of an association `{2, 1}`): descend one component at a
+  // time, inserting at the last one.
   if let Expr::List(path) = pos
     && !path.is_empty()
     && !path.iter().all(|c| matches!(c, Expr::List(_)))
-    && path.iter().any(|c| {
-      matches!(c, Expr::String(_))
-        || matches!(c, Expr::FunctionCall { name, args }
-          if name == "Key" && args.len() == 1)
-    })
+    && (path.iter().any(is_key_comp)
+      || (path.len() > 1 && matches!(list, Expr::Association(_))))
   {
     if path.len() == 1 {
       return insert_ast(list, elem, &path[0]);
@@ -1364,7 +1407,7 @@ pub fn insert_ast(
   // the end, -1 = after the last); `Key[k]` (or a string key) inserts
   // before key `k`.
   if let Expr::Association(pairs) = list {
-    let kv = match elem {
+    let as_pair = |e: &Expr| match e {
       Expr::Rule {
         pattern,
         replacement,
@@ -1380,7 +1423,12 @@ pub fn insert_ast(
       }
       _ => None,
     };
-    let Some((key, val)) = kv else {
+    // A rule, or a list of rules inserted together.
+    let kv: Option<Vec<(Expr, Expr)>> = match elem {
+      Expr::List(rules) => rules.iter().map(as_pair).collect(),
+      other => as_pair(other).map(|p| vec![p]),
+    };
+    let Some(new) = kv else {
       crate::emit_message(&format!(
         "Insert::invdt: The argument {} is not a rule or a list of rules.",
         crate::syntax::format_expr(elem, crate::syntax::ExprForm::Output)
@@ -1406,8 +1454,15 @@ pub fn insert_ast(
       _ => None,
     };
     if let Some(i) = idx {
-      let mut new_pairs = pairs.clone();
-      new_pairs.insert(i, (key, val));
+      // An inserted key replaces the existing entry with that key.
+      let new_keys: Vec<String> =
+        new.iter().map(|(k, _)| expr_to_string(k)).collect();
+      let keep =
+        |(k, _): &&(Expr, Expr)| !new_keys.contains(&expr_to_string(k));
+      let mut new_pairs: Vec<(Expr, Expr)> =
+        pairs[..i].iter().filter(keep).cloned().collect();
+      new_pairs.extend(new);
+      new_pairs.extend(pairs[i..].iter().filter(keep).cloned());
       return Ok(Expr::Association(new_pairs));
     }
     crate::emit_message(&format!(

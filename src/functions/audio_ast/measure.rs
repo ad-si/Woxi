@@ -265,11 +265,26 @@ fn window_starts(n: usize, w: usize, hop: usize) -> Vec<usize> {
 pub fn audio_local_measurements_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("AudioLocalMeasurements", args));
   }
   let Some(audio) = parse_audio(&args[0]) else {
     return Ok(unevaluated("AudioLocalMeasurements", args));
+  };
+  // Optional output format: Automatic (default), "List", "Association",
+  // "RuleList" or "Dataset".
+  let format = match args.get(2) {
+    None => "Automatic",
+    Some(Expr::Identifier(f)) if f == "Automatic" => "Automatic",
+    Some(Expr::String(f))
+      if matches!(
+        f.as_str(),
+        "List" | "Association" | "RuleList" | "Dataset"
+      ) =>
+    {
+      f.as_str()
+    }
+    Some(_) => return Ok(unevaluated("AudioLocalMeasurements", args)),
   };
 
   let local_ts = |prop: &str| -> Option<Expr> {
@@ -293,22 +308,41 @@ pub fn audio_local_measurements_ast(
     Some(call1("TimeSeries", Expr::List(pairs.into())))
   };
 
-  match &args[1] {
-    Expr::List(props) => {
-      let mut out = Vec::with_capacity(props.len());
-      for p in props {
-        let Some(ts) = prop_name(p).and_then(local_ts) else {
-          return Ok(unevaluated("AudioLocalMeasurements", args));
-        };
-        out.push(ts);
-      }
-      Ok(Expr::List(out.into()))
-    }
-    p => match prop_name(p).and_then(local_ts) {
-      Some(ts) => Ok(ts),
-      None => Ok(unevaluated("AudioLocalMeasurements", args)),
-    },
+  let props: Vec<Expr> = match &args[1] {
+    Expr::List(props) => props.to_vec(),
+    p => vec![p.clone()],
+  };
+  let mut measured: Vec<(Expr, Expr)> = Vec::with_capacity(props.len());
+  for p in &props {
+    let Some(ts) = prop_name(p).and_then(local_ts) else {
+      return Ok(unevaluated("AudioLocalMeasurements", args));
+    };
+    measured.push((p.clone(), ts));
   }
+  let rules = || {
+    measured
+      .iter()
+      .map(|(p, ts)| Expr::Rule {
+        pattern: Box::new(p.clone()),
+        replacement: Box::new(ts.clone()),
+      })
+      .collect::<Vec<_>>()
+  };
+  Ok(match format {
+    "Automatic" if !matches!(&args[1], Expr::List(_)) => measured
+      .pop()
+      .map_or(Expr::List(vec![].into()), |(_, ts)| ts),
+    "Automatic" | "List" => Expr::List(
+      measured
+        .into_iter()
+        .map(|(_, ts)| ts)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    "RuleList" => Expr::List(rules().into()),
+    "Association" => Expr::Association(measured),
+    _ => call1("Dataset", Expr::Association(measured)),
+  })
 }
 
 /// Properties made available to AudioIntervals criterion functions

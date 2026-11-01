@@ -651,6 +651,14 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Mean expects exactly 1 argument".into(),
     ));
   }
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && let Some(r) =
+      crate::functions::math_ast::extended_distributions::extended_property(
+        "Mean", name, dargs, None,
+      )
+  {
+    return r;
+  }
   // Custom distributions: moments from Integrate / Sum of the pdf.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "ProbabilityDistribution"
@@ -1139,6 +1147,14 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Variance expects exactly 1 argument".into(),
     ));
+  }
+  if let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && let Some(r) =
+      crate::functions::math_ast::extended_distributions::extended_property(
+        "Variance", name, dargs, None,
+      )
+  {
+    return r;
   }
   // Custom distributions: moments from Integrate / Sum of the pdf.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
@@ -4271,6 +4287,32 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut new_args = args.to_vec();
     new_args[0] = gamma;
     return quantile_ast(&new_args);
+  }
+  // Extended parametrizations; a list of probabilities maps elementwise.
+  if args.len() == 2
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && crate::functions::math_ast::extended_distributions::is_extended_form(
+      name,
+      dargs.len(),
+    )
+  {
+    if let Expr::List(qs) = &args[1] {
+      let values = qs
+        .iter()
+        .map(|q| quantile_ast(&[args[0].clone(), q.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(values.into()));
+    }
+    if let Some(r) =
+      crate::functions::math_ast::extended_distributions::extended_property(
+        "Quantile",
+        name,
+        dargs,
+        Some(&args[1]),
+      )
+    {
+      return r;
+    }
   }
   // Quantile[WakebyDistribution[...], q] — quantile-defined form.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]

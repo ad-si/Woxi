@@ -7,8 +7,8 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  AXIS_TICK_TARGET, format_date_tick, format_tick_with_step,
-  generate_date_ticks, nice_step,
+  AXIS_TICK_TARGET, SeriesStyle, format_date_tick, format_tick_with_step,
+  generate_date_ticks, nice_step, style_stroke,
 };
 
 /// Tick-label font size, in display pixels.
@@ -280,6 +280,11 @@ pub(crate) struct OriginAxes<'a> {
   pub sf: f64,
   pub axis_color: &'a str,
   pub label_fill: &'a str,
+  /// `AxesStyle` of the x and the y axis: the axis line, and its ticks and
+  /// labels unless `ticks_style` sets their own.
+  pub axes_style: &'a [Option<SeriesStyle>; 2],
+  /// `TicksStyle` of the x and the y axis: the tick marks and tick labels.
+  pub ticks_style: &'a [Option<SeriesStyle>; 2],
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -304,28 +309,38 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   if !(axis_x.is_finite() && axis_y.is_finite()) {
     return svg;
   }
-  let color = a.axis_color;
-  let fill = a.label_fill;
   let font = AXIS_TICK_FONT * sf;
   // A hairline, like Wolfram's (a tenth of the curve's width in its SVG
   // export), so the axes recede behind the data.
   let stroke = AXIS_STROKE * sf;
-  let line = |svg: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
+  // Per axis: the line's stroke, the tick marks' stroke, and the label fill.
+  let paint = |i: usize| {
+    let axis = a.axes_style[i].as_ref();
+    let tick = a.ticks_style[i].as_ref().or(axis);
+    let line = style_stroke(axis, a.axis_color, stroke, sf);
+    let mark = style_stroke(tick, a.axis_color, stroke, sf);
+    let fill = style_stroke(tick, a.label_fill, stroke, sf).0;
+    (line, mark, fill)
+  };
+  let line = |svg: &mut String,
+              (color, width): &(String, f64),
+              (x1, y1, x2, y2): (f64, f64, f64, f64)| {
     svg.push_str(&format!(
       "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" \
-       stroke=\"{color}\" stroke-width=\"{stroke:.0}\"/>\n"
+       stroke=\"{color}\" stroke-width=\"{width:.0}\"/>\n"
     ));
   };
   let major_len = AXIS_MAJOR_TICK_LEN * sf;
   let minor_len = AXIS_MINOR_TICK_LEN * sf;
 
   if a.show.0 {
-    line(&mut svg, x0, axis_y, x0 + w, axis_y);
+    let (axis_line, mark, fill) = paint(0);
+    line(&mut svg, &axis_line, (x0, axis_y, x0 + w, axis_y));
     if let Some((ticks, _)) = a.ticks {
       for &v in &ticks.minors {
         let x = px(v);
         if x.is_finite() {
-          line(&mut svg, x, axis_y, x, axis_y - minor_len);
+          line(&mut svg, &mark, (x, axis_y, x, axis_y - minor_len));
         }
       }
       for (v, label) in &ticks.majors {
@@ -333,7 +348,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         if !x.is_finite() {
           continue;
         }
-        line(&mut svg, x, axis_y, x, axis_y - major_len);
+        line(&mut svg, &mark, (x, axis_y, x, axis_y - major_len));
         // The label would straddle the vertical axis.
         if a.show.1
           && (x - axis_x).abs() < (label_width(label) / 2.0 + 2.0) * sf
@@ -351,12 +366,13 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   }
 
   if a.show.1 {
-    line(&mut svg, axis_x, y0, axis_x, y0 + h);
+    let (axis_line, mark, fill) = paint(1);
+    line(&mut svg, &axis_line, (axis_x, y0, axis_x, y0 + h));
     if let Some((_, ticks)) = a.ticks {
       for &v in &ticks.minors {
         let y = py(v);
         if y.is_finite() {
-          line(&mut svg, axis_x, y, axis_x + minor_len, y);
+          line(&mut svg, &mark, (axis_x, y, axis_x + minor_len, y));
         }
       }
       for (v, label) in &ticks.majors {
@@ -364,7 +380,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         if !y.is_finite() {
           continue;
         }
-        line(&mut svg, axis_x, y, axis_x + major_len, y);
+        line(&mut svg, &mark, (axis_x, y, axis_x + major_len, y));
         // The label would sit on the horizontal axis.
         if a.show.0 && (y - axis_y).abs() < font * 0.6 {
           continue;

@@ -1315,7 +1315,7 @@ VertexDegree,"Returns the degree of vertices in a graph",✅,1,8.0,1287
 OverTilde,"Displays expression with tilde above",✅,1,6.0,1288
 ReliefPlot,"Shaded relief plot of a matrix of heights",✅,pure,6.0,1289
 TableSpacing,"",🚫,,2.0,1290
-FindDivisions,"Finds nice numbers dividing an interval into about n equal parts",✅,pure,7.0,1291
+FindDivisions,"Finds nice numbers dividing an interval into about n equal parts, optionally shortest in a given base",✅,pure,7.0,1291
 FileExistsQ,"Tests whether a file or directory exists",✅,2,7.0,1293
 FrontEndToken,"",🚫,,3.0,1293
 GeometricMean,"Returns the geometric mean of a list or an association's values",✅,pure,6.0,1294
@@ -2012,7 +2012,7 @@ FourierDCT,"Discrete cosine transform of a real list (DCT types 1-4; default typ
 SqrtBox,"Low-level box construct for square root display",✅,pure,3.0,1999
 Sunrise,"Sunrise time for a location and day (next sunrise without a date; UTC-based DateObject)",✅,contextual,10.0,1999
 BlockMap,"Apply a function to non-overlapping or sliding blocks of a list",✅,none,10.2,2002
-MarginalDistribution,"Marginal distribution of multivariate distribution (complex statistics)",🚫,,8.0,2002
+MarginalDistribution,"Marginal distribution of multivariate distribution (complex statistics); the marginals of a CategoricalDistribution",🚧,pure,8.0,2002
 TooltipStyle,"Style option for tooltips (GUI)",🚫,,8.0,2002
 BitShiftRight,"Shifts integer bits to the right",✅,pure,6.0,2003
 MultiedgeStyle,"Style option for multi-edges in graphs (GUI)",🚫,,6.0,2005
@@ -3315,7 +3315,7 @@ EntityClassList,"List entity classes for a type",✅,,10.0,3353
 FindTransientRepeat,"Split a sequence into {transient repeat} where repeat is the shortest end-cycle occurring at least n times",✅,pure,10.4,3353
 InverseContinuousWaveletTransform,"Inverse continuous wavelet transform (least-squares reconstruction)",✅,pure,8.0,3353
 Perimeter,"Compute the perimeter of a region",✅,pure,11.1,3353
-PriceGraphDistribution,"",,,8.0,3353
+PriceGraphDistribution,"de Solla Price random graph distribution (recognised by RandomGraph)",✅,pure,8.0,3353
 SocketConnect,"Connect to a TCP endpoint and return a SocketObject",✅,effectful,10.3,3353
 AlgebraicNumberPolynomial,"",,,6.0,3363
 ArgumentsOptions,"",,,12.2,3363
@@ -3496,7 +3496,7 @@ BooleanVariables,"Boolean variables of an expression (canonically sorted; opaque
 ChannelListen,"",🚫,,11.0,3566
 CompleteGraphQ,"Tests whether a graph is complete (every pair adjacent exactly once; a digraph needs both arcs of every pair)",✅,pure,8.0,3566
 DGaussianWavelet,"Derivative-of-Gaussian continuous wavelet of order n",✅,pure,8.0,3566
-DMSString,"Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars and {d;m;s} triples and GeoPosition and DMS strings; an optional ""NS""/""EW""-style direction spec appends a hemisphere letter to a scalar angle instead of dropping its sign",✅,pure,7.0,3566
+DMSString,"Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars, {d;m;s} triples (optionally with a hemisphere letter), angle quantities, GeoPosition and DMS strings; an optional ""NS""/""EW""-style direction spec (or {spec; n}) appends a hemisphere letter to a scalar angle instead of dropping its sign",✅,pure,7.0,3566
 DefaultNewCellStyle,"",🚫,,3.0,3566
 GenericCylindricalDecomposition,"",,,6.0,3566
 IgnoringInactive,"",,,10.0,3566
@@ -5219,7 +5219,7 @@ AudioStop,"",🚫,,11.2,5486
 AudioTrackApply,"",🚫,,12.2,5486
 Because,"Represents a because logical relation",✅,pure,3.0,5486
 CaseSensitive,"",,,10.1,5486
-CategoricalDistribution,"Categorical distribution over a list of categories (sampled by RandomVariate)",✅,pure,12.1,5486
+CategoricalDistribution,"Categorical distribution over univariate or multivariate classes, from class lists, weights, rules or counts; with PDF, RandomVariate, MarginalDistribution and Information properties",✅,pure,12.1,5486
 CellLabelStyle,"",🚫,,11.3,5486
 CombinatorC,"",,,12.2,5486
 CompilerOptions,"",🚫,,12.0,5486
