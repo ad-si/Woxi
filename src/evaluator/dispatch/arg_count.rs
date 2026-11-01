@@ -250,7 +250,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Commonest" => Some((1, 2)),
     "Compile" => Some((2, usize::MAX)),
     "Complex" => Some((2, 2)),
-    "ComplexExpand" => Some((1, 2)),
+    "ComplexExpand" => Some((1, 3)),
     "ComplexListPlot" => Some((1, usize::MAX)),
     "ComplexPlot" => Some((2, usize::MAX)),
     "ComplexPlot3D" => Some((2, usize::MAX)),
@@ -352,15 +352,11 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "WeierstrassInvariants" => Some((1, 1)),
     "WeierstrassHalfPeriods" => Some((1, 1)),
     "DiracComb" => Some((1, usize::MAX)),
-    // Window functions all take exactly one argument.
+    // Window functions without a parameter take exactly one argument.
     "HammingWindow"
-    | "HannWindow"
     | "BlackmanWindow"
     | "DirichletWindow"
     | "BartlettWindow"
-    | "WelchWindow"
-    | "CosineWindow"
-    | "ConnesWindow"
     | "LanczosWindow"
     | "ExactBlackmanWindow"
     | "ParzenWindow"
@@ -371,6 +367,10 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     | "KaiserBesselWindow"
     | "BartlettHannWindow" => Some((1, 1)),
     "CauchyWindow" | "PoissonWindow" | "KaiserWindow" => Some((1, 2)),
+    // Parameterized windows.
+    "HannWindow" | "WelchWindow" | "CosineWindow" | "ConnesWindow" => {
+      Some((1, 2))
+    }
     "Default" => Some((1, 3)),
     "Definition" => Some((1, 1)),
     "Delete" => Some((1, 2)),
@@ -636,7 +636,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "SubresultantPolynomialRemainders" => Some((3, 4)),
     "FunctionRange" => Some((3, 3)),
     "CountRoots" => Some((2, 2)),
-    "FunctionExpand" => Some((1, 1)),
+    "FunctionExpand" => Some((1, 2)),
     "FunctionDomain" => Some((2, 3)),
     "Gamma" => Some((1, 3)),
     "GraphDistance" => Some((2, 3)),

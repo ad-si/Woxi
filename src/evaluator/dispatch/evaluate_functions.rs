@@ -11216,6 +11216,22 @@ fn evaluate_function_call_ast_inner(
       }
     };
 
+    // Rounding functions and waves of a linear argument over a bounded
+    // interval take finitely many values; UnitBox and UnitTriangle expand
+    // with or without one.
+    if let Some(assum) = args.get(1)
+      && let Some(pw) =
+        crate::functions::piecewise_rounding::expand_rounding(&args[0], assum)?
+    {
+      return Ok(pw);
+    }
+    if args.len() == 1
+      && let Some(pw) =
+        crate::functions::piecewise_rounding::expand_unit_shape_plain(&args[0])?
+    {
+      return Ok(pw);
+    }
+
     // A Piecewise nested inside another collapses into a single one.
     if let Some(flat) = flatten_nested_piecewise(&args[0])? {
       return refined(flat);
@@ -11334,6 +11350,26 @@ fn evaluate_function_call_ast_inner(
               .collect(),
           );
           let pw = call("Piecewise", vec![pw_cases, default]);
+          return evaluate_expr_to_expr(&pw);
+        }
+        // KroneckerDelta[x, y] is 1 exactly when x - y == 0.
+        "KroneckerDelta" if fargs.len() == 2 => {
+          let cond = Expr::Comparison {
+            operands: vec![
+              minus2(fargs[0].clone(), fargs[1].clone()),
+              Expr::Integer(0),
+            ],
+            operators: vec![ComparisonOp::Equal],
+          };
+          let pw = call(
+            "Piecewise",
+            vec![
+              Expr::List(
+                vec![Expr::List(vec![Expr::Integer(1), cond].into())].into(),
+              ),
+              Expr::Integer(0),
+            ],
+          );
           return evaluate_expr_to_expr(&pw);
         }
         "UnitStep" if fargs.len() == 1 => {

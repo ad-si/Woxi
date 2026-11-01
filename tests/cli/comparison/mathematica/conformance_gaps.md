@@ -6989,6 +6989,27 @@ The reference pages give these outputs; Woxi does not produce them yet.
   and which form `Cancel` uses when the denominator does not cancel completely
   is unverified.
 
+## Parameter sweep 5 (simplification): confirmed but not implemented
+
+The reference pages give these outputs; Woxi does not produce them yet.
+
+- Number-theoretic bounds under `FullSimplify` are `True` in Wolfram and stay
+  unevaluated: `Prime[n] > n Log[n]` for a positive integer `n`,
+  `EulerPhi[n] >= Sqrt[n]` for `n > 6`, `DivisorSigma[0, n] < EulerPhi[n]`
+  for `n > 30`, and `DivisorSigma[1, 2^(p - 1) (2^p - 1)]` with
+  `2^p - 1 ∈ Primes`.
+- `ComplexExpand` of `ArcSin`, `ArcCos`, `ArcSec`, `ArcSinh`, `ArcCosh` and
+  `ArcCsch` of `x + I y`: Wolfram goes through the logarithmic form and keeps
+  `Log[Sqrt[…]]` with the polar form of the inner square root; the exact
+  arrangement is not recoverable from the reference pages' text, so only
+  `ArcTan`, `ArcTanh` and fractional powers expand.
+- `ComplexExpand[Haversine[x + I y]]` is
+  `I Im[Haversine[x + I y]] + Re[Haversine[x + I y]]`; Woxi returns the input.
+- `FunctionExpand[TukeyWindow[x]]` (and `TukeyWindow[x, α]`) is a `Piecewise`
+  with conditions such as `-(1/3) - 2*x <= 0`; Woxi leaves it unexpanded.
+- `FunctionExpand[PascalBinomial[0, m]]` is `Sin[m Pi]/(m Pi)`; Woxi leaves it
+  unexpanded.
+
 ## String functions on a circular `BioSequence` across the wrap point
 
 String functions accept linear `"DNA"`/`"RNA"` and circular
