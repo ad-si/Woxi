@@ -5162,6 +5162,17 @@ mod quiet_named_messages_are_not_printed {
     assert!(shown.contains("Infinity::indet"), "{shown}");
   }
 
+  // The General::stop notice about a silenced message is silenced with it;
+  // it used to stay behind in the message buffer.
+  #[test]
+  fn stop_notice_of_a_listed_message_goes_too() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Quiet[Do[1/0, {5}], Power::infy]; 1").unwrap();
+    let shown = format!("{}{:?}", result.stdout, result.warnings);
+    assert!(!shown.contains("General::stop"), "{shown}");
+  }
+
   #[test]
   fn third_argument_re_enables() {
     clear_state();
