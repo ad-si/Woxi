@@ -166,6 +166,55 @@ fn negated(e: &Expr) -> Option<&Expr> {
   }
 }
 
+/// `f[x] + f[y]` with f one of Tan, Cot, Tanh, Coth, Csc, Csch, Sech, as
+/// wolframscript factors it.
+fn same_head_sum(a: &Expr, b: &Expr) -> Option<Expr> {
+  let (
+    Expr::FunctionCall { name: fa, args: xa },
+    Expr::FunctionCall { name: fb, args: xb },
+  ) = (a, b)
+  else {
+    return None;
+  };
+  if fa != fb || xa.len() != 1 || xb.len() != 1 || same(&xa[0], &xb[0]) {
+    return None;
+  }
+  let template = match fa.as_str() {
+    "Tan" => "Sec[fX] Sec[fY] Sin[fX + fY]",
+    "Cot" => "Csc[fX] Csc[fY] Sin[fX + fY]",
+    "Tanh" => "Sech[fX] Sech[fY] Sinh[fX + fY]",
+    "Coth" => "Csch[fX] Csch[fY] Sinh[fX + fY]",
+    "Csc" => {
+      "(1/2) Cos[fX/2 - fY/2] Csc[fX/2] Csc[fY/2] Sec[fX/2] Sec[fY/2] \
+       Sin[fX/2 + fY/2]"
+    }
+    "Csch" => {
+      "(1/2) Cosh[fX/2 - fY/2] Csch[fX/2] Csch[fY/2] Sech[fX/2] Sech[fY/2] \
+       Sinh[fX/2 + fY/2]"
+    }
+    "Sech" => {
+      "(2 Cosh[fX/2 - fY/2] Cosh[fX/2 + fY/2])/((Cosh[fX/2] - I \
+       Sinh[fX/2]) (Cosh[fX/2] + I Sinh[fX/2]) (Cosh[fY/2] - I Sinh[fY/2]) \
+       (Cosh[fY/2] + I Sinh[fY/2]))"
+    }
+    _ => return None,
+  };
+  let parsed = crate::syntax::string_to_expr(template).ok()?;
+  let rule = |v: &str, e: &Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(v.to_string())),
+    replacement: Box::new(e.clone()),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "ReplaceAll".to_string(),
+    args: vec![
+      parsed,
+      Expr::List(vec![rule("fX", &xa[0]), rule("fY", &xb[0])].into()),
+    ]
+    .into(),
+  })
+  .ok()
+}
+
 fn same(a: &Expr, b: &Expr) -> bool {
   expr_to_string(a) == expr_to_string(b)
 }
@@ -208,6 +257,12 @@ fn factor(expr: &Expr) -> Option<Expr> {
     _ => return None,
   };
   let (a, b) = (terms[0], terms[1]);
+
+  // f[x] + f[y] for the quotient functions: sums over a common
+  // denominator, e.g. Tan[x] + Tan[y] -> Sec[x] Sec[y] Sin[x + y].
+  if let Some(product) = same_head_sum(a, b) {
+    return Some(product);
+  }
 
   // 1 +- Cos[u] / 1 +- Sin[u]
   if matches!(a, Expr::Integer(1)) {

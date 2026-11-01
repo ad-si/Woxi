@@ -10,7 +10,15 @@ pub fn function_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
   let result = function_expand_inner(expr)?;
   // Evaluate the result to simplify
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  let expanded = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  // FunctionExpand[expr, assum]: refine the expansion under the assumptions.
+  match args.get(1) {
+    Some(assum) => crate::evaluator::evaluate_expr_to_expr(&call(
+      "Refine",
+      vec![expanded, assum.clone()],
+    )),
+    None => Ok(expanded),
+  }
 }
 
 fn function_expand_inner(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -568,7 +576,55 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     }
   }
 
+  if name.ends_with("Window")
+    && let Some(pw) =
+      crate::functions::window_expand::window_piecewise(name, args)
+  {
+    return Some(pw);
+  }
+
+  // Closed forms written out as Wolfram Language templates in `x`, `k`, `m`.
+  let template = |src: &str, vars: &[&str]| -> Option<Expr> {
+    let parsed = crate::syntax::string_to_expr(src).ok()?;
+    let rules: Vec<Expr> = vars
+      .iter()
+      .zip(args.iter())
+      .map(|(v, a)| Expr::Rule {
+        pattern: Box::new(Expr::Identifier((*v).to_string())),
+        replacement: Box::new(a.clone()),
+      })
+      .collect();
+    Some(call("ReplaceAll", vec![parsed, Expr::List(rules.into())]))
+  };
+
   match name {
+    // Erfc[x] → 1 - Erf[x]
+    "Erfc" if args.len() == 1 => template("1 - Erf[fX]", &["fX"]),
+    // Quotient[m, n] → Floor[m/n]
+    "Quotient" if args.len() == 2 => template("Floor[fM/fN]", &["fM", "fN"]),
+    // The unit box and triangle as differences of Heaviside steps.
+    "HeavisidePi" if args.len() == 1 => template(
+      "-HeavisideTheta[-1/2 + fX] + HeavisideTheta[1/2 + fX]",
+      &["fX"],
+    ),
+    "HeavisideLambda" if args.len() == 1 => template(
+      "-HeavisideTheta[-1 + fX] + fX HeavisideTheta[-1 + fX] - 2 fX HeavisideTheta[fX] + HeavisideTheta[1 + fX] + fX HeavisideTheta[1 + fX]",
+      &["fX"],
+    ),
+    // DiracComb[x, y, …] is the product of the one-dimensional combs.
+    "DiracComb" if args.len() >= 2 => Some(call(
+      "Times",
+      args.iter().map(|a| call1("DiracComb", a.clone())).collect(),
+    )),
+    // The Whittaker functions through the confluent hypergeometric ones.
+    "WhittakerM" if args.len() == 3 => template(
+      "E^(-fX/2) fX^(1/2 + fM) Hypergeometric1F1[1/2 - fK + fM, 1 + 2 fM, fX]",
+      &["fK", "fM", "fX"],
+    ),
+    "WhittakerW" if args.len() == 3 => template(
+      "E^(-fX/2) fX^(1/2 + fM) HypergeometricU[1/2 - fK + fM, 1 + 2 fM, fX]",
+      &["fK", "fM", "fX"],
+    ),
     // HurwitzZeta[m, a] with an integer m >= 2 → (-1)^m/(m-1)! PolyGamma[m-1, a].
     "HurwitzZeta" if args.len() == 2 => {
       if let Expr::Integer(m) = &args[0]

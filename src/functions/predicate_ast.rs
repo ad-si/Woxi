@@ -1511,18 +1511,58 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     matches!(form, Expr::Identifier(s) if s == name)
   }
 
+  fn is_atom(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::Identifier(_)
+        | Expr::Constant(_)
+        | Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)
+    )
+  }
+
+  /// Whether `expr` is the literal `form`. Rendering every subexpression
+  /// to text made FreeQ quadratic in the size of the expression; an atom
+  /// can only equal an atom, so only like with like is rendered, and an
+  /// identical structure is accepted without rendering at all.
+  fn literal_form_matches(expr: &Expr, form: &Expr, form_str: &str) -> bool {
+    if is_atom(form) != is_atom(expr) {
+      return false;
+    }
+    if let (Expr::Identifier(a), Expr::Identifier(b)) = (expr, form) {
+      return a == b;
+    }
+    crate::evaluator::pattern_matching::expr_equal(expr, form)
+      || expr_to_string(expr) == form_str
+  }
+
   fn contains_form(
     expr: &Expr,
     form: &Expr,
     form_str: &str,
     use_pattern: bool,
   ) -> bool {
+    // A held operator form (`a - b`, `-x`) is searched as the call its
+    // FullForm shows (`Plus[a, Times[-1, b]]`), so its parts are found.
+    let canonical;
+    let expr = if matches!(expr, Expr::BinaryOp { .. } | Expr::UnaryOp { .. }) {
+      canonical =
+        crate::evaluator::dispatch::complex_and_special::canonical_operator_call(
+          expr,
+        );
+      &canonical
+    } else {
+      expr
+    };
     // Check pattern match or exact string match
     if use_pattern {
       if crate::functions::list_helpers_ast::matches_pattern_ast(expr, form) {
         return true;
       }
-    } else if expr_to_string(expr) == form_str {
+    } else if literal_form_matches(expr, form, form_str) {
       return true;
     }
     // Rational and Complex are atoms: their internal parts (numerator/

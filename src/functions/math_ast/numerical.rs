@@ -2461,6 +2461,22 @@ pub fn expr_to_bigfloat(
         // each is one `1/x` away from a primitive that it does have — and
         // leaving them out is what made `N[Coth[1], 20]` come back as
         // `Coth[1.`20.]`.
+        // The degree-argument trig functions: f[x Degree].
+        "SinDegrees" | "CosDegrees" | "TanDegrees" | "CotDegrees"
+        | "SecDegrees" | "CscDegrees"
+          if args.len() == 1 =>
+        {
+          let radians = Expr::FunctionCall {
+            name: name.trim_end_matches("Degrees").to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: vec![args[0].clone(), Expr::Constant("Degree".to_string())]
+                .into(),
+            }]
+            .into(),
+          };
+          expr_to_bigfloat(&radians, bits, rm, cc)
+        }
         "Cot" | "Sec" | "Csc" | "Coth" | "Sech" | "Csch" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           // `Cot`/`Coth` go through `Cos/Sin` and `Cosh/Sinh` rather than
@@ -2549,6 +2565,62 @@ pub fn expr_to_bigfloat(
                 .into(),
             )
           })
+        }
+        "OwenT" if args.len() == 2 => {
+          let h = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let a = expr_to_bigfloat(&args[1], bits, rm, cc)?;
+          owen_t_bigfloat(&h, &a, bits, rm, cc).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate OwenT[...] to arbitrary precision".into(),
+            )
+          })
+        }
+        "MittagLefflerE" if (2..=3).contains(&args.len()) => {
+          let vals = args
+            .iter()
+            .map(|a| expr_to_bigfloat(a, bits, rm, cc))
+            .collect::<Result<Vec<_>, _>>()?;
+          let one = BigFloat::from_i32(1, bits);
+          let (a, b, z) = match vals.as_slice() {
+            [a, z] => (a, &one, z),
+            [a, b, z] => (a, b, z),
+            _ => unreachable!(),
+          };
+          crate::functions::math_ast::mittag_leffler_bigfloat(
+            a, b, z, bits, rm, cc,
+          )
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate MittagLefflerE[...] to arbitrary precision"
+                .into(),
+            )
+          })
+        }
+        // Gudermannian[x] = 2 ArcTan[Tanh[x/2]].
+        "Gudermannian" if args.len() == 1 => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let half = x.div(&BigFloat::from_i32(2, bits), bits, rm);
+          Ok(half.tanh(bits, rm, cc).atan(bits, rm, cc).mul(
+            &BigFloat::from_i32(2, bits),
+            bits,
+            rm,
+          ))
+        }
+        // Elliptic integrals of the first kind and the inverse Jacobi
+        // functions at real arguments (elliptic_bigfloat.rs).
+        "EllipticK" | "EllipticF" | "InverseJacobiSN" | "InverseJacobiCN"
+        | "InverseJacobiDN" | "InverseJacobiCD" | "InverseJacobiSC"
+        | "InverseJacobiCS" | "InverseJacobiSD" | "InverseJacobiDS"
+        | "InverseJacobiNS" | "InverseJacobiNC" | "InverseJacobiND"
+        | "InverseJacobiDC" => {
+          let (re, im) =
+            elliptic_first_kind_bigfloat(name, args, bits, rm, cc)?;
+          if !im.is_zero() {
+            return Err(InterpreterError::EvaluationError(
+              "N: complex value".into(),
+            ));
+          }
+          Ok(re)
         }
         "LogGamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
@@ -3100,6 +3172,9 @@ fn expr_to_complex_bigfloat(
         };
         expr_to_complex_bigfloat(&rewritten, bits, rm, cc)
       }
+      "InverseJacobiDN" | "InverseJacobiND" => {
+        elliptic_first_kind_bigfloat(name, args, bits, rm, cc)
+      }
       "ExpIntegralEi" if args.len() == 1 => {
         let (a, b) = expr_to_complex_bigfloat(&args[0], bits, rm, cc)?;
         Ok(complex_exp_integral_ei(&a, &b, bits, rm, cc))
@@ -3116,6 +3191,50 @@ fn expr_to_complex_bigfloat(
       expr_to_string(expr)
     ))),
   }
+}
+
+/// `EllipticK[m]`, `EllipticF[phi, m]` or `InverseJacobi<pq>[x, m]` with real
+/// arguments as `(re, im)`, from the arbitrary-precision elliptic core.
+fn elliptic_first_kind_bigfloat(
+  name: &str,
+  args: &[Expr],
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Result<(astro_float::BigFloat, astro_float::BigFloat), InterpreterError> {
+  use crate::functions::math_ast::{
+    elliptic_f_bigfloat, elliptic_k_bigfloat, inverse_jacobi_bigfloat,
+  };
+  let fail = || {
+    InterpreterError::EvaluationError(format!(
+      "N: cannot evaluate {name}[...] to arbitrary precision"
+    ))
+  };
+  let wp = bits + 32;
+  let vals = args
+    .iter()
+    .map(|a| expr_to_bigfloat(a, wp, rm, cc))
+    .collect::<Result<Vec<_>, _>>()?;
+  let zero = astro_float::BigFloat::from_i32(0, bits);
+  let (re, im) = match (name, vals.as_slice()) {
+    ("EllipticK", [m]) => {
+      (elliptic_k_bigfloat(m, wp, rm, cc).ok_or_else(fail)?, zero)
+    }
+    ("EllipticF", [phi, m]) => (
+      elliptic_f_bigfloat(phi, m, wp, rm, cc).ok_or_else(fail)?,
+      zero,
+    ),
+    (_, [x, m]) => {
+      let kind = name.strip_prefix("InverseJacobi").ok_or_else(fail)?;
+      inverse_jacobi_bigfloat(kind, x, m, wp, rm, cc).ok_or_else(fail)?
+    }
+    _ => return Err(fail()),
+  };
+  // Drop the guard bits so the digits shown match the requested precision.
+  let (mut re, mut im) = (re, im);
+  let _ = re.set_precision(bits, rm);
+  let _ = im.set_precision(bits, rm);
+  Ok((re, im))
 }
 
 /// Build a properly formatted complex result from BigFloat real and imaginary parts.
@@ -6570,6 +6689,130 @@ fn bigfloat_erfc(
   } else {
     result
   }
+}
+
+/// Owen's T function `T(h, a)` for real `h` and `a` at `bits` bits. For
+/// `|a| <= 1` the series (Owen's T1)
+/// `T = (ArcTan[a] - Σ_j c_j a^(2j+1)) / 2π`,
+/// `c_j = (-1)^j (1 - e^-x Σ_(i<=j) x^i/i!) / (2j + 1)`, `x = h²/2`,
+/// with guard bits grown past its cancellation; for `|a| > 1`
+/// `T(h, a) = Φ(h)/2 + Φ(a h)/2 - Φ(h) Φ(a h) - T(a h, 1/a)`.
+pub(crate) fn owen_t_bigfloat(
+  h: &astro_float::BigFloat,
+  a: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let exp = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      i64::from(b.exponent().unwrap_or(0))
+    }
+  };
+  if a.is_zero() {
+    return Some(BigFloat::from_i32(0, bits));
+  }
+  if a.is_negative() {
+    return Some(owen_t_bigfloat(h, &a.neg(), bits, rm, cc)?.neg());
+  }
+  let h = h.abs();
+  let one = BigFloat::from_i32(1, bits);
+  if a.cmp(&one)? > 0 {
+    return owen_t_bigfloat_split(&h, a, bits, 64, rm, cc);
+  }
+  let mut guard = 64usize;
+  loop {
+    let wp = bits + guard;
+    let x = h.mul(&h, wp, rm).div(&BigFloat::from_i32(2, wp), wp, rm);
+    let ex = x.neg().exp(wp, rm, cc);
+    let a2 = a.mul(a, wp, rm);
+    let mut apow = a.clone();
+    let mut xterm = ex.clone(); // e^-x x^i / i!
+    let mut partial = ex.clone(); // e^-x Σ_(i<=j) x^i / i!
+    let atan = a.atan(wp, rm, cc);
+    let mut sum = BigFloat::from_i32(0, wp);
+    let mut max_exp = exp(&atan);
+    let mut small = 0;
+    for j in 0..(64 * wp + 20_000) {
+      let c = one.sub(&partial, wp, rm).div(
+        &BigFloat::from_i64(2 * j as i64 + 1, wp),
+        wp,
+        rm,
+      );
+      let term = c.mul(&apow, wp, rm);
+      let term = if j % 2 == 1 { term.neg() } else { term };
+      sum = sum.add(&term, wp, rm);
+      max_exp = max_exp.max(exp(&term));
+      if exp(&term) < exp(&atan) - wp as i64 - 2 && j as f64 > 1.0 {
+        small += 1;
+        if small >= 2 {
+          break;
+        }
+      } else {
+        small = 0;
+      }
+      apow = apow.mul(&a2, wp, rm);
+      xterm = xterm.mul(&x, wp, rm).div(
+        &BigFloat::from_i64(j as i64 + 1, wp),
+        wp,
+        rm,
+      );
+      partial = partial.add(&xterm, wp, rm);
+    }
+    let v = atan.sub(&sum, wp, rm).div(
+      &cc.pi(wp, rm).mul(&BigFloat::from_i32(2, wp), wp, rm),
+      wp,
+      rm,
+    );
+    let lost = (max_exp - exp(&v)).max(0) as usize;
+    if lost + 16 <= guard || guard > 16 * bits + 4096 {
+      return Some(v);
+    }
+    guard = lost + 64;
+  }
+}
+
+/// The `|a| > 1` branch of [`owen_t_bigfloat`], with `guard` extra bits.
+fn owen_t_bigfloat_split(
+  h: &astro_float::BigFloat,
+  a: &astro_float::BigFloat,
+  bits: usize,
+  guard: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let exp = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      i64::from(b.exponent().unwrap_or(0))
+    }
+  };
+  let wp = bits + guard;
+  let ah = a.mul(h, wp, rm);
+  let sqrt2 = BigFloat::from_i32(2, wp).sqrt(wp, rm);
+  let two = BigFloat::from_i32(2, wp);
+  let phi = |z: &BigFloat, cc: &mut astro_float::Consts| {
+    bigfloat_erfc(&z.neg().div(&sqrt2, wp, rm), wp, rm, cc).div(&two, wp, rm)
+  };
+  let (p, q) = (phi(h, cc), phi(&ah, cc));
+  let one = BigFloat::from_i32(1, wp);
+  let t = owen_t_bigfloat(&ah, &one.div(a, wp, rm), wp, rm, cc)?;
+  let v = p
+    .add(&q, wp, rm)
+    .div(&two, wp, rm)
+    .sub(&p.mul(&q, wp, rm), wp, rm)
+    .sub(&t, wp, rm);
+  // The difference cancels for large h: redo with the lost bits added.
+  let lost = (exp(&p).max(exp(&t)) - exp(&v)).max(0) as usize;
+  if lost + 16 > guard && guard <= 16 * bits + 4096 {
+    return owen_t_bigfloat_split(h, a, bits, guard + lost + 32, rm, cc);
+  }
+  Some(v)
 }
 
 /// Machine `Erfc[x]` for 0.25 ≤ x < 27, rounded from the arbitrary-precision
