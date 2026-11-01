@@ -9,6 +9,25 @@ use crate::functions::plot::{
   evaluate_at_point, generate_svg_with_filling, parse_iterator, substitute_var,
 };
 
+fn is_evaluation_monitor(opt: &Expr) -> bool {
+  matches!(opt, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+    if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "EvaluationMonitor"))
+}
+
+/// The `EvaluationMonitor :> expr` option, if any (the first occurrence wins).
+fn evaluation_monitor(opts: &[Expr]) -> Option<Expr> {
+  opts
+    .iter()
+    .find(|o| is_evaluation_monitor(o))
+    .and_then(|opt| match opt {
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. } => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+}
+
 /// Parse the trailing option rules of a ParametricPlot/PolarPlot call.
 /// Matching Wolfram Language, the first occurrence of a repeated option
 /// wins (e.g. `PlotPoints -> 200, …, PlotPoints -> 10` uses 200).
@@ -18,6 +37,11 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   for opt in opts {
+    // `:>` options are evaluated by `option_name_value`, but the monitor
+    // must stay held until each sample fires it.
+    if is_evaluation_monitor(opt) {
+      continue;
+    }
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
@@ -573,9 +597,19 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (mut plot_opts, overrides) = parse_options(&args[2..]);
+  let monitor = evaluation_monitor(&args[2..]);
 
   // Parse iterator: {t, tmin, tmax}
   let (var_name, t_min, t_max) = parse_iterator(iter_spec, "ParametricPlot")?;
+  // Fire `EvaluationMonitor :> expr` with the parameter bound to the
+  // sampled value, e.g. so `Sow[{t, …}]` records the sample locations.
+  let fire_monitor = |t: f64| {
+    if let Some(m) = &monitor {
+      let sub =
+        crate::syntax::substitute_variable(m, &var_name, &Expr::Real(t));
+      let _ = evaluate_expr_to_expr(&sub);
+    }
+  };
 
   // Collect curve bodies. Wolfram accepts a single curve `{fx, fy}` or
   // any number of curves nested to any depth, e.g.
@@ -740,10 +774,13 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             &fy_storage
           };
         adaptive_samples(
-          |t| match (
-            evaluate_at_point(fx, &var_name, t),
-            evaluate_at_point(fy, &var_name, t),
-          ) {
+          |t| match {
+            fire_monitor(t);
+            (
+              evaluate_at_point(fx, &var_name, t),
+              evaluate_at_point(fy, &var_name, t),
+            )
+          } {
             (Some(x), Some(y)) => Some(vec![(x, y)]),
             _ => None,
           },
@@ -754,7 +791,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )
       }
       CurveSrc::Whole(b) => adaptive_samples(
-        |t| sample_whole_rows(b, &var_name, t),
+        |t| {
+          fire_monitor(t);
+          sample_whole_rows(b, &var_name, t)
+        },
         t_min,
         t_max,
         num_samples,
