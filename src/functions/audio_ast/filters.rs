@@ -175,13 +175,27 @@ pub fn wiener_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Rudin–Osher–Fatemi total-variation denoising by gradient descent on
 /// min_u Σ|∇u| + 1/(2λ) Σ(u−f)², with a smoothed gradient magnitude.
+///
+/// Like Mathematica, the data is first scaled by its largest magnitude,
+/// so the result scales with the input (`TotalVariationFilter[k data]` is
+/// `k TotalVariationFilter[data]`) and λ reads on a unit range. The
+/// fidelity term is treated implicitly, which keeps the descent stable for
+/// a vanishing λ (where the result is the input itself).
 fn tv_rows(rows: &[Vec<f64>], lambda: f64, is_2d: bool) -> Vec<Vec<f64>> {
+  let scale = rows.iter().flatten().fold(0.0_f64, |m, v| m.max(v.abs()));
+  if scale == 0.0 || !scale.is_finite() {
+    return rows.to_vec();
+  }
+  let rows: Vec<Vec<f64>> = rows
+    .iter()
+    .map(|r| r.iter().map(|v| v / scale).collect())
+    .collect();
   let h = rows.len();
   let w = rows[0].len();
   let eps = 1e-4;
   let tau = 0.05;
   let iterations = 100;
-  let mut u: Vec<Vec<f64>> = rows.to_vec();
+  let mut u: Vec<Vec<f64>> = rows.clone();
   let clamp_y = |y: i64| y.clamp(0, h as i64 - 1) as usize;
   let clamp_x = |x: i64| x.clamp(0, w as i64 - 1) as usize;
   for _ in 0..iterations {
@@ -203,30 +217,93 @@ fn tv_rows(rows: &[Vec<f64>], lambda: f64, is_2d: bool) -> Vec<Vec<f64>> {
         let div = dx / (dx * dx + eps).sqrt() - dxm / (dxm * dxm + eps).sqrt()
           + dy / (dy * dy + eps).sqrt()
           - dym / (dym * dym + eps).sqrt();
-        next[y][x] = u[y][x] + tau * (div - (u[y][x] - rows[y][x]) / lambda);
+        next[y][x] = (u[y][x] + tau * div + tau / lambda * rows[y][x])
+          / (1.0 + tau / lambda);
       }
     }
     u = next;
   }
+  for row in &mut u {
+    for v in row {
+      *v *= scale;
+    }
+  }
   u
 }
 
+/// The data of a TotalVariationFilter call: a list, or an image filtered
+/// channel by channel.
+fn total_variation_image(
+  image: &Expr,
+  lambda: f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::Image {
+    color_space,
+    display_size,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = image
+  else {
+    return None;
+  };
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  if w == 0 || h == 0 {
+    return Some(Ok(image.clone()));
+  }
+  let mut out = vec![0.0_f64; data.len()];
+  for c in 0..ch {
+    let plane: Vec<Vec<f64>> = (0..h)
+      .map(|y| (0..w).map(|x| data[(y * w + x) * ch + c]).collect())
+      .collect();
+    let filtered = tv_rows(&plane, lambda, h > 1);
+    for (y, row) in filtered.into_iter().enumerate() {
+      for (x, v) in row.into_iter().enumerate() {
+        out[(y * w + x) * ch + c] = v;
+      }
+    }
+  }
+  Some(Ok(Expr::Image {
+    color_space: *color_space,
+    display_size: *display_size,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: std::sync::Arc::new(out),
+    image_type: *image_type,
+  }))
+}
+
 /// TotalVariationFilter[data] or TotalVariationFilter[data, param] —
-/// total-variation denoising of 1D/2D data or an Audio object; larger
-/// regularization parameters smooth more (default 0.1).
+/// total-variation denoising of 1D/2D data, an image or an Audio object;
+/// larger regularization parameters smooth more (default 0.1). The
+/// `Method` and `MaxIterations` options are accepted; Woxi always runs its
+/// own descent (see [`tv_rows`]).
 pub fn total_variation_filter_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  let positional = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(args.len());
+  if positional == 0 || positional > 2 {
     return Ok(unevaluated("TotalVariationFilter", args));
   }
-  let lambda = match args.get(1) {
+  let lambda = match args[..positional].get(1) {
+    // A zero parameter is replaced by √$MachineEpsilon, as Mathematica
+    // does: the result is then the data itself up to rounding.
     Some(e) => match try_eval_to_f64(e) {
       Some(v) if v > 0.0 => v,
+      Some(v) if v == 0.0 => f64::EPSILON.sqrt(),
       _ => return Ok(unevaluated("TotalVariationFilter", args)),
     },
     None => 0.1,
   };
+  if let Some(result) = total_variation_image(&args[0], lambda) {
+    return result;
+  }
   if let Some(audio) = parse_audio(&args[0]) {
     let channels = audio
       .channels

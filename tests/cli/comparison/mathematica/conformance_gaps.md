@@ -5278,6 +5278,28 @@ be derived from these samples, and `"RichardsonLucy"`, `"TSVD"`, `"Hybrid"`,
 `"SteepestDescent"` and `"TotalVariation"` are unimplemented (the call stays
 unevaluated). **Not reproducible** without WL's implementation.
 
+### TotalVariationFilter runs its own descent
+
+Woxi matches WL's scale invariance (the data is divided by its largest
+magnitude first), the `0` parameter (replaced by `√$MachineEpsilon`, so the
+result is the input) and the type of an image result, and converges to a
+total-variation-smoothed result of the same shape, but not to WL's numbers:
+
+```sh
+wolframscript -code 'TotalVariationFilter[{0., 0., 1., 0., 0., 1., 1., 1., 0.5, 0.}]'
+# {0.00069, 0.0068, 0.8, 0.1, 0.1, 0.9336, 0.9334, 0.9330, 0.5, 0.1}
+woxi eval 'TotalVariationFilter[{0., 0., 1., 0., 0., 1., 1., 1., 0.5, 0.}]'
+# {0.041, 0.059, 0.8, 0.081, 0.119, 0.938, 0.925, 0.938, 0.5, 0.1}
+```
+
+What is known of WL's iteration: `MaxIterations -> 1` is one Jacobi step of
+`(1 - p Δ) u = f` (reflecting boundary, so every pixel becomes
+`(p (u[i-1] + u[i+1]) + f[i]) / (1 + 2 p)`), and the second step is
+`u2 = 2 J(u1) - f` with `J` that Jacobi map; `"Laplacian"` and `"Poisson"`
+agree with `"Gaussian"` there. The third step fits no linear recurrence of
+`J(u2)`, `u2`, `J(u1)`, `u1` and `f`, so a shrinkage step is active by then.
+Woxi ignores `MaxIterations` and `Method`. **Not reproducible** so far.
+
 ### `Export` of a multi-segment `Sound`
 
 Single `Play` and `Audio` exports are byte-identical to wolframscript. For
