@@ -7167,6 +7167,9 @@ from a stated rule or needs missing machinery:
   `FrenetSerretSystem` and `ArcCurvature`, `SyntaxQ[…, TeXForm]` and
   `Root[{f, x0}]`.
 - `AbsoluteTime["05/10/1"]` (an ambiguous date, with `AbsoluteTime::ambig`).
+- `AbsoluteTime[{"05/06/22", {"Day", "Month", "YearShort"}}]` is the integer
+  `3863376000` on the current reference page, but Woxi keeps the machine
+  real `3.863376*^9` that its earlier wolframscript-verified tests record.
 - Arbitrary-precision numbers print with all their guard digits in Woxi
   (`N[Pi^10, {Infinity, 5}]` is `93648.0474760830209737167`9.97…`), where
   wolframscript prints only the significant ones (`93648.0475`).

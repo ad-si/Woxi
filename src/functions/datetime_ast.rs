@@ -1037,9 +1037,8 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect();
           if let Some((y, m, d)) = parse_date_with_format(date_str, &format) {
-            // A whole-day date is a whole number of seconds.
             let total = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
-            return Ok(Expr::Integer(total as i128));
+            return Ok(Expr::Real(total));
           }
         }
         Ok(call1("AbsoluteTime", arg))

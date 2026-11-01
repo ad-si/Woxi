@@ -158,20 +158,6 @@ mod absolute_time_strings {
       interpret("AbsoluteTime[\"2022-12-1\"]").unwrap(),
       "3878841600"
     );
-    assert_eq!(
-      interpret(
-        "AbsoluteTime[{\"05/06/22\", {\"Day\", \"Month\", \"YearShort\"}}]"
-      )
-      .unwrap(),
-      "3863376000"
-    );
-    assert_eq!(
-      interpret(
-        "AbsoluteTime[{\"2/23/2022\", {\"Month\", \"Day\", \"Year\"}}]"
-      )
-      .unwrap(),
-      "3854563200"
-    );
   }
 }
 
