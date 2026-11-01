@@ -582,7 +582,23 @@ pub fn dispatch_complex_and_special(
         _ => None,
       };
       let start = web_time::Instant::now();
-      let result = crate::evaluator::evaluate_expr_to_expr(&args[0]);
+      let (result, fired) =
+        crate::evaluator::with_time_limit(limit_secs, || {
+          crate::evaluator::evaluate_expr_to_expr(&args[0])
+        });
+      if fired {
+        // The limit interrupted a Pause. A CheckAbort that absorbed the
+        // abort (PropagateAborts -> False) lets the body finish normally.
+        if matches!(result, Err(InterpreterError::Abort))
+          && crate::evaluator::timeout_abort_active(true)
+        {
+          if args.len() == 3 {
+            return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
+          }
+          return Some(Ok(id_expr("$Aborted")));
+        }
+        return Some(result);
+      }
       let elapsed = start.elapsed().as_secs_f64();
       let mut overshot = matches!(limit_secs, Some(limit) if elapsed > limit);
       if !overshot && contains_unevaluated_integrate(&args[0]) {

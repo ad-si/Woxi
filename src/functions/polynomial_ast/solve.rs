@@ -5513,6 +5513,38 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(domain.as_deref(), Some("Integers")) {
     use super::reduce_backend::FiniteIntegerSolve;
 
+    // A polynomial equation in one variable: its integer roots divide the
+    // lowest coefficient, so even a sparse x^12345 - 2 x^777 + 1 is solved
+    // without expanding or finding its complex roots.
+    let lone_var = match &args[1] {
+      Expr::Identifier(v) => Some(v),
+      Expr::List(vs) if vs.len() == 1 => match &vs[0] {
+        Expr::Identifier(v) => Some(v),
+        _ => None,
+      },
+      _ => None,
+    };
+    if let Some(var) = lone_var
+      && let Some(roots) =
+        super::sparse_roots::integer_roots_of_equation(&args[0], var)
+    {
+      return Ok(Expr::List(
+        roots
+          .into_iter()
+          .flat_map(|(r, mult)| {
+            let rule = Expr::List(
+              vec![rule_expr(
+                Expr::Identifier(var.clone()),
+                crate::functions::math_ast::bigint_to_expr(r),
+              )]
+              .into(),
+            );
+            std::iter::repeat_n(rule, mult as usize)
+          })
+          .collect(),
+      ));
+    }
+
     match super::reduce_backend::solve_finite_integer(&args[0], &args[1]) {
       FiniteIntegerSolve::Solved(solutions) => {
         let variables: Vec<String> = match &args[1] {
@@ -20980,6 +21012,23 @@ pub fn nminimize_ast(
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
   let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  // A vector equality constraint `{a1, a2} == {b1, b2}` stands for the
+  // element-wise equations, the way Solve threads it.
+  if let Some(Expr::List(items)) = args.first()
+    && items.len() >= 2
+    && items[1..].iter().any(|c| thread_list_equation(c).is_some())
+  {
+    let mut threaded = vec![items[0].clone()];
+    for c in &items[1..] {
+      match thread_list_equation(c) {
+        Some(eqs) => threaded.extend(eqs),
+        None => threaded.push(c.clone()),
+      }
+    }
+    let mut rewritten = args.to_vec();
+    rewritten[0] = Expr::List(threaded.into());
+    return nminimize_ast(&rewritten, maximize);
+  }
   match nminimize_ast_checked(args, maximize) {
     // An objective that never evaluates to a number (an undefined `f[r]`)
     // is NMinimize::nnum and the call stays as it is, not a hard error.

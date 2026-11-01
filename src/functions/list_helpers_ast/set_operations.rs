@@ -952,12 +952,16 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Count occurrences, recording first-appearance index for stable ordering.
   // counts: Vec<(key, item, count, first_appearance)>
+  // A hash index keeps this linear for lists with many distinct elements.
   let mut counts: Vec<(String, &Expr, usize, usize)> = Vec::new();
+  let mut index: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
   for (idx, item) in items.iter().enumerate() {
     let key = expr_to_string(item);
-    if let Some(entry) = counts.iter_mut().find(|(k, _, _, _)| k == &key) {
-      entry.2 += 1;
+    if let Some(&slot) = index.get(&key) {
+      counts[slot].2 += 1;
     } else {
+      index.insert(key.clone(), counts.len());
       counts.push((key, item, 1, idx));
     }
   }

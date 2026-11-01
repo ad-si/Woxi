@@ -1879,10 +1879,7 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .any(|i| matches!(i, Expr::Real(_) | Expr::BigFloat(_, _)));
       // Exact path: if all elements are exact (integers or rationals),
       // compute product symbolically and return Power[product, 1/n]
-      let product = times_ast(items);
-      if let Ok(ref prod) = product
-        && !has_real
-      {
+      if !has_real && let Ok(ref prod) = times_ast(items) {
         let exponent = make_rational(1, n);
         return power_two(prod, &exponent);
       }
@@ -1897,7 +1894,13 @@ pub fn geometric_mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let n_f = vals.len() as f64;
       let product: f64 = vals.iter().product();
-      let result = product.powf(1.0 / n_f);
+      // A long list of samples under/overflows the running product (10^7
+      // uniform reals multiply to 0.); average the logarithms instead.
+      let result = if product.is_normal() || vals.iter().any(|v| *v <= 0.0) {
+        product.powf(1.0 / n_f)
+      } else {
+        (vals.iter().map(|v| v.ln()).sum::<f64>() / n_f).exp()
+      };
       // A Real element makes the result inexact even when it is a whole number
       // (GeometricMean[{4., 9}] = 6., not 6); num_to_expr would collapse it.
       Ok(if has_real {
@@ -2242,6 +2245,19 @@ pub fn absolute_correlation_ast(
 /// the second argument matches Wolfram's (Hermitian) convention; for real data
 /// it evaluates away. Works for both numeric and symbolic entries.
 fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let (Some(xv), Some(yv)) =
+    (machine_real_values(xs), machine_real_values(ys))
+  {
+    let (mx, my) = (machine_real_mean(&xv), machine_real_mean(&yv));
+    let terms = xv
+      .iter()
+      .zip(&yv)
+      .map(|(x, y)| (x - mx) * (y - my))
+      .collect();
+    if let Some(sum) = machine_real_plus(terms) {
+      return machine_real_quotient(sum, xv.len() - 1);
+    }
+  }
   let mean_x = mean_ast(&[Expr::List(xs.to_vec().into())])?;
   let mean_y = mean_ast(&[Expr::List(ys.to_vec().into())])?;
 
@@ -3641,6 +3657,45 @@ pub fn moment_evaluate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// CentralMoment[list, r] - r-th central moment of a numeric list
+/// The values of a list made only of machine reals (e.g. `RandomReal`
+/// data), for the direct `f64` statistics paths that keep 10^7-sample
+/// inputs from building millions of intermediate expressions.
+fn machine_real_values(items: &[Expr]) -> Option<Vec<f64>> {
+  items
+    .iter()
+    .map(|e| match e {
+      Expr::Real(r) => Some(*r),
+      _ => None,
+    })
+    .collect()
+}
+
+/// Mean of machine reals exactly as `Mean` computes it: summed left to
+/// right, then divided by the length.
+fn machine_real_mean(xs: &[f64]) -> f64 {
+  let mut sum = 0.0;
+  for x in xs {
+    sum += x;
+  }
+  sum / xs.len() as f64
+}
+
+/// The sum the evaluator gives for `Plus` over these machine reals (folded
+/// in input order along `Plus`'s balanced tree). `None` for a non-finite
+/// sum, which the general path handles.
+fn machine_real_plus(terms: Vec<f64>) -> Option<f64> {
+  let sum = machine_real_total(&terms);
+  sum.is_finite().then_some(sum)
+}
+
+/// `sum / n` evaluated as the general statistics paths do (`div2`).
+fn machine_real_quotient(sum: f64, n: usize) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&div2(
+    Expr::Real(sum),
+    Expr::Integer(n as i128),
+  ))
+}
+
 pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A SparseArray data argument is handled via its dense form. (This also
   // fixes Kurtosis/Skewness, which are computed from CentralMoment.)
@@ -3704,6 +3759,21 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("CentralMoment", args));
     }
   };
+
+  // Machine-real data with a positive integer order: fold directly in f64.
+  if let Expr::Integer(order) = r_expr
+    && *order >= 1
+    && let Some(xs) = machine_real_values(items)
+  {
+    let mean = machine_real_mean(&xs);
+    let terms = xs.iter().map(|x| wolfram_powi(x - mean, *order)).collect();
+    if let Some(sum) = machine_real_plus(terms) {
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        "Divide",
+        vec![Expr::Real(sum), Expr::Integer(xs.len() as i128)],
+      ));
+    }
+  }
 
   // Check if all items are numeric (integer or rational or real)
   let all_numeric = items.iter().all(|item| expr_to_num(item).is_some());
@@ -3775,9 +3845,17 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let n = items.len() as i128;
+  let reals = machine_real_values(items);
 
   // raw_moment(j) = (1/n) Sum[x_i^j], evaluated symbolically/exactly.
   let raw_moment = |j: usize| -> Result<Expr, InterpreterError> {
+    if let Some(xs) = &reals
+      && let Some(sum) = machine_real_plus(
+        xs.iter().map(|x| wolfram_powi(*x, j as i128)).collect(),
+      )
+    {
+      return machine_real_quotient(sum, xs.len());
+    }
     let mut terms = Vec::with_capacity(items.len());
     for item in items {
       let powered = pow2(item.clone(), Expr::Integer(j as i128));
@@ -4449,6 +4527,17 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let r = &args[1];
 
+  // Machine-real data with an integer order: the mean of the powers in f64.
+  if let Expr::Integer(order) = r
+    && let Some(xs) = machine_real_values(items)
+  {
+    let powers: Vec<f64> =
+      xs.iter().map(|x| wolfram_powi(*x, *order)).collect();
+    if powers.iter().all(|p| p.is_finite()) {
+      return Ok(Expr::Real(machine_real_mean(&powers)));
+    }
+  }
+
   // Raise each element to power r and evaluate, then compute mean
   let mut powered = Vec::with_capacity(items.len());
   for x in items {
@@ -4689,6 +4778,14 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Err(InterpreterError::EvaluationError(
         "MeanDeviation: list must not be empty".into(),
       ));
+    }
+    if let Some(xs) = machine_real_values(items) {
+      let mean = machine_real_mean(&xs);
+      if let Some(sum) =
+        machine_real_plus(xs.iter().map(|x| (x - mean).abs()).collect())
+      {
+        return machine_real_quotient(sum, xs.len());
+      }
     }
     // Compute mean
     let mean_expr = mean_ast(&[args[0].clone()])?;
@@ -7171,6 +7268,44 @@ pub fn biweight_midvariance_ast(
   };
   let ev = crate::evaluator::evaluate_expr_to_expr;
   let median = ev(&call1("Median", args[0].clone()))?;
+  // Machine-real data: the same sums, accumulated directly in f64.
+  if let (Some(xs), Some(cf), Expr::Real(med)) =
+    (machine_real_values(items), try_eval_to_f64(&c), &median)
+  {
+    let med = *med;
+    let deviations: Vec<Expr> =
+      xs.iter().map(|x| Expr::Real((x - med).abs())).collect();
+    let mad = ev(&call1("Median", Expr::List(deviations.into())))?;
+    let Some(mad) = try_eval_to_f64(&mad) else {
+      return unevaluated();
+    };
+    if mad == 0.0 {
+      return Ok(id_expr("Indeterminate"));
+    }
+    let scale = cf * mad;
+    let (mut num, mut den) = (Vec::new(), Vec::new());
+    for x in &xs {
+      let dev = x - med;
+      let u = dev / scale;
+      if u.abs() >= 1.0 {
+        continue;
+      }
+      let one_minus = 1.0 - u * u;
+      num.push(dev * dev * wolfram_powi(one_minus, 4));
+      den.push(one_minus * (1.0 - 5.0 * u * u));
+    }
+    if den.is_empty() {
+      return Ok(id_expr("Indeterminate"));
+    }
+    if let (Some(num), Some(den)) =
+      (machine_real_plus(num), machine_real_plus(den))
+    {
+      return ev(&div2(
+        times2(Expr::Integer(xs.len() as i128), Expr::Real(num)),
+        pow2(Expr::Real(den), Expr::Integer(2)),
+      ));
+    }
+  }
   let deviations: Vec<Expr> = items
     .iter()
     .map(|x| call1("Abs", minus2(x.clone(), median.clone())))
