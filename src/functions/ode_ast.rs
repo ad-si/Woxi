@@ -12522,6 +12522,27 @@ pub fn interpolation_ast(
     }
   }
 
+  // ListInterpolation[{f1, …, fn}, {{x1, …, xn}}]: explicit coordinates for
+  // the values, the same as Interpolation of the {xi, fi} pairs.
+  if head == "ListInterpolation"
+    && let Some(Expr::List(spec)) = args.get(1)
+    && let [Expr::List(xs)] = spec.as_slice()
+    && xs.len() > 2
+    && let Expr::List(values) =
+      &crate::evaluator::evaluate_expr_to_expr(data_arg)?
+    && values.len() == xs.len()
+    && values.iter().all(|v| !matches!(v, Expr::List(_)))
+  {
+    let pairs: Vec<Expr> = xs
+      .iter()
+      .zip(values.iter())
+      .map(|(x, v)| Expr::List(vec![x.clone(), v.clone()].into()))
+      .collect();
+    let mut new_args = vec![Expr::List(pairs.into())];
+    new_args.extend(args.iter().skip(2).cloned());
+    return interpolation_ast(&new_args, "Interpolation");
+  }
+
   // A positional `{{xmin, xmax}}` argument gives the coordinate domain for the
   // (uniformly spaced) 1-D value list, overriding the default 1, 2, 3, … grid.
   let mut domain_spec: Option<(f64, f64)> = None;

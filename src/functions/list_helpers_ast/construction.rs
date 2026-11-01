@@ -1861,6 +1861,28 @@ fn build_range_indices(
     return Ok(vec![crate::evaluator::evaluate_expr_to_expr(&mid)?]);
   }
   let mut result = Vec::with_capacity(n as usize);
+  // Exact rational endpoints: value_i = (an*bd*(n-1-i) + bn*ad*i) /
+  // (ad*bd*(n-1)) in machine integers, without a trip through the
+  // evaluator per sample (Array[f, 44100, {0, 1}] builds 44100 of them).
+  if let (Some((an, ad)), Some((bn, bd))) = (
+    crate::functions::math_ast::expr_to_rational(a),
+    crate::functions::math_ast::expr_to_rational(b),
+  ) {
+    let fast: Option<Vec<Expr>> = (0..n)
+      .map(|i| {
+        let num = an
+          .checked_mul(bd)?
+          .checked_mul(n - 1 - i)?
+          .checked_add(bn.checked_mul(ad)?.checked_mul(i)?)?;
+        let den = ad.checked_mul(bd)?.checked_mul(n - 1)?;
+        let (num, den) = rat_reduce(num, den);
+        Some(crate::functions::math_ast::make_rational(num, den))
+      })
+      .collect();
+    if let Some(values) = fast {
+      return Ok(values);
+    }
+  }
   // value_i = a + i * (b - a) / (n - 1)
   let diff = plus(vec![b.clone(), neg(a.clone())]);
   let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
@@ -4159,39 +4181,37 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     id_expr(default_distance_function(&all))
   };
 
-  let rows: Vec<Expr> = match &vs {
-    // Every u against every v.
-    Some(vs) => us
-      .iter()
+  // Every u against every v.
+  let rows: Vec<Expr> = if let Some(vs) = &vs {
+    us.iter()
       .map(|u| {
         vs.iter()
           .map(|v| apply_func_to_two_args(&dist_fn, u, v))
           .collect::<Result<Vec<_>, _>>()
           .map(|r| Expr::List(r.into()))
       })
-      .collect::<Result<_, _>>()?,
-    None => {
-      let n = us.len();
-      // The diagonal is zero, a machine zero for machine-number data.
-      let zero = if us.iter().any(crate::syntax::contains_inexact) {
-        Expr::Real(0.0)
-      } else {
-        Expr::Integer(0)
-      };
-      let mut rows = Vec::with_capacity(n);
-      for i in 0..n {
-        let mut row: Vec<Expr> = Vec::with_capacity(n);
-        for j in 0..n {
-          if i == j {
-            row.push(zero.clone());
-            continue;
-          }
-          row.push(apply_func_to_two_args(&dist_fn, &us[i], &us[j])?);
+      .collect::<Result<_, _>>()?
+  } else {
+    let n = us.len();
+    // The diagonal is zero, a machine zero for machine-number data.
+    let zero = if us.iter().any(crate::syntax::contains_inexact) {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    };
+    let mut rows = Vec::with_capacity(n);
+    for i in 0..n {
+      let mut row: Vec<Expr> = Vec::with_capacity(n);
+      for j in 0..n {
+        if i == j {
+          row.push(zero.clone());
+          continue;
         }
-        rows.push(Expr::List(row.into()));
+        row.push(apply_func_to_two_args(&dist_fn, &us[i], &us[j])?);
       }
-      rows
+      rows.push(Expr::List(row.into()));
     }
+    rows
   };
 
   Ok(Expr::List(rows.into()))

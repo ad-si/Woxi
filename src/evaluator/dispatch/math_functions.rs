@@ -3644,7 +3644,7 @@ pub fn dispatch_math_functions(
     "Subdivide" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::subdivide_ast(args));
     }
-    "FindDivisions" if args.len() == 2 => {
+    "FindDivisions" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::find_divisions_ast(args));
     }
     "DigitCount" if !args.is_empty() && args.len() <= 4 => {
