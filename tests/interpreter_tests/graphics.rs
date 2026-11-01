@@ -44105,4 +44105,18 @@ mod show_array_plot_sizing {
       "Got: {svg}"
     );
   }
+
+  #[test]
+  fn log_plot_nonpositive_plot_range_bound_keeps_decade_labels() {
+    // A zero lower PlotRange bound cannot exist on a log axis; it falls back
+    // to the automatic bound instead of dropping every y tick label.
+    for opts in ["PlotRange -> {{1, 4}, {0, 1}}", "PlotRange -> {0, 1}"] {
+      let svg = interpret(&format!(
+        "ExportString[ListLogPlot[{{1, 0.1, 0.01, 0.001}}, Joined -> True, \
+         Frame -> True, {opts}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.contains("baseline-shift=\"super\""), "Got: {svg}");
+    }
+  }
 }
