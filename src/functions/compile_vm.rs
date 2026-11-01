@@ -146,6 +146,8 @@ enum N {
   Not(Box<N>),
   If(Box<N>, Box<N>, Option<Box<N>>),
   Which(Vec<(N, N)>),
+  /// `Switch[x, v1, r1, …]` over literal values; `None` stands for `_`.
+  Switch(Box<N>, Vec<(Option<V>, N)>),
   Seq(Vec<N>),
   Set(usize, Box<N>),
   SetPart(usize, Vec<N>, Box<N>),
@@ -163,6 +165,11 @@ enum N {
   NestWhile(Rc<Lambda>, Box<N>, Rc<Lambda>, Option<Box<N>>, bool),
   Map(Rc<Lambda>, Box<N>),
   Apply(Rc<Lambda>, Vec<N>),
+  /// `x = Append[x, v]` (`AppendTo`) or `Prepend` (`PrependTo`).
+  AppendTo(usize, Box<N>, bool),
+  /// A function outside the evaluator, called on the arguments' values
+  /// through the symbolic evaluator (Wolfram's `MainEvaluate`).
+  Extern(String, Vec<N>),
   Break,
   Continue,
   Return(Option<Box<N>>),
@@ -437,7 +444,16 @@ impl Comp {
         "Infinity" => N::Const(V::R(f64::INFINITY)),
         _ => match self.lookup(n) {
           Some(s) => N::Var(s),
-          None => N::Const(global_value(n)?),
+          None => {
+            if let Some(v) = global_value(n) {
+              N::Const(v)
+            } else {
+              if trace() {
+                eprintln!("compile_vm: free symbol {n}");
+              }
+              return None;
+            }
+          }
         },
       },
       Expr::Constant(n) => {
@@ -488,8 +504,25 @@ impl Comp {
         let f = self.lambda(func, args.len())?;
         N::Apply(f, args.iter().map(|a| self.c(a)).collect::<Option<_>>()?)
       }
-      Expr::FunctionCall { name, args } => return self.call(name, args),
-      _ => return None,
+      Expr::FunctionCall { name, args } => {
+        let r = self.call(name, args);
+        if r.is_none() && trace() {
+          eprintln!(
+            "compile_vm: cannot compile {name}[…] ({} args)",
+            args.len()
+          );
+        }
+        return r;
+      }
+      _ => {
+        if trace() {
+          eprintln!(
+            "compile_vm: cannot compile {}",
+            crate::syntax::expr_to_string(e)
+          );
+        }
+        return None;
+      }
     })
   }
 
@@ -625,6 +658,27 @@ impl Comp {
         }
         N::Which(cases)
       }
+      "Switch" if args.len() >= 3 && args.len() % 2 == 1 => {
+        let subject = Box::new(self.c(&args[0])?);
+        let mut cases = Vec::new();
+        for pair in args[1..].chunks(2) {
+          let pat = match &pair[0] {
+            Expr::Pattern {
+              name,
+              head: None,
+              blank_type: 1,
+            } if name.is_empty() => None,
+            Expr::FunctionCall { name, args }
+              if name == "Blank" && args.is_empty() =>
+            {
+              None
+            }
+            literal => Some(from_expr(literal)?),
+          };
+          cases.push((pat, self.c(&pair[1])?));
+        }
+        N::Switch(subject, cases)
+      }
       "CompoundExpression" => N::Seq(all(self)?),
       "Module" | "Block" | "With" if args.len() == 2 => {
         self.scoped(&args[0], &args[1])?
@@ -738,15 +792,62 @@ impl Comp {
       "Map" if args.len() == 2 => {
         N::Map(self.lambda(&args[0], 1)?, Box::new(self.c(&args[1])?))
       }
+      "AppendTo" | "PrependTo" if args.len() == 2 => {
+        let Expr::Identifier(n) = &args[0] else {
+          return None;
+        };
+        let slot = self.lookup(n)?;
+        N::AppendTo(slot, Box::new(self.c(&args[1])?), name == "AppendTo")
+      }
       "Break" if args.is_empty() => N::Break,
       "Continue" if args.is_empty() => N::Continue,
       "Return" if args.len() <= 1 => N::Return(match args.first() {
         Some(a) => Some(Box::new(self.c(a)?)),
         None => None,
       }),
+      // Any other function whose arguments are evaluated: call it on their
+      // values. One that holds its arguments (a plotting or scoping
+      // construct) would see them differently, so it is not.
+      _ if extern_callable(name) => N::Extern(name.to_string(), all(self)?),
       _ => return None,
     })
   }
+}
+
+fn extern_callable(name: &str) -> bool {
+  use crate::evaluator::Attributes as A;
+  if name.is_empty() {
+    return false;
+  }
+  let holds = A::HoldAll | A::HoldFirst | A::HoldRest | A::HoldAllComplete;
+  let builtin = crate::evaluator::get_builtin_attributes(name);
+  !builtin.contains(holds)
+    && !crate::func_attrs_contains(name, holds)
+    && !matches!(
+      name,
+      // Output would be repeated should the run fall back and start over.
+      "Print"
+        | "Echo"
+        | "Sow"
+        | "Reap"
+        | "Message"
+        | "PrintTemporary"
+        | "Set"
+        | "SetDelayed"
+        | "Module"
+        | "Block"
+        | "With"
+        | "Function"
+        | "Compile"
+        | "Pattern"
+        | "Rule"
+        | "RuleDelayed"
+    )
+}
+
+/// `WOXI_COMPILE_TRACE=1` reports what kept a body from compiling.
+fn trace() -> bool {
+  std::env::var_os("WOXI_COMPILE_TRACE").is_some()
 }
 
 /// The current value of a global symbol the body reads, if it is a
@@ -1728,6 +1829,24 @@ impl Machine {
         }
         Ok(V::Null)
       }
+      N::Switch(subject, cases) => {
+        let v = self.eval(subject)?;
+        for (pat, r) in cases {
+          let hit = match pat {
+            None => true,
+            Some(p) => match (p, &v) {
+              (V::I(a), V::I(b)) => a == b,
+              (V::R(a), V::R(b)) => a == b,
+              (V::B(a), V::B(b)) => a == b,
+              _ => false,
+            },
+          };
+          if hit {
+            return self.eval(r);
+          }
+        }
+        Ok(V::Null)
+      }
       N::Seq(items) => {
         let mut last = V::Null;
         for i in items {
@@ -1903,6 +2022,28 @@ impl Machine {
           .map(|a| self.eval(a))
           .collect::<Result<_, _>>()?;
         self.apply(f, &vals)
+      }
+      N::AppendTo(s, v, append) => {
+        let value = self.eval(v)?;
+        let V::L(items) = &mut self.env[*s] else {
+          return fail();
+        };
+        let items = Rc::make_mut(items);
+        if *append {
+          items.push(value);
+        } else {
+          items.insert(0, value);
+        }
+        Ok(V::L(Rc::new(items.clone())))
+      }
+      N::Extern(name, args) => {
+        let vals: Vec<Expr> = args
+          .iter()
+          .map(|a| self.eval(a).map(|v| to_expr(&v)))
+          .collect::<Result<_, _>>()?;
+        let r = crate::evaluator::evaluate_function_call_ast(name, &vals)
+          .map_err(|_| Flow::Fail)?;
+        from_expr(&r).ok_or(Flow::Fail)
       }
       N::Break => Err(Flow::Break),
       N::Continue => Err(Flow::Continue),

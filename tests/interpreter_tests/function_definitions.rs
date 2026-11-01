@@ -1250,6 +1250,17 @@ mod compile {
       "{385, {7., 4., 9.}, 55, {2., 0.25, 2.}, {-6, 12}, {1., 2., 3., 4.}, \
        {1. + 0.*I, 2. + 0.*I}, 1}"
     );
+    // `Switch` over literals, `AppendTo`, and a function the evaluator does
+    // not know called on machine values (a user definition here).
+    assert_eq!(
+      interpret(
+        "g[x_] := x^2 + 1; \
+         {Compile[{{n, _Integer}}, Switch[n, 1, 10., 2, 20., _, 0.]] /@ {1, 2, 3}, \
+          Compile[{x}, Module[{l = {}}, Do[AppendTo[l, g[i x]], {i, 3}]; l]][2]}"
+      )
+      .unwrap(),
+      "{{10., 20., 0.}, {5., 17., 37.}}"
+    );
     // A `CompiledFunction` saved in a notebook runs its embedded function
     // through the machine evaluator too.
     assert_eq!(
