@@ -7140,6 +7140,52 @@ mod solve_one_argument_unknowns {
 mod solve_ratnz_only_for_polynomial_systems {
   use super::*;
 
+  /// A machine-number exponent of a parameter (`a^0.5`) is no inexact
+  /// coefficient: wolframscript solves such a cubic without Solve::ratnz,
+  /// while one with machine coefficients still reports it.
+  #[test]
+  fn inexact_exponents_are_quiet() {
+    let ratnz = |input: &str| {
+      clear_state();
+      interpret(input).unwrap();
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"))
+    };
+    assert!(!ratnz("Solve[z^3 + a^0.5 z + 1 == 0, z];"));
+    assert!(!ratnz("Solve[z^3 + 0.5 a^0.5 z + 1 == 0, z];"));
+    assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
+  }
+
+  /// Rationalized machine numbers are binary fractions whose exact
+  /// solutions are radicals of integers beyond the machine range: they used
+  /// to evaluate to `0.` in machine arithmetic, so the exact solver dropped
+  /// or duplicated roots of a two-circle system, and NSolve back-substituted
+  /// into a circle with a numerically double root instead of the line
+  /// through the intersections.
+  #[test]
+  fn huge_exact_coefficients() {
+    assert_eq!(
+      interpret(
+        "r = Rationalize[#, 0] &; s = N[Solve[{x^2 + (r[-0.532088886237956] - \
+         y)^2 == r[0.4679111137620437], (r[0.5652579374235682] - x)^2 + \
+         (r[-0.32635182233306964] - y)^2 == r[0.05643698595227112]}, \
+         {x, y}]]; Round[10^6 {x, y} /. s]"
+      )
+      .unwrap(),
+      "{{524005, -92396}, {684040, -532089}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{x^2 + (-0.532088886237956 - y)^2 == \
+         0.4679111137620437, (0.5652579374235682 - x)^2 + \
+         (-0.32635182233306964 - y)^2 == 0.05643698595227112}, {x, y}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn norm_equations_are_quiet() {
     clear_state();

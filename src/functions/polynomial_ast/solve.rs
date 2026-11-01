@@ -3629,10 +3629,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       }
       // In the exact solution's order, as wolframscript numericizes it.
-      return crate::evaluator::evaluate_function_call_ast(
-        "N",
-        &[exact_result],
-      );
+      return numericize_exact_solutions(exact_result);
     }
   }
   if matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
@@ -3667,12 +3664,56 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Ok(exact_result @ Expr::List(_)) =
       solve_ast_entry(&[exact, var.clone()])
   {
-    crate::emit_message(
-      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
-    );
-    return crate::evaluator::evaluate_function_call_ast("N", &[exact_result]);
+    // A machine-number exponent (`a^0.5`) is no coefficient: wolframscript
+    // solves such an equation as it stands and says nothing.
+    if !has_inexact_exponent(eq) {
+      crate::emit_message(
+        "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+      );
+    }
+    return numericize_exact_solutions(exact_result);
   }
   Ok(result)
+}
+
+/// `N` of the exact solutions of a rationalized system. Rationalizing
+/// arbitrary machine numbers gives radicals of integers beyond the machine
+/// range, whose machine evaluation underflows to a meaningless `0.`; those
+/// are evaluated at higher precision first and then rounded to machine
+/// numbers.
+fn numericize_exact_solutions(exact: Expr) -> Result<Expr, InterpreterError> {
+  let machine = crate::evaluator::evaluate_function_call_ast(
+    "N",
+    std::slice::from_ref(&exact),
+  )?;
+  if !contains_bigfloat(&machine) {
+    return Ok(machine);
+  }
+  let precise = crate::evaluator::evaluate_function_call_ast(
+    "N",
+    &[exact, Expr::Integer(40)],
+  )?;
+  crate::evaluator::evaluate_function_call_ast("N", &[precise])
+}
+
+/// Whether `expr` holds a power whose exponent is a machine number.
+fn has_inexact_exponent(expr: &Expr) -> bool {
+  let inexact = |e: &Expr| crate::functions::math_ast::contains_inexact_real(e);
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } if inexact(right) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && inexact(&args[1]) =>
+    {
+      true
+    }
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(has_inexact_exponent),
+  }
 }
 
 /// Rewrites every `Element[{x, y, …}, region]` of a logical combination
@@ -7764,8 +7805,17 @@ fn poly_system_solutions(
       .iter()
       .map(|p| drop_rounding_noise(&substitute_values(p, outer_vars, outer)))
       .collect();
+    // The equation elimination left in `var` is a candidate too: for two
+    // circles it is the line through their intersections, which pins `var`
+    // down where a circle on its own has a (numerically) double root.
+    let eliminated = drop_rounding_noise(&substitute_values(
+      solved_for_var,
+      outer_vars,
+      outer,
+    ));
     let pivot = substituted
       .iter()
+      .chain(std::iter::once(&eliminated))
       .filter(|p| max_power_int(p, var).unwrap_or(0) > 0)
       .min_by_key(|p| max_power_int(p, var).unwrap_or(i128::MAX))?;
     for value in roots_of_last_variable(&substituted, pivot, var)? {
@@ -8046,11 +8096,12 @@ fn term_magnitude(term: &Expr) -> f64 {
   magnitude
 }
 
-/// Whether any number in `expr` is a machine-precision one.
+/// Whether any number in `expr` is an arbitrary-precision one.
 fn contains_bigfloat(expr: &Expr) -> bool {
   match expr {
     Expr::BigFloat(..) => true,
     Expr::List(items) => items.iter().any(contains_bigfloat),
+    Expr::Rule { replacement, .. } => contains_bigfloat(replacement),
     Expr::FunctionCall { args, .. } => args.iter().any(contains_bigfloat),
     Expr::BinaryOp { left, right, .. } => {
       contains_bigfloat(left) || contains_bigfloat(right)
@@ -8101,7 +8152,7 @@ fn numeric_quadratic_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
   if !coeffs.iter().all(exact) {
     return None;
   }
-  let n = |e: Expr| eval("N", vec![e]);
+  let n = |e: Expr| numericize_exact_solutions(e).ok();
   match coeffs.as_slice() {
     [c, b] if !matches!(b, Expr::Integer(0)) => Some(vec![n(eval(
       "Times",
