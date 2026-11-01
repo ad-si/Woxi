@@ -34,55 +34,6 @@ fn assert_close(expr: &str, re: f64, im: f64, tol: f64) {
   );
 }
 
-mod power_mod_gaussian {
-  use super::*;
-
-  #[test]
-  fn gaussian_base() {
-    assert_eq!(interpret("PowerMod[2 + I, 2, 3]").unwrap(), "I");
-  }
-
-  #[test]
-  fn agrees_with_mod_of_the_power() {
-    for (a, b, m) in [
-      ("2 + I", 5, "3"),
-      ("3 - 2 I", 7, "4 + I"),
-      ("1 + I", 10, "5"),
-      ("7", 4, "2 + 3 I"),
-    ] {
-      assert_eq!(
-        interpret(&format!("PowerMod[{a}, {b}, {m}]")).unwrap(),
-        interpret(&format!("Mod[({a})^{b}, {m}]")).unwrap(),
-        "PowerMod[{a}, {b}, {m}]"
-      );
-    }
-  }
-
-  #[test]
-  fn negative_exponent_is_the_modular_inverse() {
-    assert_eq!(interpret("PowerMod[2 + I, -1, 3]").unwrap(), "1 + I");
-    assert_eq!(
-      interpret("Mod[(2 + I) PowerMod[2 + I, -1, 3], 3]").unwrap(),
-      "1"
-    );
-    assert_eq!(
-      interpret("Mod[(3 + 2 I)^2 PowerMod[3 + 2 I, -2, 7 + I], 7 + I]")
-        .unwrap(),
-      "1"
-    );
-  }
-
-  #[test]
-  fn not_invertible() {
-    let r = interpret_with_stdout("PowerMod[1 + I, -1, 2]").unwrap();
-    assert_eq!(r.result, "PowerMod[1 + I, -1, 2]");
-    assert_eq!(
-      r.warnings,
-      vec!["PowerMod::ninv: 1 + I is not invertible modulo 2."]
-    );
-  }
-}
-
 mod find_integer_null_vector_none {
   use super::*;
 

@@ -4810,9 +4810,6 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = rational_reciprocal_exponent(&args[1]) {
     return power_mod_root_ast(args, n);
   }
-  if let Some(result) = gaussian_power_mod(args) {
-    return result;
-  }
   match (
     expr_to_bigint(&args[0]),
     expr_to_bigint(&args[1]),
@@ -4859,92 +4856,6 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(unevaluated("PowerMod", args)),
   }
-}
-
-/// Largest component magnitude of a Gaussian modulus handled by
-/// `gaussian_power_mod`, so products of reduced residues fit in i128.
-const GAUSSIAN_POWER_MOD_LIMIT: i128 = 1 << 30;
-
-/// PowerMod over the Gaussian integers, e.g. PowerMod[2 + I, 2, 3] = I: when
-/// the base or the modulus is a genuinely complex Gaussian integer, the power
-/// is reduced with the Gaussian Mod (a - m*Round[a/m]) at every step. A
-/// negative exponent uses the inverse of the base modulo m. Returns None when
-/// the call is not a Gaussian PowerMod (or is too large to handle here).
-fn gaussian_power_mod(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
-  use num_traits::{Signed, ToPrimitive};
-  let a = expr_to_gaussian_int(&args[0])?;
-  let m = expr_to_gaussian_int(&args[2])?;
-  if a.1 == 0 && m.1 == 0 {
-    return None;
-  }
-  let exp = expr_to_bigint(&args[1])?;
-  if m == (0, 0) {
-    crate::emit_message(&format!(
-      "PowerMod::divz: The argument 0 in PowerMod[{}, {}, 0] should be nonzero.",
-      expr_to_string(&args[0]),
-      expr_to_string(&args[1])
-    ));
-    return Some(Ok(unevaluated("PowerMod", args)));
-  }
-  if m.0.abs() > GAUSSIAN_POWER_MOD_LIMIT
-    || m.1.abs() > GAUSSIAN_POWER_MOD_LIMIT
-    || a.0.abs() > GAUSSIAN_POWER_MOD_LIMIT
-    || a.1.abs() > GAUSSIAN_POWER_MOD_LIMIT
-  {
-    return None;
-  }
-  let mut base = gaussian_rem(a, m);
-  if exp.is_negative() {
-    if let Some(inv) = gaussian_mod_inverse(base, m) {
-      base = inv;
-    } else {
-      crate::emit_message(&format!(
-        "PowerMod::ninv: {} is not invertible modulo {}.",
-        expr_to_string(&args[0]),
-        expr_to_string(&args[2])
-      ));
-      return Some(Ok(unevaluated("PowerMod", args)));
-    }
-  }
-  let mut e = exp.abs();
-  let mut acc = gaussian_rem((1, 0), m);
-  let two = BigInt::from(2);
-  while e > BigInt::from(0) {
-    if (&e % &two).to_u8() == Some(1) {
-      acc = gaussian_rem(gaussian_mul(acc, base), m);
-    }
-    base = gaussian_rem(gaussian_mul(base, base), m);
-    e /= &two;
-  }
-  Some(gaussian_to_expr(acc.0, acc.1))
-}
-
-/// Inverse of the Gaussian integer `a` modulo `m` (extended Euclid over Z[i]),
-/// reduced with the Gaussian Mod; None when gcd(a, m) is not a unit.
-fn gaussian_mod_inverse(
-  a: (i128, i128),
-  m: (i128, i128),
-) -> Option<(i128, i128)> {
-  let sub = |x: (i128, i128), y: (i128, i128)| (x.0 - y.0, x.1 - y.1);
-  let (mut r0, mut r1) = (a, m);
-  let (mut s0, mut s1) = ((1i128, 0i128), (0i128, 0i128));
-  while r1 != (0, 0) {
-    let r = gaussian_rem(r0, r1);
-    // r0 = q*r1 + r, so q = (r0 - r)/r1 exactly.
-    let q = gaussian_exact_div(sub(r0, r), r1);
-    (r0, r1) = (r1, r);
-    let s = sub(s0, gaussian_mul(q, s1));
-    (s0, s1) = (s1, gaussian_rem(s, m));
-  }
-  // r0 is the gcd; it must be a unit u, and then a*s0 ≡ u, so a^-1 ≡ s0/u.
-  let u_inv = match r0 {
-    (1, 0) => (1, 0),
-    (-1, 0) => (-1, 0),
-    (0, 1) => (0, -1),
-    (0, -1) => (0, 1),
-    _ => return None,
-  };
-  Some(gaussian_rem(gaussian_mul(s0, u_inv), m))
 }
 
 /// If `expr` is a unit fraction 1/n (stored as Rational[1, n]) with n ≥ 2,
