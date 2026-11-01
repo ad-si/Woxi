@@ -2721,6 +2721,8 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     ticks: true,
     stacked: false,
     epilog: Vec::new(),
+    color_function: None,
+    color_function_scaling: true,
   }
 }
 
