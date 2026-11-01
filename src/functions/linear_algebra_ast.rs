@@ -8921,7 +8921,7 @@ pub fn find_integer_null_vector_ast(
   let reduced = lll_reduce(&mut basis);
 
   if reduced.is_empty() {
-    return Ok(unevaluated("FindIntegerNullVector", args));
+    return Ok(no_integer_null_vector(args));
   }
 
   // Find the vector with smallest |last component| (closest to null relation)
@@ -8950,7 +8950,7 @@ pub fn find_integer_null_vector_ast(
   let result = match best {
     Some(row) => row[..n].to_vec(),
     None => {
-      return Ok(unevaluated("FindIntegerNullVector", args));
+      return Ok(no_integer_null_vector(args));
     }
   };
 
@@ -8963,7 +8963,20 @@ pub fn find_integer_null_vector_ast(
   let max_val = vals.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
   if dot.abs() > max_val * 1e-6 {
     // Relation doesn't hold well enough
-    return Ok(unevaluated("FindIntegerNullVector", args));
+    return Ok(no_integer_null_vector(args));
+  }
+
+  // FindIntegerNullVector[{x1, …}, d]: a relation whose norm exceeds the
+  // bound d does not count.
+  if let Some(bound) = args.get(1).and_then(try_eval_to_f64) {
+    let norm = result
+      .iter()
+      .map(|&c| (c as f64).powi(2))
+      .sum::<f64>()
+      .sqrt();
+    if norm > bound {
+      return Ok(no_integer_null_vector(args));
+    }
   }
 
   // Normalize: make the first nonzero coefficient positive
@@ -8977,6 +8990,26 @@ pub fn find_integer_null_vector_ast(
   }
 
   Ok(Expr::List(coeffs.into_iter().map(Expr::Integer).collect()))
+}
+
+/// The result of FindIntegerNullVector when no relation was found: the call
+/// stays unevaluated with FindIntegerNullVector::rnfu, or with
+/// FindIntegerNullVector::norel when a norm bound d was given.
+fn no_integer_null_vector(args: &[Expr]) -> Expr {
+  let xs = crate::syntax::expr_to_string(&args[0]);
+  match args.get(1) {
+    Some(d) => crate::emit_message(&format!(
+      "FindIntegerNullVector::norel: There is no integer null vector for {} \
+       with norm less than or equal to {}.",
+      xs,
+      crate::syntax::expr_to_string(d)
+    )),
+    None => crate::emit_message(&format!(
+      "FindIntegerNullVector::rnfu: FindIntegerNullVector has not found an \
+       integer null vector for {xs}."
+    )),
+  }
+  unevaluated("FindIntegerNullVector", args)
 }
 
 /// Find an integer relation among `vals` via LLL: integers `a` with

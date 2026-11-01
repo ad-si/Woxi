@@ -66,6 +66,10 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // expression like Pi/4) — not only Integer/Real. `PolyLog[2., 1/2]` must
       // evaluate, matching wolframscript.
       if let Some(zf) = try_eval_to_f64(z_expr) {
+        if sf.fract() == 0.0 && (2.0..=60.0).contains(sf) && zf > 1.0 {
+          let (re, im) = polylog_integer_above_one(*sf as usize, zf);
+          return Ok(build_complex_float_expr(re, im));
+        }
         return Ok(Expr::Real(polylog_numeric(*sf, zf)));
       }
     }
@@ -125,6 +129,10 @@ fn polylog_integer_s(
     Expr::Integer(-1) => {
       // PolyLog[s, -1] = -(1 - 2^{1-s}) * Zeta[s]
       return Ok(polylog_at_neg1(s));
+    }
+    Expr::Real(f) if *f > 1.0 && s <= 60 => {
+      let (re, im) = polylog_integer_above_one(s as usize, *f);
+      return Ok(build_complex_float_expr(re, im));
     }
     Expr::Real(f) => {
       return Ok(Expr::Real(polylog_numeric(s as f64, *f)));
@@ -450,6 +458,44 @@ fn polylog_numeric(s: f64, z: f64) -> f64 {
   } else {
     f64::NAN
   }
+}
+
+/// Li_n(x) for an integer order n >= 2 and a real x > 1, on the branch cut
+/// that starts at 1. The inversion formula
+/// Li_n(z) = -(-1)^n Li_n(1/z) - (2 Pi I)^n/n! BernoulliB[n, 1/2 + Log[-z]/(2 Pi I)]
+/// with the principal Log[-x] = Log[x] + I Pi gives the value wolframscript
+/// returns, e.g. PolyLog[2, 2.] = Pi^2/4 - I Pi Log[2].
+fn polylog_integer_above_one(n: usize, x: f64) -> (f64, f64) {
+  use num_traits::ToPrimitive;
+  type C = (f64, f64);
+  let mul = |a: C, b: C| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+  let two_pi = 2.0 * std::f64::consts::PI;
+  // t = 1/2 + (Log[x] + I Pi)/(2 Pi I) = 1 - I Log[x]/(2 Pi)
+  let t: C = (1.0, -x.ln() / two_pi);
+  // BernoulliB[n, t] = Σ_k Binomial[n, k] B_k t^(n-k), by Horner in t.
+  let mut b: C = (0.0, 0.0);
+  let mut binom = 1.0;
+  let mut coeffs = Vec::with_capacity(n + 1);
+  for k in 0..=n {
+    let (num, den) = super::number_theory::bernoulli_big(k);
+    let bk = num.to_f64().unwrap_or(0.0) / den.to_f64().unwrap_or(1.0);
+    coeffs.push(binom * bk);
+    binom = binom * (n - k) as f64 / (k + 1) as f64;
+  }
+  // coeffs[k] multiplies t^(n-k): Horner from k = 0 (highest power).
+  for c in &coeffs {
+    b = mul(b, t);
+    b.0 += c;
+  }
+  // (2 Pi I)^n / n!
+  let mut factor: C = (1.0, 0.0);
+  for k in 1..=n {
+    factor = mul(factor, (0.0, two_pi / k as f64));
+  }
+  let tail = mul(factor, b);
+  let sign = if n.is_multiple_of(2) { -1.0 } else { 1.0 };
+  let inverse = polylog_numeric(n as f64, 1.0 / x);
+  (sign * inverse - tail.0, -tail.1)
 }
 
 /// Li_{-n}(z) = Σ A(n, k) z^(k+1) / (1 - z)^(n+1), valid for every z != 1.
