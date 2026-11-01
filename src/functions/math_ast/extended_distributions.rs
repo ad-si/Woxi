@@ -219,7 +219,7 @@ pub(crate) fn extended_sampler(
         }
         let mut lo = 0.0;
         for _ in 0..200 {
-          let mid = 0.5 * (lo + hi);
+          let mid = f64::midpoint(lo, hi);
           if hazard(mid) < target {
             lo = mid;
           } else {
@@ -229,7 +229,7 @@ pub(crate) fn extended_sampler(
             break;
           }
         }
-        0.5 * (lo + hi)
+        f64::midpoint(lo, hi)
       }))
     }
     // Generalized inverse Gaussian: X = μ Y where Y has density
@@ -255,7 +255,7 @@ pub(crate) fn extended_sampler(
             a = c;
           }
         }
-        g(0.5 * (a + b))
+        g(f64::midpoint(a, b))
       };
       // Bounds of the region {(u, v): 0 < u <= sqrt f(v/u)}.
       let log_u_max = maximize(&|s: f64| 0.5 * log_f(s.exp()));

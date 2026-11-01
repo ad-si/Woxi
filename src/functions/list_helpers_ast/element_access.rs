@@ -1295,9 +1295,9 @@ pub fn insert_ast(
     ordered.sort_by(|a, b| {
       for (x, y) in a.iter().zip(b) {
         if let (Some(x), Some(y)) = (expr_to_i128(x), expr_to_i128(y)) {
-          match x.cmp(&y) {
-            std::cmp::Ordering::Equal => continue,
-            other => return other,
+          let ord = x.cmp(&y);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
           }
         }
       }

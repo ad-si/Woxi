@@ -2222,19 +2222,16 @@ fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {
 
 /// PeakDetect[data, 0, sharpness, threshold, Padding -> p]: 1 on every
 /// element of a peak run found at scale 0. `None` for forms outside that.
-fn peak_detect_unsmoothed(
-  args: &[Expr],
-  positional: usize,
-) -> Result<Option<Expr>, InterpreterError> {
+fn peak_detect_unsmoothed(args: &[Expr], positional: usize) -> Option<Expr> {
   use crate::functions::math_ast::try_eval_to_f64;
   if !(2..=4).contains(&positional) {
-    return Ok(None);
+    return None;
   }
   let Ok(padding) = super::functional::peak_padding(&args[positional..]) else {
-    return Ok(None);
+    return None;
   };
   let Expr::List(data) = &args[0] else {
-    return Ok(None);
+    return None;
   };
   // A cut-off given bare or as `{value, 0}` (measured at scale 0).
   let unsmoothed = |e: &Expr| match e {
@@ -2245,29 +2242,23 @@ fn peak_detect_unsmoothed(
     other => try_eval_to_f64(other),
   };
   if try_eval_to_f64(&args[1]) != Some(0.0) {
-    return Ok(None);
+    return None;
   }
   let sharpness = match args.get(2).filter(|_| positional > 2) {
     None => 0.0,
     Some(e) => match unsmoothed(e) {
       Some(v) if v >= 0.0 => v,
-      _ => return Ok(None),
+      _ => return None,
     },
   };
   let threshold = match args.get(3).filter(|_| positional > 3) {
     None => f64::NEG_INFINITY,
-    Some(e) => match unsmoothed(e) {
-      Some(v) => v,
-      None => return Ok(None),
-    },
+    Some(e) => unsmoothed(e)?,
   };
-  let Some(vals) = data
+  let vals = data
     .iter()
     .map(try_eval_to_f64)
-    .collect::<Option<Vec<f64>>>()
-  else {
-    return Ok(None);
-  };
+    .collect::<Option<Vec<f64>>>()?;
   let mut marks = vec![0i128; vals.len()];
   for run in super::functional::peak_runs(&vals, sharpness, threshold, padding)
   {
@@ -2275,9 +2266,7 @@ fn peak_detect_unsmoothed(
       *m = 1;
     }
   }
-  Ok(Some(Expr::List(
-    marks.into_iter().map(Expr::Integer).collect(),
-  )))
+  Some(Expr::List(marks.into_iter().map(Expr::Integer).collect()))
 }
 
 /// PeakDetect[data] or PeakDetect[data, s]
@@ -2293,8 +2282,10 @@ pub fn peak_detect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .take_while(|a| !matches!(a, Expr::Rule { .. }))
     .count();
   if positional < args.len() || positional > 2 {
-    return peak_detect_unsmoothed(args, positional)
-      .map(|r| r.unwrap_or_else(|| unevaluated("PeakDetect", args)));
+    return Ok(
+      peak_detect_unsmoothed(args, positional)
+        .unwrap_or_else(|| unevaluated("PeakDetect", args)),
+    );
   }
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
