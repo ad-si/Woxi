@@ -2876,12 +2876,12 @@ terms where WL puts it right after the constant.
 symbolic `CarlsonRC[y, y]` needs a `Piecewise` — both unimplemented, so Woxi
 echoes. `CarlsonRK` and `CarlsonRM` are unimplemented outright.
 
-`InverseWeierstrassP` is **broken**: `InverseWeierstrassP[0.5, {1,2}]` returns a
-garbage real pair `{-109.5, -39.3}` where WL returns a scalar complex
-`1.308 + 0.469 I`. The correct route is
-`℘⁻¹(p) = CarlsonRF[p-e1, p-e2, p-e3]`, but WL's representative selection is not
-a simple sign or conjugate of it — for one probe it is the conjugate, for
-another it differs by a lattice period. Picking it needs the period lattice.
+`InverseWeierstrassP[p, {g2, g3}]` is `-CarlsonRF[p-e1, p-e2, p-e3]`, moved one
+real period right when its real part lies left of `-ω/2` (real invariants).
+That representative rule was fitted to the nine reference-page values; it is
+unverified for three real roots and for complex invariants beyond the one page
+example. `N[InverseWeierstrassP[1/3, {1, 2}], 50]` needs complex
+arbitrary-precision `CarlsonRF` and stays at machine precision.
 
 ### Weierstrass and elliptic gaps
 
@@ -7031,6 +7031,27 @@ The reference pages give these outputs; Woxi does not produce them yet.
   and which form `Cancel` uses when the denominator does not cancel completely
   is unverified.
 
+## Parameter sweep 5 (simplification): confirmed but not implemented
+
+The reference pages give these outputs; Woxi does not produce them yet.
+
+- Number-theoretic bounds under `FullSimplify` are `True` in Wolfram and stay
+  unevaluated: `Prime[n] > n Log[n]` for a positive integer `n`,
+  `EulerPhi[n] >= Sqrt[n]` for `n > 6`, `DivisorSigma[0, n] < EulerPhi[n]`
+  for `n > 30`, and `DivisorSigma[1, 2^(p - 1) (2^p - 1)]` with
+  `2^p - 1 ∈ Primes`.
+- `ComplexExpand` of `ArcSin`, `ArcCos`, `ArcSec`, `ArcSinh`, `ArcCosh` and
+  `ArcCsch` of `x + I y`: Wolfram goes through the logarithmic form and keeps
+  `Log[Sqrt[…]]` with the polar form of the inner square root; the exact
+  arrangement is not recoverable from the reference pages' text, so only
+  `ArcTan`, `ArcTanh` and fractional powers expand.
+- `ComplexExpand[Haversine[x + I y]]` is
+  `I Im[Haversine[x + I y]] + Re[Haversine[x + I y]]`; Woxi returns the input.
+- `FunctionExpand[TukeyWindow[x]]` (and `TukeyWindow[x, α]`) is a `Piecewise`
+  with conditions such as `-(1/3) - 2*x <= 0`; Woxi leaves it unexpanded.
+- `FunctionExpand[PascalBinomial[0, m]]` is `Sin[m Pi]/(m Pi)`; Woxi leaves it
+  unexpanded.
+
 ## String functions on a circular `BioSequence` across the wrap point
 
 String functions accept linear `"DNA"`/`"RNA"` and circular
@@ -7073,6 +7094,114 @@ These reference-page examples still time out or diverge in Woxi:
   slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
   four-variable knapsack equation, `ReliefPlot` of a 301×301 table and
   `Plot3D`/`Graphics3D` with `Texture` are not addressed.
+## Parameter sweep 5 (options): known divergences and open items
+
+- `NSum[1/((k - 20)^2 + 1), {k, 0, ∞}]` is `3.09286` in wolframscript: with
+  the default 15 leading terms its tail extrapolation misses the bump at
+  `k = 20`, which `NSumTerms -> 30` fixes (`3.10462`). Woxi sums accurately
+  either way and gives `3.10462` for both. Likewise
+  `NProduct[1 + 1/(1 + (k - 20)^2), {k, 0, ∞}]` is `12.8567` in
+  wolframscript (default `NProductFactors`) and `12.9013` in Woxi.
+  **Not reproducible** without Wolfram's extrapolation internals.
+- `JoinAcross` with the `"Right"` and `"Outer"` join specifications: the
+  order and padding of unmatched rows is unverified, so the calls stay
+  unevaluated (`"Inner"` and `"Left"` are implemented).
+- `RenameFile[a, b]` onto an existing `b` (and `RenameFile[a, b,
+  OverwriteTarget -> False]`) fails as documented ("file2 must not exist");
+  the message text (`RenameFile::eexist` / `RenameFile::filex`) is inferred
+  from `CopyFile`'s and unverified.
+- `Trace[expr, form, TraceAbove -> …]`: `Trace` only records the input and the
+  result, so patterns and `TraceAbove` are not implemented.
+- `FindMinimumCostFlow` (and its `EdgeCost` / `EdgeCapacity` options) is not
+  implemented.
+## Wavelets (parameter sweep, round 5)
+
+### `DiscreteWaveletPacketTransform` of odd-length data pads differently
+
+For an odd-length input the reference page shows the last coarse/detail pair
+built from the final sample and a zero, while Woxi's `"Periodic"` padding
+wraps around to the first sample:
+
+```sh
+wolframscript -code 'Normal[DiscreteWaveletPacketTransform[Range[5]]]'
+# {{0} -> {2.12132, 4.94975, 3.53553}, {1} -> {-0.707107, -0.707107, 3.53553},
+#  {0, 0} -> {5., 2.5}, {0, 1} -> {-2., 2.5}, {1, 0} -> {-1., 2.5}, {1, 1} -> {-1.2116883882008518`*^-16, 2.5}}
+woxi eval 'Normal[DiscreteWaveletPacketTransform[Range[5]]]'
+# (rounded) {{0} -> {2.12132, 4.94975, 4.24264}, {1} -> {-0.707107, -0.707107, 2.82843},
+#  {0, 0} -> {5., 4.5}, {0, 1} -> {-2., 1.5}, {1, 0} -> {-1., 1.5}, {1, 1} -> {0., 2.5}}
+```
+
+How Wolfram extends odd-length data for the other filter lengths is not
+recoverable from the page, so it is not implemented.
+
+### Unverified wavelet forms
+
+- The default `n` of `"SmoothGarrote"` (`x^(2n+1)/(x^(2n) + δ^(2n))`) is
+  not stated on the reference page; Woxi uses `n = 1`.
+- `"SURE"`/`"SUREShrink"` use the page's `surethreshold` formula on the finest
+  detail coefficients. `"SURELevel"`, `"SUREHybrid"`, `"GCV"`, `"GCVLevel"`
+  and `"FDR"` are not implemented (no reproducible values on the page).
+- `WaveletPhi`/`WaveletPsi` of `BattleLemarieWavelet[n, lim]` with a symbolic
+  argument stay unevaluated; Wolfram returns a `Piecewise` of an
+  `InterpolatingFunction`.
+
+## `DiscreteAsymptotic` (parameter sweep, round 5)
+
+Confirmed against the `DiscreteAsymptotic` reference page, not fixed; Woxi
+leaves these unevaluated:
+
+- `DiscreteAsymptotic[QPolyGamma[2, n], n -> Infinity]` is `Log[n]/2`
+  (`QPolyGamma` itself is not implemented).
+- `DiscreteAsymptotic[StirlingS1[n, 2], n -> Infinity]` is
+  `(-1 + n)! Log[n]` on the page, without the `(-1)^n` sign of the signed
+  Stirling numbers; `StirlingS2[n, 2]` gives a long saddle-point form in
+  `ProductLog[E^(1/2) (-1 - n)/2]`.
+- `DifferenceRoot` sequences and `Inactive[RSolveValue][…]` (the reference
+  page gives e.g. `2 E^(-2 n) n^(-1 + 2 n) Pi` for
+  `y[n + 1] == n^2 y[n], y[1] == 1`), `Inactive[InverseZTransform][…]`
+  (a `Root[-1 - 6 #1 + 6 #1^3 &, 2]` form), and the numeric
+  `Sum[Binomial[n, k]^3, {k, 0., n}]`.
+- Expansion points other than `Infinity`:
+  `DiscreteAsymptotic[Inactive[Sum][1/(k^2 + a), {k, 0, Infinity}], a -> 0]`
+  is `1/a`.
+- `SeriesTermGoal -> m` (or `{n, Infinity, m}`) with `m > 1` is only
+  implemented for a constant times `Gamma`, `Factorial` or `Pochhammer`
+  of `n + c` (the Stirling series); other sequences stay unevaluated.
+- Terms of equal growth are added as they are
+  (`LucasL[n] + Fibonacci[n]` gives `GoldenRatio^n/Sqrt[5] + GoldenRatio^n`),
+  and several exponentials with rational bases are merged into one
+  (`2^n 3^n` gives `6^n`, as `4^n/(1 + 2^n)` gives `2^n` on the page);
+  wolframscript's form for these is unverified.
+
+## Special functions (parameter sweep, round 5)
+
+Verified against the reference pages, not fixed:
+
+- Inverse Jacobi functions with complex arguments: `InverseJacobiNC[0.2 - 0.3 I, 0.1 + 0.5 I]`
+  is `0.0756637 + 1.88568 I` in WL, `InverseJacobiNS[0.2 + I, 0.1 - 0.3 I]`
+  `-0.948949 + 3.22127 I` and `InverseJacobiDS[0.2 + I, 0.1 - 0.3 I]`
+  `2.15012 + 2.89165 I`. Woxi returns other valid inverses (`ns(u) = z` holds):
+  `NS` differs by the period `2 i K'`, and WL's choice of representative for
+  these three is not recoverable from the page. The other nine functions match
+  the page's complex examples.
+- Complex arbitrary-precision values are not implemented for the elliptic
+  core: `N[EllipticF[12/5, 3], 50]` (complex) and
+  `InverseJacobiDN[1/2, 0.5`32]` (complex, precision-tracked) come back as
+  machine numbers. Real values (`N[InverseJacobiCD[1/2, 1/2], 50]`,
+  `N[EllipticK[1/3], 50]`) and the real-axis `InverseJacobiDN`/`ND` values
+  (`K + i y`, `i y`) are arbitrary precision.
+- `CoulombG`/`CoulombH1`/`CoulombH2` at a half-integer order
+  (`N[CoulombG[1/2, 7, 1]]` is `1.4449801769045936*^6`) stay unevaluated: there
+  the reflection formula is 0/0 and the limit needs extra precision. Integer
+  orders use the outgoing-wave (`WhittakerW`) form, accurate only to ~1e-9
+  (`CoulombG[3, 0.12, 7.]` is `-1.0693069242936613` vs WL `-1.06930692292444`),
+  and only for real arguments: `CoulombH2[3, 4 + I, 0.8]` stays unevaluated.
+  No Coulomb function evaluates to arbitrary precision (`N[CoulombH1[3, 2, 5], 25]`).
+- `CosDegrees[90 - x]` is `SinDegrees[x]` in WL; Woxi keeps it, as
+  `90 Degree` does not reduce to `Pi/2`.
+- Arbitrary-precision `Coth[Around[...]]`-style uncertainties are machine only;
+  `Coth[Around[Sqrt[3], 0.1]]` differs from WL in the last two digits of the
+  uncertainty.
 
 ## Parameter sweep 5 (long tail): known divergences and unverified forms
 

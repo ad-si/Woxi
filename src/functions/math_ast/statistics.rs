@@ -4897,6 +4897,12 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LocationTest expects 1 to 3 arguments".into(),
     ));
   }
+  let (_, opts) = crate::evaluator::dispatch::split_trailing_options(
+    &full_args[positional..],
+  );
+  let Some(settings) = HypothesisTestSettings::parse(&opts) else {
+    return Ok(unevaluated("LocationTest", full_args));
+  };
 
   // Parse mu0 (second argument, default 0)
   let mu0 = if args.len() >= 2 {
@@ -4944,7 +4950,9 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
         let (t_stat, df) = two_sample_t_test(&vals1, &vals2, mu0);
-        return Ok(format_location_test_result(t_stat, df, &property, "T"));
+        return Ok(format_location_test_result(
+          t_stat, df, &property, "T", &settings,
+        ));
       }
       // One-sample t-test
       let vals = extract_numeric_list_flat(items)?;
@@ -4954,7 +4962,9 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       let (t_stat, df) = one_sample_t_test(&vals, mu0);
-      Ok(format_location_test_result(t_stat, df, &property, "T"))
+      Ok(format_location_test_result(
+        t_stat, df, &property, "T", &settings,
+      ))
     }
     _ => Ok(unevaluated("LocationTest", full_args)),
   }
@@ -5039,17 +5049,95 @@ fn two_sample_t_test(data1: &[f64], data2: &[f64], mu0: f64) -> (f64, f64) {
   (t, df)
 }
 
+/// The `AlternativeHypothesis` of a hypothesis test.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Alternative {
+  Unequal,
+  Greater,
+  Less,
+}
+
+/// The options of a hypothesis test that steer its p-value and conclusion.
+pub(crate) struct HypothesisTestSettings {
+  /// `SignificanceLevel`, the cutoff for rejecting the null hypothesis.
+  pub alpha: f64,
+  /// `AlternativeHypothesis`.
+  pub alternative: Alternative,
+}
+
+impl HypothesisTestSettings {
+  /// The settings among `opts`; options that do not change the results
+  /// (`VerifyTestAssumptions`, …) are passed over. `None` for an invalid
+  /// setting.
+  pub(crate) fn parse(opts: &[(String, Expr)]) -> Option<Self> {
+    let mut out = HypothesisTestSettings {
+      alpha: 0.05,
+      alternative: Alternative::Unequal,
+    };
+    for (name, value) in opts {
+      match name.as_str() {
+        "SignificanceLevel" => {
+          if !matches!(value, Expr::Identifier(a) if a == "Automatic") {
+            out.alpha =
+              try_eval_to_f64(value).filter(|a| *a > 0.0 && *a < 1.0)?;
+          }
+        }
+        "AlternativeHypothesis" => {
+          out.alternative = match value {
+            Expr::String(a) if a == "Unequal" => Alternative::Unequal,
+            Expr::String(a) if a == "Greater" => Alternative::Greater,
+            Expr::String(a) if a == "Less" => Alternative::Less,
+            _ => return None,
+          }
+        }
+        _ => {}
+      }
+    }
+    Some(out)
+  }
+
+  /// "Reject" or "Do not reject", comparing p-value `p` with the level.
+  pub(crate) fn short_conclusion(&self, p: f64) -> Expr {
+    str_expr(if p < self.alpha {
+      "Reject"
+    } else {
+      "Do not reject"
+    })
+  }
+}
+
+/// The p-value of a t statistic under the alternative hypothesis.
+fn t_test_p_value_for(t_stat: f64, df: f64, alternative: Alternative) -> f64 {
+  let two_sided = t_test_p_value(t_stat, df);
+  let in_direction = match alternative {
+    Alternative::Unequal => return two_sided,
+    Alternative::Greater => t_stat > 0.0,
+    Alternative::Less => t_stat < 0.0,
+  };
+  if in_direction {
+    two_sided / 2.0
+  } else {
+    1.0 - two_sided / 2.0
+  }
+}
+
 fn format_location_test_result(
   t_stat: f64,
   df: f64,
   property: &str,
   test_name: &str,
+  settings: &HypothesisTestSettings,
 ) -> Expr {
+  let t_test_p_value =
+    |t_stat, df| t_test_p_value_for(t_stat, df, settings.alternative);
   match property {
     "TestStatistic" => num_to_expr(t_stat),
     "PValue" => {
       let p = t_test_p_value(t_stat, df);
       num_to_expr(p)
+    }
+    "ShortTestConclusion" => {
+      settings.short_conclusion(t_test_p_value(t_stat, df))
     }
     "TestDataTable" => {
       let p = t_test_p_value(t_stat, df);
@@ -5657,28 +5745,40 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// data are tested against the normal distribution fitted to them by
 /// maximum likelihood, which costs two degrees of freedom.
 pub fn pearson_chi_square_test_ast(
-  args: &[Expr],
+  all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let (args, opts) =
+    crate::evaluator::dispatch::split_trailing_options(all_args);
   if args.is_empty() || args.len() > 3 {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   }
   if args.len() >= 2
     && !matches!(&args[1], Expr::Identifier(s) if s == "Automatic")
   {
-    return super::named_fit_test_ast("PearsonChiSquareTest", args);
+    return super::named_fit_test_ast("PearsonChiSquareTest", all_args);
   }
+  let settings = match opts.as_slice() {
+    [] => HypothesisTestSettings::parse(&[]),
+    [(name, _)] if name == "SignificanceLevel" => {
+      HypothesisTestSettings::parse(&opts)
+    }
+    _ => None,
+  };
+  let Some(settings) = settings else {
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
+  };
   let Expr::List(items) = &args[0] else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   let Some(data) = items
     .iter()
     .map(try_eval_to_f64)
     .collect::<Option<Vec<f64>>>()
   else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   if data.len() < 2 {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   }
   let n = data.len() as f64;
   let mean = data.iter().sum::<f64>() / n;
@@ -5690,13 +5790,16 @@ pub fn pearson_chi_square_test_ast(
   let Some((statistic, p_value)) =
     super::pearson_chi_square_fitted(&args[0], &dist, 2)
   else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   match args.get(2) {
     None => Ok(Expr::Real(p_value)),
     Some(Expr::String(p)) if p == "PValue" => Ok(Expr::Real(p_value)),
     Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(statistic)),
-    _ => Ok(unevaluated("PearsonChiSquareTest", args)),
+    Some(Expr::String(p)) if p == "ShortTestConclusion" => {
+      Ok(settings.short_conclusion(p_value))
+    }
+    _ => Ok(unevaluated("PearsonChiSquareTest", all_args)),
   }
 }
 
@@ -6681,388 +6784,6 @@ fn alternating_group_generators(n: usize) -> Expr {
     make_cycles((2..=n as i128).collect())
   };
   Expr::List(vec![three_cycle, second_gen].into())
-}
-
-// ─── DiscreteAsymptotic ───────────────────────────────────────────────
-
-/// DiscreteAsymptotic[expr, n -> Infinity] - leading asymptotic term of expr as n -> Infinity
-pub fn discrete_asymptotic_ast(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
-  if args.len() < 2 || args.len() > 3 {
-    return Ok(unevaluated("DiscreteAsymptotic", args));
-  }
-
-  // Parse second argument: must be Rule[var, Infinity] or Expr::Rule { var, Infinity }
-  let var_name = match &args[1] {
-    Expr::FunctionCall { name, args: rargs }
-      if name == "Rule" && rargs.len() == 2 =>
-    {
-      match (&rargs[0], &rargs[1]) {
-        (Expr::Identifier(s), Expr::Identifier(inf)) if inf == "Infinity" => {
-          s.clone()
-        }
-        _ => {
-          return Ok(unevaluated("DiscreteAsymptotic", args));
-        }
-      }
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => match (pattern.as_ref(), replacement.as_ref()) {
-      (Expr::Identifier(s), Expr::Identifier(inf)) if inf == "Infinity" => {
-        s.clone()
-      }
-      _ => {
-        return Ok(unevaluated("DiscreteAsymptotic", args));
-      }
-    },
-    _ => {
-      return Ok(unevaluated("DiscreteAsymptotic", args));
-    }
-  };
-
-  let expr = &args[0];
-  match discrete_asymptotic_leading(expr, &var_name) {
-    Some(result) => crate::evaluator::evaluate_expr_to_expr(&result),
-    None => Ok(unevaluated("DiscreteAsymptotic", args)),
-  }
-}
-
-/// Compute the leading asymptotic term of an expression as var -> Infinity.
-/// Returns None if the expression cannot be handled.
-fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
-  match expr {
-    // Constants don't depend on var
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => Some(expr.clone()),
-    Expr::Identifier(name) if name == var => Some(expr.clone()),
-    Expr::Identifier(name) if name != var => Some(expr.clone()),
-
-    // Factorial[var] → Stirling: var^(var+1/2) * Sqrt[2*Pi] / E^var
-    Expr::FunctionCall { name, args }
-      if name == "Factorial"
-        && args.len() == 1
-        && is_pure_var(&args[0], var) =>
-    {
-      Some(stirling_approx(var))
-    }
-
-    // Gamma[var] → (var-1)! ~ var^(var-1/2) * Sqrt[2*Pi] / E^var  (but actually Gamma(n) = (n-1)!)
-    // Gamma[n] → n^(n - 1/2) * Sqrt[2*Pi] / E^n  leading term
-    Expr::FunctionCall { name, args }
-      if name == "Gamma" && args.len() == 1 && is_pure_var(&args[0], var) =>
-    {
-      // Gamma[n] = (n-1)! ~ n^(n-1/2) * Sqrt[2*Pi] / E^n
-      let n = id_expr(var);
-      let m_one_half =
-        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
-      Some(times(vec![
-        // n^(n - 1/2)
-        pow(n.clone(), plus(vec![n.clone(), m_one_half])),
-        // Sqrt[2*Pi]
-        make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
-        // E^(-n)
-        pow(const_expr("E"), neg(n)),
-      ]))
-    }
-
-    // HarmonicNumber[var] → Log[var]
-    Expr::FunctionCall { name, args }
-      if name == "HarmonicNumber"
-        && args.len() == 1
-        && is_pure_var(&args[0], var) =>
-    {
-      Some(call1("Log", id_expr(var)))
-    }
-
-    // Power[base, exp] - handle var^k, k^var, etc.
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      // If neither depends on var, return as-is
-      if !contains_var(&args[0], var) && !contains_var(&args[1], var) {
-        return Some(expr.clone());
-      }
-      // var^const or const^var - already in asymptotic form
-      Some(expr.clone())
-    }
-
-    // BinaryOp Power
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      ..
-    } => Some(expr.clone()),
-
-    // Plus: find the dominant term
-    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
-      asymptotic_sum(args, var)
-    }
-
-    // BinaryOp Plus
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left,
-      right,
-    } => asymptotic_sum(&[*left.clone(), *right.clone()], var),
-
-    // BinaryOp Minus
-    Expr::BinaryOp {
-      op: BinaryOperator::Minus,
-      left,
-      right,
-    } => {
-      let neg_right = neg(*right.clone());
-      asymptotic_sum(&[*left.clone(), neg_right], var)
-    }
-
-    // Times: take asymptotic of each factor
-    Expr::FunctionCall { name, args }
-      if name == "Times" && !args.is_empty() =>
-    {
-      let mut result_factors = Vec::new();
-      for arg in args {
-        result_factors.push(discrete_asymptotic_leading(arg, var)?);
-      }
-      if result_factors.len() == 1 {
-        Some(result_factors.into_iter().next().unwrap())
-      } else {
-        Some(times(result_factors))
-      }
-    }
-
-    // BinaryOp Times
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      let l = discrete_asymptotic_leading(left, var)?;
-      let r = discrete_asymptotic_leading(right, var)?;
-      Some(times(vec![l, r]))
-    }
-
-    // BinaryOp Divide
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      let l = discrete_asymptotic_leading(left, var)?;
-      let r = discrete_asymptotic_leading(right, var)?;
-      Some(div2(l, r))
-    }
-
-    // Sqrt[expr]
-    expr if is_sqrt(expr).is_some() => {
-      let sqrt_arg = is_sqrt(expr).unwrap();
-      let inner = discrete_asymptotic_leading(sqrt_arg, var)?;
-      Some(make_sqrt(inner))
-    }
-
-    // Log[expr] - keep as is if it depends on var
-    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
-      Some(expr.clone())
-    }
-
-    // Binomial[var, var/2] → 2^(1/2+var) / (Sqrt[var]*Sqrt[Pi])
-    Expr::FunctionCall { name, args }
-      if name == "Binomial" && args.len() == 2 =>
-    {
-      if is_pure_var(&args[0], var)
-        && let Some(result) = asymptotic_binomial(&args[0], &args[1], var)
-      {
-        return Some(result);
-      }
-      None
-    }
-
-    // If expression doesn't contain var, it's a constant
-    _ if !contains_var(expr, var) => Some(expr.clone()),
-
-    _ => None,
-  }
-}
-
-/// Check if expr is exactly the variable
-fn is_pure_var(expr: &Expr, var: &str) -> bool {
-  matches!(expr, Expr::Identifier(name) if name == var)
-}
-
-/// Check if expression contains the variable
-fn contains_var(expr: &Expr, var: &str) -> bool {
-  match expr {
-    Expr::Identifier(name) => name == var,
-    Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_) => false,
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(|a| contains_var(a, var))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      contains_var(left, var) || contains_var(right, var)
-    }
-    Expr::UnaryOp { operand, .. } => contains_var(operand, var),
-    Expr::List(items) => items.iter().any(|a| contains_var(a, var)),
-    _ => false,
-  }
-}
-
-/// Stirling's approximation: n! ~ n^(n+1/2) * Sqrt[2*Pi] / E^n
-fn stirling_approx(var: &str) -> Expr {
-  let n = id_expr(var);
-  let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
-  times(vec![
-    // n^(n + 1/2)
-    pow(n.clone(), plus(vec![n.clone(), one_half])),
-    // Sqrt[2*Pi]
-    make_sqrt(times(vec![Expr::Integer(2), const_expr("Pi")])),
-    // E^(-n)
-    pow(const_expr("E"), neg(n)),
-  ])
-}
-
-/// Determine growth rate class for comparison.
-/// Returns a rough numerical "growth order" for comparing dominance:
-/// constants < log < polynomial < exponential < factorial
-fn growth_order(expr: &Expr, var: &str) -> Option<f64> {
-  if !contains_var(expr, var) {
-    return Some(0.0); // constant
-  }
-  match expr {
-    Expr::Identifier(name) if name == var => Some(1.0), // linear ~ n^1
-
-    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
-      Some(0.001) // Log grows slower than any polynomial
-    }
-
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if is_pure_var(&args[0], var) && !contains_var(&args[1], var) {
-        // var^k - polynomial
-        try_eval_to_f64(&args[1])
-      } else if !contains_var(&args[0], var) && contains_var(&args[1], var) {
-        // const^var - exponential
-        try_eval_to_f64(&args[0]).map(|base| 100.0 + base.ln())
-      } else {
-        Some(200.0) // var^var or similar - super-exponential
-      }
-    }
-
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      // Product: max of growth orders (approximately)
-      let mut max_order = 0.0f64;
-      for arg in args {
-        max_order = max_order.max(growth_order(arg, var)?);
-      }
-      Some(max_order)
-    }
-
-    Expr::FunctionCall { name, args }
-      if name == "Factorial"
-        && args.len() == 1
-        && is_pure_var(&args[0], var) =>
-    {
-      Some(300.0) // factorial grows faster than exponential
-    }
-
-    expr if is_sqrt(expr).is_some() => {
-      growth_order(is_sqrt(expr).unwrap(), var).map(|o| o * 0.5)
-    }
-
-    // BinaryOp variants
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      let l = growth_order(left, var)?;
-      let r = growth_order(right, var)?;
-      Some(l.max(r))
-    }
-
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      if is_pure_var(left, var) && !contains_var(right, var) {
-        try_eval_to_f64(right)
-      } else if !contains_var(left, var) && contains_var(right, var) {
-        try_eval_to_f64(left).map(|base| 100.0 + base.ln())
-      } else {
-        Some(200.0)
-      }
-    }
-
-    _ => None,
-  }
-}
-
-/// Find the dominant term in a sum
-fn asymptotic_sum(terms: &[Expr], var: &str) -> Option<Expr> {
-  if terms.is_empty() {
-    return Some(Expr::Integer(0));
-  }
-  if terms.len() == 1 {
-    return discrete_asymptotic_leading(&terms[0], var);
-  }
-
-  // Get asymptotic of each term and find the dominant one
-  let mut best_expr = discrete_asymptotic_leading(&terms[0], var)?;
-  let mut best_order = growth_order(&best_expr, var).unwrap_or(0.0);
-
-  for term in &terms[1..] {
-    let asym = discrete_asymptotic_leading(term, var)?;
-    let order = growth_order(&asym, var).unwrap_or(0.0);
-    if order > best_order {
-      best_expr = asym;
-      best_order = order;
-    } else if (order - best_order).abs() < 1e-10 {
-      // Same order - need to add them (e.g. 3n^2 + 5n^2 -> 8n^2)
-      // For simplicity, if they have the same growth order, keep as sum
-      best_expr = plus(vec![best_expr, asym]);
-    }
-  }
-  Some(best_expr)
-}
-
-/// Asymptotic of Binomial[n, n/2] → 2^(n+1/2) / (Sqrt[n]*Sqrt[Pi])
-fn asymptotic_binomial(
-  n_expr: &Expr,
-  k_expr: &Expr,
-  var: &str,
-) -> Option<Expr> {
-  // Check if k = n/2
-  let is_half = match k_expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => is_pure_var(left, var) && matches!(**right, Expr::Integer(2)),
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      let has_half = args.iter().any(|a| {
-        matches!(a, Expr::FunctionCall { name: rn, args: ra }
-          if rn == "Rational" && ra.len() == 2
-          && matches!((&ra[0], &ra[1]), (Expr::Integer(1), Expr::Integer(2))))
-      });
-      let has_var = args.iter().any(|a| is_pure_var(a, var));
-      has_half && has_var
-    }
-    _ => false,
-  };
-
-  if !is_half || !is_pure_var(n_expr, var) {
-    return None;
-  }
-
-  let n = id_expr(var);
-  let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
-  // 2^(1/2 + n) / (Sqrt[n] * Sqrt[Pi])
-  Some(times(vec![
-    // 2^(1/2 + n)
-    pow(Expr::Integer(2), plus(vec![one_half, n.clone()])),
-    // 1 / (Sqrt[n] * Sqrt[Pi])
-    pow(
-      times(vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
-      Expr::Integer(-1),
-    ),
-  ]))
 }
 
 // ─── CovarianceFunction[ARMAProcess[...], s, t] ───────────────────────

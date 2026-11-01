@@ -55,7 +55,10 @@ mod interpreter_tests {
   mod option_sweep5_graph_image;
   mod option_sweep5_graphics_options;
   mod option_sweep5_misc;
+  mod option_sweep5_options;
   mod option_sweep5_performance;
+  mod option_sweep5_simplify;
+  mod option_sweep5_special;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;
