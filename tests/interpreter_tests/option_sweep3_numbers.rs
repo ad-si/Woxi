@@ -324,7 +324,7 @@ mod meijer_g_scaled {
       .map(|v| v.parse().unwrap())
       .collect();
     for (v, e) in values.iter().zip([
-      0.051128452708100507,
+      0.051_128_452_708_100_5,
       0.12611212330424154,
       0.13390257706925418,
     ]) {
