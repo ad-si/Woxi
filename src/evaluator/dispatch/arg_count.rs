@@ -770,7 +770,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "BoundaryMeshRegionQ" => Some((1, 1)),
     "DeleteSmallComponents" => Some((1, 2)),
     "ImagePartition" => Some((2, 3)),
-    "ImageTake" => Some((2, 3)),
+    "ImageTake" => Some((2, 4)),
     "ImageType" => Some((1, 1)),
     "Implies" => Some((2, 2)),
     "Indexed" => Some((2, 2)),
