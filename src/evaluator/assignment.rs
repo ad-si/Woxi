@@ -6184,145 +6184,16 @@ pub fn tag_set_delayed_ast(
   let mut conditions: Vec<Option<Expr>> = Vec::new();
   let mut defaults: Vec<Option<Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
-  let mut final_body = body.clone();
-  // Track first occurrence of each pattern variable for SameQ conditions
-  // on repeated pattern variables (e.g. v_ appearing in multiple args).
-  let mut seen_pattern_vars: std::collections::HashMap<String, Expr> =
-    std::collections::HashMap::new();
-  // Extra conditions for repeated pattern variables
-  let mut extra_conditions: Vec<Expr> = Vec::new();
-  // Rewrites applied to the body when a destructured argument's pattern
-  // variables become `Part[_upN, j]`. A `/;` condition names the same
-  // variables, so it needs the same rewrites — without them the condition
-  // tests a free symbol and the definition never matches.
-  let mut inner_substitutions: Vec<(String, Expr)> = Vec::new();
+  let final_body = body.clone();
 
   for (i, arg) in lhs_args.iter().enumerate() {
     let arg = unwrap_longest_shortest(arg);
-    // A pattern wrapper is not the head of the expression the argument
-    // matches: `o : obj[_Symbol]` matches an `obj[…]`, not a `Pattern[…]`.
-    // Those go to the structural-pattern path below, which stores the
-    // pattern itself and binds its variables.
-    let is_wrapped_pattern = matches!(arg, Expr::FunctionCall { name, .. }
-      if crate::evaluator::pattern_matching::is_pattern_construct_head(name));
-    // The argument is taken apart by position, which only fits plain `x_`
-    // arguments: a sequence (`Move[l_, args___]`), a head (`x_Integer`), a
-    // test or a literal is matched by the structural path below.
-    let destructurable = |inner: &[Expr]| {
-      inner.iter().all(|a| {
-        let plain_form = match a {
-          Expr::Pattern { .. } => true,
-          Expr::Identifier(name) => name.contains('_'),
-          Expr::FunctionCall { name, .. } => name == "Pattern",
-          _ => false,
-        };
-        plain_form
-          && matches!(extract_pattern_info(a), (ref n, None, 1) if !n.is_empty())
-      })
-    };
-    if let Expr::FunctionCall {
-      name: arg_func_name,
-      args: inner_args,
-    } = arg
-      && !is_wrapped_pattern
-      && destructurable(inner_args)
+    // A compound argument (`R[tag_]` in `R /: R[tag_].delete[] := …`) is
+    // matched structurally, binding its pattern variables to the parts of the
+    // actual argument. (Taking it apart by position instead put `R[x][[1]]`
+    // in the body where `tag` stood, and a held position such as
+    // `axis[tag] =.` never evaluated that to `x`.)
     {
-      let param_name = format!("_up{i}");
-      heads.push(Some(arg_func_name.clone()));
-
-      // A `x__` / `x___` operand soaks up a run of arguments, so the
-      // call only needs a minimum length and the operands after it count
-      // from the end.
-      let seq_pos = inner_args.iter().position(|a| {
-        matches!(a, Expr::Pattern { .. } | Expr::Identifier(_))
-          && extract_pattern_info(a).2 >= 2
-      });
-      let inner_count = inner_args.len();
-
-      if inner_args.is_empty() {
-        conditions.push(None);
-      } else if let Some(sp) = seq_pos {
-        let required = inner_count - 1
-          + usize::from(extract_pattern_info(&inner_args[sp]).2 == 2);
-        conditions.push(Some(Expr::Comparison {
-          operands: vec![
-            call1("Length", Expr::Identifier(param_name.clone())),
-            Expr::Integer(required as i128),
-          ],
-          operators: vec![ComparisonOp::GreaterEqual],
-        }));
-      } else {
-        conditions.push(Some(Expr::Comparison {
-          operands: vec![
-            call1("Length", Expr::Identifier(param_name.clone())),
-            Expr::Integer(inner_count as i128),
-          ],
-          operators: vec![ComparisonOp::SameQ],
-        }));
-      }
-
-      for (j, inner_arg) in inner_args.iter().enumerate() {
-        let (pat_name, _pat_head, _blank_type) =
-          extract_pattern_info(inner_arg);
-        if !pat_name.is_empty() {
-          let up = Expr::Identifier(param_name.clone());
-          let part_expr = match seq_pos {
-            Some(sp) if j == sp => call(
-              "Apply",
-              vec![
-                Expr::Identifier("Sequence".to_string()),
-                call(
-                  "Take",
-                  vec![
-                    up,
-                    Expr::List(
-                      vec![
-                        Expr::Integer((j + 1) as i128),
-                        call(
-                          "Plus",
-                          vec![
-                            call1(
-                              "Length",
-                              Expr::Identifier(param_name.clone()),
-                            ),
-                            Expr::Integer(-((inner_count - 1 - j) as i128)),
-                          ],
-                        ),
-                      ]
-                      .into(),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            Some(sp) if j > sp => call(
-              "Part",
-              vec![up, Expr::Integer(-((inner_count - j) as i128))],
-            ),
-            _ => call("Part", vec![up, Expr::Integer((j + 1) as i128)]),
-          };
-          // If this pattern variable was already seen, add a SameQ
-          // condition to ensure both occurrences match the same value.
-          if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
-            extra_conditions.push(Expr::Comparison {
-              operands: vec![prev_expr.clone(), part_expr.clone()],
-              operators: vec![ComparisonOp::SameQ],
-            });
-          } else {
-            seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
-          }
-          final_body = crate::syntax::substitute_variable(
-            &final_body,
-            &pat_name,
-            &part_expr,
-          );
-          inner_substitutions.push((pat_name, part_expr));
-        }
-      }
-
-      params.push(param_name);
-      defaults.push(None);
-    } else {
       // Check if this argument is actually a pattern (contains _ or is a Pattern node)
       // Plain identifiers like `x` are literal symbols, not patterns.
       let is_pattern = match arg {
@@ -6379,30 +6250,21 @@ pub fn tag_set_delayed_ast(
     }
   }
 
-  // Add extra conditions for repeated pattern variables to the last
-  // parameter's condition slot (merging with any existing condition).
-  if !extra_conditions.is_empty() && !conditions.is_empty() {
-    let last_idx = conditions.len() - 1;
-    let mut all_conds = extra_conditions;
-    if let Some(existing) = conditions[last_idx].take() {
-      all_conds.insert(0, existing);
-    }
-    // Combine all conditions with And
-    let combined = if all_conds.len() == 1 {
-      all_conds.remove(0)
-    } else {
-      call("And", all_conds)
-    };
-    conditions[last_idx] = Some(combined);
-  }
-
-  // Attach any conditions from the LHS (/;) or body to condition slots
+  // Attach any conditions from the LHS (/;) or body to condition slots.
+  // What a structural pattern binds is known only once the dispatcher has
+  // matched it, after the slot conditions; with such a slot the condition
+  // stays on the body instead (`rhs /; test`), whose guard is checked with
+  // every variable bound — as Wolfram reads `lhs := rhs /; test`.
+  let has_structural = conditions.iter().any(|c| {
+    matches!(c, Some(Expr::FunctionCall { name, .. })
+      if name == "__StructuralPattern__")
+  });
+  let mut final_body = final_body;
   for extra_cond in lhs_condition.into_iter().chain(body_condition.as_ref()) {
-    let extra_cond = &inner_substitutions
-      .iter()
-      .fold(extra_cond.clone(), |acc, (name, part)| {
-        crate::syntax::substitute_variable(&acc, name, part)
-      });
+    if has_structural {
+      final_body = call("Condition", vec![final_body, extra_cond.clone()]);
+      continue;
+    }
     let mut attached = false;
     for c in &mut conditions {
       if c.is_none() {

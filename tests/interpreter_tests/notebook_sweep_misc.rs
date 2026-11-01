@@ -205,3 +205,93 @@ mod combinatorica_tableaux {
     );
   }
 }
+
+mod upvalue_pattern_variables {
+  use super::*;
+
+  // A pattern variable inside a compound argument of an upvalue
+  // (`R[tag_]`) is bound to that part of the actual argument, also in a
+  // held position: it used to become `R[x][[1]]`, so `axis[tag] =.` reported
+  // Unset::norep (the SU2 spinor map Demonstration's object deletion).
+  #[test]
+  fn held_positions_see_the_matched_part() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "R /: R[tag_].f[] := Hold[tag]; R /: g[R[t_]] := Hold[t]; \
+         {R[x].f[], g[R[y]]}"
+      )
+      .unwrap(),
+      "{Hold[x], Hold[y]}"
+    );
+  }
+
+  #[test]
+  fn unset_through_an_upvalue_method() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Module[{axis, key}, axis[_] := {}; \
+         R /: new[R[a_]] := (key = Unique[]; axis[key] = a; Return[R[key]]); \
+         R /: R[tag_].delete[] := (axis[tag] =.;); \
+         R /: R[tag_].get[] := axis[tag]]; \
+       r = new[R[{1, 2, 3}]]; {r.get[], r.delete[]; r.get[]}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{{1, 2, 3}, {}}");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  #[test]
+  fn sequences_and_conditions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "R /: h[R[a_, b__]] := {a, {b}}; R /: h2[R[a_, b___, c_]] := {a, {b}, c}; \
+         tagG /: fH[tagG[x_]] := x + 1 /; x > 2; \
+         S /: k[S[x_], S[x_]] := same; S /: k2[y_, S[x_]] := {x, y} /; x > y; \
+         T /: m[T[x_]] /; x > 0 := pos; \
+         {h[R[1, 2, 3]], h2[R[1, 2]], h[R[1]], fH[tagG[7]], fH[tagG[1]], \
+          k[S[1], S[1]], k[S[1], S[2]], k2[1, S[2]], k2[3, S[2]], m[T[1]], m[T[-1]]}"
+      )
+      .unwrap(),
+      "{{1, {2, 3}}, {1, {}, 2}, h[R[1]], 8, fH[tagG[1]], same, k[S[1], S[2]], \
+       {2, 1}, k2[3, S[2]], pos, m[T[-1]]}"
+    );
+  }
+}
+
+mod unset_literal_values {
+  use super::*;
+
+  // `f[a] = 1` is kept apart from the pattern rules (the memoization
+  // cache); `f[a] =.` has to find it there, with its arguments evaluated
+  // as Set evaluates them.
+  #[test]
+  fn unset_removes_a_literal_value() {
+    clear_state();
+    assert_eq!(interpret("f[a] = 1; f[a] =.; f[a]").unwrap(), "f[a]");
+    assert_eq!(
+      interpret(
+        "f[_] := 0; f[a] = 1; f[a] =.; k = Unique[]; g[k] = 1; g[k] =.; \
+         {f[a], DownValues[f], DownValues[g]}"
+      )
+      .unwrap(),
+      "{0, {HoldPattern[f[_]] :> 0}, {}}"
+    );
+  }
+
+  #[test]
+  fn unset_keeps_held_arguments_and_reports_missing() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[h, HoldAll]; k = 1; h[k] = 5; h[k] =.; {h[k], DownValues[h]}"
+      )
+      .unwrap(),
+      "{h[k], {}}"
+    );
+    let result = interpret_with_stdout("q[a] =.").unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(result.warnings.iter().any(|w| w.contains("Unset::norep")));
+  }
+}

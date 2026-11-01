@@ -2222,6 +2222,40 @@ fn evaluate_expr_to_expr_uncached(
             args: lhs_args,
           } = &args[0]
           {
+            // The arguments are evaluated, as `Set` evaluates them (unless
+            // the head holds them): `k = Unique[]; f[k] = 1; f[k] =.` removes
+            // the value of `f[$1]`.
+            let mut evaluated_args = Vec::with_capacity(lhs_args.len());
+            for (i, a) in lhs_args.iter().enumerate() {
+              if crate::evaluator::assignment::lhs_slot_is_held(head, i)
+                || crate::evaluator::pattern_matching::contains_pattern(a)
+              {
+                evaluated_args.push(a.clone());
+              } else {
+                evaluated_args.push(evaluate_expr_to_expr(a)?);
+              }
+            }
+            let target = Expr::FunctionCall {
+              name: head.clone(),
+              args: evaluated_args.clone().into(),
+            };
+            // A value for literal arguments (`f[a] = 1`) is kept apart from
+            // the pattern rules.
+            let removed_memo = crate::MEMO_VALUES.with(|m| {
+              let mut map = m.borrow_mut();
+              let Some(cache) = map.get_mut(head) else {
+                return false;
+              };
+              let key = crate::memo_key(cache, &evaluated_args);
+              cache.remove(&key).is_some()
+            });
+            if removed_memo {
+              return Ok(null_expr());
+            }
+            let args = [target];
+            let Expr::FunctionCall { args: lhs_args, .. } = &args[0] else {
+              unreachable!()
+            };
             let had_any = crate::FUNC_DEFS.with(|m| {
               m.borrow().get(head).is_some_and(|defs| !defs.is_empty())
             });
