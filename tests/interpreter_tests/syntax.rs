@@ -10771,6 +10771,310 @@ mod cases {
       r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
     );
   }
+  // A negative product inside a sum puts its sign on the operator, with no
+  // stray unit coefficient: `a - x y`, never `a - 1 x y`.
+  #[test]
+  fn to_boxes_minus_product_of_symbols() {
+    assert_case(
+      r#"ToBoxes[a - x y]"#,
+      r#"RowBox[{"a", "-", RowBox[{"x", " ", "y"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - x y z]"#,
+      r#"RowBox[{"a", "-", RowBox[{"x", " ", "y", " ", "z"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - x^2 Cos[x]]"#,
+      r#"RowBox[{"a", "-", RowBox[{SuperscriptBox["x", "2"], " ", RowBox[{"Cos", "[", "x", "]"}]}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-a b - c d]"#,
+      r#"RowBox[{RowBox[{RowBox[{"-", "a"}], " ", "b"}], "-", RowBox[{"c", " ", "d"}]}]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_minus_product_with_numeric_coefficient() {
+    assert_case(
+      r#"ToBoxes[a - 3 x y]"#,
+      r#"RowBox[{"a", "-", RowBox[{"3", " ", "x", " ", "y"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - 2.5 x y]"#,
+      r#"RowBox[{"a", "-", RowBox[{"2.5`", " ", "x", " ", "y"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - 3/2 x y]"#,
+      r#"RowBox[{"a", "-", FractionBox[RowBox[{"3", " ", "x", " ", "y"}], "2"]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - 2^129 x y]"#,
+      r#"RowBox[{"a", "-", RowBox[{"680564733841876926926749214863536422912", " ", "x", " ", "y"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a - 1/y]"#,
+      r#"RowBox[{"a", "-", FractionBox["1", "y"]}]"#,
+    );
+  }
+  // `Times[-1, f, g]` attaches the minus to its first factor.
+  #[test]
+  fn to_boxes_negated_product() {
+    assert_case(
+      r#"ToBoxes[-x y]"#,
+      r#"RowBox[{RowBox[{"-", "x"}], " ", "y"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-x^2 Cos[x]]"#,
+      r#"RowBox[{RowBox[{"-", SuperscriptBox["x", "2"]}], " ", RowBox[{"Cos", "[", "x", "]"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-x (1 + x)]"#,
+      r#"RowBox[{RowBox[{"-", "x"}], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[f[-x y]]"#,
+      r#"RowBox[{"f", "[", RowBox[{RowBox[{"-", "x"}], " ", "y"}], "]"}]"#,
+    );
+  }
+  // ...unless that factor is a sum: then the whole product is negated.
+  #[test]
+  fn to_boxes_negated_product_leading_sum() {
+    assert_case(
+      r#"ToBoxes[Factor[1 - x^2]]"#,
+      r#"RowBox[{"-", RowBox[{"(", RowBox[{RowBox[{"(", RowBox[{RowBox[{"-", "1"}], "+", "x"}], ")"}], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}], ")"}]}]"#,
+    );
+  }
+  // A negative number coefficient boxes as itself.
+  #[test]
+  fn to_boxes_negative_coefficient_product() {
+    assert_case(
+      r#"ToBoxes[-2 x]"#,
+      r#"RowBox[{RowBox[{"-", "2"}], " ", "x"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-2 x y]"#,
+      r#"RowBox[{RowBox[{"-", "2"}], " ", "x", " ", "y"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-2.5 x]"#,
+      r#"RowBox[{RowBox[{"-", "2.5`"}], " ", "x"}]"#,
+    );
+  }
+  // A negative fraction keeps its sign outside the FractionBox.
+  #[test]
+  fn to_boxes_negative_fraction() {
+    assert_case(
+      r#"ToBoxes[-3/2]"#,
+      r#"RowBox[{"-", FractionBox["3", "2"]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-3/2 x]"#,
+      r#"RowBox[{"-", FractionBox[RowBox[{"3", " ", "x"}], "2"]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-2 x/y]"#,
+      r#"RowBox[{"-", FractionBox[RowBox[{"2", " ", "x"}], "y"]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-1/y]"#,
+      r#"RowBox[{"-", FractionBox["1", "y"]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[-x y/z]"#,
+      r#"RowBox[{"-", FractionBox[RowBox[{"x", " ", "y"}], "z"]}]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_negative_exponent_is_reciprocal() {
+    assert_case(
+      r#"ToBoxes[x^-2]"#,
+      r#"FractionBox["1", SuperscriptBox["x", "2"]]"#,
+    );
+    assert_case(
+      r#"ToBoxes[(1 + x)^-2]"#,
+      r#"FractionBox["1", SuperscriptBox[RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}], "2"]]"#,
+    );
+    assert_case(
+      r#"ToBoxes[x^-a]"#,
+      r#"SuperscriptBox["x", RowBox[{"-", "a"}]]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_power_base_parenthesized() {
+    assert_case(
+      r#"ToBoxes[(-x)^y]"#,
+      r#"SuperscriptBox[RowBox[{"(", RowBox[{"-", "x"}], ")"}], "y"]"#,
+    );
+    assert_case(
+      r#"ToBoxes[(-2)^y]"#,
+      r#"SuperscriptBox[RowBox[{"(", RowBox[{"-", "2"}], ")"}], "y"]"#,
+    );
+    assert_case(
+      r#"ToBoxes[Hold[(x y)^z]]"#,
+      r#"RowBox[{"Hold", "[", SuperscriptBox[RowBox[{"(", RowBox[{"x", " ", "y"}], ")"}], "z"], "]"}]"#,
+    );
+  }
+  // A complex coefficient with a negative real part is a negative term.
+  #[test]
+  fn to_boxes_minus_complex_coefficient() {
+    assert_case(
+      r#"ToBoxes[a + (-2 + I) x] === ToBoxes[a - (2 - I) x] && MatchQ[ToBoxes[a + (-2 + I) x], RowBox[{"a", "-", _}]]"#,
+      r#"True"#,
+    );
+    assert_case(
+      r#"MatchQ[ToBoxes[a + (2 - I) x], RowBox[{"a", "+", _}]]"#,
+      r#"True"#,
+    );
+  }
+  // A factored polynomial is one flat product of flat sums.
+  #[test]
+  fn to_boxes_factored_polynomial_is_flat() {
+    assert_case(
+      r#"ToBoxes[Factor[x^6 - 1]]"#,
+      r#"RowBox[{RowBox[{"(", RowBox[{RowBox[{"-", "1"}], "+", "x"}], ")"}], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}], " ", RowBox[{"(", RowBox[{"1", "-", "x", "+", SuperscriptBox["x", "2"]}], ")"}], " ", RowBox[{"(", RowBox[{"1", "+", "x", "+", SuperscriptBox["x", "2"]}], ")"}]}]"#,
+    );
+  }
+  // Held operator chains box as one flat RowBox per head.
+  #[test]
+  fn make_boxes_operator_chains_are_flat() {
+    assert_case(
+      r#"MakeBoxes[1 - x + x^2]"#,
+      r#"RowBox[{"1", "-", "x", "+", SuperscriptBox["x", "2"]}]"#,
+    );
+    assert_case(
+      r#"MakeBoxes[a - b - c]"#,
+      r#"RowBox[{"a", "-", "b", "-", "c"}]"#,
+    );
+    assert_case(
+      r#"MakeBoxes[a - x y]"#,
+      r#"RowBox[{"a", "-", RowBox[{"x", " ", "y"}]}]"#,
+    );
+    assert_case(
+      r#"MakeBoxes[-x y z]"#,
+      r#"RowBox[{RowBox[{"-", "x"}], " ", "y", " ", "z"}]"#,
+    );
+    assert_case(
+      r#"MakeBoxes[-a/b]"#,
+      r#"RowBox[{"-", FractionBox["a", "b"]}]"#,
+    );
+    assert_case(
+      r#"MakeBoxes[a && b && c]"#,
+      r#"RowBox[{"a", "&&", "b", "&&", "c"}]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_logical_operators_infix() {
+    assert_case(
+      r#"ToBoxes[a && b && c]"#,
+      r#"RowBox[{"a", "&&", "b", "&&", "c"}]"#,
+    );
+    assert_case(r#"ToBoxes[a || b]"#, r#"RowBox[{"a", "||", "b"}]"#);
+    assert_case(
+      r#"ToBoxes[a | b | c]"#,
+      r#"RowBox[{"a", "|", "b", "|", "c"}]"#,
+    );
+    assert_case(r#"ToBoxes[!a]"#, r#"RowBox[{"!", "a"}]"#);
+    assert_case(
+      r#"ToBoxes[(a || b) && c]"#,
+      r#"RowBox[{RowBox[{"(", RowBox[{"a", "||", "b"}], ")"}], "&&", "c"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[a && b || c]"#,
+      r#"RowBox[{RowBox[{"(", RowBox[{"a", "&&", "b"}], ")"}], "||", "c"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[!(a && b)]"#,
+      r#"RowBox[{"!", RowBox[{"(", RowBox[{"a", "&&", "b"}], ")"}]}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[(a && b) | c]"#,
+      r#"RowBox[{RowBox[{"a", "&&", "b"}], "|", "c"}]"#,
+    );
+    assert_case(
+      r#"ToBoxes[Not[x + y]]"#,
+      r#"RowBox[{"!", RowBox[{"x", "+", "y"}]}]"#,
+    );
+  }
+  // A held `+`/`-` (or `&&`, `||`, `<>`) chain is one flat call.
+  #[test]
+  fn held_operator_chains_full_form_flat() {
+    assert_case(
+      r#"ToString[FullForm[Hold[1 - x + x^2]]]"#,
+      r#"Hold[Plus[1, Times[-1, x], Power[x, 2]]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a - b - c]]]"#,
+      r#"Hold[Plus[a, Times[-1, b], Times[-1, c]]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a + b - c + d]]]"#,
+      r#"Hold[Plus[a, b, Times[-1, c], d]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a && b && c]]]"#,
+      r#"Hold[And[a, b, c]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a || b || c]]]"#,
+      r#"Hold[Or[a, b, c]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a <> b <> c]]]"#,
+      r#"Hold[StringJoin[a, b, c]]"#,
+    );
+  }
+  // A leading minus binds tighter than an implicit product: `-x y` is
+  // `(-x) y`, as with an explicit `-x*y`.
+  #[test]
+  fn held_leading_minus_of_implicit_product() {
+    assert_case(
+      r#"ToString[FullForm[Hold[-x y]]]"#,
+      r#"Hold[Times[Times[-1, x], y]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[-x y z]]]"#,
+      r#"Hold[Times[Times[-1, x], y, z]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[-x^2 y]]]"#,
+      r#"Hold[Times[Times[-1, Power[x, 2]], y]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[a + -x y]]]"#,
+      r#"Hold[Plus[a, Times[Times[-1, x], y]]]"#,
+    );
+    assert_case(
+      r#"ToString[FullForm[Hold[f[-x y]]]]"#,
+      r#"Hold[f[Times[Times[-1, x], y]]]"#,
+    );
+    assert_case(r#"ToString[FullForm[Hold[-2 x]]]"#, r#"Hold[Times[-2, x]]"#);
+    assert_case(
+      r#"ToString[FullForm[Hold[-(x y)]]]"#,
+      r#"Hold[Times[-1, Times[x, y]]]"#,
+    );
+    assert_case(r#"-x y /. x -> 3"#, r#"-3*y"#);
+  }
+  // A held `(-k) x` exponent still moves its factor to the denominator.
+  #[test]
+  fn held_leading_minus_product_exponent_input_form() {
+    assert_case(
+      r#"ToString[Hold[y E^(-k x)], InputForm]"#,
+      r#"Hold[y/E^(k*x)]"#,
+    );
+    assert_case(
+      r#"ToString[Hold[E^(-k x)], InputForm]"#,
+      r#"Hold[E^((-k)*x)]"#,
+    );
+    assert_case(r#"ToString[Hold[-k x], InputForm]"#, r#"Hold[(-k)*x]"#);
+  }
+  // An imaginary factor goes after a leading real coefficient.
+  #[test]
+  fn to_boxes_negative_imaginary_fraction() {
+    assert_case(r#"ToString[-I/y, InputForm]"#, r#"(-I)/y"#);
+    assert_case(
+      r#"MatchQ[ToBoxes[-I/y], RowBox[{"-", FractionBox[_, "y"]}]]"#,
+      r#"True"#,
+    );
+  }
   #[test]
   fn take_largest_1() {
     assert_case(

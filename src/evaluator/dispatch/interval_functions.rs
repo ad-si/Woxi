@@ -22,5 +22,5 @@ pub fn dispatch_interval_functions(
     }
     _ => {}
   }
-  None
+  crate::functions::interval_ast::interval_function(name, args).map(Ok)
 }

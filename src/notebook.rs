@@ -26,6 +26,9 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub struct Notebook {
   pub cells: Vec<CellEntry>,
+  /// The `ScreenStyleEnvironment -> "…"` notebook option (`"Working"`,
+  /// `"SlideShow"`, …), kept so a slideshow notebook reopens as one.
+  pub screen_style_environment: Option<String>,
 }
 
 /// An entry in the notebook – either a single cell or a group.
@@ -71,6 +74,9 @@ pub enum CellStyle {
   Output,
   Code,
   Print,
+  /// The slide break of a slideshow notebook: every slide starts with one
+  /// (the FrontEnd draws it as the slide's navigation bar).
+  SlideShowNavigationBar,
 }
 
 impl CellStyle {
@@ -92,6 +98,7 @@ impl CellStyle {
       // Kernel messages ("During evaluation of In[1]:=") are stdout-like
       // output attached to the input that raised them, not prose.
       "Print" | "Message" => Some(Self::Print),
+      "SlideShowNavigationBar" => Some(Self::SlideShowNavigationBar),
       _ => None,
     }
   }
@@ -112,6 +119,7 @@ impl CellStyle {
       Self::Output => "Output",
       Self::Code => "Code",
       Self::Print => "Print",
+      Self::SlideShowNavigationBar => "SlideShowNavigationBar",
     }
   }
 }
@@ -139,11 +147,55 @@ pub fn parse_notebook(input: &str) -> Result<Notebook, String> {
   let after_prefix = &input[nb_start + "Notebook[{".len()..];
 
   // Find the matching `}` that closes the cell list.
-  let (cell_list, _remainder) = find_matching_brace(after_prefix)
+  let (cell_list, remainder) = find_matching_brace(after_prefix)
     .map_err(|e| format!("Parsing Notebook cell list: {e}"))?;
 
   let cells = parse_cell_list(cell_list)?;
-  Ok(Notebook { cells })
+  // The notebook options follow the cell list, up to the `]` that closes
+  // `Notebook[`.
+  let options = find_matching_bracket(remainder).map_or("", |(opts, _)| opts);
+  let screen_style_environment =
+    split_top_level_commas(options).into_iter().find_map(|opt| {
+      let (name, value) = opt.split_once("->")?;
+      (name.trim() == "ScreenStyleEnvironment")
+        .then(|| extract_string_content(value))
+    });
+  Ok(Notebook {
+    cells,
+    screen_style_environment,
+  })
+}
+
+/// The cell index ranges of a slideshow's slides. Each
+/// `SlideShowNavigationBar` cell starts a slide that runs up to the next
+/// one; cells before the first of them (if any) form a slide of their own.
+/// A notebook without slide breaks is a single slide.
+pub fn slide_ranges(styles: &[CellStyle]) -> Vec<std::ops::Range<usize>> {
+  let mut starts: Vec<usize> = styles
+    .iter()
+    .enumerate()
+    .filter(|(_, s)| **s == CellStyle::SlideShowNavigationBar)
+    .map(|(i, _)| i)
+    .collect();
+  if starts.first() != Some(&0) && !styles.is_empty() {
+    starts.insert(0, 0);
+  }
+  starts
+    .iter()
+    .enumerate()
+    .map(|(k, &start)| {
+      start..starts.get(k + 1).copied().unwrap_or(styles.len())
+    })
+    .collect()
+}
+
+/// Does `environment` (a `ScreenStyleEnvironment` value) present the
+/// notebook as a slideshow? `"SlideShow"` is the classic environment,
+/// `"Slideshow Presentation"` the Presenter Tools one; their editing
+/// counterpart `"Slideshow Working"` is not.
+pub fn is_slideshow_environment(environment: &str) -> bool {
+  environment.eq_ignore_ascii_case("SlideShow")
+    || environment.eq_ignore_ascii_case("Slideshow Presentation")
 }
 
 /// Remove the FrontEnd's physical line-wrap continuations: a backslash
@@ -4419,7 +4471,11 @@ impl fmt::Display for Notebook {
       write!(f, "{entry}")?;
     }
     writeln!(f)?;
-    write!(f, "}}]")
+    write!(f, "}}")?;
+    if let Some(env) = &self.screen_style_environment {
+      write!(f, ",\nScreenStyleEnvironment->\"{}\"", escape_string(env))?;
+    }
+    write!(f, "]")
   }
 }
 
@@ -4459,6 +4515,11 @@ impl fmt::Display for Cell {
     };
 
     match self.style {
+      // The tag is what the FrontEnd's slide navigation looks up.
+      CellStyle::SlideShowNavigationBar => write!(
+        f,
+        "Cell[\"\", \"SlideShowNavigationBar\", CellTags->\"SlideShowHeader\"]"
+      ),
       CellStyle::Input | CellStyle::Code => {
         // For input cells, wrap content in BoxData
         let lines: Vec<&str> = self.content.lines().collect();
@@ -4516,7 +4577,10 @@ impl Default for Notebook {
 impl Notebook {
   /// Create an empty notebook.
   pub fn new() -> Self {
-    Self { cells: Vec::new() }
+    Self {
+      cells: Vec::new(),
+      screen_style_environment: None,
+    }
   }
 
   /// Add a single cell at the end.
@@ -4749,6 +4813,14 @@ impl Notebook {
         CellStyle::Output | CellStyle::Print => {
           out.push_str(&format!("```\n{}\n```\n\n", cell.content));
         }
+        // A thematic break, which Markdown slide tools also split slides
+        // at. None before the first content: a leading `---` would open a
+        // YAML front matter block.
+        CellStyle::SlideShowNavigationBar => {
+          if !out.is_empty() {
+            out.push_str("---\n\n");
+          }
+        }
       }
     }
     out.trim_end().to_string()
@@ -4852,6 +4924,13 @@ impl Notebook {
           out.push_str(&cell.content);
           out.push_str("\n\\end{verbatim}\n\n");
         }
+        CellStyle::SlideShowNavigationBar => {
+          if !out.ends_with("\\begin{document}\n\n")
+            && !out.ends_with("\\maketitle\n\n")
+          {
+            out.push_str("\\clearpage\n\n");
+          }
+        }
       }
     }
 
@@ -4900,6 +4979,11 @@ impl Notebook {
         CellStyle::Output | CellStyle::Print => {
           out.push_str(&format!("```\n{}\n```\n\n", cell.content));
         }
+        CellStyle::SlideShowNavigationBar => {
+          if !out.is_empty() {
+            out.push_str("#pagebreak()\n\n");
+          }
+        }
       }
     }
     out.trim_end().to_string()
@@ -4909,10 +4993,17 @@ impl Notebook {
   pub fn to_jupyter(&self) -> String {
     let mut cells_json = Vec::new();
     let mut exec_count = 1u32;
+    // A slide break marks the cell after it as the start of a slide (the
+    // `slideshow` metadata nbconvert and RISE present by), so it is
+    // remembered here rather than written as a cell of its own.
+    let mut slide_starts = Vec::new();
 
     for entry in &self.cells {
       match entry {
         CellEntry::Single(cell) => match cell.style {
+          CellStyle::SlideShowNavigationBar => {
+            slide_starts.push(cells_json.len());
+          }
           CellStyle::Input | CellStyle::Code => {
             cells_json.push(jupyter_code_cell(&cell.content, &[], exec_count));
             exec_count += 1;
@@ -4947,6 +5038,9 @@ impl Notebook {
           } else {
             for cell in &group.cells {
               match cell.style {
+                CellStyle::SlideShowNavigationBar => {
+                  slide_starts.push(cells_json.len());
+                }
                 CellStyle::Input | CellStyle::Code => {
                   cells_json.push(jupyter_code_cell(
                     &cell.content,
@@ -4963,6 +5057,16 @@ impl Notebook {
             }
           }
         }
+      }
+    }
+    for idx in slide_starts {
+      if let Some(cell) = cells_json.get_mut(idx) {
+        // The cell's own metadata comes before any output's.
+        *cell = cell.replacen(
+          "\"metadata\": {}",
+          "\"metadata\": {\"slideshow\": {\"slide_type\": \"slide\"}}",
+          1,
+        );
       }
     }
 
@@ -5593,6 +5697,110 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  /// A slideshow as the FrontEnd writes it: every slide is a group led by a
+  /// `SlideShowNavigationBar` cell.
+  const SLIDESHOW_NB: &str = r#"Notebook[{
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["First", "Section"],
+Cell["Some text.", "Text"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Second", "Section"]
+}, Open  ]]
+},
+ScreenStyleEnvironment->"SlideShow",
+WindowSize->{600, 500},
+StyleDefinitions->"Default.nb"
+]"#;
+
+  #[test]
+  fn slideshow_navigation_bar_cells_are_slide_breaks() {
+    let nb = parse_notebook(SLIDESHOW_NB).unwrap();
+    let styles: Vec<CellStyle> =
+      nb.flat_cells().iter().map(|(_, c)| c.style).collect();
+    assert_eq!(
+      styles,
+      [
+        CellStyle::SlideShowNavigationBar,
+        CellStyle::Section,
+        CellStyle::Text,
+        CellStyle::SlideShowNavigationBar,
+        CellStyle::Section,
+      ]
+    );
+    assert_eq!(slide_ranges(&styles), [0..3, 3..5]);
+    assert_eq!(nb.screen_style_environment.as_deref(), Some("SlideShow"));
+  }
+
+  #[test]
+  fn slide_ranges_of_unbroken_and_leading_content() {
+    use CellStyle::*;
+    assert_eq!(slide_ranges(&[]), Vec::<std::ops::Range<usize>>::new());
+    // No slide breaks: the whole notebook is one slide.
+    assert_eq!(slide_ranges(&[Title, Text]), [0..2]);
+    // Cells before the first break form a slide of their own.
+    assert_eq!(
+      slide_ranges(&[Title, SlideShowNavigationBar, Text]),
+      [0..1, 1..3]
+    );
+    // Consecutive breaks make an empty slide each.
+    assert_eq!(
+      slide_ranges(&[SlideShowNavigationBar, SlideShowNavigationBar]),
+      [0..1, 1..2]
+    );
+  }
+
+  #[test]
+  fn slideshow_notebook_round_trips_its_breaks_and_environment() {
+    let nb = parse_notebook(SLIDESHOW_NB).unwrap();
+    let saved = nb.to_string();
+    assert!(saved.contains(
+      r#"Cell["", "SlideShowNavigationBar", CellTags->"SlideShowHeader"]"#
+    ));
+    assert!(saved.ends_with("ScreenStyleEnvironment->\"SlideShow\"]"));
+    let reread = parse_notebook(&saved).unwrap();
+    assert_eq!(reread.flat_cells().len(), 5);
+    assert_eq!(
+      reread.screen_style_environment.as_deref(),
+      Some("SlideShow")
+    );
+    // A notebook without the option writes none.
+    assert!(Notebook::new().to_string().ends_with("}]"));
+  }
+
+  #[test]
+  fn slideshow_environments() {
+    assert!(is_slideshow_environment("SlideShow"));
+    assert!(is_slideshow_environment("Slideshow Presentation"));
+    assert!(!is_slideshow_environment("Slideshow Working"));
+    assert!(!is_slideshow_environment("Working"));
+  }
+
+  #[test]
+  fn slide_breaks_in_exports() {
+    let nb = parse_notebook(SLIDESHOW_NB).unwrap();
+    // No break before the first slide's content.
+    assert_eq!(
+      nb.to_markdown(),
+      "#### First\n\nSome text.\n\n---\n\n#### Second"
+    );
+    assert_eq!(
+      nb.to_typst(),
+      "==== First\n\nSome text.\n\n#pagebreak()\n\n==== Second"
+    );
+    let latex = nb.to_latex();
+    assert_eq!(latex.matches("\\clearpage").count(), 1);
+    assert!(!latex.contains("\\begin{document}\n\n\\clearpage"));
+    // Jupyter marks the cell after each break as a slide start.
+    let jupyter = nb.to_jupyter();
+    assert_eq!(jupyter.matches(r#""slide_type": "slide""#).count(), 2);
+    assert_eq!(jupyter.matches(r#""cell_type""#).count(), 3);
+  }
+
   #[test]
   fn embedded_html_cell_shows_visible_text() {
     let nb = parse_notebook(

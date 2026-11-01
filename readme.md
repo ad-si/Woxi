@@ -178,6 +178,21 @@ Or simply use our
 It runs fully self-contained in your browser and no data is send to the cloud.
 
 
+### Presentations
+
+Woxi Studio presents notebooks as slideshows, like the FrontEnd's
+SlideShow environment.
+Insert a "Slide Break" cell (`SlideShowNavigationBar` style) where each slide
+starts and press the presentation button in the toolbar (or <kbd>F5</kbd>).
+The arrow keys, <kbd>Page Up</kbd>/<kbd>Page Down</kbd>, and <kbd>Space</kbd>
+turn the slides, and <kbd>Esc</kbd> ends the slideshow.
+Notebooks saved with `ScreenStyleEnvironment -> "SlideShow"` open as
+slideshows, and the Markdown, LaTeX, Typst, and Jupyter exports keep the slide
+breaks.
+Inside a notebook, `SlideView[{slide1, slide2, …}]` is an interactive slide
+viewer.
+
+
 ### Editor Integration
 
 Woxi ships a [Language Server Protocol] server for the Wolfram Language:

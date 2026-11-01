@@ -6472,6 +6472,17 @@ pub fn dispatch_list_operations(
     "ArrayPad" if args.len() >= 2 && args.len() <= 3 => {
       return Some(array_pad_ast(args));
     }
+    // ArrayPad[list, spec, "Extrapolated", InterpolationOrder -> k]
+    "ArrayPad"
+      if args.len() == 4
+        && matches!(&args[2], Expr::String(s) if s == "Extrapolated")
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[3]),
+          Some((Expr::Identifier(n), _, _)) if n == "InterpolationOrder"
+        ) =>
+    {
+      return Some(array_pad_ast(args));
+    }
     // ArrayReshape[list, {d1, d2, ...}] — reshape a flat list into given dimensions
     // ArrayReshape[list, dims, padding] — pad trailing slots with the given value(s)
     "ArrayReshape" if args.len() == 2 || args.len() == 3 => {
@@ -8761,6 +8772,9 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
   let unevaluated = || unevaluated("ArrayPad", args);
+  if matches!(&pad_val, Expr::String(s) if s == "Extrapolated") {
+    return Ok(array_pad_extrapolated(args)?.unwrap_or_else(unevaluated));
+  }
   // Named padding schemes: the array is extended along each padded
   // dimension by indexing back into it — "Periodic" (or "Cyclic") wraps
   // around, "Reflected" mirrors about the edge element, "Reversed" mirrors
@@ -8893,6 +8907,87 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   pad_array(arr, left, right, &pad_val)
+}
+
+/// ArrayPad[list, n | {left, right}, "Extrapolated"(, InterpolationOrder ->
+/// k)] for a one-dimensional list: each side continues the polynomial of
+/// degree k (default 1, Infinity for all points) through the k + 1 elements
+/// nearest to it. `None` for anything else.
+fn array_pad_extrapolated(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(items) = &args[0] else {
+    return Ok(None);
+  };
+  if items.is_empty() || items.iter().any(|i| matches!(i, Expr::List(_))) {
+    return Ok(None);
+  }
+  let (left, right) = match &args[1] {
+    Expr::Integer(n) if *n >= 0 => (*n, *n),
+    Expr::List(lr) if lr.len() == 2 => match (&lr[0], &lr[1]) {
+      (Expr::Integer(l), Expr::Integer(r)) if *l >= 0 && *r >= 0 => (*l, *r),
+      _ => return Ok(None),
+    },
+    Expr::List(one) if one.len() == 1 => match &one[0] {
+      Expr::Integer(n) if *n >= 0 => (*n, *n),
+      _ => return Ok(None),
+    },
+    _ => return Ok(None),
+  };
+  let len = items.len() as i128;
+  let order = match args
+    .get(3)
+    .and_then(crate::functions::expr_form::rule_parts)
+  {
+    None => 1,
+    Some((_, Expr::Integer(k), _)) if *k >= 0 => *k,
+    Some((_, Expr::Identifier(i), _)) if i == "Infinity" => len - 1,
+    Some(_) => return Ok(None),
+  }
+  .min(len - 1);
+  // The interpolating polynomial through (t_j, y_j) at t, by Lagrange's
+  // formula with exact weights.
+  let extrapolate =
+    |points: &[(i128, Expr)], t: i128| -> Result<Expr, InterpreterError> {
+      let terms: Vec<Expr> = points
+        .iter()
+        .map(|(tj, yj)| {
+          let (mut num, mut den) = (1i128, 1i128);
+          for (tm, _) in points {
+            if tm != tj {
+              num *= t - tm;
+              den *= tj - tm;
+            }
+          }
+          times2(make_rational_expr(num, den), yj.clone())
+        })
+        .collect();
+      evaluate_expr_to_expr(&call1("Expand", plus(terms)))
+    };
+  let k = order as usize;
+  let first: Vec<(i128, Expr)> = items[..=k]
+    .iter()
+    .enumerate()
+    .map(|(j, y)| (j as i128, y.clone()))
+    .collect();
+  let last: Vec<(i128, Expr)> = items[items.len() - 1 - k..]
+    .iter()
+    .enumerate()
+    .map(|(j, y)| (len - 1 - k as i128 + j as i128, y.clone()))
+    .collect();
+  let mut out = Vec::with_capacity((left + len + right) as usize);
+  for t in -left..0 {
+    out.push(extrapolate(&first, t)?);
+  }
+  out.extend(items.iter().cloned());
+  for t in len..len + right {
+    out.push(extrapolate(&last, t)?);
+  }
+  Ok(Some(Expr::List(out.into())))
+}
+
+fn make_rational_expr(num: i128, den: i128) -> Expr {
+  call("Rational", vec![Expr::Integer(num), Expr::Integer(den)])
 }
 
 /// Apply `(left, right)` padding per outer dimension. `per_dim[0]` pads the
