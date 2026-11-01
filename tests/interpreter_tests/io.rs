@@ -11617,3 +11617,29 @@ mod file_name_join_on_a_string {
     }
   }
 }
+
+mod to_expression_graphics_box {
+  use super::*;
+
+  #[test]
+  fn graphics_box_reads_back_as_graphics() {
+    assert_eq!(
+      interpret(
+        "ToExpression[GraphicsBox[{Red, CircleBox[{0, 0}, 5]}, ImageSize -> 17]]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  fn graphics_box_keeps_colour_of_primitives() {
+    assert_eq!(
+      interpret(
+        "ToExpression[GraphicsBox[{Blue, LineBox[{{0, 0}, {1, 1}}]}]][[1]]"
+      )
+      .unwrap(),
+      "{RGBColor[0, 0, 1], Line[{{0, 0}, {1, 1}}]}"
+    );
+  }
+}
