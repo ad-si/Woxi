@@ -371,6 +371,31 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if planes.iter().all(|p| matches!(p, Expr::List(rows)
         if rows.iter().all(|r| matches!(r, Expr::List(_))))))
   {
+    // The number of planes is the channel count the color space must
+    // accept (an interleaved array mistaken as planar has hundreds).
+    if let Expr::List(planes) = planes
+      && let Some(space) = args[opt_start..].iter().find_map(|opt| match opt {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
+          match replacement.as_ref() {
+            Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+            _ => None,
+          }
+        }
+        _ => None,
+      })
+      && let Some(base) = color_space_components(&space)
+      && planes.len() != base as usize
+      && planes.len() != base as usize + 1
+    {
+      crate::emit_message(&format!(
+        "Image::imgcsmis: The specified color space {space} and the number of channels {} are not compatible.",
+        planes.len()
+      ));
+      return Ok(unevaluated());
+    }
     let transposed = crate::evaluator::evaluate_expr_to_expr(&call(
       "Transpose",
       vec![

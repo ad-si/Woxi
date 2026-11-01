@@ -10284,6 +10284,33 @@ mod find_threshold {
   }
 }
 
+mod image_planar_channel_check {
+  use super::*;
+
+  // With Interleaving -> False the planes are the channels, checked
+  // against the color space before transposing.
+  #[test]
+  fn planar_data_with_too_many_planes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Image[Table[0.5, {5}, {2}, {3}], \"Real\", ColorSpace -> \"RGB\", \
+         Interleaving -> False] // ImageQ"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Table[0.5, {4}, {2}, {3}], \"Real\", \
+         ColorSpace -> \"RGB\", Interleaving -> False]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+}
+
 mod image_perspective_transformation {
   use super::*;
 
