@@ -11314,14 +11314,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         legends_automatic |= auto;
         legends_expressions |= expressions;
       }
-      if apply_common_plot_option(
+      apply_common_plot_option(
         name,
         replacement,
         &mut plot_opts,
         &mut overrides,
-      ) {
-        continue;
-      }
+      );
     }
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
@@ -11716,14 +11714,12 @@ fn log_scale_plot_ast(
         legends_automatic |= auto;
         legends_expressions |= expressions;
       }
-      if apply_common_plot_option(
+      apply_common_plot_option(
         name,
         replacement,
         &mut plot_opts,
         &mut overrides,
-      ) {
-        continue;
-      }
+      );
     }
   }
   let plot_range_y = overrides.y;
