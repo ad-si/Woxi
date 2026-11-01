@@ -5301,7 +5301,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
     let parts: Vec<String> = items.iter().map(&render).collect();
-    let joined = if inner_args.len() >= 2 {
+    // A rule in separator position is an option (`BaseStyle -> 20`), not
+    // a separator.
+    let joined = if inner_args.len() >= 2
+      && !crate::syntax::is_rule_expr(&inner_args[1])
+    {
       parts.join(&render(&inner_args[1]))
     } else {
       parts.concat()
@@ -8355,6 +8359,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       // A string separator is written literally, not as a `\text{…}` run.
       let separator = match args.get(1) {
         Some(Expr::String(text)) => text.clone(),
+        Some(other) if crate::syntax::is_rule_expr(other) => String::new(),
         Some(other) => expr_to_tex(other),
         None => String::new(),
       };
