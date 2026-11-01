@@ -13150,6 +13150,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let step_monitor = find_option(&args[2..], "StepMonitor");
+  let (accuracy_tol, precision_tol) = find_root_goal_tolerances(&args[2..]);
 
   // Parse second argument: {var, x0} or {var, x0, x1}
   // First peek at the variable name and start point; if the start point
@@ -13368,20 +13369,27 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .ok()
       .filter(|d| !contains_unevaluated_d(d));
 
-  // Newton's method, damped: a step that makes |f| worse is halved until it
-  // does not, which is what lets a badly scaled function like `Exp[x] - 1000`
-  // walk back from the huge first step plain Newton takes. Stops when |f| is
-  // negligible or the iterate stops moving; running out of iterations first
-  // reports FindRoot::cvmit and hands back the point reached, as
-  // wolframscript does.
-  let tol = 1e-15;
+  // Newton's method, damped: a step that makes |f| worse is shortened until
+  // it does not, which is what lets a badly scaled function like
+  // `Exp[x] - 1000` walk back from the huge first step plain Newton takes.
+  // Stops, as wolframscript does, once the step just taken meets the
+  // accuracy or precision goal and the residual meets the accuracy goal
+  // (see `find_root_goal_tolerances`); running out of iterations first
+  // reports FindRoot::cvmit and hands back the point reached.
   let mut x = x0;
+  let mut previous: Option<f64> = None;
   let mut converged = false;
-  let mut settled: Vec<(usize, f64)> = Vec::new();
 
-  for k in 0..max_iter {
+  for _ in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
-    if fx.abs() < tol {
+    let goal_met = match previous {
+      None => fx == 0.0,
+      Some(p) => {
+        (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+          && fx.abs() <= accuracy_tol
+      }
+    };
+    if goal_met {
       converged = true;
       break;
     }
@@ -13434,9 +13442,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Backtrack while the step overshoots into a worse residual.
     let mut trial = x - step;
     let mut shrink = 1.0;
+    // A trial outside the function's real domain (`Log[T]` at a negative
+    // `T`) counts as worse too, so the step shrinks back into it.
     for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
-      let ft = find_root_eval_at(&func, &var, trial)?;
-      if ft.is_finite() && ft.abs() <= fx.abs() {
+      if find_root_eval_at(&func, &var, trial)
+        .is_ok_and(|ft| ft.is_finite() && ft.abs() <= fx.abs())
+      {
         break;
       }
       shrink *= 0.5;
@@ -13445,31 +13456,18 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some((lo, hi)) = bounds {
       trial = trial.clamp(lo, hi);
     }
-    // A step this small means the iteration has settled, even for a function
-    // whose residual cannot reach `tol` because of its scale. Note it and keep
-    // going: the last iterations only jitter the final digit, and stopping here
-    // instead would move the answer off the one wolframscript reports.
-    if (trial - x).abs() <= f64::EPSILON * x.abs().max(1.0) {
-      converged = true;
-    }
-    // Once settled the iteration only jitters the last digits, and each
-    // iterate is a pure function of the previous one, so the sequence is
-    // eventually periodic. Detect the period and jump to the iterate the
-    // remaining iterations would end on instead of evaluating them all.
-    if converged && step_monitor.is_none() {
-      settled.push((k, x));
-      if let Some(m) = settled
-        .iter()
-        .position(|(_, s)| s.to_bits() == trial.to_bits())
-      {
-        let start = settled[m].0;
-        let period = k + 1 - start;
-        x = settled[m + (max_iter - start) % period].1;
-        break;
-      }
-    }
+    previous = Some(x);
     x = trial;
     fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
+  }
+  // The last step taken may itself have met the goals.
+  if !converged
+    && let Some(p) = previous
+    && (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+    && find_root_eval_at(&func, &var, x)
+      .is_ok_and(|fx| fx.abs() <= accuracy_tol)
+  {
+    converged = true;
   }
   if !converged {
     crate::emit_message(&format!(
@@ -13772,6 +13770,27 @@ fn find_root_eval_complex_at(
   }
   let n_result = n_ast(&[evaled]).ok()?;
   expr_to_complex_f64(&n_result)
+}
+
+/// The (accuracy, precision) tolerances of FindRoot's `AccuracyGoal` and
+/// `PrecisionGoal` options: `10^-goal`, where `Automatic` is half of
+/// `$MachinePrecision` digits. An iteration has converged once its last step
+/// is within `max(accuracy, |x| precision)` and the residual within
+/// `accuracy` — the rule that reproduces wolframscript's iteration counts.
+fn find_root_goal_tolerances(opts: &[Expr]) -> (f64, f64) {
+  let automatic = 10f64.powf(-(53.0 * std::f64::consts::LOG10_2) / 2.0);
+  // FindRoot holds its arguments, so an option value can still be a name.
+  let goal = |name: &str| {
+    let value = find_option(opts, name)
+      .and_then(|e| crate::evaluator::evaluate_expr_to_expr(e).ok());
+    match &value {
+      Some(Expr::Identifier(i)) if i == "Infinity" => 0.0,
+      Some(e) => crate::functions::math_ast::try_eval_to_f64(e)
+        .map_or(automatic, |g| 10f64.powf(-g)),
+      None => automatic,
+    }
+  };
+  (goal("AccuracyGoal"), goal("PrecisionGoal"))
 }
 
 /// Newton's method on the complex plane. Mirrors the real-only path

@@ -11600,12 +11600,63 @@ mod find_root {
        FindRoot[thrust[v], {v, 60}]",
     )
     .unwrap();
-    assert_eq!(result.result, "{v -> 60.52450587883597}");
+    assert_eq!(result.result, "{v -> 60.52450587883596}");
     assert!(
       result.warnings.is_empty(),
       "unexpected messages: {:?}",
       result.warnings
     );
+  }
+
+  /// The iteration stops once the step just taken is within
+  /// `max(10^-AccuracyGoal, |x| 10^-PrecisionGoal)` and the residual within
+  /// `10^-AccuracyGoal` (both goals 8 by default). A badly scaled residual
+  /// whose rounding noise never fell below a fixed 1e-15 used to run the
+  /// whole budget and report FindRoot::cvmit; the goals were ignored.
+  #[test]
+  fn stops_at_the_accuracy_and_precision_goals() {
+    use woxi::interpret_with_stdout;
+    let f = "200. - 10^(8.07131 - 1730.63/(T + 233.426))*Exp[0.135]*0.4 - \
+             10^(8.08097 - 1582.271/(T + 239.726))*Exp[0.1404]*0.6";
+    let run = |opts: &str| {
+      interpret_with_stdout(&format!(
+        "s = {{}}; r = FindRoot[{f}, {{T, 60}}{opts}, \
+         StepMonitor :> AppendTo[s, T]]; {{r, Length[s]}}"
+      ))
+      .unwrap()
+    };
+    let default = run("");
+    assert_eq!(default.result, "{{T -> 39.09908711789684}, 6}");
+    assert!(default.warnings.is_empty(), "{:?}", default.warnings);
+    assert_eq!(
+      run(", AccuracyGoal -> 3, PrecisionGoal -> 3").result,
+      "{{T -> 39.099089223489365}, 4}"
+    );
+    let x2 = |opts: &str| {
+      interpret(&format!(
+        "s = {{}}; FindRoot[x^2 - 2, {{x, 1}}{opts}, \
+         StepMonitor :> AppendTo[s, x]]; Length[s]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(x2(""), "5");
+    assert_eq!(x2(", PrecisionGoal -> 3"), "4");
+  }
+
+  /// A Newton step out of the function's real domain (`Log[T]` at a
+  /// negative `T`) is shortened like one that makes the residual worse; it
+  /// used to abandon the real iteration for the complex one, which ran out
+  /// of iterations.
+  #[test]
+  fn backtracks_into_the_real_domain() {
+    use woxi::interpret_with_stdout;
+    let result = interpret_with_stdout(
+      "ps = Exp[31.233 - 1090.44/T - 3.30115 Log[T] + 4.05692*^-5 T^2]; \
+       FindRoot[101.325/ps == 1, {T, 250}]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.result.starts_with("{T -> 9"), "{}", result.result);
   }
 
   #[test]
