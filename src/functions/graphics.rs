@@ -1638,6 +1638,18 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
 /// color rather than by line style (see [`line_legend_svg`] for the
 /// `LineLegend` counterpart).
 pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
+  marker_legend_svg(args, false)
+}
+
+/// `PointLegend[colors, labels]`: like a [`swatch_legend_svg`], with a
+/// round point marker in place of each square swatch.
+pub(crate) fn point_legend_svg(args: &[Expr]) -> Option<String> {
+  marker_legend_svg(args, true)
+}
+
+/// A legend column of colour markers (squares, or disks when `round`)
+/// beside their labels.
+fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
   if args.len() < 2 {
     return None;
   }
@@ -1655,10 +1667,21 @@ pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
   let mut entries: Vec<Expr> = Vec::new();
   for (label, color_expr) in labels.iter().zip(colors.iter()) {
     let color = parse_color(color_expr).unwrap_or(Color::new(0.0, 0.0, 0.0));
+    let color = color.to_svg_rgb();
+    let marker = if round {
+      format!(
+        "<circle cx=\"{c}\" cy=\"{c}\" r=\"{r}\" fill=\"{color}\"/>",
+        c = swatch / 2.0,
+        r = swatch / 4.0,
+      )
+    } else {
+      format!(
+        "<rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\" stroke=\"black\" stroke-width=\"1\"/>",
+        inner = swatch - 1.0,
+      )
+    };
     let swatch_svg = format!(
-      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\" stroke=\"black\" stroke-width=\"1\"/></svg>",
-      inner = swatch - 1.0,
-      color = color.to_svg_rgb(),
+      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\">{marker}</svg>",
     );
     let swatch_item = Expr::Graphics {
       svg: swatch_svg,
@@ -14782,7 +14805,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // instead: a colored glyph (a stroke or a filled square, in the
         // same color the full legend graphic would draw) followed by its
         // label.
-        "LineLegend" | "SwatchLegend"
+        "LineLegend" | "SwatchLegend" | "PointLegend"
           if args.len() >= 2
             && matches!(&args[0], Expr::List(l) if !l.is_empty())
             && matches!(&args[1], Expr::List(l) if !l.is_empty()) =>
@@ -14790,7 +14813,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           let Expr::List(style_specs) = &args[0] else { unreachable!() };
           let Expr::List(labels) = &args[1] else { unreachable!() };
           let glyph =
-            if name == "SwatchLegend" { "\u{25A0}" } else { "\u{2501}" };
+            match name.as_str() {
+              "SwatchLegend" => "\u{25A0}",
+              "PointLegend" => "\u{25CF}",
+              _ => "\u{2501}",
+            };
           let mut out = String::new();
           for (i, (spec, label)) in
             style_specs.iter().zip(labels.iter()).enumerate()
@@ -18627,6 +18654,9 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // argument.
     Expr::FunctionCall { name, args } if name == "SwatchLegend" => {
       swatch_legend_svg(args)?
+    }
+    Expr::FunctionCall { name, args } if name == "PointLegend" => {
+      point_legend_svg(args)?
     }
     // A bare `Animate[…]` cell draws its first frame (see
     // `animate_snapshot_svg`), the same as when it sits inside a `Pane`.

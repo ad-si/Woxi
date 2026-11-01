@@ -923,6 +923,22 @@ pub fn dispatch_plotting(
     "PairedBarChart" | "PairedHistogram" if args.len() >= 2 => {
       Some(crate::functions::chart::paired_chart_ast(name, args))
     }
+    // Association, temporal and `Quantity` data become plain list data
+    // (keys filling the `Automatic` labels and legends) through the one
+    // shared rewrite. BubbleChart reads its (point-level) associations
+    // itself.
+    "BarChart3D" | "PieChart3D" | "SectorChart" | "SectorChart3D"
+    | "RectangleChart" | "RectangleChart3D" | "BubbleChart"
+      if !args.is_empty()
+        && (name != "BubbleChart"
+          || !matches!(&args[0], Expr::Association(_)))
+        && let Some(new_args) =
+          crate::functions::chart::chart_data_args(args, false) =>
+    {
+      Some(crate::evaluator::evaluate_function_call_ast(
+        name, &new_args,
+      ))
+    }
     // The 3-D charts render quietly, but a first argument that is no
     // dataset still reports `head::ldata` and stays unevaluated.
     "BarChart3D" | "PieChart3D" | "SectorChart3D"

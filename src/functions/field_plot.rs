@@ -3008,6 +3008,7 @@ fn contour_plot_equations(
           point_size: None,
           dashing: None,
           opacity: None,
+          labels: Vec::new(),
         });
       }
     }

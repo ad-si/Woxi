@@ -7049,3 +7049,27 @@ wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "
 Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
+
+## Parameter sweep 5 (charts & 3-D list plots): open items
+
+Verified against the reference pages, but not (fully) implemented:
+
+- `SectorChart` of several datasets (`{{{a1, r1}, …}, {{a2, r2}, …}}`, also a
+  nested association `<|"group a" -> <|"a" -> {1, 1}, …|>, …|>`) draws no
+  sectors; only one dataset is supported.
+- `ChartLabels` / `PlotLabels` of multi-ring `PieChart3D` / `SectorChart3D`
+  (the ring names) are not drawn; only a single pie/ring is labelled.
+- With an explicit `ChartStyle` list, `PieChart3D` colours its slices in
+  size order rather than data order (the slices are drawn smallest first).
+- `EventData[values, censoring]` is not implemented, so a chart of it prints
+  the "not yet implemented" notice (the chart itself draws the values).
+- `AxesLabel -> Automatic` with `Quantity` data does not show the units on
+  the axes (`ListLinePlot3D`, `RectangleChart`, `RectangleChart3D`); the
+  magnitudes are plotted.
+- `Tabular` data with column specifications (`tabdata -> {"TotalFat", …}`,
+  `tabdata -> {{"n=1"}, …}`) and `ts -> {"a", "b"}` column labels of a
+  multi-component time series are not supported.
+- `TernaryListPlot`: `Labeled` / `Callout` points and datasets,
+  `PlotLabels -> Placed[…, pos]` and `QuantityArray` data are not handled.
+- `ListFitPlot` examples built on `ResourceData`, `FinancialData` or
+  `AirTemperatureData` cannot be fetched.
