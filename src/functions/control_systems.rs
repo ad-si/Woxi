@@ -1,6 +1,6 @@
 //! Linear control systems: `TransferFunctionModel`, its poles, zeros and
 //! responses, and the frequency-response plots (`BodePlot`, `NyquistPlot`,
-//! `NicholsPlot`).
+//! `NicholsPlot`), and the root locus (`RootLocusPlot`).
 //!
 //! A model is kept in wolframscript's normal form,
 //! `TransferFunctionModel[{nums, den}, s, opts…]`: `nums` is the matrix of
@@ -794,6 +794,287 @@ fn rule(name: &str, value: Expr) -> Expr {
 
 fn id(name: &str) -> Expr {
   Expr::Identifier(name.into())
+}
+
+// ── RootLocusPlot ───────────────────────────────────────────────────────
+
+/// Pair each of `next` with one of `prev` (a permutation of `next`'s
+/// indices), keeping each locus branch continuous: the assignment that
+/// moves the roots least in total for a handful of roots, greedily beyond.
+fn match_roots(prev: &[(f64, f64)], next: &[(f64, f64)]) -> Vec<usize> {
+  let n = next.len();
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  if n <= 6 {
+    let mut best: (f64, Vec<usize>) = (f64::INFINITY, (0..n).collect());
+    let mut perm: Vec<usize> = (0..n).collect();
+    // Heap's algorithm over the permutations.
+    fn visit(
+      k: usize,
+      perm: &mut Vec<usize>,
+      prev: &[(f64, f64)],
+      next: &[(f64, f64)],
+      best: &mut (f64, Vec<usize>),
+      dist: &dyn Fn((f64, f64), (f64, f64)) -> f64,
+    ) {
+      if k == 1 {
+        let cost: f64 = perm
+          .iter()
+          .enumerate()
+          .map(|(i, &j)| dist(prev[i], next[j]))
+          .sum();
+        if cost < best.0 {
+          *best = (cost, perm.clone());
+        }
+        return;
+      }
+      for i in 0..k {
+        visit(k - 1, perm, prev, next, best, dist);
+        let j = if k.is_multiple_of(2) { i } else { 0 };
+        perm.swap(j, k - 1);
+      }
+    }
+    if n > 0 {
+      visit(n, &mut perm, prev, next, &mut best, &dist);
+    }
+    return best.1;
+  }
+  let mut used = vec![false; n];
+  prev
+    .iter()
+    .map(|&p| {
+      let j = (0..n)
+        .filter(|&j| !used[j])
+        .min_by(|&a, &b| dist(p, next[a]).total_cmp(&dist(p, next[b])))
+        .unwrap_or(0);
+      used[j] = true;
+      j
+    })
+    .collect()
+}
+
+/// The roots of a real polynomial (`coeffs[i]` multiplying `s^i`).
+fn polynomial_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
+  let mut c = coeffs.to_vec();
+  while c.len() > 1 && *c.last().unwrap() == 0.0 {
+    c.pop();
+  }
+  if c.len() < 2 {
+    return Vec::new();
+  }
+  crate::functions::polynomial_ast::durand_kerner_roots(&c)
+}
+
+/// `RootLocusPlot[expr, {k, kmin, kmax}]`: the roots of the closed-loop
+/// characteristic equation `1 + expr == 0` in the complex plane as the gain
+/// `k` runs over its range, one line per root; the open-loop poles are
+/// marked `×`, its zeros `○`, and `PoleZeroMarkers -> {…,
+/// "ParameterValues" -> {k1, …}}` marks the roots at those gains.
+pub fn root_locus_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let fallback = || Ok(unevaluated("RootLocusPlot", args));
+  let (positional, options) = split_options(args);
+  let [body, Expr::List(iter)] = positional.as_slice() else {
+    return fallback();
+  };
+  let [Expr::Identifier(k), kmin, kmax] = iter.as_slice() else {
+    return fallback();
+  };
+  let (Some(kmin), Some(kmax)) = (
+    crate::functions::math_ast::try_eval_to_f64(&ev(kmin)?),
+    crate::functions::math_ast::try_eval_to_f64(&ev(kmax)?),
+  ) else {
+    return fallback();
+  };
+  if !(kmax > kmin) {
+    return fallback();
+  }
+  let expr =
+    crate::functions::plot::eval_body_vars_symbolic(body, &[k.as_str()]);
+  // A SISO TransferFunctionModel is its one element.
+  let expr = match TfModel::from_expr(&expr) {
+    Some(m) if m.outputs() == 1 && m.inputs() == 1 => call(
+      "Times",
+      vec![
+        m.nums[0][0].clone(),
+        call("Power", vec![m.dens[0][0].clone(), Expr::Integer(-1)]),
+      ],
+    ),
+    Some(_) => return fallback(),
+    None => expr,
+  };
+  let Expr::List(ref vars) = ev(&call("Variables", vec![expr.clone()]))? else {
+    return fallback();
+  };
+  let others: Vec<String> = vars
+    .iter()
+    .filter_map(|v| match v {
+      Expr::Identifier(n) if n != k => Some(n.clone()),
+      _ => None,
+    })
+    .collect();
+  let [s] = others.as_slice() else {
+    return fallback();
+  };
+  let together = ev(&call(
+    "Together",
+    vec![call("Plus", vec![Expr::Integer(1), expr.clone()])],
+  ))?;
+  let characteristic = ev(&call("Numerator", vec![together]))?;
+  let Expr::List(ref coeff_exprs) = ev(&call(
+    "CoefficientList",
+    vec![characteristic, Expr::Identifier(s.clone())],
+  ))?
+  else {
+    return fallback();
+  };
+  let at_gain = |kv: f64| -> Option<Vec<f64>> {
+    coeff_exprs
+      .iter()
+      .map(|c| {
+        let v = crate::syntax::substitute_variable(c, k, &Expr::Real(kv));
+        crate::functions::math_ast::try_eval_to_f64(&ev(&v).ok()?)
+      })
+      .collect()
+  };
+
+  // Gains sampled more densely near kmin, where the roots leave the poles
+  // fastest.
+  const STEPS: usize = 300;
+  let gains: Vec<f64> = (0..=STEPS)
+    .map(|i| {
+      let t = i as f64 / STEPS as f64;
+      kmin + (kmax - kmin) * t * t
+    })
+    .collect();
+  let mut branches: Vec<Vec<(f64, f64)>> = Vec::new();
+  for &kv in &gains {
+    let Some(coeffs) = at_gain(kv) else {
+      return fallback();
+    };
+    let roots = polynomial_roots(&coeffs);
+    if branches.is_empty() {
+      branches = roots.iter().map(|&r| vec![r]).collect();
+      continue;
+    }
+    if roots.len() != branches.len() {
+      continue;
+    }
+    let prev: Vec<(f64, f64)> =
+      branches.iter().map(|b| *b.last().unwrap()).collect();
+    for (b, j) in match_roots(&prev, &roots).into_iter().enumerate() {
+      branches[b].push(roots[j]);
+    }
+  }
+  if branches.is_empty() {
+    return fallback();
+  }
+
+  // The open-loop poles and zeros of `expr` at unit gain.
+  let unit = crate::syntax::substitute_variable(&expr, k, &Expr::Integer(1));
+  let unit = ev(&call("Together", vec![unit]))?;
+  let roots_of = |part: &str| -> Vec<(f64, f64)> {
+    ev(&call(part, vec![unit.clone()]))
+      .ok()
+      .and_then(|p| coefficients(&p, s))
+      .map(|c| polynomial_roots(&c))
+      .unwrap_or_default()
+  };
+  let (poles, zeros) = (roots_of("Denominator"), roots_of("Numerator"));
+
+  // `PoleZeroMarkers -> {…, "ParameterValues" -> gains}`.
+  let mut marked_gains: Vec<f64> = Vec::new();
+  if let Some(Expr::List(ref spec)) = options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PoleZeroMarkers") => {
+      ev(replacement).ok()
+    }
+    _ => None,
+  }) {
+    for item in spec {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = item
+        && matches!(pattern.as_ref(), Expr::String(p) if p == "ParameterValues")
+      {
+        match replacement.as_ref() {
+          Expr::List(vs) => marked_gains.extend(
+            vs.iter()
+              .filter_map(crate::functions::math_ast::try_eval_to_f64),
+          ),
+          v => marked_gains
+            .extend(crate::functions::math_ast::try_eval_to_f64(v)),
+        }
+      }
+    }
+  }
+
+  let mut primitives = Vec::new();
+  for (b, branch) in branches.iter().enumerate() {
+    primitives.push(Expr::List(
+      vec![
+        ev(&Expr::CurriedCall {
+          func: Box::new(call("ColorData", vec![Expr::Integer(97)])),
+          args: vec![Expr::Integer(b as i128 + 1)],
+        })?,
+        call(
+          "Line",
+          vec![Expr::List(
+            branch.iter().map(|&(re, im)| point(re, im)).collect(),
+          )],
+        ),
+      ]
+      .into(),
+    ));
+  }
+  let marker = |glyph: &str, (re, im): (f64, f64)| {
+    call(
+      "Text",
+      vec![
+        call("Style", vec![Expr::String(glyph.into()), Expr::Integer(14)]),
+        point(re, im),
+      ],
+    )
+  };
+  let mut markers = vec![call("GrayLevel", vec![Expr::Integer(0)])];
+  markers.extend(poles.iter().map(|&p| marker("\u{00D7}", p)));
+  markers.extend(zeros.iter().map(|&z| marker("\u{25CB}", z)));
+  for g in marked_gains {
+    if let Some(c) = at_gain(g) {
+      markers.push(call("PointSize", vec![id("Medium")]));
+      markers.push(call(
+        "Point",
+        vec![Expr::List(
+          polynomial_roots(&c)
+            .iter()
+            .map(|&(re, im)| point(re, im))
+            .collect(),
+        )],
+      ));
+    }
+  }
+  primitives.push(Expr::List(markers.into()));
+
+  let mut graphics_args = vec![Expr::List(primitives.into())];
+  let given = |name: &str| options.iter().any(|o| rule_name(o) == Some(name));
+  let mut defaults = Vec::new();
+  if !given("Axes") {
+    defaults.push(rule("Axes", id("True")));
+  }
+  if !given("AspectRatio") {
+    defaults.push(rule(
+      "AspectRatio",
+      call("Power", vec![id("GoldenRatio"), Expr::Integer(-1)]),
+    ));
+  }
+  graphics_args.extend(
+    options
+      .into_iter()
+      .filter(|o| rule_name(o) != Some("PoleZeroMarkers")),
+  );
+  graphics_args.extend(defaults);
+  ev(&call("Graphics", graphics_args))
 }
 
 // ── OutputResponse ──────────────────────────────────────────────────────

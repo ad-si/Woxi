@@ -2046,7 +2046,7 @@ BernsteinBasis,"Bernstein basis polynomial",✅,pure,7.0,2034
 LegendMargins,"Margins around plot legends",🚫,,9.0,2034
 Spectrogram,"Plot the magnitude of the short-time Fourier transform (time vs frequency)",✅,pure,9.0,2034
 DateTicksFormat,"Date format for plot tick labels",🚫,,6.0,2036
-RootLocusPlot,"Root locus plot for control systems",🚫,,8.0,2036
+RootLocusPlot,"Root locus of the closed-loop characteristic equation as a gain varies",✅,pure,8.0,2036
 UndirectedGraph,"Gives the graph with every edge undirected and duplicates dropped",✅,pure,8.0,2038
 DegreeGraphDistribution,"Random simple graphs with a given degree sequence (recognised by RandomGraph)",✅,pure,8.0,2039
 NyquistPlot,"Nyquist stability plot",✅,pure,8.0,2040

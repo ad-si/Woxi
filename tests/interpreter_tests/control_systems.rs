@@ -318,3 +318,33 @@ mod butterworth_filter_model {
     assert!(max < 1e-15, "{out}");
   }
 }
+
+mod root_locus_plot {
+  use super::*;
+
+  // s^2 + 1.5 s + 0.5 + k: the roots meet at -0.75 and leave the real axis,
+  // reaching -0.75 ± 0.968 I at k = 1.
+  #[test]
+  fn locus_ends() {
+    assert_eq!(
+      interpret(
+        "g = RootLocusPlot[k/((s + 0.5) (s + 1)), {k, 0, 1}]; ends = Round[Last /@ Cases[g, Line[p_] :> p, Infinity], 0.001]; {Head[g], MemberQ[ends, {-0.75, 0.968}], MemberQ[ends, {-0.75, -0.968}]}"
+      )
+      .unwrap(),
+      "{Graphics, True, True}"
+    );
+  }
+
+  // The gain is held, so a Block variable in the expression and the
+  // marker options is read when the plot is drawn.
+  #[test]
+  fn held_gain_and_parameter_markers() {
+    assert_eq!(
+      interpret(
+        "fs = {(s - 0.3)/((s + 0.5) (s + 1) (s - 0.1))}; Head[Block[{gain = 0.5, tf = 1}, RootLocusPlot[k*fs[[tf]], {k, 0, 1}, PlotRange -> All, PoleZeroMarkers -> {Automatic, \"ParameterValues\" -> gain}]]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+}
