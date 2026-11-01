@@ -694,6 +694,15 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `SpherePoints` differs in the last bit, and small `n` is missing
+
+`SpherePoints[n]` lays the points on the golden spiral Wolfram uses (the same
+z values exactly, longitude `k` times the golden angle), but the x and y
+coordinates come out up to two ulps away from Wolfram's — its trigonometric
+evaluation rounds differently. The `n` Wolfram takes from a table of optimal
+arrangements (2–12, 14, 16, 18, 20, 22, 24, 30, 32, 40, 55, 60) are not
+implemented and stay unevaluated.
+
 ### `NIntegrate` across an interior singularity
 
 A singularity inside the range that is not given as a waypoint is integrated

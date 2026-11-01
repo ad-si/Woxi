@@ -12022,6 +12022,49 @@ fn evaluate_function_call_ast_inner(
   //   CirclePoints[r, n]              — radius r, default starting angle
   //   CirclePoints[{r, theta}, n]     — radius r, explicit starting angle
   //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
+  // SpherePoints[n]: n points spread over the unit sphere on the golden
+  // spiral — z = -1 + (2k + 1)/(n + 2), longitude k times the golden
+  // angle. For the n Wolfram places from a table of optimal arrangements
+  // (2–12, 14, 16, …, 60) the call stays unevaluated.
+  if name == "SpherePoints"
+    && let [Expr::Integer(n)] = args
+    && *n >= 1
+    && *n <= 10_000_000
+    && !matches!(
+      *n,
+      2..=12 | 14 | 16 | 18 | 20 | 22 | 24 | 30 | 32 | 40 | 55 | 60
+    )
+  {
+    let n = *n;
+    if n == 1 {
+      return Ok(Expr::List(
+        vec![Expr::List(
+          vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
+        )]
+        .into(),
+      ));
+    }
+    let golden = f64::midpoint(1.0, 5.0_f64.sqrt());
+    let angle = 2.0 * std::f64::consts::PI * (1.0 - 1.0 / golden);
+    let points: Vec<Expr> = (1..=n)
+      .map(|k| {
+        // The exact rational, rounded once.
+        let z = (2 * k - n - 1) as f64 / (n + 2) as f64;
+        let r = (1.0 - z * z).sqrt();
+        let t = k as f64 * angle;
+        Expr::List(
+          vec![
+            Expr::Real(r * t.cos()),
+            Expr::Real(r * t.sin()),
+            Expr::Real(z),
+          ]
+          .into(),
+        )
+      })
+      .collect();
+    return Ok(Expr::List(points.into()));
+  }
+
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
     // n is always the last argument and must be a positive integer; a
