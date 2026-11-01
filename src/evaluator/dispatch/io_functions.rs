@@ -1332,7 +1332,7 @@ pub fn dispatch_io_functions(
       return Some(Ok(Expr::List(vec![].into())));
     }
     // ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
-    "ReadList" if !args.is_empty() && args.len() <= 3 => {
+    "ReadList" if !args.is_empty() => {
       return Some(crate::functions::string_ast::read_list_ast(args));
     }
     // ReadString["file"] — read a host-registered virtual file (WASM).
@@ -2378,12 +2378,20 @@ pub fn dispatch_io_functions(
       return Some(Ok(unevaluated("ExportString", args)));
     }
     #[cfg(not(target_arch = "wasm32"))]
-    "Find" if args.len() == 2 => {
+    "Find" if args.len() >= 2 => {
       // Find[stream_or_file, "text" | {"a", "b", …}] - find first line
       // that contains any of the search strings. Accepts file paths,
       // InputStream[…] / OutputStream[…] backed by either a file or a
       // string buffer. Advances the stream's position past the matched
       // line so consecutive Find calls walk forward.
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      if args.len() != 2 {
+        return Some(Ok(unevaluated("Find", all_args)));
+      }
+      let Some(search) = RecordSearch::parse(&opts) else {
+        return Some(Ok(unevaluated("Find", all_args)));
+      };
       let search_terms: Vec<String> = match &args[1] {
         Expr::String(s) => vec![s.clone()],
         Expr::List(items) => {
@@ -2456,19 +2464,13 @@ pub fn dispatch_io_functions(
         }
       };
 
-      let remaining = &content[start_pos.min(content.len())..];
-      let mut consumed = 0usize;
-      for line in remaining.split_inclusive('\n') {
-        let stripped = line
-          .strip_suffix('\n')
-          .unwrap_or(line)
-          .trim_end_matches('\r');
-        consumed += line.len();
-        if search_terms.iter().any(|t| stripped.contains(t)) {
+      for record in search.read.records(&content, start_pos.min(content.len()))
+      {
+        if search.matches(&record.text, &search_terms) {
           if let Some(id) = stream_id {
-            set_stream_position(id, start_pos + consumed);
+            set_stream_position(id, record.end);
           }
-          return Some(Ok(str_expr(stripped)));
+          return Some(Ok(str_expr(&record.text)));
         }
       }
       if let Some(id) = stream_id {
@@ -2511,6 +2513,11 @@ pub fn dispatch_io_functions(
           }
         }
       }
+      let Some(search) =
+        RecordSearch::parse(&super::split_trailing_options(&args[2..]).1)
+      else {
+        return Some(Ok(unevaluated("FindList", args)));
+      };
       let terms: Vec<String> = match &args[1] {
         Expr::String(s) => vec![s.clone()],
         Expr::List(items)
@@ -2535,6 +2542,7 @@ pub fn dispatch_io_functions(
       };
       let limit: usize = match args.get(2) {
         None => usize::MAX,
+        Some(Expr::Rule { .. } | Expr::RuleDelayed { .. }) => usize::MAX,
         Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
         Some(_) => {
           crate::emit_message(&format!(
@@ -2546,6 +2554,32 @@ pub fn dispatch_io_functions(
       };
       let (files, is_list): (Vec<Expr>, bool) = match &args[0] {
         Expr::String(_) => (vec![args[0].clone()], false),
+        // A stream is searched from its current position on.
+        Expr::FunctionCall {
+          name: stream_head,
+          args: stream_args,
+        } if (stream_head == "InputStream"
+          || stream_head == "OutputStream")
+          && stream_args.len() == 2 =>
+        {
+          let Expr::Integer(id) = &stream_args[1] else {
+            return failed();
+          };
+          let Some((content, position)) = get_stream_content(*id as usize)
+          else {
+            return failed();
+          };
+          let out: Vec<Expr> = search
+            .read
+            .records(&content, position.min(content.len()))
+            .into_iter()
+            .filter(|r| search.matches(&r.text, &terms))
+            .take(limit)
+            .map(|r| str_expr(&r.text))
+            .collect();
+          set_stream_position(*id as usize, content.len());
+          return Some(Ok(Expr::List(out.into())));
+        }
         Expr::List(items) => (items.iter().cloned().collect(), true),
         other => {
           crate::emit_message(&format!(
@@ -2590,13 +2624,12 @@ pub fn dispatch_io_functions(
             out.push(fail_expr());
           }
           Ok(content) => {
-            for line in content.lines() {
+            for record in search.read.records(&content, 0) {
               if found >= limit {
                 break;
               }
-              let stripped = line.trim_end_matches('\r');
-              if terms.iter().any(|t| stripped.contains(t.as_str())) {
-                out.push(str_expr(stripped));
+              if search.matches(&record.text, &terms) {
+                out.push(str_expr(&record.text));
                 found += 1;
               }
             }
@@ -2876,7 +2909,9 @@ pub fn dispatch_io_functions(
       // `CharacterEncoding -> enc` picks the bytes the query is
       // percent-encoded with.
       let all_args = args;
-      let (args, opts) = super::split_trailing_options(all_args);
+      let (args, mut opts) = super::split_trailing_options(all_args);
+      let (sort_queries, remove_empty) =
+        crate::functions::string_ast::take_query_options(&mut opts);
       let Ok(charset) =
         crate::functions::string_ast::character_encoding_option(&opts)
       else {
@@ -2892,6 +2927,12 @@ pub fn dispatch_io_functions(
       // URLBuild[{"base", ...}, {"key" -> "val", ...}] => "base/...?key=val&..."
       let parts = match &args[0] {
         Expr::String(s) => vec![s.clone()],
+        Expr::FunctionCall { name, args: url } if name == "URL" => {
+          match url.as_slice() {
+            [Expr::String(s)] => vec![s.clone()],
+            _ => return Some(Ok(unevaluated("URLBuild", all_args))),
+          }
+        }
         Expr::List(items) => {
           let mut strs = Vec::new();
           for item in items {
@@ -2925,55 +2966,12 @@ pub fn dispatch_io_functions(
 
       // Add query parameters
       if args.len() == 2 {
-        let query_pairs: Vec<(String, String)> = match &args[1] {
-          Expr::List(items) => {
-            let mut pairs = Vec::new();
-            for item in items {
-              match item {
-                Expr::Rule {
-                  pattern,
-                  replacement,
-                }
-                | Expr::RuleDelayed {
-                  pattern,
-                  replacement,
-                } => {
-                  let key = match pattern.as_ref() {
-                    Expr::String(s) => s.clone(),
-                    other => expr_to_string(other),
-                  };
-                  let val = match replacement.as_ref() {
-                    Expr::String(s) => s.clone(),
-                    other => expr_to_string(other),
-                  };
-                  pairs.push((key, val));
-                }
-                _ => {}
-              }
-            }
-            pairs
-          }
-          _ => vec![],
+        let Some(new_pairs) =
+          crate::functions::string_ast::query_pairs(&args[1])
+        else {
+          return Some(Ok(unevaluated("URLBuild", all_args)));
         };
-        if !query_pairs.is_empty() {
-          url.push('?');
-          for (i, (key, val)) in query_pairs.iter().enumerate() {
-            if i > 0 {
-              url.push('&');
-            }
-            url.push_str(
-              &crate::functions::string_ast::url_query_component_with(
-                key, charset,
-              ),
-            );
-            url.push('=');
-            url.push_str(
-              &crate::functions::string_ast::url_query_component_with(
-                val, charset,
-              ),
-            );
-          }
-        }
+        url = url_with_query(&url, new_pairs, sort_queries, remove_empty, charset);
       }
 
       return Some(Ok(Expr::String(url)));
@@ -3078,27 +3076,19 @@ pub fn dispatch_io_functions(
     // "Character8" (Integer or 1-char String → 1 byte). The 2-arg form
     // infers the type from the value (Integer → Byte, String → Character8).
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryWrite" if (2..=3).contains(&args.len()) => {
-      let Some(targets) = io_write_targets(&args[0]) else {
-        return Some(Ok(unevaluated("BinaryWrite", args)));
+    "BinaryWrite" if args.len() >= 2 => {
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      let unevaluated = || unevaluated("BinaryWrite", all_args);
+      let Some(big_endian) = byte_ordering_option(&opts) else {
+        return Some(Ok(unevaluated()));
       };
-      // Render a single value at the given type into the byte buffer.
-      // Returns false on an unsupported pairing so the caller can fall
-      // back to the unevaluated form.
-      fn write_value(out: &mut Vec<u8>, value: &Expr, ty: &str) -> bool {
-        match (value, ty) {
-          (Expr::Integer(n), "Byte" | "Character8") => {
-            out.push((*n & 0xff) as u8);
-            true
-          }
-          (Expr::String(s), "Byte" | "Character8") => {
-            out.extend_from_slice(s.as_bytes());
-            true
-          }
-          _ => false,
-        }
+      if !(2..=3).contains(&args.len()) {
+        return Some(Ok(unevaluated()));
       }
-      let unevaluated = || unevaluated("BinaryWrite", args);
+      let Some(targets) = io_write_targets(&args[0]) else {
+        return Some(Ok(unevaluated()));
+      };
       let bytes: Vec<u8> = if args.len() == 3 {
         // Explicit type spec — either a single type string applied to
         // every value or a list of per-element types.
@@ -3107,10 +3097,18 @@ pub fn dispatch_io_functions(
           Expr::List(items) => items.iter().collect(),
           v => vec![v],
         };
+        let mut write = |v: &Expr, ty: &str| match encode_binary(v, ty, big_endian)
+        {
+          Some(b) => {
+            out.extend(b);
+            true
+          }
+          None => false,
+        };
         match &args[2] {
           Expr::String(ty) => {
             for v in &values {
-              if !write_value(&mut out, v, ty) {
+              if !write(v, ty) {
                 return Some(Ok(unevaluated()));
               }
             }
@@ -3123,7 +3121,7 @@ pub fn dispatch_io_functions(
               let Expr::String(ty) = t else {
                 return Some(Ok(unevaluated()));
               };
-              if !write_value(&mut out, v, ty) {
+              if !write(v, ty) {
                 return Some(Ok(unevaluated()));
               }
             }
@@ -3180,9 +3178,17 @@ pub fn dispatch_io_functions(
     // returns the next bytes after the first call rather than starting
     // from offset 0 every time.
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryRead" if (1..=2).contains(&args.len()) => {
+    "BinaryRead" if !args.is_empty() => {
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      let Some(big_endian) = byte_ordering_option(&opts) else {
+        return Some(Ok(unevaluated("BinaryRead", all_args)));
+      };
+      if !(1..=2).contains(&args.len()) {
+        return Some(Ok(unevaluated("BinaryRead", all_args)));
+      }
       let Some(path) = io_stream_path(&args[0]) else {
-        return Some(Ok(unevaluated("BinaryRead", args)));
+        return Some(Ok(unevaluated("BinaryRead", all_args)));
       };
       // The stream id lets consecutive reads advance the position; an
       // id-less stream always reads from offset 0.
@@ -3201,64 +3207,37 @@ pub fn dispatch_io_functions(
       } else {
         str_expr("Byte")
       };
-      // Render a single-byte form (Byte/Character8) at the given offset,
-      // returning EndOfFile when out of range.
-      let read_one = |form: &Expr, offset: usize| -> Option<Expr> {
-        match form {
-          Expr::String(s) if s == "Byte" => {
-            if offset < bytes.len() {
-              Some(Expr::Integer(bytes[offset] as i128))
-            } else {
-              Some(id_expr("EndOfFile"))
-            }
-          }
-          Expr::String(s) if s == "Character8" => {
-            if offset < bytes.len() {
-              // Character8 is a raw byte rendered as a 1-char string;
-              // values >127 use the Latin-1 mapping.
-              let c = bytes[offset] as char;
-              Some(Expr::String(c.to_string()))
-            } else {
-              Some(id_expr("EndOfFile"))
-            }
-          }
-          _ => None,
-        }
+      // One object of the given type at `offset`, with its size, or
+      // EndOfFile (size 0) past the end; `None` for an unknown type.
+      let read_one = |form: &Expr, offset: usize| -> Option<(Expr, usize)> {
+        let Expr::String(ty) = form else { return None };
+        let size = binary_type_size(ty)?;
+        Some(match bytes.get(offset..offset + size) {
+          Some(chunk) => (decode_binary(chunk, ty, big_endian)?, size),
+          None => (id_expr("EndOfFile"), 0),
+        })
       };
-      match &form {
-        Expr::String(_) => {
-          let Some(result) = read_one(&form, start_pos) else {
-            return Some(Ok(unevaluated("BinaryRead", args)));
-          };
-          if let Some(id) = stream_id {
-            let advance = usize::from(
-              !matches!(&result, Expr::Identifier(s) if s == "EndOfFile"),
-            );
-            set_stream_position(id, start_pos + advance);
-          }
-          return Some(Ok(result));
-        }
-        Expr::List(items) => {
-          let mut out = Vec::with_capacity(items.len());
-          let mut offset = start_pos;
-          for it in items {
-            let Some(value) = read_one(it, offset) else {
-              return Some(Ok(unevaluated("BinaryRead", args)));
-            };
-            if !matches!(&value, Expr::Identifier(s) if s == "EndOfFile") {
-              offset += 1;
-            }
-            out.push(value);
-          }
-          if let Some(id) = stream_id {
-            set_stream_position(id, offset);
-          }
-          return Some(Ok(Expr::List(out.into())));
-        }
-        _ => {
-          return Some(Ok(unevaluated("BinaryRead", args)));
-        }
+      let items: Vec<&Expr> = match &form {
+        Expr::String(_) => vec![&form],
+        Expr::List(items) => items.iter().collect(),
+        _ => return Some(Ok(unevaluated("BinaryRead", all_args))),
+      };
+      let mut out = Vec::with_capacity(items.len());
+      let mut offset = start_pos;
+      for it in items {
+        let Some((value, size)) = read_one(it, offset) else {
+          return Some(Ok(unevaluated("BinaryRead", all_args)));
+        };
+        offset += size;
+        out.push(value);
       }
+      if let Some(id) = stream_id {
+        set_stream_position(id, offset);
+      }
+      return Some(Ok(match form {
+        Expr::List(_) => Expr::List(out.into()),
+        _ => out.pop().unwrap_or_else(|| id_expr("EndOfFile")),
+      }));
     }
     // BinaryReadList[file]            — read all bytes from `file`
     // BinaryReadList[file, "Byte"]    — same
@@ -3267,35 +3246,37 @@ pub fn dispatch_io_functions(
     //
     // Returns a List of Integers in 0..255. Returns {} on EOF.
     #[cfg(not(target_arch = "wasm32"))]
-    "BinaryReadList" if (1..=3).contains(&args.len()) => {
+    "BinaryReadList" if !args.is_empty() => {
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      let Some(big_endian) = byte_ordering_option(&opts) else {
+        return Some(Ok(unevaluated("BinaryReadList", all_args)));
+      };
+      if !(1..=3).contains(&args.len()) {
+        return Some(Ok(unevaluated("BinaryReadList", all_args)));
+      }
       let path = match &args[0] {
         Expr::String(s) => s.clone(),
         _ => match io_stream_path(&args[0]) {
           Some(p) => p,
           None => {
-            return Some(Ok(unevaluated("BinaryReadList", args)));
+            return Some(Ok(unevaluated("BinaryReadList", all_args)));
           }
         },
       };
-      let form = if args.len() >= 2 {
-        args[1].clone()
-      } else {
-        str_expr("Byte")
+      let ty = match args.get(1) {
+        None => "Byte".to_string(),
+        Some(Expr::String(s)) => s.clone(),
+        Some(_) => return Some(Ok(unevaluated("BinaryReadList", all_args))),
       };
-      // "Byte" and "Character8" are supported; other forms fall through
-      // unevaluated so callers see the same behaviour as for BinaryRead.
-      let as_chars = match &form {
-        Expr::String(s) if s == "Byte" => false,
-        Expr::String(s) if s == "Character8" => true,
-        _ => {
-          return Some(Ok(unevaluated("BinaryReadList", args)));
-        }
+      let Some(size) = binary_type_size(&ty) else {
+        return Some(Ok(unevaluated("BinaryReadList", all_args)));
       };
       // BinaryReadList[src, type, n] reads at most n objects.
       let limit = match args.get(2) {
         None => usize::MAX,
         Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
-        Some(_) => return Some(Ok(unevaluated("BinaryReadList", args))),
+        Some(_) => return Some(Ok(unevaluated("BinaryReadList", all_args))),
       };
       let bytes = match io_binary_bytes(&args[0], &path) {
         Ok(b) => b,
@@ -3305,19 +3286,15 @@ pub fn dispatch_io_functions(
           ))));
         }
       };
-      let out: Vec<Expr> = bytes
-        .into_iter()
+      let out: Option<Vec<Expr>> = bytes
+        .chunks_exact(size)
         .take(limit)
-        .map(|b| {
-          if as_chars {
-            // Character8 is a raw byte as a 1-char (Latin-1) string.
-            Expr::String((b as char).to_string())
-          } else {
-            Expr::Integer(b as i128)
-          }
-        })
+        .map(|chunk| decode_binary(chunk, &ty, big_endian))
         .collect();
-      return Some(Ok(Expr::List(out.into())));
+      return Some(Ok(match out {
+        Some(out) => Expr::List(out.into()),
+        None => unevaluated("BinaryReadList", all_args),
+      }));
     }
     // OpenAppend[file] — open a file for appending, return OutputStream[name, id]
     #[cfg(not(target_arch = "wasm32"))]
@@ -3666,7 +3643,17 @@ pub fn dispatch_io_functions(
       return Some(Ok(unevaluated("Skip", args)));
     }
     // Read[stream] or Read[stream, type] — read from a stream
-    "Read" if !args.is_empty() && args.len() <= 2 => {
+    "Read" if !args.is_empty() => {
+      let all_args = args;
+      let (args, opts) = super::split_trailing_options(all_args);
+      if args.is_empty() || args.len() > 2 {
+        return Some(Ok(unevaluated("Read", all_args)));
+      }
+      let Some(read_opts) =
+        crate::functions::string_ast::TextReadOptions::parse(&opts, false)
+      else {
+        return Some(Ok(unevaluated("Read", all_args)));
+      };
       let stream = &args[0];
       let stream_id = match stream {
         Expr::FunctionCall {
@@ -3703,7 +3690,7 @@ pub fn dispatch_io_functions(
           let mut current_pos = position;
           for t in types {
             let rem = &content[current_pos.min(content.len())..];
-            let (val, advance) = read_single_type(rem, t);
+            let (val, advance) = read_single_type_with(rem, t, &read_opts);
             current_pos += advance;
             results.push(val);
           }
@@ -3711,12 +3698,13 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::List(results.into())));
         }
 
-        let (result, advance) = read_single_type(remaining, read_type);
+        let (result, advance) =
+          read_single_type_with(remaining, read_type, &read_opts);
         advance_stream_position(id, position + advance);
         return Some(Ok(result));
       }
 
-      return Some(Ok(unevaluated("Read", args)));
+      return Some(Ok(unevaluated("Read", all_args)));
     }
     // Write[stream, expr1, expr2, ...] — write expressions to a stream in OutputForm
     #[cfg(not(target_arch = "wasm32"))]
@@ -4407,6 +4395,21 @@ pub fn dispatch_io_functions(
 /// Helper for Read: read a single value of a given type from remaining stream content.
 /// Returns (result_expr, bytes_consumed).
 fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
+  read_single_type_with(
+    remaining,
+    read_type,
+    &crate::functions::string_ast::TextReadOptions::default(),
+  )
+}
+
+/// Reads one object of `read_type` from the start of `remaining`, giving it
+/// and the number of bytes consumed. Words and records follow the
+/// separators of `opts`.
+fn read_single_type_with(
+  remaining: &str,
+  read_type: &Expr,
+  opts: &crate::functions::string_ast::TextReadOptions,
+) -> (Expr, usize) {
   let type_name = match read_type {
     Expr::Identifier(s) => s.as_str(),
     _ => "Expression",
@@ -4417,19 +4420,16 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
   }
 
   match type_name {
-    "Word" => {
-      // Skip leading whitespace
-      let trimmed = remaining.trim_start();
-      let skipped = remaining.len() - trimmed.len();
-      if trimmed.is_empty() {
-        return (id_expr("EndOfFile"), remaining.len());
+    "Word" | "Record" => {
+      let tokens = if type_name == "Word" {
+        opts.words(remaining, 0)
+      } else {
+        opts.records(remaining, 0)
+      };
+      match tokens.into_iter().next() {
+        Some(t) => (Expr::String(t.text), t.end),
+        None => (id_expr("EndOfFile"), remaining.len()),
       }
-      // Read until whitespace
-      let end = trimmed
-        .find(|c: char| c.is_whitespace())
-        .unwrap_or(trimmed.len());
-      let word = &trimmed[..end];
-      (str_expr(word), skipped + end)
     }
     "Number" => {
       // Skip leading whitespace
@@ -4778,26 +4778,13 @@ fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
     other => text(other),
   });
   let fragment = lookup("Fragment").map(text);
-  let query: Vec<(String, String)> = match lookup("Query") {
-    Some(Expr::List(items)) => items
-      .iter()
-      .filter_map(|item| match item {
-        Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => Some((text(pattern), text(replacement))),
-        _ => None,
-      })
-      .collect(),
-    Some(Expr::Association(pairs)) => {
-      pairs.iter().map(|(k, v)| (text(k), text(v))).collect()
-    }
-    _ => Vec::new(),
-  };
+  let query = lookup("Query").map(|q| match q {
+    Expr::String(s) => s.clone(),
+    other => crate::functions::string_ast::encode_query_pairs(
+      &crate::functions::string_ast::query_pairs(other).unwrap_or_default(),
+      crate::functions::string_ast::ByteCharset::Utf8,
+    ),
+  });
 
   let mut url = String::new();
   if let Some(scheme) = &scheme {
@@ -4819,28 +4806,229 @@ fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
       url.push_str(port);
     }
   }
+  let has_authority = domain.is_some() || (scheme.is_some() && absolute_path);
   if let Some(path) = &path {
+    // A relative path after an authority is joined on with a `/`.
+    if has_authority && !path.is_empty() && !path.starts_with('/') {
+      url.push('/');
+    }
     url.push_str(path);
   }
-  if !query.is_empty() {
+  if let Some(query) = query.filter(|q| !q.is_empty()) {
     url.push('?');
-    let encoded: Vec<String> = query
-      .iter()
-      .map(|(k, v)| {
-        format!(
-          "{}={}",
-          crate::functions::string_ast::url_query_component(k),
-          crate::functions::string_ast::url_query_component(v)
-        )
-      })
-      .collect();
-    url.push_str(&encoded.join("&"));
+    url.push_str(&query);
   }
   if let Some(fragment) = &fragment {
     url.push('#');
     url.push_str(fragment);
   }
   url
+}
+
+/// The `ByteOrdering` option of the binary I/O functions: `true` for big
+/// endian (`+1`), `false` for little endian (`-1`, `$ByteOrdering` here).
+/// `None` when an option is unknown or the setting invalid.
+fn byte_ordering_option(opts: &[(String, Expr)]) -> Option<bool> {
+  let mut big_endian = false;
+  for (name, value) in opts {
+    match (name.as_str(), value) {
+      ("ByteOrdering", Expr::Integer(1)) => big_endian = true,
+      ("ByteOrdering", Expr::Integer(-1)) => big_endian = false,
+      _ => return None,
+    }
+  }
+  Some(big_endian)
+}
+
+/// The number of bytes of an object of a binary type.
+fn binary_type_size(ty: &str) -> Option<usize> {
+  Some(match ty {
+    "Byte" | "Character8" | "Integer8" | "UnsignedInteger8" => 1,
+    "Integer16" | "UnsignedInteger16" => 2,
+    "Integer24" | "UnsignedInteger24" => 3,
+    "Integer32" | "UnsignedInteger32" | "Real32" => 4,
+    "Integer64" | "UnsignedInteger64" | "Real64" => 8,
+    "Integer128" | "UnsignedInteger128" => 16,
+    _ => return None,
+  })
+}
+
+/// The object of binary type `ty` that `bytes` (exactly its size) encode.
+fn decode_binary(bytes: &[u8], ty: &str, big_endian: bool) -> Option<Expr> {
+  let mut ordered = bytes.to_vec();
+  if !big_endian {
+    ordered.reverse();
+  }
+  // Most significant byte first from here on.
+  let mut buf = [0u8; 16];
+  buf[16 - ordered.len()..].copy_from_slice(&ordered);
+  let unsigned = u128::from_be_bytes(buf);
+  let bits = 8 * ordered.len() as u32;
+  Some(match ty {
+    "Character8" => Expr::String((bytes[0] as char).to_string()),
+    "Real32" => Expr::Real(f32::from_bits(unsigned as u32) as f64),
+    "Real64" => Expr::Real(f64::from_bits(unsigned as u64)),
+    "Byte" | "UnsignedInteger8" | "UnsignedInteger16" | "UnsignedInteger24"
+    | "UnsignedInteger32" | "UnsignedInteger64" => {
+      Expr::Integer(unsigned as i128)
+    }
+    "UnsignedInteger128" => {
+      return Some(match i128::try_from(unsigned) {
+        Ok(n) => Expr::Integer(n),
+        Err(_) => Expr::BigInteger(unsigned.into()),
+      });
+    }
+    // Sign-extend the two's complement value.
+    _ => Expr::Integer(((unsigned << (128 - bits)) as i128) >> (128 - bits)),
+  })
+}
+
+/// The bytes of `value` written as binary type `ty`, or `None` when the
+/// value does not fit the type.
+fn encode_binary(value: &Expr, ty: &str, big_endian: bool) -> Option<Vec<u8>> {
+  let size = binary_type_size(ty)?;
+  let mut bytes: Vec<u8> = match (value, ty) {
+    (Expr::String(s), "Byte" | "Character8") => return Some(s.as_bytes().to_vec()),
+    (_, "Real32") => {
+      (crate::functions::math_ast::try_eval_to_f64(value)? as f32)
+        .to_be_bytes()
+        .to_vec()
+    }
+    (_, "Real64") => {
+      crate::functions::math_ast::try_eval_to_f64(value)?.to_be_bytes().to_vec()
+    }
+    (Expr::Integer(n), _) => n.to_be_bytes()[16 - size..].to_vec(),
+    _ => return None,
+  };
+  if !big_endian {
+    bytes.reverse();
+  }
+  Some(bytes)
+}
+
+/// How `Find` and `FindList` match the text they search for against a
+/// record.
+struct RecordSearch {
+  /// `AnchoredSearch -> True`: the text must start the record.
+  anchored: bool,
+  /// `WordSearch -> True`: the text must be a whole word.
+  word_search: bool,
+  /// `IgnoreCase -> True`.
+  ignore_case: bool,
+  /// `RecordSeparators` and `WordSeparators`.
+  read: crate::functions::string_ast::TextReadOptions,
+}
+
+impl RecordSearch {
+  /// The search options; `None` when one is unknown or invalid.
+  fn parse(opts: &[(String, Expr)]) -> Option<Self> {
+    let flag = |v: &Expr| match v {
+      Expr::Identifier(b) if b == "True" => Some(true),
+      Expr::Identifier(b) if b == "False" => Some(false),
+      _ => None,
+    };
+    let (mut anchored, mut word_search, mut ignore_case) = (false, false, false);
+    let mut separators = Vec::new();
+    for (name, value) in opts {
+      match name.as_str() {
+        "AnchoredSearch" => anchored = flag(value)?,
+        "WordSearch" => word_search = flag(value)?,
+        "IgnoreCase" => ignore_case = flag(value)?,
+        "RecordSeparators" | "WordSeparators" => {
+          separators.push((name.clone(), value.clone()))
+        }
+        _ => return None,
+      }
+    }
+    let mut read =
+      crate::functions::string_ast::TextReadOptions::parse(&separators, false)?;
+    // Every record counts, empty ones included, when the records are
+    // searched.
+    read.keep_null_records();
+    Some(RecordSearch {
+      anchored,
+      word_search,
+      ignore_case,
+      read,
+    })
+  }
+
+  /// Whether `record` contains one of `terms` as the options require.
+  fn matches(&self, record: &str, terms: &[String]) -> bool {
+    let fold = |s: &str| {
+      if self.ignore_case {
+        s.to_lowercase()
+      } else {
+        s.to_string()
+      }
+    };
+    let record = fold(record);
+    let is_separator_at = |i: usize, before: bool| {
+      let text = if before { &record[..i] } else { &record[i..] };
+      self.read.word_separators().iter().any(|sep| {
+        if before {
+          text.ends_with(sep.as_str())
+        } else {
+          text.starts_with(sep.as_str())
+        }
+      })
+    };
+    terms.iter().any(|term| {
+      let term = fold(term);
+      if term.is_empty() {
+        return true;
+      }
+      record.match_indices(term.as_str()).any(|(i, _)| {
+        let end = i + term.len();
+        (!self.anchored || i == 0)
+          && (!self.word_search
+            || ((i == 0 || is_separator_at(i, true))
+              && (end == record.len() || is_separator_at(end, false))))
+      })
+    })
+  }
+}
+
+/// `url` with the query `pairs` added after the parameters it already has.
+/// A URL with an authority but no path gets the root path `/`.
+fn url_with_query(
+  url: &str,
+  pairs: Vec<crate::functions::string_ast::QueryPair>,
+  sort_queries: bool,
+  remove_empty: bool,
+  charset: crate::functions::string_ast::ByteCharset,
+) -> String {
+  use crate::functions::string_ast as sa;
+  let (url, fragment) = match url.split_once('#') {
+    Some((u, f)) => (u, Some(f)),
+    None => (url, None),
+  };
+  let (base, existing) = match url.split_once('?') {
+    Some((b, q)) => (b, q),
+    None => (url, ""),
+  };
+  let mut all: Vec<sa::QueryPair> = sa::decode_query_pairs(existing)
+    .into_iter()
+    .map(|(k, v)| (k, Some(v)))
+    .collect();
+  all.extend(pairs);
+  sa::arrange_query_pairs(&mut all, sort_queries, remove_empty);
+  let mut out = base.to_string();
+  if !all.is_empty() {
+    let has_empty_path = base
+      .split_once("://")
+      .is_some_and(|(_, rest)| !rest.is_empty() && !rest.contains('/'));
+    if has_empty_path {
+      out.push('/');
+    }
+    out.push('?');
+    out.push_str(&sa::encode_query_pairs(&all, charset));
+  }
+  if let Some(f) = fragment {
+    out.push('#');
+    out.push_str(f);
+  }
+  out
 }
 
 /// How a CSV cell is typed when Wolfram decides how to write a column.

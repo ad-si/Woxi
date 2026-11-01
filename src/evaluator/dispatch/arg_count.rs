@@ -845,7 +845,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "JacobiSymbol" => Some((2, 2)),
     "JacobiZeta" => Some((2, 2)),
     "JacobiEpsilon" => Some((2, 2)),
-    "JoinAcross" => Some((3, 3)),
+    "JoinAcross" => Some((3, 4)),
     "KeyDrop" => Some((1, 2)),
     "KeyDropFrom" => Some((2, 2)),
     "KeyExistsQ" => Some((1, 2)),

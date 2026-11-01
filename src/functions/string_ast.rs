@@ -14432,18 +14432,210 @@ fn readlist_get_text(source: &Expr) -> Result<String, InterpreterError> {
 }
 
 /// ReadList[source] or ReadList[source, type] or ReadList[source, type, n]
-pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 3 {
-    return Err(InterpreterError::EvaluationError(
-      "ReadList expects 1 to 3 arguments".into(),
-    ));
+/// How `Read` and `ReadList` split text into records and words.
+pub(crate) struct TextReadOptions {
+  /// `WordSeparators`; record separators separate words too.
+  word_separators: Vec<String>,
+  /// `RecordSeparators`.
+  record_separators: Vec<String>,
+  /// `NullWords -> True` keeps the empty words between repeated separators.
+  null_words: bool,
+  /// `NullRecords -> True` keeps the empty records between repeated
+  /// separators.
+  null_records: bool,
+  /// `TokenWords`: delimiters that are words of their own.
+  token_words: Vec<String>,
+  /// `RecordLists -> True` (ReadList only) groups what each record gives.
+  pub record_lists: bool,
+}
+
+impl Default for TextReadOptions {
+  fn default() -> Self {
+    TextReadOptions {
+      word_separators: vec![" ".to_string(), "\t".to_string()],
+      record_separators: vec![
+        "\r\n".to_string(),
+        "\n".to_string(),
+        "\r".to_string(),
+      ],
+      null_words: false,
+      null_records: false,
+      token_words: Vec::new(),
+      record_lists: false,
+    }
+  }
+}
+
+/// A word or record read from text, with the record it lies in and the
+/// byte offset just after it.
+pub(crate) struct ReadToken {
+  pub text: String,
+  pub record: usize,
+  pub end: usize,
+}
+
+impl TextReadOptions {
+  /// The options of a `Read` (or, with `list`, `ReadList`) call; `None`
+  /// when one of them is unknown or has an invalid setting.
+  pub(crate) fn parse(opts: &[(String, Expr)], list: bool) -> Option<Self> {
+    let mut out = TextReadOptions::default();
+    let strings = |v: &Expr| -> Option<Vec<String>> {
+      match v {
+        Expr::Identifier(n) if n == "None" => Some(Vec::new()),
+        Expr::String(s) => Some(vec![s.clone()]),
+        Expr::List(items) => items
+          .iter()
+          .map(|i| match i {
+            Expr::String(s) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+          })
+          .collect(),
+        _ => None,
+      }
+    };
+    let flag = |v: &Expr| match v {
+      Expr::Identifier(b) if b == "True" => Some(true),
+      Expr::Identifier(b) if b == "False" => Some(false),
+      _ => None,
+    };
+    for (name, value) in opts {
+      match name.as_str() {
+        "WordSeparators" => out.word_separators = strings(value)?,
+        "RecordSeparators" => out.record_separators = strings(value)?,
+        "TokenWords" => out.token_words = strings(value)?,
+        "NullWords" => out.null_words = flag(value)?,
+        "NullRecords" => out.null_records = flag(value)?,
+        "RecordLists" if list => out.record_lists = flag(value)?,
+        _ => return None,
+      }
+    }
+    // Longer separators are tried first, so "\r\n" is one separator.
+    for seps in [
+      &mut out.word_separators,
+      &mut out.record_separators,
+      &mut out.token_words,
+    ] {
+      seps.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    }
+    Some(out)
   }
 
-  let text = readlist_get_text(&args[0])?;
+  /// Keeps empty records, as `Find` and `FindList` do.
+  pub(crate) fn keep_null_records(&mut self) {
+    self.null_records = true;
+  }
+
+  /// The `WordSeparators` in effect.
+  pub(crate) fn word_separators(&self) -> &[String] {
+    &self.word_separators
+  }
+
+  /// The records of `text` from byte `start` on, as (start, end, next)
+  /// offsets: the record spans start..end and the following one starts at
+  /// next.
+  fn record_spans(&self, text: &str, start: usize) -> Vec<(usize, usize, usize)> {
+    let mut spans = Vec::new();
+    let mut record_start = start;
+    let mut i = start;
+    while i < text.len() {
+      if let Some(sep) =
+        self.record_separators.iter().find(|s| text[i..].starts_with(s.as_str()))
+      {
+        spans.push((record_start, i, i + sep.len()));
+        i += sep.len();
+        record_start = i;
+      } else {
+        i += text[i..].chars().next().map_or(1, char::len_utf8);
+      }
+    }
+    if record_start < text.len() {
+      spans.push((record_start, text.len(), text.len()));
+    }
+    if !self.null_records {
+      spans.retain(|(s, e, _)| s < e);
+    }
+    spans
+  }
+
+  /// The records of `text` from byte `start` on.
+  pub(crate) fn records(&self, text: &str, start: usize) -> Vec<ReadToken> {
+    self
+      .record_spans(text, start)
+      .into_iter()
+      .enumerate()
+      .map(|(record, (s, e, next))| ReadToken {
+        text: text[s..e].to_string(),
+        record,
+        end: next,
+      })
+      .collect()
+  }
+
+  /// The words of `text` from byte `start` on.
+  pub(crate) fn words(&self, text: &str, start: usize) -> Vec<ReadToken> {
+    let mut out = Vec::new();
+    for (record, (s, e, _)) in self.record_spans(text, start).into_iter().enumerate()
+    {
+      let mut word_start = s;
+      let mut i = s;
+      let push = |out: &mut Vec<ReadToken>, from: usize, to: usize, keep_empty| {
+        if from < to || keep_empty {
+          out.push(ReadToken {
+            text: text[from..to].to_string(),
+            record,
+            end: to,
+          });
+        }
+      };
+      while i < e {
+        let rest = &text[i..e];
+        if let Some(tok) =
+          self.token_words.iter().find(|t| rest.starts_with(t.as_str()))
+        {
+          push(&mut out, word_start, i, false);
+          push(&mut out, i, i + tok.len(), true);
+          i += tok.len();
+          word_start = i;
+        } else if let Some(sep) =
+          self.word_separators.iter().find(|w| rest.starts_with(w.as_str()))
+        {
+          push(&mut out, word_start, i, self.null_words);
+          i += sep.len();
+          word_start = i;
+        } else {
+          i += rest.chars().next().map_or(1, char::len_utf8);
+        }
+      }
+      push(&mut out, word_start, e, false);
+    }
+    out
+  }
+}
+
+/// A number token read as an integer or a real.
+fn read_number_token(token: &str) -> Option<Expr> {
+  if let Ok(n) = token.parse::<i128>() {
+    Some(Expr::Integer(n))
+  } else {
+    token.parse::<f64>().ok().map(Expr::Real)
+  }
+}
+
+pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (positional, opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  if positional.is_empty() || positional.len() > 3 {
+    return Ok(unevaluated("ReadList", args));
+  }
+  let Some(read_opts) = TextReadOptions::parse(&opts, true) else {
+    return Ok(unevaluated("ReadList", args));
+  };
+
+  let text = readlist_get_text(&positional[0])?;
 
   // Determine the read type (default: Expression)
-  let read_type = if args.len() >= 2 {
-    &args[1]
+  let read_type = if positional.len() >= 2 {
+    &positional[1]
   } else {
     &id_expr("Expression")
   };
@@ -14451,8 +14643,8 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Optional max count: must be a non-negative machine integer when
   // given. Match wolframscript on rejection: emit `ReadList::intnm`
   // and leave the call unevaluated.
-  let max_count: Option<usize> = if args.len() == 3 {
-    match &args[2] {
+  let max_count: Option<usize> = if positional.len() == 3 {
+    match &positional[2] {
       Expr::Integer(n) if *n >= 0 => Some(*n as usize),
       _ => {
         let formatted_args = args
@@ -14480,6 +14672,58 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => "Expression",
   };
 
+  // Words, numbers and records come from the separators in the options,
+  // tagged with their record for `RecordLists`.
+  let tagged: Option<Vec<(usize, Expr)>> = match type_name {
+    "Word" => Some(
+      read_opts
+        .words(&text, 0)
+        .into_iter()
+        .map(|t| (t.record, Expr::String(t.text)))
+        .collect(),
+    ),
+    "Record" => Some(
+      read_opts
+        .records(&text, 0)
+        .into_iter()
+        .map(|t| (t.record, Expr::String(t.text)))
+        .collect(),
+    ),
+    // Non-numeric tokens are skipped.
+    "Number" => Some(
+      read_opts
+        .words(&text, 0)
+        .into_iter()
+        .filter_map(|t| read_number_token(&t.text).map(|n| (t.record, n)))
+        .collect(),
+    ),
+    _ => None,
+  };
+  if let Some(mut tagged) = tagged {
+    if let Some(max) = max_count {
+      tagged.truncate(max);
+    }
+    if !read_opts.record_lists {
+      return Ok(Expr::List(
+        tagged.into_iter().map(|(_, e)| e).collect::<Vec<_>>().into(),
+      ));
+    }
+    let mut groups: Vec<(usize, Vec<Expr>)> = Vec::new();
+    for (record, e) in tagged {
+      match groups.last_mut() {
+        Some((r, items)) if *r == record => items.push(e),
+        _ => groups.push((record, vec![e])),
+      }
+    }
+    return Ok(Expr::List(
+      groups
+        .into_iter()
+        .map(|(_, items)| Expr::List(items.into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
+
   let mut results = Vec::new();
 
   match type_name {
@@ -14492,33 +14736,6 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           break;
         }
         results.push(str_expr(line));
-      }
-    }
-    "Word" => {
-      // Whitespace-separated words (returned as strings)
-      for word in text.split_whitespace() {
-        if let Some(max) = max_count
-          && results.len() >= max
-        {
-          break;
-        }
-        results.push(str_expr(word));
-      }
-    }
-    "Number" => {
-      // Whitespace-separated numbers
-      for token in text.split_whitespace() {
-        if let Some(max) = max_count
-          && results.len() >= max
-        {
-          break;
-        }
-        if let Ok(n) = token.parse::<i128>() {
-          results.push(Expr::Integer(n));
-        } else if let Ok(f) = token.parse::<f64>() {
-          results.push(Expr::Real(f));
-        }
-        // Skip non-numeric tokens
       }
     }
     // "Expression", and any unrecognized type, is read as an expression.
@@ -16111,100 +16328,166 @@ pub(crate) fn url_query_component_with(
   percent_encode_with(s, charset).replace("%20", "+")
 }
 
+/// One `key=value` pair of a URL query; a `None` value is a key alone.
+pub(crate) type QueryPair = (String, Option<String>);
+
+/// The values a query parameter stands for: lists are flattened into
+/// repeated parameters, `None` and `Missing` are a key without a value and
+/// a `URL` contributes its address.
+fn query_values(v: &Expr, out: &mut Vec<Option<String>>) {
+  match v {
+    Expr::List(items) => items.iter().for_each(|i| query_values(i, out)),
+    Expr::Identifier(id) if id == "None" || id == "Missing" => out.push(None),
+    Expr::FunctionCall { name, .. } if name == "Missing" => out.push(None),
+    Expr::FunctionCall { name, args } if name == "URL" && args.len() == 1 => {
+      out.push(Some(query_stringify(&args[0])))
+    }
+    other => out.push(Some(query_stringify(other))),
+  }
+}
+
+/// The query pairs of an association or a list of rules, or `None` when
+/// `e` is neither.
+pub(crate) fn query_pairs(e: &Expr) -> Option<Vec<QueryPair>> {
+  let entries: Vec<(&Expr, &Expr)> = match e {
+    Expr::Association(entries) => entries.iter().map(|(k, v)| (k, v)).collect(),
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => Some((pattern.as_ref(), replacement.as_ref())),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    _ => return None,
+  };
+  let mut pairs = Vec::new();
+  for (k, v) in entries {
+    let key = query_stringify(k);
+    let mut values = Vec::new();
+    query_values(v, &mut values);
+    pairs.extend(values.into_iter().map(|v| (key.clone(), v)));
+  }
+  Some(pairs)
+}
+
+/// The `"SortQueries"` and `"RemoveEmptyQueries"` options shared by
+/// `URLQueryEncode`, `URLQueryDecode` and `URLBuild`, taken out of `opts`.
+pub(crate) fn take_query_options(
+  opts: &mut Vec<(String, Expr)>,
+) -> (bool, bool) {
+  let mut flag = |name: &str| -> bool {
+    match opts.iter().position(|(o, _)| o == name) {
+      Some(i) => {
+        let (_, v) = opts.remove(i);
+        matches!(v, Expr::Identifier(ref t) if t == "True")
+      }
+      None => false,
+    }
+  };
+  let sort_queries = flag("SortQueries");
+  let remove_empty = flag("RemoveEmptyQueries");
+  (sort_queries, remove_empty)
+}
+
+/// Applies `"RemoveEmptyQueries"` (drop pairs without a value or with an
+/// empty one) and `"SortQueries"` (order the pairs by key).
+pub(crate) fn arrange_query_pairs(
+  pairs: &mut Vec<QueryPair>,
+  sort_queries: bool,
+  remove_empty: bool,
+) {
+  if remove_empty {
+    pairs.retain(|(_, v)| v.as_deref().is_some_and(|v| !v.is_empty()));
+  }
+  if sort_queries {
+    // A stable sort keeps the values of a repeated key in order;
+    // wolfram_string_order is 1 when a comes first, -1 when b does.
+    pairs.sort_by(|(a, _), (b, _)| {
+      crate::functions::list_helpers_ast::wolfram_string_order(b, a).cmp(&0)
+    });
+  }
+}
+
+/// The query string of `pairs`, percent-encoded with `charset`.
+pub(crate) fn encode_query_pairs(
+  pairs: &[QueryPair],
+  charset: ByteCharset,
+) -> String {
+  pairs
+    .iter()
+    .map(|(k, v)| {
+      let key = url_query_component_with(k, charset);
+      match v {
+        Some(v) => format!("{key}={}", url_query_component_with(v, charset)),
+        None => key,
+      }
+    })
+    .collect::<Vec<_>>()
+    .join("&")
+}
+
+/// The pairs of a query string; a parameter without `=` has an empty value.
+pub(crate) fn decode_query_pairs(s: &str) -> Vec<(String, String)> {
+  if s.is_empty() {
+    return Vec::new();
+  }
+  // Query components separate "+" as space, so restore that before percent
+  // decoding (a literal "+" arrives percent-encoded as "%2B").
+  let decode = |part: &str| percent_decode(&part.replace('+', " "));
+  s.split('&')
+    .map(|segment| {
+      let (raw_key, raw_val) = segment.split_once('=').unwrap_or((segment, ""));
+      (decode(raw_key), decode(raw_val))
+    })
+    .collect()
+}
+
 /// URLQueryEncode[assoc | {rules...}] - build a URL query string.
 pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, mut opts) =
     crate::evaluator::dispatch::split_trailing_options(args);
-  // `SortQueries -> True` orders the pairs by key, `RemoveEmptyQueries ->
-  // True` drops the ones whose value is empty.
-  let mut flag = |name: &str| -> Option<bool> {
-    let i = opts.iter().position(|(o, _)| o == name)?;
-    let (_, v) = opts.remove(i);
-    Some(matches!(v, Expr::Identifier(ref t) if t == "True"))
-  };
-  let sort_queries = flag("SortQueries").unwrap_or(false);
-  let remove_empty = flag("RemoveEmptyQueries").unwrap_or(false);
+  let (sort_queries, remove_empty) = take_query_options(&mut opts);
   let (Ok(charset), [arg]) = (character_encoding_option(&opts), positional)
   else {
     return Ok(unevaluated("URLQueryEncode", args));
   };
   let charset = charset.unwrap_or(ByteCharset::Utf8);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
-
-  // Collect the key/value pairs from either an Association or a list of rules.
-  let pairs: Vec<(Expr, Expr)> = match &evaluated {
-    Expr::Association(entries) => entries.clone(),
-    Expr::List(items) => {
-      let mut out = Vec::with_capacity(items.len());
-      for item in items {
-        match item {
-          Expr::Rule {
-            pattern,
-            replacement,
-          }
-          | Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } => out.push(((**pattern).clone(), (**replacement).clone())),
-          _ => return Ok(unevaluated("URLQueryEncode", args)),
-        }
-      }
-      out
-    }
-    _ => return Ok(unevaluated("URLQueryEncode", args)),
+  let Some(mut pairs) = query_pairs(&evaluated) else {
+    return Ok(unevaluated("URLQueryEncode", args));
   };
-
-  let mut pairs = pairs;
-  if remove_empty {
-    pairs.retain(|(_, v)| !matches!(v, Expr::String(s) if s.is_empty()));
-  }
-  if sort_queries {
-    pairs.sort_by(|(a, _), (b, _)| {
-      // wolfram_string_order is 1 when a comes first, -1 when b does.
-      crate::functions::list_helpers_ast::wolfram_string_order(
-        &query_stringify(b),
-        &query_stringify(a),
-      )
-      .cmp(&0)
-    });
-  }
-  let encoded = pairs
-    .iter()
-    .map(|(k, v)| {
-      format!(
-        "{}={}",
-        url_query_component_with(&query_stringify(k), charset),
-        url_query_component_with(&query_stringify(v), charset)
-      )
-    })
-    .collect::<Vec<_>>()
-    .join("&");
-  Ok(Expr::String(encoded))
+  arrange_query_pairs(&mut pairs, sort_queries, remove_empty);
+  Ok(Expr::String(encode_query_pairs(&pairs, charset)))
 }
 
 /// URLQueryDecode[string] - parse a URL query string into a list of rules.
 pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  let (positional, mut opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  let (sort_queries, remove_empty) = take_query_options(&mut opts);
+  let ([arg], true) = (positional, opts.is_empty()) else {
     return Ok(unevaluated("URLQueryDecode", args));
-  }
-  let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  };
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
   let Expr::String(s) = &evaluated else {
     return Ok(unevaluated("URLQueryDecode", args));
   };
-  if s.is_empty() {
-    return Ok(Expr::List(Vec::new().into()));
-  }
-  // Query components separate "+" as space, so restore that before percent
-  // decoding (a literal "+" arrives percent-encoded as "%2B").
-  let decode = |part: &str| percent_decode(&part.replace('+', " "));
-  let rules = s
-    .split('&')
-    .map(|segment| {
-      let (raw_key, raw_val) = match segment.split_once('=') {
-        Some((k, v)) => (k, v),
-        None => (segment, ""),
-      };
-      rule_expr(Expr::String(decode(raw_key)), Expr::String(decode(raw_val)))
+  let mut pairs: Vec<QueryPair> = decode_query_pairs(s)
+    .into_iter()
+    .map(|(k, v)| (k, Some(v)))
+    .collect();
+  arrange_query_pairs(&mut pairs, sort_queries, remove_empty);
+  let rules = pairs
+    .into_iter()
+    .map(|(k, v)| {
+      rule_expr(Expr::String(k), Expr::String(v.unwrap_or_default()))
     })
     .collect::<Vec<_>>();
   Ok(Expr::List(rules.into()))
@@ -16730,13 +17013,154 @@ fn quantity_to_text(args: &[Expr], abbreviated: bool) -> Option<String> {
 /// not a bare symbol is numericized to six significant digits (`1/3` is
 /// "0.333333", `Sqrt[2]` is "1.41421", while `Pi` stays "Pi").
 pub fn text_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return to_string_ast(args);
-  }
-  match text_string_render(&args[0]) {
+  let (positional, opts) =
+    crate::evaluator::dispatch::split_trailing_options(args);
+  let text_opts = match (positional, opts.is_empty()) {
+    (_, true) if args.len() == 1 => TextStringOptions::default(),
+    // An option TextString does not take leaves the call unevaluated.
+    ([_], false)
+      if opts.iter().any(|(name, _)| {
+        !matches!(
+          name.as_str(),
+          "AssociationFormat"
+            | "BooleanStrings"
+            | "DateFormat"
+            | "ElidedForms"
+            | "ListFormat"
+            | "MissingString"
+            | "TimeFormat"
+            | "TimeZone"
+        )
+      }) =>
+    {
+      return Ok(unevaluated("TextString", args));
+    }
+    ([_], false) => match TextStringOptions::parse(&opts) {
+      Some(o) => o,
+      None => return to_string_ast(args),
+    },
+    _ => return to_string_ast(args),
+  };
+  let expr = &positional[0];
+  let previous = TEXT_STRING_OPTIONS.with(|o| o.replace(text_opts));
+  let rendered = text_string_render(expr);
+  TEXT_STRING_OPTIONS.with(|o| o.replace(previous));
+  match rendered {
     Some(rendered) => Ok(Expr::String(rendered)),
-    None => to_string_ast(args),
+    None => to_string_ast(std::slice::from_ref(expr)),
   }
+}
+
+/// Which expressions `TextString` abbreviates to `head[…]`
+/// (`ElidedForms`).
+#[derive(Clone)]
+enum ElidedForms {
+  /// Expressions without an obvious textual form, such as graphics.
+  Automatic,
+  /// Every compound expression.
+  All,
+  /// Expressions with one of these heads.
+  Heads(Vec<String>),
+}
+
+/// The formatting options of `TextString`.
+#[derive(Clone)]
+struct TextStringOptions {
+  /// `ListFormat -> {left, sep, right}`.
+  list: [String; 3],
+  /// `AssociationFormat -> {left, sep, right, arrow}`.
+  association: [String; 4],
+  /// `BooleanStrings -> {true, false}`.
+  booleans: [String; 2],
+  /// `MissingString -> s`; `None` stands for `Automatic` (the reason).
+  missing: Option<String>,
+  elided: ElidedForms,
+}
+
+impl Default for TextStringOptions {
+  fn default() -> Self {
+    let s = |v: &str| v.to_string();
+    TextStringOptions {
+      list: [s("{"), s(", "), s("}")],
+      association: [s("<|"), s(", "), s("|>"), s(" -> ")],
+      booleans: [s("True"), s("False")],
+      missing: Some(String::new()),
+      elided: ElidedForms::Automatic,
+    }
+  }
+}
+
+impl TextStringOptions {
+  /// The options of a `TextString` call, or `None` when one of them is not
+  /// a valid setting.
+  fn parse(opts: &[(String, Expr)]) -> Option<Self> {
+    let mut out = TextStringOptions::default();
+    let automatic = |v: &Expr| matches!(v, Expr::Identifier(a) if a == "Automatic");
+    fn strings<const N: usize>(v: &Expr) -> Option<[String; N]> {
+      let Expr::List(items) = v else { return None };
+      let strs: Vec<String> = items
+        .iter()
+        .map(|i| match i {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        })
+        .collect::<Option<_>>()?;
+      strs.try_into().ok()
+    }
+    for (name, value) in opts {
+      match name.as_str() {
+        "ListFormat" if automatic(value) => {}
+        "ListFormat" => out.list = strings(value)?,
+        "AssociationFormat" if automatic(value) => {}
+        "AssociationFormat" => out.association = strings(value)?,
+        "BooleanStrings" => out.booleans = strings(value)?,
+        "MissingString" => {
+          out.missing = match value {
+            Expr::String(s) => Some(s.clone()),
+            v if automatic(v) => None,
+            _ => return None,
+          }
+        }
+        "ElidedForms" => {
+          out.elided = match value {
+            v if automatic(v) => ElidedForms::Automatic,
+            Expr::Identifier(a) if a == "All" => ElidedForms::All,
+            Expr::Identifier(a) if a == "None" => ElidedForms::Heads(Vec::new()),
+            Expr::Identifier(h) => ElidedForms::Heads(vec![h.clone()]),
+            Expr::List(items) => ElidedForms::Heads(
+              items
+                .iter()
+                .map(|i| match i {
+                  Expr::Identifier(h) => Some(h.clone()),
+                  _ => None,
+                })
+                .collect::<Option<_>>()?,
+            ),
+            _ => return None,
+          }
+        }
+        _ => return None,
+      }
+    }
+    Some(out)
+  }
+
+  /// Whether a compound expression with head `head` is shown as `head[…]`.
+  fn elides(&self, head: &str) -> bool {
+    match &self.elided {
+      ElidedForms::Automatic => {
+        matches!(head, "Graphics" | "Graphics3D" | "Image" | "Image3D")
+      }
+      ElidedForms::All => true,
+      ElidedForms::Heads(heads) => heads.iter().any(|h| h == head),
+    }
+  }
+}
+
+thread_local! {
+  /// The options of the `TextString` call being rendered.
+  static TEXT_STRING_OPTIONS: std::cell::RefCell<TextStringOptions> =
+    std::cell::RefCell::new(TextStringOptions::default());
 }
 
 /// The `TextString` rendering of a real: full decimal notation, with a
@@ -16799,22 +17223,39 @@ fn text_string_render(expr: &Expr) -> Option<String> {
     Expr::String(s) => return Some(s.clone()),
     Expr::List(items) => {
       let parts: Vec<String> = items.iter().map(text_string_part).collect();
-      return Some(format!("{{{}}}", parts.join(", ")));
+      let [l, sep, r] = TEXT_STRING_OPTIONS.with(|o| o.borrow().list.clone());
+      return Some(format!("{l}{}{r}", parts.join(&sep)));
     }
     Expr::Association(pairs) => {
+      let [l, sep, r, arrow] =
+        TEXT_STRING_OPTIONS.with(|o| o.borrow().association.clone());
       let parts: Vec<String> = pairs
         .iter()
         .map(|(k, v)| {
-          format!("{} -> {}", text_string_part(k), text_string_part(v))
+          format!("{}{arrow}{}", text_string_part(k), text_string_part(v))
         })
         .collect();
-      return Some(format!("<|{}|>", parts.join(", ")));
+      return Some(format!("{l}{}{r}", parts.join(&sep)));
+    }
+    Expr::Identifier(b) if b == "True" || b == "False" => {
+      let [t, f] = TEXT_STRING_OPTIONS.with(|o| o.borrow().booleans.clone());
+      return Some(if b == "True" { t } else { f });
+    }
+    Expr::FunctionCall { name, .. }
+      if TEXT_STRING_OPTIONS.with(|o| o.borrow().elides(name)) =>
+    {
+      return Some(format!("{name}[\u{2026}]"));
     }
     // An extended-precision number keeps every digit it carries.
     Expr::BigFloat(..) => return Some(text_string_to_string_form(expr)),
     // A missing value contributes nothing to the text.
-    Expr::FunctionCall { name, .. } if name == "Missing" => {
-      return Some(String::new());
+    // `MissingString -> Automatic` shows the reason instead.
+    Expr::FunctionCall { name, args } if name == "Missing" => {
+      return Some(match TEXT_STRING_OPTIONS.with(|o| o.borrow().missing.clone())
+      {
+        Some(s) => s,
+        None => args.first().map(text_string_part).unwrap_or_default(),
+      });
     }
     // A quantity abbreviates its unit: "3 m".
     Expr::FunctionCall { name, args } if name == "Quantity" => {
