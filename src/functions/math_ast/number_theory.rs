@@ -1703,10 +1703,7 @@ fn harmonic_complex_order_sum(n: i128, order: &Expr) -> Option<Expr> {
 
 /// `HarmonicNumber[x, r]` for real `x > -1` (not a non-negative integer)
 /// and real `r`, at least one of them inexact; `None` otherwise.
-fn harmonic_number_inexact(
-  x: &Expr,
-  r: &Expr,
-) -> Result<Option<Expr>, InterpreterError> {
+fn harmonic_number_inexact(x: &Expr, r: &Expr) -> Option<Expr> {
   // An integral machine index with a complex inexact order is the finite
   // sum (N[HarmonicNumber[27, 5 - I]] numericizes the index to 27.).
   if let Expr::Real(xf) = x
@@ -1715,7 +1712,7 @@ fn harmonic_number_inexact(
     && *xf <= 1.0e7
     && let Some(v) = harmonic_complex_order_sum(*xf as i128, r)
   {
-    return Ok(Some(v));
+    return Some(v);
   }
   let inexact = |e: &Expr| matches!(e, Expr::Real(_) | Expr::BigFloat(..));
   let precision = [x, r]
@@ -1731,23 +1728,21 @@ fn harmonic_number_inexact(
     || !crate::functions::math_ast::is_real_numeric(r)
     || matches!(expr_to_i128(x), Some(n) if n >= 0)
   {
-    return Ok(None);
+    return None;
   }
-  let Some(xv) = try_eval_to_f64(x) else {
-    return Ok(None);
-  };
+  let xv = try_eval_to_f64(x)?;
   if xv <= -1.0 {
-    return Ok(None);
+    return None;
   }
   let call = call("HarmonicNumber", vec![x.clone(), r.clone()]);
-  Ok(match precision {
+  match precision {
     Some(p) if !machine => {
       crate::functions::math_ast::bigfloat_function_value(&call, p)
     }
     _ => {
       crate::functions::math_ast::machine_function_value(&call).map(Expr::Real)
     }
-  })
+  }
 }
 
 /// HarmonicNumber[n, r, s] - the generalized harmonic number of order r with
@@ -1875,7 +1870,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // r = 1), numericized at the arguments' precision. (A non-negative integer
   // index is the finite sum, handled below.)
   if args.len() == 2
-    && let Some(v) = harmonic_number_inexact(&args[0], &args[1])?
+    && let Some(v) = harmonic_number_inexact(&args[0], &args[1])
   {
     return Ok(v);
   }

@@ -282,12 +282,8 @@ fn hypergeometric_0f1_regularized_bigfloat(
     let shift = one.sub(b, wp, rm); // n + 1
     let b2 = shift.add(&one, wp, rm); // n + 2
     let f = pfq_bigfloat(&[], std::slice::from_ref(&b2), z, wp, rm)?;
-    let n1 = i64::try_from(crate::functions::math_ast::bigfloat_to_f64_approx(
-      &shift,
-    )? as i64)
-    .ok()?;
-    let zp =
-      crate::functions::math_ast::bigfloat_powi(z, i128::from(n1), wp, rm);
+    let n1 = crate::functions::math_ast::bigfloat_to_f64_approx(&shift)?;
+    let zp = crate::functions::math_ast::bigfloat_powi(z, n1 as i128, wp, rm);
     return Some(zp.mul(&f, wp, rm).mul(&rgamma(&b2, wp, rm, cc), bits, rm));
   }
   let f = pfq_bigfloat(&[], std::slice::from_ref(b), z, wp, rm)?;
