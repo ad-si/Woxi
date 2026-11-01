@@ -4544,6 +4544,11 @@ pub fn dispatch_list_operations(
         // wolframscript.
         if level >= 2 {
           let unevaluated = || unevaluated("Join", args);
+          // An atomic first argument (`Join[3, 6, 7]`) is no join at all:
+          // the call stays unevaluated without a message.
+          if !matches!(&lists[0], Expr::List(_) | Expr::FunctionCall { .. }) {
+            return Some(Ok(unevaluated()));
+          }
           for (i, a) in lists.iter().enumerate() {
             if !has_join_depth(a, level) {
               let tag = if i == 0 {

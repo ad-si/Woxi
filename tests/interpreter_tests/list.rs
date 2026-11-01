@@ -10957,6 +10957,14 @@ mod join_level_spec {
     assert_eq!(interpret("Join[{1}, {2}, 3]").unwrap(), "Join[{1}, {2}, 3]");
   }
 
+  // An atomic first argument joins nothing: unevaluated, and silently.
+  #[test]
+  fn atomic_first_argument_unevaluated_without_message() {
+    let r = interpret_with_stdout("{Join[3, 6, 7], Join[3, {1}, 2]}").unwrap();
+    assert_eq!(r.result, "{Join[3, 6, 7], Join[3, {1}, 2]}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // If a later argument's parts are not Lists (wolframscript emits
   // Join::headsd), the call also stays unevaluated.
   #[test]
