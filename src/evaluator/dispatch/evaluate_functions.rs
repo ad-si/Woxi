@@ -9369,7 +9369,7 @@ fn evaluate_function_call_ast_inner(
 
   // FindMaximumFlow[graph, source, sink] — maximum flow value
   if name == "FindMaximumFlow"
-    && args.len() == 3
+    && args.len() >= 3
     && let Expr::FunctionCall {
       name: gname,
       args: gargs,
@@ -10911,10 +10911,20 @@ fn evaluate_function_call_ast_inner(
 
   // RenameFile[source, dest] — rename/move a file
   if name == "RenameFile"
-    && args.len() == 2
+    && args.len() >= 2
     && let Expr::String(source) = &args[0]
     && let Expr::String(dest) = &args[1]
   {
+    let Some(overwrite) = overwrite_target_option(&args[2..]) else {
+      return Ok(unevaluated("RenameFile", args));
+    };
+    // The new name must not exist yet unless OverwriteTarget -> True.
+    if crate::vfs::exists(source)
+      && crate::vfs::exists(dest)
+      && !may_overwrite("RenameFile", dest, overwrite)
+    {
+      return Ok(fail_expr());
+    }
     match std::fs::rename(
       crate::vfs::resolve(source),
       crate::vfs::resolve(dest),
@@ -10996,9 +11006,12 @@ fn evaluate_function_call_ast_inner(
 
   // CopyFile[source, dest] — copy a file
   if name == "CopyFile"
-    && args.len() == 2
+    && args.len() >= 2
     && let (Expr::String(source), Expr::String(dest)) = (&args[0], &args[1])
   {
+    let Some(overwrite) = overwrite_target_option(&args[2..]) else {
+      return Ok(unevaluated("CopyFile", args));
+    };
     if !crate::vfs::exists(source) {
       // Match wolframscript's message, which reports the absolute path.
       let abs = crate::vfs::resolve(source).to_string_lossy().into_owned();
@@ -11007,8 +11020,8 @@ fn evaluate_function_call_ast_inner(
       ));
       return Ok(fail_expr());
     }
-    if crate::vfs::exists(dest) {
-      crate::emit_message(&format!("CopyFile::eexist: {dest} already exists."));
+    if crate::vfs::exists(dest) && !may_overwrite("CopyFile", dest, overwrite)
+    {
       return Ok(fail_expr());
     }
     match std::fs::copy(crate::vfs::resolve(source), crate::vfs::resolve(dest))
@@ -14014,8 +14027,98 @@ fn apply_morphological_2d(
   }
 }
 
-/// Edmonds-Karp max flow implementation (extracted to avoid bloating dispatch stack frame)
-/// FindMaximumFlow using petgraph's Ford-Fulkerson algorithm
+/// The `OverwriteTarget` option of `CopyFile` and `RenameFile`: `Some(None)`
+/// for `Automatic`, `Some(Some(b))` for `True`/`False`, and `None` when an
+/// option is unknown or invalid.
+fn overwrite_target_option(opts: &[Expr]) -> Option<Option<bool>> {
+  let (positional, opts) = split_trailing_options(opts);
+  if !positional.is_empty() {
+    return None;
+  }
+  let mut overwrite = None;
+  for (name, value) in opts {
+    overwrite = match (name.as_str(), &value) {
+      ("OverwriteTarget", Expr::Identifier(v)) if v == "True" => Some(true),
+      ("OverwriteTarget", Expr::Identifier(v)) if v == "False" => Some(false),
+      ("OverwriteTarget", Expr::Identifier(v)) if v == "Automatic" => None,
+      _ => return None,
+    };
+  }
+  Some(overwrite)
+}
+
+/// Whether `func` may replace the existing file `dest`; reports why not
+/// when it may not.
+fn may_overwrite(func: &str, dest: &str, overwrite: Option<bool>) -> bool {
+  match overwrite {
+    Some(true) => true,
+    Some(false) => {
+      crate::emit_message(&format!(
+        "{func}::filex: Cannot overwrite existing file {dest}."
+      ));
+      false
+    }
+    None => {
+      crate::emit_message(&format!("{func}::eexist: {dest} already exists."));
+      false
+    }
+  }
+}
+
+/// The capacities of a flow problem's edges or vertices: the setting of
+/// the function's option, else the graph's own, else `default`. `None`
+/// when a setting is not a list of one non-negative number per item.
+fn flow_capacities(
+  name: &str,
+  call_opts: &[(String, Expr)],
+  graph_opts: &[Expr],
+  count: usize,
+  default: f64,
+) -> Option<(Vec<f64>, bool)> {
+  let graph_setting = graph_opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  });
+  let setting = call_opts
+    .iter()
+    .find(|(n, _)| n == name)
+    .map(|(_, v)| v)
+    .filter(|v| !matches!(v, Expr::Identifier(a) if a == "Automatic"))
+    .or(graph_setting);
+  let Some(setting) = setting else {
+    return Some((vec![default; count], true));
+  };
+  let Expr::List(items) = setting else {
+    return None;
+  };
+  if items.len() != count {
+    return None;
+  }
+  let mut exact = true;
+  let caps = items
+    .iter()
+    .map(|c| {
+      if !matches!(c, Expr::Integer(_)) {
+        exact = false;
+      }
+      if crate::functions::predicate_ast::is_directed_infinity(c) {
+        return Some(f64::INFINITY);
+      }
+      crate::functions::math_ast::try_eval_to_f64(c).filter(|v| *v >= 0.0)
+    })
+    .collect::<Option<Vec<f64>>>()?;
+  Some((caps, exact))
+}
+
+/// FindMaximumFlow[g, s, t, opts]: the value of a maximum flow from `s` to
+/// `t` (Edmonds–Karp). Undirected edges carry flow either way; a vertex
+/// capacity limits the flow through the vertex (split into an in-node and an
+/// out-node joined by an arc of that capacity).
 fn find_maximum_flow_impl(
   verts: &[Expr],
   edges: &[Expr],
@@ -14024,26 +14127,109 @@ fn find_maximum_flow_impl(
   args: &[Expr],
 ) -> Expr {
   let vertex_idx = |v: &Expr| -> Option<usize> {
-    verts
+    let v = crate::functions::graph::unwrap_vertex_style(v).0;
+    verts.iter().position(|vert| {
+      crate::evaluator::pattern_matching::expr_equal(
+        crate::functions::graph::unwrap_vertex_style(vert).0,
+        v,
+      )
+    })
+  };
+  let (Some(s), Some(t)) = (vertex_idx(source), vertex_idx(sink)) else {
+    return unevaluated("FindMaximumFlow", args);
+  };
+  let (positional, call_opts) = split_trailing_options(&args[3..]);
+  if !positional.is_empty()
+    || call_opts
       .iter()
-      .position(|vert| crate::evaluator::pattern_matching::expr_equal(vert, v))
+      .any(|(n, _)| n != "EdgeCapacity" && n != "VertexCapacity")
+  {
+    return unevaluated("FindMaximumFlow", args);
+  }
+  let graph_opts: &[Expr] = match &args[0] {
+    Expr::FunctionCall { args: gargs, .. } => &gargs[2..],
+    _ => &[],
   };
-
-  let Some(s) = vertex_idx(source) else {
+  let n = verts.len();
+  let Some((edge_caps, edges_exact)) =
+    flow_capacities("EdgeCapacity", &call_opts, graph_opts, edges.len(), 1.0)
+  else {
     return unevaluated("FindMaximumFlow", args);
   };
-  let Some(t) = vertex_idx(sink) else {
+  let Some((vertex_caps, vertices_exact)) =
+    flow_capacities("VertexCapacity", &call_opts, graph_opts, n, f64::INFINITY)
+  else {
     return unevaluated("FindMaximumFlow", args);
   };
 
-  let (pg_graph, _) = crate::functions::graph::build_flow_graph(verts, edges);
-  let source_idx = petgraph::graph::NodeIndex::new(s);
-  let sink_idx = petgraph::graph::NodeIndex::new(t);
+  // Node v enters at v and leaves at n + v.
+  let size = 2 * n;
+  let mut cap = vec![vec![0.0f64; size]; size];
+  for v in 0..n {
+    cap[v][n + v] = vertex_caps[v];
+  }
+  for (edge, c) in edges.iter().zip(&edge_caps) {
+    let (edge, _, _) = crate::functions::graph::unwrap_edge_wrappers(edge);
+    let Expr::FunctionCall { name, args: ends } = edge else {
+      return unevaluated("FindMaximumFlow", args);
+    };
+    let (Some(a), Some(b)) = (
+      ends.first().and_then(vertex_idx),
+      ends.get(1).and_then(vertex_idx),
+    ) else {
+      return unevaluated("FindMaximumFlow", args);
+    };
+    // Self-loops carry no flow; parallel edges add up.
+    if a == b {
+      continue;
+    }
+    cap[n + a][b] += c;
+    if name == "UndirectedEdge" {
+      cap[n + b][a] += c;
+    }
+  }
 
-  let (max_flow, _flow_map) =
-    petgraph::algo::ford_fulkerson(&pg_graph, source_idx, sink_idx);
-
-  Expr::Integer(max_flow as i128)
+  let (from, to) = (s, n + t);
+  let mut total = 0.0;
+  loop {
+    // Breadth-first search for a shortest augmenting path.
+    let mut parent = vec![usize::MAX; size];
+    parent[from] = from;
+    let mut queue = std::collections::VecDeque::from([from]);
+    while let Some(u) = queue.pop_front() {
+      for v in 0..size {
+        if parent[v] == usize::MAX && cap[u][v] > 1e-12 {
+          parent[v] = u;
+          queue.push_back(v);
+        }
+      }
+    }
+    if parent[to] == usize::MAX {
+      break;
+    }
+    let mut bottleneck = f64::INFINITY;
+    let mut v = to;
+    while v != from {
+      bottleneck = bottleneck.min(cap[parent[v]][v]);
+      v = parent[v];
+    }
+    if bottleneck.is_infinite() {
+      return Expr::Identifier("Infinity".to_string());
+    }
+    let mut v = to;
+    while v != from {
+      let u = parent[v];
+      cap[u][v] -= bottleneck;
+      cap[v][u] += bottleneck;
+      v = u;
+    }
+    total += bottleneck;
+  }
+  if edges_exact && vertices_exact {
+    Expr::Integer(total.round() as i128)
+  } else {
+    Expr::Real(total)
+  }
 }
 
 /// FindGraphIsomorphism implementation using backtracking
