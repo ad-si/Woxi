@@ -37,6 +37,7 @@ mod misc_special;
 mod number_theory;
 pub mod numeric_utils;
 pub(crate) mod numerical;
+pub(crate) mod orthogonal_bigfloat;
 mod orthogonal_polynomials;
 mod polylog;
 mod random;

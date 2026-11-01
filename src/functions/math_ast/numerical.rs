@@ -984,6 +984,61 @@ pub fn hurwitz_zeta_bigfloat(
   Some(sum)
 }
 
+/// `HarmonicNumber[x, r]` for real `x > -1` and real `r`, to `bits` bits:
+/// `ψ(x + 1) + γ` at `r = 1`, else `ζ(r) − ζ(r, x + 1)`, with guard bits
+/// grown past the cancellation of the difference.
+pub(crate) fn harmonic_number_bigfloat(
+  x: &astro_float::BigFloat,
+  r: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let exp = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      i64::from(b.exponent().unwrap_or(0))
+    }
+  };
+  if x.cmp(&BigFloat::from_i32(-1, bits))? <= 0 {
+    return None;
+  }
+  let mut guard = 64;
+  loop {
+    let wp = bits + guard;
+    let one = BigFloat::from_i32(1, wp);
+    let x1 = x.add(&one, wp, rm);
+    let (a, b) = if r.sub(&one, wp, rm).is_zero() {
+      (
+        polygamma_bigfloat(0, &x1, wp, rm, cc)?,
+        polygamma_bigfloat(0, &one, wp, rm, cc)?,
+      )
+    } else {
+      (
+        hurwitz_zeta_bigfloat(r, &one, false, wp, rm, cc)?,
+        hurwitz_zeta_bigfloat(r, &x1, false, wp, rm, cc)?,
+      )
+    };
+    let diff = a.sub(&b, wp, rm);
+    let lost = (exp(&a).max(exp(&b)) - exp(&diff)).max(0) as usize;
+    if lost + 16 <= guard || guard > 16 * bits + 4096 {
+      return Some(diff.round(bits, rm));
+    }
+    guard = lost + 64;
+  }
+}
+
+/// `expr` (a function call with real arguments) as a machine number,
+/// computed at 128 bits through the arbitrary-precision path and rounded
+/// once; `None` when that path has no value for it.
+pub(crate) fn machine_function_value(expr: &Expr) -> Option<f64> {
+  let rm = astro_float::RoundingMode::ToEven;
+  let v = with_thread_consts(|cc| expr_to_bigfloat(expr, 128, rm, cc).ok())?;
+  bigfloat_to_f64_approx(&v).filter(|v| v.is_finite())
+}
+
 /// The order of `PolyGamma[n, z]` as a non-negative integer — also from an
 /// integral `Real`/`BigFloat`, which is what `N` turns the order into.
 pub fn polygamma_order(n: &Expr) -> Option<usize> {
@@ -1585,6 +1640,18 @@ fn wl_bigfloat_expr(
   let digits = wl_fraction_digits(&bf, precision);
   let decimal = bigfloat_to_string(&bf, Some(digits), rm, cc)?;
   Ok(Expr::BigFloat(decimal, precision))
+}
+
+/// `expr`, a function call with real numeric arguments, as an
+/// arbitrary-precision number at `precision` digits — or `None` when the
+/// arbitrary-precision path has no value for it.
+pub(crate) fn bigfloat_function_value(
+  expr: &Expr,
+  precision: f64,
+) -> Option<Expr> {
+  let bits = nominal_bits(precision.floor().max(1.0) as usize) + 64;
+  let rm = astro_float::RoundingMode::ToEven;
+  with_thread_consts(|cc| wl_bigfloat_expr(expr, precision, bits, rm, cc).ok())
 }
 
 /// SetAccuracy[expr, accuracy] — set every numeric leaf of `expr` to a fixed
@@ -2468,6 +2535,21 @@ pub fn expr_to_bigfloat(
               )
             })
         }
+        // HarmonicNumber[x, r] = Zeta[r] - HurwitzZeta[r, x + 1], and
+        // PolyGamma[x + 1] + EulerGamma at r = 1; real x > -1.
+        "HarmonicNumber" if (1..=2).contains(&args.len()) => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let r = match args.get(1) {
+            Some(r) => expr_to_bigfloat(r, bits, rm, cc)?,
+            None => BigFloat::from_i32(1, bits),
+          };
+          harmonic_number_bigfloat(&x, &r, bits, rm, cc).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate HarmonicNumber[...] to arbitrary precision"
+                .into(),
+            )
+          })
+        }
         "LogGamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(gamma_bigfloat(&z, bits, rm, cc).ln(bits, rm, cc))
@@ -2541,6 +2623,34 @@ pub fn expr_to_bigfloat(
         "Gamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(gamma_bigfloat(&z, bits, rm, cc))
+        }
+        // Non-integer degrees of the orthogonal-polynomial family (integer
+        // degrees expand to exact polynomials before N sees them).
+        "LegendreP"
+        | "LaguerreL"
+        | "HermiteH"
+        | "Fibonacci"
+        | "QPochhammer"
+        | "Hypergeometric1F1"
+        | "Hypergeometric0F1"
+        | "Hypergeometric0F1Regularized"
+        | "FresnelS"
+        | "FresnelC"
+        | "LogisticSigmoid"
+          if (1..=3).contains(&args.len()) =>
+        {
+          let v: Vec<BigFloat> = args
+            .iter()
+            .map(|a| expr_to_bigfloat(a, bits, rm, cc))
+            .collect::<Result<_, _>>()?;
+          crate::functions::math_ast::orthogonal_bigfloat::orthogonal_bigfloat(
+            name, &v, bits, rm, cc,
+          )
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(format!(
+              "N: cannot evaluate {name}[...] to arbitrary precision"
+            ))
+          })
         }
         "Erf" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;

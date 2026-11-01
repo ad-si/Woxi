@@ -1681,6 +1681,75 @@ fn harmonic_arg_is_inexact(e: &Expr) -> bool {
   }
 }
 
+/// `Sum[i^-r, {i, 1, n}]` for an inexact complex order `r`, as a machine
+/// complex number; `None` unless `r` is one.
+fn harmonic_complex_order_sum(n: i128, order: &Expr) -> Option<Expr> {
+  if !crate::functions::math_ast::contains_float(order) {
+    return None;
+  }
+  let (rr, ri) = crate::functions::math_ast::try_extract_complex_float(order)?;
+  if ri == 0.0 {
+    return None;
+  }
+  let (mut re, mut im) = (0.0_f64, 0.0_f64);
+  for i in 1..=n {
+    let l = (i as f64).ln();
+    let mag = (-rr * l).exp();
+    re += mag * (ri * l).cos();
+    im -= mag * (ri * l).sin();
+  }
+  Some(crate::functions::math_ast::build_complex_float_expr(re, im))
+}
+
+/// `HarmonicNumber[x, r]` for real `x > -1` (not a non-negative integer)
+/// and real `r`, at least one of them inexact; `None` otherwise.
+fn harmonic_number_inexact(
+  x: &Expr,
+  r: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  // An integral machine index with a complex inexact order is the finite
+  // sum (N[HarmonicNumber[27, 5 - I]] numericizes the index to 27.).
+  if let Expr::Real(xf) = x
+    && xf.fract() == 0.0
+    && *xf >= 0.0
+    && *xf <= 1.0e7
+    && let Some(v) = harmonic_complex_order_sum(*xf as i128, r)
+  {
+    return Ok(Some(v));
+  }
+  let inexact = |e: &Expr| matches!(e, Expr::Real(_) | Expr::BigFloat(..));
+  let precision = [x, r]
+    .iter()
+    .filter_map(|e| match e {
+      Expr::BigFloat(_, p) => Some(*p),
+      _ => None,
+    })
+    .reduce(f64::min);
+  let machine = matches!(x, Expr::Real(_)) || matches!(r, Expr::Real(_));
+  if !(inexact(x) || inexact(r) || harmonic_arg_is_inexact(x))
+    || !crate::functions::math_ast::is_real_numeric(x)
+    || !crate::functions::math_ast::is_real_numeric(r)
+    || matches!(expr_to_i128(x), Some(n) if n >= 0)
+  {
+    return Ok(None);
+  }
+  let Some(xv) = try_eval_to_f64(x) else {
+    return Ok(None);
+  };
+  if xv <= -1.0 {
+    return Ok(None);
+  }
+  let call = call("HarmonicNumber", vec![x.clone(), r.clone()]);
+  Ok(match precision {
+    Some(p) if !machine => {
+      crate::functions::math_ast::bigfloat_function_value(&call, p)
+    }
+    _ => {
+      crate::functions::math_ast::machine_function_value(&call).map(Expr::Real)
+    }
+  })
+}
+
 /// HarmonicNumber[n, r, s] - the generalized harmonic number of order r with
 /// decoration value s, Sum[s^i/i^r, {i, 1, n}].
 ///   s = 1 is HarmonicNumber[n, r], and n = Infinity gives PolyLog[r, s].
@@ -1801,6 +1870,16 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("HarmonicNumber", args));
   }
 
+  // An inexact argument or order with a real non-integer index: H(x, r) is
+  // Zeta[r] - HurwitzZeta[r, x + 1] (PolyGamma[x + 1] + EulerGamma at
+  // r = 1), numericized at the arguments' precision. (A non-negative integer
+  // index is the finite sum, handled below.)
+  if args.len() == 2
+    && let Some(v) = harmonic_number_inexact(&args[0], &args[1])?
+  {
+    return Ok(v);
+  }
+
   // Handle inexact real argument: H(x) = digamma(x+1) + EulerGamma. Only a
   // machine-precision real numericizes; exact non-integer arguments (1/2,
   // Sqrt[2], Pi, …) stay symbolic like wolframscript.
@@ -1884,6 +1963,10 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           acc += (i as f64).powf(-rv);
         }
         return Ok(Expr::Real(acc));
+      }
+      // An inexact complex order: the same sum, term i^-r = e^(-r Log[i]).
+      if let Some(v) = harmonic_complex_order_sum(n, order) {
+        return Ok(v);
       }
       // An exact non-integer order (symbolic, rational, Pi, …) is rendered
       // expanded by wolframscript only for small n (n <= 4); larger n stays
@@ -2387,16 +2470,17 @@ pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return fibonacci_polynomial_ast(&args[0], &args[1]);
   }
 
-  // Real argument: evaluate via the analytic continuation
+  // Inexact argument: the analytic continuation
   // Fibonacci[x] = (phi^x - Cos[pi x] phi^-x) / Sqrt[5], where phi is the
   // golden ratio. This is what wolframscript returns for non-integer (and
   // for N[Fibonacci[1/2]], which first numericizes the index to a Real).
-  if let Expr::Real(x) = &args[0] {
-    let phi = f64::midpoint(1.0, 5.0_f64.sqrt());
-    let val = (phi.powf(*x)
-      - (std::f64::consts::PI * *x).cos() * phi.powf(-*x))
-      / 5.0_f64.sqrt();
-    return Ok(Expr::Real(val));
+  if let Some(v) =
+    crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+      "Fibonacci",
+      args,
+    )
+  {
+    return Ok(v);
   }
 
   match expr_to_i128(&args[0]) {
@@ -2424,7 +2508,18 @@ fn fibonacci_polynomial_ast(
   x: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let Some(n) = expr_to_i128(n_arg) else {
-    return Ok(call("Fibonacci", vec![n_arg.clone(), x.clone()]));
+    // A non-integer degree with real inexact arguments is the analytic
+    // continuation (phi^n - Cos[n Pi] phi^-n)/Sqrt[x^2 + 4].
+    let args = [n_arg.clone(), x.clone()];
+    if let Some(v) =
+      crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+        "Fibonacci",
+        &args,
+      )
+    {
+      return Ok(v);
+    }
+    return Ok(call("Fibonacci", args.to_vec()));
   };
 
   // Negative index: F_{-n}(x) = (-1)^{n+1} F_n(x)
