@@ -4575,13 +4575,24 @@ pub(crate) fn rename_compound_heads(
   expr: &Expr,
   renames: &[(Expr, String)],
 ) -> Expr {
-  let key = expr_to_string(expr);
-  for (head, fresh) in renames {
-    if expr_to_string(head) == key {
-      return Expr::Identifier(fresh.clone());
+  let keyed: Vec<(&Expr, String, &String)> = renames
+    .iter()
+    .map(|(head, fresh)| (head, expr_to_string(head), fresh))
+    .collect();
+  rename_keyed_heads(expr, &keyed, renames)
+}
+
+fn rename_keyed_heads(
+  expr: &Expr,
+  keyed: &[(&Expr, String, &String)],
+  renames: &[(Expr, String)],
+) -> Expr {
+  for (head, key, fresh) in keyed {
+    if crate::syntax::renders_as(expr, head, key) {
+      return Expr::Identifier((*fresh).clone());
     }
   }
-  let mapped = map_children(expr, &|c| rename_compound_heads(c, renames));
+  let mapped = map_children(expr, &|c| rename_keyed_heads(c, keyed, renames));
   // `Subscript[c, 1][t]` is a curried call; once its head is a plain symbol
   // it must print and match as the ordinary call `NDSolve$fn$1[t]`.
   if let Expr::CurriedCall { func, args } = &mapped
@@ -7817,14 +7828,15 @@ fn integrate_leg(
   // A stiff system or a transient faster than the grid makes RK4
   // diverge: without event functions or periodic actions to locate, the
   // rest of the leg is integrated again with adaptive steps.
+  // A right-hand side that solves a system at every evaluation (the
+  // implicit constraints of a DAE) makes an adaptive leg crawling towards a
+  // singular point prohibitively slow: such a leg only gets a bounded
+  // number of stiff steps, and otherwise stops where RK4 did.
+  let costly = residuals.iter().any(NumFn::is_costly);
   let can_go_adaptive = event_fn.is_none()
     && time_events.is_empty()
     && !dde_active()
-    && !funcs.iter().any(|f| f.order == 0)
-    // A right-hand side that solves a system at every evaluation makes an
-    // adaptive leg crawling towards a singular point prohibitively slow;
-    // such a leg stops where RK4 did.
-    && !residuals.iter().any(NumFn::is_costly);
+    && !funcs.iter().any(|f| f.order == 0);
   let rhs = |xv: f64, s: &[f64]| {
     Ok(system_derivative(
       residuals,
@@ -7843,6 +7855,17 @@ fn integrate_leg(
                   a: f64,
                   b: f64|
    -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+    if costly {
+      return stiff::rosenbrock_leg_limited(
+        &rhs,
+        start,
+        a,
+        b,
+        COSTLY_STIFF_STEPS,
+        COSTLY_STIFF_RTOL,
+        COSTLY_STIFF_ATOL,
+      );
+    }
     if let Some(p) = stiff::dormand_prince_leg(&rhs, start, a, b, true)? {
       return Ok(Some(p));
     }
@@ -8352,6 +8375,15 @@ fn system_derivative(
 /// for the highest derivatives is singular. `cached_m` is the mass matrix
 /// `probe_constant_mass_matrix` proved constant for this system, if any —
 /// passing it in skips the `O(n^2)` rebuild at every stage.
+/// Stiff steps an adaptive leg with a costly right-hand side may take, and
+/// its tolerances: Rodas4's embedded estimate grows with the stiffness, so
+/// at the default 1e-8/1e-10 a smooth stiff solution (`x' == -1000 (x -
+/// z)`) takes twenty times the steps of wolframscript's grid; these still
+/// agree with it to about eight digits.
+const COSTLY_STIFF_STEPS: usize = 20_000;
+const COSTLY_STIFF_RTOL: f64 = 1e-7;
+const COSTLY_STIFF_ATOL: f64 = 1e-8;
+
 fn rk4_system_step(
   residuals: &[NumFn],
   funcs: &[SysFunc],
@@ -9194,6 +9226,27 @@ fn newton_system(
       }
     }
     let step = solve_dense(jac, f.clone())?;
+    // A full Newton step that no longer moves `z` means it is already the
+    // root to working precision — a guess carried over from the previous
+    // solve often is, with a residual of a few ulps that no step lowers.
+    let full_step = z
+      .iter()
+      .zip(&step)
+      .map(|(zi, di)| di.abs() / zi.abs().max(1e-3))
+      .fold(0.0, f64::max);
+    if full_step <= 1e-12 {
+      // That last step is still taken: it brings `z` to the last bit, which
+      // a stiff right-hand side multiplying the residual needs.
+      let zn: Vec<f64> = z.iter().zip(&step).map(|(zi, di)| zi - di).collect();
+      let fnew = residual(&zn, vars);
+      return Some(
+        if fnew.iter().all(|v| v.is_finite()) && norm(&fnew) <= fnorm {
+          zn
+        } else {
+          z
+        },
+      );
+    }
     let mut lambda = 1.0;
     let mut accepted = false;
     for _ in 0..40 {
@@ -9213,7 +9266,7 @@ fn newton_system(
     }
     if !accepted {
       // At the noise floor no step lowers the residual any further.
-      return (last_step <= 1e-8).then_some(z);
+      return (last_step.min(full_step) <= 1e-8).then_some(z);
     }
     let rel_step = z
       .iter()

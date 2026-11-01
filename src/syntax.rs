@@ -13559,6 +13559,32 @@ pub fn data_to_string(expr: &Expr) -> Option<String> {
   go(expr, &mut out).then_some(out)
 }
 
+/// Whether `expr` prints (in InputForm) as `target`, whose printed form is
+/// `target_key`. A target printed as a call `f[…]` can only be matched by a
+/// call to `f` with as many arguments, so every other node is rejected
+/// without being rendered — the searches that use this would otherwise
+/// format each subtree of a large expression.
+pub(crate) fn renders_as(expr: &Expr, target: &Expr, target_key: &str) -> bool {
+  if let Expr::FunctionCall {
+    name: target_name,
+    args: target_args,
+  } = target
+    && target_key
+      .strip_prefix(target_name.as_str())
+      .is_some_and(|rest| rest.starts_with('['))
+  {
+    return match expr {
+      Expr::FunctionCall { name, args }
+        if name == target_name && args.len() == target_args.len() =>
+      {
+        expr_to_string(expr) == target_key
+      }
+      _ => false,
+    };
+  }
+  expr_to_string(expr) == target_key
+}
+
 /// Convert an Expr back to a string representation (InputForm)
 pub fn expr_to_string(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Input)

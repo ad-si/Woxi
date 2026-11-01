@@ -9239,6 +9239,38 @@ mod ndsolve {
     );
   }
 
+  // A Newton solve started on the root itself (the guess carried over from
+  // the previous step, residual a few ulps) converges at once instead of
+  // failing — that truncated the solution at t = 83.8 here.
+  #[test]
+  fn implicit_constraint_guess_already_the_root() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x'[t] == -(x[t] - z[t]), z[t] + Exp[z[t]] == 2 + \
+         Sin[t/10], x[0] == 0}, {x, z}, {t, 0, 200}]]; \
+         {(x /. s)[[1]], Round[10^6 {x[100], z[100], x[200]} /. s]}"
+      )
+      .unwrap(),
+      "{{{0., 200.}}, {254108, 215499, 748757}}"
+    );
+  }
+
+  // A stiff system whose right-hand side solves an implicit constraint by
+  // Newton iteration is integrated with Rosenbrock steps once RK4 diverges
+  // (the distillation-column models of SolventSwapDistillation).
+  #[test]
+  fn stiff_system_with_implicit_constraint() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x'[t] == -1000 (x[t] - z[t]), z[t] + Exp[z[t]] == \
+         2 + Sin[t/10], x[0] == 0}, {x, z}, {t, 0, 200}]]; \
+         {(x /. s)[[1]], Round[10^6 {x[50], z[50], x[200]} /. s]}"
+      )
+      .unwrap(),
+      "{{{0., 200.}}, {20419, 20433, 764654}}"
+    );
+  }
+
   // A closed-form eliminated unknown next to a numerically eliminated one
   // keeps its values on the whole grid when its solution reads no highest
   // derivative (the solve for those is skipped at the grid points).

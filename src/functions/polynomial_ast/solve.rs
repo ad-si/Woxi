@@ -11242,30 +11242,30 @@ fn solve_mass_like(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
 /// True when `target` occurs (structurally, via string comparison like
 /// `substitute_expr`) anywhere inside `expr`.
 pub(crate) fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
-  if expr_to_string(expr) == expr_to_string(target) {
-    return true;
+  fn walk(expr: &Expr, target: &Expr, key: &str) -> bool {
+    if crate::syntax::renders_as(expr, target, key) {
+      return true;
+    }
+    match expr {
+      Expr::List(items) => items.iter().any(|e| walk(e, target, key)),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().any(|e| walk(e, target, key))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        walk(left, target, key) || walk(right, target, key)
+      }
+      Expr::UnaryOp { operand, .. } => walk(operand, target, key),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|e| walk(e, target, key))
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => walk(pattern, target, key) || walk(replacement, target, key),
+      _ => false,
+    }
   }
-  match expr {
-    Expr::List(items) => items.iter().any(|e| expr_contains_expr(e, target)),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(|e| expr_contains_expr(e, target))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_expr(left, target) || expr_contains_expr(right, target)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_expr(operand, target),
-    Expr::Comparison { operands, .. } => {
-      operands.iter().any(|e| expr_contains_expr(e, target))
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => {
-      expr_contains_expr(pattern, target)
-        || expr_contains_expr(replacement, target)
-    }
-    _ => false,
-  }
+  walk(expr, target, &expr_to_string(target))
 }
 
 /// Roots beyond this index are left alone: raising to them makes a
