@@ -3422,6 +3422,41 @@ pub fn projection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("Projection", args));
     }
   };
+  // Projection[u, {v1, v2, …}]: the orthogonal projection onto the span of
+  // the vi, i.e. the sum of the projections onto a Gram-Schmidt basis of it
+  // (vectors already in the span of the earlier ones are dropped).
+  if !u.iter().any(|ui| matches!(ui, Expr::List(_)))
+    && !v.is_empty()
+    && v
+      .iter()
+      .all(|vi| matches!(vi, Expr::List(row) if row.len() == u.len()))
+  {
+    let is_zero_vector = |w: &Expr| match w {
+      Expr::List(items) => items.iter().all(|x| {
+        matches!(x, Expr::Integer(0))
+          || matches!(x, Expr::Real(r) if *r == 0.0)
+          || try_eval_to_f64(x) == Some(0.0)
+      }),
+      _ => false,
+    };
+    let mut basis: Vec<Expr> = Vec::new();
+    for vi in &v {
+      let mut w = vi.clone();
+      for b in &basis {
+        let p = projection_ast(&[vi.clone(), b.clone()])?;
+        w = evaluate_expr_to_expr(&call("Subtract", vec![w, p]))?;
+      }
+      if !is_zero_vector(&w) {
+        basis.push(w);
+      }
+    }
+    let mut total = Expr::List(vec![Expr::Integer(0); u.len()].into());
+    for b in &basis {
+      let p = projection_ast(&[args[0].clone(), b.clone()])?;
+      total = evaluate_expr_to_expr(&call("Plus", vec![total, p]))?;
+    }
+    return Ok(total);
+  }
   if u.len() != v.len() {
     return Err(InterpreterError::EvaluationError(
       "Projection: vectors have incompatible lengths".into(),

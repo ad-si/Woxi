@@ -10614,26 +10614,44 @@ fn evaluate_function_call_ast_inner(
   }
 
   // SubstitutionSystem[rules, init, n] — apply substitution rules iteratively.
-  // `{n}` asks for the state at step n alone rather than the whole history.
+  // `{n}` asks for the state at step n alone rather than the whole history,
+  // `{tmin, tmax}` for steps tmin through tmax and `{tmin, tmax, dt}` for
+  // every dt-th of them.
   if name == "SubstitutionSystem"
     && args.len() == 3
-    && let Some((n_steps, only_last)) = match &args[2] {
-      Expr::Integer(n) => Some((*n, false)),
-      Expr::List(spec) if spec.len() == 1 => match &spec[0] {
-        Expr::Integer(n) => Some((*n, true)),
-        _ => None,
-      },
+    && let Some((n_steps, first, stride)) = match &args[2] {
+      Expr::Integer(n) => Some((*n, 0, 1)),
+      Expr::List(spec) => {
+        match spec
+          .iter()
+          .map(|e| match e {
+            Expr::Integer(k) => Some(*k),
+            _ => None,
+          })
+          .collect::<Option<Vec<i128>>>()
+          .as_deref()
+        {
+          Some([n]) => Some((*n, *n, 1)),
+          Some([lo, hi]) if lo >= &0 && lo <= hi => Some((*hi, *lo, 1)),
+          Some([lo, hi, dt]) if lo >= &0 && lo <= hi && dt > &0 => {
+            Some((*hi, *lo, *dt))
+          }
+          _ => None,
+        }
+      }
       _ => None,
     }
     && n_steps >= 0
   {
     let n = n_steps as usize;
     let finish = |history: Vec<Expr>| -> Expr {
-      if only_last {
-        Expr::List(history.into_iter().next_back().into_iter().collect())
-      } else {
-        Expr::List(history.into())
-      }
+      Expr::List(
+        history
+          .into_iter()
+          .skip(first as usize)
+          .step_by(stride as usize)
+          .collect(),
+      )
     };
     // Extract rules from either Expr::Rule or Expr::FunctionCall{name:"Rule",...}
     let extract_rules = |rule_list: &[Expr]| -> Vec<(Expr, Expr)> {
