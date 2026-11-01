@@ -25482,7 +25482,7 @@ mod combinatorica_random_graph {
       interpret(
         "Needs[\"Combinatorica`\"]; g = GridGraph[2, 3]; \
          {InputForm[g], InputForm[InduceSubgraph[g, {5, 1, 2}]], \
-          InputForm[GridGraph[3, 1]], \
+          InputForm[GridGraph[3, 1]], InputForm[CompleteGraph[3]], \
           InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
       )
       .unwrap(),
@@ -25490,22 +25490,9 @@ mod combinatorica_random_graph {
        {{{1., 1.}}, {{2., 1.}}, {{1., 2.}}, {{2., 2.}}, {{1., 3.}}, {{2., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}}, {{{1., 1.}}, {{2., 1.}}, {{1., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}, {{2, 3}}}, {{{1., 0.}}, {{2., 0.}}, {{3., 0.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{-0.4999999999999998, \
+       0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, {{1., 0}}}]], \
        InputForm[{Graph[{}, {}], Graph[{}, {{{0, 0}}}]}]}"
-    );
-    // wolframscript's first coordinate is -0.49999999999999983, one ulp
-    // from the correctly rounded Cos[N[2 Pi/3]] glibc returns
-    // (-0.4999999999999998), so it is compared to 15 digits here; see
-    // conformance_gaps.md, "Machine Cos/Sin last-bit differences".
-    assert_eq!(
-      interpret(
-        "Needs[\"Combinatorica`\"]; g = CompleteGraph[3]; \
-         {g[[1]], g[[2]] - {{{-0.49999999999999983, \
-         0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, \
-         {{1., 0}}} // Chop[#, 10^-15] &, g[[2, 3]]}"
-      )
-      .unwrap(),
-      "{{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{0, 0}}, {{0, 0}}, {{0, 0}}}, \
-       {{1., 0}}}"
     );
     assert_eq!(
       interpret(
