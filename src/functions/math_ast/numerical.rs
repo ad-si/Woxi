@@ -5608,12 +5608,23 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  fourier_trig_transform("FourierDCT", args, dct_core)
+}
+
+/// FourierDCT / FourierDST of a rectangular array of numbers with an
+/// optional type (1..4 or "I".."IV"), applying the one-dimensional `core`
+/// along every axis; complex data transforms its real and imaginary parts.
+fn fourier_trig_transform(
+  name: &str,
+  args: &[Expr],
+  core: fn(&[f64], i64) -> Vec<f64>,
+) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     crate::emit_message(&format!(
-      "FourierDCT::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
+      "{name}::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
       expr_to_string(&args[0])
     ));
-    Ok(unevaluated("FourierDCT", args))
+    Ok(unevaluated(name, args))
   };
 
   // The data: a rectangular array of numbers (complex ones transform their
@@ -5694,9 +5705,9 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (0..len).map(|i| start + offset + i * stride).collect();
         let re: Vec<f64> = idx.iter().map(|&i| data[i].0).collect();
         let im: Vec<f64> = idx.iter().map(|&i| data[i].1).collect();
-        let re = dct_core(&re, m);
+        let re = core(&re, m);
         let im = if im.iter().any(|v| *v != 0.0) {
-          dct_core(&im, m)
+          core(&im, m)
         } else {
           vec![0.0; len]
         };
@@ -5865,41 +5876,7 @@ pub fn fourier_dst_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let unevaluated = || {
-    crate::emit_message(&format!(
-      "FourierDST::fftl: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-      expr_to_string(&args[0])
-    ));
-    Ok(unevaluated("FourierDST", args))
-  };
-
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => return unevaluated(),
-  };
-
-  let mut data: Vec<f64> = Vec::with_capacity(items.len());
-  for item in items {
-    match try_extract_complex_float(item) {
-      Some((re, 0.0)) => data.push(re),
-      _ => return unevaluated(),
-    }
-  }
-
-  let m = if args.len() == 2 {
-    match try_eval_to_f64(&args[1]) {
-      Some(v) if (v - v.round()).abs() < 1e-12 && (1.0..=4.0).contains(&v) => {
-        v.round() as i64
-      }
-      _ => return unevaluated(),
-    }
-  } else {
-    2
-  };
-
-  let result = dst_core(&data, m);
-  let exprs: Vec<Expr> = result.iter().map(|&x| Expr::Real(x)).collect();
-  Ok(Expr::List(exprs.into()))
+  fourier_trig_transform("FourierDST", args, dst_core)
 }
 
 /// Wynn epsilon algorithm for series acceleration.

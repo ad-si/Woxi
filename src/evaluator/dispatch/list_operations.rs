@@ -7661,6 +7661,34 @@ pub fn dispatch_list_operations(
     // Integer (1-D) or a list of Integers (multi-D). For each dimension,
     // left padding is floor((n - k)/2) and right padding is the rest, so
     // scalars in an even-length dimension sit just left of middle.
+    // CenterArray[a, nspec, pad, SparseArray]: the same array as a
+    // SparseArray whose background is the padding.
+    "CenterArray"
+      if args.len() == 4
+        && matches!(&args[3], Expr::Identifier(h) if h == "SparseArray") =>
+    {
+      let dense = match crate::evaluator::evaluate_function_call_ast(
+        "CenterArray",
+        &args[..3],
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      if !matches!(&dense, Expr::List(_)) {
+        return Some(Ok(unevaluated("CenterArray", args)));
+      }
+      let dims = match crate::evaluator::evaluate_function_call_ast(
+        "Dimensions",
+        std::slice::from_ref(&dense),
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "SparseArray",
+        &[dense, dims, args[2].clone()],
+      ));
+    }
     "CenterArray" if (1..=3).contains(&args.len()) => {
       // Normalise to (a, nspec, pad).
       let (a, nspec, pad) = if args.len() == 1 {
@@ -7670,6 +7698,56 @@ pub fn dispatch_list_operations(
       } else {
         (args[0].clone(), args[1].clone(), args[2].clone())
       };
+      // A block shallower than the spec is wrapped up to its rank (a vector
+      // in a matrix sits on the middle row); a deeper one keeps its own
+      // lower dimensions.
+      let block_rank = {
+        let mut r = 0usize;
+        let mut cur = &a;
+        while let Expr::List(items) = cur {
+          r += 1;
+          match items.first() {
+            Some(f) => cur = f,
+            None => break,
+          }
+        }
+        r
+      };
+      let spec_rank = match &nspec {
+        Expr::List(items) => items.len(),
+        _ => 1,
+      };
+      if block_rank > 0 && block_rank != spec_rank {
+        let mut a2 = a.clone();
+        let mut nspec2 = nspec.clone();
+        if block_rank < spec_rank {
+          for _ in block_rank..spec_rank {
+            a2 = Expr::List(vec![a2].into());
+          }
+        } else {
+          let mut spec: Vec<Expr> = match &nspec {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          let mut cur = &a;
+          let mut level = 0usize;
+          while let Expr::List(items) = cur {
+            if level >= spec_rank {
+              spec.push(Expr::Integer(items.len() as i128));
+            }
+            level += 1;
+            match items.first() {
+              Some(f) => cur = f,
+              None => break,
+            }
+          }
+          nspec2 = Expr::List(spec.into());
+        }
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "CenterArray",
+          &[a2, nspec2, pad],
+        ));
+      }
       // Parse nspec into a list of dimension lengths.
       let dims: Vec<usize> = match &nspec {
         Expr::Integer(n) if *n >= 0 => vec![*n as usize],
