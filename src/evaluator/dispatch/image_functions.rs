@@ -839,6 +839,29 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
   }
 }
 
+/// `ColorData["VisibleSpectrum"]` / `ColorData["BlackBodySpectrum"]`: the
+/// color function over the scheme's physical domain (wavelength in nm,
+/// temperature in K).
+fn physical_spectrum_color_function(scheme: &str) -> Expr {
+  let domain = if scheme == "VisibleSpectrum" {
+    (380, 750)
+  } else {
+    (1000, 12000)
+  };
+  let sample = Expr::Function {
+    body: Box::new(call("ColorData", vec![str_expr(scheme), Expr::Slot(1)])),
+  };
+  call(
+    "ColorDataFunction",
+    vec![
+      str_expr(scheme),
+      str_expr("Gradients"),
+      Expr::List(vec![Expr::Integer(domain.0), Expr::Integer(domain.1)].into()),
+      sample,
+    ],
+  )
+}
+
 pub fn dispatch_image_functions(
   name: &str,
   args: &[Expr],
@@ -1403,6 +1426,14 @@ pub fn dispatch_image_functions(
           vec![channel(r), channel(g), channel(b)],
         )));
       }
+      // ColorData["VisibleSpectrum" | "BlackBodySpectrum", "ColorFunction"]:
+      // the same object the one-argument form gives.
+      if let (Expr::String(scheme), Expr::String(p)) = (&args[0], &args[1])
+        && p == "ColorFunction"
+        && (scheme == "VisibleSpectrum" || scheme == "BlackBodySpectrum")
+      {
+        return Some(Ok(physical_spectrum_color_function(scheme)));
+      }
       // ColorData["VisibleSpectrum", wavelength]: the color of light with
       // the given wavelength in nm (380–750 nm; black outside that range).
       if let Expr::String(scheme) = &args[0]
@@ -1585,28 +1616,7 @@ pub fn dispatch_image_functions(
       if let Expr::String(scheme) = &args[0]
         && (scheme == "VisibleSpectrum" || scheme == "BlackBodySpectrum")
       {
-        let domain = if scheme == "VisibleSpectrum" {
-          (380, 750)
-        } else {
-          (1000, 12000)
-        };
-        let sample = Expr::Function {
-          body: Box::new(call(
-            "ColorData",
-            vec![str_expr(scheme), Expr::Slot(1)],
-          )),
-        };
-        return Some(Ok(call(
-          "ColorDataFunction",
-          vec![
-            str_expr(scheme),
-            str_expr("Gradients"),
-            Expr::List(
-              vec![Expr::Integer(domain.0), Expr::Integer(domain.1)].into(),
-            ),
-            sample,
-          ],
-        )));
+        return Some(Ok(physical_spectrum_color_function(scheme)));
       }
       // ColorData["scheme"]: the gradient's color function, echoed in
       // wolframscript's structured form

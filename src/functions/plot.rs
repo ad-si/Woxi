@@ -4250,17 +4250,46 @@ fn generate_svg_with_options(
                     if segment.len() < 2 {
                       continue;
                     }
-                    chart
-                      .draw_series(AreaSeries::new(
-                        segment.iter().copied(),
-                        ref_y,
-                        paint,
-                      ))
-                      .map_err(|e| {
-                        InterpreterError::EvaluationError(format!(
-                          "Plot: {e}"
+                    // With a `ColorFunction` and no explicit `FillingStyle`
+                    // color, the fill takes the curve's colors run by run.
+                    let tinted = opts.color_function.as_ref().filter(|_| {
+                      series_filling_style(opts, series_idx)
+                        .is_none_or(|fs| fs.color.is_none())
+                    });
+                    let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
+                      match tinted {
+                        Some(cf) => color_function_runs(
+                          segment,
+                          cf,
+                          opts.color_function_scaling,
+                          (x_min, x_max, y_min, y_max),
+                        )
+                        .into_iter()
+                        .map(|((cr, cg, cb), run)| {
+                          let opacity = series_filling_style(opts, series_idx)
+                            .and_then(|fs| fs.effective_opacity())
+                            .unwrap_or(0.2);
+                          (RGBColor(cr, cg, cb).mix(opacity), run)
+                        })
+                        .collect(),
+                        None => vec![(paint, segment.clone())],
+                      };
+                    for (piece_paint, piece) in pieces {
+                      if piece.len() < 2 {
+                        continue;
+                      }
+                      chart
+                        .draw_series(AreaSeries::new(
+                          piece.into_iter(),
+                          ref_y,
+                          piece_paint,
                         ))
-                      })?;
+                        .map_err(|e| {
+                          InterpreterError::EvaluationError(format!(
+                            "Plot: {e}"
+                          ))
+                        })?;
+                    }
                   }
                 }
               }
