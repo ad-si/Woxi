@@ -694,6 +694,16 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### `NIntegrate` across an interior singularity
+
+A singularity inside the range that is not given as a waypoint is integrated
+by one tanh-sinh pass over the whole range, so `NIntegrate[1/Sqrt[Abs[0.3 -
+y]], {y, 0, 1}]` is `2.76989…` instead of `2.76877`, and the iterated
+`NIntegrate[1/Sqrt[Abs[x - y]], {x, 0, 1}, {y, 0, 1}]` (singular along the
+diagonal) comes out far off (Wolfram: `2.66667`). Wolfram subdivides
+adaptively around the singularity. Writing it as a waypoint (`{y, 0, 0.3,
+1}`) gives the right value.
+
 ### `NMinimize` ignores `WorkingPrecision`
 
 `NMinimize[Total[EuclideanDistance[{a, b, c}, #] & /@ pts], {a, b, c},
