@@ -40,6 +40,7 @@ mod interpreter_tests {
   mod option_sweep3;
   mod option_sweep3_special;
   mod option_sweep3_strings;
+  mod option_sweep3_fitting;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;
