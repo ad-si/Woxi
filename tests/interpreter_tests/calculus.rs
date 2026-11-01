@@ -11484,6 +11484,22 @@ mod ndsolve {
     );
   }
 
+  /// `DensityPlot` of a PDE solution samples a large grid
+  /// `InterpolatingFunction` thousands of times; written as the
+  /// one-element list `u[t, x] /. sol` leaves, it must still go through
+  /// the compiled sampler instead of rebuilding the whole data array for
+  /// every sample (which took about a minute for this grid).
+  #[test]
+  fn density_plot_of_a_large_grid_interpolation_is_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "f = ListInterpolation[Table[Sin[i j/5000.], {i, 300}, {j, 300}]]; \
+       Head[DensityPlot[{Abs[f[x, y]]}, {x, 1, 300}, {y, 1, 300}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Graphics");
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
+  }
   /// `NDSolve[eqns, u, {t, …}, {x, …}]` where the evolution equation is
   /// *second*-order in time, `Derivative[2, 0][u][t, x] == rhs` — a
   /// hyperbolic (wave-type) PDE — needs an extra initial condition (the

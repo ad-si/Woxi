@@ -9534,6 +9534,18 @@ enum NExpr {
     /// state, so the same argument recurs many times in a row.
     last: std::cell::Cell<Option<(u64, f64)>>,
   },
+  /// A call `InterpolatingFunction[domain, grid, {orders…}, {coords…}][a1,
+  /// …]` of a function on a tensor-product grid (an `NDSolve` PDE
+  /// solution, a `ListInterpolation` of an array): the grid's numbers are
+  /// read once into a [`NumericGrid`] and interpolated natively, rather
+  /// than rebuilding and re-evaluating the whole data array for every
+  /// sample a plot takes. A point outside the grid goes through
+  /// `evaluate_interpolating_function`, which reports the extrapolation.
+  InterpGrid {
+    func_args: Vec<Expr>,
+    grid: std::rc::Rc<NumericGrid>,
+    args: Vec<Self>,
+  },
   /// A right-hand side written with complex constants (`I`, `Complex[a, b]`)
   /// whose value along the trajectory is real — e.g. a closed-form soliton
   /// velocity field assembled from `E^(I …)` and `Sqrt[… I …]` pieces. It
@@ -9729,6 +9741,9 @@ impl NExpr {
         .iter()
         .all(|e| e.collect_vars_from(from, out)),
       Self::Interp1D { arg, .. } => arg.collect_vars_from(from, out),
+      Self::InterpGrid { args, .. } => {
+        args.iter().all(|a| a.collect_vars_from(from, out))
+      }
       Self::External { refs, .. } => {
         out.extend(refs.iter().map(|(_, i)| *i).filter(|i| *i >= from));
         true
@@ -9756,6 +9771,7 @@ impl NExpr {
         ..
       } => [lhs, rhs, then, otherwise].iter().any(|e| e.has_implicit()),
       Self::Interp1D { arg, .. } => arg.has_implicit(),
+      Self::InterpGrid { args, .. } => args.iter().any(Self::has_implicit),
       Self::Const(_)
       | Self::Var(_)
       | Self::External { .. }
@@ -9865,6 +9881,24 @@ impl NExpr {
         }
       }
       Self::Delayed { idx, lag } => dde_history_value(*idx, vars[0] - lag),
+      Self::InterpGrid {
+        func_args,
+        grid,
+        args,
+      } => {
+        let x: Vec<f64> = args.iter().map(|a| a.eval(vars)).collect();
+        if x.iter().any(|v| !v.is_finite()) {
+          return f64::NAN;
+        }
+        if !grid.outside(&x) {
+          return grid.eval_real(&x);
+        }
+        let reals: Vec<Expr> = x.iter().map(|v| Expr::Real(*v)).collect();
+        evaluate_interpolating_function(func_args, &reals)
+          .ok()
+          .and_then(|r| expr_to_f64(&r).ok())
+          .unwrap_or(f64::NAN)
+      }
       Self::Interp1D {
         func_args,
         arg,
@@ -9958,6 +9992,39 @@ fn compile_interp1d_call(
     func_args: func_args.to_vec(),
     arg: Box::new(arg),
     last: std::cell::Cell::new(None),
+  })
+}
+
+/// If `expr` is a call of a tensor-product grid `InterpolatingFunction`
+/// with one numeric argument per axis, compile it as an
+/// `NExpr::InterpGrid` leaf. `None` for anything else.
+fn compile_grid_interp_call(
+  func: &Expr,
+  args: &[Expr],
+  var_names: &[String],
+) -> Option<NExpr> {
+  let Expr::FunctionCall {
+    name,
+    args: func_args,
+  } = func
+  else {
+    return None;
+  };
+  if name != "InterpolatingFunction" {
+    return None;
+  }
+  let grid = NumericGrid::from_function(func_args)?;
+  if grid.axes.len() != args.len() || grid.width != 1 {
+    return None;
+  }
+  let args = args
+    .iter()
+    .map(|a| compile_numeric(a, var_names))
+    .collect::<Option<Vec<_>>>()?;
+  Some(NExpr::InterpGrid {
+    func_args: func_args.to_vec(),
+    grid: std::rc::Rc::new(grid),
+    args,
   })
 }
 
@@ -10167,6 +10234,7 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
     // on every one of the tens of thousands of RK4 stages a solve takes.
     Expr::CurriedCall { func, args } => {
       compile_interp1d_call(func, args, var_names)
+        .or_else(|| compile_grid_interp_call(func, args, var_names))
         .or_else(|| Some(compile_external_leaf(expr, var_names)))
     }
     other => Some(compile_external_leaf(other, var_names)),
