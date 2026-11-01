@@ -894,7 +894,7 @@ pub fn dispatch_math_functions(
     "LocationTest" if !args.is_empty() => {
       return Some(crate::functions::math_ast::location_test_ast(args));
     }
-    "DistributionFitTest" if args.len() == 2 || args.len() == 3 => {
+    "DistributionFitTest" if args.len() >= 2 => {
       return Some(crate::functions::math_ast::distribution_fit_test_ast(args));
     }
     "KolmogorovSmirnovTest"
@@ -902,7 +902,7 @@ pub fn dispatch_math_functions(
     | "CramerVonMisesTest"
     | "KuiperTest"
     | "WatsonUSquareTest"
-      if args.len() == 2 || args.len() == 3 =>
+      if args.len() >= 2 =>
     {
       return Some(crate::functions::math_ast::named_fit_test_ast(name, args));
     }
@@ -942,7 +942,7 @@ pub fn dispatch_math_functions(
         ),
       );
     }
-    "PearsonChiSquareTest" if !args.is_empty() && args.len() <= 3 => {
+    "PearsonChiSquareTest" if !args.is_empty() => {
       return Some(crate::functions::math_ast::pearson_chi_square_test_ast(
         args,
       ));

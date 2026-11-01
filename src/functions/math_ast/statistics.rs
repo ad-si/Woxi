@@ -4754,6 +4754,11 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LocationTest expects 1 to 3 arguments".into(),
     ));
   }
+  let (_, opts) =
+    crate::evaluator::dispatch::split_trailing_options(&full_args[positional..]);
+  let Some(settings) = HypothesisTestSettings::parse(&opts) else {
+    return Ok(unevaluated("LocationTest", full_args));
+  };
 
   // Parse mu0 (second argument, default 0)
   let mu0 = if args.len() >= 2 {
@@ -4801,7 +4806,9 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
         let (t_stat, df) = two_sample_t_test(&vals1, &vals2, mu0);
-        return Ok(format_location_test_result(t_stat, df, &property, "T"));
+        return Ok(format_location_test_result(
+          t_stat, df, &property, "T", &settings,
+        ));
       }
       // One-sample t-test
       let vals = extract_numeric_list_flat(items)?;
@@ -4811,7 +4818,9 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
       let (t_stat, df) = one_sample_t_test(&vals, mu0);
-      Ok(format_location_test_result(t_stat, df, &property, "T"))
+      Ok(format_location_test_result(
+        t_stat, df, &property, "T", &settings,
+      ))
     }
     _ => Ok(unevaluated("LocationTest", full_args)),
   }
@@ -4896,18 +4905,93 @@ fn two_sample_t_test(data1: &[f64], data2: &[f64], mu0: f64) -> (f64, f64) {
   (t, df)
 }
 
+/// The `AlternativeHypothesis` of a hypothesis test.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Alternative {
+  Unequal,
+  Greater,
+  Less,
+}
+
+/// The options of a hypothesis test that steer its p-value and conclusion.
+pub(crate) struct HypothesisTestSettings {
+  /// `SignificanceLevel`, the cutoff for rejecting the null hypothesis.
+  pub alpha: f64,
+  /// `AlternativeHypothesis`.
+  pub alternative: Alternative,
+}
+
+impl HypothesisTestSettings {
+  /// The settings among `opts`; options that do not change the results
+  /// (`VerifyTestAssumptions`, …) are passed over. `None` for an invalid
+  /// setting.
+  pub(crate) fn parse(opts: &[(String, Expr)]) -> Option<Self> {
+    let mut out = HypothesisTestSettings {
+      alpha: 0.05,
+      alternative: Alternative::Unequal,
+    };
+    for (name, value) in opts {
+      match name.as_str() {
+        "SignificanceLevel" => {
+          if !matches!(value, Expr::Identifier(a) if a == "Automatic") {
+            out.alpha = try_eval_to_f64(value).filter(|a| *a > 0.0 && *a < 1.0)?;
+          }
+        }
+        "AlternativeHypothesis" => {
+          out.alternative = match value {
+            Expr::String(a) if a == "Unequal" => Alternative::Unequal,
+            Expr::String(a) if a == "Greater" => Alternative::Greater,
+            Expr::String(a) if a == "Less" => Alternative::Less,
+            _ => return None,
+          }
+        }
+        _ => {}
+      }
+    }
+    Some(out)
+  }
+
+  /// "Reject" or "Do not reject", comparing p-value `p` with the level.
+  pub(crate) fn short_conclusion(&self, p: f64) -> Expr {
+    str_expr(if p < self.alpha {
+      "Reject"
+    } else {
+      "Do not reject"
+    })
+  }
+}
+
+/// The p-value of a t statistic under the alternative hypothesis.
+fn t_test_p_value_for(t_stat: f64, df: f64, alternative: Alternative) -> f64 {
+  let two_sided = t_test_p_value(t_stat, df);
+  let in_direction = match alternative {
+    Alternative::Unequal => return two_sided,
+    Alternative::Greater => t_stat > 0.0,
+    Alternative::Less => t_stat < 0.0,
+  };
+  if in_direction {
+    two_sided / 2.0
+  } else {
+    1.0 - two_sided / 2.0
+  }
+}
+
 fn format_location_test_result(
   t_stat: f64,
   df: f64,
   property: &str,
   test_name: &str,
+  settings: &HypothesisTestSettings,
 ) -> Expr {
+  let t_test_p_value =
+    |t_stat, df| t_test_p_value_for(t_stat, df, settings.alternative);
   match property {
     "TestStatistic" => num_to_expr(t_stat),
     "PValue" => {
       let p = t_test_p_value(t_stat, df);
       num_to_expr(p)
     }
+    "ShortTestConclusion" => settings.short_conclusion(t_test_p_value(t_stat, df)),
     "TestDataTable" => {
       let p = t_test_p_value(t_stat, df);
       // Build Grid[{{, Statistic, P-Value}, {T, t_stat, p}}, ...]
@@ -5514,28 +5598,40 @@ pub fn likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// data are tested against the normal distribution fitted to them by
 /// maximum likelihood, which costs two degrees of freedom.
 pub fn pearson_chi_square_test_ast(
-  args: &[Expr],
+  all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let (args, opts) =
+    crate::evaluator::dispatch::split_trailing_options(all_args);
   if args.is_empty() || args.len() > 3 {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   }
   if args.len() >= 2
     && !matches!(&args[1], Expr::Identifier(s) if s == "Automatic")
   {
-    return super::named_fit_test_ast("PearsonChiSquareTest", args);
+    return super::named_fit_test_ast("PearsonChiSquareTest", all_args);
   }
+  let settings = match opts.as_slice() {
+    [] => HypothesisTestSettings::parse(&[]),
+    [(name, _)] if name == "SignificanceLevel" => {
+      HypothesisTestSettings::parse(&opts)
+    }
+    _ => None,
+  };
+  let Some(settings) = settings else {
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
+  };
   let Expr::List(items) = &args[0] else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   let Some(data) = items
     .iter()
     .map(try_eval_to_f64)
     .collect::<Option<Vec<f64>>>()
   else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   if data.len() < 2 {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   }
   let n = data.len() as f64;
   let mean = data.iter().sum::<f64>() / n;
@@ -5547,13 +5643,16 @@ pub fn pearson_chi_square_test_ast(
   let Some((statistic, p_value)) =
     super::pearson_chi_square_fitted(&args[0], &dist, 2)
   else {
-    return Ok(unevaluated("PearsonChiSquareTest", args));
+    return Ok(unevaluated("PearsonChiSquareTest", all_args));
   };
   match args.get(2) {
     None => Ok(Expr::Real(p_value)),
     Some(Expr::String(p)) if p == "PValue" => Ok(Expr::Real(p_value)),
     Some(Expr::String(p)) if p == "TestStatistic" => Ok(Expr::Real(statistic)),
-    _ => Ok(unevaluated("PearsonChiSquareTest", args)),
+    Some(Expr::String(p)) if p == "ShortTestConclusion" => {
+      Ok(settings.short_conclusion(p_value))
+    }
+    _ => Ok(unevaluated("PearsonChiSquareTest", all_args)),
   }
 }
 
