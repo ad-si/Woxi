@@ -8246,6 +8246,124 @@ fn is_branch_tip(alive: &[bool], w: usize, h: usize, i: usize) -> bool {
   reached == neighbors.len()
 }
 
+/// The number of connected components of the `true` pixels of a mask, with
+/// 8-connectivity when `corners` is set and 4-connectivity otherwise.
+fn count_components(mask: &[bool], w: usize, h: usize, corners: bool) -> usize {
+  let mut seen = vec![false; w * h];
+  let mut stack: Vec<usize> = Vec::new();
+  let mut count = 0;
+  for start in 0..w * h {
+    if !mask[start] || seen[start] {
+      continue;
+    }
+    count += 1;
+    seen[start] = true;
+    stack.push(start);
+    while let Some(i) = stack.pop() {
+      let (y, x) = ((i / w) as i64, (i % w) as i64);
+      for dy in -1i64..=1 {
+        for dx in -1i64..=1 {
+          if (dy == 0 && dx == 0) || (!corners && dy != 0 && dx != 0) {
+            continue;
+          }
+          let (ny, nx) = (y + dy, x + dx);
+          if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+            continue;
+          }
+          let j = ny as usize * w + nx as usize;
+          if mask[j] && !seen[j] {
+            seen[j] = true;
+            stack.push(j);
+          }
+        }
+      }
+    }
+  }
+  count
+}
+
+/// MorphologicalEulerNumber[image] / MorphologicalEulerNumber[image, t] —
+/// the number of foreground components minus the number of holes in them.
+/// Pixels above the threshold `t` (default 0; a color pixel by its gray
+/// level) are foreground. With `CornerNeighbors -> True` (the default)
+/// foreground pixels connect through corners and holes do not, and the
+/// other way round with `False`. `Padding` (default 0) is the value assumed
+/// outside the image: a foreground padding encloses every background
+/// region touching the border.
+pub fn morphological_euler_number_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "MorphologicalEulerNumber::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("MorphologicalEulerNumber", args));
+  };
+  let positional = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(args.len());
+  if positional > 2 {
+    return Ok(unevaluated("MorphologicalEulerNumber", args));
+  }
+  let threshold = match args[..positional].get(1) {
+    None => 0.0,
+    Some(t) => {
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(t) {
+        v
+      } else {
+        crate::emit_message(&format!(
+          "MorphologicalEulerNumber::rthres: The specified threshold value {} should represent a real number.",
+          expr_to_string(t)
+        ));
+        return Ok(unevaluated("MorphologicalEulerNumber", args));
+      }
+    }
+  };
+  let opts = &args[positional..];
+  let corners = !matches!(
+    option_value(opts, "CornerNeighbors"),
+    Some(Expr::Identifier(v)) if v == "False"
+  );
+  let pad_value = match option_value(opts, "Padding") {
+    None => 0.0,
+    Some(v) => match crate::functions::math_ast::try_eval_to_f64(v) {
+      Some(p) => p,
+      None => return Ok(unevaluated("MorphologicalEulerNumber", args)),
+    },
+  };
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  let gray = |px: &[f64]| match px.len() {
+    0 => 0.0,
+    1 | 2 => px[0],
+    _ => 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2],
+  };
+  // The image inside a one-pixel frame of padding.
+  let (pw, ph) = (w + 2, h + 2);
+  let pad_fg = pad_value > threshold;
+  let mut mask = vec![pad_fg; pw * ph];
+  for y in 0..h {
+    for x in 0..w {
+      let i = (y * w + x) * ch;
+      mask[(y + 1) * pw + x + 1] = gray(&data[i..i + ch]) > threshold;
+    }
+  }
+  let background: Vec<bool> = mask.iter().map(|m| !m).collect();
+  let objects = count_components(&mask, pw, ph, corners) as i64;
+  let gaps = count_components(&background, pw, ph, !corners) as i64;
+  // A background frame is one region that surrounds everything, not a hole.
+  let holes = if pad_fg { gaps } else { gaps - 1 };
+  Ok(Expr::Integer((objects - holes) as i128))
+}
+
 /// Label the 8-connected components of a foreground mask. The result has
 /// one entry per pixel: `Some(label)` for a foreground pixel, `None` for a
 /// background one. Labels are numbered from 0 in raster order of their

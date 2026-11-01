@@ -820,6 +820,8 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageAspectRatio"
     | "Thinning"
     | "MorphologicalComponents"
+    | "MorphologicalBinarize"
+    | "MorphologicalEulerNumber"
     | "WatershedComponents"
     | "MorphologicalGraph"
     | "FillingTransform"
@@ -1157,6 +1159,11 @@ pub fn dispatch_image_functions(
           converted,
         ]));
       }
+    }
+    "MorphologicalEulerNumber" if !args.is_empty() => {
+      return Some(
+        crate::functions::image_ast::morphological_euler_number_ast(args),
+      );
     }
     "ReliefImage" if !args.is_empty() => {
       return Some(crate::functions::image_ast::relief_image_ast(args));

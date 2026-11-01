@@ -10284,6 +10284,56 @@ mod find_threshold {
   }
 }
 
+mod morphological_euler_number {
+  use super::*;
+
+  #[test]
+  fn euler_number_connectivity_and_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[m_, o___] := MorphologicalEulerNumber[Image[m], o]; \
+         {f[{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}], f[{{1, 0}, {0, 1}}], \
+         f[{{1, 0}, {0, 1}}, CornerNeighbors -> False], \
+         f[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}], \
+         f[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, CornerNeighbors -> False], \
+         f[{{0.6, 0.2}, {0., 0.}}], f[{{1, 1}, {1, 1}}, Padding -> 1], \
+         f[{{1, 0, 1}, {0, 0, 0}, {1, 0, 1}}, Padding -> 1]}"
+      )
+      .unwrap(),
+      "{0, 1, 2, 0, 4, 1, 1, 0}"
+    );
+  }
+
+  // Color pixels are compared by their gray level.
+  #[test]
+  fn euler_number_threshold() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{MorphologicalEulerNumber[Image[{{{0.3, 0, 0}, {0, 0, 0}}}], 0.2], \
+         MorphologicalEulerNumber[Image[{{{0.25, 0.2, 0.2}, {0, 0, 0}}}], 0.2]}"
+      )
+      .unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  // A graphic is rasterized first, as for MorphologicalBinarize.
+  #[test]
+  fn euler_number_of_binarized_graphic() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "MorphologicalEulerNumber[ColorNegate[MorphologicalBinarize[\
+         Graphics[{Thickness[0.05], Circle[]}]]]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+}
+
 mod relief_image {
   use super::*;
 

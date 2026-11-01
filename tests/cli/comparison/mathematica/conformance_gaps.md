@@ -4509,6 +4509,19 @@ differently from the front end. The baseline is approximated: half the
 height for graphics (WL: 182 of 359 for `Graphics[Disk[]]`) and three
 quarters for everything else. WL's "RasterSize" is also at twice the
 resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
+Woxi also takes 96 dpi as 1x where WL takes 72, so `ImageResolution -> 144`
+gives 540 pixels for a 360-point graphic instead of 720.
+
+Topology measured on a rasterized graphic follows from this: a `Thick` curve
+is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally
+connected, so the 4-connected background splits:
+
+```sh
+wolframscript -code 'MorphologicalEulerNumber[MorphologicalBinarize[PolarPlot[Sin[2 t], {t, 0, 2 Pi}, Axes -> None, PlotStyle -> {Red, Thick}]]]'
+# 4
+woxi eval 'MorphologicalEulerNumber[MorphologicalBinarize[PolarPlot[Sin[2 t], {t, 0, 2 Pi}, Axes -> None, PlotStyle -> {Red, Thick}]]]'
+# 1
+```
 
 ### Twenty-two heads raise a hard error for a bad first argument
 
