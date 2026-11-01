@@ -132,6 +132,11 @@ struct WoxiStudio {
   new_cell_style: CellStyle,
   /// Whether preview mode is active (hides gutter, borders, etc).
   preview_mode: bool,
+  /// The slide on screen while the notebook is presented as a slideshow
+  /// (an index into [`notebook::slide_ranges`]); `None` in the editor.
+  slideshow: Option<usize>,
+  /// Whether the window is fullscreen (toggled from the slideshow).
+  fullscreen: bool,
   /// Display scale factor for HiDPI rasterization.
   scale_factor: f32,
   /// Font database for SVG text rendering (loaded once at startup).
@@ -337,6 +342,15 @@ enum Message {
   // Preview mode
   TogglePreview,
 
+  // Slideshow
+  StartSlideshow,
+  ExitSlideshow,
+  NextSlide,
+  PreviousSlide,
+  /// Show the given slide (clamped to the last one).
+  GoToSlide(usize),
+  ToggleFullscreen,
+
   // Table of contents sidebar
   ToggleToc,
   ScrollToCell(usize),
@@ -462,6 +476,8 @@ enum ExportFormat {
   LaTeX,
   Typst,
   Pdf,
+  /// One widescreen page per slide.
+  SlidesPdf,
 }
 
 impl std::fmt::Display for ExportFormat {
@@ -477,6 +493,7 @@ impl std::fmt::Display for ExportFormat {
       ExportFormat::LaTeX => write!(f, "LaTeX"),
       ExportFormat::Typst => write!(f, "Typst"),
       ExportFormat::Pdf => write!(f, "PDF"),
+      ExportFormat::SlidesPdf => write!(f, "PDF (Slides)"),
     }
   }
 }
@@ -489,6 +506,7 @@ impl ExportFormat {
     ExportFormat::LaTeX,
     ExportFormat::Typst,
     ExportFormat::Pdf,
+    ExportFormat::SlidesPdf,
   ];
 }
 
@@ -527,6 +545,8 @@ impl WoxiStudio {
         focused_divider: None,
         new_cell_style: CellStyle::Input,
         preview_mode: false,
+        slideshow: None,
+        fullscreen: false,
         scale_factor: 1.0,
         fontdb: {
           let mut db = resvg::usvg::fontdb::Database::new();
@@ -575,6 +595,19 @@ impl WoxiStudio {
   /// (Playback's Drop impl kills the process).
   fn stop_playback(&mut self) {
     self.playback = None;
+  }
+
+  /// The cell index ranges of the notebook's slides.
+  fn slide_ranges(&self) -> Vec<std::ops::Range<usize>> {
+    let styles: Vec<CellStyle> =
+      self.cell_editors.iter().map(|e| e.style).collect();
+    notebook::slide_ranges(&styles)
+  }
+
+  /// Whether cells are drawn without their editing chrome (gutter, dividers,
+  /// buttons): in the preview and in the slideshow.
+  fn presenting(&self) -> bool {
+    self.preview_mode || self.slideshow.is_some()
   }
 
   /// Play audio emitted by a pressed Manipulate button (`EmitSound[…]`),
@@ -1030,6 +1063,12 @@ impl WoxiStudio {
                     rasterize_svg(svg, self.scale_factor, &self.fontdb);
                 }
               }
+              // A notebook saved in a slideshow environment opens as one.
+              self.slideshow = nb
+                .screen_style_environment
+                .as_deref()
+                .is_some_and(notebook::is_slideshow_environment)
+                .then_some(0);
               self.notebook = nb;
               self.file_path = Some(path);
               self.is_dirty = false;
@@ -1106,23 +1145,27 @@ impl WoxiStudio {
           return Task::none();
         }
         self.sync_notebook_from_editors();
-        if format == ExportFormat::Pdf {
+        if matches!(format, ExportFormat::Pdf | ExportFormat::SlidesPdf) {
           let default_path =
             self.file_path.as_ref().map(|p| p.with_extension("pdf"));
-          let cells: Vec<PdfCell> = self
-            .cell_editors
-            .iter()
-            .map(|editor| PdfCell {
-              style: editor.style,
-              text: editor.content.text(),
-              output: editor.output.clone(),
-              stdout: editor.stdout.clone(),
-              graphics_svg: editor.graphics_svg.clone(),
-            })
-            .collect();
+          let layout = if format == ExportFormat::SlidesPdf {
+            PdfLayout::Slides(
+              self
+                .slide_ranges()
+                .into_iter()
+                .map(|range| {
+                  self.cell_editors[range].iter().map(pdf_cell).collect()
+                })
+                .collect(),
+            )
+          } else {
+            PdfLayout::Document(
+              self.cell_editors.iter().map(pdf_cell).collect(),
+            )
+          };
           self.is_loading = true;
           self.status = String::from("Exporting as PDF...");
-          Task::perform(export_pdf(default_path, cells), Message::FileExported)
+          Task::perform(export_pdf(default_path, layout), Message::FileExported)
         } else {
           let (content, filter_name, extension) = match format {
             ExportFormat::MathematicaNotebook => (
@@ -1150,7 +1193,7 @@ impl WoxiStudio {
               String::from("Typst"),
               String::from("typ"),
             ),
-            ExportFormat::Pdf => unreachable!(),
+            ExportFormat::Pdf | ExportFormat::SlidesPdf => unreachable!(),
           };
           self.is_loading = true;
           self.status = format!("Exporting as {format}...");
@@ -1707,6 +1750,76 @@ impl WoxiStudio {
       Message::TogglePreview => {
         self.preview_mode = !self.preview_mode;
         Task::none()
+      }
+
+      Message::StartSlideshow => {
+        // Start on the slide holding the focused cell, like the FrontEnd
+        // switching an open notebook to its SlideShow environment.
+        let ranges = self.slide_ranges();
+        let start = self
+          .focused_cell
+          .and_then(|cell| ranges.iter().position(|r| r.contains(&cell)))
+          .unwrap_or(0);
+        self.slideshow = Some(start);
+        self.cell_type_menu_open = None;
+        self.focused_divider = None;
+        // A focused editor would keep the arrow keys from turning slides.
+        iced::advanced::widget::operate(
+          iced::advanced::widget::operation::focusable::unfocus::<()>(),
+        )
+        .discard()
+      }
+
+      Message::ExitSlideshow => {
+        let Some(current) = self.slideshow.take() else {
+          return Task::none();
+        };
+        let mut tasks = Vec::new();
+        if self.fullscreen {
+          tasks.push(self.update(Message::ToggleFullscreen));
+        }
+        // Back in the editor, show where the slideshow left off.
+        if let Some(range) = self.slide_ranges().get(current) {
+          tasks.push(self.update(Message::ScrollToCell(range.start)));
+        }
+        Task::batch(tasks)
+      }
+
+      Message::NextSlide => {
+        if let Some(current) = self.slideshow {
+          let last = self.slide_ranges().len().saturating_sub(1);
+          self.slideshow = Some((current + 1).min(last));
+        }
+        Task::none()
+      }
+
+      Message::PreviousSlide => {
+        if let Some(current) = self.slideshow {
+          let last = self.slide_ranges().len().saturating_sub(1);
+          self.slideshow = Some(current.min(last).saturating_sub(1));
+        }
+        Task::none()
+      }
+
+      Message::GoToSlide(slide) => {
+        if self.slideshow.is_some() {
+          let last = self.slide_ranges().len().saturating_sub(1);
+          self.slideshow = Some(slide.min(last));
+        }
+        Task::none()
+      }
+
+      Message::ToggleFullscreen => {
+        self.fullscreen = !self.fullscreen;
+        let mode = if self.fullscreen {
+          iced::window::Mode::Fullscreen
+        } else {
+          iced::window::Mode::Windowed
+        };
+        iced::window::latest().then(move |id| match id {
+          Some(id) => iced::window::set_mode(id, mode),
+          None => Task::none(),
+        })
       }
 
       Message::ToggleToc => {
@@ -2449,6 +2562,20 @@ impl WoxiStudio {
           }
         }
 
+        if matches!(
+          key.as_ref(),
+          keyboard::Key::Named(keyboard::key::Named::F5)
+        ) && self.slideshow.is_none()
+        {
+          return self.update(Message::StartSlideshow);
+        }
+
+        if self.slideshow.is_some()
+          && let Some(message) = slideshow_key_message(&key, modifiers)
+        {
+          return self.update(message);
+        }
+
         if modifiers.command() {
           match key.as_ref() {
             keyboard::Key::Character("s") => {
@@ -2593,6 +2720,16 @@ impl WoxiStudio {
   }
 
   fn view(&self) -> Element<'_, Message> {
+    if let Some(current) = self.slideshow {
+      let (modal_layer, context_menu_layer) = self.view_overlay_layers();
+      return stack![
+        self.view_slideshow(current),
+        modal_layer,
+        context_menu_layer
+      ]
+      .into();
+    }
+
     // ── Toolbar ──
     let eval_all_svg =
       svg::Handle::from_memory(PLAY_CIRCLE_SVG.as_bytes().to_vec());
@@ -2647,6 +2784,17 @@ impl WoxiStudio {
           .style(gutter_icon_style),
       )
       .on_press(Message::ToggleToc)
+      .padding([3, 6])
+      .style(trash_button_style),
+      button(
+        svg::Svg::new(svg::Handle::from_memory(
+          cell_type_dropdown::ICON_PRESENTATION.as_bytes().to_vec(),
+        ))
+        .width(16)
+        .height(16)
+        .style(gutter_icon_style),
+      )
+      .on_press(Message::StartSlideshow)
       .padding([3, 6])
       .style(trash_button_style),
       button(
@@ -2890,6 +3038,15 @@ impl WoxiStudio {
     .spacing(0)
     .into();
 
+    let (modal_layer, context_menu_layer) = self.view_overlay_layers();
+    stack![main_view, modal_layer, context_menu_layer].into()
+  }
+
+  /// The layers stacked over the notebook: the graphics modal and the
+  /// graphics context menu (each an empty column while closed).
+  fn view_overlay_layers(
+    &self,
+  ) -> (Element<'_, Message>, Element<'_, Message>) {
     // ── Graphics modal overlay ──
     // Always use stack! so the widget tree structure stays the same
     // when the modal opens/closes, preserving scroll position.
@@ -2975,7 +3132,94 @@ impl WoxiStudio {
         column![].into()
       };
 
-    stack![main_view, modal_layer, context_menu_layer].into()
+    (modal_layer, context_menu_layer)
+  }
+
+  /// The slideshow: the cells of slide `current`, without editing chrome
+  /// and magnified, above a navigation bar.
+  fn view_slideshow(&self, current: usize) -> Element<'_, Message> {
+    let ranges = self.slide_ranges();
+    let count = ranges.len();
+    let current = current.min(count.saturating_sub(1));
+
+    let slide: Element<'_, Message> = match ranges.get(current) {
+      Some(range) => {
+        let mut col = Column::new().spacing(6).width(Fill);
+        for idx in range.clone() {
+          let editor = &self.cell_editors[idx];
+          if editor.style == CellStyle::SlideShowNavigationBar {
+            continue;
+          }
+          col = col.push(self.view_cell(
+            idx,
+            editor,
+            self.focused_cell == Some(idx),
+          ));
+        }
+        scrollable(container(col.max_width(1100)).center_x(Fill).padding(
+          iced::Padding {
+            top: 32.0,
+            right: 48.0,
+            bottom: 32.0,
+            left: 48.0,
+          },
+        ))
+        .id(iced::widget::Id::from("slide-scroll"))
+        .height(Fill)
+        .into()
+      }
+      None => container(text("Empty notebook.").size(18))
+        .center(Fill)
+        .into(),
+    };
+
+    let icon_button = |icon: &'static str, message: Option<Message>| {
+      button(
+        svg::Svg::new(svg::Handle::from_memory(icon.as_bytes().to_vec()))
+          .width(18)
+          .height(18)
+          .style(gutter_icon_style),
+      )
+      .on_press_maybe(message)
+      .padding([4, 8])
+      .style(trash_button_style)
+    };
+    let navigation = row![
+      button(text("Exit").size(12))
+        .on_press(Message::ExitSlideshow)
+        .padding([3, 10])
+        .style(muted_button_style),
+      space::horizontal(),
+      icon_button(
+        ICON_CHEVRON_LEFT,
+        (current > 0).then_some(Message::PreviousSlide)
+      ),
+      text(format!("{} / {}", current + 1, count.max(1))).size(13),
+      icon_button(
+        ICON_CHEVRON_RIGHT,
+        (current + 1 < count).then_some(Message::NextSlide)
+      ),
+      space::horizontal(),
+      icon_button(
+        if self.fullscreen {
+          ICON_MINIMIZE
+        } else {
+          ICON_MAXIMIZE
+        },
+        Some(Message::ToggleFullscreen)
+      ),
+    ]
+    .spacing(6)
+    .padding([4, 8])
+    .align_y(Center);
+
+    column![
+      slide,
+      rule::horizontal(1).style(separator_style),
+      navigation
+    ]
+    .spacing(0)
+    .into()
   }
 
   /// Compute which cells are hidden due to a collapsed Chapter or
@@ -3035,7 +3279,7 @@ impl WoxiStudio {
     // ── Left gutter: style picker + delete ──
     let mut gutter = Column::new().spacing(2).width(iced::Length::Shrink);
 
-    if !self.preview_mode {
+    if !self.presenting() {
       // Cell type: icon button with overlay dropdown
       gutter = gutter.push(cell_type_dropdown::cell_type_dropdown(
         editor.style,
@@ -3073,7 +3317,7 @@ impl WoxiStudio {
       gutter = gutter.push(space::Space::new().width(22).height(Fill));
     }
 
-    let gutter: Element<'a, Message> = if !self.preview_mode {
+    let gutter: Element<'a, Message> = if !self.presenting() {
       mouse_area(gutter)
         .on_enter(Message::GutterEnter(idx))
         .on_exit(Message::GutterExit(idx))
@@ -3083,31 +3327,25 @@ impl WoxiStudio {
     };
 
     // ── Text editor ──
-    let font_size = match editor.style {
-      CellStyle::Title => 20.0,
-      CellStyle::Subtitle => 16.0,
-      CellStyle::Chapter => 18.0,
-      CellStyle::Subchapter => 16.0,
-      CellStyle::Section => 15.0,
-      CellStyle::Subsection => 14.0,
-      CellStyle::Subsubsection => 13.0,
-      CellStyle::Item | CellStyle::Subitem => 13.0,
-      _ => 13.0,
+    // The slideshow magnifies text for the room, as the FrontEnd's
+    // SlideShow environment does.
+    let magnification = if self.slideshow.is_some() {
+      SLIDESHOW_MAGNIFICATION
+    } else {
+      1.0
     };
-
-    let cell_font = match editor.style {
-      CellStyle::Title
-      | CellStyle::Subtitle
-      | CellStyle::Chapter
-      | CellStyle::Subchapter => Font {
+    let font_size = magnification * cell_font_size(editor.style);
+    let cell_font = if cell_font_is_bold(editor.style) {
+      Font {
         weight: iced::font::Weight::Bold,
         ..Font::MONOSPACE
-      },
-      _ => Font::MONOSPACE,
+      }
+    } else {
+      Font::MONOSPACE
     };
 
     let cell_style = editor.style;
-    let in_preview = self.preview_mode;
+    let in_preview = self.presenting();
     let has_output = editor.stdout.is_some()
       || editor.graphics_svg.is_some()
       || editor.output.as_ref().is_some_and(|o| {
@@ -3315,7 +3553,7 @@ impl WoxiStudio {
         let warning_color = Color::from_rgba(0.85, 0.55, 0.10, stale_opacity);
         let warning_display = container(
           text(warning_text)
-            .size(12)
+            .size(OUTPUT_FONT_SIZE * magnification)
             .font(Font::MONOSPACE)
             .color(warning_color),
         )
@@ -3332,7 +3570,7 @@ impl WoxiStudio {
           .font(Font::MONOSPACE)
           .height(iced::Length::Shrink)
           .padding(6)
-          .size(12)
+          .size(OUTPUT_FONT_SIZE * magnification)
           .style(move |theme, status| {
             output_editor_style(theme, status, stale)
           });
@@ -3388,7 +3626,7 @@ impl WoxiStudio {
           .font(Font::MONOSPACE)
           .height(iced::Length::Shrink)
           .padding(6)
-          .size(12)
+          .size(OUTPUT_FONT_SIZE * magnification)
           .style(move |theme, status| {
             output_editor_style(theme, status, stale)
           });
@@ -3406,7 +3644,7 @@ impl WoxiStudio {
         let warning_color = Color::from_rgba(0.85, 0.55, 0.10, stale_opacity);
         let warning_display = container(
           text(warning_text)
-            .size(12)
+            .size(OUTPUT_FONT_SIZE * magnification)
             .font(Font::MONOSPACE)
             .color(warning_color),
         )
@@ -3422,7 +3660,7 @@ impl WoxiStudio {
           .font(Font::MONOSPACE)
           .height(iced::Length::Shrink)
           .padding(6)
-          .size(12)
+          .size(OUTPUT_FONT_SIZE * magnification)
           .style(move |theme, status| {
             output_editor_style(theme, status, stale)
           });
@@ -3471,7 +3709,7 @@ impl WoxiStudio {
           .font(Font::MONOSPACE)
           .height(iced::Length::Shrink)
           .padding(6)
-          .size(12)
+          .size(OUTPUT_FONT_SIZE * magnification)
           .style(move |theme, status| {
             output_editor_style(theme, status, stale)
           });
@@ -3479,10 +3717,22 @@ impl WoxiStudio {
       }
     }
 
-    let content_el: Element<'a, Message> = content_col.into();
+    // A slide break has no text of its own: it draws as a rule naming the
+    // slide it starts.
+    let content_el: Element<'a, Message> =
+      if editor.style == CellStyle::SlideShowNavigationBar {
+        let slide = self
+          .slide_ranges()
+          .iter()
+          .position(|r| r.start == idx)
+          .unwrap_or(0);
+        slide_break_element(slide + 1)
+      } else {
+        content_col.into()
+      };
 
     // ── Right side: play button + trash ──
-    let right_side: Element<'a, Message> = if !self.preview_mode {
+    let right_side: Element<'a, Message> = if !self.presenting() {
       let trash_svg =
         svg::Handle::from_memory(TRASH_ICON_SVG.as_bytes().to_vec());
       let trash_btn = button(
@@ -3533,7 +3783,7 @@ impl WoxiStudio {
     let is_collapsible =
       matches!(editor.style, CellStyle::Chapter | CellStyle::Subchapter);
     let chevron_el: Element<'a, Message> =
-      if is_collapsible && !self.preview_mode {
+      if is_collapsible && !self.presenting() {
         let chevron_svg = svg::Handle::from_memory(
           if editor.is_collapsed {
             ICON_CHEVRON_RIGHT
@@ -3571,6 +3821,28 @@ impl WoxiStudio {
 
     container(cell_row).width(Fill).into()
   }
+}
+
+/// The divider a slide break cell draws as in the editor:
+/// `──── Slide n ────`.
+fn slide_break_element<'a>(slide: usize) -> Element<'a, Message> {
+  row![
+    rule::horizontal(1).style(separator_style),
+    text(format!("Slide {slide}"))
+      .size(11)
+      .style(|theme: &Theme| text::Style {
+        color: Some(if matches!(theme, Theme::Light) {
+          Color::from_rgb(0.45, 0.45, 0.48)
+        } else {
+          Color::from_rgb(0.6, 0.6, 0.65)
+        }),
+      }),
+    rule::horizontal(1).style(separator_style),
+  ]
+  .spacing(8)
+  .padding([8, 6])
+  .align_y(Center)
+  .into()
 }
 
 // ── Indent/unindent helpers ─────────────────────────────────────────
@@ -3725,6 +3997,35 @@ fn toggle_line_comment(line: &str) -> (String, isize) {
 
 // ── Event handling ──────────────────────────────────────────────────
 
+/// What a key does while the slideshow is on screen: the presentation
+/// clicker and keyboard conventions (arrows, Page Up/Down, Space, Home/End)
+/// turn slides and Escape ends the show.
+fn slideshow_key_message(
+  key: &keyboard::Key,
+  modifiers: keyboard::Modifiers,
+) -> Option<Message> {
+  use keyboard::key::Named;
+  if modifiers.command() || modifiers.control() || modifiers.alt() {
+    return None;
+  }
+  let keyboard::Key::Named(named) = key.as_ref() else {
+    return None;
+  };
+  match named {
+    Named::Escape => Some(Message::ExitSlideshow),
+    Named::Space if modifiers.shift() => Some(Message::PreviousSlide),
+    Named::ArrowRight | Named::ArrowDown | Named::PageDown | Named::Space => {
+      Some(Message::NextSlide)
+    }
+    Named::ArrowLeft | Named::ArrowUp | Named::PageUp => {
+      Some(Message::PreviousSlide)
+    }
+    Named::Home => Some(Message::GoToSlide(0)),
+    Named::End => Some(Message::GoToSlide(usize::MAX)),
+    _ => None,
+  }
+}
+
 fn handle_event(
   event: iced::Event,
   status: iced::event::Status,
@@ -3763,11 +4064,21 @@ fn handle_event(
     ..
   }) = event
   {
-    // Escape key (always forwarded for modal close)
+    // Escape key (always forwarded for modal close), and F5, which starts
+    // the slideshow
     if matches!(
       key.as_ref(),
-      keyboard::Key::Named(keyboard::key::Named::Escape)
+      keyboard::Key::Named(
+        keyboard::key::Named::Escape | keyboard::key::Named::F5
+      )
     ) {
+      return Some(Message::KeyPressed(key, modifiers));
+    }
+
+    // Keys no widget used may turn a slide.
+    if matches!(status, iced::event::Status::Ignored)
+      && slideshow_key_message(&key, modifiers).is_some()
+    {
       return Some(Message::KeyPressed(key, modifiers));
     }
 
@@ -6834,6 +7145,9 @@ const ICON_EYE_OFF: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24"
 const ICON_TOC: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 12H3"/><path d="M16 18H3"/><path d="M16 6H3"/><path d="M21 12h.01"/><path d="M21 18h.01"/><path d="M21 6h.01"/></svg>"#;
 
 const ICON_CHEVRON_DOWN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>"#;
+const ICON_CHEVRON_LEFT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>"#;
+const ICON_MAXIMIZE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>"#;
+const ICON_MINIMIZE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>"#;
 const ICON_CHEVRON_RIGHT: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>"#;
 
 const ICON_GRIP: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>"#;
@@ -6973,6 +7287,35 @@ fn heading_level(style: CellStyle) -> Option<u8> {
   }
 }
 
+/// The size a cell's text is drawn at in the editor.
+fn cell_font_size(style: CellStyle) -> f32 {
+  match style {
+    CellStyle::Title => 20.0,
+    CellStyle::Chapter => 18.0,
+    CellStyle::Subtitle | CellStyle::Subchapter => 16.0,
+    CellStyle::Section => 15.0,
+    CellStyle::Subsection => 14.0,
+    _ => 13.0,
+  }
+}
+
+/// Whether a cell's text is drawn bold: the top-level headings.
+fn cell_font_is_bold(style: CellStyle) -> bool {
+  matches!(
+    style,
+    CellStyle::Title
+      | CellStyle::Subtitle
+      | CellStyle::Chapter
+      | CellStyle::Subchapter
+  )
+}
+
+/// The size of result and Print text below an input.
+const OUTPUT_FONT_SIZE: f32 = 12.0;
+
+/// How much larger the slideshow draws cell text than the editor.
+const SLIDESHOW_MAGNIFICATION: f32 = 1.6;
+
 const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Title,
   CellStyle::Subtitle,
@@ -6987,6 +7330,7 @@ const CELL_STYLES: &[CellStyle] = &[
   CellStyle::Input,
   CellStyle::Output,
   CellStyle::Code,
+  CellStyle::SlideShowNavigationBar,
 ];
 
 // ── Headless check mode ──────────────────────────────────────────────
@@ -7368,15 +7712,53 @@ struct PdfCell {
   output: Option<String>,
   stdout: Option<String>,
   graphics_svg: Option<String>,
+  /// The typeset results, drawn in place of `output` as Studio does. Typeset
+  /// for the light theme, the PDF's.
+  output_svgs: Vec<String>,
 }
+
+/// What the PDF exports draw of a cell. An interactive widget is drawn as
+/// its current rendering.
+fn pdf_cell(editor: &CellEditor) -> PdfCell {
+  PdfCell {
+    style: editor.style,
+    text: editor.content.text(),
+    output: editor.output.clone(),
+    stdout: editor.stdout.clone(),
+    graphics_svg: editor.graphics_svg.clone().or_else(|| {
+      editor
+        .manipulate_state
+        .as_ref()
+        .and_then(|state| state.current_svg())
+        .map(str::to_string)
+    }),
+    // Studio shows the typeset results only when every result has one.
+    output_svgs: if editor.output_all_svg {
+      editor
+        .output_svgs
+        .iter()
+        .map(|svg| {
+          if editor.output_dark {
+            svg.replace(DARK_TYPESET_TEXT, LIGHT_TYPESET_TEXT)
+          } else {
+            svg.clone()
+          }
+        })
+        .collect()
+    } else {
+      Vec::new()
+    },
+  }
+}
+
+/// The text color Woxi typesets results in for the dark and the light theme.
+const DARK_TYPESET_TEXT: &str = "fill=\"#e0e0e0\"";
+const LIGHT_TYPESET_TEXT: &str = "fill=\"#333\"";
 
 async fn export_pdf(
   default_path: Option<PathBuf>,
-  cells: Vec<PdfCell>,
+  layout: PdfLayout,
 ) -> Result<PathBuf, FileError> {
-  use std::fmt::Write;
-  use std::sync::Arc as StdArc;
-
   let mut dialog = rfd::AsyncFileDialog::new()
     .set_title("Export as PDF")
     .add_filter("PDF", &["pdf"]);
@@ -7394,14 +7776,100 @@ async fn export_pdf(
     .map(|h| h.path().to_owned())
     .ok_or(FileError::DialogClosed)?;
 
-  let page_width: f64 = 595.0;
-  let margin: f64 = 40.0;
+  let pdf_bytes = match layout {
+    PdfLayout::Document(cells) => document_pdf(&cells),
+    PdfLayout::Slides(slides) => slides_pdf(&slides),
+  }
+  .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
+
+  tokio::fs::write(&path, &pdf_bytes)
+    .await
+    .map_err(|e| FileError::IoError(e.kind()))?;
+
+  Ok(path)
+}
+
+/// What a PDF export lays out: the whole notebook as one continuous page,
+/// or one page per slide.
+enum PdfLayout {
+  Document(Vec<PdfCell>),
+  Slides(Vec<Vec<PdfCell>>),
+}
+
+/// Width of the page the PDF exports lay cells out on (A4, in points).
+const PDF_PAGE_WIDTH: f64 = 595.0;
+/// The margin around the laid-out cells.
+const PDF_MARGIN: f64 = 40.0;
+/// A slide page: 16:9 widescreen (13.33 × 7.5 in), in points.
+const PDF_SLIDE_SIZE: (f64, f64) = (960.0, 540.0);
+
+/// The font family the PDF exports set text in: the one Studio draws cells
+/// with — iced's monospace default "Noto Sans Mono", or the platform's
+/// monospace font where that is not installed.
+const PDF_FONT_FAMILY: &str =
+  "'Noto Sans Mono', Menlo, 'DejaVu Sans Mono', Consolas, monospace";
+/// The advance of the monospace font's glyphs, in em.
+const PDF_GLYPH_ADVANCE: f64 = 0.6;
+
+/// An SVG color for an iced color.
+fn svg_color(color: Color) -> String {
+  let channel = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+  format!(
+    "#{:02x}{:02x}{:02x}",
+    channel(color.r),
+    channel(color.g),
+    channel(color.b)
+  )
+}
+
+/// Studio's light-theme text color for a cell of `style` in the slideshow.
+fn pdf_cell_color(style: CellStyle) -> String {
+  svg_color(
+    preview_editor_style(&Theme::Light, text_editor::Status::Active, style)
+      .value,
+  )
+}
+
+/// Lay `cells` out as SVG elements on a page `page_width` wide, from the
+/// top margin down, in Studio's font, sizes and light-theme colors. Returns
+/// the elements and the height they take up, bottom margin included.
+fn layout_pdf_cells(cells: &[PdfCell], page_width: f64) -> (String, f64) {
+  use std::fmt::Write;
+  let margin = PDF_MARGIN;
   let content_width = page_width - 2.0 * margin;
+  let chars_at =
+    |size: f64| (content_width / (PDF_GLYPH_ADVANCE * size)) as usize;
+  let output_size = f64::from(OUTPUT_FONT_SIZE);
+  let output_color = svg_color(
+    output_editor_style(&Theme::Light, text_editor::Status::Active, false)
+      .value,
+  );
 
   let mut elements = String::new();
   let mut y: f64 = margin;
+  // Embed an SVG (a graphic or a typeset result) at its own size, shrunk to
+  // the content width, in its own coordinate system: Woxi's plots draw on
+  // a viewBox ten times their size.
+  let embed_svg = |elements: &mut String, y: &mut f64, svg: &str| {
+    let Some((svg_w, svg_h)) = parse_svg_dimensions(svg) else {
+      return;
+    };
+    let scale = (content_width / svg_w).min(1.0);
+    let rendered_w = svg_w * scale;
+    let rendered_h = svg_h * scale;
+    let view_box = parse_svg_text_attr(svg, "viewBox")
+      .unwrap_or_else(|| format!("0 0 {svg_w} {svg_h}"));
+    let top = *y;
+    let _ = write!(
+      elements,
+      r#"<svg x="{margin}" y="{top}" width="{rendered_w}" height="{rendered_h}" viewBox="{view_box}">"#,
+    );
+    elements.push_str(strip_svg_wrapper(svg));
+    elements.push_str("</svg>");
+    *y += rendered_h + 6.0;
+  };
 
-  for cell in &cells {
+  for cell in cells {
     let trimmed = cell.text.trim();
     if trimmed.is_empty()
       && cell.graphics_svg.is_none()
@@ -7411,162 +7879,95 @@ async fn export_pdf(
       continue;
     }
 
+    let size = f64::from(cell_font_size(cell.style));
+    let weight = if cell_font_is_bold(cell.style) {
+      "bold"
+    } else {
+      "normal"
+    };
+    let color = pdf_cell_color(cell.style);
+    let line_height = (size * 1.35).round();
     match cell.style {
-      CellStyle::Title => {
-        y += 8.0;
+      CellStyle::Title
+      | CellStyle::Subtitle
+      | CellStyle::Chapter
+      | CellStyle::Subchapter
+      | CellStyle::Section
+      | CellStyle::Subsection
+      | CellStyle::Subsubsection
+      | CellStyle::Text
+      | CellStyle::Item
+      | CellStyle::Subitem => {
+        let (indent, bullet) = match cell.style {
+          CellStyle::Item => (0.0, "• "),
+          CellStyle::Subitem => (2.0, "◦ "),
+          _ => (0.0, ""),
+        };
+        let indent_chars = indent as usize + bullet.chars().count();
+        let wrapped = word_wrap(trimmed, chars_at(size) - indent_chars);
+        let is_heading = heading_level(cell.style).is_some();
+        if is_heading && y > margin {
+          y += size * 0.6;
+        }
+        let x = margin + indent * PDF_GLYPH_ADVANCE * size;
+        let text = format!("{bullet}{}", wrapped.trim_end());
+        // Continuation lines line up after the bullet.
+        let text = text
+          .replace('\n', &format!("\n{}", " ".repeat(bullet.chars().count())));
         write_text_lines(
           &mut elements,
           &mut y,
-          trimmed,
-          margin,
-          (24.0, "bold", "sans-serif"),
-          "#000",
-          30.0,
+          &text,
+          x,
+          (size, weight, PDF_FONT_FAMILY),
+          &color,
+          line_height,
         );
-        y += 12.0;
-      }
-      CellStyle::Subtitle => {
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (16.0, "normal", "sans-serif"),
-          "#555",
-          22.0,
-        );
-        y += 8.0;
-      }
-      CellStyle::Chapter => {
-        y += 8.0;
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (20.0, "bold", "sans-serif"),
-          "#000",
-          26.0,
-        );
-        y += 10.0;
-      }
-      CellStyle::Subchapter => {
-        y += 6.0;
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (17.0, "bold", "sans-serif"),
-          "#000",
-          22.0,
-        );
-        y += 8.0;
-      }
-      CellStyle::Section => {
-        y += 6.0;
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (18.0, "bold", "sans-serif"),
-          "#000",
-          24.0,
-        );
-        y += 8.0;
-      }
-      CellStyle::Subsection => {
-        y += 4.0;
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (15.0, "bold", "sans-serif"),
-          "#000",
-          20.0,
-        );
-        y += 6.0;
-      }
-      CellStyle::Subsubsection => {
-        y += 2.0;
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          trimmed,
-          margin,
-          (13.0, "bold", "sans-serif"),
-          "#000",
-          18.0,
-        );
-        y += 4.0;
-      }
-      CellStyle::Text => {
-        let wrapped = word_wrap(trimmed, 80);
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          &wrapped,
-          margin,
-          (12.0, "normal", "serif"),
-          "#000",
-          16.0,
-        );
-        y += 8.0;
-      }
-      CellStyle::Item => {
-        let wrapped = word_wrap(trimmed, 78);
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          &format!("• {wrapped}"),
-          margin + 8.0,
-          (12.0, "normal", "serif"),
-          "#000",
-          16.0,
-        );
-        y += 4.0;
-      }
-      CellStyle::Subitem => {
-        let wrapped = word_wrap(trimmed, 76);
-        write_text_lines(
-          &mut elements,
-          &mut y,
-          &format!("◦ {wrapped}"),
-          margin + 20.0,
-          (12.0, "normal", "serif"),
-          "#000",
-          16.0,
-        );
-        y += 4.0;
+        y += if is_heading { size * 0.3 } else { 6.0 };
       }
       CellStyle::Input | CellStyle::Code => {
-        let lines: Vec<&str> = cell.text.lines().collect();
-        let block_h = lines.len() as f64 * 14.0 + 12.0;
+        let wrapped = code_wrap(&cell.text, chars_at(size));
+        let lines: Vec<&str> = wrapped.lines().collect();
+        let pad = 6.0;
+        let block_h = lines.len() as f64 * line_height + 2.0 * pad;
         let _ = write!(
           elements,
-          r##"<rect x="{}" y="{}" width="{}" height="{}" fill="#f5f5f5" rx="3"/>"##,
+          r##"<rect x="{}" y="{y}" width="{}" height="{block_h}" fill="#f5f5f5" rx="3"/>"##,
           margin - 4.0,
-          y - 2.0,
           content_width + 8.0,
-          block_h,
         );
-        y += 10.0;
-        let x = margin;
-        let (font_size, font_weight, font_family) =
-          (11.0, "normal", "Atkinson Hyperlegible Mono, monospace");
-        let fill = "#333";
+        let mut baseline = y + pad + size;
         for line in &lines {
           let _ = write!(
             elements,
-            r##"<text x="{x}" y="{y}" font-size="{font_size}" font-weight="{font_weight}" font-family="{font_family}" fill="{fill}">{}</text>"##,
-            escape_xml(line),
+            r#"<text x="{margin}" y="{baseline}" font-size="{size}" font-family="{PDF_FONT_FAMILY}" fill="{color}" xml:space="preserve">"#,
           );
-          y += 14.0;
+          // Syntax colors as the editor highlights the code; the text
+          // between the highlighted tokens keeps the cell's color.
+          let mut end = 0;
+          for (range, kind) in highlighter::tokenize_line(line) {
+            elements.push_str(&escape_xml(&line[end..range.start]));
+            end = range.end;
+            let token = escape_xml(&line[range]);
+            match highlighter::highlight_color(kind, false) {
+              Some(c) => {
+                let _ = write!(
+                  elements,
+                  r#"<tspan fill="{}">{token}</tspan>"#,
+                  svg_color(c)
+                );
+              }
+              None => elements.push_str(&token),
+            }
+          }
+          elements.push_str(&escape_xml(&line[end..]));
+          elements.push_str("</text>");
+          baseline += line_height;
         }
-        y += 6.0;
+        y += block_h + 6.0;
       }
+      // A slide break draws nothing: the slides export starts a page there.
+      CellStyle::SlideShowNavigationBar => {}
       CellStyle::Output | CellStyle::Print => {
         let cleaned = trimmed
           .replace("-Graphics-", "")
@@ -7577,11 +7978,11 @@ async fn export_pdf(
           write_text_lines(
             &mut elements,
             &mut y,
-            cleaned,
+            &code_wrap(cleaned, chars_at(output_size)),
             margin,
-            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
-            "#666",
-            14.0,
+            (output_size, "normal", PDF_FONT_FAMILY),
+            &output_color,
+            (output_size * 1.35).round(),
           );
           y += 4.0;
         }
@@ -7596,32 +7997,25 @@ async fn export_pdf(
           write_text_lines(
             &mut elements,
             &mut y,
-            s,
+            &code_wrap(s, chars_at(output_size)),
             margin,
-            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
-            "#888",
-            14.0,
+            (output_size, "normal", PDF_FONT_FAMILY),
+            &output_color,
+            (output_size * 1.35).round(),
           );
           y += 4.0;
         }
       }
 
-      if let Some(ref svg_data) = cell.graphics_svg
-        && let Some((svg_w, svg_h)) = parse_svg_dimensions(svg_data)
-      {
-        let scale = (content_width / svg_w).min(1.0);
-        let rendered_w = svg_w * scale;
-        let rendered_h = svg_h * scale;
-        let _ = write!(
-          elements,
-          r#"<svg x="{margin}" y="{y}" width="{rendered_w}" height="{rendered_h}" viewBox="0 0 {svg_w} {svg_h}">"#,
-        );
-        elements.push_str(strip_svg_wrapper(svg_data));
-        elements.push_str("</svg>");
-        y += rendered_h + 8.0;
+      if let Some(ref svg_data) = cell.graphics_svg {
+        embed_svg(&mut elements, &mut y, svg_data);
       }
 
-      if let Some(ref output) = cell.output {
+      if !cell.output_svgs.is_empty() {
+        for svg in &cell.output_svgs {
+          embed_svg(&mut elements, &mut y, svg);
+        }
+      } else if let Some(ref output) = cell.output {
         let s = output
           .replace("-Graphics-", "")
           .replace("-Graphics3D-", "")
@@ -7631,11 +8025,11 @@ async fn export_pdf(
           write_text_lines(
             &mut elements,
             &mut y,
-            s,
+            &code_wrap(s, chars_at(output_size)),
             margin,
-            (11.0, "normal", "Atkinson Hyperlegible Mono, monospace"),
-            "#666",
-            14.0,
+            (output_size, "normal", PDF_FONT_FAMILY),
+            &output_color,
+            (output_size * 1.35).round(),
           );
           y += 4.0;
         }
@@ -7645,11 +8039,11 @@ async fn export_pdf(
 
   y += margin;
 
-  let svg_doc = format!(
-    r#"<svg xmlns="http://www.w3.org/2000/svg" width="{page_width}" height="{y}" viewBox="0 0 {page_width} {y}">{elements}</svg>"#,
-  );
+  (elements, y)
+}
 
-  // Convert SVG to PDF via svg2pdf
+/// The fonts the PDF exports draw text with.
+fn pdf_fontdb() -> std::sync::Arc<svg2pdf::usvg::fontdb::Database> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_font_data(
     include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
@@ -7667,27 +8061,94 @@ async fn export_pdf(
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
+  std::sync::Arc::new(fontdb)
+}
 
+/// The notebook as a PDF of one page as tall as its content.
+fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
+  let (elements, height) = layout_pdf_cells(cells, PDF_PAGE_WIDTH);
+  let svg_doc = format!(
+    r#"<svg xmlns="http://www.w3.org/2000/svg" width="{PDF_PAGE_WIDTH}" height="{height}" viewBox="0 0 {PDF_PAGE_WIDTH} {height}">{elements}</svg>"#,
+  );
   let opt = svg2pdf::usvg::Options {
-    fontdb: StdArc::new(fontdb),
+    fontdb: pdf_fontdb(),
     ..Default::default()
   };
-
-  let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt)
-    .map_err(|_| FileError::IoError(std::io::ErrorKind::InvalidData))?;
-
-  let pdf_bytes = svg2pdf::to_pdf(
+  let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
+  svg2pdf::to_pdf(
     &tree,
     svg2pdf::ConversionOptions::default(),
     svg2pdf::PageOptions::default(),
   )
-  .map_err(|_| FileError::IoError(std::io::ErrorKind::Other))?;
+  .map_err(|_| ())
+}
 
-  tokio::fs::write(&path, &pdf_bytes)
-    .await
-    .map_err(|e| FileError::IoError(e.kind()))?;
+/// The SVG of one slide page: the cells laid out as on a document page,
+/// magnified like the slideshow draws them, or shrunk to fit when they
+/// would run off the slide; top-aligned and centered.
+fn slide_page_svg(cells: &[PdfCell]) -> String {
+  let (slide_w, slide_h) = PDF_SLIDE_SIZE;
+  // The layout width that magnifies to the slide width.
+  let layout_w = slide_w / f64::from(SLIDESHOW_MAGNIFICATION);
+  let (elements, height) = layout_pdf_cells(cells, layout_w);
+  let scale = (slide_w / layout_w).min(slide_h / height);
+  let dx = (slide_w - layout_w * scale) / 2.0;
+  format!(
+    r##"<svg xmlns="http://www.w3.org/2000/svg" width="{slide_w}" height="{slide_h}" viewBox="0 0 {slide_w} {slide_h}"><rect width="{slide_w}" height="{slide_h}" fill="#fff"/><g transform="translate({dx} 0) scale({scale})">{elements}</g></svg>"##,
+  )
+}
 
-  Ok(path)
+/// The slideshow as a PDF with one widescreen page per slide.
+fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
+  use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref};
+
+  let opt = svg2pdf::usvg::Options {
+    fontdb: pdf_fontdb(),
+    ..Default::default()
+  };
+  let (slide_w, slide_h) = PDF_SLIDE_SIZE;
+  let mut alloc = Ref::new(1);
+  let catalog_id = alloc.bump();
+  let page_tree_id = alloc.bump();
+  let svg_name = Name(b"S1");
+
+  let mut pdf = Pdf::new();
+  let mut page_ids = Vec::new();
+  for cells in slides {
+    let tree = svg2pdf::usvg::Tree::from_str(&slide_page_svg(cells), &opt)
+      .map_err(|_| ())?;
+    let (chunk, svg_id) =
+      svg2pdf::to_chunk(&tree, svg2pdf::ConversionOptions::default())
+        .map_err(|_| ())?;
+    // Give the chunk's objects ids of their own in this document.
+    let mut ids = std::collections::HashMap::new();
+    let chunk =
+      chunk.renumber(|old| *ids.entry(old).or_insert_with(|| alloc.bump()));
+    let svg_id = ids[&svg_id];
+
+    let page_id = alloc.bump();
+    let content_id = alloc.bump();
+    page_ids.push(page_id);
+    let mut page = pdf.page(page_id);
+    page.media_box(Rect::new(0.0, 0.0, slide_w as f32, slide_h as f32));
+    page.parent(page_tree_id);
+    page.contents(content_id);
+    page.resources().x_objects().pair(svg_name, svg_id);
+    page.finish();
+    // The SVG's form XObject spans the unit square: stretch it over the page.
+    let mut content = Content::new();
+    content
+      .transform([slide_w as f32, 0.0, 0.0, slide_h as f32, 0.0, 0.0])
+      .x_object(svg_name);
+    pdf.stream(content_id, &content.finish());
+    pdf.extend(&chunk);
+  }
+  pdf.catalog(catalog_id).pages(page_tree_id);
+  pdf
+    .pages(page_tree_id)
+    .count(page_ids.len() as i32)
+    .kids(page_ids);
+  Ok(pdf.finish())
 }
 
 /// Escape XML special characters for SVG text content.
@@ -7699,7 +8160,8 @@ fn escape_xml(s: &str) -> String {
     .replace('\'', "&apos;")
 }
 
-/// Write multi-line text as SVG `<text>` elements, one per line.
+/// Write multi-line text as SVG `<text>` elements, one per line, `line_height`
+/// apart. `y` comes in as the top of the text and goes out as its bottom.
 fn write_text_lines(
   out: &mut String,
   y: &mut f64,
@@ -7711,13 +8173,16 @@ fn write_text_lines(
 ) {
   use std::fmt::Write;
   let (font_size, font_weight, font_family) = font;
+  // Text is placed by its baseline, an ascent below the top.
+  let mut baseline = *y + font_size;
   for line in text.lines() {
     let _ = write!(
       out,
-      r#"<text x="{x}" y="{y}" font-size="{font_size}" font-weight="{font_weight}" font-family="{font_family}" fill="{fill}">{}</text>"#,
+      r#"<text x="{x}" y="{baseline}" font-size="{font_size}" font-weight="{font_weight}" font-family="{font_family}" fill="{fill}" xml:space="preserve">{}</text>"#,
       escape_xml(line),
     );
-    *y += line_height;
+    *y = baseline + 0.35 * font_size;
+    baseline += line_height;
   }
 }
 
@@ -7746,6 +8211,43 @@ fn word_wrap(text: &str, max_chars: usize) -> String {
     result.push('\n');
   }
   result
+}
+
+/// Break the lines of `text` (code or a code-like result) longer than
+/// `max_chars` characters, each break after the last space within the limit
+/// (or at the limit when there is none). Lines that fit stay as they are.
+fn code_wrap(text: &str, max_chars: usize) -> String {
+  let max_chars = max_chars.max(1);
+  let mut out = Vec::new();
+  for line in text.lines() {
+    let mut rest: Vec<char> = line.chars().collect();
+    while rest.len() > max_chars {
+      let cut = rest[..max_chars]
+        .iter()
+        .rposition(|c| *c == ' ')
+        .filter(|&i| i > 0)
+        .map_or(max_chars, |i| i + 1);
+      out.push(
+        rest[..cut]
+          .iter()
+          .collect::<String>()
+          .trim_end()
+          .to_string(),
+      );
+      rest.drain(..cut);
+    }
+    out.push(rest.into_iter().collect());
+  }
+  out.join("\n")
+}
+
+/// The value of attribute `attr` on an SVG's root element.
+fn parse_svg_text_attr(svg: &str, attr: &str) -> Option<String> {
+  let tag = &svg[..svg.find('>')?];
+  let pattern = format!(" {attr}=\"");
+  let start = tag.find(&pattern)? + pattern.len();
+  let end = start + tag[start..].find('"')?;
+  Some(tag[start..end].to_string())
 }
 
 /// Extract width and height from an SVG root element.
@@ -34020,5 +34522,172 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
       .expect("the stored Manipulate must instantiate on load");
     assert!(widget.error.is_none(), "{:?}", widget.error);
     assert!(widget.graphics_handle.is_some(), "the row must render");
+  }
+}
+
+#[cfg(test)]
+mod slideshow_tests {
+  use super::*;
+
+  fn slide_view_state(code: &str) -> manipulate::ManipulateState {
+    let expr = woxi::interpret_to_expr(code).unwrap();
+    manipulate::ManipulateState::from_expr(&expr)
+      .expect("SlideView must build a widget")
+  }
+
+  #[test]
+  fn slide_view_turns_slides() {
+    let mut state = slide_view_state("SlideView[{x, x^2, x^3}]");
+    assert_eq!(state.text_output.as_deref(), Some("x"));
+    assert!(state.select_discrete(0, "3"));
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("x^3"));
+  }
+
+  #[test]
+  fn slide_view_starts_on_the_given_slide() {
+    let state = slide_view_state("SlideView[{a, b, c}, 2]");
+    assert_eq!(state.text_output.as_deref(), Some("b"));
+    // Out of range: the first slide.
+    let state = slide_view_state("SlideView[{a, b, c}, 7]");
+    assert_eq!(state.text_output.as_deref(), Some("a"));
+  }
+
+  #[test]
+  fn slide_view_slides_keep_their_own_symbols() {
+    // The slide number is bound under a name the slides cannot use.
+    let state = slide_view_state("SlideView[{i, k}]");
+    assert_eq!(state.text_output.as_deref(), Some("i"));
+  }
+
+  #[test]
+  fn slideshow_keys() {
+    use keyboard::key::Named;
+    let none = keyboard::Modifiers::empty();
+    let key = |n| keyboard::Key::Named(n);
+    for (named, expected) in [
+      (Named::ArrowRight, "NextSlide"),
+      (Named::PageDown, "NextSlide"),
+      (Named::Space, "NextSlide"),
+      (Named::ArrowLeft, "PreviousSlide"),
+      (Named::PageUp, "PreviousSlide"),
+      (Named::Home, "GoToSlide(0)"),
+      (Named::Escape, "ExitSlideshow"),
+    ] {
+      let message = slideshow_key_message(&key(named), none)
+        .unwrap_or_else(|| panic!("{named:?} must do something"));
+      assert_eq!(format!("{message:?}"), expected);
+    }
+    assert!(matches!(
+      slideshow_key_message(&key(Named::Space), keyboard::Modifiers::SHIFT),
+      Some(Message::PreviousSlide)
+    ));
+    // Shortcuts with Cmd/Ctrl stay the editor's.
+    assert!(
+      slideshow_key_message(&key(Named::ArrowRight), keyboard::Modifiers::CTRL)
+        .is_none()
+    );
+    assert!(
+      slideshow_key_message(&keyboard::Key::Character("a".into()), none)
+        .is_none()
+    );
+  }
+
+  /// The example slideshow, evaluated, exported as one PDF page per slide.
+  /// `WOXI_SLIDES_PDF=FILE` saves the PDF for a look.
+  #[test]
+  fn slides_pdf_has_one_page_per_slide() {
+    let path = concat!(
+      env!("CARGO_MANIFEST_DIR"),
+      "/../tests/notebooks/slideshow.nb"
+    );
+    let nb = notebook::parse_notebook(&std::fs::read_to_string(path).unwrap())
+      .unwrap();
+    let mut editors = WoxiStudio::editors_from_notebook(&nb);
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    for editor in &mut editors {
+      if editor.style == CellStyle::Input {
+        let code = editor.content.text();
+        evaluate_cell_statements(editor, &code, false, 1.0, &fontdb);
+      }
+    }
+    let styles: Vec<CellStyle> = editors.iter().map(|e| e.style).collect();
+    let slides: Vec<Vec<PdfCell>> = notebook::slide_ranges(&styles)
+      .into_iter()
+      .map(|range| editors[range].iter().map(pdf_cell).collect())
+      .collect();
+    assert_eq!(slides.len(), 7);
+    let pdf = slides_pdf(&slides).expect("the slides must convert");
+    if let Some(out) = std::env::var_os("WOXI_SLIDES_PDF") {
+      std::fs::write(out, &pdf).unwrap();
+    }
+    let text = String::from_utf8_lossy(&pdf);
+    let pages = text.matches("/Type /Page").count()
+      - text.matches("/Type /Pages").count();
+    assert_eq!(pages, 7);
+    assert_eq!(text.matches("/MediaBox [0 0 960 540]").count(), 7);
+  }
+
+  #[test]
+  fn code_wrap_breaks_long_lines_after_spaces() {
+    assert_eq!(code_wrap("f[a, b]", 20), "f[a, b]");
+    assert_eq!(code_wrap("f[aa, bb, cc]", 10), "f[aa, bb,\ncc]");
+    // No space within the limit: break at the limit.
+    assert_eq!(code_wrap("abcdefgh", 3), "abc\ndef\ngh");
+    assert_eq!(code_wrap("ab\ncd", 5), "ab\ncd");
+  }
+
+  #[test]
+  fn graphics_keep_their_view_box_in_pdf_layout() {
+    let plot = r#"<svg width="360" height="225" viewBox="0 0 3600 2250" xmlns="http://www.w3.org/2000/svg"><line x1="0" y1="0" x2="3600" y2="2250"/></svg>"#;
+    assert_eq!(
+      parse_svg_text_attr(plot, "viewBox").as_deref(),
+      Some("0 0 3600 2250")
+    );
+    let cell = PdfCell {
+      style: CellStyle::Input,
+      text: "Plot[x, {x, 0, 1}]".to_string(),
+      output: None,
+      stdout: None,
+      graphics_svg: Some(plot.to_string()),
+      output_svgs: Vec::new(),
+    };
+    let (elements, _) = layout_pdf_cells(&[cell], PDF_PAGE_WIDTH);
+    assert!(
+      elements.contains(r#"width="360" height="225" viewBox="0 0 3600 2250""#),
+      "{elements}"
+    );
+  }
+
+  #[test]
+  fn slideshow_notebook_loads_its_slide_breaks() {
+    let nb = notebook::parse_notebook(
+      r#"Notebook[{
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar", CellTags->"SlideShowHeader"],
+Cell["One", "Section"]
+}, Open]],
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar", CellTags->"SlideShowHeader"],
+Cell["Two", "Section"],
+Cell[BoxData["1 + 1"], "Input"],
+Cell[BoxData["2"], "Output"]
+}, Open]]
+}, ScreenStyleEnvironment->"SlideShow"]"#,
+    )
+    .unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let styles: Vec<CellStyle> = editors.iter().map(|e| e.style).collect();
+    assert_eq!(
+      styles,
+      [
+        CellStyle::SlideShowNavigationBar,
+        CellStyle::Section,
+        CellStyle::SlideShowNavigationBar,
+        CellStyle::Section,
+        CellStyle::Input,
+      ]
+    );
+    assert_eq!(notebook::slide_ranges(&styles), [0..2, 2..5]);
   }
 }
