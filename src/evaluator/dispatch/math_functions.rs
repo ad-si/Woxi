@@ -5573,6 +5573,21 @@ pub fn dispatch_math_functions(
       if args.iter().any(definite_non_integer) {
         return Some(Ok(Expr::Integer(0)));
       }
+      // DiracComb is even in each argument: DiracComb[-x] is DiracComb[x].
+      // (Machine reals are not rewritten; strip_negation skips them.)
+      if args
+        .iter()
+        .any(|a| crate::functions::math_ast::strip_negation(a).is_some())
+      {
+        let positive: Vec<Expr> = args
+          .iter()
+          .map(|a| crate::functions::math_ast::strip_negation(a).unwrap_or_else(|| a.clone()))
+          .collect();
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "DiracComb",
+          &positive,
+        ));
+      }
       return Some(Ok(unevaluated("DiracComb", args)));
     }
     // ChampernowneNumber[] / ChampernowneNumber[b] — a numeric constant

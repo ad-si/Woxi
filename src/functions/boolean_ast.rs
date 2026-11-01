@@ -2171,6 +2171,10 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             result
           }
         }
+        // Xnor[a, b, …] → Not[Xor[a, b, …]]
+        "Xnor" if args.len() >= 2 => {
+          call1("Not", eliminate_connectives(&call("Xor", args.to_vec())))
+        }
         "Nand" if args.len() >= 2 => {
           // Nand[a, b] → Not[And[a, b]]
           let elim_args: Vec<Expr> =
