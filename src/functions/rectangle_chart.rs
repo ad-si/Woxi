@@ -161,7 +161,7 @@ pub fn rectangle_chart_ast(
       continue;
     };
     let value = replacement.as_ref();
-    match name.as_str() {
+    match crate::functions::chart::chart_option_alias(name) {
       "ChartStyle" => chart_style = Some(value.clone()),
       "ChartBaseStyle" => base_style = Some(value.clone()),
       "ChartLabels" => labels = Some(value.clone()),
@@ -187,6 +187,17 @@ pub fn rectangle_chart_ast(
     }
   }
 
+  // `Placed[labels, pos]` / `Callout[labels, pos]` wrap the label list;
+  // `Above` / `Top` put the labels over the bars instead of under them.
+  let mut labels_above = false;
+  if let Some(Expr::FunctionCall { name, args: wargs }) = &labels
+    && (name == "Placed" || name == "Callout")
+    && let Some(inner) = wargs.first()
+  {
+    labels_above = name == "Callout"
+      || matches!(wargs.get(1), Some(Expr::Identifier(p)) if p == "Above" || p == "Top");
+    labels = Some(inner.clone());
+  }
   let n_sets = sets.len();
   let multi = n_sets > 1;
   let mut x = if multi { GROUP_INSET } else { 0.0 };
@@ -235,12 +246,17 @@ pub fn rectangle_chart_ast(
         && let Some(Expr::List(ls)) = &labels
         && let Some(label) = ls.get(flat_index)
       {
+        let (y, offset) = if labels_above {
+          (item.sizes[1], -1.5)
+        } else {
+          (0.0, 1.5)
+        };
         label_prims.push(call(
           "Text",
           vec![
             label.clone(),
-            Expr::List(vec![Expr::Real(x + w / 2.0), Expr::Real(0.0)].into()),
-            Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
+            Expr::List(vec![Expr::Real(x + w / 2.0), Expr::Real(y)].into()),
+            Expr::List(vec![Expr::Integer(0), Expr::Real(offset)].into()),
           ],
         ));
       }

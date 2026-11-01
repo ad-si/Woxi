@@ -345,7 +345,7 @@ fn canonicalize_element(e: &Expr) -> Expr {
 /// canonical form is `WeightedData[Automatic, {{data…}, {weights…}}]`; the
 /// user-facing form is `WeightedData[data, weights]`. Either way the data is
 /// the list of values (weights only affect statistics, not point positions).
-fn weighted_data_values(args: &[Expr]) -> Expr {
+pub(crate) fn weighted_data_values(args: &[Expr]) -> Expr {
   // Canonical `WeightedData[_, {{data}, {weights}}]`.
   if let Some(Expr::List(inner)) = args.get(1)
     && let Some(data @ Expr::List(_)) = inner.first()
@@ -1727,6 +1727,11 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut source,
     &opts.plot_markers,
   );
+  for (series, labels) in source.series.iter_mut().zip(&opts.point_labels) {
+    if labels.len() == series.points.len() {
+      series.labels.clone_from(labels);
+    }
+  }
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
@@ -2537,14 +2542,21 @@ pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ListFitPlot", args));
   };
 
+  // `data -> {lbl1, …}` fits `data`; the labels go to the plotted points.
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let fit_data = match &data {
+    Expr::Rule { pattern, .. } => pattern.as_ref(),
+    other => other,
+  };
   let code = format!(
-    "Module[{{d$lfp = {data}, pts$lfp, f$lfp}}, \
+    "Module[{{d$lfp = {fit_data}, pts$lfp, f$lfp}}, \
      pts$lfp = If[MatrixQ[d$lfp] && Dimensions[d$lfp][[2]] == 2, d$lfp, \
      Transpose[{{Range[Length[d$lfp]], d$lfp}}]]; \
      f$lfp = {fit}; \
-     Show[ListPlot[d$lfp{opts}], Plot[Evaluate[f$lfp], {{x$lfp, \
+     Show[ListPlot[{data}{opts}], Plot[Evaluate[f$lfp], {{x$lfp, \
      Min[pts$lfp[[All, 1]]], Max[pts$lfp[[All, 1]]]}}]]]",
-    data = expr_to_string(&args[0]),
+    fit_data = expr_to_string(fit_data),
+    data = expr_to_string(&data),
   );
   evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
 }

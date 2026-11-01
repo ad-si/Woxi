@@ -1778,6 +1778,17 @@ pub(crate) fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
 }
 
 /// Parse options from chart arguments.
+/// The `Plot*` names are the current spellings of the `Chart*` options.
+pub(crate) fn chart_option_alias(name: &str) -> &str {
+  match name {
+    "PlotLabels" => "ChartLabels",
+    "PlotLegends" => "ChartLegends",
+    "PlotStyle" => "ChartStyle",
+    "PlotLayout" => "ChartLayout",
+    other => other,
+  }
+}
+
 fn parse_chart_options(args: &[Expr]) -> ChartOptions {
   let mut opts = ChartOptions {
     svg_width: DEFAULT_WIDTH,
@@ -1808,14 +1819,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
-      // The `Plot*` names are the current spellings of the `Chart*` options.
-      let name = match name {
-        "PlotLabels" => "ChartLabels",
-        "PlotLegends" => "ChartLegends",
-        "PlotStyle" => "ChartStyle",
-        "PlotLayout" => "ChartLayout",
-        other => other,
-      };
+      let name = chart_option_alias(name);
       match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -2081,9 +2085,55 @@ pub(crate) fn invalid_dataset(head: &str, args: &[Expr]) -> Expr {
 ///   colours are its datasets) they are always the outer keys.
 ///
 /// `TimeSeries` / `TemporalData` data become their values, the time stamps
-/// being ignored. Returns `None` for any other data. Shared by `BarChart`,
+/// being ignored; `WeightedData` / `EventData` their values, the weights and
+/// censoring being ignored. Returns `None` for any other data. Shared by `BarChart`,
 /// `PieChart` and `Histogram`.
 pub(crate) fn chart_data_args(
+  args: &[Expr],
+  datasets_legended: bool,
+) -> Option<Vec<Expr>> {
+  let rewritten = chart_data_args_keyed(args, datasets_legended);
+  // `Quantity` data plots as its magnitudes (wolframscript's charts draw
+  // the bare numbers).
+  let data = match &rewritten {
+    Some(new_args) => new_args.first()?.clone(),
+    None => evaluate_expr_to_expr(args.first()?).ok()?,
+  };
+  if !contains_quantity(&data) {
+    return rewritten;
+  }
+  let mut new_args = rewritten.unwrap_or_else(|| args.to_vec());
+  new_args[0] = strip_quantities(&data);
+  Some(new_args)
+}
+
+/// Whether a `Quantity[magnitude, unit]` occurs anywhere inside a list.
+fn contains_quantity(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Quantity" => args.len() == 2,
+    Expr::List(items) => items.iter().any(contains_quantity),
+    _ => false,
+  }
+}
+
+/// Replace every `Quantity[magnitude, unit]` inside a list (or wrapping
+/// one) by its magnitude.
+pub(crate) fn strip_quantities(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      strip_quantities(&args[0])
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(strip_quantities).collect())
+    }
+    other => other.clone(),
+  }
+}
+
+/// The association / temporal part of [`chart_data_args`].
+fn chart_data_args_keyed(
   args: &[Expr],
   datasets_legended: bool,
 ) -> Option<Vec<Expr>> {
@@ -2092,10 +2142,11 @@ pub(crate) fn chart_data_args(
   // (one dataset per path).
   let temporal_values = match &data {
     Expr::FunctionCall { name, args: targs }
+      // Vector values (`{{x1, y1}, …}`) stay whole: each is one chart
+      // element (a sector, rectangle or bubble).
       if name == "TimeSeries"
         && targs.len() == 2
-        && matches!(&targs[0], Expr::List(vs)
-          if vs.iter().all(|v| !matches!(v, Expr::List(_)))) =>
+        && matches!(&targs[0], Expr::List(_)) =>
     {
       Some(targs[0].clone())
     }
@@ -2113,6 +2164,21 @@ pub(crate) fn chart_data_args(
       })
     }
   };
+  // The weights of `WeightedData` and the censoring of `EventData` are
+  // ignored: the values are the data.
+  let temporal_values = temporal_values.or_else(|| match &data {
+    Expr::FunctionCall { name, args: wargs } if name == "WeightedData" => {
+      Some(crate::functions::list_plot::weighted_data_values(wargs))
+    }
+    Expr::FunctionCall { name, args: eargs }
+      if name == "EventData"
+        && eargs.len() == 2
+        && matches!(&eargs[0], Expr::List(_)) =>
+    {
+      Some(eargs[0].clone())
+    }
+    _ => None,
+  });
   if let Some(values) = temporal_values {
     let mut new_args = args.to_vec();
     new_args[0] = values;
@@ -3105,9 +3171,25 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let camera = chart_3d_camera();
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
+  // `ChartLabels` name the groups, under the front edge of their bars.
+  let mut labels: Vec<Label3D> = Vec::new();
   for (gi, group) in groups.iter().enumerate() {
     let x_lo = -1.0 + gi as f64 * group_step + group_pad;
     let x_hi = -1.0 + (gi as f64 + 1.0) * group_step - group_pad;
+    if let Some(label) = opts.chart_labels.get(gi) {
+      labels.push(Label3D {
+        at: project(
+          Point3D {
+            x: f64::midpoint(x_lo, x_hi),
+            y: y_origin,
+            z: z_base.min(nz(v_min)),
+          },
+          &camera,
+        ),
+        dy: 12.0,
+        text: label.text.clone(),
+      });
+    }
     for (bi, &v) in group.iter().enumerate() {
       let y_lo = y_origin + bi as f64 * bar_y_step + bar_y_pad;
       let y_hi = y_origin + (bi as f64 + 1.0) * bar_y_step - bar_y_pad;
@@ -3176,8 +3258,15 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
+  let svg = render_3d_triangles(
+    &all_triangles,
+    &labels,
+    svg_width,
+    svg_height,
+    full_width,
+  );
   let svg =
-    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+    with_chart_legend(svg, &opts.chart_legends, |i| sector_color(&opts, i));
   Ok(crate::graphics3d_result(svg))
 }
 
@@ -3332,7 +3421,7 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   let svg =
-    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+    render_3d_triangles(&all_triangles, &[], svg_width, svg_height, full_width);
   Ok(crate::graphics3d_result(svg))
 }
 
@@ -3380,6 +3469,10 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Number of segments per full circle for tessellating arcs.
   const SEG_PER_TURN: usize = 64;
 
+  let mut labels: Vec<Label3D> = Vec::new();
+  // The colour of each slice of the first ring, by data position.
+  let mut element_colors: Vec<(u8, u8, u8)> =
+    (0..rows[0].len()).map(|i| sector_color(&opts, i)).collect();
   for (ring_idx, row) in rows.iter().enumerate() {
     let total: f64 = row.iter().sum();
     if total <= 0.0 {
@@ -3414,6 +3507,22 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let end_angle = start_angle + sweep;
 
       let base_color = sector_color(&opts, slot_color_idx);
+      if ring_idx == 0 {
+        element_colors[i] = base_color;
+        // `ChartLabels` of a single pie sit on the top face, radially
+        // centred on their slice.
+        if n_rings == 1
+          && let Some(label) = opts.chart_labels.get(i)
+        {
+          labels.push(sector_label_3d(
+            f64::midpoint(r_in, r_out),
+            f64::midpoint(start_angle, end_angle),
+            z_top,
+            &label.text,
+            &camera,
+          ));
+        }
+      }
 
       build_cylindrical_sector(
         r_in,
@@ -3439,9 +3548,43 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
-  let svg =
-    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+  let svg = render_3d_triangles(
+    &all_triangles,
+    &labels,
+    svg_width,
+    svg_height,
+    full_width,
+  );
+  let svg = with_chart_legend(svg, &opts.chart_legends, |i| {
+    element_colors
+      .get(i)
+      .copied()
+      .unwrap_or_else(|| sector_color(&opts, i))
+  });
   Ok(crate::graphics3d_result(svg))
+}
+
+/// The label of a 3-D sector: centred at radius `r`, angle `angle` on the
+/// sector's top face `z`.
+fn sector_label_3d(
+  r: f64,
+  angle: f64,
+  z: f64,
+  text: &str,
+  camera: &crate::functions::plot3d::Camera,
+) -> Label3D {
+  Label3D {
+    at: crate::functions::plot3d::project(
+      crate::functions::plot3d::Point3D {
+        x: r * angle.cos(),
+        y: r * angle.sin(),
+        z,
+      },
+      camera,
+    ),
+    dy: 0.0,
+    text: text.to_string(),
+  }
 }
 
 /// Camera angle used by the 3D chart functions. Pulled back from the
@@ -3460,6 +3603,7 @@ fn chart_3d_camera() -> crate::functions::plot3d::Camera {
 /// Render a list of depth-sorted projected triangles into an SVG string.
 fn render_3d_triangles(
   triangles: &[crate::functions::plot3d::Triangle],
+  labels: &[Label3D],
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -3525,8 +3669,91 @@ fn render_3d_triangles(
     ));
   }
 
+  // Chart labels draw on top of every face.
+  let (_, _, _, label_fill, _) = crate::functions::plot::plot_theme();
+  for label in labels {
+    let (x, y) = to_svg(label.at.0, label.at.1);
+    svg.push_str(&format!(
+      "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
+       font-family=\"sans-serif\" font-size=\"12\" fill=\"{label_fill}\">{}</text>\n",
+      y + label.dy,
+      crate::functions::graphics::box_string_to_svg(&label.text)
+    ));
+  }
+
   svg.push_str("</svg>");
   svg
+}
+
+/// A chart label of a 3-D chart: its text centred on the projected anchor
+/// point `at`, shifted down by `dy` pixels.
+struct Label3D {
+  at: (f64, f64),
+  dy: f64,
+  text: String,
+}
+
+/// Add a `ChartLegends` / `PlotLegends` column of swatches (entry `i`
+/// coloured `color(i)`) to the right of a finished chart SVG. The chart
+/// keeps its place and size while the frame widens to fit the legend, as
+/// with `PieChart`.
+fn with_chart_legend(
+  svg: String,
+  legends: &[String],
+  color: impl Fn(usize) -> (u8, u8, u8),
+) -> String {
+  if legends.is_empty() {
+    return svg;
+  }
+  let Some(tag_end) = svg.find('>') else {
+    return svg;
+  };
+  let tag = &svg[..tag_end];
+  let Some(vb_start) = tag.find("viewBox=\"0 0 ") else {
+    return svg;
+  };
+  let dims_start = vb_start + "viewBox=\"0 0 ".len();
+  let Some(dims_len) = tag[dims_start..].find('"') else {
+    return svg;
+  };
+  let dims: Vec<f64> = tag[dims_start..dims_start + dims_len]
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [w, h] = dims[..] else {
+    return svg;
+  };
+  let legend_width =
+    crate::functions::plot::chart_legend_column_width(legends, 1.0).round();
+  let new_w = w + legend_width;
+  let mut new_tag = format!(
+    "{}viewBox=\"0 0 {new_w} {h}{}",
+    &tag[..vb_start],
+    &tag[dims_start + dims_len..]
+  );
+  let old_width = format!("width=\"{w}\"");
+  if new_tag.contains(&old_width) {
+    new_tag = new_tag.replacen(&old_width, &format!("width=\"{new_w}\""), 1);
+  }
+  let (bg, _, _, legend_fill, _) = crate::functions::plot::plot_theme();
+  let mut entries = format!(
+    "<rect x=\"{w}\" width=\"{legend_width}\" height=\"{h}\" fill=\"rgb({},{},{})\"/>\n",
+    bg.0, bg.1, bg.2
+  );
+  let line_height = 22.0;
+  let top = h / 2.0 - legends.len() as f64 * line_height / 2.0 + 5.0;
+  for (i, label) in legends.iter().enumerate() {
+    entries.push_str(&crate::functions::plot::chart_legend_entry_svg(
+      label,
+      color(i),
+      (w + 4.0, top + i as f64 * line_height),
+      1.0,
+      legend_fill,
+    ));
+  }
+  let body = &svg[tag_end..];
+  let close = body.rfind("</svg>").unwrap_or(body.len());
+  format!("{new_tag}{}{entries}{}", &body[..close], &body[close..])
 }
 
 /// The 3D shape drawn per sector by `SectorChart3D`'s `ChartElementFunction`.
@@ -3960,7 +4187,7 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some((name, value)) =
       crate::functions::graphics::option_name_value(opt)
     {
-      match name {
+      match chart_option_alias(name) {
         "ChartLayout" => {
           layout_stacked = sector_option_name(&value) == Some("Stacked");
         }
@@ -3990,6 +4217,7 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_radius = 0.95_f64;
   let camera = chart_3d_camera();
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  let mut labels: Vec<Label3D> = Vec::new();
   const SEG_PER_TURN: usize = 64;
 
   if layout_stacked {
@@ -4095,6 +4323,17 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let z_top = nz(z).max(0.0);
         let z_bot = nz(z).min(0.0);
         let base_color = sector_color(&opts, cat_idx);
+        if ring_idx == 0
+          && let Some(label) = opts.chart_labels.get(cat_idx)
+        {
+          labels.push(sector_label_3d(
+            f64::midpoint(r_in, r_out),
+            f64::midpoint(start_angle, end_angle),
+            z_top,
+            &label.text,
+            &camera,
+          ));
+        }
         build_sector_wedge(
           element,
           r_in,
@@ -4118,8 +4357,15 @@ pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .partial_cmp(&a.depth)
       .unwrap_or(std::cmp::Ordering::Equal)
   });
+  let svg = render_3d_triangles(
+    &all_triangles,
+    &labels,
+    svg_width,
+    svg_height,
+    full_width,
+  );
   let svg =
-    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+    with_chart_legend(svg, &opts.chart_legends, |i| sector_color(&opts, i));
   Ok(crate::graphics3d_result(svg))
 }
 
@@ -4745,6 +4991,23 @@ pub fn bubble_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     opts.chart_legends.clone_from(labels);
   }
+  // `ChartLabels -> Automatic` names each bubble of a `<|key -> {x, y, z}|>`
+  // association by its key.
+  let labels_automatic = args[1..].iter().any(|opt| {
+    crate::functions::graphics::option_name_value(opt).is_some_and(
+      |(name, value)| {
+        chart_option_alias(name) == "ChartLabels"
+          && matches!(&*value, Expr::Identifier(a) if a == "Automatic")
+      },
+    )
+  });
+  if labels_automatic
+    && opts.chart_labels.is_empty()
+    && let Some(labels) = &assoc_labels
+    && groups.iter().all(|g| g.len() == 1)
+  {
+    opts.chart_labels = labels.iter().cloned().map(ChartLabel::plain).collect();
+  }
   // BubbleChart's plot area is square by default — override the generic
   // (non-square) DEFAULT_HEIGHT unless the caller provided an explicit
   // ImageSize. The y-axis label column (~65 px) is wider than the x-axis
@@ -5040,7 +5303,30 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let h = svg_height as f64;
   let cx = w / 2.0;
   let cy = h / 2.0;
-  let max_radius = (w.min(h) / 2.0) * 0.85;
+  // `Callout[labels]` / `Placed[labels, "RadialCallout"]` draw the labels
+  // outside the sectors, joined to them by a leader line; the sectors
+  // shrink to leave room for the text.
+  let callout_labels = args[1..].iter().any(|opt| {
+    crate::functions::graphics::option_name_value(opt).is_some_and(
+      |(name, value)| {
+        chart_option_alias(name) == "ChartLabels"
+          && match &*value {
+            Expr::FunctionCall { name, .. } if name == "Callout" => true,
+            Expr::FunctionCall { name, args } if name == "Placed" => {
+              matches!(args.get(1), Some(Expr::String(p)) if p.ends_with("Callout"))
+            }
+            _ => false,
+          }
+      },
+    )
+  });
+  let max_radius = (w.min(h) / 2.0)
+    * 0.85
+    * if callout_labels && !opts.chart_labels.is_empty() {
+      0.72
+    } else {
+      1.0
+    };
   let total_angle: f64 = sectors.iter().map(|s| s.0).sum();
   let r_max = sectors.iter().map(|s| s.1).fold(0.0_f64, f64::max);
   let r_max = if r_max <= 0.0 { 1.0 } else { r_max };
@@ -5059,9 +5345,18 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   let mut start_angle = std::f64::consts::PI;
+  let mut colors = vec![PLOT_COLORS[0]; sectors.len()];
+  let mut labels_svg = String::new();
+  let (_, _, _, label_fill, _) = crate::functions::plot::plot_theme();
   for (slice_idx, &i) in order.iter().enumerate() {
     let (angle_val, radius_val) = sectors[i];
-    let (r, g, b) = PLOT_COLORS[slice_idx % PLOT_COLORS.len()];
+    // A `ChartStyle` list colours the sectors in data order.
+    let (r, g, b) = if opts.chart_style.is_empty() {
+      PLOT_COLORS[slice_idx % PLOT_COLORS.len()]
+    } else {
+      sector_color(&opts, i)
+    };
+    colors[i] = (r, g, b);
     let sweep = 2.0 * std::f64::consts::PI * angle_val / total_angle;
     let sector_r = (radius_val / r_max) * max_radius;
     let end_angle = start_angle + sweep;
@@ -5082,10 +5377,41 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
        fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
     ));
 
+    if let Some(label) = opts.chart_labels.get(i) {
+      let mid = f64::midpoint(start_angle, end_angle);
+      let (cos, sin) = (mid.cos(), mid.sin());
+      let text = crate::functions::graphics::box_string_to_svg(&label.text);
+      if callout_labels {
+        let (lx0, ly0) = (cx + sector_r * cos, cy + sector_r * sin);
+        let lr = sector_r.max(max_radius * 0.5) + 14.0;
+        let (lx1, ly1) = (cx + lr * cos, cy + lr * sin);
+        let anchor = if cos < 0.0 { "end" } else { "start" };
+        labels_svg.push_str(&format!(
+          "<line x1=\"{lx0:.2}\" y1=\"{ly0:.2}\" x2=\"{lx1:.2}\" y2=\"{ly1:.2}\" stroke=\"{label_fill}\" stroke-width=\"0.8\"/>\n\
+           <text x=\"{:.2}\" y=\"{ly1:.2}\" text-anchor=\"{anchor}\" dominant-baseline=\"central\" \
+           font-family=\"sans-serif\" font-size=\"12\" fill=\"{label_fill}\">{text}</text>\n",
+          lx1 + 3.0 * cos.signum(),
+        ));
+      } else {
+        let (lx, ly) = (cx + 0.6 * sector_r * cos, cy + 0.6 * sector_r * sin);
+        labels_svg.push_str(&format!(
+          "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
+           font-family=\"sans-serif\" font-size=\"12\" fill=\"{label_fill}\">{text}</text>\n"
+        ));
+      }
+    }
+
     start_angle = end_angle;
   }
 
+  svg.push_str(&labels_svg);
   svg.push_str("</svg>");
+  let svg = with_chart_legend(svg, &opts.chart_legends, |i| {
+    colors
+      .get(i)
+      .copied()
+      .unwrap_or_else(|| sector_color(&opts, i))
+  });
   Ok(crate::graphics_result(svg))
 }
 

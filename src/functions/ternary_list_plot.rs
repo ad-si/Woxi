@@ -20,13 +20,20 @@ type Triple = (f64, f64, f64);
 /// corner, component 2 towards the bottom-left corner and component 3 towards
 /// the bottom-right corner.
 pub fn ternary_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_ternary_data(&args[0])?;
+  let TernaryData {
+    series: all_series,
+    keys,
+  } = parse_ternary_data(&args[0])?;
 
   let mut svg_width = DEFAULT_TLP_SIZE;
   let mut svg_height = DEFAULT_TLP_SIZE;
   let mut full_width = false;
   let mut custom_colors: Vec<String> = Vec::new();
+  let mut dataset_labels: Vec<String> = Vec::new();
+  let mut legends: Vec<Expr> = Vec::new();
 
+  // `Automatic` dataset labels / legends are the association keys.
+  let key_labels = || keys.clone().unwrap_or_default();
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -51,6 +58,26 @@ pub fn ternary_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .filter_map(|s| s.color.as_ref().map(|c| c.to_svg_rgb()))
             .collect();
         }
+        "PlotLabels" => {
+          let labels = match &evaluate_expr_to_expr(replacement)? {
+            Expr::Identifier(a) if a == "Automatic" => key_labels(),
+            Expr::List(items) => items.to_vec(),
+            _ => Vec::new(),
+          };
+          dataset_labels = labels
+            .iter()
+            .map(|e| {
+              crate::functions::chart::expr_to_label(e).unwrap_or_default()
+            })
+            .collect();
+        }
+        "PlotLegends" => {
+          legends = match &evaluate_expr_to_expr(replacement)? {
+            Expr::Identifier(a) if a == "Automatic" => key_labels(),
+            Expr::List(items) => items.to_vec(),
+            _ => Vec::new(),
+          };
+        }
         _ => {}
       }
     }
@@ -58,28 +85,130 @@ pub fn ternary_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = render_ternary_svg(
     &all_series,
+    &dataset_labels,
     svg_width,
     svg_height,
     full_width,
     &custom_colors,
   );
-  Ok(crate::graphics_result(svg))
+  let graphics = crate::graphics_result(svg);
+  if legends.is_empty() {
+    return Ok(graphics);
+  }
+  // `PlotLegends` names the datasets beside point markers of their colour.
+  let colors: Vec<Expr> = (0..legends.len())
+    .map(|i| {
+      let color = series_color(i, &custom_colors);
+      let rgb: Vec<f64> = color
+        .trim_start_matches("rgb(")
+        .trim_end_matches(')')
+        .split(',')
+        .filter_map(|c| c.trim().parse::<f64>().ok())
+        .collect();
+      Expr::FunctionCall {
+        name: "RGBColor".into(),
+        args: rgb
+          .iter()
+          .map(|&c| Expr::Real(c / 255.0))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    })
+    .collect();
+  Ok(Expr::FunctionCall {
+    name: "Legended".into(),
+    args: vec![
+      graphics,
+      Expr::FunctionCall {
+        name: "PointLegend".into(),
+        args: vec![Expr::List(colors.into()), Expr::List(legends.into())]
+          .into(),
+      },
+    ]
+    .into(),
+  })
+}
+
+/// The datasets of a `TernaryListPlot`, each point with its optional label,
+/// and the association keys naming the datasets (if the data was one).
+struct TernaryData {
+  series: Vec<Vec<(Triple, Option<String>)>>,
+  keys: Option<Vec<Expr>>,
 }
 
 /// Parse the first argument into one or more series of normalized triples.
-fn parse_ternary_data(
-  arg: &Expr,
-) -> Result<Vec<Vec<Triple>>, InterpreterError> {
-  let data = evaluate_expr_to_expr(arg)?;
-
-  let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "TernaryListPlot: first argument must be a list".into(),
-    ));
+///
+/// Besides a list of triples (or of datasets), this accepts `data ->
+/// {lbl1, lbl2, …}` (one label per point), an association of datasets and
+/// `Quantity`-valued coordinates (plotted as their magnitudes).
+fn parse_ternary_data(arg: &Expr) -> Result<TernaryData, InterpreterError> {
+  let data =
+    crate::functions::chart::strip_quantities(&evaluate_expr_to_expr(arg)?);
+  let unlabeled = |series: Vec<Vec<Triple>>| {
+    series
+      .into_iter()
+      .map(|s| s.into_iter().map(|t| (t, None)).collect())
+      .collect()
   };
 
+  match &data {
+    // `data -> {lbl1, lbl2, …}` labels the points in order.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let Expr::List(items) = pattern.as_ref() else {
+        return Err(not_a_list());
+      };
+      let labels: Vec<Expr> = match replacement.as_ref() {
+        Expr::List(ls) => ls.to_vec(),
+        other => vec![other.clone()],
+      };
+      let points = items
+        .iter()
+        .zip(labels.iter().map(Some).chain(std::iter::repeat(None)))
+        .filter_map(|(item, label)| {
+          let t = parse_triple(item)?;
+          Some((t, label.and_then(crate::functions::chart::expr_to_label)))
+        })
+        .collect();
+      Ok(TernaryData {
+        series: vec![points],
+        keys: None,
+      })
+    }
+    // `<|k1 -> data1, …|>`: one dataset per key.
+    Expr::Association(pairs) => Ok(TernaryData {
+      series: unlabeled(
+        pairs
+          .iter()
+          .map(|(_, v)| match v {
+            Expr::List(items) => parse_triple_series(items),
+            _ => Vec::new(),
+          })
+          .collect(),
+      ),
+      keys: Some(pairs.iter().map(|(k, _)| k.clone()).collect()),
+    }),
+    Expr::List(items) => Ok(TernaryData {
+      series: unlabeled(parse_list_series(items)),
+      keys: None,
+    }),
+    _ => Err(not_a_list()),
+  }
+}
+
+fn not_a_list() -> InterpreterError {
+  InterpreterError::EvaluationError(
+    "TernaryListPlot: first argument must be a list".into(),
+  )
+}
+
+/// The datasets of a plain list: `{{a,b,c}, …}` is one,
+/// `{{{a,b,c}, …}, …}` one per sublist.
+fn parse_list_series(items: &[Expr]) -> Vec<Vec<Triple>> {
   if items.is_empty() {
-    return Ok(vec![vec![]]);
+    return vec![vec![]];
   }
 
   // Multiple datasets: {{{a,b,c}, ...}, {{a,b,c}, ...}} — the first element is
@@ -95,35 +224,35 @@ fn parse_ternary_data(
       }
     }
     if !all_series.is_empty() {
-      return Ok(all_series);
+      return all_series;
     }
   }
 
   // Single dataset: {{a,b,c}, {a,b,c}, ...}
-  Ok(vec![parse_triple_series(items)])
+  vec![parse_triple_series(items)]
 }
 
 /// Parse a flat list of `{a, b, c}` triples into normalized barycentric
 /// coordinates, dropping any entry that is not a numeric triple with a
 /// positive sum.
 fn parse_triple_series(series_items: &[Expr]) -> Vec<Triple> {
-  let mut points = Vec::with_capacity(series_items.len());
-  for item in series_items {
-    if let Expr::List(triple) = item
-      && triple.len() == 3
-    {
-      let a = eval_num(&triple[0]);
-      let b = eval_num(&triple[1]);
-      let c = eval_num(&triple[2]);
-      if let (Some(a), Some(b), Some(c)) = (a, b, c) {
-        let s = a + b + c;
-        if s.is_finite() && s.abs() > f64::EPSILON {
-          points.push((a / s, b / s, c / s));
-        }
-      }
-    }
+  series_items.iter().filter_map(parse_triple).collect()
+}
+
+/// One `{a, b, c}` point, normalized to sum to 1; `None` for anything that
+/// is not a numeric triple with a nonzero sum.
+fn parse_triple(item: &Expr) -> Option<Triple> {
+  let Expr::List(triple) = item else {
+    return None;
+  };
+  if triple.len() != 3 {
+    return None;
   }
-  points
+  let a = eval_num(&triple[0])?;
+  let b = eval_num(&triple[1])?;
+  let c = eval_num(&triple[2])?;
+  let s = a + b + c;
+  (s.is_finite() && s.abs() > f64::EPSILON).then(|| (a / s, b / s, c / s))
 }
 
 /// Evaluate an expression to an `f64` if possible.
@@ -152,7 +281,8 @@ fn series_color(idx: usize, custom_colors: &[String]) -> String {
 
 /// Render the ternary diagram to a complete SVG document.
 fn render_ternary_svg(
-  all_series: &[Vec<Triple>],
+  all_series: &[Vec<(Triple, Option<String>)>],
+  dataset_labels: &[String],
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
@@ -258,13 +388,41 @@ fn render_ternary_svg(
 
   // Data points.
   let radius = 3.0 * sf;
+  let point_font = 11.0 * sf;
   for (idx, series) in all_series.iter().enumerate() {
     let color = series_color(idx, custom_colors);
-    for t in series {
+    for (t, label) in series {
       let (px, py) = to_px(t);
       svg.push_str(&format!(
         "<circle cx=\"{px:.1}\" cy=\"{py:.1}\" r=\"{radius:.1}\" fill=\"{color}\"/>\n"
       ));
+      // A point label sits just above and right of its point.
+      if let Some(label) = label {
+        push_label(
+          &mut svg,
+          px + radius + 2.0 * sf,
+          py - radius,
+          "start",
+          point_font,
+          label_color,
+          &crate::functions::graphics::box_string_to_svg(label),
+        );
+      }
+    }
+    // A dataset label (`PlotLabels`) names the dataset at its last point.
+    if let (Some(label), Some((t, _))) =
+      (dataset_labels.get(idx), series.last())
+    {
+      let (px, py) = to_px(t);
+      push_label(
+        &mut svg,
+        px + radius + 3.0 * sf,
+        py + point_font * 0.35,
+        "start",
+        13.0 * sf,
+        &color,
+        &crate::functions::graphics::box_string_to_svg(label),
+      );
     }
   }
 

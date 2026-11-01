@@ -5114,6 +5114,7 @@ pub(crate) fn build_plot_source(
         point_size,
         dashing,
         opacity,
+        labels: Vec::new(),
       }
     })
     .collect();
@@ -6055,6 +6056,9 @@ pub(crate) fn render_merged_plot_source(
   if opts.plot_markers.iter().all(Option::is_none) {
     opts.plot_markers.clear();
   }
+  if drawn.iter().any(|s| !s.labels.is_empty()) {
+    opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
+  }
   opts.filling_rules = drawn
     .iter()
     .enumerate()
@@ -6184,6 +6188,47 @@ fn scatter_overlay_primitives(
     "Point",
     Expr::List(finite.into_iter().map(point).collect::<Vec<_>>().into()),
   ));
+  // Point labels sit above and right of their points, in the text colour;
+  // near the right end of the data they flip to the left so they stay
+  // inside the plot, as in a standalone `ListPlot`.
+  let (x_lo, x_hi) = series
+    .points
+    .iter()
+    .filter(|(x, _)| x.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+      (lo.min(x), hi.max(x))
+    });
+  let labeled: Vec<Expr> = series
+    .points
+    .iter()
+    .zip(&series.labels)
+    .filter(|((x, y), _)| x.is_finite() && y.is_finite())
+    .filter_map(|(&pt, label)| {
+      let label = label.as_ref()?;
+      Some(call(
+        "Text",
+        vec![
+          Expr::String(label.clone()),
+          point(pt),
+          Expr::List(
+            vec![
+              Expr::Real(if pt.0 > x_lo + 0.92 * (x_hi - x_lo) {
+                1.2
+              } else {
+                -1.2
+              }),
+              Expr::Real(-1.2),
+            ]
+            .into(),
+          ),
+        ],
+      ))
+    })
+    .collect();
+  if !labeled.is_empty() {
+    prims.push(call1("GrayLevel", Expr::Real(0.4)));
+    prims.extend(labeled);
+  }
   prims
 }
 
@@ -8379,6 +8424,7 @@ pub(crate) fn histogram_plot_source(
       point_size: None,
       dashing: None,
       opacity: None,
+      labels: Vec::new(),
     });
   }
 

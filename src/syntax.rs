@@ -230,6 +230,10 @@ pub struct PlotSeriesData {
   /// Travels with the series so a faded (or fully transparent) curve keeps
   /// its opacity when `Show` merges it into another graphic.
   pub opacity: Option<f64>,
+  /// Point labels (`data -> {lbl1, …}`, `Labeled[pt, lbl]`), one per point
+  /// (empty when the series has none). Travel with the series so `Show`
+  /// keeps drawing them.
+  pub labels: Vec<Option<String>>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
