@@ -53,7 +53,7 @@ mod inverse_jacobi {
     // These used to hang (R_F of a NaN never converged).
     assert_complex(
       "InverseJacobiDN[0.3, 0.7]",
-      2.0753631352924691,
+      2.075363135292469,
       1.1247480244947659,
       1e-12,
     );
@@ -232,7 +232,7 @@ mod inverse_weierstrass_p {
     assert_close("InverseWeierstrassP[11., {3, 2}]", -0.301707, 1e-6);
     assert_close(
       "InverseWeierstrassP[3.2222222222222222, {1, 2}]",
-      -0.55905351095006466,
+      -0.5590535109500647,
       1e-12,
     );
     assert_complex(
@@ -305,8 +305,8 @@ mod owen_t {
 
   #[test]
   fn numerics() {
-    assert_close("OwenT[4., 1]", 0.0000158351193827803346, 1e-15);
-    assert_close("OwenT[4., -7]", -0.0000158356209165599606, 1e-15);
+    assert_close("OwenT[4., 1]", 1.5835119382780334e-05, 1e-15);
+    assert_close("OwenT[4., -7]", -1.5835620916559962e-05, 1e-15);
     assert_close("OwenT[0, .5]", 0.0737918088252166, 1e-14);
     assert_digits(
       "N[OwenT[1/8, -1], 50]",
@@ -325,14 +325,14 @@ mod owen_t {
     );
     assert_complex(
       "OwenT[2 + I, -7.5]",
-      0.0126371298946019718,
-      0.0124522431689057844,
+      0.012637129894601971,
+      0.012452243168905785,
       1e-12,
     );
     assert_complex(
       "OwenT[0.3 + 0.2 I, 0.5]",
-      0.0716781128414692181,
-      -0.0046437921427915796,
+      0.07167811284146922,
+      -0.00464379214279158,
       1e-12,
     );
     assert_close("Table[OwenT[x, 2], {x, -2, 2}][[1]] // N", 0.0113749, 1e-6);
@@ -355,20 +355,16 @@ mod mittag_leffler {
 
   #[test]
   fn negative_alpha() {
-    assert_close("MittagLefflerE[-7., 5]", -0.0000396825401413695066, 1e-15);
-    assert_close(
-      "MittagLefflerE[-.2, .51, .87]",
-      -51.632978650108162243,
-      1e-12,
-    );
+    assert_close("MittagLefflerE[-7., 5]", -3.968254014136951e-05, 1e-15);
+    assert_close("MittagLefflerE[-.2, .51, .87]", -51.632978650108164, 1e-12);
   }
 
   #[test]
   fn cancelling_series() {
     // E_(1/2)(-x) = e^(x^2) Erfc[x]
     assert_close("MittagLefflerE[1/2, -3.] - Exp[9.] Erfc[3.]", 0.0, 1e-14);
-    assert_close("MittagLefflerE[1/4, -4.]", 0.17291766990277474255, 1e-14);
-    assert_close("MittagLefflerE[0.7, -4.]", 0.099760254890514619339, 1e-14);
+    assert_close("MittagLefflerE[1/4, -4.]", 0.17291766990277474, 1e-14);
+    assert_close("MittagLefflerE[0.7, -4.]", 0.09976025489051461, 1e-14);
     assert_eq!(
       interpret("Head[Plot[MittagLefflerE[1/4, z], {z, -4, 1}]]").unwrap(),
       "Graphics"
@@ -397,17 +393,17 @@ mod coulomb {
   #[test]
   fn general_order_and_complex_eta() {
     assert_close("N[CoulombF[1/2, 7, 1]]", 9.264698838537824e-8, 1e-12);
-    assert_close("N[CoulombF[1/2, -7, 1]]", -0.374575748022480922, 1e-12);
+    assert_close("N[CoulombF[1/2, -7, 1]]", -0.37457574802248095, 1e-12);
     assert_complex(
       "CoulombF[2/3, 0.7 + 0.1 I, 3.2]",
-      1.13268347248584489879,
-      -0.0199351412561881897,
+      1.132683472485845,
+      -0.01993514125618819,
       1e-12,
     );
     assert_complex(
       "CoulombG[2/3, 0.7 + 0.1 I, 3.2]",
-      0.369100288203947212567,
-      0.157646659510606947556,
+      0.3691002882039472,
+      0.15764665951060694,
       1e-10,
     );
     assert_complex("CoulombH1[2/3, 0.7 + 0.1 I, 3.2]", 0.389035, 1.29033, 1e-5);
@@ -419,12 +415,12 @@ mod coulomb {
     );
     assert_close(
       "CoulombF[-2/5, -3, 1.23456789101112131415]",
-      -0.137461353732488873,
+      -0.13746135373248888,
       1e-9,
     );
     assert_close(
       "CoulombG[-2/5, -3, 1.23456789101112131415]",
-      0.627156571120649795,
+      0.6271565711206498,
       1e-9,
     );
     assert_close("CoulombF[3, 0.12, 7.]", 0.158992, 1e-6);

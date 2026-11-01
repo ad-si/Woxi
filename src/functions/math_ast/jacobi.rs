@@ -524,8 +524,7 @@ fn inverse_jacobi_ast(
   }
   let (v, m) = (&args[0], &args[1]);
   // pq(0) = 1: an exact 0 even with an inexact parameter.
-  if is_expr_one(v) && matches!(kind, "CN" | "DN" | "CD" | "NC" | "ND" | "DC")
-  {
+  if is_expr_one(v) && matches!(kind, "CN" | "DN" | "CD" | "NC" | "ND" | "DC") {
     return Ok(Expr::Integer(0));
   }
   if let Some(r) = inverse_jacobi_numeric(kind, v, m) {

@@ -150,10 +150,10 @@ pub(crate) fn elliptic_f_bigfloat(
 
 /// The amplitude whose `F(·, m)` is the inverse function value.
 enum Amplitude {
-  ArcSin(BigFloat),
-  ArcCos(BigFloat),
-  ArcTan(BigFloat),
-  ArcCot(BigFloat),
+  Sin(BigFloat),
+  Cos(BigFloat),
+  Tan(BigFloat),
+  Cot(BigFloat),
 }
 
 fn amplitude_value(
@@ -165,10 +165,10 @@ fn amplitude_value(
   let one = int(1, wp);
   let in_unit = |v: &BigFloat| v.abs().cmp(&one).is_some_and(|c| c <= 0);
   match a {
-    Amplitude::ArcSin(v) => in_unit(&v).then(|| v.asin(wp, rm, cc)),
-    Amplitude::ArcCos(v) => in_unit(&v).then(|| v.acos(wp, rm, cc)),
-    Amplitude::ArcTan(v) => Some(v.atan(wp, rm, cc)),
-    Amplitude::ArcCot(v) => Some(if v.is_zero() {
+    Amplitude::Sin(v) => in_unit(&v).then(|| v.asin(wp, rm, cc)),
+    Amplitude::Cos(v) => in_unit(&v).then(|| v.acos(wp, rm, cc)),
+    Amplitude::Tan(v) => Some(v.atan(wp, rm, cc)),
+    Amplitude::Cot(v) => Some(if v.is_zero() {
       cc.pi(wp, rm).div(&int(2, wp), wp, rm)
     } else {
       one.div(&v, wp, rm).atan(wp, rm, cc)
@@ -200,7 +200,7 @@ pub(crate) fn inverse_jacobi_bigfloat(
     "DC" => return inverse_jacobi_bigfloat("CD", &recip(x)?, m, wp, rm, cc),
     _ => {}
   }
-  if !m.cmp(&one).is_some_and(|c| c < 0) {
+  if m.cmp(&one).is_none_or(|c| c >= 0) {
     return None;
   }
   let x2 = x.mul(x, wp, rm);
@@ -209,16 +209,16 @@ pub(crate) fn inverse_jacobi_bigfloat(
     Some((elliptic_f_bigfloat(&phi, m, wp, rm, cc)?, int(0, wp)))
   };
   match kind {
-    "SN" => real(Amplitude::ArcSin(x.clone()), cc),
-    "CN" => real(Amplitude::ArcCos(x.clone()), cc),
-    "SC" => real(Amplitude::ArcTan(x.clone()), cc),
-    "CS" => real(Amplitude::ArcCot(x.clone()), cc),
+    "SN" => real(Amplitude::Sin(x.clone()), cc),
+    "CN" => real(Amplitude::Cos(x.clone()), cc),
+    "SC" => real(Amplitude::Tan(x.clone()), cc),
+    "CS" => real(Amplitude::Cot(x.clone()), cc),
     "SD" => {
       let d = one.add(&m.mul(&x2, wp, rm), wp, rm);
       if !d.is_positive() || d.is_zero() {
         return None;
       }
-      real(Amplitude::ArcSin(x.div(&d.sqrt(wp, rm), wp, rm)), cc)
+      real(Amplitude::Sin(x.div(&d.sqrt(wp, rm), wp, rm)), cc)
     }
     "CD" => {
       // cn = cd Sqrt[(1 - m)/(1 - m cd^2)]
@@ -227,7 +227,7 @@ pub(crate) fn inverse_jacobi_bigfloat(
         return None;
       }
       let q = one.sub(m, wp, rm).div(&d, wp, rm).sqrt(wp, rm);
-      real(Amplitude::ArcCos(x.mul(&q, wp, rm)), cc)
+      real(Amplitude::Cos(x.mul(&q, wp, rm)), cc)
     }
     "DN" => {
       if !m.is_positive() || m.is_zero() {
@@ -258,7 +258,7 @@ pub(crate) fn inverse_jacobi_bigfloat(
       }
       // k' <= |x| <= 1: real, shifted by 2 i K' for negative x.
       let s2 = one.sub(&x2, wp, rm).div(m, wp, rm);
-      let (u, _) = real(Amplitude::ArcSin(s2.sqrt(wp, rm)), cc)?;
+      let (u, _) = real(Amplitude::Sin(s2.sqrt(wp, rm)), cc)?;
       if is_neg(x) {
         return Some((u, two_kp(cc)?));
       }

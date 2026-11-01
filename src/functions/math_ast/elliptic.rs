@@ -524,8 +524,8 @@ pub(crate) fn elliptic_k_c64(m: C64) -> C64 {
   carlson_rf_complex((0.0, 0.0), (1.0 - m.0, -m.1), (1.0, 0.0))
 }
 
-/// F(phi, m) for complex phi and m: `Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1)
-/// + 2 k K(m)` with `phi = r + k Pi` and `|Re r| <= Pi/2`, the principal
+/// F(phi, m) for complex phi and m:
+/// `Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k K(m)` with `phi = r + k Pi` and `|Re r| <= Pi/2`, the principal
 /// branch WL uses (the quasi-periodic continuation in Re phi).
 pub(crate) fn elliptic_f_c64(phi: C64, m: C64) -> C64 {
   if phi.0 == 0.0 && phi.1 == 0.0 {

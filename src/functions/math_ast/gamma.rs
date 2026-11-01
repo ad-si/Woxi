@@ -1693,8 +1693,8 @@ fn owen_t_complex(h: Cf, a: f64) -> Cf {
     let pq = cf_mul(p, q);
     let t = owen_t_complex(ah, 1.0 / a);
     return (
-      (p.0 + q.0) / 2.0 - pq.0 - t.0,
-      (p.1 + q.1) / 2.0 - pq.1 - t.1,
+      f64::midpoint(p.0, q.0) - pq.0 - t.0,
+      f64::midpoint(p.1, q.1) - pq.1 - t.1,
     );
   }
   let x = cf_mul(h, h);

@@ -346,7 +346,7 @@ fn mittag_leffler_negative_axis(alpha: f64, x: f64) -> Option<f64> {
   let panels = ((upper / width).ceil() as usize).clamp(8, 20_000);
   let h = upper / panels as f64;
   let gl = |a: f64, b: f64| -> f64 {
-    let (mid, half) = ((a + b) / 2.0, (b - a) / 2.0);
+    let (mid, half) = (f64::midpoint(a, b), (b - a) / 2.0);
     super::gamma::gauss_legendre_20()
       .iter()
       .map(|&(node, weight)| weight * half * f(mid + node * half))
