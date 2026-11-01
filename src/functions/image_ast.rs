@@ -14534,6 +14534,72 @@ pub fn image_forward_transformation_ast(
   })
 }
 
+/// ImagePerspectiveTransformation[img, tf] / ImagePerspectiveTransformation[
+/// img, m] — move the image's content by the projective map `tf` (a
+/// `TransformationFunction`, or the matrix `m`: 2×2 linear or 3×3
+/// homogeneous). Each output pixel samples the input at the inverse
+/// map, so this is `ImageTransformation[img, InverseFunction[tf]]`, with
+/// the same size, coordinate system and options.
+pub fn image_perspective_transformation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("ImagePerspectiveTransformation", args));
+  if args.len() < 2 || !matches!(&args[0], Expr::Image { .. }) {
+    if let Some(first) = args.first()
+      && !matches!(first, Expr::Image { .. })
+    {
+      crate::emit_message(&format!(
+        "ImagePerspectiveTransformation::imginv: Expecting an image or graphics instead of {}.",
+        expr_to_string(first)
+      ));
+    }
+    return echo();
+  }
+  let matrix = match &args[1] {
+    Expr::FunctionCall { name, args: tf }
+      if name == "TransformationFunction" && tf.len() == 1 =>
+    {
+      &tf[0]
+    }
+    m @ Expr::List(_) => m,
+    _ => return echo(),
+  };
+  let Some((rows, cols, m)) = parse_numeric_matrix(matrix) else {
+    return echo();
+  };
+  // Homogeneous 3×3 form of the map.
+  let h: [[f64; 3]; 3] = match (rows, cols) {
+    (2, 2) => [[m[0], m[1], 0.0], [m[2], m[3], 0.0], [0.0, 0.0, 1.0]],
+    (3, 3) => [[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]],
+    _ => return echo(),
+  };
+  let det = h[0][0] * (h[1][1] * h[2][2] - h[1][2] * h[2][1])
+    - h[0][1] * (h[1][0] * h[2][2] - h[1][2] * h[2][0])
+    + h[0][2] * (h[1][0] * h[2][1] - h[1][1] * h[2][0]);
+  if det == 0.0 || !det.is_finite() {
+    return echo();
+  }
+  let cof = |r: usize, c: usize| {
+    let (r0, r1) = ((r + 1) % 3, (r + 2) % 3);
+    let (c0, c1) = ((c + 1) % 3, (c + 2) % 3);
+    h[r0][c0] * h[r1][c1] - h[r0][c1] * h[r1][c0]
+  };
+  // inverse[i][j] = cofactor[j][i] / det
+  let inverse = Expr::List(
+    (0..3)
+      .map(|i| {
+        Expr::List((0..3).map(|j| Expr::Real(cof(j, i) / det)).collect())
+      })
+      .collect(),
+  );
+  let mut rest = vec![
+    args[0].clone(),
+    call("TransformationFunction", vec![inverse]),
+  ];
+  rest.extend(args[2..].iter().cloned());
+  image_transformation_ast(&rest)
+}
+
 /// ImageTransformation[img, f] — build an image whose every pixel takes the
 /// colour `img` has at the point `f` maps that pixel's position to.
 ///
@@ -14589,12 +14655,31 @@ pub fn image_transformation_ast(
   if ow.saturating_mul(oh) > 4_000_000 {
     return echo();
   }
-  let data_range = option_value(rest, "DataRange")
-    .and_then(range_pair_of_pairs)
-    .unwrap_or([0.0, sw as f64, 0.0, sh as f64]);
-  let plot_range = option_value(rest, "PlotRange")
-    .and_then(range_pair_of_pairs)
-    .unwrap_or(data_range);
+  // `DataRange -> Automatic` puts the image on {{0, 1}, {0, h/w}};
+  // `Full` uses pixel coordinates.
+  let data_range = match option_value(rest, "DataRange") {
+    Some(Expr::Identifier(s)) if s == "Full" => {
+      [0.0, sw as f64, 0.0, sh as f64]
+    }
+    other => other.and_then(range_pair_of_pairs).unwrap_or([
+      0.0,
+      1.0,
+      0.0,
+      sh as f64 / sw as f64,
+    ]),
+  };
+  let plot_range = match option_value(rest, "PlotRange") {
+    Some(Expr::Identifier(s)) if s == "Full" => {
+      [0.0, sw as f64, 0.0, sh as f64]
+    }
+    other => other.and_then(range_pair_of_pairs).unwrap_or(data_range),
+  };
+  // The default resampling takes the pixel a point falls in; "Linear"
+  // interpolates between the four nearest pixel centers.
+  let linear = matches!(
+    option_value(rest, "Resampling"),
+    Some(Expr::String(s)) if s == "Linear" || s == "Bilinear"
+  );
   let (dw, dh) = (data_range[1] - data_range[0], data_range[3] - data_range[2]);
   let (pw, ph) = (plot_range[1] - plot_range[0], plot_range[3] - plot_range[2]);
   if dw <= 0.0 || dh <= 0.0 || pw <= 0.0 || ph <= 0.0 {
@@ -14644,26 +14729,44 @@ pub fn image_transformation_ast(
           (data_range[3] - sy) / dh * sh as f64,
         )
       });
-      let inside = uv.filter(|(u, v)| {
-        (0.0..=sw as f64).contains(u) && (0.0..=sh as f64).contains(v)
-      });
-      match (inside, uv, &padding) {
-        (Some((u, v)), _, _) | (None, Some((u, v)), None) => {
-          let fx = (u - 0.5).clamp(0.0, sw as f64 - 1.0);
-          let fy = (v - 0.5).clamp(0.0, sh as f64 - 1.0);
-          let (x0, y0) = (fx.floor() as usize, fy.floor() as usize);
-          let (x1, y1) = ((x0 + 1).min(sw - 1), (y0 + 1).min(sh - 1));
+      // The value of source pixel (x, y), or the padding outside the image
+      // ("Fixed" padding repeats the nearest edge pixel).
+      let pixel = |x: i64, y: i64, c: usize| -> f64 {
+        let inside = (0..sw as i64).contains(&x) && (0..sh as i64).contains(&y);
+        match (&padding, inside) {
+          (_, true) | (None, false) => {
+            let x = x.clamp(0, sw as i64 - 1) as usize;
+            let y = y.clamp(0, sh as i64 - 1) as usize;
+            data[(y * sw + x) * ch + c]
+          }
+          (Some(fill), false) => fill[c],
+        }
+      };
+      match uv {
+        Some((u, v)) if linear => {
+          let (fx, fy) = (u - 0.5, v - 0.5);
+          let (x0, y0) = (fx.floor() as i64, fy.floor() as i64);
           let (tx, ty) = (fx - x0 as f64, fy - y0 as f64);
           for c in 0..ch {
-            let at = |x: usize, y: usize| data[(y * sw + x) * ch + c];
             out.push(
-              (at(x0, y0) * (1.0 - tx) + at(x1, y0) * tx) * (1.0 - ty)
-                + (at(x0, y1) * (1.0 - tx) + at(x1, y1) * tx) * ty,
+              (pixel(x0, y0, c) * (1.0 - tx) + pixel(x0 + 1, y0, c) * tx)
+                * (1.0 - ty)
+                + (pixel(x0, y0 + 1, c) * (1.0 - tx)
+                  + pixel(x0 + 1, y0 + 1, c) * tx)
+                  * ty,
             );
           }
         }
-        (_, _, Some(fill)) => out.extend_from_slice(fill),
-        _ => out.extend(std::iter::repeat_n(0.0, ch)),
+        Some((u, v)) => {
+          let (x, y) = (u.floor() as i64, v.floor() as i64);
+          for c in 0..ch {
+            out.push(pixel(x, y, c));
+          }
+        }
+        None => match &padding {
+          Some(fill) => out.extend_from_slice(fill),
+          None => out.extend(std::iter::repeat_n(0.0, ch)),
+        },
       }
     }
   }

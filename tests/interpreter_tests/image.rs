@@ -10284,6 +10284,70 @@ mod find_threshold {
   }
 }
 
+mod image_perspective_transformation {
+  use super::*;
+
+  // The default coordinates are {{0, 1}, {0, h/w}} and the default
+  // resampling takes the pixel a point falls in.
+  #[test]
+  fn image_transformation_default_range_and_resampling() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.1, 0.2, 0.3, 0.4}, {0.5, 0.6, 0.7, 0.8}}]; \
+         {ImageData[ImageTransformation[i, {#[[1]] + 0.3, #[[2]]} &]], \
+         ImageData[ImageTransformation[i, {#[[1]], #[[2]] + 0.25} &]], \
+         ImageData[ImageTransformation[i, {#[[1]] + 1, #[[2]]} &, DataRange -> Full]]}"
+      )
+      .unwrap(),
+      "{{{0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 0.}, \
+       {0.6000000238418579, 0.699999988079071, 0.800000011920929, 0.}}, \
+       {{0., 0., 0., 0.}, {0.10000000149011612, 0.20000000298023224, \
+       0.30000001192092896, 0.4000000059604645}}, \
+       {{0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 0.}, \
+       {0.6000000238418579, 0.699999988079071, 0.800000011920929, 0.}}}"
+    );
+  }
+
+  // Linear resampling blends with the padding past the border.
+  #[test]
+  fn image_transformation_linear_resampling() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[ImageData[ImageTransformation[Image[{{0., 0.5, 1.}}], \
+         {#[[1]] + 0.1, #[[2]]} &, Resampling -> \"Linear\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0.15, 0.65, 0.7000000000000001}}"
+    );
+  }
+
+  #[test]
+  fn image_perspective_transformation() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "j = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}]; \
+         {ImageData[ImagePerspectiveTransformation[Image[{{0.1, 0.2, 0.3, 0.4, \
+         0.5, 0.6, 0.7, 0.8}}], TranslationTransform[{0.25, 0}]]], \
+         ImageData[ImagePerspectiveTransformation[j, \
+         {{1, 0.2, 0}, {0, 1, 0}, {0.3, 0, 1}}]], \
+         ImageData[ImagePerspectiveTransformation[j, \
+         RotationTransform[Pi/2, {0.5, 0.5}]]]}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.10000000149011612, 0.20000000298023224, \
+       0.30000001192092896, 0.4000000059604645, 0.5, 0.6000000238418579}}, \
+       {{0., 0.20000000298023224, 0.}, {0.4000000059604645, 0.5, \
+       0.6000000238418579}, {0.699999988079071, 0.800000011920929, 0.}}, \
+       {{0.30000001192092896, 0.6000000238418579, 0.8999999761581421}, \
+       {0.20000000298023224, 0.5, 0.800000011920929}, {0.10000000149011612, \
+       0.4000000059604645, 0.699999988079071}}}"
+    );
+  }
+}
+
 mod image_periodogram {
   use super::*;
 

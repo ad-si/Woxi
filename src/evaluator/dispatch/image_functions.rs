@@ -832,6 +832,8 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageValue"
     | "PixelValue"
     | "ImageTransformation"
+    | "ImagePerspectiveTransformation"
+    | "ImagePeriodogram"
     | "ColorDetect"
     | "ImagePartition"
     | "ImageResize"
@@ -1163,6 +1165,11 @@ pub fn dispatch_image_functions(
     "MorphologicalEulerNumber" if !args.is_empty() => {
       return Some(
         crate::functions::image_ast::morphological_euler_number_ast(args),
+      );
+    }
+    "ImagePerspectiveTransformation" if args.len() >= 2 => {
+      return Some(
+        crate::functions::image_ast::image_perspective_transformation_ast(args),
       );
     }
     "ImagePeriodogram" if !args.is_empty() => {
