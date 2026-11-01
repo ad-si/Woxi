@@ -15790,13 +15790,9 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         key.clone()
       };
+      // An unfilled slot contributes nothing ("a is 1, b is ").
       if let Some(replacement) = replacements.get(&lookup_key) {
         result.push_str(replacement);
-      } else {
-        // No replacement found - keep the slot
-        result.push('`');
-        result.push_str(&key);
-        result.push('`');
       }
     } else {
       result.push(ch);

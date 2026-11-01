@@ -16338,8 +16338,9 @@ fn hamiltonian_cycles(
 }
 
 /// PermutationProduct with symbolic factors: adjacent `Cycles` factors are
-/// composed, `p` next to `InversePermutation[p]` cancels and identities
-/// (`Cycles[{}]`) drop out. Returns None when nothing simplifies.
+/// composed, `p` next to `InversePermutation[p]` cancels, identities
+/// (`Cycles[{}]`) drop out and a run of k equal factors becomes
+/// `PermutationPower[p, k]`. Returns None when nothing simplifies.
 fn simplify_symbolic_permutation_product(args: &[Expr]) -> Option<Expr> {
   let is_cycles = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Cycles" && args.len() == 1);
   let is_identity = |e: &Expr| {
@@ -16381,6 +16382,26 @@ fn simplify_symbolic_permutation_product(args: &[Expr]) -> Option<Expr> {
       _ => out.push(a.clone()),
     }
   }
+  // A run of k identical symbolic factors is PermutationPower[p, k].
+  let mut merged: Vec<Expr> = Vec::with_capacity(out.len());
+  let mut i = 0;
+  while i < out.len() {
+    let key = expr_to_string(&out[i]);
+    let mut j = i + 1;
+    while j < out.len() && expr_to_string(&out[j]) == key {
+      j += 1;
+    }
+    if j - i >= 2 && !is_cycles(&out[i]) {
+      merged.push(call(
+        "PermutationPower",
+        vec![out[i].clone(), Expr::Integer((j - i) as i128)],
+      ));
+    } else {
+      merged.extend(out[i..j].iter().cloned());
+    }
+    i = j;
+  }
+  let mut out = merged;
   if out.len() == args.len() {
     return None;
   }

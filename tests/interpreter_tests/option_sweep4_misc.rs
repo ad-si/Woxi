@@ -117,7 +117,7 @@ mod permutation_product_symbolic {
     assert_eq!(
       interpret("PermutationProduct[a, b, a, a, a, a, InversePermutation[a]]")
         .unwrap(),
-      "PermutationProduct[a, b, a, a, a]"
+      "PermutationProduct[a, b, PermutationPower[a, 3]]"
     );
   }
 
@@ -395,6 +395,133 @@ mod dispatch_association {
       )
       .unwrap(),
       "{a, b, Infinity}"
+    );
+  }
+}
+
+mod kronecker_delta_lists {
+  use super::*;
+
+  #[test]
+  fn lists_compare_as_wholes() {
+    assert_eq!(interpret("KroneckerDelta[{1, 0}, {0, 1}]").unwrap(), "0");
+    assert_eq!(interpret("KroneckerDelta[{1, 0}, {1, 0}]").unwrap(), "1");
+    assert_eq!(interpret("KroneckerDelta[{1, 0}, {1}]").unwrap(), "0");
+  }
+
+  #[test]
+  fn undecidable_symbolic_lists_stay() {
+    assert_eq!(
+      interpret("KroneckerDelta[{a}, {b}]").unwrap(),
+      "KroneckerDelta[{a}, {b}]"
+    );
+  }
+}
+
+mod nothing_as_a_head {
+  use super::*;
+
+  #[test]
+  fn reduces_to_nothing() {
+    assert_eq!(interpret("Nothing[a]").unwrap(), "Nothing");
+    assert_eq!(interpret("Nothing[a, b]").unwrap(), "Nothing");
+    assert_eq!(interpret("{1, Nothing[2], 3}").unwrap(), "{1, 3}");
+  }
+}
+
+mod dispatch_of_association {
+  use super::*;
+
+  #[test]
+  fn becomes_a_rule_list_dispatch() {
+    assert_eq!(
+      interpret("Dispatch[<|a -> b, c -> d|>]").unwrap(),
+      "Dispatch[{a -> b, c -> d}]"
+    );
+    assert_eq!(
+      interpret("Dispatch[<|a :> b|>]").unwrap(),
+      "Dispatch[{a :> b}]"
+    );
+  }
+}
+
+mod template_unfilled_slot {
+  use super::*;
+
+  #[test]
+  fn contributes_nothing() {
+    assert_eq!(
+      interpret(
+        "TemplateApply[StringTemplate[\"a is `a`, b is `b`\", \
+         <|\"a\" -> 1|>]]"
+      )
+      .unwrap(),
+      "a is 1, b is "
+    );
+    assert_eq!(
+      interpret("TemplateApply[\"`a` and `b`\", <|\"a\" -> 1|>]").unwrap(),
+      "1 and "
+    );
+  }
+}
+
+mod rescale_symbolic_bounds {
+  use super::*;
+
+  #[test]
+  fn value_at_zero_and_at_the_endpoint() {
+    assert_eq!(interpret("Rescale[0, {a, b}]").unwrap(), "-(a/(-a + b))");
+    assert_eq!(interpret("Rescale[a, {a, b}]").unwrap(), "0");
+    assert_eq!(interpret("Rescale[a, {b, a}]").unwrap(), "1");
+    assert_eq!(
+      interpret("Rescale[0, {a, b}, {c, d}]").unwrap(),
+      "-((-(b*c) + a*d)/(-a + b))"
+    );
+  }
+
+  #[test]
+  fn complex_bounds() {
+    assert_eq!(
+      interpret("Rescale[1 + 2 I, {0, 1 + I}]").unwrap(),
+      "3/2 + I/2"
+    );
+  }
+
+  #[test]
+  fn numeric_bounds_are_unchanged() {
+    assert_eq!(interpret("Rescale[3, {1, 5}]").unwrap(), "1/2");
+    assert_eq!(interpret("Rescale[3, {1, 5}, {0, 10}]").unwrap(), "5");
+  }
+}
+
+mod orthogonalize_dot_unsimplified {
+  use super::*;
+
+  #[test]
+  fn projections_use_the_unnormalized_vectors() {
+    // Wolfram's symbolic Dot result keeps `x - (a (a x + b y))/(a^2 + b^2)`
+    // unsimplified; check the components that do not involve the
+    // (differently ordered) norm.
+    assert_eq!(
+      interpret("Orthogonalize[{{a, b}, {x, y}}, Dot][[1]]").unwrap(),
+      "{a/Sqrt[a^2 + b^2], b/Sqrt[a^2 + b^2]}"
+    );
+    assert_eq!(
+      interpret("Numerator[Orthogonalize[{{a, b}, {x, y}}, Dot][[2, 1]]]")
+        .unwrap(),
+      "x - (a*(a*x + b*y))/(a^2 + b^2)"
+    );
+  }
+}
+
+mod permutation_power_runs {
+  use super::*;
+
+  #[test]
+  fn equal_factors_become_a_power() {
+    assert_eq!(
+      interpret("PermutationProduct[a, a]").unwrap(),
+      "PermutationPower[a, 2]"
     );
   }
 }

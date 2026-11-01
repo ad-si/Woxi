@@ -264,12 +264,9 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [v, f, rest @ ..] if rest.iter().all(is_rule) => (v, Some(f), rest),
     _ => return unevaluated(),
   };
-  // `Dot` is the plain (non-conjugating) product of the exact path below;
-  // any other function runs the general Gram–Schmidt.
-  let plain_dot = matches!(inner, Some(Expr::Identifier(f)) if f == "Dot");
-  if let Some(f) = inner
-    && !plain_dot
-  {
+  // An explicit inner product (`Dot` included) runs the general
+  // Gram–Schmidt, whose results wolframscript leaves unsimplified.
+  if let Some(f) = inner {
     return orthogonalize_with_inner_product(vectors, f, args);
   }
   let mut method = "GramSchmidt".to_string();
@@ -357,10 +354,9 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Orthogonalize[{{1, I}, {1, -I}}] collapse to zero vectors (the
   // "norm" of (1, I) came out 0). Real/symbolic input keeps the plain
   // product.
-  let complex = !plain_dot
-    && matrix
-      .iter()
-      .any(|row| row.iter().any(contains_imaginary_unit));
+  let complex = matrix
+    .iter()
+    .any(|row| row.iter().any(contains_imaginary_unit));
   let conj = |e: &Expr| -> Expr {
     if !complex {
       return e.clone();
@@ -425,9 +421,12 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Orthogonalize[{v1, v2, …}, f]: Gram–Schmidt with the inner product
-/// `f[u, v]`, for vectors of any kind (lists, polynomials, …):
-/// `w_k = v_k - Σ_j f[e_j, v_k] e_j` and `e_k = w_k / Sqrt[f[w_k, w_k]]`.
-/// A vector whose remainder has zero norm becomes 0.
+/// `f[u, v]`, for vectors of any kind (lists, polynomials, …). The
+/// projections are onto the unnormalized orthogonal vectors,
+/// `w_k = v_k - Σ_j (f[w_j, v_k] / f[w_j, w_j]) w_j`, and each result is
+/// `w_k / Sqrt[f[w_k, w_k]]` — the unsimplified form wolframscript gives
+/// (`x - (a (a x + b y))/(a^2 + b^2)`). A vector whose remainder has zero
+/// norm becomes 0.
 fn orthogonalize_with_inner_product(
   vectors: &Expr,
   f: &Expr,
@@ -446,10 +445,6 @@ fn orthogonalize_with_inner_product(
     };
     evaluate_expr_to_expr(&call_expr)
   };
-  let is_zero = |e: &Expr| {
-    matches!(e, Expr::Integer(0))
-      || matches!(e, Expr::List(items) if items.iter().all(|i| matches!(i, Expr::Integer(0))))
-  };
   let zero_like = |v: &Expr| -> Expr {
     match v {
       Expr::List(items) => {
@@ -458,20 +453,23 @@ fn orthogonalize_with_inner_product(
       _ => Expr::Integer(0),
     }
   };
+  // The orthogonal (unnormalized) vectors found so far, with their f[w, w].
+  let mut basis: Vec<(Expr, Expr)> = Vec::new();
   let mut result: Vec<Expr> = Vec::with_capacity(vs.len());
   for v in vs {
     let mut w = v.clone();
-    for e in &result {
-      if is_zero(e) {
-        continue;
-      }
-      let c = ip(e, v)?;
+    for (u, uu) in &basis {
+      let c = ip(u, v)?;
       if matches!(c, Expr::Integer(0)) {
         continue;
       }
+      let coeff = evaluate_expr_to_expr(&times(vec![
+        c,
+        pow(uu.clone(), Expr::Integer(-1)),
+      ]))?;
       w = evaluate_expr_to_expr(&call(
         "Subtract",
-        vec![w, call("Times", vec![c, e.clone()])],
+        vec![w, call("Times", vec![coeff, u.clone()])],
       ))?;
     }
     let normsq = ip(&w, &w)?;
@@ -479,9 +477,15 @@ fn orthogonalize_with_inner_product(
       result.push(zero_like(v));
       continue;
     }
-    let inv_norm =
-      pow(normsq, crate::functions::math_ast::make_rational(-1, 2));
-    result.push(evaluate_expr_to_expr(&call("Times", vec![inv_norm, w]))?);
+    let inv_norm = pow(
+      normsq.clone(),
+      crate::functions::math_ast::make_rational(-1, 2),
+    );
+    result.push(evaluate_expr_to_expr(&call(
+      "Times",
+      vec![inv_norm, w.clone()],
+    ))?);
+    basis.push((w, normsq));
   }
   Ok(Expr::List(result.into()))
 }

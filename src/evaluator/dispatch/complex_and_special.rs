@@ -14,6 +14,30 @@ pub fn dispatch_complex_and_special(
     "Ramp" if args.len() == 1 => {
       return Some(crate::functions::math_ast::ramp_ast(args));
     }
+    // Dispatch[<|k -> v, …|>] is the dispatch table of the association's
+    // rules: Dispatch[{k -> v, …}].
+    "Dispatch"
+      if args.len() == 1 && matches!(&args[0], Expr::Association(_)) =>
+    {
+      let Expr::Association(pairs) = &args[0] else {
+        unreachable!();
+      };
+      let rules: Vec<Expr> = pairs
+        .iter()
+        .map(|(k, v)| match v {
+          Expr::RuleDelayed { .. } => v.clone(),
+          _ => Expr::Rule {
+            pattern: Box::new(k.clone()),
+            replacement: Box::new(v.clone()),
+          },
+        })
+        .collect();
+      return Some(Ok(call1("Dispatch", Expr::List(rules.into()))));
+    }
+    // Nothing as a head reduces any expression to Nothing.
+    "Nothing" if !args.is_empty() => {
+      return Some(Ok(Expr::Identifier("Nothing".to_string())));
+    }
     "KroneckerDelta" => {
       return Some(crate::functions::math_ast::kronecker_delta_ast(args));
     }
