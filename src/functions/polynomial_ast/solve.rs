@@ -22036,6 +22036,17 @@ pub(crate) enum NumNode {
     std::rc::Rc<super::complex_numeric::CNode>,
     Box<Self>,
   ),
+  // A `CompiledFunction` applied to compiled arguments (or constant ones,
+  // a vector say), run by the machine evaluator.
+  Compiled(
+    std::rc::Rc<crate::functions::compile_vm::Program>,
+    Vec<CompiledArg>,
+  ),
+}
+
+pub(crate) enum CompiledArg {
+  Node(NumNode),
+  Value(crate::functions::compile_vm::V),
 }
 
 impl NumNode {
@@ -22059,6 +22070,10 @@ impl NumNode {
       Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
       Self::ComplexPart(_, z, _) => z.has_fallback(),
+      Self::Compiled(_, xs) => xs.iter().any(|x| match x {
+        CompiledArg::Node(n) => n.has_fallback(),
+        CompiledArg::Value(_) => false,
+      }),
     }
   }
 
@@ -22119,6 +22134,18 @@ impl NumNode {
         } else {
           v
         }
+      }
+      Self::Compiled(program, xs) => {
+        let values = xs
+          .iter()
+          .map(|x| match x {
+            CompiledArg::Node(n) => {
+              crate::functions::compile_vm::V::R(n.eval_plain(point))
+            }
+            CompiledArg::Value(v) => v.clone(),
+          })
+          .collect();
+        program.call_real(values)
       }
     }
   }
@@ -22259,7 +22286,7 @@ impl NumNode {
         }
         (v, grad)
       }
-      Self::Fallback(..) | Self::ComplexPart(..) => {
+      Self::Fallback(..) | Self::ComplexPart(..) | Self::Compiled(..) => {
         let v = self.eval_plain(point);
         let grad = (0..point.len())
           .filter_map(|k| {
@@ -22311,7 +22338,7 @@ impl NumNode {
           f(v)
         })
       }
-      Self::Fallback(..) | Self::ComplexPart(..) => {
+      Self::Fallback(..) | Self::ComplexPart(..) | Self::Compiled(..) => {
         WideFloat::new(self.eval_plain(point))
       }
     }
@@ -22492,6 +22519,9 @@ impl WideFloat {
 /// if it contains anything not handled here (forcing the slow AST fallback).
 pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
   let c = |e: &Expr| compile_numeric(e, vars);
+  if let Some(node) = compile_compiled_call(expr, vars) {
+    return Some(node);
+  }
   match expr {
     Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
     Expr::BigInteger(n) => Some(NumNode::Const(n.to_string().parse().ok()?)),
@@ -22722,6 +22752,51 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
   })
+}
+
+/// `cf[args…]` where `cf` is (or names) a `CompiledFunction`: its body
+/// run by the machine evaluator, arguments compiled (or, without the
+/// variables, taken as values).
+fn compile_compiled_call(expr: &Expr, vars: &[String]) -> Option<NumNode> {
+  let (func, args): (Expr, &[Expr]) = match expr {
+    Expr::CurriedCall { func, args } => ((**func).clone(), &args[..]),
+    Expr::FunctionCall { name, args } => {
+      let value = crate::ENV.with(|e| match e.borrow().get(name) {
+        Some(crate::StoredValue::ExprVal(v)) => Some(v.clone()),
+        _ => None,
+      })?;
+      (value, &args[..])
+    }
+    _ => return None,
+  };
+  if !matches!(&func, Expr::FunctionCall { name, .. } if name == "CompiledFunction")
+  {
+    return None;
+  }
+  let program =
+    crate::evaluator::function_application::compiled_function_program(&func)?;
+  let types = program.arg_types();
+  if types.len() != args.len() {
+    return None;
+  }
+  let mut out = Vec::with_capacity(args.len());
+  for (a, (ty, rank)) in args.iter().zip(types) {
+    let mentions = vars
+      .iter()
+      .any(|v| super::coefficient::expr_contains_identifier(a, v));
+    if mentions {
+      if rank != 0 || ty == crate::functions::compile_vm::Ty::Boolean {
+        return None;
+      }
+      out.push(CompiledArg::Node(compile_numeric(a, vars)?));
+    } else {
+      let value = crate::evaluator::evaluate_expr_to_expr(a).ok()?;
+      out.push(CompiledArg::Value(
+        crate::functions::compile_vm::bind_value(&value, ty, rank)?,
+      ));
+    }
+  }
+  Some(NumNode::Compiled(std::rc::Rc::new(program), out))
 }
 
 /// An atomic comparison split out of a (possibly chained / And-joined)

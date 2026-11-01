@@ -292,6 +292,26 @@ fn serialized_vm_run(
   pure_fn: &Expr,
   args: &[Expr],
 ) -> Option<Expr> {
+  let (params, body, real_arg) = serialized_vm_signature(func_args, pure_fn)?;
+  let result = crate::functions::compile_vm::run(&params, body, args)?;
+  Some(if real_arg {
+    coerce_to_real(&result)
+  } else {
+    result
+  })
+}
+
+/// The machine-evaluator parameters, body and "has a real argument" flag of
+/// a saved `CompiledFunction[…]` with its embedded `pure_fn`.
+#[allow(clippy::type_complexity)]
+fn serialized_vm_signature<'a>(
+  func_args: &[Expr],
+  pure_fn: &'a Expr,
+) -> Option<(
+  Vec<(String, crate::functions::compile_vm::Ty, usize)>,
+  &'a Expr,
+  bool,
+)> {
   use crate::functions::compile_vm::Ty;
   let Expr::FunctionCall { name, args: fargs } = pure_fn else {
     return None;
@@ -353,12 +373,47 @@ fn serialized_vm_run(
     };
     params.push((n, ty, serialized_spec_rank(p)));
   }
-  let result = crate::functions::compile_vm::run(&params, &fargs[1], args)?;
-  Some(if real_arg {
-    coerce_to_real(&result)
-  } else {
-    result
-  })
+  Some((params, &fargs[1], real_arg))
+}
+
+/// The machine program of a `CompiledFunction[…]` value (Woxi's own
+/// two-part form or one saved in a notebook), for compiled numerics that
+/// call it at every sample point.
+pub(crate) fn compiled_function_program(
+  f: &Expr,
+) -> Option<crate::functions::compile_vm::Program> {
+  let Expr::FunctionCall { name, args } = f else {
+    return None;
+  };
+  if name != "CompiledFunction" {
+    return None;
+  }
+  if args.len() == 2
+    || (args.len() == 3 && matches!(&args[2], Expr::Identifier(_)))
+  {
+    let specs: Vec<&Expr> = match &args[0] {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    let params = compile_vm_params(&specs, &args[1])?;
+    return crate::functions::compile_vm::Program::compile(&params, &args[1]);
+  }
+  let pure_fn = args.iter().find(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "Function"),
+  )?;
+  let plain;
+  let pure_fn = match pure_fn {
+    Expr::FunctionCall { name, args: fargs } if fargs.len() == 3 => {
+      plain = Expr::FunctionCall {
+        name: name.clone(),
+        args: fargs[..2].to_vec().into(),
+      };
+      &plain
+    }
+    other => other,
+  };
+  let (params, body, _) = serialized_vm_signature(args, pure_fn)?;
+  crate::functions::compile_vm::Program::compile(&params, body)
 }
 
 fn serialized_spec_rank(spec: &Expr) -> usize {

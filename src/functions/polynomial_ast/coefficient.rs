@@ -11,7 +11,7 @@ use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 /// - Coefficient[expr, var]      → coefficient of var^1
 /// - Coefficient[expr, var, n]   → coefficient of var^n
 /// - Coefficient[expr, x^n]      → coefficient of x^n (monomial form)
-fn expr_contains_identifier(expr: &Expr, name: &str) -> bool {
+pub(crate) fn expr_contains_identifier(expr: &Expr, name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => n == name,
     Expr::BinaryOp { left, right, .. } => {

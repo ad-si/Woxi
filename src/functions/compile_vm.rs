@@ -912,6 +912,10 @@ pub(crate) fn from_expr(e: &Expr) -> Option<V> {
 }
 
 /// The value bound to an argument of the declared type and rank.
+pub(crate) fn bind_value(e: &Expr, ty: Ty, rank: usize) -> Option<V> {
+  bind(e, ty, rank)
+}
+
 fn bind(e: &Expr, ty: Ty, rank: usize) -> Option<V> {
   if rank > 0 {
     let Expr::List(items) = e else { return None };
@@ -990,6 +994,78 @@ fn promote(v: &V, kind: u8) -> V {
   }
 }
 
+/// A compiled body, ready to run on argument values.
+pub(crate) struct Program {
+  node: N,
+  nslots: usize,
+  args: Vec<(usize, Ty, usize)>,
+}
+
+impl Program {
+  pub(crate) fn compile(
+    params: &[(String, Ty, usize)],
+    body: &Expr,
+  ) -> Option<Self> {
+    let mut comp = Comp {
+      scopes: Vec::new(),
+      slot_frames: Vec::new(),
+      nslots: 0,
+    };
+    let names: Vec<String> = params.iter().map(|(n, _, _)| n.clone()).collect();
+    let slots = comp.push_scope(&names);
+    let node = comp.c(body)?;
+    Some(Program {
+      node,
+      nslots: comp.nslots,
+      args: slots
+        .into_iter()
+        .zip(params)
+        .map(|(s, (_, ty, rank))| (s, *ty, *rank))
+        .collect(),
+    })
+  }
+
+  /// The declared (type, rank) of each argument.
+  pub(crate) fn arg_types(&self) -> Vec<(Ty, usize)> {
+    self.args.iter().map(|(_, t, r)| (*t, *r)).collect()
+  }
+
+  /// Run on bound argument values.
+  pub(crate) fn call(&self, values: Vec<V>) -> Option<V> {
+    if values.len() != self.args.len() {
+      return None;
+    }
+    let mut env = vec![V::Null; self.nslots];
+    for ((slot, _, _), v) in self.args.iter().zip(values) {
+      env[*slot] = v;
+    }
+    let mut m = Machine { env, steps: 0 };
+    match m.eval(&self.node) {
+      Ok(v) | Err(Flow::Return(v)) => Some(v),
+      Err(_) => None,
+    }
+  }
+
+  /// Run on machine reals (each argument scalar and real-typed, or given as
+  /// a value), giving a real result.
+  pub(crate) fn call_real(&self, values: Vec<V>) -> f64 {
+    let bound: Option<Vec<V>> = values
+      .into_iter()
+      .zip(&self.args)
+      .map(|(v, (_, ty, _))| match (v, ty) {
+        (V::R(x), Ty::Integer) if x.fract() == 0.0 => Some(V::I(x as i64)),
+        (V::R(x), Ty::Complex) => Some(V::Z(C::new(x, 0.0))),
+        (v, _) => Some(v),
+      })
+      .collect();
+    match bound.and_then(|b| self.call(b)) {
+      Some(V::R(x)) => x,
+      Some(V::I(n)) => n as f64,
+      _ => f64::NAN,
+    }
+  }
+}
+
 /// Run `body` with the arguments bound per `params` (name, type, rank);
 /// `None` when the body or a value at run time is outside the evaluator.
 pub(crate) fn run(
@@ -1000,24 +1076,13 @@ pub(crate) fn run(
   if params.len() != args.len() {
     return None;
   }
-  let mut comp = Comp {
-    scopes: Vec::new(),
-    slot_frames: Vec::new(),
-    nslots: 0,
-  };
-  let names: Vec<String> = params.iter().map(|(n, _, _)| n.clone()).collect();
-  let slots = comp.push_scope(&names);
-  let program = comp.c(body)?;
-  let mut env = vec![V::Null; comp.nslots];
-  for ((slot, (_, ty, rank)), arg) in slots.iter().zip(params).zip(args) {
-    env[*slot] = bind(arg, *ty, *rank)?;
-  }
-  let mut m = Machine { env, steps: 0 };
-  match m.eval(&program) {
-    Ok(v) => Some(to_expr(&v)),
-    Err(Flow::Return(v)) => Some(to_expr(&v)),
-    Err(_) => None,
-  }
+  let program = Program::compile(params, body)?;
+  let values: Vec<V> = args
+    .iter()
+    .zip(params)
+    .map(|(a, (_, ty, rank))| bind(a, *ty, *rank))
+    .collect::<Option<_>>()?;
+  program.call(values).map(|v| to_expr(&v))
 }
 
 struct Machine {

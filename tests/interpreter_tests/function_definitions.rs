@@ -1261,6 +1261,20 @@ mod compile {
       .unwrap(),
       "{{10., 20., 0.}, {5., 17., 37.}}"
     );
+    // A compiled function inside a numerical integrand or equation runs on
+    // machine numbers at each sample, a constant vector argument included.
+    assert_eq!(
+      interpret(
+        "cg = Compile[{x}, Module[{s = 0.}, Do[s += Sin[k x]/k, {k, 1, 20}]; s]]; \
+         cv = Compile[{R, s, t, {v, _Real, 1}}, Exp[-R (Cos[s]^2 + v[[1]] Sin[t]^2)]]; \
+         {Abs[NIntegrate[cg[x], {x, 0, 1}] - 1.2695671075830761] < 10^-10, \
+          Abs[(x /. FindRoot[cg[x] == 0.5, {x, 0.3}]) - 2.104620520152277] < 10^-10, \
+          Abs[NIntegrate[cv[1.5, s, t, {0.3, 0.1}], {s, 0, 2 Pi}, {t, 0, 2 Pi}] - \
+            17.27637411634429] < 10^-6}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
     // A `CompiledFunction` saved in a notebook runs its embedded function
     // through the machine evaluator too.
     assert_eq!(
