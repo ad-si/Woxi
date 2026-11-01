@@ -9400,14 +9400,8 @@ fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
       Some(sum.sqrt())
     }
     // Strings compare via EditDistance (Wolfram's default string metric).
-    (Expr::String(_), Expr::String(_)) => {
-      match crate::functions::string_ast::edit_distance_ast(&[
-        a.clone(),
-        b.clone(),
-      ]) {
-        Ok(Expr::Integer(d)) => Some(d as f64),
-        _ => None,
-      }
+    (Expr::String(x), Expr::String(y)) => {
+      Some(crate::functions::string_ast::levenshtein_str(x, y) as f64)
     }
     _ => {
       if let (Some(av), Some(bv)) = (expr_to_f64(a), expr_to_f64(b)) {

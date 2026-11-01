@@ -12069,6 +12069,67 @@ pub fn digit_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// EditDistance[s1, s2] - Levenshtein distance between two strings.
 /// Also accepts lists of items, and an optional IgnoreCase -> True rule.
+/// The Levenshtein distance of two strings, by characters. Nearest over a
+/// word list asks this for every word, so ASCII strings of up to 64 bytes
+/// take Myers' bit-parallel algorithm (one pass, no table).
+pub fn levenshtein_str(a: &str, b: &str) -> usize {
+  if a.is_ascii() && b.is_ascii() {
+    let (p, t) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    let (p, t) = (p.as_bytes(), t.as_bytes());
+    if p.is_empty() {
+      return t.len();
+    }
+    if p.len() <= 64 {
+      let m = p.len();
+      let mut peq = [0u64; 256];
+      for (i, &c) in p.iter().enumerate() {
+        peq[c as usize] |= 1 << i;
+      }
+      let (mut pv, mut mv) = (u64::MAX, 0u64);
+      let mut score = m;
+      let high = 1u64 << (m - 1);
+      for &c in t {
+        let eq = peq[c as usize];
+        let xv = eq | mv;
+        let xh = (((eq & pv).wrapping_add(pv)) ^ pv) | eq;
+        let mut ph = mv | !(xh | pv);
+        let mut mh = pv & xh;
+        if ph & high != 0 {
+          score += 1;
+        }
+        if mh & high != 0 {
+          score -= 1;
+        }
+        ph = (ph << 1) | 1;
+        mh <<= 1;
+        pv = mh | !(xv | ph);
+        mv = ph & xv;
+      }
+      return score;
+    }
+    return levenshtein_table(p, t);
+  }
+  let (x, y): (Vec<char>, Vec<char>) =
+    (a.chars().collect(), b.chars().collect());
+  levenshtein_table(&x, &y)
+}
+
+fn levenshtein_table<T: PartialEq>(a: &[T], b: &[T]) -> usize {
+  let mut row: Vec<usize> = (0..=b.len()).collect();
+  for (i, x) in a.iter().enumerate() {
+    let mut diagonal = row[0];
+    row[0] = i + 1;
+    for (j, y) in b.iter().enumerate() {
+      let above = row[j + 1];
+      row[j + 1] = (above + 1)
+        .min(row[j] + 1)
+        .min(diagonal + usize::from(x != y));
+      diagonal = above;
+    }
+  }
+  row[b.len()]
+}
+
 pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -12111,14 +12172,11 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Two strings compare character by character (Nearest over a word list
   // asks this for every word).
   if let (Expr::String(x), Expr::String(y)) = (&args[0], &args[1]) {
-    let chars = |s: &str| -> std::vec::Vec<char> {
-      if ignore_case {
-        s.to_lowercase().chars().collect()
-      } else {
-        s.chars().collect()
-      }
-    };
-    return Ok(Expr::Integer(levenshtein(&chars(x), &chars(y)) as i128));
+    return Ok(Expr::Integer(if ignore_case {
+      levenshtein_str(&x.to_lowercase(), &y.to_lowercase())
+    } else {
+      levenshtein_str(x, y)
+    } as i128));
   }
   let a = to_tokens(&args[0], ignore_case);
   let b = to_tokens(&args[1], ignore_case);
