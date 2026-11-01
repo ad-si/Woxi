@@ -534,6 +534,9 @@ pub fn dispatch_plotting(
         Ok,
       ),
     ),
+    "ListSurfacePlot3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::plot3d::list_surface_plot3d_ast(args)
+    })),
     "ListPointPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_point_plot3d_ast(args)
     })),

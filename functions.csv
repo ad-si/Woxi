@@ -1797,7 +1797,7 @@ DensityPlot3D,"3D density plot",,unevaluated,10.2,1788
 DynamicModuleValues,"",🚫,,6.0,1788
 FRatioDistribution,"F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance",✅,pure,6.0,1788
 LaplaceDistribution,"Laplace distribution",✅,pure,6.0,1788
-ListSurfacePlot3D,"3D surface plot from points",,unevaluated,6.0,1788
+ListSurfacePlot3D,"Surface through 3D points: point arrays are joined cell by cell and scattered points are wrapped in their convex hull; supports ColorFunction",✅,pure,6.0,1788
 GeoRegionValuePlot,"Choropleth shading countries by value",✅,pure,10.0,1789
 MaxExtraConditions,"Max extra conditions option",,unevaluated,8.0,1791
 TimeSeriesModelFit,"Time series model fit",,unevaluated,10.0,1791
