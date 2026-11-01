@@ -24136,6 +24136,20 @@ mod solve_disjunction {
     );
   }
 
+  // An equation between two lists inside a disjunction is the conjunction
+  // of its components; the branches used to be dropped (Solve::svars).
+  #[test]
+  fn list_equations_inside_branches() {
+    assert_eq!(
+      interpret(
+        "Solve[x + y + z == 6 && ({x, y} == {1, 2} || {y, z} == {1, 1}), \
+         {x, y, z}]"
+      )
+      .unwrap(),
+      "{{x -> 1, y -> 2, z -> 3}, {x -> 4, y -> 1, z -> 1}}"
+    );
+  }
+
   // Linear branches keep their order — a written disjunction its own, one
   // inside a conjunction `LogicalExpand`'s — while a polynomial disjunction
   // is sorted.

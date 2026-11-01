@@ -2981,6 +2981,36 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = expanded;
     return solve_ast(&normalized);
   }
+  // `{x, y} == {1, 2}` inside a logical combination is `x == 1 && y == 2`.
+  let threaded = match args.first() {
+    Some(Expr::List(items)) => {
+      let rewritten: Vec<Option<Expr>> = items
+        .iter()
+        .map(|e| match e {
+          Expr::Comparison { .. } => None,
+          other => thread_list_equations(other),
+        })
+        .collect();
+      (rewritten.iter().any(Option::is_some)).then(|| {
+        Expr::List(
+          items
+            .iter()
+            .zip(rewritten)
+            .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    Some(e @ (Expr::FunctionCall { .. } | Expr::BinaryOp { .. })) => {
+      thread_list_equations(e)
+    }
+    _ => None,
+  };
+  if let Some(threaded) = threaded {
+    let mut normalized = args.to_vec();
+    normalized[0] = threaded;
+    return solve_ast(&normalized);
+  }
   // An equation list is a conjunction: `{a && b, c}` is `{a, b, c}`.
   if let Some(Expr::List(items)) = args.first()
     && items.iter().any(|e| conjunction_parts(e).is_some())
@@ -3998,6 +4028,76 @@ fn region_membership_condition(region: &Expr, coords: &[Expr]) -> Option<Expr> {
             ]
           })
           .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// Threads every equation between two lists of one length inside a logical
+/// combination into the conjunction of its components (`{x, y} == {1, 2}`
+/// is `x == 1 && y == 2`), as Solve reads it; None when there is none.
+pub(crate) fn thread_list_equations(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && matches!(operators[0], ComparisonOp::Equal)
+      && let (Expr::List(l), Expr::List(r)) = (&operands[0], &operands[1])
+      && l.len() == r.len()
+      && !l.is_empty() =>
+    {
+      let parts: Vec<Expr> = l
+        .iter()
+        .zip(r.iter())
+        .map(|(a, b)| {
+          let eq = Expr::Comparison {
+            operands: vec![a.clone(), b.clone()],
+            operators: vec![ComparisonOp::Equal],
+          };
+          thread_list_equations(&eq).unwrap_or(eq)
+        })
+        .collect();
+      Some(call("And", parts))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(thread_list_equations).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(call(
+        name,
+        args
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => {
+      let (l, r) = (thread_list_equations(left), thread_list_equations(right));
+      if l.is_none() && r.is_none() {
+        return None;
+      }
+      let name = if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      };
+      Some(call(
+        name,
+        vec![
+          l.unwrap_or_else(|| (**left).clone()),
+          r.unwrap_or_else(|| (**right).clone()),
+        ],
       ))
     }
     _ => None,
