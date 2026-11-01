@@ -1348,10 +1348,11 @@ fn try_apply_reverse_applied(
   if name != "ReverseApplied" {
     return None;
   }
+  // n > 0 reverses the first n arguments, n < 0 the last -n.
   let (f, n) = match args.len() {
     1 => (&args[0], None),
     2 => match &args[1] {
-      Expr::Integer(k) if *k >= 0 => (&args[0], Some(*k as usize)),
+      Expr::Integer(k) => (&args[0], Some(*k)),
       _ => return None,
     },
     _ => return None,
@@ -1359,9 +1360,14 @@ fn try_apply_reverse_applied(
   let mut head_args = new_args.to_vec();
   match n {
     None => head_args.reverse(),
-    Some(n) => {
-      let k = n.min(head_args.len());
+    Some(n) if n >= 0 => {
+      let k = (n as usize).min(head_args.len());
       head_args[..k].reverse();
+    }
+    Some(n) => {
+      let len = head_args.len();
+      let k = (n.unsigned_abs() as usize).min(len);
+      head_args[len - k..].reverse();
     }
   }
   Some(apply_curried_call(f, &head_args))
@@ -2831,15 +2837,19 @@ pub fn apply_curried_call(
       name,
       args: func_args,
     } if (name == "FoldWhile" || name == "FoldWhileList")
-      && func_args.len() == 2
-      && args.len() == 1 =>
+      && (func_args.len() == 2
+        || (func_args.len() == 4
+          && matches!(&func_args[2], Expr::Integer(_))
+          && matches!(&func_args[3], Expr::Integer(_))))
+      && (args.len() == 1 || args.len() == 2) =>
     {
-      // FoldWhile[f, test][list] — the operator form folds the given list,
-      // taking its first element as the initial value.
-      evaluate_function_call_ast(
-        name,
-        &[func_args[0].clone(), args[0].clone(), func_args[1].clone()],
-      )
+      // FoldWhile[f, test][list] / FoldWhile[f, test][x, list] (and the
+      // forms with explicit m, n) — the operator form folds the given list,
+      // from x or from its first element.
+      let mut full = vec![func_args[0].clone()];
+      full.extend(args.iter().cloned());
+      full.extend(func_args[1..].iter().cloned());
+      evaluate_function_call_ast(name, &full)
     }
     Expr::FunctionCall {
       name,

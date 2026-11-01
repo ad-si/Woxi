@@ -1795,14 +1795,24 @@ pub fn dispatch_complex_and_special(
     // AngleBisector[{q1, p, q2}] — the interior-angle bisector at p, as an
     // InfiniteLine through p (2-D points only).
     "AngleBisector" if args.len() == 1 => {
-      return Some(compute_angle_bisector(&args[0]));
+      return Some(compute_angle_bisector(&args[0], false));
     }
-    // "Interior" names the default bisector explicitly.
+    // "Interior" names the default bisector explicitly; "Exterior" bisects
+    // the exterior angle at p.
     "AngleBisector"
       if args.len() == 2
-        && matches!(&args[1], Expr::String(k) if k == "Interior") =>
+        && matches!(&args[1], Expr::String(k) if k == "Interior" || k == "Exterior") =>
     {
-      return Some(compute_angle_bisector(&args[0]));
+      let exterior = matches!(&args[1], Expr::String(k) if k == "Exterior");
+      return Some(
+        compute_angle_bisector(&args[0], exterior).map(|r| {
+          if matches!(&r, Expr::FunctionCall { name, .. } if name == "AngleBisector") {
+            unevaluated("AngleBisector", args)
+          } else {
+            r
+          }
+        }),
+      );
     }
     // PerpendicularBisector[{p1, p2}] — the perpendicular bisector of the
     // segment, as an InfiniteLine through its midpoint (2-D points only).
@@ -14605,7 +14615,10 @@ fn compute_perpendicular_bisector(
 /// formed by the rays p→q1 and p→q2, returned as `InfiniteLine[p, dir]` where
 /// `dir = Normalize[q1 - p] + Normalize[q2 - p]`. Only 2-D points are handled
 /// (wolframscript leaves higher-dimensional or malformed input unevaluated).
-fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
+fn compute_angle_bisector(
+  expr: &Expr,
+  exterior: bool,
+) -> Result<Expr, InterpreterError> {
   let uneval = || Ok(call1("AngleBisector", expr.clone()));
   let Expr::List(pts) = expr else {
     return uneval();
@@ -14641,7 +14654,15 @@ fn compute_angle_bisector(expr: &Expr) -> Result<Expr, InterpreterError> {
   // dir = Simplify[Normalize[q1 - p] + Normalize[q2 - p]]. Simplify reaches
   // wolframscript's canonical radical form (e.g. 1/Sqrt[2] + 1/Sqrt[2] ->
   // Sqrt[2]), which plain Plus evaluation leaves as 2/Sqrt[2].
-  let sum = plus(vec![normalized_leg(q1), normalized_leg(q2)]);
+  // The exterior bisector runs along Normalize[q2 - p] - Normalize[q1 - p].
+  let sum = if exterior {
+    plus(vec![
+      normalized_leg(q2),
+      times(vec![Expr::Integer(-1), normalized_leg(q1)]),
+    ])
+  } else {
+    plus(vec![normalized_leg(q1), normalized_leg(q2)])
+  };
   let dir = crate::evaluator::evaluate_expr_to_expr(&call1("Simplify", sum))?;
 
   Ok(call("InfiniteLine", vec![Expr::List(p.clone()), dir]))

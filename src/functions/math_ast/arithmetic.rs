@@ -680,6 +680,20 @@ fn make_threaded(inner: Expr) -> Expr {
   call1("Threaded", inner)
 }
 
+/// The dimensions of a (rectangular) nested list, read along first elements.
+fn rect_dims(e: &Expr) -> Vec<usize> {
+  let mut dims = Vec::new();
+  let mut cur = e;
+  while let Expr::List(items) = cur {
+    dims.push(items.len());
+    match items.first() {
+      Some(first) => cur = first,
+      None => break,
+    }
+  }
+  dims
+}
+
 /// Array nesting depth: 0 for an atom, 1 + max child depth for a list.
 fn list_rank(e: &Expr) -> usize {
   match e {
@@ -742,9 +756,18 @@ fn threaded_binary(
   op: ThreadedOp,
 ) -> Result<Option<Expr>, InterpreterError> {
   match (as_threaded(a), as_threaded(b)) {
-    // Two Threaded operands combine their contents and keep the wrapper.
+    // Two Threaded operands combine their contents at the lowest level (the
+    // shallower one broadcast into the deeper) and keep the wrapper.
     (Some(ia), Some(ib)) => {
-      Ok(Some(make_threaded(apply_threaded_op(op, ia, ib)?)))
+      let combined = if list_rank(ia) >= list_rank(ib) {
+        broadcast_threaded(ia, ib, op)?
+      } else {
+        broadcast_threaded(ib, ia, op)?
+      };
+      Ok(combined.map(|c| match as_threaded(&c) {
+        Some(_) => c,
+        None => make_threaded(c),
+      }))
     }
     (Some(ia), None) => broadcast_threaded(b, ia, op),
     (None, Some(ib)) => broadcast_threaded(a, ib, op),
@@ -761,6 +784,76 @@ pub fn try_threaded_op(
 ) -> Option<Result<Expr, InterpreterError>> {
   if !args.iter().any(|a| as_threaded(a).is_some()) {
     return None;
+  }
+  // SparseArray operands (bare or threaded) are combined as their dense
+  // forms; the result is sparse again when one of them was.
+  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let any_sparse = args
+    .iter()
+    .any(|a| is_sparse(a) || as_threaded(a).is_some_and(is_sparse));
+  if any_sparse {
+    let densify = |e: &Expr| -> Expr {
+      match e {
+        Expr::FunctionCall { name, args: sa } if name == "SparseArray" => {
+          crate::functions::list_helpers_ast::sparse_array_ast(sa)
+            .unwrap_or_else(|_| e.clone())
+        }
+        other => other.clone(),
+      }
+    };
+    let dense: Vec<Expr> = args
+      .iter()
+      .map(|a| match as_threaded(a) {
+        Some(inner) => make_threaded(densify(inner)),
+        None => densify(a),
+      })
+      .collect();
+    if dense
+      .iter()
+      .any(|a| is_sparse(a) || as_threaded(a).is_some_and(is_sparse))
+    {
+      return None;
+    }
+    return Some(try_threaded_op(&dense, op)?.map(|r| {
+      if matches!(r, Expr::List(_)) {
+        crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+          &r,
+          &Expr::Integer(0),
+        )
+        .unwrap_or(r)
+      } else {
+        r
+      }
+    }));
+  }
+  // The threaded array must match the lowest-level dimensions of every
+  // array it is combined with.
+  let plain_dims: Vec<Vec<usize>> = args
+    .iter()
+    .filter(|a| as_threaded(a).is_none() && list_rank(a) > 0)
+    .map(rect_dims)
+    .collect();
+  for t in args.iter().filter_map(as_threaded) {
+    let td = rect_dims(t);
+    if plain_dims
+      .iter()
+      .any(|pd| pd.len() >= td.len() && pd[pd.len() - td.len()..] != td[..])
+    {
+      let bin_op = match op {
+        ThreadedOp::Plus => BinaryOperator::Plus,
+        ThreadedOp::Times => BinaryOperator::Times,
+      };
+      let mut folded = args[0].clone();
+      for a in &args[1..] {
+        folded = binop(bin_op, folded, a.clone());
+      }
+      crate::emit_message(&format!(
+        "Threaded::thrdims: Instances of Threaded with different argument \
+         dimensions encountered in {}.",
+        expr_to_string(&folded)
+      ));
+      return Some(Ok(folded));
+    }
   }
   let mut acc = args[0].clone();
   for b in &args[1..] {

@@ -201,7 +201,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Ceiling" => Some((1, 2)),
     "CellularAutomaton" => Some((1, 4)),
     "CensoredDistribution" => Some((2, 2)),
-    "CenterArray" => Some((1, 3)),
+    "CenterArray" => Some((1, 4)),
     "CentralMoment" => Some((1, 2)),
     "CharacteristicFunction" => Some((2, 2)),
     "MomentGeneratingFunction" => Some((2, 2)),

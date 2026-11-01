@@ -3043,6 +3043,21 @@ pub fn dispatch_math_functions(
           .collect();
         return Some(results.map(|v| Expr::List(v.into())));
       }
+      // A Gaussian integer: (-1)^(number of Gaussian prime factors, with
+      // multiplicity).
+      if let Some((re, im)) =
+        crate::functions::math_ast::expr_to_gaussian_int(&args[0])
+        && im != 0
+      {
+        return Some(Ok(
+          match crate::functions::math_ast::gaussian_prime_factor_count((
+            re, im,
+          )) {
+            Some(k) => Expr::Integer(if k % 2 == 0 { 1 } else { -1 }),
+            None => call1("LiouvilleLambda", args[0].clone()),
+          },
+        ));
+      }
       // LiouvilleLambda[n] = (-1)^Omega(n) where Omega counts prime factors with multiplicity
       if let Expr::Integer(n) = &args[0] {
         if *n == 0 {
@@ -5625,6 +5640,24 @@ pub fn dispatch_math_functions(
       }
       if args.iter().any(definite_non_integer) {
         return Some(Ok(Expr::Integer(0)));
+      }
+      // DiracComb is even in each argument: DiracComb[-x] is DiracComb[x].
+      // (Machine reals are not rewritten; strip_negation skips them.)
+      if args
+        .iter()
+        .any(|a| crate::functions::math_ast::strip_negation(a).is_some())
+      {
+        let positive: Vec<Expr> = args
+          .iter()
+          .map(|a| {
+            crate::functions::math_ast::strip_negation(a)
+              .unwrap_or_else(|| a.clone())
+          })
+          .collect();
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "DiracComb",
+          &positive,
+        ));
       }
       return Some(Ok(unevaluated("DiracComb", args)));
     }

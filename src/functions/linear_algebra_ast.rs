@@ -14159,6 +14159,27 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   };
 
+  // 1-D data {y1, y2, …} stands for {{1, y1}, {2, y2}, …} (machine-number
+  // positions for machine data).
+  if !data.is_empty() && data.iter().all(|d| !matches!(d, Expr::List(_))) {
+    let inexact = data.iter().any(crate::syntax::contains_inexact);
+    let rows: Vec<Expr> = data
+      .iter()
+      .enumerate()
+      .map(|(i, y)| {
+        let x = if inexact {
+          Expr::Real((i + 1) as f64)
+        } else {
+          Expr::Integer(i as i128 + 1)
+        };
+        Expr::List(vec![x, y.clone()].into())
+      })
+      .collect();
+    let mut new_args = args.to_vec();
+    new_args[0] = Expr::List(rows.into());
+    return design_matrix_ast(&new_args);
+  }
+
   // Parse basis functions - can be single function or list
   let fns: Vec<Expr> = match &args[1] {
     Expr::List(fs) => fs.to_vec(),
@@ -14210,6 +14231,13 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     result_rows.push(Expr::List(result_row.into()));
   }
 
+  // Machine-number data gives a machine-number matrix.
+  if data.iter().any(crate::syntax::contains_inexact) {
+    return crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1(
+      "N",
+      Expr::List(result_rows.into()),
+    ));
+  }
   Ok(Expr::List(result_rows.into()))
 }
 

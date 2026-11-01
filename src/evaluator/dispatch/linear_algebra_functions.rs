@@ -2110,6 +2110,18 @@ pub fn dispatch_linear_algebra_functions(
     "DiscreteLyapunovSolve" if args.len() == 2 || args.len() == 3 => {
       return Some(discrete_lyapunov_solve_ast(args));
     }
+    // LowerTriangularMatrix[m] / UpperTriangularMatrix[m]: a triangular
+    // matrix as a structured array, or with TargetStructure -> "Dense" /
+    // "Sparse" as an ordinary or sparse matrix.
+    "LowerTriangularMatrix" | "UpperTriangularMatrix"
+      if (args.len() == 1 || args.len() == 2)
+        && matches!(&args[0], Expr::List(rows) if !rows.is_empty()) =>
+    {
+      return Some(Ok(
+        triangular_matrix(name, args)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
     "LUDecomposition" if args.len() == 1 => {
       return Some(lu_decomposition_ast(&args[0]));
     }
@@ -6262,4 +6274,65 @@ fn singular_pencil_eigen(name: &str, args: &[Expr]) -> Option<Expr> {
       vec![Expr::List(values.into()), Expr::List(vecs.into())].into(),
     ),
   })
+}
+
+/// The structured form of a triangular matrix given as a list of rows, or
+/// `None` when it is not rectangular, not triangular the right way, or the
+/// option is not a TargetStructure.
+fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
+  let Expr::List(rows) = &args[0] else {
+    return None;
+  };
+  let cols = match rows.first()? {
+    Expr::List(r) => r.len(),
+    _ => return None,
+  };
+  let lower = name == "LowerTriangularMatrix";
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(r) = row else {
+      return None;
+    };
+    if r.len() != cols || r.iter().any(|e| matches!(e, Expr::List(_))) {
+      return None;
+    }
+    // The entries on the wrong side of the diagonal must vanish.
+    for (j, e) in r.iter().enumerate() {
+      let off = if lower { j > i } else { j < i };
+      if off && !is_zero_expr(e) {
+        return None;
+      }
+    }
+  }
+  let structure = match args.get(1) {
+    None => "Structured",
+    Some(Expr::Rule {
+      pattern,
+      replacement,
+    }) if matches!(pattern.as_ref(), Expr::Identifier(t) if t == "TargetStructure") => {
+      match replacement.as_ref() {
+        Expr::String(s)
+          if s == "Dense" || s == "Sparse" || s == "Structured" =>
+        {
+          s.as_str()
+        }
+        Expr::Identifier(a) if a == "Automatic" => "Structured",
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  match structure {
+    "Dense" => Some(args[0].clone()),
+    "Sparse" => crate::evaluator::evaluate_expr_to_expr(&call1(
+      "SparseArray",
+      args[0].clone(),
+    ))
+    .ok(),
+    _ => Some(lu_structured_matrix(
+      name,
+      rows.len(),
+      cols,
+      args[0].clone(),
+    )),
+  }
 }

@@ -429,9 +429,14 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return call();
   };
 
+  // `{{}}` with no right-hand sides is the empty constraint matrix.
+  let no_constraints = m_rows.len() == 1
+    && matches!(&m_rows[0], Expr::List(r) if r.is_empty())
+    && b_items.is_empty();
+  let m_rows: &[Expr] = if no_constraints { &[] } else { m_rows };
   let n = c_items.len();
   let k = m_rows.len();
-  if n == 0 || k == 0 {
+  if n == 0 || (k == 0 && !no_constraints) {
     return call();
   }
   if b_items.len() != k {
@@ -504,6 +509,10 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bounds =
     match args.get(3) {
       None => vec![(Bound::Finite(Rat::zero()), Bound::PosInf); n],
+      // Automatic is the default bound x >= 0.
+      Some(Expr::Identifier(a)) if a == "Automatic" => {
+        vec![(Bound::Finite(Rat::zero()), Bound::PosInf); n]
+      }
       Some(l) => match parse_bounds(l, n) {
         Ok(bounds) => bounds,
         Err(err) => {

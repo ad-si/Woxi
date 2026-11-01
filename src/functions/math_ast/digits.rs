@@ -3463,6 +3463,18 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated());
   }
+  // Listable in the first argument.
+  if let Expr::List(xs) = &args[0] {
+    return xs
+      .iter()
+      .map(|x| {
+        let mut a = args.to_vec();
+        a[0] = x.clone();
+        number_digit_ast(&a)
+      })
+      .collect::<Result<Vec<_>, _>>()
+      .map(|v| Expr::List(v.into()));
+  }
   // Base (default 10); integers below 2 emit ::rbase
   let base: u32 = if args.len() == 3 {
     match &args[2] {
@@ -3821,6 +3833,44 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     }
   };
+
+  // Exact symbolic numbers (10 Pi in the basis {E, 1}): integer
+  // coefficients from Floor, the last one the exact remainder.
+  if let Expr::List(units) = &args[1]
+    && !units.is_empty()
+    && (to_num(&args[0]).is_none() || units.iter().any(|u| to_num(u).is_none()))
+    && let Some(x) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+    && let Some(us) = units
+      .iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect::<Option<Vec<f64>>>()
+    && x.is_finite()
+  {
+    if !(us.iter().all(|u| *u > 0.0) && us.windows(2).all(|w| w[0] >= w[1])) {
+      crate::emit_message(&format!(
+        "NumberDecompose::psv: {} is not a list of nonincreasing positive numbers.",
+        expr_to_string(&args[1])
+      ));
+      return Ok(unevaluated(args));
+    }
+    use crate::evaluator::evaluate_expr_to_expr as ev;
+    let mut rem = args[0].clone();
+    let mut coeffs = Vec::with_capacity(units.len());
+    for (i, u) in units.iter().enumerate() {
+      let ratio = call("Divide", vec![rem.clone(), u.clone()]);
+      if i + 1 == units.len() {
+        coeffs.push(ev(&ratio)?);
+      } else {
+        let c = ev(&call1("Floor", ratio))?;
+        rem = ev(&call(
+          "Subtract",
+          vec![rem, call("Times", vec![c.clone(), u.clone()])],
+        ))?;
+        coeffs.push(c);
+      }
+    }
+    return Ok(Expr::List(coeffs.into()));
+  }
 
   // The value must be numeric before the unit list is even validated
   let Some(value) = to_num(&args[0]) else {

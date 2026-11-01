@@ -2792,7 +2792,12 @@ pub fn dispatch_list_operations(
       // Like Order, but numerically comparable operands are compared by value:
       // NumericalOrder[2.5, 5/2] = 0 where Order[2.5, 5/2] = 1. Falls back to
       // canonical ordering when the operands are not numerically comparable.
-      use crate::functions::math_ast::try_eval_to_f64;
+      // Infinite quantities compare as the extremes of the real line.
+      let try_eval_to_f64 = |e: &Expr| match e {
+        Expr::Identifier(s) if s == "Infinity" => Some(f64::INFINITY),
+        _ if expr_to_string(e) == "-Infinity" => Some(f64::NEG_INFINITY),
+        _ => crate::functions::math_ast::try_eval_to_f64(e),
+      };
       let result =
         match (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1])) {
           (Some(a), Some(b)) if a < b => 1,
@@ -4031,6 +4036,26 @@ pub fn dispatch_list_operations(
     }
     "Reverse" if args.len() == 2 => {
       return Some(list_helpers_ast::reverse_level_ast(&args[0], &args[1]));
+    }
+    // LexicographicSort[list, p] is Sort[list, LexicographicOrder[p]]: the
+    // elements are compared position by position with the ordering p.
+    "LexicographicSort"
+      if args.len() == 2 && !list_helpers_ast::is_atomic_arg(&args[0]) =>
+    {
+      let order = Expr::Function {
+        body: Box::new(call(
+          "LexicographicOrder",
+          vec![
+            Expr::Slot(1),
+            Expr::Slot(2),
+            args[1].clone(),
+          ],
+        )),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Sort",
+        &[args[0].clone(), order],
+      ));
     }
     "LexicographicSort" if args.len() == 1 => {
       // Atomic arg: emit ::normal and stay unevaluated (matches Sort).
@@ -6604,81 +6629,35 @@ pub fn dispatch_list_operations(
         ));
       }
     }
-    "FoldPair" if args.len() == 3 || args.len() == 4 => {
-      if let Expr::List(ref elems) = args[2] {
-        // FoldPair on an empty list stays unevaluated (matching wolframscript).
-        if elems.is_empty() {
-          return Some(Ok(unevaluated("FoldPair", args)));
-        }
-        let f = &args[0];
-        let mut state = args[1].clone();
-        // Always overwritten on the first (guaranteed) iteration.
-        let mut last_emit = args[1].clone();
-        let apply2 = |func: &Expr, a: &Expr, b: &Expr| -> Expr {
-          match func {
-            Expr::Function { body } => {
-              crate::syntax::substitute_slots(body, &[a.clone(), b.clone()])
-            }
-            Expr::Identifier(fname) => Expr::FunctionCall {
-              name: fname.clone(),
-              args: vec![a.clone(), b.clone()].into(),
-            },
-            _ => Expr::FunctionCall {
-              name: expr_to_string(func),
-              args: vec![a.clone(), b.clone()].into(),
-            },
-          }
-        };
-        for elem in elems {
-          let applied = apply2(f, &state, elem);
-          let result = crate::evaluator::evaluate_expr_to_expr(&applied)
-            .unwrap_or_else(|_| applied.clone());
-          match &result {
-            Expr::List(pair) if pair.len() == 2 => {
-              last_emit = pair[0].clone();
-              state = pair[1].clone();
-            }
-            // f did not return a length-2 list: emit FoldPair::pair and
-            // leave unevaluated, matching wolframscript.
-            _ => {
-              crate::emit_message(&format!(
-                "FoldPair::pair: Function application {} returned {}; a list of two elements is expected.",
-                crate::syntax::format_expr(
-                  &applied,
-                  crate::syntax::ExprForm::Output
-                ),
-                crate::syntax::format_expr(
-                  &result,
-                  crate::syntax::ExprForm::Output
-                )
-              ));
-              return Some(Ok(unevaluated("FoldPair", args)));
-            }
-          }
-        }
-        if args.len() == 4 {
-          // Apply the post-processing function g to the final pair.
-          let pair = Expr::List(vec![last_emit, state].into());
-          let applied = match &args[3] {
-            Expr::Function { body } => {
-              crate::syntax::substitute_slots(body, &[pair])
-            }
-            Expr::Identifier(gname) => Expr::FunctionCall {
-              name: gname.clone(),
-              args: vec![pair].into(),
-            },
-            other => Expr::FunctionCall {
-              name: expr_to_string(other),
-              args: vec![pair].into(),
-            },
-          };
-          return Some(Ok(
-            crate::evaluator::evaluate_expr_to_expr(&applied)
-              .unwrap_or(applied),
-          ));
-        }
-        return Some(Ok(last_emit));
+    // FoldPair[f, y0, list(, g)] is the last element FoldPairList emits.
+    "FoldPair"
+      if (args.len() == 3 || args.len() == 4)
+        && matches!(&args[2], Expr::List(_) | Expr::FunctionCall { .. }) =>
+    {
+      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) = &args[2]
+      else {
+        return None;
+      };
+      // FoldPair on an empty list stays unevaluated (matching wolframscript).
+      if elems.is_empty() {
+        return Some(Ok(unevaluated("FoldPair", args)));
       }
+      return Some(match fold_pair_steps(args, elems) {
+        Ok(FoldPairSteps::Emitted(mut results)) => {
+          Ok(results.pop().unwrap_or_else(|| unevaluated("FoldPair", args)))
+        }
+        // f did not return a length-2 list: emit FoldPair::pair and leave
+        // unevaluated, matching wolframscript.
+        Ok(FoldPairSteps::NotAPair { applied, result }) => {
+          crate::emit_message(&format!(
+            "FoldPair::pair: Function application {} returned {}; a list of two elements is expected.",
+            crate::syntax::format_expr(&applied, crate::syntax::ExprForm::Output),
+            crate::syntax::format_expr(&result, crate::syntax::ExprForm::Output)
+          ));
+          Ok(unevaluated("FoldPair", args))
+        }
+        Err(e) => Err(e),
+      });
     }
     // FoldPairList[f, x, list] — fold with pair output {emit, newState}.
     // FoldPairList[f, x, list, g] emits g applied to the whole {emit, newState}
@@ -6694,32 +6673,10 @@ pub fn dispatch_list_operations(
       else {
         return None;
       };
-      let mut state = args[1].clone();
-      let mut results = Vec::new();
-      for elem in elems {
-        let result =
-          match list_helpers_ast::apply_func_to_two_args(&args[0], &state, elem)
-          {
-            Ok(r) => r,
-            Err(e) => return Some(Err(e)),
-          };
-        let Expr::List(pair) = &result else {
-          return Some(Ok(result));
-        };
-        if pair.len() != 2 {
-          return Some(Ok(result));
-        }
-        let emitted = match args.get(3) {
-          Some(g) => match list_helpers_ast::apply_func_ast(g, &result) {
-            Ok(r) => r,
-            Err(e) => return Some(Err(e)),
-          },
-          None => pair[0].clone(),
-        };
-        results.push(emitted);
-        state = pair[1].clone();
-      }
-      return Some(Ok(Expr::List(results.into())));
+      return Some(fold_pair_steps(args, elems).map(|steps| match steps {
+        FoldPairSteps::Emitted(results) => Expr::List(results.into()),
+        FoldPairSteps::NotAPair { result, .. } => result,
+      }));
     }
     // JoinAcross[alist, blist, keyspec, joinspec, KeyCollisionFunction -> f]
     // joins the associations of two lists whose join keys match.
@@ -7101,6 +7058,14 @@ pub fn dispatch_list_operations(
             if !items.is_empty() && items.iter().all(is_rule) =>
           {
             items.iter().filter_map(parse_seq_rule).collect()
+          }
+          // Alternatives of sequence patterns: split at any of them.
+          Expr::FunctionCall { name, args: alts }
+            if name == "Alternatives"
+              && !alts.is_empty()
+              && alts.iter().all(|a| matches!(a, Expr::List(_))) =>
+          {
+            alts.iter().filter_map(parse_seq_pattern).collect()
           }
           single => parse_seq_rule(single)
             .or_else(|| parse_seq_pattern(single))
@@ -7680,6 +7645,34 @@ pub fn dispatch_list_operations(
     // Integer (1-D) or a list of Integers (multi-D). For each dimension,
     // left padding is floor((n - k)/2) and right padding is the rest, so
     // scalars in an even-length dimension sit just left of middle.
+    // CenterArray[a, nspec, pad, SparseArray]: the same array as a
+    // SparseArray whose background is the padding.
+    "CenterArray"
+      if args.len() == 4
+        && matches!(&args[3], Expr::Identifier(h) if h == "SparseArray") =>
+    {
+      let dense = match crate::evaluator::evaluate_function_call_ast(
+        "CenterArray",
+        &args[..3],
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      if !matches!(&dense, Expr::List(_)) {
+        return Some(Ok(unevaluated("CenterArray", args)));
+      }
+      let dims = match crate::evaluator::evaluate_function_call_ast(
+        "Dimensions",
+        std::slice::from_ref(&dense),
+      ) {
+        Ok(d) => d,
+        Err(e) => return Some(Err(e)),
+      };
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "SparseArray",
+        &[dense, dims, args[2].clone()],
+      ));
+    }
     "CenterArray" if (1..=3).contains(&args.len()) => {
       // Normalise to (a, nspec, pad).
       let (a, nspec, pad) = if args.len() == 1 {
@@ -7689,6 +7682,56 @@ pub fn dispatch_list_operations(
       } else {
         (args[0].clone(), args[1].clone(), args[2].clone())
       };
+      // A block shallower than the spec is wrapped up to its rank (a vector
+      // in a matrix sits on the middle row); a deeper one keeps its own
+      // lower dimensions.
+      let block_rank = {
+        let mut r = 0usize;
+        let mut cur = &a;
+        while let Expr::List(items) = cur {
+          r += 1;
+          match items.first() {
+            Some(f) => cur = f,
+            None => break,
+          }
+        }
+        r
+      };
+      let spec_rank = match &nspec {
+        Expr::List(items) => items.len(),
+        _ => 1,
+      };
+      if block_rank > 0 && block_rank != spec_rank {
+        let mut a2 = a.clone();
+        let mut nspec2 = nspec.clone();
+        if block_rank < spec_rank {
+          for _ in block_rank..spec_rank {
+            a2 = Expr::List(vec![a2].into());
+          }
+        } else {
+          let mut spec: Vec<Expr> = match &nspec {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          let mut cur = &a;
+          let mut level = 0usize;
+          while let Expr::List(items) = cur {
+            if level >= spec_rank {
+              spec.push(Expr::Integer(items.len() as i128));
+            }
+            level += 1;
+            match items.first() {
+              Some(f) => cur = f,
+              None => break,
+            }
+          }
+          nspec2 = Expr::List(spec.into());
+        }
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "CenterArray",
+          &[a2, nspec2, pad],
+        ));
+      }
       // Parse nspec into a list of dimension lengths.
       let dims: Vec<usize> = match &nspec {
         Expr::Integer(n) if *n >= 0 => vec![*n as usize],
@@ -8212,6 +8255,60 @@ pub fn dispatch_list_operations(
       }
     }
     // PermutationLength[perm] — number of non-fixed points
+    // Of a permutation group: the union of its generators' supports.
+    "PermutationLength" | "PermutationSupport" | "PermutationMax"
+    | "PermutationMin"
+      if args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: g, .. }
+          if g == "PermutationGroup" || g.ends_with("Group")) =>
+    {
+      let gens = match crate::evaluator::evaluate_function_call_ast(
+        "GroupGenerators",
+        args,
+      ) {
+        Ok(g) => g,
+        Err(e) => return Some(Err(e)),
+      };
+      let Expr::List(gens) = &gens else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let mut points: Vec<i128> = Vec::new();
+      for g in gens {
+        let support = match crate::evaluator::evaluate_function_call_ast(
+          "PermutationSupport",
+          std::slice::from_ref(g),
+        ) {
+          Ok(s) => s,
+          Err(e) => return Some(Err(e)),
+        };
+        match &support {
+          Expr::List(ps) => {
+            for p in ps {
+              match p {
+                Expr::Integer(i) => points.push(*i),
+                _ => return Some(Ok(unevaluated(name, args))),
+              }
+            }
+          }
+          _ => return Some(Ok(unevaluated(name, args))),
+        }
+      }
+      points.sort_unstable();
+      points.dedup();
+      return Some(Ok(match name {
+        "PermutationSupport" => {
+          Expr::List(points.into_iter().map(Expr::Integer).collect())
+        }
+        "PermutationLength" => Expr::Integer(points.len() as i128),
+        // A group moving no point has the extremes of Cycles[{}].
+        "PermutationMax" => {
+          points.last().map_or(Expr::Integer(0), |m| Expr::Integer(*m))
+        }
+        _ => points
+          .first()
+          .map_or_else(|| Expr::Identifier("Infinity".into()), |m| Expr::Integer(*m)),
+      }));
+    }
     "PermutationLength" if args.len() == 1 => {
       // Cycles form: sum of cycle lengths (Cycles canonicalises away
       // length-1 cycles, so every listed element is moved).
@@ -11319,6 +11416,52 @@ fn contains_series_data(e: &Expr) -> bool {
     || crate::syntax::expr_children(e)
       .into_iter()
       .any(contains_series_data)
+}
+
+/// The outcome of folding FoldPairList / FoldPair's step function.
+enum FoldPairSteps {
+  /// Every step returned a pair: the emitted elements (g applied to each
+  /// pair when a fourth argument is given).
+  Emitted(Vec<Expr>),
+  /// A step returned something other than a pair.
+  NotAPair { applied: Expr, result: Expr },
+}
+
+/// Fold `args[0]` over `elems` from `args[1]`, as FoldPairList does: each
+/// step f[y, e] gives {emitted, next y}. Errors (including Throw) propagate.
+fn fold_pair_steps(
+  args: &[Expr],
+  elems: &[Expr],
+) -> Result<FoldPairSteps, InterpreterError> {
+  let mut state = args[1].clone();
+  let mut results = Vec::new();
+  for elem in elems {
+    let result =
+      list_helpers_ast::apply_func_to_two_args(&args[0], &state, elem)?;
+    let pair = match &result {
+      Expr::List(pair) if pair.len() == 2 => pair.clone(),
+      _ => {
+        let applied = match &args[0] {
+          Expr::Identifier(f) => Expr::FunctionCall {
+            name: f.clone(),
+            args: vec![state.clone(), elem.clone()].into(),
+          },
+          f => Expr::CurriedCall {
+            func: Box::new(f.clone()),
+            args: vec![state.clone(), elem.clone()],
+          },
+        };
+        return Ok(FoldPairSteps::NotAPair { applied, result });
+      }
+    };
+    let emitted = match args.get(3) {
+      Some(g) => list_helpers_ast::apply_func_ast(g, &result)?,
+      None => pair[0].clone(),
+    };
+    results.push(emitted);
+    state = pair[1].clone();
+  }
+  Ok(FoldPairSteps::Emitted(results))
 }
 
 /// How `JoinAcross` decides whether two associations are joined.

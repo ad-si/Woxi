@@ -21444,6 +21444,17 @@ pub fn discrete_shift_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           specs.push((name.clone(), items[1].clone()));
         }
       }
+      // {x, n, h}: n shifts of step h, i.e. x -> x + n h.
+      Expr::List(items)
+        if items.len() == 3 && matches!(&items[0], Expr::Identifier(_)) =>
+      {
+        if let Expr::Identifier(name) = &items[0] {
+          specs.push((
+            name.clone(),
+            crate::helpers::times(vec![items[1].clone(), items[2].clone()]),
+          ));
+        }
+      }
       _ => {
         crate::emit_message(&format!(
           "General::ivar: {} is not a valid variable.",
