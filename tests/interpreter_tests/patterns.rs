@@ -1867,6 +1867,19 @@ mod between {
 mod free_q {
   use super::*;
 
+  // A rendered Graphics3D is searched through its symbolic expression, as
+  // Cases, Count and Position do.
+  #[test]
+  fn searches_rendered_graphics3d() {
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[{Red, Point[{0, 0, 0}]}]; {FreeQ[g, RGBColor[1, 0, 0]], FreeQ[g, Blue], MemberQ[g, RGBColor[1, 0, 0], Infinity], MemberQ[g, RGBColor[1, 0, 0]]}"
+      )
+      .unwrap(),
+      "{False, True, True, False}"
+    );
+  }
+
   // A rule, comparison or association written as the form is a pattern
   // like any other, not a literal to compare as text
   #[test]
