@@ -52,6 +52,7 @@ mod interpreter_tests {
   mod option_sweep4_plots;
   mod option_sweep4_special;
   mod option_sweep5_special_wavelets;
+  mod option_sweep5_special_discrete;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;

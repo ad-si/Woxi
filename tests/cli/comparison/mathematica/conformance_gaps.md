@@ -7038,3 +7038,31 @@ recoverable from the page, so it is not implemented.
 - `WaveletPhi`/`WaveletPsi` of `BattleLemarieWavelet[n, lim]` with a symbolic
   argument stay unevaluated; Wolfram returns a `Piecewise` of an
   `InterpolatingFunction`.
+
+## `DiscreteAsymptotic` (parameter sweep, round 5)
+
+Confirmed against the `DiscreteAsymptotic` reference page, not fixed; Woxi
+leaves these unevaluated:
+
+- `DiscreteAsymptotic[QPolyGamma[2, n], n -> Infinity]` is `Log[n]/2`
+  (`QPolyGamma` itself is not implemented).
+- `DiscreteAsymptotic[StirlingS1[n, 2], n -> Infinity]` is
+  `(-1 + n)! Log[n]` on the page, without the `(-1)^n` sign of the signed
+  Stirling numbers; `StirlingS2[n, 2]` gives a long saddle-point form in
+  `ProductLog[E^(1/2) (-1 - n)/2]`.
+- `DifferenceRoot` sequences and `Inactive[RSolveValue][…]` (the reference
+  page gives e.g. `2 E^(-2 n) n^(-1 + 2 n) Pi` for
+  `y[n + 1] == n^2 y[n], y[1] == 1`), `Inactive[InverseZTransform][…]`
+  (a `Root[-1 - 6 #1 + 6 #1^3 &, 2]` form), and the numeric
+  `Sum[Binomial[n, k]^3, {k, 0., n}]`.
+- Expansion points other than `Infinity`:
+  `DiscreteAsymptotic[Inactive[Sum][1/(k^2 + a), {k, 0, Infinity}], a -> 0]`
+  is `1/a`.
+- `SeriesTermGoal -> m` (or `{n, Infinity, m}`) with `m > 1` is only
+  implemented for a constant times `Gamma`, `Factorial` or `Pochhammer`
+  of `n + c` (the Stirling series); other sequences stay unevaluated.
+- Terms of equal growth are added as they are
+  (`LucasL[n] + Fibonacci[n]` gives `GoldenRatio^n/Sqrt[5] + GoldenRatio^n`),
+  and several exponentials with rational bases are merged into one
+  (`2^n 3^n` gives `6^n`, as `4^n/(1 + 2^n)` gives `2^n` on the page);
+  wolframscript's form for these is unverified.
