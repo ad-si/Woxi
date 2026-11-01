@@ -3303,6 +3303,40 @@ fn rescale_symbolic_numeric_list(
   rebuild(&args[0], min_e, &span)
 }
 
+/// Rescale with symbolic (or complex) bounds, in the forms wolframscript
+/// gives: `Rescale[x, {a, b}]` is `(x - a)/(b - a)` (so `Rescale[0, {a, b}]`
+/// is `-(a/(-a + b))` and `Rescale[a, {b, a}]` is 1), and
+/// `Rescale[x, {a, b}, {c, d}]` is the line
+/// `-(a d - b c)/(b - a) + (d - c) x/(b - a)`.
+fn rescale_symbolic(
+  x: &Expr,
+  a: &Expr,
+  b: &Expr,
+  target: Option<(&Expr, &Expr)>,
+) -> Result<Expr, InterpreterError> {
+  let inv_span = pow(plus(vec![b.clone(), neg(a.clone())]), Expr::Integer(-1));
+  let Some((c, d)) = target else {
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      plus(vec![x.clone(), neg(a.clone())]),
+      inv_span,
+    ]));
+  };
+  let constant = times(vec![
+    Expr::Integer(-1),
+    plus(vec![
+      times(vec![a.clone(), d.clone()]),
+      neg(times(vec![b.clone(), c.clone()])),
+    ]),
+    inv_span.clone(),
+  ]);
+  let slope_term = times(vec![
+    plus(vec![d.clone(), neg(c.clone())]),
+    x.clone(),
+    inv_span,
+  ]);
+  crate::evaluator::evaluate_expr_to_expr(&plus(vec![constant, slope_term]))
+}
+
 pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -3399,14 +3433,18 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && args.len() == 2)
   };
 
-  // The bounds and targets must be numbers. Symbolic bounds/targets ({a, b})
-  // make wolframscript produce an Apart/Expand-normalized form that Woxi's
-  // canonicalization does not reproduce, so those stay unevaluated. Exact
+  // Symbolic (or complex) bounds/targets ({a, b}) give the line form of
+  // `rescale_symbolic`. Otherwise the bounds are real numbers. Exact
   // numeric constants (`Log[3]`, as in a weighting of `Log[n/df]` values)
   // are numbers too, as long as the value being rescaled is numeric as well.
   let bounds = [&range[0], &range[1], ymin, ymax];
   if bounds.iter().any(|b| try_eval_to_f64(b).is_none()) {
-    return unevaluated();
+    return rescale_symbolic(
+      &args[0],
+      &range[0],
+      &range[1],
+      (args.len() == 3).then_some((ymin, ymax)),
+    );
   }
   let literal_bounds = bounds.iter().all(|b| is_numeric_literal(b));
   if !literal_bounds && try_eval_to_f64(&args[0]).is_none() {

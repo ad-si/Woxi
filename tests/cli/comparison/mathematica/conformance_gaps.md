@@ -344,6 +344,13 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
+### `Rescale[x, {a, b}, {c, d}]` orders its two terms the other way
+
+The reference page gives
+`-((-(b c) + a d)/(-a + b)) + ((-c + d) x)/(-a + b)`; Woxi builds the same sum
+but prints the `x` term first. The values at numbers (`Rescale[0, {a, b}, {c, d}]`)
+match.
+
 ### A coefficient times a sum of calls sorts before a lone call
 
 ```sh
@@ -2812,6 +2819,16 @@ symbolic standard deviation is not recognized and the call stays unevaluated.
 Symbolic *means* are recognized; only the width has to be a number.
 
 
+### `RomanNumeral` of 5000 and above
+
+`RomanNumeral[5078]` stays unevaluated; WL prints an overbar on the leading
+`V` (V̄LXXVIII). The exact characters WL uses for the overbar are not known.
+
+### `FullSimplify[Clip[-x] == -Clip[x]]`
+
+The reference page gives `True` (one-argument `Clip` is odd); Woxi's
+`FullSimplify` leaves the equation unevaluated.
+
 ## Special functions
 
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
@@ -3279,6 +3296,24 @@ Non-maximal orders are unevaluated (`Sqrt[2]+Sqrt[3]` → WL 2304 via a full
 conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 ≥ 3.
 
+
+### `MatrixPower` to a symbolic power
+
+`MatrixPower[{{0, a}, {b, 0}}, n]` stays unevaluated. The reference page
+gives the eigen-decomposition form
+
+```
+{{(1/2) (-Sqrt[a] Sqrt[b])^n + (1/2) (Sqrt[a] Sqrt[b])^n, …}, …}
+```
+
+### `Orthogonalize[…, Dot]` orders the norm's squares differently
+
+`Orthogonalize[{{a, b}, {x, y}}, Dot]` matches the reference page's
+unsimplified Gram–Schmidt form except inside the norm: WL writes
+`Sqrt[(x - (a (a x + b y))/(a^2 + b^2))^2 + (y - (b (a x + b y))/(a^2 + b^2))^2]`,
+Woxi puts the `y` square first. The cause is canonical ordering:
+`Sort[{-(a*(a*x + b*y))/(a^2 + b^2), -(b*(a*x + b*y))/(a^2 + b^2)}]` puts the
+`b` term first in Woxi.
 
 ### `LinearSolve[m]` is not a `LinearSolveFunction`
 

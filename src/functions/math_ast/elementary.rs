@@ -4060,6 +4060,11 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let s = expr_to_string(arg);
     if s != first_str {
       all_equal = false;
+      // Lists are compared as wholes: a differing length or a pair of
+      // unequal numeric entries decides KroneckerDelta[{1, 0}, {0, 1}] = 0.
+      if kronecker_lists_differ(&args[0], arg) {
+        return Ok(Expr::Integer(0));
+      }
       // Check if both are numeric and compare numerically
       if let (Some(a), Some(b)) =
         (try_eval_to_f64(&args[0]), try_eval_to_f64(arg))
@@ -4080,6 +4085,29 @@ pub fn kronecker_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(Expr::Integer(1))
   } else {
     Ok(Expr::Integer(0))
+  }
+}
+
+/// Whether two lists are certainly different: their lengths differ, or some
+/// pair of corresponding entries are unequal numbers (or differing lists).
+fn kronecker_lists_differ(a: &Expr, b: &Expr) -> bool {
+  match (a, b) {
+    (Expr::List(xs), Expr::List(ys)) => {
+      xs.len() != ys.len()
+        || xs.iter().zip(ys.iter()).any(|(x, y)| match (x, y) {
+          (Expr::List(_), _) | (_, Expr::List(_)) => {
+            kronecker_lists_differ(x, y)
+          }
+          _ => matches!(
+            (try_eval_to_f64(x), try_eval_to_f64(y)),
+            (Some(p), Some(q)) if p != q
+          ),
+        })
+    }
+    (Expr::List(_), other) | (other, Expr::List(_)) => {
+      try_eval_to_f64(other).is_some()
+    }
+    _ => false,
   }
 }
 
