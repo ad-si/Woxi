@@ -25175,3 +25175,72 @@ mod sum_index_inside_nested_iterators {
     }
   }
 }
+
+mod d_piecewise {
+  use super::*;
+
+  // Polynomial inequalities in the variable alone cut the line into open
+  // intervals, each with the derivative of its piece; the boundaries fall
+  // to Indeterminate. All wolframscript-verified.
+  #[test]
+  fn univariate_conditions_split_into_intervals() {
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x, 0 <= x <= 1}}, x^2], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{2*x, x < 0}, {1, Inequality[0, Less, x, Less, 1]}, {2*x, x > 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x > 0}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{0, x < 0}, {1, x > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x, x > 2}, {x^3, x > 0}}, 1], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{0, x < 0}, {3*x^2, Inequality[0, Less, x, Less, 2]}, {1, x > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x^2 < 2}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{0, x < -Sqrt[2]}, {1, Inequality[-Sqrt[2], Less, x, Less, Sqrt[2]]}, {0, x > Sqrt[2]}}, Indeterminate]"
+    );
+    assert_eq!(interpret("D[Piecewise[{{1, x > 0}}, 1], x]").unwrap(), "0");
+  }
+
+  // Other conditions stay, as a difference against 0 led by a positive
+  // term, and the default is differentiated too.
+  #[test]
+  fn other_conditions_are_kept() {
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, Sin[x] > 0}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, Sin[x] > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, E^x <= 2}}, x^2], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, E^x <= 2}}, 2*x]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x^2, x > a}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{2*x, a - x < 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x^2, x >= a && x < b}}, 1], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{2*x, a - x <= 0 && b - x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x != 1}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, x != 1}}, 0]"
+    );
+  }
+}
