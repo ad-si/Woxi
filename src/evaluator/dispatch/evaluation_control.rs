@@ -918,26 +918,54 @@ pub fn dispatch_evaluation_control(
       };
       let mut ignore_case = false;
       let mut resolve_aliases = true;
+      let mut spelling_correction = false;
       for opt in &args[1..] {
         match crate::functions::expr_form::rule_parts(opt) {
           Some((Expr::Identifier(n), Expr::Identifier(flag), _))
             if (flag == "True" || flag == "False")
-              && (n == "IgnoreCase" || n == "ResolveContextAliases") =>
+              && (n == "IgnoreCase"
+                || n == "ResolveContextAliases"
+                || n == "SpellingCorrection") =>
           {
-            if n == "IgnoreCase" {
-              ignore_case = flag == "True";
-            } else {
-              resolve_aliases = flag == "True";
+            match n.as_str() {
+              "IgnoreCase" => ignore_case = flag == "True",
+              "SpellingCorrection" => spelling_correction = flag == "True",
+              _ => resolve_aliases = flag == "True",
             }
           }
           _ => return Some(Ok(unevaluated("Names", args))),
         }
       }
-      let names = crate::evaluator::contexts::names_matching_with(
-        pattern,
-        ignore_case,
-        resolve_aliases,
-      );
+      // SpellingCorrection -> True: a literal name also matches the names
+      // one edit (insertion, deletion, substitution or transposition of
+      // adjacent characters) away from it.
+      let names = if spelling_correction && !pattern.contains(['*', '@']) {
+        let fold = |s: &str| {
+          if ignore_case {
+            s.to_lowercase()
+          } else {
+            s.to_string()
+          }
+        };
+        let target: Vec<char> = fold(pattern).chars().collect();
+        crate::evaluator::contexts::names_matching_with(
+          "*",
+          ignore_case,
+          resolve_aliases,
+        )
+        .into_iter()
+        .filter(|n| {
+          let candidate: Vec<char> = fold(n).chars().collect();
+          within_one_edit(&target, &candidate)
+        })
+        .collect()
+      } else {
+        crate::evaluator::contexts::names_matching_with(
+          pattern,
+          ignore_case,
+          resolve_aliases,
+        )
+      };
       return Some(Ok(Expr::List(
         names.into_iter().map(Expr::String).collect(),
       )));
@@ -1546,4 +1574,29 @@ fn clip_numeric_array_data(data: &Expr, ty: &str, round: bool) -> Option<Expr> {
     }
   }
   walk(data, int_range, ty == "Real32", round)
+}
+
+/// Whether the optimal-string-alignment distance between a and b is at most
+/// one: equal, or one insertion, deletion, substitution or transposition of
+/// adjacent characters apart.
+fn within_one_edit(a: &[char], b: &[char]) -> bool {
+  if a == b {
+    return true;
+  }
+  let (la, lb) = (a.len(), b.len());
+  if la.abs_diff(lb) > 1 {
+    return false;
+  }
+  let prefix = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+  match la.cmp(&lb) {
+    std::cmp::Ordering::Equal => {
+      a[prefix + 1..] == b[prefix + 1..]
+        || (prefix + 1 < la
+          && a[prefix] == b[prefix + 1]
+          && a[prefix + 1] == b[prefix]
+          && a[prefix + 2..] == b[prefix + 2..])
+    }
+    std::cmp::Ordering::Less => a[prefix..] == b[prefix + 1..],
+    std::cmp::Ordering::Greater => a[prefix + 1..] == b[prefix..],
+  }
 }

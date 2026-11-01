@@ -4026,13 +4026,12 @@ fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
 
 /// Whether `op` binds tighter than `Times`, so that it has to reach into an
 /// adjacent implicit product rather than take the whole product as one
-/// operand. `NEGATE` (the synthetic unary minus) and the `~f~` tilde infix
-/// are excluded: both already bind around a whole product the way Wolfram
-/// reads them.
+/// operand. `NEGATE` (the synthetic unary minus) is one of them: Wolfram
+/// reads `-x y` as `(-x) y`, `Times[Times[-1, x], y]`, not as
+/// `Times[-1, Times[x, y]]`. The `~f~` tilde infix is excluded: it already
+/// binds around a whole product the way Wolfram reads it.
 fn splits_implicit_product(op: &str) -> bool {
-  if op == "NEGATE"
-    || (op.starts_with('~') && op.ends_with('~') && op.len() > 2)
-  {
+  if op.starts_with('~') && op.ends_with('~') && op.len() > 2 {
     return false;
   }
   operator_precedence(op) > operator_precedence("*")
@@ -8873,8 +8872,31 @@ fn is_denominator_factor(expr: &Expr) -> bool {
       op: BinaryOperator::Times,
       left,
       ..
-    } => matches!(left.as_ref(), Expr::Integer(-1)),
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1))
+        || strip_leading_unary_minus(exponent).is_some()
+    }
     _ => false,
+  }
+}
+
+/// A product whose first factor is a unary minus — the held `-k x`, which
+/// parses as `(-k) x` — with that minus removed (`k x`); `None` otherwise.
+fn strip_leading_unary_minus(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(operand.as_ref().clone()),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => Some(times2(
+      strip_leading_unary_minus(left)?,
+      right.as_ref().clone(),
+    )),
+    _ => None,
   }
 }
 
@@ -8987,7 +9009,8 @@ fn denominator_form(expr: &Expr) -> Expr {
       left,
       right,
     } if matches!(left.as_ref(), Expr::Integer(-1)) => right.as_ref().clone(),
-    _ => unreachable!(),
+    other => strip_leading_unary_minus(other)
+      .expect("is_denominator_factor accepts only negative exponents"),
   };
   // If positive exponent is 1, return just the base
   if matches!(&pos_exp, Expr::Integer(1)) {

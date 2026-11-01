@@ -306,6 +306,22 @@ Smaller TraditionalForm typesetter differences, all in representation:
 `StyleBox["x", RGBColor[1, 0, 0], StripOnInput -> False]`. The TraditionalForm
 builder learned both; the StandardForm one has not.
 
+### StandardForm boxes: inline exponent fractions, `I`, logical operands of a sum
+
+```sh
+wolframscript -code 'InputForm[ToBoxes[x^(3/2)]]'   # SuperscriptBox[x, RowBox[{3, /, 2}]]
+woxi eval 'InputForm[ToBoxes[x^(3/2)]]'             # SuperscriptBox[x, FractionBox[3, 2]]
+```
+
+A quotient in an exponent (`x^(a/b)`, `E^(x/2)`) is written inline with `/`
+by WL and as a `FractionBox` by Woxi. The imaginary unit boxes as `"I"`
+rather than `\[ImaginaryI]` (`U+F74E`), and the odd shape WL gives an
+inexact complex coefficient's parts (a trailing `" "` token after the real
+part) is not reproduced. A logical operand of a sum is
+not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
+&&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
+operands themselves are parenthesized by precedence).
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -327,6 +343,13 @@ because it makes the two layers disagree with each other.
 
 
 ## Canonical ordering of Plus and Times
+
+### `Rescale[x, {a, b}, {c, d}]` orders its two terms the other way
+
+The reference page gives
+`-((-(b c) + a d)/(-a + b)) + ((-c + d) x)/(-a + b)`; Woxi builds the same sum
+but prints the `x` term first. The values at numbers (`Rescale[0, {a, b}, {c, d}]`)
+match.
 
 ### A coefficient times a sum of calls sorts before a lone call
 
@@ -2796,6 +2819,16 @@ symbolic standard deviation is not recognized and the call stays unevaluated.
 Symbolic *means* are recognized; only the width has to be a number.
 
 
+### `RomanNumeral` of 5000 and above
+
+`RomanNumeral[5078]` stays unevaluated; WL prints an overbar on the leading
+`V` (V̄LXXVIII). The exact characters WL uses for the overbar are not known.
+
+### `FullSimplify[Clip[-x] == -Clip[x]]`
+
+The reference page gives `True` (one-argument `Clip` is odd); Woxi's
+`FullSimplify` leaves the equation unevaluated.
+
 ## Special functions
 
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
@@ -2881,11 +2914,6 @@ hoist content out of `Times[1/6, Plus[…]]` when typed directly, so `LaguerreL`
 must build the common denominator internally — but `LaguerreL[1, 1/2, x]` stays
 `3/2 - x` rather than `(3 - 2*x)/2`, so it is not a plain `Together` either.
 Integer second arguments match.
-
-### `ArcCot[Interval[…]]` is unevaluated
-
-WL converts endpoints to `ArcTan` form *inside* the interval (`ArcCot[2]` →
-`ArcTan[1/2]`), which differs from its own scalar `ArcCot[2]`.
 
 ### `WignerD[{1,0,0}, Pi/2]`
 
@@ -3268,6 +3296,24 @@ Non-maximal orders are unevaluated (`Sqrt[2]+Sqrt[3]` → WL 2304 via a full
 conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 ≥ 3.
 
+
+### `MatrixPower` to a symbolic power
+
+`MatrixPower[{{0, a}, {b, 0}}, n]` stays unevaluated. The reference page
+gives the eigen-decomposition form
+
+```
+{{(1/2) (-Sqrt[a] Sqrt[b])^n + (1/2) (Sqrt[a] Sqrt[b])^n, …}, …}
+```
+
+### `Orthogonalize[…, Dot]` orders the norm's squares differently
+
+`Orthogonalize[{{a, b}, {x, y}}, Dot]` matches the reference page's
+unsimplified Gram–Schmidt form except inside the norm: WL writes
+`Sqrt[(x - (a (a x + b y))/(a^2 + b^2))^2 + (y - (b (a x + b y))/(a^2 + b^2))^2]`,
+Woxi puts the `y` square first. The cause is canonical ordering:
+`Sort[{-(a*(a*x + b*y))/(a^2 + b^2), -(b*(a*x + b*y))/(a^2 + b^2)}]` puts the
+`b` term first in Woxi.
 
 ### `LinearSolve[m]` is not a `LinearSolveFunction`
 
@@ -3997,7 +4043,14 @@ precedence, which is worse than the parse error.
 ### `(a|b)|c` loses its grouping
 
 Explicit parentheses should give `Length` 2 (nested) in WL; Woxi's parser
-produces the same flat 3-argument form as `a|b|c`.
+produces the same flat 3-argument form as `a|b|c`. The same holds for every
+flattened operator chain built from `BinaryOp` nodes: `Hold[a + (b + c)]` is
+`Plus[a, b, c]` (WL `Plus[a, Plus[b, c]]`), `Hold[(a b) c]` is
+`Times[a, b, c]`, and `MakeBoxes[-(x y)]` boxes as `-x y` where WL keeps
+`RowBox[{"-", RowBox[{"(", …, ")"}]}]` — the parse tree does not record the
+parentheses, and box formation merges a unary minus into its product
+operand because Factor-style results built with `neg1(product)` stand for
+the flat evaluated `Times[-1, …]`.
 
 ### Parse-time messages do not exist
 
@@ -6822,3 +6875,53 @@ reference pages only plot them):
   supported.
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
+
+## Parameter sweep 4 (options): confirmed but not implemented
+
+The reference pages give these outputs; Woxi does not produce them yet.
+
+- `PolynomialMod[x^2, 2 x - 1, CoefficientDomain -> Integers]` is `x^2`
+  (integer coefficients are not inverted); Woxi leaves the call unevaluated.
+  How a partial reduction proceeds when the leading coefficient does not
+  divide (e.g. `3 x^2` modulo `2 x - 1`) is unverified.
+- `DiscreteLimit[E^(a n), n -> ∞, Assumptions -> a > 0]` is `∞` (`0` for
+  `a < 0`), and `DiscreteLimit[y^n, n -> ∞, GenerateConditions -> False]` is
+  `∞`. Without options wolframscript gives
+  `ConditionalExpression[Infinity, a > 0]` /
+  `ConditionalExpression[Infinity, Log[y] > 0]`; Woxi gives `E^(a*Infinity)`
+  and `y^Infinity`.
+- `Roots[x^2 - a x + 2 == 0, x, Using -> Roots[a^2 - 5 == 0, a]]` gives the
+  roots for each value of `a`, as `((x == … || x == …) && a == -Sqrt[5]) ||
+  ((…) && a == Sqrt[5])`; Woxi leaves the call unevaluated.
+- `RankDecomposition[m, Tolerance -> t]` of a machine matrix: wolframscript
+  factors a machine matrix with an orthogonal (QR-like) first factor, not as
+  pivot columns times the row-reduced form, so Woxi's machine result differs
+  even without `Tolerance`; the option stays unevaluated.
+- `GeneralizedLinearModelFit` / `LogitModelFit` with `Weights`: the
+  likelihood-based properties (`LogLikelihood`, `AIC`, `BIC`,
+  `NullDeviance`) are left out, since wolframscript's weighted likelihood
+  is unverified. `WorkingPrecision` other than `MachinePrecision` stays
+  unevaluated.
+- `Together[…, Extension -> …]` leaves the reduced denominator factored over
+  the field (verified for the reference examples); `Cancel` gives it expanded,
+  and which form `Cancel` uses when the denominator does not cancel completely
+  is unverified.
+
+## String functions on a circular `BioSequence` across the wrap point
+
+String functions accept linear `"DNA"`/`"RNA"` and circular
+`"CircularDNA"`/`"CircularRNA"` sequences, but `StringReplace` and
+`StringDelete` stay unevaluated on a circular sequence when a match wraps
+around from the last letter to the first, because the rotation Wolfram picks
+for the result is not recoverable from the documented examples:
+
+```sh
+wolframscript -code 'StringReplace[BioSequence["CircularDNA", "GTTGGCTTG"], "GGN" -> "A"]'
+# BioSequence["CircularDNA", "TATAT"]
+wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "GGY"]'
+# BioSequence["CircularDNA", "T"]
+```
+
+Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
+other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
+`StringReverse`, …) are not handled either.

@@ -3025,7 +3025,7 @@ LongestCommonSubsequence,"Returns the longest contiguous subsequence common to t
 NotebookDynamicExpression,"",🚫,,8.0,3048
 RangeFilter,"",🚫,,8.0,3048
 SectorChart3D,"Creates a 3D sector chart with angle/radius/height driven by data",✅,pure,7.0,3048
-SlideView,"Slide view control (stays symbolic in script mode)",✅,unevaluated,6.0,3048
+SlideView,"Slide view control (interactive in notebooks; stays symbolic in script mode)",✅,unevaluated,6.0,3048
 SpanMaxSize,"",,,3.0,3048
 TestReport,"",,,10.0,3048
 BetaPrimeDistribution,"Beta prime distribution with optional power and scale parameters",✅,pure,8.0,3059

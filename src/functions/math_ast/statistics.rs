@@ -3227,7 +3227,14 @@ pub fn correlation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_numeric =
     |e: &Expr| expr_to_num(e).is_some() || matches!(e, Expr::BigInteger(_));
   let all_numeric = xs.iter().all(&is_numeric) && ys.iter().all(&is_numeric);
-  if !all_numeric {
+  // Exact complex data (`2 + I`, `3/2 - 2 I`) takes the exact covariance
+  // path below, whose products conjugate the second argument.
+  let is_exact_complex = |e: &Expr| {
+    crate::functions::math_ast::try_extract_complex_exact_big(e).is_some()
+  };
+  let all_exact_complex =
+    xs.iter().all(is_exact_complex) && ys.iter().all(is_exact_complex);
+  if !all_numeric && !all_exact_complex {
     // Symbolic two-element vectors collapse to a clean closed form:
     //   r = (v0-v1)(Conj(w0)-Conj(w1)) /
     //       (Sqrt[(v0-v1)(Conj(v0)-Conj(v1))] * Sqrt[(w0-w1)(Conj(w0)-Conj(w1))])

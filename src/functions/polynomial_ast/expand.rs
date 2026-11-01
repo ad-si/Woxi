@@ -1672,7 +1672,9 @@ pub fn build_product(factors: Vec<Expr>) -> Expr {
   // Complex[0, _]), pull it to the front so the result respects Wolfram's
   // canonical Times ordering for I-bearing products: `I*Cos[x]*Sinh[y]`
   // rather than `Cos[x]*I*Sinh[y]`. Other factors keep their relative
-  // order — Expand callers rely on the variable-position ordering.
+  // order — Expand callers rely on the variable-position ordering. A
+  // leading real coefficient stays in front of it: `-1*I/y` is `-I/y`, not
+  // `I*-1/y`.
   let i_pos = factors.iter().position(|f| {
     matches!(f, Expr::Identifier(s) if s == "I")
       || matches!(f, Expr::FunctionCall { name, args }
@@ -1680,15 +1682,21 @@ pub fn build_product(factors: Vec<Expr>) -> Expr {
           && (matches!(&args[0], Expr::Integer(0))
               || matches!(&args[0], Expr::Real(v) if *v == 0.0)))
   });
+  let leading_reals = factors
+    .iter()
+    .take_while(|f| {
+      matches!(f, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+        || matches!(f, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+    })
+    .count();
   let factors: Vec<Expr> = if let Some(idx) = i_pos
-    && idx > 0
+    && idx > leading_reals
   {
     let mut v = factors;
     let i_factor = v.remove(idx);
-    let mut out = Vec::with_capacity(v.len() + 1);
-    out.push(i_factor);
-    out.extend(v);
-    out
+    v.insert(leading_reals, i_factor);
+    v
   } else {
     factors
   };
