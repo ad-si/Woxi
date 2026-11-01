@@ -2129,9 +2129,11 @@ tables.
 
 ### Higher-rank `Curl`
 
-Scalar in 3D, vector in 4D and rank-2 tensor in 3D — the valid higher-rank
-antisymmetric forms — stay unevaluated. WL returns them as `SymmetrizedArray`
-(or a collapsed 0). Needs exterior derivative plus Hodge dual.
+A rank-`n - 1` field in `n` dimensions has a scalar curl, which is computed
+(`(1/(n-1)!) Σ ε[j, i1, …] D[f[[i1, …]], x_j]`). The forms whose curl has
+rank 2 or more — a scalar in 3D or 5D, a vector in 4D — stay unevaluated: WL
+returns them as `SymmetrizedArray[StructuredArray`StructuredData[…,
+Antisymmetric[…]]]` (or a collapsed 0), and Woxi has no `SymmetrizedArray`.
 
 ### A coupled ODE system is solved numerically, so its constants are inexact
 
@@ -6830,6 +6832,39 @@ images), so they are not implemented yet:
 - `CircleThrough[pts, q]` / `CircleThrough[pts, q, r]` with points that are not
   all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
   there is unverified.
+
+## Parameter sweep 4 (ODEs & calculus): open items
+
+Outputs confirmed from the reference pages, not yet matched:
+
+- `DSolve` of a linear system with a symbolic coefficient
+  (`{y'[x] == y[x] - a z[x], z'[x] == y[x] - z[x], y[0] == 1, z[0] == 4}`)
+  and with rational-function coefficients (the Bessel-type
+  `{y' == -4 y/x + 4 z/x, z' == (4/x - x/4) y - 4 z/x}`) stay unevaluated:
+  the system solver works in machine floats. WL gives closed forms in
+  `Sqrt[1 - a]` and in `BesselJ[4, x]/x^4`, `BesselY[4, x]/x^4`.
+- `Limit[RealAbs[x] Tan[y]^2, {x -> 0, y -> Pi/2}]` (y first) stays
+  unevaluated; WL gives `Infinity`. The inner `Limit[c Tan[y]^2, y -> Pi/2]`
+  with a symbolic factor `c` does not resolve.
+- `Integrate[Sqrt[x] Sqrt[1 + x], x]` (WL:
+  `(Sqrt[x] Sqrt[1 + x] (1 + 2 x) - ArcTanh[1/Sqrt[x/(1 + x)]])/4`),
+  `Integrate[Sqrt[x] Sqrt[1 + x] Sqrt[2 + x], x]` (an `EllipticE` form) and
+  `Integrate[BesselJ[2, x]/(1 + x^2), {x, 0, Infinity}]` (WL:
+  `(2 - 3 Pi BesselI[2, 1] + 3 Pi StruveL[2, 1])/6`) stay unevaluated.
+- `FunctionDomain` in several variables handles only nonzero denominators;
+  `FunctionDomain[Beta[a, Sqrt[x]], {a, x}]` and the `Complexes` form
+  `FunctionDomain[BesselJ[x, 1 + Gamma[y]], {x, y}, Complexes]` stay
+  unevaluated.
+- `Curl[u^2 v^2 x^2 y^2 z^2, {u, v, x, y, z}]` needs `SymmetrizedArray`
+  (see "Higher-rank `Curl`").
+- The divergent `NIntegrate[BesselJ[3, y]/x + 1, {x, 0, 5}, {y, 0, 5}]`
+  does not return; the reference page's 1.9431 is the integral of
+  `BesselJ[3, y]/(x + 1)`, which Woxi does compute. Likewise its
+  `{2., -1., -5.}` is for `Log[y]/x^(4/5)`.
+- Nested `NSum[(-1)^n (2/n)^k/k^2, {n, 2, Infinity}, {k, 1, Infinity}]` is
+  right (1.14434) but takes ~45 s.
+- `Integrate[Sinh[x] Cosh[x], x]` gives `Cosh[x]^2/2`; WL's form is
+  unverified.
 
 ## Parameter sweep 4 (distributions): known divergences and unverified forms
 

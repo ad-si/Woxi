@@ -814,7 +814,7 @@ WhenEvent,"Specify events in differential equations",✅,none,9.0,780
 Unitize,"Returns 0 for zero and 1 for nonzero values",✅,pure,6.0,781
 TeXForm,"Convert expressions to LaTeX notation — a matrix becomes a parenthesized array; Greek letters carry their macro",✅,pure,1.0,782
 Erfc,"Returns the complementary error function value",✅,pure,2.0,784
-NSum,"Numerical approximation of a sum using polynomial extrapolation",✅,pure,1.0,784
+NSum,"Numerical approximation of a sum using polynomial extrapolation (Euler-Maclaurin for complex summands)",✅,pure,1.0,784
 Legended,"Wrapper to attach a legend to a graphic",✅,none,7.0,785
 RotateRight,"Rotates list elements to the right",✅,pure,1.0,786
 ExportString,"Exports an expression to a string in a given format (CSV/TSV/Table/JSON/Lines/Text/String/SVG and image formats); symbolic XML is written back out as markup",✅,pure,4.0,787
