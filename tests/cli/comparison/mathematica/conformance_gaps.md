@@ -6774,3 +6774,34 @@ images), so they are not implemented yet:
   supported.
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
+
+## Parameter sweep 4 (options): confirmed but not implemented
+
+The reference pages give these outputs; Woxi does not produce them yet.
+
+- `PolynomialMod[x^2, 2 x - 1, CoefficientDomain -> Integers]` is `x^2`
+  (integer coefficients are not inverted); Woxi leaves the call unevaluated.
+  How a partial reduction proceeds when the leading coefficient does not
+  divide (e.g. `3 x^2` modulo `2 x - 1`) is unverified.
+- `DiscreteLimit[E^(a n), n -> ∞, Assumptions -> a > 0]` is `∞` (`0` for
+  `a < 0`), and `DiscreteLimit[y^n, n -> ∞, GenerateConditions -> False]` is
+  `∞`. Without options wolframscript gives
+  `ConditionalExpression[Infinity, a > 0]` /
+  `ConditionalExpression[Infinity, Log[y] > 0]`; Woxi gives `E^(a*Infinity)`
+  and `y^Infinity`.
+- `Roots[x^2 - a x + 2 == 0, x, Using -> Roots[a^2 - 5 == 0, a]]` gives the
+  roots for each value of `a`, as `((x == … || x == …) && a == -Sqrt[5]) ||
+  ((…) && a == Sqrt[5])`; Woxi leaves the call unevaluated.
+- `RankDecomposition[m, Tolerance -> t]` of a machine matrix: wolframscript
+  factors a machine matrix with an orthogonal (QR-like) first factor, not as
+  pivot columns times the row-reduced form, so Woxi's machine result differs
+  even without `Tolerance`; the option stays unevaluated.
+- `GeneralizedLinearModelFit` / `LogitModelFit` with `Weights`: the
+  likelihood-based properties (`LogLikelihood`, `AIC`, `BIC`,
+  `NullDeviance`) are left out, since wolframscript's weighted likelihood
+  is unverified. `WorkingPrecision` other than `MachinePrecision` stays
+  unevaluated.
+- `Together[…, Extension -> …]` leaves the reduced denominator factored over
+  the field (verified for the reference examples); `Cancel` gives it expanded,
+  and which form `Cancel` uses when the denominator does not cancel completely
+  is unverified.
