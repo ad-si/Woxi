@@ -864,8 +864,8 @@ pub fn dispatch_plotting(
     "BarChart3D" | "PieChart3D" | "SectorChart" | "SectorChart3D"
     | "RectangleChart" | "RectangleChart3D" | "BubbleChart"
       if !args.is_empty()
-        && !(name == "BubbleChart"
-          && matches!(&args[0], Expr::Association(_)))
+        && (name != "BubbleChart"
+          || !matches!(&args[0], Expr::Association(_)))
         && let Some(new_args) =
           crate::functions::chart::chart_data_args(args, false) =>
     {
