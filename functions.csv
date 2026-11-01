@@ -1350,7 +1350,7 @@ WeibullDistribution,"Weibull probability distribution",✅,pure,6.0,1322
 Front,"",🚫,,6.0,1324
 GeoDisk,"Filled geodesic disk primitive for GeoGraphics",✅,pure,10.0,1324
 Orderless,"Attribute for commutative functions",✅,pure,1.0,1325
-JuliaSetPlot,"",🚫,,10.0,1326
+JuliaSetPlot,"Filled Julia set of a quadratic or polynomial map by escape time",✅,pure,10.0,1326
 ListStepPlot,"Plots data as a step function",✅,pure,10.2,1327
 Larger,"Font size directive for making text larger",✅,none,6.0,1328
 AngleBracket,"Symbolic representation of angle brackets",✅,,3.0,1329

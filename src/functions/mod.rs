@@ -64,6 +64,7 @@ pub mod image_ast;
 pub mod information_render;
 pub mod interval_ast;
 pub mod isotope_data;
+pub mod julia_set;
 pub mod knot_data;
 pub mod lattice_data;
 pub mod linear_algebra_ast;

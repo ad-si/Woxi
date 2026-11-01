@@ -6901,6 +6901,7 @@ mod interpreter_tests {
   mod distribution_chart;
   mod graphics;
   mod image;
+  mod julia_set_plot;
   mod music;
   mod row;
   mod styling;

@@ -1003,6 +1003,12 @@ pub fn dispatch_plotting(
       Some(crate::functions::chart::histogram_ast(&new_args))
     }
     // Data that is no list reports `::ldata` (outside the plot's `Quiet`).
+    "JuliaSetPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      Ok(
+        crate::functions::julia_set::julia_set_plot_ast(args)?
+          .unwrap_or_else(|| unevaluated(name, args)),
+      )
+    })),
     "DistributionChart"
       if !args.is_empty() && !matches!(&args[0], Expr::List(_)) =>
     {
