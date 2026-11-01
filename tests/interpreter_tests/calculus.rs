@@ -5264,6 +5264,36 @@ mod nintegrate {
     );
   }
 
+  // An integrand whose value is the real part (or modulus) of a complex
+  // expression is compiled to complex machine arithmetic rather than
+  // evaluated symbolically at each sample — the characteristic-function
+  // inversion of a stable distribution samples it thousands of times.
+  #[test]
+  fn nintegrate_real_part_of_complex_integrand() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[Re[E^(-I t) E^(-t^2)], {t, 0, Infinity}] - \
+            Sqrt[Pi]/2 E^(-1/4)] < 10^-7, \
+          Abs[NIntegrate[Abs[Sqrt[t - 2]], {t, 0, 1}] - 1.2189514164974613] < 10^-9}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[Table[NIntegrate[Re[(-I t)^k E^(-I t x - Abs[t]^1.5 \
+           (1 - 0.5 I Sign[t] Tan[0.75 Pi]))], {t, 0, Infinity}]/Pi, \
+           {x, {-2., 0., 1.5}}, {k, 0, 2}], 10.^-6]"
+      )
+      .unwrap(),
+      "{{0.13330699999999998, 0.142335, 0.066231}, {0.254113, \
+       -0.09464499999999999, -0.10185899999999999}, {0.095832, -0.077258, \
+       0.056233}}"
+    );
+    assert!(start.elapsed().as_secs() < 20);
+  }
+
   #[test]
   fn nintegrate_polynomial() {
     // ∫₀¹ x² dx = 1/3

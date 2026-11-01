@@ -22028,6 +22028,14 @@ pub(crate) enum NumNode {
   // entire objective through the slow path on every call — keeps the rest
   // of a large expression on the fast numeric path.
   Fallback(std::rc::Rc<Expr>, std::rc::Rc<[String]>),
+  // `Re`, `Im`, `Abs` or `Arg` of an argument compiled to complex
+  // arithmetic, with the `Fallback` for the whole call should the complex
+  // value come out non-finite.
+  ComplexPart(
+    super::complex_numeric::Part,
+    std::rc::Rc<super::complex_numeric::CNode>,
+    Box<Self>,
+  ),
 }
 
 impl NumNode {
@@ -22050,6 +22058,7 @@ impl NumNode {
       Self::RealOr(_, a, _) => a.has_fallback(),
       Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
+      Self::ComplexPart(_, z, _) => z.has_fallback(),
     }
   }
 
@@ -22097,12 +22106,20 @@ impl NumNode {
       Self::RealOr(f, a, whole) => {
         let v = a.eval_plain(point);
         if v.is_nan() {
-          whole.eval_fallback(point)
+          whole.eval_plain(point)
         } else {
           f(v)
         }
       }
       Self::Fallback(..) => self.eval_fallback(point),
+      Self::ComplexPart(part, z, whole) => {
+        let v = part.of(z.eval(point));
+        if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          v
+        }
+      }
     }
   }
 
@@ -22242,16 +22259,16 @@ impl NumNode {
         }
         (v, grad)
       }
-      Self::Fallback(..) => {
-        let v = self.eval_fallback(point);
+      Self::Fallback(..) | Self::ComplexPart(..) => {
+        let v = self.eval_plain(point);
         let grad = (0..point.len())
           .filter_map(|k| {
             let h = 1e-7 * point[k].abs().max(1.0);
             let mut p = point.to_vec();
             p[k] += h;
-            let fp = self.eval_fallback(&p);
+            let fp = self.eval_plain(&p);
             p[k] -= 2.0 * h;
-            let fm = self.eval_fallback(&p);
+            let fm = self.eval_plain(&p);
             let d = (fp - fm) / (2.0 * h);
             (d != 0.0).then_some((k, d))
           })
@@ -22289,12 +22306,14 @@ impl NumNode {
       Self::RealOr(f, a, whole) => {
         let v = a.eval_wide(point).to_f64();
         WideFloat::new(if v.is_nan() {
-          whole.eval_fallback(point)
+          whole.eval_plain(point)
         } else {
           f(v)
         })
       }
-      Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
+      Self::Fallback(..) | Self::ComplexPart(..) => {
+        WideFloat::new(self.eval_plain(point))
+      }
     }
   }
 
@@ -22514,17 +22533,37 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
             Box::new(compile_numeric(&args[0], vars)?),
           ))
         };
-      let real_or =
-        |f: fn(f64) -> f64, args: &crate::ExprList| -> Option<NumNode> {
-          Some(NumNode::RealOr(
-            f,
-            Box::new(compile_numeric(&args[0], vars)?),
-            Box::new(NumNode::Fallback(
-              std::rc::Rc::new(expr.clone()),
-              std::rc::Rc::from(vars.to_vec()),
-            )),
+      // A real argument is compiled real, with the call's complex form (or,
+      // failing that, its symbolic evaluation) for points where it leaves
+      // the reals; an argument with `I` in it straight to complex.
+      let real_or = |f: fn(f64) -> f64,
+                     part: Option<super::complex_numeric::Part>,
+                     args: &crate::ExprList|
+       -> Option<NumNode> {
+        let fallback = || {
+          NumNode::Fallback(
+            std::rc::Rc::new(expr.clone()),
+            std::rc::Rc::from(vars.to_vec()),
+          )
+        };
+        let complex = || {
+          let part = part?;
+          let z = super::complex_numeric::compile_complex(&args[0], vars)?;
+          Some(NumNode::ComplexPart(
+            part,
+            std::rc::Rc::new(z),
+            Box::new(fallback()),
           ))
         };
+        match compile_numeric(&args[0], vars) {
+          Some(a) => Some(NumNode::RealOr(
+            f,
+            Box::new(a),
+            Box::new(complex().unwrap_or_else(fallback)),
+          )),
+          None => complex(),
+        }
+      };
       match name.as_str() {
         "Plus" => {
           Some(NumNode::Add(args.iter().map(&c).collect::<Option<_>>()?))
@@ -22565,10 +22604,23 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Sinh" => unary(f64::sinh, args),
         "Cosh" => unary(f64::cosh, args),
         "Tanh" => unary(f64::tanh, args),
-        "Re" | "Conjugate" if args.len() == 1 => real_or(|x| x, args),
-        "Im" if args.len() == 1 => real_or(|_| 0.0, args),
-        "Abs" if args.len() == 1 => real_or(f64::abs, args),
-        "Sign" => unary(f64::signum, args),
+        "Re" if args.len() == 1 => {
+          real_or(|x| x, Some(super::complex_numeric::Part::Re), args)
+        }
+        "Conjugate" if args.len() == 1 => real_or(|x| x, None, args),
+        "Im" if args.len() == 1 => {
+          real_or(|_| 0.0, Some(super::complex_numeric::Part::Im), args)
+        }
+        "Abs" if args.len() == 1 => {
+          real_or(f64::abs, Some(super::complex_numeric::Part::Abs), args)
+        }
+        "Arg" if args.len() == 1 => real_or(
+          |x| if x < 0.0 { std::f64::consts::PI } else { 0.0 },
+          Some(super::complex_numeric::Part::Arg),
+          args,
+        ),
+        // Sign[0] is 0, not the 1 `f64::signum` gives for +0.
+        "Sign" => unary(|x| if x == 0.0 { 0.0 } else { x.signum() }, args),
         "Erf" => {
           unary(crate::functions::math_ast::numeric_utils::erf_f64, args)
         }

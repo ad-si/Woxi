@@ -11,6 +11,7 @@ mod apart;
 mod cancel;
 mod coefficient;
 mod collect;
+mod complex_numeric;
 mod cyclotomic;
 mod decompose;
 mod discriminant;
