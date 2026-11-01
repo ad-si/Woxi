@@ -2040,6 +2040,40 @@ mod differentiate_if {
   }
 }
 
+// The regularized incomplete gamma and beta functions differentiate in
+// their integration limits; they used to stay Derivative[0, 0, 1][…] forms,
+// which a PDF built from a CDF (D[CDF[GammaDistribution[…]]]) then fed to
+// NIntegrate as a non-numerical integrand.
+mod differentiate_regularized_incomplete_functions {
+  use super::*;
+
+  #[test]
+  fn limits() {
+    for (input, expected) in [
+      (
+        "D[GammaRegularized[a, 0, z], z]",
+        "z^(-1 + a)/(E^z*Gamma[a])",
+      ),
+      (
+        "D[GammaRegularized[a, z], z]",
+        "-(z^(-1 + a)/(E^z*Gamma[a]))",
+      ),
+      ("D[GammaRegularized[2, 0, x/5], x]", "x/(25*E^(x/5))"),
+      (
+        "D[BetaRegularized[z, a, b], z]",
+        "((1 - z)^(-1 + b)*z^(-1 + a))/Beta[a, b]",
+      ),
+      (
+        "D[BetaRegularized[z0, z1, a, b], z1]",
+        "((1 - z1)^(-1 + b)*z1^(-1 + a))/Beta[a, b]",
+      ),
+      ("D[BetaRegularized[x^2, 2, 3], x]", "24*x^3*(1 - x^2)^2"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
+
 mod differentiate_piecewise {
   use super::*;
 

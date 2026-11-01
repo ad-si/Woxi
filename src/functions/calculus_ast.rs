@@ -4143,6 +4143,59 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let d = differentiate(&diff, var)?;
           crate::evaluator::evaluate_expr_to_expr(&d)
         }
+        // GammaRegularized[a, z] = Gamma[a, z]/Gamma[a] and
+        // GammaRegularized[a, z0, z1] = (Gamma[a, z0] - Gamma[a, z1])/Gamma[a],
+        // a free of var: differentiate those through the Gamma rules above.
+        "GammaRegularized"
+          if (args.len() == 2 || args.len() == 3)
+            && is_constant_wrt(&args[0], var) =>
+        {
+          let upper =
+            |z: &Expr| call("Gamma", vec![args[0].clone(), z.clone()]);
+          let numerator = if args.len() == 2 {
+            upper(&args[1])
+          } else {
+            minus2(upper(&args[1]), upper(&args[2]))
+          };
+          let d = differentiate(&numerator, var)?;
+          crate::evaluator::evaluate_expr_to_expr(&div2(
+            d,
+            call("Gamma", vec![args[0].clone()]),
+          ))
+        }
+        // BetaRegularized[z, a, b] (a, b free of var):
+        //   d/dvar = (1 - z)^(b-1) z^(a-1) / Beta[a, b] z';
+        // BetaRegularized[z0, z1, a, b] is the difference of two of those.
+        "BetaRegularized"
+          if (args.len() == 3 || args.len() == 4)
+            && args[args.len() - 2..]
+              .iter()
+              .all(|p| is_constant_wrt(p, var)) =>
+        {
+          let (a, b) = (&args[args.len() - 2], &args[args.len() - 1]);
+          let density = |z: &Expr| -> Result<Expr, InterpreterError> {
+            let dz = differentiate(z, var)?;
+            Ok(times2(
+              dz,
+              div2(
+                times2(
+                  pow2(
+                    minus2(Expr::Integer(1), z.clone()),
+                    minus2(b.clone(), Expr::Integer(1)),
+                  ),
+                  pow2(z.clone(), minus2(a.clone(), Expr::Integer(1))),
+                ),
+                call("Beta", vec![a.clone(), b.clone()]),
+              ),
+            ))
+          };
+          let d = if args.len() == 3 {
+            density(&args[0])?
+          } else {
+            minus2(density(&args[1])?, density(&args[0])?)
+          };
+          crate::evaluator::evaluate_expr_to_expr(&d)
+        }
         // RealSign[u]: D[RealSign[u], u] = Piecewise[{{0, u != 0}}, Indeterminate]
         "RealSign" if args.len() == 1 => {
           let dz = differentiate(&args[0], var)?;
