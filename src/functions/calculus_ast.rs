@@ -17556,7 +17556,22 @@ fn nintegrate_complex_path(
   tolerance: f64,
   max_recursion: u32,
 ) -> Result<Expr, InterpreterError> {
+  // The integrand compiled once to complex arithmetic in the path variable,
+  // with the symbolic evaluation below for what it cannot do.
+  let compiled =
+    crate::functions::polynomial_ast::complex_numeric::compile_complex_vars(
+      integrand,
+      &[var_name.to_string()],
+    );
   let eval_at = |re: f64, im: f64| -> Option<(f64, f64)> {
+    if let Some(node) = &compiled {
+      let v = node.eval_c(&[
+        crate::functions::polynomial_ast::complex_numeric::C::new(re, im),
+      ]);
+      if v.re.is_finite() && v.im.is_finite() {
+        return Some((v.re, v.im));
+      }
+    }
     // A sampled point that lands exactly on the real axis (e.g. a path
     // waypoint given as a plain real number) substitutes a plain Real,
     // not Complex[re, 0.], to avoid the integrand mixing a Real and a

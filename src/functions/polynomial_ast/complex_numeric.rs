@@ -18,7 +18,7 @@ pub(crate) struct C {
 }
 
 impl C {
-  const fn new(re: f64, im: f64) -> Self {
+  pub(crate) const fn new(re: f64, im: f64) -> Self {
     C { re, im }
   }
   fn add(self, o: C) -> C {
@@ -143,6 +143,8 @@ pub(crate) enum CNode {
   Const(C),
   /// A real subexpression, compiled by `compile_numeric`.
   Real(NumNode),
+  /// A complex-valued variable (in `compile_complex_vars` trees).
+  Var(usize),
   Add(Vec<CNode>),
   Mul(Vec<CNode>),
   Neg(Box<CNode>),
@@ -156,6 +158,7 @@ impl CNode {
     match self {
       CNode::Const(c) => *c,
       CNode::Real(n) => C::new(n.eval(point), 0.0),
+      CNode::Var(i) => C::new(point[*i], 0.0),
       CNode::Add(xs) => xs
         .iter()
         .fold(C::new(0.0, 0.0), |acc, x| acc.add(x.eval(point))),
@@ -169,9 +172,29 @@ impl CNode {
     }
   }
 
+  /// Value with the variables bound to complex numbers (a tree from
+  /// `compile_complex_vars`, whose real pieces mention no variable).
+  pub(crate) fn eval_c(&self, point: &[C]) -> C {
+    match self {
+      CNode::Const(c) => *c,
+      CNode::Real(n) => C::new(n.eval(&[]), 0.0),
+      CNode::Var(i) => point[*i],
+      CNode::Add(xs) => xs
+        .iter()
+        .fold(C::new(0.0, 0.0), |acc, x| acc.add(x.eval_c(point))),
+      CNode::Mul(xs) => xs
+        .iter()
+        .fold(C::new(1.0, 0.0), |acc, x| acc.mul(x.eval_c(point))),
+      CNode::Neg(a) => a.eval_c(point).neg(),
+      CNode::Div(a, b) => a.eval_c(point).div(b.eval_c(point)),
+      CNode::Pow(a, b) => a.eval_c(point).pow(b.eval_c(point)),
+      CNode::Func(f, a) => f(a.eval_c(point)),
+    }
+  }
+
   pub(crate) fn has_fallback(&self) -> bool {
     match self {
-      CNode::Const(_) => false,
+      CNode::Const(_) | CNode::Var(_) => false,
       CNode::Real(n) => n.has_fallback(),
       CNode::Add(xs) | CNode::Mul(xs) => xs.iter().any(CNode::has_fallback),
       CNode::Neg(a) | CNode::Func(_, a) => a.has_fallback(),
@@ -223,24 +246,66 @@ fn mentions_i(expr: &Expr) -> bool {
 /// `expr` compiled to complex arithmetic in `vars` (bound to real values),
 /// or `None` if some piece is neither a known function nor real.
 pub(crate) fn compile_complex(expr: &Expr, vars: &[String]) -> Option<CNode> {
-  if !mentions_i(expr) {
-    // Elementary functions of a real argument can still leave the reals
-    // (`Sqrt[x]`, `Log[x]` for x < 0), so they are compiled complex below;
-    // anything else real goes to the real compiler.
-    let elementary = matches!(expr, Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Sqrt" | "Log" | "Power"))
-      || matches!(
-        expr,
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          ..
-        }
-      );
-    if !elementary {
+  compile_in(expr, vars, false)
+}
+
+/// `expr` compiled to complex arithmetic with `vars` bound to complex
+/// values (evaluate with [`CNode::eval_c`]).
+pub(crate) fn compile_complex_vars(
+  expr: &Expr,
+  vars: &[String],
+) -> Option<CNode> {
+  compile_in(expr, vars, true)
+}
+
+/// Whether `expr` mentions one of `vars`.
+fn mentions_var(expr: &Expr, vars: &[String]) -> bool {
+  match expr {
+    Expr::Identifier(n) => vars.iter().any(|v| v == n),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|a| mentions_var(a, vars))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      mentions_var(left, vars) || mentions_var(right, vars)
+    }
+    Expr::UnaryOp { operand, .. } => mentions_var(operand, vars),
+    Expr::List(items) => items.iter().any(|a| mentions_var(a, vars)),
+    _ => false,
+  }
+}
+
+fn compile_in(
+  expr: &Expr,
+  vars: &[String],
+  complex_vars: bool,
+) -> Option<CNode> {
+  if complex_vars
+    && let Expr::Identifier(n) = expr
+    && let Some(i) = vars.iter().position(|v| v == n)
+  {
+    return Some(CNode::Var(i));
+  }
+  // Elementary functions of a real argument can still leave the reals
+  // (`Sqrt[x]`, `Log[x]` for x < 0), so they are compiled complex below;
+  // anything else real goes to the real compiler.
+  let elementary = matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Sqrt" | "Log" | "Power"))
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+    );
+  if !mentions_i(expr) && !elementary {
+    if !complex_vars {
       return compile_numeric(expr, vars).map(CNode::Real);
     }
+    if !mentions_var(expr, vars) {
+      return compile_numeric(expr, &[]).map(CNode::Real);
+    }
   }
-  let c = |e: &Expr| compile_complex(e, vars);
+  let c = |e: &Expr| compile_in(e, vars, complex_vars);
   let func = |f: fn(C) -> C, args: &[Expr]| -> Option<CNode> {
     match args {
       [a] => Some(CNode::Func(f, Box::new(c(a)?))),
@@ -254,7 +319,8 @@ pub(crate) fn compile_complex(expr: &Expr, vars: &[String]) -> Option<CNode> {
       Some(CNode::Const(C::new(0.0, 1.0)))
     }
     Expr::Identifier(_) | Expr::Constant(_) | Expr::BigFloat(..) => {
-      compile_numeric(expr, vars).map(CNode::Real)
+      compile_numeric(expr, if complex_vars { &[] } else { vars })
+        .map(CNode::Real)
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -342,5 +408,17 @@ mod tests {
     assert_eq!(z, C::new(0.0, 2.0));
     let z = eval_at("Abs[x]^(3/2) (1 - I Sign[x])", -1.0);
     assert_eq!(z, C::new(1.0, 1.0));
+  }
+
+  #[test]
+  fn complex_variables() {
+    let e = crate::syntax::string_to_expr("z^2 + Exp[I z] - Sqrt[z]").unwrap();
+    let node = compile_complex_vars(&e, &["z".to_string()]).unwrap();
+    let z = C::new(1.0, 2.0);
+    let expected = z
+      .mul(z)
+      .add(C::new(0.0, 1.0).mul(z).exp())
+      .add(z.sqrt().neg());
+    assert_eq!(node.eval_c(&[z]), expected);
   }
 }

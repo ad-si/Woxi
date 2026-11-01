@@ -5268,6 +5268,20 @@ mod nintegrate {
   // expression is compiled to complex machine arithmetic rather than
   // evaluated symbolically at each sample — the characteristic-function
   // inversion of a stable distribution samples it thousands of times.
+  // A contour integral samples its integrand in compiled complex arithmetic.
+  #[test]
+  fn nintegrate_complex_path_is_compiled() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[Table[NIntegrate[Exp[z/k]/z, {z, 1, I, -1, -I, 1}], {k, 1, 40}][[{1, 40}]], 10.^-6]"
+      )
+      .unwrap(),
+      "{0. + 6.283185*I, 0. + 6.283185*I}"
+    );
+    assert!(start.elapsed().as_secs() < 20);
+  }
+
   #[test]
   fn nintegrate_real_part_of_complex_integrand() {
     assert_eq!(
