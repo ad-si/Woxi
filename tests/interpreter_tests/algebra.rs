@@ -7367,6 +7367,24 @@ mod reduce_univariate_polynomial_inequalities {
   }
 }
 
+// `Element[Piecewise[…], Reals]` holds where the applicable branch is real;
+// an `Indeterminate` branch never is. It used to stay unevaluated.
+mod reduce_piecewise_in_reals {
+  use super::*;
+
+  #[test]
+  fn indeterminate_kinks_are_excluded() {
+    assert_eq!(
+      interpret(
+        "r = Reduce[Element[D[Max[(10 - q)/2, (18 - q)/5, (28 - q)/7], q], \
+         Reals], q]; {r, Reduce[!r && q > 0, q]}"
+      )
+      .unwrap(),
+      "{q < 14/5 || q > 14/5, q == 14/5}"
+    );
+  }
+}
+
 mod reduce_generalized_variables {
   use super::*;
 

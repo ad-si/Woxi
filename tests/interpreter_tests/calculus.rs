@@ -2043,6 +2043,35 @@ mod differentiate_if {
 mod differentiate_piecewise {
   use super::*;
 
+  // D[Max[…]] and D[Min[…]] differentiate the piecewise form, as
+  // wolframscript does; they used to leave Derivative[1, 0][Max][…] terms.
+  #[test]
+  fn max_and_min() {
+    for (input, expected) in [
+      (
+        "D[Max[x, 1 - x], x]",
+        "Piecewise[{{-1, x < 1/2}, {1, x > 1/2}}, Indeterminate]",
+      ),
+      (
+        "D[Max[x, x^2], x]",
+        "Piecewise[{{2*x, x < 0}, {1, Inequality[0, Less, x, Less, 1]}, \
+         {2*x, x > 1}}, Indeterminate]",
+      ),
+      ("D[Max[a, x], x]", "Piecewise[{{0, a - x >= 0}}, 1]"),
+      (
+        "D[Min[x, 2 - x, x/3], x]",
+        "Piecewise[{{1, x < 0}, {1/3, Inequality[0, Less, x, Less, 3/2]}, \
+         {-1, x > 3/2}}, Indeterminate]",
+      ),
+      (
+        "D[Max[(10 - q)/2, (18 - q)/5, (28 - q)/7], q]",
+        "Piecewise[{{-1/2, q < 14/5}, {-1/7, q > 14/5}}, Indeterminate]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
   // D[Piecewise[...]] differentiates each piece value, keeps the condition, and
   // sets the default to Indeterminate (the derivative is undefined at the piece
   // boundaries). Regression: this used to emit a Derivative[1, 0][Piecewise]

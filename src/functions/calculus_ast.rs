@@ -2974,6 +2974,21 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Piecewise" if !args.is_empty() => {
           differentiate_piecewise(expr, args, var)
         }
+        // `Max`/`Min` of real arguments: the derivative of their piecewise
+        // form, as wolframscript gives it (`D[Max[x, 1 - x], x]` is
+        // `Piecewise[{{-1, x < 1/2}, {1, x > 1/2}}, Indeterminate]`).
+        "Max" | "Min"
+          if args.len() >= 2
+            && args.iter().any(|a| !is_constant_wrt(a, var))
+            && let Ok(expanded @ Expr::FunctionCall { .. }) =
+              crate::evaluator::evaluate_function_call_ast(
+                "PiecewiseExpand",
+                std::slice::from_ref(expr),
+              )
+            && matches!(&expanded, Expr::FunctionCall { name: pn, .. } if pn == "Piecewise") =>
+        {
+          differentiate(&expanded, var)
+        }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
         // element-wise through the coefficient list and, when the center
         // x0 itself depends on `var`, apply the chain rule on the

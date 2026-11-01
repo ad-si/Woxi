@@ -22,6 +22,15 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Element[Piecewise[…], Reals]` holds where the branch that applies has
+  // a real value: a disjunction over the branches.
+  if let Some(first) = args.first()
+    && let Some(expanded) = expand_piecewise_reals(first)
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+    return reduce_ast(&rewritten);
+  }
   // Generalized variables (`Reduce[m[1] == 1, {m[1]}]`).
   if let Some(result) =
     super::solve::with_generalized_variables(args, reduce_ast)
@@ -4574,4 +4583,81 @@ fn extract_x_y_coeffs(e: &Expr, vars: &[String]) -> Option<(Expr, Expr)> {
 fn call_coefficient(e: &Expr, var: &str, n: i128) -> Option<Expr> {
   let args = vec![e.clone(), id_expr(var), Expr::Integer(n)];
   super::coefficient_ast(&args).ok()
+}
+
+/// `expr` with every `Element[Piecewise[{{v1, c1}, …}, d], Reals]` replaced
+/// by `(c1 && v1 ∈ Reals) || (!c1 && c2 && v2 ∈ Reals) || … || (!c1 && … &&
+/// d ∈ Reals)`, branches whose value is `Indeterminate` dropping out; None
+/// when there is none.
+fn expand_piecewise_reals(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Element"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(d) if d == "Reals") =>
+    {
+      let Expr::FunctionCall {
+        name: pw,
+        args: pw_args,
+      } = &args[0]
+      else {
+        return None;
+      };
+      if pw != "Piecewise" || pw_args.is_empty() {
+        return None;
+      }
+      let Expr::List(cases) = &pw_args[0] else {
+        return None;
+      };
+      let default = pw_args.get(1).cloned().unwrap_or(Expr::Integer(0));
+      let mut branches: Vec<(Expr, Expr)> = Vec::with_capacity(cases.len());
+      for case in cases {
+        let Expr::List(vc) = case else {
+          return None;
+        };
+        let [v, c] = vc.as_slice() else {
+          return None;
+        };
+        branches.push((v.clone(), c.clone()));
+      }
+      let real = |v: &Expr| -> Option<Expr> {
+        (!matches!(v, Expr::Identifier(s) if s == "Indeterminate"))
+          .then(|| call("Element", vec![v.clone(), id_expr("Reals")]))
+      };
+      let mut disjuncts = Vec::new();
+      let mut earlier: Vec<Expr> = Vec::new();
+      for (v, c) in &branches {
+        if let Some(r) = real(v) {
+          let mut parts = earlier.clone();
+          parts.push(c.clone());
+          parts.push(r);
+          disjuncts.push(call("And", parts));
+        }
+        earlier.push(call("Not", vec![c.clone()]));
+      }
+      if let Some(r) = real(&default) {
+        earlier.push(r);
+        disjuncts.push(call("And", earlier));
+      }
+      Some(call("Or", disjuncts))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(expand_piecewise_reals).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(call(
+        name,
+        args
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
 }
