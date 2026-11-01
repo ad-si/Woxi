@@ -8288,6 +8288,22 @@ mod plot3d {
       );
     }
 
+    /// Without PlotStyle a curve takes the default palette's first color
+    /// (blue), and a second curve the next one.
+    #[test]
+    fn curve_default_color_is_palette() {
+      let svg = export_svg("ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]");
+      assert!(
+        svg.contains("stroke=\"rgb(94,129,181)\""),
+        "{}",
+        &svg[..300]
+      );
+      let svg2 = export_svg(
+        "ParametricPlot3D[{{Cos[t], Sin[t], t}, {Sin[t], Cos[t], t}}, {t, 0, 6}]",
+      );
+      assert!(svg2.contains("stroke=\"rgb(224,147,44)\""));
+    }
+
     /// Show[] must merge Graphics3D primitives with the line emitted
     /// by ParametricPlot3D's curve form (regression test: previously
     /// the ParametricPlot3D evaluation failed silently and the ring
@@ -40356,7 +40372,7 @@ mod grid_text_in_graphics {
     // The curve stops at the PlotRange boundary x = 0.5 instead of
     // running on to x = 1: a clipped line is shorter than an unclipped one.
     let clipped = interpret(
-      r#"Length[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]]]"#,
+      r#"Length[Cases[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]], _Line]]"#,
     )
     .unwrap();
     assert_eq!(clipped, "1", "{clipped}");
