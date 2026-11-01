@@ -64,10 +64,10 @@ pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
 /// The circular function behind `head` and the size of its half turn in the
 /// argument's unit: `Sin` → (`Sin`, Pi), `SinDegrees` → (`Sin`, 180), so the
 /// radian and degree forms share one implementation of each range rule.
-fn trig_base(head: &str) -> Option<(&str, f64)> {
+fn trig_base(head: &str) -> (&str, f64) {
   match head.strip_suffix("Degrees") {
-    Some(base) => Some((base, 180.0)),
-    None => Some((head, std::f64::consts::PI)),
+    Some(base) => (base, 180.0),
+    None => (head, std::f64::consts::PI),
   }
 }
 
@@ -84,7 +84,7 @@ fn critical_point_in(offset: f64, period: f64, af: f64, bf: f64) -> bool {
 /// maximum point (value 1) or minimum point (value -1) falls inside the span.
 /// Returns `None` unless every endpoint and its image is real-numeric.
 pub fn trig_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  let (base, half_turn) = trig_base(head)?;
+  let (base, half_turn) = trig_base(head);
   // (offset of a maximum, offset of a minimum), period one full turn.
   let (max_offset, min_offset) = match base {
     "Sin" => (half_turn / 2.0, -half_turn / 2.0),
@@ -333,7 +333,7 @@ fn count_poles_in(offset: f64, period: f64, af: f64, bf: f64) -> i64 {
 /// poles the function already covers all reals. Returns `None` unless every
 /// endpoint and its image is real-numeric.
 pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  let (base, half_turn) = trig_base(head)?;
+  let (base, half_turn) = trig_base(head);
   let (offset, increasing) = match base {
     "Tan" => (half_turn / 2.0, true),
     "Cot" => (0.0, false),
@@ -399,7 +399,7 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
   // (pole offset, extremum offset): poles at pole_off + k*Pi, extrema (values
   // ±1) at ext_off + k*Pi with value (-1)^k (Pi being a half turn, 180 for
   // the Degrees forms).
-  let (base, half_turn) = trig_base(head)?;
+  let (base, half_turn) = trig_base(head);
   let (pole_off, ext_off) = match base {
     "Sec" => (half_turn / 2.0, 0.0),
     "Csc" => (0.0, half_turn / 2.0),
