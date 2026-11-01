@@ -5278,7 +5278,9 @@ fn box_stats(sorted: &[f64]) -> (f64, f64, f64, f64, f64) {
 /// Supports:
 /// - `{d1, d2, ...}` → single dataset
 /// - `{{d1, d2, ...}, {d3, d4, ...}}` → multiple datasets
-fn parse_datasets(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
+pub(crate) fn parse_datasets(
+  arg: &Expr,
+) -> Result<Vec<Vec<f64>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
   let Expr::List(items) = &data else {
     return Err(InterpreterError::EvaluationError(

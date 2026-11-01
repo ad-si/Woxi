@@ -40,6 +40,7 @@ pub mod delaunay;
 pub mod dendrogram;
 pub mod difference_root;
 pub mod dirichlet_ast;
+pub mod distribution_chart;
 pub mod element_data;
 pub mod entity_ast;
 pub mod example_data;

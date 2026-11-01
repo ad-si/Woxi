@@ -6898,6 +6898,7 @@ mod interpreter_tests {
   mod audio;
   mod cellular_automaton;
   mod column;
+  mod distribution_chart;
   mod graphics;
   mod image;
   mod music;

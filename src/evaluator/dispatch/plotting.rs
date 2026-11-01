@@ -1002,6 +1002,15 @@ pub fn dispatch_plotting(
       }
       Some(crate::functions::chart::histogram_ast(&new_args))
     }
+    // Data that is no list reports `::ldata` (outside the plot's `Quiet`).
+    "DistributionChart"
+      if !args.is_empty() && !matches!(&args[0], Expr::List(_)) =>
+    {
+      Some(Ok(crate::functions::chart::invalid_dataset(name, args)))
+    }
+    "DistributionChart" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::distribution_chart::distribution_chart_ast(args)
+    })),
     "BoxWhiskerChart" if !args.is_empty() => {
       Some(crate::functions::chart::box_whisker_chart_ast(args))
     }
