@@ -14631,4 +14631,19 @@ mod big_exact_numbers_with_other_terms {
       "9.288118504490939*^-68 - 1.317491379094105*^-67*I"
     );
   }
+
+  #[test]
+  fn sign_of_exactly_zero_nested_radical_sum_is_zero() {
+    // Terms in Sqrt[3] cancel exactly; the sign must be 0 with no N::meprec.
+    let setup = "P = (-16840*(304 + 1064*Sqrt[3]) - 2888*(544 + 1064*Sqrt[3]) \
+                   + 23744*(1140 + 1064*Sqrt[3]))/(2128*(1064 + 1988*Sqrt[3])); \
+                 e = -7 + (7*(1444 + (28 - P)^2 - (10 + P)^2) \
+                   + 7*(1444 - (28 - P)^2 + (10 + P)^2))/2888";
+    assert_eq!(interpret(&format!("{setup}; Sign[e]")).unwrap(), "0");
+    assert_eq!(
+      interpret(&format!("{setup}; Positive[e]")).unwrap(),
+      "False"
+    );
+    assert_eq!(interpret(&format!("{setup}; e > 0")).unwrap(), "False");
+  }
 }
