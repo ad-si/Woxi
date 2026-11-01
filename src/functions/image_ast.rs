@@ -5155,6 +5155,52 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => other,
   };
 
+  // An image of four or more channels without a color space is read as a
+  // spectrum: its channels fall into three consecutive groups of
+  // Floor[n/3], n - Floor[n/3] - Round[n/3] and Round[n/3] channels whose
+  // means are the red, green and blue components.
+  if let Expr::Image {
+    color_space: None,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    ..
+  } = source
+    && *channels >= 4
+  {
+    let n = *channels as usize;
+    let red = n / 3;
+    let blue = (n as f64 / 3.0).round() as usize;
+    let green = n - red - blue;
+    let mut rgb = Vec::with_capacity(data.len() / n * 3);
+    for px in data.chunks(n) {
+      let mut start = 0;
+      for size in [red, green, blue] {
+        let group = &px[start..start + size];
+        rgb.push(if matches!(image_type, ImageType::Real32) {
+          // Real32 pixels are averaged in single precision.
+          (group.iter().map(|v| *v as f32).sum::<f32>() / size as f32) as f64
+        } else {
+          group.iter().sum::<f64>() / size as f64
+        });
+        start += size;
+      }
+    }
+    let mut regrouped = args.to_vec();
+    regrouped[0] = Expr::Image {
+      color_space: Some("RGB"),
+      display_size: None,
+      width: *width,
+      height: *height,
+      channels: 3,
+      data: Arc::new(rgb),
+      image_type: *image_type,
+    };
+    return color_convert_ast(&regrouped);
+  }
+
   match source {
     Expr::Image {
       color_space: _,

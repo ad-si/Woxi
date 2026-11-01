@@ -10284,6 +10284,52 @@ mod find_threshold {
   }
 }
 
+mod color_convert_many_channels {
+  use super::*;
+
+  // Without a color space, n >= 4 channels average in three groups of
+  // Floor[n/3], the rest and Round[n/3] channels.
+  #[test]
+  fn color_convert_groups_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[ImageData[ColorConvert[Image[{{Range[n]/100.}}], \"RGB\"]], {n, {7, 8, 13}}]"
+      )
+      .unwrap(),
+      "{{{{0.014999999664723873, 0.04000000283122063, 0.06499999761581421}}}, \
+       {{{0.014999999664723873, 0.04000000283122063, 0.07000000029802322}}}, \
+       {{{0.02499999850988388, 0.07000000029802322, 0.11500000208616257}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorConvert[Image[{{{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}}}], \
+         \"Grayscale\"]]"
+      )
+      .unwrap(),
+      "{{0.35374999046325684}}"
+    );
+  }
+
+  // The SingleColorImages construction: a gray image plus a 7-channel
+  // combination, converted back to RGB.
+  #[test]
+  fn image_add_of_combined_channels_converts_to_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "im = Image[{{{0.2, 0.4, 0.6}, {0.1, 0.3, 0.5}}}]; \
+         z = Image[{{{0, 0, 0}, {0, 0, 0}}}]; \
+         r = ColorConvert[ImageAdd[ColorConvert[im, \"Grayscale\"], \
+         ColorCombine[{ColorSeparate[im][[1]], z, z}]], \"RGB\"]; \
+         {ImageChannels[r], ImageDimensions[r]}"
+      )
+      .unwrap(),
+      "{3, {2, 1}}"
+    );
+  }
+}
+
 mod image_planar_channel_check {
   use super::*;
 
