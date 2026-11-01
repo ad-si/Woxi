@@ -3,11 +3,10 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, Mesh, PLOT_COLORS,
-  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
-  apply_filling_option, apply_plot_theme, build_plot_source,
-  generate_scatter_svg_with_options, generate_svg_with_filling,
-  parse_image_size, parse_plot_legends, parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, PLOT_COLORS, PlotOptions,
+  SeriesStyle, adjust_y_range_for_filling_opts, apply_filling_option,
+  apply_plot_theme, build_plot_source, generate_scatter_svg_with_options,
+  generate_svg_with_filling, parse_image_size, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 
@@ -345,7 +344,7 @@ fn canonicalize_element(e: &Expr) -> Expr {
 /// canonical form is `WeightedData[Automatic, {{data…}, {weights…}}]`; the
 /// user-facing form is `WeightedData[data, weights]`. Either way the data is
 /// the list of values (weights only affect statistics, not point positions).
-fn weighted_data_values(args: &[Expr]) -> Expr {
+pub(crate) fn weighted_data_values(args: &[Expr]) -> Expr {
   // Canonical `WeightedData[_, {{data}, {weights}}]`.
   if let Some(Expr::List(inner)) = args.get(1)
     && let Some(data @ Expr::List(_)) = inner.first()
@@ -1017,7 +1016,13 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "Prolog"
         | "AxesOrigin"
         | "ColorFunction"
-        | "ColorFunctionScaling" => {
+        | "ColorFunctionScaling"
+        | "AxesStyle"
+        | "TicksStyle"
+        | "FrameStyle"
+        | "MeshStyle"
+        | "PlotLabels"
+        | "PlotLegends" => {
           let mut overrides =
             crate::functions::plot::PlotRangeOverrides::default();
           crate::functions::plot::apply_common_plot_option(
@@ -1049,11 +1054,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             // A bare position places every point label on that side.
             opts.point_label_position = Some(pos.clone());
           }
-        }
-        "PlotLegends" => {
-          let (labels, _auto, _expressions, _pos) =
-            parse_plot_legends(replacement);
-          opts.plot_legends = labels;
         }
         "FrameTicksStyle" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -1150,9 +1150,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           _ => {}
         },
         "Mesh" => match replacement {
-          Expr::Identifier(v) if v == "All" => opts.mesh = Mesh::All,
-          Expr::Identifier(v) if v == "Full" => opts.mesh = Mesh::Full,
-          Expr::Integer(n) if *n > 0 => opts.mesh = Mesh::Count(*n as usize),
           Expr::List(per_function) => {
             if let Some(Expr::List(levels)) = per_function.first() {
               out.mesh_levels =
@@ -1160,7 +1157,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
               out.mesh_levels.sort_by(f64::total_cmp);
             }
           }
-          _ => {}
+          _ => {
+            crate::functions::plot::apply_common_plot_option(
+              name,
+              replacement,
+              opts,
+              &mut crate::functions::plot::PlotRangeOverrides::default(),
+            );
+          }
         },
         "MeshFunctions" => {
           if let Expr::List(items) = replacement {
@@ -1727,6 +1731,11 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut source,
     &opts.plot_markers,
   );
+  for (series, labels) in source.series.iter_mut().zip(&opts.point_labels) {
+    if labels.len() == series.points.len() {
+      series.labels.clone_from(labels);
+    }
+  }
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
@@ -2537,14 +2546,21 @@ pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ListFitPlot", args));
   };
 
+  // `data -> {lbl1, …}` fits `data`; the labels go to the plotted points.
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let fit_data = match &data {
+    Expr::Rule { pattern, .. } => pattern.as_ref(),
+    other => other,
+  };
   let code = format!(
-    "Module[{{d$lfp = {data}, pts$lfp, f$lfp}}, \
+    "Module[{{d$lfp = {fit_data}, pts$lfp, f$lfp}}, \
      pts$lfp = If[MatrixQ[d$lfp] && Dimensions[d$lfp][[2]] == 2, d$lfp, \
      Transpose[{{Range[Length[d$lfp]], d$lfp}}]]; \
      f$lfp = {fit}; \
-     Show[ListPlot[d$lfp{opts}], Plot[Evaluate[f$lfp], {{x$lfp, \
+     Show[ListPlot[{data}{opts}], Plot[Evaluate[f$lfp], {{x$lfp, \
      Min[pts$lfp[[All, 1]]], Max[pts$lfp[[All, 1]]]}}]]]",
-    data = expr_to_string(&args[0]),
+    fit_data = expr_to_string(fit_data),
+    data = expr_to_string(&data),
   );
   evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
 }

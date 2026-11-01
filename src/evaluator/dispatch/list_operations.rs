@@ -3555,7 +3555,7 @@ pub fn dispatch_list_operations(
     "Groupings" if args.len() == 2 => {
       return Some(list_helpers_ast::groupings_ast(args));
     }
-    "PeakDetect" if !args.is_empty() && args.len() <= 2 => {
+    "PeakDetect" if !args.is_empty() && args.len() <= 5 => {
       return Some(list_helpers_ast::peak_detect_ast(args));
     }
     "SparseArray" if !args.is_empty() => {
@@ -4192,7 +4192,7 @@ pub fn dispatch_list_operations(
     "AnglePath3D" if args.len() == 1 => {
       return Some(list_helpers_ast::angle_path_3d_ast(args));
     }
-    "FindPeaks" if (1..=4).contains(&args.len()) => {
+    "FindPeaks" if (1..=5).contains(&args.len()) => {
       return Some(list_helpers_ast::find_peaks_ast(args));
     }
     // A concrete non-list argument (a number, string, association, boolean,

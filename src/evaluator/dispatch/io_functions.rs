@@ -5541,7 +5541,8 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   // Likewise a bare `SwatchLegend[…]` — a color-swatch legend rather than
   // a line-style one.
-  if matches!(expr, Expr::FunctionCall { name, .. } if name == "SwatchLegend") {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "SwatchLegend" || name == "PointLegend")
+  {
     return true;
   }
   // `Animate[expr, spec, …]` nested in a display draws its first frame
@@ -7086,7 +7087,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           legend @ Expr::FunctionCall {
             name: legend_name, ..
           },
-        ) if legend_name == "SwatchLegend" || legend_name == "LineLegend" => {
+        ) if matches!(
+          legend_name.as_str(),
+          "SwatchLegend" | "LineLegend" | "PointLegend"
+        ) =>
+        {
           Some(expr_to_svg(legend)).filter(|svg| svg.starts_with("<svg"))
         }
         _ => None,
@@ -7121,6 +7126,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // either way.
     Expr::FunctionCall { name, args } if name == "SwatchLegend" => {
       crate::functions::graphics::swatch_legend_svg(args).unwrap_or_default()
+    }
+    Expr::FunctionCall { name, args } if name == "PointLegend" => {
+      crate::functions::graphics::point_legend_svg(args).unwrap_or_default()
     }
     // `Animate[…]` composed into a static display (e.g. `Pane[Animate[…],
     // …]` sitting in a `Grid` cell) rather than being the whole Manipulate

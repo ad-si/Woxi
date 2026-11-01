@@ -206,6 +206,67 @@ fn with_symbol_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   renamed.then_some(out)
 }
 
+/// `ScalingFunctions -> "Log"` on `Plot`/`ListPlot`/`ListLinePlot` asks for
+/// the logarithmic plot of the family: the call is handed to `LogPlot`,
+/// `LogLinearPlot`, `LogLogPlot` (or their `List…` forms) without the option,
+/// so the log axes have one implementation. `"Log"` alone or `{xs, "Log"}`
+/// scales y; `{"Log", ys}` scales x. `None` everywhere just drops the option.
+fn log_scaled_plot(
+  name: &str,
+  args: &[Expr],
+) -> Option<(&'static str, Vec<Expr>)> {
+  if !matches!(name, "Plot" | "ListPlot" | "ListLinePlot") {
+    return None;
+  }
+  let pos = args.iter().position(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ScalingFunctions"))
+  })?;
+  let Expr::Rule { replacement, .. } = &args[pos] else {
+    return None;
+  };
+  // `true` for a log scale, `false` for none, `None` for anything else.
+  let scale = |e: &Expr| match e {
+    Expr::String(s) if s == "Log" || s == "Log10" => Some(true),
+    Expr::Identifier(s) if s == "None" || s == "Identity" => Some(false),
+    _ => None,
+  };
+  let (log_x, log_y) = match replacement.as_ref() {
+    Expr::List(items) if items.len() == 2 => {
+      (scale(&items[0])?, scale(&items[1])?)
+    }
+    other => (false, scale(other)?),
+  };
+  let mut rest = args.to_vec();
+  rest.remove(pos);
+  let list = name != "Plot";
+  let head = match (log_x, log_y, list) {
+    (false, false, _) => {
+      return Some((
+        match name {
+          "Plot" => "Plot",
+          "ListPlot" => "ListPlot",
+          _ => "ListLinePlot",
+        },
+        rest,
+      ));
+    }
+    (false, true, false) => "LogPlot",
+    (true, false, false) => "LogLinearPlot",
+    (true, true, false) => "LogLogPlot",
+    (false, true, true) => "ListLogPlot",
+    (true, false, true) => "ListLogLinearPlot",
+    (true, true, true) => "ListLogLogPlot",
+  };
+  if name == "ListLinePlot" {
+    rest.push(Expr::Rule {
+      pattern: Box::new(id_expr("Joined")),
+      replacement: Box::new(id_expr("True")),
+    });
+  }
+  Some((head, rest))
+}
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
@@ -305,6 +366,11 @@ pub fn dispatch_plotting(
     && crate::functions::plot::degenerate_complex_corners(name, &args[1])
   {
     return Some(Ok(call(name, args.to_vec())));
+  }
+  if let Some((head, rewritten)) = log_scaled_plot(name, args) {
+    return Some(crate::evaluator::evaluate_function_call_ast(
+      head, &rewritten,
+    ));
   }
   match name {
     #[cfg(not(target_arch = "wasm32"))]
@@ -856,6 +922,22 @@ pub fn dispatch_plotting(
     }
     "PairedBarChart" | "PairedHistogram" if args.len() >= 2 => {
       Some(crate::functions::chart::paired_chart_ast(name, args))
+    }
+    // Association, temporal and `Quantity` data become plain list data
+    // (keys filling the `Automatic` labels and legends) through the one
+    // shared rewrite. BubbleChart reads its (point-level) associations
+    // itself.
+    "BarChart3D" | "PieChart3D" | "SectorChart" | "SectorChart3D"
+    | "RectangleChart" | "RectangleChart3D" | "BubbleChart"
+      if !args.is_empty()
+        && (name != "BubbleChart"
+          || !matches!(&args[0], Expr::Association(_)))
+        && let Some(new_args) =
+          crate::functions::chart::chart_data_args(args, false) =>
+    {
+      Some(crate::evaluator::evaluate_function_call_ast(
+        name, &new_args,
+      ))
     }
     // The 3-D charts render quietly, but a first argument that is no
     // dataset still reports `head::ldata` and stays unevaluated.

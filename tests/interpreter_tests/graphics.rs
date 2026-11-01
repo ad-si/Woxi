@@ -195,6 +195,22 @@ mod graphics {
     }
 
     #[test]
+    fn text_with_offset_position_is_shifted_in_screen_points() {
+      let plain = export_svg(
+        "Graphics[{Text[\"a\", {20, -1.5}, {-1, 0}]}, PlotRange -> {{15, 24}, {-5, 0}}]",
+      );
+      let shifted = export_svg(
+        "Graphics[{Text[\"a\", Offset[{22, 0}, {20, -1.5}], {-1, 0}]}, PlotRange -> {{15, 24}, {-5, 0}}]",
+      );
+      let x_of = |svg: &str| -> f64 {
+        let i = svg.find("<text x=\"").unwrap() + 9;
+        let j = svg[i..].find('"').unwrap();
+        svg[i..i + j].parse().unwrap()
+      };
+      assert!((x_of(&shifted) - x_of(&plain) - 22.0).abs() < 0.02);
+    }
+
+    #[test]
     fn graphics_with_texture_directive() {
       // Texture[image] is a graphics directive — Graphics with it inside
       // should evaluate to the standard -Graphics- placeholder, not
@@ -41439,6 +41455,35 @@ mod static_dynamic_controls {
       interpret("ColorData[\"VisibleSpectrum\"][300]").unwrap(),
       "RGBColor[0., 0., 0.]"
     );
+  }
+
+  #[test]
+  fn color_data_physical_spectrum_color_function_property() {
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", \"ColorFunction\"][525]")
+        .unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"BlackBodySpectrum\", \"ColorFunction\"][5800]")
+        .unwrap(),
+      interpret("ColorData[\"BlackBodySpectrum\"][5800]").unwrap()
+    );
+  }
+
+  #[test]
+  fn plot_filling_takes_color_function_colors() {
+    let svg = interpret(
+      "ExportString[Plot[Sin[x] + 2, {x, 0, 7}, ColorFunction -> (ColorData[\"VisibleSpectrum\", \"ColorFunction\"][# 100] &), ColorFunctionScaling -> False, Filling -> Axis], \"SVG\"]",
+    )
+    .unwrap();
+    // The fill is split into several differently tinted polygons.
+    let fills: std::collections::HashSet<&str> = svg
+      .split("<polygon")
+      .skip(1)
+      .filter_map(|p| p.split("fill=\"").nth(1)?.split('"').next())
+      .collect();
+    assert!(fills.len() > 3, "expected tinted fill runs, got {fills:?}");
   }
 
   #[test]
