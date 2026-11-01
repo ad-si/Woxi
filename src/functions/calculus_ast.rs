@@ -18725,7 +18725,9 @@ impl CompiledCondition {
       CompiledCondition::Const(_) => {}
       CompiledCondition::Not(c) => c.collect_atoms(v, out),
       CompiledCondition::And(cs) | CompiledCondition::Or(cs) => {
-        cs.iter().for_each(|c| c.collect_atoms(v, out));
+        for c in cs {
+          c.collect_atoms(v, out);
+        }
       }
       CompiledCondition::Compare(sides, ops) => {
         let values: Vec<f64> = sides.iter().map(|s| s.eval(&[v])).collect();
