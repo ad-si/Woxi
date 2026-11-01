@@ -5986,8 +5986,17 @@ pub(crate) fn render_merged_plot_source(
   for opt in &source.options {
     if let Some((name, value)) =
       crate::functions::graphics::option_name_value(opt)
+      && !apply_common_plot_option(name, &value, &mut opts, &mut overrides)
+      && name == "PlotLegends"
     {
-      apply_common_plot_option(name, &value, &mut opts, &mut overrides);
+      // The legend of the first plot survives the merge, like the other
+      // options inherited from it. Explicit labels only: automatic
+      // legends are keyed by the per-plot expressions, gone by now.
+      let (labels, _, _, position) = parse_plot_legends(&value);
+      opts.legend_position = position;
+      if !labels.is_empty() {
+        opts.plot_legends = labels;
+      }
     }
   }
   if let Some(ar) = overrides.aspect_ratio {

@@ -308,6 +308,10 @@ struct DensityContourOptions {
   /// contour function, cycled when there are more functions than styles.
   /// Empty unless every entry of the option is itself a list or Directive.
   contour_styles: Vec<Option<crate::functions::plot::SeriesStyle>>,
+  /// `BoundaryStyle -> style`: draws the edge of the region a
+  /// `RegionFunction` (or an undefined value) cuts out of the plot. `None`
+  /// (the default, as in Wolfram) draws no boundary.
+  boundary_style: Option<crate::functions::plot::SeriesStyle>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
   /// `FrameTicks`: whether the bottom (x) and left (y) edges keep their
@@ -479,6 +483,7 @@ fn parse_density_contour_options(
   let mut mesh_functions: Vec<Expr> = Vec::new();
   let mut contour_style = None;
   let mut contour_styles = Vec::new();
+  let mut boundary_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut frame_ticks = (true, true);
   let mut frame = true;
@@ -576,6 +581,12 @@ fn parse_density_contour_options(
             crate::functions::plot::parse_style_directives(replacement);
           contour_styles = per_contour_styles(replacement);
         }
+        "BoundaryStyle" => {
+          boundary_style = match replacement {
+            Expr::Identifier(v) if v == "None" || v == "Automatic" => None,
+            other => crate::functions::plot::parse_style_directives(other),
+          };
+        }
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
         }
@@ -631,6 +642,7 @@ fn parse_density_contour_options(
     mesh_functions,
     contour_style,
     contour_styles,
+    boundary_style,
     frame_labels,
     frame_ticks,
     frame,
@@ -2783,6 +2795,42 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     contour_weight,
     "",
   );
+  if opts.boundary_style.is_some() {
+    // The region's edge is the level curve halfway between the cells that
+    // have a value and those left blank.
+    let defined: Vec<Vec<f64>> = grid
+      .iter()
+      .map(|col| {
+        col
+          .iter()
+          .map(|v| if v.is_finite() { 1.0 } else { 0.0 })
+          .collect()
+      })
+      .collect();
+    let (color, weight) = opts.contour_stroke_for(opts.boundary_style.as_ref());
+    let weight = if opts
+      .boundary_style
+      .as_ref()
+      .is_some_and(|s| s.thickness.is_some())
+    {
+      weight
+    } else {
+      CONTOUR_LINE_WEIGHT * 2.0
+    };
+    render_contour_lines_styled(
+      &mut svg,
+      &defined,
+      &[0.5],
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      &color,
+      weight,
+      "",
+    );
+  }
   if opts.frame {
     push_frame(
       &mut svg,

@@ -1272,9 +1272,36 @@ fn apply_plot_range_override(
   y_range: (f64, f64),
 ) -> ((f64, f64), (f64, f64)) {
   (
-    parsed.plot_range_x.unwrap_or(x_range),
-    parsed.plot_range_y.unwrap_or(y_range),
+    log_safe_range(parsed.plot_range_x, x_range, parsed.opts.log_x),
+    log_safe_range(parsed.plot_range_y, y_range, parsed.opts.log_y),
   )
+}
+
+/// An explicit `PlotRange` on a logarithmic axis cannot reach zero or below
+/// (`PlotRange -> {0, 1}` on a `ListLogPlot`); such a bound falls back to the
+/// automatically computed one, as the Wolfram Language does.
+fn log_safe_range(
+  explicit: Option<(f64, f64)>,
+  auto: (f64, f64),
+  log: bool,
+) -> (f64, f64) {
+  let Some((lo, hi)) = explicit else {
+    return auto;
+  };
+  if !log {
+    return (lo, hi);
+  }
+  let lo = if lo > 0.0 || auto.0 <= 0.0 {
+    lo
+  } else {
+    auto.0
+  };
+  let hi = if hi > 0.0 || auto.1 <= 0.0 {
+    hi
+  } else {
+    auto.1
+  };
+  (lo, hi)
 }
 
 /// Subdivisions per data interval when sampling a smooth interpolated curve

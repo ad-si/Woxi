@@ -5602,6 +5602,21 @@ mod nintegrate {
   }
 
   #[test]
+  fn parametric_plot_evaluation_monitor_sows_parameter_values() {
+    // EvaluationMonitor :> Sow[t] fires with the parameter bound to each
+    // sampled value, so Reap collects numbers inside the parameter range.
+    clear_state();
+    let r = interpret(
+      "Module[{pts}, pts = Reap[ParametricPlot[{Cos[t], Sin[t]}, \
+       {t, 0, Pi}, EvaluationMonitor :> Sow[t]]][[2, 1]]; \
+       {Length[pts] > 10, VectorQ[pts, NumberQ], Min[pts] >= 0, \
+       Max[pts] <= Pi}]",
+    )
+    .unwrap();
+    assert_eq!(r, "{True, True, True, True}");
+  }
+
+  #[test]
   fn nintegrate_exp_neg_x_squared() {
     // ∫₀¹ e^(-x²) dx ≈ 0.7468241328124271
     assert_approx(
@@ -24208,6 +24223,23 @@ mod ndsolve_stiff_system {
       "True"
     );
   }
+
+  // A stiff differential equation coupled to an algebraic unknown that has
+  // no closed form (solved by Newton iteration at every evaluation) is
+  // handed to the stiff method too, instead of stalling for good.
+  #[test]
+  fn stiff_dae_with_implicit_algebraic_unknown() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -100000 (x[t] - y[t]), \
+         y[t] + Sin[y[t]] + y[t]^3 == 2 + Cos[x[t]], x[0] == 1}, \
+         {x, y}, {t, 0, 50}]; \
+         {s[[1, 1, 2]][\"Domain\"], Abs[(x[50] - y[50]) /. First[s]] < 10^-3}"
+      )
+      .unwrap(),
+      "{{{0., 50.}}, True}"
+    );
+  }
 }
 
 mod differentiate_wrt_derivative {
@@ -25158,5 +25190,74 @@ mod sum_index_inside_nested_iterators {
     ] {
       assert_eq!(interpret(input).unwrap(), expected, "{input}");
     }
+  }
+}
+
+mod d_piecewise {
+  use super::*;
+
+  // Polynomial inequalities in the variable alone cut the line into open
+  // intervals, each with the derivative of its piece; the boundaries fall
+  // to Indeterminate. All wolframscript-verified.
+  #[test]
+  fn univariate_conditions_split_into_intervals() {
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x, 0 <= x <= 1}}, x^2], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{2*x, x < 0}, {1, Inequality[0, Less, x, Less, 1]}, {2*x, x > 1}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x > 0}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{0, x < 0}, {1, x > 0}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x, x > 2}, {x^3, x > 0}}, 1], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{0, x < 0}, {3*x^2, Inequality[0, Less, x, Less, 2]}, {1, x > 2}}, Indeterminate]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x^2 < 2}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{0, x < -Sqrt[2]}, {1, Inequality[-Sqrt[2], Less, x, Less, Sqrt[2]]}, {0, x > Sqrt[2]}}, Indeterminate]"
+    );
+    assert_eq!(interpret("D[Piecewise[{{1, x > 0}}, 1], x]").unwrap(), "0");
+  }
+
+  // Other conditions stay, as a difference against 0 led by a positive
+  // term, and the default is differentiated too.
+  #[test]
+  fn other_conditions_are_kept() {
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, Sin[x] > 0}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, Sin[x] > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, E^x <= 2}}, x^2], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, E^x <= 2}}, 2*x]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x^2, x > a}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{2*x, a - x < 0}}, 0]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[D[Piecewise[{{x^2, x >= a && x < b}}, 1], x], InputForm]"
+      )
+      .unwrap(),
+      "Piecewise[{{2*x, a - x <= 0 && b - x > 0}}, 0]"
+    );
+    assert_eq!(
+      interpret("ToString[D[Piecewise[{{x, x != 1}}, 0], x], InputForm]")
+        .unwrap(),
+      "Piecewise[{{1, x != 1}}, 0]"
+    );
   }
 }

@@ -10101,6 +10101,19 @@ pub fn to_expression_ast_as(
     }
     return Ok(interpreted);
   }
+  // ToExpression[GraphicsBox[…]] reads the drawing boxes back as the
+  // `Graphics` they typeset (CircleBox → Circle, LineBox → Line, …).
+  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "GraphicsBox")
+  {
+    let text =
+      crate::notebook::box_source_to_graphics_expr(&expr_to_output(&args[0]));
+    let mut text_args = vec![Expr::String(text)];
+    if let Some(h) = args.get(2) {
+      text_args.push(Expr::Identifier("InputForm".to_string()));
+      text_args.push(h.clone());
+    }
+    return to_expression_ast_as(&text_args, message_symbol);
+  }
   // Typesetting boxes (SqrtBox["x"], SuperscriptBox["x", "3"], RowBox[…])
   // read as the input text they stand for.
   if matches!(&args[0], Expr::FunctionCall { name, .. } if box_input_head(name))
