@@ -11342,15 +11342,26 @@ fn apply_initial_conditions(
     }
   }
 
-  if equations.len() != max_order {
-    // Not enough initial conditions — return general solution
+  if equations.is_empty() || equations.len() > max_order {
     return Ok(general_solution.clone());
   }
 
-  // Solve for __C1, __C2, ...
-  let c_id_exprs: Vec<Expr> = placeholders
+  // Solve for __C1, __C2, ... — with fewer conditions than constants, for
+  // the last constants the conditions involve, as many as there are
+  // conditions (`y'[0] == 0` fixes the sine's constant of
+  // `C[1] Cos[x] + C[2] Sin[x]`; `y[0] + y'[0] == 1` solves for `C[2]`),
+  // the others staying free.
+  let k = equations.len();
+  let involved: Vec<&String> = placeholders
     .iter()
-    .map(|name| Expr::Identifier(name.clone()))
+    .filter(|name| equations.iter().any(|e| expr_contains_ident(e, name)))
+    .collect();
+  if involved.len() < k {
+    return Ok(general_solution.clone());
+  }
+  let c_id_exprs: Vec<Expr> = involved[involved.len() - k..]
+    .iter()
+    .map(|name| Expr::Identifier((*name).clone()))
     .collect();
 
   let eqs_list = Expr::List(equations.into());
@@ -11373,6 +11384,11 @@ fn apply_initial_conditions(
         result =
           crate::syntax::substitute_variable(&result, var_name, replacement);
       }
+    }
+    // The constants left free keep their names.
+    for (i, name) in placeholders.iter().enumerate() {
+      result =
+        crate::syntax::substitute_variable(&result, name, &make_c(i + 1));
     }
     // Simplify the result
     let result =

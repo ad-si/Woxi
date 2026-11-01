@@ -8593,6 +8593,34 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  /// Fewer conditions than constants fix the last constants the conditions
+  /// involve and leave the others free, as in wolframscript; the
+  /// conditions used to be dropped altogether.
+  #[test]
+  fn fewer_conditions_than_constants() {
+    assert_eq!(
+      interpret("DSolve[{y''[x] + y[x] == 0, y'[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*Cos[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y''[x] + l y[x] == 0, y[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> C[2]*Sin[Sqrt[l]*x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y''[x] + y[x] == 0, y'[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*Cos[x] + 2*Sin[x]}}"
+    );
+    // Both exponentials enter `y[0] == 1`; the last constant is solved for.
+    assert_eq!(
+      interpret(
+        "Simplify[(y[x] /. DSolve[{y''[x] - y[x] == 0, y[0] == 1}, y[x], \
+         x][[1]]) - (1 - C[1] + E^(2 x) C[1])/E^x]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // y'' + (α + β Cos[ω x + φ]) y == 0 is Mathieu's equation in
   // z = (ω x + φ)/2; machine numbers make the parameters machine numbers.
   #[test]
