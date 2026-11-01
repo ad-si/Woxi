@@ -442,33 +442,61 @@ pub fn dispatch_predicate_functions(
     "PalindromeQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::palindrome_q_ast(args));
     }
-    // PalindromeQ[s, IgnoreCase -> …, IgnoreDiacritics -> …]: the string is
-    // normalized first, then tested as usual.
+    // PalindromeQ[s, IgnoreCase -> …, IgnoreDiacritics -> …, Language -> l]:
+    // the string is normalized first, then tested as usual. Which marks
+    // count as diacritics depends on the language (ñ is a letter of its own
+    // in Spanish), exactly as in RemoveDiacritics[s, Language -> l].
     "PalindromeQ" if args.len() > 1 => {
       let (pos, opts) = super::split_trailing_options(args);
       if pos.len() != 1 {
         return Some(Ok(unevaluated(name, args)));
       }
-      let mut subject = pos[0].clone();
+      let flag = |value: &Expr| match value {
+        Expr::Identifier(v) if v == "True" => Some(true),
+        Expr::Identifier(v) if v == "False" => Some(false),
+        _ => None,
+      };
+      let (mut ignore_case, mut ignore_diacritics) = (false, false);
+      let mut language: Option<Expr> = None;
       for (opt, value) in &opts {
-        let on = match value {
-          Expr::Identifier(v) if v == "True" => true,
-          Expr::Identifier(v) if v == "False" => false,
+        match (opt.as_str(), flag(value)) {
+          ("IgnoreCase", Some(on)) => ignore_case = on,
+          ("IgnoreDiacritics", Some(on)) => ignore_diacritics = on,
+          ("Language", _) if matches!(value, Expr::String(_)) => {
+            language = Some(value.clone());
+          }
           _ => return Some(Ok(unevaluated(name, args))),
-        };
-        let transform = match opt.as_str() {
-          "IgnoreCase" => "ToLowerCase",
-          "IgnoreDiacritics" => "RemoveDiacritics",
-          _ => return Some(Ok(unevaluated(name, args))),
-        };
-        if on && matches!(subject, Expr::String(_)) {
+        }
+      }
+      let mut subject = pos[0].clone();
+      if matches!(subject, Expr::String(_)) {
+        let mut steps: Vec<(&str, Vec<Expr>)> = Vec::new();
+        if ignore_case {
+          steps.push(("ToLowerCase", vec![]));
+        }
+        if ignore_diacritics {
+          let extra = match &language {
+            Some(lang) => vec![Expr::Rule {
+              pattern: Box::new(Expr::Identifier("Language".into())),
+              replacement: Box::new(lang.clone()),
+            }],
+            None => vec![],
+          };
+          steps.push(("RemoveDiacritics", extra));
+        }
+        for (transform, extra) in steps {
+          let mut call_args = vec![subject];
+          call_args.extend(extra);
           subject = match crate::evaluator::evaluate_function_call_ast(
-            transform,
-            &[subject],
+            transform, &call_args,
           ) {
             Ok(e) => e,
             Err(e) => return Some(Err(e)),
           };
+        }
+        if !matches!(subject, Expr::String(_)) {
+          // An unknown language leaves RemoveDiacritics unevaluated.
+          return Some(Ok(unevaluated(name, args)));
         }
       }
       return Some(crate::functions::predicate_ast::palindrome_q_ast(&[

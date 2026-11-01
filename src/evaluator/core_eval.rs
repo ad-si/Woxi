@@ -3361,6 +3361,10 @@ fn evaluate_expr_to_expr_uncached(
         // the primitives reference point *symbols*, not values, and must
         // stay symbolic until a `["Graphics"]` property substitutes them in.
         || name == "GeometricScene"
+        // TemplateIf's condition refers to slots that are only filled when
+        // the template is applied, so it must not evaluate before then
+        // (`TemplateIf[StringQ[TemplateSlot[1]], …]`).
+        || name == "TemplateIf"
         // NDSolve holds its equations, dependent variable(s) and
         // independent-variable spec (matching Wolfram: NDSolve has
         // HoldAll) so that an independent variable name reused elsewhere

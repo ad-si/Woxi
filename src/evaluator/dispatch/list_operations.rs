@@ -868,6 +868,32 @@ fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
 // is processed character-wise and the result is rebuilt as a string.
 fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let symbolic = || unevaluated("LongestOrderedSequence", args);
+  // IgnoreCase -> True: a string is compared in lower case, but the result
+  // keeps the characters as they occur in the string.
+  if let Some(Expr::Rule {
+    pattern,
+    replacement,
+  }) = args.last()
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "IgnoreCase")
+  {
+    let rest = &args[..args.len() - 1];
+    return match (replacement.as_ref(), rest) {
+      (Expr::Identifier(b), _) if b == "False" => {
+        longest_ordered_sequence(rest)
+      }
+      (Expr::Identifier(b), [Expr::String(text)]) if b == "True" => {
+        let original: Vec<char> = text.chars().collect();
+        // Lower-case per character so positions stay aligned.
+        let folded: Vec<Expr> = original
+          .iter()
+          .map(|c| Expr::String(c.to_lowercase().collect()))
+          .collect();
+        let idxs = longest_ordered_indices(&folded, None)?;
+        Ok(Expr::String(idxs.iter().map(|&i| original[i]).collect()))
+      }
+      _ => Ok(symbolic()),
+    };
+  }
   // A string is accepted only in the one-argument form; the two-argument form
   // requires a List. Anything else emits ::list and stays unevaluated.
   let (elements, is_string): (Vec<Expr>, bool) = match &args[0] {
@@ -898,14 +924,24 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(idxs.iter().map(|&i| elements[i].clone()).collect())
     }
   };
+  let idxs = longest_ordered_indices(&elements, args.get(1))?;
+  Ok(build(&idxs))
+}
+
+/// Indices of the longest subsequence of `elements` in order per the
+/// comparator `p` (OrderedQ of the pair by default).
+fn longest_ordered_indices(
+  elements: &[Expr],
+  p: Option<&Expr>,
+) -> Result<Vec<usize>, InterpreterError> {
   let n = elements.len();
   if n == 0 {
-    return Ok(build(&[]));
+    return Ok(Vec::new());
   }
   // True when (x, y) are in order per the comparator.
   let in_order = |x: &Expr, y: &Expr| -> Result<bool, InterpreterError> {
-    let r = if args.len() == 2 {
-      list_helpers_ast::apply_func_to_two_args(&args[1], x, y)?
+    let r = if let Some(p) = p {
+      list_helpers_ast::apply_func_to_two_args(p, x, y)?
     } else {
       crate::evaluator::evaluate_function_call_ast(
         "OrderedQ",
@@ -938,7 +974,7 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cur = pred[cur];
   }
   idxs.reverse();
-  Ok(build(&idxs))
+  Ok(idxs)
 }
 
 // View a canonical tree node `Tree[data, children]` as (data, child subtrees).

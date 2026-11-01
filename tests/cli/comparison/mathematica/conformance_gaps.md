@@ -6684,3 +6684,25 @@ differ in the last bit.
   default font size: the `Style` sizes inside a `Row` passed to `Text` are
   not applied, so a barcode's printed digits come out much smaller than in
   wolframscript.
+
+## `AlphabeticSort` options and most languages are not implemented
+
+- `AlphabeticSort[list, lang]` knows only `"English"`, `"Swedish"` and
+  `"Spanish"`; any other language (and a language entity or the `Language`
+  option) stays unevaluated.
+- `IgnoreCase`, `IgnoreDiacritics`, `IgnorePunctuation` and `CaseOrdering` are
+  not implemented: how wolframscript orders elements that compare equal
+  under `IgnoreCase -> True` (e.g. `{"b", "A", "a", "B"}`) is unverified.
+- The default collation is a simplified Unicode collation (letters compared
+  accent- and case-blind, then by accent, then lower case first; `æ` as
+  `ae`). Its treatment of punctuation, digits and `æ` in English
+  (`{"Encyclopaedia", "Encyclopædia", "Encyclopedia"}` in Woxi) is
+  unverified against wolframscript.
+
+## Template options not implemented
+
+- `TemplateSlot[…, "DefaultValue" -> v]` is not used for a missing slot.
+- `InsertionFunction -> "json"` (a format name rather than a function) is not
+  supported.
+- `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
+  arguments (wolframscript's attribute list is unverified).

@@ -13508,13 +13508,18 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     return Ok(Expr::List(results?.into()));
   }
-  let s = expr_to_str(&args[0]);
+  Ok(letter_counts_of(&expr_to_str(&args[0]), &[]))
+}
+
+/// Counts of the letters of `s`, plus the characters `extra`, sorted by
+/// count descending then by last first-occurrence.
+fn letter_counts_of(s: &str, extra: &[char]) -> Expr {
   // Count letters preserving first-occurrence order.
   let mut counts: Vec<(char, i128)> = Vec::new();
   let mut seen: std::collections::HashMap<char, usize> =
     std::collections::HashMap::new();
   for ch in s.chars() {
-    if ch.is_alphabetic() {
+    if ch.is_alphabetic() || extra.contains(&ch) {
       if let Some(&idx) = seen.get(&ch) {
         counts[idx].1 += 1;
       } else {
@@ -13527,12 +13532,12 @@ pub fn letter_counts_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (reverse, then stable-sort), matching CharacterCounts and wolframscript.
   counts.reverse();
   counts.sort_by_key(|c| std::cmp::Reverse(c.1));
-  Ok(Expr::Association(
+  Expr::Association(
     counts
       .into_iter()
       .map(|(ch, count)| (Expr::String(ch.to_string()), Expr::Integer(count)))
       .collect(),
-  ))
+  )
 }
 
 /// LetterCounts[s, n] - counts of length-n letter n-grams. Non-letter
@@ -13545,10 +13550,34 @@ pub fn letter_counts_ngram_ast(
   if let Expr::List(items) = &args[0] {
     let results: Result<Vec<Expr>, InterpreterError> = items
       .iter()
-      .map(|s| letter_counts_ngram_ast(&[s.clone(), args[1].clone()]))
+      .map(|s| {
+        let mut one = args.to_vec();
+        one[0] = s.clone();
+        letter_counts_ngram_ast(&one)
+      })
       .collect();
     return Ok(Expr::List(results?.into()));
   }
+  // LetterCounts[s, n, {"c1", …}]: the single characters ci count as
+  // letters too.
+  let extra: Vec<char> = match args.get(2) {
+    None => Vec::new(),
+    Some(Expr::List(items)) => {
+      let mut chars = Vec::with_capacity(items.len());
+      for item in items {
+        let Expr::String(c) = item else {
+          return Ok(unevaluated("LetterCounts", args));
+        };
+        let mut it = c.chars();
+        let (Some(ch), None) = (it.next(), it.next()) else {
+          return Ok(unevaluated("LetterCounts", args));
+        };
+        chars.push(ch);
+      }
+      chars
+    }
+    Some(_) => return Ok(unevaluated("LetterCounts", args)),
+  };
   let s = expr_to_str(&args[0]);
   // The n-gram length has to be a positive whole number; note that this
   // message names no call.
@@ -13559,7 +13588,7 @@ pub fn letter_counts_ngram_ast(
     return Ok(unevaluated("LetterCounts", args));
   };
   if n == 1 {
-    return letter_counts_ast(&args[0..1]);
+    return Ok(letter_counts_of(&s, &extra));
   }
   let n = n as usize;
   let mut grams: Vec<String> = Vec::new();
@@ -13572,7 +13601,7 @@ pub fn letter_counts_ngram_ast(
     }
   };
   for c in s.chars() {
-    if c.is_alphabetic() {
+    if c.is_alphabetic() || extra.contains(&c) {
       run.push(c);
     } else {
       flush(&mut run, &mut grams);
@@ -13794,26 +13823,92 @@ pub fn string_rotate_right_ast(
   Ok(Expr::String(result.into_iter().collect()))
 }
 
-/// AlphabeticSort[list] - case-insensitive alphabetic sort
-pub fn alphabetic_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
-    return Err(InterpreterError::EvaluationError(
-      "AlphabeticSort expects exactly 1 argument".into(),
-    ));
+/// Letters a language sorts as letters of their own, as (letter, primary
+/// weight) pairs. The weights are those of `collation_key`, so a weight just
+/// above `'z' * 4` places the letter after z, and `'n' * 4 + 1` places it
+/// between n and o. Variants that share a primary weight (Swedish ä and æ)
+/// are told apart by the secondary key.
+fn collation_tailoring(lang: &str) -> Option<Vec<(char, u32)>> {
+  let after_z = 'z' as u32 * 4;
+  match lang {
+    "English" => Some(Vec::new()),
+    "Swedish" => Some(vec![
+      ('å', after_z + 1),
+      ('ä', after_z + 2),
+      ('æ', after_z + 2),
+      ('ö', after_z + 3),
+      ('ø', after_z + 3),
+    ]),
+    "Spanish" => Some(vec![('ñ', 'n' as u32 * 4 + 1)]),
+    _ => None,
   }
+}
+
+/// Collation key of `s`: letters compared case- and accent-blind first
+/// (ligatures expanded, æ as ae), then by their accents, then by case with
+/// lower case first.
+fn collation_key(
+  s: &str,
+  tailoring: &[(char, u32)],
+) -> (Vec<u32>, Vec<u32>, Vec<u8>) {
+  let (mut primary, mut secondary, mut tertiary) =
+    (Vec::new(), Vec::new(), Vec::new());
+  for c in s.chars() {
+    let lower: String = c.to_lowercase().collect();
+    tertiary.push(u8::from(c.is_uppercase()));
+    secondary.extend(lower.chars().map(|l| l as u32));
+    let mut lc = lower.chars();
+    if let (Some(l), None) = (lc.next(), lc.next())
+      && let Some(&(_, w)) = tailoring.iter().find(|(t, _)| *t == l)
+    {
+      primary.push(w);
+      continue;
+    }
+    for b in strip_diacritics(&lower).chars() {
+      let expanded: &[char] = match b {
+        'æ' => &['a', 'e'],
+        'œ' => &['o', 'e'],
+        'ß' => &['s', 's'],
+        'ø' => &['o'],
+        'đ' => &['d'],
+        'ł' => &['l'],
+        _ => std::slice::from_ref(&b),
+      };
+      primary.extend(expanded.iter().map(|&e| e as u32 * 4));
+    }
+  }
+  (primary, secondary, tertiary)
+}
+
+/// AlphabeticSort[list] / AlphabeticSort[list, lang]: alphabetical order of
+/// strings with lower case before upper case (the "LowerFirst" case ordering
+/// of English, Swedish and Spanish), using the language's own letters.
+pub fn alphabetic_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let lang = match args {
+    [_] => "English",
+    [_, Expr::String(lang)] => lang.as_str(),
+    _ => return Ok(unevaluated("AlphabeticSort", args)),
+  };
+  let Some(tailoring) = collation_tailoring(lang) else {
+    return Ok(unevaluated("AlphabeticSort", args));
+  };
   match &args[0] {
     Expr::List(items) => {
-      let mut sorted = items.clone();
-      sorted.sort_by(|a, b| {
-        let sa = expr_to_string(a).to_lowercase();
-        let sb = expr_to_string(b).to_lowercase();
-        sa.cmp(&sb)
-      });
-      Ok(Expr::List(sorted))
+      let mut keyed: Vec<_> = items
+        .iter()
+        .map(|item| {
+          let text = match item {
+            Expr::String(s) => s.clone(),
+            other => expr_to_string(other),
+          };
+          (collation_key(&text, &tailoring), item.clone())
+        })
+        .collect();
+      keyed.sort_by(|a, b| a.0.cmp(&b.0));
+      Ok(Expr::List(keyed.into_iter().map(|(_, e)| e).collect()))
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "AlphabeticSort expects a list argument".into(),
-    )),
+    // A non-list (such as an undefined symbol) stays unevaluated.
+    _ => Ok(unevaluated("AlphabeticSort", args)),
   }
 }
 
@@ -15385,56 +15480,41 @@ pub fn build_template_object(
 /// positional list (1-based); a symbol/string key selects an association entry.
 /// Returns the raw value `Expr` (used directly inside `TemplateExpression`).
 fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
-  match args {
-    Expr::List(items) => match key {
-      Expr::Integer(n) if *n >= 1 && (*n as usize) <= items.len() => {
-        Some(items[(*n as usize) - 1].clone())
-      }
-      _ => None,
-    },
-    Expr::Association(pairs) => {
-      let key_str = match key {
-        Expr::String(s) => s.clone(),
-        Expr::Identifier(s) => s.clone(),
-        other => expr_to_string(other),
-      };
-      pairs.iter().find_map(|(k, v)| {
-        let k_str = match k {
-          Expr::String(s) => s.clone(),
-          Expr::Identifier(s) => s.clone(),
-          other => expr_to_string(other),
-        };
-        (k_str == key_str).then(|| v.clone())
-      })
-    }
+  // A non-list argument is treated as a one-element list, so
+  // `TemplateSlot[1]` applied to an association yields the association.
+  let items: &[Expr] = match args {
+    Expr::List(items) => items,
+    other => std::slice::from_ref(other),
+  };
+  if let Expr::Integer(n) = key {
+    return (*n >= 1 && (*n as usize) <= items.len())
+      .then(|| items[(*n as usize) - 1].clone());
+  }
+  // A named slot takes the first matching key of any association argument.
+  let name_of = |e: &Expr| match e {
+    Expr::String(s) | Expr::Identifier(s) => s.clone(),
+    other => expr_to_string(other),
+  };
+  let key_str = name_of(key);
+  items.iter().find_map(|item| match item {
+    Expr::Association(pairs) => pairs
+      .iter()
+      .find_map(|(k, v)| (name_of(k) == key_str).then(|| v.clone())),
     Expr::FunctionCall { name, args: pairs } if name == "Association" => {
-      let key_str = match key {
-        Expr::String(s) => s.clone(),
-        Expr::Identifier(s) => s.clone(),
-        other => expr_to_string(other),
-      };
-      pairs.iter().find_map(|rule| {
-        let (k, v) = match rule {
-          Expr::Rule {
-            pattern,
-            replacement,
-          }
-          | Expr::RuleDelayed {
-            pattern,
-            replacement,
-          } => (pattern.as_ref(), replacement.as_ref()),
-          _ => return None,
-        };
-        let k_str = match k {
-          Expr::String(s) => s.clone(),
-          Expr::Identifier(s) => s.clone(),
-          other => expr_to_string(other),
-        };
-        (k_str == key_str).then(|| v.clone())
+      pairs.iter().find_map(|rule| match rule {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => (name_of(pattern) == key_str).then(|| (**replacement).clone()),
+        _ => None,
       })
     }
     _ => None,
-  }
+  })
 }
 
 /// Apply a `TemplateObject[{parts...}, ...]` to arguments. Each
@@ -15528,8 +15608,13 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // An expression template: walk it, filling TemplateSlot / TemplateExpression
     // and expanding TemplateIf / TemplateSequence.
+    // The filled-in template is then evaluated, so
+    // `Mean[{TemplateSlot[1], 50, 30}]` applied to 100 gives 60.
     other => {
-      let parts = expand_template_parts(other, &args[1])?;
+      let parts = expand_template_parts(other, &args[1])?
+        .iter()
+        .map(crate::evaluator::evaluate_expr_to_expr)
+        .collect::<Result<Vec<_>, _>>()?;
       return Ok(match parts.len() {
         1 => parts.into_iter().next().unwrap(),
         // Nothing left, or several spliced pieces, is a Sequence.
@@ -17878,8 +17963,22 @@ fn expand_template_parts(
         };
         one(crate::evaluator::evaluate_expr_to_expr(&body)?)
       }
-      "TemplateIf" if parts.len() == 2 || parts.len() == 3 => {
-        let condition = expand_template_parts(&parts[0], args)?;
+      // TemplateIf[cond, t, f, InsertionFunction -> g]: the slots of the
+      // chosen clause that have no InsertionFunction of their own are
+      // formatted with g (the condition sees the raw values).
+      "TemplateIf"
+        if {
+          let (positional, opts) = split_template_options(parts);
+          (positional.len() == 2 || positional.len() == 3)
+            && opts.iter().all(|o| {
+              template_option(std::slice::from_ref(o), "InsertionFunction")
+                .is_some()
+            })
+        } =>
+      {
+        let (positional, opts) = split_template_options(parts);
+        let insertion = template_option(opts, "InsertionFunction");
+        let condition = expand_template_parts(&positional[0], args)?;
         let Some(condition) = condition.into_iter().next() else {
           return Ok(Vec::new());
         };
@@ -17887,10 +17986,16 @@ fn expand_template_parts(
           crate::evaluator::evaluate_expr_to_expr(&condition)?,
           Expr::Identifier(ref b) if b == "True"
         );
-        match (holds, parts.get(2)) {
-          (true, _) => expand_template_parts(&parts[1], args),
-          (false, Some(otherwise)) => expand_template_parts(otherwise, args),
-          (false, None) => Ok(Vec::new()),
+        let clause = match (holds, positional.get(2)) {
+          (true, _) => &positional[1],
+          (false, Some(otherwise)) => otherwise,
+          (false, None) => return Ok(Vec::new()),
+        };
+        match insertion {
+          Some(f) => {
+            expand_template_parts(&inherit_insertion_function(clause, f), args)
+          }
+          None => expand_template_parts(clause, args),
         }
       }
       // Each element of the list becomes the slot-1 argument for one copy of
@@ -17950,6 +18055,46 @@ fn expand_template_parts(
     }),
     other => one(other.clone()),
   }
+}
+
+/// Split trailing `Rule` options off a template element's arguments.
+fn split_template_options(parts: &[Expr]) -> (&[Expr], &[Expr]) {
+  let n_opts = parts
+    .iter()
+    .rev()
+    .take_while(|p| matches!(p, Expr::Rule { .. }))
+    .count();
+  parts.split_at(parts.len() - n_opts)
+}
+
+/// Give every `TemplateSlot` in `expr` that has no InsertionFunction of its
+/// own the inherited InsertionFunction `f`.
+fn inherit_insertion_function(expr: &Expr, f: &Expr) -> Expr {
+  map_expr_tree(expr, &|e| match e {
+    // A nested TemplateIf with its own InsertionFunction keeps it.
+    Expr::FunctionCall { name, args }
+      if name == "TemplateIf"
+        && template_option(&args[..], "InsertionFunction").is_some() =>
+    {
+      Some(e.clone())
+    }
+    Expr::FunctionCall { name, args } if name == "TemplateSlot" => {
+      if template_option(&args[..], "InsertionFunction").is_some() {
+        Some(e.clone())
+      } else {
+        let mut with_f: Vec<Expr> = args.iter().cloned().collect();
+        with_f.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("InsertionFunction".into())),
+          replacement: Box::new(f.clone()),
+        });
+        Some(Expr::FunctionCall {
+          name: name.clone(),
+          args: with_f.into(),
+        })
+      }
+    }
+    _ => None,
+  })
 }
 
 /// `expand_template_parts` for a position that must hold exactly one
