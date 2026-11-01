@@ -469,6 +469,11 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = args.first().and_then(expand_region_membership) {
+    let mut normalized = args.to_vec();
+    normalized[0] = expanded;
+    return nsolve_ast(&normalized);
+  }
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
@@ -2971,6 +2976,24 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = args.first().and_then(expand_region_membership) {
+    let mut normalized = args.to_vec();
+    normalized[0] = expanded;
+    return solve_ast(&normalized);
+  }
+  // An equation list is a conjunction: `{a && b, c}` is `{a, b, c}`.
+  if let Some(Expr::List(items)) = args.first()
+    && items.iter().any(|e| conjunction_parts(e).is_some())
+  {
+    let mut flat = Vec::with_capacity(items.len());
+    for item in items {
+      flat
+        .extend(conjunction_parts(item).unwrap_or_else(|| vec![item.clone()]));
+    }
+    let mut normalized = args.to_vec();
+    normalized[0] = Expr::List(flat.into());
+    return solve_ast(&normalized);
+  }
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
@@ -3650,6 +3673,273 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_function_call_ast("N", &[exact_result]);
   }
   Ok(result)
+}
+
+/// Rewrites every `Element[{x, y, …}, region]` of a logical combination
+/// whose region is a basic geometric one (points, segments, rays, lines,
+/// disks, balls, circles, spheres, boxes) into the equations and
+/// inequalities that describe membership, so Solve/NSolve/Reduce can treat
+/// them like any other constraint. `None` when there is nothing to rewrite.
+pub(crate) fn expand_region_membership(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Element" && args.len() == 2 =>
+    {
+      let Expr::List(coords) = &args[0] else {
+        return None;
+      };
+      region_membership_condition(&args[1], coords)
+        .and_then(|c| crate::evaluator::evaluate_expr_to_expr(&c).ok())
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(expand_region_membership).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      let new_args = args
+        .iter()
+        .zip(rewritten)
+        .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+        .collect();
+      Some(call(name, new_args))
+    }
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => {
+      let (l, r) = (
+        expand_region_membership(left),
+        expand_region_membership(right),
+      );
+      if l.is_none() && r.is_none() {
+        return None;
+      }
+      let name = if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      };
+      Some(call(
+        name,
+        vec![
+          l.unwrap_or_else(|| (**left).clone()),
+          r.unwrap_or_else(|| (**right).clone()),
+        ],
+      ))
+    }
+    Expr::List(items) => {
+      let rewritten: Vec<Option<Expr>> =
+        items.iter().map(expand_region_membership).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(Expr::List(
+        items
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The (unevaluated) condition for the point `coords` to lie in `region`.
+fn region_membership_condition(region: &Expr, coords: &[Expr]) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let n = coords.len();
+  let point = |e: &Expr| match e {
+    Expr::List(p) if p.len() == n => Some(p.to_vec()),
+    _ => None,
+  };
+  let points = |e: &Expr| match e {
+    Expr::List(ps) => ps.iter().map(point).collect::<Option<Vec<_>>>(),
+    _ => None,
+  };
+  let cmp = |head: &str, a: Expr, b: Expr| call(head, vec![a, b]);
+  let sum = |terms: Vec<Expr>| call("Plus", terms);
+  // `coords - p`, componentwise.
+  let offset = |p: &[Expr]| -> Vec<Expr> {
+    coords
+      .iter()
+      .zip(p)
+      .map(|(c, q)| crate::helpers::minus2(c.clone(), q.clone()))
+      .collect()
+  };
+  let dot = |a: &[Expr], b: &[Expr]| {
+    sum(
+      a.iter()
+        .zip(b)
+        .map(|(x, y)| crate::helpers::times2(x.clone(), y.clone()))
+        .collect(),
+    )
+  };
+  let direction = |a: &[Expr], b: &[Expr]| -> Vec<Expr> {
+    b.iter()
+      .zip(a)
+      .map(|(q, p)| crate::helpers::minus2(q.clone(), p.clone()))
+      .collect()
+  };
+  // `coords` on the line through `p` with direction `v`: every 2×2 minor
+  // of the pair (coords - p, v) vanishes.
+  let collinear = |p: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    let d = offset(p);
+    let mut eqs = Vec::new();
+    for i in 0..n {
+      for j in i + 1..n {
+        eqs.push(cmp(
+          "Equal",
+          crate::helpers::minus2(
+            crate::helpers::times2(d[i].clone(), v[j].clone()),
+            crate::helpers::times2(d[j].clone(), v[i].clone()),
+          ),
+          Expr::Integer(0),
+        ));
+      }
+    }
+    eqs
+  };
+  let segment = |a: &[Expr], b: &[Expr]| -> Expr {
+    let v = direction(a, b);
+    let mut conds = collinear(a, &v);
+    let along = dot(&offset(a), &v);
+    conds.push(cmp("GreaterEqual", along.clone(), Expr::Integer(0)));
+    conds.push(cmp("LessEqual", along, dot(&v, &v)));
+    call("And", conds)
+  };
+  // `(p, v)` of a `HalfLine`/`InfiniteLine` given as `[p, v]` or `[{p, q}]`.
+  let ray = |args: &[Expr]| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    match args {
+      [pq] => {
+        let ps = points(pq)?;
+        let [p, q] = ps.as_slice() else {
+          return None;
+        };
+        Some((p.clone(), direction(p, q)))
+      }
+      [p, v] => Some((point(p)?, point(v)?)),
+      _ => None,
+    }
+  };
+  let origin = || vec![Expr::Integer(0); n];
+  // `Σ ((x_i - c_i)/r_i)^2`, compared with 1 (`r` a radius or semi-axes).
+  let ball = |args: &[Expr], head: &str| -> Option<Expr> {
+    let c = match args.first() {
+      Some(c) => point(c)?,
+      None => origin(),
+    };
+    let radii = match args.get(1) {
+      None => vec![Expr::Integer(1); n],
+      Some(Expr::List(rs)) if rs.len() == n => rs.to_vec(),
+      Some(Expr::List(_)) => return None,
+      Some(r) => vec![r.clone(); n],
+    };
+    let terms = offset(&c)
+      .into_iter()
+      .zip(radii)
+      .map(|(d, r)| {
+        call(
+          "Power",
+          vec![
+            call("Times", vec![d, call("Power", vec![r, Expr::Integer(-1)])]),
+            Expr::Integer(2),
+          ],
+        )
+      })
+      .collect();
+    Some(cmp(head, sum(terms), Expr::Integer(1)))
+  };
+  match (name.as_str(), args.as_slice()) {
+    ("Point", [p]) => {
+      let ps = point(p).map(|p| vec![p]).or_else(|| points(p))?;
+      Some(call(
+        "Or",
+        ps.iter()
+          .map(|p| {
+            call(
+              "And",
+              coords
+                .iter()
+                .zip(p)
+                .map(|(c, q)| cmp("Equal", c.clone(), q.clone()))
+                .collect(),
+            )
+          })
+          .collect(),
+      ))
+    }
+    ("Line", [pts]) => {
+      // A polyline, or a list of polylines.
+      let lines = points(pts).map(|ps| vec![ps]).or_else(|| match pts {
+        Expr::List(ls) => ls.iter().map(points).collect(),
+        _ => None,
+      })?;
+      let segments: Vec<Expr> = lines
+        .iter()
+        .flat_map(|ps| ps.windows(2).map(|w| segment(&w[0], &w[1])))
+        .collect();
+      (!segments.is_empty()).then(|| call("Or", segments))
+    }
+    ("HalfLine", _) => {
+      let (p, v) = ray(args)?;
+      let mut conds = collinear(&p, &v);
+      conds.push(cmp("GreaterEqual", dot(&offset(&p), &v), Expr::Integer(0)));
+      Some(call("And", conds))
+    }
+    ("InfiniteLine", _) => {
+      let (p, v) = ray(args)?;
+      Some(call("And", collinear(&p, &v)))
+    }
+    ("Disk" | "Ball", _) if args.len() <= 2 => ball(args, "LessEqual"),
+    ("Circle" | "Sphere", _) if args.len() <= 2 => ball(args, "Equal"),
+    ("Rectangle" | "Cuboid", _) if args.len() <= 2 => {
+      let lo = match args.first() {
+        Some(a) => point(a)?,
+        None => origin(),
+      };
+      let hi = match args.get(1) {
+        Some(b) => point(b)?,
+        None => lo
+          .iter()
+          .map(|a| crate::helpers::plus2(a.clone(), Expr::Integer(1)))
+          .collect(),
+      };
+      Some(call(
+        "And",
+        coords
+          .iter()
+          .zip(lo.iter().zip(&hi))
+          .flat_map(|(c, (a, b))| {
+            [
+              cmp("LessEqual", a.clone(), c.clone()),
+              cmp("LessEqual", c.clone(), b.clone()),
+            ]
+          })
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The conjuncts of an `And`, or None for anything else.
+fn conjunction_parts(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "And" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  }
 }
 
 /// Whether a logical combination holds an `Or` (at the top or under `And`).

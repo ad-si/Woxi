@@ -23897,6 +23897,55 @@ mod reduce_disjunction_with_bounds {
   }
 }
 
+// `Element[{x, y}, region]` for a basic geometric region is the system of
+// equations and inequalities describing it; Solve/NSolve used to stay
+// unevaluated on it.
+mod solve_region_membership {
+  use super::*;
+
+  #[test]
+  fn segments_rays_and_lines() {
+    for (input, expected) in [
+      (
+        "Solve[Element[{x, y}, Line[{{1, 0}, {0, 1}}]] && \
+         Element[{x, y}, HalfLine[{0, 0}, {1, 1}]], {x, y}]",
+        "{{x -> 1/2, y -> 1/2}}",
+      ),
+      (
+        "Solve[Element[{x, y}, Line[{{1, 0}, {0, 1}}]] && \
+         Element[{x, y}, HalfLine[{0, 0}, {-1, -1}]], {x, y}]",
+        "{}",
+      ),
+      (
+        "Solve[Element[{x, y}, InfiniteLine[{{0, 0}, {1, 2}}]] && x + y == 3, \
+         {x, y}]",
+        "{{x -> 1, y -> 2}}",
+      ),
+      (
+        "NSolve[Element[{x, y}, Line[{{0, 0}, {2, 0}, {2, 2}}]] && x == 2 y, \
+         {x, y}]",
+        "{{x -> 2., y -> 1.}, {x -> 0., y -> 0.}}",
+      ),
+      (
+        "Solve[Element[{x, y, z}, InfiniteLine[{0, 0, 0}, {1, 1, 1}]] && \
+         x + y + z == 3, {x, y, z}]",
+        "{{x -> 1, y -> 1, z -> 1}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn circles() {
+    assert_eq!(
+      interpret("Solve[Element[{x, y}, Circle[{0, 0}, 2]] && y == 0, {x, y}]")
+        .unwrap(),
+      "{{x -> -2, y -> 0}, {x -> 2, y -> 0}}"
+    );
+  }
+}
+
 // A disjunction, also one inside a conjunction, is solved branch by branch
 // (it was reported as Solve::naqs).
 mod solve_disjunction {
@@ -23915,6 +23964,21 @@ mod solve_disjunction {
     assert_eq!(
       interpret("Solve[(x == -1 || x == 2) && 1 + x != 0, x]").unwrap(),
       "{{x -> 2}}"
+    );
+  }
+
+  // An equation list is a conjunction, so a conjunction wrapped in a list
+  // (`Solve[{a && (b || c)}, …]`) is solved like the bare one; it used to
+  // stay unevaluated.
+  #[test]
+  fn conjunction_inside_an_equation_list() {
+    assert_eq!(
+      interpret("Solve[{x + y == 1 && (x == 0 || y == 0)}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 1, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 == 1 && x > 0, y == x}, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 1}}"
     );
   }
 
