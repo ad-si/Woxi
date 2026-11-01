@@ -3398,15 +3398,10 @@ pub fn reduce_multi_var_and(
   // The elimination substitutes values into the remaining constraints and
   // tries the branches where a denominator vanishes; a division by zero met
   // on the way only rules a branch out, it is no message of Reduce's.
-  crate::push_quiet_filter(
-    Some(vec![
-      "Power::infy".to_string(),
-      "Infinity::indet".to_string(),
-    ]),
-    vec![],
-  );
-  let result = reduce_multi_var_and_inner(constraints, vars, domain);
-  crate::pop_quiet_filter();
+  let result =
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      reduce_multi_var_and_inner(constraints, vars, domain)
+    });
   Ok(normalize_solution_branches(&result?, vars))
 }
 

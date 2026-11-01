@@ -596,16 +596,10 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize. An infinity the exact
   // elimination runs into is its own business (the solutions it spoils are
   // dropped below); NSolve reports none.
-  crate::push_quiet_filter(
-    Some(vec![
-      "Power::infy".to_string(),
-      "Infinity::indet".to_string(),
-    ]),
-    vec![],
-  );
-  let symbolic = solve_ast(args);
-  crate::pop_quiet_filter();
-  let symbolic = symbolic?;
+  let symbolic =
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      solve_ast(args)
+    })?;
 
   // An elimination whose numeric roots verify against no equation (their
   // rounding leaves residuals the exact check rejects) finds nothing; the

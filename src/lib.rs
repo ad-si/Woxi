@@ -891,6 +891,50 @@ pub fn pop_quiet_filter() {
   });
 }
 
+thread_local! {
+    /// `Symbol::tag` names an internal computation discards outright (see
+    /// [`with_messages_dropped`]), innermost block last.
+    static DROPPED_MESSAGES: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Run `f` with the messages named in `names` (`Symbol::tag`) discarded as
+/// if they were never generated: not printed, not captured for a front end,
+/// not in `$MessageList`, not seen by `Check`, not counted toward
+/// `General::stop`.
+///
+/// For a computation's own bookkeeping — an elimination trying the branch
+/// where a denominator vanishes meets `1/0` there, which only rules the
+/// branch out. A `Quiet[expr, {…}]`-style filter is not enough for that: a
+/// quieted message is still generated, so `Check` fires and the editor and
+/// playground (which show captured messages) report it.
+pub fn with_messages_dropped<T>(names: &[&str], f: impl FnOnce() -> T) -> T {
+  DROPPED_MESSAGES.with(|d| {
+    d.borrow_mut()
+      .push(names.iter().map(std::string::ToString::to_string).collect());
+  });
+  // Pop on unwind too, so a panic caught further up cannot leave the
+  // messages dropped for the rest of the session.
+  struct Pop;
+  impl Drop for Pop {
+    fn drop(&mut self) {
+      DROPPED_MESSAGES.with(|d| {
+        d.borrow_mut().pop();
+      });
+    }
+  }
+  let _pop = Pop;
+  f()
+}
+
+/// Whether an enclosing [`with_messages_dropped`] discards `name`.
+fn message_name_is_dropped(name: &str) -> bool {
+  DROPPED_MESSAGES.with(|d| {
+    d.borrow()
+      .iter()
+      .any(|names| names.iter().any(|n| n == name))
+  })
+}
+
 /// Whether an enclosing `Quiet[expr, {…}]` silences the message `name`.
 fn quiet_filters_silence(name: &str) -> bool {
   QUIET_FILTERS.with(|f| {
@@ -1069,7 +1113,10 @@ pub fn emit_message(msg: &str) {
 /// produce a message that starts with it.
 pub fn emit_message_with(name: &str, build: impl FnOnce() -> String) {
   epoch::note_side_effect();
-  if message_name_is_off(name) || message_stop_count(name) >= 3 {
+  if message_name_is_off(name)
+    || message_name_is_dropped(name)
+    || message_stop_count(name) >= 3
+  {
     return;
   }
   emit_message(&build());
@@ -1133,7 +1180,9 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   // Counted even when the message goes nowhere (`Off`, `Quiet`, past
   // `General::stop`): it is generated each time the expression is evaluated.
   epoch::note_side_effect();
-  if message_is_off(msg) {
+  if message_is_off(msg)
+    || message_name(msg).is_some_and(|n| message_name_is_dropped(&n))
+  {
     return (false, None);
   }
   // Count before recording. Past the limit a message is not merely
