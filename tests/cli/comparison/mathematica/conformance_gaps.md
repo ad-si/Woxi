@@ -306,6 +306,22 @@ Smaller TraditionalForm typesetter differences, all in representation:
 `StyleBox["x", RGBColor[1, 0, 0], StripOnInput -> False]`. The TraditionalForm
 builder learned both; the StandardForm one has not.
 
+### StandardForm boxes: inline exponent fractions, `I`, logical operands of a sum
+
+```sh
+wolframscript -code 'InputForm[ToBoxes[x^(3/2)]]'   # SuperscriptBox[x, RowBox[{3, /, 2}]]
+woxi eval 'InputForm[ToBoxes[x^(3/2)]]'             # SuperscriptBox[x, FractionBox[3, 2]]
+```
+
+A quotient in an exponent (`x^(a/b)`, `E^(x/2)`) is written inline with `/`
+by WL and as a `FractionBox` by Woxi. The imaginary unit boxes as `"I"`
+rather than `\[ImaginaryI]` (`U+F74E`), and the odd shape WL gives an
+inexact complex coefficient's parts (a trailing `" "` token after the real
+part) is not reproduced. A logical operand of a sum is
+not parenthesized: `ToBoxes[x + (a && b)]` gives `RowBox[{x, +, RowBox[{a,
+&&, b}]}]`, WL wraps the `&&` in parentheses (the infix `&&`/`||`/`|`/`!`
+operands themselves are parenthesized by precedence).
+
 ### A box segment mid-string is not shown as DisplayForm
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
@@ -3997,7 +4013,14 @@ precedence, which is worse than the parse error.
 ### `(a|b)|c` loses its grouping
 
 Explicit parentheses should give `Length` 2 (nested) in WL; Woxi's parser
-produces the same flat 3-argument form as `a|b|c`.
+produces the same flat 3-argument form as `a|b|c`. The same holds for every
+flattened operator chain built from `BinaryOp` nodes: `Hold[a + (b + c)]` is
+`Plus[a, b, c]` (WL `Plus[a, Plus[b, c]]`), `Hold[(a b) c]` is
+`Times[a, b, c]`, and `MakeBoxes[-(x y)]` boxes as `-x y` where WL keeps
+`RowBox[{"-", RowBox[{"(", …, ")"}]}]` — the parse tree does not record the
+parentheses, and box formation merges a unary minus into its product
+operand because Factor-style results built with `neg1(product)` stand for
+the flat evaluated `Times[-1, …]`.
 
 ### Parse-time messages do not exist
 
