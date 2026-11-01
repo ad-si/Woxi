@@ -1022,6 +1022,8 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "MultiplicativeOrder" => Some((2, 3)),
     "MultiplySides" => Some((2, 2)),
     "MultivariatePoissonDistribution" => Some((2, 2)),
+    "MultivariateTDistribution" => Some((2, 3)),
+    "MultivariateHypergeometricDistribution" => Some((2, 2)),
     "N" => Some((1, 2)),
     "NameQ" => Some((1, 1)),
     "Names" => Some((0, 1)),

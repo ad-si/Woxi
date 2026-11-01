@@ -125,6 +125,19 @@ pub fn dispatch_evaluation_control(
     "RegularExpression" if args.len() == 1 => {
       return Some(Ok(unevaluated("RegularExpression", args)));
     }
+    // Location and scale parameters that are quantities in one unit make a
+    // distribution of quantities:
+    // NormalDistribution[Quantity[180, "Centimeters"], Quantity[5, …]] is
+    // QuantityDistribution[NormalDistribution[180, 5], "Centimeters"].
+    "NormalDistribution"
+    | "UniformDistribution"
+    | "WeibullDistribution"
+    | "ParetoDistribution"
+    | "RayleighDistribution"
+      if let Some(result) = quantity_parameter_distribution(name, args) =>
+    {
+      return Some(Ok(result));
+    }
     "UniformDistribution" if args.len() <= 1 => {
       let uni_args = if args.is_empty() {
         vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())]
@@ -543,6 +556,15 @@ pub fn dispatch_evaluation_control(
     }
     "WishartMatrixDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("WishartMatrixDistribution", args)));
+    }
+    "MultivariateHypergeometricDistribution" if args.len() == 2 => {
+      return Some(Ok(unevaluated(
+        "MultivariateHypergeometricDistribution",
+        args,
+      )));
+    }
+    "MultivariateTDistribution" if args.len() == 2 || args.len() == 3 => {
+      return Some(Ok(unevaluated("MultivariateTDistribution", args)));
     }
     "MultivariatePoissonDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("MultivariatePoissonDistribution", args)));
@@ -1201,6 +1223,66 @@ fn is_probability(expr: &Expr) -> bool {
 }
 
 /// Helper to check if a numeric expression is a positive integer.
+/// `QuantityDistribution[dist[magnitudes…], unit]` for a distribution whose
+/// dimensional parameters (location and scale; `UniformDistribution`'s
+/// bounds) are quantities in one unit and whose shape parameters are plain.
+fn quantity_parameter_distribution(name: &str, args: &[Expr]) -> Option<Expr> {
+  let is_quantity = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Quantity");
+  // The positions of the dimensional parameters.
+  let dimensional: &[usize] = match (name, args.len()) {
+    ("NormalDistribution", 2) => &[0, 1],
+    ("UniformDistribution", 1) => {
+      let Expr::List(bounds) = &args[0] else {
+        return None;
+      };
+      let (magnitudes, unit) = common_unit_magnitudes(bounds)?;
+      return Some(call(
+        "QuantityDistribution",
+        vec![call(name, vec![Expr::List(magnitudes.into())]), unit],
+      ));
+    }
+    ("WeibullDistribution", 2) => &[1],
+    ("ParetoDistribution", 2) => &[0],
+    ("RayleighDistribution", 1) => &[0],
+    _ => return None,
+  };
+  let picked: Vec<Expr> =
+    dimensional.iter().map(|&i| args[i].clone()).collect();
+  let (magnitudes, unit) = common_unit_magnitudes(&picked)?;
+  let mut new_args = args.to_vec();
+  for (k, &i) in dimensional.iter().enumerate() {
+    new_args[i] = magnitudes[k].clone();
+  }
+  if new_args.iter().any(is_quantity) {
+    return None;
+  }
+  let inner = crate::evaluator::evaluate_function_call_ast(name, &new_args)
+    .unwrap_or_else(|_| call(name, new_args));
+  Some(call("QuantityDistribution", vec![inner, unit]))
+}
+
+/// The magnitudes of `args` when every one is a `Quantity` in the same unit,
+/// together with that unit.
+fn common_unit_magnitudes(args: &[Expr]) -> Option<(Vec<Expr>, Expr)> {
+  let mut unit: Option<&Expr> = None;
+  let mut magnitudes = Vec::with_capacity(args.len());
+  for a in args {
+    let Expr::FunctionCall { name, args: q } = a else {
+      return None;
+    };
+    if name != "Quantity" || q.len() != 2 {
+      return None;
+    }
+    match unit {
+      None => unit = Some(&q[1]),
+      Some(u) if expr_to_string(u) == expr_to_string(&q[1]) => {}
+      Some(_) => return None,
+    }
+    magnitudes.push(q[0].clone());
+  }
+  Some((magnitudes, unit?.clone()))
+}
+
 fn is_positive_integer(expr: &Expr) -> bool {
   matches!(expr, Expr::Integer(n) if *n > 0)
 }

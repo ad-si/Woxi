@@ -2377,7 +2377,7 @@ BubbleSizes,"chart option",🚫,None,7.0,2380
 CountRoots,"Count the real roots of a univariate polynomial with multiplicity over the reals or a closed interval",✅,pure,6.0,2380
 DoubleLongLeftRightArrow,"symbol notation",✅,None,3.0,2380
 InverseGammaRegularized,"Inverse of the regularized upper incomplete gamma function Q(a z)",✅,pure,3.0,2380
-MultivariateTDistribution,"probability distribution",🚫,None,8.0,2380
+MultivariateTDistribution,"Represents a multivariate Student t distribution with scale matrix Σ and ν degrees of freedom",✅,pure,8.0,2380
 PartitionsQ,"Number of partitions of n into distinct parts",✅,pure,1.0,2380
 BatesDistribution,"Distribution of the mean of n uniform variates with Mean and Variance and piecewise PDF and CDF for integer n",✅,pure,8.0,2383
 SetSelectedNotebook,"notebook UI",🚫,None,3.0,2383
@@ -2803,7 +2803,7 @@ ImageKeypoints,"",🚫,,8.0,2812
 SectorSpacing,"Option for pie chart sector spacing",✅,pure,7.0,2812
 FindEulerianCycle,"Find an Eulerian cycle traversing every edge once",✅,pure,8.0,2816
 GaborWavelet,"Gabor wavelet of a given frequency (continuous complex family)",✅,pure,8.0,2816
-MultivariateHypergeometricDistribution,"",🚫,,8.0,2816
+MultivariateHypergeometricDistribution,"Represents a multivariate hypergeometric distribution of draws without replacement from an urn with several kinds of balls",✅,pure,8.0,2816
 PolarAxesOrigin,"Option for the origin of polar axes in polar plots",✅,pure,7.0,2816
 HistogramTransform,"Equalize the histogram of an image",✅,pure,9.0,2821
 Image3DSlices,"The 2D slices of a volume along the depth axis (all; one; or a list of them); other slicing directions are not supported",🚧,pure,9.0,2821

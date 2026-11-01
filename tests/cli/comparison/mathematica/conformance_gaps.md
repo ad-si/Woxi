@@ -6806,6 +6806,54 @@ images), so they are not implemented yet:
   all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
   there is unverified.
 
+## Parameter sweep 4 (distributions): known divergences and unverified forms
+
+`Probability` of a compound event in one variable now splits the real line
+into the intervals where the event holds and measures them through the CDF
+(and `Reduce` decides such events the same way). The values agree with the
+reference pages; some printed forms do not:
+
+```sh
+wolframscript -code 'Probability[x^2 > 3 || Abs[x] < 1, x \[Distributed] ExponentialDistribution[λ]]'
+# -E^(-Sqrt[3] λ) (-1 - E^(Sqrt[3] λ) + E^(Sqrt[3] λ) Cosh[λ] - E^(Sqrt[3] λ) Sinh[λ])
+woxi eval 'Probability[x^2 > 3 || Abs[x] < 1, x \[Distributed] ExponentialDistribution[λ]]'
+# 1 - E^(-λ) + E^(-(Sqrt[3]*λ))
+```
+
+- The same for `Probability[(x^2 < 5 && 2 x + 3 < 5) || x^3 + x > 11,
+  x \[Distributed] ExponentialDistribution[2]]`: wolframscript prints
+  `1 - E^-2 + E^-2 Root[-11 + #1 + #1^3 &, 1, 0]`, Woxi the `Together`ed
+  quotient of the same value.
+- Wolfram keeps `-(5 + Sqrt[21])/(2 Sqrt[2])` with the minus outside the sum,
+  Woxi distributes it to `(-5 - Sqrt[21])/(2*Sqrt[2])`. The two evaluate to
+  the same Woxi expression, so the `Probability` results compare `===`.
+- A discrete distribution with a symbolic parameter keeps the CDF's
+  regularized form: `Probability[x <= 3, x \[Distributed] PoissonDistribution[μ]]`
+  is `GammaRegularized[4, μ]` in Woxi, `(1/6) E^-μ (6 + 6 μ + 3 μ^2 + μ^3)` in
+  wolframscript, and `Probability[2 < x < 9, x \[Distributed]
+  BinomialDistribution[10, p]]` stays in `BetaRegularized` form.
+
+Not implemented, because the exact output could not be confirmed (the
+reference pages only plot them):
+
+- `PDF`/`CDF` of `TruncatedDistribution[{2, 3}, TriangularDistribution[{1, 4}]]`
+  and of `ProductDistribution[TriangularDistribution[{2, 4}],
+  TriangularDistribution[{1, 7}]]` at symbolic points (multi-piece
+  `Piecewise` bases), `PDF[CensoredDistribution[…], x]` of a continuous base,
+  and `CDF[CensoredDistribution[{a, b}, d], x]` for a finite `b > a` (only the
+  documented `{a, ∞}` and `{a, a}` shapes are produced).
+- `RandomVariate[QuantityDistribution[…], n]`: wolframscript returns a
+  `QuantityArray[StructuredArray`StructuredData[…]]`, which Woxi does not
+  implement; the single-variate form works.
+- Other families with `Quantity` parameters (`LaplaceDistribution`,
+  `GammaDistribution`, rate parameters such as `ExponentialDistribution`'s):
+  only `NormalDistribution`, `UniformDistribution`, `WeibullDistribution`,
+  `ParetoDistribution` and `RayleighDistribution` are documented to become a
+  `QuantityDistribution`.
+- `Covariance[MultivariateHypergeometricDistribution[…]]`: its documented
+  diagonal is written `n (-n + m1 + m2) (-m2^2 + m2 (m1 + m2))/…`, unlike the
+  `Variance` form, so the construction rule is unclear.
+
 ## `AlphabeticSort` options and most languages are not implemented
 
 - `AlphabeticSort[list, lang]` knows only `"English"`, `"Swedish"` and
