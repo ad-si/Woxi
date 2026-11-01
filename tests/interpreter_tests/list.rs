@@ -9770,6 +9770,20 @@ mod rest_nonlist {
     assert_eq!(interpret("Last[a^b]").unwrap(), "b");
   }
 
+  // A curried call `f[a][b, c]` is an ordinary compound expression whose
+  // head is `f[a]`.
+  #[test]
+  fn element_access_on_curried_calls() {
+    assert_eq!(
+      interpret(
+        "{First[f[a][b, c]], Last[f[a][b, c]], Rest[f[a][b, c]], \
+          Most[f[a][b, c]], First[f[a][], 0]}"
+      )
+      .unwrap(),
+      "{b, c, f[a][c], f[a][b], 0}"
+    );
+  }
+
   #[test]
   fn first_rule() {
     // First on a Rule returns the LHS (head is Rule, first arg is LHS).
