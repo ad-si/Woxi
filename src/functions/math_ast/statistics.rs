@@ -2269,8 +2269,8 @@ fn covariance_pair(xs: &[Expr], ys: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .zip(&yv)
       .map(|(x, y)| (x - mx) * (y - my))
-      .collect();
-    if let Some(sum) = machine_real_plus(terms) {
+      .collect::<Vec<f64>>();
+    if let Some(sum) = machine_real_plus(&terms) {
       return machine_real_quotient(sum, xv.len() - 1);
     }
   }
@@ -3699,8 +3699,8 @@ fn machine_real_mean(xs: &[f64]) -> f64 {
 /// The sum the evaluator gives for `Plus` over these machine reals (folded
 /// in input order along `Plus`'s balanced tree). `None` for a non-finite
 /// sum, which the general path handles.
-fn machine_real_plus(terms: Vec<f64>) -> Option<f64> {
-  let sum = machine_real_total(&terms);
+fn machine_real_plus(terms: &[f64]) -> Option<f64> {
+  let sum = machine_real_total(terms);
   sum.is_finite().then_some(sum)
 }
 
@@ -3782,8 +3782,9 @@ pub fn central_moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(xs) = machine_real_values(items)
   {
     let mean = machine_real_mean(&xs);
-    let terms = xs.iter().map(|x| wolfram_powi(x - mean, *order)).collect();
-    if let Some(sum) = machine_real_plus(terms) {
+    let terms: Vec<f64> =
+      xs.iter().map(|x| wolfram_powi(x - mean, *order)).collect();
+    if let Some(sum) = machine_real_plus(&terms) {
       return crate::evaluator::evaluate_expr_to_expr(&call(
         "Divide",
         vec![Expr::Real(sum), Expr::Integer(xs.len() as i128)],
@@ -3867,7 +3868,10 @@ pub fn cumulant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let raw_moment = |j: usize| -> Result<Expr, InterpreterError> {
     if let Some(xs) = &reals
       && let Some(sum) = machine_real_plus(
-        xs.iter().map(|x| wolfram_powi(*x, j as i128)).collect(),
+        &xs
+          .iter()
+          .map(|x| wolfram_powi(*x, j as i128))
+          .collect::<Vec<f64>>(),
       )
     {
       return machine_real_quotient(sum, xs.len());
@@ -4823,9 +4827,9 @@ pub fn mean_deviation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if let Some(xs) = machine_real_values(items) {
       let mean = machine_real_mean(&xs);
-      if let Some(sum) =
-        machine_real_plus(xs.iter().map(|x| (x - mean).abs()).collect())
-      {
+      if let Some(sum) = machine_real_plus(
+        &xs.iter().map(|x| (x - mean).abs()).collect::<Vec<f64>>(),
+      ) {
         return machine_real_quotient(sum, xs.len());
       }
     }
@@ -7340,7 +7344,7 @@ pub fn biweight_midvariance_ast(
       return Ok(id_expr("Indeterminate"));
     }
     if let (Some(num), Some(den)) =
-      (machine_real_plus(num), machine_real_plus(den))
+      (machine_real_plus(&num), machine_real_plus(&den))
     {
       return ev(&div2(
         times2(Expr::Integer(xs.len() as i128), Expr::Real(num)),

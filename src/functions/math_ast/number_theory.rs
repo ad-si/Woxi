@@ -84,7 +84,7 @@ fn lucy_prime_pi(n: u64) -> u64 {
   let mut small: Vec<u64> =
     (0..=r as u64).map(|v| v.saturating_sub(1)).collect();
   let mut large: Vec<u64> = (0..=r as u64)
-    .map(|k| if k == 0 { 0 } else { n / k - 1 })
+    .map(|k| n.checked_div(k).map_or(0, |q| q - 1))
     .collect();
   for p in 2..=r {
     if small[p] == small[p - 1] {
@@ -153,7 +153,7 @@ fn log_integral(x: f64) -> f64 {
       break;
     }
   }
-  0.577_215_664_901_532_9 + l.ln() + x.sqrt() * sum
+  std::f64::consts::EULER_GAMMA + l.ln() + x.sqrt() * sum
 }
 
 /// The primes in `lo..=hi` (a segmented sieve over that window).
@@ -3472,14 +3472,14 @@ fn cyclotomic_pieces(n: &BigInt) -> Option<Vec<BigInt>> {
   if n.bits() < 64 {
     return None;
   }
-  let divisors = |k: u64| (1..=k).filter(move |d| k % d == 0);
+  let divisors = |k: u64| (1..=k).filter(move |d| k.is_multiple_of(*d));
   let mobius = |mut m: u64| -> i32 {
     let mut mu = 1;
     let mut p = 2;
     while p * p <= m {
-      if m % p == 0 {
+      if m.is_multiple_of(p) {
         m /= p;
-        if m % p == 0 {
+        if m.is_multiple_of(p) {
           return 0;
         }
         mu = -mu;
@@ -3553,7 +3553,7 @@ fn factor_integer_bigint(n: &BigInt) -> Expr {
       std::collections::BTreeMap::new();
     for piece in &pieces {
       if let Expr::List(pairs) = &factor_integer_bigint(piece) {
-        for pair in pairs.iter() {
+        for pair in pairs {
           if let Expr::List(pe) = pair
             && let (Some(p), Expr::Integer(e)) =
               (expr_to_bigint(&pe[0]), &pe[1])
