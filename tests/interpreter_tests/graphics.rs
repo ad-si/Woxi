@@ -35842,6 +35842,21 @@ mod cases {
       r#"{"AlpineColors", "Aquamarine", "ArmyColors", "AtlanticColors", "AuroraColors", "AvocadoColors", "BeachColors", "BlueGreenYellow", "BrassTones", "BrightBands", "BrownCyanTones", "CandyColors", "CherryTones", "CMYKColors", "CoffeeTones", "DarkBands", "DarkRainbow", "DarkTerrain", "DeepSeaColors", "FallColors", "FruitPunchColors", "FuchsiaTones", "GrayTones", "GrayYellowTones", "GreenBrownTerrain", "GreenPinkTones", "IslandColors", "LakeColors", "LightTemperatureMap", "LightTerrain", "MintColors", "NeonColors", "Pastel", "PearlColors", "PigeonTones", "PlumColors", "Rainbow", "RedBlueTones", "RedGreenSplit", "RoseColors", "RustTones", "SandyTerrain", "SiennaTones", "SolarColors", "SouthwestColors", "StarryNightColors", "SunsetColors", "TemperatureMap", "ThermometerColors", "ValentineTones", "WatermelonColors"}"#,
     );
   }
+  // Gradient control points are Mathematica's: uniform knots, except the
+  // band schemes whose knots sit at multiples of 1/255.
+  #[test]
+  fn color_data_gradient_values() {
+    assert_case(
+      r#"Round[List @@ ColorData[#][0.37], 0.001] & /@ {"DarkTerrain", "AlpineColors", "DarkBands", "RustTones", "LightTerrain"}"#,
+      "{{0.442, 0.486, 0.41400000000000003}, {0.395, 0.51, 0.353}, \
+       {0.78, 0.491, 0.601}, {0.5760000000000001, 0.274, 0.10200000000000001}, \
+       {0.638, 0.656, 0.507}}",
+    );
+    assert_case(
+      r#"List @@ ColorData["DarkTerrain"][0]"#,
+      "{0., 0.0675975, 0.467384}",
+    );
+  }
   #[test]
   fn color_data_indexed_color_list() {
     // ColorData[97, "ColorList"] is the default plot palette: its ten fixed
