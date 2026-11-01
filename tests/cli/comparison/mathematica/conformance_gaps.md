@@ -4032,7 +4032,7 @@ declared signatures:
 Counting the required and optional slots (skipping anything with
 `OptionsPattern` or a `BlankSequence`, which are unbounded) and comparing
 against Woxi's declared maximum turns up every documented argument form that
-is missing. The sweep originally found 80; the 61 below are what is left.
+is missing. The sweep originally found 80; the 58 below are what is left.
 
 Each one is a form wolframscript accepts and Woxi rejects on arity — so the
 failure mode is an `::argt` / `::argb` / `::argx` message rather than a wrong
@@ -4042,14 +4042,12 @@ answer, which makes them safe but individually invisible.
 | --- | --- | --- | --- |
 | `AiryAiZero` | 1–1 | 2 | `{_, _.}` |
 | `AiryBiZero` | 1–1 | 2 | `{_, _.}` |
-| `AngerJ` | 2–2 | 3 | `{_, _, _.}` |
 | `ArcCurvature` | 2–2 | 3 | `{{__}, _, _.}` |
 | `BesselYZero` | 2–2 | 3 | `{_, _, _.}` |
 | `BooleanMaxterms` | 2–2 | 3 | `{_, _., _.}` |
 | `BooleanMinterms` | 2–2 | 3 | `{_, _., _.}` |
 | `CenterArray` | 1–3 | 4 | `{_, _., _., _.}` |
 | `CharacterName` | 1–1 | 2 | `{_, _.}` |
-| `CircleThrough` | 1–1 | 3 | `{{__}, _., _.}` |
 | `ConstantArray` | 2–2 | 3 | `{_, _, _.}` |
 | `CoordinateBoundingBoxArray` | 1–3 | 4 | `{{_, _}, _., _., _.}` |
 | `CoordinateBoundsArray` | 1–3 | 4 | `{{__}, _., _., _.}` |
@@ -4100,7 +4098,6 @@ answer, which makes them safe but individually invisible.
 | `ToBoxes` | 1–1 | 2 | `{_, _.}` |
 | `Uncompress` | 1–1 | 2 | `{_, _.}` |
 | `Unique` | 0–1 | 2 | `{_., Optional[{__}]}` |
-| `WeberE` | 2–2 | 3 | `{_, _, _.}` |
 
 Notes on the ones already looked at:
 
@@ -6694,3 +6691,30 @@ differ in the last bit.
   default font size: the `Style` sizes inside a `Row` passed to `Text` are
   not applied, so a barcode's printed digits come out much smaller than in
   wolframscript.
+
+## Parameter sweep 3 (special functions & calculus): unverified forms
+
+These argument forms are documented on the reference pages, but their exact
+wolframscript output could not be confirmed (the pages render outputs only as
+images), so they are not implemented yet:
+
+- `D[AngerJ[ν, μ, x], x]` / `D[WeberE[ν, μ, x], x]` stay as
+  `Derivative[0, 0, 1][AngerJ][ν, μ, x]`. From the integral definition the
+  derivative is `WeberE[ν, 1 + μ, x]/2` (and `-AngerJ[ν, 1 + μ, x]/2`), which
+  also equals `(AngerJ[-1 + ν, μ, x] - AngerJ[1 + ν, μ, x])/2`; which form
+  wolframscript prints is unknown. The 2-argument `D[AngerJ[ν, x], x]` is
+  likewise left as `Derivative[0, 1][AngerJ][ν, x]`. Whether `AngerJ[ν, 0, z]`
+  auto-reduces to `AngerJ[ν, z]` is also unverified (Woxi keeps it).
+- The 3-argument `AngerJ`/`WeberE` are evaluated numerically only for
+  μ > -1, where the defining integral converges; wolframscript continues
+  analytically to μ ≤ -1.
+- `Wronskian[eqn, y, x]` (e.g. `Wronskian[y''[x] - x y[x] == 0, y, x]`): by
+  Abel's identity the answer is `C Exp[-∫ p]`, and the reference page says the
+  result agrees with the explicit-basis Wronskian only "except for a
+  constant", but which constant wolframscript picks is unconfirmed.
+- `AsymptoticSolve[eqn, y, {x, x0, n}]` and its `Reals` 4-argument form: the
+  3-argument series-in-`x` form is not implemented, so neither is the `Reals`
+  filter on top of it.
+- `CircleThrough[pts, q]` / `CircleThrough[pts, q, r]` with points that are not
+  all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
+  there is unverified.
