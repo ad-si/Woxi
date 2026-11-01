@@ -2609,6 +2609,18 @@ pub(crate) struct PlotOptions {
   /// as scattered points otherwise. `None` means every series follows the
   /// plot's single `Joined -> True`/`False` setting instead.
   pub joined_per_series: Option<Vec<bool>>,
+  /// `AxesStyle -> s | {xs, ys}`: the style of each axis line, which its
+  /// tick marks and tick labels inherit unless `TicksStyle` overrides them.
+  pub axes_style: [Option<SeriesStyle>; 2],
+  /// `TicksStyle -> s | {xs, ys}`: the style of each axis's tick marks and
+  /// tick labels.
+  pub ticks_style: [Option<SeriesStyle>; 2],
+  /// `FrameStyle -> s`: the style of the frame edges, their tick marks and
+  /// tick labels.
+  pub frame_style: Option<SeriesStyle>,
+  /// `MeshStyle -> s`: the style of the mesh points along a curve. `None`
+  /// draws them in the curve's own colour.
+  pub mesh_style: Option<SeriesStyle>,
 }
 
 /// A `FrameLabel` entry that renders as a picture (`Grid[…]`/`TableForm[…]`)
@@ -2729,6 +2741,10 @@ impl Default for PlotOptions {
       label_style: None,
       tick_label_style: None,
       joined_per_series: None,
+      axes_style: [None, None],
+      ticks_style: [None, None],
+      frame_style: None,
+      mesh_style: None,
       axes_origin: (None, None),
       axes_origin_low: (None, None),
     }
@@ -3952,7 +3968,9 @@ fn generate_svg_with_options(
     }
   }
 
-  let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
+  // `FrameStyle` recolours the frame, its tick marks and its tick labels.
+  let (dark_gray, frame_width) = frame_paint(opts, theme_gray);
   // `FrameTicksStyle` recolours the tick labels without touching the frame.
   let tick_text_color =
     opts
@@ -4194,7 +4212,7 @@ fn generate_svg_with_options(
 
         // Draw a full frame (all four borders) when frame mode is enabled
         if opts.frame {
-          let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE);
+          let frame_style = dark_gray.stroke_width(frame_width);
           chart
             .draw_series(std::iter::once(PathElement::new(
               vec![
@@ -4447,6 +4465,17 @@ fn generate_svg_with_options(
               _ => points,
             };
             let marker_size = 3 * RESOLUTION_SCALE;
+            // `MeshStyle` recolours the mesh points; without it they take
+            // the curve's colour.
+            let mesh_color = opts
+              .mesh_style
+              .as_ref()
+              .and_then(|s| s.color)
+              .map(|c| {
+                let (r, g, b) = color_to_rgb8(c);
+                RGBColor(r, g, b).to_rgba()
+              })
+              .unwrap_or_else(|| color.to_rgba());
             let finite_pts: Vec<(f64, f64)> = mesh_src
               .iter()
               .copied()
@@ -4456,7 +4485,7 @@ fn generate_svg_with_options(
               .draw_series(
                 finite_pts
                   .iter()
-                  .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+                  .map(|&(x, y)| Circle::new((x, y), marker_size, mesh_color.filled())),
               )
               .map_err(|e| {
                 InterpreterError::EvaluationError(format!("Plot: {e}"))
@@ -4650,6 +4679,8 @@ fn generate_svg_with_options(
       sf,
       axis_color: label_fill,
       label_fill,
+      axes_style: &opts.axes_style,
+      ticks_style: &opts.ticks_style,
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -5201,7 +5232,7 @@ pub(crate) fn collapse_style_for_single_series(
 /// does not evaluate to a color. A two-parameter function receives `x` and
 /// `y`; anything else just `x`. With scaling on, both are first rescaled to
 /// 0..1 over the plot range.
-fn color_function_rgb(
+pub(crate) fn color_function_rgb(
   cf: &Expr,
   scaling: bool,
   (x, y): (f64, f64),
@@ -5552,7 +5583,9 @@ pub(crate) fn generate_scatter_svg_with_options(
     ),
   };
 
-  let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
+  let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
+  // `FrameStyle` recolours the frame, its tick marks and its tick labels.
+  let (dark_gray, frame_width) = frame_paint(opts, theme_gray);
   // `FrameTicksStyle` recolours the tick labels without touching the frame.
   let tick_text_color =
     opts
@@ -5668,7 +5701,7 @@ pub(crate) fn generate_scatter_svg_with_options(
     // A framed plot closes its plotting area on all four sides, as in the
     // line renderer; the mesh above only draws the left and bottom edges.
     if opts.frame {
-      let frame_style = dark_gray.stroke_width(RESOLUTION_SCALE);
+      let frame_style = dark_gray.stroke_width(frame_width);
       chart
         .draw_series(std::iter::once(PathElement::new(
           vec![
@@ -5858,6 +5891,8 @@ pub(crate) fn generate_scatter_svg_with_options(
       sf,
       axis_color: label_fill,
       label_fill,
+      axes_style: &opts.axes_style,
+      ticks_style: &opts.ticks_style,
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -6205,6 +6240,51 @@ pub(crate) enum BarLabelPlacement {
 }
 
 /// Generate SVG for a bar chart using plotters.
+/// The appearance options of a vertical `BarChart`.
+pub(crate) struct BarChartLook {
+  /// `Axes -> False` hides the axis lines.
+  pub axes: bool,
+  /// `AxesStyle`: the colour and stroke width (render units) of the axes
+  /// and their tick labels.
+  pub axes_color: Option<RGBColor>,
+  pub axes_width: Option<u32>,
+  /// `Frame -> True` draws a border round the plotting area, in the
+  /// `FrameStyle` colour and width.
+  pub frame: bool,
+  pub frame_color: Option<RGBColor>,
+  pub frame_width: Option<u32>,
+  /// `BarSpacing -> s`: the space between adjacent groups (single bars of a
+  /// flat list), as a fraction of a group's width.
+  pub bar_spacing: Option<f64>,
+  /// `AspectRatio -> r`: height / width of the plotting area.
+  pub aspect_ratio: Option<f64>,
+}
+
+impl Default for BarChartLook {
+  fn default() -> Self {
+    Self {
+      axes: true,
+      axes_color: None,
+      axes_width: None,
+      frame: false,
+      frame_color: None,
+      frame_width: None,
+      bar_spacing: None,
+      aspect_ratio: None,
+    }
+  }
+}
+
+/// The empty margin on each side of a bar group, in units of the group's
+/// slot (one per group): 0.1 by default, else the half of the
+/// `BarSpacing -> s` space a group of width `1 / (1 + s)` leaves.
+pub(crate) fn bar_group_gap(bar_spacing: Option<f64>) -> f64 {
+  match bar_spacing {
+    Some(sp) if sp.is_finite() && sp >= 0.0 => sp / (1.0 + sp) / 2.0,
+    _ => 0.1,
+  }
+}
+
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
   svg_width: u32,
@@ -6225,9 +6305,11 @@ pub(crate) fn generate_bar_svg(
   stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
+  look: &BarChartLook,
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
+  let mut render_height = svg_height * RESOLUTION_SCALE;
+  let mut svg_height = svg_height;
 
   let n = groups.len(); // number of groups
   // Bars per group across the x slot: stacked groups share a single column.
@@ -6338,6 +6420,26 @@ pub(crate) fn generate_bar_svg(
   };
   let legend_margin_right = legend_margin_right + axes_label_margin_right;
 
+  // `AspectRatio -> r` makes the plotting area (not the whole image) r times
+  // as tall as it is wide; the image grows or shrinks around it.
+  if let Some(r) = look.aspect_ratio {
+    let area_w = render_width as f64
+      - 10.0 * sf
+      - legend_margin_right as f64
+      - y_label_area as f64;
+    let margins_v = top_margin as f64 + 10.0 * sf + x_label_area as f64;
+    let target = area_w.max(1.0) * r + margins_v;
+    svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+    render_height = svg_height * RESOLUTION_SCALE;
+  }
+  // `AxesStyle` recolours the axes; `Axes -> False` hides them.
+  let axis_color = look.axes_color.unwrap_or(dark_gray);
+  let axis_line = if look.axes {
+    axis_color.stroke_width(look.axes_width.unwrap_or(RESOLUTION_SCALE))
+  } else {
+    ShapeStyle::from(&bg_color).stroke_width(0)
+  };
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -6377,10 +6479,10 @@ pub(crate) fn generate_bar_svg(
           String::new()
         }
       })
-      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
+      .axis_style(axis_line)
       // Tick labels are typeset smaller than in-chart labels, matching
       // wolframscript's proportionally small default axis ticks.
-      .label_style(("sans-serif", sf * 13.0).into_font().color(&dark_gray))
+      .label_style(("sans-serif", sf * 13.0).into_font().color(&axis_color))
       .set_tick_mark_size(
         LabelAreaPosition::Left,
         if show_ticks { tick } else { 0 },
@@ -6392,7 +6494,7 @@ pub(crate) fn generate_bar_svg(
       })?;
 
     // Draw bars as plotters Rectangle elements
-    let gap = 0.1; // gap between groups
+    let gap = bar_group_gap(look.bar_spacing);
     for (gi, group) in groups.iter().enumerate() {
       let group_x0 = gi as f64 + gap;
       let group_x1 = (gi + 1) as f64 - gap;
@@ -6444,6 +6546,25 @@ pub(crate) fn generate_bar_svg(
             InterpreterError::EvaluationError(format!("BarChart: {e}"))
           })?;
       }
+    }
+
+    // `Frame -> True` closes the plotting area on all four sides.
+    if look.frame {
+      let color = look.frame_color.unwrap_or(dark_gray);
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![
+            (x_min, y_min),
+            (x_max, y_min),
+            (x_max, y_max),
+            (x_min, y_max),
+            (x_min, y_min),
+          ],
+          color.stroke_width(look.frame_width.unwrap_or(RESOLUTION_SCALE)),
+        )))
+        .map_err(|e| {
+          InterpreterError::EvaluationError(format!("BarChart: {e}"))
+        })?;
     }
 
     root.present().map_err(|e| {
@@ -8424,6 +8545,9 @@ pub(crate) fn generate_histogram_svg(
     .collect();
 
   // A named ChartStyle scheme colors each bin with a distinct sampled color.
+  if let [heights] = dataset_heights.as_slice() {
+    crate::functions::chart::apply_color_function(opts, heights);
+  }
   crate::functions::chart::apply_color_scheme(opts, num_bins);
   let max_height = dataset_heights
     .iter()
@@ -10061,6 +10185,59 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   .then_some(style)
 }
 
+/// The colour and stroke width (render units) of a plot's frame: the theme's
+/// `gray` at one display pixel, unless `FrameStyle` sets either.
+fn frame_paint(opts: &PlotOptions, gray: RGBColor) -> (RGBColor, u32) {
+  let style = opts.frame_style.as_ref();
+  let color = style.and_then(|s| s.color).map_or(gray, |c| {
+    let (r, g, b) = color_to_rgb8(c);
+    RGBColor(r, g, b)
+  });
+  let width = style
+    .and_then(|s| s.thickness)
+    .map_or(RESOLUTION_SCALE, |t| {
+      ((t * RESOLUTION_SCALE as f64).round() as u32).max(1)
+    });
+  (color, width)
+}
+
+/// Parse an axis style option (`AxesStyle`, `TicksStyle`) into the style of
+/// the x and the y axis: `{xstyle, ystyle}` styles each axis on its own, any
+/// other value styles both alike.
+pub(crate) fn parse_axis_pair_styles(value: &Expr) -> [Option<SeriesStyle>; 2] {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::List(items) if items.len() == 2 => [
+      parse_style_directives(&items[0]),
+      parse_style_directives(&items[1]),
+    ],
+    other => {
+      let style = parse_style_directives(other);
+      [style.clone(), style]
+    }
+  }
+}
+
+/// The SVG stroke colour and width (in render units, `sf` per display pixel)
+/// a style gives a line, falling back to `color` / `width` for whatever it
+/// leaves unset.
+pub(crate) fn style_stroke(
+  style: Option<&SeriesStyle>,
+  color: &str,
+  width: f64,
+  sf: f64,
+) -> (String, f64) {
+  let stroke = style.and_then(|s| s.color).map_or_else(
+    || color.to_string(),
+    |c| {
+      let (r, g, b) = color_to_rgb8(c);
+      format!("rgb({r},{g},{b})")
+    },
+  );
+  let w = style.and_then(|s| s.thickness).map_or(width, |t| t * sf);
+  (stroke, w)
+}
+
 /// Parse a PlotRange option value into (x_range, y_range) overrides.
 ///
 /// Supported forms:
@@ -10742,6 +10919,31 @@ pub(crate) fn apply_common_plot_option(
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
     }
+    "PlotLabels" => plot_opts.plot_labels = parse_plot_labels(replacement),
+    "PlotLegends" => {
+      let (labels, _, _, position) = parse_plot_legends(replacement);
+      plot_opts.legend_position = position;
+      plot_opts.plot_legends = labels;
+    }
+    "AxesStyle" => plot_opts.axes_style = parse_axis_pair_styles(replacement),
+    "TicksStyle" => {
+      plot_opts.ticks_style = parse_axis_pair_styles(replacement);
+    }
+    "FrameStyle" => plot_opts.frame_style = parse_style_directives(replacement),
+    "MeshStyle" => plot_opts.mesh_style = parse_style_directives(replacement),
+    "Mesh" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      match &val {
+        Expr::Identifier(v) if v == "All" => plot_opts.mesh = Mesh::All,
+        Expr::Identifier(v) if v == "Full" => plot_opts.mesh = Mesh::Full,
+        Expr::Identifier(v) if v == "None" || v == "False" => {
+          plot_opts.mesh = Mesh::None;
+        }
+        Expr::Integer(n) if *n > 0 => plot_opts.mesh = Mesh::Count(*n as usize),
+        _ => {}
+      }
+    }
     "Frame" => plot_opts.frame = parse_frame_option(replacement),
     "FrameTicks" => {
       let (x, y) = frame_tick_axes_visible(replacement);
@@ -11105,6 +11307,13 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if !seen.insert(name.to_string()) {
         continue;
       }
+      // The shared reader takes explicit legend labels; `Automatic` and
+      // `"Expressions"` are filled in from the curves here.
+      if name == "PlotLegends" {
+        let (_, auto, expressions, _) = parse_plot_legends(replacement);
+        legends_automatic |= auto;
+        legends_expressions |= expressions;
+      }
       if apply_common_plot_option(
         name,
         replacement,
@@ -11112,21 +11321,6 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &mut overrides,
       ) {
         continue;
-      }
-      if name == "PlotLabels" {
-        plot_opts.plot_labels = parse_plot_labels(replacement);
-      }
-      if name == "PlotLegends" {
-        let (labels, auto, expressions, position) =
-          parse_plot_legends(replacement);
-        plot_opts.legend_position = position;
-        if auto {
-          legends_automatic = true;
-        } else if expressions {
-          legends_expressions = true;
-        } else {
-          plot_opts.plot_legends = labels;
-        }
       }
     }
   }
@@ -11515,6 +11709,13 @@ fn log_scale_plot_ast(
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
+      // The shared reader takes explicit legend labels; `Automatic` and
+      // `"Expressions"` are filled in from the curves here.
+      if name == "PlotLegends" {
+        let (_, auto, expressions, _) = parse_plot_legends(replacement);
+        legends_automatic |= auto;
+        legends_expressions |= expressions;
+      }
       if apply_common_plot_option(
         name,
         replacement,
@@ -11522,21 +11723,6 @@ fn log_scale_plot_ast(
         &mut overrides,
       ) {
         continue;
-      }
-      if name == "PlotLabels" {
-        plot_opts.plot_labels = parse_plot_labels(replacement);
-      }
-      if name == "PlotLegends" {
-        let (labels, auto, expressions, position) =
-          parse_plot_legends(replacement);
-        plot_opts.legend_position = position;
-        if auto {
-          legends_automatic = true;
-        } else if expressions {
-          legends_expressions = true;
-        } else {
-          plot_opts.plot_legends = labels;
-        }
       }
     }
   }

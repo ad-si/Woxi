@@ -8728,25 +8728,37 @@ fn render_axes(
   ticks: (&TickSpec, &TickSpec),
   x_margins: (f64, f64),
   axes_style: (AxisLineStyle, AxisLineStyle),
+  ticks_style: Option<(AxisLineStyle, AxisLineStyle)>,
+  origin: (Option<f64>, Option<f64>),
+  label_fill: Option<Color>,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
-  let tick_label_fill = t.tick_label_fill;
+  let theme_label_fill =
+    label_fill.map_or_else(|| t.tick_label_fill.to_string(), Color::to_svg_rgb);
+  // Tick marks and their labels follow `TicksStyle`, else `AxesStyle`.
+  let ticks_style = ticks_style.unwrap_or(axes_style);
+  let tick_fill = |st: &AxisLineStyle| {
+    st.color
+      .map_or_else(|| theme_label_fill.clone(), Color::to_svg_rgb)
+  };
 
   if !axes.0 && !axes.1 {
     return;
   }
 
-  let axis_y_data = if bb.y_min <= 0.0 && 0.0 <= bb.y_max {
+  // An explicit `AxesOrigin` places the crossing; otherwise it is the
+  // origin when in view, else the low corner.
+  let axis_y_data = origin.1.unwrap_or(if bb.y_min <= 0.0 && 0.0 <= bb.y_max {
     0.0
   } else {
     bb.y_min
-  };
-  let axis_x_data = if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
+  });
+  let axis_x_data = origin.0.unwrap_or(if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
     0.0
   } else {
     bb.x_min
-  };
+  });
   let axis_y_px = coord_y(axis_y_data, bb, svg_h);
   let axis_x_px = coord_x(axis_x_data, bb, svg_w);
 
@@ -8755,6 +8767,8 @@ fn render_axes(
       "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" {}/>\n",
       axes_style.0.stroke_attrs(axis_stroke)
     ));
+    let mark = ticks_style.0.stroke_attrs(axis_stroke);
+    let tick_label_fill = tick_fill(&ticks_style.0);
     let entries = axis_ticks(ticks.0, bb.x_min, bb.x_max);
     let step =
       tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
@@ -8764,7 +8778,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" {mark}/>\n",
         axis_y_px - 4.0,
         axis_y_px + 4.0
       ));
@@ -8792,6 +8806,8 @@ fn render_axes(
       "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" {}/>\n",
       axes_style.1.stroke_attrs(axis_stroke)
     ));
+    let mark = ticks_style.1.stroke_attrs(axis_stroke);
+    let tick_label_fill = tick_fill(&ticks_style.1);
     let entries = axis_ticks(ticks.1, bb.y_min, bb.y_max);
     let step =
       tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
@@ -8801,7 +8817,7 @@ fn render_axes(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" {mark}/>\n",
         axis_x_px - 4.0,
         axis_x_px + 4.0
       ));
@@ -8830,7 +8846,7 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
           svg_w + 8.0,
           axis_y_px,
         ));
@@ -8845,7 +8861,7 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+          "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{theme_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
         ));
       }
     }
@@ -8987,16 +9003,26 @@ fn render_frame(
   edges: [bool; 4],
   ticks: [EdgeTicks; 4],
   explicit: &[Option<Vec<(f64, String)>>; 4],
+  frame_style: AxisLineStyle,
+  ticks_style: Option<AxisLineStyle>,
+  label_fill: Option<Color>,
 ) {
   let t = theme();
-  let frame_stroke = t.framed_border;
-  let tick_label_fill = t.tick_label_fill;
+  // `FrameStyle` paints the edges; `FrameTicksStyle` (else the frame's own
+  // style) the tick marks and their labels.
+  let frame_stroke = frame_style.stroke_attrs(t.framed_border);
+  let ticks_style = ticks_style.unwrap_or(frame_style);
+  let tick_stroke = ticks_style.stroke_attrs(t.framed_border);
+  let tick_label_fill = ticks_style
+    .color
+    .or(label_fill)
+    .map_or_else(|| t.tick_label_fill.to_string(), Color::to_svg_rgb);
 
   // Draw the border: a single rectangle when all four edges are present,
   // otherwise just the requested edges.
   if edges.iter().all(|&e| e) {
     svg.push_str(&format!(
-      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" {frame_stroke}/>\n"
     ));
   } else {
     let sides = [
@@ -9008,7 +9034,7 @@ fn render_frame(
     for (&(x1, y1, x2, y2), drawn) in sides.iter().zip(edges) {
       if drawn {
         svg.push_str(&format!(
-          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" {frame_stroke}/>\n"
         ));
       }
     }
@@ -9051,7 +9077,7 @@ fn render_frame(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" {tick_stroke}/>\n",
         tick_coord(y_lo),
         tick_coord(y_hi)
       ));
@@ -9084,7 +9110,7 @@ fn render_frame(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" {tick_stroke}/>\n",
         tick_coord(x_lo),
         tick_coord(x_hi)
       ));
@@ -11108,6 +11134,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
   let mut axes_style: Option<Expr> = None;
+  // `TicksStyle`, `FrameStyle`, `FrameTicksStyle`, `LabelStyle` and
+  // `BaseStyle`, read once the drawing's extent is known.
+  let mut ticks_style: Option<Expr> = None;
+  let mut frame_style: Option<Expr> = None;
+  let mut frame_ticks_style: Option<Expr> = None;
+  let mut label_style: Option<Expr> = None;
+  let mut base_style: Option<Expr> = None;
+  // `AxesOrigin -> {x, y}`: where the axes cross.
+  let mut axes_origin: (Option<f64>, Option<f64>) = (None, None);
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
@@ -11290,6 +11325,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "AxesStyle" => axes_style = Some(replacement.clone()),
+        "TicksStyle" => ticks_style = Some(replacement.clone()),
+        "FrameStyle" => frame_style = Some(replacement.clone()),
+        "FrameTicksStyle" => frame_ticks_style = Some(replacement.clone()),
+        "LabelStyle" => label_style = Some(replacement.clone()),
+        "BaseStyle" => base_style = Some(replacement.clone()),
+        "AxesOrigin" => {
+          axes_origin = crate::functions::plot::parse_axes_origin(replacement);
+        }
         "GridLinesStyle" => {
           let mut st = StyleState::default();
           apply_directive(replacement, &mut st);
@@ -11325,8 +11368,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     explicit_height = true;
   }
 
-  // Collect primitives
+  // Collect primitives. `BaseStyle` directives are in force before any of
+  // the drawing's own.
   let mut style = StyleState::default();
+  if let Some(base) = &base_style {
+    apply_directive(base, &mut style);
+  }
   let mut primitives = Vec::new();
   let mut errors: Vec<String> = Vec::new();
   collect_primitives(&content, &mut style, &mut primitives, &mut errors);
@@ -11791,6 +11838,21 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // `LabelStyle` colours the labels and tick labels; `FrameStyle` the frame
+  // and the captions along it.
+  let label_color = label_style
+    .as_ref()
+    .and_then(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w).color);
+  let frame_line_style = frame_style
+    .as_ref()
+    .map_or_else(AxisLineStyle::default, |spec| {
+      AxisLineStyle::from_directive(spec, &bb, svg_w)
+    });
+  let frame_label_fill = frame_line_style
+    .color
+    .or(label_color)
+    .map_or_else(|| theme().tick_label_fill.to_string(), Color::to_svg_rgb);
+
   // PlotLabel: centered above the drawing area, in the reserved strip. It
   // arrives already typeset as SVG markup (sub/superscript tspans included).
   if let Some(lines) = &plot_label {
@@ -11824,8 +11886,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"#333333\" \
+       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"{}\" \
        xml:space=\"preserve\">",
+      label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb),
     ));
     for (i, line) in lines.iter().enumerate() {
       if i == 0 {
@@ -11894,6 +11957,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_style.as_ref().map_or_else(Default::default, |spec| {
       AxisLineStyle::parse_pair(spec, &bb, svg_w)
     }),
+    ticks_style
+      .as_ref()
+      .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
+    axes_origin,
+    label_color,
   );
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
@@ -11928,6 +11996,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       frame_edges,
       frame_tick_modes,
       &frame_tick_lists,
+      frame_line_style,
+      frame_ticks_style
+        .as_ref()
+        .map(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w)),
+      label_color,
     );
   }
 
@@ -11939,15 +12012,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
         svg_w / 2.0,
         svg_h + margin_bottom - 6.0,
-        theme().tick_label_fill,
+        frame_label_fill,
       ));
     }
     if !left.is_empty() {
       let lx = -(margin_left - 12.0);
       let ly = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
-        theme().tick_label_fill,
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{frame_label_fill}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
       ));
     }
     if !top.is_empty() {
@@ -11955,15 +12027,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
         svg_w / 2.0,
         -(margin_top - 12.0),
-        theme().tick_label_fill,
+        frame_label_fill,
       ));
     }
     if !right.is_empty() {
       let rx = svg_w + margin_right - 12.0;
       let ry = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(90,{rx:.1},{ry:.1})\">{right}</text>\n",
-        theme().tick_label_fill,
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{frame_label_fill}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(90,{rx:.1},{ry:.1})\">{right}</text>\n",
       ));
     }
   }
@@ -19215,6 +19286,15 @@ fn grid_svg_styled_internal(
             }
           }
         },
+        // `FrameStyle -> style` colours the frame and the dividers.
+        "FrameStyle" => {
+          if let Some(color) =
+            crate::functions::plot::parse_style_directives(replacement)
+              .and_then(|st| st.color)
+          {
+            frame_color = Some(color);
+          }
+        }
         "Dividers" => match replacement.as_ref() {
           Expr::Identifier(val) if val == "All" || val == "True" => {
             dividers_col = true;
@@ -24329,6 +24409,71 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  let svg = column_layout_svg(args)?;
+  Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
+}
+
+/// Paint the box options of a `Column`/`Row` around its laid-out `svg`:
+/// `Background -> colour` fills the whole box behind the items, and
+/// `Frame -> True` draws a border round it, in the `FrameStyle` given.
+fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
+  let option = |key: &str| {
+    opts
+      .iter()
+      .filter_map(option_kv)
+      .find(|(k, _)| *k == key)
+      .map(|(_, v)| v)
+  };
+  let background = option("Background").and_then(parse_color);
+  let framed = matches!(
+    option("Frame"),
+    Some(Expr::Identifier(v)) if v == "True" || v == "All"
+  );
+  if background.is_none() && !framed {
+    return svg;
+  }
+  let (w, h) = parse_svg_wh(&svg);
+  let mut svg = svg;
+  if let Some(bg) = background {
+    // Behind every item: straight after the opening tag and its <defs>.
+    let after_open = svg.find('>').map_or(0, |i| i + 1);
+    let at = svg[after_open..]
+      .find("</defs>")
+      .map_or(after_open, |i| after_open + i + "</defs>".len());
+    svg.insert_str(
+      at,
+      &format!(
+        "\n<rect x=\"0\" y=\"0\" width=\"{w}\" height=\"{h}\" fill=\"{}\"{}/>",
+        bg.to_svg_rgb(),
+        bg.opacity_attr()
+      ),
+    );
+  }
+  if framed && let Some(end) = svg.rfind("</svg>") {
+    let style = option("FrameStyle")
+      .and_then(crate::functions::plot::parse_style_directives);
+    let (color, width) = crate::functions::plot::style_stroke(
+      style.as_ref(),
+      theme().framed_border,
+      1.0,
+      1.0,
+    );
+    svg.insert_str(
+      end,
+      &format!(
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
+         fill=\"none\" stroke=\"{color}\" stroke-width=\"{width}\"/>\n",
+        width / 2.0,
+        width / 2.0,
+        w - width,
+        h - width
+      ),
+    );
+  }
+  svg
+}
+
+fn column_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -24624,6 +24769,17 @@ fn markup_visible_chars(markup: &str) -> usize {
 }
 
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
+  let svg = row_layout_svg(args)?;
+  let opts: Vec<Expr> = args
+    .iter()
+    .skip(1)
+    .filter(|a| crate::syntax::is_rule_expr(a))
+    .cloned()
+    .collect();
+  Some(decorate_layout_svg(svg, &opts))
+}
+
+fn row_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -25133,10 +25289,30 @@ fn framed_box_to_svg(
     .or(default_background)
     .map(Color::to_svg_rgb);
   let rect_fill = bg_fill.as_deref().unwrap_or("none");
-  // `FrameStyle -> None` draws the box without a border.
-  let frame_is_none = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
-    k == "FrameStyle" && matches!(v, Expr::Identifier(n) if n == "None")
-  });
+  // `FrameStyle -> None` draws the box without a border; any other style
+  // sets the border's colour and thickness.
+  let frame_style_opt = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameStyle")
+    .map(|(_, v)| v);
+  let frame_is_none = matches!(
+    frame_style_opt,
+    Some(Expr::Identifier(n)) if n == "None"
+  );
+  let (frame_color, stroke_width) = crate::functions::plot::style_stroke(
+    frame_style_opt
+      .and_then(crate::functions::plot::parse_style_directives)
+      .as_ref(),
+    theme().framed_border,
+    1.0,
+    1.0,
+  );
+  let border_attrs = if frame_is_none {
+    String::new()
+  } else {
+    format!("stroke=\"{frame_color}\" stroke-width=\"{stroke_width}\"")
+  };
 
   // Layout constants
   let char_width: f64 = 8.4;
@@ -25150,7 +25326,6 @@ fn framed_box_to_svg(
   };
   // `FrameMargins -> m` pads every side by `m` points.
   let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
-  let stroke_width: f64 = 1.0;
   let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(3.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
@@ -25269,9 +25444,8 @@ fn framed_box_to_svg(
       "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
     // Border rectangle
-    let framed_border = theme().framed_border;
     svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" stroke=\"{framed_border}\" stroke-width=\"{stroke_width}\"/>\n",
+      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border_attrs}/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
       total_w - stroke_width, total_h - stroke_width,
     ));
@@ -25309,14 +25483,6 @@ fn framed_box_to_svg(
       "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
     ));
     // Border rectangle
-    let border_attrs = if frame_is_none {
-      String::new()
-    } else {
-      format!(
-        "stroke=\"{}\" stroke-width=\"{stroke_width}\"",
-        theme().framed_border
-      )
-    };
     svg.push_str(&format!(
       "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border_attrs}/>\n",
       stroke_width / 2.0, stroke_width / 2.0,
