@@ -4446,51 +4446,6 @@ fn build_multivariate_result(overall: i128, factors: &[(Expr, usize)]) -> Expr {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::{integer_divisors, integer_divisors_uncached};
-
-  /// Every positive divisor of `n`, found the obvious way.
-  fn divisors_by_brute_force(n: i128) -> Vec<i128> {
-    (1..=n.abs()).filter(|d| n.abs() % d == 0).collect()
-  }
-
-  #[test]
-  fn the_divisors_of_a_small_number_are_all_of_them() {
-    for n in [1, 2, 12, -12, 97, 360, 1024, 5040, 999_983] {
-      assert_eq!(
-        integer_divisors(n),
-        divisors_by_brute_force(n),
-        "divisors of {n}"
-      );
-    }
-    // Zero has no divisor list to speak of; the caller only needs one entry.
-    assert_eq!(integer_divisors(0), vec![1]);
-  }
-
-  #[test]
-  fn memoizing_the_divisors_does_not_change_them() {
-    // Including the numbers a `Limit` towards a pole asks about again and
-    // again — the exact rationals of its probe points, up to 35 digits.
-    for n in [
-      0,
-      1,
-      -12,
-      360,
-      68_717_248_529,
-      150_094_628_194_290_239,
-      4_722_366_480_653_442_089_219,
-      22_528_399_544_939_150_079_832_048_061_255_039,
-    ] {
-      let expected = integer_divisors_uncached(n);
-      // The first call computes, the second answers from the cache, and
-      // both must agree with the uncached result.
-      assert_eq!(integer_divisors(n), expected, "first call for {n}");
-      assert_eq!(integer_divisors(n), expected, "second call for {n}");
-    }
-  }
-}
-
 // ─── Rational operations over a quadratic field (Extension) ─────────
 
 /// The quadratic field Q(Sqrt[d]) (d = -1 for Q(I)) that an `Extension`
@@ -4958,5 +4913,50 @@ pub fn extension_rational_operation(
       ev(times(product)).map(|e| Some(reorder_factored_product(e)))
     }
     _ => Ok(None),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{integer_divisors, integer_divisors_uncached};
+
+  /// Every positive divisor of `n`, found the obvious way.
+  fn divisors_by_brute_force(n: i128) -> Vec<i128> {
+    (1..=n.abs()).filter(|d| n.abs() % d == 0).collect()
+  }
+
+  #[test]
+  fn the_divisors_of_a_small_number_are_all_of_them() {
+    for n in [1, 2, 12, -12, 97, 360, 1024, 5040, 999_983] {
+      assert_eq!(
+        integer_divisors(n),
+        divisors_by_brute_force(n),
+        "divisors of {n}"
+      );
+    }
+    // Zero has no divisor list to speak of; the caller only needs one entry.
+    assert_eq!(integer_divisors(0), vec![1]);
+  }
+
+  #[test]
+  fn memoizing_the_divisors_does_not_change_them() {
+    // Including the numbers a `Limit` towards a pole asks about again and
+    // again — the exact rationals of its probe points, up to 35 digits.
+    for n in [
+      0,
+      1,
+      -12,
+      360,
+      68_717_248_529,
+      150_094_628_194_290_239,
+      4_722_366_480_653_442_089_219,
+      22_528_399_544_939_150_079_832_048_061_255_039,
+    ] {
+      let expected = integer_divisors_uncached(n);
+      // The first call computes, the second answers from the cache, and
+      // both must agree with the uncached result.
+      assert_eq!(integer_divisors(n), expected, "first call for {n}");
+      assert_eq!(integer_divisors(n), expected, "second call for {n}");
+    }
   }
 }

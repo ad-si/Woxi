@@ -1555,11 +1555,8 @@ pub fn dispatch_complex_and_special(
           Some((Expr::Identifier(n), _, _)) if n == "WorkingPrecision"
         ) =>
     {
-      let Some((_, precision, _)) =
-        crate::functions::expr_form::rule_parts(&args[args.len() - 1])
-      else {
-        return None;
-      };
+      let (_, precision, _) =
+        crate::functions::expr_form::rule_parts(&args[args.len() - 1])?;
       let precision = precision.clone();
       let measure = match evaluate_expr_to_expr(&call(
         "RegionMeasure",
