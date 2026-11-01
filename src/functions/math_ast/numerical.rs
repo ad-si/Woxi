@@ -5610,35 +5610,121 @@ pub fn fourier_dct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(unevaluated("FourierDCT", args))
   };
 
-  let items = match &args[0] {
-    Expr::List(items) if !items.is_empty() => items,
-    _ => return unevaluated(),
-  };
-
-  // Extract real numeric values. Any non-real entry leaves it unevaluated.
-  let mut data: Vec<f64> = Vec::with_capacity(items.len());
-  for item in items {
-    match try_extract_complex_float(item) {
-      Some((re, 0.0)) => data.push(re),
-      _ => return unevaluated(),
+  // The data: a rectangular array of numbers (complex ones transform their
+  // real and imaginary parts separately, the transform being linear).
+  let mut dims: Vec<usize> = Vec::new();
+  let mut data: Vec<(f64, f64)> = Vec::new();
+  fn flatten(
+    e: &Expr,
+    depth: usize,
+    dims: &mut Vec<usize>,
+    data: &mut Vec<(f64, f64)>,
+  ) -> bool {
+    match e {
+      Expr::List(items) => {
+        if items.is_empty() {
+          return false;
+        }
+        if dims.len() == depth {
+          dims.push(items.len());
+        } else if dims[depth] != items.len() {
+          return false;
+        }
+        items.iter().all(|it| flatten(it, depth + 1, dims, data))
+      }
+      other => {
+        if depth != dims.len() {
+          return false;
+        }
+        match try_extract_complex_float(other) {
+          Some(z) => {
+            data.push(z);
+            true
+          }
+          None => false,
+        }
+      }
     }
   }
+  if !matches!(&args[0], Expr::List(_))
+    || !flatten(&args[0], 0, &mut dims, &mut data)
+    || data.len() != dims.iter().product::<usize>()
+  {
+    return unevaluated();
+  }
 
-  // Optional method argument (1..4); default 2.
+  // Optional type (1..4, or "I".."IV"); default 2.
   let m = if args.len() == 2 {
-    match try_eval_to_f64(&args[1]) {
-      Some(v) if (v - v.round()).abs() < 1e-12 && (1.0..=4.0).contains(&v) => {
-        v.round() as i64
-      }
-      _ => return unevaluated(),
+    match &args[1] {
+      Expr::String(t) => match t.as_str() {
+        "I" => 1,
+        "II" => 2,
+        "III" => 3,
+        "IV" => 4,
+        _ => return unevaluated(),
+      },
+      other => match try_eval_to_f64(other) {
+        Some(v)
+          if (v - v.round()).abs() < 1e-12 && (1.0..=4.0).contains(&v) =>
+        {
+          v.round() as i64
+        }
+        _ => return unevaluated(),
+      },
     }
   } else {
     2
   };
 
-  let result = dct_core(&data, m);
-  let exprs: Vec<Expr> = result.iter().map(|&x| Expr::Real(x)).collect();
-  Ok(Expr::List(exprs.into()))
+  // The transform is separable: apply it along every axis in turn.
+  let total = data.len();
+  let mut stride = total;
+  for &len in &dims {
+    stride /= len;
+    let block = len * stride;
+    for start in (0..total).step_by(block) {
+      for offset in 0..stride {
+        let idx: Vec<usize> =
+          (0..len).map(|i| start + offset + i * stride).collect();
+        let re: Vec<f64> = idx.iter().map(|&i| data[i].0).collect();
+        let im: Vec<f64> = idx.iter().map(|&i| data[i].1).collect();
+        let re = dct_core(&re, m);
+        let im = if im.iter().any(|v| *v != 0.0) {
+          dct_core(&im, m)
+        } else {
+          vec![0.0; len]
+        };
+        for (k, &i) in idx.iter().enumerate() {
+          data[i] = (re[k], im[k]);
+        }
+      }
+    }
+  }
+
+  let complex = data.iter().any(|(_, im)| *im != 0.0);
+  let leaf = |&(re, im): &(f64, f64)| -> Expr {
+    if complex {
+      crate::helpers::call("Complex", vec![Expr::Real(re), Expr::Real(im)])
+    } else {
+      Expr::Real(re)
+    }
+  };
+  fn nest(
+    leaves: &mut dyn Iterator<Item = Expr>,
+    dims: &[usize],
+  ) -> Expr {
+    match dims {
+      [] => leaves.next().unwrap_or(Expr::Integer(0)),
+      [d, rest @ ..] => Expr::List((0..*d).map(|_| nest(leaves, rest)).collect()),
+    }
+  }
+  let mut leaves = data.iter().map(leaf);
+  let result = nest(&mut leaves, &dims);
+  if complex {
+    crate::evaluator::evaluate_expr_to_expr(&result)
+  } else {
+    Ok(result)
+  }
 }
 
 /// DiscreteHilbertTransform[list] — the periodic discrete Hilbert transform

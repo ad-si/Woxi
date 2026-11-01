@@ -1043,7 +1043,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "EffectiveInterest" if args.len() == 2 => {
+    "EffectiveInterest" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::effective_interest_ast(args));
     }
     "Likelihood" if args.len() == 2 => {
@@ -1667,6 +1667,9 @@ pub fn dispatch_math_functions(
     }
     "BellY" if args.len() == 3 => {
       return Some(crate::functions::math_ast::bell_y_ast(args));
+    }
+    "BellY" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::bell_y_matrix_ast(args));
     }
     "FiniteGroupCount" if args.len() == 1 => {
       return Some(crate::functions::math_ast::finite_group_count_ast(args));
@@ -3644,7 +3647,7 @@ pub fn dispatch_math_functions(
     "FindDivisions" if args.len() == 2 => {
       return Some(crate::functions::math_ast::find_divisions_ast(args));
     }
-    "DigitCount" if !args.is_empty() && args.len() <= 3 => {
+    "DigitCount" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::digit_count_ast(args));
     }
     "DigitSum" if !args.is_empty() && args.len() <= 3 => {

@@ -5,9 +5,9 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// DigitCount[n, b] - counts of each digit in base b
 /// DigitCount[n, b, d] - count of specific digit d in base b
 pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 3 {
+  if args.is_empty() || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "DigitCount expects 1 to 3 arguments".into(),
+      "DigitCount expects 1 to 4 arguments".into(),
     ));
   }
   let n = match expr_to_bigint(&args[0]) {
@@ -42,16 +42,33 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  if args.len() == 3 {
-    // DigitCount[n, b, d] - count of specific digit d
-    let d = match expr_to_i128(&args[2]) {
-      Some(d) => d as usize,
-      None => {
-        return Ok(unevaluated("DigitCount", args));
-      }
+  // DigitCount[n, b, d, len]: only the last len digits, padded on the left
+  // with zeros when n has fewer.
+  if let Some(len) = args.get(3) {
+    match expr_to_i128(len) {
+      Some(len) if len >= 0 => digits.resize(len as usize, 0),
+      _ => return Ok(unevaluated("DigitCount", args)),
+    }
+  }
+
+  if args.len() >= 3 {
+    // DigitCount[n, b, d] - count of specific digit d; a list of digits
+    // threads.
+    let count_of = |d: &Expr| -> Option<Expr> {
+      let d = expr_to_i128(d)?;
+      Some(Expr::Integer(
+        digits.iter().filter(|&&x| x as i128 == d).count() as i128,
+      ))
     };
-    let count = digits.iter().filter(|&&x| x == d).count();
-    Ok(Expr::Integer(count as i128))
+    let result = match &args[2] {
+      Expr::List(ds) => ds
+        .iter()
+        .map(count_of)
+        .collect::<Option<Vec<_>>>()
+        .map(|v| Expr::List(v.into())),
+      d => count_of(d),
+    };
+    Ok(result.unwrap_or_else(|| unevaluated("DigitCount", args)))
   } else {
     // DigitCount[n] or DigitCount[n, b] - list of counts for digits 1..base-1, 0
     // Wolfram returns counts in order: digit 1, digit 2, ..., digit (base-1), digit 0
@@ -2676,6 +2693,20 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let uneval = || Ok(unevaluated("IntegerReverse", args));
+
+  // A mixed-radix base: the digits in that radix, reversed and read back.
+  if args.len() == 2
+    && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "MixedRadix")
+    && matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_))
+  {
+    use crate::evaluator::evaluate_function_call_ast as ev;
+    let digits = ev("IntegerDigits", args)?;
+    let Expr::List(ds) = &digits else {
+      return uneval();
+    };
+    let reversed: Vec<Expr> = ds.iter().rev().cloned().collect();
+    return ev("FromDigits", &[Expr::List(reversed.into()), args[1].clone()]);
+  }
 
   let base = if args.len() >= 2 {
     match expr_to_i128(&args[1]) {

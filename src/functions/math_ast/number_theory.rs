@@ -219,6 +219,41 @@ fn gaussian_gcd(mut a: (i128, i128), mut b: (i128, i128)) -> (i128, i128) {
   gaussian_normalize(a)
 }
 
+/// An inverse of `a` modulo `m` over the Gaussian integers (any
+/// representative), or `None` when they are not coprime or an intermediate
+/// value overflows.
+fn gaussian_inverse(a: (i128, i128), m: (i128, i128)) -> Option<(i128, i128)> {
+  let sub = |x: (i128, i128), y: (i128, i128)| -> Option<(i128, i128)> {
+    Some((x.0.checked_sub(y.0)?, x.1.checked_sub(y.1)?))
+  };
+  // Invariant: r_i = s_i * a (mod m).
+  let (mut r0, mut r1) = (a, m);
+  let (mut s0, mut s1) = ((1i128, 0i128), (0i128, 0i128));
+  while r1 != (0, 0) {
+    let rem = gaussian_rem(r0, r1);
+    // q = (r0 - rem) / r1, exact.
+    let q = gaussian_exact_div(sub(r0, rem)?, r1);
+    let s2 = sub(s0, gaussian_mul_checked(q, s1)?)?;
+    (r0, r1) = (r1, rem);
+    (s0, s1) = (s1, s2);
+  }
+  // r0 is a gcd; it must be a unit u, and then s0 / u is the inverse.
+  match r0 {
+    (1, 0) => Some(s0),
+    (-1, 0) => Some((-s0.0, -s0.1)),
+    (0, 1) => Some((s0.1, -s0.0)),   // s0 / i = -i s0
+    (0, -1) => Some((-s0.1, s0.0)),  // s0 / -i = i s0
+    _ => None,
+  }
+}
+
+/// Whether a nonzero Gaussian integer is square free (no repeated prime
+/// factor up to units), or `None` when it cannot be factored.
+pub(crate) fn gaussian_square_free(z: (i128, i128)) -> Option<bool> {
+  let (_, factors) = gaussian_factorization(z.0, z.1)?;
+  Some(factors.iter().all(|(_, e)| *e <= 1))
+}
+
 /// Product of two Gaussian integers.
 fn gaussian_mul(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   let (ar, ai) = a;
@@ -247,7 +282,7 @@ fn gaussian_lcm(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
 
 /// Extract a Gaussian integer (re, im) from an expression, or None if it is not
 /// an exact complex number with integer real and imaginary parts.
-fn expr_to_gaussian_int(expr: &Expr) -> Option<(i128, i128)> {
+pub(crate) fn expr_to_gaussian_int(expr: &Expr) -> Option<(i128, i128)> {
   let ((rn, rd), (in_, id)) = try_extract_complex_exact(expr)?;
   if rd == 1 && id == 1 {
     Some((rn, in_))
@@ -4120,6 +4155,25 @@ pub fn moebius_mu_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A Gaussian integer m + n I works over the Gaussian integers: 0 when a
+  // prime factor repeats, otherwise (-1)^(number of prime factors).
+  if let Some((re, im)) = expr_to_gaussian_int(&args[0])
+    && im != 0
+  {
+    return Ok(match gaussian_factorization(re, im) {
+      Some((_, factors)) => {
+        if factors.iter().any(|(_, e)| *e > 1) {
+          Expr::Integer(0)
+        } else if factors.len() % 2 == 0 {
+          Expr::Integer(1)
+        } else {
+          Expr::Integer(-1)
+        }
+      }
+      None => unevaluated("MoebiusMu", args),
+    });
+  }
+
   // Integer arguments only: MoebiusMu[0] is 0, negative n uses |n|
   // (matching wolframscript). Anything else stays unevaluated.
   let is_integer = matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_));
@@ -5497,6 +5551,23 @@ pub fn modular_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use num_traits::{One, Signed, Zero};
 
+  // Gaussian integers: the extended Euclidean algorithm over Z[i], reduced
+  // with Mod (which rounds the Gaussian quotient).
+  if let (Some(a), Some(m)) =
+    (expr_to_gaussian_int(&args[0]), expr_to_gaussian_int(&args[1]))
+    && (a.1 != 0 || m.1 != 0)
+    && m != (0, 0)
+  {
+    let Some(inv) = gaussian_inverse(a, m) else {
+      return unevaluated();
+    };
+    let inv = gaussian_to_expr(inv.0, inv.1)?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Mod",
+      &[inv, args[1].clone()],
+    );
+  }
+
   // Both arguments must be ordinary integers.
   let (Some(a), Some(m)) = (expr_to_bigint(&args[0]), expr_to_bigint(&args[1]))
   else {
@@ -6457,7 +6528,85 @@ pub fn debruijn_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// BellY[n, k, {x1, x2, ...}] - Partial Bell polynomial (Bell Y polynomial)
 /// B_{n,k}(x1, x2, ..., x_{n-k+1})
 /// Uses the formula: sum over all partitions of n into k parts
+/// The columns of a matrix given as a list of equal-length rows.
+fn matrix_columns(m: &Expr) -> Option<Vec<Vec<Expr>>> {
+  let Expr::List(rows) = m else { return None };
+  let rows: Vec<&[Expr]> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(c) => Some(c.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let width = rows.first()?.len();
+  if width == 0 || rows.iter().any(|r| r.len() != width) {
+    return None;
+  }
+  Some(
+    (0..width)
+      .map(|j| rows.iter().map(|r| r[j].clone()).collect())
+      .collect(),
+  )
+}
+
+/// The generalized partial Bell polynomial of the composition of the
+/// functions whose derivatives are `cols` (outermost first):
+/// B(n, k, {g, rest…}) = Sum[B(j, k, g) B(n, j, rest…), {j, k, n}].
+fn bell_y_composition(
+  n: usize,
+  k: usize,
+  cols: &[Vec<Expr>],
+) -> Result<Expr, InterpreterError> {
+  let partial = |n: usize, k: usize, col: &[Expr]| {
+    bell_y_ast(&[
+      Expr::Integer(n as i128),
+      Expr::Integer(k as i128),
+      Expr::List(col.to_vec().into()),
+    ])
+  };
+  match cols {
+    [] => Ok(Expr::Integer(i128::from(n == k))),
+    [col] => partial(n, k, col),
+    [g, rest @ ..] => {
+      let mut terms = Vec::new();
+      for j in k..=n {
+        let outer = partial(j, k, g)?;
+        if matches!(outer, Expr::Integer(0)) {
+          continue;
+        }
+        terms.push(crate::helpers::times2(outer, bell_y_composition(n, j, rest)?));
+      }
+      crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call("Plus", terms))
+    }
+  }
+}
+
+/// BellY[m]: the generalized Bell polynomial of the matrix m, whose first
+/// column weighs the generalized partial polynomials of the others.
+pub fn bell_y_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let Some(cols) = matrix_columns(&args[0]) else {
+    return Ok(unevaluated("BellY", args));
+  };
+  let n = cols[0].len();
+  let mut terms = Vec::new();
+  for k in 1..=n {
+    let inner = bell_y_composition(n, k, &cols[1..])?;
+    terms.push(crate::helpers::times2(cols[0][k - 1].clone(), inner));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call("Plus", terms))
+}
+
 pub fn bell_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // BellY[n, k, m] with a matrix m: the generalized partial polynomial.
+  if args.len() == 3
+    && let Some(cols) = matrix_columns(&args[2])
+    && matches!(&args[2], Expr::List(rows) if rows.iter().all(|r| matches!(r, Expr::List(_))))
+    && let (Some(n), Some(k)) = (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
+    && n >= 0
+    && k >= 0
+  {
+    return bell_y_composition(n as usize, k as usize, &cols);
+  }
   let n = match expr_to_i128(&args[0]) {
     Some(n) if n >= 0 => n as usize,
     _ => {
@@ -6576,8 +6725,7 @@ fn bell_y_enumerate(
         all.extend(factors);
         times(all)
       };
-      let evaluated =
-        crate::evaluator::evaluate_function_call_ast("Times", &[term])?;
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&term)?;
       terms.push(evaluated);
     }
     return Ok(());

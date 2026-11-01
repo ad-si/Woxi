@@ -13657,6 +13657,11 @@ fn planar_angle_of_kind(
   match kind {
     "Interior" => Ok(Some(interior)),
     "Exterior" => Ok(Some(ev(&plus(vec![pi, neg(interior)]))?)),
+    // The full exterior angle is 2 Pi minus the interior one.
+    "FullExterior" => Ok(Some(ev(&plus(vec![
+      times(vec![Expr::Integer(2), pi]),
+      neg(interior),
+    ]))?)),
     "Counterclockwise" | "Clockwise" => {
       let v1 = ev(&plus(vec![q1.clone(), neg(p.clone())]))?;
       let v2 = ev(&plus(vec![q2.clone(), neg(p.clone())]))?;

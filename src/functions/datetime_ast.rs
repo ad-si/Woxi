@@ -1037,8 +1037,9 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect();
           if let Some((y, m, d)) = parse_date_with_format(date_str, &format) {
+            // A whole-day date is a whole number of seconds.
             let total = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
-            return Ok(Expr::Real(total));
+            return Ok(Expr::Integer(total as i128));
           }
         }
         Ok(call1("AbsoluteTime", arg))
@@ -1049,6 +1050,11 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let total = date_to_absolute_seconds(y, m, d, 0, 0, 0.0);
         Ok(Expr::Integer(total as i128))
       } else {
+        // Other date strings (e.g. "2022-12-1") through DateList's reader.
+        let list = date_list_ast(std::slice::from_ref(&arg))?;
+        if matches!(&list, Expr::List(_)) {
+          return absolute_time_ast(&[list]);
+        }
         Ok(call1("AbsoluteTime", arg))
       }
     }

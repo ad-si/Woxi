@@ -2917,9 +2917,60 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(unevaluated("InverseErf", args))
       }
     }
+    // Arbitrary precision: Newton's method on Erf.
+    Expr::BigFloat(_, prec) => Ok(
+      inverse_erf_bigfloat("Erf", &args[0], *prec, |f| {
+        (f > -1.0 && f < 1.0).then(|| inverse_erf_f64(f))
+      })?
+      .unwrap_or_else(|| unevaluated("InverseErf", args)),
+    ),
     // Otherwise symbolic — return unevaluated
     _ => Ok(unevaluated("InverseErf", args)),
   }
+}
+
+/// InverseErf / InverseErfc of an arbitrary-precision number `s`: Newton's
+/// iteration x -> x -+ (F[x] - s) Sqrt[Pi]/2 E^(x^2) on F = Erf or Erfc,
+/// started from the machine value `start(s)` and carried out with guard
+/// digits, then rounded to the precision of `s`.
+fn inverse_erf_bigfloat(
+  f: &str,
+  s: &Expr,
+  prec: f64,
+  start: impl Fn(f64) -> Option<f64>,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::helpers::{call, call1};
+  let ev = crate::evaluator::evaluate_expr_to_expr;
+  let Some(x0) = try_eval_to_f64(s).and_then(start) else {
+    return Ok(None);
+  };
+  if !x0.is_finite() {
+    return Ok(None);
+  }
+  let work = Expr::Real((prec + 10.0).ceil());
+  let mut x = ev(&call("SetPrecision", vec![Expr::Real(x0), work.clone()]))?;
+  let target = ev(&call("SetPrecision", vec![s.clone(), work]))?;
+  // Erfc decreases where Erf increases.
+  let sign = if f == "Erf" { -1 } else { 1 };
+  // Quadratic convergence from ~15 correct digits.
+  let steps = ((prec / 15.0).log2().ceil().max(0.0) as usize) + 2;
+  for _ in 0..steps {
+    let residual = call(
+      "Subtract",
+      vec![call1(f, x.clone()), target.clone()],
+    );
+    let step = call(
+      "Times",
+      vec![
+        Expr::Integer(sign),
+        residual,
+        call("Divide", vec![call1("Sqrt", Expr::Constant("Pi".into())), Expr::Integer(2)]),
+        call1("Exp", call("Power", vec![x.clone(), Expr::Integer(2)])),
+      ],
+    );
+    x = ev(&call("Plus", vec![x, step]))?;
+  }
+  Ok(Some(ev(&call("N", vec![x, Expr::Real(prec)]))?))
 }
 
 /// InverseErfc[x] — inverse complementary error function
@@ -2953,6 +3004,12 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(neg1(inner))
     }
     // Numeric evaluation for Real arguments
+    Expr::BigFloat(_, prec) => Ok(
+      inverse_erf_bigfloat("Erfc", &args[0], *prec, |f| {
+        (f > 0.0 && f < 2.0).then(|| inverse_erfc_f64(f))
+      })?
+      .unwrap_or_else(|| unevaluated("InverseErfc", args)),
+    ),
     Expr::Real(f) => {
       if *f > 0.0 && *f < 2.0 {
         Ok(Expr::Real(inverse_erfc_f64(*f)))
@@ -5059,6 +5116,10 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => {
       return Ok(neg1(id_expr("Infinity")));
     }
+    // A complex infinity has no single limiting value.
+    Expr::Identifier(s) if s == "ComplexInfinity" => {
+      return Ok(id_expr("Indeterminate"));
+    }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
     // Outside (-1, 1) the (inexact) real argument gives a complex result:
     // ArcTanh[x] = (1/2) Log|(1+x)/(1-x)| - sign(x)*Pi/2 I.
@@ -5684,7 +5745,9 @@ pub fn inverse_gudermannian_ast(
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Real(f) if *f == 0.0 => return Ok(Expr::Real(0.0)),
-    Expr::Real(f) => {
+    // Within (-Pi/2, Pi/2) the value is real; beyond, the complex branch
+    // below applies.
+    Expr::Real(f) if f.abs() < std::f64::consts::FRAC_PI_2 => {
       // InverseGudermannian[x] = 2 * atanh(tan(x/2)).
       // f64 atanh is not exactly odd around 0, so the direct formula
       // yields slightly different bit patterns for +x and -x. Force
@@ -5694,6 +5757,35 @@ pub fn inverse_gudermannian_ast(
       let pos = 2.0 * (abs_f / 2.0).tan().atanh();
       let result = if *f < 0.0 { -pos } else { pos };
       return Ok(Expr::Real(result));
+    }
+    // Arbitrary-precision and complex numbers through the definition
+    // Log[Tan[z/2 + Pi/4]].
+    z if crate::syntax::contains_inexact(z)
+      && crate::functions::math_ast::try_extract_complex_float(z).is_some() =>
+    {
+      use crate::helpers::{call, call1};
+      let ev = crate::evaluator::evaluate_expr_to_expr;
+      // An arbitrary-precision argument is worked with guard digits.
+      let prec = match z {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      };
+      let z = match prec {
+        Some(p) => ev(&call("SetPrecision", vec![z.clone(), Expr::Real(p + 10.0)]))?,
+        None => z.clone(),
+      };
+      let arg = call(
+        "Plus",
+        vec![
+          call("Divide", vec![z, Expr::Integer(2)]),
+          call("Divide", vec![Expr::Constant("Pi".into()), Expr::Integer(4)]),
+        ],
+      );
+      let value = ev(&call1("Log", call1("Tan", arg)))?;
+      return match prec {
+        Some(p) => ev(&call("N", vec![value, Expr::Real(p)])),
+        None => Ok(value),
+      };
     }
     _ => {}
   }
