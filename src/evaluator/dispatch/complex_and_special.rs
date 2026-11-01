@@ -526,14 +526,16 @@ pub fn dispatch_complex_and_special(
       return Some(result);
     }
     // Monitor[expr, mon] evaluates `expr` and returns it; the monitored
-    // display is a front-end affair, so without one there is nothing to
-    // show (wolframscript is silent too). Rubi shows its loading progress
-    // with it.
+    // display is a front-end affair. Without one, wolframscript says so; a
+    // notebook front end shows the monitor while `expr` runs and then
+    // nothing. Rubi shows its loading progress with it.
     "Monitor" if args.len() == 2 => {
-      crate::emit_message(
-        "FrontEndObject::notavail: A front end is not available; certain \
-         operations require a front end.",
-      );
+      if !crate::is_visual_mode() {
+        crate::emit_message(
+          "FrontEndObject::notavail: A front end is not available; certain \
+           operations require a front end.",
+        );
+      }
       return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
     }
     // MousePosition[…] — where the pointer is over a graphic. In a

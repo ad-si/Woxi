@@ -1821,8 +1821,13 @@ pub fn dispatch_predicate_functions(
       // (Wolfram behavior); outside any context, OptionValue stays unevaluated.
       let (result, in_context) = crate::OPTION_VALUE_CONTEXT.with(|ctx| {
         let stack = ctx.borrow();
-        let in_context = !stack.is_empty();
-        for (_func_name, bindings) in stack.iter().rev() {
+        let own = || {
+          stack.iter().rev().filter(|(f, _)| {
+            f != crate::evaluator::dispatch::evaluate_functions::NESTED_OPTIONS_FRAME
+          })
+        };
+        let in_context = own().next().is_some();
+        for (_func_name, bindings) in own() {
           for (key, val) in bindings {
             if *key == opt_name {
               return (Some(val.clone()), in_context);
@@ -1910,11 +1915,23 @@ pub fn dispatch_predicate_functions(
                 .find(|(k, _)| *k == key)
                 .map(|(_, v)| v.clone())
             };
+            // An `OptionsPattern` nested in an argument pattern has no
+            // head of its own on record; its frame answers before the
+            // innermost one does.
+            let nested =
+              crate::evaluator::dispatch::evaluate_functions::NESTED_OPTIONS_FRAME;
             stack
               .iter()
               .rev()
               .find(|(name, _)| name == f)
               .and_then(|(_, b)| lookup(b))
+              .or_else(|| {
+                stack
+                  .iter()
+                  .rev()
+                  .filter(|(name, _)| name == nested)
+                  .find_map(|(_, b)| lookup(b))
+              })
               .or_else(|| stack.last().and_then(|(_, b)| lookup(b)))
           });
           if let Some(val) = found {

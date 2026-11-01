@@ -558,6 +558,51 @@ fn distribute_args_to_params_impl(
 
 /// Extract option bindings from function arguments for OptionsPattern.
 /// Merges explicit options with stored Options[func_name] defaults.
+/// The options an `OptionsPattern[…]` nested inside an argument pattern
+/// matched (`g[h[x_, OptionsPattern[{"A" -> 1}]]] := OptionValue[h, "A"]`),
+/// reported by the structural matcher under its `__OptionsPattern__` key,
+/// as an `OPTION_VALUE_CONTEXT` frame for the time the body evaluates. Its
+/// name, `NESTED_OPTIONS_FRAME`, keeps it from answering a one-argument
+/// `OptionValue[name]`, which in Wolfram only reads the defining head's own
+/// options.
+struct NestedOptionFrame(bool);
+
+pub(crate) const NESTED_OPTIONS_FRAME: &str = "\u{0}nested";
+
+impl NestedOptionFrame {
+  fn push(structural: &[(String, Expr)]) -> Self {
+    let nested: Vec<(String, Expr)> = structural
+      .iter()
+      .filter(|(k, _)| k == "__OptionsPattern__")
+      .flat_map(|(_, v)| match v {
+        Expr::List(items) => {
+          items.iter().filter_map(extract_rule_pair).collect()
+        }
+        _ => Vec::new(),
+      })
+      .collect();
+    if nested.is_empty() {
+      return NestedOptionFrame(false);
+    }
+    crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+      ctx
+        .borrow_mut()
+        .push((NESTED_OPTIONS_FRAME.to_string(), nested));
+    });
+    NestedOptionFrame(true)
+  }
+}
+
+impl Drop for NestedOptionFrame {
+  fn drop(&mut self) {
+    if self.0 {
+      crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+        ctx.borrow_mut().pop();
+      });
+    }
+  }
+}
+
 fn collect_option_bindings(
   func_name: &str,
   params: &[String],
@@ -15241,6 +15286,9 @@ fn apply_user_overloads(
           .as_ref()
           .and_then(|v| v.get(overload_idx))
           .and_then(|o| o.as_ref());
+        // Below the frame of a top-level `OptionsPattern` slot, so that
+        // frame pops first.
+        let _nested_options = NestedOptionFrame::push(&structural_bindings);
         let opt_bindings =
           collect_option_bindings(name, params, &effective_args, inline_opts);
         if let Some(ref bindings) = opt_bindings {
@@ -15618,6 +15666,9 @@ fn apply_user_overloads(
           .as_ref()
           .and_then(|v| v.get(overload_idx))
           .and_then(|o| o.as_ref());
+        // Below the frame of a top-level `OptionsPattern` slot, so that
+        // frame pops first.
+        let _nested_options = NestedOptionFrame::push(&structural_bindings);
         let opt_bindings =
           collect_option_bindings(name, params, &effective_args, inline_opts2);
         if let Some(ref bindings) = opt_bindings {

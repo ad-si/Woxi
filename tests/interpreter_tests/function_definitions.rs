@@ -6841,6 +6841,38 @@ mod set_with_a_left_hand_side_condition {
   }
 }
 
+mod nested_options_pattern {
+  use super::*;
+
+  // An `OptionsPattern` inside an argument pattern answers
+  // `OptionValue[h, name]` for that argument's head, from the options it
+  // matched and the defaults it names; a one-argument `OptionValue` reads
+  // only the defining head's own options, so it stays unevaluated.
+  #[test]
+  fn option_value_of_the_inner_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[e : h[x_, OptionsPattern[{\"A\" -> 1, \"B\" -> 2}]]] := \
+           {OptionValue[h, \"A\"], OptionValue[h, \"B\"], OptionValue[\"B\"]}; \
+         {f[h[5, \"A\" -> 10]], f[h[5]]}"
+      )
+      .unwrap(),
+      "{{10, 2, OptionValue[B]}, {1, 2, OptionValue[B]}}"
+    );
+    // Alongside a top-level `OptionsPattern` of the defining head.
+    assert_eq!(
+      interpret(
+        "u[e : h[x_, o : OptionsPattern[{\"A\" -> 1}]], OptionsPattern[\"It\" -> All]] := \
+           {OptionValue[h, \"A\"], OptionValue[\"It\"]}; \
+         {u[h[1, \"A\" -> 3], \"It\" -> 2], u[h[1]]}"
+      )
+      .unwrap(),
+      "{{3, 2}, {1, All}}"
+    );
+  }
+}
+
 mod options_pattern_with_symbol_defaults {
   use super::*;
 
