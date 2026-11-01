@@ -241,10 +241,10 @@ pub fn dispatch_biosequence_string(
   let (seq_type, letters) = as_biosequence(args.first()?)?;
   // Circular sequences wrap around for matching and for positions; only
   // the wrap-independent StringLength is supported for them.
-  if seq_type.starts_with("Circular") {
+  if let Some(linear_type) = seq_type.strip_prefix("Circular") {
     if name == "StringLength"
       && args.len() == 1
-      && alphabet(&seq_type[8..]).is_some()
+      && alphabet(linear_type).is_some()
     {
       return Some(Ok(Expr::Integer(letters.chars().count() as i128)));
     }
