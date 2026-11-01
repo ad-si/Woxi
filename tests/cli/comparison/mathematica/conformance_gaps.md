@@ -7007,3 +7007,34 @@ wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "
 Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
+
+## Wavelets (parameter sweep, round 5)
+
+### `DiscreteWaveletPacketTransform` of odd-length data pads differently
+
+For an odd-length input the reference page shows the last coarse/detail pair
+built from the final sample and a zero, while Woxi's `"Periodic"` padding
+wraps around to the first sample:
+
+```sh
+wolframscript -code 'Normal[DiscreteWaveletPacketTransform[Range[5]]]'
+# {{0} -> {2.12132, 4.94975, 3.53553}, {1} -> {-0.707107, -0.707107, 3.53553},
+#  {0, 0} -> {5., 2.5}, {0, 1} -> {-2., 2.5}, {1, 0} -> {-1., 2.5}, {1, 1} -> {-1.2116883882008518`*^-16, 2.5}}
+woxi eval 'Normal[DiscreteWaveletPacketTransform[Range[5]]]'
+# (rounded) {{0} -> {2.12132, 4.94975, 4.24264}, {1} -> {-0.707107, -0.707107, 2.82843},
+#  {0, 0} -> {5., 4.5}, {0, 1} -> {-2., 1.5}, {1, 0} -> {-1., 1.5}, {1, 1} -> {0., 2.5}}
+```
+
+How Wolfram extends odd-length data for the other filter lengths is not
+recoverable from the page, so it is not implemented.
+
+### Unverified wavelet forms
+
+- The default `n` of `"SmoothGarrote"` (`x^(2n+1)/(x^(2n) + δ^(2n))`) is
+  not stated on the reference page; Woxi uses `n = 1`.
+- `"SURE"`/`"SUREShrink"` use the page's `surethreshold` formula on the finest
+  detail coefficients. `"SURELevel"`, `"SUREHybrid"`, `"GCV"`, `"GCVLevel"`
+  and `"FDR"` are not implemented (no reproducible values on the page).
+- `WaveletPhi`/`WaveletPsi` of `BattleLemarieWavelet[n, lim]` with a symbolic
+  argument stay unevaluated; Wolfram returns a `Piecewise` of an
+  `InterpolatingFunction`.
