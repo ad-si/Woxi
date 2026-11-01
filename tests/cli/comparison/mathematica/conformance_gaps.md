@@ -4490,6 +4490,16 @@ into script mode; Woxi prints the expression and renders `["Message"]` cleanly.
 **Deliberately not reproduced** — test a `Failure`'s keys, not its printed form.
 
 
+### Compiled code reports no `CompiledFunction::cfn`
+
+Woxi runs a `Compile`d body on machine numbers where it can and otherwise
+evaluates it symbolically, silently. Wolfram prints `CompiledFunction::cfn:
+Numerical error encountered at instruction …; proceeding with uncompiled
+evaluation` when machine arithmetic overflows (an escape-time fractal whose
+iterate grows without bound) and then continues uncompiled; Woxi keeps going
+in machine arithmetic, so the values agree but the message is missing. The
+instruction number has no counterpart in Woxi.
+
 ## Graphics and plotting
 
 ### `Attributes[GraphicsComplex]` (unverified)

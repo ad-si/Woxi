@@ -21,10 +21,10 @@ impl C {
   pub(crate) const fn new(re: f64, im: f64) -> Self {
     C { re, im }
   }
-  fn add(self, o: C) -> C {
+  pub(crate) fn add(self, o: C) -> C {
     C::new(self.re + o.re, self.im + o.im)
   }
-  fn mul(self, o: C) -> C {
+  pub(crate) fn mul(self, o: C) -> C {
     if self.im == 0.0 && o.im == 0.0 {
       return C::new(self.re * o.re, 0.0);
     }
@@ -33,10 +33,10 @@ impl C {
       self.re * o.im + self.im * o.re,
     )
   }
-  fn neg(self) -> C {
+  pub(crate) fn neg(self) -> C {
     C::new(-self.re, -self.im)
   }
-  fn div(self, o: C) -> C {
+  pub(crate) fn div(self, o: C) -> C {
     if o.im == 0.0 {
       return C::new(self.re / o.re, self.im / o.re);
     }
@@ -51,23 +51,23 @@ impl C {
       C::new((self.re * r + self.im) / d, (self.im * r - self.re) / d)
     }
   }
-  fn abs(self) -> f64 {
+  pub(crate) fn abs(self) -> f64 {
     self.re.hypot(self.im)
   }
-  fn arg(self) -> f64 {
+  pub(crate) fn arg(self) -> f64 {
     self.im.atan2(self.re)
   }
-  fn exp(self) -> C {
+  pub(crate) fn exp(self) -> C {
     let m = self.re.exp();
     if self.im == 0.0 {
       return C::new(m, 0.0);
     }
     C::new(m * self.im.cos(), m * self.im.sin())
   }
-  fn ln(self) -> C {
+  pub(crate) fn ln(self) -> C {
     C::new(self.abs().ln(), self.arg())
   }
-  fn sqrt(self) -> C {
+  pub(crate) fn sqrt(self) -> C {
     if self.im == 0.0 && self.re >= 0.0 {
       return C::new(self.re.sqrt(), 0.0);
     }
@@ -76,7 +76,7 @@ impl C {
     let im = ((m - self.re) / 2.0).sqrt();
     C::new(re, if self.im < 0.0 { -im } else { im })
   }
-  fn powi(self, n: i64) -> C {
+  pub(crate) fn powi(self, n: i64) -> C {
     let mut base = if n < 0 {
       C::new(1.0, 0.0).div(self)
     } else {
@@ -93,7 +93,7 @@ impl C {
     }
     acc
   }
-  fn pow(self, e: C) -> C {
+  pub(crate) fn pow(self, e: C) -> C {
     if e.im == 0.0 && e.re.fract() == 0.0 && e.re.abs() < 1e9 {
       return self.powi(e.re as i64);
     }
@@ -109,31 +109,31 @@ impl C {
     }
     e.mul(self.ln()).exp()
   }
-  fn sin(self) -> C {
+  pub(crate) fn sin(self) -> C {
     C::new(
       self.re.sin() * self.im.cosh(),
       self.re.cos() * self.im.sinh(),
     )
   }
-  fn cos(self) -> C {
+  pub(crate) fn cos(self) -> C {
     C::new(
       self.re.cos() * self.im.cosh(),
       -self.re.sin() * self.im.sinh(),
     )
   }
-  fn sinh(self) -> C {
+  pub(crate) fn sinh(self) -> C {
     C::new(
       self.re.sinh() * self.im.cos(),
       self.re.cosh() * self.im.sin(),
     )
   }
-  fn cosh(self) -> C {
+  pub(crate) fn cosh(self) -> C {
     C::new(
       self.re.cosh() * self.im.cos(),
       self.re.sinh() * self.im.sin(),
     )
   }
-  fn is_finite(self) -> bool {
+  pub(crate) fn is_finite(self) -> bool {
     self.re.is_finite() && self.im.is_finite()
   }
 }

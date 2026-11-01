@@ -1218,6 +1218,52 @@ mod compile {
   // Demonstrations Project escape-time fractal kernels do) computed the
   // wrong thing entirely: a matrix argument collapsed to a single scalar
   // result instead of a same-shaped matrix of per-element results.
+  // Compiled bodies run on machine numbers: loops, locals, part
+  // assignment, pure functions and complex arithmetic, with the results
+  // wolframscript gives.
+  #[test]
+  fn compiled_bodies_run_on_machine_numbers() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "collatz = Compile[{{c, _Complex}}, Module[{num = 1}, FixedPoint[(num++; \
+           0.25 (1 + 4 # - (1 + 2 #) Cos[Pi #])) &, c, 150, \
+           SameTest -> (Re[#]^2 + Im[#]^2 >= 10 Pi &)]; num]]; \
+         {collatz[0.3 + 0.2 I], collatz[-2. + I]}"
+      )
+      .unwrap(),
+      "{151, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "{Compile[{{n, _Integer}}, Module[{s = 0}, Do[s += i^2, {i, n}]; s]][10], \
+          Compile[{{v, _Real, 1}}, Module[{w = v}, w[[1]] = 7.; \
+            Table[w[[i]] i, {i, Length[w]}]]][{1., 2., 3.}], \
+          Compile[{{n, _Integer}}, Module[{a = 1, b = 1, t}, \
+            For[i = 1, i < n, i++, t = a + b; a = b; b = t]; a]][10], \
+          Compile[{x}, Which[x < 0, -x, x < 1, x^2, True, Sqrt[x]]] /@ {-2., 0.5, 4.}, \
+          Compile[{{n, _Integer}}, Mod[n, 7] + Quotient[n, 3]] /@ {-20, 20}, \
+          Compile[{x}, NestList[# + 1 &, x, 3]][1], \
+          Compile[{{c, _Complex}}, {1, c}][2.], Compile[{{c, _Complex}}, 1][2.]}"
+      )
+      .unwrap(),
+      "{385, {7., 4., 9.}, 55, {2., 0.25, 2.}, {-6, 12}, {1., 2., 3., 4.}, \
+       {1. + 0.*I, 2. + 0.*I}, 1}"
+    );
+    // A fractal grid of a quarter million iterations runs in well under a
+    // second of machine arithmetic.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Total[Flatten[Table[collatz[x + I*y], {y, -1.5, 1.5, 0.05}, \
+           {x, -4.7, 4.6, 0.05}]]]"
+      )
+      .unwrap(),
+      "208622"
+    );
+    assert!(start.elapsed().as_secs() < 30);
+  }
+
   #[test]
   fn compile_listable_runtime_attribute_threads_over_list_argument() {
     clear_state();

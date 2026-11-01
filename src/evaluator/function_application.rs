@@ -183,6 +183,60 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
 /// The declared array rank of a `Compile` argument spec: 0 for a scalar
 /// position (a bare name, or `{name}`/`{name, _Type}`), or the explicit
 /// rank in `{name, _Type, rank}`.
+/// Whether a `Compile` argument spec declares the type `ty`
+/// (`{c, _Complex}`).
+fn compile_spec_declares(spec: &Expr, ty: &str) -> bool {
+  match spec {
+    Expr::List(items) => match items.get(1) {
+      Some(Expr::Pattern { head, .. }) => head.as_deref() == Some(ty),
+      Some(Expr::FunctionCall { name, args }) if name == "Blank" => {
+        matches!(args.as_slice(), [Expr::Identifier(t)] if t == ty)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// The (name, type, rank) of each `Compile` argument for the machine
+/// evaluator: the declared type, or for an undeclared one the type
+/// `compile_arg_spec` infers.
+fn compile_vm_params(
+  specs: &[&Expr],
+  body: &Expr,
+) -> Option<Vec<(String, crate::functions::compile_vm::Ty, usize)>> {
+  use crate::functions::compile_vm::Ty;
+  specs
+    .iter()
+    .map(|spec| {
+      let (name, real) = compile_arg_spec(spec, body)?;
+      let declared = match spec {
+        Expr::List(items) => match items.get(1) {
+          Some(Expr::Pattern { head, .. }) => head.clone(),
+          Some(Expr::FunctionCall { name, args }) if name == "Blank" => {
+            match args.as_slice() {
+              [Expr::Identifier(t)] => Some(t.clone()),
+              _ => None,
+            }
+          }
+          _ => None,
+        },
+        _ => None,
+      };
+      let ty = match declared.as_deref() {
+        Some("Integer") => Ty::Integer,
+        Some("Complex") => Ty::Complex,
+        Some("Real") => Ty::Real,
+        Some("True" | "False") => Ty::Boolean,
+        Some(_) => return None,
+        None if real => Ty::Real,
+        None => Ty::Integer,
+      };
+      Some((name, ty, compile_spec_rank(spec)))
+    })
+    .collect()
+}
+
 fn compile_spec_rank(spec: &Expr) -> usize {
   match spec {
     Expr::List(items) if items.len() >= 3 => match &items[2] {
@@ -2832,6 +2886,28 @@ pub fn apply_curried_call(
           args: args.to_vec(),
         });
       }
+      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
+        matches!(compile_arg_spec(spec, body), Some((_, true)))
+      });
+      // Machine evaluation of the body first; the symbolic evaluation below
+      // covers everything it cannot do (as Wolfram evaluates uncompilable
+      // code outside the compiled function, its results typed real). In
+      // compiled code a `_Complex` argument does not make an integer result
+      // real: `Compile[{{c, _Complex}}, 1][2.]` is `1`.
+      if let Some(params) = compile_vm_params(&specs, body)
+        && let Some(result) =
+          crate::functions::compile_vm::run(&params, body, args)
+      {
+        let real_arg = specs.iter().any(|spec| {
+          matches!(compile_arg_spec(spec, body), Some((_, true)))
+            && !compile_spec_declares(spec, "Complex")
+        });
+        return Ok(if real_arg {
+          coerce_to_real(&result)
+        } else {
+          result
+        });
+      }
       let bound: Vec<(String, Expr)> = specs
         .iter()
         .zip(args.iter())
@@ -2856,9 +2932,6 @@ pub fn apply_curried_call(
       // back inexact: `Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]` is
       // `-4.`, not the exact bound. An all-integer signature keeps its exact
       // result.
-      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
-        matches!(compile_arg_spec(spec, body), Some((_, true)))
-      });
       Ok(if any_real {
         coerce_to_real(&result)
       } else {
