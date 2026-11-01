@@ -453,6 +453,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
   let mut background: Option<Expr> = None;
+  // `Prolog` / `Epilog`: graphics drawn under / over the graph, written in
+  // the caller's own coordinates (the ones `VertexCoordinates` uses).
+  let mut prolog: Option<Expr> = None;
+  let mut epilog: Option<Expr> = None;
 
   for opt in options {
     // A rule restored via `Uncompress` reconstructs as a plain
@@ -633,6 +637,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Background" => {
           background = Some(replacement.clone());
         }
+        "Prolog" => prolog = Some(replacement.clone()),
+        "Epilog" => epilog = Some(replacement.clone()),
+        // A single number `r` is the window `{{-r, r}, {-r, r}}`.
+        "PlotRange"
+          if let Some(r) =
+            crate::functions::graphics::expr_to_f64(replacement)
+            && r > 0.0 =>
+        {
+          explicit_range = Some(((-r, r), (-r, r)));
+        }
         "PlotRange" => {
           if let Expr::List(axes) = replacement
             && let [xs, ys] = &axes[..]
@@ -680,6 +694,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Factor that maps the caller's own coordinate units onto the internal
   // diameter-2 scale (1 when the layout is ours to choose).
   let mut coord_scale = 1.0_f64;
+  // Centre of the caller's coordinates, mapped to the origin.
+  let mut coord_centre = (0.0_f64, 0.0_f64);
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
       // Keep the caller's window: map it onto the same diameter-2 scale
@@ -687,6 +703,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let scale = 2.0 / (x1 - x0).max(y1 - y0);
       coord_scale = scale;
       let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+      coord_centre = (cx, cy);
       let pair =
         |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
       shown_range = Some(rule_expr(
@@ -704,8 +721,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
         .collect()
     } else {
-      let (pts, scale) = normalize_explicit_positions(pts);
+      let (pts, scale, centre) = normalize_explicit_positions(pts);
       coord_scale = scale;
+      coord_centre = centre;
       pts
     }
   } else {
@@ -721,7 +739,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None if linear && n > 1 => linear_layout(n),
       None if planar => planar_layout(n, &render_graph_pairs(&graph))
         .map(normalize_explicit_positions)
-        .map_or_else(|| compute_layout(&graph), |(pts, _)| pts),
+        .map_or_else(|| compute_layout(&graph), |(pts, _, _)| pts),
       None => compute_layout(&graph),
     }
   };
@@ -1361,6 +1379,36 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     primitives.push(call("Text", vec![styled, point]));
   }
 
+  // Prolog / Epilog are given in the caller's coordinates; bring them onto
+  // the internal scale the graph itself is drawn in.
+  let to_internal = |layer: Expr| -> Expr {
+    if coord_scale == 1.0 && coord_centre == (0.0, 0.0) {
+      return layer;
+    }
+    let row =
+      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+    call(
+      "GeometricTransformation",
+      vec![
+        layer,
+        Expr::List(
+          vec![
+            Expr::List(
+              vec![row(coord_scale, 0.0), row(0.0, coord_scale)].into(),
+            ),
+            row(-coord_centre.0 * coord_scale, -coord_centre.1 * coord_scale),
+          ]
+          .into(),
+        ),
+      ],
+    )
+  };
+  if let Some(p) = prolog {
+    primitives.insert(0, to_internal(p));
+  }
+  if let Some(e) = epilog {
+    primitives.push(to_internal(e));
+  }
   let content = Expr::List(primitives.into());
   // A graph is drawn at Wolfram's 360-point default unless the caller
   // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
@@ -1831,7 +1879,7 @@ fn linear_layout(n: usize) -> Vec<(f64, f64)> {
 /// give a sensibly-proportioned picture.
 fn normalize_explicit_positions(
   pts: Vec<(f64, f64)>,
-) -> (Vec<(f64, f64)>, f64) {
+) -> (Vec<(f64, f64)>, f64, (f64, f64)) {
   let (mut x_min, mut x_max, mut y_min, mut y_max) = (
     f64::INFINITY,
     f64::NEG_INFINITY,
@@ -1846,7 +1894,7 @@ fn normalize_explicit_positions(
   }
   let extent = (x_max - x_min).max(y_max - y_min);
   if !extent.is_finite() || extent <= 0.0 {
-    return (pts, 1.0);
+    return (pts, 1.0, (0.0, 0.0));
   }
   let scale = 2.0 / extent;
   let cx = f64::midpoint(x_min, x_max);
@@ -1855,7 +1903,7 @@ fn normalize_explicit_positions(
     .into_iter()
     .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
     .collect();
-  (scaled, scale)
+  (scaled, scale, (cx, cy))
 }
 
 /// Convert the setbacks of `Arrow[path, setback]` primitives from the
