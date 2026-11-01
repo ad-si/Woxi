@@ -24062,6 +24062,23 @@ mod ndsolve_stiff_system {
       "True"
     );
   }
+
+  // A stiff differential equation coupled to an algebraic unknown that has
+  // no closed form (solved by Newton iteration at every evaluation) is
+  // handed to the stiff method too, instead of stalling for good.
+  #[test]
+  fn stiff_dae_with_implicit_algebraic_unknown() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -100000 (x[t] - y[t]), \
+         y[t] + Sin[y[t]] + y[t]^3 == 2 + Cos[x[t]], x[0] == 1}, \
+         {x, y}, {t, 0, 50}]; \
+         {s[[1, 1, 2]][\"Domain\"], Abs[(x[50] - y[50]) /. First[s]] < 10^-3}"
+      )
+      .unwrap(),
+      "{{{0., 50.}}, True}"
+    );
+  }
 }
 
 mod differentiate_wrt_derivative {

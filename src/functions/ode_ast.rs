@@ -7687,11 +7687,6 @@ fn integrate_leg(
         && time_events.is_empty()
         && state_events.events.is_empty()
         && !dde_active()
-        && !funcs.iter().any(|f| f.order == 0)
-        // A right-hand side that solves a system at every evaluation makes
-        // an adaptive leg crawling towards a singular point prohibitively
-        // slow; such a leg stops where RK4 did.
-        && !residuals.iter().any(NumFn::is_costly)
       {
         let rhs = |xv: f64, s: &[f64]| {
           Ok(system_derivative(
