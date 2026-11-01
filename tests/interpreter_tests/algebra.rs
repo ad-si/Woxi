@@ -24514,4 +24514,26 @@ mod solve_substitution_of_symbols {
       "820"
     );
   }
+
+  #[test]
+  fn nsolve_finds_root_of_residual_flat_away_from_its_root() {
+    // Newton stalls on a CDF that is ~0 or ~1 almost everywhere; a scan for
+    // sign changes finds the root.
+    assert_eq!(
+      interpret(
+        "x /. First[NSolve[GammaRegularized[100., 400.*x] == 0.025, x]] \
+         // Round[#, 0.0001] &"
+      )
+      .unwrap(),
+      "0.3013"
+    );
+    assert_eq!(
+      interpret(
+        "l /. First[NSolve[1 - CDF[ErlangDistribution[100, l], 400.] \
+         == 0.975, l]] // Round[#, 0.0001] &"
+      )
+      .unwrap(),
+      "0.2034"
+    );
+  }
 }
