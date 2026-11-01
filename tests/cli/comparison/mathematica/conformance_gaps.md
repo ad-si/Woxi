@@ -3304,7 +3304,7 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 `MatrixPower[{{0, a}, {b, 0}}, n]` stays unevaluated. The reference page
 gives the eigen-decomposition form
 
-```
+```text
 {{(1/2) (-Sqrt[a] Sqrt[b])^n + (1/2) (Sqrt[a] Sqrt[b])^n, …}, …}
 ```
 
@@ -4599,20 +4599,11 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
 
-### A stored value is re-evaluated on every read, repeating its messages
+### An unevaluated result passed on is evaluated again, repeating its messages
 
-Woxi evaluates an `OwnValue` again each time the symbol is read, so a value
-that stays unevaluated with a message prints the message again on every use.
-WL marks the stored expression as already evaluated and prints it once:
-
-```sh
-wolframscript -code 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
-# LinearSolve::herm once
-woxi eval 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
-# LinearSolve::herm twice
-```
-
-The same missing mark shows when an unevaluated result is passed on: the
+A value stored with `=` counts as evaluated until something changes (like
+WL's evaluation timestamps), so reading it does not repeat its messages. An
+unevaluated result passed on as an argument still is evaluated again: the
 pure function in `Prepend[f[DeleteCases[l, #]], #] &@ l[[Quotient[n, 6] + 1]]`
 gets `l[[1 + Quotient[n, 6]]]` as `#` and evaluates it again, so the first
 `Part::pkspec1` prints twice. It also costs time: a recursion that nests an

@@ -122,16 +122,30 @@ mod evaluation_reuse {
       );
     }
 
+    // A stored value counts as evaluated, messages and all: reading it
+    // again does not repeat them, as in wolframscript (a call that stayed
+    // unevaluated used to print its message on every read).
     #[test]
-    fn a_read_that_issues_a_message_issues_it_every_time() {
+    fn a_stored_value_does_not_repeat_its_messages() {
       clear_state();
       assert_eq!(
         interpret(
-          "r = Quiet[Table[{1, 2}[[5]], {20}]]; Quiet[r]; Check[r, \"msg\"]"
+          "r = Quiet[Table[{1, 2}[[5]], {20}]]; Quiet[r]; \
+           Check[Length[r], \"msg\"]"
         )
         .unwrap(),
-        "msg"
+        "20"
       );
+      assert_eq!(
+        interpret("s = Quiet[Nearest[{}, {1, 2}]]; Check[s, \"msg\"]").unwrap(),
+        "Nearest[{}, {1, 2}]"
+      );
+    }
+
+    #[test]
+    fn a_stored_unevaluated_call_sees_a_later_definition() {
+      clear_state();
+      assert_eq!(interpret("s = g[2]; g[x_] := x^2; s").unwrap(), "4");
     }
   }
 

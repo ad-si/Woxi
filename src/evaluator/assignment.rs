@@ -3634,11 +3634,25 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // Shared first, so the stored value and the one returned are a
       // single copy of a large array instead of two.
       crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
+      // The value is stored as already evaluated, as Wolfram's evaluation
+      // timestamps have it: reading the symbol again before anything
+      // changes must not evaluate it (and repeat the messages of a call that
+      // stayed unevaluated) again.
+      if let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
+        &mut rhs_value
+      {
+        items.share();
+      }
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::ExprVal(stored))
       });
+      if let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
+        &rhs_value
+      {
+        items.mark_evaluated(crate::epoch::current_epoch());
+      }
     } else {
       // A symbol keeps its context: `cache = wcache` inside a package has to
       // store `Pkg\`Private\`wcache`, not the `wcache` it prints as, or
