@@ -399,7 +399,7 @@ pub fn dispatch_string_functions(
     "StringRotateRight" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::string_rotate_right_ast(args));
     }
-    "AlphabeticSort" if args.len() == 1 => {
+    "AlphabeticSort" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::string_ast::alphabetic_sort_ast(args));
     }
     "StringPartition" if args.len() == 2 || args.len() == 3 => {
@@ -417,7 +417,7 @@ pub fn dispatch_string_functions(
     "LetterCounts" if args.len() == 1 => {
       return Some(crate::functions::string_ast::letter_counts_ast(args));
     }
-    "LetterCounts" if args.len() == 2 => {
+    "LetterCounts" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::string_ast::letter_counts_ngram_ast(args));
     }
     "TextSentences" if !args.is_empty() && args.len() <= 2 => {

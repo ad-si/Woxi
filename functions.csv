@@ -2594,7 +2594,7 @@ ExpandNumerator,"Expands the numerator of a rational expression",✅,pure,1.0,26
 ExpressionGraph,"Create a graph from the tree structure of an expression",✅,pure,12.1,2605
 ImageDifference,"Absolute difference of two images of the same size sample by sample",✅,pure,8.0,2605
 InverseGammaDistribution,"represents an inverse gamma distribution",✅,Computation,7.0,2605
-LetterCounts,"Counts letter occurrences in a string (or each string of a list); two-arg form counts letter n-grams (non-letters break the window)",✅,pure,10.1,2605
+LetterCounts,"Counts letter occurrences in a string (or each string of a list); two-arg form counts letter n-grams (non-letters break the window); a third argument lists extra characters to count as letters",✅,pure,10.1,2605
 NArgMin,"Numerically finds the argument that minimizes an expression optionally subject to constraints given as {f cons} with a single variable or a variable list",✅,None,7.0,2605
 VertexOutComponent,"Vertices reachable from a vertex",✅,1,8.0,2605
 ViewProjection,"",🚫,,11.2,2605
@@ -2810,7 +2810,7 @@ Image3DSlices,"The 2D slices of a volume along the depth axis (all; one; or a li
 ImageDistance,"",🚫,,9.0,2821
 Modal,"",🚫,,6.0,2821
 StackedListPlot,"Plots datasets with their values stacked cumulatively",✅,pure,11.2,2821
-AlphabeticSort,"Sorts strings in case-insensitive alphabetical order",✅,pure,10.3,2828
+AlphabeticSort,"Sorts strings alphabetically (lower case first), optionally for a language such as Swedish or Spanish",✅,pure,10.3,2828
 AlternatingGroup,"Symbolic alternating group A_n of degree n; stays unevaluated and is consumed by GroupOrder/GroupGenerators/GroupElements",✅,unevaluated,8.0,2828
 BoundedRegionQ,"",🚫,,10.0,2828
 CloudObjects,"",🚫,,10.0,2828
