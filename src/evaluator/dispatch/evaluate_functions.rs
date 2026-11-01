@@ -1440,6 +1440,24 @@ fn evaluate_function_call_ast_inner(
     "ExactRandomGraph" if combinatorica_active() => {
       "Combinatorica`ExactRandomGraph"
     }
+    // Combinatorica's graph constructors shadow the built-in ones of the
+    // same name once the package is loaded. (Its `RandomTree` does not: in
+    // Wolfram Language 14 the System symbol wins and the package's is never
+    // defined.)
+    "CompleteGraph" | "GridGraph" | "InduceSubgraph" | "ListGraphs"
+    | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
+      if combinatorica_active() =>
+    {
+      match name {
+        "CompleteGraph" => "Combinatorica`CompleteGraph",
+        "GridGraph" => "Combinatorica`GridGraph",
+        "InduceSubgraph" => "Combinatorica`InduceSubgraph",
+        "ListGraphs" => "Combinatorica`ListGraphs",
+        "CodeToLabeledTree" => "Combinatorica`CodeToLabeledTree",
+        "RadialEmbedding" => "Combinatorica`RadialEmbedding",
+        _ => "Combinatorica`ConnectedQ",
+      }
+    }
     "KSubsets" if combinatorica_active() => "Combinatorica`KSubsets",
     "KSetPartitions" if combinatorica_active() => {
       "Combinatorica`KSetPartitions"
@@ -1467,6 +1485,7 @@ fn evaluate_function_call_ast_inner(
     | "SetGraphOptions"
     | "DeleteEdges"
     | "AllPairsShortestPath"
+    | "Vertices"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -14889,6 +14908,7 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
     "DeleteEdges" => "Combinatorica`DeleteEdges",
     "AllPairsShortestPath" => "Combinatorica`AllPairsShortestPath",
+    "Vertices" => "Combinatorica`Vertices",
     _ => "Combinatorica`ShortestPath",
   }
 }

@@ -25397,6 +25397,72 @@ mod combinatorica_random_graph {
   }
 
   #[test]
+  fn combinatorica_graph_constructors() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = GridGraph[2, 3]; \
+         {InputForm[g], InputForm[InduceSubgraph[g, {5, 1, 2}]], \
+          InputForm[GridGraph[3, 1]], InputForm[CompleteGraph[3]], \
+          InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
+      )
+      .unwrap(),
+      "{InputForm[Graph[{{{1, 2}}, {{3, 4}}, {{5, 6}}, {{1, 3}}, {{2, 4}}, {{3, 5}}, {{4, 6}}}, \
+       {{{1., 1.}}, {{2., 1.}}, {{1., 2.}}, {{2., 2.}}, {{1., 3.}}, {{2., 3.}}}]], \
+       InputForm[Graph[{{{1, 2}}}, {{{1., 1.}}, {{2., 1.}}, {{1., 3.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{2, 3}}}, {{{1., 0.}}, {{2., 0.}}, {{3., 0.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{-0.49999999999999983, \
+       0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, {{1., 0}}}]], \
+       InputForm[{Graph[{}, {}], Graph[{}, {{{0, 0}}}]}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {ConnectedQ[GridGraph[2, 3]], ConnectedQ[InduceSubgraph[GridGraph[2, 3], {1, 6}]], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {3, 2}}]], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {3, 2}}], Strong], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {2, 1}}], Strong]}"
+      )
+      .unwrap(),
+      "{True, False, True, False, True}"
+    );
+  }
+
+  // One graph per isomorphism class, in Combinatorica's order: its first
+  // edge bit vector, then the least remaining one.
+  #[test]
+  fn combinatorica_list_graphs() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {Edges /@ ListGraphs[4, 2], Length /@ Table[ListGraphs[5, i], {i, 0, 10}], \
+          Edges /@ ListGraphs[4, 3], Length[ListGraphs[4]]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, {1, 3}}, {{1, 4}, {2, 3}}}, {1, 1, 2, 4, 6, 6, 6, 4, 2, 1, 1}, \
+       {{{1, 2}, {1, 3}, {1, 4}}, {{2, 3}, {2, 4}, {3, 4}}, {{1, 4}, {2, 3}, {3, 4}}}, 11}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_labeled_tree_and_radial_embedding() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; t = CodeToLabeledTree[{3, 3, 1}]; \
+         {Edges[t], InputForm[Vertices[RadialEmbedding[t, 1]]], \
+          InputForm[Vertices[RadialEmbedding[CodeToLabeledTree[{2, 2, 2, 5, 5}], 2]]]}"
+      )
+      .unwrap(),
+      "{{{2, 3}, {3, 4}, {1, 3}, {1, 5}}, InputForm[{{0, 0}, {0.7071067811865475, \
+       1.7071067811865475}, {0., 1.}, {-0.7071067811865475, 1.7071067811865475}, \
+       {0., -1.}}], InputForm[{{0.7071067811865475, 0.7071067811865475}, {0, 0}, \
+       {-0.7071067811865475, 0.7071067811865475}, {-0.7071067811865475, \
+       -0.7071067811865475}, {0.7071067811865475, -0.7071067811865475}, \
+       {1.0897902135516373, -1.6309863136978342}, {1.6309863136978342, \
+       -1.0897902135516373}}]}"
+    );
+  }
+
+  #[test]
   fn exact_random_graph_has_exactly_e_distinct_edges() {
     assert_eq!(
       interpret(

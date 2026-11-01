@@ -10123,10 +10123,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // summary `Graph[<n>, <m>]` (vertex count, edge count). A
       // Combinatorica graph (shown as `Graph` with its package on the
       // context path) lists its edges as `{{u, v}}` lists and prints in full.
+      // (An empty `Graph[{}, {}]` while the package is loaded is
+      // Combinatorica's empty graph.)
       if name == "Graph"
         && args.len() >= 2
         && let (Expr::List(verts), Expr::List(edges)) = (&args[0], &args[1])
         && !edges.iter().any(|e| matches!(e, Expr::List(_)))
+        && !(verts.is_empty()
+          && edges.is_empty()
+          && crate::context_path_contains("Combinatorica`"))
       {
         return format!("Graph[<{}>, <{}>]", verts.len(), edges.len());
       }

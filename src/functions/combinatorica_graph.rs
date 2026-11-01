@@ -639,6 +639,439 @@ fn exact_random_graph(args: &[Expr]) -> Option<Expr> {
 
 /// Dispatches the `Combinatorica\`` graph functions. `None` leaves the call
 /// unevaluated (wrong argument shapes, or not a Combinatorica graph).
+fn edge_list(edges: &[(i128, i128)]) -> Expr {
+  Expr::List(
+    edges
+      .iter()
+      .map(|&(a, b)| {
+        Expr::List(
+          vec![Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())]
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// `CompleteGraph[n]`: every pair `{i, j}`, `i < j`, in row order, on the
+/// circular embedding (one vertex sits at the origin, none is empty).
+fn complete_graph(args: &[Expr]) -> Option<Expr> {
+  let [Expr::Integer(n)] = args else {
+    return None;
+  };
+  match *n {
+    0 => Some(crate::helpers::call(
+      GRAPH,
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    )),
+    1 => Some(crate::helpers::call(
+      GRAPH,
+      vec![
+        Expr::List(vec![].into()),
+        Expr::List(
+          vec![Expr::List(
+            vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())]
+              .into(),
+          )]
+          .into(),
+        ),
+      ],
+    )),
+    n if (2..=2000).contains(&n) => {
+      let edges = (1..n)
+        .flat_map(|i| (i + 1..=n).map(move |j| (i, j)))
+        .collect();
+      Some(circular_graph(n, edges, false))
+    }
+    _ => None,
+  }
+}
+
+/// `GridGraph[n, m]`: the product of paths on n and m vertices — vertex
+/// `(j - 1) n + i` at `{i, j}`, the edges of each row first, then those
+/// joining consecutive rows (Combinatorica's `GraphProduct`).
+fn grid_graph(args: &[Expr]) -> Option<Expr> {
+  let [Expr::Integer(n), Expr::Integer(m)] = args else {
+    return None;
+  };
+  let (n, m) = (*n, *m);
+  if n < 1 || m < 1 || n * m > 1_000_000 {
+    return None;
+  }
+  let mut edges = Vec::new();
+  for j in 0..m {
+    for i in 1..n {
+      edges.push((j * n + i, j * n + i + 1));
+    }
+  }
+  for j in 1..m {
+    for k in 1..=n {
+      edges.push((n * (j - 1) + k, n * j + k));
+    }
+  }
+  // A one-vertex path sits at the origin, so a single row stays at y = 0.
+  let mut points = Vec::new();
+  for j in 1..=m {
+    for i in 1..=n {
+      let y = if m == 1 { 0.0 } else { j as f64 };
+      points.push((i as f64, y));
+    }
+  }
+  let mut vs = Vec::new();
+  for &(x, y) in &points {
+    vs.push(Expr::List(
+      vec![Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())].into(),
+    ));
+  }
+  Some(crate::helpers::call(
+    GRAPH,
+    vec![edge_list(&edges), Expr::List(vs.into())],
+  ))
+}
+
+/// `InduceSubgraph[g, s]`: the subgraph on the vertices `s` (taken in
+/// increasing order and renumbered), with the edges joining two of them and
+/// those vertices' coordinates and options.
+fn induce_subgraph(args: &[Expr]) -> Option<Expr> {
+  let [graph, Expr::List(s)] = args else {
+    return None;
+  };
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  if name != GRAPH || gargs.len() < 2 {
+    return None;
+  }
+  let g = CGraph::parse(graph)?;
+  let mut keep: Vec<usize> =
+    s.iter().map(|e| vertex_arg(&g, e)).collect::<Option<_>>()?;
+  keep.sort_unstable();
+  keep.dedup();
+  if keep.is_empty() {
+    return Some(crate::helpers::call(
+      GRAPH,
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    ));
+  }
+  let mut new_index = vec![0usize; g.n];
+  for (i, &v) in keep.iter().enumerate() {
+    new_index[v] = i + 1;
+  }
+  let (Expr::List(edges), Expr::List(vertices)) = (&gargs[0], &gargs[1]) else {
+    return None;
+  };
+  let mut new_edges = Vec::new();
+  for (raw, &(u, v)) in edges.iter().zip(g.edges.iter()) {
+    if new_index[u] == 0 || new_index[v] == 0 {
+      continue;
+    }
+    let (mut a, mut b) = (new_index[u] as i128, new_index[v] as i128);
+    if !g.directed && a > b {
+      std::mem::swap(&mut a, &mut b);
+    }
+    let Expr::List(parts) = raw else { return None };
+    let mut e =
+      vec![Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())];
+    e.extend(parts[1..].iter().cloned());
+    new_edges.push(Expr::List(e.into()));
+  }
+  let new_vertices: Vec<Expr> =
+    keep.iter().map(|&v| vertices[v].clone()).collect();
+  let mut parts = vec![
+    Expr::List(new_edges.into()),
+    Expr::List(new_vertices.into()),
+  ];
+  parts.extend(gargs[2..].iter().cloned());
+  Some(crate::helpers::call(GRAPH, parts))
+}
+
+/// `ListGraphs[n, m]`: one graph per isomorphism class of graphs with n
+/// vertices and m edges, on the circular embedding — the orbit
+/// representatives (Combinatorica's: the first bit vector, then the least
+/// remaining one in canonical order) of the edge bit vectors under the
+/// symmetric group acting on vertex pairs.
+fn list_graphs(args: &[Expr]) -> Option<Expr> {
+  let (n, edge_counts): (usize, Vec<usize>) = match args {
+    [Expr::Integer(n), Expr::Integer(m)] if *n >= 1 && *n <= 6 && *m >= 0 => {
+      (*n as usize, vec![*m as usize])
+    }
+    [Expr::Integer(n)] if *n >= 1 && *n <= 6 => {
+      let n = *n as usize;
+      (n, (0..=n * (n - 1) / 2).collect())
+    }
+    _ => return None,
+  };
+  let pairs: Vec<(usize, usize)> = (0..n)
+    .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
+    .collect();
+  let np = pairs.len();
+  // Every vertex permutation as a permutation of the pairs.
+  let mut perms = vec![(0..n).collect::<Vec<usize>>()];
+  {
+    // Lexicographic order, as `Permutations[n]` lists them.
+    let mut p: Vec<usize> = (0..n).collect();
+    loop {
+      let Some(i) = (0..n.saturating_sub(1)).rev().find(|&i| p[i] < p[i + 1])
+      else {
+        break;
+      };
+      let j = (i + 1..n).rev().find(|&j| p[j] > p[i]).unwrap();
+      p.swap(i, j);
+      p[i + 1..].reverse();
+      perms.push(p.clone());
+    }
+  }
+  let pair_index = |a: usize, b: usize| {
+    let (a, b) = (a.min(b), a.max(b));
+    pairs.iter().position(|&q| q == (a, b)).unwrap()
+  };
+  let induced: Vec<Vec<usize>> = perms
+    .iter()
+    .map(|p| pairs.iter().map(|&(a, b)| pair_index(p[a], p[b])).collect())
+    .collect();
+  let mut graphs = Vec::new();
+  for m in edge_counts {
+    if m > np {
+      continue;
+    }
+    // `Permutations` of m ones then zeros: the distinct arrangements in
+    // decreasing lexicographic order.
+    let mut vectors: Vec<Vec<u8>> = Vec::new();
+    let mut v: Vec<u8> = (0..np).map(|i| u8::from(i < m)).collect();
+    loop {
+      vectors.push(v.clone());
+      // Previous permutation in lexicographic order.
+      let Some(i) = (0..np.saturating_sub(1)).rev().find(|&i| v[i] > v[i + 1])
+      else {
+        break;
+      };
+      let j = (i + 1..np).rev().find(|&j| v[j] < v[i]).unwrap();
+      v.swap(i, j);
+      v[i + 1..].reverse();
+    }
+    let mut remaining: std::collections::BTreeSet<Vec<u8>> =
+      std::collections::BTreeSet::new();
+    let mut reps = Vec::new();
+    let mut first = Some(vectors[0].clone());
+    remaining.extend(vectors);
+    loop {
+      let rep = match first.take() {
+        Some(r) => r,
+        None => match remaining.iter().next() {
+          Some(r) => r.clone(),
+          None => break,
+        },
+      };
+      for q in &induced {
+        let image: Vec<u8> = q.iter().map(|&k| rep[k]).collect();
+        remaining.remove(&image);
+      }
+      remaining.remove(&rep);
+      reps.push(rep);
+    }
+    for rep in reps {
+      let edges: Vec<(i128, i128)> = rep
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| **b == 1)
+        .map(|(k, _)| (pairs[k].0 as i128 + 1, pairs[k].1 as i128 + 1))
+        .collect();
+      graphs.push(circular_graph(n as i128, edges, false));
+    }
+  }
+  Some(Expr::List(graphs.into()))
+}
+
+/// The point at angle `num/den * Pi` on the unit circle, as
+/// `N[{Cos[θ], Sin[θ]}]` of the exact angle gives it.
+fn unit_point(num: i128, den: i128) -> (f64, f64) {
+  let theta = crate::helpers::times(vec![
+    crate::helpers::call(
+      "Rational",
+      vec![Expr::Integer(num), Expr::Integer(den)],
+    ),
+    Expr::Constant("Pi".to_string()),
+  ]);
+  let pair = crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1(
+    "N",
+    Expr::List(
+      vec![
+        crate::helpers::call1("Cos", theta.clone()),
+        crate::helpers::call1("Sin", theta),
+      ]
+      .into(),
+    ),
+  ));
+  if let Ok(Expr::List(xy)) = &pair
+    && let [x, y] = xy.as_slice()
+    && let (Some(x), Some(y)) = (
+      crate::functions::math_ast::try_eval_to_f64(x),
+      crate::functions::math_ast::try_eval_to_f64(y),
+    )
+  {
+    return (x, y);
+  }
+  let t = std::f64::consts::PI * num as f64 / den as f64;
+  (t.cos(), t.sin())
+}
+
+fn gcd(a: i128, b: i128) -> i128 {
+  if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// `RadialEmbedding[g, v]` of a graph's adjacency: the vertices placed
+/// breadth first around `v` at the origin, each vertex's angular sector
+/// split evenly among its unplaced neighbours, a child one unit out at the
+/// middle of its share.
+fn radial_points(g: &CGraph, center: usize) -> Vec<(f64, f64)> {
+  let adj = g.adjacency();
+  // Sector bounds as rational multiples of Pi: (num, den).
+  let mut ang: Vec<((i128, i128), (i128, i128))> = vec![((0, 1), (2, 1)); g.n];
+  let mut pos = vec![(0.0, 0.0); g.n];
+  let mut placed = vec![false; g.n];
+  placed[center] = true;
+  let mut queue = std::collections::VecDeque::from([center]);
+  let add = |(a, b): (i128, i128), (c, d): (i128, i128)| {
+    let (num, den) = (a * d + c * b, b * d);
+    let g = gcd(num.abs(), den).max(1);
+    (num / g, den / g)
+  };
+  let scale = |(a, b): (i128, i128), k: i128, l: i128| {
+    let (num, den) = (a * k, b * l);
+    let g = gcd(num.abs(), den).max(1);
+    (num / g, den / g)
+  };
+  while let Some(c) = queue.pop_front() {
+    let new: Vec<usize> =
+      adj[c].iter().copied().filter(|&w| !placed[w]).collect();
+    let k = new.len() as i128;
+    if k == 0 {
+      continue;
+    }
+    let (lo, hi) = ang[c];
+    let width = add(hi, scale(lo, -1, 1));
+    for (i, &w) in new.iter().enumerate() {
+      let a = add(lo, scale(width, i as i128, k));
+      let b = add(lo, scale(width, i as i128 + 1, k));
+      ang[w] = (a, b);
+      let mid = scale(add(a, b), 1, 2);
+      let (x, y) = unit_point(mid.0, mid.1);
+      pos[w] = (pos[c].0 + x, pos[c].1 + y);
+      placed[w] = true;
+    }
+    queue.extend(new);
+  }
+  pos
+}
+
+/// `CodeToLabeledTree[code]`: the labeled tree with that Prüfer code, as
+/// `FromUnorderedPairs` builds it.
+fn code_to_labeled_tree_edges(code: &[i128]) -> Option<Vec<(i128, i128)>> {
+  let n = code.len() as i128 + 2;
+  if code.iter().any(|&c| c < 1 || c > n) {
+    return None;
+  }
+  let mut m: Vec<i128> = (1..=n).collect();
+  let mut edges = Vec::new();
+  for i in 0..code.len() {
+    let rest = &code[i..];
+    let x = *m.iter().find(|v| !rest.contains(v))?;
+    m.retain(|&v| v != x);
+    edges.push((x.min(code[i]), x.max(code[i])));
+  }
+  edges.push((m[0].min(m[1]), m[0].max(m[1])));
+  Some(edges)
+}
+
+fn code_to_labeled_tree(args: &[Expr]) -> Option<Expr> {
+  let [Expr::List(code)] = args else {
+    return None;
+  };
+  let code: Vec<i128> = code
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(i) => Some(*i),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let edges = code_to_labeled_tree_edges(&code)?;
+  Some(circular_graph(code.len() as i128 + 2, edges, false))
+}
+
+fn radial_embedding(args: &[Expr]) -> Option<Expr> {
+  let (graph, center) = match args {
+    [g] => (g, 0),
+    [g, Expr::Integer(v)] => (g, (*v - 1).max(0) as usize),
+    _ => return None,
+  };
+  let g = CGraph::parse(graph)?;
+  if center >= g.n.max(1) {
+    return None;
+  }
+  let Expr::FunctionCall { args: gargs, .. } = graph else {
+    return None;
+  };
+  let mut parts = gargs.to_vec();
+  parts[1] = radial_vertices(&radial_points(&g, center), center);
+  Some(crate::helpers::call(GRAPH, parts))
+}
+
+/// Radial coordinates keep the centre's exact `{0, 0}`; every other vertex
+/// is a machine pair.
+fn radial_vertices(points: &[(f64, f64)], center: usize) -> Expr {
+  Expr::List(
+    points
+      .iter()
+      .enumerate()
+      .map(|(i, &(x, y))| {
+        let p = if i == center {
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+        } else {
+          Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+        };
+        Expr::List(vec![p].into())
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )
+}
+
+/// `ConnectedQ[g]` (weakly, for a directed graph) and
+/// `ConnectedQ[g, Strong]`.
+fn connected_q(g: &CGraph, strong: bool) -> bool {
+  if g.n == 0 {
+    return true;
+  }
+  let reach = |adj: &Vec<Vec<usize>>| {
+    let mut seen = vec![false; g.n];
+    let mut stack = vec![0];
+    seen[0] = true;
+    while let Some(v) = stack.pop() {
+      for &w in &adj[v] {
+        if !seen[w] {
+          seen[w] = true;
+          stack.push(w);
+        }
+      }
+    }
+    seen.iter().all(|&s| s)
+  };
+  let mut out = vec![Vec::new(); g.n];
+  let mut inn = vec![Vec::new(); g.n];
+  for &(u, v) in &g.edges {
+    out[u].push(v);
+    inn[v].push(u);
+  }
+  if !g.directed || !strong {
+    let both: Vec<Vec<usize>> = (0..g.n)
+      .map(|v| out[v].iter().chain(inn[v].iter()).copied().collect())
+      .collect();
+    return reach(&both);
+  }
+  reach(&out) && reach(&inn)
+}
+
 pub fn combinatorica_graph_ast(
   name: &str,
   args: &[Expr],
@@ -668,6 +1101,25 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   if name == "Combinatorica`DeleteEdges" {
     return delete_edges(args);
   }
+  if name == "Combinatorica`CompleteGraph" {
+    return complete_graph(args);
+  }
+  if name == "Combinatorica`GridGraph" {
+    return grid_graph(args);
+  }
+  if name == "Combinatorica`InduceSubgraph" {
+    return induce_subgraph(args);
+  }
+  if name == "Combinatorica`ListGraphs" {
+    return list_graphs(args);
+  }
+  if name == "Combinatorica`CodeToLabeledTree" {
+    return code_to_labeled_tree(args);
+  }
+  if name == "Combinatorica`RadialEmbedding" {
+    return radial_embedding(args);
+  }
+
   if name == "Combinatorica`ShowGraph" {
     return show_graph(args, false);
   }
@@ -695,6 +1147,52 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
           .collect::<Vec<_>>()
           .into(),
       ))
+    }
+    ("Combinatorica`ConnectedQ", 1) => Some(Expr::Identifier(
+      if connected_q(&g, false) {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
+    )),
+    ("Combinatorica`ConnectedQ", 2) => {
+      let strong = match &args[1] {
+        Expr::Identifier(k) if k.ends_with("Strong") => true,
+        Expr::Identifier(k) if k.ends_with("Weak") => false,
+        _ => return None,
+      };
+      Some(Expr::Identifier(
+        if connected_q(&g, strong) {
+          "True"
+        } else {
+          "False"
+        }
+        .to_string(),
+      ))
+    }
+    // The vertex coordinates; with `All`, each vertex with its options.
+    ("Combinatorica`Vertices", 1 | 2) => {
+      let Expr::FunctionCall { args: gargs, .. } = &args[0] else {
+        return None;
+      };
+      let Expr::List(vertices) = &gargs[1] else {
+        return None;
+      };
+      match args.get(1) {
+        Some(Expr::Identifier(a)) if a == "All" => Some(gargs[1].clone()),
+        Some(_) => None,
+        None => Some(Expr::List(
+          vertices
+            .iter()
+            .map(|v| match v {
+              Expr::List(parts) if !parts.is_empty() => Some(parts[0].clone()),
+              _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into(),
+        )),
+      }
     }
     ("Combinatorica`V", 1) => Some(Expr::Integer(g.n as i128)),
     ("Combinatorica`M", 1) => Some(Expr::Integer(g.edges.len() as i128)),
