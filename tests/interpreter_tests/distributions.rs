@@ -5976,6 +5976,24 @@ mod binomial_distribution_pdf {
   use super::*;
 
   #[test]
+  fn binomial_pdf_with_all_mass_on_one_point() {
+    // p = 0 or 1: 0^0 is 1, so the mass point has probability 1; a k
+    // outside the support has none, without dividing by zero.
+    let r = interpret_with_stdout(
+      "{PDF[BinomialDistribution[12, 0], 0], PDF[BinomialDistribution[12, 0.], 0], \
+        PDF[BinomialDistribution[12, 1], 12], PDF[BinomialDistribution[12, 0.], 3], \
+        PDF[BinomialDistribution[12, 1.], 11], PDF[BinomialDistribution[12, 0.], -1], \
+        PDF[BinomialDistribution[12, 0], k], PDF[BinomialDistribution[12, 1/2], 2.5]}",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "{1, 1, 1, 0, 0, 0., Piecewise[{{1, k == 0}}, 0], 0}"
+    );
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  #[test]
   fn exact_values() {
     assert_eq!(
       interpret("PDF[BinomialDistribution[10, 1/2], 5]").unwrap(),

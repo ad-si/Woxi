@@ -2092,6 +2092,39 @@ fn pdf_binomial(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let n = dargs[0].clone();
   let p = dargs[1].clone();
 
+  // A numeric k outside the support has no mass (and the density formula
+  // would divide by zero at p = 0 or 1).
+  if let (Some(k), Expr::Integer(nn)) =
+    (crate::functions::math_ast::try_eval_to_f64(&x), &n)
+    && matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    && (k < 0.0 || k > *nn as f64 || k.fract() != 0.0)
+  {
+    let inexact =
+      crate::functions::math_ast::numeric_utils::contains_inexact_real(&p);
+    return Ok(if inexact { Expr::Real(0.0) } else { int(0) });
+  }
+  // p = 0 or 1 puts all the mass on k = 0 or k = n (0^0 is 1 here, not
+  // Indeterminate): an exact 1 or 0 inside the support.
+  let pv = crate::functions::math_ast::try_eval_to_f64(&p);
+  if let Some(pv) = pv.filter(|v| *v == 0.0 || *v == 1.0) {
+    let mass_at = if pv == 0.0 { int(0) } else { n.clone() };
+    if let (Expr::Integer(k), Expr::Integer(nn)) = (&x, &n)
+      && (0..=*nn).contains(k)
+    {
+      let hit = if pv == 0.0 { *k == 0 } else { k == nn };
+      return Ok(int(i128::from(hit)));
+    }
+    if matches!(&p, Expr::Integer(_))
+      && !matches!(&x, Expr::Integer(_) | Expr::Real(_))
+    {
+      let cond = Expr::Comparison {
+        operands: vec![x, mass_at],
+        operators: vec![ComparisonOp::Equal],
+      };
+      return eval(&piecewise(vec![(int(1), cond)], int(0)));
+    }
+  }
+
   let binom = call("Binomial", vec![n.clone(), x.clone()]);
   let p_k = pow2(p.clone(), x.clone());
   // (1 - p)^(n - k); pre-evaluate the base and exponent so they collapse.
