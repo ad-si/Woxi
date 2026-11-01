@@ -15880,6 +15880,66 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   substitute_expr_with(expr, from, to, &from_str)
 }
 
+/// Replace each call `from` (a `FunctionCall` such as `x[1, 2]`) by its `to`
+/// in one walk of `expr` — what [`substitute_expr`] does for one pair, for
+/// many at once. Only calls whose head is one of the `from` heads are spelled
+/// out for comparison.
+fn substitute_calls(expr: &Expr, pairs: &[(Expr, Expr)]) -> Expr {
+  use std::collections::{HashMap, HashSet};
+  let heads: HashSet<&str> = pairs
+    .iter()
+    .filter_map(|(from, _)| match from {
+      Expr::FunctionCall { name, .. } => Some(name.as_str()),
+      _ => None,
+    })
+    .collect();
+  let table: HashMap<String, &Expr> = pairs
+    .iter()
+    .map(|(from, to)| (expr_to_string(from), to))
+    .collect();
+  fn walk(
+    e: &Expr,
+    heads: &HashSet<&str>,
+    table: &HashMap<String, &Expr>,
+  ) -> Expr {
+    if let Expr::FunctionCall { name, .. } = e
+      && heads.contains(name.as_str())
+      && let Some(to) = table.get(&expr_to_string(e))
+    {
+      return (*to).clone();
+    }
+    let sub = |x: &Expr| walk(x, heads, table);
+    match e {
+      Expr::List(items) => Expr::List(items.iter().map(sub).collect()),
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), args.iter().map(sub).collect())
+      }
+      Expr::BinaryOp { op, left, right } => binop(*op, sub(left), sub(right)),
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(sub(operand)),
+      },
+      Expr::Comparison {
+        operands,
+        operators,
+      } => Expr::Comparison {
+        operands: operands.iter().map(sub).collect(),
+        operators: operators.clone(),
+      },
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => rule_expr(sub(pattern), sub(replacement)),
+      Expr::CurriedCall { func, args } => Expr::CurriedCall {
+        func: Box::new(sub(func)),
+        args: args.iter().map(sub).collect(),
+      },
+      _ => e.clone(),
+    }
+  }
+  walk(expr, &heads, &table)
+}
+
 fn substitute_expr_with(
   expr: &Expr,
   from: &Expr,
@@ -21696,28 +21756,27 @@ fn nminimize_ast_checked(
   {
     let fresh_names: Vec<String> =
       (0..var_exprs.len()).map(|i| format!("__ilp_{i}")).collect();
-    let mut renamed_objective_arg = positional[0].clone();
-    for (orig, fresh) in var_exprs.iter().zip(fresh_names.iter()) {
-      if matches!(orig, Expr::FunctionCall { .. }) {
-        renamed_objective_arg = substitute_expr(
-          &renamed_objective_arg,
-          orig,
-          &Expr::Identifier(fresh.clone()),
-        );
-      }
-    }
+    // One pass for all the variables: renaming them one at a time walks the
+    // whole problem once per variable, which is quadratic for an integer
+    // program over thousands of `x[i, j]`.
+    let renames: Vec<(Expr, Expr)> = var_exprs
+      .iter()
+      .zip(&fresh_names)
+      .filter(|(orig, _)| matches!(orig, Expr::FunctionCall { .. }))
+      .map(|(orig, fresh)| (orig.clone(), Expr::Identifier(fresh.clone())))
+      .collect();
+    let renamed_objective_arg = substitute_calls(&positional[0], &renames);
     let renamed_vars_arg =
       Expr::List(fresh_names.iter().cloned().map(Expr::Identifier).collect());
     let renamed_args = [renamed_objective_arg, renamed_vars_arg];
 
     let result = nminimize_ast_impl(&renamed_args, maximize, step_monitor)?;
-    let result = fresh_names.iter().zip(var_exprs.iter()).fold(
-      result,
-      |acc, (fresh, orig)| {
-        substitute_expr(&acc, &Expr::Identifier(fresh.clone()), orig)
-      },
-    );
-    return Ok(result);
+    let bindings: Vec<(&str, &Expr)> = fresh_names
+      .iter()
+      .map(String::as_str)
+      .zip(var_exprs.iter())
+      .collect();
+    return Ok(crate::syntax::substitute_variables(&result, &bindings));
   }
 
   nminimize_ast_impl(positional, maximize, step_monitor)
