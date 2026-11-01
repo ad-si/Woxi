@@ -4156,8 +4156,9 @@ pub fn dispatch_math_functions(
           .ok()
         };
         let r2 = match args.get(2) {
-          Some(r) => evaluate_expr_to_expr(&pow2(r.clone(), Expr::Integer(2)))
-            .ok(),
+          Some(r) => {
+            evaluate_expr_to_expr(&pow2(r.clone(), Expr::Integer(2))).ok()
+          }
           None => sq_dist(&pts[0]),
         };
         if let Some(r2) = r2 {
@@ -4177,10 +4178,7 @@ pub fn dispatch_math_functions(
               None => evaluate_expr_to_expr(&make_sqrt(r2.clone()))
                 .unwrap_or_else(|_| make_sqrt(r2.clone())),
             };
-            return Some(Ok(call(
-              "Circle",
-              vec![args[1].clone(), radius],
-            )));
+            return Some(Ok(call("Circle", vec![args[1].clone(), radius])));
           }
         }
       }

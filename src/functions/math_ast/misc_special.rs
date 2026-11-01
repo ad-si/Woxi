@@ -1592,7 +1592,7 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Machine values come from that integral when every argument is real, at
 /// least one is a machine number, and μ > -1 (where the integral converges;
 /// the weight `Sin[θ]^μ` is singular at both endpoints for μ < 0, which the
-/// tanh-sinh rule handles at full precision). Everything else stays
+/// tanh-sinh rule handles). Everything else stays
 /// unevaluated.
 pub fn associated_anger_weber_ast(
   name: &str,
@@ -1621,28 +1621,44 @@ fn associated_anger_weber(
   is_weber: bool,
 ) -> Option<f64> {
   use std::f64::consts::PI;
-  let integrand = |t: f64| -> Option<f64> {
+  let trig = |t: f64| {
     let phase = nu * t - z * t.sin();
-    let trig = if is_weber { phase.sin() } else { phase.cos() };
-    Some((2.0 * t.sin()).powf(mu) * trig)
+    if is_weber { phase.sin() } else { phase.cos() }
   };
-  // Split at Pi/2 so both singular endpoints are handled by the
-  // endpoint-clustered nodes and the oscillation per piece stays small.
-  let left = crate::functions::calculus_ast::tanh_sinh(
-    &integrand,
-    0.0,
-    PI / 2.0,
-    1e-15,
-    None,
-  )?;
-  let right = crate::functions::calculus_ast::tanh_sinh(
-    &integrand,
-    PI / 2.0,
-    PI,
-    1e-15,
-    None,
-  )?;
-  Some((left + right) / PI)
+  // Fold [Pi/2, Pi] onto [0, Pi/2] with θ -> Pi - θ (Sin is symmetric there),
+  // so the only singular endpoint is θ = 0, where the tanh-sinh nodes keep
+  // their full relative precision (near Pi, `Pi - tiny` rounds to Pi and the
+  // singular part would be lost).
+  let folded = |t: f64| trig(t) + trig(PI - t);
+  let integral = if mu < 0.0 {
+    // A weight `θ^μ` close to μ = -1 is too singular even for tanh-sinh;
+    // s = θ^(μ + 1) absorbs it, leaving the bounded integrand
+    //   2^μ (Sin[θ]/θ)^μ G(θ) / (μ + 1).
+    let p = 1.0 / (mu + 1.0);
+    let integrand = |s: f64| -> Option<f64> {
+      let t = s.powf(p);
+      let sinc = if t == 0.0 { 1.0 } else { t.sin() / t };
+      Some(2f64.powf(mu) * sinc.powf(mu) * folded(t) * p)
+    };
+    crate::functions::calculus_ast::tanh_sinh(
+      &integrand,
+      0.0,
+      (PI / 2.0).powf(mu + 1.0),
+      1e-14,
+      None,
+    )?
+  } else {
+    let integrand =
+      |t: f64| -> Option<f64> { Some((2.0 * t.sin()).powf(mu) * folded(t)) };
+    crate::functions::calculus_ast::tanh_sinh(
+      &integrand,
+      0.0,
+      PI / 2.0,
+      1e-14,
+      None,
+    )?
+  };
+  Some(integral / PI)
 }
 
 /// Compute AngerJ[nu, z] numerically using Gauss-Legendre quadrature.

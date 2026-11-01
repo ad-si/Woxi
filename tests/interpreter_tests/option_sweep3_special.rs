@@ -7,6 +7,7 @@ use super::*;
 fn assert_near_zero(expr: &str, tol: f64) {
   let out = interpret(&format!("Abs[N[{expr}]]")).unwrap();
   let v: f64 = out
+    .replace("*^", "e")
     .trim_end_matches('.')
     .parse()
     .unwrap_or_else(|_| panic!("{expr} gave {out}"));
@@ -67,10 +68,13 @@ mod associated_anger_weber {
   fn symbolic_stays_unevaluated() {
     assert_eq!(
       interpret("AngerJ[\\[Nu], \\[Mu], x]").unwrap(),
-      "AngerJ[\\[Nu], \\[Mu], x]"
+      "AngerJ[ν, μ, x]"
     );
     assert_eq!(interpret("WeberE[n, m, x]").unwrap(), "WeberE[n, m, x]");
-    assert_eq!(interpret("AngerJ[1/2, 1/3, 2]").unwrap(), "AngerJ[1/2, 1/3, 2]");
+    assert_eq!(
+      interpret("AngerJ[1/2, 1/3, 2]").unwrap(),
+      "AngerJ[1/2, 1/3, 2]"
+    );
   }
 
   #[test]
@@ -93,7 +97,7 @@ mod associated_anger_weber {
   #[test]
   fn singular_weight_at_the_endpoints() {
     // AngerJ[0, μ, 0] = 2^μ Gamma[(μ + 1)/2] / (Sqrt[Pi] Gamma[μ/2 + 1]).
-    for mu in ["-0.5", "-0.9", "0.25", "2.5"] {
+    for mu in ["-0.5", "-0.9", "-0.99", "0.25", "2.5"] {
       assert_near_zero(
         &format!(
           "AngerJ[0, {mu}, 0] - 2^{mu} Gamma[({mu} + 1)/2]/\
@@ -132,8 +136,7 @@ mod circle_through_center {
   #[test]
   fn given_center_only() {
     assert_eq!(
-      interpret("CircleThrough[{{0, 0}, {1, 0}, {0, 1}}, {1/2, 1/2}]")
-        .unwrap(),
+      interpret("CircleThrough[{{0, 0}, {1, 0}, {0, 1}}, {1/2, 1/2}]").unwrap(),
       "Circle[{1/2, 1/2}, 1/Sqrt[2]]"
     );
     assert_eq!(
