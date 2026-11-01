@@ -720,7 +720,7 @@ pub fn dispatch_math_functions(
         args,
       ));
     }
-    "ListFourierSequenceTransform" if args.len() == 2 || args.len() == 3 => {
+    "ListFourierSequenceTransform" if (2..=4).contains(&args.len()) => {
       return Some(
         crate::functions::math_ast::list_fourier_sequence_transform_ast(args),
       );
@@ -5212,38 +5212,43 @@ pub fn dispatch_math_functions(
         }
       }
     }
-    // DivideSides[rel] — divide both sides by the right-hand side, giving
-    // `lhs/rhs == 1` (guarded by rhs != 0 when rhs may be zero). Restricted to
-    // equations; dividing an inequality needs sign-dependent reasoning.
-    "DivideSides" if args.len() == 1 => {
-      if let Expr::Comparison {
-        operands,
-        operators,
-      } = &args[0]
-        && operands.len() == 2
-        && operators.first() == Some(&ComparisonOp::Equal)
-        && !is_zero_literal(&operands[1])
-      {
-        let rhs = operands[1].clone();
-        let inv = pow(rhs.clone(), Expr::Integer(-1));
-        if let Some(divided) = apply_to_sides(&args[0], &inv, "Times")
-          && let Ok(divided) = evaluate_expr_to_expr(&divided)
-        {
-          if is_nonzero_number(&rhs) {
-            return Some(Ok(divided));
-          }
-          let cond = Expr::Comparison {
-            operands: vec![rhs, Expr::Integer(0)],
-            operators: vec![ComparisonOp::NotEqual],
-          };
-          let branch = Expr::List(vec![divided, cond].into());
-          let pw = call(
-            "Piecewise",
-            vec![Expr::List(vec![branch].into()), args[0].clone()],
-          );
-          return Some(evaluate_expr_to_expr(&pw));
+    // DivideSides[rel(, expr)(, GenerateConditions -> mode)] — divide both
+    // sides by expr (by default the right-hand side of rel); see
+    // `divide_sides`.
+    "DivideSides"
+      if !args.is_empty()
+        && args.len() <= 3
+        && (args.len() == 2 && !matches!(args[1], Expr::Rule { .. })
+          || args.len() == 1
+          || matches!(args.last(), Some(Expr::Rule { pattern, .. })
+            if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "GenerateConditions"))) =>
+    {
+      let (positional, mode) = match args.last() {
+        Some(Expr::Rule { replacement, .. }) if args.len() > 1 => {
+          (&args[..args.len() - 1], replacement.as_ref().clone())
         }
+        _ => (args, Expr::Identifier("All".to_string())),
+      };
+      if positional.len() == 2
+        && let Some(result) =
+          pair_sides(&positional[0], &positional[1], SideOp::Divide)
+      {
+        return Some(evaluate_expr_to_expr(&result));
       }
+      let divisor = match positional {
+        [rel] => match rel {
+          Expr::Comparison { operands, .. } if operands.len() == 2 => {
+            operands[1].clone()
+          }
+          _ => return Some(Ok(unevaluated(name, args))),
+        },
+        [_, d] => d.clone(),
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      return Some(
+        divide_sides(&positional[0], &divisor, &mode)
+          .map(|r| r.unwrap_or_else(|| unevaluated(name, args))),
+      );
     }
     // SubtractSides[rel, expr] — subtract expr from both sides
     "SubtractSides" if args.len() == 2 => {
@@ -5308,22 +5313,6 @@ pub fn dispatch_math_functions(
         return None;
       }
       if let Some(result) = apply_to_sides(&args[0], &args[1], "Times")
-        && let Ok(scaled) =
-          evaluate_expr_to_expr(&reverse_if_negative(result, &args[1]))
-      {
-        return Some(guard_equation_scale(&args[0], &args[1], scaled));
-      }
-    }
-    // DivideSides[rel, expr] — divide both sides by expr
-    "DivideSides" if args.len() == 2 => {
-      if let Some(result) = pair_sides(&args[0], &args[1], SideOp::Divide) {
-        return Some(evaluate_expr_to_expr(&result));
-      }
-      if is_zero_literal(&args[1]) {
-        return None;
-      }
-      let inv = pow(args[1].clone(), Expr::Integer(-1));
-      if let Some(result) = apply_to_sides(&args[0], &inv, "Times")
         && let Ok(scaled) =
           evaluate_expr_to_expr(&reverse_if_negative(result, &args[1]))
       {
@@ -7828,6 +7817,116 @@ fn is_nonzero_number(e: &Expr) -> bool {
 /// a == b]. A provably non-zero numeric scalar needs no guard, and only
 /// equations are guarded (inequalities need sign-dependent reasoning that is
 /// left to the plain scaled result).
+/// DivideSides[rel, d] with the GenerateConditions `mode`. A nonzero
+/// number d needs no condition (an inequality is reversed for a negative
+/// one). Otherwise, with s the relation divided by d:
+/// * `All` (the default): Piecewise[{{s, d != 0}}, rel] for an equation,
+///   Piecewise[{{s, d > 0}, {s with its sides swapped, d < 0}}, rel] for an
+///   inequality;
+/// * `True`: ConditionalExpression[s, d != 0] / ConditionalExpression[s, d > 0];
+/// * `Automatic`: s for an equation, the conditional form for an inequality;
+/// * `False`: s; `None`: unevaluated (`Ok(None)`).
+fn divide_sides(
+  relation: &Expr,
+  divisor: &Expr,
+  mode: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = relation
+  else {
+    return Ok(None);
+  };
+  if operands.len() != 2 || is_zero_literal(divisor) {
+    return Ok(None);
+  }
+  let is_equation = operators.first() == Some(&ComparisonOp::Equal);
+  let is_inequality = matches!(
+    operators.first(),
+    Some(
+      ComparisonOp::Less
+        | ComparisonOp::LessEqual
+        | ComparisonOp::Greater
+        | ComparisonOp::GreaterEqual
+    )
+  );
+  if !is_equation && !is_inequality {
+    return Ok(None);
+  }
+  let mode = match mode {
+    Expr::Identifier(m)
+      if matches!(m.as_str(), "All" | "True" | "Automatic" | "False") =>
+    {
+      m.as_str()
+    }
+    _ => return Ok(None),
+  };
+  let inv = pow(divisor.clone(), Expr::Integer(-1));
+  let Some(scaled) = apply_to_sides(relation, &inv, "Times") else {
+    return Ok(None);
+  };
+  if is_nonzero_number(divisor) {
+    return evaluate_expr_to_expr(&reverse_if_negative(scaled, divisor))
+      .map(Some);
+  }
+  let scaled = evaluate_expr_to_expr(&scaled)?;
+  let condition = |op: ComparisonOp| Expr::Comparison {
+    operands: vec![divisor.clone(), Expr::Integer(0)],
+    operators: vec![op],
+  };
+  let main_condition = if is_equation {
+    condition(ComparisonOp::NotEqual)
+  } else {
+    condition(ComparisonOp::Greater)
+  };
+  let conditional = || {
+    call(
+      "ConditionalExpression",
+      vec![scaled.clone(), main_condition.clone()],
+    )
+  };
+  let result = match (mode, is_equation) {
+    ("False", _) | ("Automatic", true) => scaled.clone(),
+    ("True", _) | ("Automatic", false) => conditional(),
+    (_, true) => call(
+      "Piecewise",
+      vec![
+        Expr::List(
+          vec![Expr::List(vec![scaled.clone(), main_condition].into())].into(),
+        ),
+        relation.clone(),
+      ],
+    ),
+    (_, false) => {
+      let swapped = match &scaled {
+        Expr::Comparison {
+          operands,
+          operators,
+        } => Expr::Comparison {
+          operands: operands.iter().rev().cloned().collect(),
+          operators: operators.clone(),
+        },
+        other => other.clone(),
+      };
+      call(
+        "Piecewise",
+        vec![
+          Expr::List(
+            vec![
+              Expr::List(vec![scaled.clone(), main_condition].into()),
+              Expr::List(vec![swapped, condition(ComparisonOp::Less)].into()),
+            ]
+            .into(),
+          ),
+          relation.clone(),
+        ],
+      )
+    }
+  };
+  evaluate_expr_to_expr(&result).map(Some)
+}
+
 fn guard_equation_scale(
   relation: &Expr,
   scalar: &Expr,

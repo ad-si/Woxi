@@ -22,7 +22,30 @@ mod extension_automatic {
   }
 
   #[test]
+  fn together_leaves_the_denominator_factored_over_the_extension() {
+    assert_eq!(
+      interpret(
+        "Together[1/(Sqrt[2] + x) + 1/(x^2 - 2), Extension -> Automatic]"
+      )
+      .unwrap(),
+      "(-1 + Sqrt[2] - x)/((Sqrt[2] - x)*(Sqrt[2] + x))"
+    );
+    assert_eq!(
+      interpret(
+        "Together[x^2/(x - Sqrt[2]) - 2/(x - Sqrt[2]), Extension -> Automatic]"
+      )
+      .unwrap(),
+      "Sqrt[2] + x"
+    );
+  }
+
+  #[test]
   fn cancel_over_the_extension() {
+    assert_eq!(
+      interpret("Cancel[(x^2 - 2)/(Sqrt[2] + x), Extension -> Automatic]")
+        .unwrap(),
+      "-Sqrt[2] + x"
+    );
     assert_eq!(
       interpret("Cancel[(x^2 - 2)/(x - Sqrt[2]), Extension -> Automatic]")
         .unwrap(),
@@ -188,6 +211,24 @@ mod positional_and_option_assumptions {
   }
 
   #[test]
+  fn refine_powers_of_signs_with_known_parity() {
+    assert_eq!(
+      interpret(
+        "Refine[Cos[k Pi]^m, Element[k, Integers], \
+         Assumptions -> Mod[m, 2] == 0]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("Refine[(-1)^m, Mod[m, 2] == 1]").unwrap(), "-1");
+    assert_eq!(interpret("Refine[x^m, Mod[m, 2] == 0]").unwrap(), "x^m");
+    assert_eq!(
+      interpret("Refine[Cos[k Pi]^m, Element[k, Integers]]").unwrap(),
+      "((-1)^k)^m"
+    );
+  }
+
+  #[test]
   fn refine_uses_both() {
     assert_eq!(
       interpret("Refine[Sqrt[x^2] + Sqrt[y^2], x > 0, Assumptions -> y > 0]")
@@ -261,6 +302,17 @@ mod rank_decomposition_modulus {
     assert_eq!(
       interpret("RankDecomposition[{{6, 2}, {3, 11}}, Modulus -> 5]").unwrap(),
       "{{{1}, {3}}, {{1, 2}}}"
+    );
+  }
+
+  #[test]
+  fn reference_example() {
+    assert_eq!(
+      interpret(
+        "RankDecomposition[{{1, 0, 4}, {2, 0, 3}, {2, 1, 2}}, Modulus -> 5]"
+      )
+      .unwrap(),
+      "{{{1, 0}, {2, 0}, {2, 1}}, {{1, 0, 4}, {0, 1, 4}}}"
     );
   }
 
@@ -408,6 +460,185 @@ mod generalized_linear_model_fit_options {
       ))
       .unwrap(),
       "GeneralizedLinearModelFit"
+    );
+  }
+}
+
+mod divide_sides_generate_conditions {
+  use super::*;
+
+  #[test]
+  fn default_is_piecewise_in_the_sign() {
+    assert_eq!(
+      interpret("DivideSides[a b > c, b]").unwrap(),
+      "Piecewise[{{a > c/b, b > 0}, {c/b > a, b < 0}}, a*b > c]"
+    );
+    assert_eq!(
+      interpret("DivideSides[a b == c, b]").unwrap(),
+      "Piecewise[{{a == c/b, b != 0}}, a*b == c]"
+    );
+  }
+
+  #[test]
+  fn true_false_none() {
+    assert_eq!(
+      interpret("DivideSides[a b > c, b, GenerateConditions -> True]").unwrap(),
+      "ConditionalExpression[a > c/b, b > 0]"
+    );
+    assert_eq!(
+      interpret("DivideSides[a b > c, b, GenerateConditions -> False]")
+        .unwrap(),
+      "a > c/b"
+    );
+    assert_eq!(
+      interpret("DivideSides[a/b > c, b, GenerateConditions -> None]").unwrap(),
+      "DivideSides[a/b > c, b, GenerateConditions -> None]"
+    );
+    assert_eq!(
+      interpret("DivideSides[a x == b, GenerateConditions -> True]").unwrap(),
+      "ConditionalExpression[(a*x)/b == 1, b != 0]"
+    );
+  }
+
+  #[test]
+  fn automatic() {
+    assert_eq!(
+      interpret("DivideSides[a x > b, GenerateConditions -> Automatic]")
+        .unwrap(),
+      "ConditionalExpression[(a*x)/b > 1, b > 0]"
+    );
+    assert_eq!(
+      interpret("DivideSides[a x == b, GenerateConditions -> Automatic]")
+        .unwrap(),
+      "(a*x)/b == 1"
+    );
+  }
+
+  #[test]
+  fn numbers_need_no_condition() {
+    assert_eq!(
+      interpret("DivideSides[a b > c, 2]").unwrap(),
+      "(a*b)/2 > c/2"
+    );
+  }
+}
+
+mod array_pad_extrapolated {
+  use super::*;
+
+  #[test]
+  fn linear_by_default() {
+    assert_eq!(
+      interpret(r#"ArrayPad[{1, 5, 7, 8}, {0, 3}, "Extrapolated"]"#).unwrap(),
+      "{1, 5, 7, 8, 9, 10, 11}"
+    );
+    assert_eq!(
+      interpret(r#"ArrayPad[{a, b, c}, 3, "Extrapolated"]"#).unwrap(),
+      "{4*a - 3*b, 3*a - 2*b, 2*a - b, a, b, c, -b + 2*c, -2*b + 3*c, \
+       -3*b + 4*c}"
+    );
+  }
+
+  #[test]
+  fn interpolation_order() {
+    assert_eq!(
+      interpret(
+        r#"ArrayPad[{1, 5, 7, 8}, {0, 3}, "Extrapolated", InterpolationOrder -> 2]"#
+      )
+      .unwrap(),
+      "{1, 5, 7, 8, 8, 7, 5}"
+    );
+    assert_eq!(
+      interpret(
+        r#"ArrayPad[{1, 5, 7, 8}, {0, 3}, "Extrapolated", InterpolationOrder -> Infinity]"#
+      )
+      .unwrap(),
+      "{1, 5, 7, 8, 9, 11, 15}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Table[ArrayPad[{1, 4, 9}, 4, "Extrapolated", InterpolationOrder -> o], {o, 0, 2}]"#
+      )
+      .unwrap(),
+      "{{1, 1, 1, 1, 1, 4, 9, 9, 9, 9, 9}, \
+       {-11, -8, -5, -2, 1, 4, 9, 14, 19, 24, 29}, \
+       {9, 4, 1, 0, 1, 4, 9, 16, 25, 36, 49}}"
+    );
+  }
+}
+
+mod list_fourier_sequence_transform_parameters {
+  use super::*;
+
+  #[test]
+  fn default_parameters() {
+    assert_eq!(
+      interpret(
+        "ListFourierSequenceTransform[{1, 1, 1}/3, w, \
+         FourierParameters -> {1, 1}]"
+      )
+      .unwrap(),
+      interpret("ListFourierSequenceTransform[{1, 1, 1}/3, w]").unwrap()
+    );
+  }
+
+  #[test]
+  fn normalization_and_period() {
+    assert_true(
+      "ListFourierSequenceTransform[{1, 1, 1}/3, w, \
+       FourierParameters -> {-1, 1}] === \
+       (1/3 + E^(-I w)/3 + E^(-2 I w)/3)/(2 Pi)",
+    );
+    assert_true(
+      "ListFourierSequenceTransform[{1, 1, 1}/3, f, \
+       FourierParameters -> {1, 2 Pi}] === \
+       1/3 + E^(-2 I f Pi)/3 + E^(-4 I f Pi)/3",
+    );
+  }
+}
+
+mod region_measure_working_precision {
+  use super::*;
+
+  #[test]
+  fn parametric_region() {
+    assert_true(
+      "RegionMeasure[{a Cos[t], a Sin[t], a Sin[t]}, {{t, 0, 2 Pi}, \
+       {a, 0, 1}}, WorkingPrecision -> 30] == N[Sqrt[2] Pi, 30]",
+    );
+    assert_eq!(
+      interpret(
+        "Precision[RegionMeasure[{a Cos[t], a Sin[t], a Sin[t]}, \
+         {{t, 0, 2 Pi}, {a, 0, 1}}, WorkingPrecision -> 30]]"
+      )
+      .unwrap(),
+      "30."
+    );
+  }
+
+  #[test]
+  fn machine_precision() {
+    assert_eq!(
+      interpret("RegionMeasure[Disk[], WorkingPrecision -> MachinePrecision]")
+        .unwrap(),
+      "3.141592653589793"
+    );
+  }
+}
+
+mod names_spelling_correction {
+  use super::*;
+
+  #[test]
+  fn one_transposition_away() {
+    assert_eq!(
+      interpret(r#"Names["Polt", SpellingCorrection -> True]"#).unwrap(),
+      "{Plot}"
+    );
+    assert_eq!(interpret(r#"Names["Polt"]"#).unwrap(), "{}");
+    assert_eq!(
+      interpret(r#"Names["Polt", SpellingCorrection -> False]"#).unwrap(),
+      "{}"
     );
   }
 }

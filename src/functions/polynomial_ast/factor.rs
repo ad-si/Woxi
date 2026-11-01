@@ -4860,8 +4860,33 @@ pub fn extension_rational_operation(
         return Ok(Some(combined));
       }
       let n2 = ring.expr(&qf::divrem(d, &n, &g).0)?;
-      let m2 = ring.expr(&qf::divrem(d, &m, &g).0)?;
-      ev(div2(n2, m2)).map(Some)
+      let m2_poly = qf::divrem(d, &m, &g).0;
+      let m2 = ring.expr(&m2_poly)?;
+      if name == "Cancel" || m2_poly.len() <= 1 {
+        return ev(div2(n2, m2)).map(Some);
+      }
+      // Together leaves the denominator factored over the field, its
+      // numeric content moved into the expanded numerator:
+      // (-1 + Sqrt[2] - x)/((Sqrt[2] - x)*(Sqrt[2] + x)).
+      let option = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Extension".to_string())),
+        replacement: Box::new(ring.generator()),
+      };
+      let factored = factor_ast(&[m2.clone(), option])?;
+      if matches!(&factored, Expr::FunctionCall { name, .. } if name == "Factor")
+      {
+        return ev(div2(n2, m2)).map(Some);
+      }
+      let parts: Vec<Expr> = match &factored {
+        Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+        other => vec![other.clone()],
+      };
+      let (numbers, factors): (Vec<Expr>, Vec<Expr>) = parts
+        .into_iter()
+        .partition(crate::functions::predicate_ast::is_numeric_q);
+      let content = ev(times(numbers))?;
+      let numerator = ExtensionRing::ev("Expand", vec![div2(n2, content)])?;
+      ev(div2(numerator, times(factors))).map(Some)
     }
     "Factor" | "FactorSquareFree" | "FactorSquareFreeList" => {
       let Some(var) = single_variable(&[&args[0]])? else {

@@ -985,6 +985,9 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
   if let Some(power) = refine_even_power_of_abs(expr, info) {
     return power;
   }
+  if let Some(power) = refine_power_of_sign(expr, info, assumption) {
+    return power;
+  }
   if let Some(rooted) = refine_sum_root(expr, info, assumption) {
     return rooted;
   }
@@ -1949,6 +1952,91 @@ fn is_real_under_assumptions(expr: &Expr, info: &AssumptionInfo) -> bool {
 }
 
 /// Abs[u]^n → u^n for an even n and a real u.
+/// The parity of e under the assumptions: Some(true) when e is even (an
+/// even integer, or assumed `Mod[e, 2] == 0`), Some(false) when odd.
+fn parity_under_assumptions(e: &Expr, info: &AssumptionInfo) -> Option<bool> {
+  if let Expr::Integer(n) = e {
+    return Some(n % 2 == 0);
+  }
+  info.raw_assumptions.iter().find_map(|a| match a {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::Equal => {
+      let residue = |m: &Expr, r: &Expr| match (m, r) {
+        (Expr::FunctionCall { name, args }, Expr::Integer(r))
+          if name == "Mod"
+            && args.len() == 2
+            && matches!(args[1], Expr::Integer(2))
+            && crate::syntax::expr_to_string(&args[0])
+              == crate::syntax::expr_to_string(e)
+            && (*r == 0 || *r == 1) =>
+        {
+          Some(*r == 0)
+        }
+        _ => None,
+      };
+      residue(&operands[0], &operands[1])
+        .or_else(|| residue(&operands[1], &operands[0]))
+    }
+    _ => None,
+  })
+}
+
+/// s^m for a sign s = ±1 (after refinement, e.g. Cos[k Pi] → (-1)^k for an
+/// integer k) and an exponent m of known parity: an even m gives 1, and an
+/// odd power of -1 is -1.
+fn refine_power_of_sign(
+  expr: &Expr,
+  info: &AssumptionInfo,
+  assumption: &Expr,
+) -> Option<Expr> {
+  let (base, exp) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  if matches!(exp, Expr::Integer(_)) {
+    return None;
+  }
+  let even = parity_under_assumptions(exp, info)?;
+  let base = refine_expr(base, info, assumption);
+  let is_sign = match &base {
+    Expr::Integer(1 | -1) => true,
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      matches!(args[0], Expr::Integer(-1))
+        && (matches!(args[1], Expr::Integer(_))
+          || matches!(&args[1], Expr::Identifier(k) if info.integer_vars.contains(k))
+          || parity_under_assumptions(&args[1], info).is_some())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1))
+        && (matches!(right.as_ref(), Expr::Identifier(k) if info.integer_vars.contains(k))
+          || parity_under_assumptions(right, info).is_some())
+    }
+    _ => false,
+  };
+  if !is_sign {
+    return None;
+  }
+  if even {
+    Some(Expr::Integer(1))
+  } else {
+    // An odd power of -1 is -1; of (-1)^k it stays (-1)^k with k unknown.
+    matches!(base, Expr::Integer(-1)).then_some(Expr::Integer(-1))
+  }
+}
+
 fn refine_even_power_of_abs(
   expr: &Expr,
   info: &AssumptionInfo,
