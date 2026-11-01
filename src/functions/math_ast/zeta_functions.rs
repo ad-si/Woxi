@@ -188,7 +188,11 @@ fn zeta_negative_a(
   let keep = || Some(Ok(unevaluated(head, args)));
   let exact = !contains_float(s) && !contains_float(a);
   let m = (-a_val).floor() as i128 + 1;
-  if (exact && !is_number_literal(s)) || m > 100_000 {
+  // A symbolic order expands only at a negative integer a for Zeta, whose
+  // terms are then plain powers: Zeta[s, -2] = 1 + 2^-s + Zeta[s].
+  let integer_a = matches!(a, Expr::Integer(_));
+  let symbolic_ok = integer_a && !signed;
+  if (exact && !is_number_literal(s) && !symbolic_ok) || m > 100_000 {
     return keep();
   }
   let eval = crate::evaluator::evaluate_expr_to_expr;
@@ -219,6 +223,8 @@ fn zeta_negative_a(
     }
     terms.push(if signed {
       pow2(x, times2(Expr::Integer(-1), s.clone()))
+    } else if let (true, Expr::Integer(j)) = (integer_a, &x) {
+      pow2(Expr::Integer(j.abs()), times2(Expr::Integer(-1), s.clone()))
     } else {
       pow2(
         pow2(x, Expr::Integer(2)),
@@ -282,6 +288,18 @@ fn hurwitz_zeta_ast_inner(
   a_expr: &Expr,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // An inexact complex argument (s or a off the real axis) with Re(a) > 0.
+  if (contains_float(s_expr) || contains_float(a_expr))
+    && let (Some(s), Some(a)) = (
+      try_extract_complex_float(s_expr),
+      try_extract_complex_float(a_expr),
+    )
+    && (s.1 != 0.0 || a.1 != 0.0)
+    && let Some((re, im)) = hurwitz_zeta_complex(s, a)
+  {
+    return Ok(build_complex_float_expr(re, im));
+  }
+
   // Zeta[s, 1] = Zeta[s]
   if matches!(a_expr, Expr::Integer(1)) {
     return zeta_ast(std::slice::from_ref(s_expr));
@@ -464,7 +482,7 @@ fn hurwitz_zeta_ast_inner(
         }
         _ => {
           if contains_float(a_expr)
-            && let Some((re, _im)) = try_extract_complex_float(a_expr)
+            && let Some((re, 0.0)) = try_extract_complex_float(a_expr)
           {
             let result = hurwitz_zeta_numeric(s, re);
             return Ok(Expr::Real(result));
@@ -605,14 +623,11 @@ fn expr_to_f64(expr: &Expr) -> Option<f64> {
       }
     }
     _ => {
-      if contains_float(expr) {
-        if let Some((re, _im)) = try_extract_complex_float(expr) {
-          Some(re)
-        } else {
-          None
-        }
-      } else {
-        None
+      // Only a real value: a complex one (`1.5 + I`) has no f64 image, and
+      // dropping its imaginary part gave HurwitzZeta[2.3, 1.5 + I] as real.
+      match try_extract_complex_float(expr) {
+        Some((re, 0.0)) if contains_float(expr) => Some(re),
+        _ => None,
       }
     }
   }
@@ -965,58 +980,73 @@ fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {
   }
 
   // Euler-Maclaurin summation for Re(s) >= 0.5
-  let n: usize = 30;
-  let nf = n as f64;
+  hurwitz_zeta_em_complex(s, (1.0, 0.0), 29)
+}
 
+/// `B_{2p}/(2p)!` for p = 1..10, the Euler–Maclaurin correction weights.
+const EM_BERNOULLI: [f64; 10] = [
+  1.0 / 12.0,
+  -1.0 / 720.0,
+  1.0 / 30240.0,
+  -1.0 / 1209600.0,
+  1.0 / 47900160.0,
+  -691.0 / 1307674368000.0,
+  7.0 / 523069747200.0,
+  -3617.0 / 10670622842880000.0,
+  43867.0 / 5109094217170944000.0,
+  -174611.0 / 802857662698291200000.0,
+];
+
+/// `Σ_{k=0}^{n-1} (a+k)^{-s}` plus the Euler–Maclaurin tail at `a + n`:
+/// `(a+n)^{1-s}/(s-1) + (a+n)^{-s}/2 + Σ_p B_{2p}/(2p)! (s)_{2p-1}
+/// (a+n)^{-s-2p+1}`, with principal-branch powers. Accurate once `|a + n|`
+/// is well past `|s|` and the 20th-order tail term.
+fn hurwitz_zeta_em_complex(
+  s: (f64, f64),
+  a: (f64, f64),
+  n: usize,
+) -> (f64, f64) {
+  let (s_re, s_im) = s;
   let mut sum = (0.0, 0.0);
-
-  // Direct sum: sum_{k=1}^{N-1} k^{-s}
-  for k in 1..n {
-    let term = cpow((k as f64, 0.0), (-s_re, -s_im));
+  for k in 0..n {
+    let term = cpow((a.0 + k as f64, a.1), (-s_re, -s_im));
     sum.0 += term.0;
     sum.1 += term.1;
   }
-
-  // Integral correction: N^{1-s} / (s-1)
-  let n1s = cpow((nf, 0.0), (1.0 - s_re, -s_im));
+  let an = (a.0 + n as f64, a.1);
+  // Integral correction: (a+n)^{1-s} / (s-1)
+  let n1s = cpow(an, (1.0 - s_re, -s_im));
   let int_c = cdiv(n1s, (s_re - 1.0, s_im));
   sum.0 += int_c.0;
   sum.1 += int_c.1;
-
-  // Endpoint correction: N^{-s} / 2
-  let ns = cpow((nf, 0.0), (-s_re, -s_im));
+  // Endpoint correction: (a+n)^{-s} / 2
+  let ns = cpow(an, (-s_re, -s_im));
   sum.0 += 0.5 * ns.0;
   sum.1 += 0.5 * ns.1;
-
-  // Bernoulli corrections
-  let bof: [f64; 10] = [
-    1.0 / 12.0,
-    -1.0 / 720.0,
-    1.0 / 30240.0,
-    -1.0 / 1209600.0,
-    1.0 / 47900160.0,
-    -691.0 / 1307674368000.0,
-    7.0 / 523069747200.0,
-    -3617.0 / 10670622842880000.0,
-    43867.0 / 5109094217170944000.0,
-    -174611.0 / 802857662698291200000.0,
-  ];
-
-  for (p_idx, &coeff) in bof.iter().enumerate() {
+  for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     // Rising factorial: prod_{j=0}^{2p-2} (s+j)
     let mut rising = (1.0, 0.0);
     for j in 0..(two_p - 1) {
       rising = cmul(rising, (s_re + j as f64, s_im));
     }
-    // N^(-(s + 2p-1))
-    let pow = cpow((nf, 0.0), (-(s_re + (two_p - 1) as f64), -s_im));
+    let pow = cpow(an, (-(s_re + (two_p - 1) as f64), -s_im));
     let term = cmul(rising, pow);
     sum.0 += coeff * term.0;
     sum.1 += coeff * term.1;
   }
-
   sum
+}
+
+/// `Zeta[s, a]` for complex `s` and `a` with `Re(a) > 0` (where it agrees
+/// with `HurwitzZeta`). `None` at the pole `s = 1`.
+fn hurwitz_zeta_complex(s: (f64, f64), a: (f64, f64)) -> Option<(f64, f64)> {
+  if a.0 <= 0.0 || (s.0 == 1.0 && s.1 == 0.0) {
+    return None;
+  }
+  let target = 25.0 + (s.0 * s.0 + s.1 * s.1).sqrt();
+  let n = (target - a.0).ceil().max(0.0) as usize;
+  Some(hurwitz_zeta_em_complex(s, a, n))
 }
 
 /// PolyGamma[z] - digamma function (equivalent to PolyGamma[0, z])
@@ -1348,6 +1378,15 @@ pub fn lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // LerchPhi[z, s, 0] = PolyLog[s, z]: the singular k = 0 term is left out
+  // and the rest is Σ_{k≥1} z^k/k^s.
+  if matches!(a, Expr::Integer(0)) {
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "PolyLog",
+      vec![s.clone(), z.clone()],
+    ));
+  }
+
   // A non-positive integer a = -n with a positive integer order s (or a
   // negative one at a rational z, where the result is a rational number): the
   // singular k = n term is left out, the terms before it are finite and the
@@ -1618,6 +1657,28 @@ pub fn hurwitz_lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !try_eval_to_f64(&args[1]).is_some_and(|s| s < 0.0)
   {
     return Ok(id_expr("ComplexInfinity"));
+  }
+  // z = -1 splits the alternating sum by parity of k:
+  // 2^-s HurwitzZeta[s, a/2] - 2^-s HurwitzZeta[s, (1 + a)/2].
+  if matches!(&args[0], Expr::Integer(-1)) {
+    let (s, a) = (&args[1], &args[2]);
+    let two_s = pow2(Expr::Integer(2), times2(Expr::Integer(-1), s.clone()));
+    let half = |e: Expr| times2(make_rational(1, 2), e);
+    let result = plus(vec![
+      times2(
+        two_s.clone(),
+        call("HurwitzZeta", vec![s.clone(), half(a.clone())]),
+      ),
+      times(vec![
+        Expr::Integer(-1),
+        two_s,
+        call(
+          "HurwitzZeta",
+          vec![s.clone(), half(plus2(Expr::Integer(1), a.clone()))],
+        ),
+      ]),
+    ]);
+    return crate::evaluator::evaluate_expr_to_expr(&result);
   }
   // Otherwise delegate to LerchPhi; keep the HurwitzLerchPhi head when LerchPhi
   // itself stays unevaluated.

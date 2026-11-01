@@ -422,6 +422,12 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(0));
   }
 
+  // EllipticF[phi, Infinity] = 0: the integrand 1/Sqrt[1 - m Sin[t]^2]
+  // vanishes like 1/Sqrt[m].
+  if matches!(m_expr, Expr::Identifier(s) if s == "Infinity") {
+    return Ok(Expr::Integer(0));
+  }
+
   // EllipticF[phi, 0] = phi (the integrand collapses to 1).
   if let Some(result) = elliptic_param_zero_reduces_to_first(phi_expr, m_expr) {
     return Ok(result);
@@ -704,6 +710,15 @@ fn elliptic_pi_f64(n: f64, phi: f64, m: f64) -> f64 {
 
 /// EllipticTheta[a, z, q] - Jacobi theta function
 /// a = 1,2,3,4 selects which theta function
+/// `z` is exactly `k Pi` for a nonzero integer `k` (`Pi`, `-Pi`, `3 Pi`).
+fn is_integer_multiple_of_pi(z: &Expr) -> bool {
+  let ratio = crate::evaluator::evaluate_expr_to_expr(&div2(
+    z.clone(),
+    Expr::Identifier("Pi".to_string()),
+  ));
+  matches!(ratio, Ok(Expr::Integer(_) | Expr::BigInteger(_)))
+}
+
 pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -734,8 +749,13 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let z = &args[1];
 
-  // theta1 is odd in z, so theta1(0, q) = 0 exactly for any q.
-  if a_val == 1 && is_expr_zero(z) {
+  // theta1 is odd in z and antiperiodic with period Pi, so
+  // theta1(k Pi, q) = 0 exactly for every integer k and any q.
+  // (A machine nome keeps the numeric path, as before.)
+  if a_val == 1
+    && (is_expr_zero(z)
+      || (!expr_is_inexact(q) && is_integer_multiple_of_pi(z)))
+  {
     return Ok(Expr::Integer(0));
   }
 

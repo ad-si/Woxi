@@ -6876,6 +6876,28 @@ reference pages only plot them):
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
 
+## Special functions (parameter sweep, round 4)
+
+Confirmed against the Wolfram reference pages, not fixed:
+
+- `Series[f, {x, Infinity, n}]` for `BesselJ`/`BesselY`/`BesselI`/`BesselK`,
+  `LegendreP[1/2, x]`, `ChebyshevT[1/3, x]` and `LaguerreL[1/2, x]` returns
+  wolframscript's asymptotic expansion (e.g. `Series[BesselJ[0, x],
+  {x, Infinity, 3}] // Normal` is a `Cos[Pi/4 - x]`/`Sin[Pi/4 - x]` form
+  with powers of `1/Sqrt[x]`). Woxi leaves these calls unevaluated, since
+  it no longer returns a Taylor series with `BesselJ[0, Infinity]`
+  coefficients.
+- `ZetaZero[k, t]` (the `k`th zero above height `t`, or below it for a
+  negative `k`) is not implemented: `ZetaZero[-1, 5.6]` and
+  `ZetaZero[-2, 15.]` are `0.5 - 14.1347 I` in wolframscript.
+- `BetaRegularized[0, 0, 0]` is `Indeterminate` in wolframscript; Woxi leaves
+  it unevaluated (the value at `z = a = 0` for other `b` is unverified).
+- Machine `Fibonacci[ν, x]` uses the closed form in f64 arithmetic, as the
+  one-argument form does (which matches wolframscript's
+  `Fibonacci[-0.5] = 0.35157758425414287`, one ulp from correct rounding);
+  wolframscript's last digit for `Fibonacci[5.8, 3]` (`283.483` on the
+  reference page) is unverified.
+
 ## Parameter sweep 4 (options): confirmed but not implemented
 
 The reference pages give these outputs; Woxi does not produce them yet.
