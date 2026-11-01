@@ -242,6 +242,12 @@ fn is_user_symbol(name: &str) -> bool {
   !is_builtin_symbol(bare) && get_builtin_attributes(bare).is_empty()
 }
 
+/// Whether a `Global`` symbol of this name is in use (created, or carrying
+/// a value or definition) — what `Unique` must not hand out again.
+pub fn global_symbol_in_use(name: &str) -> bool {
+  symbol_exists(name) || symbol_exists(&format!("Global`{name}"))
+}
+
 /// Whether a symbol with this full name exists — either created in a
 /// context or already carrying a definition from before contexts came into
 /// play (Woxi's stores are keyed the same way).
@@ -316,7 +322,26 @@ pub(crate) fn create_symbol(full_name: &str) {
 /// Resolve a name as the Wolfram Language does when it reads it: the first
 /// context on `$ContextPath` that already has the symbol wins, otherwise it
 /// is created in `$Context`.
+/// Whether `name` is spelled like a symbol `Unique`/`Module` generate
+/// (`$12`, `x$12`).
+fn generated_style_name(name: &str) -> bool {
+  name.rsplit_once('$').is_some_and(|(_, digits)| {
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+  })
+}
+
 pub fn resolve(name: &str) -> String {
+  // A name like `$22` or `x$7` read in (the objects a notebook's saved
+  // definitions restore) exists from now on, so `Unique` and `Module` never
+  // hand it out as a fresh symbol. Other names are only tracked once
+  // contexts are in play.
+  if generated_style_name(name) && !name.contains('`') {
+    SYMBOL_TABLE.with(|t| {
+      if !t.borrow().contains(name) {
+        t.borrow_mut().insert(name.to_string());
+      }
+    });
+  }
   // `Global`x` is the plain `x` even with no package open — that is the key
   // Woxi stores an unqualified symbol under, and `x === Global`x` is True.
   if let Some(bare) = name.strip_prefix("Global`")
