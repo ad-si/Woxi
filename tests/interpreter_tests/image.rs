@@ -10284,6 +10284,70 @@ mod find_threshold {
   }
 }
 
+mod image_periodogram {
+  use super::*;
+
+  #[test]
+  fn image_periodogram_gray() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ImagePeriodogram[Image[{{0.1, 0.5, 0.2, 0.9}, {0.3, 0.3, 0.8, 0.1}, \
+         {0., 1., 0.5, 0.5}}]]; {ImageType[p], ImageDimensions[p], ImageData[p, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {4, 3}, {{85, 0, 58, 143}, {99, 255, 99, 120}, {58, 0, 85, 143}}}"
+    );
+  }
+
+  // Each channel is rescaled on its own.
+  #[test]
+  fn image_periodogram_color_alignment() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImagePeriodogram[Image[{{{0.1, 0.5, 0.2}, {0.9, 0.3, 0.3}}, \
+         {{0.8, 0.1, 0.}, {1., 0.5, 0.5}}}], Alignment -> Top], \"Byte\"][[All, All, 1]]"
+      )
+      .unwrap(),
+      "{{255, 85}, {48, 0}}"
+    );
+  }
+
+  #[test]
+  fn image_adjust_rescales_each_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[ImageAdjust[Image[{{{0.1, 0.5, 0.2}, {0.9, 0.5, 0.3}}}]]], \
+         ImageData[ImageAdjust[Image[{{0.3, 0.3}}]]]}"
+      )
+      .unwrap(),
+      "{{{{0., 0., 0.}, {1., 0., 1.}}}, {{0., 0.}}}"
+    );
+  }
+
+  #[test]
+  fn gaussian_matrix_per_axis_radii() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Dimensions[GaussianMatrix[{{6, 6}, 2}]], \
+         Dimensions[GaussianMatrix[{{2, 3}, {1, 2}}]], \
+         Round[GaussianMatrix[{{1, 2}, 0.7}], 10^-6], \
+         Round[GaussianMatrix[{{1, 2}}][[2]], 10^-6]}"
+      )
+      .unwrap(),
+      "{{13, 13}, {5, 7}, {{1517/500000, 6253/250000, 105123/1000000, \
+       6253/250000, 1517/500000}, {12751/1000000, 105123/1000000, \
+       13807/31250, 105123/1000000, 12751/1000000}, {1517/500000, \
+       6253/250000, 105123/1000000, 6253/250000, 1517/500000}}, \
+       {40769/1000000, 169733/1000000, 76047/200000, 169733/1000000, \
+       40769/1000000}}"
+    );
+  }
+}
+
 mod morphological_euler_number {
   use super::*;
 

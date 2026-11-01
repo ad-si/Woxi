@@ -3968,7 +3968,7 @@ CanonicalWarpingDistance,"",,,11.0,4052
 ClassPriors,"",🚫,,10.0,4052
 DiscreteChirpZTransform,"",,,9.0,4052
 GoodmanKruskalGamma,"Goodman-Kruskal gamma rank-correlation coefficient (concordant minus discordant over untied pairs)",✅,pure,9.0,4052
-ImagePeriodogram,"",🚫,,9.0,4052
+ImagePeriodogram,"Log-scaled centered power spectrum of an image as a byte image",✅,pure,9.0,4052
 ImportByteArray,"",,,11.2,4052
 InverseDistanceTransform,"",,,8.0,4052
 LinkActivate,"",🚫,,3.0,4052

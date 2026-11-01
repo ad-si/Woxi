@@ -2553,22 +2553,27 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let new_data: Vec<f64> = if matches!(mode, Adjust::Rescale) {
-    let mut min_val = f64::MAX;
-    let mut max_val = f64::MIN;
-    for &v in data.iter() {
-      if v < min_val {
-        min_val = v;
-      }
-      if v > max_val {
-        max_val = v;
-      }
+    // Each channel is stretched over [0, 1] on its own; a constant
+    // channel becomes 0.
+    let ch = (*channels as usize).max(1);
+    let mut bounds = vec![(f64::INFINITY, f64::NEG_INFINITY); ch];
+    for (i, &v) in data.iter().enumerate() {
+      let (lo, hi) = &mut bounds[i % ch];
+      *lo = lo.min(v);
+      *hi = hi.max(v);
     }
-    let range = max_val - min_val;
-    if range > 0.0 {
-      data.iter().map(|&v| (v - min_val) / range).collect()
-    } else {
-      vec![0.5; data.len()]
-    }
+    data
+      .iter()
+      .enumerate()
+      .map(|(i, &v)| {
+        let (lo, hi) = bounds[i % ch];
+        if hi > lo {
+          snap((snap(v) - snap(lo)) as f32 as f64 / (snap(hi) - snap(lo)))
+        } else {
+          0.0
+        }
+      })
+      .collect()
   } else {
     data.iter().map(|&v| apply(v)).collect()
   };
@@ -7582,6 +7587,42 @@ fn gaussian_filter_kernel(radius: usize, sigma: f64) -> Vec<f64> {
 /// with itself, matching wolframscript byte-for-byte. With the integer
 /// form `GaussianMatrix[r]`, the standard deviation defaults to `r/2`.
 pub fn gaussian_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // GaussianMatrix[{{r1, r2}}] / GaussianMatrix[{{r1, r2}, σ}] /
+  // GaussianMatrix[{{r1, r2}, {σ1, σ2}}]: a separate radius (and standard
+  // deviation, by default half the radius) along the rows and the columns.
+  if args.len() == 1
+    && let Expr::List(spec) = &args[0]
+    && (1..=2).contains(&spec.len())
+    && let Expr::List(radii) = &spec[0]
+    && radii.len() == 2
+  {
+    let radius = |e: &Expr| match expr_to_f64_opt(e) {
+      Some(v) if v >= 0.0 && v.fract() == 0.0 => Some(v as usize),
+      _ => None,
+    };
+    let positive = |e: &Expr| expr_to_f64_opt(e).filter(|v| *v > 0.0);
+    let (Some(r1), Some(r2)) = (radius(&radii[0]), radius(&radii[1])) else {
+      return Ok(symbolic_gaussian_matrix(args));
+    };
+    let sigmas = match spec.get(1) {
+      None => Some((r1 as f64 / 2.0, r2 as f64 / 2.0)),
+      Some(Expr::List(s)) if s.len() == 2 => {
+        positive(&s[0]).zip(positive(&s[1]))
+      }
+      Some(s) => positive(s).map(|v| (v, v)),
+    };
+    let Some((s1, s2)) = sigmas.filter(|(a, b)| *a > 0.0 && *b > 0.0) else {
+      return Ok(symbolic_gaussian_matrix(args));
+    };
+    let rows = gaussian_filter_kernel(r1, s1);
+    let cols = gaussian_filter_kernel(r2, s2);
+    return Ok(Expr::List(
+      rows
+        .iter()
+        .map(|&a| Expr::List(cols.iter().map(|&b| Expr::Real(a * b)).collect()))
+        .collect(),
+    ));
+  }
   // Resolve radius and sigma from the single argument.
   let (radius, sigma): (usize, f64) = match &args[0] {
     // GaussianMatrix[{r, sigma}]
@@ -7767,6 +7808,150 @@ fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
 /// string, or a color-function head such as `Hue`. Non-matrix /
 /// non-image arguments emit `Colorize::invinput` and stay symbolic,
 /// matching wolframscript.
+/// ImagePeriodogram[image, n, d, w, m] — the squared magnitude of the
+/// image's 2D discrete Fourier transform, as Mathematica computes it: per
+/// channel `PeriodogramArray[data, n, d, w, m]` (Woxi's implementation,
+/// with the arguments passed through), rotated so the zero frequency sits
+/// at the `Alignment` position (by default the center,
+/// `Floor[(m - 1)/2]`), then `Log10` of it plus `$MachineEpsilon`,
+/// rescaled to [0, 1] by `ImageAdjust` and returned as a byte image.
+pub fn image_periodogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let positional = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(args.len());
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+    color_space,
+    ..
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImagePeriodogram::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ImagePeriodogram", args));
+  };
+  if !(1..=5).contains(&positional) {
+    return Ok(unevaluated("ImagePeriodogram", args));
+  }
+  let (w, h) = (*width as usize, *height as usize);
+  let mut ch = *channels as usize;
+  // Transparency is dropped; a bit image is analysed as gray levels.
+  let color = if ch == 2 || ch == 4 { ch - 1 } else { ch };
+  let _ = image_type;
+
+  // The size of the transformed array along each axis: the padding length
+  // `m` (5th argument), else the partition length `n` (2nd), else the
+  // image's own size.
+  let axis_lengths = |spec: Option<&Expr>, default: [usize; 2]| -> [usize; 2] {
+    let len = |e: &Expr, d: usize| match e {
+      Expr::Integer(k) if *k > 0 => *k as usize,
+      _ => d,
+    };
+    match spec {
+      Some(Expr::List(items)) if items.len() == 2 => {
+        [len(&items[0], default[0]), len(&items[1], default[1])]
+      }
+      Some(e) => [len(e, default[0]), len(e, default[1])],
+      None => default,
+    }
+  };
+  let n = axis_lengths(args[..positional].get(1), [h, w]);
+  let m = axis_lengths(args[..positional].get(4), n);
+  let align = option_value(&args[positional..], "Alignment");
+  let has = |side: &str| match align {
+    Some(Expr::Identifier(s)) => s == side,
+    Some(Expr::List(items)) => items
+      .iter()
+      .any(|i| matches!(i, Expr::Identifier(s) if s == side)),
+    _ => false,
+  };
+  let shift_y = if has("Top") {
+    0
+  } else if has("Bottom") {
+    m[0] - 1
+  } else {
+    (m[0] - 1) / 2
+  };
+  let shift_x = if has("Left") {
+    0
+  } else if has("Right") {
+    m[1] - 1
+  } else {
+    (m[1] - 1) / 2
+  };
+
+  let mut planes: Vec<Vec<f64>> = Vec::with_capacity(color);
+  let (mut out_h, mut out_w) = (0usize, 0usize);
+  for c in 0..color {
+    let matrix = Expr::List(
+      (0..h)
+        .map(|y| {
+          Expr::List(
+            (0..w)
+              .map(|x| Expr::Real(data[(y * w + x) * ch + c]))
+              .collect(),
+          )
+        })
+        .collect(),
+    );
+    let mut pa_args = vec![matrix];
+    pa_args.extend(args[1..positional].iter().cloned());
+    let pa = eval(call("PeriodogramArray", pa_args))?;
+    let Expr::List(rows) = &pa else {
+      return Ok(unevaluated("ImagePeriodogram", args));
+    };
+    let ph = rows.len();
+    let pw = match rows.first() {
+      Some(Expr::List(r)) => r.len(),
+      _ => 0,
+    };
+    if ph == 0 || pw == 0 {
+      return Ok(unevaluated("ImagePeriodogram", args));
+    }
+    let mut plane = vec![0.0; ph * pw];
+    for (y, row) in rows.iter().enumerate() {
+      let Expr::List(cells) = row else {
+        return Ok(unevaluated("ImagePeriodogram", args));
+      };
+      for (x, v) in cells.iter().enumerate() {
+        let Some(v) = crate::functions::math_ast::try_eval_to_f64(v) else {
+          return Ok(unevaluated("ImagePeriodogram", args));
+        };
+        // RotateRight by {shift_y, shift_x}.
+        let (ty, tx) = ((y + shift_y) % ph, (x + shift_x) % pw);
+        plane[ty * pw + tx] = (v + f64::EPSILON).log10();
+      }
+    }
+    (out_h, out_w) = (ph, pw);
+    planes.push(plane);
+  }
+  ch = color;
+  let mut interleaved = vec![0.0; out_h * out_w * ch];
+  for (c, plane) in planes.iter().enumerate() {
+    for (i, v) in plane.iter().enumerate() {
+      interleaved[i * ch + c] = *v as f32 as f64;
+    }
+  }
+  let raw = Expr::Image {
+    color_space: *color_space,
+    display_size: None,
+    width: out_w as u32,
+    height: out_h as u32,
+    channels: ch as u8,
+    data: Arc::new(interleaved),
+    image_type: ImageType::Real32,
+  };
+  let adjusted = image_adjust_ast(&[raw])?;
+  eval(call("Image", vec![adjusted, Expr::String("Byte".into())]))
+}
+
 /// ReliefImage[data] / ReliefImage[image] — a shaded-relief rendering of a
 /// height field, following Mathematica's implementation: the heights are
 /// colored by `ColorFunction` (default `"DarkTerrain"`) after rescaling to
