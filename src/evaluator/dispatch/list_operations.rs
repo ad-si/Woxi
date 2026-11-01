@@ -11456,10 +11456,10 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
       match assoc_lookup(b, k) {
         Some(vb) if !is_shared(k) => match &collision {
           Expr::Identifier(c) if c == "Left" => {
-            out.push((k.clone(), va.clone()))
+            out.push((k.clone(), va.clone()));
           }
           Expr::Identifier(c) if c == "Right" => {
-            out.push((k.clone(), vb.clone()))
+            out.push((k.clone(), vb.clone()));
           }
           Expr::Identifier(c) if c == "None" => {}
           f => {
