@@ -1267,6 +1267,39 @@ mod graph_rendering {
   }
 
   #[test]
+  fn graph_rule_edges_with_explicit_vertices_render() {
+    let result =
+      interpret("ExportString[Graph[{1, 2, 3}, {1 -> 2, 2 -> 3}], \"SVG\"]")
+        .unwrap();
+    assert!(result.contains("<svg"));
+    assert_eq!(
+      interpret("EdgeList[Graph[{a, b}, {a -> b}]] === {DirectedEdge[a, b]}")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn graph_tooltip_vertices_match_plain_edge_endpoints() {
+    assert_eq!(
+      interpret(
+        "Length[EdgeList[Graph[{Tooltip[1, \"a\"], Tooltip[2, \"b\"]}, {1 -> 2}]]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    let result = interpret(
+      "ExportString[Graph[{Tooltip[1, \"a\"], Tooltip[2, \"b\"]}, {1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 1}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("<line")
+        || result.contains("<path")
+        || result.contains("<polyline")
+    );
+  }
+
+  #[test]
   fn graph_with_vertex_style() {
     let result = interpret(
       "ExportString[Graph[{1  2, 2  3, 3  1}, VertexStyle -> Orange], \"SVG\"]"

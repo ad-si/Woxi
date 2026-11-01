@@ -2222,7 +2222,7 @@ fn unwrap_edge_wrappers(
   (expr, label, color)
 }
 
-/// Peel off `Style[..., directives...]` wrappers from a vertex, returning
+/// Peel off `Style[..., directives...]` and `Tooltip[..., tip]` wrappers from a vertex, returning
 /// the innermost expression along with the first color directive.
 fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
   let mut color: Option<Color> = None;
@@ -2231,6 +2231,9 @@ fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
       if color.is_none() {
         color = args[1..].iter().find_map(parse_color);
       }
+      expr = &args[0];
+    } else if name == "Tooltip" && args.len() == 2 {
+      // `Tooltip[v, tip]` only adds a hover hint; the vertex is `v`.
       expr = &args[0];
     } else {
       break;
