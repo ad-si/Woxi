@@ -270,7 +270,7 @@ fn splice_field_plot_prolog(
 }
 
 /// Contour level specification from the Contours option.
-enum ContourSpec {
+pub(crate) enum ContourSpec {
   /// Contours -> n: n equally spaced levels
   Count(usize),
   /// Contours -> {v1, v2, ...}: explicit levels
@@ -1401,7 +1401,7 @@ fn nice_contour_levels(v_min: f64, v_max: f64, target: usize) -> Vec<f64> {
 }
 
 /// Resolve the Contours option to a sorted list of levels inside the range.
-fn resolve_contour_levels(
+pub(crate) fn resolve_contour_levels(
   spec: &ContourSpec,
   v_min: f64,
   v_max: f64,

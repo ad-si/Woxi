@@ -850,6 +850,19 @@ pub fn dispatch_plotting(
         crate::functions::plot3d::contour_plot3d_ast(args)
       }))
     }
+    "DensityPlot3D" | "SliceDensityPlot3D" | "SliceContourPlot3D"
+      if args.len() >= 4 =>
+    {
+      use crate::functions::volume_plots as vp;
+      Some(quiet_plot(|| {
+        let plotted = match name {
+          "DensityPlot3D" => vp::density_plot3d_ast(args)?,
+          "SliceDensityPlot3D" => vp::slice_density_plot3d_ast(args)?,
+          _ => vp::slice_contour_plot3d_ast(args)?,
+        };
+        Ok(plotted.unwrap_or_else(|| unevaluated(name, args)))
+      }))
+    }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::region_plot_ast(
         &crate::functions::field_plot::with_evaluated_options(args, 3)?,

@@ -6903,4 +6903,5 @@ mod interpreter_tests {
   mod music;
   mod row;
   mod styling;
+  mod volume_plots;
 }

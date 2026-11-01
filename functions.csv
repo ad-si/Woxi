@@ -1793,7 +1793,7 @@ LeviCivitaTensor,"Levi-Civita totally antisymmetric tensor",✅,pure,7.0,1781
 WeierstrassZeta,"Weierstrass zeta function (numeric for machine arguments incl. complex)",✅,pure,3.0,1781
 CatalanNumber,"Returns the nth Catalan number",✅,pure,6.0,1788
 DateValue,"Extracts a named component or property of a date such as its week quarter name or name initials",✅,pure,10.0,1788
-DensityPlot3D,"3D density plot",,unevaluated,10.2,1788
+DensityPlot3D,"Volumetric density plot of a function of three variables as a Raster3D",✅,pure,10.2,1788
 DynamicModuleValues,"",🚫,,6.0,1788
 FRatioDistribution,"F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance",✅,pure,6.0,1788
 LaplaceDistribution,"Laplace distribution",✅,pure,6.0,1788
@@ -2023,7 +2023,7 @@ Shallow,"Control output depth display (notebook display)",🚫,,2.0,2008
 BooleanCountingFunction,"Boolean function from a count specification (k; {k}; {kmin; kmax} or {{k1; k2; ...}}); applied to boolean arguments it counts their Trues and with a variable list it writes out the expression in an optional form",✅,pure,7.0,2012
 DeleteStopwords,"Removes common stopwords (articles; prepositions; pronouns; etc.) from a string; a list of words; or the keys of an association",✅,pure,10.1,2012
 Downsample,"Take every n-th element from a list",✅,none,9.0,2012
-SliceContourPlot3D,"3D contour slice plot (plotting)",🚫,,10.2,2012
+SliceContourPlot3D,"Contour bands of a function of three variables on slice surfaces through a box",✅,pure,10.2,2012
 FieldHint,"Input field hint text option (GUI)",🚫,,8.0,2015
 Molecule,"Chemical molecule representation (chemistry)",✅,pure,12.0,2015
 ShowCellBracket,"Notebook cell bracket display option (GUI)",🚫,,3.0,2015
@@ -2503,7 +2503,7 @@ CloudPublish,"",🚫,,10.2,2509
 Glaisher,"Glaisher-Kinkelin constant",✅,none,4.0,2509
 ListCurvePathPlot,"",🚫,,7.0,2509
 Bookmarks,"Option for bookmarked settings in Manipulate",✅,pure,7.0,2512
-SliceDensityPlot3D,"",🚫,,10.2,2512
+SliceDensityPlot3D,"Density of a function of three variables on slice surfaces through a box",✅,pure,10.2,2512
 StringRepeat,"Repeats a string a number of times optionally truncated to a given length",✅,pure,10.1,2512
 BracketingBar,"Inert typeset form of absolute-value bars around its content",✅,pure,3.0,2514
 StartProcess,"",🚫,,10.0,2514
