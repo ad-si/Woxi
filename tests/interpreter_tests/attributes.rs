@@ -4,6 +4,24 @@ mod set_attributes {
   use super::*;
 
   #[test]
+  fn function_plots_are_hold_all() {
+    assert_eq!(
+      interpret("Attributes[{Plot, DensityPlot3D, BodePlot, ListPlot}]")
+        .unwrap(),
+      "{{HoldAll, Protected, ReadProtected}, {HoldAll, Protected, ReadProtected}, \
+     {HoldAll, Protected, ReadProtected}, {Protected}}"
+    );
+    // The body of a plot is not evaluated with its variables free, even where
+    // the plot is not drawn yet.
+    let r = interpret_with_stdout(
+      "f[v_] := (Print[v]; v); \
+     Head[SliceDensityPlot3D[f[x], {x, 0, 1}, {y, 0, 1}, {z, 0, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(r.stdout, "");
+  }
+
+  #[test]
   fn unknown_attributes() {
     clear_state();
     let result = interpret_with_stdout("Attributes[f] = Foo").unwrap();

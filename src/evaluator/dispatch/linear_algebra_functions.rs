@@ -1370,14 +1370,30 @@ pub fn dispatch_linear_algebra_functions(
         crate::functions::control_systems::to_continuous_time_model_ast(args),
       );
     }
-    "BodePlot" if !args.is_empty() => {
-      return Some(crate::functions::control_systems::bode_plot_ast(args));
-    }
-    "NicholsPlot" if !args.is_empty() => {
-      return Some(crate::functions::control_systems::nichols_plot_ast(args));
-    }
-    "NyquistPlot" if !args.is_empty() => {
-      return Some(crate::functions::control_systems::nyquist_plot_ast(args));
+    // The frequency-response plots are HoldAll: the system and the options
+    // are evaluated here, a `{ω, ωmin, ωmax}` iterator is kept as written.
+    "BodePlot" | "NicholsPlot" | "NyquistPlot" if !args.is_empty() => {
+      let mut held = Vec::with_capacity(args.len());
+      for a in args {
+        let iterator = matches!(a, Expr::List(items)
+          if matches!(items.first(), Some(Expr::Identifier(_))));
+        held.push(if iterator {
+          a.clone()
+        } else {
+          match crate::evaluator::evaluate_expr_to_expr(a) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+          }
+        });
+      }
+      let args = &held[..];
+      return Some(match name {
+        "BodePlot" => crate::functions::control_systems::bode_plot_ast(args),
+        "NicholsPlot" => {
+          crate::functions::control_systems::nichols_plot_ast(args)
+        }
+        _ => crate::functions::control_systems::nyquist_plot_ast(args),
+      });
     }
     "DiscreteIndicator" if args.len() == 3 => {
       return Some(Ok(
