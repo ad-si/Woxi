@@ -4975,6 +4975,34 @@ expected pictures come from the reference pages' own examples.
   not applied to the log plots.
 - `ComplexPlot[f, {z, Infinity}]` (the infinite-plane form) is an error.
 
+### Styling options that still have no effect
+
+Found by the round-5 parameter sweep of the plot reference pages: each is
+accepted, but the picture is the same as without it.
+
+- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `MeshShading`,
+  `PlotRangeClipping`, `RegionFunction`, `PlotLayout`; `MeshFunctions` is
+  ignored (the mesh is spaced along the curve).
+- `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
+  `LabelingFunction -> f` with a pure function.
+- `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
+  `"Log2"`, `"SignedLog"`), and `ScalingFunctions` on `ParametricPlot`.
+- `Graphics`: `PlotRegion`, `RotateLabel`, `AlignmentPoint`,
+  `BaselinePosition`, `FormatType`; `LabelStyle` sets only the colour.
+- `ParametricPlot`: `BoundaryStyle`, `PlotTheme`.
+- `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
+  `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
+- `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
+  plot.
+- `DensityPlot`, `RegionPlot`: `FrameStyle`.
+- `Histogram`: `BarOrigin`, `ChartLayout -> "Stacked"`,
+  `LabelingFunction`; `ColorFunction` only for a single dataset.
+- `BarChart`: `ChartElementFunction`, `AxesOrigin`, per-axis `Axes ->
+  {x, y}` and `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list.
+- `PieChart`: `PlotTheme`, `ChartElementFunction`.
+- `DiscretePlot`: `ExtentSize`.
+- `Grid`: `ItemSize`.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a
