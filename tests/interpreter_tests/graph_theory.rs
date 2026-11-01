@@ -9074,4 +9074,37 @@ mod graph_background {
     let svg = interpret("ExportString[Graph[{1 -> 2}], \"SVG\"]").unwrap();
     assert!(!svg.contains("<rect width="));
   }
+
+  #[test]
+  fn graph_prolog_and_epilog_follow_vertex_coordinates() {
+    // Prolog / Epilog are written in the caller's coordinates: the point at
+    // the first vertex's position must land on top of that vertex.
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2}, VertexCoordinateRules -> {1 -> {-3, 0}, 2 -> {3, 0}}, PlotRange -> 5, Prolog -> {Red, Point[{-3, 0}]}, Epilog -> {Blue, Point[{3, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(
+      "<circle cx=\"72.00\" cy=\"180.00\" r=\"2.16\" fill=\"rgb(255,0,0)\"/>"
+    ));
+    assert!(svg.contains(
+      "<circle cx=\"288.00\" cy=\"180.00\" r=\"2.16\" fill=\"rgb(0,0,255)\"/>"
+    ));
+    let red = svg.find("rgb(255,0,0)").unwrap();
+    let blue = svg.find("rgb(0,0,255)").unwrap();
+    let vertex = svg.find("<ellipse").unwrap();
+    assert!(red < vertex && vertex < blue);
+  }
+
+  #[test]
+  fn graph_scalar_plot_range_is_symmetric_window() {
+    let a = interpret(
+      "ExportString[Graph[{1 -> 2}, VertexCoordinates -> {{-3, 0}, {3, 0}}, PlotRange -> 5], \"SVG\"]",
+    )
+    .unwrap();
+    let b = interpret(
+      "ExportString[Graph[{1 -> 2}, VertexCoordinates -> {{-3, 0}, {3, 0}}, PlotRange -> {{-5, 5}, {-5, 5}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(a, b);
+  }
 }
