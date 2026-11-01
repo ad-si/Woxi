@@ -1158,6 +1158,9 @@ pub fn dispatch_image_functions(
         ]));
       }
     }
+    "ReliefImage" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::relief_image_ast(args));
+    }
     "Colorize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::colorize_ast(args));
     }

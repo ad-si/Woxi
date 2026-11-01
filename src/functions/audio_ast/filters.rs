@@ -296,7 +296,7 @@ pub fn total_variation_filter_ast(
     // does: the result is then the data itself up to rounding.
     Some(e) => match try_eval_to_f64(e) {
       Some(v) if v > 0.0 => v,
-      Some(v) if v == 0.0 => f64::EPSILON.sqrt(),
+      Some(0.0) => f64::EPSILON.sqrt(),
       _ => return Ok(unevaluated("TotalVariationFilter", args)),
     },
     None => 0.1,

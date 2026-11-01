@@ -7767,6 +7767,206 @@ fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
 /// string, or a color-function head such as `Hue`. Non-matrix /
 /// non-image arguments emit `Colorize::invinput` and stay symbolic,
 /// matching wolframscript.
+/// ReliefImage[data] / ReliefImage[image] — a shaded-relief rendering of a
+/// height field, following Mathematica's implementation: the heights are
+/// colored by `ColorFunction` (default `"DarkTerrain"`) after rescaling to
+/// [0, 1], and each color is multiplied by the diffuse lighting of the cell
+/// to its lower right: with `A`, `B` the 2×2 finite differences of the
+/// heights, tiles of `lx = depth/(0.15 w)` by `ly = depth/(0.15 h)` and
+/// light direction `L` (`LightingAngle`, default azimuth 3π/4 and
+/// elevation π/4), the intensity is
+/// `contrast (n·L/|n| + 1)/2 + brightness` for `n = {A ly, B lx, lx ly}`
+/// (`Method -> {"Contrast" -> 1.2, "Brightness" -> 0}`). The last row and
+/// column reuse the intensity of their neighbor. The result is a byte RGB
+/// image; a color image is averaged over its channels first.
+pub fn relief_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let invalid = || {
+    crate::emit_message(&format!(
+      "ReliefImage::input: Argument {} at position 1 is not a 2 x 2 or larger numerical matrix of real values.",
+      expr_to_string(&args[0])
+    ));
+    Ok(unevaluated("ReliefImage", args))
+  };
+  let (h, w, heights): (usize, usize, Vec<f64>) = match &args[0] {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      let ch = (*channels as usize).max(1);
+      // An alpha channel does not take part in the gray level.
+      let color = if ch == 2 || ch == 4 { ch - 1 } else { ch };
+      let vals = data
+        .chunks(ch)
+        .map(|px| px[..color].iter().sum::<f64>() / color as f64)
+        .collect();
+      (*height as usize, *width as usize, vals)
+    }
+    Expr::List(rows) => {
+      let mut vals = Vec::new();
+      let mut w = 0;
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(cells) = row else {
+          return invalid();
+        };
+        if i == 0 {
+          w = cells.len();
+        } else if cells.len() != w {
+          return invalid();
+        }
+        for c in cells {
+          match crate::functions::math_ast::try_eval_to_f64(c) {
+            Some(v) if v.is_finite() => vals.push(v),
+            _ => return invalid(),
+          }
+        }
+      }
+      (rows.len(), w, vals)
+    }
+    _ => return invalid(),
+  };
+  if h < 2 || w < 2 {
+    return invalid();
+  }
+
+  let opts = &args[1..];
+  // The light direction, or None for flat (unlit) coloring.
+  let light = {
+    let side = |e: &Expr| match e {
+      Expr::Identifier(s) => match s.as_str() {
+        "Right" => Some(0.0),
+        "Top" => Some(std::f64::consts::FRAC_PI_2),
+        "Left" => Some(std::f64::consts::PI),
+        "Bottom" => Some(3.0 * std::f64::consts::FRAC_PI_2),
+        _ => None,
+      },
+      other => crate::functions::math_ast::try_eval_to_f64(other),
+    };
+    let default_elevation = std::f64::consts::FRAC_PI_4;
+    let angles = match option_value(opts, "LightingAngle") {
+      None => Some((3.0 * std::f64::consts::FRAC_PI_4, default_elevation)),
+      Some(Expr::Identifier(s)) if s == "Automatic" => {
+        Some((3.0 * std::f64::consts::FRAC_PI_4, default_elevation))
+      }
+      Some(Expr::Identifier(s)) if s == "None" => None,
+      Some(Expr::List(pair)) if pair.len() == 2 => {
+        match (side(&pair[0]), side(&pair[1])) {
+          (Some(a), Some(e)) => Some((a, e)),
+          _ => return Ok(unevaluated("ReliefImage", args)),
+        }
+      }
+      Some(other) => match side(other) {
+        Some(a) => Some((a, default_elevation)),
+        None => return Ok(unevaluated("ReliefImage", args)),
+      },
+    };
+    angles.map(|(az, el): (f64, f64)| {
+      [el.cos() * az.cos(), el.cos() * az.sin(), el.sin()]
+    })
+  };
+  let (mut contrast, mut brightness) = (1.2, 0.0);
+  if let Some(Expr::List(method)) = option_value(opts, "Method") {
+    let method_value = |key: &str| {
+      method.iter().find_map(|o| match o {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::String(k) if k == key) => {
+          crate::functions::math_ast::try_eval_to_f64(replacement)
+        }
+        _ => None,
+      })
+    };
+    contrast = method_value("Contrast").unwrap_or(contrast);
+    brightness = method_value("Brightness").unwrap_or(brightness);
+  }
+  let color_function = option_value(opts, "ColorFunction")
+    .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"));
+  let scaling = !matches!(
+    option_value(opts, "ColorFunctionScaling"),
+    Some(Expr::Identifier(n)) if n == "False"
+  );
+
+  // The z range: PlotRange -> All, widened by 1/2 each way when flat.
+  let (mut lo, mut hi) = heights
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+      (lo.min(v), hi.max(v))
+    });
+  if hi - lo == 0.0 {
+    lo -= 0.5;
+    hi += 0.5;
+  }
+  let depth = hi - lo;
+
+  let mut intensity = vec![1.0_f64; h * w];
+  if let Some([sx, sy, sz]) = light {
+    let lx = depth / 0.15 / w as f64;
+    let ly = depth / 0.15 / h as f64;
+    let at = |y: usize, x: usize| heights[y * w + x];
+    for y in 0..h {
+      for x in 0..w {
+        let (y0, x0) = (y.min(h - 2), x.min(w - 2));
+        let (a, b, c, d) = (
+          at(y0, x0),
+          at(y0, x0 + 1),
+          at(y0 + 1, x0),
+          at(y0 + 1, x0 + 1),
+        );
+        let gx = 0.5 * (a - b + c - d);
+        let gy = 0.5 * (a + b - c - d);
+        let dot = gx * ly * sx + gy * lx * sy + lx * ly * sz;
+        let norm = (ly * ly * gx * gx + lx * lx * gy * gy + lx * lx * ly * ly)
+          .sqrt()
+          + f64::EPSILON;
+        intensity[y * w + x] =
+          contrast * f64::midpoint(dot / norm, 1.0) + brightness;
+      }
+    }
+  }
+
+  let mut data = Vec::with_capacity(h * w * 3);
+  for (i, &v) in heights.iter().enumerate() {
+    let t = if scaling { (v - lo) / depth } else { v };
+    let (r, g, b) = match color_function {
+      None => crate::functions::chart::sample_named_gradient("DarkTerrain", t)
+        .unwrap_or((t, t, t)),
+      Some(Expr::String(name)) => {
+        match crate::functions::chart::sample_named_gradient(name, t) {
+          Some(c) => c,
+          None => return Ok(unevaluated("ReliefImage", args)),
+        }
+      }
+      Some(f) => {
+        let value =
+          crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+            func: Box::new(f.clone()),
+            args: vec![Expr::Real(t)],
+          })?;
+        match crate::functions::graphics::parse_color(&value) {
+          Some(c) => (c.r, c.g, c.b),
+          None => return Ok(unevaluated("ReliefImage", args)),
+        }
+      }
+    };
+    let k = intensity[i];
+    for c in [r, g, b] {
+      data.push(((c * k).clamp(0.0, 1.0) * 255.0).round() / 255.0);
+    }
+  }
+  Ok(Expr::Image {
+    color_space: Some("RGB"),
+    display_size: None,
+    width: w as u32,
+    height: h as u32,
+    channels: 3,
+    data: Arc::new(data),
+    image_type: ImageType::Byte,
+  })
+}
+
 pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(rows) = &args[0]
     && !rows.is_empty()

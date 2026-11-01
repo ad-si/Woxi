@@ -3596,7 +3596,7 @@ LocationEquivalenceTest,"",,,8.0,3656
 NearestFunction,"Nearest-element function object (applying it runs the Nearest it records)",✅,pure,6.0,3656
 PairedZTest,"",,,8.0,3656
 PolygonalNumber,"Gives the nth r-gonal polygonal number",✅,pure,10.4,3656
-ReliefImage,"",🚫,,8.0,3656
+ReliefImage,"Shaded-relief image of a height array or image colored by height and lit by LightingAngle",✅,pure,8.0,3656
 SampleDepth,"",,,2.0,3656
 SequenceSplit,"Splits a list into segments separated by matching subsequences; rules keep a replacement at each separator and a third argument caps the number of segments",✅,pure,11.3,3656
 Snippet,"Opening lines of a text each cut to 80 characters; the spec selects lines the way Take selects elements",✅,pure,10.2,3656

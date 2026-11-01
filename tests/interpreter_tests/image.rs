@@ -10284,6 +10284,75 @@ mod find_threshold {
   }
 }
 
+mod relief_image {
+  use super::*;
+
+  const M: &str = "{{0.4785538089186683, 0.008696916817696687, \
+    0.34702929535492655, 0.1392798273842255, 0.18060266455745766, \
+    0.5287012112413121}, {0.5785867785984598, 0.7603494187101738, \
+    0.40429785674104424, 0.9037262805877408, 0.9759042480826978, \
+    0.6203600189312912}, {0.09800148528293073, 0.9817547207207011, \
+    0.7501726704443339, 0.13372082324090928, 0.3488323721423001, \
+    0.1823284966925054}}";
+
+  #[test]
+  fn relief_image_default_shading() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "r = ReliefImage[{M}]; {{ImageType[r], ImageColorSpace[r], ImageData[r, \"Byte\"]}}"
+      ))
+      .unwrap(),
+      "{Byte, RGB, {{{109, 105, 78}, {0, 17, 114}, {109, 123, 108}, \
+       {60, 82, 114}, {76, 99, 119}, {114, 102, 71}}, {{135, 112, 74}, \
+       {121, 91, 61}, {120, 127, 103}, {232, 215, 199}, {252, 251, 250}, \
+       {121, 95, 59}}, {{54, 79, 140}, {227, 227, 227}, {138, 104, 68}, \
+       {72, 99, 141}, {110, 124, 109}, {80, 104, 125}}}}"
+    );
+  }
+
+  #[test]
+  fn relief_image_color_function_and_lighting_angle() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ReliefImage[{M}, ColorFunction -> \"SunsetColors\", \
+         LightingAngle -> {{Left, Pi/3}}], \"Byte\"][[1]]"
+      ))
+      .unwrap(),
+      "{{255, 117, 20}, {0, 0, 0}, {235, 81, 74}, {84, 31, 115}, \
+       {112, 40, 139}, {255, 141, 19}}"
+    );
+  }
+
+  // A color image is averaged over its channels; LightingAngle -> None
+  // leaves the colors unshaded.
+  #[test]
+  fn relief_image_of_color_image_unlit() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ReliefImage[Image[{{{1, 0, 0}, {0, 1, 0}}, \
+         {{0, 0, 1}, {1, 1, 1}}}], LightingAngle -> None], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{0, 17, 119}, {0, 17, 119}}, {{0, 17, 119}, {255, 255, 255}}}"
+    );
+  }
+
+  #[test]
+  fn relief_image_flat_data() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ReliefImage[Image[{{0., 0.}, {0., 0.}}]], \"Byte\"][[1, 1]]"
+      )
+      .unwrap(),
+      "{122, 115, 83}"
+    );
+  }
+}
+
 mod image_filter_padding {
   use super::*;
 
