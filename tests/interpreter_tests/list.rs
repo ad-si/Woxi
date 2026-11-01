@@ -25482,28 +25482,17 @@ mod combinatorica_random_graph {
       interpret(
         "Needs[\"Combinatorica`\"]; g = GridGraph[2, 3]; \
          {InputForm[g], InputForm[InduceSubgraph[g, {5, 1, 2}]], \
-          InputForm[GridGraph[3, 1]], InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
+          InputForm[GridGraph[3, 1]], InputForm[CompleteGraph[3]], \
+          InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
       )
       .unwrap(),
       "{InputForm[Graph[{{{1, 2}}, {{3, 4}}, {{5, 6}}, {{1, 3}}, {{2, 4}}, {{3, 5}}, {{4, 6}}}, \
        {{{1., 1.}}, {{2., 1.}}, {{1., 2.}}, {{2., 2.}}, {{1., 3.}}, {{2., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}}, {{{1., 1.}}, {{2., 1.}}, {{1., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}, {{2, 3}}}, {{{1., 0.}}, {{2., 0.}}, {{3., 0.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{-0.4999999999999998, \
+       0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, {{1., 0}}}]], \
        InputForm[{Graph[{}, {}], Graph[{}, {{{0, 0}}}]}]}"
-    );
-    // The circle coordinates' last bit depends on the platform's cosine
-    // (the first x was recorded as -0.49999999999999983, while glibc's
-    // correctly rounded cosine gives -0.4999999999999998), so they are
-    // compared within a few ulps; the chopped sine of 2 Pi is exact.
-    assert_eq!(
-      interpret(
-        "Needs[\"Combinatorica`\"]; g = CompleteGraph[3]; \
-         {InputForm[g[[1]]], g[[2, 3]], \
-          Max[Abs[Flatten[g[[2]]] - \
-            N[Flatten[{{-1/2, Sqrt[3]/2}, {-1/2, -Sqrt[3]/2}, {1, 0}}]]]] < 10^-14}"
-      )
-      .unwrap(),
-      "{InputForm[{{{1, 2}}, {{1, 3}}, {{2, 3}}}], {{1., 0}}, True}"
     );
     assert_eq!(
       interpret(
