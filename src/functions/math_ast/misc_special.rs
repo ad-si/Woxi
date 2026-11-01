@@ -1585,6 +1585,66 @@ pub fn anger_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("AngerJ", args))
 }
 
+/// AngerJ[ν, μ, z] and WeberE[ν, μ, z] — the associated Anger and Weber
+/// functions
+///   AngerJ[ν, μ, z] = (1/π) ∫_0^π (2 Sin[θ])^μ Cos[ν θ - z Sin[θ]] dθ
+///   WeberE[ν, μ, z] = (1/π) ∫_0^π (2 Sin[θ])^μ Sin[ν θ - z Sin[θ]] dθ
+/// Machine values come from that integral when every argument is real, at
+/// least one is a machine number, and μ > -1 (where the integral converges;
+/// the weight `Sin[θ]^μ` is singular at both endpoints for μ < 0, which the
+/// tanh-sinh rule handles at full precision). Everything else stays
+/// unevaluated.
+pub fn associated_anger_weber_ast(
+  name: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let is_weber = name == "WeberE";
+  if args.len() == 3
+    && args.iter().any(|a| matches!(a, Expr::Real(_)))
+    && let (Some(nu), Some(mu), Some(z)) = (
+      try_eval_to_f64(&args[0]),
+      try_eval_to_f64(&args[1]),
+      try_eval_to_f64(&args[2]),
+    )
+    && mu > -1.0
+    && let Some(v) = associated_anger_weber(nu, mu, z, is_weber)
+  {
+    return Ok(Expr::Real(v));
+  }
+  Ok(unevaluated(name, args))
+}
+
+fn associated_anger_weber(
+  nu: f64,
+  mu: f64,
+  z: f64,
+  is_weber: bool,
+) -> Option<f64> {
+  use std::f64::consts::PI;
+  let integrand = |t: f64| -> Option<f64> {
+    let phase = nu * t - z * t.sin();
+    let trig = if is_weber { phase.sin() } else { phase.cos() };
+    Some((2.0 * t.sin()).powf(mu) * trig)
+  };
+  // Split at Pi/2 so both singular endpoints are handled by the
+  // endpoint-clustered nodes and the oscillation per piece stays small.
+  let left = crate::functions::calculus_ast::tanh_sinh(
+    &integrand,
+    0.0,
+    PI / 2.0,
+    1e-15,
+    None,
+  )?;
+  let right = crate::functions::calculus_ast::tanh_sinh(
+    &integrand,
+    PI / 2.0,
+    PI,
+    1e-15,
+    None,
+  )?;
+  Some((left + right) / PI)
+}
+
 /// Compute AngerJ[nu, z] numerically using Gauss-Legendre quadrature.
 ///
 /// AngerJ[nu, z] = (1/Pi) * Integral[Cos[nu*t - z*Sin[t]], {t, 0, Pi}]

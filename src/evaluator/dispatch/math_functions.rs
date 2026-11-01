@@ -2042,6 +2042,11 @@ pub fn dispatch_math_functions(
     "WeberE" if args.len() == 2 => {
       return Some(crate::functions::math_ast::weber_e_ast(args));
     }
+    "AngerJ" | "WeberE" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::associated_anger_weber_ast(
+        name, args,
+      ));
+    }
     "WignerD" if args.len() == 2 || args.len() == 4 => {
       return Some(crate::functions::math_ast::wigner_d_ast(args));
     }
@@ -4127,6 +4132,57 @@ pub fn dispatch_math_functions(
           result.push(ema.clone());
         }
         return Some(Ok(Expr::List(result.into())));
+      }
+    }
+    // CircleThrough[{p1, ...}, q] — the circle centred at q through every
+    // p_i, and CircleThrough[{p1, ...}, q, r] — the one that also has radius
+    // r. An explicit Circle is returned only when the points really are
+    // equidistant from q (at distance r); otherwise it stays unevaluated.
+    "CircleThrough" if args.len() == 2 || args.len() == 3 => {
+      if let Expr::List(pts) = &args[0]
+        && !pts.is_empty()
+        && let Expr::List(q) = &args[1]
+        && q.len() == 2
+      {
+        let sq_dist = |p: &Expr| -> Option<Expr> {
+          let Expr::List(c) = p else { return None };
+          if c.len() != 2 {
+            return None;
+          }
+          evaluate_expr_to_expr(&plus2(
+            pow2(minus2(c[0].clone(), q[0].clone()), Expr::Integer(2)),
+            pow2(minus2(c[1].clone(), q[1].clone()), Expr::Integer(2)),
+          ))
+          .ok()
+        };
+        let r2 = match args.get(2) {
+          Some(r) => evaluate_expr_to_expr(&pow2(r.clone(), Expr::Integer(2)))
+            .ok(),
+          None => sq_dist(&pts[0]),
+        };
+        if let Some(r2) = r2 {
+          let all_on_circle = pts.iter().all(|p| {
+            sq_dist(p).is_some_and(|d2| {
+              let diff = evaluate_expr_to_expr(&call(
+                "Simplify",
+                vec![minus2(d2, r2.clone())],
+              ));
+              matches!(diff, Ok(Expr::Integer(0)))
+                || matches!(diff, Ok(Expr::Real(x)) if x == 0.0)
+            })
+          });
+          if all_on_circle {
+            let radius = match args.get(2) {
+              Some(r) => r.clone(),
+              None => evaluate_expr_to_expr(&make_sqrt(r2.clone()))
+                .unwrap_or_else(|_| make_sqrt(r2.clone())),
+            };
+            return Some(Ok(call(
+              "Circle",
+              vec![args[1].clone(), radius],
+            )));
+          }
+        }
       }
     }
     // CircleThrough[{p1, p2, p3}] — circumscribed circle through 3 points

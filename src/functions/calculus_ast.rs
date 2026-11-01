@@ -17890,7 +17890,7 @@ fn boole_exact_measure_with_crossings(
 /// Returns `None` when successive levels never agree to `tol`, which is the
 /// caller's cue to fall back to the adaptive rule — tanh-sinh converges slowly
 /// for a strongly oscillatory integrand.
-fn tanh_sinh(
+pub(crate) fn tanh_sinh(
   f: &dyn Fn(f64) -> Option<f64>,
   a: f64,
   b: f64,
