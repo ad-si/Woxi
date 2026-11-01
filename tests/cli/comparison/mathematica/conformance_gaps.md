@@ -6708,3 +6708,11 @@ images), so they are not implemented yet:
 - `CircleThrough[pts, q]` / `CircleThrough[pts, q, r]` with points that are not
   all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
   there is unverified.
+
+## Last-ulp differences of machine `Cos`/`Sin`
+
+wolframscript's machine-precision `Cos`/`Sin` are not always correctly rounded,
+while Woxi uses the platform libm (correctly rounded on glibc). For example
+`Cos[2.0943951023931953]` (= `Cos[N[2 Pi/3]]`) is `-0.49999999999999983` in
+wolframscript and `-0.4999999999999998` in Woxi, which shows up in the
+coordinates of Combinatorica's `CompleteGraph[3]`.
