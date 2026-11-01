@@ -2168,18 +2168,52 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
 `a == 0` or `c == 0` WL also writes the characteristics unnormalised
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
+### `DSolve` gaps met by Demonstrations
+
+- Euler–Cauchy equations (`x^2 y''[x] + x y'[x] + c y[x] == 0`) stay
+  unevaluated, even with numeric `c`; WL gives
+  `C[1] Cos[Sqrt[c] Log[x]] + C[2] Sin[Sqrt[c] Log[x]]`, and for a two-point
+  eigenvalue problem (`y'[1] == 0`, `y'[2] == 0`) a `Piecewise` over
+  `Element[K[1], Integers]` (ASturmLiouvilleEigenvalueProblem).
+- The whole-line initial value problem of the heat equation
+  (`DSolve[{D[c[t, x], t] == d D[c[t, x], x, x] - k c[t, x], c[0, x] ==
+  Exp[-a x^2]}, c[t, x], {t, x}]`) stays unevaluated; WL convolves with the
+  heat kernel (OneDimensionalDiffusionOfAcetylcholineInTheSynapticCleft).
+- With conditions, WL brings the solution over a common denominator
+  (`DSolve[{y''[x] + 4 y[x] == 0, y'[0] == 1}, y[x], x]` is
+  `(2 C[1] Cos[2 x] + Sin[2 x])/2`); Woxi leaves it as a sum
+  (`C[1] Cos[2 x] + Sin[2 x]/2`).
+- A condition combining values at a point (`y[0] + y'[0] == 1`) is not
+  recognised.
+
 ### `NDSolve`'s PDE branch is 1-D
 
-This entry used to say "`NDSolve` covers ODEs only" — no longer accurate.
-1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems,
-Dirichlet or Neumann boundaries) solve via the method of lines:
+PDEs first order in one variable and one-dimensional in the other solve by
+the method of lines (`src/functions/ode_ast/pde_mol.rs`): `"DifferenceOrder"`
+4 stencils on a uniform grid (sized from the initial profiles, honouring
+`"MinPoints"`/`"MaxPoints"`), Rodas4 in time. Coupled systems, several time
+derivatives in one equation, evolution coefficients that vanish at a wall,
+any boundary condition form (Dirichlet, Neumann, Robin, coupled fluxes,
+`DirichletCondition`, `NeumannValue`), a missing condition
+(`NDSolve::bcart`, one-sided equation as in WL) and periodic ends with up to
+fourth space derivatives (Kuramoto–Sivashinsky) are covered. Remaining
+differences:
 
-```wolfram
-NDSolve[{D[u[x,t],t] == D[u[x,t],x,x], u[x,0] == Sin[Pi x],
-         u[0,t] == 0, u[1,t] == 0}, u, {x,0,1}, {t,0,1}]
-```
+- WL's default grid is adaptive and sometimes coarse: for the
+  RadialAndAxialVariationsInANonisothermalTubularReactor Demonstration WL's
+  default gives `T[1, 0.015] == 381.96`, its own converged value
+  (`"MinPoints" -> 51` or more) is 374.75, and Woxi gives 374.75. The grid
+  coordinates (`"Coordinates"`) never match WL's.
+- `NeumannValue` problems are solved by the same finite differences, not
+  WL's finite elements; values agree to 3–5 digits except in thin early
+  boundary layers.
+- Elliptic problems (conditions at both ends of both variables, second
+  derivatives in both) and two space dimensions are not covered.
+- A `DirichletCondition` written inside an equation's right-hand side
+  (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
+  on it too (`NDSolveValue::fempsf`).
 
-returns a real `InterpolatingFunction`. A second-order-in-time
+A second-order-in-time
 (hyperbolic/wave) evolution equation — `D[u[t,x],t,t] == …`, needing an
 extra initial *velocity* condition `D[u,t][t0,x] == g[x]` alongside the
 ordinary initial value — is order-reduced to the first-order system
@@ -2190,17 +2224,7 @@ tridiagonal solve each method-of-lines step rather than an explicit
 formula, so long as the right-hand side is linear in it. This is what a
 Wolfram Demonstration like
 [*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
-needs, and Woxi Studio can now render its `Manipulate`. What's still
-missing:
-
-- The hyperbolic branch only supports a single dependent function — no
-  coupled hyperbolic systems (the parabolic branch supports coupled
-  systems).
-- `DirichletCondition` exists only as a symbol; Dirichlet conditions must be
-  written as plain equalities. `NeumannValue[g, x == x0]` terms are lowered
-  to Neumann flux conditions (`n·(c ∇u) = g`), and the resulting solutions
-  take the space variable first, then time (unverified against
-  `wolframscript` for the `Method -> "FiniteElement"` form).
+needs. The hyperbolic branch only supports a single dependent function.
 
 On the symbolic side `DSolve` recognises three first-order two-variable PDE
 shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
