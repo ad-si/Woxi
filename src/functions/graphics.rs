@@ -29071,6 +29071,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   } else {
     manipulate_block_code(&body_code, &fixed)
   };
+  // They are bound outside the body too: a `Dynamic[…]` the body returns is
+  // shown after the body's `Block` has exited, and in Wolfram it still sees
+  // the variable (a `DynamicModule` local) — a `Dynamic[Refresh[…
+  // construct[[2, i]] …]]` whose `construct` is driven by a custom control.
+  for (name, value) in &fixed {
+    if !state.iter().any(|(n, _)| n == name) {
+      state.push((name.clone(), value.clone()));
+    }
+  }
 
   Some(ManipulateSpec {
     module_locals,
