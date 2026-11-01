@@ -295,3 +295,56 @@ mod unset_literal_values {
     assert!(result.warnings.iter().any(|w| w.contains("Unset::norep")));
   }
 }
+
+mod upvalue_redefinition {
+  use super::*;
+
+  // A rule whose left-hand side differs only in pattern names replaces the
+  // earlier one, as for down-values; the FullForm `Pattern[x, Blank[]]` a
+  // SaveDefinitions dump writes is the same as `x_` (the SU2 spinor map
+  // Demonstration replays its objects' methods that way).
+  #[test]
+  fn same_lhs_up_to_pattern_names_replaces() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "G /: G[t_].m[] := 1; G /: G[s_].m[] := 2; \
+         U /: new[U[p_]] := 1; UpSetDelayed[new[U[Pattern[q$, Blank[]]]], 4]; \
+         {UpValues[G], G[1].m[], Length[UpValues[U]], new[U[0]]}"
+      )
+      .unwrap(),
+      "{{HoldPattern[G[s_] . m[]] :> 2}, 2, 1, 4}"
+    );
+  }
+
+  #[test]
+  fn shared_pattern_variables_still_distinguish_rules() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "S /: k[S[x_], S[x_]] := same; S /: k[S[x_], S[y_]] := diff; \
+         {Length[UpValues[S]], k[S[1], S[1]], k[S[1], S[2]]}"
+      )
+      .unwrap(),
+      "{2, same, diff}"
+    );
+  }
+}
+
+mod unique_fresh_names {
+  use super::*;
+
+  // Unique never hands out a symbol already in use: one with a value, or
+  // one merely read in (the objects `$22`, `$23`, … a SaveDefinitions dump
+  // restores).
+  #[test]
+  fn skips_symbols_in_use() {
+    clear_state();
+    let result = interpret(
+      "$3 = 3; z = {$4, $2}; u = Table[Unique[], {4}]; \
+       {Intersection[u, {$2, $3, $4}], Length[Union[u]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{}, 4}");
+  }
+}

@@ -1285,6 +1285,18 @@ fn pattern_var_key(name: &str, expr: &Expr) -> String {
 /// Collect all pattern variables from an expression.
 /// Returns tuples of (key, name, head, is_optional, blank_type) for each
 /// Pattern/PatternOptional node found.
+/// `expr` spelled with its pattern variables renamed in order of
+/// appearance, so two left-hand sides that differ only in those names
+/// (`G[t_].m[]`, `G[s_].m[]`) spell alike.
+fn pattern_canonical_string(expr: &Expr) -> String {
+  let mut renamed = expr.clone();
+  for (i, (_, name, ..)) in collect_pattern_vars(expr).iter().enumerate() {
+    renamed =
+      crate::syntax::rename_symbol(&renamed, name, &format!("\u{1}p{i}"));
+  }
+  expr_to_string(&renamed)
+}
+
 fn collect_pattern_vars(
   expr: &Expr,
 ) -> Vec<(String, String, Option<String>, bool, u8)> {
@@ -6057,6 +6069,10 @@ pub fn tag_set_delayed_ast(
   body: &Expr,
   evaluate_rhs: bool,
 ) -> Result<Expr, InterpreterError> {
+  // `Pattern[x, Blank[]]` (as a SaveDefinitions dump writes it) is `x_`, so
+  // the rule replaces the short-form one instead of sitting beside it.
+  let lhs = &crate::evaluator::pattern_matching::with_short_form_blanks(lhs)
+    .into_owned();
   let tag_name = match tag {
     Expr::Identifier(s) => s.clone(),
     _ => {
@@ -6298,15 +6314,17 @@ pub fn tag_set_delayed_ast(
   }
 
   // Store in UPVALUES for introspection and cleanup.
-  // If an upvalue with the same original LHS already exists, replace it.
+  // If an upvalue with the same original LHS already exists, replace it —
+  // the same up to the names of its pattern variables, as Wolfram compares
+  // (`G /: G[t_].m[] := 1; G /: G[s_].m[] := 2` leaves one rule).
   // Use original_lhs (with Condition wrapper) for display purposes.
-  let lhs_str = expr_to_string(original_lhs);
+  let lhs_str = pattern_canonical_string(original_lhs);
   crate::UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
     if let Some(pos) =
       entry.iter().position(|(_, _, _, _, _, _, orig_lhs, _)| {
-        expr_to_string(orig_lhs) == lhs_str
+        pattern_canonical_string(orig_lhs) == lhs_str
       })
     {
       entry[pos] = (
@@ -6338,24 +6356,29 @@ pub fn tag_set_delayed_ast(
   // before inserting the new one (to avoid duplicates on redefinition).
   // Only remove if conditions also match (different conditions = different rules).
   let blank_types = vec![1u8; params.len()];
-  let cond_strs: Vec<String> = conditions
-    .iter()
-    .map(|c| c.as_ref().map_or(String::new(), expr_to_string))
-    .collect();
+  // All the slot conditions together, so a variable shared between slots
+  // stays one variable when the names are canonicalized.
+  let conditions_key = |c: &[Option<Expr>]| {
+    pattern_canonical_string(&Expr::List(
+      c.iter()
+        .map(|cond| {
+          cond
+            .clone()
+            .unwrap_or_else(|| Expr::Identifier("None".to_string()))
+        })
+        .collect(),
+    ))
+  };
+  let cond_key = conditions_key(&conditions);
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
     entry.retain(|(p, c, _, h, bt, _)| {
-      if p == &params && h == &heads && bt == &blank_types {
-        // Only remove if conditions also match
-        let existing_cond_strs: Vec<String> = c
-          .iter()
-          .map(|cond| cond.as_ref().map_or(String::new(), expr_to_string))
-          .collect();
-        existing_cond_strs != cond_strs
-      } else {
-        true
-      }
+      // Only remove if conditions also match
+      !(p == &params
+        && h == &heads
+        && bt == &blank_types
+        && conditions_key(c) == cond_key)
     });
     // Insert after existing upvalue entries (params starting with _up)
     // to maintain definition order, but before DownValues.
