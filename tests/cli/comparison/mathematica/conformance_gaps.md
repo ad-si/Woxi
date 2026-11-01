@@ -2882,11 +2882,6 @@ must build the common denominator internally — but `LaguerreL[1, 1/2, x]` stay
 `3/2 - x` rather than `(3 - 2*x)/2`, so it is not a plain `Together` either.
 Integer second arguments match.
 
-### `ArcCot[Interval[…]]` is unevaluated
-
-WL converts endpoints to `ArcTan` form *inside* the interval (`ArcCot[2]` →
-`ArcTan[1/2]`), which differs from its own scalar `ArcCot[2]`.
-
 ### `WignerD[{1,0,0}, Pi/2]`
 
 Gives `2.22e-16` instead of an exact 0.

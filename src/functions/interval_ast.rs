@@ -61,6 +61,16 @@ pub fn map_monotonic_interval(head: &str, expr: &Expr) -> Option<Expr> {
   Some(make_interval(normalize_intervals(out)))
 }
 
+/// The circular function behind `head` and the size of its half turn in the
+/// argument's unit: `Sin` → (`Sin`, Pi), `SinDegrees` → (`Sin`, 180), so the
+/// radian and degree forms share one implementation of each range rule.
+fn trig_base(head: &str) -> Option<(&str, f64)> {
+  match head.strip_suffix("Degrees") {
+    Some(base) => Some((base, 180.0)),
+    None => Some((head, std::f64::consts::PI)),
+  }
+}
+
 /// True if some `offset + period*k` (integer `k`) lies in `[af, bf]`.
 fn critical_point_in(offset: f64, period: f64, af: f64, bf: f64) -> bool {
   let eps = 1e-9;
@@ -74,18 +84,24 @@ fn critical_point_in(offset: f64, period: f64, af: f64, bf: f64) -> bool {
 /// maximum point (value 1) or minimum point (value -1) falls inside the span.
 /// Returns `None` unless every endpoint and its image is real-numeric.
 pub fn trig_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  // (offset of a maximum, offset of a minimum), period 2*Pi.
-  let (max_offset, min_offset) = match head {
-    "Sin" => (std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2),
-    "Cos" => (0.0, std::f64::consts::PI),
+  let (base, half_turn) = trig_base(head)?;
+  // (offset of a maximum, offset of a minimum), period one full turn.
+  let (max_offset, min_offset) = match base {
+    "Sin" => (half_turn / 2.0, -half_turn / 2.0),
+    "Cos" => (0.0, half_turn),
     _ => return None,
   };
-  let period = std::f64::consts::TAU;
+  let period = 2.0 * half_turn;
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
   for (a, b) in spans {
     let af = expr_to_f64(a)?;
     let bf = expr_to_f64(b)?;
+    // An unbounded span covers whole periods: the full range [-1, 1].
+    if !af.is_finite() || !bf.is_finite() {
+      out.push((Expr::Integer(-1), Expr::Integer(1)));
+      continue;
+    }
     // Endpoint images, kept symbolic (1/2, Sqrt[3]/2, …) but required numeric.
     let fa = crate::evaluator::evaluate_function_call_ast(
       head,
@@ -317,12 +333,13 @@ fn count_poles_in(offset: f64, period: f64, af: f64, bf: f64) -> i64 {
 /// poles the function already covers all reals. Returns `None` unless every
 /// endpoint and its image is real-numeric.
 pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  let (offset, increasing) = match head {
-    "Tan" => (std::f64::consts::FRAC_PI_2, true),
+  let (base, half_turn) = trig_base(head)?;
+  let (offset, increasing) = match base {
+    "Tan" => (half_turn / 2.0, true),
     "Cot" => (0.0, false),
     _ => return None,
   };
-  let period = std::f64::consts::PI;
+  let period = half_turn;
   let inf = || id_expr("Infinity");
   let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
 
@@ -331,6 +348,11 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     let af = expr_to_f64(a)?;
     let bf = expr_to_f64(b)?;
+    // An unbounded span crosses infinitely many poles: all reals.
+    if !af.is_finite() || !bf.is_finite() {
+      out.push((neg_inf(), inf()));
+      continue;
+    }
     let fa = crate::evaluator::evaluate_function_call_ast(
       head,
       std::slice::from_ref(a),
@@ -374,14 +396,16 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
 /// pole-adjacent side. Returns `None` unless every endpoint and finite image is
 /// real-numeric.
 pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
-  use std::f64::consts::{FRAC_PI_2, PI};
   // (pole offset, extremum offset): poles at pole_off + k*Pi, extrema (values
-  // ±1) at ext_off + k*Pi with value (-1)^k.
-  let (pole_off, ext_off) = match head {
-    "Sec" => (FRAC_PI_2, 0.0),
-    "Csc" => (0.0, FRAC_PI_2),
+  // ±1) at ext_off + k*Pi with value (-1)^k (Pi being a half turn, 180 for
+  // the Degrees forms).
+  let (base, half_turn) = trig_base(head)?;
+  let (pole_off, ext_off) = match base {
+    "Sec" => (half_turn / 2.0, 0.0),
+    "Csc" => (0.0, half_turn / 2.0),
     _ => return None,
   };
+
   let inf = || id_expr("Infinity");
   let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
   let fold_min =
@@ -394,12 +418,18 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
   for (a, b) in spans {
     let af = expr_to_f64(a)?;
     let bf = expr_to_f64(b)?;
+    // An unbounded span covers whole periods: both branches in full.
+    if !af.is_finite() || !bf.is_finite() {
+      out.push((neg_inf(), Expr::Integer(-1)));
+      out.push((Expr::Integer(1), inf()));
+      continue;
+    }
     let eps = 1e-9;
     // Boundary marker for an original endpoint: `None` if the endpoint is
     // itself a pole (image ±Infinity), else its finite image (required real).
     let mk_bound = |pos: f64, e: &Expr| -> Option<(f64, Option<Expr>)> {
-      let k = ((pos - pole_off) / PI).round();
-      if (pos - (pole_off + k * PI)).abs() < eps {
+      let k = ((pos - pole_off) / half_turn).round();
+      if (pos - (pole_off + k * half_turn)).abs() < eps {
         return Some((pos, None)); // endpoint lands on a pole
       }
       let fe = crate::evaluator::evaluate_function_call_ast(
@@ -413,10 +443,10 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
     // Boundaries: original endpoints plus the poles strictly inside.
     let mut bnds: Vec<(f64, Option<Expr>)> =
       vec![mk_bound(af, a)?, mk_bound(bf, b)?];
-    let k_lo = ((af - pole_off) / PI + eps).floor() as i64 + 1;
-    let k_hi = ((bf - pole_off) / PI - eps).ceil() as i64 - 1;
+    let k_lo = ((af - pole_off) / half_turn + eps).floor() as i64 + 1;
+    let k_hi = ((bf - pole_off) / half_turn - eps).ceil() as i64 - 1;
     for k in k_lo..=k_hi {
-      bnds.push((pole_off + k as f64 * PI, None));
+      bnds.push((pole_off + k as f64 * half_turn, None));
     }
     bnds.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(Ordering::Equal));
     // Each consecutive pair is one continuous piece on a single branch.
@@ -427,8 +457,8 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
       let right_pole = fd.is_none();
       // The branch's extremum: nearest lattice point to the piece midpoint.
       let mid = (cp + dp) / 2.0;
-      let kk = ((mid - ext_off) / PI).round() as i64;
-      let e_pos = ext_off + kk as f64 * PI;
+      let kk = ((mid - ext_off) / half_turn).round() as i64;
+      let e_pos = ext_off + kk as f64 * half_turn;
       let v = if kk.rem_euclid(2) == 0 { 1 } else { -1 };
       let e_inside = *cp < e_pos - eps && e_pos < *dp - eps;
       if v == 1 {
@@ -476,6 +506,82 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
     out,
   )))
   .ok()
+}
+
+/// One-argument functions of an `Interval[...]` that have no hook of their
+/// own: dispatched here from the interval dispatch, ahead of the function's
+/// own evaluation. Each delegates to the range rule its shape needs, so the
+/// radian and degree forms (and `Abs`/`RealAbs`) share one implementation.
+pub fn interval_function(name: &str, args: &[Expr]) -> Option<Expr> {
+  let [x] = args else {
+    return None;
+  };
+  is_interval(x)?;
+  match name {
+    // Monotonic (non-decreasing or non-increasing) on the whole real line.
+    "Sign" | "UnitStep" | "IntegerPart" | "ArcSinDegrees" | "ArcCosDegrees"
+    | "ArcTanDegrees" => map_monotonic_interval(name, x),
+    "RealAbs" => abs_interval(x),
+    "Re" | "Conjugate" => real_interval_identity(x),
+    "ArcCot" | "ArcCotDegrees" => arccot_interval(name, x),
+    "SinDegrees" | "CosDegrees" => trig_interval(name, x),
+    "TanDegrees" | "CotDegrees" => tan_cot_interval(name, x),
+    "SecDegrees" | "CscDegrees" => sec_csc_interval(name, x),
+    _ => None,
+  }
+}
+
+/// `Re` / `Conjugate` of an interval of reals is the interval itself.
+fn real_interval_identity(expr: &Expr) -> Option<Expr> {
+  for (a, b) in is_interval(expr)? {
+    expr_to_f64(a)?;
+    expr_to_f64(b)?;
+  }
+  Some(expr.clone())
+}
+
+/// `ArcCot[Interval[...]]` (and `ArcCotDegrees`). `ArcCot` is decreasing on
+/// each side of its jump at 0, so a span not straddling 0 maps to its endpoint
+/// images. Like wolframscript, the images are written in `ArcTan[1/x]` form
+/// (`ArcTanDegrees[1/x]` for degrees), with an infinite endpoint giving 0 and
+/// a lower endpoint of 0 giving the right-hand limit a quarter turn. A span
+/// containing 0 anywhere else stays unevaluated.
+fn arccot_interval(head: &str, expr: &Expr) -> Option<Expr> {
+  let arctan = if head == "ArcCotDegrees" {
+    "ArcTanDegrees"
+  } else {
+    "ArcTan"
+  };
+  let image = |e: &Expr, f: f64| -> Option<Expr> {
+    let v = if f.is_infinite() {
+      Expr::Integer(0)
+    } else if f == 0.0 {
+      crate::evaluator::evaluate_function_call_ast(
+        head,
+        std::slice::from_ref(e),
+      )
+      .ok()?
+    } else {
+      let recip = crate::evaluator::evaluate_function_call_ast(
+        "Power",
+        &[e.clone(), Expr::Integer(-1)],
+      )
+      .ok()?;
+      crate::evaluator::evaluate_function_call_ast(arctan, &[recip]).ok()?
+    };
+    expr_to_f64(&v)?;
+    Some(v)
+  };
+  let mut out: Vec<(Expr, Expr)> = Vec::new();
+  for (a, b) in is_interval(expr)? {
+    let af = expr_to_f64(a)?;
+    let bf = expr_to_f64(b)?;
+    if af < 0.0 && bf >= 0.0 {
+      return None;
+    }
+    out.push((image(a, af)?, image(b, bf)?));
+  }
+  Some(make_interval(normalize_intervals(out)))
 }
 
 /// Compare two numeric expressions. Returns None if not comparable.
@@ -699,9 +805,14 @@ pub fn interval_intersection_ast(
 
 /// IntervalMemberQ[interval, x] — test membership.
 pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `IntervalMemberQ[interval]` is an operator form, applied as
+  // `IntervalMemberQ[interval][x]`.
+  if args.len() == 1 {
+    return Ok(unevaluated("IntervalMemberQ", args));
+  }
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
-      "IntervalMemberQ expects exactly 2 arguments".into(),
+      "IntervalMemberQ expects 1 or 2 arguments".into(),
     ));
   }
 

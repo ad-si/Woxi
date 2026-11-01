@@ -824,14 +824,28 @@ pub fn dispatch_predicate_functions(
     }
     "Between" if args.len() == 2 => {
       use crate::functions::math_ast::try_eval_to_f64;
-      // Normalize arg order: Between[x, range] or Between[range, x] (from operator form)
-      let (x, range_expr) = if matches!(&args[0], Expr::List(_))
-        && !matches!(&args[1], Expr::List(_))
+      let (x, range_expr) = (&args[0], &args[1]);
+      // Between[x, Interval[…]] is membership of the number (or the whole
+      // sub-interval) x in the interval. Only decided when every endpoint
+      // and x are numeric; a symbolic one stays unevaluated.
+      if let Some(spans) =
+        crate::functions::interval_ast::is_interval(range_expr)
       {
-        (&args[1], &args[0])
-      } else {
-        (&args[0], &args[1])
-      };
+        let numeric = |e: &Expr| {
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(e).is_some()
+        };
+        let x_numeric = match crate::functions::interval_ast::is_interval(x) {
+          Some(sub) => sub.iter().all(|(lo, hi)| numeric(lo) && numeric(hi)),
+          None => numeric(x),
+        };
+        if x_numeric && spans.iter().all(|(lo, hi)| numeric(lo) && numeric(hi))
+        {
+          return Some(crate::functions::interval_ast::interval_member_q_ast(
+            &[range_expr.clone(), x.clone()],
+          ));
+        }
+        return Some(Ok(unevaluated("Between", args)));
+      }
       // Between[x, {min, max}] or Between[x, {{min1, max1}, {min2, max2}, ...}]
       if let Expr::List(range) = range_expr {
         // Check if it's a list of ranges (all elements are lists)
