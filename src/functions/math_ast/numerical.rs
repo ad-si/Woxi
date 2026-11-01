@@ -5934,9 +5934,69 @@ fn nsum_euler_maclaurin(f: &Expr, var: &str, min: i64) -> Option<(f64, f64)> {
 }
 
 /// NSum[expr, {i, min, max}] - Numerical summation
+/// `{f, {i, a, b, s}, …}` with a step `s` other than 1 rewritten to iterate
+/// a fresh variable `j` from 0 in unit steps, `i` being `a + s j` (an upper
+/// bound of Infinity stays infinite); `None` without such a step.
+fn unit_step_iteration(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(items) = &args[1] else {
+    return None;
+  };
+  let [Expr::Identifier(var), lo, hi, step] = items.as_slice() else {
+    return None;
+  };
+  if matches!(step, Expr::Integer(1)) {
+    return None;
+  }
+  let j = "NumericIterationStep$".to_string();
+  let value = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: vec![
+      lo.clone(),
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![step.clone(), Expr::Identifier(j.clone())].into(),
+      },
+    ]
+    .into(),
+  })
+  .ok()?;
+  let upper = if is_infinite_upper(hi) {
+    hi.clone()
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Floor".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: "Divide".to_string(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Subtract".to_string(),
+            args: vec![hi.clone(), lo.clone()].into(),
+          },
+          step.clone(),
+        ]
+        .into(),
+      }]
+      .into(),
+    })
+    .ok()?
+  };
+  let mut out = vec![
+    substitute_variable(&args[0], var, &value),
+    Expr::List(
+      vec![Expr::Identifier(j), Expr::Integer(0), upper].into(),
+    ),
+  ];
+  // Later ranges may have bounds that depend on the stepped variable.
+  out.extend(args[2..].iter().map(|a| substitute_variable(a, var, &value)));
+  Some(out)
+}
+
 pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Ok(unevaluated("NSum", args));
+  }
+  if let Some(unit_step) = unit_step_iteration(args) {
+    return nsum_ast(&unit_step);
   }
 
   let body = &args[0];
@@ -6127,6 +6187,9 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Ok(unevaluated("NProduct", args));
+  }
+  if let Some(unit_step) = unit_step_iteration(args) {
+    return nproduct_ast(&unit_step);
   }
 
   let body = &args[0];
