@@ -127,6 +127,19 @@ mod categorical_distribution {
   }
 
   #[test]
+  fn repeated_rule_keys_stay_unevaluated() {
+    assert_eq!(
+      interpret("CategoricalDistribution[{a -> 1, a -> 2}]").unwrap(),
+      "CategoricalDistribution[{a -> 1, a -> 2}]"
+    );
+    assert_eq!(
+      interpret("CategoricalDistribution[{a, b}, {a -> 1, a -> 2, a -> 3}]")
+        .unwrap(),
+      "CategoricalDistribution[{a, b}, {a -> 1, a -> 2, a -> 3}]"
+    );
+  }
+
+  #[test]
   fn multivariate_definitions() {
     assert_eq!(
       interpret(

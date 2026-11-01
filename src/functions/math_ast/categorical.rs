@@ -112,6 +112,10 @@ fn sparse_from_rules(
     else {
       return Ok(None);
     };
+    // A domain element given twice has no single weight.
+    if entries.iter().any(|(p, _)| *p == pos) {
+      return Ok(None);
+    }
     entries.push((pos, w.clone()));
   }
   let domain_size: usize = classes.iter().map(Vec::len).product();
