@@ -5151,11 +5151,28 @@ mod nintegrate {
   // An inner Integrate without a closed form is a number under N, so it is
   // integrated as an iterated integral — it was reported as non-numeric,
   // and before that silently integrated as 0.
+  // An iterated integral of a smooth integrand gets enough evaluations for
+  // every inner integral: the shared budget used to run out partway, and
+  // the remaining inner integrals came back short.
+  #[test]
+  fn iterated_smooth_integrals_are_accurate() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[Sin[u]^2, {s, 0, 1}, {u, 0, Pi}] - Pi/2] < 10^-8, \
+          Abs[NIntegrate[Exp[-1.5 (Cos[s]^2 + 0.3 Sin[t]^2)], {s, 0, 2 Pi}, {t, 0, 2 Pi}] - \
+            17.27637411634429] < 10^-6, \
+          Abs[NIntegrate[Cos[s]^2 + Sin[t]^2, {s, 0, 2 Pi}, {t, 0, 2 Pi}] - 4 Pi^2] < 10^-8}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
   #[test]
   fn inner_integrate_without_closed_form() {
     let result = interpret_with_stdout(
       "Abs[NIntegrate[Integrate[2 - 2 Sin[x^2 + y^2], {y, -1, 1}], \
-       {x, -1, 1}] - 3.52996] < 10^-4",
+       {x, -1, 1}] - 3.50968] < 10^-4",
     )
     .unwrap();
     assert_eq!(result.result, "True");
@@ -23224,8 +23241,11 @@ mod nintegrate_symbolic_limits {
   #[test]
   fn limit_depending_on_outer_variable_is_valid() {
     assert_eq!(
-      interpret("NIntegrate[x y, {x, 0, 1}, {y, 0, x}]").unwrap(),
-      "0.125"
+      // (wolframscript gives 0.12499999999999996: the last digits are
+      // quadrature noise.)
+      interpret("Abs[NIntegrate[x y, {x, 0, 1}, {y, 0, x}] - 1/8] < 10^-12")
+        .unwrap(),
+      "True"
     );
   }
 }

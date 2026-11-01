@@ -50,7 +50,7 @@ thread_local! {
 /// fallback), so an ordinary 1D integral's behavior is unchanged; an
 /// iterated integral now shares this same total across every dimension
 /// instead of multiplying it.
-const NINTEGRATE_TOTAL_BUDGET: u64 = 30_000;
+const NINTEGRATE_TOTAL_BUDGET: u64 = 2_000_000;
 
 /// Run `f` with a shared `NIntegrate` evaluation budget installed, unless
 /// one is already active — a nested/iterated call reuses its parent's
@@ -17183,11 +17183,54 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // whichever signal is available — and bisect each to a breakpoint,
     // splitting the range so every piece handed to tanh-sinh/Simpson is
     // smooth on its own interior.
+    //
+    // A smooth integrand over fixed inner bounds has no such kink, and the
+    // 201 inner integrations of the scan would only spend the evaluation
+    // budget the real quadrature then runs out of (a plain
+    // `∫∫ Sin[t]^2 ds dt` came back 2% low), so the scan is reserved for
+    // integrands that can change shape: a condition, a step or kink
+    // function, or inner bounds that move with the outer variable.
+    let may_kink = boole_shape.is_some()
+      || inner_ranges.iter().any(|r| {
+        crate::functions::polynomial_ast::expr_mentions_symbol(r, &ovar)
+      })
+      || [
+        "Boole",
+        "UnitStep",
+        "HeavisideTheta",
+        "Piecewise",
+        "If",
+        "Which",
+        "Abs",
+        "Min",
+        "Max",
+        "Floor",
+        "Ceiling",
+        "Round",
+        "Sign",
+        "Clip",
+        "Mod",
+        "RealAbs",
+        "UnitBox",
+        "UnitTriangle",
+        "Greater",
+        "Less",
+        "GreaterEqual",
+        "LessEqual",
+      ]
+      .iter()
+      .any(|h| {
+        crate::functions::math_ast::numeric_utils::expr_contains_head(
+          &integrand0,
+          h,
+        )
+      })
+      || matches!(&integrand0, Expr::Comparison { .. });
     const KINK_SCAN_POINTS: u32 = 200;
     let ospan = ohi - olo;
     let signature = |v: f64, count: usize| (count, v == 0.0);
     let mut kink_samples = Vec::with_capacity(KINK_SCAN_POINTS as usize + 1);
-    for i in 0..=KINK_SCAN_POINTS {
+    for i in (0..=KINK_SCAN_POINTS).filter(|_| may_kink) {
       let y = if i == KINK_SCAN_POINTS {
         ohi
       } else {
