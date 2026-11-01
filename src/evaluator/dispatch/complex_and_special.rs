@@ -2966,6 +2966,218 @@ fn needs_paren_in_product(expr: &Expr) -> bool {
   }
 }
 
+/// The canonical FullForm call of an operator node — `a - x y` (a
+/// `BinaryOp`) is `Plus[a, Times[-1, x, y]]`, `-x` (a `UnaryOp`) is
+/// `Times[-1, x]` — built by the shared [`decompose_expr`] decomposition.
+/// Operator-node operands are converted too, and nested ones of a flat head
+/// merge into it, so a `+`/`-` or `&&` chain becomes one call. Any other
+/// expression is returned unchanged.
+///
+/// [`decompose_expr`]: crate::functions::expr_form::decompose_expr
+pub(crate) fn canonical_operator_call(expr: &Expr) -> Expr {
+  use crate::functions::expr_form::{ExprForm, decompose_expr};
+  if !matches!(expr, Expr::BinaryOp { .. } | Expr::UnaryOp { .. }) {
+    return expr.clone();
+  }
+  let ExprForm::Composite { head, children } = decompose_expr(expr) else {
+    return expr.clone();
+  };
+  // A unary minus merges into its product operand too: results built with
+  // `neg1(product)` (Factor's `-((-1 + x) (1 + x))`, …) stand for the flat
+  // evaluated `Times[-1, …]`. (A held, parenthesized `-(x y)` therefore
+  // boxes as `-x y`; the parse tree no longer records the parentheses.)
+  let flat = matches!(
+    head.as_str(),
+    "Plus" | "Times" | "And" | "Or" | "StringJoin" | "Alternatives"
+  );
+  let mut args = Vec::with_capacity(children.len());
+  for child in children {
+    if !matches!(child, Expr::BinaryOp { .. } | Expr::UnaryOp { .. }) {
+      args.push(child);
+      continue;
+    }
+    let converted = canonical_operator_call(&child);
+    match &converted {
+      Expr::FunctionCall { name, args: inner } if flat && *name == head => {
+        args.extend(inner.iter().cloned());
+      }
+      _ => args.push(converted),
+    }
+  }
+  Expr::FunctionCall {
+    name: head,
+    args: args.into(),
+  }
+}
+
+/// `-x` for a real number literal `x` (Integer, BigInteger, Real or
+/// Rational), `None` for anything else.
+fn negate_real_number(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Integer(n) => Some(match n.checked_neg() {
+      Some(m) => Expr::Integer(m),
+      None => Expr::BigInteger(-num_bigint::BigInt::from(*n)),
+    }),
+    Expr::Real(f) => Some(Expr::Real(-f)),
+    Expr::BigInteger(n) => Some(Expr::BigInteger(-n.clone())),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![negate_real_number(&args[0])?, args[1].clone()].into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// The positive counterpart of a negative real number — `-2` → `2`,
+/// `-2.5` → `2.5`, `-3/2` → `3/2` — or `None` for anything else.
+fn positive_of_negative_number(e: &Expr) -> Option<Expr> {
+  let negative = match e {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(f) => *f < 0.0,
+    Expr::BigInteger(n) => n.sign() == Sign::Minus,
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      positive_of_negative_number(&args[0]).is_some()
+    }
+    _ => false,
+  };
+  if negative {
+    negate_real_number(e)
+  } else {
+    None
+  }
+}
+
+/// The positive counterpart of an additive term that carries its sign in a
+/// leading negative number — `-9`, `Times[-130, x^3]`, `Times[-1, x, y]` —
+/// or `None` when the term is not negative. Both StandardForm and
+/// TraditionalForm put such a sign on the `+`/`-` operator instead of on
+/// the number, so `a + Times[-130, x^3]` is set as `a - 130 x³` and
+/// `a + Times[-1, x, y]` as `a - x y`, never `a + -130 x³` or `a - 1 x y`.
+fn negated_term(term: &Expr) -> Option<Expr> {
+  // A complex number counts as negative when its real part is (or, for a
+  // pure imaginary, its imaginary part): `a + (-2 + I) x` is set as
+  // `a - (2 - I) x` and `a + Complex[0, -1] x` as `a - I x`.
+  fn positive_coefficient(e: &Expr) -> Option<Expr> {
+    if let Some(pos) = positive_of_negative_number(e) {
+      return Some(pos);
+    }
+    // Woxi stores a complex number as its `re + im I` Plus/Times tree;
+    // `complex_full_form_parts` is the shared recogniser for one.
+    use crate::functions::expr_form::{ComplexParts, complex_full_form_parts};
+    let negative = match complex_full_form_parts(e)? {
+      ComplexParts::Exact { re, im } => {
+        positive_of_negative_number(&re).is_some()
+          || (matches!(re, Expr::Integer(0))
+            && positive_of_negative_number(&im).is_some())
+      }
+      ComplexParts::Float { re, im } => re < 0.0 || (re == 0.0 && im < 0.0),
+    };
+    if !negative {
+      return None;
+    }
+    crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), e.clone()],
+    )
+    .ok()
+  }
+  if let Some(pos) = positive_coefficient(term) {
+    return Some(pos);
+  }
+  let mut factors = Vec::new();
+  tf_flatten_times(term, &mut factors);
+  if factors.len() < 2 {
+    return None;
+  }
+  let pos_first = positive_coefficient(&factors[0])?;
+  // A coefficient of 1 left behind is implicit: `Times[-1, x]` is `-x`.
+  let rest = if matches!(pos_first, Expr::Integer(1)) {
+    factors[1..].to_vec()
+  } else {
+    std::iter::once(pos_first)
+      .chain(factors[1..].iter().cloned())
+      .collect()
+  };
+  Some(match rest.len() {
+    1 => rest.into_iter().next().unwrap(),
+    _ => unevaluated("Times", &rest),
+  })
+}
+
+/// Box of the operand a leading `-` applies to (`-x`, `-x^2`, the first
+/// factor of `Times[-1, x, y]`): parenthesized when it is additive or
+/// itself negative, so `Times[-1, -2, x]` reads `-(-2) x`.
+fn box_signed_operand(expr: &Expr) -> Expr {
+  let boxed = expr_to_box_form(expr);
+  if needs_paren_in_product(expr)
+    || positive_of_negative_number(&canonical_operator_call(expr)).is_some()
+  {
+    paren_box(boxed)
+  } else {
+    boxed
+  }
+}
+
+/// Does this (canonical) Power base need parentheses? Sums, products and
+/// negative numbers do: `(1+x)^2`, `(x y)^z`, `(-x)^y`, `(-2)^y`.
+fn needs_paren_as_power_base(base: &Expr) -> bool {
+  needs_paren_in_product(base)
+    || matches!(base, Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2)
+    || matches!(base, Expr::Integer(n) if *n < 0)
+    || matches!(base, Expr::Real(f) if *f < 0.0)
+    || matches!(base, Expr::BigInteger(n) if n.sign() == Sign::Minus)
+}
+
+/// The infix symbol StandardForm sets between the arguments of a logical,
+/// string or pattern operator head.
+fn infix_operator_symbol(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "And" => "&&",
+    "Or" => "||",
+    "StringJoin" => "<>",
+    "Alternatives" => "|",
+    _ => return None,
+  })
+}
+
+/// `Precedence` of the operator heads [`box_infix_operand`] has to compare.
+fn box_operator_precedence(head: &str) -> Option<u16> {
+  Some(match head {
+    "Alternatives" => 160,
+    "And" | "Or" => 215,
+    "Not" => 230,
+    "Plus" => 310,
+    "Times" => 400,
+    "StringJoin" => 600,
+    _ => return None,
+  })
+}
+
+/// Box of an operand of the `parent` infix/prefix operator, parenthesized
+/// when the operand is an operator expression binding no tighter than
+/// `parent` — `(a || b) && c`, `!(a && b)` — but not `a && b` inside
+/// `a && b | c`, nor the sum in `Not[x + y]` (`RowBox[{"!", RowBox[{x, "+",
+/// y}]}]`).
+fn box_infix_operand(operand: &Expr, parent: &str) -> Expr {
+  let operand = canonical_operator_call(operand);
+  let boxed = expr_to_box_form(&operand);
+  let needs_paren = match (&operand, box_operator_precedence(parent)) {
+    (Expr::FunctionCall { name, args }, Some(parent_prec))
+      if args.len() >= 2 || name == "Not" =>
+    {
+      box_operator_precedence(name).is_some_and(|p| p <= parent_prec)
+    }
+    _ => false,
+  };
+  if needs_paren { paren_box(boxed) } else { boxed }
+}
+
 /// Box form of `expr`, parenthesized when the expression is additive so it
 /// renders unambiguously as the base of a Power or a factor in a Times product.
 fn box_with_paren_if_needed(expr: &Expr) -> Expr {
@@ -3704,41 +3916,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     } else {
       format!("##{n}")
     }),
-    // UnaryOp: -x → RowBox[{"-", box(x)}], !x → RowBox[{"!", box(x)}]
-    Expr::UnaryOp { op, operand } => {
-      let op_str = match op {
-        UnaryOperator::Minus => "-",
-        UnaryOperator::Not => "!",
-      };
-      let row = vec![str_expr(op_str), expr_to_box_form(operand)];
-      row_box(row)
-    }
-    // BinaryOp::Plus/Minus/Times/And/Or/StringJoin/Alternatives
-    Expr::BinaryOp { op, left, right }
-      if !matches!(op, BinaryOperator::Power | BinaryOperator::Divide) =>
-    {
-      let sep = match op {
-        BinaryOperator::Plus => "+",
-        BinaryOperator::Minus => "-",
-        BinaryOperator::Times => " ",
-        BinaryOperator::And => "&&",
-        BinaryOperator::Or => "||",
-        BinaryOperator::StringJoin => "<>",
-        BinaryOperator::Alternatives => "|",
-        BinaryOperator::Power | BinaryOperator::Divide => unreachable!(),
-      }
-      .to_string();
-      // Additive operands of a product need parens so `(-5+n) (-4+n)`
-      // doesn't render as `-5+n -4+n` (issue #135).
-      let box_operand = |e: &Expr| {
-        if matches!(op, BinaryOperator::Times) {
-          box_with_paren_if_needed(e)
-        } else {
-          expr_to_box_form(e)
-        }
-      };
-      let row = vec![box_operand(left), Expr::String(sep), box_operand(right)];
-      row_box(row)
+    // Operator nodes (`a - x y`, `-x`, `a/b`, `a && b`, …) — held input or
+    // results built with the `plus2`/`times2`/`neg1` helpers — are boxed as
+    // their canonical FullForm call, so they share the one implementation
+    // of each head below: `a - x y` is `Plus[a, Times[-1, x, y]]` and boxes
+    // exactly like the evaluated sum, and a `+`/`-` chain is one flat
+    // RowBox rather than one RowBox per operator.
+    Expr::UnaryOp { .. } | Expr::BinaryOp { .. } => {
+      expr_to_box_form(&canonical_operator_call(expr))
     }
     // Comparison: a == b < c → RowBox[{box(a), " == ", box(b), " < ", box(c)}]
     Expr::Comparison {
@@ -3817,116 +4002,75 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       row_box(parts)
     }
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
-      // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]
-      // Handle negative terms: Times[-1, x] → "x", "-", box(x)
+      // Plus[a, b, c] → RowBox[{box(a), "+", box(b), "+", box(c)}]. A term
+      // after the first that carries its sign in a leading negative number
+      // (`Times[-1, x, y]`, `Times[-2, x]`, `Times[-3/2, x]`, `-2`) puts
+      // the sign on the operator: `a - x y`, never `a + -x y` or
+      // `a - 1 x y`.
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {
+        let arg = canonical_operator_call(arg);
         if i > 0 {
-          // Check for negative term: Times[-1, x]
-          if let Expr::FunctionCall { name: tn, args: ta } = arg
-            && tn == "Times"
-            && ta.len() == 2
-            && matches!(&ta[0], Expr::Integer(-1))
-          {
+          if let Some(pos) = negated_term(&arg) {
             parts.push(str_expr("-"));
-            parts.push(expr_to_box_form(&ta[1]));
-            continue;
-          }
-          // Check for negative coefficient: Times[-n, x]
-          if let Expr::FunctionCall { name: tn, args: ta } = arg
-            && tn == "Times"
-            && ta.len() >= 2
-            && matches!(&ta[0], Expr::Integer(n) if *n < 0)
-          {
-            parts.push(str_expr("-"));
-            // Negate the coefficient and box the positive term
-            let mut pos_args = ta.clone();
-            if let Expr::Integer(n) = &ta[0] {
-              pos_args[0] = Expr::Integer(-n);
-            }
-            let pos_term = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: pos_args,
-            };
-            parts.push(expr_to_box_form(&pos_term));
-            continue;
-          }
-          // Check for negative BigInteger coefficient: Times[-n, x] where the
-          // coefficient overflows i128 (e.g. 2^129). Mirrors the Integer arm
-          // above so `1 + -2^129 x` folds to `1 - 2^129 x`.
-          if let Expr::FunctionCall { name: tn, args: ta } = arg
-            && tn == "Times"
-            && ta.len() >= 2
-            && matches!(&ta[0], Expr::BigInteger(n) if n.sign() == Sign::Minus)
-          {
-            parts.push(str_expr("-"));
-            let mut pos_args = ta.clone();
-            if let Expr::BigInteger(n) = &ta[0] {
-              pos_args[0] = Expr::BigInteger(-n);
-            }
-            let pos_term = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: pos_args,
-            };
-            parts.push(expr_to_box_form(&pos_term));
+            parts.push(box_with_paren_if_needed(&pos));
             continue;
           }
           parts.push(str_expr("+"));
         }
-        parts.push(expr_to_box_form(arg));
+        parts.push(expr_to_box_form(&arg));
       }
       row_box(parts)
     }
-    Expr::FunctionCall { name, args }
-      if name == "Times"
-        && args.len() >= 2
-        && matches!(&args[0], Expr::Integer(-1)) =>
-    {
-      // Times[-1, x] → RowBox[{"-", box(x)}]
-      // Times[-1, a, b, c, ...] → RowBox[{"-", RowBox[{"(", a " " b " " c, ")"}]}]
-      // so the leading minus applies to the whole product without showing
-      // a literal "1" coefficient.
-      if args.len() == 2 {
-        let row = vec![str_expr("-"), box_with_paren_if_needed(&args[1])];
-        return row_box(row);
-      }
-      let rest = unevaluated("Times", &args[1..]);
-      let row = vec![str_expr("-"), paren_box(expr_to_box_form(&rest))];
-      row_box(row)
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Times"
-        && args.len() == 2
-        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
-    {
-      // Times[-n, x] → RowBox[{"-", RowBox[{n, " ", box(x)}]}]
-      if let Expr::Integer(n) = &args[0] {
-        let pos_n = Expr::Integer(-n);
-        let inner = vec![
-          expr_to_box_form(&pos_n),
-          str_expr(" "),
-          expr_to_box_form(&args[1]),
-        ];
-        let row = vec![str_expr("-"), row_box(inner)];
-
-        row_box(row)
-      } else {
-        box_as_output_string(expr)
-      }
-    }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
-      // Check for fraction form: Times[..., Power[den, -1]]
+      // Fraction form: Times[..., Power[den, -1]] → FractionBox. A negative
+      // numerator keeps its sign outside the fraction: `-2 x/y` is
+      // RowBox[{"-", FractionBox[RowBox[{2, " ", x}], y]}].
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(expr);
       if !matches!(&den, Expr::Integer(1)) {
+        if let Some(pos) = negated_term(&num) {
+          let frac = call(
+            "FractionBox",
+            vec![expr_to_box_form(&pos), expr_to_box_form(&den)],
+          );
+          return row_box(vec![str_expr("-"), frac]);
+        }
         return call(
           "FractionBox",
           vec![expr_to_box_form(&num), expr_to_box_form(&den)],
         );
       }
-      // General Times: RowBox[{a, " ", b, " ", ...}]
-      // Additive sub-expressions (e.g. Plus[1, x]) are wrapped in parens so
-      // that `2*(1+x)` renders as `2 (1+x)` rather than `2 1+x`.
+      // Times[-1, f, g, …]: the minus sign attaches to the first factor —
+      // `-x y` is RowBox[{RowBox[{"-", x}], " ", y}] — unless that factor
+      // is a sum, in which case it negates the whole parenthesized product:
+      // `-((1 + x) y)`.
+      if matches!(&args[0], Expr::Integer(-1)) {
+        let rest = &args[1..];
+        if needs_paren_in_product(&canonical_operator_call(&rest[0])) {
+          let product = if rest.len() == 1 {
+            expr_to_box_form(&rest[0])
+          } else {
+            expr_to_box_form(&unevaluated("Times", rest))
+          };
+          return row_box(vec![str_expr("-"), paren_box(product)]);
+        }
+        let lead = row_box(vec![str_expr("-"), box_signed_operand(&rest[0])]);
+        if rest.len() == 1 {
+          return lead;
+        }
+        let mut parts = vec![lead];
+        for arg in &rest[1..] {
+          parts.push(str_expr(" "));
+          parts.push(box_with_paren_if_needed(arg));
+        }
+        return row_box(parts);
+      }
+      // General Times: RowBox[{a, " ", b, " ", ...}]. A negative number
+      // coefficient boxes as itself (`-2 x` → RowBox[{RowBox[{"-", "2"}],
+      // " ", "x"}]). Additive sub-expressions (e.g. Plus[1, x]) are wrapped
+      // in parens so that `2*(1+x)` renders as `2 (1+x)` rather than
+      // `2 1+x`.
       let mut parts = Vec::new();
       for (i, arg) in args.iter().enumerate() {
         if i > 0 {
@@ -3947,14 +4091,17 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         {
           return call1("SqrtBox", expr_to_box_form(&args[0]));
         }
-        // Power[base, -1/2] → FractionBox["1", SqrtBox[box(base)]]
-        if matches!(&ra[0], Expr::Integer(-1))
-          && matches!(&ra[1], Expr::Integer(2))
-        {
-          let frac =
-            vec![str_expr("1"), call1("SqrtBox", expr_to_box_form(&args[0]))];
-          return call("FractionBox", frac);
-        }
+      }
+      // A negative numeric exponent sets as a reciprocal:
+      // x^-2 → FractionBox["1", SuperscriptBox[x, 2]], y^-1 →
+      // FractionBox["1", y], x^(-1/2) → FractionBox["1", SqrtBox[x]].
+      if let Some(pos_exp) = positive_of_negative_number(&args[1]) {
+        let den = if matches!(pos_exp, Expr::Integer(1)) {
+          expr_to_box_form(&args[0])
+        } else {
+          expr_to_box_form(&unevaluated("Power", &[args[0].clone(), pos_exp]))
+        };
+        return call("FractionBox", vec![str_expr("1"), den]);
       }
       // Power[Subscript[x, sub], exp] → SubsuperscriptBox[box(x), box(sub), box(exp)]
       if let Expr::FunctionCall { name: bn, args: ba } = &args[0]
@@ -3969,12 +4116,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         return call("SubsuperscriptBox", script_box);
       }
       // General power: SuperscriptBox[box(base), box(exp)]
-      // The base is parenthesized when it's additive (e.g. (1+x)^2) so the
-      // result reads unambiguously instead of 1+x² looking like 1 + x².
-      let script_box = vec![
-        box_with_paren_if_needed(&args[0]),
-        expr_to_box_form(&args[1]),
-      ];
+      // The base is parenthesized when it's additive, a product or a
+      // negative number (e.g. (1+x)^2, (-x)^y, (-2)^y) so the result reads
+      // unambiguously instead of 1+x² looking like 1 + x².
+      let base = canonical_operator_call(&args[0]);
+      let base_box = if needs_paren_as_power_base(&base) {
+        paren_box(expr_to_box_form(&base))
+      } else {
+        expr_to_box_form(&base)
+      };
+      let script_box = vec![base_box, expr_to_box_form(&args[1])];
       call("SuperscriptBox", script_box)
     }
     Expr::FunctionCall { name, args }
@@ -4023,60 +4174,34 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {
-      // Rational[n, d] → FractionBox[n, d]
+      // Rational[n, d] → FractionBox[n, d]; a negative one keeps its sign
+      // outside the fraction: -3/2 → RowBox[{"-", FractionBox[3, 2]}].
+      if let Some(pos) = positive_of_negative_number(expr) {
+        return row_box(vec![str_expr("-"), expr_to_box_form(&pos)]);
+      }
       call(
         "FractionBox",
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
-    // BinaryOp::Divide → FractionBox
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => call(
-      "FractionBox",
-      vec![expr_to_box_form(left), expr_to_box_form(right)],
-    ),
-    // BinaryOp::Power with rational exponents
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      if let Expr::FunctionCall { name: rn, args: ra } = right.as_ref()
-        && rn == "Rational"
-        && ra.len() == 2
-      {
-        if matches!(&ra[0], Expr::Integer(1))
-          && matches!(&ra[1], Expr::Integer(2))
-        {
-          return call1("SqrtBox", expr_to_box_form(left));
+    // Logical / string / pattern infix operators: And[a, b, c] →
+    // RowBox[{a, "&&", b, "&&", c}]. An operand binding no tighter than the
+    // operator itself is parenthesized: `(a || b) && c`, `!(a && b)`.
+    Expr::FunctionCall { name, args }
+      if args.len() >= 2 && infix_operator_symbol(name).is_some() =>
+    {
+      let sep = infix_operator_symbol(name).unwrap();
+      let mut parts = Vec::new();
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(str_expr(sep));
         }
-        if matches!(&ra[0], Expr::Integer(-1))
-          && matches!(&ra[1], Expr::Integer(2))
-        {
-          let frac =
-            vec![str_expr("1"), call1("SqrtBox", expr_to_box_form(left))];
-          return call("FractionBox", frac);
-        }
+        parts.push(box_infix_operand(arg, name));
       }
-      // BinaryOp::Power with Subscript base → SubsuperscriptBox
-      if let Expr::FunctionCall { name: bn, args: ba } = left.as_ref()
-        && bn == "Subscript"
-        && ba.len() == 2
-      {
-        let script_box = vec![
-          expr_to_box_form(&ba[0]),
-          expr_to_box_form(&ba[1]),
-          expr_to_box_form(right),
-        ];
-        return call("SubsuperscriptBox", script_box);
-      }
-      call(
-        "SuperscriptBox",
-        vec![box_with_paren_if_needed(left), expr_to_box_form(right)],
-      )
+      row_box(parts)
+    }
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      row_box(vec![str_expr("!"), box_infix_operand(&args[0], name)])
     }
     // List → RowBox[{"{", RowBox[{elem, ",", elem, ...}], "}"}]
     Expr::List(items) => {
@@ -5240,60 +5365,6 @@ fn tf_is_numeric_constant(factor: &Expr) -> bool {
   }
 }
 
-/// The positive counterpart of an additive term that carries its sign in a
-/// leading negative number — `-9`, `Times[-130, x^3]` — or `None` when the
-/// term is not negative. TraditionalForm puts such a sign on the `+`/`-`
-/// operator instead of on the number, so `a + Times[-130, x^3]` is set as
-/// `a - 130 x³`, never `a + -130 x³`.
-fn tf_negated_term(term: &Expr) -> Option<Expr> {
-  fn positive(e: &Expr) -> Option<Expr> {
-    match e {
-      Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
-      Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
-      Expr::BigInteger(n) if n.sign() == Sign::Minus => {
-        Some(Expr::BigInteger(-n.clone()))
-      }
-      // `Rational[-1, 4]` leads the evaluated `-Pi/4`, so its sign is the
-      // term's sign too.
-      Expr::FunctionCall { name, args }
-        if name == "Rational"
-          && args.len() == 2
-          && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
-      {
-        let Expr::Integer(n) = &args[0] else {
-          return None;
-        };
-        Some(Expr::FunctionCall {
-          name: name.clone(),
-          args: vec![Expr::Integer(-n), args[1].clone()].into(),
-        })
-      }
-      _ => None,
-    }
-  }
-  if let Some(pos) = positive(term) {
-    return Some(pos);
-  }
-  let mut factors = Vec::new();
-  tf_flatten_times(term, &mut factors);
-  if factors.len() < 2 {
-    return None;
-  }
-  let pos_first = positive(&factors[0])?;
-  // A coefficient of 1 left behind is implicit: `Times[-1, x]` is `-x`.
-  let rest = if matches!(pos_first, Expr::Integer(1)) {
-    factors[1..].to_vec()
-  } else {
-    std::iter::once(pos_first)
-      .chain(factors[1..].iter().cloned())
-      .collect()
-  };
-  Some(match rest.len() {
-    1 => rest.into_iter().next().unwrap(),
-    _ => unevaluated("Times", &rest),
-  })
-}
-
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -5304,7 +5375,7 @@ fn tf_plus(expr: &Expr) -> Expr {
   let mut items: Vec<Expr> = Vec::new();
   for (i, (neg, term)) in terms.iter().enumerate() {
     // A term whose own leading number is negative contributes the sign.
-    let (neg, term) = match tf_negated_term(term) {
+    let (neg, term) = match negated_term(term) {
       Some(positive) => (!*neg, positive),
       None => (*neg, term.clone()),
     };
