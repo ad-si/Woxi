@@ -3381,6 +3381,14 @@ pub fn dispatch_list_operations(
     "Combinatorica`Josephus" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_josephus_ast(args));
     }
+    "Combinatorica`Tableaux" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_tableaux_ast(args));
+    }
+    "Combinatorica`NumberOfTableaux" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_number_of_tableaux_ast(
+        args,
+      ));
+    }
     "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
     }

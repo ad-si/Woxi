@@ -1467,6 +1467,10 @@ fn evaluate_function_call_ast_inner(
     "DihedralGroup" if combinatorica_active() => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active() => "Combinatorica`Backtrack",
     "Josephus" if combinatorica_active() => "Combinatorica`Josephus",
+    "Tableaux" if combinatorica_active() => "Combinatorica`Tableaux",
+    "NumberOfTableaux" if combinatorica_active() => {
+      "Combinatorica`NumberOfTableaux"
+    }
     "FromUnorderedPairs"
     | "FromOrderedPairs"
     | "ToAdjacencyLists"

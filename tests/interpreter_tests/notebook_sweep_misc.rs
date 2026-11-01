@@ -149,3 +149,59 @@ mod integer_programs {
     assert_eq!(result, "{18.96359150724976, {4, 11, 22}, 27}");
   }
 }
+
+mod combinatorica_tableaux {
+  use super::*;
+
+  #[test]
+  fn tableaux_of_a_shape_in_package_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet@Get[\"Combinatorica`\"]; \
+         {Tableaux[{2, 2}], Tableaux[{3, 1}], Combinatorica`Tableaux[{1}]}"
+      )
+      .unwrap(),
+      "{{{{1, 3}, {2, 4}}, {{1, 2}, {3, 4}}}, \
+       {{{1, 3, 4}, {2}}, {{1, 2, 4}, {3}}, {{1, 2, 3}, {4}}}, {{{1}}}}"
+    );
+    assert_eq!(
+      interpret("Take[Combinatorica`Tableaux[{3, 2, 1}], 3]").unwrap(),
+      "{{{1, 4, 6}, {2, 5}, {3}}, {{1, 3, 6}, {2, 5}, {4}}, \
+       {{1, 2, 6}, {3, 5}, {4}}}"
+    );
+  }
+
+  #[test]
+  fn tableaux_of_every_partition() {
+    clear_state();
+    assert_eq!(
+      interpret("Combinatorica`Tableaux[3]").unwrap(),
+      "{{{1, 2, 3}}, {{1, 3}, {2}}, {{1, 2}, {3}}, {{1}, {2}, {3}}}"
+    );
+  }
+
+  #[test]
+  fn number_of_tableaux_by_hook_lengths() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Combinatorica`NumberOfTableaux[{3, 2, 1}], \
+         Combinatorica`NumberOfTableaux[{4, 3, 1}], \
+         Combinatorica`NumberOfTableaux[5], \
+         Length[Combinatorica`Tableaux[{4, 3, 1}]]}"
+      )
+      .unwrap(),
+      "{16, 70, 26, 70}"
+    );
+  }
+
+  #[test]
+  fn non_shapes_stay_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("Combinatorica`Tableaux[{2, 3}]").unwrap(),
+      "Combinatorica`Tableaux[{2, 3}]"
+    );
+  }
+}

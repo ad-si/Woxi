@@ -1821,3 +1821,151 @@ pub fn combinatorica_backtrack_ast(
     Ok(first.unwrap_or_else(|| Expr::List(vec![].into())))
   }
 }
+
+/// A Young diagram shape: a non-empty, weakly decreasing list of positive
+/// machine integers.
+fn young_shape(e: &Expr) -> Option<Vec<usize>> {
+  let Expr::List(items) = e else { return None };
+  let shape: Vec<usize> = items
+    .iter()
+    .map(|x| match x {
+      Expr::Integer(n) if *n > 0 && *n <= 1_000_000 => Some(*n as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  (!shape.is_empty() && shape.windows(2).all(|w| w[0] >= w[1])).then_some(shape)
+}
+
+/// The partitions of `n` in `IntegerPartitions` order (`{3}`, `{2, 1}`,
+/// `{1, 1, 1}`), which is Combinatorica's `Partitions` order too.
+fn partitions_descending(n: usize) -> Vec<Vec<usize>> {
+  fn go(n: usize, max: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+    if n == 0 {
+      out.push(cur.clone());
+      return;
+    }
+    for part in (1..=n.min(max)).rev() {
+      cur.push(part);
+      go(n - part, part, cur, out);
+      cur.pop();
+    }
+  }
+  let mut out = Vec::new();
+  go(n, n, &mut Vec::new(), &mut out);
+  out
+}
+
+/// The number of standard Young tableaux of `shape`, by the hook length
+/// formula `n! / prod(hooks)`.
+fn tableaux_count(shape: &[usize]) -> BigInt {
+  let n: usize = shape.iter().sum();
+  let mut count: BigInt = (1..=n).map(BigInt::from).product();
+  for (i, &len) in shape.iter().enumerate() {
+    for j in 0..len {
+      let below = shape[i + 1..].iter().take_while(|&&l| l > j).count();
+      count /= BigInt::from(len - j + below);
+    }
+  }
+  count
+}
+
+/// The standard Young tableaux of `shape` in Combinatorica's order: by the
+/// row each entry sits in, read from the largest entry down, ascending —
+/// starting from the column-wise filling and ending with the row-wise one.
+fn tableaux_of_shape(shape: &[usize]) -> Vec<Expr> {
+  // Place `k` (from n down to 1) at the end of a row whose last cell is a
+  // corner, the rows tried top to bottom.
+  fn go(
+    k: usize,
+    counts: &mut Vec<usize>,
+    rows: &mut Vec<usize>,
+    out: &mut Vec<Vec<usize>>,
+  ) {
+    if k == 0 {
+      out.push(rows.clone());
+      return;
+    }
+    for i in 0..counts.len() {
+      let corner =
+        counts[i] > 0 && counts.get(i + 1).is_none_or(|&c| c < counts[i]);
+      if corner {
+        counts[i] -= 1;
+        rows[k - 1] = i;
+        go(k - 1, counts, rows, out);
+        counts[i] += 1;
+      }
+    }
+  }
+  let n: usize = shape.iter().sum();
+  let mut words = Vec::new();
+  go(n, &mut shape.to_vec(), &mut vec![0; n], &mut words);
+  words
+    .into_iter()
+    .map(|word| {
+      let mut tableau: Vec<Vec<Expr>> = vec![Vec::new(); shape.len()];
+      for (k, &row) in word.iter().enumerate() {
+        tableau[row].push(Expr::Integer(k as i128 + 1));
+      }
+      Expr::List(
+        tableau
+          .into_iter()
+          .map(|row| Expr::List(row.into()))
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect()
+}
+
+/// Largest tableau count `Combinatorica\`Tableaux` lists.
+const MAX_TABLEAUX: u64 = 1_000_000;
+
+/// `Combinatorica\`Tableaux[shape]` — every standard Young tableau of the
+/// shape — and `Combinatorica\`Tableaux[n]`, those of every partition of `n`
+/// in turn.
+pub fn combinatorica_tableaux_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let shapes = match &args[0] {
+    Expr::Integer(n) if (1..=60).contains(n) => {
+      partitions_descending(*n as usize)
+    }
+    other => match young_shape(other) {
+      Some(shape) => vec![shape],
+      None => return Ok(unevaluated("Combinatorica`Tableaux", args)),
+    },
+  };
+  let total: BigInt = shapes.iter().map(|s| tableaux_count(s)).sum();
+  if total > BigInt::from(MAX_TABLEAUX) {
+    return Ok(unevaluated("Combinatorica`Tableaux", args));
+  }
+  Ok(Expr::List(
+    shapes
+      .iter()
+      .flat_map(|s| tableaux_of_shape(s))
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
+/// `Combinatorica\`NumberOfTableaux[shape]` (hook length formula) and
+/// `Combinatorica\`NumberOfTableaux[n]`, summed over the partitions of `n`.
+pub fn combinatorica_number_of_tableaux_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let count = match &args[0] {
+    Expr::Integer(n) if (1..=60).contains(n) => {
+      partitions_descending(*n as usize)
+        .iter()
+        .map(|s| tableaux_count(s))
+        .sum()
+    }
+    other => match young_shape(other) {
+      Some(shape) => tableaux_count(&shape),
+      None => {
+        return Ok(unevaluated("Combinatorica`NumberOfTableaux", args));
+      }
+    },
+  };
+  Ok(crate::functions::math_ast::bigint_to_expr(count))
+}
