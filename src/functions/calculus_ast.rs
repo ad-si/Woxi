@@ -13139,7 +13139,125 @@ fn contains_unknown_function_of_var(expr: &Expr, var: &str) -> bool {
   }
 }
 
+/// Whether the imaginary unit `I` occurs in `expr`.
+fn expr_contains_imaginary_unit(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex")
+    || crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(expr_contains_imaginary_unit)
+}
+
+/// `expr` with `var` replaced by `-t` (`t` named `var$reflected`), where
+/// `Log[var]` becomes `Log[t] + I Pi` and `var^p` with a non-integer `p`
+/// becomes `(-1)^p t^p` — their principal values for `t > 0`. `None` when
+/// `expr` has neither, so plain substitution is all a reflection would do.
+///
+/// Only the outermost `Limit` reflects: the strategies take many
+/// sub-limits of series terms, and reflecting each of them again explodes.
+fn reflect_branch_cut_terms(expr: &Expr, var: &str) -> Option<Expr> {
+  if LIMIT_DEPTH.with(std::cell::Cell::get) > 1 {
+    return None;
+  }
+  let t = Expr::Identifier(format!("{var}$reflected"));
+  fn go(e: &Expr, var: &str, t: &Expr) -> Expr {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Log" && args.len() == 1 && is_var(&args[0]) =>
+      {
+        return call(
+          "Plus",
+          vec![
+            call("Log", vec![t.clone()]),
+            call(
+              "Times",
+              vec![
+                Expr::Identifier("I".to_string()),
+                Expr::Constant("Pi".to_string()),
+              ],
+            ),
+          ],
+        );
+      }
+      _ => {}
+    }
+    let (base, exp) = match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (Some(left.as_ref()), Some(right.as_ref())),
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        (Some(&args[0]), Some(&args[1]))
+      }
+      _ => (None, None),
+    };
+    if let (Some(b), Some(p)) = (base, exp)
+      && is_var(b)
+      && !matches!(p, Expr::Integer(_))
+      && !expr_has_var(p, var)
+    {
+      let p = go(p, var, t);
+      return call(
+        "Times",
+        vec![
+          call("Power", vec![Expr::Integer(-1), p.clone()]),
+          call("Power", vec![t.clone(), p]),
+        ],
+      );
+    }
+    if is_var(e) {
+      return call("Times", vec![Expr::Integer(-1), t.clone()]);
+    }
+    crate::syntax::map_children(e, &|c| go(c, var, t))
+  }
+  fn has_cut_term(e: &Expr, var: &str) -> bool {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    let here = match e {
+      Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+        is_var(&args[0])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => is_var(left) && !matches!(right.as_ref(), Expr::Integer(_)),
+      Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+        is_var(&args[0]) && !matches!(&args[1], Expr::Integer(_))
+      }
+      _ => false,
+    };
+    here
+      || crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| has_cut_term(c, var))
+  }
+  if !has_cut_term(expr, var) {
+    return None;
+  }
+  Some(go(expr, var, &t))
+}
+
 pub fn limit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Limit[f, {x1 -> a1, …, xn -> an}] is the nested limit
+  // lim_{x1 -> a1} ⋯ lim_{xn -> an} f: the last rule is taken first.
+  if let Some(Expr::List(rules)) = args.get(1)
+    && !rules.is_empty()
+    && rules.iter().all(|r| matches!(r, Expr::Rule { .. }))
+  {
+    let mut current = args[0].clone();
+    for rule in rules.iter().rev() {
+      let mut step_args = vec![current, rule.clone()];
+      step_args.extend(args[2..].iter().cloned());
+      current = limit_ast(&step_args)?;
+      if matches!(&current, Expr::FunctionCall { name, .. } if name == "Limit")
+      {
+        return Ok(unevaluated("Limit", args));
+      }
+    }
+    return Ok(current);
+  }
   let result = limit_strategies(args)?;
   // Several strategies recurse on a *rewritten* expression — a L'Hôpital
   // derivative ratio, an asymptotic expansion of HarmonicNumber or Gamma, a
@@ -13228,6 +13346,44 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return limit_ast(&[collapsed, args[1].clone()]);
     }
     let result = limit_at_infinity(&args[0], &var_name, &point)?;
+    let unresolved =
+      |r: &Expr| matches!(r, Expr::FunctionCall { name, .. } if name == "Limit");
+    // At -Infinity, Log[x] and x^p (p not an integer) are on their branch
+    // cut: with x = -t, t -> Infinity, they are Log[t] + I Pi and
+    // (-1)^p t^p.
+    if unresolved(&result)
+      && is_negative_infinity(&point)
+      && let Some(reflected) = reflect_branch_cut_terms(&args[0], &var_name)
+    {
+      let t = format!("{var_name}$reflected");
+      let reflected = crate::evaluator::evaluate_expr_to_expr(&reflected)?;
+      let resolved = limit_ast(&[
+        reflected,
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier(t)),
+          replacement: Box::new(Expr::Identifier("Infinity".to_string())),
+        },
+      ])?;
+      if !unresolved(&resolved) {
+        return Ok(resolved);
+      }
+    }
+    // A product over a sum with a complex constant (`(I Pi + Log[t])/
+    // Sqrt[t]`) resolves term by term once expanded.
+    if unresolved(&result) && expr_contains_imaginary_unit(&args[0]) {
+      let expanded = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Expand",
+        vec![args[0].clone()],
+      ))?;
+      if matches!(&expanded, Expr::FunctionCall { name, .. } if name == "Plus")
+        && expr_to_string(&expanded) != expr_to_string(&args[0])
+      {
+        let resolved = limit_ast(&[expanded, args[1].clone()])?;
+        if !unresolved(&resolved) {
+          return Ok(resolved);
+        }
+      }
+    }
     // Fallback: FunctionExpand collapses Gamma ratios that the direct
     // asymptotic path does not recognize (e.g. Gamma[x+1]/Gamma[x] -> x, whose
     // limit at Infinity is then Infinity). Retry only when the expansion
@@ -13266,6 +13422,34 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     return Ok(unevaluated("Limit", args));
+  }
+
+  // Limit[c f] = c Limit[f] for a complex numeric constant c: the
+  // strategies below compare real values, so `-I Pi/t` would not resolve.
+  if let Expr::FunctionCall { name, args: factors } = &args[0]
+    && name == "Times"
+    && let Some(pos) = factors.iter().position(|f| {
+      is_numeric_complex_constant(f) && expr_contains_imaginary_unit(f)
+    })
+  {
+    let c = factors[pos].clone();
+    let rest: Vec<Expr> = factors
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != pos)
+      .map(|(_, f)| f.clone())
+      .collect();
+    let rest = if rest.len() == 1 {
+      rest[0].clone()
+    } else {
+      call("Times", rest)
+    };
+    let mut inner_args = vec![rest, args[1].clone()];
+    inner_args.extend(args[2..].iter().cloned());
+    let inner = limit_ast(&inner_args)?;
+    if !matches!(&inner, Expr::FunctionCall { name, .. } if name == "Limit") {
+      return crate::evaluator::evaluate_expr_to_expr(&times2(c, inner));
+    }
   }
 
   // Functions with known poles (Zeta at 1, Gamma at nonpositive integers)
@@ -13580,6 +13764,86 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     LimitDirection::TwoSided => {
+      // Log[x] and fractional powers of x are complex to the left of 0:
+      // the left-hand limit is the right-hand one of the reflection x = -t,
+      // and the two-sided limit exists only when both sides agree
+      // (`Limit[Log[x]/x, x -> 0]` is Indeterminate).
+      if is_literal_zero(&point)
+        && let Some(reflected) = reflect_branch_cut_terms(&args[0], &var_name)
+      {
+        let from_above = |e: Expr, v: String| -> Result<Expr, InterpreterError> {
+          limit_ast(&[
+            e,
+            rule_expr(id_expr(&v), Expr::Integer(0)),
+            rule_expr(
+              id_expr("Direction"),
+              Expr::String("FromAbove".to_string()),
+            ),
+          ])
+        };
+        let unresolved = |r: &Expr| {
+          matches!(r, Expr::FunctionCall { name, .. } if name == "Limit")
+        };
+        let right = from_above(args[0].clone(), var_name.clone())?;
+        let reflected = crate::evaluator::evaluate_expr_to_expr(&reflected)?;
+        let t_name = format!("{var_name}$reflected");
+        let mut left = from_above(reflected.clone(), t_name.clone())?;
+        // `(-I Pi - Log[t])/t` resolves term by term once expanded; a sum
+        // of infinities in different directions is Indeterminate.
+        if unresolved(&left) {
+          let expanded = crate::evaluator::evaluate_expr_to_expr(&call(
+            "Expand",
+            vec![reflected],
+          ))?;
+          if let Expr::FunctionCall { name, args: terms } = &expanded
+            && name == "Plus"
+          {
+            let limits = terms
+              .iter()
+              .map(|term| from_above(term.clone(), t_name.clone()))
+              .collect::<Result<Vec<_>, _>>()?;
+            if !limits.iter().any(unresolved) {
+              left =
+                crate::evaluator::evaluate_expr_to_expr(&call("Plus", limits.clone()))?;
+              // Infinities in different directions: the sum heads the way of
+              // the term that dominates every other infinite one.
+              if matches!(&left, Expr::FunctionCall { name, .. } if name == "Plus") {
+                let infinite: Vec<usize> = (0..terms.len())
+                  .filter(|&i| !is_finite_limit_value(&limits[i]))
+                  .collect();
+                let dominant = infinite.iter().copied().find(|&d| {
+                  infinite.iter().all(|&o| {
+                    o == d
+                      || crate::evaluator::evaluate_expr_to_expr(&call(
+                        "Times",
+                        vec![
+                          terms[o].clone(),
+                          call("Power", vec![terms[d].clone(), Expr::Integer(-1)]),
+                        ],
+                      ))
+                      .and_then(|ratio| from_above(ratio, t_name.clone()))
+                      .is_ok_and(|r| matches!(r, Expr::Integer(0)))
+                  })
+                });
+                left = match dominant {
+                  Some(d) => limits[d].clone(),
+                  None => unevaluated("Limit", args),
+                };
+              }
+            }
+          }
+        }
+        if !unresolved(&right)
+          && !unresolved(&left)
+          && !expr_contains_imaginary_unit(&right)
+        {
+          return Ok(if expr_to_string(&right) == expr_to_string(&left) {
+            right
+          } else {
+            id_expr("Indeterminate")
+          });
+        }
+      }
       if let Some(result) =
         numerical_two_sided_limit(&args[0], &var_name, &point)
       {
@@ -17331,6 +17595,29 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("NIntegrate", args));
     }
     let integrand0 = args[0].clone();
+    // A complex-valued integrand (`1/Sqrt[Cos[x y]]` where the cosine is
+    // negative) is integrated as its real and imaginary parts: the
+    // reduction below works with real samples.
+    if !matches!(&integrand0, Expr::List(_))
+      && !expr_contains_head(&integrand0, "Re")
+      && !expr_contains_head(&integrand0, "Im")
+      && integrand_samples_complex(&integrand0, &args[1], &inner_ranges)
+    {
+      let part = |head: &str| -> Result<Expr, InterpreterError> {
+        let mut part_args = args.to_vec();
+        part_args[0] = call(head, vec![integrand0.clone()]);
+        nintegrate_ast(&part_args)
+      };
+      let re = part("Re")?;
+      let im = part("Im")?;
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        "Plus",
+        vec![
+          re,
+          call("Times", vec![Expr::Identifier("I".to_string()), im]),
+        ],
+      ));
+    }
     // `MaxPoints` bounds the *total* number of samples, so an iterated
     // integral gives each of its `d` dimensions the `d`-th root of it. The
     // inner integrals are handed the matching share of the remaining
@@ -17363,7 +17650,13 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for r in &inner_ranges {
         inner_args.push(crate::syntax::substitute_variable(r, &ovar, &x_expr));
       }
-      inner_args.extend(options.iter().cloned());
+      // Options may refer to the outer variable too
+      // (`Exclusions -> Cos[x y] == 0`).
+      inner_args.extend(
+        options
+          .iter()
+          .map(|o| crate::syntax::substitute_variable(o, &ovar, &x_expr)),
+      );
       // Each outer sample is a whole inner integration, and the outer
       // reduction only asks for `outer_tolerance`, so an inner solve tighter
       // than that is wasted work (it multiplies the cost of the whole
@@ -17431,9 +17724,9 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let ilo = eval_bound(ilo_e)?;
         let ihi = eval_bound(ihi_e)?;
-        let (total, crossings) =
+        let (total, _, signature) =
           boole_exact_measure_with_crossings(&cond_x, ivar, ilo, ihi)?;
-        Some((total, crossings.len()))
+        Some((total, signature))
       } else {
         Some((inner_eval(x)?, 0))
       }
@@ -17551,7 +17844,42 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       breakpoints.push(f64::midpoint(lo_b, hi_b));
     }
+    // An excluded curve (`Exclusions -> Cos[x y] == 0`) makes the inner
+    // integral singular where the curve leaves the inner range through one
+    // of its bounds: those outer values are breakpoints too.
+    if let Some(Expr::List(first_inner)) = inner_ranges.first()
+      && let Expr::Identifier(ivar) = &first_inner[0]
+    {
+      for opt in &options {
+        let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+        else {
+          continue;
+        };
+        if !matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Exclusions")
+        {
+          continue;
+        }
+        let eqs: Vec<&Expr> = match replacement.as_ref() {
+          Expr::List(items) => items.iter().collect(),
+          other => vec![other],
+        };
+        for eq in eqs {
+          for bound in [&first_inner[1], &first_inner[first_inner.len() - 1]] {
+            let at_bound = crate::syntax::substitute_variable(eq, ivar, bound);
+            breakpoints.extend(
+              exclusion_points(&at_bound, &ovar, olo, ohi)
+                .into_iter()
+                .filter(|&p| p > olo && p < ohi),
+            );
+          }
+        }
+      }
+    }
     breakpoints.sort_by(f64::total_cmp);
+    breakpoints.dedup_by(|a, b| (*a - *b).abs() <= (ohi - olo) * 1e-13);
 
     let mut segment_bounds = Vec::with_capacity(breakpoints.len() + 2);
     segment_bounds.push(olo);
@@ -17651,6 +17979,38 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let lo = bounds[0];
   let hi = *bounds.last().unwrap();
+  // `Exclusions -> lhs == rhs` breaks the interval wherever the equation
+  // holds (a singularity of the integrand there), like explicit waypoints.
+  if lo.is_finite() && hi.is_finite() && lo < hi {
+    let mut excluded: Vec<f64> = Vec::new();
+    for opt in &args[2..] {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Exclusions")
+      {
+        let eqs: Vec<&Expr> = match replacement.as_ref() {
+          Expr::List(items) => items.iter().collect(),
+          other => vec![other],
+        };
+        for eq in eqs {
+          excluded.extend(exclusion_points(eq, &var_name, lo, hi));
+        }
+      }
+    }
+    if !excluded.is_empty() {
+      let mut interior: Vec<f64> = bounds[1..bounds.len() - 1].to_vec();
+      interior.extend(excluded);
+      interior.retain(|&p| p > lo && p < hi);
+      interior.sort_by(f64::total_cmp);
+      interior.dedup_by(|a, b| (*a - *b).abs() <= (hi - lo) * 1e-13);
+      bounds = std::iter::once(lo)
+        .chain(interior)
+        .chain(std::iter::once(hi))
+        .collect();
+    }
+  }
 
   let integrand = &args[0];
 
@@ -18046,7 +18406,7 @@ fn boole_exact_measure(
   hi: f64,
 ) -> Option<f64> {
   boole_exact_measure_with_crossings(cond, var_name, lo, hi)
-    .map(|(total, _)| total)
+    .map(|(total, _, _)| total)
 }
 
 /// As [`boole_exact_measure`], but also returns the sorted True/False
@@ -18060,17 +18420,31 @@ fn boole_exact_measure(
 /// entirely, or starts, or stops, cutting all the way through it), whether
 /// that shows up in the measure as hitting zero, hitting its local
 /// maximum, or nothing simple at all.
+///
+/// The third value is a signature of the slice's topology: the crossing
+/// count, refined (when the condition compiles) by which elementary
+/// comparison flips at each crossing — on a half-disk `x^2 + y^2 <= 1 &&
+/// y > x` the count stays 2 where the line starts cutting the circle, but
+/// the comparison bounding the slice from below changes.
 fn boole_exact_measure_with_crossings(
   cond: &Expr,
   var_name: &str,
   lo: f64,
   hi: f64,
-) -> Option<(f64, Vec<f64>)> {
+) -> Option<(f64, Vec<f64>, usize)> {
   let span = hi - lo;
   if !span.is_finite() || span <= 0.0 {
     return None;
   }
+  // The condition compiled to float comparisons; the evaluator handles
+  // what the compiler does not know.
+  let compiled = compile_condition(cond, var_name);
   let pred = |v: f64| -> Option<bool> {
+    if let Some(c) = &compiled
+      && let Some(b) = c.eval(v)
+    {
+      return Some(b);
+    }
     let substituted =
       crate::syntax::substitute_variable(cond, var_name, &Expr::Real(v));
     match &crate::evaluator::evaluate_expr_to_expr(&substituted).ok()? {
@@ -18117,6 +18491,49 @@ fn boole_exact_measure_with_crossings(
     }
     crossings.push(f64::midpoint(lo_b, hi_b));
   }
+  // A sliver where two comparisons overlap only briefly (where the line
+  // `y > x` meets the circle `x^2 + y^2 <= 1`) can be thinner than the scan
+  // step, but each comparison on its own flips over a wide range: locate
+  // the flips of every elementary comparison and keep those where the
+  // whole condition changes.
+  if let Some(c) = &compiled {
+    let atom_samples: Vec<(f64, Vec<bool>)> =
+      samples.iter().map(|&(v, _)| (v, c.atoms(v))).collect();
+    for w in atom_samples.windows(2) {
+      let ((a, aa), (b, ab)) = (&w[0], &w[1]);
+      for k in 0..aa.len().min(ab.len()) {
+        if aa[k] == ab[k] {
+          continue;
+        }
+        let (mut lo_b, mut hi_b) = (*a, *b);
+        for _ in 0..60 {
+          let mid = f64::midpoint(lo_b, hi_b);
+          match c.atoms(mid).get(k) {
+            Some(&p) if p == aa[k] => lo_b = mid,
+            Some(_) => hi_b = mid,
+            None => break,
+          }
+        }
+        let x = f64::midpoint(lo_b, hi_b);
+        if !crossings.iter().any(|&y: &f64| (y - x).abs() <= span * 1e-12) {
+          crossings.push(x);
+        }
+      }
+    }
+    crossings.sort_by(f64::total_cmp);
+    // Keep only the points where the condition itself changes.
+    let mut bounds = vec![lo];
+    bounds.extend(crossings.iter().copied());
+    bounds.push(hi);
+    let truth: Vec<Option<bool>> = bounds
+      .windows(2)
+      .map(|w| pred(f64::midpoint(w[0], w[1])))
+      .collect();
+    crossings = (0..crossings.len())
+      .filter(|&i| truth[i] != truth[i + 1])
+      .map(|i| crossings[i])
+      .collect();
+  }
   crossings.sort_by(f64::total_cmp);
 
   let mut points = Vec::with_capacity(crossings.len() + 2);
@@ -18130,7 +18547,290 @@ fn boole_exact_measure_with_crossings(
       total += b - a;
     }
   }
-  Some((total, crossings))
+  let mut signature = crossings.len();
+  if let Some(c) = &compiled {
+    let eps = span * 1e-9;
+    for &x in &crossings {
+      let (before, after) = (c.atoms(x - eps), c.atoms(x + eps));
+      let flipped = before
+        .iter()
+        .zip(&after)
+        .position(|(p, q)| p != q)
+        .map_or(0, |i| i + 1);
+      signature = signature.wrapping_mul(31).wrapping_add(flipped);
+    }
+  }
+  Some((total, crossings, signature))
+}
+
+/// The points of `(lo, hi)` where the equation `eq` (`Cos[x] == 0`) holds:
+/// the sign changes of `lhs - rhs` on a fine scan, bisected, keeping only
+/// genuine zeros (not the sign flips of a pole).
+fn exclusion_points(eq: &Expr, var: &str, lo: f64, hi: f64) -> Vec<f64> {
+  let (lhs, rhs) = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && matches!(operators.as_slice(), [ComparisonOp::Equal]) =>
+    {
+      (&operands[0], &operands[1])
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return Vec::new(),
+  };
+  let g = call(
+    "Plus",
+    vec![lhs.clone(), call("Times", vec![Expr::Integer(-1), rhs.clone()])],
+  );
+  let Some(node) = crate::functions::polynomial_ast::solve::compile_numeric(
+    &g,
+    &[var.to_string()],
+  ) else {
+    return Vec::new();
+  };
+  let f = |x: f64| node.eval(&[x]);
+  const SCAN: u32 = 4000;
+  let step = (hi - lo) / f64::from(SCAN);
+  let mut points = Vec::new();
+  let mut prev = (lo, f(lo));
+  for i in 1..=SCAN {
+    let x = if i == SCAN { hi } else { lo + step * f64::from(i) };
+    let cur = (x, f(x));
+    if cur.1 == 0.0 && x < hi {
+      points.push(x);
+    } else if prev.1.is_finite()
+      && cur.1.is_finite()
+      && prev.1 != 0.0
+      && prev.1.signum() != cur.1.signum()
+    {
+      let (mut a, mut b, fa) = (prev.0, cur.0, prev.1);
+      for _ in 0..80 {
+        let m = f64::midpoint(a, b);
+        let fm = f(m);
+        if !fm.is_finite() {
+          break;
+        }
+        if fm.signum() == fa.signum() {
+          a = m;
+        } else {
+          b = m;
+        }
+      }
+      let root = f64::midpoint(a, b);
+      let scale = prev.1.abs().max(cur.1.abs()).max(1.0);
+      if f(root).abs() <= 1e-6 * scale {
+        points.push(root);
+      }
+    }
+    prev = cur;
+  }
+  points
+}
+
+/// Whether `f` takes a non-real value at some point of a coarse grid over
+/// the iterated ranges `outer`, `inner…` (inner bounds may depend on the
+/// outer variables, so each is evaluated after the outer ones are fixed).
+fn integrand_samples_complex(f: &Expr, outer: &Expr, inner: &[Expr]) -> bool {
+  const FRACTIONS: [f64; 3] = [0.21, 0.53, 0.87];
+  fn go(f: &Expr, ranges: &[Expr]) -> bool {
+    let Some((first, rest)) = ranges.split_first() else {
+      return matches!(
+        crate::evaluator::evaluate_expr_to_expr(&call("N", vec![f.clone()])),
+        Ok(v) if expr_contains_imaginary_unit(&v)
+      );
+    };
+    let Expr::List(items) = first else {
+      return false;
+    };
+    let Expr::Identifier(var) = &items[0] else {
+      return false;
+    };
+    let bound = |e: &Expr| {
+      crate::evaluator::evaluate_expr_to_expr(e)
+        .ok()
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(&e))
+        .filter(|v| v.is_finite())
+    };
+    let (Some(lo), Some(hi)) = (bound(&items[1]), bound(&items[items.len() - 1]))
+    else {
+      return false;
+    };
+    FRACTIONS.iter().any(|t| {
+      let v = Expr::Real(lo + (hi - lo) * t);
+      let f_v = crate::syntax::substitute_variable(f, var, &v);
+      let rest_v: Vec<Expr> = rest
+        .iter()
+        .map(|r| crate::syntax::substitute_variable(r, var, &v))
+        .collect();
+      go(&f_v, &rest_v)
+    })
+  }
+  let mut ranges = vec![outer.clone()];
+  ranges.extend(inner.iter().cloned());
+  let snapshot = crate::snapshot_warnings();
+  let complex = go(f, &ranges);
+  crate::restore_warnings(snapshot);
+  complex
+}
+
+/// A region condition (`1/4 <= x^2 + 4 y^2 <= 1 && y > x`) compiled to
+/// machine arithmetic in one variable.
+enum CompiledCondition {
+  Compare(
+    Vec<crate::functions::polynomial_ast::solve::NumNode>,
+    Vec<ComparisonOp>,
+  ),
+  And(Vec<CompiledCondition>),
+  Or(Vec<CompiledCondition>),
+  Not(Box<CompiledCondition>),
+  Const(bool),
+}
+
+impl CompiledCondition {
+  /// The truth value of every elementary comparison (each link of a
+  /// chained one) at `v`, in a fixed order; `false` where not a real.
+  fn atoms(&self, v: f64) -> Vec<bool> {
+    let mut out = Vec::new();
+    self.collect_atoms(v, &mut out);
+    out
+  }
+
+  fn collect_atoms(&self, v: f64, out: &mut Vec<bool>) {
+    match self {
+      CompiledCondition::Const(_) => {}
+      CompiledCondition::Not(c) => c.collect_atoms(v, out),
+      CompiledCondition::And(cs) | CompiledCondition::Or(cs) => {
+        cs.iter().for_each(|c| c.collect_atoms(v, out));
+      }
+      CompiledCondition::Compare(sides, ops) => {
+        let values: Vec<f64> = sides.iter().map(|s| s.eval(&[v])).collect();
+        for (k, op) in ops.iter().enumerate() {
+          out.push(compare_f64(*op, values[k], values[k + 1]).unwrap_or(false));
+        }
+      }
+    }
+  }
+
+  /// The condition at `v`; `None` when a side is not a finite real.
+  fn eval(&self, v: f64) -> Option<bool> {
+    match self {
+      CompiledCondition::Const(b) => Some(*b),
+      CompiledCondition::Not(c) => c.eval(v).map(|b| !b),
+      CompiledCondition::And(cs) => {
+        let mut all = true;
+        for c in cs {
+          all &= c.eval(v)?;
+        }
+        Some(all)
+      }
+      CompiledCondition::Or(cs) => {
+        let mut any = false;
+        for c in cs {
+          any |= c.eval(v)?;
+        }
+        Some(any)
+      }
+      CompiledCondition::Compare(sides, ops) => {
+        let values: Vec<f64> = sides.iter().map(|s| s.eval(&[v])).collect();
+        if values.iter().any(|x| !x.is_finite()) {
+          return None;
+        }
+        let mut holds = true;
+        for (k, op) in ops.iter().enumerate() {
+          holds &= compare_f64(*op, values[k], values[k + 1])?;
+        }
+        Some(holds)
+      }
+    }
+  }
+}
+
+/// `a op b` for machine reals; `None` for the structural comparisons.
+fn compare_f64(op: ComparisonOp, a: f64, b: f64) -> Option<bool> {
+  Some(match op {
+    ComparisonOp::Less => a < b,
+    ComparisonOp::LessEqual => a <= b,
+    ComparisonOp::Greater => a > b,
+    ComparisonOp::GreaterEqual => a >= b,
+    ComparisonOp::Equal => a == b,
+    ComparisonOp::NotEqual => a != b,
+    ComparisonOp::SameQ | ComparisonOp::UnsameQ => return None,
+  })
+}
+
+fn compile_condition(cond: &Expr, var: &str) -> Option<CompiledCondition> {
+  let vars = [var.to_string()];
+  let all = |items: &[Expr]| -> Option<Vec<CompiledCondition>> {
+    items.iter().map(|c| compile_condition(c, var)).collect()
+  };
+  match cond {
+    Expr::Identifier(s) if s == "True" => Some(CompiledCondition::Const(true)),
+    Expr::Identifier(s) if s == "False" => {
+      Some(CompiledCondition::Const(false))
+    }
+    Expr::Comparison {
+      operands,
+      operators,
+    } => {
+      let sides = operands
+        .iter()
+        .map(|o| crate::functions::polynomial_ast::solve::compile_numeric(o, &vars))
+        .collect::<Option<Vec<_>>>()?;
+      Some(CompiledCondition::Compare(sides, operators.clone()))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => Some(CompiledCondition::And(vec![
+      compile_condition(left, var)?,
+      compile_condition(right, var)?,
+    ])),
+    Expr::BinaryOp {
+      op: BinaryOperator::Or,
+      left,
+      right,
+    } => Some(CompiledCondition::Or(vec![
+      compile_condition(left, var)?,
+      compile_condition(right, var)?,
+    ])),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => Some(CompiledCondition::Not(Box::new(compile_condition(
+      operand, var,
+    )?))),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "And" => Some(CompiledCondition::And(all(args)?)),
+      "Or" => Some(CompiledCondition::Or(all(args)?)),
+      "Not" if args.len() == 1 => Some(CompiledCondition::Not(Box::new(
+        compile_condition(&args[0], var)?,
+      ))),
+      "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+      | "Unequal"
+        if args.len() >= 2 =>
+      {
+        let op = match name.as_str() {
+          "Less" => ComparisonOp::Less,
+          "LessEqual" => ComparisonOp::LessEqual,
+          "Greater" => ComparisonOp::Greater,
+          "GreaterEqual" => ComparisonOp::GreaterEqual,
+          "Equal" => ComparisonOp::Equal,
+          _ => ComparisonOp::NotEqual,
+        };
+        let sides = args
+          .iter()
+          .map(|o| crate::functions::polynomial_ast::solve::compile_numeric(o, &vars))
+          .collect::<Option<Vec<_>>>()?;
+        Some(CompiledCondition::Compare(sides, vec![op; args.len() - 1]))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
 }
 
 /// Adaptive Simpson's quadrature
@@ -18781,6 +19481,37 @@ fn tensor_shape(expr: &Expr) -> (usize, Vec<usize>) {
   }
 }
 
+/// All permutations of `0..n`, in lexicographic order.
+fn permutations_of(n: usize) -> Vec<Vec<usize>> {
+  fn go(prefix: &mut Vec<usize>, used: &mut [bool], out: &mut Vec<Vec<usize>>) {
+    if prefix.len() == used.len() {
+      out.push(prefix.clone());
+      return;
+    }
+    for i in 0..used.len() {
+      if !used[i] {
+        used[i] = true;
+        prefix.push(i);
+        go(prefix, used, out);
+        prefix.pop();
+        used[i] = false;
+      }
+    }
+  }
+  let mut out = Vec::new();
+  go(&mut Vec::new(), &mut vec![false; n], &mut out);
+  out
+}
+
+/// The sign (±1) of a permutation of `0..n`.
+fn permutation_sign(perm: &[usize]) -> i128 {
+  let inversions = (0..perm.len())
+    .flat_map(|i| (i + 1..perm.len()).map(move |j| (i, j)))
+    .filter(|&(i, j)| perm[i] > perm[j])
+    .count();
+  if inversions % 2 == 0 { 1 } else { -1 }
+}
+
 pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
@@ -18872,8 +19603,40 @@ pub fn curl_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
       return Ok(unevaluated());
     }
-    // rank < n with matching dimensions: a valid higher-rank curl that Woxi
-    // does not yet compute; leave unevaluated rather than return a wrong value.
+    // rank = n - 1: the curl is the scalar
+    // (1/rank!) Σ ε[j, i1, …, ik] D[f[[i1, …, ik]], x_j] over all
+    // permutations (j, i1, …, ik) of 1..n.
+    if rank + 1 == n {
+      let mut var_names = Vec::with_capacity(n);
+      for v in vars {
+        match v {
+          Expr::Identifier(s) => var_names.push(s.clone()),
+          _ => return Ok(unevaluated()),
+        }
+      }
+      let mut terms = Vec::new();
+      for perm in permutations_of(n) {
+        let sign = permutation_sign(&perm);
+        let mut component = &args[0];
+        for &i in &perm[1..] {
+          let Expr::List(items) = component else {
+            return Ok(unevaluated());
+          };
+          component = &items[i];
+        }
+        let d = differentiate_expr(component, &var_names[perm[0]])?;
+        terms.push(times2(Expr::Integer(sign), d));
+      }
+      let factorial: i128 = (1..=rank as i128).product();
+      let sum = crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))?;
+      return crate::evaluator::evaluate_expr_to_expr(&times2(
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(factorial)]),
+        sum,
+      ));
+    }
+    // rank < n - 1 with matching dimensions: an antisymmetric tensor result
+    // (a SymmetrizedArray in wolframscript) that Woxi does not yet compute;
+    // leave unevaluated rather than return a wrong value.
     return Ok(unevaluated());
   }
 
@@ -20478,6 +21241,30 @@ fn try_exponential_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   Some(result)
 }
 
+/// `DifferenceDelta[b^f[x], {x, n, h}]` with a symbolic order `n` and an
+/// exponent `f` linear in `x`: the n-fold difference is
+/// `b^f[x] (b^(f[x + h] - f[x]) - 1)^n`.
+fn symbolic_order_exponential_delta(
+  expr: &Expr,
+  var: &str,
+  order: &Expr,
+  step: &Expr,
+) -> Option<Expr> {
+  if expr_has_var(order, var) || expr_has_var(step, var) {
+    return None;
+  }
+  let first = try_exponential_delta(expr, var, step)?;
+  // first = expr * (base^delta - 1); delta must be free of the variable.
+  let Expr::BinaryOp { right, .. } = &first else {
+    return None;
+  };
+  let factor = crate::evaluator::evaluate_expr_to_expr(right).ok()?;
+  if expr_has_var(&factor, var) {
+    return None;
+  }
+  Some(times2(expr.clone(), pow2(factor, order.clone())))
+}
+
 /// Try to compute DifferenceDelta for Sin/Cos using sum-to-product identities.
 /// Δ[Sin[f(x)]] = 2*Sin[Δf/2]*Sin[Pi/2 + (f(x+h)+f(x))/2]
 /// Δ[Cos[f(x)]] = -2*Sin[(f(x+h)+f(x))/2]*Sin[Δf/2]
@@ -20735,6 +21522,15 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match crate::functions::math_ast::expr_to_i128(&items[1]) {
             Some(n) if n >= 0 => n as usize,
             _ => {
+              // A symbolic order: Δ_h^n b^(c x + d) = b^(c x + d) (b^(c h) - 1)^n,
+              // since each difference multiplies by the same factor.
+              let h = items.get(2).cloned().unwrap_or(Expr::Integer(1));
+              if !matches!(items[1], Expr::Integer(_) | Expr::Real(_))
+                && let Some(result) =
+                  symbolic_order_exponential_delta(expr, var.as_str(), &items[1], &h)
+              {
+                return crate::evaluator::evaluate_expr_to_expr(&result);
+              }
               return Ok(unevaluated("DifferenceDelta", args));
             }
           }

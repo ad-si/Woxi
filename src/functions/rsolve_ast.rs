@@ -2406,15 +2406,15 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         })
       });
     let Some((name, offset, expr, _)) = solved else {
-      return Ok(unevaluated());
+      return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
     };
     if recurrences.insert(name, (offset, expr)).is_some() {
-      return Ok(unevaluated());
+      return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
     }
   }
 
   if recurrences.len() != func_names.len() {
-    return Ok(unevaluated());
+    return recurrence_table_by_solving(args, &func_names, &var_name, nmin, nmax);
   }
 
   // An initial value may be given by another one (`r[1] == r[0]`): resolve
@@ -2485,6 +2485,145 @@ pub fn recurrence_table_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  Ok(Expr::List(results.into()))
+}
+
+/// A system `RecurrenceTable` whose equations do not each define one
+/// function — a coupled step `y[n + 1] + z[n + 1] == …` alongside an
+/// algebraic constraint `y[n] + 2 z[n] == 1`. Every equation is placed so
+/// that its furthest-forward term lands on the step being computed, and the
+/// resulting equations are solved together for the functions' values there.
+fn recurrence_table_by_solving(
+  args: &[Expr],
+  func_names: &[String],
+  var_name: &str,
+  nmin: i128,
+  nmax: i128,
+) -> Result<Expr, InterpreterError> {
+  use std::collections::HashMap;
+  let unevaluated = || Ok(unevaluated("RecurrenceTable", args));
+  if !matches!(&args[1], Expr::List(_)) {
+    return unevaluated();
+  }
+  let equations = match &args[0] {
+    Expr::List(eqs) => eqs.clone(),
+    Expr::FunctionCall { name, args: eqs } if name == "And" => eqs.clone(),
+    _ => return unevaluated(),
+  };
+  let numericize = equations
+    .iter()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real);
+  fn offsets(e: &Expr, names: &[String], var: &str, out: &mut Vec<i128>) {
+    for name in names {
+      if let Some(k) = extract_single_func_offset(e, name, var) {
+        out.push(k);
+      }
+    }
+    for child in crate::syntax::expr_children(e) {
+      offsets(child, names, var, out);
+    }
+  }
+  let mut values: HashMap<(String, i128), Expr> = HashMap::new();
+  // (difference lhs - rhs, its furthest-forward offset)
+  let mut steps: Vec<(Expr, i128)> = Vec::new();
+  for eq in &equations {
+    let Some((lhs, rhs)) = extract_equation(eq) else {
+      return unevaluated();
+    };
+    let initial = extract_func_at_integer(&lhs)
+      .filter(|(name, _)| func_names.contains(name))
+      .map(|(name, idx)| (name, idx, rhs.clone()))
+      .or_else(|| {
+        extract_func_at_integer(&rhs)
+          .filter(|(name, _)| func_names.contains(name))
+          .map(|(name, idx)| (name, idx, lhs.clone()))
+      });
+    if let Some((name, idx, val)) = initial {
+      let mut val = crate::evaluator::evaluate_expr_to_expr(&val)?;
+      if numericize {
+        val = crate::evaluator::evaluate_expr_to_expr(&call("N", vec![val]))?;
+      }
+      values.insert((name, idx), val);
+      continue;
+    }
+    let mut found = Vec::new();
+    offsets(&lhs, func_names, var_name, &mut found);
+    offsets(&rhs, func_names, var_name, &mut found);
+    let Some(k) = found.iter().max().copied() else {
+      return unevaluated();
+    };
+    steps.push((call("Subtract", vec![lhs, rhs]), k));
+  }
+  if steps.is_empty() || values.is_empty() {
+    return unevaluated();
+  }
+  let start = values.keys().map(|(_, idx)| *idx).min().unwrap().min(nmin);
+  let mut results = Vec::new();
+  for n in start..=nmax {
+    let missing: Vec<&String> = func_names
+      .iter()
+      .filter(|name| !values.contains_key(&((*name).clone(), n)))
+      .collect();
+    if !missing.is_empty() {
+      // Each equation instantiated with its leading term at step n.
+      let mut eqs = Vec::new();
+      for (diff, k) in &steps {
+        let at = crate::syntax::substitute_variable(
+          diff,
+          var_name,
+          &Expr::Integer(n - k),
+        );
+        let resolved = substitute_func_values(&at, func_names, &values);
+        let resolved = crate::evaluator::evaluate_expr_to_expr(&resolved)?;
+        if matches!(resolved, Expr::Integer(0)) {
+          continue;
+        }
+        eqs.push(call("Equal", vec![resolved, Expr::Integer(0)]));
+      }
+      let unknowns: Vec<Expr> = missing
+        .iter()
+        .map(|name| Expr::FunctionCall {
+          name: (*name).clone(),
+          args: vec![Expr::Integer(n)].into(),
+        })
+        .collect();
+      let solved = crate::functions::solve_ast(&[
+        Expr::List(eqs.into()),
+        Expr::List(unknowns.clone().into()),
+      ])?;
+      let Expr::List(solutions) = &solved else {
+        return unevaluated();
+      };
+      let [Expr::List(rules)] = solutions.as_slice() else {
+        return unevaluated();
+      };
+      for (name, unknown) in missing.iter().zip(&unknowns) {
+        let Some(value) = rules.iter().find_map(|r| match r {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if crate::evaluator::pattern_matching::expr_equal(
+            pattern, unknown,
+          ) =>
+          {
+            Some(replacement.as_ref().clone())
+          }
+          _ => None,
+        }) else {
+          return unevaluated();
+        };
+        values.insert(((*name).clone(), n), value);
+      }
+    }
+    if n < nmin {
+      continue;
+    }
+    let row: Vec<Expr> = func_names
+      .iter()
+      .map(|name| values[&(name.clone(), n)].clone())
+      .collect();
+    results.push(Expr::List(row.into()));
+  }
   Ok(Expr::List(results.into()))
 }
 

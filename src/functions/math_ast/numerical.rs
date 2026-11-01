@@ -5692,6 +5692,98 @@ fn neville_extrapolation(xs: &[f64], ys: &[f64]) -> f64 {
   c[n - 1]
 }
 
+fn is_infinite_upper(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) if s == "Infinity")
+}
+
+/// `f` at `var = at`, as a machine complex number.
+fn complex_value_at(f: &Expr, var: &str, at: &Expr) -> Option<(f64, f64)> {
+  let sub = substitute_variable(f, var, at);
+  let v = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "N".to_string(),
+    args: vec![sub].into(),
+  })
+  .ok()?;
+  let (re, im) = crate::functions::list_helpers_ast::expr_to_complex_parts(&v)?;
+  (re.is_finite() && im.is_finite()).then_some((re, im))
+}
+
+/// `Sum[f, {var, min, Infinity}]` for a smooth, decaying, possibly complex
+/// summand by Euler–Maclaurin: the first terms summed directly, the tail as
+/// `∫_N^∞ f + f(N)/2 - Σ B_2k/(2k)! f^(2k-1)(N)`. Unlike extrapolation in
+/// `1/n`, this copes with tails such as `Log[x] x^(-2 - 2 I)` whose terms
+/// oscillate in `Log[x]`.
+fn nsum_euler_maclaurin(f: &Expr, var: &str, min: i64) -> Option<(f64, f64)> {
+  const DIRECT: i64 = 40;
+  let n = min + DIRECT;
+  let mut sum = (0.0, 0.0);
+  for k in min..n {
+    let (re, im) = complex_value_at(f, var, &Expr::Integer(k as i128))?;
+    sum.0 += re;
+    sum.1 += im;
+  }
+  let at_n = Expr::Integer(n as i128);
+  // ∫_N^∞ f(x) dx with x = N e^u: the integrand f(N e^u) N e^u decays
+  // exponentially in u and oscillates at most at a fixed rate, so
+  // unit-width Gauss–Legendre panels integrate it to machine precision.
+  const NODES: [(f64, f64); 5] = [
+    (0.0, 0.568_888_888_888_888_9),
+    (0.538_469_310_105_683, 0.478_628_670_499_366_5),
+    (-0.538_469_310_105_683, 0.478_628_670_499_366_5),
+    (0.906_179_845_938_664, 0.236_926_885_056_189_1),
+    (-0.906_179_845_938_664, 0.236_926_885_056_189_1),
+  ];
+  let nf = n as f64;
+  let mut integral = (0.0, 0.0);
+  let mut quiet_panels = 0;
+  for panel in 0..4000 {
+    let mid = f64::from(panel) + 0.5;
+    let mut piece = (0.0, 0.0);
+    for (t, w) in NODES {
+      let x = nf * (mid + t / 2.0).exp();
+      let (re, im) = complex_value_at(f, var, &Expr::Real(x))?;
+      piece.0 += w / 2.0 * re * x;
+      piece.1 += w / 2.0 * im * x;
+    }
+    integral.0 += piece.0;
+    integral.1 += piece.1;
+    let size = integral.0.hypot(integral.1);
+    if piece.0.hypot(piece.1) <= 1e-17 * size.max(1e-300) {
+      quiet_panels += 1;
+      if quiet_panels >= 3 {
+        break;
+      }
+    } else {
+      quiet_panels = 0;
+    }
+    if panel == 3999 {
+      return None;
+    }
+  }
+  let (ire, iim) = integral;
+  let (fre, fim) = complex_value_at(f, var, &at_n)?;
+  sum.0 += ire + fre / 2.0;
+  sum.1 += iim + fim / 2.0;
+  // B_2/2!, B_4/4!, B_6/6!: the corrections subtract these times the odd
+  // derivatives at N.
+  const COEFFS: [f64; 3] = [1.0 / 12.0, -1.0 / 720.0, 1.0 / 30240.0];
+  let mut derivative = f.clone();
+  for (k, c) in COEFFS.iter().enumerate() {
+    let times = if k == 0 { 1 } else { 2 };
+    for _ in 0..times {
+      derivative = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "D".to_string(),
+        args: vec![derivative, Expr::Identifier(var.to_string())].into(),
+      })
+      .ok()?;
+    }
+    let (dre, dim) = complex_value_at(&derivative, var, &at_n)?;
+    sum.0 -= c * dre;
+    sum.1 -= c * dim;
+  }
+  Some(sum)
+}
+
 /// NSum[expr, {i, min, max}] - Numerical summation
 pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -5746,6 +5838,51 @@ pub fn nsum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       inner_options.push(a.clone());
     }
+  }
+  // A complex summand (`Log[x]/x^(2 + 2 I)`) is summed as its real and
+  // imaginary parts; the summation below works with real terms.
+  if inner_ranges.is_empty()
+    && !crate::functions::math_ast::numeric_utils::expr_contains_head(body, "Re")
+    && !crate::functions::math_ast::numeric_utils::expr_contains_head(body, "Im")
+    && (min_val..min_val + 3).any(|i| {
+      let sub = substitute_variable(body, &var_name, &Expr::Integer(i as i128));
+      matches!(
+        crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+          name: "N".to_string(),
+          args: vec![sub].into(),
+        }),
+        Ok(v) if try_eval_to_f64(&v).is_none()
+          && crate::functions::list_helpers_ast::expr_to_complex_parts(&v)
+            .is_some_and(|(_, im)| im != 0.0)
+      )
+    })
+  {
+    let sum = if is_infinite_upper(&items[2]) {
+      nsum_euler_maclaurin(body, &var_name, min_val)
+    } else {
+      let max_val = try_eval_to_f64(&items[2]).map(|v| v as i64);
+      max_val.and_then(|max_val| {
+        let mut terms = Vec::new();
+        for i in min_val..=max_val {
+          terms.push(complex_value_at(body, &var_name, &Expr::Integer(i as i128))?);
+        }
+        Some(terms.iter().fold((0.0, 0.0), |(a, b), (c, d)| (a + c, b + d)))
+      })
+    };
+    let Some((re, im)) = sum else {
+      return Ok(unevaluated("NSum", args));
+    };
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![
+        Expr::Real(re),
+        Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: vec![Expr::Identifier("I".to_string()), Expr::Real(im)].into(),
+        },
+      ]
+      .into(),
+    });
   }
   // Compute the summand at integer index `i`: a plain numeric evaluation of the
   // body, or a recursive inner NSum when there are further ranges.
