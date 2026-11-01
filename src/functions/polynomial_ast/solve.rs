@@ -3001,6 +3001,20 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = super::reduce::inequalities_to_comparisons(first);
     return solve_ast(&normalized);
   }
+  // A system with machine-number exponents that are simple fractions
+  // (`l^0.5 k^0.5`, a Cobb-Douglas Lagrangian) is solved with the exact
+  // exponents, and the solutions numericized.
+  if let Some(Expr::List(eqs)) = args.first()
+    && eqs.len() >= 2
+    && let Some(exact) = rationalize_simple_exponents(&args[0])
+  {
+    let mut exact_args = args.to_vec();
+    exact_args[0] = exact;
+    let solved = solve_ast(&exact_args)?;
+    if matches!(&solved, Expr::List(_)) {
+      return crate::evaluator::evaluate_function_call_ast("N", &[solved]);
+    }
+  }
   if let Some(result) = solve_interpolating_function("Solve", args) {
     return Ok(result);
   }
@@ -3694,6 +3708,26 @@ fn numericize_exact_solutions(exact: Expr) -> Result<Expr, InterpreterError> {
     &[exact, Expr::Integer(40)],
   )?;
   crate::evaluator::evaluate_function_call_ast("N", &[precise])
+}
+
+/// `expr` with every machine-number exponent of a symbolic base that is a
+/// fraction with a small denominator (`0.5`, `1.5`, `0.25`) made exact;
+/// None when there is none.
+fn rationalize_simple_exponents(expr: &Expr) -> Option<Expr> {
+  if !has_inexact_exponent(expr) {
+    return None;
+  }
+  let rule = crate::syntax::string_to_expr(
+    "Power[b_ /; !NumericQ[b], e_Real /; Rationalize[e] =!= e && \
+     Denominator[Rationalize[e]] <= 12] :> Power[b, Rationalize[e]]",
+  )
+  .ok()?;
+  let rewritten = crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+    expr: Box::new(expr.clone()),
+    rules: Box::new(rule),
+  })
+  .ok()?;
+  (!has_inexact_exponent(&rewritten)).then_some(rewritten)
 }
 
 /// Whether `expr` holds a power whose exponent is a machine number.

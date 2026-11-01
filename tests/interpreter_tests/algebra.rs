@@ -7157,6 +7157,25 @@ mod solve_ratnz_only_for_polynomial_systems {
     assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
   }
 
+  /// A system with machine exponents that are simple fractions (a
+  /// Cobb-Douglas Lagrangian) is solved with exact exponents and
+  /// numericized; it used to stop half-way with Solve::svars.
+  #[test]
+  fn simple_machine_exponents_in_systems() {
+    assert_eq!(
+      interpret(
+        "z = 0.5 l^0.5 k^0.5 + m (2200 - 20 l - 50 k); \
+         Solve[{D[z, k] == 0, D[z, l] == 0, D[z, m] == 0}, {l, k, m}]"
+      )
+      .unwrap(),
+      "{{l -> 55., k -> 22., m -> 0.007905694150420948}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^0.5 + y == 3, x - y == 1}, {x, y}]").unwrap(),
+      "{{x -> 2.4384471871911697, y -> 1.4384471871911697}}"
+    );
+  }
+
   /// Rationalized machine numbers are binary fractions whose exact
   /// solutions are radicals of integers beyond the machine range: they used
   /// to evaluate to `0.` in machine arithmetic, so the exact solver dropped
