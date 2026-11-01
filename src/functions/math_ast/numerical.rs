@@ -6870,33 +6870,55 @@ fn compute_champernowne(
   BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc)
 }
 
-/// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.
-///
-/// Computes Sum[a_k * E^(-I * omega * k), {k, 0, n-1}].
+/// ListFourierSequenceTransform[{u1, …, un}, ω(, k), FourierParameters ->
+/// {a, b}] — discrete-time Fourier transform
+/// |b/(2 Pi)|^((1 - a)/2) Sum[u_r E^(-I b (r + k - 1) ω), {r, n}], with
+/// {a, b} = {1, 1} and k = 0 by default.
 pub fn list_fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 && args.len() != 3 {
-    return Ok(unevaluated("ListFourierSequenceTransform", args));
+  let unevaluated_result =
+    || Ok(unevaluated("ListFourierSequenceTransform", args));
+  let split = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. }))
+    .unwrap_or(args.len());
+  let (positional, opts) = args.split_at(split);
+  if positional.len() != 2 && positional.len() != 3 {
+    return unevaluated_result();
+  }
+  let (mut a, mut b) = (Expr::Integer(1), Expr::Integer(1));
+  for opt in opts {
+    match crate::functions::expr_form::rule_parts(opt) {
+      Some((Expr::Identifier(n), Expr::List(ab), _))
+        if n == "FourierParameters" && ab.len() == 2 =>
+      {
+        a = ab[0].clone();
+        b = ab[1].clone();
+      }
+      _ => return unevaluated_result(),
+    }
   }
   // ListFourierSequenceTransform[list, ω, n0]: list starts at index n0.
-  let shift: i128 = match args.get(2) {
+  let shift: i128 = match positional.get(2) {
     None => 0,
     Some(Expr::Integer(n)) => *n,
-    Some(_) => return Ok(unevaluated("ListFourierSequenceTransform", args)),
+    Some(_) => return unevaluated_result(),
   };
 
-  let Expr::List(list) = &args[0] else {
-    return Ok(unevaluated("ListFourierSequenceTransform", args));
+  let Expr::List(list) = &positional[0] else {
+    return unevaluated_result();
   };
 
   if list.is_empty() {
     return Ok(Expr::List(vec![].into()));
   }
 
-  let omega = &args[1];
+  let omega = &positional[1];
+  let default_parameters =
+    matches!((&a, &b), (Expr::Integer(1), Expr::Integer(1)));
 
-  // Build the sum: Sum[a_k * E^(-I * omega * k), {k, 0, n-1}]
+  // Sum[u_k E^(-I b ω k)]
   use crate::evaluator::evaluate_expr_to_expr;
 
   let mut terms: Vec<Expr> = Vec::new();
@@ -6907,17 +6929,15 @@ pub fn list_fourier_sequence_transform_ast(
     let k = k as i128 + shift;
 
     if k == 0 {
-      // E^0 = 1, so just add the coefficient
       terms.push(coeff.clone());
     } else {
-      // a_k * E^(-I * omega * k)
-      let k_expr = Expr::Integer(k);
-      // -I * omega * k
-      let exponent =
-        times(vec![Expr::Integer(-1), id_expr("I"), omega.clone(), k_expr]);
-      let exp_term = pow2(id_expr("E"), exponent);
-      let term = times2(coeff.clone(), exp_term);
-      terms.push(term);
+      let exponent = times(vec![
+        Expr::Integer(-k),
+        id_expr("I"),
+        b.clone(),
+        omega.clone(),
+      ]);
+      terms.push(times2(coeff.clone(), pow2(id_expr("E"), exponent)));
     }
   }
 
@@ -6925,11 +6945,28 @@ pub fn list_fourier_sequence_transform_ast(
     return Ok(Expr::Integer(0));
   }
 
-  let sum = if terms.len() == 1 {
+  let mut sum = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
     plus(terms)
   };
+  if !default_parameters {
+    // |b/(2 Pi)|^((1 - a)/2)
+    let scale = pow2(
+      call1(
+        "Abs",
+        times2(
+          b.clone(),
+          pow2(times2(Expr::Integer(2), id_expr("Pi")), Expr::Integer(-1)),
+        ),
+      ),
+      times2(
+        plus(vec![Expr::Integer(1), times2(Expr::Integer(-1), a)]),
+        make_rational(1, 2),
+      ),
+    );
+    sum = times2(scale, evaluate_expr_to_expr(&sum)?);
+  }
 
   evaluate_expr_to_expr(&sum)
 }

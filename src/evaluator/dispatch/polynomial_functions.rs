@@ -189,6 +189,27 @@ pub fn dispatch_polynomial_functions(
       }
       return Some(trig_rational_transform(name, &rest[0]));
     }
+    // Rational operations over a quadratic field: [expr, Extension -> …].
+    "Together"
+    | "Cancel"
+    | "Factor"
+    | "FactorSquareFree"
+    | "FactorSquareFreeList"
+      if args.len() == 2
+        && let Expr::Rule { pattern, .. } = &args[1]
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Extension") =>
+    {
+      match crate::functions::polynomial_ast::extension_rational_operation(
+        name, args,
+      ) {
+        Ok(Some(e)) => return Some(Ok(e)),
+        Ok(None) if name == "Factor" => {
+          return Some(crate::functions::polynomial_ast::factor_ast(args));
+        }
+        Ok(None) => return Some(Ok(unevaluated(name, args))),
+        Err(e) => return Some(Err(e)),
+      }
+    }
     "Factor" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::factor_ast(args));
     }
@@ -301,10 +322,20 @@ pub fn dispatch_polynomial_functions(
     "Simplify" if !args.is_empty() => {
       return Some(crate::functions::polynomial_ast::simplify_ast(args));
     }
-    "FullSimplify" if args.len() <= 2 => {
+    "FullSimplify"
+      if args.len() <= 2
+        || args.len() == 3
+          && matches!(&args[2], Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Assumptions")) =>
+    {
       return Some(crate::functions::polynomial_ast::full_simplify_ast(args));
     }
-    "Refine" if args.len() <= 2 => {
+    "Refine"
+      if args.len() <= 2
+        || args.len() == 3
+          && matches!(&args[2], Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Assumptions")) =>
+    {
       return Some(crate::functions::polynomial_ast::refine_ast(args));
     }
     "Coefficient" if args.len() >= 2 && args.len() <= 3 => {

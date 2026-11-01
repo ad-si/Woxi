@@ -12,7 +12,7 @@ mod cancel;
 mod coefficient;
 mod collect;
 pub(crate) mod complex_numeric;
-mod cyclotomic;
+pub(crate) mod cyclotomic;
 mod decompose;
 mod discriminant;
 mod eliminate;

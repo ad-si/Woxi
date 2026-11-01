@@ -939,7 +939,12 @@ pub fn quantile_distribution_closed_form(
 ) -> Option<Expr> {
   // Numeric q in [0, 1] only; the symbolic-q forms wolframscript returns
   // are ConditionalExpression/Piecewise wrappers that are out of scope.
-  let q_num = expr_to_num(q)?;
+  // (A rational with big-integer parts has no machine expr_to_num value.)
+  let q_num = expr_to_num(q).or_else(|| {
+    matches!(q, Expr::FunctionCall { name, .. } if name == "Rational")
+      .then(|| try_eval_to_f64(q))
+      .flatten()
+  })?;
   if !(0.0..=1.0).contains(&q_num) {
     return None;
   }
