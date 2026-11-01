@@ -1395,7 +1395,20 @@ pub fn combine_and_build(terms: &[Expr]) -> Expr {
   // Sort terms using Wolfram's canonical ordering:
   // Reverse-variable lexicographic ascending — sort by last variable ascending,
   // then next-to-last ascending, etc. Constants come first naturally (all exponents 0).
-  term_map.sort_by(|(ka, va, _), (kb, vb, _)| {
+  // Each term's exponents are worked out once, as (variable, exponent) pairs
+  // in variable order, rather than for every comparison.
+  let exponents: Vec<Vec<(String, i128)>> = term_map
+    .iter()
+    .map(|(_, va, _)| {
+      let mut e: Vec<(String, i128)> =
+        extract_exponent_map(va).into_iter().collect();
+      e.sort();
+      e
+    })
+    .collect();
+  let mut order: Vec<usize> = (0..term_map.len()).collect();
+  order.sort_by(|&i, &j| {
+    let (ka, kb) = (&term_map[i].0, &term_map[j].0);
     // Constants first
     match (ka.is_empty(), kb.is_empty()) {
       (true, true) => return std::cmp::Ordering::Equal,
@@ -1403,22 +1416,47 @@ pub fn combine_and_build(terms: &[Expr]) -> Expr {
       (false, true) => return std::cmp::Ordering::Greater,
       _ => {}
     }
-    let ea = extract_exponent_map(va);
-    let eb = extract_exponent_map(vb);
-    // Collect all variable names, sort alphabetically
-    let mut all_vars: Vec<&String> = ea.keys().chain(eb.keys()).collect();
-    all_vars.sort();
-    all_vars.dedup();
-    // Compare from LAST variable ascending, then next-to-last ascending, etc.
-    for var in all_vars.iter().rev() {
-      let pa = ea.get(*var).copied().unwrap_or(0);
-      let pb = eb.get(*var).copied().unwrap_or(0);
+    // Compare from the LAST variable (of the two terms' together) ascending,
+    // then next-to-last ascending, etc.
+    let (ea, eb) = (&exponents[i], &exponents[j]);
+    let (mut x, mut y) = (ea.len(), eb.len());
+    while x > 0 || y > 0 {
+      let (pa, pb) = match (x.checked_sub(1), y.checked_sub(1)) {
+        (Some(p), Some(q)) => match ea[p].0.cmp(&eb[q].0) {
+          std::cmp::Ordering::Equal => {
+            x -= 1;
+            y -= 1;
+            (ea[p].1, eb[q].1)
+          }
+          std::cmp::Ordering::Greater => {
+            x -= 1;
+            (ea[p].1, 0)
+          }
+          std::cmp::Ordering::Less => {
+            y -= 1;
+            (0, eb[q].1)
+          }
+        },
+        (Some(p), None) => {
+          x -= 1;
+          (ea[p].1, 0)
+        }
+        (None, Some(q)) => {
+          y -= 1;
+          (0, eb[q].1)
+        }
+        (None, None) => break,
+      };
       if pa != pb {
         return pa.cmp(&pb); // ascending
       }
     }
     std::cmp::Ordering::Equal
   });
+  let mut slots: Vec<Option<(String, Vec<Expr>, Expr)>> =
+    term_map.into_iter().map(Some).collect();
+  let term_map: Vec<(String, Vec<Expr>, Expr)> =
+    order.into_iter().filter_map(|i| slots[i].take()).collect();
 
   // Build result terms
   let mut result_terms: Vec<Expr> = Vec::new();
@@ -1476,12 +1514,14 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
       _ => 1,
     }
   }
-  factors.sort_by(|a, b| {
-    let pa = crate::functions::math_ast::term_priority(a);
-    let pb = crate::functions::math_ast::term_priority(b);
-    pa.cmp(&pb)
-      .then_with(|| factor_subpriority(a).cmp(&factor_subpriority(b)))
-      .then_with(|| expr_to_string(a).cmp(&expr_to_string(b)))
+  // Keyed once per factor: formatting each factor anew for every
+  // comparison dominated the expansion of large products.
+  factors.sort_by_cached_key(|e| {
+    (
+      crate::functions::math_ast::term_priority(e),
+      factor_subpriority(e),
+      expr_to_string(e),
+    )
   });
 }
 
