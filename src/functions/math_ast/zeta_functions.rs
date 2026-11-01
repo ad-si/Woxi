@@ -1566,7 +1566,7 @@ fn lerch_phi_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
         Some(re) if re > 0.0 => return Ok(id_expr("ComplexInfinity")),
-        Some(re) if re == 0.0 => return Ok(id_expr("Indeterminate")),
+        Some(0.0) => return Ok(id_expr("Indeterminate")),
         Some(_) => {}
         None => return symbolic(),
       }

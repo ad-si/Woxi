@@ -4896,7 +4896,7 @@ fn gaussian_power_mod(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   let mut base = gaussian_rem(a, m);
   if exp.is_negative() {
     if let Some(inv) = gaussian_mod_inverse(base, m) {
-      base = inv
+      base = inv;
     } else {
       crate::emit_message(&format!(
         "PowerMod::ninv: {} is not invertible modulo {}.",
