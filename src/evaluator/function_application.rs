@@ -1502,6 +1502,7 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "ReplaceList"
       | "AllSameBy"
       | "DateSelect"
+      | "Between"
   )
 }
 
@@ -3603,7 +3604,7 @@ pub fn apply_curried_call(
           | "Prepend"
           | "Take"
           | "Drop"
-          | "Between"
+          | "IntervalMemberQ"
           | "Comap"
           | "ComapApply"
           | "KeyMap"
