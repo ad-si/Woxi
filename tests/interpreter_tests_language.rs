@@ -37,6 +37,7 @@ mod interpreter_tests {
   mod option_sweep0;
   mod option_sweep1;
   mod option_sweep2;
+  mod option_sweep3_lists;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;

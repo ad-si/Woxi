@@ -5436,47 +5436,6 @@ pub fn dispatch_math_functions(
       };
       return Some(Ok(resample_array(&args[0], &dims)));
     }
-    "ArrayResample" if args.len() == 2 => {
-      if let (Expr::List(elems), Some(n)) = (&args[0], expr_to_i128(&args[1])) {
-        let n = n as usize;
-        let m = elems.len();
-        if n == 0 {
-          return Some(Ok(Expr::List(vec![].into())));
-        }
-        if m == 0 {
-          return Some(Ok(Expr::List(vec![].into())));
-        }
-        if n == 1 {
-          return Some(Ok(Expr::List(vec![elems[0].clone()].into())));
-        }
-        if m == 1 {
-          return Some(Ok(Expr::List(vec![elems[0].clone(); n].into())));
-        }
-        let mut result = Vec::with_capacity(n);
-        for i in 0..n {
-          // Map output index i to input coordinate
-          // t = i * (m-1) / (n-1)
-          let t_num = i as i128 * (m as i128 - 1);
-          let t_den = n as i128 - 1;
-          let idx = (t_num / t_den) as usize;
-          let rem = t_num % t_den;
-          if rem == 0 {
-            // Exact index
-            result.push(elems[idx].clone());
-          } else {
-            // Linear interpolation: elems[idx] + rem/t_den * (elems[idx+1] - elems[idx])
-            let frac =
-              call("Rational", vec![Expr::Integer(rem), Expr::Integer(t_den)]);
-            let diff =
-              plus(vec![elems[idx + 1].clone(), neg(elems[idx].clone())]);
-            let interp =
-              plus(vec![elems[idx].clone(), times(vec![frac, diff])]);
-            result.push(evaluate_expr_to_expr(&interp).unwrap_or(interp));
-          }
-        }
-        return Some(Ok(Expr::List(result.into())));
-      }
-    }
     // PolynomialLCM[p1, p2, ...] — least common multiple of polynomials
     "PolynomialLCM" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_lcm_ast(args));

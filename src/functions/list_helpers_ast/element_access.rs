@@ -1269,6 +1269,95 @@ pub fn insert_ast(
     )?);
   }
 
+  // A single path through associations (`{1, Key[a]}`, `{"k", 2}`):
+  // descend one component at a time, inserting at the last one.
+  if let Expr::List(path) = pos
+    && !path.is_empty()
+    && !path.iter().all(|c| matches!(c, Expr::List(_)))
+    && path.iter().any(|c| {
+      matches!(c, Expr::String(_))
+        || matches!(c, Expr::FunctionCall { name, args }
+          if name == "Key" && args.len() == 1)
+    })
+  {
+    if path.len() == 1 {
+      return insert_ast(list, elem, &path[0]);
+    }
+    let rest = if path.len() == 2 {
+      path[1].clone()
+    } else {
+      Expr::List(path[1..].to_vec().into())
+    };
+    let key_of = |c: &Expr| match c {
+      Expr::String(_) => Some(c.clone()),
+      Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
+        Some(args[0].clone())
+      }
+      _ => None,
+    };
+    // The insertion into one part, or None when it failed.
+    let insert_inner = |part: &Expr| -> Result<Option<Expr>, InterpreterError> {
+      let inner = insert_ast(part, elem, &rest)?;
+      let failed = matches!(&inner, Expr::FunctionCall { name, args }
+        if name == "Insert" && args.len() == 3 && expr_to_string(&args[0]) == expr_to_string(part));
+      Ok((!failed).then_some(inner))
+    };
+    let rebuilt = match (list, &path[0]) {
+      (Expr::Association(pairs), comp) => {
+        let slot = match key_of(comp) {
+          Some(key) => {
+            let ks = expr_to_string(&key);
+            pairs.iter().position(|(k, _)| expr_to_string(k) == ks)
+          }
+          None => expr_to_i128(comp).and_then(|n| {
+            let len = pairs.len() as i128;
+            let i = if n < 0 { len + n } else { n - 1 };
+            (0..len).contains(&i).then_some(i as usize)
+          }),
+        };
+        slot.map(|i| {
+          insert_inner(&pairs[i].1).map(|inner| {
+            inner.map(|v| {
+              let mut new_pairs = pairs.clone();
+              new_pairs[i].1 = v;
+              Expr::Association(new_pairs)
+            })
+          })
+        })
+      }
+      (Expr::List(items), comp) => expr_to_i128(comp)
+        .and_then(|n| {
+          let len = items.len() as i128;
+          let i = if n < 0 { len + n } else { n - 1 };
+          (0..len).contains(&i).then_some(i as usize)
+        })
+        .map(|i| {
+          insert_inner(&items[i]).map(|inner| {
+            inner.map(|v| {
+              let mut new_items = items.to_vec();
+              new_items[i] = v;
+              Expr::List(new_items.into())
+            })
+          })
+        }),
+      _ => None,
+    };
+    match rebuilt {
+      Some(Ok(Some(result))) => return Ok(result),
+      // An inner insertion that failed has reported it; the whole call
+      // stays unevaluated.
+      Some(Ok(None)) => return Ok(unevaluated()),
+      Some(Err(e)) => return Err(e),
+      None => {}
+    }
+    crate::emit_message(&format!(
+      "Insert::ins: Cannot insert at position {} in {}",
+      crate::syntax::format_expr(pos, crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated());
+  }
+
   // Association subject: the inserted element must be a `key -> value` rule,
   // and the position (an integer or `Key[k]`) gives where the new pair is
   // placed. Integer `n` inserts before the n-th entry (negatives count from
