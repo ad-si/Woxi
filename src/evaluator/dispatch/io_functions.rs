@@ -2024,6 +2024,44 @@ pub fn dispatch_io_functions(
         return Some(Ok(Expr::String(filename)));
       }
 
+      // A text format is written exactly as `ExportString` renders it, so
+      // `Export["t.csv", {{1, 2}}]` holds the CSV rows, not the list's text.
+      let text_format = match fmt.as_str() {
+        "CSV" => Some("CSV"),
+        "TSV" | "TAB" => Some("TSV"),
+        "JSON" => Some("JSON"),
+        "RAWJSON" => Some("RawJSON"),
+        "TXT" | "TEXT" => Some("Text"),
+        "DAT" | "TABLE" => Some("Table"),
+        "M" | "WL" | "PACKAGE" => Some("Package"),
+        "LIST" => Some("List"),
+        "LINES" => Some("Lines"),
+        "STRING" => Some("String"),
+        _ => None,
+      };
+      if let Some(text_format) = text_format
+        && !matches!(&args[1], Expr::Graphics { .. })
+      {
+        let rendered = match crate::evaluator::evaluate_function_call_ast(
+          "ExportString",
+          &[args[1].clone(), Expr::String(text_format.to_string())],
+        ) {
+          Ok(r) => r,
+          Err(e) => return Some(Err(e)),
+        };
+        let Expr::String(text) = &rendered else {
+          return Some(Ok(fail_expr()));
+        };
+        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), text)
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("Export: {e}"))
+          })
+        {
+          return Some(Err(e));
+        }
+        return Some(Ok(Expr::String(filename)));
+      }
+
       // The second argument has already been evaluated, which triggers
       // capture_graphics() for Plot expressions.  Grab the SVG.
       let content = match &args[1] {
@@ -2300,6 +2338,13 @@ pub fn dispatch_io_functions(
           Some(json) => Expr::String(json),
           None => fail_expr(),
         }));
+      }
+      // "Package" is the expression in InputForm under the kernel's banner.
+      if format_str == "Package" {
+        return Some(Ok(Expr::String(format!(
+          "(* Created with the Wolfram Language : www.wolfram.com *)\n{}\n",
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Input)
+        ))));
       }
       // "String" is the expression's own text: ExportString[{{1, 2}}, "String"]
       // is "{{1, 2}}", not the row-per-line layout of "Text".
@@ -4798,12 +4843,142 @@ fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
   url
 }
 
+/// How a CSV cell is typed when Wolfram decides how to write a column.
+#[derive(Clone, Copy, PartialEq)]
+enum CsvKind {
+  Int,
+  Real,
+  Bool,
+  Other,
+}
+
+fn csv_kind(e: &Expr) -> CsvKind {
+  match e {
+    Expr::Integer(n) if i64::try_from(*n).is_ok() => CsvKind::Int,
+    Expr::Real(_) => CsvKind::Real,
+    Expr::Identifier(n) if n == "True" || n == "False" => CsvKind::Bool,
+    _ => CsvKind::Other,
+  }
+}
+
+/// A complex number in a CSV table: `"2 + 1i"`, `"0 - 1i"`, `"1.5 + 2.i"`.
+fn csv_complex_text(e: &Expr) -> Option<String> {
+  let head =
+    crate::functions::predicate_ast::head_ast(std::slice::from_ref(e)).ok()?;
+  if !matches!(&head, Expr::Identifier(h) if h == "Complex") {
+    return None;
+  }
+  let part = |f: &str| {
+    crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1(
+      f,
+      e.clone(),
+    ))
+    .ok()
+  };
+  let (re, im) = (part("Re")?, part("Im")?);
+  let negative = crate::functions::math_ast::try_eval_to_f64(&im)? < 0.0;
+  let im_abs = if negative {
+    crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1("Minus", im))
+      .ok()?
+  } else {
+    im
+  };
+  Some(format!(
+    "{} {} {}i",
+    expr_to_string(&re),
+    if negative { '-' } else { '+' },
+    expr_to_string(&im_abs)
+  ))
+}
+
+fn csv_quote(text: &str) -> String {
+  format!("\"{}\"", text.replace('"', "\"\""))
+}
+
+/// The CSV/TSV rows of a rectangular table the way Wolfram writes them: a
+/// column whose cells are all machine integers, all machine reals or all
+/// booleans is written bare (booleans lower-cased); a column mixing kinds has
+/// every cell quoted as text (`"3"`, `"4."`, `"True"`). A first row of
+/// strings over rows holding none is a header, left out of the typing.
+/// Rows of unequal length are written cell by cell instead, numbers bare and
+/// everything else quoted.
+fn csv_table_rows(rows: &[Expr], sep: char) -> Option<Vec<String>> {
+  let cells: Vec<&[Expr]> = rows
+    .iter()
+    .map(|r| match r {
+      Expr::List(items) => Some(items.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let sep = sep.to_string();
+  let width = cells.first().map_or(0, |r| r.len());
+  if cells.iter().any(|r| r.len() != width) {
+    let cell = |e: &Expr| match e {
+      Expr::Integer(n) => n.to_string(),
+      Expr::Real(_) => expr_to_string(e),
+      Expr::Identifier(n) if n == "True" || n == "False" => csv_quote(n),
+      _ => csv_cell(e, true),
+    };
+    return Some(
+      cells
+        .iter()
+        .map(|r| r.iter().map(cell).collect::<Vec<_>>().join(&sep))
+        .collect(),
+    );
+  }
+  let is_string = |e: &Expr| matches!(e, Expr::String(_));
+  let header = cells.len() >= 2
+    && cells[0].iter().all(is_string)
+    && !cells[1..].iter().any(|r| r.iter().any(is_string));
+  let data = if header { &cells[1..] } else { &cells[..] };
+  let mixed: Vec<bool> = (0..width)
+    .map(|j| {
+      let kinds: Vec<CsvKind> = data.iter().map(|r| csv_kind(&r[j])).collect();
+      kinds.iter().any(|k| *k != kinds[0])
+    })
+    .collect();
+  Some(
+    cells
+      .iter()
+      .enumerate()
+      .map(|(i, r)| {
+        r.iter()
+          .enumerate()
+          .map(|(j, e)| {
+            let in_data = !(header && i == 0);
+            if in_data && mixed[j] && csv_kind(e) != CsvKind::Other {
+              csv_quote(&expr_to_string(e))
+            } else if let Some(text) = csv_complex_text(e) {
+              csv_quote(&text)
+            } else {
+              csv_cell(e, true)
+            }
+          })
+          .collect::<Vec<_>>()
+          .join(&sep)
+      })
+      .collect(),
+  )
+}
+
 fn export_string_csv(
   expr: &Expr,
   sep: char,
   quote_strings: bool,
   trailing_newline: bool,
 ) -> String {
+  if quote_strings
+    && let Expr::List(items) = expr
+    && !items.is_empty()
+    && items.iter().all(|e| matches!(e, Expr::List(_)))
+    && let Some(rows) = csv_table_rows(items, sep)
+  {
+    let mut out = rows.join("\n");
+    if trailing_newline {
+      out.push('\n');
+    }
+    return out;
+  }
   let cell = |e: &Expr| csv_cell(e, quote_strings);
   let row_strs = |row: &Expr| -> String {
     if let Expr::List(items) = row {

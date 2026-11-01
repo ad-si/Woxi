@@ -10371,6 +10371,20 @@ mod cases {
     );
   }
   #[test]
+  fn edit_distance_bit_parallel_agrees_with_the_table() {
+    // ASCII strings up to 64 characters take the bit-parallel algorithm;
+    // lists of characters the dynamic-programming table.
+    assert_case(
+      r#"SeedRandom[3]; w = Table[StringJoin[RandomChoice[{"a", "b", "c"}, RandomInteger[{0, 70}]]], {120}]; Union[Flatten[Table[EditDistance[w[[i]], w[[j]]] == EditDistance[Characters[w[[i]]], Characters[w[[j]]]], {i, 1, 119, 5}, {j, 2, 120, 3}]]]"#,
+      r#"{True}"#,
+    );
+    assert_case(
+      r#"{EditDistance["flaw", "lawn"], EditDistance["a", "b"], EditDistance["ab", "ba"]}"#,
+      r#"{2, 1, 2}"#,
+    );
+  }
+
+  #[test]
   fn edit_distance_1() {
     assert_case(r#"EditDistance["kitten", "kitchen"]"#, r#"2"#);
   }

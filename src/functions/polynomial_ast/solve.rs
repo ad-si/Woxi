@@ -11242,30 +11242,30 @@ fn solve_mass_like(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
 /// True when `target` occurs (structurally, via string comparison like
 /// `substitute_expr`) anywhere inside `expr`.
 pub(crate) fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
-  if expr_to_string(expr) == expr_to_string(target) {
-    return true;
+  fn walk(expr: &Expr, target: &Expr, key: &str) -> bool {
+    if crate::syntax::renders_as(expr, target, key) {
+      return true;
+    }
+    match expr {
+      Expr::List(items) => items.iter().any(|e| walk(e, target, key)),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().any(|e| walk(e, target, key))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        walk(left, target, key) || walk(right, target, key)
+      }
+      Expr::UnaryOp { operand, .. } => walk(operand, target, key),
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|e| walk(e, target, key))
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => walk(pattern, target, key) || walk(replacement, target, key),
+      _ => false,
+    }
   }
-  match expr {
-    Expr::List(items) => items.iter().any(|e| expr_contains_expr(e, target)),
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(|e| expr_contains_expr(e, target))
-    }
-    Expr::BinaryOp { left, right, .. } => {
-      expr_contains_expr(left, target) || expr_contains_expr(right, target)
-    }
-    Expr::UnaryOp { operand, .. } => expr_contains_expr(operand, target),
-    Expr::Comparison { operands, .. } => {
-      operands.iter().any(|e| expr_contains_expr(e, target))
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => {
-      expr_contains_expr(pattern, target)
-        || expr_contains_expr(replacement, target)
-    }
-    _ => false,
-  }
+  walk(expr, target, &expr_to_string(target))
 }
 
 /// Roots beyond this index are left alone: raising to them makes a
@@ -15253,6 +15253,12 @@ fn substitute_expr_with(
     | (Expr::CurriedCall { .. }, Expr::FunctionCall { name, .. }) => {
       name == "Derivative"
     }
+    // A curried call `T[1][t]` spells like a curried call with as many
+    // arguments only (or the flat `Derivative` above).
+    (Expr::CurriedCall { args: a, .. }, Expr::CurriedCall { args: b, .. }) => {
+      a.len() == b.len()
+    }
+    (_, Expr::CurriedCall { .. }) => false,
     _ => true,
   };
   if may_match
@@ -22028,6 +22034,25 @@ pub(crate) enum NumNode {
   // entire objective through the slow path on every call — keeps the rest
   // of a large expression on the fast numeric path.
   Fallback(std::rc::Rc<Expr>, std::rc::Rc<[String]>),
+  // `Re`, `Im`, `Abs` or `Arg` of an argument compiled to complex
+  // arithmetic, with the `Fallback` for the whole call should the complex
+  // value come out non-finite.
+  ComplexPart(
+    super::complex_numeric::Part,
+    std::rc::Rc<super::complex_numeric::CNode>,
+    Box<Self>,
+  ),
+  // A `CompiledFunction` applied to compiled arguments (or constant ones,
+  // a vector say), run by the machine evaluator.
+  Compiled(
+    std::rc::Rc<crate::functions::compile_vm::Program>,
+    Vec<CompiledArg>,
+  ),
+}
+
+pub(crate) enum CompiledArg {
+  Node(NumNode),
+  Value(crate::functions::compile_vm::V),
 }
 
 impl NumNode {
@@ -22050,6 +22075,11 @@ impl NumNode {
       Self::RealOr(_, a, _) => a.has_fallback(),
       Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
+      Self::ComplexPart(_, z, _) => z.has_fallback(),
+      Self::Compiled(_, xs) => xs.iter().any(|x| match x {
+        CompiledArg::Node(n) => n.has_fallback(),
+        CompiledArg::Value(_) => false,
+      }),
     }
   }
 
@@ -22097,12 +22127,32 @@ impl NumNode {
       Self::RealOr(f, a, whole) => {
         let v = a.eval_plain(point);
         if v.is_nan() {
-          whole.eval_fallback(point)
+          whole.eval_plain(point)
         } else {
           f(v)
         }
       }
       Self::Fallback(..) => self.eval_fallback(point),
+      Self::ComplexPart(part, z, whole) => {
+        let v = part.of(z.eval(point));
+        if v.is_nan() {
+          whole.eval_fallback(point)
+        } else {
+          v
+        }
+      }
+      Self::Compiled(program, xs) => {
+        let values = xs
+          .iter()
+          .map(|x| match x {
+            CompiledArg::Node(n) => {
+              crate::functions::compile_vm::V::R(n.eval_plain(point))
+            }
+            CompiledArg::Value(v) => v.clone(),
+          })
+          .collect();
+        program.call_real(values)
+      }
     }
   }
 
@@ -22242,16 +22292,16 @@ impl NumNode {
         }
         (v, grad)
       }
-      Self::Fallback(..) => {
-        let v = self.eval_fallback(point);
+      Self::Fallback(..) | Self::ComplexPart(..) | Self::Compiled(..) => {
+        let v = self.eval_plain(point);
         let grad = (0..point.len())
           .filter_map(|k| {
             let h = 1e-7 * point[k].abs().max(1.0);
             let mut p = point.to_vec();
             p[k] += h;
-            let fp = self.eval_fallback(&p);
+            let fp = self.eval_plain(&p);
             p[k] -= 2.0 * h;
-            let fm = self.eval_fallback(&p);
+            let fm = self.eval_plain(&p);
             let d = (fp - fm) / (2.0 * h);
             (d != 0.0).then_some((k, d))
           })
@@ -22289,12 +22339,14 @@ impl NumNode {
       Self::RealOr(f, a, whole) => {
         let v = a.eval_wide(point).to_f64();
         WideFloat::new(if v.is_nan() {
-          whole.eval_fallback(point)
+          whole.eval_plain(point)
         } else {
           f(v)
         })
       }
-      Self::Fallback(..) => WideFloat::new(self.eval_fallback(point)),
+      Self::Fallback(..) | Self::ComplexPart(..) | Self::Compiled(..) => {
+        WideFloat::new(self.eval_plain(point))
+      }
     }
   }
 
@@ -22473,6 +22525,9 @@ impl WideFloat {
 /// if it contains anything not handled here (forcing the slow AST fallback).
 pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
   let c = |e: &Expr| compile_numeric(e, vars);
+  if let Some(node) = compile_compiled_call(expr, vars) {
+    return Some(node);
+  }
   match expr {
     Expr::Integer(n) => Some(NumNode::Const(*n as f64)),
     Expr::BigInteger(n) => Some(NumNode::Const(n.to_string().parse().ok()?)),
@@ -22514,17 +22569,37 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
             Box::new(compile_numeric(&args[0], vars)?),
           ))
         };
-      let real_or =
-        |f: fn(f64) -> f64, args: &crate::ExprList| -> Option<NumNode> {
-          Some(NumNode::RealOr(
-            f,
-            Box::new(compile_numeric(&args[0], vars)?),
-            Box::new(NumNode::Fallback(
-              std::rc::Rc::new(expr.clone()),
-              std::rc::Rc::from(vars.to_vec()),
-            )),
+      // A real argument is compiled real, with the call's complex form (or,
+      // failing that, its symbolic evaluation) for points where it leaves
+      // the reals; an argument with `I` in it straight to complex.
+      let real_or = |f: fn(f64) -> f64,
+                     part: Option<super::complex_numeric::Part>,
+                     args: &crate::ExprList|
+       -> Option<NumNode> {
+        let fallback = || {
+          NumNode::Fallback(
+            std::rc::Rc::new(expr.clone()),
+            std::rc::Rc::from(vars.to_vec()),
+          )
+        };
+        let complex = || {
+          let part = part?;
+          let z = super::complex_numeric::compile_complex(&args[0], vars)?;
+          Some(NumNode::ComplexPart(
+            part,
+            std::rc::Rc::new(z),
+            Box::new(fallback()),
           ))
         };
+        match compile_numeric(&args[0], vars) {
+          Some(a) => Some(NumNode::RealOr(
+            f,
+            Box::new(a),
+            Box::new(complex().unwrap_or_else(fallback)),
+          )),
+          None => complex(),
+        }
+      };
       match name.as_str() {
         "Plus" => {
           Some(NumNode::Add(args.iter().map(&c).collect::<Option<_>>()?))
@@ -22565,10 +22640,23 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Sinh" => unary(f64::sinh, args),
         "Cosh" => unary(f64::cosh, args),
         "Tanh" => unary(f64::tanh, args),
-        "Re" | "Conjugate" if args.len() == 1 => real_or(|x| x, args),
-        "Im" if args.len() == 1 => real_or(|_| 0.0, args),
-        "Abs" if args.len() == 1 => real_or(f64::abs, args),
-        "Sign" => unary(f64::signum, args),
+        "Re" if args.len() == 1 => {
+          real_or(|x| x, Some(super::complex_numeric::Part::Re), args)
+        }
+        "Conjugate" if args.len() == 1 => real_or(|x| x, None, args),
+        "Im" if args.len() == 1 => {
+          real_or(|_| 0.0, Some(super::complex_numeric::Part::Im), args)
+        }
+        "Abs" if args.len() == 1 => {
+          real_or(f64::abs, Some(super::complex_numeric::Part::Abs), args)
+        }
+        "Arg" if args.len() == 1 => real_or(
+          |x| if x < 0.0 { std::f64::consts::PI } else { 0.0 },
+          Some(super::complex_numeric::Part::Arg),
+          args,
+        ),
+        // Sign[0] is 0, not the 1 `f64::signum` gives for +0.
+        "Sign" => unary(|x| if x == 0.0 { 0.0 } else { x.signum() }, args),
         "Erf" => {
           unary(crate::functions::math_ast::numeric_utils::erf_f64, args)
         }
@@ -22670,6 +22758,51 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
   })
+}
+
+/// `cf[args…]` where `cf` is (or names) a `CompiledFunction`: its body
+/// run by the machine evaluator, arguments compiled (or, without the
+/// variables, taken as values).
+fn compile_compiled_call(expr: &Expr, vars: &[String]) -> Option<NumNode> {
+  let (func, args): (Expr, &[Expr]) = match expr {
+    Expr::CurriedCall { func, args } => ((**func).clone(), &args[..]),
+    Expr::FunctionCall { name, args } => {
+      let value = crate::ENV.with(|e| match e.borrow().get(name) {
+        Some(crate::StoredValue::ExprVal(v)) => Some(v.clone()),
+        _ => None,
+      })?;
+      (value, &args[..])
+    }
+    _ => return None,
+  };
+  if !matches!(&func, Expr::FunctionCall { name, .. } if name == "CompiledFunction")
+  {
+    return None;
+  }
+  let program =
+    crate::evaluator::function_application::compiled_function_program(&func)?;
+  let types = program.arg_types();
+  if types.len() != args.len() {
+    return None;
+  }
+  let mut out = Vec::with_capacity(args.len());
+  for (a, (ty, rank)) in args.iter().zip(types) {
+    let mentions = vars
+      .iter()
+      .any(|v| super::coefficient::expr_contains_identifier(a, v));
+    if mentions {
+      if rank != 0 || ty == crate::functions::compile_vm::Ty::Boolean {
+        return None;
+      }
+      out.push(CompiledArg::Node(compile_numeric(a, vars)?));
+    } else {
+      let value = crate::evaluator::evaluate_expr_to_expr(a).ok()?;
+      out.push(CompiledArg::Value(
+        crate::functions::compile_vm::bind_value(&value, ty, rank)?,
+      ));
+    }
+  }
+  Some(NumNode::Compiled(std::rc::Rc::new(program), out))
 }
 
 /// An atomic comparison split out of a (possibly chained / And-joined)

@@ -3298,7 +3298,11 @@ pub fn find_hamiltonian_path_ast(
 }
 
 /// UndirectedGraph[g] — the same graph with every edge undirected, duplicates
-/// dropped (`{1 -> 2, 2 -> 1}` becomes one edge).
+/// dropped (`{1 -> 2, 2 -> 1}` becomes one edge). An already undirected graph
+/// comes back unchanged. Otherwise the edges are listed the way Wolfram's
+/// adjacency-matrix construction leaves them: vertex by vertex (in
+/// `VertexList` order), first the later vertices with an edge *into* it,
+/// then those it has an edge *to* (a self-loop among them), each ascending.
 pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("UndirectedGraph", args);
   let not_a_graph = || {
@@ -3330,35 +3334,65 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|(i, v)| (key(v), i))
     .collect();
 
-  let mut seen: Vec<(usize, usize)> = Vec::new();
-  let mut out: Vec<Expr> = Vec::new();
+  let mut arcs: Vec<(usize, usize)> = Vec::new();
+  let mut any_directed = false;
   for e in &raw_edges {
     let inner = fc_unwrap_edge(e);
-    let (a, b) = match inner {
-      Expr::FunctionCall {
-        name: _,
-        args: eargs,
-      } if eargs.len() == 2 => (&eargs[0], &eargs[1]),
+    let (a, b, directed) = match inner {
+      Expr::FunctionCall { name, args: eargs } if eargs.len() == 2 => {
+        (&eargs[0], &eargs[1], name != "UndirectedEdge")
+      }
       Expr::Rule {
         pattern,
         replacement,
-      } => (pattern.as_ref(), replacement.as_ref()),
+      } => (pattern.as_ref(), replacement.as_ref(), true),
       _ => return not_a_graph(),
     };
     let (Some(&ia), Some(&ib)) = (index.get(&key(a)), index.get(&key(b)))
     else {
       return not_a_graph();
     };
-    let pair = (ia.min(ib), ia.max(ib));
-    if seen.contains(&pair) {
-      continue;
+    any_directed |= directed;
+    arcs.push((ia, ib));
+    if !directed {
+      arcs.push((ib, ia));
     }
-    seen.push(pair);
-    out.push(call(
-      "UndirectedEdge",
-      vec![vertices[pair.0].clone(), vertices[pair.1].clone()],
-    ));
   }
+  let out: Vec<Expr> = if any_directed {
+    let n = vertices.len();
+    let mut ins = vec![Vec::new(); n];
+    let mut outs = vec![Vec::new(); n];
+    for &(a, b) in &arcs {
+      if b > a {
+        outs[a].push(b);
+      } else if a > b {
+        ins[b].push(a);
+      } else {
+        outs[a].push(a);
+      }
+    }
+    let mut out = Vec::new();
+    for v in 0..n {
+      ins[v].sort_unstable();
+      outs[v].sort_unstable();
+      let mut done: Vec<usize> = Vec::new();
+      for &w in ins[v].iter().chain(outs[v].iter()) {
+        if !done.contains(&w) {
+          done.push(w);
+          out.push(call(
+            "UndirectedEdge",
+            vec![vertices[v].clone(), vertices[w].clone()],
+          ));
+        }
+      }
+    }
+    out
+  } else {
+    raw_edges
+      .iter()
+      .map(|e| fc_unwrap_edge(e).clone())
+      .collect()
+  };
 
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(out.into())];

@@ -2043,6 +2043,10 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         if cmp != 0 {
           return cmp;
         }
+        // Identical expressions tie without being formatted.
+        if crate::evaluator::pattern_matching::expr_equal(a, b) {
+          return 0;
+        }
         let a_str = order_string(a);
         let b_str = order_string(b);
         wolfram_string_order(&a_str, &b_str)

@@ -2653,11 +2653,9 @@ fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
       op: BinaryOperator::Power,
       left,
       right,
-    } => {
-      vec![split_power_exponent(left, right)]
-    }
+    } => power_den_factors(left, right),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      vec![split_power_exponent(&args[0], &args[1])]
+      power_den_factors(&args[0], &args[1])
     }
     // Times[a, b, ...] in denominator — split into factors
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
@@ -2665,10 +2663,70 @@ fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
       for arg in args {
         result.extend(extract_den_factors(arg));
       }
-      result
+      merge_integer_den_factors(result)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      let mut result = extract_den_factors(left);
+      result.extend(extract_den_factors(right));
+      merge_integer_den_factors(result)
     }
     _ => vec![(den.clone(), (1, 1))],
   }
+}
+
+/// The integer factors of one denominator multiply into a single number
+/// (`2 * 144` is `288`): the common denominator later takes the LCM of the
+/// integer parts *across* denominators, which must not see two factors of
+/// one denominator as alternatives.
+fn merge_integer_den_factors(factors: Vec<(Expr, Rat)>) -> Vec<(Expr, Rat)> {
+  let mut product: i128 = 1;
+  let mut merged = 0usize;
+  let mut rest = Vec::with_capacity(factors.len());
+  for (base, exp) in factors {
+    if let Expr::Integer(n) = &base
+      && *n > 1
+      && exp.1 == 1
+      && exp.0 > 0
+      && let Ok(e) = u32::try_from(exp.0)
+      && let Some(p) = n.checked_pow(e)
+      && let Some(next) = product.checked_mul(p)
+    {
+      product = next;
+      merged += 1;
+      continue;
+    }
+    rest.push((base, exp));
+  }
+  if merged > 0 {
+    rest.insert(0, (Expr::Integer(product), (1, 1)));
+  }
+  rest
+}
+
+/// The factors of `base^exp` in a denominator. A product raised to an
+/// integer power contributes each of its factors separately, so that
+/// `(e (1 + p))^1` and `e (2 + p)` share the base `e` in the common
+/// denominator instead of contributing it twice.
+fn power_den_factors(base: &Expr, exp: &Expr) -> Vec<(Expr, Rat)> {
+  let is_product = matches!(base, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      base,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    );
+  if is_product && let Expr::Integer(k) = exp {
+    return extract_den_factors(base)
+      .into_iter()
+      .map(|(b, (n, d))| (b, rat_reduce(n * *k, d)))
+      .collect();
+  }
+  vec![split_power_exponent(base, exp)]
 }
 
 /// Compute the "missing factor" needed to bring a fraction's denominator up to the common

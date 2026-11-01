@@ -6705,30 +6705,55 @@ pub fn infinite_argument_value(name: &str, args: &[Expr]) -> Option<Expr> {
     Neg,
     Complex,
   }
-  let classify = |e: &Expr| match e {
-    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
-      Some(Inf::Pos)
-    }
-    Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
-      Some(Inf::Complex)
-    }
-    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
-      match args.as_slice() {
-        [] => Some(Inf::Complex),
-        [Expr::Integer(1)] => Some(Inf::Pos),
-        [Expr::Integer(-1)] => Some(Inf::Neg),
-        _ => None,
+  // Recognized structurally: rendering a large argument to text only to
+  // compare it with "Infinity" dominated Re/Im of big expressions.
+  fn classify(e: &Expr) -> Option<Inf> {
+    let negate = |inf: Inf| match inf {
+      Inf::Pos => Inf::Neg,
+      Inf::Neg => Inf::Pos,
+      Inf::Complex => Inf::Complex,
+    };
+    match e {
+      Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+        Some(Inf::Pos)
       }
-    }
-    // -Infinity in its other stored forms (Times[-1, Infinity], …).
-    Expr::List(_) | Expr::Association(_) | Expr::String(_) => None,
-    _ => match crate::syntax::expr_to_string(e).as_str() {
-      "Infinity" => Some(Inf::Pos),
-      "-Infinity" => Some(Inf::Neg),
-      "ComplexInfinity" => Some(Inf::Complex),
+      Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
+        Some(Inf::Complex)
+      }
+      Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+        match args.as_slice() {
+          [] => Some(Inf::Complex),
+          [Expr::Integer(1)] => Some(Inf::Pos),
+          [Expr::Integer(-1)] => Some(Inf::Neg),
+          _ => None,
+        }
+      }
+      // -Infinity in its other stored forms (Times[-1, Infinity], …).
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        match args.as_slice() {
+          [Expr::Integer(-1), x] | [x, Expr::Integer(-1)] => {
+            classify(x).map(negate)
+          }
+          _ => None,
+        }
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => match (left.as_ref(), right.as_ref()) {
+        (Expr::Integer(-1), x) | (x, Expr::Integer(-1)) => {
+          classify(x).map(negate)
+        }
+        _ => None,
+      },
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => classify(operand).map(negate),
       _ => None,
-    },
-  };
+    }
+  }
   let value = |s: &str| {
     crate::syntax::string_to_expr(s)
       .and_then(|e| crate::evaluator::evaluate_expr_to_expr(&e))

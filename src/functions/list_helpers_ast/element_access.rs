@@ -130,6 +130,15 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
   }
 }
 
+/// The arguments of a curried call `f[a][b, …]` — an expression whose head
+/// is itself compound.
+fn curried_args(expr: &Expr) -> Option<Vec<Expr>> {
+  match expr {
+    Expr::CurriedCall { args, .. } => Some(args.clone()),
+    _ => None,
+  }
+}
+
 /// AST-based First: return first element of list.
 /// First[list] or First[list, default] - returns default if list is empty.
 /// Emit `<F>::normal: Nonatomic expression expected at position 1 in
@@ -266,8 +275,11 @@ pub fn first_ast(
       }
     }
     _ => {
-      // Try decomposing BinaryOp/UnaryOp to canonical form
-      if let Some((_head, args)) = expr_to_head_args(list) {
+      // Try decomposing BinaryOp/UnaryOp (and a curried `f[a][b, …]`, whose
+      // head is itself an expression) to canonical form
+      if let Some(args) = curried_args(list)
+        .or_else(|| expr_to_head_args(list).map(|(_, args)| args))
+      {
         if args.is_empty() {
           if let Some(d) = default {
             return Ok(d.clone());
@@ -376,8 +388,11 @@ pub fn last_ast(
       }
     }
     _ => {
-      // Try decomposing BinaryOp/UnaryOp to canonical form
-      if let Some((_head, args)) = expr_to_head_args(list) {
+      // Try decomposing BinaryOp/UnaryOp (or a curried call) to canonical
+      // form
+      if let Some(args) = curried_args(list)
+        .or_else(|| expr_to_head_args(list).map(|(_, args)| args))
+      {
         if args.is_empty() {
           if let Some(d) = default {
             return Ok(d.clone());
@@ -435,6 +450,16 @@ pub fn rest_ast(list: &Expr) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_function_call_ast(name, &args[1..])
       }
     }
+    Expr::CurriedCall { func, args } => {
+      if args.is_empty() {
+        norest()
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: func.clone(),
+          args: args[1..].to_vec(),
+        })
+      }
+    }
     _ => {
       // Try decomposing BinaryOp/UnaryOp to canonical form
       if let Some((head, args)) = expr_to_head_args(list) {
@@ -485,6 +510,16 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
           name,
           &args[..args.len() - 1],
         )
+      }
+    }
+    Expr::CurriedCall { func, args } => {
+      if args.is_empty() {
+        nomost()
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+          func: func.clone(),
+          args: args[..args.len() - 1].to_vec(),
+        })
       }
     }
     _ => {

@@ -391,8 +391,8 @@ mod table_symbolic_bounds {
     // The message quotes the iterator with its bounds evaluated, as Wolfram
     // does.
     assert_eq!(
-      interpret("a = \"x\"; Table[1, {i, a, 3}]").unwrap(),
-      "Table[1, {i, a, 3}]"
+      interpret("a = \"x\"; ToString[Table[1, {i, a, 3}], InputForm]").unwrap(),
+      "Table[1, {i, \"x\", 3}]"
     );
     assert_eq!(
       woxi::get_captured_messages_raw(),
@@ -419,6 +419,66 @@ mod table_symbolic_bounds {
     );
     // A bare (nonlist) iterator stays unevaluated too.
     assert_eq!(interpret("Table[i, i]").unwrap(), "Table[i, i]");
+  }
+
+  // The outermost iterator of an unevaluated Table comes back evaluated, the
+  // inner ones as written; a complex or infinite bound is reported twice.
+  #[test]
+  fn invalid_iterator_return_form_and_message_count() {
+    let r = woxi::interpret_with_stdout("Table[x, {Ceiling[1/0]}]").unwrap();
+    assert_eq!(r.result, "Table[x, {ComplexInfinity}]");
+    assert_eq!(
+      r.warnings
+        .iter()
+        .filter(|w| w.contains("Table::iterb"))
+        .count(),
+      2
+    );
+    assert_eq!(
+      interpret("Table[x, {i, 1, a + 1 - 1}, {j, {1, 2}}]").unwrap(),
+      "Table[x, {i, 1, a}, {j, {1, 2}}]"
+    );
+    assert_eq!(
+      interpret("Table[x, {{1, 2}}, {i, 1, a + 1 - 1}]").unwrap(),
+      "Table[x, {{1, 2}}, {i, 1, a + 1 - 1}]"
+    );
+    assert_eq!(
+      interpret("Table[x, {2 + 1}, {i, 1, a + 1 - 1}]").unwrap(),
+      "Table[x, {3}, {i, 1, a + 1 - 1}]"
+    );
+    for spec in ["{Infinity}", "{i, 1, Infinity}", "{i, I}", "{2.5 I}"] {
+      let r =
+        woxi::interpret_with_stdout(&format!("Table[x, {spec}]")).unwrap();
+      assert_eq!(
+        r.warnings
+          .iter()
+          .filter(|w| w.contains("Table::iterb"))
+          .count(),
+        2,
+        "{spec}: {:?}",
+        r.warnings
+      );
+    }
+    let r = woxi::interpret_with_stdout("Table[x, {a}]").unwrap();
+    assert_eq!(
+      r.warnings
+        .iter()
+        .filter(|w| w.contains("Table::iterb"))
+        .count(),
+      1
+    );
+  }
+
+  // `Do` runs a real repeat count Floor[n] times and an infinite one until
+  // Break[].
+  #[test]
+  fn do_real_and_infinite_repeat_counts() {
+    assert_eq!(interpret("n = 0; Do[n++, {2.7}]; n").unwrap(), "2");
+    assert_eq!(interpret("n = 0; Do[n++, {5/2}, {2}]; n").unwrap(), "4");
+    assert_eq!(
+      interpret("n = 0; Do[n++; If[n > 4, Break[]], {Infinity}]; n").unwrap(),
+      "5"
+    );
   }
 
   // A zero step never terminates, so Table/Do reject it with iterb and stay
@@ -3312,6 +3372,18 @@ mod sort_by {
       "{{a[1], b[1], z[1], h[a][1]}, {a[c], b[c], a[b][c]}, {h[1], h[a], h[a][1]}, \
        {f, g[0], Derivative[1][f]}, {s, x^2, x + y, {1}, Sin[x], h[a][1]}, \
        {f[0], g[0], Derivative[1][f][0], Derivative[2][f][0]/2}}"
+    );
+  }
+
+  #[test]
+  fn sort_identical_compound_expressions_tie() {
+    assert_eq!(
+      interpret("Sort[{f[b, 2], f[a, 1], f[b, 2], f[a, 1]}]").unwrap(),
+      "{f[a, 1], f[a, 1], f[b, 2], f[b, 2]}"
+    );
+    assert_eq!(
+      interpret("Order[f[g[x], {1, 2}], f[g[x], {1, 2}]]").unwrap(),
+      "0"
     );
   }
 
@@ -9770,6 +9842,20 @@ mod rest_nonlist {
     assert_eq!(interpret("Last[a^b]").unwrap(), "b");
   }
 
+  // A curried call `f[a][b, c]` is an ordinary compound expression whose
+  // head is `f[a]`.
+  #[test]
+  fn element_access_on_curried_calls() {
+    assert_eq!(
+      interpret(
+        "{First[f[a][b, c]], Last[f[a][b, c]], Rest[f[a][b, c]], \
+          Most[f[a][b, c]], First[f[a][], 0]}"
+      )
+      .unwrap(),
+      "{b, c, f[a][c], f[a][b], 0}"
+    );
+  }
+
   #[test]
   fn first_rule() {
     // First on a Rule returns the LHS (head is Rule, first arg is LHS).
@@ -10943,6 +11029,14 @@ mod join_level_spec {
     assert_eq!(interpret("Join[{1}, {2}, 3]").unwrap(), "Join[{1}, {2}, 3]");
   }
 
+  // An atomic first argument joins nothing: unevaluated, and silently.
+  #[test]
+  fn atomic_first_argument_unevaluated_without_message() {
+    let r = interpret_with_stdout("{Join[3, 6, 7], Join[3, {1}, 2]}").unwrap();
+    assert_eq!(r.result, "{Join[3, 6, 7], Join[3, {1}, 2]}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // If a later argument's parts are not Lists (wolframscript emits
   // Join::headsd), the call also stays unevaluated.
   #[test]
@@ -11706,7 +11800,7 @@ mod join_non_list {
             {{1,2},{2,3},{3,4},{4,1}}]]}"
       )
       .unwrap(),
-      "{{{1, 2}, {1, 4}, {2, 3}, {3, 4}}, 0., 1., True}"
+      "{{{1, 2}, {2, 3}, {3, 4}, {1, 4}}, 0., 1., True}"
     );
   }
 
@@ -11765,16 +11859,70 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_matches_lexicographic_order() {
-    // Combinatorica`UnrankPermutation[r, l] gives the r-th permutation of
-    // `l` in lexicographic order, 1-indexed (r runs from 1 through
-    // Length[l]!, so the sequence below must line up with what
-    // `Permutations` itself already produces in lexicographic order).
+    // Combinatorica`UnrankPermutation[r, l] gives the permutation of `l`
+    // of rank r in lexicographic order, counting from 0, so the ranks 0
+    // through Length[l]! - 1 line up with `Permutations`.
     assert_eq!(
       interpret(
-        "Table[Combinatorica`UnrankPermutation[r, {1, 2, 3}], {r, 1, 6}]"
+        "Table[Combinatorica`UnrankPermutation[r, {1, 2, 3}], {r, 0, 5}]"
       )
       .unwrap(),
       interpret("Permutations[{1, 2, 3}]").unwrap()
+    );
+  }
+
+  // Orbits under a permutation group acting by Permute (the images of the
+  // first element left, the rest in Complement's order), their
+  // representatives, cycles of a permutation, random subsets.
+  #[test]
+  fn combinatorica_orbits_cycles_and_random_subsets() {
+    assert_eq!(
+      interpret(
+        "x = {{1, 1, 1}, {1, 1, 0}, {1, 0, 1}, {1, 0, 0}, {0, 1, 1}, {0, 1, 0}, {0, 0, 1}, {0, 0, 0}}; \
+         {Combinatorica`OrbitRepresentatives[{{1, 2, 3}, {3, 2, 1}}, x], \
+          Combinatorica`Orbits[{{1, 2, 3}, {3, 2, 1}}, x]}"
+      )
+      .unwrap(),
+      "{{{1, 1, 1}, {0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {0, 1, 1}, {1, 0, 1}}, \
+       {{{1, 1, 1}, {1, 1, 1}}, {{0, 0, 0}, {0, 0, 0}}, {{0, 0, 1}, {1, 0, 0}}, \
+       {{0, 1, 0}, {0, 1, 0}}, {{0, 1, 1}, {1, 1, 0}}, {{1, 0, 1}, {1, 0, 1}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "{Combinatorica`ToCycles[{2, 3, 1, 5, 4, 6}], \
+          Combinatorica`ToCycles[Combinatorica`UnrankPermutation[500, {1, 2, 3, 4, 5, 6, 7, 8, 9}]], \
+          SubsetQ[{a, b, c, d}, Combinatorica`RandomSubset[{a, b, c, d}]]}"
+      )
+      .unwrap(),
+      "{{{2, 3, 1}, {5, 4}, {6}}, {{1}, {2}, {3}, {8, 5, 4}, {9, 7, 6}}, True}"
+    );
+  }
+
+  // Weak components, each in vertex-list order, ordered by first vertex.
+  #[test]
+  fn graph_utilities_weak_components() {
+    assert_eq!(
+      interpret(
+        "{GraphUtilities`WeakComponents[{1 -> 2, 3 -> 4, 4 -> 5, 6 -> 6, 2 -> 1}], \
+          GraphUtilities`WeakComponents[Graph[{1 -> 2, 3 -> 4, 5 -> 3, 7 -> 6}]], \
+          GraphUtilities`WeakComponents[Combinatorica`FromUnorderedPairs[{{1, 2}, {3, 4}, {4, 5}}]]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {3, 4, 5}, {6}}, {{1, 2}, {3, 4, 5}, {7, 6}}, {{1, 2}, {3, 4, 5}}}"
+    );
+  }
+
+  // With the package loaded, the bare names reach the package's functions.
+  #[test]
+  fn combinatorica_bare_names_after_needs() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; {ToCycles[{2, 1, 3}], \
+         OrbitRepresentatives[{{1, 2}, {2, 1}}, {{1, 2}, {2, 1}, {1, 1}}], \
+         UnrankPermutation[1, {a, b, c}], Length[RandomSubset[{a}]] <= 1}"
+      )
+      .unwrap(),
+      "{{{2, 1}, {3}}, {{1, 2}, {1, 1}}, {a, c, b}, True}"
     );
   }
 
@@ -11858,23 +12006,19 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_boundaries() {
+    // Ranks count from 0 and wrap modulo Length[l]!.
     assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[1, {1, 2, 3}]").unwrap(),
-      "{1, 2, 3}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[6, {1, 2, 3}]").unwrap(),
-      "{3, 2, 1}"
-    );
-    // Out of the valid 1..Length[l]! range, the call stays symbolic rather
-    // than silently wrapping or erroring.
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[0, {1, 2, 3}]").unwrap(),
-      "Combinatorica`UnrankPermutation[0, {1, 2, 3}]"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[7, {1, 2, 3}]").unwrap(),
-      "Combinatorica`UnrankPermutation[7, {1, 2, 3}]"
+      interpret(
+        "{Combinatorica`UnrankPermutation[0, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[5, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[6, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[-1, {1, 2, 3}], \
+          Combinatorica`UnrankPermutation[1, {a, b, c}], \
+          Combinatorica`UnrankPermutation[500, Range[9]]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {3, 2, 1}, {1, 2, 3}, {3, 2, 1}, {a, c, b}, \
+       {1, 2, 3, 8, 4, 9, 6, 5, 7}}"
     );
   }
 
@@ -11883,11 +12027,11 @@ mod join_non_list {
     // UnrankPermutation[r, n] for an integer n is UnrankPermutation[r, Range[n]].
     assert_eq!(
       interpret("Combinatorica`UnrankPermutation[1, 4]").unwrap(),
-      "{1, 2, 3, 4}"
+      "{1, 2, 4, 3}"
     );
     assert_eq!(
       interpret("Combinatorica`UnrankPermutation[24, 4]").unwrap(),
-      "{4, 3, 2, 1}"
+      "{1, 2, 3, 4}"
     );
   }
 
@@ -11906,21 +12050,17 @@ mod join_non_list {
 
   #[test]
   fn combinatorica_unrank_permutation_handles_large_factorial_rank() {
-    // The rank can exceed machine-integer range (12! = 479001600) — the
-    // last permutation at exactly n! must still resolve, and one past it
-    // must stay symbolic rather than silently wrapping.
+    // The rank can exceed machine-integer range (30! does); n! - 1 is the
+    // reverse, and ranks wrap modulo n!.
     assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[12!, Range[12]]").unwrap(),
-      "{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[1, Range[12]]").unwrap(),
-      "{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}"
-    );
-    assert_eq!(
-      interpret("Combinatorica`UnrankPermutation[12! + 1, Range[12]]").unwrap(),
-      "Combinatorica`UnrankPermutation[479001601, {1, 2, 3, 4, 5, 6, 7, 8, 9, \
-       10, 11, 12}]"
+      interpret(
+        "{Combinatorica`UnrankPermutation[12! - 1, Range[12]], \
+          Combinatorica`UnrankPermutation[12! + 1, Range[12]], \
+          Combinatorica`UnrankPermutation[30!, Range[30]] == Range[30]}"
+      )
+      .unwrap(),
+      "{{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}, \
+       {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 11}, True}"
     );
   }
 
@@ -25253,6 +25393,165 @@ mod combinatorica_random_graph {
       )
       .unwrap(),
       "{{0, 1, 2, Infinity, Infinity}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_delete_edges_and_all_pairs_shortest_path() {
+    // FromUnorderedPairs keeps duplicate pairs in their given order.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = FromUnorderedPairs[{{3, 1}, {1, 2}, {1, 2}, {2, 3}, {4, 5}}]; \
+         {Edges[g], Edges[DeleteEdges[g, {2, 1}]], \
+          Edges[DeleteEdges[g, {{1, 2}, {5, 4}}]], \
+          Edges[DeleteEdges[g, {1, 2}, All]], V[DeleteEdges[g, {1, 2}]]}"
+      )
+      .unwrap(),
+      "{{{1, 3}, {1, 2}, {1, 2}, {2, 3}, {4, 5}}, \
+       {{1, 3}, {1, 2}, {2, 3}, {4, 5}}, {{1, 3}, {1, 2}, {2, 3}}, \
+       {{1, 3}, {2, 3}, {4, 5}}, 5}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {AllPairsShortestPath[FromUnorderedPairs[{{1, 2}, {2, 3}, {4, 5}}]], \
+          AllPairsShortestPath[FromOrderedPairs[{{1, 2}, {2, 3}}]], \
+          Edges[DeleteEdges[FromOrderedPairs[{{1, 2}, {2, 3}}], {2, 1}]]}"
+      )
+      .unwrap(),
+      "{{{0, 1, 2, Infinity, Infinity}, {1, 0, 1, Infinity, Infinity}, \
+       {2, 1, 0, Infinity, Infinity}, {Infinity, Infinity, Infinity, 0, 1}, \
+       {Infinity, Infinity, Infinity, 1, 0}}, \
+       {{0, 1, 2}, {Infinity, 0, 1}, {Infinity, Infinity, 0}}, \
+       {{1, 2}, {2, 3}}}"
+    );
+    // Weighted: machine-real lengths, integral ones back as integers.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = SetGraphOptions[FromUnorderedPairs[{{1, 2}, {2, 3}, {1, 3}}], \
+           {{{1, 3}, EdgeWeight -> 5}, {{2, 1}, EdgeWeight -> 3/2}}]; \
+         {g[[1]], AllPairsShortestPath[g]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, EdgeWeight -> 3/2}, {{2, 3}}, {{1, 3}, EdgeWeight -> 5}}, \
+       {{0, 1.5, 2.5}, {1.5, 0, 1}, {2.5, 1, 0}}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_set_graph_options_spec_lists() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = FromUnorderedPairs[{{1, 2}, {1, 2}, {2, 3}}]; \
+         h = SetGraphOptions[g, {{1, 2}, EdgeWeight -> 4, EdgeColor -> Red}]; \
+         {SetGraphOptions[g, {{2, 1}, EdgeColor -> Red}, One][[1]], \
+          SetGraphOptions[h, {{1, 2}, EdgeColor -> Blue, EdgeLabel -> 1}][[1, 1]], \
+          SetGraphOptions[g, {{{3, 2}, EdgeWeight -> 2}, {2, VertexColor -> Red}}, \
+            EdgeStyle -> Thick][[{1, 3}]], \
+          SetGraphOptions[g, {2, VertexColor -> Red}][[2, 2, 2]]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, EdgeColor -> RGBColor[1, 0, 0]}, {{1, 2}}, {{2, 3}}}, \
+       {{1, 2}, EdgeWeight -> 4, EdgeColor -> RGBColor[0, 0, 1], EdgeLabel -> 1}, \
+       Graph[{{{1, 2}}, {{1, 2}}, {{2, 3}, EdgeWeight -> 2}}, EdgeStyle -> Thickness[Large]], \
+       VertexColor -> RGBColor[1, 0, 0]}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_from_cycles_and_permutation_with_cycle() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {FromCycles[{{3, 1, 2}, {5, 4}}], FromCycles[{{a, b}, {c}}], \
+          PermutationWithCycle[8, {3, 6}], PermutationWithCycle[5, {2, 4, 5}], \
+          PermutationWithCycle[4, {}], ToCycles[FromCycles[{{1, 4, 2}, {3}}]]}"
+      )
+      .unwrap(),
+      "{{2, 3, 1, 5, 4}, {b, a, c}, {1, 2, 6, 4, 5, 3, 7, 8}, {1, 4, 3, 5, 2}, \
+       {1, 2, 3, 4}, {{4, 2, 1}, {3}}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_graph_constructors() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = GridGraph[2, 3]; \
+         {InputForm[g], InputForm[InduceSubgraph[g, {5, 1, 2}]], \
+          InputForm[GridGraph[3, 1]], InputForm[CompleteGraph[3]], \
+          InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
+      )
+      .unwrap(),
+      "{InputForm[Graph[{{{1, 2}}, {{3, 4}}, {{5, 6}}, {{1, 3}}, {{2, 4}}, {{3, 5}}, {{4, 6}}}, \
+       {{{1., 1.}}, {{2., 1.}}, {{1., 2.}}, {{2., 2.}}, {{1., 3.}}, {{2., 3.}}}]], \
+       InputForm[Graph[{{{1, 2}}}, {{{1., 1.}}, {{2., 1.}}, {{1., 3.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{2, 3}}}, {{{1., 0.}}, {{2., 0.}}, {{3., 0.}}}]], \
+       InputForm[Graph[{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{-0.49999999999999983, \
+       0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, {{1., 0}}}]], \
+       InputForm[{Graph[{}, {}], Graph[{}, {{{0, 0}}}]}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {ConnectedQ[GridGraph[2, 3]], ConnectedQ[InduceSubgraph[GridGraph[2, 3], {1, 6}]], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {3, 2}}]], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {3, 2}}], Strong], \
+          ConnectedQ[FromOrderedPairs[{{1, 2}, {2, 1}}], Strong]}"
+      )
+      .unwrap(),
+      "{True, False, True, False, True}"
+    );
+  }
+
+  // One graph per isomorphism class, in Combinatorica's order: its first
+  // edge bit vector, then the least remaining one.
+  #[test]
+  fn combinatorica_list_graphs() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         {Edges /@ ListGraphs[4, 2], Length /@ Table[ListGraphs[5, i], {i, 0, 10}], \
+          Edges /@ ListGraphs[4, 3], Length[ListGraphs[4]]}"
+      )
+      .unwrap(),
+      "{{{{1, 2}, {1, 3}}, {{1, 4}, {2, 3}}}, {1, 1, 2, 4, 6, 6, 6, 4, 2, 1, 1}, \
+       {{{1, 2}, {1, 3}, {1, 4}}, {{2, 3}, {2, 4}, {3, 4}}, {{1, 4}, {2, 3}, {3, 4}}}, 11}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_labeled_tree_and_radial_embedding() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; t = CodeToLabeledTree[{3, 3, 1}]; \
+         {Edges[t], InputForm[Vertices[RadialEmbedding[t, 1]]], \
+          InputForm[Vertices[RadialEmbedding[CodeToLabeledTree[{2, 2, 2, 5, 5}], 2]]]}"
+      )
+      .unwrap(),
+      "{{{2, 3}, {3, 4}, {1, 3}, {1, 5}}, InputForm[{{0, 0}, {0.7071067811865475, \
+       1.7071067811865475}, {0., 1.}, {-0.7071067811865475, 1.7071067811865475}, \
+       {0., -1.}}], InputForm[{{0.7071067811865475, 0.7071067811865475}, {0, 0}, \
+       {-0.7071067811865475, 0.7071067811865475}, {-0.7071067811865475, \
+       -0.7071067811865475}, {0.7071067811865475, -0.7071067811865475}, \
+       {1.0897902135516373, -1.6309863136978342}, {1.6309863136978342, \
+       -1.0897902135516373}}]}"
+    );
+  }
+
+  #[test]
+  fn exact_random_graph_has_exactly_e_distinct_edges() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = ExactRandomGraph[10, 10]; \
+         {V[g], M[g], Length[Union[Sort /@ Edges[g]]], \
+          M[ExactRandomGraph[5, 10]], M[ExactRandomGraph[5, 0]]}"
+      )
+      .unwrap(),
+      "{10, 10, 10, 10, 0}"
     );
   }
 

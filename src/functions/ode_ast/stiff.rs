@@ -34,6 +34,22 @@ pub(super) fn rosenbrock_leg(
   x_from: f64,
   x_to: f64,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  rosenbrock_leg_limited(f, init, x_from, x_to, MAX_STEPS, RTOL, ATOL)
+}
+
+/// [`rosenbrock_leg`] with its own tolerances, giving up after `max_steps`
+/// accepted plus rejected steps — for a right-hand side so expensive (a
+/// Newton solve per evaluation) that a leg crawling towards a singular
+/// point must stop early.
+pub(super) fn rosenbrock_leg_limited(
+  f: &Rhs,
+  init: &[f64],
+  x_from: f64,
+  x_to: f64,
+  max_steps: usize,
+  rtol: f64,
+  atol: f64,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let n = init.len();
   let span = x_to - x_from;
   if span == 0.0 || n == 0 {
@@ -51,10 +67,10 @@ pub(super) fn rosenbrock_leg(
   let scale0 = y
     .iter()
     .zip(&f0)
-    .map(|(yi, fi)| fi.abs() / (ATOL + RTOL * yi.abs()))
+    .map(|(yi, fi)| fi.abs() / (atol + rtol * yi.abs()))
     .fold(0.0_f64, f64::max);
   let mut h = if scale0 > 0.0 {
-    (0.8 * RTOL.cbrt() / scale0).min(span.abs() / 10.0)
+    (0.8 * rtol.cbrt() / scale0).min(span.abs() / 10.0)
   } else {
     span.abs() / 100.0
   };
@@ -62,7 +78,7 @@ pub(super) fn rosenbrock_leg(
   let mut failures = 0;
   let mut sparsity = JacobianSparsity::default();
 
-  for _ in 0..MAX_STEPS {
+  for _ in 0..max_steps {
     if (x_to - x) * dir <= h_min {
       return Ok(Some(points));
     }
@@ -165,7 +181,7 @@ pub(super) fn rosenbrock_leg(
     // whole step back.
     let error = ((0..n)
       .map(|i| {
-        let e = ks[5][i] / (ATOL + RTOL * y[i].abs().max(y_new[i].abs()));
+        let e = ks[5][i] / (atol + rtol * y[i].abs().max(y_new[i].abs()));
         e * e
       })
       .sum::<f64>()

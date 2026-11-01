@@ -558,6 +558,51 @@ fn distribute_args_to_params_impl(
 
 /// Extract option bindings from function arguments for OptionsPattern.
 /// Merges explicit options with stored Options[func_name] defaults.
+/// The options an `OptionsPattern[…]` nested inside an argument pattern
+/// matched (`g[h[x_, OptionsPattern[{"A" -> 1}]]] := OptionValue[h, "A"]`),
+/// reported by the structural matcher under its `__OptionsPattern__` key,
+/// as an `OPTION_VALUE_CONTEXT` frame for the time the body evaluates. Its
+/// name, `NESTED_OPTIONS_FRAME`, keeps it from answering a one-argument
+/// `OptionValue[name]`, which in Wolfram only reads the defining head's own
+/// options.
+struct NestedOptionFrame(bool);
+
+pub(crate) const NESTED_OPTIONS_FRAME: &str = "\u{0}nested";
+
+impl NestedOptionFrame {
+  fn push(structural: &[(String, Expr)]) -> Self {
+    let nested: Vec<(String, Expr)> = structural
+      .iter()
+      .filter(|(k, _)| k == "__OptionsPattern__")
+      .flat_map(|(_, v)| match v {
+        Expr::List(items) => {
+          items.iter().filter_map(extract_rule_pair).collect()
+        }
+        _ => Vec::new(),
+      })
+      .collect();
+    if nested.is_empty() {
+      return NestedOptionFrame(false);
+    }
+    crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+      ctx
+        .borrow_mut()
+        .push((NESTED_OPTIONS_FRAME.to_string(), nested));
+    });
+    NestedOptionFrame(true)
+  }
+}
+
+impl Drop for NestedOptionFrame {
+  fn drop(&mut self) {
+    if self.0 {
+      crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+        ctx.borrow_mut().pop();
+      });
+    }
+  }
+}
+
 fn collect_option_bindings(
   func_name: &str,
   params: &[String],
@@ -781,6 +826,56 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "Vertices",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("Polytopes`{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "GraphUtilities`" {
+    // Its exports that are not System symbols; read after loading, a bare
+    // `HamiltonianCycles` is `GraphUtilities\`HamiltonianCycles`.
+    for name in [
+      "Aggressive",
+      "Bicomponents",
+      "CommunityModularity",
+      "CommunityStructureAssignment",
+      "CommunityStructurePartition",
+      "ExpressionTreePlot",
+      "GraphCoordinates",
+      "GraphCoordinates3D",
+      "GraphEdit",
+      "GraphPath",
+      "HamiltonianCycles",
+      "LineScaledCoordinate",
+      "LinkRankMatrix",
+      "LinkRanks",
+      "MaximalBipartiteMatching",
+      "MaximalIndependentEdgeSet",
+      "MaximalIndependentVertexSet",
+      "MinCut",
+      "MinimumBandwidthOrdering",
+      "NeighborhoodSubgraph",
+      "NeighborhoodVertices",
+      "PageRanks",
+      "PageRankVector",
+      "Parent",
+      "PseudoDiameter",
+      "RecursionMethod",
+      "RefinementMethod",
+      "RemoveSinks",
+      "StrongComponents",
+      "TeleportProbability",
+      "ToCombinatoricaGraph",
+      "WeakComponents",
+      "Weighted",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "VectorFieldPlots`" {
+    // A bare `VectorFieldPlot` read after the package is loaded is the
+    // package's; its functions dispatch on the qualified names.
+    for name in crate::functions::vector_field_plots::EXPORTS {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
     }
     crate::prepend_to_context_path(ctx);
   }
@@ -1156,6 +1251,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
+  // `GraphUtilities\`WeakComponents[g]`: the weakly connected components,
+  // each in vertex-list order, ordered by their first vertex — of a rule
+  // list, a `Graph` or a Combinatorica graph.
+  if name == "GraphUtilities`WeakComponents" && args.len() == 1 {
+    return weak_components(&args[0])
+      .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
+  }
+
   // `GraphUtilities\`GraphCoordinates[rules]` / `GraphCoordinates3D[rules]`:
   // one position per vertex, in `VertexList` order.
   if let Some(short) = name.strip_prefix("GraphUtilities`")
@@ -1260,45 +1363,20 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // `GraphUtilities`HamiltonianCycles[rules]` lists Hamiltonian cycles of the
-  // undirected graph given by a list of rules, each as a vertex sequence.
-  // Delegates to `FindHamiltonianCycle`, so only one cycle is reported.
-  if name == "GraphUtilities`HamiltonianCycles"
-    && args.len() == 1
-    && let Expr::List(rules) = &args[0]
-    && rules.iter().all(|r| {
-      matches!(r, Expr::Rule { .. })
-        || matches!(r, Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2)
-    })
+  // `GraphUtilities\`HamiltonianCycles[g]` / `HamiltonianCycles[g, n | All]`:
+  // up to n (default 1) Hamiltonian cycles of a rule list, `Graph`,
+  // Combinatorica graph or adjacency matrix, each as a vertex sequence from
+  // the first vertex.
+  if name == "GraphUtilities`HamiltonianCycles" && (1..=2).contains(&args.len())
   {
-    let edges = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Apply",
-      vec![
-        id_expr("UndirectedEdge"),
-        args[0].clone(),
-        Expr::List(vec![Expr::Integer(1)].into()),
-      ],
-    ))?;
-    let graph = crate::evaluator::evaluate_expr_to_expr(&call1("Graph", edges))?;
-    let cycles = crate::evaluator::evaluate_expr_to_expr(&call1(
-      "FindHamiltonianCycle",
-      graph,
-    ))?;
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Map",
-      vec![
-        Expr::Function {
-          body: Box::new(call(
-            "Map",
-            vec![
-              id_expr("First"),
-              Expr::Slot(1),
-            ],
-          )),
-        },
-        cycles,
-      ],
-    ));
+    let limit = match args.get(1) {
+      None => Some(1),
+      Some(Expr::Identifier(a)) if a == "All" => None,
+      Some(Expr::Integer(k)) if *k > 0 => Some(*k as usize),
+      Some(_) => return Ok(unevaluated(name, args)),
+    };
+    return hamiltonian_cycles(&args[0], limit)
+      .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
   }
 
   // Read only by the arms below that need them, so other calls skip the
@@ -1324,6 +1402,9 @@ fn evaluate_function_call_ast_inner(
       "Combinatorica`ShortestPath"
     }
     "GraphPath" if graph_utilities_active() => "GraphUtilities`GraphPath",
+    "HamiltonianCycles" if graph_utilities_active() => {
+      "GraphUtilities`HamiltonianCycles"
+    }
     "ConvexHull" if computational_geometry_active() => {
       "ComputationalGeometry`ConvexHull"
     }
@@ -1339,7 +1420,6 @@ fn evaluate_function_call_ast_inner(
         _ => "ComputationalGeometry`DelaunayTriangulation",
       }
     }
-    "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
     "PieCharts`PieChart" => "PieChart",
@@ -1361,6 +1441,19 @@ fn evaluate_function_call_ast_inner(
       "Combinatorica`Graph"
     }
     "RandomKSubset" if combinatorica_active() => "Combinatorica`RandomKSubset",
+    "RandomSubset" if combinatorica_active() => "Combinatorica`RandomSubset",
+    "ToCycles" if combinatorica_active() => "Combinatorica`ToCycles",
+    "FromCycles" if combinatorica_active() => "Combinatorica`FromCycles",
+    "PermutationWithCycle" if combinatorica_active() => {
+      "Combinatorica`PermutationWithCycle"
+    }
+    "Orbits" if combinatorica_active() => "Combinatorica`Orbits",
+    "OrbitRepresentatives" if combinatorica_active() => {
+      "Combinatorica`OrbitRepresentatives"
+    }
+    "UnrankPermutation" if combinatorica_active() => {
+      "Combinatorica`UnrankPermutation"
+    }
     "StableMarriage" if combinatorica_active() => {
       "Combinatorica`StableMarriage"
     }
@@ -1389,6 +1482,27 @@ fn evaluate_function_call_ast_inner(
     {
       "Combinatorica`RandomGraph"
     }
+    "ExactRandomGraph" if combinatorica_active() => {
+      "Combinatorica`ExactRandomGraph"
+    }
+    // Combinatorica's graph constructors shadow the built-in ones of the
+    // same name once the package is loaded. (Its `RandomTree` does not: in
+    // Wolfram Language 14 the System symbol wins and the package's is never
+    // defined.)
+    "CompleteGraph" | "GridGraph" | "InduceSubgraph" | "ListGraphs"
+    | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
+      if combinatorica_active() =>
+    {
+      match name {
+        "CompleteGraph" => "Combinatorica`CompleteGraph",
+        "GridGraph" => "Combinatorica`GridGraph",
+        "InduceSubgraph" => "Combinatorica`InduceSubgraph",
+        "ListGraphs" => "Combinatorica`ListGraphs",
+        "CodeToLabeledTree" => "Combinatorica`CodeToLabeledTree",
+        "RadialEmbedding" => "Combinatorica`RadialEmbedding",
+        _ => "Combinatorica`ConnectedQ",
+      }
+    }
     "KSubsets" if combinatorica_active() => "Combinatorica`KSubsets",
     "KSetPartitions" if combinatorica_active() => {
       "Combinatorica`KSetPartitions"
@@ -1414,6 +1528,9 @@ fn evaluate_function_call_ast_inner(
     | "ShowGraph"
     | "ShowLabeledGraph"
     | "SetGraphOptions"
+    | "DeleteEdges"
+    | "AllPairsShortestPath"
+    | "Vertices"
       if combinatorica_active()
         && matches!(
           args.first(),
@@ -5645,6 +5762,14 @@ fn evaluate_function_call_ast_inner(
 
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
+  // `Graph[{}]` is the empty graph, `Graph[<0>, <0>]`.
+  if name == "Graph" && matches!(args, [Expr::List(items)] if items.is_empty())
+  {
+    return Ok(call(
+      "Graph",
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    ));
+  }
   if name == "Graph" {
     // Normalize TwoWayRule[a, b] (produced by the `<->` operator) to
     // UndirectedEdge[a, b] inside edge lists so all downstream edge
@@ -5878,6 +6003,16 @@ fn evaluate_function_call_ast_inner(
 
   if name == "FindCurvePath" {
     return crate::functions::shortest_tour::find_curve_path_ast(args);
+  }
+
+  if let Some(result) =
+    crate::functions::vector_field_plots::vector_field_plots_ast(name, args)
+  {
+    return result;
+  }
+
+  if name == "DifferenceRoot" {
+    return crate::functions::difference_root::difference_root_ast(args);
   }
 
   // FindShortestTour[points[, s, t], opts] → {length, order}
@@ -11891,6 +12026,49 @@ fn evaluate_function_call_ast_inner(
   //   CirclePoints[r, n]              — radius r, default starting angle
   //   CirclePoints[{r, theta}, n]     — radius r, explicit starting angle
   //   CirclePoints[{cx, cy}, ..., n]  — the above translated to a center
+  // SpherePoints[n]: n points spread over the unit sphere on the golden
+  // spiral — z = -1 + (2k + 1)/(n + 2), longitude k times the golden
+  // angle. For the n Wolfram places from a table of optimal arrangements
+  // (2–12, 14, 16, …, 60) the call stays unevaluated.
+  if name == "SpherePoints"
+    && let [Expr::Integer(n)] = args
+    && *n >= 1
+    && *n <= 10_000_000
+    && !matches!(
+      *n,
+      2..=12 | 14 | 16 | 18 | 20 | 22 | 24 | 30 | 32 | 40 | 55 | 60
+    )
+  {
+    let n = *n;
+    if n == 1 {
+      return Ok(Expr::List(
+        vec![Expr::List(
+          vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)].into(),
+        )]
+        .into(),
+      ));
+    }
+    let golden = f64::midpoint(1.0, 5.0_f64.sqrt());
+    let angle = 2.0 * std::f64::consts::PI * (1.0 - 1.0 / golden);
+    let points: Vec<Expr> = (1..=n)
+      .map(|k| {
+        // The exact rational, rounded once.
+        let z = (2 * k - n - 1) as f64 / (n + 2) as f64;
+        let r = (1.0 - z * z).sqrt();
+        let t = k as f64 * angle;
+        Expr::List(
+          vec![
+            Expr::Real(r * t.cos()),
+            Expr::Real(r * t.sin()),
+            Expr::Real(z),
+          ]
+          .into(),
+        )
+      })
+      .collect();
+    return Ok(Expr::List(points.into()));
+  }
+
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
     // n is always the last argument and must be a positive integer; a
@@ -14828,6 +15006,9 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "M" => "Combinatorica`M",
     "ShowGraph" => "Combinatorica`ShowGraph",
     "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
+    "DeleteEdges" => "Combinatorica`DeleteEdges",
+    "AllPairsShortestPath" => "Combinatorica`AllPairsShortestPath",
+    "Vertices" => "Combinatorica`Vertices",
     _ => "Combinatorica`ShortestPath",
   }
 }
@@ -15160,6 +15341,9 @@ fn apply_user_overloads(
           .as_ref()
           .and_then(|v| v.get(overload_idx))
           .and_then(|o| o.as_ref());
+        // Below the frame of a top-level `OptionsPattern` slot, so that
+        // frame pops first.
+        let _nested_options = NestedOptionFrame::push(&structural_bindings);
         let opt_bindings =
           collect_option_bindings(name, params, &effective_args, inline_opts);
         if let Some(ref bindings) = opt_bindings {
@@ -15537,6 +15721,9 @@ fn apply_user_overloads(
           .as_ref()
           .and_then(|v| v.get(overload_idx))
           .and_then(|o| o.as_ref());
+        // Below the frame of a top-level `OptionsPattern` slot, so that
+        // frame pops first.
+        let _nested_options = NestedOptionFrame::push(&structural_bindings);
         let opt_bindings =
           collect_option_bindings(name, params, &effective_args, inline_opts2);
         if let Some(ref bindings) = opt_bindings {
@@ -15729,4 +15916,373 @@ fn flatten_rule_args(args: &[Expr]) -> Option<Vec<Expr>> {
     }
   }
   Some(out)
+}
+
+/// The weak components of a graph for `GraphUtilities\`WeakComponents`;
+/// `None` when the argument is not a graph.
+/// The vertices (in `VertexList` order) and edges of a graph given as a rule
+/// list, a `Graph` or a Combinatorica graph, as the legacy graph packages
+/// read them: each edge `(u, v, directed)`.
+#[allow(clippy::type_complexity)]
+fn package_graph(
+  g: &Expr,
+) -> Result<Option<(Vec<Expr>, Vec<(Expr, Expr, bool)>)>, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  Ok(Some(match g {
+    Expr::FunctionCall { name, .. } if name == "Combinatorica`Graph" => {
+      let n = eval(call1("Combinatorica`V", g.clone()))?;
+      let Expr::Integer(n) = n else { return Ok(None) };
+      let Expr::List(ref pairs) =
+        eval(call1("Combinatorica`ToUnorderedPairs", g.clone()))?
+      else {
+        return Ok(None);
+      };
+      let edges = pairs
+        .iter()
+        .filter_map(|p| match p {
+          Expr::List(uv) if uv.len() == 2 => {
+            Some((uv[0].clone(), uv[1].clone(), false))
+          }
+          _ => None,
+        })
+        .collect();
+      ((1..=n).map(Expr::Integer).collect(), edges)
+    }
+    _ => {
+      let graph = match g {
+        Expr::List(_) => eval(call1("Graph", g.clone()))?,
+        other => other.clone(),
+      };
+      let pair = (
+        eval(call1("VertexList", graph.clone()))?,
+        eval(call1("EdgeList", graph))?,
+      );
+      let (Expr::List(vs), Expr::List(es)) = &pair else {
+        return Ok(None);
+      };
+      let edges = es
+        .iter()
+        .filter_map(|e| match e {
+          Expr::FunctionCall { name, args }
+            if (name == "DirectedEdge" || name == "UndirectedEdge")
+              && args.len() >= 2 =>
+          {
+            Some((args[0].clone(), args[1].clone(), name == "DirectedEdge"))
+          }
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some(((**pattern).clone(), (**replacement).clone(), true)),
+          _ => None,
+        })
+        .collect();
+      (vs.to_vec(), edges)
+    }
+  }))
+}
+
+fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let Some((vertices, edges)) = package_graph(g)? else {
+    return Ok(None);
+  };
+  let key = crate::syntax::expr_to_string;
+  let index: std::collections::HashMap<String, usize> = vertices
+    .iter()
+    .enumerate()
+    .map(|(i, v)| (key(v), i))
+    .collect();
+  let mut parent: Vec<usize> = (0..vertices.len()).collect();
+  fn find(p: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while p[r] != r {
+      r = p[r];
+    }
+    let mut j = i;
+    while p[j] != r {
+      let next = p[j];
+      p[j] = r;
+      j = next;
+    }
+    r
+  }
+  for (u, v, _) in &edges {
+    if let (Some(&a), Some(&b)) = (index.get(&key(u)), index.get(&key(v))) {
+      let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+      if ra != rb {
+        parent[ra.max(rb)] = ra.min(rb);
+      }
+    }
+  }
+  let mut groups: Vec<(usize, Vec<Expr>)> = Vec::new();
+  for (i, v) in vertices.iter().enumerate() {
+    let r = find(&mut parent, i);
+    match groups.iter_mut().find(|(root, _)| *root == r) {
+      Some((_, members)) => members.push(v.clone()),
+      None => groups.push((r, vec![v.clone()])),
+    }
+  }
+  Ok(Some(Expr::List(
+    groups
+      .into_iter()
+      .map(|(_, m)| Expr::List(m.into()))
+      .collect(),
+  )))
+}
+
+/// The Hamiltonian-cycle search behind `GraphUtilities\`HamiltonianCycles`:
+/// a depth-first search from the first vertex over the symmetrized adjacency
+/// matrix — in a directed graph each vertex tries its in-neighbours
+/// (ascending), then its out-neighbours, a vertex only once — stopping after
+/// `limit` cycles. A cycle is found once per orientation. The out-neighbours
+/// of a rule list come in the order its rules give them (the package's sparse
+/// matrix keeps that order); those of a `Graph`, Combinatorica graph or
+/// matrix ascend.
+fn hamiltonian_cycles(
+  g: &Expr,
+  limit: Option<usize>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let is_matrix = |rows: &[Expr]| {
+    !rows.is_empty()
+      && rows
+        .iter()
+        .all(|r| matches!(r, Expr::List(c) if c.len() == rows.len()))
+  };
+  let (vertices, arcs): (Vec<Expr>, Vec<(usize, usize)>) = match g {
+    Expr::List(rows) if is_matrix(rows) => {
+      let mut arcs = Vec::new();
+      for (i, row) in rows.iter().enumerate() {
+        let Expr::List(row) = row else {
+          return Ok(None);
+        };
+        for (j, x) in row.iter().enumerate() {
+          let zero = matches!(x, Expr::Integer(0))
+            || matches!(x, Expr::Real(r) if *r == 0.0);
+          if !zero {
+            arcs.push((i, j));
+          }
+        }
+      }
+      ((1..=rows.len() as i128).map(Expr::Integer).collect(), arcs)
+    }
+    _ => {
+      let Some((vertices, edges)) = package_graph(g)? else {
+        return Ok(None);
+      };
+      let key = crate::syntax::expr_to_string;
+      let index: std::collections::HashMap<String, usize> = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (key(v), i))
+        .collect();
+      let mut arcs = Vec::new();
+      for (u, v, directed) in &edges {
+        let (Some(&a), Some(&b)) = (index.get(&key(u)), index.get(&key(v)))
+        else {
+          return Ok(None);
+        };
+        arcs.push((a, b));
+        if !directed {
+          arcs.push((b, a));
+        }
+      }
+      (vertices, arcs)
+    }
+  };
+  let rule_order = matches!(g, Expr::List(rows) if !is_matrix(rows));
+  let n = vertices.len();
+  if n == 0 {
+    return Ok(Some(Expr::List(vec![].into())));
+  }
+  let mut ins = vec![Vec::new(); n];
+  let mut outs = vec![Vec::new(); n];
+  for &(a, b) in &arcs {
+    if a != b {
+      outs[a].push(b);
+      ins[b].push(a);
+    }
+  }
+  // A structurally symmetric matrix is searched as stored; any other is
+  // first made symmetric as `Transpose[m] + m`, whose rows list the
+  // transpose's (ascending) entries before the matrix's own.
+  let symmetric = arcs.iter().all(|&(a, b)| a == b || outs[b].contains(&a));
+  let adj: Vec<Vec<usize>> = (0..n)
+    .map(|v| {
+      let (mut i, mut o) = (ins[v].clone(), outs[v].clone());
+      i.sort_unstable();
+      if !rule_order {
+        o.sort_unstable();
+      }
+      if symmetric {
+        i.clear();
+      }
+      let mut list = Vec::new();
+      for w in i.into_iter().chain(o) {
+        if !list.contains(&w) {
+          list.push(w);
+        }
+      }
+      list
+    })
+    .collect();
+  fn search(
+    adj: &[Vec<usize>],
+    path: &mut Vec<usize>,
+    on_path: &mut [bool],
+    limit: Option<usize>,
+    found: &mut Vec<Vec<usize>>,
+  ) {
+    let last = path[path.len() - 1];
+    if path.len() == adj.len() {
+      if adj[last].contains(&path[0]) {
+        found.push(path.clone());
+      }
+      return;
+    }
+    if !completable(adj, path, on_path) {
+      return;
+    }
+    for &w in &adj[last] {
+      if limit.is_some_and(|l| found.len() >= l) {
+        return;
+      }
+      if !on_path[w] {
+        on_path[w] = true;
+        path.push(w);
+        search(adj, path, on_path, limit, found);
+        path.pop();
+        on_path[w] = false;
+      }
+    }
+  }
+  // Whether the path can still close into a Hamiltonian cycle: with two or
+  // more vertices left, each needs two neighbours among the remaining
+  // vertices and the path's ends, and the remaining vertices must hang
+  // together off the path's last vertex. Only dead branches are cut, so the
+  // cycles still come out in search order.
+  fn completable(adj: &[Vec<usize>], path: &[usize], on_path: &[bool]) -> bool {
+    let (start, last) = (path[0], path[path.len() - 1]);
+    let left = adj.len() - path.len();
+    if left < 2 {
+      return true;
+    }
+    // A vertex left with exactly two ways in or out must use both edges.
+    // Another remaining vertex can take two such forced edges, but the
+    // path's last vertex has one edge left to give (to the next vertex) and
+    // its first vertex one (to the final vertex).
+    let mut forced = vec![0u8; adj.len()];
+    let mut open_ns: Vec<usize> = Vec::with_capacity(3);
+    for (w, ns) in adj.iter().enumerate() {
+      if on_path[w] {
+        continue;
+      }
+      open_ns.clear();
+      for &x in ns {
+        if !on_path[x] || x == last || x == start {
+          open_ns.push(x);
+          if open_ns.len() > 2 {
+            break;
+          }
+        }
+      }
+      match open_ns.len() {
+        0 | 1 => return false,
+        2 => {
+          for &x in &open_ns {
+            forced[x] += 1;
+            let cap = if (x == last || x == start) && last != start {
+              1
+            } else {
+              2
+            };
+            if forced[x] > cap {
+              return false;
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    two_connected(adj, on_path, start, last, left)
+  }
+  // The rest of the cycle is a path from `last` through every remaining
+  // vertex to `start`, which exists only if those vertices together with the
+  // two ends — joined by an extra edge `last`–`start` — are connected with no
+  // cut vertex. Tarjan's lowpoint search, iterative.
+  fn two_connected(
+    adj: &[Vec<usize>],
+    on_path: &[bool],
+    start: usize,
+    last: usize,
+    left: usize,
+  ) -> bool {
+    let n = adj.len();
+    let inside = |x: usize| !on_path[x] || x == start || x == last;
+    let neighbours = |v: usize| {
+      adj[v].iter().copied().filter(move |&x| inside(x)).chain(
+        (v == last && last != start)
+          .then_some(start)
+          .into_iter()
+          .chain((v == start && last != start).then_some(last)),
+      )
+    };
+    let size = left + if last == start { 1 } else { 2 };
+    let mut disc = vec![usize::MAX; n];
+    let mut low = vec![0usize; n];
+    let mut parent = vec![usize::MAX; n];
+    let mut time = 0;
+    disc[last] = 0;
+    low[last] = 0;
+    time += 1;
+    let mut root_children = 0;
+    let mut stack: Vec<(usize, Vec<usize>, usize)> =
+      vec![(last, neighbours(last).collect(), 0)];
+    while let Some((v, ns, i)) = stack.last_mut() {
+      let v = *v;
+      if *i < ns.len() {
+        let w = ns[*i];
+        *i += 1;
+        if disc[w] == usize::MAX {
+          parent[w] = v;
+          disc[w] = time;
+          low[w] = time;
+          time += 1;
+          if v == last {
+            root_children += 1;
+          }
+          let wn: Vec<usize> = neighbours(w).collect();
+          stack.push((w, wn, 0));
+        } else if w != parent[v] {
+          low[v] = low[v].min(disc[w]);
+        }
+      } else {
+        stack.pop();
+        let p = parent[v];
+        if p != usize::MAX {
+          low[p] = low[p].min(low[v]);
+          if p != last && low[v] >= disc[p] {
+            return false;
+          }
+        }
+      }
+    }
+    time == size && (size < 3 || root_children < 2)
+  }
+  let mut found = Vec::new();
+  let mut on_path = vec![false; n];
+  on_path[0] = true;
+  search(&adj, &mut vec![0], &mut on_path, limit, &mut found);
+  Ok(Some(Expr::List(
+    found
+      .into_iter()
+      .map(|c| {
+        Expr::List(
+          c.into_iter()
+            .map(|i| vertices[i].clone())
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  )))
 }

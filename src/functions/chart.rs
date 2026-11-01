@@ -1061,11 +1061,11 @@ fn applied_label(e: &Expr) -> Option<String> {
     // A built-in head stays in StandardForm bracket notation (`Re[Z]`,
     // `Sin[x]`), with its arguments set as labels so
     // `Sin[Subscript[k, 1] x]` reads `Sin[k₁ x]`.
-    Expr::FunctionCall { name, args }
-      if !args.is_empty()
-        && args.iter().all(|a| expr_to_label(a).is_some()) =>
-    {
-      let parts: Vec<String> = args.iter().filter_map(expr_to_label).collect();
+    // (Each argument is labelled once: testing them first and labelling
+    // them again doubled the work at every level of a nested label.)
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      let parts: Vec<String> =
+        args.iter().map(expr_to_label).collect::<Option<Vec<_>>>()?;
       return Some(format!("{name}[{}]", parts.join(", ")));
     }
     _ => return None,

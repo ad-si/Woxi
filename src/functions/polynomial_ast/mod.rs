@@ -11,6 +11,7 @@ mod apart;
 mod cancel;
 mod coefficient;
 mod collect;
+pub(crate) mod complex_numeric;
 mod cyclotomic;
 mod decompose;
 mod discriminant;
@@ -75,3 +76,11 @@ pub use solve::*;
 pub use symmetric_reduction::*;
 pub use to_radicals::*;
 pub use together::*;
+
+/// Whether `expr` mentions the symbol `name`.
+pub(crate) fn expr_mentions_symbol(
+  expr: &crate::syntax::Expr,
+  name: &str,
+) -> bool {
+  coefficient::expr_contains_identifier(expr, name)
+}

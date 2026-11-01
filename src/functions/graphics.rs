@@ -18399,6 +18399,24 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
+  // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
+  // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
+  // rather than printed as the one-line `2 a b/(a + b)S` text.
+  if name == "Row" && !args.is_empty() {
+    let boxes =
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+        content,
+      );
+    if !box_has_fraction(&boxes) {
+      return None;
+    }
+    let boxes = crate::strip_number_precision_markers(&boxes);
+    let layout = layout_box(&boxes, size);
+    if layout.width <= 0.0 || layout.height <= 0.0 {
+      return None;
+    }
+    return Some(layout_to_svg(&layout, theme().text_primary));
+  }
   if name != "TraditionalForm"
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
@@ -30863,6 +30881,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
         || name == "Text"
         || name == "Panel"
         || name == "Framed"
+        || name == "Pane"
         || name == "ExpressionCell"
         || name == "Labeled"
         || name == "Style")
@@ -31260,12 +31279,14 @@ fn visibility_switched_control(spec: &Expr) -> Option<(Expr, Expr)> {
 /// control is just as likely to arrive `Control`-wrapped.
 fn unwrap_control_wrapper(spec: Expr) -> Expr {
   // `Framed[Control[…]]` / `Panel[Control[…]]`: a bordered single control;
-  // `Tooltip[Control[…], hint]` only adds a hover hint to it, and
-  // `Item[Control[…], Alignment -> …]` is a grid cell that only positions it.
+  // `Tooltip[Control[…], hint]` only adds a hover hint to it,
+  // `Item[Control[…], Alignment -> …]` is a grid cell that only positions it
+  // and `Pane[Control[…], width]` only sizes it.
   let spec = match &spec {
     Expr::FunctionCall { name, args }
       if (name == "Framed"
         || name == "Panel"
+        || name == "Pane"
         || name == "Tooltip"
         || name == "Labeled"
         || name == "Item")

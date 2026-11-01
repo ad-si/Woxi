@@ -183,6 +183,60 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
 /// The declared array rank of a `Compile` argument spec: 0 for a scalar
 /// position (a bare name, or `{name}`/`{name, _Type}`), or the explicit
 /// rank in `{name, _Type, rank}`.
+/// Whether a `Compile` argument spec declares the type `ty`
+/// (`{c, _Complex}`).
+fn compile_spec_declares(spec: &Expr, ty: &str) -> bool {
+  match spec {
+    Expr::List(items) => match items.get(1) {
+      Some(Expr::Pattern { head, .. }) => head.as_deref() == Some(ty),
+      Some(Expr::FunctionCall { name, args }) if name == "Blank" => {
+        matches!(args.as_slice(), [Expr::Identifier(t)] if t == ty)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// The (name, type, rank) of each `Compile` argument for the machine
+/// evaluator: the declared type, or for an undeclared one the type
+/// `compile_arg_spec` infers.
+fn compile_vm_params(
+  specs: &[&Expr],
+  body: &Expr,
+) -> Option<Vec<(String, crate::functions::compile_vm::Ty, usize)>> {
+  use crate::functions::compile_vm::Ty;
+  specs
+    .iter()
+    .map(|spec| {
+      let (name, real) = compile_arg_spec(spec, body)?;
+      let declared = match spec {
+        Expr::List(items) => match items.get(1) {
+          Some(Expr::Pattern { head, .. }) => head.clone(),
+          Some(Expr::FunctionCall { name, args }) if name == "Blank" => {
+            match args.as_slice() {
+              [Expr::Identifier(t)] => Some(t.clone()),
+              _ => None,
+            }
+          }
+          _ => None,
+        },
+        _ => None,
+      };
+      let ty = match declared.as_deref() {
+        Some("Integer") => Ty::Integer,
+        Some("Complex") => Ty::Complex,
+        Some("Real") => Ty::Real,
+        Some("True" | "False") => Ty::Boolean,
+        Some(_) => return None,
+        None if real => Ty::Real,
+        None => Ty::Integer,
+      };
+      Some((name, ty, compile_spec_rank(spec)))
+    })
+    .collect()
+}
+
 fn compile_spec_rank(spec: &Expr) -> usize {
   match spec {
     Expr::List(items) if items.len() >= 3 => match &items[2] {
@@ -228,6 +282,138 @@ fn serialized_real_params(func_args: &[Expr]) -> Vec<bool> {
       _ => None,
     })
     .unwrap_or_default()
+}
+
+/// A saved `CompiledFunction[…]` run through the machine evaluator: the
+/// parameters of its embedded `Function[params, body]`, typed by its
+/// `Blank[type]` / `{Blank[type], rank}` argument patterns.
+fn serialized_vm_run(
+  func_args: &[Expr],
+  pure_fn: &Expr,
+  args: &[Expr],
+) -> Option<Expr> {
+  let (params, body, real_arg) = serialized_vm_signature(func_args, pure_fn)?;
+  let result = crate::functions::compile_vm::run(&params, body, args)?;
+  Some(if real_arg {
+    coerce_to_real(&result)
+  } else {
+    result
+  })
+}
+
+/// The machine-evaluator parameters, body and "has a real argument" flag of
+/// a saved `CompiledFunction[…]` with its embedded `pure_fn`.
+#[allow(clippy::type_complexity)]
+fn serialized_vm_signature<'a>(
+  func_args: &[Expr],
+  pure_fn: &'a Expr,
+) -> Option<(
+  Vec<(String, crate::functions::compile_vm::Ty, usize)>,
+  &'a Expr,
+  bool,
+)> {
+  use crate::functions::compile_vm::Ty;
+  let Expr::FunctionCall { name, args: fargs } = pure_fn else {
+    return None;
+  };
+  if name != "Function" || fargs.len() < 2 {
+    return None;
+  }
+  let names: Vec<String> = match &fargs[0] {
+    Expr::Identifier(n) => vec![n.clone()],
+    Expr::List(items) => items
+      .iter()
+      .map(|i| match i {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    _ => return None,
+  };
+  let Some(Expr::List(patterns)) = func_args.get(1) else {
+    return None;
+  };
+  if patterns.len() != names.len() {
+    return None;
+  }
+  let blank = |e: &Expr| -> Option<String> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Blank" => {
+        match args.as_slice() {
+          [Expr::Identifier(t)] => Some(t.clone()),
+          _ => None,
+        }
+      }
+      Expr::Pattern { name, head, .. } if name.is_empty() => head.clone(),
+      Expr::List(items) if items.len() == 2 => match &items[0] {
+        Expr::FunctionCall { name, args } if name == "Blank" => {
+          match args.as_slice() {
+            [Expr::Identifier(t)] => Some(t.clone()),
+            _ => None,
+          }
+        }
+        Expr::Pattern { name, head, .. } if name.is_empty() => head.clone(),
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let mut params = Vec::with_capacity(names.len());
+  let mut real_arg = false;
+  for (n, p) in names.into_iter().zip(patterns.iter()) {
+    let ty = match blank(p)?.as_str() {
+      "Integer" => Ty::Integer,
+      "Real" => {
+        real_arg = true;
+        Ty::Real
+      }
+      "Complex" => Ty::Complex,
+      "True" | "False" => Ty::Boolean,
+      _ => return None,
+    };
+    params.push((n, ty, serialized_spec_rank(p)));
+  }
+  Some((params, &fargs[1], real_arg))
+}
+
+/// The machine program of a `CompiledFunction[…]` value (Woxi's own
+/// two-part form or one saved in a notebook), for compiled numerics that
+/// call it at every sample point.
+pub(crate) fn compiled_function_program(
+  f: &Expr,
+) -> Option<crate::functions::compile_vm::Program> {
+  let Expr::FunctionCall { name, args } = f else {
+    return None;
+  };
+  if name != "CompiledFunction" {
+    return None;
+  }
+  if args.len() == 2
+    || (args.len() == 3 && matches!(&args[2], Expr::Identifier(_)))
+  {
+    let specs: Vec<&Expr> = match &args[0] {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    let params = compile_vm_params(&specs, &args[1])?;
+    return crate::functions::compile_vm::Program::compile(&params, &args[1]);
+  }
+  let pure_fn = args.iter().find(
+    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "Function"),
+  )?;
+  let plain;
+  let pure_fn = match pure_fn {
+    Expr::FunctionCall { name, args: fargs } if fargs.len() == 3 => {
+      plain = Expr::FunctionCall {
+        name: name.clone(),
+        args: fargs[..2].to_vec().into(),
+      };
+      &plain
+    }
+    other => other,
+  };
+  let (params, body, _) = serialized_vm_signature(args, pure_fn)?;
+  crate::functions::compile_vm::Program::compile(&params, body)
 }
 
 fn serialized_spec_rank(spec: &Expr) -> usize {
@@ -2740,6 +2926,19 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "DifferenceRoot" && func_args.len() == 1 => Ok(
+      crate::functions::difference_root::apply_difference_root(
+        &func_args[0],
+        args,
+      )
+      .unwrap_or_else(|| Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      }),
+    ),
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "BSplineFunction" && func_args.len() == 9 => {
       // BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
       // knots, ...][params] — evaluate the spline at the given parameters.
@@ -2832,6 +3031,28 @@ pub fn apply_curried_call(
           args: args.to_vec(),
         });
       }
+      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
+        matches!(compile_arg_spec(spec, body), Some((_, true)))
+      });
+      // Machine evaluation of the body first; the symbolic evaluation below
+      // covers everything it cannot do (as Wolfram evaluates uncompilable
+      // code outside the compiled function, its results typed real). In
+      // compiled code a `_Complex` argument does not make an integer result
+      // real: `Compile[{{c, _Complex}}, 1][2.]` is `1`.
+      if let Some(params) = compile_vm_params(&specs, body)
+        && let Some(result) =
+          crate::functions::compile_vm::run(&params, body, args)
+      {
+        let real_arg = specs.iter().any(|spec| {
+          matches!(compile_arg_spec(spec, body), Some((_, true)))
+            && !compile_spec_declares(spec, "Complex")
+        });
+        return Ok(if real_arg {
+          coerce_to_real(&result)
+        } else {
+          result
+        });
+      }
       let bound: Vec<(String, Expr)> = specs
         .iter()
         .zip(args.iter())
@@ -2856,9 +3077,6 @@ pub fn apply_curried_call(
       // back inexact: `Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]` is
       // `-4.`, not the exact bound. An all-integer signature keeps its exact
       // result.
-      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
-        matches!(compile_arg_spec(spec, body), Some((_, true)))
-      });
       Ok(if any_real {
         coerce_to_real(&result)
       } else {
@@ -2974,10 +3192,16 @@ pub fn apply_curried_call(
               }
               Ok(Expr::List(results.into()))
             } else {
-              let plain =
-                evaluate_expr_to_expr(&call("Function", fargs[..2].to_vec()))?;
+              let plain = call("Function", fargs[..2].to_vec());
+              if let Some(result) = serialized_vm_run(func_args, &plain, args) {
+                return Ok(result);
+              }
+              let plain = evaluate_expr_to_expr(&plain)?;
               apply_curried_call(&plain, args).map(finish)
             };
+          }
+          if let Some(result) = serialized_vm_run(func_args, pure_fn, args) {
+            return Ok(result);
           }
           let pure_fn = evaluate_expr_to_expr(pure_fn)?;
           apply_curried_call(&pure_fn, args).map(finish)

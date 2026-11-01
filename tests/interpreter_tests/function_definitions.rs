@@ -1218,6 +1218,100 @@ mod compile {
   // Demonstrations Project escape-time fractal kernels do) computed the
   // wrong thing entirely: a matrix argument collapsed to a single scalar
   // result instead of a same-shaped matrix of per-element results.
+  // Compiled bodies run on machine numbers: loops, locals, part
+  // assignment, pure functions and complex arithmetic, with the results
+  // wolframscript gives.
+  #[test]
+  fn compiled_bodies_run_on_machine_numbers() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "collatz = Compile[{{c, _Complex}}, Module[{num = 1}, FixedPoint[(num++; \
+           0.25 (1 + 4 # - (1 + 2 #) Cos[Pi #])) &, c, 150, \
+           SameTest -> (Re[#]^2 + Im[#]^2 >= 10 Pi &)]; num]]; \
+         {collatz[0.3 + 0.2 I], collatz[-2. + I]}"
+      )
+      .unwrap(),
+      "{151, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "{Compile[{{n, _Integer}}, Module[{s = 0}, Do[s += i^2, {i, n}]; s]][10], \
+          Compile[{{v, _Real, 1}}, Module[{w = v}, w[[1]] = 7.; \
+            Table[w[[i]] i, {i, Length[w]}]]][{1., 2., 3.}], \
+          Compile[{{n, _Integer}}, Module[{a = 1, b = 1, t}, \
+            For[i = 1, i < n, i++, t = a + b; a = b; b = t]; a]][10], \
+          Compile[{x}, Which[x < 0, -x, x < 1, x^2, True, Sqrt[x]]] /@ {-2., 0.5, 4.}, \
+          Compile[{{n, _Integer}}, Mod[n, 7] + Quotient[n, 3]] /@ {-20, 20}, \
+          Compile[{x}, NestList[# + 1 &, x, 3]][1], \
+          Compile[{{c, _Complex}}, {1, c}][2.], Compile[{{c, _Complex}}, 1][2.]}"
+      )
+      .unwrap(),
+      "{385, {7., 4., 9.}, 55, {2., 0.25, 2.}, {-6, 12}, {1., 2., 3., 4.}, \
+       {1. + 0.*I, 2. + 0.*I}, 1}"
+    );
+    // `Switch` over literals, `AppendTo`, and a function the evaluator does
+    // not know called on machine values (a user definition here).
+    assert_eq!(
+      interpret(
+        "g[x_] := x^2 + 1; \
+         {Compile[{{n, _Integer}}, Switch[n, 1, 10., 2, 20., _, 0.]] /@ {1, 2, 3}, \
+          Compile[{x}, Module[{l = {}}, Do[AppendTo[l, g[i x]], {i, 3}]; l]][2]}"
+      )
+      .unwrap(),
+      "{{10., 20., 0.}, {5., 17., 37.}}"
+    );
+    // A built-in function's name is passed on to a call the evaluator makes.
+    assert_eq!(
+      interpret(
+        "Compile[{{max, _Real}, {n, _Integer}}, Module[{r}, \
+           r = Range[-max, max, ((2 max)/(n - 1))]; Outer[Plus, -r, I r]]][1., 3]"
+      )
+      .unwrap(),
+      "{{1. - 1.*I, 1. + 0.*I, 1. + 1.*I}, {0. - 1.*I, 0. + 0.*I, 0. + 1.*I}, \
+       {-1. - 1.*I, -1. + 0.*I, -1. + 1.*I}}"
+    );
+    // A compiled function inside a numerical integrand or equation runs on
+    // machine numbers at each sample, a constant vector argument included.
+    assert_eq!(
+      interpret(
+        "cg = Compile[{x}, Module[{s = 0.}, Do[s += Sin[k x]/k, {k, 1, 20}]; s]]; \
+         cv = Compile[{R, s, t, {v, _Real, 1}}, Exp[-R (Cos[s]^2 + v[[1]] Sin[t]^2)]]; \
+         {Abs[NIntegrate[cg[x], {x, 0, 1}] - 1.2695671075830761] < 10^-10, \
+          Abs[(x /. FindRoot[cg[x] == 0.5, {x, 0.3}]) - 2.104620520152277] < 10^-10, \
+          Abs[NIntegrate[cv[1.5, s, t, {0.3, 0.1}], {s, 0, 2 Pi}, {t, 0, 2 Pi}] - \
+            17.27637411634429] < 10^-6}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+    // A `CompiledFunction` saved in a notebook runs its embedded function
+    // through the machine evaluator too.
+    assert_eq!(
+      interpret(
+        "sc = CompiledFunction[{10, 10., 5724}, {Blank[Complex]}, {{4, 0, 0}}, {}, \
+           {0, 1, 0, 0, 0}, {{1}}, Function[{c}, Module[{num = 1}, FixedPoint[(num++; \
+           0.25 (1 + 4 # - (1 + 2 #) Cos[Pi #])) &, c, 150, \
+           SameTest -> (Re[#]^2 + Im[#]^2 >= 10 Pi &)]; num]], Evaluate]; \
+         {sc[0.3 + 0.2 I], sc[-2. + I]}"
+      )
+      .unwrap(),
+      "{151, 3}"
+    );
+    // A fractal grid of a quarter million iterations runs in well under a
+    // second of machine arithmetic.
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Total[Flatten[Table[collatz[x + I*y], {y, -1.5, 1.5, 0.05}, \
+           {x, -4.7, 4.6, 0.05}]]]"
+      )
+      .unwrap(),
+      "208622"
+    );
+    assert!(start.elapsed().as_secs() < 30);
+  }
+
   #[test]
   fn compile_listable_runtime_attribute_threads_over_list_argument() {
     clear_state();
@@ -6837,6 +6931,38 @@ mod set_with_a_left_hand_side_condition {
     assert_eq!(
       interpret("k = 3; g[p_] /; p > 0 = k p; k = 5; {g[2], g[-2]}").unwrap(),
       "{6, g[-2]}"
+    );
+  }
+}
+
+mod nested_options_pattern {
+  use super::*;
+
+  // An `OptionsPattern` inside an argument pattern answers
+  // `OptionValue[h, name]` for that argument's head, from the options it
+  // matched and the defaults it names; a one-argument `OptionValue` reads
+  // only the defining head's own options, so it stays unevaluated.
+  #[test]
+  fn option_value_of_the_inner_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[e : h[x_, OptionsPattern[{\"A\" -> 1, \"B\" -> 2}]]] := \
+           {OptionValue[h, \"A\"], OptionValue[h, \"B\"], OptionValue[\"B\"]}; \
+         {f[h[5, \"A\" -> 10]], f[h[5]]}"
+      )
+      .unwrap(),
+      "{{10, 2, OptionValue[B]}, {1, 2, OptionValue[B]}}"
+    );
+    // Alongside a top-level `OptionsPattern` of the defining head.
+    assert_eq!(
+      interpret(
+        "u[e : h[x_, o : OptionsPattern[{\"A\" -> 1}]], OptionsPattern[\"It\" -> All]] := \
+           {OptionValue[h, \"A\"], OptionValue[\"It\"]}; \
+         {u[h[1, \"A\" -> 3], \"It\" -> 2], u[h[1]]}"
+      )
+      .unwrap(),
+      "{{3, 2}, {1, All}}"
     );
   }
 }

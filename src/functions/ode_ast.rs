@@ -4575,13 +4575,24 @@ pub(crate) fn rename_compound_heads(
   expr: &Expr,
   renames: &[(Expr, String)],
 ) -> Expr {
-  let key = expr_to_string(expr);
-  for (head, fresh) in renames {
-    if expr_to_string(head) == key {
-      return Expr::Identifier(fresh.clone());
+  let keyed: Vec<(&Expr, String, &String)> = renames
+    .iter()
+    .map(|(head, fresh)| (head, expr_to_string(head), fresh))
+    .collect();
+  rename_keyed_heads(expr, &keyed, renames)
+}
+
+fn rename_keyed_heads(
+  expr: &Expr,
+  keyed: &[(&Expr, String, &String)],
+  renames: &[(Expr, String)],
+) -> Expr {
+  for (head, key, fresh) in keyed {
+    if crate::syntax::renders_as(expr, head, key) {
+      return Expr::Identifier((*fresh).clone());
     }
   }
-  let mapped = map_children(expr, &|c| rename_compound_heads(c, renames));
+  let mapped = map_children(expr, &|c| rename_keyed_heads(c, keyed, renames));
   // `Subscript[c, 1][t]` is a curried call; once its head is a plain symbol
   // it must print and match as the ordinary call `NDSolve$fn$1[t]`.
   if let Expr::CurriedCall { func, args } = &mapped
@@ -7343,6 +7354,9 @@ enum StateTrigger {
 /// `f[x] -> value` in it names the state component it resets.
 struct StateEvent {
   trigger: StateTrigger,
+  /// The other conjuncts of `lhs == rhs && cond`, checked when the
+  /// crossing happens (over the state placeholders).
+  guard: Option<Expr>,
   action: Expr,
   active: std::cell::Cell<bool>,
 }
@@ -7360,7 +7374,47 @@ impl StateEvent {
     x_name: &str,
     var_names: &[String],
   ) -> Self {
-    let trigger = match as_equal_pair(&raw.condition) {
+    // `lhs == rhs && cond`: a crossing of the equation, taken only where the
+    // rest of the conjunction holds (an equation alone is true on a set of
+    // measure zero, so as a plain condition it would never fire).
+    let conjuncts: Vec<Expr> = match &raw.condition {
+      Expr::FunctionCall { name, args } if name == "And" => args.to_vec(),
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => vec![(**left).clone(), (**right).clone()],
+      _ => Vec::new(),
+    };
+    let equations: Vec<usize> = conjuncts
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| as_equal_pair(c).is_some())
+      .map(|(i, _)| i)
+      .collect();
+    let (condition, guard) = if let [ei] = equations.as_slice() {
+      let rest: Vec<Expr> = conjuncts
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i != ei)
+        .map(|(_, c)| c.clone())
+        .collect();
+      let guard = if rest.len() == 1 {
+        rest.into_iter().next().unwrap()
+      } else {
+        Expr::FunctionCall {
+          name: "And".to_string(),
+          args: rest.into(),
+        }
+      };
+      (
+        conjuncts[*ei].clone(),
+        Some(substitute_function_values(&guard, funcs, x_name)),
+      )
+    } else {
+      (raw.condition.clone(), None)
+    };
+    let trigger = match as_equal_pair(&condition) {
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -7377,13 +7431,12 @@ impl StateEvent {
         StateTrigger::Crossing(NumFn::new(rewritten, var_names))
       }
       None => StateTrigger::Condition(substitute_function_values(
-        &raw.condition,
-        funcs,
-        x_name,
+        &condition, funcs, x_name,
       )),
     };
     StateEvent {
       trigger,
+      guard,
       action: raw.action,
       active: std::cell::Cell::new(true),
     }
@@ -7413,6 +7466,18 @@ impl StateEvent {
         }
       }
     }
+  }
+
+  /// Whether the event's guard (if any) holds at `(x, state)`.
+  fn guard_holds(&self, x: f64, state: &[f64], var_names: &[String]) -> bool {
+    let Some(guard) = &self.guard else {
+      return true;
+    };
+    let g = substitute_state(guard, var_names, x, state);
+    matches!(
+      crate::evaluator::evaluate_expr_to_expr(&g),
+      Ok(Expr::Identifier(ref b)) if b == "True"
+    )
   }
 
   /// Whether moving from trigger value `prev` to `next` fires the event.
@@ -7583,6 +7648,115 @@ fn parse_periodic_when_event(
 
 /// Integrate one leg with RK4. Returns the points in integration order
 /// (starting at `x_from`), or `None` if a derivative evaluation failed.
+/// State events on a leg integrated with adaptive steps: each crossing is
+/// located between two output points by bisecting the straight line
+/// between their states, the action runs there, and a reset state (or a
+/// stop) restarts (or ends) the integration from the event.
+#[allow(clippy::type_complexity)]
+fn state_events_on_points(
+  mut leg: Vec<(f64, Vec<f64>)>,
+  state_events: &StateEventCtx,
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  x_name: &str,
+  x_to: f64,
+  integrate: &dyn Fn(
+    &[f64],
+    f64,
+    f64,
+  )
+    -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError>,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let value = |ev: &StateEvent, x: f64, s: &[f64]| {
+    ev.value(x, s, funcs, state_events.var_names)
+  };
+  let lerp = |a: &(f64, Vec<f64>), b: &(f64, Vec<f64>), u: f64| {
+    (
+      a.0 + u * (b.0 - a.0),
+      a.1
+        .iter()
+        .zip(&b.1)
+        .map(|(p, q)| p + u * (q - p))
+        .collect::<Vec<f64>>(),
+    )
+  };
+  let mut out: Vec<(f64, Vec<f64>)> = vec![leg[0].clone()];
+  let mut start = 0usize;
+  loop {
+    let mut prev: Vec<Option<f64>> = state_events
+      .events
+      .iter()
+      .map(|ev| value(ev, leg[start].0, &leg[start].1))
+      .collect();
+    let mut hit: Option<(usize, (f64, Vec<f64>), usize)> = None;
+    'scan: for i in start..leg.len().saturating_sub(1) {
+      for (ei, ev) in state_events.events.iter().enumerate() {
+        if !ev.active.get() {
+          continue;
+        }
+        let (Some(g0), Some(g1)) =
+          (prev[ei], value(ev, leg[i + 1].0, &leg[i + 1].1))
+        else {
+          continue;
+        };
+        if !ev.fires(g0, g1) {
+          continue;
+        }
+        let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+        for _ in 0..60 {
+          let mid = f64::midpoint(lo, hi);
+          let (xm, sm) = lerp(&leg[i], &leg[i + 1], mid);
+          match value(ev, xm, &sm) {
+            Some(g) if ev.fires(g0, g) => hi = mid,
+            _ => lo = mid,
+          }
+        }
+        let at = lerp(&leg[i], &leg[i + 1], hi);
+        if ev.guard_holds(at.0, &at.1, state_events.var_names) {
+          hit = Some((i, at, ei));
+          break 'scan;
+        }
+      }
+      for (ei, ev) in state_events.events.iter().enumerate() {
+        prev[ei] = value(ev, leg[i + 1].0, &leg[i + 1].1);
+      }
+    }
+    let Some((i, (te, state_at), ei)) = hit else {
+      out.extend(leg[start + 1..].iter().cloned());
+      return Ok(Some(out));
+    };
+    out.extend(leg[start + 1..=i].iter().cloned());
+    let outcome = state_events.events[ei].run(
+      te,
+      &state_at,
+      funcs,
+      state_offset,
+      state_events.var_names,
+      x_name,
+    )?;
+    out.push((te, outcome.state.clone()));
+    if outcome.stop {
+      return Ok(Some(out));
+    }
+    if outcome.state == state_at {
+      // Carry on along the same points, from the event.
+      let mut rest = vec![(te, state_at)];
+      rest.extend(leg[i + 1..].iter().cloned());
+      leg = rest;
+      start = 0;
+    } else {
+      // A reset: integrate on from the event with the new state.
+      match integrate(&outcome.state, te, x_to)? {
+        Some(rest) => {
+          leg = rest;
+          start = 0;
+        }
+        None => return Ok(Some(out)),
+      }
+    }
+  }
+}
+
 /// When an event function is given, integration stops at the located
 /// event point after running the (held) event action; an action that
 /// throws the `"StopIntegration"` tag simply stops the leg.
@@ -7651,6 +7825,80 @@ fn integrate_leg(
     .map(|ev| state_value(ev, x, &state))
     .collect();
 
+  // A stiff system or a transient faster than the grid makes RK4
+  // diverge: without event functions or periodic actions to locate, the
+  // rest of the leg is integrated again with adaptive steps.
+  // A right-hand side that solves a system at every evaluation (the
+  // implicit constraints of a DAE) makes an adaptive leg crawling towards a
+  // singular point prohibitively slow: such a leg only gets a bounded
+  // number of stiff steps, and otherwise stops where RK4 did.
+  let costly = residuals.iter().any(NumFn::is_costly);
+  let can_go_adaptive = event_fn.is_none()
+    && time_events.is_empty()
+    && !dde_active()
+    && !funcs.iter().any(|f| f.order == 0);
+  let rhs = |xv: f64, s: &[f64]| {
+    Ok(system_derivative(
+      residuals,
+      funcs,
+      state_offset,
+      s,
+      xv,
+      cached_m,
+    ))
+  };
+  // An adaptive explicit step first (a fast transient the grid missed),
+  // handing a stiff system to the stiff method as soon as the explicit
+  // steps detect it; when the stiff method fails too (fast spikes rather
+  // than stiffness), the explicit steps run to the end after all.
+  let adaptive = |start: &[f64],
+                  a: f64,
+                  b: f64|
+   -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+    if costly {
+      return stiff::rosenbrock_leg_limited(
+        &rhs,
+        start,
+        a,
+        b,
+        COSTLY_STIFF_STEPS,
+        COSTLY_STIFF_RTOL,
+        COSTLY_STIFF_ATOL,
+      );
+    }
+    if let Some(p) = stiff::dormand_prince_leg(&rhs, start, a, b, true)? {
+      return Ok(Some(p));
+    }
+    if let Some(p) = stiff::rosenbrock_leg(&rhs, start, a, b)? {
+      return Ok(Some(p));
+    }
+    stiff::dormand_prince_leg(&rhs, start, a, b, false)
+  };
+  // With state events the leg goes on adaptively from where the fixed
+  // steps stopped (the events found up to there have run their actions),
+  // and the events of the rest are located on the adaptive points.
+  let adaptive_with_events =
+    |points: &mut Vec<(f64, Vec<f64>)>,
+     from_state: &[f64],
+     from_x: f64|
+     -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+      let Some(leg) = adaptive(from_state, from_x, x_to)? else {
+        return Ok(None);
+      };
+      let mut done = std::mem::take(points);
+      if let Some(rest) = state_events_on_points(
+        leg,
+        &state_events,
+        funcs,
+        state_offset,
+        x_name,
+        x_to,
+        &adaptive,
+      )? {
+        done.extend(rest.into_iter().skip(1));
+      }
+      Ok(Some(done))
+    };
   for i in 0..n_steps {
     let new_x = grid(i + 1);
     let h = new_x - x;
@@ -7683,40 +7931,15 @@ fn integrate_leg(
       // A stiff system or a transient faster than the grid makes RK4
       // diverge: without events to locate, the whole leg is integrated
       // again with adaptive steps.
-      if event_fn.is_none()
-        && time_events.is_empty()
-        && state_events.events.is_empty()
-        && !dde_active()
-      {
-        let rhs = |xv: f64, s: &[f64]| {
-          Ok(system_derivative(
-            residuals,
-            funcs,
-            state_offset,
-            s,
-            xv,
-            cached_m,
-          ))
-        };
-        // An adaptive explicit step first (a fast transient the grid
-        // missed), handing a stiff system to the stiff method as soon as
-        // the explicit steps detect it; when the stiff method fails too
-        // (fast spikes rather than stiffness), the explicit steps run to
-        // the end after all.
-        if let Some(adaptive_points) =
-          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, true)?
+      // State events are found afterwards on the adaptive points.
+      if can_go_adaptive {
+        if state_events.events.is_empty() {
+          if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
+            return Ok(Some(leg));
+          }
+        } else if let Some(done) = adaptive_with_events(&mut points, &state, x)?
         {
-          return Ok(Some(adaptive_points));
-        }
-        if let Some(stiff_points) =
-          stiff::rosenbrock_leg(&rhs, &points[0].1, x_from, x_to)?
-        {
-          return Ok(Some(stiff_points));
-        }
-        if let Some(adaptive_points) =
-          stiff::dormand_prince_leg(&rhs, &points[0].1, x_from, x_to, false)?
-        {
-          return Ok(Some(adaptive_points));
+          return Ok(Some(done));
         }
       }
       if points.len() > 1 {
@@ -7775,6 +7998,9 @@ fn integrate_leg(
             _ => lo = mid,
           }
         }
+        if !ev.guard_holds(x + hi, &hi_state, state_events.var_names) {
+          continue;
+        }
         // "Earliest" along the leg's direction (a backward leg runs down).
         let dir = h.signum();
         if earliest
@@ -7802,16 +8028,29 @@ fn integrate_leg(
         // Carry on from the event with the (possibly reset) state.
         new_state = if dir * (new_x - te) > f64::EPSILON * new_x.abs().max(1.0)
         {
-          match rk4_system_step(
+          let mut after: Vec<(f64, Vec<f64>)> = Vec::new();
+          match rk4_step_refined(
             residuals,
             funcs,
             state_offset,
             &outcome.state,
             te,
             new_x - te,
+            Refinement::START,
+            &mut after,
             cached_m,
           )? {
             Some(s) => s,
+            None if can_go_adaptive => {
+              return match adaptive_with_events(
+                &mut points,
+                &outcome.state,
+                te,
+              )? {
+                Some(done) => Ok(Some(done)),
+                None => Ok(Some(points)),
+              };
+            }
             None => return Ok(Some(points)),
           }
         } else {
@@ -8136,6 +8375,15 @@ fn system_derivative(
 /// for the highest derivatives is singular. `cached_m` is the mass matrix
 /// `probe_constant_mass_matrix` proved constant for this system, if any —
 /// passing it in skips the `O(n^2)` rebuild at every stage.
+/// Stiff steps an adaptive leg with a costly right-hand side may take, and
+/// its tolerances: Rodas4's embedded estimate grows with the stiffness, so
+/// at the default 1e-8/1e-10 a smooth stiff solution (`x' == -1000 (x -
+/// z)`) takes twenty times the steps of wolframscript's grid; these still
+/// agree with it to about eight digits.
+const COSTLY_STIFF_STEPS: usize = 20_000;
+const COSTLY_STIFF_RTOL: f64 = 1e-7;
+const COSTLY_STIFF_ATOL: f64 = 1e-8;
+
 fn rk4_system_step(
   residuals: &[NumFn],
   funcs: &[SysFunc],
@@ -8978,6 +9226,27 @@ fn newton_system(
       }
     }
     let step = solve_dense(jac, f.clone())?;
+    // A full Newton step that no longer moves `z` means it is already the
+    // root to working precision — a guess carried over from the previous
+    // solve often is, with a residual of a few ulps that no step lowers.
+    let full_step = z
+      .iter()
+      .zip(&step)
+      .map(|(zi, di)| di.abs() / zi.abs().max(1e-3))
+      .fold(0.0, f64::max);
+    if full_step <= 1e-12 {
+      // That last step is still taken: it brings `z` to the last bit, which
+      // a stiff right-hand side multiplying the residual needs.
+      let zn: Vec<f64> = z.iter().zip(&step).map(|(zi, di)| zi - di).collect();
+      let fnew = residual(&zn, vars);
+      return Some(
+        if fnew.iter().all(|v| v.is_finite()) && norm(&fnew) <= fnorm {
+          zn
+        } else {
+          z
+        },
+      );
+    }
     let mut lambda = 1.0;
     let mut accepted = false;
     for _ in 0..40 {
@@ -8997,7 +9266,7 @@ fn newton_system(
     }
     if !accepted {
       // At the noise floor no step lowers the residual any further.
-      return (last_step <= 1e-8).then_some(z);
+      return (last_step.min(full_step) <= 1e-8).then_some(z);
     }
     let rel_step = z
       .iter()

@@ -50,7 +50,7 @@ thread_local! {
 /// fallback), so an ordinary 1D integral's behavior is unchanged; an
 /// iterated integral now shares this same total across every dimension
 /// instead of multiplying it.
-const NINTEGRATE_TOTAL_BUDGET: u64 = 30_000;
+const NINTEGRATE_TOTAL_BUDGET: u64 = 2_000_000;
 
 /// Run `f` with a shared `NIntegrate` evaluation budget installed, unless
 /// one is already active — a nested/iterated call reuses its parent's
@@ -16718,7 +16718,39 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
       _ => {}
     }
   }
+  // The zero of an argument linear in `var` (`Abs[0.3 - y]`): where `Abs`,
+  // `Sign` or a step switches, and where an integrand like
+  // `1/Sqrt[Abs[0.3 - y]]` is singular.
+  fn linear_root(arg: &Expr, var: &str) -> Option<f64> {
+    let at = |x: f64| {
+      crate::functions::math_ast::try_eval_to_f64(
+        &crate::evaluator::evaluate_expr_to_expr(
+          &crate::syntax::substitute_variable(arg, var, &Expr::Real(x)),
+        )
+        .ok()?,
+      )
+    };
+    let (f0, f1, fh) = (at(0.0)?, at(1.0)?, at(0.5)?);
+    let slope = f1 - f0;
+    if slope == 0.0
+      || (fh - f64::midpoint(f0, f1)).abs()
+        > 1e-12 * (1.0 + f0.abs() + f1.abs())
+    {
+      return None;
+    }
+    Some(-f0 / slope)
+  }
   fn walk(e: &Expr, var: &str, out: &mut Vec<f64>) {
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(
+        name.as_str(),
+        "Abs" | "RealAbs" | "Sign" | "UnitStep" | "HeavisideTheta" | "Ramp"
+      )
+      && args.len() == 1
+      && let Some(root) = linear_root(&args[0], var)
+    {
+      out.push(root);
+    }
     if let Expr::FunctionCall { name, args } = e
       && name == "Piecewise"
       && let Some(Expr::List(cases)) = args.first()
@@ -17183,11 +17215,54 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // whichever signal is available — and bisect each to a breakpoint,
     // splitting the range so every piece handed to tanh-sinh/Simpson is
     // smooth on its own interior.
+    //
+    // A smooth integrand over fixed inner bounds has no such kink, and the
+    // 201 inner integrations of the scan would only spend the evaluation
+    // budget the real quadrature then runs out of (a plain
+    // `∫∫ Sin[t]^2 ds dt` came back 2% low), so the scan is reserved for
+    // integrands that can change shape: a condition, a step or kink
+    // function, or inner bounds that move with the outer variable.
+    let may_kink = boole_shape.is_some()
+      || inner_ranges.iter().any(|r| {
+        crate::functions::polynomial_ast::expr_mentions_symbol(r, &ovar)
+      })
+      || [
+        "Boole",
+        "UnitStep",
+        "HeavisideTheta",
+        "Piecewise",
+        "If",
+        "Which",
+        "Abs",
+        "Min",
+        "Max",
+        "Floor",
+        "Ceiling",
+        "Round",
+        "Sign",
+        "Clip",
+        "Mod",
+        "RealAbs",
+        "UnitBox",
+        "UnitTriangle",
+        "Greater",
+        "Less",
+        "GreaterEqual",
+        "LessEqual",
+      ]
+      .iter()
+      .any(|h| {
+        crate::functions::math_ast::numeric_utils::expr_contains_head(
+          &integrand0,
+          h,
+        )
+      })
+      || matches!(&integrand0, Expr::Comparison { .. });
     const KINK_SCAN_POINTS: u32 = 200;
     let ospan = ohi - olo;
     let signature = |v: f64, count: usize| (count, v == 0.0);
     let mut kink_samples = Vec::with_capacity(KINK_SCAN_POINTS as usize + 1);
-    for i in 0..=KINK_SCAN_POINTS {
+    for i in (0..=KINK_SCAN_POINTS).filter(|_| may_kink) {
       let y = if i == KINK_SCAN_POINTS {
         ohi
       } else {
@@ -17556,7 +17631,22 @@ fn nintegrate_complex_path(
   tolerance: f64,
   max_recursion: u32,
 ) -> Result<Expr, InterpreterError> {
+  // The integrand compiled once to complex arithmetic in the path variable,
+  // with the symbolic evaluation below for what it cannot do.
+  let compiled =
+    crate::functions::polynomial_ast::complex_numeric::compile_complex_vars(
+      integrand,
+      &[var_name.to_string()],
+    );
   let eval_at = |re: f64, im: f64| -> Option<(f64, f64)> {
+    if let Some(node) = &compiled {
+      let v = node.eval_c(&[
+        crate::functions::polynomial_ast::complex_numeric::C::new(re, im),
+      ]);
+      if v.re.is_finite() && v.im.is_finite() {
+        return Some((v.re, v.im));
+      }
+    }
     // A sampled point that lands exactly on the real axis (e.g. a path
     // waypoint given as a plain real number) substitutes a plain Real,
     // not Complex[re, 0.], to avoid the integrand mixing a Real and a

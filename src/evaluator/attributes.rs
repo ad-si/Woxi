@@ -782,8 +782,34 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "ParallelSelect" | "ParallelCases"
     | "ParallelSubmit" => A::Protected | A::ReadProtected,
 
+    // The function plots hold their bodies and iterators (checked against
+    // wolframscript). Most are also held by name in `core_eval.rs`; the
+    // attribute keeps the ones Woxi does not draw yet from evaluating their
+    // body with the plot variables free.
+    "Plot" | "Animate" | "AbsArgPlot" | "BodePlot"
+    | "ComplexContourPlot" | "ComplexPlot" | "ComplexPlot3D"
+    | "ComplexRegionPlot" | "ComplexStreamPlot" | "ComplexVectorPlot"
+    | "ContourPlot" | "ContourPlot3D" | "DensityPlot" | "DensityPlot3D"
+    | "DiscretePlot" | "DiscretePlot3D" | "LineIntegralConvolutionPlot"
+    | "ListVectorDisplacementPlot" | "ListVectorDisplacementPlot3D"
+    | "LogLinearPlot" | "LogLogPlot" | "LogPlot" | "NicholsPlot"
+    | "NumberLinePlot" | "NyquistPlot" | "ParametricPlot"
+    | "ParametricPlot3D" | "PolarPlot" | "ReImPlot" | "RegionPlot"
+    | "RegionPlot3D" | "RevolutionPlot3D" | "RootLocusPlot"
+    | "SingularValuePlot" | "SliceContourPlot3D" | "SliceDensityPlot3D"
+    | "SliceVectorPlot3D" | "SphericalPlot3D" | "StreamDensityPlot"
+    | "StreamPlot" | "StreamPlot3D" | "VectorDensityPlot"
+    | "VectorDisplacementPlot" | "VectorDisplacementPlot3D" | "VectorPlot"
+    | "VectorPlot3D" => A::HoldAll | A::Protected | A::ReadProtected,
+
     // HoldAll + Locked + Protected
     "Remove" => A::HoldAll | A::Locked | A::Protected,
+
+    // The legacy package's samplers hold the field they sample (and are
+    // not Protected).
+    "VectorFieldPlots`VectorFieldPlot" | "VectorFieldPlots`PolyaFieldPlot" => {
+      A::HoldFirst
+    }
 
     // HoldFirst + Protected + ReadProtected
     "MessageName" | "Increment" | "Decrement" | "PreIncrement"
@@ -900,6 +926,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
 
     // NHoldAll + Protected
     "SlotSequence" => A::NHoldAll | A::Protected,
+
+    // NHoldAll + Protected + ReadProtected
+    "DifferenceRoot" => A::NHoldAll | A::Protected | A::ReadProtected,
 
     // Listable + NHoldFirst + NumericFunction + Protected
     "EllipticTheta" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,

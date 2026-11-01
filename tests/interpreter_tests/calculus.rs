@@ -5151,11 +5151,42 @@ mod nintegrate {
   // An inner Integrate without a closed form is a number under N, so it is
   // integrated as an iterated integral — it was reported as non-numeric,
   // and before that silently integrated as 0.
+  // An iterated integral of a smooth integrand gets enough evaluations for
+  // every inner integral: the shared budget used to run out partway, and
+  // the remaining inner integrals came back short.
+  // The range is split where an Abs/Sign/step argument linear in the
+  // variable changes sign, so a singularity there is an endpoint.
+  #[test]
+  fn splits_at_zeros_of_abs_arguments() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[1/Sqrt[Abs[0.3 - y]], {y, 0, 1}] - (2 Sqrt[0.3] + 2 Sqrt[0.7])] < 10^-7, \
+          Abs[NIntegrate[1/Sqrt[Abs[x - y]], {x, 0, 1}, {y, 0, 1}] - 8/3] < 10^-6}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn iterated_smooth_integrals_are_accurate() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[Sin[u]^2, {s, 0, 1}, {u, 0, Pi}] - Pi/2] < 10^-8, \
+          Abs[NIntegrate[Exp[-1.5 (Cos[s]^2 + 0.3 Sin[t]^2)], {s, 0, 2 Pi}, {t, 0, 2 Pi}] - \
+            17.27637411634429] < 10^-6, \
+          Abs[NIntegrate[Cos[s]^2 + Sin[t]^2, {s, 0, 2 Pi}, {t, 0, 2 Pi}] - 4 Pi^2] < 10^-8}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
   #[test]
   fn inner_integrate_without_closed_form() {
     let result = interpret_with_stdout(
       "Abs[NIntegrate[Integrate[2 - 2 Sin[x^2 + y^2], {y, -1, 1}], \
-       {x, -1, 1}] - 3.52996] < 10^-4",
+       {x, -1, 1}] - 3.50968] < 10^-4",
     )
     .unwrap();
     assert_eq!(result.result, "True");
@@ -5262,6 +5293,50 @@ mod nintegrate {
       0.7468241328124271,
       1e-3,
     );
+  }
+
+  // An integrand whose value is the real part (or modulus) of a complex
+  // expression is compiled to complex machine arithmetic rather than
+  // evaluated symbolically at each sample — the characteristic-function
+  // inversion of a stable distribution samples it thousands of times.
+  // A contour integral samples its integrand in compiled complex arithmetic.
+  #[test]
+  fn nintegrate_complex_path_is_compiled() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[Table[NIntegrate[Exp[z/k]/z, {z, 1, I, -1, -I, 1}], {k, 1, 40}][[{1, 40}]], 10.^-6]"
+      )
+      .unwrap(),
+      "{0. + 6.283185*I, 0. + 6.283185*I}"
+    );
+    assert!(start.elapsed().as_secs() < 20);
+  }
+
+  #[test]
+  fn nintegrate_real_part_of_complex_integrand() {
+    assert_eq!(
+      interpret(
+        "{Abs[NIntegrate[Re[E^(-I t) E^(-t^2)], {t, 0, Infinity}] - \
+            Sqrt[Pi]/2 E^(-1/4)] < 10^-7, \
+          Abs[NIntegrate[Abs[Sqrt[t - 2]], {t, 0, 1}] - 1.2189514164974613] < 10^-9}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "Round[Table[NIntegrate[Re[(-I t)^k E^(-I t x - Abs[t]^1.5 \
+           (1 - 0.5 I Sign[t] Tan[0.75 Pi]))], {t, 0, Infinity}]/Pi, \
+           {x, {-2., 0., 1.5}}, {k, 0, 2}], 10.^-6]"
+      )
+      .unwrap(),
+      "{{0.13330699999999998, 0.142335, 0.066231}, {0.254113, \
+       -0.09464499999999999, -0.10185899999999999}, {0.095832, -0.077258, \
+       0.056233}}"
+    );
+    assert!(start.elapsed().as_secs() < 20);
   }
 
   #[test]
@@ -5524,6 +5599,21 @@ mod nintegrate {
     )
     .unwrap();
     assert_eq!(r, "{True, True, True}");
+  }
+
+  #[test]
+  fn parametric_plot_evaluation_monitor_sows_parameter_values() {
+    // EvaluationMonitor :> Sow[t] fires with the parameter bound to each
+    // sampled value, so Reap collects numbers inside the parameter range.
+    clear_state();
+    let r = interpret(
+      "Module[{pts}, pts = Reap[ParametricPlot[{Cos[t], Sin[t]}, \
+       {t, 0, Pi}, EvaluationMonitor :> Sow[t]]][[2, 1]]; \
+       {Length[pts] > 10, VectorQ[pts, NumberQ], Min[pts] >= 0, \
+       Max[pts] <= Pi}]",
+    )
+    .unwrap();
+    assert_eq!(r, "{True, True, True, True}");
   }
 
   #[test]
@@ -9164,6 +9254,38 @@ mod ndsolve {
     );
   }
 
+  // A Newton solve started on the root itself (the guess carried over from
+  // the previous step, residual a few ulps) converges at once instead of
+  // failing — that truncated the solution at t = 83.8 here.
+  #[test]
+  fn implicit_constraint_guess_already_the_root() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x'[t] == -(x[t] - z[t]), z[t] + Exp[z[t]] == 2 + \
+         Sin[t/10], x[0] == 0}, {x, z}, {t, 0, 200}]]; \
+         {(x /. s)[[1]], Round[10^6 {x[100], z[100], x[200]} /. s]}"
+      )
+      .unwrap(),
+      "{{{0., 200.}}, {254108, 215499, 748757}}"
+    );
+  }
+
+  // A stiff system whose right-hand side solves an implicit constraint by
+  // Newton iteration is integrated with Rosenbrock steps once RK4 diverges
+  // (the distillation-column models of SolventSwapDistillation).
+  #[test]
+  fn stiff_system_with_implicit_constraint() {
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve[{x'[t] == -1000 (x[t] - z[t]), z[t] + Exp[z[t]] == \
+         2 + Sin[t/10], x[0] == 0}, {x, z}, {t, 0, 200}]]; \
+         {(x /. s)[[1]], Round[10^6 {x[50], z[50], x[200]} /. s]}"
+      )
+      .unwrap(),
+      "{{{0., 200.}}, {20419, 20433, 764654}}"
+    );
+  }
+
   // A closed-form eliminated unknown next to a numerically eliminated one
   // keeps its values on the whole grid when its solution reads no highest
   // derivative (the solve for those is skipped at the grid points).
@@ -10441,6 +10563,42 @@ mod ndsolve {
       (vals[0] - expected_lo).abs() < 0.01
         && (vals[1] - expected_hi).abs() < 0.01,
       "Expected {{{expected_lo}, {expected_hi}}}, got {result}"
+    );
+  }
+
+  // `lhs == rhs && cond` is a crossing of the equation taken only where the
+  // rest holds (as a plain condition it was true at no sampled point and
+  // never fired).
+  #[test]
+  fn when_event_guarded_crossing() {
+    assert_eq!(
+      interpret(
+        "{Round[Reap[NDSolve[{y'[t] == z[t], z'[t] == -y[t], y[0] == 1, z[0] == 0, \
+         WhenEvent[z[t] == 0 && t > 2, Sow[t]]}, {y, z}, {t, 0, 7}]][[2]], 0.001], \
+         Round[Reap[NDSolve[{y'[t] == z[t], z'[t] == -y[t], y[0] == 1, z[0] == 0, \
+         WhenEvent[z[t] == 0 && t > 4, Sow[t]]}, {y, z}, {t, 0, 7}]][[2]], 0.001], \
+         Round[Reap[NDSolve[{x[1]'[t] == x[2][t], x[2]'[t] == -x[1][t], x[1][0] == 1, \
+         x[2][0] == 0, WhenEvent[x[1]'[t] == 0 && t > 2, Sow[t]]}, {x[1][t], x[2][t]}, \
+         {t, 0, 4}]][[2]], 0.001]}"
+      )
+      .unwrap(),
+      "{{{3.142, 6.283}}, {{6.283}}, {{3.142}}}"
+    );
+  }
+
+  // A stiff system the fixed RK4 steps cannot take goes on with adaptive
+  // steps, its state events located on their points — also after an event
+  // already fired on the fixed steps.
+  #[test]
+  fn when_event_on_a_stiff_system() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{y'[t] == -100000 (y[t] - Cos[t]), y[0] == 1, \
+         WhenEvent[y[t] == 0.5, Sow[t]]}, y, {t, 0, 3}]]; \
+         {Round[r[[2]], 0.001], Round[y[2] /. r[[1, 1]], 0.0001]}"
+      )
+      .unwrap(),
+      "{{{1.047}}, -0.4161}"
     );
   }
 
@@ -23144,8 +23302,11 @@ mod nintegrate_symbolic_limits {
   #[test]
   fn limit_depending_on_outer_variable_is_valid() {
     assert_eq!(
-      interpret("NIntegrate[x y, {x, 0, 1}, {y, 0, x}]").unwrap(),
-      "0.125"
+      // (wolframscript gives 0.12499999999999996: the last digits are
+      // quadrature noise.)
+      interpret("Abs[NIntegrate[x y, {x, 0, 1}, {y, 0, x}] - 1/8] < 10^-12")
+        .unwrap(),
+      "True"
     );
   }
 }

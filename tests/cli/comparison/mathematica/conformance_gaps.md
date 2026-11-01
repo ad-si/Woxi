@@ -673,6 +673,25 @@ combined fractions further than Woxi does (collecting in `x` with factored
 coefficients), so Woxi keeps a sum of quotients where WL prints one fraction —
 `Together` alone matches exactly on the same inputs.
 
+### `Simplify` expands factored denominators that wolframscript keeps
+
+```sh
+wolframscript -code '{Simplify[1/(x (1 + y))], Simplify[(a + b)/(e^2 (2 + p)^2)], Simplify[1/(e (1 + p) (2 + p))]}'
+# {1/(x*(1 + y)), (a + b)/(e^2*(2 + p)^2), 1/(e*(2 + 3*p + p^2))}
+woxi eval '{Simplify[1/(x (1 + y))], Simplify[(a + b)/(e^2 (2 + p)^2)], Simplify[1/(e (1 + p) (2 + p))]}'
+# {(x + x*y)^(-1), (a + b)/(4*e^2 + 4*e^2*p + e^2*p^2), (2*e + 3*e*p + e*p^2)^(-1)}
+```
+
+`simplify_division` works on the expanded numerator and denominator and only
+restores a `(sum)^n` denominator afterwards. WL is not simply cost-minimal
+here: `(x + x*y)^(-1)` has the lower `SimplifyCount` (8 against 11), yet
+`Simplify[1/(x (1 + y))]` keeps the factored input. It expands only some
+denominators: `1/((1 + x) (2 + y))` becomes `(2 + 2*x + y + x*y)^(-1)`, and
+`x/(y (1 + y))` becomes `x/(y + y^2)`. Which candidates WL generates is not
+decoded. `Together`, `Cancel`, `ExpandDenominator` and `Factor` all match on
+these inputs. `DifferenceRoot` values with symbolic parameters go through
+`Simplify` and inherit this gap.
+
 ### `Simplify` can be pathologically slow
 
 `Simplify[(z+1)*(1/(z+1) + PolyGamma[0,2] + (z+1)*(PolyGamma[0,2]^2 + PolyGamma[1,2]))/(z+1)]`
@@ -693,6 +712,15 @@ in WL, which keeps integer coefficients.
 
 
 ## Numeric precision and floating point
+
+### `SpherePoints` differs in the last bit, and small `n` is missing
+
+`SpherePoints[n]` lays the points on the golden spiral Wolfram uses (the same
+z values exactly, longitude `k` times the golden angle), but the x and y
+coordinates come out up to two ulps away from Wolfram's — its trigonometric
+evaluation rounds differently. The `n` Wolfram takes from a table of optimal
+arrangements (2–12, 14, 16, 18, 20, 22, 24, 30, 32, 40, 55, 60) are not
+implemented and stay unevaluated.
 
 ### `NMinimize` ignores `WorkingPrecision`
 
@@ -1646,6 +1674,21 @@ numerator, since its exponent arithmetic is exact-rational. wolframscript
 itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
 even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
 
+### `Together` of an exponential sum sometimes factors the numerator in WL
+
+```sh
+wolframscript -code 'Together[1/2 E^(-t) - E^(-2 t) + 1/2 E^(-3 t)]'
+# (-1 + E^t)^2/(2*E^(3*t))
+woxi eval 'Together[1/2 E^(-t) - E^(-2 t) + 1/2 E^(-3 t)]'
+# (1 - 2*E^t + E^(2*t))/(2*E^(3*t))
+```
+
+The same sum in a plain variable stays expanded in wolframscript
+(`Together[1/(2x) - 1/x^2 + 1/(2x^3)]` is `(1 - 2*x + x^2)/(2*x^3)`), and
+so does `Together[E^(-t) - 3 E^(-2 t) + 2 E^(-3 t)]`
+(`(2 - 3*E^t + E^(2*t))/E^(3*t)`). The rule that picks the factored form is
+not decoded. `Simplify` matches, through its exponential-regrouping candidate.
+
 ### Machine `Orthogonalize` differs in last digits
 
 ```sh
@@ -2148,6 +2191,24 @@ then holds the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /.
 sol, …]` reruns it at every sample and times out. A solvent-swap variant of
 the model (10 stages, `t` up to 20000) now integrates — the stiff Rosenbrock
 fallback also takes legs with algebraic unknowns — but takes about a minute.
+
+Status 2026-11-01. Columns without an energy balance now solve
+(SolventSwapDistillation, TernaryBatchRectification, the residue-curve
+models): the stiff Rosenbrock fallback runs when the right-hand side Newton
+solves the stage temperatures. DistillationOfAnEthanolWaterMixture is still
+open. Its temperatures are fixed by the bubble-point equations and also
+differentiated in the energy balances (`T[0]'[t]`, `T[0]` not even listed as
+an unknown), which makes it a higher-index DAE. WL reduces the index and
+computes consistent initial values (`NDSolve::ivres`).
+
+Two experiments, both reverted:
+- Cancelling terms in the algebraic equations after the explicit
+  eliminations exposes the overall balance `-10 + B[t] + Di[t] == 0`. Woxi
+  had assigned it to `V2`, an unknown it no longer contains.
+- Letting the stiff fallback run with order-0 unknowns then integrates. But
+  from the inconsistent start it drifts away from WL's steady state
+  (`x[1][50]` 0.0666 against 0.8375), so the result is wrong rather than
+  missing.
 
 ### `NDSolve` uses a fixed grid
 
@@ -4490,6 +4551,16 @@ into script mode; Woxi prints the expression and renders `["Message"]` cleanly.
 **Deliberately not reproduced** — test a `Failure`'s keys, not its printed form.
 
 
+### Compiled code reports no `CompiledFunction::cfn`
+
+Woxi runs a `Compile`d body on machine numbers where it can and otherwise
+evaluates it symbolically, silently. Wolfram prints `CompiledFunction::cfn:
+Numerical error encountered at instruction …; proceeding with uncompiled
+evaluation` when machine arithmetic overflows (an escape-time fractal whose
+iterate grows without bound) and then continues uncompiled; Woxi keeps going
+in machine arithmetic, so the values agree but the message is missing. The
+instruction number has no counterpart in Woxi.
+
 ## Graphics and plotting
 
 ### `Attributes[GraphicsComplex]` (unverified)
@@ -4502,6 +4573,19 @@ against wolframscript.
 Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.
+
+### Legacy `VectorFieldPlots`` plots carry fewer options
+
+The package's `Graphics` gets `FilterRules[{opts, Options[ListVectorFieldPlot]},
+Options[Graphics]]`: the caller's options followed by every default of
+`Developer`GraphicsOptions[]` (twice over from `VectorFieldPlot`). Woxi keeps
+the caller's options and appends only `AspectRatio -> Automatic` and
+`PlotRange -> All`, the two defaults the package changes. The primitives — what
+notebooks take apart with `[[1, 3]]` — are identical; only
+`InputForm[plot]`'s option tail differs.
+
+Loading the package also prints `General::obspkg` in wolframscript; Woxi
+loads it silently.
 
 ### The default plot style is not Wolfram's
 
@@ -6085,12 +6169,15 @@ builds its message popup from `StringTake[ExampleData[{"Text", #}], 5000]`, so
 its chart shows the letter frequencies of the generated English text — close
 to, but not the same as, the original's.
 
-### `GraphUtilities`HamiltonianCycles` reports a single cycle
+### `HamiltonianCycles` of an `UndirectedGraph[…]` result
 
-Wolfram lists every Hamiltonian cycle of the graph. Woxi delegates to
-`FindHamiltonianCycle` and returns a one-element list, so `First[...]` (as in
-the `Hamiltonian Tours on Polyhedra` Demonstration) works, but `Length[...]`
-and later elements differ. The cycle chosen may also differ from Wolfram's.
+`GraphUtilities`HamiltonianCycles` searches the graph's sparse adjacency matrix
+in its stored order. `UndirectedGraph[g]` of a directed `g` keeps, in Wolfram,
+the storage order of `Transpose[m] + m` — every vertex's in-neighbours of `g`
+before its out-neighbours — while a `Graph` built from the same edges is stored
+ascending. Woxi's graphs carry no storage order, so it searches the
+`UndirectedGraph` result ascending and can report other cycles first (the same
+set with `All`).
 
 ### `Rotate[Text[…], angle]` inside a `Grid` cell is not rotated
 

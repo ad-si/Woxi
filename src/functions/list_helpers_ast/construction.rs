@@ -61,6 +61,29 @@ fn table_unevaluated(body: &Expr, iter_spec: &Expr) -> Expr {
 /// so an expensive bound (`{x, someLongComputation}`) is not computed twice,
 /// and a bound with side effects runs once, as in Wolfram.
 pub fn table_preevaluate_iterators(iters: &[Expr]) -> Vec<Expr> {
+  table_counted_iterators(table_evaluate_iterators(iters))
+}
+
+/// `{list}` runs once per element of the list, like an iterator `{i, list}`
+/// whose variable the body never names: as a count.
+pub fn table_counted_iterators(iters: Vec<Expr>) -> Vec<Expr> {
+  iters
+    .into_iter()
+    .map(|iter| match &iter {
+      Expr::List(items) if items.len() == 1 => match &items[0] {
+        Expr::List(values) => {
+          Expr::List(vec![Expr::Integer(values.len() as i128)].into())
+        }
+        _ => iter,
+      },
+      _ => iter,
+    })
+    .collect()
+}
+
+/// The iterator specs with their bounds evaluated (see
+/// [`table_preevaluate_iterators`]), a `{list}` still holding its list.
+pub fn table_evaluate_iterators(iters: &[Expr]) -> Vec<Expr> {
   let eval = |e: &Expr| {
     crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone())
   };
@@ -88,14 +111,7 @@ pub fn table_preevaluate_iterators(iters: &[Expr]) -> Vec<Expr> {
         if expr_references_any(&items[0], &bound_vars) {
           iter.clone()
         } else {
-          // `{list}` runs once per element of the list, like an iterator
-          // `{i, list}` whose variable the body never names.
-          match &eval(&items[0]) {
-            Expr::List(values) => {
-              Expr::List(vec![Expr::Integer(values.len() as i128)].into())
-            }
-            value => Expr::List(vec![value.clone()].into()),
-          }
+          Expr::List(vec![eval(&items[0])].into())
         }
       }
       Expr::List(_) => iter.clone(),
@@ -106,6 +122,48 @@ pub fn table_preevaluate_iterators(iters: &[Expr]) -> Vec<Expr> {
 }
 
 pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
+  table_iterator_failure(name, iters).map(|(msg, _)| msg)
+}
+
+/// Like [`table_iterators_invalid`], with the position of the offending
+/// iterator in `iters`.
+pub fn table_iterator_failure(
+  name: &str,
+  iters: &[Expr],
+) -> Option<(String, usize)> {
+  let mut failing = 0usize;
+  let failure = table_iterator_failure_message(name, iters, &mut failing)?;
+  Some((failure, failing))
+}
+
+/// Whether an iterator bound is a number that cannot count: complex, or an
+/// infinity. `Table` reports such an iterator twice, as wolframscript does
+/// (`Table[x, {I}]`); a symbolic bound once.
+pub fn iterator_has_nonreal_numeric_bound(iter: &Expr) -> bool {
+  let bounds: &[Expr] = match iter {
+    Expr::List(items) if items.len() == 1 => items,
+    Expr::List(items) if items.len() > 1 => &items[1..],
+    _ => return false,
+  };
+  bounds.iter().any(|b| {
+    let infinite = matches!(
+      crate::functions::math_ast::try_eval_to_f64_with_infinity(b),
+      Some(f) if f.is_infinite()
+    );
+    let complex_infinity = matches!(b, Expr::Identifier(s) if s == "ComplexInfinity")
+      || matches!(b, Expr::FunctionCall { name, args } if name == "DirectedInfinity" && args.is_empty());
+    infinite
+      || complex_infinity
+      || (crate::functions::predicate_ast::is_numeric_q(b)
+        && crate::functions::math_ast::try_eval_to_f64(b).is_none())
+  })
+}
+
+fn table_iterator_failure_message(
+  name: &str,
+  iters: &[Expr],
+  failing: &mut usize,
+) -> Option<String> {
   let iterb = |iter: &Expr| {
     Some(format!(
       "{}::iterb: Iterator {} does not have appropriate bounds.",
@@ -113,6 +171,8 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
       crate::syntax::format_expr(iter, crate::syntax::ExprForm::Output)
     ))
   };
+  // `Do` runs an infinite iterator until a `Break[]`; `Table` cannot.
+  let allow_infinite = !matches!(name, "Table" | "ParallelTable");
   // Variables introduced by earlier iterators: a later bound that references
   // one of them (e.g. the inner `{j, i}` of `Table[j, {i, 1, 3}, {j, i}]`)
   // becomes numeric during iteration, so it must not be flagged.
@@ -125,9 +185,13 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
     }
     let ev =
       crate::evaluator::evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
-    crate::functions::math_ast::try_eval_to_f64_with_infinity(&ev).is_some()
+    match crate::functions::math_ast::try_eval_to_f64_with_infinity(&ev) {
+      Some(f) => allow_infinite || f.is_finite(),
+      None => false,
+    }
   };
   for (idx, iter) in iters.iter().enumerate() {
+    *failing = idx;
     let position = idx + 2; // the body is argument 1
     match iter {
       // A bare count `Table[expr, n]`: valid when it resolves.
@@ -1335,12 +1399,10 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 1 => {
       // Do[body, {n}] — repeat n times without iterator variable
       let n_expr = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
-      let n = expr_to_i128(&n_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Do: repeat count must be an integer".into(),
-        )
-      })?;
-      for _ in 0..n {
+      let n = repeat_count(&n_expr)?;
+      let mut done: i128 = 0;
+      while n.is_none_or(|n| done < n) {
+        done += 1;
         match crate::evaluator::evaluate_expr_to_expr(body) {
           Ok(_) => {}
           Err(InterpreterError::BreakSignal) => break,
@@ -1622,6 +1684,22 @@ fn do_multi_inner(
   }
 }
 
+/// The number of repetitions of a `{n}` iterator: a real `n` runs
+/// `Floor[n]` times (`Do[body, {2.7}]` runs twice) and `Infinity` until a
+/// `Break[]` (`None`).
+fn repeat_count(n: &Expr) -> Result<Option<i128>, InterpreterError> {
+  if let Some(k) = expr_to_i128(n) {
+    return Ok(Some(k));
+  }
+  match crate::functions::math_ast::try_eval_to_f64_with_infinity(n) {
+    Some(f) if f == f64::INFINITY => Ok(None),
+    Some(f) if f.is_finite() => Ok(Some(f.floor() as i128)),
+    _ => Err(InterpreterError::EvaluationError(
+      "Do: repeat count must be a real number".into(),
+    )),
+  }
+}
+
 /// Helper: drive a single iterator spec, calling `step` once per iteration.
 /// `step` receives the current iteration index (0-based) for informational
 /// purposes; the iterator variable (if any) is bound in ENV before each call.
@@ -1643,13 +1721,11 @@ where
     }
     Expr::List(items) if items.len() == 1 => {
       let n_expr = crate::evaluator::evaluate_expr_to_expr(&items[0])?;
-      let n = expr_to_i128(&n_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Do: repeat count must be an integer".into(),
-        )
-      })?;
-      for i in 0..n {
+      let n = repeat_count(&n_expr)?;
+      let mut i: i128 = 0;
+      while n.is_none_or(|n| i < n) {
         step(i as usize)?;
+        i += 1;
       }
       Ok(())
     }

@@ -3593,7 +3593,7 @@ mod together {
     assert_eq!(interpret("Together[x (1/x + 1/y)]").unwrap(), "(x + y)/y");
     assert_eq!(
       interpret("Together[3 (1/(a - I x) + 1/(a + I x))]").unwrap(),
-      "(6*a)/(a^2 + x^2)"
+      "(6*a)/((a - I*x)*(a + I*x))"
     );
   }
 
@@ -18804,6 +18804,23 @@ mod cases {
     );
   }
   #[test]
+  fn together_shared_symbol_factor_of_product_denominators() {
+    // `e` occurs in both denominators once; it must not enter the common
+    // denominator twice (was `(3 e + 2 e p)/(e e (1 + p) (2 + p))`).
+    assert_case(
+      r#"Together[1/(e (2 + p)) + 1/(e (1 + p))]"#,
+      r#"(3 + 2*p)/(e*(1 + p)*(2 + p))"#,
+    );
+    assert_case(
+      r#"Together[1/((2 + p) e) + 1/(2 + p)^2]"#,
+      r#"(2 + e + p)/(e*(2 + p)^2)"#,
+    );
+    assert_case(
+      r#"Together[(-a + (a (1 + p))/(2 + p))/(e (-1 - p))]"#,
+      r#"a/(e*(1 + p)*(2 + p))"#,
+    );
+  }
+  #[test]
   fn find_maximum_constrained_large_erfc_objective() {
     // A big objective with nested `Erfc` terms and non-integer powers: the
     // constrained search stays on the compiled numeric path and skips the
@@ -24513,5 +24530,145 @@ mod solve_substitution_of_symbols {
       .unwrap(),
       "820"
     );
+  }
+}
+
+mod difference_root {
+  use super::*;
+
+  const FIB: &str = "DifferenceRoot[Function[{y, n}, {y[n + 2] == y[n + 1] + y[n], y[0] == 0, y[1] == 1}]]";
+
+  #[test]
+  fn values_forwards_backwards_and_listable() {
+    assert_eq!(
+      interpret(&format!(
+        "f = {FIB}; {{f[10], f[-3], f[100], f[{{1, 2, 3}}]}}"
+      ))
+      .unwrap(),
+      "{55, 2, 354224848179261915075, {1, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_and_inexact_arguments_stay_unevaluated() {
+    assert_eq!(
+      interpret(&format!("Head[{FIB}[k]]")).unwrap(),
+      "DifferenceRoot[Function[{\u{F818}, \u{F80D}}, {-\u{F818}[\u{F80D}] - \u{F818}[1 + \u{F80D}] + \u{F818}[2 + \u{F80D}] == 0, \u{F818}[0] == 0, \u{F818}[1] == 1}]]"
+    );
+    let r =
+      interpret_with_stdout(&format!("{FIB}[2.5] === {FIB}[2.5]")).unwrap();
+    assert_eq!(r.result, "True");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DifferenceRoot::exact: Argument 2.5 in DifferenceRoot is not an exact number."
+    )));
+    let r = interpret_with_stdout(&format!("{FIB}[1/2]; 0")).unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DifferenceRoot::int: Integer expected at position 1 in DifferenceRoot."
+    )));
+  }
+
+  #[test]
+  fn recurrence_is_normalized() {
+    // Shifted to start at y[n], denominators cleared, the polynomial
+    // content divided out, the top coefficient made positive, factored.
+    let normal = |eq: &str| {
+      interpret(&format!(
+        "DifferenceRoot[Function[{{y, n}}, {{{eq}, y[0] == 1}}]][[1, 2, 1]] /. {{\\[FormalY] -> y, \\[FormalN] -> n}}"
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      normal("y[n] == 2 y[n-1] + n"),
+      "-1 - n - 2*y[n] + y[1 + n] == 0"
+    );
+    assert_eq!(
+      normal("y[n+1] == n y[n+1]/2 + y[n]"),
+      "2*y[n] + (-2 + n)*y[1 + n] == 0"
+    );
+    assert_eq!(
+      normal("y[n+1]/3 == y[n]/2 + 1/5"),
+      "-6 - 15*y[n] + 10*y[1 + n] == 0"
+    );
+    assert_eq!(
+      normal("(n+1)^2 y[n+1] == (n^2+2n+1) y[n]"),
+      "-y[n] + y[1 + n] == 0"
+    );
+    assert_eq!(
+      normal("y[n+1] == a (n+1)^2 y[n] + b (n+1)^2 y[n]"),
+      "-((a + b)*(1 + n)^2*y[n]) + y[1 + n] == 0"
+    );
+    assert_eq!(
+      normal("y[n] == y[n-1] (n+1)/(n+2)"),
+      "(-2 - n)*y[n] + (3 + n)*y[1 + n] == 0"
+    );
+  }
+
+  #[test]
+  fn symbolic_coefficients_and_singular_points() {
+    assert_eq!(
+      interpret("DifferenceRoot[Function[{y, n}, {(n+1) y[n + 1] == a y[n], y[0] == 1}]][4]").unwrap(),
+      "a^4/24"
+    );
+    // Backwards across a vanishing coefficient of y[n + 1].
+    assert_eq!(
+      interpret(
+        "DifferenceRoot[Function[{y, n}, {n y[n+1] == y[n], y[1] == 1}]][0]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn too_few_initial_values_is_undefined() {
+    let r = interpret_with_stdout(
+      "DifferenceRoot[Function[{y, n}, {y[n + 2] == y[n], y[0] == 1}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "DifferenceRoot[Function[{y, n}, {y[n + 2] == y[n], y[0] == 1}]]"
+    );
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DifferenceRoot::undef: DifferenceRoot[Function[{y, n}, {y[n + 2] == y[n], y[0] == 1}]] does not define a suitable difference root object."
+    )));
+  }
+
+  #[test]
+  fn attributes() {
+    assert_eq!(
+      interpret("Attributes[DifferenceRoot]").unwrap(),
+      "{NHoldAll, Protected, ReadProtected}"
+    );
+  }
+}
+
+mod difference_root_invalid {
+  use super::*;
+
+  #[test]
+  fn nonlinear_recurrence_reports_ieqn() {
+    let r = interpret_with_stdout(
+      "DifferenceRoot[Function[{y, n}, {y[n + 1] == y[n]^2, y[0] == 1}]]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "DifferenceRoot[Function[{y, n}, {y[n + 1] == y[n]^2, y[0] == 1}]]"
+    );
+    assert!(r.warnings.iter().any(|w| w.starts_with(
+      "DifferenceRoot::ieqn: The supplied equation in Function[{y, n}, "
+    )));
+  }
+
+  #[test]
+  fn non_polynomial_coefficient_is_undefined() {
+    let r = interpret_with_stdout(
+      "DifferenceRoot[Function[{y, n}, {y[n + 1] == Sin[n] y[n], y[0] == 1}]]",
+    )
+    .unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "DifferenceRoot::undef: DifferenceRoot[Function[{y, n}, {y[n + 1] == Sin[n] y[n], y[0] == 1}]] does not define a suitable difference root object."
+    )));
   }
 }

@@ -2783,7 +2783,7 @@ MeanSquaredLossLayer,"",🚫,,11.0,2792
 TableView,"",🚫,,12.1,2792
 Tabular,"Represents a data frame or table of structured data",✅,pure,14.2,2792
 ButterflyGraph,"Butterfly graph",✅,1,8.0,2798
-DifferenceRoot,"",🚫,,7.0,2798
+DifferenceRoot,"The sequence defined by a linear recurrence with polynomial coefficients and initial values; evaluates at integer indices",✅,pure,7.0,2798
 ListPicker,"",🚫,,9.0,2798
 MeanAround,"Computes the mean and uncertainty of Around values",✅,pure,12.0,2798
 PeakDetect,"Detects peaks in a list of values with optional sharpness filtering",✅,pure,10.0,2798
@@ -3059,7 +3059,7 @@ GeologicalPeriodData,"",🚫,,10.0,3083
 ImageAlign,"",🚫,,8.0,3083
 MoleculePlot,"Draws the 2-D skeletal structure diagram of a molecule as a Graphics object",✅,pure,12.0,3083
 SchurDecomposition,"Real Schur decomposition {q; t} of a machine-precision square matrix with m == q . t . Transpose[q]; q is orthogonal and t quasi-upper-triangular (a 2x2 block per complex pair)",✅,pure,2.0,3083
-SpherePoints,"",,,11.1,3083
+SpherePoints,"n points spread evenly over the unit sphere (golden spiral; the tabulated optimal arrangements of small n are missing)",🚧,pure,11.1,3083
 ToSphericalCoordinates,"Converts Cartesian coordinates to spherical",✅,None,10.1,3083
 VectorColorFunctionScaling,"",,,7.0,3083
 ViewRange,"",🚫,,6.0,3083
@@ -6376,9 +6376,9 @@ GraphUtilities`ClosenessCentrality,"Closeness centrality of every vertex of a gr
 GraphUtilities`GraphCoordinates,"Vertex coordinates of a graph given as a list of rules in a 2D force-directed layout",✅,pure,8.0,
 GraphUtilities`GraphCoordinates3D,"Vertex coordinates of a graph given as a list of rules in a 3D force-directed layout",✅,pure,8.0,
 GraphUtilities`GraphPath,"Shortest path between two vertices of a graph given as a list of rules",✅,pure,8.0,
-GraphUtilities`HamiltonianCycles,"Hamiltonian cycle of a graph given as a list of rules as a vertex list (only one cycle is reported)",🚧,pure,8.0,
+GraphUtilities`HamiltonianCycles,"Up to n (or All) Hamiltonian cycles of a rule list or Graph or Combinatorica graph or adjacency matrix in the package search order",✅,pure,8.0,
 MultivariateStatistics`EllipsoidQuantile,"Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance]",✅,pure,8.0,
-Combinatorica`FromUnorderedPairs,"Builds a Combinatorica graph with one edge per distinct vertex pair on a circular embedding",✅,pure,6.0,
+Combinatorica`FromUnorderedPairs,"Builds a Combinatorica graph with one edge per (sorted) vertex pair on a circular embedding",✅,pure,6.0,
 Combinatorica`FromOrderedPairs,"Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding",✅,pure,6.0,
 Combinatorica`SetGraphOptions,"Sets options on vertices or edges or the whole of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`StableMarriage,"Man-optimal stable matching from men's and women's preference lists (Gale-Shapley)",✅,pure,6.0,
@@ -6390,6 +6390,9 @@ Combinatorica`CyclicGroup,"The n rotations of Range[n] as the elements of the cy
 Combinatorica`DihedralGroup,"The rotations of Range[n] and their reversals as the elements of the dihedral group",✅,pure,6.0,
 Combinatorica`V,"Number of vertices of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`RandomGraph,"Combinatorica graph with each vertex pair an edge with probability p",✅,contextual,6.0,
+Combinatorica`ExactRandomGraph,"Combinatorica graph on n vertices with exactly e edges drawn uniformly from all vertex pairs",✅,contextual,6.0,
+Combinatorica`DeleteEdges,"A Combinatorica graph with one edge (or with All every edge) per named vertex pair removed",✅,pure,6.0,
+Combinatorica`AllPairsShortestPath,"Matrix of shortest-path lengths between all vertices of a weighted Combinatorica graph",✅,pure,6.0,
 Combinatorica`KSubsets,"The k-element subsets of a list (Subsets[l {k}])",✅,pure,6.0,
 Combinatorica`KSetPartitions,"The partitions of a list (or Range[n]) into k nonempty blocks",✅,pure,6.0,
 Combinatorica`ToAdjacencyMatrix,"Adjacency matrix of a Combinatorica graph",✅,pure,6.0,
@@ -6421,3 +6424,23 @@ HypothesisTesting`StudentTPValue,"Legacy Student t p-value as an OneSidedPValue 
 HypothesisTesting`ChiSquarePValue,"Legacy chi-square p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule",✅,pure,1.0,
 HypothesisTesting`FRatioPValue,"Legacy F-ratio p-value (smaller tail) as an OneSidedPValue (or TwoSidedPValue) rule",✅,pure,1.0,
 DualLinearProgramming,"Solves a linear program and its dual giving the primal solution and the dual variables of the constraints and of the lower and upper bounds",✅,pure,6.0,
+Combinatorica`RandomSubset,"A uniformly random subset of a list (or of Range[n]) in the list's order",✅,pure,6.0,
+Combinatorica`ToCycles,"The cycles of a permutation list; each started from its smallest unvisited point",✅,pure,6.0,
+Combinatorica`Orbits,"The orbits of the elements of a list under a group of permutations acting by Permute",✅,pure,6.0,
+Combinatorica`OrbitRepresentatives,"One representative (the first) of each orbit of the elements of a list under a group of permutations",✅,pure,6.0,
+GraphUtilities`WeakComponents,"Weakly connected components of a rule list or Graph or Combinatorica graph in vertex order",✅,pure,6.0,
+VectorFieldPlots`VectorFieldPlot,"Legacy package function: arrows of a vector field sampled on a grid as Graphics",✅,pure,6.0,
+VectorFieldPlots`ListVectorFieldPlot,"Legacy package function: arrows from {base vector} pairs or a matrix of vectors as Graphics",✅,pure,6.0,
+VectorFieldPlots`GradientFieldPlot,"Legacy package function: the gradient field of a scalar function as arrows",✅,pure,6.0,
+VectorFieldPlots`HamiltonianFieldPlot,"Legacy package function: the Hamiltonian field of a scalar function as arrows",✅,pure,6.0,
+VectorFieldPlots`PolyaFieldPlot,"Legacy package function: the Polya field {Re[f] -Im[f]} of a complex function as log-scaled arrows",✅,pure,6.0,
+Combinatorica`FromCycles,"The permutation sending each element of a cycle to the next one",✅,pure,6.0,
+Combinatorica`PermutationWithCycle,"The size-n permutation with one given cycle and every other point fixed",✅,pure,6.0,
+Combinatorica`CompleteGraph,"The complete Combinatorica graph on n vertices on the circular embedding",✅,pure,6.0,
+Combinatorica`GridGraph,"The n by m grid graph as the product of two paths with vertex k at its grid point",✅,pure,6.0,
+Combinatorica`InduceSubgraph,"The subgraph of a Combinatorica graph induced by a vertex set with its vertices renumbered",✅,pure,6.0,
+Combinatorica`ListGraphs,"One Combinatorica graph per isomorphism class of graphs with n vertices (and m edges)",✅,pure,6.0,
+Combinatorica`CodeToLabeledTree,"The labeled tree with a given Pruefer code",✅,pure,6.0,
+Combinatorica`RadialEmbedding,"A Combinatorica graph with its vertices laid out breadth first around a center",✅,pure,6.0,
+Combinatorica`ConnectedQ,"Whether a Combinatorica graph is (weakly or strongly) connected",✅,pure,6.0,
+Combinatorica`Vertices,"The vertex coordinates of a Combinatorica graph (with All the vertices with their options)",✅,pure,6.0,

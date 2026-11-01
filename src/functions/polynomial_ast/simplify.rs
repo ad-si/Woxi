@@ -5216,10 +5216,14 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
   // form, the same way the Factor candidate below prefers `3*(1 + a)` over
   // `3 + 3*a` — `Simplify[E^x + E^(2 x)]` is `E^x*(1 + E^x)` in
   // wolframscript, both costing the same.
-  if let Some(regrouped) = factor_exponential_sum(&simplified)
-    && wl_simplify_count(&regrouped) <= wl_simplify_count(&simplified)
-  {
-    return regrouped;
+  // The input itself is regrouped too: `simplify_expr` may already have
+  // combined the sum over a common denominator, which hides the exponentials.
+  for source in [&simplified, expr] {
+    if let Some(regrouped) = factor_exponential_sum(source)
+      && wl_simplify_count(&regrouped) <= wl_simplify_count(&simplified)
+    {
+      return regrouped;
+    }
   }
   // The SimplifyCount candidate selection's rational-prefactor display
   // (-1/5*(2+4x)/x, Simplify[(-2-4x)/(5x)]) is FINAL: the leaf-count

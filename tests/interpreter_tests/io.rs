@@ -2254,6 +2254,69 @@ mod export_string {
     assert_eq!(result, "\"a\",\"b\"\n\"c\",\"d\"\n");
   }
 
+  // A column of one kind (machine integers, machine reals or booleans) is
+  // written bare; a column mixing kinds is quoted cell by cell as text. A
+  // first row of strings over string-free rows is a header, left out of the
+  // typing. Ragged rows go cell by cell.
+  #[test]
+  fn export_string_csv_quotes_mixed_columns() {
+    clear_state();
+    let csv = |data: &str| {
+      interpret(&format!("ExportString[{data}, \"CSV\"]")).unwrap()
+    };
+    assert_eq!(csv("{{1, 2}, {3, \"a\"}}"), "1,\"2\"\n3,\"a\"\n");
+    assert_eq!(csv("{{1, 2.5}, {3, 4}}"), "1,\"2.5\"\n3,\"4\"\n");
+    assert_eq!(csv("{{1.5, 2}, {2.5, 3}}"), "1.5,2\n2.5,3\n");
+    assert_eq!(csv("{{1, True}, {2, 3}}"), "1,\"True\"\n2,\"3\"\n");
+    assert_eq!(csv("{{True, 1}, {False, 2}}"), "true,1\nfalse,2\n");
+    assert_eq!(csv("{{\"h1\", \"h2\"}, {2, 3}}"), "\"h1\",\"h2\"\n2,3\n");
+    assert_eq!(
+      csv("{{\"h1\", \"h2\"}, {2, \"x\"}, {3, 4}}"),
+      "\"h1\",\"h2\"\n\"2\",\"x\"\n\"3\",\"4\"\n"
+    );
+    assert_eq!(csv("{{\"h\"}, {1}, {2.5}}"), "\"h\"\n\"1\"\n\"2.5\"\n");
+    assert_eq!(
+      csv("{{2^70, 1}, {3, 2}}"),
+      "\"1180591620717411303424\",1\n\"3\",2\n"
+    );
+    assert_eq!(csv("{{1, 2 + I}, {2, 3}}"), "1,\"2 + 1i\"\n2,\"3\"\n");
+    assert_eq!(csv("{{-I, 1.5 + 2 I}}"), "\"0 - 1i\",\"1.5 + 2.i\"\n");
+    assert_eq!(csv("{{1, \"b c\"}, {2, 3, 4}}"), "1,\"b c\"\n2,3,4\n");
+    assert_eq!(csv("{{1, True}, {2}}"), "1,\"True\"\n2\n");
+    assert_eq!(csv("{{1, 2^70}, {2}}"), "1,1180591620717411303424\n2\n");
+    assert_eq!(csv("{\"a\", 1}"), "\"a\"\n1\n");
+  }
+
+  // Export writes a text format exactly as ExportString renders it.
+  #[test]
+  fn export_text_formats_to_files() {
+    clear_state();
+    for (name, data, expected) in [
+      ("t.csv", "{{1, 2}, {3, \"a\"}}", "1,\"2\"\n3,\"a\"\n"),
+      ("t.txt", "{1, 2}", "1\n2"),
+      ("t.json", "<|\"a\" -> {1}|>", "{\n\t\"a\":[\n\t\t1\n\t]\n}"),
+      ("t.tsv", "{{1, 2}}", "1\t2\n"),
+      ("t.dat", "{{1, 2}, {3, 4}}", "1\t2\n3\t4"),
+      (
+        "t.m",
+        "{1, x^2}",
+        "(* Created with the Wolfram Language : www.wolfram.com *)\n{1, x^2}\n",
+      ),
+    ] {
+      let path = temp_file(&format!("woxi_test_export_{name}"));
+      assert_eq!(
+        interpret(&format!("Export[\"{path}\", {data}]")).unwrap(),
+        path
+      );
+      assert_eq!(std::fs::read_to_string(&path).unwrap(), expected, "{name}");
+      std::fs::remove_file(path).ok();
+    }
+    let path = temp_file("woxi_test_export_explicit.out");
+    interpret(&format!("Export[\"{path}\", {{1, 2}}, \"JSON\"]")).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "[\n\t1,\n\t2\n]");
+    std::fs::remove_file(path).ok();
+  }
+
   #[test]
   fn export_string_csv_string_with_embedded_quote() {
     clear_state();

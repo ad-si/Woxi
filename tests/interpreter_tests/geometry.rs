@@ -10182,3 +10182,24 @@ mod formal_letter_order {
     );
   }
 }
+
+mod sphere_points {
+  use super::*;
+
+  // The golden spiral: z = -1 + (2k + 1)/(n + 2) exactly, longitude k times
+  // the golden angle (x and y to within an ulp or two of wolframscript).
+  #[test]
+  fn golden_spiral() {
+    assert_eq!(
+      interpret(
+        "p = SpherePoints[300]; {Length[p], p[[1, 3]], p[[-1, 3]], \
+          Max[Abs[Norm /@ p - 1]] < 10^-12, \
+          Max[Abs[p[[1]] - {-0.10367540102243458, 0.09497515995906641, -0.9900662251655629}]] < 10^-15, \
+          Max[Abs[p[[300]] - {-0.11880702155436285, -0.07519149829464791, 0.9900662251655629}]] < 10^-15, \
+          SpherePoints[1]}"
+      )
+      .unwrap(),
+      "{300, -0.9900662251655629, 0.9900662251655629, True, True, True, {{1., 0., 0.}}}"
+    );
+  }
+}
