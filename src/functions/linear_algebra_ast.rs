@@ -3701,7 +3701,7 @@ fn fit_symbolic_responses(
 /// - `{{v11, v12, …}, …} -> k`, whose `k`-th column is the response.
 ///
 /// `None` when `data` is in none of these forms (it is then used as given).
-fn fit_data_rows_from_rules(data: &Expr) -> Option<Expr> {
+fn rule_form_fit_data(data: &Expr) -> Option<Expr> {
   let row = |x: &Expr, y: &Expr| -> Expr {
     let mut items = match x {
       Expr::List(xs) => xs.to_vec(),
@@ -3770,9 +3770,9 @@ fn fit_data_rows_from_rules(data: &Expr) -> Option<Expr> {
 }
 
 /// `args` with its data argument (the first) rewritten by
-/// [`fit_data_rows_from_rules`], or `None` when it needs no rewriting.
-fn with_fit_data_rows(args: &[Expr]) -> Option<Vec<Expr>> {
-  let rows = fit_data_rows_from_rules(args.first()?)?;
+/// [`rule_form_fit_data`], or `None` when it needs no rewriting.
+fn with_row_fit_data(args: &[Expr]) -> Option<Vec<Expr>> {
+  let rows = rule_form_fit_data(args.first()?)?;
   let mut out = args.to_vec();
   out[0] = rows;
   Some(out)
@@ -10257,7 +10257,7 @@ fn triangularize_ast(args: &[Expr], upper: bool) -> Expr {
 /// - Converted with Normal: `Normal[lm]` returns the fitted expression
 pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() >= 3
-    && let Some(rewritten) = with_fit_data_rows(args)
+    && let Some(rewritten) = with_row_fit_data(args)
   {
     let fitted = linear_model_fit_ast(&rewritten)?;
     return Ok(match fitted {
@@ -11279,7 +11279,7 @@ pub fn nonlinear_model_fit_ast(
   if args.len() < 4 {
     return uneval();
   }
-  if let Some(rewritten) = with_fit_data_rows(args) {
+  if let Some(rewritten) = with_row_fit_data(args) {
     let fitted = nonlinear_model_fit_ast(&rewritten)?;
     return match fitted {
       Expr::FunctionCall { ref name, .. } if name == "NonlinearModelFit" => {
@@ -13679,6 +13679,8 @@ pub fn principal_components_ast(
 pub fn smith_decomposition_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{bigint_to_expr, expr_to_bigint};
+  use num_traits::{Signed, Zero};
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "SmithDecomposition expects exactly 1 argument".into(),
@@ -13689,7 +13691,13 @@ pub fn smith_decomposition_ast(
     return Ok(unevaluated("SmithDecomposition", args));
   };
 
-  let Some(int_matrix) = matrix_to_i128(&matrix) else {
+  // Entries are exact integers of any size: the elimination below runs on
+  // BigInt because the transformation matrices grow quickly.
+  let Some(int_matrix) = matrix
+    .iter()
+    .map(|row| row.iter().map(expr_to_bigint).collect::<Option<Vec<_>>>())
+    .collect::<Option<Vec<Vec<BigInt>>>>()
+  else {
     // Matches wolframscript: emit SmithDecomposition::latm when an
     // entry isn't a rational (integer-coefficient matrices satisfy
     // this trivially; non-integer rationals would otherwise need a
@@ -13706,30 +13714,27 @@ pub fn smith_decomposition_ast(
     return Ok(unevaluated("SmithDecomposition", args));
   }
 
-  let mut s: Vec<Vec<i128>> = int_matrix;
-  let mut u: Vec<Vec<i128>> = identity_i128(nrows);
-  let mut v: Vec<Vec<i128>> = identity_i128(ncols);
+  let mut s: Vec<Vec<BigInt>> = int_matrix;
+  let mut u: Vec<Vec<BigInt>> = identity_bigint(nrows);
+  let mut v: Vec<Vec<BigInt>> = identity_bigint(ncols);
 
   let min_dim = nrows.min(ncols);
 
   for k in 0..min_dim {
     loop {
       // Find smallest nonzero absolute value in submatrix s[k..][k..]
-      let mut pivot_r = k;
-      let mut pivot_c = k;
-      let mut pivot_val = 0i128;
-      for i in k..nrows {
-        for j in k..ncols {
-          if s[i][j] != 0 && (pivot_val == 0 || s[i][j].abs() < pivot_val) {
-            pivot_val = s[i][j].abs();
-            pivot_r = i;
-            pivot_c = j;
+      let mut pivot: Option<(usize, usize, BigInt)> = None;
+      for (i, row) in s.iter().enumerate().skip(k) {
+        for (j, x) in row.iter().enumerate().skip(k) {
+          if !x.is_zero() && pivot.as_ref().is_none_or(|(_, _, p)| x.abs() < *p)
+          {
+            pivot = Some((i, j, x.abs()));
           }
         }
       }
-      if pivot_val == 0 {
+      let Some((pivot_r, pivot_c, _)) = pivot else {
         break;
-      }
+      };
 
       // Move pivot to (k, k)
       if pivot_r != k {
@@ -13746,27 +13751,29 @@ pub fn smith_decomposition_ast(
       }
 
       // Ensure positive
-      if s[k][k] < 0 {
-        for j in 0..ncols {
-          s[k][j] = -s[k][j];
+      if s[k][k].is_negative() {
+        for x in &mut s[k] {
+          *x = -&*x;
         }
-        for j in 0..nrows {
-          u[k][j] = -u[k][j];
+        for x in &mut u[k] {
+          *x = -&*x;
         }
       }
 
       // Eliminate column k
       let mut changed = false;
       for i in (k + 1)..nrows {
-        if s[i][k] != 0 {
-          let q = s[i][k] / s[k][k];
+        if !s[i][k].is_zero() {
+          let q = &s[i][k] / &s[k][k];
           for j in 0..ncols {
-            s[i][j] -= q * s[k][j];
+            let t = &q * &s[k][j];
+            s[i][j] -= t;
           }
           for j in 0..nrows {
-            u[i][j] -= q * u[k][j];
+            let t = &q * &u[k][j];
+            u[i][j] -= t;
           }
-          if s[i][k] != 0 {
+          if !s[i][k].is_zero() {
             changed = true;
           }
         }
@@ -13774,15 +13781,17 @@ pub fn smith_decomposition_ast(
 
       // Eliminate row k
       for j in (k + 1)..ncols {
-        if s[k][j] != 0 {
-          let q = s[k][j] / s[k][k];
-          for i in 0..nrows {
-            s[i][j] -= q * s[i][k];
+        if !s[k][j].is_zero() {
+          let q = &s[k][j] / &s[k][k];
+          for row in &mut s {
+            let t = &q * &row[k];
+            row[j] -= t;
           }
-          for i in 0..ncols {
-            v[i][j] -= q * v[i][k];
+          for row in &mut v {
+            let t = &q * &row[k];
+            row[j] -= t;
           }
-          if s[k][j] != 0 {
+          if !s[k][j].is_zero() {
             changed = true;
           }
         }
@@ -13791,21 +13800,20 @@ pub fn smith_decomposition_ast(
       if !changed {
         // Check divisibility
         let mut all_divide = true;
-        for i in (k + 1)..nrows {
+        'outer: for i in (k + 1)..nrows {
           for j in (k + 1)..ncols {
-            if s[i][j] != 0 && s[i][j] % s[k][k] != 0 {
+            if !s[i][j].is_zero() && !(&s[i][j] % &s[k][k]).is_zero() {
               all_divide = false;
               for jj in 0..ncols {
-                s[k][jj] += s[i][jj];
+                let t = s[i][jj].clone();
+                s[k][jj] += t;
               }
               for jj in 0..nrows {
-                u[k][jj] += u[i][jj];
+                let t = u[i][jj].clone();
+                u[k][jj] += t;
               }
-              break;
+              break 'outer;
             }
-          }
-          if !all_divide {
-            break;
           }
         }
         if all_divide {
@@ -13815,31 +13823,21 @@ pub fn smith_decomposition_ast(
     }
   }
 
-  let u_expr = matrix_to_expr(
-    u.into_iter()
-      .map(|row| row.into_iter().map(Expr::Integer).collect())
-      .collect(),
-  );
-  let s_expr = matrix_to_expr(
-    s.into_iter()
-      .map(|row| row.into_iter().map(Expr::Integer).collect())
-      .collect(),
-  );
-  let v_expr = matrix_to_expr(
-    v.into_iter()
-      .map(|row| row.into_iter().map(Expr::Integer).collect())
-      .collect(),
-  );
+  let to_expr = |m: Vec<Vec<BigInt>>| {
+    matrix_to_expr(
+      m.into_iter()
+        .map(|row| row.into_iter().map(bigint_to_expr).collect())
+        .collect(),
+    )
+  };
 
-  Ok(Expr::List(vec![u_expr, s_expr, v_expr].into()))
+  Ok(Expr::List(vec![to_expr(u), to_expr(s), to_expr(v)].into()))
 }
 
-fn identity_i128(n: usize) -> Vec<Vec<i128>> {
-  let mut m = vec![vec![0i128; n]; n];
-  for i in 0..n {
-    m[i][i] = 1;
-  }
-  m
+fn identity_bigint(n: usize) -> Vec<Vec<BigInt>> {
+  (0..n)
+    .map(|i| (0..n).map(|j| BigInt::from(u8::from(i == j))).collect())
+    .collect()
 }
 
 /// TensorWedge[v1, v2, ...] — exterior (wedge) product of vectors/tensors.
@@ -16119,13 +16117,16 @@ pub fn coordinate_transform_data_ast(
 pub fn hermite_decomposition_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  use crate::functions::math_ast::{bigint_to_expr, expr_to_bigint};
+  use num_traits::{One, Signed, Zero};
   let unevaluated = || unevaluated("HermiteDecomposition", args);
-  // Parse an integer matrix
+  // Parse an integer matrix; the elimination runs on BigInt because the
+  // transformation matrix grows quickly.
   let rows = match &args[0] {
     Expr::List(rows) if !rows.is_empty() => rows,
     _ => return Ok(unevaluated()),
   };
-  let mut m: Vec<Vec<i128>> = Vec::with_capacity(rows.len());
+  let mut m: Vec<Vec<BigInt>> = Vec::with_capacity(rows.len());
   let mut width: Option<usize> = None;
   for r in rows {
     let Expr::List(cells) = r else {
@@ -16137,7 +16138,9 @@ pub fn hermite_decomposition_ast(
     let mut row = Vec::with_capacity(cells.len());
     for c in cells {
       match c {
-        Expr::Integer(v) => row.push(*v),
+        Expr::Integer(_) | Expr::BigInteger(_) => {
+          row.push(expr_to_bigint(c).unwrap());
+        }
         _ => return Ok(unevaluated()),
       }
     }
@@ -16149,9 +16152,22 @@ pub fn hermite_decomposition_ast(
     return Ok(unevaluated());
   }
 
+  // Euclidean quotient: a - q*p lies in [0, |p|)
+  let div_euclid = |a: &BigInt, p: &BigInt| -> BigInt {
+    let mut q = a / p;
+    if (a - &q * p).is_negative() {
+      if p.is_positive() {
+        q -= BigInt::one();
+      } else {
+        q += BigInt::one();
+      }
+    }
+    q
+  };
+
   // u starts as the identity and tracks every row operation
-  let mut u: Vec<Vec<i128>> = (0..nrows)
-    .map(|i| (0..nrows).map(|j| i128::from(i == j)).collect())
+  let mut u: Vec<Vec<BigInt>> = (0..nrows)
+    .map(|i| (0..nrows).map(|j| BigInt::from(u8::from(i == j))).collect())
     .collect();
   let mut h = m;
 
@@ -16166,10 +16182,8 @@ pub fn hermite_decomposition_ast(
       // Row with the smallest nonzero |entry| in this column
       let mut best: Option<usize> = None;
       for r in pivot_row..nrows {
-        if h[r][col] != 0
-          && best.is_none_or(|b: usize| {
-            h[r][col].unsigned_abs() < h[b][col].unsigned_abs()
-          })
+        if !h[r][col].is_zero()
+          && best.is_none_or(|b: usize| h[r][col].abs() < h[b][col].abs())
         {
           best = Some(r);
         }
@@ -16181,18 +16195,20 @@ pub fn hermite_decomposition_ast(
         h.swap(b, pivot_row);
         u.swap(b, pivot_row);
       }
-      let p = h[pivot_row][col];
+      let p = h[pivot_row][col].clone();
       let mut done = true;
       for r in (pivot_row + 1)..nrows {
-        if h[r][col] != 0 {
-          let q = h[r][col].div_euclid(p);
+        if !h[r][col].is_zero() {
+          let q = div_euclid(&h[r][col], &p);
           for c in 0..ncols {
-            h[r][c] -= q * h[pivot_row][c];
+            let t = &q * &h[pivot_row][c];
+            h[r][c] -= t;
           }
           for c in 0..nrows {
-            u[r][c] -= q * u[pivot_row][c];
+            let t = &q * &u[pivot_row][c];
+            u[r][c] -= t;
           }
-          if h[r][col] != 0 {
+          if !h[r][col].is_zero() {
             done = false;
           }
         }
@@ -16201,42 +16217,44 @@ pub fn hermite_decomposition_ast(
         break;
       }
     }
-    if h[pivot_row][col] == 0 {
+    if h[pivot_row][col].is_zero() {
       continue;
     }
     // Positive pivot
-    if h[pivot_row][col] < 0 {
-      for c in 0..ncols {
-        h[pivot_row][c] = -h[pivot_row][c];
+    if h[pivot_row][col].is_negative() {
+      for x in &mut h[pivot_row] {
+        *x = -&*x;
       }
-      for c in 0..nrows {
-        u[pivot_row][c] = -u[pivot_row][c];
+      for x in &mut u[pivot_row] {
+        *x = -&*x;
       }
     }
     // Reduce the entries above the pivot into [0, pivot)
-    let p = h[pivot_row][col];
+    let p = h[pivot_row][col].clone();
     for r in 0..pivot_row {
-      let q = h[r][col].div_euclid(p);
-      if q != 0 {
+      let q = div_euclid(&h[r][col], &p);
+      if !q.is_zero() {
         for c in 0..ncols {
-          h[r][c] -= q * h[pivot_row][c];
+          let t = &q * &h[pivot_row][c];
+          h[r][c] -= t;
         }
         for c in 0..nrows {
-          u[r][c] -= q * u[pivot_row][c];
+          let t = &q * &u[pivot_row][c];
+          u[r][c] -= t;
         }
       }
     }
     pivot_row += 1;
   }
 
-  let to_matrix = |m: &[Vec<i128>]| {
+  let to_matrix = |m: Vec<Vec<BigInt>>| {
     Expr::List(
-      m.iter()
+      m.into_iter()
         .map(|row| {
           Expr::List(
             row
-              .iter()
-              .map(|&v| Expr::Integer(v))
+              .into_iter()
+              .map(bigint_to_expr)
               .collect::<Vec<_>>()
               .into(),
           )
@@ -16245,7 +16263,7 @@ pub fn hermite_decomposition_ast(
         .into(),
     )
   };
-  Ok(Expr::List(vec![to_matrix(&u), to_matrix(&h)].into()))
+  Ok(Expr::List(vec![to_matrix(u), to_matrix(h)].into()))
 }
 
 // ─── Modulus -> m support for Det / Inverse / RowReduce / NullSpace /

@@ -713,6 +713,16 @@ in WL, which keeps integer coefficients.
 
 ## Numeric precision and floating point
 
+### Machine Cos/Sin last-bit differences
+
+Machine `Cos`/`Sin` call the platform libm, so their last bit depends on the
+OS. glibc rounds `Cos[2.0943951023931953]` (`N[2 Pi/3]`) correctly to
+`-0.4999999999999998`, while wolframscript — like Apple's libm — gives
+`-0.49999999999999983`, one ulp away (the exact cosine is
+`-0.4999999999999998010…`). Combinatorica's `CircularEmbedding` coordinates
+(`CompleteGraph[3]`, …) show it on Linux. Matching Wolfram everywhere would
+need its own trigonometric kernel.
+
 ### `SpherePoints` differs in the last bit, and small `n` is missing
 
 `SpherePoints[n]` lays the points on the golden spiral Wolfram uses (the same

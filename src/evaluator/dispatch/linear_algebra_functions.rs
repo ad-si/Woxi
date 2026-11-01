@@ -516,7 +516,9 @@ pub fn dispatch_linear_algebra_functions(
     // IdentityMatrix[n, type] with an unsupported structural type (neither a
     // list nor SparseArray) stays unevaluated with wolframscript's message.
     "IdentityMatrix"
-      if args.len() == 2 && !matches!(&args[1], Expr::List(_)) =>
+      if args.len() == 2
+        && !matches!(&args[1], Expr::List(_))
+        && option_rule_value(&args[1], "TargetStructure").is_none() =>
     {
       let call = unevaluated("IdentityMatrix", args);
       crate::emit_message(&format!(
@@ -579,9 +581,10 @@ pub fn dispatch_linear_algebra_functions(
     }
     // f[…, TargetStructure -> "Dense" | "Sparse" | Automatic]: the result
     // of the plain call, expanded to a list or wrapped in a SparseArray.
-    "DiagonalMatrix" | "UpperTriangularize" | "LowerTriangularize"
-    | "CompanionMatrix" | "ToeplitzMatrix" | "HankelMatrix"
-    | "VandermondeMatrix" | "HadamardMatrix" | "RotationMatrix"
+    "IdentityMatrix" | "DiagonalMatrix" | "UpperTriangularize"
+    | "LowerTriangularize" | "CompanionMatrix" | "ToeplitzMatrix"
+    | "HankelMatrix" | "VandermondeMatrix" | "HadamardMatrix"
+    | "RotationMatrix"
       if args.len() >= 2
         && option_rule_value(&args[args.len() - 1], "TargetStructure")
           .is_some() =>
