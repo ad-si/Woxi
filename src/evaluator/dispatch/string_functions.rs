@@ -5,6 +5,12 @@ pub fn dispatch_string_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // String functions accept BioSequence objects in place of strings.
+  if let Some(result) =
+    crate::functions::biosequence::dispatch_biosequence_string(name, args)
+  {
+    return Some(result);
+  }
   // The String* family refuses a first argument that is not a string (or a
   // list of strings, where it threads), rather than coercing it to its
   // printed form: `StringDelete[foo, "a"]` is not `"foo"`.

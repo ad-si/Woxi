@@ -6800,6 +6800,7 @@ dependencies = [
  "iced",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
+ "pdf-writer",
  "resvg",
  "rfd",
  "svg2pdf",

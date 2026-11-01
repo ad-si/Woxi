@@ -16,6 +16,7 @@ pub mod assessment_render;
 pub mod association_ast;
 pub mod astronomy_ast;
 pub mod audio_ast;
+pub mod biosequence;
 pub mod boolean_ast;
 pub mod calculus_ast;
 pub mod caputo_d;

@@ -65,12 +65,20 @@ pub fn format_highlight(
   highlight: &WolframHighlight,
   theme: &Theme,
 ) -> highlighter::Format<Font> {
-  let is_dark = !matches!(theme, Theme::Light);
+  highlighter::Format {
+    color: highlight_color(*highlight, !matches!(theme, Theme::Light)),
+    font: None,
+  }
+}
 
-  let color = match highlight {
-    WolframHighlight::Normal => {
-      return highlighter::Format::default();
-    }
+/// The color code of the given kind is drawn in, `None` for the editor's
+/// default text color.
+pub fn highlight_color(
+  highlight: WolframHighlight,
+  is_dark: bool,
+) -> Option<Color> {
+  Some(match highlight {
+    WolframHighlight::Normal => return None,
     // The comment grey reads well on both themes.
     WolframHighlight::Comment => Color::from_rgb(0.42, 0.45, 0.49),
     WolframHighlight::String => {
@@ -115,12 +123,7 @@ pub fn format_highlight(
         Color::from_rgb(0.89, 0.34, 0.29)
       }
     }
-  };
-
-  highlighter::Format {
-    color: Some(color),
-    font: None,
-  }
+  })
 }
 
 fn is_keyword(word: &str) -> bool {
@@ -162,7 +165,7 @@ fn is_keyword(word: &str) -> bool {
   )
 }
 
-fn tokenize_line(line: &str) -> Vec<(Range<usize>, WolframHighlight)> {
+pub fn tokenize_line(line: &str) -> Vec<(Range<usize>, WolframHighlight)> {
   let mut tokens = Vec::new();
   let bytes = line.as_bytes();
   let mut i = 0;

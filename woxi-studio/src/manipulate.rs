@@ -13,7 +13,8 @@ use woxi::functions::graphics::{
   DisplayNode, LabelRun, ManipulateControl, ManipulateSpec,
   apply_manipulate_mutations, build_manipulate_display, extract_animator_spec,
   extract_click_pane_spec, extract_control_spec, extract_list_animate_spec,
-  extract_locator_pane_spec, extract_manipulate_spec, read_manipulate_state,
+  extract_locator_pane_spec, extract_manipulate_spec, extract_slide_view_spec,
+  read_manipulate_state,
 };
 use woxi::syntax::Expr;
 
@@ -679,12 +680,14 @@ impl ManipulateState {
   /// the caller should fall back to the normal text/graphics path).
   pub fn from_expr(expr: &Expr) -> Option<Self> {
     // Manipulate/Animate, a standalone Control/Animator, a ListAnimate frame
-    // list, or a LocatorPane/ClickPane all back an interactive widget. The
+    // list, a SlideView, or a LocatorPane/ClickPane all back an interactive
+    // widget. The
     // animated ones (Animate/ListAnimate/Animator) auto-play: the app's
     // animation-tick subscription advances them while `playing` is set.
     let spec = extract_manipulate_spec(expr)
       .or_else(|| extract_control_spec(expr))
       .or_else(|| extract_list_animate_spec(expr))
+      .or_else(|| extract_slide_view_spec(expr))
       .or_else(|| extract_animator_spec(expr))
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;
@@ -1354,6 +1357,17 @@ impl ManipulateState {
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
     self.reevaluate_inner(true);
+  }
+
+  /// The SVG of the widget's current rendering, when it drew a graphic.
+  pub fn current_svg(&self) -> Option<&str> {
+    self
+      .last_render
+      .as_ref()?
+      .as_ref()
+      .ok()?
+      .graphics
+      .as_deref()
   }
 
   /// Evaluate the body once for the current control values and return the

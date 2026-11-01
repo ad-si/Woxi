@@ -578,6 +578,9 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::ceiling_ast(args));
     }
     "Round" if args.len() == 1 || args.len() == 2 => {
+      if let Some(r) = odd_function_rewrite(name, args) {
+        return Some(r);
+      }
       return Some(crate::functions::math_ast::round_ast(args));
     }
     "Mod" if args.len() == 2 => {
@@ -3581,9 +3584,15 @@ pub fn dispatch_math_functions(
       return Some(crate::functions::math_ast::integer_exponent_ast(args));
     }
     "IntegerPart" if args.len() == 1 => {
+      if let Some(r) = odd_function_rewrite(name, args) {
+        return Some(r);
+      }
       return Some(crate::functions::math_ast::integer_part_ast(args));
     }
     "FractionalPart" if args.len() == 1 => {
+      if let Some(r) = odd_function_rewrite(name, args) {
+        return Some(r);
+      }
       return Some(crate::functions::math_ast::fractional_part_ast(args));
     }
     "MixedFractionParts" if args.len() == 1 => {
@@ -8431,5 +8440,36 @@ fn random_variate_working_precision(
       flat,
       Expr::List(dims.into_iter().map(Expr::Integer).collect()),
     ],
+  ))
+}
+
+/// `f[-x]` → `-f[x]` for the odd one-argument functions `Round`,
+/// `IntegerPart` and `FractionalPart` on a symbolic negated argument (`-x`,
+/// `-2 x`, `-x/3`). Number literals keep their direct numeric paths.
+fn odd_function_rewrite(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1
+    || matches!(
+      &args[0],
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    )
+    || matches!(&args[0], Expr::FunctionCall { name: r, .. } if r == "Rational" || r == "Complex")
+    || crate::functions::math_ast::try_eval_to_f64(&args[0]).is_some()
+  {
+    return None;
+  }
+  let pos = crate::functions::math_ast::strip_negation(&args[0])?;
+  let inner = match crate::evaluator::evaluate_function_call_ast(name, &[pos]) {
+    Ok(e) => e,
+    Err(e) => return Some(Err(e)),
+  };
+  Some(crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[Expr::Integer(-1), inner],
   ))
 }

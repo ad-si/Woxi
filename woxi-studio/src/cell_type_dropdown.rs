@@ -35,6 +35,8 @@ const ICON_TERMINAL: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24
 const ICON_BOOK_OPEN: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>"#;
 const ICON_BOOK: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></svg>"#;
 const ICON_LIST: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/></svg>"#;
+/// Lucide "presentation": a projector screen, for slide breaks.
+pub const ICON_PRESENTATION: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg>"#;
 const ICON_LIST_TREE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-8"/><path d="M21 6H8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg>"#;
 
 pub fn cell_style_icon(style: CellStyle) -> &'static str {
@@ -53,6 +55,16 @@ pub fn cell_style_icon(style: CellStyle) -> &'static str {
     CellStyle::Output => ICON_RECTANGLE_ELLIPSIS,
     CellStyle::Code => ICON_FILE_BRACES,
     CellStyle::Print => ICON_TERMINAL,
+    CellStyle::SlideShowNavigationBar => ICON_PRESENTATION,
+  }
+}
+
+/// The menu entry for a cell style: its Wolfram style name, except for the
+/// slide break, whose `SlideShowNavigationBar` would not fit the menu.
+pub fn cell_style_label(style: CellStyle) -> &'static str {
+  match style {
+    CellStyle::SlideShowNavigationBar => "Slide Break",
+    _ => style.as_str(),
   }
 }
 
@@ -480,7 +492,7 @@ impl<Message: Clone> overlay::Overlay<Message, Theme, iced::Renderer>
 
       renderer.fill_text(
         Text {
-          content: style.as_str().to_string(),
+          content: cell_style_label(style).to_string(),
           bounds: Size::new(
             item_bounds.width
               - ITEM_PADDING_X * 2.0
