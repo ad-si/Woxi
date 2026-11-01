@@ -6100,18 +6100,14 @@ mod inverse_weierstrass_p {
 
   #[test]
   fn roundtrip_form1() {
-    // WeierstrassP[0.5, {4, 0}] ≈ 4.050208734712057
-    // InverseWeierstrassP[4.050208734712057, {4.0, 0.0}] should return {u, p'}
-    // where u ≈ 0.5
-    let result =
-      interpret("InverseWeierstrassP[4.050208734712057, {4.0, 0.0}]").unwrap();
-    // result is a list {u, pp}
-    assert!(result.starts_with('{'), "expected list, got {result}");
-    let inner = &result[1..result.len() - 1];
-    let parts: Vec<&str> = inner.split(", ").collect();
-    assert_eq!(parts.len(), 2, "expected 2 elements, got {parts:?}");
-    let u: f64 = parts[0].parse().unwrap();
-    assert!((u.abs() - 0.5).abs() < 1e-4, "expected |u| ≈ 0.5, got {u}");
+    // WeierstrassP[0.5, {4, 0}] ≈ 4.050208734712057, so InverseWeierstrassP
+    // returns a u (a lattice point away from ±0.5) with ℘(u) = p.
+    let result = interpret(
+      "WeierstrassP[InverseWeierstrassP[4.050208734712057, {4.0, 0.0}], {4.0, 0.0}]",
+    )
+    .unwrap();
+    let p: f64 = result.parse().unwrap();
+    assert!((p - 4.050208734712057).abs() < 1e-8, "got {result}");
   }
 
   #[test]

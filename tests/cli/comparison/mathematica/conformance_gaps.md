@@ -2876,12 +2876,12 @@ terms where WL puts it right after the constant.
 symbolic `CarlsonRC[y, y]` needs a `Piecewise` — both unimplemented, so Woxi
 echoes. `CarlsonRK` and `CarlsonRM` are unimplemented outright.
 
-`InverseWeierstrassP` is **broken**: `InverseWeierstrassP[0.5, {1,2}]` returns a
-garbage real pair `{-109.5, -39.3}` where WL returns a scalar complex
-`1.308 + 0.469 I`. The correct route is
-`℘⁻¹(p) = CarlsonRF[p-e1, p-e2, p-e3]`, but WL's representative selection is not
-a simple sign or conjugate of it — for one probe it is the conjugate, for
-another it differs by a lattice period. Picking it needs the period lattice.
+`InverseWeierstrassP[p, {g2, g3}]` is `-CarlsonRF[p-e1, p-e2, p-e3]`, moved one
+real period right when its real part lies left of `-ω/2` (real invariants).
+That representative rule was fitted to the nine reference-page values; it is
+unverified for three real roots and for complex invariants beyond the one page
+example. `N[InverseWeierstrassP[1/3, {1, 2}], 50]` needs complex
+arbitrary-precision `CarlsonRF` and stays at machine precision.
 
 ### Weierstrass and elliptic gaps
 
@@ -7066,3 +7066,33 @@ leaves these unevaluated:
   and several exponentials with rational bases are merged into one
   (`2^n 3^n` gives `6^n`, as `4^n/(1 + 2^n)` gives `2^n` on the page);
   wolframscript's form for these is unverified.
+
+## Special functions (parameter sweep, round 5)
+
+Verified against the reference pages, not fixed:
+
+- Inverse Jacobi functions with complex arguments: `InverseJacobiNC[0.2 - 0.3 I, 0.1 + 0.5 I]`
+  is `0.0756637 + 1.88568 I` in WL, `InverseJacobiNS[0.2 + I, 0.1 - 0.3 I]`
+  `-0.948949 + 3.22127 I` and `InverseJacobiDS[0.2 + I, 0.1 - 0.3 I]`
+  `2.15012 + 2.89165 I`. Woxi returns other valid inverses (`ns(u) = z` holds):
+  `NS` differs by the period `2 i K'`, and WL's choice of representative for
+  these three is not recoverable from the page. The other nine functions match
+  the page's complex examples.
+- Complex arbitrary-precision values are not implemented for the elliptic
+  core: `N[EllipticF[12/5, 3], 50]` (complex) and
+  `InverseJacobiDN[1/2, 0.5`32]` (complex, precision-tracked) come back as
+  machine numbers. Real values (`N[InverseJacobiCD[1/2, 1/2], 50]`,
+  `N[EllipticK[1/3], 50]`) and the real-axis `InverseJacobiDN`/`ND` values
+  (`K + i y`, `i y`) are arbitrary precision.
+- `CoulombG`/`CoulombH1`/`CoulombH2` at a half-integer order
+  (`N[CoulombG[1/2, 7, 1]]` is `1.4449801769045936*^6`) stay unevaluated: there
+  the reflection formula is 0/0 and the limit needs extra precision. Integer
+  orders use the outgoing-wave (`WhittakerW`) form, accurate only to ~1e-9
+  (`CoulombG[3, 0.12, 7.]` is `-1.0693069242936613` vs WL `-1.06930692292444`),
+  and only for real arguments: `CoulombH2[3, 4 + I, 0.8]` stays unevaluated.
+  No Coulomb function evaluates to arbitrary precision (`N[CoulombH1[3, 2, 5], 25]`).
+- `CosDegrees[90 - x]` is `SinDegrees[x]` in WL; Woxi keeps it, as
+  `90 Degree` does not reduce to `Pi/2`.
+- Arbitrary-precision `Coth[Around[...]]`-style uncertainties are machine only;
+  `Coth[Around[Sqrt[3], 0.1]]` differs from WL in the last two digits of the
+  uncertainty.
