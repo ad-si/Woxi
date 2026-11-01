@@ -493,6 +493,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_range: Option<((f64, f64), (f64, f64))> = None;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
+  let mut background: Option<Expr> = None;
 
   for opt in options {
     // A rule restored via `Uncompress` reconstructs as a plain
@@ -667,6 +668,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "ImageSize" => {
           image_size = Some(replacement.clone());
+        }
+        // `Background -> colour` fills the panel behind the drawing, as it
+        // does for `Graphics`.
+        "Background" => {
+          background = Some(replacement.clone());
         }
         "PlotRange" => {
           if let Expr::List(axes) = replacement
@@ -1406,6 +1412,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let mut graphics_args = vec![content, image_size_opt];
+  if let Some(bg) = background {
+    graphics_args.push(rule_expr(id_expr("Background"), bg));
+  }
   if let Some(range) =
     shown_range.or_else(|| flat_axis_plot_range(&positions, vertex_radius))
   {
