@@ -4,6 +4,18 @@ mod connected_components {
   use super::*;
 
   #[test]
+  fn empty_edge_list_is_the_empty_graph() {
+    assert_eq!(
+    interpret(
+      "{Graph[{}], EdgeList[Graph[{}]], VertexList[Graph[{}]], \
+        EdgeList[TransitiveClosureGraph[Graph[{}]]], ConnectedComponents[Graph[{}]]}"
+    )
+    .unwrap(),
+    "{Graph[<0>, <0>], {}, {}, {}, {}}"
+  );
+  }
+
+  #[test]
   fn undirected_two_components() {
     let result =
       interpret("ConnectedComponents[Graph[{1  2, 2  3, 4  5}]]").unwrap();

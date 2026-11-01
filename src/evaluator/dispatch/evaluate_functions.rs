@@ -5762,6 +5762,14 @@ fn evaluate_function_call_ast_inner(
 
   // Graph[{rule1, rule2, ...}] or Graph[{edge1, edge2, ...}]
   // → Graph[{sorted vertices}, {DirectedEdge/UndirectedEdge[...], ...}]
+  // `Graph[{}]` is the empty graph, `Graph[<0>, <0>]`.
+  if name == "Graph" && matches!(args, [Expr::List(items)] if items.is_empty())
+  {
+    return Ok(call(
+      "Graph",
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    ));
+  }
   if name == "Graph" {
     // Normalize TwoWayRule[a, b] (produced by the `<->` operator) to
     // UndirectedEdge[a, b] inside edge lists so all downstream edge
