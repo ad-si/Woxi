@@ -1191,13 +1191,13 @@ pub fn dispatch_image_functions(
     "GaussianMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_matrix_ast(args));
     }
-    "ImageConvolve" if args.len() == 2 => {
+    "ImageConvolve" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_convolve_ast(args));
     }
     "ImageDeconvolve" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_deconvolve_ast(args));
     }
-    "ImageCorrelate" if args.len() == 2 => {
+    "ImageCorrelate" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_correlate_ast(args));
     }
     "MedianFilter" if args.len() == 2 => {

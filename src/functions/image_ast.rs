@@ -3792,6 +3792,12 @@ fn image_pad_source(mode: &str, i: i64, len: i64) -> Option<i64> {
       Some(if m > len - 1 { period - m } else { m })
     }
     "Reflected" => Some(0),
+    // Mirror about the edges repeating them: a a b c c b a a …
+    "Reversed" => {
+      let period = 2 * len;
+      let m = i.rem_euclid(period);
+      Some(if m >= len { period - 1 - m } else { m })
+    }
     _ => None,
   }
 }
@@ -6860,9 +6866,9 @@ fn aggregating_filter_ast(
 /// channels and image type — is shared with `ImageConvolve` through
 /// [`spatial_filter_ast`].
 pub fn image_correlate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCorrelate expects exactly 2 arguments".into(),
+      "ImageCorrelate expects at least 2 arguments".into(),
     ));
   }
   spatial_filter_ast("ImageCorrelate", args, &args[1])
@@ -6876,9 +6882,9 @@ pub fn image_correlate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `ImageCorrelate`. A symmetric kernel — `GaussianMatrix`, `BoxMatrix`,
 /// `DiskMatrix` — makes the two identical.
 pub fn image_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
-      "ImageConvolve expects exactly 2 arguments".into(),
+      "ImageConvolve expects at least 2 arguments".into(),
     ));
   }
   // A kernel that isn't a rectangular numeric matrix can't be reflected;
@@ -7089,7 +7095,8 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let padding_mode = match option_value(opts, "Padding") {
     Some(Expr::String(s)) if s == "Fixed" => "Fixed",
     Some(Expr::String(s)) if s == "Periodic" => "Periodic",
-    _ => "Reflected", // "Reversed" (the default) and anything unrecognized.
+    Some(Expr::String(s)) if s == "Reflected" => "Reflected",
+    _ => "Reversed", // the default, and anything unrecognized.
   };
 
   let w = *width as usize;
@@ -7227,18 +7234,33 @@ fn spatial_filter_ast(
   let w = *width as usize;
   let h = *height as usize;
   let ch = *channels as usize;
+  let Some(padding) = FilterPadding::from_options(&args[2..], ch) else {
+    return Ok(unevaluated(head, args));
+  };
   let mut new_data = vec![0.0_f64; data.len()];
   for c_idx in 0..ch {
     for y in 0..h {
       for x in 0..w {
         let mut sum = 0.0;
         for ky in 0..krows {
+          let sy = y as i64 + ky as i64 - cy as i64;
           for kx in 0..kcols {
-            let sy = (y as isize + ky as isize - cy as isize)
-              .clamp(0, h as isize - 1) as usize;
-            let sx = (x as isize + kx as isize - cx as isize)
-              .clamp(0, w as isize - 1) as usize;
-            sum += kernel[ky * kcols + kx] * data[(sy * w + sx) * ch + c_idx];
+            let sx = x as i64 + kx as i64 - cx as i64;
+            let value = match &padding {
+              FilterPadding::Mode(mode) => {
+                let sy = image_pad_source(mode, sy, h as i64).unwrap_or(0);
+                let sx = image_pad_source(mode, sx, w as i64).unwrap_or(0);
+                data[(sy as usize * w + sx as usize) * ch + c_idx]
+              }
+              FilterPadding::Constant(fill) => {
+                if (0..h as i64).contains(&sy) && (0..w as i64).contains(&sx) {
+                  data[(sy as usize * w + sx as usize) * ch + c_idx]
+                } else {
+                  fill[c_idx]
+                }
+              }
+            };
+            sum += kernel[ky * kcols + kx] * value;
           }
         }
         new_data[(y * w + x) * ch + c_idx] = sum;
@@ -7254,6 +7276,39 @@ fn spatial_filter_ast(
     data: Arc::new(new_data),
     image_type: *image_type,
   })
+}
+
+/// How a neighborhood filter extends an image past its border: one of the
+/// `ImagePad` extension modes (`"Fixed"`, the default, `"Reversed"`,
+/// `"Reflected"`, `"Periodic"`), or a constant gray level or color.
+enum FilterPadding {
+  Mode(&'static str),
+  Constant(Vec<f64>),
+}
+
+impl FilterPadding {
+  /// Read the `Padding` option among `opts`; `None` for a value the
+  /// filters do not support (such as `Padding -> None`).
+  fn from_options(opts: &[Expr], channels: usize) -> Option<Self> {
+    let Some(value) = option_value(opts, "Padding") else {
+      return Some(FilterPadding::Mode("Fixed"));
+    };
+    match value {
+      Expr::String(s) | Expr::Identifier(s) => {
+        ["Fixed", "Reversed", "Reflected", "Periodic"]
+          .into_iter()
+          .find(|m| m == s)
+          .map(FilterPadding::Mode)
+      }
+      Expr::List(items) if items.len() == channels => items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<f64>>>()
+        .map(FilterPadding::Constant),
+      other => crate::functions::math_ast::try_eval_to_f64(other)
+        .map(|v| FilterPadding::Constant(vec![v; channels])),
+    }
+  }
 }
 
 /// GaussianFilter[arg, sigma] — stub. Real Gaussian filtering for
