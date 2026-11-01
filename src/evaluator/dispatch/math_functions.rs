@@ -2117,6 +2117,18 @@ pub fn dispatch_math_functions(
         &args[..args.len() - 1],
       ));
     }
+    // RandomVariate[dist, (n,) WorkingPrecision -> p]: inverse-transform
+    // samples, the quantile of an exact random level evaluated to p digits.
+    "RandomVariate"
+      if (2..=3).contains(&args.len())
+        && matches!(
+          crate::functions::expr_form::rule_parts(&args[args.len() - 1]),
+          Some((Expr::Identifier(n), Expr::Integer(_) | Expr::Real(_), _))
+            if n == "WorkingPrecision"
+        ) =>
+    {
+      return Some(random_variate_working_precision(args));
+    }
     "RandomVariate" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::math_ast::random_variate_ast(args));
     }
@@ -8238,4 +8250,87 @@ fn pairwise_column_statistic(
     out.push(Expr::List(row.into()));
   }
   Ok(Expr::List(out.into()))
+}
+
+/// RandomVariate[dist, WorkingPrecision -> p] and
+/// RandomVariate[dist, n | {n1, …}, WorkingPrecision -> p]: each sample is
+/// N[Quantile[dist, u], p] for a uniformly random exact level u with p + 10
+/// digits. Distributions whose quantile does not evaluate to a number at
+/// that precision stay unevaluated.
+fn random_variate_working_precision(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let Some((_, prec, _)) =
+    crate::functions::expr_form::rule_parts(&args[args.len() - 1])
+  else {
+    return Ok(unevaluated("RandomVariate", args));
+  };
+  let digits = match prec {
+    Expr::Integer(p) if *p >= 1 => *p,
+    Expr::Real(p) if *p >= 1.0 => p.ceil() as i128,
+    _ => return Ok(unevaluated("RandomVariate", args)),
+  };
+  let dims: Vec<i128> = match args.get(1) {
+    Some(_) if args.len() == 2 => Vec::new(),
+    Some(Expr::Integer(n)) if *n >= 0 => vec![*n],
+    Some(Expr::List(ns)) => {
+      let mut out = Vec::new();
+      for n in ns {
+        match n {
+          Expr::Integer(k) if *k >= 0 => out.push(*k),
+          _ => return Ok(unevaluated("RandomVariate", args)),
+        }
+      }
+      out
+    }
+    _ => return Ok(unevaluated("RandomVariate", args)),
+  };
+  let total: i128 = dims.iter().product();
+  // The level u is built from base-10^9 random digits (the range of a
+  // single RandomInteger call stays within machine integers).
+  let chunks = (digits + 10 + 8) / 9;
+  let mut samples = Vec::with_capacity(total.max(1) as usize);
+  for _ in 0..total.max(1) {
+    let mut terms = Vec::with_capacity(chunks as usize);
+    for k in 1..=chunks {
+      let digit = eval(call1("RandomInteger", Expr::Integer(999_999_999)))?;
+      terms.push(call(
+        "Times",
+        vec![
+          digit,
+          call(
+            "Power",
+            vec![Expr::Integer(1_000_000_000), Expr::Integer(-k)],
+          ),
+        ],
+      ));
+    }
+    let u = eval(call("Plus", terms))?;
+    let q = eval(call("Quantile", vec![args[0].clone(), u]))?;
+    // Discrete distributions give exact integers whatever the precision.
+    if matches!(q, Expr::Integer(_)) {
+      samples.push(q);
+      continue;
+    }
+    let x = eval(call("N", vec![q, prec.clone()]))?;
+    if !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(..)) {
+      return Ok(unevaluated("RandomVariate", args));
+    }
+    samples.push(x);
+  }
+  if args.len() == 2 {
+    return Ok(samples.pop().expect("one sample"));
+  }
+  let flat = Expr::List(samples.into());
+  if dims.len() == 1 {
+    return Ok(flat);
+  }
+  eval(call(
+    "ArrayReshape",
+    vec![
+      flat,
+      Expr::List(dims.into_iter().map(Expr::Integer).collect()),
+    ],
+  ))
 }

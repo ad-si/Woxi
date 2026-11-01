@@ -7298,9 +7298,16 @@ pub fn row_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// matching wolframscript message and stay unevaluated.
 pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("RankDecomposition", args);
-  if args.len() != 1 {
-    return Ok(unevaluated());
-  }
+  // RankDecomposition[m, Modulus -> p]: the decomposition over GF(p).
+  let modulus = match args {
+    [_] => None,
+    [_, opt] => match extract_modulus_option_la(opt) {
+      Some(p) if p >= 2 => Some(p),
+      Some(0) => None,
+      _ => return Ok(unevaluated()),
+    },
+    _ => return Ok(unevaluated()),
+  };
   let matrix = match expr_to_matrix(&args[0]) {
     Some(m) if !m.is_empty() && !m[0].is_empty() => m,
     _ => {
@@ -7313,7 +7320,30 @@ pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let rref = row_reduce_impl(&matrix);
+  let (matrix, rref) = match modulus {
+    None => {
+      let rref = row_reduce_impl(&matrix);
+      (matrix, rref)
+    }
+    Some(p) => {
+      let modulus_rule = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Modulus".to_string())),
+        replacement: Box::new(Expr::Integer(p)),
+      };
+      let reduced = evaluate_expr_to_expr(&call(
+        "RowReduce",
+        vec![args[0].clone(), modulus_rule],
+      ))?;
+      let residues = evaluate_expr_to_expr(&call(
+        "Mod",
+        vec![args[0].clone(), Expr::Integer(p)],
+      ))?;
+      match (expr_to_matrix(&residues), expr_to_matrix(&reduced)) {
+        (Some(m), Some(r)) => (m, r),
+        _ => return Ok(unevaluated()),
+      }
+    }
+  };
   let is_zero = |e: &Expr| {
     matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(f) if *f == 0.0)
   };
@@ -17979,6 +18009,8 @@ fn glm_irls(
   y: &[f64],
   family: GlmFamily,
   link: GlmLink,
+  prior: &[f64],
+  offset: &[f64],
 ) -> Option<Vec<f64>> {
   let n = y.len();
   let m = design.first()?.len();
@@ -18002,8 +18034,8 @@ fn glm_irls(
       {
         return beta;
       }
-      let w = dmu * dmu / variance;
-      let z = eta[i] + (y[i] - mu) / dmu;
+      let w = prior[i] * dmu * dmu / variance;
+      let z = eta[i] - offset[i] + (y[i] - mu) / dmu;
       for j in 0..m {
         atwz[j] += design[i][j] * w * z;
         for k in 0..m {
@@ -18026,7 +18058,10 @@ fn glm_irls(
     let scale = next.iter().map(|b| b.abs()).fold(1.0, f64::max);
     eta = design
       .iter()
-      .map(|row| row.iter().zip(&next).map(|(a, b)| a * b).sum())
+      .zip(offset)
+      .map(|(row, o)| {
+        o + row.iter().zip(&next).map(|(a, b)| a * b).sum::<f64>()
+      })
       .collect();
     beta = Some(next);
     if iteration > 0 && change <= 1e-13 * scale {
@@ -18092,6 +18127,11 @@ fn generalized_linear_model_fit(
   let mut link: Option<GlmLink> = None;
   let mut nominal_spec: Option<Expr> = None;
   let mut include_constant = true;
+  let mut weights_spec: Option<Expr> = None;
+  let mut offset_fn: Option<Expr> = None;
+  // Quantile[NormalDistribution[], (1 + level)/2] scales the errors into
+  // the parameter confidence intervals.
+  let mut confidence_level = 0.95;
   for opt in &args[3..] {
     let Expr::Rule {
       pattern,
@@ -18123,6 +18163,15 @@ fn generalized_linear_model_fit(
         include_constant =
           !matches!(value, Expr::Identifier(b) if b == "False");
       }
+      ("Weights", Expr::Identifier(a)) if a == "Automatic" => {}
+      ("Weights", w @ Expr::List(_)) => weights_spec = Some(w.clone()),
+      ("LinearOffsetFunction", Expr::Identifier(a)) if a == "None" => {}
+      ("LinearOffsetFunction", f) => offset_fn = Some(f.clone()),
+      ("ConfidenceLevel", level) => match try_eval_to_f64(level) {
+        Some(c) if c > 0.0 && c < 1.0 => confidence_level = c,
+        _ => return unevaluated_call(),
+      },
+      ("WorkingPrecision", Expr::Identifier(a)) if a == "MachinePrecision" => {}
       _ => return unevaluated_call(),
     }
   }
@@ -18281,12 +18330,60 @@ fn generalized_linear_model_fit(
     design.push(values);
   }
 
-  let Some(beta) = glm_irls(&design, &y, family, link) else {
+  // Prior weights (one positive number per data point) and the offset
+  // added to the linear predictor at each data point.
+  let prior: Vec<f64> = match &weights_spec {
+    None => vec![1.0; rows.len()],
+    Some(Expr::List(ws)) if ws.len() == rows.len() => {
+      let mut out = Vec::with_capacity(ws.len());
+      for w in ws {
+        match try_eval_to_f64(w) {
+          Some(v) if v >= 0.0 && v.is_finite() => out.push(v),
+          _ => return unevaluated_call(),
+        }
+      }
+      out
+    }
+    Some(_) => return unevaluated_call(),
+  };
+  let offset_at = |values: &[Expr]| -> Result<Option<Expr>, InterpreterError> {
+    let Some(f) = &offset_fn else {
+      return Ok(None);
+    };
+    let applied = match f {
+      Expr::Function { .. }
+      | Expr::Identifier(_)
+      | Expr::NamedFunction { .. } => Expr::CurriedCall {
+        func: Box::new(f.clone()),
+        args: values.to_vec(),
+      },
+      body => vars.iter().zip(values).fold(body.clone(), |e, (v, value)| {
+        crate::syntax::substitute_variable(&e, v, value)
+      }),
+    };
+    evaluate_expr_to_expr(&applied).map(Some)
+  };
+  let mut offset = Vec::with_capacity(rows.len());
+  for row in &rows {
+    match offset_at(&row[..k])? {
+      None => offset.push(0.0),
+      Some(value) => match try_eval_to_f64(&value) {
+        Some(v) => offset.push(v),
+        None => return unevaluated_call(),
+      },
+    }
+  }
+  let weighted = weights_spec.is_some();
+
+  let Some(beta) = glm_irls(&design, &y, family, link, &prior, &offset) else {
     return unevaluated_call();
   };
   let predicted: Vec<f64> = design
     .iter()
-    .map(|row| link.mean(row.iter().zip(&beta).map(|(a, b)| a * b).sum()))
+    .zip(&offset)
+    .map(|(row, o)| {
+      link.mean(o + row.iter().zip(&beta).map(|(a, b)| a * b).sum::<f64>())
+    })
     .collect();
 
   let predictor = {
@@ -18298,6 +18395,12 @@ fn generalized_linear_model_fit(
         other => times(vec![Expr::Real(*c), other.clone()]),
       })
       .collect();
+    let mut terms = terms;
+    let symbolic_vars: Vec<Expr> =
+      vars.iter().map(|v| Expr::Identifier(v.clone())).collect();
+    if let Some(o) = offset_at(&symbolic_vars)? {
+      terms.push(o);
+    }
     let raw = if terms.len() == 1 {
       terms.into_iter().next().unwrap()
     } else {
@@ -18330,7 +18433,8 @@ fn generalized_linear_model_fit(
   let deviances: Vec<f64> = y
     .iter()
     .zip(&predicted)
-    .map(|(&yi, &mu)| family.unit_deviance(yi, mu))
+    .zip(&prior)
+    .map(|((&yi, &mu), w)| w * family.unit_deviance(yi, mu))
     .collect();
   let null_mean = if include_constant {
     y.iter().sum::<f64>() / n as f64
@@ -18347,7 +18451,8 @@ fn generalized_linear_model_fit(
     let pearson: f64 = y
       .iter()
       .zip(&predicted)
-      .map(|(&yi, &mu)| (yi - mu) * (yi - mu) / family.variance(mu))
+      .zip(&prior)
+      .map(|((&yi, &mu), w)| w * (yi - mu) * (yi - mu) / family.variance(mu))
       .sum();
     pearson / residual_dof.max(1) as f64
   } else {
@@ -18368,7 +18473,8 @@ fn generalized_linear_model_fit(
   let pearson_residuals: Vec<f64> = y
     .iter()
     .zip(&predicted)
-    .map(|(&yi, &mu)| (yi - mu) / family.variance(mu).sqrt())
+    .zip(&prior)
+    .map(|((&yi, &mu), w)| w.sqrt() * (yi - mu) / family.variance(mu).sqrt())
     .collect();
   let anscombe_residuals: Vec<f64> = y
     .iter()
@@ -18379,10 +18485,10 @@ fn generalized_linear_model_fit(
   // inverse of the final weighted cross product `Transpose[X] . W . X`, and
   // each estimate is tested with a two-sided z test.
   let mut xtwx = vec![vec![0.0; p]; p];
-  for (row, &mu) in design.iter().zip(&predicted) {
+  for ((row, &mu), prior_w) in design.iter().zip(&predicted).zip(&prior) {
     let mu = family.clamp_mean(mu);
     let dmu = link.mean_derivative(mu);
-    let w = dmu * dmu / family.variance(mu);
+    let w = prior_w * dmu * dmu / family.variance(mu);
     for a in 0..p {
       for b in 0..p {
         xtwx[a][b] += row[a] * w * row[b];
@@ -18409,9 +18515,11 @@ fn generalized_linear_model_fit(
       )
     })
     .collect();
-  // Quantile[NormalDistribution[], 0.975]
+  // Quantile[NormalDistribution[], (1 + level)/2]
   let z_975 = std::f64::consts::SQRT_2
-    * crate::functions::math_ast::numeric_utils::inverse_erf_f64(0.95);
+    * crate::functions::math_ast::numeric_utils::inverse_erf_f64(
+      confidence_level,
+    );
   let integer = |v: usize| Expr::Integer(v as i128);
   let mut assoc = vec![
     (str_expr("Deviances"), reals(&deviances)),
@@ -18455,13 +18563,17 @@ fn generalized_linear_model_fit(
   // Gaussian families, and its inverse Gaussian likelihood, are neither
   // the constant model's nor the density's; those properties are left out
   // rather than reported differently.
-  if !matches!(
-    family,
-    GlmFamily::Gaussian | GlmFamily::Gamma | GlmFamily::InverseGaussian
-  ) {
+  // With prior weights the likelihood-based properties are left out too
+  // (wolframscript's weighted likelihood is not reproduced).
+  if !weighted
+    && !matches!(
+      family,
+      GlmFamily::Gaussian | GlmFamily::Gamma | GlmFamily::InverseGaussian
+    )
+  {
     assoc.push((str_expr("NullDeviance"), Expr::Real(null_deviance)));
   }
-  if !matches!(family, GlmFamily::InverseGaussian) {
+  if !weighted && !matches!(family, GlmFamily::InverseGaussian) {
     assoc.extend([
       (str_expr("LogLikelihood"), Expr::Real(log_likelihood)),
       (

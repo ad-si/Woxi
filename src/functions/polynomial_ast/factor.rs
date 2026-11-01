@@ -41,7 +41,27 @@ fn unknown_option_fallback(head: &str, args: &[Expr]) -> Expr {
 }
 
 pub fn factor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  Ok(reorder_factored_product(factor_ast_impl(args)?))
+  canonical_factored_result(factor_ast_impl(args)?)
+}
+
+/// The final form of a Factor / FactorSquareFree result: an unfactored sum
+/// is put back in canonical order (its monomials may have been rebuilt with
+/// an algebraic coefficient after the variable, `1 + x*Sqrt[2]` for
+/// `1 + Sqrt[2]*x`), and a product's monomial factors take their canonical
+/// position.
+fn canonical_factored_result(result: Expr) -> Result<Expr, InterpreterError> {
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      &result,
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Plus,
+        ..
+      }
+    )
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  Ok(reorder_factored_product(result))
 }
 
 /// Put a factored product's monomial factors in canonical position
@@ -345,6 +365,55 @@ mod quadratic_field {
       r = trim(r);
     }
     r
+  }
+  /// The quotient and remainder of a divided by the nonzero b.
+  pub(super) fn divrem(d: i128, a: &Poly, b: &Poly) -> (Poly, Poly) {
+    let mut r = trim(a.clone());
+    let lead_inv = inv(d, b.last().expect("nonzero divisor"));
+    let mut q = vec![zero(); r.len().saturating_sub(b.len()) + 1];
+    while r.len() >= b.len() && !r.is_empty() {
+      let shift = r.len() - b.len();
+      let c = mul(d, r.last().unwrap(), &lead_inv);
+      for (i, bc) in b.iter().enumerate() {
+        r[i + shift] = add(&r[i + shift], &neg(&mul(d, &c, bc)));
+      }
+      q[shift] = c;
+      r = trim(r);
+    }
+    (trim(q), r)
+  }
+  /// The derivative of p.
+  pub(super) fn derivative(d: i128, p: &Poly) -> Poly {
+    trim(
+      p.iter()
+        .enumerate()
+        .skip(1)
+        .map(|(k, c)| {
+          let kk = (
+            (BigInt::from(k), BigInt::one()),
+            (BigInt::zero(), BigInt::one()),
+          );
+          mul(d, &kk, c)
+        })
+        .collect(),
+    )
+  }
+  /// The product of two polynomials.
+  pub(super) fn pmul(d: i128, a: &Poly, b: &Poly) -> Poly {
+    if a.is_empty() || b.is_empty() {
+      return Vec::new();
+    }
+    let mut out = vec![zero(); a.len() + b.len() - 1];
+    for (i, x) in a.iter().enumerate() {
+      for (j, y) in b.iter().enumerate() {
+        out[i + j] = add(&out[i + j], &mul(d, x, y));
+      }
+    }
+    trim(out)
+  }
+  /// The conjugate a - b Sqrt[d] of every coefficient.
+  pub(super) fn conjugate(p: &Poly) -> Poly {
+    p.iter().map(|(a, b)| (a.clone(), rneg(b))).collect()
   }
   /// The monic greatest common divisor of two polynomials.
   pub(super) fn gcd(d: i128, a: &Poly, b: &Poly) -> Poly {
@@ -3194,7 +3263,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Monomial factors take their canonical position against sum factors
   // (x*(-5 + 3*x), not (-5 + 3*x)*x), exactly like factor_ast.
-  Ok(reorder_factored_product(factor_square_free_ast_impl(args)?))
+  canonical_factored_result(factor_square_free_ast_impl(args)?)
 }
 
 fn factor_square_free_ast_impl(
@@ -4419,5 +4488,450 @@ mod tests {
       assert_eq!(integer_divisors(n), expected, "first call for {n}");
       assert_eq!(integer_divisors(n), expected, "second call for {n}");
     }
+  }
+}
+
+// ─── Rational operations over a quadratic field (Extension) ─────────
+
+/// The quadratic field Q(Sqrt[d]) (d = -1 for Q(I)) that an `Extension`
+/// option selects for `expr`: `Extension -> Automatic` takes the single
+/// square root of an integer (or I) occurring in expr. `Some(None)` means
+/// no extension is involved (Automatic on an expression without algebraic
+/// numbers, or `Extension -> None`); `None` means the request is outside
+/// what is supported (several generators, other algebraic numbers).
+fn extension_field(expr: &Expr, opt: &Expr) -> Option<Option<i128>> {
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Extension") {
+    return None;
+  }
+  let mut found = std::collections::BTreeSet::new();
+  if !collect_square_roots(expr, &mut found) || found.len() > 1 {
+    return None;
+  }
+  let in_expr = found.into_iter().next();
+  match replacement.as_ref() {
+    Expr::Identifier(v) if v == "Automatic" => Some(in_expr),
+    Expr::Identifier(v) if v == "None" => Some(None),
+    _ => {
+      let d = quadratic_extension_option(opt)?;
+      match in_expr {
+        Some(e) if e != d => None,
+        _ => Some(Some(d)),
+      }
+    }
+  }
+}
+
+/// Collect the radicands d of the square roots Sqrt[d] (d an integer, -1
+/// for I) occurring in e. Returns false for other algebraic numbers.
+fn collect_square_roots(
+  e: &Expr,
+  out: &mut std::collections::BTreeSet<i128>,
+) -> bool {
+  match e {
+    Expr::Identifier(s) if s == "I" => {
+      out.insert(-1);
+      true
+    }
+    Expr::FunctionCall { name, args } if name == "Complex" => {
+      out.insert(-1);
+      args.iter().all(|a| collect_square_roots(a, out))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      collect_power_root(&args[0], &args[1], out)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => collect_power_root(left, right, out),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      match &args[0] {
+        Expr::Integer(n) if *n >= 2 => {
+          out.insert(*n);
+          true
+        }
+        a => collect_square_roots(a, out),
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().all(|a| collect_square_roots(a, out))
+    }
+    Expr::List(items) => items.iter().all(|a| collect_square_roots(a, out)),
+    Expr::BinaryOp { left, right, .. } => {
+      collect_square_roots(left, out) && collect_square_roots(right, out)
+    }
+    Expr::UnaryOp { operand, .. } => collect_square_roots(operand, out),
+    _ => true,
+  }
+}
+
+/// `collect_square_roots` for base^exp: an integer to a half-integer power
+/// is a square root; an integer to another rational power is a different
+/// algebraic number.
+fn collect_power_root(
+  base: &Expr,
+  exp: &Expr,
+  out: &mut std::collections::BTreeSet<i128>,
+) -> bool {
+  match (base, exp) {
+    (Expr::Integer(n), Expr::FunctionCall { name, args })
+      if name == "Rational" && args.len() == 2 =>
+    {
+      if matches!(args[1], Expr::Integer(2)) && *n >= 2 {
+        out.insert(*n);
+        true
+      } else {
+        false
+      }
+    }
+    _ => collect_square_roots(base, out) && collect_square_roots(exp, out),
+  }
+}
+
+/// A univariate polynomial with coefficients in Q(Sqrt[d]) and its
+/// conversion to and from expressions.
+struct ExtensionRing {
+  d: i128,
+  var: Expr,
+}
+
+impl ExtensionRing {
+  fn ev(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
+    crate::evaluator::evaluate_expr_to_expr(&call(name, args))
+  }
+
+  fn generator(&self) -> Expr {
+    if self.d == -1 {
+      Expr::Identifier("I".to_string())
+    } else {
+      call1("Sqrt", Expr::Integer(self.d))
+    }
+  }
+
+  /// The element a + b Sqrt[d] an exact number c is, if it lies in the
+  /// field.
+  fn element(
+    &self,
+    c: &Expr,
+  ) -> Result<Option<quadratic_field::Elt>, InterpreterError> {
+    use crate::functions::math_ast::expr_to_big_rational;
+    let (a, b) = if self.d == -1 {
+      (
+        Self::ev("Re", vec![c.clone()])?,
+        Self::ev("Im", vec![c.clone()])?,
+      )
+    } else {
+      let t = Expr::Identifier("Woxi`ext$t".to_string());
+      let root = crate::evaluator::evaluate_expr_to_expr(&self.generator())?;
+      let inv_root = crate::evaluator::evaluate_expr_to_expr(&pow2(
+        Expr::Integer(self.d),
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+      ))?;
+      let replaced = Self::ev(
+        "ReplaceAll",
+        vec![
+          c.clone(),
+          Expr::List(
+            vec![
+              Expr::Rule {
+                pattern: Box::new(root),
+                replacement: Box::new(t.clone()),
+              },
+              Expr::Rule {
+                pattern: Box::new(inv_root),
+                replacement: Box::new(div2(t.clone(), Expr::Integer(self.d))),
+              },
+            ]
+            .into(),
+          ),
+        ],
+      )?;
+      let reduced = Self::ev(
+        "PolynomialRemainder",
+        vec![
+          Self::ev("Expand", vec![replaced])?,
+          plus2(pow2(t.clone(), Expr::Integer(2)), Expr::Integer(-self.d)),
+          t.clone(),
+        ],
+      )?;
+      let Expr::List(ref cs) = Self::ev("CoefficientList", vec![reduced, t])?
+      else {
+        return Ok(None);
+      };
+      match cs.as_slice() {
+        [] => (Expr::Integer(0), Expr::Integer(0)),
+        [a] => (a.clone(), Expr::Integer(0)),
+        [a, b] => (a.clone(), b.clone()),
+        _ => return Ok(None),
+      }
+    };
+    let (Some((an, ad)), Some((bn, bd))) =
+      (expr_to_big_rational(&a), expr_to_big_rational(&b))
+    else {
+      return Ok(None);
+    };
+    Ok(Some((
+      quadratic_field::rat(an, ad),
+      quadratic_field::rat(bn, bd),
+    )))
+  }
+
+  /// The coefficients of a polynomial expression in var, lowest degree
+  /// first.
+  fn poly(
+    &self,
+    e: &Expr,
+  ) -> Result<Option<quadratic_field::Poly>, InterpreterError> {
+    if !matches!(
+      Self::ev("PolynomialQ", vec![e.clone(), self.var.clone()])?,
+      Expr::Identifier(ref t) if t == "True"
+    ) {
+      return Ok(None);
+    }
+    let Expr::List(ref cs) = Self::ev(
+      "CoefficientList",
+      vec![Self::ev("Expand", vec![e.clone()])?, self.var.clone()],
+    )?
+    else {
+      return Ok(None);
+    };
+    let mut out = Vec::with_capacity(cs.len());
+    for c in cs {
+      match self.element(c)? {
+        Some(elt) => out.push(elt),
+        None => return Ok(None),
+      }
+    }
+    while out.last().is_some_and(quadratic_field::is_zero) {
+      out.pop();
+    }
+    Ok(Some(out))
+  }
+
+  fn elt_expr(&self, (a, b): &quadratic_field::Elt) -> Expr {
+    use num_traits::One;
+    let rat = |r: &quadratic_field::Rat| {
+      if r.1.is_one() {
+        bigint_to_expr(r.0.clone())
+      } else {
+        call(
+          "Rational",
+          vec![bigint_to_expr(r.0.clone()), bigint_to_expr(r.1.clone())],
+        )
+      }
+    };
+    plus2(rat(a), times2(rat(b), self.generator()))
+  }
+
+  fn expr(&self, p: &quadratic_field::Poly) -> Result<Expr, InterpreterError> {
+    let terms: Vec<Expr> = p
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !quadratic_field::is_zero(c))
+      .map(|(k, c)| {
+        times2(
+          self.elt_expr(c),
+          pow2(self.var.clone(), Expr::Integer(k as i128)),
+        )
+      })
+      .collect();
+    Self::ev("Expand", vec![plus(terms)])
+  }
+
+  /// p divided by its leading coefficient, and that coefficient.
+  fn monic(
+    &self,
+    p: &quadratic_field::Poly,
+  ) -> (quadratic_field::Elt, quadratic_field::Poly) {
+    let lead = p.last().cloned().expect("nonzero polynomial");
+    let li = quadratic_field::inv(self.d, &lead);
+    (
+      lead,
+      p.iter()
+        .map(|c| quadratic_field::mul(self.d, c, &li))
+        .collect(),
+    )
+  }
+}
+
+/// The single variable of the polynomials in `exprs`, if there is one.
+fn single_variable(exprs: &[&Expr]) -> Result<Option<Expr>, InterpreterError> {
+  let vars = ExtensionRing::ev(
+    "Variables",
+    vec![Expr::List(exprs.iter().map(|e| (*e).clone()).collect())],
+  )?;
+  Ok(match &vars {
+    Expr::List(v) if v.len() == 1 && matches!(&v[0], Expr::Identifier(_)) => {
+      Some(v[0].clone())
+    }
+    _ => None,
+  })
+}
+
+/// Yun's square-free decomposition of a monic polynomial over Q(Sqrt[d]):
+/// the monic square-free a_i (with f = Π a_i^i), as (a_i, i) pairs of
+/// positive degree.
+fn square_free_parts(
+  d: i128,
+  f: &quadratic_field::Poly,
+) -> Vec<(quadratic_field::Poly, usize)> {
+  use quadratic_field as qf;
+  let sub = |a: &qf::Poly, b: &qf::Poly| -> qf::Poly {
+    let n = a.len().max(b.len());
+    let mut out: qf::Poly = (0..n)
+      .map(|i| {
+        let x = a.get(i).cloned().unwrap_or_else(qf::zero);
+        let y = b.get(i).cloned().unwrap_or_else(qf::zero);
+        qf::add(&x, &qf::neg(&y))
+      })
+      .collect();
+    while out.last().is_some_and(qf::is_zero) {
+      out.pop();
+    }
+    out
+  };
+  let df = qf::derivative(d, f);
+  let a0 = qf::gcd(d, f, &df);
+  let mut b = qf::divrem(d, f, &a0).0;
+  let mut c = qf::divrem(d, &df, &a0).0;
+  let mut dd = sub(&c, &qf::derivative(d, &b));
+  let mut parts = Vec::new();
+  let mut i = 1;
+  while b.len() > 1 {
+    let a = qf::gcd(d, &b, &dd);
+    b = qf::divrem(d, &b, &a).0;
+    c = qf::divrem(d, &dd, &a).0;
+    dd = sub(&c, &qf::derivative(d, &b));
+    if a.len() > 1 {
+      parts.push((a, i));
+    }
+    i += 1;
+  }
+  parts
+}
+
+/// Together / Cancel / Factor / FactorSquareFree / FactorSquareFreeList
+/// [expr, Extension -> Automatic | Sqrt[d] | I] for univariate rational
+/// functions whose coefficients lie in a quadratic field. `None` leaves the
+/// call to the ordinary implementation (no algebraic coefficients, or a
+/// form this does not cover).
+pub fn extension_rational_operation(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  use quadratic_field as qf;
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let Some(field) = extension_field(&args[0], &args[1]) else {
+    return Ok(None);
+  };
+  let mut found = std::collections::BTreeSet::new();
+  collect_square_roots(&args[0], &mut found);
+  let d = match field {
+    // Rational coefficients: gcds and square-free parts do not change in
+    // an extension field, so only Factor (over an explicit field) differs
+    // from the ordinary operation.
+    Some(_) if found.is_empty() && name == "Factor" => return Ok(None),
+    Some(d) if !found.is_empty() => d,
+    _ => return ev(call1(name, args[0].clone())).map(Some),
+  };
+  match name {
+    "Together" | "Cancel" => {
+      let combined = ev(call1("Together", args[0].clone()))?;
+      let (num, den) = super::together::extract_num_den(&combined);
+      let Some(var) = single_variable(&[&num, &den])? else {
+        return Ok(None);
+      };
+      let ring = ExtensionRing { d, var };
+      let (Some(n), Some(m)) = (ring.poly(&num)?, ring.poly(&den)?) else {
+        return Ok(None);
+      };
+      if n.is_empty() || m.is_empty() {
+        return Ok(Some(combined));
+      }
+      let g = qf::gcd(d, &n, &m);
+      if g.len() <= 1 {
+        return Ok(Some(combined));
+      }
+      let n2 = ring.expr(&qf::divrem(d, &n, &g).0)?;
+      let m2 = ring.expr(&qf::divrem(d, &m, &g).0)?;
+      ev(div2(n2, m2)).map(Some)
+    }
+    "Factor" | "FactorSquareFree" | "FactorSquareFreeList" => {
+      let Some(var) = single_variable(&[&args[0]])? else {
+        return Ok(None);
+      };
+      let ring = ExtensionRing { d, var };
+      let Some(f) = ring.poly(&args[0])? else {
+        return Ok(None);
+      };
+      if f.len() <= 1 {
+        return Ok(None);
+      }
+      let (lead, monic) = ring.monic(&f);
+      let mut parts: Vec<(Expr, Expr)> = Vec::new();
+      let mut content = lead.clone();
+      if name == "Factor" {
+        // The irreducible factors of f divide its norm f * conj(f), which
+        // has rational coefficients and is split by the Trager routine.
+        let norm = ring.expr(&qf::pmul(d, &f, &qf::conjugate(&f)))?;
+        let Some((_, norm_factors)) =
+          quadratic_extension_factor_list(&norm, d)?
+        else {
+          return Ok(None);
+        };
+        let mut rest = f.clone();
+        content = qf::zero();
+        for (h_expr, _) in norm_factors {
+          let Some(h) = ring.poly(&h_expr)? else {
+            return Ok(None);
+          };
+          let mut mult = 0i128;
+          loop {
+            let (q, r) = qf::divrem(d, &rest, &h);
+            if !r.is_empty() {
+              break;
+            }
+            rest = q;
+            mult += 1;
+          }
+          if mult > 0
+            && !parts
+              .iter()
+              .any(|(e, _)| expr_to_string(e) == expr_to_string(&h_expr))
+          {
+            parts.push((h_expr, Expr::Integer(mult)));
+          }
+        }
+        if rest.len() != 1 {
+          return Ok(None);
+        }
+        content = qf::add(&content, &rest[0]);
+      } else {
+        for (a, i) in square_free_parts(d, &monic) {
+          parts.push((ring.expr(&a)?, Expr::Integer(i as i128)));
+        }
+      }
+      let content = ev(ring.elt_expr(&content))?;
+      if name == "FactorSquareFreeList" {
+        let mut out = vec![Expr::List(vec![content, Expr::Integer(1)].into())];
+        out.extend(
+          parts
+            .into_iter()
+            .map(|(h, e)| Expr::List(vec![h, e].into())),
+        );
+        return Ok(Some(Expr::List(out.into())));
+      }
+      let mut product = vec![content];
+      product.extend(parts.into_iter().map(|(h, e)| pow2(h, e)));
+      ev(times(product)).map(|e| Some(reorder_factored_product(e)))
+    }
+    _ => Ok(None),
   }
 }

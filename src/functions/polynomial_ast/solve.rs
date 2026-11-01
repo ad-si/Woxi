@@ -1720,6 +1720,7 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut modulus: i128 = 0;
   let mut multiplicity: Option<usize> = None;
   let mut radical_degrees: Vec<i128> = Vec::new();
+  let mut equated_to: Option<Expr> = None;
   for opt in &args[2..] {
     let Some((Expr::Identifier(name), value, _)) = rule_parts(opt) else {
       return Ok(unevaluated("Roots", args));
@@ -1730,6 +1731,9 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
         multiplicity = Some(*k as usize);
       }
       ("Multiplicity", Expr::Identifier(i)) if i == "Infinity" => {}
+      // EquatedTo -> e writes each root as e == root (Null: the variable).
+      ("EquatedTo", Expr::Identifier(n)) if n == "Null" => {}
+      ("EquatedTo", e) => equated_to = Some(e.clone()),
       ("Cubics" | "Quartics", Expr::Identifier(b))
         if b == "True" || b == "False" =>
       {
@@ -1795,6 +1799,16 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     });
+  }
+
+  if let Some(lhs) = equated_to {
+    for c in &mut conditions {
+      if let Expr::Comparison { operands, .. } = c
+        && let Some(first) = operands.first_mut()
+      {
+        *first = lhs.clone();
+      }
+    }
   }
 
   Ok(if conditions.len() == 1 {

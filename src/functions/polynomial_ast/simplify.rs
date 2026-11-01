@@ -10,10 +10,22 @@ use crate::functions::math_ast::{
 /// Refine[expr] - Simplify using default assumptions.
 /// E.g. Refine[Sqrt[x^2], x > 0] → x
 pub fn refine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "Refine expects 1 or 2 arguments".into(),
     ));
+  }
+  // Refine[expr, assum, Assumptions -> more]: both hold.
+  if args.len() > 2 {
+    let (combined, _) = combine_assumption_args(&args[1..]);
+    let combined = match combined {
+      Expr::Rule {
+        ref replacement, ..
+      } => replacement.as_ref().clone(),
+      other => other,
+    };
+    let combined = crate::evaluator::evaluate_expr_to_expr(&combined)?;
+    return refine_ast(&[args[0].clone(), combined]);
   }
 
   // Single argument: use $Assumptions if available
@@ -4674,6 +4686,55 @@ fn simplify_via_opaque_atoms(expr: &Expr) -> Option<Expr> {
   Some(restored)
 }
 
+/// The single assumption that the positional assumptions and an
+/// `Assumptions -> …` option of Simplify / FullSimplify / Refine stand for,
+/// and whether `ComplexityFunction -> LeafCount` was given. wolframscript:
+///   `f[expr, asn]`                — adds asn to $Assumptions
+///   `f[expr, Assumptions -> asn]` — replaces $Assumptions
+///   `f[expr, p1, …, Assumptions -> override]`
+///                                 — replaces $Assumptions and AND-s in the
+///                                   positional assumptions
+fn combine_assumption_args(rest: &[Expr]) -> (Expr, bool) {
+  let mut override_asn: Option<Expr> = None;
+  let mut positional: Vec<Expr> = Vec::new();
+  let mut leaf_count_complexity = false;
+  for a in rest {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = a
+    {
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions") {
+        override_asn = Some(replacement.as_ref().clone());
+        continue;
+      }
+      // Recognise Simplify-specific options as options, not assumptions.
+      // `ComplexityFunction -> LeafCount` switches the cost metric to
+      // raw leaf count (so e.g. `Log[1048576]` beats `20*Log[2]`).
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ComplexityFunction")
+      {
+        if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "LeafCount")
+        {
+          leaf_count_complexity = true;
+        }
+        continue;
+      }
+    }
+    positional.push(a.clone());
+  }
+  let combined = match (override_asn, positional.len()) {
+    (Some(o), 0) => rule_expr(id_expr("Assumptions"), o),
+    (Some(o), _) => {
+      let mut and_args = vec![o];
+      and_args.extend(positional);
+      rule_expr(id_expr("Assumptions"), call("And", and_args))
+    }
+    (None, 1) => positional.into_iter().next().unwrap(),
+    (None, _) => call("And", positional),
+  };
+  (combined, leaf_count_complexity)
+}
+
 pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -4690,49 +4751,12 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   //                                          AND-s in the positional
   //                                          assumptions
   if args.len() >= 2 {
-    let mut override_asn: Option<Expr> = None;
-    let mut positional: Vec<Expr> = Vec::new();
-    let mut leaf_count_complexity = false;
-    for a in &args[1..] {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = a
-      {
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Assumptions")
-        {
-          override_asn = Some(replacement.as_ref().clone());
-          continue;
-        }
-        // Recognise Simplify-specific options as options, not assumptions.
-        // `ComplexityFunction -> LeafCount` switches the cost metric to
-        // raw leaf count (so e.g. `Log[1048576]` beats `20*Log[2]`).
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ComplexityFunction")
-        {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "LeafCount")
-          {
-            leaf_count_complexity = true;
-          }
-          continue;
-        }
-      }
-      positional.push(a.clone());
-    }
+    let (combined, leaf_count_complexity) = combine_assumption_args(&args[1..]);
     if leaf_count_complexity {
       let base = simplify_expr_with_together(&args[0]);
       let base = apply_active_assumptions(&base);
       return Ok(simplify_for_leaf_count(&base));
     }
-    let combined = match (override_asn, positional.len()) {
-      (Some(o), 0) => rule_expr(id_expr("Assumptions"), o),
-      (Some(o), _) => {
-        let mut and_args = vec![o];
-        and_args.extend(positional);
-        rule_expr(id_expr("Assumptions"), call("And", and_args))
-      }
-      (None, 1) => positional.into_iter().next().unwrap(),
-      (None, _) => call("And", positional),
-    };
     return Ok(simplify_with_assumptions(&args[0], &combined, false));
   }
   // Single argument: consult $Assumptions from the environment (e.g. set by
@@ -6434,13 +6458,14 @@ fn together_subexpressions(expr: &Expr) -> Expr {
 
 /// FullSimplify[expr] or FullSimplify[expr, assum]
 pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.is_empty() || args.len() > 2 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "FullSimplify expects 1 or 2 arguments".into(),
+      "FullSimplify expects at least 1 argument".into(),
     ));
   }
-  if args.len() == 2 {
-    return Ok(simplify_with_assumptions(&args[0], &args[1], true));
+  if args.len() >= 2 {
+    let (combined, _) = combine_assumption_args(&args[1..]);
+    return Ok(simplify_with_assumptions(&args[0], &combined, true));
   }
   // Thread over Lists
   if let Expr::List(items) = &args[0] {
