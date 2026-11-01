@@ -2478,7 +2478,7 @@ CoordinateBounds,"Coordinate bounds of a list of points with optional padding",�
 ImageRecolor,"",🚫,,12.0,2483
 MatrixPropertyDistribution,"represents the distribution of a matrix property for a matrix distribution",✅,none,10.3,2483
 Regularization,"",🚫,,7.0,2483
-ColorProfileData,"",🚫,,9.0,2487
+ColorProfileData,"Inert ICC color profile used as an image ColorSpace value",✅,pure,9.0,2487
 DegreeCentrality,"Degree centrality of graph vertices",✅,1,8.0,2487
 TransferFunctionPoles,"Poles of each element of a transfer-function model",✅,pure,8.0,2487
 WhiteNoiseProcess,"White noise process sliced as its underlying distribution",✅,unevaluated,10.0,2487
