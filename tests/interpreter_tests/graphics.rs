@@ -15678,6 +15678,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn deeply_nested_chart_label_is_set_in_linear_time() {
+      // Labelling each argument of a built-in head twice made a label of
+      // depth d cost 2^d; 28 nested Sin took half a minute.
+      let start = std::time::Instant::now();
+      let svg =
+        export_svg("BarChart[{1, 2}, ChartLabels -> {Nest[Sin, x, 28], y}]");
+      assert!(svg.contains("Sin[Sin["));
+      assert!(start.elapsed().as_secs() < 5);
+    }
+
+    #[test]
     fn box_whisker_chart_chart_labels() {
       insta::assert_snapshot!(export_svg(
         r#"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, ChartLabels -> {"A", "B"}]"#
