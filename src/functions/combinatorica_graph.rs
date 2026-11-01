@@ -811,11 +811,9 @@ fn list_graphs(args: &[Expr]) -> Option<Expr> {
   {
     // Lexicographic order, as `Permutations[n]` lists them.
     let mut p: Vec<usize> = (0..n).collect();
-    loop {
-      let Some(i) = (0..n.saturating_sub(1)).rev().find(|&i| p[i] < p[i + 1])
-      else {
-        break;
-      };
+    while let Some(i) =
+      (0..n.saturating_sub(1)).rev().find(|&i| p[i] < p[i + 1])
+    {
       let j = (i + 1..n).rev().find(|&j| p[j] > p[i]).unwrap();
       p.swap(i, j);
       p[i + 1..].reverse();

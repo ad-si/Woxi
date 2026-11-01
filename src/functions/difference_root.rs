@@ -365,7 +365,7 @@ impl Recurrence {
     idx.into_iter().find(|&s| (s..s + r).all(known))
   }
 
-  fn at(&self, c: &Expr, m: i128) -> Expr {
+  fn at(c: &Expr, m: i128) -> Expr {
     eval(crate::syntax::substitute_variable(
       c,
       FORMAL_N,
@@ -401,17 +401,17 @@ impl Recurrence {
           continue;
         }
         let m = i - r;
-        let mut terms = vec![self.at(&self.inhom, m)];
+        let mut terms = vec![Self::at(&self.inhom, m)];
         for j in 0..r {
           terms.push(call(
             "Times",
             vec![
-              self.at(&self.coeffs[j as usize], m),
+              Self::at(&self.coeffs[j as usize], m),
               known.get(&(m + j))?.clone(),
             ],
           ));
         }
-        let v = combine(terms, self.at(&self.coeffs[r as usize], m))?;
+        let v = combine(terms, Self::at(&self.coeffs[r as usize], m))?;
         known.insert(i, v);
       }
     } else {
@@ -419,17 +419,17 @@ impl Recurrence {
         if known.contains_key(&i) {
           continue;
         }
-        let mut terms = vec![self.at(&self.inhom, i)];
+        let mut terms = vec![Self::at(&self.inhom, i)];
         for j in 1..=r {
           terms.push(call(
             "Times",
             vec![
-              self.at(&self.coeffs[j as usize], i),
+              Self::at(&self.coeffs[j as usize], i),
               known.get(&(i + j))?.clone(),
             ],
           ));
         }
-        let v = combine(terms, self.at(&self.coeffs[0], i))?;
+        let v = combine(terms, Self::at(&self.coeffs[0], i))?;
         known.insert(i, v);
       }
     }
