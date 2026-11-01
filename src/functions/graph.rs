@@ -493,6 +493,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut explicit_range: Option<((f64, f64), (f64, f64))> = None;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
+  let mut background: Option<Expr> = None;
 
   for opt in options {
     // A rule restored via `Uncompress` reconstructs as a plain
@@ -667,6 +668,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "ImageSize" => {
           image_size = Some(replacement.clone());
+        }
+        // `Background -> colour` fills the panel behind the drawing, as it
+        // does for `Graphics`.
+        "Background" => {
+          background = Some(replacement.clone());
         }
         "PlotRange" => {
           if let Expr::List(axes) = replacement
@@ -1406,6 +1412,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let mut graphics_args = vec![content, image_size_opt];
+  if let Some(bg) = background {
+    graphics_args.push(rule_expr(id_expr("Background"), bg));
+  }
   if let Some(range) =
     shown_range.or_else(|| flat_axis_plot_range(&positions, vertex_radius))
   {
@@ -6761,6 +6770,26 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // that is not replicated.
 pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("Subgraph", args);
+  // Subgraph[{e1, e2, …}, vs]: the edge list (rules or edges) stands for
+  // the graph it builds.
+  if let Expr::List(items) = &args[0]
+    && !items.is_empty()
+    && items.iter().all(|e| {
+      matches!(e, Expr::Rule { .. })
+        || matches!(e, Expr::FunctionCall { name, args }
+          if (name == "DirectedEdge" || name == "UndirectedEdge")
+            && args.len() == 2)
+    })
+  {
+    let g = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Graph",
+      args[0].clone(),
+    ))?;
+    if matches!(&g, Expr::FunctionCall { name, .. } if name == "Graph") {
+      return subgraph_ast(&[g, args[1].clone()]);
+    }
+    return Ok(unevaluated());
+  }
   let (vertices, edge_exprs) = match &args[0] {
     Expr::FunctionCall {
       name: gname,
@@ -6790,6 +6819,7 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let pos_of = |e: &Expr| sub_keys.iter().position(|k| *k == expr_to_string(e));
   let mut edges: Vec<((usize, usize), Expr)> = Vec::new();
+  let mut has_directed = false;
   for e in edge_exprs {
     if let Expr::FunctionCall {
       name: ename,
@@ -6808,9 +6838,24 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (pa.max(pb), pa.min(pb)),
         call("UndirectedEdge", vec![first, second]),
       ));
+    } else if let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = e
+      && ename == "DirectedEdge"
+      && eargs.len() == 2
+      && pos_of(&eargs[0]).is_some()
+      && pos_of(&eargs[1]).is_some()
+    {
+      // A directed edge keeps its orientation, and a graph with directed
+      // edges keeps g's edge order.
+      has_directed = true;
+      edges.push(((0, 0), e.clone()));
     }
   }
-  edges.sort_by_key(|(k, _)| *k);
+  if !has_directed {
+    edges.sort_by_key(|(k, _)| *k);
+  }
   Ok(call(
     "Graph",
     vec![

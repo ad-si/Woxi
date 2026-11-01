@@ -1908,6 +1908,23 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand_distr::{Distribution, Normal};
 
   let dist = &args[0];
+  // A single variate of QuantityDistribution[d, unit] is a variate of d in
+  // that unit.
+  if args.len() == 1
+    && let Expr::FunctionCall { name, args: dargs } = dist
+    && name == "QuantityDistribution"
+    && dargs.len() == 2
+  {
+    let value = random_variate_ast(&dargs[..1])?;
+    if matches!(&value, Expr::FunctionCall { name, .. } if name == "RandomVariate")
+    {
+      return Ok(unevaluated("RandomVariate", args));
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Quantity",
+      vec![value, dargs[1].clone()],
+    ));
+  }
   let n = if args.len() == 2 {
     match &args[1] {
       // A zero count yields an empty list (matching wolframscript).
@@ -2536,8 +2553,31 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
-      if name == "MultinormalDistribution" && dargs.len() == 2 =>
+      if (name == "MultinormalDistribution" && dargs.len() == 2)
+        || (name == "MultivariateTDistribution"
+          && (dargs.len() == 2 || dargs.len() == 3)) =>
     {
+      // MultivariateTDistribution[{mu,} sigma, nu] scales a centered
+      // multinormal draw by Sqrt[nu / W] for a chi-square(nu) variate W.
+      let student = name == "MultivariateTDistribution";
+      let nu = if student {
+        match try_eval_to_f64(dargs.last().unwrap()) {
+          Some(v) if v > 0.0 => Some(v),
+          _ => return Ok(unevaluated("RandomVariate", args)),
+        }
+      } else {
+        None
+      };
+      let zero_mean;
+      let (mu_arg, sigma_arg) = if student && dargs.len() == 2 {
+        let Expr::List(rows) = &dargs[0] else {
+          return Ok(unevaluated("RandomVariate", args));
+        };
+        zero_mean = Expr::List(vec![Expr::Integer(0); rows.len()].into());
+        (&zero_mean, &dargs[0])
+      } else {
+        (&dargs[0], &dargs[1])
+      };
       // MultinormalDistribution[mu, sigma]: a k-dimensional mean vector and
       // a k x k covariance matrix. Sampled via the standard reparametrization
       // `mu + L z`, where `z` is a vector of iid standard normals and `L` is
@@ -2545,7 +2585,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // computed numerically since (unlike PDF/CDF) a random draw has no
       // exact/symbolic form to preserve.
       let (Expr::List(mu_list), sigma_expr @ Expr::List(sigma_list)) =
-        (&dargs[0], &dargs[1])
+        (mu_arg, sigma_arg)
       else {
         return Ok(unevaluated("RandomVariate", args));
       };
@@ -2577,10 +2617,11 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
 
       let posdefprm = || {
+        let position = if student && dargs.len() == 2 { 1 } else { 2 };
         crate::emit_message(&format!(
-          "MultinormalDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
+          "{name}::posdefprm: The value {} at position {position} in {} is expected to be a symmetric positive definite matrix.",
           expr_to_string(sigma_expr),
-          expr_to_string(&unevaluated("MultinormalDistribution", dargs))
+          expr_to_string(&unevaluated(name, dargs))
         ));
         Ok(unevaluated("RandomVariate", args))
       };
@@ -2623,8 +2664,16 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let z: Vec<f64> = crate::with_rng(|rng| {
           (0..k).map(|_| rng.sample(StandardNormal)).collect()
         });
+        let scale = match nu {
+          Some(nu) => {
+            let chi = rand_distr::ChiSquared::new(nu)
+              .map_or(nu, |d| crate::with_rng(|rng| d.sample(rng)));
+            (nu / chi).sqrt()
+          }
+          None => 1.0,
+        };
         (0..k)
-          .map(|i| mu[i] + (0..=i).map(|j| l[i][j] * z[j]).sum::<f64>())
+          .map(|i| mu[i] + scale * (0..=i).map(|j| l[i][j] * z[j]).sum::<f64>())
           .collect()
       };
       let vec_to_list =

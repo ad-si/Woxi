@@ -572,6 +572,15 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(Expr::Real(value));
         }
       }
+      // Arbitrary-precision arguments.
+      if let Some(v) =
+        crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+          "LegendreP",
+          args,
+        )
+      {
+        return Ok(v);
+      }
       return Ok(unevaluated("LegendreP", args));
     }
   };
@@ -1688,6 +1697,21 @@ fn chebyshev_general_exact(
   crate::evaluator::evaluate_expr_to_expr(&final_expr).ok()
 }
 
+/// `ChebyshevT[n, 0]` and `ChebyshevU[n, 0]` for a symbolic order: both are
+/// `Cos[n Pi/2]` (`T_n(0) = cos(n π/2)`, `U_n(0) = sin((n+1) π/2)`).
+fn chebyshev_at_zero(
+  n: &Expr,
+  x: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if !matches!(x, Expr::Integer(0))
+    || crate::functions::predicate_ast::is_numeric_q(n)
+  {
+    return None;
+  }
+  let arg = times(vec![n.clone(), id_expr("Pi"), make_rational(1, 2)]);
+  Some(crate::evaluator::evaluate_expr_to_expr(&call1("Cos", arg)))
+}
+
 /// ChebyshevT[n, x] - Chebyshev polynomial of the first kind
 pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1708,6 +1732,9 @@ pub fn chebyshev_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Exact non-integer order: rewrite to Cos[n ArcCos[x]] like wolframscript.
     if let Some(result) = chebyshev_general_exact("T", &args[0], &args[1]) {
       return Ok(result);
+    }
+    if let Some(result) = chebyshev_at_zero(&args[0], &args[1]) {
+      return result;
     }
     return Ok(unevaluated("ChebyshevT", args));
   };
@@ -1906,6 +1933,9 @@ pub fn chebyshev_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = chebyshev_general_exact("U", &args[0], &args[1]) {
         return Ok(result);
       }
+      if let Some(result) = chebyshev_at_zero(&args[0], &args[1]) {
+        return result;
+      }
       return Ok(unevaluated("ChebyshevU", args));
     }
   };
@@ -2095,6 +2125,27 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "GegenbauerC expects 2 or 3 arguments".into(),
     ));
+  }
+
+  // λ = 1/2 and λ = 1 are the Legendre and second-kind Chebyshev
+  // polynomials, which a symbolic degree is rewritten to.
+  if !crate::functions::predicate_ast::is_numeric_q(&args[0]) {
+    let target = match &args[1] {
+      Expr::Integer(1) => Some("ChebyshevU"),
+      Expr::FunctionCall { name, args: r }
+        if name == "Rational"
+          && matches!(&r[..], [Expr::Integer(1), Expr::Integer(2)]) =>
+      {
+        Some("LegendreP")
+      }
+      _ => None,
+    };
+    if let Some(head) = target {
+      return crate::evaluator::evaluate_expr_to_expr(&call(
+        head,
+        vec![args[0].clone(), args[2].clone()],
+      ));
+    }
   }
 
   // Complex/inexact path via the hypergeometric representation:
@@ -2618,6 +2669,13 @@ fn gegenbauer_coefficients(
 }
 
 /// LaguerreL[n, x] - Laguerre polynomial
+/// `e` is a machine or arbitrary-precision complex number `re + im I`.
+fn is_inexact_complex(e: &Expr) -> bool {
+  contains_float(e)
+    && crate::functions::math_ast::try_extract_complex_float(e)
+      .is_some_and(|(_, im)| im != 0.0)
+}
+
 pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2644,8 +2702,18 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![neg_n, Expr::Integer(1), args[1].clone()],
       );
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewrite)?;
-      if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _)) {
+      if matches!(evaluated, Expr::Real(_) | Expr::BigFloat(_, _))
+        || is_inexact_complex(&evaluated)
+      {
         return Ok(evaluated);
+      }
+      if let Some(v) =
+        crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+          "LaguerreL",
+          args,
+        )
+      {
+        return Ok(v);
       }
       return Ok(unevaluated("LaguerreL", args));
     }
@@ -2698,10 +2766,44 @@ fn generalized_laguerre_l_ast(
   let n = match n_expr {
     Expr::Integer(n) if *n >= 0 => *n as usize,
     _ => {
-      return Ok(call(
-        "LaguerreL",
-        vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
-      ));
+      let args = [n_expr.clone(), a_expr.clone(), x_expr.clone()];
+      if let Some(v) =
+        crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+          "LaguerreL",
+          &args,
+        )
+      {
+        return Ok(v);
+      }
+      // A complex argument with an inexact one: the same continuation,
+      // Gamma[n+a+1]/(Gamma[n+1] Gamma[a+1]) Hypergeometric1F1[-n, a+1, x].
+      if args.iter().any(contains_float) {
+        let one = || Expr::Integer(1);
+        let rewrite = times(vec![
+          call1("Gamma", plus(vec![n_expr.clone(), a_expr.clone(), one()])),
+          pow(
+            call1("Gamma", plus(vec![n_expr.clone(), one()])),
+            Expr::Integer(-1),
+          ),
+          pow(
+            call1("Gamma", plus(vec![a_expr.clone(), one()])),
+            Expr::Integer(-1),
+          ),
+          call(
+            "Hypergeometric1F1",
+            vec![
+              neg(n_expr.clone()),
+              plus(vec![a_expr.clone(), one()]),
+              x_expr.clone(),
+            ],
+          ),
+        ]);
+        let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewrite)?;
+        if is_inexact_complex(&evaluated) {
+          return Ok(evaluated);
+        }
+      }
+      return Ok(call("LaguerreL", args.to_vec()));
     }
   };
 
@@ -3009,41 +3111,17 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let n = match &args[0] {
     Expr::Integer(n) if *n >= 0 => *n as usize,
-    // Non-integer real ν with real x: closed form via Kummer 1F1.
-    //   H_ν(x) = 2^ν √π · [1F1(-ν/2; 1/2; x²) / Γ((1-ν)/2)
-    //                    − 2x · 1F1((1-ν)/2; 3/2; x²) / Γ(-ν/2)]
-    Expr::Real(nf) if nf.fract() != 0.0 => {
-      if let Some(xf) = try_eval_to_f64(&args[1]) {
-        let nu = *nf;
-        let x2 = xf * xf;
-        let eval_real = |e: Expr| -> Option<f64> {
-          let r = crate::evaluator::evaluate_expr_to_expr(&e).ok()?;
-          try_eval_to_f64(&r)
-        };
-        let h1 = eval_real(call(
-          "Hypergeometric1F1",
-          vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)],
-        ));
-        let h2 = eval_real(call(
-          "Hypergeometric1F1",
-          vec![
-            Expr::Real((1.0 - nu) / 2.0),
-            Expr::Real(1.5),
-            Expr::Real(x2),
-          ],
-        ));
-        let g1 = eval_real(call1("Gamma", Expr::Real((1.0 - nu) / 2.0)));
-        let g2 = eval_real(call1("Gamma", Expr::Real(-nu / 2.0)));
-        if let (Some(h1v), Some(h2v), Some(g1v), Some(g2v)) = (h1, h2, g1, g2) {
-          let pi = std::f64::consts::PI;
-          let result =
-            2f64.powf(nu) * pi.sqrt() * (h1v / g1v - 2.0 * xf * h2v / g2v);
-          return Ok(Expr::Real(result));
-        }
-      }
-      return Ok(unevaluated("HermiteH", args));
-    }
+    // Any other degree (non-integer, or an inexact integer like `3.`) with
+    // real inexact arguments: H_ν(x) through its Kummer 1F1 form.
     _ => {
+      if let Some(v) =
+        crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+          "HermiteH",
+          args,
+        )
+      {
+        return Ok(v);
+      }
       return Ok(unevaluated("HermiteH", args));
     }
   };

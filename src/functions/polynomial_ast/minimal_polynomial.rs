@@ -647,6 +647,29 @@ fn handle_power(
   base: &Expr,
   exp: &Expr,
 ) -> Result<Option<Vec<i128>>, InterpreterError> {
+  // Case: E^(I Pi p/q), a primitive root of unity of order
+  // 2q / gcd(p, 2q), whose minimal polynomial is that cyclotomic polynomial.
+  if matches!(base, Expr::Constant(c) if c == "E")
+    || matches!(base, Expr::Identifier(c) if c == "E")
+  {
+    let ratio = crate::evaluator::evaluate_expr_to_expr(&div2(
+      exp.clone(),
+      times2(Expr::Identifier("I".into()), Expr::Constant("Pi".into())),
+    ))?;
+    if let Some((p, q)) = expr_to_rational(&ratio)
+      && q > 0
+      && q <= 1000
+    {
+      let two_q = 2 * q;
+      let order = two_q / crate::functions::math_ast::gcd_i128(p.abs(), two_q);
+      return Ok(Some(
+        crate::functions::polynomial_ast::cyclotomic::cyclotomic_coeffs(
+          order as usize,
+        ),
+      ));
+    }
+    return Ok(None);
+  }
   // Case: a^(p/q) where a is rational
   if let Some((a_num, a_den)) = expr_to_rational(base)
     && let Some((p, q)) = expr_to_rational(exp)

@@ -15690,6 +15690,45 @@ fn empty_series_at_valuation(
 }
 
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let result = series_ast_impl(args)?;
+  // An expansion about Infinity whose coefficients still mention an infinite
+  // quantity (`BesselJ[0, Infinity]`, `Derivative[0, 1][LegendreP][1/2,
+  // Infinity]`) is a Taylor series taken at a point where the function has
+  // none — its true expansion is asymptotic. Leave such a call unevaluated
+  // rather than return a wrong series.
+  if let Some(Expr::List(spec)) = args.get(1)
+    && spec.len() == 3
+    && matches!(&spec[1], Expr::Identifier(s) if s == "Infinity")
+    && let Expr::FunctionCall { name, args: sd } = &result
+    && name == "SeriesData"
+    && sd.len() == 6
+    && mentions_non_finite(&sd[2])
+  {
+    return Ok(unevaluated("Series", args));
+  }
+  Ok(result)
+}
+
+/// True when `e` contains `Infinity`, `ComplexInfinity`, `Indeterminate` or a
+/// `DirectedInfinity[…]` anywhere in its tree.
+fn mentions_non_finite(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(s)
+      if matches!(
+        s.as_str(),
+        "Infinity" | "ComplexInfinity" | "Indeterminate"
+      ) =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => true,
+    _ => crate::syntax::expr_children(e)
+      .into_iter()
+      .any(mentions_non_finite),
+  }
+}
+
+fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
       "Series expects at least 2 arguments".into(),

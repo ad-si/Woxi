@@ -25,6 +25,15 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let n = match expr_to_i128(n_expr) {
     Some(n) if n >= 0 => n as usize,
     _ => {
+      // A non-integer count is (a; q)_∞ / (a q^n; q)_∞, numerically.
+      if let Some(v) =
+        crate::functions::math_ast::orthogonal_bigfloat::inexact_orthogonal_value(
+          "QPochhammer",
+          args,
+        )
+      {
+        return Ok(v);
+      }
       return Ok(unevaluated("QPochhammer", args));
     }
   };

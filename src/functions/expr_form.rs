@@ -30,6 +30,33 @@ fn collect_children(expr: &Expr, target_op: BinaryOperator) -> Vec<Expr> {
   }
 }
 
+/// Collect the terms of a `+`/`-` chain into one flat Plus argument list.
+/// The right operand of each `-` becomes `Times[-1, operand]` (itself a flat
+/// product), so `a - x y + b` gives `{a, Times[-1, x, y], b}`.
+fn collect_additive_children(expr: &Expr) -> Vec<Expr> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      let mut parts = collect_additive_children(left);
+      parts.extend(collect_additive_children(right));
+      parts
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      let mut parts = collect_additive_children(left);
+      parts.push(times2(Expr::Integer(-1), *right.clone()));
+      parts
+    }
+    _ => vec![expr.clone()],
+  }
+}
+
 /// Flatten nested Part expressions into (base_expr, [index1, index2, ...]).
 fn flatten_part(expr: &Expr) -> (&Expr, Vec<Expr>) {
   let mut indices = Vec::new();
@@ -169,21 +196,15 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
     // --- Binary operators ---
     Expr::BinaryOp { op, left, right } => match op {
       // Associative: flatten nested Plus/Times
-      BinaryOperator::Plus => ExprForm::Composite {
+      // `a - b + c` is one sum, `Plus[a, Times[-1, b], c]`: a `-` in the
+      // chain negates its right operand and continues the same Plus.
+      BinaryOperator::Plus | BinaryOperator::Minus => ExprForm::Composite {
         head: "Plus".to_string(),
-        children: collect_children(expr, BinaryOperator::Plus),
+        children: collect_additive_children(expr),
       },
       BinaryOperator::Times => ExprForm::Composite {
         head: "Times".to_string(),
         children: collect_children(expr, BinaryOperator::Times),
-      },
-      // Canonical transformations
-      BinaryOperator::Minus => ExprForm::Composite {
-        head: "Plus".to_string(),
-        children: vec![
-          left.as_ref().clone(),
-          times2(Expr::Integer(-1), *right.clone()),
-        ],
       },
       BinaryOperator::Divide => {
         // Structural decomposition only: a/b → Times[a, Power[b, -1]]
@@ -209,17 +230,18 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         head: "Power".to_string(),
         children: vec![left.as_ref().clone(), right.as_ref().clone()],
       },
+      // `a && b && c` is `And[a, b, c]` (likewise `||` and `<>`).
       BinaryOperator::And => ExprForm::Composite {
         head: "And".to_string(),
-        children: vec![left.as_ref().clone(), right.as_ref().clone()],
+        children: collect_children(expr, BinaryOperator::And),
       },
       BinaryOperator::Or => ExprForm::Composite {
         head: "Or".to_string(),
-        children: vec![left.as_ref().clone(), right.as_ref().clone()],
+        children: collect_children(expr, BinaryOperator::Or),
       },
       BinaryOperator::StringJoin => ExprForm::Composite {
         head: "StringJoin".to_string(),
-        children: vec![left.as_ref().clone(), right.as_ref().clone()],
+        children: collect_children(expr, BinaryOperator::StringJoin),
       },
       BinaryOperator::Alternatives => ExprForm::Composite {
         head: "Alternatives".to_string(),

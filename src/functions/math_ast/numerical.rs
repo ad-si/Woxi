@@ -984,6 +984,61 @@ pub fn hurwitz_zeta_bigfloat(
   Some(sum)
 }
 
+/// `HarmonicNumber[x, r]` for real `x > -1` and real `r`, to `bits` bits:
+/// `ψ(x + 1) + γ` at `r = 1`, else `ζ(r) − ζ(r, x + 1)`, with guard bits
+/// grown past the cancellation of the difference.
+pub(crate) fn harmonic_number_bigfloat(
+  x: &astro_float::BigFloat,
+  r: &astro_float::BigFloat,
+  bits: usize,
+  rm: astro_float::RoundingMode,
+  cc: &mut astro_float::Consts,
+) -> Option<astro_float::BigFloat> {
+  use astro_float::BigFloat;
+  let exp = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      i64::from(b.exponent().unwrap_or(0))
+    }
+  };
+  if x.cmp(&BigFloat::from_i32(-1, bits))? <= 0 {
+    return None;
+  }
+  let mut guard = 64;
+  loop {
+    let wp = bits + guard;
+    let one = BigFloat::from_i32(1, wp);
+    let x1 = x.add(&one, wp, rm);
+    let (a, b) = if r.sub(&one, wp, rm).is_zero() {
+      (
+        polygamma_bigfloat(0, &x1, wp, rm, cc)?,
+        polygamma_bigfloat(0, &one, wp, rm, cc)?,
+      )
+    } else {
+      (
+        hurwitz_zeta_bigfloat(r, &one, false, wp, rm, cc)?,
+        hurwitz_zeta_bigfloat(r, &x1, false, wp, rm, cc)?,
+      )
+    };
+    let diff = a.sub(&b, wp, rm);
+    let lost = (exp(&a).max(exp(&b)) - exp(&diff)).max(0) as usize;
+    if lost + 16 <= guard || guard > 16 * bits + 4096 {
+      return Some(diff.round(bits, rm));
+    }
+    guard = lost + 64;
+  }
+}
+
+/// `expr` (a function call with real arguments) as a machine number,
+/// computed at 128 bits through the arbitrary-precision path and rounded
+/// once; `None` when that path has no value for it.
+pub(crate) fn machine_function_value(expr: &Expr) -> Option<f64> {
+  let rm = astro_float::RoundingMode::ToEven;
+  let v = with_thread_consts(|cc| expr_to_bigfloat(expr, 128, rm, cc).ok())?;
+  bigfloat_to_f64_approx(&v).filter(|v| v.is_finite())
+}
+
 /// The order of `PolyGamma[n, z]` as a non-negative integer — also from an
 /// integral `Real`/`BigFloat`, which is what `N` turns the order into.
 pub fn polygamma_order(n: &Expr) -> Option<usize> {
@@ -1585,6 +1640,18 @@ fn wl_bigfloat_expr(
   let digits = wl_fraction_digits(&bf, precision);
   let decimal = bigfloat_to_string(&bf, Some(digits), rm, cc)?;
   Ok(Expr::BigFloat(decimal, precision))
+}
+
+/// `expr`, a function call with real numeric arguments, as an
+/// arbitrary-precision number at `precision` digits — or `None` when the
+/// arbitrary-precision path has no value for it.
+pub(crate) fn bigfloat_function_value(
+  expr: &Expr,
+  precision: f64,
+) -> Option<Expr> {
+  let bits = nominal_bits(precision.floor().max(1.0) as usize) + 64;
+  let rm = astro_float::RoundingMode::ToEven;
+  with_thread_consts(|cc| wl_bigfloat_expr(expr, precision, bits, rm, cc).ok())
 }
 
 /// SetAccuracy[expr, accuracy] — set every numeric leaf of `expr` to a fixed
@@ -2468,6 +2535,21 @@ pub fn expr_to_bigfloat(
               )
             })
         }
+        // HarmonicNumber[x, r] = Zeta[r] - HurwitzZeta[r, x + 1], and
+        // PolyGamma[x + 1] + EulerGamma at r = 1; real x > -1.
+        "HarmonicNumber" if (1..=2).contains(&args.len()) => {
+          let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let r = match args.get(1) {
+            Some(r) => expr_to_bigfloat(r, bits, rm, cc)?,
+            None => BigFloat::from_i32(1, bits),
+          };
+          harmonic_number_bigfloat(&x, &r, bits, rm, cc).ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "N: cannot evaluate HarmonicNumber[...] to arbitrary precision"
+                .into(),
+            )
+          })
+        }
         "LogGamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(gamma_bigfloat(&z, bits, rm, cc).ln(bits, rm, cc))
@@ -2541,6 +2623,34 @@ pub fn expr_to_bigfloat(
         "Gamma" if args.len() == 1 => {
           let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(gamma_bigfloat(&z, bits, rm, cc))
+        }
+        // Non-integer degrees of the orthogonal-polynomial family (integer
+        // degrees expand to exact polynomials before N sees them).
+        "LegendreP"
+        | "LaguerreL"
+        | "HermiteH"
+        | "Fibonacci"
+        | "QPochhammer"
+        | "Hypergeometric1F1"
+        | "Hypergeometric0F1"
+        | "Hypergeometric0F1Regularized"
+        | "FresnelS"
+        | "FresnelC"
+        | "LogisticSigmoid"
+          if (1..=3).contains(&args.len()) =>
+        {
+          let v: Vec<BigFloat> = args
+            .iter()
+            .map(|a| expr_to_bigfloat(a, bits, rm, cc))
+            .collect::<Result<_, _>>()?;
+          crate::functions::math_ast::orthogonal_bigfloat::orthogonal_bigfloat(
+            name, &v, bits, rm, cc,
+          )
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(format!(
+              "N: cannot evaluate {name}[...] to arbitrary precision"
+            ))
+          })
         }
         "Erf" if args.len() == 1 => {
           let x = expr_to_bigfloat(&args[0], bits, rm, cc)?;
@@ -3303,6 +3413,40 @@ fn rescale_symbolic_numeric_list(
   rebuild(&args[0], min_e, &span)
 }
 
+/// Rescale with symbolic (or complex) bounds, in the forms wolframscript
+/// gives: `Rescale[x, {a, b}]` is `(x - a)/(b - a)` (so `Rescale[0, {a, b}]`
+/// is `-(a/(-a + b))` and `Rescale[a, {b, a}]` is 1), and
+/// `Rescale[x, {a, b}, {c, d}]` is the line
+/// `-(a d - b c)/(b - a) + (d - c) x/(b - a)`.
+fn rescale_symbolic(
+  x: &Expr,
+  a: &Expr,
+  b: &Expr,
+  target: Option<(&Expr, &Expr)>,
+) -> Result<Expr, InterpreterError> {
+  let inv_span = pow(plus(vec![b.clone(), neg(a.clone())]), Expr::Integer(-1));
+  let Some((c, d)) = target else {
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      plus(vec![x.clone(), neg(a.clone())]),
+      inv_span,
+    ]));
+  };
+  let constant = times(vec![
+    Expr::Integer(-1),
+    plus(vec![
+      times(vec![a.clone(), d.clone()]),
+      neg(times(vec![b.clone(), c.clone()])),
+    ]),
+    inv_span.clone(),
+  ]);
+  let slope_term = times(vec![
+    plus(vec![d.clone(), neg(c.clone())]),
+    x.clone(),
+    inv_span,
+  ]);
+  crate::evaluator::evaluate_expr_to_expr(&plus(vec![constant, slope_term]))
+}
+
 pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
@@ -3399,14 +3543,18 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if name == "Rational" && args.len() == 2)
   };
 
-  // The bounds and targets must be numbers. Symbolic bounds/targets ({a, b})
-  // make wolframscript produce an Apart/Expand-normalized form that Woxi's
-  // canonicalization does not reproduce, so those stay unevaluated. Exact
+  // Symbolic (or complex) bounds/targets ({a, b}) give the line form of
+  // `rescale_symbolic`. Otherwise the bounds are real numbers. Exact
   // numeric constants (`Log[3]`, as in a weighting of `Log[n/df]` values)
   // are numbers too, as long as the value being rescaled is numeric as well.
   let bounds = [&range[0], &range[1], ymin, ymax];
   if bounds.iter().any(|b| try_eval_to_f64(b).is_none()) {
-    return unevaluated();
+    return rescale_symbolic(
+      &args[0],
+      &range[0],
+      &range[1],
+      (args.len() == 3).then_some((ymin, ymax)),
+    );
   }
   let literal_bounds = bounds.iter().all(|b| is_numeric_literal(b));
   if !literal_bounds && try_eval_to_f64(&args[0]).is_none() {
@@ -6832,33 +6980,55 @@ fn compute_champernowne(
   BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc)
 }
 
-/// ListFourierSequenceTransform[{a0, a1, ..., an}, omega] — discrete-time Fourier transform.
-///
-/// Computes Sum[a_k * E^(-I * omega * k), {k, 0, n-1}].
+/// ListFourierSequenceTransform[{u1, …, un}, ω(, k), FourierParameters ->
+/// {a, b}] — discrete-time Fourier transform
+/// |b/(2 Pi)|^((1 - a)/2) Sum[u_r E^(-I b (r + k - 1) ω), {r, n}], with
+/// {a, b} = {1, 1} and k = 0 by default.
 pub fn list_fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 && args.len() != 3 {
-    return Ok(unevaluated("ListFourierSequenceTransform", args));
+  let unevaluated_result =
+    || Ok(unevaluated("ListFourierSequenceTransform", args));
+  let split = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. }))
+    .unwrap_or(args.len());
+  let (positional, opts) = args.split_at(split);
+  if positional.len() != 2 && positional.len() != 3 {
+    return unevaluated_result();
+  }
+  let (mut a, mut b) = (Expr::Integer(1), Expr::Integer(1));
+  for opt in opts {
+    match crate::functions::expr_form::rule_parts(opt) {
+      Some((Expr::Identifier(n), Expr::List(ab), _))
+        if n == "FourierParameters" && ab.len() == 2 =>
+      {
+        a = ab[0].clone();
+        b = ab[1].clone();
+      }
+      _ => return unevaluated_result(),
+    }
   }
   // ListFourierSequenceTransform[list, ω, n0]: list starts at index n0.
-  let shift: i128 = match args.get(2) {
+  let shift: i128 = match positional.get(2) {
     None => 0,
     Some(Expr::Integer(n)) => *n,
-    Some(_) => return Ok(unevaluated("ListFourierSequenceTransform", args)),
+    Some(_) => return unevaluated_result(),
   };
 
-  let Expr::List(list) = &args[0] else {
-    return Ok(unevaluated("ListFourierSequenceTransform", args));
+  let Expr::List(list) = &positional[0] else {
+    return unevaluated_result();
   };
 
   if list.is_empty() {
     return Ok(Expr::List(vec![].into()));
   }
 
-  let omega = &args[1];
+  let omega = &positional[1];
+  let default_parameters =
+    matches!((&a, &b), (Expr::Integer(1), Expr::Integer(1)));
 
-  // Build the sum: Sum[a_k * E^(-I * omega * k), {k, 0, n-1}]
+  // Sum[u_k E^(-I b ω k)]
   use crate::evaluator::evaluate_expr_to_expr;
 
   let mut terms: Vec<Expr> = Vec::new();
@@ -6869,17 +7039,15 @@ pub fn list_fourier_sequence_transform_ast(
     let k = k as i128 + shift;
 
     if k == 0 {
-      // E^0 = 1, so just add the coefficient
       terms.push(coeff.clone());
     } else {
-      // a_k * E^(-I * omega * k)
-      let k_expr = Expr::Integer(k);
-      // -I * omega * k
-      let exponent =
-        times(vec![Expr::Integer(-1), id_expr("I"), omega.clone(), k_expr]);
-      let exp_term = pow2(id_expr("E"), exponent);
-      let term = times2(coeff.clone(), exp_term);
-      terms.push(term);
+      let exponent = times(vec![
+        Expr::Integer(-k),
+        id_expr("I"),
+        b.clone(),
+        omega.clone(),
+      ]);
+      terms.push(times2(coeff.clone(), pow2(id_expr("E"), exponent)));
     }
   }
 
@@ -6887,11 +7055,28 @@ pub fn list_fourier_sequence_transform_ast(
     return Ok(Expr::Integer(0));
   }
 
-  let sum = if terms.len() == 1 {
+  let mut sum = if terms.len() == 1 {
     terms.pop().unwrap()
   } else {
     plus(terms)
   };
+  if !default_parameters {
+    // |b/(2 Pi)|^((1 - a)/2)
+    let scale = pow2(
+      call1(
+        "Abs",
+        times2(
+          b.clone(),
+          pow2(times2(Expr::Integer(2), id_expr("Pi")), Expr::Integer(-1)),
+        ),
+      ),
+      times2(
+        plus(vec![Expr::Integer(1), times2(Expr::Integer(-1), a)]),
+        make_rational(1, 2),
+      ),
+    );
+    sum = times2(scale, evaluate_expr_to_expr(&sum)?);
+  }
 
   evaluate_expr_to_expr(&sum)
 }

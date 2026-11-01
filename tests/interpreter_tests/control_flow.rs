@@ -308,6 +308,35 @@ mod block_scoping {
 mod with_scoping {
   use super::*;
 
+  // A definition inside With whose pattern variable has the same name as
+  // the With variable binds that pattern variable; the With value must not
+  // leak into the right-hand side.
+  #[test]
+  fn definition_pattern_variable_shadows_with_variable() {
+    clear_state();
+    assert_eq!(
+      interpret("With[{a = 3}, f[{t_, a_}] := a + t; f[{1, 10}]]").unwrap(),
+      "11"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("With[{a = 3}, {1, 2} /. a_ :> a]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn definition_pattern_variable_shadows_with_inside_module() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{s = 0}, With[{a = 3}, Module[{e}, e[s_][{a_}] := a + s; e[1][{10}]]]]"
+      )
+      .unwrap(),
+      "11"
+    );
+  }
+
   // With takes any number of local variable specifications, each scoped
   // inside the ones before it, so a later one can build on an earlier one.
   #[test]

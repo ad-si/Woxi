@@ -10031,7 +10031,10 @@ pub fn apply_string_template_with(
             }
             pieces.push(apply_and_evaluate(f, v.clone())?);
           }
-          None => result.push_str(&expr_to_output(v)),
+          None => result.push_str(&match v {
+            Expr::Real(_) => template_insertion_text(v),
+            other => expr_to_output(other),
+          }),
         }
       }
       // Unfilled slots contribute nothing.
@@ -15581,6 +15584,16 @@ fn template_object_apply(
   Ok(Expr::String(result))
 }
 
+/// The text a string template inserts for a slot value. A machine real shows
+/// its six-digit text form (`0.123457`), as `TextString`/`ToString` give it;
+/// other values keep their `InputForm`-like spelling.
+fn template_insertion_text(v: &Expr) -> String {
+  match v {
+    Expr::Real(f) => text_string_real(*f),
+    other => expr_to_string(other),
+  }
+}
+
 /// TemplateApply[template, args] - Apply arguments to a string template.
 /// Replaces `n` with the nth argument (1-indexed) from a list,
 /// or `key` with the value from an association.
@@ -15596,6 +15609,42 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut unwrapped = vec![inner[0].clone()];
     unwrapped.extend(args[1..].iter().cloned());
     return template_apply_ast(&unwrapped);
+  }
+  // `StringTemplate[s, <|defaults|>]`: the defaults fill the named slots the
+  // applied association leaves out. Delayed defaults (`"a" :> RandomReal[]`)
+  // are evaluated afresh on every application.
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "StringTemplate"
+    && inner.len() == 2
+    && let Expr::Association(defaults) = &inner[1]
+    && matches!(args.get(1), None | Some(Expr::Association(_)))
+  {
+    let mut merged: Vec<(Expr, Expr)> = Vec::new();
+    for (k, v) in defaults {
+      let value = match v {
+        Expr::RuleDelayed { replacement, .. } => {
+          crate::evaluator::evaluate_expr_to_expr(replacement)?
+        }
+        other => other.clone(),
+      };
+      merged.push((k.clone(), value));
+    }
+    if let Some(Expr::Association(given)) = args.get(1) {
+      for (k, v) in given {
+        let v = match v {
+          Expr::RuleDelayed { replacement, .. } => {
+            crate::evaluator::evaluate_expr_to_expr(replacement)?
+          }
+          other => other.clone(),
+        };
+        let key = expr_to_string(k);
+        match merged.iter_mut().find(|(mk, _)| expr_to_string(mk) == key) {
+          Some(slot) => slot.1 = v,
+          None => merged.push((k.clone(), v)),
+        }
+      }
+    }
+    return template_apply_ast(&[inner[0].clone(), Expr::Association(merged)]);
   }
   // TemplateApply[template] evaluates the template's expression slots with no
   // parameters to fill.
@@ -15650,7 +15699,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (i, item) in items.iter().enumerate() {
         let value_str = match item {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert((i + 1).to_string(), value_str);
       }
@@ -15665,7 +15714,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let value = match v {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert(key, value);
       }
@@ -15702,7 +15751,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let value = match val_expr {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert(key, value);
       }
@@ -15741,13 +15790,9 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         key.clone()
       };
+      // An unfilled slot contributes nothing ("a is 1, b is ").
       if let Some(replacement) = replacements.get(&lookup_key) {
         result.push_str(replacement);
-      } else {
-        // No replacement found - keep the slot
-        result.push('`');
-        result.push_str(&key);
-        result.push('`');
       }
     } else {
       result.push(ch);
@@ -15832,15 +15877,82 @@ static DICTIONARY_LIST: LazyLock<Vec<String>> = LazyLock::new(|| {
   text.lines().map(str::to_string).collect()
 });
 
-static DICTIONARY_WORDS: LazyLock<std::collections::HashSet<String>> =
-  LazyLock::new(|| DICTIONARY_LIST.iter().map(|w| w.to_lowercase()).collect());
+/// The bundled words keyed by their lower-case form.
+static DICTIONARY_WORDS: LazyLock<
+  std::collections::HashMap<String, Vec<&'static str>>,
+> = LazyLock::new(|| {
+  let mut map: std::collections::HashMap<String, Vec<&'static str>> =
+    std::collections::HashMap::new();
+  for w in DICTIONARY_LIST.iter() {
+    map.entry(w.to_lowercase()).or_default().push(w.as_str());
+  }
+  map
+});
+
+/// Whether s is a dictionary word: an entry as written, capitalized or in
+/// all capitals ("hello", "Hello", "HELLO"), but not a capitalized entry in
+/// lower case ("paris") unless case is ignored.
+fn is_dictionary_word(s: &str, ignore_case: bool) -> bool {
+  let Some(entries) = DICTIONARY_WORDS.get(&s.to_lowercase()) else {
+    return false;
+  };
+  ignore_case
+    || entries.iter().any(|w| {
+      let mut chars = w.chars();
+      let capitalized: String = chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default();
+      s == *w || s == capitalized || s == w.to_uppercase()
+    })
+}
+
+/// The `IgnoreCase -> True | False` and `Language -> "English"` options of
+/// the dictionary functions: `Some(ignore_case)`, or `None` for anything
+/// else (another language has no bundled dictionary).
+fn dictionary_options(opts: &[Expr]) -> Option<bool> {
+  let mut ignore_case = false;
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return None;
+    };
+    match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::Identifier(n), Expr::Identifier(v)) if n == "IgnoreCase" => {
+        match v.as_str() {
+          "True" => ignore_case = true,
+          "False" => ignore_case = false,
+          _ => return None,
+        }
+      }
+      (Expr::Identifier(n), Expr::String(l))
+        if n == "Language" && l == "English" => {}
+      _ => return None,
+    }
+  }
+  Some(ignore_case)
+}
 
 /// DictionaryLookup[patt] - all dictionary words matching the string pattern
 /// DictionaryLookup[patt, n] - at most the first n matches
 /// DictionaryLookup[] - the whole word list
 pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let split = args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. }))
+    .unwrap_or(args.len());
+  let (positional, opts) = args.split_at(split);
+  let Some(ignore_case) = dictionary_options(opts) else {
+    return Ok(unevaluated("DictionaryLookup", args));
+  };
+  if positional.len() > 2 {
+    return Ok(unevaluated("DictionaryLookup", args));
+  }
   // An optional {"English", patt} wrapper selects the (only) English list.
-  let patt = match args.first() {
+  let patt = match positional.first() {
     Some(Expr::List(items))
       if items.len() == 2
         && matches!(&items[0], Expr::String(l) if l == "English") =>
@@ -15850,10 +15962,14 @@ pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(p) => Some(p.clone()),
     None => None,
   };
-  let limit = match args.get(1) {
+  let limit = match positional.get(1) {
     None => None,
     Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
     Some(_) => return Ok(unevaluated("DictionaryLookup", args)),
+  };
+  let case_option = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("IgnoreCase".to_string())),
+    replacement: Box::new(bool_expr(ignore_case)),
   };
   let mut out = Vec::new();
   for word in DICTIONARY_LIST.iter() {
@@ -15863,7 +15979,11 @@ pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let keep = match &patt {
       None => true,
       Some(p) => matches!(
-        string_match_q_ast(&[Expr::String(word.clone()), p.clone()])?,
+        string_match_q_ast(&[
+          Expr::String(word.clone()),
+          p.clone(),
+          case_option.clone()
+        ])?,
         Expr::Identifier(ref t) if t == "True"
       ),
     };
@@ -15876,16 +15996,18 @@ pub fn dictionary_lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DictionaryWordQ[string] - True if string is a dictionary word
 pub fn dictionary_word_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
-      "DictionaryWordQ expects exactly 1 argument".into(),
+      "DictionaryWordQ expects 1 argument".into(),
     ));
   }
+  let Some(ignore_case) = dictionary_options(&args[1..]) else {
+    return Ok(unevaluated("DictionaryWordQ", args));
+  };
   match &args[0] {
-    Expr::String(s) => {
-      let result = s.is_empty() || DICTIONARY_WORDS.contains(&s.to_lowercase());
-      Ok(bool_expr(result))
-    }
+    Expr::String(s) => Ok(bool_expr(
+      s.is_empty() || is_dictionary_word(s, ignore_case),
+    )),
     _ => Ok(unevaluated("DictionaryWordQ", args)),
   }
 }
