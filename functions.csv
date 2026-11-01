@@ -3315,7 +3315,7 @@ EntityClassList,"List entity classes for a type",✅,,10.0,3353
 FindTransientRepeat,"Split a sequence into {transient repeat} where repeat is the shortest end-cycle occurring at least n times",✅,pure,10.4,3353
 InverseContinuousWaveletTransform,"Inverse continuous wavelet transform (least-squares reconstruction)",✅,pure,8.0,3353
 Perimeter,"Compute the perimeter of a region",✅,pure,11.1,3353
-PriceGraphDistribution,"",,,8.0,3353
+PriceGraphDistribution,"de Solla Price random graph distribution (recognised by RandomGraph)",✅,pure,8.0,3353
 SocketConnect,"Connect to a TCP endpoint and return a SocketObject",✅,effectful,10.3,3353
 AlgebraicNumberPolynomial,"",,,6.0,3363
 ArgumentsOptions,"",,,12.2,3363
