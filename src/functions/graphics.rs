@@ -332,6 +332,9 @@ struct StyleState {
   /// against each other: the SVG `text-anchor` of the block's left or right
   /// edge. `None` centers every line on the anchor.
   text_line_anchor: Option<&'static str>,
+  /// `Text[expr, Offset[{dx, dy}, pos]]`: the label sits `dx`, `dy` screen
+  /// points (y up) away from `pos`, whatever the plot range.
+  text_pixel_shift: (f64, f64),
   /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
@@ -582,6 +585,7 @@ impl Default for StyleState {
       font_family: String::new(),
       text_background: None,
       text_line_anchor: None,
+      text_pixel_shift: (0.0, 0.0),
       arrowheads: None,
       cap_form: None,
       join_form: None,
@@ -6158,10 +6162,22 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   let text = graphics_text_content(content);
   local_style.text_line_anchor = column_line_anchor(content);
 
-  let (x, y, scaled) = if args.len() >= 2 {
-    expr_to_anchor(&args[1]).unwrap_or((0.0, 0.0, false))
-  } else {
-    (0.0, 0.0, false)
+  // `Offset[{dx, dy}, pos]` places the label `dx`, `dy` screen points from
+  // `pos` (`pos` defaults to the origin of the plot).
+  let (anchor_expr, pixel_shift) = match args.get(1) {
+    Some(Expr::FunctionCall { name, args: oargs })
+      if name == "Offset"
+        && (1..=2).contains(&oargs.len())
+        && let Some(shift) = expr_to_point(&oargs[0]) =>
+    {
+      (oargs.get(1), shift)
+    }
+    other => (other, (0.0, 0.0)),
+  };
+  local_style.text_pixel_shift = pixel_shift;
+  let (x, y, scaled) = match anchor_expr {
+    Some(e) => expr_to_anchor(e).unwrap_or((0.0, 0.0, false)),
+    None => (0.0, 0.0, false),
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
   // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
@@ -10260,8 +10276,8 @@ fn render_primitive(
       let text_w = longest as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
-      let anchor_x = coord_x(ax, bb, svg_w);
-      let anchor_y = coord_y(ay, bb, svg_h);
+      let anchor_x = coord_x(ax, bb, svg_w) + style.text_pixel_shift.0;
+      let anchor_y = coord_y(ay, bb, svg_h) - style.text_pixel_shift.1;
       // A fourth `direction` argument tilts the label's baseline to match
       // that vector — carried in data coordinates, so it has to go through
       // the same x/y pixel-per-unit scaling `coord_x`/`coord_y` apply (and
