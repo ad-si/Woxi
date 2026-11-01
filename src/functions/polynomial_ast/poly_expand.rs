@@ -396,11 +396,104 @@ fn to_poly(expr: &Expr, nv: usize, gens: &GenLookup) -> Option<Poly> {
 /// `p^n` by repeated multiplication with the (usually short) base, which for
 /// sparse multivariate bases is cheaper than squaring the growing result.
 fn pow(p: &Poly, n: u32) -> Poly {
+  if let Some(r) = multinomial_pow(p, n) {
+    return r;
+  }
   let mut acc = Poly::one(p.nv);
   for _ in 0..n {
     acc = acc.mul(p);
   }
   acc
+}
+
+/// `p^n` by the multinomial theorem: one term per composition
+/// e_1 + … + e_k = n of the exponent over the k terms of `p`, with
+/// coefficient n!/(e_1!…e_k!) Π c_i^e_i. Repeated multiplication costs about
+/// n^k terms for a dense k-term base (minutes for `(x + y + z)^1000`), while
+/// there are only C(n + k - 1, k - 1) compositions; when terms collide
+/// heavily (`(1 + x + … + x^20)^50`) the compositions far outnumber the
+/// result, so that case — more than `MAX_COMPOSITIONS` — returns None.
+fn multinomial_pow(p: &Poly, n: u32) -> Option<Poly> {
+  const MAX_COMPOSITIONS: f64 = 2.0e6;
+  let k = p.t.len();
+  if k < 2 || n < 2 {
+    return None;
+  }
+  let mut count = 1.0f64;
+  for i in 1..k {
+    count = count * (n as f64 + i as f64) / i as f64;
+    if count > MAX_COMPOSITIONS {
+      return None;
+    }
+  }
+  let terms: Vec<(&Mono, &Q)> = p.t.iter().collect();
+  // Powers of every term's numerator and denominator, 0..=n.
+  let powers = |b: &BigInt| {
+    let mut v = Vec::with_capacity(n as usize + 1);
+    v.push(BigInt::one());
+    for e in 1..=n as usize {
+      let next = &v[e - 1] * b;
+      v.push(next);
+    }
+    v
+  };
+  let num_pows: Vec<Vec<BigInt>> =
+    terms.iter().map(|(_, c)| powers(&c.n)).collect();
+  let den_pows: Vec<Vec<BigInt>> =
+    terms.iter().map(|(_, c)| powers(&c.d)).collect();
+
+  struct Walk<'a> {
+    terms: &'a [(&'a Mono, &'a Q)],
+    num_pows: &'a [Vec<BigInt>],
+    den_pows: &'a [Vec<BigInt>],
+    out: Poly,
+  }
+  impl Walk<'_> {
+    fn go(
+      &mut self,
+      i: usize,
+      rest: u32,
+      num: &BigInt,
+      den: &BigInt,
+      mono: &Mono,
+    ) {
+      let add = |mono: &Mono, m: &Mono, e: u32| -> Mono {
+        mono.iter().zip(m).map(|(a, b)| a + b * e).collect()
+      };
+      if i + 1 == self.terms.len() {
+        // The last term takes the remaining exponent (multinomial factor 1).
+        let num = num * &self.num_pows[i][rest as usize];
+        let den = den * &self.den_pows[i][rest as usize];
+        let m = add(mono, self.terms[i].0, rest);
+        let c = if den.is_one() {
+          Q::int(num)
+        } else {
+          Q::new(num, den)
+        };
+        self.out.add_term(m, c);
+        return;
+      }
+      // binom(rest, e), updated incrementally as e grows.
+      let mut binom = BigInt::one();
+      for e in 0..=rest {
+        if e > 0 {
+          binom = binom * BigInt::from(rest - e + 1) / BigInt::from(e);
+        }
+        let num2 = num * &binom * &self.num_pows[i][e as usize];
+        let den2 = den * &self.den_pows[i][e as usize];
+        let m = add(mono, self.terms[i].0, e);
+        self.go(i + 1, rest - e, &num2, &den2, &m);
+      }
+    }
+  }
+  let mut walk = Walk {
+    terms: &terms,
+    num_pows: &num_pows,
+    den_pows: &den_pows,
+    out: Poly::zero(p.nv),
+  };
+  walk.go(0, n, &BigInt::one(), &BigInt::one(), &vec![0; p.nv]);
+  Some(walk.out)
 }
 
 /// Build the canonical expanded form of `p` over the generators.

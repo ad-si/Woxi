@@ -3182,6 +3182,18 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           Ok(simplify(times2(neg1(call_expr("Sin", args)), df)))
         }
+        // fDegrees[u] = f[u Degree]: differentiate the radian form.
+        "SinDegrees" | "CosDegrees" | "TanDegrees" | "CotDegrees"
+        | "SecDegrees" | "CscDegrees"
+          if args.len() == 1 =>
+        {
+          let radians = call1(
+            name.trim_end_matches("Degrees"),
+            times2(args[0].clone(), Expr::Constant("Degree".to_string())),
+          );
+          let d = differentiate(&radians, var)?;
+          crate::functions::math_ast::from_radian_form(&d)
+        }
         "Gudermannian" if args.len() == 1 => {
           // d/dx[gd(f(x))] = Sech[f(x)] * f'(x)
           let df = differentiate(&args[0], var)?;
@@ -20343,8 +20355,13 @@ pub fn asymptotic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Extract the leading (first non-zero) term `c*(x-x0)^order` from a SeriesData
-/// expression. Returns None when every stored coefficient is zero.
-fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
+/// expression (`c*x^-order` at `x0 = Infinity`). Returns None when every
+/// stored coefficient is zero.
+pub fn leading_series_term(
+  series: &Expr,
+  var: &str,
+  x0: &Expr,
+) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = series else {
     return None;
   };
@@ -20373,6 +20390,14 @@ fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
     } else {
       crate::functions::math_ast::make_rational(order, denom)
     };
+    if matches!(x0, Expr::Identifier(n) if n == "Infinity") {
+      let neg_exp = if denom == 1 {
+        Expr::Integer(-order)
+      } else {
+        crate::functions::math_ast::make_rational(-order, denom)
+      };
+      return Some(times(vec![c.clone(), pow(id_expr(var), neg_exp)]));
+    }
     let base = if matches!(x0, Expr::Integer(0)) {
       id_expr(var)
     } else {

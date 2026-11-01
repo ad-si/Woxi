@@ -318,3 +318,46 @@ pub(crate) fn weierstrass_complex(
   };
   (value.0.is_finite() && value.1.is_finite()).then_some(value)
 }
+
+/// `InverseWeierstrassP[p, {g2, g3}]` for machine complex `p`, `g2`, `g3`:
+/// `u = -R_F(p - e1, p - e2, p - e3)` (so `℘(u) = p`), the representative WL
+/// returns. For real invariants WL moves a `u` whose real part lies left of
+/// `-ω/2` (`ω` the real half-period `R_F(0, e1 - e2, e1 - e3)`, `e1` the
+/// largest real root) one real period right, into `[-ω/2, 3ω/2)`.
+pub(crate) fn inverse_weierstrass_p_complex(p: C, g2: C, g3: C) -> Option<C> {
+  let e = cubic_roots(g2, g3);
+  let rf = super::carlson_rf_complex(sub(p, e[0]), sub(p, e[1]), sub(p, e[2]));
+  let mut u = scale(rf, -1.0);
+  if g2.1 == 0.0 && g3.1 == 0.0 {
+    // The largest real root (the roots with |Im| at rounding level).
+    let tol = 1e-9 * (1.0 + abs(g2).sqrt() + abs(g3).cbrt());
+    let e1 = e
+      .iter()
+      .filter(|r| r.1.abs() <= tol)
+      .map(|r| r.0)
+      .fold(f64::NEG_INFINITY, f64::max);
+    if e1.is_finite() {
+      let others: Vec<C> = e
+        .iter()
+        .copied()
+        .filter(|r| (r.0 - e1).abs() > tol || r.1.abs() > tol)
+        .collect();
+      if let [a, b] = others.as_slice() {
+        let w = super::carlson_rf_complex(
+          (0.0, 0.0),
+          sub((e1, 0.0), *a),
+          sub((e1, 0.0), *b),
+        );
+        if w.0.is_finite() && u.0 < -w.0 / 2.0 {
+          u.0 += 2.0 * w.0;
+        }
+        // On [e1, Infinity) the real period segment maps onto p: u is real
+        // (the imaginary part left is rounding noise of the complex roots).
+        if p.1 == 0.0 && p.0 >= e1 {
+          u.1 = 0.0;
+        }
+      }
+    }
+  }
+  (u.0.is_finite() && u.1.is_finite()).then_some(u)
+}

@@ -331,13 +331,30 @@ pub fn dispatch_math_functions(
         if items.is_empty() {
           return Some(Ok(unevaluated("Quartiles", args)));
         }
-        // Sort numerically
-        let mut sorted = items.clone();
-        sorted.sort_by(|a, b| {
-          let fa = crate::functions::math_ast::try_eval_to_f64(a);
-          let fb = crate::functions::math_ast::try_eval_to_f64(b);
-          fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        // Sort numerically. Machine reals (e.g. 10^7 RandomReal samples)
+        // sort as plain f64s rather than re-converting both operands on
+        // every comparison.
+        let sorted: Vec<Expr> = if let Some(mut xs) = items
+          .iter()
+          .map(|e| match e {
+            Expr::Real(r) => Some(*r),
+            _ => None,
+          })
+          .collect::<Option<Vec<f64>>>()
+        {
+          xs.sort_unstable_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          xs.into_iter().map(Expr::Real).collect()
+        } else {
+          let mut sorted = items.to_vec();
+          sorted.sort_by(|a, b| {
+            let fa = crate::functions::math_ast::try_eval_to_f64(a);
+            let fb = crate::functions::math_ast::try_eval_to_f64(b);
+            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+          });
+          sorted
+        };
         let n = sorted.len() as i128;
         // Machine-real inputs must yield machine-real quartiles, not exact
         // rationals (e.g. Quartiles[{1., 2., 3., 4., 5.}] → {1.75, 3., 4.25}).
@@ -653,6 +670,24 @@ pub fn dispatch_math_functions(
     {
       return Some(crate::functions::math_ast::window_function_ast(name, args));
     }
+    // The parameterized forms evaluate through their closed form.
+    "HannWindow" | "WelchWindow" | "CosineWindow" | "ConnesWindow"
+      if args.len() == 2 =>
+    {
+      let numeric =
+        |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e).is_some();
+      if numeric(&args[0])
+        && numeric(&args[1])
+        && let Some(pw) =
+          crate::functions::window_expand::window_piecewise(name, args)
+      {
+        return Some(crate::evaluator::evaluate_expr_to_expr(&pw));
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     "TukeyWindow" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::tukey_window_ast(args));
     }
@@ -894,7 +929,7 @@ pub fn dispatch_math_functions(
     "LocationTest" if !args.is_empty() => {
       return Some(crate::functions::math_ast::location_test_ast(args));
     }
-    "DistributionFitTest" if args.len() == 2 || args.len() == 3 => {
+    "DistributionFitTest" if args.len() >= 2 => {
       return Some(crate::functions::math_ast::distribution_fit_test_ast(args));
     }
     "KolmogorovSmirnovTest"
@@ -902,7 +937,7 @@ pub fn dispatch_math_functions(
     | "CramerVonMisesTest"
     | "KuiperTest"
     | "WatsonUSquareTest"
-      if args.len() == 2 || args.len() == 3 =>
+      if args.len() >= 2 =>
     {
       return Some(crate::functions::math_ast::named_fit_test_ast(name, args));
     }
@@ -942,7 +977,7 @@ pub fn dispatch_math_functions(
         ),
       );
     }
-    "PearsonChiSquareTest" if !args.is_empty() && args.len() <= 3 => {
+    "PearsonChiSquareTest" if !args.is_empty() => {
       return Some(crate::functions::math_ast::pearson_chi_square_test_ast(
         args,
       ));
@@ -3797,6 +3832,37 @@ pub fn dispatch_math_functions(
     "TrigExpand" if args.len() == 1 => {
       return Some(crate::functions::math_ast::trig_expand_ast(args));
     }
+    // ComplexExpand[expr, (vars,) TargetFunctions -> targets]
+    "ComplexExpand"
+      if (2..=3).contains(&args.len())
+        && matches!(args.last(), Some(Expr::Rule { pattern, .. })
+          if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "TargetFunctions")) =>
+    {
+      let Some(Expr::Rule { replacement, .. }) = args.last() else {
+        return None;
+      };
+      let targets: Vec<String> = match replacement.as_ref() {
+        Expr::Identifier(t) => vec![t.clone()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|e| match e {
+            Expr::Identifier(t) => Some(t.clone()),
+            _ => None,
+          })
+          .collect(),
+        _ => vec![],
+      };
+      let rest = &args[..args.len() - 1];
+      let expanded = match crate::evaluator::evaluate_function_call_ast(
+        "ComplexExpand",
+        rest,
+      ) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+      };
+      let rewritten = rewrite_to_targets(&expanded, &targets);
+      return Some(crate::evaluator::evaluate_expr_to_expr(&rewritten));
+    }
     "ComplexExpand" if args.len() == 1 => {
       return Some(Ok(complex_expand_ast(&args[0])));
     }
@@ -6434,6 +6500,13 @@ fn contains_explicit_i(e: &Expr) -> bool {
       // imaginary component.
       !is_expr_zero(&args[1])
     }
+    // Real-valued whatever their argument.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "Arg" | "Abs" | "Re" | "Im") =>
+    {
+      false
+    }
     Expr::FunctionCall { args, .. } => args.iter().any(contains_explicit_i),
     Expr::BinaryOp { left, right, .. } => {
       contains_explicit_i(left) || contains_explicit_i(right)
@@ -7041,6 +7114,97 @@ fn complex_reciprocal_power(base: &Expr, k: &Expr) -> Expr {
   pow2(base, k.clone())
 }
 
+/// Rewrite a ComplexExpand result in terms of the requested target
+/// functions: without Arg, Arg[w] becomes ArcTan[Re[w], Im[w]]; without
+/// Abs, Sign[w] becomes w/Sqrt[Re[w]^2 + Im[w]^2]; and with Conjugate in
+/// place of Re and Im, Re[z] → (z + Conjugate[z])/2 and
+/// Im[z] → (z - Conjugate[z])/(2 I).
+fn rewrite_to_targets(expr: &Expr, targets: &[String]) -> Expr {
+  let has = |t: &str| targets.iter().any(|x| x == t);
+  let recurse = |e: &Expr| rewrite_to_targets(e, targets);
+  match expr {
+    Expr::FunctionCall { name, args } if args.len() == 1 => {
+      let arg = recurse(&args[0]);
+      let parts = || split_real_imag(&complex_expand_recursive(&arg));
+      match name.as_str() {
+        "Arg" if !has("Arg") => {
+          if let Some((re, im)) = parts() {
+            return call("ArcTan", vec![re, im]);
+          }
+        }
+        "Sign" if !has("Sign") && !has("Abs") => {
+          if let Some((re, im)) = parts() {
+            return times2(
+              plus2(re.clone(), times2(id_expr("I"), im.clone())),
+              pow2(
+                plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2))),
+                call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+              ),
+            );
+          }
+        }
+        "Re" if has("Conjugate") && !has("Re") => {
+          return times2(
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+            plus2(arg.clone(), call1("Conjugate", arg)),
+          );
+        }
+        "Im" if has("Conjugate") && !has("Im") => {
+          return times(vec![
+            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+            id_expr("I"),
+            plus2(
+              times2(Expr::Integer(-1), arg.clone()),
+              call1("Conjugate", arg),
+            ),
+          ]);
+        }
+        _ => {}
+      }
+      call(name, vec![arg])
+    }
+    Expr::FunctionCall { name, args } => {
+      call(name, args.iter().map(recurse).collect())
+    }
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, recurse(left), recurse(right))
+    }
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(recurse(operand)),
+    },
+    Expr::List(items) => Expr::List(items.iter().map(recurse).collect()),
+    _ => expr.clone(),
+  }
+}
+
+/// w^p for a non-integer rational p and a w with a nonzero imaginary part:
+/// (re^2 + im^2)^(p/2) Cos[p Arg[w]] + I (re^2 + im^2)^(p/2) Sin[p Arg[w]].
+fn complex_fractional_power(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = exp else {
+    return None;
+  };
+  if name != "Rational" || args.len() != 2 {
+    return None;
+  }
+  let (re, im) = split_real_imag(base)?;
+  if matches!(im, Expr::Integer(0)) {
+    return None;
+  }
+  let modulus = pow2(
+    plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2))),
+    times2(
+      exp.clone(),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    ),
+  );
+  let angle = times2(exp.clone(), call1("Arg", base.clone()));
+  Some(ce_simplify(plus2(
+    times2(modulus.clone(), call1("Cos", angle.clone())),
+    times2(id_expr("I"), times2(modulus, call1("Sin", angle))),
+  )))
+}
+
 fn complex_expand_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
@@ -7135,6 +7299,14 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
                 plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2))),
               ));
             }
+            // The logarithmic inverse functions go through their Log form,
+            // whose logarithms then split into Log|w| + I Arg[w].
+            "ArcTan" | "ArcTanh" => {
+              let logs = trig_to_exp_recursive(expr);
+              if let Ok(logs) = crate::evaluator::evaluate_expr_to_expr(&logs) {
+                return complex_expand_recursive(&logs);
+              }
+            }
             _ => {}
           }
         }
@@ -7190,6 +7362,20 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
         args: args.iter().map(complex_expand_recursive).collect(),
       }
     }
+    // A fractional power of a complex quantity in polar form:
+    // w^p = |w|^p (Cos[p Arg[w]] + I Sin[p Arg[w]]).
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && let Some(polar) = complex_fractional_power(&args[0], &args[1]) =>
+    {
+      polar
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if let Some(polar) = complex_fractional_power(left, right) => polar,
     // A negative integer power of a complex quantity is taken over the
     // conjugate: 1/(a + I b)^n = (a - I b)^n/(a^2 + b^2)^n.
     Expr::FunctionCall { name, args }
@@ -7626,6 +7812,56 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(vec![e_x, denom.clone()]),
             times(vec![Expr::Integer(-1), e_nx, denom]),
           ])
+        }
+        // ArcSin[x] = -I Log[I x + Sqrt[1 - x^2]]
+        // ArcCos[x] = Pi/2 + I Log[I x + Sqrt[1 - x^2]]
+        "ArcSin" | "ArcCos" => {
+          let log = log_of(plus(vec![
+            times(vec![i.clone(), arg.clone()]),
+            sqrt_of(plus(vec![
+              Expr::Integer(1),
+              times(vec![
+                Expr::Integer(-1),
+                power(arg.clone(), Expr::Integer(2)),
+              ]),
+            ])),
+          ]));
+          if name == "ArcSin" {
+            times(vec![Expr::Integer(-1), i, log])
+          } else {
+            plus(vec![
+              times(vec![half, const_expr("Pi")]),
+              times(vec![i, log]),
+            ])
+          }
+        }
+        // Csch[x] = 2/(E^x - E^(-x))
+        "Csch" => {
+          let e_x = power(e.clone(), arg.clone());
+          let e_nx = power(e.clone(), neg(arg));
+          times(vec![
+            Expr::Integer(2),
+            power(plus(vec![e_x, neg(e_nx)]), Expr::Integer(-1)),
+          ])
+        }
+        // The inverse functions in degrees: ArcFDegrees[x] = 180/Pi ArcF[x].
+        _ if name.starts_with("Arc") && name.ends_with("Degrees") => {
+          let radians = name.trim_end_matches("Degrees");
+          let expanded =
+            trig_to_exp_recursive(&call1(radians, args[0].clone()));
+          if matches!(&expanded, Expr::FunctionCall { name: n, .. } if n == radians)
+          {
+            call1(name, arg)
+          } else {
+            call1(
+              "Expand",
+              times(vec![
+                Expr::Integer(180),
+                power(const_expr("Pi"), Expr::Integer(-1)),
+                expanded,
+              ]),
+            )
+          }
         }
         // Other functions: recurse into args
         _ => Expr::FunctionCall {

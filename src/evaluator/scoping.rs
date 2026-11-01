@@ -35,10 +35,19 @@ fn unevaluated_with_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
 /// simplifying it. Without unwrapping `Evaluate` here, that spec is passed
 /// through literally and rejected as "not a List".
 fn resolve_var_spec(vars_expr: &Expr) -> Result<Expr, InterpreterError> {
-  match crate::evaluator::core_eval::evaluate_wrapper_args(vars_expr) {
-    Some([vars]) => evaluate_expr_to_expr(vars),
-    _ => Ok(vars_expr.clone()),
-  }
+  let resolved =
+    match crate::evaluator::core_eval::evaluate_wrapper_args(vars_expr) {
+      Some([vars]) => evaluate_expr_to_expr(vars)?,
+      _ => vars_expr.clone(),
+    };
+  // The FullForm spelling `List[x, y = 1]` is the same list as `{x, y = 1}`
+  // but arrives (held) as an ordinary call.
+  Ok(match &resolved {
+    Expr::FunctionCall { name, args } if name == "List" => {
+      Expr::List(args.clone())
+    }
+    _ => resolved,
+  })
 }
 
 /// One local of a scoping construct: the symbol it binds, its initializer

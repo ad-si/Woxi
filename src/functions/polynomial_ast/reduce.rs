@@ -101,6 +101,28 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
     extra.dedup();
     let vars: Vec<String> = extra.into_iter().chain(named).collect();
+    // One polynomial equation in one variable: its integer roots, found
+    // from the divisors of the lowest coefficient (see `sparse_roots`).
+    if let [var] = vars.as_slice()
+      && let Some(roots) =
+        super::sparse_roots::integer_roots_of_equation(&args[0], var)
+    {
+      let mut parts: Vec<Expr> = roots
+        .into_iter()
+        .map(|(r, _)| Expr::Comparison {
+          operands: vec![
+            Expr::Identifier(var.clone()),
+            crate::functions::math_ast::bigint_to_expr(r),
+          ],
+          operators: vec![ComparisonOp::Equal],
+        })
+        .collect();
+      return Ok(match parts.len() {
+        0 => Expr::Identifier("False".into()),
+        1 => parts.pop().unwrap(),
+        _ => call("Or", parts),
+      });
+    }
     if let Some(result) =
       super::reduce_integer_box::reduce_bounded_integer_box(&args[0], &vars)
     {

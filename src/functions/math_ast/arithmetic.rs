@@ -1030,6 +1030,16 @@ pub(crate) fn image_arithmetic_rounded(
 
 /// Wolfram's machine fold of `args` (see `machine_tree_fold`) when every
 /// one is a machine real and the sum is finite.
+/// Sum of machine reals in `Plus`'s balanced tree order, so callers that
+/// fold big numeric vectors directly in `f64` (statistics on 10^7 samples)
+/// agree bit-for-bit with evaluating `Plus` over the same terms.
+pub fn machine_real_total(xs: &[f64]) -> f64 {
+  if xs.is_empty() {
+    return 0.0;
+  }
+  machine_tree_fold(xs, |a, b| a + b)
+}
+
 fn machine_real_sum(args: &[Expr]) -> Option<f64> {
   let reals: Vec<f64> = args
     .iter()
@@ -3594,10 +3604,36 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if stripped_a.is_some() || stripped_b.is_some() {
     let sa = stripped_a.as_ref().unwrap_or(a);
     let sb = stripped_b.as_ref().unwrap_or(b);
-    // Terms built on a sum (`Sqrt[1 - x^(-2)]`) are left to the rule below:
-    // Woxi's ordering of a reciprocal monomial against a power of a sum does
-    // not yet match Wolfram, and the stripped comparison would surface that.
-    if !is_sum_based(sa) && !is_sum_based(sb) {
+    // Terms built on a sum against a reciprocal (`Sqrt[1 - x^(-2)]` against
+    // `I/x`) are left to the rule below: Woxi's ordering of a reciprocal
+    // monomial against a power of a sum does not yet match Wolfram, and the
+    // stripped comparison would surface that. A plain monomial against a
+    // power of a sum compares as usual: `I z + Sqrt[1 - z^2]`, like
+    // `z + Sqrt[1 - z^2]`.
+    let reciprocal = |e: &Expr| {
+      crate::syntax::expr_to_string(e).contains("^(-")
+        || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    let sum_vs_reciprocal = (is_sum_based(sa) || is_sum_based(sb))
+      && (reciprocal(sa) || reciprocal(sb) || {
+        let (sa_s, sb_s) = (
+          crate::syntax::expr_to_string(sa),
+          crate::syntax::expr_to_string(sb),
+        );
+        sa_s.contains('/') || sb_s.contains('/')
+      });
+    // A bare sum (`I (a + b)`) is likewise left to the rule below.
+    let bare_sum = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+    };
+    if !sum_vs_reciprocal && !bare_sum(sa) && !bare_sum(sb) {
       let cmp = compare_plus_terms(sa, sb);
       if cmp != std::cmp::Ordering::Equal {
         return cmp;
@@ -15197,6 +15233,19 @@ fn around_func_and_deriv(name: &str, a: f64) -> Option<(f64, f64)> {
     "Sinh" => (a.sinh(), a.cosh()),
     "Cosh" => (a.cosh(), a.sinh()),
     "Tanh" => (a.tanh(), 1.0 - a.tanh() * a.tanh()),
+    "Coth" => (1.0 / a.tanh(), -1.0 / (a.sinh() * a.sinh())),
+    "Sec" => (1.0 / a.cos(), a.tan() / a.cos()),
+    "Csc" => (1.0 / a.sin(), -1.0 / (a.sin() * a.tan())),
+    "Sech" => (1.0 / a.cosh(), -a.tanh() / a.cosh()),
+    "Csch" => (1.0 / a.sinh(), -1.0 / (a.sinh() * a.tanh())),
+    "Gudermannian" => (2.0 * (a / 2.0).tanh().atan(), 1.0 / a.cosh()),
+    "SinDegrees" | "CosDegrees" | "TanDegrees" | "CotDegrees"
+    | "SecDegrees" | "CscDegrees" => {
+      let k = std::f64::consts::PI / 180.0;
+      let (f, d) =
+        around_func_and_deriv(name.trim_end_matches("Degrees"), a * k)?;
+      (f, d * k)
+    }
     "ArcSin" => (a.asin(), 1.0 / (1.0 - a * a).sqrt()),
     "ArcCos" => (a.acos(), -1.0 / (1.0 - a * a).sqrt()),
     "ArcTan" => (a.atan(), 1.0 / (1.0 + a * a)),

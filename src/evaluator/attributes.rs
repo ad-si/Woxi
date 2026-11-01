@@ -738,7 +738,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "Function"
     // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
     // get substituted by an OwnValue before the iteration starts.
-    | "FindRoot" => A::HoldAll | A::Protected,
+    | "FindRoot"
+    // MaxMemoryUsed[expr] measures the evaluation of its held argument.
+    | "MaxMemoryUsed" => A::HoldAll | A::Protected,
 
     // HoldAllComplete
     // Assert is the odd one out: wolframscript reports HoldAllComplete and

@@ -40,6 +40,7 @@ mod reduce_integer_box;
 mod resultant;
 mod simplify;
 pub mod solve;
+mod sparse_roots;
 mod symmetric_reduction;
 mod to_radicals;
 pub mod together;

@@ -101,7 +101,7 @@ pub fn dispatch_string_functions(
     }
     // TextString has its own number rules; everything it does not special-case
     // falls through to the ToString rendering.
-    "TextString" if args.len() == 1 || args.len() == 2 => {
+    "TextString" if !args.is_empty() => {
       return Some(crate::functions::string_ast::text_string_ast(args));
     }
     // Display wrapper: stays unevaluated in script-mode echo (rendering
@@ -624,7 +624,7 @@ pub fn dispatch_string_functions(
     "URLQueryEncode" if !args.is_empty() => {
       return Some(crate::functions::string_ast::url_query_encode_ast(args));
     }
-    "URLQueryDecode" if args.len() == 1 => {
+    "URLQueryDecode" if !args.is_empty() => {
       return Some(crate::functions::string_ast::url_query_decode_ast(args));
     }
     "StringToByteArray" if args.len() == 1 || args.len() == 2 => {

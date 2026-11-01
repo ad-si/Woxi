@@ -237,12 +237,8 @@ fn mittag_leffler_two_arg(
     }
   }
 
-  // Numeric series when a Real argument forces machine-precision evaluation.
-  if (matches!(alpha, Expr::Real(_)) || matches!(z, Expr::Real(_)))
-    && let (Some(a), Some(zv)) = (try_eval_to_f64(alpha), try_eval_to_f64(z))
-    && let Some(v) = mittag_leffler_series_f64(a, 1.0, zv)
-  {
-    return Ok(Expr::Real(v));
+  if let Some(v) = mittag_leffler_inexact(&[alpha.clone(), z.clone()]) {
+    return Ok(v);
   }
 
   Ok(mittag_leffler_unevaluated(vec![alpha.clone(), z.clone()]))
@@ -261,18 +257,10 @@ fn mittag_leffler_three_arg(
     ));
   }
 
-  // Numeric series when a Real argument forces machine-precision evaluation.
-  if (matches!(alpha, Expr::Real(_))
-    || matches!(beta, Expr::Real(_))
-    || matches!(z, Expr::Real(_)))
-    && let (Some(a), Some(b), Some(zv)) = (
-      try_eval_to_f64(alpha),
-      try_eval_to_f64(beta),
-      try_eval_to_f64(z),
-    )
-    && let Some(v) = mittag_leffler_series_f64(a, b, zv)
+  if let Some(v) =
+    mittag_leffler_inexact(&[alpha.clone(), beta.clone(), z.clone()])
   {
-    return Ok(Expr::Real(v));
+    return Ok(v);
   }
 
   Ok(mittag_leffler_unevaluated(vec![
@@ -282,39 +270,138 @@ fn mittag_leffler_three_arg(
   ]))
 }
 
-/// Sum E_{alpha,beta}(z) = Σ_{k≥0} z^k / Γ(alpha·k + beta) in f64.
-/// Returns None when alpha ≤ 0 (the series does not converge as written) so
-/// the caller can leave the expression symbolic.
-fn mittag_leffler_series_f64(alpha: f64, beta: f64, z: f64) -> Option<f64> {
-  // Require alpha > 0 for convergence; reject NaN / non-positive alpha.
-  if !matches!(alpha.partial_cmp(&0.0), Some(std::cmp::Ordering::Greater)) {
+/// `MittagLefflerE[α, (β,) z]` once an argument is inexact: real arguments
+/// through the arbitrary-precision series (`mittag_leffler_bigfloat`) — a
+/// machine number when any argument is one, else at the lowest argument
+/// precision — and a machine complex `z` through the complex series.
+fn mittag_leffler_inexact(args: &[Expr]) -> Option<Expr> {
+  if !args.iter().any(super::elliptic::expr_is_inexact) {
     return None;
   }
-  let mut sum = 0.0_f64;
-  let mut comp = 0.0_f64; // Kahan compensation
-  let mut z_pow = 1.0_f64; // z^k
-  for k in 0..2000 {
-    let g = gamma_fn(alpha * k as f64 + beta);
-    // Γ poles (non-positive integers) contribute a zero term.
-    let term = if g.is_finite() && g != 0.0 {
-      z_pow / g
+  let call = Expr::FunctionCall {
+    name: "MittagLefflerE".to_string(),
+    args: args.to_vec().into(),
+  };
+  if args.iter().all(is_real_numeric) {
+    if args.iter().any(contains_machine_real) {
+      let v: Vec<f64> =
+        args.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
+      let (a, b, z) = match v.as_slice() {
+        [a, z] => (*a, 1.0, *z),
+        [a, b, z] => (*a, *b, *z),
+        _ => return None,
+      };
+      // Without cancellation the machine series is exact enough; otherwise
+      // the arbitrary-precision one absorbs it.
+      if b == 1.0
+        && z < -0.5
+        && let Some(v) = mittag_leffler_negative_axis(a, -z)
+      {
+        return Some(Expr::Real(v));
+      }
+      if let Some((re, _)) = mittag_leffler_complex_f64(a, b, (z, 0.0), 2.0) {
+        return Some(Expr::Real(re));
+      }
+      return machine_function_value(&call).map(Expr::Real);
+    }
+    let p = args
+      .iter()
+      .filter_map(|e| match e {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min)?;
+    return bigfloat_function_value(&call, p);
+  }
+  let (a, b, z) = match args {
+    [a, z] => (try_eval_to_f64(a)?, 1.0, try_extract_complex_float(z)?),
+    [a, b, z] => (
+      try_eval_to_f64(a)?,
+      try_eval_to_f64(b)?,
+      try_extract_complex_float(z)?,
+    ),
+    _ => return None,
+  };
+  let (re, im) = mittag_leffler_complex_f64(a, b, z, 1e6)?;
+  Some(build_complex_float_expr(re, im))
+}
+
+/// `E_α(-x)` for `0 < α < 1`, `x > 0`, where the power series cancels:
+/// the Laplace-type representation (`u = s^α` in Gorenflo–Mainardi's)
+/// `E_α(-x) = sin(απ)/(απ) ∫₀^∞ e^(-u^(1/α)) x / (u² + 2 x u cos(απ) + x²) du`,
+/// summed by composite Gauss–Legendre quadrature.
+fn mittag_leffler_negative_axis(alpha: f64, x: f64) -> Option<f64> {
+  if !(alpha > 0.0 && alpha < 1.0 && x > 0.0) {
+    return None;
+  }
+  let pi = std::f64::consts::PI;
+  let c = (alpha * pi).cos();
+  // e^(-u^(1/α)) < 1e-20 beyond u = 46^α.
+  let upper = 46f64.powf(alpha);
+  let f = |u: f64| {
+    (-u.powf(1.0 / alpha)).exp() * x / (u * u + 2.0 * x * u * c + x * x)
+  };
+  // Panels fine enough for the peak of width ~ x sin(απ) near max(0, -x cos(απ)).
+  let width = (x * (alpha * pi).sin()).clamp(1e-3, 1.0) / 4.0;
+  let panels = ((upper / width).ceil() as usize).clamp(8, 20_000);
+  let h = upper / panels as f64;
+  let gl = |a: f64, b: f64| -> f64 {
+    let (mid, half) = (f64::midpoint(a, b), (b - a) / 2.0);
+    super::gamma::gauss_legendre_20()
+      .iter()
+      .map(|&(node, weight)| weight * half * f(mid + node * half))
+      .sum()
+  };
+  // u^(1/α) is not smooth at 0 for non-integer 1/α: grade the first panel
+  // geometrically towards 0.
+  let mut sum = gl(0.0, h * 2f64.powi(-40));
+  for j in (0..40).rev() {
+    sum += gl(h * 2f64.powi(-j - 1), h * 2f64.powi(-j));
+  }
+  for k in 1..panels {
+    sum += gl(k as f64 * h, (k + 1) as f64 * h);
+  }
+  let v = (alpha * pi).sin() / (alpha * pi) * sum;
+  v.is_finite().then_some(v)
+}
+
+/// `E_{α,β}(z) = Σ_k z^k / Γ(α k + β)` for real `α > 0`, `β` and machine
+/// complex `z`. `None` when the largest term exceeds the sum more than
+/// `max_loss` times (the cancellation would eat the machine digits).
+fn mittag_leffler_complex_f64(
+  alpha: f64,
+  beta: f64,
+  z: (f64, f64),
+  max_loss: f64,
+) -> Option<(f64, f64)> {
+  if alpha <= 0.0 {
+    return None;
+  }
+  let (mut sr, mut si) = (0.0f64, 0.0f64);
+  let (mut pr, mut pi) = (1.0f64, 0.0f64);
+  let mut max_term = 0.0f64;
+  for k in 0..20_000 {
+    let x = alpha * k as f64 + beta;
+    let g = gamma_fn(x);
+    let rg = if g.is_finite() && g != 0.0 {
+      1.0 / g
     } else {
       0.0
     };
-    // Kahan compensated addition for improved precision.
-    let y = term - comp;
-    let t = sum + y;
-    comp = (t - sum) - y;
-    sum = t;
-    if k > 5 && term.abs() < 1e-18 * sum.abs().max(1e-300) {
+    let (tr, ti) = (pr * rg, pi * rg);
+    sr += tr;
+    si += ti;
+    let t = tr.hypot(ti);
+    max_term = max_term.max(t);
+    if k > 5 && x > 2.0 && t <= 1e-17 * sr.hypot(si) {
       break;
     }
-    z_pow *= z;
-    if !z_pow.is_finite() {
-      break;
+    (pr, pi) = (pr * z.0 - pi * z.1, pr * z.1 + pi * z.0);
+    if !pr.is_finite() || !pi.is_finite() {
+      return None;
     }
   }
-  if sum.is_finite() { Some(sum) } else { None }
+  (max_term <= max_loss * sr.hypot(si).max(1e-300)).then_some((sr, si))
 }
 
 /// ProductLog[z] - Lambert W function (principal branch)
