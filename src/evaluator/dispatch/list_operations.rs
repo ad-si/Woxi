@@ -2895,15 +2895,25 @@ pub fn dispatch_list_operations(
     }
     "Table" | "ParallelTable" if args.len() >= 2 => {
       // Bounds are evaluated once and shared by the check and the iteration.
-      let iters = list_helpers_ast::table_preevaluate_iterators(&args[1..]);
+      let evaluated = list_helpers_ast::table_evaluate_iterators(&args[1..]);
+      let iters = list_helpers_ast::table_counted_iterators(evaluated.clone());
       // An iterator with non-numeric bounds leaves the whole call unevaluated
       // (matching wolframscript's ::iterb / ::nliter) rather than erroring.
-      if let Some(msg) = list_helpers_ast::table_iterators_invalid(name, &iters)
+      if let Some((msg, idx)) =
+        list_helpers_ast::table_iterator_failure(name, &iters)
       {
         // Like Wolfram, the message quotes the iterator with its bounds
-        // evaluated (`a = "x"` shows `{i, x, 3}`).
+        // evaluated (`a = "x"` shows `{i, x, 3}`). A complex or infinite
+        // bound is reported twice.
         crate::emit_message(&msg);
-        return Some(Ok(unevaluated(name, args)));
+        if list_helpers_ast::iterator_has_nonreal_numeric_bound(&iters[idx]) {
+          crate::emit_message(&msg);
+        }
+        // The outermost iterator comes back evaluated, the inner ones as
+        // written: `Table[x, {Ceiling[1/0]}]` is `Table[x, {ComplexInfinity}]`.
+        let mut kept = vec![args[0].clone(), evaluated[0].clone()];
+        kept.extend(args[2..].iter().cloned());
+        return Some(Ok(unevaluated(name, &kept)));
       }
       if iters.len() == 1 {
         return Some(list_helpers_ast::table_ast(&args[0], &iters[0]));

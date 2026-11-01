@@ -391,8 +391,8 @@ mod table_symbolic_bounds {
     // The message quotes the iterator with its bounds evaluated, as Wolfram
     // does.
     assert_eq!(
-      interpret("a = \"x\"; Table[1, {i, a, 3}]").unwrap(),
-      "Table[1, {i, a, 3}]"
+      interpret("a = \"x\"; ToString[Table[1, {i, a, 3}], InputForm]").unwrap(),
+      "Table[1, {i, \"x\", 3}]"
     );
     assert_eq!(
       woxi::get_captured_messages_raw(),
@@ -419,6 +419,66 @@ mod table_symbolic_bounds {
     );
     // A bare (nonlist) iterator stays unevaluated too.
     assert_eq!(interpret("Table[i, i]").unwrap(), "Table[i, i]");
+  }
+
+  // The outermost iterator of an unevaluated Table comes back evaluated, the
+  // inner ones as written; a complex or infinite bound is reported twice.
+  #[test]
+  fn invalid_iterator_return_form_and_message_count() {
+    let r = woxi::interpret_with_stdout("Table[x, {Ceiling[1/0]}]").unwrap();
+    assert_eq!(r.result, "Table[x, {ComplexInfinity}]");
+    assert_eq!(
+      r.warnings
+        .iter()
+        .filter(|w| w.contains("Table::iterb"))
+        .count(),
+      2
+    );
+    assert_eq!(
+      interpret("Table[x, {i, 1, a + 1 - 1}, {j, {1, 2}}]").unwrap(),
+      "Table[x, {i, 1, a}, {j, {1, 2}}]"
+    );
+    assert_eq!(
+      interpret("Table[x, {{1, 2}}, {i, 1, a + 1 - 1}]").unwrap(),
+      "Table[x, {{1, 2}}, {i, 1, a + 1 - 1}]"
+    );
+    assert_eq!(
+      interpret("Table[x, {2 + 1}, {i, 1, a + 1 - 1}]").unwrap(),
+      "Table[x, {3}, {i, 1, a + 1 - 1}]"
+    );
+    for spec in ["{Infinity}", "{i, 1, Infinity}", "{i, I}", "{2.5 I}"] {
+      let r =
+        woxi::interpret_with_stdout(&format!("Table[x, {spec}]")).unwrap();
+      assert_eq!(
+        r.warnings
+          .iter()
+          .filter(|w| w.contains("Table::iterb"))
+          .count(),
+        2,
+        "{spec}: {:?}",
+        r.warnings
+      );
+    }
+    let r = woxi::interpret_with_stdout("Table[x, {a}]").unwrap();
+    assert_eq!(
+      r.warnings
+        .iter()
+        .filter(|w| w.contains("Table::iterb"))
+        .count(),
+      1
+    );
+  }
+
+  // `Do` runs a real repeat count Floor[n] times and an infinite one until
+  // Break[].
+  #[test]
+  fn do_real_and_infinite_repeat_counts() {
+    assert_eq!(interpret("n = 0; Do[n++, {2.7}]; n").unwrap(), "2");
+    assert_eq!(interpret("n = 0; Do[n++, {5/2}, {2}]; n").unwrap(), "4");
+    assert_eq!(
+      interpret("n = 0; Do[n++; If[n > 4, Break[]], {Infinity}]; n").unwrap(),
+      "5"
+    );
   }
 
   // A zero step never terminates, so Table/Do reject it with iterb and stay
