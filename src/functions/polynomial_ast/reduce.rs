@@ -163,6 +163,17 @@ fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Reduce", args));
   }
 
+  // A boolean combination of real inequalities in one variable is decided
+  // piece by piece on the real line.
+  if vars.len() == 1
+    && (domain == Some("Reals")
+      || (domain.is_none() && !has_equation_atom(expr)))
+    && is_compound_condition(expr, &vars[0])
+    && let Some(cells) = univariate_real_cells(expr, &vars[0])
+  {
+    return Ok(cells.to_condition(&vars[0]));
+  }
+
   // Reduce[trigEq && bounded_range, x]: delegate to Solve, which specializes
   // the periodic family to the concrete in-range values, then present them as
   // `x == v1 || x == v2 || …`.
@@ -210,6 +221,48 @@ fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(result)
+}
+
+/// True for a logical combination of conditions, or a comparison chain that
+/// doesn't isolate `var` (`1/2 < x^2 < 5`).
+fn is_compound_condition(expr: &Expr, var: &str) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::And | BinaryOperator::Or,
+      ..
+    }
+    | Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => true,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "And" | "Or" | "Not" | "Xor" | "Nand" | "Nor" | "Implies" | "Equivalent"
+    ),
+    Expr::Comparison { operands, .. } => {
+      operands.len() >= 3
+        && !matches!(&operands[1], Expr::Identifier(v) if v == var)
+    }
+    _ => false,
+  }
+}
+
+/// True when `expr` holds an `==` or `!=` comparison.
+fn has_equation_atom(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { operators, .. } => operators
+      .iter()
+      .any(|op| matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual)),
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Equal" | "Unequal")
+        || args.iter().any(has_equation_atom)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_equation_atom(left) || has_equation_atom(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_equation_atom(operand),
+    _ => false,
+  }
 }
 
 /// Thread top-level vector equalities in `expr` into element-wise scalar
@@ -701,7 +754,7 @@ fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
 /// These are the variables `Reduce` falls back to when the caller's list
 /// names none of them: `Reduce[a^2 < 4, x]` still answers `-2 < a < 2`,
 /// because a statement that does not mention `x` is not thereby unconstrained.
-fn constraint_variables(expr: &Expr, out: &mut Vec<String>) {
+pub(super) fn constraint_variables(expr: &Expr, out: &mut Vec<String>) {
   match expr {
     Expr::Identifier(_) => {
       for name in extract_reduce_vars(expr) {
@@ -1616,61 +1669,16 @@ fn reduce_univariate_polynomial_inequality(
       },
     ));
   }
-  // The real roots of the numerator and the poles, in increasing order,
-  // without repeats; a pole is marked `true`.
-  let mut roots: Vec<(f64, Expr)> = Vec::new();
-  let mut poles: Vec<bool> = Vec::new();
-  for (part, degree, is_pole) in [
-    (&numerator, numerator_degree, false),
-    (&denominator, denominator_degree, true),
-  ] {
-    if degree < 1 {
-      continue;
-    }
-    let solved = crate::functions::polynomial_ast::solve_ast(&[
-      make_equality(part, &Expr::Integer(0)),
-      id_expr(var),
-    ])
-    .ok()?;
-    let Expr::List(ref solutions) = solved else {
-      return None;
-    };
-    for solution in solutions {
-      let Expr::List(rules) = solution else {
-        return None;
-      };
-      let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
-        return None;
-      };
-      let numeric = crate::evaluator::evaluate_function_call_ast(
-        "N",
-        std::slice::from_ref(replacement.as_ref()),
-      )
-      .ok()?;
-      let (re, im) =
-        crate::functions::math_ast::try_extract_complex_float(&numeric)?;
-      if im.abs() > 1e-10 * (1.0 + re.abs()) {
-        continue;
-      }
-      if !roots
-        .iter()
-        .any(|(r, _)| (r - re).abs() <= 1e-12 * (1.0 + re.abs()))
-      {
-        roots.push((re, replacement.as_ref().clone()));
-        poles.push(is_pole);
-      }
-    }
-  }
-  let mut order: Vec<usize> = (0..roots.len()).collect();
-  order.sort_by(|&a, &b| {
-    roots[a]
-      .0
-      .partial_cmp(&roots[b].0)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
-  let roots: Vec<(f64, Expr)> =
-    order.iter().map(|&i| roots[i].clone()).collect();
-  let poles: Vec<bool> = order.iter().map(|&i| poles[i]).collect();
+  let (roots, poles): (Vec<(f64, Expr)>, Vec<bool>) = real_roots_and_poles(
+    &numerator,
+    numerator_degree,
+    &denominator,
+    denominator_degree,
+    var,
+  )?
+  .into_iter()
+  .map(|(x, e, pole)| ((x, e), pole))
+  .unzip();
   let holds_at = |x: f64| -> Option<bool> {
     let value = try_eval_to_f64(&crate::syntax::substitute_variable(
       poly,
@@ -1727,10 +1735,67 @@ fn reduce_univariate_polynomial_inequality(
   Some(build_or(conditions))
 }
 
+/// The real roots of `numerator` and of `denominator` (the poles, marked
+/// `true`), in increasing order and without repeats, each with its numeric
+/// value and its exact form as `Solve` gives it. `None` when `Solve` can't
+/// solve one of them.
+pub(super) fn real_roots_and_poles(
+  numerator: &Expr,
+  numerator_degree: i128,
+  denominator: &Expr,
+  denominator_degree: i128,
+  var: &str,
+) -> Option<Vec<(f64, Expr, bool)>> {
+  let mut roots: Vec<(f64, Expr, bool)> = Vec::new();
+  for (part, degree, is_pole) in [
+    (numerator, numerator_degree, false),
+    (denominator, denominator_degree, true),
+  ] {
+    if degree < 1 {
+      continue;
+    }
+    let solved = crate::functions::polynomial_ast::solve_ast(&[
+      make_equality(part, &Expr::Integer(0)),
+      id_expr(var),
+    ])
+    .ok()?;
+    let Expr::List(ref solutions) = solved else {
+      return None;
+    };
+    for solution in solutions {
+      let Expr::List(rules) = solution else {
+        return None;
+      };
+      let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+        return None;
+      };
+      let numeric = crate::evaluator::evaluate_function_call_ast(
+        "N",
+        std::slice::from_ref(replacement.as_ref()),
+      )
+      .ok()?;
+      let (re, im) =
+        crate::functions::math_ast::try_extract_complex_float(&numeric)?;
+      if im.abs() > 1e-10 * (1.0 + re.abs()) {
+        continue;
+      }
+      if !roots
+        .iter()
+        .any(|(r, _, _)| (r - re).abs() <= 1e-12 * (1.0 + re.abs()))
+      {
+        roots.push((re, replacement.as_ref().clone(), is_pole));
+      }
+    }
+  }
+  roots
+    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  Some(roots)
+}
+
 /// The condition for the run of pieces `first..=last` (even indices are
 /// the intervals between roots, odd ones the roots themselves): an interval
 /// leaves its bounding root out, a root piece puts it in.
-fn run_condition(
+pub(super) fn run_condition(
   var: &str,
   first: usize,
   last: usize,

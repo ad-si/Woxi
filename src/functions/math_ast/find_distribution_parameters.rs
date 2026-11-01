@@ -127,6 +127,37 @@ fn closed_form(
       Some(vec![rule(&dist_args[0], 1.0 / mean)])
     }
     ("PoissonDistribution", 1) if all => Some(vec![rule(&dist_args[0], mean)]),
+    // The likelihood of UniformDistribution[{a, b}] grows as the interval
+    // shrinks onto the data.
+    ("UniformDistribution", 1) => {
+      let Expr::List(bounds) = &dist_args[0] else {
+        return None;
+      };
+      let [a, b] = bounds.as_slice() else {
+        return None;
+      };
+      if !is_parameter(a) || !is_parameter(b) {
+        return None;
+      }
+      let lo = data.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      Some(vec![rule(a, lo), rule(b, hi)])
+    }
+    ("BinomialDistribution", 2) => binomial_mle(dist_args, params, data, mean),
+    // The mean -θ/((1 - θ) Log[1 - θ]) increases with θ on (0, 1).
+    ("LogSeriesDistribution", 1) if all && mean > 1.0 => {
+      let mean_at = |t: f64| -t / ((1.0 - t) * (1.0 - t).ln());
+      let (mut lo, mut hi) = (1e-15, 1.0 - 1e-15);
+      for _ in 0..200 {
+        let mid = f64::midpoint(lo, hi);
+        if mean_at(mid) > mean {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      Some(vec![rule(&dist_args[0], f64::midpoint(lo, hi))])
+    }
     ("LaplaceDistribution", 2) if all => {
       let mut sorted = data.to_vec();
       sorted.sort_by(f64::total_cmp);
@@ -144,6 +175,99 @@ fn closed_form(
     }
     _ => None,
   }
+}
+
+/// Maximum-likelihood estimates for `BinomialDistribution[n, p]` from
+/// non-negative integer counts: p = mean / n for a known n, and otherwise
+/// the integer n ≥ max(data) of highest (profile) likelihood.
+fn binomial_mle(
+  dist_args: &[Expr],
+  params: &[usize],
+  data: &[f64],
+  mean: f64,
+) -> Option<Vec<Expr>> {
+  if data.iter().any(|&x| x < 0.0 || x.fract() != 0.0) {
+    return None;
+  }
+  let max = data.iter().copied().fold(0.0, f64::max);
+  let log_likelihood = |n: f64, p: f64| -> f64 {
+    data
+      .iter()
+      .map(|&x| {
+        ln_gamma(n + 1.0) - ln_gamma(x + 1.0) - ln_gamma(n - x + 1.0)
+          + x * p.ln()
+          + (n - x) * (1.0 - p).ln()
+      })
+      .sum()
+  };
+  // The best integer n in [max, cap], with p given as a function of n.
+  let best_n = |p_of: &dyn Fn(f64) -> f64| -> Option<f64> {
+    let cap = (100.0 * max).max(1000.0);
+    let mut best: Option<(f64, f64)> = None;
+    let mut n = max.max(1.0);
+    while n <= cap {
+      let p = p_of(n);
+      if p > 0.0 && p < 1.0 {
+        let ll = log_likelihood(n, p);
+        if best.is_none_or(|(_, b)| ll > b) {
+          best = Some((n, ll));
+        }
+      }
+      n += 1.0;
+    }
+    // A maximum at the cap means the likelihood keeps growing: no estimate.
+    best.filter(|(n, _)| *n < cap).map(|(n, _)| n)
+  };
+  let int_rule = |p: &Expr, v: f64| Expr::Rule {
+    pattern: Box::new(p.clone()),
+    replacement: Box::new(Expr::Integer(v as i128)),
+  };
+  match params {
+    [1] => {
+      let n = try_eval_to_f64(&dist_args[0])?;
+      (n >= max && n > 0.0).then(|| vec![rule(&dist_args[1], mean / n)])
+    }
+    [0] => {
+      let p = try_eval_to_f64(&dist_args[1])?;
+      let n = best_n(&|_| p)?;
+      Some(vec![int_rule(&dist_args[0], n)])
+    }
+    [0, 1] => {
+      let n = best_n(&|n| mean / n)?;
+      Some(vec![
+        int_rule(&dist_args[0], n),
+        rule(&dist_args[1], mean / n),
+      ])
+    }
+    _ => None,
+  }
+}
+
+/// The logarithm of the gamma function for positive arguments (Lanczos).
+fn ln_gamma(x: f64) -> f64 {
+  const G: f64 = 7.0;
+  const C: [f64; 9] = [
+    0.999_999_999_999_809_9,
+    676.520_368_121_885_1,
+    -1_259.139_216_722_402_8,
+    771.323_428_777_653_1,
+    -176.615_029_162_140_6,
+    12.507_343_278_686_905,
+    -0.138_571_095_265_720_12,
+    9.984_369_578_019_572e-6,
+    1.505_632_735_149_311_6e-7,
+  ];
+  if x < 0.5 {
+    let pi = std::f64::consts::PI;
+    return (pi / (pi * x).sin()).ln() - ln_gamma(1.0 - x);
+  }
+  let x = x - 1.0;
+  let mut a = C[0];
+  let t = x + G + 0.5;
+  for (i, c) in C.iter().enumerate().skip(1) {
+    a += c / (x + i as f64);
+  }
+  0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + a.ln()
 }
 
 /// Maximize the log-likelihood numerically: a Nelder–Mead search from the
@@ -379,6 +503,23 @@ pub fn estimated_distribution_ast(
   if args.len() < 2 {
     return Ok(call("EstimatedDistribution", args.to_vec()));
   }
+  // Data in one unit fit the distribution of their magnitudes, which is
+  // then a distribution of quantities in that unit.
+  if let Expr::List(items) = &args[0]
+    && let Some((magnitudes, unit)) = common_unit(items)
+    && !matches!(&args[1], Expr::FunctionCall { name, .. }
+      if name == "QuantityDistribution")
+  {
+    let mut rest = args.to_vec();
+    rest[0] = Expr::List(magnitudes.into());
+    let fitted = estimated_distribution_ast(&rest)?;
+    if matches!(&fitted, Expr::FunctionCall { name, .. }
+      if name == "EstimatedDistribution")
+    {
+      return Ok(call("EstimatedDistribution", args.to_vec()));
+    }
+    return Ok(call("QuantityDistribution", vec![fitted, unit]));
+  }
   let rules = find_distribution_parameters_ast(args)?;
   if !matches!(&rules, Expr::List(_)) {
     return Ok(call("EstimatedDistribution", args.to_vec()));
@@ -387,4 +528,28 @@ pub fn estimated_distribution_ast(
     "ReplaceAll",
     vec![args[1].clone(), rules],
   ))
+}
+
+/// The magnitudes of `items` when all are quantities in the same unit,
+/// and that unit.
+fn common_unit(items: &[Expr]) -> Option<(Vec<Expr>, Expr)> {
+  let mut unit: Option<&Expr> = None;
+  let mut magnitudes = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::FunctionCall { name, args } = item else {
+      return None;
+    };
+    if name != "Quantity" || args.len() != 2 {
+      return None;
+    }
+    match unit {
+      None => unit = Some(&args[1]),
+      Some(u)
+        if crate::syntax::expr_to_string(u)
+          == crate::syntax::expr_to_string(&args[1]) => {}
+      Some(_) => return None,
+    }
+    magnitudes.push(args[0].clone());
+  }
+  Some((magnitudes, unit?.clone()))
 }

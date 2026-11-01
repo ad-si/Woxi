@@ -38,11 +38,12 @@ mod interpreter_tests {
   mod option_sweep1;
   mod option_sweep2;
   mod option_sweep3;
+  mod option_sweep3_fitting;
+  mod option_sweep3_lists;
+  mod option_sweep3_numbers;
   mod option_sweep3_special;
   mod option_sweep3_strings;
-  mod option_sweep3_fitting;
-  mod option_sweep3_numbers;
-  mod option_sweep3_lists;
+  mod option_sweep4_distributions;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;
