@@ -447,10 +447,7 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !f.is_nan() {
       return Ok(Expr::Real(f));
     }
-    if let Some((re, im)) = elliptic_f_past_branch_point(phi, m) {
-      return Ok(build_complex_float_expr(re, im));
-    }
-    let (re, im) = elliptic_f_complex((phi, 0.0), (m, 0.0));
+    let (re, im) = elliptic_f_c64((phi, 0.0), (m, 0.0));
     return Ok(build_complex_float_expr(re, im));
   }
 
@@ -462,7 +459,7 @@ pub fn elliptic_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       try_extract_complex_float(m_expr),
     )
   {
-    let (re, im) = elliptic_f_complex(phi, m);
+    let (re, im) = elliptic_f_c64(phi, m);
     return Ok(build_complex_float_expr(re, im));
   }
 
@@ -522,10 +519,38 @@ fn c_recip(a: C64) -> C64 {
   (a.0 / d, -a.1 / d)
 }
 
-/// F(phi, m) for complex phi and m: integrates 1/Sqrt[1 - m Sin[t]^2] along
-/// the straight segment from 0 to phi.
-fn elliptic_f_complex(phi: C64, m: C64) -> C64 {
-  elliptic_segment_integral(phi, m, true)
+/// K(m) = R_F(0, 1 - m, 1) for complex m.
+pub(crate) fn elliptic_k_c64(m: C64) -> C64 {
+  carlson_rf_complex((0.0, 0.0), (1.0 - m.0, -m.1), (1.0, 0.0))
+}
+
+/// F(phi, m) for complex phi and m:
+/// `Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k K(m)` with `phi = r + k Pi` and `|Re r| <= Pi/2`, the principal
+/// branch WL uses (the quasi-periodic continuation in Re phi).
+pub(crate) fn elliptic_f_c64(phi: C64, m: C64) -> C64 {
+  if phi.0 == 0.0 && phi.1 == 0.0 {
+    return (0.0, 0.0);
+  }
+  let pi = std::f64::consts::PI;
+  let k = if phi.0.abs() > std::f64::consts::FRAC_PI_2 {
+    (phi.0 / pi).round()
+  } else {
+    0.0
+  };
+  let r = (phi.0 - k * pi, phi.1);
+  let s = c_sin(r);
+  let c = c_cos(r);
+  let s2 = c_mul(s, s);
+  let ms2 = c_mul(m, s2);
+  let f = c_mul(
+    s,
+    carlson_rf_complex(c_mul(c, c), (1.0 - ms2.0, -ms2.1), (1.0, 0.0)),
+  );
+  if k == 0.0 {
+    return f;
+  }
+  let kk = elliptic_k_c64(m);
+  (f.0 + 2.0 * k * kk.0, f.1 + 2.0 * k * kk.1)
 }
 
 /// E(phi, m) for complex phi and m: integrates Sqrt[1 - m Sin[t]^2] along
@@ -591,19 +616,6 @@ pub fn elliptic_f(phi: f64, m: f64) -> f64 {
   } else {
     f + 2.0 * k * elliptic_k(m)
   }
-}
-
-/// F(phi, m) for real phi and m whose value is complex: past the branch
-/// point 1 - m Sin[phi]^2 = 0 the Carlson form takes R_F's principal branch.
-fn elliptic_f_past_branch_point(phi: f64, m: f64) -> Option<C64> {
-  let (r, k) = reduce_amplitude(phi);
-  if k != 0.0 {
-    return None;
-  }
-  let (s, c) = r.sin_cos();
-  let (re, im) =
-    carlson_rf_complex((c * c, 0.0), (1.0 - m * s * s, 0.0), (1.0, 0.0));
-  Some((s * re, s * im))
 }
 
 /// EllipticPi[n, m] - Complete elliptic integral of the third kind

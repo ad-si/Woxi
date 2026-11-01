@@ -95,11 +95,11 @@ mod url_character_encoding {
          \"Eötvös Loránd University\"}, CharacterEncoding -> \"MacintoshRoman\"]"
       )
       .unwrap(),
-      "https://university.com?university=E%9Atv%9As+Lor%87nd+University"
+      "https://university.com/?university=E%9Atv%9As+Lor%87nd+University"
     );
     assert_eq!(
       interpret("URLBuild[\"https://x.com\", {\"q\" -> \"a b&c\"}]").unwrap(),
-      "https://x.com?q=a+b%26c"
+      "https://x.com/?q=a+b%26c"
     );
   }
 

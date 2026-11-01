@@ -5675,14 +5675,29 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(call1("DirectedInfinity", direction));
   }
+  // A real arbitrary-precision argument: at its precision.
+  if let Expr::BigFloat(_, p) = &args[0]
+    && let Some(v) =
+      bigfloat_function_value(&call1("Gudermannian", args[0].clone()), *p)
+  {
+    return Ok(v);
+  }
+  // Inexact (machine, arbitrary-precision or complex) arguments:
+  // Gudermannian[z] = 2 ArcTan[Tanh[z/2]], through the canonical ArcTan
+  // and Tanh numerics.
+  if super::elliptic::expr_is_inexact(&args[0])
+    && try_extract_complex_float(&args[0]).is_some()
+  {
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(2),
+      call1(
+        "ArcTan",
+        call1("Tanh", div2(args[0].clone(), Expr::Integer(2))),
+      ),
+    ]));
+  }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
-    Expr::Real(f) if *f == 0.0 => return Ok(Expr::Real(0.0)),
-    Expr::Real(f) => {
-      // Gudermannian[x] = 2 * atan(tanh(x/2))
-      let result = 2.0 * (f / 2.0).tanh().atan();
-      return Ok(Expr::Real(result));
-    }
     Expr::Identifier(name) if name == "Infinity" => {
       // Gudermannian[Infinity] = Pi/2
       return Ok(div2(const_expr("Pi"), Expr::Integer(2)));
@@ -5864,7 +5879,11 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Degree Trig Functions ──────────────────────────────────────────────
 
-/// Helper: multiply argument by Degree (Pi/180) and evaluate trig function
+/// `f[x Degree]` for the degree-argument trig function `degrees_name`
+/// (`func_name` its radian counterpart). Values the radian function finds
+/// (exact special angles, numbers) are returned as they are; a symbolic
+/// result is written back in degree form, so `SinDegrees[-x]` is
+/// `-SinDegrees[x]` and `CosDegrees[-x]` is `CosDegrees[x]`.
 fn trig_degrees_ast(
   func_name: &str,
   degrees_name: &str,
@@ -5874,6 +5893,18 @@ fn trig_degrees_ast(
     return Err(InterpreterError::EvaluationError(format!(
       "{degrees_name} expects 1 argument"
     )));
+  }
+  // A machine complex argument: scale it to radians numerically (a symbolic
+  // `Degree` factor would keep the product from numericizing).
+  if contains_inexact_real(&args[0])
+    && let Some((re, im)) = try_extract_complex_float(&args[0])
+    && im != 0.0
+  {
+    let k = std::f64::consts::PI / 180.0;
+    return crate::evaluator::evaluate_function_call_ast(
+      func_name,
+      &[build_complex_float_expr(re * k, im * k)],
+    );
   }
   // Convert degrees to radians: x * Degree
   let radians = crate::evaluator::evaluate_function_call_ast(
@@ -5885,10 +5916,99 @@ fn trig_degrees_ast(
   // If the result is still unevaluated (symbolic), return unevaluated degree form
   if let Expr::FunctionCall { name, .. } = &result
     && name == func_name
+    && strip_degree_factor(&result).is_none()
   {
     return Ok(unevaluated(degrees_name, args));
   }
-  Ok(result)
+  Ok(to_degree_form(&result))
+}
+
+/// `u` for a product `u Degree` (`Times[Degree, u…]`).
+fn strip_degree_factor(call: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { args, .. } = call else {
+    return None;
+  };
+  let [arg] = args.as_slice() else {
+    return None;
+  };
+  let is_degree = |e: &Expr| matches!(e, Expr::Constant(s) | Expr::Identifier(s) if s == "Degree");
+  let factors: Vec<Expr> = match arg {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref().clone(), right.as_ref().clone()],
+    _ => return None,
+  };
+  let pos = factors.iter().position(is_degree)?;
+  let mut rest = factors;
+  rest.remove(pos);
+  Some(match rest.len() {
+    1 => rest.pop().unwrap(),
+    _ => times(rest),
+  })
+}
+
+/// An expression computed from the radian form of degree-trig functions
+/// (e.g. a derivative of `Sin[x Degree]`) written back in degree form:
+/// `f[u Degree]` becomes `fDegrees[u]` and a remaining `Degree` factor
+/// `Pi/180`, as wolframscript writes `D[SinDegrees[x], x]`.
+pub(crate) fn from_radian_form(e: &Expr) -> Result<Expr, InterpreterError> {
+  fn replace_degree(e: &Expr) -> Expr {
+    match e {
+      Expr::Constant(s) | Expr::Identifier(s) if s == "Degree" => times(vec![
+        div2(Expr::Integer(1), Expr::Integer(180)),
+        const_expr("Pi"),
+      ]),
+      Expr::FunctionCall { name, args } if !name.ends_with("Degrees") => {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(replace_degree).collect::<Vec<_>>().into(),
+        }
+      }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(replace_degree(left)),
+        right: Box::new(replace_degree(right)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(replace_degree(operand)),
+      },
+      _ => e.clone(),
+    }
+  }
+  let e = crate::evaluator::evaluate_expr_to_expr(e)?;
+  crate::evaluator::evaluate_expr_to_expr(&replace_degree(&to_degree_form(&e)))
+}
+
+/// Rewrites every `f[u Degree]` (f a circular function) in `e` as
+/// `fDegrees[u]`.
+fn to_degree_form(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      if matches!(name.as_str(), "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc")
+        && let Some(u) = strip_degree_factor(e)
+      {
+        return call1(&format!("{name}Degrees"), u);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(to_degree_form).collect::<Vec<_>>().into(),
+      }
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(to_degree_form(left)),
+      right: Box::new(to_degree_form(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(to_degree_form(operand)),
+    },
+    _ => e.clone(),
+  }
 }
 
 /// Helper: evaluate inverse trig function and convert result from radians to degrees

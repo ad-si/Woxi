@@ -285,420 +285,281 @@ fn has_real_arg(a: &Expr, b: &Expr) -> bool {
   matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_))
 }
 
-/// Helper: compute InverseJacobiSN numerically via EllipticF[ArcSin[v], m]
-fn inverse_jacobi_sn_numeric(v: f64, m: f64) -> f64 {
-  elliptic_f(v.asin(), m)
-}
-
-/// InverseJacobiSN[v, m]
-pub fn inverse_jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiSN expects exactly 2 arguments".into(),
-    ));
+/// `pq^-1(v, m)` at the parameter values where it reduces to an elementary
+/// function or a constant: `v = 0` / `v = 1` (the zero and the quarter
+/// period), `m = 0` and `m = 1` (circular and hyperbolic limits) and
+/// `m = Infinity`, where every listed inverse collapses to 0.
+fn inverse_jacobi_special(kind: &str, v: &Expr, m: &Expr) -> Option<Expr> {
+  let inexact = has_real_arg(v, m);
+  // pq(0) = 0 for the functions with sn as numerator.
+  if is_expr_zero(v) && matches!(kind, "SN" | "SC" | "SD") {
+    return Some(if inexact {
+      Expr::Real(0.0)
+    } else {
+      Expr::Integer(0)
+    });
   }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiSN[0, m] = 0
-  if is_expr_zero(v) {
-    if has_real_arg(v, m) {
-      return Ok(Expr::Real(0.0));
+  // pq(0) = 1 for the functions without sn.
+  if is_expr_one(v) && matches!(kind, "CN" | "DN" | "CD" | "NC" | "ND" | "DC") {
+    return Some(Expr::Integer(0));
+  }
+  if !inexact {
+    // sn(K) = 1, cn(K) = cd(K) = 0.
+    if (is_expr_one(v) && kind == "SN")
+      || (is_expr_zero(v) && matches!(kind, "CN" | "CD"))
+    {
+      return Some(call1("EllipticK", m.clone()));
     }
-    return Ok(Expr::Integer(0));
   }
-
-  // InverseJacobiSN[1, m] = EllipticK[m]
-  if is_expr_one(v) && !has_real_arg(v, m) {
-    return Ok(call1("EllipticK", m.clone()));
+  if matches!(m, Expr::Identifier(s) if s == "Infinity") && kind != "DC" {
+    return Some(Expr::Integer(0));
   }
-
-  // Numeric evaluation: EllipticF[ArcSin[v], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && (has_real_arg(v, m) || is_expr_one(v))
-  {
-    return Ok(Expr::Real(inverse_jacobi_sn_numeric(v_f, m_f)));
-  }
-
-  // InverseJacobiSN[x, 0] = ArcSin[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcSin", v.clone()));
-  }
-
-  // InverseJacobiSN[x, 1] = ArcTanh[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcTanh", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiSN", args))
-}
-
-/// InverseJacobiCN[v, m]
-pub fn inverse_jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiCN expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiCN[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // InverseJacobiCN[0, m] = EllipticK[m] (symbolic only)
-  if is_expr_zero(v) && !has_real_arg(v, m) {
-    return Ok(call1("EllipticK", m.clone()));
-  }
-
-  // Numeric: EllipticF[ArcCos[v], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    return Ok(Expr::Real(elliptic_f(v_f.acos(), m_f)));
-  }
-
-  // InverseJacobiCN[x, 0] = ArcCos[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcCos", v.clone()));
-  }
-
-  // InverseJacobiCN[x, 1] = ArcSech[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcSech", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiCN", args))
-}
-
-/// InverseJacobiDN[v, m]
-pub fn inverse_jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiDN expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiDN[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // Numeric: EllipticF[ArcSin[Sqrt[(1-v^2)/m]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-    && m_f != 0.0
-  {
-    let arg = ((1.0 - v_f * v_f) / m_f).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiDN[x, 1] = ArcSech[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcSech", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiDN", args))
-}
-
-/// InverseJacobiCD[v, m]
-pub fn inverse_jacobi_cd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiCD expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiCD[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // InverseJacobiCD[0, m] = EllipticK[m] (symbolic only)
-  if is_expr_zero(v) && !has_real_arg(v, m) {
-    return Ok(call1("EllipticK", m.clone()));
-  }
-
-  // Numeric: EllipticF[ArcSin[Sqrt[(1-v^2)/(1-m*v^2)]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = ((1.0 - v_f * v_f) / (1.0 - m_f * v_f * v_f)).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiCD[x, 0] = ArcCos[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcCos", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiCD", args))
-}
-
-/// InverseJacobiSC[v, m]
-pub fn inverse_jacobi_sc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiSC expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiSC[0, m] = 0
-  if is_expr_zero(v) {
-    if has_real_arg(v, m) {
-      return Ok(Expr::Real(0.0));
+  let elementary = if is_expr_zero(m) {
+    match kind {
+      "SN" | "SD" => "ArcSin",
+      "CN" | "CD" => "ArcCos",
+      "SC" => "ArcTan",
+      "CS" => "ArcCot",
+      "DS" | "NS" => "ArcCsc",
+      "NC" | "DC" => "ArcSec",
+      _ => return None,
     }
-    return Ok(Expr::Integer(0));
-  }
-
-  // Numeric: EllipticF[ArcSin[v/Sqrt[1+v^2]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = v_f / (1.0 + v_f * v_f).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiSC[x, 0] = ArcTan[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcTan", v.clone()));
-  }
-
-  // InverseJacobiSC[x, 1] = ArcSinh[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcSinh", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiSC", args))
-}
-
-/// InverseJacobiCS[v, m]
-pub fn inverse_jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiCS expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // Numeric: EllipticF[ArcSin[1/Sqrt[1+v^2]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = 1.0 / (1.0 + v_f * v_f).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiCS[x, 0] = ArcCot[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcCot", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiCS", args))
-}
-
-/// InverseJacobiSD[v, m]
-pub fn inverse_jacobi_sd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiSD expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiSD[0, m] = 0
-  if is_expr_zero(v) {
-    if has_real_arg(v, m) {
-      return Ok(Expr::Real(0.0));
+  } else if is_expr_one(m) {
+    match kind {
+      "SN" => "ArcTanh",
+      "CN" | "DN" => "ArcSech",
+      "SC" | "SD" => "ArcSinh",
+      "DS" => "ArcCsch",
+      "NS" => "ArcCoth",
+      "NC" | "ND" => "ArcCosh",
+      _ => return None,
     }
+  } else {
+    return None;
+  };
+  Some(call1(elementary, v.clone()))
+}
+
+/// Machine complex arithmetic for the complex inverse Jacobi path.
+#[derive(Clone, Copy)]
+struct Cx(f64, f64);
+
+impl Cx {
+  fn add(self, o: Cx) -> Cx {
+    Cx(self.0 + o.0, self.1 + o.1)
+  }
+  fn sub(self, o: Cx) -> Cx {
+    Cx(self.0 - o.0, self.1 - o.1)
+  }
+  fn mul(self, o: Cx) -> Cx {
+    Cx(self.0 * o.0 - self.1 * o.1, self.0 * o.1 + self.1 * o.0)
+  }
+  fn div(self, o: Cx) -> Cx {
+    let d = o.0 * o.0 + o.1 * o.1;
+    Cx(
+      (self.0 * o.0 + self.1 * o.1) / d,
+      (self.1 * o.0 - self.0 * o.1) / d,
+    )
+  }
+  fn recip(self) -> Cx {
+    Cx(1.0, 0.0).div(self)
+  }
+  /// Principal square root; the negative real axis maps to +i.
+  fn sqrt(self) -> Cx {
+    if self.1 == 0.0 {
+      return if self.0 >= 0.0 {
+        Cx(self.0.sqrt(), 0.0)
+      } else {
+        Cx(0.0, (-self.0).sqrt())
+      };
+    }
+    let r = self.0.hypot(self.1);
+    let re = f64::midpoint(r, self.0).sqrt();
+    let im = ((r - self.0) / 2.0).sqrt();
+    Cx(re, if self.1 < 0.0 { -im } else { im })
+  }
+  fn ln(self) -> Cx {
+    Cx(self.0.hypot(self.1).ln(), self.1.atan2(self.0))
+  }
+  /// ArcSin[z] = -i Log[i z + Sqrt[1 - z^2]] (WL's branch cuts).
+  fn asin(self) -> Cx {
+    let iz = Cx(-self.1, self.0);
+    let w = iz.add(Cx(1.0, 0.0).sub(self.mul(self)).sqrt()).ln();
+    Cx(w.1, -w.0)
+  }
+  fn acos(self) -> Cx {
+    Cx(std::f64::consts::FRAC_PI_2, 0.0).sub(self.asin())
+  }
+  /// ArcTan[z] = i/2 (Log[1 - i z] - Log[1 + i z]).
+  fn atan(self) -> Cx {
+    let iz = Cx(-self.1, self.0);
+    let d = Cx(1.0, 0.0).sub(iz).ln().sub(Cx(1.0, 0.0).add(iz).ln());
+    Cx(-d.1 / 2.0, d.0 / 2.0)
+  }
+}
+
+/// `pq^-1(z, m)` for machine complex `z` and `m`: `F(phi, m)` of the
+/// amplitude `phi` with `sn(phi) = Sin[phi]` the matching circular inverse
+/// (`F(ArcSin[z])` for sn, `F(ArcCos[z])` for cn, ...), the reciprocal
+/// functions through `pq^-1(z) = qp^-1(1/z)`.
+fn inverse_jacobi_complex(kind: &str, z: Cx, m: Cx) -> Option<Cx> {
+  let one = Cx(1.0, 0.0);
+  let f = |phi: Cx| {
+    let (re, im) = elliptic_f_c64((phi.0, phi.1), (m.0, m.1));
+    Cx(re, im)
+  };
+  let recip = |z: Cx| (z.0 != 0.0 || z.1 != 0.0).then(|| z.recip());
+  let r = match kind {
+    "SN" => f(z.asin()),
+    "CN" => f(z.acos()),
+    "SC" => f(z.atan()),
+    "CS" => {
+      if z.0 == 0.0 && z.1 == 0.0 {
+        f(Cx(std::f64::consts::FRAC_PI_2, 0.0))
+      } else {
+        f(z.recip().atan())
+      }
+    }
+    "SD" => f(z.div(one.add(m.mul(z).mul(z)).sqrt()).asin()),
+    "CD" => {
+      let q = one.sub(m).div(one.sub(m.mul(z).mul(z))).sqrt();
+      f(z.mul(q).acos())
+    }
+    "DN" => {
+      if m.0 == 0.0 && m.1 == 0.0 {
+        return None;
+      }
+      // dn(2 i K' - u) = -dn(u): the left half plane by reflection.
+      let w = if z.0 < 0.0 { Cx(-z.0, -z.1) } else { z };
+      let u = f(one.sub(w.mul(w)).div(m).sqrt().asin());
+      if z.0 < 0.0 {
+        let (kr, ki) = elliptic_k_c64((1.0 - m.0, -m.1));
+        Cx(-2.0 * ki, 2.0 * kr).sub(u)
+      } else {
+        u
+      }
+    }
+    "NS" => return inverse_jacobi_complex("SN", recip(z)?, m),
+    "NC" => return inverse_jacobi_complex("CN", recip(z)?, m),
+    "ND" => return inverse_jacobi_complex("DN", recip(z)?, m),
+    "DS" => return inverse_jacobi_complex("SD", recip(z)?, m),
+    "DC" => return inverse_jacobi_complex("CD", recip(z)?, m),
+    _ => return None,
+  };
+  (r.0.is_finite() && r.1.is_finite()).then_some(r)
+}
+
+/// The numeric value of `InverseJacobi<kind>[v, m]` once an argument is
+/// inexact: real arguments go through the arbitrary-precision core
+/// (`elliptic_bigfloat`) — at 128 bits rounded to a machine number, or at
+/// the lowest argument precision for arbitrary-precision input — and the
+/// rest through the machine complex formulas.
+fn inverse_jacobi_numeric(kind: &str, v: &Expr, m: &Expr) -> Option<Expr> {
+  if !expr_is_inexact(v) && !expr_is_inexact(m) {
+    return None;
+  }
+  let machine = contains_machine_real(v) || contains_machine_real(m);
+  let real =
+    |a: &Expr| is_real_numeric(a).then(|| try_eval_to_f64(a)).flatten();
+  if let (Some(vf), Some(mf)) = (real(v), real(m))
+    && (vf.is_finite() && mf.is_finite())
+  {
+    if !machine {
+      let precision = [v, m]
+        .iter()
+        .filter_map(|a| match a {
+          Expr::BigFloat(_, p) => Some(*p),
+          _ => None,
+        })
+        .reduce(f64::min)?;
+      let call =
+        call(&format!("InverseJacobi{kind}"), vec![v.clone(), m.clone()]);
+      if let Some(r) = bigfloat_function_value(&call, precision) {
+        return Some(r);
+      }
+    } else if let Some((re, im)) = with_thread_consts(|cc| {
+      let rm = astro_float::RoundingMode::ToEven;
+      let bits = 128;
+      let x = astro_float::BigFloat::from_f64(vf, bits);
+      let mm = astro_float::BigFloat::from_f64(mf, bits);
+      let (re, im) = inverse_jacobi_bigfloat(kind, &x, &mm, bits, rm, cc)?;
+      Some((bigfloat_to_f64_approx(&re)?, bigfloat_to_f64_approx(&im)?))
+    }) {
+      return Some(if im == 0.0 {
+        Expr::Real(re)
+      } else {
+        build_complex_float_expr(re, im)
+      });
+    }
+  }
+  let z = try_extract_complex_float(v)?;
+  let mc = try_extract_complex_float(m)?;
+  let r = inverse_jacobi_complex(kind, Cx(z.0, z.1), Cx(mc.0, mc.1))?;
+  Some(build_complex_float_expr(r.0, r.1))
+}
+
+pub(crate) fn contains_machine_real(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_machine_real(left) || contains_machine_real(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_machine_real(operand),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_machine_real),
+    _ => false,
+  }
+}
+
+/// `InverseJacobi<kind>[v, m]`, the canonical implementation behind the
+/// twelve inverse Jacobi functions.
+fn inverse_jacobi_ast(
+  kind: &str,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let name = format!("InverseJacobi{kind}");
+  if args.len() != 2 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "{name} expects exactly 2 arguments"
+    )));
+  }
+  let (v, m) = (&args[0], &args[1]);
+  // pq(0) = 1: an exact 0 even with an inexact parameter.
+  if is_expr_one(v) && matches!(kind, "CN" | "DN" | "CD" | "NC" | "ND" | "DC") {
     return Ok(Expr::Integer(0));
   }
-
-  // Numeric: EllipticF[ArcSin[v/Sqrt[1+m*v^2]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = v_f / (1.0 + m_f * v_f * v_f).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
+  if let Some(r) = inverse_jacobi_numeric(kind, v, m) {
+    return Ok(r);
   }
-
-  // InverseJacobiSD[x, 0] = ArcSin[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcSin", v.clone()));
+  if let Some(r) = inverse_jacobi_special(kind, v, m) {
+    return Ok(r);
   }
-
-  // InverseJacobiSD[x, 1] = ArcSinh[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcSinh", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiSD", args))
+  Ok(unevaluated(&name, args))
 }
 
-/// InverseJacobiDS[v, m]
-pub fn inverse_jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiDS expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // Numeric: EllipticF[ArcSin[1/Sqrt[v^2+m]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = 1.0 / (v_f * v_f + m_f).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiDS[x, 0] = ArcCsc[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcCsc", v.clone()));
-  }
-
-  // InverseJacobiDS[x, 1] = ArcCsch[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcCsch", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiDS", args))
+macro_rules! inverse_jacobi_entry {
+  ($($fn_name:ident => $kind:literal),* $(,)?) => {
+    $(
+      #[doc = concat!("InverseJacobi", $kind, "[v, m]")]
+      pub fn $fn_name(args: &[Expr]) -> Result<Expr, InterpreterError> {
+        inverse_jacobi_ast($kind, args)
+      }
+    )*
+  };
 }
 
-/// InverseJacobiNS[v, m]
-pub fn inverse_jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiNS expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // Numeric: EllipticF[ArcSin[1/v], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = 1.0 / v_f;
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiNS[x, 0] = ArcCsc[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcCsc", v.clone()));
-  }
-
-  // InverseJacobiNS[x, 1] = ArcCoth[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcCoth", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiNS", args))
-}
-
-/// InverseJacobiNC[v, m]
-pub fn inverse_jacobi_nc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiNC expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiNC[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // Numeric: EllipticF[ArcSin[Sqrt[1-1/v^2]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = (1.0 - 1.0 / (v_f * v_f)).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiNC[x, 0] = ArcSec[x]
-  if is_expr_zero(m) {
-    return Ok(call1("ArcSec", v.clone()));
-  }
-
-  // InverseJacobiNC[x, 1] = ArcCosh[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcCosh", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiNC", args))
-}
-
-/// InverseJacobiND[v, m]
-pub fn inverse_jacobi_nd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiND expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiND[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // Numeric: EllipticF[ArcSin[Sqrt[(v^2-1)/(m*v^2)]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-    && m_f != 0.0
-  {
-    let arg = ((v_f * v_f - 1.0) / (m_f * v_f * v_f)).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  // InverseJacobiND[x, 1] = ArcCosh[x]
-  if is_expr_one(m) {
-    return Ok(call1("ArcCosh", v.clone()));
-  }
-
-  Ok(unevaluated("InverseJacobiND", args))
-}
-
-/// InverseJacobiDC[v, m]
-pub fn inverse_jacobi_dc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "InverseJacobiDC expects exactly 2 arguments".into(),
-    ));
-  }
-  let v = &args[0];
-  let m = &args[1];
-
-  // InverseJacobiDC[1, m] = 0
-  if is_expr_one(v) {
-    return Ok(Expr::Integer(0));
-  }
-
-  // Numeric: EllipticF[ArcSin[Sqrt[(v^2-1)/(v^2-m)]], m]
-  if let (Some(v_f), Some(m_f)) = (expr_to_f64(v), expr_to_f64(m))
-    && has_real_arg(v, m)
-  {
-    let arg = ((v_f * v_f - 1.0) / (v_f * v_f - m_f)).sqrt();
-    return Ok(Expr::Real(elliptic_f(arg.asin(), m_f)));
-  }
-
-  Ok(unevaluated("InverseJacobiDC", args))
+inverse_jacobi_entry! {
+  inverse_jacobi_sn_ast => "SN",
+  inverse_jacobi_cn_ast => "CN",
+  inverse_jacobi_dn_ast => "DN",
+  inverse_jacobi_cd_ast => "CD",
+  inverse_jacobi_sc_ast => "SC",
+  inverse_jacobi_cs_ast => "CS",
+  inverse_jacobi_sd_ast => "SD",
+  inverse_jacobi_ds_ast => "DS",
+  inverse_jacobi_ns_ast => "NS",
+  inverse_jacobi_nc_ast => "NC",
+  inverse_jacobi_nd_ast => "ND",
+  inverse_jacobi_dc_ast => "DC",
 }
 
 /// Extract the inner expression from a negated expression like Times[-1, x] or -x

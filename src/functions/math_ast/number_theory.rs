@@ -53,10 +53,73 @@ fn for_each_prime_up_to(limit: u64, mut visit: impl FnMut(u64) -> bool) {
   }
 }
 
+/// Above this, prime counting switches from sieving to Lucy's method.
+const LUCY_THRESHOLD: u64 = 10_000_000;
+/// Lucy's method keeps two `sqrt(n)`-sized tables and runs in O(n^(3/4));
+/// beyond this bound neither its memory nor its time is reasonable.
+const LUCY_LIMIT: u64 = 100_000_000_000_000;
+
+/// Integer square root (floor).
+fn isqrt_u64(n: u64) -> u64 {
+  let mut r = (n as f64).sqrt() as u64;
+  while r * r > n {
+    r -= 1;
+  }
+  while (r + 1) * (r + 1) <= n {
+    r += 1;
+  }
+  r
+}
+
+/// pi(n) by Lucy_Hedgehog's method: S(v) counts the integers in 2..=v not
+/// yet crossed off, for every v of the form n / k, and each prime p
+/// up to sqrt(n) updates S(v) -= S(v / p) - S(p - 1) for v >= p^2. Time
+/// O(n^(3/4)), memory O(sqrt(n)).
+fn lucy_prime_pi(n: u64) -> u64 {
+  if n < 2 {
+    return 0;
+  }
+  let r = isqrt_u64(n) as usize;
+  // small[v] = S(v) for v <= r; large[k] = S(n / k) for k <= r.
+  let mut small: Vec<u64> =
+    (0..=r as u64).map(|v| v.saturating_sub(1)).collect();
+  let mut large: Vec<u64> = (0..=r as u64)
+    .map(|k| n.checked_div(k).map_or(0, |q| q - 1))
+    .collect();
+  for p in 2..=r {
+    if small[p] == small[p - 1] {
+      continue; // p is composite
+    }
+    let sp = small[p - 1];
+    let p2 = (p as u64) * (p as u64);
+    // Large values n / k with n / k >= p^2, i.e. k <= n / p^2.
+    let kmax = ((n / p2) as usize).min(r);
+    for k in 1..=kmax {
+      let d = k * p;
+      let v = if d <= r {
+        large[d]
+      } else {
+        small[(n / d as u64) as usize]
+      };
+      large[k] -= v - sp;
+    }
+    // Small values v in p^2..=r.
+    if p2 <= r as u64 {
+      for v in (p2 as usize..=r).rev() {
+        small[v] -= small[v / p] - sp;
+      }
+    }
+  }
+  large[1]
+}
+
 /// The number of primes up to `n`.
 fn prime_count(n: i128) -> i128 {
   if n < 2 {
     return 0;
+  }
+  if n >= LUCY_THRESHOLD as i128 && n <= LUCY_LIMIT as i128 {
+    return lucy_prime_pi(n as u64) as i128;
   }
   let mut count = 0i128;
   for_each_prime_up_to(n as u64, |_| {
@@ -71,6 +134,93 @@ thread_local! {
   /// sieves once.
   static SMALL_PRIMES: std::cell::RefCell<Vec<u64>> =
     const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The logarithmic integral li(x) for x > 1 (Ramanujan's series).
+fn log_integral(x: f64) -> f64 {
+  let l = x.ln();
+  let mut sum = 0.0;
+  let mut term = 1.0; // (-1)^(k-1) l^k / (k! 2^(k-1)), built incrementally
+  let mut inner = 0.0; // Sum_{j=0}^{floor((k-1)/2)} 1/(2j+1)
+  for k in 1..200 {
+    term *= if k == 1 { l } else { -l / (k as f64 * 2.0) };
+    if (k - 1) % 2 == 0 {
+      inner += 1.0 / (k as f64);
+    }
+    let add = term * inner;
+    sum += add;
+    if add.abs() < 1e-17 * sum.abs() {
+      break;
+    }
+  }
+  std::f64::consts::EULER_GAMMA + l.ln() + x.sqrt() * sum
+}
+
+/// The primes in `lo..=hi` (a segmented sieve over that window).
+fn primes_in_window(lo: u64, hi: u64) -> Vec<u64> {
+  let lo = lo.max(2);
+  if hi < lo {
+    return Vec::new();
+  }
+  let base = primes_below(isqrt_u64(hi) as usize + 2);
+  let mut is_prime = vec![true; (hi - lo + 1) as usize];
+  for &p in &base {
+    if p * p > hi {
+      break;
+    }
+    let mut m = (lo.div_ceil(p) * p).max(p * p);
+    while m <= hi {
+      is_prime[(m - lo) as usize] = false;
+      m += p;
+    }
+  }
+  is_prime
+    .iter()
+    .enumerate()
+    .filter(|(_, b)| **b)
+    .map(|(i, _)| lo + i as u64)
+    .collect()
+}
+
+/// The n-th prime for large n: count the primes up to an estimate
+/// li^(-1)(n) with Lucy's method, then sieve the short window between the
+/// estimate and the target.
+fn nth_prime_by_counting(n: u64) -> u64 {
+  // Newton iteration for li(x) = n, from x = n ln n.
+  let nf = n as f64;
+  let mut x = nf * nf.ln();
+  for _ in 0..50 {
+    let step = (log_integral(x) - nf) * x.ln();
+    x -= step;
+    if step.abs() < 1.0 {
+      break;
+    }
+  }
+  let mut pivot = x.max(2.0) as u64;
+  let mut count = lucy_prime_pi(pivot);
+  const WINDOW: u64 = 1 << 22;
+  if count >= n {
+    // Walk down: the n-th prime is at or below the pivot.
+    loop {
+      let lo = pivot.saturating_sub(WINDOW - 1).max(2);
+      let primes = primes_in_window(lo, pivot);
+      let c = primes.len() as u64;
+      if count - c < n {
+        return primes[(n - (count - c) - 1) as usize];
+      }
+      count -= c;
+      pivot = lo - 1;
+    }
+  }
+  loop {
+    let primes = primes_in_window(pivot + 1, pivot + WINDOW);
+    let c = primes.len() as u64;
+    if count + c >= n {
+      return primes[(n - count - 1) as usize];
+    }
+    count += c;
+    pivot += WINDOW;
+  }
 }
 
 /// The `n`-th prime (`n >= 1`).
@@ -94,6 +244,9 @@ fn nth_prime(n: i128) -> i128 {
       }
       cache[(n - 1) as usize] as i128
     });
+  }
+  if bound > LUCY_THRESHOLD && bound <= LUCY_LIMIT {
+    return nth_prime_by_counting(n as u64) as i128;
   }
   let mut count = 0i128;
   let mut found = 0u64;
@@ -3340,8 +3493,127 @@ fn factor_integer_i128(n: i128) -> Expr {
   Expr::List(factors.into())
 }
 
+/// The cyclotomic split of a number `b^k - 1` or `b^k + 1` (b >= 2,
+/// k >= 2): `b^k - 1 = Π_{d | k} Φ_d(b)` and `b^k + 1 = Π Φ_d(b)` over the
+/// divisors d of 2k that do not divide k. Each piece is far smaller than
+/// the number, so a Mersenne number like 2^500 - 1 factors piece by piece
+/// instead of handing a 500-bit composite to Pollard's rho. None when `n`
+/// has no such form (or splits into fewer than two pieces).
+fn cyclotomic_pieces(n: &BigInt) -> Option<Vec<BigInt>> {
+  use num_traits::{One, Pow, Zero};
+  let one = BigInt::one();
+  let gcd_big = |x: &BigInt, y: &BigInt| {
+    let (mut a, mut b) = (x.clone(), y.clone());
+    while !b.is_zero() {
+      let r = &a % &b;
+      a = b;
+      b = r;
+    }
+    a
+  };
+  if n.bits() < 64 {
+    return None;
+  }
+  let divisors = |k: u64| (1..=k).filter(move |d| k.is_multiple_of(*d));
+  let mobius = |mut m: u64| -> i32 {
+    let mut mu = 1;
+    let mut p = 2;
+    while p * p <= m {
+      if m.is_multiple_of(p) {
+        m /= p;
+        if m.is_multiple_of(p) {
+          return 0;
+        }
+        mu = -mu;
+      }
+      p += 1;
+    }
+    if m > 1 { -mu } else { mu }
+  };
+  // Φ_d(b) = Π_{e | d} (b^e - 1)^μ(d/e)
+  let cyclotomic = |d: u64, b: &BigInt| -> BigInt {
+    let (mut num, mut den) = (BigInt::one(), BigInt::one());
+    for e in divisors(d) {
+      let term = Pow::pow(b, e) - &one;
+      match mobius(d / e) {
+        1 => num *= term,
+        -1 => den *= term,
+        _ => {}
+      }
+    }
+    num / den
+  };
+  for (sign, m) in [(-1, n + &one), (1, n - &one)] {
+    // The largest exponent k with m = b^k (smallest base).
+    let bits = m.bits();
+    for k in (2..=bits).rev() {
+      let b = m.nth_root(k as u32);
+      if b < BigInt::from(2) || Pow::pow(&b, k) != m {
+        continue;
+      }
+      // n = b^k + sign·(-1): sign -1 means n = b^k - 1.
+      let ds: Vec<u64> = if sign == -1 {
+        divisors(k).collect()
+      } else {
+        divisors(2 * k).filter(|d| k % d != 0).collect()
+      };
+      let mut pieces: Vec<BigInt> = Vec::new();
+      for d in ds {
+        let phi = cyclotomic(d, &b);
+        // Aurifeuillian split for base 2: with d = 4h, h odd, Φ_d(2)
+        // divides 2^(2h) + 1 = (2^h - 2^((h+1)/2) + 1)(2^h + 2^((h+1)/2) + 1).
+        if b == BigInt::from(2) && d % 4 == 0 && (d / 4) % 2 == 1 && d > 4 {
+          let h = d / 4;
+          let a = Pow::pow(&b, h);
+          let c = Pow::pow(&b, h.div_ceil(2));
+          let lower = gcd_big(&phi, &(&a - &c + &one));
+          let upper = &phi / &lower;
+          if lower > one && upper > one {
+            pieces.push(lower);
+            pieces.push(upper);
+            continue;
+          }
+        }
+        pieces.push(phi);
+      }
+      let pieces: Vec<BigInt> =
+        pieces.into_iter().filter(|p| *p > one).collect();
+      return (pieces.len() >= 2).then_some(pieces);
+    }
+  }
+  None
+}
+
 fn factor_integer_bigint(n: &BigInt) -> Expr {
   use num_traits::{One, Signed, Zero};
+
+  // b^k ± 1: factor the cyclotomic pieces separately and merge.
+  if n.is_positive()
+    && let Some(pieces) = cyclotomic_pieces(n)
+  {
+    let mut merged: std::collections::BTreeMap<BigInt, i128> =
+      std::collections::BTreeMap::new();
+    for piece in &pieces {
+      if let Expr::List(pairs) = &factor_integer_bigint(piece) {
+        for pair in pairs {
+          if let Expr::List(pe) = pair
+            && let (Some(p), Expr::Integer(e)) =
+              (expr_to_bigint(&pe[0]), &pe[1])
+          {
+            *merged.entry(p).or_insert(0) += e;
+          }
+        }
+      }
+    }
+    return Expr::List(
+      merged
+        .into_iter()
+        .map(|(p, e)| {
+          Expr::List(vec![bigint_to_expr(p), Expr::Integer(e)].into())
+        })
+        .collect(),
+    );
+  }
 
   if n.is_zero() {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).

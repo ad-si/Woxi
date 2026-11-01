@@ -16,6 +16,7 @@ pub type Filter = Vec<(i64, f64)>;
 /// Exact symbolic filter, when the family has a closed form.
 pub type ExactFilter = Vec<(i64, Expr)>;
 
+#[derive(Clone)]
 pub struct WaveletFilters {
   pub primal_lo: Filter,
   pub dual_lo: Filter,
@@ -665,6 +666,30 @@ fn battle_lemarie_filters(n: u32, lim: f64) -> WaveletFilters {
   WaveletFilters::orthogonal(lo, None)
 }
 
+thread_local! {
+  /// Filters of the families computed by numerical quadrature
+  /// (Battle-Lemarie, Meyer), keyed by (family tag, order, limit bits).
+  /// Each costs millions of operations, so pointwise uses such as
+  /// `Plot[WaveletPsi[BattleLemarieWavelet[3, 10], x], ...]` must not
+  /// recompute them per sample.
+  static NUMERIC_FILTER_CACHE: std::cell::RefCell<
+    std::collections::HashMap<(u8, u32, u64), WaveletFilters>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn cached_numeric_filters(
+  key: (u8, u32, u64),
+  compute: impl FnOnce() -> WaveletFilters,
+) -> WaveletFilters {
+  if let Some(f) = NUMERIC_FILTER_CACHE.with(|c| c.borrow().get(&key).cloned())
+  {
+    return f;
+  }
+  let f = compute();
+  NUMERIC_FILTER_CACHE.with(|c| c.borrow_mut().insert(key, f.clone()));
+  f
+}
+
 /// Filters for a validated discrete wavelet spec.
 pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
   match spec {
@@ -673,7 +698,9 @@ pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
     WaveletSpec::Symlet(n) => symlet_filters(*n),
     WaveletSpec::Coiflet(n) => coiflet_filters(*n),
     WaveletSpec::BattleLemarie(n, lim) => {
-      Some(battle_lemarie_filters(*n, *lim))
+      Some(cached_numeric_filters((0, *n, lim.to_bits()), || {
+        battle_lemarie_filters(*n, *lim)
+      }))
     }
     WaveletSpec::BiorthogonalSpline(n, m) => {
       Some(biorthogonal_spline_filters(*n, *m))
@@ -686,7 +713,11 @@ pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
     } else {
       cdf_53_filters()
     }),
-    WaveletSpec::Meyer(n, lim) => Some(meyer_filters(*n, *lim)),
+    WaveletSpec::Meyer(n, lim) => {
+      Some(cached_numeric_filters((1, *n, lim.to_bits()), || {
+        meyer_filters(*n, *lim)
+      }))
+    }
     WaveletSpec::Shannon(lim) => Some(shannon_filters(*lim)),
   }
 }
@@ -741,6 +772,32 @@ pub(crate) fn wavelet_filter_coefficients_ast(args: &[Expr]) -> Expr {
   single_filter_result(&spec, filt_spec, exact_requested, args)
 }
 
+/// The filter specifications available for a wavelet: orthogonal wavelets
+/// have only primal filters, biorthogonal ones also dual filters, and the
+/// compactly supported families add the lifting filters.
+fn filter_properties(spec: &WaveletSpec) -> Expr {
+  let biorthogonal = matches!(
+    spec,
+    WaveletSpec::BiorthogonalSpline(_, _)
+      | WaveletSpec::ReverseBiorthogonalSpline(_, _)
+      | WaveletSpec::Cdf(_)
+  );
+  let compact = !matches!(
+    spec,
+    WaveletSpec::BattleLemarie(_, _)
+      | WaveletSpec::Meyer(_, _)
+      | WaveletSpec::Shannon(_)
+  );
+  let mut props = vec!["PrimalLowpass", "PrimalHighpass"];
+  if biorthogonal {
+    props.extend(["DualLowpass", "DualHighpass"]);
+  }
+  if compact {
+    props.extend(["LiftingFilter", "AllLiftingFilter", "BestLiftingFilter"]);
+  }
+  Expr::List(props.into_iter().map(str_expr).collect::<Vec<_>>().into())
+}
+
 fn single_filter_result(
   spec: &WaveletSpec,
   filt_spec: &Expr,
@@ -756,6 +813,9 @@ fn single_filter_result(
   };
   if kind == "LiftingFilter" {
     return super::transforms::lifting_filter_data(spec);
+  }
+  if kind == "Properties" {
+    return filter_properties(spec);
   }
   let Some(filters) = wavelet_filters(spec) else {
     return unevaluated("WaveletFilterCoefficients", orig_args);

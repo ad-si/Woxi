@@ -946,33 +946,55 @@ fn coulomb_wave_reduce(
   let eta_zero = matches!(eta, Expr::Integer(0))
     || matches!(eta, Expr::Real(f) if *f == 0.0);
   if !eta_zero {
-    // Nonzero eta (the genuine Coulomb regime). With a non-negative integer
-    // order and numeric arguments (at least one inexact), evaluate numerically.
-    // The regular F uses its confluent-hypergeometric form; the irregular G and
-    // the outgoing/incoming H1/H2 derive from the outgoing wave
-    //   H+ = (-i)^L e^(pi eta/2) e^(i sigma_L) W_{-i eta, L+1/2}(-2 i rho)
-    // with sigma_L = Arg[Gamma[L+1+i eta]]. Then G = Re(H+), H1 = H+,
-    // H2 = Conjugate(H+).
-    if let Some(l_int) = expr_to_i128(l)
-      && l_int >= 0
-      && (contains_inexact_real(eta) || contains_inexact_real(z))
-      && try_eval_to_f64(eta).is_some()
-      && try_eval_to_f64(z).is_some()
+    // Nonzero eta (the genuine Coulomb regime), numerically once an argument
+    // is inexact: F from its confluent-hypergeometric form, G from the
+    // reflection formula at a non-integer order, H1 = G + i F, H2 = G - i F.
+    let inexact = [l, eta, z].iter().any(|a| contains_inexact_real(a));
+    if inexact
+      && is_real_numeric(l)
+      && let (Some(lf), Some(e), Some(r)) = (
+        try_eval_to_f64(l),
+        try_extract_complex_float(eta),
+        try_extract_complex_float(z),
+      )
     {
-      return match kind {
-        CoulombKind::F => coulomb_f_numeric(l_int, eta, z),
-        CoulombKind::G => {
-          let hplus = coulomb_hplus_expr(l_int, eta, z);
-          crate::evaluator::evaluate_expr_to_expr(&call1("Re", hplus))
+      let real = e.1 == 0.0 && r.1 == 0.0 && r.0 > 0.0;
+      let (f, g) = coulomb_fg_c(lf, e, r);
+      let g = match g {
+        Some(g) => Some(g),
+        // An integer order: G from the outgoing wave (real arguments only).
+        None if real && lf >= 0.0 && lf.fract() == 0.0 => {
+          let hplus = coulomb_hplus_expr(lf as i128, eta, z);
+          let v = crate::evaluator::evaluate_expr_to_expr(&call1("Re", hplus))?;
+          try_eval_to_f64(&v).map(|v| (v, 0.0))
         }
-        CoulombKind::H1 => crate::evaluator::evaluate_expr_to_expr(
-          &coulomb_hplus_expr(l_int, eta, z),
-        ),
-        CoulombKind::H2 => {
-          let hplus = coulomb_hplus_expr(l_int, eta, z);
-          crate::evaluator::evaluate_expr_to_expr(&call1("Conjugate", hplus))
+        None => None,
+      };
+      let out = |c: Cx| {
+        if real {
+          Expr::Real(c.0)
+        } else {
+          build_complex_float_expr(c.0, c.1)
         }
       };
+      let both = |sign: f64| -> Option<Expr> {
+        let g = g?;
+        let (re, im) = (g.0 - sign * f.1, g.1 + sign * f.0);
+        Some(if real {
+          build_complex_float_expr(g.0, sign * f.0)
+        } else {
+          build_complex_float_expr(re, im)
+        })
+      };
+      let v = match kind {
+        CoulombKind::F => Some(out(f)),
+        CoulombKind::G => g.map(out),
+        CoulombKind::H1 => both(1.0),
+        CoulombKind::H2 => both(-1.0),
+      };
+      if let Some(v) = v {
+        return Ok(v);
+      }
     }
     return uneval();
   }
@@ -1054,73 +1076,6 @@ fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
     ],
   );
   times(vec![neg_i_pow, exp_norm, exp_phase, whittaker])
-}
-
-/// Numeric CoulombF[L, eta, rho] for a non-negative integer order L and real
-/// eta, rho (at least one inexact), using the confluent-hypergeometric form
-///   F_L(eta, rho) = C_L(eta) rho^(L+1) e^(-i rho) 1F1(L+1-i eta; 2L+2; 2 i rho)
-///   C_L(eta) = 2^L e^(-pi eta/2) |Gamma[L+1+i eta]| / Gamma[2L+2]
-/// The imaginary parts cancel, so the real part is taken. The expression is
-/// assembled and handed to the evaluator, which already carries complex Gamma
-/// and Hypergeometric1F1.
-fn coulomb_f_numeric(
-  l: i128,
-  eta: &Expr,
-  rho: &Expr,
-) -> Result<Expr, InterpreterError> {
-  let i_unit = id_expr("I");
-  let l1 = Expr::Integer(l + 1);
-  let two_l2 = Expr::Integer(2 * l + 2);
-
-  // C_L(eta) factors.
-  let two_pow_l = pow(Expr::Integer(2), Expr::Integer(l));
-  // e^(-pi eta / 2)
-  let exp_norm = call1(
-    "Exp",
-    times(vec![
-      call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-      const_expr("Pi"),
-      eta.clone(),
-    ]),
-  );
-  // |Gamma[L+1 + i eta]|
-  let abs_gamma = call1(
-    "Abs",
-    call1(
-      "Gamma",
-      plus(vec![l1.clone(), times(vec![i_unit.clone(), eta.clone()])]),
-    ),
-  );
-  let inv_gamma_2l2 = pow(call1("Gamma", two_l2.clone()), Expr::Integer(-1));
-
-  // rho^(L+1) e^(-i rho) 1F1(L+1 - i eta; 2L+2; 2 i rho)
-  let rho_pow = pow(rho.clone(), l1.clone());
-  let exp_rho = call1(
-    "Exp",
-    times(vec![Expr::Integer(-1), i_unit.clone(), rho.clone()]),
-  );
-  let hyp = call(
-    "Hypergeometric1F1",
-    vec![
-      plus(vec![
-        l1,
-        times(vec![Expr::Integer(-1), i_unit.clone(), eta.clone()]),
-      ]),
-      two_l2,
-      times(vec![Expr::Integer(2), i_unit, rho.clone()]),
-    ],
-  );
-
-  let product = times(vec![
-    two_pow_l,
-    exp_norm,
-    abs_gamma,
-    inv_gamma_2l2,
-    rho_pow,
-    exp_rho,
-    hyp,
-  ]);
-  crate::evaluator::evaluate_expr_to_expr(&call1("Re", product))
 }
 
 pub fn spherical_bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2053,4 +2008,111 @@ fn bessel_complex_numeric(
   }
   let (r, i) = bessel_complex_value(kind, nu, (re, im));
   Some(build_complex_float_expr(r, i))
+}
+
+// ─── Machine Coulomb wave functions for general order ─────────────────
+
+fn cw_mul(a: Cx, b: Cx) -> Cx {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cw_div(a: Cx, b: Cx) -> Cx {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cw_exp(a: Cx) -> Cx {
+  let r = a.0.exp();
+  (r * a.1.cos(), r * a.1.sin())
+}
+fn cw_ln(a: Cx) -> Cx {
+  (a.0.hypot(a.1).ln(), a.1.atan2(a.0))
+}
+fn cw_cos(a: Cx) -> Cx {
+  (a.0.cos() * a.1.cosh(), -a.0.sin() * a.1.sinh())
+}
+fn cw_sin(a: Cx) -> Cx {
+  (a.0.sin() * a.1.cosh(), a.0.cos() * a.1.sinh())
+}
+fn cw_lgamma(a: Cx) -> Cx {
+  super::zeta_functions::log_gamma_complex(a.0, a.1)
+}
+
+/// The regularized `1F1(a; b; z)/Γ(b)`, also at the poles `b = -m` of `Γ`:
+/// `(a)_(m+1) z^(m+1)/(m+1)! 1F1(a + m + 1; m + 2; z)`.
+fn hyp1f1_regularized_c(a: Cx, b: f64, z: Cx) -> Cx {
+  if b <= 0.0 && b.fract() == 0.0 {
+    let m = -b as u32;
+    let mut coef = (1.0, 0.0);
+    for k in 0..=m {
+      coef = cw_mul(
+        coef,
+        cw_div(
+          cw_mul((a.0 + f64::from(k), a.1), z),
+          (f64::from(k + 1), 0.0),
+        ),
+      );
+    }
+    let shifted = (a.0 + f64::from(m) + 1.0, a.1);
+    let h = super::hypergeometric::hypergeometric_1f1_complex(
+      shifted,
+      (f64::from(m) + 2.0, 0.0),
+      z,
+    );
+    return cw_mul(coef, h);
+  }
+  let h = super::hypergeometric::hypergeometric_1f1_complex(a, (b, 0.0), z);
+  let lg = cw_lgamma((b, 0.0));
+  cw_mul(h, cw_exp((-lg.0, -lg.1)))
+}
+
+/// `F_l(η, z) = C_l(η) z^(l+1) e^(-i z) 1F1(l + 1 - i η; 2l + 2; 2 i z)`,
+/// `C_l(η) = 2^l e^((-π η + lnΓ(1+l+iη) + lnΓ(1+l-iη))/2) / Γ(2l + 2)`
+/// (DLMF 33.2.4, 33.2.5), for real `l` and complex `η`, `z`.
+fn coulomb_f_c(l: f64, eta: Cx, z: Cx) -> Cx {
+  let ieta = (-eta.1, eta.0);
+  let lp = cw_lgamma((1.0 + l + ieta.0, ieta.1));
+  let lm = cw_lgamma((1.0 + l - ieta.0, -ieta.1));
+  let expo = (
+    (-std::f64::consts::PI * eta.0 + lp.0 + lm.0) / 2.0 + l * 2f64.ln(),
+    (-std::f64::consts::PI * eta.1 + lp.1 + lm.1) / 2.0,
+  );
+  let zpow = cw_exp(cw_mul((l + 1.0, 0.0), cw_ln(z)));
+  let e = cw_exp((z.1, -z.0));
+  let h = hyp1f1_regularized_c(
+    (l + 1.0 - ieta.0, -ieta.1),
+    2.0 * l + 2.0,
+    (-2.0 * z.1, 2.0 * z.0),
+  );
+  cw_mul(cw_mul(cw_exp(expo), zpow), cw_mul(e, h))
+}
+
+/// The Coulomb phase `σ_l(η) = (lnΓ(1+l+iη) - lnΓ(1+l-iη)) / 2i`.
+fn coulomb_sigma(l: f64, eta: Cx) -> Cx {
+  let ieta = (-eta.1, eta.0);
+  let lp = cw_lgamma((1.0 + l + ieta.0, ieta.1));
+  let lm = cw_lgamma((1.0 + l - ieta.0, -ieta.1));
+  let d = (lp.0 - lm.0, lp.1 - lm.1);
+  // d / (2i) = (d.1 - i d.0) / 2
+  (d.1 / 2.0, -d.0 / 2.0)
+}
+
+/// `G_l = (F_l cos χ - F_(-l-1)) / sin χ` with
+/// `χ = σ_l - σ_(-l-1) - (l + 1/2) π` (DLMF 33.2.11 continued to complex
+/// `η`); `2l` must not be an integer (there the formula is 0/0).
+fn coulomb_g_reflection(l: f64, eta: Cx, z: Cx) -> Cx {
+  let f = coulomb_f_c(l, eta, z);
+  let f2 = coulomb_f_c(-l - 1.0, eta, z);
+  let s1 = coulomb_sigma(l, eta);
+  let s2 = coulomb_sigma(-l - 1.0, eta);
+  let chi = (s1.0 - s2.0 - (l + 0.5) * std::f64::consts::PI, s1.1 - s2.1);
+  let num = cw_mul(f, cw_cos(chi));
+  cw_div((num.0 - f2.0, num.1 - f2.1), cw_sin(chi))
+}
+
+/// `(F, G)` for a real order `l`; `G` only where `2l` is not an integer.
+fn coulomb_fg_c(l: f64, eta: Cx, z: Cx) -> (Cx, Option<Cx>) {
+  let f = coulomb_f_c(l, eta, z);
+  if (2.0 * l).fract() == 0.0 {
+    return (f, None);
+  }
+  (f, Some(coulomb_g_reflection(l, eta, z)))
 }

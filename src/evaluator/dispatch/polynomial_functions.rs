@@ -491,7 +491,7 @@ pub fn dispatch_polynomial_functions(
       // coefficients and polynomial form; otherwise returns unevaluated.
       return Some(crate::functions::polynomial_ast::root_sum_ast(args));
     }
-    "FunctionExpand" if args.len() == 1 => {
+    "FunctionExpand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::function_expand_ast(args));
     }
     "ToRadicals"

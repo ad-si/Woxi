@@ -498,19 +498,57 @@ pub fn dispatch_linear_algebra_functions(
       if args.len() == 2
         && matches!(&args[1], Expr::Identifier(s) if s == "SparseArray") =>
     {
-      let dense =
-        match crate::functions::linear_algebra_ast::identity_matrix_ast(
-          std::slice::from_ref(&args[0]),
-        ) {
-          Ok(d) => d,
-          err => return Some(err),
-        };
-      // A dense identity contains no structural zeros to preserve, so the
-      // usual SparseArray conversion produces the same CSR form as
-      // wolframscript's IdentityMatrix[n, SparseArray].
-      return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
+      // Built straight in wolframscript's CSR form (row pointers, column
+      // indices, values) so a 10^6 x 10^6 identity never exists densely.
+      let size = |e: &Expr| match e {
+        Expr::Integer(k) if *k >= 1 => Some(*k as usize),
+        _ => None,
+      };
+      let dims = match &args[0] {
+        Expr::List(d) if d.len() == 2 => size(&d[0]).zip(size(&d[1])),
+        other => size(other).map(|k| (k, k)),
+      };
+      let Some((m, n)) = dims else {
+        // Other sizes keep the general path (dense identity → SparseArray).
+        let dense =
+          match crate::functions::linear_algebra_ast::identity_matrix_ast(
+            std::slice::from_ref(&args[0]),
+          ) {
+            Ok(d) => d,
+            err => return Some(err),
+          };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&call1(
+          "SparseArray",
+          dense,
+        )));
+      };
+      let k = m.min(n);
+      let row_ptr: Vec<Expr> =
+        (0..=m).map(|i| Expr::Integer(i.min(n) as i128)).collect();
+      let cols: Vec<Expr> = (1..=k)
+        .map(|j| Expr::List(vec![Expr::Integer(j as i128)].into()))
+        .collect();
+      let values = vec![Expr::Integer(1); k];
+      return Some(Ok(call(
         "SparseArray",
-        dense,
+        vec![
+          id_expr("Automatic"),
+          Expr::List(
+            vec![Expr::Integer(m as i128), Expr::Integer(n as i128)].into(),
+          ),
+          Expr::Integer(0),
+          Expr::List(
+            vec![
+              Expr::Integer(1),
+              Expr::List(
+                vec![Expr::List(row_ptr.into()), Expr::List(cols.into())]
+                  .into(),
+              ),
+              Expr::List(values.into()),
+            ]
+            .into(),
+          ),
+        ],
       )));
     }
     // IdentityMatrix[n, type] with an unsupported structural type (neither a

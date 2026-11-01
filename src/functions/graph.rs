@@ -95,47 +95,6 @@ pub(crate) fn build_ungraph(
   (graph, index_map)
 }
 
-/// Build a petgraph DiGraph with u32 edge weights (capacity 1 per edge).
-/// For max-flow: directed edges get capacity in one direction,
-/// undirected edges get capacity in both.
-pub(crate) fn build_flow_graph(
-  vertices: &[Expr],
-  edges: &[Expr],
-) -> (DiGraph<usize, u32>, HashMap<String, NodeIndex>) {
-  let mut graph = DiGraph::new();
-  let mut index_map: HashMap<String, NodeIndex> = HashMap::new();
-
-  for (i, v) in vertices.iter().enumerate() {
-    let (inner, _) = unwrap_vertex_style(v);
-    let key = expr_to_string(inner);
-    let idx = graph.add_node(i);
-    index_map.insert(key, idx);
-  }
-
-  for edge in edges {
-    let (edge_expr, _, _) = unwrap_edge_wrappers(edge);
-    if let Expr::FunctionCall {
-      name: ename,
-      args: eargs,
-    } = edge_expr
-      && eargs.len() == 2
-    {
-      let from_str = expr_to_string(unwrap_vertex_style(&eargs[0]).0);
-      let to_str = expr_to_string(unwrap_vertex_style(&eargs[1]).0);
-      if let (Some(&fi), Some(&ti)) =
-        (index_map.get(&from_str), index_map.get(&to_str))
-      {
-        graph.add_edge(fi, ti, 1u32);
-        if ename == "UndirectedEdge" {
-          graph.add_edge(ti, fi, 1u32);
-        }
-      }
-    }
-  }
-
-  (graph, index_map)
-}
-
 /// Data associated with each edge in the rendering petgraph.
 #[derive(Clone, Debug)]
 struct RenderEdgeData {
@@ -2199,7 +2158,7 @@ pub(crate) fn snap_coord(v: f64) -> f64 {
 /// Peel off `Labeled[..., label]` and `Style[..., directives...]` wrappers,
 /// in any nesting order, returning the innermost expression along with the
 /// first label and first color directive encountered.
-fn unwrap_edge_wrappers(
+pub(crate) fn unwrap_edge_wrappers(
   mut expr: &Expr,
 ) -> (&Expr, Option<String>, Option<Color>) {
   let mut label: Option<String> = None;
@@ -2233,7 +2192,7 @@ fn unwrap_edge_wrappers(
 
 /// Peel off `Style[..., directives...]` and `Tooltip[..., tip]` wrappers from a vertex, returning
 /// the innermost expression along with the first color directive.
-fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
+pub(crate) fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
   let mut color: Option<Color> = None;
   while let Expr::FunctionCall { name, args } = expr {
     if name == "Style" && args.len() >= 2 {

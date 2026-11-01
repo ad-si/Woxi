@@ -53,6 +53,82 @@ thread_local! {
   /// An `Abort[]` was deferred by an enclosing `AbortProtect`.
   static ABORT_PENDING: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+
+  /// Deadlines of the enclosing `TimeConstrained` calls, innermost last,
+  /// each with whether its time limit has already fired.
+  static TIME_LIMITS: std::cell::RefCell<Vec<(web_time::Instant, bool)>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+  /// Set while an abort raised by a `TimeConstrained` time limit unwinds
+  /// (`CheckAbort` propagates those by default, unlike `Abort[]`).
+  static TIMEOUT_ABORT: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Evaluate `body` under a `TimeConstrained` deadline `limit` seconds away.
+/// Returns the body's result and whether the limit fired during it (a
+/// `Pause` reaching the deadline stops there and raises an abort).
+pub(crate) fn with_time_limit(
+  limit: Option<f64>,
+  body: impl FnOnce() -> Result<Expr, InterpreterError>,
+) -> (Result<Expr, InterpreterError>, bool) {
+  let Some(limit) = limit.filter(|l| l.is_finite() && *l >= 0.0) else {
+    return (body(), false);
+  };
+  let deadline =
+    web_time::Instant::now() + std::time::Duration::from_secs_f64(limit);
+  TIME_LIMITS.with(|t| t.borrow_mut().push((deadline, false)));
+  let result = body();
+  let fired = TIME_LIMITS
+    .with(|t| t.borrow_mut().pop())
+    .is_some_and(|(_, fired)| fired);
+  (result, fired)
+}
+
+/// Whether an abort now unwinding came from a `TimeConstrained` limit,
+/// clearing the mark when `clear` is set (the abort has been handled).
+pub(crate) fn timeout_abort_active(clear: bool) -> bool {
+  let active = TIMEOUT_ABORT.with(std::cell::Cell::get);
+  if clear {
+    TIMEOUT_ABORT.with(|t| t.set(false));
+  }
+  active
+}
+
+/// Sleep `secs` seconds, stopping at the earliest pending `TimeConstrained`
+/// deadline: that limit then fires and the pause raises an abort.
+fn pause_seconds(secs: f64) -> Result<(), InterpreterError> {
+  let now = web_time::Instant::now();
+  let deadline = TIME_LIMITS.with(|t| {
+    t.borrow()
+      .iter()
+      .filter(|(_, fired)| !fired)
+      .map(|(d, _)| *d)
+      .min()
+  });
+  let wanted = std::time::Duration::from_secs_f64(secs);
+  let (sleep, fires) = match deadline {
+    Some(d) if now + wanted >= d => (d.saturating_duration_since(now), true),
+    _ => (wanted, false),
+  };
+  if !sleep.is_zero() {
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::sleep(sleep);
+    #[cfg(target_arch = "wasm32")]
+    crate::wasm::sleep_seconds(sleep.as_secs_f64());
+  }
+  if fires {
+    let now = web_time::Instant::now();
+    TIME_LIMITS.with(|t| {
+      for (d, fired) in t.borrow_mut().iter_mut() {
+        if *d <= now {
+          *fired = true;
+        }
+      }
+    });
+    TIMEOUT_ABORT.with(|t| t.set(true));
+    return Err(InterpreterError::Abort);
+  }
+  Ok(())
 }
 
 /// Keeps an abort handler on `ABORT_HANDLERS` for the evaluation of its body,
@@ -1021,6 +1097,21 @@ fn evaluate_expr_to_expr_early_dispatch(
       let result = evaluate_expr_to_expr(&args[0])?;
       let elapsed = start.elapsed().as_secs_f64();
       return Ok(Some(Expr::List(vec![Expr::Real(elapsed), result].into())));
+    }
+    // MaxMemoryUsed[expr]: the bytes needed while evaluating the held expr —
+    // at least its result's ByteCount, or the process's peak growth when
+    // the evaluation needed more transiently.
+    "MaxMemoryUsed" if args.len() == 1 => {
+      let before = crate::functions::memory::max_memory_used();
+      let result = evaluate_expr_to_expr(&args[0])?;
+      let growth = crate::functions::memory::max_memory_used() - before;
+      let bytes = match crate::functions::predicate_ast::byte_count_ast(
+        std::slice::from_ref(&result),
+      )? {
+        Expr::Integer(b) => b.max(growth),
+        _ => growth,
+      };
+      return Ok(Some(Expr::Integer(bytes)));
     }
     "RepeatedTiming" if args.len() == 1 => {
       let mut times = Vec::new();
@@ -3034,10 +3125,7 @@ fn evaluate_expr_to_expr_uncached(
           match secs {
             Some(s) if s >= 0.0 => {
               if s > 0.0 {
-                #[cfg(not(target_arch = "wasm32"))]
-                std::thread::sleep(std::time::Duration::from_secs_f64(s));
-                #[cfg(target_arch = "wasm32")]
-                crate::wasm::sleep_seconds(s);
+                pause_seconds(s)?;
               }
               // A pause is where a socket handler gets its turn: it runs on
               // this thread, so it can only fire where evaluation stops to
@@ -3079,17 +3167,18 @@ fn evaluate_expr_to_expr_uncached(
         // PropagateAborts -> True the abort continues past CheckAbort after
         // failexpr is evaluated. The default Automatic absorbs an Abort[]
         // like False does (only interactive interrupts propagate then).
+        // `None` stands for Automatic: an abort from a TimeConstrained
+        // limit propagates, a user `Abort[]` does not.
         let propagate = match args.get(2) {
-          None => Some(false),
+          None => Some(None),
           Some(Expr::Rule {
             pattern,
             replacement,
           }) if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PropagateAborts") => {
             match replacement.as_ref() {
-              Expr::Identifier(v) if v == "True" => Some(true),
-              Expr::Identifier(v) if v == "False" || v == "Automatic" => {
-                Some(false)
-              }
+              Expr::Identifier(v) if v == "True" => Some(Some(true)),
+              Expr::Identifier(v) if v == "False" => Some(Some(false)),
+              Expr::Identifier(v) if v == "Automatic" => Some(None),
               _ => None,
             }
           }
@@ -3105,11 +3194,16 @@ fn evaluate_expr_to_expr_uncached(
           };
           match body {
             Ok(result) => return Ok(result),
-            Err(InterpreterError::Abort) if propagate => {
+            Err(InterpreterError::Abort)
+              if propagate.unwrap_or_else(|| timeout_abort_active(false)) =>
+            {
+              let timeout = timeout_abort_active(true);
               evaluate_expr_to_expr(&args[1])?;
+              TIMEOUT_ABORT.with(|t| t.set(timeout));
               return Err(InterpreterError::Abort);
             }
             Err(InterpreterError::Abort) => {
+              timeout_abort_active(true);
               return Err(InterpreterError::TailCall(Box::new(
                 args[1].clone(),
               )));

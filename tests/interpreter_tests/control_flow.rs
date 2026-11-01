@@ -454,6 +454,21 @@ mod with_scoping {
     }
   }
 
+  // The FullForm spelling `List[...]` of the specification is the same list
+  // as `{...}` (regression: it was rejected as "not a List").
+  #[test]
+  fn a_fullform_list_specification_is_a_list() {
+    for (code, expected) in [
+      ("Module[List[Set[a, {1, 2}]], a]", "{1, 2}"),
+      ("Module[List[a, b], a = 1; b = 2; a + b]", "3"),
+      ("Block[List[Set[a, 3]], a + 1]", "4"),
+      ("With[List[Set[a, 3]], a + 1]", "4"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   /// Run `code` and expect it to stay unevaluated with exactly `message`.
   fn assert_local_spec_message(code: &str, expected: &str, message: &str) {
     clear_state();

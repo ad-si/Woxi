@@ -702,6 +702,11 @@ fn selected_test<'a>(
   association_get(tests, name)
 }
 
+/// The p-value recorded for a test.
+fn association_get_p_value(test_assoc: &Expr) -> Option<f64> {
+  property_from_test(test_assoc, "PValue").and_then(|p| try_eval_to_f64(&p))
+}
+
 fn property_from_test(test_assoc: &Expr, prop: &str) -> Option<Expr> {
   let Expr::Association(pairs) = test_assoc else {
     return None;
@@ -780,10 +785,23 @@ pub fn apply_hypothesis_test_data(
 /// `"TestStatistic"`, one of [`TEST_NAMES`] (interpreted as that test's
 /// p-value), or omitted (defaults to `"PValue"`).
 pub fn distribution_fit_test_ast(
-  args: &[Expr],
+  all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  let (args, opts) =
+    crate::evaluator::dispatch::split_trailing_options(all_args);
+  // `SignificanceLevel` is the cutoff of "ShortTestConclusion".
+  let settings = match opts.as_slice() {
+    [] => super::statistics::HypothesisTestSettings::parse(&[]),
+    [(name, _)] if name == "SignificanceLevel" => {
+      super::statistics::HypothesisTestSettings::parse(&opts)
+    }
+    _ => None,
+  };
+  let Some(settings) = settings else {
+    return Ok(unevaluated("DistributionFitTest", all_args));
+  };
   if args.len() < 2 || args.len() > 3 {
-    return Ok(unevaluated("DistributionFitTest", args));
+    return Ok(unevaluated("DistributionFitTest", all_args));
   }
   let data = &args[0];
   let dist = &args[1];
@@ -796,14 +814,14 @@ pub fn distribution_fit_test_ast(
       {
         (prop.as_str(), Some(test.as_str()))
       }
-      _ => return Ok(unevaluated("DistributionFitTest", args)),
+      _ => return Ok(unevaluated("DistributionFitTest", all_args)),
     },
     None => ("PValue", None),
-    _ => return Ok(unevaluated("DistributionFitTest", args)),
+    _ => return Ok(unevaluated("DistributionFitTest", all_args)),
   };
 
   let Some(u) = sorted_probability_transform(data, dist) else {
-    return Ok(unevaluated("DistributionFitTest", args));
+    return Ok(unevaluated("DistributionFitTest", all_args));
   };
   if u.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -829,20 +847,25 @@ pub fn distribution_fit_test_ast(
         }
         Ok(property_from_test(test, property).unwrap_or(assoc))
       }
+      "ShortTestConclusion" => Ok(
+        association_get_p_value(test)
+          .map(|p| settings.short_conclusion(p))
+          .unwrap_or(assoc),
+      ),
       "TestDataTable" => {
         let Expr::Association(tp) = test else {
-          return Ok(unevaluated("DistributionFitTest", args));
+          return Ok(unevaluated("DistributionFitTest", all_args));
         };
         let (Some(stat), Some(p)) = (
           association_get(tp, "TestStatistic").and_then(try_eval_to_f64),
           association_get(tp, "PValue").and_then(try_eval_to_f64),
         ) else {
-          return Ok(unevaluated("DistributionFitTest", args));
+          return Ok(unevaluated("DistributionFitTest", all_args));
         };
         Ok(test_data_table(name, stat, p))
       }
       "HypothesisTestData" => Ok(call1("HypothesisTestData", assoc)),
-      _ => Ok(unevaluated("DistributionFitTest", args)),
+      _ => Ok(unevaluated("DistributionFitTest", all_args)),
     };
   }
 
@@ -859,6 +882,18 @@ pub fn distribution_fit_test_ast(
       })?;
       Ok(property_from_test(test, property).unwrap_or(assoc))
     }
+    "ShortTestConclusion" => {
+      let test = selected_test(pairs, None).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "DistributionFitTest: no test available".into(),
+        )
+      })?;
+      Ok(
+        association_get_p_value(test)
+          .map(|p| settings.short_conclusion(p))
+          .unwrap_or(assoc),
+      )
+    }
     name if TEST_NAMES.contains(&name) => {
       warn_if_out_of_range(pairs, name);
       let test = selected_test(pairs, Some(name)).ok_or_else(|| {
@@ -872,7 +907,7 @@ pub fn distribution_fit_test_ast(
       if !PROPERTIES.contains(&other) {
         emit_invalid_property(&args[2]);
       }
-      Ok(unevaluated("DistributionFitTest", args))
+      Ok(unevaluated("DistributionFitTest", all_args))
     }
   }
 }
@@ -881,11 +916,13 @@ pub fn distribution_fit_test_ast(
 /// goodness-of-fit tests: `DistributionFitTest` with that one test chosen.
 pub fn named_fit_test_ast(
   head: &str,
-  args: &[Expr],
+  all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let test = head.strip_suffix("Test").unwrap_or(head);
+  let (args, _) = crate::evaluator::dispatch::split_trailing_options(all_args);
+  let options = &all_args[args.len()..];
   if !(2..=3).contains(&args.len()) || !TEST_NAMES.contains(&test) {
-    return Ok(unevaluated(head, args));
+    return Ok(unevaluated(head, all_args));
   }
   let property = match args.get(2) {
     None => str_expr("PValue"),
@@ -893,11 +930,12 @@ pub fn named_fit_test_ast(
     Some(_) => return Ok(unevaluated(head, args)),
   };
   let spec = Expr::List(vec![property, str_expr(test)].into());
-  let result =
-    distribution_fit_test_ast(&[args[0].clone(), args[1].clone(), spec])?;
+  let mut call_args = vec![args[0].clone(), args[1].clone(), spec];
+  call_args.extend(options.iter().cloned());
+  let result = distribution_fit_test_ast(&call_args)?;
   Ok(match &result {
     Expr::FunctionCall { name, .. } if name == "DistributionFitTest" => {
-      unevaluated(head, args)
+      unevaluated(head, all_args)
     }
     _ => result,
   })

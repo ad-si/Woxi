@@ -6678,27 +6678,11 @@ pub fn dispatch_list_operations(
         FoldPairSteps::NotAPair { result, .. } => result,
       }));
     }
-    // JoinAcross[list1, list2, key] — join associations on a common key
-    "JoinAcross" if args.len() == 3 => {
-      if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
-        let key_str = expr_to_string(&args[2]);
-        let mut results = Vec::new();
-        for a1 in l1 {
-          let key_val = get_assoc_value(a1, &key_str);
-          if let Some(ref kv) = key_val {
-            for a2 in l2 {
-              let key_val2 = get_assoc_value(a2, &key_str);
-              if let Some(ref kv2) = key_val2
-                && expr_to_string(kv) == expr_to_string(kv2)
-              {
-                // Merge the two associations
-                let merged = merge_associations(a1, a2);
-                results.push(merged);
-              }
-            }
-          }
-        }
-        return Some(Ok(Expr::List(results.into())));
+    // JoinAcross[alist, blist, keyspec, joinspec, KeyCollisionFunction -> f]
+    // joins the associations of two lists whose join keys match.
+    "JoinAcross" if args.len() >= 3 => {
+      if let Some(result) = join_across(args) {
+        return Some(result);
       }
     }
     // CountDistinct[list] — count unique elements
@@ -8831,43 +8815,6 @@ fn cycles_arg(expr: &Expr) -> Option<Vec<Vec<i128>>> {
     result.push(nums);
   }
   Some(result)
-}
-
-fn get_assoc_value(assoc: &Expr, key: &str) -> Option<Expr> {
-  if let Expr::Association(pairs) = assoc {
-    for (k, v) in pairs {
-      let k_str = expr_to_string(k);
-      if k_str == key || k_str == key.trim_matches('"') {
-        return Some(v.clone());
-      }
-    }
-  }
-  None
-}
-
-/// Merge two associations, with the first taking priority for duplicate keys
-fn merge_associations(a1: &Expr, a2: &Expr) -> Expr {
-  let mut pairs: Vec<(Expr, Expr)> = Vec::new();
-  let mut seen_keys: Vec<String> = Vec::new();
-
-  if let Expr::Association(items) = a1 {
-    for (k, v) in items {
-      let k_str = expr_to_string(k);
-      seen_keys.push(k_str);
-      pairs.push((k.clone(), v.clone()));
-    }
-  }
-
-  if let Expr::Association(items) = a2 {
-    for (k, v) in items {
-      let k_str = expr_to_string(k);
-      if !seen_keys.contains(&k_str) {
-        pairs.push((k.clone(), v.clone()));
-      }
-    }
-  }
-
-  Expr::Association(pairs)
 }
 
 fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -11515,4 +11462,214 @@ fn fold_pair_steps(
     state = pair[1].clone();
   }
   Ok(FoldPairSteps::Emitted(results))
+}
+
+/// How `JoinAcross` decides whether two associations are joined.
+enum JoinKeys {
+  /// Pairs of a key in the left association and one in the right whose
+  /// values must agree.
+  Keys(Vec<(Expr, Expr)>),
+  /// A predicate applied to both associations.
+  Test(Expr),
+}
+
+/// A `JoinAcross` key: `Key[k]` stands for `k`, a string for itself.
+fn join_key(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::String(_) => Some(e.clone()),
+    Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  }
+}
+
+fn join_key_pair(e: &Expr) -> Option<(Expr, Expr)> {
+  match e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some((join_key(pattern)?, join_key(replacement)?)),
+    _ => join_key(e).map(|k| (k.clone(), k)),
+  }
+}
+
+fn assoc_lookup<'a>(
+  entries: &'a [(Expr, Expr)],
+  key: &Expr,
+) -> Option<&'a Expr> {
+  entries
+    .iter()
+    .find(|(k, _)| crate::functions::boolean_ast::same_q_pair(k, key))
+    .map(|(_, v)| v)
+}
+
+/// JoinAcross[alist, blist, keyspec, joinspec, opts]. `None` leaves the call
+/// unevaluated.
+fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
+  use crate::functions::boolean_ast::same_q_pair;
+  let (positional, opts) = split_trailing_options(&args[2..]);
+  let (keyspec, join_type) = match positional {
+    [keyspec] => (keyspec, "Inner"),
+    [keyspec, Expr::String(j)] => (keyspec, j.as_str()),
+    // The keyspec may itself be a rule, which split_trailing_options takes
+    // for an option.
+    [] if args.len() >= 3 => (&args[2], "Inner"),
+    _ => return None,
+  };
+  let opts = if positional.is_empty() {
+    &opts[1..]
+  } else {
+    &opts[..]
+  };
+  // Right and Outer joins are not implemented yet.
+  if !matches!(join_type, "Inner" | "Left") {
+    return None;
+  }
+  let mut collision = Expr::Identifier("Left".to_string());
+  for (name, value) in opts {
+    match name.as_str() {
+      "KeyCollisionFunction" => collision = value.clone(),
+      _ => return None,
+    }
+  }
+  let rows = |e: &Expr| -> Option<Vec<Vec<(Expr, Expr)>>> {
+    match e {
+      Expr::List(items) => items
+        .iter()
+        .map(|a| match a {
+          Expr::Association(entries) => Some(entries.clone()),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    }
+  };
+  let (left, right) = (rows(&args[0])?, rows(&args[1])?);
+  let keys = match keyspec {
+    Expr::List(items) => {
+      JoinKeys::Keys(items.iter().map(join_key_pair).collect::<Option<_>>()?)
+    }
+    Expr::Rule { .. } | Expr::String(_) => {
+      JoinKeys::Keys(vec![join_key_pair(keyspec)?])
+    }
+    Expr::FunctionCall { name, .. } if name == "Key" => {
+      JoinKeys::Keys(vec![join_key_pair(keyspec)?])
+    }
+    f => JoinKeys::Test(f.clone()),
+  };
+  // Keys named alike on both sides that are joined on hold equal values,
+  // so they never collide.
+  let shared_join_keys: Vec<Expr> = match &keys {
+    JoinKeys::Keys(pairs) => pairs
+      .iter()
+      .filter(|(a, b)| same_q_pair(a, b))
+      .map(|(a, _)| a.clone())
+      .collect(),
+    JoinKeys::Test(_) => Vec::new(),
+  };
+  let is_shared = |k: &Expr| shared_join_keys.iter().any(|s| same_q_pair(s, k));
+
+  let matches = |a: &[(Expr, Expr)],
+                 b: &[(Expr, Expr)]|
+   -> Result<bool, InterpreterError> {
+    match &keys {
+      JoinKeys::Keys(pairs) => Ok(pairs.iter().all(|(ka, kb)| {
+        match (assoc_lookup(a, ka), assoc_lookup(b, kb)) {
+          (Some(va), Some(vb)) => same_q_pair(va, vb),
+          _ => false,
+        }
+      })),
+      JoinKeys::Test(f) => {
+        let r = list_helpers_ast::apply_func_to_two_args(
+          f,
+          &Expr::Association(a.to_vec()),
+          &Expr::Association(b.to_vec()),
+        )?;
+        Ok(matches!(r, Expr::Identifier(ref t) if t == "True"))
+      }
+    }
+  };
+
+  let merge = |a: &[(Expr, Expr)],
+               b: &[(Expr, Expr)]|
+   -> Result<Expr, InterpreterError> {
+    let mut out: Vec<(Expr, Expr)> = Vec::new();
+    for (k, va) in a {
+      match assoc_lookup(b, k) {
+        Some(vb) if !is_shared(k) => match &collision {
+          Expr::Identifier(c) if c == "Left" => {
+            out.push((k.clone(), va.clone()));
+          }
+          Expr::Identifier(c) if c == "Right" => {
+            out.push((k.clone(), vb.clone()));
+          }
+          Expr::Identifier(c) if c == "None" => {}
+          f => {
+            let new_keys = list_helpers_ast::apply_func_ast(f, k)?;
+            let Expr::List(new_keys) = &new_keys else {
+              return Ok(Expr::Identifier("$Failed".to_string()));
+            };
+            let [lk, rk] = new_keys.as_slice() else {
+              return Ok(Expr::Identifier("$Failed".to_string()));
+            };
+            out.push((lk.clone(), va.clone()));
+            out.push((rk.clone(), vb.clone()));
+          }
+        },
+        _ => out.push((k.clone(), va.clone())),
+      }
+    }
+    for (k, vb) in b {
+      if assoc_lookup(a, k).is_none() {
+        out.push((k.clone(), vb.clone()));
+      }
+    }
+    Ok(Expr::Association(out))
+  };
+
+  // The keys of the right associations, which an unmatched left row of a
+  // "Left" join is padded with.
+  let mut right_keys: Vec<Expr> = Vec::new();
+  for b in &right {
+    for (k, _) in b {
+      if !right_keys.iter().any(|r| same_q_pair(r, k)) {
+        right_keys.push(k.clone());
+      }
+    }
+  }
+
+  let mut results = Vec::new();
+  for a in &left {
+    let mut matched = false;
+    for b in &right {
+      match matches(a, b) {
+        Ok(true) => {
+          matched = true;
+          match merge(a, b) {
+            Ok(m) => results.push(m),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        Ok(false) => {}
+        Err(e) => return Some(Err(e)),
+      }
+    }
+    if !matched && join_type == "Left" {
+      let mut row = a.clone();
+      for k in &right_keys {
+        if assoc_lookup(a, k).is_none() {
+          row.push((
+            k.clone(),
+            Expr::FunctionCall {
+              name: "Missing".to_string(),
+              args: vec![Expr::String("Unmatched".to_string())].into(),
+            },
+          ));
+        }
+      }
+      results.push(Expr::Association(row));
+    }
+  }
+  Some(Ok(Expr::List(results.into())))
 }
