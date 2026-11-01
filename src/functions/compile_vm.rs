@@ -272,7 +272,7 @@ impl Comp {
 
   /// An iterator spec `{i, a, b, d}`, `{i, a, b}`, `{i, b}`, `{i, list}`
   /// or `{n}`. The variable is bound in a new scope the caller pops.
-  fn iterator_spec(&mut self, spec: &Expr) -> Option<Iter> {
+  fn iter_spec(&mut self, spec: &Expr) -> Option<Iter> {
     let Expr::List(items) = spec else {
       let end = self.c(spec)?;
       return Some(Iter {
@@ -341,7 +341,7 @@ impl Comp {
     let mut scopes = 0;
     for s in specs {
       let before = self.scopes.len();
-      out.push(self.iterator_spec(s)?);
+      out.push(self.iter_spec(s)?);
       scopes += self.scopes.len() - before;
     }
     Some((out, scopes))

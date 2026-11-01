@@ -776,11 +776,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         adaptive_samples(
           |t| {
             fire_monitor(t);
-            let point = (
+            match (
               evaluate_at_point(fx, &var_name, t),
               evaluate_at_point(fy, &var_name, t),
-            );
-            match point {
+            ) {
               (Some(x), Some(y)) => Some(vec![(x, y)]),
               _ => None,
             }
