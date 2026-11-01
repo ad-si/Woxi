@@ -89,6 +89,7 @@ pub mod parametric_plot;
 pub mod pdf_import;
 pub mod periodic_table_plot;
 pub mod piecewise_combine;
+pub mod piecewise_rounding;
 pub mod plot;
 pub mod plot3d;
 pub mod plot_axes;
@@ -133,6 +134,7 @@ pub mod vector_field_plots;
 pub mod voronoi;
 pub mod wavelet_ast;
 pub mod wikidata_ast;
+pub mod window_expand;
 #[cfg(target_os = "windows")]
 pub mod windows;
 pub mod wl_serialize;
