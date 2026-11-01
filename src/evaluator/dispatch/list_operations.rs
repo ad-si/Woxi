@@ -2668,6 +2668,15 @@ pub fn dispatch_list_operations(
       return Some(with_held_default(args, list_helpers_ast::first_case_ast));
     }
     "Position" if args.len() >= 2 && args.len() <= 5 => {
+      // Rendered graphics are searched through their symbolic form, so the
+      // positions are the ones `Part` and `Extract` read.
+      if let Some(symbolic) =
+        crate::evaluator::part_extraction::graphics_symbolic_form(&args[0])
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = symbolic;
+        return Some(list_helpers_ast::position_unified_ast(&new_args));
+      }
       return Some(list_helpers_ast::position_unified_ast(args));
     }
     "FirstPosition" if args.len() >= 2 => {

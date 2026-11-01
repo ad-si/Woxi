@@ -4895,6 +4895,31 @@ the two, and `StreamPoints` settings keep Wolfram's proportions to it.
 `DensityPlot[x, {x, 0, 10}, {y, 0, 1}, AspectRatio -> 0.3]` is drawn square
 in Woxi; Wolfram draws it 0.3 times as tall as wide.
 
+### Plot argument forms from the reference pages that are still missing
+
+Found by the round-4 parameter sweep of the plot reference pages; the
+expected pictures come from the reference pages' own examples.
+
+- 3D plots draw no legends: `ParametricPlot3D[{…, Legended[curve, "label"]},
+  …]` draws the curve but no legend, and `PlotLegends` is ignored by the 3D
+  plot functions.
+- `Callout` labels (`PlotLabels -> Callout[Automatic, Above]` in `BarChart`,
+  `PlotLabels -> Callout[Automatic]` in `PieChart`, `LabelingFunction ->
+  Callout` in `ListPointPlot3D`) are drawn as plain labels beside their
+  element, without the leader line.
+- `Histogram[<|"one" -> {…}, "two" -> {…}|>, n, PlotLabels -> Automatic]`
+  draws no dataset labels (`PlotLegends -> Automatic` does draw the legend).
+- `ListPlot3D` of a height matrix numbers its x/y axes from 0, Wolfram from 1.
+- `Tabular` / `Dataset` column selection (`ListPlot[tab -> "col"]`,
+  `NumberLinePlot[tab -> {"a", "b"}]`, `ListPolarPlot[tab -> {"θ", "r"}]`, …)
+  is unsupported, since there is no `Tabular`.
+- Region iterators (`Plot[f, {x} ∈ Line[…]]`, `ParametricPlot[…, {u, r} ∈
+  region]`, `RegionPlot3D[…, {x, y, z} ∈ Ball[…]]`) are unsupported.
+- `LogLogPlot` / `LogLinearPlot` with a lower limit of 0 (`{x, 0, 10}`) are an
+  error; Wolfram plots from just above 0. `ScalingFunctions -> "Reverse"` is
+  not applied to the log plots.
+- `ComplexPlot[f, {z, Infinity}]` (the infinite-plane form) is an error.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a

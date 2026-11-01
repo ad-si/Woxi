@@ -9294,10 +9294,6 @@ fn resample_tensor_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
   Some(grid)
 }
 
-/// Implementation of ListPlot3D[data, opts...].
-/// Accepts two formats:
-/// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — explicit 3D coordinates
-/// - `{{z11,z12,...}, {z21,z22,...}, ...}` — 2D matrix where indices → x,y, values → z
 /// The surfaces of `ListPlot3D[{m1, m2, …}]`: a list of at least two
 /// height matrices (rectangular arrays of scalars). Rows of three numbers
 /// stay a single set of `{x, y, z}` points, as before.
@@ -9397,6 +9393,10 @@ fn list_plot3d_multi(
   evaluate_expr_to_expr(&call("Show", surfaces))
 }
 
+/// Implementation of ListPlot3D[data, opts...].
+/// Accepts two formats:
+/// - `{{x1,y1,z1}, {x2,y2,z2}, ...}` — explicit 3D coordinates
+/// - `{{z11,z12,...}, {z21,z22,...}, ...}` — 2D matrix where indices → x,y, values → z
 pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = &args[0];
 
@@ -13854,7 +13854,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rows = evaluate_expr_to_expr(&table)?;
     let mut pts = Vec::new();
     if let Expr::List(rows) = &rows {
-      for row in rows.iter() {
+      for row in rows {
         if let Expr::List(cells) = row {
           pts.extend(parse_xyz_points(cells));
         }
@@ -13911,43 +13911,40 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       style_items[k % style_items.len()].clone()
     };
     let mut group = vec![color];
-    match extent {
-      Some([xl, xr, yl, yr]) => {
-        group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
-        for &(x, y, z) in pts {
-          let bottom = base.unwrap_or(z_min);
-          let (lo, hi) = if z >= bottom {
-            (bottom, z)
-          } else {
-            (z, bottom)
-          };
-          group.push(call(
-            "Cuboid",
-            vec![triple(x - xl, y - yl, lo), triple(x + xr, y + yr, hi)],
-          ));
-        }
-      }
-      None => {
-        group.push(call1("PointSize", num(0.012)));
-        group.push(call1(
-          "Point",
-          Expr::List(pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect()),
+    if let Some([xl, xr, yl, yr]) = extent {
+      group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
+      for &(x, y, z) in pts {
+        let bottom = base.unwrap_or(z_min);
+        let (lo, hi) = if z >= bottom {
+          (bottom, z)
+        } else {
+          (z, bottom)
+        };
+        group.push(call(
+          "Cuboid",
+          vec![triple(x - xl, y - yl, lo), triple(x + xr, y + yr, hi)],
         ));
-        if let Some(bottom) = base {
-          let stems: Vec<Expr> = pts
-            .iter()
-            .map(|&(x, y, z)| {
-              Expr::List(vec![triple(x, y, bottom), triple(x, y, z)].into())
-            })
-            .collect();
-          group.push(Expr::List(
-            vec![
-              call1("Opacity", num(0.5)),
-              call1("Line", Expr::List(stems.into())),
-            ]
-            .into(),
-          ));
-        }
+      }
+    } else {
+      group.push(call1("PointSize", num(0.012)));
+      group.push(call1(
+        "Point",
+        Expr::List(pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect()),
+      ));
+      if let Some(bottom) = base {
+        let stems: Vec<Expr> = pts
+          .iter()
+          .map(|&(x, y, z)| {
+            Expr::List(vec![triple(x, y, bottom), triple(x, y, z)].into())
+          })
+          .collect();
+        group.push(Expr::List(
+          vec![
+            call1("Opacity", num(0.5)),
+            call1("Line", Expr::List(stems.into())),
+          ]
+          .into(),
+        ));
       }
     }
     content.push(Expr::List(group.into()));
