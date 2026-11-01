@@ -4853,10 +4853,28 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Expand, Factor candidates) rather than getting the candidates evaluated
   // on the list as a whole — that way `Simplify[LeastSquares[...]]` collapses
   // each component to its canonical form just like `Simplify[component]`.
+  // A rule simplifies both of its sides (`Simplify[x -> (a + a)/2]` is
+  // `x -> a`), so lists of coefficient rules simplify entry by entry.
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = &args[0]
+  {
+    let lhs = simplify_ast(std::slice::from_ref(pattern.as_ref()))?;
+    let rhs = simplify_ast(std::slice::from_ref(replacement.as_ref()))?;
+    return Ok(Expr::Rule {
+      pattern: Box::new(lhs),
+      replacement: Box::new(rhs),
+    });
+  }
   if let Expr::List(items) = &args[0] {
     let simplified_items: Vec<Expr> = items
       .iter()
       .map(|item| {
+        if matches!(item, Expr::Rule { .. }) {
+          return simplify_ast(std::slice::from_ref(item))
+            .unwrap_or_else(|_| item.clone());
+        }
         match crate::functions::piecewise_combine::fold_piecewise(item) {
           Ok(Some(folded)) => simplify_piecewise_values(&folded, true),
           _ => simplify_expr_with_together(item),
