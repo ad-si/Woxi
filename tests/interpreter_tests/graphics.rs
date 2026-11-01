@@ -41442,6 +41442,35 @@ mod static_dynamic_controls {
   }
 
   #[test]
+  fn color_data_physical_spectrum_color_function_property() {
+    assert_eq!(
+      interpret("ColorData[\"VisibleSpectrum\", \"ColorFunction\"][525]")
+        .unwrap(),
+      "RGBColor[0., 1., 0.]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"BlackBodySpectrum\", \"ColorFunction\"][5800]")
+        .unwrap(),
+      interpret("ColorData[\"BlackBodySpectrum\"][5800]").unwrap()
+    );
+  }
+
+  #[test]
+  fn plot_filling_takes_color_function_colors() {
+    let svg = interpret(
+      "ExportString[Plot[Sin[x] + 2, {x, 0, 7}, ColorFunction -> (ColorData[\"VisibleSpectrum\", \"ColorFunction\"][# 100] &), ColorFunctionScaling -> False, Filling -> Axis], \"SVG\"]",
+    )
+    .unwrap();
+    // The fill is split into several differently tinted polygons.
+    let fills: std::collections::HashSet<&str> = svg
+      .split("<polygon")
+      .skip(1)
+      .filter_map(|p| p.split("fill=\"").nth(1)?.split('"').next())
+      .collect();
+    assert!(fills.len() > 3, "expected tinted fill runs, got {fills:?}");
+  }
+
+  #[test]
   fn color_data_black_body_spectrum_runs_from_red_to_blue() {
     let channels = |code: &str| -> Vec<f64> {
       let out = interpret(code).unwrap();
