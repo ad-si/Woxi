@@ -13933,7 +13933,7 @@ fn pdf_product_general(dargs: &[Expr], x: &Expr) -> Expr {
   let mut values = Vec::new();
   let mut conds = Vec::new();
   for (comp, v) in comps.iter().zip(vars.iter()) {
-    if !distribution_kind(comp).is_some() {
+    if distribution_kind(comp).is_none() {
       return unevaluated_call();
     }
     let Ok(density) = pdf_ast(&[comp.clone(), v.clone()]) else {

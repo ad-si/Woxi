@@ -50,7 +50,7 @@ struct Atom {
   poles: Vec<f64>,
 }
 
-fn comp_op(op: &ComparisonOp) -> Option<CompOp> {
+fn comp_op(op: ComparisonOp) -> Option<CompOp> {
   Some(match op {
     ComparisonOp::Equal => CompOp::Equal,
     ComparisonOp::NotEqual => CompOp::NotEqual,
@@ -113,7 +113,8 @@ impl Parser {
         operands,
         operators,
       } if operands.len() >= 2 && operators.len() + 1 == operands.len() => {
-        let ops: Option<Vec<CompOp>> = operators.iter().map(comp_op).collect();
+        let ops: Option<Vec<CompOp>> =
+          operators.iter().copied().map(comp_op).collect();
         Some(self.chain(operands, &ops?))
       }
       Expr::BinaryOp { op, left, right } => {
