@@ -1,0 +1,71 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Woxi Slideshow", "Title"],
+Cell["A presentation running on Woxi Studio", "Subtitle"],
+Cell["\<\
+Turn slides with the arrow keys, Page Up/Down or Space. Esc ends the \
+slideshow and F5 starts it again.\
+\>", "Text"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Text Slides", "Section"],
+Cell["Slides hold any kind of cell:", "Text"],
+Cell["headings and text", "Item"],
+Cell["bullet lists", "Item"],
+Cell["nested items", "Subitem"],
+Cell["live code with its results", "Item"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Symbolic Computation", "Section"],
+Cell["Input cells stay live: evaluate them with Shift+Enter.", "Text"],
+Cell[BoxData["Integrate[x^2 Sin[x], x]"], "Input"],
+Cell[BoxData["Factor[x^6 - 1]"], "Input"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Graphics", "Section"],
+Cell[BoxData["Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}]"], "Input"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Interactive Content", "Section"],
+Cell["A SlideView is a slideshow inside a slide:", "Text"],
+Cell[BoxData["SlideView[Graphics[#, ImageSize -> 200] & /@ {Disk[], \
+RegularPolygon[5], Rectangle[]}]"], "Input"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Manipulate", "Section"],
+Cell["A Manipulate works as in any notebook:", "Text"],
+Cell[BoxData["Manipulate[Plot[Sin[n x], {x, 0, 2 Pi}], {n, 1, 5}]"], \
+"Input"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+Cell["", "SlideShowNavigationBar",
+ CellTags->"SlideShowHeader"],
+Cell["Thank You", "Title"]
+}, Open  ]]
+},
+ScreenStyleEnvironment->"SlideShow",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)

@@ -263,6 +263,7 @@ mod tests {
         CellEntry::Single(cell(CellStyle::Section, "Documentation")),
         CellEntry::Single(cell(CellStyle::Input, "MyResource[5]")),
       ],
+      screen_style_environment: None,
     };
     let src = extract_definition_source(&nb).unwrap();
     assert_eq!(src, "ClearAll[MyResource]\nMyResource[x_]:=x+1");
@@ -275,6 +276,7 @@ mod tests {
         CellEntry::Single(cell(CellStyle::Title, "MyResource")),
         CellEntry::Single(cell(CellStyle::Input, "MyResource[5]")),
       ],
+      screen_style_environment: None,
     };
     assert!(extract_definition_source(&nb).is_none());
   }

@@ -44,6 +44,13 @@ mod interpreter_tests {
   mod option_sweep3_special;
   mod option_sweep3_strings;
   mod option_sweep4_calculus;
+  mod option_sweep4_plots;
+  mod option_sweep4_special;
+  mod option_sweep4_distributions;
+  mod option_sweep4_biosequence;
+  mod option_sweep4_interval;
+  mod option_sweep4_misc;
+  mod option_sweep4_options;
   mod patterns;
   mod rosetta_script_fixes;
   mod sockets;

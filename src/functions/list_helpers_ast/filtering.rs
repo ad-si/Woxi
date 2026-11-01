@@ -1315,7 +1315,14 @@ pub fn count_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if positional.len() < 2 {
     return Ok(original());
   }
-  let subject = &positional[0];
+  // A rendered graphic is counted through its symbolic expression, as
+  // `Cases` searches it.
+  let graphic_form = if let Expr::Graphics { .. } = &positional[0] {
+    crate::evaluator::part_extraction::graphics_symbolic_form(&positional[0])
+  } else {
+    None
+  };
+  let subject = graphic_form.as_ref().unwrap_or(&positional[0]);
   let pattern = &positional[1];
   let (match_pat, replacement) = extract_rule_parts(pattern);
 
@@ -2082,6 +2089,9 @@ pub fn length_while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let items: Vec<Expr> = match &args[0] {
     Expr::List(items) => items.to_vec(),
     Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    // Any other normal expression: count its leading arguments, whatever
+    // the head (`LengthWhile[f[1, 2, a], IntegerQ]` is 2).
+    Expr::FunctionCall { args: fargs, .. } => fargs.to_vec(),
     _ => {
       return Ok(unevaluated("LengthWhile", args));
     }

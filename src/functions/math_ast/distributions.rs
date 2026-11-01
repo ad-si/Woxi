@@ -503,6 +503,10 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  if args.len() == 1 {
+    return distribution_operator_form("PDF", &args[0], pdf_ast);
+  }
+
   let dist = &args[0];
 
   // PDF[DiscreteMarkovProcess[...][t], x] — the state distribution after
@@ -730,8 +734,11 @@ pub fn survival_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if args.len() == 1 {
-    // SurvivalFunction[dist] — symbolic pure form, leave unevaluated.
-    return Ok(unevaluated("SurvivalFunction", args));
+    return distribution_operator_form(
+      "SurvivalFunction",
+      &args[0],
+      survival_function_ast,
+    );
   }
   // FailureDistribution has its own survival shape:
   // Piecewise[{{1, t < 0}}, 1 - cdfvalue] (wolframscript-verified).
@@ -939,7 +946,12 @@ pub fn quantile_distribution_closed_form(
 ) -> Option<Expr> {
   // Numeric q in [0, 1] only; the symbolic-q forms wolframscript returns
   // are ConditionalExpression/Piecewise wrappers that are out of scope.
-  let q_num = expr_to_num(q)?;
+  // (A rational with big-integer parts has no machine expr_to_num value.)
+  let q_num = expr_to_num(q).or_else(|| {
+    matches!(q, Expr::FunctionCall { name, .. } if name == "Rational")
+      .then(|| try_eval_to_f64(q))
+      .flatten()
+  })?;
   if !(0.0..=1.0).contains(&q_num) {
     return None;
   }
@@ -2468,6 +2480,10 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  if args.len() == 1 {
+    return distribution_operator_form("CDF", &args[0], cdf_ast);
+  }
+
   let dist = &args[0];
 
   // CDF over process time slices delegates to the slice distribution.
@@ -3737,6 +3753,38 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return eval(&div2(int(count), int(data.len() as i128)));
   }
 
+  // An empirical distribution (EmpiricalDistribution[data] evaluates to
+  // DataDistribution["Empirical", {weights, values, False}, 1, n]) gives
+  // the event the total weight of the values that satisfy it.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && name == "DataDistribution"
+    && dargs.len() == 4
+    && matches!(&dargs[0], Expr::Identifier(k) | Expr::String(k) if k == "Empirical")
+    && matches!(&dargs[2], Expr::Integer(1))
+    && let Expr::List(spec) = &dargs[1]
+    && let [Expr::List(weights), Expr::List(values), _] = spec.as_slice()
+    && weights.len() == values.len()
+    && is_comparison_event(event)
+  {
+    let mut terms = Vec::new();
+    for (w, v) in weights.iter().zip(values.iter()) {
+      let holds = crate::evaluator::evaluate_expr_to_expr(&call(
+        "ReplaceAll",
+        vec![event.clone(), rule_expr(id_expr(var_name), v.clone())],
+      ))?;
+      match &holds {
+        Expr::Identifier(b) if b == "True" => terms.push(w.clone()),
+        Expr::Identifier(b) if b == "False" => {}
+        _ => return unevaluated(),
+      }
+    }
+    return eval(&plus(
+      std::iter::once(int(0) as Expr)
+        .chain(terms)
+        .collect::<Vec<_>>(),
+    ));
+  }
+
   // P[event, x \[Distributed] ProbabilityDistribution[pdf, {x, lo, hi}]]
   // = Integrate[pdf * Boole[event], {x, lo, hi}], reduced to a sub-range
   // integral for simple `x > k` / `x < k` / `a < x < b` events.
@@ -3749,14 +3797,16 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Determine if distribution is discrete
-  let is_discrete = matches!(
-    dist,
-    Expr::FunctionCall { name, .. }
-    if matches!(name.as_str(), "PoissonDistribution" | "BernoulliDistribution" | "BinomialDistribution" | "GeometricDistribution" | "NegativeBinomialDistribution" | "DiscreteUniformDistribution" | "PascalDistribution")
-  );
+  let is_discrete = distribution_kind(dist) == Some(DistributionKind::Discrete);
 
   // Parse the event condition and compute probability
   let result = probability_from_event(event, var_name, dist, is_discrete)?;
+  // An event left unevaluated must not be evaluated again: that would
+  // dispatch straight back here.
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == "Probability")
+  {
+    return Ok(result);
+  }
   // Apply Together to normalize fractions (e.g. 1 - E^(-2) → (-1 + E^2)/E^2)
   eval(&call1("Together", result))
 }
@@ -3793,6 +3843,13 @@ fn probability_from_event(
   dist: &Expr,
   is_discrete: bool,
 ) -> Result<Expr, InterpreterError> {
+  // On a discrete distribution, whether an end point is included matters,
+  // which the simple CDF shortcuts below ignore.
+  if is_discrete
+    && let Some(result) = probability_of_real_cells(event, var, dist)?
+  {
+    return Ok(result);
+  }
   // Handle And conditions: a < x && x < b  →  a < x < b
   if let Expr::FunctionCall { name, args } = event
     && name == "And"
@@ -3897,7 +3954,11 @@ fn probability_from_event(
     }
   }
 
-  let _ = is_discrete;
+  // Any other combination of inequalities in `var`: measure the set of
+  // real numbers where it holds.
+  if let Some(result) = probability_of_real_cells(event, var, dist)? {
+    return Ok(result);
+  }
 
   // Unevaluated fallback
   Ok(call(
@@ -3907,6 +3968,134 @@ fn probability_from_event(
       call("Distributed", vec![id_expr(var), dist.clone()]),
     ],
   ))
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum DistributionKind {
+  Continuous,
+  Discrete,
+}
+
+/// `PDF[dist]`, `CDF[dist]`, `SurvivalFunction[dist]`: the pure function
+/// `Function[\[FormalX], f[dist, \[FormalX]], Listable]` for a univariate
+/// distribution whose `f` evaluates; otherwise the call stays unevaluated.
+fn distribution_operator_form(
+  head: &str,
+  dist: &Expr,
+  f: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || Ok(unevaluated(head, std::slice::from_ref(dist)));
+  if distribution_kind(dist).is_none() {
+    return unevaluated_call();
+  }
+  let formal_x = id_expr("\u{F817}");
+  let body = f(&[dist.clone(), formal_x.clone()])?;
+  if matches!(&body, Expr::FunctionCall { name, .. } if name == head) {
+    return unevaluated_call();
+  }
+  Ok(call("Function", vec![formal_x, body, id_expr("Listable")]))
+}
+
+/// Whether a univariate distribution head is continuous or discrete, for
+/// the families whose `CDF` (and, if discrete, `PDF`) Woxi evaluates.
+fn distribution_kind(dist: &Expr) -> Option<DistributionKind> {
+  let Expr::FunctionCall { name, .. } = dist else {
+    return None;
+  };
+  Some(match name.as_str() {
+    "PoissonDistribution"
+    | "BernoulliDistribution"
+    | "BinomialDistribution"
+    | "GeometricDistribution"
+    | "NegativeBinomialDistribution"
+    | "DiscreteUniformDistribution"
+    | "PascalDistribution"
+    | "HypergeometricDistribution"
+    | "BetaBinomialDistribution"
+    | "LogSeriesDistribution"
+    | "ZipfDistribution"
+    | "SkellamDistribution"
+    | "WaringYuleDistribution"
+    | "BorelTannerDistribution"
+    | "BenfordDistribution" => DistributionKind::Discrete,
+    "NormalDistribution"
+    | "UniformDistribution"
+    | "ExponentialDistribution"
+    | "LaplaceDistribution"
+    | "CauchyDistribution"
+    | "GammaDistribution"
+    | "BetaDistribution"
+    | "LogNormalDistribution"
+    | "ChiSquareDistribution"
+    | "StudentTDistribution"
+    | "WeibullDistribution"
+    | "ParetoDistribution"
+    | "RayleighDistribution"
+    | "LogisticDistribution"
+    | "TriangularDistribution"
+    | "HalfNormalDistribution"
+    | "ChiDistribution"
+    | "MaxwellDistribution"
+    | "GumbelDistribution"
+    | "ExtremeValueDistribution"
+    | "FrechetDistribution"
+    | "ArcSinDistribution"
+    | "FRatioDistribution"
+    | "InverseGammaDistribution"
+    | "InverseGaussianDistribution"
+    | "LevyDistribution"
+    | "KumaraswamyDistribution"
+    | "SechDistribution"
+    | "WignerSemicircleDistribution" => DistributionKind::Continuous,
+    _ => return None,
+  })
+}
+
+/// `Probability[event, x ~ dist]` for a boolean combination of inequalities
+/// in `x` alone: the real line is split into the intervals where the event
+/// holds (see `univariate_real_cells`), each measured through the CDF.
+/// `None` when the event or the distribution is outside that scope.
+fn probability_of_real_cells(
+  event: &Expr,
+  var: &str,
+  dist: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(kind) = distribution_kind(dist) else {
+    return Ok(None);
+  };
+  let Some(cells) =
+    crate::functions::polynomial_ast::univariate_real_cells(event, var)
+  else {
+    return Ok(None);
+  };
+  let cdf = |x: &Expr| cdf_ast(&[dist.clone(), x.clone()]);
+  // A discrete distribution lives on the integers: P[x <= u] is the CDF at
+  // Floor[u], P[x < u] the CDF at Ceiling[u] - 1.
+  let below = |x: &Expr, inclusive: bool| -> Result<Expr, InterpreterError> {
+    if kind == DistributionKind::Continuous {
+      return cdf(x);
+    }
+    let end = if inclusive {
+      call1("Floor", x.clone())
+    } else {
+      plus2(call1("Ceiling", x.clone()), int(-1))
+    };
+    cdf(&eval(&end)?)
+  };
+  let mut terms = Vec::new();
+  for interval in cells.intervals() {
+    let upper = match &interval.upper {
+      None => int(1),
+      Some((u, closed)) => below(u, *closed)?,
+    };
+    let lower = match &interval.lower {
+      None => int(0),
+      Some((l, closed)) => below(l, !closed)?,
+    };
+    terms.push(minus2(upper, lower));
+  }
+  let total = terms.into_iter().reduce(plus2).unwrap_or_else(|| int(0));
+  Ok(Some(eval(&total)?))
 }
 
 /// Walk an `And[Distributed[x1, d1], Distributed[x2, d2], ...]` expression
@@ -4635,9 +4824,65 @@ pub fn n_probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If it stayed unevaluated, re-wrap as NProbability so the user sees the
   // numerical-evaluation request rather than the symbolic fallback.
   if matches!(&prob, Expr::FunctionCall { name, .. } if name == "Probability") {
+    if let Some(p) = n_probability_by_integration(&args[0], &args[1])? {
+      return Ok(p);
+    }
     return Ok(unevaluated("NProbability", args));
   }
   eval(&call1("N", prob))
+}
+
+/// `NProbability[event, x ~ dist]` for a continuous `dist` and an event
+/// `Probability` can't decide symbolically (e.g. one calling a numeric-only
+/// function): integrate `PDF[dist, x] Boole[event]` over the real line.
+fn n_probability_by_integration(
+  event: &Expr,
+  dist_spec: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = dist_spec else {
+    return Ok(None);
+  };
+  if name != "Distributed" || args.len() != 2 {
+    return Ok(None);
+  }
+  let (Expr::Identifier(var), dist) = (&args[0], &args[1]) else {
+    return Ok(None);
+  };
+  if distribution_kind(dist) != Some(DistributionKind::Continuous) {
+    return Ok(None);
+  }
+  // Only a fully numeric event and distribution can be integrated.
+  let probe = Expr::Real(0.5);
+  let event_at = eval(&call(
+    "ReplaceAll",
+    vec![event.clone(), rule_expr(id_expr(var), probe.clone())],
+  ))?;
+  let density_at =
+    eval(&call("N", vec![call("PDF", vec![dist.clone(), probe])]))?;
+  if !matches!(&event_at, Expr::Identifier(b) if b == "True" || b == "False")
+    || !matches!(density_at, Expr::Real(_) | Expr::Integer(_))
+  {
+    return Ok(None);
+  }
+  let x = id_expr(var);
+  let integrand = times2(
+    call("PDF", vec![dist.clone(), x.clone()]),
+    call1("Boole", event.clone()),
+  );
+  let result = eval(&call(
+    "NIntegrate",
+    vec![
+      integrand,
+      Expr::List(
+        vec![x, times2(int(-1), id_expr("Infinity")), id_expr("Infinity")]
+          .into(),
+      ),
+    ],
+  ));
+  Ok(match result {
+    Ok(r @ Expr::Real(_)) => Some(r),
+    _ => None,
+  })
 }
 
 /// Numerical wrapper for `Expectation` — returns `N[Expectation[…]]`.
@@ -11060,6 +11305,40 @@ fn pdf_multivariate_poisson(
   eval(&piecewise(vec![(pdf_val, cond)], int(0)))
 }
 
+/// `(Mean, Variance)` of `MultivariateHypergeometricDistribution[n, {m1, …}]`
+/// with M = Σ mi: the means n mi / M and the variances
+/// n mi (M - mi) (M - n) / ((M - 1) M^2). `None` for a malformed spec.
+pub fn multivariate_hypergeometric_mean_variance(
+  dargs: &[Expr],
+) -> Result<Option<(Expr, Expr)>, InterpreterError> {
+  let [n, Expr::List(counts)] = dargs else {
+    return Ok(None);
+  };
+  if counts.is_empty() {
+    return Ok(None);
+  }
+  let total = plus(counts.to_vec());
+  let mut means = Vec::with_capacity(counts.len());
+  let mut variances = Vec::with_capacity(counts.len());
+  for m in counts {
+    means.push(eval(&div2(times2(n.clone(), m.clone()), total.clone()))?);
+    let others = plus2(total.clone(), neg(m.clone()));
+    variances.push(eval(&div2(
+      times(vec![
+        n.clone(),
+        m.clone(),
+        others,
+        plus2(total.clone(), neg(n.clone())),
+      ]),
+      times2(plus2(int(-1), total.clone()), pow2(total.clone(), int(2))),
+    ))?);
+  }
+  Ok(Some((
+    Expr::List(means.into()),
+    Expr::List(variances.into()),
+  )))
+}
+
 /// Returns (Mean list, Variance list) for MultinomialDistribution
 /// Mean_i = n * p_i, Variance_i = n * p_i * (1 - p_i)
 pub fn multinomial_mean_variance(
@@ -13627,6 +13906,85 @@ fn data_distribution_pdf_cdf(
 
 // ─── ProductDistribution ─────────────────────────────────────────────
 
+/// `PDF[ProductDistribution[d1, …], {x1, …}]` for components whose density
+/// is a plain expression or a single `Piecewise` piece over a default of 0:
+/// the product of the densities, held to the conjunction of their supports.
+/// A `{d, n}` component stands for `n` copies of `d`.
+fn pdf_product_general(dargs: &[Expr], x: &Expr) -> Expr {
+  let unevaluated_call = || {
+    call(
+      "PDF",
+      vec![unevaluated("ProductDistribution", dargs), x.clone()],
+    )
+  };
+  let mut comps: Vec<Expr> = Vec::new();
+  for d in dargs {
+    match d {
+      Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+        Expr::Integer(n) if *n >= 1 && *n <= 64 => {
+          comps.extend(std::iter::repeat_n(spec[0].clone(), *n as usize));
+        }
+        _ => return unevaluated_call(),
+      },
+      _ => comps.push(d.clone()),
+    }
+  }
+  let Expr::List(vars) = x else {
+    return unevaluated_call();
+  };
+  if vars.len() != comps.len() {
+    return unevaluated_call();
+  }
+  let mut values = Vec::new();
+  let mut conds = Vec::new();
+  for (comp, v) in comps.iter().zip(vars.iter()) {
+    if distribution_kind(comp).is_none() {
+      return unevaluated_call();
+    }
+    let Ok(density) = pdf_ast(&[comp.clone(), v.clone()]) else {
+      return unevaluated_call();
+    };
+    match &density {
+      Expr::FunctionCall { name, .. } if name == "PDF" => {
+        return unevaluated_call();
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Piecewise" && args.len() == 2 =>
+      {
+        let Expr::List(pieces) = &args[0] else {
+          return unevaluated_call();
+        };
+        let [Expr::List(piece)] = pieces.as_slice() else {
+          return unevaluated_call();
+        };
+        if piece.len() != 2 || !matches!(&args[1], Expr::Integer(0)) {
+          return unevaluated_call();
+        }
+        values.push(piece[0].clone());
+        conds.push(piece[1].clone());
+      }
+      _ => values.push(density),
+    }
+  }
+  let Ok(value) = crate::evaluator::evaluate_expr_to_expr(&times(values))
+  else {
+    return unevaluated_call();
+  };
+  if conds.is_empty() {
+    return value;
+  }
+  let cond = if conds.len() == 1 {
+    conds.remove(0)
+  } else {
+    call("And", conds)
+  };
+  crate::evaluator::evaluate_expr_to_expr(&piecewise(
+    vec![(value, cond)],
+    int(0),
+  ))
+  .unwrap_or_else(|_| unevaluated_call())
+}
+
 /// PDF[ProductDistribution[d1, d2], {x, y}] for pairs of standard
 /// normals and integer-rate exponentials, in wolframscript's merged
 /// form: one E-power with position-styled exponent terms, And-ed
@@ -13634,12 +13992,7 @@ fn data_distribution_pdf_cdf(
 /// E^.../Sqrt[2*Pi], (3*E^...)/Sqrt[2*Pi], and the lambda = 2 special
 /// case E^...*Sqrt[2/Pi]).
 fn pdf_product_distribution(dargs: &[Expr], x: &Expr) -> Expr {
-  let unevaluated = || {
-    call(
-      "PDF",
-      vec![unevaluated("ProductDistribution", dargs), x.clone()],
-    )
-  };
+  let unevaluated = || pdf_product_general(dargs, x);
   let vars = match &x {
     Expr::List(vars) if vars.len() == dargs.len() => vars,
     _ => return unevaluated(),
@@ -18158,7 +18511,8 @@ pub fn censored_distribution_value(
       // Inside the range the base CDF is unchanged.
       match decides(x, C::Less, &hi) {
         Some(true) => Ok(Some(cdf_ast(&[base, x.clone()])?)),
-        _ => Ok(None),
+        Some(false) => Ok(None),
+        None => censored_symbolic_cdf(&lo, &hi, &base, x),
       }
     }
     "Quantile" => {
@@ -18168,6 +18522,42 @@ pub fn censored_distribution_value(
     }
     _ => Ok(None),
   }
+}
+
+/// The CDF of `CensoredDistribution[{lo, hi}, base]` at a symbolic `x`, as
+/// a `Piecewise` that is 0 below `lo`, for the shapes whose wolframscript
+/// form is known: a range open above (`{-1, ∞}`: the base CDF from `lo` on)
+/// and a degenerate range (`{2, 2}`: a unit step at `hi`).
+fn censored_symbolic_cdf(
+  lo: &Expr,
+  hi: &Expr,
+  base: &Expr,
+  x: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let cmp = |a: &Expr, op: ComparisonOp, b: &Expr| Expr::Comparison {
+    operands: vec![a.clone(), b.clone()],
+    operators: vec![op],
+  };
+  if is_infinite_bound(lo, false) {
+    return Ok(None);
+  }
+  if is_infinite_bound(hi, true) {
+    let value = cdf_ast(&[base.clone(), x.clone()])?;
+    let opaque = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. }
+        if name == "CDF" || name == "Piecewise")
+    };
+    if opaque(&value) {
+      return Ok(None);
+    }
+    let cond = cmp(x, ComparisonOp::GreaterEqual, lo);
+    return Ok(Some(eval(&piecewise(vec![(value, cond)], int(0)))?));
+  }
+  if expr_to_string(lo) == expr_to_string(hi) {
+    let cond = cmp(x, ComparisonOp::GreaterEqual, hi);
+    return Ok(Some(eval(&piecewise(vec![(int(1), cond)], int(0)))?));
+  }
+  Ok(None)
 }
 
 /// `Mean`/`Variance` of a censored distribution. The clamped variable puts the

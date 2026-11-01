@@ -38,7 +38,7 @@ pub fn cyclotomic_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Compute the coefficients of the n-th cyclotomic polynomial.
 /// Returns coefficients from degree 0 to degree phi(n).
-fn cyclotomic_coeffs(n: usize) -> Vec<i128> {
+pub(crate) fn cyclotomic_coeffs(n: usize) -> Vec<i128> {
   if n == 1 {
     // Φ_1(x) = x - 1
     return vec![-1, 1];

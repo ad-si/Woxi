@@ -1034,6 +1034,20 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             Expr::Identifier(v) if v == "None" || v == "Tooltip")
           {
             out.hide_point_labels = true;
+          } else if let Expr::Identifier(pos) = replacement
+            && matches!(
+              pos.as_str(),
+              "Above"
+                | "Below"
+                | "Left"
+                | "Right"
+                | "Center"
+                | "Top"
+                | "Bottom"
+            )
+          {
+            // A bare position places every point label on that side.
+            opts.point_label_position = Some(pos.clone());
           }
         }
         "PlotLegends" => {
@@ -1716,92 +1730,77 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
-/// Convert a flat list of complex numbers into (Re, Im) points.
-/// Entries that don't evaluate to a (possibly complex) number are skipped.
-fn complex_series_points(items: &[Expr]) -> Vec<(f64, f64)> {
-  items
-    .iter()
-    .filter_map(|z| {
-      let e = evaluate_expr_to_expr(z).unwrap_or_else(|_| z.clone());
-      crate::functions::list_helpers_ast::expr_to_complex_parts(&e)
-    })
-    .filter(|(re, im)| re.is_finite() && im.is_finite())
-    .collect()
-}
-
-/// Parse complex list data from the first argument of ComplexListPlot.
-///
-/// Supported formats:
-/// - `{z1, z2, ...}` → single series of (Re, Im) points
-/// - `{{z11, z12, ...}, {z21, z22, ...}}` → multiple series
-fn parse_complex_list_data(
-  arg: &Expr,
-) -> Result<Vec<Vec<(f64, f64)>>, InterpreterError> {
-  let data = evaluate_expr_to_expr(arg)?;
-  let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "ComplexListPlot: first argument must be a list".into(),
-    ));
-  };
-
-  if items.is_empty() {
-    return Ok(vec![vec![]]);
+/// Replace every number of `ComplexListPlot` data by its `{Re[z], Im[z]}`
+/// point, looking through the data forms `ListPlot` accepts: lists,
+/// association values, the data side of `data -> labels`, `SparseArray`s and
+/// the content of display wrappers (`Labeled`, `Callout`, `Tooltip`, …).
+/// Anything that is no number is kept as is, for `ListPlot` to judge.
+fn complex_data_to_points(e: &Expr) -> Expr {
+  let e = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+  if let Some((re, im)) =
+    crate::functions::list_helpers_ast::expr_to_complex_parts(&e)
+  {
+    return Expr::List(vec![Expr::Real(re), Expr::Real(im)].into());
   }
-
-  // Multiple datasets: {{z11, ...}, {z21, ...}}
-  if items.iter().all(|item| matches!(item, Expr::List(_))) {
-    let mut all_series = Vec::new();
-    for item in items {
-      if let Expr::List(zs) = item {
-        all_series.push(complex_series_points(zs));
+  match &e {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(complex_data_to_points).collect())
+    }
+    Expr::Association(pairs) => Expr::Association(
+      pairs
+        .iter()
+        .map(|(k, v)| (k.clone(), complex_data_to_points(v)))
+        .collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(complex_data_to_points(pattern)),
+      replacement: replacement.clone(),
+    },
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+      let normal = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Normal".into(),
+        args: vec![e.clone()].into(),
+      })
+      .unwrap_or_else(|_| e.clone());
+      if matches!(normal, Expr::List(_)) {
+        complex_data_to_points(&normal)
+      } else {
+        e.clone()
       }
     }
-    return Ok(all_series);
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "Labeled"
+            | "Callout"
+            | "Tooltip"
+            | "Style"
+            | "Legended"
+            | "Annotation"
+        ) =>
+    {
+      let mut args = args.to_vec();
+      args[0] = complex_data_to_points(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    _ => e,
   }
-
-  Ok(vec![complex_series_points(items)])
 }
 
 /// ComplexListPlot[{z1, z2, ...}] plots complex numbers as points at
-/// (Re[z], Im[z]) in the complex plane, like ListPlot[ReIm[data]].
+/// (Re[z], Im[z]) in the complex plane: it is `ListPlot` of those points,
+/// so every data form and option of `ListPlot` carries over.
 pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let all_series = parse_complex_list_data(&args[0])?;
-  let parsed = parse_plot_options(args);
-  let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let joined = parsed.joined;
-  let mut parsed = parsed;
-  if all_series.len() == 1 {
-    parsed.opts.plot_style =
-      crate::functions::plot::collapse_style_for_single_series(
-        &parsed.opts.plot_style,
-      );
-  }
-  let opts = &parsed.opts;
-
-  let svg = if joined {
-    generate_svg_with_filling(&all_series, x_range, y_range, opts)?
-  } else {
-    generate_scatter_svg_with_options(&all_series, x_range, y_range, opts)?
-  };
-
-  let mut source = build_plot_source(
-    &all_series,
-    &opts.plot_style,
-    x_range,
-    y_range,
-    (opts.svg_width, opts.svg_height),
-    &[!joined],
-    opts.filling,
-    opts.filling_style,
-    crate::functions::plot::explicit_options(args),
-  );
-  crate::functions::plot::apply_markers_to_source(
-    &mut source,
-    &opts.plot_markers,
-  );
-  Ok(crate::graphics_result_with_source(svg, source))
+  let mut new_args = args.to_vec();
+  new_args[0] = complex_data_to_points(&args[0]);
+  list_plot_ast(&new_args)
 }
 
 /// ListLinePlot[{y1, y2, ...}]

@@ -2542,6 +2542,10 @@ pub(crate) struct PlotOptions {
   /// each series' points (None = no label for that point). Empty when no
   /// point is labeled.
   pub point_labels: Vec<Vec<Option<String>>>,
+  /// Where `point_labels` sit relative to their point, from a position given
+  /// as `LabelingFunction` (`Above`, `Below`, `Left`, `Right`, `Center`).
+  /// `None` keeps the automatic above-right placement.
+  pub point_label_position: Option<String>,
   /// Stacked mode (StackedListPlot): fill each series down to the previous
   /// series' curve instead of to a constant baseline, producing opaque
   /// stacked bands. The `all_points` passed in are the cumulative curves.
@@ -2707,6 +2711,7 @@ impl Default for PlotOptions {
       callout_labels: Vec::new(),
       plot_labels: Vec::new(),
       point_labels: Vec::new(),
+      point_label_position: None,
       log_x: false,
       log_y: false,
       stacked: false,
@@ -5030,15 +5035,24 @@ fn inject_point_labels(
       let frac_y = (data_y - y_min) / (y_max - y_min);
       let px = plot_x0 + frac_x * plot_w;
       let py = plot_top + plot_h * (1.0 - frac_y);
-      // Place the label above-right of the point, flipping to above-left
-      // near the right edge so it stays inside the plot area.
-      let (label_px, anchor) = if frac_x > 0.92 {
-        (px - sf * 4.0, "end")
-      } else {
-        (px + sf * 4.0, "start")
+      // A named position puts the label on that side of the point; the
+      // automatic placement is above-right, flipping to above-left near the
+      // right edge so it stays inside the plot area.
+      let gap = sf * 6.0;
+      let (label_px, label_py, anchor) = match opts
+        .point_label_position
+        .as_deref()
+      {
+        Some("Above" | "Top") => (px, py - gap, "middle"),
+        Some("Below" | "Bottom") => (px, py + gap + font_size * 0.75, "middle"),
+        Some("Left") => (px - gap, py + font_size * 0.35, "end"),
+        Some("Right") => (px + gap, py + font_size * 0.35, "start"),
+        Some("Center") => (px, py + font_size * 0.35, "middle"),
+        _ if frac_x > 0.92 => (px - sf * 4.0, py - sf * 8.0, "end"),
+        _ => (px + sf * 4.0, py - sf * 8.0, "start"),
       };
       // Keep the label inside the image when the point sits near the top.
-      let label_py = (py - sf * 8.0).max(font_size);
+      let label_py = label_py.max(font_size);
       label_svg.push_str(&format!(
         "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
@@ -6320,13 +6334,7 @@ pub(crate) fn generate_bar_svg(
   let legend_margin_right = if chart_legends.is_empty() || row_legend {
     10 * s as u32
   } else {
-    let max_label_len = chart_legends
-      .iter()
-      .map(std::string::String::len)
-      .max()
-      .unwrap_or(0);
-    // swatch width + gap + estimated text width + padding
-    (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
+    chart_legend_column_width(chart_legends, sf) as u32
   };
   let legend_margin_right = legend_margin_right + axes_label_margin_right;
 
@@ -6723,7 +6731,6 @@ pub(crate) fn generate_bar_svg(
     // ChartLegends: color swatch + label, positioned to the right of the
     // plot (or in a single row below it for `LegendAppearance -> "Row"`)
     if !chart_legends.is_empty() {
-      let legend_font = sf * 16.0;
       let swatch_size = sf * 12.0;
       let swatch_gap = sf * 6.0;
       let entry_gap = sf * 14.0;
@@ -6760,18 +6767,12 @@ pub(crate) fn generate_bar_svg(
         } else {
           (legend_x, legend_y_start + i as f64 * line_height)
         };
-        // Color swatch
-        labels_svg.push_str(&format!(
-          "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\"/>\n"
-        ));
-        // Label text
-        labels_svg.push_str(&format!(
-          "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
-           fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-          legend_x + swatch_size + swatch_gap,
-          ly + swatch_size / 2.0,
-          crate::functions::graphics::box_string_to_svg(label)
+        labels_svg.push_str(&chart_legend_entry_svg(
+          label,
+          (cr, cg, cb),
+          (legend_x, ly),
+          sf,
+          label_fill,
         ));
       }
     }
@@ -6780,6 +6781,40 @@ pub(crate) fn generate_bar_svg(
   }
 
   Ok(buf)
+}
+
+/// The room a column of chart legend entries takes to the right of a
+/// chart: swatch, gap, the estimated text width and padding.
+pub(crate) fn chart_legend_column_width(labels: &[String], sf: f64) -> f64 {
+  let max_label_len = labels
+    .iter()
+    .map(|l| crate::functions::graphics::box_string_visible_len(l))
+    .max()
+    .unwrap_or(0);
+  sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0
+}
+
+/// One chart legend entry (`ChartLegends` / `PlotLegends`): a colour swatch
+/// with its top-left corner at `(x, y)` and the label beside it.
+pub(crate) fn chart_legend_entry_svg(
+  label: &str,
+  (cr, cg, cb): (u8, u8, u8),
+  (x, y): (f64, f64),
+  sf: f64,
+  label_fill: &str,
+) -> String {
+  let legend_font = sf * 16.0;
+  let swatch_size = sf * 12.0;
+  let swatch_gap = sf * 6.0;
+  format!(
+    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
+     fill=\"rgb({cr},{cg},{cb})\"/>\n\
+     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
+     fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
+    x + swatch_size + swatch_gap,
+    y + swatch_size / 2.0,
+    crate::functions::graphics::box_string_to_svg(label)
+  )
 }
 
 /// Generate SVG for a horizontal BarChart (`BarOrigin -> Left`).
@@ -8442,6 +8477,12 @@ pub(crate) fn generate_histogram_svg(
         * 18.0
   }) as u32;
 
+  // `ChartLegends` / `PlotLegends`: a column of swatches to the right.
+  let legend_margin_right = if opts.chart_legends.is_empty() {
+    0
+  } else {
+    chart_legend_column_width(&opts.chart_legends, sf) as u32
+  };
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
 
@@ -8457,7 +8498,9 @@ pub(crate) fn generate_histogram_svg(
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
-      .margin_right(10 * s as u32 + axes_label_margin_right)
+      .margin_right(
+        10 * s as u32 + axes_label_margin_right + legend_margin_right,
+      )
       .margin_bottom(10 * s as u32)
       .margin_left(10 * s as u32)
       .x_label_area_size(x_label_area)
@@ -8604,6 +8647,7 @@ pub(crate) fn generate_histogram_svg(
     - margin_left
     - 10.0 * sf
     - axes_label_margin_right as f64
+    - legend_margin_right as f64
     - y_label_area as f64;
   let plot_h =
     render_height as f64 - top_margin as f64 - 10.0 * sf - x_label_area as f64;
@@ -8701,6 +8745,30 @@ pub(crate) fn generate_histogram_svg(
       font_size,
       label_fill,
     ));
+
+    // Legend entries, one per dataset, in the datasets' colours.
+    for (i, label) in opts.chart_legends.iter().enumerate() {
+      let color = if opts.chart_style.is_empty() {
+        PLOT_COLORS[i % PLOT_COLORS.len()]
+      } else {
+        let c = &opts.chart_style[i % opts.chart_style.len()];
+        (
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        )
+      };
+      labels_svg.push_str(&chart_legend_entry_svg(
+        label,
+        color,
+        (
+          plot_x0 + plot_w + sf * 16.0,
+          plot_y0 + sf * 8.0 + i as f64 * sf * 22.0,
+        ),
+        sf,
+        label_fill,
+      ));
+    }
 
     // PlotLabel: centered above the chart
     if let Some(sl) = &opts.plot_label
@@ -10787,7 +10855,7 @@ fn tan_compactify(inner: Expr) -> Expr {
 /// - `{-Infinity, Infinity}` -> `[-1, 1]`,   `x = Tan[Pi u/2]`
 /// - `{a, Infinity}`         -> `[a, a+1]`,  `x = a + Tan[Pi (u-a)/2]`
 /// - `{-Infinity, b}`        -> `[b-1, b]`,  `x = b - Tan[Pi (b-u)/2]`
-fn compactify_plot_range(
+pub(crate) fn compactify_plot_range(
   var: &str,
   raw_min: f64,
   raw_max: f64,

@@ -1502,6 +1502,7 @@ fn is_subject_first_operator(name: &str) -> bool {
       | "ReplaceList"
       | "AllSameBy"
       | "DateSelect"
+      | "Between"
   )
 }
 
@@ -2039,6 +2040,19 @@ pub fn apply_curried_call(
         .collect();
       let substituted = crate::syntax::substitute_variables(body, &bindings);
       evaluate_expr_to_expr(&substituted)
+    }
+    // StringTemplate[template, <|defaults|>][assoc] is TemplateApply.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "StringTemplate"
+      && func_args.len() == 2
+      && matches!(&func_args[1], Expr::Association(_))
+      && args.len() <= 1 =>
+    {
+      let mut apply_args = vec![func.clone()];
+      apply_args.extend(args.iter().cloned());
+      crate::functions::string_ast::template_apply_ast(&apply_args)
     }
     Expr::FunctionCall {
       name,
@@ -3603,7 +3617,7 @@ pub fn apply_curried_call(
           | "Prepend"
           | "Take"
           | "Drop"
-          | "Between"
+          | "IntervalMemberQ"
           | "Comap"
           | "ComapApply"
           | "KeyMap"
