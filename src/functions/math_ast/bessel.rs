@@ -1250,14 +1250,11 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z_f64 = try_eval_to_f64(z_expr);
 
   // Integer-order direct evaluation (more accurate than the BesselY route).
-  // For a non-negative integer order y_n is an elementary function of z
-  // (a polynomial in 1/z times Sin and Cos), real on the whole real axis
-  // except z = 0, so the recurrence holds for negative z as well.
   if has_real
     && let Some(n) = expr_to_i128(n_expr)
     && n >= 0
     && let Some(z) = z_f64
-    && z != 0.0
+    && z > 0.0
   {
     let s = z.sin();
     let c = z.cos();

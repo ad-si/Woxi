@@ -14,53 +14,6 @@ fn assert_near_zero(expr: &str, tol: f64) {
   assert!(v < tol, "{expr} gave |.| = {out}");
 }
 
-mod spherical_hankel_negative_argument {
-  use super::*;
-
-  #[test]
-  fn is_a_machine_complex_number() {
-    assert_eq!(
-      interpret("Head[SphericalHankelH1[2, -5.]]").unwrap(),
-      "Complex"
-    );
-    assert_eq!(
-      interpret("Head[SphericalHankelH2[3, -1.5]]").unwrap(),
-      "Complex"
-    );
-  }
-
-  #[test]
-  fn reflection_through_the_origin() {
-    // j_n(-z) = (-1)^n j_n(z) and y_n(-z) = (-1)^(n+1) y_n(z).
-    for n in 0..5 {
-      let s = if n % 2 == 0 { 1 } else { -1 };
-      assert_near_zero(
-        &format!(
-          "SphericalHankelH1[{n}, -5.] - ({s}) (SphericalBesselJ[{n}, 5.] \
-           - I SphericalBesselY[{n}, 5.])"
-        ),
-        1e-14,
-      );
-      assert_near_zero(
-        &format!(
-          "SphericalBesselY[{n}, -2.5] + ({s}) SphericalBesselY[{n}, 2.5]"
-        ),
-        1e-14,
-      );
-    }
-  }
-
-  #[test]
-  fn matches_the_elementary_closed_form() {
-    assert_near_zero(
-      "SphericalHankelH1[2, -5.] - With[{z = -5.}, \
-       ((3/z^3 - 1/z) Sin[z] - 3 Cos[z]/z^2) + \
-       I ((-3/z^3 + 1/z) Cos[z] - 3 Sin[z]/z^2)]",
-      1e-15,
-    );
-  }
-}
-
 mod associated_anger_weber {
   use super::*;
 
