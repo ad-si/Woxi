@@ -11020,8 +11020,7 @@ fn evaluate_function_call_ast_inner(
       ));
       return Ok(fail_expr());
     }
-    if crate::vfs::exists(dest) && !may_overwrite("CopyFile", dest, overwrite)
-    {
+    if crate::vfs::exists(dest) && !may_overwrite("CopyFile", dest, overwrite) {
       return Ok(fail_expr());
     }
     match std::fs::copy(crate::vfs::resolve(source), crate::vfs::resolve(dest))

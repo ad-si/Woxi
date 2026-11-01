@@ -5982,12 +5982,14 @@ fn unit_step_iteration(args: &[Expr]) -> Option<Vec<Expr>> {
   };
   let mut out = vec![
     substitute_variable(&args[0], var, &value),
-    Expr::List(
-      vec![Expr::Identifier(j), Expr::Integer(0), upper].into(),
-    ),
+    Expr::List(vec![Expr::Identifier(j), Expr::Integer(0), upper].into()),
   ];
   // Later ranges may have bounds that depend on the stepped variable.
-  out.extend(args[2..].iter().map(|a| substitute_variable(a, var, &value)));
+  out.extend(
+    args[2..]
+      .iter()
+      .map(|a| substitute_variable(a, var, &value)),
+  );
   Some(out)
 }
 

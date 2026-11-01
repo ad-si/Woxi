@@ -2971,7 +2971,8 @@ pub fn dispatch_io_functions(
         else {
           return Some(Ok(unevaluated("URLBuild", all_args)));
         };
-        url = url_with_query(&url, new_pairs, sort_queries, remove_empty, charset);
+        url =
+          url_with_query(&url, new_pairs, sort_queries, remove_empty, charset);
       }
 
       return Some(Ok(Expr::String(url)));
@@ -3097,14 +3098,14 @@ pub fn dispatch_io_functions(
           Expr::List(items) => items.iter().collect(),
           v => vec![v],
         };
-        let mut write = |v: &Expr, ty: &str| match encode_binary(v, ty, big_endian)
-        {
-          Some(b) => {
-            out.extend(b);
-            true
-          }
-          None => false,
-        };
+        let mut write =
+          |v: &Expr, ty: &str| match encode_binary(v, ty, big_endian) {
+            Some(b) => {
+              out.extend(b);
+              true
+            }
+            None => false,
+          };
         match &args[2] {
           Expr::String(ty) => {
             for v in &values {
@@ -4888,15 +4889,16 @@ fn decode_binary(bytes: &[u8], ty: &str, big_endian: bool) -> Option<Expr> {
 fn encode_binary(value: &Expr, ty: &str, big_endian: bool) -> Option<Vec<u8>> {
   let size = binary_type_size(ty)?;
   let mut bytes: Vec<u8> = match (value, ty) {
-    (Expr::String(s), "Byte" | "Character8") => return Some(s.as_bytes().to_vec()),
-    (_, "Real32") => {
-      (crate::functions::math_ast::try_eval_to_f64(value)? as f32)
-        .to_be_bytes()
-        .to_vec()
+    (Expr::String(s), "Byte" | "Character8") => {
+      return Some(s.as_bytes().to_vec());
     }
-    (_, "Real64") => {
-      crate::functions::math_ast::try_eval_to_f64(value)?.to_be_bytes().to_vec()
-    }
+    (_, "Real32") => (crate::functions::math_ast::try_eval_to_f64(value)?
+      as f32)
+      .to_be_bytes()
+      .to_vec(),
+    (_, "Real64") => crate::functions::math_ast::try_eval_to_f64(value)?
+      .to_be_bytes()
+      .to_vec(),
     (Expr::Integer(n), _) => n.to_be_bytes()[16 - size..].to_vec(),
     _ => return None,
   };
@@ -4927,7 +4929,8 @@ impl RecordSearch {
       Expr::Identifier(b) if b == "False" => Some(false),
       _ => None,
     };
-    let (mut anchored, mut word_search, mut ignore_case) = (false, false, false);
+    let (mut anchored, mut word_search, mut ignore_case) =
+      (false, false, false);
     let mut separators = Vec::new();
     for (name, value) in opts {
       match name.as_str() {
@@ -4935,7 +4938,7 @@ impl RecordSearch {
         "WordSearch" => word_search = flag(value)?,
         "IgnoreCase" => ignore_case = flag(value)?,
         "RecordSeparators" | "WordSeparators" => {
-          separators.push((name.clone(), value.clone()))
+          separators.push((name.clone(), value.clone()));
         }
         _ => return None,
       }

@@ -8720,7 +8720,6 @@ fn cycles_arg(expr: &Expr) -> Option<Vec<Vec<i128>>> {
   Some(result)
 }
 
-
 fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let arr = &args[0];
   let pad_val = if args.len() >= 3 {
@@ -11352,7 +11351,10 @@ fn join_key_pair(e: &Expr) -> Option<(Expr, Expr)> {
   }
 }
 
-fn assoc_lookup<'a>(entries: &'a [(Expr, Expr)], key: &Expr) -> Option<&'a Expr> {
+fn assoc_lookup<'a>(
+  entries: &'a [(Expr, Expr)],
+  key: &Expr,
+) -> Option<&'a Expr> {
   entries
     .iter()
     .find(|(k, _)| crate::functions::boolean_ast::same_q_pair(k, key))
@@ -11372,7 +11374,11 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     [] if args.len() >= 3 => (&args[2], "Inner"),
     _ => return None,
   };
-  let opts = if positional.is_empty() { &opts[1..] } else { &opts[..] };
+  let opts = if positional.is_empty() {
+    &opts[1..]
+  } else {
+    &opts[..]
+  };
   // Right and Outer joins are not implemented yet.
   if !matches!(join_type, "Inner" | "Left") {
     return None;
@@ -11401,7 +11407,9 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     Expr::List(items) => {
       JoinKeys::Keys(items.iter().map(join_key_pair).collect::<Option<_>>()?)
     }
-    Expr::Rule { .. } | Expr::String(_) => JoinKeys::Keys(vec![join_key_pair(keyspec)?]),
+    Expr::Rule { .. } | Expr::String(_) => {
+      JoinKeys::Keys(vec![join_key_pair(keyspec)?])
+    }
     Expr::FunctionCall { name, .. } if name == "Key" => {
       JoinKeys::Keys(vec![join_key_pair(keyspec)?])
     }
@@ -11419,7 +11427,9 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   };
   let is_shared = |k: &Expr| shared_join_keys.iter().any(|s| same_q_pair(s, k));
 
-  let matches = |a: &[(Expr, Expr)], b: &[(Expr, Expr)]| -> Result<bool, InterpreterError> {
+  let matches = |a: &[(Expr, Expr)],
+                 b: &[(Expr, Expr)]|
+   -> Result<bool, InterpreterError> {
     match &keys {
       JoinKeys::Keys(pairs) => Ok(pairs.iter().all(|(ka, kb)| {
         match (assoc_lookup(a, ka), assoc_lookup(b, kb)) {
@@ -11438,13 +11448,19 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     }
   };
 
-  let merge = |a: &[(Expr, Expr)], b: &[(Expr, Expr)]| -> Result<Expr, InterpreterError> {
+  let merge = |a: &[(Expr, Expr)],
+               b: &[(Expr, Expr)]|
+   -> Result<Expr, InterpreterError> {
     let mut out: Vec<(Expr, Expr)> = Vec::new();
     for (k, va) in a {
       match assoc_lookup(b, k) {
         Some(vb) if !is_shared(k) => match &collision {
-          Expr::Identifier(c) if c == "Left" => out.push((k.clone(), va.clone())),
-          Expr::Identifier(c) if c == "Right" => out.push((k.clone(), vb.clone())),
+          Expr::Identifier(c) if c == "Left" => {
+            out.push((k.clone(), va.clone()))
+          }
+          Expr::Identifier(c) if c == "Right" => {
+            out.push((k.clone(), vb.clone()))
+          }
           Expr::Identifier(c) if c == "None" => {}
           f => {
             let new_keys = list_helpers_ast::apply_func_ast(f, k)?;

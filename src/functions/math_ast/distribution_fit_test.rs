@@ -787,7 +787,8 @@ pub fn apply_hypothesis_test_data(
 pub fn distribution_fit_test_ast(
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let (args, opts) = crate::evaluator::dispatch::split_trailing_options(all_args);
+  let (args, opts) =
+    crate::evaluator::dispatch::split_trailing_options(all_args);
   // `SignificanceLevel` is the cutoff of "ShortTestConclusion".
   let settings = match opts.as_slice() {
     [] => super::statistics::HypothesisTestSettings::parse(&[]),

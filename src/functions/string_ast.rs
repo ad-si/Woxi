@@ -14533,13 +14533,19 @@ impl TextReadOptions {
   /// The records of `text` from byte `start` on, as (start, end, next)
   /// offsets: the record spans start..end and the following one starts at
   /// next.
-  fn record_spans(&self, text: &str, start: usize) -> Vec<(usize, usize, usize)> {
+  fn record_spans(
+    &self,
+    text: &str,
+    start: usize,
+  ) -> Vec<(usize, usize, usize)> {
     let mut spans = Vec::new();
     let mut record_start = start;
     let mut i = start;
     while i < text.len() {
-      if let Some(sep) =
-        self.record_separators.iter().find(|s| text[i..].starts_with(s.as_str()))
+      if let Some(sep) = self
+        .record_separators
+        .iter()
+        .find(|s| text[i..].starts_with(s.as_str()))
       {
         spans.push((record_start, i, i + sep.len()));
         i += sep.len();
@@ -14574,30 +14580,36 @@ impl TextReadOptions {
   /// The words of `text` from byte `start` on.
   pub(crate) fn words(&self, text: &str, start: usize) -> Vec<ReadToken> {
     let mut out = Vec::new();
-    for (record, (s, e, _)) in self.record_spans(text, start).into_iter().enumerate()
+    for (record, (s, e, _)) in
+      self.record_spans(text, start).into_iter().enumerate()
     {
       let mut word_start = s;
       let mut i = s;
-      let push = |out: &mut Vec<ReadToken>, from: usize, to: usize, keep_empty| {
-        if from < to || keep_empty {
-          out.push(ReadToken {
-            text: text[from..to].to_string(),
-            record,
-            end: to,
-          });
-        }
-      };
+      let push =
+        |out: &mut Vec<ReadToken>, from: usize, to: usize, keep_empty| {
+          if from < to || keep_empty {
+            out.push(ReadToken {
+              text: text[from..to].to_string(),
+              record,
+              end: to,
+            });
+          }
+        };
       while i < e {
         let rest = &text[i..e];
-        if let Some(tok) =
-          self.token_words.iter().find(|t| rest.starts_with(t.as_str()))
+        if let Some(tok) = self
+          .token_words
+          .iter()
+          .find(|t| rest.starts_with(t.as_str()))
         {
           push(&mut out, word_start, i, false);
           push(&mut out, i, i + tok.len(), true);
           i += tok.len();
           word_start = i;
-        } else if let Some(sep) =
-          self.word_separators.iter().find(|w| rest.starts_with(w.as_str()))
+        } else if let Some(sep) = self
+          .word_separators
+          .iter()
+          .find(|w| rest.starts_with(w.as_str()))
         {
           push(&mut out, word_start, i, self.null_words);
           i += sep.len();
@@ -14705,7 +14717,11 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if !read_opts.record_lists {
       return Ok(Expr::List(
-        tagged.into_iter().map(|(_, e)| e).collect::<Vec<_>>().into(),
+        tagged
+          .into_iter()
+          .map(|(_, e)| e)
+          .collect::<Vec<_>>()
+          .into(),
       ));
     }
     let mut groups: Vec<(usize, Vec<Expr>)> = Vec::new();
@@ -16340,7 +16356,7 @@ fn query_values(v: &Expr, out: &mut Vec<Option<String>>) {
     Expr::Identifier(id) if id == "None" || id == "Missing" => out.push(None),
     Expr::FunctionCall { name, .. } if name == "Missing" => out.push(None),
     Expr::FunctionCall { name, args } if name == "URL" && args.len() == 1 => {
-      out.push(Some(query_stringify(&args[0])))
+      out.push(Some(query_stringify(&args[0])));
     }
     other => out.push(Some(query_stringify(other))),
   }
@@ -17095,7 +17111,8 @@ impl TextStringOptions {
   /// a valid setting.
   fn parse(opts: &[(String, Expr)]) -> Option<Self> {
     let mut out = TextStringOptions::default();
-    let automatic = |v: &Expr| matches!(v, Expr::Identifier(a) if a == "Automatic");
+    let automatic =
+      |v: &Expr| matches!(v, Expr::Identifier(a) if a == "Automatic");
     fn strings<const N: usize>(v: &Expr) -> Option<[String; N]> {
       let Expr::List(items) = v else { return None };
       let strs: Vec<String> = items
@@ -17125,7 +17142,9 @@ impl TextStringOptions {
           out.elided = match value {
             v if automatic(v) => ElidedForms::Automatic,
             Expr::Identifier(a) if a == "All" => ElidedForms::All,
-            Expr::Identifier(a) if a == "None" => ElidedForms::Heads(Vec::new()),
+            Expr::Identifier(a) if a == "None" => {
+              ElidedForms::Heads(Vec::new())
+            }
             Expr::Identifier(h) => ElidedForms::Heads(vec![h.clone()]),
             Expr::List(items) => ElidedForms::Heads(
               items
@@ -17251,11 +17270,12 @@ fn text_string_render(expr: &Expr) -> Option<String> {
     // A missing value contributes nothing to the text.
     // `MissingString -> Automatic` shows the reason instead.
     Expr::FunctionCall { name, args } if name == "Missing" => {
-      return Some(match TEXT_STRING_OPTIONS.with(|o| o.borrow().missing.clone())
-      {
-        Some(s) => s,
-        None => args.first().map(text_string_part).unwrap_or_default(),
-      });
+      return Some(
+        match TEXT_STRING_OPTIONS.with(|o| o.borrow().missing.clone()) {
+          Some(s) => s,
+          None => args.first().map(text_string_part).unwrap_or_default(),
+        },
+      );
     }
     // A quantity abbreviates its unit: "3 m".
     Expr::FunctionCall { name, args } if name == "Quantity" => {

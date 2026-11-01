@@ -4754,8 +4754,9 @@ pub fn location_test_ast(full_args: &[Expr]) -> Result<Expr, InterpreterError> {
       "LocationTest expects 1 to 3 arguments".into(),
     ));
   }
-  let (_, opts) =
-    crate::evaluator::dispatch::split_trailing_options(&full_args[positional..]);
+  let (_, opts) = crate::evaluator::dispatch::split_trailing_options(
+    &full_args[positional..],
+  );
   let Some(settings) = HypothesisTestSettings::parse(&opts) else {
     return Ok(unevaluated("LocationTest", full_args));
   };
@@ -4934,7 +4935,8 @@ impl HypothesisTestSettings {
       match name.as_str() {
         "SignificanceLevel" => {
           if !matches!(value, Expr::Identifier(a) if a == "Automatic") {
-            out.alpha = try_eval_to_f64(value).filter(|a| *a > 0.0 && *a < 1.0)?;
+            out.alpha =
+              try_eval_to_f64(value).filter(|a| *a > 0.0 && *a < 1.0)?;
           }
         }
         "AlternativeHypothesis" => {
@@ -4991,7 +4993,9 @@ fn format_location_test_result(
       let p = t_test_p_value(t_stat, df);
       num_to_expr(p)
     }
-    "ShortTestConclusion" => settings.short_conclusion(t_test_p_value(t_stat, df)),
+    "ShortTestConclusion" => {
+      settings.short_conclusion(t_test_p_value(t_stat, df))
+    }
     "TestDataTable" => {
       let p = t_test_p_value(t_stat, df);
       // Build Grid[{{, Statistic, P-Value}, {T, t_stat, p}}, ...]

@@ -7007,3 +7007,24 @@ wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "
 Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
+
+## Parameter sweep 5 (options): known divergences and open items
+
+- `NSum[1/((k - 20)^2 + 1), {k, 0, ∞}]` is `3.09286` in wolframscript: with
+  the default 15 leading terms its tail extrapolation misses the bump at
+  `k = 20`, which `NSumTerms -> 30` fixes (`3.10462`). Woxi sums accurately
+  either way and gives `3.10462` for both. Likewise
+  `NProduct[1 + 1/(1 + (k - 20)^2), {k, 0, ∞}]` is `12.8567` in
+  wolframscript (default `NProductFactors`) and `12.9013` in Woxi.
+  **Not reproducible** without Wolfram's extrapolation internals.
+- `JoinAcross` with the `"Right"` and `"Outer"` join specifications: the
+  order and padding of unmatched rows is unverified, so the calls stay
+  unevaluated (`"Inner"` and `"Left"` are implemented).
+- `RenameFile[a, b]` onto an existing `b` (and `RenameFile[a, b,
+  OverwriteTarget -> False]`) fails as documented ("file2 must not exist");
+  the message text (`RenameFile::eexist` / `RenameFile::filex`) is inferred
+  from `CopyFile`'s and unverified.
+- `Trace[expr, form, TraceAbove -> …]`: `Trace` only records the input and the
+  result, so patterns and `TraceAbove` are not implemented.
+- `FindMinimumCostFlow` (and its `EdgeCost` / `EdgeCapacity` options) is not
+  implemented.
