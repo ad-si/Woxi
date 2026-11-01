@@ -5013,16 +5013,13 @@ mod monitor_evaluates_its_expression {
       "5"
     );
     assert_eq!(interpret("Monitor[1 + 1, undefined[i]]").unwrap(), "2");
+    // In a notebook front end (the playground, Woxi Studio) there is a
+    // front end to show the monitor, so no `FrontEndObject::notavail` —
+    // wolframscript's message is for the command line only.
     let result =
       interpret_with_stdout("Monitor[Do[Null, {i, 3}]; 7, i]").unwrap();
     assert_eq!(result.result, "7");
-    assert_eq!(
-      result.warnings,
-      vec![
-        "FrontEndObject::notavail: A front end is not available; certain operations require a front end."
-          .to_string()
-      ]
-    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
   }
 }
 

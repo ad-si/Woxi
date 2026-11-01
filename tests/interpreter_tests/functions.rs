@@ -7436,16 +7436,3 @@ mod mouse_position {
     assert_eq!(r.result, "True");
   }
 }
-
-mod monitor_front_end {
-  use super::*;
-
-  // Without a front end Monitor says so (as wolframscript does); in a
-  // notebook front end it just evaluates.
-  #[test]
-  fn monitor_is_silent_in_a_notebook() {
-    let r = interpret_with_stdout("Monitor[Table[i, {i, 3}], i]").unwrap();
-    assert_eq!(r.result, "{1, 2, 3}");
-    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
-  }
-}
