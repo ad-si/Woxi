@@ -261,7 +261,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 - `ComplexPlot` — Domain coloring visualization of a complex function
 - `DateListPlot` — Plots data with date-valued x-axis
 - `DiscretePlot` — Plots discrete values of a function
-- `DiscretePlot3D` — 3D surface plot at discrete integer grid points
+- `DiscretePlot3D` — 3D plot of a function at discrete grid points (stems or bars)
 - `GraphicsColumn` — Arranges graphics in a vertical column
 - `GraphicsGrid` — Arranges graphics in a 2D grid
 - `GraphicsRow` — Arranges graphics in a horizontal row
