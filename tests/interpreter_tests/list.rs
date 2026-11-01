@@ -3316,6 +3316,18 @@ mod sort_by {
   }
 
   #[test]
+  fn sort_identical_compound_expressions_tie() {
+    assert_eq!(
+      interpret("Sort[{f[b, 2], f[a, 1], f[b, 2], f[a, 1]}]").unwrap(),
+      "{f[a, 1], f[a, 1], f[b, 2], f[b, 2]}"
+    );
+    assert_eq!(
+      interpret("Order[f[g[x], {1, 2}], f[g[x], {1, 2}]]").unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
   fn sort_by_abs() {
     assert_eq!(
       interpret("SortBy[{-3, 1, -2, 4}, Abs]").unwrap(),
