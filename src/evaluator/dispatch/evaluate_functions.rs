@@ -3187,6 +3187,19 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
+  // RGBColor[{r, g, b}] and RGBColor[{r, g, b, a}] are the list forms of the
+  // plain channel arguments.
+  if name == "RGBColor"
+    && args.len() == 1
+    && let Expr::List(channels) = &args[0]
+    && (channels.len() == 3 || channels.len() == 4)
+    && channels
+      .iter()
+      .all(crate::functions::predicate_ast::is_numeric_q)
+  {
+    return Ok(call("RGBColor", channels.to_vec()));
+  }
+
   // Graphics primitives and style directives: return as symbolic (unevaluated)
   match name {
     "RGBColor"

@@ -16000,3 +16000,180 @@ pub fn absolute_plot_range_3d(g: &Expr) -> Option<[(f64, f64); 3]> {
     .all(|(lo, hi)| lo.is_finite() && hi.is_finite())
     .then_some(bounds)
 }
+
+/// `ListSurfacePlot3D[points, opts]`: a surface through 3D points, drawn as
+/// a `Graphics3D` of triangles.
+///
+/// An array of `{x, y, z}` rows (`Table[{x, y, z}, {u, …}, {v, …}]`) is
+/// joined cell by cell; a plain list of points is wrapped in its convex
+/// hull. `ColorFunction -> Function[{x, y, z}, …]` colours every triangle
+/// at its centroid, with the coordinates rescaled to 0..1 over the point
+/// set unless `ColorFunctionScaling -> False`. The remaining options go to
+/// the `Graphics3D`.
+pub fn list_surface_plot3d_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let Expr::List(outer) = &data else {
+    return Ok(Expr::FunctionCall {
+      name: "ListSurfacePlot3D".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let unevaluated = || {
+    Ok(Expr::FunctionCall {
+      name: "ListSurfacePlot3D".to_string(),
+      args: args.to_vec().into(),
+    })
+  };
+
+  // Rows of points when every entry is a list of {x, y, z} points.
+  let mut rows: Vec<Vec<[f64; 3]>> = Vec::new();
+  let mut flat: Vec<[f64; 3]> = Vec::new();
+  let is_array = !outer.is_empty()
+    && outer.iter().all(|r| matches!(r, Expr::List(items)
+      if !items.is_empty() && items.iter().all(|p| matches!(p, Expr::List(c) if c.len() == 3))));
+  if is_array {
+    for r in outer {
+      let Expr::List(items) = r else { continue };
+      let mut row = Vec::new();
+      for p in items {
+        match eval_vec3(p) {
+          Some(v) if v.iter().all(|c| c.is_finite()) => row.push(v),
+          _ => return unevaluated(),
+        }
+      }
+      rows.push(row);
+    }
+    if rows.iter().any(|r| r.len() != rows[0].len()) {
+      return unevaluated();
+    }
+    flat = rows.iter().flatten().copied().collect();
+  } else {
+    for p in outer {
+      match eval_vec3(p) {
+        Some(v) if v.iter().all(|c| c.is_finite()) => flat.push(v),
+        _ => return unevaluated(),
+      }
+    }
+  }
+  if flat.len() < 3 {
+    return unevaluated();
+  }
+
+  let mut triangles: Vec<Vec<[f64; 3]>> = Vec::new();
+  if is_array {
+    for i in 0..rows.len().saturating_sub(1) {
+      for j in 0..rows[i].len().saturating_sub(1) {
+        let (a, b, c, d) = (
+          rows[i][j],
+          rows[i][j + 1],
+          rows[i + 1][j + 1],
+          rows[i + 1][j],
+        );
+        triangles.push(vec![a, b, c]);
+        triangles.push(vec![a, c, d]);
+      }
+    }
+  } else {
+    let tuples: Vec<(f64, f64, f64)> =
+      flat.iter().map(|p| (p[0], p[1], p[2])).collect();
+    let Some(faces) =
+      crate::functions::convex_hull::convex_hull_polygons(&tuples)
+    else {
+      return unevaluated();
+    };
+    for face in faces {
+      for k in 1..face.len().saturating_sub(1) {
+        triangles.push(vec![flat[face[0]], flat[face[k]], flat[face[k + 1]]]);
+      }
+    }
+  }
+  if triangles.is_empty() {
+    return unevaluated();
+  }
+
+  let mut facet_color = FacetColorFunction::default();
+  const CONSUMED: &[&str] = &[
+    "ColorFunction",
+    "ColorFunctionScaling",
+    "BoundaryStyle",
+    "Mesh",
+    "MaxPlotPoints",
+    "PlotPoints",
+  ];
+  let mut graphics_opts: Vec<Expr> = Vec::new();
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(n) = pattern.as_ref()
+      && CONSUMED.contains(&n.as_str())
+    {
+      facet_color.read_option(pattern, replacement);
+    } else {
+      graphics_opts.push(opt.clone());
+    }
+  }
+
+  let mut ranges = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+  for p in &flat {
+    for k in 0..3 {
+      ranges[k].0 = ranges[k].0.min(p[k]);
+      ranges[k].1 = ranges[k].1.max(p[k]);
+    }
+  }
+
+  let polygon = |tri: &[[f64; 3]]| Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(
+      tri
+        .iter()
+        .map(|p| {
+          Expr::List(
+            p.iter().map(|c| Expr::Real(*c)).collect::<Vec<_>>().into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )]
+    .into(),
+  };
+  let mut primitives = vec![Expr::FunctionCall {
+    name: "EdgeForm".to_string(),
+    args: vec![Expr::Identifier("None".to_string())].into(),
+  }];
+  for tri in &triangles {
+    let n = tri.len() as f64;
+    let centroid = [0, 1, 2].map(|k| tri.iter().map(|p| p[k]).sum::<f64>() / n);
+    let poly = polygon(tri);
+    match facet_color.function.as_ref().and_then(|f| {
+      let args = (0..3)
+        .map(|k| {
+          let (lo, hi) = ranges[k];
+          Expr::Real(if facet_color.unscaled || (hi - lo).abs() < 1e-15 {
+            centroid[k]
+          } else {
+            (centroid[k] - lo) / (hi - lo)
+          })
+        })
+        .collect();
+      evaluate_expr_to_expr(&Expr::CurriedCall {
+        func: Box::new(f.clone()),
+        args,
+      })
+      .ok()
+    }) {
+      Some(color) => primitives.push(Expr::List(vec![color, poly].into())),
+      None => primitives.push(poly),
+    }
+  }
+
+  let mut g_args = vec![Expr::List(primitives.into())];
+  g_args.extend(graphics_opts);
+  evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: g_args.into(),
+  })
+}
