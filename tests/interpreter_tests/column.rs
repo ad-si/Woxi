@@ -646,3 +646,34 @@ mod traditional_form_layout {
     }
   }
 }
+
+mod row_option_in_separator_position {
+  use super::*;
+
+  /// A rule after the item list (`BaseStyle -> 20`) is an option of `Row`,
+  /// not its separator.
+  #[test]
+  fn to_string_ignores_option_rule() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Row[{\"a\", 1}, BaseStyle -> 20]]").unwrap(),
+      "a1"
+    );
+    assert_eq!(
+      interpret("ToString[Row[{\"a\", 1}, \"-\", BaseStyle -> 20]]").unwrap(),
+      "a-1"
+    );
+  }
+
+  #[test]
+  fn graphics_label_ignores_option_rule() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ExportString[Graphics[{Inset[Row[{\"x = \", 0.5}, BaseStyle -> 20], {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    let svg = result.result;
+    assert!(svg.contains("x = 0.5"), "{svg}");
+    assert!(!svg.contains("BaseStyle"), "{svg}");
+  }
+}

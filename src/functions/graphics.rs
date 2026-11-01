@@ -4750,8 +4750,11 @@ fn graphics_text_content(expr: &Expr) -> String {
         Some(sep) if spacer_gap_text(sep).is_some() => {
           parts.join(&spacer_gap_text(sep).unwrap_or_default())
         }
-        Some(sep) => parts.join(&graphics_text_content(sep)),
-        None => parts.concat(),
+        // A rule in separator position is an option (`BaseStyle -> 20`).
+        Some(sep) if !crate::syntax::is_rule_expr(sep) => {
+          parts.join(&graphics_text_content(sep))
+        }
+        _ => parts.concat(),
       }
     }
     // `Grid[{{…}, …}, opts…]` / `Column[{…}, opts…]` lay their items out in
