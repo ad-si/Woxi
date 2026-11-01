@@ -1003,6 +1003,14 @@ pub fn dispatch_plotting(
       Some(crate::functions::chart::histogram_ast(&new_args))
     }
     // Data that is no list reports `::ldata` (outside the plot's `Quiet`).
+    "LineIntegralConvolutionPlot" if args.len() >= 3 => {
+      Some(quiet_plot(|| {
+        Ok(
+          crate::functions::lic_plot::line_integral_convolution_plot_ast(args)?
+            .unwrap_or_else(|| unevaluated(name, args)),
+        )
+      }))
+    }
     "BulletGauge" if args.len() >= 3 => Some(
       crate::functions::bullet_gauge::bullet_gauge_ast(args)
         .map(|g| g.unwrap_or_else(|| unevaluated(name, args))),

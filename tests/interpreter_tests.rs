@@ -6903,6 +6903,7 @@ mod interpreter_tests {
   mod graphics;
   mod image;
   mod julia_set_plot;
+  mod lic_plot;
   mod music;
   mod row;
   mod styling;

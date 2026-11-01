@@ -68,6 +68,7 @@ pub mod isotope_data;
 pub mod julia_set;
 pub mod knot_data;
 pub mod lattice_data;
+pub mod lic_plot;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod list_plot;
