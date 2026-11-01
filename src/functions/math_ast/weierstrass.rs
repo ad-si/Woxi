@@ -226,9 +226,8 @@ fn weierstrass_p_laurent(u: f64, g2: f64, g3: f64) -> f64 {
   result
 }
 
-/// InverseWeierstrassP[p, {g2, g3}] — inverse Weierstrass elliptic function.
-///
-/// Returns {u, ℘'(u)} where ℘(u; g₂, g₃) = p.
+/// InverseWeierstrassP[p, {g2, g3}] — inverse Weierstrass elliptic function:
+/// the u with ℘(u; g₂, g₃) = p that WL returns.
 ///
 /// InverseWeierstrassP[{p, pp}, {g2, g3}] — returns u given both p and p'.
 pub fn inverse_weierstrass_p_ast(
@@ -247,20 +246,16 @@ pub fn inverse_weierstrass_p_ast(
     }
   };
 
-  // Try to get g2, g3 as f64
-  let Some(g2_f) = try_eval_to_f64(g2) else {
-    return Ok(unevaluated("InverseWeierstrassP", args));
-  };
-  let Some(g3_f) = try_eval_to_f64(g3) else {
-    return Ok(unevaluated("InverseWeierstrassP", args));
-  };
-
   // Two forms:
-  // 1. InverseWeierstrassP[p, {g2, g3}] where p is a number → {u, p'}
-  // 2. InverseWeierstrassP[{p, pp}, {g2, g3}] → u
+  // 1. InverseWeierstrassP[p, {g2, g3}] → u with ℘(u) = p
+  // 2. InverseWeierstrassP[{p, pp}, {g2, g3}] → u with ℘(u) = p, ℘'(u) = pp
   match &args[0] {
     Expr::List(items) if items.len() == 2 => {
       // Form 2: {p, pp} given
+      let (Some(g2_f), Some(g3_f)) = (try_eval_to_f64(g2), try_eval_to_f64(g3))
+      else {
+        return Ok(unevaluated("InverseWeierstrassP", args));
+      };
       let Some(p_f) = try_eval_to_f64(&items[0]) else {
         return Ok(unevaluated("InverseWeierstrassP", args));
       };
@@ -271,44 +266,27 @@ pub fn inverse_weierstrass_p_ast(
       Ok(Expr::Real(u))
     }
     _ => {
-      // Form 1: just p given
-      let Some(p_f) = try_eval_to_f64(&args[0]) else {
-        // Check if it's purely symbolic
-        if !matches!(&args[0], Expr::Real(_))
-          && !matches!(&args[0], Expr::Integer(_))
-        {
-          return Ok(unevaluated("InverseWeierstrassP", args));
+      // Form 1: just p given; numeric once an argument is inexact.
+      if !any_inexact(&[&args[0], g2, g3]) {
+        // ℘ has a double pole at 0: ℘^-1(0) for g2 = g3 = 0.
+        if is_expr_zero(&args[0]) && is_expr_zero(g2) && is_expr_zero(g3) {
+          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
         }
         return Ok(unevaluated("InverseWeierstrassP", args));
-      };
-      // Need at least one Real for numeric eval
-      let has_real = matches!(&args[0], Expr::Real(_))
-        || matches!(g2, Expr::Real(_))
-        || matches!(g3, Expr::Real(_));
-      if !has_real {
-        return Ok(unevaluated("InverseWeierstrassP", args));
       }
-      let (u, pp) = inverse_weierstrass_p_numeric(p_f, g2_f, g3_f);
-      Ok(Expr::List(vec![Expr::Real(u), Expr::Real(pp)].into()))
+      let (Some(p), Some(a), Some(b)) = (
+        try_extract_complex_float(&args[0]),
+        try_extract_complex_float(g2),
+        try_extract_complex_float(g3),
+      ) else {
+        return Ok(unevaluated("InverseWeierstrassP", args));
+      };
+      match super::weierstrass_lattice::inverse_weierstrass_p_complex(p, a, b) {
+        Some((re, im)) => Ok(build_complex_float_expr(re, im)),
+        None => Ok(unevaluated("InverseWeierstrassP", args)),
+      }
     }
   }
-}
-
-/// Compute InverseWeierstrassP[p, {g2, g3}] numerically.
-/// Returns (u, p') where ℘(u) = p.
-/// Uses Newton's method starting from an initial guess.
-fn inverse_weierstrass_p_numeric(p: f64, g2: f64, g3: f64) -> (f64, f64) {
-  // ℘'² = 4℘³ - g₂℘ - g₃
-  let pp_sq = 4.0 * p * p * p - g2 * p - g3;
-  let pp = if pp_sq >= 0.0 {
-    -pp_sq.sqrt() // Take the negative branch (principal value, small positive u)
-  } else {
-    // Complex case — for now just use the magnitude
-    0.0
-  };
-  let u = inverse_weierstrass_p_with_prime(p, pp, g2, g3);
-  let actual_pp = weierstrass_p_prime_numeric(u, g2, g3);
-  (u, actual_pp)
 }
 
 /// Compute u given p, p', g2, g3 such that ℘(u) = p and ℘'(u) = pp.

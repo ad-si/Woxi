@@ -15197,6 +15197,19 @@ fn around_func_and_deriv(name: &str, a: f64) -> Option<(f64, f64)> {
     "Sinh" => (a.sinh(), a.cosh()),
     "Cosh" => (a.cosh(), a.sinh()),
     "Tanh" => (a.tanh(), 1.0 - a.tanh() * a.tanh()),
+    "Coth" => (1.0 / a.tanh(), -1.0 / (a.sinh() * a.sinh())),
+    "Sec" => (1.0 / a.cos(), a.tan() / a.cos()),
+    "Csc" => (1.0 / a.sin(), -1.0 / (a.sin() * a.tan())),
+    "Sech" => (1.0 / a.cosh(), -a.tanh() / a.cosh()),
+    "Csch" => (1.0 / a.sinh(), -1.0 / (a.sinh() * a.tanh())),
+    "Gudermannian" => (2.0 * (a / 2.0).tanh().atan(), 1.0 / a.cosh()),
+    "SinDegrees" | "CosDegrees" | "TanDegrees" | "CotDegrees"
+    | "SecDegrees" | "CscDegrees" => {
+      let k = std::f64::consts::PI / 180.0;
+      let (f, d) =
+        around_func_and_deriv(name.trim_end_matches("Degrees"), a * k)?;
+      (f, d * k)
+    }
     "ArcSin" => (a.asin(), 1.0 / (1.0 - a * a).sqrt()),
     "ArcCos" => (a.acos(), -1.0 / (1.0 - a * a).sqrt()),
     "ArcTan" => (a.atan(), 1.0 / (1.0 + a * a)),

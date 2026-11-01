@@ -2167,6 +2167,16 @@ pub fn dispatch_complex_and_special(
               *a = Expr::Real(*n as f64 / *d as f64);
             }
           }
+          // A numeric constant expression (Sqrt[3], Pi/4) is its value.
+          Expr::FunctionCall { .. }
+          | Expr::Constant(_)
+          | Expr::BinaryOp { .. }
+            if crate::functions::math_ast::is_real_numeric(a) =>
+          {
+            if let Some(v) = crate::functions::math_ast::try_eval_to_f64(a) {
+              *a = Expr::Real(v);
+            }
+          }
           _ => {}
         }
       }

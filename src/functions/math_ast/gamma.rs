@@ -1624,30 +1624,104 @@ fn marcum_q_numeric(m: f64, a: f64, b: f64) -> f64 {
   sum
 }
 
-/// Owen's T function, T(h, a) = (1/2π) ∫₀ᵃ e^(-h²(1+x²)/2)/(1+x²) dx, by
-/// composite Simpson quadrature. It is even in h and odd in a.
-fn owen_t_numeric(h: f64, a: f64) -> f64 {
-  if a == 0.0 {
-    return 0.0;
-  }
-  let a_abs = a.abs();
-  let h2 = h * h;
-  let f = |x: f64| (-0.5 * h2 * (1.0 + x * x)).exp() / (1.0 + x * x);
-  // Even panel count; scale resolution with the interval length.
-  let n = (((a_abs * 4000.0).round() as usize).clamp(2000, 1_000_000) / 2) * 2;
-  let step = a_abs / n as f64;
-  let mut sum = f(0.0) + f(a_abs);
-  for i in 1..n {
-    let x = i as f64 * step;
-    sum += if i.is_multiple_of(2) { 2.0 } else { 4.0 } * f(x);
-  }
-  let integral = sum * step / 3.0;
-  a.signum() * integral / (2.0 * std::f64::consts::PI)
+/// Gauss–Legendre nodes and weights on [-1, 1] (20 points), by Newton's
+/// method on the Legendre polynomial.
+pub(crate) fn gauss_legendre_20() -> &'static [(f64, f64)] {
+  static NODES: std::sync::OnceLock<Vec<(f64, f64)>> =
+    std::sync::OnceLock::new();
+  NODES.get_or_init(|| {
+    let n = 20usize;
+    (0..n)
+      .map(|i| {
+        let mut x =
+          (std::f64::consts::PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+        let mut dp = 1.0;
+        for _ in 0..100 {
+          let (mut p0, mut p1) = (1.0, x);
+          for k in 2..=n {
+            let p2 =
+              ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
+            p0 = p1;
+            p1 = p2;
+          }
+          dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
+          let dx = p1 / dp;
+          x -= dx;
+          if dx.abs() < 1e-16 {
+            break;
+          }
+        }
+        (x, 2.0 / ((1.0 - x * x) * dp * dp))
+      })
+      .collect()
+  })
 }
 
-/// OwenT[h, a] — Owen's T function. Exact values: T(h, 0) = 0 and, for an exact
-/// h = 0, T(0, a) = ArcTan[a]/(2π). Otherwise it evaluates numerically when an
-/// argument is inexact, and stays symbolic for exact non-special arguments
+type Cf = (f64, f64);
+
+fn cf_mul(a: Cf, b: Cf) -> Cf {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn cf_exp(a: Cf) -> Cf {
+  let r = a.0.exp();
+  (r * a.1.cos(), r * a.1.sin())
+}
+
+/// `Φ(z) = Erfc[-z/√2]/2` for complex `z`.
+fn normal_cdf_complex(z: Cf) -> Cf {
+  let s = -std::f64::consts::FRAC_1_SQRT_2;
+  let e = erfc_complex((z.0 * s, z.1 * s));
+  (e.0 / 2.0, e.1 / 2.0)
+}
+
+/// Owen's T for complex `h` and real `a` (machine precision):
+/// `(1/2π) ∫₀ᵃ e^(-h²(1+t²)/2)/(1+t²) dt` by composite Gauss–Legendre for
+/// `|a| <= 1`, and for `a > 1` through
+/// `T(h, a) = Φ(h)/2 + Φ(a h)/2 - Φ(h) Φ(a h) - T(a h, 1/a)`.
+fn owen_t_complex(h: Cf, a: f64) -> Cf {
+  if a == 0.0 {
+    return (0.0, 0.0);
+  }
+  if a < 0.0 {
+    let t = owen_t_complex(h, -a);
+    return (-t.0, -t.1);
+  }
+  if a > 1.0 {
+    let ah = (a * h.0, a * h.1);
+    let (p, q) = (normal_cdf_complex(h), normal_cdf_complex(ah));
+    let pq = cf_mul(p, q);
+    let t = owen_t_complex(ah, 1.0 / a);
+    return (
+      (p.0 + q.0) / 2.0 - pq.0 - t.0,
+      (p.1 + q.1) / 2.0 - pq.1 - t.1,
+    );
+  }
+  let x = cf_mul(h, h);
+  let x = (-x.0 / 2.0, -x.1 / 2.0);
+  let panels = ((a * (1.0 + h.0.hypot(h.1)) * 2.0).ceil() as usize).max(1);
+  let width = a / panels as f64;
+  let mut sum = (0.0, 0.0);
+  for k in 0..panels {
+    let mid = (k as f64 + 0.5) * width;
+    for &(node, weight) in gauss_legendre_20() {
+      let t = mid + node * width / 2.0;
+      let s = 1.0 + t * t;
+      let v = cf_exp((x.0 * s, x.1 * s));
+      let w = weight * width / 2.0 / s;
+      sum.0 += w * v.0;
+      sum.1 += w * v.1;
+    }
+  }
+  let tau = 2.0 * std::f64::consts::PI;
+  (sum.0 / tau, sum.1 / tau)
+}
+
+/// OwenT[h, a] — Owen's T function. Exact values: T(h, 0) = 0, for an exact
+/// h = 0, T(0, a) = ArcTan[a]/(2π), and T(h, 1) = Erfc[-h/√2] Erfc[h/√2]/8;
+/// T is even in h. Otherwise it evaluates numerically when an argument is
+/// inexact (real arguments through the arbitrary-precision series, complex
+/// h by quadrature), and stays symbolic for exact non-special arguments
 /// (matching wolframscript).
 pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("OwenT", args));
@@ -1667,18 +1741,82 @@ pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Exact h = 0: T(0, a) = ArcTan[a]/(2π).
   if matches!(h, Expr::Integer(0)) && !has_real {
-    return Ok(div2(
+    return crate::evaluator::evaluate_expr_to_expr(&div2(
       call1("ArcTan", a.clone()),
       times(vec![Expr::Integer(2), id_expr("Pi")]),
     ));
   }
-  // Numeric evaluation requires an inexact argument.
-  if has_real
-    && let (Some(hv), Some(av)) = (try_eval_to_f64(h), try_eval_to_f64(a))
+  // T(h, 1) = Erfc[-h/√2] Erfc[h/√2]/8 for exact h.
+  if matches!(a, Expr::Integer(1)) && !super::elliptic::expr_is_inexact(h) {
+    let arg = div2(h.clone(), call1("Sqrt", Expr::Integer(2)));
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      div2(Expr::Integer(1), Expr::Integer(8)),
+      call1("Erfc", times(vec![Expr::Integer(-1), arg.clone()])),
+      call1("Erfc", arg),
+    ]));
+  }
+  let inexact =
+    super::elliptic::expr_is_inexact(h) || super::elliptic::expr_is_inexact(a);
+  if inexact && is_real_numeric(h) && is_real_numeric(a) {
+    let call = Expr::FunctionCall {
+      name: "OwenT".to_string(),
+      args: args.to_vec().into(),
+    };
+    if has_real {
+      if let Some(v) = machine_function_value(&call) {
+        return Ok(Expr::Real(v));
+      }
+    } else if let Some(p) = args
+      .iter()
+      .filter_map(|e| match e {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min)
+      && let Some(v) = bigfloat_function_value(&call, p)
+    {
+      return Ok(v);
+    }
+  }
+  // Machine complex h with a real a.
+  if inexact
+    && let (Some(hz), Some(av)) =
+      (try_extract_complex_float(h), try_eval_to_f64(a))
+    && is_real_numeric(a)
   {
-    return Ok(Expr::Real(owen_t_numeric(hv, av)));
+    let (re, im) = owen_t_complex(hz, av);
+    return Ok(build_complex_float_expr(re, im));
+  }
+  // T is even in h.
+  if let Some(inner) = negated_operand(h) {
+    return Ok(call("OwenT", vec![inner, a.clone()]));
   }
   unevaluated()
+}
+
+/// `x` for an expression of the form `-x` (`Times[-1, x]`).
+fn negated_operand(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() == 2
+        && matches!(args[0], Expr::Integer(-1)) =>
+    {
+      Some(args[1].clone())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Integer(-1)) => {
+      Some(right.as_ref().clone())
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(operand.as_ref().clone()),
+    _ => None,
+  }
 }
 
 /// Compute Q(a, z) = 1 - P(a, z) numerically
