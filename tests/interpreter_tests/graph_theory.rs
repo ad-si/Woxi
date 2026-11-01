@@ -9040,3 +9040,38 @@ mod degree_and_spatial_graph_distributions {
     );
   }
 }
+
+/// `Background -> colour` on `Graph` / `GraphPlot` paints the panel behind
+/// the drawing instead of being ignored.
+mod graph_background {
+  use super::*;
+
+  #[test]
+  fn graph_plot_background_fills_panel() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2, 2 -> 3}, Background -> Red], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg
+        .contains("<rect width=\"360\" height=\"315\" fill=\"rgb(255,0,0)\"/>")
+    );
+  }
+
+  #[test]
+  fn graph_background_fills_panel() {
+    let svg = interpret(
+      "ExportString[Graph[{1 -> 2}, Background -> LightBlue], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<rect width=") && svg.contains("fill=\"rgb(222,240,255)\"")
+    );
+  }
+
+  #[test]
+  fn graph_without_background_has_no_panel() {
+    let svg = interpret("ExportString[Graph[{1 -> 2}], \"SVG\"]").unwrap();
+    assert!(!svg.contains("<rect width="));
+  }
+}
