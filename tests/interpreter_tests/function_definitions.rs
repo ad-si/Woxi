@@ -1261,6 +1261,16 @@ mod compile {
       .unwrap(),
       "{{10., 20., 0.}, {5., 17., 37.}}"
     );
+    // A built-in function's name is passed on to a call the evaluator makes.
+    assert_eq!(
+      interpret(
+        "Compile[{{max, _Real}, {n, _Integer}}, Module[{r}, \
+           r = Range[-max, max, ((2 max)/(n - 1))]; Outer[Plus, -r, I r]]][1., 3]"
+      )
+      .unwrap(),
+      "{{1. - 1.*I, 1. + 0.*I, 1. + 1.*I}, {0. - 1.*I, 0. + 0.*I, 0. + 1.*I}, \
+       {-1. - 1.*I, -1. + 0.*I, -1. + 1.*I}}"
+    );
     // A compiled function inside a numerical integrand or equation runs on
     // machine numbers at each sample, a constant vector argument included.
     assert_eq!(

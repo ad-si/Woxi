@@ -26,6 +26,9 @@ pub(crate) enum V {
   Z(C),
   B(bool),
   L(Rc<Vec<V>>),
+  /// A built-in function's name, passed on to an external call
+  /// (`Outer[Plus, a, b]`).
+  Sym(Rc<str>),
   Null,
 }
 
@@ -447,6 +450,8 @@ impl Comp {
           None => {
             if let Some(v) = global_value(n) {
               N::Const(v)
+            } else if crate::evaluator::is_builtin_symbol(n) {
+              N::Const(V::Sym(Rc::from(n.as_str())))
             } else {
               if trace() {
                 eprintln!("compile_vm: free symbol {n}");
@@ -968,6 +973,7 @@ pub(crate) fn to_expr(v: &V) -> Expr {
           .into(),
       )
     }
+    V::Sym(n) => Expr::Identifier(n.to_string()),
     V::Null => Expr::Identifier("Null".to_string()),
   }
 }
