@@ -1670,7 +1670,7 @@ pub fn hypergeometric_1f1(a: f64, b: f64, z: f64) -> f64 {
 
 /// Compute 1F1(a, b; z) for complex arguments via the same series, in
 /// double-precision complex arithmetic. Inputs are `(re, im)` pairs.
-fn hypergeometric_1f1_complex(
+pub(crate) fn hypergeometric_1f1_complex(
   a: (f64, f64),
   b: (f64, f64),
   z: (f64, f64),

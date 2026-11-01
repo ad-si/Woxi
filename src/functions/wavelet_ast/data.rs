@@ -422,8 +422,15 @@ enum DataArg {
   Symbolic(Vec<Expr>),
 }
 
-fn parse_data(e: &Expr) -> Option<DataArg> {
-  if let Some(arr) = CoefArray::from_expr(e) {
+fn parse_data(e: &Expr, exact_requested: bool) -> Option<DataArg> {
+  // At the default machine working precision, exact numeric entries such
+  // as `Sqrt[2]` or `Sin[1/9]` are transformed numerically.
+  let numericized = if exact_requested || CoefArray::from_expr(e).is_some() {
+    None
+  } else {
+    CoefArray::from_expr(&eval(call1("N", e.clone())))
+  };
+  if let Some(arr) = numericized.or_else(|| CoefArray::from_expr(e)) {
     // Reject empty and ragged input.
     match &arr {
       CoefArray::D1(v) if v.is_empty() => return None,
@@ -513,8 +520,10 @@ pub fn wavelet_transform_ast(
   }
   let image_matrix = image_to_matrix(positional[0]);
   let is_image = image_matrix.is_some();
-  let Some(data) = parse_data(image_matrix.as_ref().unwrap_or(positional[0]))
-  else {
+  let Some(data) = parse_data(
+    image_matrix.as_ref().unwrap_or(positional[0]),
+    exact_requested,
+  ) else {
     crate::emit_message(&format!(
       "{fname}::invdata: The data {} is not a rectangular array of numbers of rank 1 or 2.",
       expr_to_string(positional[0])
@@ -1222,6 +1231,8 @@ fn parse_tspec(tspec: &Expr) -> Option<ThresholdFun> {
       "UniversalLevel" => Some(named("Hard", "UniversalLevel")),
       "VisuShrink" => Some(named("Soft", "Universal")),
       "VisuShrinkLevel" => Some(named("Soft", "UniversalLevel")),
+      "SURE" => Some(named("Hard", "SURE")),
+      "SUREShrink" => Some(named("Soft", "SURE")),
       "Hard" | "Soft" | "Firm" | "PiecewiseGarrote" | "SmoothGarrote"
       | "Hyperbola" => Some(named(s, "Universal")),
       _ => None,
@@ -1275,6 +1286,29 @@ fn sigma_mad(values: &[f64]) -> f64 {
   let med = median(&mut v);
   let mut dev: Vec<f64> = values.iter().map(|x| (x - med).abs()).collect();
   median(&mut dev) / 0.6744897501960817
+}
+
+/// Stein's unbiased risk estimate threshold of a coefficient vector: with
+/// `sw = Sort[w^2]` and `s = Accumulate[sw] + Range[n - 1, 0, -1] sw`, the
+/// threshold is `Sqrt[sw[[i]]]` for the first `i` minimizing
+/// `n - 2 i + s[[i]]` (the formula on the WaveletThreshold reference page).
+fn sure_threshold(values: &[f64]) -> f64 {
+  let n = values.len();
+  if n == 0 {
+    return 0.0;
+  }
+  let mut sw: Vec<f64> = values.iter().map(|x| x * x).collect();
+  sw.sort_by(f64::total_cmp);
+  let mut best = (f64::INFINITY, 0usize);
+  let mut acc = 0.0;
+  for (i, &v) in sw.iter().enumerate() {
+    acc += v;
+    let risk = n as f64 - 2.0 * (i + 1) as f64 + acc + (n - 1 - i) as f64 * v;
+    if risk < best.0 {
+      best = (risk, i);
+    }
+  }
+  sw[best.1].sqrt()
 }
 
 pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1359,6 +1393,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         match e {
           Expr::String(s) if s == "Universal" => Some(universal_delta),
           Expr::Identifier(s) if s == "Automatic" => Some(universal_delta),
+          Expr::String(s) if s == "SURE" => Some(sure_threshold(&finest)),
           Expr::String(s) if s == "UniversalLevel" => {
             Some(sigma_mad(values) * (2.0 * (n_data as f64).ln()).sqrt())
           }
@@ -1433,8 +1468,12 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       "SmoothGarrote" => {
+        // x^(2n+1) / (x^(2n) + delta^(2n)), written via x^2 so that
+        // non-integer n keeps the sign of x.
         let n = tfun.extra.first().copied().unwrap_or(1.0);
-        x.powf(2.0 * n + 1.0) / (x.powf(2.0 * n) + delta.powf(2.0 * n))
+        let x2n = (x * x).powf(n);
+        let denom = x2n + delta.powf(2.0 * n);
+        if denom == 0.0 { 0.0 } else { x * x2n / denom }
       }
       "Hyperbola" => {
         if x.abs() <= delta {
