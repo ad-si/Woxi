@@ -10284,6 +10284,25 @@ mod find_threshold {
   }
 }
 
+mod color_profile_data {
+  use super::*;
+
+  // A ColorProfileData color space names its data space.
+  #[test]
+  fn image_with_color_profile_color_space() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+         {ImageQ[i], ImageColorSpace[i]}"
+      )
+      .unwrap(),
+      "{True, RGB}"
+    );
+  }
+}
+
 mod color_convert_many_channels {
   use super::*;
 

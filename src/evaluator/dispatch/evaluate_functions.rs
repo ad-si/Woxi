@@ -12713,6 +12713,9 @@ fn evaluate_function_call_ast_inner(
         | "RootSum"
         | "RootApproximant"
         | "Image3D"
+        // ColorProfileData[icc, space, pcs] is an inert ICC profile, the
+        // value of an image's ColorSpace option.
+        | "ColorProfileData"
         | "CenteredInterval"
         | "BernoulliGraphDistribution"
         // TemplateObject/TemplateSlot/TemplateExpression are symbolic template

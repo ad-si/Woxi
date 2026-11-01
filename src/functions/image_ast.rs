@@ -374,18 +374,7 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The number of planes is the channel count the color space must
     // accept (an interleaved array mistaken as planar has hundreds).
     if let Expr::List(planes) = planes
-      && let Some(space) = args[opt_start..].iter().find_map(|opt| match opt {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
-          match replacement.as_ref() {
-            Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
-            _ => None,
-          }
-        }
-        _ => None,
-      })
+      && let Some(space) = color_space_option(&args[opt_start..])
       && let Some(base) = color_space_components(&space)
       && planes.len() != base as usize
       && planes.len() != base as usize + 1
@@ -594,30 +583,9 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wolframscript rejects the pair outright rather than reinterpreting the
   // data, so `Image[{{0, 128, 255}, {255, 128, 0}}, ColorSpace -> "RGB"]`
   // (a one-channel 3x2 image) is an error, not a 1x2 RGB image.
-  let explicit_space = args[opt_start..].iter().find_map(|opt| match opt {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
-      match replacement.as_ref() {
-        Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
-        _ => None,
-      }
-    }
-    _ => None,
-  });
-  if let Some(space) = args[opt_start..].iter().find_map(|opt| match opt {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
-      match replacement.as_ref() {
-        Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
-        _ => None,
-      }
-    }
-    _ => None,
-  }) && let Some(base) = color_space_components(&space)
+  let explicit_space = color_space_option(&args[opt_start..]);
+  if let Some(space) = explicit_space.clone()
+    && let Some(base) = color_space_components(&space)
     && channels != base
     && channels != base + 1
   {
@@ -651,6 +619,32 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     channels,
     data: Arc::new(data),
     image_type: requested_type.unwrap_or(ImageType::Real32),
+  })
+}
+
+/// The color space named by a `ColorSpace -> …` option among `opts`: a
+/// name, or the data space of a `ColorProfileData[icc, space, pcs]`
+/// profile.
+fn color_space_option(opts: &[Expr]) -> Option<String> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "ColorSpace") => {
+      match replacement.as_ref() {
+        Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+        Expr::FunctionCall { name, args }
+          if name == "ColorProfileData" && args.len() >= 2 =>
+        {
+          match &args[1] {
+            Expr::String(s) => Some(s.clone()),
+            _ => None,
+          }
+        }
+        _ => None,
+      }
+    }
+    _ => None,
   })
 }
 
