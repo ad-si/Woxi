@@ -1992,6 +1992,22 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
+  // Extended parametrizations (generalized gamma, scaled inverse chi-square,
+  // …) sampled through their defining transformations.
+  if let Expr::FunctionCall { name, args: dargs } = dist
+    && let Some(draw) =
+      crate::functions::math_ast::extended_distributions::extended_sampler(
+        name, dargs,
+      )
+  {
+    return Ok(match n {
+      None => Expr::Real(draw()),
+      Some(count) => {
+        Expr::List((0..count).map(|_| Expr::Real(draw())).collect())
+      }
+    });
+  }
+
   // Random-matrix ensembles and properties derived from them.
   if let Expr::FunctionCall { name, args: dargs } = dist
     && let Some(draw) = matrix_ensemble_sampler(name, dargs)
@@ -2805,19 +2821,14 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
-    // CategoricalDistribution[{c1, …}, {p1, …}] draws category ci with
-    // weight pi (uniformly when no weights are given).
-    Expr::FunctionCall { name, args: dargs }
-      if name == "CategoricalDistribution"
-        && matches!(dargs.len(), 1 | 2)
-        && matches!(&dargs[0], Expr::List(_)) =>
-    {
-      let spec = match dargs.get(1) {
-        Some(w) => Expr::Rule {
-          pattern: Box::new(w.clone()),
-          replacement: Box::new(dargs[0].clone()),
-        },
-        None => dargs[0].clone(),
+    // CategoricalDistribution[<|"Probabilities" -> …, "Index" -> …|>] draws
+    // a domain element with its probability; symbolic probabilities stay
+    // unevaluated.
+    Expr::FunctionCall { name, .. } if name == "CategoricalDistribution" => {
+      let Some(spec) =
+        crate::functions::math_ast::categorical::categorical_choice_spec(dist)
+      else {
+        return Ok(unevaluated("RandomVariate", args));
       };
       let mut choice_args = vec![spec];
       if let Some(count) = n {

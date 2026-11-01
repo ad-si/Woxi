@@ -7050,6 +7050,64 @@ Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
 other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
 `StringReverse`, …) are not handled either.
 
+## Parameter sweep 5 (long tail): known divergences and unverified forms
+
+The four-parameter `GompertzMakehamDistribution` CDF has the right value, but
+its exponent prints with the terms in a different order (Woxi's `Plus`
+ordering puts `-(t θ λ ξ)` before `(1 - E^(t λ)) ξ`):
+
+```sh
+wolframscript -code 'CDF[GompertzMakehamDistribution[λ, ξ, θ, α], t]'
+# Piecewise[{{1 - E^((1 - E^(t*λ))*ξ - t*θ*λ*ξ - t^2*α*λ^2*ξ), t >= 0}}, 0]
+woxi eval 'CDF[GompertzMakehamDistribution[λ, ξ, θ, α], t]'
+# Piecewise[{{1 - E^(-(t*θ*λ*ξ) - t^2*α*λ^2*ξ + (1 - E^(t*λ))*ξ), t >= 0}}, 0]
+```
+
+`RegionCentroid` of a multi-segment `Line` gives the right value, but
+wolframscript reduces the y coordinate to `1/2` while Woxi leaves the quotient
+(how Wolfram simplifies here is unclear, since it keeps the x quotient):
+
+```sh
+wolframscript -code 'RegionCentroid[Line[{{0, 0}, {1, 1}, {1, 0}}]]'
+# {(1 + 1/Sqrt[2])/(1 + Sqrt[2]), 1/2}
+woxi eval 'RegionCentroid[Line[{{0, 0}, {1, 1}, {1, 0}}]]'
+# {(1 + 1/Sqrt[2])/(1 + Sqrt[2]), (1/2 + 1/Sqrt[2])/(1 + Sqrt[2])}
+```
+
+`FindPeaks` sometimes reports a peak on the first element at position `1/2`
+rather than `1`, for reasons the reference pages do not show
+(`FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 2, 3, 4, 3, 2}, 0, 0]` starts
+with `{1/2, 2}` but the 16-element `FindPeaks[…, 0]` with a final `…, 2, 2, 1}`
+starts with `{1, 2}`). Woxi always reports `{1, 2}`.
+
+Not implemented, because the exact output could not be confirmed or the
+machinery is missing:
+
+- `PeakDetect`/`FindPeaks` at the default or a non-zero scale with three or
+  four arguments, with `Quantity` data or thresholds, with
+  `Padding -> "Fixed"` and other non-constant paddings, and `FindPeaks` with
+  `InterpolationOrder`: they need the scale-space tracking pass. Also the
+  default-scale `PeakDetect[{2, 1, 6, 5, 7, 4}]` is `{0, 0, 0, 0, 1, 0}` in
+  wolframscript but `{1, 0, 1, 0, 1, 0}` in Woxi.
+- `CategoricalDistribution` `"ProbabilityTable"` (needs `Dataset`),
+  `"ProbabilityPlot"` and `"NEntropy"`, `Probability`/`Expectation` over a
+  categorical distribution, `MarginalDistribution` of a uniform categorical
+  distribution, and the class order of an unsorted list of rules (rules are
+  sorted per variable, as the Titanic counts example shows).
+- `CDF[InverseGaussianDistribution[μ, λ, θ], x]` and the moments of the
+  four-parameter `GompertzMakehamDistribution` (no closed forms; both stay
+  unevaluated). `N[Mean[GompertzMakehamDistribution[E, 1, 3, 2]]]` is
+  `0.0748474` in wolframscript.
+- `LUDecomposition` of a rectangular machine-precision matrix (the condition
+  number is not documented for that case).
+- `FindDivisions[{0, 10, {Pi, Pi/4}}, {5, 5}]` (nested divisions with symbolic
+  units) and bases other than 10 with nested counts. For a base `k` other
+  than 10 the step is the power of `k` closest to the raw step, which matches
+  the documented bases 2 and 3 only.
+- `MinimalPolynomial` over a `FiniteField` (`FiniteField` is not implemented).
+- `ImplicitRegion` forms such as `ImplicitRegion[x^3 - x == 0, {x}]` stay
+  unevaluated region objects, as in Wolfram; their measures and centroids are
+  not computed.
 ## Parameter sweep 5 (charts & 3-D list plots): open items
 
 Verified against the reference pages, but not (fully) implemented:

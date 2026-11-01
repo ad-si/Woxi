@@ -122,6 +122,22 @@ pub fn dispatch_evaluation_control(
     "Evaluate" => {
       return Some(Ok(unevaluated("Sequence", args)));
     }
+    "CategoricalDistribution" => {
+      return match crate::functions::math_ast::categorical::categorical_distribution(args) {
+        Ok(Some(canonical)) => Some(Ok(canonical)),
+        Ok(None) => Some(Ok(unevaluated("CategoricalDistribution", args))),
+        Err(e) => Some(Err(e)),
+      };
+    }
+    "MarginalDistribution" if args.len() == 2 => {
+      if let Some(r) =
+        crate::functions::math_ast::categorical::categorical_marginal(
+          &args[0], &args[1],
+        )
+      {
+        return Some(r);
+      }
+    }
     "RegularExpression" if args.len() == 1 => {
       return Some(Ok(unevaluated("RegularExpression", args)));
     }
