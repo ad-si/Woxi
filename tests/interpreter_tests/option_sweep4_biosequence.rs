@@ -400,3 +400,200 @@ mod rna_degenerate_letters {
     );
   }
 }
+
+mod circular_take_drop {
+  use super::*;
+
+  #[test]
+  fn works_on_biosequence() {
+    assert_eq!(
+      interpret("StringTake[BioSequence[\"CircularDNA\", \"CGGTTA\"], {5, 2}]")
+        .unwrap(),
+      "BioSequence[CircularDNA, TACG]"
+    );
+    assert_eq!(
+      interpret("StringDrop[BioSequence[\"CircularDNA\", \"ACGT\"], {4, 1}]")
+        .unwrap(),
+      "BioSequence[CircularDNA, CG]"
+    );
+    assert_eq!(
+      interpret(
+        "StringTakeDrop[BioSequence[\"CircularDNA\", \"CGGTTA\"], {5, 2}]"
+      )
+      .unwrap(),
+      "{BioSequence[CircularDNA, TACG], BioSequence[CircularDNA, GT]}"
+    );
+    assert_eq!(
+      interpret("StringReplacePart[BioSequence[\"CircularDNA\", \"ACGT\"], \"NNNN\", {4, 1}]").unwrap(),
+      "BioSequence[CircularDNA, CGNNNN]"
+    );
+  }
+}
+
+mod circular_matching {
+  use super::*;
+
+  #[test]
+  fn works_on_biosequence() {
+    assert_eq!(
+      interpret(
+        "StringPosition[BioSequence[\"CircularDNA\", \"ATGGCGG\"], \"GGN\"]"
+      )
+      .unwrap(),
+      "{{3, 5}, {6, 1}}"
+    );
+    assert_eq!(
+      interpret("StringPosition[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\"]").unwrap(),
+      "{{3, 8}, {8, 13}, {12, 17}, {16, 21}, {20, 4}}"
+    );
+    assert_eq!(
+      interpret("StringPosition[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\", Overlaps -> False]").unwrap(),
+      "{{3, 8}, {12, 17}}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCount[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
+      )
+      .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("StringCount[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], Verbatim[\"GGY\"]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("StringCount[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\"]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("StringCount[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\", Overlaps -> True]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "StringCases[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
+      )
+      .unwrap(),
+      "{BioSequence[CircularDNA, GGC], BioSequence[CircularDNA, GGT], BioSequence[CircularDNA, GGY], BioSequence[CircularDNA, GGC]}"
+    );
+    assert_eq!(
+      interpret("StringCases[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], Verbatim[\"GGY\"]]").unwrap(),
+      "{BioSequence[CircularDNA, GGY]}"
+    );
+    assert_eq!(
+      interpret("StringCases[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\", Overlaps -> True]").unwrap(),
+      "{BioSequence[CircularDNA, TTGGTT, {}], BioSequence[CircularDNA, TTGCTT, {}], BioSequence[CircularDNA, TTCATT, {}], BioSequence[CircularDNA, TTCGTT, {}], BioSequence[CircularDNA, TTGATT, {}]}"
+    );
+    assert_eq!(
+      interpret(
+        "StringFreeQ[BioSequence[\"CircularDNA\", \"CAGGC\"], \"CCA\"]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringFreeQ[BioSequence[\"CircularDNA\", \"CAGGC\"], \"CCT\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringFreeQ[BioSequence[\"CircularDNA\", \"CAGGC\"], \"CCN\"]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[BioSequence[\"CircularDNA\", \"ATGGC\"], \"CA\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[BioSequence[\"CircularDNA\", \"ATGGC\"], \"CT\"]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "StringContainsQ[BioSequence[\"CircularDNA\", \"ATGGC\"], \"CN\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringMatchQ[BioSequence[\"CircularDNA\", \"ACGCT\"], \"TA\" ~~ (\"S\"..)]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("StringMatchQ[BioSequence[\"CircularDNA\", \"ACGCT\"], \"AT\" ~~ (\"S\"..)]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("StringDelete[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], Verbatim[\"GGY\"]]").unwrap(),
+      "BioSequence[CircularDNA, CTGGCGGTGG]"
+    );
+  }
+}
+
+mod degenerate_letters_in_sequence {
+  use super::*;
+
+  #[test]
+  fn works_on_biosequence() {
+    assert_eq!(
+      interpret(
+        "StringCases[BioSequence[\"DNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
+      )
+      .unwrap(),
+      "{BioSequence[DNA, GGC], BioSequence[DNA, GGT], BioSequence[DNA, GGY]}"
+    );
+    assert_eq!(
+      interpret(
+        "StringCount[BioSequence[\"DNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "StringDelete[BioSequence[\"DNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
+      )
+      .unwrap(),
+      "BioSequence[DNA, CTGG]"
+    );
+    assert_eq!(
+      interpret(
+        "StringMatchQ[BioSequence[\"DNA\", \"ATG\"], \"AT\" ~~ (\"C\" | \"G\")]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod default_padding_and_parts {
+  use super::*;
+
+  #[test]
+  fn works_on_biosequence() {
+    assert_eq!(
+      interpret("StringPadLeft[BioSequence[\"DNA\", \"CGGAGT\"], 9]").unwrap(),
+      "BioSequence[DNA, NNNCGGAGT]"
+    );
+    assert_eq!(
+      interpret("StringPadRight[BioSequence[\"DNA\", \"CGGAGT\"], 9]").unwrap(),
+      "BioSequence[DNA, CGGAGTNNN]"
+    );
+    assert_eq!(
+      interpret("StringPart[BioSequence[\"DNA\", \"CGGTGC\"], 4 ;; 5]")
+        .unwrap(),
+      "{BioSequence[DNA, T], BioSequence[DNA, G]}"
+    );
+  }
+}

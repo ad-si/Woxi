@@ -6774,3 +6774,22 @@ images), so they are not implemented yet:
   supported.
 - `Attributes[TemplateIf]` still reports `{Protected}` although Woxi holds its
   arguments (wolframscript's attribute list is unverified).
+
+## String functions on a circular `BioSequence` across the wrap point
+
+String functions accept linear `"DNA"`/`"RNA"` and circular
+`"CircularDNA"`/`"CircularRNA"` sequences, but `StringReplace` and
+`StringDelete` stay unevaluated on a circular sequence when a match wraps
+around from the last letter to the first, because the rotation Wolfram picks
+for the result is not recoverable from the documented examples:
+
+```sh
+wolframscript -code 'StringReplace[BioSequence["CircularDNA", "GTTGGCTTG"], "GGN" -> "A"]'
+# BioSequence["CircularDNA", "TATAT"]
+wolframscript -code 'StringDelete[BioSequence["CircularDNA", "CTGGCGGTGGYGG"], "GGY"]'
+# BioSequence["CircularDNA", "T"]
+```
+
+Peptide sequences (and their degenerate letters `B`, `Z`, `J`, `X`) and the
+other string functions on circular sequences (`StringStartsQ`, `StringSplit`,
+`StringReverse`, …) are not handled either.
