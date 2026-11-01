@@ -1232,7 +1232,7 @@ fn build_hankel(
 }
 
 /// SphericalBesselY[n, z] — spherical Bessel function of the second kind.
-/// For non-negative integer `n` and positive real `z`, evaluate via the
+/// For non-negative integer `n` and nonzero real `z`, evaluate via the
 /// closed-form base cases and the standard upward three-term recurrence
 ///   y_{n+1}(x) = (2n+1)/x · y_n(x) - y_{n-1}(x)
 /// with y_0(x) = -cos(x)/x, y_1(x) = -sin(x)/x - cos(x)/x^2.
@@ -1254,7 +1254,7 @@ pub fn spherical_bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(n) = expr_to_i128(n_expr)
     && n >= 0
     && let Some(z) = z_f64
-    && z > 0.0
+    && z != 0.0
   {
     let s = z.sin();
     let c = z.cos();

@@ -110,7 +110,7 @@ pub fn resultant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(1));
     }
     let det = sylvester_det_integer(&ic1, m, &ic2, n);
-    return Ok(Expr::Integer(det));
+    return Ok(crate::functions::math_ast::bigint_to_expr(det));
   }
 
   // Symbolic path: build Sylvester matrix and compute determinant
@@ -235,13 +235,16 @@ pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let (mr, nr) = (int_poly_deg(&c1), int_poly_deg(&c2));
     let entries: Vec<i128> = if mr >= nr {
-      psc_int(&c1, &c2).iter().map(|v| v.rem_euclid(p)).collect()
+      psc_int(&c1, &c2)
+        .iter()
+        .map(|v| bigint_rem_euclid(v, p))
+        .collect()
     } else {
       psc_int(&c2, &c1)
         .iter()
         .enumerate()
         .map(|(j, v)| {
-          let w = v.rem_euclid(p);
+          let w = bigint_rem_euclid(v, p);
           if (mr - j) % 2 == 1 && (nr - j) % 2 == 1 {
             -w
           } else {
@@ -338,11 +341,13 @@ pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     fill_rows(&mut matrix, &coeff2, m - j);
 
     if integer_path {
-      let mut int_matrix: Vec<Vec<i128>> = matrix
+      let int_matrix: Vec<Vec<i128>> = matrix
         .iter()
         .map(|row| row.iter().map(|e| expr_to_i128(e).unwrap()).collect())
         .collect();
-      result.push(Expr::Integer(bareiss_determinant(&mut int_matrix)));
+      result.push(crate::functions::math_ast::bigint_to_expr(
+        bareiss_determinant(&int_matrix),
+      ));
     } else {
       let det = symbolic_determinant(&matrix);
       result.push(crate::evaluator::evaluate_expr_to_expr(&det)?);
@@ -354,7 +359,7 @@ pub fn subresultants_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Principal subresultant coefficients over the integers for trimmed
 /// ascending coefficient vectors — the same matrices as the Expr-based loop
 /// in `subresultants_ast`, specialized to i128.
-fn psc_int(c1: &[i128], c2: &[i128]) -> Vec<i128> {
+fn psc_int(c1: &[i128], c2: &[i128]) -> Vec<BigInt> {
   let m = int_poly_deg(c1);
   let n = int_poly_deg(c2);
   let d = m.min(n);
@@ -362,7 +367,7 @@ fn psc_int(c1: &[i128], c2: &[i128]) -> Vec<i128> {
   for j in 0..=d {
     let size = m + n - 2 * j;
     if size == 0 {
-      result.push(1);
+      result.push(BigInt::from(1));
       continue;
     }
     let top_degree = m + n - j - 1;
@@ -380,7 +385,7 @@ fn psc_int(c1: &[i128], c2: &[i128]) -> Vec<i128> {
         matrix.push(row);
       }
     }
-    result.push(bareiss_determinant(&mut matrix));
+    result.push(bareiss_determinant(&matrix));
   }
   result
 }
@@ -521,15 +526,15 @@ pub fn subresultant_polynomials_ast(
         }
       }
       let det = if integer_path {
-        let mut int_matrix: Vec<Vec<i128>> = matrix
+        let int_matrix: Vec<Vec<i128>> = matrix
           .iter()
           .map(|row| row.iter().map(|e| expr_to_i128(e).unwrap()).collect())
           .collect();
-        let mut d = bareiss_determinant(&mut int_matrix);
-        if let Some(p) = modulus {
-          d = d.rem_euclid(p);
+        let d = bareiss_determinant(&int_matrix);
+        match modulus {
+          Some(p) => Expr::Integer(bigint_rem_euclid(&d, p)),
+          None => crate::functions::math_ast::bigint_to_expr(d),
         }
-        Expr::Integer(d)
       } else {
         symbolic_determinant(&matrix)
       };
@@ -975,10 +980,10 @@ fn sylvester_det_integer(
   deg1: usize,
   coeffs2: &[i128],
   deg2: usize,
-) -> i128 {
+) -> BigInt {
   let size = deg1 + deg2;
   if size == 0 {
-    return 1;
+    return BigInt::from(1);
   }
 
   // Build Sylvester matrix
@@ -1001,53 +1006,58 @@ fn sylvester_det_integer(
   }
 
   // Bareiss algorithm (fraction-free Gaussian elimination)
-  bareiss_determinant(&mut matrix)
+  bareiss_determinant(&matrix)
 }
 
-/// Bareiss algorithm for exact integer determinant computation
-fn bareiss_determinant(matrix: &mut [Vec<i128>]) -> i128 {
+/// Bareiss algorithm for exact integer determinant computation. The
+/// entries are i128 but the elimination runs on BigInt: the intermediate
+/// minors of a Sylvester matrix outgrow i128 already for moderate degrees.
+fn bareiss_determinant(matrix: &[Vec<i128>]) -> BigInt {
+  use num_traits::Zero;
   let n = matrix.len();
   if n == 0 {
-    return 1;
+    return BigInt::from(1);
   }
-  if n == 1 {
-    return matrix[0][0];
-  }
+  let mut m: Vec<Vec<BigInt>> = matrix
+    .iter()
+    .map(|row| row.iter().map(|&v| BigInt::from(v)).collect())
+    .collect();
 
-  let mut sign = 1i128;
-  let mut prev_pivot = 1i128;
+  let mut negate = false;
+  let mut prev_pivot = BigInt::from(1);
 
   for k in 0..n {
     // Find pivot
-    let mut pivot_row = None;
-    for i in k..n {
-      if matrix[i][k] != 0 {
-        pivot_row = Some(i);
-        break;
-      }
-    }
-    let Some(pivot_row) = pivot_row else { return 0 };
+    let Some(pivot_row) = (k..n).find(|&i| !m[i][k].is_zero()) else {
+      return BigInt::zero();
+    };
 
     if pivot_row != k {
-      matrix.swap(k, pivot_row);
-      sign = -sign;
+      m.swap(k, pivot_row);
+      negate = !negate;
     }
 
-    let pivot = matrix[k][k];
+    let pivot = m[k][k].clone();
 
-    if k + 1 < n {
-      for i in (k + 1)..n {
-        for j in (k + 1)..n {
-          matrix[i][j] =
-            (matrix[i][j] * pivot - matrix[i][k] * matrix[k][j]) / prev_pivot;
-        }
+    for i in (k + 1)..n {
+      for j in (k + 1)..n {
+        let v = (&m[i][j] * &pivot - &m[i][k] * &m[k][j]) / &prev_pivot;
+        m[i][j] = v;
       }
     }
 
     prev_pivot = pivot;
   }
 
-  sign * matrix[n - 1][n - 1]
+  let det = m[n - 1][n - 1].clone();
+  if negate { -det } else { det }
+}
+
+/// `v mod p` in `[0, p)` for a positive modulus.
+fn bigint_rem_euclid(v: &BigInt, p: i128) -> i128 {
+  use num_traits::ToPrimitive;
+  let p = BigInt::from(p);
+  (((v % &p) + &p) % &p).to_i128().unwrap()
 }
 
 /// Compute symbolic determinant using cofactor expansion
