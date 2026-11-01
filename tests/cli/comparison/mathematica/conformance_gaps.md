@@ -2831,6 +2831,27 @@ Symbolic *means* are recognized; only the width has to be a number.
 The reference page gives `True` (one-argument `Clip` is odd); Woxi's
 `FullSimplify` leaves the equation unevaluated.
 
+### Which root `Solve` picks for an `InterpolatingFunction` equation
+
+`Solve`/`NSolve[f[t] == y, t]` with `f` an `InterpolatingFunction` invert it
+(`::ifun`) and return a single root. Woxi returns the first root in the
+domain; WL's choice is not the first, not FindRoot from the domain midpoint
+or an endpoint, and not the closest data point (**not reproducible** so far):
+
+```sh
+# b = Interpolation[{{0, -1.}, {0.1, 0.}, {0.2, 1.}, {0.4, 1.2}, {0.6, 1.1},
+#                    {0.8, 1.}, {0.95, 0.}, {1, -0.5}}]
+# Quiet[Solve[b[t] == 0, t]]    WL {{t -> 0.95}}              Woxi {{t -> 0.1}}
+# Quiet[Solve[b[t] == 0.5, t]]  WL {{t -> 0.888802079832663}} Woxi {{t -> 0.147…}}
+# (with the same shape but {0.2, 0.}, {0.9, 0.} as the zeros, both give 0.2)
+```
+
+WL also extrapolates a monotone function past its domain
+(`Solve[Interpolation[{{0, 1.}, {1, 2.}, {2, 3.}}][t] == 0, t]` is
+`{{t -> -1.}}`; Woxi gives `{}`). In TrajectoryOfATennisServe.nb this, plus
+WL's NDSolve storing `1.87*^-18` rather than the exact initial value `0` at
+`t == 0`, makes WL find the bounce at `t == 0.354` where Woxi finds `t == 0`.
+
 ## Special functions
 
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
