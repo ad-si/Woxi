@@ -10031,7 +10031,10 @@ pub fn apply_string_template_with(
             }
             pieces.push(apply_and_evaluate(f, v.clone())?);
           }
-          None => result.push_str(&expr_to_output(v)),
+          None => result.push_str(&match v {
+            Expr::Real(_) => template_insertion_text(v),
+            other => expr_to_output(other),
+          }),
         }
       }
       // Unfilled slots contribute nothing.
@@ -15581,6 +15584,16 @@ fn template_object_apply(
   Ok(Expr::String(result))
 }
 
+/// The text a string template inserts for a slot value. A machine real shows
+/// its six-digit text form (`0.123457`), as `TextString`/`ToString` give it;
+/// other values keep their `InputForm`-like spelling.
+fn template_insertion_text(v: &Expr) -> String {
+  match v {
+    Expr::Real(f) => text_string_real(*f),
+    other => expr_to_string(other),
+  }
+}
+
 /// TemplateApply[template, args] - Apply arguments to a string template.
 /// Replaces `n` with the nth argument (1-indexed) from a list,
 /// or `key` with the value from an association.
@@ -15596,6 +15609,42 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut unwrapped = vec![inner[0].clone()];
     unwrapped.extend(args[1..].iter().cloned());
     return template_apply_ast(&unwrapped);
+  }
+  // `StringTemplate[s, <|defaults|>]`: the defaults fill the named slots the
+  // applied association leaves out. Delayed defaults (`"a" :> RandomReal[]`)
+  // are evaluated afresh on every application.
+  if let Expr::FunctionCall { name, args: inner } = &args[0]
+    && name == "StringTemplate"
+    && inner.len() == 2
+    && let Expr::Association(defaults) = &inner[1]
+    && matches!(args.get(1), None | Some(Expr::Association(_)))
+  {
+    let mut merged: Vec<(Expr, Expr)> = Vec::new();
+    for (k, v) in defaults {
+      let value = match v {
+        Expr::RuleDelayed { replacement, .. } => {
+          crate::evaluator::evaluate_expr_to_expr(replacement)?
+        }
+        other => other.clone(),
+      };
+      merged.push((k.clone(), value));
+    }
+    if let Some(Expr::Association(given)) = args.get(1) {
+      for (k, v) in given {
+        let v = match v {
+          Expr::RuleDelayed { replacement, .. } => {
+            crate::evaluator::evaluate_expr_to_expr(replacement)?
+          }
+          other => other.clone(),
+        };
+        let key = expr_to_string(k);
+        match merged.iter_mut().find(|(mk, _)| expr_to_string(mk) == key) {
+          Some(slot) => slot.1 = v,
+          None => merged.push((k.clone(), v)),
+        }
+      }
+    }
+    return template_apply_ast(&[inner[0].clone(), Expr::Association(merged)]);
   }
   // TemplateApply[template] evaluates the template's expression slots with no
   // parameters to fill.
@@ -15650,7 +15699,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (i, item) in items.iter().enumerate() {
         let value_str = match item {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert((i + 1).to_string(), value_str);
       }
@@ -15665,7 +15714,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let value = match v {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert(key, value);
       }
@@ -15702,7 +15751,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let value = match val_expr {
           Expr::String(s) => s.clone(),
-          other => expr_to_string(other),
+          other => template_insertion_text(other),
         };
         map.insert(key, value);
       }

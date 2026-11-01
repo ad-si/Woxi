@@ -256,13 +256,22 @@ fn adjoint_matrix(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
 pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("Orthogonalize", args));
   // The standard inner product, with an optional `Method -> …`.
-  let (vectors, opts) = match args {
-    [v] => (v, &[][..]),
-    [v, rest @ ..] if rest.iter().all(|o| matches!(o, Expr::Rule { .. })) => {
-      (v, rest)
-    }
+  // `Orthogonalize[vs, f, …]` takes the inner product `f`.
+  let is_rule = |o: &Expr| matches!(o, Expr::Rule { .. });
+  let (vectors, inner, opts) = match args {
+    [v] => (v, None, &[][..]),
+    [v, rest @ ..] if rest.iter().all(is_rule) => (v, None, rest),
+    [v, f, rest @ ..] if rest.iter().all(is_rule) => (v, Some(f), rest),
     _ => return unevaluated(),
   };
+  // `Dot` is the plain (non-conjugating) product of the exact path below;
+  // any other function runs the general Gram–Schmidt.
+  let plain_dot = matches!(inner, Some(Expr::Identifier(f)) if f == "Dot");
+  if let Some(f) = inner
+    && !plain_dot
+  {
+    return orthogonalize_with_inner_product(vectors, f, args);
+  }
   let mut method = "GramSchmidt".to_string();
   let mut method_given = false;
   for o in opts {
@@ -348,9 +357,10 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Orthogonalize[{{1, I}, {1, -I}}] collapse to zero vectors (the
   // "norm" of (1, I) came out 0). Real/symbolic input keeps the plain
   // product.
-  let complex = matrix
-    .iter()
-    .any(|row| row.iter().any(contains_imaginary_unit));
+  let complex = !plain_dot
+    && matrix
+      .iter()
+      .any(|row| row.iter().any(contains_imaginary_unit));
   let conj = |e: &Expr| -> Expr {
     if !complex {
       return e.clone();
@@ -412,6 +422,68 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(matrix_to_expr(result))
+}
+
+/// Orthogonalize[{v1, v2, …}, f]: Gram–Schmidt with the inner product
+/// `f[u, v]`, for vectors of any kind (lists, polynomials, …):
+/// `w_k = v_k - Σ_j f[e_j, v_k] e_j` and `e_k = w_k / Sqrt[f[w_k, w_k]]`.
+/// A vector whose remainder has zero norm becomes 0.
+fn orthogonalize_with_inner_product(
+  vectors: &Expr,
+  f: &Expr,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let Expr::List(vs) = vectors else {
+    return Ok(unevaluated("Orthogonalize", args));
+  };
+  let ip = |u: &Expr, v: &Expr| -> Result<Expr, InterpreterError> {
+    let call_expr = match f {
+      Expr::Identifier(name) => call(name, vec![u.clone(), v.clone()]),
+      other => Expr::CurriedCall {
+        func: Box::new(other.clone()),
+        args: vec![u.clone(), v.clone()],
+      },
+    };
+    evaluate_expr_to_expr(&call_expr)
+  };
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0))
+      || matches!(e, Expr::List(items) if items.iter().all(|i| matches!(i, Expr::Integer(0))))
+  };
+  let zero_like = |v: &Expr| -> Expr {
+    match v {
+      Expr::List(items) => {
+        Expr::List(vec![Expr::Integer(0); items.len()].into())
+      }
+      _ => Expr::Integer(0),
+    }
+  };
+  let mut result: Vec<Expr> = Vec::with_capacity(vs.len());
+  for v in vs {
+    let mut w = v.clone();
+    for e in &result {
+      if is_zero(e) {
+        continue;
+      }
+      let c = ip(e, v)?;
+      if matches!(c, Expr::Integer(0)) {
+        continue;
+      }
+      w = evaluate_expr_to_expr(&call(
+        "Subtract",
+        vec![w, call("Times", vec![c, e.clone()])],
+      ))?;
+    }
+    let normsq = ip(&w, &w)?;
+    if matches!(normsq, Expr::Integer(0)) {
+      result.push(zero_like(v));
+      continue;
+    }
+    let inv_norm =
+      pow(normsq, crate::functions::math_ast::make_rational(-1, 2));
+    result.push(evaluate_expr_to_expr(&call("Times", vec![inv_norm, w]))?);
+  }
+  Ok(Expr::List(result.into()))
 }
 
 /// Orthonormalize machine vectors by `method`: classical Gram–Schmidt
@@ -8771,26 +8843,24 @@ pub fn minors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         submatrix.push(row);
       }
-      // Apply function (default is Det)
-      if args.len() == 3 {
-        // Minors[m, k, f] - apply f to the submatrix
-        let sub_expr = Expr::List(
-          submatrix
-            .into_iter()
-            .map(|v| Expr::List(v.into()))
-            .collect(),
-        );
-        let f_call = call1(
-          match &args[2] {
-            Expr::Identifier(name) => name.as_str(),
-            _ => "Det",
-          },
-          sub_expr,
-        );
-        result_row.push(crate::evaluator::evaluate_expr_to_expr(&f_call)?);
-      } else {
-        result_row.push(determinant(&submatrix));
-      }
+      // Apply `f` (default Det) to the submatrix. Det goes through the
+      // evaluator so each minor has exactly the form `Det` gives it
+      // (`Minors[m, n] == {{Det[m]}}` for an n×n matrix).
+      let sub_expr = Expr::List(
+        submatrix
+          .into_iter()
+          .map(|v| Expr::List(v.into()))
+          .collect(),
+      );
+      let f_call = match args.get(2) {
+        None => call1("Det", sub_expr),
+        Some(Expr::Identifier(name)) => call1(name, sub_expr),
+        Some(f) => Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![sub_expr],
+        },
+      };
+      result_row.push(crate::evaluator::evaluate_expr_to_expr(&f_call)?);
     }
     result_rows.push(Expr::List(result_row.into()));
   }

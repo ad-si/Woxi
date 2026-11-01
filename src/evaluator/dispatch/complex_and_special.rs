@@ -1897,20 +1897,22 @@ pub fn dispatch_complex_and_special(
       if args.is_empty() || args.len() > 2 {
         return Some(Ok(unevaluated("Inactivate", all_args)));
       }
-      let filter: Option<String> = if args.len() == 2 {
+      // The second argument is a pattern the head symbols are matched
+      // against (`g`, `g | h`, `Except[Integrate]`, …).
+      let filter: Option<&Expr> = if args.len() == 2 {
         match &args[1] {
-          Expr::Identifier(h) => Some(h.clone()),
           // A list of heads is rejected by Wolfram (Inactivate::sympatt);
           // keep the call unevaluated to mirror that non-result.
-          _ => {
+          Expr::List(_) => {
             return Some(Ok(unevaluated("Inactivate", args)));
           }
+          patt => Some(patt),
         }
       } else {
         None
       };
       INACTIVATE_HEADS.with(|h| h.set(heads));
-      let result = inactivate_expr(&args[0], filter.as_deref());
+      let result = inactivate_expr(&args[0], filter);
       INACTIVATE_HEADS.with(|h| h.set(true));
       return Some(Ok(result));
     }
@@ -6473,8 +6475,8 @@ fn flatten_binop(expr: &Expr, op: BinaryOperator) -> Vec<Expr> {
 
 /// Negate a Plus operand: numeric literals flip sign in place (`1` → `-1`),
 /// everything else becomes `Times[-1, inactivate(e)]`.
-fn negate_plus_term(e: &Expr, filter: Option<&str>) -> Expr {
-  let wants_times = filter.is_none_or(|f| f == "Times");
+fn negate_plus_term(e: &Expr, filter: Option<&Expr>) -> Expr {
+  let wants_times = inactivate_wants(filter, "Times");
   match e {
     Expr::Integer(n) => Expr::Integer(-n),
     Expr::Real(r) => Expr::Real(-r),
@@ -6490,7 +6492,7 @@ fn negate_plus_term(e: &Expr, filter: Option<&str>) -> Expr {
 /// Flatten a mixed Plus/Minus chain into the list of (inactivated) Plus
 /// operands, in left-to-right order. A `0` left operand of a subtraction
 /// (Woxi's encoding of unary minus) contributes no term.
-fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&str>) {
+fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&Expr>) {
   use BinaryOperator as B;
   match expr {
     Expr::BinaryOp {
@@ -6515,6 +6517,16 @@ fn collect_plus_terms(expr: &Expr, out: &mut Vec<Expr>, filter: Option<&str>) {
   }
 }
 
+/// Whether the head symbol `head` matches the `Inactivate` filter pattern.
+fn inactivate_wants(filter: Option<&Expr>, head: &str) -> bool {
+  filter.is_none_or(|patt| {
+    crate::functions::list_helpers_ast::matches_pattern_ast(
+      &Expr::Identifier(head.to_string()),
+      patt,
+    )
+  })
+}
+
 thread_local! {
   /// Whether `inactivate_expr` descends into compound heads (the `Heads`
   /// option of `Inactivate`).
@@ -6525,9 +6537,10 @@ thread_local! {
 /// Recursively replace each head `H` in `expr` with `Inactive[H]`, the inverse
 /// of `activate_expr`. Operators are mapped to their full-form heads (`+`→Plus,
 /// `-a`→Times[-1,a], `a/b`→Times[a,Power[b,-1]], …). `List` is left structural.
-/// When `filter` is Some, only that head name is inactivated.
-fn inactivate_expr(expr: &Expr, filter: Option<&str>) -> Expr {
-  let wants = |head: &str| filter.is_none_or(|f| f == head);
+/// When `filter` is Some, only the heads matching that pattern are
+/// inactivated.
+fn inactivate_expr(expr: &Expr, filter: Option<&Expr>) -> Expr {
+  let wants = |head: &str| inactivate_wants(filter, head);
   let inact = |e: &Expr| inactivate_expr(e, filter);
   match expr {
     Expr::BinaryOp { op, left, right } => {

@@ -12223,6 +12223,9 @@ fn evaluate_function_call_ast_inner(
     if let Some(result) = compose_cycles_args(args) {
       return Ok(result);
     }
+    if let Some(result) = simplify_symbolic_permutation_product(args) {
+      return Ok(result);
+    }
   }
 
   // Functions that return empty list
@@ -16332,4 +16335,58 @@ fn hamiltonian_cycles(
       .collect::<Vec<_>>()
       .into(),
   )))
+}
+
+/// PermutationProduct with symbolic factors: adjacent `Cycles` factors are
+/// composed, `p` next to `InversePermutation[p]` cancels and identities
+/// (`Cycles[{}]`) drop out. Returns None when nothing simplifies.
+fn simplify_symbolic_permutation_product(args: &[Expr]) -> Option<Expr> {
+  let is_cycles = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Cycles" && args.len() == 1);
+  let is_identity = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Cycles" && args.len() == 1
+        && matches!(&args[0], Expr::List(c) if c.is_empty()))
+  };
+  let inverse_of = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "InversePermutation" && args.len() == 1 =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
+  let cancels = |a: &Expr, b: &Expr| {
+    inverse_of(b).is_some_and(|ib| expr_to_string(&ib) == expr_to_string(a))
+      || inverse_of(a)
+        .is_some_and(|ia| expr_to_string(&ia) == expr_to_string(b))
+  };
+  let mut out: Vec<Expr> = Vec::with_capacity(args.len());
+  for a in args {
+    if is_identity(a) {
+      continue;
+    }
+    match out.last() {
+      Some(last) if cancels(last, a) => {
+        out.pop();
+      }
+      Some(last) if is_cycles(last) && is_cycles(a) => {
+        let composed = compose_cycles_args(&[last.clone(), a.clone()])?;
+        out.pop();
+        if !is_identity(&composed) {
+          out.push(composed);
+        }
+      }
+      _ => out.push(a.clone()),
+    }
+  }
+  if out.len() == args.len() {
+    return None;
+  }
+  Some(match out.len() {
+    0 => call1("Cycles", Expr::List(vec![].into())),
+    1 => out.pop().unwrap(),
+    _ => call("PermutationProduct", out),
+  })
 }
