@@ -310,7 +310,25 @@ mod algorithm_options {
   fn region_measure_goal_options() {
     assert_eq!(interpret("Area[Disk[], AccuracyGoal -> 8]").unwrap(), "Pi");
     assert_eq!(
-      interpret("Volume[Ball[], PrecisionGoal -> 5]").unwrap(),
+      interpret("Precision[Volume[Ball[], PrecisionGoal -> 5]]").unwrap(),
+      "5."
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], PrecisionGoal -> 5] == 4 Pi/3").unwrap(),
+      "True"
+    );
+    // Without a PrecisionGoal the WorkingPrecision decides the digits.
+    assert_eq!(
+      interpret("Precision[Area[Disk[], WorkingPrecision -> 20]]").unwrap(),
+      "20."
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], WorkingPrecision -> MachinePrecision]")
+        .unwrap(),
+      "4.1887902047863905"
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], PerformanceGoal -> \"Speed\"]").unwrap(),
       "(4*Pi)/3"
     );
   }

@@ -1574,25 +1574,48 @@ pub fn dispatch_complex_and_special(
           .unwrap_or_else(|| unevaluated(name, args)),
       ));
     }
-    // Area[…, opts] and Volume[…, opts]: the goals and precision options
-    // (AccuracyGoal, PrecisionGoal, WorkingPrecision, PerformanceGoal,
-    // Assumptions) steer only how a numerical answer is found, so an exact
-    // measure is the same with or without them.
+    // Area[…, opts] and Volume[…, opts]: AccuracyGoal, PerformanceGoal and
+    // Assumptions leave an exact measure exact. A PrecisionGoal (an integer)
+    // asks for the measure to that many digits, and so does a
+    // WorkingPrecision when there is no PrecisionGoal (`Volume[Ball[],
+    // PrecisionGoal -> 5]` is `4.18879…`5.`, MachinePrecision gives a machine
+    // number). Any other PrecisionGoal leaves the call unevaluated.
     "Area" | "Volume"
       if args.len() > 1
         && matches!(args.last(), Some(Expr::Rule { pattern, .. })
           if matches!(pattern.as_ref(), Expr::Identifier(_))) =>
     {
-      let (positional, _) = super::split_trailing_options(args);
+      let (positional, opts) = super::split_trailing_options(args);
       if positional.is_empty() {
         return Some(Ok(unevaluated(name, args)));
       }
+      let option =
+        |key: &str| opts.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+      let is_default = |v: &Expr| matches!(v, Expr::Identifier(n) if n == "Automatic" || n == "Infinity");
+      let digits = match (option("PrecisionGoal"), option("WorkingPrecision")) {
+        (Some(goal @ Expr::Integer(_)), _) => Some(goal),
+        (Some(goal), _) if !is_default(&goal) => {
+          return Some(Ok(unevaluated(name, args)));
+        }
+        (_, Some(p @ (Expr::Integer(_) | Expr::Real(_)))) => Some(p),
+        (_, Some(m @ Expr::Identifier(_))) if matches!(&m, Expr::Identifier(n) if n == "MachinePrecision") => {
+          Some(m)
+        }
+        _ => None,
+      };
       let result =
         crate::evaluator::evaluate_function_call_ast(name, positional);
       return Some(match result {
         Ok(Expr::FunctionCall { name: ref head, .. }) if head == name => {
           Ok(unevaluated(name, args))
         }
+        Ok(measure) => match digits {
+          Some(Expr::Identifier(_)) => {
+            evaluate_expr_to_expr(&call1("N", measure))
+          }
+          Some(p) => evaluate_expr_to_expr(&call("N", vec![measure, p])),
+          None => Ok(measure),
+        },
         other => other,
       });
     }
