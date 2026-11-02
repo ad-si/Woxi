@@ -12030,3 +12030,56 @@ mod hypothesis_testing_intervals_and_p_values {
     );
   }
 }
+
+mod hierarchical_clustering_package {
+  use super::*;
+
+  #[test]
+  fn agglomerate_and_flatten() {
+    assert_eq!(
+      interpret(
+        "Get[\"HierarchicalClustering`\"]; \
+         c = HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}} -> \
+         {1, 2, 3, 4}, DistanceFunction -> EuclideanDistance]; \
+         {c, ClusterFlatten[c], Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]}"
+      )
+      .unwrap(),
+      "{Cluster[Cluster[Cluster[1, 4, 1, 1, 1], 2, Sqrt[5], 2, 1], 3, Sqrt[61], 3, 1], \
+       {1, 4, 2, 3}, Cluster[Cluster[Cluster[{1, 2}, {1, 3}, 1, 1, 1], {3, 4}, 5, 2, 1], \
+       {9, 9}, 61, 3, 1]}"
+    );
+  }
+
+  // Merge heights for every linkage, against wolframscript ("Average" is
+  // the equal-weight update, "WeightedAverage" the size-weighted one).
+  #[test]
+  fn linkages() {
+    assert_eq!(
+      interpret(
+        "Get[\"HierarchicalClustering`\"]; \
+         heights[c_] := Cases[c, Cluster[_, _, d_, __] :> d, {0, Infinity}]; \
+         Table[Sort[heights[Agglomerate[{1, 2, 4, 10, 11, 20}, Linkage -> l]]], \
+         {l, {\"Single\", \"Complete\", \"Average\", \"WeightedAverage\", \
+         \"Centroid\", \"Median\", \"Ward\"}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 4, 36, 81}, {1, 1, 9, 100, 361}, {1, 1, 13/2, 62, 1559/8}, \
+       {1, 1, 13/2, 137/2, 1122/5}, {1, 1, 25/4, 2401/36, 5184/25}, \
+       {1, 1, 25/4, 961/16, 11449/64}, {1/2, 1/2, 25/6, 361/6, 578/3}}"
+    );
+  }
+
+  #[test]
+  fn dendrogram_plot_lines() {
+    assert_eq!(
+      interpret(
+        "Get[\"HierarchicalClustering`\"]; \
+         Cases[DendrogramPlot[Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]], \
+         _Line, Infinity]"
+      )
+      .unwrap(),
+      "{Line[{{1, 0}, {1, 1}, {2, 1}, {2, 0}}], Line[{{1.5, 1}, {1.5, 5}, {3, 5}, \
+       {3, 0}}], Line[{{2.25, 5}, {2.25, 61}, {4, 61}, {4, 0}}]}"
+    );
+  }
+}

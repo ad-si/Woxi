@@ -910,6 +910,9 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "HierarchicalClustering`" {
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Combinatorica`" {
     // Combinatorica has no values to pre-create (its functions are ordinary
     // dispatch entries, not symbol-table lookups), but putting it on
@@ -1187,6 +1190,31 @@ fn evaluate_function_call_ast_inner(
   // Combinatorica only extends it to accept a bare integer `n` (meaning
   // `Range[n]`), so only that shape is redirected — a list argument keeps
   // using the built-in's identical (lexicographic) algorithm.
+  // The `HierarchicalClustering`` package, by its full names or by the bare
+  // ones once the package is on `$ContextPath`.
+  {
+    let bare = name.strip_prefix("HierarchicalClustering`").or_else(|| {
+      crate::context_path_contains("HierarchicalClustering`").then_some(name)
+    });
+    match bare {
+      Some("Agglomerate") => {
+        return crate::functions::hierarchical_clustering::agglomerate_ast(
+          args,
+        );
+      }
+      Some("ClusterFlatten") => {
+        return crate::functions::hierarchical_clustering::cluster_flatten_ast(
+          args,
+        );
+      }
+      Some("DendrogramPlot") => {
+        return crate::functions::hierarchical_clustering::dendrogram_plot_ast(
+          args,
+        );
+      }
+      _ => {}
+    }
+  }
   if name == "GraphUtilities`ExpressionTreePlot" && !args.is_empty() {
     return crate::functions::tree_form::expression_tree_plot_ast(args);
   }

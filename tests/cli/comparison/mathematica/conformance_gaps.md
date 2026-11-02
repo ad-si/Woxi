@@ -3170,6 +3170,16 @@ Also: `DiscreteUniformDistribution`'s StandardDeviation is `Sqrt[X/12]` against
 WL's `Sqrt[X]/(2 Sqrt[3])`, and `ExpGammaDistribution`'s PDF is unimplemented
 (exponent `Plus` order).
 
+### `HierarchicalClustering`Agglomerate`: ties
+
+Merge heights match the package for every linkage, but with equal
+dissimilarities Woxi merges the earliest pair and lists the child holding the
+lower data index first, while the package's order differs
+(`Agglomerate[{1, 2, 4, 10, 11, 20}]` has `Cluster[11, 10, …]` there,
+`Cluster[10, 11, …]` here), and it never prints `Agglomerate::ties`.
+`DendrogramPlot` ignores `TruncateDendrogram`, `HighlightLevel` and
+`PlotStyle`.
+
 ### `MovingMap[Mean, …]` stays exact
 
 ```sh
