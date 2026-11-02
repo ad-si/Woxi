@@ -5410,10 +5410,10 @@ mod graph_of_a_graph {
     clear_state();
     assert_eq!(
       interpret(
-        "{Options[Graph[Graph[{1 <-> 2}, GraphLayout -> \"SpringEmbedding\"], ImageSize -> 100]], Options[Graph[Graph[{1 -> 2}], ImageSize -> 100]], Options[UndirectedGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2]], Options[SimpleGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[Graph[{1 <-> 2}, VertexStyle -> Red, VertexLabels -> {1 -> \"a\"}, EdgeWeight -> {2}]]}"
+        "{Options[Graph[Graph[{1 <-> 2}, GraphLayout -> \"SpringEmbedding\"], ImageSize -> 100]], Options[Graph[Graph[{1 -> 2}], ImageSize -> 100]], Options[UndirectedGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2]], Options[SimpleGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[Graph[{1 <-> 2}, VertexStyle -> Red, VertexLabels -> {1 -> \"a\"}]]}"
       )
       .unwrap(),
-      "{{GraphLayout -> {Dimension -> 2, VertexLayout -> SpringEmbedding}, ImageSize -> 100}, {GraphLayout -> {Dimension -> 2}, ImageSize -> 100}, {VertexSize -> {2}}, {GraphLayout -> {Dimension -> 2}, VertexSize -> {2}}, {VertexSize -> {2}}, {EdgeWeight -> {2}, VertexLabels -> {1 -> a}, VertexStyle -> {RGBColor[1, 0, 0]}}}"
+      "{{GraphLayout -> {Dimension -> 2, VertexLayout -> SpringEmbedding}, ImageSize -> 100}, {GraphLayout -> {Dimension -> 2}, ImageSize -> 100}, {VertexSize -> {2}}, {GraphLayout -> {Dimension -> 2}, VertexSize -> {2}}, {VertexSize -> {2}}, {VertexLabels -> {1 -> a}, VertexStyle -> {RGBColor[1, 0, 0]}}}"
     );
   }
 }

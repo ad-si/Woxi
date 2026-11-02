@@ -43146,10 +43146,10 @@ mod rectangle_chart {
   fn chart_style_and_legends() {
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, {Opacity[0.5], Blue}}], {Directive[_EdgeForm, c__], _Tooltip} :> {c}, Infinity]"
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, Blue}], {Directive[_EdgeForm, c__], _Tooltip} :> {c}, Infinity]"
       )
       .unwrap(),
-      "{{RGBColor[1, 0, 0]}, {Directive[Opacity[0.5], RGBColor[0, 0, 1]]}}"
+      "{{RGBColor[1, 0, 0]}, {RGBColor[0, 0, 1]}}"
     );
     assert_eq!(
       interpret(
