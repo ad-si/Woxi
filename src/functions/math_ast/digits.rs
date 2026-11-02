@@ -1249,31 +1249,23 @@ pub fn from_continued_fraction_ast(
     if let Some(n) = expr_to_bigint(elem) {
       ints.push(n);
     } else {
-      // Symbolic terms: fold from the right, combining into a single
-      // fraction at every step (the convergent recurrence).
+      // Symbolic terms: the convergent recurrence p_k = a_k p_(k-1) +
+      // p_(k-2), q_k = a_k q_(k-1) + q_(k-2), evaluated but not multiplied
+      // out, which is the form wolframscript prints:
+      // `FromContinuedFraction[{a, b, c}]` is `(a + (1 + a*b)*c)/(1 + b*c)`.
       if elements.iter().any(|e| matches!(e, Expr::List(_))) {
         return Ok(unevaluated("FromContinuedFraction", args));
       }
-      let mut acc = elements.last().unwrap().clone();
-      for e in elements[..elements.len() - 1].iter().rev() {
-        let step = Expr::FunctionCall {
-          name: "Together".to_string(),
-          args: vec![Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              e.clone(),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![acc, Expr::Integer(-1)].into(),
-              },
-            ]
-            .into(),
-          }]
-          .into(),
-        };
-        acc = crate::evaluator::evaluate_expr_to_expr(&step)?;
+      let eval = crate::evaluator::evaluate_expr_to_expr;
+      let (mut p_prev, mut p) = (Expr::Integer(0), Expr::Integer(1));
+      let (mut q_prev, mut q) = (Expr::Integer(1), Expr::Integer(0));
+      for e in elements {
+        let p_next = eval(&plus2(times2(e.clone(), p.clone()), p_prev))?;
+        let q_next = eval(&plus2(times2(e.clone(), q.clone()), q_prev))?;
+        p_prev = std::mem::replace(&mut p, p_next);
+        q_prev = std::mem::replace(&mut q, q_next);
       }
-      return Ok(acc);
+      return eval(&times2(p, pow2(q, Expr::Integer(-1))));
     }
   }
 
