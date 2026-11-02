@@ -5086,38 +5086,45 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Clock[]`, `Clock[tmax]`, `Clock[{tmin, tmax}]`, `Clock[{tmin, tmax, dt}]`,
-/// each optionally followed by a period in seconds (default 1): the value of
-/// a variable that cycles from `tmin` to `tmax` as session time passes.
-/// Returns `None` (stays unevaluated) when a limit or the period is not a
-/// number.
+/// each optionally followed by a period. Outside `Dynamic` a clock does not
+/// tick: like wolframscript, the kernel answers its starting value `tmin`,
+/// exactly as written (`Clock[{2, 5}, 3]` is 2, `Clock[{a, b}]` is `a`). The
+/// period — by default `tmax - tmin` — has to be a finite positive number,
+/// else `Clock::period` is reported (the value is still `tmin`). An iterator
+/// of the wrong length reports `Clock::vals` and stays unevaluated.
 pub fn clock_ast(args: &[Expr]) -> Option<Expr> {
-  use crate::functions::graphics::expr_to_f64;
-  let (tmin, tmax, dt) = match args.first() {
-    None => (0.0, 1.0, None),
+  let (tmin, tmax) = match args.first() {
+    None => (Expr::Integer(0), Expr::Integer(1)),
     Some(Expr::List(items)) if items.len() == 2 || items.len() == 3 => {
-      let dt = match items.get(2) {
-        Some(d) => Some(expr_to_f64(d)?),
-        None => None,
-      };
-      (expr_to_f64(&items[0])?, expr_to_f64(&items[1])?, dt)
+      (items[0].clone(), items[1].clone())
     }
-    Some(Expr::List(_)) => return None,
-    Some(max) => (0.0, expr_to_f64(max)?, None),
+    Some(spec @ Expr::List(_)) => {
+      crate::emit_message(&format!(
+        "Clock::vals: Clock called with illegal iterator values, {}.",
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+      ));
+      return None;
+    }
+    Some(max) => (Expr::Integer(0), max.clone()),
   };
   let period = match args.get(1) {
-    Some(p) => expr_to_f64(p)?,
-    None => 1.0,
+    Some(p) => p.clone(),
+    None => crate::functions::math_ast::plus_ast(&[
+      tmax,
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), tmin.clone()])
+        .ok()?,
+    ])
+    .ok()?,
   };
-  // `partial_cmp` so NaN is rejected too.
-  let positive =
-    |x: f64| x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater);
-  if !positive(period) || dt.is_some_and(|d| !positive(d)) {
-    return None;
+  let numeric =
+    crate::evaluator::evaluate_function_call_ast("N", &[period]).ok()?;
+  let finite_positive = matches!(&numeric, Expr::Real(x) if x.is_finite() && *x > 0.0)
+    || matches!(&numeric, Expr::Integer(n) if *n > 0);
+  if !finite_positive {
+    crate::emit_message(&format!(
+      "Clock::period: Clock period {} is not a finite positive number.",
+      crate::syntax::format_expr(&numeric, crate::syntax::ExprForm::Output)
+    ));
   }
-  let phase = (crate::session_time() / period).fract();
-  let mut value = tmin + (tmax - tmin) * phase;
-  if let Some(d) = dt {
-    value = tmin + ((value - tmin) / d).floor() * d;
-  }
-  Some(Expr::Real(value))
+  Some(tmin)
 }

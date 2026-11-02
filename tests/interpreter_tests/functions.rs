@@ -3570,27 +3570,33 @@ mod session_time {
 mod clock {
   use super::*;
 
+  // Outside Dynamic the kernel does not tick a clock: it answers the
+  // starting value, exactly as written.
   #[test]
-  fn stays_within_range() {
-    assert_eq!(interpret("Head[Clock[{2, 5}, 3]]").unwrap(), "Real");
-    assert_eq!(interpret("2 <= Clock[{2, 5}, 3] <= 5").unwrap(), "True");
-    assert_eq!(interpret("0 <= Clock[] <= 1").unwrap(), "True");
-    assert_eq!(interpret("0 <= Clock[7, 2] <= 7").unwrap(), "True");
-  }
-
-  #[test]
-  fn step_size_quantizes_value() {
+  fn evaluates_to_its_starting_value() {
+    assert_eq!(interpret("Head[Clock[{2, 5}, 3]]").unwrap(), "Integer");
     assert_eq!(
-      interpret("Mod[Clock[{0, 4, 1}, 2], 1] == 0").unwrap(),
-      "True"
+      interpret(
+        "{Clock[], Clock[7, 2], Clock[{0, 4, 1}, 2], Clock[{a, b}], \
+         Clock[{1, 2, 0.5}], Clock[{2., 5}], Clock[{1/2, 5}, 3]}"
+      )
+      .unwrap(),
+      "{0, 0, 0, a, 1, 2., 1/2}"
     );
   }
 
   #[test]
-  fn symbolic_period_stays_unevaluated() {
+  fn invalid_period_still_gives_the_starting_value() {
+    assert_eq!(interpret("Clock[{0, Pi}, 60/t]").unwrap(), "0");
+    assert_eq!(interpret("Clock[{3, 1}]").unwrap(), "3");
+    assert_eq!(interpret("Clock[{0, 1}, -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn malformed_iterator_stays_unevaluated() {
     assert_eq!(
-      interpret("Clock[{0, Pi}, 60/t]").unwrap(),
-      "Clock[{0, Pi}, 60/t]"
+      interpret("Clock[{0, 1, 2, 3}]").unwrap(),
+      "Clock[{0, 1, 2, 3}]"
     );
   }
 }
