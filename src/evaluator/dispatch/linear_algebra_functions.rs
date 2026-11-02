@@ -179,9 +179,22 @@ pub fn dispatch_linear_algebra_functions(
       // avoid recursing forever on a form we could not expand.
       if !dense.iter().any(is_sparse) {
         let result = dispatch_linear_algebra_functions(name, &dense);
-        // The inverse, exponential and powers of a SparseArray are
-        // SparseArrays themselves.
-        if matches!(name, "Inverse" | "MatrixExp" | "MatrixPower")
+        // A positive integer power of a SparseArray, and the exponential of
+        // a machine-number one, are SparseArrays themselves; the inverse, a
+        // negative power and an exact exponential come back as lists, as in
+        // wolframscript.
+        let stays_sparse = match name {
+          "MatrixPower" => {
+            matches!(args.get(1), Some(Expr::Integer(k)) if *k >= 0)
+          }
+          "MatrixExp" => {
+            crate::functions::math_ast::numeric_utils::contains_inexact_real(
+              &dense[0],
+            )
+          }
+          _ => false,
+        };
+        if stays_sparse
           && let Some(Ok(inv @ Expr::List(rows))) = &result
           // `MatrixExp[m, v]` is a vector.
           && rows.iter().all(|r| matches!(r, Expr::List(_)))

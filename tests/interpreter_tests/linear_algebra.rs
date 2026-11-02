@@ -12243,7 +12243,21 @@ mod sparse_array_part_set_and_inverse {
          m[[3, 1]] = 1; {Head[Inverse[m]], Normal[Inverse[m]]}"
       )
       .unwrap(),
-      "{SparseArray, {{1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}}"
+      "{List, {{1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}}"
+    );
+  }
+
+  // A positive power, and the exponential of a machine matrix, stay sparse;
+  // a negative power and an exact exponential do not.
+  #[test]
+  fn sparse_matrix_function_heads() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 1}, {0, 1}}]; {Head[MatrixPower[s, 3]], \
+         Head[MatrixPower[s, -1]], Head[MatrixExp[s]], Head[MatrixExp[N[s]]]}"
+      )
+      .unwrap(),
+      "{SparseArray, List, List, SparseArray}"
     );
   }
 }
