@@ -43080,7 +43080,7 @@ mod rectangle_chart {
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, Frame -> True], HoldPattern[Axes -> a_] :> a, Infinity]"
       )
       .unwrap(),
-      "{False}"
+      "{{False, False}}"
     );
     assert_eq!(
       interpret(
@@ -43098,21 +43098,21 @@ mod rectangle_chart {
         "Cases[RectangleChart[{{1, 2}, {2, 3}}], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.0975, 0.}, {3.0975, 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1.098, 0.}, {3.098, 3.}, RoundingRadius -> 0]}"
     );
     assert_eq!(
       interpret(
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> 0.5], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.5, 0.}, {2.5, 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1.5, 0.}, {2.5, 3.}, RoundingRadius -> 0]}"
     );
     assert_eq!(
       interpret(
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> None], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1., 0.}, {2., 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1., 0.}, {2., 3.}, RoundingRadius -> 0]}"
     );
   }
 
@@ -43120,14 +43120,14 @@ mod rectangle_chart {
   fn several_datasets_are_inset_and_coloured_by_position() {
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, _] :> a[[1]], Infinity]"
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, __] :> a[[1]], Infinity]"
       )
       .unwrap(),
-      "{0.1, 1.1975, 2.3975, 3.495}"
+      "{0.1, 1.1960000000000002, 2.3960000000000004, 3.4920000000000004}"
     );
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], {c_RGBColor, _Rectangle} :> c, Infinity]"
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Directive[_EdgeForm, c_RGBColor] :> c, Infinity]"
       )
       .unwrap(),
       "{RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95], RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95]}"
@@ -43135,7 +43135,7 @@ mod rectangle_chart {
     // A single dataset uses the first colour throughout.
     assert_eq!(
       interpret(
-        "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], {c_RGBColor, _Rectangle} :> c, Infinity]]"
+        "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], Directive[_EdgeForm, c_RGBColor] :> c, Infinity]]"
       )
       .unwrap(),
       "{RGBColor[1., 0.835, 0.25]}"
@@ -43146,10 +43146,10 @@ mod rectangle_chart {
   fn chart_style_and_legends() {
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, {Opacity[0.5], Blue}}], {c_, _Rectangle} :> c, Infinity]"
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, {Opacity[0.5], Blue}}], {Directive[_EdgeForm, c__], _Tooltip} :> {c}, Infinity]"
       )
       .unwrap(),
-      "{RGBColor[1, 0, 0], Directive[Opacity[0.5], RGBColor[0, 0, 1]]}"
+      "{{RGBColor[1, 0, 0]}, {Directive[Opacity[0.5], RGBColor[0, 0, 1]]}}"
     );
     assert_eq!(
       interpret(
@@ -43167,7 +43167,7 @@ mod rectangle_chart {
         "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], _Cuboid, Infinity]"
       )
       .unwrap(),
-      "{Cuboid[{0., 0., 0.}, {1., 2., 3.}], Cuboid[{1.0975, 0., 0.}, {3.0975, 1., 1.}]}"
+      "{Cuboid[{0., 0., 0.}, {1., 2., 3.}], Cuboid[{1.098, 0., 0.}, {3.098, 1., 1.}]}"
     );
   }
 

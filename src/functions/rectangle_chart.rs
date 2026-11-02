@@ -4,10 +4,13 @@
 //! `Rectangle` (`Cuboid`) primitives, so `ChartStyle`/`ChartBaseStyle`
 //! directives and the ordinary graphics options pass straight through to the
 //! shared renderer. Layout follows wolframscript: rectangles stand on the axis
-//! from x = 0, separated by a gap of about 0.0975 (`BarSpacing -> s` sets it,
-//! `None` removes it); with several datasets each starts 0.1 in and datasets
-//! are 0.2 apart, and the default colours run by position within a dataset
-//! (a single dataset is drawn in the first colour).
+//! from x = 0, separated by a gap of 0.1 - 0.001 n for n rectangles in all
+//! (`BarSpacing -> s` sets it, `None` removes it); with several datasets each
+//! starts 0.1 in and datasets are 0.2 apart, and the default colours run by
+//! position within a dataset (a single dataset is drawn in the first colour).
+//! Each 2D bar is wrapped the way wolframscript's chart holds it:
+//! `{style, Tooltip[StatusArea[Charting`DelayedMouseEffect[Rectangle[…,
+//! "RoundingRadius" -> 0], effect], {w, h}], Style[{w, h}, {}]]}`.
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -25,7 +28,6 @@ const PALETTE: [(f64, f64, f64); 6] = [
   (0.85, 0.51, 0.),
 ];
 
-const DEFAULT_GAP: f64 = 0.0975;
 const GROUP_GAP: f64 = 0.2;
 const GROUP_INSET: f64 = 0.1;
 
@@ -93,6 +95,15 @@ fn parse_datasets(data: &Expr, arity: usize) -> Option<Vec<Vec<Item>>> {
   (!sets.is_empty()).then_some(sets)
 }
 
+/// A bar size as the chart's tooltip writes it: the number given.
+fn sizes_expr(v: f64) -> Expr {
+  if v.fract() == 0.0 && v.abs() < 1e15 {
+    Expr::Integer(v as i128)
+  } else {
+    Expr::Real(v)
+  }
+}
+
 fn palette_color(i: usize) -> Expr {
   let (r, g, b) = PALETTE[i % PALETTE.len()];
   call(
@@ -142,7 +153,8 @@ pub fn rectangle_chart_ast(
   let mut base_style = None;
   let mut labels = None;
   let mut legends = None;
-  let mut gap = DEFAULT_GAP;
+  let n_bars: usize = sets.iter().map(Vec::len).sum();
+  let mut gap = 0.1 - 0.001 * n_bars as f64;
   let mut passthrough = Vec::new();
   let mut has = std::collections::HashSet::new();
   for opt in &args[1..] {
@@ -200,14 +212,27 @@ pub fn rectangle_chart_ast(
   }
   let n_sets = sets.len();
   let multi = n_sets > 1;
+  // The bars' edges fade a little with every bar.
+  let edge = call(
+    "EdgeForm",
+    vec![call(
+      "Directive",
+      vec![
+        call("Thickness", vec![Expr::Identifier("Small".into())]),
+        call("Opacity", vec![Expr::Real(0.7 - 0.007 * n_bars as f64)]),
+      ],
+    )],
+  );
   let mut x = if multi { GROUP_INSET } else { 0.0 };
+  let mut end = x;
   let mut prims = Vec::new();
   let mut label_prims = Vec::new();
   let mut flat_index = 0usize;
   let mut swatches = Vec::new();
   for (s, set) in sets.iter().enumerate() {
+    // A dataset starts 0.2 past the end of the one before.
     if s > 0 {
-      x += GROUP_GAP - gap;
+      x = end + GROUP_GAP;
     }
     for (pos, item) in set.iter().enumerate() {
       let w = item.sizes[0];
@@ -235,12 +260,67 @@ pub fn rectangle_chart_ast(
           vec![
             Expr::List(vec![Expr::Real(x), Expr::Real(0.0)].into()),
             Expr::List(vec![Expr::Real(x + w), Expr::Real(h)].into()),
+            Expr::Rule {
+              pattern: Box::new(Expr::String("RoundingRadius".into())),
+              replacement: Box::new(Expr::Integer(0)),
+            },
           ],
         )
       };
       let mut group = vec![style];
       group.extend(item.style.iter().cloned());
-      group.push(shape);
+      if three_d {
+        group.push(shape);
+      } else {
+        group = vec![call("Directive", {
+          let mut d = vec![edge.clone()];
+          d.extend(group);
+          d
+        })];
+        let size = Expr::List(
+          item
+            .sizes
+            .iter()
+            .map(|v| sizes_expr(*v))
+            .collect::<Vec<_>>()
+            .into(),
+        );
+        group.push(call(
+          "Tooltip",
+          vec![
+            call(
+              "StatusArea",
+              vec![
+                call(
+                  "Charting`DelayedMouseEffect",
+                  vec![
+                    shape,
+                    Expr::List(
+                      vec![
+                        Expr::String("Style".into()),
+                        call(
+                          "EdgeForm",
+                          vec![Expr::List(
+                            vec![
+                              call("GrayLevel", vec![Expr::Real(0.5)]),
+                              call("AbsoluteThickness", vec![Expr::Real(1.5)]),
+                              call("Opacity", vec![Expr::Real(0.66)]),
+                            ]
+                            .into(),
+                          )],
+                        ),
+                      ]
+                      .into(),
+                    ),
+                  ],
+                ),
+                size.clone(),
+              ],
+            ),
+            call("Style", vec![size, Expr::List(vec![].into())]),
+          ],
+        ));
+      }
       prims.push(Expr::List(group.into()));
       if !three_d
         && let Some(Expr::List(ls)) = &labels
@@ -261,21 +341,12 @@ pub fn rectangle_chart_ast(
         ));
       }
       flat_index += 1;
-      x += w + gap;
+      end = x + w;
+      x = x + w + gap;
     }
   }
 
-  let edge = call(
-    "EdgeForm",
-    vec![call(
-      "Directive",
-      vec![
-        call("Thickness", vec![Expr::Identifier("Small".into())]),
-        call("Opacity", vec![Expr::Real(0.686)]),
-      ],
-    )],
-  );
-  let mut content = vec![edge];
+  let mut content = if three_d { vec![edge.clone()] } else { vec![] };
   if let Some(b) = base_style {
     content.push(b);
   }
@@ -310,11 +381,7 @@ pub fn rectangle_chart_ast(
         |on: bool| Expr::Identifier(if on { "True" } else { "False" }.into());
       opts.push(rule(
         "Axes",
-        if framed {
-          flag(false)
-        } else {
-          Expr::List(vec![flag(false), flag(true)].into())
-        },
+        Expr::List(vec![flag(false), flag(!framed)].into()),
       ));
     }
     if framed && !has.contains("FrameTicks") {

@@ -2903,6 +2903,12 @@ fn collect_primitives(
         "Mouseover" if !args.is_empty() => {
           collect_primitives(&args[0], style, prims, errors);
         }
+        // The charts' interaction wrappers (`StatusArea[g, text]`, the
+        // highlight-on-hover `Charting`DelayedMouseEffect[g, effect]`) draw
+        // `g` as it is.
+        "StatusArea" | "Charting`DelayedMouseEffect" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
         // `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker
         // drawn at the point's current position. A custom appearance
         // graphic keeps its own ImageSize in screen pixels.
