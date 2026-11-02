@@ -391,8 +391,70 @@ fn rewrap(head: &str, children: Vec<Expr>) -> Expr {
   }
   if head == "List" {
     Expr::List(children.into())
+  } else if let ("Slot" | "SlotSequence", [Expr::Integer(n)]) =
+    (head, children.as_slice())
+    && *n >= 1
+  {
+    if head == "Slot" {
+      Expr::Slot(*n as usize)
+    } else {
+      Expr::SlotSequence(*n as usize)
+    }
+  } else if head == "Function"
+    && let [body] = children.as_slice()
+  {
+    Expr::Function {
+      body: Box::new(body.clone()),
+    }
   } else {
     call(head, children)
+  }
+}
+
+/// Whether a composite with this head keeps its parts unevaluated
+/// (`Function`, `Hold`, …): a Map below it builds `f[part]` without
+/// evaluating it, as Wolfram does.
+fn holds_parts(head: &str) -> bool {
+  use crate::evaluator::{Attributes as A, get_builtin_attributes};
+  get_builtin_attributes(head).contains(A::HoldAll | A::HoldAllComplete)
+}
+
+/// `f[x]`, unevaluated.
+fn held_application(func: &Expr, x: Expr) -> Expr {
+  match func {
+    Expr::Identifier(name) => call(name, vec![x]),
+    other => Expr::CurriedCall {
+      func: Box::new(other.clone()),
+      args: vec![x],
+    },
+  }
+}
+
+/// `map_at_depth` inside a held expression: the same traversal, with every
+/// application left unevaluated.
+fn map_at_depth_held(
+  func: &Expr,
+  expr: &Expr,
+  current_depth: i64,
+  min_level: i64,
+  max_level: i64,
+) -> Expr {
+  let result = match map_decompose(expr) {
+    None => expr.clone(),
+    Some((head, children)) => rewrap(
+      &head,
+      children
+        .iter()
+        .map(|c| {
+          map_at_depth_held(func, c, current_depth + 1, min_level, max_level)
+        })
+        .collect(),
+    ),
+  };
+  if current_depth >= min_level && current_depth <= max_level {
+    held_application(func, result)
+  } else {
+    result
   }
 }
 
@@ -480,6 +542,20 @@ fn map_at_depth(
     // Rational / Complex are atoms: do not descend into their parts.
     _ if crate::functions::predicate_ast::is_atomic_number(expr) => {
       expr.clone()
+    }
+    // A held expression keeps what Map builds inside it unevaluated.
+    _ if let Some((head, children)) = map_decompose(expr)
+      && holds_parts(&head) =>
+    {
+      rewrap(
+        &head,
+        children
+          .iter()
+          .map(|c| {
+            map_at_depth_held(func, c, current_depth + 1, min_level, max_level)
+          })
+          .collect(),
+      )
     }
     Expr::List(items) => {
       let mapped: Result<Vec<Expr>, _> = items.iter().map(recurse).collect();

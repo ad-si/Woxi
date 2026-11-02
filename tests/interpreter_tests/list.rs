@@ -2993,6 +2993,23 @@ mod maximal_by {
 mod map_all {
   use super::*;
 
+  // Below a held head (Function, Hold) Map builds f[part] unevaluated
+  // (ElementaryModelForNuclearFissionReactor gathers with
+  // `Map[First, (#1 == #2 &), {2}]`).
+  #[test]
+  fn map_inside_held_expressions() {
+    assert_eq!(
+      interpret(
+        "{Map[First, (#1 == #2 &), {2}], \
+         Gather[{{a, 1}, {b, 2}, {a, 3}}, Map[First, (#1 == #2 &), {2}]], \
+         Map[f, Hold[1 + 1, 2], 2]}"
+      )
+      .unwrap(),
+      "{First[#1] == First[#2] & , {{{a, 1}, {a, 3}}, {{b, 2}}}, \
+       Hold[f[f[1] + f[1]], f[2]]}"
+    );
+  }
+
   #[test]
   fn basic_expression() {
     assert_eq!(
