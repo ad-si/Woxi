@@ -6815,10 +6815,19 @@ pub fn dispatch_list_operations(
       else {
         return None;
       };
-      return Some(fold_pair_steps(args, elems).map(|steps| match steps {
-        FoldPairSteps::Emitted(results) => Expr::List(results.into()),
-        FoldPairSteps::NotAPair { result, .. } => result,
-      }));
+      // The emitted values keep the elements' head:
+      // `FoldPairList[TakeDrop, {a, b, c}, h[1, 2]]` is `h[{a}, {b, c}]`.
+      return Some(fold_pair_steps(args, elems).and_then(
+        |steps| match steps {
+          FoldPairSteps::Emitted(results) => match &args[2] {
+            Expr::FunctionCall { name: head, .. } => {
+              crate::evaluator::evaluate_function_call_ast(head, &results)
+            }
+            _ => Ok(Expr::List(results.into())),
+          },
+          FoldPairSteps::NotAPair { result, .. } => Ok(result),
+        },
+      ));
     }
     // JoinAcross[alist, blist, keyspec, joinspec, KeyCollisionFunction -> f]
     // joins the associations of two lists whose join keys match.

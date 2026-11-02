@@ -62,7 +62,7 @@ mod fold_pair_list {
     assert_eq!(
       interpret("FoldPairList[TakeDrop, {a, b, c, d, e, f}, h[1, 3, 2]]")
         .unwrap(),
-      "{{a}, {b, c, d}, {e, f}}"
+      "h[{a}, {b, c, d}, {e, f}]"
     );
   }
 
