@@ -98,9 +98,7 @@ pub fn dispatch_polynomial_functions(
     "Expand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::expand_ast(args));
     }
-    // Decompose[poly, x, Modulus -> p]: the decomposition of poly reduced
-    // modulo p, with each component reduced as well. A decomposition that
-    // does not survive the reduction leaves the reduced polynomial whole.
+    // Decompose[poly, x, Modulus -> p]: the decomposition over GF(p).
     "Decompose"
       if args.len() == 3
         && let Some(p) =
@@ -111,55 +109,17 @@ pub fn dispatch_polynomial_functions(
       if p == 0 {
         return dispatch_polynomial_functions(name, &args[..2]);
       }
-      let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
-      let reduce =
-        |e: Expr| eval(call("PolynomialMod", vec![e, Expr::Integer(p)]));
-      let reduced = match reduce(args[0].clone()) {
-        Ok(r) => r,
-        Err(e) => return Some(Err(e)),
-      };
-      let whole = Expr::List(vec![reduced.clone()].into());
-      let parts =
-        match eval(call("Decompose", vec![reduced.clone(), args[1].clone()])) {
-          Ok(Expr::List(ref parts)) => parts.to_vec(),
-          Ok(_) => return Some(Ok(unevaluated(name, args))),
-          Err(e) => return Some(Err(e)),
-        };
-      let Ok(parts) =
-        parts.into_iter().map(reduce).collect::<Result<Vec<_>, _>>()
-      else {
-        return Some(Ok(whole));
-      };
-      // Every component must still have degree at least 2, and composing
-      // them must give back the reduced polynomial.
-      let degree_ok = parts.iter().all(|q| {
-        matches!(
-          eval(call("Exponent", vec![q.clone(), args[1].clone()])),
-          Ok(Expr::Integer(d)) if d >= 2
-        )
-      });
-      let mut composed = args[1].clone();
-      for q in parts.iter().rev() {
-        composed = call(
-          "ReplaceAll",
-          vec![
-            q.clone(),
-            Expr::Rule {
-              pattern: Box::new(args[1].clone()),
-              replacement: Box::new(composed),
-            },
-          ],
-        );
+      let prime = p > 1 && (2..).take_while(|d| d * d <= p).all(|d| p % d != 0);
+      if !prime {
+        crate::emit_message(&format!(
+          "Decompose::modp: The value of the option Modulus -> {p} should be \
+           a prime number or zero."
+        ));
+        return Some(Ok(unevaluated(name, args)));
       }
-      let same = matches!(
-        reduce(call("Subtract", vec![call1("Expand", composed), reduced])),
-        Ok(Expr::Integer(0))
-      );
-      return Some(Ok(if degree_ok && same {
-        Expr::List(parts.into())
-      } else {
-        whole
-      }));
+      return Some(crate::functions::polynomial_ast::decompose_modulo(
+        &args[0], &args[1], p,
+      ));
     }
     "Decompose" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::decompose_ast(args));

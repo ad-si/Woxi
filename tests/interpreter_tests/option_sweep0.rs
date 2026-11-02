@@ -231,7 +231,32 @@ mod polynomial_modulus {
   fn decompose_with_modulus() {
     assert_eq!(
       interpret("Decompose[x^3 + 2x^2 + 4x + 7, x, Modulus -> 2]").unwrap(),
-      "{1 + x^3}"
+      "{1 + x, x^3}"
+    );
+    // Decompositions that exist only over GF(p).
+    assert_eq!(
+      interpret(
+        "Decompose[(x^2 + 2 x)^2 + 3 (x^2 + 2 x) + 1, x, Modulus -> 7]"
+      )
+      .unwrap(),
+      "{1 + 3*x + x^2, 2*x + x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(x^2 + x)^2 + 3, x, Modulus -> 7]").unwrap(),
+      "{3 + x, x^2, x + x^2}"
+    );
+    // The prime dividing the outer degree: only a monomial inner part.
+    assert_eq!(
+      interpret("Decompose[x^6 + x^2 + 2, x, Modulus -> 3]").unwrap(),
+      "{2 + x + x^3, x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(x^3 + x)^3 + x^3 + x, x, Modulus -> 3]").unwrap(),
+      "{x + 2*x^3 + x^9}"
+    );
+    assert_eq!(
+      interpret("Decompose[x^4 + x^2 + 1, x, Modulus -> 4]").unwrap(),
+      "Decompose[1 + x^2 + x^4, x, Modulus -> 4]"
     );
     assert_eq!(
       interpret("Decompose[7x^4 + 2x^2 + 3, x, Modulus -> 5]").unwrap(),
