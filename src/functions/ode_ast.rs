@@ -7179,14 +7179,64 @@ fn solve_bvp_shooting(
       .filter(|(x, c)| same(*x, p) && matches!(c, BvpCondition::Fixed(..)))
       .count()
   };
-  // The start point: most fixed components, then the leftmost
-  let Some(x0) = conds
-    .iter()
-    .map(|(x, _)| *x)
-    .max_by(|a, b| fixed_at(*a).cmp(&fixed_at(*b)).then(b.total_cmp(a)))
-  else {
-    return Ok(None);
+  // The start points: most fixed components first, then the leftmost. A
+  // shot that blows up from one (a costate equation integrated away from
+  // its own end condition, `λ' == -(1 - λ)^2/4` on [0, 300]) is tried from
+  // the next.
+  let mut starts: Vec<f64> = conds.iter().map(|(x, _)| *x).collect();
+  starts.sort_by(|a, b| fixed_at(*b).cmp(&fixed_at(*a)).then(a.total_cmp(b)));
+  starts.dedup_by(|a, b| same(*a, *b));
+  let attempt = |x0: f64| {
+    solve_bvp_shooting_from(
+      residuals,
+      funcs,
+      state_offset,
+      n_state,
+      domain,
+      conds,
+      placeholders,
+      n_steps,
+      x_name,
+      x0,
+    )
   };
+  if starts.len() <= 1 {
+    return match starts.first() {
+      Some(&x0) => attempt(x0),
+      None => Ok(None),
+    };
+  }
+  // The attempts run quietly: a shot that blows up reports NDSolve::ndsz,
+  // which only stands when no start succeeds — then the first start is
+  // run again for its messages.
+  for &x0 in &starts {
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let result = attempt(x0);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    if let Some(path) = result? {
+      return Ok(Some(path));
+    }
+  }
+  attempt(starts[0])
+}
+
+/// [`solve_bvp_shooting`] from the start point `x0`.
+#[allow(clippy::too_many_arguments)]
+fn solve_bvp_shooting_from(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  n_state: usize,
+  domain: (f64, f64),
+  conds: &[(f64, BvpCondition)],
+  placeholders: &[(String, usize)],
+  n_steps: usize,
+  x_name: &str,
+  x0: f64,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let same = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs());
   let mut probe_state = vec![0.0; n_state];
   let mut is_fixed = vec![false; n_state];
   let mut remaining: Vec<&(f64, BvpCondition)> = Vec::new();

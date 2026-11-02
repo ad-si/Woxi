@@ -10341,6 +10341,24 @@ mod ndsolve {
     );
   }
 
+  // A costate with its condition at the far end blows up when shot from
+  // t = 0 for any guess not within 1e-4 of the answer: the shot is taken
+  // from t = 300 instead, quietly. Exactly λ = 1 - 4/(304 - t) and
+  // x = 2 ((304 - t)/304)^2 (MaximizingProfitInOreMining).
+  #[test]
+  fn ndsolve_boundary_value_problem_shot_from_the_other_end() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "s = NDSolve[{l'[t] == -(1 - l[t])^2/4, x'[t] == -x[t] (1 - l[t])/2, \
+       l[300] == 0, x[0] == 2.}, {l, x}, {t, 0, 300}]; \
+       Max[Abs[({l[150], x[150]} /. First[s]) - \
+       {1 - 4/154., 2 (154/304.)^2}]] < 10^-6",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
   #[test]
   fn ndsolve_coupled_first_order_boundary_value_problem() {
     // A counterflow heat exchanger: two coupled first-order equations with
