@@ -4515,12 +4515,13 @@ pub fn dispatch_list_operations(
       if args.len() == 2
         && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Cycles") =>
     {
-      let rank = match crate::evaluator::evaluate_function_call_ast(
-        "TensorRank",
-        std::slice::from_ref(&args[0]),
-      ) {
-        Ok(Expr::Integer(r)) => r,
-        _ => return Some(Ok(unevaluated("TensorTranspose", args))),
+      let Ok(Expr::Integer(rank)) =
+        crate::evaluator::evaluate_function_call_ast(
+          "TensorRank",
+          std::slice::from_ref(&args[0]),
+        )
+      else {
+        return Some(Ok(unevaluated("TensorTranspose", args)));
       };
       return Some(
         match crate::evaluator::evaluate_function_call_ast(

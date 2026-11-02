@@ -2116,10 +2116,7 @@ fn machine_complex_determinant(
   let n = a.len();
   let mut det: C = (1.0, 0.0);
   for k in 0..n {
-    let Some(p) = (k..n).max_by(|&i, &j| abs(a[i][k]).total_cmp(&abs(a[j][k])))
-    else {
-      return None;
-    };
+    let p = (k..n).max_by(|&i, &j| abs(a[i][k]).total_cmp(&abs(a[j][k])))?;
     if abs(a[p][k]) == 0.0 {
       return None;
     }

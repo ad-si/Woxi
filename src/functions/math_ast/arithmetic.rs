@@ -4845,29 +4845,26 @@ fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Cow<'_, Expr>>) {
     Some(_) => Some(None),
     None => None,
   });
-  match cached {
+  if let Some(order) = cached {
     // A term of the sum being sorted: its factors are ordered once.
-    Some(order) => {
-      let order = order.unwrap_or_else(|| {
-        let mut order: Vec<usize> = (0..factors.len()).collect();
-        order.sort_by(|&i, &j| wl_arg_order(&factors[i], &factors[j]));
-        PLUS_TERM_FACTOR_ORDER.with(|m| {
-          m.borrow_mut().insert(key, Some(order.clone()));
-        });
-        order
+    let order = order.unwrap_or_else(|| {
+      let mut order: Vec<usize> = (0..factors.len()).collect();
+      order.sort_by(|&i, &j| wl_arg_order(&factors[i], &factors[j]));
+      PLUS_TERM_FACTOR_ORDER.with(|m| {
+        m.borrow_mut().insert(key, Some(order.clone()));
       });
-      let mut slots: Vec<Option<Cow<'_, Expr>>> =
-        factors.into_iter().map(Some).collect();
-      let factors = order
-        .into_iter()
-        .map(|i| slots[i].take().expect("factor order is a permutation"))
-        .collect();
-      (c, factors)
-    }
-    None => {
-      factors.sort_by(|a, b| wl_arg_order(a, b));
-      (c, factors)
-    }
+      order
+    });
+    let mut slots: Vec<Option<Cow<'_, Expr>>> =
+      factors.into_iter().map(Some).collect();
+    let factors = order
+      .into_iter()
+      .map(|i| slots[i].take().expect("factor order is a permutation"))
+      .collect();
+    (c, factors)
+  } else {
+    factors.sort_by(|a, b| wl_arg_order(a, b));
+    (c, factors)
   }
 }
 
