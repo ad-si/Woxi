@@ -13434,11 +13434,37 @@ pub fn qr_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     q.push((0..n).map(|k| Expr::Integer((k == 0) as i128)).collect());
     r_entries.push(vec![Expr::Integer(0); m]);
   }
-  // Completing an exact q to a square one would pick a basis of the
-  // orthogonal complement, which is not implemented: only a q that is
-  // square already is the full decomposition.
+  // The full decomposition completes q to a square matrix with an
+  // orthonormal basis of the orthogonal complement of the columns: the
+  // Gram-Schmidt of NullSpace[Transpose[m]], as wolframscript gives
+  // `{1/Sqrt[6], -Sqrt[2/3], 1/Sqrt[6]}` for {{1, 2}, {3, 4}, {5, 6}}; r gets
+  // zero rows to match.
   if full && q.len() != n {
-    return Ok(unevaluated("QRDecomposition", args));
+    if complex {
+      return Ok(unevaluated("QRDecomposition", args));
+    }
+    let transposed = Expr::List(
+      cols
+        .iter()
+        .map(|c| Expr::List(c.clone().into()))
+        .collect::<Vec<_>>()
+        .into(),
+    );
+    let complement =
+      eval_expr(&call1("Orthogonalize", call1("NullSpace", transposed)))?;
+    let Expr::List(extra) = &complement else {
+      return Ok(unevaluated("QRDecomposition", args));
+    };
+    for v in extra {
+      let Expr::List(entries) = v else {
+        return Ok(unevaluated("QRDecomposition", args));
+      };
+      q.push(entries.to_vec());
+      r_entries.push(vec![Expr::Integer(0); m]);
+    }
+    if q.len() != n {
+      return Ok(unevaluated("QRDecomposition", args));
+    }
   }
 
   // Build Q^T (rows of Q^T = the qi vectors, conjugated for complex input

@@ -719,6 +719,11 @@ pub fn dispatch_linear_algebra_functions(
         match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
           Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
           Expr::Identifier(s) if s == "Automatic" => "Automatic",
+          // LUDecomposition's own factors are already the structured
+          // triangular and permutation matrices.
+          Expr::String(s) if s == "Structured" && name == "LUDecomposition" => {
+            "Automatic"
+          }
           _ => return Some(Ok(unevaluated(name, args))),
         };
       let result = match crate::evaluator::evaluate_function_call_ast(
