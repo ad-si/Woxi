@@ -2519,6 +2519,10 @@ function main() {
     // BooleanFunction whose InputForm is WL's internal BDD encoding
     // ("BDD" -> {…}); Woxi leaves the call unevaluated.
     "BooleanMaxterms[{{0, 1, 1}}]",
+    // Symbolic MatrixPower of a matrix with radical eigenvalues: WL's
+    // sign normalization of the eigenvector factors is not decoded (see
+    // "Symbolic MatrixPower with irrational or complex eigenvalues").
+    "MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]",
     // ConstantImage with options: WL appends Magnification -> Automatic to
     // the image's options; Woxi's Image has no magnification slot (the
     // ColorSpace and ImageSize parts are tested with Options).
