@@ -219,7 +219,7 @@ impl Curve {
         self.controlled_step(x, &y, &guess, step)?
       {
         if let Some((x_ev, y_ev, stop)) =
-          self.event_on_step(x, &y, &guess, step, &y_new)?
+          self.event_on_step(x, &y, &guess, step, &y_new, &tangent)?
         {
           points.push((x_ev, y_ev.clone()));
           if stop {
@@ -247,9 +247,11 @@ impl Curve {
   }
 
   /// The first active `WhenEvent` that fires on the step of length `h`
-  /// from `(x, y)` (ending at `y_new`): its point, located by bisecting the
-  /// step, after its action has run, and whether the action stops the
-  /// integration.
+  /// from `(x, y)` with tangent `guess` (ending at `y_new` with tangent
+  /// `tangent_new`): its point, located by bisecting the step, after its
+  /// action has run, and whether the action stops the integration. An event
+  /// on a derivative (`T'[s] == 0`, the extremum of a boiling-point curve)
+  /// reads it from the tangent.
   fn event_on_step(
     &self,
     x: f64,
@@ -257,11 +259,15 @@ impl Curve {
     guess: &[f64],
     h: f64,
     y_new: &[f64],
+    tangent_new: &[f64],
   ) -> Result<Option<(f64, Vec<f64>, bool)>, InterpreterError> {
     for ev in self.events.iter().filter(|e| e.active.get()) {
-      let value =
-        |x: f64, y: &[f64]| ev.value(x, y, &self.funcs, &self.var_names);
-      let (Some(before), Some(after)) = (value(x, y), value(x + h, y_new))
+      let value = |x: f64, y: &[f64], p: &[f64]| {
+        let state: Vec<f64> = y.iter().chain(p).copied().collect();
+        ev.value(x, &state, &self.funcs, &self.var_names)
+      };
+      let (Some(before), Some(after)) =
+        (value(x, y, guess), value(x + h, y_new, tangent_new))
       else {
         continue;
       };
@@ -273,10 +279,10 @@ impl Curve {
       let mut at = (x + h, y_new.to_vec());
       for _ in 0..50 {
         let mid = f64::midpoint(lo, hi);
-        let Some((y_mid, _)) = self.rk4_step(x, y, guess, h * mid)? else {
+        let Some((y_mid, t_mid)) = self.rk4_step(x, y, guess, h * mid)? else {
           break;
         };
-        match value(x + h * mid, &y_mid) {
+        match value(x + h * mid, &y_mid, &t_mid) {
           Some(v) if ev.fires(before, v) => {
             hi = mid;
             at = (x + h * mid, y_mid);

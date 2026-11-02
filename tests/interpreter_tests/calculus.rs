@@ -9517,6 +9517,24 @@ mod ndsolve {
     );
   }
 
+  // A WhenEvent on a derivative of a traced curve (`y'[s] == 0`, the top of
+  // the parabola; the azeotrope of the arc-length VLE Demonstration) reads
+  // it from the tangent. wolframscript: {1.4789431775150794,
+  // 1.813460669219897*^-7, 0.9999999976104572}.
+  #[test]
+  fn implicit_curve_event_on_a_derivative() {
+    assert_eq!(
+      interpret(
+        "r = Reap[NDSolve[{y[s] == 1 - x[s]^2, x'[s]^2 + y'[s]^2 == 1, \
+         x[0] == -1, y[0] == 0, x'[0] == 1/Sqrt[5.], y'[0] == 2/Sqrt[5.], \
+         WhenEvent[y'[s] == 0, Sow[{s, x[s], y[s]}]]}, {x, y}, {s, 0, 3}]]; \
+         Max[Abs[r[[2, 1, 1]] - {1.4789431775150794, 0, 1}]] < 10^-5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // An arclength-parametrised curve that ends well inside a wide domain
   // (the quarter circle y == Sqrt[1 - x^2] ends at x == ±1) is traced with
   // steps that shrink near the end instead of failing at the first nominal
