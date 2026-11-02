@@ -445,11 +445,10 @@ mod discrete_plot_3d_forms {
     assert_eq!(
       interpret(
         "Cases[DiscretePlot3D[{i + j, Style[i - j, Green]}, {i, 2}, {j, 2}], \
-         {_EdgeForm, Directive[PointSize[_], c_], {___, _Point, ___}} :> c, Infinity]"
+         Style[{___, _Point, ___}, s_] :> s, Infinity]"
       )
       .unwrap(),
-      "{RGBColor[0.216, 0.5399999999999999, 0.7200000000000001], \
-       RGBColor[0, 1, 0]}"
+      "{RGBColor[0, 1, 0]}"
     );
   }
 

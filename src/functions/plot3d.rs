@@ -14116,9 +14116,17 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (0.40950000000000003, 0.63, 0.189),
     (0.8302733999999999, 0.3470634, 0.18826110000000001),
   ];
+  // A function's own `Style` does not change its palette colour: it wraps
+  // its points (and, as wolframscript does it, every function's stems take
+  // the last such style).
+  let own_styles: Vec<Option<Expr>> =
+    bodies.iter().map(|(_, own)| own.clone()).collect();
+  let stem_style = own_styles.iter().rev().find_map(Clone::clone);
   let colors: Vec<Expr> = (0..datasets.len())
     .map(|k| {
-      if let Some(own) = &bodies[k].1 {
+      if extent.is_some()
+        && let Some(own) = &bodies[k].1
+      {
         own.clone()
       } else if style_items.is_empty() {
         let (r, g, b) = DISCRETE_COLORS[k % DISCRETE_COLORS.len()];
@@ -14159,8 +14167,8 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let vertex_colors =
       || crate::helpers::rule_expr(id_expr("VertexColors"), id_expr("None"));
+    let mut stems = Vec::with_capacity(datasets.len());
     if let Some(bottom) = base {
-      let mut stems = Vec::with_capacity(datasets.len());
       for (k, pts) in datasets.iter().enumerate() {
         let stem = |&(x, y, z): &(f64, f64, f64)| {
           Expr::List(vec![triple(x, y, z), triple(x, y, bottom)].into())
@@ -14170,13 +14178,13 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let high: Vec<Expr> =
           pts.iter().filter(|p| p.2 > bottom).map(stem).collect();
         let line = |segments: Vec<Expr>| {
-          Expr::List(
-            vec![
-              style(k, true),
-              call("Line", vec![Expr::List(segments.into()), vertex_colors()]),
-            ]
-            .into(),
-          )
+          let line =
+            call("Line", vec![Expr::List(segments.into()), vertex_colors()]);
+          let line = match &stem_style {
+            Some(st) => call("Style", vec![line, st.clone()]),
+            None => line,
+          };
+          Expr::List(vec![style(k, true), line].into())
         };
         stems.push(Expr::List(
           vec![
@@ -14188,19 +14196,9 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
         ));
       }
-      content.push(Expr::List(
-        vec![
-          call(
-            "Directive",
-            vec![
-              call1("CapForm", Expr::String("Butt".into())),
-              call1("EdgeForm", call1("Directive", call1("Opacity", num(0.5)))),
-            ],
-          ),
-          Expr::List(stems.into()),
-        ]
-        .into(),
-      ));
+    } else {
+      // Without filling the stems' place holds Null.
+      stems.push(id_expr("Null"));
     }
     let empty = || Expr::List(vec![].into());
     let points: Vec<Expr> = datasets
@@ -14211,26 +14209,45 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           vec![
             call1("EdgeForm", call1("Opacity", num(0.5))),
             style(k, false),
-            Expr::List(
-              vec![
-                empty(),
-                empty(),
-                call1(
-                  "Point",
-                  Expr::List(
-                    pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect(),
+            {
+              let group = Expr::List(
+                vec![
+                  empty(),
+                  empty(),
+                  call1(
+                    "Point",
+                    Expr::List(
+                      pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect(),
+                    ),
                   ),
-                ),
-                empty(),
-              ]
-              .into(),
-            ),
+                  empty(),
+                ]
+                .into(),
+              );
+              match &own_styles[k] {
+                Some(st) => call("Style", vec![group, st.clone()]),
+                None => group,
+              }
+            },
           ]
           .into(),
         )
       })
       .collect();
-    content.push(Expr::List(points.into()));
+    content.push(Expr::List(
+      vec![
+        call(
+          "Directive",
+          vec![
+            call1("CapForm", Expr::String("Butt".into())),
+            call1("EdgeForm", call1("Directive", call1("Opacity", num(0.5)))),
+          ],
+        ),
+        Expr::List(stems.into()),
+        Expr::List(points.into()),
+      ]
+      .into(),
+    ));
     content.push(empty());
     content.push(empty());
   }
