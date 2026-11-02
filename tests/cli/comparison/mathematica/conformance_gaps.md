@@ -300,11 +300,11 @@ Smaller TraditionalForm typesetter differences, all in representation:
   `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
   renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
-### `ToBoxes` in StandardForm drops StyleBox and held TagBox
+### `ToBoxes` in StandardForm drops a held TagBox
 
-`ToBoxes[Style[x, Red]]` is `"x"` where wolframscript gives
-`StyleBox["x", RGBColor[1, 0, 0], StripOnInput -> False]`. The TraditionalForm
-builder learned both; the StandardForm one has not.
+The TraditionalForm builder keeps a held `TagBox`; the StandardForm one does
+not. (`ToBoxes[Style[x, Red]]` is `StyleBox["x", RGBColor[1, 0, 0],
+StripOnInput -> False]` in both, as in wolframscript.)
 
 ### StandardForm boxes: inline exponent fractions, `I`, logical operands of a sum
 
@@ -7640,3 +7640,51 @@ outer one flips the sign of `-a + d - Sqrt[…]` factors that WL keeps);
 which case applies is not decoded, and Woxi's `Inverse`/`Cancel` of
 radical expressions, its symbolic eigenvectors and its `I^n` products
 (`I/2 I^n` stays separate in WL) differ from WL's anyway.
+
+## Unit-test conformance sweep (misc cluster, 2026-11)
+
+Divergences the unit-test cross-check (`verify_unit_tests.ts`) found and
+that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
+(`NEAR_MATCH`), with the reason.
+
+- **Stored objects in an older internal form still evaluate.** A
+  Demonstration notebook saved by an older version stores
+  `TemporalData[EventSeries, {{values}, {{t0, t1, dt}}, 1}]`,
+  version-less `CompiledFunction[{Blank[Real]}, …, Function[…], Evaluate]`
+  dumps and raw `NearestFunction[1, {n, 1}, …, Hold[Nearest[…]]]` objects.
+  wolframscript 14 rejects all three (`TemporalData::invstrct`, or the call
+  stays unevaluated); Woxi evaluates them so the notebooks run. Deliberate.
+- **`Audio`Waveform`** is defined in Woxi as the sound player of the "Sounds
+  of Waveforms" Demonstration; a plain kernel has no definition (and with
+  ``Needs["Audio`"]`` the legacy package rejects `Audio`Square`).
+- **Plot attributes before the first plot.** `Attributes[Plot]` is
+  `{Protected, ReadProtected}` on a cold wolframscript kernel (an autoload
+  stub) and `{HoldAll, Protected, ReadProtected}` once any plot has been
+  drawn; Woxi reports the loaded attributes. Same non-determinism as
+  `Attributes[ParallelDo]`.
+- **`SmoothKernelDistribution`** interpolates its density in wolframscript
+  (`InterpolationPoints`), so `Variance`, a kernel `PDF` and the
+  default-bandwidth `PDF` differ from the exact kernel sum in the fifth
+  digit (`1.30567` against `1.30556` for `{1., 2., 3.5}`, bandwidth 0.5).
+- **`DictionaryWordQ[w, Language -> l]`**: Woxi's word list is English only.
+- **Stream numbers.** wolframscript keeps stream 3 open for its own output
+  file, so its first `StringToStream` is `InputStream[String, 4]`; a kernel's
+  (and Woxi's) is 3.
+- **`TreePlot`** returns the legacy GraphPlot drawing in wolframscript
+  (`GraphicsComplex`, `Hue` directives, a disk radius from its own size
+  heuristics, the graph center as the default root); Woxi draws its own tree
+  layout. Not compared: Graphics internals.
+- **Last-digit values** (`NEAR_MATCH`): `PeriodogramArray` (FFT round-off,
+  `6.249999999999998` for 6.25), `Hyperfactorial[4.]`
+  (`27647.99999999983`), `SphericalHankelH1[2, -5.]` (Woxi's real part is
+  the correctly rounded `SphericalBesselJ`), `Projection` onto a list of
+  machine vectors, `Mean[InverseChiSquareDistribution[53.2, 1.04]]`,
+  `Accuracy[N[Exp[100], {Infinity, -10}]]` (wolframscript's two Log10s
+  disagree in the last bit) and the spline peaks of
+  `FindPeaks[…, InterpolationOrder -> 3]`.
+- **`FindPeaks[…, InterpolationOrder -> 2]`** (wolframscript's quadratic
+  spline peaks) stays unevaluated; orders 0, 1 and 3 are implemented.
+- **Two-sample `KolmogorovSmirnovTest`** p-values are exact rationals
+  rounded once; wolframscript's own evaluation is off by one unit in the
+  last place for some samples (`Range[60]` against `Range[5, 70]`:
+  `0.3653150154290672`, the exact value rounds to `…725`).
