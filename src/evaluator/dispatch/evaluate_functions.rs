@@ -1338,23 +1338,30 @@ fn evaluate_function_call_ast_inner(
       .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
   }
 
-  // `GraphUtilities\`GraphCoordinates[rules]` / `GraphCoordinates3D[rules]`:
-  // one position per vertex, in `VertexList` order.
+  // `GraphUtilities\`GraphCoordinates[g]` / `GraphCoordinates3D[g]`, once
+  // the package is loaded. The package reads the coordinates out of the
+  // `VertexCoordinateRules` option of a `GraphPlot`, which today's
+  // `GraphPlot` no longer sets — so in wolframscript every non-empty graph
+  // comes back as the bare symbol `VertexCoordinateRules`, and an empty one
+  // as `{}`.
   if let Some(short) = name.strip_prefix("GraphUtilities`")
     && matches!(short, "GraphCoordinates" | "GraphCoordinates3D")
     && args.len() == 1
-    && matches!(&args[0], Expr::List(_))
+    && package_loaded("GraphUtilities`")
   {
-    let dim = if short == "GraphCoordinates3D" { 3 } else { 2 };
-    return match crate::functions::graph::graph_coordinates(&args[0], dim)? {
-      Some((_, _, coords)) => Ok(Expr::List(
-        coords
-          .into_iter()
-          .map(|p| Expr::List(p.into_iter().map(Expr::Real).collect()))
-          .collect(),
-      )),
-      None => Ok(unevaluated(name, args)),
+    let empty = match &args[0] {
+      Expr::List(items) => items.is_empty(),
+      g => evaluate_expr_to_expr(&call1("VertexCount", g.clone()))
+        .is_ok_and(|c| matches!(c, Expr::Integer(0))),
     };
+    if empty {
+      return Ok(Expr::List(vec![].into()));
+    }
+    if matches!(&args[0], Expr::List(_))
+      || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graph")
+    {
+      return Ok(id_expr("VertexCoordinateRules"));
+    }
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules

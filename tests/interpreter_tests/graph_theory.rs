@@ -8912,36 +8912,30 @@ mod find_shortest_tour {
 mod graph_coordinates_3d {
   use super::*;
 
+  // Until the package is loaded the names have no definitions.
   #[test]
-  fn one_position_per_vertex() {
+  fn unloaded_package_stays_unevaluated() {
     assert_eq!(
       interpret(
-        "Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]"
+        "{Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]], Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]], Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]]}"
       )
       .unwrap(),
-      "{4, 3}"
+      "{{1}, {1}, Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]}"
     );
   }
 
+  // Loaded, the package reads the coordinates from a `GraphPlot` option
+  // that `GraphPlot` no longer sets: what comes back is the option's name
+  // (and {} for an empty graph), as in wolframscript.
   #[test]
-  fn planar_coordinates_are_pairs() {
+  fn loaded_package_reads_a_vanished_option() {
     assert_eq!(
       interpret(
-        "Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]]"
+        "Needs[\"GraphUtilities`\"]\n\
+         {GraphCoordinates[{a -> b, b -> c, c -> a}], GraphCoordinates3D[{1 -> 2, 2 -> 3}], GraphCoordinates[{}]}"
       )
       .unwrap(),
-      "{3, 2}"
-    );
-  }
-
-  #[test]
-  fn coordinates_fit_the_unit_cube() {
-    assert_eq!(
-      interpret(
-        "Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]]"
-      )
-      .unwrap(),
-      "1."
+      "{VertexCoordinateRules, VertexCoordinateRules, {}}"
     );
   }
 
