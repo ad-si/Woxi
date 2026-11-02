@@ -14,6 +14,14 @@ use super::*;
 const RTOL: f64 = 1e-8;
 const ATOL: f64 = 1e-10;
 
+/// The longest step is the leg over this. On a stiff problem's slow
+/// manifold the error estimate lets the step grow far beyond what the
+/// solution between the accepted points can be recovered over (by the
+/// method's continuous extension or by interpolation): `y' == -10^5 (y -
+/// Cos[t])` took steps of 0.16, and its values between them were off by
+/// 1e-4.
+const MAX_STEP_FRACTION: f64 = 100.0;
+
 /// Accepted plus rejected steps a leg may take before giving up. The
 /// order-2 method needs ~500 steps per unit of `x` on a stiff problem whose
 /// slow solution varies on a unit scale (`y' = -10^5 (y - Cos[x])`), so a
@@ -25,25 +33,32 @@ const MAX_STEPS: usize = 2_000_000;
 pub(super) type Rhs<'a> =
   dyn Fn(f64, &[f64]) -> Result<Option<Vec<f64>>, InterpreterError> + 'a;
 
+/// The Jacobian `∂f/∂y` at `(x, y)` in closed form, where the system has
+/// one; `None` asks for the finite-difference one.
+pub(super) type Jac<'a> = dyn Fn(f64, &[f64]) -> Option<Vec<Vec<f64>>> + 'a;
+
 /// Integrate `y' = f(x, y)` from `x_from` to `x_to` with adaptive
 /// Rosenbrock steps. Returns every accepted point, starting at `x_from`, or
 /// `None` when the right-hand side fails or the step size collapses.
 pub(super) fn rosenbrock_leg(
   f: &Rhs,
+  jac: Option<&Jac>,
   init: &[f64],
   x_from: f64,
   x_to: f64,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let (atol, rtol) = error_goals((ATOL, RTOL));
-  rosenbrock_leg_limited(f, init, x_from, x_to, MAX_STEPS, rtol, atol)
+  rosenbrock_leg_limited(f, jac, init, x_from, x_to, MAX_STEPS, rtol, atol)
 }
 
 /// [`rosenbrock_leg`] with its own tolerances, giving up after `max_steps`
 /// accepted plus rejected steps — for a right-hand side so expensive (a
 /// Newton solve per evaluation) that a leg crawling towards a singular
 /// point must stop early.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn rosenbrock_leg_limited(
   f: &Rhs,
+  jac: Option<&Jac>,
   init: &[f64],
   x_from: f64,
   x_to: f64,
@@ -84,12 +99,19 @@ pub(super) fn rosenbrock_leg_limited(
     if (x_to - x) * dir <= h_min {
       return Ok(Some(points));
     }
-    h = h.min((x_to - x).abs());
+    h = h.min((x_to - x).abs()).min(span.abs() / MAX_STEP_FRACTION);
     let hs = h * dir;
 
-    // The Jacobian and the time derivative, by forward differences.
-    let Some(jacobian) = sparsity.jacobian(f, x, &y, &f0)? else {
-      return Ok(None);
+    // The Jacobian (in closed form where the system gives it, else by
+    // forward differences) and the time derivative.
+    let analytic = jac.and_then(|j| j(x, &y));
+    let jacobian = if let Some(j) = analytic {
+      j
+    } else {
+      let Some(j) = sparsity.jacobian(f, x, &y, &f0)? else {
+        return Ok(None);
+      };
+      j
     };
     // Differenced over a step sized to the leg rather than to the current
     // step: the first steps of a leg starting at 0 are tiny, and a
@@ -706,7 +728,7 @@ mod tests {
   fn rodas4_is_accurate_and_takes_few_steps() {
     // y' = -y: e^-1 at 1, within the tolerance.
     let decay = |_: f64, y: &[f64]| Ok(Some(vec![-y[0]]));
-    let points = rosenbrock_leg(&decay, &[1.0], 0.0, 1.0)
+    let points = rosenbrock_leg(&decay, None, &[1.0], 0.0, 1.0)
       .unwrap()
       .expect("integrates");
     let err = (points.last().unwrap().1[0] - (-1.0f64).exp()).abs();
@@ -717,7 +739,7 @@ mod tests {
     let pair = |_: f64, y: &[f64]| {
       Ok(Some(vec![-y[0] + 9999.0 * y[1], -10000.0 * y[1]]))
     };
-    let points = rosenbrock_leg(&pair, &[1.0, 1.0], 0.0, 10.0)
+    let points = rosenbrock_leg(&pair, None, &[1.0, 1.0], 0.0, 10.0)
       .unwrap()
       .expect("integrates");
     // y1 = (2 e^-x - e^(-10^4 x)), y2 = e^(-10^4 x).
@@ -729,7 +751,7 @@ mod tests {
   #[test]
   fn long_stiff_leg_completes() {
     let stiff = |x: f64, y: &[f64]| Ok(Some(vec![-1e5 * (y[0] - x.cos())]));
-    let points = rosenbrock_leg(&stiff, &[0.0], 0.0, 300.0)
+    let points = rosenbrock_leg(&stiff, None, &[0.0], 0.0, 300.0)
       .unwrap()
       .expect("integrates");
     let (x, y) = points.last().unwrap();
@@ -757,7 +779,7 @@ mod tests {
     assert!(calls.get() < 5_000, "{} evaluations", calls.get());
     calls.set(0);
     assert!(
-      rosenbrock_leg(&undefined_past_one, &[1.0], 0.0, 10.0)
+      rosenbrock_leg(&undefined_past_one, None, &[1.0], 0.0, 10.0)
         .unwrap()
         .is_none()
     );

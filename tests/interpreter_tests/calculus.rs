@@ -24551,8 +24551,8 @@ mod ndsolve_stiff_system {
     );
   }
 
-  // AccuracyGoal and PrecisionGoal set the adaptive steps' tolerances: the
-  // looser goals take far fewer steps and stay within them
+  // AccuracyGoal and PrecisionGoal set the adaptive steps' tolerances:
+  // tighter goals take more steps, looser ones stay within theirs
   // (NonadiabaticTubularReactorWithNegligibleMassDispersion asks for
   // AccuracyGoal -> 3 on a stiff collocation system).
   #[test]
@@ -24562,14 +24562,34 @@ mod ndsolve_stiff_system {
         "e = {x1'[t] == -x1[t] + 0.1 z2[t], \
          x2'[t] == -2 x2[t] + 0.1 z1[t], z1[t] + Exp[z1[t]] == 2 + x1[t], \
          z2[t]^3 + z2[t] == 3 + x2[t], x1[0] == 1, x2[0] == 2}; \
-         s1 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}]; \
+         s1 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 12, \
+         PrecisionGoal -> 12]; \
          s2 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 3, \
          PrecisionGoal -> 3]; \
          {Length[(x1 /. s2[[1]])[[2]]] < Length[(x1 /. s1[[1]])[[2]]] / 2, \
-         Abs[(x1[2] /. s2[[1]]) - 0.2446458436321119] < 10^-3}"
+         Abs[(x1[2] /. s2[[1]]) - 0.2446458436321119] < 10^-3, \
+         Abs[(x1[2] /. s1[[1]]) - 0.2446458436321119] < 10^-7}"
       )
       .unwrap(),
-      "{True, True}"
+      "{True, True, True}"
+    );
+  }
+
+  // A stiff solution is accurate between the accepted points too: on the
+  // slow manifold the error estimate would let the step grow to 0.16, over
+  // which the values in between were off by 1e-4 (y'[t] == -10^5 (y[t] -
+  // Cos[t]) settles to Cos[t] + Sin[t]/10^5).
+  #[test]
+  fn stiff_solution_between_steps() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -100000 (y[t] - Cos[t]), y[0] == 1}, y, \
+         {t, 0, 3}]; f = y /. First[s]; \
+         Max[Table[Abs[f[t] - Cos[t] - Sin[t]/100000], {t, 0.5, 3, 0.01}]] \
+         < 10^-5"
+      )
+      .unwrap(),
+      "True"
     );
   }
 

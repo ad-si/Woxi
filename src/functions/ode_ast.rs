@@ -6253,6 +6253,9 @@ fn ndsolve_system(
   // Rewrite the equations over placeholder variables and wrap them into
   // numeric residual functions.
   let mut residuals: Vec<NumFn> = Vec::with_capacity(odes.len());
+  // The residuals as expressions, for a closed-form Jacobian (only when
+  // each evaluation is a plain function of the state: no Newton solve).
+  let mut residual_exprs: Vec<Expr> = Vec::with_capacity(odes.len());
   let delay_found = std::cell::Cell::new(false);
   // The numerically-eliminated unknowns live in extra slots past the
   // placeholders; each residual solves their constraints for those first.
@@ -6347,6 +6350,7 @@ fn ndsolve_system(
       1 + n_state,
       |e| compile_shared(e, &var_names),
     );
+    residual_exprs.push(rewritten.clone());
     residuals.push(match (NumFn::new(rewritten, &var_names), coeffs) {
       (NumFn::Compiled(e, memo, _), coeffs) => NumFn::Compiled(e, memo, coeffs),
       (symbolic, _) => symbolic,
@@ -6527,7 +6531,7 @@ fn ndsolve_system(
         // run's stage evaluations is a large constant-factor speedup with
         // no change to the result: the linear solve at each stage is
         // unaffected, only where its matrix comes from.
-        let cached_mass_matrix = probe_constant_mass_matrix(
+        let mut cached_mass_matrix = probe_constant_mass_matrix(
           &residuals,
           funcs.len(),
           x0,
@@ -6535,6 +6539,12 @@ fn ndsolve_system(
           x_min,
           x_max_resolved,
         );
+        if let Some(m) = cached_mass_matrix.as_mut()
+          && residual_exprs.len() == residuals.len()
+          && !delay_found.get()
+        {
+          m.jacobian_source = Some((residual_exprs.clone(), var_names.clone()));
+        }
         // Integrate (if x0 is interior) backward from x0 to x_min, then
         // forward from x0 to x_max, locating events on both legs in that
         // order — wolframscript sows `{-Pi, -2 Pi, Pi, 2 Pi}` for the turning
@@ -7951,6 +7961,11 @@ fn integrate_leg(
       cached_m,
     ))
   };
+  let jac_closure = cached_m
+    .filter(|m| m.jacobian_source.is_some())
+    .map(|m| move |xv: f64, s: &[f64]| m.jacobian(funcs, state_offset, xv, s));
+  let analytic_jac: Option<&stiff::Jac> =
+    jac_closure.as_ref().map(|j| j as &stiff::Jac);
   // An adaptive explicit step first (a fast transient the grid missed),
   // handing a stiff system to the stiff method as soon as the explicit
   // steps detect it; when the stiff method fails too (fast spikes rather
@@ -7962,6 +7977,7 @@ fn integrate_leg(
     if costly {
       return stiff::rosenbrock_leg_limited(
         &rhs,
+        analytic_jac,
         start,
         a,
         b,
@@ -7973,7 +7989,7 @@ fn integrate_leg(
     if let Some(p) = stiff::dormand_prince_leg(&rhs, start, a, b, true)? {
       return Ok(Some(p));
     }
-    if let Some(p) = stiff::rosenbrock_leg(&rhs, start, a, b)? {
+    if let Some(p) = stiff::rosenbrock_leg(&rhs, analytic_jac, start, a, b)? {
       return Ok(Some(p));
     }
     stiff::dormand_prince_leg(&rhs, start, a, b, false)
@@ -8821,6 +8837,14 @@ pub(crate) struct MassLu {
   pivots: Vec<usize>,
   /// The factor each row was divided by before elimination.
   scales: Vec<f64>,
+  /// The residuals and the names of their variables, from which the
+  /// derivatives below are taken, when the system allows it.
+  jacobian_source: Option<(Vec<Expr>, Vec<String>)>,
+  /// The derivatives of each residual with respect to the state variables
+  /// it reads (`(state index, derivative)`), compiled on first use: with
+  /// the mass matrix constant they give the system's Jacobian in closed
+  /// form, for a fraction of the cost of differencing every column.
+  state_jacobian: std::cell::OnceCell<Option<Vec<Vec<(usize, NExpr)>>>>,
 }
 
 /// The largest magnitude in a row, or 1 for a row of zeros.
@@ -8859,7 +8883,74 @@ impl MassLu {
       lu: m,
       pivots,
       scales,
+      jacobian_source: None,
+      state_jacobian: std::cell::OnceCell::new(),
     })
+  }
+
+  /// The Jacobian of the first-order system at `(x, state)`: the state's
+  /// lower derivatives shift up, and the highest ones are `-M⁻¹ ∂r/∂y`.
+  fn jacobian(
+    &self,
+    funcs: &[SysFunc],
+    state_offset: &[usize],
+    x: f64,
+    state: &[f64],
+  ) -> Option<Vec<Vec<f64>>> {
+    let entries = self
+      .state_jacobian
+      .get_or_init(|| {
+        let (residuals, names) = self.jacobian_source.as_ref()?;
+        let n_state = state.len();
+        residuals
+          .iter()
+          .map(|r| {
+            (0..n_state)
+              .filter(|&s| mentions_symbol(r, &names[1 + s]))
+              .map(|s| {
+                let d = differentiate_expr(r, &names[1 + s]).ok()?;
+                Some((s, compile_shared(&d, names)?))
+              })
+              .collect::<Option<Vec<_>>>()
+          })
+          .collect::<Option<Vec<_>>>()
+      })
+      .as_ref()?;
+    let n_state = state.len();
+    let n = funcs.len();
+    let mut vars = Vec::with_capacity(1 + n_state + n);
+    vars.push(x);
+    vars.extend_from_slice(state);
+    vars.extend(std::iter::repeat_n(0.0, n));
+    // ∂r/∂y, one column per state variable.
+    let mut dr = vec![vec![0.0; n]; n_state];
+    for (i, row) in entries.iter().enumerate() {
+      for (s, e) in row {
+        let v = e.eval(&vars);
+        if !v.is_finite() {
+          return None;
+        }
+        dr[*s][i] = v;
+      }
+    }
+    let mut jac = vec![vec![0.0; n_state]; n_state];
+    for (s, col) in dr.iter().enumerate() {
+      if col.iter().all(|v| *v == 0.0) {
+        continue;
+      }
+      let h = self.solve(col);
+      for (fi, f) in funcs.iter().enumerate() {
+        if f.order > 0 {
+          jac[state_offset[fi] + f.order - 1][s] = h[fi];
+        }
+      }
+    }
+    for (fi, f) in funcs.iter().enumerate() {
+      for k in 0..f.order.saturating_sub(1) {
+        jac[state_offset[fi] + k][state_offset[fi] + k + 1] = 1.0;
+      }
+    }
+    Some(jac)
   }
 
   /// `hvec` with `M·hvec = -c`.
