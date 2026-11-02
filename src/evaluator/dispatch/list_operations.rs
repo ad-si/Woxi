@@ -2197,7 +2197,7 @@ pub fn dispatch_list_operations(
           }
         }
         // ... then gather the rows' pieces with the same chunk indices.
-        match gather_take_list_blocks(&rows, depth, &head) {
+        match gather_take_list_blocks(&rows, depth, head.as_ref()) {
           Some(block) => new_groups.push(block),
           None => return Some(Ok(unevaluated("TakeList", args))),
         }
@@ -11918,7 +11918,7 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
 fn gather_take_list_blocks(
   rows: &[Expr],
   depth: usize,
-  head: &Option<String>,
+  head: Option<&String>,
 ) -> Option<Expr> {
   if depth == 0 {
     return Some(match head {
