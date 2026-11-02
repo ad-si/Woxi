@@ -246,7 +246,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// fixes the width; a pair is a bounding box the image is scaled to fit
 /// while keeping its aspect ratio (an `Automatic` side leaves the other
 /// side to decide).
-fn image_size_option(
+pub(crate) fn image_size_option(
   opts: &[Expr],
   width: u32,
   height: u32,

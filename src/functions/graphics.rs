@@ -17398,8 +17398,30 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &evaled_first
       }
     };
-    if matches!(first_ref, Expr::Image { .. }) {
-      return Ok(first_ref.clone());
+    if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      color_space,
+      display_size,
+    } = first_ref
+    {
+      // `Show[image, ImageSize -> …]` displays the same pixels at the
+      // requested size, exactly as `Image[data, ImageSize -> …]` does.
+      let display_size =
+        crate::functions::image_ast::image_size_option(rest, *width, *height)
+          .or(*display_size);
+      return Ok(Expr::Image {
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: data.clone(),
+        image_type: *image_type,
+        color_space: *color_space,
+        display_size,
+      });
     }
   }
 
