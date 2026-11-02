@@ -9997,7 +9997,8 @@ mod hierarchical_clustering_distance_matrix {
   }
 }
 
-// Derivatives of a B-spline curve evaluate as the derivative curve.
+// The derivative of a B-spline is the spline object carrying the derivative
+// order (its seventh slot); applied, it evaluates the derivative curve.
 mod bspline_function_derivatives {
   use super::*;
 
@@ -10009,9 +10010,10 @@ mod bspline_function_derivatives {
        {1.5, 0.3}, {2.1, 0.5}}]; g = BSplineFunction[{1, 3, 2, 5}];",
     )
     .unwrap();
+    // (Rounded: the last bits depend on how the derivative is summed.)
     assert_eq!(
-      interpret("rear'[0.5]").unwrap(),
-      "{1.6875, 0.22499999999999992}"
+      interpret("Round[rear'[0.5], 10^-9]").unwrap(),
+      "{27/16, 9/40}"
     );
     assert_eq!(
       interpret("Chop[rear''[0.3] - {-3.375, 1.485}, 10^-12]").unwrap(),
@@ -10021,8 +10023,10 @@ mod bspline_function_derivatives {
     assert_eq!(interpret("g'[0.5]").unwrap(), "2.25");
     assert_eq!(
       interpret("Head[rear'[x]]").unwrap(),
-      "Derivative[1][BSplineFunction[1, {{0., 1.}}, {3}, {False}, {{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, {1.5, 0.3}, {2.1, 0.5}}, Automatic}, {{0., 0., 0., 0., 0.3333333333333333, 0.6666666666666666, 1., 1., 1., 1.}}, {0}, MachinePrecision, Unevaluated]]"
+      "BSplineFunction[1, {{0., 1.}}, {3}, {False}, {{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, {1.5, 0.3}, {2.1, 0.5}}, Automatic}, {{0., 0., 0., 0., 0.3333333333333333, 0.6666666666666666, 1., 1., 1., 1.}}, {1}, MachinePrecision, Unevaluated]"
     );
+    // A derivative of a derivative adds to the order the object carries.
+    assert_eq!(interpret("Derivative[2][rear'][[7]]").unwrap(), "{3}");
   }
 }
 
