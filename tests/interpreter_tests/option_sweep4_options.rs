@@ -112,13 +112,15 @@ mod extension_automatic {
   }
 
   #[test]
-  fn another_field_than_the_coefficients_stays_unevaluated() {
+  fn square_free_factorization_ignores_the_field() {
+    // A gcd does not depend on the field: any extension factors over the
+    // coefficients' own one.
     assert_eq!(
       interpret(
         "FactorSquareFree[x^2 + 2 Sqrt[2] x + 2, Extension -> Sqrt[3]]"
       )
       .unwrap(),
-      "FactorSquareFree[2 + 2*Sqrt[2]*x + x^2, Extension -> Sqrt[3]]"
+      "(Sqrt[2] + x)^2"
     );
   }
 }

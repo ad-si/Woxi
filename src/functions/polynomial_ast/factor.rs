@@ -4783,7 +4783,21 @@ pub fn extension_rational_operation(
 ) -> Result<Option<Expr>, InterpreterError> {
   use quadratic_field as qf;
   let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
-  let Some(field) = extension_field(&args[0], &args[1]) else {
+  // A square-free factorization is a gcd computation, and gcds do not
+  // depend on the field the coefficients are taken in: any extension gives
+  // the factorization over the coefficients' own field
+  // (`FactorSquareFree[x^2 + 2 Sqrt[2] x + 2, Extension -> Sqrt[3]]` is
+  // `(Sqrt[2] + x)^2`).
+  let automatic = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("Extension".to_string())),
+    replacement: Box::new(Expr::Identifier("Automatic".to_string())),
+  };
+  let option = if matches!(name, "FactorSquareFree" | "FactorSquareFreeList") {
+    &automatic
+  } else {
+    &args[1]
+  };
+  let Some(field) = extension_field(&args[0], option) else {
     return Ok(None);
   };
   let mut found = std::collections::BTreeSet::new();
