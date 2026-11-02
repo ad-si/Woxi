@@ -44345,10 +44345,14 @@ mod smooth_histogram_3d {
       .unwrap(),
       "Graphics3D"
     );
-    // Not 2D numeric data: stays unevaluated.
+    // A list without numeric pairs is drawn as wolframscript's empty
+    // surface.
     assert_eq!(
-      interpret("SmoothHistogram3D[{a, b}]").unwrap(),
-      "SmoothHistogram3D[{a, b}]"
+      interpret(
+        "{Head[SmoothHistogram3D[{a, b}]], SmoothHistogram3D[{a, b}][[1]], Length[SmoothHistogram3D[{a, b}][[2]]], PlotRange /. SmoothHistogram3D[{a, b}][[2]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {{{}, {}}}, 20, {{-1, 1}, {-1, 1}, {0., 0.}}}"
     );
   }
 }
