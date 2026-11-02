@@ -339,7 +339,8 @@ mod resolve_context_aliases {
     clear_state();
     assert_eq!(
       interpret(
-        "$ContextAliases[\"abc`\"] = \"NewContext`\"; abc`newSymbol; \
+        "$ContextAliases[\"abc`\"] = \"NewContext`\"\n\
+         abc`newSymbol; \
          {Names[\"abc`newSymbol\"], \
          Names[\"abc`newSymbol\", ResolveContextAliases -> False], \
          Contexts[\"abc`\"], \
@@ -348,6 +349,25 @@ mod resolve_context_aliases {
       .unwrap(),
       // `abc`newSymbol` is created when the line is read, before the alias
       // exists (wolframscript also warns `$ContextAliases::cxinuse`).
+      "{{}, {abc`newSymbol}, {}, {abc`}}"
+    );
+    clear_state();
+  }
+
+  // On the line that sets the alias the name was read before it existed:
+  // the symbol is `abc`newSymbol` itself, which the new alias then hides.
+  #[test]
+  fn an_alias_does_not_redirect_a_name_read_before_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "$ContextAliases[\"abc`\"] = \"NewContext`\"; abc`newSymbol; \
+         {Names[\"abc`newSymbol\"], \
+         Names[\"abc`newSymbol\", ResolveContextAliases -> False], \
+         Contexts[\"abc`\"], \
+         Contexts[\"abc`\", ResolveContextAliases -> False]}"
+      )
+      .unwrap(),
       "{{}, {abc`newSymbol}, {}, {abc`}}"
     );
     clear_state();
