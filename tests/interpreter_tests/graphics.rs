@@ -44281,11 +44281,19 @@ mod graphics3d_overlay_and_atom_colors {
     );
     assert_eq!(
       interpret("Round[List @@ ColorData[\"Atoms\", \"O\"] * 255]").unwrap(),
-      "{255, 13, 13}"
+      "{204, 51, 49}"
     );
     assert_eq!(
       interpret("Round[List @@ ColorData[\"Atoms\", \"H\"] * 255]").unwrap(),
-      "{255, 255, 255}"
+      "{166, 178, 178}"
+    );
+    // All 118 elements, exact zero channels kept exact.
+    assert_eq!(
+      interpret(
+        "{ColorData[\"Atoms\", \"P\"], ColorData[\"Atoms\", 53], ColorData[\"Atoms\", \"Og\"]}"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0.501961, 0], RGBColor[0.580392, 0, 0.580392], RGBColor[0.635401, 0.0528, 0.226184]}"
     );
     assert_eq!(
       interpret("ColorData[\"Atoms\", \"Xx\"]").unwrap(),
