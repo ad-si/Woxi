@@ -14383,10 +14383,18 @@ mod exact_base_bigfloat_exponent {
     }
 
     #[test]
-    fn unsolvable_stays_unevaluated_without_range_message() {
+    fn step_dividing_the_lower_bound_reads_as_series_in_step_multiples() {
       assert_eq!(
         interpret("Sum[x^n/n, {n, 2, Infinity, 2}]").unwrap(),
-        "Sum[x^n/n, {n, 2, Infinity, 2}]"
+        "-1/2*Log[1 - x^2]"
+      );
+    }
+
+    #[test]
+    fn unsolvable_stays_unevaluated_without_range_message() {
+      assert_eq!(
+        interpret("Sum[f[n], {n, 2, Infinity, 2}]").unwrap(),
+        "Sum[f[n], {n, 2, Infinity, 2}]"
       );
     }
 

@@ -23052,10 +23052,64 @@ mod sum_with_symbolic_bounds_and_step {
   use super::*;
 
   #[test]
-  fn stepped_symbolic_bounds_are_not_an_error() {
+  fn stepped_symbolic_bounds_run_to_the_floor_of_the_trip_count() {
     assert_eq!(
       interpret("Sum[k^i, {i, 0, n, 2}]").unwrap(),
-      "Sum[k^i, {i, 0, n, 2}]"
+      "(-1 + k^(2 + 2*Floor[n/2]))/(-1 + k^2)"
+    );
+    assert_eq!(
+      interpret("Sum[i, {i, 0, n, 2}]").unwrap(),
+      "Floor[n/2]*(1 + Floor[n/2])"
+    );
+    assert_eq!(
+      interpret("Sum[i^2, {i, 1, n, 2}]").unwrap(),
+      "((1 + Floor[(-1 + n)/2])*(1 + 2*Floor[(-1 + n)/2])*(3 + 2*Floor[(-1 + n)/2]))/3"
+    );
+  }
+
+  #[test]
+  fn stepped_symbolic_bounds_are_not_an_error() {
+    assert_eq!(
+      interpret("Sum[f[i], {i, 1, n, 2}]").unwrap(),
+      "Sum[f[i], {i, 1, n, 2}]"
+    );
+  }
+
+  #[test]
+  fn geometric_sum_with_offset_exponent() {
+    assert_eq!(
+      interpret("Sum[k^(1 + 3 j), {j, 0, m}]").unwrap(),
+      "(k*(-1 + k^(3 + 3*m)))/(-1 + k^3)"
+    );
+    assert_eq!(
+      interpret("Sum[k^(3 j), {j, 0, Floor[m]}]").unwrap(),
+      "(-1 + k^(3 + 3*Floor[m]))/(-1 + k^3)"
+    );
+  }
+
+  #[test]
+  fn polynomial_sum_from_any_integer_lower_bound() {
+    assert_eq!(
+      interpret("Sum[j^2, {j, 0, m}]").unwrap(),
+      "(m*(1 + m)*(1 + 2*m))/6"
+    );
+    assert_eq!(
+      interpret("Sum[j + 1, {j, 0, m}]").unwrap(),
+      "((1 + m)*(2 + m))/2"
+    );
+    assert_eq!(
+      interpret("Sum[j^2 + j, {j, 1, m}]").unwrap(),
+      "(m*(1 + m)*(2 + m))/3"
+    );
+    assert_eq!(interpret("Sum[j + 1, {j, 1, m}]").unwrap(), "(3*m + m^2)/2");
+    assert_eq!(interpret("Sum[j, {j, 2, m}]").unwrap(), "(-2 + m + m^2)/2");
+    assert_eq!(
+      interpret("Sum[j, {j, -1, m}]").unwrap(),
+      "-1 + (m*(1 + m))/2"
+    );
+    assert_eq!(
+      interpret("Sum[j^2 + 1, {j, -2, m}]").unwrap(),
+      "7 + ((1 + m)*(6 + m + 2*m^2))/6"
     );
   }
 

@@ -2533,6 +2533,10 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && (expr_to_i128(&items[1]).is_none()
           || expr_to_i128(&items[2]).is_none()
           || expr_to_i128(&items[3]).is_none())
+        // A symbolic bound is no Range: that would only report Range::range.
+        && items[1..4]
+          .iter()
+          .all(|b| crate::functions::math_ast::try_eval_to_f64(b).is_some())
         && let Ok(range) = super::range_ast(&[
           items[1].clone(),
           items[2].clone(),
@@ -2569,10 +2573,29 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if step == 1 {
           return sum_ast(&[body.clone(), iter(min, inf)]);
         }
-        let index = plus2(
-          Expr::Integer(min),
-          times2(Expr::Integer(step), Expr::Identifier(var_name.clone())),
+        let scaled =
+          times2(Expr::Integer(step), Expr::Identifier(var_name.clone()));
+        // First as i = r + s j with r = min mod s, so a step that divides
+        // the lower bound reads as the plain series in s j
+        // (`Sum[x^n/n, {n, 2, Infinity, 2}]` is the one in x^(2 j)/(2 j)).
+        let r = min.rem_euclid(step);
+        let residue_index = if r == 0 {
+          scaled.clone()
+        } else {
+          plus2(Expr::Integer(r), scaled.clone())
+        };
+        let residue_form = crate::syntax::substitute_index_variable(
+          body,
+          &var_name,
+          &residue_index,
         );
+        let result =
+          sum_ast(&[residue_form, iter((min - r) / step, inf.clone())])?;
+        if !matches!(&result, Expr::FunctionCall { name, .. } if name == "Sum")
+        {
+          return Ok(result);
+        }
+        let index = plus2(Expr::Integer(min), scaled);
         let reindexed =
           crate::syntax::substitute_index_variable(body, &var_name, &index);
         let result = sum_ast(&[reindexed.clone(), iter(0, inf.clone())])?;
@@ -2670,28 +2693,45 @@ fn sum_ast_unevaluated_body(args: &[Expr]) -> Result<Expr, InterpreterError> {
           || expr_to_i128(&items[2]).is_none()
           || expr_to_i128(&items[3]).is_none())
         && !matches!(expr_to_i128(&items[3]), Some(0))
-        && crate::functions::math_ast::try_eval_to_f64(&items[1]).is_none()
+        && (crate::functions::math_ast::try_eval_to_f64(&items[1]).is_none()
+          || expr_to_i128(&items[1]).is_some())
       {
         let (a, b, s) = (&items[1], &items[2], &items[3]);
         let span = crate::evaluator::evaluate_expr_to_expr(&div2(
           minus2(b.clone(), a.clone()),
           s.clone(),
         ))?;
-        if !crate::syntax::expr_to_string(&span).contains('/') {
+        // A concrete step that need not divide the span makes the last index
+        // value a + s Floor[(b - a)/s] (`Sum[k^i, {i, 0, n, 2}]`).
+        let span = if crate::syntax::expr_to_string(&span).contains('/')
+          && expr_to_i128(s).is_some_and(|s| s >= 2)
+        {
+          crate::evaluator::evaluate_expr_to_expr(&call1("Floor", span))?
+        } else {
+          span
+        };
+        if !crate::syntax::expr_to_string(&span).contains('/')
+          || matches!(&span, Expr::FunctionCall { name, .. } if name == "Floor")
+        {
           let index = plus2(
             a.clone(),
             times2(s.clone(), Expr::Identifier(var_name.clone())),
           );
           let reindexed =
             crate::syntax::substitute_index_variable(body, &var_name, &index);
-          return sum_ast(&[
+          let result = sum_ast(&[
             reindexed,
             Expr::List(crate::ExprList::from(vec![
               Expr::Identifier(var_name.clone()),
               Expr::Integer(0),
               span,
             ])),
-          ]);
+          ])?;
+          // An open reindexed sum hands back the call as written.
+          if has_sum_over(&result, std::slice::from_ref(&var_name)) {
+            return Ok(unevaluated("Sum", args));
+          }
+          return Ok(result);
         }
       }
 
@@ -3266,6 +3306,62 @@ fn try_symbolic_sum(
     return Ok(Some(factored));
   }
 
+  // Any polynomial with numeric coefficients, from any integer lower bound
+  // `a`, through H(n) = Factor[Sum_{k=0}^n p(k)], in the shape wolframscript
+  // prints: H(n) itself for a = 0 (`Sum[j^2, {j, 0, m}]` is
+  // `(m*(1 + m)*(1 + 2*m))/6`); for a > 0 the first terms come off over a
+  // common denominator (`Sum[j, {j, 2, m}]` is `(-2 + m + m^2)/2`, while
+  // `Sum[j, {j, 1, m}]`, whose p(0) is 0, keeps H(n)); for a < 0 the terms
+  // below zero are added on as a number (`-1 + (m*(1 + m))/2`).
+  if let Some(a) = min_concrete
+    && (-64..=64).contains(&a)
+    && crate::functions::polynomial_ast::is_polynomial(body, var_name)
+    && let Ok(Expr::List(ref coeffs)) =
+      crate::functions::polynomial_ast::coefficient_list_ast(&[
+        body.clone(),
+        id_expr(var_name),
+      ])
+    && (2..=65).contains(&coeffs.len())
+    && coeffs.iter().all(|c| {
+      matches!(c, Expr::Integer(_) | Expr::BigInteger(_))
+        || matches!(c, Expr::FunctionCall { name, .. } if name == "Rational")
+    })
+  {
+    let p_at = |k: i128| {
+      crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_index_variable(
+          body,
+          var_name,
+          &Expr::Integer(k),
+        ),
+      )
+    };
+    let from_zero = crate::evaluator::evaluate_expr_to_expr(&plus2(
+      p_at(0)?,
+      sum_polynomial_over_var(body, var_name, max_expr)?,
+    ))?;
+    let h_top = crate::functions::polynomial_ast::factor_ast(&[from_zero])?;
+    if a == 0 {
+      return Ok(Some(h_top));
+    }
+    if a > 0 {
+      let skipped =
+        plus_all(&(0..a).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
+      if matches!(skipped, Expr::Integer(0)) {
+        return Ok(Some(h_top));
+      }
+      let diff =
+        crate::evaluator::evaluate_expr_to_expr(&minus2(h_top, skipped))?;
+      return Ok(Some(crate::functions::polynomial_ast::together_ast(&[
+        diff,
+      ])?));
+    }
+    let below = plus_all(&(a..0).map(p_at).collect::<Result<Vec<_>, _>>()?)?;
+    return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&plus2(
+      below, h_top,
+    ))?));
+  }
+
   // Sum[k^s * HarmonicNumber[k], {k, 1, n}] via discrete summation by parts
   // (the technique the "Summation by Parts" Demonstration illustrates):
   // with S(x) = Sum_{k=1}^x k^s and ΔH_k = H_{k+1} - H_k = 1/(k+1),
@@ -3425,39 +3521,55 @@ fn try_symbolic_sum(
     && crate::functions::polynomial_ast::contains_var(exp, var_name)
     && !crate::functions::polynomial_ast::contains_var(base, var_name)
   {
-    // Try to write `exp` as `q * var` with `q` constant w.r.t. `var`.
-    let q_opt: Option<Expr> = match exp.as_ref() {
-      Expr::Identifier(n) if n == var_name => Some(Expr::Integer(1)),
+    // Write `exp` as `q * var + r` with `q`, `r` constant w.r.t. `var`.
+    let terms: Vec<Expr> = match exp.as_ref() {
+      Expr::FunctionCall { name, args } if name == "Plus" => args.to_vec(),
       Expr::BinaryOp {
-        op: BinaryOperator::Times,
+        op: BinaryOperator::Plus,
         left,
         right,
-      } => {
-        let l_is_var =
-          matches!(left.as_ref(), Expr::Identifier(n) if n == var_name);
-        let r_is_var =
-          matches!(right.as_ref(), Expr::Identifier(n) if n == var_name);
-        if l_is_var
-          && !crate::functions::polynomial_ast::contains_var(right, var_name)
-        {
-          Some(*right.clone())
-        } else if r_is_var
-          && !crate::functions::polynomial_ast::contains_var(left, var_name)
-        {
-          Some(*left.clone())
-        } else {
-          None
-        }
-      }
-      _ => None,
+      } => vec![*left.clone(), *right.clone()],
+      other => vec![other.clone()],
     };
-    if let Some(q) = q_opt {
-      let one_plus_max = plus2(Expr::Integer(1), max_expr.clone());
-      let c_to_q = pow2(*base.clone(), q.clone());
-      let c_to_q_times_top = pow2(*base.clone(), times2(q, one_plus_max));
-      let numer = plus2(Expr::Integer(-1), c_to_q_times_top);
+    let mut q_parts = Vec::new();
+    let mut r_parts = Vec::new();
+    let mut linear = true;
+    for t in &terms {
+      if !crate::functions::polynomial_ast::contains_var(t, var_name) {
+        r_parts.push(t.clone());
+      } else if let Some(q) = linear_coeff_of_var(t, var_name) {
+        q_parts.push(q);
+      } else {
+        linear = false;
+      }
+    }
+    if linear && !q_parts.is_empty() {
+      let q = if q_parts.len() == 1 {
+        q_parts.remove(0)
+      } else {
+        plus(q_parts)
+      };
+      // The ratio's power past the top term prints expanded, as in
+      // wolframscript: `k^(3 + 3*m)`, not `k^(3*(1 + m))`.
+      let top_exp = crate::functions::polynomial_ast::expand_and_combine(
+        &crate::evaluator::evaluate_expr_to_expr(&times2(
+          q.clone(),
+          plus2(Expr::Integer(1), max_expr.clone()),
+        ))?,
+      );
+      let c_to_q = pow2(*base.clone(), q);
+      let numer = plus2(Expr::Integer(-1), pow2(*base.clone(), top_exp));
       let denom = plus2(Expr::Integer(-1), c_to_q);
-      let result = div2(numer, denom);
+      let mut result = div2(numer, denom);
+      // The constant part of the exponent is a common factor `base^r`.
+      if !r_parts.is_empty() {
+        let r = if r_parts.len() == 1 {
+          r_parts.remove(0)
+        } else {
+          plus(r_parts)
+        };
+        result = times2(pow2(*base.clone(), r), result);
+      }
       return Ok(Some(
         crate::evaluator::evaluate_expr_to_expr(&result).unwrap_or(result),
       ));
