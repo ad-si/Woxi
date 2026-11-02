@@ -13948,21 +13948,33 @@ pub fn crossing_detect_ast(
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CrossingDetect", all_args));
-  // CornerNeighbors -> False (or None) uses only the 4 edge neighbors.
+  // CornerNeighbors -> False uses only the 4 edge neighbors. None marks
+  // the cells between the elements instead: each (2 × 2 block, or pair in
+  // one dimension) holding both a positive and a negative value, so the
+  // result is one smaller along every axis.
   let mut corners = true;
+  let mut cells = false;
   let mut n_args = all_args.len();
   while n_args > 1
     && let Some((Expr::Identifier(opt), value, _)) =
       crate::functions::expr_form::rule_parts(&all_args[n_args - 1])
   {
     if opt != "CornerNeighbors" {
+      crate::emit_message(&format!(
+        "CrossingDetect::optx: Unknown option {opt} in {}.",
+        crate::syntax::format_expr(
+          &crate::helpers::unevaluated("CrossingDetect", all_args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
       return unevaluated();
     }
-    corners = match value {
-      Expr::Identifier(v) if v == "True" || v == "Automatic" => true,
-      Expr::Identifier(v) if v == "False" || v == "None" => false,
+    match value {
+      Expr::Identifier(v) if v == "True" || v == "Automatic" => corners = true,
+      Expr::Identifier(v) if v == "False" => corners = false,
+      Expr::Identifier(v) if v == "None" => cells = true,
       _ => return unevaluated(),
-    };
+    }
     n_args -= 1;
   }
   let args = &all_args[..n_args];
@@ -13977,7 +13989,32 @@ pub fn crossing_detect_ast(
     },
   };
   let zeroed = |v: f64| if v.abs() < delta { 0.0 } else { v };
+  let cell_crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    let h = grid.len();
+    let w = grid.first().map_or(0, std::vec::Vec::len);
+    // A single row's cells are its adjacent pairs.
+    let (rows, row_span) = if h == 1 { (1, 0) } else { (h - 1, 1) };
+    let cols = w.saturating_sub(1);
+    let mut out = vec![vec![0i128; cols]; rows];
+    for r in 0..rows {
+      for c in 0..cols {
+        let (mut pos, mut neg) = (false, false);
+        for rr in r..=r + row_span {
+          for cc in c..=c + 1 {
+            let v = zeroed(grid[rr][cc]);
+            pos |= v > 0.0;
+            neg |= v < 0.0;
+          }
+        }
+        out[r][c] = i128::from(pos && neg);
+      }
+    }
+    out
+  };
   let crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    if cells {
+      return cell_crossings(grid);
+    }
     let h = grid.len();
     let w = grid.first().map_or(0, std::vec::Vec::len);
     let mut out = vec![vec![0i128; w]; h];
@@ -14025,11 +14062,13 @@ pub fn crossing_detect_ast(
         .iter()
         .flat_map(|row| row.iter().map(|&b| b as f64))
         .collect();
+      let out_h = marked.len() as u32;
+      let out_w = marked.first().map_or(0, std::vec::Vec::len) as u32;
       Ok(Expr::Image {
         color_space: None,
         display_size: None,
-        width: *width,
-        height: *height,
+        width: out_w,
+        height: out_h,
         channels: 1,
         data: std::sync::Arc::new(out),
         image_type: ImageType::Bit,

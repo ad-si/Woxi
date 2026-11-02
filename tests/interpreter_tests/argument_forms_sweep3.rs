@@ -541,7 +541,7 @@ mod crossing_detect_corners {
         "CrossingDetect[{1, -.2, -1, 1}, CornerNeighbors -> None] // Normal"
       )
       .unwrap(),
-      "{1, 0, 0, 1}"
+      "{1, 0, 1}"
     );
     // Only a diagonal neighbor is negative: no crossing without corners.
     assert_eq!(
@@ -554,6 +554,41 @@ mod crossing_detect_corners {
     assert_eq!(
       interpret("Normal[CrossingDetect[{{1, 0}, {0, -1}}]]").unwrap(),
       "{{1, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn corner_neighbors_none_marks_the_cells_between() {
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{1, 2, -1, 3, 4, -5}, CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{0, 1, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{{1, -1, 1}, {1, 1, 1}, {-1, 1, 1}}, \
+         CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{1, 2, -1, 3, 4, -5}, 1.5, \
+         CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn unknown_option_stays() {
+    assert_eq!(
+      interpret("CrossingDetect[{1, -1}, Foo -> None]").unwrap(),
+      "CrossingDetect[{1, -1}, Foo -> None]"
     );
   }
 }
