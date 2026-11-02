@@ -9035,115 +9035,112 @@ pub fn watershed_components_ast(
   let n = w * h;
   // `labels`: 0 = unlabeled, -1 = watershed line, otherwise the basin.
   let mut labels = vec![0i64; n];
-  match args.get(1) {
+  if let Some(markers) = args.get(1) {
     // Markers: an image of the same size (its nonzero pixels) or a list of
     // `{x, y}` pixel positions (y counted from the bottom). Each connected
     // group of marked pixels seeds one basin, numbered in reading order.
-    Some(markers) => {
-      let mut marked = vec![false; n];
-      let positions: Option<Vec<(f64, f64)>> = match markers {
-        Expr::List(items) => items
-          .iter()
-          .map(|p| match p {
-            Expr::List(xy) if xy.len() == 2 => Some((
-              crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
-              crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
-            )),
-            _ => None,
-          })
-          .collect(),
-        _ => None,
-      };
-      if let Some(positions) = positions {
-        for (x, y) in positions {
-          let (col, row) = (x.round() as i64 - 1, h as i64 - y.round() as i64);
-          if (0..w as i64).contains(&col) && (0..h as i64).contains(&row) {
-            marked[row as usize * w + col as usize] = true;
-          }
+    let mut marked = vec![false; n];
+    let positions: Option<Vec<(f64, f64)>> = match markers {
+      Expr::List(items) => items
+        .iter()
+        .map(|p| match p {
+          Expr::List(xy) if xy.len() == 2 => Some((
+            crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+          )),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
+    };
+    if let Some(positions) = positions {
+      for (x, y) in positions {
+        let (col, row) = (x.round() as i64 - 1, h as i64 - y.round() as i64);
+        if (0..w as i64).contains(&col) && (0..h as i64).contains(&row) {
+          marked[row as usize * w + col as usize] = true;
         }
-      } else if let Some((mw, mh, plane)) = image_gray_plane(markers)
-        && (mw, mh) == (w, h)
-      {
-        for (k, v) in plane.iter().enumerate() {
-          marked[k] = *v != 0.0;
-        }
-      } else {
-        crate::emit_message(&format!(
-          "WatershedComponents::mkinv: Expecting either an image or graphics \
+      }
+    } else if let Some((mw, mh, plane)) = image_gray_plane(markers)
+      && (mw, mh) == (w, h)
+    {
+      for (k, v) in plane.iter().enumerate() {
+        marked[k] = *v != 0.0;
+      }
+    } else {
+      crate::emit_message(&format!(
+        "WatershedComponents::mkinv: Expecting either an image or graphics \
            with dimensions {{{w}, {h}}} or a list of positions to specify \
            markers instead of {}.",
-          expr_to_string(markers)
-        ));
-        return Ok(unevaluated());
+        expr_to_string(markers)
+      ));
+      return Ok(unevaluated());
+    }
+    let mut next = 0i64;
+    for start in 0..n {
+      if !marked[start] || labels[start] != 0 {
+        continue;
       }
-      let mut next = 0i64;
-      for start in 0..n {
-        if !marked[start] || labels[start] != 0 {
-          continue;
-        }
-        next += 1;
-        labels[start] = next;
-        let mut stack = vec![start];
-        while let Some(p) = stack.pop() {
-          let (y, x) = ((p / w) as i64, (p % w) as i64);
-          for dy in -1i64..=1 {
-            for dx in -1i64..=1 {
-              let (ny, nx) = (y + dy, x + dx);
-              if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
-                continue;
-              }
-              let q = ny as usize * w + nx as usize;
-              if marked[q] && labels[q] == 0 {
-                labels[q] = next;
-                stack.push(q);
-              }
+      next += 1;
+      labels[start] = next;
+      let mut stack = vec![start];
+      while let Some(p) = stack.pop() {
+        let (y, x) = ((p / w) as i64, (p % w) as i64);
+        for dy in -1i64..=1 {
+          for dx in -1i64..=1 {
+            let (ny, nx) = (y + dy, x + dx);
+            if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+              continue;
+            }
+            let q = ny as usize * w + nx as usize;
+            if marked[q] && labels[q] == 0 {
+              labels[q] = next;
+              stack.push(q);
             }
           }
         }
       }
     }
-    None => {
-      let mut next = 0i64;
-      let mut seen = vec![false; n];
-      for start in 0..n {
-        if seen[start] {
-          continue;
-        }
-        let level = gray[start];
-        let mut plateau = vec![start];
-        seen[start] = true;
-        let mut is_minimum = true;
-        let mut k = 0;
-        while k < plateau.len() {
-          let (y, x) = (plateau[k] / w, plateau[k] % w);
-          k += 1;
-          for dy in -1i64..=1 {
-            for dx in -1i64..=1 {
-              let ny = y as i64 + dy;
-              let nx = x as i64 + dx;
-              if (dy == 0 && dx == 0)
-                || ny < 0
-                || nx < 0
-                || ny >= h as i64
-                || nx >= w as i64
-              {
-                continue;
-              }
-              let j = ny as usize * w + nx as usize;
-              if gray[j] < level {
-                is_minimum = false;
-              } else if gray[j] == level && !seen[j] {
-                seen[j] = true;
-                plateau.push(j);
-              }
+  } else {
+    let mut next = 0i64;
+    let mut seen = vec![false; n];
+    for start in 0..n {
+      if seen[start] {
+        continue;
+      }
+      let level = gray[start];
+      let mut plateau = vec![start];
+      seen[start] = true;
+      let mut is_minimum = true;
+      let mut k = 0;
+      while k < plateau.len() {
+        let (y, x) = (plateau[k] / w, plateau[k] % w);
+        k += 1;
+        for dy in -1i64..=1 {
+          for dx in -1i64..=1 {
+            let ny = y as i64 + dy;
+            let nx = x as i64 + dx;
+            if (dy == 0 && dx == 0)
+              || ny < 0
+              || nx < 0
+              || ny >= h as i64
+              || nx >= w as i64
+            {
+              continue;
+            }
+            let j = ny as usize * w + nx as usize;
+            if gray[j] < level {
+              is_minimum = false;
+            } else if gray[j] == level && !seen[j] {
+              seen[j] = true;
+              plateau.push(j);
             }
           }
         }
-        if is_minimum {
-          next += 1;
-          for &p in &plateau {
-            labels[p] = next;
-          }
+      }
+      if is_minimum {
+        next += 1;
+        for &p in &plateau {
+          labels[p] = next;
         }
       }
     }
