@@ -6974,7 +6974,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(interpret("PermutationSupport[{2, 1}]").unwrap(), "{1, 2}");
     assert_eq!(
-      interpret("PermutationMatrix[{2, 1}]").unwrap(),
+      interpret("Normal[PermutationMatrix[{2, 1}]]").unwrap(),
       "{{0, 1}, {1, 0}}"
     );
     assert_eq!(interpret("PermutationOrder[{}]").unwrap(), "1");

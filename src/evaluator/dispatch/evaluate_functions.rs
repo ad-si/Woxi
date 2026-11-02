@@ -1175,6 +1175,13 @@ fn evaluate_function_call_ast_inner(
     return Ok(series);
   }
 
+  // Matrix and list functions see the matrix a structured array stands for.
+  if let Some(result) =
+    crate::functions::linear_algebra_ast::structured_matrix_call(name, args)
+  {
+    return result;
+  }
+
   // Legacy standard-distribution package functions whose modern built-in
   // equivalent lives under a different name. Woxi keeps every built-in in
   // one flat namespace (see `is_standard_distribution_context`), so a
@@ -12976,6 +12983,9 @@ fn evaluate_function_call_ast_inner(
         | "LowerTriangularMatrix"
         | "UpperTriangularMatrix"
         | "PermutationMatrix"
+        | "VandermondeMatrix"
+        | "CauchyMatrix"
+        | "BlockDiagonalMatrix"
         // Inert region forms produced by the region set operations: the
         // empty region and the Boolean combination they fall back to. A
         // ParametricRegion likewise stays as written (RandomPoint samples it).

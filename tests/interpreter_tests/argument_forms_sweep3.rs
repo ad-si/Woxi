@@ -188,18 +188,16 @@ mod linear_algebra_options {
       interpret("RotationMatrix[Pi/2, TargetStructure -> \"Dense\"]").unwrap(),
       "{{0, -1}, {1, 0}}"
     );
-    assert_eq!(
-      interpret(
-        "Normal[RotationMatrix[Pi/2, TargetStructure -> \"Sparse\"]] == \
-         RotationMatrix[Pi/2]"
-      )
-      .unwrap(),
-      "True"
-    );
+    // A rotation matrix has no sparse (or generic structured) form.
     assert_eq!(
       interpret("Head[RotationMatrix[Pi/2, TargetStructure -> \"Sparse\"]]")
         .unwrap(),
-      "SparseArray"
+      "RotationMatrix"
+    );
+    assert_eq!(
+      interpret("RotationMatrix[Pi/2, TargetStructure -> \"Structured\"]")
+        .unwrap(),
+      "RotationMatrix[Pi/2, TargetStructure -> Structured]"
     );
   }
 

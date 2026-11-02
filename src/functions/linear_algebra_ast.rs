@@ -733,6 +733,7 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
       | "PermutationMatrix"
       | "BlockDiagonalMatrix"
       | "CauchyMatrix"
+      | "VandermondeMatrix"
   ) || args.len() != 1
   {
     return None;
@@ -797,6 +798,13 @@ pub fn structured_matrix_to_dense(e: &Expr) -> Option<Expr> {
       return None;
     };
     return cauchy_dense(x, y).ok();
+  }
+  if name == "VandermondeMatrix" {
+    let cols = match &dims[..] {
+      [Expr::Integer(_), Expr::Integer(c)] => usize::try_from(*c).ok()?,
+      _ => return None,
+    };
+    return vandermonde_dense(&sd_args[1], cols);
   }
   if name == "PermutationMatrix" {
     // Payload is {Cycles[{{…}, …}], workingLength}; row i of the dense form
@@ -2988,63 +2996,274 @@ pub fn identity_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(matrix.into()))
 }
 
-/// PermutationMatrix[perm] - the permutation matrix of a permutation, given as
-/// a permutation list (perm[i] = image of i) or a Cycles object. The result is
-/// the n x n matrix with a 1 at (i, perm[i]) and 0 elsewhere. (wolframscript
-/// returns a sparse StructuredArray here; Woxi returns the dense matrix, like
-/// AdjacencyMatrix, so Normal[...] agrees with wolframscript.)
+/// PermutationMatrix[perm] / PermutationMatrix[Cycles[…], n] — the
+/// permutation matrix with a 1 at (i, π(i)), kept as the structured array
+///   PermutationMatrix[StructuredArray`StructuredData[{n, n},
+///                                                    {Cycles[…], Infinity}]]
+/// the way wolframscript returns it. A permutation list fixes the size; a
+/// Cycles object is as large as its largest point (at least 1) unless n
+/// says otherwise, and n below that point is `::lowlen`.
 pub fn permutation_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("PermutationMatrix", args));
-  // PermutationMatrix[perm, n] pads perm with fixed points to length n.
-  let size = match args {
-    [_] => None,
-    [_, Expr::Integer(n)] if *n >= 0 => Some(*n as usize),
+  let (cycles, n) = match args {
+    [list @ Expr::List(items)] => {
+      if items.is_empty()
+        || crate::evaluator::dispatch::list_operations::permutation_list_indices(
+          "PermutationMatrix",
+          list,
+          false,
+        )
+        .is_none()
+      {
+        return unevaluated();
+      }
+      let cycles =
+        evaluate_expr_to_expr(&call1("PermutationCycles", list.clone()))?;
+      (cycles, items.len())
+    }
+    [cycles @ Expr::FunctionCall { name, .. }, rest @ ..]
+      if name == "Cycles" && rest.len() <= 1 =>
+    {
+      let max = match evaluate_expr_to_expr(&call1(
+        "PermutationMax",
+        cycles.clone(),
+      ))? {
+        Expr::Integer(m) => usize::try_from(m).unwrap_or(0),
+        _ => return unevaluated(),
+      };
+      let n = match rest.first() {
+        None => max.max(1),
+        Some(Expr::Integer(n)) if *n >= 1 => {
+          let n = usize::try_from(*n).unwrap_or(usize::MAX);
+          if n < max {
+            crate::emit_message(&format!(
+              "PermutationMatrix::lowlen: The required dimension {n} is smaller \
+               than the maximum {max} of the support of {}.",
+              crate::syntax::format_expr(
+                cycles,
+                crate::syntax::ExprForm::Output
+              )
+            ));
+            return unevaluated();
+          }
+          n
+        }
+        Some(_) => return unevaluated(),
+      };
+      (cycles.clone(), n)
+    }
     _ => return unevaluated(),
   };
-  // Accept a permutation list directly, or convert a Cycles object via
-  // PermutationList.
-  let mut perm_list = match &args[0] {
-    Expr::List(items) => items.iter().cloned().collect::<Vec<_>>(),
-    cycles @ Expr::FunctionCall { name, .. } if name == "Cycles" => {
-      let converted = crate::evaluator::evaluate_expr_to_expr(&call(
-        "PermutationList",
-        vec![cycles.clone()],
-      ))?;
-      match &converted {
-        Expr::List(items) => items.iter().cloned().collect(),
-        _ => return unevaluated(),
+  Ok(permutation_matrix_structured(cycles, n))
+}
+
+/// `PermutationMatrix[StructuredArray`StructuredData[{n, n}, {cycles, Infinity}]]`.
+fn permutation_matrix_structured(cycles: Expr, n: usize) -> Expr {
+  let n = Expr::Integer(n as i128);
+  call1(
+    "PermutationMatrix",
+    call(
+      "StructuredArray`StructuredData",
+      vec![
+        Expr::List(vec![n.clone(), n].into()),
+        Expr::List(
+          vec![cycles, Expr::Identifier("Infinity".to_string())].into(),
+        ),
+      ],
+    ),
+  )
+}
+
+/// The structured permutation matrix of a dense square 0/1 matrix with a
+/// single 1 in every row and column; `None` for any other matrix.
+fn dense_to_permutation_matrix(m: &Expr) -> Option<Expr> {
+  let Expr::List(rows) = m else {
+    return None;
+  };
+  let n = rows.len();
+  if n == 0 {
+    return None;
+  }
+  let mut perm = Vec::with_capacity(n);
+  let mut seen = vec![false; n];
+  for row in rows {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    if cells.len() != n {
+      return None;
+    }
+    let mut one = None;
+    for (j, c) in cells.iter().enumerate() {
+      match c {
+        Expr::Integer(0) => {}
+        Expr::Integer(1) if one.is_none() && !seen[j] => one = Some(j),
+        _ => return None,
       }
     }
-    _ => return unevaluated(),
-  };
-  if let Some(size) = size {
-    if size < perm_list.len() {
-      return unevaluated();
-    }
-    for k in perm_list.len()..size {
-      perm_list.push(Expr::Integer(k as i128 + 1));
-    }
+    let j = one?;
+    seen[j] = true;
+    perm.push(Expr::Integer(j as i128 + 1));
   }
-  // Every entry must be an integer in 1..=n and no two the same, or the
-  // matrix would have a repeated column. wolframscript reports nothing
-  // for a list that is not a permutation, it just declines.
-  let n = perm_list.len();
-  let Some(perm) =
-    crate::evaluator::dispatch::list_operations::permutation_list_indices(
-      "PermutationMatrix",
-      &Expr::List(perm_list.clone().into()),
-      false,
-    )
-  else {
-    return unevaluated();
-  };
-  let mut matrix = Vec::with_capacity(n);
-  for &p in &perm {
-    let mut row = vec![Expr::Integer(0); n];
-    row[p] = Expr::Integer(1);
-    matrix.push(Expr::List(row.into()));
+  let cycles =
+    evaluate_expr_to_expr(&call1("PermutationCycles", Expr::List(perm.into())))
+      .ok()?;
+  Some(permutation_matrix_structured(cycles, n))
+}
+
+/// Whether `e` is a structured-matrix wrapper `head[StructuredData[…]]`.
+fn is_structured_matrix(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+  if args.len() == 1
+    && matches!(&args[0], Expr::FunctionCall { name: sd, .. }
+      if sd == "StructuredArray`StructuredData")
+    && matches!(
+      name.as_str(),
+      "LowerTriangularMatrix"
+        | "UpperTriangularMatrix"
+        | "PermutationMatrix"
+        | "BlockDiagonalMatrix"
+        | "CauchyMatrix"
+        | "VandermondeMatrix"
+    ))
+}
+
+/// A call of a matrix or list function on a structured matrix
+/// (`Det[VandermondeMatrix[…]]`, `PermutationMatrix[…] + 1`, …) works on the
+/// matrix it represents. The operations that map permutation matrices to
+/// permutation matrices (Inverse, Transpose, Dot, MatrixPower) keep the
+/// structured form, as in WL. `None` when no argument is structured or the
+/// function is not one of these.
+pub fn structured_matrix_call(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if !args.iter().any(is_structured_matrix) {
+    return None;
   }
-  Ok(Expr::List(matrix.into()))
+  let densifies = matches!(
+    name,
+    "Det"
+      | "Inverse"
+      | "Transpose"
+      | "ConjugateTranspose"
+      | "Tr"
+      | "MatrixQ"
+      | "SquareMatrixQ"
+      | "ArrayQ"
+      | "VectorQ"
+      | "ArrayDepth"
+      | "Plus"
+      | "Times"
+      | "Subtract"
+      | "Minus"
+      | "Divide"
+      | "Power"
+      | "Dot"
+      | "Eigenvalues"
+      | "Eigenvectors"
+      | "Eigensystem"
+      | "CharacteristicPolynomial"
+      | "MatrixRank"
+      | "NullSpace"
+      | "RowReduce"
+      | "LinearSolve"
+      | "MatrixPower"
+      | "MatrixExp"
+      | "MatrixLog"
+      | "Norm"
+      | "SparseArray"
+      | "Map"
+      | "Apply"
+      | "Flatten"
+      | "First"
+      | "Last"
+      | "Rest"
+      | "Most"
+      | "Take"
+      | "Drop"
+      | "Length"
+      | "Max"
+      | "Min"
+      | "Mean"
+      | "N"
+      | "Reverse"
+      | "Join"
+      | "Diagonal"
+      | "UpperTriangularize"
+      | "LowerTriangularize"
+      | "LUDecomposition"
+      | "QRDecomposition"
+      | "SingularValueList"
+      | "SingularValueDecomposition"
+      | "CholeskyDecomposition"
+      | "PseudoInverse"
+      | "Outer"
+      | "KroneckerProduct"
+      | "Accumulate"
+  );
+  if !densifies {
+    return None;
+  }
+  // The transpose of the Cauchy matrix of {x, y} is that of {y, x}.
+  if name == "Transpose"
+    && let [
+      Expr::FunctionCall {
+        name: head,
+        args: inner,
+      },
+    ] = args
+    && head == "CauchyMatrix"
+    && let Expr::FunctionCall { args: sd, .. } = &inner[0]
+    && let [Expr::List(dims), Expr::List(xy)] = &sd[..]
+    && let ([m, n], [x, y]) = (&dims[..], &xy[..])
+  {
+    return Some(Ok(call1(
+      "CauchyMatrix",
+      call(
+        "StructuredArray`StructuredData",
+        vec![
+          Expr::List(vec![n.clone(), m.clone()].into()),
+          Expr::List(vec![y.clone(), x.clone()].into()),
+        ],
+      ),
+    )));
+  }
+  let all_permutations = args.iter().all(|a| {
+    matches!(a, Expr::FunctionCall { name, .. } if name == "PermutationMatrix")
+      && is_structured_matrix(a)
+  });
+  let dense_args: Vec<Expr> = args
+    .iter()
+    .map(|a| {
+      if is_structured_matrix(a) {
+        structured_matrix_to_dense(a).unwrap_or_else(|| a.clone())
+      } else {
+        a.clone()
+      }
+    })
+    .collect();
+  let result =
+    match crate::evaluator::evaluate_function_call_ast(name, &dense_args) {
+      Ok(r) => r,
+      Err(e) => return Some(Err(e)),
+    };
+  // Permutation matrices are closed under inversion, transposition,
+  // products and integer powers.
+  let closed = match name {
+    "Inverse" | "Transpose" | "Dot" => all_permutations,
+    "MatrixPower" => {
+      args.len() == 2
+        && is_structured_matrix(&args[0])
+        && matches!(&args[0], Expr::FunctionCall { name, .. } if name == "PermutationMatrix")
+        && matches!(args[1], Expr::Integer(_))
+    }
+    _ => false,
+  };
+  if closed && let Some(pm) = dense_to_permutation_matrix(&result) {
+    return Some(Ok(pm));
+  }
+  Some(Ok(result))
 }
 
 /// Where a companion matrix keeps its negated coefficients.
@@ -3199,9 +3418,17 @@ pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
-/// VandermondeMatrix[{x1, ..., xn}] - the n x n Vandermonde matrix with entry
-/// (i, j) equal to xi^(j-1). (wolframscript returns a sparse StructuredArray;
-/// Woxi returns the dense matrix, so Normal[...] agrees with wolframscript.)
+/// VandermondeMatrix[{x1, …, xm}] / VandermondeMatrix[{x1, …, xm}, n] — the
+/// m × n (default m × m) matrix with entry (i, j) = xi^(j-1); a node that
+/// repeats an earlier one gives the derivative row instead (the confluent
+/// Vandermonde matrix). Like wolframscript it is kept as the structured array
+///   VandermondeMatrix[StructuredArray`StructuredData[{m, n},
+///                     {ordered, positions, multiplicities, False}]]
+/// where `ordered` lists the nodes grouped by value — numeric values in Leja
+/// order (largest magnitude first, then each one farthest, by product of
+/// distances, from those already taken), symbolic ones as they first occur —
+/// `positions` gives every input node's place in `ordered` and
+/// `multiplicities` the size of each group.
 pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("VandermondeMatrix", args));
   if args.is_empty() || args.len() > 2 {
@@ -3211,29 +3438,173 @@ pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(p) if !p.is_empty() => p.iter().cloned().collect(),
     _ => return unevaluated(),
   };
-  // VandermondeMatrix[v, m]: m columns (powers 0 .. m-1).
   let n = match args.get(1) {
     None => points.len(),
     Some(Expr::Integer(m)) if *m >= 1 => *m as usize,
-    Some(_) => return unevaluated(),
+    Some(other) => {
+      if !matches!(other, Expr::FunctionCall { name, .. } if name == "StructuredArray`StructuredData")
+      {
+        crate::emit_message(&format!(
+          "VandermondeMatrix::intp: Positive integer expected at position 2 \
+           in {}.",
+          crate::syntax::format_expr(
+            &crate::helpers::unevaluated("VandermondeMatrix", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+      }
+      return unevaluated();
+    }
   };
-  let mut matrix = Vec::with_capacity(points.len());
-  for x in &points {
-    let mut row = Vec::with_capacity(n);
-    for j in 0..n {
-      let entry = match j {
+  // An inexact node makes every node a machine number.
+  let points: Vec<Expr> = if points.iter().any(|p| matches!(p, Expr::Real(_))) {
+    points
+      .iter()
+      .map(|p| evaluate_expr_to_expr(&call1("N", p.clone())))
+      .collect::<Result<_, _>>()?
+  } else {
+    points
+  };
+  // Group equal nodes, in order of first occurrence.
+  let mut groups: Vec<(Expr, Vec<usize>)> = Vec::new();
+  for (i, p) in points.iter().enumerate() {
+    let key = expr_to_string(p);
+    match groups.iter_mut().find(|(v, _)| expr_to_string(v) == key) {
+      Some((_, members)) => members.push(i),
+      None => groups.push((p.clone(), vec![i])),
+    }
+  }
+  // Numeric nodes are taken in Leja order.
+  let magnitudes: Option<Vec<(f64, f64)>> = groups
+    .iter()
+    .map(|(v, _)| {
+      if !crate::functions::predicate_ast::is_numeric_q(v) {
+        return None;
+      }
+      let nv = evaluate_expr_to_expr(&call1("N", v.clone())).ok()?;
+      crate::functions::math_ast::try_extract_complex_f64(&nv)
+    })
+    .collect();
+  if let Some(values) = magnitudes {
+    // Ties go to the earliest value in canonical order.
+    let sorted = evaluate_expr_to_expr(&call(
+      "Ordering",
+      vec![Expr::List(groups.iter().map(|(v, _)| v.clone()).collect())],
+    ))?;
+    let canonical: Vec<usize> = match &sorted {
+      Expr::List(ix) => ix
+        .iter()
+        .filter_map(|i| match i {
+          Expr::Integer(k) => Some(*k as usize - 1),
+          _ => None,
+        })
+        .collect(),
+      _ => (0..groups.len()).collect(),
+    };
+    let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+    let mut chosen: Vec<usize> = Vec::with_capacity(groups.len());
+    while chosen.len() < groups.len() {
+      let mut best: Option<(usize, f64)> = None;
+      for &g in &canonical {
+        if chosen.contains(&g) {
+          continue;
+        }
+        let score = if chosen.is_empty() {
+          dist(values[g], (0.0, 0.0))
+        } else {
+          chosen.iter().map(|&c| dist(values[g], values[c])).product()
+        };
+        if best.is_none_or(|(_, s)| score > s) {
+          best = Some((g, score));
+        }
+      }
+      chosen.push(best.expect("a group is left").0);
+    }
+    groups = chosen.into_iter().map(|g| groups[g].clone()).collect();
+  }
+  let mut ordered = Vec::with_capacity(points.len());
+  let mut positions = vec![Expr::Integer(0); points.len()];
+  let mut multiplicities = Vec::with_capacity(groups.len());
+  for (_, members) in &groups {
+    for &i in members {
+      ordered.push(points[i].clone());
+      positions[i] = Expr::Integer(ordered.len() as i128);
+    }
+    multiplicities.push(Expr::Integer(members.len() as i128));
+  }
+  Ok(call1(
+    "VandermondeMatrix",
+    call(
+      "StructuredArray`StructuredData",
+      vec![
+        Expr::List(
+          vec![
+            Expr::Integer(points.len() as i128),
+            Expr::Integer(n as i128),
+          ]
+          .into(),
+        ),
+        Expr::List(
+          vec![
+            Expr::List(ordered.into()),
+            Expr::List(positions.into()),
+            Expr::List(multiplicities.into()),
+            Expr::Identifier("False".to_string()),
+          ]
+          .into(),
+        ),
+      ],
+    ),
+  ))
+}
+
+/// The dense (confluent) Vandermonde matrix of a structured payload
+/// `{ordered, positions, multiplicities, _}` with `cols` columns: row i is
+/// node `ordered[[positions[[i]]]]`, differentiated once for every earlier
+/// row with the same node.
+fn vandermonde_dense(payload: &Expr, cols: usize) -> Option<Expr> {
+  let Expr::List(parts) = payload else {
+    return None;
+  };
+  let (Some(Expr::List(ordered)), Some(Expr::List(positions))) =
+    (parts.first(), parts.get(1))
+  else {
+    return None;
+  };
+  let mut rows = Vec::with_capacity(positions.len());
+  let mut seen: Vec<String> = Vec::with_capacity(positions.len());
+  for pos in positions {
+    let Expr::Integer(k) = pos else {
+      return None;
+    };
+    let x = ordered.get(usize::try_from(*k).ok()?.checked_sub(1)?)?;
+    let key = expr_to_string(x);
+    let order = seen.iter().filter(|s| **s == key).count();
+    seen.push(key);
+    let mut row = Vec::with_capacity(cols);
+    for j in 0..cols {
+      if j < order {
+        row.push(Expr::Integer(0));
+        continue;
+      }
+      // d^order/dx^order x^j = j!/(j-order)! x^(j-order)
+      let falling: i128 = ((j - order + 1)..=j).map(|t| t as i128).product();
+      let power = j - order;
+      let base = match power {
         0 => Expr::Integer(1),
         1 => x.clone(),
-        _ => crate::evaluator::evaluate_expr_to_expr(&pow(
-          x.clone(),
-          Expr::Integer(j as i128),
-        ))?,
+        _ => pow(x.clone(), Expr::Integer(power as i128)),
       };
-      row.push(entry);
+      let entry = if falling == 1 {
+        base
+      } else {
+        times(vec![Expr::Integer(falling), base])
+      };
+      row.push(evaluate_expr_to_expr(&entry).ok()?);
     }
-    matrix.push(Expr::List(row.into()));
+    rows.push(Expr::List(row.into()));
   }
-  Ok(Expr::List(matrix.into()))
+  Some(Expr::List(rows.into()))
 }
 
 /// DiagonalMatrix[list] - diagonal matrix from a list

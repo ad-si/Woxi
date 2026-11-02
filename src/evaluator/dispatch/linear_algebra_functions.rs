@@ -622,13 +622,33 @@ pub fn dispatch_linear_algebra_functions(
     "IdentityMatrix" | "DiagonalMatrix" | "UpperTriangularize"
     | "LowerTriangularize" | "CompanionMatrix" | "ToeplitzMatrix"
     | "HankelMatrix" | "VandermondeMatrix" | "HadamardMatrix"
-    | "RotationMatrix"
+    | "RotationMatrix" | "PermutationMatrix"
       if args.len() >= 2
         && option_rule_value(&args[args.len() - 1], "TargetStructure")
           .is_some() =>
     {
+      // The structured matrices (Toeplitz, Hankel, …) have no sparse form,
+      // and a rotation matrix no generic structured one.
+      let rejects = |target: &str| match target {
+        "Sparse" => matches!(
+          name,
+          "ToeplitzMatrix"
+            | "HankelMatrix"
+            | "VandermondeMatrix"
+            | "HadamardMatrix"
+            | "RotationMatrix"
+        ),
+        "Structured" => name == "RotationMatrix",
+        _ => false,
+      };
       let target =
         match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
+          Expr::String(s) if rejects(s) || !is_target_structure_name(s) => {
+            crate::emit_message(&format!(
+              "{name}::badts: {s} is not a valid target structure."
+            ));
+            return Some(Ok(unevaluated(name, args)));
+          }
           Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
           Expr::Identifier(s) if s == "Automatic" => "Automatic",
           _ => return Some(Ok(unevaluated(name, args))),
@@ -640,6 +660,22 @@ pub fn dispatch_linear_algebra_functions(
         Ok(d) => d,
         Err(e) => return Some(Err(e)),
       };
+      // A structured result (VandermondeMatrix[StructuredData[…]]) is made
+      // dense for "Dense" and a SparseArray for "Sparse".
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+          &result,
+        )
+      {
+        return Some(match target {
+          "Dense" => Ok(dense),
+          "Sparse" => crate::evaluator::evaluate_function_call_ast(
+            "SparseArray",
+            &[dense],
+          ),
+          _ => Ok(result),
+        });
+      }
       let is_sparse = matches!(&result, Expr::FunctionCall { name: h, .. } if h == "SparseArray");
       return Some(match target {
         "Dense" if is_sparse => {
@@ -5985,6 +6021,28 @@ fn matrix_function_by_eigensystem(f: &Expr, m: &Expr) -> Option<Expr> {
 }
 
 /// The value of `opt -> value` when `e` is that option rule.
+/// Whether `s` names a `TargetStructure` WL knows (even where a given
+/// constructor does not support it); any other string is `::badts`.
+fn is_target_structure_name(s: &str) -> bool {
+  matches!(
+    s,
+    "Dense"
+      | "Sparse"
+      | "Structured"
+      | "Orthogonal"
+      | "Unitary"
+      | "Symmetric"
+      | "Hermitian"
+      | "Antisymmetric"
+      | "Antihermitian"
+      | "Diagonal"
+      | "UpperTriangular"
+      | "LowerTriangular"
+      | "Permutation"
+      | "Banded"
+  )
+}
+
 fn option_rule_value<'a>(e: &'a Expr, opt: &str) -> Option<&'a Expr> {
   match e {
     Expr::Rule {
