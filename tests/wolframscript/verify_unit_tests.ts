@@ -823,10 +823,6 @@ const NEAR_MATCH = new Set([
   // wolframscript takes Log10 of the number two ways (…175 and …18), so the
   // accuracy it reports is -10.000000000000004 for the requested -10.
   "Accuracy[N[Exp[100], {Infinity, -10}]]",
-  // The clamped spline's maxima differ from wolframscript's in the last
-  // digits (6.251184654940374 against 6.25118465494037; its x = 1 end value
-  // is 1.9999999999999996).
-  "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 3]",
 ]);
 
 /**
