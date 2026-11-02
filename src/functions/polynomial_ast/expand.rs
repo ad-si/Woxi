@@ -784,7 +784,7 @@ fn combine_like_terms(terms: Vec<Expr>) -> Expr {
   if terms.len() < COMBINE_THRESHOLD {
     return build_sum(terms);
   }
-  combine_and_build(&terms)
+  combine_unordered(&terms)
 }
 
 /// Recursively expand an expression.
@@ -1345,15 +1345,15 @@ fn expand_power(base: &Expr, n: i128) -> Expr {
   {
     return result;
   }
-  // Repeated multiplication
+  // Repeated multiplication, combining like terms after each step to keep
+  // the expression manageable; only the result is put in canonical order.
   let mut result = base.clone();
   for _ in 1..n {
     result = distribute_product(&result, base);
-    // Combine like terms to keep expression manageable
     let terms = collect_additive_terms(&result);
-    result = combine_and_build(&terms);
+    result = combine_unordered(&terms);
   }
-  result
+  combine_and_build(&collect_additive_terms(&result))
 }
 
 /// Build a sum (BinaryOp::Plus chain) from terms.
@@ -1370,10 +1370,13 @@ pub fn build_sum(terms: Vec<Expr>) -> Expr {
   result
 }
 
-/// Combine like terms and sort, then build the final expression.
-pub fn combine_and_build(terms: &[Expr]) -> Expr {
+/// Like terms merged: `(variable key, variable factors, summed coefficient)`
+/// in first-seen order.
+type MergedTerms = Vec<(String, Vec<Expr>, Expr)>;
+
+fn merge_like_terms(terms: &[Expr]) -> MergedTerms {
   // Represent each term as (key, coefficient) where key identifies the "variable part"
-  let mut term_map: Vec<(String, Vec<Expr>, Expr)> = Vec::new(); // (sort_key, var_factors, coeff)
+  let mut term_map: MergedTerms = Vec::new(); // (sort_key, var_factors, coeff)
   // Side index from sort key to its slot in `term_map`. `term_map` stays a Vec
   // so first-seen order is preserved for the (stable) sort below; the index
   // only replaces the linear `find`, which made combining a dense expansion
@@ -1391,6 +1394,46 @@ pub fn combine_and_build(terms: &[Expr]) -> Expr {
       term_map.push((var_key, var_factors, coeff));
     }
   }
+  term_map
+}
+
+/// The terms of merged like terms, zero ones dropped.
+fn merged_term_exprs(term_map: MergedTerms) -> Vec<Expr> {
+  let mut result_terms: Vec<Expr> = Vec::new();
+  for (_, var_factors, coeff) in term_map {
+    let coeff = simplify(coeff);
+    if matches!(&coeff, Expr::Integer(0)) {
+      continue; // skip zero terms
+    }
+    if var_factors.is_empty() {
+      // Constant term
+      result_terms.push(coeff);
+    } else if matches!(&coeff, Expr::Integer(1)) {
+      // Coefficient is 1, just use the variable part
+      let var_expr = build_product(var_factors);
+      result_terms.push(var_expr);
+    } else if matches!(&coeff, Expr::Integer(-1)) {
+      let var_expr = build_product(var_factors);
+      result_terms.push(negate_term(&var_expr));
+    } else {
+      let var_expr = build_product(var_factors);
+      result_terms.push(multiply_exprs(&coeff, &var_expr));
+    }
+  }
+  result_terms
+}
+
+/// Like terms merged, in no particular order: an intermediate of an
+/// expansion, which `combine_and_build` puts in canonical order at the end.
+/// Ordering every intermediate canonically (a `Plus` evaluation per
+/// product) was most of the cost of expanding a product of large sums.
+fn combine_unordered(terms: &[Expr]) -> Expr {
+  build_sum(merged_term_exprs(merge_like_terms(terms)))
+}
+
+/// Combine like terms and sort, then build the final expression.
+pub fn combine_and_build(terms: &[Expr]) -> Expr {
+  let term_map = merge_like_terms(terms);
 
   // Sort terms using Wolfram's canonical ordering:
   // Reverse-variable lexicographic ascending — sort by last variable ascending,
@@ -1455,31 +1498,11 @@ pub fn combine_and_build(terms: &[Expr]) -> Expr {
   });
   let mut slots: Vec<Option<(String, Vec<Expr>, Expr)>> =
     term_map.into_iter().map(Some).collect();
-  let term_map: Vec<(String, Vec<Expr>, Expr)> =
+  let term_map: MergedTerms =
     order.into_iter().filter_map(|i| slots[i].take()).collect();
 
   // Build result terms
-  let mut result_terms: Vec<Expr> = Vec::new();
-  for (_, var_factors, coeff) in term_map {
-    let coeff = simplify(coeff);
-    if matches!(&coeff, Expr::Integer(0)) {
-      continue; // skip zero terms
-    }
-    if var_factors.is_empty() {
-      // Constant term
-      result_terms.push(coeff);
-    } else if matches!(&coeff, Expr::Integer(1)) {
-      // Coefficient is 1, just use the variable part
-      let var_expr = build_product(var_factors);
-      result_terms.push(var_expr);
-    } else if matches!(&coeff, Expr::Integer(-1)) {
-      let var_expr = build_product(var_factors);
-      result_terms.push(negate_term(&var_expr));
-    } else {
-      let var_expr = build_product(var_factors);
-      result_terms.push(multiply_exprs(&coeff, &var_expr));
-    }
-  }
+  let result_terms = merged_term_exprs(term_map);
 
   if result_terms.is_empty() {
     Expr::Integer(0)

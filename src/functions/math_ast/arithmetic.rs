@@ -1959,8 +1959,10 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     std::panic::set_hook(Box::new(|_| {}));
     let sort_result =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        order.sort_by(|&i, &j| {
-          compare_plus_terms(&sorted_symbolic[i], &sorted_symbolic[j])
+        with_plus_term_factor_memo(&sorted_symbolic, || {
+          order.sort_by(|&i, &j| {
+            compare_plus_terms(&sorted_symbolic[i], &sorted_symbolic[j])
+          });
         });
       }));
     std::panic::set_hook(prev_hook);
@@ -4835,8 +4837,94 @@ fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Cow<'_, Expr>>) {
       None => factors.push(f),
     }
   }
-  factors.sort_by(|a, b| wl_arg_order(a, b));
-  (c, factors)
+  let key = std::ptr::from_ref::<Expr>(e) as usize;
+  let cached = PLUS_TERM_FACTOR_ORDER.with(|m| match m.borrow().get(&key) {
+    Some(Some(order)) if order.len() == factors.len() => {
+      Some(Some(order.clone()))
+    }
+    Some(_) => Some(None),
+    None => None,
+  });
+  match cached {
+    // A term of the sum being sorted: its factors are ordered once.
+    Some(order) => {
+      let order = order.unwrap_or_else(|| {
+        let mut order: Vec<usize> = (0..factors.len()).collect();
+        order.sort_by(|&i, &j| wl_arg_order(&factors[i], &factors[j]));
+        PLUS_TERM_FACTOR_ORDER.with(|m| {
+          m.borrow_mut().insert(key, Some(order.clone()));
+        });
+        order
+      });
+      let mut slots: Vec<Option<Cow<'_, Expr>>> =
+        factors.into_iter().map(Some).collect();
+      let factors = order
+        .into_iter()
+        .map(|i| slots[i].take().expect("factor order is a permutation"))
+        .collect();
+      (c, factors)
+    }
+    None => {
+      factors.sort_by(|a, b| wl_arg_order(a, b));
+      (c, factors)
+    }
+  }
+}
+
+type FactorOrderMemo = std::collections::HashMap<usize, Option<Vec<usize>>>;
+
+thread_local! {
+  /// While a sum's terms are sorted, the canonical order of each term's
+  /// factors (`wl_coeff_and_factors`), keyed by the term's address: every
+  /// comparison of the sort asks for it again, and sorting the factors was
+  /// most of the cost of ordering a large expansion. Only the terms being
+  /// sorted are registered (their addresses stay put for the sort), so a
+  /// temporary built during a comparison is never mistaken for one.
+  static PLUS_TERM_FACTOR_ORDER: std::cell::RefCell<FactorOrderMemo> =
+    std::cell::RefCell::new(FactorOrderMemo::new());
+}
+
+/// Run `sort` with the factor orders of `terms` memoized (see
+/// `PLUS_TERM_FACTOR_ORDER`); a nested sort keeps its own.
+fn with_plus_term_factor_memo<R>(
+  terms: &[Expr],
+  sort: impl FnOnce() -> R,
+) -> R {
+  struct Restore(Option<FactorOrderMemo>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      if let Some(previous) = self.0.take() {
+        PLUS_TERM_FACTOR_ORDER.with(|m| *m.borrow_mut() = previous);
+      }
+    }
+  }
+  struct RestoreRest(
+    Option<
+      std::collections::HashMap<(usize, usize), Option<std::rc::Rc<Expr>>>,
+    >,
+  );
+  impl Drop for RestoreRest {
+    fn drop(&mut self) {
+      if let Some(previous) = self.0.take() {
+        PLUS_TERM_REST.with(|m| *m.borrow_mut() = previous);
+      }
+    }
+  }
+  let registered: FactorOrderMemo = terms
+    .iter()
+    .map(|t| (std::ptr::from_ref::<Expr>(t) as usize, None))
+    .collect();
+  // Declared after it, the kept rests are restored (and freed) first; their
+  // addresses stay keys of the factor-order memo only until it is restored
+  // right after, with no lookup in between.
+  let _restore = Restore(Some(
+    PLUS_TERM_FACTOR_ORDER
+      .with(|m| std::mem::replace(&mut *m.borrow_mut(), registered)),
+  ));
+  let _restore_rest = RestoreRest(Some(
+    PLUS_TERM_REST.with(|m| std::mem::take(&mut *m.borrow_mut())),
+  ));
+  sort()
 }
 
 /// Base and exponent of a factor (`x` → (`x`, 1)).
@@ -5151,8 +5239,8 @@ fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
     return Some(ord);
   }
   match (
-    product_without(&factors_a, ia),
-    product_without(&factors_b, ib),
+    term_product_without(a, &factors_a, ia),
+    term_product_without(b, &factors_b, ib),
   ) {
     (None, None) => None,
     (None, Some(_)) => Some(std::cmp::Ordering::Less),
@@ -5162,6 +5250,46 @@ fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
       (ord != std::cmp::Ordering::Equal).then_some(ord)
     }
   }
+}
+
+thread_local! {
+  /// `product_without` of a term of the sum being sorted, kept for the sort
+  /// (see `PLUS_TERM_FACTOR_ORDER`): its address then stays put, so its own
+  /// factor order is memoized too.
+  static PLUS_TERM_REST: std::cell::RefCell<
+    std::collections::HashMap<(usize, usize), Option<std::rc::Rc<Expr>>>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// `product_without(factors, skip)` of the Plus term `term`, memoized while
+/// `term` is one of the terms being sorted.
+fn term_product_without(
+  term: &Expr,
+  factors: &[Cow<Expr>],
+  skip: usize,
+) -> Option<std::rc::Rc<Expr>> {
+  let address = std::ptr::from_ref::<Expr>(term) as usize;
+  let registered =
+    PLUS_TERM_FACTOR_ORDER.with(|m| m.borrow().contains_key(&address));
+  if !registered {
+    return product_without(factors, skip).map(std::rc::Rc::new);
+  }
+  if let Some(rest) =
+    PLUS_TERM_REST.with(|m| m.borrow().get(&(address, skip)).cloned())
+  {
+    return rest;
+  }
+  let rest = product_without(factors, skip).map(std::rc::Rc::new);
+  if let Some(r) = &rest {
+    let key = std::rc::Rc::as_ptr(r) as usize;
+    PLUS_TERM_FACTOR_ORDER.with(|m| {
+      m.borrow_mut().entry(key).or_insert(None);
+    });
+  }
+  PLUS_TERM_REST.with(|m| {
+    m.borrow_mut().insert((address, skip), rest.clone());
+  });
+  rest
 }
 
 /// The function call a Plus term is "led" by: the call itself, the base of
