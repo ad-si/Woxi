@@ -7662,10 +7662,16 @@ that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
   stub) and `{HoldAll, Protected, ReadProtected}` once any plot has been
   drawn; Woxi reports the loaded attributes. Same non-determinism as
   `Attributes[ParallelDo]`.
-- **`SmoothKernelDistribution`** interpolates its density in wolframscript
-  (`InterpolationPoints`), so `Variance`, a kernel `PDF` and the
-  default-bandwidth `PDF` differ from the exact kernel sum in the fifth
-  digit (`1.30567` against `1.30556` for `{1., 2., 3.5}`, bandwidth 0.5).
+- **`SmoothKernelDistribution`** follows wolframscript's stored grid
+  density (512 points from `min - 5 h` to `max + 5 h`, linearly binned data,
+  kernel cut at `5 h`, trapezoid-normalized, linear in between; Variance is
+  the trapezoid one plus `δ^2/3`). Two things remain: the Gaussian
+  `Variance` differs from wolframscript's in the tenth digit
+  (`1.3056733890928802` against `1.3056733885323657`; the Epanechnikov one
+  agrees to the last bit), and the `"Rectangular"` kernel, which
+  wolframscript stores as an adaptively sampled step function (90 points
+  for `{1., 2., 3.5}`, bandwidth 0.7, its support cut at the data's
+  ends), keeps Woxi's exact kernel sum.
 - **`DictionaryWordQ[w, Language -> l]`**: Woxi's word list is English only.
 - **Stream numbers.** wolframscript keeps stream 3 open for its own output
   file, so its first `StringToStream` is `InputStream[String, 4]`; a kernel's
