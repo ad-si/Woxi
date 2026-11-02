@@ -11144,6 +11144,22 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // An entry of the held equation list may splice in several equations
+  // (ShearAngleModelsForObliqueMetalCutting).
+  #[test]
+  fn spliced_equations_in_the_held_list() {
+    assert_eq!(
+      interpret(
+        "g[a_, b_] := {a + b == 3, a - b == 1}; \
+         {FindRoot[{Evaluate @@ g[x, y]}, {{x, 1}, {y, 1}}], \
+          FindRoot[{Evaluate @@ g[x, y], z == 2}, {{x, 1}, {y, 1}, {z, 0}}], \
+          FindRoot[{Sequence @@ g[x, y]}, {{x, 1}, {y, 1}}]}"
+      )
+      .unwrap(),
+      "{{x -> 2., y -> 1.}, {x -> 2., y -> 1., z -> 2.}, {x -> 2., y -> 1.}}"
+    );
+  }
+
   // `FindRoot[f, {x0}]` finds a root of the function itself and reports
   // it as `{x}` (Demonstration TheRefinanceDecision, with an
   // InterpolatingFunction); it used to stop the evaluation.

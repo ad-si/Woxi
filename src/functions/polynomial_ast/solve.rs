@@ -14891,7 +14891,26 @@ fn find_root_multivariate(
   // resulting closed form instead catches every occurrence, wherever it
   // came from.
   let raw_eq_list: Vec<Expr> = match eqns_arg {
-    Expr::List(es) => es.to_vec(),
+    // An entry that splices several equations into the held list
+    // (`{Evaluate @@ eqs[…], eq4}`, `Sequence @@ eqs`) is expanded first.
+    Expr::List(es) => es
+      .iter()
+      .flat_map(|e| match e {
+        Expr::Apply { .. } | Expr::FunctionCall { .. }
+          if matches!(e, Expr::Apply { .. })
+            || matches!(e, Expr::FunctionCall { name, .. }
+              if name == "Apply" || name == "Sequence") =>
+        {
+          match &evaluate_with_vars_localized(e, &raw_var_refs) {
+            Expr::FunctionCall { name, args } if name == "Sequence" => {
+              args.to_vec()
+            }
+            _ => vec![e.clone()],
+          }
+        }
+        _ => vec![e.clone()],
+      })
+      .collect(),
     other => vec![other.clone()],
   };
   // An equation between lists (`{a, b} == {c, d}`) is one equation per
