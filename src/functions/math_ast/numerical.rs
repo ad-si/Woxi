@@ -7658,9 +7658,11 @@ pub fn list_fourier_sequence_transform_ast(
 }
 
 /// FourierSequenceTransform[f, n, omega] — discrete-time Fourier transform of a
-/// sequence with finite support, `Sum[f E^(I b n omega), n]` scaled by
-/// `Sqrt[Abs[b]/(2 Pi)^(1 - a)]` for `FourierParameters -> {a, b}`.
-/// Sequences whose support is not finite stay unevaluated.
+/// sequence with finite support, `Sum[f E^(-I b n omega), n]` scaled by
+/// `Sqrt[Abs[b]/(2 Pi)^(1 - a)]` for `FourierParameters -> {a, b}` (the
+/// kernel ListFourierSequenceTransform uses too: `KroneckerDelta[n - 2]`
+/// transforms to `E^((-2*I)*w)`), over a common denominator as wolframscript
+/// prints it. Sequences whose support is not finite stay unevaluated.
 pub fn fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -7707,14 +7709,20 @@ pub fn fourier_sequence_transform_ast(
     .into_iter()
     .map(|(k, v)| {
       let exponent =
-        times(vec![Expr::Integer(b * k), id_expr("I"), omega.clone()]);
+        times(vec![Expr::Integer(-b * k), id_expr("I"), omega.clone()]);
       times2(v, pow2(id_expr("E"), exponent))
     })
     .collect();
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  let mut sum = plus(terms);
+  let mut sum = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    crate::functions::polynomial_ast::together_ast(&[evaluate_expr_to_expr(
+      &plus(terms),
+    )?])?
+  };
   if a != 1 || b.abs() != 1 {
     // Sqrt[Abs[b]/(2 Pi)^(1 - a)]
     let scale = pow2(

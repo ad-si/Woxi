@@ -24898,7 +24898,7 @@ mod fourier_sequence_transform {
     assert_eq!(
       interpret("FourierSequenceTransform[If[Abs[n] <= 1, 1, 0]/3, n, w]")
         .unwrap(),
-      "1/3 + 1/(3*E^(I*w)) + E^(I*w)/3"
+      "(1 + E^(I*w) + E^((2*I)*w))/(3*E^(I*w))"
     );
   }
 
@@ -24908,6 +24908,13 @@ mod fourier_sequence_transform {
     assert_eq!(
       interpret("FourierSequenceTransform[KroneckerDelta[n - 2], n, w]")
         .unwrap(),
+      "E^((-2*I)*w)"
+    );
+    assert_eq!(
+      interpret(
+        "FourierSequenceTransform[KroneckerDelta[n - 2], n, w, FourierParameters -> {1, -1}]"
+      )
+      .unwrap(),
       "E^((2*I)*w)"
     );
   }
@@ -24920,7 +24927,7 @@ mod fourier_sequence_transform {
         "FourierSequenceTransform[Boole[0 <= n <= 2], n, w, FourierParameters -> {0, 1}]"
       )
       .unwrap(),
-      "(1 + E^(I*w) + E^((2*I)*w))/Sqrt[2*Pi]"
+      "(1 + E^(I*w) + E^((2*I)*w))/(E^((2*I)*w)*Sqrt[2*Pi])"
     );
   }
 
