@@ -8963,14 +8963,16 @@ mod graph_coordinates_3d {
     );
   }
 
+  // Every edge is a tube between two vertex indices (sorted pairs), every
+  // vertex a sphere, inside one GraphicsComplex.
   #[test]
   fn graph_plot_3d_draws_every_edge() {
     assert_eq!(
       interpret(
-        "Length[Cases[GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1}][[1]], _Line, Infinity]]"
+        "g = GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1}][[1]]; {Length[Cases[g, _Line, Infinity]], Head[g], Cases[g, Tube[e_] :> e, Infinity], Length[Cases[g, _Sphere, Infinity]], Cases[g, _Hue, Infinity]}"
       )
       .unwrap(),
-      "3"
+      "{0, GraphicsComplex, {{{1, 2}, {1, 3}, {2, 3}}}, 3, {Hue[0.6, 0.2, 0.8], Hue[0.6, 0.6, 1]}}"
     );
   }
 

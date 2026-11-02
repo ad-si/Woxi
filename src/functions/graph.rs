@@ -10515,8 +10515,10 @@ pub(crate) fn graph_coordinates(
   Ok(Some((vertices.to_vec(), edges, coords)))
 }
 
-/// `GraphPlot3D[edges]`: the graph drawn as a `Graphics3D` with one `Line`
-/// per edge and a `Point` per vertex.
+/// `GraphPlot3D[edges]`: the graph drawn the way wolframscript draws it, a
+/// `GraphicsComplex` over the vertex positions holding one tube per edge
+/// (`Arrow[Tube[{{i, j}, …}], r]`, the vertex pairs sorted) and a sphere
+/// per vertex, both of radius `r` = 1/40 of the mean edge length.
 pub(crate) fn graph_plot3d_ast(
   graph_input: &Expr,
   options: &[Expr],
@@ -10526,16 +10528,72 @@ pub(crate) fn graph_plot3d_ast(
   };
   let point =
     |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
-  let lines: Vec<Expr> = edges
+  let mut pairs: Vec<(usize, usize)> = edges
     .iter()
-    .map(|&(a, b)| {
-      call("Line", vec![Expr::List(vec![point(a), point(b)].into())])
-    })
+    .filter(|(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
     .collect();
-  let points =
-    call1("Point", Expr::List((0..coords.len()).map(point).collect()));
-  let mut args =
-    vec![Expr::List(vec![Expr::List(lines.into()), points].into())];
+  pairs.sort_unstable();
+  pairs.dedup();
+  let mean_length = if pairs.is_empty() {
+    1.0
+  } else {
+    pairs
+      .iter()
+      .map(|&(a, b)| {
+        coords[a]
+          .iter()
+          .zip(&coords[b])
+          .map(|(p, q)| (p - q) * (p - q))
+          .sum::<f64>()
+          .sqrt()
+      })
+      .sum::<f64>()
+      / pairs.len() as f64
+  };
+  let radius = Expr::Real(mean_length / 40.0);
+  let int = |i: usize| Expr::Integer(i as i128 + 1);
+  let tube = call(
+    "Tube",
+    vec![Expr::List(
+      pairs
+        .iter()
+        .map(|&(a, b)| Expr::List(vec![int(a), int(b)].into()))
+        .collect(),
+    )],
+  );
+  let hue = |s: f64, b: f64| {
+    call1(
+      "Directive",
+      call("Hue", vec![Expr::Real(0.6), Expr::Real(s), Expr::Real(b)]),
+    )
+  };
+  let edge_group = Expr::List(
+    vec![
+      hue(0.2, 0.8),
+      call1("Arrowheads", Expr::Real(0.0)),
+      Expr::List(vec![call("Arrow", vec![tube, radius.clone()])].into()),
+    ]
+    .into(),
+  );
+  let mut vertex_group = vec![call(
+    "Directive",
+    vec![call(
+      "Hue",
+      vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Integer(1)],
+    )],
+  )];
+  vertex_group.extend(
+    (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
+  );
+  let complex = call(
+    "GraphicsComplex",
+    vec![
+      Expr::List((0..coords.len()).map(point).collect()),
+      Expr::List(vec![edge_group, Expr::List(vertex_group.into())].into()),
+    ],
+  );
+  let mut args = vec![complex];
   args.extend(options.iter().cloned());
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
     "Graphics3D",
