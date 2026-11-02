@@ -1128,26 +1128,56 @@ pub fn filter_rules_ast(
     return Ok(call("FilterRules", vec![rules.clone(), keys.clone()]));
   };
 
-  // Build set of key names to keep
-  let key_names: Vec<String> = match keys {
-    Expr::List(items) => items.iter().map(expr_to_string).collect(),
-    _ => vec![expr_to_string(keys)],
+  // The keys: names or patterns the left-hand sides are matched with; a
+  // rule among them (an options list, `Options[f]`) stands for its name.
+  let key_items: Vec<Expr> = match keys {
+    Expr::List(items) => items.to_vec(),
+    _ => vec![keys.clone()],
+  };
+  let keys: Vec<Expr> = key_items
+    .iter()
+    .map(|k| match k {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        pattern.as_ref().clone()
+      }
+      other => other.clone(),
+    })
+    .collect();
+  // An option name is the same written as a symbol or as a string.
+  let name_of = |e: &Expr| match e {
+    Expr::String(s) => s.clone(),
+    other => expr_to_string(other),
+  };
+  let key_names: Vec<String> = keys.iter().map(name_of).collect();
+  let matches_key = |lhs: &Expr| -> bool {
+    let name = name_of(lhs);
+    key_names.contains(&name)
+      || keys.iter().any(|k| {
+        crate::evaluator::pattern_matching::contains_pattern(k)
+          && matches!(
+            crate::evaluator::evaluate_function_call_ast(
+              "MatchQ",
+              &[lhs.clone(), k.clone()],
+            ),
+            Ok(Expr::Identifier(ref t)) if t == "True"
+          )
+      })
   };
 
   let mut result = Vec::new();
   for rule in rule_list {
-    let rule_key = match rule {
+    let lhs = match rule {
       Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-        expr_to_string(pattern)
+        pattern.as_ref()
       }
       Expr::FunctionCall { name, args }
         if (name == "Rule" || name == "RuleDelayed") && !args.is_empty() =>
       {
-        expr_to_string(&args[0])
+        &args[0]
       }
       _ => continue,
     };
-    if key_names.contains(&rule_key) {
+    if matches_key(lhs) {
       result.push(rule.clone());
     }
   }

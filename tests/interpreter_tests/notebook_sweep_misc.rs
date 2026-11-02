@@ -486,3 +486,26 @@ mod solve_options_and_bad_domain {
     );
   }
 }
+
+mod filter_rules_patterns {
+  use super::*;
+
+  // FilterRules matches the left-hand sides with patterns (`Except[…]`,
+  // `x[_]`), takes rules among the keys by their names, and treats an
+  // option name as the same written as a string or a symbol.
+  #[test]
+  fn patterns_rules_and_string_names() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{FilterRules[{a -> 1, b -> 2}, \"a\"], FilterRules[{a -> 1, b -> 2}, {a -> 5}], \
+         FilterRules[{a -> 1, b :> 2, c -> 3}, Except[a]], \
+         FilterRules[{x[1] -> 1, x[2] -> 2, y -> 3}, x[_]], FilterRules[{a -> 1}, {}], \
+         FilterRules[{n -> {1}, Indexed[x, {2}] -> 3, c -> 4}, \
+           Except[Alternatives[Indexed[x, {2}], Indexed[y, {2}]]]]}"
+      )
+      .unwrap(),
+      "{{a -> 1}, {a -> 1}, {b :> 2, c -> 3}, {x[1] -> 1, x[2] -> 2}, {}, {n -> {1}, c -> 4}}"
+    );
+  }
+}
