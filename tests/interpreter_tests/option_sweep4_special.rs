@@ -242,7 +242,20 @@ mod special_values {
   #[test]
   fn elliptic_theta1_at_multiples_of_pi() {
     assert_eq!(interpret("EllipticTheta[1, Pi, 1/2]").unwrap(), "0");
-    assert_eq!(interpret("EllipticTheta[1, -3 Pi, q]").unwrap(), "0");
+    // Zero only inside the unit disk of the nome.
+    assert_eq!(
+      interpret("EllipticTheta[1, -3 Pi, q]").unwrap(),
+      "EllipticTheta[1, -3*Pi, q]"
+    );
+    assert_eq!(
+      interpret("EllipticTheta[1, 0, q]").unwrap(),
+      "ConditionalExpression[0, Abs[q] < 1]"
+    );
+    assert_eq!(
+      interpret("EllipticTheta[1, Pi, 2]").unwrap(),
+      "EllipticTheta[1, Pi, 2]"
+    );
+    assert_eq!(interpret("EllipticTheta[1, Pi, I/2]").unwrap(), "0");
     assert_eq!(
       interpret("EllipticTheta[1, Pi/2, 1/2]").unwrap(),
       "EllipticTheta[1, Pi/2, 1/2]"

@@ -762,12 +762,33 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z = &args[1];
 
   // theta1 is odd in z and antiperiodic with period Pi, so
-  // theta1(k Pi, q) = 0 exactly for every integer k and any q.
-  // (A machine nome keeps the numeric path, as before.)
-  if a_val == 1
-    && (is_expr_zero(z)
-      || (!expr_is_inexact(q) && is_integer_multiple_of_pi(z)))
-  {
+  // theta1(k Pi, q) = 0 for every integer k inside the unit disk |q| < 1,
+  // where the series converges. An exact numeric nome is decided there
+  // (outside it the call stays); for a symbolic nome wolframscript gives
+  // `ConditionalExpression[0, Abs[q] < 1]` at z = 0 and keeps the call
+  // at the other multiples of Pi. (A machine nome keeps the numeric path.)
+  if a_val == 1 && !expr_is_inexact(q) && is_integer_multiple_of_pi(z) {
+    let modulus = crate::functions::math_ast::try_extract_complex_f64(q)
+      .map(|(re, im)| re.hypot(im));
+    match modulus {
+      Some(m) if m < 1.0 => return Ok(Expr::Integer(0)),
+      Some(_) => return Ok(unevaluated("EllipticTheta", args)),
+      None if is_expr_zero(z) => {
+        return Ok(call(
+          "ConditionalExpression",
+          vec![
+            Expr::Integer(0),
+            Expr::Comparison {
+              operands: vec![call1("Abs", q.clone()), Expr::Integer(1)],
+              operators: vec![ComparisonOp::Less],
+            },
+          ],
+        ));
+      }
+      None => return Ok(unevaluated("EllipticTheta", args)),
+    }
+  }
+  if a_val == 1 && is_expr_zero(z) && !expr_is_inexact(q) {
     return Ok(Expr::Integer(0));
   }
 
