@@ -9345,6 +9345,22 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // A zero-length domain keeps the slope at its one point
+  // (SpecularAndDiffuseReflection restarts a bounce at the domain's end).
+  #[test]
+  fn zero_length_domain_keeps_derivatives() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{x'[t] == 5., x[100] == 3, y''[t] == -2., \
+         y[100] == 1, y'[100] == 4}, {x, y}, {t, 100, 100}]]; \
+         {{x[100], x'[100], y[100], y'[100], y''[100]} /. sol, \
+          (x /. sol)[\"Domain\"]}"
+      )
+      .unwrap(),
+      "{{3., 5., 1., 4., -2.}, {{100., 100.}}}"
+    );
+  }
+
   // A parameter inside a held `If` branch of a numerically eliminated
   // constraint takes its value from the enclosing Block, rather than making
   // the constraint uncompilable (Demonstration

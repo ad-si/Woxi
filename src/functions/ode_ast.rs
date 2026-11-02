@@ -6077,14 +6077,33 @@ fn ndsolve_system(
       )
       .map_or(f64::NAN, |h| h[fi])
     };
-    let data = Expr::List(
-      points
-        .iter()
-        .map(|(x, s)| {
-          Expr::List(vec![Expr::Real(*x), Expr::Real(value_at(*x, s))].into())
-        })
-        .collect(),
-    );
+    // A zero-length domain `{t, t0, t0}` keeps the derivatives at its one
+    // point (`{{t0}, f, f', …}`), so `f'[t0]` reads the equation's own
+    // slope there rather than a difference quotient over nothing.
+    let single_point = x_lo == x_hi && f.order > 0;
+    let data = if single_point && let Some((x, s)) = points.first() {
+      let mut row = vec![Expr::List(vec![Expr::Real(*x)].into())];
+      row.extend((0..f.order).map(|k| Expr::Real(s[state_offset[fi] + k])));
+      if let Some(highest) = solve_highest_derivatives_cached(
+        &residuals,
+        funcs.len(),
+        *x,
+        &s[..n_state],
+        None,
+      ) {
+        row.push(Expr::Real(highest[fi]));
+      }
+      Expr::List(vec![Expr::List(row.into())].into())
+    } else {
+      Expr::List(
+        points
+          .iter()
+          .map(|(x, s)| {
+            Expr::List(vec![Expr::Real(*x), Expr::Real(value_at(*x, s))].into())
+          })
+          .collect(),
+      )
+    };
     let interp = call(
       "InterpolatingFunction",
       vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
