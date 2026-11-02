@@ -8031,23 +8031,28 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
 
 /// Swap the direction of every inequality operator of a relation.
 fn reverse_inequality(relation: Expr) -> Expr {
+  // wolframscript keeps the operators and swaps the sides:
+  // `DivideSides[x > 1, -2]` is `-1/2 > -1/2 x`, not `-1/2 x < -1/2`. An
+  // equation (no ordering operator) keeps its sides.
   match &relation {
     Expr::Comparison {
       operands,
       operators,
-    } => Expr::Comparison {
-      operands: operands.clone(),
-      operators: operators
-        .iter()
-        .map(|op| match *op {
-          ComparisonOp::Less => ComparisonOp::Greater,
-          ComparisonOp::Greater => ComparisonOp::Less,
-          ComparisonOp::LessEqual => ComparisonOp::GreaterEqual,
-          ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
-          other => other,
-        })
-        .collect(),
-    },
+    } if operators.iter().any(|op| {
+      matches!(
+        op,
+        ComparisonOp::Less
+          | ComparisonOp::Greater
+          | ComparisonOp::LessEqual
+          | ComparisonOp::GreaterEqual
+      )
+    }) =>
+    {
+      Expr::Comparison {
+        operands: operands.iter().rev().cloned().collect(),
+        operators: operators.iter().rev().copied().collect(),
+      }
+    }
     _ => relation,
   }
 }

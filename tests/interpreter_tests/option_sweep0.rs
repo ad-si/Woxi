@@ -510,7 +510,7 @@ mod scaling_sides {
     assert_eq!(
       interpret("DivideSides[a x^2 > b x + c, a, Assumptions -> a < 0]")
         .unwrap(),
-      "x^2 < (c + b*x)/a"
+      "(c + b*x)/a > x^2"
     );
     assert_eq!(
       interpret("DivideSides[a == b, c, Assumptions -> c > 0]").unwrap(),
@@ -522,11 +522,20 @@ mod scaling_sides {
   fn a_negative_number_reverses_an_inequality() {
     assert_eq!(
       interpret("DivideSides[x > 1, -2]").unwrap(),
-      "-1/2*x < -1/2"
+      "-1/2 > -1/2*x"
     );
     assert_eq!(
       interpret("MultiplySides[x >= 1, -2]").unwrap(),
-      "-2*x <= -2"
+      "-2 >= -2*x"
+    );
+    // The sides swap and the operators stay; an equation keeps its sides.
+    assert_eq!(
+      interpret("MultiplySides[1 < x <= 2, -1]").unwrap(),
+      "Inequality[-2, LessEqual, -x, Less, -1]"
+    );
+    assert_eq!(
+      interpret("MultiplySides[a == b, -2]").unwrap(),
+      "-2*a == -2*b"
     );
   }
 }
