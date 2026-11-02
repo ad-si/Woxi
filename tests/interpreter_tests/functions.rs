@@ -2570,8 +2570,22 @@ mod plus_minus {
          2*MinusPlus[a, b]}"
       )
       .unwrap(),
-      "{2*(a ± b), (a ± b)^2, c + (a ± b), -(a ± b), 2*±a, (±a)^2, x + ±a, \
-       2*(a ∓ b)}"
+      "{2*(a ± b), (a ± b)^2, c + (a ± b), -(a ± b), 2*(±a), (±a)^2, \
+       x + (±a), 2*(a ∓ b)}"
+    );
+  }
+
+  #[test]
+  fn prefix_operand_parentheses() {
+    // The prefix `±a` is bracketed as the operand of every arithmetic
+    // operator, but not as a function argument or list element.
+    assert_eq!(
+      interpret(
+        "{-PlusMinus[a], PlusMinus[a] b, f[PlusMinus[a]], {PlusMinus[a]}, \
+         MinusPlus[a] + x, PlusMinus[a]^PlusMinus[b], PlusMinus[a]/2}"
+      )
+      .unwrap(),
+      "{-(±a), b*(±a), f[±a], {±a}, x + (∓a), (±a)^(±b), (±a)/2}"
     );
   }
 }

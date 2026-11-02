@@ -6810,6 +6810,15 @@ mod function_head_and_compound_printing {
       interpret("Hold[k -> CompoundExpression[a, b]]").unwrap(),
       "Hold[k -> (a; b)]"
     );
+    assert_eq!(
+      interpret("Hold[CompoundExpression[a, b] :> c]").unwrap(),
+      "Hold[(a; b) :> c]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[k :> CompoundExpression[a, b]], InputForm]")
+        .unwrap(),
+      "Hold[k :> (a; b)]"
+    );
     clear_state();
     assert_eq!(
       interpret("f[x_] := CompoundExpression[y = x, y + 1]; DownValues[f]")
@@ -7048,6 +7057,24 @@ mod symbol_holding_curried_call_applies_as_head {
       )
       .unwrap(),
       "17"
+    );
+  }
+}
+
+mod function_long_form_display {
+  use super::*;
+
+  // `Function[body]` held in its long form prints as `body &`.
+  #[test]
+  fn one_argument_function_prints_as_ampersand() {
+    assert_eq!(
+      interpret(
+        "{Hold[Function[x + 1]], Hold[Function[a; b]], \
+         Hold[k :> Function[a; b]], Hold[Function[x, x + 1]]}"
+      )
+      .unwrap(),
+      "{Hold[x + 1 & ], Hold[(a; b) & ], Hold[k :> ((a; b) & )], \
+       Hold[Function[x, x + 1]]}"
     );
   }
 }

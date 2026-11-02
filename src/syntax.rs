@@ -9868,7 +9868,17 @@ fn is_bare_pattern(e: &Expr) -> bool {
 /// as `(a + b) + c`. After a `-` it is a value change, not just a shape one:
 /// printing `Plus[a, -(b + c)]` as `a - b + c` drops the sign of `c`.
 fn plus_term_needs_parens(e: &Expr) -> bool {
-  is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p <= 30)
+  is_bare_pattern(e)
+    || is_prefix_plus_minus(e)
+    || printed_infix_precedence(e).is_some_and(|p| p <= 30)
+}
+
+/// The prefix `±a` / `∓a`. wolframscript brackets it as the operand of any
+/// arithmetic operator — `x + (±a)`, `2*(±a)`, `-(±a)`, `(±a)^(±b)` — though
+/// not as a function argument or list element (`f[±a]`, `{±a}`).
+fn is_prefix_plus_minus(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if args.len() == 1 && matches!(name.as_str(), "PlusMinus" | "MinusPlus"))
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -10620,20 +10630,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // that e.g. `Initialization :> (d[t_] := ...)` renders with the
         // parentheses required to disambiguate operator precedence.
         let rhs_str = fmt(&args[1]);
-        let rhs_final = match &args[1] {
-          Expr::FunctionCall { name: n, args: a }
-            if matches!(
-              n.as_str(),
-              "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-            ) && a.len() == 2 =>
-          {
-            format!("({rhs_str})")
-          }
-          // `&` binds looser than `:>`, so a pure function needs parens.
-          Expr::Function { .. } => format!("({rhs_str})"),
-          _ => rhs_str,
+        let rhs_final = if binds_looser_than_rule(&args[1]) {
+          format!("({rhs_str})")
+        } else {
+          rhs_str
         };
-        return format!("{} :> {}", fmt(&args[0]), rhs_final);
+        let lhs_str = fmt(&args[0]);
+        let lhs_final = if rule_lhs_needs_parens(&args[0]) {
+          format!("({lhs_str})")
+        } else {
+          lhs_str
+        };
+        return format!("{lhs_final} :> {rhs_final}");
       }
       if name == "Set" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -12181,19 +12189,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     }
                   }
                 };
-                // Wolfram parenthesises a subtracted prefix MinusPlus so the
-                // leading `-` doesn't fuse with the `∓`: a - MinusPlus[b] → a - (∓b).
-                let pos_term_str = fmt_plus_term(&pos_term);
-                let pos_term_str = if matches!(
-                  &pos_term,
-                  Expr::FunctionCall { name: n, args: a }
-                    if n == "MinusPlus" && a.len() == 1
-                ) {
-                  format!("({pos_term_str})")
-                } else {
-                  pos_term_str
-                };
-                result.push_str(&pos_term_str);
+                // A subtracted prefix MinusPlus is bracketed by
+                // `fmt_plus_term` (`plus_term_needs_parens`):
+                // a - MinusPlus[b] → a - (∓b).
+                result.push_str(&fmt_plus_term(&pos_term));
               } else {
                 result.push_str(" + ");
                 result.push_str(&fmt(arg));
@@ -12950,6 +12949,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
       let needs_right_parens = (is_multiplicative && is_additive(right))
+        // `(±a)^(±b)`: a prefix `±` is bracketed as any arithmetic operand.
+        || (matches!(
+          op,
+          BinaryOperator::Power
+            | BinaryOperator::Times
+            | BinaryOperator::Divide
+            | BinaryOperator::Plus
+            | BinaryOperator::Minus
+        ) && is_prefix_plus_minus(right))
         || (matches!(op, BinaryOperator::Divide)
           && is_right_multiplicative(right))
         || (matches!(op, BinaryOperator::Power)
@@ -13231,14 +13239,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Parenthesize the LHS when it is itself a rule (`->` is
       // right-associative, so `(a -> b) -> c` must keep its parentheses) or a
       // pure function (`&` binds looser than `->`, so `(f & ) -> x`).
-      let lhs = match pattern.as_ref() {
-        Expr::Rule { .. }
-        | Expr::RuleDelayed { .. }
-        | Expr::Function { .. } => {
-          format!("({})", fmt(pattern))
-        }
-        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
-        _ => fmt(pattern),
+      let lhs = if rule_lhs_needs_parens(pattern) {
+        format!("({})", fmt(pattern))
+      } else {
+        fmt(pattern)
       };
       // Parenthesize RHS if it's a pure function (& has low precedence) or a
       // `;`-sequence (CompoundExpression binds looser than every operator,
@@ -13259,14 +13263,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     } => {
       // Parenthesize the LHS when it is itself a rule or a pure function
       // (see Expr::Rule).
-      let lhs = match pattern.as_ref() {
-        Expr::Rule { .. }
-        | Expr::RuleDelayed { .. }
-        | Expr::Function { .. } => {
-          format!("({})", fmt(pattern))
-        }
-        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
-        _ => fmt(pattern),
+      let lhs = if rule_lhs_needs_parens(pattern) {
+        format!("({})", fmt(pattern))
+      } else {
+        fmt(pattern)
       };
       // Parenthesize RHS if it's an assignment so the := operator is
       // correctly disambiguated from the :> operator visually, or if it's a
@@ -13276,20 +13276,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // 2)` for a multi-statement event handler action would silently lose
       // its later statements from the rule).
       let rhs_str = fmt(replacement);
-      let rhs_final = match replacement.as_ref() {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        r if assignment_rhs_needs_parens(r) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        // `&` binds looser than `:>`.
-        Expr::Function { .. } => format!("({rhs_str})"),
-        _ => rhs_str,
+      let rhs_final = if binds_looser_than_rule(replacement) {
+        format!("({rhs_str})")
+      } else {
+        rhs_str
       };
       format!("{lhs} :> {rhs_final}")
     }
@@ -14040,16 +14030,22 @@ fn is_replace_operator(e: &Expr) -> bool {
 /// it is itself a rule (`->` is right-associative, so `(a -> b) -> c` must
 /// keep its parentheses).
 fn input_form_rule_lhs(e: &Expr) -> String {
-  match e {
-    // A nested rule keeps its parens (`->` is right-associative) and a pure
-    // function is parenthesised because `&` binds looser than `->`/`:>`
-    // (`(#1 & ) -> x`), matching wolframscript.
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Function { .. } => {
-      format!("({})", expr_to_input_form(e))
-    }
-    _ if is_replace_operator(e) => format!("({})", expr_to_input_form(e)),
-    _ => expr_to_input_form(e),
+  if rule_lhs_needs_parens(e) {
+    format!("({})", expr_to_input_form(e))
+  } else {
+    expr_to_input_form(e)
   }
+}
+
+/// Whether the left side of `->`/`:>` needs parentheses: a nested rule
+/// (the arrows are right-associative), and everything that binds looser
+/// than a rule — a pure function (`(#1 & ) -> x`), a `;`-sequence
+/// (`(a; b) :> c`), an assignment, a replacement — as in wolframscript.
+fn rule_lhs_needs_parens(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+    || matches!(e, Expr::FunctionCall { name, args }
+      if args.len() == 2 && matches!(name.as_str(), "Rule" | "RuleDelayed"))
+    || binds_looser_than_rule(e)
 }
 
 /// Parenthesize a rule's RHS when it is a pure function, since `&` binds
@@ -14279,11 +14275,7 @@ fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
 /// not `0.05 - x /. sol`, which re-parses as `(0.05 - x) /. sol`.
 fn input_form_subtracted_term(term: &Expr) -> String {
   let s = expr_to_input_form(term);
-  if matches!(
-    term,
-    Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
-  ) || plus_term_needs_parens(term)
-  {
+  if plus_term_needs_parens(term) {
     format!("({s})")
   } else {
     s
@@ -14526,39 +14518,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       // `(cond :> a = 1); b = 2` without parens (the Demonstrations idiom
       // `"event" :> (a = 1; b = 2)` for a multi-statement action would
       // silently lose its later statements once re-parsed).
-      let rhs_str = expr_to_input_form(replacement);
-      let rhs_final = match replacement.as_ref() {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        _ => rhs_str,
-      };
+      let rhs_final = input_form_rule_rhs(replacement);
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
     }
     Expr::FunctionCall { name, args }
       if name == "RuleDelayed" && args.len() == 2 =>
     {
-      let rhs_str = expr_to_input_form(&args[1]);
-      let rhs_final = match &args[1] {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        _ => rhs_str,
-      };
+      let rhs_final = input_form_rule_rhs(&args[1]);
       format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)
     }
     // Equivalent renders in functional form in InputForm: `Equivalent[a, b]`
@@ -18677,6 +18643,7 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
     // `!`, `&`, …) and a bare pattern: `2*(a -> 1)`, `2*(a_)`.
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
     || is_bare_pattern(e)
+    || is_prefix_plus_minus(e)
 }
 
 /// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),
@@ -18727,6 +18694,11 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
     ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
     ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
     ("List", _) => Some(Expr::List(args.clone())),
+    // `Function[body]` is the long form of `body &`: `Hold[Function[x + 1]]`
+    // prints as `Hold[x + 1 & ]`.
+    ("Function", 1) => Some(Expr::Function {
+      body: Box::new(args[0].clone()),
+    }),
     ("Rule", 2) => Some(rule_expr(args[0].clone(), args[1].clone())),
     ("RuleDelayed", 2) => {
       Some(rule_delayed_expr(args[0].clone(), args[1].clone()))
