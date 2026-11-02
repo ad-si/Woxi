@@ -7136,6 +7136,15 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "T'=a \u{00B7} T \u{00B7} a");
   }
 
+  /// `\[LongEqual]` is the long `=` an inline-math equation uses between its
+  /// sides. Its private-use code point (U+F7D9) had no glyph substitution,
+  /// so a Text cell dropped it and `v_x = -a` read as `v_x-a`.
+  #[test]
+  fn test_long_equal_named_character_renders_as_equals_sign() {
+    let s = r#"TextData[Cell[BoxData[RowBox[{"a", "\[LongEqual]", "b"}]], "InlineMath"]]"#;
+    assert_eq!(extract_cell_content(s), "a=b");
+  }
+
   /// `\[UpEquilibrium]` (⥮) and `\[ReverseUpEquilibrium]` (⥯) are the
   /// same-spin-pair glyphs a Demonstrations electron-configuration diagram
   /// draws its spin arrows with. They were missing from the named-character
