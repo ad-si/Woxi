@@ -9820,6 +9820,20 @@ qué tal?"; a/b//MakeBoxes"#,
 mod power_overflow {
   use woxi::interpret;
 
+  // A machine zero times a number promoted past the machine range is the
+  // machine zero (wolframscript), not an arbitrary-precision zero.
+  #[test]
+  fn machine_zero_times_promoted_number() {
+    assert_eq!(
+      interpret("ToString[4.^-3000. * 4.^3000., InputForm]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("ToString[0. * 10.^400 * 3, InputForm]").unwrap(),
+      "0."
+    );
+  }
+
   #[test]
   fn a_power_past_max_number_overflows() {
     assert_eq!(interpret("2^(10^18/3)").unwrap(), "Overflow[]");

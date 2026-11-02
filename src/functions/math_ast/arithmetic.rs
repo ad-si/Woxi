@@ -10658,6 +10658,22 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A machine number makes the whole product machine precision: an
   // arbitrary-precision factor joins it as the f64 it rounds to
   // (`2.5`50 * 0.5` is `1.25`), as in Plus.
+  // A machine zero is that even against a number past the machine range:
+  // `0. * 1.5`12*^1806` is `0.`, as in wolframscript.
+  if args.iter().any(|a| matches!(a, Expr::Real(r) if *r == 0.0))
+    && args.iter().any(|a| matches!(a, Expr::BigFloat(..)))
+    && args.iter().all(|a| {
+      matches!(
+        a,
+        Expr::Real(_)
+          | Expr::BigFloat(..)
+          | Expr::Integer(_)
+          | Expr::BigInteger(_)
+      ) || matches!(a, Expr::FunctionCall { name, .. } if name == "Rational")
+    })
+  {
+    return Ok(Expr::Real(0.0));
+  }
   if args.iter().any(|a| matches!(a, Expr::Real(_)))
     && args.iter().any(|a| matches!(a, Expr::BigFloat(..)))
   {
