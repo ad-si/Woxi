@@ -6207,6 +6207,7 @@ pub fn tag_set_delayed_ast(
   let mut conditions: Vec<Option<Expr>> = Vec::new();
   let mut defaults: Vec<Option<Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
+  let mut blank_types: Vec<u8> = Vec::new();
   let final_body = body.clone();
 
   for (i, arg) in lhs_args.iter().enumerate() {
@@ -6225,7 +6226,9 @@ pub fn tag_set_delayed_ast(
         _ => crate::evaluator::pattern_matching::contains_pattern(arg),
       };
       if is_pattern {
-        let (pat_name, head, _blank_type) = extract_pattern_info(arg);
+        let (pat_name, head, blank_type) = extract_pattern_info(arg);
+        // A sequence (`v___h`) takes a run of the call's arguments.
+        blank_types.push(blank_type);
         // A `?test` is part of what the argument must match: such a pattern
         // takes the structural path too, or the test would be dropped and
         // `c_?NumericQ` would accept anything.
@@ -6267,6 +6270,7 @@ pub fn tag_set_delayed_ast(
         params.push(param_name);
         defaults.push(None);
         heads.push(None);
+        blank_types.push(1);
         continue;
       }
       defaults.push(None);
@@ -6362,7 +6366,7 @@ pub fn tag_set_delayed_ast(
   // Remove any existing upvalue definition with the same params/heads/conditions
   // before inserting the new one (to avoid duplicates on redefinition).
   // Only remove if conditions also match (different conditions = different rules).
-  let blank_types = vec![1u8; params.len()];
+  blank_types.resize(params.len(), 1);
   // All the slot conditions together, so a variable shared between slots
   // stays one variable when the names are canonicalized.
   let conditions_key = |c: &[Option<Expr>]| {

@@ -369,3 +369,23 @@ mod upset_fullform_pattern_test {
     );
   }
 }
+
+mod upvalue_sequence_slots {
+  use super::*;
+
+  // An upvalue's `v___h` / `a__` slot takes a run of arguments, also an
+  // empty one: `Cross[u_CV, v___CV]` used to need exactly two arguments,
+  // so the potential-flow Demonstrations' `Cross[ud]` stayed unevaluated.
+  #[test]
+  fn sequence_slots_take_runs_of_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "CV /: g[u_CV, v___CV] := gg[u, {v}]; CV /: h[a__, u_CV] := hh[{a}, u]; \
+         {g[CV[1]], g[CV[1], CV[2], CV[3]], g[CV[1], 2], h[1, 2, CV[0]], h[CV[0]]}"
+      )
+      .unwrap(),
+      "{gg[CV[1], {}], gg[CV[1], {CV[2], CV[3]}], g[CV[1], 2], hh[{1, 2}, CV[0]], h[CV[0]]}"
+    );
+  }
+}
