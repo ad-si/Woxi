@@ -2043,9 +2043,35 @@ mod circle_points {
     );
   }
 
+  // A fractional n keeps the 2 Pi/n spacing and draws Floor[n] points.
   #[test]
-  fn fractional_real_stays_unevaluated() {
-    assert_eq!(interpret("CirclePoints[4.5]").unwrap(), "CirclePoints[4.5]");
+  fn fractional_real_n() {
+    assert_eq!(
+      interpret("CirclePoints[4.5]").unwrap(),
+      "{{0.6427876096865394, -0.766044443118978}, {0.8660254037844387, 0.49999999999999994}, {-0.3420201433256687, 0.9396926207859084}, {-0.9848077530122081, -0.17364817766693003}}"
+    );
+    assert_eq!(
+      interpret("{CirclePoints[2.5], CirclePoints[0.5], CirclePoints[1.5]}")
+        .unwrap(),
+      "{{{0.9510565162951535, -0.3090169943749474}, {-0.587785252292473, 0.8090169943749475}}, {}, {{0.8660254037844387, 0.49999999999999983}}}"
+    );
+  }
+
+  #[test]
+  fn fractional_rational_n_is_exact() {
+    assert_eq!(
+      interpret("CirclePoints[9/2]").unwrap(),
+      "{{Sin[(2*Pi)/9], -Cos[(2*Pi)/9]}, {Sqrt[3]/2, 1/2}, {-Sin[Pi/9], Cos[Pi/9]}, {-Cos[Pi/18], -Sin[Pi/18]}}"
+    );
+  }
+
+  #[test]
+  fn fractional_n_with_center_and_angle() {
+    assert_eq!(
+      interpret("{CirclePoints[{1, 2}, 3, 4.5], CirclePoints[{2, Pi}, 4.5]}")
+        .unwrap(),
+      "{{{2.928362829059618, -0.29813332935693415}, {3.598076211353316, 3.5}, {-0.026060429977006194, 4.819077862357725}, {-1.9544232590366244, 1.47905546699921}}, {{-2., 2.4492935982947064*^-16}, {-0.34729635533386066, -1.969615506024416}, {1.8793852415718169, -0.6840402866513372}, {1.000000000000001, 1.7320508075688767}}}"
+    );
   }
 
   #[test]

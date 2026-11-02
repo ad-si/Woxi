@@ -12335,12 +12335,29 @@ fn evaluate_function_call_ast_inner(
 
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
-    // n is always the last argument and must be a positive integer; a
-    // whole-number real asks for the machine-precision points.
-    let (n, numeric) = match args.last() {
-      Some(Expr::Integer(n)) if *n >= 1 => (*n as usize, false),
-      Some(Expr::Real(r)) if *r >= 1.0 && r.fract() == 0.0 => {
-        (*r as usize, true)
+    // n is always the last argument: a positive number. A fractional n
+    // still spaces the points 2 Pi/n apart, Floor[n] of them; a real n asks
+    // for the machine-precision points.
+    let (count, n_expr, numeric) = match args.last() {
+      Some(Expr::Integer(n)) if *n >= 1 => {
+        (*n as usize, Expr::Integer(*n), false)
+      }
+      Some(Expr::Real(r)) if *r > 0.0 && r.is_finite() => {
+        (r.floor() as usize, Expr::Real(*r), true)
+      }
+      Some(
+        q @ Expr::FunctionCall {
+          name: rational_head,
+          args: qa,
+        },
+      ) if rational_head == "Rational"
+        && qa.len() == 2
+        && matches!((&qa[0], &qa[1]), (Expr::Integer(a), Expr::Integer(b)) if *a > 0 && *b > 0) =>
+      {
+        let (Expr::Integer(a), Expr::Integer(b)) = (&qa[0], &qa[1]) else {
+          unreachable!()
+        };
+        ((a / b) as usize, q.clone(), false)
       }
       _ => return unevaluated(),
     };
@@ -12372,26 +12389,19 @@ fn evaluate_function_call_ast_inner(
       _ if args.len() == 1 => (Expr::Integer(1), None),
       _ => return unevaluated(),
     };
-    // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
+    // Base angle theta0: explicit, or the default Pi/n - Pi/2 (summed in
+    // this order, which fixes the last bit for a real n).
     let pi = || id_expr("Pi");
     let base = theta.unwrap_or_else(|| {
-      minus2(
-        div2(pi(), Expr::Integer(2)),
-        div2(
-          times2(Expr::Integer((n - 1) as i128), pi()),
-          Expr::Integer(n as i128),
-        ),
-      )
+      minus2(div2(pi(), n_expr.clone()), div2(pi(), Expr::Integer(2)))
     });
-    let mut points = Vec::with_capacity(n);
-    for k in 0..n {
+    let base = evaluate_expr_to_expr(&base)?;
+    let mut points = Vec::with_capacity(count);
+    for k in 0..count {
       // angle_k = base + 2*k*Pi/n
       let angle = plus2(
         base.clone(),
-        div2(
-          times2(Expr::Integer(k as i128 * 2), pi()),
-          Expr::Integer(n as i128),
-        ),
+        div2(times2(Expr::Integer(k as i128 * 2), pi()), n_expr.clone()),
       );
       // coordinate = center + radius * trig(angle)
       let coord = |trig: &str, c: &Expr| {
