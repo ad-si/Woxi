@@ -35,7 +35,7 @@ More terms of Stirling's series with `SeriesTermGoal`:
 
 ```scrut
 $ wo 'DiscreteAsymptotic[n!, n -> Infinity, SeriesTermGoal -> 3]'
-(n^(1/2 + n)*Sqrt[2*Pi]*(1 + 1/(288*n^2) + 1/(12*n)))/E^n
+((1 + 1/(288*n^2) + 1/(12*n))*n^(1/2 + n)*Sqrt[2*Pi])/E^n
 ```
 
 The coefficients of a generating function, from its nearest pole:

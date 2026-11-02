@@ -7533,6 +7533,15 @@ fn order_factor_vs_additive(
   {
     return Ordering::Less;
   }
+  // A sum topped by a reciprocal power leads a symbolic power of the same
+  // base: `(1 + n^(-1))*n^a`, `(1 + 1/(12*n))*n^(1/2 + n)`
+  // (wolframscript-verified; `n^n*(1 + n)` keeps the factor first).
+  if fe.is_none()
+    && he.is_some_and(|h| h < 0.0)
+    && symbolic_power(factor).is_some()
+  {
+    return Ordering::Greater;
+  }
   // The same base under symbolic exponents on both sides: the factor leads,
   // whatever the exponents — `c^n*(1 - c^(-n))`, `c^n*(1 + c^n)`,
   // `x^a*(1 + x^b)` (wolframscript-verified).

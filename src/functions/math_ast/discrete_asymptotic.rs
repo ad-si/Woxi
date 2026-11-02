@@ -850,8 +850,41 @@ fn discrete_asymptotic(expr: &Expr, var: &str, goal: usize) -> Option<Expr> {
     constant.push(l.expr);
     ev(&times(constant))?
   } else {
+    // An undefined function of the index is its own asymptotic form, as in
+    // wolframscript (`DiscreteAsymptotic[f[n], n -> Infinity]` is `f[n]`).
+    if let Expr::FunctionCall { name, args } = expr
+      && !crate::evaluator::functions::is_builtin_symbol(name)
+      && args.iter().any(|a| !is_constant_wrt(a, var))
+      && !crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name.as_str()))
+    {
+      return Some(expr.clone());
+    }
     let l = lead(expr, var)?;
-    if l.zero { Expr::Integer(0) } else { l.expr }
+    if l.zero {
+      Expr::Integer(0)
+    } else {
+      // A sum dominated by one of its terms is that term as written:
+      // `Cosh[2 n] + n^5` gives `Cosh[2*n]`, not its exponential lead.
+      if let Expr::FunctionCall { name, args } = expr
+        && name == "Plus"
+      {
+        let dominant: Vec<&Expr> = args
+          .iter()
+          .filter(|t| {
+            lead(t, var).is_some_and(|lt| {
+              !lt.zero
+                && crate::evaluator::pattern_matching::expr_equal(
+                  &lt.expr, &l.expr,
+                )
+            })
+          })
+          .collect();
+        if let [term] = dominant.as_slice() {
+          return Some((*term).clone());
+        }
+      }
+      l.expr
+    }
   };
   merge_rational_exponentials(result, var)
 }

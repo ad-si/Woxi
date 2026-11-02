@@ -97,7 +97,16 @@ mod discrete_asymptotic {
   fn cosh_beats_polynomial() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Cosh[2 n] + n^5, n -> Infinity]").unwrap(),
+      "Cosh[2*n]"
+    );
+    // Alone, Cosh gives its exponential lead.
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Cosh[2 n], n -> Infinity]").unwrap(),
       "E^(2*n)/2"
+    );
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Sinh[n] + n, n -> Infinity]").unwrap(),
+      "Sinh[n]"
     );
   }
 
@@ -300,7 +309,7 @@ mod discrete_asymptotic {
     assert_eq!(
       interpret("DiscreteAsymptotic[n!, n -> Infinity, SeriesTermGoal -> 3]")
         .unwrap(),
-      "(n^(1/2 + n)*Sqrt[2*Pi]*(1 + 1/(288*n^2) + 1/(12*n)))/E^n"
+      "((1 + 1/(288*n^2) + 1/(12*n))*n^(1/2 + n)*Sqrt[2*Pi])/E^n"
     );
   }
 
@@ -308,7 +317,7 @@ mod discrete_asymptotic {
   fn factorial_list_spec() {
     assert_eq!(
       interpret("DiscreteAsymptotic[n!, {n, Infinity, 3}]").unwrap(),
-      "(n^(1/2 + n)*Sqrt[2*Pi]*(1 + 1/(288*n^2) + 1/(12*n)))/E^n"
+      "((1 + 1/(288*n^2) + 1/(12*n))*n^(1/2 + n)*Sqrt[2*Pi])/E^n"
     );
   }
 
@@ -316,7 +325,7 @@ mod discrete_asymptotic {
   fn gamma_list_spec() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Gamma[n], {n, Infinity, 3}]").unwrap(),
-      "(n^(-1/2 + n)*Sqrt[2*Pi]*(1 + 1/(288*n^2) + 1/(12*n)))/E^n"
+      "((1 + 1/(288*n^2) + 1/(12*n))*n^(-1/2 + n)*Sqrt[2*Pi])/E^n"
     );
   }
 
@@ -362,10 +371,10 @@ mod discrete_asymptotic {
   }
 
   #[test]
-  fn unknown_function_unevaluated() {
+  fn unknown_function_is_its_own_form() {
     assert_eq!(
       interpret("DiscreteAsymptotic[f[n], n -> Infinity]").unwrap(),
-      "DiscreteAsymptotic[f[n], n -> Infinity]"
+      "f[n]"
     );
   }
 

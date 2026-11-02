@@ -632,6 +632,17 @@ mod arithmetic {
       assert_eq!(interpret("(2 Pi)^n").unwrap(), "(2*Pi)^n");
     }
 
+    // A sum topped by a reciprocal leads a symbolic power of its base.
+    #[test]
+    fn reciprocal_topped_sum_before_symbolic_power() {
+      assert_eq!(interpret("(1 + 1/n) n^a").unwrap(), "(1 + n^(-1))*n^a");
+      assert_eq!(
+        interpret("(1 + 1/(12 n)) n^(1/2 + n)").unwrap(),
+        "(1 + 1/(12*n))*n^(1/2 + n)"
+      );
+      assert_eq!(interpret("(1 + n) n^n").unwrap(), "n^n*(1 + n)");
+    }
+
     // A power of `-s` sorts before `s` in a product.
     #[test]
     fn power_of_negated_symbol_before_the_symbol() {
