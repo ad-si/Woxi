@@ -1939,6 +1939,32 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let input_len = components.len();
 
+  // Seconds stay inexact when the date had inexact seconds or an inexact
+  // number of seconds is added: `{2., "Second"}` gives `2.`, while
+  // `{0.5, "Minute"}` is an exact 30 seconds.
+  fn real_seconds_increment(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => match items.as_slice() {
+        [Expr::Real(_), Expr::String(u) | Expr::Identifier(u)] => {
+          u.starts_with("Second")
+        }
+        _ => items.iter().any(real_seconds_increment),
+      },
+      Expr::FunctionCall { name, args } if name == "Quantity" => {
+        matches!(args.as_slice(), [Expr::Real(_), Expr::String(u)]
+          if u.starts_with("Second"))
+      }
+      _ => false,
+    }
+  }
+  let date_list = match &date_arg {
+    Expr::FunctionCall { name, args } if name == "DateObject" => args.first(),
+    other => Some(other),
+  };
+  let real_seconds = matches!(date_list, Some(Expr::List(items))
+    if matches!(items.get(5), Some(Expr::Real(_))))
+    || real_seconds_increment(&delta_arg);
+
   // A date with a clock time, or an increment in hours, minutes or seconds,
   // moves through the time of day too.
   if !input_is_date_object
@@ -1948,27 +1974,6 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .any(|(n, unit)| is_sub_day_unit(unit) || n.fract() != 0.0))
   {
-    // Seconds stay inexact when the date had inexact seconds or an inexact
-    // number of seconds is added: `{2., "Second"}` gives `2.`, while
-    // `{0.5, "Minute"}` is an exact 30 seconds.
-    fn real_seconds_increment(e: &Expr) -> bool {
-      match e {
-        Expr::List(items) => match items.as_slice() {
-          [Expr::Real(_), Expr::String(u) | Expr::Identifier(u)] => {
-            u.starts_with("Second")
-          }
-          _ => items.iter().any(real_seconds_increment),
-        },
-        Expr::FunctionCall { name, args } if name == "Quantity" => {
-          matches!(args.as_slice(), [Expr::Real(_), Expr::String(u)]
-            if u.starts_with("Second"))
-        }
-        _ => false,
-      }
-    }
-    let real_seconds = matches!(&date_arg, Expr::List(items)
-      if matches!(items.get(5), Some(Expr::Real(_))))
-      || real_seconds_increment(&delta_arg);
     return Ok(date_plus_with_time(&components, &increments, real_seconds));
   }
   // A DateObject with a clock time (an "Instant") moves through the time
@@ -1977,7 +1982,8 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && components.len() > 3
     && let Some(increments) = parse_increments(&delta_arg)
     && let Expr::FunctionCall { args: dargs, .. } = &date_arg
-    && let moved @ Expr::List(_) = date_plus_with_time(&components, &increments)
+    && let moved @ Expr::List(_) =
+      date_plus_with_time(&components, &increments, real_seconds)
   {
     let mut new_args = vec![moved];
     new_args.extend(dargs.iter().skip(1).cloned());

@@ -449,6 +449,21 @@ mod date_plus {
   }
 
   #[test]
+  fn date_plus_instant_keeps_seconds_exactness() {
+    // An Instant follows the same rule as a date list: its seconds turn
+    // inexact only for inexact seconds in the date or the increment.
+    assert_eq!(
+      interpret(
+        "First /@ {DatePlus[DateObject[{2024, 1, 1, 10, 0, 0}], {2, \"Second\"}], \
+         DatePlus[DateObject[{2024, 1, 1, 10, 0, 0.}], {2, \"Hour\"}], \
+         DatePlus[DateObject[{2024, 1, 1, 10, 0, 0}], {2., \"Second\"}]}"
+      )
+      .unwrap(),
+      "{{2024, 1, 1, 10, 0, 2}, {2024, 1, 1, 12, 0, 0.}, {2024, 1, 1, 10, 0, 2.}}"
+    );
+  }
+
+  #[test]
   fn date_plus_fractional_days() {
     assert_eq!(
       interpret("DatePlus[{2026, 10, 27}, {1.5, \"Day\"}]").unwrap(),
