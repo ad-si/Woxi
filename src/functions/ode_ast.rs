@@ -485,6 +485,10 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       dsolve_exact_first_order_system(eqns_arg, &items, &x_name)?
     {
       solved
+    } else if let Some(solved) =
+      dsolve_variable_coefficient_pair(eqns_arg, &items, &x_name)?
+    {
+      solved
     } else {
       match dsolve_linear_system(eqns_arg, &items, &x_name) {
         Ok(solved) => solved,
@@ -18035,6 +18039,138 @@ fn dsolve_exact_first_order_system(
     };
     rules.push(rule_expr(dep_items[r].clone(), value));
   }
+  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+}
+
+/// A homogeneous pair `{u' == c v, v' == p(x) v + q(x) u}` with a constant
+/// `c` and coefficients depending on `x`: eliminating `v = u'/c` leaves the
+/// second-order equation `u'' == p u' + c q u`, and `v` is `u'/c` collected
+/// over the constants, as wolframscript writes it —
+/// `{y' == x y + z, z' == y}` gives
+/// `{E^(x^2/2)*x*C[2] + C[1]*(1 + E^(x^2/2)*Sqrt[Pi/2]*x*Erf[x/Sqrt[2]]), …}`.
+/// `None` for any other shape, or when the second-order equation is not
+/// solved.
+fn dsolve_variable_coefficient_pair(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let mut y_names: Vec<String> = Vec::with_capacity(2);
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        y_names.push(name.clone());
+      }
+      _ => return Ok(None),
+    }
+  }
+  let odes: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+  if y_names.len() != 2 || odes.len() != 2 {
+    return Ok(None);
+  }
+  // rows[k][j]: the coefficient of y_j in y_k' = Σ_j a_kj y_j.
+  let mut rows: Vec<Option<[Expr; 2]>> = vec![None, None];
+  for ode in &odes {
+    let Ok(normalized) = normalize_equation(ode) else {
+      return Ok(None);
+    };
+    let normalized =
+      crate::evaluator::evaluate_function_call_ast("Expand", &[normalized])?;
+    let Ok(terms) = collect_multivar_terms(&normalized, &y_names) else {
+      return Ok(None);
+    };
+    let mut lead: Option<(usize, Expr)> = None;
+    let mut rest: [Vec<Expr>; 2] = [Vec::new(), Vec::new()];
+    for t in terms {
+      match (t.var_index, t.order) {
+        (Some(k), 1) if lead.is_none() => lead = Some((k, t.coefficient)),
+        (Some(j), 0) => rest[j].push(t.coefficient),
+        _ => return Ok(None),
+      }
+    }
+    let Some((k, c)) = lead else {
+      return Ok(None);
+    };
+    if rows[k].is_some() {
+      return Ok(None);
+    }
+    let coefficient = |cs: Vec<Expr>| -> Result<Expr, InterpreterError> {
+      if cs.is_empty() {
+        return Ok(Expr::Integer(0));
+      }
+      eval(&times(vec![
+        Expr::Integer(-1),
+        plus(cs),
+        pow(c.clone(), Expr::Integer(-1)),
+      ]))
+    };
+    let [r0, r1] = rest;
+    rows[k] = Some([coefficient(r0)?, coefficient(r1)?]);
+  }
+  let (Some(row0), Some(row1)) = (rows[0].clone(), rows[1].clone()) else {
+    return Ok(None);
+  };
+  let rows = [row0, row1];
+  let depends =
+    |e: &Expr| crate::functions::polynomial_ast::contains_var(e, x_name);
+  // Constant-coefficient systems belong to the eigen-projector solver.
+  if !rows.iter().flatten().any(depends) {
+    return Ok(None);
+  }
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  // The row u' == c v.
+  let Some(k) = (0..2).find(|&k| {
+    let j = 1 - k;
+    is_zero(&rows[k][k]) && !is_zero(&rows[k][j]) && !depends(&rows[k][j])
+  }) else {
+    return Ok(None);
+  };
+  let j = 1 - k;
+  let c = rows[k][j].clone();
+  let (u, x) = (&y_names[k], x_name);
+  let p = crate::syntax::expr_to_input_form(&rows[j][j]);
+  let q = crate::syntax::expr_to_input_form(&eval(&times(vec![
+    c.clone(),
+    rows[j][k].clone(),
+  ]))?);
+  let second_order = crate::syntax::string_to_expr(&format!(
+    "DSolveValue[{u}''[{x}] == ({p})*{u}'[{x}] + ({q})*{u}[{x}], {u}[{x}], {x}]"
+  ))?;
+  let u_value = eval(&second_order)?;
+  if matches!(&u_value, Expr::FunctionCall { name, .. } if name == "DSolveValue")
+  {
+    return Ok(None);
+  }
+  let derivative = crate::evaluator::evaluate_function_call_ast(
+    "D",
+    &[u_value.clone(), Expr::Identifier(x.to_string())],
+  )?;
+  let constants = Expr::List(
+    (1..=2)
+      .map(|i| call1("C", Expr::Integer(i)))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let v_value = crate::evaluator::evaluate_function_call_ast(
+    "Collect",
+    &[
+      eval(&times(vec![derivative, pow(c, Expr::Integer(-1))]))?,
+      constants,
+    ],
+  )?;
+  let mut values = [Expr::Integer(0), Expr::Integer(0)];
+  values[k] = u_value;
+  values[j] = v_value;
+  let rules: Vec<Expr> = (0..2)
+    .map(|i| rule_expr(dep_items[i].clone(), values[i].clone()))
+    .collect();
   Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
 }
 

@@ -122,11 +122,33 @@ mod dsolve_systems {
   fn unsupported_system_stays_unevaluated() {
     assert_eq!(
       interpret(
+        "DSolveValue[{y'[x] == y[x]^2 z[x], z'[x] == Sin[y[x]]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "DSolveValue[{Derivative[1][y][x] == y[x]^2*z[x], \
+       Derivative[1][z][x] == Sin[y[x]]}, {y[x], z[x]}, x]"
+    );
+  }
+
+  // A pair {u' == c v, v' == p(x) v + q(x) u} is reduced to one
+  // second-order equation in u; v is u'/c collected over the constants.
+  #[test]
+  fn variable_coefficient_pair_by_elimination() {
+    assert_eq!(
+      interpret(
         "DSolveValue[{y'[x] == x y[x] + z[x], z'[x] == y[x]}, {y[x], z[x]}, x]"
       )
       .unwrap(),
-      "DSolveValue[{Derivative[1][y][x] == x*y[x] + z[x], \
-       Derivative[1][z][x] == y[x]}, {y[x], z[x]}, x]"
+      "{E^(x^2/2)*x*C[2] + C[1]*(1 + E^(x^2/2)*Sqrt[Pi/2]*x*Erf[x/Sqrt[2]]), \
+       E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]]}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[x] == z[x], z'[x] == x z[x] + y[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]], \
+       E^(x^2/2)*x*C[2] + C[1]*(1 + E^(x^2/2)*Sqrt[Pi/2]*x*Erf[x/Sqrt[2]])}"
     );
   }
 }
