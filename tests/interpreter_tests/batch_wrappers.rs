@@ -9120,7 +9120,7 @@ mod batch_unevaluated_wrappers_2 {
     // {2, 1, 4} is not a permutation of {1, 2, 3}.
     assert_eq!(
       interpret("PermutationProduct[{2, 1, 4}, {1, 3, 2}]").unwrap(),
-      "PermutationProduct[{2, 1, 4}, {1, 3, 2}]"
+      "{2, 1, 4} \u{F3DE} {1, 3, 2}"
     );
   }
 

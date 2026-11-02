@@ -9676,6 +9676,7 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "StringJoin" if args.len() >= 2 => Some(30),
       "CompoundExpression" if args.len() >= 2 => Some(1),
       "Power" if args.len() == 2 => Some(48),
+      "PermutationProduct" if args.len() >= 2 => Some(46),
       _ => None,
     },
     _ => None,
@@ -11012,6 +11013,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           })
           .collect();
         return parts.join(" \u{F3DA} ");
+      }
+      if name == "PermutationProduct" && args.len() >= 2 {
+        return permutation_product_text(args, &fmt);
       }
       // CenterDot[a, b, ...] displays as a · b · ...
       if name == "CenterDot" && args.len() >= 2 {
@@ -14200,6 +14204,27 @@ impl Drop for TrueInputFormGuard {
 /// (TensorProduct/CircleTimes, precedence 36) and so must be parenthesised when
 /// used as an operand, matching wolframscript (`TensorProduct[a + b, c]` →
 /// `(a + b) ⊗ c`). Tighter-binding operands (Power, Dot, …) stay bare.
+/// `a \u{F3DE} b \u{F3DE} …` for `PermutationProduct` (precedence 520,
+/// between `**` and `^`): an operand that binds looser — a sum, a product,
+/// a dot or tensor product, a negation, a rule — is parenthesized.
+fn permutation_product_text(
+  args: &[Expr],
+  fmt: &dyn Fn(&Expr) -> String,
+) -> String {
+  args
+    .iter()
+    .map(|a| {
+      let s = fmt(a);
+      let looser = ring_operand_needs_parens(a)
+        || printed_infix_precedence(a).is_some_and(|p| p < 46)
+        || matches!(a, Expr::FunctionCall { name, args }
+          if args.len() >= 2 && matches!(name.as_str(), "TensorProduct" | "PermutationProduct"));
+      if looser { format!("({s})") } else { s }
+    })
+    .collect::<Vec<_>>()
+    .join(" \u{F3DE} ")
+}
+
 fn ring_operand_needs_parens(e: &Expr) -> bool {
   match e {
     Expr::BinaryOp { op, .. } => matches!(
@@ -14554,6 +14579,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         })
         .collect::<Vec<_>>()
         .join(" \u{F3DA} ")
+    }
+    // PermutationProduct[a, b, …] prints infix with U+F3DE in every form,
+    // FullForm included, as wolframscript does.
+    Expr::FunctionCall { name, args }
+      if name == "PermutationProduct" && args.len() >= 2 =>
+    {
+      permutation_product_text(args, &expr_to_input_form)
     }
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
@@ -18715,7 +18747,7 @@ fn is_infix_display_call(e: &Expr) -> bool {
       "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
         | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
         | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual" | "Dot"
-        | "PlusMinus" | "MinusPlus"
+        | "PlusMinus" | "MinusPlus" | "PermutationProduct"
     ))
     // The prefix `±a` binds looser than `^` as well: `(±a)^2`.
     || (args.len() == 1 && matches!(name.as_str(), "PlusMinus" | "MinusPlus")))
