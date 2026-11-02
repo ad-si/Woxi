@@ -2642,6 +2642,28 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         bucket.push((idx, factors));
       }
     }
+  } else if decomposed
+    .iter()
+    .all(|(_, base)| product_factors(base).iter().all(is_canonical_tree))
+    && !crate::evaluator::contexts::contexts_active()
+  {
+    // Evaluated bases built only from calls and exact atoms print alike
+    // exactly when they are structurally equal too, so they group by a
+    // structural hash: printing every base of a large sum at every level
+    // of a nested one cost far more than adding it up.
+    let mut index: HashMap<u64, Vec<(usize, &[Expr])>> = HashMap::new();
+    for (term, (c, base)) in terms.iter().zip(decomposed) {
+      let factors = product_factors(base);
+      let bucket = index.entry(tree_factors_hash(factors)).or_default();
+      let found = bucket
+        .iter()
+        .find(|(_, other)| tree_factors_equal(other, factors))
+        .map(|(idx, _)| *idx);
+      let idx = add_term(found, c, base, term);
+      if found.is_none() {
+        bucket.push((idx, factors));
+      }
+    }
   } else {
     // Group by string representation of base
     let mut index: BTreeMap<String, usize> = BTreeMap::new();
@@ -2846,6 +2868,229 @@ fn factors_hash(factors: &[Expr]) -> u64 {
     go(f, &mut h);
   }
   h.finish()
+}
+
+/// An evaluated expression built only from calls of canonical heads, the
+/// operator nodes `+`, `*`, `/`, `^` and unary `-`, and exact atoms (no
+/// machine numbers, context-qualified symbols or `I`): two of them that
+/// print alike are equal as trees once a product or sum is read flat and
+/// `a/b` as `a*b^-1`, `-a` as `-1*a` (see `TreeView`). Heads with a second
+/// spelling of the same printed form (`Sqrt` for `Power[_, 1/2]`,
+/// `Complex`, `Minus`, …) are excluded.
+fn is_canonical_tree(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Constant(_) => true,
+    Expr::Identifier(name) => !name.contains('`') && name != "I",
+    Expr::FunctionCall { name, args } => {
+      !name.contains('`')
+        && !matches!(
+          name.as_str(),
+          "Sqrt"
+            | "Complex"
+            | "Minus"
+            | "Subtract"
+            | "Divide"
+            | "Exp"
+            | "CubeRoot"
+            | "Surd"
+            | "HoldForm"
+            | "Hold"
+            | "Defer"
+            | "InterpolatingFunction"
+        )
+        && args.iter().all(is_canonical_tree)
+    }
+    Expr::BinaryOp {
+      op:
+        BinaryOperator::Plus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power,
+      left,
+      right,
+    } => is_canonical_tree(left) && is_canonical_tree(right),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_canonical_tree(operand),
+    _ => false,
+  }
+}
+
+/// A canonical tree read the way it prints: a head and its operands, sums
+/// and products flattened whichever node spells them.
+#[derive(Clone, Copy)]
+enum TreeView<'a> {
+  /// The expression itself.
+  Node(&'a Expr),
+  /// `e^-1`, the divisor of an `a/b` node.
+  Reciprocal(&'a Expr),
+  /// The `-1` of a `-a` node.
+  MinusOne,
+}
+
+impl<'a> TreeView<'a> {
+  /// The head of a compound view (`None` for an atom) and its operands.
+  fn parts(self) -> Option<(&'a str, Vec<TreeView<'a>>)> {
+    fn flatten<'a>(e: &'a Expr, head: &str, out: &mut Vec<TreeView<'a>>) {
+      match e {
+        Expr::FunctionCall { name, args } if name == head => {
+          for a in args {
+            flatten(a, head, out);
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left,
+          right,
+        } if head == "Plus" => {
+          flatten(left, head, out);
+          flatten(right, head, out);
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          right,
+        } if head == "Times" => {
+          flatten(left, head, out);
+          flatten(right, head, out);
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          left,
+          right,
+        } if head == "Times" => {
+          flatten(left, head, out);
+          out.push(TreeView::Reciprocal(right));
+        }
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } if head == "Times" => {
+          out.push(TreeView::MinusOne);
+          flatten(operand, head, out);
+        }
+        other => out.push(TreeView::Node(other)),
+      }
+    }
+    let e = match self {
+      TreeView::MinusOne => return None,
+      TreeView::Reciprocal(b) => {
+        return Some(("Power", vec![TreeView::Node(b), TreeView::MinusOne]));
+      }
+      TreeView::Node(e) => e,
+    };
+    let head = match e {
+      Expr::FunctionCall { name, .. } => name.as_str(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        ..
+      } => "Plus",
+      Expr::BinaryOp {
+        op: BinaryOperator::Times | BinaryOperator::Divide,
+        ..
+      }
+      | Expr::UnaryOp { .. } => "Times",
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        return Some((
+          "Power",
+          vec![TreeView::Node(left), TreeView::Node(right)],
+        ));
+      }
+      _ => return None,
+    };
+    let mut out = Vec::new();
+    match (head, e) {
+      ("Plus" | "Times", _) => flatten(e, head, &mut out),
+      (_, Expr::FunctionCall { args, .. }) => {
+        out.extend(args.iter().map(TreeView::Node));
+      }
+      _ => {}
+    }
+    Some((head, out))
+  }
+
+  /// An atom's integer value, when it is a machine integer (`-1` for
+  /// `MinusOne`).
+  fn integer(self) -> Option<i128> {
+    match self {
+      TreeView::Node(Expr::Integer(n)) => Some(*n),
+      TreeView::MinusOne => Some(-1),
+      _ => None,
+    }
+  }
+
+  fn atom(self) -> Option<&'a Expr> {
+    match self {
+      TreeView::Node(e) => Some(e),
+      _ => None,
+    }
+  }
+
+  fn hash(self, h: &mut std::collections::hash_map::DefaultHasher) {
+    use std::hash::Hash;
+    match self.parts() {
+      Some((head, operands)) => {
+        (2u8, head, operands.len()).hash(h);
+        for o in operands {
+          o.hash(h);
+        }
+      }
+      None => match (self.integer(), self.atom()) {
+        (Some(n), _) => (0u8, n).hash(h),
+        (_, Some(Expr::BigInteger(n))) => (0u8, n.to_string()).hash(h),
+        (_, Some(Expr::Identifier(s) | Expr::Constant(s))) => (1u8, s).hash(h),
+        _ => 3u8.hash(h),
+      },
+    }
+  }
+
+  fn equal(self, other: TreeView<'_>) -> bool {
+    match (self.parts(), other.parts()) {
+      (Some((h1, o1)), Some((h2, o2))) => {
+        h1 == h2
+          && o1.len() == o2.len()
+          && o1.iter().zip(&o2).all(|(a, b)| a.equal(*b))
+      }
+      (None, None) => match (self.integer(), other.integer()) {
+        (Some(a), Some(b)) => a == b,
+        (None, None) => match (self.atom(), other.atom()) {
+          (Some(Expr::BigInteger(a)), Some(Expr::BigInteger(b))) => a == b,
+          (
+            Some(Expr::Identifier(a) | Expr::Constant(a)),
+            Some(Expr::Identifier(b) | Expr::Constant(b)),
+          ) => a == b,
+          _ => false,
+        },
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+}
+
+/// A hash of canonical trees (see `is_canonical_tree`) consistent with
+/// `tree_factors_equal`.
+fn tree_factors_hash(factors: &[Expr]) -> u64 {
+  use std::hash::{Hash, Hasher};
+  let mut h = std::collections::hash_map::DefaultHasher::new();
+  factors.len().hash(&mut h);
+  for f in factors {
+    TreeView::Node(f).hash(&mut h);
+  }
+  h.finish()
+}
+
+fn tree_factors_equal(a: &[Expr], b: &[Expr]) -> bool {
+  a.len() == b.len()
+    && a
+      .iter()
+      .zip(b)
+      .all(|(x, y)| TreeView::Node(x).equal(TreeView::Node(y)))
 }
 
 fn factors_equal(a: &[Expr], b: &[Expr]) -> bool {
