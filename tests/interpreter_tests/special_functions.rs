@@ -757,7 +757,18 @@ mod elliptic_complex_arguments {
         "{Round[Re[#], 10^-6], Round[Im[#], 10^-6]} &[EllipticE[1.2, 1.5]]"
       )
       .unwrap(),
-      "{716313/1000000, 46303/500000}"
+      "{89539/125000, 46303/500000}"
+    );
+    // Accurate to the last digits on both sides of the branch point.
+    assert_eq!(
+      interpret("Abs[EllipticE[1.0, 1.5] - (0.7163119387000894 + 0.007450608767743561 I)] < 10^-14")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Abs[EllipticE[4., 1.5] - (2.124806128513897 + 0.6720681345377234 I)] < 10^-14")
+        .unwrap(),
+      "True"
     );
   }
 
