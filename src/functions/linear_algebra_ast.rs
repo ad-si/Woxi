@@ -1538,6 +1538,11 @@ fn machine_complex_dot(a: &Expr, b: &Expr) -> Option<Expr> {
       Expr::Identifier(i) => i == "I",
       Expr::List(items) => items.iter().any(mentions_i),
       Expr::FunctionCall { args, .. } => args.iter().any(mentions_i),
+      // `re + im*I` as arithmetic leaves it.
+      Expr::BinaryOp { left, right, .. } => {
+        mentions_i(left) || mentions_i(right)
+      }
+      Expr::UnaryOp { operand, .. } => mentions_i(operand),
       _ => false,
     }
   }
