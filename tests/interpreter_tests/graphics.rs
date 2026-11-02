@@ -4001,6 +4001,38 @@ mod graphics {
     }
 
     #[test]
+    fn rgb_color_list_form() {
+      assert_eq!(
+        interpret("RGBColor[{1, 0.5, 0}]").unwrap(),
+        "RGBColor[1, 0.5, 0]"
+      );
+      assert_eq!(
+        interpret("RGBColor[{0.1, 0.2, 0.3, 0.4}]").unwrap(),
+        "RGBColor[0.1, 0.2, 0.3, 0.4]"
+      );
+    }
+
+    #[test]
+    fn list_surface_plot3d_grid_with_color_function() {
+      let svg = interpret(
+        "ExportString[ListSurfacePlot3D[Table[{u, v, u v}, {u, 0, 1, 0.25}, {v, 0, 1, 0.25}], ColorFunction -> Function[{x, y, z}, RGBColor[{x, y, z}]], ColorFunctionScaling -> False, Boxed -> False, Axes -> False], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("<svg"), "Got: {svg}");
+      // 4 x 4 cells, two triangles each
+      assert_eq!(svg.matches("<polygon").count(), 32, "Got: {svg}");
+    }
+
+    #[test]
+    fn list_surface_plot3d_scattered_points() {
+      let svg = interpret(
+        "ExportString[ListSurfacePlot3D[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], \"SVG\"]",
+      )
+      .unwrap();
+      assert_eq!(svg.matches("<polygon").count(), 4, "Got: {svg}");
+    }
+
+    #[test]
     fn graphics_primitives_are_symbolic() {
       assert_eq!(interpret("Circle[]").unwrap(), "Circle[{0, 0}]");
       assert_eq!(interpret("Disk[{1, 0}]").unwrap(), "Disk[{1, 0}]");

@@ -7421,6 +7421,11 @@ from a stated rule or needs missing machinery:
 - `LowerTriangularMatrix[SparseArray[…]]`: Wolfram's stored CSR data keeps
   the input's insertion order, which Woxi's sorted sparse arrays do not.
 
+## ListSurfacePlot3D
+
+- Scattered (non-array) point lists are wrapped in their convex hull, whereas
+  Wolfram reconstructs a (possibly non-convex) surface from the points.
+
 ## Notebook-sweep gaps (misc cluster, 2026-11)
 
 - `AbsoluteOptions[plot, FrameTicks]` returns `{}`: Wolfram lists the
