@@ -1179,6 +1179,27 @@ fn release_hold_rec(e: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     ),
+    // A held head is released too: `Hold[f][x]` becomes `f[x]`.
+    Expr::CurriedCall { func, args } => {
+      let args: Vec<Expr> = args.iter().map(release_hold_rec).collect();
+      match release_hold_rec(func) {
+        Expr::Identifier(ref name) => Expr::FunctionCall {
+          name: name.clone(),
+          args: args.into(),
+        },
+        head => Expr::CurriedCall {
+          func: Box::new(head),
+          args,
+        },
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(release_hold_rec(pattern)),
+      replacement: Box::new(release_hold_rec(replacement)),
+    },
     Expr::BinaryOp { op, left, right } => {
       binop(*op, release_hold_rec(left), release_hold_rec(right))
     }

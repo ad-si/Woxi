@@ -6581,6 +6581,22 @@ mod hold {
     assert_eq!(interpret("ReleaseHold[Hold[1 + 2]]").unwrap(), "3");
   }
 
+  // A held head is released too (ElementaryModelForNuclearFissionReactor
+  // stores `Hold[ReplaceAll][expr, solution]`).
+  #[test]
+  fn release_hold_in_heads() {
+    assert_eq!(
+      interpret(
+        "{ReleaseHold[Hold[ReplaceAll][{a, b}, {a -> 1, b -> 2}]], \
+         ReleaseHold[Hold[Thread][{a, b} -> {3, 4}]], \
+         ReleaseHold[Hold[f][Hold[1 + 1]]], ReleaseHold[f[Hold[g]][x]], \
+         ReleaseHold[HoldForm[Plus][1, 2]]}"
+      )
+      .unwrap(),
+      "{{1, 2}, {a -> 3, b -> 4}, f[2], f[g][x], 3}"
+    );
+  }
+
   #[test]
   fn release_hold_form() {
     assert_eq!(interpret("ReleaseHold[HoldForm[1 + 2]]").unwrap(), "3");
