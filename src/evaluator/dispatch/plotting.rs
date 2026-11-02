@@ -444,20 +444,33 @@ pub fn dispatch_plotting(
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
     // RulePlot[CellularAutomaton[rule]] draws each neighborhood and its
-    // result. Other objects (substitution rules, …) still produce an empty
-    // Graphics placeholder so the expected `-Graphics-` output renders,
-    // matching wolframscript.
-    "RulePlot" if !args.is_empty() => Some(quiet_plot(|| {
-      if let Some(result) =
-        crate::functions::rule_plot::rule_plot_graphics(args)
-      {
-        return result;
-      }
-      crate::functions::graphics::show_ast(&[call1(
-        "Graphics",
-        Expr::List(vec![].into()),
-      )])
-    })),
+    // result. The other systems (substitution systems, Turing machines)
+    // still produce an empty Graphics placeholder so the expected
+    // `-Graphics-` output renders; anything that is not a system
+    // (`RulePlot[x]`, a bare rule number) stays unevaluated, as in WL.
+    "RulePlot"
+      if matches!(args.first(), Some(Expr::FunctionCall { name, .. })
+      if matches!(
+        name.as_str(),
+        "CellularAutomaton"
+          | "SubstitutionSystem"
+          | "TuringMachine"
+          | "MultiwaySystem"
+      )) =>
+    {
+      Some(quiet_plot(|| {
+        if let Some(result) =
+          crate::functions::rule_plot::rule_plot_graphics(args)
+        {
+          return result;
+        }
+        crate::functions::graphics::show_ast(&[call1(
+          "Graphics",
+          Expr::List(vec![].into()),
+        )])
+      }))
+    }
+    "RulePlot" if !args.is_empty() => Some(Ok(unevaluated(name, args))),
     // ReImPlot[f, {x, xmin, xmax}, opts...] plots Re[f] and Im[f] on the
     // same axes. We forward to Plot[{Re[f], Im[f]}, …]. When f is a list,
     // splat the real and imaginary parts across all entries. Falls through

@@ -1886,8 +1886,14 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn rule_plot() {
-    // RulePlot now returns a Graphics placeholder.
-    assert_eq!(interpret("RulePlot[x]").unwrap(), "-Graphics-");
+    // Only a system (CellularAutomaton[…], SubstitutionSystem[…], …) is
+    // plotted; anything else stays unevaluated.
+    assert_eq!(interpret("RulePlot[x]").unwrap(), "RulePlot[x]");
+    assert_eq!(interpret("RulePlot[30]").unwrap(), "RulePlot[30]");
+    assert_eq!(
+      interpret("RulePlot[SubstitutionSystem[{\"A\" -> \"AB\"}]]").unwrap(),
+      "-Graphics-"
+    );
   }
   #[test]
   fn mathieu_group_m11() {
