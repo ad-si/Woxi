@@ -5361,7 +5361,7 @@ mod solve {
     assert_eq!(
       interpret("Solve[Sqrt[(x-1)^2 + y^2] + Sqrt[(x+1)^2 + y^2] == 3, y]")
         .unwrap(),
-      "{{y -> -1/6*Sqrt[45 - 20*x^2]}, {y -> Sqrt[45 - 20*x^2]/6}}"
+      "{{y -> -1/6*(Sqrt[5]*Sqrt[9 - 4*x^2])}, {y -> (Sqrt[5]*Sqrt[9 - 4*x^2])/6}}"
     );
     assert_eq!(
       interpret("Solve[Sqrt[x^2 + 1] + Sqrt[x^2 + 4] == 3, x]").unwrap(),
@@ -25246,6 +25246,27 @@ mod solve_quadratic_common_factor {
     assert_eq!(
       interpret("Solve[4 x^2 - 8 x + 1 == 0, x]").unwrap(),
       "{{x -> (2 - Sqrt[3])/2}, {x -> (2 + Sqrt[3])/2}}"
+    );
+  }
+}
+
+// The integer content of a radicand comes out of the square root.
+mod solve_radicand_content {
+  use super::*;
+
+  #[test]
+  fn content_leaves_the_radical() {
+    assert_eq!(
+      interpret("Solve[y^2 == 45 - 20 x^2, y]").unwrap(),
+      "{{y -> -(Sqrt[5]*Sqrt[9 - 4*x^2])}, {y -> Sqrt[5]*Sqrt[9 - 4*x^2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 6 a + 9 b, x]").unwrap(),
+      "{{x -> -(Sqrt[3]*Sqrt[2*a + 3*b])}, {x -> Sqrt[3]*Sqrt[2*a + 3*b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 x^2 + 4 a x + b == 0, x]").unwrap(),
+      "{{x -> (-2*a - Sqrt[2]*Sqrt[2*a^2 - b])/2}, {x -> (-2*a + Sqrt[2]*Sqrt[2*a^2 - b])/2}}"
     );
   }
 }

@@ -2984,6 +2984,110 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return result;
   }
+  let result = solve_ast_core(args)?;
+  Ok(split_radicand_content(result))
+}
+
+/// The integer content of a sum under a square root comes out of it in a
+/// solution, as wolframscript writes `Sqrt[45 - 20 x^2]` there:
+/// `Sqrt[5]*Sqrt[9 - 4*x^2]`.
+fn split_radicand_content(expr: Expr) -> Expr {
+  fn is_half(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name: r, args: ra }
+      if r == "Rational"
+        && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]))
+  }
+  fn radicand(e: &Expr) -> Option<&Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        Some(&args[0])
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 && is_half(&args[1]) =>
+      {
+        Some(&args[0])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if is_half(right) => Some(left.as_ref()),
+      _ => None,
+    }
+  }
+  fn gcd(a: i128, b: i128) -> i128 {
+    if b == 0 { a } else { gcd(b, a % b) }
+  }
+  // The gcd of the integer coefficients of a sum, when every term has one.
+  fn content(sum: &Expr) -> Option<i128> {
+    let terms = crate::functions::polynomial_ast::collect_additive_terms(sum);
+    if terms.len() < 2 {
+      return None;
+    }
+    let mut g: i128 = 0;
+    for t in &terms {
+      let c = match t {
+        Expr::Integer(n) => *n,
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          match args.first() {
+            Some(Expr::Integer(n)) => *n,
+            _ => 1,
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          ..
+        } => match left.as_ref() {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        },
+        _ => 1,
+      };
+      g = gcd(g, c.abs());
+    }
+    (g > 1).then_some(g)
+  }
+  fn walk(e: &Expr) -> Expr {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = e
+    {
+      return Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(walk(replacement)),
+      };
+    }
+    let rebuilt = crate::syntax::map_children(e, &walk);
+    if let Some(r) = radicand(&rebuilt)
+      && let Some(c) = content(r)
+      && let Ok(rest) = crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        &[times2(r.clone(), make_rational(1, c))],
+      )
+      && let Ok(split) = crate::evaluator::evaluate_expr_to_expr(&times2(
+        call1("Sqrt", Expr::Integer(c)),
+        call1("Sqrt", rest),
+      ))
+    {
+      return split;
+    }
+    rebuilt
+  }
+  let text = crate::syntax::expr_to_string(&expr);
+  if !text.contains("Sqrt[") && !text.contains("^(1/2)") {
+    return expr;
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&walk(&expr)) {
+    Ok(e) => e,
+    Err(_) => expr,
+  }
+}
+
+fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(expanded) = args.first().and_then(expand_region_membership) {
     let mut normalized = args.to_vec();
     normalized[0] = expanded;
