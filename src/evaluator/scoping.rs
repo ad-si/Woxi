@@ -1359,6 +1359,15 @@ pub fn set_part_deep(
     ));
   }
 
+  // A rendered graphic is assigned into through the `Graphics[…]`
+  // expression it stands for (`p[[1]] = p[[1]] /. …` on a `ListPlot`).
+  if matches!(expr, Expr::Graphics { .. })
+    && let Some(symbolic) =
+      crate::evaluator::part_extraction::graphics_symbolic_form(expr)
+  {
+    *expr = symbolic;
+  }
+
   // An operator form (`a -> b`, `x + y`, `a == b`, …) is a call of its head
   // like any other; spell it as one so its parts can be assigned.
   if !matches!(

@@ -24397,6 +24397,21 @@ mod atomic_numbers_have_no_parts {
 mod part_assignment_failures {
   use super::*;
 
+  // A plot's parts can be assigned, as the ErrorBarPlots package does with
+  // `p[[1]] = p[[1]] /. …` (MonteCarloModelOfChargeRecombinationInFeldspars).
+  #[test]
+  fn assigning_into_a_rendered_graphic() {
+    assert_eq!(
+      interpret(
+        "p = ListPlot[{{1, 2}, {2, 3}}]; \
+         p[[1]] = p[[1]] /. Point[x_] :> {Red, Point[x]}; \
+         {Head[p], Cases[p, {RGBColor[1, 0, 0], _Point}, Infinity]}"
+      )
+      .unwrap(),
+      "{Graphics, {{RGBColor[1, 0, 0], Point[{{1., 2.}, {2., 3.}}]}}}"
+    );
+  }
+
   // An operator form has parts like any call: a rule's right side, a sum's
   // terms, an equation's sides.
   #[test]
