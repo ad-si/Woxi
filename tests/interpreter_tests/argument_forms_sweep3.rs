@@ -46,15 +46,28 @@ mod take_list_levels {
   }
 }
 
-mod digit_sum_powers {
+mod digit_sum_digit_count {
   use super::*;
 
   #[test]
-  fn sums_kth_powers_of_digits() {
-    assert_eq!(interpret("DigitSum[6345354, 10, 4]").unwrap(), "3220");
-    assert_eq!(interpret("DigitSum[153, 10, 3]").unwrap(), "153");
-    assert_eq!(interpret("DigitSum[10, 2, 2]").unwrap(), "2");
-    assert_eq!(interpret("DigitSum[1234, 10, 1]").unwrap(), "10");
+  fn sums_the_first_k_digits() {
+    assert_eq!(interpret("DigitSum[6345354, 10, 4]").unwrap(), "18");
+    assert_eq!(interpret("DigitSum[153, 10, 3]").unwrap(), "9");
+    assert_eq!(interpret("DigitSum[10, 2, 2]").unwrap(), "1");
+    assert_eq!(interpret("DigitSum[1234, 10, 1]").unwrap(), "1");
+    assert_eq!(interpret("DigitSum[1234, 2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_k_sums_the_last_digits() {
+    assert_eq!(interpret("DigitSum[1234, 10, -2]").unwrap(), "7");
+    assert_eq!(interpret("DigitSum[-1234, 10, 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn k_beyond_the_length_or_zero() {
+    assert_eq!(interpret("DigitSum[1234, 10, 10]").unwrap(), "10");
+    assert_eq!(interpret("DigitSum[1234, 10, 0]").unwrap(), "0");
   }
 }
 

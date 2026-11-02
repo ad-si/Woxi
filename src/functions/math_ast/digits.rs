@@ -88,21 +88,22 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DigitSum[n] - sum of digits in base 10
 /// DigitSum[n, b] - sum of digits in base b
-/// DigitSum[n, b, k] - sum of the k-th powers of the base-b digits
+/// DigitSum[n, b, k] - sum of the first k base-b digits (the last -k for a
+/// negative k)
 pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "DigitSum expects 1 to 3 arguments".into(),
     ));
   }
-  // The power each digit is raised to (1 unless a third argument is given).
-  let power: u32 = match args.get(2) {
-    None => 1,
-    Some(Expr::Integer(k)) if *k >= 0 && *k <= u32::MAX as i128 => *k as u32,
+  // How many leading (positive) or trailing (negative) digits to add.
+  let count: Option<i128> = match args.get(2) {
+    None => None,
+    Some(Expr::Integer(k)) => Some(*k),
     Some(_) => return Ok(unevaluated("DigitSum", args)),
   };
   let add_digit = |sum: &mut BigInt, d: BigInt| {
-    *sum += if power == 1 { d } else { d.pow(power) };
+    *sum += d;
   };
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
@@ -160,14 +161,26 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
   let big_base = BigInt::from(base);
-  let mut sum = BigInt::from(0);
   let mut val = n;
   if val.is_zero() {
     return Ok(Expr::Integer(0));
   }
+  // Digits least significant first.
+  let mut digits: Vec<BigInt> = Vec::new();
   while !val.is_zero() {
-    add_digit(&mut sum, &val % &big_base);
+    digits.push(&val % &big_base);
     val /= &big_base;
+  }
+  let len = digits.len();
+  let range = match count {
+    None => 0..len,
+    // The first k digits are the most significant ones.
+    Some(k) if k >= 0 => len - usize::try_from(k).unwrap_or(len).min(len)..len,
+    Some(k) => 0..usize::try_from(k.unsigned_abs()).unwrap_or(len).min(len),
+  };
+  let mut sum = BigInt::from(0);
+  for d in digits.drain(range) {
+    add_digit(&mut sum, d);
   }
   Ok(bigint_to_expr(sum))
 }
