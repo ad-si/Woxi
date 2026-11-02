@@ -1998,6 +1998,12 @@ pub fn dispatch_linear_algebra_functions(
       {
         return Some(Ok(result));
       }
+      // A symbolic power of a matrix whose Jordan form Woxi computes the way
+      // wolframscript does (rational matrices with rational eigenvalues,
+      // and upper-triangular matrices): s . J^n . s^-1.
+      if let Some(result) = symbolic_matrix_power(&args[0], &args[1]) {
+        return Some(result);
+      }
       // Symbolic n with a matrix that splits (after a row/column
       // permutation) into multiple connected components: handle each
       // block independently. Blocks of size 1 reduce to `entry^n`;
@@ -6380,5 +6386,80 @@ fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
       cols,
       args[0].clone(),
     )),
+  }
+}
+
+/// The Wolfram Language definition of a symbolic `MatrixPower[m, k]`,
+/// applied as `Function[{m, k}, …]`. It reproduces wolframscript's result:
+///
+/// - `s . J^k . Inverse[s]` from the Jordan decomposition `m = s . J . s^-1`
+///   (`JordanDecomposition`, or Jordan chains built from the null spaces of
+///   `(m - λ)^j` where it is not available), a Jordan block of λ of size L
+///   contributing `Binomial`-like `k (k - 1) … / d! λ^(k - d)` entries;
+/// - for a defective matrix each entry is then factored with the powers
+///   `b^(k + c)` read as `b^c Y` (`2^n + 2^(-1 + n) n` is
+///   `2^(-1 + n) (2 + n)`).
+///
+/// It only answers (otherwise `$Failed`) for matrices whose decomposition
+/// and arithmetic agree with wolframscript's: upper-triangular ones and
+/// rational ones with rational, nonzero eigenvalues.
+const SYMBOLIC_MATRIX_POWER_WL: &str = r#"Function[{m$mp, k$mp}, Module[{dim$mp = Length[m$mp], ev$mp, data$mp = {}, s$mp, blocks$mp, jn$mp, jd$mp, defective$mp, expTog$mp, r$mp},
+  ev$mp = Tally[Eigenvalues[m$mp]];
+  If[!FreeQ[ev$mp, Eigenvalues | Root] || MemberQ[ev$mp[[All, 1]], 0], Return[$Failed, Module]];
+  If[!(And @@ Flatten[Table[m$mp[[i$mp, j$mp]] === 0, {i$mp, dim$mp}, {j$mp, i$mp - 1}]] ||
+       (MatrixQ[m$mp, IntegerQ[#] || Head[#] === Rational &] &&
+        AllTrue[ev$mp[[All, 1]], IntegerQ[#] || Head[#] === Rational &])),
+    Return[$Failed, Module]];
+  jd$mp = JordanDecomposition[m$mp];
+  If[MatchQ[jd$mp, {_?MatrixQ, _?MatrixQ}],
+    s$mp = jd$mp[[1]];
+    blocks$mp = Module[{j$mp = jd$mp[[2]], out$mp = {}, i$mp = 1, len$mp},
+      While[i$mp <= dim$mp, len$mp = 1;
+        While[i$mp + len$mp <= dim$mp && j$mp[[i$mp + len$mp - 1, i$mp + len$mp]] === 1, len$mp++];
+        AppendTo[out$mp, {j$mp[[i$mp, i$mp]], len$mp}]; i$mp += len$mp];
+      out$mp],
+    Do[Module[{lam$mp = e$mp[[1]], mult$mp = e$mp[[2]], nm$mp, kmax$mp = 1, chains$mp = {}, basis$mp = {}},
+       nm$mp = m$mp - lam$mp IdentityMatrix[dim$mp];
+       While[MatrixRank[MatrixPower[nm$mp, kmax$mp]] > dim$mp - mult$mp && kmax$mp < mult$mp, kmax$mp++];
+       Do[Do[If[Length[basis$mp] < mult$mp,
+            Module[{ch$mp = Reverse[NestList[nm$mp . # &, v$mp, len$mp - 1]]},
+             If[MatrixPower[nm$mp, len$mp - 1] . v$mp =!= ConstantArray[0, dim$mp] &&
+                MatrixRank[Join[basis$mp, ch$mp]] == Length[basis$mp] + len$mp,
+              basis$mp = Join[basis$mp, ch$mp]; AppendTo[chains$mp, ch$mp]]]],
+          {v$mp, NullSpace[MatrixPower[nm$mp, len$mp]]}], {len$mp, kmax$mp, 1, -1}];
+       If[Length[basis$mp] < mult$mp, Return[$Failed, Module]];
+       AppendTo[data$mp, {lam$mp, chains$mp}]], {e$mp, ev$mp}];
+    s$mp = Transpose[Flatten[Map[Flatten[#[[2]], 1] &, data$mp], 1]];
+    blocks$mp = Flatten[Map[Function[d$mp, Map[{d$mp[[1]], Length[#]} &, d$mp[[2]]]], data$mp], 1]];
+  jn$mp = ConstantArray[0, {dim$mp, dim$mp}];
+  Module[{off$mp = 0},
+    Do[Do[If[jj$mp >= ii$mp,
+        jn$mp[[off$mp + ii$mp, off$mp + jj$mp]] = Product[k$mp - t$mp, {t$mp, 0, jj$mp - ii$mp - 1}]/(jj$mp - ii$mp)! b$mp[[1]]^(k$mp - jj$mp + ii$mp)],
+       {ii$mp, b$mp[[2]]}, {jj$mp, b$mp[[2]]}]; off$mp += b$mp[[2]], {b$mp, blocks$mp}]];
+  r$mp = s$mp . jn$mp . Inverse[s$mp];
+  If[Max[blocks$mp[[All, 2]]] > 1,
+    expTog$mp = Function[e$mp, Module[{pw$mp, rules$mp},
+      pw$mp = DeleteDuplicates[Cases[e$mp, Power[bb$mp_, x$mp_] /; !FreeQ[x$mp, k$mp], {0, Infinity}]];
+      rules$mp = Map[Function[p$mp, Module[{x$mp = Expand[p$mp[[2]]], c$mp}, c$mp = x$mp /. k$mp -> 0; p$mp -> p$mp[[1]]^c$mp woxiY$mp[p$mp[[1]], x$mp - c$mp]]], pw$mp];
+      Factor[e$mp /. rules$mp] /. woxiY$mp[bb$mp_, x$mp_] :> bb$mp^x$mp]];
+    Map[expTog$mp, r$mp, {2}],
+    r$mp]]]"#;
+
+/// `MatrixPower[m, k]` for a symbolic `k` through
+/// [`SYMBOLIC_MATRIX_POWER_WL`]; `None` when that declines.
+fn symbolic_matrix_power(
+  m: &Expr,
+  k: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let func = crate::syntax::string_to_expr(SYMBOLIC_MATRIX_POWER_WL).ok()?;
+  let call = Expr::CurriedCall {
+    func: Box::new(func),
+    args: vec![m.clone(), k.clone()],
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&call) {
+    Ok(Expr::Identifier(ref f)) if f == "$Failed" => None,
+    Ok(r @ Expr::List(_)) => Some(Ok(r)),
+    Ok(_) => None,
+    Err(e) => Some(Err(e)),
   }
 }

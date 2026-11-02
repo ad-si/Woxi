@@ -181,6 +181,86 @@ mod matrix_power_vector {
       interpret("MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]").unwrap(),
       "MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]"
     );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1}, {0, 1}}, n, {1, 2}]").unwrap(),
+      "{1 + 2*n, 2}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {0, 2}}, n, {x, y}]").unwrap(),
+      "{2^n*x + 2^(-1 + n)*n*y, 2^n*y}"
+    );
+  }
+}
+
+mod matrix_power_symbolic_exponent {
+  use super::*;
+
+  #[test]
+  fn jordan_blocks() {
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1}, {0, 1}}, n]").unwrap(),
+      "{{1, n}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {0, 2}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n}, {0, 2^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1, 0}, {0, 1, 1}, {0, 0, 1}}, n]").unwrap(),
+      "{{1, n, ((-1 + n)*n)/2}, {0, 1, n}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1, 0}, {0, 2, 1}, {0, 0, 2}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n, 2^(-3 + n)*(-1 + n)*n}, {0, 2^n, 2^(-1 + n)*n}, \
+       {0, 0, 2^n}}"
+    );
+  }
+
+  #[test]
+  fn defective_entries_are_factored() {
+    assert_eq!(
+      interpret("MatrixPower[{{3, 1}, {-1, 1}}, n]").unwrap(),
+      "{{2^(-1 + n)*(2 + n), 2^(-1 + n)*n}, {-(2^(-1 + n)*n), \
+       -(2^(-1 + n)*(-2 + n))}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1, 1}, {0, 2, 1}, {0, 0, 3}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n, (-2^(2 + n) + 4*3^n - 2^n*n)/2}, \
+       {0, 2^n, -2^n + 3^n}, {0, 0, 3^n}}"
+    );
+  }
+
+  #[test]
+  fn diagonalizable_rational_eigenvalues() {
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {1, 2}}, n]").unwrap(),
+      "{{1/2 + 3^n/2, -1/2 + 3^n/2}, {-1/2 + 3^n/2, 1/2 + 3^n/2}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 2, 3}, {0, 4, 5}, {0, 0, 6}}, n]").unwrap(),
+      "{{1, -2/3 + 2^(1 + 2*n)/3, 1/15 - (5*2^(2*n))/3 + (2^(3 + n)*3^n)/5}, \
+       {0, 4^n, -5*2^(-1 + 2*n) + 5*2^(-1 + n)*3^n}, {0, 0, 6^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1/3, 1}, {0, 2/3}}, n]").unwrap(),
+      "{{3^(-n), -3^(1 - n) + 2^n*3^(1 - n)}, {0, (2/3)^n}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_upper_triangular() {
+    assert_eq!(
+      interpret("MatrixPower[{{a, b}, {0, d}}, n]").unwrap(),
+      "{{a^n, (a^n*b)/(a - d) - (b*d^n)/(a - d)}, {0, d^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{a, 1}, {0, a}}, n]").unwrap(),
+      "{{a^n, a^(-1 + n)*n}, {0, a^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{k, 1}, {0, k}}, n]").unwrap(),
+      "{{k^n, k^(-1 + n)*n}, {0, k^n}}"
+    );
   }
 }
 
