@@ -2590,10 +2590,6 @@ function main() {
     // wolframscript holds stream 3 for its own output file, so its first
     // StringToStream is InputStream[String, 4] where a kernel's is 3.
     'ReadList[StringToStream["a b"], Word, Foo -> 1]',
-    // wolframscript's SmoothKernelDistribution interpolates its density
-    // (InterpolationPoints), so its moments and kernel PDFs are off in the
-    // fifth digit; Woxi evaluates the kernel sum exactly.
-    'd = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; Round[10^5 {PDF[d, 1.5], CDF[d, 1.5], Mean[d], Variance[d], PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.5, "Epanechnikov"], 1.5], PDF[SmoothKernelDistribution[{1., 2., 3.5, 4.2, 7.}], 1.5]}]',
     // TraditionalForm templates (see "TraditionalForm boxes are written out
     // inline instead of as TemplateBoxes").
     'ToBoxes[TraditionalForm[Subsuperscript[q, 1, "*"]]]',
