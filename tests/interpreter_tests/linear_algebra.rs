@@ -7398,12 +7398,15 @@ mod cases {
       r#"{5, 5}"#,
     );
   }
-  // Radical eigenvalues: each eigenvector is paired with its eigenvalue
-  // (the real ones came after the complex ones).
+  // Radical eigenvalues: each eigenvector is paired with its eigenvalue.
+  // The order of eigenvalues of equal magnitude (1 and the cube roots of
+  // unity here) follows the last bit of their numeric magnitudes, which
+  // differs between platforms' libm (wolframscript lists the real ones
+  // first), so only the pairing and the real eigenvectors are checked.
   #[test]
   fn eigenvectors_follow_radical_eigenvalue_order() {
     assert_case(
-      r#"m = {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}; {vals, vecs} = Eigensystem[m]; {Take[Eigenvectors[m], -2], Simplify[MapThread[m . #2 - #1 #2 &, {vals, vecs}]]}"#,
+      r#"m = {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}; {vals, vecs} = Eigensystem[m]; {Sort[Select[Eigenvectors[m], FreeQ[#, Complex | Sqrt[3]] &]], Simplify[MapThread[m . #2 - #1 #2 &, {vals, vecs}]]}"#,
       r#"{{{0, 1, 1, 1}, {1, 0, 0, 0}}, {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}}}"#,
     );
   }

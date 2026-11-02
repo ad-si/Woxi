@@ -200,6 +200,26 @@ pub(crate) fn inverse_jacobi_bigfloat(
     "DC" => return inverse_jacobi_bigfloat("CD", &recip(x)?, m, wp, rm, cc),
     _ => {}
   }
+  // A modulus above 1 through the reciprocal-modulus transformation
+  // sn(u | m) = sn(√m u | 1/m)/√m, real while m x^2 <= 1.
+  if kind == "SN"
+    && m.cmp(&one).is_some_and(|c| c > 0)
+    && m
+      .mul(&x.mul(x, wp, rm), wp, rm)
+      .cmp(&one)
+      .is_some_and(|c| c <= 0)
+  {
+    let root = m.sqrt(wp, rm);
+    let (u, _) = inverse_jacobi_bigfloat(
+      "SN",
+      &x.mul(&root, wp, rm),
+      &one.div(m, wp, rm),
+      wp,
+      rm,
+      cc,
+    )?;
+    return Some((u.div(&root, wp, rm), zero));
+  }
   if m.cmp(&one).is_none_or(|c| c >= 0) {
     return None;
   }

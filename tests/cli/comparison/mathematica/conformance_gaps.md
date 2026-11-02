@@ -7440,3 +7440,13 @@ from a stated rule or needs missing machinery:
   are not implemented (3DCoordinateSystemTransformations).
 - `FindIndependentEdgeSet` is not implemented
   (SpreadsheetLikeSolutionOfLargeScaleSystemsOfEquations).
+
+### Eigenvalues of equal magnitude are ordered by float noise
+
+`Eigenvalues` sorts by decreasing magnitude, and the magnitudes of exact
+eigenvalues are compared as machine numbers. For eigenvalues of equal
+magnitude (`1` and the cube roots of unity of
+`{{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}`) the order then
+follows the last bit of `Abs[(-1)^(1/3)]`, which differs between platforms'
+libm: on macOS Woxi lists the real ones first, as wolframscript does; on
+Linux they come last.

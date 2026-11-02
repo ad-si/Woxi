@@ -25498,7 +25498,7 @@ mod combinatorica_random_graph {
       interpret(
         "Needs[\"Combinatorica`\"]; g = GridGraph[2, 3]; \
          {InputForm[g], InputForm[InduceSubgraph[g, {5, 1, 2}]], \
-          InputForm[GridGraph[3, 1]], InputForm[CompleteGraph[3]], \
+          InputForm[GridGraph[3, 1]], \
           InputForm[{CompleteGraph[0], CompleteGraph[1]}]}"
       )
       .unwrap(),
@@ -25506,9 +25506,19 @@ mod combinatorica_random_graph {
        {{{1., 1.}}, {{2., 1.}}, {{1., 2.}}, {{2., 2.}}, {{1., 3.}}, {{2., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}}, {{{1., 1.}}, {{2., 1.}}, {{1., 3.}}}]], \
        InputForm[Graph[{{{1, 2}}, {{2, 3}}}, {{{1., 0.}}, {{2., 0.}}, {{3., 0.}}}]], \
-       InputForm[Graph[{{{1, 2}}, {{1, 3}}, {{2, 3}}}, {{{-0.4999999999999998, \
-       0.8660254037844387}}, {{-0.5000000000000004, -0.8660254037844384}}, {{1., 0}}}]], \
        InputForm[{Graph[{}, {}], Graph[{}, {{{0, 0}}}]}]}"
+    );
+    // The circle's vertex coordinates are machine cosines and sines, whose
+    // last bit differs between platforms' libm, so they are compared to a
+    // tolerance.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = CompleteGraph[3]; \
+         {g[[1]], Max[Abs[Flatten[g[[2]]] - \
+           Flatten[{{{-1/2, Sqrt[3]/2}}, {{-1/2, -Sqrt[3]/2}}, {{1, 0}}}]]] < 10^-14}"
+      )
+      .unwrap(),
+      "{{{{1, 2}}, {{1, 3}}, {{2, 3}}}, True}"
     );
     assert_eq!(
       interpret(
