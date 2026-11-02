@@ -370,8 +370,8 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .take_while(|a| !matches!(a, Expr::Rule { .. }))
     .count();
-  // `InterpolationOrder -> 3` finds the peaks of the interpolating spline
-  // (see `spline_peaks`); orders 0 and 1 are the list's own peaks.
+  // `InterpolationOrder -> 2 | 3` finds the peaks of the interpolating
+  // spline (see `spline_peaks`); orders 0 and 1 are the list's own peaks.
   let mut interpolation_order = None;
   let options: Vec<Expr> = args[positional..]
     .iter()
@@ -388,9 +388,8 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .cloned()
     .collect();
   let spline = match &interpolation_order {
-    None => false,
-    Some(Expr::Integer(0 | 1)) => false,
-    Some(Expr::Integer(3)) => true,
+    None | Some(Expr::Integer(0 | 1)) => None,
+    Some(Expr::Integer(k @ (2 | 3))) => Some(*k),
     Some(_) => return Ok(unevaluated("FindPeaks", args)),
   };
   // A constant `Padding -> p` option; other options are not supported.
@@ -472,11 +471,16 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if sigma != 0.0 || sharpness.1 != 0.0 || threshold.1 != 0.0 {
     return Ok(unevaluated());
   }
-  if spline {
+  if let Some(order) = spline {
     if sharpness.0 != 0.0 || padding.is_some() || vals.len() < 2 {
       return Ok(unevaluated());
     }
-    let peaks = spline_peaks(&vals)
+    let peaks = if order == 2 {
+      quadratic_spline_peaks(&vals)
+    } else {
+      spline_peaks(&vals)
+    };
+    let peaks = peaks
       .into_iter()
       .filter(|&(_, y)| y >= threshold.0)
       .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
@@ -581,6 +585,60 @@ fn spline_peaks(vals: &[f64]) -> Vec<(f64, f64)> {
   }
   if m[n - 1] < 0.0 {
     peaks.push((n as f64, vals[n - 1]));
+  }
+  // A maximum at a knot can be found from both of its pieces.
+  peaks.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-9);
+  peaks
+}
+
+/// The local maxima `(x, y)` of the quadratic spline through
+/// `(i, vals[i - 1])` with its knots halfway between the points and zero
+/// slope at both ends (wolframscript's `FindPeaks[list, 0,
+/// InterpolationOrder -> 2]`). Around the point `i` the spline is
+/// `y_i + d_i u + c_i u^2` (`u = x - i`, `|u| <= 1/2`); matching value and
+/// slope at the knots gives `d_(i-1) + 6 d_i + d_(i+1) = 4 (y_(i+1) -
+/// y_(i-1))` with `d_1 = d_n = 0`, and `c_i = (4 Δy_i - 3 d_i - d_(i+1))/2`.
+fn quadratic_spline_peaks(vals: &[f64]) -> Vec<(f64, f64)> {
+  let n = vals.len();
+  let mut d = vec![0.0; n];
+  if n > 2 {
+    // Tridiagonal system for d_2 … d_(n-1) (diagonal 6, off-diagonals 1).
+    let m = n - 2;
+    let mut diag = vec![6.0; m];
+    let mut rhs: Vec<f64> = (1..n - 1)
+      .map(|i| 4.0 * (vals[i + 1] - vals[i - 1]))
+      .collect();
+    for k in 1..m {
+      let w = 1.0 / diag[k - 1];
+      diag[k] -= w;
+      rhs[k] -= w * rhs[k - 1];
+    }
+    d[m] = rhs[m - 1] / diag[m - 1];
+    for k in (0..m - 1).rev() {
+      d[k + 1] = (rhs[k] - d[k + 2]) / diag[k];
+    }
+  }
+  let c: Vec<f64> = (0..n)
+    .map(|i| {
+      if i + 1 < n {
+        (4.0 * (vals[i + 1] - vals[i]) - 3.0 * d[i] - d[i + 1]) / 2.0
+      } else {
+        (3.0 * d[i] + d[i - 1] - 4.0 * (vals[i] - vals[i - 1])) / 2.0
+      }
+    })
+    .collect();
+  let mut peaks = Vec::new();
+  for i in 0..n {
+    if c[i] >= 0.0 {
+      continue;
+    }
+    let u = -d[i] / (2.0 * c[i]);
+    // The piece around point i covers [-1/2, 1/2], cut at the list ends.
+    let lo = if i == 0 { 0.0 } else { -0.5 };
+    let hi = if i == n - 1 { 0.0 } else { 0.5 };
+    if u >= lo && u < hi || (u == hi && i == n - 1) {
+      peaks.push((i as f64 + 1.0 + u, vals[i] + d[i] * u + c[i] * u * u));
+    }
   }
   peaks
 }

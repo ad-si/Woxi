@@ -635,6 +635,14 @@ mod peaks_at_scale_zero {
   // InterpolationOrder -> 3 finds the maxima of the clamped cubic spline
   // through the data (a clamped end curving down is one too).
   fn interpolation_order_three_uses_the_spline() {
+    // A maximum on a knot is reported once.
+    assert_eq!(
+      interpret(
+        "FindPeaks[{0, 1, 0, 1, 0, 1}, 0, InterpolationOrder -> 3][[All, 1]]"
+      )
+      .unwrap(),
+      "{2., 4., 6.}"
+    );
     assert_eq!(
       interpret(
         "Round[10^6 FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, \
@@ -649,6 +657,27 @@ mod peaks_at_scale_zero {
       )
       .unwrap(),
       "{{1, 2}, {11/2, 6}, {11, 7}}"
+    );
+  }
+
+  // InterpolationOrder -> 2: the quadratic spline with its knots halfway
+  // between the points and zero slope at both ends.
+  #[test]
+  fn interpolation_order_two_uses_the_quadratic_spline() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, \
+         InterpolationOrder -> 2]]"
+      )
+      .unwrap(),
+      "{{1000000, 2000000}, {5596136, 6235220}, {10898016, 7063713}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 FindPeaks[{1, 3, 2, 5, 4}, 0, InterpolationOrder -> 2]]"
+      )
+      .unwrap(),
+      "{{2075075, 3018401}, {4154856, 5089573}}"
     );
   }
 }
