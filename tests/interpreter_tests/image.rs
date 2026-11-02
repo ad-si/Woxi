@@ -10685,6 +10685,37 @@ mod image_filter_padding {
   }
 }
 
+mod image3d_arithmetic {
+  use super::*;
+
+  // A stack of images is a volume: ImageAdd pads the shallower one with
+  // zeros, and ImageAdjust and Threshold work on the whole volume
+  // (TheLayoutOfTheCenterOfYerevanArmenia).
+  #[test]
+  fn stacked_images_add_adjust_and_threshold() {
+    assert_eq!(
+      interpret(
+        "a = Image3D[Table[Image[ConstantArray[0.1 k, {3, 4}]], {k, 3}]]; \
+         b = Image3D[Table[Image[ConstantArray[0.5, {3, 4}]], {k, 2}]]; \
+         c = ImageAdd[a, b]; \
+         {Head[c], ImageDimensions[c], Round[10 ImageData[c][[All, 1, 1]]], \
+          ImageData[Threshold[ImageAdjust[c], 0.8]][[All, 1, 1]]}"
+      )
+      .unwrap(),
+      "{Image3D, {4, 3, 3}, {6, 7, 3}, {0., 1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn threshold_of_an_image() {
+    assert_eq!(
+      interpret("ImageData[Threshold[Image[{{0.1, 0.5}, {0.3, 0.05}}], 0.2]]")
+        .unwrap(),
+      "{{0., 0.5}, {0.30000001192092896, 0.}}"
+    );
+  }
+}
+
 mod gabor {
   use super::*;
 

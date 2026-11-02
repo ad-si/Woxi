@@ -2387,6 +2387,28 @@ fn image3d_scalar_volume(
   let Expr::List(planes) = &args[0] else {
     return None;
   };
+  // A stack of equally sized single-channel images.
+  if let Some(Expr::Image { width, height, .. }) = planes.first() {
+    let (w, h) = (*width as usize, *height as usize);
+    let mut vals = Vec::with_capacity(planes.len() * w * h);
+    for plane in planes {
+      let Expr::Image {
+        width,
+        height,
+        channels: 1,
+        data,
+        ..
+      } = plane
+      else {
+        return None;
+      };
+      if (*width as usize, *height as usize) != (w, h) {
+        return None;
+      }
+      vals.extend(data.iter().copied());
+    }
+    return Some(([planes.len(), h, w], vals, args[1..].to_vec()));
+  }
   let mut vals = Vec::new();
   let mut dims = [planes.len(), 0, 0];
   for (i, plane) in planes.iter().enumerate() {
@@ -5843,6 +5865,31 @@ fn fold_pointwise(
     return Err(InterpreterError::EvaluationError(format!(
       "{name} expects at least 2 arguments"
     )));
+  }
+  if let Some((dims, vals, opts)) = image3d_scalar_volume(&args[0]) {
+    let mut acc = vals;
+    let mut ok = true;
+    for next in &args[1..] {
+      if let Some(c) = crate::functions::math_ast::try_eval_to_f64(next) {
+        for v in &mut acc {
+          *v = op(*v, c);
+        }
+      } else if let Some((d2, v2, _)) = image3d_scalar_volume(next)
+        && d2[1..] == dims[1..]
+      {
+        let plane = dims[1] * dims[2];
+        for (i, v) in acc.iter_mut().enumerate() {
+          let other = if i / plane < d2[0] { v2[i] } else { 0.0 };
+          *v = op(*v, other);
+        }
+      } else {
+        ok = false;
+        break;
+      }
+    }
+    if ok {
+      return Ok(image3d_from_volume(dims, &acc, opts));
+    }
   }
   let mut acc = args[0].clone();
   for next in &args[1..] {
@@ -10790,9 +10837,37 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     return Ok(unevaluated());
   }
-  // Image input is still a TODO — leave unevaluated without a message.
+  // An image or a volume thresholds its values and keeps its kind.
+  if let Some((dims, vals, opts)) = image3d_scalar_volume(&args[0]) {
+    let volume = image3d_from_volume(dims, &vals, Vec::new());
+    let Expr::FunctionCall { args: vargs, .. } = &volume else {
+      return Ok(unevaluated());
+    };
+    let mut targs = args.to_vec();
+    targs[0] = vargs[0].clone();
+    let thresholded = threshold_ast(&targs)?;
+    if !matches!(&thresholded, Expr::List(_)) {
+      return Ok(unevaluated());
+    }
+    let mut out = vec![thresholded];
+    out.extend(opts);
+    return Ok(call("Image3D", out));
+  }
   if matches!(&args[0], Expr::Image { .. }) {
-    return Ok(unevaluated());
+    let data = crate::evaluator::evaluate_function_call_ast(
+      "ImageData",
+      std::slice::from_ref(&args[0]),
+    )?;
+    let mut targs = args.to_vec();
+    targs[0] = data;
+    let thresholded = threshold_ast(&targs)?;
+    if !matches!(&thresholded, Expr::List(_)) {
+      return Ok(unevaluated());
+    }
+    return crate::evaluator::evaluate_function_call_ast(
+      "Image",
+      &[thresholded],
+    );
   }
   let Expr::List(_) = &args[0] else {
     return Ok(unevaluated());

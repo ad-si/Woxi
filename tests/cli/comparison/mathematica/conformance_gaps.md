@@ -5079,6 +5079,21 @@ both alike.
 
 ## Images
 
+### `Image3D` has no volume rendering
+
+Wolfram draws an `Image3D` as a translucent volume in a 3-D box. Woxi
+computes with it (`ImageAdd`, `ImageAdjust`, `Threshold`, `GaussianFilter`,
+`ImageTake`, …) but displays it as its `Image3D[…]` expression, so a
+notebook that shows one (TheLayoutOfTheCenterOfYerevanArmenia) prints the
+voxel array instead of a picture.
+
+### `ImageEffect[img, {"Comics", {t1, t2}}]` and `ListDeconvolve` are unimplemented
+
+Both are undecoded: "Comics" is a two-threshold binarization whose middle
+band is dithered by a position-dependent pattern that also depends on the
+image size; `ListDeconvolve`'s `"DampedLS"` damping does not match a plain
+Tikhonov solve with either cyclic or zero padding.
+
 ### `HistogramTransform` equalizes on the bands, not on a spline
 
 Woxi maps each pixel to the midpoint of the band its value occupies in the
