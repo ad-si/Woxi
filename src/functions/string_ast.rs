@@ -9975,15 +9975,10 @@ pub fn apply_string_template_with(
   }
   match combiner {
     Some(c) => apply_and_evaluate(c, Expr::List(pieces.into())),
-    None => Ok(Expr::String(
-      pieces
-        .iter()
-        .map(|p| match p {
-          Expr::String(s) => s.clone(),
-          other => expr_to_output(other),
-        })
-        .collect(),
-    )),
+    // The default combiner is StringJoin itself: inserted values an
+    // InsertionFunction left as non-strings make it fail (and stay
+    // unevaluated), as in WL.
+    None => crate::evaluator::evaluate_function_call_ast("StringJoin", &pieces),
   }
 }
 

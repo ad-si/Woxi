@@ -294,7 +294,14 @@ mod string_template_options {
         "StringTemplate[\"`a` + `b`\", InsertionFunction -> (#^2 &)][<|\"a\" -> 2, \"b\" -> 3|>]"
       )
       .unwrap(),
-      "4 + 9"
+      "StringJoin[4,  + , 9]"
+    );
+    assert_eq!(
+      interpret(
+        "StringTemplate[\"`a``b`\", InsertionFunction -> ToString][<|\"a\" -> 2, \"b\" -> 3|>]"
+      )
+      .unwrap(),
+      "23"
     );
   }
 
