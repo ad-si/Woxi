@@ -14433,6 +14433,33 @@ mod machine_real_over_exact {
   }
 }
 
+// Terms over a power of a sum order as `Order` does: from the last factor
+// back, so the power decides and then the rest (wolframscript).
+mod plus_order_over_power_of_sum {
+  use super::*;
+
+  #[test]
+  fn power_first_then_numerator() {
+    assert_eq!(
+      interpret(
+        "{z/(1 + c) + a/(2 + c), x/(1 + c) - a/(1 + c), x/(b - a) - a/(b - a), \
+         (x + y)/(1 + c) + a/(1 + c), z/(1 + c)^2 + a/(2 + c)^2, \
+         z Sqrt[1 + c] + a Sqrt[2 + c]}"
+      )
+      .unwrap(),
+      "{a/(2 + c) + z/(1 + c), -(a/(1 + c)) + x/(1 + c), \
+       -(a/(-a + b)) + x/(-a + b), a/(1 + c) + (x + y)/(1 + c), \
+       a/(2 + c)^2 + z/(1 + c)^2, a*Sqrt[2 + c] + Sqrt[1 + c]*z}"
+    );
+    // Rescale's line form is written in that order.
+    assert_eq!(
+      interpret("{Rescale[x, {a, b}], Rescale[x, {a, b}, {c, d}]}").unwrap(),
+      "{-(a/(-a + b)) + x/(-a + b), \
+       -((-(b*c) + a*d)/(-a + b)) + ((-c + d)*x)/(-a + b)}"
+    );
+  }
+}
+
 mod machine_real_ordering_tolerance {
   use super::*;
 

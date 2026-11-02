@@ -3763,6 +3763,22 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
   }
+  // Symbols times a power of a sum free of them (`a/(1 + c)`, `z Sqrt[2 +
+  // c]`) order as `Order` does — from the last factor back, so the power
+  // decides and then the symbols: `-(a/(1 + c)) + x/(1 + c)`, `a/(2 + c) +
+  // z/(1 + c)`.
+  // The same holds for two terms over one and the same power of a sum,
+  // whatever algebraic numerators they have: `a/(1 + c) + (x + y)/(1 + c)`,
+  // `-(a/(-a + b)) + x/(-a + b)`.
+  if (symbols_times_power_of_sum(a) && symbols_times_power_of_sum(b))
+    || same_power_of_sum(a, b)
+  {
+    match crate::functions::list_helpers_ast::sorting::compare_exprs(a, b) {
+      1 => return std::cmp::Ordering::Less,
+      -1 => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+  }
   // Two terms ending in powers of one base with symbolic exponents order by
   // those exponents, whatever leads them: `c^(-1 + n) + c^n`, `b c^n + a
   // c^(1 + n)`. (Rendered as text they would compare `(` against `n`.)
@@ -4826,6 +4842,107 @@ fn wl_summands(e: &Expr) -> Vec<Cow<'_, Expr>> {
 /// number has no factors at all. The factors are re-sorted here rather than
 /// taken as stored, so "the last factor" means the same thing on both sides
 /// of a comparison even where Woxi's own `Times` order strays from Wolfram's.
+/// A product of symbols and one power of a sum (any exponent but 1) that
+/// mentions none of them, with a numeric coefficient at most:
+/// `-(a/(1 + c))`, `z Sqrt[1 + c]`. Not `x/(1 + x)`, `(a + b)/(1 + c)`.
+fn symbols_times_power_of_sum(e: &Expr) -> bool {
+  if !algebraic_only(e) {
+    return false;
+  }
+  let (_, factors) = wl_coeff_and_factors(e);
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  let mut sum_base: Option<Expr> = None;
+  let mut symbols: Vec<&Expr> = Vec::new();
+  for f in &factors {
+    let f: &Expr = f;
+    if matches!(f, Expr::Identifier(_)) {
+      symbols.push(f);
+      continue;
+    }
+    let (base, exp) = wl_base_exp(f);
+    if sum_base.is_some()
+      || !is_sum(base)
+      || matches!(exp.as_ref(), Expr::Integer(1))
+    {
+      return false;
+    }
+    sum_base = Some(base.clone());
+  }
+  let Some(base) = sum_base else {
+    return false;
+  };
+  !symbols.is_empty()
+    && symbols.iter().all(|sym| {
+      !crate::functions::polynomial_ast::solve::expr_contains_expr(&base, sym)
+    })
+    && algebraic_only(&base)
+}
+
+/// Whether `a` and `b` are algebraic products that both carry the same
+/// power of a sum (exponent other than 1) and otherwise differ.
+fn same_power_of_sum(a: &Expr, b: &Expr) -> bool {
+  let power_of_sum = |e: &Expr| -> Option<Expr> {
+    if !algebraic_only(e) {
+      return None;
+    }
+    let (_, factors) = wl_coeff_and_factors(e);
+    let powers: Vec<&Expr> = factors
+      .iter()
+      .map(|f| -> &Expr { f })
+      .filter(|f| {
+        let (base, exp) = wl_base_exp(f);
+        let sum = matches!(base, Expr::FunctionCall { name, args }
+          if name == "Plus" && args.len() >= 2)
+          || matches!(
+            base,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          );
+        sum && !matches!(exp.as_ref(), Expr::Integer(1))
+      })
+      .collect();
+    match powers.as_slice() {
+      [p] if factors.len() >= 2 => Some((*p).clone()),
+      _ => None,
+    }
+  };
+  match (power_of_sum(a), power_of_sum(b)) {
+    (Some(pa), Some(pb)) => {
+      crate::evaluator::pattern_matching::expr_equal(&pa, &pb)
+    }
+    _ => false,
+  }
+}
+
+/// Built only from numbers, symbols and Plus/Times/Power/Rational.
+fn algebraic_only(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    // The imaginary unit counts as a number to Plus (complex terms lead).
+    Expr::Identifier(name) => name != "I",
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power" | "Rational")
+        && args.iter().all(algebraic_only)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      algebraic_only(left) && algebraic_only(right)
+    }
+    Expr::UnaryOp { operand, .. } => algebraic_only(operand),
+    _ => false,
+  }
+}
+
 fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Cow<'_, Expr>>) {
   let (coeff, base) = decompose_term_ref(e);
   let mut c = coeff.to_f64();
