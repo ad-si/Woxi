@@ -13184,6 +13184,87 @@ const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
 /// How many times one Newton step may be halved before it is accepted anyway.
 const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
 
+/// A root of `f` inside the bracket `(a, fa)`, `(b, fb)` (`fa`, `fb` of
+/// opposite signs) by Brent's method, as in Numerical Recipes' `zbrent`:
+/// inverse quadratic interpolation or a secant step when it stays well
+/// inside the bracket, bisection otherwise. Stops once the bracket is
+/// narrower than the accuracy or precision goal (`tolerances`), which
+/// reproduces wolframscript's iterates for `FindRoot[f, {x, x0, x1}]` with a
+/// bracketing start. `None` when `f` cannot be evaluated at an iterate.
+fn brent_root(
+  f: impl Fn(f64) -> Option<f64>,
+  (mut a, mut fa): (f64, f64),
+  (mut b, mut fb): (f64, f64),
+  (accuracy_tol, precision_tol): (f64, f64),
+  max_iter: usize,
+  mut on_step: impl FnMut(f64),
+) -> Option<f64> {
+  let (mut c, mut fc) = (b, fb);
+  let (mut d, mut e) = (0.0_f64, 0.0_f64);
+  for _ in 0..max_iter {
+    if (fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0) {
+      c = a;
+      fc = fa;
+      d = b - a;
+      e = d;
+    }
+    if fc.abs() < fb.abs() {
+      a = b;
+      b = c;
+      c = a;
+      fa = fb;
+      fb = fc;
+      fc = fa;
+    }
+    let tol1 = 2.0 * f64::EPSILON * b.abs();
+    let xm = 0.5 * (c - b);
+    if xm.abs() <= tol1
+      || fb == 0.0
+      || (c - b).abs() <= accuracy_tol.max(b.abs() * precision_tol)
+    {
+      return Some(b);
+    }
+    if e.abs() >= tol1 && fa.abs() > fb.abs() {
+      let s = fb / fa;
+      let (mut p, mut q) = if a == c {
+        (2.0 * xm * s, 1.0 - s)
+      } else {
+        let q = fa / fc;
+        let r = fb / fc;
+        (
+          s * (2.0 * xm * q * (q - r) - (b - a) * (r - 1.0)),
+          (q - 1.0) * (r - 1.0) * (s - 1.0),
+        )
+      };
+      if p > 0.0 {
+        q = -q;
+      }
+      p = p.abs();
+      let min1 = 3.0 * xm * q - (tol1 * q).abs();
+      let min2 = (e * q).abs();
+      if 2.0 * p < min1.min(min2) {
+        e = d;
+        d = p / q;
+      } else {
+        d = xm;
+        e = d;
+      }
+    } else {
+      d = xm;
+      e = d;
+    }
+    a = b;
+    fa = fb;
+    let step = if d.abs() > tol1 { d } else { tol1.copysign(xm) };
+    // The monitor sees the best point so far as each step starts, as in
+    // wolframscript (the same point again while the other end improves).
+    on_step(b);
+    b += step;
+    fb = f(b)?;
+  }
+  Some(b)
+}
+
 /// Parse the `MaxIterations` option out of FindRoot's trailing option
 /// arguments, shared by the single-variable and multivariate forms so the
 /// validation and message stay in one place. `Ok(None)` means the option was
@@ -13636,6 +13717,29 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ) else {
       return complex_secant(&func, &var, x_prev, x_curr, step_monitor);
     };
+    // Two starting values that bracket the root are refined the way
+    // wolframscript does it, by Brent's method: the iterates never leave
+    // the bracket, so an interpolating function sampled on [0, 1] is not
+    // asked for its value at a negative secant iterate.
+    if bounds.is_none() && f0.is_finite() && f1.is_finite() && f0 * f1 < 0.0 {
+      let root = brent_root(
+        |x| {
+          find_root_eval_at(&func, &var, x)
+            .ok()
+            .filter(|v| v.is_finite())
+        },
+        (x_prev, f0),
+        (x_curr, f1),
+        (accuracy_tol, precision_tol),
+        max_iter,
+        |x| fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]),
+      );
+      if let Some(root) = root {
+        return Ok(Expr::List(
+          vec![rule_expr(Expr::Identifier(var), Expr::Real(root))].into(),
+        ));
+      }
+    }
     let mut f_prev = f0;
     let mut f_curr = f1;
 

@@ -13132,7 +13132,7 @@ mod findroot_secant_domain_backtracking {
     let root =
       interpret("x /. FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}]").unwrap();
     let residual = interpret(&format!("N[50*({root})^0.6]")).unwrap();
-    assert_eq!(residual, "4.999999999999999");
+    assert_eq!(residual, "5.");
   }
 
   #[test]
@@ -13142,6 +13142,32 @@ mod findroot_secant_domain_backtracking {
     )
     .unwrap();
     assert_eq!(result, "6786044041/1000000000000");
+  }
+
+  // Two starting values that bracket the root are refined by Brent's
+  // method, as in wolframscript (same iterates), so the search stays inside
+  // the bracket: a secant step from {0.001, 0.15} would ask the
+  // interpolating function for its value at a negative t.
+  #[test]
+  fn bracketing_start_uses_brent_and_stays_inside() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "f = Interpolation[Table[{x, Sqrt[x]}, {x, 0, 1, 0.01}]]; \
+       Abs[(t /. FindRoot[f[t] == 0.07, {t, 0.001, 0.15}]) - \
+       0.006025597385479556] < 10^-15",
+    )
+    .unwrap();
+    assert_eq!(result.result, "True");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(
+      interpret(
+        "InputForm[Reap[FindRoot[x^2 - 2, {x, 0, 3}, StepMonitor :> Sow[x]]]]"
+      )
+      .unwrap(),
+      "InputForm[{{x -> 1.4142135623730951}, {{0., 0.6666666666666667, \
+       1.8333333333333333, 1.288888888888889, 1.3973902728351126, \
+       1.414407073393098, 1.4142124045756022, 1.414213562293888}}}]"
+    );
   }
 
   // A coefficient small enough that the unguarded secant path never left
