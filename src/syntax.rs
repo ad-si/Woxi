@@ -14012,23 +14012,10 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       c if c == BOX_OPEN => escaped.push_str("\\("),
       c if c == BOX_SEP => escaped.push_str("\\*"),
       c if c == BOX_CLOSE => escaped.push_str("\\)"),
-      '\\' if i + 1 < chars.len() => match chars[i + 1] {
-        // \[Name] named character sequences — preserve as-is
-        '[' => {
-          escaped.push_str("\\[");
-          i += 2;
-          continue;
-        }
-        // Any other backslash (including a run of backslashes) — escape each
-        // one individually, so `\\` becomes `\\\\` like wolframscript.
-        _ => {
-          escaped.push_str("\\\\");
-        }
-      },
-      '\\' => {
-        // Trailing backslash
-        escaped.push_str("\\\\");
-      }
+      // Every backslash is escaped, `\[Name]` text included: the string
+      // holding the six characters `\[Pi]` is `"\\[Pi]"`, as in
+      // wolframscript (a named character itself is stored as its code point).
+      '\\' => escaped.push_str("\\\\"),
       '"' => escaped.push_str("\\\""),
       '\n' => escaped.push_str("\\n"),
       '\t' => escaped.push_str("\\t"),

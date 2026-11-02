@@ -15659,6 +15659,19 @@ mod to_string_full_form_strings {
       r#"List["\:4e2d", "\|01f600", "\[EAcute]", "\[Pi]", \[Alpha]]"#
     );
   }
+
+  // InputForm escapes every backslash in a string, `\[Name]` text too.
+  #[test]
+  fn input_form_escapes_a_backslash_before_a_name() {
+    assert_eq!(
+      interpret(r#"ToString["a\\[Pi]", InputForm]"#).unwrap(),
+      r#""a\\[Pi]""#
+    );
+    assert_eq!(
+      interpret(r#"StringLength[ToString[FullForm["\[Pi]"]]]"#).unwrap(),
+      "7"
+    );
+  }
 }
 
 mod form_wrappers_take_extra_arguments_silently {
