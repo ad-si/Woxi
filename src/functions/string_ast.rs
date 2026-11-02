@@ -16432,11 +16432,30 @@ pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// URLQueryDecode[string] - parse a URL query string into a list of rules.
+/// `OptionValue::nodef` for each option `known` rejects: functions that
+/// read their options through `OptionValue` report an unknown one this way
+/// and carry on without it.
+fn report_unknown_options(
+  head: &str,
+  opts: &[(String, Expr)],
+  known: impl Fn(&str) -> bool,
+) {
+  for (name, _) in opts {
+    if !known(name) {
+      crate::emit_message(&format!(
+        "OptionValue::nodef: Unknown option {name} for {head}."
+      ));
+    }
+  }
+}
+
 pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, mut opts) =
     crate::evaluator::dispatch::split_trailing_options(args);
   let (sort_queries, remove_empty) = take_query_options(&mut opts);
-  let ([arg], true) = (positional, opts.is_empty()) else {
+  // Any other option is reported and ignored.
+  report_unknown_options("URLQueryDecode", &opts, |_| false);
+  let [arg] = positional else {
     return Ok(unevaluated("URLQueryDecode", args));
   };
   let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
@@ -16979,26 +16998,28 @@ fn quantity_to_text(args: &[Expr], abbreviated: bool) -> Option<String> {
 pub fn text_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, opts) =
     crate::evaluator::dispatch::split_trailing_options(args);
+  // An option TextString does not take is reported and ignored.
+  let known = |name: &str| {
+    matches!(
+      name,
+      "AssociationFormat"
+        | "BooleanStrings"
+        | "DateFormat"
+        | "ElidedForms"
+        | "ListFormat"
+        | "MissingString"
+        | "TimeFormat"
+        | "TimeZone"
+    )
+  };
+  let opts: Vec<(String, Expr)> = if let [_] = positional {
+    report_unknown_options("TextString", &opts, known);
+    opts.into_iter().filter(|(name, _)| known(name)).collect()
+  } else {
+    opts
+  };
   let text_opts = match (positional, opts.is_empty()) {
-    (_, true) if args.len() == 1 => TextStringOptions::default(),
-    // An option TextString does not take leaves the call unevaluated.
-    ([_], false)
-      if opts.iter().any(|(name, _)| {
-        !matches!(
-          name.as_str(),
-          "AssociationFormat"
-            | "BooleanStrings"
-            | "DateFormat"
-            | "ElidedForms"
-            | "ListFormat"
-            | "MissingString"
-            | "TimeFormat"
-            | "TimeZone"
-        )
-      }) =>
-    {
-      return Ok(unevaluated("TextString", args));
-    }
+    ([_], true) => TextStringOptions::default(),
     ([_], false) => match TextStringOptions::parse(&opts) {
       Some(o) => o,
       None => return to_string_ast(args),

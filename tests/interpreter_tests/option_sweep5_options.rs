@@ -36,10 +36,10 @@ mod url_query_options {
   }
 
   #[test]
-  fn url_query_decode_rejects_unknown_options() {
+  fn url_query_decode_ignores_unknown_options() {
     assert_eq!(
       interpret(r#"URLQueryDecode["a=1", Foo -> 2]"#).unwrap(),
-      "URLQueryDecode[a=1, Foo -> 2]"
+      "{a -> 1}"
     );
   }
 
@@ -50,7 +50,7 @@ mod url_query_options {
         r#"URLBuild["https://example.com?x=2", {"c" -> 4, "z" -> 1, "a" -> 2}]"#
       )
       .unwrap(),
-      "https://example.com/?x=2&c=4&z=1&a=2"
+      "https://example.com?x=2&c=4&z=1&a=2"
     );
     assert_eq!(
       interpret(
@@ -75,7 +75,7 @@ mod url_query_options {
         r#"URLBuild["https://example.com?x=2", {"c" -> 4, "z" -> 1, "a" -> 2}, "SortQueries" -> True]"#
       )
       .unwrap(),
-      "https://example.com/?a=2&c=4&x=2&z=1"
+      "https://example.com?a=2&c=4&x=2&z=1"
     );
   }
 
@@ -86,23 +86,23 @@ mod url_query_options {
         r#"URLBuild["https://example.com?x=2", {"y" -> None, "z" -> 3}, "RemoveEmptyQueries" -> True]"#
       )
       .unwrap(),
-      "https://example.com/?x=2&z=3"
+      "https://example.com?x=2&z=3"
     );
     assert_eq!(
       interpret(
         r#"URLBuild["https://example.com?x=2", {"y" -> None, "z" -> 3}]"#
       )
       .unwrap(),
-      "https://example.com/?x=2&y&z=3"
+      "https://example.com?x=2&y&z=3"
     );
   }
 
   #[test]
-  fn url_build_adds_root_path_before_query() {
+  fn url_build_keeps_an_empty_path_before_query() {
     assert_eq!(
       interpret(r#"URLBuild["https://example.com", <|"n" -> {1, 2, 3}|>]"#)
         .unwrap(),
-      "https://example.com/?n=1&n=2&n=3"
+      "https://example.com?n=1&n=2&n=3"
     );
     assert_eq!(
       interpret(
@@ -116,7 +116,7 @@ mod url_query_options {
         r#"URLBuild["https://example.com", {"value" -> 1, "value" -> 2}]"#
       )
       .unwrap(),
-      "https://example.com/?value=1&value=2"
+      "https://example.com?value=1&value=2"
     );
   }
 
@@ -397,11 +397,8 @@ mod text_string_formats {
   }
 
   #[test]
-  fn unknown_option_stays_unevaluated() {
-    assert_eq!(
-      interpret("TextString[{1, 2}, Foo -> 1]").unwrap(),
-      "TextString[{1, 2}, Foo -> 1]"
-    );
+  fn unknown_option_is_ignored() {
+    assert_eq!(interpret("TextString[{1, 2}, Foo -> 1]").unwrap(), "{1, 2}");
   }
 }
 
@@ -522,10 +519,10 @@ mod find_options {
   }
 
   #[test]
-  fn unknown_option_stays_unevaluated() {
+  fn unknown_option_fails() {
     assert_eq!(
       interpret(r#"FindList[StringToStream["abc"], "a", Foo -> 1]"#).unwrap(),
-      "FindList[InputStream[String, 3], a, Foo -> 1]"
+      "$Failed"
     );
   }
 }

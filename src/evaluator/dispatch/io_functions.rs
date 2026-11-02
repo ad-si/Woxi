@@ -2513,9 +2513,26 @@ pub fn dispatch_io_functions(
           }
         }
       }
-      let Some(search) =
-        RecordSearch::parse(&super::split_trailing_options(&args[2..]).1)
-      else {
+      let options = super::split_trailing_options(&args[2..]).1;
+      // An option FindList does not know is an error: FindList::optx and
+      // $Failed, as in wolframscript.
+      if let Some((unknown, _)) = options.iter().find(|(name, _)| {
+        !matches!(
+          name.as_str(),
+          "AnchoredSearch"
+            | "WordSearch"
+            | "IgnoreCase"
+            | "RecordSeparators"
+            | "WordSeparators"
+        )
+      }) {
+        crate::emit_message(&format!(
+          "FindList::optx: Unknown option {unknown} in {}.",
+          call_display()
+        ));
+        return failed();
+      }
+      let Some(search) = RecordSearch::parse(&options) else {
         return Some(Ok(unevaluated("FindList", args)));
       };
       let terms: Vec<String> = match &args[1] {
@@ -5030,13 +5047,9 @@ fn url_with_query(
   all.extend(pairs);
   sa::arrange_query_pairs(&mut all, sort_queries, remove_empty);
   let mut out = base.to_string();
+  // An empty path stays empty: `URLBuild["https://x.com", {"q" -> 1}]` is
+  // "https://x.com?q=1", not "https://x.com/?q=1".
   if !all.is_empty() {
-    let has_empty_path = base
-      .split_once("://")
-      .is_some_and(|(_, rest)| !rest.is_empty() && !rest.contains('/'));
-    if has_empty_path {
-      out.push('/');
-    }
     out.push('?');
     out.push_str(&sa::encode_query_pairs(&all, charset));
   }
