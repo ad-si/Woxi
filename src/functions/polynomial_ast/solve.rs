@@ -21644,6 +21644,14 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
       match &n_result {
         Expr::Real(r) => Ok(*r),
         Expr::Integer(n) => Ok(*n as f64),
+        // A machine complex whose imaginary part is exactly zero (from
+        // `Sqrt[-x] Sqrt[-1/x]`) counts as real, as in Wolfram.
+        other
+          if let Some((re, 0.0)) =
+            crate::functions::math_ast::try_extract_complex_float(other) =>
+        {
+          Ok(re)
+        }
         _ => Err(InterpreterError::EvaluationError(
           "Cannot evaluate expression numerically".into(),
         )),

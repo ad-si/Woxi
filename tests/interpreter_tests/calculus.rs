@@ -7055,6 +7055,22 @@ mod mixed_partial_derivatives {
 mod find_minimum {
   use super::*;
 
+  // `Sqrt[t - Pi] Sqrt[1/(t - Pi)]` is a machine complex with a zero
+  // imaginary part below Pi; Wolfram treats such a value as real
+  // (OffsetSliderCrankMechanism).
+  #[test]
+  fn zero_imaginary_part_counts_as_real() {
+    assert_eq!(
+      interpret(
+        "f[t_] := Sqrt[2.9375 + 0.5 Cos[t] + 2. Sin[t]^2 + Sqrt[t - Pi] \
+         Sqrt[1/(t - Pi)] Sqrt[2.] Sqrt[-(-6.875 - Cos[t] + Cos[2 t]) Sin[t]^2]]; \
+         {f[1.], Round[10^8 FindMinValue[f[t], {t, 1.}]]}"
+      )
+      .unwrap(),
+      "{1.1373479991336972 + 0.*I, 96824584}"
+    );
+  }
+
   // Many variables with a coupling constraint: the starting points and the
   // sampling grid stay bounded instead of growing exponentially
   // (MethodOfSupportVectorRegression reached 14 GB).
