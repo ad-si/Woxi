@@ -9824,6 +9824,32 @@ fn absorb_coefficient_into_powers(
     let mut changed = false;
     for factor in symbolic_args {
       let (base, exp) = extract_base_exponent(factor);
+      // A positive rational base p/q whose primes the coefficient shares
+      // splits into p^e q^-e, whose integer powers then absorb it:
+      // 3*(2/3)^x → 2^x*3^(1 - x).
+      if let Expr::FunctionCall { name, args: rargs } = &base
+        && name == "Rational"
+        && rargs.len() == 2
+        && !is_real_number_exponent(&exp)
+        && let (Some(p), Some(q)) = (
+          crate::functions::math_ast::expr_to_bigint(&rargs[0]),
+          crate::functions::math_ast::expr_to_bigint(&rargs[1]),
+        )
+        && p > BigInt::from(1)
+        && q > BigInt::from(1)
+      {
+        let pq = (&p * &q).magnitude().clone();
+        if !is_one_big(&gcd_big(&pq, &num)) || !is_one_big(&gcd_big(&pq, &den))
+        {
+          rebuilt.push(power_two(&rargs[0], &exp)?);
+          rebuilt.push(power_two(
+            &rargs[1],
+            &times_ast(&[Expr::Integer(-1), exp])?,
+          )?);
+          changed = true;
+          continue;
+        }
+      }
       let Some(b) = (match &base {
         Expr::Integer(_) | Expr::BigInteger(_) => {
           crate::functions::math_ast::expr_to_bigint(&base)

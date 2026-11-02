@@ -907,6 +907,19 @@ mod group_orbits_without_domain {
   }
 }
 
+mod times_absorbs_into_rational_bases {
+  use super::*;
+
+  #[test]
+  fn shared_primes_split_the_base() {
+    assert_eq!(interpret("3*(2/3)^n").unwrap(), "2^n*3^(1 - n)");
+    assert_eq!(interpret("2*(2/3)^n").unwrap(), "2^(1 + n)/3^n");
+    assert_eq!(interpret("(3/2)^n*2").unwrap(), "2^(1 - n)*3^n");
+    assert_eq!(interpret("(4/9)^n*3").unwrap(), "3^(1 - 2*n)*4^n");
+    assert_eq!(interpret("5*(2/3)^n").unwrap(), "5*(2/3)^n");
+  }
+}
+
 mod call_patterns_match_operator_nodes {
   use super::*;
 
