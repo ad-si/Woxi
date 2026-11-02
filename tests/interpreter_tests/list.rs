@@ -4857,6 +4857,18 @@ mod random_choice {
 mod random_sample {
   use super::*;
 
+  // `UpTo[n]` samples as many elements as there are, up to n.
+  #[test]
+  fn up_to_count() {
+    assert_eq!(
+      interpret(
+        "{Sort[RandomSample[{a, b, c}, UpTo[30]]], Length[RandomSample[Range[50], UpTo[30]]], RandomSample[{}, UpTo[3]]}"
+      )
+      .unwrap(),
+      "{{a, b, c}, 30, {}}"
+    );
+  }
+
   #[test]
   fn association_is_shuffled_with_pairs_intact() {
     assert_eq!(

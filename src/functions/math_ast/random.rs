@@ -1451,6 +1451,13 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     let n = match &args[1] {
       Expr::Integer(n) if *n >= 0 => *n as usize,
+      // `UpTo[n]` takes as many as there are, up to n.
+      upto
+        if let Some(k) =
+          crate::functions::list_helpers_ast::upto_count(upto) =>
+      {
+        (k.min(items.len() as i128)) as usize
+      }
       _ => {
         // Match wolframscript: emit RandomSample::intnm and return the
         // call unevaluated rather than aborting. Covers the dim-list
