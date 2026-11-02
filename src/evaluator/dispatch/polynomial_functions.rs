@@ -519,6 +519,40 @@ pub fn dispatch_polynomial_functions(
     "Cyclotomic" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::cyclotomic_ast(args));
     }
+    // `Backsubstitution -> True` substitutes each solved variable into the
+    // equations of the ones after it; `False` is the default form.
+    "Reduce"
+      if args.len() >= 2
+        && args[1..].iter().any(|a| {
+          matches!(a, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Backsubstitution"))
+        }) =>
+    {
+      let mut backsubstitute = false;
+      let rest: Vec<Expr> = args
+        .iter()
+        .filter(|a| match a {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Backsubstitution") =>
+          {
+            backsubstitute =
+              matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True");
+            false
+          }
+          _ => true,
+        })
+        .cloned()
+        .collect();
+      let reduced = crate::evaluator::evaluate_function_call_ast("Reduce", &rest);
+      return Some(match reduced {
+        Ok(r) if backsubstitute => {
+          crate::functions::polynomial_ast::backsubstitute(&r)
+        }
+        other => other,
+      });
+    }
     "Reduce" if args.len() == 3 => {
       // Reduce[expr, vars, Modulus -> n]: brute-force enumerate
       // solutions in Z/nZ. Falls through to the generic reduce_ast

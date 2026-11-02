@@ -4044,13 +4044,10 @@ pub(crate) fn thread_list_equations(e: &Expr) -> Option<Expr> {
       operators,
     } if operators.len() == 1
       && matches!(operators[0], ComparisonOp::Equal)
-      && let (Expr::List(l), Expr::List(r)) = (&operands[0], &operands[1])
-      && l.len() == r.len()
-      && !l.is_empty() =>
+      && let Some(pairs) = list_equation_pairs(&operands[0], &operands[1]) =>
     {
-      let parts: Vec<Expr> = l
-        .iter()
-        .zip(r.iter())
+      let parts: Vec<Expr> = pairs
+        .into_iter()
         .map(|(a, b)| {
           let eq = Expr::Comparison {
             operands: vec![a.clone(), b.clone()],
@@ -4099,6 +4096,33 @@ pub(crate) fn thread_list_equations(e: &Expr) -> Option<Expr> {
           r.unwrap_or_else(|| (**right).clone()),
         ],
       ))
+    }
+    _ => None,
+  }
+}
+
+/// The component pairs of an equation between two lists of one length, or
+/// between a list and a scalar (`{a, b} == 0` is `a == 0 && b == 0`).
+fn list_equation_pairs(lhs: &Expr, rhs: &Expr) -> Option<Vec<(Expr, Expr)>> {
+  match (lhs, rhs) {
+    (Expr::List(l), Expr::List(r)) if l.len() == r.len() && !l.is_empty() => {
+      Some(l.iter().cloned().zip(r.iter().cloned()).collect())
+    }
+    (Expr::List(l), scalar) | (scalar, Expr::List(l))
+      if !l.is_empty() && !matches!(scalar, Expr::List(_)) =>
+    {
+      let left_is_list = matches!(lhs, Expr::List(_));
+      Some(
+        l.iter()
+          .map(|item| {
+            if left_is_list {
+              (item.clone(), scalar.clone())
+            } else {
+              (scalar.clone(), item.clone())
+            }
+          })
+          .collect(),
+      )
     }
     _ => None,
   }

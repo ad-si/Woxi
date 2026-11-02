@@ -22,6 +22,28 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Reduce solves equations along the way, but the caveats Solve reports
+  // about its own answers (generic parameters, unsolved variables) are not
+  // Reduce's: wolframscript's Reduce never issues them.
+  crate::push_quiet_filter(
+    Some(
+      [
+        "Solve::nongen",
+        "Solve::svars",
+        "Solve::ratnz",
+        "Solve::ifun",
+      ]
+      .map(String::from)
+      .to_vec(),
+    ),
+    vec![],
+  );
+  let result = reduce_ast_unquieted(args);
+  crate::pop_quiet_filter();
+  result
+}
+
+fn reduce_ast_unquieted(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Element[Piecewise[…], Reals]` holds where the branch that applies has
   // a real value: a disjunction over the branches.
   if let Some(first) = args.first()
@@ -29,6 +51,32 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let mut rewritten = args.to_vec();
     rewritten[0] = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+    return reduce_ast(&rewritten);
+  }
+  // An equation between lists (`{a, b} == 0`, `{x, y} == {1, 2}`) is the
+  // conjunction of its components.
+  let threaded = match args.first() {
+    Some(Expr::List(items)) => {
+      let rewritten: Vec<Option<Expr>> = items
+        .iter()
+        .map(super::solve::thread_list_equations)
+        .collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        Expr::List(
+          items
+            .iter()
+            .zip(rewritten)
+            .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    Some(e) => super::solve::thread_list_equations(e),
+    None => None,
+  };
+  if let Some(threaded) = threaded {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = threaded;
     return reduce_ast(&rewritten);
   }
   // Generalized variables (`Reduce[m[1] == 1, {m[1]}]`).
@@ -4659,5 +4707,45 @@ fn expand_piecewise_reals(expr: &Expr) -> Option<Expr> {
       ))
     }
     _ => None,
+  }
+}
+
+/// `Reduce`'s `Backsubstitution -> True` form of a solved result: within
+/// each conjunction, every `var == value` is substituted into the
+/// conjuncts after it, so each equation gives its variable explicitly.
+pub fn backsubstitute(result: &Expr) -> Result<Expr, InterpreterError> {
+  match result {
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      let branches: Result<Vec<Expr>, InterpreterError> =
+        args.iter().map(backsubstitute).collect();
+      crate::evaluator::evaluate_expr_to_expr(&call("Or", branches?))
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      let mut rules: Vec<Expr> = Vec::new();
+      let mut out: Vec<Expr> = Vec::with_capacity(args.len());
+      for conjunct in args {
+        let substituted = if rules.is_empty() {
+          conjunct.clone()
+        } else {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+            expr: Box::new(conjunct.clone()),
+            rules: Box::new(Expr::List(rules.clone().into())),
+          })?
+        };
+        if let Expr::Comparison {
+          operands,
+          operators,
+        } = &substituted
+          && operators.len() == 1
+          && matches!(operators[0], ComparisonOp::Equal)
+          && matches!(&operands[0], Expr::Identifier(_))
+        {
+          rules.push(rule_expr(operands[0].clone(), operands[1].clone()));
+        }
+        out.push(substituted);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&call("And", out))
+    }
+    other => Ok(other.clone()),
   }
 }

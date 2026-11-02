@@ -1173,9 +1173,15 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   if past_the_limit {
     return (false, None);
   }
-  CAPTURED_MESSAGES.with(|buffer| {
-    buffer.borrow_mut().push(msg.to_string());
-  });
+  // A message an enclosing filter silences is not shown, so it is not
+  // captured for display either (internal solver probes push filters
+  // without a `Quiet` to clean up after them).
+  let filtered = message_name(msg).is_some_and(|n| quiet_filters_silence(&n));
+  if !filtered {
+    CAPTURED_MESSAGES.with(|buffer| {
+      buffer.borrow_mut().push(msg.to_string());
+    });
+  }
   // A quieted message still joins `$MessageList` — wolframscript's `Quiet`
   // saves and restores the list around the block, so the entry is visible to
   // code *inside* the block and gone once it returns (see `quiet_ast`).
@@ -1183,13 +1189,14 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
     MESSAGE_LIST.with(|m| m.borrow_mut().push(name));
   }
   if let Some(stop) = &stop_line {
-    CAPTURED_MESSAGES.with(|buffer| {
-      buffer.borrow_mut().push(stop.clone());
-    });
+    if !filtered {
+      CAPTURED_MESSAGES.with(|buffer| {
+        buffer.borrow_mut().push(stop.clone());
+      });
+    }
     MESSAGE_LIST.with(|m| m.borrow_mut().push("General::stop".to_string()));
   }
-  if is_quiet() || message_name(msg).is_some_and(|n| quiet_filters_silence(&n))
-  {
+  if is_quiet() || filtered {
     return (false, None);
   }
   let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());

@@ -7385,6 +7385,45 @@ mod reduce_piecewise_in_reals {
   }
 }
 
+// `Backsubstitution -> True` and equations between lists (`{a, b} == 0`)
+// used to leave Reduce unevaluated.
+mod reduce_backsubstitution_and_list_equations {
+  use super::*;
+
+  #[test]
+  fn backsubstitution_option() {
+    assert_eq!(
+      interpret(
+        "Reduce[{{x - 1, y - 2} == 0, 0 <= x <= 3}, {x, y}, Reals, \
+         Backsubstitution -> True]"
+      )
+      .unwrap(),
+      "x == 1 && y == 2"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[x^2 == a && y == x + 1, {x, y}, Backsubstitution -> True]"
+      )
+      .unwrap(),
+      "(x == -Sqrt[a] && y == 1 - Sqrt[a]) || (x == Sqrt[a] && y == 1 + Sqrt[a])"
+    );
+  }
+
+  // Reduce does not pass on Solve's caveats about its intermediate steps.
+  #[test]
+  fn no_solve_messages() {
+    clear_state();
+    interpret("Reduce[x^2 == a && y == x + 1, {x, y}];").unwrap();
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.starts_with("Solve::")),
+      "{:?}",
+      woxi::get_captured_messages_raw()
+    );
+  }
+}
+
 mod reduce_generalized_variables {
   use super::*;
 
