@@ -5386,10 +5386,11 @@ mod hypothesis_testing_legacy_package {
   }
 
   #[test]
+  // wolframscript defines MeanCI only once the package is loaded.
   fn mean_ci_default_level_is_ninety_five_percent() {
     clear_state();
     assert_eq!(
-      interpret("Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}], 10^-6]")
+      interpret("Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}], 10^-6]")
         .unwrap(),
       "{249241/1000000, 5000759/1000000}"
     );
@@ -5400,7 +5401,7 @@ mod hypothesis_testing_legacy_package {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+        "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          ConfidenceLevel -> 0.9], 10^-6]"
       )
       .unwrap(),
@@ -5413,7 +5414,7 @@ mod hypothesis_testing_legacy_package {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+        "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          KnownVariance -> 2], 10^-6]"
       )
       .unwrap(),
@@ -5425,7 +5426,7 @@ mod hypothesis_testing_legacy_package {
   fn mean_ci_matrix_gives_one_interval_per_column() {
     clear_state();
     assert_eq!(
-      interpret("Length[HypothesisTesting`MeanCI[{{1, 2}, {3, 5}, {4, 9}}]]")
+      interpret("Needs[\"HypothesisTesting`\"]; Length[HypothesisTesting`MeanCI[{{1, 2}, {3, 5}, {4, 9}}]]")
         .unwrap(),
       "2"
     );
