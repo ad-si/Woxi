@@ -9752,12 +9752,20 @@ impl ImplicitSystem {
     local.extend_from_slice(&root);
     let mut ok = true;
     for block in &self.blocks {
-      let inputs: Vec<f64> = match &block.inputs {
-        Some(idx) => idx.iter().map(|&i| local[i]).collect(),
-        None => key.to_vec(),
+      // A remembered solve at the same inputs, compared in place.
+      let same_inputs = |stored: &[f64]| match &block.inputs {
+        Some(idx) => {
+          idx.len() == stored.len()
+            && idx.iter().zip(stored).all(|(&i, &v)| local[i] == v)
+        }
+        None => stored == key,
       };
-      if let Some((_, last_root)) =
-        block.last.borrow().iter().rev().find(|(i, _)| *i == inputs)
+      if let Some((_, last_root)) = block
+        .last
+        .borrow()
+        .iter()
+        .rev()
+        .find(|(i, _)| same_inputs(i))
       {
         for (&u, &v) in block.unknowns.iter().zip(last_root) {
           root[u] = v;
@@ -9765,6 +9773,10 @@ impl ImplicitSystem {
         }
         continue;
       }
+      let inputs: Vec<f64> = match &block.inputs {
+        Some(idx) => idx.iter().map(|&i| local[i]).collect(),
+        None => key.to_vec(),
+      };
       let constraints: Vec<&NExpr> = block
         .constraints
         .iter()
@@ -9775,20 +9787,25 @@ impl ImplicitSystem {
       let start: Vec<f64> = block.unknowns.iter().map(|&u| root[u]).collect();
       let init: Vec<f64> =
         block.unknowns.iter().map(|&u| self.init[u]).collect();
-      // From the last root, else the initial values; an unknown given no
-      // initial value starts at 1, where a constraint like `(1 - u)^1.5`
-      // has no derivative, so a few more starts follow.
-      let starts = [
-        start.clone(),
-        init.clone(),
-        vec![0.0; init.len()],
-        init.iter().map(|v| v / 2.0).collect(),
-        init.iter().map(|v| -v).collect(),
-        init.iter().map(|v| 2.0 * v).collect(),
-      ];
-      let Some(z) = starts
-        .iter()
-        .find_map(|z0| newton_system(&constraints, &mut local, &slots, z0))
+      // From the last root, else the initial values. Before a block has
+      // been solved at all, an unknown given no initial value starts at 1,
+      // where a constraint like `(1 - u)^1.5` has no derivative, so a few
+      // more starts follow; later a failure means no root near the
+      // solution (a stage point the stiff method probes), which more
+      // starts would only spend Newton runs on.
+      let scaled =
+        |f: f64| -> Vec<f64> { init.iter().map(|v| f * v).collect() };
+      let factors: &[f64] = if block.last.borrow().is_empty() {
+        &[1.0, 0.0, 0.5, -1.0, 2.0]
+      } else {
+        &[1.0]
+      };
+      let Some(z) = newton_system(&constraints, &mut local, &slots, &start)
+        .or_else(|| {
+          factors.iter().find_map(|&f| {
+            newton_system(&constraints, &mut local, &slots, &scaled(f))
+          })
+        })
       else {
         ok = false;
         break;
@@ -9839,7 +9856,22 @@ fn newton_system(
     place(z, vars);
     constraints.iter().map(|c| c.eval(vars)).collect()
   };
-  let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
+  // The residual norm the line search lowers. Where the plain norm stalls,
+  // each constraint is weighted by the size of its row of the Jacobian: a
+  // pressure balance of order 1e5 next to a mole-fraction sum of order 1
+  // would otherwise decide every step alone, and the damped iteration
+  // crawl.
+  let weights: std::cell::RefCell<Option<Vec<f64>>> =
+    std::cell::RefCell::new(None);
+  let norm = |f: &[f64]| match weights.borrow().as_ref() {
+    Some(w) => f
+      .iter()
+      .zip(w)
+      .map(|(v, w)| (v * w) * (v * w))
+      .sum::<f64>()
+      .sqrt(),
+    None => f.iter().map(|v| v * v).sum::<f64>().sqrt(),
+  };
   // Which constraints read each unknown (all of them when that cannot be
   // told), and the unknowns grouped so that no two in a group share a
   // constraint (Curtis, Powell & Reid): a column's stage temperatures,
@@ -9889,12 +9921,11 @@ fn newton_system(
   };
   let mut f = residual(&z, vars);
   let mut last_step = f64::INFINITY;
-  for _ in 0..100 {
+  for iteration in 0..100 {
     if f.iter().any(|v| !v.is_finite()) {
       return None;
     }
-    let fnorm = norm(&f);
-    if fnorm == 0.0 {
+    if f.iter().all(|v| *v == 0.0) {
       return Some(z);
     }
     // Jacobian by forward differences, a group of unknowns no constraint
@@ -9914,6 +9945,11 @@ fn newton_system(
         }
       }
     }
+    // Weighted once the plain norm has not converged in a few iterations.
+    if weights.borrow().is_none() && iteration >= 6 {
+      *weights.borrow_mut() = Some(newton_row_weights(&jac, &z));
+    }
+    let fnorm = norm(&f);
     let step = solve_dense(jac.clone(), f.clone())?;
     // A full Newton step that no longer moves `z` means it is already the
     // root to working precision — a guess carried over from the previous
@@ -9954,6 +9990,11 @@ fn newton_system(
       lambda *= 0.5;
     }
     if !accepted {
+      // The plain norm can refuse a good step that the weighted one takes.
+      if weights.borrow().is_none() {
+        *weights.borrow_mut() = Some(newton_row_weights(&jac, &z));
+        continue;
+      }
       // At the noise floor no step lowers the residual any further.
       return (last_step.min(full_step) <= 1e-8).then_some(z);
     }
@@ -9981,6 +10022,25 @@ fn newton_system(
     }
   }
   Some(z)
+}
+
+/// The reciprocal size of each row of a Newton Jacobian, measured against
+/// the unknowns' own scales.
+fn newton_row_weights(jac: &[Vec<f64>], z: &[f64]) -> Vec<f64> {
+  jac
+    .iter()
+    .map(|row| {
+      let m = row
+        .iter()
+        .zip(z)
+        .fold(0.0_f64, |a, (v, zi)| a.max((v * zi.abs().max(1e-3)).abs()));
+      if m > 0.0 && m.is_finite() {
+        1.0 / m
+      } else {
+        1.0
+      }
+    })
+    .collect()
 }
 
 /// Solution of the dense linear system `a x = b` by Gaussian elimination
