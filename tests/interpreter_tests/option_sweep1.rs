@@ -388,7 +388,22 @@ mod overflow_regressions {
   fn random_complex_beyond_machine_range() {
     assert_eq!(
       interpret("Head[RandomComplex[10^1000 + 10^1000 I]]").unwrap(),
-      "RandomComplex"
+      "Complex"
+    );
+    // Past the machine range the draw is a machine-precision bignum.
+    assert_eq!(
+      interpret(
+        "z = RandomComplex[10^1000 + 10^1000 I]; \
+         {Round[Precision[z], 0.001], 0 <= Re[z] <= 10^1000, \
+         0 <= Im[z] <= 10^1000}"
+      )
+      .unwrap(),
+      "{15.955, True, True}"
+    );
+    assert_eq!(
+      interpret("x = RandomReal[{0, 10^400}]; {Precision[x], x < 10^400}")
+        .unwrap(),
+      "{15.954589770191005, True}"
     );
   }
 

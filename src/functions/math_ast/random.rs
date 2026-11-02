@@ -289,8 +289,13 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so the option is read and dropped.
   let (args, working_precision) = split_random_options(args);
   let args = args.as_slice();
-  if let Some(p) = working_precision.as_ref().and_then(extended_precision) {
-    // A uniform draw at a precision beyond machine numbers.
+  if let Some(p) = working_precision
+    .as_ref()
+    .and_then(extended_precision)
+    .or_else(|| beyond_machine_range(args.first()).then_some(MACHINE_DIGITS))
+  {
+    // A uniform draw at a precision beyond machine numbers, or of
+    // machine-precision numbers too large for a machine real.
     if let Some(bounds) = match args.first() {
       None => Some((Expr::Integer(0), Expr::Integer(1))),
       Some(Expr::FunctionCall { name, .. })
@@ -428,6 +433,27 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// A `WorkingPrecision` beyond machine precision, in decimal digits.
 /// `None` for MachinePrecision or anything at or below it.
+/// `$MachinePrecision`, the digits of a machine number.
+const MACHINE_DIGITS: f64 = 15.954589770191005;
+
+/// Whether a range (`max`, `{min, max}`, real or complex) has a bound past
+/// the largest machine real: wolframscript then draws arbitrary-precision
+/// numbers of machine precision (`RandomComplex[10^1000 + 10^1000 I]`).
+fn beyond_machine_range(spec: Option<&Expr>) -> bool {
+  let huge = |e: &Expr| {
+    crate::functions::list_helpers_ast::expr_to_complex_parts(e)
+      .is_some_and(|(re, im)| !re.is_finite() || !im.is_finite())
+  };
+  match spec {
+    Some(Expr::List(items)) if items.len() == 2 => items.iter().any(huge),
+    Some(Expr::FunctionCall { name, .. }) if name.ends_with("Distribution") => {
+      false
+    }
+    Some(e) => huge(e),
+    None => false,
+  }
+}
+
 fn extended_precision(wp: &Expr) -> Option<f64> {
   let p = try_eval_to_f64(wp)?;
   (p.is_finite() && p > 15.954589770191003).then_some(p)
@@ -554,7 +580,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Options (WorkingPrecision) follow the range and dimensions.
   let (args, working_precision) = split_random_options(args);
   let args = args.as_slice();
-  if let Some(p) = working_precision.as_ref().and_then(extended_precision)
+  if let Some(p) = working_precision
+    .as_ref()
+    .and_then(extended_precision)
+    .or_else(|| beyond_machine_range(args.first()).then_some(MACHINE_DIGITS))
     && let Some((lo, hi)) = match args.first() {
       None => Some((
         Expr::Integer(0),
