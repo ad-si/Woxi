@@ -11602,7 +11602,11 @@ fn try_nsolve_bracketed(args: &[Expr]) -> Option<Expr> {
   {
     roots.push(*x);
   }
-  if roots.is_empty() {
+  // No root where the function is a real number nearly everywhere: there
+  // is none (an unevaluable function says nothing).
+  if roots.is_empty()
+    && points.iter().filter(|(_, f)| f.is_some()).count() * 2 <= points.len()
+  {
     return None;
   }
   Some(Expr::List(

@@ -25019,8 +25019,8 @@ mod solve_bounded_inexact_transcendental {
       "4"
     );
     assert_eq!(
-      interpret("Solve[Cos[x] == 2.5 && 0 <= x <= 1, x]").unwrap(),
-      "{}"
+      interpret("{Solve[Cos[x] == 2.5 && 0 <= x <= 1, x], NSolve[Cos[x] == 2.5 && 0 <= x <= 1, x]}").unwrap(),
+      "{{}, {}}"
     );
   }
 }
