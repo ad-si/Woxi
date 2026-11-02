@@ -651,6 +651,26 @@ mod parabolic_cylinder_d {
 mod elliptic_complex_arguments {
   use super::*;
 
+  // An amplitude past the real branch (`ArcSin[Sqrt[3/2]]` is complex)
+  // used to send the real Carlson kernel into an endless loop on NaN.
+  #[test]
+  fn complex_amplitude_from_exact_input() {
+    assert_eq!(
+      interpret(
+        "Round[{Re[#], Im[#]} &[N[EllipticE[ArcSin[Sqrt[3/2]], 2/3]]], 10^-4]"
+      )
+      .unwrap(),
+      "{3153/2500, -759/2500}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[{Re[#], Im[#]} &[N[EllipticF[ArcSin[Sqrt[3/2]], 2/3]]], 10^-4]"
+      )
+      .unwrap(),
+      "{2029/1000, -17339/10000}"
+    );
+  }
+
   #[test]
   fn theta1_complex_z() {
     assert_eq!(

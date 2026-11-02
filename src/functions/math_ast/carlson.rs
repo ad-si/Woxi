@@ -30,7 +30,8 @@ fn carlson_rc(x: f64, y: f64) -> f64 {
     yt = 0.25 * (yt + alamb);
     ave = (xt + yt + yt) / 3.0;
     s = (yt - ave) / ave;
-    if s.abs() <= ERRTOL {
+    // A non-finite argument never converges: stop with the NaN it carries.
+    if s.abs() <= ERRTOL || !s.is_finite() {
       break;
     }
   }
@@ -58,7 +59,8 @@ pub(crate) fn carlson_rf(x: f64, y: f64, z: f64) -> f64 {
     delx = (ave - xt) / ave;
     dely = (ave - yt) / ave;
     delz = (ave - zt) / ave;
-    if delx.abs().max(dely.abs()).max(delz.abs()) <= ERRTOL {
+    let err = delx.abs().max(dely.abs()).max(delz.abs());
+    if err <= ERRTOL || !err.is_finite() || !ave.is_finite() {
       break;
     }
   }
@@ -184,7 +186,8 @@ pub(crate) fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {
     delx = (ave - xt) / ave;
     dely = (ave - yt) / ave;
     delz = (ave - zt) / ave;
-    if delx.abs().max(dely.abs()).max(delz.abs()) <= ERRTOL {
+    let err = delx.abs().max(dely.abs()).max(delz.abs());
+    if err <= ERRTOL || !err.is_finite() || !ave.is_finite() {
       break;
     }
   }
@@ -236,7 +239,8 @@ fn carlson_rj(x: f64, y: f64, z: f64, p: f64) -> f64 {
     dely = (ave - yt) / ave;
     delz = (ave - zt) / ave;
     delp = (ave - pt) / ave;
-    if delx.abs().max(dely.abs()).max(delz.abs()).max(delp.abs()) <= ERRTOL {
+    let err = delx.abs().max(dely.abs()).max(delz.abs()).max(delp.abs());
+    if err <= ERRTOL || !err.is_finite() || !ave.is_finite() {
       break;
     }
   }
