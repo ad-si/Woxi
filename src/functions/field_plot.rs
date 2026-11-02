@@ -5843,6 +5843,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `{position, label}` ticks, and the `FrameTicksStyle` they default to.
   let mut frame_ticks = FrameTickLabels::default();
   let mut tick_style = TickStyle::default();
+  // `FrameTicks -> True` / `Automatic`: tick labels at round values along
+  // the bottom and left edges, in `DataRange` coordinates. `Frame -> False`
+  // removes the frame and with it the ticks.
+  let mut auto_frame_ticks = false;
+  let mut frame_hidden = false;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -5923,7 +5928,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FrameTicks" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
+          auto_frame_ticks = matches!(
+            &val,
+            Expr::Identifier(n) if n == "True" || n == "Automatic"
+          );
           frame_ticks = parse_frame_tick_labels(&val);
+        }
+        "Frame" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          frame_hidden = matches!(&val, Expr::Identifier(n) if n == "False");
         }
         "FrameTicksStyle" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -6231,6 +6245,15 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
   );
 
+  if auto_frame_ticks && !frame_hidden {
+    // Without a `DataRange` the axes count cells, so ticks sit on integers.
+    let min_step = if data_range.is_some() { 0.0 } else { 1.0 };
+    let ((x0, x1), (y0, y1)) =
+      data_range.unwrap_or(((1.0, n_cols as f64), (1.0, n_rows as f64)));
+    frame_ticks.bottom = automatic_array_ticks(x0, x1, n_cols, false, min_step);
+    frame_ticks.left =
+      automatic_array_ticks(y0, y1, n_rows, !data_reversed, min_step);
+  }
   let (buf, svg_width, svg_height) = frame_ticked_svg(
     &buf,
     svg_width,
@@ -6532,6 +6555,49 @@ fn parse_frame_tick_labels(value: &Expr) -> FrameTickLabels {
   } else {
     out.bottom = parse_edge_tick_labels(&items[0]);
     out.left = parse_edge_tick_labels(&items[1]);
+  }
+  out
+}
+
+/// Automatic ticks for one `ArrayPlot` axis whose `n` cell centers span the
+/// data interval `[lo, hi]`: round values inside the interval, placed at
+/// the (1-based) index position of that value. `from_top` counts the cells
+/// from the high end of the interval, as the rows of a default plot do.
+fn automatic_array_ticks(
+  lo: f64,
+  hi: f64,
+  n: usize,
+  from_top: bool,
+  min_step: f64,
+) -> Vec<FrameTickLabel> {
+  let span = hi - lo;
+  if n == 0 || !span.is_finite() || span <= 0.0 {
+    return Vec::new();
+  }
+  let step = crate::functions::plot::nice_step(span, 5).max(min_step);
+  let eps = step * 1e-9;
+  let mut out = Vec::new();
+  let mut k = (lo / step - 1e-9).ceil();
+  loop {
+    let v = k * step;
+    if v > hi + eps {
+      break;
+    }
+    let frac = if n > 1 {
+      if from_top {
+        (hi - v) / span
+      } else {
+        (v - lo) / span
+      }
+    } else {
+      0.0
+    };
+    out.push(FrameTickLabel {
+      pos: 1.0 + frac * (n.saturating_sub(1)) as f64,
+      text: crate::functions::plot::format_tick_with_step(v, step),
+      style: TickStyle::default(),
+    });
+    k += 1.0;
   }
   out
 }
