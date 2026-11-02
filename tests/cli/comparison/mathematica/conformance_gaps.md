@@ -2278,19 +2278,8 @@ benzene/toluene/p-xylene) integrates but drifts from wolframscript right
 away: at t = 0.01 `x[1][5]` is 0.207 against 0.224 and `V[5]` is 178 against
 168, and by t = 5 the stage temperatures are 15 K off. `V[5]` at t = 0 already
 reads 2584 from the linear solve, so the reduced system's algebraic part is
-inconsistent with the given initial values; not yet traced.
-
-### `NDSolve` two-point boundary value problems blow up while shooting
-
-OptimalControlOfAContinuousStirredTankReactor and MaximizingProfitInOreMining
-(state and costate equations with the state given at t = 0 and the costate
-at the final time) stop with `NDSolve::ndsz`: Woxi shoots from t = 0, and the
-costate equations blow up in finite time for every guess not already close
-to the answer (`λ' == -(1 - λ)^2/4` on [0, 300] needs λ(0) within 1e-4 of
-0.98684). wolframscript solves both in under a second. The ore-mining costate
-does not depend on the state, so integrating it backwards from its own
-condition first would do; the reactor needs multiple shooting or a
-collocation method.
+inconsistent with the given initial values; not yet traced. (Since the
+square-block Newton pairing it no longer integrates at all.)
 
 ### `NDSolve` uses a fixed grid
 
