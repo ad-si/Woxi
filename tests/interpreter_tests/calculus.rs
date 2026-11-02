@@ -11620,6 +11620,50 @@ mod ndsolve {
     assert_eq!(result, "{True, True, True}");
   }
 
+  /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`
+  /// (conditions at both ends of the first variable), so no variable is an
+  /// evolution variable and the system is solved as a stationary problem.
+  /// `p - q` is constant along `x`, which gives the exact solution
+  /// `p == 1 - x/2`, `q == 1/2 - x/2`.
+  #[test]
+  fn pde_stationary_countercurrent_pair_matches_exact_solution() {
+    let result = interpret(
+      "{a, b} = NDSolveValue[{D[p[x, y], x] - 0.01 D[p[x, y], y, y] == \
+       -(p[x, y] - q[x, y]) + NeumannValue[0, y == 0] + \
+       NeumannValue[0, y == 1], p[0, y] == 1, \
+       -D[q[x, y], x] == p[x, y] - q[x, y], q[1, y] == 0}, {p, q}, \
+       {x, 0, 1}, {y, 0, 1}]; \
+       Round[{a[0.5, 0.3], b[0.5, 0.3], a[1, 0.9], b[0, 0.1]}, 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{3/4, 1/4, 1/2, 1/2}");
+  }
+
+  /// An elliptic system (second derivatives in both variables) with
+  /// `NeumannValue` Robin coupling on two edges, a zero flux on a third,
+  /// and Dirichlet inlets (the ParallelPlateHeatExchanger Demonstration).
+  /// wolframscript's finite element solution gives `Tc[0.5, 0.] ==
+  /// 315.218` and `Th[0.1, 0.03] == 343.056`.
+  #[test]
+  fn pde_stationary_elliptic_heat_exchanger_matches_wolframscript() {
+    let result = interpret(
+      "{tc, th} = NDSolveValue[{(1/3) (1 - 625 y^2) D[Tc[x, y], x] == \
+       0.0015 (D[Tc[x, y], x, x] + D[Tc[x, y], y, y]) + \
+       NeumannValue[-0.012 (Tc[x, y] - Th[x, y]), y == -0.04] + \
+       NeumannValue[-0.012 (Tc[x, y] - Th[x, y]), y == 0.04] + \
+       NeumannValue[0, x == 1], Tc[0, y] == 300., \
+       (1/3) (1 - 625 y^2) D[Th[x, y], x] == \
+       0.0015 (D[Th[x, y], x, x] + D[Th[x, y], y, y]) + \
+       NeumannValue[0.012 (Tc[x, y] - Th[x, y]), y == -0.04] + \
+       NeumannValue[0.012 (Tc[x, y] - Th[x, y]), y == 0.04] + \
+       NeumannValue[0, x == 0], Th[0, y] == 350.}, {Tc, Th}, {x, 0, 1}, \
+       {y, -0.04, 0.04}]; \
+       {Abs[tc[0.5, 0.] - 315.218] < 0.1, Abs[th[0.1, 0.03] - 343.056] < 0.1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
   /// `DensityPlot` of a PDE solution samples a large grid
   /// `InterpolatingFunction` thousands of times; written as the
   /// one-element list `u[t, x] /. sol` leaves, it must still go through

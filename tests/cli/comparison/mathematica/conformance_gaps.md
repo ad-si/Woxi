@@ -2207,8 +2207,18 @@ differences:
 - `NeumannValue` problems are solved by the same finite differences, not
   WL's finite elements; values agree to 3–5 digits except in thin early
   boundary layers.
-- Elliptic problems (conditions at both ends of both variables, second
-  derivatives in both) and two space dimensions are not covered.
+- Stationary problems on a rectangle (second derivatives in both
+  variables, or first order in a variable with conditions at both of its
+  ends: counter-current flow) are solved by second-order finite differences
+  and Newton iterations, not WL's finite elements. ParallelPlateHeatExchanger
+  agrees to 4 digits. For CountercurrentFlowHemodialyzer WL's own answer
+  does not converge (`Cb[10, 0.006]` is 0.506 by default, 0.341 and 0.343
+  with `"MaxCellMeasure"` 0.0005 and 0.0001; Woxi gives 0.407, stable
+  under grid refinement), and on the line `r == 0`, where the equation's
+  `1/(r + 10^-6)` regularization is singular, Woxi's values exceed 1.
+- Two space dimensions plus time (SpatioTemporalEpidemicSpread) and
+  non-rectangular regions (StokesFlowInContainerWithConcaveBottom) are not
+  covered.
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).

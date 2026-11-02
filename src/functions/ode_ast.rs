@@ -2535,18 +2535,19 @@ fn collapse_identical_if_branches(expr: &Expr) -> Expr {
 /// without any condition keeps the zero natural flux of the finite element
 /// method, which the method-of-lines solver adds itself.
 ///
-/// Returns the lowered equations and the space variable, or `None` when
-/// there is no `NeumannValue` or it is not in the supported shape.
+/// Returns the lowered equations and the variables whose ends carry a
+/// `NeumannValue`, or `None` when there is no `NeumannValue` or it is not in
+/// the supported shape.
 fn lower_neumann_values(
   eqs: &[Expr],
   u_names: &[String],
   doms: &[&PdeDomain],
-) -> Option<(Vec<Expr>, String)> {
+) -> Option<(Vec<Expr>, Vec<String>)> {
   if !eqs.iter().any(|e| mentions_head(e, "NeumannValue")) {
     return None;
   }
   let mut out: Vec<Expr> = Vec::new();
-  let mut x_info: Option<String> = None;
+  let mut x_vars: Vec<String> = Vec::new();
   for eq in eqs {
     if !mentions_head(eq, "NeumannValue") {
       out.push(eq.clone());
@@ -2593,9 +2594,6 @@ fn lower_neumann_values(
       let is_lo = (x0 - dom.min).abs() <= 1e-9 * dom.min.abs().max(1.0);
       let is_hi = (x0 - dom.max).abs() <= 1e-9 * dom.max.abs().max(1.0);
       if !is_lo && !is_hi {
-        return None;
-      }
-      if x_info.as_ref().is_some_and(|x| *x != x_name) {
         return None;
       }
       let t_name = doms.iter().find(|d| d.name != x_name)?.name.clone();
@@ -2651,14 +2649,16 @@ fn lower_neumann_values(
         operands: vec![flux, value],
         operators: vec![ComparisonOp::Equal],
       });
-      x_info = Some(x_name);
+      if !x_vars.contains(&x_name) {
+        x_vars.push(x_name);
+      }
     }
     out.push(Expr::Comparison {
       operands: vec![lhs.clone(), rest_expr],
       operators: vec![ComparisonOp::Equal],
     });
   }
-  Some((out, x_info?))
+  (!x_vars.is_empty()).then_some((out, x_vars))
 }
 
 /// `NDSolve[eqns, u, {v1, v1min, v1max}, {v2, v2min, v2max}]` — one or
@@ -2709,16 +2709,26 @@ fn ndsolve_pde(
   // The finite-element form (`NeumannValue`) returns its solutions as
   // functions of the space variable first, then time, like the unknowns'
   // own `u[x, t]` calls, whatever order the domains were declared in.
-  let (eq_items, dim0_dom, natural_flux) =
+  let (eq_items, dim0_dom, natural_flux, both_edges) =
     match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
-      Some((lowered, x_name)) => {
-        let dim0 = if dom_a.name == x_name { &dom_a } else { &dom_b };
-        (lowered, dim0.clone(), true)
+      Some((lowered, x_vars)) => {
+        let dim0 = if dom_a.name == x_vars[0] {
+          &dom_a
+        } else {
+          &dom_b
+        };
+        (lowered, dim0.clone(), true, x_vars.len() > 1)
       }
-      None => (eq_items, dom_a.clone(), false),
+      None => (eq_items, dom_a.clone(), false, false),
     };
 
-  for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
+  // Flux conditions on the ends of both variables: a stationary problem.
+  let roles: &[(&PdeDomain, &PdeDomain)] = if both_edges {
+    &[]
+  } else {
+    &[(&dom_a, &dom_b), (&dom_b, &dom_a)]
+  };
+  for &(t_dom, x_dom) in roles {
     for swap in [false, true] {
       if let Some(result) = pde_mol::solve_pde_mol(
         &eq_items,
@@ -2733,6 +2743,15 @@ fn ndsolve_pde(
         return Ok(Some(result));
       }
     }
+  }
+  if let Some(result) = pde_mol::solve_pde_stationary(
+    &eq_items,
+    &u_names,
+    [&dom_a, &dom_b],
+    natural_flux,
+    opts,
+  )? {
+    return Ok(Some(result));
   }
   if u_names.len() > 1 {
     return ndsolve_pde_components(

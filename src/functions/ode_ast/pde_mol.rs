@@ -1450,6 +1450,721 @@ fn solve_pde_mol_inner(
   Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
 }
 
+// ─── Stationary PDE systems on a rectangle ──────────────────────────────
+
+/// A stationary system's rows at one grid point of a rectangle.
+#[derive(Clone, Copy)]
+enum StationaryRow {
+  /// The field equation with this index.
+  Field(usize),
+  /// The boundary equation with this index.
+  Boundary(usize),
+  /// The zero natural flux of unknown `.1`'s field equation across an edge
+  /// normal to axis `.0`.
+  NaturalFlux(usize, usize),
+}
+
+/// `NDSolve` of a stationary PDE system in two variables on a rectangle —
+/// an elliptic problem (`κ (u_xx + u_yy) == v(y) u_x`, conditions on every
+/// edge) or one first order in a variable with conditions at both of its
+/// ends (counter-current flow): every unknown is sampled on a tensor grid,
+/// derivatives become second-order finite differences, boundary conditions
+/// replace the field equation of the unknown they constrain on their edge
+/// (a Dirichlet condition wins at a corner), and the algebraic system is
+/// solved by Newton iterations on a banded Jacobian. `natural_flux` gives an
+/// edge without a condition the zero flux of the finite element method
+/// (the `NeumannValue` form); otherwise, and for an unknown only first
+/// order across the edge, the field equation holds there one-sidedly.
+pub(super) fn solve_pde_stationary(
+  eqs: &[Expr],
+  all_names: &[String],
+  doms: [&PdeDomain; 2],
+  natural_flux: bool,
+  opts: &MolOptions,
+) -> Result<Option<Expr>, InterpreterError> {
+  match solve_pde_stationary_inner(eqs, all_names, doms, natural_flux, opts) {
+    Err(InterpreterError::EvaluationError(_)) => Ok(None),
+    other => other,
+  }
+}
+
+fn solve_pde_stationary_inner(
+  eq_items: &[Expr],
+  all_names: &[String],
+  doms_declared: [&PdeDomain; 2],
+  natural_flux: bool,
+  opts: &MolOptions,
+) -> Result<Option<Expr>, InterpreterError> {
+  let near =
+    |v: f64, target: f64| (v - target).abs() <= 1e-9 * target.abs().max(1.0);
+  let mentioned: Vec<String> = all_names
+    .iter()
+    .filter(|u| {
+      eq_items
+        .iter()
+        .any(|e| mentions_head(e, u) || expr_contains_ident(e, u))
+    })
+    .cloned()
+    .collect();
+  if mentioned.is_empty() {
+    return Ok(None);
+  }
+  let u_names = &mentioned[..];
+  let n = u_names.len();
+
+  // `DirichletCondition[eq, v == v0]` is the condition on that edge.
+  let mut eqs: Vec<Expr> = Vec::with_capacity(eq_items.len());
+  for eq in eq_items {
+    if let Expr::FunctionCall { name, args } = eq
+      && name == "DirichletCondition"
+    {
+      let [cond, pred] = args.as_slice() else {
+        return Ok(None);
+      };
+      let Some((Expr::Identifier(v), v0)) = as_equal_pair(pred) else {
+        return Ok(None);
+      };
+      if nval_to_f64(v0).is_none() {
+        return Ok(None);
+      }
+      eqs.push(crate::syntax::substitute_variable(cond, v, v0));
+    } else {
+      eqs.push(eq.clone());
+    }
+  }
+
+  // Which variable each call-argument position holds, read off the first
+  // appearance of an unknown at a generic point.
+  let mut all_occs: Vec<Vec<Occ>> = Vec::with_capacity(eqs.len());
+  for eq in &eqs {
+    as_equal_pair(eq).ok_or_else(|| {
+      InterpreterError::EvaluationError("not an equation".into())
+    })?;
+    let mut occs = Vec::new();
+    if collect_occurrences(eq, u_names, false, &mut occs).is_none()
+      || occs.is_empty()
+    {
+      return Ok(None);
+    }
+    all_occs.push(occs);
+  }
+  let var_at = |e: &Expr| -> Option<usize> {
+    let Expr::Identifier(v) = e else { return None };
+    doms_declared.iter().position(|d| d.name == *v)
+  };
+  let mut slot_dom: Option<[usize; 2]> = None;
+  for occs in &all_occs {
+    for o in occs {
+      if let (Some(a), Some(b)) = (var_at(&o.t_arg), var_at(&o.x_arg))
+        && a != b
+      {
+        slot_dom = Some([a, b]);
+      }
+    }
+  }
+  let Some(slot_dom) = slot_dom else {
+    return Ok(None);
+  };
+  let doms = [doms_declared[slot_dom[0]], doms_declared[slot_dom[1]]];
+  let names = [doms[0].name.as_str(), doms[1].name.as_str()];
+  let is_var = |e: &Expr, axis: usize| matches!(e, Expr::Identifier(v) if v == names[axis]);
+  let args_of = |o: &Occ| [o.t_arg.clone(), o.x_arg.clone()];
+  let orders_of = |o: &Occ| [o.dt, o.dx];
+
+  // Classify: field equations (every appearance at a generic point) and
+  // edge conditions (one argument at an end of its range).
+  let mut field_idx = Vec::new();
+  // `edges[axis][side]`: the conditions on that edge.
+  let mut edges: [[Vec<usize>; 2]; 2] = Default::default();
+  for (e, occs) in all_occs.iter().enumerate() {
+    if occs
+      .iter()
+      .all(|o| is_var(&o.t_arg, 0) && is_var(&o.x_arg, 1))
+    {
+      if occs.iter().any(|o| o.dt > 2 || o.dx > 2) {
+        return Ok(None);
+      }
+      field_idx.push(e);
+      continue;
+    }
+    let mut edge: Option<(usize, usize)> = None;
+    for o in occs {
+      let a = args_of(o);
+      let mut this = None;
+      for axis in 0..2 {
+        if is_var(&a[1 - axis], 1 - axis)
+          && let Some(v) = nval_to_f64(&a[axis])
+        {
+          let side = if near(v, doms[axis].min) {
+            0
+          } else if near(v, doms[axis].max) {
+            1
+          } else {
+            return Ok(None);
+          };
+          if orders_of(o)[axis] > 1 {
+            return Ok(None);
+          }
+          this = Some((axis, side));
+        }
+      }
+      let Some(this) = this else {
+        return Ok(None);
+      };
+      if edge.is_some_and(|e2| e2 != this) {
+        return Ok(None);
+      }
+      edge = Some(this);
+    }
+    let (axis, side) = edge.unwrap();
+    edges[axis][side].push(e);
+  }
+  if field_idx.len() != n {
+    return Ok(None);
+  }
+  // A field equation per unknown, matched through the unknown's own
+  // highest derivatives.
+  let field_adj: Vec<Vec<usize>> = (0..n)
+    .map(|j| {
+      (0..n)
+        .filter(|&e| {
+          all_occs[field_idx[e]]
+            .iter()
+            .any(|o| o.j == j && o.dt + o.dx > 0)
+        })
+        .collect()
+    })
+    .collect();
+  let Some(field_of) = bipartite_match(&field_adj, n)
+    .into_iter()
+    .collect::<Option<Vec<usize>>>()
+  else {
+    return Ok(None);
+  };
+  // `order[axis][j]`: the highest derivative of unknown j along the axis.
+  let mut order = [vec![0usize; n], vec![0usize; n]];
+  for &e in &field_idx {
+    for o in &all_occs[e] {
+      order[0][o.j] = order[0][o.j].max(o.dt);
+      order[1][o.j] = order[1][o.j].max(o.dx);
+    }
+  }
+  if (0..n).all(|j| order[0][j] + order[1][j] == 0) {
+    return Ok(None);
+  }
+
+  // The rows each edge supplies, per unknown.
+  let mut edge_rows: [[Vec<Option<StationaryRow>>; 2]; 2] = Default::default();
+  let mut is_dirichlet = vec![false; eqs.len()];
+  for axis in 0..2 {
+    for side in 0..2 {
+      let bcs = &edges[axis][side];
+      let adj: Vec<Vec<usize>> = bcs
+        .iter()
+        .map(|&e| {
+          (0..n)
+            .filter(|&j| {
+              order[axis][j] > 0 && all_occs[e].iter().any(|o| o.j == j)
+            })
+            .collect()
+        })
+        .collect();
+      let mut rows = vec![None; n];
+      for (b, m) in bipartite_match(&adj, n).iter().enumerate() {
+        // A condition left over (WL lets `NeumannValue[0, x == 0]` stand
+        // next to a Dirichlet value on the same edge) is dropped, the
+        // Dirichlet value taking precedence below.
+        let Some(j) = m else {
+          // Without the finite element form, two conditions on one edge
+          // (a value and a slope: Cauchy data) are no stationary problem.
+          if !natural_flux {
+            return Ok(None);
+          }
+          continue;
+        };
+        rows[*j] = Some(StationaryRow::Boundary(bcs[b]));
+      }
+      for &e in bcs {
+        is_dirichlet[e] = all_occs[e].iter().all(|o| o.dt + o.dx == 0);
+      }
+      // A Dirichlet condition beats a flux condition on the same edge.
+      for &e in bcs {
+        if is_dirichlet[e]
+          && let [o] = all_occs[e].as_slice()
+        {
+          rows[o.j] = Some(StationaryRow::Boundary(e));
+        }
+      }
+      for j in 0..n {
+        if rows[j].is_none() && order[axis][j] == 2 {
+          // An elliptic unknown needs a condition on every edge, unless
+          // the finite element form gives it the natural zero flux.
+          if !natural_flux {
+            return Ok(None);
+          }
+          rows[j] = Some(StationaryRow::NaturalFlux(axis, j));
+        }
+      }
+      edge_rows[axis][side] = rows;
+    }
+  }
+
+  // Compile the rows over `[D{d0}x{d1}U{j}…, v0, v1]`.
+  let mut var_names = Vec::with_capacity(9 * n + 2);
+  for d0 in 0..=2 {
+    for d1 in 0..=2 {
+      for j in 0..n {
+        var_names.push(format!("NDSolve$D{d0}x{d1}U{j}"));
+      }
+    }
+  }
+  var_names.push(names[0].to_string());
+  var_names.push(names[1].to_string());
+  let var_index = |d0: usize, d1: usize, j: usize| (d0 * 3 + d1) * n + j;
+  fn placeholders2(expr: &Expr, u_names: &[String]) -> Expr {
+    for (j, name) in u_names.iter().enumerate() {
+      if let Some((d0, d1, _, _)) = match_pde_term(expr, name) {
+        return Expr::Identifier(format!("NDSolve$D{d0}x{d1}U{j}"));
+      }
+    }
+    map_children(expr, &|c| placeholders2(c, u_names))
+  }
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let row_expr = |e: usize| -> Result<Expr, InterpreterError> {
+    let (lhs, rhs) = as_equal_pair(&eqs[e]).unwrap();
+    ev(placeholders2(&minus2(rhs.clone(), lhs.clone()), u_names))
+  };
+  let mut fns: Vec<Option<NumFn>> = (0..eqs.len()).map(|_| None).collect();
+  let mut field_exprs: Vec<Option<Expr>> = vec![None; eqs.len()];
+  for e in 0..eqs.len() {
+    let f = row_expr(e)?;
+    fns[e] = Some(NumFn::new(f.clone(), &var_names));
+    field_exprs[e] = Some(f);
+  }
+  let state_placeholder = |e: &Expr| {
+    var_names[..var_names.len() - 2]
+      .iter()
+      .any(|v| expr_contains_ident(e, v))
+  };
+  // Natural flux rows: Σ_k c_k ∂u_k/∂n with c_k the coefficient of the
+  // second derivative across the edge.
+  let mut natural: [Vec<Option<NumFn>>; 2] = [
+    (0..n).map(|_| None).collect(),
+    (0..n).map(|_| None).collect(),
+  ];
+  for axis in 0..2 {
+    for j in 0..n {
+      let wanted = (0..2).any(|side| {
+        matches!(
+          edge_rows[axis][side][j],
+          Some(StationaryRow::NaturalFlux(..))
+        )
+      });
+      if !wanted {
+        continue;
+      }
+      let f = field_exprs[field_idx[field_of[j]]].as_ref().unwrap();
+      let mut terms = Vec::with_capacity(n);
+      for k in 0..n {
+        let (d2, d1) = if axis == 0 {
+          ((2, 0), (1, 0))
+        } else {
+          ((0, 2), (0, 1))
+        };
+        let c = ev(call(
+          "D",
+          vec![
+            f.clone(),
+            Expr::Identifier(format!("NDSolve$D{}x{}U{k}", d2.0, d2.1)),
+          ],
+        ))?;
+        let c = ev(collapse_identical_if_branches(&c))?;
+        if state_placeholder(&c) {
+          return Ok(None);
+        }
+        terms.push(times2(
+          c,
+          Expr::Identifier(format!("NDSolve$D{}x{}U{k}", d1.0, d1.1)),
+        ));
+      }
+      natural[axis][j] = Some(NumFn::new(ev(plus(terms))?, &var_names));
+    }
+  }
+
+  // The grid: second-order differences; along an axis where some unknown
+  // is convected faster than it diffuses, fine enough for a cell Péclet
+  // number below 2.
+  let p = opts.difference_order.unwrap_or(2);
+  let mut sizes = [41usize, 41usize];
+  for axis in 0..2 {
+    let span = doms[axis].max - doms[axis].min;
+    let mut needed = 41.0_f64;
+    for (j, &fe) in field_of.iter().enumerate() {
+      let f = fns[field_idx[fe]].as_ref().unwrap();
+      let (i1, i2) = if axis == 0 {
+        (var_index(1, 0, j), var_index(2, 0, j))
+      } else {
+        (var_index(0, 1, j), var_index(0, 2, j))
+      };
+      for s in 0..=8 {
+        let mut vars = vec![0.0; var_names.len()];
+        vars[9 * n] =
+          doms[0].min + (doms[0].max - doms[0].min) * s as f64 / 8.0;
+        vars[9 * n + 1] =
+          doms[1].min + (doms[1].max - doms[1].min) * s as f64 / 8.0;
+        let base = f.eval(&vars)?;
+        let mut probe = vars.clone();
+        probe[i1] = 1.0;
+        let conv = (f.eval(&probe)? - base).abs();
+        let mut probe = vars.clone();
+        probe[i2] = 1.0;
+        let diff = (f.eval(&probe)? - base).abs();
+        if conv > 0.0 && diff > 0.0 {
+          needed = needed.max(conv / diff * span / 1.5);
+        } else if conv > 0.0 && order[axis][j] == 1 {
+          needed = needed.max(101.0);
+        }
+      }
+    }
+    sizes[axis] = (needed.ceil() as usize).clamp(41, 241);
+    if let Some(lo) = opts.min_points {
+      sizes[axis] = sizes[axis].max(lo);
+    }
+    if let Some(hi) = opts.max_points {
+      sizes[axis] = sizes[axis].min(hi + 1);
+    }
+  }
+  // Keep the banded system affordable: the narrower axis runs fastest.
+  while sizes[0] * sizes[1] * n > 40_000 {
+    let big = usize::from(sizes[0] < sizes[1]);
+    sizes[big] = sizes[big] * 3 / 4;
+  }
+  let coords: [Vec<f64>; 2] = [0, 1].map(|axis| {
+    let m = sizes[axis];
+    let d = (doms[axis].max - doms[axis].min) / (m - 1) as f64;
+    (0..m).map(|i| doms[axis].min + i as f64 * d).collect()
+  });
+  // `stencils[axis][k - 1][i]`
+  let stencils: [Vec<Vec<Stencil>>; 2] = [0, 1].map(|axis| {
+    let m = sizes[axis];
+    let h = coords[axis][1] - coords[axis][0];
+    (1..=2)
+      .map(|k: usize| {
+        let width = (2 * k.div_ceil(2) - 1 + p).min(m);
+        let half = width / 2;
+        (0..m)
+          .map(|i| {
+            let start = i.saturating_sub(half).min(m - width);
+            let idx: Vec<usize> = (start..start + width).collect();
+            let offs: Vec<f64> =
+              idx.iter().map(|&g| (g as f64 - i as f64) * h).collect();
+            Stencil {
+              w: fd_weights(0.0, &offs, k),
+              idx,
+            }
+          })
+          .collect()
+      })
+      .collect()
+  });
+  // `taps[axis][d][i]`: grid indices and weights of the `d`-th derivative
+  // along the axis at index `i` (`d == 0` the value itself).
+  let taps: [Vec<Vec<Vec<(usize, f64)>>>; 2] = [0, 1].map(|axis| {
+    let mut per_order =
+      vec![(0..sizes[axis]).map(|i| vec![(i, 1.0)]).collect()];
+    for st in &stencils[axis] {
+      per_order.push(
+        st.iter()
+          .map(|s| s.idx.iter().copied().zip(s.w.iter().copied()).collect())
+          .collect(),
+      );
+    }
+    per_order
+  });
+  // An unknown only first order along an axis, with its condition at one
+  // end only, is carried from that end: its first derivative is taken
+  // upwind (from the points on the condition's side), as central
+  // differences of a purely convected profile decouple odd and even
+  // points.
+  let upwind: [Vec<Option<Vec<Vec<(usize, f64)>>>>; 2] = [0, 1].map(|axis| {
+    let m = sizes[axis];
+    let h = coords[axis][1] - coords[axis][0];
+    (0..n)
+      .map(|j| {
+        if order[axis][j] != 1 {
+          return None;
+        }
+        let has = |side: usize| {
+          edges[axis][side]
+            .iter()
+            .any(|&e| all_occs[e].iter().any(|o| o.j == j))
+        };
+        let from_lo = match (has(0), has(1)) {
+          (true, false) => true,
+          (false, true) => false,
+          _ => return None,
+        };
+        let width = (p + 1).min(m);
+        Some(
+          (0..m)
+            .map(|i| {
+              let start = if from_lo {
+                (i + 1).saturating_sub(width)
+              } else {
+                i.min(m - width)
+              };
+              let idx: Vec<usize> = (start..start + width).collect();
+              let offs: Vec<f64> =
+                idx.iter().map(|&g| (g as f64 - i as f64) * h).collect();
+              idx.into_iter().zip(fd_weights(0.0, &offs, 1)).collect()
+            })
+            .collect(),
+        )
+      })
+      .collect()
+  });
+  // The derivative placeholders some row reads.
+  let mut used = vec![false; 9 * n];
+  for e in field_exprs.iter().flatten() {
+    for (k, v) in var_names[..9 * n].iter().enumerate() {
+      used[k] |= expr_contains_ident(e, v);
+    }
+  }
+  for k in 0..n {
+    for (d0, d1) in [(1, 0), (0, 1)] {
+      used[var_index(d0, d1, k)] = true;
+    }
+  }
+  let inner = usize::from(sizes[1] <= sizes[0]);
+  let outer = 1 - inner;
+  let pos = |i: [usize; 2]| (i[outer] * sizes[inner] + i[inner]) * n;
+  let total = sizes[0] * sizes[1] * n;
+
+  // The row kind of every (point, unknown).
+  let row_of = |i: [usize; 2], s: usize| -> StationaryRow {
+    let mut found: Option<StationaryRow> = None;
+    for axis in 0..2 {
+      let side = if i[axis] == 0 {
+        0
+      } else if i[axis] == sizes[axis] - 1 {
+        1
+      } else {
+        continue;
+      };
+      if let Some(r) = edge_rows[axis][side][s] {
+        let dirichlet =
+          matches!(r, StationaryRow::Boundary(e) if is_dirichlet[e]);
+        let found_dirichlet =
+          matches!(found, Some(StationaryRow::Boundary(e)) if is_dirichlet[e]);
+        if found.is_none() || (dirichlet && !found_dirichlet) {
+          found = Some(r);
+        }
+      }
+    }
+    found.unwrap_or(StationaryRow::Field(field_idx[field_of[s]]))
+  };
+  let points: Vec<[usize; 2]> = (0..sizes[0])
+    .flat_map(|a| (0..sizes[1]).map(move |b| [a, b]))
+    .collect();
+  let kinds: Vec<Vec<StationaryRow>> = points
+    .iter()
+    .map(|&i| (0..n).map(|s| row_of(i, s)).collect())
+    .collect();
+
+  let residual = |y: &[f64]| -> Result<Vec<f64>, InterpreterError> {
+    let mut out = vec![0.0; total];
+    let mut vars = vec![0.0; var_names.len()];
+    for (pi, &i) in points.iter().enumerate() {
+      for d0 in 0..=2 {
+        for d1 in 0..=2 {
+          for j in 0..n {
+            if !used[var_index(d0, d1, j)] {
+              continue;
+            }
+            let list0 = match (&upwind[0][j], d0, d1) {
+              (Some(up), 1, 0) => &up[i[0]],
+              _ => &taps[0][d0][i[0]],
+            };
+            let list1 = match (&upwind[1][j], d0, d1) {
+              (Some(up), 0, 1) => &up[i[1]],
+              _ => &taps[1][d1][i[1]],
+            };
+            let mut s = 0.0;
+            for &(a, wa) in list0 {
+              for &(b, wb) in list1 {
+                s += wa * wb * y[pos([a, b]) + j];
+              }
+            }
+            vars[var_index(d0, d1, j)] = s;
+          }
+        }
+      }
+      vars[9 * n] = coords[0][i[0]];
+      vars[9 * n + 1] = coords[1][i[1]];
+      let base = pos(i);
+      for s in 0..n {
+        out[base + s] = match kinds[pi][s] {
+          StationaryRow::Field(e) | StationaryRow::Boundary(e) => {
+            fns[e].as_ref().unwrap().eval(&vars)?
+          }
+          StationaryRow::NaturalFlux(axis, j) => {
+            natural[axis][j].as_ref().unwrap().eval(&vars)?
+          }
+        };
+      }
+    }
+    Ok(out)
+  };
+
+  // Jacobian structure: a point's rows read the points of its stencils.
+  let reach: [usize; 2] = [0, 1].map(|axis| {
+    stencils[axis]
+      .iter()
+      .flat_map(|per_point| {
+        per_point
+          .iter()
+          .enumerate()
+          .flat_map(|(i, st)| st.idx.iter().map(move |&g| g.abs_diff(i)))
+      })
+      .max()
+      .unwrap_or(0)
+  });
+  let band = (reach[outer] * sizes[inner] + reach[inner] + 1) * n;
+  // Column groups: points further apart than twice the reach along some
+  // axis never feed the same row.
+  let period = [2 * reach[0] + 1, 2 * reach[1] + 1];
+  let mut groups: Vec<Vec<usize>> = vec![Vec::new(); period[0] * period[1]];
+  for (pi, i) in points.iter().enumerate() {
+    groups[(i[0] % period[0]) * period[1] + i[1] % period[1]].push(pi);
+  }
+  let reads = |row: [usize; 2], col: [usize; 2]| {
+    row[0].abs_diff(col[0]) <= reach[0] && row[1].abs_diff(col[1]) <= reach[1]
+  };
+
+  let mut y = vec![0.0; total];
+  let mut converged = false;
+  for _ in 0..25 {
+    let f0 = residual(&y)?;
+    let scale = y.iter().fold(1.0_f64, |m, v| m.max(v.abs()));
+    let mut jac = Band::new(total, band, band);
+    let mut probe = y.clone();
+    for group in &groups {
+      for j in 0..n {
+        let delta = f64::EPSILON.sqrt() * scale;
+        for &pi in group {
+          probe[pos(points[pi]) + j] += delta;
+        }
+        let fp = residual(&probe)?;
+        for &pi in group {
+          let col_pt = points[pi];
+          let col = pos(col_pt) + j;
+          probe[col] = y[col];
+          let (a0, a1) = (
+            col_pt[0].saturating_sub(reach[0]),
+            (col_pt[0] + reach[0]).min(sizes[0] - 1),
+          );
+          let (b0, b1) = (
+            col_pt[1].saturating_sub(reach[1]),
+            (col_pt[1] + reach[1]).min(sizes[1] - 1),
+          );
+          for a in a0..=a1 {
+            for b in b0..=b1 {
+              if !reads([a, b], col_pt) {
+                continue;
+              }
+              let rb = pos([a, b]);
+              for s in 0..n {
+                let v = (fp[rb + s] - f0[rb + s]) / delta;
+                if !v.is_finite() {
+                  return Ok(None);
+                }
+                if v != 0.0 {
+                  jac.add(rb + s, col, v);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    if !jac.factor() {
+      return Ok(None);
+    }
+    let mut step: Vec<f64> = f0.iter().map(|v| -v).collect();
+    jac.solve(&mut step);
+    if step.iter().any(|v| !v.is_finite()) {
+      return Ok(None);
+    }
+    let size = step.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+    for (yi, d) in y.iter_mut().zip(&step) {
+      *yi += d;
+    }
+    let new_scale = y.iter().fold(1e-300_f64, |m, v| m.max(v.abs()));
+    if size <= 1e-9 * new_scale {
+      converged = true;
+      break;
+    }
+  }
+  if !converged {
+    return Ok(None);
+  }
+
+  // Interpolating functions over the declared variable order.
+  let reals =
+    |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
+  // The functions take their arguments in the unknowns' own order.
+  let (first, second) = (0, 1);
+  let domain = Expr::List(
+    [first, second]
+      .iter()
+      .map(|&ax| {
+        Expr::List(
+          vec![Expr::Real(doms[ax].min), Expr::Real(doms[ax].max)].into(),
+        )
+      })
+      .collect(),
+  );
+  let orders = Expr::List(vec![Expr::Integer(3), Expr::Integer(3)].into());
+  let coords_expr =
+    Expr::List(vec![reals(&coords[first]), reals(&coords[second])].into());
+  let mut rules = Vec::with_capacity(all_names.len());
+  for name in all_names {
+    let Some(j) = u_names.iter().position(|u| u == name) else {
+      rules.push(rule_expr(
+        Expr::Identifier(name.clone()),
+        Expr::Identifier(name.clone()),
+      ));
+      continue;
+    };
+    let grid: Vec<Expr> = (0..sizes[first])
+      .map(|a| {
+        let row: Vec<f64> = (0..sizes[second])
+          .map(|b| {
+            let mut i = [0, 0];
+            i[first] = a;
+            i[second] = b;
+            y[pos(i) + j]
+          })
+          .collect();
+        reals(&row)
+      })
+      .collect();
+    rules.push(rule_expr(
+      Expr::Identifier(name.clone()),
+      call(
+        "InterpolatingFunction",
+        vec![
+          domain.clone(),
+          Expr::List(grid.into()),
+          orders.clone(),
+          coords_expr.clone(),
+        ],
+      ),
+    ));
+  }
+  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
