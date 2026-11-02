@@ -509,3 +509,28 @@ mod filter_rules_patterns {
     );
   }
 }
+
+mod turing_machine_head_displacement {
+  use super::*;
+
+  // An `{s, pos, x}` head spec starts the reported displacement at `x`
+  // (FractalDimensionVersusTimeComplexityInTuringMachines); the whole
+  // triple used to be taken for the state, so the machine never moved.
+  #[test]
+  fn three_element_head_spec() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "TuringMachine[{91290, 3, 2}, {{1, 2, 0}, {{1, 1, Null}, 0}}, 3]"
+      )
+      .unwrap(),
+      "{{{1, 4, 0}, {0, 0, 1, 1, Null}}, {{1, 3, -1}, {0, 0, 1, 0, Null}}, \
+       {{1, 2, -2}, {0, 0, 0, 0, Null}}, {{2, 1, -3}, {0, 0, 0, 0, Null}}}"
+    );
+    assert_eq!(
+      interpret("TuringMachine[{91290, 3, 2}, {{1, 2, 5}, {1, 1, 0, 1}}, 2]")
+        .unwrap(),
+      "{{{1, 2, 5}, {1, 1, 0, 1}}, {{1, 1, 4}, {1, 0, 0, 1}}, {{1, 4, 3}, {0, 0, 0, 1}}}"
+    );
+  }
+}
