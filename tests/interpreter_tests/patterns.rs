@@ -7057,6 +7057,24 @@ mod comparison_patterns {
     );
   }
 
+  // A held pattern is a compound: `_Symbol` matches the `t` of `t_`, not
+  // `t_` itself.
+  #[test]
+  fn a_held_pattern_is_not_a_symbol() {
+    assert_eq!(
+      interpret("Cases[Hold[f[t_, u__, v_Integer]], _Symbol, Infinity]")
+        .unwrap(),
+      "{t, u, v, Integer}"
+    );
+    assert_eq!(
+      interpret(
+        "{MatchQ[Unevaluated[x_], _Symbol], MatchQ[Unevaluated[x_], _Pattern]}"
+      )
+      .unwrap(),
+      "{False, True}"
+    );
+  }
+
   #[test]
   fn single_comparison_inequality_evaluates() {
     assert_eq!(

@@ -6396,6 +6396,19 @@ pub fn get_expr_head(expr: &Expr) -> String {
       crate::functions::predicate_ast::rendered_object_head(expr)
         .unwrap_or("Symbol")
     }
+    // A pattern held in an expression is a compound, not a symbol: `_Symbol`
+    // matches the `t` of `t_` but not `t_` itself.
+    Expr::Pattern {
+      name, blank_type, ..
+    } if name.is_empty() => match blank_type {
+      2 => "BlankSequence",
+      3 => "BlankNullSequence",
+      _ => "Blank",
+    },
+    Expr::Pattern { .. } => "Pattern",
+    Expr::PatternOptional { .. } => "Optional",
+    Expr::PatternTest { .. } => "PatternTest",
+    Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
   result.to_string()
