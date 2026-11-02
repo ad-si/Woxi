@@ -35,13 +35,37 @@ mod take_list_levels {
   fn splits_successive_levels() {
     assert_eq!(
       interpret("TakeList[Partition[Range[25], 5], {2, 3}, {3, 2}]").unwrap(),
-      "{{{{1, 2, 3}, {4, 5}}, {{6, 7, 8}, {9, 10}}}, \
-       {{{11, 12, 13}, {14, 15}}, {{16, 17, 18}, {19, 20}}, \
-       {{21, 22, 23}, {24, 25}}}}"
+      "{{{{1, 2, 3}, {6, 7, 8}}, {{4, 5}, {9, 10}}}, \
+       {{{11, 12, 13}, {16, 17, 18}, {21, 22, 23}}, \
+       {{14, 15}, {19, 20}, {24, 25}}}}"
     );
     assert_eq!(
       interpret("TakeList[{{1, 2}, {3, 4}}, {1, 1}, {1, 1}]").unwrap(),
-      "{{{{1}, {2}}}, {{{3}, {4}}}}"
+      "{{{{1}}, {{2}}}, {{{3}}, {{4}}}}"
+    );
+    assert_eq!(
+      interpret("TakeList[Partition[Range[8], 4], {1, 1}, {2, 2}]").unwrap(),
+      "{{{{1, 2}}, {{3, 4}}}, {{{5, 6}}, {{7, 8}}}}"
+    );
+  }
+
+  #[test]
+  fn three_levels() {
+    assert_eq!(
+      interpret(
+        "TakeList[Partition[Partition[Range[8], 2], 2], {1, 1}, {1, 1}, {1, 1}]"
+      )
+      .unwrap(),
+      "{{{{{{1}}}, {{{2}}}}, {{{{3}}}, {{{4}}}}}, \
+       {{{{{5}}}, {{{6}}}}, {{{{7}}}, {{{8}}}}}}"
+    );
+  }
+
+  #[test]
+  fn too_deep_a_specification_stays_unevaluated() {
+    assert_eq!(
+      interpret("TakeList[Range[3], {1, 1}, {1}]").unwrap(),
+      "TakeList[{1, 2, 3}, {1, 1}, {1}]"
     );
   }
 }

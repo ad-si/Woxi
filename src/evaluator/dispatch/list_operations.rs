@@ -2138,7 +2138,8 @@ pub fn dispatch_list_operations(
       }
     }
     // TakeList[list, seqs1, seqs2, ...] — split at level 1 by seqs1, then
-    // split every element of each resulting sublist by seqs2, ...
+    // split every group at level 2 by seqs2, ...: result[[i, j, …]] is the
+    // block of the rows in chunk i restricted to the columns of chunk j, ….
     "TakeList" if args.len() > 2 => {
       let outer = match evaluate_function_call_ast(
         "TakeList",
@@ -2150,6 +2151,7 @@ pub fn dispatch_list_operations(
       let Expr::List(groups) = &outer else {
         return Some(Ok(unevaluated("TakeList", args)));
       };
+      let depth = args.len() - 2;
       let mut new_groups = Vec::with_capacity(groups.len());
       for group in groups {
         let (head, elems) = match group {
@@ -2157,8 +2159,24 @@ pub fn dispatch_list_operations(
           Expr::FunctionCall { name, args: xs } => (Some(name.clone()), xs),
           _ => return Some(Ok(unevaluated("TakeList", args))),
         };
-        let mut new_elems = Vec::with_capacity(elems.len());
+        // Split every row by the remaining specifications ...
+        let mut rows = Vec::with_capacity(elems.len());
         for elem in elems {
+          if !matches!(elem, Expr::List(_) | Expr::FunctionCall { .. }) {
+            crate::emit_message(&format!(
+              "TakeList::iseqs: Cannot take list {} of sequence \
+               specifications at level 2 of {}.",
+              crate::syntax::format_expr(
+                &args[2],
+                crate::syntax::ExprForm::Output
+              ),
+              crate::syntax::format_expr(
+                &args[0],
+                crate::syntax::ExprForm::Output
+              ),
+            ));
+            return Some(Ok(unevaluated("TakeList", args)));
+          }
           let mut inner_args = Vec::with_capacity(args.len() - 1);
           inner_args.push(elem.clone());
           inner_args.extend(args[2..].iter().cloned());
@@ -2166,17 +2184,15 @@ pub fn dispatch_list_operations(
             Ok(Expr::FunctionCall { ref name, .. }) if name == "TakeList" => {
               return Some(Ok(unevaluated("TakeList", args)));
             }
-            Ok(r) => new_elems.push(r),
+            Ok(r) => rows.push(r),
             Err(e) => return Some(Err(e)),
           }
         }
-        new_groups.push(match head {
-          None => Expr::List(new_elems.into()),
-          Some(name) => Expr::FunctionCall {
-            name,
-            args: new_elems.into(),
-          },
-        });
+        // ... then gather the rows' pieces with the same chunk indices.
+        match gather_take_list_blocks(&rows, depth, &head) {
+          Some(block) => new_groups.push(block),
+          None => return Some(Ok(unevaluated("TakeList", args))),
+        }
       }
       return Some(Ok(Expr::List(new_groups.into())));
     }
@@ -11802,4 +11818,41 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     }
   }
   Some(Ok(Expr::List(results.into())))
+}
+
+/// Regroup the per-row results of a multi-level `TakeList`: every row is
+/// nested `depth` levels deep by chunk index; the result has the same chunk
+/// nesting with, at each leaf, the rows' pieces wrapped in the group head.
+/// `None` when the rows do not split into the same number of chunks.
+fn gather_take_list_blocks(
+  rows: &[Expr],
+  depth: usize,
+  head: &Option<String>,
+) -> Option<Expr> {
+  if depth == 0 {
+    return Some(match head {
+      None => Expr::List(rows.to_vec().into()),
+      Some(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: rows.to_vec().into(),
+      },
+    });
+  }
+  let mut parts: Vec<&[Expr]> = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(xs) = row else {
+      return None;
+    };
+    parts.push(xs);
+  }
+  let len = parts.first().map_or(0, |p| p.len());
+  if parts.iter().any(|p| p.len() != len) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(len);
+  for j in 0..len {
+    let column: Vec<Expr> = parts.iter().map(|p| p[j].clone()).collect();
+    out.push(gather_take_list_blocks(&column, depth - 1, head)?);
+  }
+  Some(Expr::List(out.into()))
 }
