@@ -632,13 +632,34 @@ mod peaks_at_scale_zero {
   }
 
   #[test]
+  // InterpolationOrder -> 3 finds the maxima of the clamped cubic spline
+  // through the data (a clamped end curving down is one too).
+  fn interpolation_order_three_uses_the_spline() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, \
+         InterpolationOrder -> 3]]"
+      )
+      .unwrap(),
+      "{{1000000, 2000000}, {5566075, 6251185}, {10884034, 7101697}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 1]"
+      )
+      .unwrap(),
+      "{{1, 2}, {11/2, 6}, {11, 7}}"
+    );
+  }
+
+  #[test]
   fn unsupported_options_stay_unevaluated() {
     assert_eq!(
       interpret(
-        "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 3]"
+        "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 2]"
       )
       .unwrap(),
-      "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 3]"
+      "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 2]"
     );
   }
 }

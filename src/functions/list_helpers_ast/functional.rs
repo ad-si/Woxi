@@ -370,8 +370,31 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .take_while(|a| !matches!(a, Expr::Rule { .. }))
     .count();
+  // `InterpolationOrder -> 3` finds the peaks of the interpolating spline
+  // (see `spline_peaks`); orders 0 and 1 are the list's own peaks.
+  let mut interpolation_order = None;
+  let options: Vec<Expr> = args[positional..]
+    .iter()
+    .filter(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "InterpolationOrder") => {
+        interpolation_order = Some(replacement.as_ref().clone());
+        false
+      }
+      _ => true,
+    })
+    .cloned()
+    .collect();
+  let spline = match &interpolation_order {
+    None => false,
+    Some(Expr::Integer(0 | 1)) => false,
+    Some(Expr::Integer(3)) => true,
+    Some(_) => return Ok(unevaluated("FindPeaks", args)),
+  };
   // A constant `Padding -> p` option; other options are not supported.
-  let Ok(padding) = peak_padding(&args[positional..]) else {
+  let Ok(padding) = peak_padding(&options) else {
     return Ok(unevaluated("FindPeaks", args));
   };
   let args = &args[..positional];
@@ -449,6 +472,17 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if sigma != 0.0 || sharpness.1 != 0.0 || threshold.1 != 0.0 {
     return Ok(unevaluated());
   }
+  if spline {
+    if sharpness.0 != 0.0 || padding.is_some() || vals.len() < 2 {
+      return Ok(unevaluated());
+    }
+    let peaks = spline_peaks(&vals)
+      .into_iter()
+      .filter(|&(_, y)| y >= threshold.0)
+      .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect::<Vec<_>>();
+    return Ok(Expr::List(peaks.into()));
+  }
 
   let mut peaks: Vec<Expr> = Vec::new();
   for run in peak_runs(&vals, sharpness.0, threshold.0, padding) {
@@ -465,6 +499,90 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     peaks.push(Expr::List(vec![pos, items[run.start].clone()].into()));
   }
   Ok(Expr::List(peaks.into()))
+}
+
+/// The local maxima `(x, y)` of the cubic spline through `(i, vals[i - 1])`
+/// with zero slope at both ends (the clamped spline wolframscript's
+/// `FindPeaks[list, 0, InterpolationOrder -> 3]` uses). A clamped end whose
+/// spline curves down is a maximum too: `{2, 1, 3, …}` has one at x = 1.
+fn spline_peaks(vals: &[f64]) -> Vec<(f64, f64)> {
+  let n = vals.len();
+  // Second derivatives m from the clamped spline system (unit spacing):
+  // 2 m0 + m1 = 6 (y1 - y0), m(i-1) + 4 m(i) + m(i+1) = 6 (y(i+1) - 2 y(i)
+  // + y(i-1)), m(n-2) + 2 m(n-1) = -6 (y(n-1) - y(n-2)).
+  let mut diag = vec![4.0; n];
+  diag[0] = 2.0;
+  diag[n - 1] = 2.0;
+  let mut rhs: Vec<f64> = (0..n)
+    .map(|i| {
+      if i == 0 {
+        6.0 * (vals[1] - vals[0])
+      } else if i == n - 1 {
+        -6.0 * (vals[n - 1] - vals[n - 2])
+      } else {
+        6.0 * (vals[i + 1] - 2.0 * vals[i] + vals[i - 1])
+      }
+    })
+    .collect();
+  // Thomas algorithm (all off-diagonals are 1).
+  for i in 1..n {
+    let w = 1.0 / diag[i - 1];
+    diag[i] -= w;
+    rhs[i] -= w * rhs[i - 1];
+  }
+  let mut m = vec![0.0; n];
+  m[n - 1] = rhs[n - 1] / diag[n - 1];
+  for i in (0..n - 1).rev() {
+    m[i] = (rhs[i] - m[i + 1]) / diag[i];
+  }
+  // On [i, i + 1] with t in [0, 1]:
+  // S(t) = y_i + b t + m_i t^2 / 2 + (m_(i+1) - m_i) t^3 / 6,
+  // b = y_(i+1) - y_i - (2 m_i + m_(i+1)) / 6.
+  let piece = |i: usize| {
+    let b = vals[i + 1] - vals[i] - (2.0 * m[i] + m[i + 1]) / 6.0;
+    let c = m[i] / 2.0;
+    let d = (m[i + 1] - m[i]) / 6.0;
+    (vals[i], b, c, d)
+  };
+  let eval = |i: usize, t: f64| {
+    let (a, b, c, d) = piece(i);
+    a + t * (b + t * (c + t * d))
+  };
+  let mut peaks: Vec<(f64, f64)> = Vec::new();
+  if m[0] < 0.0 {
+    peaks.push((1.0, eval(0, 0.0)));
+  }
+  for i in 0..n - 1 {
+    let (_, b, c, d) = piece(i);
+    // S'(t) = b + 2 c t + 3 d t^2 = 0 with S''(t) = 2 c + 6 d t < 0.
+    let mut roots = Vec::new();
+    if d.abs() < 1e-300 {
+      if c != 0.0 {
+        roots.push(-b / (2.0 * c));
+      }
+    } else {
+      let disc = 4.0 * c * c - 12.0 * d * b;
+      if disc >= 0.0 {
+        let sq = disc.sqrt();
+        roots.push((-2.0 * c + sq) / (6.0 * d));
+        roots.push((-2.0 * c - sq) / (6.0 * d));
+      }
+    }
+    roots.sort_by(f64::total_cmp);
+    for t in roots {
+      if t > 0.0 && t < 1.0 && 2.0 * c + 6.0 * d * t < 0.0 {
+        peaks.push((i as f64 + 1.0 + t, eval(i, t)));
+      }
+    }
+    // A maximum exactly at an interior knot.
+    if i + 1 < n - 1 && b + 2.0 * c + 3.0 * d == 0.0 && m[i + 1] < 0.0 {
+      peaks.push(((i + 2) as f64, vals[i + 1]));
+    }
+  }
+  if m[n - 1] < 0.0 {
+    peaks.push((n as f64, vals[n - 1]));
+  }
+  peaks
 }
 
 pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
