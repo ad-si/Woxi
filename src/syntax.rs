@@ -10171,6 +10171,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // stay re-parseable for Woxi Studio's Manipulate re-evaluation.)
       if is_output
         && !in_true_input_form()
+        && name == "Image3D"
+        && matches!(args.first(), Some(Expr::List(_)))
+      {
+        return "-Image3D-".to_string();
+      }
+      if is_output
+        && !in_true_input_form()
         && !args.is_empty()
         && (name == "Graphics" || name == "Graphics3D")
       {
@@ -14391,6 +14398,94 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
   })
 }
 
+/// `Image3D[data, type?, opts…]` written the way wolframscript stores the
+/// volume: the voxels as a `NumericArray` of the image type (machine
+/// `Real32` unless given), then the type, the other options, `ColorSpace`
+/// and `Interleaving`.
+fn image3d_input_form(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(_) = &args[0] else {
+    return None;
+  };
+  let (image_type, rest) = match args.get(1) {
+    Some(Expr::String(t)) => (t.as_str(), &args[2..]),
+    _ => ("Real32", &args[1..]),
+  };
+  let array_type = match image_type {
+    "Byte" => "UnsignedInteger8",
+    "Bit16" => "UnsignedInteger16",
+    "Real32" => "Real32",
+    "Real64" | "Real" => "Real64",
+    _ => return None,
+  };
+  fn depth(e: &Expr) -> usize {
+    match e {
+      Expr::List(items) => 1 + items.first().map_or(0, depth),
+      _ => 0,
+    }
+  }
+  let interleaved = match depth(&args[0]) {
+    3 => false,
+    4 => true,
+    _ => return None,
+  };
+  fn voxels(e: &Expr, kind: &str) -> Option<String> {
+    if let Expr::List(items) = e {
+      let parts: Option<Vec<String>> =
+        items.iter().map(|i| voxels(i, kind)).collect();
+      Some(format!("{{{}}}", parts?.join(", ")))
+    } else {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      match kind {
+        "UnsignedInteger8" | "UnsignedInteger16" => {
+          if v.fract() != 0.0 {
+            return None;
+          }
+          Some(format!("{}", v as i64))
+        }
+        "Real32" => Some(expr_to_input_form(&Expr::Real(v as f32 as f64))),
+        _ => Some(expr_to_input_form(&Expr::Real(v))),
+      }
+    }
+  }
+  let data = voxels(&args[0], array_type)?;
+  let option_name = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let mut parts = vec![
+    format!("NumericArray[{data}, \"{array_type}\"]"),
+    format!("\"{image_type}\""),
+  ];
+  let mut color_space = "Automatic".to_string();
+  for opt in rest {
+    let name = option_name(opt)?;
+    match (name.as_str(), opt) {
+      ("ColorSpace", Expr::Rule { replacement, .. }) => {
+        color_space = expr_to_input_form(replacement);
+      }
+      ("Interleaving", _) => {}
+      _ => parts.push(expr_to_input_form(opt)),
+    }
+  }
+  parts.push(format!("ColorSpace -> {color_space}"));
+  parts.push(format!(
+    "Interleaving -> {}",
+    if interleaved { "True" } else { "None" }
+  ));
+  Some(format!("Image3D[{}]", parts.join(", ")))
+}
+
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
 
@@ -14400,6 +14495,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   // it the two InputForm renderers disagree.
   if let Some(rewritten) = operator_call_node(expr) {
     return expr_to_input_form(&rewritten);
+  }
+  if let Some(text) = image3d_input_form(expr) {
+    return text;
   }
   // Parenthesisation is decided by inspecting the direct children, so those
   // checks have to see the operator node rather than the call spelling.

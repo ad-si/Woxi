@@ -24917,32 +24917,23 @@ mod grid_rasterize {
     assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
   }
 
+  // An image is an atom: Part cannot reach inside it (Part::partd), and it
+  // has no length; ImageData is what reads the pixels.
   #[test]
-  fn image_part_reaches_pixel_data() {
+  fn image_has_no_parts() {
     clear_state();
-    // `img[[1]]` is the pixel array, `img[[2]]` the image type.
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]").unwrap(),
-      "{{0, 255}, {255, 0}}"
-    );
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1, 2]]").unwrap(),
-      "{255, 0}"
-    );
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[2]]").unwrap(),
-      "Byte"
-    );
-    // Part on a rasterized graphic feeds ordinary list functions.
+    let r = interpret_with_stdout("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]")
+      .unwrap();
+    assert_eq!(r.result, "-Image-[[1]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Part::partd: Part specification -Image-[[1]] is longer than depth of object."
+    )));
     assert_eq!(
       interpret(
-        "Dimensions[Rasterize[Graphics[{Disk[]}], ImageSize -> 10][[1]]]"
+        "{Length[Image[{{0, 255}, {255, 0}}, \"Byte\"]], AtomQ[Image[{{0, 255}, {255, 0}}, \"Byte\"]], ImageData[Image[{{0, 255}, {255, 0}}, \"Byte\"], \"Byte\"]}"
       )
       .unwrap(),
-      interpret(
-        "Dimensions[ImageData[Rasterize[Graphics[{Disk[]}], ImageSize -> 10], \"Byte\"]]"
-      )
-      .unwrap()
+      "{0, True, {{0, 255}, {255, 0}}}"
     );
   }
 

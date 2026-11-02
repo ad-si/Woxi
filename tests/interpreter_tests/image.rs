@@ -353,13 +353,23 @@ mod image_core {
         "ImageAdjust[Image3D[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 9}}}, Background -> Black]]"
       )
       .unwrap(),
-      "Image3D[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, Background -> GrayLevel[0]]"
+      "-Image3D-"
     );
-    // The filter preserves the total mass of a single bright voxel and
-    // spreads it symmetrically over the neighbouring voxels.
+    // Written out, the voxels are the Real32 NumericArray wolframscript
+    // stores, followed by the options.
     assert_eq!(
       interpret(
-        "v = GaussianFilter[Image3D[Table[If[{i, j, k} == {2, 2, 2}, 9, 0], {i, 3}, {j, 3}, {k, 3}]], 1][[1]]; \
+        "ToString[{ImageAdjust[Image3D[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 9}}}, Background -> Black]], Image3D[{{{0, 255}}}, \"Byte\"], Image3D[{{{0.5, 0.2}}}, ColorSpace -> \"Grayscale\"], Image3D[{{{{1, 0, 0}, {0, 1, 0}}}}]}, InputForm]"
+      )
+      .unwrap(),
+      "{Image3D[NumericArray[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, \"Real32\"], \"Real32\", Background -> GrayLevel[0], ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0, 255}}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0.5, 0.20000000298023224}}}, \"Real32\"], \"Real32\", ColorSpace -> \"Grayscale\", Interleaving -> None], Image3D[NumericArray[{{{{1., 0., 0.}, {0., 1., 0.}}}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, Interleaving -> True]}"
+    );
+    // The filter preserves the total mass of a single bright voxel and
+    // spreads it symmetrically over the neighbouring voxels. (An image is
+    // an atom; ImageData reads the voxels.)
+    assert_eq!(
+      interpret(
+        "v = ImageData[GaussianFilter[Image3D[Table[If[{i, j, k} == {2, 2, 2}, 9, 0], {i, 3}, {j, 3}, {k, 3}]], 1]]; \
          {Dimensions[v], Round[Total[Flatten[v]], 0.001], v[[1, 2, 2]] == v[[3, 2, 2]]}"
       )
       .unwrap(),
