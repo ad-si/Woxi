@@ -14369,9 +14369,24 @@ fn find_root_eval_at(
 ) -> Result<f64, InterpreterError> {
   let substituted =
     crate::syntax::substitute_variable(expr, var, &Expr::Real(x));
-  let evaled = unwrap_singleton_list(crate::evaluator::evaluate_expr_to_expr(
-    &substituted,
-  )?);
+  // The unknown can also be reached through a definition (`q[k_] :=
+  // NIntegrate[g[r], …]` with `g` mentioning `k`'s symbol): Wolfram's
+  // FindRoot gives it its value with Block, which such a definition sees.
+  let blocked = call(
+    "Block",
+    vec![
+      Expr::List(
+        vec![call(
+          "Set",
+          vec![Expr::Identifier(var.to_string()), Expr::Real(x)],
+        )]
+        .into(),
+      ),
+      substituted,
+    ],
+  );
+  let evaled =
+    unwrap_singleton_list(crate::evaluator::evaluate_expr_to_expr(&blocked)?);
   match &evaled {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),

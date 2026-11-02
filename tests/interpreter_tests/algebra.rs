@@ -25024,3 +25024,21 @@ mod solve_bounded_inexact_transcendental {
     );
   }
 }
+
+// FindRoot gives its unknown a value with Block, so a definition that
+// mentions the unknown's symbol sees it; the substituted-only evaluation
+// left such an integrand symbolic (NIntegrate::inumr).
+mod find_root_block_semantics {
+  use super::*;
+
+  #[test]
+  fn definitions_see_the_unknown() {
+    let r = woxi::interpret_with_stdout(
+      "g[r_] := k r^2; q[k_?NumericQ] := NIntegrate[g[r], {r, 0, 1}]; \
+       FindRoot[q[k] == 2, {k, 1}]",
+    )
+    .unwrap();
+    assert!(r.result.starts_with("{k -> 6."), "{}", r.result);
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}
