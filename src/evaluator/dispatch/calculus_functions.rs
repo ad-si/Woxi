@@ -4707,7 +4707,12 @@ fn function_domain_multivariate(
       }
     }
   }
-  // Only polynomial denominators are understood.
+  // Polynomial conditions are understood: nonzero denominators, and the
+  // nonnegative radicands and positive logarithm arguments, written the
+  // way wolframscript writes them — a constant term goes to the right with
+  // the sum's leading sign made positive (`Sqrt[1 - x^2 - y^2]` gives
+  // `x^2 + y^2 <= 1`, `Sqrt[x - y]` gives `x - y >= 0`).
+  let mut normalized = Vec::with_capacity(constraints.len());
   for c in &constraints {
     let Expr::Comparison {
       operands,
@@ -4716,16 +4721,44 @@ fn function_domain_multivariate(
     else {
       return Ok(unevaluated("FunctionDomain", args));
     };
+    // A two-sided bound (`-1 <= p <= 1` from ArcSin) stays as it is.
+    if let ([lo, mid, hi], [ComparisonOp::LessEqual, ComparisonOp::LessEqual]) =
+      (operands.as_slice(), operators.as_slice())
+      && names
+        .iter()
+        .all(|n| crate::functions::polynomial_ast::is_polynomial(mid, n))
+      && crate::functions::predicate_ast::is_numeric_q(lo)
+      && crate::functions::predicate_ast::is_numeric_q(hi)
+    {
+      normalized.push(call(
+        "Inequality",
+        vec![
+          lo.clone(),
+          id_expr("LessEqual"),
+          mid.clone(),
+          id_expr("LessEqual"),
+          hi.clone(),
+        ],
+      ));
+      continue;
+    }
     let polynomial = names.iter().all(|n| {
       crate::functions::polynomial_ast::is_polynomial(&operands[0], n)
     });
-    if !matches!(operators.as_slice(), [ComparisonOp::NotEqual])
-      || !matches!(operands.get(1), Some(Expr::Integer(0)))
-      || !polynomial
-    {
+    let op = match operators.as_slice() {
+      [
+        op @ (ComparisonOp::NotEqual
+        | ComparisonOp::GreaterEqual
+        | ComparisonOp::Greater),
+      ] => *op,
+      _ => return Ok(unevaluated("FunctionDomain", args)),
+    };
+    if !matches!(operands.get(1), Some(Expr::Integer(0))) || !polynomial {
       return Ok(unevaluated("FunctionDomain", args));
     }
+    normalized.push(normalize_domain_condition(&operands[0], op)?);
   }
+  let mut constraints = normalized;
   if constraints.is_empty() {
     return Ok(bool_expr(true));
   }
@@ -4735,6 +4768,44 @@ fn function_domain_multivariate(
     call("And", constraints)
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
+}
+
+/// `p op 0` for a polynomial `p`, with a constant term moved to the right
+/// and, when moved, the sign chosen so the remaining sum leads positively:
+/// `1 - x^2 - y^2 >= 0` is `x^2 + y^2 <= 1`.
+fn normalize_domain_condition(
+  p: &Expr,
+  op: ComparisonOp,
+) -> Result<Expr, InterpreterError> {
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let terms = crate::functions::polynomial_ast::collect_additive_terms(p);
+  let is_number = |t: &Expr| crate::functions::predicate_ast::is_numeric_q(t);
+  let constant: Vec<Expr> =
+    terms.iter().filter(|t| is_number(t)).cloned().collect();
+  let rest: Vec<Expr> =
+    terms.iter().filter(|t| !is_number(t)).cloned().collect();
+  if constant.is_empty() || rest.is_empty() || op == ComparisonOp::NotEqual {
+    return Ok(Expr::Comparison {
+      operands: vec![p.clone(), Expr::Integer(0)],
+      operators: vec![op],
+    });
+  }
+  let mut lhs = eval(&plus(rest))?;
+  let mut rhs = eval(&times(vec![Expr::Integer(-1), plus(constant)]))?;
+  let mut op = op;
+  if crate::syntax::expr_to_string(&lhs).starts_with('-') {
+    lhs = eval(&times(vec![Expr::Integer(-1), lhs]))?;
+    rhs = eval(&times(vec![Expr::Integer(-1), rhs]))?;
+    op = match op {
+      ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
+      ComparisonOp::Greater => ComparisonOp::Less,
+      other => other,
+    };
+  }
+  Ok(Expr::Comparison {
+    operands: vec![lhs, rhs],
+    operators: vec![op],
+  })
 }
 
 fn collect_domain_constraints(
@@ -4819,6 +4890,18 @@ fn collect_domain_constraints(
         });
       }
     }
+    // ArcSin[x], ArcCos[x] → -1 <= x <= 1
+    Expr::FunctionCall { name, args }
+      if (name == "ArcSin" || name == "ArcCos") && args.len() == 1 =>
+    {
+      collect_domain_constraints(&args[0], var, constraints);
+      if contains_variable(&args[0], var) {
+        constraints.push(Expr::Comparison {
+          operands: vec![Expr::Integer(-1), args[0].clone(), Expr::Integer(1)],
+          operators: vec![ComparisonOp::LessEqual, ComparisonOp::LessEqual],
+        });
+      }
+    }
     // Sqrt[x] → x >= 0
     expr if is_sqrt(expr).is_some() => {
       let sqrt_arg = is_sqrt(expr).unwrap();
@@ -4852,6 +4935,16 @@ fn collect_domain_constraints(
 /// - `-1 + x >= 0` → `x >= 1`
 /// - `x^2 - 1 != 0` → `x < -1 || Inequality[-1, Less, x, Less, 1] || x > 1`
 fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
+  // A two-sided bound reduces to an interval in the variable.
+  if let Expr::Comparison { operands, .. } = constraint
+    && operands.len() == 3
+    && let Ok(reduced) = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Reduce",
+      vec![constraint.clone(), id_expr(var), id_expr("Reals")],
+    ))
+  {
+    return reduced;
+  }
   if let Expr::Comparison {
     operands,
     operators,

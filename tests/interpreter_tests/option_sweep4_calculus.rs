@@ -304,11 +304,37 @@ mod function_domain_several_variables {
     assert_eq!(interpret("FunctionDomain[x + y, {x, y}]").unwrap(), "True");
   }
 
+  // Radicands and logarithm arguments are polynomial conditions too.
   #[test]
-  fn other_restrictions_stay_unevaluated() {
+  fn radicals_and_logarithms() {
     assert_eq!(
       interpret("FunctionDomain[Sqrt[x - y], {x, y}]").unwrap(),
-      "FunctionDomain[Sqrt[x - y], {x, y}]"
+      "x - y >= 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Log[x + y], {x, y}]").unwrap(),
+      "x + y > 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Sqrt[x] + Sqrt[y], {x, y}]").unwrap(),
+      "x >= 0 && y >= 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Sqrt[1 - x^2 - y^2], {x, y}]").unwrap(),
+      "x^2 + y^2 <= 1"
+    );
+  }
+
+  #[test]
+  fn arcsine_bounds() {
+    assert_eq!(
+      interpret("ToString[FunctionDomain[ArcSin[x - y], {x, y}], InputForm]")
+        .unwrap(),
+      "Inequality[-1, LessEqual, x - y, LessEqual, 1]"
+    );
+    assert_eq!(
+      interpret("ToString[FunctionDomain[ArcSin[x], x], InputForm]").unwrap(),
+      "Inequality[-1, LessEqual, x, LessEqual, 1]"
     );
   }
 }
