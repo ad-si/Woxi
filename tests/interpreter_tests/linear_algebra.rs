@@ -425,6 +425,23 @@ mod det {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // A machine-complex matrix is reduced numerically, not symbolically (a
+  // 30 x 30 one took minutes).
+  #[test]
+  fn machine_complex_matrix() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[1]; m = RandomComplex[{-1 - I, 1 + I}, {30, 30}]; \
+         {First[AbsoluteTiming[d = Det[m]]] < 5, \
+          Abs[d - Times @@ Eigenvalues[m]]/Abs[d] < 10^-8, \
+          Det[{{1. + 0. I, 2.}, {2., 4.}}], \
+          Chop[Det[{{1. + I, 2.}, {3., 4. - I}}] - (-1 + 3 I)]}"
+      )
+      .unwrap(),
+      "{True, True, 0., 0}"
+    );
+  }
+
   // Machine numbers with one symbolic row: expanded along that row
   // (Demonstration NinePointCubic's 10 x 10 cubic through nine points took
   // minutes of symbolic elimination).

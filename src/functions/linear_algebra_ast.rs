@@ -1869,6 +1869,32 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(m) = machine_real_matrix(&matrix) {
     return Ok(Expr::Real(machine_determinant(&m)));
   }
+  // A machine-complex matrix: the product of its complex LU pivots.
+  if matrix
+    .iter()
+    .flatten()
+    .any(crate::functions::math_ast::numeric_utils::contains_inexact_real)
+    && let Some(m) = matrix
+      .iter()
+      .map(|row| {
+        row
+          .iter()
+          .map(machine_complex_parts)
+          .collect::<Option<Vec<(f64, f64)>>>()
+      })
+      .collect::<Option<Vec<_>>>()
+  {
+    // An exactly singular matrix has the real determinant 0., as in
+    // wolframscript.
+    return Ok(match machine_complex_determinant(m) {
+      Some((re, im)) => {
+        crate::functions::math_ast::numeric_utils::machine_complex_result(
+          re, im,
+        )
+      }
+      None => Expr::Real(0.0),
+    });
+  }
   if let Some(det) = det_by_one_symbolic_row(&matrix) {
     return det;
   }
@@ -2068,6 +2094,46 @@ fn machine_determinant(m: &[Vec<f64>]) -> f64 {
     Some((_, sign)) => (0..a.len()).fold(sign, |acc, i| acc * a[i][i]),
     None => 0.0,
   }
+}
+
+/// `Det` of a machine-complex matrix: Gaussian elimination with partial
+/// pivoting in complex arithmetic, the product of the pivots.
+fn machine_complex_determinant(
+  mut a: Vec<Vec<(f64, f64)>>,
+) -> Option<(f64, f64)> {
+  type C = (f64, f64);
+  let mul = |x: C, y: C| (x.0 * y.0 - x.1 * y.1, x.0 * y.1 + x.1 * y.0);
+  let div = |x: C, y: C| {
+    let d = y.0 * y.0 + y.1 * y.1;
+    ((x.0 * y.0 + x.1 * y.1) / d, (x.1 * y.0 - x.0 * y.1) / d)
+  };
+  let abs = |c: C| c.0.hypot(c.1);
+  let n = a.len();
+  let mut det: C = (1.0, 0.0);
+  for k in 0..n {
+    let Some(p) = (k..n).max_by(|&i, &j| abs(a[i][k]).total_cmp(&abs(a[j][k])))
+    else {
+      return None;
+    };
+    if abs(a[p][k]) == 0.0 {
+      return None;
+    }
+    if p != k {
+      a.swap(p, k);
+      det = (-det.0, -det.1);
+    }
+    det = mul(det, a[k][k]);
+    // LAPACK's order: scale by the pivot's reciprocal.
+    let recip = div((1.0, 0.0), a[k][k]);
+    for i in k + 1..n {
+      let factor = mul(a[i][k], recip);
+      for j in k + 1..n {
+        let t = mul(factor, a[k][j]);
+        a[i][j] = (a[i][j].0 - t.0, a[i][j].1 - t.1);
+      }
+    }
+  }
+  Some(det)
 }
 
 /// `Inverse` of a machine-real matrix by LU, or `None` when singular.
