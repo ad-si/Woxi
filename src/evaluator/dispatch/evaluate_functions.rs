@@ -788,6 +788,9 @@ fn is_identifier_like(s: &str) -> bool {
 /// else would create them — and a package that reads one of the names by its
 /// short form has to land on the same symbol the built-in produces.
 pub(crate) fn register_standard_context_symbols(ctx: &str) {
+  // Loaded is loaded: the package is in `$Packages` from now on, and the
+  // functions it defines answer to their qualified names.
+  crate::register_package(ctx.to_string());
   if ctx == "CodeParser`" {
     crate::functions::code_parser::register_context_symbols();
     // Reading `LeafNode` after the context is loaded has to find
@@ -797,9 +800,32 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "ComputationalGeometry`" {
-    // Like Combinatorica, it only shadows bare names (`ConvexHull`), which
-    // `evaluate_function_call_ast_inner` redirects while the context is on
-    // `$ContextPath`.
+    // Its exports, so a bare `ConvexHull` read after loading is
+    // `ComputationalGeometry`ConvexHull`; one read before it (on the same
+    // line, say) stays the `Global`` symbol, as in wolframscript.
+    for name in [
+      "AllPoints",
+      "BoundedDiagram",
+      "ConvexHull",
+      "ConvexHullArea",
+      "ConvexHullMedian",
+      "DelaunayTriangulation",
+      "DelaunayTriangulationQ",
+      "DiagramPlot",
+      "Hull",
+      "LabelPoints",
+      "NearestNeighbor",
+      "PlanarGraphPlot",
+      "Ray",
+      "TileAreas",
+      "TriangularSurfacePlot",
+      "TrimPoints",
+      "VoronoiDiagram",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!(
+        "ComputationalGeometry`{name}"
+      ));
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "Polytopes`" {
@@ -1435,8 +1461,6 @@ fn evaluate_function_call_ast_inner(
   // Read only by the arms below that need them, so other calls skip the
   // `$ContextPath` lookups.
   let combinatorica_active = || crate::context_path_contains("Combinatorica`");
-  let computational_geometry_active =
-    || crate::context_path_contains("ComputationalGeometry`");
   let graph_utilities_active =
     || crate::context_path_contains("GraphUtilities`");
   let combinatorica_graph_first = matches!(
@@ -1457,21 +1481,6 @@ fn evaluate_function_call_ast_inner(
     "GraphPath" if graph_utilities_active() => "GraphUtilities`GraphPath",
     "HamiltonianCycles" if graph_utilities_active() => {
       "GraphUtilities`HamiltonianCycles"
-    }
-    "ConvexHull" if computational_geometry_active() => {
-      "ComputationalGeometry`ConvexHull"
-    }
-    "ConvexHullArea" if computational_geometry_active() => {
-      "ComputationalGeometry`ConvexHullArea"
-    }
-    "DelaunayTriangulation" | "DiagramPlot" | "VoronoiDiagram"
-      if computational_geometry_active() =>
-    {
-      match name {
-        "DiagramPlot" => "ComputationalGeometry`DiagramPlot",
-        "VoronoiDiagram" => "ComputationalGeometry`VoronoiDiagram",
-        _ => "ComputationalGeometry`DelaunayTriangulation",
-      }
     }
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
@@ -5746,73 +5755,45 @@ fn evaluate_function_call_ast_inner(
   }
 
   // The legacy package's DistanceMatrix[data, DistanceFunction -> f] is the
-  // built-in DistanceMatrix.
+  // built-in DistanceMatrix, with its own Automatic distance.
   if name == "HierarchicalClustering`DistanceMatrix"
     && (args.len() == 1 || args.len() == 2)
   {
-    return crate::functions::list_helpers_ast::distance_matrix_ast(args);
+    return hierarchical_clustering_distance_matrix(args);
   }
 
-  // ComputationalGeometry`ConvexHull[{{x1,y1},...}] → indices of the hull
-  // corners, counter-clockwise.
-  if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
-    return crate::functions::convex_hull::convex_hull_indices_ast(args);
-  }
-  // ComputationalGeometry`ConvexHullArea[pts]: the shoelace area of the
-  // hull, exact for exact points.
-  if name == "ComputationalGeometry`ConvexHullArea"
-    && let [Expr::List(points)] = args
+  // The legacy ComputationalGeometry` package, once loaded.
+  if name.starts_with("ComputationalGeometry`")
+    && package_loaded("ComputationalGeometry`")
   {
-    let hull = crate::functions::convex_hull::convex_hull_indices_ast(args)?;
-    let Expr::List(indices) = &hull else {
-      return Ok(unevaluated(name, args));
-    };
-    let corners: Vec<Expr> = indices
-      .iter()
-      .filter_map(|i| {
-        expr_to_i128(i).and_then(|k| points.get(k as usize - 1).cloned())
-      })
-      .collect();
-    if corners.len() < 3 {
-      return Ok(Expr::Integer(0));
+    use crate::functions::computational_geometry as cg;
+    match name {
+      "ComputationalGeometry`ConvexHull" if !args.is_empty() => {
+        return cg::convex_hull_ast(args);
+      }
+      "ComputationalGeometry`ConvexHullArea" if args.len() == 1 => {
+        return cg::convex_hull_area_ast(args);
+      }
+      _ => {}
     }
-    let coord = |p: &Expr, k: usize| match p {
-      Expr::List(c) if c.len() == 2 => Some(c[k].clone()),
-      _ => None,
-    };
-    let mut terms = Vec::with_capacity(corners.len());
-    for (j, p) in corners.iter().enumerate() {
-      let next = &corners[(j + 1) % corners.len()];
-      let (Some(x1), Some(y1), Some(x2), Some(y2)) =
-        (coord(p, 0), coord(p, 1), coord(next, 0), coord(next, 1))
-      else {
-        return Ok(unevaluated(name, args));
-      };
-      terms.push(call(
-        "Subtract",
-        vec![call("Times", vec![x1, y2]), call("Times", vec![x2, y1])],
-      ));
-    }
-    return evaluate_expr_to_expr(&call(
-      "Times",
-      vec![
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
-        call("Abs", vec![call("Plus", terms)]),
-      ],
-    ));
   }
-
-  if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
-    return crate::functions::delaunay::delaunay_triangulation_ast(args);
+  if name == "ComputationalGeometry`DelaunayTriangulation"
+    && package_loaded("ComputationalGeometry`")
+    && !args.is_empty()
+  {
+    return crate::functions::computational_geometry::delaunay_triangulation_ast(args);
   }
-  if name == "ComputationalGeometry`VoronoiDiagram" && args.len() == 1 {
-    return crate::functions::delaunay::voronoi_diagram_ast(args);
+  if name == "ComputationalGeometry`VoronoiDiagram"
+    && package_loaded("ComputationalGeometry`")
+    && args.len() == 1
+  {
+    return crate::functions::computational_geometry::voronoi_diagram_ast(args);
   }
-  if name == "ComputationalGeometry`DiagramPlot" && !args.is_empty() {
-    return crate::functions::delaunay::diagram_plot_ast(args);
+  if name == "ComputationalGeometry`DiagramPlot"
+    && package_loaded("ComputationalGeometry`")
+    && !args.is_empty()
+  {
+    return crate::functions::computational_geometry::diagram_plot_ast(args);
   }
 
   // ExpressionGraph[expr] → Graph of the expression tree
@@ -6188,19 +6169,21 @@ fn evaluate_function_call_ast_inner(
 
   // The legacy `Polytopes`` package: regular polygons with their vertices
   // on the unit circle (`Vertices`), and radii for unit edge length.
-  // `Triangle` is shadowed by `System`Triangle`, so the package never
-  // reaches it in wolframscript either.
-  let name = name.strip_prefix("Polytopes`").unwrap_or(name);
-  if matches!(
-    name,
-    "Vertices"
-      | "NumberOfVertices"
-      | "NumberOfEdges"
-      | "NumberOfFaces"
-      | "Faces"
-      | "InscribedRadius"
-      | "CircumscribedRadius"
-  ) && crate::context_path_contains("Polytopes`")
+  // The functions are the package's own symbols, so a name read before the
+  // package was loaded is a `Global`` one and stays unevaluated. `Triangle`
+  // and `Square` are the System symbols, which the package's rules take too.
+  if let Some(pname) = name.strip_prefix("Polytopes`")
+    && package_loaded("Polytopes`")
+    && matches!(
+      pname,
+      "Vertices"
+        | "NumberOfVertices"
+        | "NumberOfEdges"
+        | "NumberOfFaces"
+        | "Faces"
+        | "InscribedRadius"
+        | "CircumscribedRadius"
+    )
     && let [Expr::Identifier(poly)] = args
     && let Some(n) = polytopes_polygon_sides(poly)
   {
@@ -6212,7 +6195,7 @@ fn evaluate_function_call_ast_inner(
         call("Power", vec![n_e.clone(), Expr::Integer(-1)]),
       ],
     );
-    let value = match name {
+    let value = match pname {
       "Vertices" => call(
         "Table",
         vec![
@@ -16363,13 +16346,123 @@ fn apply_user_overloads_to_subsets(
   Ok(None)
 }
 
-/// The number of sides of a `Polytopes`` polygon symbol (bare or qualified).
+/// Whether a package has been loaded (`Get`/`Needs`) this session. Until it
+/// is, its qualified names are plain symbols without definitions.
+fn package_loaded(ctx: &str) -> bool {
+  crate::packages_list().iter().any(|pkg| pkg == ctx)
+}
+
+/// `HierarchicalClustering`DistanceMatrix[data]`: the package's Automatic
+/// distance is SquaredEuclideanDistance for numbers and numeric vectors,
+/// EditDistance for strings and HammingDistance for boolean vectors; other
+/// data has no automatic distance (`DistanceMatrix::amtd`). The diagonal is
+/// an exact 0 whatever the data.
+fn hierarchical_clustering_distance_matrix(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let name = "HierarchicalClustering`DistanceMatrix";
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated(name, args));
+  };
+  let given = match args.get(1) {
+    None => None,
+    Some(Expr::Rule {
+      pattern,
+      replacement,
+    }) if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "DistanceFunction") => {
+      Some(replacement.as_ref().clone())
+    }
+    Some(_) => {
+      crate::emit_message(
+        "DistanceMatrix::argx: DistanceMatrix called with 2 arguments; 1 argument is expected.",
+      );
+      return Ok(unevaluated(name, args));
+    }
+  };
+  let automatic = match &given {
+    None => true,
+    Some(Expr::Identifier(f)) => f == "Automatic",
+    Some(_) => false,
+  };
+  let function = if automatic {
+    let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+    let boolean = |e: &Expr| matches!(e, Expr::Identifier(b) if b == "True" || b == "False");
+    let vectors: Option<Vec<&[Expr]>> = items
+      .iter()
+      .map(|e| match e {
+        Expr::List(v) => Some(v.as_slice()),
+        _ => None,
+      })
+      .collect();
+    let same_length =
+      |vs: &[&[Expr]]| vs.iter().all(|v| v.len() == vs[0].len());
+    let chosen = if items.is_empty() {
+      None
+    } else if items.iter().all(numeric) {
+      Some("SquaredEuclideanDistance")
+    } else if items.iter().all(|e| matches!(e, Expr::String(_))) {
+      Some("EditDistance")
+    } else if let Some(vs) = vectors.filter(|vs| same_length(vs)) {
+      if vs.iter().all(|v| v.iter().all(numeric)) {
+        Some("SquaredEuclideanDistance")
+      } else if vs.iter().all(|v| v.iter().all(boolean)) {
+        Some("HammingDistance")
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    if let Some(f) = chosen {
+      Expr::Identifier(f.to_string())
+    } else {
+      crate::emit_message(&format!(
+        "DistanceMatrix::amtd: DistanceMatrix is unable to automatically select an appropriate dissimilarity function for the input data {}.",
+        expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(name, args));
+    }
+  } else {
+    given.unwrap()
+  };
+  let matrix = crate::functions::list_helpers_ast::distance_matrix_ast(&[
+    args[0].clone(),
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier("DistanceFunction".to_string())),
+      replacement: Box::new(function),
+    },
+  ])?;
+  let Expr::List(rows) = &matrix else {
+    return Ok(unevaluated(name, args));
+  };
+  let rows: Vec<Expr> = rows
+    .iter()
+    .enumerate()
+    .map(|(i, row)| match row {
+      Expr::List(cells) => {
+        let mut cells = cells.to_vec();
+        if let Some(c) = cells.get_mut(i) {
+          *c = Expr::Integer(0);
+        }
+        Expr::List(cells.into())
+      }
+      other => other.clone(),
+    })
+    .collect();
+  Ok(Expr::List(rows.into()))
+}
+
+/// The number of sides of a `Polytopes`` polygon symbol: one of the
+/// package's own, or the System `Triangle` and `Square`.
 fn polytopes_polygon_sides(symbol: &str) -> Option<i128> {
-  let bare = symbol.strip_prefix("Polytopes`").unwrap_or(symbol);
+  match symbol {
+    "Triangle" | "System`Triangle" => return Some(3),
+    "Square" | "System`Square" => return Some(4),
+    _ => {}
+  }
+  let bare = symbol.strip_prefix("Polytopes`")?;
   Some(match bare {
     "Digon" => 2,
-    "Triangle" => 3,
-    "Square" => 4,
     "Pentagon" => 5,
     "Hexagon" => 6,
     "Heptagon" => 7,

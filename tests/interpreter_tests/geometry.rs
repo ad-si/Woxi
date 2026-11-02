@@ -3040,10 +3040,11 @@ mod delaunay_mesh {
 mod computational_geometry_convex_hull {
   use super::*;
 
-  // The hull's area: exact for exact points, a machine number otherwise,
-  // 0 for a degenerate hull.
+  // A line is read before it runs: the bare names on the line that loads
+  // the package are `Global`` symbols, and print as such once the package
+  // exports the same names.
   #[test]
-  fn convex_hull_area() {
+  fn bare_names_on_the_loading_line_stay_global() {
     assert_eq!(
       interpret(
         "Get[\"ComputationalGeometry`\"]; \
@@ -3052,67 +3053,180 @@ mod computational_geometry_convex_hull {
            ComputationalGeometry`ConvexHullArea[{{0,0},{3,0},{1,2},{1,1}}]}]"
       )
       .unwrap(),
-      "InputForm[{1, 3., 0, 3}]"
+      "InputForm[{Global`ConvexHullArea[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {1/2, 1/2}}], Global`ConvexHullArea[{{0., 0}, {2, 0}, {0, 3}}], Global`ConvexHullArea[{{0, 0}, {1, 1}}], 3}]"
     );
   }
 
-  // Indices of the strict corners, counter-clockwise from the leftmost one.
+  // The hull's area: the triangles each hull edge makes with the centroid,
+  // exact for exact points, a machine number otherwise, 0 for a degenerate
+  // hull. Read on a later line, the bare name is the package's.
+  #[test]
+  fn convex_hull_area() {
+    assert_eq!(
+      interpret(
+        "Get[\"ComputationalGeometry`\"]\n\
+         InputForm[{ConvexHullArea[{{0,0},{1,0},{1,1},{0,1},{1/2,1/2}}], \
+           ConvexHullArea[{{0.,0},{2,0},{0,3}}], ConvexHullArea[{{0,0},{1,1}}], \
+           ConvexHullArea[{{0.1,0.2},{2.3,0.1},{1.7,3.3},{0.5,2.9}}]}]"
+      )
+      .unwrap(),
+      "InputForm[{1, 3., 0, 5.029999999999999}]"
+    );
+  }
+
+  // Until the package is loaded its qualified names have no definitions.
+  // (Two lines, so the conformance run, whose session may have loaded the
+  // package already, leaves it alone.)
+  #[test]
+  fn qualified_name_before_loading() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = {{0,0},{1,1},{2,0}};\nComputationalGeometry`ConvexHull[pts]"
+      )
+      .unwrap(),
+      "ComputationalGeometry`ConvexHull[{{0, 0}, {1, 1}, {2, 0}}]"
+    );
+  }
+
+  // Graham's scan as the package runs it: counter-clockwise from the first
+  // rightmost point of the polar order, the lowest of the rightmost ones.
   #[test]
   fn qualified_name() {
     assert_eq!(
       interpret(
-        "ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,0},{1,0.5},{1,-1}}]"
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,0},{1,0.5},{1,-1}}]"
       )
       .unwrap(),
-      "{1, 5, 3, 2}"
+      "{3, 2, 1, 5}"
     );
   }
 
-  // Loading the package puts the bare name in scope.
+  #[test]
+  fn hull_start_and_direction() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`ConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}], ComputationalGeometry`ConvexHull[{{0,0},{0,2},{2,2},{2,0}}], ComputationalGeometry`ConvexHull[{{1,0},{0,1},{-1,0},{0,-1}}], ComputationalGeometry`ConvexHull[{{0,1},{0,0},{1,0},{1,1}}], ComputationalGeometry`ConvexHull[{{3,0},{3,1},{0,0},{0,1},{1,5}}]}"
+      )
+      .unwrap(),
+      "{{2, 3, 5, 1}, {4, 3, 2, 1}, {1, 2, 3, 4}, {3, 4, 1, 2}, {1, 2, 5, 4, 3}}"
+    );
+  }
+
+  // AllPoints -> True (the default) keeps points on a hull edge; collinear
+  // points come back sorted by position; a duplicate is dropped with a
+  // message.
+  #[test]
+  fn edge_points_collinear_sets_and_duplicates() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`ConvexHull[{{0,0},{1,0},{2,0},{2,2},{1,2},{0,2}}], ComputationalGeometry`ConvexHull[{{0,0},{1,0},{2,0},{2,2},{0,2}}, ComputationalGeometry`AllPoints -> False], ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,2},{3,3}}], ComputationalGeometry`ConvexHull[{{0,0},{1,1}}]}"
+      )
+      .unwrap(),
+      "{{3, 4, 5, 6, 1, 2}, {3, 4, 5, 1}, {1, 2, 3, 4}, {1, 2}}"
+    );
+    let r = interpret_with_stdout(
+      "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`ConvexHull[{{0,0},{0,0},{1,0},{0,1}}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{3, 4, 1}");
+    assert!(r.warnings.iter().any(|w| {
+      w.contains("ConvexHull::duplicated: 1 duplicated point(s) ignored.")
+    }));
+  }
+
+  // Loading the package puts the bare name in scope for the lines after.
   #[test]
   fn bare_name_after_get() {
     assert_eq!(
       interpret(
-        "<<\"ComputationalGeometry`\"; ConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}]"
+        "<<\"ComputationalGeometry`\"\nConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}]"
       )
       .unwrap(),
-      "{1, 2, 3, 5}"
+      "{2, 3, 5, 1}"
     );
   }
 
-  // The legacy adjacency-list triangulation: neighbours of each point.
+  // The legacy adjacency-list triangulation: the neighbours of each point
+  // counter-clockwise, in the order the package's divide-and-conquer merge
+  // leaves them.
   #[test]
   fn delaunay_triangulation_adjacency() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; DelaunayTriangulation[{{-3,-3},{2,-2},{4,2},{1,3}}]"
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`DelaunayTriangulation[{{-3,-3},{2,-2},{4,2},{1,3}}]"
       )
       .unwrap(),
-      "{{1, {2, 4}}, {2, {1, 3, 4}}, {3, {2, 4}}, {4, {1, 2, 3}}}"
+      "{{1, {2, 4}}, {2, {3, 4, 1}}, {3, {4, 2}}, {4, {1, 2, 3}}}"
     );
   }
 
-  // The Voronoi diagram: cell edges clipped to a frame, sites, index labels.
+  // With Hull -> True the hull comes too; an interior point's list and a
+  // collinear half are merged the package's way.
+  #[test]
+  fn delaunay_triangulation_hull_and_collinear_halves() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`DelaunayTriangulation[{{0,0},{4,0},{0,4},{4,4},{1,2}}, ComputationalGeometry`Hull -> True], ComputationalGeometry`DelaunayTriangulation[{{0,0},{1,0},{2,0},{0,1},{1,1},{2,1}}]}"
+      )
+      .unwrap(),
+      "{{{{1, {2, 5, 3}}, {2, {4, 5, 1}}, {3, {1, 5, 4}}, {4, {3, 5, 2}}, {5, {3, 1, 2, 4}}}, {3, 1, 2, 4}}, {{1, {2, 5, 4}}, {2, {3, 6, 5, 1}}, {3, {6, 2}}, {4, {1, 5}}, {5, {4, 1, 2, 6}}, {6, {5, 2, 3}}}}"
+    );
+  }
+
+  // Twelve points with repeated abscissae, by the package's labels.
+  #[test]
+  fn delaunay_triangulation_larger_set() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`DelaunayTriangulation[Table[{Mod[i*37, 11], Mod[i*61, 13]}, {i, 12}], ComputationalGeometry`Hull -> True]"
+      )
+      .unwrap(),
+      "{{{1, {11, 12, 2, 4}}, {2, {5, 4, 1, 12, 9, 6, 3}}, {3, {2, 6, 11}}, {4, {11, 1, 2, 5, 8, 7}}, {5, {8, 4, 2}}, {6, {9, 11, 3, 2}}, {7, {11, 4, 8, 10}}, {8, {10, 7, 4, 5}}, {9, {12, 11, 6, 2}}, {10, {11, 7, 8}}, {11, {3, 6, 9, 12, 1, 4, 7, 10}}, {12, {1, 11, 9, 2}}}, {11, 3, 2, 5, 8, 10}}"
+    );
+  }
+
+  // The Voronoi diagram as graphics: the site labels, the finite vertex,
+  // the rays and the (open) cell outlines, in the points' own arithmetic.
   #[test]
   fn diagram_plot_voronoi_edges_sites_and_labels() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; g = DiagramPlot[{{0,0},{4,0},{0,3}}, LabelPoints -> True]; {Length[Cases[g, _Line, Infinity]], Cases[g, _Point, Infinity], Cases[g, _Text, Infinity]}"
+        "Needs[\"ComputationalGeometry`\"]; g = ComputationalGeometry`DiagramPlot[{{0,0},{4,0},{0,3}}, ComputationalGeometry`LabelPoints -> True]; {Length[Cases[g, _Line, Infinity]], Cases[g, _Point, Infinity], Cases[g, _Text, Infinity]}"
       )
       .unwrap(),
-      "{3, {Point[{0., 0.}], Point[{4., 0.}], Point[{0., 3.}]}, {Text[1, {0., 0.}], Text[2, {4., 0.}], Text[3, {0., 3.}]}}"
+      "{6, {Point[{2, 3/2}]}, {Text[1, {0, 0}], Text[2, {4, 0}], Text[3, {0, 3}]}}"
     );
   }
 
-  // One finite vertex (the circumcentre) followed by a ray per hull edge.
+  #[test]
+  fn diagram_plot_structure() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; ToString[ComputationalGeometry`DiagramPlot[{{0,0},{4,0},{0,3},{2,2}}, ComputationalGeometry`LabelPoints -> False], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{{PointSize[0.012], Point[{0, 0}], Point[{4, 0}], Point[{0, 3}], Point[{2, 2}]}, {PointSize[0.012], Point[{1/2, 3/2}], Point[{2, 0}]}, {Thickness[0.003], Line[{{2, 0}, {2, -4}}], Line[{{1/2, 3/2}, {-3, 3/2}}], Line[{{2, 0}, {5, 3}}], Line[{{1/2, 3/2}, {2, 9/2}}], Line[{{2, 0}, {1/2, 3/2}}], Line[{{2, 0}}], Line[{{1/2, 3/2}}], Line[{{1/2, 3/2}, {2, 0}}]}}, {PlotRange -> {{-3.473684210526316, 5.473684210526316}, {-4.223684210526316, 4.723684210526316}}, AspectRatio -> 1}]"
+    );
+  }
+
+  // One finite vertex (the circumcentre) followed by a ray per hull edge,
+  // exact for exact points; the ray's second point is its tail.
   #[test]
   fn voronoi_diagram_vertices_rays_and_cells() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,3}}]; {Length[v], v[[1]], Head /@ Rest[v], Length /@ c[[All, 2]], c[[All, 1]]}"
+        "Needs[\"ComputationalGeometry`\"]; {v, c} = ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,3}}]; {Length[v], v[[1]], Head /@ Rest[v], Length /@ c[[All, 2]], c[[All, 1]]}"
       )
       .unwrap(),
-      "{4, {2., 1.5}, {Ray, Ray, Ray}, {3, 3, 3}, {1, 2, 3}}"
+      "{4, {2, 3/2}, {Ray, Ray, Ray}, {3, 3, 3}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,3}}]]"
+      )
+      .unwrap(),
+      "InputForm[{{{2, 3/2}, Ray[{2, 3/2}, {2, -4}], Ray[{2, 3/2}, {-3, 3/2}], Ray[{2, 3/2}, {5, 11/2}]}, {{1, {1, 3, 2}}, {2, {1, 2, 4}}, {3, {1, 4, 3}}}}]"
     );
   }
 
@@ -3121,10 +3235,22 @@ mod computational_geometry_convex_hull {
   fn voronoi_diagram_bounded_cell() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,4},{-4,0},{0,-4}}]; {Length[c[[1, 2]]], AllTrue[c[[1, 2]], # <= Length[v] - 4 &]}"
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,4},{-4,0},{0,-4}}]]"
       )
       .unwrap(),
-      "{4, True}"
+      "InputForm[{{{-2, -2}, {-2, 2}, {2, -2}, {2, 2}, Ray[{2, 2}, {6, 6}], Ray[{2, -2}, {6, -6}], Ray[{-2, 2}, {-6, 6}], Ray[{-2, -2}, {-6, -6}]}, {{1, {2, 1, 3, 4}}, {2, {4, 3, 6, 5}}, {3, {2, 4, 5, 7}}, {4, {1, 2, 7, 8}}, {5, {3, 1, 8, 6}}}}]"
+    );
+  }
+
+  // Collinear sites: a pair of rays between each two neighbours.
+  #[test]
+  fn voronoi_diagram_collinear_sites() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{1,1},{2,2}}]]"
+      )
+      .unwrap(),
+      "InputForm[{{Ray[{1/2, 1/2}, {2., -1.}], Ray[{1/2, 1/2}, {-1., 2.}], Ray[{3/2, 3/2}, {3., 0.}], Ray[{3/2, 3/2}, {0., 3.}]}, {{1, {1, 2}}, {2, {1, 2, 3, 4}}, {3, {3, 4}}}}]"
     );
   }
 }
@@ -9853,7 +9979,20 @@ mod hierarchical_clustering_distance_matrix {
         "Needs[\"HierarchicalClustering`\"]; HierarchicalClustering`DistanceMatrix[{{0, 0}, {3, 4}}]"
       )
       .unwrap(),
-      "{{0, 5}, {5, 0}}"
+      "{{0, 25}, {25, 0}}"
+    );
+  }
+
+  // The package's Automatic distance: squared Euclidean for numbers, edit
+  // distance for strings, Hamming for booleans; the diagonal stays exact.
+  #[test]
+  fn automatic_distance_by_data_kind() {
+    assert_eq!(
+      interpret(
+        "InputForm[{HierarchicalClustering`DistanceMatrix[{1.5, 2, 5}], HierarchicalClustering`DistanceMatrix[{\"abc\", \"abd\", \"xyz\"}], HierarchicalClustering`DistanceMatrix[{{True, False}, {False, False}}], HierarchicalClustering`DistanceMatrix[{{0, 0}, {3, 4}, {1, 1}}, DistanceFunction -> EuclideanDistance]}]"
+      )
+      .unwrap(),
+      "InputForm[{{{0, 0.25, 12.25}, {0.25, 0, 9}, {12.25, 9, 0}}, {{0, 1, 3}, {1, 0, 3}, {3, 3, 0}}, {{0, 1}, {1, 0}}, {{0, 5, Sqrt[2]}, {5, 0, Sqrt[13]}, {Sqrt[2], Sqrt[13], 0}}}]"
     );
   }
 }
@@ -10106,20 +10245,35 @@ mod polytopes_package {
   use super::*;
 
   // The legacy Polytopes` package: polygon vertices on the unit circle,
-  // radii for unit edge length.
+  // radii for unit edge length. The names are read on the line after the
+  // one that loads it; `Triangle` and `Square` are the System symbols.
   #[test]
   fn regular_polygons() {
     assert_eq!(
       interpret(
-        "Quiet[Get[\"Polytopes`\"]]; \
+        "Quiet[Get[\"Polytopes`\"]]\n\
          {NumberOfVertices[Pentagon], NumberOfFaces[Pentagon], InscribedRadius[Square], \
           CircumscribedRadius[Square], Faces[Square], Vertices[Digon], Vertices[Square], \
-          Vertices[Heptagon][[1]], Vertices[Triangle]}"
+          Vertices[Heptagon][[1]], Vertices[Triangle], Vertices[Global`Pentagon]}"
       )
       .unwrap(),
       "{5, 1, 1/2, 1/Sqrt[2], {1, 2, 3, 4}, {{-1, 0}, {1, 0}}, \
        {{0, 1}, {-1, 0}, {0, -1}, {1, 0}}, {Sin[(3*Pi)/14], Cos[(3*Pi)/14]}, \
-       {{-1/2, Sqrt[3]/2}, {-1/2, -1/2*Sqrt[3]}, {1, 0}}}"
+       {{-1/2, Sqrt[3]/2}, {-1/2, -1/2*Sqrt[3]}, {1, 0}}, Vertices[Global`Pentagon]}"
+    );
+  }
+
+  // On the loading line itself every name is read as a `Global`` symbol
+  // before the package defines its own.
+  #[test]
+  fn names_on_the_loading_line_stay_global() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Polytopes`\"]]; \
+         {NumberOfVertices[Pentagon], InscribedRadius[Square], Vertices[Heptagon][[1]], Vertices[Triangle]}"
+      )
+      .unwrap(),
+      "{Global`NumberOfVertices[Global`Pentagon], Global`InscribedRadius[Square], Global`Heptagon, Global`Vertices[Triangle]}"
     );
   }
 }
