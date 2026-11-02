@@ -632,6 +632,19 @@ mod arithmetic {
       assert_eq!(interpret("(2 Pi)^n").unwrap(), "(2*Pi)^n");
     }
 
+    // A scaled sum against a symbol: by the sum's last term, a tie going to
+    // the symbol unless that term is negated.
+    #[test]
+    fn scaled_sum_against_a_symbol() {
+      assert_eq!(interpret("c + 0.5 (b - c)").unwrap(), "0.5*(b - c) + c");
+      assert_eq!(interpret("c + (b + c)/2").unwrap(), "c + (b + c)/2");
+      assert_eq!(interpret("c + (a + b)/2").unwrap(), "(a + b)/2 + c");
+      assert_eq!(
+        interpret("b + c + 0.5 (2 a - b - c)").unwrap(),
+        "b + 0.5*(2*a - b - c) + c"
+      );
+    }
+
     // A sum topped by a reciprocal leads a symbolic power of its base.
     #[test]
     fn reciprocal_topped_sum_before_symbolic_power() {

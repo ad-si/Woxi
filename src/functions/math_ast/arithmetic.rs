@@ -3810,6 +3810,57 @@ fn sum_coefficient_power_order(
   Some(ka.cmp(&kb))
 }
 
+/// A (numerically scaled) sum against a (numerically scaled) symbol in a
+/// Plus: by the symbol against the sum's last term, a tie going to the
+/// symbol unless that term is negated. wolframscript:
+/// `(a + b)/2 + c`, `c + (b + c)/2`, `0.5*(b - c) + c`,
+/// `b + 0.5*(2*a - b - c) + c`. `None` for other pairs.
+fn scaled_sum_vs_symbol_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  use std::cmp::Ordering;
+  let is_sum =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Plus");
+  let single = |e: &Expr| -> Option<Expr> {
+    let (_, factors) = wl_coeff_and_factors(e);
+    match factors.as_slice() {
+      [f] => Some(f.as_ref().clone()),
+      _ => None,
+    }
+  };
+  let (fa, fb) = (single(a)?, single(b)?);
+  let (sum, sym, sum_first_if_less) = match (&fa, &fb) {
+    (s, Expr::Identifier(y)) if is_sum(s) => (s, y.clone(), true),
+    (Expr::Identifier(y), s) if is_sum(s) => (s, y.clone(), false),
+    _ => return None,
+  };
+  let Expr::FunctionCall { args: terms, .. } = sum else {
+    return None;
+  };
+  let top = terms.last()?;
+  let (top_coeff, top_factors) = wl_coeff_and_factors(top);
+  let [top_base] = top_factors.as_slice() else {
+    return None;
+  };
+  let Expr::Identifier(t) = top_base.as_ref() else {
+    return None;
+  };
+  // Ordering of the sum relative to the symbol.
+  let sum_vs_symbol =
+    match crate::functions::list_helpers_ast::wolfram_string_order(t, &sym) {
+      o if o > 0 => Ordering::Less,
+      o if o < 0 => Ordering::Greater,
+      _ if top_coeff < 0.0 => Ordering::Less,
+      _ => Ordering::Greater,
+    };
+  Some(if sum_first_if_less {
+    sum_vs_symbol
+  } else {
+    sum_vs_symbol.reverse()
+  })
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3839,6 +3890,9 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // `(a + b)*x^2 + x^3`, `-((a + b)*x) + x^2` (the order of Collect and
   // Apart output).
   if let Some(ord) = sum_coefficient_power_order(a, b) {
+    return ord;
+  }
+  if let Some(ord) = scaled_sum_vs_symbol_order(a, b) {
     return ord;
   }
   // Two terms ending in powers of one base with symbolic exponents order by
