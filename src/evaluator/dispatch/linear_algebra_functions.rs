@@ -5306,8 +5306,12 @@ fn rotation_transform_3d_axis(
 
   let mut rows = Vec::with_capacity(4);
   for (i, r_row) in r.iter().enumerate() {
-    let mut row: Vec<Expr> =
-      r_row.iter().map(|e| call1("Together", e.clone())).collect();
+    // Multiplied out first, so an irrational factor of the axis stays on
+    // each term: `(Sqrt[2] - Sqrt[2]*Cos[t])/3`, as in wolframscript.
+    let mut row: Vec<Expr> = r_row
+      .iter()
+      .map(|e| call1("Together", call1("Expand", e.clone())))
+      .collect();
     let translation = match point {
       Some(p) => {
         let r_dot_p: Vec<Expr> = (0..3)
