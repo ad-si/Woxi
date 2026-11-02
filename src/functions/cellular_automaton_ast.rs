@@ -232,24 +232,40 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  // `{cells, {b1, b2, …}}`: a 1D seed on a background that repeats a block.
-  if !rule.two_d
-    && let Some((seed, block)) = parse_periodic_background_init(&args[1])
+  // `{cells, block}`: a seed on a background that repeats a block (a list
+  // in 1D, a matrix in 2D).
+  if let Some((seed, block)) =
+    parse_periodic_background_init(&args[1], rule.two_d)
   {
-    let window = match steps.windows.as_slice() {
-      [] => Window::Auto,
-      [x] => *x,
+    let (rows, cols) = match (steps.windows.as_slice(), rule.two_d) {
+      ([], false) => (Window::Range(0, 0, 1), Window::Auto),
+      ([x], false) => (Window::Range(0, 0, 1), *x),
+      ([], true) => (Window::Auto, Window::Auto),
+      ([x], true) => (*x, Window::Auto),
+      ([x, y], true) => (*x, *y),
       _ => return unevaluated(),
     };
-    let Some(rows) =
-      evolve_on_periodic_background(&rule, &seed, &block, &steps.times, window)
-    else {
+    let Some(states) = evolve_on_periodic_background(
+      &rule,
+      &seed,
+      &block,
+      &steps.times,
+      rows,
+      cols,
+    ) else {
       return unevaluated();
     };
-    let mut exprs: Vec<Expr> = rows
+    let to_list = |row: Vec<u128>| {
+      Expr::List(row.into_iter().map(|c| Expr::Integer(c as i128)).collect())
+    };
+    let mut exprs: Vec<Expr> = states
       .into_iter()
-      .map(|row| {
-        Expr::List(row.into_iter().map(|c| Expr::Integer(c as i128)).collect())
+      .map(|state| {
+        if rule.two_d {
+          Expr::List(state.into_iter().map(to_list).collect())
+        } else {
+          to_list(state.into_iter().next().unwrap_or_default())
+        }
       })
       .collect();
     if steps.single_state {
@@ -616,14 +632,22 @@ fn function_rule_automaton(
 /// selects the last n steps.
 fn legacy_offset_form(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
-  let rule = match parse_rule(&args[0]) {
-    Ok(rule) => rule,
-    Err(msg) => {
-      crate::emit_message(&msg);
-      return unevaluated();
+  // A 3D rule `{n, {k, w}, {r1, r2, r3}}` is only understood by the 3D
+  // evolution, not by `parse_rule`.
+  let three_d = matches!(&args[0], Expr::List(spec)
+    if matches!(spec.as_slice(), [_, Expr::List(_), Expr::List(radii)] if radii.len() == 3));
+  let space_dims = if three_d {
+    3
+  } else {
+    match parse_rule(&args[0]) {
+      Ok(rule) if rule.two_d => 2,
+      Ok(_) => 1,
+      Err(msg) => {
+        crate::emit_message(&msg);
+        return unevaluated();
+      }
     }
   };
-  let space_dims = if rule.two_d { 2 } else { 1 };
   let t = match &args[2] {
     Expr::Integer(t) if *t >= 0 => i64::try_from(*t).ok(),
     _ => None,
@@ -1232,84 +1256,127 @@ fn parse_init(
   }
 }
 
-/// `{{c1, c2, …}, {b1, …, bp}}`: the cells at offsets 0, 1, …
-/// on an infinite background repeating the block, aligned so that offset
-/// `x` holds `b[x mod p]`; a one-cell block `{b}` is the plain background `b`.
+/// `{cells, block}`: the cells at offsets 0, 1, … (a row in 1D, a matrix in
+/// 2D) on an infinite background repeating the block, aligned so that offset
+/// `x` holds `block[x mod p]` (`block[r mod p][c mod q]` in 2D); a one-cell
+/// block is the plain background. Both are returned as matrices (one row in
+/// 1D).
 fn parse_periodic_background_init(
   expr: &Expr,
-) -> Option<(Vec<u128>, Vec<u128>)> {
+  two_d: bool,
+) -> Option<(Vec<Vec<u128>>, Vec<Vec<u128>>)> {
   let Expr::List(items) = expr else {
     return None;
   };
-  let [Expr::List(cells), Expr::List(block)] = items.as_slice() else {
+  let [cells, block] = items.as_slice() else {
     return None;
   };
-  if cells.is_empty() || block.is_empty() {
-    return None;
-  }
-  let seed: Vec<u128> =
-    cells.iter().map(as_nonneg_int).collect::<Option<_>>()?;
-  let block: Vec<u128> =
-    block.iter().map(as_nonneg_int).collect::<Option<_>>()?;
-  Some((seed, block))
+  let row = |e: &Expr| -> Option<Vec<u128>> {
+    let Expr::List(cells) = e else {
+      return None;
+    };
+    if cells.is_empty() {
+      return None;
+    }
+    cells.iter().map(as_nonneg_int).collect()
+  };
+  let matrix = |e: &Expr| -> Option<Vec<Vec<u128>>> {
+    if !two_d {
+      return Some(vec![row(e)?]);
+    }
+    let Expr::List(rows) = e else {
+      return None;
+    };
+    let m: Vec<Vec<u128>> = rows.iter().map(row).collect::<Option<_>>()?;
+    let width = m.first()?.len();
+    m.iter().all(|r| r.len() == width).then_some(m)
+  };
+  Some((matrix(cells)?, matrix(block)?))
 }
 
-/// A 1D evolution of `seed` on a periodic background. The background on its
-/// own stays periodic, so it is evolved exactly on one period; the seeded
-/// configuration is evolved on a window wide enough that every cell asked
-/// for is still exact after `t_max` steps (it can only be influenced from
-/// `reach * t` cells away). With no window named, the result keeps the
-/// cells that ever differ from the bare background's evolution — none at
-/// all when the seed blends into the background.
+/// An evolution of `seed` on a periodic background (1D rules use a single
+/// row). The background on its own stays periodic, so it is evolved exactly
+/// on one period; the seeded configuration is evolved on a region wide
+/// enough that every cell asked for is still exact after `t_max` steps (it
+/// can only be influenced from `reach * t` cells away). `All` is every cell
+/// the seed can have affected — for a neighborhood reading offsets
+/// `lo..=hi`, from `-hi * t` to `n - 1 - lo * t`. With no window named, an
+/// axis keeps the cells that ever differ from the bare background's
+/// evolution — none at all when the seed blends into the background.
 fn evolve_on_periodic_background(
   rule: &RuleSpec,
-  seed: &[u128],
-  block: &[u128],
+  seed: &[Vec<u128>],
+  block: &[Vec<u128>],
   times: &[usize],
-  window: Window,
-) -> Option<Vec<Vec<u128>>> {
+  rows: Window,
+  cols: Window,
+) -> Option<Vec<Vec<Vec<u128>>>> {
   let t_max = *times.last()? as i64;
-  let reach = rule.neighbors.iter().map(|n| n.1.abs()).max().unwrap_or(0);
-  let p = block.len() as i64;
-  let seed_hi = seed.len() as i64 - 1;
-  let (want_lo, want_hi) = match window {
-    Window::Range(from, to, _) => (from, to),
-    Window::All | Window::Auto => (-reach * t_max, seed_hi + reach * t_max),
-  };
-  let lo = want_lo.min(0) - reach * t_max - 1;
-  let hi = want_hi.max(seed_hi) + reach * t_max + 1;
-  let len = usize::try_from(hi - lo + 1).ok()?;
-  if len > 50_000_000 / (t_max as usize + 1) {
+  let (h, w) = (seed.len() as i64, seed.first()?.len() as i64);
+  let (p, q) = (block.len() as i64, block.first()?.len() as i64);
+  if h == 0 || w == 0 || p == 0 || q == 0 {
     return None;
   }
-  let step = |cells: &[u128], cyclic: bool| -> Vec<u128> {
-    let n = cells.len() as i64;
-    (0..n)
+  // Per axis: the offsets the neighborhood reads, the wanted range of
+  // cells, and the padded range that is evolved.
+  let axis = |offsets: Vec<i64>, n: i64, window: Window| {
+    let hi = offsets.iter().copied().max().unwrap_or(0).max(0);
+    let lo = offsets.iter().copied().min().unwrap_or(0).min(0);
+    let reach = hi.max(-lo);
+    let (want_lo, want_hi) = match window {
+      Window::Range(from, to, _) => (from, to),
+      Window::All | Window::Auto => (-hi * t_max, n - 1 - lo * t_max),
+    };
+    let pad_lo = want_lo.min(0) - reach * t_max - 1;
+    let pad_hi = want_hi.max(n - 1) + reach * t_max + 1;
+    (want_lo, want_hi, pad_lo, pad_hi)
+  };
+  let (rw_lo, rw_hi, r_lo, r_hi) =
+    axis(rule.neighbors.iter().map(|n| n.0).collect(), h, rows);
+  let (cw_lo, cw_hi, c_lo, c_hi) =
+    axis(rule.neighbors.iter().map(|n| n.1).collect(), w, cols);
+  let height = usize::try_from(r_hi - r_lo + 1).ok()?;
+  let width = usize::try_from(c_hi - c_lo + 1).ok()?;
+  let cells = height.checked_mul(width)?;
+  if cells.checked_mul(t_max as usize + 1)? > 50_000_000 {
+    return None;
+  }
+  let step = |grid: &[Vec<u128>], cyclic: bool| -> Vec<Vec<u128>> {
+    let (gh, gw) = (grid.len() as i64, grid[0].len() as i64);
+    (0..gh)
       .map(|x| {
-        let mut sum: u128 = 0;
-        for &(_, dc, w) in &rule.neighbors {
-          let j = x + dc;
-          let v = if cyclic {
-            cells[j.rem_euclid(n) as usize]
-          } else if (0..n).contains(&j) {
-            cells[j as usize]
-          } else {
-            // Out of range only at the stale edges, never read back.
-            0
-          };
-          sum = sum.saturating_add(w.saturating_mul(v));
-        }
-        rule_digit(rule, sum)
+        (0..gw)
+          .map(|y| {
+            let mut sum: u128 = 0;
+            for &(dr, dc, wt) in &rule.neighbors {
+              let (r, c) = (x + dr, y + dc);
+              let v = if cyclic {
+                grid[r.rem_euclid(gh) as usize][c.rem_euclid(gw) as usize]
+              } else if (0..gh).contains(&r) && (0..gw).contains(&c) {
+                grid[r as usize][c as usize]
+              } else {
+                // Out of range only at the stale edges, never read back.
+                0
+              };
+              sum = sum.saturating_add(wt.saturating_mul(v));
+            }
+            rule_digit(rule, sum)
+          })
+          .collect()
       })
       .collect()
   };
-  let mut cells: Vec<u128> = (lo..=hi)
-    .map(|x| {
-      if (0..=seed_hi).contains(&x) {
-        seed[x as usize]
-      } else {
-        block[x.rem_euclid(p) as usize]
-      }
+  let mut grid: Vec<Vec<u128>> = (r_lo..=r_hi)
+    .map(|r| {
+      (c_lo..=c_hi)
+        .map(|c| {
+          if (0..h).contains(&r) && (0..w).contains(&c) {
+            seed[r as usize][c as usize]
+          } else {
+            block[r.rem_euclid(p) as usize][c.rem_euclid(q) as usize]
+          }
+        })
+        .collect()
     })
     .collect();
   let mut base = block.to_vec();
@@ -1317,37 +1384,60 @@ fn evolve_on_periodic_background(
   let mut next_time = 0;
   for t in 0..=t_max as usize {
     if next_time < times.len() && times[next_time] == t {
-      snapshots.push((cells.clone(), base.clone()));
+      snapshots.push((grid.clone(), base.clone()));
       next_time += 1;
     }
     if t < t_max as usize {
-      cells = step(&cells, false);
+      grid = step(&grid, false);
       base = step(&base, true);
     }
   }
-  let at = |cells: &[u128], x: i64| cells[(x - lo) as usize];
-  let background_at = |base: &[u128], x: i64| base[x.rem_euclid(p) as usize];
-  let offsets: Vec<i64> = match window {
-    Window::Range(from, to, step) => (from..=to).step_by(step.max(1)).collect(),
-    Window::All => (want_lo..=want_hi).collect(),
-    Window::Auto => {
-      let differs = |x: i64| {
-        snapshots
-          .iter()
-          .any(|(c, b)| at(c, x) != background_at(b, x))
-      };
-      let first = (want_lo..=want_hi).find(|&x| differs(x));
-      let last = (want_lo..=want_hi).rev().find(|&x| differs(x));
-      match (first, last) {
-        (Some(a), Some(b)) => (a..=b).collect(),
-        _ => Vec::new(),
+  let at = |g: &[Vec<u128>], r: i64, c: i64| {
+    g[(r - r_lo) as usize][(c - c_lo) as usize]
+  };
+  let background_at = |b: &[Vec<u128>], r: i64, c: i64| {
+    b[r.rem_euclid(p) as usize][c.rem_euclid(q) as usize]
+  };
+  let differs = |r: i64, c: i64| {
+    snapshots
+      .iter()
+      .any(|(g, b)| at(g, r, c) != background_at(b, r, c))
+  };
+  let offsets = |window: Window,
+                 lo: i64,
+                 hi: i64,
+                 active: &dyn Fn(i64) -> bool|
+   -> Vec<i64> {
+    match window {
+      Window::Range(from, to, step) => {
+        (from..=to).step_by(step.max(1)).collect()
+      }
+      Window::All => (lo..=hi).collect(),
+      Window::Auto => {
+        let first = (lo..=hi).find(|&x| active(x));
+        let last = (lo..=hi).rev().find(|&x| active(x));
+        match (first, last) {
+          (Some(a), Some(b)) => (a..=b).collect(),
+          _ => Vec::new(),
+        }
       }
     }
   };
+  let row_offsets = offsets(rows, rw_lo, rw_hi, &|r| {
+    (cw_lo..=cw_hi).any(|c| differs(r, c))
+  });
+  let col_offsets = offsets(cols, cw_lo, cw_hi, &|c| {
+    (rw_lo..=rw_hi).any(|r| differs(r, c))
+  });
   Some(
     snapshots
       .iter()
-      .map(|(c, _)| offsets.iter().map(|&x| at(c, x)).collect())
+      .map(|(g, _)| {
+        row_offsets
+          .iter()
+          .map(|&r| col_offsets.iter().map(|&c| at(g, r, c)).collect())
+          .collect()
+      })
       .collect(),
   )
 }
@@ -1450,26 +1540,16 @@ fn cellular_automaton_3d(
     }
     other => (array3(other)?, None),
   };
-  // The step argument is `t` or `{tspec}`; tspec `t` is steps 0..t, `{t}`
-  // step t in a list and `{{t}}` step t alone.
-  let as_t = |e: &Expr| match e {
-    Expr::Integer(t) if (0..=10_000).contains(t) => Some(*t as usize),
-    _ => None,
-  };
-  let tspec = match &args[2] {
-    e @ Expr::Integer(_) => e,
-    Expr::List(items) if items.len() == 1 => &items[0],
-    _ => return None,
-  };
-  let (t_max, single, bare) = match tspec {
-    e @ Expr::Integer(_) => (as_t(e)?, false, false),
-    Expr::List(items) if items.len() == 1 => match &items[0] {
-      e @ Expr::Integer(_) => (as_t(e)?, true, false),
-      Expr::List(inner) if inner.len() == 1 => (as_t(&inner[0])?, true, true),
-      _ => return None,
-    },
-    _ => return None,
-  };
+  // `{tspec, w1, w2, w3}`: any tspec, and a window per axis (`All`,
+  // `Automatic` or offsets relative to the init's first cell).
+  let steps = parse_step_spec(&args[2])?;
+  if steps.windows.len() > 3 {
+    return None;
+  }
+  let t_max = *steps.times.last()?;
+  if t_max > 10_000 {
+    return None;
+  }
   // The rule's digits, least significant first, for every reachable sum.
   let max_sum = weights.iter().sum::<u64>().checked_mul(k - 1)? as usize;
   if max_sum > 1 << 20 {
@@ -1507,7 +1587,7 @@ fn cellular_automaton_3d(
     }
   }
   let digit = |s: u64| digits.get(s as usize).copied().unwrap_or(0);
-  let mut steps = vec![grid.clone()];
+  let mut states = vec![(grid.clone(), bg0)];
   let mut bg = bg0;
   for _ in 0..t_max {
     let mut next = vec![0u64; grid.len()];
@@ -1555,18 +1635,22 @@ fn cellular_automaton_3d(
       bg = digit(weights.iter().sum::<u64>() * bg);
     }
     grid = next;
-    steps.push(grid.clone());
+    states.push((grid.clone(), bg));
   }
-  // A background init keeps only the cells that ever differ from it.
-  let (lo, hi) = if background.is_some() {
-    let mut lo = size;
-    let mut hi = [0usize; 3];
-    let mut any = false;
-    for step in &steps {
+  let states: Vec<(Vec<u64>, u64)> =
+    steps.times.iter().map(|&t| states[t].clone()).collect();
+  // Each axis keeps its window: `All` is the whole grid, offsets read the
+  // (evolving) background outside it, and with no window a background init
+  // keeps only the cells that ever differ from the background.
+  let mut lo = size;
+  let mut hi = [0usize; 3];
+  let mut any = false;
+  if background.is_some() {
+    for (g, bg) in &states {
       for i in 0..size[0] {
         for j in 0..size[1] {
           for l in 0..size[2] {
-            if step[idx(i, j, l)] != bg0 {
+            if g[idx(i, j, l)] != *bg {
               any = true;
               for (d, v) in [i, j, l].into_iter().enumerate() {
                 lo[d] = lo[d].min(v);
@@ -1577,23 +1661,54 @@ fn cellular_automaton_3d(
         }
       }
     }
-    if !any {
-      return None;
+  }
+  let axes: Vec<Vec<i64>> = (0..3)
+    .map(
+      |d| match steps.windows.get(d).copied().unwrap_or(Window::Auto) {
+        Window::Range(from, to, step) => (from..=to)
+          .step_by(step)
+          .map(|off| off + pad[d] as i64)
+          .collect(),
+        Window::Auto if background.is_some() => {
+          if any {
+            (lo[d] as i64..hi[d] as i64).collect()
+          } else {
+            Vec::new()
+          }
+        }
+        Window::Auto | Window::All => (0..size[d] as i64).collect(),
+      },
+    )
+    .collect();
+  if axes.iter().map(Vec::len).product::<usize>() * states.len() > 64_000_000 {
+    return None;
+  }
+  let cell = |g: &[u64], bg: u64, i: i64, j: i64, l: i64| -> u64 {
+    if background.is_none() {
+      let w = |p: i64, d: usize| p.rem_euclid(size[d] as i64) as usize;
+      g[idx(w(i, 0), w(j, 1), w(l, 2))]
+    } else if (0..size[0] as i64).contains(&i)
+      && (0..size[1] as i64).contains(&j)
+      && (0..size[2] as i64).contains(&l)
+    {
+      g[idx(i as usize, j as usize, l as usize)]
+    } else {
+      bg
     }
-    (lo, hi)
-  } else {
-    ([0, 0, 0], size)
   };
-  let to_expr = |g: &Vec<u64>| -> Expr {
+  let to_expr = |(g, bg): &(Vec<u64>, u64)| -> Expr {
     Expr::List(
-      (lo[0]..hi[0])
-        .map(|i| {
+      axes[0]
+        .iter()
+        .map(|&i| {
           Expr::List(
-            (lo[1]..hi[1])
-              .map(|j| {
+            axes[1]
+              .iter()
+              .map(|&j| {
                 Expr::List(
-                  (lo[2]..hi[2])
-                    .map(|l| Expr::Integer(g[idx(i, j, l)] as i128))
+                  axes[2]
+                    .iter()
+                    .map(|&l| Expr::Integer(cell(g, *bg, i, j, l) as i128))
                     .collect::<Vec<_>>()
                     .into(),
                 )
@@ -1606,15 +1721,11 @@ fn cellular_automaton_3d(
         .into(),
     )
   };
-  Some(Ok(if single {
-    let last = to_expr(steps.last()?);
-    if bare {
-      last
-    } else {
-      Expr::List(vec![last].into())
-    }
+  let mut exprs: Vec<Expr> = states.iter().map(to_expr).collect();
+  Some(Ok(if steps.single_state {
+    exprs.remove(0)
   } else {
-    Expr::List(steps.iter().map(to_expr).collect::<Vec<_>>().into())
+    Expr::List(exprs.into())
   }))
 }
 

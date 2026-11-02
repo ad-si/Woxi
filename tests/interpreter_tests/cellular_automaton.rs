@@ -1223,6 +1223,51 @@ mod periodic_background {
       "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 1, 1, 0, 0, 1, 0}}"
     );
   }
+
+  // A half-integer range reads offsets -1 and 0, so `All` only grows to
+  // the right.
+  #[test]
+  fn half_range_all_window() {
+    assert_eq!(
+      interpret("CellularAutomaton[{6, 2, 1/2}, {{1, 1}, {0, 1}}, {2, All}]")
+        .unwrap(),
+      "{{1, 1, 0, 1}, {0, 0, 1, 1}, {1, 0, 1, 0}}"
+    );
+  }
+
+  // In 2D the block is a matrix, aligned so that offset {r, c} holds
+  // block[[Mod[r, p] + 1, Mod[c, q] + 1]].
+  #[test]
+  fn two_d_seed_on_a_repeating_block() {
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{278, 2, {1/2, 1/2}}, \
+         {{{0, 1}, {1, 1}}, {{0, 0}, {0, 1}}}, {{0, 2}, All, All}]"
+      )
+      .unwrap(),
+      "{{{0, 1, 0, 0}, {1, 1, 0, 1}, {0, 0, 0, 0}, {0, 1, 0, 1}}, \
+       {{1, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 1, 1}, {1, 1, 1, 1}}, \
+       {{0, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{278, 2, {1/2, 1/2}}, \
+         {{{1, 1, 1}}, {{0, 1, 0}, {1, 0, 0}}}, 2]"
+      )
+      .unwrap(),
+      "{{{1, 1, 1, 0, 1}, {1, 0, 0, 1, 0}, {0, 1, 0, 0, 1}}, \
+       {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {1, 0, 1, 1, 0}}, \
+       {{0, 1, 1, 0, 1}, {0, 0, 0, 0, 0}, {0, 1, 1, 0, 1}}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{278, 2, {1, 1}}, \
+         {{{1, 1, 1}}, {{0, 1, 0}, {1, 0, 0}}}, {{{0}}, {-1, 2}, {-2, 2}}]"
+      )
+      .unwrap(),
+      "{{0, 0, 1, 0, 0}, {1, 0, 1, 1, 1}, {0, 0, 1, 0, 0}, {1, 0, 0, 1, 0}}"
+    );
+  }
 }
 
 mod cellular_automaton_background_blocks_and_automatic {
@@ -1302,6 +1347,29 @@ mod cellular_automaton_3d {
       .unwrap(),
       "{{7, 7, 7}, {1, 7, 7, 7}}"
     );
+  }
+
+  // Demonstration TruncatedOctahedraOuterTotalisticCellularAutomaton uses
+  // the legacy four-argument form with an `All` window per axis.
+  #[test]
+  fn windows_and_legacy_offsets() {
+    let setup = "w = {{{2, 0, 2}, {0, 0, 0}, {2, 0, 2}}, \
+                 {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, \
+                 {{2, 0, 2}, {0, 0, 0}, {2, 0, 2}}}; \
+                 r = {30398, {2, w}, {1, 1, 1}}; ";
+    let run = |code: &str| interpret(&[setup, code].concat()).unwrap();
+    assert_eq!(
+      run("CellularAutomaton[r, {{{{1}}}, 0}, 1, {-1, All, All, All}]"),
+      "{{{{1, 0, 1}, {0, 0, 0}, {1, 0, 1}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, \
+       {{1, 0, 1}, {0, 0, 0}, {1, 0, 1}}}}"
+    );
+    assert_eq!(
+      run("CellularAutomaton[r, {{{{1}}}, 0}, {{1, 2}, {-1, 1}, {0, 0}, All}]"),
+      "{{{{0, 0, 0, 0, 0}}, {{0, 0, 1, 0, 0}}, {{0, 0, 0, 0, 0}}}, \
+       {{{0, 0, 0, 0, 0}}, {{0, 0, 0, 0, 0}}, {{0, 0, 0, 0, 0}}}}"
+    );
+    // A seed that never leaves the background leaves nothing.
+    assert_eq!(run("CellularAutomaton[r, {{{{0}}}, 0}, 2]"), "{{}, {}, {}}");
   }
 }
 
