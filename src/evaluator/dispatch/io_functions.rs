@@ -5573,7 +5573,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   // `Animate[expr, spec, …]` nested in a display draws its first frame
   // (see `animate_snapshot_svg`), so it counts as a picture too.
-  if matches!(expr, Expr::FunctionCall { name, args } if name == "Animate" && args.len() >= 2)
+  if matches!(expr, Expr::FunctionCall { name, args } if crate::functions::graphics::is_animate_call(name, args))
   {
     return true;
   }
@@ -7160,7 +7160,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // …]` sitting in a `Grid` cell) rather than being the whole Manipulate
     // output — draw its first frame instead of the unevaluated source.
     Expr::FunctionCall { name, args }
-      if name == "Animate" && args.len() >= 2 =>
+      if crate::functions::graphics::is_animate_call(name, args) =>
     {
       crate::functions::graphics::animate_snapshot_svg(args).unwrap_or_default()
     }

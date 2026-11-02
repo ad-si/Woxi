@@ -6603,7 +6603,7 @@ mod interpreter_tests {
       // guide. In script mode these stay unevaluated as their canonical form
       // (they only become interactive objects inside a notebook), so they
       // must not emit a spurious "not yet implemented" warning.
-      ("Animate[x, {x, 0, 1}]", "Animate[x, {x, 0, 1}]"),
+      ("Animate[x]", "Animate[x]"),
       ("Animator[0]", "Animator[0]"),
       ("ListAnimate[{1, 2, 3}]", "ListAnimate[{1, 2, 3}]"),
       (

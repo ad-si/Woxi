@@ -506,6 +506,16 @@ pub fn dispatch_plotting(
     // specs preserved. A non-list variable spec emits a Manipulate::vsform
     // message but the expression is still returned unchanged.
     "Manipulate" => Some(crate::functions::graphics::manipulate_ast(args)),
+    // Animate is a Manipulate with animator controls (wolframscript
+    // evaluates it to one).
+    "Animate" => crate::functions::graphics::animate_to_manipulate(args).map(
+      |m| match &m {
+        Expr::FunctionCall { args, .. } => {
+          crate::functions::graphics::manipulate_ast(args)
+        }
+        _ => Ok(m),
+      },
+    ),
     // Control holds its argument (see core_eval.rs) and echoes itself back
     // with the variable spec's bounds evaluated. Playground / Studio detect
     // the held Control[…] and render an interactive control widget.

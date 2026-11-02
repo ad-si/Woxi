@@ -18907,9 +18907,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     }
     // A bare `Animate[…]` cell draws its first frame (see
     // `animate_snapshot_svg`), the same as when it sits inside a `Pane`.
-    Expr::FunctionCall { name, args }
-      if name == "Animate" && args.len() >= 2 =>
-    {
+    Expr::FunctionCall { name, args } if is_animate_call(name, args) => {
       animate_snapshot_svg(args)?
     }
     // A bare `Button[label, action]` cell (a Demonstration's clickable
@@ -28052,6 +28050,214 @@ fn is_initialization_option(pattern: &Expr, replacement: &Expr) -> bool {
 /// expression is not a well-formed Manipulate/Animate (e.g. `Manipulate[]`,
 /// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
 /// should fall back to the standard text/graphics output path.
+/// The options of `Animate` (wolframscript's `Options[Animate]`).
+const ANIMATE_OPTIONS: &[&str] = &[
+  "Alignment",
+  "AnimationDirection",
+  "AnimationRate",
+  "AnimationRepetitions",
+  "AnimationRunning",
+  "AnimationRunTime",
+  "AnimationTimeIndex",
+  "AppearanceElements",
+  "AutoAction",
+  "AutorunSequencing",
+  "BaselinePosition",
+  "BaseStyle",
+  "Bookmarks",
+  "ContentSize",
+  "ContinuousAction",
+  "ControlAlignment",
+  "ControllerLinking",
+  "ControllerMethod",
+  "ControllerPath",
+  "ControlPlacement",
+  "ControlType",
+  "DefaultBaseStyle",
+  "DefaultDuration",
+  "DefaultLabelStyle",
+  "Deinitialization",
+  "Deployed",
+  "DisplayAllSteps",
+  "Evaluator",
+  "ExcludedContexts",
+  "Exclusions",
+  "Frame",
+  "FrameLabel",
+  "FrameMargins",
+  "ImageMargins",
+  "IncludedContexts",
+  "InterpolationOrder",
+  "Initialization",
+  "LabelStyle",
+  "LocalizeVariables",
+  "Method",
+  "Paneled",
+  "PausedTime",
+  "PreserveImageOptions",
+  "RefreshRate",
+  "RotateLabel",
+  "SaveDefinitions",
+  "ShrinkingDelay",
+  "SynchronousInitialization",
+  "SynchronousUpdating",
+  "TouchscreenAutoZoom",
+  "TouchscreenControlPlacement",
+  "TrackedSymbols",
+  "UndoTrackedVariables",
+  "UnsavedVariables",
+  "UntrackedVariables",
+];
+
+/// `Animate` options that belong to each animated control: wolframscript
+/// moves them into every control spec.
+const ANIMATOR_CONTROL_OPTIONS: [&str; 10] = [
+  "AnimationDirection",
+  "AnimationRate",
+  "AnimationRepetitions",
+  "AnimationRunning",
+  "AnimationRunTime",
+  "AnimationTimeIndex",
+  "DefaultDuration",
+  "DisplayAllSteps",
+  "PausedTime",
+  "RefreshRate",
+];
+
+fn rule_option_name(opt: &Expr) -> Option<&str> {
+  match opt {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(s) | Expr::String(s) => Some(s.as_str()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `Animate[body, spec, …, opts]` is the `Manipulate` wolframscript turns it
+/// into: every control spec gets the animator options and the four
+/// animator buttons, the other options are sorted, and the animation
+/// defaults (`ControlType -> Animator`, …) follow them. `None` when the
+/// call has no control spec.
+pub fn animate_to_manipulate(args: &[Expr]) -> Option<Expr> {
+  let (body, rest) = args.split_first()?;
+  let mut specs: Vec<Expr> = Vec::new();
+  let mut control_opts: Vec<Expr> = Vec::new();
+  let mut widget_opts: Vec<Expr> = Vec::new();
+  let mut appearance = None;
+  let value_of = |name: &str, opts: &[Expr]| -> Option<Expr> {
+    opts.iter().rev().find_map(|o| match o {
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. }
+        if rule_option_name(o) == Some(name) =>
+      {
+        Some((**replacement).clone())
+      }
+      _ => None,
+    })
+  };
+  for arg in rest {
+    match rule_option_name(arg) {
+      Some(name) if ANIMATOR_CONTROL_OPTIONS.contains(&name) => {
+        control_opts.push(arg.clone());
+      }
+      Some("AppearanceElements") => appearance = Some(arg.clone()),
+      Some(name) if ANIMATE_OPTIONS.contains(&name) => {
+        widget_opts.push(arg.clone());
+      }
+      Some(_) => crate::emit_message(&format!(
+        "Animate::unknop: {} is not a recognized option.",
+        crate::syntax::expr_to_string(arg)
+      )),
+      None => specs.push(arg.clone()),
+    }
+  }
+  if !specs.iter().any(|s| matches!(s, Expr::List(_))) {
+    return None;
+  }
+  let buttons = Expr::Rule {
+    pattern: Box::new(id_expr("AppearanceElements")),
+    replacement: Box::new(Expr::List(
+      [
+        "ProgressSlider",
+        "PlayPauseButton",
+        "FasterSlowerButtons",
+        "DirectionButton",
+      ]
+      .iter()
+      .map(|s| Expr::String((*s).to_string()))
+      .collect::<Vec<_>>()
+      .into(),
+    )),
+  };
+  let mut out = vec![body.clone()];
+  for spec in specs {
+    out.push(match &spec {
+      Expr::List(items) => {
+        let mut items = items.to_vec();
+        items.extend(control_opts.iter().cloned());
+        items.push(buttons.clone());
+        Expr::List(items.into())
+      }
+      _ => spec,
+    });
+  }
+  widget_opts
+    .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(id_expr(k)),
+    replacement: Box::new(v),
+  };
+  let control_type = value_of("ControlType", &widget_opts)
+    .unwrap_or_else(|| id_expr("Animator"));
+  let synchronous = value_of("SynchronousUpdating", &widget_opts)
+    .unwrap_or_else(|| id_expr("True"));
+  let shrinking =
+    value_of("ShrinkingDelay", &widget_opts).map_or(Expr::Real(10.0), |v| {
+      evaluate_expr_to_expr(&call1("N", v)).unwrap_or_else(|_| Expr::Real(10.0))
+    });
+  let appearance = match &appearance {
+    Some(
+      Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. },
+    ) => (**replacement).clone(),
+    _ => id_expr("None"),
+  };
+  out.extend(widget_opts);
+  out.push(rule("ControlType", control_type));
+  out.push(rule("AppearanceElements", appearance));
+  out.push(rule("DefaultBaseStyle", Expr::String("Animate".into())));
+  out.push(rule(
+    "DefaultLabelStyle",
+    Expr::String("AnimateLabel".into()),
+  ));
+  out.push(rule("SynchronousUpdating", synchronous));
+  out.push(rule("ShrinkingDelay", shrinking));
+  Some(Expr::FunctionCall {
+    name: "Manipulate".into(),
+    args: out.into(),
+  })
+}
+
+/// Whether a `Manipulate[…]` is an evaluated `Animate[…]` (see
+/// `animate_to_manipulate`), which the front ends draw as an animation.
+pub fn is_animate_manipulate(args: &[Expr]) -> bool {
+  args.iter().skip(1).any(|a| {
+    rule_option_name(a) == Some("DefaultBaseStyle")
+      && matches!(a, Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::String(s) if s == "Animate"))
+  })
+}
+
+/// The head a front end should treat a call as: an evaluated `Animate` is a
+/// `Manipulate` carrying `DefaultBaseStyle -> "Animate"`.
+pub fn is_animate_call(name: &str, args: &[Expr]) -> bool {
+  args.len() >= 2
+    && (name == "Animate"
+      || (name == "Manipulate" && is_animate_manipulate(args)))
+}
+
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let expr = peel_manipulate_wrapper(expr);
   let Expr::FunctionCall { name, args } = expr else {
@@ -28060,7 +28266,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
   }
-  let mut animated = name == "Animate";
+  let mut animated = is_animate_call(name, args);
   let mut animation_running = true;
 
   // A Manipulate whose body is itself an `Animate[…]` (the Demonstrations

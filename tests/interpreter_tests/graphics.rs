@@ -31814,7 +31814,9 @@ mod manipulate {
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed animate");
     assert!(spec.animated, "Animate widget must auto-play");
-    assert!(spec.appearance_none, "Appearance -> None must be captured");
+    // Animate does not know `Appearance`: wolframscript drops it
+    // (Animate::unknop), so the animator controls stay visible.
+    assert!(!spec.appearance_none, "Appearance -> None is dropped");
     match &spec.controls[0] {
       ManipulateControl::Continuous {
         name,
@@ -31834,7 +31836,6 @@ mod manipulate {
     }
     let json = manipulate_spec_to_json(&spec);
     assert!(json.contains(r#""animated":true"#));
-    assert!(json.contains(r#""appearanceNone":true"#));
 
     // A frame rendered at the initial tt must contain the three styled
     // curves and the Epilog overlay (red line + black circle).
@@ -42439,7 +42440,36 @@ mod animate_result_display {
     clear_state();
     let out =
       interpret("Head[Animate[Graphics[{Disk[{T, 0}]}], {T, 0, 1}]]").unwrap();
-    assert_eq!(out, "Animate");
+    assert_eq!(out, "Manipulate");
+  }
+
+  // Animate evaluates to the Manipulate wolframscript builds: animator
+  // options go into every control, the rest are sorted, then the defaults.
+  #[test]
+  fn animate_is_a_manipulate_with_animator_controls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Animate[x + y, {x, 0, 1}, {{y, 0.5, \"why\"}, 0, 2}, AnimationRunning -> False, Paneled -> False, AnimationRepetitions -> 3, Bookmarks -> {}], InputForm]"
+      )
+      .unwrap(),
+      "Manipulate[x + y, {x, 0, 1, AnimationRunning -> False, AnimationRepetitions -> 3, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, {{y, 0.5, \"why\"}, 0, 2, AnimationRunning -> False, AnimationRepetitions -> 3, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, Bookmarks -> {}, Paneled -> False, ControlType -> Animator, AppearanceElements -> None, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 10.]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Animate[x, {x, 0, 1}, ControlType -> Trigger, AppearanceElements -> All, ShrinkingDelay -> 3, Deinitialization :> 1, Alignment -> Center], InputForm]"
+      )
+      .unwrap(),
+      "Manipulate[x, {x, 0, 1, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, Alignment -> Center, ControlType -> Trigger, ShrinkingDelay -> 3, Deinitialization :> 1, ControlType -> Trigger, AppearanceElements -> All, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 3.]"
+    );
+    assert_eq!(
+      interpret("Quiet[ToString[Animate[x, {x, {1, 2}}, Appearance -> None], InputForm]]").unwrap(),
+      "Manipulate[x, {x, {1, 2}, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, ControlType -> Animator, AppearanceElements -> None, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 10.]"
+    );
+    assert_eq!(
+      interpret("ToString[Animate[x], InputForm]").unwrap(),
+      "Animate[x]"
+    );
   }
 }
 

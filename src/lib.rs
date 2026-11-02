@@ -1500,8 +1500,7 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   // animation's first frame. Script mode keeps the symbolic form.
   if VISUAL_MODE.with(|v| *v.borrow())
     && let syntax::Expr::FunctionCall { name, args } = expr
-    && name == "Animate"
-    && args.len() >= 2
+    && functions::graphics::is_animate_call(name, args)
     && let Some(svg) = functions::graphics::animate_snapshot_svg(args)
   {
     capture_graphics(&svg);
