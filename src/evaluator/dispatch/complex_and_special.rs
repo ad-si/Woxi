@@ -5778,28 +5778,40 @@ fn tf_comparison_glyph(head: &str) -> Option<&'static str> {
   })
 }
 
-/// `a ∧ b ∧ …` / `a ∨ b ∨ …`. `And` binds tighter than `Or`, so an `Or`
-/// operand of an `And` is parenthesized (`(x ≤ -1 ∨ x ≥ 2) ∧ x ≥ -4`).
-fn tf_logic(is_and: bool, operands: &[Expr]) -> Expr {
-  let is_or = |e: &Expr| {
-    matches!(
-      e,
+/// `a ∧ b ∧ …`, `a ∨ b ∨ …` and `a ⊻ b ⊻ …`. Any operand that is itself a
+/// different one of these is parenthesized, whichever binds tighter
+/// (`(x ≤ -1 ∨ x ≥ 2) ∧ x ≥ -4`, `a < b ∨ (c < d ∧ e < f)`), as wolframscript
+/// typesets them.
+fn tf_logic(head: &str, operands: &[Expr]) -> Expr {
+  let logic_head = |e: &Expr| -> Option<&'static str> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        ..
+      } => Some("And"),
       Expr::BinaryOp {
         op: BinaryOperator::Or,
         ..
+      } => Some("Or"),
+      Expr::FunctionCall { name, args } if args.len() > 1 => {
+        ["And", "Or", "Xor"].into_iter().find(|h| h == name)
       }
-    ) || matches!(e, Expr::FunctionCall { name, args } if name == "Or" && args.len() > 1)
+      _ => None,
+    }
   };
-  let glyph = if is_and { "\u{2227}" } else { "\u{2228}" };
+  let glyph = match head {
+    "And" => "\u{2227}",
+    "Or" => "\u{2228}",
+    _ => "\u{22BB}",
+  };
   let mut parts = Vec::new();
   for (i, operand) in operands.iter().enumerate() {
     if i > 0 {
       parts.push(tf_string(glyph));
     }
-    parts.push(if is_and && is_or(operand) {
-      tf_parens(tf(operand))
-    } else {
-      tf(operand)
+    parts.push(match logic_head(operand) {
+      Some(inner) if inner != head => tf_parens(tf(operand)),
+      _ => tf(operand),
     });
   }
   tf_row(parts)
@@ -5807,7 +5819,7 @@ fn tf_logic(is_and: bool, operands: &[Expr]) -> Expr {
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
-    "And" | "Or" if args.len() > 1 => tf_logic(name == "And", args),
+    "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
       if args.len() >= 5
@@ -6331,7 +6343,14 @@ fn tf(expr: &Expr) -> Expr {
     Expr::BinaryOp {
       op: op @ (BinaryOperator::And | BinaryOperator::Or),
       ..
-    } => tf_logic(matches!(op, BinaryOperator::And), &flatten_binop(expr, *op)),
+    } => tf_logic(
+      if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      },
+      &flatten_binop(expr, *op),
+    ),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,

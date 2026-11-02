@@ -7534,7 +7534,12 @@ mod make_boxes {
     assert_eq!(
       interpret("MakeBoxes[TraditionalForm[Or[a < b, And[c < d, e < f]]]]")
         .unwrap(),
-      "TagBox[FormBox[RowBox[{RowBox[{a, <, b}], ∨, RowBox[{RowBox[{c, <, d}], ∧, RowBox[{e, <, f}]}]}], TraditionalForm], TraditionalForm, Editable -> True]"
+      "TagBox[FormBox[RowBox[{RowBox[{a, <, b}], ∨, RowBox[{(, RowBox[{RowBox[{c, <, d}], ∧, RowBox[{e, <, f}]}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+    // Every nested logical operator of another kind is parenthesized.
+    assert_eq!(
+      interpret("MakeBoxes[TraditionalForm[Or[a, Xor[c, d]]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{a, ∨, RowBox[{(, RowBox[{c, ⊻, d}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"
     );
   }
 
