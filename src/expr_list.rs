@@ -68,9 +68,9 @@ struct SharedList {
   /// The list's text in each form (see `cached_rendering`), `None` when its
   /// rendering depends on more than the elements.
   rendered: [OnceLock<Option<Arc<str>>>; 2],
-  /// A second memoized property of the elements (see `cached_flag`), used
-  /// for "plain numbers only".
-  numeric: OnceLock<bool>,
+  /// A second memoized property of the elements (see `cached_flag`): what
+  /// kind of numeric data they are (see `cached_numeric_kind`).
+  numeric: OnceLock<u8>,
 }
 
 impl Clone for SharedList {
@@ -173,12 +173,10 @@ impl ExprList {
     }
   }
 
-  /// Like `cached_flag`, for a second property: whether the elements are
-  /// plain numbers (`compute` must answer exactly that).
-  pub fn cached_numeric_flag(
-    &self,
-    compute: impl FnOnce(&[Expr]) -> bool,
-  ) -> bool {
+  /// Like `cached_flag`, for a second property: the kind of numeric data
+  /// the elements are (`compute` must answer exactly that; see
+  /// `crate::syntax::numeric_data_kind`).
+  pub fn cached_numeric_kind(&self, compute: impl FnOnce(&[Expr]) -> u8) -> u8 {
     match &self.inner {
       Inner::Shared(s) => *s.numeric.get_or_init(|| compute(&s.items)),
       _ => compute(self.as_slice_internal()),

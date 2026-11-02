@@ -23633,6 +23633,34 @@ mod shared_list_rendering_cache {
       "{{1.,, {99,, {99,}"
     );
   }
+
+  // A held table of machine complex numbers prints them as wolframscript
+  // does, the first time and from the kept text alike, and its entries
+  // read back as the same numbers.
+  #[test]
+  fn complex_table_text() {
+    let expected = "{1. + 2.5*I, 1., 3. + 2.5*I, 0. + 1.5*I, 5. + 2.5*I, 3., 7. + 2.5*I, 0. + 1.5*I, 9. + 2.5*I, 5., 11. + 2.5*I, 0. + 1.5*I, 13. + 2.5*I, 7., 15. + 2.5*I, 0. + 1.5*I, 17. + 2.5*I, 9., 19. + 2.5*I, 0. + 1.5*I}";
+    assert_eq!(
+      interpret(
+        "x = Table[If[OddQ[i], i + 2.5 I, If[Mod[i, 4] == 0, 1.5 I, i/2.]], {i, 20}]; ToString[x, InputForm]"
+      )
+      .unwrap(),
+      expected
+    );
+    assert_eq!(interpret("ToString[x, InputForm]").unwrap(), expected);
+    // The plain result goes through the kept text.
+    assert_eq!(interpret("x").unwrap(), expected);
+    assert_eq!(interpret("x").unwrap(), expected);
+    assert_eq!(
+      interpret("StringTake[ToString[x], 12]").unwrap(),
+      "{1. + 2.5 I,"
+    );
+    assert_eq!(
+      interpret("{x[[1]], x[[4]], Re[x[[3]]], Im[x[[3]]], x[[1]] - x[[3]]}")
+        .unwrap(),
+      "{1. + 2.5*I, 0. + 1.5*I, 3., 2.5, -2. + 0.*I}"
+    );
+  }
 }
 
 mod tree_leaves_cases_scan_and_atomicity {

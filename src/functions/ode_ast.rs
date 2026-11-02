@@ -11839,13 +11839,20 @@ fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
 /// data (e.g. a wave function sampled on a grid) interpolates its real and
 /// imaginary parts independently.
 fn interp_complex_to_parts(expr: &Expr) -> Option<(f64, f64)> {
-  if let Ok(v) = interp_value_to_f64(expr) {
-    return Some((v, 0.0));
+  // A complex number literal is read directly: trying it as a real first
+  // would evaluate it, and then its `N`, for every grid value.
+  match expr {
+    Expr::Real(v) => return Some((*v, 0.0)),
+    Expr::Integer(n) => return Some((*n as f64, 0.0)),
+    _ => {}
   }
   if let Some(parts) =
     crate::functions::math_ast::numeric_utils::try_extract_complex_f64(expr)
   {
     return Some(parts);
+  }
+  if let Ok(v) = interp_value_to_f64(expr) {
+    return Some((v, 0.0));
   }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(expr)
     .unwrap_or_else(|_| expr.clone());

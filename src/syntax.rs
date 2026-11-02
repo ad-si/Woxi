@@ -9352,7 +9352,7 @@ fn with_complex_display<T>(expr: &Expr, render: impl FnOnce(&Expr) -> T) -> T {
 fn contains_imag_i(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(s) => s == "I",
-    _ if is_shared_number_array(expr) => false,
+    _ if shared_numeric_data_kind(expr) == REAL_NUMERIC_DATA => false,
     _ => expr_children(expr).iter().any(|c| contains_imag_i(c)),
   }
 }
@@ -9422,6 +9422,11 @@ fn complex_display_shape(expr: &Expr) -> Expr {
   if matches!(expr, Expr::Function { .. })
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex")
   {
+    return expr.clone();
+  }
+  // A shared table of numbers is shaped as it is printed (see the `List`
+  // arm of `format_expr_impl`), which keeps its text cached.
+  if shared_numeric_data_kind(expr) != NOT_NUMERIC_DATA {
     return expr.clone();
   }
   if imag_term_kind(expr) == Some(true) {
@@ -9530,7 +9535,7 @@ fn mentions_system_context(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(s) => s.starts_with("System`") && !s.ends_with('`'),
     Expr::FunctionCall { name, .. } if name.starts_with("System`") => true,
-    _ if is_shared_number_array(expr) => false,
+    _ if shared_numeric_data_kind(expr) != NOT_NUMERIC_DATA => false,
     _ => expr_children(expr)
       .iter()
       .any(|c| mentions_system_context(c)),
@@ -10064,10 +10069,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // InterpolatingFunction's grid) prints the same every time, so its
       // text is kept with it rather than rebuilt by every comparison that
       // renders it.
+      // Complex entries are left in their stored shape by
+      // `complex_display_shape` (which skips such a list), so they are
+      // shaped here, as the list is first printed.
       if items.is_shared()
-        && let Some(text) = items
-          .cached_rendering(usize::from(is_output), |xs| {
-            xs.iter().all(is_plain_number_array).then(|| render(xs))
+        && let Some(text) =
+          items.cached_rendering(usize::from(is_output), |xs| {
+            match numeric_data_kind(expr) {
+              REAL_NUMERIC_DATA => Some(render(xs)),
+              COMPLEX_NUMERIC_DATA => {
+                let shaped: Vec<Expr> =
+                  xs.iter().map(complex_display_shape).collect();
+                Some(render(&shaped))
+              }
+              _ => None,
+            }
           })
       {
         return text.to_string();
@@ -13458,24 +13474,78 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   }
 }
 
-/// A machine or exact integer number, or a (nested) list of them: text
-/// that reads the same whatever the context and display settings.
-/// Memoized on shared lists.
-pub(crate) fn is_plain_number_array(e: &Expr) -> bool {
-  match e {
-    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
-    Expr::List(items) => {
-      items.cached_numeric_flag(|xs| xs.iter().all(is_plain_number_array))
+/// Kinds of numeric data (see `numeric_data_kind`).
+pub(crate) const NOT_NUMERIC_DATA: u8 = 0;
+pub(crate) const REAL_NUMERIC_DATA: u8 = 1;
+pub(crate) const COMPLEX_NUMERIC_DATA: u8 = 2;
+
+/// Whether `e` is a number — a machine or exact integer one, or a complex
+/// number built from those (`2.5*I`, `1. + 2.5*I`) — or a (nested) list of
+/// them, and if so whether any is complex. Such data prints the same
+/// whatever the context and display settings. Memoized on shared lists.
+pub(crate) fn numeric_data_kind(e: &Expr) -> u8 {
+  let real = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+  };
+  let unit = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "I");
+  let imaginary = |e: &Expr| match e {
+    _ if unit(e) => true,
+    Expr::FunctionCall { name, args } => {
+      name == "Times" && args.len() == 2 && real(&args[0]) && unit(&args[1])
     }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => real(left) && unit(right),
     _ => false,
+  };
+  match e {
+    _ if real(e) => REAL_NUMERIC_DATA,
+    _ if imaginary(e) => COMPLEX_NUMERIC_DATA,
+    // The shapes `build_complex_float_expr` leaves: `re ± im*I`, `-im*I`.
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } if real(left) && imaginary(right) => COMPLEX_NUMERIC_DATA,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if imaginary(operand) => COMPLEX_NUMERIC_DATA,
+    Expr::FunctionCall { name, args }
+      if (name == "Plus"
+        && args.len() == 2
+        && real(&args[0])
+        && imaginary(&args[1]))
+        || (name == "Complex"
+          && args.len() == 2
+          && real(&args[0])
+          && real(&args[1])) =>
+    {
+      COMPLEX_NUMERIC_DATA
+    }
+    Expr::List(items) => items.cached_numeric_kind(|xs| {
+      let mut kind = REAL_NUMERIC_DATA;
+      for x in xs {
+        match numeric_data_kind(x) {
+          NOT_NUMERIC_DATA => return NOT_NUMERIC_DATA,
+          k => kind = kind.max(k),
+        }
+      }
+      kind
+    }),
+    _ => NOT_NUMERIC_DATA,
   }
 }
 
-/// A shared list of plain numbers: data that holds no symbol, string or
-/// call, so walks looking for one can skip it in O(1).
-pub(crate) fn is_shared_number_array(e: &Expr) -> bool {
-  matches!(e, Expr::List(items) if items.is_shared())
-    && is_plain_number_array(e)
+/// A shared list of numeric data (see `numeric_data_kind`), with its kind;
+/// walks looking for a symbol, string or call can skip it in O(1).
+pub(crate) fn shared_numeric_data_kind(e: &Expr) -> u8 {
+  match e {
+    Expr::List(items) if items.is_shared() => numeric_data_kind(e),
+    _ => NOT_NUMERIC_DATA,
+  }
 }
 
 /// `expr_to_string(a).cmp(&expr_to_string(b))`, rendering only what the

@@ -280,6 +280,34 @@ pub(crate) fn is_inert_data(expr: &Expr) -> bool {
       })
     }
     Expr::List(items) => is_inert_list(items),
+    _ => is_machine_complex_number(expr),
+  }
+}
+
+/// A machine complex number in the shape arithmetic leaves it
+/// (`build_complex_float_expr`): `re + im*I`, `re - im*I` or `im*I`, with
+/// machine reals `re ≠ 0` and `im > 0`. Evaluating one gives it back.
+fn is_machine_complex_number(expr: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  let imaginary_term = |e: &Expr| {
+    matches!(e, Expr::BinaryOp { op: BinaryOperator::Times, left, right }
+      if matches!(left.as_ref(), Expr::Real(im) if *im > 0.0 && im.is_finite())
+        && matches!(right.as_ref(), Expr::Identifier(i) if i == "I"))
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Real(re) if *re != 0.0 && re.is_finite())
+        && imaginary_term(right)
+    }
+    // A unit coefficient alone is not kept (`1.*I` becomes `I`).
+    Expr::BinaryOp { left, .. } => {
+      imaginary_term(expr)
+        && !matches!(left.as_ref(), Expr::Real(im) if *im == 1.0)
+    }
     _ => false,
   }
 }
