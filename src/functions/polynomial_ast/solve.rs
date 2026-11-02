@@ -1203,52 +1203,37 @@ fn try_nsolve_quadratic(
     }
   }
 
-  let a = coeffs_f64[2];
-  let b = coeffs_f64[1];
-  let c = coeffs_f64[0];
-  let disc = b * b - 4.0 * a * c;
-
   let make_rule = |val: Expr| -> Expr {
     Expr::List(vec![rule_expr(Expr::Identifier(var.clone()), val)].into())
   };
 
-  if disc >= 0.0 {
-    let sqrt_disc = disc.sqrt();
-    // Kahan's method: compute the well-conditioned root first,
-    // then use Vieta's formula (c/q) for the other root.
-    // This avoids cancellation when -b and sqrt(disc) nearly cancel.
-    let q = if b >= 0.0 {
-      -0.5 * (b + sqrt_disc)
+  let (a, b, c) = (coeffs_f64[2], coeffs_f64[1], coeffs_f64[0]);
+  let mut roots = match machine_quadratic_roots(a, b, c) {
+    Some(roots) => roots,
+    // Both roots 0 (`q` vanishes).
+    None if a != 0.0 && b == 0.0 && c == 0.0 => vec![(0.0, 0.0); 2],
+    None => return None,
+  };
+  roots.sort_by(|x, y| {
+    x.0
+      .partial_cmp(&y.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  let value = |(re, im): (f64, f64)| -> Expr {
+    if im == 0.0 {
+      Expr::Real(re)
     } else {
-      -0.5 * (b - sqrt_disc)
-    };
-    let r1 = q / a;
-    let r2 = if q.abs() > 0.0 { c / q } else { r1 };
-    let mut roots = [r1, r2];
-    roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(Ok(Expr::List(
-      vec![
-        make_rule(Expr::Real(roots[0])),
-        make_rule(Expr::Real(roots[1])),
-      ]
-      .into(),
-    )))
-  } else {
-    let sqrt_neg_disc = (-disc).sqrt();
-    let re = -b / (2.0 * a);
-    let im = sqrt_neg_disc / (2.0 * a);
-    let c1 = crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(-im.abs())],
-    )
-    .unwrap_or(Expr::Real(re));
-    let c2 = crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(im.abs())],
-    )
-    .unwrap_or(Expr::Real(re));
-    Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)].into())))
-  }
+      crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      )
+      .unwrap_or(Expr::Real(re))
+    }
+  };
+  Some(Ok(Expr::List(
+    roots.into_iter().map(|r| make_rule(value(r))).collect(),
+  )))
 }
 
 /// `NSolve[a x^n + c == 0, x]` for n >= 3 — the roots on a circle.
@@ -1986,6 +1971,30 @@ fn polynomial_f64_coefficients(poly: &Expr, var: &str) -> Option<Vec<f64>> {
     }
   }
   Some(coeffs)
+}
+
+/// The roots of `a x^2 + b x + c` the way wolframscript computes them for
+/// machine coefficients: the cancellation-free form `q = -(b + sgn(b)
+/// Sqrt[b^2 - 4 a c])/2`, roots `q/a` and `c/q` (so `x^2 - 2.` gives
+/// `-1.4142135623730951` and `1.414213562373095`), and `-b/(2 a) ± …i` for a
+/// negative discriminant. `None` when `q` vanishes (both roots 0, left to
+/// the general solver).
+fn machine_quadratic_roots(a: f64, b: f64, c: f64) -> Option<Vec<(f64, f64)>> {
+  let disc = b * b - 4.0 * a * c;
+  if !disc.is_finite() || a == 0.0 {
+    return None;
+  }
+  if disc < 0.0 {
+    let re = -b / (2.0 * a);
+    let im = (-disc).sqrt() / (2.0 * a);
+    return Some(vec![(re, -im.abs()), (re, im.abs())]);
+  }
+  let d = disc.sqrt();
+  let q = -(b + if b < 0.0 { -d } else { d }) / 2.0;
+  if q == 0.0 {
+    return None;
+  }
+  Some(vec![(q / a, 0.0), (c / q, 0.0)])
 }
 
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
@@ -2967,6 +2976,14 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A quadratic with machine coefficients is solved numerically, exactly as
+  // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
+  if args.len() == 2
+    && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Some(result) = try_nsolve_quadratic(args)
+  {
+    return result;
+  }
   if let Some(expanded) = args.first().and_then(expand_region_membership) {
     let mut normalized = args.to_vec();
     normalized[0] = expanded;
