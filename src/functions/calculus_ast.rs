@@ -2972,6 +2972,11 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         }
         // `If[cond, a, b]` differentiates branch-by-branch and leaves the
         // condition alone: `D[If[c, a, b], x] = If[c, D[a, x], D[b, x]]`.
+        // An `If` that never mentions `x` is a constant: its derivative is
+        // plain `0`, not `If[c, 0, 0]`.
+        "If" if args.len() >= 2 && is_constant_wrt(expr, var) => {
+          Ok(Expr::Integer(0))
+        }
         "If" if args.len() >= 2 => {
           let mut out = Vec::with_capacity(args.len());
           out.push(args[0].clone());

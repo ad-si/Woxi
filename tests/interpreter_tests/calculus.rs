@@ -2028,6 +2028,21 @@ mod differentiate_if {
     assert_eq!(interpret("D[If[x < 1, x^2], x]").unwrap(), "If[x < 1, 2*x]");
   }
 
+  // An If free of the variable is a constant (wolframscript: 0), while one
+  // whose condition alone mentions it keeps its zero branches.
+  #[test]
+  fn constant_if() {
+    assert_eq!(interpret("D[If[t <= 100, 10, 12], u]").unwrap(), "0");
+    assert_eq!(
+      interpret("D[If[x <= 100, 10, 12], x]").unwrap(),
+      "If[x <= 100, 0, 0]"
+    );
+    assert_eq!(
+      interpret("D[If[t <= 100, x, x], x]").unwrap(),
+      "If[t <= 100, 1, 1]"
+    );
+  }
+
   #[test]
   fn delayed_derivative_then_find_root() {
     assert_eq!(
