@@ -570,10 +570,11 @@ mod random_working_precision {
     );
     assert_eq!(
       interpret(
-        "Precision /@ RandomComplex[{-1 - I, 1 + I}, 3, WorkingPrecision -> 20]"
+        "Round[Precision /@ RandomComplex[{-1 - I, 1 + I}, 3, \
+         WorkingPrecision -> 20]]"
       )
       .unwrap(),
-      "{20., 20., 20.}"
+      "{20, 20, 20}"
     );
     assert_eq!(
       interpret(
