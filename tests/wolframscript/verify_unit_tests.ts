@@ -2602,6 +2602,36 @@ function main() {
     // harness joins the setup and the case into one line, where they would
     // be read before the Get runs.
     "{Context[ClusterFlatten], Context[Linkage]}",
+    // Image[Graphics[…]] and SetAlphaChannel[Graphics[…], …] rasterize
+    // through the front end at the display's scale (twice the pixels on a
+    // Retina Mac), see "Rasterizing a Graphics depends on the display scale".
+    "ImageDimensions[Image[Graphics[{White, Disk[]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {{246, 246}, {246, 246}}, Background -> Black]]]",
+    "m = Image[{{1, 0}, {1, 1}}]; {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}",
+    // Adaptive sampling and the nesting of the 3D plot primitives are not
+    // decoded (see "3D plots sample and nest differently").
+    "Length[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}], Line[p_] :> p, Infinity][[1]]]",
+    "Length[Cases[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]], _Line]]",
+    "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), ColorFunctionScaling -> False, PlotPoints -> 4]; Take[p[[1, 2]], {2, 3}]",
+    "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3]; Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 && 0 <= b <= 1, Infinity] // Length",
+    "ListPlot3D[{{0,0,0},{1,0,1},{0,1,2},{1,1,3}}]",
+    "ListPlot3D[{{1,2,3},{4,5,6}}, Mesh -> None]",
+    "g = ContourPlot3D[(x^2 + y^2 + z^2 + 0.9991)^2 == 4 (x^2 + z^2), {x, -1.2, 1.2}, {y, -3., 3.}, {z, -3., 3.}, PlotPoints -> 20]; c = First[g]; {Head[c], Length[c[[1]]] > 0, Length[c[[3, 2]]] == Length[c[[1]]], c[[3, 1]]}",
+    "c = First[ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Contours -> {0.25, 0.64}, PlotPoints -> 10]]; tris = Cases[c[[2]], Polygon[t_] :> t, Infinity]; {Length[tris], 3 Total[Length /@ tris] > 2 Length[c[[1]]], Max[Flatten[tris]] == Length[c[[1]]]}",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}, Contours -> 5, Mesh -> None]",
+    "pts = First[RevolutionPlot3D[2, {t, 1, 3}, RevolutionAxis -> {1, 0, 0}]][[1]]; {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 2]]], 0.01], Round[Max[pts[[All, 3]]], 0.01]}",
+    "First[RevolutionPlot3D[t, {t, 1, 3}, RevolutionAxis -> {0, 0, 1}]] === First[RevolutionPlot3D[t, {t, 1, 3}]]",
+    // Plot's adaptive sampler starts a hair inside the endpoints, so its
+    // y range is 0.99999995… rather than 1 (see "`Plot` samples just inside
+    // the interval's ends").
+    "PlotRange[Plot[x^2, {x, 0, 1}]]",
+    // wolframscript never runs a Manipulate's (Synchronous)Initialization,
+    // Woxi does (see "`Manipulate`'s `Initialization` is not scoped").
+    "Manipulate[x + q, {x, 0, 1}, SynchronousInitialization :> {q = 5}]; q",
+    // ImageLines' Hough-transform peak picking is not decoded: WL reports
+    // several near-duplicate lines per stroke (see "ImageLines finds other
+    // lines").
+    "Round[First /@ ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]",
+    "Round[First /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
