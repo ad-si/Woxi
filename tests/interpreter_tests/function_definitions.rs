@@ -5061,9 +5061,14 @@ mod curried_and_head_patterns {
     // numeric-head form above. A Demonstration writes its inverse-function
     // label this way, applying a box-notation superscript string to the
     // variable, so the whole surrounding expression has to parse.
-    assert_eq!(interpret("\"f\"[x]").unwrap(), "\"f\"[x]");
-    assert_eq!(interpret("Head[\"f\"[x]]").unwrap(), "\"f\"");
-    assert_eq!(interpret("{a, \"f\"[x]}").unwrap(), "{a, \"f\"[x]}");
+    // wolframscript prints the string head without its quotes.
+    assert_eq!(interpret("\"f\"[x]").unwrap(), "f[x]");
+    assert_eq!(interpret("Head[\"f\"[x]]").unwrap(), "f");
+    assert_eq!(interpret("{a, \"f\"[x]}").unwrap(), "{a, f[x]}");
+    assert_eq!(
+      interpret("ToString[\"f\"[x], InputForm]").unwrap(),
+      "\"f\"[x]"
+    );
   }
 
   #[test]
