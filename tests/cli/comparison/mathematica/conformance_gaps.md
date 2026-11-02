@@ -7251,9 +7251,6 @@ These reference-page examples still time out or diverge in Woxi:
   expression node).
 - `FiniteField` is not implemented, so `MatrixPower`/`LinearSolve` over
   `FiniteField[29, 4]` stay symbolic.
-- `PermutationMatrix[perm]` returns a dense matrix where wolframscript
-  returns a sparse `StructuredArray`, so `ByteCount` of a large one is slow
-  and large.
 - `NSolve`/`Solve`/`FindInstance` with `MaxRoots` on degree-10^6 polynomials,
   real-root isolation of sparse degree-10^6 polynomials over `Reals`, the
   slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
@@ -7576,3 +7573,63 @@ Linux they come last.
 - `FindArgMin[…, Method -> "Newton"]` on a diverging start
   (QuantumMotionOfTwoParticles…) ends at a different point than
   wolframscript and takes ~1.5 s per call (wolframscript 15 ms).
+
+## Argument-form sweep conformance (C_args, 2026-11)
+
+### Apart with Modulus
+
+`Apart[1/(x^2 + x), Modulus -> 3]` is `x^(-1) - (1 + x)^(-1)` in WL, while
+Woxi reduces the partial-fraction coefficients mod 3 (`x^(-1) + 2/(1 + x)`).
+WL reduces the numerator and denominator mod p and factors the denominator
+mod p (`Apart[1/(x^2 + 1), Modulus -> 2]` is `(1 + x)^(-2)`), but then mixes
+rational and reduced coefficients: `Apart[1/(x^2 - 1), Modulus -> 5]` is
+`1/(3*(1 + x)) - 1/(3*(4 + x))` (unreduced thirds) while
+`Apart[2/(x (x + 1)^2), Modulus -> 3]` is `2/x + (1 + x)^(-2) + (1 + x)^(-1)`
+(reduced) and `Apart[(x^3 + 2)/(x^2 (x^2 + 1)), Modulus -> 5]` is
+`1/(3*x^2) + (2 + x)^(-1)` (one term unreduced, one reduced). Denominators
+of distinct linear factors seem to keep rational coefficients, but no rule
+covers all probes. `ApartSquareFree[(1 - x^2)/(x^4 + 2 x^2 + 1),
+Modulus -> 2]` is `(1 + x^2)^(-1)` (WL treats `1 + x^4` as `(1 + x^2)^2`
+there; Woxi gives the equal `(1 + x)^(-2)`).
+
+### BooleanMaxterms / BooleanMinterms without variables
+
+`BooleanMaxterms[{{0, 1, 1}}]` (and `BooleanFunction[k, n]`) evaluate to a
+`BooleanFunction` whose InputForm is WL's internal BDD encoding,
+`BooleanFunction["BDD" -> {3, 0, 2, 1, 1, 1, 3, 2, 1, -1}]`; Woxi leaves the
+call unevaluated. **Not reproducible** without WL's BDD node numbering.
+
+### `ConstantImage[…, opts]` adds `Magnification -> Automatic`
+
+`ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, ImageSize -> 100]` lists
+`ColorSpace -> "RGB", ImageSize -> 100, Interleaving -> True,
+Magnification -> Automatic` in WL; Woxi prints the first three (its `Image`
+has no magnification slot). `ImageSize -> Small` (a named size) is not kept.
+
+### Gauges and graph layouts
+
+`ClockGauge`, `ThermometerGauge` and `VerticalGauge` (like `AngularGauge`
+and `HorizontalGauge`) return WL's internal styled gauge Graphics
+(`LightDarkSwitched`, nested `Style`, `Scaled` ticks); Woxi draws its own
+primitives, so their Graphics expressions and `Cases` over them differ.
+`GraphPlot` and `LayeredGraphPlot` coordinates come from WL's
+spring-electrical and layered layouts and are **not reproducible** point
+for point.
+
+### CountryData curated data
+
+WL 15's `CountryData["EU"]` lists `Entity["Country", …]` objects (Woxi:
+names), `CountryData["Italy", "FullName"]` is the official
+`"Italian Republic"` (Woxi: the common name), and the shape and polygon
+properties come from WL's finer outlines with its own nesting, so tests over
+their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ. These
+need WL's curated country data.
+
+### Symbolic `MatrixPower`
+
+`MatrixPower[{{a, b}, {c, d}}, n]` (and `MatrixPower[m, n, v]`) stay
+unevaluated in Woxi; WL writes them through the eigen-decomposition with
+`Sqrt[a^2 + 4*b*c - 2*a*d + d^2]`, but its entries are not
+`s . DiagonalMatrix[λ^n] . Inverse[s]` term for term (WL normalizes the
+signs of the eigenvector factors and divides the off-diagonal entries by
+`c`), and even `{{1, 1}, {0, 1}}^n = {{1, n}, {0, 1}}` is missing.
