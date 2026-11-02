@@ -12083,3 +12083,47 @@ mod hierarchical_clustering_package {
     );
   }
 }
+
+mod variance_equivalence_test {
+  use super::*;
+
+  const DATA: &str = "a = {1.2, 3.4, 2.2, 5.1, 0.3, 2.8, 4.4, 1.9}; \
+                      b = {2.0, 2.5, 2.2, 2.9, 2.4, 2.6, 2.1, 2.7, 3.0}; \
+                      c = {1., 5., 2., 8., 3., 3.5, 9.};";
+
+  /// The statistics and p-values of the full table, to 12 digits, against
+  /// wolframscript's.
+  #[test]
+  fn all_tests_two_and_three_samples() {
+    assert_eq!(
+      interpret(&format!(
+        "{DATA} t = VarianceEquivalenceTest[{{a, b}}, \"HypothesisTestData\"]\
+         [\"TestDataTable\", All][[1, 2 ;;]]; \
+         {{t[[All, 1]], Round[t[[All, 2 ;;]] - {{{{12.945763586933854, \
+         0.00032064628357147187}}, {{10.668480067914118, 0.005206837142022101}}, \
+         {{2.666080185441466, 0.007674138656263988}}, {{21.277686762778508, \
+         0.0002855069979808727}}, {{11.060362162554497, 0.004609343741355545}}}}, \
+         10^-12], VarianceEquivalenceTest[{{a, b, c}}, \"HypothesisTestData\"]\
+         [\"AutomaticTest\"]}}"
+      ))
+      .unwrap(),
+      "{{Bartlett, Brown\u{2010}Forsythe, Conover, Fisher Ratio, Levene}, \
+       {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}}, Levene}"
+    );
+  }
+
+  #[test]
+  fn automatic_test_and_conclusion() {
+    assert_eq!(
+      interpret(&format!(
+        "{DATA} skew = {{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1., 2., 5., 10., 20., 50.}}; \
+         h = VarianceEquivalenceTest[{{a, b}}, \"HypothesisTestData\"]; \
+         {{h[\"AutomaticTest\"], h[\"ShortTestConclusion\"], \
+          VarianceEquivalenceTest[{{skew, b}}, \"HypothesisTestData\"][\"AutomaticTest\"], \
+          Round[10^6 VarianceEquivalenceTest[{{a, b}}, \"Levene\"]]}}"
+      ))
+      .unwrap(),
+      "{FisherRatio, Reject, Conover, 4609}"
+    );
+  }
+}

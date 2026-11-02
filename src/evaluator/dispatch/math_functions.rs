@@ -1359,6 +1359,13 @@ pub fn dispatch_math_functions(
     "ZTest" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::ztest_ast(args));
     }
+    "VarianceEquivalenceTest" if !args.is_empty() => {
+      return Some(
+        crate::functions::variance_equivalence_test::variance_equivalence_test_ast(
+          args,
+        ),
+      );
+    }
     "FisherRatioTest" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::fisher_ratio_test_ast(args));
     }

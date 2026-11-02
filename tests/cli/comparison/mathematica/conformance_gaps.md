@@ -3170,6 +3170,16 @@ Also: `DiscreteUniformDistribution`'s StandardDeviation is `Sqrt[X/12]` against
 WL's `Sqrt[X]/(2 Sqrt[3])`, and `ExpGammaDistribution`'s PDF is unimplemented
 (exponent `Plus` order).
 
+### `VarianceEquivalenceTest`: choice of the automatic test
+
+The statistics and p-values match wolframscript to the last digits, but the
+automatic test is picked by Woxi's own normality check of the pooled
+residuals (Anderson–Darling with estimated parameters at 5%): Fisher ratio
+(two samples) or Levene (more) when they look normal, Conover otherwise.
+Wolfram's rule is not documented and may disagree on borderline data; the
+`HypothesisTestData` object also prints as an association rather than
+Wolfram's opaque form.
+
 ### `HierarchicalClustering`Agglomerate`: ties
 
 Merge heights match the package for every linkage, but with equal

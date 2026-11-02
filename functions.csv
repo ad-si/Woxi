@@ -3934,7 +3934,7 @@ SpectralLineData,"",🚫,,11.1,4006
 StreamMarkers,"",,,11.3,4006
 TravelDistanceList,"",🚫,,10.4,4006
 UniverseModelData,"",🚫,,10.4,4006
-VarianceEquivalenceTest,"",,,8.0,4006
+VarianceEquivalenceTest,"Equal-variance tests: Bartlett Brown-Forsythe Conover Fisher ratio and Levene",✅,pure,8.0,4006
 WaitNext,"",🚫,,7.0,4006
 WalleniusHypergeometricDistribution,"",,,8.0,4006
 WikidataData,"Retrieves the values of Wikidata properties for Wikidata items from the wikidata.org API",✅,effectful,12.1,4006

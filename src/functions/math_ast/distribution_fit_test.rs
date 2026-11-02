@@ -722,6 +722,16 @@ pub fn apply_hypothesis_test_data(
   let Some(Expr::Association(pairs)) = func_args.first() else {
     return None;
   };
+  if let Some(result) =
+    crate::functions::variance_equivalence_test::property(pairs, index_args)
+  {
+    return Some(result);
+  }
+  if pairs.iter().any(
+    |(k, _)| matches!(k, Expr::String(s) if s == "VarianceEquivalenceTest"),
+  ) {
+    return None;
+  }
   match index_args {
     [Expr::String(prop)] => match prop.as_str() {
       "FittedDistribution" | "AllTests" | "Properties" => {

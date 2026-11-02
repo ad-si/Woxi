@@ -137,6 +137,7 @@ pub mod trig_factor_ast;
 pub mod turing_machine_ast;
 pub mod txt_ast;
 pub mod unicode_casefold_data;
+pub mod variance_equivalence_test;
 pub mod vector_field_plots;
 pub mod volume_plots;
 pub mod voronoi;
