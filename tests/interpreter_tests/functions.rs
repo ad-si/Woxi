@@ -114,7 +114,26 @@ fn sequence_alignment_merge_differences_false() {
       r#"SequenceAlignment["abcde", "axyde", MergeDifferences -> False]"#
     )
     .unwrap(),
-    "{a, {b, x}, {c, y}, de}"
+    "{a, {bc, xy}, de}"
+  );
+  // False only keeps a run of substitutions apart from a run of gaps.
+  assert_eq!(
+    interpret(
+      r#"SequenceAlignment["abxcd", "aycd", MergeDifferences -> False]"#
+    )
+    .unwrap(),
+    "{a, {b, }, {x, y}, cd}"
+  );
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abxcd", "aycd"]"#).unwrap(),
+    "{a, {bx, y}, cd}"
+  );
+  assert_eq!(
+    interpret(
+      "SequenceAlignment[{1, 2, 3, 4}, {1, 5, 6, 4}, MergeDifferences -> False]"
+    )
+    .unwrap(),
+    "{{1}, {{2, 3}, {5, 6}}, {4}}"
   );
   assert_eq!(
     interpret(

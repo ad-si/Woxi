@@ -12779,58 +12779,49 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let len = aligned1.len();
 
   while k < len {
-    if aligned1[k].is_some() && aligned2[k].is_some() {
-      let i1 = aligned1[k].unwrap();
-      let j1 = aligned2[k].unwrap();
-      if chars1[i1] == chars2[j1] {
-        // Matching segment (both sides identical, so emit one piece).
-        let mut idxs = vec![i1];
-        k += 1;
-        while k < len
-          && aligned1[k].is_some()
-          && aligned2[k].is_some()
-          && chars1[aligned1[k].unwrap()] == chars2[aligned2[k].unwrap()]
-        {
-          idxs.push(aligned1[k].unwrap());
-          k += 1;
-        }
-        result.push(make_seg(&idxs, true));
-      } else {
-        // Mismatch: a {removed, inserted} pair.
-        let mut idx1 = vec![i1];
-        let mut idx2 = vec![j1];
-        k += 1;
-        while k < len
-          && aligned1[k].is_some()
-          && aligned2[k].is_some()
-          && chars1[aligned1[k].unwrap()] != chars2[aligned2[k].unwrap()]
-          && merge_differences
-        {
-          idx1.push(aligned1[k].unwrap());
-          idx2.push(aligned2[k].unwrap());
-          k += 1;
-        }
-        result.push(Expr::List(
-          vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
-        ));
-      }
-    } else {
-      // Gap on one side: a {removed, inserted} pair where one side is empty.
-      let mut idx1 = Vec::new();
-      let mut idx2 = Vec::new();
-      while k < len && (aligned1[k].is_none() || aligned2[k].is_none()) {
-        if let Some(i1) = aligned1[k] {
-          idx1.push(i1);
-        }
-        if let Some(j1) = aligned2[k] {
-          idx2.push(j1);
-        }
+    if let (Some(i1), Some(j1)) = (aligned1[k], aligned2[k])
+      && chars1[i1] == chars2[j1]
+    {
+      // Matching segment (both sides identical, so emit one piece).
+      let mut idxs = vec![i1];
+      k += 1;
+      while k < len
+        && aligned1[k].is_some()
+        && aligned2[k].is_some()
+        && chars1[aligned1[k].unwrap()] == chars2[aligned2[k].unwrap()]
+      {
+        idxs.push(aligned1[k].unwrap());
         k += 1;
       }
-      result.push(Expr::List(
-        vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
-      ));
+      result.push(make_seg(&idxs, true));
+      continue;
     }
+    // A run of differing columns becomes one {removed, inserted} pair. With
+    // MergeDifferences -> True (the default) the whole run merges; with
+    // False a run of substitutions and a run of gaps stay separate pairs:
+    // "abxcd" vs "aycd" is {"a", {"bx", "y"}, "cd"} by default but
+    // {"a", {"b", ""}, {"x", "y"}, "cd"} with False.
+    let is_match = |k: usize| match (aligned1[k], aligned2[k]) {
+      (Some(a), Some(b)) => chars1[a] == chars2[b],
+      _ => false,
+    };
+    let is_gap = |k: usize| aligned1[k].is_none() || aligned2[k].is_none();
+    let run_gap = is_gap(k);
+    let mut idx1 = Vec::new();
+    let mut idx2 = Vec::new();
+    while k < len && !is_match(k) && (merge_differences || is_gap(k) == run_gap)
+    {
+      if let Some(i1) = aligned1[k] {
+        idx1.push(i1);
+      }
+      if let Some(j1) = aligned2[k] {
+        idx2.push(j1);
+      }
+      k += 1;
+    }
+    result.push(Expr::List(
+      vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
+    ));
   }
 
   Ok(Expr::List(result.into()))
