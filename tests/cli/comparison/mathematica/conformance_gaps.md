@@ -7625,11 +7625,18 @@ properties come from WL's finer outlines with its own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ. These
 need WL's curated country data.
 
-### Symbolic `MatrixPower`
+### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
-`MatrixPower[{{a, b}, {c, d}}, n]` (and `MatrixPower[m, n, v]`) stay
-unevaluated in Woxi; WL writes them through the eigen-decomposition with
-`Sqrt[a^2 + 4*b*c - 2*a*d + d^2]`, but its entries are not
-`s . DiagonalMatrix[λ^n] . Inverse[s]` term for term (WL normalizes the
-signs of the eigenvector factors and divides the off-diagonal entries by
-`c`), and even `{{1, 1}, {0, 1}}^n = {{1, n}, {0, 1}}` is missing.
+`MatrixPower[m, n]` for a symbolic `n` is written as `s . J^n . s^-1` and
+matches WL for upper-triangular matrices and rational matrices with
+rational nonzero eigenvalues. Matrices with radical or complex eigenvalues
+(`{{1, 2}, {3, 4}}`, `{{a, b}, {c, d}}`, `{{0, 1}, {-1, 0}}`) and a zero
+eigenvalue (WL writes `DiscreteDelta[n]`, `0^n`) stay unevaluated. Probes:
+WL's result for numeric radical eigenvalues equals
+`Cancel /@ (s . D^n . (Cancel /@ Inverse[s]))` with its own `JordanDecomposition`
+`s`, but for symbolic radicals (`{{a, b}, {c, d}}`, `{{1, 2}, {3, x}}`)
+it is `s . D^n . (Cancel /@ Inverse[s])` without the outer `Cancel` (the
+outer one flips the sign of `-a + d - Sqrt[…]` factors that WL keeps);
+which case applies is not decoded, and Woxi's `Inverse`/`Cancel` of
+radical expressions, its symbolic eigenvectors and its `I^n` products
+(`I/2 I^n` stays separate in WL) differ from WL's anyway.
