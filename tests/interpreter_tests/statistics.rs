@@ -10996,15 +10996,23 @@ mod random_function_simulation {
       .unwrap(),
       "{50, True, 1, {}}"
     );
-    // A deterministic chain alternates between its states; the start time
-    // may be nonzero.
+    // A deterministic chain alternates between its states. The process
+    // starts at time 0, so a later window sees it already moved on.
     assert_eq!(
       interpret(
         "RandomFunction[DiscreteMarkovProcess[2, {{0, 1}, {1, 0}}], {1, 5}]\
          [\"Path\"]"
       )
       .unwrap(),
-      "{{1, 2}, {2, 1}, {3, 2}, {4, 1}, {5, 2}}"
+      "{{1, 1}, {2, 2}, {3, 1}, {4, 2}, {5, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "RandomFunction[DiscreteMarkovProcess[2, {{0, 1}, {1, 0}}], {3, 6}]\
+         [\"Path\"]"
+      )
+      .unwrap(),
+      "{{3, 1}, {4, 2}, {5, 1}, {6, 2}}"
     );
     // The same seed reproduces the same realization.
     assert_eq!(
