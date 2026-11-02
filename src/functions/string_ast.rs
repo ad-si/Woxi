@@ -12140,35 +12140,41 @@ fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
 }
 
 /// Options of NeedlemanWunschSimilarity / SmithWatermanSimilarity:
-/// `GapPenalty -> g` (a real number, default 1), `IgnoreCase -> True|False`
+/// `GapPenalty -> g` (a real number, default 0), `IgnoreCase -> True|False`
 /// and `SimilarityRules -> {{a, b} -> s, …}` (the score of aligning a with b,
-/// in place of the default +1 for a match and -1 for a mismatch).
-/// Returns `None` for any other option or value.
+/// patterns allowed, in place of the default +1 for a match and -1 for a
+/// mismatch). Returns `None` for any other option or value.
 struct AlignmentOptions {
   gap: f64,
   ignore_case: bool,
-  rules: Vec<(String, String, f64)>,
+  rules: Vec<(Expr, f64)>,
 }
 
 impl AlignmentOptions {
-  /// The score of aligning token `a` (from the first sequence) with `b`.
+  /// The score of aligning token `a` (from the first sequence) with `b`:
+  /// the first rule whose left side matches `{a, b}` (or `{b, a}`).
   fn score(&self, a: &str, b: &str) -> f64 {
-    let rule = self
-      .rules
-      .iter()
-      .find(|(x, y, _)| x == a && y == b)
-      .or_else(|| self.rules.iter().find(|(x, y, _)| x == b && y == a));
-    match rule {
-      Some((_, _, s)) => *s,
-      None if a == b => 1.0,
-      None => -1.0,
+    let pair = |x: &str, y: &str| {
+      Expr::List(
+        vec![Expr::String(x.to_string()), Expr::String(y.to_string())].into(),
+      )
+    };
+    for candidate in [pair(a, b), pair(b, a)] {
+      for (lhs, s) in &self.rules {
+        if crate::evaluator::pattern_matching::match_pattern(&candidate, lhs)
+          .is_some()
+        {
+          return *s;
+        }
+      }
     }
+    if a == b { 1.0 } else { -1.0 }
   }
 }
 
 fn alignment_similarity_options(opts: &[Expr]) -> Option<AlignmentOptions> {
   let mut options = AlignmentOptions {
-    gap: 1.0,
+    gap: 0.0,
     ignore_case: false,
     rules: Vec::new(),
   };
@@ -12193,27 +12199,70 @@ fn alignment_similarity_options(opts: &[Expr]) -> Option<AlignmentOptions> {
         let Expr::List(rules) = value else {
           return None;
         };
-        let token = |e: &Expr| match e {
-          Expr::String(s) => s.clone(),
-          other => expr_to_output(other),
-        };
         for rule in rules {
-          let (Expr::List(pair), score, _) =
+          let (lhs @ Expr::List(pair), score, _) =
             crate::functions::expr_form::rule_parts(rule)?
           else {
             return None;
           };
-          let [a, b] = pair.as_slice() else {
+          if pair.len() != 2 {
             return None;
-          };
+          }
           let score = crate::functions::math_ast::try_eval_to_f64(score)?;
-          options.rules.push((token(a), token(b), score));
+          options.rules.push((lhs.clone(), score));
         }
       }
       _ => return None,
     }
   }
   Some(options)
+}
+
+/// The alignment score of token sequences `a` and `b` with affine gaps: a
+/// run of L gap characters costs `gap + L` (each character against a gap
+/// scores -1 and opening the run costs the GapPenalty). Global
+/// (Needleman–Wunsch) or local (Smith–Waterman, cells floored at 0 and the
+/// best cell taken) by `local`; Gotoh's three-table recurrence.
+fn affine_alignment_score(
+  a: &[String],
+  b: &[String],
+  options: &AlignmentOptions,
+  local: bool,
+) -> f64 {
+  let (n, m) = (a.len(), b.len());
+  let open = options.gap + 1.0;
+  let extend = 1.0;
+  let neg = f64::NEG_INFINITY;
+  // h: best ending anywhere; e: ending in a gap in `a` (consuming b);
+  // f: ending in a gap in `b` (consuming a).
+  let mut h = vec![vec![0f64; m + 1]; n + 1];
+  let mut e = vec![vec![neg; m + 1]; n + 1];
+  let mut f = vec![vec![neg; m + 1]; n + 1];
+  if !local {
+    for i in 1..=n {
+      f[i][0] = -(options.gap + i as f64);
+      h[i][0] = f[i][0];
+    }
+    for j in 1..=m {
+      e[0][j] = -(options.gap + j as f64);
+      h[0][j] = e[0][j];
+    }
+  }
+  let mut best = 0f64;
+  for i in 1..=n {
+    for j in 1..=m {
+      e[i][j] = (h[i][j - 1] - open).max(e[i][j - 1] - extend);
+      f[i][j] = (h[i - 1][j] - open).max(f[i - 1][j] - extend);
+      let diag = h[i - 1][j - 1] + options.score(&a[i - 1], &b[j - 1]);
+      let mut v = diag.max(e[i][j]).max(f[i][j]);
+      if local {
+        v = v.max(0.0);
+        best = best.max(v);
+      }
+      h[i][j] = v;
+    }
+  }
+  if local { best } else { h[n][m] }
 }
 
 /// The tokens of both alignment arguments, lower-cased for IgnoreCase.
@@ -12233,7 +12282,7 @@ fn alignment_token_pair(
 }
 
 /// NeedlemanWunschSimilarity[s1, s2] - global sequence-alignment score with the
-/// default scoring (match +1, mismatch -1, gap penalty 1). When one input is
+/// default scoring (match +1, mismatch -1, each gap character -1). When one input is
 /// empty, wolframscript returns the length of the other. The options
 /// GapPenalty, IgnoreCase and SimilarityRules are supported.
 pub fn needleman_wunsch_similarity_ast(
@@ -12252,31 +12301,16 @@ pub fn needleman_wunsch_similarity_ast(
   let (n, m) = (a.len(), b.len());
   if n == 0 || m == 0 {
     // Only the default scoring's empty-input value is known.
-    if gap != 1.0 || !options.rules.is_empty() {
+    if gap != 0.0 || !options.rules.is_empty() {
       return Ok(unevaluated("NeedlemanWunschSimilarity", args));
     }
     return Ok(Expr::Real(n.max(m) as f64));
   }
-  let mut dp = vec![vec![0f64; m + 1]; n + 1];
-  for (i, row) in dp.iter_mut().enumerate() {
-    row[0] = -(i as f64) * gap;
-  }
-  for j in 0..=m {
-    dp[0][j] = -(j as f64) * gap;
-  }
-  for i in 1..=n {
-    for j in 1..=m {
-      let s = options.score(&a[i - 1], &b[j - 1]);
-      dp[i][j] = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - gap)
-        .max(dp[i][j - 1] - gap);
-    }
-  }
-  Ok(Expr::Real(dp[n][m]))
+  Ok(Expr::Real(affine_alignment_score(&a, &b, &options, false)))
 }
 
 /// SmithWatermanSimilarity[s1, s2] - local sequence-alignment score with the
-/// default scoring (match +1, mismatch -1, gap penalty 1). Cell scores are
+/// default scoring (match +1, mismatch -1, each gap character -1). Cell scores are
 /// floored at 0 and the result is the maximum cell value. The options
 /// GapPenalty, IgnoreCase and SimilarityRules are supported.
 pub fn smith_waterman_similarity_ast(
@@ -12292,21 +12326,8 @@ pub fn smith_waterman_similarity_ast(
     return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
   let (a, b) = alignment_token_pair(args, ignore_case);
-  let (n, m) = (a.len(), b.len());
-  let mut dp = vec![vec![0f64; m + 1]; n + 1];
-  let mut best = 0f64;
-  for i in 1..=n {
-    for j in 1..=m {
-      let s = options.score(&a[i - 1], &b[j - 1]);
-      let v = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - gap)
-        .max(dp[i][j - 1] - gap)
-        .max(0.0);
-      dp[i][j] = v;
-      best = best.max(v);
-    }
-  }
-  Ok(Expr::Real(best))
+  let _ = gap;
+  Ok(Expr::Real(affine_alignment_score(&a, &b, &options, true)))
 }
 
 /// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also

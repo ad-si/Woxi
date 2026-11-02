@@ -397,7 +397,7 @@ mod alignment_options {
         r#"SmithWatermanSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 1]"#
       )
       .unwrap(),
-      "5."
+      "4."
     );
     assert_eq!(
       interpret(
@@ -418,11 +418,55 @@ mod alignment_options {
         r#"NeedlemanWunschSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 1]"#
       )
       .unwrap(),
-      "5."
+      "4."
     );
     assert_eq!(
       interpret(
         r#"NeedlemanWunschSimilarity["ABCDEF", "abcdef", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "6."
+    );
+  }
+
+  #[test]
+  fn gap_penalty_is_the_cost_of_opening_a_gap() {
+    // A run of L gap characters costs GapPenalty + L.
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCDEF", "ABCxxDEF", GapPenalty -> 1]"#
+      )
+      .unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 0.5]"#
+      )
+      .unwrap(),
+      "4.5"
+    );
+    assert_eq!(
+      interpret(
+        r#"NeedlemanWunschSimilarity["ABCD", "ABxCD", GapPenalty -> 2]"#
+      )
+      .unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret(
+        r#"NeedlemanWunschSimilarity["ABC", "ABCDE", GapPenalty -> 2]"#
+      )
+      .unwrap(),
+      "-1."
+    );
+  }
+
+  #[test]
+  fn similarity_rules_with_patterns() {
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCD", "ABxCD", GapPenalty -> 1, SimilarityRules -> {{a_, a_} -> 2, {_, _} -> -1}]"#
       )
       .unwrap(),
       "6."
