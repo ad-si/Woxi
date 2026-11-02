@@ -23657,6 +23657,23 @@ mod sparse_array_properties_and_predicates {
 mod shared_list_rendering_cache {
   use super::*;
 
+  // A table stored as a literal-argument value reads element by element in
+  // O(1) each (it used to be checked whole on every read), and a stored
+  // value with symbols is still evaluated.
+  #[test]
+  fn memoized_table_reads() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "t[1] = Table[{i, 2. i}, {i, 20000}]; s = 0.; Do[s += t[1][[k, 2]], {k, 20000}]; s"
+      )
+      .unwrap(),
+      "4.0002*^8"
+    );
+    assert!(start.elapsed().as_secs() < 10, "took {:?}", start.elapsed());
+    assert_eq!(interpret("f[1] = {g, 2}; g = 5; f[1]").unwrap(), "{5, 2}");
+  }
+
   // A symbol's large list keeps its printed text between renderings; a part
   // assignment must drop that text so the new element shows.
   #[test]
