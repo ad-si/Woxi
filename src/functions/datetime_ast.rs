@@ -1789,6 +1789,7 @@ fn parse_increments(delta: &Expr) -> Option<Vec<(f64, String)>> {
 fn date_plus_with_time(
   components: &[f64],
   increments: &[(f64, String)],
+  real_seconds: bool,
 ) -> Expr {
   let get = |i: usize| components.get(i).copied().unwrap_or(0.0);
   let mut y = components[0] as i64;
@@ -1828,14 +1829,41 @@ fn date_plus_with_time(
       absolute_days_to_date(date_to_absolute_days(y, m, d) + carry as i64);
   }
   let whole = secs.floor() as i64;
-  make_date_list(
-    y,
-    m,
-    d,
-    whole / 3600,
-    whole % 3600 / 60,
-    secs - (whole / 60 * 60) as f64,
-  )
+  let (hour, minute) = (whole / 3600, whole % 3600 / 60);
+  let second = secs - (whole / 60 * 60) as f64;
+  // The result is as long as the date it was given, and longer only as far
+  // as the clock fields that came out nonzero (`{2026, 12, 31}` plus 25
+  // hours is `{2027, 1, 1, 1}`, plus 24 hours stays `{2027, 1, 1}`). A
+  // fractional clock field in the date spreads over the full date list.
+  let fractional_clock = components.iter().skip(3).any(|c| c.fract() != 0.0);
+  let mut len = if fractional_clock {
+    6
+  } else {
+    components.len().max(3)
+  };
+  if second != 0.0 {
+    len = 6;
+  } else if minute != 0 {
+    len = len.max(5);
+  } else if hour != 0 {
+    len = len.max(4);
+  }
+  // Seconds stay exact unless the date carried inexact seconds or the sum
+  // has a fractional second.
+  let seconds = if real_seconds || second.fract() != 0.0 {
+    Expr::Real(second)
+  } else {
+    Expr::Integer(second as i128)
+  };
+  let fields = [
+    Expr::Integer(y as i128),
+    Expr::Integer(m as i128),
+    Expr::Integer(d as i128),
+    Expr::Integer(hour as i128),
+    Expr::Integer(minute as i128),
+    seconds,
+  ];
+  Expr::List(fields[..len].to_vec().into())
 }
 
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1918,7 +1946,9 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .any(|(n, unit)| is_sub_day_unit(unit) || n.fract() != 0.0))
   {
-    return Ok(date_plus_with_time(&components, &increments));
+    let real_seconds = matches!(&date_arg, Expr::List(items)
+      if matches!(items.get(5), Some(Expr::Real(_))));
+    return Ok(date_plus_with_time(&components, &increments, real_seconds));
   }
   // A DateObject with a clock time (an "Instant") moves through the time
   // of day as well and keeps its granularity, calendar and time zone.
