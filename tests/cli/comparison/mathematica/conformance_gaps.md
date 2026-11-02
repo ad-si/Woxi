@@ -7420,3 +7420,18 @@ from a stated rule or needs missing machinery:
   `AugmentedSymmetricPolynomial`.
 - `LowerTriangularMatrix[SparseArray[…]]`: Wolfram's stored CSR data keeps
   the input's insertion order, which Woxi's sorted sparse arrays do not.
+
+## Notebook-sweep gaps (misc cluster, 2026-11)
+
+- `AbsoluteOptions[plot, FrameTicks]` returns `{}`: Wolfram lists the
+  resolved tick specifications (`{{left, right}, {bottom, top}}`, each tick
+  `{x, label, {in, out}}`). PlottingPriceDivergences reads them back.
+- `Solve` of a system with a symbolic parameter and a fractional power
+  (`t/T1 == (P2/p)^(2/7)` in CompressibleFlowThroughANozzleDiffuser)
+  returns `{}`; Wolfram rationalizes the exponent and returns 12 parametric
+  solutions.
+- `CoordinateTransformData[]` (the list of supported transforms) and the
+  parametrized 3-D systems (`BipolarCylindrical`, `Toroidal`, `Confocal`, …)
+  are not implemented (3DCoordinateSystemTransformations).
+- `FindIndependentEdgeSet` is not implemented
+  (SpreadsheetLikeSolutionOfLargeScaleSystemsOfEquations).
