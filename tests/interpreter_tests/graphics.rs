@@ -32202,6 +32202,47 @@ mod manipulate {
     assert!(svg.contains("alpha") && svg.contains("delta"));
   }
 
+  /// A Trigger's `AnimationRepetitions` is a literal count, or the name of
+  /// another control (bare or in `Dynamic`); `Infinity` loops forever.
+  #[test]
+  fn trigger_animation_repetitions_are_parsed() {
+    let reps = |opt: &str| {
+      let expr = woxi::interpret_to_expr(&format!(
+        "Manipulate[x, {{{{x, 0}}, 0, 5, 1, ControlType -> Trigger, \
+         AnimationRepetitions -> {opt}}}, {{{{n, 2}}, 1, 9, 1}}]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("well-formed");
+      spec
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ManipulateControl::Trigger { repetitions, .. } => {
+            Some(repetitions.clone())
+          }
+          _ => None,
+        })
+        .expect("a trigger control")
+    };
+    assert_eq!(
+      reps("3"),
+      Some(woxi::functions::graphics::TriggerRepetitions::Count(3))
+    );
+    assert_eq!(reps("Infinity"), None);
+    assert_eq!(
+      reps("n"),
+      Some(woxi::functions::graphics::TriggerRepetitions::Variable(
+        "n".to_string()
+      ))
+    );
+    assert_eq!(
+      reps("Dynamic[n]"),
+      Some(woxi::functions::graphics::TriggerRepetitions::Variable(
+        "n".to_string()
+      ))
+    );
+  }
+
   /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
   /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
   /// do, so they are found the same way. A variable declared in more than

@@ -142,6 +142,11 @@ pub enum ControlState {
     max: f64,
     step: f64,
     current: f64,
+    /// `AnimationRepetitions`: sweeps per press before it stops by itself
+    /// (`None` loops forever).
+    repetitions: Option<woxi::functions::graphics::TriggerRepetitions>,
+    /// Sweeps finished since the last press of play.
+    completed: u32,
   },
   /// A `Button[label, action]` row. Pressing it runs `action` (InputForm)
   /// against the live bindings — e.g. `time = 0; {U, V} = {Uinit, Vinit}`
@@ -1297,6 +1302,46 @@ impl ManipulateState {
     }
   }
 
+  /// The number of sweeps the Trigger at `idx` plays per press, or `None`
+  /// for an endless one. A count that names another control follows that
+  /// control's live value (at least one sweep).
+  fn trigger_repetition_limit(&self, idx: usize) -> Option<u32> {
+    use woxi::functions::graphics::TriggerRepetitions;
+    let ControlState::Trigger { repetitions, .. } = self.controls.get(idx)?
+    else {
+      return None;
+    };
+    match repetitions.as_ref()? {
+      TriggerRepetitions::Count(n) => Some(*n),
+      TriggerRepetitions::Variable(v) => {
+        let ctrl = self.controls.iter().find(|c| c.name() == v)?;
+        let n = ctrl.current_code().trim().parse::<f64>().ok()?;
+        Some(n.round().max(1.0) as u32)
+      }
+    }
+  }
+
+  /// Press the play/pause button. Playing a Trigger that already ran its
+  /// repetitions starts over from the beginning.
+  pub fn toggle_play(&mut self) {
+    if !self.playing {
+      for c in &mut self.controls {
+        if let ControlState::Trigger {
+          min,
+          current,
+          completed,
+          repetitions: Some(_),
+          ..
+        } = c
+        {
+          *completed = 0;
+          *current = *min;
+        }
+      }
+    }
+    self.playing = !self.playing;
+  }
+
   /// Advance the animated control by one step, wrapping back to the start
   /// once it passes the end, then re-render. Called from the app's
   /// animation-tick subscription while `playing` is set. The target is the
@@ -1305,7 +1350,7 @@ impl ManipulateState {
   /// runs forever for an infinite one), else the first continuous control.
   pub fn advance_animation(&mut self) {
     let target = self.animation_var.clone();
-    let ctrl = self.controls.iter_mut().find(|c| match &target {
+    let idx = self.controls.iter().position(|c| match &target {
       Some(name) => matches!(
         c,
         ControlState::Continuous { name: n, .. }
@@ -1316,21 +1361,18 @@ impl ManipulateState {
         ControlState::Continuous { .. } | ControlState::Trigger { .. }
       ),
     });
-    match ctrl {
-      Some(ControlState::Continuous {
+    let Some(idx) = idx else { return };
+    // A Trigger's `AnimationRepetitions` may name another control.
+    let limit = self.trigger_repetition_limit(idx);
+    let mut finished = false;
+    match &mut self.controls[idx] {
+      ControlState::Continuous {
         min,
         max,
         step,
         current,
         ..
-      })
-      | Some(ControlState::Trigger {
-        min,
-        max,
-        step,
-        current,
-        ..
-      }) => {
+      } => {
         let mut v = *current + *step;
         // Loop back to the start once we step past the end (small epsilon
         // so floating-point drift doesn't skip the final frame). An
@@ -1340,7 +1382,31 @@ impl ManipulateState {
         }
         *current = v;
       }
+      ControlState::Trigger {
+        min,
+        max,
+        step,
+        current,
+        completed,
+        ..
+      } => {
+        let mut v = *current + *step;
+        if max.is_finite() && v > *max + *step * 1e-6 {
+          *completed += 1;
+          if limit.is_some_and(|n| *completed >= n) {
+            // The last requested sweep is done: rest on the final frame.
+            v = *max;
+            finished = true;
+          } else {
+            v = *min;
+          }
+        }
+        *current = v;
+      }
       _ => return,
+    }
+    if finished {
+      self.playing = false;
     }
     self.reevaluate();
   }
@@ -1954,6 +2020,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         initial,
         label,
         label_runs,
+        repetitions,
         ..
       } => ControlState::Trigger {
         name: name.clone(),
@@ -1963,6 +2030,8 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         max: *max,
         step: *step,
         current: *initial,
+        repetitions: repetitions.clone(),
+        completed: 0,
       },
       ManipulateControl::Button {
         label,
