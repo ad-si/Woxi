@@ -96,11 +96,19 @@ mod graph_functions_accept_edge_rule_lists {
       .unwrap(),
       "3"
     );
-    // No path from 4 back to 1
+    // No path from 4 back to 1: no flow, at cost 0 (a network without
+    // any arc stays unevaluated).
     assert_eq!(
       interpret("FindMinimumCostFlow[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}, 4, 1]")
         .unwrap(),
-      "FindMinimumCostFlow[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}, 4, 1]"
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Quiet[{FindMinimumCostFlow[{{0, 1}, {0, 0}}, 2, 1], FindMinimumCostFlow[Graph[{1 -> 2, 3 -> 4}], 1, 4], FindMinimumCostFlow[{{0, 0}, {0, 0}}, 1, 2]}]"
+      )
+      .unwrap(),
+      "{0, 0, FindMinimumCostFlow[{{0, 0}, {0, 0}}, 1, 2]}"
     );
   }
 }
@@ -110,13 +118,20 @@ mod find_independent_vertex_set_forms {
 
   #[test]
   fn three_argument_form_is_accepted() {
-    // Valid arity (FindIndependentVertexSet[g, nspec, s]); the set order
-    // Wolfram enumerates is not reproducible, so it stays unevaluated
-    // without an argt message.
+    // FindIndependentVertexSet[g, sizespec, n]: the first n maximal sets in
+    // lexicographic order, listed largest first and reverse
+    // lexicographically within a size.
     assert_eq!(
       interpret("Head[FindIndependentVertexSet[CycleGraph[5], Infinity, All]]")
         .unwrap(),
-      "FindIndependentVertexSet"
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "{FindIndependentVertexSet[CycleGraph[6], Infinity, All], FindIndependentVertexSet[CycleGraph[5], Infinity, 3], FindIndependentVertexSet[PathGraph[Range[5]], Infinity, 2], FindIndependentVertexSet[CycleGraph[6], {3}, All], FindIndependentVertexSet[CycleGraph[6], 2], FindIndependentVertexSet[CycleGraph[4], {1}, All]}"
+      )
+      .unwrap(),
+      "{{{2, 4, 6}, {1, 3, 5}, {3, 6}, {2, 5}, {1, 4}}, {{2, 4}, {1, 4}, {1, 3}}, {{1, 3, 5}, {1, 4}}, {{2, 4, 6}, {1, 3, 5}}, {{1, 4}}, {}}"
     );
     assert_eq!(
       interpret("FindIndependentVertexSet[{1 -> 2, 2 -> 3}]").unwrap(),

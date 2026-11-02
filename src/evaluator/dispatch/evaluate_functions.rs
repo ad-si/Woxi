@@ -6424,7 +6424,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // FindIndependentVertexSet[graph] → {maximum independent vertex set}
-  if name == "FindIndependentVertexSet" && args.len() == 1 {
+  if name == "FindIndependentVertexSet" && (1..=3).contains(&args.len()) {
     return crate::functions::graph::find_independent_vertex_set_ast(args);
   }
 

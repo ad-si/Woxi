@@ -5543,7 +5543,7 @@ pub fn find_independent_vertex_set_ast(
 ) -> Result<Expr, InterpreterError> {
   let unevaluated =
     |args: &[Expr]| unevaluated("FindIndependentVertexSet", args);
-  if args.len() != 1 {
+  if !(1..=3).contains(&args.len()) {
     return Ok(unevaluated(args));
   }
   let graph = match &args[0] {
@@ -5604,6 +5604,12 @@ pub fn find_independent_vertex_set_ast(
   }
 
   let full = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+  if args.len() > 1 {
+    return Ok(
+      maximal_independent_sets(&vertices, &nbr, &args[1..])
+        .unwrap_or_else(|| unevaluated(args)),
+    );
+  }
   let target = mis(full, &nbr);
   // Greedy lexicographic selection: take vertex i whenever doing so
   // still extends to a maximum independent set
@@ -5623,6 +5629,77 @@ pub fn find_independent_vertex_set_ast(
     }
   }
   Ok(Expr::List(vec![Expr::List(chosen.into())].into()))
+}
+
+/// `FindIndependentVertexSet[g, spec, n]`: the first `n` (default 1, or
+/// All) maximal independent sets, in the lexicographic order of their
+/// vertex positions, whose size `spec` allows (`Infinity`, at most `k`,
+/// exactly `{k}`, or `{kmin, kmax}`); listed largest first, and within a
+/// size in reverse lexicographic order, as wolframscript lists them.
+fn maximal_independent_sets(
+  vertices: &[Expr],
+  nbr: &[u64],
+  rest: &[Expr],
+) -> Option<Expr> {
+  let n = vertices.len();
+  let (lo, hi) = match &rest[0] {
+    Expr::Identifier(s) if s == "Infinity" => (0, usize::MAX),
+    Expr::Integer(k) if *k >= 0 => (0, *k as usize),
+    Expr::List(b) => match b.as_slice() {
+      [Expr::Integer(k)] if *k >= 0 => (*k as usize, *k as usize),
+      [Expr::Integer(a), Expr::Integer(b)] if *a >= 0 && *b >= *a => {
+        (*a as usize, *b as usize)
+      }
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let limit = match rest.get(1) {
+    None => 1,
+    Some(Expr::Identifier(s)) if s == "All" => usize::MAX,
+    Some(Expr::Integer(k)) if *k >= 0 => *k as usize,
+    Some(_) => return None,
+  };
+  if rest.len() > 2 {
+    return None;
+  }
+  // Include-first depth-first search lists the sets lexicographically
+  // (no maximal set is a prefix of another).
+  fn search(
+    i: usize,
+    n: usize,
+    chosen: &mut Vec<usize>,
+    mask: u64,
+    nbr: &[u64],
+    out: &mut Vec<Vec<usize>>,
+    bounds: (usize, usize, usize),
+  ) {
+    if out.len() >= bounds.2 || chosen.len() > bounds.1 {
+      return;
+    }
+    if i == n {
+      let maximal = (0..n).all(|v| mask & (1 << v) != 0 || nbr[v] & mask != 0);
+      if maximal && chosen.len() >= bounds.0 {
+        out.push(chosen.clone());
+      }
+      return;
+    }
+    if nbr[i] & mask == 0 {
+      chosen.push(i);
+      search(i + 1, n, chosen, mask | (1 << i), nbr, out, bounds);
+      chosen.pop();
+    }
+    search(i + 1, n, chosen, mask, nbr, out, bounds);
+  }
+  let mut sets = Vec::new();
+  search(0, n, &mut Vec::new(), 0, nbr, &mut sets, (lo, hi, limit));
+  sets.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
+  Some(Expr::List(
+    sets
+      .into_iter()
+      .map(|s| Expr::List(s.into_iter().map(|i| vertices[i].clone()).collect()))
+      .collect(),
+  ))
 }
 
 /// VertexComponent[g, v] / VertexComponent[g, {v1, ...}] - vertices
@@ -6193,8 +6270,15 @@ pub fn find_minimum_cost_flow_ast(
       v = u;
     }
   }
+  // A sink the source cannot reach carries no flow, at cost 0; a matrix
+  // without any arc is no network at all.
   if !augmented_any {
-    return Ok(unevaluated(args));
+    let any_arc = cost.iter().flatten().any(|c| *c != 0.0);
+    return Ok(if any_arc {
+      Expr::Integer(0)
+    } else {
+      unevaluated(args)
+    });
   }
   if all_integer {
     Ok(Expr::Integer(total_int))
