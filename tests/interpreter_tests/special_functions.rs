@@ -5668,3 +5668,31 @@ mod poly_log_gaussian_rational_argument {
     );
   }
 }
+
+// Machine complex arguments: StruveH by its power series (also through
+// WeberE), HermiteH of a non-integer degree by its Kummer form.
+mod complex_struve_and_hermite {
+  use super::*;
+
+  #[test]
+  fn struve_h_of_a_complex_argument() {
+    assert_eq!(
+      interpret(
+        "Round[{StruveH[2, 1. + I], StruveH[0, 2. - 1.5 I], StruveH[0.3, -1.2 + 0.4 I], WeberE[2, 1. + I]}, 10^-12]"
+      )
+      .unwrap(),
+      "{-15289754791/200000000000 + (2893694829*I)/31250000000, 698170236327/500000000000 + (16856885709*I)/250000000000, -241989387219/500000000000 - (8557431647*I)/25000000000, 57731072949/200000000000 + (59804178131*I)/500000000000}"
+    );
+  }
+
+  #[test]
+  fn hermite_h_of_a_non_integer_degree_and_complex_argument() {
+    assert_eq!(
+      interpret(
+        "Round[{HermiteH[1/2, 0.5 + 0.3 I], HermiteH[2.5, 1. - 2 I]}, 10^-12]"
+      )
+      .unwrap(),
+      "{1149343601153/1000000000000 + (45958931443*I)/200000000000, -46119792858787/1000000000000 - (1132296847077*I)/100000000000}"
+    );
+  }
+}

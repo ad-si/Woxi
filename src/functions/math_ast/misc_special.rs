@@ -1324,8 +1324,55 @@ pub fn struve_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Real(result));
   }
 
+  // A machine complex argument (and a real order): the power series.
+  if let Some(nu) = struve_arg_to_f64(n_expr).or(n_val)
+    && crate::syntax::contains_inexact(z_expr)
+    && let Some(z) =
+      crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(z_expr)
+    && z.1 != 0.0
+    && let Some((re, im)) = struve_h_complex(nu, z)
+  {
+    return Ok(crate::functions::math_ast::build_complex_float_expr(re, im));
+  }
+
   // Return unevaluated
   Ok(unevaluated("StruveH", args))
+}
+
+/// H_ν(z) for complex z by its power series
+/// Σ_k (-1)^k (z/2)^(2k+ν+1) / (Γ(k+3/2) Γ(k+ν+3/2)), each term from the
+/// last by the factor -(z/2)^2 / ((k+3/2)(k+ν+3/2)).
+fn struve_h_complex(nu: f64, z: (f64, f64)) -> Option<(f64, f64)> {
+  let g = crate::functions::math_ast::gamma::gamma_fn;
+  let denom = g(1.5) * g(nu + 1.5);
+  if !denom.is_finite() || denom == 0.0 {
+    return None;
+  }
+  let mul = |a: (f64, f64), b: (f64, f64)| {
+    (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+  };
+  let half = (z.0 / 2.0, z.1 / 2.0);
+  // (z/2)^(ν+1) on the principal branch.
+  let (r, theta) = (half.0.hypot(half.1), half.1.atan2(half.0));
+  let p = nu + 1.0;
+  let mag = r.powf(p);
+  let mut term = (
+    mag * (p * theta).cos() / denom,
+    mag * (p * theta).sin() / denom,
+  );
+  let step = mul(half, half);
+  let step = (-step.0, -step.1);
+  let mut sum = term;
+  for k in 0..500 {
+    let k = k as f64;
+    let f = 1.0 / ((k + 1.5) * (k + nu + 1.5));
+    term = mul(term, (step.0 * f, step.1 * f));
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    if term.0.hypot(term.1) <= 1e-17 * sum.0.hypot(sum.1) {
+      return Some(sum);
+    }
+  }
+  None
 }
 
 /// Machine Struve H_n(z) for real n and z (see [`struve_f64`]).
