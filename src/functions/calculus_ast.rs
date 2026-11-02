@@ -1009,10 +1009,37 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A constant multiple of a sum is integrated term by term with the
+  // constant distributed, as wolframscript does: `∫ 2 (x + Sin[x]) dx` is
+  // `x^2 - 2*Cos[x]`, `∫ (3 Sin[x] - Cos[x])/10 dx` is
+  // `(-3*Cos[x])/10 - Sin[x]/10` (also inside a sum of terms).
+  let integrand = match &args[0] {
+    Expr::FunctionCall { name, args: terms } if name == "Plus" => {
+      let mut changed = false;
+      let terms: Vec<Expr> = terms
+        .iter()
+        .map(|t| match distribute_constant_over_sum(t, &var_name) {
+          Some(d) => {
+            changed = true;
+            d
+          }
+          None => t.clone(),
+        })
+        .collect();
+      if changed {
+        crate::evaluator::evaluate_expr_to_expr(&plus(terms))
+          .unwrap_or_else(|_| args[0].clone())
+      } else {
+        args[0].clone()
+      }
+    }
+    other => distribute_constant_over_sum(other, &var_name)
+      .unwrap_or_else(|| other.clone()),
+  };
   // Integrate the expression; a product of a sum (`Sin[x] (Cos[x] + Sin[x])`)
   // that no rule matches directly is retried with the integrand distributed
   // into a sum of terms.
-  let integral = integrate(&args[0], &var_name).or_else(|| {
+  let integral = integrate(&integrand, &var_name).or_else(|| {
     let expanded = crate::evaluator::evaluate_function_call_ast(
       "Expand",
       std::slice::from_ref(&args[0]),
@@ -1030,6 +1057,8 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let simplified = simplify(result);
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
         .unwrap_or(simplified);
+      let evaluated = factor_exponential_antiderivative(&evaluated, &var_name)
+        .unwrap_or(evaluated);
       Ok(
         factor_logarithmic_antiderivative(&evaluated, &var_name)
           .unwrap_or(evaluated),
@@ -1037,6 +1066,111 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     None => Ok(unevaluated("Integrate", args)),
   }
+}
+
+/// `c*(t1 + t2 + …)` with every factor but the sum free of `var` and the
+/// sum not a polynomial in `var`, as the evaluated sum `c*t1 + c*t2 + …`.
+/// `None` for any other shape.
+fn distribute_constant_over_sum(expr: &Expr, var: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Times" {
+    return None;
+  }
+  let is_sum =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Plus");
+  let (sums, consts): (Vec<&Expr>, Vec<&Expr>) =
+    args.iter().partition(|f| is_sum(f));
+  let [sum] = sums.as_slice() else {
+    return None;
+  };
+  if consts.is_empty() || consts.iter().any(|c| expr_depends_on_var(c, var)) {
+    return None;
+  }
+  let Expr::FunctionCall { args: terms, .. } = sum else {
+    return None;
+  };
+  // A polynomial keeps the constant outside: `∫ (x + x^2)/2 dx` is
+  // `(x^2/2 + x^3/3)/2`.
+  if matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[(*sum).clone(), Expr::Identifier(var.to_string())],
+    ),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  ) {
+    return None;
+  }
+  let distributed = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms
+      .iter()
+      .map(|t| {
+        let mut fs: Vec<Expr> = consts.iter().map(|c| (*c).clone()).collect();
+        fs.push(t.clone());
+        times(fs)
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&distributed).ok()
+}
+
+/// A sum of antiderivative terms that all carry the same exponential of the
+/// variable is factored, as wolframscript writes it:
+/// `∫ E^x (Cos[x] + Sin[x]) dx` is `E^x*Sin[x]`, `∫ E^x (Cos[x] + 2 Sin[x])
+/// dx` is `-1/2*(E^x*(Cos[x] - 3*Sin[x]))`. `None` when the terms do not
+/// share one.
+fn factor_exponential_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: terms } = expr else {
+    return None;
+  };
+  if name != "Plus" || terms.len() < 2 {
+    return None;
+  }
+  let exponentials = |t: &Expr| -> Vec<String> {
+    let factors = match t {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    factors
+      .iter()
+      .filter(|f| {
+        let (base, exp) = match f {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            (&args[0], &args[1])
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => (left.as_ref(), right.as_ref()),
+          _ => return false,
+        };
+        (matches!(base, Expr::Constant(c) if c == "E")
+          || matches!(base, Expr::Identifier(c) if c == "E"))
+          && !is_constant_wrt(exp, var)
+      })
+      .map(expr_to_string)
+      .collect()
+  };
+  let first = exponentials(&terms[0]);
+  let shared: Vec<String> = first
+    .into_iter()
+    .filter(|e| terms.iter().all(|t| exponentials(t).contains(e)))
+    .collect();
+  if shared.is_empty() {
+    return None;
+  }
+  let factored =
+    crate::functions::polynomial_ast::factor_ast(std::slice::from_ref(expr))
+      .ok()?;
+  let shown = expr_to_string(&factored);
+  (shown != expr_to_string(expr) && shared.iter().all(|e| shown.contains(e)))
+    .then_some(factored)
 }
 
 /// An antiderivative of `x^n Log[x]^m` comes out of integration by parts as a
@@ -6236,6 +6370,41 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   // Match linear argument a*x
   let coeff = try_match_linear_arg(arg, var)?;
   let is_sin = name == "Sin";
+
+  // An odd power of a cosine is a polynomial in the sine (u = Sin[a x]),
+  // as wolframscript writes it: `∫ Cos[x]^5 dx` is
+  // `Sin[x] - (2*Sin[x]^3)/3 + Sin[x]^5/5`. (Odd powers of a sine keep the
+  // multiple-angle form below, as they do there.)
+  if !is_sin && n % 2 != 0 {
+    let m = n / 2;
+    let sine = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg.clone()].into(),
+    };
+    let terms: Vec<Expr> = (0..=m)
+      .map(|k| {
+        let c = crate::functions::binomial_coeff(m, k)
+          * if k % 2 == 0 { 1 } else { -1 };
+        times(vec![
+          crate::functions::math_ast::make_rational(c, 2 * k + 1),
+          pow2(sine.clone(), Expr::Integer(2 * k + 1)),
+        ])
+      })
+      .collect();
+    let sum = times(vec![
+      pow2(coeff.clone(), Expr::Integer(-1)),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      },
+    ]);
+    let distributed = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&sum),
+    )
+    .ok()?;
+    return Some(distributed);
+  }
 
   // Build the Chebyshev expansion terms and integrate each
   let mut terms: Vec<Expr> = Vec::new();

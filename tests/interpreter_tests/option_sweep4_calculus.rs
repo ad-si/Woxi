@@ -94,16 +94,32 @@ mod dsolve_systems {
     );
   }
 
+  // A constant-coefficient system with a symbolic coefficient is solved
+  // exactly, through the eigen-projectors of its matrix.
+  #[test]
+  fn symbolic_coefficient_system() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == a y[x] + z[x], z'[x] == y[x]}, {y, z}, x]")
+        .unwrap(),
+      "{{y -> Function[{x}, ((-(a*E^(((a - Sqrt[4 + a^2])*x)/2)) + \
+       Sqrt[4 + a^2]*E^(((a - Sqrt[4 + a^2])*x)/2) + \
+       a*E^(((a + Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a + Sqrt[4 + a^2])*x)/2))*C[1])/(2*Sqrt[4 + a^2]) - \
+       ((E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       E^(((a + Sqrt[4 + a^2])*x)/2))*C[2])/Sqrt[4 + a^2]], \
+       z -> Function[{x}, -(((E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       E^(((a + Sqrt[4 + a^2])*x)/2))*C[1])/Sqrt[4 + a^2]) + \
+       ((a*E^(((a - Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       a*E^(((a + Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a + Sqrt[4 + a^2])*x)/2))*C[2])/(2*Sqrt[4 + a^2])]}}"
+    );
+  }
+
   // A system the solvers cannot handle stays unevaluated instead of
   // aborting with "cannot convert … to a numeric value".
   #[test]
   fn unsupported_system_stays_unevaluated() {
-    assert_eq!(
-      interpret("DSolve[{y'[x] == a y[x] + z[x], z'[x] == y[x]}, {y, z}, x]")
-        .unwrap(),
-      "DSolve[{Derivative[1][y][x] == a*y[x] + z[x], \
-       Derivative[1][z][x] == y[x]}, {y, z}, x]"
-    );
     assert_eq!(
       interpret(
         "DSolveValue[{y'[x] == x y[x] + z[x], z'[x] == y[x]}, {y[x], z[x]}, x]"

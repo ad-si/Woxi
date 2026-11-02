@@ -481,6 +481,10 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       dsolve_decoupled_system(eqns_arg, &items, &x_name)?
     {
       solved
+    } else if let Some(solved) =
+      dsolve_exact_first_order_system(eqns_arg, &items, &x_name)?
+    {
+      solved
     } else {
       match dsolve_linear_system(eqns_arg, &items, &x_name) {
         Ok(solved) => solved,
@@ -636,8 +640,21 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Try to solve based on ODE type
   // For first-order ODEs, always try the first-order solver (handles more cases)
+  // Reduction of order is wolframscript's route when y is absent but y' is
+  // there (`y'' + y' == f`); `y'' == f` alone integrates twice, giving
+  // `C[1] + x*C[2]`.
+  let no_unknown_term =
+    !terms.iter().any(|t| t.order == 0) && terms.iter().any(|t| t.order == 1);
   let general_solution = if max_order == 1 {
     solve_first_order_linear(&terms, &x_name)?
+  } else if max_order == 2
+    && no_unknown_term
+    && all_constant_coeffs
+    && let Some(solution) = solve_second_order_without_unknown(&terms, &x_name)?
+  {
+    // `y'' + y' == f`: wolframscript reduces the order (v = y') here too,
+    // which writes the homogeneous part as `-(C[1]/E^x) + C[2]`.
+    solution
   } else if all_constant_coeffs && forcing_is_constant {
     solve_constant_coefficient_ode(&terms, max_order as usize, &x_name)?
   } else if all_constant_coeffs {
@@ -651,6 +668,10 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(solution) => solution,
       None => return Ok(unevaluated("DSolve", args)),
     }
+  } else if max_order == 2
+    && let Some(solution) = solve_exact_second_order(&terms, &x_name)?
+  {
+    solution
   } else {
     // Unsupported
     return Ok(unevaluated("DSolve", args));
@@ -672,8 +693,175 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simplify the solution
   let solution =
     crate::evaluator::evaluate_expr_to_expr(&solution).unwrap_or(solution);
+  // A first-order initial-value solution is put over one denominator, as
+  // wolframscript does: `y' == -y + t, y[0] == 1` gives
+  // `(2 - E^t + E^t*t)/E^t`.
+  let solution = if max_order == 1 && !initial_conditions.is_empty() {
+    together_leading_positive(&solution).unwrap_or(solution)
+  } else {
+    solution
+  };
 
   Ok(build_dsolve_result(solution, y_name, x_name, function_form))
+}
+
+/// `Together[expr]` with wolframscript's sign convention for the numerator:
+/// its leading term — lexicographically, over the factors in canonical order,
+/// the first one weighing most — has a positive coefficient, the sign going
+/// in front: `-1/5*(8 - 15*E^(2*t) + 2*E^(2*t)*Cos[t] - …)/E^(2*t)`.
+fn together_leading_positive(expr: &Expr) -> Option<Expr> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let combined =
+    crate::functions::polynomial_ast::together_ast(std::slice::from_ref(expr))
+      .ok()?;
+  let num = eval(&call1("Numerator", combined.clone())).ok()?;
+  let den = eval(&call1("Denominator", combined.clone())).ok()?;
+  let terms = crate::functions::polynomial_ast::collect_additive_terms(&num);
+  if terms.len() < 2 {
+    return Some(combined);
+  }
+  // Each term as (literal coefficient, [(kernel, exponent)]).
+  let split = |t: &Expr| -> (f64, Vec<(Expr, i128)>) {
+    let factors: Vec<Expr> =
+      crate::functions::polynomial_ast::collect_multiplicative_factors(t)
+        .into_iter()
+        .map(|f| match &f {
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => call("Power", vec![*left.clone(), *right.clone()]),
+          _ => f,
+        })
+        .collect();
+    let mut coeff = 1.0;
+    let mut kernels = Vec::new();
+    for f in factors {
+      match &f {
+        Expr::Integer(n) => coeff *= *n as f64,
+        Expr::Real(r) => coeff *= r,
+        Expr::FunctionCall { name, .. } if name == "Rational" => {
+          coeff *=
+            crate::functions::math_ast::try_eval_to_f64(&f).unwrap_or(1.0);
+        }
+        Expr::FunctionCall { name, args }
+          if name == "Power"
+            && args.len() == 2
+            && matches!(&args[1], Expr::Integer(k) if *k > 0)
+            && !matches!(&args[0], Expr::Constant(_)) =>
+        {
+          let Expr::Integer(k) = &args[1] else {
+            unreachable!()
+          };
+          kernels.push((args[0].clone(), *k));
+        }
+        other => kernels.push((other.clone(), 1)),
+      }
+    }
+    (coeff, kernels)
+  };
+  let split_terms: Vec<(f64, Vec<(Expr, i128)>)> =
+    terms.iter().map(split).collect();
+  let mut vars: Vec<Expr> = Vec::new();
+  for (_, ks) in &split_terms {
+    for (k, _) in ks {
+      if !vars
+        .iter()
+        .any(|v| crate::evaluator::pattern_matching::expr_equal(v, k))
+      {
+        vars.push(k.clone());
+      }
+    }
+  }
+  // Symbols weigh most (`k`), then numeric constants (`Pi`, `Sqrt[2]`),
+  // then the other kernels (`E^(k*t)`, `Cos[t]`).
+  let group = |v: &Expr| -> u8 {
+    if crate::functions::predicate_ast::is_numeric_q(v) {
+      1
+    } else if matches!(v, Expr::Identifier(_)) {
+      0
+    } else {
+      2
+    }
+  };
+  vars
+    .sort_by(|a, b| group(a).cmp(&group(b)).then_with(|| canonical_cmp(a, b)));
+  let degrees = |ks: &[(Expr, i128)]| -> Vec<i128> {
+    vars
+      .iter()
+      .map(|v| {
+        ks.iter()
+          .filter(|(k, _)| crate::evaluator::pattern_matching::expr_equal(k, v))
+          .map(|(_, e)| *e)
+          .sum()
+      })
+      .collect()
+  };
+  let leading = split_terms
+    .iter()
+    .max_by(|a, b| degrees(&a.1).cmp(&degrees(&b.1)))?;
+  let sign: i128 = if leading.0 >= 0.0 { 1 } else { -1 };
+  let numerator = crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    &[times(vec![Expr::Integer(sign), num])],
+  )
+  .ok()?;
+  // The integer content of the numerator stands in front:
+  // `(5*(-2*k^2 + …))/(…)`.
+  let mut g: i128 = 0;
+  for t in crate::functions::polynomial_ast::collect_additive_terms(&numerator)
+  {
+    let c = match &t {
+      Expr::Integer(n) => *n,
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        match args.first() {
+          Some(Expr::Integer(n)) => *n,
+          _ => 1,
+        }
+      }
+      _ => 1,
+    };
+    let (mut a, mut b) = (g, c.abs());
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    g = a;
+  }
+  let g = g.max(1);
+  let inner = if g > 1 {
+    crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[times(vec![
+        numerator,
+        crate::functions::math_ast::make_rational(1, g),
+      ])],
+    )
+    .ok()?
+  } else {
+    numerator
+  };
+  // Rebuilt from their terms, so the sums are in canonical order.
+  let resort = |e: &Expr| -> Option<Expr> {
+    let terms = crate::functions::polynomial_ast::collect_additive_terms(e);
+    if terms.len() < 2 {
+      return eval(e).ok();
+    }
+    eval(&plus(terms)).ok()
+  };
+  let inner = resort(&inner)?;
+  let den = match &den {
+    Expr::FunctionCall { name, args } if name == "Times" => eval(&times(
+      args.iter().map(&resort).collect::<Option<Vec<_>>>()?,
+    ))
+    .ok()?,
+    other => resort(other)?,
+  };
+  let mut factors = vec![Expr::Integer(sign * g), inner];
+  if !matches!(den, Expr::Integer(1)) {
+    factors.push(pow(den, Expr::Integer(-1)));
+  }
+  eval(&times(factors)).ok()
 }
 
 /// `DSolve[{eq1, eq2, …}, {y1[x], y2[x], …}, x]` where every equation (and
@@ -11499,6 +11687,27 @@ fn solve_constant_coefficient_ode(
   // For non-homogeneous: return homogeneous part + particular solution
   // For now, handle simple forcing terms
   if let Some(forcing_expr) = &forcing {
+    // An oscillating second-order equation (complex characteristic roots)
+    // with a forcing that is not a polynomial: wolframscript's particular
+    // solution is the variation-of-parameters one over a common denominator
+    // (`y'' + y == Cos[x] + Sin[x]` gives `(-2*x*Cos[x] + 2*Cos[x]^3 + …)/4`);
+    // polynomial forcing and real roots keep the undetermined-coefficient
+    // form (`y'' + y == x` gives `x`).
+    let complex_roots = roots.iter().any(|(_, im, _)| im.abs() > 1e-10);
+    let polynomial_forcing =
+      crate::functions::polynomial_ast::is_polynomial(forcing_expr, x_name);
+    if max_order == 2
+      && complex_roots
+      && !polynomial_forcing
+      && let Some(part) =
+        variation_of_parameters(&coeffs, &roots, forcing_expr, x_name, true)
+      && !crate::syntax::expr_to_string(&part).contains("Integrate[")
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&plus2(
+        homogeneous,
+        part,
+      ));
+    }
     let particular = find_particular_solution(
       &coeffs,
       max_order,
@@ -11506,7 +11715,9 @@ fn solve_constant_coefficient_ode(
       &roots,
       x_name,
     )
-    .or_else(|| variation_of_parameters(&coeffs, &roots, forcing_expr, x_name));
+    .or_else(|| {
+      variation_of_parameters(&coeffs, &roots, forcing_expr, x_name, false)
+    });
     if let Some(part) = particular {
       return Ok(crate::functions::calculus_ast::simplify(plus2(
         homogeneous,
@@ -11537,6 +11748,7 @@ fn variation_of_parameters(
   roots: &[(f64, f64, usize)],
   forcing: &Expr,
   x_name: &str,
+  raw: bool,
 ) -> Option<Expr> {
   if coeffs.len() != 3 {
     return None;
@@ -11615,6 +11827,14 @@ fn variation_of_parameters(
   // y_p = -y1 ∫ y2 g/(a2 W) + y2 ∫ y1 g/(a2 W); expand so products like
   // -Cos (ArcTanh[Sin] - Sin) + Sin (-Cos) cancel across the two halves.
   let y_p = plus2(times2(negate_expr(&y1), int1), times2(y2, int2));
+  if raw {
+    let expanded = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      &[crate::evaluator::evaluate_expr_to_expr(&y_p).ok()?],
+    )
+    .ok()?;
+    return crate::functions::polynomial_ast::together_ast(&[expanded]).ok();
+  }
   let y_p = crate::evaluator::evaluate_function_call_ast(
     "Expand",
     std::slice::from_ref(&y_p),
@@ -12300,6 +12520,79 @@ fn solve_first_order_linear(
   Ok(plus2(particular, homogeneous))
 }
 
+/// An exact second-order linear equation `a2 y'' + a1 y' + a0 y == 0`, one
+/// with `a0 - a1' + a2'' == 0`: it is the derivative of
+/// `a2 y' + (a1 - a2') y`, so that first integral equals a constant `C[1]`
+/// and the first-order linear equation it gives brings `C[2]` —
+/// `y'' == x y' + y` has `E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[…]`,
+/// as in wolframscript. `None` for an inexact or forced equation.
+fn solve_exact_second_order(
+  terms: &[OdeTerm],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  if terms.iter().any(|t| t.order < 0 || t.order > 2) {
+    return Ok(None);
+  }
+  let coeff = |k: i32| -> Result<Expr, InterpreterError> {
+    let parts: Vec<Expr> = terms
+      .iter()
+      .filter(|t| t.order == k)
+      .map(|t| t.coefficient.clone())
+      .collect();
+    if parts.is_empty() {
+      Ok(Expr::Integer(0))
+    } else {
+      eval(&plus(parts))
+    }
+  };
+  let (a2, a1, a0) = (coeff(2)?, coeff(1)?, coeff(0)?);
+  let d = |e: &Expr| {
+    crate::functions::calculus_ast::differentiate_expr(e, x_name)
+      .and_then(|r| eval(&r))
+  };
+  let a2p = d(&a2)?;
+  let check = crate::evaluator::evaluate_function_call_ast(
+    "Simplify",
+    &[plus(vec![
+      a0.clone(),
+      times(vec![Expr::Integer(-1), d(&a1)?]),
+      d(&a2p)?,
+    ])],
+  )?;
+  if !matches!(check, Expr::Integer(0)) {
+    return Ok(None);
+  }
+  let k = Expr::Identifier("$woxiExactIntegralConstant".to_string());
+  let reduced = vec![
+    OdeTerm {
+      order: 1,
+      coefficient: a2,
+    },
+    OdeTerm {
+      order: 0,
+      coefficient: eval(&plus(vec![a1, times(vec![Expr::Integer(-1), a2p])]))?,
+    },
+    OdeTerm {
+      order: -1,
+      coefficient: times(vec![Expr::Integer(-1), k.clone()]),
+    },
+  ];
+  let first = solve_first_order_linear(&reduced, x_name)?;
+  if crate::syntax::expr_to_string(&first).contains("Integrate[") {
+    return Ok(None);
+  }
+  let renamed = crate::syntax::substitute_variable(
+    &eval(&call(
+      "ReplaceAll",
+      vec![first.clone(), rule_expr(make_c(1), make_c(2))],
+    ))?,
+    "$woxiExactIntegralConstant",
+    &make_c(1),
+  );
+  Ok(Some(eval(&renamed)?))
+}
+
 /// Reduction of order for `a2(x) y'' + a1(x) y' + f(x) == 0`: solve the first
 /// order linear equation for `v = y'` (introducing `C[1]`), then integrate
 /// (introducing `C[2]`). `None` when the integral stays unevaluated.
@@ -12315,6 +12608,7 @@ fn solve_second_order_without_unknown(
     })
     .collect();
   let v = solve_first_order_linear(&reduced, x_name)?;
+  let v = crate::evaluator::evaluate_expr_to_expr(&v).unwrap_or(v);
   let integral =
     crate::functions::calculus_ast::integrate_ast(&[v, id_expr(x_name)])?;
   if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
@@ -17382,6 +17676,368 @@ fn sys_const(k: usize) -> Expr {
 /// message for any shape outside this scope, which
 /// [`dsolve_ast_with_head`] turns into an unevaluated `DSolve[…]` rather
 /// than leaking the internal error.
+/// A homogeneous first-order system `Y' = A Y` with a constant matrix whose
+/// eigenvalues are distinct but not all rational, or that has symbolic
+/// entries: `Y = MatrixExp[A x] . C` built exactly by Sylvester's formula,
+/// `MatrixExp[A x] = Σ E^(λ_i x) Π_{j≠i} (A - λ_j)/(λ_i - λ_j)`, in the form
+/// wolframscript prints. For numeric eigenvalues each coefficient of a
+/// constant has the smallest exponential factored out of a common
+/// denominator, `(E^(x - Sqrt[2]*x)*(2 - Sqrt[2] + 2*E^(2*Sqrt[2]*x) +
+/// Sqrt[2]*E^(2*Sqrt[2]*x))*C[1])/4`; with symbolic eigenvalues the whole
+/// coefficient is put over a common denominator. `None` for every other
+/// system (rational eigenvalues are left to `dsolve_linear_system`).
+fn dsolve_exact_first_order_system(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let mut y_names: Vec<String> = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        y_names.push(name.clone());
+      }
+      _ => return Ok(None),
+    }
+  }
+  let n = y_names.len();
+  if !(2..=3).contains(&n) {
+    return Ok(None);
+  }
+  let odes: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+  if odes.len() != n {
+    return Ok(None);
+  }
+  // Row k of A: y_k' = Σ_j a_kj y_j.
+  let mut a: Vec<Option<Vec<Expr>>> = vec![None; n];
+  for ode in &odes {
+    let Ok(normalized) = normalize_equation(ode) else {
+      return Ok(None);
+    };
+    let normalized =
+      crate::evaluator::evaluate_function_call_ast("Expand", &[normalized])?;
+    let Ok(terms) = collect_multivar_terms(&normalized, &y_names) else {
+      return Ok(None);
+    };
+    let mut lead: Option<(usize, Expr)> = None;
+    let mut rest: Vec<Vec<Expr>> = vec![Vec::new(); n];
+    for t in terms {
+      if crate::functions::polynomial_ast::contains_var(&t.coefficient, x_name)
+      {
+        return Ok(None);
+      }
+      match (t.var_index, t.order) {
+        (Some(k), 1) => {
+          if lead.as_ref().is_some_and(|(j, _)| *j != k) {
+            return Ok(None);
+          }
+          lead = Some((k, t.coefficient.clone()));
+        }
+        (Some(j), 0) => rest[j].push(t.coefficient.clone()),
+        _ => return Ok(None),
+      }
+    }
+    let Some((k, c)) = lead else {
+      return Ok(None);
+    };
+    if a[k].is_some() {
+      return Ok(None);
+    }
+    let row: Vec<Expr> = rest
+      .into_iter()
+      .map(|cs| {
+        eval(&times(vec![
+          Expr::Integer(-1),
+          plus(if cs.is_empty() {
+            vec![Expr::Integer(0)]
+          } else {
+            cs
+          }),
+          pow(c.clone(), Expr::Integer(-1)),
+        ]))
+      })
+      .collect::<Result<_, _>>()?;
+    a[k] = Some(row);
+  }
+  let a: Vec<Vec<Expr>> =
+    a.into_iter().collect::<Option<_>>().unwrap_or_default();
+  if a.len() != n {
+    return Ok(None);
+  }
+  let matrix = Expr::List(
+    a.iter()
+      .map(|r| Expr::List(r.clone().into()))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let numeric_matrix = a
+    .iter()
+    .flatten()
+    .all(crate::functions::predicate_ast::is_numeric_q);
+  let Expr::List(ref lambdas) = eval(&call1("Eigenvalues", matrix.clone()))?
+  else {
+    return Ok(None);
+  };
+  let lambdas: Vec<Expr> = lambdas.to_vec();
+  if lambdas.len() != n
+    || lambdas.iter().any(|l| {
+      let s = crate::syntax::expr_to_string(l);
+      s.contains("Root[") || s.contains("Eigenvalues")
+    })
+  {
+    return Ok(None);
+  }
+  for i in 0..n {
+    for j in (i + 1)..n {
+      if crate::evaluator::pattern_matching::expr_equal(
+        &lambdas[i],
+        &lambdas[j],
+      ) {
+        return Ok(None);
+      }
+    }
+  }
+  let rational = |e: &Expr| {
+    matches!(e, Expr::Integer(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  if numeric_matrix && lambdas.iter().all(rational) {
+    return Ok(None);
+  }
+  // Numeric eigenvalues must be real to be ordered.
+  let mut order_key: Vec<f64> = Vec::with_capacity(n);
+  if numeric_matrix {
+    for l in &lambdas {
+      if crate::functions::math_ast::contains_imaginary_unit(l) {
+        return Ok(None);
+      }
+      let Some(v) = crate::functions::math_ast::try_eval_to_f64(l) else {
+        return Ok(None);
+      };
+      order_key.push(v);
+    }
+  }
+  let identity = |scale: &Expr| -> Expr {
+    Expr::List(
+      (0..n)
+        .map(|r| {
+          Expr::List(
+            (0..n)
+              .map(|c| {
+                if r == c {
+                  scale.clone()
+                } else {
+                  Expr::Integer(0)
+                }
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  // Projectors P_i.
+  let mut projectors: Vec<Vec<Vec<Expr>>> = Vec::with_capacity(n);
+  for i in 0..n {
+    let mut prod = identity(&Expr::Integer(1));
+    for j in 0..n {
+      if j == i {
+        continue;
+      }
+      let factor = eval(&times(vec![
+        plus(vec![
+          matrix.clone(),
+          times(vec![Expr::Integer(-1), identity(&lambdas[j])]),
+        ]),
+        pow(
+          plus(vec![
+            lambdas[i].clone(),
+            times(vec![Expr::Integer(-1), lambdas[j].clone()]),
+          ]),
+          Expr::Integer(-1),
+        ),
+      ]))?;
+      prod = eval(&call("Dot", vec![prod, factor]))?;
+    }
+    let Expr::List(rows) = &prod else {
+      return Ok(None);
+    };
+    let mut p = Vec::with_capacity(n);
+    for r in rows {
+      let Expr::List(cells) = r else {
+        return Ok(None);
+      };
+      p.push(
+        cells
+          .iter()
+          .map(|c| {
+            crate::evaluator::evaluate_function_call_ast(
+              "Simplify",
+              std::slice::from_ref(c),
+            )
+          })
+          .collect::<Result<Vec<_>, _>>()?,
+      );
+    }
+    projectors.push(p);
+  }
+  let x = Expr::Identifier(x_name.to_string());
+  let expand =
+    |e: Expr| crate::evaluator::evaluate_function_call_ast("Expand", &[e]);
+  let together = |e: Expr| crate::functions::polynomial_ast::together_ast(&[e]);
+  // Σ c_i e_i over a common denominator; coefficients that are rational
+  // multiples of one another keep that common factor outside instead
+  // (`(-1 + E^(2*Sqrt[2]*x))/(2*Sqrt[2])`, `-((E^… - E^…)/Sqrt[4 + a^2])`),
+  // taken positive for numeric eigenvalues.
+  // Returned as the factors of the product, so that a leading `-1` is
+  // multiplied in together with the other factors and is not distributed
+  // back into the sum.
+  let combine = |pairs: Vec<(Expr, Expr)>,
+                 positive: bool|
+   -> Result<Vec<Expr>, InterpreterError> {
+    let nonzero: Vec<(Expr, Expr)> = pairs
+      .into_iter()
+      .filter(|(c, _)| !matches!(c, Expr::Integer(0)))
+      .collect();
+    if nonzero.is_empty() {
+      return Ok(vec![Expr::Integer(0)]);
+    }
+    let first = &nonzero[0].0;
+    let mut ratios = Vec::with_capacity(nonzero.len());
+    let mut all_rational = nonzero.len() >= 2;
+    for (c, _) in &nonzero {
+      let ratio = crate::evaluator::evaluate_function_call_ast(
+        "Simplify",
+        &[times(vec![
+          c.clone(),
+          pow(first.clone(), Expr::Integer(-1)),
+        ])],
+      )?;
+      all_rational &= matches!(ratio, Expr::Integer(_))
+        || matches!(&ratio, Expr::FunctionCall { name, .. } if name == "Rational");
+      ratios.push(ratio);
+    }
+    if all_rational {
+      let negative = positive
+        && crate::functions::math_ast::try_eval_to_f64(first)
+          .is_some_and(|v| v < 0.0);
+      let (g, sign) = if negative {
+        (eval(&times(vec![Expr::Integer(-1), first.clone()]))?, -1)
+      } else {
+        (first.clone(), 1)
+      };
+      let inner: Vec<Expr> = nonzero
+        .iter()
+        .zip(&ratios)
+        .map(|((_, e), r)| {
+          times(vec![Expr::Integer(sign), r.clone(), e.clone()])
+        })
+        .collect();
+      return Ok(vec![g, eval(&plus(inner))?]);
+    }
+    let combined = together(eval(&plus(
+      nonzero
+        .into_iter()
+        .map(|(c, e)| times(vec![c, e]))
+        .collect(),
+    ))?)?;
+    // The numerator's last term is kept positive, the sign going outside:
+    // `-(E^…*(-2 - Sqrt[2] - 2*E^… + Sqrt[2]*E^…)*C[2])/4`.
+    let num = eval(&call1("Numerator", combined.clone()))?;
+    let den = eval(&call1("Denominator", combined.clone()))?;
+    let terms = crate::functions::polynomial_ast::collect_additive_terms(&num);
+    if terms.len() >= 2
+      && terms
+        .last()
+        .is_some_and(|t| crate::syntax::expr_to_string(t).starts_with('-'))
+    {
+      let flipped = expand(times(vec![Expr::Integer(-1), num]))?;
+      return Ok(vec![
+        Expr::Integer(-1),
+        flipped,
+        eval(&pow(den, Expr::Integer(-1)))?,
+      ]);
+    }
+    Ok(vec![combined])
+  };
+  let min_index = if numeric_matrix {
+    (0..n)
+      .min_by(|&i, &j| order_key[i].total_cmp(&order_key[j]))
+      .unwrap_or(0)
+  } else {
+    0
+  };
+  let mut rules = Vec::with_capacity(n);
+  for r in 0..n {
+    let mut terms = Vec::with_capacity(n);
+    for c in 0..n {
+      let coefficient = if numeric_matrix {
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|&i, &j| order_key[i].total_cmp(&order_key[j]));
+        let inner: Vec<(Expr, Expr)> = order
+          .into_iter()
+          .map(|i| {
+            let shift = expand(times(vec![
+              plus(vec![
+                lambdas[i].clone(),
+                times(vec![Expr::Integer(-1), lambdas[min_index].clone()]),
+              ]),
+              x.clone(),
+            ]))?;
+            Ok((
+              projectors[i][r][c].clone(),
+              eval(&pow(id_expr("E"), shift))?,
+            ))
+          })
+          .collect::<Result<_, InterpreterError>>()?;
+        let mut factors = combine(inner, true)?;
+        if matches!(factors.as_slice(), [Expr::Integer(0)]) {
+          continue;
+        }
+        let base = expand(times(vec![lambdas[min_index].clone(), x.clone()]))?;
+        factors.push(eval(&pow(id_expr("E"), base))?);
+        factors
+      } else {
+        let sum: Vec<(Expr, Expr)> = (0..n)
+          .map(|i| {
+            Ok((
+              projectors[i][r][c].clone(),
+              eval(&pow(
+                id_expr("E"),
+                times(vec![lambdas[i].clone(), x.clone()]),
+              ))?,
+            ))
+          })
+          .collect::<Result<_, InterpreterError>>()?;
+        let factors = combine(sum, false)?;
+        if matches!(factors.as_slice(), [Expr::Integer(0)]) {
+          continue;
+        }
+        factors
+      };
+      let mut factors = coefficient;
+      factors.push(call1("C", Expr::Integer(c as i128 + 1)));
+      terms.push(times(factors));
+    }
+    let value = if terms.is_empty() {
+      Expr::Integer(0)
+    } else {
+      eval(&plus(terms))?
+    };
+    rules.push(rule_expr(dep_items[r].clone(), value));
+  }
+  Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+}
+
 fn dsolve_linear_system(
   eqns_arg: &Expr,
   dep_items: &[Expr],

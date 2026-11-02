@@ -66,9 +66,76 @@ pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(value);
     }
   }
-  Ok(order_numerator_factors(&canonicalize_together_result(
+  let combined = order_numerator_factors(&canonicalize_together_result(
     &together_expr(&args[0]),
-  )))
+  ));
+  Ok(pull_common_exponential(&combined).unwrap_or(combined))
+}
+
+/// A numerator whose terms all carry the same exponential `E^g` has it
+/// taken out, as wolframscript's Together does:
+/// `Together[E^x Cos[x]^2/2 + E^x Sin[x]^2/2]` is
+/// `(E^x*(Cos[x]^2 + Sin[x]^2))/2`, `Together[a E^x + b E^x]` is
+/// `(a + b)*E^x`. `None` when there is no such shared factor.
+fn pull_common_exponential(expr: &Expr) -> Option<Expr> {
+  let (num, den) = extract_num_den(expr);
+  let Expr::FunctionCall { name, args: terms } = &num else {
+    return None;
+  };
+  if name != "Plus" || terms.len() < 2 {
+    return None;
+  }
+  let exponentials = |t: &Expr| -> Vec<Expr> {
+    let factors = match t {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    factors
+      .into_iter()
+      .filter(|f| {
+        let (base, exp) = match f {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            (&args[0], &args[1])
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => (left.as_ref(), right.as_ref()),
+          _ => return false,
+        };
+        (matches!(base, Expr::Constant(c) if c == "E")
+          || matches!(base, Expr::Identifier(c) if c == "E"))
+          && !crate::functions::predicate_ast::is_numeric_q(exp)
+      })
+      .collect()
+  };
+  let first = exponentials(&terms[0]);
+  let shared = first.into_iter().find(|e| {
+    terms.iter().all(|t| {
+      exponentials(t)
+        .iter()
+        .any(|g| crate::evaluator::pattern_matching::expr_equal(g, e))
+    })
+  })?;
+  let inner: Vec<Expr> = terms
+    .iter()
+    .map(|t| {
+      crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        t.clone(),
+        pow(shared.clone(), Expr::Integer(-1)),
+      ]))
+    })
+    .collect::<Result<_, _>>()
+    .ok()?;
+  let inner = crate::evaluator::evaluate_expr_to_expr(&plus(inner)).ok()?;
+  let mut factors = vec![shared, inner];
+  if !matches!(den, Expr::Integer(1)) {
+    factors.push(pow(den, Expr::Integer(-1)));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&times(factors)).ok()
 }
 
 /// A combined numerator is assembled from raw products, so its terms can

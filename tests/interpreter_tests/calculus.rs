@@ -8817,7 +8817,7 @@ mod dsolve {
         "sol = y[t] /. First[DSolve[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]]; {sol /. {t -> 0, k -> 3/2}, N[(D[sol, t] - k (60 - sol + 15 Sin[2 Pi t])) /. {t -> 7/10, k -> 3/2}] < 10^-9}"
       )
       .unwrap(),
-      "{60 - (45*Pi)/(9/4 + 4*Pi^2) - (10*(9/4 - (9*Pi)/2 + 4*Pi^2))/(9/4 + 4*Pi^2), True}"
+      "{(5*(45/2 + 40*Pi^2))/(9/4 + 4*Pi^2), True}"
     );
   }
 
@@ -24419,7 +24419,7 @@ mod dsolve_sinusoidal_forcing_sum {
   fn first_order_part_missing() {
     assert_eq!(
       interpret("DSolve[y''[x] + y'[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
-      "{{y[x] -> C[1]/E^x + C[2] - Cos[x]}}"
+      "{{y[x] -> -(C[1]/E^x) + C[2] - Cos[x]}}"
     );
   }
 
@@ -24427,7 +24427,7 @@ mod dsolve_sinusoidal_forcing_sum {
   fn resonant_sum() {
     assert_eq!(
       interpret("DSolve[y''[x] + y[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
-      "{{y[x] -> (Cos[x] - x*Cos[x] + x*Sin[x])/2 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+      "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x] + (-2*x*Cos[x] + 2*Cos[x]^3 + 2*x*Sin[x] - 2*Cos[x]^2*Sin[x] + Cos[x]*Sin[2*x] + Sin[x]*Sin[2*x])/4}}"
     );
   }
 
@@ -24436,7 +24436,7 @@ mod dsolve_sinusoidal_forcing_sum {
     assert_eq!(
       interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
         .unwrap(),
-      "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+      "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x] + (-3*Cos[x]^2 + Cos[x]*Cos[3*x] - 18*Cos[x]*Sin[x] - 3*Cos[3*x]*Sin[x] + 3*Sin[x]^2 + 3*Cos[x]*Sin[3*x] + Sin[x]*Sin[3*x])/6}}"
     );
   }
 }
@@ -26099,6 +26099,180 @@ mod d_keeps_factor_signs {
     assert_eq!(
       interpret("D[-Log[1 - z]^3/6, z]").unwrap(),
       "Log[1 - z]^2/(2*(1 - z))"
+    );
+  }
+}
+
+mod integrate_constant_multiples_and_odd_cosines {
+  use super::*;
+
+  // A constant multiple of a non-polynomial sum is integrated with the
+  // constant distributed; a polynomial keeps it outside.
+  #[test]
+  fn constant_multiple_of_sum() {
+    assert_eq!(
+      interpret("Integrate[(3 Sin[x] - Cos[x])/10, x]").unwrap(),
+      "(-3*Cos[x])/10 - Sin[x]/10"
+    );
+    assert_eq!(
+      interpret("Integrate[2 (x + Sin[x]), x]").unwrap(),
+      "x^2 - 2*Cos[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[a (Sin[x] + Cos[x]), x]").unwrap(),
+      "-(a*Cos[x]) + a*Sin[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[C[1]/E^(3 x) + (-Cos[x] + 3 Sin[x])/10, x]")
+        .unwrap(),
+      "-1/3*C[1]/E^(3*x) - (3*Cos[x])/10 - Sin[x]/10"
+    );
+    assert_eq!(
+      interpret("Integrate[(x + x^2)/2, x]").unwrap(),
+      "(x^2/2 + x^3/3)/2"
+    );
+  }
+
+  #[test]
+  fn odd_cosine_power_is_polynomial_in_sine() {
+    assert_eq!(
+      interpret("Integrate[Cos[x]^5, x]").unwrap(),
+      "Sin[x] - (2*Sin[x]^3)/3 + Sin[x]^5/5"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[2 x]^3, x]").unwrap(),
+      "Sin[2*x]/2 - Sin[2*x]^3/6"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[b x]^3, x]").unwrap(),
+      "Sin[b*x]/b - Sin[b*x]^3/(3*b)"
+    );
+    assert_eq!(
+      interpret("Integrate[a Cos[x]^3, x]").unwrap(),
+      "a*(Sin[x] - Sin[x]^3/3)"
+    );
+    // Odd sine powers keep the multiple-angle form.
+    assert_eq!(
+      interpret("Integrate[Sin[x]^3, x]").unwrap(),
+      "(-3*Cos[x])/4 + Cos[3*x]/12"
+    );
+  }
+
+  #[test]
+  fn exponential_antiderivative_is_factored() {
+    assert_eq!(
+      interpret("Integrate[E^x (x^2 + 1), x]").unwrap(),
+      "E^x*(3 - 2*x + x^2)"
+    );
+    assert_eq!(
+      interpret("Integrate[E^(2 x) (x + 3), x]").unwrap(),
+      "E^(2*x)*(5/4 + x/2)"
+    );
+  }
+
+  #[test]
+  fn together_pulls_out_common_exponential() {
+    assert_eq!(
+      interpret("Together[E^x/(1 + x) + E^x x]").unwrap(),
+      "(E^x*(1 + x + x^2))/(1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[a E^(2 x) + b E^(2 x)/x]").unwrap(),
+      "(E^(2*x)*(b + a*x))/x"
+    );
+  }
+}
+
+mod dsolve_wolfram_forms {
+  use super::*;
+
+  // Exact systems whose matrix has irrational eigenvalues are solved
+  // exactly (they used to come out in machine numbers).
+  #[test]
+  fn irrational_eigenvalue_systems_stay_exact() {
+    assert_eq!(
+      interpret(
+        "DSolve[{y'[x] == y[x] + 2 z[x], z'[x] == 3 y[x] + z[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{{y[x] -> (E^(x - Sqrt[6]*x)*(1 + E^(2*Sqrt[6]*x))*C[1])/2 + \
+       (E^(x - Sqrt[6]*x)*(-1 + E^(2*Sqrt[6]*x))*C[2])/Sqrt[6], \
+       z[x] -> (Sqrt[3/2]*E^(x - Sqrt[6]*x)*(-1 + E^(2*Sqrt[6]*x))*C[1])/2 + \
+       (E^(x - Sqrt[6]*x)*(1 + E^(2*Sqrt[6]*x))*C[2])/2}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[x] == y[x] + z[x], z'[x] == y[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{(E^(x/2 - (Sqrt[5]*x)/2)*(5 - Sqrt[5] + 5*E^(Sqrt[5]*x) + \
+       Sqrt[5]*E^(Sqrt[5]*x))*C[1])/10 + (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-1 + E^(Sqrt[5]*x))*C[2])/Sqrt[5], (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-1 + E^(Sqrt[5]*x))*C[1])/Sqrt[5] - (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-5 - Sqrt[5] - 5*E^(Sqrt[5]*x) + Sqrt[5]*E^(Sqrt[5]*x))*C[2])/10}"
+    );
+  }
+
+  // Without a y term the equation is first order in y'.
+  #[test]
+  fn reduction_of_order_without_unknown() {
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y'[x] == x^2, y[x], x]").unwrap(),
+      "2*x - x^2 + x^3/3 - C[1]/E^x + C[2]"
+    );
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + 3 y'[x] == Sin[x], y[x], x]").unwrap(),
+      "-1/3*C[1]/E^(3*x) + C[2] - (3*Cos[x])/10 - Sin[x]/10"
+    );
+  }
+
+  // An exact equation a2 y'' + a1 y' + a0 y == 0 (a0 - a1' + a2'' == 0)
+  // integrates once to a first-order one.
+  #[test]
+  fn exact_second_order_equation() {
+    assert_eq!(
+      interpret("DSolveValue[z''[x] == x z'[x] + z[x], z[x], x]").unwrap(),
+      "E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]]"
+    );
+  }
+
+  // Complex characteristic roots with a non-polynomial forcing keep the raw
+  // variation-of-parameters form.
+  #[test]
+  fn variation_of_parameters_forms() {
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y[x] == Tan[x], y[x], x]").unwrap(),
+      "-(ArcTanh[Sin[x]]*Cos[x]) + C[1]*Cos[x] + C[2]*Sin[x]"
+    );
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y[x] == E^x, y[x], x]").unwrap(),
+      "C[1]*Cos[x] + C[2]*Sin[x] + (E^x*(Cos[x]^2 + Sin[x]^2))/2"
+    );
+  }
+
+  // A first-order initial value problem comes out as one quotient.
+  #[test]
+  fn first_order_ivp_single_quotient() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[t] == 2 (3 - y[t] + Sin[t]), y[0] == 1}, y[t], t]"
+      )
+      .unwrap(),
+      "-1/5*(8 - 15*E^(2*t) + 2*E^(2*t)*Cos[t] - 4*E^(2*t)*Sin[t])/E^(2*t)"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]"
+      )
+      .unwrap(),
+      "(5*(-2*k^2 + 12*E^(k*t)*k^2 + 6*k*Pi - 8*Pi^2 + 48*E^(k*t)*Pi^2 - \
+       6*E^(k*t)*k*Pi*Cos[2*Pi*t] + 3*E^(k*t)*k^2*Sin[2*Pi*t]))/\
+       (E^(k*t)*(k^2 + 4*Pi^2))"
+    );
+    assert_eq!(
+      interpret("DSolveValue[{y'[t] == -y[t] + t, y[0] == a}, y[t], t]")
+        .unwrap(),
+      "(1 + a - E^t + E^t*t)/E^t"
     );
   }
 }
