@@ -416,7 +416,7 @@ fn position_of(list: &[usize], x: usize) -> Option<usize> {
 }
 
 fn rotate_until(
-  hull: &mut Vec<usize>,
+  hull: &mut [usize],
   ok: impl Fn(&[usize]) -> bool,
 ) -> Option<()> {
   for _ in 0..=hull.len() {
@@ -888,6 +888,7 @@ pub fn delaunay_triangulation_ast(
 // triangulation above.
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::needless_pass_by_value)]
 fn ev(e: Expr) -> Result<Expr, InterpreterError> {
   evaluate_expr_to_expr(&e)
 }
