@@ -21,18 +21,28 @@ mod roots_options {
   }
 
   #[test]
-  fn multiplicity_caps_repeated_roots() {
+  fn multiplicity_scales_repeated_roots() {
     assert_eq!(
       interpret("Roots[(x - a)^3 (x - b) == 0, x, Multiplicity -> 2]").unwrap(),
-      "x == a || x == a || x == b"
+      "x == a || x == a || x == a || x == a || x == a || x == a || x == b || \
+       x == b"
     );
     assert_eq!(
       interpret("Roots[(x - a)^3 (x - b) == 0, x, Multiplicity -> 1]").unwrap(),
-      "x == a || x == b"
+      "x == a || x == a || x == a || x == b"
     );
     assert_eq!(
       interpret("Roots[(x - 2)^2 == 0, x, Multiplicity -> 1]").unwrap(),
-      "x == 2"
+      "x == 2 || x == 2"
+    );
+    assert_eq!(
+      interpret("Roots[x^2 == 1, x, Multiplicity -> 2]").unwrap(),
+      "x == 1 || x == 1 || x == -1 || x == -1"
+    );
+    // An invalid value is reported and ignored.
+    assert_eq!(
+      interpret("Roots[x^2 == 1, x, Multiplicity -> 1.5]").unwrap(),
+      "x == 1 || x == -1"
     );
   }
 
@@ -45,10 +55,10 @@ mod roots_options {
   }
 
   #[test]
-  fn unknown_option_stays_unevaluated() {
+  fn unknown_option_is_ignored() {
     assert_eq!(
       interpret("Roots[x^2 == 1, x, Foo -> 1]").unwrap(),
-      "Roots[x^2 == 1, x, Foo -> 1]"
+      "x == 1 || x == -1"
     );
   }
 }

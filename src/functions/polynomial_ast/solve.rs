@@ -1712,7 +1712,8 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Roots[eqn, var, opts]` with the options `Modulus`, `Multiplicity`,
-/// `Cubics` and `Quartics`. Any other option leaves the call unevaluated.
+/// `Cubics` and `Quartics`; any other option is ignored, as wolframscript
+/// does.
 fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::expr_form::rule_parts;
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
@@ -1730,6 +1731,11 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
         multiplicity = Some(*k as usize);
       }
       ("Multiplicity", Expr::Identifier(i)) if i == "Infinity" => {}
+      ("Multiplicity", other) => crate::emit_message(&format!(
+        "Roots::mult: The value of the option Multiplicity -> {} is not a \
+         positive integer.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      )),
       // EquatedTo -> e writes each root as e == root (Null: the variable).
       ("EquatedTo", Expr::Identifier(n)) if n == "Null" => {}
       ("EquatedTo", e) => equated_to = Some(e.clone()),
@@ -1740,7 +1746,10 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radical_degrees.push(if name == "Cubics" { 3 } else { 4 });
         }
       }
-      _ => return Ok(unevaluated("Roots", args)),
+      ("Modulus" | "Cubics" | "Quartics", _) => {
+        return Ok(unevaluated("Roots", args));
+      }
+      _ => {}
     }
   }
 
@@ -1779,25 +1788,13 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // At most `k` copies of each repeated root.
+  // `Multiplicity -> k` scales every root's multiplicity by `k`: each
+  // occurrence is listed `k` times.
   if let Some(k) = multiplicity {
-    let mut kept: Vec<(Expr, usize)> = Vec::new();
-    conditions.retain(|c| {
-      match kept
-        .iter_mut()
-        .find(|(e, _)| crate::evaluator::pattern_matching::expr_equal(e, c))
-      {
-        Some((_, n)) if *n >= k => false,
-        Some((_, n)) => {
-          *n += 1;
-          true
-        }
-        None => {
-          kept.push((c.clone(), 1));
-          true
-        }
-      }
-    });
+    conditions = conditions
+      .into_iter()
+      .flat_map(|c| std::iter::repeat_n(c, k))
+      .collect();
   }
 
   if let Some(lhs) = equated_to {
