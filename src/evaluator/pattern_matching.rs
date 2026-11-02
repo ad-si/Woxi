@@ -112,7 +112,7 @@ fn bindings_compatible_with_context(bindings: &[(String, Expr)]) -> bool {
 /// `_lp…`, structural-pattern `__sp…`, `__opts…`, upvalue `_up…`, and the
 /// empty guard-only slots). Only real variables carry the repeated-name
 /// constraint of a non-linear pattern.
-fn is_named_pattern_param(name: &str) -> bool {
+pub(crate) fn is_named_pattern_param(name: &str) -> bool {
   !name.is_empty() && !name.starts_with('_')
 }
 
@@ -5634,9 +5634,13 @@ fn match_pattern_impl(
       name: pat_name,
       args: pat_args,
     } if pat_name == "Alternatives" && !pat_args.is_empty() => {
-      // Alternatives as FunctionCall: try each alternative
+      // Alternatives as FunctionCall: try each alternative. One that binds
+      // a name already bound differently in the enclosing pattern is passed
+      // over for the next (`f[x_, y_, y_ | x_]` matches `f[1, 2, 1]`).
       for alt in pat_args {
-        if let Some(b) = match_pattern(expr, alt) {
+        if let Some(b) = match_pattern(expr, alt)
+          && bindings_compatible_with_context(&b)
+        {
           return Some(b);
         }
       }
@@ -6052,8 +6056,11 @@ fn match_pattern_impl(
       left: alt_left,
       right: alt_right,
     } => {
-      // Alternatives pattern: try each alternative
-      if let Some(b) = match_pattern(expr, alt_left) {
+      // Alternatives pattern: try each alternative, passing over one whose
+      // bindings conflict with the enclosing pattern's.
+      if let Some(b) = match_pattern(expr, alt_left)
+        && bindings_compatible_with_context(&b)
+      {
         return Some(b);
       }
       match_pattern(expr, alt_right)

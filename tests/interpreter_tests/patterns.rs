@@ -1117,6 +1117,55 @@ mod pattern_matching {
 mod alternatives {
   use super::*;
 
+  // An alternative binding a name already bound differently is passed over
+  // for the next one.
+  #[test]
+  fn alternative_respects_earlier_bindings() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[f[1, 2, 2], f[x_, y_, y_ | x_]], MatchQ[f[1, 2, 1], f[x_, y_, y_ | x_]], MatchQ[f[1, 2, 3], f[x_, y_, y_ | x_]]}"
+      )
+      .unwrap(),
+      "{True, True, False}"
+    );
+    assert_eq!(
+      interpret(
+        "g[x_, y_, y_ | x_] := 1; g[x_, y_, z_] := 2; {g[1, 2, 2], g[1, 2, 1], g[1, 2, 3]}"
+      )
+      .unwrap(),
+      "{1, 1, 2}"
+    );
+  }
+
+  // A name of a list pattern repeated in another argument is one variable
+  // (ConvexHull3D's `ang[{v1_List, v2_List}, v2_ | v1_]`), the rules that
+  // differ only in which name repeats are distinct, and they keep their
+  // order against a headed general rule.
+  #[test]
+  fn list_pattern_names_repeated_in_other_arguments() {
+    assert_eq!(
+      interpret(
+        "h[{x_, y_}, y_ | x_] := 1; h[{x_, y_}, z_] := 2; {h[{1, 2}, 2], h[{1, 2}, 1], h[{1, 2}, 3]}"
+      )
+      .unwrap(),
+      "{1, 1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "k[{x_, y_}, y_] := 1; k[{x_, y_}, z_] := 2; {k[{1, 2}, 2], k[{1, 2}, 3]}"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "a2[{v1_List, v2_List}, v2_] := 1.; a2[{v1_List, v2_List}, v1_] := -1.; a2[{v1_List, v2_List}, v3_List] := 0; {a2[{{0, 0}, {1, 0}}, {1, 0}], a2[{{0, 0}, {1, 0}}, {0, 0}], a2[{{0, 0}, {1, 0}}, {5, 0}], Length[DownValues[a2]]}"
+      )
+      .unwrap(),
+      "{1., -1., 0, 3}"
+    );
+  }
+
   #[test]
   fn replace_all_with_alternatives() {
     assert_eq!(

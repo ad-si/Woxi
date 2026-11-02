@@ -235,24 +235,33 @@ pub(crate) fn same_rule_lhs(a: &StoredRule, b: &StoredRule) -> bool {
   if pa.len() != pb.len() || ha != hb || bta != btb {
     return false;
   }
-  // Rename every pattern variable to its position of first occurrence.
-  let canonical = |params: &[String]| -> Vec<(String, String)> {
-    let mut seen: Vec<String> = Vec::new();
-    params
-      .iter()
-      .filter(|p| !p.is_empty())
-      .filter_map(|p| {
-        if seen.contains(p) {
-          None
-        } else {
-          seen.push(p.clone());
-          Some((p.clone(), format!("Woxi`rulevar{}", seen.len())))
-        }
-      })
-      .collect()
-  };
-  let ra = canonical(pa);
-  let rb = canonical(pb);
+  // Rename every pattern variable to its position of first occurrence: the
+  // parameters', then those named inside structural slot patterns
+  // (`a[{v1_, v2_}, v2_]` and `a[{v1_, v2_}, v1_]` are different rules).
+  let canonical =
+    |params: &[String], conds: &[Option<Expr>]| -> Vec<(String, String)> {
+      let mut seen: Vec<String> = Vec::new();
+      let inner = conds
+        .iter()
+        .flatten()
+        .flat_map(crate::evaluator::scoping::pattern_variable_names);
+      params
+        .iter()
+        .filter(|p| !p.is_empty())
+        .cloned()
+        .chain(inner)
+        .filter_map(|p| {
+          if seen.contains(&p) {
+            None
+          } else {
+            seen.push(p.clone());
+            Some((p, format!("Woxi`rulevar{}", seen.len())))
+          }
+        })
+        .collect()
+    };
+  let ra = canonical(pa, ca);
+  let rb = canonical(pb, cb);
   let rename_param = |p: &String, map: &[(String, String)]| {
     map
       .iter()
@@ -269,11 +278,7 @@ pub(crate) fn same_rule_lhs(a: &StoredRule, b: &StoredRule) -> bool {
   let render = |e: &Expr, map: &[(String, String)]| {
     let mut e = e.clone();
     for (from, to) in map {
-      e = crate::syntax::substitute_variable(
-        &e,
-        from,
-        &Expr::Identifier(to.clone()),
-      );
+      e = crate::syntax::rename_symbol(&e, from, to);
     }
     expr_to_string(&e)
   };
@@ -424,8 +429,28 @@ fn pattern_specificity_score(
     .sum();
   // A whole-rule `/;` guard left on the body (non-list rules) adds specificity.
   let rule_cond_bonus = u32::from(body_has_condition(body));
+  // A slot repeating a name bound elsewhere on the left-hand side
+  // (`a[{v1_List, v2_List}, v2_]`) is constrained like a headed one: it is
+  // not less specific than `a[{v1_List, v2_List}, v3_List]`, so the
+  // definitions keep their order, as in wolframscript.
+  let structural_names: Vec<String> = conditions
+    .iter()
+    .flatten()
+    .flat_map(crate::evaluator::scoping::pattern_variable_names)
+    .collect();
+  let repeat_bonus = params
+    .iter()
+    .enumerate()
+    .filter(|(i, p)| {
+      heads.get(*i).is_some_and(Option::is_none)
+        && crate::evaluator::pattern_matching::is_named_pattern_param(p)
+        && (structural_names.contains(p)
+          || params.iter().filter(|q| q == p).count() > 1)
+    })
+    .count() as u32;
   // Score: higher blank_type dominates, head/condition constraints reduce score
-  (max_blank * 10).saturating_sub(head_bonus + cond_bonus + rule_cond_bonus)
+  (max_blank * 10)
+    .saturating_sub(head_bonus + cond_bonus + rule_cond_bonus + repeat_bonus)
 }
 
 /// Whether a rule carries a user-written `/;` guard, as opposed to only the
@@ -1309,6 +1334,21 @@ fn pattern_canonical_string(expr: &Expr) -> String {
       crate::syntax::rename_symbol(&renamed, name, &format!("\u{1}p{i}"));
   }
   expr_to_string(&renamed)
+}
+
+/// Whether a pattern variable of `lhs_args[i]` also appears in another
+/// argument (`h[{x_, y_}, y_ | x_]`): the Part-accessor lowering of a list
+/// pattern names its elements apart from the other parameters, so such a
+/// list is matched structurally, where a repeated name is one variable.
+fn shares_pattern_names(lhs_args: &[Expr], i: usize) -> bool {
+  let own = crate::evaluator::scoping::pattern_variable_names(&lhs_args[i]);
+  !own.is_empty()
+    && lhs_args.iter().enumerate().any(|(j, other)| {
+      j != i
+        && crate::evaluator::scoping::pattern_variable_names(other)
+          .iter()
+          .any(|n| own.contains(n))
+    })
 }
 
 fn collect_pattern_vars(
@@ -2807,8 +2847,9 @@ fn downvalue_arg_info(
       // element, which relaxes the length check and (for named sequence
       // elements) binds the sequence variable to the matching tail.
       Expr::List(patterns)
-        if patterns.iter().enumerate().any(|(idx, p)| {
-          contains_mutating_head(p)
+        if shares_pattern_names(lhs_args, i)
+          || patterns.iter().enumerate().any(|(idx, p)| {
+            contains_mutating_head(p)
             || crate::evaluator::pattern_matching::is_optional_slot(p)
             || is_options_or_repeated_element(p)
             || is_ordered_or_inner_sequence(p, idx + 1 < patterns.len())
@@ -2824,7 +2865,7 @@ fn downvalue_arg_info(
             // like `children[{x__}]` back out of it through Part would
             // evaluate it.
             || (lhs_slot_is_held(func_name, i) && is_call_pattern(p))
-        }) =>
+          }) =>
       {
         // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
         // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be

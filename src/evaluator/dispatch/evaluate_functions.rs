@@ -15695,6 +15695,10 @@ fn apply_user_overloads(
                   positional_ctx
                     .push((param.clone(), effective_args[pi].clone()));
                 }
+                // So do the bindings of the structural slots matched
+                // before, so a repeated name (`h[{x_, y_}, y_ | x_]`) is one
+                // variable.
+                positional_ctx.extend(structural_bindings.iter().cloned());
                 crate::evaluator::pattern_matching::push_match_context(
                   &positional_ctx,
                 );
@@ -16053,6 +16057,10 @@ fn apply_user_overloads(
                     positional_ctx
                       .push((param.clone(), effective_args[pi].clone()));
                   }
+                  // So do the bindings of the structural slots matched
+                  // before, so a repeated name (`h[{x_, y_}, y_ | x_]`) is
+                  // one variable.
+                  positional_ctx.extend(structural_bindings.iter().cloned());
                   crate::evaluator::pattern_matching::push_match_context(
                     &positional_ctx,
                   );
