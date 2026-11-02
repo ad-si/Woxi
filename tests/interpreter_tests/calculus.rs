@@ -2164,13 +2164,44 @@ mod differentiate_piecewise {
     );
   }
 
+  // PiecewiseExpand makes the conditions disjoint, takes 0 or else the
+  // greatest value as the default and sorts the other pieces by value.
+  #[test]
+  fn piecewise_expand_canonical_form() {
+    assert_eq!(
+      interpret(
+        "PiecewiseExpand[Piecewise[{{2 x, y < 1}, {3 x^2, y > 3}}, 3]]"
+      )
+      .unwrap(),
+      "Piecewise[{{3, Inequality[1, LessEqual, y, LessEqual, 3]}, {2*x, y < 1}}, 3*x^2]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x^2, a < 1}, {x, b < 1}}, 1]]")
+        .unwrap(),
+      "Piecewise[{{1, a >= 1 && b >= 1}, {x, a >= 1 && b < 1}}, x^2]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x, x > 0}}, -x]]").unwrap(),
+      "Piecewise[{{-x, x <= 0}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x, a < 1}, {x^2, b < 1}}, 0]]")
+        .unwrap(),
+      "Piecewise[{{x, a < 1}, {x^2, a >= 1 && b < 1}}, 0]"
+    );
+  }
+
   // Conditions independent of the differentiation variable have no boundary
   // points, so the default is differentiated too.
   #[test]
   fn conditions_free_of_variable() {
     assert_eq!(
       interpret("D[Piecewise[{{x^2, y < 1}}, 3 x], x]").unwrap(),
-      "Piecewise[{{2*x, y < 1}}, 3]"
+      "Piecewise[{{3, y >= 1}}, 2*x]"
+    );
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, y < 1}, {x^3, y < 2}}, 3 x], x]").unwrap(),
+      "Piecewise[{{3, y >= 2}, {2*x, y < 1}}, 3*x^2]"
     );
     assert_eq!(
       interpret("D[Piecewise[{{a x, y < 1}}], x]").unwrap(),

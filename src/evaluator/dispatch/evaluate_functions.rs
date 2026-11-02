@@ -11440,6 +11440,33 @@ fn evaluate_function_call_ast_inner(
     {
       return Ok(pw);
     }
+    // A Piecewise itself takes its canonical form: disjoint conditions, the
+    // greatest value (or 0) as the default.
+    if args.len() == 1
+      && let Expr::FunctionCall {
+        name: pw,
+        args: pargs,
+      } = &args[0]
+      && pw == "Piecewise"
+      && (1..=2).contains(&pargs.len())
+      && let Expr::List(pieces) = &pargs[0]
+      && let Some(pairs) = pieces
+        .iter()
+        .map(|p| match p {
+          Expr::List(pv) if pv.len() == 2 => {
+            Some((pv[0].clone(), pv[1].clone()))
+          }
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+      && let Some(canonical) =
+        crate::functions::calculus_ast::canonical_piecewise(
+          &pairs,
+          pargs.get(1).unwrap_or(&Expr::Integer(0)),
+        )?
+    {
+      return Ok(canonical);
+    }
 
     // A Piecewise nested inside another collapses into a single one.
     if let Some(flat) = flatten_nested_piecewise(&args[0])? {

@@ -2483,10 +2483,156 @@ fn differentiate_piecewise(
     ));
   }
   let d_default = differentiate(&default, var)?;
+  let d_pairs: Option<Vec<(Expr, Expr)>> = diffed
+    .iter()
+    .map(|p| match p {
+      Expr::List(pv) if pv.len() == 2 => Some((
+        crate::evaluator::evaluate_expr_to_expr(&pv[0]).ok()?,
+        pv[1].clone(),
+      )),
+      _ => None,
+    })
+    .collect();
+  // Conditions in the variable keep their pieces (`D[Max[a, x], x]` is
+  // `Piecewise[{{0, a - x >= 0}}, 1]`); otherwise the derivative takes the
+  // canonical form.
+  if let Some(d_pairs) = d_pairs
+    && pairs.iter().all(|(_, c)| is_constant_wrt(c, var))
+    && let Ok(d_default) = crate::evaluator::evaluate_expr_to_expr(&d_default)
+    && let Some(canonical) = canonical_piecewise(&d_pairs, &d_default)?
+  {
+    return Ok(canonical);
+  }
   crate::evaluator::evaluate_expr_to_expr(&call(
     "Piecewise",
     vec![Expr::List(diffed.into()), d_default],
   ))
+}
+
+/// The canonical form `PiecewiseExpand` gives a `Piecewise`: the conditions
+/// made disjoint (each piece holds where the earlier ones do not), the value
+/// `0` — or else the canonically greatest value — taken as the default, and
+/// the other pieces in canonical order of their values. wolframscript:
+/// `PiecewiseExpand[Piecewise[{{2 x, y < 1}}, 3]]` is
+/// `Piecewise[{{3, y >= 1}}, 2*x]`, and `D` of a `Piecewise` comes out in
+/// this form. `None` for shapes this does not cover (an `Or` condition, a
+/// value repeated).
+pub(crate) fn canonical_piecewise(
+  pairs: &[(Expr, Expr)],
+  default: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  if pairs.is_empty() {
+    return Ok(None);
+  }
+  let has_or = |e: &Expr| {
+    let s = crate::syntax::expr_to_string(e);
+    s.contains("||") || s.contains("Or[")
+  };
+  let nested =
+    |e: &Expr| crate::syntax::expr_to_string(e).contains("Piecewise[");
+  if pairs.iter().any(|(v, c)| has_or(c) || nested(v)) || nested(default) {
+    return Ok(None);
+  }
+  // The single variable all conditions are inequalities in, if any.
+  let mut vars: Vec<String> = Vec::new();
+  for (_, c) in pairs {
+    let Some(sides) = piecewise_condition_sides(c) else {
+      return Ok(None);
+    };
+    let Ok(Expr::List(ref vs)) = crate::evaluator::evaluate_function_call_ast(
+      "Variables",
+      &[Expr::List(sides.into())],
+    ) else {
+      return Ok(None);
+    };
+    for v in vs {
+      let Expr::Identifier(name) = v else {
+        return Ok(None);
+      };
+      if !vars.contains(name) {
+        vars.push(name.clone());
+      }
+    }
+  }
+  let region = |parts: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    let conj = if parts.len() == 1 {
+      parts[0].clone()
+    } else {
+      call("And", parts)
+    };
+    if let [v] = vars.as_slice() {
+      eval(&call(
+        "Reduce",
+        vec![conj, Expr::Identifier(v.clone()), id_expr("Reals")],
+      ))
+    } else {
+      eval(&conj)
+    }
+  };
+  let negations = |upto: usize| -> Vec<Expr> {
+    pairs[..upto]
+      .iter()
+      .map(|(_, c)| call1("Not", c.clone()))
+      .collect()
+  };
+  let mut pieces: Vec<(Expr, Expr)> = Vec::new();
+  for (i, (value, cond)) in pairs.iter().enumerate() {
+    let r = if i == 0 {
+      cond.clone()
+    } else {
+      let mut parts = negations(i);
+      parts.push(cond.clone());
+      region(parts)?
+    };
+    if matches!(&r, Expr::Identifier(f) if f == "False") {
+      continue;
+    }
+    pieces.push((value.clone(), r));
+  }
+  let default_region = region(negations(pairs.len()))?;
+  if !matches!(&default_region, Expr::Identifier(f) if f == "False") {
+    pieces.push((default.clone(), default_region));
+  }
+  if pieces.is_empty() {
+    return Ok(None);
+  }
+  for (i, (a, _)) in pieces.iter().enumerate() {
+    for (b, _) in &pieces[i + 1..] {
+      if crate::evaluator::pattern_matching::expr_equal(a, b) {
+        return Ok(None);
+      }
+    }
+  }
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let new_default = pieces
+    .iter()
+    .position(|(v, _)| matches!(v, Expr::Integer(0)))
+    .unwrap_or_else(|| {
+      (0..pieces.len())
+        .max_by(|&i, &j| canonical_cmp(&pieces[i].0, &pieces[j].0))
+        .unwrap()
+    });
+  let (default_value, _) = pieces.remove(new_default);
+  pieces.sort_by(|a, b| canonical_cmp(&a.0, &b.0));
+  let list: Vec<Expr> = pieces
+    .into_iter()
+    .map(|(v, r)| Expr::List(vec![v, r].into()))
+    .collect();
+  Ok(Some(eval(&call(
+    "Piecewise",
+    vec![Expr::List(list.into()), default_value],
+  ))?))
+}
+
+/// The operands of the comparisons in a piecewise condition, for reading
+/// off its variables.
+fn piecewise_condition_sides(cond: &Expr) -> Option<Vec<Expr>> {
+  let mut sides = Vec::new();
+  if !piecewise_condition_comparisons(cond, &mut sides) {
+    return None;
+  }
+  Some(sides.into_iter().flat_map(|(a, b)| [a, b]).collect())
 }
 
 /// The atomic comparisons of a condition built with `And`/`Or`/`Not`, or
