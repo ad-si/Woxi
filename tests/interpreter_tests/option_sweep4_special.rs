@@ -257,10 +257,14 @@ mod special_values {
   #[test]
   fn zeta_negative_integer_shift() {
     assert_eq!(interpret("Zeta[s, -1]").unwrap(), "1 + Zeta[s]");
-    assert_eq!(
-      interpret("Zeta[s, -3]").unwrap(),
-      "1 + 2^(-s) + 3^(-s) + Zeta[s]"
-    );
+    // Without a closed-form Zeta[s] the argument moves one step at most.
+    assert_eq!(interpret("Zeta[s, -3]").unwrap(), "Zeta[s, -3]");
+    assert_eq!(interpret("Zeta[s, 0]").unwrap(), "Zeta[s]");
+    assert_eq!(interpret("Zeta[s, 2]").unwrap(), "-1 + Zeta[s]");
+    assert_eq!(interpret("Zeta[3, 3]").unwrap(), "Zeta[3, 3]");
+    assert_eq!(interpret("HurwitzZeta[s, 2]").unwrap(), "-1 + Zeta[s]");
+    // A closed-form Zeta[s] takes any integer shift.
+    assert_eq!(interpret("Zeta[2, -3]").unwrap(), "49/36 + Pi^2/6");
     // HurwitzZeta has a pole there for s > 0, so a symbolic s stays.
     assert_eq!(
       interpret("HurwitzZeta[s, -1]").unwrap(),

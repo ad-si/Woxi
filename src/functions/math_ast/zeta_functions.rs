@@ -22,6 +22,9 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if args.len() == 2 {
+    if let Some(r) = integer_shift_without_closed_form("Zeta", args) {
+      return r;
+    }
     if let Some(r) = zeta_negative_a(&args[0], &args[1], false, args) {
       return r;
     }
@@ -114,6 +117,46 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// An explicit real number: Integer, Rational, Real or BigFloat.
+/// `Zeta[s, n]` (or `HurwitzZeta[s, n]`) at an integer `n` when `Zeta[s]`
+/// itself has no closed form (a symbolic or odd `s`): wolframscript moves the
+/// argument only one step, onto `Zeta[s]` — `Zeta[s, 0]` and `Zeta[s, 1]` are
+/// `Zeta[s]`, `Zeta[s, 2]` is `-1 + Zeta[s]`, `Zeta[s, -1]` is
+/// `1 + Zeta[s]` — and keeps every other `n` as it is (`Zeta[3, 3]`,
+/// `Zeta[s, -3]`). With a closed-form `Zeta[s]` (`Zeta[2, 10]`) and for
+/// inexact arguments `None` hands over to the full evaluation.
+fn integer_shift_without_closed_form(
+  head: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let (s, Expr::Integer(n)) = (&args[0], &args[1]) else {
+    return None;
+  };
+  if contains_float(s)
+    || matches!(s, Expr::Integer(k) if *k <= 1)
+    || !matches!(s, Expr::Identifier(_)) && !is_number_literal(s)
+  {
+    return None;
+  }
+  let zeta_s = match zeta_ast(std::slice::from_ref(s)) {
+    Ok(v) => v,
+    Err(e) => return Some(Err(e)),
+  };
+  let has_zeta = |e: &Expr| crate::syntax::expr_to_string(e).contains("Zeta[");
+  if !has_zeta(&zeta_s) {
+    return None;
+  }
+  // HurwitzZeta has a pole at a non-positive integer.
+  let hurwitz = head == "HurwitzZeta";
+  let shifted = match *n {
+    0 if !hurwitz => zeta_s,
+    1 => zeta_s,
+    2 => plus2(Expr::Integer(-1), zeta_s),
+    -1 if !hurwitz => plus2(Expr::Integer(1), zeta_s),
+    _ => return Some(Ok(unevaluated(head, args))),
+  };
+  Some(crate::evaluator::evaluate_expr_to_expr(&shifted))
+}
+
 fn is_number_literal(e: &Expr) -> bool {
   match e {
     Expr::Integer(_)
@@ -264,6 +307,12 @@ pub fn hurwitz_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Some(r) = zeta_bigfloat_args("HurwitzZeta", args) {
     return Ok(r);
+  }
+  if let Expr::Integer(n) = a
+    && *n >= 1
+    && let Some(r) = integer_shift_without_closed_form("HurwitzZeta", args)
+  {
+    return r;
   }
   if let Some(r) = zeta_negative_a(s, a, true, args) {
     return r;
