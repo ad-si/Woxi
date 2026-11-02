@@ -16352,7 +16352,7 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
   // cancellation (N[Pi,30]*10^25 - 31415926535897932384626433). Otherwise
   // fall back to the f64 approximation.
   if args.iter().all(is_bigfloat_evaluable_factor) {
-    use astro_float::{BigFloat, Consts, RoundingMode};
+    use astro_float::{BigFloat, RoundingMode};
     let rm = RoundingMode::ToEven;
     // Enough bits for the most precise summand at its magnitude, so the
     // exact parts of a cancelling sum survive.
@@ -16368,7 +16368,7 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
       .max(precision_of(sum_val))
       + max_mag.max(0.0);
     let bits = nominal_bits(max_prec.ceil() as usize);
-    if let Ok(mut cc) = Consts::new() {
+    if let Ok(mut cc) = crate::functions::math_ast::numerical::astro_consts() {
       let mut sum = BigFloat::from_i32(0, bits);
       let mut ok = true;
       for arg in args {
@@ -16530,7 +16530,7 @@ fn try_bigfloat_power(
   base: &Expr,
   exp: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{Consts, RoundingMode};
+  use astro_float::RoundingMode;
 
   let base_prec = match base {
     Expr::BigFloat(_, p) if *p > 0.0 => *p,
@@ -16554,7 +16554,7 @@ fn try_bigfloat_power(
 
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(base_prec.ceil() as usize);
-  let mut cc = match Consts::new() {
+  let mut cc = match crate::functions::math_ast::numerical::astro_consts() {
     Ok(c) => c,
     Err(e) => {
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
@@ -16611,7 +16611,7 @@ fn exact_base_bigfloat_power(
   base: &Expr,
   exp: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{Consts, RoundingMode};
+  use astro_float::RoundingMode;
   let Expr::BigFloat(_, exp_prec) = exp else {
     return None;
   };
@@ -16636,7 +16636,7 @@ fn exact_base_bigfloat_power(
   let result_prec = exp_prec - magnification.log10();
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(exp_prec.max(result_prec).ceil() as usize + 10);
-  let mut cc = match Consts::new() {
+  let mut cc = match crate::functions::math_ast::numerical::astro_consts() {
     Ok(c) => c,
     Err(e) => {
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
@@ -16727,7 +16727,7 @@ fn bigfloat_negative_base_power(
 /// tracked via the per-factor relative-error formula
 /// `1/p_result = sum 1/p_i`.
 fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use astro_float::{BigFloat, Consts, RoundingMode};
+  use astro_float::{BigFloat, RoundingMode};
 
   // Combine per-factor relative errors. Each finite-precision factor
   // contributes `10^(-p)` to the result's total relative error; the
@@ -16754,7 +16754,7 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let bits = nominal_bits(min_contrib.ceil() as usize);
   let rm = RoundingMode::ToEven;
-  let mut cc = Consts::new()
+  let mut cc = crate::functions::math_ast::numerical::astro_consts()
     .map_err(|e| InterpreterError::EvaluationError(format!("{e}")))?;
 
   let mut product = BigFloat::from_i32(1, bits);

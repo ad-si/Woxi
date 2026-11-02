@@ -1646,7 +1646,7 @@ fn floor_via_bigfloat(
   approx: f64,
   is_floor: bool,
 ) -> Option<Expr> {
-  use astro_float::{Consts, RoundingMode};
+  use astro_float::RoundingMode;
   if !approx.is_finite() {
     return None;
   }
@@ -1658,7 +1658,7 @@ fn floor_via_bigfloat(
   // or all 9s and therefore say nothing about which side the true value is on.
   let mag_digits = approx.abs().log10().ceil() as i64;
   let base_precision = (mag_digits.max(20) as usize) + 10;
-  let mut cc = Consts::new().ok()?;
+  let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
   let rm = RoundingMode::ToEven;
   const EXTRA_DIGIT_STEPS: [usize; 4] = [0, 30, 120, 500];
   let mut resolved: Option<(String, String, String)> = None;
@@ -1729,7 +1729,7 @@ pub enum NumericSign {
 /// extra digits like Wolfram's adaptive numerics; when even that cannot
 /// separate it from 0, `N::meprec` is issued and the sign is undecidable.
 pub fn numeric_real_sign(expr: &Expr) -> Option<NumericSign> {
-  use astro_float::{Consts, RoundingMode};
+  use astro_float::RoundingMode;
   // An arbitrary-precision number's sign is in its digits, whatever its
   // magnitude (`N[10^-400, 20]` underflows a machine number).
   if let Expr::BigFloat(digits, _) = expr {
@@ -1759,7 +1759,7 @@ pub fn numeric_real_sign(expr: &Expr) -> Option<NumericSign> {
   if scale == 0.0 || !scale.is_finite() || approx.abs() > 1e-10 * scale {
     return Some(sign_of(approx));
   }
-  let mut cc = Consts::new().ok()?;
+  let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
   for digits in [30_i32, 45, 66] {
     let bits = super::numerical::nominal_bits(digits as usize);
     let Ok(bf) = expr_to_bigfloat(expr, bits, RoundingMode::ToEven, &mut cc)

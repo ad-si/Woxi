@@ -630,26 +630,57 @@ pub fn machine_power_out_of_range(
   Some(computed.and_then(|r| r))
 }
 
-/// Run `f` with this thread's astro-float constants cache, built once:
-/// building it per call cost far more than the arithmetic it serves (every
-/// promoted machine power of a plot's samples built one).
+thread_local! {
+  /// Spare astro-float constants caches. Building one computes `e`, `pi`
+  /// and `ln 2` tables, which cost far more than the arithmetic most callers
+  /// need it for (every promoted machine power of a plot's samples built
+  /// one), so they are reused.
+  static ASTRO_CONSTS: std::cell::RefCell<Vec<astro_float::Consts>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// An astro-float constants cache borrowed from this thread's pool and
+/// returned to it on drop; a drop-in for `crate::functions::math_ast::numerical::astro_consts()` (nested uses each
+/// get their own).
+pub(crate) struct PooledConsts(Option<astro_float::Consts>);
+
+impl std::ops::Deref for PooledConsts {
+  type Target = astro_float::Consts;
+  fn deref(&self) -> &astro_float::Consts {
+    self.0.as_ref().unwrap()
+  }
+}
+
+impl std::ops::DerefMut for PooledConsts {
+  fn deref_mut(&mut self) -> &mut astro_float::Consts {
+    self.0.as_mut().unwrap()
+  }
+}
+
+impl Drop for PooledConsts {
+  fn drop(&mut self) {
+    if let Some(cc) = self.0.take() {
+      ASTRO_CONSTS.with(|pool| pool.borrow_mut().push(cc));
+    }
+  }
+}
+
+/// A constants cache from the pool, or a new one when it is empty.
+pub(crate) fn astro_consts() -> Result<PooledConsts, astro_float::Error> {
+  let spare = ASTRO_CONSTS.with(|pool| pool.borrow_mut().pop());
+  match spare {
+    Some(cc) => Ok(PooledConsts(Some(cc))),
+    None => astro_float::Consts::new().map(|cc| PooledConsts(Some(cc))),
+  }
+}
+
+/// Run `f` with a pooled astro-float constants cache.
 pub(crate) fn with_astro_consts<R>(
   f: impl FnOnce(&mut astro_float::Consts) -> R,
 ) -> Result<R, InterpreterError> {
-  thread_local! {
-    static CONSTS: std::cell::RefCell<Option<astro_float::Consts>> =
-      const { std::cell::RefCell::new(None) };
-  }
-  CONSTS.with(|slot| {
-    let mut slot = slot.borrow_mut();
-    if slot.is_none() {
-      *slot = Some(
-        astro_float::Consts::new()
-          .map_err(|e| InterpreterError::EvaluationError(format!("{e}")))?,
-      );
-    }
-    Ok(f(slot.as_mut().unwrap()))
-  })
+  let mut cc = astro_consts()
+    .map_err(|e| InterpreterError::EvaluationError(format!("{e}")))?;
+  Ok(f(&mut cc))
 }
 
 /// `Exp[x]` for a precision-tagged BigFloat `x`. Computes e^x in astro-float
@@ -660,7 +691,7 @@ pub fn bigfloat_exp(
   digits: &str,
   prec: f64,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  use astro_float::{BigFloat, Radix, RoundingMode};
   let x_val: f64 = digits.parse().ok()?;
   if x_val == 0.0 {
     return None;
@@ -676,7 +707,7 @@ pub fn bigfloat_exp(
   }
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(prec.ceil() as usize);
-  let mut cc = match Consts::new() {
+  let mut cc = match crate::functions::math_ast::numerical::astro_consts() {
     Ok(c) => c,
     Err(e) => {
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
@@ -701,7 +732,7 @@ pub fn bigfloat_log(
   digits: &str,
   prec: f64,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, Consts, Radix, RoundingMode};
+  use astro_float::{BigFloat, Radix, RoundingMode};
   let x_val: f64 = digits.parse().ok()?;
   // Log[-x] = Log[x] + I Pi, both parts known to the same accuracy.
   if let Some(abs_digits) = digits.strip_prefix('-')
@@ -710,7 +741,7 @@ pub fn bigfloat_log(
     let im_prec = prec + std::f64::consts::PI.log10();
     let rm = RoundingMode::ToEven;
     let bits = nominal_bits(im_prec.ceil() as usize);
-    let mut cc = Consts::new().ok()?;
+    let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
     let pi = cc.pi(bits, rm);
     let pi_digits = wl_fraction_digits(&pi, im_prec);
     let im_term = match bigfloat_to_string(&pi, Some(pi_digits), rm, &mut cc) {
@@ -729,7 +760,7 @@ pub fn bigfloat_log(
   }
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(prec.ceil() as usize);
-  let mut cc = match Consts::new() {
+  let mut cc = match crate::functions::math_ast::numerical::astro_consts() {
     Ok(c) => c,
     Err(e) => {
       return Some(Err(InterpreterError::EvaluationError(format!("{e}"))));
@@ -1503,10 +1534,11 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  use astro_float::{Consts, RoundingMode};
-  let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
-  })?;
+  use astro_float::RoundingMode;
+  let mut cc =
+    crate::functions::math_ast::numerical::astro_consts().map_err(|e| {
+      InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
+    })?;
   let rm = RoundingMode::ToEven;
   let prec_usize = precision_f64.floor().max(1.0) as usize;
   let bits = nominal_bits(prec_usize) + 64;
@@ -1678,10 +1710,11 @@ pub fn set_accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     },
   };
 
-  use astro_float::{Consts, RoundingMode};
-  let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
-  })?;
+  use astro_float::RoundingMode;
+  let mut cc =
+    crate::functions::math_ast::numerical::astro_consts().map_err(|e| {
+      InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
+    })?;
   set_accuracy_walk(&args[0], accuracy, RoundingMode::ToEven, &mut cc)
 }
 
@@ -1944,11 +1977,12 @@ pub fn n_eval_arbitrary(
     }
   }
 
-  use astro_float::{Consts, RoundingMode};
+  use astro_float::RoundingMode;
 
-  let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
-  })?;
+  let mut cc =
+    crate::functions::math_ast::numerical::astro_consts().map_err(|e| {
+      InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
+    })?;
   let rm = RoundingMode::ToEven;
 
   // Compute at one extra 64-bit word above the nominal display precision
@@ -2313,7 +2347,7 @@ pub fn expr_to_bigfloat(
       let sqrt5 = five.sqrt(wbits, rm);
       let three = BigFloat::from_i32(3, wbits);
       let factor = three.sub(&sqrt5, wbits, rm);
-      let pi = astro_float::Consts::new()
+      let pi = crate::functions::math_ast::numerical::astro_consts()
         .map_or_else(|_| BigFloat::from_i32(0, wbits), |mut c| c.pi(wbits, rm));
       Ok(pi.mul(&factor, bits, rm))
     }
@@ -8850,7 +8884,7 @@ fn bigint_to_bigfloat(
   use num_traits::ToPrimitive;
   match c.to_i128() {
     Some(small) => astro_float::BigFloat::from_i128(small, bits),
-    None => match astro_float::Consts::new() {
+    None => match crate::functions::math_ast::numerical::astro_consts() {
       Ok(mut cc) => astro_float::BigFloat::parse(
         &c.to_string(),
         astro_float::Radix::Dec,

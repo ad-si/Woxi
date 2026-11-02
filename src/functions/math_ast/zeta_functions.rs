@@ -2195,9 +2195,10 @@ impl SinCosTurns {
   const TERMS: usize = 34;
 
   fn new(bits: usize) -> Self {
-    use astro_float::{BigFloat, Consts, RoundingMode};
+    use astro_float::{BigFloat, RoundingMode};
     let rm = RoundingMode::ToEven;
-    let mut cc = Consts::new().expect("astro-float constants");
+    let mut cc = crate::functions::math_ast::numerical::astro_consts()
+      .expect("astro-float constants");
     let two_pi = cc.pi(bits, rm).mul(&BigFloat::from_u64(2, bits), bits, rm);
     let mut inv_fact = vec![BigFloat::from_u64(1, bits)];
     for k in 1..=Self::TERMS {
@@ -2272,10 +2273,10 @@ impl SinCosTurns {
 fn zeta_half_plus_it_accurate(
   t: f64,
 ) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
-  use astro_float::{BigFloat, Consts, RoundingMode};
+  use astro_float::{BigFloat, RoundingMode};
   let bits = 128usize;
   let rm = RoundingMode::ToEven;
-  let mut cc = Consts::new().ok()?;
+  let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
   let n: usize = (t.abs().ceil() as usize).max(30);
   let two_pi = cc.pi(bits, rm).mul(&BigFloat::from_u64(2, bits), bits, rm);
   // Turns per unit of ln n: t / (2π).

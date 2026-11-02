@@ -202,7 +202,7 @@ fn big_range_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
     return Some(sa.cmp(&sb));
   }
   let rm = astro_float::RoundingMode::ToEven;
-  let mut cc = astro_float::Consts::new().ok()?;
+  let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
   let bits = 512;
   let x =
     crate::functions::math_ast::expr_to_bigfloat(a, bits, rm, &mut cc).ok()?;
