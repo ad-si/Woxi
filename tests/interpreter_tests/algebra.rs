@@ -25001,3 +25001,26 @@ mod polynomial_gcd_radical_coefficients {
     );
   }
 }
+
+// A transcendental equation with machine coefficients on a bounded interval
+// has its real roots there found numerically; the interval used to be
+// dropped (an unevaluated Solve) or only the principal inverse kept.
+mod solve_bounded_inexact_transcendental {
+  use super::*;
+
+  #[test]
+  fn all_roots_in_the_interval() {
+    assert_eq!(
+      interpret("Solve[Sin[x] + Cos[2 x] == 0.3 && 0 <= x <= 3, x]").unwrap(),
+      "{{x -> 1.102329579202033}, {x -> 2.0392630743877604}}"
+    );
+    assert_eq!(
+      interpret("Length[Solve[Sin[x] == 0.3 && 0 <= x <= 10, x]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Solve[Cos[x] == 2.5 && 0 <= x <= 1, x]").unwrap(),
+      "{}"
+    );
+  }
+}

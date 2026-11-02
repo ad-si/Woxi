@@ -3042,6 +3042,9 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(result) = solve_interpolating_function("Solve", args) {
     return Ok(result);
   }
+  if let Some(roots) = solve_bounded_inexact_transcendental(args) {
+    return Ok(roots);
+  }
   let solved = solve_ast_exact_parts(args)?;
   if matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve")
     && let Some(roots) = solve_exponential_polynomial_reals(args)
@@ -3772,6 +3775,59 @@ fn has_inexact_exponent(expr: &Expr) -> bool {
       .into_iter()
       .any(has_inexact_exponent),
   }
+}
+
+/// A transcendental equation with machine coefficients on a bounded
+/// interval (`f[t] == 0 && 0 <= t <= 1`): its real roots there, found
+/// numerically, as wolframscript reports them (with Solve::ratnz when it
+/// finds any). None for anything else, including polynomial equations.
+fn solve_bounded_inexact_transcendental(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2
+    || !crate::functions::math_ast::contains_inexact_real(&args[0])
+  {
+    return None;
+  }
+  let Expr::Identifier(var) = &args[1] else {
+    return None;
+  };
+  let mut parts = Vec::new();
+  let mut stack = vec![args[0].clone()];
+  while let Some(e) = stack.pop() {
+    match conjunction_parts(&e) {
+      Some(ps) => stack.extend(ps.into_iter().rev()),
+      None => match &e {
+        Expr::List(items) => stack.extend(items.iter().rev().cloned()),
+        _ => parts.push(e),
+      },
+    }
+  }
+  if parts.len() < 2 {
+    return None;
+  }
+  // Only a non-polynomial equation: polynomials have exact methods.
+  let polynomial = parts.iter().any(|p| {
+    matches!(p, Expr::Comparison { operands, operators }
+    if operands.len() == 2
+      && matches!(operators[0], ComparisonOp::Equal)
+      && matches!(
+        crate::evaluator::evaluate_function_call_ast(
+          "PolynomialQ",
+          &[minus2(operands[0].clone(), operands[1].clone()), id_expr(var)],
+        ),
+        Ok(Expr::Identifier(ref t)) if t == "True"
+      ))
+  });
+  if polynomial {
+    return None;
+  }
+  let roots =
+    try_nsolve_bracketed(&[Expr::List(parts.into()), args[1].clone()])?;
+  if matches!(&roots, Expr::List(r) if !r.is_empty()) {
+    crate::emit_message(
+      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+    );
+  }
+  Some(roots)
 }
 
 /// Rewrites every `Element[{x, y, …}, region]` of a logical combination
