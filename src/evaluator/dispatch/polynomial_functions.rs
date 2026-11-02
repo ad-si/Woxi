@@ -384,8 +384,8 @@ pub fn dispatch_polynomial_functions(
     // equations do not mention it.
     "Solve"
       if args.len() >= 2
-        && (args.len() > 3
-          || args.iter().skip(2).any(|a| matches!(a, Expr::Rule { .. }))
+        && (args.iter().skip(2).any(|a| matches!(a, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "WorkingPrecision")))
           || matches!(args.get(2), Some(Expr::Identifier(d))
             if !solve_domain_name(d))) =>
     {
@@ -401,7 +401,7 @@ pub fn dispatch_polynomial_functions(
             {
               precision = Some(replacement.as_ref().clone());
             } else {
-              return Some(Ok(unevaluated("Solve", args)));
+              positional.push(a.clone());
             }
           }
           _ => positional.push(a.clone()),
@@ -423,14 +423,15 @@ pub fn dispatch_polynomial_functions(
         }
         positional.remove(2);
       }
-      if positional.len() > 3 {
-        return Some(Ok(unevaluated("Solve", args)));
-      }
-      let solved =
-        match crate::functions::polynomial_ast::solve_ast(&positional) {
-          Ok(s) => s,
-          Err(e) => return Some(Err(e)),
-        };
+      // The remaining arguments (other options included) go through
+      // Solve as usual.
+      let solved = match crate::evaluator::evaluate_function_call_ast(
+        "Solve",
+        &positional,
+      ) {
+        Ok(s) => s,
+        Err(e) => return Some(Err(e)),
+      };
       return Some(match precision {
         Some(p) if !matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve") => {
           crate::evaluator::evaluate_function_call_ast("N", &[solved, p])
