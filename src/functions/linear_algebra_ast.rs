@@ -2698,11 +2698,12 @@ fn machine_complex_inverse(
     })
     .collect();
   let abs = |c: C| c.0.hypot(c.1);
-  let scale = m.iter().flatten().fold(0.0f64, |acc, &c| acc.max(abs(c)));
+  // Singular only on an exactly zero pivot, as for a real matrix: a badly
+  // conditioned one is still inverted, the way wolframscript does.
   for col in 0..n {
     let pivot_row = (col..n)
       .max_by(|&a, &b| abs(aug[a][col]).total_cmp(&abs(aug[b][col])))?;
-    if abs(aug[pivot_row][col]) <= scale * 1e-15 * n as f64 {
+    if abs(aug[pivot_row][col]) == 0.0 {
       return None;
     }
     aug.swap(col, pivot_row);

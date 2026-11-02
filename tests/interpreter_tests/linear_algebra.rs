@@ -634,6 +634,18 @@ mod permanent {
 mod inverse {
   use super::*;
 
+  // A badly conditioned machine-complex matrix is inverted like a real one
+  // (singular only on an exactly zero pivot), as wolframscript does
+  // (RapidStabilizationOfHeatAndStructureInteractionsWithBoundary).
+  #[test]
+  fn badly_conditioned_complex_matrix() {
+    assert_eq!(
+      interpret("Inverse[{{1. + 0. I, 1.}, {1., 1. + 1*^-15}}]").unwrap(),
+      "{{9.007199254741002*^14 + 0.*I, -9.007199254740992*^14 + 0.*I}, \
+       {-9.007199254740992*^14 + 0.*I, 9.007199254740992*^14 + 0.*I}}"
+    );
+  }
+
   // An inexact number inside an entry makes the matrix a machine one,
   // inverted numerically rather than by cofactors.
   #[test]

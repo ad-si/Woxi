@@ -3227,6 +3227,12 @@ wolframscript -code 'FinancialDerivative[{"American", "Put"}, {"StrikePrice" -> 
 
 ## Linear algebra
 
+### `Inverse::luc` is never issued
+
+`Inverse[{{1., 1.}, {1., 1. + 1*^-15}}]` gives the same numbers as
+wolframscript but without its "badly conditioned matrix" warning; Woxi only
+reports `Inverse::sing` for an exactly zero pivot.
+
 ### `SingularValueDecomposition` of an exact matrix stays unevaluated
 
 ```sh
