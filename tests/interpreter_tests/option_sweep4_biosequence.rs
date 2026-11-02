@@ -13,7 +13,82 @@ mod string_join {
         "StringJoin[BioSequence[\"DNA\", \"A\"], BioSequence[\"DNA\", \"C\"]]"
       )
       .unwrap(),
-      "BioSequence[DNA, AC]"
+      "BioSequence[DNA, AC, {}]"
+    );
+  }
+
+  #[test]
+  fn mixed_types_fail() {
+    assert_eq!(
+      interpret(
+        "StringJoin[BioSequence[\"DNA\", \"A\"], BioSequence[\"RNA\", \"C\"]]"
+      )
+      .unwrap(),
+      "$Failed"
+    );
+  }
+}
+
+mod constructor {
+  use super::*;
+
+  #[test]
+  fn canonical_form_carries_an_annotation_list() {
+    assert_eq!(
+      interpret("BioSequence[\"DNA\", \"A\"]").unwrap(),
+      "BioSequence[DNA, A, {}]"
+    );
+    assert_eq!(
+      interpret("BioSequence[\"DNA\", \"A\", {}]").unwrap(),
+      "BioSequence[DNA, A, {}]"
+    );
+    assert_eq!(
+      interpret("BioSequence[\"CircularRNA\", \"acg\"]").unwrap(),
+      "BioSequence[CircularRNA, ACG, {}]"
+    );
+  }
+
+  #[test]
+  fn letters_are_normalized() {
+    assert_eq!(
+      interpret("BioSequence[\"DNA\", \"acgX\"]").unwrap(),
+      "BioSequence[DNA, ACGN, {}]"
+    );
+    assert_eq!(
+      interpret("BioSequence[\"Peptide\", \"mkv*\"]").unwrap(),
+      "BioSequence[Peptide, MKV., {}]"
+    );
+  }
+
+  #[test]
+  fn length_gives_wildcards() {
+    assert_eq!(
+      interpret("BioSequence[\"RNA\", 3]").unwrap(),
+      "BioSequence[RNA, NNN, {}]"
+    );
+    assert_eq!(
+      interpret("BioSequence[\"Peptide\", 2]").unwrap(),
+      "BioSequence[Peptide, XX, {}]"
+    );
+  }
+
+  #[test]
+  fn type_is_inferred() {
+    assert_eq!(
+      interpret("BioSequence[\"acg\"]").unwrap(),
+      "BioSequence[DNA, ACG, {}]"
+    );
+    assert_eq!(
+      interpret("BioSequence[\"ACGU\"]").unwrap(),
+      "BioSequence[RNA, ACGU, {}]"
+    );
+  }
+
+  #[test]
+  fn unknown_type_stays() {
+    assert_eq!(
+      interpret("BioSequence[\"Foo\", \"A\"]").unwrap(),
+      "BioSequence[Foo, A]"
     );
   }
 }
@@ -28,18 +103,18 @@ mod string_replace {
         "StringReplace[BioSequence[\"DNA\", \"ATGGCGGT\"], \"GG\" -> \"TC\"]"
       )
       .unwrap(),
-      "BioSequence[DNA, ATTCCTCT]"
+      "BioSequence[DNA, ATTCCTCT, {}]"
     );
     assert_eq!(
       interpret(
         "StringReplace[BioSequence[\"DNA\", \"GTTGGCTTG\"], \"GGN\" -> \"A\"]"
       )
       .unwrap(),
-      "BioSequence[DNA, GTTATTG]"
+      "BioSequence[DNA, GTTATTG, {}]"
     );
     assert_eq!(
       interpret("StringReplace[BioSequence[\"DNA\", \"GTTGGCTTG\"], \"GG\" ~~ Verbatim[\"N\"] -> \"A\"]").unwrap(),
-      "BioSequence[DNA, GTTGGCTTG]"
+      "BioSequence[DNA, GTTGGCTTG, {}]"
     );
   }
 }
@@ -69,19 +144,19 @@ mod string_take_drop {
     assert_eq!(
       interpret("StringTake[BioSequence[\"DNA\", \"GTCTCGCGTAGC\"], {4, 6}]")
         .unwrap(),
-      "BioSequence[DNA, TCG]"
+      "BioSequence[DNA, TCG, {}]"
     );
     assert_eq!(
       interpret("StringDrop[BioSequence[\"DNA\", \"GTCTCGCGTAGC\"], {4, 6}]")
         .unwrap(),
-      "BioSequence[DNA, GTCCGTAGC]"
+      "BioSequence[DNA, GTCCGTAGC, {}]"
     );
     assert_eq!(
       interpret(
         "StringTakeDrop[BioSequence[\"DNA\", \"GTCTCGCGTAGC\"], {4, 6}]"
       )
       .unwrap(),
-      "{BioSequence[DNA, TCG], BioSequence[DNA, GTCCGTAGC]}"
+      "{BioSequence[DNA, TCG, {}], BioSequence[DNA, GTCCGTAGC, {}]}"
     );
   }
 }
@@ -117,18 +192,18 @@ mod string_split {
         "StringSplit[BioSequence[\"DNA\", \"GATGGCAAGGCAG\"], \"GGC\"]"
       )
       .unwrap(),
-      "{BioSequence[DNA, GAT], BioSequence[DNA, AA], BioSequence[DNA, AG]}"
+      "{BioSequence[DNA, GAT, {}], BioSequence[DNA, AA, {}], BioSequence[DNA, AG, {}]}"
     );
     assert_eq!(
       interpret(
         "StringSplit[BioSequence[\"DNA\", \"GATGGCAAGGNAG\"], \"GGN\"]"
       )
       .unwrap(),
-      "{BioSequence[DNA, GAT], BioSequence[DNA, AA], BioSequence[DNA, AG]}"
+      "{BioSequence[DNA, GAT, {}], BioSequence[DNA, AA, {}], BioSequence[DNA, AG, {}]}"
     );
     assert_eq!(
       interpret("StringSplit[BioSequence[\"DNA\", \"GATGGCAAGGNAG\"], \"GG\" ~~ Verbatim[\"N\"]]").unwrap(),
-      "{BioSequence[DNA, GATGGCAA], BioSequence[DNA, AG]}"
+      "{BioSequence[DNA, GATGGCAA, {}], BioSequence[DNA, AG, {}]}"
     );
   }
 }
@@ -198,7 +273,7 @@ mod string_reverse {
   fn works_on_biosequence() {
     assert_eq!(
       interpret("StringReverse[BioSequence[\"DNA\", \"TCCGAA\"]]").unwrap(),
-      "BioSequence[DNA, AAGCCT]"
+      "BioSequence[DNA, AAGCCT, {}]"
     );
   }
 }
@@ -241,7 +316,7 @@ mod string_insert {
         "StringInsert[BioSequence[\"DNA\", \"GCCCGAGAC\"], \"TTT\", 2]"
       )
       .unwrap(),
-      "BioSequence[DNA, GTTTCCCGAGAC]"
+      "BioSequence[DNA, GTTTCCCGAGAC, {}]"
     );
   }
 }
@@ -256,7 +331,7 @@ mod string_delete {
         "StringDelete[BioSequence[\"DNA\", \"CACACGTCGACT\"], \"CGA\"]"
       )
       .unwrap(),
-      "BioSequence[DNA, CACACGTCT]"
+      "BioSequence[DNA, CACACGTCT, {}]"
     );
   }
 }
@@ -268,7 +343,7 @@ mod string_replace_part {
   fn works_on_biosequence() {
     assert_eq!(
       interpret("StringReplacePart[BioSequence[\"DNA\", \"GCCTGGAGG\"], \"GGT\", {4, 6}]").unwrap(),
-      "BioSequence[DNA, GCCGGTAGG]"
+      "BioSequence[DNA, GCCGGTAGG, {}]"
     );
   }
 }
@@ -342,7 +417,7 @@ mod string_repeat {
   fn works_on_biosequence() {
     assert_eq!(
       interpret("StringRepeat[BioSequence[\"DNA\", \"GTT\"], 3]").unwrap(),
-      "BioSequence[DNA, GTTGTTGTT]"
+      "BioSequence[DNA, GTTGTTGTT, {}]"
     );
   }
 }
@@ -355,12 +430,12 @@ mod string_pad {
     assert_eq!(
       interpret("StringPadLeft[BioSequence[\"DNA\", \"CGGAGT\"], 9, \"A\"]")
         .unwrap(),
-      "BioSequence[DNA, AAACGGAGT]"
+      "BioSequence[DNA, AAACGGAGT, {}]"
     );
     assert_eq!(
       interpret("StringPadRight[BioSequence[\"DNA\", \"CGGAGT\"], 9, \"A\"]")
         .unwrap(),
-      "BioSequence[DNA, CGGAGTAAA]"
+      "BioSequence[DNA, CGGAGTAAA, {}]"
     );
   }
 }
@@ -373,12 +448,12 @@ mod string_rotate {
     assert_eq!(
       interpret("StringRotateRight[BioSequence[\"DNA\", \"CGGTCTNNN\"], 3]")
         .unwrap(),
-      "BioSequence[DNA, NNNCGGTCT]"
+      "BioSequence[DNA, NNNCGGTCT, {}]"
     );
     assert_eq!(
       interpret("StringRotateLeft[BioSequence[\"DNA\", \"NNNCGGTCT\"], 3]")
         .unwrap(),
-      "BioSequence[DNA, CGGTCTNNN]"
+      "BioSequence[DNA, CGGTCTNNN, {}]"
     );
   }
 }
@@ -409,23 +484,23 @@ mod circular_take_drop {
     assert_eq!(
       interpret("StringTake[BioSequence[\"CircularDNA\", \"CGGTTA\"], {5, 2}]")
         .unwrap(),
-      "BioSequence[CircularDNA, TACG]"
+      "BioSequence[CircularDNA, TACG, {}]"
     );
     assert_eq!(
       interpret("StringDrop[BioSequence[\"CircularDNA\", \"ACGT\"], {4, 1}]")
         .unwrap(),
-      "BioSequence[CircularDNA, CG]"
+      "BioSequence[CircularDNA, CG, {}]"
     );
     assert_eq!(
       interpret(
         "StringTakeDrop[BioSequence[\"CircularDNA\", \"CGGTTA\"], {5, 2}]"
       )
       .unwrap(),
-      "{BioSequence[CircularDNA, TACG], BioSequence[CircularDNA, GT]}"
+      "{BioSequence[CircularDNA, TACG, {}], BioSequence[CircularDNA, GT, {}]}"
     );
     assert_eq!(
       interpret("StringReplacePart[BioSequence[\"CircularDNA\", \"ACGT\"], \"NNNN\", {4, 1}]").unwrap(),
-      "BioSequence[CircularDNA, CGNNNN]"
+      "BioSequence[CircularDNA, CGNNNN, {}]"
     );
   }
 }
@@ -474,11 +549,11 @@ mod circular_matching {
         "StringCases[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
       )
       .unwrap(),
-      "{BioSequence[CircularDNA, GGC], BioSequence[CircularDNA, GGT], BioSequence[CircularDNA, GGY], BioSequence[CircularDNA, GGC]}"
+      "{BioSequence[CircularDNA, GGC, {}], BioSequence[CircularDNA, GGT, {}], BioSequence[CircularDNA, GGY, {}], BioSequence[CircularDNA, GGC, {}]}"
     );
     assert_eq!(
       interpret("StringCases[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], Verbatim[\"GGY\"]]").unwrap(),
-      "{BioSequence[CircularDNA, GGY]}"
+      "{BioSequence[CircularDNA, GGY, {}]}"
     );
     assert_eq!(
       interpret("StringCases[BioSequence[\"CircularDNA\", \"GATTGGTTTGCTTCATTCGTT\", {}], \"TTNNTT\", Overlaps -> True]").unwrap(),
@@ -536,7 +611,7 @@ mod circular_matching {
     );
     assert_eq!(
       interpret("StringDelete[BioSequence[\"CircularDNA\", \"CTGGCGGTGGYGG\"], Verbatim[\"GGY\"]]").unwrap(),
-      "BioSequence[CircularDNA, CTGGCGGTGG]"
+      "BioSequence[CircularDNA, CTGGCGGTGG, {}]"
     );
   }
 }
@@ -551,7 +626,7 @@ mod degenerate_letters_in_sequence {
         "StringCases[BioSequence[\"DNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
       )
       .unwrap(),
-      "{BioSequence[DNA, GGC], BioSequence[DNA, GGT], BioSequence[DNA, GGY]}"
+      "{BioSequence[DNA, GGC, {}], BioSequence[DNA, GGT, {}], BioSequence[DNA, GGY, {}]}"
     );
     assert_eq!(
       interpret(
@@ -565,7 +640,7 @@ mod degenerate_letters_in_sequence {
         "StringDelete[BioSequence[\"DNA\", \"CTGGCGGTGGYGG\"], \"GGY\"]"
       )
       .unwrap(),
-      "BioSequence[DNA, CTGG]"
+      "BioSequence[DNA, CTGG, {}]"
     );
     assert_eq!(
       interpret(
@@ -584,16 +659,16 @@ mod default_padding_and_parts {
   fn works_on_biosequence() {
     assert_eq!(
       interpret("StringPadLeft[BioSequence[\"DNA\", \"CGGAGT\"], 9]").unwrap(),
-      "BioSequence[DNA, NNNCGGAGT]"
+      "BioSequence[DNA, NNNCGGAGT, {}]"
     );
     assert_eq!(
       interpret("StringPadRight[BioSequence[\"DNA\", \"CGGAGT\"], 9]").unwrap(),
-      "BioSequence[DNA, CGGAGTNNN]"
+      "BioSequence[DNA, CGGAGTNNN, {}]"
     );
     assert_eq!(
       interpret("StringPart[BioSequence[\"DNA\", \"CGGTGC\"], 4 ;; 5]")
         .unwrap(),
-      "{BioSequence[DNA, T], BioSequence[DNA, G]}"
+      "{BioSequence[DNA, T, {}], BioSequence[DNA, G, {}]}"
     );
   }
 }

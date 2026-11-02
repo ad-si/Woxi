@@ -3039,7 +3039,7 @@ MissingDataMethod,"",,,9.0,3059
 NoncentralChiSquareDistribution,"Noncentral chi-square distribution (moments and parity-cased PDF)",✅,pure,6.0,3059
 StationaryWaveletPacketTransform,"Undecimated full-tree wavelet packet transform",✅,pure,8.0,3059
 ZTest,"One-sample z-test p-value (known or estimated variance)",✅,pure,8.0,3059
-BioSequence,"",🚫,,12.2,3070
+BioSequence,"Represents a DNA or RNA or peptide sequence which the String functions accept",🚧,pure,12.2,3070
 CorrelationDistance,"1 minus Pearson correlation between vectors",✅,none,6.0,3070
 FoldWhileList,"Fold while a test holds returning every intermediate result",✅,pure,12.2,3070
 GeoHistogram,"Geographic density histogram shading hexagonal or rectangular or triangular map tiles by count",✅,pure,11.0,3070

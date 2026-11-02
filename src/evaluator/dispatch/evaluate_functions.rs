@@ -13008,6 +13008,8 @@ fn evaluate_function_call_ast_inner(
         // An element of a number field, c0 + c1 θ + …; N, RootReduce and
         // ToRadicals read it.
         | "AlgebraicNumber"
+        // A biological sequence object: the String* family reads it.
+        | "BioSequence"
     )
   {
     let args_str = args
