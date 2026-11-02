@@ -13164,7 +13164,8 @@ pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data: Vec<f64> = pixel.iter().cycle().take(len).copied().collect();
 
   Ok(Expr::Image {
-    color_space: None,
+    // A constant color image is tagged RGB; a gray level stays Automatic.
+    color_space: (channels >= 3).then_some("RGB"),
     display_size: None,
     width: w,
     height: h,

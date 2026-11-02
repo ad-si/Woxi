@@ -419,6 +419,30 @@ mod image_forms {
       .unwrap(),
       "-Image-"
     );
+    assert_eq!(
+      interpret(
+        "Options[ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, \
+         ImageSize -> 100], {ColorSpace, ImageSize}]"
+      )
+      .unwrap(),
+      "{ColorSpace -> RGB, ImageSize -> 100}"
+    );
+  }
+
+  #[test]
+  fn constant_image_input_form() {
+    assert_eq!(
+      interpret("ToString[ConstantImage[Red, {2, 1}, \"Byte\"], InputForm]")
+        .unwrap(),
+      "Image[NumericArray[{{{255, 0, 0}, {255, 0, 0}}}, \"UnsignedInteger8\"], \
+       \"Byte\", ColorSpace -> \"RGB\", Interleaving -> True]"
+    );
+    assert_eq!(
+      interpret("ToString[Image[{{0, 1}}, ImageSize -> 100], InputForm]")
+        .unwrap(),
+      "Image[NumericArray[{{0., 1.}}, \"Real32\"], \"Real32\", \
+       ColorSpace -> Automatic, ImageSize -> 100, Interleaving -> None]"
+    );
   }
 
   #[test]

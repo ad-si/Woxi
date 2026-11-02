@@ -15634,7 +15634,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // Image: produce NumericArray InputForm
     Expr::Image {
       color_space,
-      display_size: _,
+      display_size,
       width,
       height,
       channels,
@@ -15688,8 +15688,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
       let array_data = format!("{{{}}}", rows.join(", "));
 
+      // An explicit ImageSize is one of the image's options.
+      let image_size = match display_size {
+        Some((dw, _)) => format!(", ImageSize -> {dw}"),
+        None => String::new(),
+      };
       format!(
-        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{image_type_str}\", ColorSpace -> {color_space}, Interleaving -> {interleaving}]"
+        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{image_type_str}\", ColorSpace -> {color_space}{image_size}, Interleaving -> {interleaving}]"
       )
     }
 
