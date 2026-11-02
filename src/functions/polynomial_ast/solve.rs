@@ -15937,6 +15937,34 @@ fn substitute_expr_with(
       a.len() == b.len()
     }
     (_, Expr::CurriedCall { .. }) => false,
+    // An operator node spells like a call only of an operator head.
+    (
+      Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. },
+      Expr::FunctionCall { name, .. },
+    )
+    | (
+      Expr::FunctionCall { name, .. },
+      Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. },
+    ) => matches!(
+      name.as_str(),
+      "Plus"
+        | "Times"
+        | "Power"
+        | "And"
+        | "Or"
+        | "Not"
+        | "StringJoin"
+        | "Alternatives"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "LessEqual"
+        | "Greater"
+        | "GreaterEqual"
+        | "SameQ"
+        | "UnsameQ"
+        | "Inequality"
+    ),
     _ => true,
   };
   if may_match
