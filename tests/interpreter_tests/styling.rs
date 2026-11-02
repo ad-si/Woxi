@@ -186,7 +186,7 @@ mod font_size {
         "ToString[ToString[Style[\"ab\", Red, 12, Bold], StandardForm], InputForm]"
       )
       .unwrap(),
-      r#""\!\(\*StyleBox[\"\\\"ab\\\"\", RGBColor[1, 0, 0], 12, Bold]\)""#
+      r#""\!\(\*StyleBox[\"\\\"ab\\\"\", RGBColor[1, 0, 0], 12, Bold, Rule[StripOnInput, False]]\)""#
     );
     assert_eq!(
       interpret("ToString[Style[\"ab\", Red, 12, Bold]]").unwrap(),
@@ -208,14 +208,15 @@ mod font_size {
 
   #[test]
   fn number_form_of_style_keeps_the_style() {
-    // A number format around a Style formats the content and keeps the style,
-    // so a styled entry in a list of formatted numbers still draws coloured.
+    // A number format around a Style stays as written (wolframscript), and
+    // typesets as the style around the formatted number, so a styled entry
+    // in a list of formatted numbers still draws coloured.
     assert_eq!(
       interpret(
         "{Head[#], Head[First[#]]} &[NumberForm[Style[3., Red], {4, 2}]]"
       )
       .unwrap(),
-      "{Style, NumberForm}"
+      "{NumberForm, Style}"
     );
     assert_eq!(
       interpret("ToString[NumberForm[Style[2.5, Bold], {4, 2}]]").unwrap(),

@@ -17745,6 +17745,16 @@ pub(crate) fn number_form_family_to_string(
   head: &str,
   inner: &[Expr],
 ) -> Option<String> {
+  // As text a styled number is just the number: `NumberForm[Style[2.5,
+  // Bold], {4, 2}]` is "2.50".
+  if let Some(Expr::FunctionCall { name, args }) = inner.first()
+    && name == "Style"
+    && !args.is_empty()
+  {
+    let mut unstyled = inner.to_vec();
+    unstyled[0] = args[0].clone();
+    return number_form_family_to_string(head, &unstyled);
+  }
   // A wrapper around another wrapper (`AccountingForm[NumberForm[x, {12, 2}],
   // 12]`) formats the innermost number with the inner wrapper's own spec and
   // options; the outer arguments only fill in what the inner one left out.

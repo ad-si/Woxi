@@ -4510,6 +4510,9 @@ fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
 }
 
 fn graphics_text_content(expr: &Expr) -> String {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return graphics_text_content(&styled);
+  }
   match expr {
     // A `Dynamic[x]` inside text reads as the value `x` currently has.
     Expr::FunctionCall { name, args } if name == "Dynamic" && args.len() == 1 => {
@@ -13806,6 +13809,9 @@ fn is_stacked_block(expr: &Expr) -> bool {
 /// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
 /// further. Everything else is a single line.
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return expr_to_svg_markup_lines(&styled);
+  }
   // `Framed[content]`/`Highlighted[content]` draws no box in a running
   // line of text (see this function's own single-line sibling below) — but
   // as a whole item inside a `Column`, the same reasoning that lets a
@@ -14035,7 +14041,50 @@ fn shorten_for_display(expr: &Expr, lines: f64) -> Expr {
   Expr::String(format!("{head}<<{omitted}>>{tail}"))
 }
 
+/// A number format around a `Style` typesets as the style around the
+/// formatted number: `NumberForm[Style[x, Red], {4, 2}]` draws `x` to two
+/// decimals in red. `None` for anything else.
+pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if !matches!(
+    name.as_str(),
+    "NumberForm"
+      | "PaddedForm"
+      | "AccountingForm"
+      | "ScientificForm"
+      | "EngineeringForm"
+  ) {
+    return None;
+  }
+  let Some(Expr::FunctionCall {
+    name: style,
+    args: style_args,
+  }) = args.first()
+  else {
+    return None;
+  };
+  if style != "Style" || style_args.is_empty() {
+    return None;
+  }
+  let mut form_args = vec![style_args[0].clone()];
+  form_args.extend(args[1..].iter().cloned());
+  let mut styled = vec![Expr::FunctionCall {
+    name: name.clone(),
+    args: form_args.into(),
+  }];
+  styled.extend(style_args[1..].iter().cloned());
+  Some(Expr::FunctionCall {
+    name: "Style".to_string(),
+    args: styled.into(),
+  })
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return expr_to_svg_markup(&styled);
+  }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
   // `Print`/OutputForm in a script, which show the literal wrapper because

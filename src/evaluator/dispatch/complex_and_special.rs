@@ -3896,6 +3896,13 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
 }
 
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
+  // A number format around a `Style` typesets as the style around the
+  // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
+  if let Some(styled) =
+    crate::functions::graphics::hoist_style_out_of_number_form(expr)
+  {
+    return expr_to_box_form(&styled);
+  }
   // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
   // delivered as `Expr::Postfix { expr, func }` rather than being
   // normalised to `FunctionCall { name: f, args: [expr] }`. The
@@ -4419,6 +4426,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if args.len() > 1 {
         let mut items = vec![inner];
         items.extend(args[1..].iter().cloned());
+        // The style survives being read back in, as wolframscript marks it:
+        // `ToBoxes[Style[x, Red]]` is `StyleBox["x", RGBColor[1, 0, 0],
+        // StripOnInput -> False]`.
+        if !items[1..].iter().any(is_strip_on_input_rule) {
+          items.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
+        }
         call("StyleBox", items)
       } else {
         inner
@@ -5024,6 +5037,19 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
       call(name, args)
     }
     _ => boxes.clone(),
+  }
+}
+
+/// `StripOnInput -> …`, as a rule node or a `Rule[…]` call.
+fn is_strip_on_input_rule(e: &Expr) -> bool {
+  match e {
+    Expr::Rule { pattern, .. } => {
+      matches!(pattern.as_ref(), Expr::Identifier(n) if n == "StripOnInput")
+    }
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      matches!(&args[0], Expr::Identifier(n) if n == "StripOnInput")
+    }
+    _ => false,
   }
 }
 
