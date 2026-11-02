@@ -10093,7 +10093,7 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]"
+        "Round[First /@ ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]"
       )
       .unwrap(),
       "{{{0., 15.5}, {30., 15.5}}, {{9.5, 0.}, {9.5, 20.}}}"
@@ -10117,10 +10117,18 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]"
+        "Round[First /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]"
       )
       .unwrap(),
       "{{{0., 20.}, {20., 0.}}}"
+    );
+    // The lines are Line primitives.
+    assert_eq!(
+      interpret(
+        "Union[Head /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]]"
+      )
+      .unwrap(),
+      "{Line}"
     );
   }
 
@@ -10138,7 +10146,7 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Head[HighlightImage[#, Line /@ ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
+        "Head[HighlightImage[#, ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
       )
       .unwrap(),
       "Image"

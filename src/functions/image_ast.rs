@@ -15615,8 +15615,12 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     ends.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let pt =
       |p: (f64, f64)| Expr::List(vec![Expr::Real(p.0), Expr::Real(p.1)].into());
-    lines.push(Expr::List(
-      vec![pt(ends[0]), pt(ends[ends.len() - 1])].into(),
+    // Each found line is a `Line` primitive, as in wolframscript.
+    lines.push(call(
+      "Line",
+      vec![Expr::List(
+        vec![pt(ends[0]), pt(ends[ends.len() - 1])].into(),
+      )],
     ));
   }
   Ok(Expr::List(lines.into()))
