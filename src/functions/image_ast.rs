@@ -651,7 +651,8 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Whether `ColorProfileData[icc, space, pcs]` could hold an ICC profile:
-/// its byte array is at least the 128-byte profile header long.
+/// its bytes are at least the 128-byte profile header long and carry the
+/// header's `acsp` signature at offset 36.
 fn icc_profile_plausible(profile: &Expr) -> bool {
   let Expr::FunctionCall { args, .. } = profile else {
     return false;
@@ -665,11 +666,14 @@ fn icc_profile_plausible(profile: &Expr) -> bool {
     Some(other) => other,
     None => return false,
   };
-  match bytes {
-    Expr::List(items) => items.len() >= 128,
-    Expr::String(s) => s.len() >= 128,
-    _ => false,
-  }
+  let Expr::List(items) = bytes else {
+    return false;
+  };
+  items.len() >= 128
+    && items[36..40]
+      .iter()
+      .zip(b"acsp")
+      .all(|(b, c)| matches!(b, Expr::Integer(v) if *v == i128::from(*c)))
 }
 
 /// The color space named by a `ColorSpace -> …` option among `opts`: a

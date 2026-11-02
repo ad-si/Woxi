@@ -10333,18 +10333,28 @@ mod color_profile_data {
   use super::*;
 
   // A ColorProfileData color space names its data space, once it holds a
-  // profile (at least the 128-byte ICC header).
+  // profile (the 128-byte ICC header with its `acsp` signature).
   #[test]
   fn image_with_color_profile_color_space() {
     clear_state();
     assert_eq!(
       interpret(
-        "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
-         NumericArray[ConstantArray[0, 200], \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+        "bytes = ReplacePart[ConstantArray[0, 200], Thread[Range[37, 40] -> ToCharacterCode[\"acsp\"]]];\n\
+         i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[bytes, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
          {ImageQ[i], ImageColorSpace[i]}"
       )
       .unwrap(),
       "{True, RGB}"
+    );
+    // Without the signature the bytes are no profile.
+    assert_eq!(
+      interpret(
+        "Quiet[ImageQ[Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[ConstantArray[0, 200], \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]]]"
+      )
+      .unwrap(),
+      "False"
     );
   }
 
