@@ -18777,8 +18777,10 @@ fn pdf_noncentral_student_t(dargs: &[Expr], x: Expr) -> Expr {
 
 // ─── SmoothKernelDistribution ───────────────────────────────────────
 
-/// The kernels of `SmoothKernelDistribution`, each scaled to unit variance
-/// so the bandwidth is the kernel's standard deviation, as Wolfram does.
+/// The kernels of `SmoothKernelDistribution`. The Gaussian and
+/// Epanechnikov ones have unit variance (the bandwidth is their standard
+/// deviation), the others are the textbook kernels on [-1, 1], as Wolfram
+/// does.
 #[derive(Clone, Copy)]
 enum SmoothKernel {
   Gaussian,
@@ -18786,6 +18788,7 @@ enum SmoothKernel {
   Rectangular,
   Triangular,
   Biweight,
+  Cosine,
 }
 
 impl SmoothKernel {
@@ -18806,47 +18809,31 @@ impl SmoothKernel {
         let r = 3f64.sqrt();
         if u.abs() < r { 1.0 / (2.0 * r) } else { 0.0 }
       }
+      // wolframscript scales only the Epanechnikov kernel to unit
+      // variance; the triangular, biweight and cosine kernels live on
+      // [-1, 1] (decoded from its stored density grids).
       Self::Triangular => {
-        let r = 6f64.sqrt();
-        if u.abs() < r {
-          (1.0 - u.abs() / r) / r
+        if u.abs() < 1.0 {
+          1.0 - u.abs()
         } else {
           0.0
         }
       }
       Self::Biweight => {
-        let r = 7f64.sqrt();
-        if u.abs() < r {
-          15.0 / (16.0 * r) * (1.0 - u * u / 7.0).powi(2)
+        if u.abs() < 1.0 {
+          15.0 / 16.0 * (1.0 - u * u).powi(2)
+        } else {
+          0.0
+        }
+      }
+      Self::Cosine => {
+        if u.abs() < 1.0 {
+          std::f64::consts::FRAC_PI_4 * (std::f64::consts::FRAC_PI_2 * u).cos()
         } else {
           0.0
         }
       }
     }
-  }
-
-  /// The kernel's cumulative distribution, where it has a closed form.
-  fn cumulative(self, u: f64) -> Option<f64> {
-    Some(match self {
-      Self::Gaussian => 0.5 * erfc_f64(-u / 2f64.sqrt()),
-      Self::Epanechnikov => {
-        let t = (u / 5f64.sqrt()).clamp(-1.0, 1.0);
-        0.5 + 0.75 * t - 0.25 * t * t * t
-      }
-      Self::Rectangular => {
-        let r = 3f64.sqrt();
-        ((u + r) / (2.0 * r)).clamp(0.0, 1.0)
-      }
-      Self::Triangular => {
-        let t = (u / 6f64.sqrt()).clamp(-1.0, 1.0);
-        if t < 0.0 {
-          (1.0 + t).powi(2) / 2.0
-        } else {
-          1.0 - (1.0 - t).powi(2) / 2.0
-        }
-      }
-      Self::Biweight => return None,
-    })
   }
 }
 
@@ -18892,6 +18879,7 @@ fn smooth_kernel_parts(
       "Rectangular" => SmoothKernel::Rectangular,
       "Triangular" => SmoothKernel::Triangular,
       "Biweight" => SmoothKernel::Biweight,
+      "Cosine" => SmoothKernel::Cosine,
       _ => return None,
     },
     Some(_) => return None,
@@ -18916,9 +18904,142 @@ pub(crate) fn silverman_bandwidth(data: &[f64]) -> f64 {
   0.9 * spread * n.powf(-0.2)
 }
 
-/// PDF or CDF of a `SmoothKernelDistribution` at a numeric point: the
-/// average of the kernels centred on the data, scaled by the bandwidth.
-/// `None` for a symbolic point or an unsupported specification.
+/// The density of a `SmoothKernelDistribution` the way wolframscript
+/// stores it: 512 values on an even grid from `min - 5 h` to `max + 5 h`,
+/// computed from the data linearly binned onto that grid, convolved with
+/// the kernel (cut off beyond `5 h`) and scaled so the trapezoid rule
+/// integrates to 1. Between grid points the density is linear. Decoded
+/// against wolframscript's `DataDistribution["SmoothKernel", …]`: the grid
+/// values agree to the last bit.
+struct SmoothKernelGrid {
+  lo: f64,
+  delta: f64,
+  values: Vec<f64>,
+}
+
+const SMOOTH_KERNEL_POINTS: usize = 512;
+
+thread_local! {
+  /// The last grid built (plots evaluate the same distribution many times).
+  static SMOOTH_KERNEL_CACHE: std::cell::RefCell<Option<(Vec<u64>, std::rc::Rc<SmoothKernelGrid>)>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+fn smooth_kernel_grid(
+  data: &[f64],
+  h: f64,
+  kernel: SmoothKernel,
+) -> std::rc::Rc<SmoothKernelGrid> {
+  let mut key: Vec<u64> = data.iter().map(|x| x.to_bits()).collect();
+  key.push(h.to_bits());
+  key.push(kernel as u64);
+  if let Some(grid) = SMOOTH_KERNEL_CACHE.with(|c| {
+    c.borrow()
+      .as_ref()
+      .filter(|(k, _)| *k == key)
+      .map(|(_, g)| g.clone())
+  }) {
+    return grid;
+  }
+  let m = SMOOTH_KERNEL_POINTS;
+  let min = data.iter().copied().fold(f64::INFINITY, f64::min);
+  let max = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+  let (lo, hi) = (min - 5.0 * h, max + 5.0 * h);
+  let delta = (hi - lo) / (m - 1) as f64;
+  let node = |i: usize| lo + i as f64 * delta;
+  // Linear binning: each point splits its unit weight between the two grid
+  // points around it.
+  let mut weights = vec![0.0; m];
+  for x in data {
+    let pos = (x - lo) / delta;
+    let j = (pos.floor() as usize).min(m - 1);
+    let frac = pos - j as f64;
+    weights[j] += 1.0 - frac;
+    if j + 1 < m {
+      weights[j + 1] += frac;
+    }
+  }
+  let occupied: Vec<usize> = (0..m).filter(|&j| weights[j] != 0.0).collect();
+  let reach = (5.0 * h / delta).floor() as usize;
+  let mut values: Vec<f64> = (0..m)
+    .map(|i| {
+      occupied
+        .iter()
+        .filter(|&&j| i.abs_diff(j) <= reach)
+        .map(|&j| weights[j] * kernel.density((node(i) - node(j)) / h))
+        .sum()
+    })
+    .collect();
+  let total = (values.iter().sum::<f64>()
+    - f64::midpoint(values[0], values[m - 1]))
+    * delta;
+  for v in &mut values {
+    *v /= total;
+  }
+  let grid = std::rc::Rc::new(SmoothKernelGrid { lo, delta, values });
+  SMOOTH_KERNEL_CACHE.with(|c| *c.borrow_mut() = Some((key, grid.clone())));
+  grid
+}
+
+impl SmoothKernelGrid {
+  fn hi(&self) -> f64 {
+    self.lo + (self.values.len() - 1) as f64 * self.delta
+  }
+
+  /// The grid cell holding `x` and the fraction of the way across it.
+  fn cell(&self, x: f64) -> (usize, f64) {
+    let pos = (x - self.lo) / self.delta;
+    let i = (pos.floor().max(0.0) as usize).min(self.values.len() - 2);
+    (i, pos - i as f64)
+  }
+
+  fn pdf(&self, x: f64) -> f64 {
+    if !(self.lo..=self.hi()).contains(&x) {
+      return 0.0;
+    }
+    let (i, t) = self.cell(x);
+    self.values[i] + t * (self.values[i + 1] - self.values[i])
+  }
+
+  fn cdf(&self, x: f64) -> f64 {
+    if x <= self.lo {
+      return 0.0;
+    }
+    if x >= self.hi() {
+      return 1.0;
+    }
+    let (i, t) = self.cell(x);
+    let full: f64 = (0..i)
+      .map(|k| f64::midpoint(self.values[k], self.values[k + 1]) * self.delta)
+      .sum();
+    let at_x = self.values[i] + t * (self.values[i + 1] - self.values[i]);
+    full + f64::midpoint(self.values[i], at_x) * t * self.delta
+  }
+
+  /// Mean and variance by the trapezoid rule on the grid; the variance gets
+  /// `δ^2/3` on top, as wolframscript's does.
+  fn mean_variance(&self) -> (f64, f64) {
+    let m = self.values.len();
+    let weight = |i: usize| {
+      if i == 0 || i == m - 1 {
+        self.delta / 2.0
+      } else {
+        self.delta
+      }
+    };
+    let node = |i: usize| self.lo + i as f64 * self.delta;
+    let mean: f64 = (0..m).map(|i| weight(i) * node(i) * self.values[i]).sum();
+    let var: f64 = (0..m)
+      .map(|i| weight(i) * (node(i) - mean).powi(2) * self.values[i])
+      .sum::<f64>()
+      + self.delta * self.delta / 3.0;
+    (mean, var)
+  }
+}
+
+/// PDF or CDF of a `SmoothKernelDistribution` at a numeric point, from its
+/// grid density (see `smooth_kernel_grid`). `None` for a symbolic point or
+/// an unsupported specification.
 pub(crate) fn smooth_kernel_value(
   dargs: &[Expr],
   x: &Expr,
@@ -18926,30 +19047,18 @@ pub(crate) fn smooth_kernel_value(
 ) -> Option<Expr> {
   let (data, h, kernel) = smooth_kernel_parts(dargs)?;
   let x = try_eval_to_f64(x)?;
-  let n = data.len() as f64;
-  let value = if cumulative {
-    let mut sum = 0.0;
-    for xi in &data {
-      sum += kernel.cumulative((x - xi) / h)?;
-    }
-    sum / n
+  let grid = smooth_kernel_grid(&data, h, kernel);
+  Some(Expr::Real(if cumulative {
+    grid.cdf(x)
   } else {
-    data
-      .iter()
-      .map(|xi| kernel.density((x - xi) / h))
-      .sum::<f64>()
-      / (n * h)
-  };
-  Some(Expr::Real(value))
+    grid.pdf(x)
+  }))
 }
 
-/// Mean and variance of a `SmoothKernelDistribution`: the data's mean, and
-/// its population variance plus the kernel's (the bandwidth squared).
+/// Mean and variance of a `SmoothKernelDistribution`, from its grid density.
 fn smooth_kernel_mean_variance(dargs: &[Expr]) -> Option<(Expr, Expr)> {
-  let (data, h, _) = smooth_kernel_parts(dargs)?;
-  let n = data.len() as f64;
-  let mean = data.iter().sum::<f64>() / n;
-  let var = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n + h * h;
+  let (data, h, kernel) = smooth_kernel_parts(dargs)?;
+  let (mean, var) = smooth_kernel_grid(&data, h, kernel).mean_variance();
   Some((Expr::Real(mean), Expr::Real(var)))
 }
 

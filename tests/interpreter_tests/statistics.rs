@@ -12020,9 +12020,10 @@ mod count_level_pruning {
 mod smooth_kernel_distribution {
   use super::*;
 
-  // The kernel density estimate itself (wolframscript bins it, so its
-  // values agree to about six digits): Gaussian by default, other kernels
-  // scaled to unit variance, Silverman's bandwidth when none is given.
+  // wolframscript's grid density: the data linearly binned onto 512 points
+  // from min - 5 h to max + 5 h, convolved with the kernel, linear between
+  // the points. Gaussian by default, Silverman's bandwidth when none is
+  // given.
   #[test]
   fn density_distribution_and_moments() {
     assert_eq!(
@@ -12033,7 +12034,38 @@ mod smooth_kernel_distribution {
          1.5], PDF[SmoothKernelDistribution[{1., 2., 3.5, 4.2, 7.}], 1.5]}]"
       )
       .unwrap(),
-      "{32272, 33334, 216667, 130556, 35777, 14975}"
+      "{32272, 33334, 216667, 130567, 35774, 14974}"
+    );
+  }
+
+  #[test]
+  fn grid_density_values() {
+    assert_eq!(
+      interpret(
+        "d = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; \
+         Round[10^12 {PDF[d, 1.5], CDF[d, 4.7], Mean[d], PDF[d, -1.]}]"
+      )
+      .unwrap(),
+      "{322717217822, 997264590656, 2166666665818, 89383908}"
+    );
+    // Outside the grid the density is 0 and the distribution is 0 or 1.
+    assert_eq!(
+      interpret(
+        "d = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; \
+         {PDF[d, 7.], CDF[d, -2.], CDF[d, 8.]}"
+      )
+      .unwrap(),
+      "{0., 0., 1.}"
+    );
+    // The triangular and biweight kernels live on [-1, 1].
+    assert_eq!(
+      interpret(
+        "Round[10^10 {PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.7, \
+         \"Triangular\"], 2.2], PDF[SmoothKernelDistribution[{1., 2., 3.5}, \
+         0.7, \"Biweight\"], 2.2]}]"
+      )
+      .unwrap(),
+      "{3400816729, 3764185650}"
     );
   }
 }
