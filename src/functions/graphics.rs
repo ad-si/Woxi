@@ -2700,6 +2700,31 @@ fn collect_primitives(
         "JoinedCurve" if !args.is_empty() => {
           collect_primitives(&args[0], style, prims, errors);
         }
+        // AxisObject[curve, {min, max}, opts…] draws `curve` as an axis; its
+        // stroke follows BaseStyle and then AxisStyle (the latter wins).
+        "AxisObject" if !args.is_empty() => {
+          let saved = style.clone();
+          for key in ["BaseStyle", "AxisStyle"] {
+            for opt in &args[1..] {
+              if let Expr::Rule {
+                pattern,
+                replacement,
+              } = opt
+                && matches!(pattern.as_ref(), Expr::Identifier(n) if n == key)
+              {
+                let directives: Vec<Expr> = match replacement.as_ref() {
+                  Expr::List(items) => items.to_vec(),
+                  other => vec![other.clone()],
+                };
+                for d in style_directives_in_application_order(&directives) {
+                  apply_directive(d, style);
+                }
+              }
+            }
+          }
+          collect_primitives(&args[0], style, prims, errors);
+          *style = saved;
+        }
         "HalfPlane" => {
           parse_half_plane(args, style, prims);
         }

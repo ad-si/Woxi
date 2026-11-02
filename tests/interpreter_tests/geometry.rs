@@ -6493,6 +6493,22 @@ mod graphics_object_regions {
       "AxisObject[Line[{{0, 0}, {1, 0}}]]"
     );
   }
+
+  // AxisObject draws its curve in the AxisStyle (over BaseStyle) colour.
+  #[test]
+  fn axis_object_uses_axis_style_colour() {
+    let svg = interpret(
+      "ExportString[Graphics[{AxisObject[Line[{{0, 0}, {1, 1}}], {0, 1}, AxisStyle -> Blue, BaseStyle -> Red]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("rgb(0,0,255)"), "{svg}");
+    assert!(!svg.contains("rgb(255,0,0)"), "{svg}");
+    let svg = interpret(
+      "ExportString[Graphics[{AxisObject[Line[{{0, 0}, {1, 1}}], {0, 1}, BaseStyle -> Red]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+  }
 }
 
 mod triangle_constructor_tests {
