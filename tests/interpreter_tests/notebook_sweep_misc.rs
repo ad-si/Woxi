@@ -2,6 +2,27 @@
 //! semantic bugs that surfaced as generic Part/list/argument messages.
 use super::*;
 
+mod same_q_without_rendering {
+  use super::*;
+
+  // Parts compare structurally, and a number never equals an expression
+  // holding a call: comparing `1` with `-InterpolatingFunction[…][t]` used
+  // to render the whole table, per plot sample
+  // (SeparationOfMethanolFromWaterByBatchRectification).
+  #[test]
+  fn parts_and_numbers_against_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Hold[a[[1]]] === Hold[a[[1]]], Hold[a[[1]]] === Hold[a[[2]]], \
+         1 === -f[x], 2 === E, 1 === 1., x === \"x\"}"
+      )
+      .unwrap(),
+      "{True, False, False, False, False, False}"
+    );
+  }
+}
+
 mod internal_messages {
   use super::*;
 

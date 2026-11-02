@@ -3753,8 +3753,99 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
     {
       false
     }
+    // A list in either representation is compared element by element (a
+    // plot body's `{InterpolatingFunction[…], …}` against its evaluated
+    // copy rendered every table per sample).
+    (Expr::List(xs), Expr::FunctionCall { name, args })
+    | (Expr::FunctionCall { name, args }, Expr::List(xs))
+      if name == "List" =>
+    {
+      xs.len() == args.len()
+        && xs.iter().zip(args.iter()).all(|(x, y)| expr_equal(x, y))
+    }
+    // A number never prints like a symbol, a string or a number of the
+    // other kind (`1` against `1.`), and a symbol or a string never prints
+    // like a compound expression.
+    _ if (is_number(a) && is_name(b))
+      || (is_number(b) && is_name(a))
+      || (is_exact_number(a) && is_inexact_number(b))
+      || (is_exact_number(b) && is_inexact_number(a))
+      || (is_name(a) && is_structured(b))
+      || (is_name(b) && is_structured(a)) =>
+    {
+      false
+    }
+    (
+      Expr::Part {
+        expr: e1,
+        index: i1,
+      },
+      Expr::Part {
+        expr: e2,
+        index: i2,
+      },
+    ) => expr_equal(e1, e2) && expr_equal(i1, i2),
+    // A number against an expression that cannot print as one (it holds a
+    // symbol or a call that is no arithmetic): `1` against
+    // `-InterpolatingFunction[…][t]` rendered the whole table per sample.
+    _ if (is_number(a) && !may_print_as_number(b))
+      || (is_number(b) && !may_print_as_number(a)) =>
+    {
+      false
+    }
     _ => expr_to_string(a) == expr_to_string(b),
   }
+}
+
+/// Whether `e` may stand for a number atom: a number, or an operator node
+/// on numbers alone, the form a parsed `-5` can take. A call such as a held
+/// `Times[-1, 5]` is no number, as in wolframscript.
+fn may_print_as_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      may_print_as_number(left) && may_print_as_number(right)
+    }
+    Expr::UnaryOp { operand, .. } => may_print_as_number(operand),
+    _ => false,
+  }
+}
+
+fn is_exact_number(e: &Expr) -> bool {
+  matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+}
+
+fn is_inexact_number(e: &Expr) -> bool {
+  matches!(e, Expr::Real(_) | Expr::BigFloat(..))
+}
+
+/// A machine or arbitrary-precision number atom.
+fn is_number(e: &Expr) -> bool {
+  is_exact_number(e) || is_inexact_number(e)
+}
+
+/// An expression that prints with brackets, operators or braces.
+fn is_structured(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::FunctionCall { .. }
+      | Expr::BinaryOp { .. }
+      | Expr::UnaryOp { .. }
+      | Expr::Comparison { .. }
+      | Expr::CurriedCall { .. }
+      | Expr::List(_)
+      | Expr::Rule { .. }
+      | Expr::RuleDelayed { .. }
+      | Expr::Association(_)
+  )
+}
+
+/// A symbol or string atom.
+fn is_name(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))
 }
 
 fn is_atom(e: &Expr) -> bool {
