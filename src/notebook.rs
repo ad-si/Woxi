@@ -2453,10 +2453,18 @@ fn box_part_source(part: &str) -> String {
       // `\<…\>` is the linear-syntax spelling of a string literal's
       // quotes (`"\<surface 1\>"` is the string `"surface 1"`), so the
       // element is a string literal just like `"\"…\""`.
-      canonical_linear_syntax(&format!(
-        "\"{}\"",
-        escape_unescaped_quotes(&unescape_code_string(inner))
-      ))
+      let body = unescape_code_string(inner);
+      // `\<\"…\"\>` already carries the literal's own quotes (an empty
+      // string is `\<\"\"\>`); wrapping them again would turn it into
+      // the two-character string `""`.
+      if body.len() >= 2 && body.starts_with('"') && body.ends_with('"') {
+        canonical_linear_syntax(&body)
+      } else {
+        canonical_linear_syntax(&format!(
+          "\"{}\"",
+          escape_unescaped_quotes(&body)
+        ))
+      }
     } else {
       unescape_code_string(inner)
     }
@@ -7909,6 +7917,19 @@ Cell["Chapter 2", "Chapter"]
     assert!(result.contains("Point["), "{result}");
     // The reconstructed source must actually parse as Wolfram Language.
     assert!(crate::parse_to_expr(&result).is_ok(), "{result}");
+  }
+
+  #[test]
+  fn test_empty_string_literal_box_leaf_stays_empty() {
+    // `\<\"\"\>` is the box spelling of the empty string literal; it must
+    // not be quoted a second time into the two-character string `""`.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[GridBox[{{"\<\"\"\>"}, {"\"a\""}}]], "Output"], Cell[BoxData[RowBox[{"f", "[", "\<\"\"\>", "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    assert_eq!(flat[0].1.content, r#"{{""}, {"a"}}"#);
+    assert_eq!(flat[1].1.content, r#"f[""]"#);
   }
 
   #[test]
