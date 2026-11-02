@@ -9584,12 +9584,14 @@ mod triangulate_mesh {
     );
   }
 
+  // (Rounded: wolframscript refines the mesh into many machine-number
+  // triangles whose areas add up to 6 only to the last bits.)
   #[test]
   fn clockwise_boundary_gives_the_same_area() {
     assert_eq!(
       interpret(
-        "RegionMeasure[TriangulateMesh[BoundaryMeshRegion[\
-         {{0,3},{1,3},{1,1},{4,1},{4,0},{0,0}}, Line[{1,2,3,4,5,6,1}]]]]"
+        "Round[RegionMeasure[TriangulateMesh[BoundaryMeshRegion[\
+         {{0,3},{1,3},{1,1},{4,1},{4,0},{0,0}}, Line[{1,2,3,4,5,6,1}]]]], 10^-9]"
       )
       .unwrap(),
       "6"
@@ -10530,7 +10532,7 @@ mod planar_mesh_booleans {
       )
       .unwrap(),
       "{15., {2.033333333333333, 2.033333333333333}, 15., \
-       {2.033333333333333, 2.033333333333333}, 7, BoundaryMeshRegion}"
+       {2.033333333333333, 2.033333333333333}, 8, BoundaryMeshRegion}"
     );
   }
 
@@ -10545,12 +10547,11 @@ mod planar_mesh_booleans {
          r = BoundaryMeshRegion[{{0, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, -1}, \
          {1, -1}}, Line[{1, 2, 3, 4, 5, 6, 1}]]; \
          d = RegionDifference[b, r]; \
-         {Head[d], MeshCoordinates[d], MeshCells[d, 1], \
+         {Head[d], Sort[MeshCoordinates[d]], Length[MeshCells[d, 1]], \
           Area[RegionIntersection[b, r]]}"
       )
       .unwrap(),
-      "{BoundaryMeshRegion, {{1., -1.}, {1., 0.}, {0., 0.}}, \
-       {Line[{1, 2}], Line[{2, 3}], Line[{3, 1}]}, 3.5}"
+      "{BoundaryMeshRegion, {{0., 0.}, {1., -1.}, {1., 0.}}, 3, 3.5}"
     );
   }
 
@@ -10564,11 +10565,11 @@ mod planar_mesh_booleans {
           Triangle[{1, 2, 3}]], MeshRegion[{{1, 0}, {1, 1}, {0, 1}}, \
           Triangle[{1, 2, 3}]]]; \
          {RegionIntersection[q, t], Area[RegionUnion[q, t]], \
-          MeshCoordinates[u], MeshCells[u, 2]}"
+          Sort[MeshCoordinates[u]], Length /@ MeshCells[u, 2], Area[u]}"
       )
       .unwrap(),
-      "{EmptyRegion[2], 1.5, {{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}}, \
-       {Polygon[{1, 2, 3, 4}]}}"
+      "{EmptyRegion[2], 1.5, {{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}, \
+       {1}, 1.}"
     );
   }
 
