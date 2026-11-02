@@ -2159,7 +2159,7 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
         {
-          state.playing = !state.playing;
+          state.toggle_play();
         }
         Task::none()
       }
@@ -11129,6 +11129,62 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       }
       other => panic!("expected a dedicated Trigger row, got {other:?}"),
     }
+  }
+
+  fn trigger_value(state: &manipulate::ManipulateState) -> f64 {
+    match &state.controls[0] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger row, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn trigger_stops_after_the_repetitions_set_by_another_control() {
+    // `AnimationRepetitions -> reps` (or `Dynamic[reps]`) names a slider:
+    // a press plays that many sweeps and then pauses on the last frame.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Disk[{0, 0}, t], \
+       {{t, 0, \"time\"}, 0, 2, 1, ControlType -> Trigger, \
+       AnimationRepetitions -> Dynamic[reps]}, \
+       {{reps, 2, \"repetitions\"}, 1, 5, 1}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    state.toggle_play();
+    assert!(state.playing);
+    // Sweep 1: t = 0 -> 1 -> 2, then wraps to 0 (still playing).
+    for _ in 0..3 {
+      state.advance_animation();
+    }
+    assert!(state.playing, "one of two sweeps must keep playing");
+    assert_eq!(trigger_value(&state), 0.0);
+    // Sweep 2 ends on the final frame and pauses.
+    for _ in 0..3 {
+      state.advance_animation();
+    }
+    assert!(!state.playing, "the requested sweeps are done");
+    assert_eq!(trigger_value(&state), 2.0);
+    // Pressing play again starts over.
+    state.toggle_play();
+    assert!(state.playing);
+    assert_eq!(trigger_value(&state), 0.0);
+  }
+
+  #[test]
+  fn trigger_with_a_literal_repetition_count_plays_once() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Disk[{0, 0}, t], \
+       {{t, 0}, 0, 1, 1, ControlType -> Trigger, \
+       AnimationRepetitions -> 1}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    state.toggle_play();
+    state.advance_animation();
+    assert!(state.playing);
+    state.advance_animation();
+    assert!(!state.playing);
+    assert_eq!(trigger_value(&state), 1.0);
   }
 
   #[test]

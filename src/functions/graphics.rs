@@ -27081,6 +27081,39 @@ pub fn locator_binding_code(
   .unwrap_or(points_code)
 }
 
+/// How many sweeps a `ControlType -> Trigger` plays per press
+/// (`AnimationRepetitions`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum TriggerRepetitions {
+  /// A literal count (`AnimationRepetitions -> 3`).
+  Count(u32),
+  /// Another control's variable (`AnimationRepetitions -> reps` or
+  /// `Dynamic[reps]`), read live from the widget's bindings.
+  Variable(String),
+}
+
+/// The `AnimationRepetitions` value of a Trigger spec; `None` for
+/// `Infinity` (the default) or anything that isn't a count or a variable.
+fn trigger_repetitions_from_expr(e: &Expr) -> Option<TriggerRepetitions> {
+  match e {
+    Expr::Integer(n) if *n >= 1 => {
+      u32::try_from(*n).ok().map(TriggerRepetitions::Count)
+    }
+    Expr::Identifier(s) if s != "Infinity" => {
+      Some(TriggerRepetitions::Variable(s.clone()))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::Identifier(s) => Some(TriggerRepetitions::Variable(s.clone())),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// A single control inside a Manipulate expression.
 ///
 /// Continuous controls correspond to `{u, umin, umax}` or
@@ -27237,6 +27270,10 @@ pub enum ManipulateControl {
     /// `AnimationRunning -> True`: start sweeping immediately. Wolfram's
     /// Trigger sits paused until pressed by default.
     running: bool,
+    /// `AnimationRepetitions -> n`: how many sweeps a press plays before
+    /// the trigger stops by itself. `None` (the default, `Infinity`) loops
+    /// forever.
+    repetitions: Option<TriggerRepetitions>,
     label: String,
     label_runs: Vec<LabelRun>,
   },
@@ -35202,6 +35239,19 @@ fn parse_manipulate_control(
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
       )
     });
+    let repetitions = items.iter().find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRepetitions") => {
+        trigger_repetitions_from_expr(replacement)
+      }
+      _ => None,
+    });
     return Some(ParsedControl::Visible {
       control: ManipulateControl::Trigger {
         name,
@@ -35210,6 +35260,7 @@ fn parse_manipulate_control(
         step,
         initial,
         running,
+        repetitions,
         label,
         label_runs,
       },
@@ -37148,6 +37199,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         step,
         initial,
         running,
+        repetitions,
         label,
         label_runs,
       } => {
@@ -37159,7 +37211,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           "null".to_string()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"trigger","name":"{}","label":"{}","labelRuns":{},"min":{},"max":{},"step":{},"initial":{},"running":{}}}"#,
+          r#"{{"kind":"trigger","name":"{}","label":"{}","labelRuns":{},"min":{},"max":{},"step":{},"initial":{},"running":{},"repetitions":{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -37168,6 +37220,12 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           step,
           initial,
           running,
+          match repetitions {
+            Some(TriggerRepetitions::Count(n)) => n.to_string(),
+            Some(TriggerRepetitions::Variable(v)) =>
+              format!("\"{}\"", json_escape_manipulate(v)),
+            None => "null".to_string(),
+          },
         ));
       }
       ManipulateControl::Button {
