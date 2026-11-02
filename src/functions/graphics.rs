@@ -35702,6 +35702,22 @@ fn parse_manipulate_control(
   // spec — and with it the variable's only value — the way a bound that
   // fails to evaluate (an unbound symbol the caller's post-body-bindings
   // retry might still resolve to a real list) must keep doing.
+  // `{u, func}` with a pure function builds a custom control for `u`
+  // (`Control@{play, ButtonBar[{…}] &}`); without an initial value `u` is
+  // a variable the body or the widget sets — the function is the widget,
+  // never the variable's value.
+  if bounds.len() == 1
+    && explicit_initial.is_none()
+    && (matches!(
+      bounds[0],
+      Expr::Function { .. } | Expr::NamedFunction { .. }
+    ) || matches!(bounds[0], Expr::FunctionCall { name, .. } if name == "Function"))
+  {
+    return Some(ParsedControl::State {
+      name,
+      value: "Null".to_string(),
+    });
+  }
   if bounds.len() == 1
     && crate::evaluator::evaluate_expr_to_expr(bounds[0]).is_ok()
   {

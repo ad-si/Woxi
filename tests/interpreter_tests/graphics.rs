@@ -34829,6 +34829,31 @@ mod manipulate {
     assert!(json.contains(r#""maxCode":"#), "json: {json}");
   }
 
+  // `{u, func}` without an initial value: `func` builds the widget and `u`
+  // is state the body sets on its first run — never bound to the function
+  // itself (Replay10GreatChessGames, `Control@{play, ButtonBar[…] &}`).
+  #[test]
+  fn custom_control_function_without_initial_value() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[If[g != pg, play = 1; pg = g]; {g, play}, \
+       {{pg, 0}, None}, {g, {1, 2}}, \
+       Control@{play, ButtonBar[{\"<\" :> (play -= 1), \">\" :> (play += 1)}] &}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let play = spec
+      .state
+      .iter()
+      .find(|(n, _)| n == "play")
+      .map(|(_, v)| v.as_str());
+    assert!(
+      matches!(play, Some(v) if !v.contains("ButtonBar")),
+      "play must be state, not the control function: {:?}",
+      spec.state
+    );
+    assert!(!spec.body_code.contains("ButtonBar"), "{}", spec.body_code);
+  }
+
   // `{{u, uinit, ulbl}, func}` is a custom control: `func` builds the
   // widget instead of describing a range. The Demonstrations idiom is a
   // `Button` that resets the variable, so the row is the button and the
