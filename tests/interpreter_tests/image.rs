@@ -9757,11 +9757,13 @@ mod morphology_3d {
     );
     assert_eq!(
       interpret(
-        "StringEndsQ[ToString[InputForm[ExampleData[{\"TestImage\", \"Moon\"}]]], \
+        "StringContainsQ[ToString[InputForm[ExampleData[{\"TestImage\", \"Moon\"}]]], \
          \"\\\"UnsignedInteger8\\\"], \\\"Byte\\\", ColorSpace -> \\\"Grayscale\\\", \
-         Interleaving -> None]\"]"
+         Interleaving -> None\"]"
       )
       .unwrap(),
+      // (Contains, not ends with: wolframscript's test image also carries
+      // a MetaInformation option, which Woxi's images do not have.)
       "True"
     );
   }
