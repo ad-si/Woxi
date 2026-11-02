@@ -109,7 +109,8 @@ pub fn dispatch_polynomial_functions(
       if p == 0 {
         return dispatch_polynomial_functions(name, &args[..2]);
       }
-      let prime = p > 1 && (2..).take_while(|d| d * d <= p).all(|d| p % d != 0);
+      let prime =
+        p > 1 && (2..p).take_while(|d| d * d <= p).all(|d| p % d != 0);
       if !prime {
         crate::emit_message(&format!(
           "Decompose::modp: The value of the option Modulus -> {p} should be \
