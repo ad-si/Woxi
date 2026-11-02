@@ -9631,6 +9631,7 @@ mod triangulate_mesh {
     );
   }
 
+  // The highlights and labels ride along as the mesh's `Properties`.
   #[test]
   fn highlight_mesh_shows_the_mesh() {
     assert_eq!(
@@ -9640,7 +9641,14 @@ mod triangulate_mesh {
          Triangle[{{1,2,3}}]]"
       )
       .unwrap(),
-      "True"
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "m = MeshRegion[{{0,0},{1,0},{0,1}}, Triangle[{{1,2,3}}]]; ToString[Options /@ {HighlightMesh[m, Labeled[0, \"Index\"]], HighlightMesh[m, {{1, 2}, {0, 3}}], HighlightMesh[m, Labeled[{1, All}, \"Index\"]], HighlightMesh[m, {Style[0, Blue], Labeled[2, \"x\"]}], HighlightMesh[m, {2, 1}]}, InputForm]"
+      )
+      .unwrap(),
+      "{{Properties -> {{0, Default} -> MeshCellLabel -> \"Index\"}}, {Properties -> {{0, 3} -> MeshCellHighlight -> Directive[AbsolutePointSize[5], LABColor[0.46955436271454654, 0.6458308777218053, 0.45400449528052444]], {0, Default} -> MeshCellHighlight -> Automatic, {1, 2} -> MeshCellHighlight -> Directive[JoinForm[\"Round\"], AbsoluteThickness[3], LABColor[0.46955436271454654, 0.6458308777218053, 0.45400449528052444]], {1, Default} -> MeshCellHighlight -> Automatic}}, {Properties -> {{1, 1} -> MeshCellLabel -> \"Index\", {1, 2} -> MeshCellLabel -> \"Index\", {1, 3} -> MeshCellLabel -> \"Index\", {1, Default} -> MeshCellLabel -> Automatic}}, {Properties -> {{0, Default} -> MeshCellHighlight -> RGBColor[0, 0, 1], {2, Default} -> MeshCellLabel -> \"x\"}}, {Properties -> {{2, 1} -> MeshCellHighlight -> Hue[0.125, 0.5, 0.95], {2, Default} -> MeshCellHighlight -> Automatic}}}"
     );
   }
 

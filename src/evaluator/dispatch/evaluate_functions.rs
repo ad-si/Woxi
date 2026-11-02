@@ -5722,9 +5722,8 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
-  // HighlightMesh[mesh, spec, opts…] displays the mesh itself; the
-  // highlighting (and the cell labels `Labeled[…]` or `MeshCellLabel` would
-  // add) is not drawn.
+  // HighlightMesh[mesh, spec, opts…] is the mesh carrying the highlights and
+  // labels as `Properties` (which the renderer does not draw).
   if name == "HighlightMesh"
     && args.len() >= 2
     && args[2..]
@@ -5732,7 +5731,7 @@ fn evaluate_function_call_ast_inner(
       .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     && crate::functions::mesh_region::is_mesh_region(&args[0])
   {
-    return Ok(args[0].clone());
+    return highlight_mesh(args);
   }
 
   if name == "DiscretizeGraphics"
@@ -16344,6 +16343,205 @@ fn apply_user_overloads_to_subsets(
     }
   }
   Ok(None)
+}
+
+/// `HighlightMesh[mesh, spec, opts]`: the mesh with a `Properties` option
+/// holding a `MeshCellHighlight` and a `MeshCellLabel` entry per cell named
+/// (`{d, i}`, `{d, All}`) or per dimension (`{d, Default}`), the highlights
+/// first, by dimension, each dimension's named cells before its default
+/// (`Automatic` when only cells were named). `Labeled[spec, l]` labels,
+/// `Style[spec, s]` styles; a bare spec gets the default highlight.
+#[allow(clippy::unnecessary_wraps)]
+fn highlight_mesh(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mesh = &args[0];
+  let lab = || {
+    call(
+      "LABColor",
+      vec![
+        Expr::Real(0.46955436271454654),
+        Expr::Real(0.6458308777218053),
+        Expr::Real(0.45400449528052444),
+      ],
+    )
+  };
+  let default_highlight = |d: i128, specific: bool| match d {
+    0 => call(
+      "Directive",
+      vec![call1("AbsolutePointSize", Expr::Integer(5)), lab()],
+    ),
+    1 => call(
+      "Directive",
+      vec![
+        call1("JoinForm", Expr::String("Round".to_string())),
+        call1("AbsoluteThickness", Expr::Integer(3)),
+        lab(),
+      ],
+    ),
+    _ if specific => call(
+      "Hue",
+      vec![Expr::Real(0.125), Expr::Real(0.5), Expr::Real(0.95)],
+    ),
+    _ => call(
+      "Directive",
+      vec![
+        lab(),
+        call1(
+          "EdgeForm",
+          Expr::List(
+            vec![call1("JoinForm", Expr::String("Round".to_string())), lab()]
+              .into(),
+          ),
+        ),
+      ],
+    ),
+  };
+  let cell_count = |d: i128| -> usize {
+    evaluate_expr_to_expr(&call(
+      "MeshCellCount",
+      vec![mesh.clone(), Expr::Integer(d)],
+    ))
+    .ok()
+    .and_then(|c| expr_to_i128(&c))
+    .map_or(0, |c| c.max(0) as usize)
+  };
+  // (property: 0 highlight / 1 label, dim, cell or None for the default,
+  // value)
+  let mut entries: Vec<(u8, i128, Option<i128>, Expr)> = Vec::new();
+  // `value`: None for the default highlight of the cells named.
+  fn walk(
+    spec: &Expr,
+    prop: u8,
+    value: Option<&Expr>,
+    out: &mut Vec<(u8, i128, Option<i128>, Option<Expr>)>,
+    count: &dyn Fn(i128) -> usize,
+  ) {
+    match spec {
+      Expr::FunctionCall { name, args }
+        if name == "Labeled" && args.len() == 2 =>
+      {
+        walk(&args[0], 1, Some(&args[1]), out, count);
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() == 2 =>
+      {
+        let style = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          call("Directive", args[1..].to_vec())
+        };
+        walk(&args[0], 0, Some(&style), out, count);
+      }
+      Expr::Integer(d) => out.push((prop, *d, None, value.cloned())),
+      Expr::List(items) => match items.as_slice() {
+        [Expr::Integer(d), Expr::Integer(i)] => {
+          out.push((prop, *d, Some(*i), value.cloned()));
+        }
+        [Expr::Integer(d), Expr::Identifier(all)] if all == "All" => {
+          for i in 1..=count(*d) {
+            out.push((prop, *d, Some(i as i128), value.cloned()));
+          }
+        }
+        [Expr::Integer(d), Expr::String(_)] => {
+          out.push((prop, *d, None, value.cloned()));
+        }
+        _ => {
+          for item in items {
+            walk(item, prop, value, out, count);
+          }
+        }
+      },
+      _ => {}
+    }
+  }
+  let mut raw: Vec<(u8, i128, Option<i128>, Option<Expr>)> = Vec::new();
+  walk(&args[1], 0, None, &mut raw, &cell_count);
+  for opt in &args[2..] {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      continue;
+    };
+    let prop = match pattern.as_ref() {
+      Expr::Identifier(n) if n == "MeshCellHighlight" => 0,
+      Expr::Identifier(n) if n == "MeshCellLabel" => 1,
+      _ => continue,
+    };
+    let rules: Vec<&Expr> = match replacement.as_ref() {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for rule in rules {
+      if let Expr::Rule {
+        pattern: lhs,
+        replacement: rhs,
+      } = rule
+      {
+        walk(lhs, prop, Some(rhs), &mut raw, &cell_count);
+      }
+    }
+  }
+  for (prop, d, cell, value) in raw {
+    let value = value.unwrap_or_else(|| default_highlight(d, cell.is_some()));
+    entries.push((prop, d, cell, value));
+  }
+  let mut rules = Vec::new();
+  for prop in [0u8, 1] {
+    let mut dims: Vec<i128> = entries
+      .iter()
+      .filter(|e| e.0 == prop)
+      .map(|e| e.1)
+      .collect();
+    dims.sort_unstable();
+    dims.dedup();
+    let key = if prop == 0 {
+      "MeshCellHighlight"
+    } else {
+      "MeshCellLabel"
+    };
+    for d in dims {
+      let rule = |cell: Expr, value: Expr| {
+        rule_expr(
+          Expr::List(vec![Expr::Integer(d), cell].into()),
+          rule_expr(id_expr(key), value),
+        )
+      };
+      for e in entries.iter().filter(|e| e.0 == prop && e.1 == d) {
+        if let Some(i) = e.2 {
+          rules.push(rule(Expr::Integer(i), e.3.clone()));
+        }
+      }
+      let default = entries
+        .iter()
+        .rfind(|e| e.0 == prop && e.1 == d && e.2.is_none())
+        .map_or_else(|| id_expr("Automatic"), |e| e.3.clone());
+      rules.push(rule(id_expr("Default"), default));
+    }
+  }
+  let Expr::FunctionCall {
+    name: mesh_head,
+    args: mesh_args,
+  } = mesh
+  else {
+    return Ok(mesh.clone());
+  };
+  let mut new_args: Vec<Expr> = mesh_args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Properties"))
+    })
+    .cloned()
+    .collect();
+  if !rules.is_empty() {
+    new_args.push(rule_expr(id_expr("Properties"), Expr::List(rules.into())));
+  }
+  Ok(call(mesh_head, new_args))
 }
 
 /// Whether a package has been loaded (`Get`/`Needs`) this session. Until it

@@ -1787,6 +1787,20 @@ pub fn dispatch_predicate_functions(
           .collect();
         return Some(Ok(Expr::List(picked.into())));
       }
+      // A mesh region's options are the rules after its coordinates and
+      // cells.
+      if let Expr::FunctionCall { name, args: margs } = &func_arg
+        && (name == "MeshRegion" || name == "BoundaryMeshRegion")
+        && args.len() == 1
+      {
+        let opts: Vec<Expr> = margs
+          .iter()
+          .skip(1)
+          .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+          .cloned()
+          .collect();
+        return Some(Ok(Expr::List(opts.into())));
+      }
       // A rendered graphic carries the options it was drawn with.
       if let Some(opts) =
         crate::functions::graphics::graphics_options(&func_arg)
