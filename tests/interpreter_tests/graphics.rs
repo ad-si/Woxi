@@ -22149,6 +22149,50 @@ mod show {
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
   }
 
+  // `Show` of symbolic graphics builds what Wolfram builds: an option-free
+  // single graphic comes back as is; otherwise one primitive list (a
+  // single graphic's own, or a list of each graphic's) and one option list
+  // — Show's own options first, then the first graphic's.
+  #[test]
+  fn show_symbolic_result_structure() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[#, InputForm] & /@ {Show[Graphics[{Circle[{0, 0}]}]], Show[Graphics[Circle[{0, 0}]]], Show[Graphics[{Circle[{0, 0}]}, Axes -> True]], Show[Graphics[{Circle[{0, 0}]}], Axes -> True], Show[Graphics[{Circle[{0, 0}]}, Frame -> True], {}]}"
+      )
+      .unwrap(),
+      "{Graphics[{Circle[{0, 0}]}], Graphics[Circle[{0, 0}]], Graphics[{Circle[{0, 0}]}, {Axes -> True}], Graphics[{Circle[{0, 0}]}, {Axes -> True}], Graphics[{Circle[{0, 0}]}, {Frame -> True}]}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[#, InputForm] & /@ {Show[Graphics[{Red, Disk[{0, 0}]}], Graphics[{Blue, Circle[{1, 0}]}]], Show[Graphics[{Red, Disk[{0, 0}]}, Axes -> True], Graphics[{Blue, Circle[{1, 0}]}, Frame -> True]], Show[{Graphics[Disk[{0, 0}]], Graphics[Circle[{0, 0}]]}], Show[Graphics[Disk[{0, 0}], PlotRange -> 1, Axes -> True], PlotRange -> 3], Show[Graphics3D[Sphere[{0, 0, 0}]], Graphics3D[Cuboid[{0, 0, 0}]]]}"
+      )
+      .unwrap(),
+      "{Graphics[{{RGBColor[1, 0, 0], Disk[{0, 0}]}, {RGBColor[0, 0, 1], Circle[{1, 0}]}}, {}], Graphics[{{RGBColor[1, 0, 0], Disk[{0, 0}]}, {RGBColor[0, 0, 1], Circle[{1, 0}]}}, {Axes -> True}], Graphics[{Disk[{0, 0}], Circle[{0, 0}]}, {}], Graphics[Disk[{0, 0}], {PlotRange -> 3, PlotRange -> 1, Axes -> True}], Graphics3D[{Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}, {}]}"
+    );
+  }
+
+  // A symbol without a value is no graphic: Show stays unevaluated.
+  #[test]
+  fn show_of_a_symbol_cannot_combine() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ToString[Show[undefinedSymbol, Graphics[{Disk[]}]], InputForm]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Show[undefinedSymbol, Graphics[{Disk[{0, 0}]}]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Show::gcomb: Could not combine the graphics objects in Show[undefinedSymbol, -Graphics-]."
+    )));
+    let r = interpret_with_stdout("Show[undefinedSymbol]").unwrap();
+    assert_eq!(r.result, "Show[undefinedSymbol]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Show::gtype: Symbol is not a type of graphics."))
+    );
+  }
+
   /// Two plots merged by `Show` render through the ordinary plot renderer,
   /// so the first plot's frame and labels survive and each curve keeps the
   /// colour its own `PlotStyle` gave it.

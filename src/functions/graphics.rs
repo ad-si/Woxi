@@ -17374,7 +17374,137 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Legended", vec![shown, legend]))
 }
 
+/// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
+/// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
+/// otherwise the
+/// primitives — a single graphic's own, or a list of each graphic's — with
+/// one list of options, `Show`'s own followed by the first graphic's (a
+/// later graphic's options are dropped). A symbol or number among the
+/// graphics cannot be combined (`Show::gcomb`) and leaves `Show`
+/// unevaluated. Returns None for anything else (plots, images, meshes),
+/// which the general merge handles.
+fn show_symbolic_graphics(args: &[Expr], original: &[Expr]) -> Option<Expr> {
+  // A symbol can still stand for a graphic (Show's arguments can reach it
+  // unevaluated); only one without a value is no graphic at all.
+  fn resolve_arg(a: &Expr) -> Expr {
+    match a {
+      Expr::Identifier(_) => {
+        evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+      }
+      Expr::FunctionCall { name, .. } if name == "Graphics" => {
+        evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+      }
+      _ => a.clone(),
+    }
+  }
+  let resolved: Vec<Expr> = args.iter().map(resolve_arg).collect();
+  let original: Vec<Expr> = original
+    .iter()
+    .map(|a| match a {
+      Expr::List(items) => Expr::List(items.iter().map(resolve_arg).collect()),
+      other => resolve_arg(other),
+    })
+    .collect();
+  let original = original.as_slice();
+  if resolved.iter().zip(args).any(|(r, a)| {
+    matches!(a, Expr::Identifier(_)) && matches!(r, Expr::List(_))
+  }) {
+    return None;
+  }
+  let args = resolved.as_slice();
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let (graphics, own_options): (Vec<&Expr>, Vec<&Expr>) = {
+    let mut graphics = Vec::new();
+    let mut options = Vec::new();
+    for arg in args {
+      match arg {
+        Expr::List(items) if items.iter().all(is_option) => {
+          options.extend(items.iter());
+        }
+        _ if is_option(arg) => options.push(arg),
+        _ => graphics.push(arg),
+      }
+    }
+    (graphics, options)
+  };
+  if graphics.is_empty() {
+    return None;
+  }
+  let not_graphics = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::String(_)
+    ) && !matches!(e, Expr::Identifier(s) if s == "Null")
+  };
+  if graphics.iter().any(|g| not_graphics(g)) {
+    if let [single] = graphics.as_slice() {
+      let head = match single {
+        Expr::Identifier(_) => "Symbol",
+        Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
+        Expr::Real(_) => "Real",
+        _ => "String",
+      };
+      crate::emit_message(&format!(
+        "Show::gtype: {head} is not a type of graphics."
+      ));
+    } else {
+      crate::emit_message(&format!(
+        "Show::gcomb: Could not combine the graphics objects in {}.",
+        crate::syntax::expr_to_output(&unevaluated("Show", original))
+      ));
+    }
+    return Some(unevaluated("Show", original));
+  }
+  let head = match graphics[0] {
+    Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      name.as_str()
+    }
+    _ => return None,
+  };
+  let mut prims = Vec::with_capacity(graphics.len());
+  let mut first_options: Vec<Expr> = Vec::new();
+  for (i, g) in graphics.iter().enumerate() {
+    let Expr::FunctionCall { name, args: gargs } = g else {
+      return None;
+    };
+    if name != head || gargs.is_empty() || wraps_rendered_graphic(&gargs[0]) {
+      return None;
+    }
+    prims.push(gargs[0].clone());
+    if i == 0 {
+      for opt in gargs.iter().skip(1) {
+        match opt {
+          Expr::List(items) => first_options.extend(items.iter().cloned()),
+          other => first_options.push(other.clone()),
+        }
+      }
+    }
+  }
+  if graphics.len() == 1 && own_options.is_empty() && first_options.is_empty() {
+    return Some(graphics[0].clone());
+  }
+  let content = if prims.len() == 1 {
+    prims.pop().unwrap()
+  } else {
+    Expr::List(prims.into())
+  };
+  let options: Vec<Expr> = own_options
+    .into_iter()
+    .cloned()
+    .chain(first_options)
+    .collect();
+  Some(call(head, vec![content, Expr::List(options.into())]))
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
   let mut is_3d = false;
@@ -17423,6 +17553,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     args
   };
+
+  if let Some(result) = show_symbolic_graphics(args, original_args) {
+    return Ok(result);
+  }
 
   // `Show[image, opts…]` — a raster Image argument passes through: Show
   // of an image just displays it (sizing options like `ImageSize -> 100`
