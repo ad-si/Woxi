@@ -6265,8 +6265,9 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }
     // Setting[expr] is expr with every Dynamic[x, …] replaced by x and every
-    // control (Slider[…], Checkbox[…], an inline colour control, …) by the
-    // setting it holds, then evaluated: Setting[Dynamic[rs]] is rs's value.
+    // control (Slider[…], Checkbox[…], ColorSlider[…], …) by the setting it
+    // holds, then evaluated: Setting[Dynamic[rs]] is rs's value. Boxes are
+    // not controls: Setting[SliderBox[0.5]] stays as it is.
     "Setting" if args.len() == 1 => {
       fn settle(e: &Expr) -> Expr {
         match e {
@@ -6277,8 +6278,8 @@ pub fn dispatch_list_operations(
               | "Checkbox" | "CheckboxBar" | "InputField" | "PopupMenu"
               | "ActionMenu" | "SetterBar" | "RadioButtonBar" | "Toggler"
               | "TogglerBar" | "Opener" | "Manipulator" | "Animator"
-              | "ColorSetter" | "ColorSetterBox" | "ColorSlider"
-              | "ProgressIndicator" | "LocatorPane" => settle(&args[0]),
+              | "ColorSetter" | "ColorSlider" | "ProgressIndicator"
+              | "LocatorPane" => settle(&args[0]),
               _ => Expr::FunctionCall {
                 name: name.clone(),
                 args: args.iter().map(settle).collect(),

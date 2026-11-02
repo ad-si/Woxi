@@ -3919,24 +3919,26 @@ mod setting {
   }
 
   #[test]
-  fn color_setter_box_gives_its_color() {
+  fn color_slider_gives_its_color() {
+    assert_eq!(
+      interpret("Setting[ColorSlider[RGBColor[1, 0, 0]]]").unwrap(),
+      "RGBColor[1, 0, 0]"
+    );
+    assert_eq!(
+      interpret("c = Setting[ColorSetter[GrayLevel[0.5]]]; c").unwrap(),
+      "GrayLevel[0.5]"
+    );
+  }
+
+  // A box is not a control: Setting leaves it alone (wolframscript).
+  #[test]
+  fn boxes_are_left_alone() {
     assert_eq!(
       interpret(
         "Setting[ColorSetterBox[RGBColor[1, 0, 0], \"SwatchSpectrum\"]]"
       )
       .unwrap(),
-      "RGBColor[1, 0, 0]"
-    );
-  }
-
-  #[test]
-  fn usable_as_background_value() {
-    assert_eq!(
-      interpret(
-        "c = Setting[ColorSetterBox[GrayLevel[0.5], \"SwatchSpectrum\"]]; c"
-      )
-      .unwrap(),
-      "GrayLevel[0.5]"
+      "ColorSetterBox[RGBColor[1, 0, 0], SwatchSpectrum]"
     );
   }
 }
