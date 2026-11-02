@@ -24551,6 +24551,26 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // A flow written with another tank's accumulation (`L == 1 + N2'`) is not
+  // substituted into the weir relation that holds it under a power: it
+  // stays an algebraic unknown solved from that relation.
+  // wolframscript: {1.5851612136698356, 2.414838786330165,
+  // 1.9957684644319393}.
+  #[test]
+  fn dae_keeps_a_flow_with_a_derivative_out_of_a_power() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{N1'[t] == 2 - L[t], L[t] == 1 + N2'[t], \
+         N1[t] == L[t]^(2/3), N1[0] == 1, N2[0] == 0}, {N1, N2, L}, \
+         {t, 0, 3}]; Max[Abs[({N1[3], N2[3], L[3]} /. First[s]) - \
+         {1.5851612136698356, 2.414838786330165, 1.9957684644319393}]] \
+         < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A DAE with a Newton-solved constraint goes to the stiff method, which
   // crosses a steady stretch in a few long steps; where a step change in
   // the input then shortens them abruptly, the long steps are filled in

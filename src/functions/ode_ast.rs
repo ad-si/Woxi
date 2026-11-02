@@ -4924,6 +4924,16 @@ fn find_algebraic_constraint(
           && !expr_mentions_function(rhs, name)
           && never_differentiated(name)
           && !expr_size_exceeds(rhs, max_size)
+          // A solution holding a derivative keeps the equations linear in
+          // the derivatives only where the unknown enters linearly: a
+          // tray's liquid flow `L[t] == B[t] + N'[t]` substituted into its
+          // weir formula `L^(2/3)` would leave the derivative under a power.
+          && (derivative_orders(rhs).values().all(|&k| k == 0)
+            || odes.iter().enumerate().all(|(ej, other)| {
+              ej == ei
+                || polynomial_degree_in(other, &[name.as_str()])
+                  .is_some_and(|d| d <= 1)
+            }))
         {
           return Some((ei, fi, rhs.clone()));
         }
@@ -4995,11 +5005,11 @@ fn function_in_transcendental_context(
 /// leaving the unknowns to be found numerically at every evaluation. When
 /// the derivative-free equations and the never-differentiated unknowns they
 /// mention are equally many they form one coupled system; otherwise each
-/// equation, those mentioning the fewest unknowns first, is paired with an
-/// unknown it holds nonlinearly — once the unknowns already paired are
-/// known, an equation affine in the rest (a still's energy balance in its
-/// vapour flow, once the bubble point fixes its temperature) is left to the
-/// linear solve for the highest derivatives.
+/// nonlinear equation, those mentioning the fewest unknowns first, grows a
+/// square block with the unknowns it holds — once the unknowns already in
+/// blocks are known, an equation affine in the rest (a still's energy
+/// balance in its vapour flow, once the bubble point fixes its temperature)
+/// is left to the linear solve for the highest derivatives.
 fn find_numeric_constraints(
   odes: &[Expr],
   funcs: &[SysFunc],
@@ -5044,8 +5054,28 @@ fn find_numeric_constraints(
   if !algebraic.is_empty() && algebraic.len() == free.len() {
     return Some((algebraic, free));
   }
+  // Every derivative-free equation may join a block; the never-differentiated
+  // unknowns any of them mention are the candidates.
+  let pool: Vec<usize> = (0..odes.len())
+    .filter(|&i| {
+      !funcs
+        .iter()
+        .any(|f| orders[i].get(&f.name).is_some_and(|&k| k > 0))
+    })
+    .collect();
+  let candidates: Vec<usize> = funcs
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| {
+      never_differentiated.contains(&f.name.as_str())
+        && pool
+          .iter()
+          .any(|&ei| expr_mentions_function(&odes[ei], &f.name))
+    })
+    .map(|(i, _)| i)
+    .collect();
   let mentioned = |ei: usize| -> Vec<usize> {
-    free
+    candidates
       .iter()
       .copied()
       .filter(|&fi| expr_mentions_function(&odes[ei], &funcs[fi].name))
@@ -5056,10 +5086,16 @@ fn find_numeric_constraints(
   let (mut eqs, mut unknowns): (Vec<usize>, Vec<usize>) =
     (Vec::new(), Vec::new());
   for ei in order {
-    let rest: Vec<usize> = mentioned(ei)
-      .into_iter()
-      .filter(|fi| !unknowns.contains(fi))
-      .collect();
+    if eqs.contains(&ei) {
+      continue;
+    }
+    let fresh = |ej: usize, unknowns: &[usize]| -> Vec<usize> {
+      mentioned(ej)
+        .into_iter()
+        .filter(|fi| !unknowns.contains(fi))
+        .collect()
+    };
+    let rest = fresh(ei, &unknowns);
     let names: Vec<&str> =
       rest.iter().map(|&fi| funcs[fi].name.as_str()).collect();
     if names.is_empty()
@@ -5067,13 +5103,37 @@ fn find_numeric_constraints(
     {
       continue;
     }
-    let nonlinear = |fi: &usize| {
-      polynomial_degree_in(&odes[ei], &[funcs[*fi].name.as_str()])
-        .is_none_or(|d| d > 1)
-    };
-    let pick = rest.iter().copied().find(nonlinear).unwrap_or(rest[0]);
-    eqs.push(ei);
-    unknowns.push(pick);
+    // A constraint solved by Newton iteration can read no unknown of the
+    // linear solve: every unknown it holds joins the block, together with
+    // further equations for them, those bringing in the fewest new unknowns
+    // first (a condenser's equilibria for its two vapour fractions and its
+    // temperature), until the block is square.
+    let mut block_eqs = vec![ei];
+    let mut block_unknowns = rest;
+    while block_eqs.len() < block_unknowns.len() {
+      let taken: Vec<usize> =
+        unknowns.iter().chain(&block_unknowns).copied().collect();
+      let next = pool
+        .iter()
+        .copied()
+        .filter(|ej| !eqs.contains(ej) && !block_eqs.contains(ej))
+        .filter(|&ej| {
+          block_unknowns
+            .iter()
+            .any(|&fi| expr_mentions_function(&odes[ej], &funcs[fi].name))
+        })
+        .min_by_key(|&ej| fresh(ej, &taken).len());
+      let Some(ej) = next else {
+        break;
+      };
+      block_unknowns.extend(fresh(ej, &taken));
+      block_eqs.push(ej);
+    }
+    if block_eqs.len() != block_unknowns.len() {
+      continue;
+    }
+    eqs.extend(block_eqs);
+    unknowns.extend(block_unknowns);
   }
   (!eqs.is_empty()).then_some((eqs, unknowns))
 }
@@ -5237,7 +5297,9 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
     &u,
   );
   let eval = crate::evaluator::evaluate_expr_to_expr;
-  if let Ok(c) = eval(&call("D", vec![residual.clone(), u.clone()]))
+  // The bare derivative: `D` cancels the quotients in its result, which
+  // costs polynomial GCDs over a stage's rational vapour-pressure terms.
+  if let Ok(c) = differentiate_expr(&residual, "\u{2620}dae\u{2620}")
     && crate::functions::calculus_ast::is_constant_wrt(
       &c,
       "\u{2620}dae\u{2620}",
@@ -5262,7 +5324,7 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
   }
   // A large equation that is not linear in the unknown is left to the
   // numerical elimination rather than to an expanding `Solve`.
-  if expr_size_exceeds(eq, 400) {
+  if expr_size_exceeds(eq, 120) {
     return None;
   }
 
@@ -5496,14 +5558,23 @@ fn reduce_index(
           .filter(|&j| expr_mentions_function(&reduced[j].1, name))
           .count()
       };
-      // An unknown no other constraint still needs, then one fewer
-      // equations differentiate (a stage temperature rather than its
-      // composition, which the component balance integrates).
+      // The unknown the constraint is written for (`N[t] == …`, a
+      // reboiler's holdup from its molar volume), then one no other
+      // constraint still needs, then one fewer equations differentiate (a
+      // stage temperature rather than its composition, which the component
+      // balance integrates).
+      let solved_for = |name: &str| {
+        as_equal_pair(&reduced[i].1).is_some_and(|(a, b)| {
+          (is_bare_call(a, name) && !expr_mentions_function(b, name))
+            || (is_bare_call(b, name) && !expr_mentions_function(a, name))
+        })
+      };
       let pick = candidates(&reduced[i].1)
         .into_iter()
         .filter(|name| !chosen.iter().any(|(_, c)| c == name))
         .min_by_key(|name| {
           (
+            !solved_for(name),
             in_open_constraints(name),
             derivative_uses.get(name).copied().unwrap_or(0),
           )
@@ -6563,6 +6634,9 @@ fn ndsolve_system(
   let x_lo = points.first().unwrap().0;
   let x_hi = points.last().unwrap().0;
 
+  if let Some(system) = &implicit_system {
+    system.reset();
+  }
   // The highest derivatives and algebraic unknowns at every grid point,
   // solved for once and shared by every function that reads them.
   let highest_at_points: std::cell::OnceCell<Vec<Option<Vec<f64>>>> =
@@ -9480,6 +9554,19 @@ impl ImplicitSystem {
       key_len,
       blocks,
       memo: std::cell::RefCell::new(None),
+    }
+  }
+
+  /// Forget every solve, so that the next starts from the initial values
+  /// again. Constraints with several roots (a weir formula's fractional
+  /// power) are followed along the solution by starting each solve from the
+  /// last root; sampling the solution afresh from its start must not begin
+  /// from wherever the integration ended.
+  fn reset(&self) {
+    self.guess.borrow_mut().clone_from(&self.init);
+    *self.memo.borrow_mut() = None;
+    for block in &self.blocks {
+      block.last.borrow_mut().clear();
     }
   }
 
