@@ -24575,6 +24575,26 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // A linear constraint is solved for the unknown no nonlinear constraint
+  // holds (`w`, not `u` under `(1 - u)^1.5`), and Newton iteration for an
+  // unknown with no initial value tries more starts than 1, where that
+  // power has no derivative. wolframscript: {0.4899212327677134,
+  // 0.34055710629697045, 0.4865156617047437}.
+  #[test]
+  fn dae_keeps_a_nonlinearly_held_unknown_for_newton() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t] + w[t], u[t] + 100 (w[t] - x[t]) == 0, \
+         (1 - u[t])^1.5 == w[t] + x[t]/10, x[0] == 0.5}, {x, u, w}, \
+         {t, 0, 3}]; Max[Abs[({x[3], u[3], w[3]} /. First[s]) - \
+         {0.4899212327677134, 0.34055710629697045, 0.4865156617047437}]] \
+         < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A stiff solution is accurate between the accepted points too: on the
   // slow manifold the error estimate would let the step grow to 0.16, over
   // which the values in between were off by 1e-4 (y'[t] == -10^5 (y[t] -

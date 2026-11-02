@@ -5007,9 +5007,25 @@ fn find_algebraic_constraint(
     }
     // The unknown this constraint defines is one it mentions that no
     // equation ever differentiates — the others in it are dynamic
-    // variables the solution is written in terms of.
-    let Some(fi) = funcs.iter().enumerate().position(|(_, f)| {
-      expr_mentions_function(eq, &f.name) && never_differentiated(&f.name)
+    // variables the solution is written in terms of. One that another
+    // constraint holds nonlinearly is left to that constraint's Newton
+    // iteration: a collocation's boundary value written as a combination
+    // of the interior ones (with coefficients in the hundreds) would carry
+    // that constraint's `(1 - ϕ)^6.55` past its domain at every iterate.
+    let derivative_free = |ej: usize| {
+      !funcs
+        .iter()
+        .any(|f| orders[ej].get(&f.name).is_some_and(|&k| k > 0))
+    };
+    let Some(fi) = funcs.iter().position(|f| {
+      expr_mentions_function(eq, &f.name)
+        && never_differentiated(&f.name)
+        && odes.iter().enumerate().all(|(ej, other)| {
+          ej == ei
+            || !derivative_free(ej)
+            || polynomial_degree_in(other, &[f.name.as_str()])
+              .is_some_and(|d| d <= 1)
+        })
     }) else {
       continue;
     };
@@ -9759,8 +9775,20 @@ impl ImplicitSystem {
       let start: Vec<f64> = block.unknowns.iter().map(|&u| root[u]).collect();
       let init: Vec<f64> =
         block.unknowns.iter().map(|&u| self.init[u]).collect();
-      let Some(z) = newton_system(&constraints, &mut local, &slots, &start)
-        .or_else(|| newton_system(&constraints, &mut local, &slots, &init))
+      // From the last root, else the initial values; an unknown given no
+      // initial value starts at 1, where a constraint like `(1 - u)^1.5`
+      // has no derivative, so a few more starts follow.
+      let starts = [
+        start.clone(),
+        init.clone(),
+        vec![0.0; init.len()],
+        init.iter().map(|v| v / 2.0).collect(),
+        init.iter().map(|v| -v).collect(),
+        init.iter().map(|v| 2.0 * v).collect(),
+      ];
+      let Some(z) = starts
+        .iter()
+        .find_map(|z0| newton_system(&constraints, &mut local, &slots, z0))
       else {
         ok = false;
         break;
