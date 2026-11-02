@@ -14359,27 +14359,63 @@ pub fn singular_value_list_with_tolerance(
   }
   let nrows = rows.len();
 
-  // Optional second argument: how many singular values to keep
+  // Optional second argument: which singular values to keep. With one, the
+  // values are taken from all min(m, n) of them, zeros included (a value
+  // below the tolerance counts as zero); without one, the zeros are dropped.
+  enum Take {
+    All,
+    First(usize),
+    Last(usize),
+    Nth(i128),
+  }
   let take = match args.get(1) {
-    None => None,
+    None => Take::All,
     Some(k) => match crate::functions::math_ast::expr_to_i128(k) {
-      Some(k) => Some(k),
-      None => return Ok(unevaluated(args)),
+      Some(k) if k >= 0 => {
+        Take::First(usize::try_from(k).unwrap_or(usize::MAX))
+      }
+      Some(k) => {
+        Take::Last(usize::try_from(k.unsigned_abs()).unwrap_or(usize::MAX))
+      }
+      None => match k {
+        Expr::List(ks) if ks.len() == 1 => {
+          match crate::functions::math_ast::expr_to_i128(&ks[0]) {
+            Some(k) if k != 0 => Take::Nth(k),
+            _ => return Ok(unevaluated(args)),
+          }
+        }
+        _ => return Ok(unevaluated(args)),
+      },
     },
   };
 
-  // The first k values, or the |k| smallest for a negative k.
-  let take_values = |mut values: Vec<Expr>| match take {
-    None => Expr::List(values.into()),
-    Some(k) if k >= 0 => {
-      values.truncate(k as usize);
-      Expr::List(values.into())
-    }
-    Some(k) => {
-      let keep = (-k) as usize;
-      let skip = values.len().saturating_sub(keep);
-      Expr::List(values.split_off(skip).into())
-    }
+  // `values` are all min(m, n) singular values, largest first, each paired
+  // with whether it is (numerically) zero.
+  let take_values = |mut values: Vec<(Expr, bool)>| -> Option<Expr> {
+    let picked: Vec<Expr> = match take {
+      Take::All => values
+        .into_iter()
+        .filter(|(_, zero)| !zero)
+        .map(|(v, _)| v)
+        .collect(),
+      Take::First(k) => {
+        values.truncate(k);
+        values.into_iter().map(|(v, _)| v).collect()
+      }
+      Take::Last(k) => {
+        let skip = values.len().saturating_sub(k);
+        values.split_off(skip).into_iter().map(|(v, _)| v).collect()
+      }
+      Take::Nth(k) => {
+        let n = values.len() as i128;
+        let i = if k > 0 { k - 1 } else { n + k };
+        if i < 0 || i >= n {
+          return None;
+        }
+        vec![values.swap_remove(i as usize).0]
+      }
+    };
+    Some(Expr::List(picked.into()))
   };
 
   // A machine matrix: the nonzero singular values of its SVD, which keeps
@@ -14397,13 +14433,25 @@ pub fn singular_value_list_with_tolerance(
     && let Some((_, sigma, _)) =
       jacobi_svd_with_tolerance(&a, rel_tol.unwrap_or(100.0 * f64::EPSILON))
   {
-    return Ok(take_values(
-      (0..nrows.min(ncols))
-        .map(|i| sigma[i][i])
-        .filter(|s| *s > 0.0)
-        .map(Expr::Real)
-        .collect(),
-    ));
+    let max = (0..nrows.min(ncols))
+      .map(|i| sigma[i][i])
+      .fold(0.0_f64, f64::max);
+    let cutoff = rel_tol.map_or(0.0, |t| t * max);
+    let mut values: Vec<f64> =
+      (0..nrows.min(ncols)).map(|i| sigma[i][i]).collect();
+    values
+      .sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    let values = values
+      .into_iter()
+      .map(|s| {
+        if s > 0.0 && s >= cutoff {
+          (Expr::Real(s), false)
+        } else {
+          (Expr::Real(0.0), true)
+        }
+      })
+      .collect();
+    return Ok(take_values(values).unwrap_or_else(|| unevaluated(args)));
   }
 
   // Eigenvalues of the smaller Gram matrix (m.m^H or m^H.m); both share
@@ -14434,21 +14482,32 @@ pub fn singular_value_list_with_tolerance(
   // that are zero relative to the largest (Gram eigenvalues scale as the
   // squares of the singular values).
   let tol = if has_real { max_val * 1e-24 } else { 0.0 };
-  pairs.retain(|(e, v)| !matches!(e, Expr::Integer(0)) && v.abs() > tol);
+  // A Tolerance t zeroes the singular values below t times the largest
+  // (the Gram eigenvalues are their squares).
+  let cutoff = rel_tol.map_or(0.0, |t| t * t * max_val);
 
   // Largest first
   pairs
     .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
+  let zero = if has_real {
+    Expr::Real(0.0)
+  } else {
+    Expr::Integer(0)
+  };
   let mut values = Vec::with_capacity(pairs.len());
-  for (e, _) in &pairs {
+  for (e, v) in &pairs {
+    if matches!(e, Expr::Integer(0)) || v.abs() <= tol || v.abs() < cutoff {
+      values.push((zero.clone(), true));
+      continue;
+    }
     // Use the Sqrt head (not make_sqrt's Power form): the Power
     // simplifier splits Sqrt[a*b/c] into radical products, while
     // wolframscript keeps the nested Sqrt[(a*b)/c] form
-    values.push(evaluate_expr_to_expr(&call1("Sqrt", e.clone()))?);
+    values.push((evaluate_expr_to_expr(&call1("Sqrt", e.clone()))?, false));
   }
 
-  Ok(take_values(values))
+  Ok(take_values(values).unwrap_or_else(|| unevaluated(args)))
 }
 
 /// Shared MatrixExp / MatrixLog implementation. `head` is the matrix

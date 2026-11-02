@@ -280,6 +280,46 @@ mod matrix_options {
          Tolerance -> 1/5]"
       )
       .unwrap(),
+      "{3, 2, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 1/10}}, \
+         Tolerance -> 1/5]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "SingularValueList[{{3., 0, 0}, {0, 2, 0}, {0, 0, 0.01}}, 3, \
+         Tolerance -> 0.1]"
+      )
+      .unwrap(),
+      "{3., 2., 0.}"
+    );
+  }
+
+  #[test]
+  fn singular_value_list_count_keeps_zeros() {
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, 3]")
+        .unwrap(),
+      "{3, 2, 0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, -2]")
+        .unwrap(),
+      "{2, 0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, {3}]")
+        .unwrap(),
+      "{0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}]")
+        .unwrap(),
       "{3, 2}"
     );
   }

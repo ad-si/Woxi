@@ -3003,7 +3003,7 @@ pub fn dispatch_linear_algebra_functions(
       );
     }
     // SingularValueList[m, k, Tolerance -> t]: singular values smaller than
-    // t times the largest one are dropped (before taking k of them).
+    // t times the largest one count as zero.
     "SingularValueList"
       if (2..=3).contains(&args.len())
         && matches!(args.last(), Some(Expr::Rule { pattern, .. })
@@ -3016,39 +3016,18 @@ pub fn dispatch_linear_algebra_functions(
       else {
         return Some(Ok(unevaluated(name, args)));
       };
-      let all = match crate::functions::linear_algebra_ast::singular_value_list_with_tolerance(
-          &pos[..1],
+      return Some(
+        crate::functions::linear_algebra_ast::singular_value_list_with_tolerance(
+          pos,
           Some(tol),
-        ) {
-          Ok(Expr::List(ref values)) => values.to_vec(),
-          Ok(_) => return Some(Ok(unevaluated(name, args))),
-          Err(e) => return Some(Err(e)),
-        };
-      let nums: Option<Vec<f64>> = all
-        .iter()
-        .map(crate::functions::math_ast::try_eval_to_f64)
-        .collect();
-      let Some(nums) = nums else {
-        return Some(Ok(unevaluated(name, args)));
-      };
-      let max = nums.iter().copied().fold(0.0_f64, f64::max);
-      let mut kept: Vec<Expr> = all
-        .iter()
-        .zip(&nums)
-        .filter(|(_, v)| **v >= tol * max)
-        .map(|(e, _)| e.clone())
-        .collect();
-      if let Some(k) = pos.get(1) {
-        match crate::functions::math_ast::expr_to_i128(k) {
-          Some(k) if k >= 0 => kept.truncate(k as usize),
-          Some(k) => {
-            let skip = kept.len().saturating_sub((-k) as usize);
-            kept = kept.split_off(skip);
+        )
+        .map(|r| match r {
+          Expr::FunctionCall { ref name, .. } if name == "SingularValueList" => {
+            unevaluated("SingularValueList", args)
           }
-          None => return Some(Ok(unevaluated(name, args))),
-        }
-      }
-      return Some(Ok(Expr::List(kept.into())));
+          other => other,
+        }),
+      );
     }
     "SingularValueList" if args.len() == 1 || args.len() == 2 => {
       return Some(
