@@ -1136,6 +1136,9 @@ function main() {
     /\bTimelinePlot\[/,     // Complex Graphics output, implementation-specific rendering
     /\bAngularGauge\[/,     // Complex Graphics output, implementation-specific rendering
     /\bHorizontalGauge\[/,  // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bVerticalGauge\[/,    // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bThermometerGauge\[/, // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bClockGauge\[/,       // Same gauge family as AngularGauge — full tick/label Graphics
     /\bSmoothDensityHistogram\[/, // Complex Graphics output, implementation-specific rendering
     /\bServiceConnect\[/,   // Network-dependent Failure result
     /\bNetGraph\[/,         // Neural network internals differ between implementations
@@ -2245,11 +2248,6 @@ function main() {
     // Same core ordering gap as the `Log[E^(a + 3 I)]` entry above.
     "ComplexExpand[E^(I*ArcSin[1/3])]",
 
-    // PermutationMatrix returns a StructuredArray in Wolfram
-    // (`PermutationMatrix[StructuredArray`StructuredData[…]]`); Woxi returns
-    // the dense matrix, exactly as for Symmetrize / CrossMatrix above.
-    "PermutationMatrix[{2, 1}]",
-
     // NDSolve results that are *printed* rather than sampled: Wolfram shows
     // its internal solver state (the {5, 7, 1, {52}, …} header, the adaptive
     // step grid and a Developer`PackedArrayForm coefficient block) where Woxi
@@ -2517,6 +2515,37 @@ function main() {
     // scale (twice the pixels on a Retina Mac, with a minimum height), see
     // "HighlightImage returns the image at its own size".
     "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}",
+    // Apart / ApartSquareFree with Modulus: WL mixes partial fractions taken
+    // over the rationals with coefficients reduced mod p in a way no model
+    // reproduces (see "Apart with Modulus" in conformance_gaps.md).
+    "Apart[1/(x^2 + x), Modulus -> 3]",
+    "ApartSquareFree[(1 - x^2)/(x^4 + 2 x^2 + 1), Modulus -> 2]",
+    // BooleanMaxterms/BooleanMinterms without variables return a
+    // BooleanFunction whose InputForm is WL's internal BDD encoding
+    // ("BDD" -> {…}); Woxi leaves the call unevaluated.
+    "BooleanMaxterms[{{0, 1, 1}}]",
+    // ConstantImage with options: WL appends Magnification -> Automatic to
+    // the image's options; Woxi's Image has no magnification slot (the
+    // ColorSpace and ImageSize parts are tested with Options).
+    "ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, ImageSize -> 100]",
+    // Graph layouts: WL's spring-electrical and layered layouts (and its
+    // GraphicsComplex output with curved self-loops) are not reproduced
+    // coordinate for coordinate.
+    "GraphPlot[{1 -> 4, 1 -> 5, 2 -> 3, 2 -> 5, 3 -> 5, 4 -> 5, 5 -> 5}]",
+    "LayeredGraphPlot[PetersenGraph[]]",
+    "LayeredGraphPlot[{1 -> 2, 1 -> 3, 2 -> 3, 1 -> 4, 2 -> 4, 1 -> 5}, Left]",
+    // CountryData: WL's curated data (finer outlines and its own
+    // coordinate scale for the shapes, full official names, entity lists for
+    // the groups) against Woxi's bundled 1:110m outlines and names.
+    "Map[Length, CountryData[\"Belgium\", \"SchematicCoordinates\"]] === {Length[CountryData[\"Belgium\", \"Polygon\"][[1]]]}",
+    "w = CountryData[\"World\", \"SchematicCoordinates\"]; a = CountryData[\"Antarctica\", \"SchematicCoordinates\"]; {Head[w], Length[w] > 100, MatchQ[w[[1, 1]], {_Real, _Real}], Max[a[[All, All, 1]] /. l_List :> Max[l]] < -60}",
+    "pts = Flatten[CountryData[\"Egypt\", {\"Shape\", {\"Equirectangular\", {0, 0}}}][[1, All, 1]], 1]; {0.4 < Min[pts[[All, 1]]] < 0.5, 0.45 < Max[pts[[All, 1]]] < 0.65}",
+    "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Equirectangular\", {0, 180}}}][[1, All, 1]], 1]; {Max[Abs[pts[[All, 1]]]] <= Pi, Min[pts[[All, 1]]] < -3.1, Max[pts[[All, 1]]] > 3.1}",
+    "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Orthographic\", {0, 0}}}][[1, All, 1]], 1]; Max[Norm /@ pts] <= 1.0000001",
+    "MemberQ[CountryData[\"EU\"], \"CzechRepublic\"]",
+    "CountryData[\"Italy\", \"FullName\"]",
+    "CountryData[\"CzechRepublic\", \"FullName\"]",
+    "CountryData[\"Italy\", \"Polygon\"] === CountryData[\"Italy\", \"SchematicPolygon\"]",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
