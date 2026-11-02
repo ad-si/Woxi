@@ -13217,6 +13217,14 @@ pub fn interpolation_ast(
           Expr::List(rows) => rows
             .iter()
             .map(|row| match row {
+              // Exact values stay exact, so an exact query point
+              // interpolates exactly (`f[3/2]` is `21/8 + I/8`).
+              Expr::List(p)
+                if p.len() == 2
+                  && !crate::functions::math_ast::contains_inexact_real(&p[1]) =>
+              {
+                row.clone()
+              }
               Expr::List(p) if p.len() == 2 => {
                 let (re, im) =
                   crate::functions::math_ast::numeric_utils::try_extract_complex_f64(&p[1])
@@ -13810,6 +13818,14 @@ fn stored_grid_value(e: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(stored_grid_value).collect())
     }
+    // An exact complex sample stays exact (`2 - I`), for exact queries.
+    other
+      if !crate::functions::math_ast::contains_inexact_real(other)
+        && crate::functions::math_ast::contains_imaginary_unit(other)
+        && crate::functions::predicate_ast::is_numeric_q(other) =>
+    {
+      other.clone()
+    }
     other => match interp_complex_to_parts(other) {
       Some((re, im)) if im != 0.0 => {
         crate::functions::math_ast::numeric_utils::build_complex_float_expr(
@@ -14071,7 +14087,10 @@ fn evaluate_grid_interpolating_function(
         index[k] = windows[k].0 + counters[k];
       }
       let value = cell(&index)?;
-      if !is_exact_number(value) {
+      let exact_complex =
+        !crate::functions::math_ast::contains_inexact_real(value)
+          && crate::functions::predicate_ast::is_numeric_q(value);
+      if !is_exact_number(value) && !exact_complex {
         exact = false;
         break;
       }
@@ -14752,13 +14771,11 @@ pub(crate) fn kernel_interpolating_function_to_native(
 }
 
 /// A kernel InterpolatingFunction fitted to complex data stores every value
-/// as `x + 0. I` when the data is in fact real; those entries read as the
-/// machine real `x`, anything with a non-zero imaginary part is kept.
+/// as a complex number, `x + 0. I` included, and its values are complex
+/// (wolframscript gives `4. + 0.*I` between such points), so the entries are
+/// kept as they are.
 fn demote_zero_imaginary(e: &Expr) -> Expr {
-  match crate::functions::math_ast::numeric_utils::machine_complex_shape(e) {
-    Some((re, 0.0)) => Expr::Real(re),
-    _ => e.clone(),
-  }
+  e.clone()
 }
 
 fn kernel_interpolating_function_to_pairs(
@@ -14926,7 +14943,11 @@ fn complex_interpolation_parts(
   // point; the raw data `Interpolation` is given is scanned in full
   let first_is_complex = matches!(rows.first(), Some(Expr::List(p))
     if p.len() == 2 && crate::functions::math_ast::contains_imaginary_unit(&p[1]));
-  if stored && !first_is_complex {
+  // Exact complex data is stored as given, so a real first value does not
+  // rule it out; it is scanned in full.
+  let first_is_exact = matches!(rows.first(), Some(Expr::List(p))
+    if p.len() == 2 && !crate::functions::math_ast::contains_inexact_real(&p[1]));
+  if stored && !first_is_complex && !first_is_exact {
     return None;
   }
   let mut any_complex = false;
@@ -14941,8 +14962,19 @@ fn complex_interpolation_parts(
     };
     let (re, im) = try_extract_complex_f64(z)?;
     any_complex |= crate::functions::math_ast::contains_imaginary_unit(z);
-    re_rows.push(Expr::List(vec![x.clone(), Expr::Real(re)].into()));
-    im_rows.push(Expr::List(vec![x.clone(), Expr::Real(im)].into()));
+    // Exact values keep exact parts, so an exact query point interpolates
+    // exactly (`6 - I`, not `6. - 1.*I`).
+    let (re_part, im_part) =
+      if crate::functions::math_ast::contains_inexact_real(z) {
+        (Expr::Real(re), Expr::Real(im))
+      } else {
+        let part = |head: &str| {
+          crate::evaluator::evaluate_expr_to_expr(&call1(head, z.clone())).ok()
+        };
+        (part("Re")?, part("Im")?)
+      };
+    re_rows.push(Expr::List(vec![x.clone(), re_part].into()));
+    im_rows.push(Expr::List(vec![x.clone(), im_part].into()));
   }
   any_complex.then_some((re_rows, im_rows))
 }
@@ -15070,6 +15102,15 @@ pub fn evaluate_interpolating_function(
     };
     let re = with_rows(re_rows)?;
     let im = with_rows(im_rows)?;
+    // Machine parts make a machine complex number, a zero imaginary part
+    // included (`4. + 0.*I`), as the values of a complex interpolant are.
+    if let (Expr::Real(r), Expr::Real(i)) = (&re, &im) {
+      return crate::evaluator::evaluate_expr_to_expr(
+        &crate::functions::math_ast::numeric_utils::build_complex_float_expr_keep_real(
+          *r, *i,
+        ),
+      );
+    }
     return crate::evaluator::evaluate_expr_to_expr(&plus2(
       re,
       times2(id_expr("I"), im),
@@ -15085,6 +15126,9 @@ pub fn evaluate_interpolating_function(
   let numeric = evaluate_interpolating_function_values(func_args, call_args);
   if numeric.is_ok() {
     return numeric;
+  }
+  if let Some(linear) = linear_symbolic_interpolation(func_args, call_args)? {
+    return Ok(linear);
   }
   if let Expr::List(rows) = &func_args[1]
     && !matches!(&call_args[0], Expr::String(_))
@@ -15124,6 +15168,67 @@ pub fn evaluate_interpolating_function(
 }
 
 /// A one-dimensional InterpolatingFunction with numeric values at a point.
+/// A first-order interpolation of values that are not numbers, in
+/// wolframscript's form `y1 + t (y0 - y1)` with `t = (x1 - x)/(x1 - x0)` on
+/// the interval `[x0, x1]` holding `x`:
+/// `Interpolation[{{1, a}, {2, b}, {3, c}}, InterpolationOrder -> 1][2.5]`
+/// is `0.5*(b - c) + c`. `None` for higher orders or a non-numeric `x`.
+fn linear_symbolic_interpolation(
+  func_args: &[Expr],
+  call_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  if func_args.len() != 3
+    || !matches!(&func_args[2], Expr::Integer(1))
+    || call_args.len() != 1
+  {
+    return Ok(None);
+  }
+  let Expr::List(rows) = &func_args[1] else {
+    return Ok(None);
+  };
+  let mut points = Vec::with_capacity(rows.len());
+  for r in rows {
+    let Expr::List(p) = r else {
+      return Ok(None);
+    };
+    let [x, y] = p.as_slice() else {
+      return Ok(None);
+    };
+    let Ok(xf) = interp_value_to_f64(x) else {
+      return Ok(None);
+    };
+    points.push((xf, x.clone(), y.clone()));
+  }
+  if points.len() < 2 {
+    return Ok(None);
+  }
+  let x = crate::evaluator::evaluate_expr_to_expr(&call_args[0])?;
+  let Ok(xv) = interp_value_to_f64(&x) else {
+    return Ok(None);
+  };
+  let k = points
+    .windows(2)
+    .position(|w| xv <= w[1].0)
+    .unwrap_or(points.len() - 2);
+  let (_, x0, y0) = &points[k];
+  let (_, x1, y1) = &points[k + 1];
+  let t = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+    plus(vec![x1.clone(), times(vec![Expr::Integer(-1), x.clone()])]),
+    pow(
+      plus(vec![x1.clone(), times(vec![Expr::Integer(-1), x0.clone()])]),
+      Expr::Integer(-1),
+    ),
+  ]))?;
+  let diff = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    y0.clone(),
+    times(vec![Expr::Integer(-1), y1.clone()]),
+  ]))?;
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    y1.clone(),
+    times(vec![t, diff]),
+  ]))?))
+}
+
 fn evaluate_interpolating_function_values(
   func_args: &[Expr],
   call_args: &[Expr],
@@ -15264,6 +15369,16 @@ fn evaluate_interpolating_function_values(
         && let Ok(xp) = interp_value_to_f64(&pair[0])
         && (xp - x_val).abs() < 1e-15
       {
+        // A machine query point gives a machine value, as in wolframscript
+        // (`Interpolation[{{1, 1}, {2, 3}, {3, 2}}][2.]` is `3.`).
+        if crate::functions::math_ast::contains_inexact_real(&x_val_expr)
+          && !crate::functions::math_ast::contains_inexact_real(&pair[1])
+        {
+          return crate::evaluator::evaluate_expr_to_expr(&call1(
+            "N",
+            pair[1].clone(),
+          ));
+        }
         return Ok(pair[1].clone());
       }
     }

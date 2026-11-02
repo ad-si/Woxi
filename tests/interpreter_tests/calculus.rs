@@ -10119,7 +10119,23 @@ mod ndsolve {
          {i, 1, 4}, {j, 1, 4}], 1]]; {f[2.5, 3.5], f[2, 3]}"
       )
       .unwrap(),
-      "{8.75 - 1.*I, 6. - 1.*I}"
+      "{8.75 - 1.*I, 6 - I}"
+    );
+    // Exact complex data interpolates exactly at an exact point.
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{i, j, i*j + I*(i - j)}, \
+         {i, 1, 4}, {j, 1, 4}], 1]]; {f[2., 3], f[5/2, 7/2]}"
+      )
+      .unwrap(),
+      "{6. - 1.*I, 35/4 - I}"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{1, 2}, {2, 3 + I}, {3, 2}}]; {f[2], f[2.], f[3/2]}"
+      )
+      .unwrap(),
+      "{3 + I, 3. + 1.*I, 11/4 + (3*I)/4}"
     );
     // Polynomial data is reproduced exactly by the order-3 local fit, so the
     // partial derivatives match the analytic ones.
@@ -23039,8 +23055,8 @@ mod kernel_format_interpolating_function {
 
   #[test]
   fn zero_imaginary_values_read_as_real() {
-    // Data fitted as complex is saved as `x + 0. I`; it applies like the
-    // real data it is.
+    // Data fitted as complex is saved as `x + 0. I`, and its values stay
+    // complex, as in wolframscript.
     assert_eq!(
       interpret(
         "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
@@ -23048,7 +23064,7 @@ mod kernel_format_interpolating_function {
          {1. + 0. I, 3. + 0. I, 2. + 0. I, 6. + 0. I}}, {Automatic}][3]"
       )
       .unwrap(),
-      "4."
+      "4. + 0.*I"
     );
   }
 
@@ -24130,7 +24146,15 @@ mod interpolation_symbolic_values {
          InterpolationOrder -> 1][2.5]"
       )
       .unwrap(),
-      "0.5*b + 0.5*c"
+      "0.5*(b - c) + c"
+    );
+    assert_eq!(
+      interpret(
+        "Interpolation[{{1, a}, {2, b}, {3, c}, {5, d}}, \
+         InterpolationOrder -> 1][5/2]"
+      )
+      .unwrap(),
+      "(b - c)/2 + c"
     );
     assert_eq!(
       interpret(
