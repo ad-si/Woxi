@@ -2687,14 +2687,8 @@ pub fn dispatch_math_functions(
       if matches!(&args[0], Expr::Integer(0)) {
         return Some(crate::functions::math_ast::inverse_erf_ast(&args[1..]));
       }
-      // InverseErf[a, Erf[a, z]] is z.
-      if let Expr::FunctionCall { name: e, args: ea } = &args[1]
-        && e == "Erf"
-        && ea.len() == 2
-        && expr_to_string(&ea[0]) == expr_to_string(&args[0])
-      {
-        return Some(Ok(ea[1].clone()));
-      }
+      // InverseErf[a, Erf[a, z]] stays as it is: z is only one of its
+      // values when z is complex, so WL does not simplify it.
       let inexact = args.iter().any(|a| matches!(a, Expr::Real(_)));
       let numeric = args
         .iter()

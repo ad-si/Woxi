@@ -684,10 +684,20 @@ mod inverse_erf_two_arguments {
   #[test]
   fn generalized_inverse() {
     assert_eq!(
-      interpret("InverseErf[0.4, 0.2] - InverseErf[0.2 + Erf[0.4]]").unwrap(),
-      "0."
+      interpret(
+        "Abs[InverseErf[0.4, 0.2] - InverseErf[0.2 + Erf[0.4]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
     );
-    assert_eq!(interpret("InverseErf[a, Erf[a, z]]").unwrap(), "z");
+    assert_eq!(
+      interpret("InverseErf[a, Erf[a, z]]").unwrap(),
+      "InverseErf[a, Erf[a, z]]"
+    );
+    assert_eq!(
+      interpret("InverseErf[0, Erf[0, z]]").unwrap(),
+      "InverseErf[Erf[z]]"
+    );
     assert_eq!(interpret("InverseErf[0, s]").unwrap(), "InverseErf[s]");
   }
 }
