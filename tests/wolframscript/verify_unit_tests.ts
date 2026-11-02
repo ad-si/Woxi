@@ -823,6 +823,37 @@ const NEAR_MATCH = new Set([
   // wolframscript takes Log10 of the number two ways (…175 and …18), so the
   // accuracy it reports is -10.000000000000004 for the requested -10.
   "Accuracy[N[Exp[100], {Infinity, -10}]]",
+  // Iterated or least-squares machine results (Solve/NSolve roots, simplex
+  // and optimizer stopping points, fits, linear solves, the software
+  // bignum arithmetic of an overflow) that differ from wolframscript's in
+  // the last digits only; see "Machine results that differ in the last
+  // digits" in conformance_gaps.md.
+  "Chop[z /. Solve[(0. + 0.*I) + 2.*z + (0. - 4.4*^-16*I)*z - 3.*z^2 + z^3 == 0, z], 10^-12]",
+  "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers, Reals}]",
+  "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers}]",
+  "FindMaximum[{-(x - 1)^2 - (y - 2)^2, x >= 0 && y >= 0}, {x, 5}, {y, 5}]",
+  "NSolve[{(0.5 x2/(1 + x2) - 0.25) x1 == 0, (3 - x2) - x2 x1/(1 + x2) == 0}, {x1, x2}]",
+  "Quiet[Solve[{x y == 1.5, x + y == 3}, {x, y}]]",
+  "(10.^400 + 10.^400) / 10.^399 // N",
+  "1.5^3000 / 1.5^2999 // N",
+  "(3. E^(29248./10.) + 2. E^(29240./10.)) / (3. E^(29248./10.)) // N",
+  "3.5`50 + Sqrt[5]",
+  "Sqrt[Abs[2.75`3. - 5]]",
+  "NIntegrate[I x, {x, 0, 1}]",
+  "th = 0.3; NIntegrate[th^2, {th, 0, 1}]",
+  "Eigenvalues[N[{{1, 2}, {-3, 1}}]]",
+  "LinearSolve[{{1., 2}, {3, 4}, {5, 6}}, {3, 7, 11}]",
+  "LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]",
+  "Chop[LinearSolve[{{2., 1.}, {1., 2.}}, Method -> \"Cholesky\"][{1., 2.}]]",
+  "g = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a g, {a}, g]",
+  "FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a f[1], {a}, f[1]]",
+  "GeneralizedLinearModelFit[{{1, 2}, {2, 4}, {3, 6}}, x, x][4]",
+  "NonlinearModelFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x][\"BestFitParameters\"]",
+  "FindFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x]",
+  "QPochhammer[0.3 I, 0.5]",
+  "QPochhammer[0.3 + 0.2 I, 0.5 I]",
+  "ToString[{Erfc[1.], Erfc[2.5], Erfc[1.1630871536766743], InverseErf[0.9], InverseErfc[0.1], InverseErfc[1.9]}, InputForm]",
+  "RecurrenceTable[{y[n + 1] + z[n + 1] == y[n] - 3 z[n] + 7, y[n] + 2 z[n] == 1, y[0] == 0.5, z[0] == 0.25}, {y, z}, {n, 0, 2}]",
 ]);
 
 /**
@@ -2632,6 +2663,59 @@ function main() {
     // lines").
     "Round[First /@ ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]",
     "Round[First /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]",
+    // NSolve/N[Solve] of a numeric system: wolframscript orders (and for
+    // the restricted three-body system repeats) the roots its homotopy
+    // continuation finds; Woxi sorts the distinct roots. See "NSolve root
+    // order and multiplicity" in conformance_gaps.md.
+    "s = NSolve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, {x, y}]; Round[{x, y} /. s, 0.001]",
+    "mu = 0.1; s = NSolve[{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, -y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3)) y}, {x, y}]; {Length[s], Sort[Round[{x, y} /. s, 0.001]]}",
+    "r = Rationalize[#, 0] &; s = N[Solve[{x^2 + (r[-0.532088886237956] - y)^2 == r[0.4679111137620437], (r[0.5652579374235682] - x)^2 + (r[-0.32635182233306964] - y)^2 == r[0.05643698595227112]}, {x, y}]]; Round[10^6 {x, y} /. s]",
+    // FindInstance picks a point by an internal heuristic (1027, -1075).
+    "FindInstance[x > 1000, x]",
+    "FindInstance[x < -1000, x]",
+    // The optimizer stops 5*10^-7 short in L, which Round makes visible.
+    "Round[10^6 {#[[1]], {L, a} /. #[[2]]} &[FindMaximum[{100 a Exp[-a^2/2] + Exp[-(L - 52)^2/100], a > 0 && L >= 45}, {{L, 45}, {a, 0.05}}]]]",
+    // Arbitrary-precision complex parts and overflowing machine products
+    // follow wolframscript's internal bignum error tracking (per-part
+    // precisions, General::munfl and 0. for an exact 1); see "Software
+    // arithmetic past the machine range" in conformance_gaps.md.
+    "{N[(2 + I)^5, 20], N[(1 + I)^(-2), 20]}",
+    "1.*^200 * 1.*^200 / (1.*^300 * 1.*^100) // N",
+    // wolframscript's machine closed form for the integral cancels away
+    // eight digits (-6.3*10^-8 off); Woxi's value is exact to the last digit.
+    "Chop[Integrate[Sqrt[6.5 - 0.18*h + 0.002*h^2], {h, 0, 40}] - 78.81253032630696]",
+    // A DifferentialEquations`InterpolatingFunctionAnatomy` function, which
+    // wolframscript only knows after Needs; Woxi provides it built in.
+    "InterpolatingFunctionDomain[Interpolation[{{1}, {4}, {9}}]]",
+    // NDSolve / NDEigensystem / FEM / FindFit numerics: wolframscript's
+    // methods meet the asserted tolerances differently (or, for the DAE,
+    // fail); see "NDSolve accuracy and step control" in conformance_gaps.md.
+    "eqns = {50 (1 - 100 r^2) D[ca[z, r], z] == D[r D[ca[z, r], r], r]/(10^9 r) - 2500 Exp[-721.674/T[z, r]] ca[z, r], 50 (1 - 100 r^2) D[cb[z, r], z] == D[r D[cb[z, r], r], r]/(10^9 r) + 2500 Exp[-721.674/T[z, r]] ca[z, r] - 2500 Exp[-1202.79/T[z, r]] cb[z, r], 3.75 (1 - 100 r^2) D[T[z, r], z] == 0.1 D[r D[T[z, r], r], r]/r + 25000 Exp[-721.674/T[z, r]] ca[z, r] + 25000 Exp[-1202.79/T[z, r]] cb[z, r], D[Tx[z, r], z] == -5 (Tx[z, r] - T[z, r]), T[0, r] == 350., Tx[0, r] == 350., ca[0, r] == 1, cb[0, r] == 0., (D[ca[z, r], r] /. r -> 10^-6) == 0, (D[ca[z, r], r] /. r -> 0.1) == 0, (D[cb[z, r], r] /. r -> 10^-6) == 0, (D[cb[z, r], r] /. r -> 0.1) == 0, (D[T[z, r], r] /. r -> 10^-6) == 0, 0.1 (D[T[z, r], r] /. r -> 0.1) == -5 (T[z, 0.1] - Tx[z, 0.1])}; {tr, tx, a, b, cc0} = NDSolveValue[eqns, {T, Tx, ca, cb, cc}, {z, 0, 1}, {r, 10^-6, 0.1}]; {Abs[tr[0.405, 0.015] - 385.463] < 0.05, cc0}",
+    "k = 2 Pi/10.; s = NDSolve[{I D[u[t, x], t] + D[u[t, x], x, x] == 0, u[0, x] == E^(I k x), u[t, -5.] == u[t, 5.]}, u, {t, 0, 2}, {x, -5., 5.}]; (Abs[u[1.5, 0.7] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4",
+    "k = 2 Pi/10.; s = NDSolve[{I D[u[x, t], t] + D[u[x, t], x, x] == 0, u[x, 0] == E^(I k x), u[-5., t] == u[5., t]}, u, {x, -5., 5.}, {t, 0, 2}]; (Abs[u[0.7, 1.5] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4",
+    "data = Table[{t, Exp[-1.3 t^1.2]}, {t, 0, 3, 0.25}]; f[a_?NumericQ, b_?NumericQ][t_?NumericQ] := Exp[-a t^b]; {a, b} /. FindFit[data, f[a, b][t], {{a, 1.0, 2.0}, {b, 1.5, 2.0}}, t] // Chop[# - {1.3, 1.2}, 10^-6] &",
+    "e = {x1'[t] == -x1[t] + 0.1 z2[t], x2'[t] == -2 x2[t] + 0.1 z1[t], z1[t] + Exp[z1[t]] == 2 + x1[t], z2[t]^3 + z2[t] == 3 + x2[t], x1[0] == 1, x2[0] == 2}; s1 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 12, PrecisionGoal -> 12]; s2 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 3, PrecisionGoal -> 3]; {Length[(x1 /. s2[[1]])[[2]]] < Length[(x1 /. s1[[1]])[[2]]] / 2, Abs[(x1[2] /. s2[[1]]) - 0.2446458436321119] < 10^-3, Abs[(x1[2] /. s1[[1]]) - 0.2446458436321119] < 10^-7}",
+    "s = NDSolve[{x'[t] == -x[t] + w[t], u[t] + 100 (w[t] - x[t]) == 0, (1 - u[t])^1.5 == w[t] + x[t]/10, x[0] == 0.5}, {x, u, w}, {t, 0, 3}]; Max[Abs[({x[3], u[3], w[3]} /. First[s]) - {0.4899212327677134, 0.34055710629697045, 0.4865156617047437}]] < 10^-6",
+    "{v, f} = NDEigensystem[{-Derivative[2][u][x], DirichletCondition[u[x] == 0, True]}, u[x], {x, 0, Pi}, 3]; {Round[v, 10.^-4], Round[Table[g /. x -> 0.3, {g, f}], 10.^-3]}",
+    "Round[NDEigenvalues[(0.9*x^2 + 0.5*x^4)*u[x] - Derivative[2][u][x]/2, u[x], {x, -3.5, 3.5}, 3], 10.^-3]",
+    // A large sparse system: wolframscript's iterative solver leaves a
+    // residual above 10^-12.
+    "n = 60; idx[i_, j_] := (i - 1) n + j; rules = Flatten[Table[{{idx[i, j], idx[i, j]} -> 4.1, If[i > 1, {idx[i, j], idx[i - 1, j]} -> -1., Nothing], If[i < n, {idx[i, j], idx[i + 1, j]} -> -1.2, Nothing], If[j > 1, {idx[i, j], idx[i, j - 1]} -> -0.9, Nothing], If[j < n, {idx[i, j], idx[i, j + 1]} -> -1., Nothing]}, {i, n}, {j, n}]]; perm = Mod[37 Range[n^2], n^2] + 1; rules = rules /. ({r_, c_} -> v_) :> ({perm[[r]], c} -> v); A = SparseArray[rules, {n^2, n^2}]; b = N[Table[Sin[k], {k, n^2}]][[perm]]; x = LinearSolve[A, b]; {Length[x], Max[Abs[A . x - b]] < 10^-12}",
+    // A rounding tie at 10^-6 decided by the last bit of the ANOVA sum.
+    "lm = LinearModelFit[{{1, 2, 2.}, {2, 1, 3.5}, {3, 5, 7.}, {4, 3, 8.}, {5, 5, 9.}}, {x, y}, {x, y}]; e = lm[\"ANOVATableEntries\"]; {e[[All, 1]], Round[e[[All, 2]], 10^-6], Round[lm[\"ANOVATableFStatistics\"], 10^-6]}",
+    // "IndependentVariables" is not a FittedModel property in
+    // wolframscript (FittedModel::elmntav, the internal association
+    // printed back).
+    "fm = LinearModelFit[{{1, 2, 3}, {2, 3, 5}, {3, 5, 6}, {4, 4, 9}}, {Subscript[x, 1], Subscript[x, 1] Subscript[x, 2]}, {Subscript[x, 1], Subscript[x, 2]}]; {Rationalize[fm[\"BestFitParameters\"], 10^-6], fm[\"IndependentVariables\"], Rationalize[fm[2, 3], 10^-6]}",
+    // N of the last convergent hits $MaxExtraPrecision in wolframscript,
+    // whose fuzzy zero then fails the < 10^-70 test.
+    "c = Convergents[ContinuedFraction[N[Sqrt[13], 80]]]; {Take[c, 3], Abs[N[Last[c] - Sqrt[13], 20]] < 10^-70}",
+    // A symbolic axis: wolframscript's general rotation formula carries
+    // Conjugate and Abs of every component, unsimplified.
+    "RotationMatrix[t, {a, 1, 0}]",
+    // Root[{f, x0}] keeps an ~20-digit x0 in wolframscript (catalogued under
+    // "Transcendental Root[{f, x0}] objects").
+    "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
