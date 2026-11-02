@@ -634,9 +634,14 @@ pub fn dispatch_plotting(
     "DiscretePlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::list_plot::discrete_plot_ast(args)
     })),
-    "DiscretePlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
-      crate::functions::plot3d::discrete_plot3d_ast(args)
-    })),
+    "DiscretePlot3D" if args.len() >= 3 => Some(
+      match crate::functions::plot3d::discrete_plot3d_bad_iterator(args) {
+        Some(unevaluated) => Ok(unevaluated),
+        None => {
+          quiet_plot(|| crate::functions::plot3d::discrete_plot3d_ast(args))
+        }
+      },
+    ),
     "ListLinePlot" if !args.is_empty() => {
       // Match wolframscript: if the first argument doesn't evaluate
       // to a List, emit `ListLinePlot::lpn` (outside Quiet) and

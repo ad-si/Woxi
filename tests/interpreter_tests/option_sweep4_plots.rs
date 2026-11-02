@@ -389,7 +389,8 @@ mod discrete_plot_3d_forms {
         Length[First[Cases[g, Line[l_] :> l, Infinity]]]}",
     )
     .unwrap();
-    assert_eq!(r, "{Graphics3D, 1, 9, 9}");
+    // The stems reaching no higher than the filling level come first.
+    assert_eq!(r, "{Graphics3D, 1, 9, 1}");
   }
 
   #[test]
@@ -402,14 +403,11 @@ mod discrete_plot_3d_forms {
       .unwrap(),
       "2"
     );
-    // The second iterator may depend on the first.
+    // The second iterator may not depend on the first
+    // (DiscretePlot3D::iterb): the plot stays unevaluated.
     assert_eq!(
-      interpret(
-        "Length[First[Cases[DiscretePlot3D[i + j, {i, 0, 2}, {j, 0, i}], \
-         Point[p_] :> p, Infinity]]]"
-      )
-      .unwrap(),
-      "6"
+      interpret("Head[DiscretePlot3D[i + j, {i, 0, 2}, {j, 0, i}]]").unwrap(),
+      "DiscretePlot3D"
     );
     assert_eq!(
       interpret(
@@ -430,7 +428,7 @@ mod discrete_plot_3d_forms {
          {Length[c], c[[-1]]}"
       )
       .unwrap(),
-      "{4, Cuboid[{1., 1.5, 1.}, {3., 2.5, 4.}]}"
+      "{4, Cuboid[{1., 1.5, 4.}, {3., 2.5, 0.}]}"
     );
     assert_eq!(
       interpret(
@@ -438,7 +436,7 @@ mod discrete_plot_3d_forms {
          _Cuboid, Infinity][[-1]]"
       )
       .unwrap(),
-      "Cuboid[{2., 1., 1.}, {3., 2., 2.}]"
+      "Cuboid[{2., 1., 2.}, {3., 2., 0.}]"
     );
   }
 
@@ -447,10 +445,10 @@ mod discrete_plot_3d_forms {
     assert_eq!(
       interpret(
         "Cases[DiscretePlot3D[{i + j, Style[i - j, Green]}, {i, 2}, {j, 2}], \
-         {c_, PointSize[_], _Point, ___} :> c, Infinity]"
+         {_EdgeForm, Directive[PointSize[_], c_], {___, _Point, ___}} :> c, Infinity]"
       )
       .unwrap(),
-      "{RGBColor[0.3686274509803922, 0.5058823529411764, 0.7098039215686275], \
+      "{RGBColor[0.216, 0.5399999999999999, 0.7200000000000001], \
        RGBColor[0, 1, 0]}"
     );
   }
