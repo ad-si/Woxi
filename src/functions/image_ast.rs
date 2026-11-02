@@ -4791,6 +4791,13 @@ pub(crate) fn color_directive_to_rgb(
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
+  // The channels packed in one list (`RGBColor[{r, g, b}]`) are the same
+  // color.
+  if let [Expr::List(channels)] = args.as_slice()
+    && !channels.is_empty()
+  {
+    return color_directive_to_rgb(&call(name, channels.to_vec()));
+  }
   let to_f = |x: &Expr| -> Option<f64> {
     crate::functions::math_ast::try_eval_to_f64(x)
   };

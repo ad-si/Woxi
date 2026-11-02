@@ -4024,15 +4024,24 @@ mod graphics {
       ));
     }
 
+    // The list form stays as written: a color all the same, but not the
+    // same expression as the spread-out channels.
     #[test]
     fn rgb_color_list_form() {
       assert_eq!(
         interpret("RGBColor[{1, 0.5, 0}]").unwrap(),
-        "RGBColor[1, 0.5, 0]"
+        "RGBColor[{1, 0.5, 0}]"
       );
       assert_eq!(
         interpret("RGBColor[{0.1, 0.2, 0.3, 0.4}]").unwrap(),
-        "RGBColor[0.1, 0.2, 0.3, 0.4]"
+        "RGBColor[{0.1, 0.2, 0.3, 0.4}]"
+      );
+      assert_eq!(
+        interpret(
+          "{ColorQ[RGBColor[{1, 0, 0}]], RGBColor[{1, 0, 0}] === RGBColor[1, 0, 0], RGBColor[{1, 0, 0}][[1]], ColorConvert[RGBColor[{1, 0, 0}], \"HSB\"]}"
+        )
+        .unwrap(),
+        "{True, False, {1, 0, 0}, Hue[0., 1., 1.]}"
       );
     }
 
