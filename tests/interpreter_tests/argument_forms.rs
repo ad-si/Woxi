@@ -571,15 +571,48 @@ mod divisor_sigma_general_order {
   fn symbolic_and_rational_orders() {
     assert_eq!(
       interpret("DivisorSigma[k, 30]").unwrap(),
-      "1 + 2^k + 3^k + 5^k + 6^k + 10^k + 15^k + 30^k"
+      "((-1 + 2^(2*k))*(-1 + 3^(2*k))*(-1 + 5^(2*k)))/((-1 + 2^k)*(-1 + 3^k)*(-1 + 5^k))"
     );
     assert_eq!(
       interpret("DivisorSigma[1/2, 12]").unwrap(),
-      "3 + Sqrt[2] + 3*Sqrt[3] + Sqrt[6]"
+      "(2*(-1 + 2*Sqrt[2]))/((-1 + Sqrt[2])*(-1 + Sqrt[3]))"
     );
     assert_eq!(
       interpret("DivisorSigma[k, n]").unwrap(),
       "DivisorSigma[k, n]"
+    );
+  }
+
+  #[test]
+  fn multiplicative_formula_over_prime_powers() {
+    assert_eq!(interpret("DivisorSigma[k, 1]").unwrap(), "1");
+    assert_eq!(
+      interpret("DivisorSigma[k, 8]").unwrap(),
+      "(-1 + 2^(4*k))/(-1 + 2^k)"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[k, -6]").unwrap(),
+      "((-1 + 2^(2*k))*(-1 + 3^(2*k)))/((-1 + 2^k)*(-1 + 3^k))"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[-1/2, 6]").unwrap(),
+      "1/(3*(-1 + 1/Sqrt[2])*(-1 + 1/Sqrt[3]))"
+    );
+  }
+
+  #[test]
+  fn machine_real_order() {
+    assert_eq!(
+      interpret("DivisorSigma[0.5, 12]").unwrap(),
+      "12.059855727862907"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[2.5, 8]").unwrap(),
+      "219.67619023324863"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[0.5, 30]").unwrap(),
+      "21.344308671652403"
     );
   }
 }
