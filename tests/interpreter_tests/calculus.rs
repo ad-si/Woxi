@@ -24551,6 +24551,28 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // AccuracyGoal and PrecisionGoal set the adaptive steps' tolerances: the
+  // looser goals take far fewer steps and stay within them
+  // (NonadiabaticTubularReactorWithNegligibleMassDispersion asks for
+  // AccuracyGoal -> 3 on a stiff collocation system).
+  #[test]
+  fn accuracy_and_precision_goals_set_the_step_tolerances() {
+    assert_eq!(
+      interpret(
+        "e = {x1'[t] == -x1[t] + 0.1 z2[t], \
+         x2'[t] == -2 x2[t] + 0.1 z1[t], z1[t] + Exp[z1[t]] == 2 + x1[t], \
+         z2[t]^3 + z2[t] == 3 + x2[t], x1[0] == 1, x2[0] == 2}; \
+         s1 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}]; \
+         s2 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 3, \
+         PrecisionGoal -> 3]; \
+         {Length[(x1 /. s2[[1]])[[2]]] < Length[(x1 /. s1[[1]])[[2]]] / 2, \
+         Abs[(x1[2] /. s2[[1]]) - 0.2446458436321119] < 10^-3}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   // A flow written with another tank's accumulation (`L == 1 + N2'`) is not
   // substituted into the weir relation that holds it under a power: it
   // stays an algebraic unknown solved from that relation.

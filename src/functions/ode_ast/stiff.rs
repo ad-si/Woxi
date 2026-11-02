@@ -34,7 +34,8 @@ pub(super) fn rosenbrock_leg(
   x_from: f64,
   x_to: f64,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
-  rosenbrock_leg_limited(f, init, x_from, x_to, MAX_STEPS, RTOL, ATOL)
+  let (atol, rtol) = error_goals((ATOL, RTOL));
+  rosenbrock_leg_limited(f, init, x_from, x_to, MAX_STEPS, rtol, atol)
 }
 
 /// [`rosenbrock_leg`] with its own tolerances, giving up after `max_steps`
@@ -535,6 +536,7 @@ pub(super) fn dormand_prince_leg(
   x_to: f64,
   detect_stiffness: bool,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let (atol, rtol) = error_goals((ATOL, RTOL));
   const C: [f64; 7] =
     [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
   const A: [[f64; 6]; 7] = [
@@ -593,7 +595,7 @@ pub(super) fn dormand_prince_leg(
   let scale0 = y
     .iter()
     .zip(&k0)
-    .map(|(yi, fi)| fi.abs() / (ATOL + RTOL * yi.abs()))
+    .map(|(yi, fi)| fi.abs() / (atol + rtol * yi.abs()))
     .fold(0.0_f64, f64::max);
   let mut h = if scale0 > 0.0 {
     (0.1 * scale0.powf(-0.2)).min(span.abs() / 10.0)
@@ -650,7 +652,7 @@ pub(super) fn dormand_prince_leg(
     let error = (0..n)
       .map(|i| {
         let e = (hs * (0..7).map(|j| E[j] * k[j][i]).sum::<f64>()).abs();
-        e / (ATOL + RTOL * y[i].abs().max(y_new[i].abs()))
+        e / (atol + rtol * y[i].abs().max(y_new[i].abs()))
       })
       .fold(0.0_f64, f64::max);
     if !error.is_finite() {

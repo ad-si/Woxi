@@ -1395,6 +1395,33 @@ thread_local! {
 
 struct StepHintScope(Option<f64>);
 
+thread_local! {
+  /// The `(absolute, relative)` local-error tolerances `AccuracyGoal` and
+  /// `PrecisionGoal` ask for, while the NDSolve call that gave them runs.
+  static ERROR_GOALS: std::cell::Cell<Option<(f64, f64)>> =
+    const { std::cell::Cell::new(None) };
+}
+
+struct ErrorGoalsScope(Option<(f64, f64)>);
+
+impl ErrorGoalsScope {
+  fn new(goals: Option<(f64, f64)>) -> Self {
+    Self(ERROR_GOALS.with(|c| c.replace(goals)))
+  }
+}
+
+impl Drop for ErrorGoalsScope {
+  fn drop(&mut self) {
+    ERROR_GOALS.with(|c| c.set(self.0));
+  }
+}
+
+/// The absolute and relative tolerances of an adaptive leg: those
+/// `AccuracyGoal`/`PrecisionGoal` asked for, else `default`.
+pub(super) fn error_goals(default: (f64, f64)) -> (f64, f64) {
+  ERROR_GOALS.with(std::cell::Cell::get).unwrap_or(default)
+}
+
 impl StepHintScope {
   fn new(hint: Option<f64>) -> Self {
     Self(STEP_HINT.with(|c| c.replace(hint)))
@@ -1724,6 +1751,39 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   });
   let _step_hint = StepHintScope::new(step_hint);
+  // `AccuracyGoal -> a` and `PrecisionGoal -> p` bound the local error of
+  // the adaptive steps by `10^-a + 10^-p |y|` (`Infinity` dropping that
+  // term); a goal left out keeps its default of 8 digits.
+  let goal = |name: &str| {
+    opts.iter().find_map(|o| {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = o
+      else {
+        return None;
+      };
+      if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) {
+        return None;
+      }
+      if matches!(replacement.as_ref(), Expr::Identifier(i) if i == "Infinity")
+      {
+        return Some(0.0);
+      }
+      nval_to_f64(replacement)
+        .filter(|g| g.is_finite())
+        .map(|g| 10f64.powf(-g))
+    })
+  };
+  let goals = match (goal("AccuracyGoal"), goal("PrecisionGoal")) {
+    (None, None) => None,
+    (a, p) => Some((a.unwrap_or(1e-8), p.unwrap_or(1e-8))),
+  };
+  let _error_goals = ErrorGoalsScope::new(goals);
   // A system of algebraic equations plus unit-speed conditions on the
   // derivatives is an implicit curve rather than an initial value problem.
   let solved = match ndsolve_system(&positional, event.as_ref()) {
@@ -7906,8 +7966,8 @@ fn integrate_leg(
         a,
         b,
         COSTLY_STIFF_STEPS,
-        COSTLY_STIFF_RTOL,
-        COSTLY_STIFF_ATOL,
+        error_goals((COSTLY_STIFF_ATOL, COSTLY_STIFF_RTOL)).1,
+        error_goals((COSTLY_STIFF_ATOL, COSTLY_STIFF_RTOL)).0,
       );
     }
     if let Some(p) = stiff::dormand_prince_leg(&rhs, start, a, b, true)? {
