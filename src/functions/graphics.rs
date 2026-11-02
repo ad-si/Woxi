@@ -921,6 +921,9 @@ enum Primitive {
     /// instead. Resolved to pixels at render time (`render_primitive`),
     /// once the final plot range/canvas size are known.
     size: Option<(f64, f64)>,
+    /// `size` came from `Scaled[…]`: fractions of the plot range rather
+    /// than data coordinates.
+    size_scaled: bool,
   },
   RasterPrim {
     /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
@@ -5414,7 +5417,15 @@ fn is_chart_svg(svg: &str) -> bool {
 /// Given in the coordinate system of the enclosing graphic, regardless of
 /// whether `pos` is a plain point or a `Scaled`/`ImageScaled` fraction.
 fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
-  match args.get(3) {
+  let spec = args.get(3).map(|spec| match spec {
+    Expr::FunctionCall { name, args: sa }
+      if name == "Scaled" && sa.len() == 1 =>
+    {
+      &sa[0]
+    }
+    other => other,
+  });
+  match spec {
     Some(spec) => match expr_to_point(spec) {
       Some(wh) => (Some(wh.0), Some(wh.1)),
       None => match expr_to_f64(spec) {
@@ -5424,6 +5435,14 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
     },
     None => (None, None),
   }
+}
+
+/// `Inset[obj, pos, opos, Scaled[size]]`: the size is a fraction of the
+/// enclosing plot range, known only at render time.
+fn inset_size_is_scaled(args: &[Expr]) -> bool {
+  matches!(args.get(3), Some(Expr::FunctionCall { name, args: sa })
+    if name == "Scaled" && sa.len() == 1)
+    && parse_inset_target_size(args) != (None, None)
 }
 
 /// Drop the full-size background rectangle a rendered three-dimensional
@@ -5519,6 +5538,7 @@ fn framed_plot_inset(
     h: dims.nat_h,
     scaled: false,
     size: Some((width, height)),
+    size_scaled: false,
   })
 }
 
@@ -5763,7 +5783,9 @@ fn inset_primitives(
     call @ Expr::FunctionCall { name, .. }
       if name == "Graphics3D"
         || name == "Graphics3DBox"
-        || ((natural_size || anchor.is_some_and(|(_, _, scaled)| scaled))
+        || ((natural_size
+          || inset_size_is_scaled(args)
+          || anchor.is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
       let svg = crate::evaluator::expr_to_svg(call);
@@ -5822,6 +5844,7 @@ fn inset_primitives(
       h,
       scaled,
       size,
+      size_scaled: inset_size_is_scaled(args),
     }]);
   }
   // `Inset[Button[label, action], pos]` — the control a puzzle
@@ -5850,6 +5873,7 @@ fn inset_primitives(
       h: button_plate_size(&label).1,
       scaled: false,
       size: None,
+      size_scaled: false,
     }]);
   }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
@@ -6145,6 +6169,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       h,
       scaled,
       size: None,
+      size_scaled: false,
     });
     return;
   }
@@ -6181,6 +6206,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         h: layout.height.ceil().max(1.0),
         scaled,
         size: None,
+        size_scaled: false,
       });
       return;
     }
@@ -7280,6 +7306,7 @@ fn rotate_primitive(
       h,
       scaled,
       size,
+      size_scaled,
     } => {
       // A scaled anchor names a place in the finished frame, not a point in
       // the data, so a transform of the coordinates leaves it where it is.
@@ -7292,6 +7319,7 @@ fn rotate_primitive(
         h: *h,
         scaled: *scaled,
         size: *size,
+        size_scaled: *size_scaled,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -7592,6 +7620,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       h,
       scaled,
       size,
+      size_scaled,
     } => Primitive::InsetGraphic {
       svg: svg.clone(),
       x: if *scaled { *x } else { x + dx },
@@ -7600,6 +7629,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       h: *h,
       scaled: *scaled,
       size: *size,
+      size_scaled: *size_scaled,
     },
     Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
       x: x + dx,
@@ -7847,12 +7877,19 @@ fn scale_primitive(
       h,
       scaled,
       size,
+      size_scaled,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
       // An explicit `size` lives in data coordinates, so it scales with the
       // primitive; the natural `w`/`h` fallback is screen pixels and stays
       // fixed, same as point sizes and stroke widths above.
-      let nsize = size.map(|(sw, sh)| (sw * sx.abs(), sh * sy.abs()));
+      let nsize = size.map(|(sw, sh)| {
+        if *size_scaled {
+          (sw, sh)
+        } else {
+          (sw * sx.abs(), sh * sy.abs())
+        }
+      });
       Primitive::InsetGraphic {
         svg: svg.clone(),
         x: nx,
@@ -7861,6 +7898,7 @@ fn scale_primitive(
         h: *h,
         scaled: *scaled,
         size: nsize,
+        size_scaled: *size_scaled,
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -9605,9 +9643,11 @@ fn render_primitive(
       h,
       scaled,
       size,
+      size_scaled,
     } => {
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
       let (pw, ph) = match size {
+        Some((sw, sh)) if *size_scaled => (sw * svg_w, sh * svg_h),
         Some((sw, sh)) if bb.width() > 0.0 && bb.height() > 0.0 => {
           (sw * svg_w / bb.width(), sh * svg_h / bb.height())
         }
