@@ -38983,6 +38983,19 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           svg: None,
           text: formatted.replace('\n', " ").trim().to_string(),
         }
+      } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
+        && name == "StringForm"
+        && let Some(Expr::String(template)) = args.first()
+      {
+        // A `Dynamic[StringForm[…]]` caption shows the template with its
+        // slots filled, not the held call.
+        DisplayNode::Static {
+          svg: None,
+          text: crate::functions::string_ast::format_string_form(
+            template,
+            &args[1..],
+          ),
+        }
       } else {
         let text = r
           .result
