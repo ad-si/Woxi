@@ -1891,8 +1891,9 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("RulePlot[x]").unwrap(), "RulePlot[x]");
     assert_eq!(interpret("RulePlot[30]").unwrap(), "RulePlot[30]");
     assert_eq!(
-      interpret("RulePlot[SubstitutionSystem[{\"A\" -> \"AB\"}]]").unwrap(),
-      "-Graphics-"
+      interpret("Head[RulePlot[SubstitutionSystem[{\"A\" -> \"AB\"}]]]")
+        .unwrap(),
+      "Graphics"
     );
   }
   #[test]
