@@ -13821,14 +13821,28 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut x = x0;
   let mut previous: Option<f64> = None;
   let mut converged = false;
+  // A step of a unit or two in the last place means the iterate has settled
+  // as far as machine arithmetic can take it: an AccuracyGoal past what the
+  // residual's rounding noise allows (`AccuracyGoal -> 30` on a function of
+  // size ~1) is then met as well as it can be, which wolframscript accepts
+  // without FindRoot::cvmit.
+  let settled = |x: f64, p: f64, fx: f64| {
+    (x - p).abs() <= 2.0 * f64::EPSILON * x.abs()
+      && fx.abs()
+        <= 10f64.powf(
+          -crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS
+            / 2.0,
+        )
+  };
 
   for _ in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
     let goal_met = match previous {
       None => fx == 0.0,
       Some(p) => {
-        (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
-          && fx.abs() <= accuracy_tol
+        ((x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+          && fx.abs() <= accuracy_tol)
+          || settled(x, p, fx)
       }
     };
     if goal_met {
@@ -14227,8 +14241,15 @@ fn find_root_goal_tolerances(opts: &[Expr]) -> (f64, f64) {
       .and_then(|e| crate::evaluator::evaluate_expr_to_expr(e).ok());
     match &value {
       Some(Expr::Identifier(i)) if i == "Infinity" => 0.0,
-      Some(e) => crate::functions::math_ast::try_eval_to_f64(e)
-        .map_or(automatic, |g| 10f64.powf(-g)),
+      // A goal beyond the machine working precision cannot be met; the
+      // search is held to the precision it actually works in instead.
+      Some(e) => {
+        crate::functions::math_ast::try_eval_to_f64(e).map_or(automatic, |g| {
+          10f64.powf(-g.min(
+            crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS,
+          ))
+        })
+      }
       None => automatic,
     }
   };
