@@ -3390,7 +3390,7 @@ ThueMorse,"Returns the parity of the number of 1-bits in the binary expansion of
 VertexQ,"True if a vertex is in a graph (False for any non-graph first argument)",✅,pure,8.0,3427
 BrayCurtisDistance,"Bray-Curtis distance between vectors",✅,none,6.0,3440
 EdgeCost,"",,,9.0,3440
-GaborFilter,"",🚫,,9.0,3440
+GaborFilter,"Convolution of an array or image with a Gabor kernel (edges padded with the nearest value)",✅,pure,9.0,3440
 GeomagneticModelData,"",🚫,,10.1,3440
 GraphAssortativity,"Newman degree assortativity as an exact rational (0 for regular graphs)",✅,pure,9.0,3440
 LearningRateMultipliers,"",🚫,,11.1,3440
@@ -3862,7 +3862,7 @@ ControllerPath,"",,,6.0,3947
 DataStructure,"",,,12.1,3947
 DeviceExecute,"",🚫,,10.0,3947
 FindKClan,"",,,9.0,3947
-GaborMatrix,"",,,9.0,3947
+GaborMatrix,"Gabor kernel: a unit-sum Gaussian times Cos[k.x - phase]",✅,pure,9.0,3947
 GrammarApply,"",🚫,,10.0,3947
 GroupElementToWord,"",,,9.0,3947
 GroupPageBreakWithin,"",,,3.0,3947
