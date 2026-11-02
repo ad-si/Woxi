@@ -3376,6 +3376,20 @@ fn evaluate_expr_to_expr_uncached(
             return Ok(unevaluated(name, args));
           }
         }
+        // FunctionInterpolation samples its expression as written, at
+        // numbers: `FunctionInterpolation[f[c], {c, 0, 1}]` with
+        // `f[c_?NumericQ] := …` interpolates f, where evaluating `f[c]` for
+        // a symbolic `c` first would leave nothing to sample.
+        if name == "FunctionInterpolation" && args.len() >= 2 {
+          let result = with_local_iterators(name, args, || {
+            let mut evaluated = vec![args[0].clone()];
+            for a in &args[1..] {
+              evaluated.push(evaluate_expr_to_expr(a)?);
+            }
+            evaluate_function_call_ast(name, &evaluated)
+          })?;
+          return Ok(result);
+        }
         // The numeric searches hold their arguments (HoldAll): the iterator
         // variable is a free symbol while the arguments are evaluated, even
         // when it has a value outside — `th = 0.3; NIntegrate[th^2, {th, 0,

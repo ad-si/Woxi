@@ -414,3 +414,27 @@ mod literal_rule_ordering {
     );
   }
 }
+
+mod function_interpolation_samples_held_expression {
+  use super::*;
+
+  // FunctionInterpolation samples its expression as written, with the
+  // variable set to each number: a function defined only for numbers (as
+  // the ballistics Demonstration's NDSolve-based F[Cd, …]) is interpolated
+  // instead of evaluated once at the symbol.
+  #[test]
+  fn samples_numeric_only_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "k = 0; f[c_?NumericQ] := (k++; c^2); f[c_] := 0; \
+         G = FunctionInterpolation[f[c], {c, 0, 1}]; \
+         e = Sin[x]; H = FunctionInterpolation[e, {x, 0, 1}]; \
+         x = 5; J = FunctionInterpolation[x^2, {x, 0, 2}]; \
+         {G[0.5], k > 0, H[0.5], J[1.5], x}"
+      )
+      .unwrap(),
+      "{0.25, True, 0.479425538604203, 2.25, 5}"
+    );
+  }
+}

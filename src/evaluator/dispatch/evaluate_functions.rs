@@ -13694,12 +13694,24 @@ fn function_interpolation_ast(args: &[Expr]) -> Expr {
 
         for i in 0..n_points {
           let x_val = xmin + i as f64 * dx;
-          let x_expr = Expr::Real(x_val);
-          let substituted =
-            crate::syntax::substitute_variable(body, var_name, &x_expr);
-          if let Ok(y_expr) =
-            crate::evaluator::evaluate_expr_to_expr(&substituted)
-          {
+          // The (held) expression is evaluated with the variable set, as in
+          // a Block: a function of it that only computes for a number
+          // (`f[c_?NumericQ]`, or a solver run whose result it reads off)
+          // sees the number, and so does an expression held in a symbol.
+          let sample = call(
+            "Block",
+            vec![
+              Expr::List(
+                vec![call(
+                  "Set",
+                  vec![Expr::Identifier(var_name.clone()), Expr::Real(x_val)],
+                )]
+                .into(),
+              ),
+              body.clone(),
+            ],
+          );
+          if let Ok(y_expr) = crate::evaluator::evaluate_expr_to_expr(&sample) {
             let y_val = match &y_expr {
               Expr::Integer(n) => Some(*n as f64),
               Expr::Real(f) => Some(*f),
