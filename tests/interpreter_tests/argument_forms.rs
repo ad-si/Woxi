@@ -906,3 +906,30 @@ mod group_orbits_without_domain {
     );
   }
 }
+
+mod call_patterns_match_operator_nodes {
+  use super::*;
+
+  #[test]
+  fn power_and_plus_under_condition_and_hold() {
+    assert_eq!(
+      interpret("MatchQ[2^n, Power[b_, x_] /; !FreeQ[x, n]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[a + b], Hold[Plus[x_, y_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[a^b], Hold[Power[x_, y_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[2^n + 2^(n - 1) n, Power[b_, x_] /; !FreeQ[x, n], {0, Infinity}]"
+      )
+      .unwrap(),
+      "{2^n, 2^(-1 + n)}"
+    );
+  }
+}
