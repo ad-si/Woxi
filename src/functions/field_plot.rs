@@ -334,6 +334,9 @@ struct DensityContourOptions {
   /// `ContourLabels -> True` (or a function): label each contour line with
   /// its level.
   contour_labels: bool,
+  /// The explicit `Contours -> {…}` levels as written, so a label of an
+  /// exact level stays exact.
+  contour_level_exprs: Vec<(f64, Expr)>,
   /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
   /// swatch per shaded band, labelled at the contour levels.
   bar_legend: bool,
@@ -492,6 +495,7 @@ fn parse_density_contour_options(
   let mut color_function_expr: Option<Expr> = None;
   let mut color_function_scaling = true;
   let mut contour_labels = false;
+  let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
   let mut bar_legend = false;
   let mut value_range: Option<(f64, f64)> = None;
   let mut clipping = Clipping::Blank;
@@ -534,7 +538,9 @@ fn parse_density_contour_options(
               .iter()
               .filter_map(|item| {
                 let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-                try_eval_to_f64(&v)
+                let f = try_eval_to_f64(&v)?;
+                contour_level_exprs.push((f, v));
+                Some(f)
               })
               .filter(|v| v.is_finite())
               .collect();
@@ -651,6 +657,7 @@ fn parse_density_contour_options(
     plot_label: parse_field_plot_label(args, start),
     region_function,
     contour_labels,
+    contour_level_exprs,
     bar_legend,
     value_range,
     clipping,
@@ -2144,12 +2151,14 @@ fn contour_structure_items(
       contour_label_points(grid, levels, x_min, y_max, step_x, -step_y)
         .into_iter()
         .map(|(level, (x, y))| {
+          let text = opts
+            .contour_level_exprs
+            .iter()
+            .find(|(v, _)| *v == level)
+            .map_or(Expr::Real(level), |(_, e)| e.clone());
           call(
             "Text",
-            vec![
-              Expr::Real(level),
-              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-            ],
+            vec![text, Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())],
           )
         })
         .collect();

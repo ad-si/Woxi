@@ -38195,7 +38195,7 @@ mod color_data_indexed {
           Length[labels] > 0, labels[[1, 1]], IntegerQ[labels[[1, 2]]]}"
       )
       .unwrap(),
-      "{True, 1, True, True, 1., True}"
+      "{True, 1, True, True, 1, True}"
     );
   }
 
