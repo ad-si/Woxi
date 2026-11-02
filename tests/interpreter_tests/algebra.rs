@@ -25029,8 +25029,6 @@ mod solve_bounded_inexact_transcendental {
 // mentions the unknown's symbol sees it; the substituted-only evaluation
 // left such an integrand symbolic (NIntegrate::inumr).
 mod find_root_block_semantics {
-  use super::*;
-
   #[test]
   fn definitions_see_the_unknown() {
     let r = woxi::interpret_with_stdout(

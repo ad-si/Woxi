@@ -228,7 +228,9 @@ pub fn line_integral_convolution_plot_ast(
         for _ in 0..steps {
           let (u, v) = field_at[at];
           let len = u.hypot(v);
-          if !(len > 0.0) || !len.is_finite() {
+          if len.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater)
+            || !len.is_finite()
+          {
             break;
           }
           // The direction in pixel units (the axes may be scaled apart).

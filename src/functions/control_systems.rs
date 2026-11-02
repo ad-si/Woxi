@@ -884,7 +884,7 @@ pub fn root_locus_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) else {
     return fallback();
   };
-  if !(kmax > kmin) {
+  if kmax.partial_cmp(&kmin) != Some(std::cmp::Ordering::Greater) {
     return fallback();
   }
   let expr =

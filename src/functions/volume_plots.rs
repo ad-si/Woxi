@@ -68,7 +68,7 @@ impl Volume {
     let mut hi = [0.0; 3];
     for (k, label) in ["first", "second", "third"].iter().enumerate() {
       let (v, a, b) = parse_iterator_generic(&iterators[k], head, label)?;
-      if !(a < b) {
+      if a.partial_cmp(&b) != Some(std::cmp::Ordering::Less) {
         return Err(InterpreterError::EvaluationError(format!(
           "{head}: the {label} iterator range must be increasing"
         )));

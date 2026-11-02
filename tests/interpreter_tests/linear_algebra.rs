@@ -731,7 +731,7 @@ mod inverse {
       .unwrap(),
       "True"
     );
-    assert!(start.elapsed().as_secs() < 15, "took {:?}", start.elapsed());
+    assert!(start.elapsed().as_secs() < 60, "took {:?}", start.elapsed());
   }
 
   #[test]

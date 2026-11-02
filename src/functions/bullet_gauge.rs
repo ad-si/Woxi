@@ -67,7 +67,7 @@ pub fn bullet_gauge_ast(
     return Ok(None);
   }
   let (lo, hi) = (range[0], range[range.len() - 1]);
-  if !(hi > lo) {
+  if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
     return Ok(None);
   }
 
