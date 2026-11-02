@@ -1082,3 +1082,276 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
     .into(),
   })
 }
+
+/// The cells a mesh property item names: `d` (the dimension as a whole),
+/// `{d, All}`, `{d, i}` or `{d, {i1, i2, …}}` (1-based cell indices).
+enum MeshItem {
+  Dimension(usize),
+  All(usize),
+  One(usize, usize),
+  Many(usize, Vec<usize>),
+}
+
+fn mesh_item(item: &Expr) -> Option<MeshItem> {
+  let dim = |e: &Expr| match e {
+    Expr::Integer(d) if (0..=3).contains(d) => Some(*d as usize),
+    _ => None,
+  };
+  match item {
+    Expr::Integer(_) => Some(MeshItem::Dimension(dim(item)?)),
+    Expr::List(parts) if parts.len() == 2 => {
+      let d = dim(&parts[0])?;
+      match &parts[1] {
+        Expr::Identifier(s) if s == "All" => Some(MeshItem::All(d)),
+        Expr::Integer(i) if *i >= 1 => Some(MeshItem::One(d, *i as usize)),
+        other => Some(MeshItem::Many(d, index_list(other)?)),
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The `Properties -> {{d, i} -> name -> value, …}` entries of a mesh.
+fn mesh_properties(region: &Expr) -> Vec<(Expr, String, Expr)> {
+  let Expr::FunctionCall { args, .. } = region else {
+    return Vec::new();
+  };
+  let mut out = Vec::new();
+  for arg in args.iter().skip(2) {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Properties")
+      && let Expr::List(entries) = replacement.as_ref()
+    {
+      for entry in entries {
+        if let Expr::Rule {
+          pattern: key,
+          replacement: inner,
+        } = entry
+          && let Expr::Rule {
+            pattern: prop,
+            replacement: value,
+          } = inner.as_ref()
+          && let Expr::Identifier(prop) = prop.as_ref()
+        {
+          out.push((
+            key.as_ref().clone(),
+            prop.clone(),
+            value.as_ref().clone(),
+          ));
+        }
+      }
+    }
+  }
+  out
+}
+
+/// The value of a user-set property for the cell key `{d, i}` (or
+/// `{d, Default}`), falling back to the dimension's default and then to
+/// `Automatic`.
+fn stored_mesh_property(
+  stored: &[(Expr, String, Expr)],
+  d: usize,
+  index: Option<usize>,
+  property: &str,
+) -> Expr {
+  let key = |i: Option<usize>| {
+    Expr::List(
+      vec![
+        Expr::Integer(d as i128),
+        match i {
+          Some(i) => Expr::Integer(i as i128),
+          None => Expr::Identifier("Default".into()),
+        },
+      ]
+      .into(),
+    )
+  };
+  let find = |k: &Expr| {
+    stored
+      .iter()
+      .find(|(sk, sp, _)| {
+        sp == property && expr_to_string(sk) == expr_to_string(k)
+      })
+      .map(|(_, _, v)| v.clone())
+  };
+  index
+    .and_then(|i| find(&key(Some(i))))
+    .or_else(|| find(&key(None)))
+    .unwrap_or_else(|| Expr::Identifier("Automatic".into()))
+}
+
+/// `PropertyValue[{mesh, item}, property]`: the computed `MeshCellMeasure`
+/// and `MeshCellCentroid` of the named cells, or a property set with
+/// `SetProperty` (`Automatic` when unset). `None` when `region` is not a
+/// mesh or the item is malformed; `$Failed` for an unknown property.
+pub fn mesh_property_value(
+  region: &Expr,
+  item: &Expr,
+  property: &str,
+) -> Option<Expr> {
+  let mesh = parse_mesh(region)?;
+  let item = mesh_item(item)?;
+  let (d, indices) = match &item {
+    MeshItem::Dimension(d) | MeshItem::All(d) => (*d, None),
+    MeshItem::One(d, i) => (*d, Some(vec![*i])),
+    MeshItem::Many(d, is) => (*d, Some(is.clone())),
+  };
+  let count = mesh.cell_counts().get(d).copied().unwrap_or(0);
+  let indices: Vec<usize> = indices.unwrap_or_else(|| (1..=count).collect());
+  if indices.iter().any(|&i| i > count) {
+    return None;
+  }
+  let values: Vec<Expr> = match property {
+    "MeshCellMeasure" | "MeshCellCentroid" => {
+      let primitives = if count == 0 {
+        Vec::new()
+      } else {
+        mesh.cell_primitives(d)?
+      };
+      let mut out = Vec::with_capacity(indices.len());
+      for &i in &indices {
+        let primitive = primitives.get(i - 1)?;
+        let value = match (property, d) {
+          ("MeshCellMeasure", 0) => Expr::Real(1.0),
+          ("MeshCellMeasure", _) => eval_call(
+            "N",
+            &[eval_call("RegionMeasure", std::slice::from_ref(primitive))?],
+          )?,
+          _ => eval_call(
+            "N",
+            &[eval_call(
+              "RegionCentroid",
+              std::slice::from_ref(primitive),
+            )?],
+          )?,
+        };
+        out.push(value);
+      }
+      out
+    }
+    "MeshCellLabel"
+    | "MeshCellStyle"
+    | "MeshCellHighlight"
+    | "MeshCellMarker"
+    | "MeshCellShapeFunction" => {
+      let stored = mesh_properties(region);
+      if let MeshItem::Dimension(d) = item {
+        return Some(stored_mesh_property(&stored, d, None, property));
+      }
+      indices
+        .iter()
+        .map(|&i| stored_mesh_property(&stored, d, Some(i), property))
+        .collect()
+    }
+    _ => return Some(Expr::Identifier("$Failed".into())),
+  };
+  Some(match item {
+    MeshItem::One(..) => values.into_iter().next()?,
+    _ => Expr::List(values.into()),
+  })
+}
+
+/// `SetProperty[{mesh, item}, property -> value]`: the mesh with `value`
+/// recorded under `Properties`, per cell for `{d, All}` / `{d, i}` /
+/// `{d, {…}}` items (a list value assigns one entry per cell) and as the
+/// dimension's default for a bare `d`.
+pub fn mesh_set_property(
+  region: &Expr,
+  item: &Expr,
+  property: &str,
+  value: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let mesh = parse_mesh(region)?;
+  let item = mesh_item(item)?;
+  let count = |d: usize| mesh.cell_counts().get(d).copied().unwrap_or(0);
+  let key = |d: usize, i: Option<usize>| {
+    Expr::List(
+      vec![
+        Expr::Integer(d as i128),
+        match i {
+          Some(i) => Expr::Integer(i as i128),
+          None => Expr::Identifier("Default".into()),
+        },
+      ]
+      .into(),
+    )
+  };
+  let (d, assignments): (usize, Vec<(Option<usize>, Expr)>) = match item {
+    MeshItem::Dimension(d) => (d, vec![(None, value.clone())]),
+    MeshItem::One(d, i) => (d, vec![(Some(i), value.clone())]),
+    MeshItem::All(d) | MeshItem::Many(d, _) => {
+      let indices: Vec<usize> = match &item {
+        MeshItem::Many(_, is) => is.clone(),
+        _ => (1..=count(d)).collect(),
+      };
+      let values: Vec<Expr> = match value {
+        Expr::List(vs) if vs.len() == indices.len() => vs.to_vec(),
+        Expr::List(_) => return None,
+        other => vec![other.clone(); indices.len()],
+      };
+      (d, indices.into_iter().map(Some).zip(values).collect())
+    }
+  };
+  let mut stored = mesh_properties(region);
+  for (i, v) in assignments {
+    let k = key(d, i);
+    let k_text = expr_to_string(&k);
+    stored
+      .retain(|(sk, sp, _)| !(sp == property && expr_to_string(sk) == k_text));
+    stored.push((k, property.to_string(), v));
+  }
+  // A per-cell assignment leaves the dimension's default explicitly
+  // `Automatic`, as wolframscript writes it.
+  let default_key = key(d, None);
+  if !stored.iter().any(|(sk, sp, _)| {
+    sp == property && expr_to_string(sk) == expr_to_string(&default_key)
+  }) {
+    stored.push((
+      default_key,
+      property.to_string(),
+      Expr::Identifier("Automatic".into()),
+    ));
+  }
+  // Entries in key order, the default of each dimension last.
+  let rank = |k: &Expr| match k {
+    Expr::List(p) => match (&p[0], &p[1]) {
+      (Expr::Integer(d), Expr::Integer(i)) => (*d, *i),
+      (Expr::Integer(d), _) => (*d, i128::MAX),
+      _ => (i128::MAX, i128::MAX),
+    },
+    _ => (i128::MAX, i128::MAX),
+  };
+  stored.sort_by_key(|(k, p, _)| (rank(k), p.clone()));
+  let entries: Vec<Expr> = stored
+    .into_iter()
+    .map(|(k, p, v)| Expr::Rule {
+      pattern: Box::new(k),
+      replacement: Box::new(Expr::Rule {
+        pattern: Box::new(Expr::Identifier(p)),
+        replacement: Box::new(v),
+      }),
+    })
+    .collect();
+  let mut new_args: Vec<Expr> = args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Properties"))
+    })
+    .cloned()
+    .collect();
+  new_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("Properties".into())),
+    replacement: Box::new(Expr::List(entries.into())),
+  });
+  Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  })
+}

@@ -5593,6 +5593,17 @@ story as `ElementData["Properties"]`.
 
 ## Geometry and regions
 
+### `MeshRegion` keeps its input cells; Wolfram canonicalizes them
+
+Wolfram rewrites a constructed `MeshRegion` (machine-real coordinates,
+re-oriented polygons: `Polygon[{{1, 2, 4, 3}, …}]` becomes
+`{Polygon[{{3, 4, 2, 1}, …}]}`) and enumerates its 1-cells in its own order.
+Woxi keeps the input, so `MeshCells[mr, 1]` and
+`PropertyValue[{mr, 1}, MeshCellMeasure]` list the same edges in a different
+order. The 2-D mesh renderer also ignores `MeshCellStyle`,
+`MeshCellHighlight` and `MeshCellLabel` (cells are drawn in the default
+colour).
+
 ### `FindCurvePath` finds one curve where Wolfram may find several
 
 Woxi orders the points along a single shortest tour, closed or cut at its

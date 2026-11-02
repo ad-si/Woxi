@@ -892,9 +892,15 @@ pub fn mesh_region_to_svg(
     return None;
   }
 
-  // Parse polygons
-  let Expr::List(prims) = primitives_expr else {
-    return None;
+  // Parse polygons; a single cell primitive may stand without a list.
+  let single;
+  let prims = match primitives_expr {
+    Expr::List(prims) => prims.as_slice(),
+    Expr::FunctionCall { .. } => {
+      single = [primitives_expr.clone()];
+      &single[..]
+    }
+    _ => return None,
   };
   let mut polygons: Vec<Vec<usize>> = Vec::new(); // 0-indexed vertex indices
   for prim in prims {

@@ -10231,3 +10231,75 @@ mod sphere_points {
     );
   }
 }
+
+mod mesh_property_value {
+  use super::*;
+
+  const MESH: &str = "mr = MeshRegion[{{0, 0}, {0, 2}, {2, 0}, {2, 2}, {3, 0}, \
+                      {3, 2}}, Polygon[{{1, 2, 4, 3}, {3, 4, 6, 5}}]];";
+
+  #[test]
+  fn cell_measures_and_centroids() {
+    assert_eq!(
+      interpret(&format!(
+        "{MESH} {{PropertyValue[{{mr, 2}}, MeshCellMeasure], \
+         PropertyValue[{{mr, {{2, All}}}}, MeshCellMeasure], \
+         PropertyValue[{{mr, {{2, 1}}}}, MeshCellMeasure], \
+         PropertyValue[{{mr, {{2, {{2, 1}}}}}}, MeshCellMeasure], \
+         PropertyValue[{{mr, 0}}, MeshCellMeasure], \
+         PropertyValue[{{mr, 3}}, MeshCellMeasure], \
+         PropertyValue[{{mr, 2}}, MeshCellCentroid], \
+         PropertyValue[{{mr, 2}}, MeshCellLabel], \
+         PropertyValue[{{mr, 2}}, Foo]}}"
+      ))
+      .unwrap(),
+      "{{4., 2.}, {4., 2.}, 4., {2., 4.}, {1., 1., 1., 1., 1., 1.}, {}, \
+       {{1., 1.}, {2.5, 1.}}, Automatic, $Failed}"
+    );
+  }
+
+  #[test]
+  fn assignment_stores_properties() {
+    // `PropertyValue[{sym, item}, p] = v` updates the mesh held by sym and
+    // returns v, like SetProperty.
+    assert_eq!(
+      interpret(&format!(
+        "{MESH} m3 = mr; x = (PropertyValue[{{m3, {{2, All}}}}, \
+         MeshCellLabel] = {{\"a\", \"b\"}}); \
+         {{x, PropertyValue[{{m3, {{2, All}}}}, MeshCellLabel], \
+         PropertyValue[{{m3, {{2, 2}}}}, MeshCellLabel], \
+         PropertyValue[{{m3, 2}}, MeshCellLabel], \
+         PropertyValue[{{m3, {{2, {{2, 1}}}}}}, MeshCellLabel], \
+         PropertyValue[{{mr, {{2, All}}}}, MeshCellLabel]}}"
+      ))
+      .unwrap(),
+      "{{a, b}, {a, b}, b, Automatic, {b, a}, {Automatic, Automatic}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{MESH} m2 = mr; PropertyValue[{{m2, 2}}, MeshCellLabel] = \"z\"; \
+         PropertyValue[{{m2, {{2, All}}}}, MeshCellLabel]"
+      ))
+      .unwrap(),
+      "{z, z}"
+    );
+  }
+
+  #[test]
+  fn set_property_records_cell_entries() {
+    assert_eq!(
+      interpret(&format!(
+        "{MESH} Last[InputForm[SetProperty[{{mr, {{2, 1}}}}, \
+         MeshCellLabel -> \"q\"]][[1]]]"
+      ))
+      .unwrap(),
+      "Properties -> {{2, 1} -> MeshCellLabel -> q, \
+       {2, Default} -> MeshCellLabel -> Automatic}"
+    );
+  }
+
+  #[test]
+  fn bare_polygon_mesh_renders() {
+    assert_eq!(interpret(MESH.trim_end_matches(';')).unwrap(), "-Graphics-");
+  }
+}

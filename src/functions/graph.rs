@@ -9669,6 +9669,14 @@ pub fn graph_annotation_ast(
     other => (other, None),
   };
   if graph_parts(graph).is_none() {
+    if name == "PropertyValue"
+      && let Some(item) = item
+      && let Some(value) = crate::functions::mesh_region::mesh_property_value(
+        graph, item, property,
+      )
+    {
+      return Ok(value);
+    }
     return Ok(original());
   }
   Ok(annotation_value(graph, item, property).unwrap_or_else(fail_expr))
@@ -9921,6 +9929,16 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => (other, None),
   };
   let Some((vertices, edges, options)) = graph_parts(graph) else {
+    if let Some(item) = item
+      && let Some(region) = crate::functions::mesh_region::mesh_set_property(
+        graph,
+        item,
+        property,
+        replacement,
+      )
+    {
+      return Ok(region);
+    }
     return Ok(original());
   };
   let slots = if property.starts_with("Vertex") {

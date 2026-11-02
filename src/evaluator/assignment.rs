@@ -3696,6 +3696,43 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(rhs_value);
   }
 
+  // `PropertyValue[{sym, item}, property] = value` stores the property in
+  // the graph or mesh region `sym` holds: sym = SetProperty[{sym, item},
+  // property -> value].
+  if let Expr::FunctionCall {
+    name: func_name,
+    args: lhs_args,
+  } = lhs
+    && func_name == "PropertyValue"
+    && lhs_args.len() == 2
+    && let Expr::List(target) = &lhs_args[0]
+    && target.len() == 2
+    && let Expr::Identifier(sym_name) = &target[0]
+    && let Expr::Identifier(_) = &lhs_args[1]
+  {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    let current = evaluate_expr_to_expr(&target[0])?;
+    let item = evaluate_expr_to_expr(&target[1])?;
+    let updated = evaluate_expr_to_expr(&crate::helpers::call(
+      "SetProperty",
+      vec![
+        Expr::List(vec![current, item].into()),
+        Expr::Rule {
+          pattern: Box::new(lhs_args[1].clone()),
+          replacement: Box::new(rhs_value.clone()),
+        },
+      ],
+    ))?;
+    if !matches!(&updated, Expr::FunctionCall { name, .. } if name == "SetProperty")
+    {
+      evaluate_expr_to_expr(&crate::helpers::call(
+        "Set",
+        vec![Expr::Identifier(sym_name.clone()), updated],
+      ))?;
+      return Ok(rhs_value);
+    }
+  }
+
   // Handle Options[f] = value — set options on symbol f
   if let Expr::FunctionCall {
     name: func_name,
