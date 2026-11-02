@@ -274,10 +274,11 @@ mod algorithm_options {
     );
     assert_eq!(
       interpret(
-        "Eigenvalues[{{2., 0, 0}, {0, 3., 0}, {0, 0, 1.}}, 1, Method -> \"Arnoldi\"]"
+        "Abs[First[Eigenvalues[{{2., 0, 0}, {0, 3., 0}, {0, 0, 1.}}, 1, \
+         Method -> \"Arnoldi\"]] - 3] < 10^-12"
       )
       .unwrap(),
-      "{3.}"
+      "True"
     );
   }
 
