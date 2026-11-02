@@ -8986,31 +8986,72 @@ pub fn watershed_components_ast(
   // `labels`: 0 = unlabeled, -1 = watershed line, otherwise the basin.
   let mut labels = vec![0i64; n];
   match args.get(1) {
-    Some(Expr::List(rows)) => {
-      let parsed: Option<Vec<i64>> = (rows.len() == h)
-        .then(|| {
-          rows
-            .iter()
-            .map(|row| match row {
-              Expr::List(cells) if cells.len() == w => cells
-                .iter()
-                .map(|c| match c {
-                  Expr::Integer(v) if *v >= 0 => i64::try_from(*v).ok(),
-                  _ => None,
-                })
-                .collect::<Option<Vec<i64>>>(),
-              _ => None,
-            })
-            .collect::<Option<Vec<Vec<i64>>>>()
-            .map(|r| r.into_iter().flatten().collect())
-        })
-        .flatten();
-      match parsed {
-        Some(markers) => labels = markers,
-        None => return Ok(unevaluated()),
+    // Markers: an image of the same size (its nonzero pixels) or a list of
+    // `{x, y}` pixel positions (y counted from the bottom). Each connected
+    // group of marked pixels seeds one basin, numbered in reading order.
+    Some(markers) => {
+      let mut marked = vec![false; n];
+      let positions: Option<Vec<(f64, f64)>> = match markers {
+        Expr::List(items) => items
+          .iter()
+          .map(|p| match p {
+            Expr::List(xy) if xy.len() == 2 => Some((
+              crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+              crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+            )),
+            _ => None,
+          })
+          .collect(),
+        _ => None,
+      };
+      if let Some(positions) = positions {
+        for (x, y) in positions {
+          let (col, row) = (x.round() as i64 - 1, h as i64 - y.round() as i64);
+          if (0..w as i64).contains(&col) && (0..h as i64).contains(&row) {
+            marked[row as usize * w + col as usize] = true;
+          }
+        }
+      } else if let Some((mw, mh, plane)) = image_gray_plane(markers)
+        && (mw, mh) == (w, h)
+      {
+        for (k, v) in plane.iter().enumerate() {
+          marked[k] = *v != 0.0;
+        }
+      } else {
+        crate::emit_message(&format!(
+          "WatershedComponents::mkinv: Expecting either an image or graphics \
+           with dimensions {{{w}, {h}}} or a list of positions to specify \
+           markers instead of {}.",
+          expr_to_string(markers)
+        ));
+        return Ok(unevaluated());
+      }
+      let mut next = 0i64;
+      for start in 0..n {
+        if !marked[start] || labels[start] != 0 {
+          continue;
+        }
+        next += 1;
+        labels[start] = next;
+        let mut stack = vec![start];
+        while let Some(p) = stack.pop() {
+          let (y, x) = ((p / w) as i64, (p % w) as i64);
+          for dy in -1i64..=1 {
+            for dx in -1i64..=1 {
+              let (ny, nx) = (y + dy, x + dx);
+              if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+                continue;
+              }
+              let q = ny as usize * w + nx as usize;
+              if marked[q] && labels[q] == 0 {
+                labels[q] = next;
+                stack.push(q);
+              }
+            }
+          }
+        }
       }
     }
-    Some(_) => return Ok(unevaluated()),
     None => {
       let mut next = 0i64;
       let mut seen = vec![false; n];

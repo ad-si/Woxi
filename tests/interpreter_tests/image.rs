@@ -9793,16 +9793,27 @@ mod watershed_and_morphological_graph {
     );
   }
 
+  // Markers are an image or {x, y} positions (y from the bottom); each
+  // group of marked pixels seeds a basin, numbered in reading order. A
+  // label matrix is neither (WatershedComponents::mkinv).
   #[test]
   fn watershed_with_explicit_markers() {
     clear_state();
     assert_eq!(
       interpret(
-        "WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], {{1, 0, 0, 0, 2}}]"
+        "{WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], Image[{{1, 0, 0, 0, 1}}]], WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}, {0, 0.5, 1, 0.5, 0}}], {{1, 1}, {5, 2}}]}"
       )
       .unwrap(),
-      "{{1, 1, 0, 2, 2}}"
+      "{{{1, 1, 0, 2, 2}}, {{2, 2, 0, 1, 1}, {2, 2, 0, 1, 1}}}"
     );
+    let r = interpret_with_stdout(
+      "WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], {{1, 0, 0, 0, 2}}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "WatershedComponents[-Image-, {{1, 0, 0, 0, 2}}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "WatershedComponents::mkinv: Expecting either an image or graphics with dimensions {5, 1} or a list of positions to specify markers instead of {{1, 0, 0, 0, 2}}."
+    )));
   }
 
   #[test]
