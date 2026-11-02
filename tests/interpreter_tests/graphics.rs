@@ -18817,6 +18817,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_automatic_frame_ticks_follow_data_range() {
+      let plain =
+        export_svg("ArrayPlot[Table[x y, {x, -15, 15, 5}, {y, -15, 15, 5}]]");
+      assert!(!plain.contains("<text"));
+      let svg = export_svg(
+        "ArrayPlot[Table[x y, {x, -15, 15, 5}, {y, -15, 15, 5}], \
+         FrameTicks -> True, DataRange -> {{-15, 15}, {-15, 15}}]",
+      );
+      for label in [">-10<", ">0<", ">10<"] {
+        assert!(svg.contains(label), "missing {label}: {svg}");
+      }
+      // `Frame -> False` drops the frame and its ticks.
+      let hidden = export_svg(
+        "ArrayPlot[{{1, 0}, {0, 1}}, FrameTicks -> True, Frame -> False]",
+      );
+      assert!(!hidden.contains("<text"));
+      // Without a `DataRange` the ticks count cells.
+      let cells = export_svg(
+        "ArrayPlot[{{1, 0, 1}, {0, 1, 0}}, FrameTicks -> Automatic]",
+      );
+      assert!(cells.contains(">1<") && cells.contains(">2<"));
+    }
+
+    #[test]
     fn array_plot_color_function_rainbow() {
       // ColorFunction -> "Rainbow" uses a rainbow gradient
       insta::assert_snapshot!(export_svg(
