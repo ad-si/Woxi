@@ -15489,13 +15489,22 @@ mod list_convolve {
     );
   }
 
-  // Machine numbers take a direct path with the evaluator's exactness:
-  // 0 times a real is an exact 0, and an all-exact window stays exact.
+  // A list of numbers holding a machine number is packed: all of its
+  // entries are machine numbers, so every output is one too.
   #[test]
-  fn machine_entries_keep_exact_terms() {
+  fn machine_entries_pack_the_list() {
     assert_eq!(
       interpret("ListConvolve[{1, 2}, {0., 0, 1}]").unwrap(),
-      "{0., 1}"
+      "{0., 1.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2}, {0, 0, 1}]").unwrap(),
+      "{0., 1.}"
+    );
+    // A symbolic entry keeps the list unpacked.
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {x, 0., 1}]").unwrap(),
+      "{0. + 2*x, 1.}"
     );
     assert_eq!(
       interpret("ListCorrelate[{0, 0.5}, {1, 2, 3}]").unwrap(),

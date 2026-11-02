@@ -6678,6 +6678,43 @@ pub fn dispatch_list_operations(
         return dispatch_list_operations(name, &dense);
       }
     }
+    // A kernel or list of numbers with a machine number among them is a
+    // packed array to wolframscript, so all of its numbers are machine
+    // numbers — and so are those of the other one, when it is all numbers
+    // too: `ListConvolve[{1, 2}, {0., 0, 1}]` and `ListConvolve[{1., 2},
+    // {0, 0, 1}]` are both `{0., 1.}`.
+    "ListConvolve" | "ListCorrelate"
+      if args.len() >= 2
+        && let (Some(ker), Some(data)) =
+          (numeric_array_kind(&args[0]), numeric_array_kind(&args[1]))
+        && (ker.0 || data.0)
+        && (ker.1 || data.1) =>
+    {
+      let mut packed = args.to_vec();
+      for a in packed.iter_mut().take(2) {
+        if let Ok(n) = evaluate_expr_to_expr(&call1("N", a.clone())) {
+          *a = n;
+        }
+      }
+      return dispatch_list_operations(name, &packed);
+    }
+    "ListConvolve" | "ListCorrelate"
+      if args.len() >= 2
+        && args[..2].iter().any(|a| {
+          numeric_array_kind(a).is_some_and(|(machine, exact)| machine && exact)
+        }) =>
+    {
+      let mut packed = args.to_vec();
+      for a in packed.iter_mut().take(2) {
+        if numeric_array_kind(a)
+          .is_some_and(|(machine, exact)| machine && exact)
+          && let Ok(n) = evaluate_expr_to_expr(&call1("N", a.clone()))
+        {
+          *a = n;
+        }
+      }
+      return dispatch_list_operations(name, &packed);
+    }
     // ListConvolve[kernel, list] — discrete convolution
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));
@@ -10505,6 +10542,42 @@ fn try_2d_conv_corr(
     rows.push(Expr::List(row.into()));
   }
   Some(Ok(Expr::List(rows.into())))
+}
+
+/// For a (nested) list of numbers: whether it holds a machine number and
+/// whether it holds an exact one. `None` when it is not a list or has an
+/// entry that is not a number.
+fn numeric_array_kind(e: &Expr) -> Option<(bool, bool)> {
+  fn scan(e: &Expr, acc: &mut (bool, bool)) -> Option<()> {
+    match e {
+      Expr::List(items) => items.iter().try_for_each(|i| scan(i, acc)),
+      Expr::Real(_) => {
+        acc.0 = true;
+        Some(())
+      }
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        acc.1 = true;
+        Some(())
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        acc.1 = true;
+        Some(())
+      }
+      _ if crate::functions::math_ast::machine_complex_parts(e).is_some() => {
+        acc.0 = true;
+        Some(())
+      }
+      _ => None,
+    }
+  }
+  if !matches!(e, Expr::List(_)) {
+    return None;
+  }
+  let mut acc = (false, false);
+  scan(e, &mut acc)?;
+  Some(acc)
 }
 
 fn list_convolve_ast(
