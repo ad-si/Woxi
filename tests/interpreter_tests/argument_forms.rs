@@ -347,11 +347,23 @@ mod random_color_templates {
          Flatten[c[[All, 2 ;; 3]] /. RGBColor -> List]]}"
       )
       .unwrap(),
-      "{4, {1}, True}"
+      "{4, {1.}, True}"
     );
     assert_eq!(
       interpret("Dimensions[RandomColor[Hue[_, 1, 1], {2, 3}]]").unwrap(),
       "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn fixed_components_are_machine_numbers() {
+    assert_eq!(
+      interpret("RandomColor[Hue[1/2, _, 1]][[{1, 3}]]").unwrap(),
+      "Hue[0.5, 1.]"
+    );
+    assert_eq!(
+      interpret("RandomColor[RGBColor[x, _, _]]").unwrap(),
+      "RandomColor[RGBColor[x, _, _]]"
     );
   }
 }
