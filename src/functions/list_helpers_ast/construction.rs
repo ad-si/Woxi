@@ -3786,6 +3786,16 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
       _ => return None,
     }
   };
+  // A sum of sparse arrays of machine numbers is a packed array: every
+  // stored value and the background take the widest number type present
+  // (wolframscript: `s + Transpose[Conjugate[s]]` for a complex `s` has the
+  // background `0. + 0.*I`).
+  let (values, background) =
+    if head == "Plus" && args.len() >= 2 && args.iter().all(is_sparse) {
+      pack_machine_numbers(values, background)
+    } else {
+      (values, background)
+    };
   let background_str = expr_to_string(&background);
   let mut rules = Vec::with_capacity(paths.len());
   for (path, value) in paths.into_iter().zip(values) {
@@ -3799,6 +3809,57 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
   }
 
   sparse_array_normalize_ast(&[Expr::List(rules.into()), dims, background]).ok()
+}
+
+/// Coerce `values` and `background` to one machine number type, the way a
+/// packed array holds them: all to Real, or all to Complex when any is
+/// complex. Left alone unless every one is a number and at least one is a
+/// machine number.
+fn pack_machine_numbers(
+  values: Vec<Expr>,
+  background: Expr,
+) -> (Vec<Expr>, Expr) {
+  use crate::functions::math_ast::{
+    machine_complex_parts, machine_complex_result, try_eval_to_f64,
+    try_extract_complex_f64,
+  };
+  // (is inexact, is complex) of a number, None for anything else.
+  fn kind(e: &Expr) -> Option<(bool, bool)> {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => Some((false, false)),
+      Expr::Real(_) => Some((true, false)),
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        (args.len() == 2).then_some((false, false))
+      }
+      _ if machine_complex_parts(e).is_some() => Some((true, true)),
+      _ if try_extract_complex_f64(e).is_some() => Some((false, true)),
+      _ => None,
+    }
+  }
+  let Some(kinds) = values
+    .iter()
+    .chain(std::iter::once(&background))
+    .map(kind)
+    .collect::<Option<Vec<_>>>()
+  else {
+    return (values, background);
+  };
+  if !kinds.iter().any(|&(inexact, _)| inexact) {
+    return (values, background);
+  }
+  let complex = kinds.iter().any(|&(_, c)| c);
+  let coerce = |e: Expr| -> Expr {
+    let packed = if complex {
+      try_eval_to_f64(&e)
+        .map(|re| (re, 0.0))
+        .or_else(|| try_extract_complex_f64(&e))
+        .map(|(re, im)| machine_complex_result(re, im))
+    } else {
+      try_eval_to_f64(&e).map(Expr::Real)
+    };
+    packed.unwrap_or(e)
+  };
+  (values.into_iter().map(coerce).collect(), coerce(background))
 }
 
 /// `a / b` with a SparseArray operand. Routed as `a * b^-1` rather than as a

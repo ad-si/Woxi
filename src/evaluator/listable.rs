@@ -327,9 +327,34 @@ pub fn thread_listable(
   // this the opaque SparseArray would be paired whole with each list element.
   // Only densify when a real list is present, so a lone SparseArray argument is
   // left for the sparse-aware handlers.
-  let has_sparse = args.iter().any(
-    |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
-  );
+  let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  // Several SparseArrays in a sum are added among themselves first, as one
+  // sparse sum (which packs machine numbers: wolframscript's
+  // `DiagonalMatrix[{-1., -1.}] + s + Transpose[Conjugate[s]]` has complex
+  // `-1. + 0.*I` diagonal entries for a complex `s`).
+  let grouped: Vec<Expr>;
+  let args: &[Expr] = if name == "Plus"
+    && args.iter().filter(|a| is_sparse(a)).count() >= 2
+    && let Some(sum) =
+      crate::functions::list_helpers_ast::try_sparse_array_arithmetic(
+        "Plus",
+        &args
+          .iter()
+          .filter(|a| is_sparse(a))
+          .cloned()
+          .collect::<Vec<_>>(),
+      ) {
+    grouped = args
+      .iter()
+      .filter(|a| !is_sparse(a))
+      .cloned()
+      .chain(std::iter::once(sum))
+      .collect();
+    &grouped
+  } else {
+    args
+  };
+  let has_sparse = args.iter().any(is_sparse);
   let densified: Vec<Expr>;
   let args: &[Expr] = if has_sparse {
     densified = args

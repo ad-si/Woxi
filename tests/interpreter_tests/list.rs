@@ -14972,7 +14972,43 @@ mod sparse_array_list_ops {
          Normal[DiagonalMatrix[{-1., -1.}] + s + Transpose[Conjugate[s]]]"
       )
       .unwrap(),
-      "{{-1., 1. + 1.*I}, {1. - 1.*I, -1.}}"
+      "{{-1. + 0.*I, 1. + 1.*I}, {1. - 1.*I, -1. + 0.*I}}"
+    );
+  }
+
+  // A sum of sparse arrays of machine numbers is packed: the stored values
+  // and the background share the widest number type.
+  #[test]
+  fn sparse_sum_packs_machine_numbers() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1. + I}, {2, 2}]; s + Transpose[Conjugate[s]]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0. + 0.*I, {1, {{0, 1, 2}, {{2}, {1}}}, \
+       {1. + 1.*I, 1. - 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SparseArray[{{1, 2} -> 1.}, {2, 2}] + SparseArray[{{1, 1} -> 3}, {2, 2}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 2, 2}, {{1}, {2}}}, {3., 1.}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SparseArray[{{1, 2} -> 1}, {2, 2}] + SparseArray[{{1, 1} -> 3}, {2, 2}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 2, 2}, {{1}, {2}}}, {3, 1}}]"
+    );
+    // A dense list with one sparse array is not packed.
+    assert_eq!(
+      interpret(
+        "Normal[DiagonalMatrix[{-1., -1.}] + SparseArray[{{1, 2} -> 1. + I}, {2, 2}]]"
+      )
+      .unwrap(),
+      "{{-1., 1. + 1.*I}, {0., -1.}}"
     );
   }
 

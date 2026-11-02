@@ -1357,7 +1357,6 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(result);
     }
-
     // Handle Quantity arithmetic before anything else
     if let Some(result) =
       crate::functions::quantity_ast::try_quantity_plus(args)
