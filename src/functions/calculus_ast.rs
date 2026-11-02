@@ -16290,6 +16290,16 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
   }
 
+  // A rational function about 0 with numeric coefficients: divide the
+  // power series of numerator and denominator. Repeated differentiation
+  // swells exponentially with the order (a Molien series to x^20).
+  if order >= 0
+    && matches!(&x0, Expr::Integer(0))
+    && let Some(series) = rational_function_series(&args[0], &var_name, order)
+  {
+    return Ok(series);
+  }
+
   // Gamma[x] has a simple pole at x = 0; the direct coefficient path samples
   // Gamma[0] = ComplexInfinity and fails. Use the identity Gamma[x] = x!/x:
   // expand the analytic factorial one order higher, then divide by x by
@@ -22740,4 +22750,83 @@ pub fn asymptotic_comparison_ast(
     _ => Verdict::Unknown,
   };
   Ok(verdict.into_expr().unwrap_or_else(original))
+}
+
+/// `Series[f, {var, 0, order}]` for a rational function `f` of `var` with
+/// rational coefficients, by dividing the coefficient lists of numerator
+/// and denominator; None for anything else.
+fn rational_function_series(f: &Expr, var: &str, order: i128) -> Option<Expr> {
+  use num_bigint::BigInt;
+  use num_traits::{One, Signed, Zero};
+  type Q = (BigInt, BigInt);
+  let norm = |n: BigInt, d: BigInt| -> Q {
+    let g = crate::functions::math_ast::gcd_bigint(&n, &d);
+    let (n, d) = if g.is_zero() {
+      (n, d)
+    } else {
+      (n / &g, d / &g)
+    };
+    if d.is_negative() { (-n, -d) } else { (n, d) }
+  };
+  let eval = |head: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(head, &a).ok()
+  };
+  let x = id_expr(var);
+  let together = eval("Together", vec![f.clone()])?;
+  let coeffs = |p: Expr| -> Option<Vec<Q>> {
+    let list = eval("CoefficientList", vec![p, x.clone()])?;
+    let Expr::List(items) = &list else {
+      return None;
+    };
+    items
+      .iter()
+      .map(crate::functions::math_ast::expr_to_big_rational)
+      .collect()
+  };
+  let num = coeffs(eval("Numerator", vec![together.clone()])?)?;
+  let den = coeffs(eval("Denominator", vec![together])?)?;
+  // Leading zeros of the denominator are a pole of that order.
+  let valuation = den.iter().position(|c| !c.0.is_zero())?;
+  let den = &den[valuation..];
+  if den.len() < 2 {
+    // A polynomial (or a monomial pole): the generic path handles it.
+    return None;
+  }
+  let terms = usize::try_from(order).ok()? + valuation + 1;
+  let mut c: Vec<Q> = Vec::with_capacity(terms);
+  for k in 0..terms {
+    let (mut an, mut ad) = num
+      .get(k)
+      .cloned()
+      .unwrap_or_else(|| (BigInt::zero(), BigInt::one()));
+    for j in 1..=k.min(den.len() - 1) {
+      let (bn, bd) = (&den[j].0 * &c[k - j].0, &den[j].1 * &c[k - j].1);
+      (an, ad) = norm(&an * &bd - &bn * &ad, &ad * &bd);
+    }
+    c.push(norm(an * &den[0].1, ad * &den[0].0));
+  }
+  let first = c.iter().position(|v| !v.0.is_zero());
+  let to_expr =
+    |q: &Q| crate::functions::math_ast::make_rational_expr(&q.0, &q.1);
+  let (nmin, list): (i128, Vec<Expr>) = match first {
+    Some(i) => {
+      let last = c.iter().rposition(|v| !v.0.is_zero())?;
+      (
+        i as i128 - valuation as i128,
+        c[i..=last].iter().map(to_expr).collect(),
+      )
+    }
+    None => (order + 1, Vec::new()),
+  };
+  Some(call(
+    "SeriesData",
+    vec![
+      x,
+      Expr::Integer(0),
+      Expr::List(list.into()),
+      Expr::Integer(nmin),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ],
+  ))
 }

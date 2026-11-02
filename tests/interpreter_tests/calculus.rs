@@ -25578,3 +25578,31 @@ mod d_piecewise {
     );
   }
 }
+
+// The series of a rational function about 0 divides the coefficient lists;
+// the derivative path swelled exponentially with the order (a Molien series
+// to x^40 never finished).
+mod series_rational_function {
+  use super::*;
+
+  #[test]
+  fn power_series_division() {
+    for (input, expected) in [
+      (
+        "Normal[Series[(1 + x)/(1 - x - x^2), {x, 0, 6}]]",
+        "1 + 2*x + 3*x^2 + 5*x^3 + 8*x^4 + 13*x^5 + 21*x^6",
+      ),
+      (
+        "Normal[Series[1/(x (1 - x)), {x, 0, 2}]]",
+        "1 + x^(-1) + x + x^2",
+      ),
+      (
+        "CoefficientList[Normal[Series[(1 + x^30)/((1 - x^12) (1 - x^20)), \
+         {x, 0, 40}]], x][[{1, 13, 21, 25, 31, 33, 37, 41}]]",
+        "{1, 1, 1, 1, 1, 1, 1, 1}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}

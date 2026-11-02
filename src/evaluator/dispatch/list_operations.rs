@@ -3833,7 +3833,12 @@ pub fn dispatch_list_operations(
         // order is already canonical, so keep it to avoid disturbing it.
         // So does a series with machine coefficients, whose `0.` terms and
         // negative reals the evaluated sum folds and signs (`2. - 3.*x^2`).
-        if is_infinity || coeffs.iter().any(|c| matches!(c, Expr::Real(_))) {
+        // A Laurent series is not: the constant leads the negative powers
+        // (`1 + x^(-1) + x`).
+        if is_infinity
+          || (nmin < 0 && is_zero_center)
+          || coeffs.iter().any(|c| matches!(c, Expr::Real(_)))
+        {
           let plus = plus(terms);
           return Some(evaluate_expr_to_expr(&plus));
         }
