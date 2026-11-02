@@ -344,12 +344,11 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
-### `Rescale[x, {a, b}, {c, d}]` orders its two terms the other way
+### A rational multiple of a sum is ordered against a product by its own rule
 
-The reference page gives
-`-((-(b c) + a d)/(-a + b)) + ((-c + d) x)/(-a + b)`; Woxi builds the same sum
-but prints the `x` term first. The values at numbers (`Rescale[0, {a, b}, {c, d}]`)
-match.
+`Rescale[x, {-1, 1}, {a, b}]` is `((-a + b)*x)/2 + (a + b)/2` in Woxi and
+`(a + b)/2 + ((-a + b)*x)/2` in wolframscript. (Terms over a common power of a
+sum, `-(a/(-a + b)) + x/(-a + b)`, follow `Order` and conform.)
 
 ### A coefficient times a sum of calls sorts before a lone call
 
