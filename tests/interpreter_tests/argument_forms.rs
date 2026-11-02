@@ -525,7 +525,30 @@ mod multivariate_step_functions {
     assert_eq!(interpret("UnitBox[0, 1/4]").unwrap(), "1");
     assert_eq!(interpret("UnitTriangle[1/2, 1/4]").unwrap(), "3/8");
     assert_eq!(interpret("HeavisideLambda[0, 1/2]").unwrap(), "1/2");
-    assert_eq!(interpret("UnitBox[x, 0]").unwrap(), "UnitBox[x, 0]");
+    assert_eq!(interpret("UnitBox[x, 0]").unwrap(), "UnitBox[x]");
+  }
+
+  #[test]
+  fn numeric_arguments_split_off_as_factors() {
+    assert_eq!(interpret("UnitBox[x, 1]").unwrap(), "0");
+    assert_eq!(interpret("UnitBox[x, y, 0]").unwrap(), "UnitBox[x, y]");
+    assert_eq!(interpret("UnitBox[x, y]").unwrap(), "UnitBox[x, y]");
+    assert_eq!(
+      interpret("UnitTriangle[x, 1/2]").unwrap(),
+      "UnitTriangle[x]/2"
+    );
+    assert_eq!(
+      interpret("HeavisidePi[x, 1/2]").unwrap(),
+      "HeavisidePi[1/2]*HeavisidePi[x]"
+    );
+    assert_eq!(
+      interpret("HeavisideLambda[x, 1/2]").unwrap(),
+      "HeavisideLambda[x]/2"
+    );
+    assert_eq!(
+      interpret("UnitBox[x, 2 + I]").unwrap(),
+      "UnitBox[2 + I]*UnitBox[x]"
+    );
   }
 
   #[test]

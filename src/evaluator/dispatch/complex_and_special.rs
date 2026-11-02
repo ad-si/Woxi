@@ -116,20 +116,33 @@ pub fn dispatch_complex_and_special(
       });
     }
     // UnitBox[x1, x2, …] (likewise UnitTriangle, HeavisidePi and
-    // HeavisideLambda) is the product of the one-variable functions; it
-    // evaluates once every factor is a number.
+    // HeavisideLambda) is the product of the one-variable functions. Every
+    // numeric argument is split off as its own one-variable factor
+    // (`UnitTriangle[x, 1/2]` is `UnitTriangle[x]/2`, `HeavisidePi[x, 1/2]`
+    // is `HeavisidePi[1/2] HeavisidePi[x]`); the symbolic arguments stay
+    // together in one call.
     "UnitBox" | "UnitTriangle" | "HeavisidePi" | "HeavisideLambda"
       if args.len() > 1 =>
     {
-      let mut factors = Vec::with_capacity(args.len());
-      for x in args {
+      let (numeric, symbolic): (Vec<&Expr>, Vec<&Expr>) = args
+        .iter()
+        .partition(|x| crate::functions::predicate_ast::is_numeric_q(x));
+      if numeric.is_empty() {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let mut factors = Vec::with_capacity(numeric.len() + 1);
+      for x in numeric {
         match crate::evaluator::evaluate_function_call_ast(
           name,
           std::slice::from_ref(x),
         ) {
-          Ok(Expr::FunctionCall { name: ref h, .. }) if h == name => {
-            return Some(Ok(unevaluated(name, args)));
-          }
+          Ok(v) => factors.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      if !symbolic.is_empty() {
+        let rest: Vec<Expr> = symbolic.into_iter().cloned().collect();
+        match crate::evaluator::evaluate_function_call_ast(name, &rest) {
           Ok(v) => factors.push(v),
           Err(e) => return Some(Err(e)),
         }
