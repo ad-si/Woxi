@@ -4318,6 +4318,16 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return r;
     }
   }
+  if args.len() == 2
+    && !matches!(&args[1], Expr::List(_))
+    && let Expr::FunctionCall { name, args: dargs } = &args[0]
+    && let Some(r) =
+      crate::functions::math_ast::numeric_distributions::numeric_distribution_property(
+        "Quantile", name, dargs, &args[1],
+      )
+  {
+    return r;
+  }
   // Quantile[WakebyDistribution[...], q] — quantile-defined form.
   if let Expr::FunctionCall { name, args: dargs } = &args[0]
     && name == "WakebyDistribution"

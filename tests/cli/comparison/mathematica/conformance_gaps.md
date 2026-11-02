@@ -3158,6 +3158,13 @@ Left unevaluated because WL's own output is an unreproducible form:
 | `LogSeries` | `RandomVariate`, `Median`, `Quantile` |
 | `PolyaAeppli` | PDF, CDF |
 | `Benford`, `WaringYule`, 4-arg `Gamma`, `Davis` | unimplemented |
+| `Beckmann`, `Landau`, `Pearson`, `NoncentralBeta` | numeric PDF/CDF/Quantile only: no moments, `RandomVariate`, Pearson's symbolic closed forms or its `::bprm` check |
+
+`LandauDistribution`'s machine PDF differs from WL's in the 7th digit
+(`PDF[LandauDistribution[1, 2], 0.5]`: Woxi `0.135915122…`, WL
+`0.135915057…`); `NIntegrate` of WL's own defining integral gives
+`0.135915122…`, so WL's density routine is the approximate one. Its CDF and
+quantiles agree to about 1e-10.
 
 Also: `DiscreteUniformDistribution`'s StandardDeviation is `Sqrt[X/12]` against
 WL's `Sqrt[X]/(2 Sqrt[3])`, and `ExpGammaDistribution`'s PDF is unimplemented

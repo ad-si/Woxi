@@ -550,6 +550,13 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return r;
   }
+  if let Some(r) =
+    crate::functions::math_ast::numeric_distributions::numeric_distribution_property(
+      "PDF", dist_name, dargs, &args[1],
+    )
+  {
+    return r;
+  }
 
   // PDF[StationaryDistribution[DiscreteMarkovProcess[...]], x].
   if dist_name == "StationaryDistribution"
@@ -2530,6 +2537,13 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       dist_name,
       dargs,
       Some(&args[1]),
+    )
+  {
+    return r;
+  }
+  if let Some(r) =
+    crate::functions::math_ast::numeric_distributions::numeric_distribution_property(
+      "CDF", dist_name, dargs, &args[1],
     )
   {
     return r;

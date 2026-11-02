@@ -1854,7 +1854,7 @@ ResourceObject,"Resource object",,unevaluated,11.0,1844
 StieltjesGamma,"Stieltjes constants (gamma_0 is EulerGamma; generalized order-0 is -PolyGamma; N gives machine values up to order 10)",✅,pure,3.0,1844
 DynamicWrapper,"Dynamic wrapper (stays symbolic in script mode)",✅,unevaluated,8.0,1846
 PolarTicks,"Polar ticks option",,unevaluated,7.0,1846
-BeckmannDistribution,"Beckmann distribution",,unevaluated,8.0,1849
+BeckmannDistribution,"Beckmann distribution (numeric PDF and CDF and bisected Quantile)",✅,pure,8.0,1849
 CoordinateTransformData,"Mapping and Jacobian of the Polar/Spherical/Cylindrical/Cartesian coordinate transforms",✅,pure,9.0,1849
 FirstCase,"First element matching a pattern",✅,pure,10.0,1849
 EndOfFile,"Symbol returned by Read at end of file",✅,pure,1.0,1852
@@ -2080,7 +2080,7 @@ IntegerReverse,"Reverses the digits of an integer in base b optionally over a fi
 ColorDistance,"Distance between colors",✅,pure,10.0,2071
 Construct,"Constructs an expression from a head and arguments",✅,pure,11.3,2071
 ContinuousWaveletTransform,"Continuous wavelet transform giving a ContinuousWaveletData object",✅,pure,8.0,2071
-PearsonDistribution,"Pearson family distribution",🚫,,8.0,2071
+PearsonDistribution,"Pearson family distribution (numeric PDF and CDF and bisected Quantile)",✅,pure,8.0,2071
 AngleVector,"Direction vector from angle",✅,pure,10.1,2074
 Back,"Navigate back in history",🚫,,6.0,2074
 CreateWindow,"Create GUI window",🚫,,6.0,2079
@@ -3656,7 +3656,7 @@ LUVColor,"",,,10.0,3717
 LeastSquaresFilterKernel,"",,,9.0,3717
 LessFullEqual,"Operator without built-in meaning displayed infix",✅,pure,3.0,3717
 MorphologicalEulerNumber,"Number of foreground components minus holes of a thresholded image",✅,pure,7.0,3717
-NoncentralBetaDistribution,"",,,8.0,3717
+NoncentralBetaDistribution,"Noncentral beta distribution (closed-form PDF and Poisson-mixture CDF)",✅,pure,8.0,3717
 PageBreakWithin,"",🚫,,3.0,3717
 PersistentObjects,"",🚫,,11.1,3717
 RegionSymmetricDifference,"",,,10.0,3717
@@ -3736,7 +3736,7 @@ FindHiddenMarkovStates,"",,,10.0,3803
 FitRegularization,"",,,12.0,3803
 HumanGrowthData,"",🚫,,10.1,3803
 Iconize,"",🚫,,11.3,3803
-LandauDistribution,"",,,8.0,3803
+LandauDistribution,"Landau distribution (numeric PDF and CDF and bisected Quantile)",✅,pure,8.0,3803
 LinearOptimization,"Minimizes a linear objective over real vectors subject to linear constraints given in matrix form ({a; b} meaning a.x + b >= 0 and {aeq; beq} meaning aeq.x + beq == 0); symbolic constraint forms and solution properties are not supported",🚧,pure,12.0,3803
 LocatorRegion,"",🚫,,6.0,3803
 MatrixTDistribution,"",,,10.3,3803

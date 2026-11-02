@@ -209,6 +209,24 @@ pub fn dispatch_evaluation_control(
     "ExponentialPowerDistribution" if args.len() == 3 => {
       return Some(Ok(unevaluated("ExponentialPowerDistribution", args)));
     }
+    "BeckmannDistribution" if args.len() == 4 => {
+      return Some(Ok(unevaluated("BeckmannDistribution", args)));
+    }
+    "LandauDistribution" if args.is_empty() => {
+      return Some(Ok(unevaluated(
+        "LandauDistribution",
+        &[Expr::Integer(0), Expr::Integer(1)],
+      )));
+    }
+    "LandauDistribution" if args.len() == 2 => {
+      return Some(Ok(unevaluated("LandauDistribution", args)));
+    }
+    "NoncentralBetaDistribution" if args.len() == 3 => {
+      return Some(Ok(unevaluated("NoncentralBetaDistribution", args)));
+    }
+    "PearsonDistribution" if args.len() == 5 || args.len() == 6 => {
+      return Some(Ok(unevaluated("PearsonDistribution", args)));
+    }
     "RiceDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("RiceDistribution", args)));
     }

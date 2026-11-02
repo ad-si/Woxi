@@ -9852,3 +9852,161 @@ mod student_t_location_scale {
     );
   }
 }
+
+mod numeric_only_distributions {
+  use super::*;
+
+  /// Evaluates `code` to a list of machine reals and compares each with
+  /// `expected` to a relative tolerance.
+  fn assert_rel(code: &str, expected: &[f64], tol: f64) {
+    let out = interpret(code).unwrap();
+    let values: Vec<f64> = out
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.replace("*^", "e").parse::<f64>().unwrap())
+      .collect();
+    assert_eq!(values.len(), expected.len(), "{out}");
+    for (v, e) in values.iter().zip(expected) {
+      assert!(((v - e) / e).abs() < tol, "{code}: {v} vs {e}");
+    }
+  }
+
+  #[test]
+  fn heads_stay_inert() {
+    assert_eq!(
+      interpret(
+        "{BeckmannDistribution[1, 2, 0.1, 0.2], LandauDistribution[], \
+         NoncentralBetaDistribution[2, 3, 2], \
+         PearsonDistribution[4, 45, -85, 37, 26, 58]}"
+      )
+      .unwrap(),
+      "{BeckmannDistribution[1, 2, 0.1, 0.2], LandauDistribution[0, 1], \
+       NoncentralBetaDistribution[2, 3, 2], \
+       PearsonDistribution[4, 45, -85, 37, 26, 58]}"
+    );
+  }
+
+  #[test]
+  fn exact_arguments_stay_unevaluated() {
+    assert_eq!(
+      interpret(
+        "{PDF[LandauDistribution[1, 2], 1/2], \
+         PDF[BeckmannDistribution[1, 2, 1, 2], 1], \
+         CDF[NoncentralBetaDistribution[2, 3, 2], 1/2], \
+         Quantile[LandauDistribution[1, 2], 1/2]}"
+      )
+      .unwrap(),
+      "{PDF[LandauDistribution[1, 2], 1/2], \
+       PDF[BeckmannDistribution[1, 2, 1, 2], 1], \
+       CDF[NoncentralBetaDistribution[2, 3, 2], 1/2], \
+       Quantile[LandauDistribution[1, 2], 1/2]}"
+    );
+  }
+
+  #[test]
+  fn noncentral_beta_pdf_closed_form() {
+    assert_eq!(
+      interpret("PDF[NoncentralBetaDistribution[a, b, d], x]").unwrap(),
+      "Piecewise[{{((1 - x)^(-1 + b)*x^(-1 + a)*Hypergeometric1F1[a + b, a, \
+       (d*x)/2])/(E^(d/2)*Beta[a, b]), 0 < x < 1}}, 0]"
+    );
+  }
+
+  #[test]
+  fn quantile_support_ends() {
+    assert_eq!(
+      interpret(
+        "Table[{Quantile[d, 0], Quantile[d, 1]}, {d, \
+         {BeckmannDistribution[1, 2, 0.1, 0.2], LandauDistribution[1, 2], \
+         NoncentralBetaDistribution[2, 3, 2], \
+         PearsonDistribution[4, 45, -85, 37, 26, 58]}}]"
+      )
+      .unwrap(),
+      "{{0, Infinity}, {-Infinity, Infinity}, {0, 1}, {-Infinity, Infinity}}"
+    );
+  }
+
+  // Reference values from wolframscript.
+  #[test]
+  fn beckmann() {
+    let d = "BeckmannDistribution[1, 2, 0.1, 0.2]";
+    assert_rel(
+      &format!("{{PDF[{d}, 0.7], CDF[{d}, 0.7], Quantile[{d}, 0.6]}}"),
+      &[
+        3.2445834067623414e-18,
+        5.231397689626818e-20,
+        2.285418168006352,
+      ],
+      1e-7,
+    );
+  }
+
+  #[test]
+  fn landau() {
+    // wolframscript's own Landau density is only good to about 1e-7.
+    let d = "LandauDistribution[1, 2]";
+    assert_rel(
+      &format!(
+        "{{PDF[{d}, 0.7], CDF[{d}, 0.7], Quantile[{d}, 0.6], \
+         CDF[{d}, -3.], CDF[{d}, 30.], PDF[{d}, -3.], \
+         PDF[LandauDistribution[], 0.3]}}"
+      ),
+      &[
+        0.13970433832290594,
+        0.20099454270014636,
+        4.16369373454482,
+        2.2878292522503916e-6,
+        0.9501998063338581,
+        0.00002031186527694191,
+        0.2331987474204136,
+      ],
+      1e-5,
+    );
+  }
+
+  #[test]
+  fn noncentral_beta() {
+    let d = "NoncentralBetaDistribution[2, 3, 2]";
+    assert_rel(
+      &format!(
+        "{{PDF[{d}, 0.7], CDF[{d}, 0.7], CDF[{d}, 0.5], Quantile[{d}, 0.6]}}"
+      ),
+      &[
+        1.2933385997125493,
+        0.8316532764014963,
+        0.5164987649115393,
+        0.548967296331308,
+      ],
+      1e-12,
+    );
+  }
+
+  #[test]
+  fn pearson_types() {
+    assert_rel(
+      "{PDF[PearsonDistribution[4, 45, -85, 37, 26, 58], 0.7], \
+       CDF[PearsonDistribution[4, 45, -85, 37, 26, 58], 0.7], \
+       Quantile[PearsonDistribution[4, 45, -85, 37, 26, 58], 0.6], \
+       PDF[PearsonDistribution[1, -1, -1, 0, 1], 0.3], \
+       CDF[PearsonDistribution[1, -1, -1, 0, 1], 0.3], \
+       PDF[PearsonDistribution[2., 1, 0, 1, 1], 0.5], \
+       CDF[PearsonDistribution[2., 1, 0, 1, 1], 0.5], \
+       PDF[PearsonDistribution[3, 1, 0, 0, 0.5], 0.2], \
+       PDF[PearsonDistribution[1, 0, 0, 1, 1], 2.], \
+       PDF[PearsonDistribution[1, 0, 0, 0, 1], 2.]}",
+      &[
+        0.02388789154457143,
+        0.020610340014558755,
+        272.2283306778623,
+        0.65,
+        0.4225,
+        0.29872241020718365,
+        0.8008517265285442,
+        0.416282096511456,
+        0.14936120510359185,
+        0.053990966513188056,
+      ],
+      1e-12,
+    );
+  }
+}

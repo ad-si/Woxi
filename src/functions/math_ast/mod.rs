@@ -39,6 +39,7 @@ mod jacobi;
 mod mathieu;
 mod misc_special;
 mod number_theory;
+pub(crate) mod numeric_distributions;
 pub mod numeric_utils;
 pub(crate) mod numerical;
 pub(crate) mod orthogonal_bigfloat;
