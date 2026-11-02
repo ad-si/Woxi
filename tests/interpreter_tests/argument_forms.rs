@@ -462,10 +462,34 @@ mod date_plus_one_argument {
   use super::*;
 
   #[test]
-  fn days_after_today() {
+  fn days_after_now_as_a_date_list() {
     assert_eq!(
-      interpret("DatePlus[3] == DatePlus[Today, 3]").unwrap(),
+      interpret(
+        "Take[DatePlus[3], 3] == Take[DateList[DatePlus[Today, 3]], 3]"
+      )
+      .unwrap(),
       "True"
+    );
+    assert_eq!(interpret("Length[DatePlus[3]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn a_duration_after_now_is_an_instant() {
+    assert_eq!(
+      interpret("DatePlus[{3, \"Week\"}][\"Granularity\"]").unwrap(),
+      "Instant"
+    );
+  }
+
+  #[test]
+  fn an_instant_moves_through_the_time_of_day() {
+    assert_eq!(
+      interpret(
+        "DatePlus[DateObject[{2026, 11, 2, 19, 37, 14.5}, \"Instant\", \
+         \"Gregorian\", 0.], {3, \"Hour\"}]"
+      )
+      .unwrap(),
+      "DateObject[{2026, 11, 2, 22, 37, 14.5}, Instant, Gregorian, 0.]"
     );
   }
 }

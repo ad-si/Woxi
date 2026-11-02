@@ -1920,6 +1920,18 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(date_plus_with_time(&components, &increments));
   }
+  // A DateObject with a clock time (an "Instant") moves through the time
+  // of day as well and keeps its granularity, calendar and time zone.
+  if input_is_date_object
+    && components.len() > 3
+    && let Some(increments) = parse_increments(&delta_arg)
+    && let Expr::FunctionCall { args: dargs, .. } = &date_arg
+    && let moved @ Expr::List(_) = date_plus_with_time(&components, &increments)
+  {
+    let mut new_args = vec![moved];
+    new_args.extend(dargs.iter().skip(1).cloned());
+    return Ok(call("DateObject", new_args));
+  }
 
   // Calculate total days to add
   let total_days = match &delta_arg {
