@@ -2971,10 +2971,12 @@ Neville theta values are 1–2 ULP off wolframscript on some points.
 ### Mathieu functions
 
 `MathieuC[1, 2, 0.5]` is `0.26 + 1.17 I` in WL — the Mathieu functions are
-complex for a general characteristic value. Woxi's `MathieuS` returns a wrong
-**real** value, having confused the order-versus-characteristic convention.
-A correct fix needs a full Floquet implementation (continued fractions for the
-characteristic exponent plus Fourier coefficients).
+complex for a characteristic value in an unstable region (a complex
+characteristic exponent). Woxi returns a **real** value there. For a stable
+`(a, q)` with a non-integer exponent Woxi takes wolframscript's Floquet
+normalisation (unit-norm Fourier coefficients) and agrees; for an integer
+exponent (the periodic `ce`/`se`) it keeps the `y(0) = 1` / `y'(0) = √a`
+scaling.
 
 ### `SphericalHarmonicY` numericizes exact angles
 
@@ -7647,10 +7649,6 @@ Linux they come last.
 - `N[-GoldenRatio + 2 GoldenRatio/(2 + GoldenRatio) + GoldenRatio^2/(2 +
   GoldenRatio), 30]` (an exact zero) is `0``79.09` with `N::meprec` in
   wolframscript; Woxi answers a tiny nonzero `-4.68…`30.*^-97`.
-- `EllipticE`/`EllipticF` of a complex amplitude past the real branch lose
-  digits: `N[EllipticE[ArcSin[Sqrt[3/2]], 2/3]]` is `1.26118382064276 -
-  0.3036020376753771*I`, wolframscript `1.2611859497426054… -
-  0.30360162808571534…*I`.
 - Linear `Solve` results keep common factors wolframscript cancels:
   `Solve[{(x - 1) 2 + (y - 2) Pi == 0, x == 1 + t, y == 1 + 2 t}, {x, y, t}]`
   gives `x -> (2*Pi + 3*Pi^2)/(2*(Pi + Pi^2))` (wolframscript
@@ -7869,7 +7867,11 @@ sparse `LinearSolve` whose residual stays above `10^-12` in wolframscript.
   `C[1]/E^x + C[2]`.
 - Linear first-order systems with a symbolic coefficient
   (`{y' == a y + z, z' == y}`) or a variable one (`y' == x y + z`) stay
-  unevaluated.
+  unevaluated, and an exact system with irrational eigenvalues
+  (`{y' == 2 y + z, z' == y}`) is solved in machine numbers
+  (`0.14644660940672624/E^(0.41421356237309515*x) + …`) where wolframscript
+  gives `(E^(x - Sqrt[2]*x)*(2 - Sqrt[2] + 2*E^(2*Sqrt[2]*x) + …)*C[1])/4`;
+  the system solver works with machine eigenvalues throughout.
 - Boundary-value solutions are combined differently: the `u[1] == 1,
   u[2] == 2` solution of `-2 u'/u'' == x` is `(-2 + 3*x)/x`, Woxi's
   `3 - 2/x`; a forced first-order solution at `t -> 0` prints as one
