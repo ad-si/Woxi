@@ -3776,7 +3776,8 @@ fn evaluate_expr_to_expr_uncached(
             value @ StoredValue::ExprVal(
               Expr::Function { .. }
               | Expr::NamedFunction { .. }
-              | Expr::FunctionCall { .. },
+              | Expr::FunctionCall { .. }
+              | Expr::CurriedCall { .. },
             ),
           ) => Some(value.clone()),
           _ => None,
@@ -3785,7 +3786,8 @@ fn evaluate_expr_to_expr_uncached(
           match stored_expr {
             Expr::Function { .. }
             | Expr::NamedFunction { .. }
-            | Expr::FunctionCall { .. } => {
+            | Expr::FunctionCall { .. }
+            | Expr::CurriedCall { .. } => {
               // A stored call is a delayed body to evaluate first — the
               // memoization idiom `tpl := tpl = StringTemplate[…]` yields
               // the template, not the `Set` — and what it yields is what
@@ -3805,7 +3807,7 @@ fn evaluate_expr_to_expr_uncached(
                 } if crate::syntax::is_structured_bspline(head, head_args) => {
                   stored_expr.clone()
                 }
-                Expr::FunctionCall { .. } => {
+                Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
                   evaluate_expr_to_expr(&Expr::Identifier(name.clone()))?
                 }
                 other => other.clone(),
@@ -3827,6 +3829,7 @@ fn evaluate_expr_to_expr_uncached(
                 Expr::Function { .. }
                   | Expr::NamedFunction { .. }
                   | Expr::FunctionCall { .. }
+                  | Expr::CurriedCall { .. }
                   | Expr::Association(_)
               ) {
                 // For Function[{params}, body, attrs] with HoldAll/HoldFirst/

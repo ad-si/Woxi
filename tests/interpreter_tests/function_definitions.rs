@@ -7023,3 +7023,31 @@ mod definition_pattern_variables_avoid_capture {
     );
   }
 }
+
+mod symbol_holding_curried_call_applies_as_head {
+  use super::*;
+
+  #[test]
+  fn partially_applied_curried_definition_stored_in_a_symbol() {
+    // `w` holds `g[2][1]`, which has no value until applied once more; `w[3]`
+    // must apply the stored expression like `g[2][1][3]` does.
+    assert_eq!(
+      interpret(
+        "g[n_][a_][z_] := n*z + a; w = g[2][1]; {w[3], w[4], g[2][1][3]}"
+      )
+      .unwrap(),
+      "{7, 9, 7}"
+    );
+  }
+
+  #[test]
+  fn curried_definition_with_several_arguments_per_level() {
+    assert_eq!(
+      interpret(
+        "f[n_][a_, b_][z_] := a[[1]]*z^n + b[[1]]; w = f[2][{3, 4}, {5, 6}]; w[2]"
+      )
+      .unwrap(),
+      "17"
+    );
+  }
+}
