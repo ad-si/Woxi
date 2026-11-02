@@ -816,13 +816,24 @@ mod parent_directory_levels {
 
   #[test]
   fn several_levels_up() {
+    assert_eq!(interpret("ParentDirectory[\"/usr/bin\", 2]").unwrap(), "/");
+    assert_eq!(interpret("ParentDirectory[\"/usr/bin\", 5]").unwrap(), "/");
+    // A File gives the parent as a string.
+    assert_eq!(
+      interpret("ParentDirectory[File[\"/usr/bin\"]]").unwrap(),
+      "/usr"
+    );
+  }
+
+  #[test]
+  fn the_directory_must_exist() {
     assert_eq!(
       interpret("ParentDirectory[\"/a/b/c/d\", 2]").unwrap(),
-      "/a/b"
+      "ParentDirectory[/a/b/c/d, 2]"
     );
     assert_eq!(
-      interpret("ParentDirectory[File[\"/a/b/c\"], 2]").unwrap(),
-      "File[/a]"
+      interpret("ParentDirectory[\"/usr/bin\", 0]").unwrap(),
+      "ParentDirectory[/usr/bin, 0]"
     );
   }
 }
