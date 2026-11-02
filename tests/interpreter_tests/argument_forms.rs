@@ -765,24 +765,40 @@ mod uncompress_wrapper {
   }
 }
 
-mod group_support_and_orbits {
+mod group_orbits_without_domain {
   use super::*;
 
   #[test]
-  fn support_of_the_generators() {
+  fn group_support_is_not_a_system_function() {
     assert_eq!(
       interpret(
         "GroupSupport[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
       )
       .unwrap(),
-      "{1, 2, 3, 4, 7}"
+      "GroupSupport[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
     );
+  }
+
+  #[test]
+  fn fixed_points_up_to_the_largest_moved_point() {
     assert_eq!(
       interpret(
         "GroupOrbits[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
       )
       .unwrap(),
-      "{{1, 4}, {2, 3, 7}}"
+      "{{1, 4}, {2, 3, 7}, {5}, {6}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[PermutationGroup[{Cycles[{{2, 4}}]}]]").unwrap(),
+      "{{1}, {2, 4}, {3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[SymmetricGroup[3]]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[PermutationGroup[{}]]").unwrap(),
+      "{}"
     );
   }
 }

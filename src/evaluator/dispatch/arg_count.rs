@@ -666,7 +666,6 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "GroupBy" => Some((1, 3)),
     "GroupElements" => Some((1, 2)),
     "GroupOrbits" => Some((1, 2)),
-    "GroupSupport" => Some((1, 1)),
     "GroupElementQ" => Some((2, 2)),
     "GroupElementPosition" => Some((2, 2)),
     "GroupMultiplicationTable" => Some((1, 1)),

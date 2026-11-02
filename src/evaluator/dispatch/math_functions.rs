@@ -1008,51 +1008,34 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
-    // GroupSupport[group] — the points moved by some generator of the group.
-    "GroupSupport" if args.len() == 1 => {
+    // GroupOrbits[group] — the orbits of the points 1 … n, where n is the
+    // largest point moved by a generator (fixed points are orbits of their
+    // own).
+    "GroupOrbits" if args.len() == 1 => {
       let gens = match crate::evaluator::evaluate_function_call_ast(
         "GroupGenerators",
         args,
       ) {
         Ok(Expr::List(ref gens)) => gens.to_vec(),
-        Ok(_) => return Some(Ok(unevaluated("GroupSupport", args))),
+        Ok(_) => return Some(Ok(unevaluated("GroupOrbits", args))),
         Err(e) => return Some(Err(e)),
       };
-      let supports = match gens
-        .iter()
-        .map(|g| {
-          crate::evaluator::evaluate_function_call_ast(
-            "PermutationSupport",
-            std::slice::from_ref(g),
-          )
-        })
-        .collect::<Result<Vec<_>, _>>()
-      {
-        Ok(s) => s,
-        Err(e) => return Some(Err(e)),
-      };
-      if !supports.iter().all(|s| matches!(s, Expr::List(_))) {
-        return Some(Ok(unevaluated("GroupSupport", args)));
+      let mut max = 0_i128;
+      for g in &gens {
+        match crate::evaluator::evaluate_function_call_ast(
+          "PermutationMax",
+          std::slice::from_ref(g),
+        ) {
+          Ok(Expr::Integer(m)) => max = max.max(m),
+          Ok(_) => return Some(Ok(unevaluated("GroupOrbits", args))),
+          Err(e) => return Some(Err(e)),
+        }
       }
-      return Some(crate::evaluator::evaluate_function_call_ast(
-        "Union", &supports,
-      ));
-    }
-    // GroupOrbits[group] — the orbits of the points of the group's support.
-    "GroupOrbits" if args.len() == 1 => {
-      return Some(
-        crate::evaluator::evaluate_function_call_ast(
-          "GroupSupport",
-          &args[..1],
-        )
-        .and_then(|support| match support {
-          Expr::List(_) => crate::functions::math_ast::group_orbits_ast(&[
-            args[0].clone(),
-            support,
-          ]),
-          _ => Ok(unevaluated("GroupOrbits", args)),
-        }),
-      );
+      let domain = Expr::List((1..=max).map(Expr::Integer).collect());
+      return Some(crate::functions::math_ast::group_orbits_ast(&[
+        args[0].clone(),
+        domain,
+      ]));
     }
     "GroupOrbits" if args.len() == 2 => {
       return Some(crate::functions::math_ast::group_orbits_ast(args));
