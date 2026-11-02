@@ -24211,7 +24211,26 @@ mod reduce_chained_equality {
   fn chain_of_three() {
     assert_eq!(
       interpret("Reduce[{3 - b - c == 6 b/5 == 2 c}]").unwrap(),
-      "b == 15/14 && c == 9/14"
+      "c == 9/14 && b == 15/14"
+    );
+  }
+
+  // Unnamed variables: conjuncts sharing variables group in order of first
+  // appearance, each group in reverse canonical order.
+  #[test]
+  fn default_variable_order() {
+    assert_eq!(interpret("Reduce[x + y == 1]").unwrap(), "x == 1 - y");
+    assert_eq!(
+      interpret("Reduce[{a + b == 2, a - b == 0, c == 1}]").unwrap(),
+      "b == 1 && a == 1 && c == 1"
+    );
+    assert_eq!(
+      interpret("Reduce[{z == 2, x + y == 1}]").unwrap(),
+      "z == 2 && x == 1 - y"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + y + z == 1, x - y == 0, z == 2 x}]").unwrap(),
+      "z == 1/2 && y == 1/4 && x == 1/4"
     );
   }
 }

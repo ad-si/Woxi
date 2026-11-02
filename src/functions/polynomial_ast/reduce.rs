@@ -234,9 +234,7 @@ fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vars = if let Some(spec) = args.get(1) {
     extract_reduce_vars(spec)
   } else {
-    let mut own = Vec::new();
-    constraint_variables(expr, &mut own);
-    own
+    default_reduce_variables(expr)
   };
   if vars.is_empty() {
     return Ok(unevaluated("Reduce", args));
@@ -826,6 +824,69 @@ fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
     Expr::List(items) => items.iter().flat_map(extract_reduce_vars).collect(),
     _ => vec![],
   }
+}
+
+/// The variables `Reduce[expr]` eliminates when none are named, in
+/// wolframscript's order: the conjuncts that share variables form groups,
+/// taken in the order they first appear, and within a group the variables go
+/// in reverse canonical order — so the alphabetically last one is free and
+/// the first is solved for last: `Reduce[x + y == 1]` is `x == 1 - y`,
+/// `Reduce[{a + b == 2, a - b == 0, c == 1}]` is
+/// `b == 1 && a == 1 && c == 1`.
+fn default_reduce_variables(expr: &Expr) -> Vec<String> {
+  fn conjuncts(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| conjuncts(i, out)),
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().for_each(|i| conjuncts(i, out));
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        conjuncts(left, out);
+        conjuncts(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut parts = Vec::new();
+  conjuncts(expr, &mut parts);
+  let mut groups: Vec<Vec<String>> = Vec::new();
+  for part in &parts {
+    let mut vars = Vec::new();
+    constraint_variables(part, &mut vars);
+    if vars.is_empty() {
+      continue;
+    }
+    // Merge every group this conjunct touches into the first of them.
+    let touched: Vec<usize> = (0..groups.len())
+      .filter(|&g| groups[g].iter().any(|v| vars.contains(v)))
+      .collect();
+    match touched.first() {
+      None => groups.push(vars),
+      Some(&first) => {
+        for &g in touched[1..].iter().rev() {
+          let moved = groups.remove(g);
+          groups[first].extend(moved);
+        }
+        groups[first].extend(vars);
+      }
+    }
+  }
+  let mut ordered = Vec::new();
+  for mut group in groups {
+    group.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(
+        &Expr::Identifier(b.clone()),
+        &Expr::Identifier(a.clone()),
+      )
+    });
+    group.dedup();
+    ordered.extend(group);
+  }
+  ordered
 }
 
 /// The free variables of a constraint, in the order they first appear.
