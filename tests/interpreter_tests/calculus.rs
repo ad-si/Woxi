@@ -24527,6 +24527,30 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // Fewer nonlinear constraints than unknowns they mention: each is paired
+  // with an unknown it holds nonlinearly (the bubble point with the still
+  // temperature `T`), and the energy balance, affine in `V` and `D1` once
+  // `T` is known, is left to the linear solve — whatever order the
+  // equations come in. wolframscript: {0.7446580168539092,
+  // 1.8162800187354102, 5.565585575677391, 1.6260953211815086,
+  // 0.3751475793460154}.
+  #[test]
+  fn dae_pairs_each_constraint_with_a_nonlinear_unknown() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == 1 - V[t] x[t] - D1[t]/10, \
+         y'[t] + V[t] == 2 + D1[t], x'[t] + y'[t] == V[t] - 3 D1[t], \
+         V[t] T[t]^2 + D1[t] == 50 + x[t], Exp[T[t]/10] == 1 + x[t], \
+         x[0] == 1, y[0] == 0}, {x, y, T, V, D1}, {t, 0, 2}]; \
+         Max[Abs[({x[2], y[2], T[2], V[2], D1[2]} /. First[s]) - \
+         {0.7446580168539092, 1.8162800187354102, 5.565585575677391, \
+         1.6260953211815086, 0.3751475793460154}]] < 10^-5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A DAE with a Newton-solved constraint goes to the stiff method, which
   // crosses a steady stretch in a few long steps; where a step change in
   // the input then shortens them abruptly, the long steps are filled in

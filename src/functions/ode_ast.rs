@@ -4994,8 +4994,12 @@ fn function_in_transcendental_context(
 /// solved in closed form: returns the equations' and the unknowns' indices,
 /// leaving the unknowns to be found numerically at every evaluation. When
 /// the derivative-free equations and the never-differentiated unknowns they
-/// mention are equally many they form one coupled system; otherwise the
-/// first such equation is paired with the first such unknown.
+/// mention are equally many they form one coupled system; otherwise each
+/// equation, those mentioning the fewest unknowns first, is paired with an
+/// unknown it holds nonlinearly — once the unknowns already paired are
+/// known, an equation affine in the rest (a still's energy balance in its
+/// vapour flow, once the bubble point fixes its temperature) is left to the
+/// linear solve for the highest derivatives.
 fn find_numeric_constraints(
   odes: &[Expr],
   funcs: &[SysFunc],
@@ -5040,15 +5044,38 @@ fn find_numeric_constraints(
   if !algebraic.is_empty() && algebraic.len() == free.len() {
     return Some((algebraic, free));
   }
-  for &ei in &algebraic {
-    if let Some(&fi) = free
+  let mentioned = |ei: usize| -> Vec<usize> {
+    free
       .iter()
-      .find(|&&fi| expr_mentions_function(&odes[ei], &funcs[fi].name))
+      .copied()
+      .filter(|&fi| expr_mentions_function(&odes[ei], &funcs[fi].name))
+      .collect()
+  };
+  let mut order = algebraic.clone();
+  order.sort_by_key(|&ei| mentioned(ei).len());
+  let (mut eqs, mut unknowns): (Vec<usize>, Vec<usize>) =
+    (Vec::new(), Vec::new());
+  for ei in order {
+    let rest: Vec<usize> = mentioned(ei)
+      .into_iter()
+      .filter(|fi| !unknowns.contains(fi))
+      .collect();
+    let names: Vec<&str> =
+      rest.iter().map(|&fi| funcs[fi].name.as_str()).collect();
+    if names.is_empty()
+      || polynomial_degree_in(&odes[ei], &names).is_some_and(|d| d <= 1)
     {
-      return Some((vec![ei], vec![fi]));
+      continue;
     }
+    let nonlinear = |fi: &usize| {
+      polynomial_degree_in(&odes[ei], &[funcs[*fi].name.as_str()])
+        .is_none_or(|d| d > 1)
+    };
+    let pick = rest.iter().copied().find(nonlinear).unwrap_or(rest[0]);
+    eqs.push(ei);
+    unknowns.push(pick);
   }
-  None
+  (!eqs.is_empty()).then_some((eqs, unknowns))
 }
 
 /// The total degree of `expr` (an equation's sides are taken together) in
