@@ -7405,9 +7405,50 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         simplify(evaled2)
       };
       let num1 = eval_expr(minus2(neg_b.clone(), sqrt_disc.clone()));
-      let sol1 = eval_expr(solve_divide(&num1, &two_a));
       let num2 = eval_expr(plus2(neg_b, sqrt_disc));
-      let sol2 = eval_expr(solve_divide(&num2, &two_a));
+      // A factor common to every term of the numerator and to 2a cancels:
+      // `x^2 - 2 a x + b` has roots `a ± Sqrt[a^2 - b]`, not
+      // `(2*a ± 2*Sqrt[a^2 - b])/2`.
+      let common = |num: &Expr| -> i128 {
+        let Some(den) = (match &two_a {
+          Expr::Integer(d) => Some(d.abs()),
+          _ => None,
+        }) else {
+          return 1;
+        };
+        let mut g = den;
+        for t in crate::functions::polynomial_ast::collect_additive_terms(num) {
+          let c = match &t {
+            Expr::Integer(n) => *n,
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              match args.first() {
+                Some(Expr::Integer(n)) => *n,
+                _ => 1,
+              }
+            }
+            _ => 1,
+          };
+          let (mut a, mut b) = (g, c.abs());
+          while b != 0 {
+            (a, b) = (b, a % b);
+          }
+          g = a;
+        }
+        g
+      };
+      let divide = |num: &Expr| -> Expr {
+        let quotient = solve_divide(num, &two_a);
+        if common(num) > 1
+          && let Ok(cancelled) = super::cancel_ast(std::slice::from_ref(
+            &eval_expr(quotient.clone()),
+          ))
+        {
+          return cancelled;
+        }
+        eval_expr(quotient)
+      };
+      let sol1 = divide(&num1);
+      let sol2 = divide(&num2);
       // Wolfram convention: negative root first. When the leading coefficient
       // is negative, dividing by 2a flips the root order, so swap.
       let leading_negative = match a {

@@ -25228,3 +25228,24 @@ mod find_root_block_semantics {
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }
+
+// The quadratic formula cancels a factor common to the numerator and 2a.
+mod solve_quadratic_common_factor {
+  use super::*;
+
+  #[test]
+  fn common_factor_cancels() {
+    assert_eq!(
+      interpret("Solve[x^2 - 2 a x - 3 b == 0, x]").unwrap(),
+      "{{x -> a - Sqrt[a^2 + 3*b]}, {x -> a + Sqrt[a^2 + 3*b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + 4 a x + b == 0, x]").unwrap(),
+      "{{x -> -2*a - Sqrt[4*a^2 - b]}, {x -> -2*a + Sqrt[4*a^2 - b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[4 x^2 - 8 x + 1 == 0, x]").unwrap(),
+      "{{x -> (2 - Sqrt[3])/2}, {x -> (2 + Sqrt[3])/2}}"
+    );
+  }
+}
