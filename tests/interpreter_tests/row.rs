@@ -584,3 +584,24 @@ mod dynamic_release_in_frames {
     assert!(result.graphics.unwrap().contains(">7</text>"));
   }
 }
+
+mod labeled_text_layout {
+  use super::*;
+
+  /// A caption set on a sized pane of laid-out text is a drawn picture in
+  /// the notebook, not the call echoed back as source text.
+  #[test]
+  fn labeled_pane_of_text_column_draws() {
+    clear_state();
+    let r = interpret_with_stdout(
+      r#"Style[Labeled[Pane[Text[Column[{Row[{"a", "b"}], "c"}]], {120, 60}], Text["cap"], Top], 24]"#,
+    )
+    .unwrap();
+    assert!(
+      r.result.starts_with("-Graphics-") || r.result.contains("<svg"),
+      "Labeled text layout was not drawn: {}",
+      r.result
+    );
+    assert!(!r.result.contains("Labeled["), "{}", r.result);
+  }
+}
