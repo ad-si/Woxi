@@ -385,31 +385,26 @@ pub fn rectangle_chart_ast(
 }
 
 /// `` BarCharts`GeneralizedBarChart[{{x1, h1, w1}, …}] `` — the legacy
-/// package chart: a bar of height `h` and width `w` centred at `x`, drawn
-/// as plain `Rectangle` primitives in a `Graphics` with axes. `` BarCharts`BarStyle ``
-/// holds the directive applied to every bar; other options pass straight
-/// through to `Graphics`.
+/// package chart, once the package is loaded: a bar of height `h` and width
+/// `w` centred at `x`, each drawn as `{style, EdgeForm[Opacity[0.5]],
+/// Rectangle[…]}` in the bars' own arithmetic, in a `Graphics` with axes.
+/// `` BarCharts`BarStyle `` gives the style (the package's blue
+/// `Hue[0.67, 0.45, 0.65]` by default); other options pass through to
+/// `Graphics`.
 pub fn generalized_bar_chart_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   const HEAD: &str = "BarCharts`GeneralizedBarChart";
+  if !crate::packages_list().iter().any(|p| p == "BarCharts`") {
+    return Ok(unevaluated(HEAD, args));
+  }
   let Some(Expr::List(bars)) = args.first() else {
     return Ok(unevaluated(HEAD, args));
   };
-  let mut rects = Vec::new();
-  for bar in bars {
-    let Some(Item { sizes, .. }) = parse_item(bar, 3) else {
-      return Ok(unevaluated(HEAD, args));
-    };
-    let (x, h, w) = (sizes[0], sizes[1], sizes[2]);
-    let pt =
-      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-    rects.push(call(
-      "Rectangle",
-      vec![pt(x - w / 2.0, 0.0), pt(x + w / 2.0, h)],
-    ));
-  }
-  let mut style = None;
+  let mut style = call(
+    "Hue",
+    vec![Expr::Real(0.67), Expr::Real(0.45), Expr::Real(0.65)],
+  );
   let mut options = Vec::new();
   let mut has_axes = false;
   for opt in &args[1..] {
@@ -422,7 +417,7 @@ pub fn generalized_bar_chart_ast(
     };
     match pattern.as_ref() {
       Expr::Identifier(n) if n == "BarCharts`BarStyle" || n == "BarStyle" => {
-        style = Some(replacement.as_ref().clone());
+        style = replacement.as_ref().clone();
       }
       Expr::Identifier(n) => {
         has_axes |= n == "Axes";
@@ -431,12 +426,43 @@ pub fn generalized_bar_chart_ast(
       _ => options.push(opt.clone()),
     }
   }
+  let mut prims = Vec::new();
+  for bar in bars {
+    let Expr::List(xhw) = bar else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    let [x, h, w] = xhw.as_slice() else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    if [x, h, w]
+      .iter()
+      .any(|v| crate::functions::math_ast::try_eval_to_f64(v).is_none())
+    {
+      return Ok(unevaluated(HEAD, args));
+    }
+    let half = crate::helpers::times2(
+      w.clone(),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    );
+    let left =
+      evaluate_expr_to_expr(&crate::helpers::minus2(x.clone(), half.clone()))?;
+    let right = evaluate_expr_to_expr(&crate::helpers::plus2(x.clone(), half))?;
+    let pt = |a: Expr, b: Expr| Expr::List(vec![a, b].into());
+    prims.push(Expr::List(
+      vec![
+        style.clone(),
+        call("EdgeForm", vec![call("Opacity", vec![Expr::Real(0.5)])]),
+        call(
+          "Rectangle",
+          vec![pt(left, Expr::Integer(0)), pt(right, h.clone())],
+        ),
+      ]
+      .into(),
+    ));
+  }
   if !has_axes {
     options.push(rule("Axes", Expr::Identifier("True".into())));
   }
-  let mut prims = Vec::new();
-  prims.extend(style);
-  prims.extend(rects);
   let mut graphics_args = vec![Expr::List(prims.into())];
   graphics_args.extend(options);
   evaluate_expr_to_expr(&call("Graphics", graphics_args))

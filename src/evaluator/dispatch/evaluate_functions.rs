@@ -828,6 +828,26 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "BarCharts`" {
+    // Its exports that are not System symbols (its own `BarChart` would
+    // shadow the System one, which Woxi keeps).
+    for name in [
+      "BarEdgeStyle",
+      "BarEdges",
+      "BarGroupSpacing",
+      "BarLabels",
+      "BarOrientation",
+      "BarStyle",
+      "BarValues",
+      "GeneralizedBarChart",
+      "GeneralizedBarChart3D",
+      "PercentileBarChart",
+      "StackedBarChart",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Polytopes`" {
     // Its functions are dispatch entries on the names it exports, active
     // while it is on `$ContextPath`; the symbols are created so a bare

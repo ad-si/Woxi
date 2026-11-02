@@ -43896,14 +43896,26 @@ mod styled_text_and_computed_options_in_graphics_layouts {
 mod generalized_bar_chart {
   use super::*;
 
+  // Bars centred on their position, in the bars' own arithmetic; the
+  // package's names exist once it is loaded.
   #[test]
   fn bars_are_centred_on_their_position() {
     assert_eq!(
       interpret(
-        "Cases[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}], _Rectangle, Infinity]"
+        "Needs[\"BarCharts`\"]; ToString[First[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}]], InputForm]"
       )
       .unwrap(),
-      "{Rectangle[{-0.5, 0.}, {0.5, 3.}], Rectangle[{1.75, 0.}, {2.25, 5.}]}"
+      "{{Hue[0.67, 0.45, 0.65], EdgeForm[Opacity[0.5]], Rectangle[{-1/2, 0}, {1/2, 3}]}, {Hue[0.67, 0.45, 0.65], EdgeForm[Opacity[0.5]], Rectangle[{1.75, 0}, {2.25, 5}]}}"
+    );
+  }
+
+  #[test]
+  fn unloaded_package_has_no_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 1;\nHead[BarCharts`GeneralizedBarChart[{{0, 3, 1}}]]")
+        .unwrap(),
+      "BarCharts`GeneralizedBarChart"
     );
   }
 
@@ -43911,14 +43923,14 @@ mod generalized_bar_chart {
   fn bar_style_and_options_reach_the_graphics() {
     assert_eq!(
       interpret(
-        "Head[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red, PlotRange -> {{-1, 1}, {0, 4}}]]"
+        "Needs[\"BarCharts`\"]; Head[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red, PlotRange -> {{-1, 1}, {0, 4}}]]"
       )
       .unwrap(),
       "Graphics"
     );
     assert_eq!(
       interpret(
-        "FreeQ[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red], Red]"
+        "Needs[\"BarCharts`\"]; FreeQ[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red], Red]"
       )
       .unwrap(),
       "False"
