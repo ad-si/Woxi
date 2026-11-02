@@ -14270,14 +14270,18 @@ fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
       Some(Expr::BigInteger(-n))
     }
     Expr::FunctionCall { name, args }
-      if name == "Rational"
-        && args.len() == 2
-        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+      if name == "Rational" && args.len() == 2 =>
     {
-      if let Expr::Integer(n) = &args[0] {
-        Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
-      } else {
-        None
+      match &args[0] {
+        Expr::Integer(n) if *n < 0 => {
+          Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
+        }
+        // A numerator past i128 is a BigInteger: `-(10^40/3)`.
+        Expr::BigInteger(n) if n.sign() == Sign::Minus => Some(call(
+          "Rational",
+          vec![Expr::BigInteger(-n), args[1].clone()],
+        )),
+        _ => None,
       }
     }
     _ => None,

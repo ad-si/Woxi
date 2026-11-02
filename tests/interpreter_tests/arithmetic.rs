@@ -13874,6 +13874,15 @@ mod big_exact_complex {
       interpret("2 - (10^40/3) I").unwrap(),
       "2 - (10000000000000000000000000000000000000000*I)/3"
     );
+    // A negative numerator past i128 still prints as a subtraction.
+    assert_eq!(
+      interpret("ToString[2 - (10^40/3) I, InputForm]").unwrap(),
+      "2 - (10000000000000000000000000000000000000000*I)/3"
+    );
+    assert_eq!(
+      interpret("ToString[x - (10^40/3) y, InputForm]").unwrap(),
+      "x - (10000000000000000000000000000000000000000*y)/3"
+    );
     assert_eq!(
       interpret("ToString[FullForm[(10^40/7) I]]").unwrap(),
       "Complex[0, Rational[10000000000000000000000000000000000000000, 7]]"
