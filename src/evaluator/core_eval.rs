@@ -329,11 +329,12 @@ pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
           if *d > 1 && crate::functions::math_ast::gcd_i128(*n, *d) == 1
       )
     }
-    // A shared table of machine numbers answers in O(1) after the first
-    // time (a memoized `f[1] = table` read element by element).
+    // A shared table of numbers (complex ones included, in the shape
+    // arithmetic leaves them) answers in O(1) after the first time (a
+    // memoized `f[1] = table` read element by element).
     Expr::List(_)
       if crate::syntax::shared_numeric_data_kind(expr)
-        == crate::syntax::REAL_NUMERIC_DATA =>
+        != crate::syntax::NOT_NUMERIC_DATA =>
     {
       true
     }
