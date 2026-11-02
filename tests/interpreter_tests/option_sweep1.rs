@@ -251,14 +251,33 @@ mod algorithm_options {
   #[test]
   fn eigensystem_method() {
     assert_eq!(
+      interpret("Eigenvalues[{{2, 0}, {0, 3}}, Method -> \"Direct\"]").unwrap(),
+      "{3, 2}"
+    );
+    // Arnoldi finds at most n - 2 eigenvalues, and only of an inexact matrix.
+    assert_eq!(
       interpret("Eigenvalues[{{2, 0}, {0, 3}}, Method -> \"Arnoldi\"]")
         .unwrap(),
-      "{3, 2}"
+      "Eigenvalues[{{2, 0}, {0, 3}}, Method -> Arnoldi]"
     );
     assert_eq!(
       interpret("Eigensystem[{{2, 0}, {0, 3}}, 1, Method -> \"Arnoldi\"]")
         .unwrap(),
-      "{{3}, {{0, 1}}}"
+      "Eigensystem[{{2, 0}, {0, 3}}, 1, Method -> Arnoldi]"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 1, Method -> \"Arnoldi\"]"
+      )
+      .unwrap(),
+      "Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 1, Method -> Arnoldi]"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvalues[{{2., 0, 0}, {0, 3., 0}, {0, 0, 1.}}, 1, Method -> \"Arnoldi\"]"
+      )
+      .unwrap(),
+      "{3.}"
     );
   }
 

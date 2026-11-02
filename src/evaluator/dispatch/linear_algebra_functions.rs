@@ -1280,11 +1280,16 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     // `Method -> …` (Arnoldi, Banded, Direct, FEAST, …) picks only the
-    // algorithm that finds the eigenvalues, never their values.
+    // algorithm that finds the eigenvalues, never their values — except that
+    // Arnoldi refuses work it cannot do (see `arnoldi_refusal`).
     "Eigenvalues" | "Eigenvectors" | "Eigensystem"
       if (2..=3).contains(&args.len())
         && option_rule_value(&args[args.len() - 1], "Method").is_some() =>
     {
+      let method = option_rule_value(&args[args.len() - 1], "Method")?;
+      if is_arnoldi_method(method) && arnoldi_refusal(name, args) {
+        return Some(Ok(crate::helpers::unevaluated(name, args)));
+      }
       return Some(crate::evaluator::evaluate_function_call_ast(
         name,
         &args[..args.len() - 1],
@@ -6026,7 +6031,6 @@ fn matrix_function_by_eigensystem(f: &Expr, m: &Expr) -> Option<Expr> {
   (out_rows.len() == n).then_some(result)
 }
 
-/// The value of `opt -> value` when `e` is that option rule.
 /// Whether `s` names a `TargetStructure` WL knows (even where a given
 /// constructor does not support it); any other string is `::badts`.
 fn is_target_structure_name(s: &str) -> bool {
@@ -6049,6 +6053,80 @@ fn is_target_structure_name(s: &str) -> bool {
   )
 }
 
+/// `Method -> "Arnoldi"` (or `Arnoldi`, or `{"Arnoldi", subopts…}`).
+fn is_arnoldi_method(method: &Expr) -> bool {
+  match method {
+    Expr::String(m) | Expr::Identifier(m) => m == "Arnoldi",
+    Expr::List(items) => items.first().is_some_and(is_arnoldi_method),
+    _ => false,
+  }
+}
+
+/// Whether `Method -> "Arnoldi"` refuses `name[m, (k,) Method -> …]`, after
+/// reporting why the way wolframscript does. The Arnoldi iteration finds at
+/// most n - 2 of an n×n matrix's eigenvalues (`::arall`, preceded by the
+/// `::ars` advice when more than half of them are asked for), and only of a
+/// matrix of machine- or arbitrary-precision reals (`::arm`).
+fn arnoldi_refusal(name: &str, args: &[Expr]) -> bool {
+  let Expr::List(rows) = &args[0] else {
+    return false;
+  };
+  let n = rows.len();
+  let square = rows
+    .iter()
+    .all(|r| matches!(r, Expr::List(cols) if cols.len() == n));
+  if n == 0 || !square {
+    return false;
+  }
+  let requested = match args.len() {
+    3 => match &args[1] {
+      Expr::Integer(k) => k.unsigned_abs() as usize,
+      _ => return false,
+    },
+    _ => n,
+  }
+  .min(n);
+  let most = n.saturating_sub(2);
+  if requested > most {
+    if 2 * requested > n {
+      crate::emit_message(&format!(
+        "{name}::ars: Method -> Arnoldi is typically only effective for \
+         finding a few eigenvalues and/or eigenvectors. Finding the requested \
+         {requested} out of {n} eigenvalues and eigenvectors may be faster \
+         with dense matrix methods."
+      ));
+    }
+    crate::emit_message(&format!(
+      "{name}::arall: Method -> Arnoldi cannot be used to compute more than \
+       {most} out of the {n} eigenvalues and/or eigenvectors."
+    ));
+    return true;
+  }
+  let entries = rows.iter().flat_map(|r| match r {
+    Expr::List(cols) => cols.to_vec(),
+    _ => Vec::new(),
+  });
+  let mut inexact = false;
+  let mut real = true;
+  for e in entries {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => inexact = true,
+      Expr::Integer(_) | Expr::BigInteger(_) => {}
+      Expr::FunctionCall { ref name, .. } if name == "Rational" => {}
+      _ => real = false,
+    }
+  }
+  if !(inexact && real) {
+    crate::emit_message(&format!(
+      "{name}::arm: Method -> Arnoldi can only be used for matrices of \
+       machine- or arbitrary-precision real numbers."
+    ));
+    return true;
+  }
+  false
+}
+
+/// The value of `opt -> value` when `e` is that option rule.
 fn option_rule_value<'a>(e: &'a Expr, opt: &str) -> Option<&'a Expr> {
   match e {
     Expr::Rule {
