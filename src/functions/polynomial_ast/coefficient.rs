@@ -793,6 +793,17 @@ pub fn extract_coefficient_of_power(
 /// even after a product adds a few powers to it.
 pub const NON_POWER: i128 = i128::MIN / 4;
 
+/// The power of `x` in a product of two factors with powers `a` and `b`:
+/// their sum, or `NON_POWER` when either is (a product of many non-power
+/// factors would otherwise overflow).
+fn product_power(a: i128, b: i128) -> i128 {
+  if a <= NON_POWER / 2 || b <= NON_POWER / 2 {
+    NON_POWER
+  } else {
+    a.saturating_add(b)
+  }
+}
+
 /// How a factor `base^exponent` depends on `var`: an integer power of it, a
 /// coefficient (an exponential `3^x`, `E^x` or `(1 + x)^x`, which Wolfram's
 /// `Coefficient` treats like `Sin[x]`), or `NON_POWER`.
@@ -842,7 +853,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
     } => {
       let (lp, lc) = term_var_power_and_coeff(left, var);
       let (rp, rc) = term_var_power_and_coeff(right, var);
-      let total_power = lp + rp;
+      let total_power = product_power(lp, rp);
       let coeff = multiply_exprs(&lc, &rc);
       (total_power, coeff)
     }
@@ -898,7 +909,7 @@ pub fn term_var_power_and_coeff(term: &Expr, var: &str) -> (i128, Expr) {
         let mut coeffs: Vec<Expr> = Vec::new();
         for a in args {
           let (p, c) = term_var_power_and_coeff(a, var);
-          total_power += p;
+          total_power = product_power(total_power, p);
           coeffs.push(c);
         }
         let coeff = coeffs

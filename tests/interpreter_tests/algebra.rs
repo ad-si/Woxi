@@ -206,6 +206,19 @@ mod exponent {
 mod coefficient {
   use super::*;
 
+  // A product of many factors that are no power of the variable used to
+  // overflow the power count (a panic in checked builds).
+  #[test]
+  fn many_non_power_factors() {
+    assert_eq!(
+      interpret(
+        "Coefficient[Sqrt[1 + x] Sqrt[2 + x] Sqrt[3 + x] Sqrt[4 + x] Sqrt[5 + x] Sqrt[6 + x] + 3 x, x]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
   // A factor that depends on the variable other than as a power of it
   // (`3^x`, `E^x`, `(1 + x)^x`, `Sin[x]`) belongs to the coefficient, while
   // `x^(1/2)` or `x^y` match no integer power. Exponentials used to vanish,
