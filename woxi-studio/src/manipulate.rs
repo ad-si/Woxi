@@ -5602,4 +5602,17 @@ mod mapped_layout_tests {
     );
     assert!(!format!("{node:?}").contains("SpanFromLeft"), "{node:?}");
   }
+
+  /// A `Dynamic[StringForm[…]]` caption in a display shows the template with
+  /// its slots filled from the current bindings, not an empty cell.
+  #[test]
+  fn display_dynamic_string_form_fills_slots() {
+    let node = build_manipulate_display(
+      r#"Grid[{{"speed", Dynamic[StringForm["`` units per tick", n]]}}]"#,
+      &[("n".to_string(), "7".to_string())],
+    );
+    let dump = format!("{node:?}");
+    assert!(dump.contains("7 units per tick"), "{dump}");
+    assert!(!dump.contains("StringForm"), "{dump}");
+  }
 }
