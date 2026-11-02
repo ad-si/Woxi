@@ -1408,6 +1408,30 @@ mod graphics {
       );
     }
 
+    /// A `Scaled[{w, h}]` inset size is a fraction of the plot, so a
+    /// picture inset into itself shrinks at every level instead of keeping
+    /// its natural size.
+    #[test]
+    fn a_scaled_inset_size_is_a_fraction_of_the_plot() {
+      let svg = export_svg(
+        "d = Graphics[Raster[{{{1, 0, 0}, {0, 1, 0}}}]]; \
+         Graphics[{First[d], Inset[d, Scaled[{0.5, 0.5}], Automatic, \
+         Scaled[{0.25, 0.5}]]}, ImageSize -> {200, 100}]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      assert!(
+        nested.contains("width=\"50.00\"")
+          && nested.contains("height=\"50.00\""),
+        "a quarter of the width, half of the height: {nested}"
+      );
+    }
+
     /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
     /// picture in a flat one, at its own size — a Demonstration puts a
     /// little schematic of its apparatus in the corner that way. It used
