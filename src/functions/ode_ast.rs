@@ -8784,7 +8784,9 @@ fn solve_mass_matrix_system(
   // rounding noise — noise a finite-difference Jacobian then amplifies.
   for (row, r) in m.iter_mut().zip(rhs.iter_mut()) {
     let s = row_scale(row);
-    row.iter_mut().for_each(|v| *v /= s);
+    for v in row.iter_mut() {
+      *v /= s;
+    }
     *r /= s;
   }
   for col in 0..n {
@@ -8925,7 +8927,9 @@ impl MassLu {
     // Rows scaled to unit size, as in `solve_mass_matrix_system`.
     let scales: Vec<f64> = m.iter().map(|row| row_scale(row)).collect();
     for (row, s) in m.iter_mut().zip(&scales) {
-      row.iter_mut().for_each(|v| *v /= s);
+      for v in row.iter_mut() {
+        *v /= s;
+      }
     }
     let mut pivots = Vec::with_capacity(n);
     for col in 0..n {
