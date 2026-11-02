@@ -24154,10 +24154,16 @@ mod inverse_function_of_a_definition {
         .unwrap(),
       "r"
     );
-    // Two rules: no single formula to invert.
+    // A value for one argument does not hide the general rule.
     assert_eq!(
       interpret("h[0] = 1; h[x_] := 2 x; InverseFunction[h]").unwrap(),
-      "InverseFunction[h]"
+      "#1/2 & "
+    );
+    // A rule for a restricted pattern is passed over too.
+    assert_eq!(
+      interpret("k[x_Integer] := 2 x; k[x_] := 3 x; InverseFunction[k]")
+        .unwrap(),
+      "#1/3 & "
     );
   }
 }

@@ -7235,23 +7235,22 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
 /// The body of `name`'s definition, in terms of `#`, when it has exactly
 /// one: `f[x_] := 3/8 - x/2` gives `3/8 - #/2`.
 fn single_argument_definition(name: &str) -> Option<Expr> {
-  let has_values = crate::MEMO_VALUES
-    .with(|m| m.borrow().get(name).is_some_and(|v| !v.is_empty()));
-  if has_values {
-    return None;
-  }
+  // Only the one unrestricted rule `f[x_] := body` counts: values for
+  // specific arguments (`h[0] = 1`) and rules for restricted patterns
+  // (`k[x_Integer] := …`) are passed over, as in wolframscript, where
+  // `h[0] = 1; h[x_] := 2 x; InverseFunction[h]` is `#1/2 &`.
   let defs = crate::FUNC_DEFS.with(|m| m.borrow().get(name).cloned())?;
-  let [(params, conditions, defaults, heads, blank_types, body)] =
-    defs.as_slice()
-  else {
-    return None;
-  };
-  if params.len() != 1
-    || conditions.iter().any(Option::is_some)
-    || defaults.iter().any(Option::is_some)
-    || heads.iter().any(Option::is_some)
-    || blank_types.first() != Some(&1)
-  {
+  let mut general = defs.iter().filter(
+    |(params, conditions, defaults, heads, blank_types, _)| {
+      params.len() == 1
+        && conditions.iter().all(Option::is_none)
+        && defaults.iter().all(Option::is_none)
+        && heads.iter().all(Option::is_none)
+        && blank_types.first() == Some(&1)
+    },
+  );
+  let (params, _, _, _, _, body) = general.next()?;
+  if general.next().is_some() {
     return None;
   }
   Some(crate::syntax::substitute_variable(
