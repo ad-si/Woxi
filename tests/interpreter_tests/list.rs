@@ -14359,6 +14359,30 @@ mod nearest {
     assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 4]").unwrap(), "{3, 5}");
   }
 
+  // Only exact ties count: machine distances a bit apart pick the closer.
+  #[test]
+  fn machine_near_ties_are_not_ties() {
+    assert_eq!(
+      interpret(
+        "{Nearest[{0.1, 0.3}, 0.2], Nearest[{0.1 -> a, 0.3 -> b}, 0.2], Nearest[{1., 3.}, 2.], Nearest[{0.2, 0.4}, 0.3]}"
+      )
+      .unwrap(),
+      "{{0.3}, {b}, {1., 3.}, {0.2}}"
+    );
+  }
+
+  // A nested target list threads level by level.
+  #[test]
+  fn nested_targets_thread() {
+    assert_eq!(
+      interpret(
+        "f = Nearest[{0.1 -> 0.5, 0.3 -> 0.2, 0.7 -> 0.9}]; {f[{{0.25}}], FoldList[f[#1] &, 0.25, {1, 1, 1}]}"
+      )
+      .unwrap(),
+      "{{{{0.2}}}, {0.25, {0.2}, {{0.2}}, {{{0.2}}}}}"
+    );
+  }
+
   #[test]
   fn basic_tie_2() {
     assert_eq!(interpret("Nearest[{1, 3, 5, 7, 9}, 6]").unwrap(), "{5, 7}");

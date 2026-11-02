@@ -3316,6 +3316,28 @@ mod list {
     );
   }
 
+  // A permutation in Cycles form, and a symmetry generator {perm, c}
+  // (transpose, then scale by c).
+  #[test]
+  fn tensor_transpose_cycles_and_generators() {
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2}, {3, 4}}, Cycles[{{1, 2}}]]").unwrap(),
+      "{{1, 3}, {2, 4}}"
+    );
+    assert_eq!(
+      interpret("TensorTranspose[{{1, 2}, {3, 4}}, {Cycles[{{1, 2}}], -1}]")
+        .unwrap(),
+      "{{-1, -3}, {-2, -4}}"
+    );
+    assert_eq!(
+      interpret(
+        "TensorTranspose[Array[a, {2, 2, 2}], {Cycles[{{3, 1}}], 1}] == TensorTranspose[Array[a, {2, 2, 2}], {3, 2, 1}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn test_tensor_transpose() {
     // Matrix transpose via explicit permutation.

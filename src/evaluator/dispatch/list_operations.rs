@@ -4483,6 +4483,60 @@ pub fn dispatch_list_operations(
         return Some(list_helpers_ast::transpose_perm_ast(&args[0], perm));
       }
     }
+    // A symmetry generator `{perm, c}` transposes and scales by `c`; a
+    // permutation in `Cycles` form is read as the list it stands for.
+    "TensorTranspose"
+      if args.len() == 2
+        && matches!(&args[1], Expr::List(g)
+          if g.len() == 2
+            && matches!(&g[0], Expr::List(_) | Expr::FunctionCall { .. })
+            && !matches!(&g[1], Expr::List(_))) =>
+    {
+      let Expr::List(g) = &args[1] else {
+        unreachable!()
+      };
+      let transposed = match crate::evaluator::evaluate_function_call_ast(
+        "TensorTranspose",
+        &[args[0].clone(), g[0].clone()],
+      ) {
+        Ok(t) => t,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&transposed, Expr::FunctionCall { name, .. } if name == "TensorTranspose")
+      {
+        return Some(Ok(unevaluated("TensorTranspose", args)));
+      }
+      return Some(crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[g[1].clone(), transposed],
+      ));
+    }
+    "TensorTranspose"
+      if args.len() == 2
+        && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Cycles") =>
+    {
+      let rank = match crate::evaluator::evaluate_function_call_ast(
+        "TensorRank",
+        std::slice::from_ref(&args[0]),
+      ) {
+        Ok(Expr::Integer(r)) => r,
+        _ => return Some(Ok(unevaluated("TensorTranspose", args))),
+      };
+      return Some(
+        match crate::evaluator::evaluate_function_call_ast(
+          "PermutationList",
+          &[args[1].clone(), Expr::Integer(rank)],
+        ) {
+          Ok(perm @ Expr::List(_)) => {
+            crate::evaluator::evaluate_function_call_ast(
+              "TensorTranspose",
+              &[args[0].clone(), perm],
+            )
+          }
+          _ => Ok(unevaluated("TensorTranspose", args)),
+        },
+      );
+    }
     "TensorTranspose" if args.len() == 1 || args.len() == 2 => {
       use list_helpers_ast::TensorTransposeResult;
       let perm: Option<Vec<Expr>> = if args.len() == 2 {
@@ -9932,12 +9986,22 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Nearest[{colors…}, {Orange, Gray}]` where each target is itself
   // a colour. We skip this branch when `target` matches `items[0]`
   // dimensionally as a single vector (the common scalar-list case).
+  // A target list nested deeper threads level by level (`f[{{x}}]` is
+  // `{{f[x]}}`).
+  fn threads_over(item: &Expr, target: &Expr) -> bool {
+    match target {
+      Expr::List(ts) => {
+        !ts.is_empty()
+          && nearest_distance(item, target).is_none()
+          && ts.iter().all(|t| {
+            nearest_distance(item, t).is_some() || threads_over(item, t)
+          })
+      }
+      _ => false,
+    }
+  }
   if let Expr::List(targets) = &args[1]
-    && !targets.is_empty()
-    && nearest_distance(&items[0], &args[1]).is_none()
-    && targets
-      .iter()
-      .all(|t| nearest_distance(&items[0], t).is_some())
+    && threads_over(&items[0], &args[1])
   {
     let mut sub_args = args.to_vec();
     let mut results = Vec::with_capacity(targets.len());
@@ -10028,12 +10092,14 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   match (args.len() >= 3, n) {
-    // Bare 2-arg Nearest: return the tied-for-closest group.
+    // Bare 2-arg Nearest: return the tied-for-closest group. Only an exact
+    // tie counts (wolframscript: `Nearest[{0.1, 0.3}, 0.2]` is `{0.3}`, the
+    // machine distances differing in the last bit).
     (false, _) => {
       let min_dist = filtered[0].1;
       let result: Vec<Expr> = filtered
         .iter()
-        .take_while(|(_, d)| (*d - min_dist).abs() < 1e-15)
+        .take_while(|(_, d)| *d == min_dist)
         .map(|(i, d)| pick(*i, *d))
         .collect();
       Ok(Expr::List(result.into()))
