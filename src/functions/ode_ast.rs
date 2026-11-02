@@ -1548,6 +1548,10 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
+  if let Some(rewritten) = componentwise_system(args) {
+    let solved = ndsolve_ast_inner(&rewritten)?;
+    return Ok(group_component_rules(&solved, &args[1]));
+  }
   if let Some(rewritten) = dirac_delta_events(args)? {
     return ndsolve_ast_inner(&rewritten);
   }
@@ -4416,6 +4420,136 @@ fn derivative_dep_item(
 /// initial conditions are often grouped into their own sublist —
 /// `{ode, {ic1, ic2}}` — and that grouping can nest arbitrarily deep, so
 /// each level is flattened, not just the outermost.
+/// A system written with lists of functions — unknowns `{V[t], m[t]}` where
+/// each evaluates to a list of component functions, equations
+/// `{a1, a2} == {b1, b2}` between such lists — as one equation per
+/// component and a flat list of unknowns. None when nothing is written that
+/// way.
+fn componentwise_system(args: &[Expr]) -> Option<Vec<Expr>> {
+  fn thread(eq: &Expr, out: &mut Vec<Expr>, changed: &mut bool) {
+    match eq {
+      Expr::List(items) => {
+        for item in items {
+          thread(item, out, changed);
+        }
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && matches!(
+          operators.as_slice(),
+          [crate::syntax::ComparisonOp::Equal]
+        )
+        && let (Expr::List(a), Expr::List(b)) =
+          (&operands[0], &operands[1])
+        && a.len() == b.len() =>
+      {
+        *changed = true;
+        for (x, y) in a.iter().zip(b.iter()) {
+          let component = Expr::Comparison {
+            operands: vec![x.clone(), y.clone()],
+            operators: operators.clone(),
+          };
+          thread(&component, out, changed);
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Equal"
+          && args.len() == 2
+          && let (Expr::List(a), Expr::List(b)) = (&args[0], &args[1])
+          && a.len() == b.len() =>
+      {
+        *changed = true;
+        for (x, y) in a.iter().zip(b.iter()) {
+          let component = Expr::FunctionCall {
+            name: "Equal".into(),
+            args: vec![x.clone(), y.clone()].into(),
+          };
+          thread(&component, out, changed);
+        }
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+      other => out.push(other.clone()),
+    }
+  }
+  let mut changed = false;
+  let mut eqs = Vec::new();
+  thread(&args[0], &mut eqs, &mut changed);
+  let unknowns = match &args[1] {
+    Expr::List(items) if items.iter().any(|i| matches!(i, Expr::List(_))) => {
+      changed = true;
+      let mut flat = Vec::new();
+      flatten(&args[1], &mut flat);
+      Expr::List(flat.into())
+    }
+    other => other.clone(),
+  };
+  if !changed {
+    return None;
+  }
+  let mut out = args.to_vec();
+  out[0] = Expr::List(eqs.into());
+  out[1] = unknowns;
+  Some(out)
+}
+
+/// The solution rules of a componentwise system regrouped the way the
+/// unknowns were written: an unknown that stands for a list of component
+/// functions gets one rule from that list to the list of their solutions.
+fn group_component_rules(solved: &Expr, unknowns: &Expr) -> Expr {
+  let Expr::List(solutions) = solved else {
+    return solved.clone();
+  };
+  let Expr::List(entries) = unknowns else {
+    return solved.clone();
+  };
+  if !entries.iter().any(|e| matches!(e, Expr::List(_))) {
+    return solved.clone();
+  }
+  let regrouped: Option<Vec<Expr>> = solutions
+    .iter()
+    .map(|solution| {
+      let Expr::List(rules) = solution else {
+        return None;
+      };
+      let lookup: std::collections::HashMap<String, Expr> = rules
+        .iter()
+        .filter_map(|r| match r {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => Some((expr_to_string(pattern), replacement.as_ref().clone())),
+          _ => None,
+        })
+        .collect();
+      let value = |e: &Expr| lookup.get(&expr_to_string(e)).cloned();
+      let grouped: Option<Vec<Expr>> = entries
+        .iter()
+        .map(|entry| {
+          let rhs = match entry {
+            Expr::List(parts) => Expr::List(
+              parts.iter().map(value).collect::<Option<Vec<_>>>()?.into(),
+            ),
+            single => value(single)?,
+          };
+          Some(rule_expr(entry.clone(), rhs))
+        })
+        .collect();
+      grouped.map(|g| Expr::List(g.into()))
+    })
+    .collect();
+  match regrouped {
+    Some(r) => Expr::List(r.into()),
+    None => solved.clone(),
+  }
+}
+
 /// `DiracDelta[a t + b]` terms in an ODE are impulses: wolframscript drops
 /// them from the equation and, where the root `r = -b/a` lies strictly inside
 /// the domain, makes the next-lower derivative of the equation's unknown

@@ -9345,6 +9345,25 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // Unknowns that stand for lists of component functions, with equations
+  // between such lists, solve componentwise and report one rule per list
+  // (ActionPotentialPropagationAlongMyelinatedAxons).
+  #[test]
+  fn lists_of_component_functions() {
+    assert_eq!(
+      interpret(
+        "u[t_] := {u1[t], u2[t]}; w[t_] := {w1[t]}; \
+         sol = NDSolve[{D[u[t], t] == {u2[t], -u1[t]}, u[0] == {0, 1}, \
+         D[w[t], t] == {-w1[t]}, w[0] == {1}}, {u[t], w[t]}, {t, 0, 1}]; \
+         {Dimensions[sol], sol[[1, 1, 1]], \
+          Round[10^6 (u[t] /. sol[[1]] /. t -> 1.)], \
+          Round[10^6 (w[t] /. sol[[1]] /. t -> 1.)]}"
+      )
+      .unwrap(),
+      "{{1, 2}, {u1[t], u2[t]}, {841471, 540302}, {367879}}"
+    );
+  }
+
   // A zero-length domain keeps the slope at its one point
   // (SpecularAndDiffuseReflection restarts a bounce at the domain's end).
   #[test]
