@@ -10283,3 +10283,404 @@ mod find_threshold {
     );
   }
 }
+
+mod color_profile_data {
+  use super::*;
+
+  // A ColorProfileData color space names its data space.
+  #[test]
+  fn image_with_color_profile_color_space() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+         {ImageQ[i], ImageColorSpace[i]}"
+      )
+      .unwrap(),
+      "{True, RGB}"
+    );
+  }
+}
+
+mod color_convert_many_channels {
+  use super::*;
+
+  // Without a color space, n >= 4 channels average in three groups of
+  // Floor[n/3], the rest and Round[n/3] channels.
+  #[test]
+  fn color_convert_groups_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Table[ImageData[ColorConvert[Image[{{Range[n]/100.}}], \"RGB\"]], {n, {7, 8, 13}}]"
+      )
+      .unwrap(),
+      "{{{{0.014999999664723873, 0.04000000283122063, 0.06499999761581421}}}, \
+       {{{0.014999999664723873, 0.04000000283122063, 0.07000000029802322}}}, \
+       {{{0.02499999850988388, 0.07000000029802322, 0.11500000208616257}}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ColorConvert[Image[{{{0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7}}}], \
+         \"Grayscale\"]]"
+      )
+      .unwrap(),
+      "{{0.35374999046325684}}"
+    );
+  }
+
+  // The SingleColorImages construction: a gray image plus a 7-channel
+  // combination, converted back to RGB.
+  #[test]
+  fn image_add_of_combined_channels_converts_to_rgb() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "im = Image[{{{0.2, 0.4, 0.6}, {0.1, 0.3, 0.5}}}]; \
+         z = Image[{{{0, 0, 0}, {0, 0, 0}}}]; \
+         r = ColorConvert[ImageAdd[ColorConvert[im, \"Grayscale\"], \
+         ColorCombine[{ColorSeparate[im][[1]], z, z}]], \"RGB\"]; \
+         {ImageChannels[r], ImageDimensions[r]}"
+      )
+      .unwrap(),
+      "{3, {2, 1}}"
+    );
+  }
+}
+
+mod image_planar_channel_check {
+  use super::*;
+
+  // With Interleaving -> False the planes are the channels, checked
+  // against the color space before transposing.
+  #[test]
+  fn planar_data_with_too_many_planes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Image[Table[0.5, {5}, {2}, {3}], \"Real\", ColorSpace -> \"RGB\", \
+         Interleaving -> False] // ImageQ"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Table[0.5, {4}, {2}, {3}], \"Real\", \
+         ColorSpace -> \"RGB\", Interleaving -> False]]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+}
+
+mod image_perspective_transformation {
+  use super::*;
+
+  // The default coordinates are {{0, 1}, {0, h/w}} and the default
+  // resampling takes the pixel a point falls in.
+  #[test]
+  fn image_transformation_default_range_and_resampling() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.1, 0.2, 0.3, 0.4}, {0.5, 0.6, 0.7, 0.8}}]; \
+         {ImageData[ImageTransformation[i, {#[[1]] + 0.3, #[[2]]} &]], \
+         ImageData[ImageTransformation[i, {#[[1]], #[[2]] + 0.25} &]], \
+         ImageData[ImageTransformation[i, {#[[1]] + 1, #[[2]]} &, DataRange -> Full]]}"
+      )
+      .unwrap(),
+      "{{{0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 0.}, \
+       {0.6000000238418579, 0.699999988079071, 0.800000011920929, 0.}}, \
+       {{0., 0., 0., 0.}, {0.10000000149011612, 0.20000000298023224, \
+       0.30000001192092896, 0.4000000059604645}}, \
+       {{0.20000000298023224, 0.30000001192092896, 0.4000000059604645, 0.}, \
+       {0.6000000238418579, 0.699999988079071, 0.800000011920929, 0.}}}"
+    );
+  }
+
+  // Linear resampling blends with the padding past the border.
+  #[test]
+  fn image_transformation_linear_resampling() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[ImageData[ImageTransformation[Image[{{0., 0.5, 1.}}], \
+         {#[[1]] + 0.1, #[[2]]} &, Resampling -> \"Linear\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0.15, 0.65, 0.7000000000000001}}"
+    );
+  }
+
+  #[test]
+  fn image_perspective_transformation() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "j = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}, {0.7, 0.8, 0.9}}]; \
+         {ImageData[ImagePerspectiveTransformation[Image[{{0.1, 0.2, 0.3, 0.4, \
+         0.5, 0.6, 0.7, 0.8}}], TranslationTransform[{0.25, 0}]]], \
+         ImageData[ImagePerspectiveTransformation[j, \
+         {{1, 0.2, 0}, {0, 1, 0}, {0.3, 0, 1}}]], \
+         ImageData[ImagePerspectiveTransformation[j, \
+         RotationTransform[Pi/2, {0.5, 0.5}]]]}"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.10000000149011612, 0.20000000298023224, \
+       0.30000001192092896, 0.4000000059604645, 0.5, 0.6000000238418579}}, \
+       {{0., 0.20000000298023224, 0.}, {0.4000000059604645, 0.5, \
+       0.6000000238418579}, {0.699999988079071, 0.800000011920929, 0.}}, \
+       {{0.30000001192092896, 0.6000000238418579, 0.8999999761581421}, \
+       {0.20000000298023224, 0.5, 0.800000011920929}, {0.10000000149011612, \
+       0.4000000059604645, 0.699999988079071}}}"
+    );
+  }
+}
+
+mod image_periodogram {
+  use super::*;
+
+  #[test]
+  fn image_periodogram_gray() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p = ImagePeriodogram[Image[{{0.1, 0.5, 0.2, 0.9}, {0.3, 0.3, 0.8, 0.1}, \
+         {0., 1., 0.5, 0.5}}]]; {ImageType[p], ImageDimensions[p], ImageData[p, \"Byte\"]}"
+      )
+      .unwrap(),
+      "{Byte, {4, 3}, {{85, 0, 58, 143}, {99, 255, 99, 120}, {58, 0, 85, 143}}}"
+    );
+  }
+
+  // Each channel is rescaled on its own.
+  #[test]
+  fn image_periodogram_color_alignment() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImagePeriodogram[Image[{{{0.1, 0.5, 0.2}, {0.9, 0.3, 0.3}}, \
+         {{0.8, 0.1, 0.}, {1., 0.5, 0.5}}}], Alignment -> Top], \"Byte\"][[All, All, 1]]"
+      )
+      .unwrap(),
+      "{{255, 85}, {48, 0}}"
+    );
+  }
+
+  #[test]
+  fn image_adjust_rescales_each_channel() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ImageData[ImageAdjust[Image[{{{0.1, 0.5, 0.2}, {0.9, 0.5, 0.3}}}]]], \
+         ImageData[ImageAdjust[Image[{{0.3, 0.3}}]]]}"
+      )
+      .unwrap(),
+      "{{{{0., 0., 0.}, {1., 0., 1.}}}, {{0., 0.}}}"
+    );
+  }
+
+  #[test]
+  fn gaussian_matrix_per_axis_radii() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Dimensions[GaussianMatrix[{{6, 6}, 2}]], \
+         Dimensions[GaussianMatrix[{{2, 3}, {1, 2}}]], \
+         Round[GaussianMatrix[{{1, 2}, 0.7}], 10^-6], \
+         Round[GaussianMatrix[{{1, 2}}][[2]], 10^-6]}"
+      )
+      .unwrap(),
+      "{{13, 13}, {5, 7}, {{1517/500000, 6253/250000, 105123/1000000, \
+       6253/250000, 1517/500000}, {12751/1000000, 105123/1000000, \
+       13807/31250, 105123/1000000, 12751/1000000}, {1517/500000, \
+       6253/250000, 105123/1000000, 6253/250000, 1517/500000}}, \
+       {40769/1000000, 169733/1000000, 76047/200000, 169733/1000000, \
+       40769/1000000}}"
+    );
+  }
+}
+
+mod morphological_euler_number {
+  use super::*;
+
+  #[test]
+  fn euler_number_connectivity_and_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f[m_, o___] := MorphologicalEulerNumber[Image[m], o]; \
+         {f[{{1, 1, 1}, {1, 0, 1}, {1, 1, 1}}], f[{{1, 0}, {0, 1}}], \
+         f[{{1, 0}, {0, 1}}, CornerNeighbors -> False], \
+         f[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}], \
+         f[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, CornerNeighbors -> False], \
+         f[{{0.6, 0.2}, {0., 0.}}], f[{{1, 1}, {1, 1}}, Padding -> 1], \
+         f[{{1, 0, 1}, {0, 0, 0}, {1, 0, 1}}, Padding -> 1]}"
+      )
+      .unwrap(),
+      "{0, 1, 2, 0, 4, 1, 1, 0}"
+    );
+  }
+
+  // Color pixels are compared by their gray level.
+  #[test]
+  fn euler_number_threshold() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{MorphologicalEulerNumber[Image[{{{0.3, 0, 0}, {0, 0, 0}}}], 0.2], \
+         MorphologicalEulerNumber[Image[{{{0.25, 0.2, 0.2}, {0, 0, 0}}}], 0.2]}"
+      )
+      .unwrap(),
+      "{0, 1}"
+    );
+  }
+
+  // A graphic is rasterized first, as for MorphologicalBinarize.
+  #[test]
+  fn euler_number_of_binarized_graphic() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "MorphologicalEulerNumber[ColorNegate[MorphologicalBinarize[\
+         Graphics[{Thickness[0.05], Circle[]}]]]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+}
+
+mod relief_image {
+  use super::*;
+
+  const M: &str = "{{0.4785538089186683, 0.008696916817696687, \
+    0.34702929535492655, 0.1392798273842255, 0.18060266455745766, \
+    0.5287012112413121}, {0.5785867785984598, 0.7603494187101738, \
+    0.40429785674104424, 0.9037262805877408, 0.9759042480826978, \
+    0.6203600189312912}, {0.09800148528293073, 0.9817547207207011, \
+    0.7501726704443339, 0.13372082324090928, 0.3488323721423001, \
+    0.1823284966925054}}";
+
+  #[test]
+  fn relief_image_default_shading() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "r = ReliefImage[{M}]; {{ImageType[r], ImageColorSpace[r], ImageData[r, \"Byte\"]}}"
+      ))
+      .unwrap(),
+      "{Byte, RGB, {{{109, 105, 78}, {0, 17, 114}, {109, 123, 108}, \
+       {60, 82, 114}, {76, 99, 119}, {114, 102, 71}}, {{135, 112, 74}, \
+       {121, 91, 61}, {120, 127, 103}, {232, 215, 199}, {252, 251, 250}, \
+       {121, 95, 59}}, {{54, 79, 140}, {227, 227, 227}, {138, 104, 68}, \
+       {72, 99, 141}, {110, 124, 109}, {80, 104, 125}}}}"
+    );
+  }
+
+  #[test]
+  fn relief_image_color_function_and_lighting_angle() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ReliefImage[{M}, ColorFunction -> \"SunsetColors\", \
+         LightingAngle -> {{Left, Pi/3}}], \"Byte\"][[1]]"
+      ))
+      .unwrap(),
+      "{{255, 117, 20}, {0, 0, 0}, {235, 81, 74}, {84, 31, 115}, \
+       {112, 40, 139}, {255, 141, 19}}"
+    );
+  }
+
+  // A color image is averaged over its channels; LightingAngle -> None
+  // leaves the colors unshaded.
+  #[test]
+  fn relief_image_of_color_image_unlit() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ReliefImage[Image[{{{1, 0, 0}, {0, 1, 0}}, \
+         {{0, 0, 1}, {1, 1, 1}}}], LightingAngle -> None], \"Byte\"]"
+      )
+      .unwrap(),
+      "{{{0, 17, 119}, {0, 17, 119}}, {{0, 17, 119}, {255, 255, 255}}}"
+    );
+  }
+
+  #[test]
+  fn relief_image_flat_data() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ReliefImage[Image[{{0., 0.}, {0., 0.}}]], \"Byte\"][[1, 1]]"
+      )
+      .unwrap(),
+      "{122, 115, 83}"
+    );
+  }
+}
+
+mod image_filter_padding {
+  use super::*;
+
+  #[test]
+  fn image_convolve_padding_modes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}]; \
+         k = {{1, 2, 0}, {0, 0, 0}, {0, 0, 4}}; \
+         Map[ImageData[ImageConvolve[i, k, Padding -> #]] &, \
+         {\"Reflected\", \"Periodic\", 0, 0.5}]"
+      )
+      .unwrap(),
+      "{{{3.299999952316284, 3.200000047683716, 3.700000047683716}, \
+       {1.2000000476837158, 1.100000023841858, 1.600000023841858}}, \
+       {{3.700000047683716, 3.200000047683716, 3.5999999046325684}, \
+       {1.600000023841858, 1.100000023841858, 1.5}}, \
+       {{1.2999999523162842, 1.600000023841858, 1.2000000476837158}, \
+       {0., 0.4000000059604645, 0.800000011920929}}, \
+       {{3.299999952316284, 3.5999999046325684, 3.700000047683716}, \
+       {3.5, 1.899999976158142, 2.299999952316284}}}"
+    );
+  }
+
+  // "Reversed" mirrors about the border repeating the edge pixel.
+  #[test]
+  fn image_convolve_reversed_padding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageConvolve[Image[{{1, 2, 3, 4}}/10.], \
+         {{1, 0, 0, 0, 0}}, Padding -> \"Reversed\"]]"
+      )
+      .unwrap(),
+      "{{0.30000001192092896, 0.4000000059604645, 0.4000000059604645, \
+       0.30000001192092896}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCorrelate[Image[{{0.1, 0.2, 0.3}, {0.4, 0.5, 0.6}}], \
+         {{1, 2, 0}, {0, 0, 0}, {0, 0, 4}}, Padding -> \"Reversed\"]]"
+      )
+      .unwrap(),
+      "{{2.299999952316284, 2.9000000953674316, 3.200000047683716}, \
+       {2.299999952316284, 2.9000000953674316, 3.200000047683716}}"
+    );
+  }
+
+  #[test]
+  fn image_pad_reversed() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImagePad[Image[{{1, 2, 3}}/10.], {{2, 2}, {0, 0}}, \"Reversed\"]]")
+        .unwrap(),
+      "{{0.20000000298023224, 0.10000000149011612, 0.10000000149011612, \
+       0.20000000298023224, 0.30000001192092896, 0.30000001192092896, \
+       0.20000000298023224}}"
+    );
+  }
+}

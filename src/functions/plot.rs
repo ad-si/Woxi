@@ -353,7 +353,14 @@ pub(crate) fn evaluate_at_xy(
   xval: f64,
   yval: f64,
 ) -> Option<f64> {
-  if let Some(c) = compiled_body(body, &[xvar.to_string(), yvar.to_string()]) {
+  // A one-element list is a single surface (see below), so its element is
+  // what gets compiled.
+  let single = match body {
+    Expr::List(items) if items.len() == 1 => &items[0],
+    other => other,
+  };
+  if let Some(c) = compiled_body(single, &[xvar.to_string(), yvar.to_string()])
+  {
     let v = c.eval(&[xval, yval]);
     if v.is_finite() {
       return Some(v);

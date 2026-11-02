@@ -2239,10 +2239,11 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let precision = num_digits + leading_skip.unwrap_or(0) + 10;
 
-  use astro_float::{Consts, RoundingMode};
-  let mut cc = Consts::new().map_err(|e| {
-    InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
-  })?;
+  use astro_float::RoundingMode;
+  let mut cc =
+    crate::functions::math_ast::numerical::astro_consts().map_err(|e| {
+      InterpreterError::EvaluationError(format!("BigFloat init error: {e}"))
+    })?;
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(precision);
 
@@ -3612,7 +3613,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let bits = (((max_abs_k as f64) + 60.0) * (base as f64).log2()).ceil()
         as usize
         + 64;
-      let mut cc = astro_float::Consts::new()
+      let mut cc = crate::functions::math_ast::numerical::astro_consts()
         .map_err(|e| InterpreterError::EvaluationError(format!("N: {e}")))?;
       let rm = astro_float::RoundingMode::ToEven;
       if let Ok(bf) = expr_to_bigfloat(other, bits, rm, &mut cc) {

@@ -7140,6 +7140,71 @@ mod solve_one_argument_unknowns {
 mod solve_ratnz_only_for_polynomial_systems {
   use super::*;
 
+  /// A machine-number exponent of a parameter (`a^0.5`) is no inexact
+  /// coefficient: wolframscript solves such a cubic without Solve::ratnz,
+  /// while one with machine coefficients still reports it.
+  #[test]
+  fn inexact_exponents_are_quiet() {
+    let ratnz = |input: &str| {
+      clear_state();
+      interpret(input).unwrap();
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"))
+    };
+    assert!(!ratnz("Solve[z^3 + a^0.5 z + 1 == 0, z];"));
+    assert!(!ratnz("Solve[z^3 + 0.5 a^0.5 z + 1 == 0, z];"));
+    assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
+  }
+
+  /// A system with machine exponents that are simple fractions (a
+  /// Cobb-Douglas Lagrangian) is solved with exact exponents and
+  /// numericized; it used to stop half-way with Solve::svars.
+  #[test]
+  fn simple_machine_exponents_in_systems() {
+    assert_eq!(
+      interpret(
+        "z = 0.5 l^0.5 k^0.5 + m (2200 - 20 l - 50 k); \
+         Solve[{D[z, k] == 0, D[z, l] == 0, D[z, m] == 0}, {l, k, m}]"
+      )
+      .unwrap(),
+      "{{l -> 55., k -> 22., m -> 0.007905694150420948}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^0.5 + y == 3, x - y == 1}, {x, y}]").unwrap(),
+      "{{x -> 2.4384471871911697, y -> 1.4384471871911697}}"
+    );
+  }
+
+  /// Rationalized machine numbers are binary fractions whose exact
+  /// solutions are radicals of integers beyond the machine range: they used
+  /// to evaluate to `0.` in machine arithmetic, so the exact solver dropped
+  /// or duplicated roots of a two-circle system, and NSolve back-substituted
+  /// into a circle with a numerically double root instead of the line
+  /// through the intersections.
+  #[test]
+  fn huge_exact_coefficients() {
+    assert_eq!(
+      interpret(
+        "r = Rationalize[#, 0] &; s = N[Solve[{x^2 + (r[-0.532088886237956] - \
+         y)^2 == r[0.4679111137620437], (r[0.5652579374235682] - x)^2 + \
+         (r[-0.32635182233306964] - y)^2 == r[0.05643698595227112]}, \
+         {x, y}]]; Round[10^6 {x, y} /. s]"
+      )
+      .unwrap(),
+      "{{524005, -92396}, {684040, -532089}}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[NSolve[{x^2 + (-0.532088886237956 - y)^2 == \
+         0.4679111137620437, (0.5652579374235682 - x)^2 + \
+         (-0.32635182233306964 - y)^2 == 0.05643698595227112}, {x, y}]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn norm_equations_are_quiet() {
     clear_state();
@@ -7298,6 +7363,63 @@ mod reduce_univariate_polynomial_inequalities {
     assert!(
       msgs.iter().any(|m| m.starts_with("Reduce::ratnz")),
       "{msgs:?}"
+    );
+  }
+}
+
+// `Element[Piecewise[…], Reals]` holds where the applicable branch is real;
+// an `Indeterminate` branch never is. It used to stay unevaluated.
+mod reduce_piecewise_in_reals {
+  use super::*;
+
+  #[test]
+  fn indeterminate_kinks_are_excluded() {
+    assert_eq!(
+      interpret(
+        "r = Reduce[Element[D[Max[(10 - q)/2, (18 - q)/5, (28 - q)/7], q], \
+         Reals], q]; {r, Reduce[!r && q > 0, q]}"
+      )
+      .unwrap(),
+      "{q < 14/5 || q > 14/5, q == 14/5}"
+    );
+  }
+}
+
+// `Backsubstitution -> True` and equations between lists (`{a, b} == 0`)
+// used to leave Reduce unevaluated.
+mod reduce_backsubstitution_and_list_equations {
+  use super::*;
+
+  #[test]
+  fn backsubstitution_option() {
+    assert_eq!(
+      interpret(
+        "Reduce[{{x - 1, y - 2} == 0, 0 <= x <= 3}, {x, y}, Reals, \
+         Backsubstitution -> True]"
+      )
+      .unwrap(),
+      "x == 1 && y == 2"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[x^2 == a && y == x + 1, {x, y}, Backsubstitution -> True]"
+      )
+      .unwrap(),
+      "(x == -Sqrt[a] && y == 1 - Sqrt[a]) || (x == Sqrt[a] && y == 1 + Sqrt[a])"
+    );
+  }
+
+  // Reduce does not pass on Solve's caveats about its intermediate steps.
+  #[test]
+  fn no_solve_messages() {
+    clear_state();
+    interpret("Reduce[x^2 == a && y == x + 1, {x, y}];").unwrap();
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.starts_with("Solve::")),
+      "{:?}",
+      woxi::get_captured_messages_raw()
     );
   }
 }
@@ -11600,11 +11722,82 @@ mod find_root {
        FindRoot[thrust[v], {v, 60}]",
     )
     .unwrap();
-    assert_eq!(result.result, "{v -> 60.52450587883597}");
+    assert_eq!(result.result, "{v -> 60.52450587883596}");
     assert!(
       result.warnings.is_empty(),
       "unexpected messages: {:?}",
       result.warnings
+    );
+  }
+
+  /// The iteration stops once the step just taken is within
+  /// `max(10^-AccuracyGoal, |x| 10^-PrecisionGoal)` and the residual within
+  /// `10^-AccuracyGoal` (both goals 8 by default). A badly scaled residual
+  /// whose rounding noise never fell below a fixed 1e-15 used to run the
+  /// whole budget and report FindRoot::cvmit; the goals were ignored.
+  #[test]
+  fn stops_at_the_accuracy_and_precision_goals() {
+    use woxi::interpret_with_stdout;
+    let f = "200. - 10^(8.07131 - 1730.63/(T + 233.426))*Exp[0.135]*0.4 - \
+             10^(8.08097 - 1582.271/(T + 239.726))*Exp[0.1404]*0.6";
+    let run = |opts: &str| {
+      interpret_with_stdout(&format!(
+        "s = {{}}; r = FindRoot[{f}, {{T, 60}}{opts}, \
+         StepMonitor :> AppendTo[s, T]]; {{r, Length[s]}}"
+      ))
+      .unwrap()
+    };
+    let default = run("");
+    assert_eq!(default.result, "{{T -> 39.09908711789684}, 6}");
+    assert!(default.warnings.is_empty(), "{:?}", default.warnings);
+    assert_eq!(
+      run(", AccuracyGoal -> 3, PrecisionGoal -> 3").result,
+      "{{T -> 39.099089223489365}, 4}"
+    );
+    let x2 = |opts: &str| {
+      interpret(&format!(
+        "s = {{}}; FindRoot[x^2 - 2, {{x, 1}}{opts}, \
+         StepMonitor :> AppendTo[s, x]]; Length[s]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(x2(""), "5");
+    assert_eq!(x2(", PrecisionGoal -> 3"), "4");
+  }
+
+  /// A Newton step out of the function's real domain (`Log[T]` at a
+  /// negative `T`) is shortened like one that makes the residual worse; it
+  /// used to abandon the real iteration for the complex one, which ran out
+  /// of iterations.
+  #[test]
+  fn backtracks_into_the_real_domain() {
+    use woxi::interpret_with_stdout;
+    let result = interpret_with_stdout(
+      "ps = Exp[31.233 - 1090.44/T - 3.30115 Log[T] + 4.05692*^-5 T^2]; \
+       FindRoot[101.325/ps == 1, {T, 250}]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.result.starts_with("{T -> 9"), "{}", result.result);
+  }
+
+  /// `a == h /. sol` is `(a == h) /. sol`: the equation is still a
+  /// computation, which with a nested rule list gives a nested equation
+  /// list. Both are evaluated with the unknowns symbolic and flattened; they
+  /// used to report FindRoot::nlnum.
+  #[test]
+  fn equations_given_as_computations() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y == h /. {{h -> 50.}}, x - y == 0}, {x, 1}, {y, 1}]"
+      )
+      .unwrap(),
+      "{x -> 25., y -> 25.}"
+    );
+    assert_eq!(
+      interpret("FindRoot[{{x + y == 50.}, x - y == 0}, {{x, 1}, {y, 1}}]")
+        .unwrap(),
+      "{x -> 25., y -> 25.}"
     );
   }
 
@@ -23897,6 +24090,55 @@ mod reduce_disjunction_with_bounds {
   }
 }
 
+// `Element[{x, y}, region]` for a basic geometric region is the system of
+// equations and inequalities describing it; Solve/NSolve used to stay
+// unevaluated on it.
+mod solve_region_membership {
+  use super::*;
+
+  #[test]
+  fn segments_rays_and_lines() {
+    for (input, expected) in [
+      (
+        "Solve[Element[{x, y}, Line[{{1, 0}, {0, 1}}]] && \
+         Element[{x, y}, HalfLine[{0, 0}, {1, 1}]], {x, y}]",
+        "{{x -> 1/2, y -> 1/2}}",
+      ),
+      (
+        "Solve[Element[{x, y}, Line[{{1, 0}, {0, 1}}]] && \
+         Element[{x, y}, HalfLine[{0, 0}, {-1, -1}]], {x, y}]",
+        "{}",
+      ),
+      (
+        "Solve[Element[{x, y}, InfiniteLine[{{0, 0}, {1, 2}}]] && x + y == 3, \
+         {x, y}]",
+        "{{x -> 1, y -> 2}}",
+      ),
+      (
+        "NSolve[Element[{x, y}, Line[{{0, 0}, {2, 0}, {2, 2}}]] && x == 2 y, \
+         {x, y}]",
+        "{{x -> 2., y -> 1.}, {x -> 0., y -> 0.}}",
+      ),
+      (
+        "Solve[Element[{x, y, z}, InfiniteLine[{0, 0, 0}, {1, 1, 1}]] && \
+         x + y + z == 3, {x, y, z}]",
+        "{{x -> 1, y -> 1, z -> 1}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn circles() {
+    assert_eq!(
+      interpret("Solve[Element[{x, y}, Circle[{0, 0}, 2]] && y == 0, {x, y}]")
+        .unwrap(),
+      "{{x -> -2, y -> 0}, {x -> 2, y -> 0}}"
+    );
+  }
+}
+
 // A disjunction, also one inside a conjunction, is solved branch by branch
 // (it was reported as Solve::naqs).
 mod solve_disjunction {
@@ -23915,6 +24157,35 @@ mod solve_disjunction {
     assert_eq!(
       interpret("Solve[(x == -1 || x == 2) && 1 + x != 0, x]").unwrap(),
       "{{x -> 2}}"
+    );
+  }
+
+  // An equation list is a conjunction, so a conjunction wrapped in a list
+  // (`Solve[{a && (b || c)}, …]`) is solved like the bare one; it used to
+  // stay unevaluated.
+  #[test]
+  fn conjunction_inside_an_equation_list() {
+    assert_eq!(
+      interpret("Solve[{x + y == 1 && (x == 0 || y == 0)}, {x, y}]").unwrap(),
+      "{{x -> 0, y -> 1}, {x -> 1, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x^2 == 1 && x > 0, y == x}, {x, y}]").unwrap(),
+      "{{x -> 1, y -> 1}}"
+    );
+  }
+
+  // An equation between two lists inside a disjunction is the conjunction
+  // of its components; the branches used to be dropped (Solve::svars).
+  #[test]
+  fn list_equations_inside_branches() {
+    assert_eq!(
+      interpret(
+        "Solve[x + y + z == 6 && ({x, y} == {1, 2} || {y, z} == {1, 1}), \
+         {x, y, z}]"
+      )
+      .unwrap(),
+      "{{x -> 1, y -> 2, z -> 3}, {x -> 4, y -> 1, z -> 1}}"
     );
   }
 
@@ -24692,5 +24963,41 @@ mod difference_root_invalid {
     assert!(r.warnings.iter().any(|w| w.contains(
       "DifferenceRoot::undef: DifferenceRoot[Function[{y, n}, {y[n + 1] == Sin[n] y[n], y[0] == 1}]] does not define a suitable difference root object."
     )));
+  }
+}
+
+// A radical coefficient is a generator of its own, as in wolframscript
+// without `Extension`; the Euclidean steps used to compute over Q(Sqrt[5])
+// (giving x - Sqrt[5] for x^2 - 5) and swelled until Together hung.
+mod polynomial_gcd_radical_coefficients {
+  use super::*;
+
+  #[test]
+  fn radicals_are_variables() {
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 5, x - Sqrt[5]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "PolynomialGCD[Expand[(x - Sqrt[5]) (x + 1)], \
+         Expand[(x - Sqrt[5]) (x + 2)]]"
+      )
+      .unwrap(),
+      "Sqrt[5] - x"
+    );
+  }
+
+  #[test]
+  fn together_with_radical_denominators_finishes() {
+    assert_eq!(
+      interpret(
+        "e = (1 + Sqrt[5])/(10 (1 - x) (1 + x + x^2 - ((1 + Sqrt[5]) x)/2)) \
+         - 2/(5 (1 + Sqrt[5]) (1 - x) (1 + x^2 + ((1 + Sqrt[5]) x)/2)); \
+         Simplify[Together[e] - e]"
+      )
+      .unwrap(),
+      "0"
+    );
   }
 }

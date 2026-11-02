@@ -1467,6 +1467,10 @@ fn evaluate_function_call_ast_inner(
     "DihedralGroup" if combinatorica_active() => "Combinatorica`DihedralGroup",
     "Backtrack" if combinatorica_active() => "Combinatorica`Backtrack",
     "Josephus" if combinatorica_active() => "Combinatorica`Josephus",
+    "Tableaux" if combinatorica_active() => "Combinatorica`Tableaux",
+    "NumberOfTableaux" if combinatorica_active() => {
+      "Combinatorica`NumberOfTableaux"
+    }
     "FromUnorderedPairs"
     | "FromOrderedPairs"
     | "ToAdjacencyLists"
@@ -5337,6 +5341,56 @@ fn evaluate_function_call_ast_inner(
         });
         return Ok(unevaluated(name, args));
       }
+      // A plain `GraphPlot` (no styling, labelling or rendering options)
+      // evaluates to Wolfram's symbolic GraphicsComplex picture.
+      let option_name = |o: &Expr| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          match pattern.as_ref() {
+            Expr::Identifier(n) => Some(n.clone()),
+            _ => None,
+          }
+        }
+        _ => None,
+      };
+      let directed_option = forwarded[1..].iter().find_map(|o| match o {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DirectedEdges") => {
+          Some(matches!(replacement.as_ref(), Expr::Identifier(b) if b == "True"))
+        }
+        _ => None,
+      });
+      if name == "GraphPlot"
+        && let Expr::FunctionCall {
+          name: en,
+          args: eargs,
+        } = &evaluated
+        && en == "Graph"
+        && eargs.len() >= 2
+        && let Expr::List(edges) = &eargs[1]
+        && eargs[2..].iter().chain(&forwarded[1..]).all(|o| {
+          matches!(
+            option_name(o).as_deref(),
+            Some("GraphLayout" | "DirectedEdges" | "VertexCoordinates")
+          )
+        })
+      {
+        // Rules given directly plot undirected unless `DirectedEdges ->
+        // True`; a Graph object keeps its own directedness.
+        let directed = directed_option.unwrap_or_else(|| {
+          matches!(&args[0], Expr::FunctionCall { name: gn, .. } if gn == "Graph")
+            && edges.iter().any(|e| {
+              crate::functions::graph::edge_endpoints(e)
+                .is_some_and(|(_, _, d)| d)
+            })
+        });
+        let plot = crate::functions::graph::graph_plot_ast(eargs, directed)?;
+        if matches!(&plot, Expr::FunctionCall { name: pn, .. } if pn == "Graphics")
+        {
+          return Ok(plot);
+        }
+      }
       if let Expr::FunctionCall {
         name: en,
         args: eargs,
@@ -5629,13 +5683,25 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
-  // HighlightMesh[mesh, spec] displays the mesh itself; the highlighting
-  // (and the cell labels `Labeled[…]` would add) is not drawn.
+  // HighlightMesh[mesh, spec, opts…] displays the mesh itself; the
+  // highlighting (and the cell labels `Labeled[…]` or `MeshCellLabel` would
+  // add) is not drawn.
   if name == "HighlightMesh"
-    && args.len() == 2
+    && args.len() >= 2
+    && args[2..]
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     && crate::functions::mesh_region::is_mesh_region(&args[0])
   {
     return Ok(args[0].clone());
+  }
+
+  if name == "DiscretizeGraphics"
+    && !args.is_empty()
+    && let Some(mesh) =
+      crate::functions::mesh_region::discretize_graphics_ast(args)
+  {
+    return evaluate_expr_to_expr(&mesh);
   }
 
   if name == "TriangulateMesh" && args.len() == 1 {
@@ -12676,6 +12742,9 @@ fn evaluate_function_call_ast_inner(
         | "RootSum"
         | "RootApproximant"
         | "Image3D"
+        // ColorProfileData[icc, space, pcs] is an inert ICC profile, the
+        // value of an image's ColorSpace option.
+        | "ColorProfileData"
         | "CenteredInterval"
         | "BernoulliGraphDistribution"
         // TemplateObject/TemplateSlot/TemplateExpression are symbolic template
@@ -13638,12 +13707,24 @@ fn function_interpolation_ast(args: &[Expr]) -> Expr {
 
         for i in 0..n_points {
           let x_val = xmin + i as f64 * dx;
-          let x_expr = Expr::Real(x_val);
-          let substituted =
-            crate::syntax::substitute_variable(body, var_name, &x_expr);
-          if let Ok(y_expr) =
-            crate::evaluator::evaluate_expr_to_expr(&substituted)
-          {
+          // The (held) expression is evaluated with the variable set, as in
+          // a Block: a function of it that only computes for a number
+          // (`f[c_?NumericQ]`, or a solver run whose result it reads off)
+          // sees the number, and so does an expression held in a symbol.
+          let sample = call(
+            "Block",
+            vec![
+              Expr::List(
+                vec![call(
+                  "Set",
+                  vec![Expr::Identifier(var_name.clone()), Expr::Real(x_val)],
+                )]
+                .into(),
+              ),
+              body.clone(),
+            ],
+          );
+          if let Ok(y_expr) = crate::evaluator::evaluate_expr_to_expr(&sample) {
             let y_val = match &y_expr {
               Expr::Integer(n) => Some(*n as f64),
               Expr::Real(f) => Some(*f),

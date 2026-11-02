@@ -270,7 +270,7 @@ fn splice_field_plot_prolog(
 }
 
 /// Contour level specification from the Contours option.
-enum ContourSpec {
+pub(crate) enum ContourSpec {
   /// Contours -> n: n equally spaced levels
   Count(usize),
   /// Contours -> {v1, v2, ...}: explicit levels
@@ -1401,7 +1401,7 @@ fn nice_contour_levels(v_min: f64, v_max: f64, target: usize) -> Vec<f64> {
 }
 
 /// Resolve the Contours option to a sorted list of levels inside the range.
-fn resolve_contour_levels(
+pub(crate) fn resolve_contour_levels(
   spec: &ContourSpec,
   v_min: f64,
   v_max: f64,
@@ -2626,38 +2626,72 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ContourPlot[lhs == rhs, …]` (or a list of equations) plots each
   // equation's implicit curve — the zero contour of `lhs - rhs` — with no
   // band shading, matching Wolfram.
-  let eq_bodies: Option<Vec<Expr>> = match body {
+  let eq_bodies: Option<Vec<(Expr, usize)>> = match body {
     Expr::List(items)
       if !items.is_empty()
         && items.iter().all(|i| equation_zero_body(i).is_some()) =>
     {
-      Some(items.iter().filter_map(equation_zero_body).collect())
+      Some(
+        items
+          .iter()
+          .filter_map(equation_zero_body)
+          .enumerate()
+          .map(|(i, b)| (b, i))
+          .collect(),
+      )
     }
-    _ => equation_zero_body(body).map(|b| vec![b]),
+    _ => equation_zero_body(body).map(|b| vec![(b, 0)]),
   };
-  // `ContourPlot[{f, g}, …, Contours -> {c, …}]` draws the level curves of
-  // each function; a curve `f == c` is the zero contour of `f - c`.
-  let eq_bodies = eq_bodies.or_else(|| match body {
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| !matches!(i, Expr::List(_))) =>
-    {
-      match parse_density_contour_options(args, 3).contours {
-        ContourSpec::Levels(levels) if !levels.is_empty() => Some(
-          items
-            .iter()
-            .flat_map(|f| {
-              levels
-                .iter()
-                .map(move |&c| crate::helpers::minus2(f.clone(), Expr::Real(c)))
-            })
-            .collect(),
-        ),
-        _ => None,
+  // `ContourPlot[{f, g}, …]` draws the unshaded level curves of each
+  // function (a nested list `{{f, g}, {h}}` counts as its flattened
+  // functions); a curve `f == c` is the zero contour of `f - c`. Without
+  // explicit `Contours -> {c, …}` each function gets its own automatic
+  // levels.
+  let eq_bodies =
+    eq_bodies.or_else(|| match body {
+      Expr::List(items) if !items.is_empty() => {
+        let mut funcs = Vec::new();
+        flatten_function_list(items, &mut funcs);
+        if funcs.is_empty() {
+          return None;
+        }
+        let spec = parse_density_contour_options(args, 3).contours;
+        let fixed = match &spec {
+          ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
+          ContourSpec::Levels(_) => return None,
+          _ => None,
+        };
+        let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
+          parse_iterator(&args[1], "ContourPlot"),
+          parse_iterator(&args[2], "ContourPlot"),
+        ) else {
+          return None;
+        };
+        let mut bodies = Vec::new();
+        for (index, f) in funcs.into_iter().enumerate() {
+          let levels = if let Some(levels) = fixed {
+            levels.clone()
+          } else {
+            let (v_min, v_max) = sampled_value_range(
+              f,
+              &xvar,
+              &yvar,
+              (x_min, x_max),
+              (y_min, y_max),
+            );
+            if !v_min.is_finite() || !v_max.is_finite() {
+              continue;
+            }
+            resolve_contour_levels(&spec, v_min, v_max)
+          };
+          bodies.extend(levels.iter().map(|&c| {
+            (crate::helpers::minus2(f.clone(), Expr::Real(c)), index)
+          }));
+        }
+        Some(bodies)
       }
-    }
-    _ => None,
-  });
+      _ => None,
+    });
   if let Some(bodies) = eq_bodies {
     return contour_plot_equations(&bodies, args);
   }
@@ -2852,6 +2886,40 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::plot_result_with_structure(svg, structure))
 }
 
+/// The functions of a (possibly nested) ContourPlot function list.
+fn flatten_function_list<'a>(items: &'a [Expr], out: &mut Vec<&'a Expr>) {
+  for item in items {
+    match item {
+      Expr::List(inner) => flatten_function_list(inner, out),
+      other => out.push(other),
+    }
+  }
+}
+
+/// The robust value range of `body` over the ContourPlot sampling grid.
+fn sampled_value_range(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> (f64, f64) {
+  let n = FIELD_GRID + 1;
+  let mut samples = Vec::with_capacity(n * n);
+  for i in 0..n {
+    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    for j in 0..n {
+      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      if let Some(v) = evaluate_at_xy(body, xvar, yvar, x, y)
+        && v.is_finite()
+      {
+        samples.push(v);
+      }
+    }
+  }
+  robust_value_range(&samples)
+}
+
 /// The `ContourStyle -> …` option items of a ContourPlot call (a single
 /// directive or a directive list), for embedding into the plot's symbolic
 /// `structure`. Empty when the option is absent.
@@ -2901,8 +2969,10 @@ fn contour_dash_attr(
 /// The equation form of ContourPlot: draw each body's zero contour as an
 /// implicit curve. No bands are shaded — Wolfram renders equation contours
 /// as bare curves on an unshaded background.
+/// Each body comes with the index of the function it belongs to, which
+/// picks its `ContourStyle`.
 fn contour_plot_equations(
-  bodies: &[Expr],
+  bodies: &[(Expr, usize)],
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
@@ -2930,8 +3000,8 @@ fn contour_plot_equations(
   let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
   let mut series_per_body: Vec<std::ops::Range<usize>> = Vec::new();
 
-  for (body_index, body) in bodies.iter().enumerate() {
-    let style = opts.style_for_contour(body_index);
+  for (body, style_index) in bodies {
+    let style = opts.style_for_contour(*style_index);
     let (contour_color, contour_weight) = opts.contour_stroke_for(style);
     let series_color =
       style.and_then(|s| s.color).map_or((0x40, 0x40, 0x40), |c| {
@@ -3037,10 +3107,10 @@ fn contour_plot_equations(
   } else {
     Vec::new()
   };
-  for (body_index, range) in series_per_body.iter().enumerate() {
+  for ((_, style_index), range) in bodies.iter().zip(&series_per_body) {
     // A per-contour style precedes just its own function's curves.
     if !opts.contour_styles.is_empty() {
-      structure_items.push(directives[body_index % directives.len()].clone());
+      structure_items.push(directives[style_index % directives.len()].clone());
     }
     for s in &series[range.clone()] {
       let points: Vec<Expr> = s

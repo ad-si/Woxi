@@ -1509,6 +1509,15 @@ pub fn dispatch_linear_algebra_functions(
         _ => crate::functions::control_systems::nyquist_plot_ast(args),
       });
     }
+    // HoldAll: the gain stays a symbol while the loci are traced.
+    "RootLocusPlot" if args.len() >= 2 => {
+      let snapshot = crate::snapshot_warnings();
+      crate::push_quiet();
+      let result = crate::functions::control_systems::root_locus_plot_ast(args);
+      crate::pop_quiet();
+      crate::restore_warnings(snapshot);
+      return Some(result);
+    }
     "DiscreteIndicator" if args.len() == 3 => {
       return Some(Ok(
         crate::functions::linear_algebra_ast::discrete_indicator(args)

@@ -2580,7 +2580,8 @@ pub fn dispatch_math_functions(
         use astro_float::{BigFloat, Consts, RoundingMode};
         let bits = 192usize;
         let rm = RoundingMode::ToEven;
-        let mut cc = match Consts::new() {
+        let mut cc = match crate::functions::math_ast::numerical::astro_consts()
+        {
           Ok(c) => c,
           Err(e) => {
             return Some(Err(InterpreterError::EvaluationError(format!(

@@ -2680,7 +2680,10 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::position_unified_ast(args));
     }
     "FirstPosition" if args.len() >= 2 => {
-      return Some(with_held_default(args, list_helpers_ast::first_position_ast));
+      return Some(with_held_default(
+        args,
+        list_helpers_ast::first_position_ast,
+      ));
     }
     "MapIndexed" if args.len() == 2 => {
       return Some(list_helpers_ast::map_indexed_ast(&args[0], &args[1]));
@@ -2853,14 +2856,21 @@ pub fn dispatch_list_operations(
     // association's values.
     "OrderedQ"
       if args.len() == 1
-        && matches!(&args[0], Expr::FunctionCall { .. } | Expr::Association(_)) =>
+        && matches!(
+          &args[0],
+          Expr::FunctionCall { .. } | Expr::Association(_)
+        ) =>
     {
       let elems: Vec<Expr> = match &args[0] {
         Expr::FunctionCall { args: items, .. } => items.to_vec(),
-        Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+        Expr::Association(pairs) => {
+          pairs.iter().map(|(_, v)| v.clone()).collect()
+        }
         _ => unreachable!(),
       };
-      return Some(list_helpers_ast::ordered_q_ast(&[Expr::List(elems.into())]));
+      return Some(list_helpers_ast::ordered_q_ast(&[Expr::List(
+        elems.into(),
+      )]));
     }
     "OrderedQ" if args.len() == 1 => {
       return Some(list_helpers_ast::ordered_q_ast(args));
@@ -3371,6 +3381,14 @@ pub fn dispatch_list_operations(
     "Combinatorica`Josephus" if args.len() == 2 => {
       return Some(list_helpers_ast::combinatorica_josephus_ast(args));
     }
+    "Combinatorica`Tableaux" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_tableaux_ast(args));
+    }
+    "Combinatorica`NumberOfTableaux" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_number_of_tableaux_ast(
+        args,
+      ));
+    }
     "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
       return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
     }
@@ -3548,14 +3566,14 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated(name, args)));
       }
       let limit = *limit as usize;
-      return Some(list_helpers_ast::subsequences_ast(&args[..2]).map(|r| {
-        match r {
+      return Some(list_helpers_ast::subsequences_ast(&args[..2]).map(
+        |r| match r {
           Expr::List(ref items) if items.len() > limit => {
             Expr::List(items[..limit].to_vec().into())
           }
           other => other,
-        }
-      }));
+        },
+      ));
     }
     "Groupings" if args.len() == 2 => {
       return Some(list_helpers_ast::groupings_ast(args));
@@ -3815,7 +3833,10 @@ pub fn dispatch_list_operations(
         // order is already canonical, so keep it to avoid disturbing it.
         // So does a series with machine coefficients, whose `0.` terms and
         // negative reals the evaluated sum folds and signs (`2. - 3.*x^2`).
+        // A Laurent series is not: the constant leads the negative powers
+        // (`1 + x^(-1) + x`).
         if is_infinity
+          || (nmin < 0 && is_zero_center)
           || coeffs.iter().any(|c| matches!(c, Expr::Real(_)))
         {
           let plus = plus(terms);
@@ -4045,11 +4066,7 @@ pub fn dispatch_list_operations(
       let order = Expr::Function {
         body: Box::new(call(
           "LexicographicOrder",
-          vec![
-            Expr::Slot(1),
-            Expr::Slot(2),
-            args[1].clone(),
-          ],
+          vec![Expr::Slot(1), Expr::Slot(2), args[1].clone()],
         )),
       };
       return Some(crate::evaluator::evaluate_function_call_ast(
@@ -4874,9 +4891,7 @@ pub fn dispatch_list_operations(
       let (lo, hi) = (resolve(lo), resolve(hi));
       // The positions must all exist among the expression's arguments.
       let empty = if step > 0 { lo > hi } else { lo < hi };
-      if !empty
-        && (lo < 1 || hi < 1 || lo > arg_count || hi > arg_count)
-      {
+      if !empty && (lo < 1 || hi < 1 || lo > arg_count || hi > arg_count) {
         crate::emit_message(&format!(
           "Thread::tpos: Cannot thread over positions {} through {} in {}.",
           lo,
@@ -6414,10 +6429,11 @@ pub fn dispatch_list_operations(
     // Inner[f, a, b, g, n] contracts the n-th index of `a` with the first
     // of `b`: `a` with that index moved last, under the ordinary Inner.
     "Inner" if args.len() == 5 => {
-      let rank = match crate::functions::list_helpers_ast::array_depth_ast(&args[1]) {
-        Ok(Expr::Integer(d)) if d >= 1 => d as usize,
-        _ => return Some(Ok(crate::helpers::unevaluated("Inner", args))),
-      };
+      let rank =
+        match crate::functions::list_helpers_ast::array_depth_ast(&args[1]) {
+          Ok(Expr::Integer(d)) if d >= 1 => d as usize,
+          _ => return Some(Ok(crate::helpers::unevaluated("Inner", args))),
+        };
       let n = match &args[4] {
         Expr::Integer(n) if *n >= 1 && (*n as usize) <= rank => *n as usize,
         level => {
@@ -6526,18 +6542,25 @@ pub fn dispatch_list_operations(
     "PositionIndex" if args.len() == 1 => {
       return Some(Ok(position_index_ast(&args[0])));
     }
-    // A SparseArray kernel or list (`m/Total[m, 2]` of a SparseArray stays
-    // sparse) is convolved as the array it stands for.
+    // A SparseArray or NumericArray kernel or list (`m/Total[m, 2]` of a
+    // SparseArray stays sparse) is convolved as the list it stands for.
     "ListConvolve" | "ListCorrelate"
       if args.len() >= 2
         && args[..2].iter().any(|a| {
-          matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray")
+          matches!(a, Expr::FunctionCall { name, .. }
+            if name == "SparseArray" || name == "NumericArray")
         }) =>
     {
       let mut dense = args.to_vec();
       let mut changed = false;
       for a in dense.iter_mut().take(2) {
-        if let Some(d) = list_helpers_ast::densify_sparse_array(a) {
+        if let Expr::FunctionCall { name, args: na } = &*a
+          && name == "NumericArray"
+          && let Some(list @ Expr::List(_)) = na.first()
+        {
+          *a = list.clone();
+          changed = true;
+        } else if let Some(d) = list_helpers_ast::densify_sparse_array(a) {
           *a = d;
           changed = true;
         }
@@ -6634,7 +6657,8 @@ pub fn dispatch_list_operations(
       if (args.len() == 3 || args.len() == 4)
         && matches!(&args[2], Expr::List(_) | Expr::FunctionCall { .. }) =>
     {
-      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) = &args[2]
+      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) =
+        &args[2]
       else {
         return None;
       };
@@ -6643,16 +6667,24 @@ pub fn dispatch_list_operations(
         return Some(Ok(unevaluated("FoldPair", args)));
       }
       return Some(match fold_pair_steps(args, elems) {
-        Ok(FoldPairSteps::Emitted(mut results)) => {
-          Ok(results.pop().unwrap_or_else(|| unevaluated("FoldPair", args)))
-        }
+        Ok(FoldPairSteps::Emitted(mut results)) => Ok(
+          results
+            .pop()
+            .unwrap_or_else(|| unevaluated("FoldPair", args)),
+        ),
         // f did not return a length-2 list: emit FoldPair::pair and leave
         // unevaluated, matching wolframscript.
         Ok(FoldPairSteps::NotAPair { applied, result }) => {
           crate::emit_message(&format!(
             "FoldPair::pair: Function application {} returned {}; a list of two elements is expected.",
-            crate::syntax::format_expr(&applied, crate::syntax::ExprForm::Output),
-            crate::syntax::format_expr(&result, crate::syntax::ExprForm::Output)
+            crate::syntax::format_expr(
+              &applied,
+              crate::syntax::ExprForm::Output
+            ),
+            crate::syntax::format_expr(
+              &result,
+              crate::syntax::ExprForm::Output
+            )
           ));
           Ok(unevaluated("FoldPair", args))
         }
@@ -6669,7 +6701,8 @@ pub fn dispatch_list_operations(
       if (args.len() == 3 || args.len() == 4)
         && matches!(&args[2], Expr::List(_) | Expr::FunctionCall { .. }) =>
     {
-      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) = &args[2]
+      let (Expr::List(elems) | Expr::FunctionCall { args: elems, .. }) =
+        &args[2]
       else {
         return None;
       };
@@ -8301,12 +8334,13 @@ pub fn dispatch_list_operations(
         }
         "PermutationLength" => Expr::Integer(points.len() as i128),
         // A group moving no point has the extremes of Cycles[{}].
-        "PermutationMax" => {
-          points.last().map_or(Expr::Integer(0), |m| Expr::Integer(*m))
-        }
-        _ => points
-          .first()
-          .map_or_else(|| Expr::Identifier("Infinity".into()), |m| Expr::Integer(*m)),
+        "PermutationMax" => points
+          .last()
+          .map_or(Expr::Integer(0), |m| Expr::Integer(*m)),
+        _ => points.first().map_or_else(
+          || Expr::Identifier("Infinity".into()),
+          |m| Expr::Integer(*m),
+        ),
       }));
     }
     "PermutationLength" if args.len() == 1 => {

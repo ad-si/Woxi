@@ -22,6 +22,63 @@ pub fn or2(a: Expr, b: Expr) -> Expr {
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Reduce solves equations along the way, but the caveats Solve reports
+  // about its own answers (generic parameters, unsolved variables) are not
+  // Reduce's: wolframscript's Reduce never issues them.
+  crate::push_quiet_filter(
+    Some(
+      [
+        "Solve::nongen",
+        "Solve::svars",
+        "Solve::ratnz",
+        "Solve::ifun",
+      ]
+      .map(String::from)
+      .to_vec(),
+    ),
+    vec![],
+  );
+  let result = reduce_ast_unquieted(args);
+  crate::pop_quiet_filter();
+  result
+}
+
+fn reduce_ast_unquieted(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Element[Piecewise[…], Reals]` holds where the branch that applies has
+  // a real value: a disjunction over the branches.
+  if let Some(first) = args.first()
+    && let Some(expanded) = expand_piecewise_reals(first)
+  {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = crate::evaluator::evaluate_expr_to_expr(&expanded)?;
+    return reduce_ast(&rewritten);
+  }
+  // An equation between lists (`{a, b} == 0`, `{x, y} == {1, 2}`) is the
+  // conjunction of its components.
+  let threaded = match args.first() {
+    Some(Expr::List(items)) => {
+      let rewritten: Vec<Option<Expr>> = items
+        .iter()
+        .map(super::solve::thread_list_equations)
+        .collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        Expr::List(
+          items
+            .iter()
+            .zip(rewritten)
+            .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    Some(e) => super::solve::thread_list_equations(e),
+    None => None,
+  };
+  if let Some(threaded) = threaded {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = threaded;
+    return reduce_ast(&rewritten);
+  }
   // Generalized variables (`Reduce[m[1] == 1, {m[1]}]`).
   if let Some(result) =
     super::solve::with_generalized_variables(args, reduce_ast)
@@ -3341,15 +3398,10 @@ pub fn reduce_multi_var_and(
   // The elimination substitutes values into the remaining constraints and
   // tries the branches where a denominator vanishes; a division by zero met
   // on the way only rules a branch out, it is no message of Reduce's.
-  crate::push_quiet_filter(
-    Some(vec![
-      "Power::infy".to_string(),
-      "Infinity::indet".to_string(),
-    ]),
-    vec![],
-  );
-  let result = reduce_multi_var_and_inner(constraints, vars, domain);
-  crate::pop_quiet_filter();
+  let result =
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      reduce_multi_var_and_inner(constraints, vars, domain)
+    });
   Ok(normalize_solution_branches(&result?, vars))
 }
 
@@ -4574,4 +4626,121 @@ fn extract_x_y_coeffs(e: &Expr, vars: &[String]) -> Option<(Expr, Expr)> {
 fn call_coefficient(e: &Expr, var: &str, n: i128) -> Option<Expr> {
   let args = vec![e.clone(), id_expr(var), Expr::Integer(n)];
   super::coefficient_ast(&args).ok()
+}
+
+/// `expr` with every `Element[Piecewise[{{v1, c1}, …}, d], Reals]` replaced
+/// by `(c1 && v1 ∈ Reals) || (!c1 && c2 && v2 ∈ Reals) || … || (!c1 && … &&
+/// d ∈ Reals)`, branches whose value is `Indeterminate` dropping out; None
+/// when there is none.
+fn expand_piecewise_reals(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Element"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(d) if d == "Reals") =>
+    {
+      let Expr::FunctionCall {
+        name: pw,
+        args: pw_args,
+      } = &args[0]
+      else {
+        return None;
+      };
+      if pw != "Piecewise" || pw_args.is_empty() {
+        return None;
+      }
+      let Expr::List(cases) = &pw_args[0] else {
+        return None;
+      };
+      let default = pw_args.get(1).cloned().unwrap_or(Expr::Integer(0));
+      let mut branches: Vec<(Expr, Expr)> = Vec::with_capacity(cases.len());
+      for case in cases {
+        let Expr::List(vc) = case else {
+          return None;
+        };
+        let [v, c] = vc.as_slice() else {
+          return None;
+        };
+        branches.push((v.clone(), c.clone()));
+      }
+      let real = |v: &Expr| -> Option<Expr> {
+        (!matches!(v, Expr::Identifier(s) if s == "Indeterminate"))
+          .then(|| call("Element", vec![v.clone(), id_expr("Reals")]))
+      };
+      let mut disjuncts = Vec::new();
+      let mut earlier: Vec<Expr> = Vec::new();
+      for (v, c) in &branches {
+        if let Some(r) = real(v) {
+          let mut parts = earlier.clone();
+          parts.push(c.clone());
+          parts.push(r);
+          disjuncts.push(call("And", parts));
+        }
+        earlier.push(call("Not", vec![c.clone()]));
+      }
+      if let Some(r) = real(&default) {
+        earlier.push(r);
+        disjuncts.push(call("And", earlier));
+      }
+      Some(call("Or", disjuncts))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(expand_piecewise_reals).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(call(
+        name,
+        args
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// `Reduce`'s `Backsubstitution -> True` form of a solved result: within
+/// each conjunction, every `var == value` is substituted into the
+/// conjuncts after it, so each equation gives its variable explicitly.
+pub fn backsubstitute(result: &Expr) -> Result<Expr, InterpreterError> {
+  match result {
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      let branches: Result<Vec<Expr>, InterpreterError> =
+        args.iter().map(backsubstitute).collect();
+      crate::evaluator::evaluate_expr_to_expr(&call("Or", branches?))
+    }
+    Expr::FunctionCall { name, args } if name == "And" => {
+      let mut rules: Vec<Expr> = Vec::new();
+      let mut out: Vec<Expr> = Vec::with_capacity(args.len());
+      for conjunct in args {
+        let substituted = if rules.is_empty() {
+          conjunct.clone()
+        } else {
+          crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+            expr: Box::new(conjunct.clone()),
+            rules: Box::new(Expr::List(rules.clone().into())),
+          })?
+        };
+        if let Expr::Comparison {
+          operands,
+          operators,
+        } = &substituted
+          && operators.len() == 1
+          && matches!(operators[0], ComparisonOp::Equal)
+          && matches!(&operands[0], Expr::Identifier(_))
+        {
+          rules.push(rule_expr(operands[0].clone(), operands[1].clone()));
+        }
+        out.push(substituted);
+      }
+      crate::evaluator::evaluate_expr_to_expr(&call("And", out))
+    }
+    other => Ok(other.clone()),
+  }
 }

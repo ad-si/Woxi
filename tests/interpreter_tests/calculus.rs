@@ -2040,8 +2040,71 @@ mod differentiate_if {
   }
 }
 
+// The regularized incomplete gamma and beta functions differentiate in
+// their integration limits; they used to stay Derivative[0, 0, 1][…] forms,
+// which a PDF built from a CDF (D[CDF[GammaDistribution[…]]]) then fed to
+// NIntegrate as a non-numerical integrand.
+mod differentiate_regularized_incomplete_functions {
+  use super::*;
+
+  #[test]
+  fn limits() {
+    for (input, expected) in [
+      (
+        "D[GammaRegularized[a, 0, z], z]",
+        "z^(-1 + a)/(E^z*Gamma[a])",
+      ),
+      (
+        "D[GammaRegularized[a, z], z]",
+        "-(z^(-1 + a)/(E^z*Gamma[a]))",
+      ),
+      ("D[GammaRegularized[2, 0, x/5], x]", "x/(25*E^(x/5))"),
+      (
+        "D[BetaRegularized[z, a, b], z]",
+        "((1 - z)^(-1 + b)*z^(-1 + a))/Beta[a, b]",
+      ),
+      (
+        "D[BetaRegularized[z0, z1, a, b], z1]",
+        "((1 - z1)^(-1 + b)*z1^(-1 + a))/Beta[a, b]",
+      ),
+      ("D[BetaRegularized[x^2, 2, 3], x]", "24*x^3*(1 - x^2)^2"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
+
 mod differentiate_piecewise {
   use super::*;
+
+  // D[Max[…]] and D[Min[…]] differentiate the piecewise form, as
+  // wolframscript does; they used to leave Derivative[1, 0][Max][…] terms.
+  #[test]
+  fn max_and_min() {
+    for (input, expected) in [
+      (
+        "D[Max[x, 1 - x], x]",
+        "Piecewise[{{-1, x < 1/2}, {1, x > 1/2}}, Indeterminate]",
+      ),
+      (
+        "D[Max[x, x^2], x]",
+        "Piecewise[{{2*x, x < 0}, {1, Inequality[0, Less, x, Less, 1]}, \
+         {2*x, x > 1}}, Indeterminate]",
+      ),
+      ("D[Max[a, x], x]", "Piecewise[{{0, a - x >= 0}}, 1]"),
+      (
+        "D[Min[x, 2 - x, x/3], x]",
+        "Piecewise[{{1, x < 0}, {1/3, Inequality[0, Less, x, Less, 3/2]}, \
+         {-1, x > 3/2}}, Indeterminate]",
+      ),
+      (
+        "D[Max[(10 - q)/2, (18 - q)/5, (28 - q)/7], q]",
+        "Piecewise[{{-1/2, q < 14/5}, {-1/7, q > 14/5}}, Indeterminate]",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
 
   // D[Piecewise[...]] differentiates each piece value, keeps the condition, and
   // sets the default to Indeterminate (the derivative is undefined at the piece
@@ -8530,6 +8593,34 @@ mod quadratic_denominator {
 mod dsolve {
   use super::*;
 
+  /// Fewer conditions than constants fix the last constants the conditions
+  /// involve and leave the others free, as in wolframscript; the
+  /// conditions used to be dropped altogether.
+  #[test]
+  fn fewer_conditions_than_constants() {
+    assert_eq!(
+      interpret("DSolve[{y''[x] + y[x] == 0, y'[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*Cos[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y''[x] + l y[x] == 0, y[0] == 0}, y[x], x]").unwrap(),
+      "{{y[x] -> C[2]*Sin[Sqrt[l]*x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{y''[x] + y[x] == 0, y'[0] == 2}, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]*Cos[x] + 2*Sin[x]}}"
+    );
+    // Both exponentials enter `y[0] == 1`; the last constant is solved for.
+    assert_eq!(
+      interpret(
+        "Simplify[(y[x] /. DSolve[{y''[x] - y[x] == 0, y[0] == 1}, y[x], \
+         x][[1]]) - (1 - C[1] + E^(2 x) C[1])/E^x]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // y'' + (α + β Cos[ω x + φ]) y == 0 is Mathieu's equation in
   // z = (ω x + φ)/2; machine numbers make the parameters machine numbers.
   #[test]
@@ -11060,7 +11151,7 @@ mod ndsolve {
     .unwrap();
     assert!(
       result.starts_with("{{u -> InterpolatingFunction[")
-        && result.contains("{1, 1}"),
+        && result.contains("{3, 3}"),
       "Got: {result}"
     );
   }
@@ -11156,20 +11247,28 @@ mod ndsolve {
     assert_eq!(result, "200");
   }
 
-  /// A PDE missing one of its two Dirichlet boundary conditions doesn't
-  /// match the one recognised shape, so the call is left unevaluated —
-  /// the same fallback NDSolve gives any equation system it can't classify
-  /// — rather than panicking or silently returning a wrong answer.
+  /// A PDE missing the boundary condition at one end is still solved, as
+  /// in wolframscript: the end without a condition keeps the PDE itself,
+  /// discretized one-sidedly, and `NDSolve::bcart` warns about it. The
+  /// linear initial profile is then a steady state, as it is in
+  /// wolframscript (`u[1, 1.]` is `0.99999988…` there).
   #[test]
-  fn pde_heat_equation_without_both_boundaries_stays_unevaluated() {
-    let result = interpret(
-      "NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
-       u[t, 0] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+  fn pde_heat_equation_with_one_boundary_condition_warns_and_solves() {
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       Round[{u[1, 0.5], u[1, 1.]} /. sol[[1]], 10^-5]",
     )
     .unwrap();
+    assert_eq!(result.result, "{1/2, 1}");
     assert!(
-      result.starts_with("NDSolve["),
-      "Expected an unevaluated NDSolve, got: {result}"
+      result.warnings.iter().any(|w| w.starts_with(
+        "NDSolve::bcart: Warning: an insufficient number of boundary \
+         conditions have been specified for the direction of independent \
+         variable x."
+      )),
+      "{:?}",
+      result.warnings
     );
   }
 
@@ -11255,8 +11354,10 @@ mod ndsolve {
   /// value (not a derivative) for the reaction term. Since `A`'s own
   /// equation doesn't depend on `B`, solving it standalone through the
   /// single-unknown PDE branch and reading it back out of the two-unknown
-  /// coupled solve must agree exactly: coupling other unknowns in must
-  /// never perturb an unknown whose own equation doesn't reference them.
+  /// coupled solve must agree to the integration tolerance (the coupled
+  /// solve's adaptive steps also follow `B`): coupling other unknowns in
+  /// must never perturb an unknown whose own equation doesn't reference
+  /// them.
   #[test]
   fn pde_coupled_system_matches_a_standalone_solve_of_the_uncoupled_unknown() {
     let coupled = interpret(
@@ -11280,7 +11381,7 @@ mod ndsolve {
     let coupled_val: f64 = coupled.parse().expect("should be a number");
     let alone_val: f64 = alone.parse().expect("should be a number");
     assert!(
-      (coupled_val - alone_val).abs() < 1e-9,
+      (coupled_val - alone_val).abs() < 1e-6,
       "Coupling in Subscript[c, 2] shouldn't change Subscript[c, 1]'s own \
        solution: coupled={coupled_val}, standalone={alone_val}"
     );
@@ -11419,6 +11520,165 @@ mod ndsolve {
       (p_mid + q_mid - 1.0).abs() < 1e-6,
       "p + q must stay conserved away from the wall too: p={p_mid}, q={q_mid}"
     );
+  }
+
+  /// A laminar tubular reactor: the evolution variable `z` multiplies its
+  /// derivative by the velocity profile `1 - r^2` (nearly zero at the
+  /// wall), the radial diffusion carries the cylindrical `1/r` term, the
+  /// Arrhenius rate couples both unknowns, and `T` has no condition at
+  /// `r == 10^-6` (one-sided equation there, with `NDSolveValue::bcart`).
+  /// The reference values are wolframscript's (converged with
+  /// `"MinPoints" -> 101`: 0.14940 and 0.025090).
+  #[test]
+  fn pde_laminar_tubular_reactor_matches_wolframscript() {
+    let result = interpret_with_stdout(
+      "eqns = {(1 - r^2) D[c[z, r], z] == 0.001 D[r D[c[z, r], r], r]/r - \
+       2*10^13 Exp[-30.7/(T[z, r] + 1)] c[z, r], (1 - r^2) D[T[z, r], z] == \
+       D[r D[T[z, r], r], r]/r + 5*10^12 Exp[-30.7/(T[z, r] + 1)] c[z, r], \
+       T[0, r] == 0, c[0, r] == 1., T[z, 0.999] == 0, \
+       (D[c[z, r], r] /. r -> 10^-6) == 0, \
+       (D[c[z, r], r] /. r -> 0.999) == 0}; \
+       {u, v} = NDSolveValue[eqns, {T, c}, {z, 0, 1}, {r, 10^-6, 0.999}]; \
+       {Abs[u[0.25, 0.25] - 0.14940] < 10^-3, \
+        Abs[v[0.5, 0.9] - 0.025090] < 5 10^-4}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{True, True}");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.starts_with("NDSolveValue::bcart:")),
+      "{:?}",
+      result.warnings
+    );
+  }
+
+  /// An unknown evolving without any space derivative (`Tx`, a coolant
+  /// temperature at every radius) next to diffusing ones, a Robin wall
+  /// condition coupling it in, and an unknown the equations never mention
+  /// (`cc`), which comes back as itself. Reference: wolframscript with
+  /// `"MinPoints" -> 51` gives `T[0.405, 0.015] == 385.463`.
+  #[test]
+  fn pde_reactor_with_coolant_ode_and_unused_unknown() {
+    let result = interpret(
+      "eqns = {50 (1 - 100 r^2) D[ca[z, r], z] == \
+       D[r D[ca[z, r], r], r]/(10^9 r) - 2500 Exp[-721.674/T[z, r]] ca[z, r], \
+       50 (1 - 100 r^2) D[cb[z, r], z] == D[r D[cb[z, r], r], r]/(10^9 r) + \
+       2500 Exp[-721.674/T[z, r]] ca[z, r] - 2500 Exp[-1202.79/T[z, r]] cb[z, r], \
+       3.75 (1 - 100 r^2) D[T[z, r], z] == 0.1 D[r D[T[z, r], r], r]/r + \
+       25000 Exp[-721.674/T[z, r]] ca[z, r] + 25000 Exp[-1202.79/T[z, r]] cb[z, r], \
+       D[Tx[z, r], z] == -5 (Tx[z, r] - T[z, r]), T[0, r] == 350., \
+       Tx[0, r] == 350., ca[0, r] == 1, cb[0, r] == 0., \
+       (D[ca[z, r], r] /. r -> 10^-6) == 0, (D[ca[z, r], r] /. r -> 0.1) == 0, \
+       (D[cb[z, r], r] /. r -> 10^-6) == 0, (D[cb[z, r], r] /. r -> 0.1) == 0, \
+       (D[T[z, r], r] /. r -> 10^-6) == 0, \
+       0.1 (D[T[z, r], r] /. r -> 0.1) == -5 (T[z, 0.1] - Tx[z, 0.1])}; \
+       {tr, tx, a, b, cc0} = NDSolveValue[eqns, {T, Tx, ca, cb, cc}, {z, 0, 1}, \
+       {r, 10^-6, 0.1}]; {Abs[tr[0.405, 0.015] - 385.463] < 0.05, cc0}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, cc}");
+  }
+
+  /// Coupled time derivatives (`T_t - 1.44 U_t` in one equation) with
+  /// `NeumannValue` flux conditions at both ends, the one of the second
+  /// equation involving both unknowns' radial derivatives. Reference
+  /// values from wolframscript's finite element solution:
+  /// `T[0.5, 10] == 24.3738`, `U[0.9, 100] == 23.9427`.
+  #[test]
+  fn pde_coupled_time_derivatives_with_neumann_values() {
+    let result = interpret(
+      "{temp, mass} = NDSolveValue[{D[T[r, t], t] - \
+       0.005 D[r D[T[r, t], r], r]/r - 1.44 D[U[r, t], t] == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-34.6154 (T[r, t] - 110) - \
+       0.00323077 (U[r, t] - 8), r == 1], T[r, 0] == 10, D[U[r, t], t] - \
+       0.0005 D[r D[U[r, t], r], r]/r - 5.94595*^-9 D[r D[T[r, t], r], r]/r == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-2 (-34.6154 (T[r, t] - 110) - \
+       0.00323077 (U[r, t] - 8)) - 113.636 (U[r, t] - 8), r == 1], \
+       U[r, 0] == 86}, {T, U}, {r, 10^-6, 1}, {t, 0, 1000}]; \
+       {Abs[temp[0.5, 10] - 24.3738] < 0.01, Abs[mass[0.9, 100] - 23.9427] < 0.01}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
+  /// The Kuramoto–Sivashinsky equation: fourth order in space, nonlinear,
+  /// on a periodic domain (`u[t, -25] == u[t, 25]`). wolframscript gives
+  /// `u[1, 0] == 1.71008` and `u[5, -3] == -6.94246`.
+  #[test]
+  fn pde_kuramoto_sivashinsky_periodic_fourth_order() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] + D[u[t, x], {x, 4}] + \
+       2.5 D[u[t, x], {x, 2}] + u[t, x] D[u[t, x], x] == 0, \
+       u[0, x] == Exp[-(x - 1)^2] + Exp[-(x + 1)^2], u[t, -25] == u[t, 25]}, \
+       u, {t, 0, 5}, {x, -25, 25}]; f = u /. sol[[1]]; \
+       {Abs[f[1, 0] - 1.71008] < 0.005, Abs[f[5, -3] + 6.94246] < 0.01, \
+        f[2, -25] == f[2, 25]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
+  }
+
+  /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`
+  /// (conditions at both ends of the first variable), so no variable is an
+  /// evolution variable and the system is solved as a stationary problem.
+  /// `p - q` is constant along `x`, which gives the exact solution
+  /// `p == 1 - x/2`, `q == 1/2 - x/2`.
+  #[test]
+  fn pde_stationary_countercurrent_pair_matches_exact_solution() {
+    let result = interpret(
+      "{a, b} = NDSolveValue[{D[p[x, y], x] - 0.01 D[p[x, y], y, y] == \
+       -(p[x, y] - q[x, y]) + NeumannValue[0, y == 0] + \
+       NeumannValue[0, y == 1], p[0, y] == 1, \
+       -D[q[x, y], x] == p[x, y] - q[x, y], q[1, y] == 0}, {p, q}, \
+       {x, 0, 1}, {y, 0, 1}]; \
+       Round[{a[0.5, 0.3], b[0.5, 0.3], a[1, 0.9], b[0, 0.1]}, 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{3/4, 1/4, 1/2, 1/2}");
+  }
+
+  /// An elliptic system (second derivatives in both variables) with
+  /// `NeumannValue` Robin coupling on two edges, a zero flux on a third,
+  /// and Dirichlet inlets (the ParallelPlateHeatExchanger Demonstration).
+  /// wolframscript's finite element solution gives `Tc[0.5, 0.] ==
+  /// 315.218` and `Th[0.1, 0.03] == 343.056`.
+  #[test]
+  fn pde_stationary_elliptic_heat_exchanger_matches_wolframscript() {
+    let result = interpret(
+      "{tc, th} = NDSolveValue[{(1/3) (1 - 625 y^2) D[Tc[x, y], x] == \
+       0.0015 (D[Tc[x, y], x, x] + D[Tc[x, y], y, y]) + \
+       NeumannValue[-0.012 (Tc[x, y] - Th[x, y]), y == -0.04] + \
+       NeumannValue[-0.012 (Tc[x, y] - Th[x, y]), y == 0.04] + \
+       NeumannValue[0, x == 1], Tc[0, y] == 300., \
+       (1/3) (1 - 625 y^2) D[Th[x, y], x] == \
+       0.0015 (D[Th[x, y], x, x] + D[Th[x, y], y, y]) + \
+       NeumannValue[0.012 (Tc[x, y] - Th[x, y]), y == -0.04] + \
+       NeumannValue[0.012 (Tc[x, y] - Th[x, y]), y == 0.04] + \
+       NeumannValue[0, x == 0], Th[0, y] == 350.}, {Tc, Th}, {x, 0, 1}, \
+       {y, -0.04, 0.04}]; \
+       {Abs[tc[0.5, 0.] - 315.218] < 0.1, Abs[th[0.1, 0.03] - 343.056] < 0.1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True}");
+  }
+
+  /// `DensityPlot` of a PDE solution samples a large grid
+  /// `InterpolatingFunction` thousands of times; written as the
+  /// one-element list `u[t, x] /. sol` leaves, it must still go through
+  /// the compiled sampler instead of rebuilding the whole data array for
+  /// every sample (which took about a minute for this grid).
+  #[test]
+  fn density_plot_of_a_large_grid_interpolation_is_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "f = ListInterpolation[Table[Sin[i j/5000.], {i, 300}, {j, 300}]]; \
+       Head[DensityPlot[{Abs[f[x, y]]}, {x, 1, 300}, {y, 1, 300}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "Graphics");
+    assert!(start.elapsed().as_secs() < 20, "took {:?}", start.elapsed());
   }
 
   /// `NDSolve[eqns, u, {t, …}, {x, …}]` where the evolution equation is
@@ -24777,19 +25037,76 @@ mod dsolve_single_variable_pde {
   }
 }
 
-mod ndsolve_initial_value_from_solution_list {
+mod ndsolve_one_component_vector_unknowns {
   use super::*;
 
-  // `v[0] == (v /. sol)` with `sol` a list of rule lists yields `v[0] == {x}`;
-  // the one-element list must still act as the initial value.
+  // An initial value written as a one-element list (`v[0] == (v /. sol)`
+  // with `sol` a list of rule lists) makes `v` a vector-valued unknown with
+  // one component, as in wolframscript: its values are one-element lists.
   #[test]
-  fn singleton_list_initial_values() {
+  fn singleton_list_initial_value_gives_vector_solution() {
     assert_eq!(
       interpret(
-        "sol = {{v -> 2., h -> 3.}}; s = NDSolve[{v'[t] == -v[t], h'[t] == 0, v[0] == (v /. sol), h[0] == (h /. sol)}, {v[t], h[t]}, {t, 0, 1}]; Round[(h[t] /. s[[1]] /. t -> 1), 0.01]"
+        "s = NDSolve[{x'[t] == -x[t], x[0] == {1.}}, x, {t, 0, 1}]; Round[x[0.5] /. s, 0.0001]"
       )
       .unwrap(),
-      "3."
+      "{{0.6065}}"
+    );
+  }
+
+  // `First[x[t]]` in an event condition picks the component.
+  #[test]
+  fn event_condition_on_component() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t], x[0] == {1.}, WhenEvent[First[x[t]] == 0.5, {Sow[tm = t], \"StopIntegration\"}]}, x, {t, 0, 1}]; Round[{tm, x[\"Domain\"] /. s}, 0.0001]"
+      )
+      .unwrap(),
+      "{0.6931, {{{0., 0.6931}}}}"
+    );
+  }
+
+  // A scalar algebraic unknown next to a one-component vector: `V[t] + M[t]`
+  // is threaded over `M`'s component, `-V[t]` broadcast to it.
+  #[test]
+  fn mixed_with_scalar_algebraic_unknown() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{M'[t] == -V[t], V[t] + M[t] == 2, M[0] == {1.}, V[0] == 1.}, {M, V}, {t, 0, 1}]; Round[{M[0.2], V[0.2]} /. s, 0.0001]"
+      )
+      .unwrap(),
+      "{{{0.7786000000000001}, 1.2214}}"
+    );
+  }
+
+  // The curried `Derivative[1][M][t]` that an evaluated product rule leaves
+  // is split into components too.
+  #[test]
+  fn evaluated_product_rule_derivative() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[M[t] x[t], t] == 0, M'[t] == -x[t] M[t], M[0] == {2.}, x[0] == {1.}}, {M, x}, {t, 0, 1}]; Round[x[0.5] /. s, 0.0001]"
+      )
+      .unwrap(),
+      "{{2.}}"
+    );
+  }
+}
+
+mod ndsolve_event_before_singularity {
+  use super::*;
+
+  // `Sqrt[M[t]]` stops being real once `M` crosses zero; the event at
+  // `M == 0.0001` just before that point must still fire, rather than a
+  // step jumping over it and the integration ending short of it.
+  #[test]
+  fn event_fires_before_the_state_turns_singular() {
+    assert_eq!(
+      interpret(
+        "NDSolve[{M'[t] == -V[t], V[t] + Sqrt[M[t]] == 2, M[0] == 1., V[0] == 1., WhenEvent[M[t] == 0.0001, {tm = t, \"StopIntegration\"}]}, {M, V}, {t, 0, 5}]; Round[tm, 0.0001]"
+      )
+      .unwrap(),
+      "0.7725000000000001"
     );
   }
 }
@@ -25259,5 +25576,33 @@ mod d_piecewise {
         .unwrap(),
       "Piecewise[{{1, x != 1}}, 0]"
     );
+  }
+}
+
+// The series of a rational function about 0 divides the coefficient lists;
+// the derivative path swelled exponentially with the order (a Molien series
+// to x^40 never finished).
+mod series_rational_function {
+  use super::*;
+
+  #[test]
+  fn power_series_division() {
+    for (input, expected) in [
+      (
+        "Normal[Series[(1 + x)/(1 - x - x^2), {x, 0, 6}]]",
+        "1 + 2*x + 3*x^2 + 5*x^3 + 8*x^4 + 13*x^5 + 21*x^6",
+      ),
+      (
+        "Normal[Series[1/(x (1 - x)), {x, 0, 2}]]",
+        "1 + x^(-1) + x + x^2",
+      ),
+      (
+        "CoefficientList[Normal[Series[(1 + x^30)/((1 - x^12) (1 - x^20)), \
+         {x, 0, 40}]], x][[{1, 13, 21, 25, 31, 33, 37, 41}]]",
+        "{1, 1, 1, 1, 1, 1, 1, 1}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 }

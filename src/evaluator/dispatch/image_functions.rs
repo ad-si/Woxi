@@ -820,6 +820,8 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageAspectRatio"
     | "Thinning"
     | "MorphologicalComponents"
+    | "MorphologicalBinarize"
+    | "MorphologicalEulerNumber"
     | "WatershedComponents"
     | "MorphologicalGraph"
     | "FillingTransform"
@@ -830,6 +832,8 @@ fn image_argument_positions(name: &str, argc: usize) -> Vec<usize> {
     | "ImageValue"
     | "PixelValue"
     | "ImageTransformation"
+    | "ImagePerspectiveTransformation"
+    | "ImagePeriodogram"
     | "ColorDetect"
     | "ImagePartition"
     | "ImageResize"
@@ -1158,6 +1162,22 @@ pub fn dispatch_image_functions(
         ]));
       }
     }
+    "MorphologicalEulerNumber" if !args.is_empty() => {
+      return Some(
+        crate::functions::image_ast::morphological_euler_number_ast(args),
+      );
+    }
+    "ImagePerspectiveTransformation" if args.len() >= 2 => {
+      return Some(
+        crate::functions::image_ast::image_perspective_transformation_ast(args),
+      );
+    }
+    "ImagePeriodogram" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::image_periodogram_ast(args));
+    }
+    "ReliefImage" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::relief_image_ast(args));
+    }
     "Colorize" if !args.is_empty() => {
       return Some(crate::functions::image_ast::colorize_ast(args));
     }
@@ -1191,13 +1211,13 @@ pub fn dispatch_image_functions(
     "GaussianMatrix" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::image_ast::gaussian_matrix_ast(args));
     }
-    "ImageConvolve" if args.len() == 2 => {
+    "ImageConvolve" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_convolve_ast(args));
     }
     "ImageDeconvolve" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_deconvolve_ast(args));
     }
-    "ImageCorrelate" if args.len() == 2 => {
+    "ImageCorrelate" if args.len() >= 2 => {
       return Some(crate::functions::image_ast::image_correlate_ast(args));
     }
     "MedianFilter" if args.len() == 2 => {

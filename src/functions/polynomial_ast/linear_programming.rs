@@ -109,6 +109,9 @@ trait LpNum: Clone {
   fn zero() -> Self;
   fn one() -> Self;
   fn is_zero(&self) -> bool;
+  /// Zero without any tolerance: an entry the elimination may skip because
+  /// subtracting a multiple of it changes nothing.
+  fn is_exactly_zero(&self) -> bool;
   fn is_negative(&self) -> bool;
   fn is_positive(&self) -> bool;
   fn neg(&self) -> Self;
@@ -117,6 +120,10 @@ trait LpNum: Clone {
   fn mul(&self, o: &Self) -> Self;
   fn div(&self, o: &Self) -> Self;
   fn cmp(&self, o: &Self) -> std::cmp::Ordering;
+  /// Whether the value counts as an integer for branch and bound.
+  fn is_integral(&self) -> bool;
+  fn floor(&self) -> Self;
+  fn from_rat(r: &Rat) -> Self;
 }
 
 impl LpNum for Rat {
@@ -127,6 +134,9 @@ impl LpNum for Rat {
     Rat::one()
   }
   fn is_zero(&self) -> bool {
+    Rat::is_zero(self)
+  }
+  fn is_exactly_zero(&self) -> bool {
     Rat::is_zero(self)
   }
   fn is_negative(&self) -> bool {
@@ -153,6 +163,15 @@ impl LpNum for Rat {
   fn cmp(&self, o: &Self) -> std::cmp::Ordering {
     Rat::cmp(self, o)
   }
+  fn is_integral(&self) -> bool {
+    self.den.is_one()
+  }
+  fn floor(&self) -> Self {
+    rat_floor(self)
+  }
+  fn from_rat(r: &Rat) -> Self {
+    r.clone()
+  }
 }
 
 /// Values this close to zero count as zero in machine-precision pivoting.
@@ -167,6 +186,9 @@ impl LpNum for f64 {
   }
   fn is_zero(&self) -> bool {
     self.abs() <= LP_EPS
+  }
+  fn is_exactly_zero(&self) -> bool {
+    *self == 0.0
   }
   fn is_negative(&self) -> bool {
     *self < -LP_EPS
@@ -196,7 +218,20 @@ impl LpNum for f64 {
       self.total_cmp(o)
     }
   }
+  fn is_integral(&self) -> bool {
+    (self - self.round()).abs() <= LP_INTEGRALITY_EPS
+  }
+  fn floor(&self) -> Self {
+    f64::floor(*self)
+  }
+  fn from_rat(r: &Rat) -> Self {
+    rat_to_f64(r)
+  }
 }
+
+/// How far from an integer a machine-precision branch-and-bound value may be
+/// and still count as integral.
+const LP_INTEGRALITY_EPS: f64 = 1e-6;
 
 fn bigint_to_expr(n: &BigInt) -> Expr {
   match i128::try_from(n.clone()) {
@@ -658,34 +693,100 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       LpResult::Optimal(y) => LpResult::Optimal(
         maps
           .iter()
-          .map(|map| {
-            Expr::Real(match map {
-              VarMap::Shifted { col, offset } => rat_to_f64(offset) + y[*col],
-              VarMap::Free { pos, neg } => y[*pos] - y[*neg],
-            })
-          })
+          .map(|map| Expr::Real(original_value(map, &y)))
           .collect(),
       ),
       LpResult::Unbounded => LpResult::Unbounded,
       LpResult::Infeasible => LpResult::Infeasible,
     }
   } else {
-    let exact = if any_integer {
+    let exact = if inexact && any_integer {
+      // Wolfram solves an inexact integer program in machine precision.
+      // The search runs on machine reals — exact pivots over the rationals
+      // of decimal inputs grow without bound, and a thousand-variable
+      // problem took minutes — and the continuous variables, if any, are
+      // then solved for exactly with the integer ones fixed, so they come
+      // out as the vertex the exact search would report.
+      let to_f = |v: &[Rat]| v.iter().map(rat_to_f64).collect::<Vec<f64>>();
+      let a3: Vec<Vec<f64>> = a2.iter().map(|r| to_f(r)).collect();
+      match solve_branch_and_bound(
+        &to_f(&c2),
+        &a3,
+        &to_f(&b2),
+        &rel2,
+        width,
+        &maps,
+        &integer,
+      ) {
+        LpResult::Optimal(y) => {
+          let fixed: Vec<Rat> = maps
+            .iter()
+            .map(|map| {
+              let v: f64 = original_value(map, &y);
+              rat_from_f64(v.round()).unwrap_or_else(Rat::zero)
+            })
+            .collect();
+          if integer.iter().all(|&b| b) {
+            // Every variable is an integer: report them directly.
+            LpResult::Optimal(fixed)
+          } else {
+            let (mut a4, mut b4, mut rel4) =
+              (a2.clone(), b2.clone(), rel2.clone());
+            for (j, map) in maps.iter().enumerate() {
+              if !integer[j] {
+                continue;
+              }
+              let mut row = vec![Rat::zero(); width];
+              let rhs = match map {
+                VarMap::Shifted { col, offset } => {
+                  row[*col] = Rat::one();
+                  fixed[j].sub(offset)
+                }
+                VarMap::Free { pos, neg } => {
+                  row[*pos] = Rat::one();
+                  row[*neg] = Rat::one().neg();
+                  fixed[j].clone()
+                }
+              };
+              a4.push(row);
+              b4.push(rhs);
+              rel4.push(Rel::Eq);
+            }
+            match solve_simplex(&c2, &a4, &b4, &rel4, width) {
+              LpResult::Optimal(z) => LpResult::Optimal(
+                maps.iter().map(|map| original_value(map, &z)).collect(),
+              ),
+              _ => LpResult::Optimal(
+                maps
+                  .iter()
+                  .map(|map| {
+                    let v: f64 = original_value(map, &y);
+                    rat_from_f64(v).unwrap_or_else(Rat::zero)
+                  })
+                  .collect(),
+              ),
+            }
+          }
+        }
+        LpResult::Unbounded => LpResult::Unbounded,
+        LpResult::Infeasible => LpResult::Infeasible,
+      }
+    } else if any_integer {
       solve_branch_and_bound(&c2, &a2, &b2, &rel2, width, &maps, &integer)
+        .map_values(&maps)
     } else {
-      solve_simplex(&c2, &a2, &b2, &rel2, width)
+      solve_simplex(&c2, &a2, &b2, &rel2, width).map_values(&maps)
     };
     match exact {
-      LpResult::Optimal(y) => LpResult::Optimal(
-        maps
+      LpResult::Optimal(values) => LpResult::Optimal(
+        values
           .iter()
           .zip(&integer)
-          .map(|(map, &is_int)| {
-            let value = original_value(map, &y);
+          .map(|(value, &is_int)| {
             // A mixed problem is solved in machine precision in Wolfram, so
             // its continuous variables come back as machine reals.
             if any_integer && !is_int {
-              Expr::Real(rat_to_f64(&value))
+              Expr::Real(rat_to_f64(value))
             } else {
               value.to_expr()
             }
@@ -747,9 +848,9 @@ fn parse_domains(dom: &Expr, n: usize) -> Vec<bool> {
 }
 
 /// The value of an original variable given the simplex's non-negative ones.
-fn original_value(map: &VarMap, y: &[Rat]) -> Rat {
+fn original_value<T: LpNum>(map: &VarMap, y: &[T]) -> T {
   match map {
-    VarMap::Shifted { col, offset } => offset.add(&y[*col]),
+    VarMap::Shifted { col, offset } => T::from_rat(offset).add(&y[*col]),
     VarMap::Free { pos, neg } => y[*pos].sub(&y[*neg]),
   }
 }
@@ -782,24 +883,24 @@ fn rat_floor(r: &Rat) -> Rat {
 
 /// Best-first branch and bound for the integer-restricted variables. Each node
 /// is the root problem plus a list of branching rows over the simplex columns.
-fn solve_branch_and_bound(
-  c: &[Rat],
-  a: &[Vec<Rat>],
-  b: &[Rat],
+fn solve_branch_and_bound<T: LpNum>(
+  c: &[T],
+  a: &[Vec<T>],
+  b: &[T],
   rel: &[Rel],
   width: usize,
   maps: &[VarMap],
   integer: &[bool],
-) -> LpResult {
+) -> LpResult<T> {
   /// Wolfram gives up on a hard integer program too; this bounds the work.
   const MAX_NODES: usize = 20_000;
-  type Branch = (Vec<Rat>, Rat, Rel);
-  let objective = |y: &[Rat]| {
+  type Branch<T> = (Vec<T>, T, Rel);
+  let objective = |y: &[T]| {
     c.iter()
       .zip(y)
-      .fold(Rat::zero(), |acc, (ci, yi)| acc.add(&ci.mul(yi)))
+      .fold(T::zero(), |acc, (ci, yi)| acc.add(&ci.mul(yi)))
   };
-  let solve = |extra: &[Branch]| {
+  let solve = |extra: &[Branch<T>]| {
     let mut a2 = a.to_vec();
     let mut b2 = b.to_vec();
     let mut rel2 = rel.to_vec();
@@ -811,14 +912,14 @@ fn solve_branch_and_bound(
     solve_simplex(c, &a2, &b2, &rel2, width)
   };
   // The first integer variable whose value is fractional, with that value.
-  let fractional = |y: &[Rat]| {
+  let fractional = |y: &[T]| {
     maps
       .iter()
       .zip(integer)
       .enumerate()
       .filter(|(_, (_, is_int))| **is_int)
       .map(|(j, (map, _))| (j, original_value(map, y)))
-      .find(|(_, v)| !v.den.is_one())
+      .find(|(_, v)| !v.is_integral())
   };
 
   let root = match solve(&[]) {
@@ -828,9 +929,9 @@ fn solve_branch_and_bound(
   if fractional(&root).is_none() {
     return LpResult::Optimal(root);
   }
-  let mut incumbent: Option<(Rat, Vec<Rat>)> = None;
+  let mut incumbent: Option<(T, Vec<T>)> = None;
   // Open nodes: (bound, branching rows, relaxed solution).
-  let mut open: Vec<(Rat, Vec<Branch>, Vec<Rat>)> =
+  let mut open: Vec<(T, Vec<Branch<T>>, Vec<T>)> =
     vec![(objective(&root), Vec::new(), root)];
   let mut nodes = 0usize;
   while !open.is_empty() && nodes < MAX_NODES {
@@ -848,20 +949,20 @@ fn solve_branch_and_bound(
     let Some((j, value)) = fractional(&y) else {
       continue;
     };
-    let mut var_row = vec![Rat::zero(); width];
+    let mut var_row = vec![T::zero(); width];
     let shift = match &maps[j] {
       VarMap::Shifted { col, offset } => {
-        var_row[*col] = Rat::one();
-        offset.clone()
+        var_row[*col] = T::one();
+        T::from_rat(offset)
       }
       VarMap::Free { pos, neg } => {
-        var_row[*pos] = Rat::one();
-        var_row[*neg] = Rat::one().neg();
-        Rat::zero()
+        var_row[*pos] = T::one();
+        var_row[*neg] = T::one().neg();
+        T::zero()
       }
     };
-    let down = rat_floor(&value);
-    let up = down.add(&Rat::one());
+    let down = value.floor();
+    let up = down.add(&T::one());
     for (limit, r) in [(down, Rel::Le), (up, Rel::Ge)] {
       nodes += 1;
       let mut child = rows.clone();
@@ -893,6 +994,19 @@ enum LpResult<T = Rat> {
   Optimal(Vec<T>),
   Unbounded,
   Infeasible,
+}
+
+impl LpResult<Rat> {
+  /// The original variables' values from the simplex columns'.
+  fn map_values(self, maps: &[VarMap]) -> LpResult<Rat> {
+    match self {
+      LpResult::Optimal(y) => LpResult::Optimal(
+        maps.iter().map(|map| original_value(map, &y)).collect(),
+      ),
+      LpResult::Unbounded => LpResult::Unbounded,
+      LpResult::Infeasible => LpResult::Infeasible,
+    }
+  }
 }
 
 /// Two-phase simplex. Columns `0..n` are the structural (non-negative)
@@ -1060,35 +1174,40 @@ fn run_simplex_restricted<T: LpNum>(
   // optima, but can cycle on degenerate problems; after a generous iteration
   // budget we switch to Bland's rule, which is guaranteed to terminate.
   let bland_after = 20 * (total + k + 1);
+  // Reduced costs `cost[j] - sum_i cost[basis[i]] * tab[i][j]`, computed once
+  // and then kept current by every pivot (the objective row of the tableau),
+  // so choosing the entering column costs one pass over the columns rather
+  // than a pass over the whole tableau.
+  let mut rc: Vec<T> = (0..entering_limit)
+    .map(|j| {
+      let mut r = cost[j].clone();
+      for i in 0..k {
+        let cb = &cost[basis[i]];
+        if !cb.is_zero() {
+          r = r.sub(&cb.mul(&tab[i][j]));
+        }
+      }
+      r
+    })
+    .collect();
   let mut iter = 0usize;
   loop {
     let use_bland = iter >= bland_after;
     iter += 1;
-    // Reduced cost of column j: cost[j] - sum_i cost[basis[i]] * tab[i][j].
     // Dantzig's rule: pick the column with the most negative reduced cost,
     // breaking ties toward the lowest index. This matches the vertex
     // wolframscript reports when a problem has multiple optima. Under Bland's
     // fallback we instead take the first column with a negative reduced cost.
     let mut entering = None;
-    let mut best_rc: Option<T> = None;
-    for j in 0..entering_limit {
-      let mut rc = cost[j].clone();
-      for i in 0..k {
-        let cb = &cost[basis[i]];
-        if !cb.is_zero() {
-          rc = rc.sub(&cb.mul(&tab[i][j]));
-        }
-      }
-      if rc.is_negative() {
+    let mut best_rc: Option<&T> = None;
+    for (j, r) in rc.iter().enumerate() {
+      if r.is_negative() {
         if use_bland {
           entering = Some(j);
           break;
         }
-        if best_rc
-          .as_ref()
-          .is_none_or(|b| rc.cmp(b) == std::cmp::Ordering::Less)
-        {
-          best_rc = Some(rc);
+        if best_rc.is_none_or(|b| r.cmp(b) == std::cmp::Ordering::Less) {
+          best_rc = Some(r);
           entering = Some(j);
         }
       }
@@ -1129,24 +1248,36 @@ fn run_simplex_restricted<T: LpNum>(
     let Some(row) = leaving else {
       return SimplexOutcome::Unbounded;
     };
-    pivot(tab, basis, row, col, rhs_col);
+    let support = pivot(tab, basis, row, col, rhs_col);
+    // The objective row is eliminated like any other row.
+    let factor = rc[col].clone();
+    for &j in &support {
+      if j < entering_limit {
+        rc[j] = rc[j].sub(&factor.mul(&tab[row][j]));
+      }
+    }
     let _ = total;
   }
 }
 
-/// Gauss-Jordan pivot on `tab[row][col]`, updating the basis.
+/// Gauss-Jordan pivot on `tab[row][col]`, updating the basis. Returns the
+/// columns where the (normalized) pivot row is nonzero — the only columns any
+/// other row changes in, so the elimination skips the rest of each row.
 fn pivot<T: LpNum>(
   tab: &mut [Vec<T>],
   basis: &mut [usize],
   row: usize,
   col: usize,
   rhs_col: usize,
-) {
+) -> Vec<usize> {
   let width = rhs_col + 1;
   let piv = tab[row][col].clone();
   for entry in tab[row].iter_mut().take(width) {
     *entry = entry.div(&piv);
   }
+  let support: Vec<usize> = (0..width)
+    .filter(|&j| !tab[row][j].is_exactly_zero())
+    .collect();
   let pivot_row = tab[row].clone();
   for (i, tab_i) in tab.iter_mut().enumerate() {
     if i == row {
@@ -1156,11 +1287,12 @@ fn pivot<T: LpNum>(
     if factor.is_zero() {
       continue;
     }
-    for (j, entry) in tab_i.iter_mut().enumerate().take(width) {
-      *entry = entry.sub(&factor.mul(&pivot_row[j]));
+    for &j in &support {
+      tab_i[j] = tab_i[j].sub(&factor.mul(&pivot_row[j]));
     }
   }
   basis[row] = col;
+  support
 }
 
 /// `LinearOptimization[c, {a, b}]` and `LinearOptimization[c, {a, b},

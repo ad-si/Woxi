@@ -63,6 +63,13 @@ fn pattern_head_tag(expr: &Expr) -> Option<String> {
     {
       pattern_head_tag(&args[1])
     }
+    // The FullForm `PatternTest[Pattern[r, Blank[h]], test]` (as a
+    // SaveDefinitions dump writes `r_h?test`) is tagged by `h` too.
+    Expr::FunctionCall { name, args }
+      if (name == "PatternTest" || name == "Condition") && args.len() == 2 =>
+    {
+      pattern_head_tag(&args[0])
+    }
     _ => None,
   }
 }
@@ -354,11 +361,15 @@ fn pattern_specificity_score(
   conditions: &[Option<Expr>],
   body: &Expr,
 ) -> u32 {
-  // Literal-argument definitions (e.g. `f[0]`) are most specific.
-  let is_literal = conditions
-    .iter()
-    .flatten()
-    .any(|c| condition_is_literal_arg(params, c));
+  // Literal-argument definitions (e.g. `f[0]`) are most specific. One
+  // literal among blanks (`f[l_, None, o___]`) only counts as one more
+  // constraint below, or it would tie with `f[{}, None, o___]` and leave
+  // the order to the definitions'.
+  let is_literal = !conditions.is_empty()
+    && conditions.iter().all(|c| {
+      c.as_ref()
+        .is_some_and(|c| condition_is_literal_arg(params, c))
+    });
   if is_literal {
     return 0;
   }
@@ -1069,7 +1080,10 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
         Some(Expr::FunctionCall { name, .. }) if name == "Length"
       ) =>
     {
-      0
+      // The empty list `{}` is a literal: its length check is all the
+      // constraint there is. For a list with elements the elements' own
+      // checks count instead.
+      u32::from(matches!(operands.get(1), Some(Expr::Integer(0))))
     }
     // A nested structural pattern (`f[g[x_]]`) is stored as
     // `__StructuralPattern__[param, patternAST]`. Score it by how constrained
@@ -1285,6 +1299,18 @@ fn pattern_var_key(name: &str, expr: &Expr) -> String {
 /// Collect all pattern variables from an expression.
 /// Returns tuples of (key, name, head, is_optional, blank_type) for each
 /// Pattern/PatternOptional node found.
+/// `expr` spelled with its pattern variables renamed in order of
+/// appearance, so two left-hand sides that differ only in those names
+/// (`G[t_].m[]`, `G[s_].m[]`) spell alike.
+fn pattern_canonical_string(expr: &Expr) -> String {
+  let mut renamed = expr.clone();
+  for (i, (_, name, ..)) in collect_pattern_vars(expr).iter().enumerate() {
+    renamed =
+      crate::syntax::rename_symbol(&renamed, name, &format!("\u{1}p{i}"));
+  }
+  expr_to_string(&renamed)
+}
+
 fn collect_pattern_vars(
   expr: &Expr,
 ) -> Vec<(String, String, Option<String>, bool, u8)> {
@@ -3634,11 +3660,25 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       // Shared first, so the stored value and the one returned are a
       // single copy of a large array instead of two.
       crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
+      // The value is stored as already evaluated, as Wolfram's evaluation
+      // timestamps have it: reading the symbol again before anything
+      // changes must not evaluate it (and repeat the messages of a call that
+      // stayed unevaluated) again.
+      if let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
+        &mut rhs_value
+      {
+        items.share();
+      }
       let stored = own_value_expr(&rhs_value);
       ENV.with(|e| {
         e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::ExprVal(stored))
       });
+      if let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
+        &rhs_value
+      {
+        items.mark_evaluated(crate::epoch::current_epoch());
+      }
     } else {
       // A symbol keeps its context: `cache = wcache` inside a package has to
       // store `Pkg\`Private\`wcache`, not the `wcache` it prints as, or
@@ -4792,13 +4832,29 @@ pub fn set_delayed_ast(
       stored_rule_count
     } else if has_literal_conditions {
       // Literal-match definitions go before pattern definitions but after
-      // existing literal definitions (preserving definition order).
+      // existing literal definitions (preserving definition order) — unless
+      // the new rule is strictly more specific than one of those, as
+      // `f[0, 1]` is than `f[l_, 1]`.
       (0..stored_rule_count)
         .find(|&index| {
-          stored_rule(index).is_some_and(|(pp, c, _, _, _, _)| {
+          stored_rule(index).is_some_and(|(pp, c, d, h, bt, b)| {
             !c.iter()
               .flatten()
               .any(|cc| condition_is_literal_arg(&pp, cc))
+              || rule_dominates(
+                &params,
+                &heads,
+                &blank_types,
+                &conditions,
+                &defaults,
+                &final_body,
+                &pp,
+                &h,
+                &bt,
+                &c,
+                &d,
+                &b,
+              )
           })
         })
         .unwrap_or(stored_rule_count)
@@ -6043,6 +6099,10 @@ pub fn tag_set_delayed_ast(
   body: &Expr,
   evaluate_rhs: bool,
 ) -> Result<Expr, InterpreterError> {
+  // `Pattern[x, Blank[]]` (as a SaveDefinitions dump writes it) is `x_`, so
+  // the rule replaces the short-form one instead of sitting beside it.
+  let lhs = &crate::evaluator::pattern_matching::with_short_form_blanks(lhs)
+    .into_owned();
   let tag_name = match tag {
     Expr::Identifier(s) => s.clone(),
     _ => {
@@ -6170,145 +6230,17 @@ pub fn tag_set_delayed_ast(
   let mut conditions: Vec<Option<Expr>> = Vec::new();
   let mut defaults: Vec<Option<Expr>> = Vec::new();
   let mut heads: Vec<Option<String>> = Vec::new();
-  let mut final_body = body.clone();
-  // Track first occurrence of each pattern variable for SameQ conditions
-  // on repeated pattern variables (e.g. v_ appearing in multiple args).
-  let mut seen_pattern_vars: std::collections::HashMap<String, Expr> =
-    std::collections::HashMap::new();
-  // Extra conditions for repeated pattern variables
-  let mut extra_conditions: Vec<Expr> = Vec::new();
-  // Rewrites applied to the body when a destructured argument's pattern
-  // variables become `Part[_upN, j]`. A `/;` condition names the same
-  // variables, so it needs the same rewrites — without them the condition
-  // tests a free symbol and the definition never matches.
-  let mut inner_substitutions: Vec<(String, Expr)> = Vec::new();
+  let mut blank_types: Vec<u8> = Vec::new();
+  let final_body = body.clone();
 
   for (i, arg) in lhs_args.iter().enumerate() {
     let arg = unwrap_longest_shortest(arg);
-    // A pattern wrapper is not the head of the expression the argument
-    // matches: `o : obj[_Symbol]` matches an `obj[…]`, not a `Pattern[…]`.
-    // Those go to the structural-pattern path below, which stores the
-    // pattern itself and binds its variables.
-    let is_wrapped_pattern = matches!(arg, Expr::FunctionCall { name, .. }
-      if crate::evaluator::pattern_matching::is_pattern_construct_head(name));
-    // The argument is taken apart by position, which only fits plain `x_`
-    // arguments: a sequence (`Move[l_, args___]`), a head (`x_Integer`), a
-    // test or a literal is matched by the structural path below.
-    let destructurable = |inner: &[Expr]| {
-      inner.iter().all(|a| {
-        let plain_form = match a {
-          Expr::Pattern { .. } => true,
-          Expr::Identifier(name) => name.contains('_'),
-          Expr::FunctionCall { name, .. } => name == "Pattern",
-          _ => false,
-        };
-        plain_form
-          && matches!(extract_pattern_info(a), (ref n, None, 1) if !n.is_empty())
-      })
-    };
-    if let Expr::FunctionCall {
-      name: arg_func_name,
-      args: inner_args,
-    } = arg
-      && !is_wrapped_pattern
-      && destructurable(inner_args)
+    // A compound argument (`R[tag_]` in `R /: R[tag_].delete[] := …`) is
+    // matched structurally, binding its pattern variables to the parts of the
+    // actual argument. (Taking it apart by position instead put `R[x][[1]]`
+    // in the body where `tag` stood, and a held position such as
+    // `axis[tag] =.` never evaluated that to `x`.)
     {
-      let param_name = format!("_up{i}");
-      heads.push(Some(arg_func_name.clone()));
-
-      // A `x__` / `x___` operand soaks up a run of arguments, so the
-      // call only needs a minimum length and the operands after it count
-      // from the end.
-      let seq_pos = inner_args.iter().position(|a| {
-        matches!(a, Expr::Pattern { .. } | Expr::Identifier(_))
-          && extract_pattern_info(a).2 >= 2
-      });
-      let inner_count = inner_args.len();
-
-      if inner_args.is_empty() {
-        conditions.push(None);
-      } else if let Some(sp) = seq_pos {
-        let required = inner_count - 1
-          + usize::from(extract_pattern_info(&inner_args[sp]).2 == 2);
-        conditions.push(Some(Expr::Comparison {
-          operands: vec![
-            call1("Length", Expr::Identifier(param_name.clone())),
-            Expr::Integer(required as i128),
-          ],
-          operators: vec![ComparisonOp::GreaterEqual],
-        }));
-      } else {
-        conditions.push(Some(Expr::Comparison {
-          operands: vec![
-            call1("Length", Expr::Identifier(param_name.clone())),
-            Expr::Integer(inner_count as i128),
-          ],
-          operators: vec![ComparisonOp::SameQ],
-        }));
-      }
-
-      for (j, inner_arg) in inner_args.iter().enumerate() {
-        let (pat_name, _pat_head, _blank_type) =
-          extract_pattern_info(inner_arg);
-        if !pat_name.is_empty() {
-          let up = Expr::Identifier(param_name.clone());
-          let part_expr = match seq_pos {
-            Some(sp) if j == sp => call(
-              "Apply",
-              vec![
-                Expr::Identifier("Sequence".to_string()),
-                call(
-                  "Take",
-                  vec![
-                    up,
-                    Expr::List(
-                      vec![
-                        Expr::Integer((j + 1) as i128),
-                        call(
-                          "Plus",
-                          vec![
-                            call1(
-                              "Length",
-                              Expr::Identifier(param_name.clone()),
-                            ),
-                            Expr::Integer(-((inner_count - 1 - j) as i128)),
-                          ],
-                        ),
-                      ]
-                      .into(),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            Some(sp) if j > sp => call(
-              "Part",
-              vec![up, Expr::Integer(-((inner_count - j) as i128))],
-            ),
-            _ => call("Part", vec![up, Expr::Integer((j + 1) as i128)]),
-          };
-          // If this pattern variable was already seen, add a SameQ
-          // condition to ensure both occurrences match the same value.
-          if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
-            extra_conditions.push(Expr::Comparison {
-              operands: vec![prev_expr.clone(), part_expr.clone()],
-              operators: vec![ComparisonOp::SameQ],
-            });
-          } else {
-            seen_pattern_vars.insert(pat_name.clone(), part_expr.clone());
-          }
-          final_body = crate::syntax::substitute_variable(
-            &final_body,
-            &pat_name,
-            &part_expr,
-          );
-          inner_substitutions.push((pat_name, part_expr));
-        }
-      }
-
-      params.push(param_name);
-      defaults.push(None);
-    } else {
       // Check if this argument is actually a pattern (contains _ or is a Pattern node)
       // Plain identifiers like `x` are literal symbols, not patterns.
       let is_pattern = match arg {
@@ -6317,7 +6249,9 @@ pub fn tag_set_delayed_ast(
         _ => crate::evaluator::pattern_matching::contains_pattern(arg),
       };
       if is_pattern {
-        let (pat_name, head, _blank_type) = extract_pattern_info(arg);
+        let (pat_name, head, blank_type) = extract_pattern_info(arg);
+        // A sequence (`v___h`) takes a run of the call's arguments.
+        blank_types.push(blank_type);
         // A `?test` is part of what the argument must match: such a pattern
         // takes the structural path too, or the test would be dropped and
         // `c_?NumericQ` would accept anything.
@@ -6359,36 +6293,28 @@ pub fn tag_set_delayed_ast(
         params.push(param_name);
         defaults.push(None);
         heads.push(None);
+        blank_types.push(1);
         continue;
       }
       defaults.push(None);
     }
   }
 
-  // Add extra conditions for repeated pattern variables to the last
-  // parameter's condition slot (merging with any existing condition).
-  if !extra_conditions.is_empty() && !conditions.is_empty() {
-    let last_idx = conditions.len() - 1;
-    let mut all_conds = extra_conditions;
-    if let Some(existing) = conditions[last_idx].take() {
-      all_conds.insert(0, existing);
-    }
-    // Combine all conditions with And
-    let combined = if all_conds.len() == 1 {
-      all_conds.remove(0)
-    } else {
-      call("And", all_conds)
-    };
-    conditions[last_idx] = Some(combined);
-  }
-
-  // Attach any conditions from the LHS (/;) or body to condition slots
+  // Attach any conditions from the LHS (/;) or body to condition slots.
+  // What a structural pattern binds is known only once the dispatcher has
+  // matched it, after the slot conditions; with such a slot the condition
+  // stays on the body instead (`rhs /; test`), whose guard is checked with
+  // every variable bound — as Wolfram reads `lhs := rhs /; test`.
+  let has_structural = conditions.iter().any(|c| {
+    matches!(c, Some(Expr::FunctionCall { name, .. })
+      if name == "__StructuralPattern__")
+  });
+  let mut final_body = final_body;
   for extra_cond in lhs_condition.into_iter().chain(body_condition.as_ref()) {
-    let extra_cond = &inner_substitutions
-      .iter()
-      .fold(extra_cond.clone(), |acc, (name, part)| {
-        crate::syntax::substitute_variable(&acc, name, part)
-      });
+    if has_structural {
+      final_body = call("Condition", vec![final_body, extra_cond.clone()]);
+      continue;
+    }
     let mut attached = false;
     for c in &mut conditions {
       if c.is_none() {
@@ -6422,15 +6348,17 @@ pub fn tag_set_delayed_ast(
   }
 
   // Store in UPVALUES for introspection and cleanup.
-  // If an upvalue with the same original LHS already exists, replace it.
+  // If an upvalue with the same original LHS already exists, replace it —
+  // the same up to the names of its pattern variables, as Wolfram compares
+  // (`G /: G[t_].m[] := 1; G /: G[s_].m[] := 2` leaves one rule).
   // Use original_lhs (with Condition wrapper) for display purposes.
-  let lhs_str = expr_to_string(original_lhs);
+  let lhs_str = pattern_canonical_string(original_lhs);
   crate::UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
     if let Some(pos) =
       entry.iter().position(|(_, _, _, _, _, _, orig_lhs, _)| {
-        expr_to_string(orig_lhs) == lhs_str
+        pattern_canonical_string(orig_lhs) == lhs_str
       })
     {
       entry[pos] = (
@@ -6461,25 +6389,30 @@ pub fn tag_set_delayed_ast(
   // Remove any existing upvalue definition with the same params/heads/conditions
   // before inserting the new one (to avoid duplicates on redefinition).
   // Only remove if conditions also match (different conditions = different rules).
-  let blank_types = vec![1u8; params.len()];
-  let cond_strs: Vec<String> = conditions
-    .iter()
-    .map(|c| c.as_ref().map_or(String::new(), expr_to_string))
-    .collect();
+  blank_types.resize(params.len(), 1);
+  // All the slot conditions together, so a variable shared between slots
+  // stays one variable when the names are canonicalized.
+  let conditions_key = |c: &[Option<Expr>]| {
+    pattern_canonical_string(&Expr::List(
+      c.iter()
+        .map(|cond| {
+          cond
+            .clone()
+            .unwrap_or_else(|| Expr::Identifier("None".to_string()))
+        })
+        .collect(),
+    ))
+  };
+  let cond_key = conditions_key(&conditions);
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(outer_func).or_insert_with(Vec::new);
     entry.retain(|(p, c, _, h, bt, _)| {
-      if p == &params && h == &heads && bt == &blank_types {
-        // Only remove if conditions also match
-        let existing_cond_strs: Vec<String> = c
-          .iter()
-          .map(|cond| cond.as_ref().map_or(String::new(), expr_to_string))
-          .collect();
-        existing_cond_strs != cond_strs
-      } else {
-        true
-      }
+      // Only remove if conditions also match
+      !(p == &params
+        && h == &heads
+        && bt == &blank_types
+        && conditions_key(c) == cond_key)
     });
     // Insert after existing upvalue entries (params starting with _up)
     // to maintain definition order, but before DownValues.

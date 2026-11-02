@@ -15420,6 +15420,22 @@ mod list_convolve {
     );
   }
 
+  // A NumericArray kernel or list is correlated as its list, also with
+  // the generalized inner and outer functions.
+  #[test]
+  fn numeric_array_arguments() {
+    assert_eq!(
+      interpret(
+        "m = NumericArray[{{1, 5, 2}, {7, 3, 4}, {0, 9, 6}}, \"UnsignedInteger8\"]; \
+         {ListCorrelate[Table[0, {3}, {3}], m, {2, 2}, 0, Plus, Max], \
+         ListCorrelate[{{1, 1}, {1, 1}}, m], \
+         ListConvolve[NumericArray[{1, 2}, \"Integer8\"], {1, 2, 3}]}"
+      )
+      .unwrap(),
+      "{{{7, 7, 5}, {9, 9, 9}, {9, 9, 9}}, {{16, 14}, {19, 22}}, {4, 7}}"
+    );
+  }
+
   // Machine numbers take a direct path with the evaluator's exactness:
   // 0 times a real is an exact 0, and an all-exact window stays exact.
   #[test]

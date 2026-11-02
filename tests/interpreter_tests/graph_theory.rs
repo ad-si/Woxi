@@ -669,6 +669,56 @@ mod graph_plot_labelled_edges {
   }
 }
 
+/// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
+/// coords, {edges, vertices}], …]`: Demonstrations read the vertex
+/// positions as `GraphPlot[g][[1, 1]]`. It used to be a flat primitive list.
+mod graph_plot_graphics_complex {
+  use super::*;
+
+  #[test]
+  fn undirected_edges_are_one_sorted_indexed_arrow() {
+    assert_eq!(
+      interpret(
+        "gp = GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]; \
+         {Head[gp[[1]]], Length[gp[[1, 1]]], gp[[1, 2, 1, 2]], \
+         gp[[1, 2, 1, 3, 1, 1]], Head /@ Rest[gp[[1, 2, 2]]], gp[[2]]}"
+      )
+      .unwrap(),
+      "{GraphicsComplex, 4, Arrowheads[0.], {{1, 2}, {1, 3}, {2, 3}, {3, 4}}, \
+       {Disk, Disk, Disk, Disk}, {FormatType -> TraditionalForm, \
+       FrameTicks -> None}}"
+    );
+  }
+
+  #[test]
+  fn explicit_coordinates_keep_the_callers_units() {
+    assert_eq!(
+      interpret(
+        "GraphPlot[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {4, 0}, {4, 3}}][[1, 1]]"
+      )
+      .unwrap(),
+      "{{0., 0.}, {4., 0.}, {4., 3.}}"
+    );
+  }
+
+  #[test]
+  fn directed_edges_get_medium_arrowheads() {
+    assert_eq!(
+      interpret(
+        "gp = GraphPlot[{1 -> 2}, DirectedEdges -> True]; \
+         {gp[[1, 2, 1, 1]], gp[[1, 2, 1, 3, 1]]}"
+      )
+      .unwrap(),
+      "{Arrowheads[Medium], {1, 2}}"
+    );
+    assert_eq!(
+      interpret("GraphPlot[Graph[{1 -> 2, 2 -> 3}]][[1, 2, 1, 3, 1]]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+}
+
 /// Regression: `GraphPlot[m]` takes a bare adjacency matrix directly
 /// (documented for GraphPlot, unlike plain `Graph[m]` which needs
 /// `AdjacencyGraph[m]`). It used to stay unevaluated because the matrix

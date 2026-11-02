@@ -2009,6 +2009,29 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A variable driven by a custom control (a `With[…, Row[{Button[…]}]]`,
+  /// which has no widget of its own) is still bound when the `Dynamic[…]`
+  /// the body returns is shown, after the body itself has finished
+  /// (ConstructingVectorGeometrySolutions).
+  #[test]
+  fn custom_control_variable_visible_to_returned_dynamic() {
+    let code = r#"Manipulate[
+      k = n + 1;
+      Dynamic[Refresh[Row[{construct[[2, 1]], " ", k}], TrackedSymbols :> {k}]],
+      {{construct, {a, {b, c}}},
+        With[{x = 1}, Row[{Button["go", construct = {a, {d, c}}]}]]},
+      {{n, 1}, 1, 3, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let render = state.check_render().expect("render");
+    assert!(
+      render.warnings.is_empty(),
+      "the returned Dynamic must see construct: {:?}",
+      render.warnings
+    );
+  }
+
   /// A `Dynamic` that sets a module variable after an earlier `Dynamic`
   /// reads it (PolynomialRootsInTheComplexPlane): the front end re-renders
   /// once the variable changes, so the settled render carries no warnings

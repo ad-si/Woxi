@@ -2974,6 +2974,21 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Piecewise" if !args.is_empty() => {
           differentiate_piecewise(expr, args, var)
         }
+        // `Max`/`Min` of real arguments: the derivative of their piecewise
+        // form, as wolframscript gives it (`D[Max[x, 1 - x], x]` is
+        // `Piecewise[{{-1, x < 1/2}, {1, x > 1/2}}, Indeterminate]`).
+        "Max" | "Min"
+          if args.len() >= 2
+            && args.iter().any(|a| !is_constant_wrt(a, var))
+            && let Ok(expanded @ Expr::FunctionCall { .. }) =
+              crate::evaluator::evaluate_function_call_ast(
+                "PiecewiseExpand",
+                std::slice::from_ref(expr),
+              )
+            && matches!(&expanded, Expr::FunctionCall { name: pn, .. } if pn == "Piecewise") =>
+        {
+          differentiate(&expanded, var)
+        }
         // SeriesData[var, x0, {coeffs}, nmin, nmax, denom]: differentiate
         // element-wise through the coefficient list and, when the center
         // x0 itself depends on `var`, apply the chain rule on the
@@ -4126,6 +4141,59 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             call("Gamma", vec![args[0].clone(), args[2].clone()]),
           );
           let d = differentiate(&diff, var)?;
+          crate::evaluator::evaluate_expr_to_expr(&d)
+        }
+        // GammaRegularized[a, z] = Gamma[a, z]/Gamma[a] and
+        // GammaRegularized[a, z0, z1] = (Gamma[a, z0] - Gamma[a, z1])/Gamma[a],
+        // a free of var: differentiate those through the Gamma rules above.
+        "GammaRegularized"
+          if (args.len() == 2 || args.len() == 3)
+            && is_constant_wrt(&args[0], var) =>
+        {
+          let upper =
+            |z: &Expr| call("Gamma", vec![args[0].clone(), z.clone()]);
+          let numerator = if args.len() == 2 {
+            upper(&args[1])
+          } else {
+            minus2(upper(&args[1]), upper(&args[2]))
+          };
+          let d = differentiate(&numerator, var)?;
+          crate::evaluator::evaluate_expr_to_expr(&div2(
+            d,
+            call("Gamma", vec![args[0].clone()]),
+          ))
+        }
+        // BetaRegularized[z, a, b] (a, b free of var):
+        //   d/dvar = (1 - z)^(b-1) z^(a-1) / Beta[a, b] z';
+        // BetaRegularized[z0, z1, a, b] is the difference of two of those.
+        "BetaRegularized"
+          if (args.len() == 3 || args.len() == 4)
+            && args[args.len() - 2..]
+              .iter()
+              .all(|p| is_constant_wrt(p, var)) =>
+        {
+          let (a, b) = (&args[args.len() - 2], &args[args.len() - 1]);
+          let density = |z: &Expr| -> Result<Expr, InterpreterError> {
+            let dz = differentiate(z, var)?;
+            Ok(times2(
+              dz,
+              div2(
+                times2(
+                  pow2(
+                    minus2(Expr::Integer(1), z.clone()),
+                    minus2(b.clone(), Expr::Integer(1)),
+                  ),
+                  pow2(z.clone(), minus2(a.clone(), Expr::Integer(1))),
+                ),
+                call("Beta", vec![a.clone(), b.clone()]),
+              ),
+            ))
+          };
+          let d = if args.len() == 3 {
+            density(&args[0])?
+          } else {
+            minus2(density(&args[1])?, density(&args[0])?)
+          };
           crate::evaluator::evaluate_expr_to_expr(&d)
         }
         // RealSign[u]: D[RealSign[u], u] = Piecewise[{{0, u != 0}}, Indeterminate]
@@ -16222,6 +16290,16 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&args[0]);
   }
 
+  // A rational function about 0 with numeric coefficients: divide the
+  // power series of numerator and denominator. Repeated differentiation
+  // swells exponentially with the order (a Molien series to x^20).
+  if order >= 0
+    && matches!(&x0, Expr::Integer(0))
+    && let Some(series) = rational_function_series(&args[0], &var_name, order)
+  {
+    return Ok(series);
+  }
+
   // Gamma[x] has a simple pole at x = 0; the direct coefficient path samples
   // Gamma[0] = ComplexInfinity and fails. Use the identity Gamma[x] = x!/x:
   // expand the analytic factorial one order higher, then divide by x by
@@ -22672,4 +22750,83 @@ pub fn asymptotic_comparison_ast(
     _ => Verdict::Unknown,
   };
   Ok(verdict.into_expr().unwrap_or_else(original))
+}
+
+/// `Series[f, {var, 0, order}]` for a rational function `f` of `var` with
+/// rational coefficients, by dividing the coefficient lists of numerator
+/// and denominator; None for anything else.
+fn rational_function_series(f: &Expr, var: &str, order: i128) -> Option<Expr> {
+  use num_bigint::BigInt;
+  use num_traits::{One, Signed, Zero};
+  type Q = (BigInt, BigInt);
+  let norm = |n: BigInt, d: BigInt| -> Q {
+    let g = crate::functions::math_ast::gcd_bigint(&n, &d);
+    let (n, d) = if g.is_zero() {
+      (n, d)
+    } else {
+      (n / &g, d / &g)
+    };
+    if d.is_negative() { (-n, -d) } else { (n, d) }
+  };
+  let eval = |head: &str, a: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(head, &a).ok()
+  };
+  let x = id_expr(var);
+  let together = eval("Together", vec![f.clone()])?;
+  let coeffs = |p: Expr| -> Option<Vec<Q>> {
+    let list = eval("CoefficientList", vec![p, x.clone()])?;
+    let Expr::List(items) = &list else {
+      return None;
+    };
+    items
+      .iter()
+      .map(crate::functions::math_ast::expr_to_big_rational)
+      .collect()
+  };
+  let num = coeffs(eval("Numerator", vec![together.clone()])?)?;
+  let den = coeffs(eval("Denominator", vec![together])?)?;
+  // Leading zeros of the denominator are a pole of that order.
+  let valuation = den.iter().position(|c| !c.0.is_zero())?;
+  let den = &den[valuation..];
+  if den.len() < 2 {
+    // A polynomial (or a monomial pole): the generic path handles it.
+    return None;
+  }
+  let terms = usize::try_from(order).ok()? + valuation + 1;
+  let mut c: Vec<Q> = Vec::with_capacity(terms);
+  for k in 0..terms {
+    let (mut an, mut ad) = num
+      .get(k)
+      .cloned()
+      .unwrap_or_else(|| (BigInt::zero(), BigInt::one()));
+    for j in 1..=k.min(den.len() - 1) {
+      let (bn, bd) = (&den[j].0 * &c[k - j].0, &den[j].1 * &c[k - j].1);
+      (an, ad) = norm(&an * &bd - &bn * &ad, &ad * &bd);
+    }
+    c.push(norm(an * &den[0].1, ad * &den[0].0));
+  }
+  let first = c.iter().position(|v| !v.0.is_zero());
+  let to_expr =
+    |q: &Q| crate::functions::math_ast::make_rational_expr(&q.0, &q.1);
+  let (nmin, list): (i128, Vec<Expr>) = match first {
+    Some(i) => {
+      let last = c.iter().rposition(|v| !v.0.is_zero())?;
+      (
+        i as i128 - valuation as i128,
+        c[i..=last].iter().map(to_expr).collect(),
+      )
+    }
+    None => (order + 1, Vec::new()),
+  };
+  Some(call(
+    "SeriesData",
+    vec![
+      x,
+      Expr::Integer(0),
+      Expr::List(list.into()),
+      Expr::Integer(nmin),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ],
+  ))
 }

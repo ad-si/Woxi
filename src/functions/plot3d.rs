@@ -5608,7 +5608,7 @@ fn collect_3d_primitives(
           }
         }
         "Raster3D" if !args.is_empty() => {
-          collect_raster3d(&args[0], style, prims);
+          collect_raster3d(args, style, prims);
         }
         // GraphicsComplex[points, prims]: primitives reference the shared
         // coordinate list by 1-based index.
@@ -5993,67 +5993,196 @@ fn tessellate_bspline_surface(
 /// cells (x); each cell is a grayscale value in [0, 1] or an {r, g, b} /
 /// {r, g, b, a} list. Every cell becomes a unit voxel cuboid.
 fn collect_raster3d(
-  data: &Expr,
+  args: &[Expr],
   style: &StyleState3D,
   prims: &mut Vec<Primitive3D>,
 ) {
   let num =
     |e: &Expr| try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()));
-  let Expr::List(layers) = data else {
+  // A voxel: one value, or its colour channels.
+  enum Cell {
+    Value(f64),
+    Channels(Vec<f64>),
+  }
+  let Expr::List(layers) = &args[0] else {
     return;
   };
-  for (k, layer) in layers.iter().enumerate() {
+  let mut cells: Vec<Vec<Vec<Cell>>> = Vec::with_capacity(layers.len());
+  for layer in layers {
     let Expr::List(rows) = layer else {
       return;
     };
-    for (j, row) in rows.iter().enumerate() {
-      let Expr::List(cells) = row else {
+    let mut layer_cells = Vec::with_capacity(rows.len());
+    for row in rows {
+      let Expr::List(items) = row else {
         return;
       };
-      for (i, cell) in cells.iter().enumerate() {
-        let (r, g, b, a) = match cell {
+      let mut row_cells = Vec::with_capacity(items.len());
+      for cell in items {
+        row_cells.push(match cell {
           Expr::List(channels) => {
-            let vals: Vec<f64> =
-              match channels.iter().map(num).collect::<Option<Vec<_>>>() {
-                Some(v) => v,
-                None => return,
-              };
-            match vals.len() {
-              3 => (vals[0], vals[1], vals[2], 1.0),
-              4 => (vals[0], vals[1], vals[2], vals[3]),
+            match channels.iter().map(num).collect::<Option<Vec<_>>>() {
+              Some(v) if v.len() == 3 || v.len() == 4 => Cell::Channels(v),
               _ => return,
             }
           }
           other => match num(other) {
-            Some(v) => (v, v, v, 1.0),
+            Some(v) => Cell::Value(v),
             None => return,
           },
-        };
+        });
+      }
+      layer_cells.push(row_cells);
+    }
+    cells.push(layer_cells);
+  }
+  let nz = cells.len();
+  let ny = cells.first().map_or(0, Vec::len);
+  let nx = cells.first().and_then(|l| l.first()).map_or(0, Vec::len);
+  if nx == 0 || ny == 0 || nz == 0 {
+    return;
+  }
+  // `Raster3D[data, {{x0, y0, z0}, {x1, y1, z1}}]` spans that box; without
+  // one, each voxel is a unit cube from the origin.
+  let corner = |e: Option<&Expr>| match e {
+    Some(Expr::List(c)) if c.len() == 3 => {
+      let v: Option<Vec<f64>> = c.iter().map(num).collect();
+      v.map(|v| [v[0], v[1], v[2]])
+    }
+    _ => None,
+  };
+  let (lo, hi) = match args.get(1) {
+    Some(Expr::List(box_)) if box_.len() == 2 => {
+      match (corner(box_.first()), corner(box_.get(1))) {
+        (Some(lo), Some(hi)) => (lo, hi),
+        _ => ([0.0; 3], [nx as f64, ny as f64, nz as f64]),
+      }
+    }
+    _ => ([0.0; 3], [nx as f64, ny as f64, nz as f64]),
+  };
+  let color_function = args[1..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ColorFunction") => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  });
+  // A dense volume (a `DensityPlot3D` samples 51³ points) is drawn from
+  // block averages, so the scene stays a few thousand cubes.
+  const MAX_VOXELS: usize = 2000;
+  let mut stride = 1;
+  while nx.div_ceil(stride) * ny.div_ceil(stride) * nz.div_ceil(stride)
+    > MAX_VOXELS
+  {
+    stride += 1;
+  }
+  let size = [
+    (hi[0] - lo[0]) / nx as f64,
+    (hi[1] - lo[1]) / ny as f64,
+    (hi[2] - lo[2]) / nz as f64,
+  ];
+  for k0 in (0..nz).step_by(stride) {
+    for j0 in (0..ny).step_by(stride) {
+      for i0 in (0..nx).step_by(stride) {
+        let (k1, j1, i1) = (
+          (k0 + stride).min(nz),
+          (j0 + stride).min(ny),
+          (i0 + stride).min(nx),
+        );
+        // The block's mean value or mean channels.
+        let mut sum = [0.0; 4];
+        let mut count = 0.0;
+        let mut channels = 0;
+        for layer in &cells[k0..k1] {
+          for row in &layer[j0..j1] {
+            for cell in &row[i0..i1] {
+              match cell {
+                Cell::Value(v) => sum[0] += v,
+                Cell::Channels(c) => {
+                  channels = channels.max(c.len());
+                  for (s, v) in sum.iter_mut().zip(c) {
+                    *s += v;
+                  }
+                  if c.len() == 3 {
+                    sum[3] += 1.0;
+                  }
+                }
+              }
+              count += 1.0;
+            }
+          }
+        }
+        let mean = sum.map(|s| s / count);
         let mut voxel_style = style.clone();
-        voxel_style.color = Some((
-          (r.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (g.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        ));
-        voxel_style.opacity = a.clamp(0.0, 1.0) * style.opacity;
-        let p_min = Point3D {
-          x: i as f64,
-          y: j as f64,
-          z: k as f64,
-        };
-        let p_max = Point3D {
-          x: i as f64 + 1.0,
-          y: j as f64 + 1.0,
-          z: k as f64 + 1.0,
+        // Voxels are cells of one volume, not outlined boxes.
+        voxel_style.edges = false;
+        if channels > 0 {
+          voxel_style.color = Some((
+            (mean[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (mean[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (mean[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+          ));
+          voxel_style.opacity = mean[3].clamp(0.0, 1.0) * style.opacity;
+        } else if let Some(cf) = &color_function {
+          let applied = Expr::CurriedCall {
+            func: Box::new(cf.clone()),
+            args: vec![Expr::Real(mean[0])],
+          };
+          let Ok(directive) = evaluate_expr_to_expr(&applied) else {
+            continue;
+          };
+          voxel_style.opacity = style.opacity;
+          apply_3d_directive(
+            &resolve_named_gradients(&directive),
+            &mut voxel_style,
+          );
+        } else {
+          let g = (mean[0].clamp(0.0, 1.0) * 255.0).round() as u8;
+          voxel_style.color = Some((g, g, g));
+        }
+        if voxel_style.opacity <= 1e-3 {
+          continue;
+        }
+        let at = |i: usize, j: usize, k: usize| Point3D {
+          x: lo[0] + i as f64 * size[0],
+          y: lo[1] + j as f64 * size[1],
+          z: lo[2] + k as f64 * size[2],
         };
         prims.push(Primitive3D::Surface3D {
-          tris: tessellate_cuboid(&p_min, &p_max),
+          tris: tessellate_cuboid(&at(i0, j0, k0), &at(i1, j1, k1)),
           style: voxel_style,
           smooth: false,
         });
       }
     }
   }
+}
+
+/// Replace the `ColorData["name"][t]` calls Woxi's `ColorData` leaves
+/// unevaluated (the default density gradient) by the gradient's colour.
+fn resolve_named_gradients(expr: &Expr) -> Expr {
+  if let Expr::CurriedCall { func, args } = expr
+    && let Expr::FunctionCall { name, args: cd } = func.as_ref()
+    && name == "ColorData"
+    && let [Expr::String(scheme)] = cd.as_slice()
+    && let [t] = args.as_slice()
+    && let Some(t) = try_eval_to_f64(t)
+  {
+    let (r, g, b) =
+      crate::functions::field_plot::apply_named_color_function(scheme, t);
+    return Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![
+        Expr::Real(r as f64 / 255.0),
+        Expr::Real(g as f64 / 255.0),
+        Expr::Real(b as f64 / 255.0),
+      ]
+      .into(),
+    };
+  }
+  crate::syntax::map_children(expr, &resolve_named_gradients)
 }
 
 /// Split a polygon whose point list revisits a vertex into its closed
@@ -10594,7 +10723,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
-fn parse_iterator_generic(
+pub(crate) fn parse_iterator_generic(
   spec: &Expr,
   func_name: &str,
   label: &str,
@@ -11195,7 +11324,13 @@ thread_local! {
   > = const { std::cell::RefCell::new(None) };
 }
 
-fn evaluate_scalar_3d(
+/// Forget [`evaluate_scalar_3d`]'s compiled body, as each plot must before
+/// it starts sampling (a new body may reuse a freed one's address).
+pub(crate) fn reset_scalar_3d_cache() {
+  CONTOUR3D_COMPILED.with(|c| *c.borrow_mut() = None);
+}
+
+pub(crate) fn evaluate_scalar_3d(
   body: &Expr,
   xvar: &str,
   yvar: &str,
@@ -11326,7 +11461,7 @@ fn march_tetra(
 /// cube, via its 6-tetrahedra decomposition. `corners` and `vals` follow
 /// the standard cube corner order: `{x,y,z}` in `{0,1}` with `x` varying
 /// fastest, i.e. corner `i` has bit 0 = x, bit 1 = y, bit 2 = z.
-fn march_cube(
+pub(crate) fn march_cube(
   corners: &[Point3D; 8],
   vals: &[f64; 8],
   level: f64,

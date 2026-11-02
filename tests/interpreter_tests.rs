@@ -6896,11 +6896,16 @@ mod interpreter_tests {
   mod case_helpers;
 
   mod audio;
+  mod bullet_gauge;
   mod cellular_automaton;
   mod column;
+  mod distribution_chart;
   mod graphics;
   mod image;
+  mod julia_set_plot;
+  mod lic_plot;
   mod music;
   mod row;
   mod styling;
+  mod volume_plots;
 }

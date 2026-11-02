@@ -34,6 +34,7 @@ mod interpreter_tests {
   mod function_definitions;
   mod interpret_to_expr_api;
   mod machine_specific;
+  mod notebook_sweep_misc;
   mod option_sweep0;
   mod option_sweep1;
   mod option_sweep2;

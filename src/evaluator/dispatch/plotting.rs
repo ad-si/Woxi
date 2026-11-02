@@ -853,6 +853,19 @@ pub fn dispatch_plotting(
         crate::functions::plot3d::contour_plot3d_ast(args)
       }))
     }
+    "DensityPlot3D" | "SliceDensityPlot3D" | "SliceContourPlot3D"
+      if args.len() >= 4 =>
+    {
+      use crate::functions::volume_plots as vp;
+      Some(quiet_plot(|| {
+        let plotted = match name {
+          "DensityPlot3D" => vp::density_plot3d_ast(args)?,
+          "SliceDensityPlot3D" => vp::slice_density_plot3d_ast(args)?,
+          _ => vp::slice_contour_plot3d_ast(args)?,
+        };
+        Ok(plotted.unwrap_or_else(|| unevaluated(name, args)))
+      }))
+    }
     "RegionPlot" if args.len() >= 3 => Some(quiet_plot(|| {
       crate::functions::field_plot::region_plot_ast(
         &crate::functions::field_plot::with_evaluated_options(args, 3)?,
@@ -992,6 +1005,33 @@ pub fn dispatch_plotting(
       }
       Some(crate::functions::chart::histogram_ast(&new_args))
     }
+    // Data that is no list reports `::ldata` (outside the plot's `Quiet`).
+    "LineIntegralConvolutionPlot" if args.len() >= 3 => {
+      Some(quiet_plot(|| {
+        Ok(
+          crate::functions::lic_plot::line_integral_convolution_plot_ast(args)?
+            .unwrap_or_else(|| unevaluated(name, args)),
+        )
+      }))
+    }
+    "BulletGauge" if args.len() >= 3 => Some(
+      crate::functions::bullet_gauge::bullet_gauge_ast(args)
+        .map(|g| g.unwrap_or_else(|| unevaluated(name, args))),
+    ),
+    "JuliaSetPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      Ok(
+        crate::functions::julia_set::julia_set_plot_ast(args)?
+          .unwrap_or_else(|| unevaluated(name, args)),
+      )
+    })),
+    "DistributionChart"
+      if !args.is_empty() && !matches!(&args[0], Expr::List(_)) =>
+    {
+      Some(Ok(crate::functions::chart::invalid_dataset(name, args)))
+    }
+    "DistributionChart" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::distribution_chart::distribution_chart_ast(args)
+    })),
     "BoxWhiskerChart" if !args.is_empty() => {
       Some(crate::functions::chart::box_whisker_chart_ast(args))
     }

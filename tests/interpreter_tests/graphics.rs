@@ -17233,6 +17233,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A nested function list counts as its flattened functions, and a
+    /// function list without explicit `Contours` gets automatic levels for
+    /// each function; both used to yield an opaque, primitive-less plot.
+    #[test]
+    fn contour_plot_nested_function_list_and_automatic_levels() {
+      assert_eq!(
+        interpret(
+          "Head[First[ContourPlot[{{x^2 - y^2, 2 x y}, {x, y}}, {x, -4, 4}, \
+           {y, -4, 4}, Contours -> {0}, ContourShading -> None]]]"
+        )
+        .unwrap(),
+        "List"
+      );
+      let lines = interpret(
+        "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}], _Line, \
+         Infinity]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      assert!(
+        lines >= 10,
+        "expected level lines of both functions: {lines}"
+      );
+    }
+
     /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows
     /// up at the origin) used to dominate the raw min/max of the grid
     /// samples, which fed both the color scale and the automatic contour
@@ -35846,6 +35872,21 @@ mod cases {
     assert_case(
       r#"ColorData[]; ColorData["Gradients"]"#,
       r#"{"AlpineColors", "Aquamarine", "ArmyColors", "AtlanticColors", "AuroraColors", "AvocadoColors", "BeachColors", "BlueGreenYellow", "BrassTones", "BrightBands", "BrownCyanTones", "CandyColors", "CherryTones", "CMYKColors", "CoffeeTones", "DarkBands", "DarkRainbow", "DarkTerrain", "DeepSeaColors", "FallColors", "FruitPunchColors", "FuchsiaTones", "GrayTones", "GrayYellowTones", "GreenBrownTerrain", "GreenPinkTones", "IslandColors", "LakeColors", "LightTemperatureMap", "LightTerrain", "MintColors", "NeonColors", "Pastel", "PearlColors", "PigeonTones", "PlumColors", "Rainbow", "RedBlueTones", "RedGreenSplit", "RoseColors", "RustTones", "SandyTerrain", "SiennaTones", "SolarColors", "SouthwestColors", "StarryNightColors", "SunsetColors", "TemperatureMap", "ThermometerColors", "ValentineTones", "WatermelonColors"}"#,
+    );
+  }
+  // Gradient control points are Mathematica's: uniform knots, except the
+  // band schemes whose knots sit at multiples of 1/255.
+  #[test]
+  fn color_data_gradient_values() {
+    assert_case(
+      r#"Round[List @@ ColorData[#][0.37], 0.001] & /@ {"DarkTerrain", "AlpineColors", "DarkBands", "RustTones", "LightTerrain"}"#,
+      "{{0.442, 0.486, 0.41400000000000003}, {0.395, 0.51, 0.353}, \
+       {0.78, 0.491, 0.601}, {0.5760000000000001, 0.274, 0.10200000000000001}, \
+       {0.638, 0.656, 0.507}}",
+    );
+    assert_case(
+      r#"List @@ ColorData["DarkTerrain"][0]"#,
+      "{0., 0.0675975, 0.467384}",
     );
   }
   #[test]

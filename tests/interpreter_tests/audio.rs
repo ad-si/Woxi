@@ -531,6 +531,44 @@ fn total_variation_filter_on_audio_returns_audio() {
   );
 }
 
+#[test]
+fn total_variation_filter_scales_with_the_data() {
+  assert_eq!(
+    interpret(
+      "d = {0., 0., 1., 0., 0., 1., 1., 1., 0.5, 0.}; \
+       Max[Abs[TotalVariationFilter[100 d]/100 - TotalVariationFilter[d]]] < 10^-12"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+// A zero parameter (with options) leaves an image as it is, keeping its type.
+#[test]
+fn total_variation_filter_image_zero_parameter() {
+  assert_eq!(
+    interpret(
+      "r = TotalVariationFilter[Image[{{10, 200, 30}, {40, 50, 60}}, \"Byte\"], \
+       0., Method -> \"Gaussian\", MaxIterations -> 10]; \
+       {ImageType[r], ImageData[r, \"Byte\"]}"
+    )
+    .unwrap(),
+    "{Byte, {{10, 200, 30}, {40, 50, 60}}}"
+  );
+}
+
+#[test]
+fn total_variation_filter_image_smooths() {
+  assert_eq!(
+    interpret(
+      "r = TotalVariationFilter[Image[{{0., 1., 0.}, {1., 0.5, 0.2}}], 0.2]; \
+       {Head[r], ImageType[r], ImageData[r][[1, 2]] < 1.}"
+    )
+    .unwrap(),
+    "{Image, Real32, True}"
+  );
+}
+
 // ─── Shared filters on Audio ─────────────────────────────────────────────────
 
 #[test]

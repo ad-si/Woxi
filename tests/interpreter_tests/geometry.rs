@@ -9489,6 +9489,34 @@ mod triangulate_mesh {
       "True"
     );
   }
+
+  // Highlighting options (and a cell spec naming no cell) still give the
+  // mesh.
+  #[test]
+  fn highlight_mesh_with_options() {
+    assert_eq!(
+      interpret(
+        "Head[HighlightMesh[MeshRegion[{{0,0},{1,0},{0,1}}, Triangle[{{1,2,3}}]], \
+         {2, \"NotFound\"}, MeshCellHighlight -> {{2, All} -> Blue}, \
+         MeshCellLabel -> {{2, All} -> None}]]"
+      )
+      .unwrap(),
+      "MeshRegion"
+    );
+  }
+
+  // The polygons of a graphic as one MeshRegion, shared corners merged.
+  #[test]
+  fn discretize_graphics_polygons() {
+    assert_eq!(
+      interpret(
+        "m = DiscretizeGraphics[Graphics[{Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], \
+         Polygon[{{1, 0}, {2, 0}, {2, 1}, {1, 1}}]}]]; {ToString[m, InputForm], MeshCellCount[m]}"
+      )
+      .unwrap(),
+      "{MeshRegion[{{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}, {2., 0.}, {2., 1.}}, {Polygon[{{1, 2, 3, 4}, {2, 5, 6, 3}}]}], {6, 7, 2}}"
+    );
+  }
 }
 
 mod transformation_function_normalization {

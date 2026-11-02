@@ -1175,7 +1175,7 @@ Refresh,"Returns its first argument evaluated; the update-interval options only 
 KelvinBer,"Kelvin ber function (real part of BesselJ on a rotated argument)",✅,pure,6.0,1146
 NetTrain,"",🚫,,11.0,1147
 SinIntegral,"Sine integral Si(z)",✅,pure,2.0,1148
-DiscretizeGraphics,"",🚫,,10.0,1149
+DiscretizeGraphics,"MeshRegion of the points lines and polygons of a graphic",✅,pure,10.0,1149
 GroebnerBasis,"Reduced lexicographic Groebner basis over the rationals",✅,pure,2.0,1150
 LegendMarkerSize,"",🚫,,9.0,1151
 Subsuperscript,"Subsuperscript notation wrapper (stays symbolic)",✅,unevaluated,3.0,1152
@@ -1350,7 +1350,7 @@ WeibullDistribution,"Weibull probability distribution",✅,pure,6.0,1322
 Front,"",🚫,,6.0,1324
 GeoDisk,"Filled geodesic disk primitive for GeoGraphics",✅,pure,10.0,1324
 Orderless,"Attribute for commutative functions",✅,pure,1.0,1325
-JuliaSetPlot,"",🚫,,10.0,1326
+JuliaSetPlot,"Filled Julia set of a quadratic or polynomial map by escape time",✅,pure,10.0,1326
 ListStepPlot,"Plots data as a step function",✅,pure,10.2,1327
 Larger,"Font size directive for making text larger",✅,none,6.0,1328
 AngleBracket,"Symbolic representation of angle brackets",✅,,3.0,1329
@@ -1793,7 +1793,7 @@ LeviCivitaTensor,"Levi-Civita totally antisymmetric tensor",✅,pure,7.0,1781
 WeierstrassZeta,"Weierstrass zeta function (numeric for machine arguments incl. complex)",✅,pure,3.0,1781
 CatalanNumber,"Returns the nth Catalan number",✅,pure,6.0,1788
 DateValue,"Extracts a named component or property of a date such as its week quarter name or name initials",✅,pure,10.0,1788
-DensityPlot3D,"3D density plot",,unevaluated,10.2,1788
+DensityPlot3D,"Volumetric density plot of a function of three variables as a Raster3D",✅,pure,10.2,1788
 DynamicModuleValues,"",🚫,,6.0,1788
 FRatioDistribution,"F-ratio (Fisher-Snedecor) distribution; supports PDF CDF Quantile Mean and Variance",✅,pure,6.0,1788
 LaplaceDistribution,"Laplace distribution",✅,pure,6.0,1788
@@ -1896,7 +1896,7 @@ MatrixLog,"Computes the matrix logarithm (inverse of MatrixExp)",✅,pure,9.0,18
 PlotRegion,"Plot region option",,unevaluated,2.0,1875
 DensityHistogram,"Density histogram",,unevaluated,8.0,1877
 DigitCount,"Counts occurrences of each digit in a number (Listable)",✅,pure,4.0,1877
-DistributionChart,"Distribution chart",,unevaluated,8.0,1880
+DistributionChart,"Violin chart of the kernel density estimate of each dataset",✅,pure,8.0,1880
 IncidenceMatrix,"Builds the vertex-by-edge incidence matrix of a graph",✅,none,8.0,1880
 InverseZTransform,"Computes the inverse Z transform of rational and exponential forms",✅,pure,4.0,1880
 Notebooks,"List open notebooks",,unevaluated,3.0,1883
@@ -2023,7 +2023,7 @@ Shallow,"Control output depth display (notebook display)",🚫,,2.0,2008
 BooleanCountingFunction,"Boolean function from a count specification (k; {k}; {kmin; kmax} or {{k1; k2; ...}}); applied to boolean arguments it counts their Trues and with a variable list it writes out the expression in an optional form",✅,pure,7.0,2012
 DeleteStopwords,"Removes common stopwords (articles; prepositions; pronouns; etc.) from a string; a list of words; or the keys of an association",✅,pure,10.1,2012
 Downsample,"Take every n-th element from a list",✅,none,9.0,2012
-SliceContourPlot3D,"3D contour slice plot (plotting)",🚫,,10.2,2012
+SliceContourPlot3D,"Contour bands of a function of three variables on slice surfaces through a box",✅,pure,10.2,2012
 FieldHint,"Input field hint text option (GUI)",🚫,,8.0,2015
 Molecule,"Chemical molecule representation (chemistry)",✅,pure,12.0,2015
 ShowCellBracket,"Notebook cell bracket display option (GUI)",🚫,,3.0,2015
@@ -2046,7 +2046,7 @@ BernsteinBasis,"Bernstein basis polynomial",✅,pure,7.0,2034
 LegendMargins,"Margins around plot legends",🚫,,9.0,2034
 Spectrogram,"Plot the magnitude of the short-time Fourier transform (time vs frequency)",✅,pure,9.0,2034
 DateTicksFormat,"Date format for plot tick labels",🚫,,6.0,2036
-RootLocusPlot,"Root locus plot for control systems",🚫,,8.0,2036
+RootLocusPlot,"Root locus of the closed-loop characteristic equation as a gain varies",✅,pure,8.0,2036
 UndirectedGraph,"Gives the graph with every edge undirected and duplicates dropped",✅,pure,8.0,2038
 DegreeGraphDistribution,"Random simple graphs with a given degree sequence (recognised by RandomGraph)",✅,pure,8.0,2039
 NyquistPlot,"Nyquist stability plot",✅,pure,8.0,2040
@@ -2070,7 +2070,7 @@ Quartics,"Option for Solve controlling whether quartic formulas are used",✅,pu
 MachineNumberQ,"Test whether an expression is a machine-precision real number",✅,1,2.0,2059
 TextString,"Convert an expression to a human-readable string; reals print in full decimal (a fractional digit is kept below six integer digits) and exact non-symbol numbers are numericized to six significant digits",✅,pure,10.0,2059
 ContainsAny,"Test if any elements of the second list appear in the first",✅,pure,10.2,2061
-ImagePerspectiveTransformation,"Perspective transform on image",🚫,,8.0,2061
+ImagePerspectiveTransformation,"Moves image content by a projective transformation sampling at its inverse",✅,pure,8.0,2061
 Atom,"Represents an atom in a molecule (chemistry)",✅,pure,12.0,2065
 InverseSeries,"Computes the reversion (inverse) of a power series",✅,pure,1.0,2065
 RootMeanSquare,"Returns the root mean square of a list or the column-wise root mean square of a matrix — exact for exact values symbols included",✅,pure,6.0,2065
@@ -2398,7 +2398,7 @@ Cyclotomic,"n-th cyclotomic polynomial",✅,pure,1.0,2399
 ReshapeLayer,"neural network",🚫,None,11.0,2399
 Stack,"Return the current evaluation call stack as a list of function names",✅,pure,2.0,2399
 HaarWavelet,"Haar wavelet family",✅,pure,8.0,2404
-LineIntegralConvolutionPlot,"visualization",🚫,None,7.0,2404
+LineIntegralConvolutionPlot,"Noise texture smeared along the streamlines of a 2D vector field",✅,pure,7.0,2404
 PolynomialExtendedGCD,"Extended GCD of two polynomials returning the monic GCD and Bezout cofactors",✅,pure,6.0,2404
 VertexReplace,"Renames the vertices of a graph in its vertex list and its edges",✅,pure,8.0,2404
 Cashflow,"Financial cashflow stream (passthrough used by TimeValue)",✅,pure,8.0,2408
@@ -2478,7 +2478,7 @@ CoordinateBounds,"Coordinate bounds of a list of points with optional padding",�
 ImageRecolor,"",🚫,,12.0,2483
 MatrixPropertyDistribution,"represents the distribution of a matrix property for a matrix distribution",✅,none,10.3,2483
 Regularization,"",🚫,,7.0,2483
-ColorProfileData,"",🚫,,9.0,2487
+ColorProfileData,"Inert ICC color profile used as an image ColorSpace value",✅,pure,9.0,2487
 DegreeCentrality,"Degree centrality of graph vertices",✅,1,8.0,2487
 TransferFunctionPoles,"Poles of each element of a transfer-function model",✅,pure,8.0,2487
 WhiteNoiseProcess,"White noise process sliced as its underlying distribution",✅,unevaluated,10.0,2487
@@ -2503,7 +2503,7 @@ CloudPublish,"",🚫,,10.2,2509
 Glaisher,"Glaisher-Kinkelin constant",✅,none,4.0,2509
 ListCurvePathPlot,"",🚫,,7.0,2509
 Bookmarks,"Option for bookmarked settings in Manipulate",✅,pure,7.0,2512
-SliceDensityPlot3D,"",🚫,,10.2,2512
+SliceDensityPlot3D,"Density of a function of three variables on slice surfaces through a box",✅,pure,10.2,2512
 StringRepeat,"Repeats a string a number of times optionally truncated to a given length",✅,pure,10.1,2512
 BracketingBar,"Inert typeset form of absolute-value bars around its content",✅,pure,3.0,2514
 StartProcess,"",🚫,,10.0,2514
@@ -2746,7 +2746,7 @@ SierpinskiMesh,"",🚫,,11.1,2755
 SubsetMap,"Map a function over a subset of a list at flat/deep/span/Part-style positions and recombine",✅,pure,12.0,2755
 XMLObject,"represents an XML object",✅,Symbolic,4.2,2755
 AbsArgPlot,"",🚫,,12.0,2762
-BulletGauge,"",🚫,,9.0,2762
+BulletGauge,"Horizontal bullet graph of values against references and qualitative ranges",✅,pure,9.0,2762
 LeftArrow,"left arrow symbol",✅,Symbolic,3.0,2762
 ReplicateLayer,"",🚫,,11.1,2762
 SARIMAProcess,"Seasonal autoregressive integrated moving-average process",✅,unevaluated,9.0,2762
@@ -3596,7 +3596,7 @@ LocationEquivalenceTest,"",,,8.0,3656
 NearestFunction,"Nearest-element function object (applying it runs the Nearest it records)",✅,pure,6.0,3656
 PairedZTest,"",,,8.0,3656
 PolygonalNumber,"Gives the nth r-gonal polygonal number",✅,pure,10.4,3656
-ReliefImage,"",🚫,,8.0,3656
+ReliefImage,"Shaded-relief image of a height array or image colored by height and lit by LightingAngle",✅,pure,8.0,3656
 SampleDepth,"",,,2.0,3656
 SequenceSplit,"Splits a list into segments separated by matching subsequences; rules keep a replacement at each separator and a third argument caps the number of segments",✅,pure,11.3,3656
 Snippet,"Opening lines of a text each cut to 80 characters; the spec selects lines the way Take selects elements",✅,pure,10.2,3656
@@ -3655,7 +3655,7 @@ KuiperTest,"Kuiper goodness-of-fit test",✅,pure,8.0,3717
 LUVColor,"",,,10.0,3717
 LeastSquaresFilterKernel,"",,,9.0,3717
 LessFullEqual,"Operator without built-in meaning displayed infix",✅,pure,3.0,3717
-MorphologicalEulerNumber,"",🚫,,7.0,3717
+MorphologicalEulerNumber,"Number of foreground components minus holes of a thresholded image",✅,pure,7.0,3717
 NoncentralBetaDistribution,"",,,8.0,3717
 PageBreakWithin,"",🚫,,3.0,3717
 PersistentObjects,"",🚫,,11.1,3717
@@ -3968,7 +3968,7 @@ CanonicalWarpingDistance,"",,,11.0,4052
 ClassPriors,"",🚫,,10.0,4052
 DiscreteChirpZTransform,"",,,9.0,4052
 GoodmanKruskalGamma,"Goodman-Kruskal gamma rank-correlation coefficient (concordant minus discordant over untied pairs)",✅,pure,9.0,4052
-ImagePeriodogram,"",🚫,,9.0,4052
+ImagePeriodogram,"Log-scaled centered power spectrum of an image as a byte image",✅,pure,9.0,4052
 ImportByteArray,"",,,11.2,4052
 InverseDistanceTransform,"",,,8.0,4052
 LinkActivate,"",🚫,,3.0,4052
@@ -6384,6 +6384,8 @@ Combinatorica`SetGraphOptions,"Sets options on vertices or edges or the whole of
 Combinatorica`StableMarriage,"Man-optimal stable matching from men's and women's preference lists (Gale-Shapley)",✅,pure,6.0,
 Combinatorica`NextPermutation,"The permutation following a list in lexicographic order (the last wraps to the sorted list)",✅,pure,6.0,
 Combinatorica`Josephus,"Round in which each of n people in a circle is eliminated when every m-th one goes",✅,pure,6.0,
+Combinatorica`Tableaux,"Every standard Young tableau of a shape (or of every partition of n) in the package order",✅,pure,6.0,
+Combinatorica`NumberOfTableaux,"Number of standard Young tableaux of a shape by the hook length formula (or summed over the partitions of n)",✅,pure,6.0,
 Combinatorica`SymmetricGroup,"All permutations of Range[n] as the elements of the symmetric group",✅,pure,6.0,
 Combinatorica`AlternatingGroup,"The even permutations of Range[n] as the elements of the alternating group",✅,pure,6.0,
 Combinatorica`CyclicGroup,"The n rotations of Range[n] as the elements of the cyclic group",✅,pure,6.0,

@@ -482,7 +482,47 @@ fn complex_root_modulus(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// The machine value of a numeric expression, or None.
+///
+/// Exact numbers beyond the machine range (the radicals of huge integers a
+/// rationalized system's exact solution is made of) overflow or underflow
+/// in machine arithmetic even when their value is moderate; such an
+/// expression is evaluated at higher precision instead.
 pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
+  let machine = try_eval_to_f64_machine(expr);
+  if machine.is_some_and(|v| v.is_finite() && v != 0.0)
+    || !contains_huge_integer(expr)
+  {
+    return machine;
+  }
+  let precise = crate::evaluator::evaluate_function_call_ast(
+    "N",
+    &[expr.clone(), Expr::Integer(30)],
+  )
+  .ok()?;
+  match &precise {
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
+    Expr::Real(v) => Some(*v),
+    Expr::Integer(n) => Some(*n as f64),
+    _ => machine,
+  }
+}
+
+/// Whether `expr` holds an integer too large for machine arithmetic.
+fn contains_huge_integer(expr: &Expr) -> bool {
+  match expr {
+    Expr::BigInteger(n) => n.bits() > 500,
+    Expr::List(items) => items.iter().any(contains_huge_integer),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_huge_integer),
+    Expr::BinaryOp { left, right, .. } => {
+      contains_huge_integer(left) || contains_huge_integer(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_huge_integer(operand),
+    _ => false,
+  }
+}
+
+fn try_eval_to_f64_machine(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::BigInteger(n) => {
@@ -515,10 +555,10 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
-    } => try_eval_to_f64(operand).map(|v| -v),
+    } => try_eval_to_f64_machine(operand).map(|v| -v),
     Expr::BinaryOp { op, left, right } => {
-      let l = try_eval_to_f64(left)?;
-      let r = try_eval_to_f64(right)?;
+      let l = try_eval_to_f64_machine(left)?;
+      let r = try_eval_to_f64_machine(right)?;
       match op {
         BinaryOperator::Plus => Some(l + r),
         BinaryOperator::Minus => Some(l - r),
@@ -553,8 +593,8 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         {
           return big_rational_to_f64(&num, &den);
         }
-        let n = try_eval_to_f64(&args[0])?;
-        let d = try_eval_to_f64(&args[1])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
+        let d = try_eval_to_f64_machine(&args[1])?;
         if d == 0.0 { None } else { Some(n / d) }
       }
       // `Root[poly &, k]` is an exact algebraic number: it keeps its exact
@@ -581,7 +621,8 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         match &args[0] {
           Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
             let k = expr_to_i128(&fa[0])?;
-            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?).map(|_| 0.5)
+            super::zeta_zero_t_after(k, try_eval_to_f64_machine(&fa[1])?)
+              .map(|_| 0.5)
           }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).filter(|k| *k != 0).map(|_| 0.5)
@@ -597,7 +638,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         match &args[0] {
           Expr::FunctionCall { args: fa, .. } if fa.len() == 2 => {
             let k = expr_to_i128(&fa[0])?;
-            super::zeta_zero_t_after(k, try_eval_to_f64(&fa[1])?)
+            super::zeta_zero_t_after(k, try_eval_to_f64_machine(&fa[1])?)
           }
           Expr::FunctionCall { args: fa, .. } => {
             expr_to_i128(&fa[0]).and_then(super::zeta_zero_t_for_k)
@@ -608,7 +649,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       // Auxiliary Fresnel moduli: symbolic for exact arguments but
       // numericizable (so N[FresnelF[1]] works).
       "FresnelF" | "FresnelG" if args.len() == 1 => {
-        let x = try_eval_to_f64(&args[0])?;
+        let x = try_eval_to_f64_machine(&args[0])?;
         Some(fresnel_fg_numeric(name == "FresnelF", x))
       }
       // Champernowne constants: numeric (NumericQ True) but symbolic until
@@ -633,60 +674,86 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         Expr::Integer(10) => Some(0.0002053328149090648),
         _ => None,
       },
-      "Sin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sin),
-      "Cos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::cos),
-      "Tan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::tan),
-      "Sec" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
-        let c = v.cos();
-        if c == 0.0 { None } else { Some(1.0 / c) }
-      }),
-      "Csc" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
-        let s = v.sin();
-        if s == 0.0 { None } else { Some(1.0 / s) }
-      }),
-      "Cot" if args.len() == 1 => try_eval_to_f64(&args[0]).and_then(|v| {
-        let s = v.sin();
-        if s == 0.0 { None } else { Some(v.cos() / s) }
-      }),
-      "ArcSin" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::asin),
-      "ArcCos" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::acos),
-      "ArcTan" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::atan),
-      "Sinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sinh),
-      "Cosh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::cosh),
-      "Tanh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::tanh),
+      "Sin" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::sin)
+      }
+      "Cos" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::cos)
+      }
+      "Tan" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::tan)
+      }
+      "Sec" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).and_then(|v| {
+          let c = v.cos();
+          if c == 0.0 { None } else { Some(1.0 / c) }
+        })
+      }
+      "Csc" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).and_then(|v| {
+          let s = v.sin();
+          if s == 0.0 { None } else { Some(1.0 / s) }
+        })
+      }
+      "Cot" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).and_then(|v| {
+          let s = v.sin();
+          if s == 0.0 { None } else { Some(v.cos() / s) }
+        })
+      }
+      "ArcSin" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::asin)
+      }
+      "ArcCos" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::acos)
+      }
+      "ArcTan" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::atan)
+      }
+      "Sinh" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::sinh)
+      }
+      "Cosh" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::cosh)
+      }
+      "Tanh" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::tanh)
+      }
       "Coth" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.tanh())
+        try_eval_to_f64_machine(&args[0]).map(|v| 1.0 / v.tanh())
       }
       "Sech" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.cosh())
+        try_eval_to_f64_machine(&args[0]).map(|v| 1.0 / v.cosh())
       }
       "Csch" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| 1.0 / v.sinh())
+        try_eval_to_f64_machine(&args[0]).map(|v| 1.0 / v.sinh())
       }
-      "ArcSinh" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::asinh),
-      "ArcCosh" if args.len() == 1 => try_eval_to_f64(&args[0])
+      "ArcSinh" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::asinh)
+      }
+      "ArcCosh" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .and_then(|v| if v >= 1.0 { Some(v.acosh()) } else { None }),
-      "ArcTanh" if args.len() == 1 => try_eval_to_f64(&args[0])
+      "ArcTanh" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .and_then(|v| if v.abs() < 1.0 { Some(v.atanh()) } else { None }),
       // Bessel functions with exact numeric arguments stay symbolic but
       // must numericize under Real contagion (2.*BesselI[0, 3] is a
       // machine real in wolframscript).
       "BesselI" if args.len() == 2 => {
-        let n = try_eval_to_f64(&args[0])?;
-        let z = try_eval_to_f64(&args[1])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
+        let z = try_eval_to_f64_machine(&args[1])?;
         let v = bessel_i(n, z);
         v.is_finite().then_some(v)
       }
       "BesselJ" if args.len() == 2 => {
-        let n = try_eval_to_f64(&args[0])?;
-        let z = try_eval_to_f64(&args[1])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
+        let z = try_eval_to_f64_machine(&args[1])?;
         let v = bessel_j(n, z);
         v.is_finite().then_some(v)
       }
       // Zeros stay symbolic for exact arguments but numericize under
       // Real contagion (BesselJZero[0, 2]/2. is a machine real).
       "BesselJZero" | "BesselYZero" if args.len() == 2 => {
-        let n = try_eval_to_f64(&args[0])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
         let k = match &args[1] {
           Expr::Integer(k) if *k >= 1 => *k as usize,
           _ => return None,
@@ -699,60 +766,69 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         v.is_finite().then_some(v)
       }
       "BesselK" if args.len() == 2 => {
-        let n = try_eval_to_f64(&args[0])?;
-        let z = try_eval_to_f64(&args[1])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
+        let z = try_eval_to_f64_machine(&args[1])?;
         let v = bessel_k(n, z);
         v.is_finite().then_some(v)
       }
       "BesselY" if args.len() == 2 => {
-        let n = try_eval_to_f64(&args[0])?;
-        let z = try_eval_to_f64(&args[1])?;
+        let n = try_eval_to_f64_machine(&args[0])?;
+        let z = try_eval_to_f64_machine(&args[1])?;
         let v = bessel_y(n, z);
         v.is_finite().then_some(v)
       }
-      "Sqrt" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::sqrt),
-      "Abs" if args.len() == 1 => try_eval_to_f64(&args[0])
+      "Sqrt" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::sqrt)
+      }
+      "Abs" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .map(f64::abs)
         .or_else(|| complex_root_modulus(&args[0])),
-      "Exp" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::exp),
-      "Erf" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erf_f64),
-      "Erfc" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(|v| 1.0 - erf_f64(v))
+      "Exp" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::exp)
       }
-      "Erfi" if args.len() == 1 => try_eval_to_f64(&args[0]).map(erfi_f64),
-      "DawsonF" if args.len() == 1 => try_eval_to_f64(&args[0]).map(dawson_f64),
+      "Erf" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(erf_f64)
+      }
+      "Erfc" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(|v| 1.0 - erf_f64(v))
+      }
+      "Erfi" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(erfi_f64)
+      }
+      "DawsonF" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(dawson_f64)
+      }
       "FresnelS" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(fresnel_s_numeric)
+        try_eval_to_f64_machine(&args[0]).map(fresnel_s_numeric)
       }
       "FresnelC" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).map(fresnel_c_numeric)
+        try_eval_to_f64_machine(&args[0]).map(fresnel_c_numeric)
       }
-      "InverseErf" if args.len() == 1 => {
-        try_eval_to_f64(&args[0]).and_then(|v| {
+      "InverseErf" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
+        .and_then(|v| {
           if v > -1.0 && v < 1.0 {
             Some(inverse_erf_f64(v))
           } else {
             None
           }
-        })
-      }
-      "Log" if args.len() == 1 => try_eval_to_f64(&args[0])
+        }),
+      "Log" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.ln()) } else { None }),
       "Log" if args.len() == 2 => {
-        let base = try_eval_to_f64(&args[0])?;
-        let val = try_eval_to_f64(&args[1])?;
+        let base = try_eval_to_f64_machine(&args[0])?;
+        let val = try_eval_to_f64_machine(&args[1])?;
         if base > 0.0 && base != 1.0 && val > 0.0 {
           Some(val.ln() / base.ln())
         } else {
           None
         }
       }
-      "Log10" if args.len() == 1 => try_eval_to_f64(&args[0])
+      "Log10" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.log10()) } else { None }),
-      "Log2" if args.len() == 1 => try_eval_to_f64(&args[0])
+      "Log2" if args.len() == 1 => try_eval_to_f64_machine(&args[0])
         .and_then(|v| if v > 0.0 { Some(v.log2()) } else { None }),
       "Power" if args.len() == 2 => {
-        let b = try_eval_to_f64(&args[0])?;
+        let b = try_eval_to_f64_machine(&args[0])?;
         if b > 0.0
           && let Expr::FunctionCall { name: r, args: ra } = &args[1]
           && r == "Rational"
@@ -760,42 +836,48 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         {
           return Some(machine_half_power(b, *p));
         }
-        let e = try_eval_to_f64(&args[1])?;
+        let e = try_eval_to_f64_machine(&args[1])?;
         let result = b.powf(e);
         if result.is_nan() { None } else { Some(result) }
       }
-      "Floor" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::floor),
+      "Floor" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::floor)
+      }
       "Floor" if args.len() == 2 => {
-        let x = try_eval_to_f64(&args[0])?;
-        let a = try_eval_to_f64(&args[1])?;
+        let x = try_eval_to_f64_machine(&args[0])?;
+        let a = try_eval_to_f64_machine(&args[1])?;
         if a == 0.0 {
           None
         } else {
           Some((x / a).floor() * a)
         }
       }
-      "Ceiling" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::ceil),
+      "Ceiling" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::ceil)
+      }
       "Ceiling" if args.len() == 2 => {
-        let x = try_eval_to_f64(&args[0])?;
-        let a = try_eval_to_f64(&args[1])?;
+        let x = try_eval_to_f64_machine(&args[0])?;
+        let a = try_eval_to_f64_machine(&args[1])?;
         if a == 0.0 {
           None
         } else {
           Some((x / a).ceil() * a)
         }
       }
-      "Round" if args.len() == 1 => try_eval_to_f64(&args[0]).map(f64::round),
+      "Round" if args.len() == 1 => {
+        try_eval_to_f64_machine(&args[0]).map(f64::round)
+      }
       "Times" => {
         let mut product = 1.0;
         for arg in args {
-          product *= try_eval_to_f64(arg)?;
+          product *= try_eval_to_f64_machine(arg)?;
         }
         Some(product)
       }
       "Plus" => {
         let mut sum = 0.0;
         for arg in args {
-          sum += try_eval_to_f64(arg)?;
+          sum += try_eval_to_f64_machine(arg)?;
         }
         Some(sum)
       }
@@ -836,7 +918,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           real_args.push(if held(i) {
             a.clone()
           } else {
-            Expr::Real(try_eval_to_f64(a)?)
+            Expr::Real(try_eval_to_f64_machine(a)?)
           });
         }
         if real_args.iter().all(|a| !matches!(a, Expr::Real(_))) {

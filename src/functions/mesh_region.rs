@@ -943,3 +943,142 @@ pub fn nintegrate_over_mesh(
   }
   Some(Expr::Real(total))
 }
+
+/// `DiscretizeGraphics[Graphics[prims]]`: the points, lines and polygons
+/// of a graphic as one `MeshRegion` — the coordinates (as machine reals,
+/// shared corners merged) and one cell primitive per kind listing every
+/// cell of that kind. `None` for a graphic with other primitives.
+pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
+  let graphic = match &args[0] {
+    g @ Expr::Graphics { .. } => {
+      crate::evaluator::part_extraction::graphics_symbolic_form(g)?
+    }
+    other => other.clone(),
+  };
+  let Expr::FunctionCall { name, args: gargs } = &graphic else {
+    return None;
+  };
+  if name != "Graphics" || gargs.is_empty() {
+    return None;
+  }
+  let mut coords: Vec<Vec<f64>> = Vec::new();
+  let mut index: std::collections::HashMap<Vec<u64>, usize> =
+    std::collections::HashMap::new();
+  // Cells by kind, in the order of first appearance.
+  let mut cells: Vec<(&'static str, Vec<Expr>)> = Vec::new();
+  fn point(e: &Expr) -> Option<Vec<f64>> {
+    let Expr::List(c) = e else { return None };
+    c.iter()
+      .map(crate::functions::math_ast::try_eval_to_f64)
+      .collect::<Option<Vec<f64>>>()
+      .filter(|v| v.len() == 2 || v.len() == 3)
+  }
+  fn walk(
+    e: &Expr,
+    coords: &mut Vec<Vec<f64>>,
+    index: &mut std::collections::HashMap<Vec<u64>, usize>,
+    cells: &mut Vec<(&'static str, Vec<Expr>)>,
+  ) -> Option<()> {
+    let mut id_of = |p: Vec<f64>| {
+      let key: Vec<u64> = p.iter().map(|v| (v + 0.0).to_bits()).collect();
+      let next = coords.len();
+      let i = *index.entry(key).or_insert(next);
+      if i == next {
+        coords.push(p);
+      }
+      Expr::Integer(i as i128 + 1)
+    };
+    match e {
+      Expr::List(items) => {
+        for item in items {
+          walk(item, coords, index, cells)?;
+        }
+        Some(())
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Polygon" | "Line" | "Point")
+          && args.len() == 1 =>
+      {
+        let Expr::List(items) = &args[0] else {
+          return None;
+        };
+        // One cell (a list of points), or several.
+        let groups: Vec<&Expr> =
+          if items.first().and_then(point).is_some() || name == "Point" {
+            vec![&args[0]]
+          } else {
+            items.iter().collect()
+          };
+        let kind: &'static str = match name.as_str() {
+          "Polygon" => "Polygon",
+          "Line" => "Line",
+          _ => "Point",
+        };
+        let mut new_cells = Vec::new();
+        for g in groups {
+          let Expr::List(pts) = g else { return None };
+          if kind == "Point" {
+            for p in pts {
+              new_cells.push(id_of(point(p)?));
+            }
+          } else {
+            let ids: Option<Vec<Expr>> =
+              pts.iter().map(|p| point(p).map(&mut id_of)).collect();
+            new_cells.push(Expr::List(ids?.into()));
+          }
+        }
+        match cells.iter_mut().find(|(k, _)| *k == kind) {
+          Some((_, list)) => list.extend(new_cells),
+          None => cells.push((kind, new_cells)),
+        }
+        Some(())
+      }
+      // Styling directives carry no geometry.
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "RGBColor"
+            | "GrayLevel"
+            | "Hue"
+            | "Opacity"
+            | "EdgeForm"
+            | "FaceForm"
+            | "Thickness"
+            | "AbsoluteThickness"
+            | "PointSize"
+            | "AbsolutePointSize"
+            | "Directive"
+            | "Dashing"
+        ) =>
+      {
+        Some(())
+      }
+      Expr::Identifier(_) => Some(()),
+      _ => None,
+    }
+  }
+  walk(&gargs[0], &mut coords, &mut index, &mut cells)?;
+  if coords.is_empty() || cells.is_empty() {
+    return None;
+  }
+  let primitives: Vec<Expr> = cells
+    .into_iter()
+    .map(|(kind, list)| Expr::FunctionCall {
+      name: kind.to_string(),
+      args: vec![Expr::List(list.into())].into(),
+    })
+    .collect();
+  Some(Expr::FunctionCall {
+    name: "MeshRegion".to_string(),
+    args: vec![
+      Expr::List(
+        coords
+          .iter()
+          .map(|p| Expr::List(p.iter().map(|&v| Expr::Real(v)).collect()))
+          .collect(),
+      ),
+      Expr::List(primitives.into()),
+    ]
+    .into(),
+  })
+}

@@ -244,8 +244,11 @@ fn parse_message_name(expr: &Expr) -> Option<(String, String)> {
     Expr::FunctionCall { name, args }
       if name == "MessageName" && args.len() == 2 =>
     {
+      // Messages are issued under the symbol's short name, so a
+      // context-qualified spec (`System\`Infinity::indet` as a notebook's
+      // saved definitions spell it) has to match that.
       let sym = match &args[0] {
-        Expr::Identifier(s) => s.clone(),
+        Expr::Identifier(s) => s.rsplit('`').next().unwrap_or(s).to_string(),
         _ => expr_to_string(&args[0]),
       };
       let tag = match &args[1] {
@@ -361,8 +364,13 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into_iter()
       .enumerate()
       .filter(|(i, w)| {
+        // The `General::stop` notice about a silenced message goes too.
+        let stopped = w
+          .strip_prefix("General::stop: Further output of ")
+          .and_then(|rest| rest.split(' ').next());
         *i < snap_msgs
-          || !crate::message_name_of(w).is_some_and(|n| silenced(&n))
+          || !(crate::message_name_of(w).is_some_and(|n| silenced(&n))
+            || stopped.is_some_and(silenced))
       })
       .map(|(_, w)| w)
       .collect();

@@ -2168,18 +2168,62 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
 `a == 0` or `c == 0` WL also writes the characteristics unnormalised
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
+### `DSolve` gaps met by Demonstrations
+
+- Euler–Cauchy equations (`x^2 y''[x] + x y'[x] + c y[x] == 0`) stay
+  unevaluated, even with numeric `c`; WL gives
+  `C[1] Cos[Sqrt[c] Log[x]] + C[2] Sin[Sqrt[c] Log[x]]`, and for a two-point
+  eigenvalue problem (`y'[1] == 0`, `y'[2] == 0`) a `Piecewise` over
+  `Element[K[1], Integers]` (ASturmLiouvilleEigenvalueProblem).
+- The whole-line initial value problem of the heat equation
+  (`DSolve[{D[c[t, x], t] == d D[c[t, x], x, x] - k c[t, x], c[0, x] ==
+  Exp[-a x^2]}, c[t, x], {t, x}]`) stays unevaluated; WL convolves with the
+  heat kernel (OneDimensionalDiffusionOfAcetylcholineInTheSynapticCleft).
+- With conditions, WL brings the solution over a common denominator
+  (`DSolve[{y''[x] + 4 y[x] == 0, y'[0] == 1}, y[x], x]` is
+  `(2 C[1] Cos[2 x] + Sin[2 x])/2`); Woxi leaves it as a sum
+  (`C[1] Cos[2 x] + Sin[2 x]/2`).
+- A condition combining values at a point (`y[0] + y'[0] == 1`) is not
+  recognised.
+
 ### `NDSolve`'s PDE branch is 1-D
 
-This entry used to say "`NDSolve` covers ODEs only" — no longer accurate.
-1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems,
-Dirichlet or Neumann boundaries) solve via the method of lines:
+PDEs first order in one variable and one-dimensional in the other solve by
+the method of lines (`src/functions/ode_ast/pde_mol.rs`): `"DifferenceOrder"`
+4 stencils on a uniform grid (sized from the initial profiles, honouring
+`"MinPoints"`/`"MaxPoints"`), Rodas4 in time. Coupled systems, several time
+derivatives in one equation, evolution coefficients that vanish at a wall,
+any boundary condition form (Dirichlet, Neumann, Robin, coupled fluxes,
+`DirichletCondition`, `NeumannValue`), a missing condition
+(`NDSolve::bcart`, one-sided equation as in WL) and periodic ends with up to
+fourth space derivatives (Kuramoto–Sivashinsky) are covered. Remaining
+differences:
 
-```wolfram
-NDSolve[{D[u[x,t],t] == D[u[x,t],x,x], u[x,0] == Sin[Pi x],
-         u[0,t] == 0, u[1,t] == 0}, u, {x,0,1}, {t,0,1}]
-```
+- WL's default grid is adaptive and sometimes coarse: for the
+  RadialAndAxialVariationsInANonisothermalTubularReactor Demonstration WL's
+  default gives `T[1, 0.015] == 381.96`, its own converged value
+  (`"MinPoints" -> 51` or more) is 374.75, and Woxi gives 374.75. The grid
+  coordinates (`"Coordinates"`) never match WL's.
+- `NeumannValue` problems are solved by the same finite differences, not
+  WL's finite elements; values agree to 3–5 digits except in thin early
+  boundary layers.
+- Stationary problems on a rectangle (second derivatives in both
+  variables, or first order in a variable with conditions at both of its
+  ends: counter-current flow) are solved by second-order finite differences
+  and Newton iterations, not WL's finite elements. ParallelPlateHeatExchanger
+  agrees to 4 digits. For CountercurrentFlowHemodialyzer WL's own answer
+  does not converge (`Cb[10, 0.006]` is 0.506 by default, 0.341 and 0.343
+  with `"MaxCellMeasure"` 0.0005 and 0.0001; Woxi gives 0.407, stable
+  under grid refinement), and on the line `r == 0`, where the equation's
+  `1/(r + 10^-6)` regularization is singular, Woxi's values exceed 1.
+- Two space dimensions plus time (SpatioTemporalEpidemicSpread) and
+  non-rectangular regions (StokesFlowInContainerWithConcaveBottom) are not
+  covered.
+- A `DirichletCondition` written inside an equation's right-hand side
+  (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
+  on it too (`NDSolveValue::fempsf`).
 
-returns a real `InterpolatingFunction`. A second-order-in-time
+A second-order-in-time
 (hyperbolic/wave) evolution equation — `D[u[t,x],t,t] == …`, needing an
 extra initial *velocity* condition `D[u,t][t0,x] == g[x]` alongside the
 ordinary initial value — is order-reduced to the first-order system
@@ -2190,17 +2234,7 @@ tridiagonal solve each method-of-lines step rather than an explicit
 formula, so long as the right-hand side is linear in it. This is what a
 Wolfram Demonstration like
 [*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
-needs, and Woxi Studio can now render its `Manipulate`. What's still
-missing:
-
-- The hyperbolic branch only supports a single dependent function — no
-  coupled hyperbolic systems (the parabolic branch supports coupled
-  systems).
-- `DirichletCondition` exists only as a symbol; Dirichlet conditions must be
-  written as plain equalities. `NeumannValue[g, x == x0]` terms are lowered
-  to Neumann flux conditions (`n·(c ∇u) = g`), and the resulting solutions
-  take the space variable first, then time (unverified against
-  `wolframscript` for the `Method -> "FiniteElement"` form).
+needs. The hyperbolic branch only supports a single dependent function.
 
 On the symbolic side `DSolve` recognises three first-order two-variable PDE
 shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
@@ -2831,6 +2865,27 @@ Symbolic *means* are recognized; only the width has to be a number.
 The reference page gives `True` (one-argument `Clip` is odd); Woxi's
 `FullSimplify` leaves the equation unevaluated.
 
+### Which root `Solve` picks for an `InterpolatingFunction` equation
+
+`Solve`/`NSolve[f[t] == y, t]` with `f` an `InterpolatingFunction` invert it
+(`::ifun`) and return a single root. Woxi returns the first root in the
+domain; WL's choice is not the first, not FindRoot from the domain midpoint
+or an endpoint, and not the closest data point (**not reproducible** so far):
+
+```sh
+# b = Interpolation[{{0, -1.}, {0.1, 0.}, {0.2, 1.}, {0.4, 1.2}, {0.6, 1.1},
+#                    {0.8, 1.}, {0.95, 0.}, {1, -0.5}}]
+# Quiet[Solve[b[t] == 0, t]]    WL {{t -> 0.95}}              Woxi {{t -> 0.1}}
+# Quiet[Solve[b[t] == 0.5, t]]  WL {{t -> 0.888802079832663}} Woxi {{t -> 0.147…}}
+# (with the same shape but {0.2, 0.}, {0.9, 0.} as the zeros, both give 0.2)
+```
+
+WL also extrapolates a monotone function past its domain
+(`Solve[Interpolation[{{0, 1.}, {1, 2.}, {2, 3.}}][t] == 0, t]` is
+`{{t -> -1.}}`; Woxi gives `{}`). In TrajectoryOfATennisServe.nb this, plus
+WL's NDSolve storing `1.87*^-18` rather than the exact initial value `0` at
+`t == 0`, makes WL find the bounce at `t == 0.354` where Woxi finds `t == 0`.
+
 ## Special functions
 
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
@@ -3304,7 +3359,7 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 `MatrixPower[{{0, a}, {b, 0}}, n]` stays unevaluated. The reference page
 gives the eigen-decomposition form
 
-```
+```text
 {{(1/2) (-Sqrt[a] Sqrt[b])^n + (1/2) (Sqrt[a] Sqrt[b])^n, …}, …}
 ```
 
@@ -4509,6 +4564,19 @@ differently from the front end. The baseline is approximated: half the
 height for graphics (WL: 182 of 359 for `Graphics[Disk[]]`) and three
 quarters for everything else. WL's "RasterSize" is also at twice the
 resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
+Woxi also takes 96 dpi as 1x where WL takes 72, so `ImageResolution -> 144`
+gives 540 pixels for a 360-point graphic instead of 720.
+
+Topology measured on a rasterized graphic follows from this: a `Thick` curve
+is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally
+connected, so the 4-connected background splits:
+
+```sh
+wolframscript -code 'MorphologicalEulerNumber[MorphologicalBinarize[PolarPlot[Sin[2 t], {t, 0, 2 Pi}, Axes -> None, PlotStyle -> {Red, Thick}]]]'
+# 4
+woxi eval 'MorphologicalEulerNumber[MorphologicalBinarize[PolarPlot[Sin[2 t], {t, 0, 2 Pi}, Axes -> None, PlotStyle -> {Red, Thick}]]]'
+# 1
+```
 
 ### Twenty-two heads raise a hard error for a bad first argument
 
@@ -4586,20 +4654,11 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
 
-### A stored value is re-evaluated on every read, repeating its messages
+### An unevaluated result passed on is evaluated again, repeating its messages
 
-Woxi evaluates an `OwnValue` again each time the symbol is read, so a value
-that stays unevaluated with a message prints the message again on every use.
-WL marks the stored expression as already evaluated and prints it once:
-
-```sh
-wolframscript -code 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
-# LinearSolve::herm once
-woxi eval 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
-# LinearSolve::herm twice
-```
-
-The same missing mark shows when an unevaluated result is passed on: the
+A value stored with `=` counts as evaluated until something changes (like
+WL's evaluation timestamps), so reading it does not repeat its messages. An
+unevaluated result passed on as an argument still is evaluated again: the
 pure function in `Prepend[f[DeleteCases[l, #]], #] &@ l[[Quotient[n, 6] + 1]]`
 gets `l[[1 + Quotient[n, 6]]]` as `#` and evaluates it again, so the first
 `Part::pkspec1` prints twice. It also costs time: a recursion that nests an
@@ -5277,6 +5336,28 @@ The default `"DampedLS"` is an iterative method whose output
 be derived from these samples, and `"RichardsonLucy"`, `"TSVD"`, `"Hybrid"`,
 `"SteepestDescent"` and `"TotalVariation"` are unimplemented (the call stays
 unevaluated). **Not reproducible** without WL's implementation.
+
+### TotalVariationFilter runs its own descent
+
+Woxi matches WL's scale invariance (the data is divided by its largest
+magnitude first), the `0` parameter (replaced by `√$MachineEpsilon`, so the
+result is the input) and the type of an image result, and converges to a
+total-variation-smoothed result of the same shape, but not to WL's numbers:
+
+```sh
+wolframscript -code 'TotalVariationFilter[{0., 0., 1., 0., 0., 1., 1., 1., 0.5, 0.}]'
+# {0.00069, 0.0068, 0.8, 0.1, 0.1, 0.9336, 0.9334, 0.9330, 0.5, 0.1}
+woxi eval 'TotalVariationFilter[{0., 0., 1., 0., 0., 1., 1., 1., 0.5, 0.}]'
+# {0.041, 0.059, 0.8, 0.081, 0.119, 0.938, 0.925, 0.938, 0.5, 0.1}
+```
+
+What is known of WL's iteration: `MaxIterations -> 1` is one Jacobi step of
+`(1 - p Δ) u = f` (reflecting boundary, so every pixel becomes
+`(p (u[i-1] + u[i+1]) + f[i]) / (1 + 2 p)`), and the second step is
+`u2 = 2 J(u1) - f` with `J` that Jacobi map; `"Laplacian"` and `"Poisson"`
+agree with `"Gaussian"` there. The third step fits no linear recurrence of
+`J(u2)`, `u2`, `J(u1)`, `u1` and `f`, so a shrinkage step is active by then.
+Woxi ignores `MaxIterations` and `Method`. **Not reproducible** so far.
 
 ### `Export` of a multi-segment `Sound`
 
@@ -7344,3 +7425,18 @@ from a stated rule or needs missing machinery:
 
 - Scattered (non-array) point lists are wrapped in their convex hull, whereas
   Wolfram reconstructs a (possibly non-convex) surface from the points.
+
+## Notebook-sweep gaps (misc cluster, 2026-11)
+
+- `AbsoluteOptions[plot, FrameTicks]` returns `{}`: Wolfram lists the
+  resolved tick specifications (`{{left, right}, {bottom, top}}`, each tick
+  `{x, label, {in, out}}`). PlottingPriceDivergences reads them back.
+- `Solve` of a system with a symbolic parameter and a fractional power
+  (`t/T1 == (P2/p)^(2/7)` in CompressibleFlowThroughANozzleDiffuser)
+  returns `{}`; Wolfram rationalizes the exponent and returns 12 parametric
+  solutions.
+- `CoordinateTransformData[]` (the list of supported transforms) and the
+  parametrized 3-D systems (`BipolarCylindrical`, `Toroidal`, `Confocal`, …)
+  are not implemented (3DCoordinateSystemTransformations).
+- `FindIndependentEdgeSet` is not implemented
+  (SpreadsheetLikeSolutionOfLargeScaleSystemsOfEquations).

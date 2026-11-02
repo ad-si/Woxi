@@ -26,6 +26,16 @@ pub fn polynomial_gcd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A radical coefficient (`Sqrt[5]`) is a generator of its own, as in
+  // Wolfram without `Extension`: the gcd is taken with it as a variable,
+  // which also keeps the Euclidean steps from swelling with nested
+  // radical arithmetic.
+  if modulus.is_none()
+    && let Some(result) = gcd_with_radicals_as_variables(&polys)
+  {
+    return result;
+  }
+
   // Detect variables from the polynomial expressions only
   let mut all_vars = std::collections::HashSet::new();
   for arg in &polys {
@@ -696,4 +706,79 @@ fn integer_gcd_multi(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn integer_gcd_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
   let gcd_expr = call("GCD", vec![a.clone(), b.clone()]);
   crate::evaluator::evaluate_expr_to_expr(&gcd_expr)
+}
+
+/// The gcd of `polys` with every radical of a rational number replaced by a
+/// fresh variable and put back afterwards; None when there is no radical.
+fn gcd_with_radicals_as_variables(
+  polys: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  fn collect(e: &Expr, out: &mut Vec<Expr>) {
+    let is_radical = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_))
+          || matches!(&args[0], Expr::FunctionCall { name: r, .. } if r == "Rational")
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => matches!(left.as_ref(), Expr::Integer(_) | Expr::BigInteger(_)),
+      _ => false,
+    } && match e {
+      Expr::FunctionCall { args, .. } => {
+        matches!(&args[1], Expr::FunctionCall { name: r, .. } if r == "Rational")
+      }
+      Expr::BinaryOp { right, .. } => {
+        matches!(right.as_ref(), Expr::FunctionCall { name: r, .. } if r == "Rational")
+      }
+      _ => false,
+    };
+    if is_radical {
+      let key = crate::syntax::expr_to_string(e);
+      if !out.iter().any(|r| crate::syntax::expr_to_string(r) == key) {
+        out.push(e.clone());
+      }
+      return;
+    }
+    for c in crate::syntax::expr_children(e) {
+      collect(c, out);
+    }
+  }
+  let evaluated: Vec<Expr> = polys
+    .iter()
+    .map(|p| crate::evaluator::evaluate_expr_to_expr(p).ok())
+    .collect::<Option<_>>()?;
+  let mut radicals = Vec::new();
+  for p in &evaluated {
+    collect(p, &mut radicals);
+  }
+  if radicals.is_empty() {
+    return None;
+  }
+  let names: Vec<String> = (0..radicals.len())
+    .map(|i| format!("Woxi`Radical{i}"))
+    .collect();
+  let replaced: Vec<Expr> = evaluated
+    .iter()
+    .map(|p| {
+      let mut e = p.clone();
+      for (r, n) in radicals.iter().zip(&names) {
+        e = super::solve::substitute_expr(&e, r, &Expr::Identifier(n.clone()));
+      }
+      e
+    })
+    .collect();
+  let gcd = match polynomial_gcd_ast(&replaced) {
+    Ok(g) => g,
+    Err(e) => return Some(Err(e)),
+  };
+  let mut back = gcd;
+  for (r, n) in radicals.iter().zip(&names) {
+    back =
+      super::solve::substitute_expr(&back, &Expr::Identifier(n.clone()), r);
+  }
+  Some(crate::evaluator::evaluate_expr_to_expr(&back))
 }

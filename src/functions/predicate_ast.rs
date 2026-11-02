@@ -1266,7 +1266,24 @@ pub fn association_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// MemberQ[list, elem] - Tests if elem is a member of list
+/// `args` with a rendered graphic in first position replaced by the symbolic
+/// expression it was built from, which is what `MemberQ` and `FreeQ` search
+/// (as `Cases`, `Count` and `Position` do).
+fn with_graphic_form(args: &[Expr]) -> Option<Vec<Expr>> {
+  if !matches!(args.first(), Some(Expr::Graphics { .. })) {
+    return None;
+  }
+  let form =
+    crate::evaluator::part_extraction::graphics_symbolic_form(&args[0])?;
+  let mut out = args.to_vec();
+  out[0] = form;
+  Some(out)
+}
+
 pub fn member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(args) = with_graphic_form(args) {
+    return member_q_ast(&args);
+  }
   // A trailing `Heads -> True|False` option may follow the levelspec. The
   // arity check upstream allows for it, so a call that has no option is one
   // argument over the limit and is reported here instead.
@@ -1436,6 +1453,9 @@ fn parse_level_spec(spec: &Expr) -> (i64, i64) {
 
 /// FreeQ[expr, form] - Tests if expr is free of form
 pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(args) = with_graphic_form(args) {
+    return free_q_ast(&args);
+  }
   // FreeQ[expr, form, levelspec]: True when no part of expr at the
   // given levels matches form. Invalid specs emit ::level.
   if args.len() == 3 {

@@ -764,6 +764,18 @@ fn is_member_of_domain(expr: &Expr, domain: &str) -> Option<bool> {
 }
 
 /// Element[x, domain] - Test or assert domain membership
+/// `a | b | c` as the one flat `Alternatives[a, b, c]` it evaluates to (a
+/// single alternative stands alone). A nested binary chain would be as deep
+/// as the list is long, and re-evaluating `Element` over a 1600-variable list
+/// (`Thread[vars \[Element] Integers]` in an integer program) then exceeds
+/// `$RecursionLimit`.
+fn flat_alternatives(mut alts: Vec<Expr>) -> Expr {
+  if alts.len() == 1 {
+    return alts.pop().unwrap();
+  }
+  call("Alternatives", alts)
+}
+
 pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
   // `Vectors[n, dom]` and `Matrices[{m, n}, dom]`: a list of that shape
   // whose entries lie in `dom` (Complexes when not given).
@@ -861,12 +873,10 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
     if remaining.is_empty() {
       return Ok(bool_expr(true));
     }
-    // Rebuild Alternatives from remaining
-    let alt_expr = remaining
-      .into_iter()
-      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
-      .unwrap();
-    return Ok(call("Element", vec![alt_expr, domain.clone()]));
+    return Ok(call(
+      "Element",
+      vec![flat_alternatives(remaining), domain.clone()],
+    ));
   }
 
   // Handle lists: Element[{a, b, c}, dom] → Element[a | b | c, dom]
@@ -875,12 +885,7 @@ pub fn element_ast(x: &Expr, domain: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(bool_expr(true));
     }
     // Convert list to Alternatives and recurse
-    let alt_expr = items
-      .iter()
-      .cloned()
-      .reduce(|acc, e| binop(BinaryOperator::Alternatives, acc, e))
-      .unwrap();
-    return element_ast(&alt_expr, domain);
+    return element_ast(&flat_alternatives(items.to_vec()), domain);
   }
 
   // Element[Plus[a, b, c, ...], Reals] / Integers / Rationals: drop any
@@ -1123,26 +1128,56 @@ pub fn filter_rules_ast(
     return Ok(call("FilterRules", vec![rules.clone(), keys.clone()]));
   };
 
-  // Build set of key names to keep
-  let key_names: Vec<String> = match keys {
-    Expr::List(items) => items.iter().map(expr_to_string).collect(),
-    _ => vec![expr_to_string(keys)],
+  // The keys: names or patterns the left-hand sides are matched with; a
+  // rule among them (an options list, `Options[f]`) stands for its name.
+  let key_items: Vec<Expr> = match keys {
+    Expr::List(items) => items.to_vec(),
+    _ => vec![keys.clone()],
+  };
+  let keys: Vec<Expr> = key_items
+    .iter()
+    .map(|k| match k {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+        pattern.as_ref().clone()
+      }
+      other => other.clone(),
+    })
+    .collect();
+  // An option name is the same written as a symbol or as a string.
+  let name_of = |e: &Expr| match e {
+    Expr::String(s) => s.clone(),
+    other => expr_to_string(other),
+  };
+  let key_names: Vec<String> = keys.iter().map(name_of).collect();
+  let matches_key = |lhs: &Expr| -> bool {
+    let name = name_of(lhs);
+    key_names.contains(&name)
+      || keys.iter().any(|k| {
+        crate::evaluator::pattern_matching::contains_pattern(k)
+          && matches!(
+            crate::evaluator::evaluate_function_call_ast(
+              "MatchQ",
+              &[lhs.clone(), k.clone()],
+            ),
+            Ok(Expr::Identifier(ref t)) if t == "True"
+          )
+      })
   };
 
   let mut result = Vec::new();
   for rule in rule_list {
-    let rule_key = match rule {
+    let lhs = match rule {
       Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-        expr_to_string(pattern)
+        pattern.as_ref()
       }
       Expr::FunctionCall { name, args }
         if (name == "Rule" || name == "RuleDelayed") && !args.is_empty() =>
       {
-        expr_to_string(&args[0])
+        &args[0]
       }
       _ => continue,
     };
-    if key_names.contains(&rule_key) {
+    if matches_key(lhs) {
       result.push(rule.clone());
     }
   }

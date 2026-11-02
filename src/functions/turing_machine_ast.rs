@@ -75,7 +75,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tape = tape;
   let mut state = state;
   let mut pos = (start_pos - 1).rem_euclid(len) + 1; // 1-indexed
-  let mut shift: i64 = 0;
+  let mut shift: i64 = head_displacement(&args[1]);
   let row = |state: &Expr, pos: i64, shift: i64, tape: &[Expr]| {
     Expr::List(
       vec![
@@ -280,7 +280,9 @@ fn parse_init(expr: &Expr) -> Result<(Expr, i64, Vec<Expr>), InterpreterError> {
   };
   let (state, pos) = match &items[0] {
     Expr::List(spec) if spec.len() == 1 => (spec[0].clone(), 1i64),
-    Expr::List(spec) if spec.len() == 2 => match &spec[1] {
+    // `{s, pos, x}` also names the head's starting displacement `x`
+    // (see `head_displacement`).
+    Expr::List(spec) if spec.len() == 2 || spec.len() == 3 => match &spec[1] {
       Expr::Integer(n) => (spec[0].clone(), *n as i64),
       _ => {
         return Err(InterpreterError::EvaluationError(
@@ -295,6 +297,21 @@ fn parse_init(expr: &Expr) -> Result<(Expr, i64, Vec<Expr>), InterpreterError> {
     _ => Vec::new(),
   };
   Ok((state, pos, tape))
+}
+
+/// The starting displacement `x` of an `{s, pos, x}` head spec (0
+/// otherwise): the third entry of every reported state counts from it.
+fn head_displacement(init: &Expr) -> i64 {
+  match init {
+    Expr::List(items) if items.len() == 2 => match &items[0] {
+      Expr::List(spec) if spec.len() == 3 => match &spec[2] {
+        Expr::Integer(x) => *x as i64,
+        _ => 0,
+      },
+      _ => 0,
+    },
+    _ => 0,
+  }
 }
 
 /// Transition output: (new_state, new_color, direction)
@@ -391,6 +408,7 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
     vec![items[0].clone(), Expr::List(vec![].into())].into(),
   ))?;
   rule.warn_initial_state(&args[1], &state);
+  let displacement = head_displacement(&args[1]);
 
   // Content index of the cell at offset 0, and the initial colour anywhere:
   // the background is aligned so the content's first cell holds the
@@ -445,7 +463,7 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
           vec![
             st,
             Expr::Integer((off - lo + 1) as i128),
-            Expr::Integer(off as i128),
+            Expr::Integer((off + displacement) as i128),
           ]
           .into(),
         ),

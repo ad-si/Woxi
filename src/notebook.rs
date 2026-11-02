@@ -2080,6 +2080,13 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
   let s = s.strip_suffix('}').unwrap_or(s);
 
   let parts = merge_double_bracket_parts(&split_top_level_commas(s));
+  // A comment row is text, not code: its pieces are written as they are,
+  // without the grouping parentheses a nested row of code may need (`(* **
+  // * Lift & moment ****)` spliced as code became `(*(** * Lift &) …`,
+  // whose `(**` opens a nested comment that never closes).
+  if parts.first().is_some_and(|p| p.trim() == "\"(*\"") {
+    return comment_row_text(&parts);
+  }
   let mut result = String::new();
   let mut i = 0;
   while i < parts.len() {
@@ -2338,6 +2345,31 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
     i += 1;
   }
   result
+}
+
+/// The text of a comment's box row: every token as written, nested rows
+/// flattened in place.
+fn comment_row_text(parts: &[String]) -> String {
+  let mut text = String::new();
+  for part in parts {
+    let part = part.trim();
+    if part.starts_with('"') && part.ends_with('"') && part.len() >= 2 {
+      text.push_str(&unescape_code_string(&part[1..part.len() - 1]));
+    } else if let Some(inner) = part
+      .strip_prefix("RowBox[")
+      .and_then(|p| p.strip_suffix(']'))
+    {
+      let inner = inner.trim();
+      let inner = inner.strip_prefix('{').unwrap_or(inner);
+      let inner = inner.strip_suffix('}').unwrap_or(inner);
+      text.push_str(&comment_row_text(&merge_double_bracket_parts(
+        &split_top_level_commas(inner),
+      )));
+    } else {
+      text.push_str(&box_part_source(part));
+    }
+  }
+  text
 }
 
 /// Is `part` the quoted single character `"ch"` (a bare display token, not
@@ -8111,6 +8143,22 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "Subscript[X, 1,i]");
     let s = r#"BoxData[SubscriptBox["x", RowBox[{"[", RowBox[{"[", "1", "]"}], "]"}]]]"#;
     assert_eq!(extract_cell_content(s), "x[[1]]");
+  }
+
+  /// A comment whose closing token is glued to its stars (`"****)"`) keeps
+  /// its text as written: wrapping its inner RowBoxes in grouping
+  /// parentheses turned `(* ** * Lift & moment … ****)` into
+  /// `(*(** * Lift &) …`, whose `(**` opened a nested comment that never
+  /// closed and swallowed the rest of the cell (PotentialFlowOverAnAirfoil).
+  #[test]
+  fn comment_with_glued_close_keeps_its_text() {
+    let s = r#"BoxData[RowBox[{RowBox[{"ul", "=", "1"}], ";", "\[IndentingNewLine]", RowBox[{"(*", RowBox[{RowBox[{RowBox[{RowBox[{"**", RowBox[{"*", " ", "Lift"}]}], " ", "&"}], " ", "moment", " ", "from", " ", "Kutta"}], "-", RowBox[{"Joukowski", " ", "theorem"}]}], " ", "****)"}], "\[IndentingNewLine]", RowBox[{"x", "=", "2"}]}]]"#;
+    let code = extract_cell_content(s);
+    assert!(
+      code.contains("(**** Lift & moment from Kutta-Joukowski theorem ****)"),
+      "{code}"
+    );
+    assert!(crate::parse_to_expr(&code).is_ok(), "{code}");
   }
 
   #[test]

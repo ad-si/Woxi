@@ -1064,7 +1064,8 @@ mod cr {
     fallback: fn(f64) -> f64,
   ) -> f64 {
     const BITS: usize = 192;
-    let Ok(mut cc) = Consts::new() else {
+    let Ok(mut cc) = crate::functions::math_ast::numerical::astro_consts()
+    else {
       return fallback(x);
     };
     let r = f(&BigFloat::from_f64(x, BITS), &mut cc);
@@ -1997,9 +1998,9 @@ fn bigfloat_unary(
   // through `N`'s argument-by-argument fallback.
   let call = unevaluated(name, std::slice::from_ref(x));
   {
-    use astro_float::{Consts, RoundingMode};
+    use astro_float::RoundingMode;
     let bits = nominal_bits(prec.max(1.0).ceil() as usize) + 64;
-    let mut cc = Consts::new().ok()?;
+    let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
     if expr_to_bigfloat(&call, bits, RoundingMode::ToEven, &mut cc)
       .is_ok_and(|v| v.is_nan())
     {

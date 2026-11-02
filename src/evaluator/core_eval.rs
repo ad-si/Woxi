@@ -202,7 +202,7 @@ fn big_range_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
     return Some(sa.cmp(&sb));
   }
   let rm = astro_float::RoundingMode::ToEven;
-  let mut cc = astro_float::Consts::new().ok()?;
+  let mut cc = crate::functions::math_ast::numerical::astro_consts().ok()?;
   let bits = 512;
   let x =
     crate::functions::math_ast::expr_to_bigfloat(a, bits, rm, &mut cc).ok()?;
@@ -2222,6 +2222,40 @@ fn evaluate_expr_to_expr_uncached(
             args: lhs_args,
           } = &args[0]
           {
+            // The arguments are evaluated, as `Set` evaluates them (unless
+            // the head holds them): `k = Unique[]; f[k] = 1; f[k] =.` removes
+            // the value of `f[$1]`.
+            let mut evaluated_args = Vec::with_capacity(lhs_args.len());
+            for (i, a) in lhs_args.iter().enumerate() {
+              if crate::evaluator::assignment::lhs_slot_is_held(head, i)
+                || crate::evaluator::pattern_matching::contains_pattern(a)
+              {
+                evaluated_args.push(a.clone());
+              } else {
+                evaluated_args.push(evaluate_expr_to_expr(a)?);
+              }
+            }
+            let target = Expr::FunctionCall {
+              name: head.clone(),
+              args: evaluated_args.clone().into(),
+            };
+            // A value for literal arguments (`f[a] = 1`) is kept apart from
+            // the pattern rules.
+            let removed_memo = crate::MEMO_VALUES.with(|m| {
+              let mut map = m.borrow_mut();
+              let Some(cache) = map.get_mut(head) else {
+                return false;
+              };
+              let key = crate::memo_key(cache, &evaluated_args);
+              cache.remove(&key).is_some()
+            });
+            if removed_memo {
+              return Ok(null_expr());
+            }
+            let args = [target];
+            let Expr::FunctionCall { args: lhs_args, .. } = &args[0] else {
+              unreachable!()
+            };
             let had_any = crate::FUNC_DEFS.with(|m| {
               m.borrow().get(head).is_some_and(|defs| !defs.is_empty())
             });
@@ -3341,6 +3375,20 @@ fn evaluate_expr_to_expr_uncached(
             }
             return Ok(unevaluated(name, args));
           }
+        }
+        // FunctionInterpolation samples its expression as written, at
+        // numbers: `FunctionInterpolation[f[c], {c, 0, 1}]` with
+        // `f[c_?NumericQ] := …` interpolates f, where evaluating `f[c]` for
+        // a symbolic `c` first would leave nothing to sample.
+        if name == "FunctionInterpolation" && args.len() >= 2 {
+          let result = with_local_iterators(name, args, || {
+            let mut evaluated = vec![args[0].clone()];
+            for a in &args[1..] {
+              evaluated.push(evaluate_expr_to_expr(a)?);
+            }
+            evaluate_function_call_ast(name, &evaluated)
+          })?;
+          return Ok(result);
         }
         // The numeric searches hold their arguments (HoldAll): the iterator
         // variable is a free symbol while the arguments are evaluated, even

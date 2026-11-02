@@ -469,6 +469,11 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = args.first().and_then(expand_region_membership) {
+    let mut normalized = args.to_vec();
+    normalized[0] = expanded;
+    return nsolve_ast(&normalized);
+  }
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
@@ -591,16 +596,10 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize. An infinity the exact
   // elimination runs into is its own business (the solutions it spoils are
   // dropped below); NSolve reports none.
-  crate::push_quiet_filter(
-    Some(vec![
-      "Power::infy".to_string(),
-      "Infinity::indet".to_string(),
-    ]),
-    vec![],
-  );
-  let symbolic = solve_ast(args);
-  crate::pop_quiet_filter();
-  let symbolic = symbolic?;
+  let symbolic =
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      solve_ast(args)
+    })?;
 
   // An elimination whose numeric roots verify against no equation (their
   // rounding leaves residuals the exact check rejects) finds nothing; the
@@ -2971,12 +2970,74 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(expanded) = args.first().and_then(expand_region_membership) {
+    let mut normalized = args.to_vec();
+    normalized[0] = expanded;
+    return solve_ast(&normalized);
+  }
+  // `{x, y} == {1, 2}` inside a logical combination is `x == 1 && y == 2`.
+  let threaded = match args.first() {
+    Some(Expr::List(items)) => {
+      let rewritten: Vec<Option<Expr>> = items
+        .iter()
+        .map(|e| match e {
+          Expr::Comparison { .. } => None,
+          other => thread_list_equations(other),
+        })
+        .collect();
+      (rewritten.iter().any(Option::is_some)).then(|| {
+        Expr::List(
+          items
+            .iter()
+            .zip(rewritten)
+            .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    Some(e @ (Expr::FunctionCall { .. } | Expr::BinaryOp { .. })) => {
+      thread_list_equations(e)
+    }
+    _ => None,
+  };
+  if let Some(threaded) = threaded {
+    let mut normalized = args.to_vec();
+    normalized[0] = threaded;
+    return solve_ast(&normalized);
+  }
+  // An equation list is a conjunction: `{a && b, c}` is `{a, b, c}`.
+  if let Some(Expr::List(items)) = args.first()
+    && items.iter().any(|e| conjunction_parts(e).is_some())
+  {
+    let mut flat = Vec::with_capacity(items.len());
+    for item in items {
+      flat
+        .extend(conjunction_parts(item).unwrap_or_else(|| vec![item.clone()]));
+    }
+    let mut normalized = args.to_vec();
+    normalized[0] = Expr::List(flat.into());
+    return solve_ast(&normalized);
+  }
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
     let mut normalized = args.to_vec();
     normalized[0] = super::reduce::inequalities_to_comparisons(first);
     return solve_ast(&normalized);
+  }
+  // A system with machine-number exponents that are simple fractions
+  // (`l^0.5 k^0.5`, a Cobb-Douglas Lagrangian) is solved with the exact
+  // exponents, and the solutions numericized.
+  if let Some(Expr::List(eqs)) = args.first()
+    && eqs.len() >= 2
+    && let Some(exact) = rationalize_simple_exponents(&args[0])
+  {
+    let mut exact_args = args.to_vec();
+    exact_args[0] = exact;
+    let solved = solve_ast(&exact_args)?;
+    if matches!(&solved, Expr::List(_)) {
+      return crate::evaluator::evaluate_function_call_ast("N", &[solved]);
+    }
   }
   if let Some(result) = solve_interpolating_function("Solve", args) {
     return Ok(result);
@@ -3606,10 +3667,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       }
       // In the exact solution's order, as wolframscript numericizes it.
-      return crate::evaluator::evaluate_function_call_ast(
-        "N",
-        &[exact_result],
-      );
+      return numericize_exact_solutions(exact_result);
     }
   }
   if matches!(&result, Expr::FunctionCall { name, .. } if name == "Solve")
@@ -3644,12 +3702,437 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Ok(exact_result @ Expr::List(_)) =
       solve_ast_entry(&[exact, var.clone()])
   {
-    crate::emit_message(
-      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
-    );
-    return crate::evaluator::evaluate_function_call_ast("N", &[exact_result]);
+    // A machine-number exponent (`a^0.5`) is no coefficient: wolframscript
+    // solves such an equation as it stands and says nothing.
+    if !has_inexact_exponent(eq) {
+      crate::emit_message(
+        "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+      );
+    }
+    return numericize_exact_solutions(exact_result);
   }
   Ok(result)
+}
+
+/// `N` of the exact solutions of a rationalized system. Rationalizing
+/// arbitrary machine numbers gives radicals of integers beyond the machine
+/// range, whose machine evaluation underflows to a meaningless `0.`; those
+/// are evaluated at higher precision first and then rounded to machine
+/// numbers.
+fn numericize_exact_solutions(exact: Expr) -> Result<Expr, InterpreterError> {
+  let machine = crate::evaluator::evaluate_function_call_ast(
+    "N",
+    std::slice::from_ref(&exact),
+  )?;
+  if !contains_bigfloat(&machine) {
+    return Ok(machine);
+  }
+  let precise = crate::evaluator::evaluate_function_call_ast(
+    "N",
+    &[exact, Expr::Integer(40)],
+  )?;
+  crate::evaluator::evaluate_function_call_ast("N", &[precise])
+}
+
+/// `expr` with every machine-number exponent of a symbolic base that is a
+/// fraction with a small denominator (`0.5`, `1.5`, `0.25`) made exact;
+/// None when there is none.
+fn rationalize_simple_exponents(expr: &Expr) -> Option<Expr> {
+  if !has_inexact_exponent(expr) {
+    return None;
+  }
+  let rule = crate::syntax::string_to_expr(
+    "Power[b_ /; !NumericQ[b], e_Real /; Rationalize[e] =!= e && \
+     Denominator[Rationalize[e]] <= 12] :> Power[b, Rationalize[e]]",
+  )
+  .ok()?;
+  let rewritten = crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+    expr: Box::new(expr.clone()),
+    rules: Box::new(rule),
+  })
+  .ok()?;
+  (!has_inexact_exponent(&rewritten)).then_some(rewritten)
+}
+
+/// Whether `expr` holds a power whose exponent is a machine number.
+fn has_inexact_exponent(expr: &Expr) -> bool {
+  let inexact = |e: &Expr| crate::functions::math_ast::contains_inexact_real(e);
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      right,
+      ..
+    } if inexact(right) => true,
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && inexact(&args[1]) =>
+    {
+      true
+    }
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(has_inexact_exponent),
+  }
+}
+
+/// Rewrites every `Element[{x, y, …}, region]` of a logical combination
+/// whose region is a basic geometric one (points, segments, rays, lines,
+/// disks, balls, circles, spheres, boxes) into the equations and
+/// inequalities that describe membership, so Solve/NSolve/Reduce can treat
+/// them like any other constraint. `None` when there is nothing to rewrite.
+pub(crate) fn expand_region_membership(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Element" && args.len() == 2 =>
+    {
+      let Expr::List(coords) = &args[0] else {
+        return None;
+      };
+      region_membership_condition(&args[1], coords)
+        .and_then(|c| crate::evaluator::evaluate_expr_to_expr(&c).ok())
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(expand_region_membership).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      let new_args = args
+        .iter()
+        .zip(rewritten)
+        .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+        .collect();
+      Some(call(name, new_args))
+    }
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => {
+      let (l, r) = (
+        expand_region_membership(left),
+        expand_region_membership(right),
+      );
+      if l.is_none() && r.is_none() {
+        return None;
+      }
+      let name = if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      };
+      Some(call(
+        name,
+        vec![
+          l.unwrap_or_else(|| (**left).clone()),
+          r.unwrap_or_else(|| (**right).clone()),
+        ],
+      ))
+    }
+    Expr::List(items) => {
+      let rewritten: Vec<Option<Expr>> =
+        items.iter().map(expand_region_membership).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(Expr::List(
+        items
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The (unevaluated) condition for the point `coords` to lie in `region`.
+fn region_membership_condition(region: &Expr, coords: &[Expr]) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let n = coords.len();
+  let point = |e: &Expr| match e {
+    Expr::List(p) if p.len() == n => Some(p.to_vec()),
+    _ => None,
+  };
+  let points = |e: &Expr| match e {
+    Expr::List(ps) => ps.iter().map(point).collect::<Option<Vec<_>>>(),
+    _ => None,
+  };
+  let cmp = |head: &str, a: Expr, b: Expr| call(head, vec![a, b]);
+  let sum = |terms: Vec<Expr>| call("Plus", terms);
+  // `coords - p`, componentwise.
+  let offset = |p: &[Expr]| -> Vec<Expr> {
+    coords
+      .iter()
+      .zip(p)
+      .map(|(c, q)| crate::helpers::minus2(c.clone(), q.clone()))
+      .collect()
+  };
+  let dot = |a: &[Expr], b: &[Expr]| {
+    sum(
+      a.iter()
+        .zip(b)
+        .map(|(x, y)| crate::helpers::times2(x.clone(), y.clone()))
+        .collect(),
+    )
+  };
+  let direction = |a: &[Expr], b: &[Expr]| -> Vec<Expr> {
+    b.iter()
+      .zip(a)
+      .map(|(q, p)| crate::helpers::minus2(q.clone(), p.clone()))
+      .collect()
+  };
+  // `coords` on the line through `p` with direction `v`: every 2×2 minor
+  // of the pair (coords - p, v) vanishes.
+  let collinear = |p: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    let d = offset(p);
+    let mut eqs = Vec::new();
+    for i in 0..n {
+      for j in i + 1..n {
+        eqs.push(cmp(
+          "Equal",
+          crate::helpers::minus2(
+            crate::helpers::times2(d[i].clone(), v[j].clone()),
+            crate::helpers::times2(d[j].clone(), v[i].clone()),
+          ),
+          Expr::Integer(0),
+        ));
+      }
+    }
+    eqs
+  };
+  let segment = |a: &[Expr], b: &[Expr]| -> Expr {
+    let v = direction(a, b);
+    let mut conds = collinear(a, &v);
+    let along = dot(&offset(a), &v);
+    conds.push(cmp("GreaterEqual", along.clone(), Expr::Integer(0)));
+    conds.push(cmp("LessEqual", along, dot(&v, &v)));
+    call("And", conds)
+  };
+  // `(p, v)` of a `HalfLine`/`InfiniteLine` given as `[p, v]` or `[{p, q}]`.
+  let ray = |args: &[Expr]| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    match args {
+      [pq] => {
+        let ps = points(pq)?;
+        let [p, q] = ps.as_slice() else {
+          return None;
+        };
+        Some((p.clone(), direction(p, q)))
+      }
+      [p, v] => Some((point(p)?, point(v)?)),
+      _ => None,
+    }
+  };
+  let origin = || vec![Expr::Integer(0); n];
+  // `Σ ((x_i - c_i)/r_i)^2`, compared with 1 (`r` a radius or semi-axes).
+  let ball = |args: &[Expr], head: &str| -> Option<Expr> {
+    let c = match args.first() {
+      Some(c) => point(c)?,
+      None => origin(),
+    };
+    let radii = match args.get(1) {
+      None => vec![Expr::Integer(1); n],
+      Some(Expr::List(rs)) if rs.len() == n => rs.to_vec(),
+      Some(Expr::List(_)) => return None,
+      Some(r) => vec![r.clone(); n],
+    };
+    let terms = offset(&c)
+      .into_iter()
+      .zip(radii)
+      .map(|(d, r)| {
+        call(
+          "Power",
+          vec![
+            call("Times", vec![d, call("Power", vec![r, Expr::Integer(-1)])]),
+            Expr::Integer(2),
+          ],
+        )
+      })
+      .collect();
+    Some(cmp(head, sum(terms), Expr::Integer(1)))
+  };
+  match (name.as_str(), args.as_slice()) {
+    ("Point", [p]) => {
+      let ps = point(p).map(|p| vec![p]).or_else(|| points(p))?;
+      Some(call(
+        "Or",
+        ps.iter()
+          .map(|p| {
+            call(
+              "And",
+              coords
+                .iter()
+                .zip(p)
+                .map(|(c, q)| cmp("Equal", c.clone(), q.clone()))
+                .collect(),
+            )
+          })
+          .collect(),
+      ))
+    }
+    ("Line", [pts]) => {
+      // A polyline, or a list of polylines.
+      let lines = points(pts).map(|ps| vec![ps]).or_else(|| match pts {
+        Expr::List(ls) => ls.iter().map(points).collect(),
+        _ => None,
+      })?;
+      let segments: Vec<Expr> = lines
+        .iter()
+        .flat_map(|ps| ps.windows(2).map(|w| segment(&w[0], &w[1])))
+        .collect();
+      (!segments.is_empty()).then(|| call("Or", segments))
+    }
+    ("HalfLine", _) => {
+      let (p, v) = ray(args)?;
+      let mut conds = collinear(&p, &v);
+      conds.push(cmp("GreaterEqual", dot(&offset(&p), &v), Expr::Integer(0)));
+      Some(call("And", conds))
+    }
+    ("InfiniteLine", _) => {
+      let (p, v) = ray(args)?;
+      Some(call("And", collinear(&p, &v)))
+    }
+    ("Disk" | "Ball", _) if args.len() <= 2 => ball(args, "LessEqual"),
+    ("Circle" | "Sphere", _) if args.len() <= 2 => ball(args, "Equal"),
+    ("Rectangle" | "Cuboid", _) if args.len() <= 2 => {
+      let lo = match args.first() {
+        Some(a) => point(a)?,
+        None => origin(),
+      };
+      let hi = match args.get(1) {
+        Some(b) => point(b)?,
+        None => lo
+          .iter()
+          .map(|a| crate::helpers::plus2(a.clone(), Expr::Integer(1)))
+          .collect(),
+      };
+      Some(call(
+        "And",
+        coords
+          .iter()
+          .zip(lo.iter().zip(&hi))
+          .flat_map(|(c, (a, b))| {
+            [
+              cmp("LessEqual", a.clone(), c.clone()),
+              cmp("LessEqual", c.clone(), b.clone()),
+            ]
+          })
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// Threads every equation between two lists of one length inside a logical
+/// combination into the conjunction of its components (`{x, y} == {1, 2}`
+/// is `x == 1 && y == 2`), as Solve reads it; None when there is none.
+pub(crate) fn thread_list_equations(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operators.len() == 1
+      && matches!(operators[0], ComparisonOp::Equal)
+      && let Some(pairs) = list_equation_pairs(&operands[0], &operands[1]) =>
+    {
+      let parts: Vec<Expr> = pairs
+        .into_iter()
+        .map(|(a, b)| {
+          let eq = Expr::Comparison {
+            operands: vec![a.clone(), b.clone()],
+            operators: vec![ComparisonOp::Equal],
+          };
+          thread_list_equations(&eq).unwrap_or(eq)
+        })
+        .collect();
+      Some(call("And", parts))
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "And" | "Or" | "Not") =>
+    {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(thread_list_equations).collect();
+      if rewritten.iter().all(Option::is_none) {
+        return None;
+      }
+      Some(call(
+        name,
+        args
+          .iter()
+          .zip(rewritten)
+          .map(|(a, r)| r.unwrap_or_else(|| a.clone()))
+          .collect(),
+      ))
+    }
+    Expr::BinaryOp {
+      op: op @ (BinaryOperator::And | BinaryOperator::Or),
+      left,
+      right,
+    } => {
+      let (l, r) = (thread_list_equations(left), thread_list_equations(right));
+      if l.is_none() && r.is_none() {
+        return None;
+      }
+      let name = if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      };
+      Some(call(
+        name,
+        vec![
+          l.unwrap_or_else(|| (**left).clone()),
+          r.unwrap_or_else(|| (**right).clone()),
+        ],
+      ))
+    }
+    _ => None,
+  }
+}
+
+/// The component pairs of an equation between two lists of one length, or
+/// between a list and a scalar (`{a, b} == 0` is `a == 0 && b == 0`).
+fn list_equation_pairs(lhs: &Expr, rhs: &Expr) -> Option<Vec<(Expr, Expr)>> {
+  match (lhs, rhs) {
+    (Expr::List(l), Expr::List(r)) if l.len() == r.len() && !l.is_empty() => {
+      Some(l.iter().cloned().zip(r.iter().cloned()).collect())
+    }
+    (Expr::List(l), scalar) | (scalar, Expr::List(l))
+      if !l.is_empty() && !matches!(scalar, Expr::List(_)) =>
+    {
+      let left_is_list = matches!(lhs, Expr::List(_));
+      Some(
+        l.iter()
+          .map(|item| {
+            if left_is_list {
+              (item.clone(), scalar.clone())
+            } else {
+              (scalar.clone(), item.clone())
+            }
+          })
+          .collect(),
+      )
+    }
+    _ => None,
+  }
+}
+
+/// The conjuncts of an `And`, or None for anything else.
+fn conjunction_parts(e: &Expr) -> Option<Vec<Expr>> {
+  match e {
+    Expr::FunctionCall { name, args } if name == "And" => Some(args.to_vec()),
+    Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left,
+      right,
+    } => Some(vec![(**left).clone(), (**right).clone()]),
+    _ => None,
+  }
 }
 
 /// Whether a logical combination holds an `Or` (at the top or under `And`).
@@ -7474,8 +7957,17 @@ fn poly_system_solutions(
       .iter()
       .map(|p| drop_rounding_noise(&substitute_values(p, outer_vars, outer)))
       .collect();
+    // The equation elimination left in `var` is a candidate too: for two
+    // circles it is the line through their intersections, which pins `var`
+    // down where a circle on its own has a (numerically) double root.
+    let eliminated = drop_rounding_noise(&substitute_values(
+      solved_for_var,
+      outer_vars,
+      outer,
+    ));
     let pivot = substituted
       .iter()
+      .chain(std::iter::once(&eliminated))
       .filter(|p| max_power_int(p, var).unwrap_or(0) > 0)
       .min_by_key(|p| max_power_int(p, var).unwrap_or(i128::MAX))?;
     for value in roots_of_last_variable(&substituted, pivot, var)? {
@@ -7756,11 +8248,12 @@ fn term_magnitude(term: &Expr) -> f64 {
   magnitude
 }
 
-/// Whether any number in `expr` is a machine-precision one.
+/// Whether any number in `expr` is an arbitrary-precision one.
 fn contains_bigfloat(expr: &Expr) -> bool {
   match expr {
     Expr::BigFloat(..) => true,
     Expr::List(items) => items.iter().any(contains_bigfloat),
+    Expr::Rule { replacement, .. } => contains_bigfloat(replacement),
     Expr::FunctionCall { args, .. } => args.iter().any(contains_bigfloat),
     Expr::BinaryOp { left, right, .. } => {
       contains_bigfloat(left) || contains_bigfloat(right)
@@ -7811,7 +8304,7 @@ fn numeric_quadratic_roots(poly: &Expr, var: &str) -> Option<Vec<Expr>> {
   if !coeffs.iter().all(exact) {
     return None;
   }
-  let n = |e: Expr| eval("N", vec![e]);
+  let n = |e: Expr| numericize_exact_solutions(e).ok();
   match coeffs.as_slice() {
     [c, b] if !matches!(b, Expr::Integer(0)) => Some(vec![n(eval(
       "Times",
@@ -12693,6 +13186,63 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &arg1_owned
   };
 
+  // An equation that is still a computation (`a == h /. sol`, which is
+  // `(a == h) /. sol`) or a nested equation list is evaluated once with the
+  // unknowns held symbolic, as Wolfram does, and the list flattened.
+  if let Expr::List(eqs) = &args[0]
+    && eqs
+      .iter()
+      .any(|e| matches!(e, Expr::List(_) | Expr::ReplaceAll { .. }))
+  {
+    let mut vars: Vec<String> = Vec::new();
+    let mut add_spec = |spec: &Expr| {
+      if let Expr::List(items) = spec
+        && let Some(Expr::Identifier(name) | Expr::FunctionCall { name, .. }) =
+          items.first()
+        && !vars.contains(name)
+      {
+        vars.push(name.clone());
+      }
+    };
+    match arg1 {
+      Expr::List(specs) if specs.iter().all(|s| matches!(s, Expr::List(_))) => {
+        specs.iter().for_each(&mut add_spec);
+      }
+      spec => add_spec(spec),
+    }
+    args[2..]
+      .iter()
+      .filter(|a| matches!(a, Expr::List(_)))
+      .for_each(&mut add_spec);
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Block",
+      vec![
+        Expr::List(vars.into_iter().map(Expr::Identifier).collect()),
+        // Held on the way out, or a global value of an unknown would
+        // replace it once the Block is left.
+        call("Hold", vec![call("Evaluate", vec![args[0].clone()])]),
+      ],
+    ))?;
+    if let Expr::FunctionCall { name, args: held } = &evaluated
+      && name == "Hold"
+      && let [Expr::List(items)] = held.as_slice()
+    {
+      let mut flat = Vec::new();
+      let mut stack: Vec<&Expr> = items.iter().rev().collect();
+      while let Some(e) = stack.pop() {
+        match e {
+          Expr::List(inner) => stack.extend(inner.iter().rev()),
+          other => flat.push(other.clone()),
+        }
+      }
+      if flat.iter().all(|e| !matches!(e, Expr::ReplaceAll { .. })) {
+        let mut new_args = args.to_vec();
+        new_args[0] = Expr::List(flat.into());
+        return find_root_ast(&new_args);
+      }
+    }
+  }
+
   // `FindRoot[f, {x0}]`: a root of the function `f` itself, from the
   // starting value x0, reported as `{x}` (no variable to name).
   if let Expr::List(start) = arg1
@@ -12860,6 +13410,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let step_monitor = find_option(&args[2..], "StepMonitor");
+  let (accuracy_tol, precision_tol) = find_root_goal_tolerances(&args[2..]);
 
   // Parse second argument: {var, x0} or {var, x0, x1}
   // First peek at the variable name and start point; if the start point
@@ -13078,20 +13629,27 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .ok()
       .filter(|d| !contains_unevaluated_d(d));
 
-  // Newton's method, damped: a step that makes |f| worse is halved until it
-  // does not, which is what lets a badly scaled function like `Exp[x] - 1000`
-  // walk back from the huge first step plain Newton takes. Stops when |f| is
-  // negligible or the iterate stops moving; running out of iterations first
-  // reports FindRoot::cvmit and hands back the point reached, as
-  // wolframscript does.
-  let tol = 1e-15;
+  // Newton's method, damped: a step that makes |f| worse is shortened until
+  // it does not, which is what lets a badly scaled function like
+  // `Exp[x] - 1000` walk back from the huge first step plain Newton takes.
+  // Stops, as wolframscript does, once the step just taken meets the
+  // accuracy or precision goal and the residual meets the accuracy goal
+  // (see `find_root_goal_tolerances`); running out of iterations first
+  // reports FindRoot::cvmit and hands back the point reached.
   let mut x = x0;
+  let mut previous: Option<f64> = None;
   let mut converged = false;
-  let mut settled: Vec<(usize, f64)> = Vec::new();
 
-  for k in 0..max_iter {
+  for _ in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
-    if fx.abs() < tol {
+    let goal_met = match previous {
+      None => fx == 0.0,
+      Some(p) => {
+        (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+          && fx.abs() <= accuracy_tol
+      }
+    };
+    if goal_met {
       converged = true;
       break;
     }
@@ -13144,9 +13702,12 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Backtrack while the step overshoots into a worse residual.
     let mut trial = x - step;
     let mut shrink = 1.0;
+    // A trial outside the function's real domain (`Log[T]` at a negative
+    // `T`) counts as worse too, so the step shrinks back into it.
     for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
-      let ft = find_root_eval_at(&func, &var, trial)?;
-      if ft.is_finite() && ft.abs() <= fx.abs() {
+      if find_root_eval_at(&func, &var, trial)
+        .is_ok_and(|ft| ft.is_finite() && ft.abs() <= fx.abs())
+      {
         break;
       }
       shrink *= 0.5;
@@ -13155,31 +13716,18 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some((lo, hi)) = bounds {
       trial = trial.clamp(lo, hi);
     }
-    // A step this small means the iteration has settled, even for a function
-    // whose residual cannot reach `tol` because of its scale. Note it and keep
-    // going: the last iterations only jitter the final digit, and stopping here
-    // instead would move the answer off the one wolframscript reports.
-    if (trial - x).abs() <= f64::EPSILON * x.abs().max(1.0) {
-      converged = true;
-    }
-    // Once settled the iteration only jitters the last digits, and each
-    // iterate is a pure function of the previous one, so the sequence is
-    // eventually periodic. Detect the period and jump to the iterate the
-    // remaining iterations would end on instead of evaluating them all.
-    if converged && step_monitor.is_none() {
-      settled.push((k, x));
-      if let Some(m) = settled
-        .iter()
-        .position(|(_, s)| s.to_bits() == trial.to_bits())
-      {
-        let start = settled[m].0;
-        let period = k + 1 - start;
-        x = settled[m + (max_iter - start) % period].1;
-        break;
-      }
-    }
+    previous = Some(x);
     x = trial;
     fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
+  }
+  // The last step taken may itself have met the goals.
+  if !converged
+    && let Some(p) = previous
+    && (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+    && find_root_eval_at(&func, &var, x)
+      .is_ok_and(|fx| fx.abs() <= accuracy_tol)
+  {
+    converged = true;
   }
   if !converged {
     crate::emit_message(&format!(
@@ -13482,6 +14030,27 @@ fn find_root_eval_complex_at(
   }
   let n_result = n_ast(&[evaled]).ok()?;
   expr_to_complex_f64(&n_result)
+}
+
+/// The (accuracy, precision) tolerances of FindRoot's `AccuracyGoal` and
+/// `PrecisionGoal` options: `10^-goal`, where `Automatic` is half of
+/// `$MachinePrecision` digits. An iteration has converged once its last step
+/// is within `max(accuracy, |x| precision)` and the residual within
+/// `accuracy` — the rule that reproduces wolframscript's iteration counts.
+fn find_root_goal_tolerances(opts: &[Expr]) -> (f64, f64) {
+  let automatic = 10f64.powf(-(53.0 * std::f64::consts::LOG10_2) / 2.0);
+  // FindRoot holds its arguments, so an option value can still be a name.
+  let goal = |name: &str| {
+    let value = find_option(opts, name)
+      .and_then(|e| crate::evaluator::evaluate_expr_to_expr(e).ok());
+    match &value {
+      Some(Expr::Identifier(i)) if i == "Infinity" => 0.0,
+      Some(e) => crate::functions::math_ast::try_eval_to_f64(e)
+        .map_or(automatic, |g| 10f64.powf(-g)),
+      None => automatic,
+    }
+  };
+  (goal("AccuracyGoal"), goal("PrecisionGoal"))
 }
 
 /// Newton's method on the complex plane. Mirrors the real-only path
@@ -15311,6 +15880,66 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   substitute_expr_with(expr, from, to, &from_str)
 }
 
+/// Replace each call `from` (a `FunctionCall` such as `x[1, 2]`) by its `to`
+/// in one walk of `expr` — what [`substitute_expr`] does for one pair, for
+/// many at once. Only calls whose head is one of the `from` heads are spelled
+/// out for comparison.
+fn substitute_calls(expr: &Expr, pairs: &[(Expr, Expr)]) -> Expr {
+  use std::collections::{HashMap, HashSet};
+  let heads: HashSet<&str> = pairs
+    .iter()
+    .filter_map(|(from, _)| match from {
+      Expr::FunctionCall { name, .. } => Some(name.as_str()),
+      _ => None,
+    })
+    .collect();
+  let table: HashMap<String, &Expr> = pairs
+    .iter()
+    .map(|(from, to)| (expr_to_string(from), to))
+    .collect();
+  fn walk(
+    e: &Expr,
+    heads: &HashSet<&str>,
+    table: &HashMap<String, &Expr>,
+  ) -> Expr {
+    if let Expr::FunctionCall { name, .. } = e
+      && heads.contains(name.as_str())
+      && let Some(to) = table.get(&expr_to_string(e))
+    {
+      return (*to).clone();
+    }
+    let sub = |x: &Expr| walk(x, heads, table);
+    match e {
+      Expr::List(items) => Expr::List(items.iter().map(sub).collect()),
+      Expr::FunctionCall { name, args } => {
+        call(name.as_str(), args.iter().map(sub).collect())
+      }
+      Expr::BinaryOp { op, left, right } => binop(*op, sub(left), sub(right)),
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(sub(operand)),
+      },
+      Expr::Comparison {
+        operands,
+        operators,
+      } => Expr::Comparison {
+        operands: operands.iter().map(sub).collect(),
+        operators: operators.clone(),
+      },
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => rule_expr(sub(pattern), sub(replacement)),
+      Expr::CurriedCall { func, args } => Expr::CurriedCall {
+        func: Box::new(sub(func)),
+        args: args.iter().map(sub).collect(),
+      },
+      _ => e.clone(),
+    }
+  }
+  walk(expr, &heads, &table)
+}
+
 fn substitute_expr_with(
   expr: &Expr,
   from: &Expr,
@@ -15362,6 +15991,34 @@ fn substitute_expr_with(
       a.len() == b.len()
     }
     (_, Expr::CurriedCall { .. }) => false,
+    // An operator node spells like a call only of an operator head.
+    (
+      Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. },
+      Expr::FunctionCall { name, .. },
+    )
+    | (
+      Expr::FunctionCall { name, .. },
+      Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. },
+    ) => matches!(
+      name.as_str(),
+      "Plus"
+        | "Times"
+        | "Power"
+        | "And"
+        | "Or"
+        | "Not"
+        | "StringJoin"
+        | "Alternatives"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "LessEqual"
+        | "Greater"
+        | "GreaterEqual"
+        | "SameQ"
+        | "UnsameQ"
+        | "Inequality"
+    ),
     _ => true,
   };
   if may_match
@@ -21099,28 +21756,27 @@ fn nminimize_ast_checked(
   {
     let fresh_names: Vec<String> =
       (0..var_exprs.len()).map(|i| format!("__ilp_{i}")).collect();
-    let mut renamed_objective_arg = positional[0].clone();
-    for (orig, fresh) in var_exprs.iter().zip(fresh_names.iter()) {
-      if matches!(orig, Expr::FunctionCall { .. }) {
-        renamed_objective_arg = substitute_expr(
-          &renamed_objective_arg,
-          orig,
-          &Expr::Identifier(fresh.clone()),
-        );
-      }
-    }
+    // One pass for all the variables: renaming them one at a time walks the
+    // whole problem once per variable, which is quadratic for an integer
+    // program over thousands of `x[i, j]`.
+    let renames: Vec<(Expr, Expr)> = var_exprs
+      .iter()
+      .zip(&fresh_names)
+      .filter(|(orig, _)| matches!(orig, Expr::FunctionCall { .. }))
+      .map(|(orig, fresh)| (orig.clone(), Expr::Identifier(fresh.clone())))
+      .collect();
+    let renamed_objective_arg = substitute_calls(&positional[0], &renames);
     let renamed_vars_arg =
       Expr::List(fresh_names.iter().cloned().map(Expr::Identifier).collect());
     let renamed_args = [renamed_objective_arg, renamed_vars_arg];
 
     let result = nminimize_ast_impl(&renamed_args, maximize, step_monitor)?;
-    let result = fresh_names.iter().zip(var_exprs.iter()).fold(
-      result,
-      |acc, (fresh, orig)| {
-        substitute_expr(&acc, &Expr::Identifier(fresh.clone()), orig)
-      },
-    );
-    return Ok(result);
+    let bindings: Vec<(&str, &Expr)> = fresh_names
+      .iter()
+      .map(String::as_str)
+      .zip(var_exprs.iter())
+      .collect();
+    return Ok(crate::syntax::substitute_variables(&result, &bindings));
   }
 
   nminimize_ast_impl(positional, maximize, step_monitor)
