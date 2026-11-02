@@ -10,6 +10,7 @@ use crate::syntax::{expr_children, map_children};
 
 mod complex_ode;
 mod complex_pde;
+mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
@@ -4905,6 +4906,7 @@ fn collect_unlisted_unknowns(
 fn find_algebraic_constraint(
   odes: &[Expr],
   funcs: &[SysFunc],
+  max_size: usize,
 ) -> Option<(usize, usize, Expr)> {
   let orders: Vec<std::collections::HashMap<String, usize>> =
     odes.iter().map(derivative_orders).collect();
@@ -4921,6 +4923,7 @@ fn find_algebraic_constraint(
           && let Some(fi) = funcs.iter().position(|f| &f.name == name)
           && !expr_mentions_function(rhs, name)
           && never_differentiated(name)
+          && !expr_size_exceeds(rhs, max_size)
         {
           return Some((ei, fi, rhs.clone()));
         }
@@ -4949,6 +4952,9 @@ fn find_algebraic_constraint(
     let Some(solved) = solve_for_function(eq, &funcs[fi].name) else {
       continue;
     };
+    if expr_size_exceeds(&solved, max_size) {
+      continue;
+    }
     return Some((ei, fi, solved));
   }
   None
@@ -4996,11 +5002,26 @@ fn find_numeric_constraints(
 ) -> Option<(Vec<usize>, Vec<usize>)> {
   let orders: Vec<std::collections::HashMap<String, usize>> =
     odes.iter().map(derivative_orders).collect();
+  let never_differentiated: Vec<&str> = funcs
+    .iter()
+    .filter(|f| {
+      orders
+        .iter()
+        .all(|o| o.get(&f.name).is_none_or(|&k| k == 0))
+    })
+    .map(|f| f.name.as_str())
+    .collect();
+  // A constraint affine in the never-differentiated unknowns (`B[t] +
+  // D[t] == F`, a column's overall balance) needs no Newton iteration:
+  // those unknowns stay algebraic and are solved for exactly, together
+  // with the highest derivatives, at every evaluation.
   let algebraic: Vec<usize> = (0..odes.len())
     .filter(|&i| {
       !funcs
         .iter()
         .any(|f| orders[i].get(&f.name).is_some_and(|&k| k > 0))
+        && polynomial_degree_in(&odes[i], &never_differentiated)
+          .is_none_or(|d| d > 1)
     })
     .collect();
   let free: Vec<usize> = funcs
@@ -5028,6 +5049,111 @@ fn find_numeric_constraints(
     }
   }
   None
+}
+
+/// The total degree of `expr` (an equation's sides are taken together) in
+/// the calls of the functions `names`, read off its structure; `None` when
+/// one occurs anywhere but in sums, products and non-negative integer
+/// powers (`Exp[f[t]]`, `1/f[t]`).
+fn polynomial_degree_in(expr: &Expr, names: &[&str]) -> Option<u32> {
+  degree_in(
+    expr,
+    &|e| matches!(e, Expr::FunctionCall { name, .. } if names.contains(&name.as_str())),
+    &|e| names.iter().any(|n| expr_mentions_function(e, n)),
+  )
+}
+
+/// The total degree of `expr` in the derivatives of the unknowns `names`
+/// (`Derivative[k][f][t]`, `k > 0`), as [`polynomial_degree_in`] reads it.
+fn derivative_degree_in(expr: &Expr, names: &[&str]) -> Option<u32> {
+  let of_unknown = |e: &Expr| {
+    derivative_orders(e)
+      .iter()
+      .any(|(f, &k)| k > 0 && names.contains(&f.as_str()))
+  };
+  degree_in(
+    expr,
+    &|e| is_derivative_call(e) && of_unknown(e),
+    &of_unknown,
+  )
+}
+
+/// Whether `e` itself is a derivative `Derivative[k][f][x]` (in one of the
+/// forms [`derivative_orders`] reads), not merely an expression holding one.
+fn is_derivative_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Derivative" && args.len() == 3
+    }
+    Expr::CurriedCall { func, args } if args.len() == 1 => {
+      match func.as_ref() {
+        Expr::FunctionCall { name, args: d } => {
+          name == "Derivative" && d.len() == 2
+        }
+        Expr::CurriedCall { func: inner, .. } => {
+          matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")
+        }
+        _ => false,
+      }
+    }
+    _ => false,
+  }
+}
+
+/// The total degree of `expr` in the atoms `is_atom` picks out, read off
+/// its structure; `None` when one occurs anywhere but in sums, products and
+/// non-negative integer powers. `mentions` tells whether a subexpression
+/// holds an atom at all.
+fn degree_in(
+  expr: &Expr,
+  is_atom: &dyn Fn(&Expr) -> bool,
+  mentions: &dyn Fn(&Expr) -> bool,
+) -> Option<u32> {
+  if !mentions(expr) {
+    return Some(0);
+  }
+  if is_atom(expr) {
+    return Some(1);
+  }
+  let degree = |e: &Expr| degree_in(e, is_atom, mentions);
+  let max_of = |items: Vec<&Expr>| {
+    items
+      .into_iter()
+      .try_fold(0, |acc, e| degree(e).map(|d| acc.max(d)))
+  };
+  let sum_of = |items: Vec<&Expr>| {
+    items
+      .into_iter()
+      .try_fold(0, |acc, e| degree(e).map(|d| acc + d))
+  };
+  let integer_power = |base: &Expr, exp: &Expr| match exp {
+    Expr::Integer(k) if *k >= 0 => degree(base).map(|d| d * (*k as u32)),
+    _ => None,
+  };
+  match expr {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" | "Subtract" => max_of(args.iter().collect()),
+      "Times" => sum_of(args.iter().collect()),
+      "Power" if args.len() == 2 => integer_power(&args[0], &args[1]),
+      _ => None,
+    },
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus => {
+        max_of(vec![left.as_ref(), right.as_ref()])
+      }
+      BinaryOperator::Times => sum_of(vec![left.as_ref(), right.as_ref()]),
+      BinaryOperator::Divide if !mentions(right) => degree(left),
+      BinaryOperator::Power => integer_power(left, right),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => degree(operand),
+    Expr::Comparison { operands, .. } => max_of(operands.iter().collect()),
+    Expr::List(items) => max_of(items.iter().collect()),
+    _ => None,
+  }
 }
 
 /// Whether `expr` contains `fname[…]` anywhere.
@@ -5192,6 +5318,243 @@ fn clip_points_to_range(
   );
   clipped.push(bound(hi));
   clipped
+}
+
+/// Index reduction: an algebraic equation whose unknowns are all
+/// differentiated elsewhere (`y[t] == x[t]^2` next to `2 x'[t] + y'[t] ==
+/// -x[t]`) determines no unknown on its own; its time derivative (`y'[t] ==
+/// 2 x[t] x'[t]`) is the differential equation the integrator needs.
+///
+/// Integrating only the differentiated constraint lets the solution drift
+/// off the constraint itself (a column's bubble-point temperature wanders
+/// away from its composition until a logarithm's argument turns negative).
+/// Dummy derivatives keep it exact: each such constraint picks one of its
+/// unknowns, which stops being integrated and is solved from the original
+/// constraint instead — in closed form (into `eliminated`) when it has a
+/// small one, by Newton iteration at every evaluation (into `implicit`)
+/// otherwise — while its derivative becomes an algebraic unknown (listed in
+/// `hidden`, substituted as recorded in `dummy_subs`) that the
+/// differentiated constraint determines.
+#[allow(clippy::too_many_arguments)]
+fn reduce_index(
+  odes: &mut Vec<Expr>,
+  funcs: &mut Vec<SysFunc>,
+  eliminated: &mut Vec<(SysFunc, Expr)>,
+  implicit: &mut Vec<(SysFunc, Expr)>,
+  hidden: &mut Vec<String>,
+  dummy_subs: &mut Vec<(Expr, Expr)>,
+  x_name: &str,
+  allow_implicit: bool,
+) -> bool {
+  // The initial conditions already satisfy the constraint.
+  let differentiated: Vec<String> = {
+    let orders: Vec<std::collections::HashMap<String, usize>> =
+      odes.iter().map(derivative_orders).collect();
+    funcs
+      .iter()
+      .filter(|f| {
+        orders
+          .iter()
+          .any(|o| o.get(&f.name).is_some_and(|&k| k > 0))
+      })
+      .map(|f| f.name.clone())
+      .collect()
+  };
+  // The reduction leaves the highest derivatives to be solved for from a
+  // linear system; a system not linear in them (a unit-speed condition
+  // `x'[s]^2 + y'[s]^2 == 1`) is an implicit curve instead.
+  {
+    let names: Vec<&str> = funcs.iter().map(|f| f.name.as_str()).collect();
+    if odes
+      .iter()
+      .any(|ode| derivative_degree_in(ode, &names).is_none_or(|d| d > 1))
+    {
+      return false;
+    }
+  }
+  // How many equations differentiate each unknown, before the reduction.
+  let derivative_uses: std::collections::HashMap<String, usize> = {
+    let mut uses = std::collections::HashMap::new();
+    for o in odes.iter().map(derivative_orders) {
+      for (name, k) in o {
+        if k > 0 {
+          *uses.entry(name).or_insert(0) += 1;
+        }
+      }
+    }
+    uses
+  };
+  // The constraints differentiated below, with their original form.
+  let mut reduced: Vec<(usize, Expr)> = Vec::new();
+  for (ode_idx, ode) in odes.iter_mut().enumerate() {
+    let mentioned: Vec<&SysFunc> = funcs
+      .iter()
+      .filter(|f| expr_mentions_function(ode, &f.name))
+      .collect();
+    // Only a constraint along the solution: an initial condition
+    // (`x[0] == 1`) mentions its unknown at a point instead of at `t`.
+    let at_variable = |f: &&SysFunc| {
+      let call_at_x = Expr::FunctionCall {
+        name: f.name.clone(),
+        args: vec![Expr::Identifier(x_name.to_string())].into(),
+      };
+      crate::functions::polynomial_ast::solve::expr_contains_expr(
+        ode, &call_at_x,
+      )
+    };
+    // An equation with any derivative in it (of a mentioned unknown or not:
+    // `x'[t] == y[t]` mentions only `y` as a call) is no constraint.
+    if mentioned.is_empty()
+      || !mentioned.iter().all(at_variable)
+      || {
+        let own = derivative_orders(ode);
+        funcs
+          .iter()
+          .any(|f| own.get(&f.name).is_some_and(|&k| k > 0))
+      }
+      || mentioned.iter().any(|f| !differentiated.contains(&f.name))
+    {
+      continue;
+    }
+    let Some((lhs, rhs)) = as_equal_pair(ode) else {
+      continue;
+    };
+    // The bare derivative: `D`'s cancelling of the quotients in it (for the
+    // forms Wolfram prints) costs polynomial GCDs over a large constraint,
+    // which the numerical solution has no use for.
+    let d = |side: &Expr| differentiate_expr(side, x_name);
+    if let (Ok(dl), Ok(dr)) = (d(lhs), d(rhs)) {
+      reduced.push((ode_idx, ode.clone()));
+      // A derivative of an unknown an earlier pass already solves from
+      // its constraint is that pass's dummy unknown.
+      let mut derived = Expr::Comparison {
+        operands: vec![dl, dr],
+        operators: vec![ComparisonOp::Equal],
+      };
+      for (df, dummy) in dummy_subs.iter() {
+        derived = crate::functions::polynomial_ast::solve::substitute_expr(
+          &derived, df, dummy,
+        );
+      }
+      *ode = derived;
+    }
+  }
+  if !reduced.is_empty() {
+    let orders_now: Vec<std::collections::HashMap<String, usize>> =
+      odes.iter().map(derivative_orders).collect();
+    let max_order = |name: &str| {
+      orders_now
+        .iter()
+        .filter_map(|o| o.get(name))
+        .max()
+        .copied()
+        .unwrap_or(0)
+    };
+    let candidates = |g: &Expr| -> Vec<String> {
+      funcs
+        .iter()
+        .filter(|f| expr_mentions_function(g, &f.name))
+        .filter(|f| max_order(&f.name) == 1)
+        .map(|f| f.name.clone())
+        .collect()
+    };
+    let mut order: Vec<usize> = (0..reduced.len()).collect();
+    order.sort_by_key(|&i| candidates(&reduced[i].1).len());
+    let mut chosen: Vec<(usize, String)> = Vec::new();
+    let mut assigned = vec![false; reduced.len()];
+    for &i in &order {
+      let in_open_constraints = |name: &str| {
+        (0..reduced.len())
+          .filter(|&j| !assigned[j] && j != i)
+          .filter(|&j| expr_mentions_function(&reduced[j].1, name))
+          .count()
+      };
+      // An unknown no other constraint still needs, then one fewer
+      // equations differentiate (a stage temperature rather than its
+      // composition, which the component balance integrates).
+      let pick = candidates(&reduced[i].1)
+        .into_iter()
+        .filter(|name| !chosen.iter().any(|(_, c)| c == name))
+        .min_by_key(|name| {
+          (
+            in_open_constraints(name),
+            derivative_uses.get(name).copied().unwrap_or(0),
+          )
+        });
+      assigned[i] = true;
+      if let Some(name) = pick {
+        chosen.push((i, name));
+      }
+    }
+    chosen.sort_by_key(|(i, _)| *i);
+    let at_x = |name: &str| Expr::FunctionCall {
+      name: name.to_string(),
+      args: vec![Expr::Identifier(x_name.to_string())].into(),
+    };
+    let derivative_at_x = |name: &str| {
+      crate::evaluator::evaluate_expr_to_expr(&call(
+        "D",
+        vec![at_x(name), Expr::Identifier(x_name.to_string())],
+      ))
+      .ok()
+    };
+    let subst = crate::functions::polynomial_ast::solve::substitute_expr;
+    let mut dropped: Vec<usize> = Vec::new();
+    for (i, name) in chosen {
+      let (ode_idx, g) = reduced[i].clone();
+      let Some(fi) = funcs.iter().position(|f| f.name == name) else {
+        continue;
+      };
+      let Some(df) = derivative_at_x(&name) else {
+        continue;
+      };
+      // Only a small constraint is worth solving symbolically: a large one
+      // would not give a small solution anyway, and `Solve` on it costs
+      // more than all the Newton iterations of the integration.
+      let closed = (!expr_size_exceeds(&g, 120)
+        && !function_in_transcendental_context(&g, &name, false))
+      .then(|| solve_for_function(&g, &name))
+      .flatten()
+      .filter(|s| !expr_size_exceeds(s, 60))
+      .and_then(|s| differentiate_expr(&s, x_name).ok().map(|ds| (s, ds)));
+      if let Some((s, ds)) = closed {
+        let f = funcs.remove(fi);
+        for ode in odes.iter_mut() {
+          *ode = subst(&subst(ode, &df, &ds), &at_x(&name), &s);
+        }
+        for prev in eliminated
+          .iter_mut()
+          .chain(implicit.iter_mut())
+          .map(|(_, e)| e)
+          .chain(reduced.iter_mut().map(|(_, e)| e))
+        {
+          *prev = subst(prev, &at_x(&name), &s);
+        }
+        dropped.push(ode_idx);
+        eliminated.push((f, s));
+      } else if allow_implicit {
+        let f = funcs.remove(fi);
+        let dummy = format!("{name}$dd");
+        for ode in odes.iter_mut() {
+          *ode = subst(ode, &df, &at_x(&dummy));
+        }
+        dummy_subs.push((df, at_x(&dummy)));
+        funcs.push(SysFunc {
+          name: dummy.clone(),
+          order: 0,
+          function_form: true,
+          ics: Vec::new(),
+        });
+        hidden.push(dummy);
+        implicit.push((f, g));
+      }
+    }
+    dropped.sort_unstable_by(|a, b| b.cmp(a));
+    for idx in dropped {
+      odes.remove(idx);
+    }
+  }
+  !reduced.is_empty()
 }
 
 fn ndsolve_system(
@@ -5468,70 +5831,19 @@ fn ndsolve_system(
     }
   }
 
-  // Index reduction: an algebraic equation whose unknowns are all
-  // differentiated elsewhere (`y[t] == x[t]^2` next to `2 x'[t] + y'[t] ==
-  // -x[t]`) determines no unknown on its own; its time derivative
-  // (`y'[t] == 2 x[t] x'[t]`) is the differential equation the integrator
-  // needs. The initial conditions already satisfy the constraint.
-  let differentiated: Vec<String> = {
-    let orders: Vec<std::collections::HashMap<String, usize>> =
-      odes.iter().map(derivative_orders).collect();
-    funcs
-      .iter()
-      .filter(|f| {
-        orders
-          .iter()
-          .any(|o| o.get(&f.name).is_some_and(|&k| k > 0))
-      })
-      .map(|f| f.name.clone())
-      .collect()
-  };
-  for ode in &mut odes {
-    let mentioned: Vec<&SysFunc> = funcs
-      .iter()
-      .filter(|f| expr_mentions_function(ode, &f.name))
-      .collect();
-    // Only a constraint along the solution: an initial condition
-    // (`x[0] == 1`) mentions its unknown at a point instead of at `t`.
-    let at_variable = |f: &&SysFunc| {
-      let call_at_x = Expr::FunctionCall {
-        name: f.name.clone(),
-        args: vec![Expr::Identifier(x_name.clone())].into(),
-      };
-      crate::functions::polynomial_ast::solve::expr_contains_expr(
-        ode, &call_at_x,
-      )
-    };
-    // An equation with any derivative in it (of a mentioned unknown or not:
-    // `x'[t] == y[t]` mentions only `y` as a call) is no constraint.
-    if mentioned.is_empty()
-      || !mentioned.iter().all(at_variable)
-      || {
-        let own = derivative_orders(ode);
-        funcs
-          .iter()
-          .any(|f| own.get(&f.name).is_some_and(|&k| k > 0))
-      }
-      || mentioned.iter().any(|f| !differentiated.contains(&f.name))
-    {
-      continue;
-    }
-    let Some((lhs, rhs)) = as_equal_pair(ode) else {
-      continue;
-    };
-    let d = |side: &Expr| {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "D",
-        vec![side.clone(), Expr::Identifier(x_name.clone())],
-      ))
-    };
-    if let (Ok(dl), Ok(dr)) = (d(lhs), d(rhs)) {
-      *ode = Expr::Comparison {
-        operands: vec![dl, dr],
-        operators: vec![ComparisonOp::Equal],
-      };
-    }
-  }
+  let mut eliminated: Vec<(SysFunc, Expr)> = Vec::new();
+  let mut implicit: Vec<(SysFunc, Expr)> = Vec::new();
+  let mut dummy_subs: Vec<(Expr, Expr)> = Vec::new();
+  let mut index_reduced = reduce_index(
+    &mut odes,
+    &mut funcs,
+    &mut eliminated,
+    &mut implicit,
+    &mut hidden,
+    &mut dummy_subs,
+    x_name,
+    event.is_none(),
+  );
 
   // An algebraic constraint — an equation with no derivative in it — that
   // determines one unknown explicitly is eliminated: the constraint is
@@ -5540,18 +5852,15 @@ fn ndsolve_system(
   // Lagrangian model states a rigid link (`l[t] + d - y[t] == L`), and it
   // turns an index-1 DAE the integrator cannot take into the ODE system it
   // can. The eliminated function is rebuilt from the solution afterwards.
-  let mut eliminated: Vec<(SysFunc, Expr)> = Vec::new();
   loop {
-    let Some((eq_idx, fi, solved)) = find_algebraic_constraint(&odes, &funcs)
-    else {
-      break;
-    };
     // Substituting one solution into the next makes the expressions swell
     // (a distillation column's stage-by-stage equilibria); past a modest
     // size the remaining constraints are cheaper to solve numerically.
-    if expr_size_exceeds(&solved, 300) {
+    let Some((eq_idx, fi, solved)) =
+      find_algebraic_constraint(&odes, &funcs, 300)
+    else {
       break;
-    }
+    };
     let f = funcs.remove(fi);
     odes.remove(eq_idx);
     let target = Expr::FunctionCall {
@@ -5564,7 +5873,7 @@ fn ndsolve_system(
       );
     }
     // A later constraint may refer to an already-eliminated function.
-    for (_, prev) in &mut eliminated {
+    for (_, prev) in eliminated.iter_mut().chain(implicit.iter_mut()) {
       *prev = crate::functions::polynomial_ast::solve::substitute_expr(
         prev, &target, &solved,
       );
@@ -5572,9 +5881,23 @@ fn ndsolve_system(
     eliminated.push((f, solved));
   }
 
+  // An elimination can leave a constraint with only differentiated
+  // unknowns behind (a condenser's dew point once its liquid composition
+  // is substituted by the top stage's vapour): it is reduced like the ones
+  // the equations started with.
+  index_reduced |= reduce_index(
+    &mut odes,
+    &mut funcs,
+    &mut eliminated,
+    &mut implicit,
+    &mut hidden,
+    &mut dummy_subs,
+    x_name,
+    event.is_none(),
+  );
+
   // A constraint with no closed-form solution (index-1 DAE): its unknown is
   // found by Newton iteration whenever the residuals are evaluated.
-  let mut implicit: Vec<(SysFunc, Expr)> = Vec::new();
   if let Some((mut eq_idxs, mut fis)) = find_numeric_constraints(&odes, &funcs)
   {
     if event.is_some() {
@@ -5585,7 +5908,7 @@ fn ndsolve_system(
     let eqs: Vec<Expr> = eq_idxs.iter().map(|&i| odes.remove(i)).collect();
     let fs: Vec<SysFunc> = fis.iter().map(|&i| funcs.remove(i)).collect();
     // Back in the order they were given, each paired with its equation.
-    implicit = fs.into_iter().rev().zip(eqs.into_iter().rev()).collect();
+    implicit.extend(fs.into_iter().rev().zip(eqs.into_iter().rev()));
   }
 
   if odes.len() != funcs.len() {
@@ -5607,7 +5930,11 @@ fn ndsolve_system(
   if funcs.iter().all(|f| f.order == 0) {
     return Ok(None);
   }
-  let algebraic_unknowns = funcs.iter().any(|f| f.order == 0);
+  // Wolfram reports solving a DAE only for an index-1 system it hands to
+  // its DAE solver as it stands; one it had to reduce the index of first
+  // (a distillation column whose bubble-point temperatures are also
+  // differentiated) is integrated without the message.
+  let algebraic_unknowns = !index_reduced && funcs.iter().any(|f| f.order == 0);
   // Every requested derivative must be of a function actually being
   // solved for, and of an order already carried in its state vector
   // (0..order-1); the highest derivative itself isn't stored there.
@@ -5798,16 +6125,17 @@ fn ndsolve_system(
     .collect();
   // The compiled constraints of the numerically-eliminated unknowns.
   let implicit_memo = std::rc::Rc::new(std::cell::RefCell::new(None));
-  let compile_implicit = || -> Option<Vec<NExpr>> {
-    implicit
-      .iter()
-      .map(|(_, eq)| {
-        let norm = normalize_equation(eq).ok()?;
-        let r = substitute_function_values(&norm, &implicit_funcs, x_name);
-        compile_numeric(&r, &ext_names)
-      })
-      .collect()
-  };
+  // Compiled once and shared by every residual that solves them.
+  let implicit_compiled: Option<std::rc::Rc<Vec<NExpr>>> = implicit
+    .iter()
+    .map(|(_, eq)| {
+      let norm = normalize_equation(eq).ok()?;
+      let r = substitute_function_values(&norm, &implicit_funcs, x_name);
+      compile_shared(&r, &ext_names)
+    })
+    .collect::<Option<Vec<NExpr>>>()
+    .map(std::rc::Rc::new);
+  let compile_implicit = || implicit_compiled.clone();
   if !implicit.is_empty() && compile_implicit().is_none() {
     return Ok(None);
   }
@@ -5827,23 +6155,43 @@ fn ndsolve_system(
       let rewritten =
         substitute_function_values(&normalized, &implicit_funcs, x_name);
       let (Some(body), Some(constraints)) =
-        (compile_numeric(&rewritten, &ext_names), compile_implicit())
+        (compile_shared(&rewritten, &ext_names), compile_implicit())
       else {
         return Ok(None);
       };
-      residuals.push(NumFn::Compiled(NExpr::Implicit {
-        constraints,
+      let wrap = |body: NExpr| NExpr::Implicit {
+        constraints: constraints.clone(),
         slot: implicit_slot,
         guess: std::cell::RefCell::new(implicit_guess.clone()),
         init: implicit_guess.clone(),
         memo: implicit_memo.clone(),
         key_len: 1 + n_state,
         body: Box::new(body),
-      }));
+      };
+      let coeffs = highest_derivative_coefficients(
+        &rewritten,
+        &var_names[1 + n_state..],
+        1 + n_state,
+        |e| compile_shared(e, &ext_names).map(wrap),
+      );
+      residuals.push(NumFn::Compiled(
+        wrap(body),
+        std::cell::RefCell::new(None),
+        coeffs,
+      ));
       continue;
     }
     let rewritten = substitute_function_values(&normalized, &funcs, x_name);
-    residuals.push(NumFn::new(rewritten, &var_names));
+    let coeffs = highest_derivative_coefficients(
+      &rewritten,
+      &var_names[1 + n_state..],
+      1 + n_state,
+      |e| compile_shared(e, &var_names),
+    );
+    residuals.push(match (NumFn::new(rewritten, &var_names), coeffs) {
+      (NumFn::Compiled(e, memo, _), coeffs) => NumFn::Compiled(e, memo, coeffs),
+      (symbolic, _) => symbolic,
+    });
   }
   // A delay equation reads earlier values of the solution: before the
   // initial point those are the (constant) history conditions, afterwards
@@ -6187,6 +6535,30 @@ fn ndsolve_system(
   let x_lo = points.first().unwrap().0;
   let x_hi = points.last().unwrap().0;
 
+  // The highest derivatives and algebraic unknowns at every grid point,
+  // solved for once and shared by every function that reads them.
+  let highest_at_points: std::cell::OnceCell<Vec<Option<Vec<f64>>>> =
+    std::cell::OnceCell::new();
+  let highest = |i: usize| -> Option<&Vec<f64>> {
+    highest_at_points
+      .get_or_init(|| {
+        points
+          .iter()
+          .map(|(x, s)| {
+            solve_highest_derivatives_cached(
+              &residuals,
+              funcs.len(),
+              *x,
+              &s[..n_state],
+              None,
+            )
+          })
+          .collect()
+      })
+      .get(i)
+      .and_then(Option::as_ref)
+  };
+
   // Build one InterpolatingFunction rule per dependent function.
   let mut rules: Vec<Expr> = Vec::with_capacity(funcs.len() + eliminated.len());
   for (fi, f) in funcs.iter().enumerate() {
@@ -6198,18 +6570,11 @@ fn ndsolve_system(
     );
     // An algebraic unknown is read from the highest-derivative solve at
     // each point; every other function from its state.
-    let value_at = |x: f64, s: &[f64]| -> f64 {
+    let value_at = |i: usize, s: &[f64]| -> f64 {
       if f.order > 0 {
         return s[state_offset[fi]];
       }
-      solve_highest_derivatives_cached(
-        &residuals,
-        funcs.len(),
-        x,
-        &s[..n_state],
-        None,
-      )
-      .map_or(f64::NAN, |h| h[fi])
+      highest(i).map_or(f64::NAN, |h| h[fi])
     };
     // A zero-length domain `{t, t0, t0}` keeps the derivatives at its one
     // point (`{{t0}, f, f', …}`), so `f'[t0]` reads the equation's own
@@ -6232,8 +6597,9 @@ fn ndsolve_system(
       Expr::List(
         points
           .iter()
-          .map(|(x, s)| {
-            Expr::List(vec![Expr::Real(*x), Expr::Real(value_at(*x, s))].into())
+          .enumerate()
+          .map(|(i, (x, s))| {
+            Expr::List(vec![Expr::Real(*x), Expr::Real(value_at(i, s))].into())
           })
           .collect(),
       )
@@ -6303,6 +6669,45 @@ fn ndsolve_system(
     });
   }
 
+  // The numerically-eliminated unknowns at every grid point, solved for
+  // once (each from the previous point's root) and shared by every
+  // function that reads them.
+  let roots_at_points: std::cell::OnceCell<Vec<Option<Vec<f64>>>> =
+    std::cell::OnceCell::new();
+  let roots = |i: usize| -> Option<&Vec<f64>> {
+    roots_at_points
+      .get_or_init(|| {
+        let Some(constraints) = compile_implicit() else {
+          return vec![None; points.len()];
+        };
+        let mut vars = vec![0.0; ext_names.len()];
+        let mut guess = implicit_guess.clone();
+        points
+          .iter()
+          .map(|(x, state)| {
+            vars[0] = *x;
+            vars[1..=n_state].copy_from_slice(&state[..n_state]);
+            let root =
+              newton_system(&constraints, &mut vars, implicit_slot, &guess)
+                .or_else(|| {
+                  newton_system(
+                    &constraints,
+                    &mut vars,
+                    implicit_slot,
+                    &implicit_guess,
+                  )
+                });
+            if let Some(r) = &root {
+              guess.clone_from(r);
+            }
+            root
+          })
+          .collect()
+      })
+      .get(i)
+      .and_then(Option::as_ref)
+  };
+
   // An eliminated function is sampled from its constraint solution at the
   // same grid, so it comes back as an InterpolatingFunction like the rest.
   for (f, solved) in &eliminated {
@@ -6317,54 +6722,25 @@ fn ndsolve_system(
     let reads_highest_derivatives = value_fn
       .vars_from(1 + n_state)
       .is_none_or(|used| used.iter().any(|&slot| slot < implicit_slot));
-    let root_fn = (!implicit.is_empty()).then(|| {
-      compile_implicit().map(|constraints| NExpr::Implicit {
-        constraints,
-        slot: implicit_slot,
-        guess: std::cell::RefCell::new(implicit_guess.clone()),
-        init: implicit_guess.clone(),
-        memo: implicit_memo.clone(),
-        key_len: 1 + n_state,
-        body: Box::new(NExpr::Const(0.0)),
-      })
-    });
+    let reads_roots = !implicit.is_empty()
+      && value_fn
+        .vars_from(implicit_slot)
+        .is_none_or(|used| !used.is_empty());
     let data = Expr::List(
       points
         .iter()
-        .map(|(x, state)| {
+        .enumerate()
+        .map(|(i, (x, state))| {
           vars[0] = *x;
           vars[1..=n_state].copy_from_slice(&state[..n_state]);
-          if let Some(Some(NExpr::Implicit {
-            constraints,
-            guess,
-            init,
-            ..
-          })) = &root_fn
-          {
-            let start = guess.borrow().clone();
-            if let Some(root) =
-              newton_system(constraints, &mut vars, implicit_slot, &start)
-                .or_else(|| {
-                  newton_system(constraints, &mut vars, implicit_slot, init)
-                })
-            {
-              vars[implicit_slot..implicit_slot + root.len()]
-                .copy_from_slice(&root);
-              *guess.borrow_mut() = root;
-            }
+          if reads_roots && let Some(root) = roots(i) {
+            vars[implicit_slot..implicit_slot + root.len()]
+              .copy_from_slice(root);
           }
           // A solution written with a highest derivative (`F0 == … - h'`)
           // reads it from the solve for the highest derivatives.
-          if reads_highest_derivatives
-            && let Some(high) = solve_highest_derivatives_cached(
-              &residuals,
-              funcs.len(),
-              *x,
-              &state[..n_state],
-              None,
-            )
-          {
-            vars[1 + n_state..1 + n_state + high.len()].copy_from_slice(&high);
+          if reads_highest_derivatives && let Some(high) = highest(i) {
+            vars[1 + n_state..1 + n_state + high.len()].copy_from_slice(high);
           }
           Expr::List(
             vec![
@@ -6400,28 +6776,13 @@ fn ndsolve_system(
   }
   // The numerically-eliminated unknowns are recovered at the same grid.
   for (k, (zf, _)) in implicit.iter().enumerate() {
-    let Some(constraints) = compile_implicit() else {
-      return Ok(None);
-    };
-    let value_fn = NExpr::Implicit {
-      constraints,
-      slot: implicit_slot,
-      guess: std::cell::RefCell::new(implicit_guess.clone()),
-      init: implicit_guess.clone(),
-      memo: implicit_memo.clone(),
-      key_len: 1 + n_state,
-      body: Box::new(NExpr::Var(implicit_slot + k)),
-    };
-    let mut vars = vec![0.0; var_names.len()];
     let data = Expr::List(
       points
         .iter()
-        .map(|(x, state)| {
-          vars[0] = *x;
-          vars[1..=n_state].copy_from_slice(&state[..n_state]);
-          Expr::List(
-            vec![Expr::Real(*x), Expr::Real(value_fn.eval(&vars))].into(),
-          )
+        .enumerate()
+        .map(|(i, (x, _))| {
+          let value = roots(i).map_or(f64::NAN, |r| r[k]);
+          Expr::List(vec![Expr::Real(*x), Expr::Real(value)].into())
         })
         .collect(),
     );
@@ -7430,10 +7791,8 @@ fn integrate_leg(
   // singular point prohibitively slow: such a leg only gets a bounded
   // number of stiff steps, and otherwise stops where RK4 did.
   let costly = residuals.iter().any(NumFn::is_costly);
-  let can_go_adaptive = event_fn.is_none()
-    && time_events.is_empty()
-    && !dde_active()
-    && !funcs.iter().any(|f| f.order == 0);
+  let can_go_adaptive =
+    event_fn.is_none() && time_events.is_empty() && !dde_active();
   let rhs = |xv: f64, s: &[f64]| {
     Ok(system_derivative(
       residuals,
@@ -7503,6 +7862,20 @@ fn integrate_leg(
   // still fires.
   let creeps = event_fn.is_some() || !state_events.events.is_empty();
   let mut adaptive_tried = false;
+  // A DAE whose constraints are solved by Newton iteration at every
+  // evaluation (a distillation column's stage temperatures) is stiff as a
+  // rule, and the fixed grid's step doubling then costs a dozen such
+  // evaluations per nominal step: it goes to the stiff method straight
+  // away, and to the grid only if that fails.
+  if can_go_adaptive
+    && state_events.events.is_empty()
+    && residuals.iter().any(NumFn::solves_constraints)
+  {
+    adaptive_tried = true;
+    if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
+      return Ok(Some(leg));
+    }
+  }
   let mut i = 0;
   while i < n_steps {
     let target = grid(i + 1);
@@ -8133,11 +8506,25 @@ fn mass_matrix(
   let used: Vec<Option<Vec<usize>>> =
     residuals.iter().map(|r| r.vars_from(first_slot)).collect();
   let mut m = vec![vec![0.0; n]; n];
+  // A row whose coefficients are known is read off them.
+  let mut known = vec![false; residuals.len()];
+  for (i, r) in residuals.iter().enumerate() {
+    if let Some(coeffs) = r.linear_coefficients() {
+      for (slot, coeff) in coeffs {
+        let v = coeff.eval(&vars);
+        if !v.is_finite() {
+          return None;
+        }
+        m[i][slot - first_slot] = v;
+      }
+      known[i] = true;
+    }
+  }
   for j in 0..n {
     let slot = first_slot + j;
     vars[slot] = delta;
     for (i, r) in residuals.iter().enumerate() {
-      if used[i].as_ref().is_some_and(|u| !u.contains(&slot)) {
+      if known[i] || used[i].as_ref().is_some_and(|u| !u.contains(&slot)) {
         continue;
       }
       let v = r.eval(&vars).ok()?;
@@ -8160,6 +8547,16 @@ fn solve_mass_matrix_system(
 ) -> Option<Vec<f64>> {
   let n = c.len();
   let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+  // Each row scaled to unit size first: a DAE's rows come in wildly
+  // different units (an energy balance's 1e4-sized enthalpies next to a
+  // mole balance's unit coefficients), and partial pivoting on the raw
+  // rows picks pivots that leave the solution with a hundredfold more
+  // rounding noise — noise a finite-difference Jacobian then amplifies.
+  for (row, r) in m.iter_mut().zip(rhs.iter_mut()) {
+    let s = row_scale(row);
+    row.iter_mut().for_each(|v| *v /= s);
+    *r /= s;
+  }
   for col in 0..n {
     let (pivot_row, pivot_abs) = (col..n)
       .map(|r| (r, m[r][col].abs()))
@@ -8274,11 +8671,24 @@ fn probe_constant_mass_matrix(
 pub(crate) struct MassLu {
   lu: Vec<Vec<f64>>,
   pivots: Vec<usize>,
+  /// The factor each row was divided by before elimination.
+  scales: Vec<f64>,
+}
+
+/// The largest magnitude in a row, or 1 for a row of zeros.
+fn row_scale(row: &[f64]) -> f64 {
+  let s = row.iter().fold(0.0_f64, |a, v| a.max(v.abs()));
+  if s > 0.0 && s.is_finite() { s } else { 1.0 }
 }
 
 impl MassLu {
   fn factor(mut m: Vec<Vec<f64>>) -> Option<Self> {
     let n = m.len();
+    // Rows scaled to unit size, as in `solve_mass_matrix_system`.
+    let scales: Vec<f64> = m.iter().map(|row| row_scale(row)).collect();
+    for (row, s) in m.iter_mut().zip(&scales) {
+      row.iter_mut().for_each(|v| *v /= s);
+    }
     let mut pivots = Vec::with_capacity(n);
     for col in 0..n {
       let (pivot_row, pivot_abs) = (col..n)
@@ -8297,14 +8707,19 @@ impl MassLu {
         m[row][col] = factor;
       }
     }
-    Some(Self { lu: m, pivots })
+    Some(Self {
+      lu: m,
+      pivots,
+      scales,
+    })
   }
 
   /// `hvec` with `M·hvec = -c`.
   fn solve(&self, c: &[f64]) -> Vec<f64> {
     let n = c.len();
     let m = &self.lu;
-    let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
+    let mut rhs: Vec<f64> =
+      c.iter().zip(&self.scales).map(|(v, s)| -v / s).collect();
     // The factorization swapped whole rows, multipliers included, so `L`
     // is in the final row order: every interchange applies to the
     // right-hand side before the forward substitution.
@@ -8367,6 +8782,36 @@ fn probe_constant_mass_matrix_inner(
   }
 
   Some(m0)
+}
+
+/// The coefficient of each highest-derivative placeholder (`names`, at
+/// slots from `first`) that `residual` mentions, compiled by `compile` —
+/// `None` unless `residual` is affine in all of them. Reading a large DAE's
+/// mass matrix off these small expressions is far cheaper than differencing
+/// the whole residual once per placeholder at every evaluation.
+fn highest_derivative_coefficients(
+  residual: &Expr,
+  names: &[String],
+  first: usize,
+  compile: impl Fn(&Expr) -> Option<NExpr>,
+) -> Option<Vec<(usize, NExpr)>> {
+  // Only worth it (and only safe to spend the symbolic differentiation
+  // on) for a system large enough that differencing dominates.
+  if names.len() < 8 {
+    return None;
+  }
+  let mut out = Vec::new();
+  for (j, name) in names.iter().enumerate() {
+    if !mentions_symbol(residual, name) {
+      continue;
+    }
+    let coeff = differentiate_expr(residual, name).ok()?;
+    if names.iter().any(|other| mentions_symbol(&coeff, other)) {
+      return None;
+    }
+    out.push((first + j, compile(&coeff)?));
+  }
+  Some(out)
 }
 
 /// The synthesized variable name standing for the k-th derivative of `f`
@@ -8666,19 +9111,50 @@ fn replace_delayed_values(
 /// A residual/event function over the numeric variable vector, compiled
 /// to a closure tree when possible and falling back to per-call symbolic
 /// substitution otherwise.
+/// The last [`NumFn::vars_from`] answer, by its `from` — asked at every
+/// evaluation of a DAE's mass matrix, whose walk over a large residual
+/// costs as much as evaluating it.
+type VarsMemo = std::cell::RefCell<Option<(usize, Option<Vec<usize>>)>>;
+
 enum NumFn {
-  Compiled(NExpr),
-  Symbolic { expr: Expr, names: Vec<String> },
+  /// A compiled residual, the memo of its `vars_from`, and — for a residual
+  /// affine in the highest derivatives — the compiled coefficient of each
+  /// highest-derivative slot it reads, which the mass matrix is then read
+  /// from directly instead of by differencing the whole residual.
+  Compiled(NExpr, VarsMemo, Option<Vec<(usize, NExpr)>>),
+  Symbolic {
+    expr: Expr,
+    names: Vec<String>,
+  },
 }
 
 impl NumFn {
+  fn compiled(e: NExpr) -> Self {
+    Self::Compiled(e, std::cell::RefCell::new(None), None)
+  }
+
+  /// The coefficients of the highest-derivative slots, when known.
+  fn linear_coefficients(&self) -> Option<&[(usize, NExpr)]> {
+    match self {
+      Self::Compiled(_, _, coeffs) => coeffs.as_deref(),
+      Self::Symbolic { .. } => None,
+    }
+  }
+
   /// The variable indices `>= from` the value depends on, or `None` when
   /// it must be assumed to depend on all of them.
   fn vars_from(&self, from: usize) -> Option<Vec<usize>> {
     match self {
-      Self::Compiled(e) => {
+      Self::Compiled(e, memo, _) => {
+        if let Some((f, vars)) = memo.borrow().as_ref()
+          && *f == from
+        {
+          return vars.clone();
+        }
         let mut out = Vec::new();
-        e.collect_vars_from(from, &mut out).then_some(out)
+        let vars = e.collect_vars_from(from, &mut out).then_some(out);
+        *memo.borrow_mut() = Some((from, vars.clone()));
+        vars
       }
       Self::Symbolic { .. } => None,
     }
@@ -8688,16 +9164,22 @@ impl NumFn {
   /// iteration (an index-1 DAE's constraints) or goes through the symbolic
   /// evaluator — too costly for the thousands of evaluations an adaptive
   /// leg spends near a singular point.
+  /// Whether each evaluation solves algebraic constraints by Newton
+  /// iteration.
+  fn solves_constraints(&self) -> bool {
+    matches!(self, Self::Compiled(e, _, _) if e.has_implicit())
+  }
+
   fn is_costly(&self) -> bool {
     match self {
-      Self::Compiled(e) => e.has_implicit(),
+      Self::Compiled(e, _, _) => e.has_implicit(),
       Self::Symbolic { .. } => true,
     }
   }
 
   fn new(expr: Expr, var_names: &[String]) -> Self {
-    match compile_numeric(&expr, var_names) {
-      Some(compiled) => Self::Compiled(compiled),
+    match compile_shared(&expr, var_names) {
+      Some(compiled) => Self::compiled(compiled),
       None => Self::Symbolic {
         expr,
         names: var_names.to_vec(),
@@ -8707,7 +9189,7 @@ impl NumFn {
 
   fn eval(&self, vars: &[f64]) -> Result<f64, InterpreterError> {
     match self {
-      Self::Compiled(nexpr) => Ok(nexpr.eval(vars)),
+      Self::Compiled(nexpr, _, _) => Ok(nexpr.eval(vars)),
       Self::Symbolic { expr, names } => {
         let mut substituted = expr.clone();
         for (name, value) in names.iter().zip(vars) {
@@ -8816,6 +9298,15 @@ enum NExpr {
     idx: usize,
     lag: f64,
   },
+  /// `body`, evaluated with the variables cut to the first `base` and
+  /// extended by the values of `table`'s entries, each computed in turn and
+  /// free to read the ones before it — the common subexpressions
+  /// [`cse::share`] hoisted out of a large residual.
+  Let {
+    base: usize,
+    table: Vec<Self>,
+    body: Box<Self>,
+  },
   /// `body`, evaluated with `vars[slot..slot + n]` set to the root of the
   /// square system `constraints == 0` — the unknowns of algebraic equations
   /// that have no closed-form solution (index-1 DAE). `slot` is the first
@@ -8823,7 +9314,7 @@ enum NExpr {
   /// the last root found (`guess`) and falls back to the initial values
   /// (`init`).
   Implicit {
-    constraints: Vec<Self>,
+    constraints: std::rc::Rc<Vec<Self>>,
     slot: usize,
     guess: std::cell::RefCell<Vec<f64>>,
     init: Vec<f64>,
@@ -8836,6 +9327,12 @@ enum NExpr {
     key_len: usize,
     body: Box<Self>,
   },
+}
+
+thread_local! {
+  /// The scratch variable vector of [`NExpr::Implicit`] evaluations.
+  static IMPLICIT_SCRATCH: std::cell::RefCell<Vec<f64>> =
+    const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// Root of the square system `constraints(vars with vars[slot..] = z)` near
@@ -8854,6 +9351,50 @@ fn newton_system(
     constraints.iter().map(|c| c.eval(vars)).collect()
   };
   let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
+  // Which constraints read each unknown (all of them when that cannot be
+  // told), and the unknowns grouped so that no two in a group share a
+  // constraint (Curtis, Powell & Reid): a column's stage temperatures,
+  // each fixed by its own bubble point, difference in one evaluation.
+  let rows: Vec<Vec<usize>> = {
+    let mut rows = vec![Vec::new(); n];
+    for (i, c) in constraints.iter().enumerate() {
+      let mut read = Vec::new();
+      if c.collect_vars_from(slot, &mut read) {
+        for j in read.into_iter().filter(|&v| v < slot + n).map(|v| v - slot) {
+          if !rows[j].contains(&i) {
+            rows[j].push(i);
+          }
+        }
+      } else {
+        for r in &mut rows {
+          if !r.contains(&i) {
+            r.push(i);
+          }
+        }
+      }
+    }
+    rows
+  };
+  let groups: Vec<Vec<usize>> = {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut taken: Vec<Vec<bool>> = Vec::new();
+    for j in 0..n {
+      let g = if let Some(g) =
+        taken.iter().position(|t| rows[j].iter().all(|&i| !t[i]))
+      {
+        g
+      } else {
+        groups.push(Vec::new());
+        taken.push(vec![false; n]);
+        groups.len() - 1
+      };
+      groups[g].push(j);
+      for &i in &rows[j] {
+        taken[g][i] = true;
+      }
+    }
+    groups
+  };
   let mut f = residual(&z, vars);
   let mut last_step = f64::INFINITY;
   for _ in 0..100 {
@@ -8864,18 +9405,24 @@ fn newton_system(
     if fnorm == 0.0 {
       return Some(z);
     }
-    // Jacobian by forward differences, one column per unknown.
+    // Jacobian by forward differences, a group of unknowns no constraint
+    // shares at a time, evaluating only the constraints that read them.
     let mut jac = vec![vec![0.0; n]; n];
-    for j in 0..n {
-      let h = 1e-7 * z[j].abs().max(1e-3);
+    for group in &groups {
       let mut zp = z.clone();
-      zp[j] += h;
-      let fp = residual(&zp, vars);
-      for i in 0..n {
-        jac[i][j] = (fp[i] - f[i]) / h;
+      let steps: Vec<f64> =
+        group.iter().map(|&j| 1e-7 * z[j].abs().max(1e-3)).collect();
+      for (&j, h) in group.iter().zip(&steps) {
+        zp[j] += h;
+      }
+      vars[slot..slot + n].copy_from_slice(&zp);
+      for (&j, h) in group.iter().zip(&steps) {
+        for &i in &rows[j] {
+          jac[i][j] = (constraints[i].eval(vars) - f[i]) / h;
+        }
       }
     }
-    let step = solve_dense(jac, f.clone())?;
+    let step = solve_dense(jac.clone(), f.clone())?;
     // A full Newton step that no longer moves `z` means it is already the
     // root to working precision — a guess carried over from the previous
     // solve often is, with a residual of a few ulps that no step lowers.
@@ -8925,6 +9472,19 @@ fn newton_system(
       .fold(0.0, f64::max);
     last_step = rel_step;
     if rel_step <= 1e-13 {
+      // Converged; one more step with the same Jacobian takes `z` to the
+      // last bits. A right-hand side whose terms are large multiples of
+      // the root (a column's flows times its equilibria) otherwise carries
+      // the remaining 1e-13 as noise that a finite-difference Jacobian or
+      // time derivative of it amplifies a hundred-million-fold.
+      if let Some(polish) = solve_dense(jac, f.clone()) {
+        let zn: Vec<f64> =
+          z.iter().zip(&polish).map(|(zi, di)| zi - di).collect();
+        let fnew = residual(&zn, vars);
+        if fnew.iter().all(|v| v.is_finite()) && norm(&fnew) <= norm(&f) {
+          return Some(zn);
+        }
+      }
       return Some(z);
     }
   }
@@ -8974,6 +9534,19 @@ impl NExpr {
   fn collect_vars_from(&self, from: usize, out: &mut Vec<usize>) -> bool {
     match self {
       Self::Const(_) | Self::Delayed { .. } => true,
+      // Slots from `base` on are the table's own values.
+      Self::Let { base, table, body } => {
+        let mut inner = Vec::new();
+        if !table
+          .iter()
+          .chain(std::iter::once(body.as_ref()))
+          .all(|e| e.collect_vars_from(from, &mut inner))
+        {
+          return false;
+        }
+        out.extend(inner.into_iter().filter(|&i| i < *base));
+        true
+      }
       Self::Var(i) => {
         if *i >= from {
           out.push(*i);
@@ -9004,7 +9577,33 @@ impl NExpr {
         out.extend(refs.iter().map(|(_, i)| *i).filter(|i| *i >= from));
         true
       }
-      Self::ComplexReal(_) | Self::Implicit { .. } => false,
+      // The roots in the slots from `slot` on are internal; what they are
+      // solved from — the constraints' own variables — is read too.
+      Self::Implicit {
+        constraints,
+        slot,
+        body,
+        ..
+      } => {
+        let mut inner = Vec::new();
+        if from > *slot || !body.collect_vars_from(from, &mut inner) {
+          return false;
+        }
+        let uses_roots = inner.iter().any(|&i| i >= *slot);
+        out.extend(inner.into_iter().filter(|&i| i < *slot));
+        if uses_roots {
+          let mut read = Vec::new();
+          if !constraints
+            .iter()
+            .all(|c| c.collect_vars_from(from, &mut read))
+          {
+            return false;
+          }
+          out.extend(read.into_iter().filter(|&i| i < *slot));
+        }
+        true
+      }
+      Self::ComplexReal(_) => false,
     }
   }
 
@@ -9033,6 +9632,9 @@ impl NExpr {
       | Self::External { .. }
       | Self::ComplexReal(_)
       | Self::Delayed { .. } => false,
+      Self::Let { table, body, .. } => {
+        body.has_implicit() || table.iter().any(Self::has_implicit)
+      }
     }
   }
 
@@ -9047,17 +9649,33 @@ impl NExpr {
         key_len,
         body,
       } => {
-        let mut local = vars.to_vec();
+        // The variables extended by the roots, in a buffer reused from
+        // one evaluation to the next (the mass matrix alone evaluates
+        // hundreds of these per right-hand side).
+        let mut local =
+          IMPLICIT_SCRATCH.with(|b| std::mem::take(&mut *b.borrow_mut()));
+        local.clear();
+        local.extend_from_slice(vars);
         local.resize(slot + constraints.len(), 0.0);
         let key = &vars[..(*key_len).min(vars.len())];
-        let cached = memo
-          .borrow()
-          .as_ref()
-          .filter(|(k, _)| k.as_slice() == key)
-          .map(|(_, root)| root.clone());
-        let root = if let Some(root) = cached {
-          root
-        } else {
+        let hit = {
+          let memo = memo.borrow();
+          match memo.as_ref() {
+            Some((k, root)) if k.as_slice() == key => {
+              if let Some(root) = root {
+                local[*slot..*slot + root.len()].copy_from_slice(root);
+              }
+              Some(root.is_some())
+            }
+            _ => None,
+          }
+        };
+        if let Some(found) = hit {
+          let value = if found { body.eval(&local) } else { f64::NAN };
+          IMPLICIT_SCRATCH.with(|b| *b.borrow_mut() = local);
+          return value;
+        }
+        let root = {
           let start = guess.borrow().clone();
           let root = newton_system(constraints, &mut local, *slot, &start)
             .or_else(|| newton_system(constraints, &mut local, *slot, init));
@@ -9071,7 +9689,9 @@ impl NExpr {
           return f64::NAN;
         };
         local[*slot..*slot + root.len()].copy_from_slice(&root);
-        body.eval(&local)
+        let value = body.eval(&local);
+        IMPLICIT_SCRATCH.with(|b| *b.borrow_mut() = local);
+        value
       }
       Self::Const(v) => *v,
       Self::Var(i) => vars[*i],
@@ -9137,6 +9757,9 @@ impl NExpr {
         }
       }
       Self::Delayed { idx, lag } => dde_history_value(*idx, vars[0] - lag),
+      Self::Let { base, table, body } => {
+        cse::eval_let(*base, table, body, vars)
+      }
       Self::InterpGrid {
         func_args,
         grid,
@@ -9303,6 +9926,12 @@ impl CompiledReal {
 /// Compile an expression over the given variable names to an `NExpr`.
 /// Returns `None` for any construct outside the supported numeric subset
 /// (the caller then falls back to symbolic evaluation).
+/// [`compile_numeric`] for a large expression evaluated many times (a DAE
+/// residual): its repeated subexpressions are evaluated once each.
+fn compile_shared(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
+  compile_numeric(expr, var_names).map(|e| cse::share(e, var_names.len()))
+}
+
 fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   if contains_imaginary(expr) {
     return compile_complex(expr, var_names)

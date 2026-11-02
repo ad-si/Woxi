@@ -2243,42 +2243,38 @@ among them.
 `NDSolve`'s DAE support handles index-1 constraints: those that solve
 explicitly for an unknown are eliminated, and the remaining derivative-free
 equations are solved together by Newton iteration when they are as many as
-the never-differentiated unknowns they mention. Index ≥ 2 constraints, and
-constraints whose unknown is also differentiated, are not covered. The one exception is a
+the never-differentiated unknowns they mention; ones affine in those unknowns
+are solved with the highest derivatives instead. Index-2 constraints (all of
+whose unknowns are differentiated elsewhere, a bubble point fixing a
+differentiated stage temperature) are reduced by dummy derivatives: the
+constraint is differentiated, one of its unknowns is solved from the original
+constraint at every step (in closed form when that is small, else by Newton
+iteration) and its derivative becomes an algebraic unknown. Systems not linear
+in their highest derivatives are not reduced. The one exception is a
 system whose algebraic equations leave a single degree of freedom, closed by
 first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
 leaves the region the equations are defined on.
 
-### `NDSolve` of a DAE mixing algebraic unknowns into differential equations
+Woxi does not compute consistent initial values (`NDSolve::ivres`): it takes
+the given ones as they are, so a DAE started off its constraints differs from
+WL's from the start.
 
-A distillation-column model (Housam Binous's Demonstrations: holdup balances
-with `T[i]'[t]` and `y[i]'[t]` terms, vapor-liquid equilibria, and flows
-`L[t]`, `V[t]`, `D[t]` that only appear algebraically) returns `NDSolve`
-unevaluated when an equation combines differentiated unknowns with the
-Newton-solved algebraic ones in a way that does not compile; because `sol`
-then holds the unevaluated `NDSolve`, the Demonstrations' `Plot[x[11][t] /.
-sol, …]` reruns it at every sample and times out. A solvent-swap variant of
-the model (10 stages, `t` up to 20000) now integrates — the stiff Rosenbrock
-fallback also takes legs with algebraic unknowns — but takes about a minute.
+### `NDSolve` of a distillation-column DAE
 
-Status 2026-11-01. Columns without an energy balance now solve
-(SolventSwapDistillation, TernaryBatchRectification, the residue-curve
-models): the stiff Rosenbrock fallback runs when the right-hand side Newton
-solves the stage temperatures. DistillationOfAnEthanolWaterMixture is still
-open. Its temperatures are fixed by the bubble-point equations and also
-differentiated in the energy balances (`T[0]'[t]`, `T[0]` not even listed as
-an unknown), which makes it a higher-index DAE. WL reduces the index and
-computes consistent initial values (`NDSolve::ivres`).
+Housam Binous's distillation Demonstrations (holdup balances, energy balances
+`h[i]'[t]` that differentiate the stage temperatures, bubble-point
+constraints, flows `L[t]`, `V[t]` that only appear algebraically) now
+integrate with the stiff Rosenbrock method and the dummy-derivative index
+reduction, matching wolframscript to 1e-7 (DistillationOfAnEthanolWaterMixture,
+DistillationOfATernaryIdealMixture, DynamicSimulationOfABinaryDistillation).
 
-Two experiments, both reverted:
-- Cancelling terms in the algebraic equations after the explicit
-  eliminations exposes the overall balance `-10 + B[t] + Di[t] == 0`. Woxi
-  had assigned it to `V2`, an unknown it no longer contains.
-- Letting the stiff fallback run with order-0 unknowns then integrates. But
-  from the inconsistent start it drifts away from WL's steady state
-  (`x[1][50]` 0.0666 against 0.8375), so the result is wrong rather than
-  missing.
+DistillationColumnUsingTheFrancisFormulaForFlowThroughWeirs still differs in
+its transient: `x[1][0][50]` is 0.8519573 in Woxi (the same at RTOL 1e-10)
+against 0.8520657 in wolframscript, which agree again by t = 300
+(0.85226559 against 0.85226706). wolframscript with
+`AccuracyGoal -> 11, PrecisionGoal -> 11` stops at the start with
+`InterpolatingFunction::dmval`, so its own converged answer is unknown.
 
 ### `NDSolve` uses a fixed grid
 

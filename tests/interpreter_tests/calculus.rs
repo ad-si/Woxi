@@ -24420,6 +24420,69 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // A constraint among differentiated unknowns with no closed form
+  // (`Exp[y] == 1 + x`, a bubble point fixing a stage temperature) keeps
+  // holding exactly: `y` is solved from it at every step while its
+  // differentiated form determines `y'` (dummy derivatives), and the
+  // index-2 system is integrated without `NDSolve::pdord`.
+  // wolframscript: {0.5306020766072884, 0.4256611578353689,
+  // 0.2961549648061113, 0.2594021623916216}.
+  #[test]
+  fn dae_index_reduction_keeps_transcendental_constraint() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "s = NDSolve[{Exp[y[t]] == 1 + x[t], x'[t] + y'[t] == -x[t], \
+       x[0] == 1, y[0] == Log[2.]}, {x, y}, {t, 0, 2}]; \
+       v = {x[1], y[1], x[2], y[2]} /. First[s]; \
+       {Max[Abs[v - {0.5306020766072884, 0.4256611578353689, \
+       0.2961549648061113, 0.2594021623916216}]] < 10^-6, \
+       Abs[Exp[v[[4]]] - 1 - v[[3]]] < 10^-12}",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{True, True}");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+  }
+
+  // A constraint whose unknowns are all differentiated only once another
+  // unknown is eliminated (`Exp[T/10] == 1 + y` with `y == 2 x`) is reduced
+  // too. wolframscript: {0.88180299538977, 10.165363463582576,
+  // 1.7636059907795427, 0.7020522826271448, 8.771775120889345}.
+  #[test]
+  fn dae_index_reduction_after_elimination() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y[t] == 2 x[t], Exp[T[t]/10] == 1 + y[t], \
+         T'[t] + x'[t] == -x[t], x[0] == 1, T[0] == 10 Log[3.], \
+         y[0] == 2}, {x, T, y}, {t, 0, 3}]; \
+         Max[Abs[({x[1], T[1], y[1], x[3], T[3]} /. First[s]) - \
+         {0.88180299538977, 10.165363463582576, 1.7636059907795427, \
+         0.7020522826271448, 8.771775120889345}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A DAE with a Newton-solved constraint goes to the stiff method, which
+  // crosses a steady stretch in a few long steps; where a step change in
+  // the input then shortens them abruptly, the long steps are filled in
+  // from the method's continuous extension so that the interpolating
+  // function does not swing away from the data next to the change.
+  #[test]
+  fn stiff_dae_solution_is_accurate_between_long_steps() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -x[t] + If[t < 5, 0, 1] + 0 z[t], \
+         z[t] + Exp[z[t]] == x[t] + 1, x[0] == 1, z[0] == 0.5}, {x, z}, \
+         {t, 0, 10}]; xs = x /. First[s]; \
+         ex[t_] := If[t < 5, Exp[-t], 1 + (Exp[-5] - 1) Exp[-(t - 5)]]; \
+         Max[Table[Abs[xs[t] - ex[t]], {t, 0, 10, 0.01}]] < 10^-5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // NDSolve::ndsz names the independent variable where stepping stalled.
   #[test]
   fn ndsz_names_the_independent_variable() {

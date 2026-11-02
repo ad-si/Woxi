@@ -77,6 +77,7 @@ pub(super) fn rosenbrock_leg_limited(
   let h_min = 16.0 * f64::EPSILON * x_from.abs().max(x_to.abs()).max(1.0);
   let mut failures = 0;
   let mut sparsity = JacobianSparsity::default();
+  let mut prev_step: Option<DenseStep> = None;
 
   for _ in 0..max_steps {
     if (x_to - x) * dir <= h_min {
@@ -89,7 +90,12 @@ pub(super) fn rosenbrock_leg_limited(
     let Some(jacobian) = sparsity.jacobian(f, x, &y, &f0)? else {
       return Ok(None);
     };
-    let dt = f64::EPSILON.sqrt() * x.abs().max(h);
+    // Differenced over a step sized to the leg rather than to the current
+    // step: the first steps of a leg starting at 0 are tiny, and a
+    // right-hand side that solves constraints by Newton iteration is only
+    // exact to its convergence tolerance, which a difference over a step of
+    // 1e-12 blows up into a derivative of order one.
+    let dt = f64::EPSILON.sqrt() * x.abs().max(span.abs());
     let Some(ft) = f(x + dt * dir, &y)? else {
       return Ok(None);
     };
@@ -210,16 +216,124 @@ pub(super) fn rosenbrock_leg_limited(
       h /= 4.0;
       continue;
     };
+    let step = DenseStep::new(x, hs, &y, &y_new, &ks);
     x += hs;
     if (x_to - x) * dir <= h_min {
       x = x_to;
     }
+    grade_points(&mut points, prev_step.as_ref(), &step);
     y = y_new;
     f0 = f_new;
     points.push((x, y.clone()));
+    prev_step = Some(step);
     h *= factor;
   }
   Ok(None)
+}
+
+/// Rodas4's continuous extension (Hairer & Wanner's `RODAS`, `D21`…`D35`):
+/// the solution inside a step from its two ends and two combinations of the
+/// stage increments, accurate to third order.
+const RODAS_DENSE: [[f64; 5]; 2] = [
+  [
+    10.12623508344586,
+    -7.487995877610167,
+    -34.80091861555747,
+    -7.992771707568823,
+    1.025137723295662,
+  ],
+  [
+    -0.6762803392801253,
+    6.087714651678606,
+    16.43084320892478,
+    24.76722511418386,
+    -6.594389125716872,
+  ],
+];
+
+/// One accepted step and what its continuous extension needs.
+pub(super) struct DenseStep {
+  x0: f64,
+  h: f64,
+  y0: Vec<f64>,
+  y1: Vec<f64>,
+  c2: Vec<f64>,
+  c3: Vec<f64>,
+}
+
+impl DenseStep {
+  fn new(x0: f64, h: f64, y0: &[f64], y1: &[f64], ks: &[Vec<f64>]) -> Self {
+    let combine = |w: &[f64; 5]| -> Vec<f64> {
+      (0..y0.len())
+        .map(|i| (0..5).map(|j| w[j] * ks[j][i]).sum())
+        .collect()
+    };
+    Self {
+      x0,
+      h,
+      y0: y0.to_vec(),
+      y1: y1.to_vec(),
+      c2: combine(&RODAS_DENSE[0]),
+      c3: combine(&RODAS_DENSE[1]),
+    }
+  }
+
+  /// The solution at `x`, inside the step.
+  pub(super) fn at(&self, x: f64) -> Vec<f64> {
+    let s = (x - self.x0) / self.h;
+    (0..self.y0.len())
+      .map(|i| {
+        (1.0 - s) * self.y0[i]
+          + s * (self.y1[i] + (1.0 - s) * (self.c2[i] + s * self.c3[i]))
+      })
+      .collect()
+  }
+}
+
+/// How much longer one interval of the returned grid may be than the next.
+const GRADE: f64 = 3.0;
+
+/// The solution is handed back as values on the accepted points, which a
+/// cubic interpolates four at a time. A long step right next to a short one
+/// (a steady state that a step change in a control abruptly ends, the step
+/// size collapsing there) makes such a cubic swing far outside the data, so
+/// the long step gets intermediate points from its continuous extension,
+/// spaced to grow by at most [`GRADE`] from the short step's length. `step`
+/// is the step just accepted, whose start is `points`' last point.
+fn grade_points(
+  points: &mut Vec<(f64, Vec<f64>)>,
+  prev: Option<&DenseStep>,
+  step: &DenseStep,
+) {
+  let short = step.h.abs();
+  let dir = step.h.signum();
+  if let Some(prev) = prev {
+    let long = prev.h.abs();
+    if long > GRADE * short {
+      // The end of the previous step, finer towards its end.
+      let Some(last) = points.pop() else { return };
+      let mut offsets = Vec::new();
+      let mut d = short * GRADE;
+      while d < long / GRADE.sqrt() {
+        offsets.push(d);
+        d *= GRADE;
+      }
+      for d in offsets.into_iter().rev() {
+        let xq = last.0 - dir * d;
+        points.push((xq, prev.at(xq)));
+      }
+      points.push(last);
+    } else if short > GRADE * long {
+      // The start of this step, coarser away from its start.
+      let start = step.x0;
+      let mut d = long * GRADE;
+      while d < short / GRADE.sqrt() {
+        let xq = start + dir * d;
+        points.push((xq, step.at(xq)));
+        d *= GRADE;
+      }
+    }
+  }
 }
 
 /// Rodas4 (Hairer & Wanner, as tabulated in DifferentialEquations.jl):
