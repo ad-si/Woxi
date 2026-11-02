@@ -43657,16 +43657,24 @@ mod highlighted_list_plot {
   use super::*;
 
   // `Highlighted[data, Placed["XSlice", {{i}}]]` plots the data and marks
-  // the i-th point with a vertical line (SphericalShellAndLatticePoints).
+  // the i-th point with a vertical line (SphericalShellAndLatticePoints),
+  // the ray up from it as wolframscript writes it.
   #[test]
   fn x_slice_is_drawn() {
     assert_eq!(
       interpret(
         "g = ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]]; \
-         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]]}"
+         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]], Cases[g, _ConicHullRegion, Infinity]}"
       )
       .unwrap(),
-      "{Graphics, 1}"
+      "{Graphics, 0, {ConicHullRegion[{2., 4.}, {{0, 1}}]}}"
+    );
+    assert!(
+      interpret(
+        "ExportString[ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]], \"SVG\"]"
+      )
+      .unwrap()
+      .contains("<polyline")
     );
     assert_eq!(
       interpret("Head[ListPlot[Highlighted[{1, 2, 3}]]]").unwrap(),

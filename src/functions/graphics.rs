@@ -2712,6 +2712,21 @@ fn collect_primitives(
         "HalfLine" if !args.is_empty() => {
           parse_infinite_line(args, style, prims, true);
         }
+        // `ConicHullRegion[p, {v}]` with one direction is the ray from `p`
+        // along `v`.
+        "ConicHullRegion"
+          if args.len() == 2
+            && matches!(&args[1], Expr::List(vs) if vs.len() == 1) =>
+        {
+          if let Expr::List(vs) = &args[1] {
+            parse_infinite_line(
+              &[args[0].clone(), vs[0].clone()],
+              style,
+              prims,
+              true,
+            );
+          }
+        }
         // Rotate[g, θ] rotates g by θ radians counterclockwise about the
         // center of its bounding box; Rotate[g, {u, v}] by the angle that
         // carries the direction u onto the direction v; Rotate[g, θ, {x, y}] about the point

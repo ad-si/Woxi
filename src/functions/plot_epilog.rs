@@ -573,9 +573,13 @@ fn render_item(
       }
       // InfiniteLine[p, v] / InfiniteLine[{p1, p2}] and HalfLine (from the
       // point on) are drawn across the visible plot range.
-      "InfiniteLine" | "HalfLine" if !args.is_empty() => {
+      // `ConicHullRegion[p, {v}]` with one direction is the ray `HalfLine`.
+      "InfiniteLine" | "HalfLine" | "ConicHullRegion" if !args.is_empty() => {
         let (point, direction) = match args.as_slice() {
-          [p, v] => (point2(p), point2(v)),
+          [p, Expr::List(vs)] if name == "ConicHullRegion" && vs.len() == 1 => {
+            (point2(p), point2(&vs[0]))
+          }
+          [p, v] if name != "ConicHullRegion" => (point2(p), point2(v)),
           [Expr::List(pts)] if pts.len() == 2 => {
             match (point2(&pts[0]), point2(&pts[1])) {
               (Some(a), Some(b)) => (Some(a), Some((b.0 - a.0, b.1 - a.1))),
@@ -589,7 +593,7 @@ fn render_item(
             (px, py),
             (dx, dy),
             (area.x_min, area.x_max, area.y_min, area.y_max),
-            name == "HalfLine",
+            name != "InfiniteLine",
           )
         {
           let pts =

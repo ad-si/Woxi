@@ -241,11 +241,21 @@ pub fn expand_highlighted_data(args: &[Expr]) -> Option<Vec<Expr>> {
         vec![
           call("GrayLevel", vec![Expr::Real(0.7)]),
           call("AbsoluteThickness", vec![Expr::Integer(1)]),
+          // wolframscript draws the slice as the ray up from the point.
           call(
-            "InfiniteLine",
+            "ConicHullRegion",
             vec![
-              point.clone(),
-              Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+              crate::evaluator::evaluate_expr_to_expr(&call(
+                "N",
+                vec![point.clone()],
+              ))
+              .unwrap_or_else(|_| point.clone()),
+              Expr::List(
+                vec![Expr::List(
+                  vec![Expr::Integer(0), Expr::Integer(1)].into(),
+                )]
+                .into(),
+              ),
             ],
           ),
           call("PointSize", vec![Expr::Real(0.028875)]),
