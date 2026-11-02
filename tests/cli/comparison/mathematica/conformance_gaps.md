@@ -4847,18 +4847,64 @@ Woxi makes 10000 every time. The pictures look alike, but an expensive body
 ### Plot parts nest differently
 
 wolframscript wraps curves in `GraphicsComplex` / `Annotation` where Woxi emits
-plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid;
-`Graph[…, opts]` echoes its options unwrapped where wolframscript wraps them in
-a list.
+plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid.
 
-### Chart functions have no symbolic primitive list at all
+### 3D plots sample and nest differently
 
-`PieChart`, `BarChart` and friends render straight to SVG, so unlike `Plot`
-they expose no `Graphics[{…}]` to index into: `Head[PieChart[{0.3, 0.7}][[1]]]`
-is `Part` in Woxi (the `Part` stays unapplied on the opaque graphic) against
-`List` in wolframscript, and a `/.` rule that matches nothing leaves the whole
-expression alone rather than rewriting inside it. Making the charts symbolic
-means routing them through the `Graphics` layer the plots use.
+`ParametricPlot3D`, `ListPlot3D`, `ContourPlot3D` and `RevolutionPlot3D`
+draw the same surfaces, but the primitive tree differs from wolframscript's:
+
+- `ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]` has 201 line points in
+  Woxi and 284 in wolframscript (adaptive refinement). A curve clipped away
+  by `PlotRange` still leaves a `Line` in Woxi.
+- wolframscript wraps the surface's `GraphicsComplex` in a list and colours a
+  `ColorFunction` surface with `VertexColors`, so `p[[1, 2]]` is not a list
+  of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
+- `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
+  triangulation in wolframscript; Woxi draws one polygon over the points.
+- `RevolutionPlot3D` samples a hair inside the parameter range
+  (`1.0000001428…`), and an explicit `RevolutionAxis -> {0, 0, 1}` gives a
+  different (rotated) mesh than the default axis.
+
+The adaptive samplers are not decoded, so these cases are skip-listed.
+
+### `Plot` samples just inside the interval's ends
+
+wolframscript's first and last samples sit about `1*^-6` of the range inside
+`{x, 0, 1}`, so `PlotRange[Plot[x^2, {x, 0, 1}]]` gives
+`{{0., 1.}, {0., 0.9999999591836739}}`. Woxi samples the ends themselves and
+gives `{{0., 1.}, {0., 1.}}`.
+
+### Rasterizing a `Graphics` depends on the display scale
+
+`Image[Graphics[…, ImageSize -> {{246, 246}, {246, 246}}]]` is 492 × 492
+pixels in wolframscript on a Retina Mac (the front end renders at the
+display's scale), and `SetAlphaChannel[Graphics[…], mask]` is rasterized the
+same way. Woxi rasterizes at the requested size. **Not reproducible** across
+machines (compare "HighlightImage returns the image at its own size").
+
+### Chart functions: symbolic primitives
+
+`PieChart`, `BarChart` and friends return `Graphics[{…}]`, but only
+`RectangleChart` and ``BarCharts`GeneralizedBarChart`` reproduce
+wolframscript's primitive tree (a
+``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]``
+per bar, the exact bar positions). Still different:
+
+- `BarChart[<|"a" -> 1, …|>]` emits plain `{RGBColor[…], Rectangle[…]}`
+  pairs; wolframscript wraps each bar like `RectangleChart` does and uses
+  bar edges at `0.5487…`.
+- `PairedBarChart` / `PairedHistogram` draw rectangles where wolframscript's
+  first part holds none (its bars sit deeper in the tree).
+- `RectangleChart3D` returns one cuboid per box; wolframscript's only
+  `Cuboid` is the shaded base plate (the boxes are polygons).
+- `BulletGauge[{3, 8}, 5, {0, 10}]` draws its bars as `Rectangle`s with
+  `{0., 0.35}` corners and a target `Line` at `x = 5`; wolframscript's gauge
+  has no such rectangles and a `Line` at 0.
+- `RectangleChart[<|…|>, PlotLabels -> Callout[Automatic, Above]]` places the
+  label `Text` at a different height.
+- `Head[Animate[…]]` stays `Animate`; wolframscript rewrites it to
+  `Manipulate`.
 
 ### `PointSize` in `PlotStyle` and `ListPlot`'s `PlotLabel`
 
@@ -6535,8 +6581,7 @@ its fill/line colors. The same holds for `ColorData[7, k]` and
 Demonstration colors its triangle, discs and background with them). The
 schemes' values could not be checked against a real kernel. `ColorData[8][k]`
 (the row backgrounds of the `Grid` in the `The Perfect Venn Diagram`
-Demonstration's plot title) is in the same state. `ComputationalGeometry`ConvexHull` starts its index list at the
-leftmost corner, which is likewise unverified.
+Demonstration's plot title) is in the same state.
 
 
 ## Text width of `Row`/`Grid` captions is overestimated
@@ -6592,9 +6637,37 @@ printed form of the result differs.
 
 ## HighlightMesh draws no highlighting
 
-`HighlightMesh[mesh, spec]` evaluates to the bare mesh. wolframscript also
-highlights the cells `spec` names and, for `Labeled[0, "Index"]`, writes each
-vertex's index next to it; Woxi draws neither.
+`HighlightMesh[mesh, spec]` returns the mesh with the `Properties ->
+{{d, Default} -> MeshCellHighlight | MeshCellLabel -> …}` option
+wolframscript adds, but Woxi draws a `MeshRegion` as text, so neither the
+highlighted cells nor the vertex indices of `Labeled[0, "Index"]` appear in
+the picture. wolframscript's echo also normalises the mesh itself (machine
+coordinates, `{Polygon[…]}` cells), which Woxi does not.
+
+## ``ComputationalGeometry`VoronoiDiagram`` of machine points: last digits
+
+Woxi ports the package's divide-and-conquer Delaunay and its circumcenter
+formula, so exact input gives wolframscript's result exactly and the index
+lists always match. With machine coordinates a vertex whose circumcenter
+involves cancellation can differ in the last few digits:
+
+```sh
+# Needs["ComputationalGeometry`"]; First[VoronoiDiagram[{{0.1,0.3},{1.7,0.2},{0.9,1.3},{1.1,2.9},{2.3,1.7}}]][[1]]
+# wolframscript: {-1.5185185185185164, 2.4148148148148145}
+# woxi:          {-1.518518518518515, 2.414814814814813}
+```
+
+The kernel's `Dot`/`Det` round differently (probably fused multiply-adds).
+
+## `ImageLines` finds other lines
+
+Woxi's Hough transform reports one line per straight stroke. wolframscript
+reports several near-duplicate lines for each: on a 20 × 20 image with one
+diagonal it returns ten lines, Woxi one. The peak picking is not decoded, so
+the two `Round[First /@ ImageLines[…]]` cases are skip-listed.
+`HighlightImage[img, {Line[…], …}]` also returns a `Graphics` in
+wolframscript (an overlay of the image and the lines) where Woxi returns an
+`Image`.
 
 ## `PolyhedronData` covers only a subset of the polyhedron entities
 
@@ -6653,12 +6726,10 @@ instances the tour comes within about 0.4% of WL's length and is sometimes
 shorter. `FindShortestTour[graph]` returns the cheapest Hamiltonian cycle along
 the graph's edges (or `{}`); it has not been compared against WL.
 
-### `RectangleChart` spacing and 3D layout are approximations
+### `RectangleChart3D` layout is an approximation
 
-The default gap between rectangles in WL drifts slightly with the number of
-rectangles: 0.098 for two, 0.097 for three, and 0.096 within datasets when
-there are several. Woxi uses a fixed 0.0975. Woxi also renders neither WL's
-hover tooltips nor the `"RoundingRadius"` option. `RectangleChart3D` stacks
+`RectangleChart` matches wolframscript's gaps (`0.1 - 0.001 n`), tooltips and
+`"RoundingRadius"` primitives. `RectangleChart3D` stacks
 plain cuboids from y = 0 and leaves out WL's shaded base plate, face grids,
 `ViewPoint -> {2, -10, 2}` and box ratios.
 
