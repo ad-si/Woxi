@@ -24547,7 +24547,7 @@ mod integrate_interpolating_function {
         "f = u /. First@First@FullSimplify[DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]]; f[x]"
       )
       .unwrap(),
-      "3 - 2/x"
+      "(-2 + 3*x)/x"
     );
   }
 }
@@ -26170,6 +26170,35 @@ mod integrate_constant_multiples_and_odd_cosines {
     );
   }
 
+  // An exponent sum with negative terms puts them in the denominator.
+  #[test]
+  fn together_splits_exponent_with_negative_terms() {
+    assert_eq!(
+      interpret("Together[E^(1 - x) + 1]").unwrap(),
+      "(E + E^x)/E^x"
+    );
+    assert_eq!(
+      interpret("Together[E^(x - y) + 1]").unwrap(),
+      "(E^x + E^y)/E^y"
+    );
+    assert_eq!(
+      interpret("Together[2^(1 - x) + 1]").unwrap(),
+      "(2 + 2^x)/2^x"
+    );
+    assert_eq!(
+      interpret("Together[x^(a - 2 b) + 1]").unwrap(),
+      "(x^a + x^(2*b))/x^(2*b)"
+    );
+    assert_eq!(
+      interpret("Together[E^(x/2 - 1/2) + 1]").unwrap(),
+      "(Sqrt[E] + E^(x/2))/Sqrt[E]"
+    );
+    assert_eq!(
+      interpret("Together[5 c^(-1 + n) + d]").unwrap(),
+      "(5*c^n + c*d)/c"
+    );
+  }
+
   #[test]
   fn together_pulls_out_common_exponential() {
     assert_eq!(
@@ -26247,6 +26276,47 @@ mod dsolve_wolfram_forms {
     assert_eq!(
       interpret("DSolveValue[y''[x] + y[x] == E^x, y[x], x]").unwrap(),
       "C[1]*Cos[x] + C[2]*Sin[x] + (E^x*(Cos[x]^2 + Sin[x]^2))/2"
+    );
+  }
+
+  // A solution fixed by conditions, of any order, comes out as one
+  // quotient.
+  #[test]
+  fn conditioned_solution_single_quotient() {
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]")
+        .unwrap(),
+      "{{u -> Function[{x}, (-2 + 3*x)/x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 2, -3 u'[x]/u''[x] == x}, u, x]")
+        .unwrap(),
+      "{{u -> Function[{x}, (-4 + 7*x^2)/(3*x^2)]}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] == y[x], y[0] == 1, y'[0] == 0}, y[x], x]"
+      )
+      .unwrap(),
+      "(1 + E^(2*x))/(2*E^x)"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] == -y'[x]/x, y[1] == 1, y[2] == 3}, y[x], x]"
+      )
+      .unwrap(),
+      "(Log[2] + 2*Log[x])/Log[2]"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] + 3 y'[x] + 2 y[x] == 0, y[0] == 1, y'[0] == 0}, y[x], x]"
+      )
+      .unwrap(),
+      "(-1 + 2*E^x)/E^(2*x)"
+    );
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 3, u''[x] == 2}, u, x]").unwrap(),
+      "{{u -> Function[{x}, 1 - x + x^2]}}"
     );
   }
 

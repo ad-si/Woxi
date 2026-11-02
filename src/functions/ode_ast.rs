@@ -696,10 +696,10 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A first-order initial-value solution is put over one denominator, as
   // wolframscript does: `y' == -y + t, y[0] == 1` gives
   // `(2 - E^t + E^t*t)/E^t`.
-  let solution = if max_order == 1 && !initial_conditions.is_empty() {
-    together_leading_positive(&solution).unwrap_or(solution)
-  } else {
+  let solution = if initial_conditions.is_empty() {
     solution
+  } else {
+    together_leading_positive(&solution).unwrap_or(solution)
   };
 
   Ok(build_dsolve_result(solution, y_name, x_name, function_form))

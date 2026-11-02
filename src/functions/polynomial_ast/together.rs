@@ -734,6 +734,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       if let Some(flipped) = quotient_base_flip(left, right) {
         return flipped;
       }
+      if let Some(split) = split_integer_offset_exponent(left, right) {
+        return split;
+      }
       if let Some(pos_exp) = get_negative_exponent(right) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), *left.clone())
@@ -841,8 +844,9 @@ impl Drop for SplitOffsetGuard {
   }
 }
 
-/// `b^(rest + k)` with a negative integer `k` as the fraction `b^rest/b^-k`,
-/// the way wolframscript's `Together` reads it: `c^(-1 + n)` is `c^n/c`, so
+/// `b^(p - q)`, an exponent sum with negative terms `-q`, as the fraction
+/// `b^p/b^q`, the way wolframscript's `Together` reads it: `c^(-1 + n)` is
+/// `c^n/c`, `E^(2 - x)` is `E^2/E^x`, `E^(x - y)` is `E^x/E^y`, so
 /// `Together[5 c^(-1 + n) + d]` comes over the denominator `c`.
 fn split_integer_offset_exponent(
   base: &Expr,
@@ -862,28 +866,51 @@ fn split_integer_offset_exponent(
     } => vec![*left.clone(), *right.clone()],
     _ => return None,
   };
-  let k = terms.iter().find_map(|t| match t {
-    Expr::Integer(k) if *k < 0 => Some(*k),
-    _ => None,
-  })?;
-  let rest: Vec<Expr> = terms
-    .into_iter()
-    .filter(|t| !matches!(t, Expr::Integer(_)))
-    .collect();
-  if rest.is_empty() {
+  // A term with a negative literal coefficient, as its negation.
+  let negative_literal = |e: Option<&Expr>| match e {
+    Some(Expr::Integer(k)) => *k < 0,
+    Some(Expr::FunctionCall { name, args }) if name == "Rational" => {
+      matches!(args.first(), Some(Expr::Integer(k)) if *k < 0)
+    }
+    _ => false,
+  };
+  let negated = |t: &Expr| -> Option<Expr> {
+    let negative = match t {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        negative_literal(args.first())
+      }
+      other => negative_literal(Some(other)),
+    };
+    negative.then(|| {
+      let flipped = times(vec![Expr::Integer(-1), t.clone()]);
+      crate::evaluator::evaluate_expr_to_expr(&flipped).unwrap_or(flipped)
+    })
+  };
+  let mut positive = Vec::new();
+  let mut negative = Vec::new();
+  for t in terms {
+    match negated(&t) {
+      Some(n) => negative.push(n),
+      None => positive.push(t),
+    }
+  }
+  if positive.is_empty() || negative.is_empty() {
     return None;
   }
-  let rest = if rest.len() == 1 {
-    rest.into_iter().next().unwrap()
-  } else {
-    call("Plus", rest)
+  let join = |ts: Vec<Expr>| {
+    if ts.len() == 1 {
+      ts.into_iter().next().unwrap()
+    } else {
+      call("Plus", ts)
+    }
   };
-  let den = if k == -1 {
+  let den_exp = join(negative);
+  let den = if matches!(den_exp, Expr::Integer(1)) {
     base.clone()
   } else {
-    pow(base.clone(), Expr::Integer(-k))
+    pow(base.clone(), den_exp)
   };
-  Some((pow(base.clone(), rest), den))
+  Some((pow(base.clone(), join(positive)), den))
 }
 
 /// Check if an expression is a negative integer and return its absolute value
