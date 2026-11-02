@@ -599,7 +599,55 @@ mod number_theory_options {
     assert_eq!(
       interpret("FactorSquareFreeList[x^2 (x + 1)^2 (x + 2), Modulus -> 3]")
         .unwrap(),
-      "{{1, 1}, {2 + x, 1}, {x + x^2, 2}}"
+      "{{1, 1}, {x, 2}, {1 + x, 2}, {2 + x, 1}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_keeps_product_factors() {
+    assert_eq!(
+      interpret("FactorSquareFreeList[(x + 1)^2 (x + 3)^2, Modulus -> 5]")
+        .unwrap(),
+      "{{1, 1}, {1 + x, 2}, {3 + x, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[(x + 1)^2 (x + 3)^2], Modulus -> 5]"
+      )
+      .unwrap(),
+      "{{1, 1}, {3 + 4*x + x^2, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorSquareFreeList[(x^2 + 1)^2 (x + 3), Modulus -> 7]")
+        .unwrap(),
+      "{{1, 1}, {3 + x, 1}, {1 + x^2, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorSquareFreeList[3 (x + 1)^2 (x + 2)^2, Modulus -> 5]")
+        .unwrap(),
+      "{{3, 1}, {1 + x, 2}, {2 + x, 2}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_merges_coinciding_factors() {
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[(x + 1)^2 (x + 2)^2 (x + 4), Modulus -> 3]"
+      )
+      .unwrap(),
+      "{{1, 1}, {1 + x, 3}, {2 + x, 2}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_lists_monomial_variables() {
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[x^2 (x + 1)^2 (x + 2)], Modulus -> 3]"
+      )
+      .unwrap(),
+      "{{1, 1}, {x, 2}, {1 + x, 2}, {2 + x, 1}}"
     );
   }
 }
