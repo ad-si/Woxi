@@ -11384,12 +11384,13 @@ mod mathieu_s {
     );
   }
 
+  // wolframscript's Floquet normalisation, not 1 at the origin.
   #[test]
-  fn mathieu_c_one_at_origin() {
-    let val = parse_real(&interpret("MathieuC[2, 1, 0]").unwrap());
+  fn mathieu_c_at_origin() {
+    let val = parse_real(&interpret("MathieuC[2., 1., 0.]").unwrap());
     assert!(
-      (val - 1.0).abs() < 1e-12,
-      "MathieuC(2, 1, 0) should be 1, got {val}"
+      (val - 1.1824427065731018).abs() < 1e-10,
+      "MathieuC(2, 1, 0) should be 1.18244..., got {val}"
     );
   }
 
@@ -12127,12 +12128,25 @@ mod mathieu_far_arguments {
   fn periodicity_reduction_matches_direct_values() {
     assert_eq!(
       interpret(
-        "{Abs[MathieuC[1.5, 0.5, 10.3] + 0.40015261803607666] < 10^-8, \
+        "{Abs[MathieuC[1.5, 0.5, 10.3] + 0.5212825199734195] < 10^-8, \
           Abs[MathieuC[1.5, 0.5, -10.3] - MathieuC[1.5, 0.5, 10.3]] < 10^-10, \
-          Abs[MathieuS[2., 1., 35.7] + 2.09255549736036] < 10^-7}"
+          Abs[MathieuS[2., 1., 35.7] + 0.7895705720344396] < 10^-7}"
       )
       .unwrap(),
       "{True, True, True}"
+    );
+  }
+
+  // wolframscript's normalisation: the Floquet coefficients have unit norm.
+  #[test]
+  fn floquet_normalisation() {
+    assert_eq!(
+      interpret(
+        "{Abs[MathieuC[1.5, 0.5, 0.] - 1.3027092577566124] < 10^-10, \
+          Abs[MathieuSPrime[2., 1., 0.] - 0.5336161514292099] < 10^-10}"
+      )
+      .unwrap(),
+      "{True, True}"
     );
   }
 }
