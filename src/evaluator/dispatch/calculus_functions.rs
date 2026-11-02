@@ -761,9 +761,9 @@ pub fn dispatch_calculus_functions(
     "RecurrenceTable" if args.len() == 3 => {
       return Some(crate::functions::rsolve_ast::recurrence_table_ast(args));
     }
-    // DSolve[eqns] / DSolveValue[eqns]: the unknown functions and their
+    // DSolve[eqns]: the unknown functions and their
     // independent variables are read off the derivatives in the equations.
-    "DSolve" | "DSolveValue" if args.len() == 1 => {
+    "DSolve" if args.len() == 1 => {
       return Some(match dsolve_unknowns(&args[0]) {
         Ok(Some((funcs, vars))) => {
           crate::evaluator::evaluate_function_call_ast(

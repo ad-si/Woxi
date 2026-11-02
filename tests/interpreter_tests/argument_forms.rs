@@ -409,7 +409,15 @@ mod dsolve_one_argument {
     );
     assert_eq!(
       interpret("DSolveValue[y''[x] + y[x] == 0]").unwrap(),
-      "C[1]*Cos[x] + C[2]*Sin[x]"
+      "DSolveValue[y[x] + Derivative[2][y][x] == 0]"
+    );
+  }
+
+  #[test]
+  fn dsolve_value_needs_three_arguments() {
+    assert_eq!(
+      interpret("DSolveValue[y'[x] == y[x], y]").unwrap(),
+      "DSolveValue[Derivative[1][y][x] == y[x], y]"
     );
   }
 }
