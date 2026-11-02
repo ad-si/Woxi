@@ -127,15 +127,22 @@ mod categorical_distribution {
   }
 
   #[test]
-  fn repeated_rule_keys_stay_unevaluated() {
+  fn repeated_rule_keys_keep_the_first_weight() {
     assert_eq!(
       interpret("CategoricalDistribution[{a -> 1, a -> 2}]").unwrap(),
-      "CategoricalDistribution[{a -> 1, a -> 2}]"
+      "CategoricalDistribution[<|Probabilities -> SparseArray[Automatic, {1}, \
+       0, {1, {{0, 1}, {{1}}}, {1}}], Index -> <|a -> 1|>|>]"
     );
     assert_eq!(
       interpret("CategoricalDistribution[{a, b}, {a -> 1, a -> 2, a -> 3}]")
         .unwrap(),
-      "CategoricalDistribution[{a, b}, {a -> 1, a -> 2, a -> 3}]"
+      "CategoricalDistribution[<|Probabilities -> SparseArray[Automatic, {2}, \
+       0, {1, {{0, 1}, {{1}}}, {1}}], Index -> <|a -> 1, b -> 2|>|>]"
+    );
+    assert_eq!(
+      interpret("CategoricalDistribution[{a -> 1, b -> 1, a -> 2}]").unwrap(),
+      "CategoricalDistribution[<|Probabilities -> SparseArray[Automatic, {2}, \
+       0, {1, {{0, 2}, {{1}, {2}}}, {1/2, 1/2}}], Index -> <|a -> 1, b -> 2|>|>]"
     );
   }
 

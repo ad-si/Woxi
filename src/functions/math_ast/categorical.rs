@@ -112,9 +112,10 @@ fn sparse_from_rules(
     else {
       return Ok(None);
     };
-    // A domain element given twice has no single weight.
+    // A domain element given twice keeps its first weight (wolframscript:
+    // `{a -> 1, b -> 1, a -> 2}` gives a and b probability 1/2 each).
     if entries.iter().any(|(p, _)| *p == pos) {
-      return Ok(None);
+      continue;
     }
     entries.push((pos, w.clone()));
   }
