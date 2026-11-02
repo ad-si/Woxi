@@ -14499,6 +14499,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   if let Some(text) = image3d_input_form(expr) {
     return text;
   }
+  if let Some(graph) = crate::functions::graph::graph_display_form(expr) {
+    return expr_to_input_form(&graph);
+  }
   // Parenthesisation is decided by inspecting the direct children, so those
   // checks have to see the operator node rather than the call spelling.
   let with_normalized_children;

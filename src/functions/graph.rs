@@ -10094,6 +10094,40 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Graph", graph_args))
 }
 
+/// The form a graph with options is written in (InputForm, FullForm), as
+/// wolframscript stores it: `Graph[vertices, edges, {opts}]` with the
+/// options in one list, alphabetical, a single per-element value listed.
+/// None for anything else (no options, or already in that form).
+pub fn graph_display_form(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Graph"
+    || args.len() < 3
+    || !matches!(&args[0], Expr::List(_))
+    || !matches!(&args[1], Expr::List(_))
+    || !args[2..]
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    return None;
+  }
+  // Only a graph of edge objects (a Combinatorica graph, printed under the
+  // same name, lists its edges as index pairs).
+  let Expr::List(edges) = &args[1] else {
+    return None;
+  };
+  if !edges.iter().all(|e| {
+    matches!(e, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "UndirectedEdge" | "DirectedEdge"))
+  }) {
+    return None;
+  }
+  let options = graph_options_ast(std::slice::from_ref(expr)).ok()?;
+  matches!(options, Expr::List(_))
+    .then(|| call("Graph", vec![args[0].clone(), args[1].clone(), options]))
+}
+
 /// `Options[graph]` / `Options[graph, name]` — the annotations the graph
 /// carries, named in alphabetical order however the graph was written.
 pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

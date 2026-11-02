@@ -9867,7 +9867,21 @@ mod watershed_and_morphological_graph {
       )
       .unwrap(),
       "FullForm[Graph[{1, 2}, {UndirectedEdge[1, 2]}, \
-       VertexCoordinates -> {{0.5, 0.5}, {2.5, 0.5}}, ImageSize -> 50]]"
+       {EdgeWeight -> {2}, ImageSize -> 50, VertexCoordinates -> {{0.5, 0.5}, {2.5, 0.5}}}]]"
+    );
+  }
+
+  // Each arm of a branch point is its own edge, weighted by its length in
+  // pixel steps, even where two arms touch diagonally.
+  #[test]
+  fn morphological_graph_arms_and_weights() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = MorphologicalGraph[Image[{{1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}]]; ToString[{EdgeList[g], PropertyValue[g, EdgeWeight], g}, InputForm]"
+      )
+      .unwrap(),
+      "{{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[2, 4]}, {2, 2, 2}, Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[2, 4]}, {EdgeWeight -> {2, 2, 2}, VertexCoordinates -> {{0.5, 2.5}, {2.5, 2.5}, {4.5, 2.5}, {2.5, 0.5}}}]}"
     );
   }
 }

@@ -9275,50 +9275,106 @@ pub fn morphological_graph_ast(
     .map(|&(sx, sy, c)| (sx / c as f64, sy / c as f64))
     .collect();
 
-  // The arcs are the chains of the remaining skeleton pixels; each joins the
-  // vertices it touches.
+  // The arcs are the chains of the remaining skeleton pixels, traced from
+  // each vertex along unvisited arc pixels to the vertex they reach; the
+  // number of steps is the edge's weight. (Two arms leaving one branch
+  // point can touch diagonally, so they are traced, not merged.)
   let on_arc: Vec<bool> = (0..w * h)
     .map(|i| skeleton[i] && !is_vertex_pixel[i])
     .collect();
-  let arc_of = connected_components(&on_arc, w, h);
-  let arc_count = arc_of.iter().flatten().max().map_or(0, |l| l + 1);
-  let mut touching: Vec<std::collections::BTreeSet<usize>> =
-    vec![std::collections::BTreeSet::default(); arc_count];
-  let mut first_pixel = vec![usize::MAX; arc_count];
-  for i in 0..w * h {
-    let Some(arc) = arc_of[i] else { continue };
-    first_pixel[arc] = first_pixel[arc].min(i);
-    for dy in -1i64..=1 {
-      for dx in -1i64..=1 {
-        let ny = (i / w) as i64 + dy;
-        let nx = (i % w) as i64 + dx;
-        if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
-          continue;
+  let neighbours = |i: usize| -> Vec<usize> {
+    let (y, x) = ((i / w) as i64, (i % w) as i64);
+    let mut out = Vec::with_capacity(8);
+    // Orthogonal neighbours first: a chain steps along them when it can.
+    for (dy, dx) in [
+      (-1, 0),
+      (0, -1),
+      (0, 1),
+      (1, 0),
+      (-1, -1),
+      (-1, 1),
+      (1, -1),
+      (1, 1),
+    ] {
+      let (ny, nx) = (y + dy, x + dx);
+      if ny >= 0 && nx >= 0 && ny < h as i64 && nx < w as i64 {
+        out.push(ny as usize * w + nx as usize);
+      }
+    }
+    out
+  };
+  let mut visited = vec![false; w * h];
+  let mut weighted: std::collections::BTreeMap<(usize, usize), i128> =
+    std::collections::BTreeMap::new();
+  for start in 0..w * h {
+    let Some(from) = vertex_of[start] else {
+      continue;
+    };
+    for first in neighbours(start) {
+      if let Some(to) = vertex_of[first] {
+        // Two vertices side by side.
+        if to != from {
+          weighted.entry((from.min(to), from.max(to))).or_insert(1);
         }
-        if let Some(v) = vertex_of[ny as usize * w + nx as usize] {
-          touching[arc].insert(v);
+        continue;
+      }
+      if !on_arc[first] || visited[first] {
+        continue;
+      }
+      visited[first] = true;
+      let (mut prev, mut cur, mut steps) = (start, first, 1i128);
+      loop {
+        let next = neighbours(cur);
+        if let Some(&end) = next
+          .iter()
+          .find(|&&n| n != prev && n != start && vertex_of[n].is_some())
+        {
+          let to = vertex_of[end].unwrap();
+          if to != from || steps > 1 {
+            weighted
+              .entry((from.min(to), from.max(to)))
+              .or_insert(steps + 1);
+          }
+          break;
         }
+        let Some(&step) = next.iter().find(|&&n| on_arc[n] && !visited[n])
+        else {
+          break;
+        };
+        visited[step] = true;
+        prev = cur;
+        cur = step;
+        steps += 1;
       }
     }
   }
-  let mut edges = std::collections::BTreeSet::new();
-  for (arc, vertices) in touching.iter().enumerate() {
-    if vertices.is_empty() {
-      // A closed loop: its one vertex is the loop's first pixel.
-      let i = first_pixel[arc];
+  // A closed loop without any branch point: its one vertex is the loop's
+  // first pixel.
+  for i in 0..w * h {
+    if on_arc[i] && !visited[i] {
       coordinates
         .push(((i % w) as f64 + 0.5, h as f64 - ((i / w) as f64 + 0.5)));
       vertex_count += 1;
-      continue;
-    }
-    let vs: Vec<usize> = vertices.iter().copied().collect();
-    for (a, &u) in vs.iter().enumerate() {
-      for &v in &vs[a + 1..] {
-        edges.insert((u, v));
+      let mut stack = vec![i];
+      visited[i] = true;
+      while let Some(p) = stack.pop() {
+        for n in neighbours(p) {
+          if on_arc[n] && !visited[n] {
+            visited[n] = true;
+            stack.push(n);
+          }
+        }
       }
     }
   }
+  let edges: Vec<(usize, usize)> = weighted.keys().copied().collect();
+  let weights: Vec<Expr> =
+    weighted.values().map(|&s| Expr::Integer(s)).collect();
 
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
   let mut graph_args = vec![
     Expr::List(
       (1..=vertex_count as i128)
@@ -9340,17 +9396,20 @@ pub fn morphological_graph_ast(
         .collect::<Vec<_>>()
         .into(),
     ),
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("VertexCoordinates".to_string())),
-      replacement: Box::new(Expr::List(
-        coordinates
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect::<Vec<_>>()
-          .into(),
-      )),
-    },
   ];
+  if !weights.is_empty() {
+    graph_args.push(rule("EdgeWeight", Expr::List(weights.into())));
+  }
+  graph_args.push(rule(
+    "VertexCoordinates",
+    Expr::List(
+      coordinates
+        .iter()
+        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  ));
   graph_args.extend(args[1..].iter().cloned());
   crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
 }
