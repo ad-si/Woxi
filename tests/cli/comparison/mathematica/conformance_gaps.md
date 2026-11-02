@@ -7509,7 +7509,6 @@ magnitude (`1` and the cube roots of unity of
 follows the last bit of `Abs[(-1)^(1/3)]`, which differs between platforms'
 libm: on macOS Woxi lists the real ones first, as wolframscript does; on
 Linux they come last.
-||||||| parent of bea667998 (Record timeout-cluster divergences in conformance_gaps.md)
 
 
 ## Notebook-sweep gaps (timeout cluster, 2026-11)
