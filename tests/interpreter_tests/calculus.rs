@@ -25945,3 +25945,31 @@ mod series_rational_function {
     }
   }
 }
+
+// D keeps the signs of the factors it produced: a rational coefficient is
+// not cancelled into the denominator (`(-1 + z)` for `(1 - z)`).
+mod d_keeps_factor_signs {
+  use super::*;
+
+  #[test]
+  fn numeric_denominator() {
+    assert_eq!(interpret("D[(1 - z)^3/6, z]").unwrap(), "-1/2*(1 - z)^2");
+    assert_eq!(
+      interpret("D[x (1 - z)^3/6, z]").unwrap(),
+      "-1/2*(x*(1 - z)^2)"
+    );
+  }
+
+  #[test]
+  fn nothing_to_cancel() {
+    assert_eq!(interpret("D[Log[1 - z]/6, z]").unwrap(), "-1/6*1/(1 - z)");
+    assert_eq!(
+      interpret("D[Log[1 - z]^3/7, z]").unwrap(),
+      "(-3*Log[1 - z]^2)/(7*(1 - z))"
+    );
+    assert_eq!(
+      interpret("D[-Log[1 - z]^3/6, z]").unwrap(),
+      "Log[1 - z]^2/(2*(1 - z))"
+    );
+  }
+}

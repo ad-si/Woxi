@@ -368,13 +368,38 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => false,
     }
   }
+  // A purely numeric denominator (`(-3 (1 - z)^2)/2`) has nothing to cancel
+  // against; cancelling would only rewrite the factors' signs
+  // (`(-1 + z)^2`), which D does not do.
   if matches!(&den, Expr::Integer(1)) || has_symbolic_exponent(&result) {
-    Ok(result)
-  } else {
-    Ok(
-      crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result),
-    )
+    return Ok(result);
   }
+  if matches!(&den, Expr::Integer(_) | Expr::BigInteger(_)) {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  let cancelled =
+    crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result);
+  // A cancellation that leaves the denominator as it was up to a number
+  // has cancelled nothing; it would only have moved a sign into a factor
+  // (`-1/(6 (1 - z))` as `1/(6 (-1 + z))`).
+  let (_, cancelled_den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&cancelled);
+  if expr_to_string(&cancelled_den) != expr_to_string(&den)
+    && let Ok(ratio) = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Together",
+      call(
+        "Times",
+        vec![
+          den.clone(),
+          call("Power", vec![cancelled_den, Expr::Integer(-1)]),
+        ],
+      ),
+    ))
+    && crate::functions::predicate_ast::is_numeric_q(&ratio)
+  {
+    return Ok(result);
+  }
+  Ok(cancelled)
 }
 
 /// Recursively replace every occurrence of `target` in `expr` with `replacement`.
