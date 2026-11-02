@@ -6124,9 +6124,8 @@ fn ndsolve_system(
     })
     .collect();
   // The compiled constraints of the numerically-eliminated unknowns.
-  let implicit_memo = std::rc::Rc::new(std::cell::RefCell::new(None));
   // Compiled once and shared by every residual that solves them.
-  let implicit_compiled: Option<std::rc::Rc<Vec<NExpr>>> = implicit
+  let implicit_system: Option<std::rc::Rc<ImplicitSystem>> = implicit
     .iter()
     .map(|(_, eq)| {
       let norm = normalize_equation(eq).ok()?;
@@ -6134,9 +6133,15 @@ fn ndsolve_system(
       compile_shared(&r, &ext_names)
     })
     .collect::<Option<Vec<NExpr>>>()
-    .map(std::rc::Rc::new);
-  let compile_implicit = || implicit_compiled.clone();
-  if !implicit.is_empty() && compile_implicit().is_none() {
+    .map(|constraints| {
+      std::rc::Rc::new(ImplicitSystem::new(
+        constraints,
+        implicit_slot,
+        implicit_guess.clone(),
+        1 + n_state,
+      ))
+    });
+  if !implicit.is_empty() && implicit_system.is_none() {
     return Ok(None);
   }
   for ode in &odes {
@@ -6154,18 +6159,14 @@ fn ndsolve_system(
     if !implicit.is_empty() {
       let rewritten =
         substitute_function_values(&normalized, &implicit_funcs, x_name);
-      let (Some(body), Some(constraints)) =
-        (compile_shared(&rewritten, &ext_names), compile_implicit())
-      else {
+      let (Some(body), Some(system)) = (
+        compile_shared(&rewritten, &ext_names),
+        implicit_system.clone(),
+      ) else {
         return Ok(None);
       };
       let wrap = |body: NExpr| NExpr::Implicit {
-        constraints: constraints.clone(),
-        slot: implicit_slot,
-        guess: std::cell::RefCell::new(implicit_guess.clone()),
-        init: implicit_guess.clone(),
-        memo: implicit_memo.clone(),
-        key_len: 1 + n_state,
+        system: system.clone(),
         body: Box::new(body),
       };
       let coeffs = highest_derivative_coefficients(
@@ -6677,30 +6678,16 @@ fn ndsolve_system(
   let roots = |i: usize| -> Option<&Vec<f64>> {
     roots_at_points
       .get_or_init(|| {
-        let Some(constraints) = compile_implicit() else {
+        let Some(system) = implicit_system.as_ref() else {
           return vec![None; points.len()];
         };
-        let mut vars = vec![0.0; ext_names.len()];
-        let mut guess = implicit_guess.clone();
+        let mut vars = vec![0.0; implicit_slot];
         points
           .iter()
           .map(|(x, state)| {
             vars[0] = *x;
             vars[1..=n_state].copy_from_slice(&state[..n_state]);
-            let root =
-              newton_system(&constraints, &mut vars, implicit_slot, &guess)
-                .or_else(|| {
-                  newton_system(
-                    &constraints,
-                    &mut vars,
-                    implicit_slot,
-                    &implicit_guess,
-                  )
-                });
-            if let Some(r) = &root {
-              guess.clone_from(r);
-            }
-            root
+            system.solve(&vars)
           })
           .collect()
       })
@@ -9314,19 +9301,223 @@ enum NExpr {
   /// the last root found (`guess`) and falls back to the initial values
   /// (`init`).
   Implicit {
-    constraints: std::rc::Rc<Vec<Self>>,
-    slot: usize,
-    guess: std::cell::RefCell<Vec<f64>>,
-    init: Vec<f64>,
-    /// The last solve: the first `key_len` variables it was solved at and
-    /// the root found, or `None` where Newton failed. Shared by every
-    /// residual of a system, which are evaluated at the same point one
-    /// after another — a failure is remembered too, since retrying it costs
-    /// a full failing Newton run per residual.
-    memo: std::rc::Rc<std::cell::RefCell<Option<(Vec<f64>, Option<Vec<f64>>)>>>,
-    key_len: usize,
+    system: std::rc::Rc<ImplicitSystem>,
     body: Box<Self>,
   },
+}
+
+/// The algebraic constraints of a DAE whose unknowns (variables
+/// `slot..slot + n`) are found by Newton iteration at every evaluation of
+/// the residuals, shared by all of them. The constraints split into blocks
+/// that share no unknown (a column's stage temperatures, each fixed by its
+/// own bubble point); a block is solved again only when the variables it
+/// reads change, so that perturbing one state for a Jacobian column re-solves
+/// one stage instead of the whole column.
+pub(crate) struct ImplicitSystem {
+  constraints: Vec<NExpr>,
+  slot: usize,
+  /// The values Newton iteration falls back to starting from.
+  init: Vec<f64>,
+  /// How many leading variables (`x` and the state) a solve depends on.
+  key_len: usize,
+  blocks: Vec<ImplicitBlock>,
+  /// The last solve: its key and root (`None` where Newton failed — a
+  /// failure is remembered too, since every residual asks again at the same
+  /// point).
+  memo: std::cell::RefCell<Option<(Vec<f64>, Option<Vec<f64>>)>>,
+  /// The last root found, where the next solve starts.
+  guess: std::cell::RefCell<Vec<f64>>,
+}
+
+struct ImplicitBlock {
+  /// Indices of its unknowns among `0..n` and of its constraints.
+  unknowns: Vec<usize>,
+  constraints: Vec<usize>,
+  /// The variables below `slot` its constraints read (`None`: any of the
+  /// key's).
+  inputs: Option<Vec<usize>>,
+  /// The inputs and roots of its last few solves, newest last. More than
+  /// one: a finite-difference Jacobian perturbs the inputs of one block
+  /// after another, and every other block must then find its root for the
+  /// unperturbed inputs again bit for bit — re-solved from a different
+  /// start it could differ in the last bit, which reads as a spurious
+  /// dependence on every perturbed state.
+  last: std::cell::RefCell<Vec<(Vec<f64>, Vec<f64>)>>,
+}
+
+/// How many solves each [`ImplicitBlock`] remembers.
+const IMPLICIT_BLOCK_MEMORY: usize = 4;
+
+impl ImplicitSystem {
+  fn new(
+    constraints: Vec<NExpr>,
+    slot: usize,
+    init: Vec<f64>,
+    key_len: usize,
+  ) -> Self {
+    let n = constraints.len();
+    // Each constraint's variables, split into unknowns and inputs.
+    let reads: Vec<Option<Vec<usize>>> = constraints
+      .iter()
+      .map(|c| {
+        let mut read = Vec::new();
+        c.collect_vars_from(0, &mut read).then_some(read)
+      })
+      .collect();
+    // Union-find over the unknowns, joined by the constraints they share.
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut [usize], i: usize) -> usize {
+      let mut r = i;
+      while parent[r] != r {
+        r = parent[r];
+      }
+      let mut j = i;
+      while parent[j] != r {
+        let next = parent[j];
+        parent[j] = r;
+        j = next;
+      }
+      r
+    }
+    let unknowns_of = |i: usize| -> Vec<usize> {
+      match &reads[i] {
+        Some(read) => read
+          .iter()
+          .filter(|&&v| v >= slot && v < slot + n)
+          .map(|&v| v - slot)
+          .collect(),
+        None => (0..n).collect(),
+      }
+    };
+    for i in 0..n {
+      let us = unknowns_of(i);
+      for w in us.windows(2) {
+        let (a, b) = (find(&mut parent, w[0]), find(&mut parent, w[1]));
+        parent[a] = b;
+      }
+    }
+    let mut blocks: Vec<ImplicitBlock> = Vec::new();
+    let mut root_block: std::collections::HashMap<usize, usize> =
+      std::collections::HashMap::new();
+    for u in 0..n {
+      let r = find(&mut parent, u);
+      let b = *root_block.entry(r).or_insert_with(|| {
+        blocks.push(ImplicitBlock {
+          unknowns: Vec::new(),
+          constraints: Vec::new(),
+          inputs: Some(Vec::new()),
+          last: std::cell::RefCell::new(Vec::new()),
+        });
+        blocks.len() - 1
+      });
+      blocks[b].unknowns.push(u);
+    }
+    for i in 0..n {
+      let us = unknowns_of(i);
+      // A constraint on no unknown at all cannot be placed: one block.
+      let Some(&u) = us.first() else {
+        blocks.clear();
+        break;
+      };
+      let b = root_block[&find(&mut parent, u)];
+      blocks[b].constraints.push(i);
+      match (&reads[i], &mut blocks[b].inputs) {
+        (Some(read), Some(inputs)) => {
+          for &v in read.iter().filter(|&&v| v < slot) {
+            if !inputs.contains(&v) {
+              inputs.push(v);
+            }
+          }
+        }
+        (_, inputs) => *inputs = None,
+      }
+    }
+    // Only a split into square blocks is solvable block by block.
+    if blocks.is_empty()
+      || blocks
+        .iter()
+        .any(|b| b.unknowns.len() != b.constraints.len())
+    {
+      blocks = vec![ImplicitBlock {
+        unknowns: (0..n).collect(),
+        constraints: (0..n).collect(),
+        inputs: None,
+        last: std::cell::RefCell::new(Vec::new()),
+      }];
+    }
+    Self {
+      guess: std::cell::RefCell::new(init.clone()),
+      constraints,
+      slot,
+      init,
+      key_len,
+      blocks,
+      memo: std::cell::RefCell::new(None),
+    }
+  }
+
+  /// The roots at the variables `vars` (at least the first `slot`).
+  fn solve(&self, vars: &[f64]) -> Option<Vec<f64>> {
+    let key = &vars[..self.key_len.min(vars.len())];
+    if let Some((k, root)) = self.memo.borrow().as_ref()
+      && k.as_slice() == key
+    {
+      return root.clone();
+    }
+    let n = self.constraints.len();
+    let mut local: Vec<f64> = vars[..self.slot.min(vars.len())].to_vec();
+    local.resize(self.slot, 0.0);
+    let mut root = self.guess.borrow().clone();
+    local.extend_from_slice(&root);
+    let mut ok = true;
+    for block in &self.blocks {
+      let inputs: Vec<f64> = match &block.inputs {
+        Some(idx) => idx.iter().map(|&i| local[i]).collect(),
+        None => key.to_vec(),
+      };
+      if let Some((_, last_root)) =
+        block.last.borrow().iter().rev().find(|(i, _)| *i == inputs)
+      {
+        for (&u, &v) in block.unknowns.iter().zip(last_root) {
+          root[u] = v;
+          local[self.slot + u] = v;
+        }
+        continue;
+      }
+      let constraints: Vec<&NExpr> = block
+        .constraints
+        .iter()
+        .map(|&i| &self.constraints[i])
+        .collect();
+      let slots: Vec<usize> =
+        block.unknowns.iter().map(|&u| self.slot + u).collect();
+      let start: Vec<f64> = block.unknowns.iter().map(|&u| root[u]).collect();
+      let init: Vec<f64> =
+        block.unknowns.iter().map(|&u| self.init[u]).collect();
+      let Some(z) = newton_system(&constraints, &mut local, &slots, &start)
+        .or_else(|| newton_system(&constraints, &mut local, &slots, &init))
+      else {
+        ok = false;
+        break;
+      };
+      for (&u, &v) in block.unknowns.iter().zip(&z) {
+        root[u] = v;
+        local[self.slot + u] = v;
+      }
+      let mut last = block.last.borrow_mut();
+      if last.len() >= IMPLICIT_BLOCK_MEMORY {
+        last.remove(0);
+      }
+      last.push((inputs, z));
+    }
+    let result = ok.then(|| root.clone());
+    if ok {
+      *self.guess.borrow_mut() = root;
+    }
+    debug_assert_eq!(result.as_ref().map_or(n, Vec::len), n);
+    *self.memo.borrow_mut() = Some((key.to_vec(), result.clone()));
+    result
+  }
 }
 
 thread_local! {
@@ -9335,19 +9526,24 @@ thread_local! {
     const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Root of the square system `constraints(vars with vars[slot..] = z)` near
+/// Root of the square system `constraints(vars with vars[slots] = z)` near
 /// `z0` by damped Newton iteration with a finite-difference Jacobian; `None`
 /// when it fails to converge.
 fn newton_system(
-  constraints: &[NExpr],
+  constraints: &[&NExpr],
   vars: &mut [f64],
-  slot: usize,
+  slots: &[usize],
   z0: &[f64],
 ) -> Option<Vec<f64>> {
   let n = constraints.len();
   let mut z = z0.to_vec();
+  let place = |z: &[f64], vars: &mut [f64]| {
+    for (&s, &v) in slots.iter().zip(z) {
+      vars[s] = v;
+    }
+  };
   let residual = |z: &[f64], vars: &mut [f64]| -> Vec<f64> {
-    vars[slot..slot + n].copy_from_slice(z);
+    place(z, vars);
     constraints.iter().map(|c| c.eval(vars)).collect()
   };
   let norm = |f: &[f64]| f.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -9359,8 +9555,11 @@ fn newton_system(
     let mut rows = vec![Vec::new(); n];
     for (i, c) in constraints.iter().enumerate() {
       let mut read = Vec::new();
-      if c.collect_vars_from(slot, &mut read) {
-        for j in read.into_iter().filter(|&v| v < slot + n).map(|v| v - slot) {
+      if c.collect_vars_from(0, &mut read) {
+        for j in read
+          .into_iter()
+          .filter_map(|v| slots.iter().position(|&s| s == v))
+        {
           if !rows[j].contains(&i) {
             rows[j].push(i);
           }
@@ -9415,7 +9614,7 @@ fn newton_system(
       for (&j, h) in group.iter().zip(&steps) {
         zp[j] += h;
       }
-      vars[slot..slot + n].copy_from_slice(&zp);
+      place(&zp, vars);
       for (&j, h) in group.iter().zip(&steps) {
         for &i in &rows[j] {
           jac[i][j] = (constraints[i].eval(vars) - f[i]) / h;
@@ -9579,27 +9778,24 @@ impl NExpr {
       }
       // The roots in the slots from `slot` on are internal; what they are
       // solved from — the constraints' own variables — is read too.
-      Self::Implicit {
-        constraints,
-        slot,
-        body,
-        ..
-      } => {
+      Self::Implicit { system, body } => {
+        let slot = system.slot;
         let mut inner = Vec::new();
-        if from > *slot || !body.collect_vars_from(from, &mut inner) {
+        if from > slot || !body.collect_vars_from(from, &mut inner) {
           return false;
         }
-        let uses_roots = inner.iter().any(|&i| i >= *slot);
-        out.extend(inner.into_iter().filter(|&i| i < *slot));
+        let uses_roots = inner.iter().any(|&i| i >= slot);
+        out.extend(inner.into_iter().filter(|&i| i < slot));
         if uses_roots {
           let mut read = Vec::new();
-          if !constraints
+          if !system
+            .constraints
             .iter()
             .all(|c| c.collect_vars_from(from, &mut read))
           {
             return false;
           }
-          out.extend(read.into_iter().filter(|&i| i < *slot));
+          out.extend(read.into_iter().filter(|&i| i < slot));
         }
         true
       }
@@ -9640,55 +9836,19 @@ impl NExpr {
 
   fn eval(&self, vars: &[f64]) -> f64 {
     match self {
-      Self::Implicit {
-        constraints,
-        slot,
-        guess,
-        init,
-        memo,
-        key_len,
-        body,
-      } => {
+      Self::Implicit { system, body } => {
         // The variables extended by the roots, in a buffer reused from
         // one evaluation to the next (the mass matrix alone evaluates
         // hundreds of these per right-hand side).
+        let Some(root) = system.solve(vars) else {
+          return f64::NAN;
+        };
         let mut local =
           IMPLICIT_SCRATCH.with(|b| std::mem::take(&mut *b.borrow_mut()));
         local.clear();
-        local.extend_from_slice(vars);
-        local.resize(slot + constraints.len(), 0.0);
-        let key = &vars[..(*key_len).min(vars.len())];
-        let hit = {
-          let memo = memo.borrow();
-          match memo.as_ref() {
-            Some((k, root)) if k.as_slice() == key => {
-              if let Some(root) = root {
-                local[*slot..*slot + root.len()].copy_from_slice(root);
-              }
-              Some(root.is_some())
-            }
-            _ => None,
-          }
-        };
-        if let Some(found) = hit {
-          let value = if found { body.eval(&local) } else { f64::NAN };
-          IMPLICIT_SCRATCH.with(|b| *b.borrow_mut() = local);
-          return value;
-        }
-        let root = {
-          let start = guess.borrow().clone();
-          let root = newton_system(constraints, &mut local, *slot, &start)
-            .or_else(|| newton_system(constraints, &mut local, *slot, init));
-          if let Some(ref root) = root {
-            guess.borrow_mut().clone_from(root);
-          }
-          *memo.borrow_mut() = Some((key.to_vec(), root.clone()));
-          root
-        };
-        let Some(root) = root else {
-          return f64::NAN;
-        };
-        local[*slot..*slot + root.len()].copy_from_slice(&root);
+        local.extend_from_slice(&vars[..system.slot.min(vars.len())]);
+        local.resize(system.slot, 0.0);
+        local.extend_from_slice(&root);
         let value = body.eval(&local);
         IMPLICIT_SCRATCH.with(|b| *b.borrow_mut() = local);
         value

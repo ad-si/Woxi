@@ -24507,6 +24507,26 @@ mod ndsolve_stiff_system {
     );
   }
 
+  // Constraints that share no unknown are solved block by block, each again
+  // only when what it reads changes. wolframscript: {0.2446458436321119,
+  // 0.06455312193062662, 0.5358114796118462, 1.2252339740267393}.
+  #[test]
+  fn dae_with_independent_newton_blocks() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x1'[t] == -x1[t] + 0.1 z2[t], \
+         x2'[t] == -2 x2[t] + 0.1 z1[t], z1[t] + Exp[z1[t]] == 2 + x1[t], \
+         z2[t]^3 + z2[t] == 3 + x2[t], x1[0] == 1, x2[0] == 2}, \
+         {x1, x2, z1, z2}, {t, 0, 2}]; \
+         Max[Abs[({x1[2], x2[2], z1[2], z2[2]} /. First[s]) - \
+         {0.2446458436321119, 0.06455312193062662, 0.5358114796118462, \
+         1.2252339740267393}]] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A DAE with a Newton-solved constraint goes to the stiff method, which
   // crosses a steady stretch in a few long steps; where a step change in
   // the input then shortens them abruptly, the long steps are filled in
