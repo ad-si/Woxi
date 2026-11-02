@@ -27,12 +27,28 @@ thread_local! {
   /// guarded pattern. Matching reached through a nested evaluation — the
   /// condition's own `MatchQ[h[a], h[__g]]`, a `PatternTest`, a sequence
   /// test — is an unrelated match and must not see the guard.
-  static OUTER_LHS_CONDITION: RefCell<Vec<(Expr, usize)>> = const { RefCell::new(Vec::new()) };
+  /// The third field lists the guarded pattern's variable names the
+  /// condition mentions: the condition is only tested once all of them are
+  /// bound.
+  static OUTER_LHS_CONDITION: RefCell<Vec<(Expr, usize, Vec<String>)>> = const { RefCell::new(Vec::new()) };
 }
 
-fn push_outer_lhs_condition(cond: Expr) {
+fn push_outer_lhs_condition(cond: Expr, pattern: &Expr) {
   let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get);
-  OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push((cond, depth)));
+  fn mentions(e: &Expr, name: &str) -> bool {
+    match e {
+      Expr::Identifier(n) => n == name,
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(|c| mentions(c, name)),
+    }
+  }
+  let names: Vec<String> =
+    crate::evaluator::scoping::pattern_variable_names(pattern)
+      .into_iter()
+      .filter(|n| mentions(&cond, n))
+      .collect();
+  OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push((cond, depth, names)));
 }
 
 /// Returns `true` when an LHS Condition is active for the current match and
@@ -43,13 +59,20 @@ fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
   let cond = OUTER_LHS_CONDITION.with(|stack| {
     let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get);
     match stack.borrow().last() {
-      Some((cond, pushed_at)) if *pushed_at == depth => Some(cond.clone()),
+      Some((cond, pushed_at, names)) if *pushed_at == depth => {
+        Some((cond.clone(), names.clone()))
+      }
       _ => None,
     }
   });
-  let Some(cond) = cond else {
+  let Some((cond, names)) = cond else {
     return false;
   };
+  // A pattern variable the condition needs is still unbound: evaluating
+  // it now would test the bare symbol, not the value it will take.
+  if names.iter().any(|n| !bindings.iter().any(|(b, _)| b == n)) {
+    return false;
+  }
   let Ok(evaluated) = apply_bindings(&cond, bindings) else {
     return false;
   };
@@ -1097,7 +1120,7 @@ fn try_ast_pattern_replace_single(
       pushed: combined_cond.is_some(),
     };
     if let Some(ref c) = combined_cond {
-      push_outer_lhs_condition(c.clone());
+      push_outer_lhs_condition(c.clone(), pattern);
     }
     match match_pattern(value, pattern) {
       Some(bindings) => Some(bindings),
@@ -5735,7 +5758,7 @@ fn match_pattern_impl(
       );
       let bindings = {
         if !defers_to_final_check {
-          push_outer_lhs_condition(pat_args[1].clone());
+          push_outer_lhs_condition(pat_args[1].clone(), &pat_args[0]);
         }
         struct G(bool);
         impl Drop for G {

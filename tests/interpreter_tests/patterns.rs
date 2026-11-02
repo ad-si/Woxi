@@ -6809,6 +6809,23 @@ mod implicit_times_before_named_pattern {
 mod condition_with_nested_matching {
   use super::*;
 
+  // A condition over a sequence pattern is only tried early once the
+  // variables it uses are bound: `MemberQ[fs, i]` with `i` still free is
+  // `False` and used to reject every match (TuringMachineCausalNetworks).
+  #[test]
+  fn early_check_waits_for_the_condition_variables() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[{1, 2}, {i_, __} /; MemberQ[{1, 2}, i]], \
+         Cases[{{1, 2, 0}, {3, 5, 1}}, {i_, j_, __} /; MemberQ[{1, 2}, i] && MemberQ[{2, 5}, j]], \
+         Cases[{{1, 2, 0}, {3, 5, 1}}, {i_, __} /; Count[{1, 2}, i] > 0], \
+         {1, 2, 1} /. {a___, b_, c_, d___} /; b > c :> {b, c}}"
+      )
+      .unwrap(),
+      "{True, {{1, 2, 0}}, {{1, 2, 0}}, {2, 1}}"
+    );
+  }
+
   #[test]
   fn sequence_binding_tested_with_match_q() {
     assert_eq!(
