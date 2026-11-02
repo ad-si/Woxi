@@ -4951,6 +4951,35 @@ pub fn dispatch_list_operations(
       // Leaf (children given as None) or any other spec: keep as-is.
       return Some(Ok(unevaluated("Tree", args)));
     }
+    // `Tree[x]` of a non-list stays unevaluated without a message.
+    "Tree" if args.len() == 1 && !matches!(args[0], Expr::List(_)) => {
+      return Some(Ok(unevaluated("Tree", args)));
+    }
+    // Anything beyond `Tree[data, children]` must be options; a call whose
+    // last argument is not one stays unevaluated with `Tree::nonopt`.
+    "Tree"
+      if args.len() > 2 && {
+        fn is_option(e: &Expr) -> bool {
+          match e {
+            Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+            Expr::List(items) => items.iter().all(is_option),
+            _ => false,
+          }
+        }
+        !is_option(args.last().unwrap())
+      } =>
+    {
+      let call = unevaluated("Tree", args);
+      let show = |e: &Expr| {
+        crate::syntax::format_expr(e, crate::syntax::ExprForm::Output)
+      };
+      crate::emit_message(&format!(
+        "Tree::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+        show(args.last().unwrap()),
+        show(&call)
+      ));
+      return Some(Ok(call));
+    }
     // TreeQ[expr] -> True iff expr is a valid Tree object (head Tree with two
     // arguments whose second is None or a list of valid Trees), else False.
     // Any non-Tree expression (number, symbol, list, graph, ...) is False.

@@ -23621,6 +23621,35 @@ mod sparse_array_properties_and_predicates {
 mod tree_leaves_cases_scan_and_atomicity {
   use super::*;
 
+  // Only a well-formed tree is an atom; `Tree[x, 1, 2]` is an ordinary
+  // expression whose parts Position reaches, and it stays unevaluated with
+  // Tree::nonopt.
+  #[test]
+  fn malformed_tree_is_an_ordinary_expression() {
+    assert_eq!(
+      interpret(
+        "{AtomQ[Tree[1, None]], AtomQ[Tree[x, {1, 2}]], AtomQ[Tree[x, None, ImageSize -> 10]], AtomQ[Tree[x, 1]], AtomQ[Tree[x]]}"
+      )
+      .unwrap(),
+      "{True, True, True, False, False}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"Position[Tree["a", Tree["b", "", "", {1, 1}], "", {2, 2}], _Tree, {0, Infinity}]"#
+      )
+      .unwrap(),
+      "{{2}, {}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Tree::nonopt: Options expected (instead of {1, 1}) beyond position 2 in Tree[b, , , {1, 1}]."
+      )),
+      "expected Tree::nonopt, got {msgs:?}"
+    );
+  }
+
   // The leaf subtrees, left to right; a tree with no children is its own
   // only leaf.
   #[test]

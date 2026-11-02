@@ -510,11 +510,33 @@ pub fn is_atomic_object(expr: &Expr) -> bool {
 /// `Part` cannot reach inside.
 pub fn is_fully_atomic_object(expr: &Expr) -> bool {
   match expr {
-    Expr::FunctionCall { name, .. } if name == "Tree" => true,
+    Expr::FunctionCall { name, args } if name == "Tree" => is_tree_object(args),
     Expr::FunctionCall { name, args }
       if name == "MeshRegion" || name == "BoundaryMeshRegion" =>
     {
       args.len() >= 2 && matches!(args[0], Expr::List(_))
+    }
+    _ => false,
+  }
+}
+
+/// Whether `Tree[args]` is a well-formed tree object: `Tree[data, children]`
+/// with a list of children or `None`, optionally followed by options, or
+/// `Tree[{…}]`. Anything else (`Tree[x, 1, 2]`) is an ordinary expression
+/// whose parts `Position`, `Part` and `Map` reach, as in wolframscript.
+fn is_tree_object(args: &[Expr]) -> bool {
+  let is_option = |e: &Expr| match e {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      matches!(pattern.as_ref(), Expr::Identifier(_))
+    }
+    _ => false,
+  };
+  match args {
+    [Expr::List(_)] => true,
+    [_, children, options @ ..] => {
+      (matches!(children, Expr::List(_))
+        || matches!(children, Expr::Identifier(s) if s == "None"))
+        && options.iter().all(is_option)
     }
     _ => false,
   }
