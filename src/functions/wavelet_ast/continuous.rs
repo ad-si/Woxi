@@ -386,9 +386,22 @@ pub fn continuous_wavelet_transform_ast(
     return Ok(unevaluated(fname, args));
   };
   let n = data.len();
+  // `Automatic` octaves (alone or as `{Automatic, nvoc}`) cover the data:
+  // floor(log2(n/2)) of them.
+  let default_octaves = (((n as f64) / 2.0).log2().floor() as i64).max(1);
+  let is_automatic =
+    |e: &Expr| matches!(e, Expr::Identifier(a) if a == "Automatic");
   let (noct, nvoc) = match positional.get(2) {
-    None => ((((n as f64) / 2.0).log2().floor() as i64).max(1), 4),
-    Some(Expr::List(ov)) if ov.len() == 2 => match (num(&ov[0]), num(&ov[1])) {
+    None => (default_octaves, 4),
+    Some(e) if is_automatic(e) => (default_octaves, 4),
+    Some(Expr::List(ov)) if ov.len() == 2 => match (
+      if is_automatic(&ov[0]) {
+        Some(default_octaves as f64)
+      } else {
+        num(&ov[0])
+      },
+      num(&ov[1]),
+    ) {
       (Some(o), Some(v)) if o >= 1.0 && v >= 1.0 => (o as i64, v as i64),
       _ => {
         crate::emit_message(&format!(
@@ -650,6 +663,13 @@ pub fn apply_cwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
       func: Box::new(func.clone()),
       args: args.to_vec(),
     });
+  }
+  // `cwd["Coefficients"]` (unlisted in "Properties") is `cwd[All]`.
+  if let Expr::String(prop) = &args[0]
+    && prop == "Coefficients"
+    && args.len() == 1
+  {
+    return apply_cwd(func, &[Expr::Identifier("All".into())]);
   }
   if let Expr::String(prop) = &args[0] {
     return Ok(cwd_property(&cwd, prop));

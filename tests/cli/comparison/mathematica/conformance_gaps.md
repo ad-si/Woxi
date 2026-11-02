@@ -2889,6 +2889,20 @@ WL's NDSolve storing `1.87*^-18` rather than the exact initial value `0` at
 
 ## Special functions
 
+### `ContinuousWaveletTransform` coefficient values
+
+```sh
+wolframscript -code 'ContinuousWaveletTransform[{1,2,3,4,5,6,7,8.}]["Coefficients"][[1]]'
+# {1, 1} -> {-1.0982370418505618, 0.13926308046164212, -0.06581530226016169, …}
+woxi eval 'ContinuousWaveletTransform[{1,2,3,4,5,6,7,8.}]["Coefficients"][[1]]'
+# {1, 1} -> {-4.079293102773578, -4.9986056247094, -4.050590191555365, …}
+```
+
+The octave/voice layout, scales and wavelet agree; the coefficients do not.
+Wolfram's are near zero inside the data and large at both ends, which looks
+like a circular (FFT) convolution of the uncentered data; Woxi correlates the
+mean-centered data with the sampled wavelet directly. Not decoded yet.
+
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
 
 ```sh

@@ -867,6 +867,39 @@ mod wavelets {
     );
   }
 
+  // `Automatic` octaves are floor(log2(n/2)), alone or with explicit voices.
+  #[test]
+  fn cwt_automatic_octaves() {
+    assert_eq!(
+      interpret(
+        "cwd = ContinuousWaveletTransform[Range[201] // N, DGaussianWavelet[4], {Automatic, 24}]; \
+         {cwd[\"Octaves\"], cwd[\"Voices\"], Last[cwd[\"WaveletIndex\"]]}"
+      )
+      .unwrap(),
+      "{6, 24, {6, 24}}"
+    );
+    assert_eq!(
+      interpret(
+        "Last[ContinuousWaveletTransform[Range[1000] // N, DGaussianWavelet[4], Automatic][\"WaveletIndex\"]]"
+      )
+      .unwrap(),
+      "{8, 4}"
+    );
+  }
+
+  // "Coefficients" is not listed in "Properties" but gives cwd[All].
+  #[test]
+  fn cwt_coefficients_property() {
+    assert_eq!(
+      interpret(
+        "cwd = ContinuousWaveletTransform[Range[16] // N]; \
+         {Keys[cwd[\"Coefficients\"]] == Keys[cwd[All]], Length[cwd[\"Coefficients\"]]}"
+      )
+      .unwrap(),
+      "{True, 12}"
+    );
+  }
+
   #[test]
   fn inverse_cwt_recovers_data() {
     assert_eq!(
