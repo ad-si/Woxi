@@ -3956,9 +3956,34 @@ mod apart {
     );
     assert_eq!(
       interpret("Apart[(x - a) (x - b)]").unwrap(),
-      "a*b - a*x - b*x + x^2"
+      "a*b - (a + b)*x + x^2"
     );
     assert_eq!(interpret("Apart[x]").unwrap(), "x");
+  }
+
+  // Collected by powers of the variable, each coefficient factored.
+  #[test]
+  fn apart_collects_polynomials_in_the_variable() {
+    assert_eq!(
+      interpret("Apart[(x - a) (x - b) (x - c)]").unwrap(),
+      "-(a*b*c) + (a*b + a*c + b*c)*x - (a + b + c)*x^2 + x^3"
+    );
+    assert_eq!(
+      interpret("Apart[2 (x + 1) (x + 3) + a x]").unwrap(),
+      "6 + (8 + a)*x + 2*x^2"
+    );
+    assert_eq!(
+      interpret("Apart[a - b + (b - a) x]").unwrap(),
+      "a - b - (a - b)*x"
+    );
+    assert_eq!(
+      interpret("Apart[(x - a) (y - b)]").unwrap(),
+      "b*(a - x) - (a - x)*y"
+    );
+    assert_eq!(
+      interpret("Apart[(x - a) (y - b), x]").unwrap(),
+      "a*(b - y) - x*(b - y)"
+    );
   }
 
   #[test]

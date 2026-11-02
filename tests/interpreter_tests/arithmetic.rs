@@ -621,6 +621,15 @@ mod arithmetic {
     // monomial down; the first differing position decides (smaller monomial
     // first, equal monomials by numerically smaller coefficient) —
     // wolframscript-verified.
+    // A sum in front of a power of a symbol orders like a coefficient.
+    #[test]
+    fn sum_coefficient_term_orders_by_its_power() {
+      assert_eq!(interpret("x^2 + (a + b) x").unwrap(), "(a + b)*x + x^2");
+      assert_eq!(interpret("x^2 - (a + b) x").unwrap(), "-((a + b)*x) + x^2");
+      assert_eq!(interpret("x^3 + (a + b) x^2").unwrap(), "(a + b)*x^2 + x^3");
+      assert_eq!(interpret("x^2 + (a + b) x^3").unwrap(), "x^2 + (a + b)*x^3");
+    }
+
     #[test]
     fn sum_vs_sum_factor_order_by_top_coefficients() {
       assert_eq!(

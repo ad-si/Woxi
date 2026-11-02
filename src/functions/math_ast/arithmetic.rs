@@ -3755,6 +3755,61 @@ fn plus_var_name_cmp(a: &str, b: &str) -> std::cmp::Ordering {
   a.chars().map(key).cmp(b.chars().map(key))
 }
 
+/// The order of two Plus terms that are, past numeric coefficients and sum
+/// factors, powers of one symbol with different integer exponents, at least
+/// one of them carrying a sum factor: the lower power first, as when the
+/// sums are plain coefficients. `None` for every other pair.
+fn sum_coefficient_power_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  // (symbol, exponent, has a sum factor)
+  let split = |e: &Expr| -> Option<(String, i128, bool)> {
+    let (_, factors) = wl_coeff_and_factors(e);
+    let mut with_sum = false;
+    let mut monomial: Option<(String, i128)> = None;
+    for f in &factors {
+      if is_sum(f) {
+        // Only a sum ahead of the power acts as its coefficient: in
+        // `a*(a + b + c)` the sum is the last factor and the term sorts
+        // after `a^2`.
+        if monomial.is_some() {
+          return None;
+        }
+        with_sum = true;
+        continue;
+      }
+      if monomial.is_some() {
+        return None;
+      }
+      let (base, exp) = wl_base_exp(f);
+      match (base, exp.as_ref()) {
+        (Expr::Identifier(s), Expr::Integer(k)) if *k >= 1 => {
+          monomial = Some((s.clone(), *k));
+        }
+        _ => return None,
+      }
+    }
+    monomial.map(|(s, k)| (s, k, with_sum))
+  };
+  let (sa, ka, wa) = split(a)?;
+  let (sb, kb, wb) = split(b)?;
+  if !(wa || wb) || sa != sb || ka == kb {
+    return None;
+  }
+  Some(ka.cmp(&kb))
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3778,6 +3833,13 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       -1 => return std::cmp::Ordering::Greater,
       _ => {}
     }
+  }
+  // Products are compared from their last factor, so a sum standing in front
+  // of a power of a symbol is a coefficient: `(a + b)*x + x^2`,
+  // `(a + b)*x^2 + x^3`, `-((a + b)*x) + x^2` (the order of Collect and
+  // Apart output).
+  if let Some(ord) = sum_coefficient_power_order(a, b) {
+    return ord;
   }
   // Two terms ending in powers of one base with symbolic exponents order by
   // those exponents, whatever leads them: `c^(-1 + n) + c^n`, `b c^n + a
