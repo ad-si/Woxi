@@ -6640,8 +6640,10 @@ unevaluated.
 `Sum[k^i, {i, q h, 0, -q}]` is re-indexed to `Sum[k^(h q - q i), {i, 0, h}]`
 but not summed in closed form (the kernel gives `(-1 + k^(q + h q))/(-1 +
 k^q)`). Applying a definition stored from it to numbers evaluates correctly.
-Steps that do not divide a symbolic span (`Sum[k^i, {i, 0, n, 2}]`) stay
-unevaluated.
+A concrete step that does not divide a symbolic span runs to
+`Floor[(n - a)/s]` (`Sum[k^i, {i, 0, n, 2}]` matches); with a step of 3
+from 1 wolframscript writes the top power as `k^(3*(1 + Floor[(-1 + n)/3]))`
+where Woxi expands it to `k^(3 + 3*Floor[(-1 + n)/3])`.
 
 ## Automatically sized `Graphics` in a `Row` inside a fixed `Pane`
 
@@ -7797,3 +7799,105 @@ that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
   rounded once; wolframscript's own evaluation is off by one unit in the
   last place for some samples (`Range[60]` against `Range[5, 70]`:
   `0.3653150154290672`, the exact value rounds to `…725`).
+
+## Machine results that differ in the last digits
+
+Iterated and least-squares machine results agree with wolframscript to
+within a few units in the last place but not bit for bit: `Solve`/`NSolve`
+roots (`2.999999999999999` against `3.`), `LinearProgramming` with integer
+variables (`0.49999999999999956`), constrained `FindMaximum` stopping points
+(`1.0000000026163025`), `NIntegrate` (`0.5000000000000006`), `LinearSolve`
+least-squares and minimum-norm solutions, `FindFit`, `NonlinearModelFit`,
+`GeneralizedLinearModelFit`, machine `Eigenvalues`, `QPochhammer`, `Erfc` and
+`InverseErf`, and a `RecurrenceTable` solved for its leading terms
+(`72.49999999999999`). The conformance harness compares these with
+`NEAR_MATCH` (relative 10^-8). Where a rounding step magnifies the difference
+(`Round[…, 10^-6]` of an ANOVA sum on a tie, the `L` of a bounded
+`FindMaximum` rounded to 10^-6) the cases are skipped.
+
+## Software arithmetic past the machine range
+
+Machine arithmetic that overflows continues as arbitrary-precision numbers.
+Woxi computes those exactly from the machine operands and tags them with
+wolframscript's precision (`15.954589770191005`, or 52 bits for an integer
+power); wolframscript's software arithmetic carries its own rounding:
+`(10.^400 + 10.^400)/10.^399` is `19.999999999999925` and
+`1.5^3000/1.5^2999` is `1.5000000000000002` (Woxi `20.` and `1.5`), and
+`1.*^200 1.*^200/(1.*^300 1.*^100) // N` underflows with `General::munfl`
+to `0.` (Woxi `1.`). `N[(2 + I)^5, 20]` gives the two parts of a complex
+number different precisions (``-38.`19.98…``, ``41.`20.02…``) where Woxi
+keeps 20 for both.
+
+## `NSolve` root order and multiplicity
+
+For a numeric polynomial system wolframscript lists the roots in the order
+its homotopy continuation finds them (`{{-5.557, -5.59}, {0.365, -1.6}}`)
+and, for the restricted three-body equilibrium system, repeats roots of
+higher multiplicity (8 solutions where Woxi gives the 5 distinct ones). Woxi
+sorts the distinct roots.
+
+## `FindInstance` picks other witnesses
+
+`FindInstance[x > 1000, x]` is `{{x -> 1027}}` and
+`FindInstance[x < -1000, x]` is `{{x -> -1075}}` in wolframscript (an
+internal heuristic); Woxi gives the nearest integers `1001` and `-1001`.
+
+## `NDSolve` accuracy and step control
+
+Several assertions about `NDSolve`, `NDEigensystem` and `NDEigenvalues`
+results hold for Woxi's solvers but not for wolframscript's: the
+cylindrical reactor PDE system, the periodic Schrödinger equation
+(`Abs[u - exact] < 10^-4`), the step count of an index-1 DAE at
+`AccuracyGoal -> 3` versus 12, a DAE with a `(1 - u)^1.5` constraint (which
+wolframscript does not solve at all), the FEM eigenvalues of `-u''`
+(`4.0001`, `9.0006` against Woxi's `4.`, `9.`) and of an anharmonic
+oscillator (`2.633`, `4.781` against `2.632`, `4.777`), a `FindFit` with a
+`NumericQ`-guarded model (wolframscript lands `10^-5` off), and a large
+sparse `LinearSolve` whose residual stays above `10^-12` in wolframscript.
+
+## `DSolve` particular solutions and constants
+
+- `y'' + y == Cos[x] + Sin[x]` and other trigonometric forcing: wolframscript
+  gives the variation-of-parameters solution over a common denominator
+  (`(-2*x*Cos[x] + 2*Cos[x]^3 + …)/4`), Woxi a simplified one
+  (`(Cos[x] - x*Cos[x] + x*Sin[x])/2`). Both satisfy the equation; matching
+  needs wolframscript's choice of method per forcing term (polynomial and
+  exponential forcing are not written that way) and its integrals of
+  products such as `Sin[x] Sin[2 x]`.
+- `y'' + y' == f` (no `y` term) is reduced to first order in wolframscript,
+  which makes the homogeneous part `-(C[1]/E^x) + C[2]`; Woxi writes
+  `C[1]/E^x + C[2]`.
+- Linear first-order systems with a symbolic coefficient
+  (`{y' == a y + z, z' == y}`) or a variable one (`y' == x y + z`) stay
+  unevaluated.
+- Boundary-value solutions are combined differently: the `u[1] == 1,
+  u[2] == 2` solution of `-2 u'/u'' == x` is `(-2 + 3*x)/x`, Woxi's
+  `3 - 2/x`; a forced first-order solution at `t -> 0` prints as one
+  fraction, `(5*(45/2 + 40*Pi^2))/(9/4 + 4*Pi^2)`.
+
+## `Reduce` of a polynomial system in triangular form
+
+`Reduce[{(1 - x) (x + y) - 4 x == 0, (1 - y) (x + y) - y == 0}, {x, y}]` is
+`(x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3) && y ==
+(x*(13 + 3*x))/4` in wolframscript: the last variable as a polynomial in the
+first. Woxi lists the three solution pairs with `y` evaluated.
+
+## Remaining symbolic forms
+
+- `Eigenvectors` of a general symbolic 3×3 matrix: wolframscript gives
+  vectors in the three `Root` objects of the characteristic polynomial; Woxi
+  stays unevaluated.
+- `MeijerG[{{}, {}}, {{a}, {b}}, z, r]` with the fourth argument is
+  unevaluated (wolframscript: a `BesselJ[a - b, 2*z^(3/2)]` form for
+  `r = 1/3`).
+- `DifferenceDelta[i^2, {i, n}]` (a step `n`) is unevaluated; wolframscript
+  writes it with `HypergeometricPFQ[{-n}, {}, 1]` terms.
+- `DiscreteAsymptotic[Log[n!], n -> Infinity]` is
+  `Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n]` in
+  wolframscript (Woxi `n*Log[n]`); `Sin[n]` gives an exponential form there;
+  the coefficients of `-(z/(-1 + z + z^2))` are
+  `2^n*(-1 + Sqrt[5])^(-1 - n) - (2^n*(-1 + Sqrt[5])^(-1 - n))/Sqrt[5]`
+  (Woxi the equal `(2/(-1 + Sqrt[5]))^n/Sqrt[5]`).
+- `RotationMatrix[t, {a, 1, 0}]` with a symbolic component stays
+  unevaluated (wolframscript's general formula carries `Conjugate` of every
+  component).
