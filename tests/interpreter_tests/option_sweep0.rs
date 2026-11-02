@@ -321,7 +321,7 @@ mod time_zone_option {
   use super::*;
 
   #[test]
-  fn absolute_time_reads_the_date_in_the_zone() {
+  fn absolute_time_counts_on_the_zone_clock() {
     // New York is on daylight saving time (UTC-4) in August.
     assert_eq!(
       interpret(
@@ -337,7 +337,15 @@ mod time_zone_option {
          AbsoluteTime[{2022, 8, 4}, TimeZone -> 0]"
       )
       .unwrap(),
-      "14400"
+      "-14400"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteTime[{2022, 8, 4}, TimeZone -> 3] - \
+         AbsoluteTime[{2022, 8, 4}, TimeZone -> 0]"
+      )
+      .unwrap(),
+      "10800"
     );
     assert_eq!(
       interpret(

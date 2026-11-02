@@ -929,7 +929,9 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(now());
   }
 
-  // AbsoluteTime[date, TimeZone -> tz] reads the date in zone tz.
+  // AbsoluteTime[date, TimeZone -> tz] takes the date in $TimeZone and
+  // counts the seconds on the clock of zone tz: 3 hours more for zone 3
+  // than for zone 0.
   if let [date, opt] = args
     && let Some((Expr::Identifier(o), zone, _)) =
       crate::functions::expr_form::rule_parts(opt)
@@ -950,7 +952,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     else {
       return unevaluated();
     };
-    let shifted = seconds - (offset - local) * 3600.0;
+    let shifted = seconds + (offset - local) * 3600.0;
     return Ok(
       if matches!(absolute, Expr::Integer(_)) && shifted.fract() == 0.0 {
         Expr::Integer(shifted as i128)
