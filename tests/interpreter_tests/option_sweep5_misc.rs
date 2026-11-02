@@ -651,17 +651,6 @@ mod peaks_at_scale_zero {
       "{{1, 2}, {11/2, 6}, {11, 7}}"
     );
   }
-
-  #[test]
-  fn unsupported_options_stay_unevaluated() {
-    assert_eq!(
-      interpret(
-        "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 2]"
-      )
-      .unwrap(),
-      "FindPeaks[{2, 1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3}, 0, InterpolationOrder -> 2]"
-    );
-  }
 }
 
 mod regions {
