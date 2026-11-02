@@ -219,9 +219,14 @@ mod knot_data_tests {
       interpret(r#"Head[KnotData[{"TorusKnot", {3, 5}}, "Image"]]"#).unwrap(),
       "Graphics3D"
     );
+    // The tube sits in a styled group, as in wolframscript's picture.
     assert_eq!(
       interpret(r#"Head[First[First[KnotData[{5, 1}, "Image"]]]]"#).unwrap(),
-      "GraphicsComplex"
+      "List"
+    );
+    assert_eq!(
+      interpret(r#"Head /@ KnotData[{5, 1}, "Image"][[1, 1, 1]]"#).unwrap(),
+      "{RGBColor, AbsoluteThickness, GraphicsComplex}"
     );
   }
 
