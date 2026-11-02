@@ -7850,13 +7850,12 @@ pub fn rank_decomposition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RowReduce",
         vec![args[0].clone(), modulus_rule],
       ))?;
-      let residues = evaluate_expr_to_expr(&call(
-        "Mod",
-        vec![args[0].clone(), Expr::Integer(p)],
-      ))?;
-      match (expr_to_matrix(&residues), expr_to_matrix(&reduced)) {
-        (Some(m), Some(r)) => (m, r),
-        _ => return Ok(unevaluated()),
+      // The pivot columns are taken from the matrix as given, not reduced
+      // modulo p (wolframscript: `{{6, 2}, {3, 11}}` modulo 5 gives the
+      // column `{{6}, {3}}`).
+      match expr_to_matrix(&reduced) {
+        Some(r) => (matrix, r),
+        None => return Ok(unevaluated()),
       }
     }
   };

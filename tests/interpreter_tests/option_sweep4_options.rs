@@ -301,7 +301,7 @@ mod rank_decomposition_modulus {
     );
     assert_eq!(
       interpret("RankDecomposition[{{6, 2}, {3, 11}}, Modulus -> 5]").unwrap(),
-      "{{{1}, {3}}, {{1, 2}}}"
+      "{{{6}, {3}}, {{1, 2}}}"
     );
   }
 
