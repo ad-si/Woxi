@@ -911,6 +911,26 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "HierarchicalClustering`" {
+    // A bare `ClusterFlatten` read after the package is loaded is the
+    // package's; one read on the same line as the `Get` (before it ran) is
+    // `Global\`ClusterFlatten` and stays undefined, as in wolframscript.
+    for name in [
+      "Agglomerate",
+      "Cluster",
+      "ClusterFlatten",
+      "ClusterSplit",
+      "DendrogramPlot",
+      "DirectAgglomerate",
+      "DistanceMatrix",
+      "HighlightLevel",
+      "HighlightStyle",
+      "LeafLabels",
+      "Linkage",
+      "Orientation",
+      "TruncateDendrogram",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "Combinatorica`" {
@@ -1197,12 +1217,10 @@ fn evaluate_function_call_ast_inner(
   // Combinatorica only extends it to accept a bare integer `n` (meaning
   // `Range[n]`), so only that shape is redirected — a list argument keeps
   // using the built-in's identical (lexicographic) algorithm.
-  // The `HierarchicalClustering`` package, by its full names or by the bare
-  // ones once the package is on `$ContextPath`.
+  // The `HierarchicalClustering`` package: its symbols are read under
+  // their full names once the package is loaded.
   {
-    let bare = name.strip_prefix("HierarchicalClustering`").or_else(|| {
-      crate::context_path_contains("HierarchicalClustering`").then_some(name)
-    });
+    let bare = name.strip_prefix("HierarchicalClustering`");
     match bare {
       Some("Agglomerate") => {
         return crate::functions::hierarchical_clustering::agglomerate_ast(

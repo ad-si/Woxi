@@ -346,7 +346,9 @@ mod resolve_context_aliases {
          Contexts[\"abc`\", ResolveContextAliases -> False]}"
       )
       .unwrap(),
-      "{{NewContext`newSymbol}, {}, {NewContext`}, {}}"
+      // `abc`newSymbol` is created when the line is read, before the alias
+      // exists (wolframscript also warns `$ContextAliases::cxinuse`).
+      "{{}, {abc`newSymbol}, {}, {abc`}}"
     );
     clear_state();
   }

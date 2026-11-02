@@ -1810,9 +1810,8 @@ fn evaluate_expr_to_expr_uncached(
         if let Some(style_expr) = style_directive_expr(name) {
           return Ok(style_expr);
         }
-        // Reading a name that spells its context out brings that context
-        // into being — `Contexts["a`*"]` lists `a`` after a bare `a`foo`.
-        crate::evaluator::contexts::note_qualified_symbol(name);
+        // (A name that spells its context out was created when its line was
+        // read — see `contexts::resolve` — not when it is evaluated.)
         // Return as symbolic identifier
         Ok(Expr::Identifier(name.clone()))
       }

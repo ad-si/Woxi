@@ -12096,6 +12096,8 @@ mod hypothesis_testing_intervals_and_p_values {
 mod hierarchical_clustering_package {
   use super::*;
 
+  // Symbols are read when their line is: on the line that loads the
+  // package, a bare `ClusterFlatten` is still `Global`ClusterFlatten`.
   #[test]
   fn agglomerate_and_flatten() {
     assert_eq!(
@@ -12107,8 +12109,35 @@ mod hierarchical_clustering_package {
       )
       .unwrap(),
       "{Cluster[Cluster[Cluster[1, 4, 1, 1, 1], 2, Sqrt[5], 2, 1], 3, Sqrt[61], 3, 1], \
-       {1, 4, 2, 3}, Cluster[Cluster[Cluster[{1, 2}, {1, 3}, 1, 1, 1], {3, 4}, 5, 2, 1], \
-       {9, 9}, 61, 3, 1]}"
+       Global`ClusterFlatten[Cluster[Cluster[Cluster[1, 4, 1, 1, 1], 2, Sqrt[5], 2, 1], \
+       3, Sqrt[61], 3, 1]], Global`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn qualified_names_on_the_loading_line() {
+    assert_eq!(
+      interpret(
+        "Get[\"HierarchicalClustering`\"]; \
+         c = HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}} -> \
+         {1, 2, 3, 4}, DistanceFunction -> EuclideanDistance]; \
+         {HierarchicalClustering`ClusterFlatten[c], \
+         HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]}"
+      )
+      .unwrap(),
+      "{{1, 4, 2, 3}, Cluster[Cluster[Cluster[{1, 2}, {1, 3}, 1, 1, 1], {3, 4}, 5, 2, \
+       1], {9, 9}, 61, 3, 1]}"
+    );
+  }
+
+  // Once the package is loaded, its bare names read as its symbols.
+  #[test]
+  fn bare_names_after_loading() {
+    clear_state();
+    interpret("Get[\"HierarchicalClustering`\"]").unwrap();
+    assert_eq!(
+      interpret("{Context[ClusterFlatten], Context[Linkage]}").unwrap(),
+      "{HierarchicalClustering`, HierarchicalClustering`}"
     );
   }
 
@@ -12119,8 +12148,10 @@ mod hierarchical_clustering_package {
     assert_eq!(
       interpret(
         "Get[\"HierarchicalClustering`\"]; \
-         heights[c_] := Cases[c, Cluster[_, _, d_, __] :> d, {0, Infinity}]; \
-         Table[Sort[heights[Agglomerate[{1, 2, 4, 10, 11, 20}, Linkage -> l]]], \
+         heights[c_] := Cases[c, HierarchicalClustering`Cluster[_, _, d_, __] :> d, \
+         {0, Infinity}]; \
+         Table[Sort[heights[HierarchicalClustering`Agglomerate[{1, 2, 4, 10, 11, 20}, \
+         HierarchicalClustering`Linkage -> l]]], \
          {l, {\"Single\", \"Complete\", \"Average\", \"WeightedAverage\", \
          \"Centroid\", \"Median\", \"Ward\"}}]"
       )
@@ -12136,7 +12167,8 @@ mod hierarchical_clustering_package {
     assert_eq!(
       interpret(
         "Get[\"HierarchicalClustering`\"]; \
-         Cases[DendrogramPlot[Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]], \
+         Cases[HierarchicalClustering`DendrogramPlot[\
+         HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]], \
          _Line, Infinity]"
       )
       .unwrap(),
