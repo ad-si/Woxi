@@ -339,8 +339,7 @@ mod resolve_context_aliases {
     clear_state();
     assert_eq!(
       interpret(
-        "$ContextAliases[\"abc`\"] = \"NewContext`\"\n\
-         abc`newSymbol; \
+        "$ContextAliases[\"abc`\"] = \"NewContext`\"; abc`newSymbol; \
          {Names[\"abc`newSymbol\"], \
          Names[\"abc`newSymbol\", ResolveContextAliases -> False], \
          Contexts[\"abc`\"], \
@@ -354,21 +353,21 @@ mod resolve_context_aliases {
     clear_state();
   }
 
-  // On the line that sets the alias the name was read before it existed:
-  // the symbol is `abc`newSymbol` itself, which the new alias then hides.
+  // A name read on a later line than the alias goes through it.
   #[test]
-  fn an_alias_does_not_redirect_a_name_read_before_it() {
+  fn an_alias_redirects_a_name_read_after_it() {
     clear_state();
     assert_eq!(
       interpret(
-        "$ContextAliases[\"abc`\"] = \"NewContext`\"; abc`newSymbol; \
+        "$ContextAliases[\"abc`\"] = \"NewContext`\"\n\
+         abc`newSymbol; \
          {Names[\"abc`newSymbol\"], \
          Names[\"abc`newSymbol\", ResolveContextAliases -> False], \
          Contexts[\"abc`\"], \
          Contexts[\"abc`\", ResolveContextAliases -> False]}"
       )
       .unwrap(),
-      "{{}, {abc`newSymbol}, {}, {abc`}}"
+      "{{NewContext`newSymbol}, {}, {NewContext`}, {}}"
     );
     clear_state();
   }
