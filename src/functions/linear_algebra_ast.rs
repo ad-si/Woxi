@@ -8372,6 +8372,7 @@ fn linear_solve_rectangular_machine(
   if !inexact {
     return None;
   }
+  let original = m.clone();
   let scale = m.iter().flatten().fold(0.0_f64, |acc, v| acc.max(v.abs()));
   let tol = scale * 1e-10;
   let nrows = m.len();
@@ -8405,6 +8406,15 @@ fn linear_solve_rectangular_machine(
   }
   if m[pivot_row..].iter().any(|r| r[ncols].abs() > tol) {
     return Some(None);
+  }
+  // A consistent system with free variables has many solutions; for machine
+  // numbers wolframscript gives the shortest one
+  // (`LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]` is about `{0.5, 0.5, 0.}`).
+  if pivots.len() < ncols {
+    let a: Vec<Vec<f64>> =
+      original.iter().map(|r| r[..ncols].to_vec()).collect();
+    let rhs: Vec<f64> = original.iter().map(|r| r[ncols]).collect();
+    return Some(Some(solve_least_squares_min_norm(&a, &rhs, false)));
   }
   let mut x = vec![0.0; ncols];
   for (row, col) in pivots {
@@ -9152,6 +9162,24 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if let Some(solution) = linear_solve_machine(&matrix, &b) {
     return Ok(solution);
+  }
+  // A singular machine matrix: the shortest solution, as for a rectangular
+  // one (`LinearSolve[{{1., 2}, {2, 4}}, {1, 2}]` is `{0.2, 0.4}`).
+  if !b.iter().any(|e| matches!(e, Expr::List(_))) {
+    match linear_solve_rectangular_machine(&matrix, &b, ncols) {
+      Some(Some(x)) => {
+        return Ok(Expr::List(
+          x.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
+        ));
+      }
+      Some(None) => {
+        crate::emit_message(
+          "LinearSolve::nosol: Linear equation encountered that has no solution.",
+        );
+        return Ok(unevaluated("LinearSolve", args));
+      }
+      None => {}
+    }
   }
 
   // Build augmented matrix [A | b]

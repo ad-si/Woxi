@@ -2966,7 +2966,12 @@ mod linear_solve {
     );
     assert_eq!(
       interpret("LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]").unwrap(),
-      "{1., 0., 0.}"
+      "{0.5, 0.5, 0.}"
+    );
+    // A singular machine system has many solutions: the shortest one.
+    assert_eq!(
+      interpret("LinearSolve[{{1., 2}, {2, 4}}, {1, 2}]").unwrap(),
+      "{0.2, 0.4}"
     );
   }
 
