@@ -1568,6 +1568,12 @@ fn evaluate_expr_to_expr_uncached(
       {
         return evaluate_expr_to_expr(&id_expr(plain));
       }
+      // The grammar's constants have one canonical node, `Expr::Constant`;
+      // a symbol spelled `Pi` (as `Pi k` parses) evaluates to it, so the
+      // ordering comparators see a single spelling.
+      if matches!(name.as_str(), "Pi" | "E" | "Degree") {
+        return evaluate_expr_to_expr(&Expr::Constant(name.clone()));
+      }
       // Look up in environment
       if let Some(stored) = stored_value_for_lookup(name) {
         match stored {

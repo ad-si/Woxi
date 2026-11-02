@@ -14782,3 +14782,61 @@ mod big_exact_numbers_with_other_terms {
     assert_eq!(interpret(&format!("{setup}; e > 0")).unwrap(), "False");
   }
 }
+
+// `Pi`, `E` and `Degree` have one canonical node after evaluation, and the
+// Plus order places a power of a constant among the symbols by its base.
+mod constant_power_plus_order {
+  use super::*;
+
+  #[test]
+  fn constant_spelled_as_symbol_orders_as_constant() {
+    // `Pi k` parses Pi as a symbol node.
+    assert_eq!(interpret("x = Pi k; x/k + k").unwrap(), "k + Pi");
+    assert_eq!(interpret("Pi k + k^2").unwrap(), "k^2 + k*Pi");
+  }
+
+  #[test]
+  fn symbolic_power_of_constant_sorts_by_base() {
+    assert_eq!(interpret("a + E^t").unwrap(), "a + E^t");
+    assert_eq!(interpret("e + E^t").unwrap(), "e + E^t");
+    assert_eq!(interpret("f + E^t").unwrap(), "E^t + f");
+    assert_eq!(interpret("p + Pi^t").unwrap(), "p + Pi^t");
+    assert_eq!(interpret("q + Pi^t").unwrap(), "Pi^t + q");
+    assert_eq!(interpret("a^2 + E^t").unwrap(), "a^2 + E^t");
+    assert_eq!(interpret("a b + E^t").unwrap(), "a*b + E^t");
+    assert_eq!(interpret("E^a + a").unwrap(), "a + E^a");
+    assert_eq!(interpret("x^2 + E^x").unwrap(), "E^x + x^2");
+    assert_eq!(interpret("1 + x + E^x").unwrap(), "1 + E^x + x");
+  }
+
+  #[test]
+  fn products_with_exponentials_compare_from_last_factor() {
+    assert_eq!(
+      interpret("a E^(b x) + c E^(b x) + a E^(d x) + c E^(d x)").unwrap(),
+      "a*E^(b*x) + c*E^(b*x) + a*E^(d*x) + c*E^(d*x)"
+    );
+    assert_eq!(
+      interpret("k^2 + E^t k^2 + 4 Pi^2 + 4 E^t Pi^2").unwrap(),
+      "k^2 + E^t*k^2 + 4*Pi^2 + 4*E^t*Pi^2"
+    );
+  }
+
+  #[test]
+  fn numeric_exponent_before_symbolic_exponent() {
+    assert_eq!(interpret("E^(-2) - E^(-y)").unwrap(), "E^(-2) - E^(-y)");
+    assert_eq!(interpret("Pi^2 + Pi^y").unwrap(), "Pi^2 + Pi^y");
+    assert_eq!(interpret("Sqrt[3] + 3^y").unwrap(), "Sqrt[3] + 3^y");
+    assert_eq!(interpret("Gamma[1, 2, y]").unwrap(), "E^(-2) - E^(-y)");
+  }
+
+  #[test]
+  fn negated_negative_integer_power_keeps_power_form() {
+    assert_eq!(interpret("-E^(-3)").unwrap(), "-E^(-3)");
+    assert_eq!(
+      interpret("-(1 + Sqrt[2])^(-2)").unwrap(),
+      "-(1 + Sqrt[2])^(-2)"
+    );
+    assert_eq!(interpret("-1/(x + y)^2").unwrap(), "-(x + y)^(-2)");
+    assert_eq!(interpret("-1/Sqrt[Pi]").unwrap(), "-(1/Sqrt[Pi])");
+  }
+}

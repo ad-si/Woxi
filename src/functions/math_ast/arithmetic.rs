@@ -3392,15 +3392,13 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
       }
-      if let Expr::Constant(c) = left.as_ref()
-        && let Some(exp) = expr_to_f64(right)
-      {
-        // Named numeric constants (Pi, E, …) raised to a *concrete*
-        // numeric exponent sort like polynomial variables so
-        // `Pi^2 + 3*Pi` lands as `3*Pi + Pi^2`, matching
-        // wolframscript. Symbolic exponents (e.g. `E^x`) fall
-        // through to the term-sort-key path so their existing
-        // ordering rules apply.
+      if let Expr::Constant(c) = left.as_ref() {
+        // Named numeric constants (Pi, E, …) raised to a power sort like
+        // polynomial variables, so `Pi^2 + 3*Pi` lands as `3*Pi + Pi^2`;
+        // a symbolic exponent (`E^t`) is above every concrete one, so the
+        // power sits among the symbols by its base: `a + E^t`, `E^t + t`,
+        // `p + Pi^t` (all matching wolframscript).
+        let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
         return Some(vec![(c.to_lowercase(), exp)]);
       }
       if is_indexed_variable(left) {
@@ -3414,9 +3412,8 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
         return Some(vec![(s.clone(), exp)]);
       }
-      if let Expr::Constant(c) = &args[0]
-        && let Some(exp) = expr_to_f64(&args[1])
-      {
+      if let Expr::Constant(c) = &args[0] {
+        let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
         return Some(vec![(c.to_lowercase(), exp)]);
       }
       if is_indexed_variable(&args[0]) {
@@ -3861,6 +3858,188 @@ fn scaled_sum_vs_symbol_order(
   })
 }
 
+/// Products compare from their last factor, an exponential `E^g` taking its
+/// place among the factors as a power of the symbol `E`:
+/// `k^2 + E^t*k^2 + 4*Pi^2 + 4*E^t*Pi^2` (the `E^t` sits before `k^2`) and
+/// `a*E^(b*x) + c*E^(b*x) + a*E^(d*x) + c*E^(d*x)` (it sits last). When the
+/// factors agree as far as the shorter product goes, that one is first.
+/// `None` when neither term has an exponential, or the factors all agree.
+fn exponential_factor_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  let is_exp = |f: &Expr| {
+    let (base, exp) = match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return false,
+    };
+    (matches!(base, Expr::Constant(c) if c == "E")
+      || matches!(base, Expr::Identifier(c) if c == "E"))
+      && !crate::functions::predicate_ast::is_numeric_q(exp)
+  };
+  // The non-literal factors, in the product's (canonical) order.
+  let factors = |e: &Expr| -> (Vec<Expr>, usize) {
+    let all: Vec<Expr> = match e {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let literal = |f: &Expr| {
+      matches!(f, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+        || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
+    };
+    let rest: Vec<Expr> = all.into_iter().filter(|f| !literal(f)).collect();
+    let exps = rest.iter().filter(|f| is_exp(f)).count();
+    (rest, exps)
+  };
+  let (fa, ea) = factors(a);
+  let (fb, eb) = factors(b);
+  if ea == 0 && eb == 0 {
+    return None;
+  }
+  // Only when something besides numbers and exponentials is on both sides.
+  if fa.len() == ea || fb.len() == eb {
+    return None;
+  }
+  for (x, y) in fa.iter().rev().zip(fb.iter().rev()) {
+    let ord = if is_exp(x) || is_exp(y) {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(x, y)
+    } else {
+      compare_plus_terms(x, y)
+    };
+    if ord != std::cmp::Ordering::Equal {
+      return Some(ord);
+    }
+  }
+  (fa.len() != fb.len()).then(|| fa.len().cmp(&fb.len()))
+}
+
+/// A (numerically scaled) sum against a product of non-numeric factors that
+/// contains a function call: `Order` compares the sum's last term with the
+/// product's last factor — `C[1]*Cos[x] + C[2]*Sin[x] + (… + Sin[x]*Sin[2*x])/4`,
+/// `C[1]/E^(2*x) + C[2]/E^x + (-3*Cos[x] + Sin[x])/10` (the constants'
+/// `C[k]` against `Sin[x]`). `None` when that comparison ties or the pair
+/// is of another shape.
+fn scaled_sum_vs_product_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let is_sum =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Plus");
+  let factors_of = |e: &Expr| -> Vec<Expr> {
+    let (_, factors) = wl_coeff_and_factors(e);
+    factors.iter().map(|f| f.as_ref().clone()).collect()
+  };
+  let (fa, fb) = (factors_of(a), factors_of(b));
+  let has_call = |p: &[Expr]| {
+    p.iter()
+      .any(|f| matches!(f, Expr::FunctionCall { name, .. } if name != "Power"))
+  };
+  // A product that has a sum among other factors (`E^x*(Cos[x]^2 +
+  // Sin[x]^2)`) against a sum-free product with a call: `Order` of the two
+  // products (`C[1]*Cos[x] + … + (E^x*(Cos[x]^2 + Sin[x]^2))/2`).
+  let mixed = |f: &[Expr]| f.len() >= 2 && f.iter().any(is_sum);
+  let plain = |f: &[Expr]| f.len() >= 2 && !f.iter().any(is_sum) && has_call(f);
+  if (mixed(&fa) && plain(&fb)) || (plain(&fa) && mixed(&fb)) {
+    let ord = crate::functions::list_helpers_ast::sorting::canonical_cmp(
+      &times(fa.clone()),
+      &times(fb.clone()),
+    );
+    return (ord != std::cmp::Ordering::Equal).then_some(ord);
+  }
+  let (sum, product, sum_is_a) = match (fa.as_slice(), fb.as_slice()) {
+    ([s], p) if is_sum(s) && p.len() >= 2 => (s.clone(), p.to_vec(), true),
+    (p, [s]) if is_sum(s) && p.len() >= 2 => (s.clone(), p.to_vec(), false),
+    _ => return None,
+  };
+  if product.iter().any(is_sum)
+    || !product
+      .iter()
+      .any(|f| matches!(f, Expr::FunctionCall { name, .. } if name != "Power"))
+  {
+    return None;
+  }
+  let Expr::FunctionCall { args: terms, .. } = &sum else {
+    return None;
+  };
+  let mut sorted = product.clone();
+  sorted.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  // From the back: the sum's terms against the product's factors, the
+  // first difference deciding (`C[2]*Sin[x]` before `(… + Sin[x])/4`).
+  let ord = terms
+    .iter()
+    .rev()
+    .zip(sorted.iter().rev())
+    .map(|(t, f)| {
+      let t = factors_of(t);
+      let t = if t.len() == 1 { t[0].clone() } else { times(t) };
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(&t, f)
+    })
+    .find(|o| *o != std::cmp::Ordering::Equal)?;
+  Some(if sum_is_a { ord } else { ord.reverse() })
+}
+
+/// Two terms that are the same product apart from their numeric factor,
+/// one a plain number and the other a numeric constant (`Sqrt[2]`, `Pi`):
+/// the plain number first, as the product with fewer factors —
+/// `-2*y + Sqrt[2]*y`, `-4*y + Pi*y`.
+fn literal_vs_constant_coefficient_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let split = |e: &Expr| -> Option<(bool, Vec<Expr>)> {
+    let factors: Vec<Expr> = match e {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      _ => return None,
+    };
+    let mut literal = false;
+    let mut constant = false;
+    let mut rest = Vec::new();
+    for f in factors {
+      let is_literal = matches!(f, Expr::Integer(_) | Expr::Real(_))
+        || matches!(&f, Expr::FunctionCall { name, .. } if name == "Rational");
+      if is_literal {
+        literal = true;
+      } else if crate::functions::predicate_ast::is_numeric_q(&f)
+        && !crate::functions::math_ast::contains_imaginary_unit(&f)
+      {
+        constant = true;
+      } else {
+        rest.push(f);
+      }
+    }
+    if rest.is_empty() {
+      return None;
+    }
+    match (literal, constant) {
+      (true, false) => Some((true, rest)),
+      (_, true) => Some((false, rest)),
+      _ => None,
+    }
+  };
+  let (la, ra) = split(a)?;
+  let (lb, rb) = split(b)?;
+  if la == lb
+    || ra.len() != rb.len()
+    || !ra
+      .iter()
+      .zip(&rb)
+      .all(|(x, y)| crate::evaluator::pattern_matching::expr_equal(x, y))
+  {
+    return None;
+  }
+  Some(if la {
+    std::cmp::Ordering::Less
+  } else {
+    std::cmp::Ordering::Greater
+  })
+}
+
 fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Underflow[] always sorts to the front of a Plus, ahead of constants
   // and every other term shape.
@@ -3894,6 +4073,35 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   }
   if let Some(ord) = scaled_sum_vs_symbol_order(a, b) {
     return ord;
+  }
+  if let Some(ord) = literal_vs_constant_coefficient_order(a, b) {
+    return ord;
+  }
+  if let Some(ord) = scaled_sum_vs_product_order(a, b) {
+    return ord;
+  }
+  if let Some(ord) = exponential_factor_order(a, b) {
+    return ord;
+  }
+  // Powers of one base, one with a numeric and one with a symbolic exponent,
+  // order by the exponents, the number first: `E^(-2) - E^(-y)`,
+  // `Pi^2 + Pi^y`, `Sqrt[3] + 3^y`.
+  {
+    let ((_, fa), (_, fb)) = (wl_coeff_and_factors(a), wl_coeff_and_factors(b));
+    if let ([pa], [pb]) = (fa.as_slice(), fb.as_slice()) {
+      let ((base_a, exp_a), (base_b, exp_b)) =
+        (wl_base_exp(pa), wl_base_exp(pb));
+      let numeric = |e: &Expr| expr_to_f64(e).is_some();
+      if numeric(&exp_a) != numeric(&exp_b)
+        && crate::evaluator::pattern_matching::expr_equal(base_a, base_b)
+      {
+        return if numeric(&exp_a) {
+          std::cmp::Ordering::Less
+        } else {
+          std::cmp::Ordering::Greater
+        };
+      }
+    }
   }
   // Two terms ending in powers of one base with symbolic exponents order by
   // those exponents, whatever leads them: `c^(-1 + n) + c^n`, `b c^n + a

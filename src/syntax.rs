@@ -8801,19 +8801,12 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
   if !neg_exp {
     return false;
   }
-  // Check if base contains any identifiers (symbolic, not purely numeric)
-  fn has_identifier(e: &Expr) -> bool {
-    match e {
-      Expr::Identifier(_) => true,
-      Expr::FunctionCall { args, .. } => args.iter().any(has_identifier),
-      Expr::BinaryOp { left, right, .. } => {
-        has_identifier(left) || has_identifier(right)
-      }
-      Expr::UnaryOp { operand, .. } => has_identifier(operand),
-      _ => false,
-    }
-  }
-  has_identifier(base)
+  // Any base that is not itself a number: `-x^(-3)`, `-E^(-3)`,
+  // `-(1 + Sqrt[2])^(-2)` (wolframscript writes none of them as `-(1/…)`).
+  !matches!(
+    base,
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+  ) && !matches!(base, Expr::FunctionCall { name, .. } if name == "Rational" || name == "Complex")
 }
 
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
