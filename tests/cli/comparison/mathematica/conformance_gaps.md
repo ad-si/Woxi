@@ -7509,3 +7509,46 @@ magnitude (`1` and the cube roots of unity of
 follows the last bit of `Abs[(-1)^(1/3)]`, which differs between platforms'
 libm: on macOS Woxi lists the real ones first, as wolframscript does; on
 Linux they come last.
+||||||| parent of bea667998 (Record timeout-cluster divergences in conformance_gaps.md)
+
+
+## Notebook-sweep gaps (timeout cluster, 2026-11)
+
+- A product with a machine complex factor orders it last in Woxi:
+  `{1. + 2.5 I, 3.} a` is `{a*(1. + 2.5*I), 3.*a}`, wolframscript
+  `{(1. + 2.5*I)*a, 3.*a}`.
+- `N[-GoldenRatio + 2 GoldenRatio/(2 + GoldenRatio) + GoldenRatio^2/(2 +
+  GoldenRatio), 30]` (an exact zero) is `0``79.09` with `N::meprec` in
+  wolframscript; Woxi answers a tiny nonzero `-4.68…`30.*^-97`.
+- `EllipticE`/`EllipticF` of a complex amplitude past the real branch lose
+  digits: `N[EllipticE[ArcSin[Sqrt[3/2]], 2/3]]` is `1.26118382064276 -
+  0.3036020376753771*I`, wolframscript `1.2611859497426054… -
+  0.30360162808571534…*I`.
+- Linear `Solve` results keep common factors wolframscript cancels:
+  `Solve[{(x - 1) 2 + (y - 2) Pi == 0, x == 1 + t, y == 1 + 2 t}, {x, y, t}]`
+  gives `x -> (2*Pi + 3*Pi^2)/(2*(Pi + Pi^2))` (wolframscript
+  `-1/2*(-2 - 3*Pi)/(1 + Pi)`); with `GoldenRatio` coefficients wolframscript
+  partly rewrites the answer in radicals.
+- `Solve[-Sin[3 t] + 2 Sin[5 t] == 0, t]` (several multiples of the
+  unknown) stays unevaluated; wolframscript gives ten `ConditionalExpression`
+  families (StationaryStatesOfMaximalEntropyRandomWalk…).
+- `Solve` of a transcendental equation with machine coefficients over
+  `Reals` (`(3800 (325 - T) - 3000 (T - 350) + 7*^10/(E^(4330.04/T) (2 +
+  70000/E^(4330.04/T))))/15000 == 0`) stays unevaluated; wolframscript
+  answers `{{T -> 365.49893230547883}}` with `Solve::ratnz`
+  (ContinuousStirredTankReactorThatLosesCooling).
+- `Maximize` of a rational function with machine coefficients under linear
+  constraints (MaximizingConversionToAnIntermediateProduct…) does not
+  finish: the exact elimination over the rationalized coefficients swells in
+  the rational extended GCD of `mfactor::square_free`. wolframscript answers
+  in 0.3 s (and its `NMaximize` finds a different local maximum).
+- `Plot3D` samples far more densely than wolframscript (5202 against 1213
+  evaluations for `Plot3D[f, {m, 1, 300}, {k, 1, 10}]`), which with
+  arbitrary-precision intermediates times out TheSatisfiabilityThreshold.
+- Where wolframscript underflows a machine power to `0.` (`General::munfl`,
+  PayThePoints' `(12 + r)^-360`), Woxi computes the power through a
+  promoted overflow and keeps arbitrary precision: the values differ (Woxi's
+  is the exact one) and each evaluation is ~100x slower.
+- `FindArgMin[…, Method -> "Newton"]` on a diverging start
+  (QuantumMotionOfTwoParticles…) ends at a different point than
+  wolframscript and takes ~1.5 s per call (wolframscript 15 ms).
