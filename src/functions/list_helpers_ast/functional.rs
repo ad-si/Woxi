@@ -201,8 +201,7 @@ fn fixed_point_converged(
 
 /// FixedPoint/FixedPointList default comparison: SameQ semantics.
 fn same_q_default(a: &Expr, b: &Expr) -> bool {
-  expr_to_string(a) == expr_to_string(b)
-    || crate::functions::boolean_ast::same_q_real_bigfloat(a, b)
+  crate::functions::boolean_ast::same_q_pair(a, b)
 }
 
 /// AST-based Accumulate: cumulative sums.

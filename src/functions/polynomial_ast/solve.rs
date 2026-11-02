@@ -7922,6 +7922,10 @@ fn coupled_variables(
 /// More variables than this and the eliminations multiply out of hand.
 const MAX_SYSTEM_VARS: usize = 4;
 
+/// A linear solution whose right-hand side has more leaves than this is not
+/// passed through Simplify.
+const SOLVE_SIMPLIFY_MAX_LEAVES: usize = 400;
+
 /// The largest Sylvester matrix an elimination step is allowed to build.
 /// Two cubics already produce a degree-9 polynomial in the variable that
 /// survives, which is past what Solve reports in radicals anyway.
@@ -21031,6 +21035,12 @@ fn is_expr_zero(e: &Expr) -> bool {
   matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(x) if *x == 0.0)
 }
 
+/// Whether an elimination entry is zero in value (see
+/// `helpers::is_exact_numeric_zero`).
+fn is_entry_zero(e: &Expr) -> bool {
+  is_expr_zero(e) || super::helpers::is_exact_numeric_zero(e)
+}
+
 /// Evaluate and simplify an expression (double pass for compound simplifications).
 fn eval_entry(e: Expr) -> Expr {
   let r = crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
@@ -21519,6 +21529,12 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
       if pivot_row >= nrows {
         break;
       }
+      // Entries that are zero in value are made so in form first.
+      for r in pivot_row..nrows {
+        if !is_expr_zero(&matrix[r][col]) && is_entry_zero(&matrix[r][col]) {
+          matrix[r][col] = Expr::Integer(0);
+        }
+      }
       let found = (pivot_row..nrows).find(|&r| !is_expr_zero(&matrix[r][col]));
       let Some(swap_row) = found else { continue };
       if swap_row != pivot_row {
@@ -21532,7 +21548,9 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
           continue;
         }
         let factor = matrix[row][col].clone();
-        if !is_expr_zero(&factor) {
+        if is_entry_zero(&factor) {
+          matrix[row][col] = Expr::Integer(0);
+        } else {
           for j in 0..ncols {
             let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
             let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
@@ -21570,7 +21588,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
   // Check for inconsistency
   for row in 0..nrows {
     if (0..n).all(|j| is_expr_zero(&matrix[row][j]))
-      && !is_expr_zero(&matrix[row][n])
+      && !is_entry_zero(&matrix[row][n])
     {
       return Some(Expr::List(vec![].into())); // no solution
     }
@@ -21602,8 +21620,11 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
     // (`3/2 - x/2`, `c/b - (a*x)/b`), as Wolfram's does. A unique one runs
     // through the user-level Simplify so the RHS collapses forms like
     // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
+    // A large one (radical coefficients eliminated fraction-free) is left
+    // as it is: simplifying it can take far longer than the solve.
     let rhs = if underdetermined
       || matches!(intermediate, Expr::Integer(_) | Expr::Real(_))
+      || super::simplify::leaf_count(&intermediate) > SOLVE_SIMPLIFY_MAX_LEAVES
     {
       intermediate
     } else {

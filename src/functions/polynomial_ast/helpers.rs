@@ -289,3 +289,27 @@ pub(super) fn shares_opaque_atom_across_quotient(expr: &Expr) -> bool {
     in_den.iter().any(|b| expr_to_string(b) == key)
   })
 }
+
+/// Whether `e` is an exact numeric expression (radicals, `GoldenRatio`, …)
+/// that is zero though not written as `0`: its value at 50 digits vanishes.
+/// Eliminating or dividing over such coefficients leaves unsimplified zeros
+/// behind, and taken as a pivot or leading coefficient they divide by zero.
+pub fn is_exact_numeric_zero(e: &Expr) -> bool {
+  if matches!(
+    e,
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+  ) || crate::syntax::contains_inexact(e)
+    || !crate::functions::predicate_ast::is_numeric_q(e)
+  {
+    return false;
+  }
+  let n = crate::helpers::call("N", vec![e.clone(), Expr::Integer(50)]);
+  crate::evaluator::evaluate_expr_to_expr(&n)
+    .ok()
+    .and_then(|v| {
+      crate::functions::math_ast::try_extract_complex_float(&v).or_else(|| {
+        crate::functions::math_ast::try_eval_to_f64(&v).map(|r| (r, 0.0))
+      })
+    })
+    .is_some_and(|(re, im)| re.abs() + im.abs() < 1e-30)
+}

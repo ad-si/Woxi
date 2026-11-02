@@ -652,6 +652,21 @@ pub fn poly_divide_symbolic(
     q_coeffs.push(crate::evaluator::evaluate_expr_to_expr(&c)?);
   }
 
+  // A leading coefficient that is zero in value though not in form (an
+  // exact radical expression) does not set the degree.
+  let is_zero_coeff = |c: &Expr| {
+    expr_to_string(c) == "0" || super::helpers::is_exact_numeric_zero(c)
+  };
+  while q_coeffs.len() > 1 && is_zero_coeff(q_coeffs.last().unwrap()) {
+    q_coeffs.pop();
+  }
+  if q_coeffs.len() == 1 && is_zero_coeff(&q_coeffs[0]) {
+    return Err(InterpreterError::EvaluationError(
+      "PolynomialRemainder: division by zero polynomial".into(),
+    ));
+  }
+  let q_deg = q_coeffs.len() as i128 - 1;
+
   if p_deg < q_deg {
     // Remainder is p itself, quotient is 0
     return Ok((Expr::Integer(0), p_expanded));

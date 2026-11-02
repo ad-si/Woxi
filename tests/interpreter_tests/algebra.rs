@@ -7246,6 +7246,59 @@ mod solve_ratnz_only_for_polynomial_systems {
 mod solve_system_rejects_invalid_candidates {
   use super::*;
 
+  // A solution whose check against an equation leaves an exact zero not
+  // written as 0 (`-g + 2 g/(2 + g) + g^2/(2 + g)`) is kept: that Equal is
+  // True, not False.
+  #[test]
+  fn exact_zero_check_keeps_the_solution() {
+    assert_eq!(
+      interpret(
+        "-GoldenRatio + 2 GoldenRatio/(2 + GoldenRatio) + GoldenRatio^2/(2 + GoldenRatio) == 0"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "N[{x, y} /. First[Solve[{2 x + y GoldenRatio - GoldenRatio == 0, x == y}, {x, y}]]]"
+      )
+      .unwrap(),
+      "{0.4472135954999579, 0.4472135954999579}"
+    );
+    assert_eq!(
+      interpret(
+        "N[{x, y, t} /. First[Solve[{(x - 1) Sqrt[2] + (y - 2) GoldenRatio == 0, x == 1 + t, y == 1 + 2 t}, {x, y, t}]]]"
+      )
+      .unwrap(),
+      "{1.3479432320121685, 1.6958864640243367, 0.3479432320121684}"
+    );
+  }
+
+  // A leading coefficient that is zero in value does not set the divisor's
+  // degree (it used to be divided by).
+  #[test]
+  fn exact_zero_leading_coefficient() {
+    assert_eq!(
+      interpret(
+        "PolynomialRemainder[x^2 + 1, ((1 + Sqrt[2])^2 - 3 - 2 Sqrt[2]) x^2 + x + 2, x]"
+      )
+      .unwrap(),
+      "5"
+    );
+  }
+
+  // Like terms written with operator nodes and with calls combine.
+  #[test]
+  fn like_terms_over_radical_bases_combine() {
+    assert_eq!(
+      interpret(
+        "Sqrt[2 + GoldenRatio] x/(1 + y)^2 - 3 (2 + GoldenRatio)^(1/2) x (1 + y)^-2 + 2 x Sqrt[2 + GoldenRatio]/(1 + y)^2"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // An elimination through a fractional power must not report an infinite
   // candidate, nor one (`p -> 0`, `t -> 405`) that fails `p == t^(-7/2)`.
   #[test]

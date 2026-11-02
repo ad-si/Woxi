@@ -307,9 +307,49 @@ pub fn same_q_pair(a: &Expr, b: &Expr) -> bool {
   {
     return crate::evaluator::pattern_matching::expr_equal(a, b);
   }
+  if let Some(same) = same_plain_data(a, b) {
+    return same;
+  }
   let identity =
     |e: &Expr| expr_to_string(e) + &crate::syntax::graphics_identity_suffix(e);
   identity(a) == identity(b) || same_with_tolerant_reals(a, b)
+}
+
+/// SameQ decided without printing for plain data: machine integers, machine
+/// reals, strings and lists of them (a `FixedPoint` iterating on a long
+/// list compared both lists' text every step). `None` for anything else.
+/// Two machine reals are the same when their (round-trip) spellings agree
+/// or they are one unit in the last place apart, as in
+/// `same_with_tolerant_reals`.
+fn same_plain_data(a: &Expr, b: &Expr) -> Option<bool> {
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => Some(x == y),
+    (Expr::Real(x), Expr::Real(y)) => {
+      Some(x == y || (x.is_nan() && y.is_nan()) || same_q_real_bigfloat(a, b))
+    }
+    (Expr::String(x), Expr::String(y)) => Some(x == y),
+    // Differently spelled atoms of these kinds never print alike.
+    (
+      Expr::Integer(_) | Expr::Real(_) | Expr::String(_),
+      Expr::Integer(_) | Expr::Real(_) | Expr::String(_),
+    ) => Some(false),
+    (Expr::List(xs), Expr::List(ys)) => {
+      if xs.same_shared(ys) {
+        return Some(true);
+      }
+      if xs.len() != ys.len() {
+        return Some(false);
+      }
+      let mut verdict = true;
+      for (x, y) in xs.iter().zip(ys.iter()) {
+        if !same_plain_data(x, y)? {
+          verdict = false;
+        }
+      }
+      Some(verdict)
+    }
+    _ => None,
+  }
 }
 
 /// Whether `a` and `b` are the same expression up to machine reals that
@@ -824,7 +864,10 @@ fn exact_difference_vanishes(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
 
 fn exact_numbers_coincide(a: &Expr, b: &Expr, fa: f64, fb: f64) -> bool {
   let scale = fa.abs().max(fb.abs());
-  if (fa - fb).abs() > scale * 1e-12 {
+  // Against zero the machine values carry only rounding noise (an exact
+  // zero written as `-g + g (2 + g)/(2 + g)` evaluates to `-1.1*^-16`), so
+  // the quick rejection measures the difference absolutely there.
+  if (fa - fb).abs() > scale.max(1.0) * 1e-12 {
     return false;
   }
   let difference = crate::helpers::call(
