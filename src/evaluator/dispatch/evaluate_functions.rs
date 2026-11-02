@@ -5997,6 +5997,42 @@ fn evaluate_function_call_ast_inner(
         }
       }
       merged.extend(args[1..].iter().cloned());
+      // Re-made with new options, the graph records its layout as
+      // `{"Dimension" -> 2, "VertexLayout" -> layout}` — just the
+      // dimension when it had none — unless a layout is among the new
+      // options.
+      if !new_names.contains(&Some("GraphLayout".to_string())) {
+        let dimension =
+          || rule_expr(Expr::String("Dimension".to_string()), Expr::Integer(2));
+        let position = merged
+          .iter()
+          .position(|o| option_name(o).as_deref() == Some("GraphLayout"));
+        match position {
+          Some(i) => {
+            if let Expr::Rule { replacement, .. } = &merged[i]
+              && let Expr::String(layout) = replacement.as_ref()
+            {
+              merged[i] = rule_expr(
+                id_expr("GraphLayout"),
+                Expr::List(
+                  vec![
+                    dimension(),
+                    rule_expr(
+                      Expr::String("VertexLayout".to_string()),
+                      Expr::String(layout.clone()),
+                    ),
+                  ]
+                  .into(),
+                ),
+              );
+            }
+          }
+          None => merged.push(rule_expr(
+            id_expr("GraphLayout"),
+            Expr::List(vec![dimension()].into()),
+          )),
+        }
+      }
       return evaluate_function_call_ast("Graph", &merged);
     }
 
@@ -6354,9 +6390,33 @@ fn evaluate_function_call_ast_inner(
     && let Some(opts) = flatten_rule_args(&args[1..])
   {
     let converted = evaluate_function_call_ast(name, &args[..1])?;
+    let had_layout = matches!(&converted, Expr::FunctionCall { args: ga, .. }
+      if ga.iter().any(|o| matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout"))));
     let mut graph_args = vec![converted];
     graph_args.extend(opts);
-    return evaluate_function_call_ast("Graph", &graph_args);
+    let result = evaluate_function_call_ast("Graph", &graph_args)?;
+    // Only `DirectedGraph` records the dimension of a layout-free graph.
+    if name != "DirectedGraph"
+      && !had_layout
+      && let Expr::FunctionCall {
+        name: head,
+        args: ga,
+      } = &result
+      && head == "Graph"
+    {
+      let kept: Vec<Expr> = ga
+        .iter()
+        .filter(|o| {
+          !matches!(o, Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout")
+              && matches!(replacement.as_ref(), Expr::List(l) if l.len() == 1))
+        })
+        .cloned()
+        .collect();
+      return Ok(call("Graph", kept));
+    }
+    return Ok(result);
   }
 
   // FindHamiltonianPath[graph] / [graph, s, t] → one Hamiltonian path

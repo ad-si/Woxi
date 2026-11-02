@@ -5385,7 +5385,7 @@ mod graph_of_a_graph {
         r#"g = CycleGraph[4]; h = Graph[g, VertexLabels -> "Name"]; {Head[h], VertexCount[h], EdgeCount[h], Options[h, VertexLabels], h === g}"#
       )
       .unwrap(),
-      "{Graph, 4, 4, {VertexLabels -> Name}, False}"
+      "{Graph, 4, 4, {VertexLabels -> {Name}}, False}"
     );
     // A repeated option replaces the old value; others are kept
     assert_eq!(
@@ -5393,11 +5393,27 @@ mod graph_of_a_graph {
         r#"Options[Graph[Graph[{1 <-> 2}, VertexLabels -> "Name", EdgeStyle -> Red], VertexLabels -> None]]"#
       )
       .unwrap(),
-      "{EdgeStyle -> RGBColor[1, 0, 0], VertexLabels -> None}"
+      "{EdgeStyle -> {RGBColor[1, 0, 0]}, GraphLayout -> {Dimension -> 2}, VertexLabels -> {None}}"
     );
     assert_eq!(
       interpret("g = CycleGraph[4]; Graph[g] === g").unwrap(),
       "True"
+    );
+  }
+
+  // A graph re-made with options records its layout's dimension (with the
+  // old layout as "VertexLayout"); DirectedGraph does too, UndirectedGraph
+  // and SimpleGraph do not. One value for every vertex is a one-element
+  // list.
+  #[test]
+  fn regraphed_layout_and_listed_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Options[Graph[Graph[{1 <-> 2}, GraphLayout -> \"SpringEmbedding\"], ImageSize -> 100]], Options[Graph[Graph[{1 -> 2}], ImageSize -> 100]], Options[UndirectedGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2]], Options[SimpleGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[Graph[{1 <-> 2}, VertexStyle -> Red, VertexLabels -> {1 -> \"a\"}, EdgeWeight -> {2}]]}"
+      )
+      .unwrap(),
+      "{{GraphLayout -> {Dimension -> 2, VertexLayout -> SpringEmbedding}, ImageSize -> 100}, {GraphLayout -> {Dimension -> 2}, ImageSize -> 100}, {VertexSize -> {2}}, {GraphLayout -> {Dimension -> 2}, VertexSize -> {2}}, {VertexSize -> {2}}, {EdgeWeight -> {2}, VertexLabels -> {1 -> a}, VertexStyle -> {RGBColor[1, 0, 0]}}}"
     );
   }
 }
@@ -9010,7 +9026,7 @@ mod simple_graph {
          Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2], VertexSize]}"
       )
       .unwrap(),
-      "{Graph, {VertexSize -> 3}, {VertexSize -> 2}}"
+      "{Graph, {VertexSize -> {3}}, {VertexSize -> {2}}}"
     );
   }
 }

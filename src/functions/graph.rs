@@ -740,6 +740,21 @@ fn graph_render(
         // distance from a root instead of spreading them on a circle.
         // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
         "GraphLayout" => {
+          // `{"Dimension" -> 2, "VertexLayout" -> layout}` (what `Graph`
+          // makes of a re-graphed graph's layout) is that layout.
+          let vertex_layout = match replacement {
+            Expr::List(items) => items.iter().find_map(|i| match i {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(), Expr::String(s) if s == "VertexLayout") => {
+                Some(replacement.as_ref())
+              }
+              _ => None,
+            }),
+            _ => None,
+          };
+          let replacement = vertex_layout.unwrap_or(replacement);
           (layered, layered_root) = match parse_layered_layout(replacement) {
             Some((dir, root)) => (Some(dir), root),
             None => (None, None),
@@ -10017,6 +10032,23 @@ pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .cmp(&0)
     .reverse()
   });
+  // A per-vertex or per-edge annotation given one value for all of them is
+  // stored as a one-element list of it.
+  for opt in &mut options {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if matches!(n.as_str(),
+        "VertexLabels" | "VertexSize" | "VertexStyle" | "VertexShape"
+          | "VertexShapeFunction" | "VertexLabelStyle" | "EdgeStyle"
+          | "EdgeLabels" | "EdgeLabelStyle" | "EdgeShapeFunction"
+          | "GraphHighlightStyle"))
+      && !matches!(replacement.as_ref(), Expr::List(_))
+    {
+      **replacement = Expr::List(vec![replacement.as_ref().clone()].into());
+    }
+  }
   if args.len() == 1 {
     return Ok(Expr::List(options.into()));
   }
