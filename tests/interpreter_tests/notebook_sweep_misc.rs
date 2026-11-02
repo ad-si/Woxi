@@ -438,3 +438,24 @@ mod function_interpolation_samples_held_expression {
     );
   }
 }
+
+mod make_expression_boxes {
+  use super::*;
+
+  // A number standing in a box row is itself, and MakeExpression threads
+  // over a list of boxes (SpreadsheetLikeSolution… reads its model's
+  // variables back this way).
+  #[test]
+  fn numbers_in_boxes_and_lists_of_boxes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToExpression[RowBox[{\"g\", \"[\", 1, \"]\"}]], \
+         MakeExpression[{RowBox[{\"g\", \"[\", 1, \"]\"}], RowBox[{\"g\", \"[\", 2, \"]\"}]}, StandardForm], \
+         ToExpression[RowBox[{\"x\", \"+\", -2}]], MakeExpression[{}, StandardForm]}"
+      )
+      .unwrap(),
+      "{g[1], {HoldComplete[g[1]], HoldComplete[g[2]]}, -2 + x, {}}"
+    );
+  }
+}

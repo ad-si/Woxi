@@ -139,6 +139,22 @@ pub fn dispatch_string_functions(
     // ToExpression[input, InputForm, HoldComplete]: a string, or boxes read
     // as the source they typeset.
     "MakeExpression" if args.len() == 1 || args.len() == 2 => {
+      // A list of boxes gives the list of their held expressions.
+      if let Expr::List(items) = &args[0] {
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+          let mut item_args = args.to_vec();
+          item_args[0] = item.clone();
+          match crate::evaluator::evaluate_function_call_ast(
+            "MakeExpression",
+            &item_args,
+          ) {
+            Ok(e) => out.push(e),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(Ok(Expr::List(out.into())));
+      }
       if matches!(&args[0], Expr::String(_))
         || matches!(&args[0], Expr::FunctionCall { name, .. } if name.ends_with("Box"))
       {

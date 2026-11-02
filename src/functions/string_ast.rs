@@ -10212,6 +10212,15 @@ fn boxes_to_input(e: &Expr) -> Option<String> {
   let Expr::FunctionCall { name, args } = e else {
     return match e {
       Expr::String(s) => Some(s.clone()),
+      // A number or symbol standing in a box (`RowBox[{"g", "[", 1,
+      // "]"}]`) is itself, as in wolframscript.
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::Identifier(_) => {
+        Some(format!("({})", crate::syntax::expr_to_input_form(e)))
+      }
       _ => None,
     };
   };
