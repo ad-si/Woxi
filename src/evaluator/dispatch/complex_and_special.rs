@@ -1408,7 +1408,11 @@ pub fn dispatch_complex_and_special(
     }
     // The mesh objects ConvexHullMesh/DelaunayMesh/VoronoiMesh build are read
     // through their own accessors.
-    "MeshCoordinates" | "MeshCells" | "MeshPrimitives" | "MeshCellCount"
+    "MeshCoordinates"
+    | "MeshCells"
+    | "MeshPrimitives"
+    | "MeshCellCount"
+    | "ConnectedMeshComponents"
       if !args.is_empty()
         && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
     {
@@ -1710,7 +1714,10 @@ pub fn dispatch_complex_and_special(
     "RegionDisjoint" => {
       return Some(Ok(compute_region_disjoint(args)));
     }
-    "RegionIntersection" | "RegionUnion" | "RegionDifference" => {
+    "RegionIntersection"
+    | "RegionUnion"
+    | "RegionDifference"
+    | "RegionSymmetricDifference" => {
       return Some(compute_region_set_op(name, args));
     }
     "RegionProduct" => {
@@ -16136,10 +16143,18 @@ fn compute_region_set_op(
       "RegionIntersection" if same(&acc, next) => acc,
       "RegionIntersection" if is_empty(&acc) => acc,
       "RegionIntersection" if is_empty(next) => next.clone(),
-      "RegionDifference" if same(&acc, next) => match empty(&acc) {
-        Some(e) => e,
-        None => return echo(),
-      },
+      "RegionDifference" | "RegionSymmetricDifference" if same(&acc, next) => {
+        match empty(&acc) {
+          Some(e) => e,
+          None => return echo(),
+        }
+      }
+      // Planar mesh regions combine into a concrete mesh region.
+      _ if let Some(region) =
+        crate::functions::mesh_region::mesh_boolean(name, &acc, next) =>
+      {
+        region
+      }
       "RegionIntersection" => match region_box_intersection(&acc, next)
         .or_else(|| region_line_intersection(&acc, next))
         .or_else(|| region_polygon_intersection(&acc, next))
@@ -16193,6 +16208,7 @@ fn boolean_region(name: &str, a: &Expr, b: &Expr) -> Option<Expr> {
     "RegionUnion" => call("Or", vec![fa, fb]),
     "RegionIntersection" => call("And", vec![fa, fb]),
     "RegionDifference" => call("And", vec![fa, call1("Not", fb)]),
+    "RegionSymmetricDifference" => call("Xor", vec![fa, fb]),
     _ => return None,
   };
   // And/Or are Flat, so evaluating the formula merges `(#1 && #2) && #3`.

@@ -10303,3 +10303,171 @@ mod mesh_property_value {
     assert_eq!(interpret(MESH.trim_end_matches(';')).unwrap(), "-Graphics-");
   }
 }
+
+mod planar_mesh_booleans {
+  use super::*;
+
+  const SQUARES: &str = "p = MeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+     Polygon[{1, 2, 3, 4}]]; q = MeshRegion[{{1, 1}, {3, 1}, {3, 3}, \
+     {1, 3}}, Polygon[{1, 2, 3, 4}]];";
+
+  #[test]
+  fn overlapping_squares() {
+    assert_eq!(
+      interpret(&format!(
+        "{SQUARES} Table[{{Head[r], Area[r], \
+         Rationalize[RegionCentroid[r], 10^-12]}}, {{r, \
+         {{RegionIntersection[p, q], RegionDifference[p, q], \
+         RegionUnion[p, q], RegionSymmetricDifference[p, q]}}}}]"
+      ))
+      .unwrap(),
+      "{{MeshRegion, 1., {3/2, 3/2}}, {MeshRegion, 3., {5/6, 5/6}}, \
+       {MeshRegion, 7., {3/2, 3/2}}, {MeshRegion, 6., {3/2, 3/2}}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{SQUARES} MeshCoordinates[RegionIntersection[p, q]]"
+      ))
+      .unwrap(),
+      "{{2., 1.}, {2., 2.}, {1., 2.}, {1., 1.}}"
+    );
+  }
+
+  #[test]
+  fn hole_is_triangulated_in_a_mesh_and_kept_as_a_loop_in_a_boundary_mesh() {
+    assert_eq!(
+      interpret(
+        "p = MeshRegion[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}, Polygon[{1, 2, 3, 4}]]; \
+         q = MeshRegion[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}, Polygon[{1, 2, 3, 4}]]; \
+         b = BoundaryMeshRegion[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}, Line[{1, 2, 3, 4, 1}]]; \
+         d = RegionDifference[p, q]; e = RegionDifference[b, q]; \
+         {Area[d], RegionCentroid[d], Area[e], RegionCentroid[e], \
+          Length[MeshCells[d, 2]], Head[e]}"
+      )
+      .unwrap(),
+      "{15., {2.033333333333333, 2.033333333333333}, 15., \
+       {2.033333333333333, 2.033333333333333}, 7, BoundaryMeshRegion}"
+    );
+  }
+
+  #[test]
+  fn boundary_mesh_operands() {
+    // A boundary mesh operand gives a boundary mesh: one counter-clockwise
+    // loop of lines per boundary component.
+    assert_eq!(
+      interpret(
+        "b = BoundaryMeshRegion[{{1, 1}, {-1, 1}, {-1, -1}, {1, -1}}, \
+         Line[{1, 2, 3, 4, 1}]]; \
+         r = BoundaryMeshRegion[{{0, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, -1}, \
+         {1, -1}}, Line[{1, 2, 3, 4, 5, 6, 1}]]; \
+         d = RegionDifference[b, r]; \
+         {Head[d], MeshCoordinates[d], MeshCells[d, 1], \
+          Area[RegionIntersection[b, r]]}"
+      )
+      .unwrap(),
+      "{BoundaryMeshRegion, {{1., -1.}, {1., 0.}, {0., 0.}}, \
+       {Line[{1, 2}], Line[{2, 3}], Line[{3, 1}]}, 3.5}"
+    );
+  }
+
+  #[test]
+  fn disjoint_and_adjacent_pieces() {
+    assert_eq!(
+      interpret(
+        "q = MeshRegion[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}, Polygon[{1, 2, 3, 4}]]; \
+         t = MeshRegion[{{5, 5}, {6, 5}, {6, 6}}, Triangle[{1, 2, 3}]]; \
+         u = RegionUnion[MeshRegion[{{0, 0}, {1, 0}, {0, 1}}, \
+          Triangle[{1, 2, 3}]], MeshRegion[{{1, 0}, {1, 1}, {0, 1}}, \
+          Triangle[{1, 2, 3}]]]; \
+         {RegionIntersection[q, t], Area[RegionUnion[q, t]], \
+          MeshCoordinates[u], MeshCells[u, 2]}"
+      )
+      .unwrap(),
+      "{EmptyRegion[2], 1.5, {{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}}, \
+       {Polygon[{1, 2, 3, 4}]}}"
+    );
+  }
+
+  #[test]
+  fn symmetric_difference_of_other_regions_is_boolean() {
+    assert_eq!(
+      interpret(
+        "{RegionSymmetricDifference[Disk[], Rectangle[], Triangle[]], \
+         RegionSymmetricDifference[Disk[]], \
+         RegionSymmetricDifference[Disk[], Disk[]]}"
+      )
+      .unwrap(),
+      "{BooleanRegion[Xor[#1, #2, #3] & , {Disk[{0, 0}], Rectangle[{0, 0}], \
+       Triangle[{{0, 0}, {1, 0}, {0, 1}}]}], Disk[{0, 0}], EmptyRegion[2]}"
+    );
+  }
+
+  #[test]
+  fn xor_is_flat_and_orderless() {
+    assert_eq!(
+      interpret("{Attributes[Xor], Xor[Xor[a, b], c], Xor[c, Xor[a, b]]}")
+        .unwrap(),
+      "{{Flat, OneIdentity, Orderless, Protected}, Xor[a, b, c], Xor[a, b, c]}"
+    );
+  }
+
+  #[test]
+  fn discretized_disk_is_a_43_gon() {
+    // Area of the regular 43-gon of radius 2, as Wolfram discretizes the disk.
+    assert_eq!(
+      interpret(
+        "r = DiscretizeGraphics[Graphics[{Disk[{0., 0.}, 2.]}]]; \
+         {MeshCellCount[r], Abs[Area[r] - 86 Sin[2 Pi/43]] < 10^-12}"
+      )
+      .unwrap(),
+      "{{43, 43, 1}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "r = DiscretizeGraphics[Graphics[{Disk[{0., 0.}, {2., 2.5}]}], \
+         MaxCellMeasure -> 0.01]; \
+         {Head[r], Abs[Area[r] - 5 Pi] < 0.05, Max[Area /@ MeshPrimitives[r, 2]] < 0.02}"
+      )
+      .unwrap(),
+      "{MeshRegion, True, True}"
+    );
+  }
+
+  #[test]
+  fn triangulate_mesh_with_max_cell_measure() {
+    assert_eq!(
+      interpret(
+        "r = BoundaryMeshRegion[{{0, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, -1}, \
+         {1, -1}}, Line[{1, 2, 3, 4, 5, 6, 1}]]; \
+         f = TriangulateMesh[r, MaxCellMeasure -> {\"Length\" -> 0.1}]; \
+         g = TriangulateMesh[r, MaxCellMeasure -> 0.01]; \
+         {Head[f], Abs[Area[f] - 3.5] < 10^-12, MeshCellCount[f][[3]] > 300, \
+          Abs[Area[g] - 3.5] < 10^-12, \
+          Area[RegionDifference[BoundaryMeshRegion[{{1, 1}, {-1, 1}, {-1, -1}, \
+          {1, -1}}, Line[{1, 2, 3, 4, 1}]], f]]}"
+      )
+      .unwrap(),
+      "{MeshRegion, True, True, True, 0.5}"
+    );
+  }
+
+  #[test]
+  fn connected_mesh_components() {
+    assert_eq!(
+      interpret(
+        "c = ConnectedMeshComponents[MeshRegion[{{0, 0}, {1, 0}, {1, 1}, \
+         {5, 5}, {6, 5}, {6, 6}}, {Polygon[{1, 2, 3}], Polygon[{4, 5, 6}]}]]; \
+         l = ConnectedMeshComponents[MeshRegion[{{0, 0}, {1, 0}, {2, 0}, \
+         {5, 0}}, Line[{{1, 2}, {2, 3}}]]]; \
+         {MeshCoordinates /@ c, MeshCells[#, 2] & /@ c, \
+          Length[ConnectedMeshComponents[MeshRegion[{{0, 0}, {1, 0}, {0, 1}, \
+          {-1, 0}, {0, -1}}, {Polygon[{1, 2, 3}], Polygon[{1, 4, 5}]}]]], \
+          MeshCoordinates /@ l}"
+      )
+      .unwrap(),
+      "{{{{0., 0.}, {1., 0.}, {1., 1.}}, {{5., 5.}, {6., 5.}, {6., 6.}}}, \
+       {{Polygon[{1, 2, 3}]}, {Polygon[{1, 2, 3}]}}, 1, \
+       {{{0., 0.}, {1., 0.}, {2., 0.}}}}"
+    );
+  }
+}

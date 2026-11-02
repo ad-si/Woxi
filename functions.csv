@@ -1175,7 +1175,7 @@ Refresh,"Returns its first argument evaluated; the update-interval options only 
 KelvinBer,"Kelvin ber function (real part of BesselJ on a rotated argument)",✅,pure,6.0,1146
 NetTrain,"",🚫,,11.0,1147
 SinIntegral,"Sine integral Si(z)",✅,pure,2.0,1148
-DiscretizeGraphics,"MeshRegion of the points lines and polygons of a graphic",✅,pure,10.0,1149
+DiscretizeGraphics,"MeshRegion of the points lines polygons and filled shapes of a graphic",✅,pure,10.0,1149
 GroebnerBasis,"Reduced lexicographic Groebner basis over the rationals",✅,pure,2.0,1150
 LegendMarkerSize,"",🚫,,9.0,1151
 Subsuperscript,"Subsuperscript notation wrapper (stays symbolic)",✅,unevaluated,3.0,1152
@@ -2365,7 +2365,7 @@ ExponentialMovingAverage,"Computes exponential moving average of a list",✅,Non
 GeoDirection,"Initial bearing from one geo position to another",✅,pure,7.0,2367
 MeanDeviation,"Mean absolute deviation from the mean",✅,1,6.0,2367
 RegionEmbeddingDimension,"Dimension of the space a region is embedded in",✅,pure,10.0,2367
-TriangulateMesh,"Ear-clips a planar mesh region or boundary mesh into a MeshRegion of triangles",✅,pure,10.0,2367
+TriangulateMesh,"Ear-clips a planar mesh region or boundary mesh into triangles or re-meshes it under MaxCellMeasure",✅,pure,10.0,2367
 CloseKernels,"parallel computing",🚫,None,7.0,2371
 DefaultBaseStyle,"styling option",🚫,None,7.0,2371
 ImageDeconvolve,"Restores an image blurred by a point spread function (spectral methods DampedLS/Tikhonov/Wiener; iterative methods TSVD/Hybrid/RichardsonLucy/SteepestDescent/TotalVariation not implemented)",🚧,pure,8.0,2371
@@ -3174,7 +3174,7 @@ RegionMoment,"Polynomial moment integral of coordinates over a region",✅,pure,
 StringPadRight,"Pads a string on the right to a specified length; a bare list of strings is padded to the longest",✅,pure,10.1,3200
 CellLabelAutoDelete,"",🚫,,3.0,3215
 CloudDirectory,"",🚫,,10.0,3215
-ConnectedMeshComponents,"",🚫,,10.0,3215
+ConnectedMeshComponents,"Pieces of a mesh region joined through shared vertices",✅,pure,10.0,3215
 EigenvectorCentrality,"Eigenvector centrality of graph vertices from the principal adjacency eigenvector",✅,pure,8.0,3215
 GreaterEqualThan,"Operator form of GreaterEqual",✅,none,10.3,3215
 HalfSpace,"Unbounded half-space region consumed by RegionMember/RegionDistance/RegionDimension",✅,pure,10.2,3215
@@ -3659,7 +3659,7 @@ MorphologicalEulerNumber,"Number of foreground components minus holes of a thres
 NoncentralBetaDistribution,"Noncentral beta distribution (closed-form PDF and Poisson-mixture CDF)",✅,pure,8.0,3717
 PageBreakWithin,"",🚫,,3.0,3717
 PersistentObjects,"",🚫,,11.1,3717
-RegionSymmetricDifference,"",,,10.0,3717
+RegionSymmetricDifference,"Region covered by exactly one of two regions (exact for planar meshes)",✅,pure,10.0,3717
 ReturnPacket,"",,,3.0,3717
 RollPitchYawMatrix,"Rotation matrix from roll-pitch-yaw angles (default {3 2 1} convention; rotations apply in reverse angle order; optional axis sequence)",✅,pure,10.2,3717
 WatsonUSquareTest,"Watson U² goodness-of-fit test",✅,pure,8.0,3717

@@ -98,6 +98,7 @@ pub mod plot;
 pub mod plot3d;
 pub mod plot_axes;
 pub mod plot_epilog;
+pub mod polygon_boolean;
 pub mod polygon_holes;
 pub mod polyhedron_data;
 pub mod polyhedron_operations;

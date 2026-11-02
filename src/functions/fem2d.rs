@@ -391,6 +391,50 @@ pub fn mesh_from_rings(rings: &[Ring], target: usize) -> Option<TriMesh> {
     return None;
   }
   let h = (area / (0.866 * target as f64)).sqrt();
+  mesh_from_rings_h(rings, h)
+}
+
+/// The edge length of a mesh whose cells meet a `MaxCellMeasure`
+/// specification: a number or `"Area" -> a` bounds the triangle area (an
+/// equilateral triangle of side h has area sqrt(3)/4 h^2), `"Length" -> l`
+/// the edge length.
+pub fn edge_length_for_max_cell_measure(spec: &Expr) -> Option<f64> {
+  let from_area = |a: f64| (a > 0.0).then(|| (4.0 * a / 3f64.sqrt()).sqrt());
+  if let Some(a) = try_eval_to_f64(spec) {
+    return from_area(a);
+  }
+  let rules: Vec<&Expr> = match spec {
+    Expr::List(items) => items.iter().collect(),
+    other => vec![other],
+  };
+  let mut h: Option<f64> = None;
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      return None;
+    };
+    let Expr::String(kind) = pattern.as_ref() else {
+      return None;
+    };
+    let v = try_eval_to_f64(replacement).filter(|v| *v > 0.0)?;
+    let this = match kind.as_str() {
+      "Length" => v,
+      "Area" => from_area(v)?,
+      _ => continue,
+    };
+    h = Some(h.map_or(this, |h: f64| h.min(this)));
+  }
+  h
+}
+
+/// A mesh with edges about `h` long for the region bounded by `rings`.
+pub fn mesh_from_rings_h(rings: &[Ring], h: f64) -> Option<TriMesh> {
+  if h.is_nan() || h <= 0.0 || rings.is_empty() {
+    return None;
+  }
   let boundary: Vec<Ring> = rings.iter().map(|r| resample_ring(r, h)).collect();
   let mut nodes: Vec<P> = boundary.iter().flatten().copied().collect();
   let (mut x0, mut y0, mut x1, mut y1) = (
@@ -484,7 +528,7 @@ fn mesh_from_mesh_region(region: &Expr) -> Option<TriMesh> {
     .then_some(TriMesh { nodes, triangles })
 }
 
-fn mesh_expr(mesh: &TriMesh) -> Expr {
+pub fn mesh_expr(mesh: &TriMesh) -> Expr {
   let coordinates = Expr::List(
     mesh
       .nodes

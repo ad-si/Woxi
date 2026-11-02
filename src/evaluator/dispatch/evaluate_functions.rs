@@ -5705,7 +5705,7 @@ fn evaluate_function_call_ast_inner(
     return evaluate_expr_to_expr(&mesh);
   }
 
-  if name == "TriangulateMesh" && args.len() == 1 {
+  if name == "TriangulateMesh" && !args.is_empty() {
     return crate::functions::mesh_region::triangulate_mesh_ast(args);
   }
 

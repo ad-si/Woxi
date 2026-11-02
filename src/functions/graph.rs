@@ -4420,9 +4420,9 @@ pub fn graph_hub_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n = vertices.len();
   let mut out_nb: Vec<std::collections::BTreeSet<usize>> =
-    vec![Default::default(); n];
+    vec![std::collections::BTreeSet::new(); n];
   let mut in_nb: Vec<std::collections::BTreeSet<usize>> =
-    vec![Default::default(); n];
+    vec![std::collections::BTreeSet::new(); n];
   let mut any_directed = false;
   for e in &raw_edges {
     let Some((u, v, directed)) = edge_endpoints(e) else {

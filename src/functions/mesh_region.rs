@@ -57,15 +57,18 @@ pub fn parse_mesh(expr: &Expr) -> Option<Mesh> {
     return None;
   };
   // A single cell primitive may stand without the enclosing list.
-  let single_spec;
-  let cell_specs: &[Expr] = match &args[1] {
-    Expr::List(specs) => specs,
-    spec @ Expr::FunctionCall { .. } => {
-      single_spec = [spec.clone()];
-      &single_spec
+  // `BoundaryMeshRegion[coords, {Line[…]}, {Line[…]}, opts]` lists each
+  // boundary component separately; the cell lists run until the options.
+  let mut cell_specs: Vec<Expr> = Vec::new();
+  for (k, arg) in args[1..].iter().enumerate() {
+    match arg {
+      Expr::List(specs) => cell_specs.extend(specs.iter().cloned()),
+      Expr::FunctionCall { .. } => cell_specs.push(arg.clone()),
+      _ if k == 0 => return None,
+      _ => break,
     }
-    _ => return None,
-  };
+  }
+  let cell_specs: &[Expr] = &cell_specs;
   let mut cells: Vec<Vec<Vec<usize>>> =
     vec![Vec::new(), Vec::new(), Vec::new()];
   for spec in cell_specs {
@@ -143,29 +146,115 @@ impl Mesh {
     {
       return vec![call1("Polygon", Expr::List(pts.into()))];
     }
+    // A boundary mesh of several loops (holes, separate pieces) is filled
+    // by triangles.
+    if self.boundary
+      && let Some(triangles) = self.triangle_indices()
+    {
+      return triangles
+        .iter()
+        .filter_map(|t| self.points(t))
+        .map(|pts| call1("Polygon", Expr::List(pts.into())))
+        .collect();
+    }
     Vec::new()
   }
 
-  /// Walk the boundary lines into a single closed loop of vertex indices.
+  /// The boundary loop of a boundary mesh with a single component.
   fn boundary_loop(&self) -> Option<Vec<usize>> {
+    let mut loops = self.boundary_loops()?;
+    (loops.len() == 1).then(|| loops.remove(0))
+  }
+
+  /// Walk the boundary lines into closed loops of vertex indices.
+  fn boundary_loops(&self) -> Option<Vec<Vec<usize>>> {
     let edges = &self.cells[1];
     if edges.is_empty() || edges.iter().any(|e| e.len() != 2) {
       return None;
     }
     let mut remaining: Vec<[usize; 2]> =
       edges.iter().map(|e| [e[0], e[1]]).collect();
-    let start = remaining[0][0];
-    let mut loop_indices = vec![start];
-    let mut current = remaining.remove(0)[1];
-    while current != start {
-      loop_indices.push(current);
-      let next = remaining
-        .iter()
-        .position(|e| e[0] == current || e[1] == current)?;
-      let edge = remaining.remove(next);
-      current = if edge[0] == current { edge[1] } else { edge[0] };
+    let mut loops = Vec::new();
+    while !remaining.is_empty() {
+      let start = remaining[0][0];
+      let mut loop_indices = vec![start];
+      let mut current = remaining.remove(0)[1];
+      while current != start {
+        loop_indices.push(current);
+        let next = remaining
+          .iter()
+          .position(|e| e[0] == current || e[1] == current)?;
+        let edge = remaining.remove(next);
+        current = if edge[0] == current { edge[1] } else { edge[0] };
+      }
+      loops.push(loop_indices);
     }
-    Some(loop_indices)
+    Some(loops)
+  }
+
+  /// The boundary of a planar region as rings of points: the loops of a
+  /// boundary mesh, or the sides that belong to a single 2-cell, each
+  /// running the way its cell is wound counter-clockwise.
+  pub fn planar_rings(&self) -> Option<Vec<Vec<(f64, f64)>>> {
+    let pts = self.planar_points()?;
+    let at = |i: usize| pts.get(i.checked_sub(1)?).copied();
+    if self.cells[2].is_empty() {
+      if !self.boundary {
+        return None;
+      }
+      return self
+        .boundary_loops()?
+        .iter()
+        .map(|l| l.iter().map(|&i| at(i)).collect::<Option<Vec<_>>>())
+        .collect();
+    }
+    let mut directed: Vec<(usize, usize)> = Vec::new();
+    let mut count: std::collections::HashMap<(usize, usize), usize> =
+      std::collections::HashMap::new();
+    for face in &self.cells[2] {
+      let ring: Vec<(f64, f64)> =
+        face.iter().map(|&i| at(i)).collect::<Option<_>>()?;
+      let ccw = crate::functions::polygon_boolean::signed_area(&ring) >= 0.0;
+      let n = face.len();
+      for k in 0..n {
+        let (a, b) = (face[k], face[(k + 1) % n]);
+        let (a, b) = if ccw { (a, b) } else { (b, a) };
+        directed.push((a, b));
+        *count.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+      }
+    }
+    let boundary: Vec<(usize, usize)> = directed
+      .into_iter()
+      .filter(|&(a, b)| count[&(a.min(b), a.max(b))] == 1)
+      .collect();
+    let mut outgoing: std::collections::HashMap<usize, Vec<usize>> =
+      std::collections::HashMap::new();
+    for (k, &(a, _)) in boundary.iter().enumerate() {
+      outgoing.entry(a).or_default().push(k);
+    }
+    let mut used = vec![false; boundary.len()];
+    let mut rings = Vec::new();
+    for start in 0..boundary.len() {
+      if used[start] {
+        continue;
+      }
+      used[start] = true;
+      let first = boundary[start].0;
+      let mut ring = vec![at(first)?];
+      let mut current = boundary[start].1;
+      while current != first {
+        ring.push(at(current)?);
+        let next = outgoing
+          .get(&current)?
+          .iter()
+          .copied()
+          .find(|&k| !used[k])?;
+        used[next] = true;
+        current = boundary[next].1;
+      }
+      rings.push(ring);
+    }
+    Some(rings)
   }
 
   /// The distinct sides of the 2-cells, in the order they first appear.
@@ -728,6 +817,12 @@ pub fn mesh_accessor_ast(
         None => Ok(original()),
       }
     }
+    "ConnectedMeshComponents" if args.len() == 1 => {
+      Ok(match connected_components(&mesh) {
+        Some(parts) => Expr::List(parts.into()),
+        None => original(),
+      })
+    }
     "MeshCellCount" if args.len() == 1 => Ok(Expr::List(
       mesh
         .cell_counts()
@@ -744,6 +839,97 @@ pub fn mesh_accessor_ast(
     },
     _ => Ok(original()),
   }
+}
+
+/// `ConnectedMeshComponents[mesh]`: the pieces of a mesh whose top-
+/// dimensional cells are joined through shared vertices, each a mesh of its
+/// own kind with the coordinates it uses, in order of first use.
+fn connected_components(mesh: &Mesh) -> Option<Vec<Expr>> {
+  let top = (0..3).rev().find(|&d| !mesh.cells[d].is_empty())?;
+  let cells = &mesh.cells[top];
+  let n = mesh.coordinates.len();
+  let mut parent: Vec<usize> = (0..=n).collect();
+  fn find(parent: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while parent[r] != r {
+      r = parent[r];
+    }
+    let mut i = i;
+    while parent[i] != r {
+      let next = parent[i];
+      parent[i] = r;
+      i = next;
+    }
+    r
+  }
+  for cell in cells {
+    if cell.iter().any(|&i| i == 0 || i > n) {
+      return None;
+    }
+    for w in cell.windows(2) {
+      let (a, b) = (find(&mut parent, w[0]), find(&mut parent, w[1]));
+      parent[a] = b;
+    }
+  }
+  // Components in the order their first cell appears.
+  let mut order: Vec<usize> = Vec::new();
+  let mut members: std::collections::HashMap<usize, Vec<&Vec<usize>>> =
+    std::collections::HashMap::new();
+  for cell in cells {
+    let root = find(&mut parent, cell[0]);
+    if !members.contains_key(&root) {
+      order.push(root);
+    }
+    members.entry(root).or_default().push(cell);
+  }
+  let (head, cell_head) = match (mesh.boundary, top) {
+    (true, _) => ("BoundaryMeshRegion", "Line"),
+    (false, 0) => ("MeshRegion", "Point"),
+    (false, 1) => ("MeshRegion", "Line"),
+    (false, _) => ("MeshRegion", "Polygon"),
+  };
+  // Machine coordinates, as Wolfram returns them.
+  let numeric = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "N",
+    Expr::List(mesh.coordinates.clone().into()),
+  ))
+  .ok()?;
+  let Expr::List(numeric) = &numeric else {
+    return None;
+  };
+  let mut out = Vec::new();
+  for root in order {
+    let mut renumber: std::collections::HashMap<usize, usize> =
+      std::collections::HashMap::new();
+    let mut coords = Vec::new();
+    let mut new_cells = Vec::new();
+    for cell in &members[&root] {
+      let ids: Vec<Expr> = cell
+        .iter()
+        .map(|&i| {
+          let next = renumber.len() + 1;
+          let id = *renumber.entry(i).or_insert_with(|| {
+            coords.push(numeric[i - 1].clone());
+            next
+          });
+          Expr::Integer(id as i128)
+        })
+        .collect();
+      new_cells.push(if top == 0 {
+        ids.into_iter().next()?
+      } else {
+        Expr::List(ids.into())
+      });
+    }
+    out.push(call(
+      head,
+      vec![
+        Expr::List(coords.into()),
+        Expr::List(vec![call1(cell_head, Expr::List(new_cells.into()))].into()),
+      ],
+    ));
+  }
+  Some(out)
 }
 
 /// Twice the signed area of the triangle `a b c` (positive when it winds
@@ -832,7 +1018,12 @@ impl Mesh {
     let loops: Vec<Vec<usize>> = if !self.cells[2].is_empty() {
       self.cells[2].clone()
     } else if self.boundary {
-      vec![self.boundary_loop()?]
+      let loops = self.boundary_loops()?;
+      if loops.len() == 1 {
+        loops
+      } else {
+        filled_loops(&pts, &loops)
+      }
     } else {
       return None;
     };
@@ -847,11 +1038,187 @@ impl Mesh {
   }
 }
 
+/// Several boundary loops (1-based index rings into `pts`) as simple
+/// polygons: each outer loop with the holes nested directly inside it
+/// bridged into one ring.
+fn filled_loops(pts: &[(f64, f64)], loops: &[Vec<usize>]) -> Vec<Vec<usize>> {
+  use crate::functions::polygon_boolean::{inside, signed_area};
+  let ring = |l: &Vec<usize>| -> Vec<(f64, f64)> {
+    l.iter().map(|&i| pts[i - 1]).collect()
+  };
+  // Nesting depth decides: even depth bounds the region, odd is a hole.
+  let depth = |k: usize| {
+    let probe = ring(&loops[k])[0];
+    (0..loops.len())
+      .filter(|&j| j != k && inside(&[ring(&loops[j])], probe))
+      .count()
+  };
+  let depths: Vec<usize> = (0..loops.len()).map(depth).collect();
+  let zero_based: Vec<Vec<usize>> = loops
+    .iter()
+    .map(|l| l.iter().map(|&i| i - 1).collect())
+    .collect();
+  let mut out = Vec::new();
+  for (k, outer) in zero_based.iter().enumerate() {
+    if depths[k] % 2 == 1 {
+      continue;
+    }
+    let outer_ring = ring(&loops[k]);
+    let mut outer = outer.clone();
+    if signed_area(&outer_ring) < 0.0 {
+      outer.reverse();
+    }
+    let holes: Vec<Vec<usize>> = (0..loops.len())
+      .filter(|&j| {
+        depths[j] == depths[k] + 1
+          && inside(std::slice::from_ref(&outer_ring), ring(&loops[j])[0])
+      })
+      .map(|j| {
+        let mut h = zero_based[j].clone();
+        if signed_area(&ring(&loops[j])) > 0.0 {
+          h.reverse();
+        }
+        h
+      })
+      .collect();
+    let bridged =
+      crate::functions::polygon_boolean::bridge_holes(pts, &outer, &holes);
+    out.push(bridged.into_iter().map(|i| i + 1).collect());
+  }
+  out
+}
+
+/// The `MeshRegion` (or, with `boundary`, `BoundaryMeshRegion`) bounded by
+/// `rings`, which have the region on their left. A boundary mesh lists each
+/// ring as its own counter-clockwise loop of lines; a mesh of polygons has
+/// one polygon per ring, or triangles when the region has holes.
+pub fn mesh_from_rings_expr(rings: &[Vec<(f64, f64)>], boundary: bool) -> Expr {
+  let mut coords: Vec<(f64, f64)> = Vec::new();
+  let mut index: std::collections::HashMap<(u64, u64), usize> =
+    std::collections::HashMap::new();
+  let loops: Vec<Vec<usize>> = rings
+    .iter()
+    .map(|r| {
+      r.iter()
+        .map(|&p| {
+          *index
+            .entry(((p.0 + 0.0).to_bits(), (p.1 + 0.0).to_bits()))
+            .or_insert_with(|| {
+              coords.push(p);
+              coords.len()
+            })
+        })
+        .collect()
+    })
+    .collect();
+  let coordinate_list = Expr::List(
+    coords
+      .iter()
+      .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let int_list = |l: &[usize]| {
+    Expr::List(l.iter().map(|&i| Expr::Integer(i as i128)).collect())
+  };
+  if boundary {
+    let mut args = vec![coordinate_list];
+    for (ring, l) in rings.iter().zip(&loops) {
+      let mut l = l.clone();
+      if crate::functions::polygon_boolean::signed_area(ring) < 0.0 {
+        l.reverse();
+      }
+      let n = l.len();
+      let segments: Vec<Expr> =
+        (0..n).map(|k| int_list(&[l[k], l[(k + 1) % n]])).collect();
+      args.push(Expr::List(
+        vec![call1("Line", Expr::List(segments.into()))].into(),
+      ));
+    }
+    return call("BoundaryMeshRegion", args);
+  }
+  let has_holes = rings
+    .iter()
+    .any(|r| crate::functions::polygon_boolean::signed_area(r) < 0.0);
+  let cells: Vec<Expr> = if has_holes {
+    filled_loops(&coords, &loops)
+      .iter()
+      .filter_map(|l| ear_clip(&coords, l))
+      .flatten()
+      .map(|t| int_list(&t))
+      .collect()
+  } else {
+    loops.iter().map(|l| int_list(l)).collect()
+  };
+  call(
+    "MeshRegion",
+    vec![
+      coordinate_list,
+      Expr::List(vec![call1("Polygon", Expr::List(cells.into()))].into()),
+    ],
+  )
+}
+
+/// `RegionIntersection`, `RegionUnion`, `RegionDifference` and
+/// `RegionSymmetricDifference` of two planar mesh regions, as a mesh region
+/// (a boundary mesh when either operand is one), or `EmptyRegion[2]`.
+pub fn mesh_boolean(name: &str, a: &Expr, b: &Expr) -> Option<Expr> {
+  use crate::functions::polygon_boolean::{Op, boolean};
+  let (ma, mb) = (parse_mesh(a)?, parse_mesh(b)?);
+  if ma.dimension() != 2 || mb.dimension() != 2 {
+    return None;
+  }
+  let (ra, rb) = (ma.planar_rings()?, mb.planar_rings()?);
+  let rings = match name {
+    "RegionIntersection" => boolean(&ra, &rb, Op::Intersection),
+    "RegionUnion" => boolean(&ra, &rb, Op::Union),
+    "RegionDifference" => boolean(&ra, &rb, Op::Difference),
+    "RegionSymmetricDifference" => {
+      let mut rings = boolean(&ra, &rb, Op::Difference);
+      rings.extend(boolean(&rb, &ra, Op::Difference));
+      rings
+    }
+    _ => return None,
+  };
+  if rings.is_empty() {
+    return Some(call1("EmptyRegion", Expr::Integer(2)));
+  }
+  Some(mesh_from_rings_expr(&rings, ma.boundary || mb.boundary))
+}
+
+/// The value of a `MaxCellMeasure -> spec` option among `opts`.
+fn max_cell_measure(opts: &[Expr]) -> Option<&Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "MaxCellMeasure") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// A planar region re-meshed by triangles that meet a `MaxCellMeasure`
+/// specification.
+fn refined_mesh(mesh: &Mesh, spec: &Expr) -> Option<Expr> {
+  let h = crate::functions::fem2d::edge_length_for_max_cell_measure(spec)?;
+  let rings = crate::functions::polygon_boolean::orient(&mesh.planar_rings()?);
+  let tri = crate::functions::fem2d::mesh_from_rings_h(&rings, h)?;
+  Some(crate::functions::fem2d::mesh_expr(&tri))
+}
+
 /// `TriangulateMesh[mesh]`: the planar region as a `MeshRegion` of triangles.
 pub fn triangulate_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(mesh) = parse_mesh(&args[0]) else {
     return Ok(unevaluated("TriangulateMesh", args));
   };
+  if let Some(spec) = max_cell_measure(&args[1..]) {
+    return Ok(
+      refined_mesh(&mesh, spec)
+        .unwrap_or_else(|| unevaluated("TriangulateMesh", args)),
+    );
+  }
   let Some(triangles) = mesh.triangle_indices() else {
     return Ok(unevaluated("TriangulateMesh", args));
   };
@@ -973,11 +1340,16 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       .collect::<Option<Vec<f64>>>()
       .filter(|v| v.len() == 2 || v.len() == 3)
   }
+  // With `MaxCellMeasure`, a curved boundary is sampled finely enough for
+  // cells of that size.
+  let edge_length = max_cell_measure(&args[1..])
+    .and_then(crate::functions::fem2d::edge_length_for_max_cell_measure);
   fn walk(
     e: &Expr,
     coords: &mut Vec<Vec<f64>>,
     index: &mut std::collections::HashMap<Vec<u64>, usize>,
     cells: &mut Vec<(&'static str, Vec<Expr>)>,
+    edge_length: Option<f64>,
   ) -> Option<()> {
     let mut id_of = |p: Vec<f64>| {
       let key: Vec<u64> = p.iter().map(|v| (v + 0.0).to_bits()).collect();
@@ -991,7 +1363,7 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
     match e {
       Expr::List(items) => {
         for item in items {
-          walk(item, coords, index, cells)?;
+          walk(item, coords, index, cells, edge_length)?;
         }
         Some(())
       }
@@ -1033,6 +1405,68 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
         }
         Some(())
       }
+      // A full disk or ellipse is a 43-gon, as Wolfram discretizes it, or
+      // finer under `MaxCellMeasure`.
+      Expr::FunctionCall { name, args }
+        if name == "Disk" && args.len() <= 2 =>
+      {
+        let center = match args.first() {
+          Some(c) => point(c).filter(|c| c.len() == 2)?,
+          None => vec![0.0, 0.0],
+        };
+        let radii = match args.get(1) {
+          None => (1.0, 1.0),
+          Some(r) => {
+            if let Some(r) = crate::functions::math_ast::try_eval_to_f64(r) {
+              (r, r)
+            } else {
+              let r = point(r).filter(|r| r.len() == 2)?;
+              (r[0], r[1])
+            }
+          }
+        };
+        // Ramanujan's approximation of the ellipse's perimeter.
+        let (a, b) = (radii.0.abs(), radii.1.abs());
+        let perimeter = std::f64::consts::PI
+          * (3.0 * (a + b) - ((3.0 * a + b) * (a + 3.0 * b)).sqrt());
+        let sides =
+          edge_length.map_or(43, |h| ((perimeter / h).ceil() as usize).max(43));
+        let ids: Vec<Expr> = (0..sides)
+          .map(|k| {
+            let t = std::f64::consts::TAU * k as f64 / sides as f64;
+            id_of(vec![
+              center[0] + radii.0 * t.cos(),
+              center[1] + radii.1 * t.sin(),
+            ])
+          })
+          .collect();
+        let cell = Expr::List(ids.into());
+        match cells.iter_mut().find(|(k, _)| *k == "Polygon") {
+          Some((_, list)) => list.push(cell),
+          None => cells.push(("Polygon", vec![cell])),
+        }
+        Some(())
+      }
+      // Other filled planar regions by their boundary.
+      Expr::FunctionCall { name, .. }
+        if matches!(
+          name.as_str(),
+          "Rectangle" | "Triangle" | "RegularPolygon" | "Parallelogram"
+        ) =>
+      {
+        let rings = crate::functions::fem2d::region_rings(e)?;
+        if rings.len() != 1 {
+          return None;
+        }
+        let ids: Vec<Expr> =
+          rings[0].iter().map(|&(x, y)| id_of(vec![x, y])).collect();
+        let cell = Expr::List(ids.into());
+        match cells.iter_mut().find(|(k, _)| *k == "Polygon") {
+          Some((_, list)) => list.push(cell),
+          None => cells.push(("Polygon", vec![cell])),
+        }
+        Some(())
+      }
       // Styling directives carry no geometry.
       Expr::FunctionCall { name, .. }
         if matches!(
@@ -1057,7 +1491,7 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       _ => None,
     }
   }
-  walk(&gargs[0], &mut coords, &mut index, &mut cells)?;
+  walk(&gargs[0], &mut coords, &mut index, &mut cells, edge_length)?;
   if coords.is_empty() || cells.is_empty() {
     return None;
   }
@@ -1068,7 +1502,7 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       args: vec![Expr::List(list.into())].into(),
     })
     .collect();
-  Some(Expr::FunctionCall {
+  let region = Expr::FunctionCall {
     name: "MeshRegion".to_string(),
     args: vec![
       Expr::List(
@@ -1080,7 +1514,15 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       Expr::List(primitives.into()),
     ]
     .into(),
-  })
+  };
+  // `MaxCellMeasure` re-meshes a filled planar result into small triangles.
+  if let Some(spec) = max_cell_measure(&args[1..])
+    && let Some(mesh) = parse_mesh(&region)
+    && mesh.dimension() == 2
+  {
+    return refined_mesh(&mesh, spec);
+  }
+  Some(region)
 }
 
 /// The cells a mesh property item names: `d` (the dimension as a whole),
