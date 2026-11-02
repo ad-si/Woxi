@@ -342,6 +342,7 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F725}' => "\u{26A0}",              // WarningSign: ⚠
     '\u{F3DF}' => "\u{2641}",              // Earth: ♁
     '\u{F431}' => "=",                     // Equal
+    '\u{F7D9}' => "=",                     // LongEqual
     '\u{F603}' | '\u{F604}' => "|",        // Left/RightBracketingBar: |
     '\u{F605}' | '\u{F606}' => "\u{2016}", // Left/RightDoubleBracketingBar: ‖
     '\u{F74B}' => "\u{2145}",              // CapitalDifferentialD: ⅅ
