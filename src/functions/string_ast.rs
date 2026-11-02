@@ -15782,9 +15782,11 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     unwrapped.extend(args[1..].iter().cloned());
     return template_apply_ast(&unwrapped);
   }
-  // `StringTemplate[s, <|defaults|>]`: the defaults fill the named slots the
-  // applied association leaves out. Delayed defaults (`"a" :> RandomReal[]`)
-  // are evaluated afresh on every application.
+  // `StringTemplate[s, <|bound|>]`: the bound values win over the applied
+  // association, which only fills the slots they leave out (wolframscript:
+  // a template bound to `"a" -> 5` applied to `<|"a" -> 1, "b" -> 2|>` says
+  // "a is 5, b is 2"). Delayed values (`"a" :> RandomReal[]`) are evaluated
+  // afresh on every application.
   if let Expr::FunctionCall { name, args: inner } = &args[0]
     && name == "StringTemplate"
     && inner.len() == 2
@@ -15810,9 +15812,8 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           other => other.clone(),
         };
         let key = expr_to_string(k);
-        match merged.iter_mut().find(|(mk, _)| expr_to_string(mk) == key) {
-          Some(slot) => slot.1 = v,
-          None => merged.push((k.clone(), v)),
+        if !merged.iter().any(|(mk, _)| expr_to_string(mk) == key) {
+          merged.push((k.clone(), v));
         }
       }
     }

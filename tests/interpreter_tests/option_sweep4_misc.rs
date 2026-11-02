@@ -233,7 +233,7 @@ mod string_template_defaults {
   use super::*;
 
   #[test]
-  fn defaults_fill_missing_named_slots() {
+  fn bound_values_win_over_the_applied_ones() {
     assert_eq!(
       interpret(
         "t = StringTemplate[\"a is `a`, b is `b`\", <|\"a\" -> 5|>]; \
@@ -248,7 +248,7 @@ mod string_template_defaults {
          TemplateApply[t, <|\"a\" -> 1, \"b\" -> 2|>]"
       )
       .unwrap(),
-      "a is 1, b is 2"
+      "a is 5, b is 2"
     );
     assert_eq!(
       interpret(
