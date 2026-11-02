@@ -1537,11 +1537,6 @@ function main() {
     // Equivalent[a, False]: Woxi renders as `Not[a]`, Wolfram as prefix `!a`.
     // Semantically identical.
     "Equivalent[a, False]",
-    // ParentDirectory: Wolfram only evaluates when the directory actually
-    // exists on disk; Woxi does pure string manipulation. Unit tests rely
-    // on the string-manipulation form with synthetic paths like /a/b/c.
-    "ParentDirectory[\"/a/b/c\"]",
-    "ParentDirectory[\"a/b/c\"]",
     // E^(a+I*Pi): Woxi preserves symbolic form (no over-simplification) but
     // Plus ordering differs — Woxi emits `E^(I*Pi + a)`, Wolfram emits
     // `E^(a + I*Pi)`. Semantic fix lives in arithmetic.rs; surface ordering
