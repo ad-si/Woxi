@@ -1627,6 +1627,7 @@ fn evaluate_function_call_ast_inner(
     "LocalClusteringCoefficient",
     "MeanClusteringCoefficient",
     "MeanDegreeConnectivity",
+    "GraphHub",
     "MixedGraphQ",
     "MultigraphQ",
     "PageRankCentrality",
@@ -7703,6 +7704,10 @@ fn evaluate_function_call_ast_inner(
 
   if name == "PlanarGraphQ" && args.len() == 1 {
     return crate::functions::graph::planar_graph_q_ast(args);
+  }
+
+  if name == "GraphHub" && (args.len() == 1 || args.len() == 2) {
+    return crate::functions::graph::graph_hub_ast(args);
   }
 
   if name == "MeanNeighborDegree" && args.len() == 1 {

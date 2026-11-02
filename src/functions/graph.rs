@@ -4383,6 +4383,87 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(vec![Expr::List(tour.into())].into()))
 }
 
+/// GraphHub[g] and GraphHub[g, "In" | "Out"]: the vertices (in VertexList
+/// order) with the most distinct neighbours. Self-loops and repeated edges
+/// do not count; in a directed graph the default counts in-neighbours plus
+/// out-neighbours.
+pub fn graph_hub_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let call_text =
+    || crate::syntax::expr_to_output(&unevaluated("GraphHub", args));
+  let unevaluated = || Ok(unevaluated("GraphHub", args));
+  let mode = match args.get(1) {
+    None => "All",
+    Some(Expr::String(s)) if s == "In" || s == "Out" => s.as_str(),
+    Some(other) => {
+      crate::emit_message(&format!(
+        "GraphHub::inv: The argument {} in {} is not a valid parameter.",
+        crate::syntax::expr_to_output(other),
+        call_text()
+      ));
+      return unevaluated();
+    }
+  };
+  let graph_given = matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graph")
+    || matches!(&args[0], Expr::List(_));
+  let Some((vertices, raw_edges)) =
+    fc_parse_input(&args[0]).filter(|_| graph_given)
+  else {
+    crate::emit_message(&format!(
+      "GraphHub::graph: A graph object is expected at position 1 in {}.",
+      call_text()
+    ));
+    return unevaluated();
+  };
+  let mut rank: HashMap<String, usize> = HashMap::new();
+  for (i, v) in vertices.iter().enumerate() {
+    rank.entry(expr_to_string(v)).or_insert(i);
+  }
+  let n = vertices.len();
+  let mut out_nb: Vec<std::collections::BTreeSet<usize>> =
+    vec![Default::default(); n];
+  let mut in_nb: Vec<std::collections::BTreeSet<usize>> =
+    vec![Default::default(); n];
+  let mut any_directed = false;
+  for e in &raw_edges {
+    let Some((u, v, directed)) = edge_endpoints(e) else {
+      return unevaluated();
+    };
+    let (Some(&ui), Some(&vi)) =
+      (rank.get(&expr_to_string(&u)), rank.get(&expr_to_string(&v)))
+    else {
+      return unevaluated();
+    };
+    if ui == vi {
+      continue;
+    }
+    any_directed |= directed;
+    out_nb[ui].insert(vi);
+    in_nb[vi].insert(ui);
+    if !directed {
+      out_nb[vi].insert(ui);
+      in_nb[ui].insert(vi);
+    }
+  }
+  let score: Vec<usize> = (0..n)
+    .map(|i| match mode {
+      "In" => in_nb[i].len(),
+      "Out" => out_nb[i].len(),
+      _ if any_directed => in_nb[i].len() + out_nb[i].len(),
+      _ => out_nb[i].len(),
+    })
+    .collect();
+  let best = score.iter().copied().max().unwrap_or(0);
+  Ok(Expr::List(
+    vertices
+      .iter()
+      .zip(&score)
+      .filter(|(_, s)| **s == best)
+      .map(|(v, _)| v.clone())
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// MeanNeighborDegree[g] gives, for each vertex (in VertexList order), the mean
 /// degree of its neighbours (0 for an isolated vertex). Degrees are total
 /// degrees, treating every edge as an undirected connection.

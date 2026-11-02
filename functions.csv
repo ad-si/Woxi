@@ -4433,7 +4433,7 @@ DefaultNaturalLanguage,"",,,4.0,4567
 DimensionalCombinations,"",,,10.0,4567
 Disjunction,"Or of an expression over all True/False assignments of the given variables (minimized)",✅,pure,7.0,4567
 GoodmanKruskalGammaTest,"",,,9.0,4567
-GraphHub,"",,,9.0,4567
+GraphHub,"Vertices with the most distinct neighbours",✅,pure,9.0,4567
 ImageDemosaic,"",🚫,,9.0,4567
 InitializationObjects,"",🚫,,11.2,4567
 InputNamePacket,"",🚫,,3.0,4567

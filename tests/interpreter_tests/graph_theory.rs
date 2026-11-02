@@ -9158,3 +9158,48 @@ mod graph_background {
     assert_eq!(a, b);
   }
 }
+
+mod graph_hub {
+  use super::*;
+
+  #[test]
+  fn undirected_counts_distinct_neighbours() {
+    // Self-loops and repeated edges do not count.
+    assert_eq!(
+      interpret(
+        "{GraphHub[Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], \
+         UndirectedEdge[3, 1], UndirectedEdge[3, 4], UndirectedEdge[4, 5], \
+         UndirectedEdge[5, 6], UndirectedEdge[6, 4]}]], \
+         GraphHub[Graph[{UndirectedEdge[1, 2], UndirectedEdge[1, 1]}]], \
+         GraphHub[Graph[{UndirectedEdge[1, 2], UndirectedEdge[1, 2], \
+         UndirectedEdge[3, 4], UndirectedEdge[3, 5]}]], \
+         GraphHub[{UndirectedEdge[1, 2], UndirectedEdge[2, 3]}], \
+         GraphHub[Graph[{a, b}, {}]], GraphHub[Graph[{}]]}"
+      )
+      .unwrap(),
+      "{{3, 4}, {1, 2}, {3}, {2}, {a, b}, {}}"
+    );
+  }
+
+  #[test]
+  fn directed_in_out_and_total() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{1 -> 2, 1 -> 3, 4 -> 1}]; \
+         {GraphHub[g], GraphHub[g, \"In\"], GraphHub[g, \"Out\"], \
+         GraphHub[Graph[{1 -> 2, 2 -> 1, 3 -> 4}]], \
+         GraphHub[Graph[{1 -> 2, 1 -> 2, 3 -> 4}], \"Out\"]}"
+      )
+      .unwrap(),
+      "{{1}, {1, 2, 3}, {1}, {1, 2}, {1, 3}}"
+    );
+  }
+
+  #[test]
+  fn invalid_arguments_stay_unevaluated() {
+    assert_eq!(
+      interpret("{GraphHub[5], GraphHub[Graph[{1 -> 2}], \"All\"]}").unwrap(),
+      "{GraphHub[5], GraphHub[Graph[<2>, <1>], All]}"
+    );
+  }
+}
