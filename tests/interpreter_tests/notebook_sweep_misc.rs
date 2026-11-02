@@ -459,3 +459,30 @@ mod make_expression_boxes {
     );
   }
 }
+
+mod solve_options_and_bad_domain {
+  use super::*;
+
+  // `WorkingPrecision -> p` numericizes the solution, and a third argument
+  // that is no domain is a variable to eliminate (Solve::bdomv) — the
+  // galactic-center ellipse Demonstration passes `Null` there.
+  #[test]
+  fn working_precision_and_null_domain() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Solve[{a^2 == 2, b == 3}, {a, b}, Null, WorkingPrecision -> 20]",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "{{a -> -1.41421356237309504880168872420969807857`20., b -> 3.`20.}, \
+       {a -> 1.41421356237309504880168872420969807857`20., b -> 3.`20.}}"
+    );
+    assert!(result.warnings.iter().any(|w| w.contains("Solve::bdomv")));
+    assert_eq!(
+      interpret("Precision[a /. First[Solve[a^2 == 2, a, Reals, WorkingPrecision -> 30]]]")
+        .unwrap(),
+      "30."
+    );
+  }
+}

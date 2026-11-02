@@ -378,6 +378,66 @@ pub fn dispatch_polynomial_functions(
     "PolynomialQ" if !args.is_empty() && args.len() <= 2 => {
       return Some(crate::functions::polynomial_ast::polynomial_q_ast(args));
     }
+    // Solve[eqns, vars, (dom,) opts…]: `WorkingPrecision -> p` solves
+    // exactly and numericizes to p digits; a third argument that is no
+    // domain is a variable to eliminate (Solve::bdomv), dropped when the
+    // equations do not mention it.
+    "Solve"
+      if args.len() >= 2
+        && (args.len() > 3
+          || args.iter().skip(2).any(|a| matches!(a, Expr::Rule { .. }))
+          || matches!(args.get(2), Some(Expr::Identifier(d))
+            if !solve_domain_name(d))) =>
+    {
+      let mut positional: Vec<Expr> = Vec::new();
+      let mut precision: Option<Expr> = None;
+      for (i, a) in args.iter().enumerate() {
+        match a {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if i >= 2 => {
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "WorkingPrecision")
+            {
+              precision = Some(replacement.as_ref().clone());
+            } else {
+              return Some(Ok(unevaluated("Solve", args)));
+            }
+          }
+          _ => positional.push(a.clone()),
+        }
+      }
+      if let Some(d) = positional.get(2).and_then(|e| match e {
+        Expr::Identifier(d) => Some(d.clone()),
+        _ => None,
+      }) && !solve_domain_name(&d)
+      {
+        crate::emit_message(&format!(
+          "Solve::bdomv: Warning: {d} is not a valid domain specification. Assuming it is a variable to eliminate."
+        ));
+        if crate::syntax::expr_to_string(&positional[0])
+          .split(|c: char| !(c.is_alphanumeric() || c == '$' || c == '`'))
+          .any(|tok| tok == d)
+        {
+          return Some(Ok(unevaluated("Solve", args)));
+        }
+        positional.remove(2);
+      }
+      if positional.len() > 3 {
+        return Some(Ok(unevaluated("Solve", args)));
+      }
+      let solved =
+        match crate::functions::polynomial_ast::solve_ast(&positional) {
+          Ok(s) => s,
+          Err(e) => return Some(Err(e)),
+        };
+      return Some(match precision {
+        Some(p) if !matches!(&solved, Expr::FunctionCall { name, .. } if name == "Solve") => {
+          crate::evaluator::evaluate_function_call_ast("N", &[solved, p])
+        }
+        _ => Ok(solved),
+      });
+    }
     "Solve" if !args.is_empty() && args.len() <= 3 => {
       // 1-arg Solve[eqns] auto-detects the variables.
       return Some(crate::functions::polynomial_ast::solve_ast(args));
@@ -2257,4 +2317,26 @@ fn rational_parts_with_options(
   };
   let reciprocal = eval("Power", &[den, Expr::Integer(-1)])?;
   eval("Times", &[num, reciprocal])
+}
+
+/// Whether `name` is a domain `Solve` takes as its third argument.
+fn solve_domain_name(name: &str) -> bool {
+  matches!(
+    name,
+    "Reals"
+      | "Integers"
+      | "Complexes"
+      | "Rationals"
+      | "Algebraics"
+      | "Booleans"
+      | "Primes"
+      | "PositiveReals"
+      | "NegativeReals"
+      | "NonNegativeReals"
+      | "NonPositiveReals"
+      | "PositiveIntegers"
+      | "NegativeIntegers"
+      | "NonNegativeIntegers"
+      | "NonPositiveIntegers"
+  )
 }
