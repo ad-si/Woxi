@@ -11959,10 +11959,28 @@ mod count_level_pruning {
     assert_eq!(
       interpret(
         "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
-         KendallTauTest[x, y, \"PValue\"] == KendallTauTest[x, y, PValue]"
+         KendallTauTest[x, y, \"PValue\"] == KendallTauTest[x, y]"
       )
       .unwrap(),
       "True"
+    );
+    assert_eq!(
+      interpret(
+        "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
+         KendallTauTest[x, y, {\"PValue\", \"TestStatistic\"}] == \
+         {KendallTauTest[x, y], KendallTau[x, y]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A property is a string: the symbol `PValue` is not one.
+  #[test]
+  fn kendall_tau_test_symbol_property_is_invalid() {
+    assert_eq!(
+      interpret("KendallTauTest[{1, 2, 3}, {1, 3, 2}, PValue]").unwrap(),
+      "KendallTauTest[{1, 2, 3}, {1, 3, 2}, PValue]"
     );
   }
 }
