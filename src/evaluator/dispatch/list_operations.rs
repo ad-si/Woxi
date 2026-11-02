@@ -868,8 +868,8 @@ fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
 // is processed character-wise and the result is rebuilt as a string.
 fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let symbolic = || unevaluated("LongestOrderedSequence", args);
-  // IgnoreCase -> True: a string is compared in lower case, but the result
-  // keeps the characters as they occur in the string.
+  // IgnoreCase -> True: a string is compared, and answered, in lower case
+  // (`LongestOrderedSequence["dAbC", IgnoreCase -> True]` is "abc").
   if let Some(Expr::Rule {
     pattern,
     replacement,
@@ -889,7 +889,15 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|c| Expr::String(c.to_lowercase().collect()))
           .collect();
         let idxs = longest_ordered_indices(&folded, None)?;
-        Ok(Expr::String(idxs.iter().map(|&i| original[i]).collect()))
+        Ok(Expr::String(
+          idxs
+            .iter()
+            .filter_map(|&i| match &folded[i] {
+              Expr::String(c) => Some(c.as_str()),
+              _ => None,
+            })
+            .collect(),
+        ))
       }
       _ => Ok(symbolic()),
     };

@@ -68,12 +68,12 @@ mod longest_ordered_sequence {
   }
 
   #[test]
-  fn ignore_case_keeps_the_original_characters() {
-    // Folded "dabc" -> "abc", taken from the string as written.
+  fn ignore_case_answers_in_lower_case() {
+    // Folded "dabc" -> "abc".
     assert_eq!(
       interpret("LongestOrderedSequence[\"dAbC\", IgnoreCase -> True]")
         .unwrap(),
-      "AbC"
+      "abc"
     );
     assert_eq!(
       interpret("LongestOrderedSequence[\"dAbC\", IgnoreCase -> False]")
