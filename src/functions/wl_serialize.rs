@@ -269,13 +269,16 @@ fn try_read_integer_array(
     Vec::new()
   } else {
     let rest = data.len().checked_sub(pos)?;
-    if rest % count != 0 {
+    // The array is usually the whole payload, whose length then gives the
+    // element width; one inside a larger expression (more parts follow)
+    // holds machine integers (32-bit).
+    let width = if rest % count == 0 && matches!(rest / count, 1 | 2 | 4 | 8) {
+      rest / count
+    } else if !with_type_field && rest >= 4 * count {
+      4
+    } else {
       return None;
-    }
-    let width = rest / count;
-    if !matches!(width, 1 | 2 | 4 | 8) {
-      return None;
-    }
+    };
     let mut vals = Vec::with_capacity(count);
     for _ in 0..count {
       let mut buf = [0u8; 8];

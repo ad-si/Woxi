@@ -692,6 +692,21 @@ mod uncompress_wrapper {
       "2"
     );
   }
+
+  // A packed integer array followed by more parts (wolframscript's
+  // `Compress[{Developer`ToPackedArray[{100000, -2, 3}], 5}]`) holds 32-bit
+  // integers; its width cannot come from the payload length
+  // (TuringMachineCausalNetworks).
+  #[test]
+  fn packed_integers_inside_a_larger_expression() {
+    assert_eq!(
+      interpret(
+        "Uncompress[\"1:eJxTTMoPSmNiYGAoZgESPpnFJWnMyDxPNiDD0AAEPEHKdI08GYGUcSYrkAQASuIJQQ==\"]"
+      )
+      .unwrap(),
+      "{{100000, -2, 3}, 5}"
+    );
+  }
 }
 
 mod group_support_and_orbits {
