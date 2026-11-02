@@ -1201,12 +1201,17 @@ pub fn apply_function_to_arg(
     // A compound arithmetic/relational head stays an inert curried call,
     // e.g. `(f + g) @ x` → `(f + g)[x]`. Stringifying it would mistake
     // "f + g" for a function name.
-    Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Comparison { .. } => {
-      Ok(Expr::CurriedCall {
-        func: Box::new(func.clone()),
-        args: vec![arg.clone()],
-      })
-    }
+    Expr::BinaryOp { .. }
+    | Expr::UnaryOp { .. }
+    | Expr::Comparison { .. }
+    | Expr::String(_)
+    | Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => Ok(Expr::CurriedCall {
+      func: Box::new(func.clone()),
+      args: vec![arg.clone()],
+    }),
     _ => {
       // Fallback: create a function call expression
       let func_str = expr_to_string(func);
@@ -3843,7 +3848,15 @@ pub fn apply_curried_call(
     | Expr::Rule { .. }
     | Expr::RuleDelayed { .. }
     | Expr::Pattern { .. }
-    | Expr::PatternOptional { .. } => Ok(Expr::CurriedCall {
+    | Expr::PatternOptional { .. }
+    // A string or number head is no symbol either: `"a"[1]` has head
+    // `"a"` (a String), so stringifying it would make its head a symbol
+    // named `"a"` that `_String[…]` and `StringLength` no longer see.
+    | Expr::String(_)
+    | Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => Ok(Expr::CurriedCall {
       func: Box::new(func.clone()),
       args: args.to_vec(),
     }),

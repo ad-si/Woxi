@@ -101,6 +101,25 @@ mod function_name_substitution {
 mod function_head {
   use super::*;
 
+  // A string or number head stays that atom, not a symbol of that name.
+  #[test]
+  fn string_and_number_heads_keep_their_type() {
+    assert_eq!(
+      interpret(r#"{Head[Head["a"[1]]], Head[Head["f" @ x]]}"#).unwrap(),
+      "{String, String}"
+    );
+    assert_eq!(
+      interpret(r#"{Head[Head[1[x]]], Head[Head[2.5[x]]]}"#).unwrap(),
+      "{Integer, Real}"
+    );
+    assert_eq!(interpret(r#"MatchQ["a"[1], _String[_]]"#).unwrap(), "True");
+    assert_eq!(
+      interpret(r#"StringLength["101"[a, b] /. s_[__] :> s]"#).unwrap(),
+      "3"
+    );
+    assert_eq!(interpret(r#"ToString["a"[1]]"#).unwrap(), "a[1]");
+  }
+
   #[test]
   fn function_one_arg_is_pure_function() {
     // Function[body] is equivalent to body &
