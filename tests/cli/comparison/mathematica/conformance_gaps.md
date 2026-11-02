@@ -2269,12 +2269,28 @@ integrate with the stiff Rosenbrock method and the dummy-derivative index
 reduction, matching wolframscript to 1e-7 (DistillationOfAnEthanolWaterMixture,
 DistillationOfATernaryIdealMixture, DynamicSimulationOfABinaryDistillation).
 
-DistillationColumnUsingTheFrancisFormulaForFlowThroughWeirs still differs in
-its transient: `x[1][0][50]` is 0.8519573 in Woxi (the same at RTOL 1e-10)
-against 0.8520657 in wolframscript, which agree again by t = 300
-(0.85226559 against 0.85226706). wolframscript with
-`AccuracyGoal -> 11, PrecisionGoal -> 11` stops at the start with
-`InterpolatingFunction::dmval`, so its own converged answer is unknown.
+The Francis-weir columns match too, once a flow solved in terms of another
+tray's accumulation (`L[t] == B[t] + N'[t]`) is kept out of the weir formula's
+power.
+
+MulticomponentDistillationColumn (variable holdups from the Francis formula,
+benzene/toluene/p-xylene) integrates but drifts from wolframscript right
+away: at t = 0.01 `x[1][5]` is 0.207 against 0.224 and `V[5]` is 178 against
+168, and by t = 5 the stage temperatures are 15 K off. `V[5]` at t = 0 already
+reads 2584 from the linear solve, so the reduced system's algebraic part is
+inconsistent with the given initial values; not yet traced.
+
+### `NDSolve` two-point boundary value problems blow up while shooting
+
+OptimalControlOfAContinuousStirredTankReactor and MaximizingProfitInOreMining
+(state and costate equations with the state given at t = 0 and the costate
+at the final time) stop with `NDSolve::ndsz`: Woxi shoots from t = 0, and the
+costate equations blow up in finite time for every guess not already close
+to the answer (`λ' == -(1 - λ)^2/4` on [0, 300] needs λ(0) within 1e-4 of
+0.98684). wolframscript solves both in under a second. The ore-mining costate
+does not depend on the state, so integrating it backwards from its own
+condition first would do; the reactor needs multiple shooting or a
+collocation method.
 
 ### `NDSolve` uses a fixed grid
 
@@ -6653,6 +6669,16 @@ on a 3×3×3 grid gives `0.6400000000000001` at `{0.3, 1.7, 0.2}` where WL
 gives `0.6399999999999999`. Partial derivatives (`Derivative[1, 0, 0][f]`)
 can come out a few ULP away from WL's value, so a mixed derivative that WL
 returns as exactly `0.` can be about `1*^-16` in Woxi.
+
+### `Interpolation` ignores `PeriodicInterpolation -> True`
+
+wolframscript's periodic interpolation wraps the argument into the data's
+period and takes the cubic's neighbours across the seam:
+`Interpolation[{{0, 1}, {1, 2}, {2, 0}, {3, 1}}, PeriodicInterpolation -> True]`
+gives 1.6875 at 0.5 (the window {-1, 0, 1, 2} with the value at -1 taken from
+2) and the same at 3.5. Woxi interpolates the data as it stands (2.25 at 0.5)
+and extrapolates outside it with `InterpolatingFunction::dmval`, which is what
+stops ShapingARoadAndFindingTheCorrespondingWheel.
 
 ### Symbolic values: `Interpolation` and `Fit` write their results differently
 
