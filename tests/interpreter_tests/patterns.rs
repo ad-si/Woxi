@@ -7052,7 +7052,21 @@ mod comparison_patterns {
          MatchQ[a < b <= c, Inequality[_, Less, __]]}"
       )
       .unwrap(),
-      "{True, True, True, True, True}"
+      // `Inequality[_, Less, __]` evaluates to `_ < __` before matching.
+      "{True, True, True, True, False}"
+    );
+  }
+
+  #[test]
+  fn single_comparison_inequality_evaluates() {
+    assert_eq!(
+      interpret(
+        "{Inequality[a, Less, b], Inequality[a, Unequal, b], \
+         Inequality[a, SameQ, b], Inequality[1, Less, 2], \
+         Inequality[a, foo, b], MatchQ[a < b, Inequality[_, Less, _]]}"
+      )
+      .unwrap(),
+      "{a < b, a != b, False, True, Inequality[a, foo, b], True}"
     );
   }
 

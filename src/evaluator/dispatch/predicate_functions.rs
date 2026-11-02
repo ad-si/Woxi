@@ -131,6 +131,26 @@ pub fn dispatch_predicate_functions(
   match name {
     // Inequality[a, Less, b, Less, c, ...] - evaluate chained comparisons
     "Inequality" if args.len() >= 3 && args.len() % 2 == 1 => {
+      // A single comparison is not a chain: `Inequality[a, Less, b]` is
+      // `a < b` (so the pattern `Inequality[_, Less, __]` is `_ < __`).
+      if let [lhs, Expr::Identifier(op), rhs] = args
+        && matches!(
+          op.as_str(),
+          "Less"
+            | "LessEqual"
+            | "Greater"
+            | "GreaterEqual"
+            | "Equal"
+            | "Unequal"
+            | "SameQ"
+            | "UnsameQ"
+        )
+      {
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          op,
+          &[lhs.clone(), rhs.clone()],
+        ));
+      }
       let comparison_op = |op_name: &str| -> Option<ComparisonOp> {
         match op_name {
           "Less" => Some(ComparisonOp::Less),

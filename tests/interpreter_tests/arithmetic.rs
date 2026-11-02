@@ -14460,6 +14460,8 @@ mod machine_real_ordering_tolerance {
   #[test]
   fn exact_operands_compare_exactly() {
     assert_eq!(interpret("1 + 10^-17 > 1").unwrap(), "True");
+    // The long form as well, though the machine values coincide.
+    assert_eq!(interpret("Equal[1, 1 + 10^-17]").unwrap(), "False");
   }
 
   #[test]
