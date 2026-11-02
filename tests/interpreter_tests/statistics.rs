@@ -5193,10 +5193,33 @@ mod distribution_fit_test {
       .unwrap(),
       "{0.2387562635567651, 0.2387562635567651, True}"
     );
-    // A two-sample test is not implemented and stays unevaluated.
+  }
+
+  // Two samples: the exact permutation p-value of the two-sample statistic,
+  // ties counted at the end of each block of equal values (wolframscript).
+  #[test]
+  fn two_sample_kolmogorov_smirnov() {
     assert_eq!(
       interpret("KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]").unwrap(),
-      "KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]"
+      "1."
+    );
+    assert_eq!(
+      interpret(
+        "{KolmogorovSmirnovTest[{1, 2, 3, 4, 5}, {3, 4, 5, 6, 7, 8}], \
+         KolmogorovSmirnovTest[{1, 2, 2, 3}, {2, 2, 4, 5}], \
+         KolmogorovSmirnovTest[Range[10], Range[11, 20]]}"
+      )
+      .unwrap(),
+      "{0.24675324675324675, 0.42857142857142855, 0.00001082508822446903}"
+    );
+    assert_eq!(
+      interpret(
+        "{KolmogorovSmirnovTest[Range[30], Range[10, 45], \"TestStatistic\"], \
+         KolmogorovSmirnovTest[{1., 2.5, 3, 4.2}, {0.5, 1.5, 2, 3.3, 7}, \
+         {\"TestStatistic\", \"PValue\"}]}"
+      )
+      .unwrap(),
+      "{5/12, {0.3500000000000001, 0.873015873015873}}"
     );
   }
 
