@@ -344,6 +344,34 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A `ColorProfileData` color space has to hold an ICC profile, which
+  // starts with a 128-byte header; anything shorter is no profile, and the
+  // image is no image.
+  if let Some(profile) = args[opt_start..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorSpace") => {
+      match replacement.as_ref() {
+        p @ Expr::FunctionCall { name, .. } if name == "ColorProfileData" => {
+          Some(p)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }) && !icc_profile_plausible(profile)
+  {
+    let shown = crate::syntax::expr_to_output(profile);
+    crate::emit_message(&format!(
+      "ColorProfileData::iccinv: Invalid ColorProfileData object {shown}."
+    ));
+    crate::emit_message(&format!(
+      "Image::imgcstype: {shown} is an invalid color space specification."
+    ));
+    return Ok(unevaluated());
+  }
+
   // `Interleaving -> False` gives the data channel-first, `{c, h, w}`:
   // transpose it to the interleaved `{h, w, c}` layout and build from that.
   let interleaving_false = |o: &Expr| {
@@ -620,6 +648,28 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data: Arc::new(data),
     image_type: requested_type.unwrap_or(ImageType::Real32),
   })
+}
+
+/// Whether `ColorProfileData[icc, space, pcs]` could hold an ICC profile:
+/// its byte array is at least the 128-byte profile header long.
+fn icc_profile_plausible(profile: &Expr) -> bool {
+  let Expr::FunctionCall { args, .. } = profile else {
+    return false;
+  };
+  let bytes = match args.first() {
+    Some(Expr::FunctionCall { name, args: na })
+      if (name == "NumericArray" || name == "ByteArray") && !na.is_empty() =>
+    {
+      &na[0]
+    }
+    Some(other) => other,
+    None => return false,
+  };
+  match bytes {
+    Expr::List(items) => items.len() >= 128,
+    Expr::String(s) => s.len() >= 128,
+    _ => false,
+  }
 }
 
 /// The color space named by a `ColorSpace -> …` option among `opts`: a

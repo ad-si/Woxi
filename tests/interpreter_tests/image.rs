@@ -10308,18 +10308,42 @@ mod find_threshold {
 mod color_profile_data {
   use super::*;
 
-  // A ColorProfileData color space names its data space.
+  // A ColorProfileData color space names its data space, once it holds a
+  // profile (at least the 128-byte ICC header).
   #[test]
   fn image_with_color_profile_color_space() {
     clear_state();
     assert_eq!(
       interpret(
         "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
-         NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+         NumericArray[ConstantArray[0, 200], \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
          {ImageQ[i], ImageColorSpace[i]}"
       )
       .unwrap(),
       "{True, RGB}"
+    );
+  }
+
+  // Three bytes are no profile: the image is no image.
+  #[test]
+  fn too_short_a_profile_is_invalid() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+       NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+       ImageQ[i]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "False");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ColorProfileData::iccinv"))
+    );
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("is an invalid color space specification."))
     );
   }
 }
