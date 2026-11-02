@@ -24965,3 +24965,39 @@ mod difference_root_invalid {
     )));
   }
 }
+
+// A radical coefficient is a generator of its own, as in wolframscript
+// without `Extension`; the Euclidean steps used to compute over Q(Sqrt[5])
+// (giving x - Sqrt[5] for x^2 - 5) and swelled until Together hung.
+mod polynomial_gcd_radical_coefficients {
+  use super::*;
+
+  #[test]
+  fn radicals_are_variables() {
+    assert_eq!(
+      interpret("PolynomialGCD[x^2 - 5, x - Sqrt[5]]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "PolynomialGCD[Expand[(x - Sqrt[5]) (x + 1)], \
+         Expand[(x - Sqrt[5]) (x + 2)]]"
+      )
+      .unwrap(),
+      "Sqrt[5] - x"
+    );
+  }
+
+  #[test]
+  fn together_with_radical_denominators_finishes() {
+    assert_eq!(
+      interpret(
+        "e = (1 + Sqrt[5])/(10 (1 - x) (1 + x + x^2 - ((1 + Sqrt[5]) x)/2)) \
+         - 2/(5 (1 + Sqrt[5]) (1 - x) (1 + x^2 + ((1 + Sqrt[5]) x)/2)); \
+         Simplify[Together[e] - e]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+}
