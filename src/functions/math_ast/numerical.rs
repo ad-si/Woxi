@@ -3572,24 +3572,27 @@ fn rescale_symbolic_numeric_list(
   rebuild(&args[0], min_e, &span)
 }
 
-/// Rescale with symbolic (or complex) bounds, in the forms wolframscript
-/// gives: `Rescale[x, {a, b}]` is `(x - a)/(b - a)` (so `Rescale[0, {a, b}]`
-/// is `-(a/(-a + b))` and `Rescale[a, {b, a}]` is 1), and
-/// `Rescale[x, {a, b}, {c, d}]` is the line
-/// `-(a d - b c)/(b - a) + (d - c) x/(b - a)`.
+/// Rescale with a symbolic value or symbolic (or complex) bounds, in the
+/// form wolframscript gives: the line
+/// `((d - c) x)/(b - a) - (a d - b c)/(b - a)`, where `Rescale[x, {a, b}]`
+/// is the `{c, d} = {0, 1}` case (`-(a/(-a + b)) + x/(-a + b)`). A value that
+/// is literally one of the bounds maps straight to its end of the target
+/// (`Rescale[a, {b, a}]` is 1).
 fn rescale_symbolic(
   x: &Expr,
   a: &Expr,
   b: &Expr,
   target: Option<(&Expr, &Expr)>,
 ) -> Result<Expr, InterpreterError> {
+  let (zero, one) = (Expr::Integer(0), Expr::Integer(1));
+  let (c, d) = target.unwrap_or((&zero, &one));
+  if crate::functions::boolean_ast::same_q_pair(x, a) {
+    return Ok(c.clone());
+  }
+  if crate::functions::boolean_ast::same_q_pair(x, b) {
+    return Ok(d.clone());
+  }
   let inv_span = pow(plus(vec![b.clone(), neg(a.clone())]), Expr::Integer(-1));
-  let Some((c, d)) = target else {
-    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
-      plus(vec![x.clone(), neg(a.clone())]),
-      inv_span,
-    ]));
-  };
   let constant = times(vec![
     Expr::Integer(-1),
     plus(vec![
@@ -3715,23 +3718,21 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (args.len() == 3).then_some((ymin, ymax)),
     );
   }
-  let literal_bounds = bounds.iter().all(|b| is_numeric_literal(b));
-  if !literal_bounds && try_eval_to_f64(&args[0]).is_none() {
-    return unevaluated();
-  }
   let xmin_n = try_eval_to_f64(&range[0]).unwrap();
   let xmax_n = try_eval_to_f64(&range[1]).unwrap();
   if (xmax_n - xmin_n).abs() < f64::EPSILON {
     return unevaluated();
   }
-  // For a non-literal x (a symbol or constant like Pi), only xmin == 0 is
-  // safe: with a nonzero xmin wolframscript distributes the offset
-  // (10 + 5 (x - 2) -> 5 x) in a way Woxi's evaluator leaves factored.
-  if literal_bounds
-    && !is_numeric_literal(&args[0])
-    && xmin_n.abs() >= f64::EPSILON
-  {
-    return unevaluated();
+  // A value that is not a number literal (a symbol, a sum, a constant like
+  // Pi) gets the line form, which distributes the offset the way
+  // wolframscript does (`Rescale[x, {2, 4}, {10, 20}]` is `5 x`).
+  if !is_numeric_literal(&args[0]) {
+    return rescale_symbolic(
+      &args[0],
+      &range[0],
+      &range[1],
+      (args.len() == 3).then_some((ymin, ymax)),
+    );
   }
 
   // Build and evaluate  ymin + (x - xmin) * (ymax - ymin) / (xmax - xmin).

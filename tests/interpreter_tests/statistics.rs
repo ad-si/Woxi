@@ -787,10 +787,22 @@ mod rescale {
       .unwrap(),
       "{20, 24, 8}"
     );
-    // A symbolic value or bound stays unevaluated.
+    // A symbolic value gives the line through the two bounds.
     assert_eq!(
       interpret("Rescale[x, {Log[2], Log[4]}]").unwrap(),
-      "Rescale[x, {Log[2], Log[4]}]"
+      "x/(-Log[2] + Log[4]) - Log[2]/(-Log[2] + Log[4])"
+    );
+  }
+
+  #[test]
+  fn rescale_symbolic_value_with_numeric_bounds() {
+    assert_eq!(
+      interpret(
+        "{Rescale[Pi, {1, 2}], Rescale[x, {2, 4}, {10, 20}], \
+         Rescale[2 x, {1, 3}], Rescale[x, {1., 3}], Rescale[a, {b, a}]}"
+      )
+      .unwrap(),
+      "{-1 + Pi, 5*x, -1/2 + x, -0.5 + 0.5*x, 1}"
     );
   }
 
