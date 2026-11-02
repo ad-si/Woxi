@@ -12457,6 +12457,14 @@ fn evaluate_function_call_ast_inner(
     return Ok(points);
   }
 
+  // Multicolumn[list, spec, opts] is the Grid it lays the items out in.
+  if name == "Multicolumn"
+    && !args.is_empty()
+    && let Some(grid) = multicolumn_grid(args)
+  {
+    return Ok(grid);
+  }
+
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
   if name == "Key" {
     return Ok(unevaluated(name, args));
@@ -16596,6 +16604,79 @@ fn highlight_mesh(args: &[Expr]) -> Result<Expr, InterpreterError> {
     new_args.push(rule_expr(id_expr("Properties"), Expr::List(rules.into())));
   }
   Ok(call(mesh_head, new_args))
+}
+
+/// `Multicolumn[{e1, …}, spec, opts]` as the `Grid` wolframscript makes of
+/// it: `n` columns (by default Ceiling[Sqrt[len]]), or `{rows, cols}` with
+/// either Automatic, filled column by column (row by row for `Appearance
+/// -> "Horizontal"`), padded with Null, the options followed by
+/// `Alignment -> {Left, Baseline}`.
+fn multicolumn_grid(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let (spec, opts) = match args.get(1) {
+    Some(Expr::Rule { .. }) | None => (None, &args[1..]),
+    Some(s) => (Some(s), &args[2..]),
+  };
+  if !opts.iter().all(|o| matches!(o, Expr::Rule { .. })) {
+    return None;
+  }
+  let len = items.len();
+  let positive = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+    _ => None,
+  };
+  let auto = |e: &Expr| matches!(e, Expr::Identifier(a) if a == "Automatic");
+  let (rows, cols) = match spec {
+    None => {
+      let cols = ((len as f64).sqrt().ceil() as usize).max(1);
+      (len.div_ceil(cols).max(1), cols)
+    }
+    Some(Expr::List(rc)) if rc.len() == 2 => {
+      match (positive(&rc[0]), positive(&rc[1])) {
+        (Some(r), Some(c)) => (r, c),
+        (Some(r), None) if auto(&rc[1]) => (r, len.div_ceil(r).max(1)),
+        (None, Some(c)) if auto(&rc[0]) => (len.div_ceil(c).max(1), c),
+        _ => return None,
+      }
+    }
+    Some(n) => {
+      let cols = positive(n)?;
+      (len.div_ceil(cols).max(1), cols)
+    }
+  };
+  let horizontal = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Appearance")
+        && matches!(replacement.as_ref(), Expr::String(s) if s == "Horizontal"))
+  });
+  let cell = |r: usize, c: usize| {
+    let k = if horizontal {
+      r * cols + c
+    } else {
+      c * rows + r
+    };
+    items.get(k).cloned().unwrap_or_else(|| id_expr("Null"))
+  };
+  let grid: Vec<Expr> = (0..rows)
+    .map(|r| Expr::List((0..cols).map(|c| cell(r, c)).collect()))
+    .collect();
+  let mut grid_args = vec![Expr::List(grid.into())];
+  grid_args.extend(
+    opts
+      .iter()
+      .filter(|o| {
+        !matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Appearance"))
+      })
+      .cloned(),
+  );
+  grid_args.push(rule_expr(
+    id_expr("Alignment"),
+    Expr::List(vec![id_expr("Left"), id_expr("Baseline")].into()),
+  ));
+  Some(call("Grid", grid_args))
 }
 
 /// Whether a package has been loaded (`Get`/`Needs`) this session. Until it

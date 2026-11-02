@@ -23725,9 +23725,8 @@ mod graphics_grid {
     assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
   }
 
-  /// `Multicolumn[{e1, e2, …}, n]` is a display wrapper like `Column`: the
-  /// head stays symbolic, while a notebook host draws the items down `n`
-  /// columns (one column is a plain vertical stack).
+  /// `Multicolumn[{e1, e2, …}, n]` evaluates to the `Grid` holding the
+  /// items down `n` columns.
   #[test]
   fn multicolumn_draws_items_in_columns() {
     clear_state();
@@ -23736,7 +23735,14 @@ mod graphics_grid {
         "Head[Multicolumn[{Graphics[{Disk[]}], Graphics[{Circle[]}]}, 1]]"
       )
       .unwrap(),
-      "Multicolumn"
+      "Grid"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[{Multicolumn[Range[5], 2], Multicolumn[Range[10]], Multicolumn[Range[5], {2, Automatic}], Multicolumn[Range[5], {2, 2}], Multicolumn[Range[6], 2, Appearance -> \"Horizontal\"], Multicolumn[Range[5], 2, Frame -> All], Multicolumn[{}]}, InputForm]"
+      )
+      .unwrap(),
+      "{Grid[{{1, 4}, {2, 5}, {3, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 4, 7, 10}, {2, 5, 8, Null}, {3, 6, 9, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 3, 5}, {2, 4, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 3}, {2, 4}}, Alignment -> {Left, Baseline}], Grid[{{1, 2}, {3, 4}, {5, 6}}, Alignment -> {Left, Baseline}], Grid[{{1, 4}, {2, 5}, {3, Null}}, Frame -> All, Alignment -> {Left, Baseline}], Grid[{{Null}}, Alignment -> {Left, Baseline}]}"
     );
     let one = interpret_with_stdout(
       "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
