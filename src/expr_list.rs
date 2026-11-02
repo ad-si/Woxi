@@ -65,6 +65,12 @@ struct SharedList {
   items: Vec<Expr>,
   flag: OnceLock<bool>,
   evaluated_at: AtomicU64,
+  /// The list's text in each form (see `cached_rendering`), `None` when its
+  /// rendering depends on more than the elements.
+  rendered: [OnceLock<Option<Arc<str>>>; 2],
+  /// A second memoized property of the elements (see `cached_flag`), used
+  /// for "plain numbers only".
+  numeric: OnceLock<bool>,
 }
 
 impl Clone for SharedList {
@@ -73,6 +79,8 @@ impl Clone for SharedList {
       items: self.items.clone(),
       flag: self.flag.clone(),
       evaluated_at: AtomicU64::new(0),
+      rendered: Default::default(),
+      numeric: self.numeric.clone(),
     }
   }
 }
@@ -128,6 +136,8 @@ impl ExprList {
         let s = Arc::make_mut(s);
         s.flag = OnceLock::new();
         *s.evaluated_at.get_mut() = 0;
+        s.rendered = Default::default();
+        s.numeric = OnceLock::new();
         ReprMut::Vec(&mut s.items)
       }
       Inner::Tree(t) => ReprMut::Tree(t),
@@ -143,6 +153,8 @@ impl ExprList {
         items,
         flag: OnceLock::new(),
         evaluated_at: AtomicU64::new(0),
+        rendered: Default::default(),
+        numeric: OnceLock::new(),
       }));
     }
   }
@@ -158,6 +170,36 @@ impl ExprList {
     match &self.inner {
       Inner::Shared(s) => *s.flag.get_or_init(|| compute(&s.items)),
       _ => compute(self.as_slice_internal()),
+    }
+  }
+
+  /// Like `cached_flag`, for a second property: whether the elements are
+  /// plain numbers (`compute` must answer exactly that).
+  pub fn cached_numeric_flag(
+    &self,
+    compute: impl FnOnce(&[Expr]) -> bool,
+  ) -> bool {
+    match &self.inner {
+      Inner::Shared(s) => *s.numeric.get_or_init(|| compute(&s.items)),
+      _ => compute(self.as_slice_internal()),
+    }
+  }
+
+  /// The text of a shared list in form number `form` (0 or 1), computed by
+  /// `compute` once until the next mutation; `None` for a list that is not
+  /// shared or whose `compute` declined (its text depends on outside
+  /// state). A table held by a symbol (an InterpolatingFunction's data) is
+  /// otherwise printed again by every comparison that renders it.
+  pub fn cached_rendering(
+    &self,
+    form: usize,
+    compute: impl FnOnce(&[Expr]) -> Option<String>,
+  ) -> Option<Arc<str>> {
+    match &self.inner {
+      Inner::Shared(s) => s.rendered[form]
+        .get_or_init(|| compute(&s.items).map(Arc::from))
+        .clone(),
+      _ => None,
     }
   }
 

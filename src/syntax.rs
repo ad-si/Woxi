@@ -9352,6 +9352,7 @@ fn with_complex_display<T>(expr: &Expr, render: impl FnOnce(&Expr) -> T) -> T {
 fn contains_imag_i(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(s) => s == "I",
+    _ if is_shared_number_array(expr) => false,
     _ => expr_children(expr).iter().any(|c| contains_imag_i(c)),
   }
 }
@@ -9529,6 +9530,7 @@ fn mentions_system_context(expr: &Expr) -> bool {
   match expr {
     Expr::Identifier(s) => s.starts_with("System`") && !s.ends_with('`'),
     Expr::FunctionCall { name, .. } if name.starts_with("System`") => true,
+    _ if is_shared_number_array(expr) => false,
     _ => expr_children(expr)
       .iter()
       .any(|c| mentions_system_context(c)),
@@ -10054,8 +10056,23 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       format!("##{n}")
     }
     Expr::List(items) => {
-      let parts: Vec<String> = items.iter().map(&fmt).collect();
-      format!("{{{}}}", parts.join(", "))
+      let render = |xs: &[Expr]| {
+        let parts: Vec<String> = xs.iter().map(&fmt).collect();
+        format!("{{{}}}", parts.join(", "))
+      };
+      // A shared table of plain numbers (a symbol's data, an
+      // InterpolatingFunction's grid) prints the same every time, so its
+      // text is kept with it rather than rebuilt by every comparison that
+      // renders it.
+      if items.is_shared()
+        && let Some(text) = items
+          .cached_rendering(usize::from(is_output), |xs| {
+            xs.iter().all(is_plain_number_array).then(|| render(xs))
+          })
+      {
+        return text.to_string();
+      }
+      render(items)
     }
     // `Definition[sym]` and `FullDefinition[sym]` stay held (like
     // wolframscript) and print as the symbol's definition text.
@@ -10291,7 +10308,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // round-trip) recovers the same object instead of hitting `<>`,
       // which isn't valid input syntax.
       if name == "InterpolatingFunction"
-        && (args.len() == 2 || args.len() == 3)
+        && (2..=4).contains(&args.len())
+        && !matches!(args.get(2), Some(Expr::List(_)))
         && is_output
       {
         return format!("InterpolatingFunction[{}, <>]", fmt(&args[0]));
@@ -13438,6 +13456,26 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       format!("{}[{}]", func_display, args_str.join(", "))
     }
   }
+}
+
+/// A machine or exact integer number, or a (nested) list of them: text
+/// that reads the same whatever the context and display settings.
+/// Memoized on shared lists.
+pub(crate) fn is_plain_number_array(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+    Expr::List(items) => {
+      items.cached_numeric_flag(|xs| xs.iter().all(is_plain_number_array))
+    }
+    _ => false,
+  }
+}
+
+/// A shared list of plain numbers: data that holds no symbol, string or
+/// call, so walks looking for one can skip it in O(1).
+pub(crate) fn is_shared_number_array(e: &Expr) -> bool {
+  matches!(e, Expr::List(items) if items.is_shared())
+    && is_plain_number_array(e)
 }
 
 /// `expr_to_string(a).cmp(&expr_to_string(b))`, rendering only what the

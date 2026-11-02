@@ -10219,6 +10219,28 @@ mod ndsolve {
     );
   }
 
+  // A derivative of an interpolating function displays like the function,
+  // its data hidden (wolframscript: ToString of it is 40 characters).
+  #[test]
+  fn derivative_displays_with_hidden_data() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 1}]; ToString[D[y[t] /. s[[1]], t]]"
+      )
+      .unwrap(),
+      "InterpolatingFunction[{{0., 1.}}, <>][t]"
+    );
+    // Differentiating a quotient of interpolating functions keeps both
+    // apart and evaluates to the right number.
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == -y[t], z'[t] == z[t], y[0] == 1, z[0] == 1}, {y, z}, {t, 0, 1}]; Round[1000 (D[Log[10, y[t]/z[t]] /. s[[1]], t] /. t -> 0.5)]"
+      )
+      .unwrap(),
+      "-869"
+    );
+  }
+
   #[test]
   fn dependent_variable_form_keeps_the_argument() {
     // `NDSolve[…, y[x], …]` solves for y[x], so both sides of the rule carry

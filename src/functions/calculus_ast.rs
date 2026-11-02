@@ -2736,11 +2736,21 @@ fn chain_rule_unknown_function(
         args: args.to_vec(),
       }
     } else {
+      let derivative = Expr::CurriedCall {
+        func: Box::new(call("Derivative", deriv_indices)),
+        args: vec![head.clone()],
+      };
+      // The derivative of an interpolating function is another one, as
+      // wolframscript gives it: `InterpolatingFunction[…][t]`, not
+      // `Derivative[1][InterpolatingFunction[…]][t]`.
+      let derivative = if matches!(head, Expr::FunctionCall { name, .. } if name == "InterpolatingFunction")
+      {
+        crate::evaluator::evaluate_expr_to_expr(&derivative)?
+      } else {
+        derivative
+      };
       Expr::CurriedCall {
-        func: Box::new(Expr::CurriedCall {
-          func: Box::new(call("Derivative", deriv_indices)),
-          args: vec![head.clone()],
-        }),
+        func: Box::new(derivative),
         args: args.to_vec(),
       }
     };

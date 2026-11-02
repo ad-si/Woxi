@@ -23618,6 +23618,23 @@ mod sparse_array_properties_and_predicates {
   }
 }
 
+mod shared_list_rendering_cache {
+  use super::*;
+
+  // A symbol's large list keeps its printed text between renderings; a part
+  // assignment must drop that text so the new element shows.
+  #[test]
+  fn part_assignment_refreshes_the_text() {
+    assert_eq!(
+      interpret(
+        "x = N[Range[20]]; a = ToString[x, InputForm]; x[[1]] = 99; {StringTake[a, 4], StringTake[ToString[x, InputForm], 4], StringTake[ToString[x], 4]}"
+      )
+      .unwrap(),
+      "{{1.,, {99,, {99,}"
+    );
+  }
+}
+
 mod tree_leaves_cases_scan_and_atomicity {
   use super::*;
 
