@@ -3579,7 +3579,7 @@ mod n_beyond_machine_range {
     );
     assert_eq!(
       interpret("N[10^400]").unwrap(),
-      "1.`15.954589770191003*^400"
+      "1.`15.954589770191005*^400"
     );
     assert_eq!(
       interpret(
@@ -12391,7 +12391,30 @@ mod bigfloat_subtract {
   fn overflowing_scientific_literal() {
     assert_eq!(
       interpret("{Precision[1.*^400], 1.*^400 > 10^399, 1.*^-400}").unwrap(),
-      "{15.954589770191003, True, 0.}"
+      "{15.954589770191005, True, 0.}"
+    );
+  }
+
+  // Machine arithmetic that leaves the machine range keeps the mantissa's
+  // 53 bits (one fewer for an exact integer power); an inexact exponent
+  // loses the digits it amplifies.
+  #[test]
+  fn overflowing_machine_arithmetic_precision() {
+    assert_eq!(
+      interpret("Precision[1.*^200 * 1.*^200]").unwrap(),
+      "15.954589770191005"
+    );
+    assert_eq!(
+      interpret("Precision[10.^400]").unwrap(),
+      "15.653559774527023"
+    );
+    assert_eq!(
+      interpret("Precision[1.5^3000]").unwrap(),
+      "15.653559774527023"
+    );
+    assert_eq!(
+      interpret("Precision[10.^400.]").unwrap(),
+      "12.990314090163578"
     );
   }
 

@@ -2513,7 +2513,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         {
           return Expr::BigFloat(
             shift_decimal_point(&s[..idx], exponent),
-            crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS,
+            crate::functions::math_ast::numerical::MACHINE_OVERFLOW_PRECISION,
           );
         }
         Expr::Real(value)

@@ -10272,7 +10272,16 @@ pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         other => other.clone(),
       })
       .collect();
-    return bigfloat_times(&promoted);
+    // The product of machine numbers is good to the machine mantissa,
+    // whatever its size (`Precision[1.*^200 * 1.*^200]` is
+    // `15.954589770191005`).
+    return bigfloat_times(&promoted).map(|p| match &p {
+      Expr::BigFloat(digits, _) => Expr::BigFloat(
+        digits.clone(),
+        super::numerical::MACHINE_OVERFLOW_PRECISION,
+      ),
+      _ => p,
+    });
   }
   Ok(flip_unit_negative_rational_product(product))
 }
@@ -15655,7 +15664,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       if result.is_infinite()
         && let Some(promoted) =
           crate::functions::math_ast::numerical::machine_power_out_of_range(
-            a, b,
+            a,
+            b,
+            matches!(exp, Expr::Integer(_) | Expr::BigInteger(_)),
           )
       {
         return promoted;

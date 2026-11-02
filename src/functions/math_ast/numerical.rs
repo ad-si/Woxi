@@ -137,6 +137,14 @@ fn is_exact_rational(expr: &Expr) -> bool {
 /// `$MachinePrecision`: the decimal digits of a machine real.
 pub(crate) const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
 
+/// The precision of a machine computation that left the machine range and
+/// carries on as an arbitrary-precision number: the 53 bits of the machine
+/// mantissa, converted the way wolframscript converts bits to digits
+/// (`53/Log2[10]`), which lands one unit in the last place above
+/// `$MachinePrecision` — `Precision[1.*^400]` is `15.954589770191005`.
+pub(crate) const MACHINE_OVERFLOW_PRECISION: f64 =
+  53.0 / std::f64::consts::LOG2_10;
+
 /// Recursively convert an expression to numeric (Real) form
 pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   let value = n_eval_machine(expr)?;
@@ -605,6 +613,7 @@ pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
 pub fn machine_power_out_of_range(
   a: f64,
   b: f64,
+  integer_exponent: bool,
 ) -> Option<Result<Expr, InterpreterError>> {
   use astro_float::{BigFloat, RoundingMode};
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
@@ -616,8 +625,14 @@ pub fn machine_power_out_of_range(
     return None;
   }
   let rm = RoundingMode::ToEven;
-  let result_prec =
-    MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10();
+  // An exact integer power of a machine real keeps all but one bit of the
+  // mantissa (`Precision[10.^400]` is `15.653559774527023`, 52 bits); an
+  // inexact exponent loses the digits `b ln a` amplifies its error by.
+  let result_prec = if integer_exponent {
+    52.0 / std::f64::consts::LOG2_10
+  } else {
+    MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10()
+  };
   let bits = nominal_bits(MACHINE_PRECISION_DIGITS.ceil() as usize);
   let computed = with_astro_consts(|cc| {
     let base = BigFloat::from_f64(a, bits);
@@ -1932,7 +1947,7 @@ fn n_eval_beyond_machine_range(expr: &Expr) -> Option<Expr> {
   match &value {
     Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
       Ok(f) if f.is_finite() => Some(Expr::Real(f)),
-      _ => n_eval_arbitrary(expr, MACHINE_PRECISION_DIGITS).ok(),
+      _ => n_eval_arbitrary(expr, MACHINE_OVERFLOW_PRECISION).ok(),
     },
     Expr::Real(f) if f.is_finite() => Some(value),
     _ => None,
