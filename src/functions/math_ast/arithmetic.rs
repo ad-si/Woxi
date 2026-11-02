@@ -7751,6 +7751,64 @@ fn sum_constant_and_rest(e: &Expr) -> Option<((f64, f64), Vec<&Expr>)> {
 }
 
 pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // A power of `-s` against a power of the symbol `s` orders by the bases,
+  // as `Order` does, and `-s` comes first: `(-p)^(3/2)*p`, `Sqrt[-p]*p`.
+  {
+    let base_of = |e: &Expr| -> Expr {
+      match e {
+        Expr::FunctionCall { name, args }
+          if (name == "Power" && args.len() == 2)
+            || (name == "Sqrt" && args.len() == 1) =>
+        {
+          args[0].clone()
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          ..
+        } => *left.clone(),
+        other => other.clone(),
+      }
+    };
+    let negated_symbol = |e: &Expr| -> Option<String> {
+      match e {
+        Expr::FunctionCall { name, args }
+          if name == "Times"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Integer(-1)) =>
+        {
+          match &args[1] {
+            Expr::Identifier(s) => Some(s.clone()),
+            _ => None,
+          }
+        }
+        _ => None,
+      }
+    };
+    let is_power = |e: &Expr| {
+      matches!(e, Expr::FunctionCall { name, .. } if name == "Power" || name == "Sqrt")
+        || matches!(
+          e,
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            ..
+          }
+        )
+    };
+    let (ba, bb) = (base_of(a), base_of(b));
+    if is_power(a)
+      && let Some(s) = negated_symbol(&ba)
+      && matches!(&bb, Expr::Identifier(t) if *t == s)
+    {
+      return std::cmp::Ordering::Less;
+    }
+    if is_power(b)
+      && let Some(s) = negated_symbol(&bb)
+      && matches!(&ba, Expr::Identifier(t) if *t == s)
+    {
+      return std::cmp::Ordering::Greater;
+    }
+  }
   // Sums that differ only in their numeric constant (a complex number is a
   // single number to wolframscript, though Woxi spreads `1 - I` over the
   // sum): by that number, real part first — `((1 - I) + s)*((1 + I) + s)*
@@ -14440,6 +14498,56 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // (c * rest)^n for a symbolic n and a rational c: c^n * rest^n, a negative
+  // c leaving its sign with the rest — `(2 p)^n` is `2^n*p^n`, `(-2 p)^n`
+  // is `2^n*(-p)^n` — when the rest is not a number (`(2 Pi)^n` stays).
+  if !matches!(exp, Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_))
+    && !matches!(exp, Expr::FunctionCall { name, .. } if name == "Rational")
+    && !crate::functions::predicate_ast::is_numeric_q(exp)
+    && let Expr::FunctionCall { name, args: targs } = base
+    && name == "Times"
+    && targs.len() >= 2
+    && let Some(idx) = targs.iter().position(|f| {
+      matches!(f, Expr::Integer(n) if n.abs() >= 2)
+        || matches!(f, Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2)
+    })
+    && targs.iter().enumerate().any(|(i, f)| {
+      i != idx && !crate::functions::predicate_ast::is_numeric_q(f)
+    })
+  {
+    let c = &targs[idx];
+    let negative = match c {
+      Expr::Integer(n) => *n < 0,
+      Expr::FunctionCall { args, .. } => {
+        matches!(args.first(), Some(Expr::Integer(p)) if *p < 0)
+      }
+      _ => false,
+    };
+    let magnitude = if negative {
+      times_ast(&[Expr::Integer(-1), c.clone()])?
+    } else {
+      c.clone()
+    };
+    let mut rest: Vec<Expr> = if negative {
+      vec![Expr::Integer(-1)]
+    } else {
+      Vec::new()
+    };
+    rest.extend(
+      targs
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != idx)
+        .map(|(_, f)| f.clone()),
+    );
+    let rest_expr = times_ast(&rest)?;
+    return times_ast(&[
+      power_two(&magnitude, exp)?,
+      power_two(&rest_expr, exp)?,
+    ]);
+  }
+
   // (c * rest)^(p/q) → c^(p/q) * rest^(p/q) when c is a positive numeric
   // factor (Integer ≥ 2 or positive Rational) and `rest` contains at least
   // one non-numeric factor. This matches Wolfram's behavior of pulling
@@ -14692,6 +14800,48 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           let pow_rest = power_two(&rest_expr, exp)?;
           return times_ast(&[pow_numeric, pow_rest]);
         }
+      }
+      // A negative numeric factor gives up its magnitude and leaves its sign
+      // with the symbolic rest: `(-2 p)^(3/2)` is `2*Sqrt[2]*(-p)^(3/2)`,
+      // `(-3 p)^(1/3)` is `3^(1/3)*(-p)^(1/3)`, as in wolframscript.
+      let negative_magnitude = |e: &Expr| -> Option<Expr> {
+        match e {
+          Expr::Integer(n) if *n <= -2 => Some(Expr::Integer(-n)),
+          Expr::FunctionCall { name, args }
+            if name == "Rational"
+              && args.len() == 2
+              && matches!(&args[0], Expr::Integer(p) if *p < 0)
+              && matches!(&args[1], Expr::Integer(q) if *q > 0) =>
+          {
+            let (Expr::Integer(p), Expr::Integer(q)) = (&args[0], &args[1])
+            else {
+              return None;
+            };
+            Some(make_rational(-p, *q))
+          }
+          _ => None,
+        }
+      };
+      if let Some(idx) =
+        factors.iter().position(|f| negative_magnitude(f).is_some())
+        && factors.iter().enumerate().any(|(i, f)| {
+          i != idx && !crate::functions::predicate_ast::is_numeric_q(f)
+        })
+      {
+        let magnitude = negative_magnitude(factors[idx]).unwrap();
+        let mut rest = vec![Expr::Integer(-1)];
+        rest.extend(
+          factors
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != idx)
+            .map(|(_, f)| (*f).clone()),
+        );
+        let negated_rest = times_ast(&rest)?;
+        return times_ast(&[
+          power_two(&magnitude, exp)?,
+          power_two(&negated_rest, exp)?,
+        ]);
       }
     }
   }

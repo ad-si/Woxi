@@ -6828,10 +6828,10 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   ))
   .ok()?;
   if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
-    // (a·x)^p with a symbolic p: x (a·x)^p/(p+1). A numeric p is left to
+    // (a·x)^p with a symbolic p, or a negative a (the power keeps the sign
+    // with the variable, `(-x)^(3/2)`): x (a·x)^p/(p+1), as wolframscript
+    // gives `((-p)^(3/2)*p)/(5/2)`. A numeric p with a positive a is left to
     // the power rules, which split the constant factor out.
-    // A negative constant cannot be split out of a fractional power, so
-    // `(-2 x)^(3/2)` takes the general `base^(p+1)/(a (p+1))` form below.
     let negative_coefficient = match &a {
       Expr::Integer(n) => *n < 0,
       Expr::Real(f) => *f < 0.0,
@@ -6843,7 +6843,7 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
     if numeric_exponent && !negative_coefficient {
       return None;
     }
-    if !numeric_exponent {
+    if !matches!(exponent_plus_one, Expr::Integer(0)) {
       return crate::evaluator::evaluate_expr_to_expr(&div2(
         times2(var_expr, expr.clone()),
         exponent_plus_one,
@@ -6877,6 +6877,7 @@ fn try_integrate_monomial_times_negative_power(
   let mut constants: Vec<Expr> = Vec::new();
   let mut k_total: i128 = 0;
   let mut scaled: Option<(Expr, Expr, Expr)> = None; // (base, a, q)
+  let mut symbolic_q = false;
   for f in &factors {
     if is_constant_wrt(f, var) {
       constants.push(f.clone());
@@ -6904,9 +6905,10 @@ fn try_integrate_monomial_times_negative_power(
       let numeric_q = matches!(q, Expr::Integer(_) | Expr::Real(_))
         || matches!(q, Expr::FunctionCall { name, args }
           if name == "Rational" && args.len() == 2);
-      if scaled.is_some() || !numeric_q || contains_var(q, var) {
+      if scaled.is_some() || contains_var(q, var) {
         return None;
       }
+      symbolic_q = !numeric_q;
       let a = extract_linear_coefficient(base, var)?;
       let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
         base.clone(),
@@ -6931,14 +6933,44 @@ fn try_integrate_monomial_times_negative_power(
   if k_total == 0 {
     return None;
   }
-  // c · (a·x)^(k+q) / a^k, then integrate the single power.
-  let merged = pow2(
-    base,
+  // A symbolic exponent: an odd k gives x^(k+1) (a x)^q/(q + k + 1), as
+  // wolframscript gives `((-p)^n*p^2)/(2 + n)` for `p (-p)^n`; an even k
+  // merges into the power like a numeric one (`((-p)^(2 + n)*p)/(3 + n)`).
+  if symbolic_q && k_total % 2 == 1 {
+    let result = div2(
+      times(vec![
+        times(constants),
+        pow2(id_expr(var), Expr::Integer(k_total + 1)),
+        pow2(base, q.clone()),
+      ]),
+      plus2(q, Expr::Integer(k_total + 1)),
+    );
+    return crate::evaluator::evaluate_expr_to_expr(&result).ok();
+  }
+  // c · (a·x)^(k+q) / a^k, then integrate the single power. wolframscript
+  // writes an even k like the bare power, `x (a x)^r/(r + 1)`
+  // (`((-p)^(7/2)*p)/(9/2)`), and an odd one as `(a x)^(r + 1)/(a (r + 1))`
+  // (`(-p)^(7/2)/(7/2)` for `p (-p)^(3/2)`).
+  let r =
     crate::evaluator::evaluate_expr_to_expr(&plus2(q, Expr::Integer(k_total)))
-      .ok()?,
-  );
-  let scale = div2(times(constants), pow2(a, Expr::Integer(k_total)));
-  let inner = try_integrate_linear_power(&merged, var)?;
+      .ok()?;
+  let merged = pow2(base.clone(), r.clone());
+  let scale = div2(times(constants), pow2(a.clone(), Expr::Integer(k_total)));
+  let inner = if k_total % 2 == 1 {
+    let r_plus_1 =
+      crate::evaluator::evaluate_expr_to_expr(&plus2(r, Expr::Integer(1)))
+        .ok()?;
+    if matches!(r_plus_1, Expr::Integer(0)) {
+      return None;
+    }
+    crate::evaluator::evaluate_expr_to_expr(&div2(
+      pow2(base, r_plus_1.clone()),
+      times2(a, r_plus_1),
+    ))
+    .ok()?
+  } else {
+    try_integrate_linear_power(&merged, var)?
+  };
   crate::evaluator::evaluate_expr_to_expr(&times2(scale, inner)).ok()
 }
 

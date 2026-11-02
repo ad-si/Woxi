@@ -23147,7 +23147,7 @@ mod integrate_negative_scaled_power {
   fn fractional_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[(-2 p)^(3/2), p]").unwrap(),
-      "-1/5*(-2*p)^(5/2)"
+      "(4*Sqrt[2]*(-p)^(3/2)*p)/5"
     );
   }
 
@@ -23155,7 +23155,33 @@ mod integrate_negative_scaled_power {
   fn monomial_times_fractional_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[p^2 (-2 p)^(3/2), p]").unwrap(),
-      "-1/36*(-2*p)^(9/2)"
+      "(4*Sqrt[2]*(-p)^(7/2)*p)/9"
+    );
+  }
+
+  // `(-x)^r` integrates to `x (-x)^r/(r + 1)`; an odd power of x in front
+  // merges into the standard form, an even one into the `x` form.
+  #[test]
+  fn powers_of_the_negated_variable() {
+    assert_eq!(
+      interpret("Integrate[(-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(3/2)*p)/5"
+    );
+    assert_eq!(
+      interpret("Integrate[p (-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(7/2))/7"
+    );
+    assert_eq!(
+      interpret("Integrate[p^4 (-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(11/2)*p)/13"
+    );
+    assert_eq!(
+      interpret("Integrate[p (-p)^n, p]").unwrap(),
+      "((-p)^n*p^2)/(2 + n)"
+    );
+    assert_eq!(
+      interpret("Integrate[p^2 (-p)^n, p]").unwrap(),
+      "((-p)^(2 + n)*p)/(3 + n)"
     );
   }
 
@@ -23163,7 +23189,7 @@ mod integrate_negative_scaled_power {
   fn linear_factor_times_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[p (-3 p)^(5/2), p]").unwrap(),
-      "(2*(-3*p)^(9/2))/81"
+      "2*Sqrt[3]*(-p)^(9/2)"
     );
   }
 

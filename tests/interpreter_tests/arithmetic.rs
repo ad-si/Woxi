@@ -621,6 +621,25 @@ mod arithmetic {
     // monomial down; the first differing position decides (smaller monomial
     // first, equal monomials by numerically smaller coefficient) —
     // wolframscript-verified.
+    // A numeric factor of a power's base comes out, its sign staying inside.
+    #[test]
+    fn numeric_factor_out_of_a_power() {
+      assert_eq!(interpret("(-2 p)^(3/2)").unwrap(), "2*Sqrt[2]*(-p)^(3/2)");
+      assert_eq!(interpret("(-3 p)^(1/3)").unwrap(), "3^(1/3)*(-p)^(1/3)");
+      assert_eq!(interpret("(2 p)^n").unwrap(), "2^n*p^n");
+      assert_eq!(interpret("(-2 p)^n").unwrap(), "2^n*(-p)^n");
+      assert_eq!(interpret("(2/3 p)^n").unwrap(), "(2/3)^n*p^n");
+      assert_eq!(interpret("(2 Pi)^n").unwrap(), "(2*Pi)^n");
+    }
+
+    // A power of `-s` sorts before `s` in a product.
+    #[test]
+    fn power_of_negated_symbol_before_the_symbol() {
+      assert_eq!(interpret("p (-p)^(3/2)").unwrap(), "(-p)^(3/2)*p");
+      assert_eq!(interpret("p Sqrt[-p]").unwrap(), "Sqrt[-p]*p");
+      assert_eq!(interpret("p q (-p)^n").unwrap(), "(-p)^n*p*q");
+    }
+
     // A sum in front of a power of a symbol orders like a coefficient.
     #[test]
     fn sum_coefficient_term_orders_by_its_power() {
