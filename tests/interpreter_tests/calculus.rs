@@ -24385,11 +24385,46 @@ mod ndsolve_vector_unknown_with_matrix_product {
 mod integrate_interpolating_function {
   use super::*;
 
+  // Exact data between exact limits integrates exactly, piece by piece.
   #[test]
-  fn definite_integral_is_numeric() {
+  fn definite_integral_of_exact_data_is_exact() {
     assert_eq!(
       interpret(
         "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}, {3, 5}}]; Integrate[f[x], {x, 0, 3}]"
+      )
+      .unwrap(),
+      "51/8"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}, {3, 5}}]; Integrate[f[x], {x, 3, 0}]"
+      )
+      .unwrap(),
+      "-51/8"
+    );
+  }
+
+  #[test]
+  fn definite_integral_is_numeric_for_inexact_input() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 0.5}]"
+      )
+      .unwrap(),
+      "0.25"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0.}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
          Integrate[f[x], {x, 0, 2}]"
       )
       .unwrap(),
@@ -24398,14 +24433,14 @@ mod integrate_interpolating_function {
   }
 
   #[test]
-  fn sum_of_piecewise_integrals_is_numeric() {
+  fn sum_of_piecewise_integrals_is_exact() {
     assert_eq!(
       interpret(
         "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
          Integrate[f[x], {x, 0, 1}] + Integrate[f[x], {x, 1, 2}]"
       )
       .unwrap(),
-      "3."
+      "3"
     );
   }
 

@@ -594,6 +594,116 @@ fn contains_interpolating_function(expr: &Expr) -> bool {
   }
 }
 
+/// `Integrate[f[x], {x, lo, hi}]` for an interpolation `f` of exact data
+/// between exact limits inside its domain: the interpolant is a polynomial
+/// of the interpolation order between consecutive nodes, so each piece is
+/// integrated exactly through the polynomial it agrees with at order + 1
+/// equally spaced points — wolframscript gives the exact `3`, not `3.`, for
+/// the linear interpolant of `{{0, 0}, {1, 2}, {2, 2}}` over `{x, 0, 2}`.
+fn exact_interpolation_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::functions::math_ast::try_eval_to_f64;
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let Expr::CurriedCall { func, args } = integrand else {
+    return Ok(None);
+  };
+  let (Expr::FunctionCall { name, args: fargs }, [Expr::Identifier(v)]) =
+    (func.as_ref(), args.as_slice())
+  else {
+    return Ok(None);
+  };
+  if name != "InterpolatingFunction" || v != var || fargs.len() != 3 {
+    return Ok(None);
+  }
+  let (Expr::List(rows), Expr::Integer(order)) = (&fargs[1], &fargs[2]) else {
+    return Ok(None);
+  };
+  let exact = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let mut nodes = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(pair) = row else {
+      return Ok(None);
+    };
+    let [x, y] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if !exact(x) || !exact(y) {
+      return Ok(None);
+    }
+    nodes.push(x.clone());
+  }
+  if !exact(lo) || !exact(hi) || nodes.len() < 2 || *order < 1 {
+    return Ok(None);
+  }
+  // The pieces' polynomial degree, as the interpolant reduces it.
+  let degree = (*order).min(nodes.len() as i128 - 1);
+  let (Some(lo_f), Some(hi_f)) = (try_eval_to_f64(lo), try_eval_to_f64(hi))
+  else {
+    return Ok(None);
+  };
+  let node_f: Vec<f64> = nodes.iter().filter_map(try_eval_to_f64).collect();
+  let (first, last) = (node_f[0], node_f[node_f.len() - 1]);
+  let (a_f, b_f) = (lo_f.min(hi_f), lo_f.max(hi_f));
+  if a_f < first || b_f > last {
+    return Ok(None);
+  }
+  let (a, b) = if lo_f <= hi_f { (lo, hi) } else { (hi, lo) };
+  // Breakpoints: a, the nodes strictly inside (a, b), b.
+  let mut breaks = vec![a.clone()];
+  for (x, xf) in nodes.iter().zip(&node_f) {
+    if *xf > a_f && *xf < b_f {
+      breaks.push(x.clone());
+    }
+  }
+  breaks.push(b.clone());
+  let t = Expr::Identifier("$woxiInterpolationT".to_string());
+  let mut pieces = Vec::new();
+  for w in breaks.windows(2) {
+    let (p, q) = (&w[0], &w[1]);
+    let mut points = Vec::new();
+    for k in 0..=degree {
+      let x = eval(&plus(vec![
+        p.clone(),
+        times(vec![
+          make_rational(k, degree),
+          plus(vec![q.clone(), times(vec![Expr::Integer(-1), p.clone()])]),
+        ]),
+      ]))?;
+      let y = eval(&Expr::CurriedCall {
+        func: func.clone(),
+        args: vec![x.clone()],
+      })?;
+      if !exact(&y) {
+        return Ok(None);
+      }
+      points.push(Expr::List(vec![x, y].into()));
+    }
+    let poly = eval(&call(
+      "InterpolatingPolynomial",
+      vec![Expr::List(points.into()), t.clone()],
+    ))?;
+    pieces.push(call(
+      "Integrate",
+      vec![
+        poly,
+        Expr::List(vec![t.clone(), p.clone(), q.clone()].into()),
+      ],
+    ));
+  }
+  let mut total = eval(&plus(pieces))?;
+  if lo_f > hi_f {
+    total = eval(&times(vec![Expr::Integer(-1), total]))?;
+  }
+  Ok(exact(&total).then_some(total))
+}
+
 pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -682,6 +792,11 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && crate::functions::math_ast::try_eval_to_f64(lo).is_some()
       && crate::functions::math_ast::try_eval_to_f64(hi).is_some()
     {
+      if let Some(exact) =
+        exact_interpolation_integral(&args[0], &var_name, lo, hi)?
+      {
+        return Ok(exact);
+      }
       return nintegrate_ast(args);
     }
 
