@@ -24178,11 +24178,19 @@ mod solve_exponentials {
   fn two_exponentials() {
     assert_eq!(
       interpret("Solve[a b^t == c d^t, t]").unwrap(),
-      "{{t -> Log[c/a]/Log[b/d]}}"
+      "{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}"
     );
     assert_eq!(
       interpret("Solve[a b^t - c d^t == 0, t]").unwrap(),
-      "{{t -> Log[c/a]/Log[b/d]}}"
+      "{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 b^t == 3 d^t, t]").unwrap(),
+      "{{t -> Log[3/2]/(Log[b] - Log[d])}}"
+    );
+    assert_eq!(
+      interpret("Solve[b^t == c d^t, t]").unwrap(),
+      "{{t -> -(Log[c^(-1)]/(Log[b] - Log[d]))}}"
     );
     assert_eq!(
       interpret(

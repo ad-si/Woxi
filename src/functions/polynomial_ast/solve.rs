@@ -3527,6 +3527,14 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     return Ok(Expr::List(solutions.into()));
   }
+  // `a b^t == c d^t` with a symbolic base: wolframscript divides through
+  // and takes logarithms of `(a/c) b^t/d^t == 1`, giving
+  // `t -> -(Log[a/c]/(Log[b] - Log[d]))`.
+  if let [eq, Expr::Identifier(var)] = args
+    && let Some(solution) = solve_two_exponential_terms(eq, var)
+  {
+    return solution;
+  }
   // `a b^t == c d^t`: the exponentials of one product combine into a single
   // power, `(b/d)^t`, which the exponential solver inverts.
   if let [eq, Expr::Identifier(var)] = args
@@ -4299,6 +4307,105 @@ fn or_operands(e: &Expr) -> Option<Vec<Expr>> {
 /// Rewrites every product holding two or more powers `b^(c var)` (bases
 /// free of `var`, exponents proportional to it) into one power
 /// `(b1^c1 b2^c2 …)^var`, evaluated. `None` when no product has two.
+/// `a b^t == c d^t` (also written `a b^t - c d^t == 0`), each side one
+/// coefficient free of `t` times one power with exponent exactly `t`, and
+/// at least one base symbolic: `{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}`.
+/// `None` for any other shape (two numeric bases take the combined-power
+/// route below).
+fn solve_two_exponential_terms(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  // The two terms: either side one each, or `lhs - rhs` a two-term sum.
+  let (left, right) = if matches!(&operands[1], Expr::Integer(0)) {
+    let Expr::FunctionCall { name, args } = &operands[0] else {
+      return None;
+    };
+    if name != "Plus" || args.len() != 2 {
+      return None;
+    }
+    (
+      args[0].clone(),
+      eval(times2(Expr::Integer(-1), args[1].clone()))?,
+    )
+  } else {
+    (operands[0].clone(), operands[1].clone())
+  };
+  // `(coefficient, base)` of `coefficient * base^var`.
+  let split = |term: &Expr| -> Option<(Expr, Expr)> {
+    let factors = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut base = None;
+    let mut coeff = Vec::new();
+    for f in factors {
+      let power = match &f {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          Some((args[0].clone(), args[1].clone()))
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => Some((*left.clone(), *right.clone())),
+        _ => None,
+      };
+      match &power {
+        Some((b, Expr::Identifier(e)))
+          if e == var && is_constant_wrt(b, var) =>
+        {
+          if base.replace(b.clone()).is_some() {
+            return None;
+          }
+        }
+        _ if is_constant_wrt(&f, var) => coeff.push(f),
+        _ => return None,
+      }
+    }
+    let coeff = match coeff.len() {
+      0 => Expr::Integer(1),
+      1 => coeff.remove(0),
+      _ => times(coeff),
+    };
+    Some((coeff, base?))
+  };
+  let (a, b) = split(&left)?;
+  let (c, d) = split(&right)?;
+  let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+  if numeric(&b) && numeric(&d) {
+    return None;
+  }
+  let value = eval(times(vec![
+    Expr::Integer(-1),
+    call1("Log", times2(a, pow(c, Expr::Integer(-1)))),
+    pow(
+      plus(vec![
+        call1("Log", b),
+        times2(Expr::Integer(-1), call1("Log", d)),
+      ]),
+      Expr::Integer(-1),
+    ),
+  ]))?;
+  report_inverse_function_use();
+  Some(Ok(Expr::List(
+    vec![Expr::List(vec![rule_expr(id_expr(var), value)].into())].into(),
+  )))
+}
+
 fn combine_exponential_factors(expr: &Expr, var: &str) -> Option<Expr> {
   // `exponent = c var + d` with `c`, `d` free of `var`: `(c, d)`.
   fn affine(exponent: &Expr, var: &str) -> Option<(Expr, Expr)> {
