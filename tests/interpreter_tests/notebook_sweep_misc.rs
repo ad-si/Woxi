@@ -389,3 +389,28 @@ mod upvalue_sequence_slots {
     );
   }
 }
+
+mod literal_rule_ordering {
+  use super::*;
+
+  // A rule with literal arguments is tried before a rule it is strictly
+  // more specific than, also when that one has a literal argument too:
+  // `f[0, 1]` before `f[l_, 1]`, `MPTPlot[{}, …, None, opts]` before
+  // `MPTPlot[list_, …, None, opts]` (ModernPortfolioTheory).
+  #[test]
+  fn more_specific_literal_rule_goes_first() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h1[l_, None] := gen; h1[{}, None] := empty; \
+         h4[l_, 1] := gen; h4[0, 1] := zero; \
+         f[l_, None, o___] := gen; f[{}, None, o___] := empty; \
+         m[0, 1] := a; m[0, y_] := b; \
+         {h1[{}, None], h1[{1}, None], h4[0, 1], h4[2, 1], f[{}, None], \
+          f[{1}, None], m[0, 1], m[0, 2]}"
+      )
+      .unwrap(),
+      "{empty, gen, zero, gen, empty, gen, a, b}"
+    );
+  }
+}

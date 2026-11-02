@@ -361,11 +361,15 @@ fn pattern_specificity_score(
   conditions: &[Option<Expr>],
   body: &Expr,
 ) -> u32 {
-  // Literal-argument definitions (e.g. `f[0]`) are most specific.
-  let is_literal = conditions
-    .iter()
-    .flatten()
-    .any(|c| condition_is_literal_arg(params, c));
+  // Literal-argument definitions (e.g. `f[0]`) are most specific. One
+  // literal among blanks (`f[l_, None, o___]`) only counts as one more
+  // constraint below, or it would tie with `f[{}, None, o___]` and leave
+  // the order to the definitions'.
+  let is_literal = !conditions.is_empty()
+    && conditions.iter().all(|c| {
+      c.as_ref()
+        .is_some_and(|c| condition_is_literal_arg(params, c))
+    });
   if is_literal {
     return 0;
   }
@@ -1076,7 +1080,10 @@ fn count_specificity_clauses(c: &Expr) -> u32 {
         Some(Expr::FunctionCall { name, .. }) if name == "Length"
       ) =>
     {
-      0
+      // The empty list `{}` is a literal: its length check is all the
+      // constraint there is. For a list with elements the elements' own
+      // checks count instead.
+      u32::from(matches!(operands.get(1), Some(Expr::Integer(0))))
     }
     // A nested structural pattern (`f[g[x_]]`) is stored as
     // `__StructuralPattern__[param, patternAST]`. Score it by how constrained
@@ -4825,13 +4832,29 @@ pub fn set_delayed_ast(
       stored_rule_count
     } else if has_literal_conditions {
       // Literal-match definitions go before pattern definitions but after
-      // existing literal definitions (preserving definition order).
+      // existing literal definitions (preserving definition order) — unless
+      // the new rule is strictly more specific than one of those, as
+      // `f[0, 1]` is than `f[l_, 1]`.
       (0..stored_rule_count)
         .find(|&index| {
-          stored_rule(index).is_some_and(|(pp, c, _, _, _, _)| {
+          stored_rule(index).is_some_and(|(pp, c, d, h, bt, b)| {
             !c.iter()
               .flatten()
               .any(|cc| condition_is_literal_arg(&pp, cc))
+              || rule_dominates(
+                &params,
+                &heads,
+                &blank_types,
+                &conditions,
+                &defaults,
+                &final_body,
+                &pp,
+                &h,
+                &bt,
+                &c,
+                &d,
+                &b,
+              )
           })
         })
         .unwrap_or(stored_rule_count)
