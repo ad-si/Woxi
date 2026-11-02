@@ -1399,33 +1399,9 @@ fn expand_dollar_replacement(template: &str, caps: &Captures) -> String {
 fn expand_dollar_in_expr(expr: &Expr, caps: &Captures) -> Expr {
   match expr {
     Expr::String(s) => Expr::String(expand_dollar_replacement(s, caps)),
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|e| expand_dollar_in_expr(e, caps))
-        .collect::<Vec<_>>()
-        .into(),
-    ),
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(|e| expand_dollar_in_expr(e, caps))
-        .collect::<Vec<_>>()
-        .into(),
-    },
-    // `"<" <> "$1" <> ">"` is a BinaryOp, so the operators have to be walked
-    // too or the backreference never reaches its string literal.
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      expand_dollar_in_expr(left, caps),
-      expand_dollar_in_expr(right, caps),
-    ),
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(expand_dollar_in_expr(operand, caps)),
-    },
-    other => other.clone(),
+    _ => crate::syntax::map_children(expr, &|child| {
+      expand_dollar_in_expr(child, caps)
+    }),
   }
 }
 
@@ -2608,7 +2584,9 @@ pub fn string_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Substitute named captures into an expression, replacing pattern variable
-/// identifiers with matched string values.
+/// identifiers with matched string values. Every node kind is walked (a
+/// curried head such as `"101"[x, y]`, a part, a rule, …), so no capture is
+/// left behind as a bare symbol.
 fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
   match expr {
     Expr::Identifier(name) => {
@@ -2621,69 +2599,9 @@ fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
         expr.clone()
       }
     }
-    Expr::FunctionCall { name, args } => {
-      let new_args: Vec<Expr> = args
-        .iter()
-        .map(|a| substitute_captures(a, captures))
-        .collect();
-      Expr::FunctionCall {
-        name: name.clone(),
-        args: new_args.into(),
-      }
-    }
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      substitute_captures(left, captures),
-      substitute_captures(right, captures),
-    ),
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(substitute_captures(operand, captures)),
-    },
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|a| substitute_captures(a, captures))
-        .collect(),
-    ),
-    // A rule (or delayed rule) RHS such as `w -> d` must have its pattern
-    // variables substituted on both sides, not be left verbatim.
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => rule_expr(
-      substitute_captures(pattern, captures),
-      substitute_captures(replacement, captures),
-    ),
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => rule_delayed_expr(
-      substitute_captures(pattern, captures),
-      substitute_captures(replacement, captures),
-    ),
-    Expr::Comparison {
-      operands,
-      operators,
-    } => Expr::Comparison {
-      operands: operands
-        .iter()
-        .map(|a| substitute_captures(a, captures))
-        .collect(),
-      operators: operators.clone(),
-    },
-    Expr::Association(pairs) => Expr::Association(
-      pairs
-        .iter()
-        .map(|(k, v)| {
-          (
-            substitute_captures(k, captures),
-            substitute_captures(v, captures),
-          )
-        })
-        .collect(),
-    ),
-    _ => expr.clone(),
+    _ => crate::syntax::map_children(expr, &|child| {
+      substitute_captures(child, captures)
+    }),
   }
 }
 

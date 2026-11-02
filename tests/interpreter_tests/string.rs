@@ -924,6 +924,41 @@ mod string_split_regex {
 mod string_replace {
   use super::*;
 
+  // Captures reach every node kind of the right-hand side, a curried head
+  // `g[1][x, y]` and a part `{x, y}[[2]]` included (a rule built as
+  // `(x___ ~~ # ~~ y___ :> #[x, y] &)["101"]` has a curried right side).
+  #[test]
+  fn captures_substitute_inside_curried_and_part_rhs() {
+    assert_eq!(
+      interpret(
+        r#"StringReplace["0110110", x___ ~~ "101" ~~ y___ :> g[1][x, y]]"#
+      )
+      .unwrap(),
+      "StringExpression[g[1][01, 10]]"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringReplace["0110110", x___ ~~ "101" ~~ y___ :> {x, y}[[2]]]"#
+      )
+      .unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret(
+        r#"List @@ First[StringReplace["0110110", (x___ ~~ # ~~ y___ :> #[x, y] &)["101"]]]"#
+      )
+      .unwrap(),
+      "{01, 10}"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringCases["ab", RegularExpression["(a)(b)"] :> g[1]["$2"]]"#
+      )
+      .unwrap(),
+      "{g[1][b]}"
+    );
+  }
+
   // A replacement that produces a non-string value yields a StringExpression
   // (mixed content), not a coerced string. Adjacent string segments coalesce.
   // Verified against wolframscript:
