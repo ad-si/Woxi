@@ -502,7 +502,46 @@ mod nielsen_polylog {
     assert_eq!(interpret("PolyLog[n, 1, z]").unwrap(), "PolyLog[1 + n, z]");
     assert_eq!(interpret("PolyLog[2, 1, z]").unwrap(), "PolyLog[3, z]");
     assert_eq!(interpret("PolyLog[0, 2, z]").unwrap(), "Log[1 - z]^2/2");
-    assert_eq!(interpret("PolyLog[1, 3, z]").unwrap(), "PolyLog[1, 3, z]");
+    assert_eq!(
+      interpret("PolyLog[1, 3, z]").unwrap(),
+      "Pi^4/90 - (Log[1 - z]^3*Log[z])/6 - (Log[1 - z]^2*PolyLog[2, 1 - z])/2 \
+       + Log[1 - z]*PolyLog[3, 1 - z] - PolyLog[4, 1 - z]"
+    );
+  }
+
+  #[test]
+  fn n_one_in_terms_of_polylogs_of_one_minus_z() {
+    assert_eq!(
+      interpret("PolyLog[1, 2, z]").unwrap(),
+      "(Log[1 - z]^2*Log[z])/2 + Log[1 - z]*PolyLog[2, 1 - z] - \
+       PolyLog[3, 1 - z] + Zeta[3]"
+    );
+    assert_eq!(interpret("PolyLog[1, 2, 1]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("PolyLog[2, 2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn n_zero_with_a_symbolic_p() {
+    assert_eq!(
+      interpret("PolyLog[0, p, z]").unwrap(),
+      "(-Log[1 - z])^p/Gamma[1 + p]"
+    );
+  }
+
+  #[test]
+  fn negative_n_by_differentiation() {
+    assert_eq!(
+      interpret("PolyLog[-1, 2, z]").unwrap(),
+      "-((z*Log[1 - z])/(1 - z))"
+    );
+    assert_eq!(
+      interpret("PolyLog[-1, 3, z]").unwrap(),
+      "(z*Log[1 - z]^2)/(2*(1 - z))"
+    );
+    assert_eq!(
+      interpret("PolyLog[-2, 2, z]").unwrap(),
+      "z^2/(1 - z)^2 - (z*Log[1 - z])/(1 - z) - (z^2*Log[1 - z])/(1 - z)^2"
+    );
   }
 
   #[test]

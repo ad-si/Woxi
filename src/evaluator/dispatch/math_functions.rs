@@ -1676,6 +1676,9 @@ pub fn dispatch_math_functions(
           ],
         )));
       }
+      if let Some(result) = nielsen_polylog_closed_form(args) {
+        return Some(result);
+      }
       return Some(Ok(unevaluated("PolyLog", args)));
     }
     "PolyLog" if args.len() == 2 => {
@@ -8729,4 +8732,123 @@ fn odd_function_rewrite(
     "Times",
     &[Expr::Integer(-1), inner],
   ))
+}
+
+/// Closed forms of the Nielsen polylogarithm `PolyLog[n, p, z]` that WL
+/// writes out: the value 0 at z = 0, `(-Log[1 - z])^p / Gamma[1 + p]` for
+/// n = 0 and a symbolic p, ζ(p + 1) at z = 1 and, for a symbolic z, the
+/// `PolyLog[k, 1 - z]` expansion for n = 1 and an integer p ≥ 2,
+///   Zeta[p + 1] + (-1)^p Log[1 - z]^p Log[z] / p!
+///     + Σ_{k=0}^{p-1} (-1)^(k+1) Log[1 - z]^k PolyLog[p + 1 - k, 1 - z] / k!,
+/// and, for a negative integer n, `z D[PolyLog[n + 1, p, z], z]` expanded
+/// (S_{n-1,p}(z) = z S'_{n,p}(z)). `None` for every other call.
+fn nielsen_polylog_closed_form(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let (n, p, z) = (&args[0], &args[1], &args[2]);
+  if matches!(z, Expr::Integer(0)) {
+    return Some(Ok(Expr::Integer(0)));
+  }
+  let one_minus_z = call(
+    "Plus",
+    vec![
+      Expr::Integer(1),
+      call("Times", vec![Expr::Integer(-1), z.clone()]),
+    ],
+  );
+  let log = call1("Log", one_minus_z.clone());
+  match (n, p) {
+    (Expr::Integer(0), p)
+      if !matches!(p, Expr::Integer(_))
+        && !crate::functions::predicate_ast::is_numeric_q(p) =>
+    {
+      Some(eval(call(
+        "Times",
+        vec![
+          call(
+            "Power",
+            vec![call("Times", vec![Expr::Integer(-1), log]), p.clone()],
+          ),
+          call(
+            "Power",
+            vec![
+              call1("Gamma", call("Plus", vec![Expr::Integer(1), p.clone()])),
+              Expr::Integer(-1),
+            ],
+          ),
+        ],
+      )))
+    }
+    // S_{1,p}(1) = ζ(p + 1).
+    (Expr::Integer(1), Expr::Integer(p))
+      if *p >= 2 && matches!(z, Expr::Integer(1)) =>
+    {
+      Some(eval(call1("Zeta", Expr::Integer(p + 1))))
+    }
+    (Expr::Integer(1), Expr::Integer(p))
+      if *p >= 2
+        && *p <= 64
+        && !crate::functions::predicate_ast::is_numeric_q(z) =>
+    {
+      let p = *p;
+      let sign = |k: i128| Expr::Integer(if k % 2 == 0 { 1 } else { -1 });
+      let factorial = |k: i128| -> i128 { (1..=k).product() };
+      let mut terms = vec![
+        call1("Zeta", Expr::Integer(p + 1)),
+        call(
+          "Times",
+          vec![
+            sign(p),
+            call(
+              "Rational",
+              vec![Expr::Integer(1), Expr::Integer(factorial(p))],
+            ),
+            call("Power", vec![log.clone(), Expr::Integer(p)]),
+            call1("Log", z.clone()),
+          ],
+        ),
+      ];
+      for k in 0..p {
+        terms.push(call(
+          "Times",
+          vec![
+            sign(k + 1),
+            call(
+              "Rational",
+              vec![Expr::Integer(1), Expr::Integer(factorial(k))],
+            ),
+            call("Power", vec![log.clone(), Expr::Integer(k)]),
+            call(
+              "PolyLog",
+              vec![Expr::Integer(p + 1 - k), one_minus_z.clone()],
+            ),
+          ],
+        ));
+      }
+      Some(eval(call("Plus", terms)))
+    }
+    (Expr::Integer(n), Expr::Integer(p)) if *n < 0 && *n >= -16 && *p >= 1 => {
+      let var = match z {
+        Expr::Identifier(_) => z.clone(),
+        _ => return None,
+      };
+      let inner = match eval(call(
+        "PolyLog",
+        vec![Expr::Integer(n + 1), Expr::Integer(*p), var.clone()],
+      )) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&inner, Expr::FunctionCall { name, args } if name == "PolyLog" && args.len() == 3)
+      {
+        return None;
+      }
+      Some(eval(call1(
+        "Expand",
+        call("Times", vec![var.clone(), call("D", vec![inner, var])]),
+      )))
+    }
+    _ => None,
+  }
 }
