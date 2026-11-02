@@ -4422,6 +4422,31 @@ mod plot_body_with_large_shared_data {
   }
 }
 
+// A plot evaluates its options once, so the body of a
+// `ColorFunction -> (Evaluate[…] &)` is computed once, not per sample
+// point (Demonstration PositionDependentOpacity ran an NIntegrate there).
+mod plot_option_evaluate_once {
+  use super::*;
+
+  #[test]
+  fn color_function_with_evaluate_body() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "n = 0; g[] := (n++; Red); \
+         ParametricPlot3D[{s, t, 0}, {s, 0, 1}, {t, 0, 1}, PlotPoints -> 5, \
+         ColorFunction -> (Evaluate[g[]] &)]; \
+         Plot[x, {x, 0, 1}, PlotPoints -> 5, ColorFunction -> (Evaluate[g[]] &)]; \
+         n <= 6"
+      )
+      .unwrap(),
+      // wolframscript evaluates it 6 times over the two plots, Woxi twice;
+      // what matters is that it does not run at each sample point.
+      "True"
+    );
+  }
+}
+
 mod plot3d {
   /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
   /// colours and thins out the surface, both when drawn on its own and when

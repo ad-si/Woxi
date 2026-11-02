@@ -206,6 +206,43 @@ fn with_symbol_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   renamed.then_some(out)
 }
 
+/// The arguments with every `opt -> (Evaluate[…] &)` option value
+/// evaluated, or `None` when there is none. (A pure function whose body is
+/// not wrapped in `Evaluate` evaluates to itself; other option values are
+/// evaluated by each plot as it reads them.)
+fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
+  let evaluate_body = |e: &Expr| match e {
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+      matches!(body.as_ref(), Expr::FunctionCall { name, .. } if name == "Evaluate")
+    }
+    _ => false,
+  };
+  let mut out = args.to_vec();
+  let mut changed = false;
+  for arg in out.iter_mut().skip(1) {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+    else {
+      continue;
+    };
+    if !evaluate_body(replacement) {
+      continue;
+    }
+    if let Ok(value) =
+      crate::evaluator::evaluate_expr_to_expr(replacement.as_ref())
+    {
+      *arg = Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(value),
+      };
+      changed = true;
+    }
+  }
+  changed.then_some(out)
+}
+
 /// `ScalingFunctions -> "Log"` on `Plot`/`ListPlot`/`ListLinePlot` asks for
 /// the logarithmic plot of the family: the call is handed to `LogPlot`,
 /// `LogLinearPlot`, `LogLogPlot` (or their `List…` forms) without the option,
@@ -276,6 +313,16 @@ pub fn dispatch_plotting(
     && let Some(renamed) = with_symbol_iterators(args)
   {
     return dispatch_plotting(name, &renamed);
+  }
+  // The function plots hold their arguments, but Wolfram evaluates their
+  // options once up front: the `Evaluate[…]` in a
+  // `ColorFunction -> (Evaluate[…] &)` runs once, not at every sample
+  // point.
+  if PLLD_HEADS.contains(&name)
+    && args.len() >= 2
+    && let Some(evaluated) = with_evaluated_options(args)
+  {
+    return dispatch_plotting(name, &evaluated);
   }
   // A range like `{x, 1, 1}` has nothing to sample. The check sits here,
   // ahead of `quiet_plot`, because the plot bodies run with messages
