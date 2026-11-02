@@ -7681,9 +7681,8 @@ that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
   machine vectors, `Mean[InverseChiSquareDistribution[53.2, 1.04]]`,
   `Accuracy[N[Exp[100], {Infinity, -10}]]` (wolframscript's two Log10s
   disagree in the last bit) and the spline peaks of
-  `FindPeaks[…, InterpolationOrder -> 3]`.
-- **`FindPeaks[…, InterpolationOrder -> 2]`** (wolframscript's quadratic
-  spline peaks) stays unevaluated; orders 0, 1 and 3 are implemented.
+  `FindPeaks[…, InterpolationOrder -> 2 | 3]` (same positions; the values at
+  a list end come out as `2.000000000000001` in wolframscript).
 - **Two-sample `KolmogorovSmirnovTest`** p-values are exact rationals
   rounded once; wolframscript's own evaluation is off by one unit in the
   last place for some samples (`Range[60]` against `Range[5, 70]`:
