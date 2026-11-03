@@ -45146,7 +45146,6 @@ mod wl_table_layout {
   }
 }
 
-
 // WL 15 list plots reach out to 0 when the data lies close enough to it,
 // lower far-from-0 data a little below its minimum (where the axis then
 // crosses) and pad the x axis by Scaled[0.02], the y axis by Scaled[0.05]
