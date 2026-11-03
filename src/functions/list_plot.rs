@@ -3,10 +3,11 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, IntervalMarkers, PLOT_COLORS, PlotOptions,
-  SeriesStyle, adjust_y_range_for_filling_opts, apply_filling_option,
-  apply_plot_theme, build_plot_source, generate_scatter_svg_with_options,
-  generate_svg_with_filling, parse_image_size, parse_plot_style,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, FillTarget, Filling, IntervalMarkers,
+  PLOT_COLORS, PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
+  apply_filling_option, apply_plot_theme, build_plot_source,
+  generate_scatter_svg_with_options, generate_svg_with_filling,
+  parse_image_size, parse_plot_style,
 };
 use crate::functions::sound::audio_sample_rate;
 
@@ -20,6 +21,9 @@ struct ErrPoint {
   y: f64,
   dx: (f64, f64),
   dy: (f64, f64),
+  /// The x-coordinate is the point's position in a plain list of values
+  /// (1, 2, …) rather than given by the data.
+  implicit_x: bool,
 }
 
 impl ErrPoint {
@@ -29,12 +33,26 @@ impl ErrPoint {
       y,
       dx: (0.0, 0.0),
       dy,
+      implicit_x: true,
     }
   }
 
   fn from_xy((x, dx): (f64, (f64, f64)), (y, dy): (f64, (f64, f64))) -> Self {
-    Self { x, y, dx, dy }
+    Self {
+      x,
+      y,
+      dx,
+      dy,
+      implicit_x: false,
+    }
   }
+}
+
+/// Whether every point of the parsed data sits at its list position, so the
+/// x axis of the plot starts at 0 (`ListPlot[{y1, y2, …}]`).
+fn all_implicit_x(all_series: &[Vec<ErrPoint>]) -> bool {
+  let mut points = all_series.iter().flatten().peekable();
+  points.peek().is_some() && points.all(|p| p.implicit_x)
 }
 
 /// Strips a `Quantity[magnitude, unit]` wrapper down to its magnitude, like
@@ -1291,6 +1309,13 @@ fn split_at_mesh_levels(
   pieces
 }
 
+impl ParsedOptions {
+  /// Whether `PlotRange` fixes the x and the y range.
+  fn explicit_range(&self) -> (bool, bool) {
+    (self.plot_range_x.is_some(), self.plot_range_y.is_some())
+  }
+}
+
 /// Apply explicit PlotRange overrides from parsed options on top of the
 /// auto-computed (x_range, y_range) pair. Axes that were not specified
 /// (None) keep their auto-computed values.
@@ -1447,6 +1472,145 @@ fn include_axes_origin(
   }
 }
 
+/// The axis of a list plot an automatic range is computed for: the two
+/// differ in how far from 0 the data may lie and still have the range
+/// reach out to it, and in their padding.
+#[derive(Clone, Copy, PartialEq)]
+enum ListAxis {
+  X,
+  Y,
+}
+
+/// The automatic plot range (before padding) of one axis of a WL 15 list
+/// plot whose data spans `min..max`, as `Options[ListPlot[…], PlotRange]`
+/// reports it. Data close enough to 0 — its nearer end at most 1/6 (x) or
+/// 1/2 (y) of the farther one — is extended to 0; positive data farther
+/// away gets its lower end lowered by 1/48 (x) or 1/18 (y) of its span,
+/// which is where the axis then crosses; negative data keeps its range.
+/// `from_zero` (the positions of a plain value list) always starts at 0. A
+/// single value `v` spans `0..2 v` (`-1..1` for 0).
+fn list_axis_extent(
+  min: f64,
+  max: f64,
+  axis: ListAxis,
+  from_zero: bool,
+) -> (f64, f64) {
+  if !(min.is_finite() && max.is_finite()) {
+    return (0.0, 1.0);
+  }
+  let (min, max) = if from_zero {
+    (min.min(0.0), max.max(0.0))
+  } else {
+    (min, max)
+  };
+  if min == max {
+    return match min {
+      v if v == 0.0 => (-1.0, 1.0),
+      v if v > 0.0 => (0.0, 2.0 * v),
+      v => (2.0 * v, 0.0),
+    };
+  }
+  let (ratio, reach) = match axis {
+    ListAxis::X => (1.0 / 6.0, 1.0 / 48.0),
+    ListAxis::Y => (0.5, 1.0 / 18.0),
+  };
+  if min > 0.0 {
+    if min <= ratio * max {
+      (0.0, max)
+    } else {
+      (min - (max - min) * reach, max)
+    }
+  } else if max < 0.0 && -max <= ratio * -min {
+    (min, 0.0)
+  } else {
+    (min, max)
+  }
+}
+
+/// Pad an automatic list-plot range by its `PlotRangePadding`: `Scaled[0.02]`
+/// on both ends of the x axis; on the y axis `Scaled[0.02]` at an end that is
+/// 0 and `Scaled[0.05]` elsewhere.
+fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
+  let span = hi - lo;
+  let side = |v: f64| {
+    if axis == ListAxis::X || v == 0.0 {
+      0.02
+    } else {
+      0.05
+    }
+  };
+  (lo - span * side(lo), hi + span * side(hi))
+}
+
+/// The automatic, padded x/y ranges of a linear `ListPlot` /
+/// `ListLinePlot` of the points `all_series`, following the WL 15 rules of
+/// [`list_axis_extent`]. Also records the unpadded lower ends as the place
+/// the automatic axes cross (`AxesOrigin`) for the axes without an explicit
+/// `PlotRange`.
+fn list_plot_ranges(
+  all_series: &[Vec<(f64, f64)>],
+  implicit_x: bool,
+  (explicit_x, explicit_y): (bool, bool),
+  opts: &mut PlotOptions,
+) -> ((f64, f64), (f64, f64)) {
+  let bounds = |pick: fn(&(f64, f64)) -> f64| {
+    all_series
+      .iter()
+      .flatten()
+      .map(pick)
+      .filter(|v| v.is_finite())
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      })
+  };
+  let (x_min, x_max) = bounds(|p| p.0);
+  let (y_min, y_max) = bounds(|p| p.1);
+  let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x);
+  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false);
+  if !explicit_x {
+    opts.axes_origin_low.0 = Some(x.0);
+  }
+  if !explicit_y {
+    opts.axes_origin_low.1 = Some(y.0);
+  }
+  let (x, y_padded) =
+    (pad_list_axis(x, ListAxis::X), pad_list_axis(y, ListAxis::Y));
+  // The range does not reach out to a filling's level: `Filling -> Axis`
+  // fills to wherever the horizontal axis crosses, which is not 0 when the
+  // range leaves 0 out.
+  if !explicit_y && opts.axes_origin.1.is_none() && !(y.0 <= 0.0 && 0.0 <= y.1)
+  {
+    let axis_y = if y.0 > 0.0 { y.0 } else { y_padded.1 };
+    let at_axis = |f: &mut Filling| {
+      if *f == Filling::Axis {
+        *f = Filling::Value(axis_y);
+      }
+    };
+    at_axis(&mut opts.filling);
+    for (_, target) in &mut opts.filling_rules {
+      if let FillTarget::Level(level) = target {
+        at_axis(level);
+      }
+    }
+  }
+  (x, y_padded)
+}
+
+/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 7/6000
+/// of the image width per step, from 7 steps for series of fewer than 50
+/// points down to 3 from 1000 points on (the longest series decides).
+fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  let n = all_series.iter().map(Vec::len).max().unwrap_or(0);
+  let steps = match n {
+    0..50 => 7.0,
+    50..100 => 6.0,
+    100..250 => 5.0,
+    250..1000 => 4.0,
+    _ => 3.0,
+  };
+  steps * 11.0 / 6000.0
+}
+
 /// Compute x/y ranges from data with 4% padding.
 fn compute_ranges(all_series: &[Vec<(f64, f64)>]) -> ((f64, f64), (f64, f64)) {
   compute_ranges_scaled(all_series, false, false)
@@ -1550,6 +1714,7 @@ fn render_panel_layout(
   labels: &[Option<String>],
   parsed: &ParsedOptions,
   scatter: bool,
+  implicit_x: bool,
 ) -> Result<Expr, InterpreterError> {
   let mut svgs = Vec::with_capacity(all_series.len());
   for (idx, series) in all_series.iter().enumerate() {
@@ -1572,9 +1737,18 @@ fn render_panel_layout(
     let single = std::slice::from_ref(series);
     let range_single =
       range_series.get(idx).map_or(single, std::slice::from_ref);
-    let (x_range, y_range) =
-      compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
-    let y_range = adjust_y_range_for_filling_opts(&opts, y_range);
+    let (x_range, y_range) = if opts.log_x || opts.log_y {
+      let (x_range, y_range) =
+        compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
+      (x_range, adjust_y_range_for_filling_opts(&opts, y_range))
+    } else {
+      list_plot_ranges(
+        range_single,
+        implicit_x,
+        parsed.explicit_range(),
+        &mut opts,
+      )
+    };
     let (x_range, y_range) =
       apply_plot_range_override(parsed, x_range, y_range);
     // `PlotLayout` splits each series into its own panel; a per-series
@@ -1629,6 +1803,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data_arg(args, &parsed), true)?;
   let all_series = strip_errors(&err_series);
+  let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
@@ -1679,6 +1854,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  parsed.opts.default_point_size = Some(list_plot_point_size(&draw_series));
   if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
     include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
@@ -1687,11 +1863,16 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &labels,
       &parsed,
       !parsed.joined,
+      implicit_x,
     );
   }
   include_axes_origin(&mut range_series, parsed.opts.axes_origin);
-  let (x_range, y_range) = compute_ranges(&range_series);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
+  let (x_range, y_range) = list_plot_ranges(
+    &range_series,
+    implicit_x,
+    parsed.explicit_range(),
+    &mut parsed.opts,
+  );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let joined = parsed.joined;
   let mut parsed = parsed;
@@ -1741,6 +1922,9 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut source,
     &opts.plot_markers,
   );
+  for series in &mut source.series {
+    series.point_size = series.point_size.or(opts.default_point_size);
+  }
   for (series, labels) in source.series.iter_mut().zip(&opts.point_labels) {
     if labels.len() == series.points.len() {
       series.labels.clone_from(labels);
@@ -1842,6 +2026,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data_arg(args, &parsed), false)?;
   let all_series = strip_errors(&err_series);
+  let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
@@ -1874,11 +2059,17 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &labels,
       &parsed,
       false,
+      implicit_x,
     );
   }
-  let (x_range, mut y_range) = compute_ranges(&range_series);
-
-  y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
+  let mut range_series = range_series;
+  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
+  let (x_range, y_range) = list_plot_ranges(
+    &range_series,
+    implicit_x,
+    parsed.explicit_range(),
+    &mut parsed.opts,
+  );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   // A single curve takes a `PlotStyle` list as one combined style, as
@@ -1992,10 +2183,15 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &labels,
       &parsed,
       false,
+      false,
     );
   }
-  let (x_range, y_range) = compute_ranges(&step_series);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
+  let (x_range, y_range) = list_plot_ranges(
+    &step_series,
+    false,
+    parsed.explicit_range(),
+    &mut parsed.opts,
+  );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let svg =
     generate_svg_with_filling(&step_series, x_range, y_range, &parsed.opts)?;
@@ -2047,7 +2243,9 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
-    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+    return render_panel_layout(
+      &filtered, &filtered, &labels, &parsed, false, false,
+    );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
@@ -2084,7 +2282,9 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
-    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+    return render_panel_layout(
+      &filtered, &filtered, &labels, &parsed, false, false,
+    );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
@@ -2116,7 +2316,9 @@ pub fn list_log_linear_plot_ast(
     .collect();
 
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
-    return render_panel_layout(&filtered, &filtered, &labels, &parsed, false);
+    return render_panel_layout(
+      &filtered, &filtered, &labels, &parsed, false, false,
+    );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);

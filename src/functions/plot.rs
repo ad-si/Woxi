@@ -2636,6 +2636,9 @@ pub(crate) struct PlotOptions {
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
+  /// The `PointSize` (a fraction of the image width) of scatter dots whose
+  /// style sets none; `None` = the fixed 3 px radius dot.
+  pub default_point_size: Option<f64>,
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
@@ -2784,6 +2787,7 @@ impl Default for PlotOptions {
       aspect_full: false,
       image_size_explicit: (false, false),
       plot_markers: Vec::new(),
+      default_point_size: None,
       label_style: None,
       tick_label_style: None,
       joined_per_series: None,
@@ -3779,25 +3783,8 @@ fn generate_svg_with_options(
   // `ColorFunctionScaling` rescales over the sampled data, not the padded
   // plot range: the highest point of `Plot[Sin[x], …, ColorFunction ->
   // Function[{x, y}, Hue[y]]]` gets `Hue[1.]`.
-  let color_scale_ranges = {
-    let (mut lo_x, mut hi_x, mut lo_y, mut hi_y) = (
-      f64::INFINITY,
-      f64::NEG_INFINITY,
-      f64::INFINITY,
-      f64::NEG_INFINITY,
-    );
-    for &(x, y) in all_points.iter().flatten() {
-      if x.is_finite() && y.is_finite() {
-        (lo_x, hi_x) = (lo_x.min(x), hi_x.max(x));
-        (lo_y, hi_y) = (lo_y.min(y), hi_y.max(y));
-      }
-    }
-    if lo_x <= hi_x {
-      (lo_x, hi_x, lo_y, hi_y)
-    } else {
-      (x_min, x_max, y_min, y_max)
-    }
-  };
+  let color_scale_ranges =
+    data_extents(all_points).unwrap_or((x_min, x_max, y_min, y_max));
   let mut svg_width = opts.svg_width;
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
@@ -4623,7 +4610,7 @@ fn generate_svg_with_options(
 
           if !series_joined {
             let marker_size =
-              series_point_radius(&opts.plot_style, series_idx, render_width);
+              series_point_radius(opts, series_idx, render_width);
             draw_scatter_series(
               &mut chart,
               all_points,
@@ -4785,36 +4772,15 @@ fn generate_svg_with_options(
               .get(series_idx)
               .map(|v| v.as_slice())
               .unwrap_or(points);
-            let (mr, mg, mb) = marker.color.unwrap_or_else(|| {
-              let c = color.to_rgba();
-              (c.0, c.1, c.2)
-            });
-            let text_style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
-              .into_font()
-              .color(&RGBColor(mr, mg, mb))
-              .pos(plotters::style::text_anchor::Pos::new(
-                plotters::style::text_anchor::HPos::Center,
-                plotters::style::text_anchor::VPos::Center,
-              ));
-            chart
-              .draw_series(
-                marker_src
-                  .iter()
-                  .copied()
-                  .filter(|&(x, y)| {
-                    marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
-                  })
-                  .map(|(x, y)| {
-                    plotters::element::Text::new(
-                      marker.glyph.clone(),
-                      (x, y),
-                      text_style.clone(),
-                    )
-                  }),
-              )
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+            let c = color.to_rgba();
+            let in_view: Vec<(f64, f64)> = marker_src
+              .iter()
+              .copied()
+              .filter(|&(x, y)| {
+                marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
+              })
+              .collect();
+            draw_marker_glyphs(&mut chart, &in_view, marker, (c.0, c.1, c.2))?;
           }
         }
 
@@ -5645,6 +5611,26 @@ pub(crate) fn scatter_point_colors(
     .collect()
 }
 
+/// The `(x_min, x_max, y_min, y_max)` extent of the finite points of
+/// `series`, or `None` when there are none.
+fn data_extents(series: &[Vec<(f64, f64)>]) -> Option<(f64, f64, f64, f64)> {
+  let mut pts = series
+    .iter()
+    .flatten()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .peekable();
+  pts.peek()?;
+  Some(pts.fold(
+    (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ),
+    |(x0, x1, y0, y1), &(x, y)| (x0.min(x), x1.max(x), y0.min(y), y1.max(y)),
+  ))
+}
+
 /// Split a curve segment into maximal runs of consecutive points whose
 /// `ColorFunction` color agrees. Each run is colored by the function at the
 /// midpoint of every step, and consecutive runs share their boundary point
@@ -5715,20 +5701,22 @@ fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
 /// The radius, in render-space units, of the dots of a scatter series.
 /// `PointSize[f]` gives the dot a diameter of the fraction `f` of the image
 /// width; `AbsolutePointSize[p]` (stored negative) is p printer's points
-/// whatever the image size. Without either, the 3px default dot.
+/// whatever the image size. Without either, the plot's default
+/// `PlotOptions::default_point_size`, else the 3px default dot.
 fn series_point_radius(
-  plot_style: &[SeriesStyle],
+  opts: &PlotOptions,
   idx: usize,
   render_width: u32,
 ) -> u32 {
-  let default_radius = 3 * RESOLUTION_SCALE;
-  if plot_style.is_empty() {
-    return default_radius;
-  }
-  match plot_style[idx % plot_style.len()].point_size {
+  let plot_style = &opts.plot_style;
+  let size = plot_style
+    .get(idx % plot_style.len().max(1))
+    .and_then(|s| s.point_size)
+    .or(opts.default_point_size);
+  match size {
     Some(f) if f > 0.0 => (f * render_width as f64 * 0.5).round() as u32,
     Some(p) => (-p * 0.5 * RESOLUTION_SCALE as f64).round() as u32,
-    None => default_radius,
+    None => 3 * RESOLUTION_SCALE,
   }
 }
 
@@ -6131,8 +6119,7 @@ pub(crate) fn generate_scatter_svg_with_options(
 
     // Draw scatter points using plotters Circle markers
     for (series_idx, points) in all_series.iter().enumerate() {
-      let marker_size =
-        series_point_radius(&opts.plot_style, series_idx, render_width);
+      let marker_size = series_point_radius(opts, series_idx, render_width);
       let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
 
@@ -10195,10 +10182,89 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
 /// names none — the default graphics font size the Wolfram Language uses.
 const DEFAULT_MARKER_SIZE: f64 = 12.0;
 
-/// The glyphs `PlotMarkers -> "OpenMarkers"` cycles over the series: open
-/// (unfilled) shapes rather than the default filled dot, so overlapping
-/// series stay distinguishable by outline as well as colour.
-const OPEN_MARKER_GLYPHS: [&str; 8] = ["○", "□", "◇", "△", "▽", "☆", "⬠", "⬡"];
+/// The shapes `PlotMarkers -> "OpenMarkers"` cycles over the series (in WL
+/// 15's order): white-filled outlines rather than the default filled dot,
+/// so overlapping series stay distinguishable by outline as well as colour.
+/// Each is named by its glyph and drawn by [`open_marker_outline`].
+const OPEN_MARKER_GLYPHS: [&str; 5] = ["○", "△", "◇", "□", "▽"];
+
+/// The outline of the open marker `glyph` as offsets from the data point in
+/// printer's points (y up), the polygons WL 15's `"OpenMarkers"` insets
+/// draw; `None` for the circle (radius 3) and for any other glyph.
+fn open_marker_outline(glyph: &str) -> Option<Vec<(f64, f64)>> {
+  let r3 = 3f64.sqrt();
+  Some(match glyph {
+    "△" => vec![(0.0, 4.0), (-2.0 * r3, -2.0), (2.0 * r3, -2.0)],
+    "▽" => vec![(0.0, -4.0), (-2.0 * r3, 2.0), (2.0 * r3, 2.0)],
+    "◇" => vec![(0.0, 3.75), (3.75, 0.0), (0.0, -3.75), (-3.75, 0.0)],
+    "□" => vec![(-2.75, -2.75), (2.75, -2.75), (2.75, 2.75), (-2.75, 2.75)],
+    _ => return None,
+  })
+}
+
+/// Draw the `PlotMarkers` glyph `marker` at each of `points`, centred on
+/// the point: text at the marker's size, or for an `"OpenMarkers"` shape a
+/// white-filled outline stroked 1.5 pt wide in `rgb` (the series colour).
+fn draw_marker_glyphs<DB, CT>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  points: &[(f64, f64)],
+  marker: &PlotMarker,
+  rgb: (u8, u8, u8),
+) -> Result<(), InterpreterError>
+where
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+{
+  let err = |e: plotters::drawing::DrawingAreaErrorKind<DB::ErrorType>| {
+    InterpreterError::EvaluationError(format!("Plot: {e}"))
+  };
+  let (mr, mg, mb) = marker.color.unwrap_or(rgb);
+  let color = RGBColor(mr, mg, mb);
+  if marker.open {
+    let scale = RESOLUTION_SCALE as f64;
+    let stroke = color.stroke_width((1.5 * scale).round() as u32);
+    if let Some(outline) = open_marker_outline(&marker.glyph) {
+      let px: Vec<(i32, i32)> = outline
+        .iter()
+        .map(|&(dx, dy)| {
+          ((dx * scale).round() as i32, (-dy * scale).round() as i32)
+        })
+        .collect();
+      let mut closed = px.clone();
+      closed.push(px[0]);
+      chart
+        .draw_series(points.iter().map(|&p| {
+          EmptyElement::at(p)
+            + Polygon::new(px.clone(), WHITE.filled())
+            + PathElement::new(closed.clone(), stroke)
+        }))
+        .map_err(err)?;
+    } else {
+      let r = (3.0 * scale).round() as i32;
+      chart
+        .draw_series(points.iter().map(|&p| {
+          EmptyElement::at(p)
+            + Circle::new((0, 0), r, WHITE.filled())
+            + Circle::new((0, 0), r, stroke)
+        }))
+        .map_err(err)?;
+    }
+    return Ok(());
+  }
+  let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+    .into_font()
+    .color(&color)
+    .pos(plotters::style::text_anchor::Pos::new(
+      plotters::style::text_anchor::HPos::Center,
+      plotters::style::text_anchor::VPos::Center,
+    ));
+  chart
+    .draw_series(points.iter().map(|&p| {
+      plotters::element::Text::new(marker.glyph.clone(), p, style.clone())
+    }))
+    .map_err(err)?;
+  Ok(())
+}
 
 /// Read one `PlotMarkers` entry: a glyph, optionally wrapped in `Style`
 /// (which may carry a colour and a font size in any order) or paired with
@@ -10211,6 +10277,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
       glyph: s.clone(),
       size: DEFAULT_MARKER_SIZE,
       color: None,
+      open: false,
     }),
     // `Row[{a, b, …}]` — the pieces laid side by side as one text glyph,
     // e.g. a number followed by its unit.
@@ -10233,6 +10300,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         glyph,
         size: DEFAULT_MARKER_SIZE,
         color: None,
+        open: false,
       })
     }
     // `Style[marker, directives…]` — a colour and/or a font size.
@@ -10288,6 +10356,7 @@ pub(crate) fn parse_plot_markers(
           glyph: (*glyph).to_string(),
           size: DEFAULT_MARKER_SIZE,
           color: None,
+          open: true,
         })
       })
       .collect();
@@ -10371,9 +10440,13 @@ where
   // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
   // the other series, linearly interpolated at this point's x so
   // irregularly spaced datasets fill correctly.
-  let stem_style =
-    fill_paint(series_filling_style(opts, series_idx), (r, g, b))
-      .stroke_width(RESOLUTION_SCALE);
+  // WL 15 draws the stems of a filled scatter at Opacity[0.3], a little
+  // stronger than the 0.2 of a filled curve's area.
+  let stem_style = match series_filling_style(opts, series_idx) {
+    None => RGBColor(r, g, b).mix(0.3),
+    fs => fill_paint(fs, (r, g, b)),
+  }
+  .stroke_width(RESOLUTION_SCALE);
   let stem_targets: Vec<((f64, f64), f64)> =
     match series_fill_target(opts, series_idx) {
       FillTarget::Level(level) => level
@@ -10408,41 +10481,17 @@ where
   // `PlotMarkers` replaces the round dot with its glyph, drawn
   // centred on the point at the size the marker spec asks for.
   if let Some(marker) = series_marker(&opts.plot_markers, series_idx) {
-    let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
-    let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
-      .into_font()
-      .color(&RGBColor(mr, mg, mb))
-      .pos(plotters::style::text_anchor::Pos::new(
-        plotters::style::text_anchor::HPos::Center,
-        plotters::style::text_anchor::VPos::Center,
-      ));
-    chart
-      .draw_series(finite_pts.iter().map(|&(x, y)| {
-        plotters::element::Text::new(
-          marker.glyph.clone(),
-          (x, y),
-          style.clone(),
-        )
-      }))
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    draw_marker_glyphs(chart, &finite_pts, marker, (r, g, b))?;
   } else {
     // `ColorFunction -> f` colors each dot by `f` at its own position
     // (rescaled over the plotted data when `ColorFunctionScaling` is on).
-    let x_range = all_series
-      .iter()
-      .flatten()
-      .filter(|(x, y)| x.is_finite() && y.is_finite())
-      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
-        (lo.min(x), hi.max(x))
-      });
+    let cf_ranges =
+      data_extents(all_series).unwrap_or((x_min, x_max, y_min, y_max));
     let dot_color = |p: (f64, f64)| match &opts.color_function {
-      Some(cf) => color_function_rgb(
-        cf,
-        opts.color_function_scaling,
-        p,
-        (x_range.0, x_range.1, y_min, y_max),
-      )
-      .map_or(color, |(r, g, b)| RGBColor(r, g, b)),
+      Some(cf) => {
+        color_function_rgb(cf, opts.color_function_scaling, p, cf_ranges)
+          .map_or(color, |(r, g, b)| RGBColor(r, g, b))
+      }
       None => color,
     };
     chart

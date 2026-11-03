@@ -197,6 +197,9 @@ pub struct PlotMarker {
   pub size: f64,
   /// Colour from `Style[marker, colour]`; `None` = the series colour.
   pub color: Option<(u8, u8, u8)>,
+  /// One of the `"OpenMarkers"` shapes (named by `glyph`), drawn as a
+  /// white-filled outline in the series colour rather than as text.
+  pub open: bool,
 }
 
 /// A single data series within a plot.

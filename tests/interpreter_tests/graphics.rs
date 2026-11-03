@@ -9894,7 +9894,8 @@ mod plot3d {
       };
       let plain =
         radius(r#"ListPlot[{{0, 0}, {1, 1}}, ImageSize -> {500, 350}]"#);
-      assert_eq!(plain, 30.0, "the default dot is a 3px radius");
+      // WL 15's default PointSize[0.012833] of a short series, 500 px wide.
+      assert_eq!(plain, 32.0, "the default dot is PointSize[0.012833]");
       // A bare directive, a list and a Directive[…] all reach the dots.
       for style in [
         "PointSize[0.015]",
@@ -11732,9 +11733,29 @@ mod plot3d {
       let (_, top, right, _) = plot_area(&svg);
       assert_eq!(axes_crossing(&svg), (right, top));
 
+      let svg = export_svg("ListPlot[{{-4, -5}, {-3, -6}, {-2, -8}}]");
+      let (_, top, right, _) = plot_area(&svg);
+      assert_eq!(axes_crossing(&svg), (right, top));
+    }
+
+    /// Far from 0, a list plot's axes cross at its automatic range's lower
+    /// ends — the data minima lowered by 1/48 (x) and 1/18 (y) of the data
+    /// span — inside the padding of Scaled[0.02] (x) and Scaled[0.05] (y).
+    #[test]
+    fn list_plot_axes_cross_at_the_lowered_minima() {
       let svg = export_svg("ListPlot[{{2, 5}, {3, 6}, {4, 8}}]");
-      let (left, _, _, bottom) = plot_area(&svg);
-      assert_eq!(axes_crossing(&svg), (left, bottom));
+      let (left, top, right, bottom) = plot_area(&svg);
+      let (x, y) = axes_crossing(&svg);
+      let expected_x = left + (right - left) * 0.02 / 1.04;
+      let expected_y = bottom - (bottom - top) * 0.05 / 1.10;
+      assert!(
+        (x - expected_x).abs() < 1.5,
+        "y axis at {x}, not {expected_x}"
+      );
+      assert!(
+        (y - expected_y).abs() < 1.5,
+        "x axis at {y}, not {expected_y}"
+      );
     }
 
     /// An all-positive curve has its x axis at its lowest value, inside the
@@ -39569,36 +39590,52 @@ mod list_plot_markers_and_epilog {
       "ListPlot[{{{0, 1.}, {1, 2.}}, {{0, 3.}, {1, 4.}}, {{0, 5.}, {1, 6.}}}, \
        PlotMarkers -> \"OpenMarkers\"]",
     );
-    let markers = marker_glyphs(&svg);
-    // The literal option name must never be drawn as text.
+    // The named marker set is drawn as shapes, never as text.
     assert!(
-      markers.iter().all(|(t, _)| t != "OpenMarkers"),
-      "the named marker set must not draw its own name: {svg}"
+      marker_glyphs(&svg).iter().all(|(t, _)| {
+        !["OpenMarkers", "○", "△", "◇", "□", "▽"].contains(&t.as_str())
+      }),
+      "no glyph text: {svg}"
     );
-    // Each series draws its own open (hollow) shape glyph, one per point.
-    let open_shapes = ["○", "□", "◇"];
-    for glyph in open_shapes {
-      assert_eq!(
-        markers.iter().filter(|(t, _)| t == glyph).count(),
-        2,
-        "two points for the glyph {glyph:?}: {svg}"
-      );
-    }
-    let distinct_colors: std::collections::HashSet<_> = markers
-      .iter()
-      .filter(|(t, _)| open_shapes.contains(&t.as_str()))
-      .map(|(_, fill)| fill.clone())
+    // WL 15 cycles circle, up-triangle, diamond, …: white-filled outlines
+    // stroked 1.5 pt wide in the series colour.
+    let outlined = |stroke: &str| {
+      svg
+        .matches(&format!("stroke=\"{stroke}\" stroke-width=\"15\""))
+        .count()
+    };
+    assert_eq!(
+      svg
+        .matches("r=\"30\" opacity=\"1\" fill=\"#FFFFFF\"")
+        .count(),
+      2
+    );
+    assert_eq!(outlined("#3D99CC"), 2, "two circles: {svg}");
+    let polygons: Vec<&str> = svg
+      .split("<polyline")
+      .skip(1)
+      .map(|p| &p[..p.find("/>").unwrap()])
       .collect();
-    assert_eq!(
-      distinct_colors.len(),
-      3,
-      "each series' open shape keeps its own series colour: {svg}"
-    );
-    assert_eq!(
-      svg.matches("<circle").count(),
-      0,
-      "glyphs replace the dots: {svg}"
-    );
+    // A closed triangle repeats its first vertex: 4 points; a diamond 5.
+    let corners = |p: &str| {
+      let pts = p.split("points=\"").nth(1).unwrap();
+      pts[..pts.find('"').unwrap()].split_whitespace().count()
+    };
+    assert_eq!(polygons.iter().filter(|p| corners(p) == 4).count(), 2);
+    assert_eq!(polygons.iter().filter(|p| corners(p) == 5).count(), 2);
+    assert_eq!(svg.matches("fill=\"#FFFFFF\" points=").count(), 4);
+    let colors: std::collections::HashSet<_> = polygons
+      .iter()
+      .map(|p| {
+        p.split("stroke=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+      })
+      .collect();
+    assert_eq!(colors.len(), 2, "each series keeps its own colour: {svg}");
   }
 
   #[test]
@@ -45096,5 +45133,150 @@ mod wl_table_layout {
       svg.starts_with("<svg width=\"100\" height=\"196\""),
       "{svg}"
     );
+  }
+}
+
+
+// WL 15 list plots reach out to 0 when the data lies close enough to it,
+// lower far-from-0 data a little below its minimum (where the axis then
+// crosses) and pad the x axis by Scaled[0.02], the y axis by Scaled[0.05]
+// (Scaled[0.02] at an end that is 0). Each automatic plot must draw exactly
+// what the equivalent explicit `PlotRange` (and `AxesOrigin`) draws.
+mod list_plot_wl15_ranges {
+  use super::*;
+
+  fn same(auto: &str, explicit: &str) {
+    assert_eq!(export_svg(auto), export_svg(explicit), "{auto}");
+  }
+
+  /// `ListPlot[data, PlotRange -> …, AxesOrigin -> …]` for the unpadded
+  /// automatic range `(x0, x1) × (y0, y1)`, padded the WL 15 way.
+  fn explicit(
+    head: &str,
+    data: &str,
+    (x0, x1): (f64, f64),
+    (y0, y1): (f64, f64),
+  ) -> String {
+    let (xs, ys) = (x1 - x0, y1 - y0);
+    let pad = |v: f64| if v == 0.0 { 0.02 } else { 0.05 };
+    format!(
+      "{head}[{data}, PlotRange -> {{{{{}, {}}}, {{{}, {}}}}}, AxesOrigin -> {{{x0}, {y0}}}]",
+      x0 - 0.02 * xs,
+      x1 + 0.02 * xs,
+      y0 - pad(y0) * ys,
+      y1 + pad(y1) * ys,
+    )
+  }
+
+  #[test]
+  fn value_list_starts_both_axes_at_zero() {
+    same(
+      "ListPlot[{5, 2, 6}]",
+      &explicit("ListPlot", "{5, 2, 6}", (0.0, 3.0), (0.0, 6.0)),
+    );
+  }
+
+  #[test]
+  fn list_line_plot_follows_the_same_rule() {
+    same(
+      "ListLinePlot[{5, 2, 6}]",
+      &explicit("ListLinePlot", "{5, 2, 6}", (0.0, 3.0), (0.0, 6.0)),
+    );
+  }
+
+  #[test]
+  fn negative_values_reach_up_to_zero() {
+    same(
+      "ListPlot[{-5, -2, -6}]",
+      &explicit("ListPlot", "{-5, -2, -6}", (0.0, 3.0), (-6.0, 0.0))
+        .replace("AxesOrigin -> {0, -6}", "AxesOrigin -> {0, 0}"),
+    );
+  }
+
+  #[test]
+  fn far_from_zero_lowers_the_minimum() {
+    // x: 1..4 lowered by 3/48; y: 5..7 lowered by 2/18.
+    let data = "{{1, 5}, {4, 7}}";
+    same(
+      &format!("ListPlot[{data}]"),
+      &explicit(
+        "ListPlot",
+        data,
+        (1.0 - 3.0 / 48.0, 4.0),
+        (5.0 - 2.0 / 18.0, 7.0),
+      ),
+    );
+  }
+
+  #[test]
+  fn x_reaches_zero_within_a_sixth_of_its_maximum() {
+    // 0.5 <= 3/6 reaches 0, 0.6 does not; y 2..6 has 2 <= 6/2 and does too.
+    let near = "{{0.5, 2}, {3, 6}}";
+    same(
+      &format!("ListPlot[{near}]"),
+      &explicit("ListPlot", near, (0.0, 3.0), (0.0, 6.0)),
+    );
+    let far = "{{0.6, 2}, {3, 6}}";
+    same(
+      &format!("ListPlot[{far}]"),
+      &explicit("ListPlot", far, (0.6 - 2.4 / 48.0, 3.0), (0.0, 6.0)),
+    );
+  }
+
+  #[test]
+  fn constant_value_spans_zero_to_twice_it() {
+    same(
+      "ListPlot[{3, 3}]",
+      &explicit("ListPlot", "{3, 3}", (0.0, 2.0), (0.0, 6.0)),
+    );
+  }
+
+  #[test]
+  fn filling_axis_fills_to_the_raised_axis() {
+    // The range does not stretch down to 0 for the filling; the stems end
+    // on the axis instead.
+    let y0 = 5.0 - 1.0 / 18.0;
+    same(
+      "ListPlot[{{1, 5}, {3, 6}}, Filling -> Axis]",
+      &explicit(
+        "ListPlot",
+        &format!("{{{{1, 5}}, {{3, 6}}}}, Filling -> {y0}"),
+        (1.0 - 2.0 / 48.0, 3.0),
+        (y0, 6.0),
+      ),
+    );
+  }
+
+  /// The radius of the first scatter dot, in SVG units (10 per pixel).
+  fn dot_radius(svg: &str) -> u32 {
+    let at = svg.find("<circle").expect("a dot");
+    let r = &svg[at..];
+    let r = &r[r.find(" r=\"").unwrap() + 4..];
+    r[..r.find('"').unwrap()].parse().unwrap()
+  }
+
+  #[test]
+  fn dots_shrink_with_the_number_of_points() {
+    // PointSize[k 11/6000] of the 360 px width: k = 7, 6, 5, 4, 3.
+    for (n, r) in [(10, 23), (60, 20), (150, 17), (300, 13), (1000, 10)] {
+      let svg = export_svg(&format!("ListPlot[Range[{n}]]"));
+      assert_eq!(dot_radius(&svg), r, "n = {n}");
+    }
+  }
+
+  #[test]
+  fn filling_stems_are_drawn_at_opacity_0_3() {
+    let svg = export_svg("ListPlot[{1, 3}, Filling -> Axis]");
+    assert_eq!(
+      svg.matches("opacity=\"0.3\" stroke=\"#3D99CC\"").count(),
+      2,
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn dots_scale_with_the_image_width() {
+    let svg = export_svg("ListPlot[Range[10], ImageSize -> 720]");
+    assert_eq!(dot_radius(&svg), 46);
   }
 }
