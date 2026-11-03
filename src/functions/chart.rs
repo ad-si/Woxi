@@ -2612,6 +2612,21 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "ChartLegends" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
+          // `Placed[labels, pos]` carries the labels in its first argument;
+          // a legend placed below or above the chart is laid out as a row.
+          let val = match &val {
+            Expr::FunctionCall { name, args }
+              if name == "Placed" && !args.is_empty() =>
+            {
+              if matches!(&args[1..], [Expr::Identifier(p), ..]
+                if matches!(p.as_str(), "Below" | "Bottom" | "Above" | "Top"))
+              {
+                opts.legend_layout = LegendLayout::Row;
+              }
+              args[0].clone()
+            }
+            _ => val,
+          };
           match &val {
             // `ChartLegends -> Automatic` — let the caller fill in legend
             // labels from the input shape (e.g. Association keys). Fall
