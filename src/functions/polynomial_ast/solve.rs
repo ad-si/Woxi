@@ -2100,6 +2100,57 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
   roots
 }
 
+/// The rules of a conjunction, one list per branch of the disjunctions it
+/// holds (a `Sequence` of them when there are several).
+fn and_to_rules(input: &Expr, collect: &dyn Fn(&Expr) -> Vec<Expr>) -> Expr {
+  fn dnf(e: &Expr) -> Vec<Vec<Expr>> {
+    let (is_and, parts): (bool, Vec<Expr>) = match e {
+      Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+        (name == "And", args.to_vec())
+      }
+      Expr::BinaryOp {
+        op: op @ (BinaryOperator::And | BinaryOperator::Or),
+        left,
+        right,
+      } => (
+        matches!(op, BinaryOperator::And),
+        vec![*left.clone(), *right.clone()],
+      ),
+      _ => return vec![vec![e.clone()]],
+    };
+    if is_and {
+      parts.iter().fold(vec![Vec::new()], |acc, p| {
+        let mut out = Vec::new();
+        for a in &acc {
+          for b in dnf(p) {
+            out.push(a.iter().chain(b.iter()).cloned().collect());
+          }
+        }
+        out
+      })
+    } else {
+      parts.iter().flat_map(dnf).collect()
+    }
+  }
+  let branches = dnf(input);
+  let lists: Vec<Expr> = branches
+    .iter()
+    .map(|conj| {
+      Expr::List(conj.iter().flat_map(collect).collect::<Vec<_>>().into())
+    })
+    .collect();
+  if lists.len() == 1 {
+    return lists.into_iter().next().unwrap();
+  }
+  call(
+    "Sequence",
+    lists
+      .into_iter()
+      .filter(|l| matches!(l, Expr::List(items) if !items.is_empty()))
+      .collect(),
+  )
+}
+
 /// ToRules[eqns] — converts logical combinations of equations to lists of rules.
 /// Takes output from Roots/Reduce (Or/And of equations) and converts to Solve-style rules.
 /// Discards inequalities (!=).
@@ -2214,19 +2265,17 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(call("Sequence", result))
     }
-    // And[x == a, y == b] → {x -> a, y -> b}
+    // And[x == a, y == b] → {x -> a, y -> b}; a disjunction inside is
+    // distributed first: `(x == 0 || x == 1) && y == x^2` gives
+    // `{x -> 0, y -> x^2}`, `{x -> 1, y -> x^2}`.
     Expr::FunctionCall { name, .. } if name == "And" => {
-      let rules = collect_and_rules(input);
-      Ok(Expr::List(rules.into()))
+      Ok(and_to_rules(input, &collect_and_rules))
     }
     // BinaryOp::And tree (used by reduce_multi_var_and for single solution)
     Expr::BinaryOp {
       op: BinaryOperator::And,
       ..
-    } => {
-      let rules = collect_and_rules(input);
-      Ok(Expr::List(rules.into()))
-    }
+    } => Ok(and_to_rules(input, &collect_and_rules)),
     // Single equation: x == a → {x -> a}
     Expr::Comparison { .. } => {
       let rules = collect_and_rules(input);
@@ -2976,6 +3025,15 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let previous = crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
+    .with(|f| f.replace(false));
+  let result = solve_ast_inner(args);
+  crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
+    .with(|f| f.set(previous));
+  result
+}
+
+fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A quadratic with machine coefficients is solved numerically, exactly as
   // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
   if args.len() == 2

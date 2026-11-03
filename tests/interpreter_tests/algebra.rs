@@ -23777,11 +23777,22 @@ mod reduce_vanishing_coefficient_branch {
     // must not re-solve through that value (it gave x == f[x] solutions).
     assert_eq!(
       interpret(
+        "Round[Sort[N[{x, y} /. Solve[{(1 - x) (x + y) - 4 x == 0, \
+         (1 - y) (x + y) - y == 0}, {x, y}]] 10^6]]"
+      )
+      .unwrap(),
+      "{{-4737034, 1434259}, {0, 0}, {70368, 232408}}"
+    );
+    // Reduce keeps y as a polynomial in x, which ToRules leaves alone.
+    assert_eq!(
+      interpret(
         "Round[Sort[N[{x, y} /. {ToRules[Reduce[{(1 - x) (x + y) - 4 x == 0, \
          (1 - y) (x + y) - y == 0}, {x, y}]]}] 10^6]]"
       )
       .unwrap(),
-      "{{-4737034, 1434259}, {0, 0}, {70368, 232408}}"
+      "{{-4737034, Round[250000.*x*(13. + 3.*x)]}, \
+       {0, Round[250000.*x*(13. + 3.*x)]}, \
+       {70368, Round[250000.*x*(13. + 3.*x)]}}"
     );
     assert_eq!(
       interpret(
@@ -25267,6 +25278,138 @@ mod solve_radicand_content {
     assert_eq!(
       interpret("Solve[2 x^2 + 4 a x + b == 0, x]").unwrap(),
       "{{x -> (-2*a - Sqrt[2]*Sqrt[2*a^2 - b])/2}, {x -> (-2*a + Sqrt[2]*Sqrt[2*a^2 - b])/2}}"
+    );
+  }
+}
+
+// Reduce of a two-variable polynomial system in shape position keeps the
+// second variable as a polynomial in the first; the roots are in canonical
+// order and a solved linear value is in its square-free factored form.
+mod reduce_shape_position_and_root_order {
+  use super::*;
+
+  #[test]
+  fn second_variable_as_polynomial_in_first() {
+    assert_eq!(
+      interpret(
+        "Reduce[{(1 - x) (x + y) - 4 x == 0, (1 - y) (x + y) - y == 0}, {x, y}]"
+      )
+      .unwrap(),
+      "(x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3) && \
+       y == (x*(13 + 3*x))/4"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 1, x == y}, {x, y}]").unwrap(),
+      "(x == -(1/Sqrt[2]) || x == 1/Sqrt[2]) && y == x"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 5, x y == 2}, {x, y}]").unwrap(),
+      "(x == -2 || x == -1 || x == 1 || x == 2) && y == (5*x - x^3)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y == 1, x^2 + 2 y == 3}, {x, y}]").unwrap(),
+      "(x == -I || x == I) && y == 2"
+    );
+    assert_eq!(
+      interpret("Reduce[{y^2 == x, x == 4}, {x, y}]").unwrap(),
+      "x == 4 && (y == -2 || y == 2)"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 1, x == y}, {x, y}, Reals]").unwrap(),
+      "(x == -(1/Sqrt[2]) || x == 1/Sqrt[2]) && y == x"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y == 1, x^2 + 2 y == 3}, {x, y}, Reals]")
+        .unwrap(),
+      "False"
+    );
+    // A product equation still splits into branches.
+    assert_eq!(
+      interpret("Reduce[{x y == 0, x + y == 1}, {x, y}]").unwrap(),
+      "(x == 0 && y == 1) || (x == 1 && y == 0)"
+    );
+    // Solve gives the values.
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, x == y}, {x, y}]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn to_rules_distributes_a_disjunction() {
+    assert_eq!(
+      interpret("{ToRules[(x == 0 || x == 1) && y == x^2 + 1]}").unwrap(),
+      "{{x -> 0, y -> 1 + x^2}, {x -> 1, y -> 1 + x^2}}"
+    );
+    assert_eq!(
+      interpret("{ToRules[x == 4 && (y == -2 || y == 2)]}").unwrap(),
+      "{{x -> 4, y -> -2}, {x -> 4, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn roots_in_canonical_order() {
+    assert_eq!(
+      interpret("Reduce[-x + 14 x^2 + 3 x^3 == 0, x]").unwrap(),
+      "x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3"
+    );
+    assert_eq!(
+      interpret("Reduce[1 - 3 x + x^2 == 0, x]").unwrap(),
+      "x == (3 - Sqrt[5])/2 || x == (3 + Sqrt[5])/2"
+    );
+    assert_eq!(
+      interpret("Reduce[(x^2 + 1) (x - 3) == 0, x]").unwrap(),
+      "x == -I || x == I || x == 3"
+    );
+    assert_eq!(
+      interpret("Reduce[(x^2 - 2) (x - 5) == 0, x]").unwrap(),
+      "x == 5 || x == -Sqrt[2] || x == Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Reduce[-x + x^4 == 0, x]").unwrap(),
+      "x == 0 || x == 1 || x == -(-1)^(1/3) || x == (-1)^(2/3)"
+    );
+  }
+
+  #[test]
+  fn linear_value_square_free_form() {
+    assert_eq!(
+      interpret("Reduce[2 y == x^2 + x, y]").unwrap(),
+      "y == (x*(1 + x))/2"
+    );
+    assert_eq!(
+      interpret("Reduce[y == x^2 - x, y]").unwrap(),
+      "y == (-1 + x)*x"
+    );
+    assert_eq!(
+      interpret("Reduce[2 y == x^2 - 1, y]").unwrap(),
+      "y == (-1 + x^2)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[3 y == x^2 + 2 x + 1, y]").unwrap(),
+      "y == (1 + x)^2/3"
+    );
+    assert_eq!(
+      interpret("Reduce[2 y == 5 x - x^3, y]").unwrap(),
+      "y == (5*x - x^3)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[y + x^2 + x == 0, y]").unwrap(),
+      "y == -x - x^2"
+    );
+    // A symbolic denominator must not vanish.
+    assert_eq!(
+      interpret("Reduce[2 y == a/b + 1, y]").unwrap(),
+      "b != 0 && y == (a + b)/(2*b)"
+    );
+    assert_eq!(
+      interpret("Reduce[y == 1/x + 1/(x+1), y]").unwrap(),
+      "x*(1 + x) != 0 && y == (1 + 2*x)/(x*(1 + x))"
+    );
+    // Not linear: the radical is no coefficient.
+    assert_eq!(
+      interpret("Reduce[-4 + Sqrt[x] + x == 0, x]").unwrap(),
+      "x == (9 - Sqrt[17])/2"
     );
   }
 }
