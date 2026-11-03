@@ -7855,51 +7855,81 @@ sparse `LinearSolve` whose residual stays above `10^-12` in wolframscript.
 
 ## `DSolve` particular solutions and constants
 
-- `y'' + y == Cos[x] + Sin[x]` and other trigonometric forcing: wolframscript
-  gives the variation-of-parameters solution over a common denominator
-  (`(-2*x*Cos[x] + 2*Cos[x]^3 + …)/4`), Woxi a simplified one
-  (`(Cos[x] - x*Cos[x] + x*Sin[x])/2`). Both satisfy the equation; matching
-  needs wolframscript's choice of method per forcing term (polynomial and
-  exponential forcing are not written that way) and its integrals of
-  products such as `Sin[x] Sin[2 x]`.
-- `y'' + y' == f` (no `y` term) is reduced to first order in wolframscript,
-  which makes the homogeneous part `-(C[1]/E^x) + C[2]`; Woxi writes
-  `C[1]/E^x + C[2]`.
-- Linear first-order systems with a symbolic coefficient
-  (`{y' == a y + z, z' == y}`) or a variable one (`y' == x y + z`) stay
-  unevaluated, and an exact system with irrational eigenvalues
-  (`{y' == 2 y + z, z' == y}`) is solved in machine numbers
-  (`0.14644660940672624/E^(0.41421356237309515*x) + …`) where wolframscript
-  gives `(E^(x - Sqrt[2]*x)*(2 - Sqrt[2] + 2*E^(2*Sqrt[2]*x) + …)*C[1])/4`;
-  the system solver works with machine eigenvalues throughout.
-- Boundary-value solutions are combined differently: the `u[1] == 1,
-  u[2] == 2` solution of `-2 u'/u'' == x` is `(-2 + 3*x)/x`, Woxi's
-  `3 - 2/x`; a forced first-order solution at `t -> 0` prints as one
-  fraction, `(5*(45/2 + 40*Pi^2))/(9/4 + 4*Pi^2)`.
+- Variation of parameters needs wolframscript's integrals of trigonometric
+  products, which depend on how the integrand is scaled:
+  `Integrate[Cos[x] Sin[2 x], x]` is `-1/2*Cos[x] - Cos[3*x]/6` but
+  `Integrate[Cos[x] Sin[2 x]/2, x]` is `-1/3*Cos[x]^3`, and
+  `Integrate[Sin[x] Cos[3 x], x]` is `Cos[x]^2/2 - Cos[4*x]/8` (Woxi
+  `Cos[2*x]/4 - Cos[4*x]/8`). So `y'' + 4 y == Cos[x]` gives
+  `(4*Cos[x]^3*Cos[2*x] + …)/12` there and `(3*Cos[x]*Cos[2*x] +
+  Cos[2*x]*Cos[3*x] + …)/12` in Woxi (equal values), and likewise the
+  initial value problem with `Sin[x]` forcing.
+- Euler equations (`x^2 y'' + x y' - y == 0`, `x^2 y'' + y == 0`) and other
+  variable-coefficient equations that are not exact
+  (`x y'' + 2 y' + x y == 0`) stay unevaluated, and so does a system that
+  reduces to one (`{y' == 2 z, z' == -y/(2 x^2)}`). wolframscript labels the
+  constants of some Euler solutions in its own way
+  (`x^2*C[2]*Cos[3*Log[x]] + x^2*C[1]*Sin[3*Log[x]]`,
+  `C[1]/x^2 + (2*C[2]*Log[x])/x^2`).
+- A boundary-value solution over a denominator built from powers of `E` has
+  its signs normalized differently: `{y'' == y, y[0] == 1, y[1] == 0}` is
+  `-((-E^2 + E^(2*x))/(E^x*(-1 + E^2)))` in wolframscript and
+  `-((E^2 - E^(2*x))/(E^x*(1 - E^2)))` in Woxi, the sign rule of `Together`
+  for such numerators (`Together[E^(2 - x) - E^x]` is
+  `-((-E^2 + E^(2*x))/E^x)` there).
 
-## `Reduce` of a polynomial system in triangular form
+## `Reduce` of polynomial systems outside shape position
 
-`Reduce[{(1 - x) (x + y) - 4 x == 0, (1 - y) (x + y) - y == 0}, {x, y}]` is
-`(x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3) && y ==
-(x*(13 + 3*x))/4` in wolframscript: the last variable as a polynomial in the
-first. Woxi lists the three solution pairs with `y` evaluated.
+Systems whose Gröbner basis is `{g(x), a y - q(x)}` are answered as
+`(x == … || …) && y == q(x)`, as in wolframscript. Other shapes differ:
+`{x^2 + y^2 == 1, x^2 - y^2 == 0}` is `((x == -(1/Sqrt[2]) || x ==
+1/Sqrt[2]) && y == -x) || (… && y == x)` there (the second equation factored
+into branches) where Woxi lists the four points; `{x^2 == 1, y^2 == 4}`
+enumerates the points with `y` first; a parametric system
+(`{x^2 + y^2 == 1, x + y == a}`) keeps `y == a - x` there. A solved linear
+value that is not a polynomial is expanded in wolframscript
+(`Reduce[3 y == Sin[x] + 1, y]` is `y == 1/3 + Sin[x]/3`; Woxi
+`y == (1 + Sin[x])/3`).
 
 ## Remaining symbolic forms
 
-- `Eigenvectors` of a general symbolic 3×3 matrix: wolframscript gives
-  vectors in the three `Root` objects of the characteristic polynomial; Woxi
-  stays unevaluated.
-- `MeijerG[{{}, {}}, {{a}, {b}}, z, r]` with the fourth argument is
-  unevaluated (wolframscript: a `BesselJ[a - b, 2*z^(3/2)]` form for
-  `r = 1/3`).
-- `DifferenceDelta[i^2, {i, n}]` (a step `n`) is unevaluated; wolframscript
-  writes it with `HypergeometricPFQ[{-n}, {}, 1]` terms.
-- `DiscreteAsymptotic[Log[n!], n -> Infinity]` is
-  `Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n]` in
-  wolframscript (Woxi `n*Log[n]`); `Sin[n]` gives an exponential form there;
-  the coefficients of `-(z/(-1 + z + z^2))` are
-  `2^n*(-1 + Sqrt[5])^(-1 - n) - (2^n*(-1 + Sqrt[5])^(-1 - n))/Sqrt[5]`
-  (Woxi the equal `(2/(-1 + Sqrt[5]))^n/Sqrt[5]`).
+- `Eigenvectors` of an exact numeric 3×3 matrix with `Root` eigenvalues:
+  wolframscript writes each component as its own `Root` object
+  (`{Root[9 - 44*#1 + 30*#1^2 + 33*#1^3 & , 2, 0], …}`), Woxi as a
+  rational function of the eigenvalue. Radical eigenvectors are normalized
+  differently too (`{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}`: `-((-15 -
+  Sqrt[33])/(33 + 7*Sqrt[33]))` against `(15 + Sqrt[33])/(33 +
+  7*Sqrt[33])`; `{{1, 1, 0}, {1, 2, 1}, {0, 1, 3}}`: `{-1, -1, 1}` against
+  `{1, 1, -1}`).
+- `MeijerG` closed forms cover one pole series (`G^{1,0}_{0,1}`,
+  `G^{1,1}_{1,1}`, `G^{1,0}_{0,2}`) of a symbol, with `r = n` or `r = 1/n`.
+  A compound argument (`MeijerG[{{}, {}}, {{a}, {b}}, x^2]`, wolframscript
+  `x^(-a + b)*(x^2)^(a + (a - b)/2 + (-a + b)/2)*BesselJ[a - b, 2*x]`) or
+  other `r` stay unevaluated, and `G^{1,1}_{1,1}` with `r = 2` orders its
+  factors `z^(b/2)*(1 + Sqrt[z])^(-1 + a - b)` where wolframscript has
+  `(1 + Sqrt[z])^(-1 + a - b)*z^(b/2)` (the Times order of a power of a
+  symbol against a power of a sum holding its root).
+- `DiscreteAsymptotic[Sin[n], n -> Infinity]` stays unevaluated;
+  wolframscript returns one exponential branch written in `Cos[1/2]` and
+  `Sin[1/2]`. Of the `Log` and `Exp` forms of factorials only `n!`,
+  `Gamma[n]` and `Gamma[n + 1]` (times constants and exponentials) are
+  reproduced: `Log[(2 n)!]`, `Log[Gamma[2 n]]`, `Sqrt[n!]` and `n! + 1`
+  (`1 + (n^(1/2 + n)*Sqrt[2*Pi])/E^n` there) differ, as does
+  `DiscreteAsymptotic[Gamma[n + 1], n -> Infinity]`
+  (`E^(-1 - n)*(1 + n)^(1/2 + n)*Sqrt[2*Pi]`). `Log[n! 2^n]` comes out
+  right up to the product `2^n*Sqrt[2*Pi]`, which wolframscript writes
+  `2^(1/2 + n)*Sqrt[Pi]` (and `3^n Sqrt[6]` as `Sqrt[2]*3^(1/2 + n)`).
+- Indefinite integrals of `p(x) Sqrt[q(x)]` for a quadratic `q` stay
+  unevaluated. wolframscript's forms vary with the radicand:
+  `(x*Sqrt[1 + x^2] + ArcSinh[x])/2`, but
+  `(x*Sqrt[4 + x^2])/2 + 2*ArcTanh[x/Sqrt[4 + x^2]]`,
+  `(x*Sqrt[2 - 3*x^2])/2 + ArcTan[x/Sqrt[2/3 - x^2]]/Sqrt[3]`,
+  `((1 + x)*Sqrt[2 + 2*x + x^2])/2 - Log[-1 - x + Sqrt[2 + 2*x + x^2]]/2`
+  and `(Sqrt[1 + x^2]*(x + 2*x^3))/8 - ArcTanh[x/Sqrt[1 + x^2]]/8`; the
+  definite `Integrate[Sqrt[1 - x^2], {x, 0, 2}]` is
+  `((2*I)*Sqrt[3] + ArcSin[2])/2` there (Woxi leaves it unevaluated) and
+  `Integrate[Sqrt[1 + x^2], {x, 0, 1}]` is `(Sqrt[2] + ArcSinh[1])/2`
+  (Woxi `1/Sqrt[2] + ArcSinh[1]/2`).
 - `RotationMatrix[t, {a, 1, 0}]` with a symbolic component stays
   unevaluated (wolframscript's general formula carries `Conjugate` of every
   component).
