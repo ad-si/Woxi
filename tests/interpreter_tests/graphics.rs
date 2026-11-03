@@ -16047,6 +16047,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: `ChartLegends -> Placed[labels, Below]` must use the
+    /// labels (not print the raw `Placed[...]` text) and keep the bars.
+    #[test]
+    fn bar_chart_placed_legends() {
+      let svg = export_svg(
+        r#"BarChart[{30, 70}, ChartLegends -> Placed[{"alpha", "beta"}, Below]]"#,
+      );
+      assert!(!svg.contains("Placed["), "raw Placed text leaked: {svg}");
+      for label in ["alpha", "beta"] {
+        assert!(svg.contains(&format!(">{label}<")), "missing {label}");
+      }
+      // Background, two bars and two legend swatches.
+      assert!(svg.matches("<rect").count() >= 5, "bars missing: {svg}");
+    }
+
     /// BubbleChart should accept an Association whose values are each a
     /// single `{x,y,z}` triple — each key becomes its own dataset (and,
     /// with `ChartLegends -> Automatic`, its own legend entry).
