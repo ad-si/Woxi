@@ -288,8 +288,10 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
     shift: f64,
   }
   let mut labels: Vec<Label> = Vec::new();
-  // One entry per open `<g>`: whether it carries a transform.
+  // One entry per open `<g>` / `<svg>`: whether it sets up coordinates of
+  // its own.
   let mut groups: Vec<bool> = Vec::new();
+  let mut svg_depth = 0usize;
   let mut pos = 0usize;
   while let Some(rel) = svg[pos..].find('<') {
     let start = pos + rel;
@@ -309,7 +311,22 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
       }
       continue;
     }
-    if tag.starts_with("</g") {
+    // A nested `<svg>` (a cell of a list of graphics) has its own
+    // coordinates, like a transformed group; the outermost one is the
+    // canvas.
+    let is_svg = tag.starts_with("<svg")
+      && tag
+        .as_bytes()
+        .get(4)
+        .is_none_or(|b| !b.is_ascii_alphanumeric());
+    if is_svg {
+      if !tag.ends_with("/>") {
+        groups.push(svg_depth > 0);
+        svg_depth += 1;
+      }
+      continue;
+    }
+    if tag.starts_with("</g") || tag.starts_with("</svg") {
       groups.pop();
       continue;
     }
@@ -913,6 +930,15 @@ mod tests {
                text-anchor=\"end\" font-size=\"10\">0.08</text>\
                <g transform=\"translate(50,0)\"><text x=\"1\" \
                text-anchor=\"end\" font-size=\"10\">0.08</text></g></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
+    // Nor do labels of a nested `<svg>` (a cell of a list of graphics),
+    // which lie in that cell's own, wider coordinates.
+    let svg = "<svg viewBox=\"0 0 389 101\"><svg x=\"7.8\" width=\"180\" \
+               viewBox=\"0 0 1800 1010\"><text x=\"1684.7\" \
+               text-anchor=\"middle\" font-size=\"100\">6</text></svg></svg>";
     assert!(matches!(
       keep_text_in_view(svg),
       std::borrow::Cow::Borrowed(_)
