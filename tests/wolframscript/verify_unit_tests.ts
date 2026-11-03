@@ -15,6 +15,7 @@ import {
 } from "fs";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname } from "path";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -318,6 +319,19 @@ function extractTestCases(filePath: string): TestCase[] {
   }
 
   return cases;
+}
+
+/** Spell every non-ASCII character of WL code as its `\:XXXX` (or, past the
+ * BMP, `\|XXXXXX`) escape; everything else is left as written. */
+function escapeNonAscii(s: string): string {
+  let result = "";
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (code <= 127) result += ch;
+    else if (code <= 0xffff) result += "\\:" + code.toString(16).padStart(4, "0");
+    else result += "\\|" + code.toString(16).padStart(6, "0");
+  }
+  return result;
 }
 
 /** Escape a string for embedding inside a Wolfram Language string literal.
@@ -714,7 +728,11 @@ function buildWolframScript(
   }
 
   lines.push('Print["DONE"]');
-  return lines.join(";\n");
+  // `wolframscript -code` mangles non-ASCII input (`λ` arrives as `Î»`, and
+  // `»` is a syntax error), so the program spells every non-ASCII character
+  // as a `\:XXXX` / `\|XXXXXX` escape, which WL reads as the same character
+  // both in code and inside string literals.
+  return escapeNonAscii(lines.join(";\n"));
 }
 
 function listRustFiles(dir: string): string[] {
@@ -927,6 +945,23 @@ function runWolframBatch(
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
+  // A program past the OS argument limit (Woxi's 1.2 MB InputForm of a
+  // ContourPlot3D, embedded as the expected value) makes the spawn fail with
+  // E2BIG, so a large one is handed over in a file. `-code` itself reads its
+  // argument with ToExpression, so `ToExpression[ReadString[…]]` reads the
+  // file as the same single input; the program is ASCII (every non-ASCII
+  // character is escaped), so the file's charset cannot mangle it.
+  const MAX_INLINE_PROGRAM = 200_000;
+  let programFile: string | undefined;
+  let codeArg = wolframProgram;
+  if (wolframProgram.length > MAX_INLINE_PROGRAM) {
+    programFile = join(
+      tmpdir(),
+      `woxi-verify-${process.pid}-${batch[0]?.idx ?? 0}.wl`
+    );
+    writeFileSync(programFile, wolframProgram, "ascii");
+    codeArg = `ToExpression[ReadString[${JSON.stringify(programFile)}]]`;
+  }
   // spawnSync (rather than execSync) so wolframscript's stderr is captured
   // instead of forwarded straight to our own stderr. Wolfram's bundled
   // libraries write diagnostics there that are not test failures — e.g. qhull's
@@ -934,7 +969,7 @@ function runWolframBatch(
   // DelaunayMesh inputs — and they would otherwise bury the progress output.
   // The captured text is still reported whenever a batch actually fails.
   const res = spawnSync(
-    `wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`,
+    `wolframscript -charset UTF8 -code ${shellQuoteForExec(codeArg)}`,
     {
       shell: true,
       encoding: "utf-8",
@@ -943,6 +978,7 @@ function runWolframBatch(
       killSignal: "SIGKILL", // SIGTERM is ignored by wolframscript during computation
     }
   );
+  if (programFile) unlinkSync(programFile);
   lastWolframStderr = res.stderr ?? "";
   if (res.error) {
     const err: any = new Error(res.error.message || "wolframscript batch failed");
@@ -2620,12 +2656,26 @@ function main() {
     // wolframscript ({Protected, ReadProtected}); once loaded they are
     // HoldAll, which is what Woxi reports (same story as ParallelDo).
     "Attributes[{Plot, DensityPlot3D, BodePlot, ListPlot}]",
+    // Same story: a fresh kernel gives Woxi's {Listable, NumericFunction,
+    // Protected}; ReadProtected appears once an earlier case in the batch
+    // has loaded the function's definitions.
+    "Attributes[Hypergeometric0F1Regularized]",
+    // A bare `∑`/`∏` glyph is WL's prefix Sum/Product operator, so
+    // `Hold[∑]` is a syntax error there; Woxi reads it as a symbol so the
+    // Demonstrations that use the glyph only for display load.
+    "Head[Hold[∑]]",
+    "Head[Hold[∏]]",
+    "Hold[Subscript[∑, i = 1]]",
     // Stored objects in an older internal form, from Demonstration
     // notebooks: Woxi evaluates them, wolframscript 14 rejects them.
     'z = TemporalData[EventSeries, {{{3.5, 4.5, 6.}}, {{0, 2, 1}}, 1}]; {z["Values"], z["Times"]}',
     'TemporalData[EventSeries, {{{1, 2, 3}}, {{10, 14, 2}}, 1}]["Times"]',
     "ci = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {Round[x], 2}], Evaluate]; cr = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {x, 1}], Evaluate]; {ci[2.4], cr[2.4]}",
     "cf = CompiledFunction[{Blank[Real], Blank[Integer]}, {{3, 0, 0}, {2, 0, 0}, {3, 0, 1}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x, n}, NestList[#/3 &, x, n]], Evaluate]; cf[1/2, 3]",
+    // A version-10 serialized CompiledFunction with rank-1 arguments:
+    // wolframscript 15's kernel crashes on it every time ("The product
+    // exited for an unknown reason"), so the case never reports.
+    "f = CompiledFunction[{10, 10.1, 5848}, {{Blank[Real], 1}, {Blank[Real], 1}}, {{3, 1, 0}}, {{0., {3, 0, 4}}}, {0, 3, 5, 0, 5}, {{1}}, Function[{a, b}, Cross[{-Part[a, 2] + Part[b, 2], Part[a, 1] - Part[b, 1], 0.}, a/Norm[a]], Listable], Evaluate]; {f[{{1., 0., 0.}, {0., 1., 0.}}, {0., 0.}], f[{1., 0., 0.}, {0., 0.}]}",
     "f = NearestFunction[1, {3, 1}, 1, {1, 2, 3}, Automatic, Hold[Nearest[{1, 2, 3} -> {a, b, c}]]]; {f[2.2], f[2.6, 2]}",
     // ExampleData content is generated (see "ExampleData content is
     // generated by design"): a TimeSeries rather than TemporalData, and the
@@ -2682,6 +2732,8 @@ function main() {
     "g = ContourPlot3D[(x^2 + y^2 + z^2 + 0.9991)^2 == 4 (x^2 + z^2), {x, -1.2, 1.2}, {y, -3., 3.}, {z, -3., 3.}, PlotPoints -> 20]; c = First[g]; {Head[c], Length[c[[1]]] > 0, Length[c[[3, 2]]] == Length[c[[1]]], c[[3, 1]]}",
     "c = First[ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Contours -> {0.25, 0.64}, PlotPoints -> 10]]; tris = Cases[c[[2]], Polygon[t_] :> t, Infinity]; {Length[tris], 3 Total[Length /@ tris] > 2 Length[c[[1]]], Max[Flatten[tris]] == Length[c[[1]]]}",
     "ContourPlot3D[x^2 + y^2 - z^2, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}, Contours -> 5, Mesh -> None]",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, ContourStyle -> Opacity[0.4]]",
     "pts = First[RevolutionPlot3D[2, {t, 1, 3}, RevolutionAxis -> {1, 0, 0}]][[1]]; {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 2]]], 0.01], Round[Max[pts[[All, 3]]], 0.01]}",
     "First[RevolutionPlot3D[t, {t, 1, 3}, RevolutionAxis -> {0, 0, 1}]] === First[RevolutionPlot3D[t, {t, 1, 3}]]",
     // Plot's adaptive sampler starts a hair inside the endpoints, so its

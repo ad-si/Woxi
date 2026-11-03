@@ -564,9 +564,12 @@ mod random_working_precision {
 
   #[test]
   fn random_complex_precision() {
+    // wolframscript's precision depends on the draw (49.999999999999986 for
+    // some), so it is compared rounded.
     assert_eq!(
-      interpret("Precision[RandomComplex[WorkingPrecision -> 50]]").unwrap(),
-      "50."
+      interpret("Round[Precision[RandomComplex[WorkingPrecision -> 50]]]")
+        .unwrap(),
+      "50"
     );
     assert_eq!(
       interpret(

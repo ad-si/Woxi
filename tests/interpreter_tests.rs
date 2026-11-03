@@ -3935,7 +3935,12 @@ mod interpreter_tests {
       interpret("Hold[Subscript[∑, i = 1]]").unwrap(),
       "Hold[Subscript[∑, i = 1]]"
     );
+  }
+
+  #[test]
+  fn test_sum_and_product_unaffected_by_the_glyph_symbols() {
     // The real `Sum`/`Product` functions (ASCII names) are unaffected.
+    clear_state();
     assert_eq!(interpret("Sum[i, {i, 1, 4}]").unwrap(), "10");
     assert_eq!(interpret("Product[i, {i, 1, 4}]").unwrap(), "24");
   }
