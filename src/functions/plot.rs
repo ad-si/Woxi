@@ -711,7 +711,7 @@ fn region_function_allows(region: &Expr, x: f64, y: f64) -> bool {
 /// between an accepted and a rejected sample is located by bisection so the
 /// drawn pieces end where the region does, not at the last sample inside.
 fn clip_to_region_function(
-  points: Vec<(f64, f64)>,
+  points: &[(f64, f64)],
   func_body: &Expr,
   var_name: &str,
   region: &Expr,
@@ -12863,7 +12863,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     all_points.push(match &region_function {
       Some(region) => {
-        clip_to_region_function(points, func_body, &var_name, region)
+        clip_to_region_function(&points, func_body, &var_name, region)
       }
       None => points,
     });
