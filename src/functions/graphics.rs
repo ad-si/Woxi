@@ -27753,6 +27753,32 @@ fn bare_control_type_as_option(spec: Expr) -> Expr {
   Expr::List(out.into())
 }
 
+/// Whether `expr` mentions a user symbol that currently has no value, i.e.
+/// an identifier that is neither a built-in/constant nor bound to anything.
+fn mentions_undefined_symbol(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(name) => {
+      !crate::evaluator::functions::is_builtin_symbol(name)
+        && !matches!(
+          evaluate_expr_to_expr(expr),
+          Ok(ref v) if !matches!(v, Expr::Identifier(n) if n == name)
+        )
+    }
+    Expr::List(items) => items.iter().any(mentions_undefined_symbol),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(mentions_undefined_symbol)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      mentions_undefined_symbol(left) || mentions_undefined_symbol(right)
+    }
+    Expr::UnaryOp { operand, .. } => mentions_undefined_symbol(operand),
+    Expr::Part { expr, index } => {
+      mentions_undefined_symbol(expr) || mentions_undefined_symbol(index)
+    }
+    _ => false,
+  }
+}
+
 /// Process a single Manipulate variable specification list for its echo,
 /// evaluating the initial value and the trailing bounds/step/discrete
 /// values while keeping the variable and label intact; values that name a
@@ -27833,6 +27859,15 @@ fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
         }
       }
       _ if mentions_sibling(item) => {
+        new_items.push(dynamic(item));
+        continue;
+      }
+      // A bound naming a symbol that has no value yet (`Length[tiles]`
+      // where the body fills `tiles` in) would fold to a wrong number
+      // (0) now; keep it live so it is re-resolved after the body runs.
+      Expr::FunctionCall { name, .. }
+        if name != "Dynamic" && mentions_undefined_symbol(item) =>
+      {
         new_items.push(dynamic(item));
         continue;
       }
@@ -41707,6 +41742,24 @@ mod manipulate_reversed_range_tests {
     // The initial value is still the one written in the spec, not clamped
     // to either sorted bound.
     assert_eq!(initial, -1.2);
+  }
+
+  /// A bound like `Length[results]` would fold to 0 while `results` is
+  /// still undefined; it must stay a live (dynamic) bound so the slider
+  /// range is re-resolved once the body has defined the variable.
+  #[test]
+  fn bound_naming_a_body_variable_is_dynamic() {
+    let expr = crate::interpret_to_expr(
+      r#"Manipulate[results = Range[7]; m, {{m, 2, "t"}, 0, Length[results], 1}]"#,
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert!(
+      spec
+        .dynamic_bounds
+        .iter()
+        .any(|(n, _, max, _)| n == "m" && max.is_some())
+    );
   }
 
   /// The ordinary (already increasing) case is unaffected by the sort.
