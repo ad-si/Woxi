@@ -18626,8 +18626,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg =
         export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"Caption\"]");
       assert!(svg.contains(">Caption</text>"));
-      // The picture keeps its 360x360 size; the canvas grows by the caption.
-      assert!(svg.starts_with("<svg width=\"360\" height=\"385\""));
+      // The picture keeps its 360x359 size (the default PlotRangePadding is
+      // 1/48 vs 1/50 of the grid); the canvas grows by the caption.
+      assert!(svg.starts_with("<svg width=\"360\" height=\"384\""));
     }
 
     #[test]
@@ -18677,18 +18678,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "ArrayPlot[{{1, 0}, {0, 1}}, Frame -> False, ImageSize -> {500, 325}]",
       );
       assert!(
-        square.starts_with("<svg width=\"325\" height=\"325\""),
+        square.starts_with("<svg width=\"326\" height=\"325\""),
         "unexpected header: {}",
         square.lines().next().unwrap_or("")
       );
       let wide = export_svg(
         "ArrayPlot[{{1, 0, 1, 1}}, Frame -> False, ImageSize -> {500, 325}]",
       );
-      assert!(wide.starts_with("<svg width=\"500\" height=\"125\""));
+      assert!(wide.starts_with("<svg width=\"500\" height=\"139\""));
       let tall = export_svg(
         "ArrayPlot[{{1}, {0}, {1}, {1}}, Frame -> False, ImageSize -> {500, 200}]",
       );
-      assert!(tall.starts_with("<svg width=\"50\" height=\"200\""));
+      assert!(tall.starts_with("<svg width=\"56\" height=\"200\""));
     }
 
     #[test]
@@ -18815,8 +18816,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         r#"ArrayPlot[{{1, 0}, {0, 1}}, Epilog -> {Text["x", {0.5, 1.5}]}]"#,
       );
       assert!(svg.contains(">x<"), "{svg}");
-      // The cell center at data {0.5, 1.5} lands at the center of the
-      // 3600x3600 render canvas's top-left quadrant: (900, 900). The SVG
+      // The cell center at data {0.5, 1.5} is the center of the top-left
+      // cell of the 3600x3590 render canvas, inset by the default padding
+      // of 1/24 cell horizontally and 1/25 vertically. The SVG
       // is emitted as one long line, so isolate the `<text …>x</text>`
       // element itself rather than splitting on newlines.
       let end = svg.find(">x</text>").expect("epilog text element") + 1;
@@ -18834,8 +18836,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .and_then(|s| s.split('"').next())
         .and_then(|s| s.parse().ok())
         .expect("y attribute");
-      assert!((x - 900.0).abs() < 1.0, "x={x}");
-      assert!((y - 900.0).abs() < 1.0, "y={y}");
+      let ex = (0.5 + 1.0 / 24.0) / (2.0 + 1.0 / 12.0) * 3600.0;
+      let ey = (0.5 + 1.0 / 25.0) / (2.0 + 2.0 / 25.0) * 3590.0;
+      assert!((x - ex).abs() < 1.0, "x={x}");
+      assert!((y - ey).abs() < 1.0, "y={y}");
     }
 
     #[test]
@@ -18946,19 +18950,108 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn matrix_plot_honors_color_function_and_color_rules() {
       // Regression: ColorFunction / ColorRules were ignored, so every plot
-      // used the default blue-red gradient.
+      // used the default blue-red gradient. The rule-colored cell takes no
+      // part in the scaling of the others (as in wolframscript).
       let svg = export_svg(
         "MatrixPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
          ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]",
       );
       assert!(svg.contains("#AAAAAA"), "ColorRules cell: {svg}");
-      assert!(svg.contains("#781C86"), "Rainbow cell: {svg}");
       assert_eq!(
-        svg,
-        export_svg(
-          "ArrayPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
-           ColorRules -> {50 -> Lighter[Gray]}, Mesh -> False]"
+        interpret(
+          "Round[MatrixPlot[{{50, 0}, {3, 2}}, ColorFunction -> \"Rainbow\", \
+           ColorRules -> {50 -> Lighter[Gray]}][[1, 1]], 0.01]"
         )
+        .unwrap(),
+        "{{{0.86, 0.13, 0.13}, {0.89, 0.61, 0.22}}, \
+         {{0.67, 0.67, 0.67}, {0.51, 0.73, 0.44}}}"
+      );
+    }
+
+    #[test]
+    fn matrix_plot_hybrid_rank_scaling() {
+      // Regression: MatrixPlot scaled values linearly between the minimum
+      // and maximum, so one large entry (binomial coefficients) pushed every
+      // other cell to the bottom of the color range. WL averages the rank
+      // and the linear position of each value, with 0 at the middle.
+      assert_eq!(
+        interpret(
+          "Round[MatrixPlot[{{1, 10}, {-5, 0}}, \
+           ColorFunction -> (GrayLevel[#] &)][[1, 1, All, All, 1]], 0.01]"
+        )
+        .unwrap(),
+        "{{0.25, 0.5}, {0.65, 1.}}"
+      );
+      assert_eq!(
+        interpret(
+          "Round[MatrixPlot[{{-5, 1, 2}}, \
+           ColorFunction -> (GrayLevel[#] &)][[1, 1, All, All, 1]], 0.01]"
+        )
+        .unwrap(),
+        "{{0., 0.73, 0.9500000000000001}}"
+      );
+    }
+
+    #[test]
+    fn matrix_plot_default_color_function() {
+      // WL 15 MatrixPlot colors with its theme's blue-dark-orange LAB blend.
+      assert_eq!(
+        interpret(
+          "Round[MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {0, -1, -6}}][[1, 1]], 0.05]"
+        )
+        .unwrap(),
+        "{{{0.15000000000000002, 0.15000000000000002, 0.15000000000000002}, \
+         {0.15000000000000002, 0.25, 0.35000000000000003}, \
+         {0.15000000000000002, 0.4, 0.7000000000000001}}, \
+         {{0.75, 0.4, 0.05}, {0.8500000000000001, 0.45, 0.}, {1., 0.5, 0.}}, \
+         {{0.35000000000000003, 0.25, 0.1}, {0.55, 0.30000000000000004, 0.05}, \
+         {0.65, 0.35000000000000003, 0.05}}}"
+      );
+    }
+
+    #[test]
+    fn matrix_plot_frame_ticks_with_ends() {
+      // MatrixPlot labels the first and last index on all four edges;
+      // ArrayPlot's FrameTicks -> Automatic leaves the ends out.
+      assert_eq!(
+        interpret(
+          "FrameTicks /. Options[MatrixPlot[ConstantArray[1, {12, 30}]], FrameTicks]"
+        )
+        .unwrap(),
+        "{{{{11.5, 1}, {7.5, 5}, {0.5, 12}}, {{11.5, 1}, {7.5, 5}, {0.5, 12}}}, \
+         {{{0.5, 1}, {9.5, 10}, {19.5, 20}, {29.5, 30}}, \
+         {{0.5, 1}, {9.5, 10}, {19.5, 20}, {29.5, 30}}}}"
+      );
+      assert_eq!(
+        interpret(
+          "FrameTicks /. Options[ArrayPlot[ConstantArray[1, {12, 30}], \
+           FrameTicks -> Automatic], FrameTicks]"
+        )
+        .unwrap(),
+        "{{{{7.5, 5}, {2.5, 10}}, {{7.5, 5}, {2.5, 10}}}, \
+         {{{9.5, 10}, {19.5, 20}, {29.5, 30}}, {{9.5, 10}, {19.5, 20}, {29.5, 30}}}}"
+      );
+      assert_eq!(
+        interpret(
+          "ToExpression[(FrameTicks /. Options[MatrixPlot[ConstantArray[1, {10, 11}]], \
+           FrameTicks])[[All, 1, All, 2]]]"
+        )
+        .unwrap(),
+        "{{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, {1, 2, 4, 6, 8, 10, 11}}"
+      );
+    }
+
+    #[test]
+    fn array_plot_gray_scale_by_magnitude() {
+      // Regression: ArrayPlot's default gray scale ran from the minimum to
+      // the maximum, so a GCD table (minimum 1) drew its 1s white. WL maps
+      // |value| / max |value| onto white..black.
+      assert_eq!(
+        interpret(
+          "Round[ArrayPlot[{{-2, -1, 0, 1}, {1, 2, 3, 4}}][[1, 1, All, All, 1]], 0.01]"
+        )
+        .unwrap(),
+        "{{0.75, 0.5, 0.25, 0.}, {0.5, 0.75, 1., 0.75}}"
       );
     }
 
@@ -18978,12 +19071,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg(
         "MatrixPlot[{{Pink, RGBColor[1, 0, 0]}, {RGBColor[0, 0.5, 0], GrayLevel[0.3]}}]",
       );
-      for fill in [
-        "rgb(255,128,128)",
-        "rgb(255,0,0)",
-        "rgb(0,128,0)",
-        "rgb(77,77,77)",
-      ] {
+      for fill in ["#FF8080", "#FF0000", "#008000", "#4D4D4D"] {
         assert!(svg.contains(&format!("fill=\"{fill}\"")), "{fill}: {svg}");
       }
     }

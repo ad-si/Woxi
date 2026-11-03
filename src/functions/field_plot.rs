@@ -9,7 +9,7 @@ use crate::functions::math_ast::{
 use crate::functions::plot::{
   DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy, generate_axes_only,
   parse_image_size, parse_iterator, plot_theme, rewrite_svg_header,
-  substitute_var, svg_header,
+  substitute_var,
 };
 
 const FIELD_GRID: usize = 100;
@@ -5723,6 +5723,7 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
     }
     // The gradient `DensityPlot` shades with when given no `ColorFunction`.
     "WL14DefaultDensityGradient" => density_gradient(t),
+    MATRIX_PLOT_GRADIENT => crate::functions::plot::matrix_plot_gradient(t),
     "Rainbow" => {
       // Hue-based rainbow: red -> yellow -> green -> cyan -> blue -> violet
       let c = GfxColor::from_hue(t * 0.83, 1.0, 1.0);
@@ -5895,6 +5896,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the bottom and left edges, in `DataRange` coordinates. `Frame -> False`
   // removes the frame and with it the ticks.
   let mut auto_frame_ticks = false;
+  // `FrameTicks -> All`: the automatic ticks also mark the first and last
+  // cell.
+  let mut ticks_with_ends = false;
   let mut frame_hidden = false;
 
   for opt in &args[1..] {
@@ -5978,8 +5982,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .unwrap_or_else(|_| (**replacement).clone());
           auto_frame_ticks = matches!(
             &val,
-            Expr::Identifier(n) if n == "True" || n == "Automatic"
+            Expr::Identifier(n) if n == "True" || n == "Automatic" || n == "All"
           );
+          ticks_with_ends = matches!(&val, Expr::Identifier(n) if n == "All");
           frame_ticks = parse_frame_tick_labels(&val);
         }
         "Frame" => {
@@ -6049,18 +6054,23 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
+  let max_abs = v_min.abs().max(v_max.abs());
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
-  // Padding in cell units; `Automatic` means none for an array plot.
+  // Padding in cell units. `Automatic` (the default) leaves a margin of
+  // 1/48 (horizontally) and 1/50 (vertically) of the larger dimension
+  // between the cells and the frame, as `AbsoluteOptions` reports.
+  let longest = n_cols.max(n_rows) as f64;
+  let (auto_x, auto_y) = (longest / 48.0, longest / 50.0);
   let ((pad_l, pad_r), (pad_b, pad_t)) = match &range_padding {
     Some(spec) => (
-      spec.x.resolve(n_cols as f64, 0.0),
-      spec.y.resolve(n_rows as f64, 0.0),
+      spec.x.resolve(n_cols as f64, auto_x / n_cols as f64),
+      spec.y.resolve(n_rows as f64, auto_y / n_rows as f64),
     ),
-    None => ((0.0, 0.0), (0.0, 0.0)),
+    None => ((auto_x, auto_x), (auto_y, auto_y)),
   };
   let total_cols = n_cols as f64 + pad_l + pad_r;
   let total_rows = n_rows as f64 + pad_b + pad_t;
@@ -6135,7 +6145,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 ((*val - v_min) / range).clamp(0.0, 1.0)
               };
               if let Some(ref cf_name) = color_function {
-                apply_named_color_function(cf_name, t)
+                // Unscaled, the raw value picks the gradient position.
+                let x = if color_function_scaling { t } else { *val };
+                apply_named_color_function(cf_name, x)
               } else if let Some(ref cf_expr) = color_function_expr {
                 // Raw (unscaled) values commonly come from exact integer
                 // literals (e.g. packed 24-bit colors); passing them back
@@ -6171,6 +6183,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     },
                   )
               } else {
+                // The default gray scale runs from white at 0 to black at
+                // the largest magnitude (sign ignored), not from the
+                // minimum to the maximum.
+                let t = if max_abs > 0.0 {
+                  (val.abs() / max_abs).min(1.0)
+                } else {
+                  0.0
+                };
                 let gray = ((1.0 - t) * 255.0).round() as u8;
                 (gray, gray, gray)
               }
@@ -6260,6 +6280,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
     })?;
   }
+  // Abutting cells drawn with anti-aliased edges leave faint seams between
+  // them; the grid is pixel-aligned, so render it without anti-aliasing.
+  if let (Some(open), Some(close)) = (buf.find('>'), buf.rfind("</svg>")) {
+    buf.insert_str(close, "</g>\n");
+    buf.insert_str(open + 1, "\n<g shape-rendering=\"crispEdges\">");
+  }
 
   if !epilog.is_empty()
     && let Some(pos) = buf.rfind("</svg>")
@@ -6294,19 +6320,38 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   if auto_frame_ticks && !frame_hidden {
-    // Without a `DataRange` the axes count cells, so ticks sit on integers.
-    let min_step = if data_range.is_some() { 0.0 } else { 1.0 };
-    let ((x0, x1), (y0, y1)) =
-      data_range.unwrap_or(((1.0, n_cols as f64), (1.0, n_rows as f64)));
-    frame_ticks.bottom = automatic_array_ticks(x0, x1, n_cols, false, min_step);
-    frame_ticks.left =
-      automatic_array_ticks(y0, y1, n_rows, !data_reversed, min_step);
+    if let Some(((x0, x1), (y0, y1))) = data_range {
+      frame_ticks.bottom = automatic_array_ticks(x0, x1, n_cols, false, 0.0);
+      frame_ticks.left =
+        automatic_array_ticks(y0, y1, n_rows, !data_reversed, 0.0);
+    } else {
+      // Without a `DataRange` the axes count cells, labelled on all four
+      // edges (rows from the top unless `DataReversed`).
+      let axis = |n: usize, reversed: bool| -> Vec<FrameTickLabel> {
+        array_index_ticks(n, ticks_with_ends)
+          .into_iter()
+          .map(|i| FrameTickLabel {
+            pos: if reversed {
+              (n + 1 - i) as f64
+            } else {
+              i as f64
+            },
+            text: i.to_string(),
+            style: TickStyle::default(),
+          })
+          .collect()
+      };
+      frame_ticks.bottom = axis(n_cols, false);
+      frame_ticks.top = axis(n_cols, false);
+      frame_ticks.left = axis(n_rows, data_reversed);
+      frame_ticks.right = axis(n_rows, data_reversed);
+    }
   }
   let (buf, svg_width, svg_height) = frame_ticked_svg(
     &buf,
     svg_width,
     svg_height,
-    (n_cols, n_rows),
+    ((pad_l, total_cols), (pad_t, total_rows)),
     &frame_ticks,
     &tick_style,
   );
@@ -6650,15 +6695,65 @@ fn automatic_array_ticks(
   out
 }
 
+/// The cell indices `ArrayPlot`/`MatrixPlot` label on an axis of `n` cells
+/// (WL's internal `ArrayTicks[1, n, k, withEnds]`, `k` = n for up to 10
+/// cells, else 5): multiples of a 1-2-5 step, with `with_ends` also the
+/// first and last index (replacing a multiple closer than half a step).
+fn array_index_ticks(n: usize, with_ends: bool) -> Vec<usize> {
+  if n <= 1 {
+    return vec![1];
+  }
+  let (x0, x1) = (1.0, n as f64);
+  let count = if n > 10 { 5 } else { n.max(2) };
+  let num = (count as f64).min(x1 - x0);
+  let mut dist = (x1 - x0) / num;
+  let mut scale = 10f64.powf(dist.log10().floor());
+  dist /= scale;
+  if dist < 1.0 {
+    dist *= 10.0;
+    scale /= 10.0;
+  }
+  if dist >= 10.0 {
+    dist /= 10.0;
+    scale *= 10.0;
+  }
+  let delta = [1.0, 2.0, 5.0, 10.0]
+    .into_iter()
+    .find(|&s| s >= dist - 1e-12)
+    .unwrap_or(10.0)
+    * scale;
+  let mut res: Vec<f64> = Vec::new();
+  let mut x = (x0 / delta).ceil() * delta;
+  while x <= x1 + 1e-9 {
+    res.push((x / delta + 0.5).floor() * delta);
+    x += delta;
+  }
+  if with_ends {
+    match res.first() {
+      Some(&first) if x0 > first - delta / 2.0 => res[0] = x0,
+      _ => res.insert(0, x0),
+    }
+    let last = *res.last().unwrap_or(&x0);
+    if x1 < last + delta / 2.0 {
+      *res.last_mut().unwrap() = x1;
+    } else {
+      res.push(x1);
+    }
+  }
+  res.into_iter().map(|v| v.round() as usize).collect()
+}
+
 /// Draw explicit `FrameTicks` labels around a finished array plot. Positions
 /// are in `ArrayPlot` coordinates: the center of the cell at column `j`
-/// (resp. row `i`, counted from the top) is `j` (resp. `i`). The picture is
+/// (resp. row `i`, counted from the top) is `j` (resp. `i`); the grid sits
+/// `pad_l`/`pad_t` cells inside a picture `total_cols` × `total_rows` cells
+/// large. The picture is
 /// inset into a canvas widened by the label extents; returns the new size.
 fn frame_ticked_svg(
   svg: &str,
   width: u32,
   height: u32,
-  (n_cols, n_rows): (usize, usize),
+  ((pad_l, total_cols), (pad_t, total_rows)): ((f64, f64), (f64, f64)),
   ticks: &FrameTickLabels,
   default_style: &TickStyle,
 ) -> (String, u32, u32) {
@@ -6715,8 +6810,32 @@ fn frame_ticked_svg(
      overflow=\"visible\">\n{}\n</svg>\n",
     svg.trim()
   );
-  let x_of = |pos: f64| ml + (pos - 0.5) / n_cols as f64 * w;
-  let y_of = |pos: f64| mt + (pos - 0.5) / n_rows as f64 * h;
+  let x_of = |pos: f64| ml + (pad_l + pos - 0.5) / total_cols * w;
+  let y_of = |pos: f64| mt + (pad_t + pos - 0.5) / total_rows * h;
+  // Short tick marks pointing out of the frame at every labelled position.
+  const MARK: f64 = 4.0;
+  let mark = |x1: f64, y1: f64, x2: f64, y2: f64| {
+    format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" \
+       stroke=\"rgb(102,102,102)\" stroke-width=\"0.5\"/>\n"
+    )
+  };
+  for t in &ticks.left {
+    let y = y_of(t.pos);
+    out.push_str(&mark(ml, y, ml - MARK, y));
+  }
+  for t in &ticks.right {
+    let y = y_of(t.pos);
+    out.push_str(&mark(ml + w, y, ml + w + MARK, y));
+  }
+  for t in &ticks.bottom {
+    let x = x_of(t.pos);
+    out.push_str(&mark(x, mt + h, x, mt + h + MARK));
+  }
+  for t in &ticks.top {
+    let x = x_of(t.pos);
+    out.push_str(&mark(x, mt, x, mt - MARK));
+  }
   for t in &ticks.left {
     out.push_str(&label(t, ml - GAP, y_of(t.pos), "end"));
   }
@@ -6847,97 +6966,195 @@ fn frame_labelled_svg(
 }
 
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
-pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // Options that choose how cells are colored or captioned are handled by
-  // the one canonical grid renderer, ArrayPlot.
-  let styled = crate::functions::graphics::splice_option_lists(args)
-    .iter()
-    .skip(1)
-    .any(|opt| {
-      matches!(opt, Expr::Rule { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(n)
-          if matches!(n.as_str(),
-            "ColorFunction" | "ColorRules" | "PlotLabel" | "Mesh")))
-    });
-  if styled {
-    return array_plot_ast(args);
+/// `MatrixPlot`'s value scaling (WL's internal
+/// `HybridRankingAndNaturalScale` with scale range `{0, 1}` and natural
+/// portion 1/2): each value's position is the mean of its rank among the
+/// distinct values and its linear position between the minimum and the
+/// maximum, both taken over `values` plus the implicit value 0. The result
+/// is then stretched so that 0 lands on 1/2 — positive values above, negative
+/// ones below — keeping the longer side of 0 within `[0, 1]`.
+fn matrix_plot_hybrid_scale(values: &[f64]) -> Vec<f64> {
+  let n = values.len();
+  if n == 0 {
+    return Vec::new();
   }
+  let mut a: Vec<f64> = values.to_vec();
+  a.push(0.0);
+  let (amin, amax) = a
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+      (lo.min(v), hi.max(v))
+    });
+  if amax == amin {
+    return vec![1.0; n];
+  }
+  let mut ord: Vec<usize> = (0..=n).collect();
+  ord.sort_by(|&i, &j| a[i].total_cmp(&a[j]));
+  let natural: Vec<f64> =
+    ord.iter().map(|&i| (a[i] - amin) / (amax - amin)).collect();
+  let mut ranks = vec![0.0; n + 1];
+  for k in 1..=n {
+    let step = natural[k] - natural[k - 1];
+    ranks[k] = ranks[k - 1]
+      + if step > 0.0 {
+        1.0
+      } else if step < 0.0 {
+        -1.0
+      } else {
+        0.0
+      };
+  }
+  let last = ranks[n];
+  let mixed: Vec<f64> = ranks
+    .iter()
+    .zip(&natural)
+    .map(|(r, x)| 0.5 * (r / last) + 0.5 * x)
+    .collect();
+  let implicit_pos = ord.iter().position(|&i| i == n).unwrap_or(0);
+  let implicit_rank = mixed[implicit_pos];
+  let rescale = |x: f64, (a0, a1): (f64, f64), (b0, b1): (f64, f64)| {
+    b0 + (x - a0) / (a1 - a0) * (b1 - b0)
+  };
+  let scaled: Vec<f64> = if implicit_rank <= 0.5 {
+    mixed
+      .iter()
+      .map(|&x| rescale(x, (implicit_rank, mixed[n]), (0.5, 1.0)))
+      .collect()
+  } else {
+    mixed
+      .iter()
+      .map(|&x| rescale(x, (mixed[0], implicit_rank), (0.0, 0.5)))
+      .collect()
+  };
+  let mut out = vec![0.0; n];
+  for (k, &i) in ord.iter().enumerate() {
+    if i < n {
+      out[i] = scaled[k];
+    }
+  }
+  out
+}
+
+/// MatrixPlot[m, opts] — `ArrayPlot` with MatrixPlot's own defaults: values
+/// rescaled by [`matrix_plot_hybrid_scale`] (zeros at the middle of the
+/// color range), the theme's diverging blue–dark–orange LAB gradient, and
+/// index ticks with the end values on all four frame edges.
+pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
-  let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
-    .unwrap_or(data);
-  let Expr::List(rows) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "MatrixPlot: first argument must be a matrix".into(),
-    ));
+  let Some(rows) = array_plot_matrix(&data) else {
+    return Ok(crate::helpers::unevaluated("MatrixPlot", args));
   };
 
-  let mut matrix: Vec<Vec<f64>> = Vec::new();
-  // Entries that are themselves colors (`Pink`, `RGBColor[…]`) are drawn as
-  // given and take no part in the automatic value scaling.
-  let mut direct: Vec<Vec<Option<GfxColor>>> = Vec::new();
-  let mut v_min = f64::INFINITY;
-  let mut v_max = f64::NEG_INFINITY;
-
-  for row in rows {
-    if let Expr::List(items) = row {
-      let mut vals = Vec::with_capacity(items.len());
-      let mut colors = Vec::with_capacity(items.len());
-      for item in items {
-        let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-        let color = parse_color(&v);
-        let val = if color.is_some() {
-          0.0
-        } else {
-          try_eval_to_f64(&v).unwrap_or(0.0)
-        };
-        if color.is_none() && val.is_finite() {
-          v_min = v_min.min(val);
-          v_max = v_max.max(val);
-        }
-        vals.push(val);
-        colors.push(color);
+  let opt = |name: &str| {
+    args[1..].iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(
+          evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone()),
+        )
       }
-      matrix.push(vals);
-      direct.push(colors);
+      _ => None,
+    })
+  };
+  let is_sym = |e: &Option<Expr>, s: &str| matches!(e, Some(Expr::Identifier(n)) if n == s);
+  let color_function = opt("ColorFunction");
+  let color_rules = opt("ColorRules");
+  let monochrome = matches!(&color_function,
+    Some(Expr::String(s)) if s == "Monochrome" || s == "BlackAndWhite");
+  let scaling = !monochrome && !is_sym(&opt("ColorFunctionScaling"), "False");
+
+  // Cells: colors (given, or produced by `ColorRules`) are drawn as they
+  // are; numbers take part in the scaling.
+  let mut cells: Vec<Vec<Expr>> = Vec::with_capacity(rows.len());
+  let mut numeric: Vec<(usize, usize, f64)> = Vec::new();
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(items) = row else { continue };
+    let mut out = Vec::with_capacity(items.len());
+    for (j, item) in items.iter().enumerate() {
+      let mut v = evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
+      if let Some(rules) = &color_rules
+        && parse_color(&v).is_none()
+        && let Ok(replaced) =
+          crate::evaluator::pattern_matching::apply_replace_all_ast(&v, rules)
+        && parse_color(&replaced).is_some()
+      {
+        v = replaced;
+      }
+      if parse_color(&v).is_none()
+        && let Some(x) = try_eval_to_f64(&v).filter(|x| x.is_finite())
+      {
+        if monochrome {
+          v = Expr::Identifier(if x == 0.0 { "White" } else { "Black" }.into());
+        } else if x != 0.0 {
+          numeric.push((i, j, x));
+        } else if scaling {
+          v = Expr::Real(0.5);
+        }
+      }
+      out.push(v);
+    }
+    cells.push(out);
+  }
+  if scaling {
+    let values: Vec<f64> = numeric.iter().map(|c| c.2).collect();
+    for (&(i, j, _), t) in numeric.iter().zip(matrix_plot_hybrid_scale(&values))
+    {
+      cells[i][j] = Expr::Real(t);
     }
   }
 
-  if matrix.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
-  let n_rows = matrix.len();
-  let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
-  let w = svg_width as f64;
-  let h = svg_height as f64;
-  let cell_w = w / n_cols as f64;
-  let cell_h = h / n_rows as f64;
-
-  let mut svg = svg_header(svg_width, svg_height, full_width);
-
-  for (i, row) in matrix.iter().enumerate() {
-    for (j, &val) in row.iter().enumerate() {
-      let fill = if let Some(c) = direct[i][j] {
-        c.to_svg_rgb()
-      } else {
-        let (r, g, b) = value_to_color(val, v_min, v_max);
-        format!("rgb({r},{g},{b})")
-      };
-      let sx = j as f64 * cell_w;
-      let sy = i as f64 * cell_h;
-      svg.push_str(&format!(
-        "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{fill}\" stroke=\"none\"/>\n",
-        cell_w + 0.5, cell_h + 0.5
-      ));
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  let mut forwarded = vec![Expr::List(
+    cells
+      .into_iter()
+      .map(|r| Expr::List(r.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  )];
+  for o in &args[1..] {
+    if let Expr::Rule { pattern, .. } = o
+      && let Expr::Identifier(n) = pattern.as_ref()
+      && matches!(
+        n.as_str(),
+        "ColorFunction" | "ColorFunctionScaling" | "ColorRules"
+      )
+    {
+      continue;
     }
+    forwarded.push(o.clone());
   }
-
-  svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  match &color_function {
+    Some(cf)
+      if !monochrome
+        && !matches!(cf, Expr::Identifier(n) if n == "Automatic") =>
+    {
+      forwarded.push(rule("ColorFunction", cf.clone()));
+    }
+    _ => forwarded.push(rule(
+      "ColorFunction",
+      Expr::String(MATRIX_PLOT_GRADIENT.to_string()),
+    )),
+  }
+  forwarded.push(rule(
+    "ColorFunctionScaling",
+    Expr::Identifier("False".to_string()),
+  ));
+  if opt("FrameTicks").is_none() {
+    forwarded.push(rule("FrameTicks", Expr::Identifier("All".to_string())));
+  }
+  array_plot_ast(&forwarded)
 }
+
+/// Internal name of `MatrixPlot`'s default color function (its theme's
+/// `"DefaultColorFunction"`), resolved by [`apply_named_color_function`].
+const MATRIX_PLOT_GRADIENT: &str = "MatrixPlotDefaultGradient";
 
 /// Parse a complex iterator: {z, zmin, zmax} where zmin/zmax are complex numbers.
 /// Returns (var_name, re_min, re_max, im_min, im_max).

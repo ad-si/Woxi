@@ -7474,6 +7474,56 @@ pub(crate) fn wl_default_vector_density_gradient(t: f64) -> (u8, u8, u8) {
   lab_blend(&LAB_STOPS, t)
 }
 
+/// `MatrixPlot`'s default color function (the `"DefaultColorFunction"` of
+/// `Charting`ResolvePlotTheme[Automatic, MatrixPlot]`): a LAB blend from
+/// blue through near-black at 1/2 to orange.
+pub(crate) fn matrix_plot_gradient(t: f64) -> (u8, u8, u8) {
+  const LAB_STOPS: [(f64, f64, f64); 9] = [
+    (
+      0.602_089_947_828_292_8,
+      -0.020_256_766_996_109_565,
+      -0.594_100_976_643_204_9,
+    ),
+    (
+      0.500_950_689_292_482_5,
+      -0.018_349_557_401_535_765,
+      -0.513_287_458_202_765_8,
+    ),
+    (
+      0.401_784_938_836_845_3,
+      -0.017_877_998_121_300_642,
+      -0.430_407_370_784_194_66,
+    ),
+    (
+      0.304_564_431_479_7,
+      -0.018_489_247_900_803_64,
+      -0.345_981_686_525_546_3,
+    ),
+    (0.152_794_501_653_630_93, 0.0, 0.0),
+    (
+      0.353_915_906_341_993_66,
+      0.209_580_751_191_310_3,
+      0.398_660_281_492_549,
+    ),
+    (
+      0.459_671_728_950_685_4,
+      0.283_947_224_061_996_7,
+      0.515_293_805_830_302_8,
+    ),
+    (
+      0.563_382_709_272_066_1,
+      0.364_302_603_362_989_25,
+      0.627_665_078_529_221_5,
+    ),
+    (
+      0.665_829_747_848_021_6,
+      0.450_331_088_205_992_44,
+      0.737_624_583_210_847_3,
+    ),
+  ];
+  lab_blend(&LAB_STOPS, t)
+}
+
 /// `Blend` of `LABColor` stops (L in [0, 1], a/b divided by 100) at `t`:
 /// linear in LAB, then converted D50-LAB → sRGB with out-of-gamut channels
 /// clipped, as Wolfram renders it.

@@ -1074,9 +1074,10 @@ mod wavelets {
 
   #[test]
   fn wavelet_matrix_plot_honors_color_function() {
+    // The largest coefficient takes the top of the SolarColors gradient.
     assert_eq!(
       interpret(
-        "StringContainsQ[ExportString[WaveletMatrixPlot[DiscreteWaveletTransform[Table[N[i + j], {i, 8}, {j, 8}]], ColorFunction -> \"SolarColors\"], \"SVG\"], \"#780004\"]"
+        "StringContainsQ[ExportString[WaveletMatrixPlot[DiscreteWaveletTransform[Table[N[i + j], {i, 8}, {j, 8}]], ColorFunction -> \"SolarColors\"], \"SVG\"], \"#FFD120\"]"
       )
       .unwrap(),
       "True"

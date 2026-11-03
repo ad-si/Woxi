@@ -1,22 +1,23 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5844
 expression: "export_svg(\"ArrayPlot[{{0, 0.25, 0.5, 0.75, 1}, {1, 0.75, 0.5, 0.25, 0}}, ColorFunction -> \\\"Rainbow\\\"]\")"
 ---
-<svg width="360" height="144" viewBox="0 0 3600 1440" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<rect x="0" y="0" width="3600" height="1440" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="0" y="0" width="720" height="720" opacity="1" fill="#781C86" stroke="none"/>
-<rect x="720" y="0" width="720" height="720" opacity="1" fill="#447CCD" stroke="none"/>
-<rect x="1440" y="0" width="720" height="720" opacity="1" fill="#83BA70" stroke="none"/>
-<rect x="2160" y="0" width="720" height="720" opacity="1" fill="#DCAB3C" stroke="none"/>
-<rect x="2880" y="0" width="720" height="720" opacity="1" fill="#DB2122" stroke="none"/>
-<rect x="0" y="720" width="720" height="720" opacity="1" fill="#DB2122" stroke="none"/>
-<rect x="720" y="720" width="720" height="720" opacity="1" fill="#DCAB3C" stroke="none"/>
-<rect x="1440" y="720" width="720" height="720" opacity="1" fill="#83BA70" stroke="none"/>
-<rect x="2160" y="720" width="720" height="720" opacity="1" fill="#447CCD" stroke="none"/>
-<rect x="2880" y="720" width="720" height="720" opacity="1" fill="#781C86" stroke="none"/>
+<svg width="360" height="152" viewBox="0 0 3600 1520" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<g shape-rendering="crispEdges">
+<rect x="0" y="0" width="3600" height="1520" opacity="1" fill="#FFFFFF" stroke="none"/>
+<rect x="72" y="69" width="691" height="691" opacity="1" fill="#781C86" stroke="none"/>
+<rect x="763" y="69" width="691" height="691" opacity="1" fill="#447CCD" stroke="none"/>
+<rect x="1454" y="69" width="692" height="691" opacity="1" fill="#83BA70" stroke="none"/>
+<rect x="2146" y="69" width="691" height="691" opacity="1" fill="#DCAB3C" stroke="none"/>
+<rect x="2837" y="69" width="691" height="691" opacity="1" fill="#DB2122" stroke="none"/>
+<rect x="72" y="760" width="691" height="691" opacity="1" fill="#DB2122" stroke="none"/>
+<rect x="763" y="760" width="691" height="691" opacity="1" fill="#DCAB3C" stroke="none"/>
+<rect x="1454" y="760" width="692" height="691" opacity="1" fill="#83BA70" stroke="none"/>
+<rect x="2146" y="760" width="691" height="691" opacity="1" fill="#447CCD" stroke="none"/>
+<rect x="2837" y="760" width="691" height="691" opacity="1" fill="#781C86" stroke="none"/>
 <rect x="0" y="0" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="1430" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="0" width="10" height="1440" opacity="1" fill="#666666" stroke="none"/>
-<rect x="3590" y="0" width="10" height="1440" opacity="1" fill="#666666" stroke="none"/>
+<rect x="0" y="1510" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
+<rect x="0" y="0" width="10" height="1520" opacity="1" fill="#666666" stroke="none"/>
+<rect x="3590" y="0" width="10" height="1520" opacity="1" fill="#666666" stroke="none"/>
+</g>
 </svg>
