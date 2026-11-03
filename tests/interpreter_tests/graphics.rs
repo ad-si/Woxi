@@ -12910,12 +12910,20 @@ mod plot3d {
     }
 
     // ComplexListPlot[data] plots each z at (Re[z], Im[z]), so it must
-    // render exactly like ListPlot[ReIm[data]]. Covers real, purely
-    // imaginary, and negative entries.
+    // render exactly like ListPlot[ReIm[data]] drawn to scale (its
+    // AspectRatio defaults to Automatic). Covers real, purely imaginary,
+    // and negative entries.
     #[test]
     fn complex_list_plot_matches_list_plot_of_reim() {
       let data = "{1 + I, 2 - I, -1 + 2 I, 3.5, -2 I}";
       assert_eq!(
+        export_svg(&format!("ComplexListPlot[{data}]")),
+        export_svg(&format!(
+          "ListPlot[ReIm[{data}], AspectRatio -> Automatic]"
+        ))
+      );
+      // Regression: it used ListPlot's 1/GoldenRatio.
+      assert_ne!(
         export_svg(&format!("ComplexListPlot[{data}]")),
         export_svg(&format!("ListPlot[ReIm[{data}]]"))
       );

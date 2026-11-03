@@ -1819,6 +1819,18 @@ fn complex_data_to_points(e: &Expr) -> Expr {
 pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut new_args = args.to_vec();
   new_args[0] = complex_data_to_points(&args[0]);
+  // The complex plane is drawn to scale: ComplexListPlot's AspectRatio
+  // defaults to Automatic, not ListPlot's 1/GoldenRatio.
+  let has_aspect = args[1..].iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
+  });
+  if !has_aspect {
+    new_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("AspectRatio".into())),
+      replacement: Box::new(Expr::Identifier("Automatic".into())),
+    });
+  }
   list_plot_ast(&new_args)
 }
 

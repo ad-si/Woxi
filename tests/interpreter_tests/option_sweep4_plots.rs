@@ -247,7 +247,7 @@ mod complex_list_plot_data_forms {
       s,
       svg(
         "ListPlot[{{1, 1}, {2, 2}, {3, 1}} -> {\"za\", \"zb\", \"zc\"}, \
-         LabelingFunction -> Above]"
+         LabelingFunction -> Above, AspectRatio -> Automatic]"
       )
     );
   }
