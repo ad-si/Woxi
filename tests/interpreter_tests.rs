@@ -1306,6 +1306,27 @@ mod interpreter_tests {
     );
   }
 
+  /// `EdgeForm` inside a `Plot` `Epilog` outlines filled shapes, and
+  /// `EdgeForm[]` removes the outline again.
+  #[test]
+  fn test_plot_epilog_edgeform_outlines_shapes() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ExportString[Plot[x, {x, 0, 1}, Epilog -> {EdgeForm[Directive[Thin, \
+       Dashed, Blue]], LightGray, Rectangle[{0, 0}, {1, 1}], \
+       Disk[{0.5, 0.5}, 0.1]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(r.result.contains("stroke=\"rgb(0,0,255)\""));
+    assert!(r.result.contains("stroke-dasharray"));
+    let r = interpret_with_stdout(
+      "ExportString[Plot[x, {x, 0, 1}, Epilog -> {EdgeForm[Blue], \
+       EdgeForm[], Polygon[{{0, 0}, {1, 0}, {1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!r.result.contains("<polygon fill=\"rgb(0,0,0)\" stroke"));
+  }
+
   /// A `TabView` tab that is a `Dynamic[Module[…, plot]]` (held, so it only
   /// *computes* a picture) shows that picture, not the symbolic call.
   #[test]
