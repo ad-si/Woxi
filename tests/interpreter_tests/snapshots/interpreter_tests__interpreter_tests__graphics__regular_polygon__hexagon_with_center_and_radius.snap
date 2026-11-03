@@ -2,11 +2,11 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[RegularPolygon[{0.5, 0.5}, 0.3, 6]]\")"
 ---
-<svg width="360" height="413" viewBox="0 0 360 413" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="314" viewBox="0 0 360 314" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x413"><rect x="0" y="0" width="360.00" height="413.00"/></clipPath>
+<clipPath id="plotClip_360x314"><rect x="0" y="0" width="360.00" height="314.00"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x413)">
-<polygon points="180.00,7.19 7.39,106.85 7.39,306.15 180.00,405.81 352.61,306.15 352.61,106.85" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_360x314)">
+<polygon points="93.60,7.35 7.20,157.00 93.60,306.65 266.40,306.65 352.80,157.00 266.40,7.35" fill="rgb(0,0,0)"/>
 </g>
 </svg>

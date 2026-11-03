@@ -264,11 +264,12 @@ fn regular_polygon(c: P, r: f64, n: &Expr) -> Option<Vec<Ring>> {
   if *n < 3 {
     return None;
   }
-  let half_pi = std::f64::consts::FRAC_PI_2;
+  let start =
+    crate::functions::graphics::regular_polygon_default_angle(*n as usize);
   Some(vec![
     (0..*n)
       .map(|k| {
-        let t = half_pi + std::f64::consts::TAU * k as f64 / *n as f64;
+        let t = start + std::f64::consts::TAU * k as f64 / *n as f64;
         (c.0 + r * t.cos(), c.1 + r * t.sin())
       })
       .collect(),

@@ -45417,6 +45417,42 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn regular_polygon_stands_on_a_flat_edge() {
+    // Wolfram turns an even regular polygon by half a step so that it
+    // stands on a flat bottom edge: a hexagon's first vertex is at 120°,
+    // not on top. An explicit `{r, θ}` still puts it at θ.
+    let svg = export_svg("Graphics[RegularPolygon[6]]");
+    assert!(
+      svg.contains("<polygon points=\"93.60,7.35 7.20,157.00 "),
+      "{svg}"
+    );
+    let svg = export_svg("Graphics[RegularPolygon[{1, 0}, 6]]");
+    assert!(svg.contains("<polygon points=\"352.80,157.00 "), "{svg}");
+  }
+
+  #[test]
+  fn edge_form_dashing_dashes_the_edge() {
+    // `EdgeForm[{Dashed, Red}]` draws a dashed red edge; `EdgeForm[Dashed]`
+    // alone a dashed black one.
+    let svg = export_svg("Graphics[{EdgeForm[{Dashed, Red}], Rectangle[]}]");
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(255,0,0)\" stroke-width=\"1.00\" \
+         stroke-dasharray=\"4.0,4.0\""
+      ),
+      "{svg}"
+    );
+    let svg = export_svg("Graphics[{EdgeForm[Dashed], Blue, Disk[]}]");
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(0,0,0)\" stroke-width=\"1.00\" \
+         stroke-dasharray=\"4.0,4.0\""
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn graphics_margin_and_axis_tick_steps() {
     // A margin of 2% of the width all round: a unit disk is 345.6 across.
     let svg = export_svg("Graphics[Disk[]]");

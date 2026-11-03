@@ -400,6 +400,8 @@ struct ArrowHead {
 struct EdgeForm {
   color: Option<Color>,
   thickness: Option<f64>,
+  /// `EdgeForm[{Dashed, …}]`: the edge's dash pattern, as `Dashing` keeps it.
+  dashing: Option<Vec<f64>>,
 }
 
 /// `Haloing[…]` directive: draws a contrasting outline (halo) behind a
@@ -1889,11 +1891,13 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           style.edge_form = Some(EdgeForm {
             color: None,
             thickness: None,
+            dashing: None,
           });
         } else {
           let mut ef = EdgeForm {
             color: None,
             thickness: None,
+            dashing: None,
           };
           // Unwrap Lists and `Directive[…]` wrappers (at any depth):
           // `EdgeForm[{GrayLevel[0, 0.5]}]`, `EdgeForm[Directive[Thick, Red]]`.
@@ -1923,6 +1927,14 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               } else if n2 == "AbsoluteThickness" && a2.len() == 1 {
                 ef.thickness = symbolic_thickness_arg(&a2[0])
                   .or_else(|| expr_to_f64(&a2[0]).map(|t| -t));
+              } else {
+                // `Dashing[…]` (`Dashed` evaluates to it): whatever the one
+                // directive parser makes of it.
+                let mut scratch = StyleState::default();
+                if apply_directive(a, &mut scratch) && scratch.dashing.is_some()
+                {
+                  ef.dashing = scratch.dashing;
+                }
               }
             } else if let Expr::Identifier(sym) = a
               && let Some(t) = symbolic_thickness(sym)
@@ -1930,6 +1942,13 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               // `EdgeForm[None]` names neither colour nor width, so it
               // draws no edge at all.
               ef.thickness = Some(t);
+            } else {
+              // `Dashed`, `Dashing[…]`, …: whatever the one directive
+              // parser makes of it.
+              let mut scratch = StyleState::default();
+              if apply_directive(a, &mut scratch) && scratch.dashing.is_some() {
+                ef.dashing = scratch.dashing;
+              }
             }
           }
           style.edge_form = Some(ef);
@@ -4142,6 +4161,19 @@ fn parse_infinite_line(
   });
 }
 
+/// The angle of `RegularPolygon[…, n]`'s first vertex when none is given:
+/// Wolfram sets every regular polygon on a flat bottom edge, so an odd one
+/// has a vertex at the top (π/2) and an even one is turned by half a step
+/// (a square's vertices sit at 45°, a hexagon's at 0°).
+pub(crate) fn regular_polygon_default_angle(n: usize) -> f64 {
+  let half_pi = std::f64::consts::FRAC_PI_2;
+  if n.is_multiple_of(2) {
+    half_pi + std::f64::consts::PI / n as f64
+  } else {
+    half_pi
+  }
+}
+
 fn parse_regular_polygon(
   args: &[Expr],
   style: &StyleState,
@@ -4151,20 +4183,21 @@ fn parse_regular_polygon(
   // RegularPolygon[r, n] — circumradius r at origin
   // RegularPolygon[{cx, cy}, r, n] — at center with circumradius r
   // RegularPolygon[{cx, cy}, {r, θ}, n] — first vertex at angle θ
-  let radius_spec = |e: &Expr| -> (f64, f64) {
+  // Without an explicit angle the polygon stands on a flat bottom edge.
+  let radius_spec = |e: &Expr| -> (f64, Option<f64>) {
     if let Expr::List(items) = e
       && items.len() == 2
       && let (Some(r), Some(t)) =
         (expr_to_f64(&items[0]), expr_to_f64(&items[1]))
     {
-      return (r, t);
+      return (r, Some(t));
     }
-    (expr_to_f64(e).unwrap_or(1.0), std::f64::consts::FRAC_PI_2)
+    (expr_to_f64(e).unwrap_or(1.0), None)
   };
   let (cx, cy, r, theta, n) = match args.len() {
     1 => {
       let n = expr_to_f64(&args[0]).unwrap_or(0.0) as usize;
-      (0.0, 0.0, 1.0, std::f64::consts::FRAC_PI_2, n)
+      (0.0, 0.0, 1.0, None, n)
     }
     2 => {
       let (r, theta) = radius_spec(&args[0]);
@@ -4182,7 +4215,8 @@ fn parse_regular_polygon(
   if n < 3 {
     return;
   }
-  // Generate vertices starting from top (Pi/2), going counterclockwise
+  let theta = theta.unwrap_or_else(|| regular_polygon_default_angle(n));
+  // Generate vertices from the first one, going counterclockwise
   let pts: Vec<(f64, f64)> = (0..n)
     .map(|k| {
       let angle = theta + 2.0 * std::f64::consts::PI * (k as f64) / (n as f64);
@@ -8287,7 +8321,7 @@ fn edge_stroke(
   svg_w: f64,
 ) -> Option<(Color, f64)> {
   let ef = edge_form.as_ref()?;
-  if ef.color.is_none() && ef.thickness.is_none() {
+  if ef.color.is_none() && ef.thickness.is_none() && ef.dashing.is_none() {
     return None;
   }
   Some((
@@ -9916,6 +9950,14 @@ fn render_primitive(
         } else {
           String::new()
         };
+        let so = format!(
+          "{so}{}",
+          dash_attr(
+            style.edge_form.as_ref().and_then(|e| e.dashing.as_ref()),
+            bb,
+            svg_w
+          )
+        );
         format!(
           " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
@@ -9976,6 +10018,14 @@ fn render_primitive(
           } else {
             String::new()
           };
+          let so = format!(
+            "{so}{}",
+            dash_attr(
+              style.edge_form.as_ref().and_then(|e| e.dashing.as_ref()),
+              bb,
+              svg_w
+            )
+          );
           format!(
             " stroke=\"{}\" stroke-width=\"{sw:.2}\"{so}",
             sc.to_svg_rgb()
@@ -10027,6 +10077,14 @@ fn render_primitive(
         } else {
           String::new()
         };
+        let so = format!(
+          "{so}{}",
+          dash_attr(
+            style.edge_form.as_ref().and_then(|e| e.dashing.as_ref()),
+            bb,
+            svg_w
+          )
+        );
         format!(
           " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
@@ -10082,6 +10140,14 @@ fn render_primitive(
         } else {
           String::new()
         };
+        let so = format!(
+          "{so}{}",
+          dash_attr(
+            style.edge_form.as_ref().and_then(|e| e.dashing.as_ref()),
+            bb,
+            svg_w
+          )
+        );
         format!(
           " stroke=\"{}\" stroke-width=\"{stroke_width:.2}\"{so}",
           sc.to_svg_rgb()
@@ -10696,6 +10762,14 @@ fn render_primitive(
             } else {
               String::new()
             };
+            let so = format!(
+              "{so}{}",
+              dash_attr(
+                style.edge_form.as_ref().and_then(|e| e.dashing.as_ref()),
+                bb,
+                svg_w
+              )
+            );
             format!(
               " stroke=\"{}\" stroke-width=\"{esw:.2}\"{so}",
               sc.to_svg_rgb()
