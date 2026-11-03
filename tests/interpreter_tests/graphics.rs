@@ -46044,4 +46044,26 @@ mod plot_area_aspect {
         .starts_with("<svg width=\"576\"")
     );
   }
+
+  #[test]
+  fn graph_labeled_rule_edges_build_a_graph() {
+    assert_eq!(
+      interpret("EdgeCount[Graph[{Labeled[1 -> 2, \"a\"], 2 -> 3}]]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("VertexList[Graph[{Labeled[1 -> 2, \"a\"], 2 -> 3}]]").unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn graph_edge_label_is_formatted_and_placed_along_edge() {
+    let svg = export_svg(
+      "Graph[{Labeled[1 -> 2, Placed[NumberForm[0.70777, 3], 1/3]]}, \
+       VertexCoordinates -> {1 -> {0, 0}, 2 -> {3, 0}}]",
+    );
+    assert!(svg.contains(">0.708</text>"));
+    assert!(!svg.contains("Placed["));
+  }
 }
