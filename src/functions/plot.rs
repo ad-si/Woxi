@@ -14278,6 +14278,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut scaling: (Option<Scaling>, Option<Scaling>) = (None, None);
   // `WorkingPrecision -> p` above machine precision.
   let mut working_precision: Option<f64> = None;
+  let mut automatic_labels: Vec<String> = Vec::new();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
@@ -14322,6 +14323,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let value = evaluate_expr_to_expr(replacement)
           .unwrap_or_else(|_| replacement.clone());
         scaling = Scaling::parse_option(&value).unwrap_or((None, None));
+        continue;
+      }
+      // `AxesLabel -> Automatic` / `FrameLabel -> Automatic` label the
+      // horizontal axis with the plot variable (filled in below).
+      if (name == "AxesLabel" || name == "FrameLabel")
+        && matches!(replacement, Expr::Identifier(a) if a == "Automatic")
+      {
+        automatic_labels.push(name.to_string());
         continue;
       }
       if name == "WorkingPrecision" {
@@ -14397,6 +14406,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })?;
       let (x_min, x_max, transform) =
         compactify_plot_range(&var, raw_min, raw_max)?;
+      for name in &automatic_labels {
+        apply_common_plot_option(
+          name,
+          &Expr::List(vec![id_expr(&var), id_expr("None")].into()),
+          &mut plot_opts,
+          &mut PlotRangeOverrides::default(),
+        );
+      }
       // The compactified axis is labelled with original values.
       if transform.is_some() && plot_opts.ticks_x.is_none() {
         plot_opts.ticks_x = Some(infinite_range_ticks(raw_min, raw_max));

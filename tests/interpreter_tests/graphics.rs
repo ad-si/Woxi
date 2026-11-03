@@ -18464,6 +18464,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `AxesLabel -> Automatic` / `FrameLabel -> Automatic` name the
+    /// horizontal axis after the plot variable (WL 15: `{u, None}`).
+    #[test]
+    fn automatic_axes_and_frame_labels_name_the_variable() {
+      let axes =
+        export_svg("Plot[Sinc[u], {u, 0, 10}, AxesLabel -> Automatic]");
+      assert_eq!(axes.matches(">u</text>").count(), 1, "{axes}");
+      let frame = export_svg(
+        "Plot[Sinc[u], {u, 0, 10}, Frame -> True, FrameLabel -> Automatic]",
+      );
+      assert_eq!(frame.matches(">u</text>").count(), 1, "{frame}");
+    }
+
     /// `WorkingPrecision -> p` samples at `p` digits: `Sin[x + 10^20]` is a
     /// sine wave, not machine precision's constant.
     #[test]
