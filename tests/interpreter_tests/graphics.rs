@@ -20391,15 +20391,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
       // `E`'s glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a Letterlike
       // Symbols codepoint most non-Mathematica fonts have no glyph for
-      // (this renderer's fonts included), so it renders as an italicized
-      // plain "e" instead of the raw codepoint.
+      // (this renderer's fonts included), so it renders as a plain "e"
+      // drawn double-struck, the way Wolfram shows it, instead of the raw
+      // codepoint.
       assert!(
         !svg.contains('\u{2147}'),
         "must not contain the raw U+2147 glyph: {svg}"
       );
       assert!(
-        svg.contains("<tspan font-style=\"italic\">e</tspan>"),
-        "E must typeset as an italicized plain \"e\": {svg}"
+        svg.contains("<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">e</tspan>"),
+        "E must typeset as a double-struck plain \"e\": {svg}"
       );
       assert!(!svg.contains(">Infinity<"), "not the name: {svg}");
       // Script-mode text output is unchanged.
@@ -40825,9 +40826,9 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
   );
   assert!(
     with_label.contains("\u{222b}")
-      && with_label.contains("<tspan font-style=\"italic\">d</tspan>"),
+      && with_label.contains("<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">d</tspan>"),
     "PlotLabel should typeset the held integral (\u{222b} \u{2026} dx, the \
-     differential as a plain italicized \"d\" rather than the raw U+2146 \
+     differential as a double-struck plain \"d\" rather than the raw U+2146 \
      glyph most fonts have no glyph for), not raw TraditionalForm/HoldForm \
      source: {with_label}"
   );
@@ -45631,6 +45632,66 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn traditional_form_argument_parentheses_grow_around_a_fraction() {
+    // `cos(π/16)`: the call's parentheses are stretched to the fraction's
+    // height (drawn as paths), not left as text-sized glyphs.
+    let svg =
+      interpret("ExportString[TraditionalForm[HoldForm[Cos[Pi/16]]], \"SVG\"]")
+        .unwrap();
+    assert_eq!(svg.matches("<path d=\"M ").count(), 2, "{svg}");
+    assert!(!svg.contains(">(<"), "{svg}");
+    // A short argument keeps the plain glyphs.
+    let svg =
+      interpret("ExportString[TraditionalForm[HoldForm[Cos[x]]], \"SVG\"]")
+        .unwrap();
+    assert!(
+      svg.contains(">(<") && !svg.contains("<path d=\"M "),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn traditional_form_exponential_e_and_imaginary_i_are_double_struck() {
+    // Wolfram draws `ⅇ` and `ⅈ` double-struck; the letters are outlined in
+    // the heavy weight, upright.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[E^(I Pi) + 1 == 0]], \"SVG\"]",
+    )
+    .unwrap();
+    let tspan = |letter: char| {
+      format!(
+        "<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" \
+         stroke=\"currentColor\" stroke-width=\"0.035em\">{letter}</tspan>"
+      )
+    };
+    assert!(svg.contains(&tspan('e')), "{svg}");
+    assert!(svg.contains(&tspan('i')), "{svg}");
+    assert!(!svg.contains("font-style=\"italic\">i<"), "{svg}");
+  }
+
+  #[test]
+  fn table_form_sets_fractions_stacked_and_fits_wide_numbers() {
+    // A quotient cell is typeset as a stacked fraction, not the text `1/2`.
+    let svg = interpret(
+      "ExportString[TableForm[Table[1/(i + j), {i, 2}, {j, 2}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains(">1/2<"), "{svg}");
+    assert!(svg.contains("<line"), "{svg}");
+    // A centred long number puts its digit-group gaps in as thin spaces,
+    // which a rasterizer counts when it centres the text (resvg leaves
+    // `dx` shifts out of the anchoring and pushed the number off the edge).
+    let svg = interpret(
+      "ExportString[TableForm[{{1307674368000}}, TableAlignments -> Center], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">1\u{2009}307\u{2009}674\u{2009}368\u{2009}000<"),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn traditional_form_fraction_line_sits_on_the_math_axis() {
     // The line of `1/b` is 0.26 em above the baseline of `a ==`, level with
     // the middle of the `=`, not on the baseline.
@@ -45708,7 +45769,8 @@ mod wl_table_layout {
   #[test]
   fn traditional_form_superscript_raise_and_exponential_e() {
     // A superscript's baseline is 0.39 em above a text base's, and `E` is
-    // drawn as an upright `e` (the embedded fonts have no `ℯ`).
+    // drawn as an upright double-struck `e` (the embedded fonts have no
+    // `ℯ` or `ⅇ`).
     let svg =
       interpret("ExportString[TraditionalForm[HoldForm[E^x]], \"SVG\"]")
         .unwrap();
@@ -45716,7 +45778,9 @@ mod wl_table_layout {
       svg.contains(
         "<text x=\"0\" y=\"11.2\" font-family=\"Atkinson Hyperlegible Mono, \
          monospace\" font-size=\"14.0\" stroke=\"none\" \
-         xml:space=\"preserve\">e</text>"
+         xml:space=\"preserve\"><tspan font-style=\"normal\" \
+         font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" \
+         stroke-width=\"0.035em\">e</tspan></text>"
       ),
       "{svg}"
     );

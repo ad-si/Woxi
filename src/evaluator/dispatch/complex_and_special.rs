@@ -5547,72 +5547,191 @@ fn tf_reciprocal_factor(expr: &Expr) -> Option<Expr> {
   }
 }
 
-/// TraditionalForm box of a product (already flattened factor list).
-/// Reciprocal factors are gathered under a fraction bar, so the evaluated
-/// `Times[a, Power[b, -1]]` sets as `a/b` rather than `a b⁻¹`.
-fn tf_times(expr: &Expr) -> Expr {
-  let mut factors = Vec::new();
-  tf_flatten_times(expr, &mut factors);
-  // Pull a leading -1 / negative numeric coefficient into a sign.
-  let mut negative = false;
-  // A held `-a x` is `Times[-a, x]`: the sign of `-a` is the product's.
-  if let Some(Expr::UnaryOp {
-    op: UnaryOperator::Minus,
-    operand,
-  }) = factors.first()
-  {
-    let operand = (**operand).clone();
-    factors.remove(0);
-    let mut inner = Vec::new();
-    tf_flatten_times(&operand, &mut inner);
-    for (i, f) in inner.into_iter().enumerate() {
-      factors.insert(i, f);
+/// The factors of a product, sorted to either side of its fraction bar,
+/// with the sign the product carries in front.
+#[derive(Default)]
+struct TfProduct {
+  negative: bool,
+  numerators: Vec<Expr>,
+  denominators: Vec<Expr>,
+}
+
+/// Is `expr` a product (or quotient) node, rather than a single factor?
+fn tf_is_product_node(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      ..
     }
-    negative = true;
+  ) || matches!(expr, Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2)
+}
+
+/// A group of factors as one item: the item itself when there is just one,
+/// a `Times` of them otherwise (which sets in parentheses next to another
+/// factor).
+fn tf_group_item(mut parts: Vec<Expr>) -> Option<Expr> {
+  match parts.len() {
+    0 => None,
+    1 => parts.pop(),
+    _ => Some(unevaluated("Times", &parts)),
   }
-  if let Some(Expr::Integer(n)) = factors.first()
-    && *n < 0
-  {
-    negative = true;
-    if *n == -1 {
-      factors.remove(0);
-    } else {
-      factors[0] = Expr::Integer(-*n);
-    }
-  }
-  // A `Rational[p, q]` coefficient splits across the bar: `p` above, `q`
-  // below. It is always the leading factor of an evaluated product.
-  let mut numerators: Vec<Expr> = Vec::new();
-  let mut denominators: Vec<Expr> = Vec::new();
-  for f in &factors {
-    if let Expr::FunctionCall { name, args } = f
-      && name == "Rational"
-      && args.len() == 2
-    {
-      if !matches!(&args[0], Expr::Integer(1)) {
-        numerators.push(args[0].clone());
+}
+
+impl TfProduct {
+  /// Collect the factors of the product `expr` at this level. A held
+  /// `Times`/`Divide` chain is one level (`a b/c d` is `Times[a, b,
+  /// Power[c, -1], d]`); a product sitting as one of its factors — the
+  /// parenthesized `(a b/c) d`, or an explicit nested `Times[…]` — is a
+  /// group of its own (see `push_factor`).
+  fn collect(&mut self, expr: &Expr) {
+    match expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        self.collect_left(left);
+        self.push_factor(right);
       }
-      denominators.push(args[1].clone());
-      continue;
-    }
-    match tf_reciprocal_factor(f) {
-      Some(den) => denominators.push(den),
-      None => numerators.push(f.clone()),
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        // `1/b` is read as `Power[b, -1]`: the `1` is no factor of its own,
+        // so `(1/b) c` sets as `c/b`.
+        if !matches!(left.as_ref(), Expr::Integer(1)) {
+          self.collect_left(left);
+        }
+        self.denominators.push((**right).clone());
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          self.push_factor(a);
+        }
+      }
+      other => self.push_factor(other),
     }
   }
+
+  /// The left operand of a held binary `*`: a further `*` continues the
+  /// chain. A quotient there reads as the parenthesized group it is far
+  /// more often written as — `(8 π G/c⁴) T` — than as the flat `a e/b c`;
+  /// the held tree cannot tell the two apart.
+  fn collect_left(&mut self, left: &Expr) {
+    match left {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      } => self.collect(left),
+      _ => self.push_factor(left),
+    }
+  }
+
+  fn is_empty(&self) -> bool {
+    !self.negative && self.numerators.is_empty() && self.denominators.is_empty()
+  }
+
+  fn push_factor(&mut self, f: &Expr) {
+    let first = self.is_empty();
+    match f {
+      // The sign of the leading factor is the product's: `-(a/b) c` sets as
+      // `-(a c)/b`, a held `-2 x` as `-2 x`.
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } if first => {
+        self.negative = true;
+        self.push_factor(operand);
+      }
+      Expr::Integer(n) if first && *n < 0 => {
+        self.negative = true;
+        if *n != -1 {
+          self.numerators.push(Expr::Integer(-*n));
+        }
+      }
+      // A `Rational[p, q]` coefficient splits across the bar: `p` above,
+      // `q` below.
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        if let Expr::Integer(p) = &args[0]
+          && *p < 0
+          && first
+        {
+          self.negative = true;
+          if *p != -1 {
+            self.numerators.push(Expr::Integer(-*p));
+          }
+        } else if !matches!(&args[0], Expr::Integer(1)) {
+          self.numerators.push(args[0].clone());
+        }
+        self.denominators.push(args[1].clone());
+      }
+      // A product inside the product: what it has under its bar joins this
+      // product's denominator, and what is left above stays together as one
+      // factor — `(a e/b) c` sets as `((a e) c)/b`, `(a/b)(c/d)` as
+      // `(a c)/(b d)`. Its sign moves to the front when it leads.
+      _ if tf_is_product_node(f) => {
+        let mut group = TfProduct::default();
+        group.collect(f);
+        let num = tf_group_item(group.numerators);
+        let num = if group.negative {
+          if first {
+            self.negative = !self.negative;
+            num
+          } else {
+            Some(neg1(num.unwrap_or(Expr::Integer(1))))
+          }
+        } else {
+          num
+        };
+        if let Some(num) = num {
+          self.numerators.push(num);
+        }
+        if let Some(den) = tf_group_item(group.denominators) {
+          self.denominators.push(den);
+        }
+      }
+      _ => match tf_reciprocal_factor(f) {
+        Some(den) => self.denominators.push(den),
+        None => self.numerators.push(f.clone()),
+      },
+    }
+  }
+}
+
+/// TraditionalForm box of a product. Reciprocal factors are gathered under
+/// a fraction bar, so the evaluated `Times[a, Power[b, -1]]` sets as `a/b`
+/// rather than `a b⁻¹`.
+fn tf_times(expr: &Expr) -> Expr {
+  let mut product = TfProduct::default();
+  product.collect(expr);
+  let TfProduct {
+    negative,
+    mut numerators,
+    mut denominators,
+  } = product;
   // Exact numeric factors lead, in their canonical order: `a Pi` is set as
   // `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`.
   numerators.sort_by_key(|f| !tf_is_numeric_constant(f));
   denominators.sort_by_key(|f| !tf_is_numeric_constant(f));
   let row_of = |parts: &[Expr]| -> Expr {
+    // A lone factor is set as it is: `a/(b c)` has `b c` under the bar.
+    if let [only] = parts {
+      return tf(only);
+    }
     let mut items: Vec<Expr> = Vec::new();
     for (i, f) in parts.iter().enumerate() {
       if i > 0 {
         items.push(tf_thin_space());
       }
       // A large operator followed by another factor is parenthesised;
-      // the last one runs on to the end of the product.
-      if i + 1 < parts.len() && tf_is_big_operator(f) {
+      // the last one runs on to the end of the product. A product among
+      // other factors keeps its grouping: `a (b c)`.
+      if (i + 1 < parts.len() && tf_is_big_operator(f)) || tf_is_product_node(f)
+      {
         items.push(tf_parens(tf(f)));
       } else {
         items.push(tf_factor_boxed(f));
@@ -5621,7 +5740,11 @@ fn tf_times(expr: &Expr) -> Expr {
     tf_row(items)
   };
   let body = if denominators.is_empty() {
-    row_of(&numerators)
+    if numerators.is_empty() {
+      tf_string("1")
+    } else {
+      row_of(&numerators)
+    }
   } else {
     let num = if numerators.is_empty() {
       tf_string("1")
@@ -5672,6 +5795,17 @@ fn tf_is_numeric_constant(factor: &Expr) -> bool {
   }
 }
 
+/// Box of an operand of an infix sum or relation. A `Piecewise`, whose
+/// brace and case grid would otherwise run on into what follows, is
+/// parenthesized there: `|x| = ({-x x < 0; x x ≥ 0)`.
+fn tf_operand(expr: &Expr) -> Expr {
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Piecewise") {
+    tf_parens(tf(expr))
+  } else {
+    tf(expr)
+  }
+}
+
 /// TraditionalForm box of an additive expression.
 fn tf_plus(expr: &Expr) -> Expr {
   let mut terms = Vec::new();
@@ -5693,7 +5827,7 @@ fn tf_plus(expr: &Expr) -> Expr {
     } else {
       items.push(tf_string(if neg { "-" } else { "+" }));
     }
-    items.push(tf(&term));
+    items.push(tf_operand(&term));
   }
   tf_row(items)
 }
@@ -5822,32 +5956,100 @@ fn tf_derivative(head: &str, glyph: &str, args: &[Expr]) -> Expr {
   } else {
     tf_box("SuperscriptBox", vec![tf_string(glyph), tf(&total)])
   };
+  // One `∂x` (or `∂x²`) per variable, the groups set apart by a thin
+  // space (a literal U+2009 in the box text as well).
   let mut den_items: Vec<Expr> = Vec::new();
   for (var, order) in &specs {
-    den_items.push(tf_string(glyph));
-    if is_one(order) {
-      den_items.push(tf(var));
-    } else {
-      den_items.push(tf_box("SuperscriptBox", vec![tf(var), tf(order)]));
+    if !den_items.is_empty() {
+      den_items.push(str_expr("\u{2009}"));
     }
+    let var_box = if is_one(order) {
+      tf(var)
+    } else {
+      tf_box("SuperscriptBox", vec![tf(var), tf(order)])
+    };
+    den_items.push(tf_row(vec![tf_string(glyph), var_box]));
   }
-  let frac = tf_box("FractionBox", vec![num, tf_row(den_items)]);
+  let den = tf_row(den_items);
   let body = &args[0];
+  let tall = tf_derivand_is_tall(body);
+  // A product is bracketed, unless it sets as a fraction after an operator
+  // form, whose bar already sets it apart.
+  let bracket_product = tf_is_product_node(body)
+    && !(tall && {
+      let mut product = TfProduct::default();
+      product.collect(body);
+      !product.negative && !product.denominators.is_empty()
+    });
   let body_box = if tf_needs_paren_factor(body)
-    || matches!(
-      body,
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        ..
-      }
-    )
-    || matches!(body, Expr::FunctionCall { name, .. } if name == "Times")
+    || bracket_product
+    || tf_is_big_operator(body)
   {
     tf_parens(tf(body))
   } else {
     tf(body)
   };
-  tf_row(vec![frac, tf_thin_space(), body_box])
+  // The differentiated expression goes on top, `∂ψ(x, t)/∂t` — unless it
+  // is itself set in two dimensions (a quotient, a large operator, `exp`),
+  // which would be cramped up there: then the derivative is an operator in
+  // front of it, `∂/∂x (1/x)`, tagged with the head it came from.
+  if tall {
+    let mut items = vec![tf_box("FractionBox", vec![num, den])];
+    if !TF_BOX_TEXT.get() {
+      items.push(tf_thin_space());
+    }
+    items.push(body_box);
+    return tf_box("TagBox", vec![tf_row(items), id_expr(head)]);
+  }
+  let top = tf_row(vec![num, body_box]);
+  let mut frac_args = vec![top, den];
+  if TF_BOX_TEXT.get() {
+    frac_args.push(rule_expr(id_expr("MultilineFunction"), id_expr("None")));
+  }
+  tf_box("FractionBox", frac_args)
+}
+
+/// Does `expr` typeset with a quotient or a large operator in it — the
+/// derivands TraditionalForm writes after an operator-form `∂/∂x` rather
+/// than over the bar? An exponent does not count: it is set inline.
+fn tf_derivand_is_tall(expr: &Expr) -> bool {
+  let negative_number = |e: &Expr| {
+    matches!(e, Expr::Integer(n) if *n < 0)
+      || matches!(e, Expr::Real(f) if *f < 0.0)
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rational" && matches!(args.first(), Some(Expr::Integer(p)) if *p < 0))
+      || matches!(
+        e,
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      ..
+    } => true,
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => negative_number(right) || tf_derivand_is_tall(left),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Rational" | "Sum" | "Product" | "Integrate" | "Exp" => true,
+      "Power" if args.len() == 2 => {
+        negative_number(&args[1]) || tf_derivand_is_tall(&args[0])
+      }
+      _ => args.iter().any(tf_derivand_is_tall),
+    },
+    Expr::BinaryOp { left, right, .. } => {
+      tf_derivand_is_tall(left) || tf_derivand_is_tall(right)
+    }
+    Expr::UnaryOp { operand, .. } => tf_derivand_is_tall(operand),
+    Expr::List(items) => items.iter().any(tf_derivand_is_tall),
+    _ => false,
+  }
 }
 
 /// Build a GridBox from a matrix (list of row-lists), boxing each cell.
@@ -5870,6 +6072,23 @@ fn tf_matrix_grid(rows: &[Expr]) -> Expr {
 /// applied here, so a symbol used as a function head (e.g. the field `E` in
 /// `E[x, y, z]`) stays `E(x, y, z)` rather than becoming `ⅇ(x, y, z)`.
 fn tf_generic_call(name: &str, args: &[Expr]) -> Expr {
+  // A head that is a constant typesets as its glyph: `E[x]` is `ⅇ(x)`.
+  let glyph = tf_symbol(name);
+  if glyph != name {
+    return tf_applied(tf_string(&glyph), args);
+  }
+  // A built-in function that is no mathematical function and has no
+  // notation of its own keeps its StandardForm brackets — `Length[x]`,
+  // `FractionalD[f(t), {t, 1/2}]` — so it does not read as a function
+  // application `Length(x)`; a user's `f[x]` is the function value `f(x)`.
+  if crate::evaluator::functions::is_builtin_symbol(name)
+    && !crate::functions::predicate_ast::is_numeric_function(name)
+  {
+    let mut items = vec![tf_string(name), tf_string("[")];
+    items.extend(tf_comma_seq(args.iter().map(tf)));
+    items.push(tf_string("]"));
+    return tf_row(items);
+  }
   tf_applied(tf_string(name), args)
 }
 
@@ -6175,6 +6394,43 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       }
       tf_row(items)
     }
+    // The binomial coefficient is its two arguments stacked in
+    // parentheses: (n over k).
+    "Binomial" if args.len() == 2 => tf_row(vec![
+      tf_string("("),
+      tf_box(
+        "GridBox",
+        vec![Expr::List(
+          vec![
+            Expr::List(vec![tf(&args[0])].into()),
+            Expr::List(vec![tf(&args[1])].into()),
+          ]
+          .into(),
+        )],
+      ),
+      tf_string(")"),
+    ]),
+    // Generalized hypergeometric functions: ₚFₙ(a₁, …; b₁, …; z), with a
+    // tilde over the F for the regularized ones.
+    "Hypergeometric0F1" | "Hypergeometric0F1Regularized" if args.len() == 2 => {
+      tf_hypergeometric(name, &[], &args[..1], &args[1])
+    }
+    "Hypergeometric1F1" | "Hypergeometric1F1Regularized" if args.len() == 3 => {
+      tf_hypergeometric(name, &args[..1], &args[1..2], &args[2])
+    }
+    "Hypergeometric2F1" | "Hypergeometric2F1Regularized" if args.len() == 4 => {
+      tf_hypergeometric(name, &args[..2], &args[2..3], &args[3])
+    }
+    "HypergeometricPFQ" | "HypergeometricPFQRegularized"
+      if args.len() == 3
+        && matches!(&args[0], Expr::List(_))
+        && matches!(&args[1], Expr::List(_)) =>
+    {
+      let (Expr::List(upper), Expr::List(lower)) = (&args[0], &args[1]) else {
+        unreachable!("guarded by the match arm")
+      };
+      tf_hypergeometric(name, upper, lower, &args[2])
+    }
     "Sqrt" if args.len() == 1 => tf_box("SqrtBox", vec![tf(&args[0])]),
     "Piecewise"
       if (1..=2).contains(&args.len())
@@ -6280,33 +6536,25 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[0])
       }
     }
-    // Vector-calculus operators drop their coordinate-list argument and use
-    // ∇ notation: Grad → ∇f, Div → ∇·f, Curl → ∇×f, Laplacian → ∇²f.
-    "Grad" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
-      tf_row(vec![tf_string("\u{2207}"), tf(&args[0])])
-    }
-    "Div" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
-      tf_row(vec![
-        tf_string("\u{2207}"),
-        tf_string("\u{22C5}"),
-        tf(&args[0]),
-      ])
-    }
-    "Curl" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
-      tf_row(vec![
-        tf_string("\u{2207}"),
-        tf_string("\u{00D7}"),
-        tf(&args[0]),
-      ])
-    }
-    "Laplacian" if args.len() == 2 && matches!(&args[1], Expr::List(_)) => {
-      tf_row(vec![
-        tf_box(
-          "SuperscriptBox",
-          vec![tf_string("\u{2207}"), tf_string("2")],
-        ),
-        tf(&args[0]),
-      ])
+    // Vector-calculus operators use ∇ notation with the coordinate list as
+    // its subscript: Grad → ∇_{x,y} f, Div → ∇_{x,y}·f, Curl → ∇_{x,y}×f,
+    // Laplacian → ∇²_{x,y} f.
+    "Grad" | "Div" | "Curl" | "Laplacian"
+      if args.len() == 2 && matches!(&args[1], Expr::List(_)) =>
+    {
+      let nabla = tf_string("\u{2207}");
+      let vars = tf(&args[1]);
+      let op = if name == "Laplacian" {
+        tf_box("SubsuperscriptBox", vec![nabla, vars, tf_string("2")])
+      } else {
+        tf_box("SubscriptBox", vec![nabla, vars])
+      };
+      let body = tf_factor_boxed(&args[0]);
+      match name {
+        "Div" => tf_row(vec![op, tf_string("\u{22C5}"), body]),
+        "Curl" => tf_row(vec![op, tf_string("\u{00D7}"), body]),
+        _ => tf_row(vec![op, body]),
+      }
     }
     // Limit[body, x -> x0] → lim_{x→x0} body
     "Limit" if args.len() >= 2 => {
@@ -6432,6 +6680,44 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   }
 }
 
+/// `ₚFₙ(a₁, …, aₚ; b₁, …, bₙ; z)` for the hypergeometric function `name`
+/// with upper parameters `upper` and lower parameters `lower`.
+fn tf_hypergeometric(
+  name: &str,
+  upper: &[Expr],
+  lower: &[Expr],
+  z: &Expr,
+) -> Expr {
+  // `F̃` (with a combining tilde) keeps the subscript at the letter's foot.
+  let letter = tf_string(if name.ends_with("Regularized") {
+    "F\u{0303}"
+  } else {
+    "F"
+  });
+  let head = tf_row(vec![
+    tf_box(
+      "SubscriptBox",
+      vec![tf_string(""), tf_string(&upper.len().to_string())],
+    ),
+    tf_box(
+      "SubscriptBox",
+      vec![letter, tf_string(&lower.len().to_string())],
+    ),
+  ]);
+  let mut items: Vec<Expr> = Vec::new();
+  for group in [upper, lower] {
+    for (i, a) in group.iter().enumerate() {
+      if i > 0 {
+        items.push(tf_string(","));
+      }
+      items.push(tf(a));
+    }
+    items.push(tf_string(";"));
+  }
+  items.push(tf(z));
+  tf_row(vec![head, tf_string("("), row_box(items), tf_string(")")])
+}
+
 /// Core TraditionalForm typesetter: expression → 2D box tree.
 fn tf(expr: &Expr) -> Expr {
   match expr {
@@ -6477,12 +6763,7 @@ fn tf(expr: &Expr) -> Expr {
       right,
     } => tf_power(left, right),
     Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => tf_fraction(left, right),
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
+      op: BinaryOperator::Times | BinaryOperator::Divide,
       ..
     } => tf_times(expr),
     Expr::BinaryOp {
@@ -6520,7 +6801,7 @@ fn tf(expr: &Expr) -> Expr {
       operands,
       operators,
     } => {
-      let mut parts = vec![tf(&operands[0])];
+      let mut parts = vec![tf_operand(&operands[0])];
       for (i, op) in operators.iter().enumerate() {
         let sym = match op {
           ComparisonOp::Equal => "=",
@@ -6533,7 +6814,7 @@ fn tf(expr: &Expr) -> Expr {
           ComparisonOp::UnsameQ => "\u{2262}",      // ≢
         };
         parts.push(tf_string(sym));
-        parts.push(tf(&operands[i + 1]));
+        parts.push(tf_operand(&operands[i + 1]));
       }
       tf_row(parts)
     }

@@ -8058,6 +8058,159 @@ mod cases {
     );
   }
 
+  /// Box text of `TraditionalForm[HoldForm[code]]`, as wolframscript writes
+  /// it with `ToString[ToBoxes[…], InputForm]`.
+  fn held_traditional_boxes(code: &str) -> String {
+    let full = woxi::interpret(&format!(
+      "ToString[ToBoxes[TraditionalForm[HoldForm[{code}]]], InputForm]"
+    ))
+    .unwrap();
+    let prefix = "TagBox[FormBox[TagBox[";
+    let suffix =
+      ", HoldForm], TraditionalForm], TraditionalForm, Editable -> True]";
+    assert!(
+      full.starts_with(prefix) && full.ends_with(suffix),
+      "unexpected wrapper: {full}"
+    );
+    full[prefix.len()..full.len() - suffix.len()].to_string()
+  }
+
+  /// A product whose factors are themselves quotients sets as one fraction:
+  /// what the inner products have under their bars joins the outer
+  /// denominator, and an inner numerator of several factors stays grouped
+  /// in parentheses (the Einstein field equations' `(8 π G) T(μ, ν)/c⁴`).
+  #[test]
+  fn traditional_form_merges_nested_quotients_into_one_fraction() {
+    assert_eq!(
+      held_traditional_boxes("(8 Pi G/c^4) T[m, n]"),
+      r#"FractionBox[RowBox[{RowBox[{"(", RowBox[{"8", " ", "π", " ", "G"}], ")"}], " ", RowBox[{"T", "(", RowBox[{"m", ",", "n"}], ")"}]}], SuperscriptBox["c", "4"]]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("(a/b) (c/d)"),
+      r#"FractionBox[RowBox[{"a", " ", "c"}], RowBox[{"b", " ", "d"}]]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("(a/(b c)) (d/(e f))"),
+      r#"FractionBox[RowBox[{"a", " ", "d"}], RowBox[{RowBox[{"(", RowBox[{"b", " ", "c"}], ")"}], " ", RowBox[{"(", RowBox[{"e", " ", "f"}], ")"}]}]]"#
+    );
+    // The sign of a leading quotient goes in front of the whole fraction.
+    assert_eq!(
+      held_traditional_boxes("-(h^2/(2 m)) d"),
+      r#"RowBox[{"-", FractionBox[RowBox[{SuperscriptBox["h", "2"], " ", "d"}], RowBox[{"2", " ", "m"}]]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("-a/b"),
+      r#"RowBox[{"-", FractionBox["a", "b"]}]"#
+    );
+    // `1/b` is `Power[b, -1]`: no `1` is left over as a factor.
+    assert_eq!(
+      held_traditional_boxes("(1/b) c"),
+      r#"FractionBox["c", "b"]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("(a/b)/c"),
+      r#"FractionBox["a", RowBox[{"b", " ", "c"}]]"#
+    );
+    // A nested product without a denominator keeps its parentheses.
+    assert_eq!(
+      held_traditional_boxes("a (b c)"),
+      r#"RowBox[{"a", " ", RowBox[{"(", RowBox[{"b", " ", "c"}], ")"}]}]"#
+    );
+  }
+
+  /// A derivative sets the differentiated expression over the bar,
+  /// `∂ψ(x, t)/∂t`, and only falls back to the operator form `∂/∂x (…)`
+  /// for a derivand that is itself two-dimensional.
+  #[test]
+  fn traditional_form_derivative_puts_the_derivand_on_top() {
+    assert_eq!(
+      held_traditional_boxes("D[f[x, t], t]"),
+      r#"FractionBox[RowBox[{"∂", RowBox[{"f", "(", RowBox[{"x", ",", "t"}], ")"}]}], RowBox[{"∂", "t"}], MultilineFunction -> None]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("D[a b, x]"),
+      r#"FractionBox[RowBox[{"∂", RowBox[{"(", RowBox[{"a", " ", "b"}], ")"}]}], RowBox[{"∂", "x"}], MultilineFunction -> None]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("D[f[x, y], {x, 2}, y]"),
+      "FractionBox[RowBox[{SuperscriptBox[\"∂\", \"3\"], RowBox[{\"f\", \"(\", RowBox[{\"x\", \",\", \"y\"}], \")\"}]}], RowBox[{RowBox[{\"∂\", SuperscriptBox[\"x\", \"2\"]}], \"\u{2009}\", RowBox[{\"∂\", \"y\"}]}], MultilineFunction -> None]"
+    );
+    assert_eq!(
+      held_traditional_boxes("D[1/x, x]"),
+      r#"TagBox[RowBox[{FractionBox["∂", RowBox[{"∂", "x"}]], FractionBox["1", "x"]}], D]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("D[Exp[x] + 1, x]"),
+      r#"TagBox[RowBox[{FractionBox["∂", RowBox[{"∂", "x"}]], RowBox[{"(", RowBox[{RowBox[{"exp", "(", "x", ")"}], "+", "1"}], ")"}]}], D]"#
+    );
+  }
+
+  /// A built-in that is no mathematical function keeps its StandardForm
+  /// brackets in TraditionalForm, and a constant used as a head typesets
+  /// as its glyph.
+  #[test]
+  fn traditional_form_heads_of_unknown_calls() {
+    assert_eq!(
+      held_traditional_boxes("FractionalD[f[t], {t, 1/2}]"),
+      r#"RowBox[{"FractionalD", "[", RowBox[{RowBox[{"f", "(", "t", ")"}], ",", RowBox[{"{", RowBox[{"t", ",", FractionBox["1", "2"]}], "}"}]}], "]"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("Length[x]"),
+      r#"RowBox[{"Length", "[", "x", "]"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("f[x]"),
+      r#"RowBox[{"f", "(", "x", ")"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("E[x]"),
+      "RowBox[{\"\u{F74D}\", \"(\", \"x\", \")\"}]"
+    );
+  }
+
+  /// A `Piecewise` operand of a relation or sum is parenthesized.
+  #[test]
+  fn traditional_form_parenthesizes_piecewise_operand() {
+    let boxes =
+      held_traditional_boxes("Abs[x] == Piecewise[{{-x, x < 0}, {x, x >= 0}}]");
+    assert!(
+      boxes.contains(r#""=", RowBox[{"(", TagBox[GridBox"#),
+      "{boxes}"
+    );
+    let boxes = held_traditional_boxes("y + Piecewise[{{1, x > 0}}, 0]");
+    assert!(
+      boxes.contains(r#""+", RowBox[{"(", TagBox[GridBox"#),
+      "{boxes}"
+    );
+  }
+
+  /// Binomials stack their arguments, hypergeometric functions are written
+  /// `ₚF_q(a…; b…; z)`, and the vector-calculus operators keep their
+  /// coordinate list as the subscript of `∇`.
+  #[test]
+  fn traditional_form_special_function_notation() {
+    assert_eq!(
+      held_traditional_boxes("Binomial[n, k]"),
+      r#"RowBox[{"(", GridBox[{{"n"}, {"k"}}], ")"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("HypergeometricPFQ[{a, b}, {c, d}, x]"),
+      r#"RowBox[{RowBox[{SubscriptBox["", "2"], SubscriptBox["F", "2"]}], "(", RowBox[{"a", ",", "b", ";", "c", ",", "d", ";", "x"}], ")"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("Hypergeometric0F1[a, x]"),
+      r#"RowBox[{RowBox[{SubscriptBox["", "0"], SubscriptBox["F", "1"]}], "(", RowBox[{";", "a", ";", "x"}], ")"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("Div[g, {x, y}]"),
+      r#"RowBox[{SubscriptBox["∇", RowBox[{"{", RowBox[{"x", ",", "y"}], "}"}]], "⋅", "g"}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("Laplacian[a + b, {x, y}]"),
+      r#"RowBox[{SubsuperscriptBox["∇", RowBox[{"{", RowBox[{"x", ",", "y"}], "}"}], "2"], RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}]}]"#
+    );
+  }
+
   /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
   /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
   #[test]

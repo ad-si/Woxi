@@ -9809,8 +9809,8 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 
 pub(crate) fn svg_escape(s: &str) -> String {
   // `\[ExponentialE]` (U+F74D) would become `ℯ`, which the embedded fonts
-  // lack; Wolfram draws an upright e (see `BoxLayout::text`).
-  let s = s.replace('\u{F74D}', "e");
+  // lack; it is drawn as the double-struck `ⅇ` Wolfram shows.
+  let s = s.replace('\u{F74D}', "\u{2147}");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
   let escaped = s
     .replace('&', "&amp;")
@@ -9883,22 +9883,22 @@ fn svg_escape_with_italics(
 }
 
 /// Substitute any differential/exponential/imaginary-unit Letterlike
-/// Symbols glyph (see [`italic_letter_for_math_glyph`]) with an italicized
-/// plain-ASCII letter in a `<tspan>`. Safe to run after XML-escaping,
-/// since none of the substituted codepoints are XML metacharacters — the
-/// injected `<tspan>` markup is the only angle-bracket content this adds.
+/// Symbols glyph (see [`letter_for_double_struck_glyph`]) with its plain
+/// letter drawn double-struck in a `<tspan>`. Safe to run after
+/// XML-escaping, since none of the substituted codepoints are XML
+/// metacharacters — the injected `<tspan>` markup is the only angle-bracket
+/// content this adds.
 fn render_math_letterlike_glyphs(s: &str) -> String {
-  if !s.chars().any(|c| italic_letter_for_math_glyph(c).is_some()) {
+  if !s
+    .chars()
+    .any(|c| letter_for_double_struck_glyph(c).is_some())
+  {
     return s.to_string();
   }
   let mut out = String::with_capacity(s.len());
   for c in s.chars() {
-    match italic_letter_for_math_glyph(c) {
-      Some(letter) => {
-        out.push_str("<tspan font-style=\"italic\">");
-        out.push(letter);
-        out.push_str("</tspan>");
-      }
+    match letter_for_double_struck_glyph(c) {
+      Some(letter) => out.push_str(&double_struck_tspan(letter)),
       None => out.push(c),
     }
   }
@@ -12656,21 +12656,32 @@ fn is_math_italic_atom(s: &str) -> bool {
 
 /// The plain-ASCII letter TraditionalForm's differential/exponential/
 /// imaginary-unit Letterlike Symbols glyphs stand in for: `ⅆ` (U+2146,
-/// `∫ … ⅆx`), `ⅇ` (U+2147, `ⅇ^x`), `ⅈ`/`ⅉ` (U+2148/2149, `a + b ⅈ`). Most
-/// non-Mathematica fonts — including the ones this renderer embeds — have
-/// no glyph for these, and the font-fallback substitute comes out as an
-/// unrelated glyph (an "L" shape for `ⅆ`, roman numerals for `ⅇ`/`ⅈ`) at a
-/// different advance width than plain ASCII. Callers render the returned
-/// letter italicized, matching Mathematica's own typeset look without
-/// depending on the codepoint's glyph coverage.
-pub(crate) fn italic_letter_for_math_glyph(c: char) -> Option<char> {
+/// `∫ … ⅆx`), `ⅇ` (U+2147, `ⅇ^x`), `ⅈ`/`ⅉ` (U+2148/2149, `a + b ⅈ`), and
+/// the private-use spellings `\[ExponentialE]`/`\[ImaginaryI]` (U+F74D/F74E)
+/// box text writes for the latter two. Most non-Mathematica fonts —
+/// including the ones this renderer embeds — have no glyph for these, and
+/// the font-fallback substitute comes out as an unrelated glyph (an "L"
+/// shape for `ⅆ`, roman numerals for `ⅇ`/`ⅈ`) at a different advance width
+/// than plain ASCII. Callers draw the returned letter double-struck (see
+/// [`double_struck_tspan`]), Mathematica's own look for these symbols,
+/// without depending on the codepoint's glyph coverage.
+pub(crate) fn letter_for_double_struck_glyph(c: char) -> Option<char> {
   match c {
-    '\u{2146}' => Some('d'), // \[DifferentialD]
-    '\u{2147}' => Some('e'), // \[ExponentialE]
-    '\u{2148}' => Some('i'), // \[ImaginaryI]
-    '\u{2149}' => Some('j'), // \[ImaginaryJ]
+    '\u{2146}' => Some('d'),              // \[DifferentialD]
+    '\u{2147}' | '\u{F74D}' => Some('e'), // \[ExponentialE]
+    '\u{2148}' | '\u{F74E}' => Some('i'), // \[ImaginaryI]
+    '\u{2149}' => Some('j'),              // \[ImaginaryJ]
     _ => None,
   }
+}
+
+/// `letter` drawn double-struck inside an SVG `<text>`: the heavy weight of
+/// the letter in outline, so every stem shows as two parallel strokes.
+fn double_struck_tspan(letter: char) -> String {
+  format!(
+    "<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" \
+     stroke=\"currentColor\" stroke-width=\"0.035em\">{letter}</tspan>"
+  )
 }
 
 /// The set of single-character bracket/bar glyphs that can be vertically
@@ -12980,27 +12991,18 @@ impl BoxLayout {
     // SVG output displays correctly everywhere. Each maps one char to one
     // char, so the width estimate below is unaffected.
     // `\[DifferentialD]`/`\[ExponentialE]`/`\[ImaginaryI]`/`\[ImaginaryJ]`
-    // (U+2146/2147/2148/2149, used in `∫ … ⅆx`, `ⅇ^x`, `a + b ⅈ`) are rare
-    // Letterlike Symbols codepoints most non-Mathematica fonts don't carry
-    // either — the SVG viewer's font-fallback glyph for them comes out a
-    // different width than the plain-ASCII advance computed below (and can
-    // be a completely unrelated glyph), so it overlaps the following
-    // variable (`ⅆx` renders as if it read "ddx"). Map each to its plain
-    // letter; `is_math_italic_atom` below then italicizes the lone letter,
-    // giving the same look without depending on that glyph.
-    // `E` reaches the typesetter as `\[ExponentialE]` (U+F74D), which the
-    // SVG escaping turns into `ℯ` (U+212F) — a glyph the embedded fonts
-    // lack, so a fallback serif italic script e was drawn. Wolfram draws
-    // its exponential e as an upright double-struck `e`; the plain upright
-    // letter is the nearest glyph the embedded font has.
-    let upright_e = s == "\u{F74D}";
+    // (U+2146/2147/2148/2149 and the private-use U+F74D/F74E, used in
+    // `∫ … ⅆx`, `ⅇ^x`, `a + b ⅈ`) are rare codepoints most non-Mathematica
+    // fonts don't carry — the SVG viewer's fallback glyph for them comes out
+    // a different width than the plain-ASCII advance computed below. They
+    // stay one character here (so the width is one advance) and
+    // `svg_escape` draws each as its letter double-struck.
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
-        '\u{F74D}' => 'e',
-        other => italic_letter_for_math_glyph(other).unwrap_or(other),
+        other => other,
       })
       .collect();
     let s = mapped.as_str();
@@ -13014,7 +13016,7 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if is_math_italic_atom(s) && !upright_e {
+    let style_attr = if is_math_italic_atom(s) {
       " font-style=\"italic\""
     } else {
       ""
@@ -13154,57 +13156,90 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut children: Vec<BoxLayout> =
           items.iter().map(|e| layout_box(e, font_size)).collect();
 
-        // Stretchy delimiters: when the row is bracketed — its first child is
-        // an opening (or bar) delimiter and its last child is the matching
-        // closing (or bar) delimiter — grow both to enclose the inner content
-        // (matrices, determinants, tall fractions). Function-call parens are
-        // unaffected because the head token precedes the `(`.
-        if items.len() >= 3 {
-          let open = match &items[0] {
-            Expr::String(s) => stretchy_delim_kind(s),
-            _ => None,
-          };
-          let close = match items.last() {
-            Some(Expr::String(s)) => stretchy_delim_kind(s),
-            _ => None,
-          };
-          if let (Some(o), Some(c)) = (open, close)
-            && delim_pair_matches(o, c)
-          {
-            let inner_ascent = children[1..children.len() - 1]
-              .iter()
-              .map(|c| c.baseline)
-              .fold(0.0_f64, f64::max);
-            let inner_descent = children[1..children.len() - 1]
-              .iter()
-              .map(|c| c.height - c.baseline)
-              .fold(0.0_f64, f64::max);
-            let natural = children[0].height;
-            // Only stretch for genuinely tall content (fractions, grids,
-            // nested radicals) — a lone superscript (~1.3×) stays with plain
-            // glyphs so ordinary parenthesized expressions are unaffected.
-            if inner_ascent + inner_descent > natural * 1.5 {
-              let last = children.len() - 1;
-              let around_grid = items[1..items.len() - 1].iter().any(|it| {
-                matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
-              });
-              children[0] = render_stretchy_delim(
-                o,
-                inner_ascent,
-                inner_descent,
-                font_size,
-                around_grid,
-                false,
-              );
-              children[last] = render_stretchy_delim(
-                c,
-                inner_ascent,
-                inner_descent,
-                font_size,
-                around_grid,
-                true,
-              );
+        // Stretchy delimiters: a matching pair of delimiters in the row grows
+        // to enclose the content between them — the brackets of a matrix or
+        // determinant, and equally the argument parentheses of `cos(π/16)`.
+        // Parentheses and brackets pair up by nesting anywhere in the row;
+        // bars, which open and close alike, only when they bracket the
+        // whole row.
+        let mut pairs: Vec<(usize, usize)> = Vec::new();
+        let mut open_stack: Vec<(usize, char)> = Vec::new();
+        for (i, item) in items.iter().enumerate() {
+          match item {
+            Expr::String(t) if t == "(" || t == "[" => {
+              open_stack.push((i, t.chars().next().unwrap()));
             }
+            Expr::String(t) if t == ")" || t == "]" => {
+              let c = t.chars().next().unwrap();
+              match open_stack.pop() {
+                Some((o, kind)) if delim_pair_matches(kind, c) => {
+                  if i > o + 1 {
+                    pairs.push((o, i));
+                  }
+                }
+                _ => {
+                  pairs.clear();
+                  open_stack.clear();
+                  break;
+                }
+              }
+            }
+            _ => {}
+          }
+        }
+        if !open_stack.is_empty() {
+          pairs.clear();
+        }
+        if items.len() >= 3
+          && matches!(&items[0], Expr::String(t) if t == "|")
+          && matches!(items.last(), Some(Expr::String(t)) if t == "|")
+        {
+          pairs.push((0, items.len() - 1));
+        }
+        for (o_idx, c_idx) in pairs {
+          let (Some(o), Some(c)) = (
+            match &items[o_idx] {
+              Expr::String(t) => stretchy_delim_kind(t),
+              _ => None,
+            },
+            match &items[c_idx] {
+              Expr::String(t) => stretchy_delim_kind(t),
+              _ => None,
+            },
+          ) else {
+            continue;
+          };
+          let inner = &children[o_idx + 1..c_idx];
+          let inner_ascent =
+            inner.iter().map(|c| c.baseline).fold(0.0_f64, f64::max);
+          let inner_descent = inner
+            .iter()
+            .map(|c| c.height - c.baseline)
+            .fold(0.0_f64, f64::max);
+          let natural = BoxLayout::text("(", font_size).height;
+          // Only stretch for genuinely tall content (fractions, grids,
+          // nested radicals) — a lone superscript (~1.3×) stays with plain
+          // glyphs so ordinary parenthesized expressions are unaffected.
+          if inner_ascent + inner_descent > natural * 1.5 {
+            let around_grid = items[o_idx + 1..c_idx].iter().any(|it| {
+              matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
+            });
+            children[o_idx] = render_stretchy_delim(
+              o,
+              inner_ascent,
+              inner_descent,
+              font_size,
+              around_grid,
+              false,
+            );
+            children[c_idx] = render_stretchy_delim(
+              c,
+              inner_ascent,
+              inner_descent,
+              font_size,
+              around_grid,
+              true,
+            );
           }
         }
 
@@ -13237,8 +13272,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           elements.push_str(&child.translate(x, dy));
           x += child.width;
           x += op_space;
-          // Add space after bare comma
-          if matches!(&items[i], Expr::String(s) if s == ",")
+          // Add space after bare comma (or semicolon, the parameter-group
+          // separator of `₂F₁(a, b; c; x)`)
+          if matches!(&items[i], Expr::String(s) if s == "," || s == ";")
             && i + 1 < items.len()
           {
             x += ch * 0.4;
@@ -13253,7 +13289,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
 
       // FractionBox: numerator above line above denominator
-      "FractionBox" if args.len() == 2 => {
+      "FractionBox"
+        if crate::functions::graphics::is_fraction_box_args(args) =>
+      {
         let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
           font_size
         } else {
@@ -14043,6 +14081,31 @@ fn group_digits_svg(s: &str) -> String {
     }
   }
   result
+}
+
+/// Rewrite the `<tspan dx="0.18em">ddd</tspan>` digit-group gaps
+/// [`group_digits_svg`] emits as a thin space (U+2009) before the group —
+/// the gap as a glyph advance, which every rasterizer counts when it anchors
+/// the text. Only for a proportional face, whose thin space is thin.
+fn digit_group_gaps_as_thin_spaces(markup: &str) -> String {
+  const OPEN: &str = "<tspan dx=\"0.18em\">";
+  let mut out = String::with_capacity(markup.len());
+  let mut rest = markup;
+  while let Some(start) = rest.find(OPEN) {
+    let after = &rest[start + OPEN.len()..];
+    let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 || !after[digits..].starts_with("</tspan>") {
+      out.push_str(&rest[..start + OPEN.len()]);
+      rest = after;
+      continue;
+    }
+    out.push_str(&rest[..start]);
+    out.push('\u{2009}');
+    out.push_str(&after[..digits]);
+    rest = &after[digits + "</tspan>".len()..];
+  }
+  out.push_str(rest);
+  out
 }
 
 /// Calculate the extra display width added by digit grouping.
@@ -16072,7 +16135,9 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       }
 
       // FractionBox[num, den] → stacked fraction
-      "FractionBox" if args.len() == 2 => {
+      "FractionBox"
+        if crate::functions::graphics::is_fraction_box_args(args) =>
+      {
         let side = |b: &Expr| {
           let svg = boxes_to_svg(b);
           if fraction_side_needs_parens(b) {
@@ -17029,10 +17094,14 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
         let sup = estimate_box_display_width(&args[2]) * 0.7;
         base + sub.max(sup)
       }
-      "FractionBox" if args.len() == 2 => stacked_fraction_width(
-        estimate_box_display_width(&args[0]),
-        estimate_box_display_width(&args[1]),
-      ),
+      "FractionBox"
+        if crate::functions::graphics::is_fraction_box_args(args) =>
+      {
+        stacked_fraction_width(
+          estimate_box_display_width(&args[0]),
+          estimate_box_display_width(&args[1]),
+        )
+      }
       "SqrtBox" if args.len() == 1 => {
         // √( + content + )
         3.0 + estimate_box_display_width(&args[0])
@@ -19322,7 +19391,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
   {
-    return None;
+    return standard_fraction_cell_svg(content, size);
   }
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
@@ -19356,6 +19425,32 @@ pub(crate) fn hide_svg_content(svg: &str) -> Option<String> {
     &svg[open_end..close],
     &svg[close..]
   ))
+}
+
+/// A grid cell holding a quotient — `TableForm[{{1/2, a/b}}]` — typeset
+/// from its StandardForm boxes, the fraction stacked the way Wolfram sets
+/// it, rather than drawn as the one-line `1/2` text. `None` for a cell
+/// without one.
+fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
+  // Only an arithmetic value is typeset here; a wrapper (`Panel[…]`,
+  // `Framed[…]`, `Row[…]`) has a drawing of its own.
+  let arithmetic = matches!(cell, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
+    || matches!(cell, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
+  if !arithmetic || !has_fraction(cell) {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(cell);
+  if !box_has_fraction(&boxes) {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, size);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
 }
 
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
@@ -21223,6 +21318,15 @@ fn grid_svg_styled_internal(
           theme().text_primary.to_string()
         };
         let markup = expr_to_svg_markup(text_content);
+        // A centred or right-aligned number in the proportional default
+        // face sets its digit-group gaps as thin spaces: resvg leaves `dx`
+        // shifts out of the `text-anchor` placement, so a `<tspan dx>` gap
+        // would push a long number past its column (and the picture's edge).
+        let markup = if anchor != "start" && ff == "sans-serif" {
+          digit_group_gaps_as_thin_spaces(&markup)
+        } else {
+          markup
+        };
         // `Row[{…, "  ", …}]` spaces its parts with the string it was
         // given, and Wolfram draws every one of those spaces. SVG collapses
         // runs of whitespace unless the element asks it not to.
@@ -34597,7 +34701,8 @@ fn default_control_label(name: &str) -> String {
 fn linearize_fraction_boxes(e: &Expr) -> Expr {
   match e {
     Expr::FunctionCall { name, args }
-      if name == "FractionBox" && args.len() == 2 =>
+      if name == "FractionBox"
+        && crate::functions::graphics::is_fraction_box_args(args) =>
     {
       let side = |b: &Expr| {
         let b = linearize_fraction_boxes(b);
@@ -42731,4 +42836,10 @@ mod manipulate_traditional_form_equation_tests {
       "TraditionalForm source leaked: {dump}"
     );
   }
+}
+
+/// Are these the arguments of a `FractionBox[num, den, opts…]` — two boxes
+/// followed only by options such as `MultilineFunction -> None`?
+pub(crate) fn is_fraction_box_args(args: &[Expr]) -> bool {
+  args.len() >= 2 && args[2..].iter().all(crate::syntax::is_rule_expr)
 }

@@ -2657,9 +2657,13 @@ mod grid_graphics {
     clear_state();
     let result = interpret_with_stdout("Grid[{{5/7, x}, {a, 3/11}}]").unwrap();
     let svg = result.graphics.unwrap();
-    // Fractions rendered as inline text in grid cells
-    assert!(svg.contains("5/7"), "5/7 should be rendered in grid");
-    assert!(svg.contains("3/11"), "3/11 should be rendered in grid");
+    // Fractions are stacked in grid cells, as wolframscript draws them:
+    // numerator and denominator are separate texts over a fraction line.
+    assert!(!svg.contains("5/7"), "5/7 must not be inline text: {svg}");
+    assert!(!svg.contains("3/11"), "3/11 must not be inline text: {svg}");
+    for part in [">5<", ">7<", ">3<", ">11<", "<line"] {
+      assert!(svg.contains(part), "missing {part}: {svg}");
+    }
   }
 
   #[test]

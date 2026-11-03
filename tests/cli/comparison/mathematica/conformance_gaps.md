@@ -300,6 +300,40 @@ Smaller TraditionalForm typesetter differences, all in representation:
   `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
   renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
+The same goes for `Binomial[n, k]` (WL: `TemplateBox[{n, k}, "Binomial"]`,
+Woxi: `RowBox[{"(", GridBox[{{n}, {k}}], ")"}]`), the hypergeometric family
+(WL: a nest of `TagBox`es with `InterpretTemplate`, Woxi: the
+`SubscriptBox["", p]`/`SubscriptBox["F", q]` row with `;`-separated
+parameters, and `F̃` with a combining tilde for the regularized ones) and `Grad`/`Div`/`Curl`/`Laplacian` with a coordinate list (WL:
+`TemplateBox[{f, {x, y}}, "Grad", SyntaxForm -> Del]`, Woxi: a
+`SubscriptBox["∇", {x, y}]` row). The pictures agree.
+
+### TraditionalForm of a held product cannot see the source's parentheses
+
+WL's parser keeps a parenthesized product as a nested `Times`, and
+TraditionalForm brackets such a group as one factor: `(a b) c` is
+`(a b) c`, `(a e/b) c` is `((a e) c)/b`, and `(-a) b` keeps its `(-a)`.
+Woxi's held tree is the binary `a*b` chain, which is the same with or
+without the parentheses. A quotient written as the left factor of a
+product is therefore read as the parenthesized group (`(8 π G/c⁴) T` sets
+as `(8 π G) T/c⁴`, as in WL), so the unparenthesized `a e/b c`, flat in WL,
+sets as `((a e) c)/b`; and `(a b) c` sets flat, `-a b` and `(-a) b` both as
+`-(a b)`:
+
+```sh
+wolframscript -code 'ToString[ToBoxes[TraditionalForm[HoldForm[a e/b c]]], InputForm]'
+# …FractionBox[RowBox[{"a", " ", "e", " ", "c"}], "b"]…
+woxi eval 'ToString[ToBoxes[TraditionalForm[HoldForm[a e/b c]]], InputForm]'
+# …FractionBox[RowBox[{RowBox[{"(", RowBox[{"a", " ", "e"}], ")"}], " ", "c"}], "b"]…
+```
+
+The fix is a parser that records a parenthesized `Times` as its own node.
+
+Two smaller ones in the same typesetter: an exponent that is a quotient
+stays a stacked `FractionBox` (WL writes it inline, `SuperscriptBox["x",
+RowBox[{"a", "/", "b"}]]`, and `x^(1/3)` as `RadicalBox`), and a large
+operator's body follows its `∑`/`∫` after a `" "` item WL does not write.
+
 ### `ToBoxes` in StandardForm drops a held TagBox
 
 The TraditionalForm builder keeps a held `TagBox`; the StandardForm one does
