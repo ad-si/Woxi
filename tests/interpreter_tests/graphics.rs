@@ -35712,16 +35712,15 @@ fn callout_plot_multiple_labels() {
 
 #[test]
 fn callout_plot_with_plot_style() {
-  // Callout labels should use the correct series color from PlotStyle
+  // A curve's callout hangs off the curve's end on a gray leader, its
+  // label in the text color whatever the PlotStyle (WL 15).
   let svg = export_svg(
     r#"Plot[{Callout[Sin[x], "sin(x)"], Callout[Cos[x], "cos(x)"]}, {x, 0, 2 Pi}, PlotStyle -> {Red, Blue}]"#,
   );
   assert!(svg.contains(">sin(x)</text>"));
   assert!(svg.contains(">cos(x)</text>"));
-  // Red series label
-  assert!(svg.contains("fill=\"rgb(255,0,0)\""));
-  // Blue series label
-  assert!(svg.contains("fill=\"rgb(0,0,255)\""));
+  assert_eq!(svg.matches("stroke=\"#AAAAAA\"").count(), 2);
+  assert!(!svg.contains("fill=\"rgb(255,0,0)\""));
 }
 
 #[test]

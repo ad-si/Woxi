@@ -2642,6 +2642,11 @@ pub(crate) struct PlotOptions {
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
   /// each curve (None = that curve is unlabeled).
   pub plot_labels: Vec<Option<String>>,
+  /// Per series: its `plot_labels` entry hangs off a horizontal leader line
+  /// (a `Callout[data, label]` at its automatic place, the series' end)
+  /// rather than sitting right after the last point (`PlotLabels`,
+  /// `Labeled`).
+  pub plot_label_leaders: Vec<bool>,
   /// Per-point labels from `Labeled[y, label]` data entries, parallel to
   /// each series' points (None = no label for that point). Empty when no
   /// point is labeled.
@@ -2854,6 +2859,7 @@ impl Default for PlotOptions {
       date_axis: false,
       callout_labels: Vec::new(),
       plot_labels: Vec::new(),
+      plot_label_leaders: Vec::new(),
       point_labels: Vec::new(),
       point_label_position: None,
       point_label_callouts: false,
@@ -4006,7 +4012,14 @@ fn generate_svg_with_options(
         .map(|l| crate::functions::graphics::box_string_visible_len(l))
         .max()
         .unwrap_or(0);
-      (10.0 * sf + 8.0 * sf + widest as f64 * 0.62 * sf * 14.0).round() as u32
+      let leader = if opts.plot_label_leaders.iter().any(|&l| l) {
+        PLOT_LABEL_LEADER * sf
+      } else {
+        0.0
+      };
+      // The labels are set at 11 pt.
+      (10.0 * sf + 8.0 * sf + leader + widest as f64 * 0.6 * sf * 11.0).round()
+        as u32
     } else {
       0
     },
@@ -5469,8 +5482,8 @@ fn inject_plot_labels(
   let Some(insert_pos) = buf.rfind("</svg>") else {
     return;
   };
-  let mut label_svg = String::new();
-
+  // Each label's series, its curve end (px, py) and its own text height.
+  let mut placed: Vec<(usize, &String, f64, f64, f64)> = Vec::new();
   for (series_idx, label) in opts.plot_labels.iter().enumerate() {
     let Some(label_text) = label else { continue };
     let Some(points) = all_points.get(series_idx) else {
@@ -5486,17 +5499,69 @@ fn inject_plot_labels(
     let frac_y = ((data_y - y_min) / (y_max - y_min)).clamp(0.0, 1.0);
     let px = plot_x0 + frac_x * plot_w;
     let py = plot_top + plot_h * (1.0 - frac_y);
+    placed.push((series_idx, label_text, px, py, py));
+  }
+  // Labels whose curves end close together are spread apart vertically
+  // (top to bottom, one line height between them); a callout's leader
+  // then bends from its curve end to its label.
+  let line_h = font_size * 1.6;
+  placed
+    .sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+  for i in 1..placed.len() {
+    let min_y = placed[i - 1].4 + line_h;
+    if placed[i].4 < min_y {
+      placed[i].4 = min_y;
+    }
+  }
+  // Re-centre a spread group on its curve ends.
+  if let (Some(first), Some(last)) = (placed.first(), placed.last()) {
+    let shift = ((first.3 + last.3) - (first.4 + last.4)) / 2.0;
+    if shift < 0.0 {
+      for p in &mut placed {
+        p.4 += shift;
+      }
+    }
+  }
+
+  let mut label_svg = String::new();
+  for (series_idx, label_text, px, py, ly) in placed {
+    // A callout's leader: a gray 1.25 pt line on a translucent white halo,
+    // from 3.5 pt past the point, as WL 15 draws it.
+    let mut text_x = px + sf * 6.0;
+    if opts.plot_label_leaders.get(series_idx) == Some(&true) {
+      let (x1, x2) = (px + 3.5 * sf, px + (3.5 + PLOT_LABEL_LEADER) * sf);
+      let points = if (ly - py).abs() < 0.5 * sf {
+        format!("{x1:.1},{py:.1} {x2:.1},{py:.1}")
+      } else {
+        format!(
+          "{x1:.1},{py:.1} {:.1},{py:.1} {:.1},{ly:.1} {x2:.1},{ly:.1}",
+          x1 + 8.0 * sf,
+          x1 + 16.0 * sf,
+        )
+      };
+      label_svg.push_str(&format!(
+        "<polyline points=\"{points}\" fill=\"none\" stroke=\"#FFFFFF\" \
+         stroke-opacity=\"0.667\" stroke-width=\"{:.1}\"/>\n\
+         <polyline points=\"{points}\" fill=\"none\" stroke=\"#AAAAAA\" \
+         stroke-width=\"{:.1}\"/>\n",
+        4.0 * sf,
+        1.25 * sf,
+      ));
+      text_x = x2 + 2.0 * sf;
+    }
     label_svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{py:.1}\" font-family=\"sans-serif\" \
+      "<text x=\"{text_x:.1}\" y=\"{ly:.1}\" font-family=\"sans-serif\" \
        font-size=\"{font_size:.0}\" fill=\"{text_fill}\" \
        dominant-baseline=\"central\">{}</text>\n",
-      px + sf * 6.0,
       crate::functions::graphics::box_string_to_svg(label_text)
     ));
   }
 
   buf.insert_str(insert_pos, &label_svg);
 }
+
+/// Length of a series-end callout's leader line, in points.
+const PLOT_LABEL_LEADER: f64 = 24.5;
 
 /// Font size of a point label (`Labeled` / `Callout` data entries), in
 /// display pixels.
@@ -11479,16 +11544,23 @@ pub(crate) fn parse_plot_legends(
   }
 }
 
+/// Whether `Callout[data, label, pos…]` sits at its automatic place, the
+/// end of its curve or dataset (no position, or `Automatic`).
+pub(crate) fn callout_at_series_end(callout_args: &[Expr]) -> bool {
+  match callout_args.get(2) {
+    None => true,
+    Some(Expr::Identifier(p)) => p == "Automatic",
+    Some(_) => false,
+  }
+}
+
 /// Parse a `PlotLabels -> {l1, l2, …}` value into one optional label per
 /// curve; `None` and `Automatic` entries leave their curve unlabeled.
 fn parse_plot_labels(value: &Expr) -> Vec<Option<String>> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let label = |item: &Expr| match item {
     Expr::Identifier(s) if s == "None" || s == "Automatic" => None,
-    other => Some(
-      crate::functions::graphics::styled_axis_label(other)
-        .unwrap_or_else(|| expr_to_string(other)),
-    ),
+    other => Some(crate::functions::graphics::traditional_label(other)),
   };
   match &val {
     Expr::List(items) => items.iter().map(label).collect(),
@@ -12221,6 +12293,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // wrappers (Highlighted/Tooltip/Legended/Labeled) around a single curve are
   // peeled first so their inner function is what gets sampled.
   let mut bodies: Vec<&Expr> = Vec::with_capacity(raw_bodies.len());
+  let mut end_labels: Vec<Option<String>> = Vec::new();
   for b in &raw_bodies {
     let b = peel_plot_wrappers(b);
     if let Expr::FunctionCall { name, args: cargs } = b
@@ -12228,15 +12301,26 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && cargs.len() >= 2
     {
       bodies.push(&cargs[0]);
-      let label = match &cargs[1] {
-        Expr::String(s) => s.clone(),
-        other => expr_to_output(other),
-      };
-      plot_opts.callout_labels.push(Some(label));
+      let label = crate::functions::graphics::traditional_label(&cargs[1]);
+      // At its automatic place a curve's callout hangs off the curve's end.
+      if callout_at_series_end(cargs) {
+        end_labels.push(Some(label));
+        plot_opts.callout_labels.push(None);
+      } else {
+        end_labels.push(None);
+        plot_opts.callout_labels.push(Some(label));
+      }
     } else {
       bodies.push(b);
+      end_labels.push(None);
       plot_opts.callout_labels.push(None);
     }
+  }
+  if plot_opts.plot_labels.is_empty() && end_labels.iter().any(Option::is_some)
+  {
+    plot_opts.plot_label_leaders =
+      end_labels.iter().map(Option::is_some).collect();
+    plot_opts.plot_labels = end_labels;
   }
 
   // Fill automatic legends from expression strings

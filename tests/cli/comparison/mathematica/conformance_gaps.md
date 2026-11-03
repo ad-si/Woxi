@@ -4971,10 +4971,12 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
   the data range and drops callouts that do not fit inside it. The callout
   positions themselves come from a greedy search, not WL's optimiser, so
   the subset shown and the leader directions differ.
-- `Callout[dataset, label]` / `Labeled[dataset, label]` on a whole series
-  places the label at the series' end with a horizontal leader in WL;
-  Woxi draws it beside the last point, and as `InputForm` text rather than
-  `TraditionalForm` (`q(n)`).
+- `Callout[series, label, pos]` with an explicit position (`Above`, an x
+  value, …) is still drawn at 2/3 of the x range in the series color; WL
+  puts `Above` over the series maximum (widening the `PlotRange` for it)
+  and an x value at that x, in black on a gray leader. Series-end labels
+  that crowd each other are spread apart evenly, where WL's leaders bend
+  by their own optimiser.
 - A `Legended` dataset of `ListPlot` draws its legend entry, but the
   result is a `Graphics`, not WL's `Legended[Graphics[…],
   Placed[PointLegend[…], After]]`.

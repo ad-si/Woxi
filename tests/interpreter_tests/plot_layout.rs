@@ -400,6 +400,68 @@ mod framed_axes {
   }
 }
 
+// `Callout[data, label]` on a whole curve or dataset hangs its label off a
+// horizontal gray leader at the series' end; `Labeled[data, label]` puts
+// it right after the last point; expression labels are TraditionalForm.
+mod series_end_labels {
+  use super::*;
+
+  /// `(x, y)` of the `<text>` holding exactly `label`.
+  fn label_at(svg: &str, label: &str) -> (f64, f64) {
+    let end = svg.find(&format!(">{label}</text>")).unwrap();
+    let tag = &svg[svg[..end].rfind("<text ").unwrap()..end];
+    let attr = |name: &str| -> f64 {
+      let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    (attr("x"), attr("y"))
+  }
+
+  #[test]
+  fn callout_and_labeled_datasets() {
+    let svg = svg_of(
+      "ListPlot[{Callout[Range[5], PartitionsQ[n]], Labeled[Range[5] + 3, \
+       \"lab\"]}]",
+    );
+    // One leader, for the callout; the label is typeset q(n).
+    assert_eq!(svg.matches("fill=\"none\" stroke=\"#AAAAAA\"").count(), 1);
+    let (qx, _) = label_at(&svg, "q(n)");
+    let (lx, _) = label_at(&svg, "lab");
+    // Both sit right of the last points, the callout's past its leader.
+    assert!(qx > lx + 200.0, "{qx} {lx}");
+  }
+
+  #[test]
+  fn plot_callout_at_the_curve_end() {
+    let svg = svg_of("Plot[{Callout[x, x], Callout[2 x, \"two\"]}, {x, 0, 1}]");
+    let (x1, y1) = label_at(&svg, "x");
+    let (x2, y2) = label_at(&svg, "two");
+    assert!((x1 - x2).abs() < 1e-6);
+    // 2 x ends higher (smaller SVG y).
+    assert!(y2 < y1, "{y1} {y2}");
+  }
+
+  #[test]
+  fn close_labels_are_spread_apart() {
+    let svg = svg_of(
+      "ListPlot[{Callout[{1, 2, 3}, \"a\"], Callout[{1, 2, 3.01}, \"b\"]}]",
+    );
+    let (_, ya) = label_at(&svg, "a");
+    let (_, yb) = label_at(&svg, "b");
+    assert!((ya - yb).abs() > 150.0, "{ya} {yb}");
+  }
+
+  #[test]
+  fn a_positioned_callout_keeps_its_place() {
+    // `Callout[data, label, Above]` is not moved to the series end.
+    let svg = svg_of("ListPlot[Callout[{1, 3, 2}, \"top\", Above]]");
+    assert!(svg.contains(">top</text>"));
+    assert_eq!(svg.matches("fill=\"none\" stroke=\"#AAAAAA\"").count(), 0);
+  }
+}
+
 // `ListPlot[{a, Legended[b, label], c}]` gets a point legend with the one
 // entry, in the color of the series it names (WL: `Legended[g,
 // Placed[PointLegend[…], After]]`).

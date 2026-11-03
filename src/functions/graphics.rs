@@ -16327,6 +16327,25 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 
 /// The label string for an axis label: a `Style[label, Italic, …]` carries
 /// its font directives as ready-made markup, anything else is its plain text.
+/// A curve or dataset label (`Callout`, `Labeled`, `PlotLabels`) as drawn:
+/// a string as it is, any other expression typeset in `TraditionalForm`
+/// (`PartitionsQ[n]` reads q(n), `n^Sin[n]` as n with sin(n) raised).
+pub fn traditional_label(e: &Expr) -> String {
+  match e {
+    Expr::String(s) => s.clone(),
+    _ if contains_visible_style(e) => {
+      format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
+    }
+    _ => format!(
+      "{STYLED_LABEL_MARKER}{}",
+      expr_to_svg_markup(&Expr::FunctionCall {
+        name: "TraditionalForm".into(),
+        args: vec![e.clone()].into(),
+      })
+    ),
+  }
+}
+
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
   if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));

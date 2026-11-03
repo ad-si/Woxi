@@ -684,11 +684,10 @@ fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
     && name == "Labeled"
     && args.len() >= 2
   {
-    let label = match &args[1] {
-      Expr::String(s) => s.clone(),
-      other => expr_to_output(other),
-    };
-    Some((args[0].clone(), label))
+    Some((
+      args[0].clone(),
+      crate::functions::graphics::traditional_label(&args[1]),
+    ))
   } else {
     None
   }
@@ -1804,12 +1803,59 @@ fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
   }
 }
 
-/// Attach dataset labels from `Labeled` wrappers as callout labels, unless
-/// explicit Callout labels are already present.
-fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
-  if labels.iter().any(std::option::Option::is_some)
-    && opts.callout_labels.is_empty()
+/// How a dataset's own label is drawn: `Labeled[data, l]` right after the
+/// dataset's last point, `Callout[data, l]` there too but off a leader
+/// line; `None` for a callout with an explicit position.
+fn dataset_label_kind(e: &Expr) -> Option<bool> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Labeled" && args.len() == 2 =>
+    {
+      Some(false)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Callout" && args.len() >= 2 =>
+    {
+      crate::functions::plot::callout_at_series_end(args).then_some(true)
+    }
+    _ => None,
+  }
+}
+
+/// Attach the dataset labels of `Labeled` / `Callout` wrappers in the
+/// (evaluated) data `data`: those at their automatic place go to the
+/// series' end (`plot_labels`), the others are drawn as callouts. Explicit
+/// `PlotLabels` or callout labels win.
+fn apply_dataset_labels(
+  opts: &mut PlotOptions,
+  labels: &[Option<String>],
+  data: &Expr,
+) {
+  if !labels.iter().any(std::option::Option::is_some)
+    || !opts.callout_labels.is_empty()
   {
+    return;
+  }
+  let data = evaluate_expr_to_expr(data).unwrap_or_else(|_| data.clone());
+  let kinds: Vec<Option<bool>> = match &data {
+    Expr::List(items) => items.iter().map(dataset_label_kind).collect(),
+    whole => vec![dataset_label_kind(whole); labels.len()],
+  };
+  let at_end = |i: usize| kinds.get(i).copied().flatten();
+  if opts.plot_labels.is_empty() && labels.len() == kinds.len() {
+    opts.plot_labels = labels
+      .iter()
+      .enumerate()
+      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_some()))
+      .collect();
+    opts.plot_label_leaders =
+      (0..labels.len()).map(|i| at_end(i) == Some(true)).collect();
+    opts.callout_labels = labels
+      .iter()
+      .enumerate()
+      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_none()))
+      .collect();
+  } else {
     opts.callout_labels = labels.to_vec();
   }
 }
@@ -1824,7 +1870,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_list_data_err_labeled(&data, true)?;
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
   } else {
@@ -2050,7 +2096,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_list_data_err_labeled(&data, false)?;
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels = if parsed.hide_point_labels {
     Vec::new()
   } else {
@@ -2156,8 +2202,9 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// cumulative curves are filled by default.
 pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  let data = data_arg(args, &parsed);
+  let (all_series, labels) = parse_list_data_labeled(&data)?;
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.stacked = true;
   // Default to filled bands unless the user explicitly overrode Filling.
   if parsed.opts.filling == crate::functions::plot::Filling::None {
@@ -2193,8 +2240,9 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListStepPlot[{y1, y2, ...}]
 pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  let data = data_arg(args, &parsed);
+  let (all_series, labels) = parse_list_data_labeled(&data)?;
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
 
   // Transform each series into staircase coordinates
   let step_series: Vec<Vec<(f64, f64)>> =
@@ -2270,8 +2318,9 @@ fn points_unless_joined(
 /// ListLogPlot: y-axis is log10 scale
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  let data = data_arg(args, &parsed);
+  let (all_series, labels) = parse_list_data_labeled(&data)?;
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.log_y = true;
 
   // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
@@ -2308,8 +2357,9 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ListLogLogPlot: both axes log10 scale
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  let data = data_arg(args, &parsed);
+  let (all_series, labels) = parse_list_data_labeled(&data)?;
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.log_x = true;
   parsed.opts.log_y = true;
 
@@ -2355,8 +2405,9 @@ pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let (all_series, labels) = parse_list_data_labeled(&data_arg(args, &parsed))?;
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  let data = data_arg(args, &parsed);
+  let (all_series, labels) = parse_list_data_labeled(&data)?;
+  apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.log_x = true;
 
   // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
@@ -2394,7 +2445,13 @@ pub fn list_log_linear_plot_ast(
 pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (all_series, labels) = parse_list_data_labeled(&args[0])?;
   let mut parsed = parse_plot_options(args);
-  apply_dataset_labels(&mut parsed.opts, &labels);
+  // A polar plot has no series end to the right: its dataset labels stay
+  // callouts (an empty data list matches no dataset).
+  apply_dataset_labels(
+    &mut parsed.opts,
+    &labels,
+    &Expr::List(Vec::new().into()),
+  );
 
   // `{{θ1, r1}, …}` pairs give each point its angle; plain radii
   // `{r1, r2, …}` are spread evenly over the circle, starting at angle 0.
