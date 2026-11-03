@@ -3836,6 +3836,14 @@ producing a `StudentTDistribution` over a *list* of degrees of freedom.
 Woxi returns its version *string* (`v0.3.0-46-g…`) rather than a number, so
 `ToString[$VersionNumber]` and any `$VersionNumber >= 9` test break.
 
+### `Animate` with an option it does not know
+
+`Animate[…]` evaluates to wolframscript's `Manipulate` (animator controls,
+sorted options, the `"Animate"` defaults). An unknown option
+(`Appearance -> None`, `ImageSize -> 100`) is dropped with
+`Animate::unknop` in both. wolframscript also prints three
+`OptionValue::nodef` messages first, which Woxi does not.
+
 ### `Manipulate`'s `Initialization` is not scoped
 
 `Manipulate[…, Initialization :> (f[x_] := …)]` leaves `f` defined in the
@@ -4891,26 +4899,38 @@ machines (compare "HighlightImage returns the image at its own size").
 
 ### Chart functions: symbolic primitives
 
-`PieChart`, `BarChart` and friends return `Graphics[{…}]`, but only
-`RectangleChart` and ``BarCharts`GeneralizedBarChart`` reproduce
-wolframscript's primitive tree (a
-``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]``
-per bar, the exact bar positions). Still different:
+`PieChart`, `BarChart` and friends return `Graphics[{…}]`, but only some
+reproduce wolframscript's primitive tree:
 
-- `BarChart[<|"a" -> 1, …|>]` emits plain `{RGBColor[…], Rectangle[…]}`
-  pairs; wolframscript wraps each bar like `RectangleChart` does and uses
-  bar edges at `0.5487…`.
-- `PairedBarChart` / `PairedHistogram` draw rectangles where wolframscript's
-  first part holds none (its bars sit deeper in the tree).
-- `RectangleChart3D` returns one cuboid per box; wolframscript's only
-  `Cuboid` is the shaded base plate (the boxes are polygons).
-- `BulletGauge[{3, 8}, 5, {0, 10}]` draws its bars as `Rectangle`s with
-  `{0., 0.35}` corners and a target `Line` at `x = 5`; wolframscript's gauge
-  has no such rectangles and a `Line` at 0.
-- `RectangleChart[<|…|>, PlotLabels -> Callout[Automatic, Above]]` places the
-  label `Text` at a different height.
-- `Head[Animate[…]]` stays `Animate`; wolframscript rewrites it to
-  `Manipulate`.
+- `RectangleChart`, ``BarCharts`GeneralizedBarChart``, `PairedBarChart` and
+  `PairedHistogram` use one
+  ``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]`` per bar, at
+  wolframscript's positions. The paired charts' axes, ticks and options are
+  not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
+  largest count between its halves. wolframscript's gap is a little smaller
+  and not proportional: `15/67` for a largest count of 3, `85/163` for 5.
+- `BarChart` (of a list or an association) emits plain
+  `{RGBColor[…], Rectangle[…]}` pairs. wolframscript draws yellow tooltip
+  rectangles from `k - 0.4512…` to `k + 0.4512…`, an invisible `Point`
+  pair that sets the extent, and the axis as `"GraphicsAxes"` styled lines.
+- `RectangleChart3D` boxes are `GraphicsComplex` polygons at wolframscript's
+  corners, above an invisible base plate. The faces carry a plain colour
+  instead of wolframscript's `VertexColors` shading (and its
+  `LightDarkSwitched` pairs), and the scaled backdrop polygons, face grids
+  and options are missing.
+- `RectangleChart` `Callout` labels sit 19 printer points past the bar,
+  or 20 when the label has an ascender. That rule is read off a few labels
+  (wolframscript measures the text). Woxi draws the leader curves and the
+  `Offset` text at their base points, so the label can fall outside the
+  plot range.
+- `BulletGauge` builds wolframscript's tree. Two details differ: a
+  reference marker's matrix entry (`-0.07499999999999996`) changes in its
+  last digits with the marker position in wolframscript, and the series
+  colours from the third series on drift in the last digit. The colours
+  are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
+  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
+  draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
+  scale's tick marks have no length.
 
 ### `PointSize` in `PlotStyle` and `ListPlot`'s `PlotLabel`
 
@@ -6746,13 +6766,6 @@ Above 12 points Woxi uses iterated 2-opt/Or-opt local search. On random
 instances the tour comes within about 0.4% of WL's length and is sometimes
 shorter. `FindShortestTour[graph]` returns the cheapest Hamiltonian cycle along
 the graph's edges (or `{}`); it has not been compared against WL.
-
-### `RectangleChart3D` layout is an approximation
-
-`RectangleChart` matches wolframscript's gaps (`0.1 - 0.001 n`), tooltips and
-`"RoundingRadius"` primitives. `RectangleChart3D` stacks
-plain cuboids from y = 0 and leaves out WL's shaded base plate, face grids,
-`ViewPoint -> {2, -10, 2}` and box ratios.
 
 ### Grid `Interpolation` in two or more dimensions differs in the last digit
 
