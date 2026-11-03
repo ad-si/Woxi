@@ -712,6 +712,23 @@ fn meijer_g_scaled(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(r, Expr::Integer(1)) {
     return meijer_g_ast(&args[..3]);
   }
+  // r = n or r = 1/n: the closed forms in powers of z (see
+  // meijer_g_closed_form).
+  let scale = match r {
+    Expr::Integer(n) if *n >= 2 => Some((1, *n)),
+    Expr::FunctionCall { name, args: q } if name == "Rational" => {
+      match q.as_slice() {
+        [Expr::Integer(1), Expr::Integer(n)] if *n >= 2 => Some((*n, 1)),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  if let Some(m) = scale
+    && let Some(closed) = meijer_g_closed_form(alist, blist, z, m)?
+  {
+    return Ok(closed);
+  }
   let positive = |e: &Expr| try_eval_to_f64(e).is_some_and(|v| v > 0.0);
   if !positive(r) || !positive(z) {
     return Ok(unevaluated("MeijerG", args));
@@ -727,12 +744,134 @@ fn meijer_g_scaled(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(result)
 }
 
+/// The elementary and Bessel closed forms of the Meijer G-functions with
+/// one pole series, as wolframscript writes them, for `MeijerG[…, z, r]`
+/// with `1/r = m` given as `(numerator, denominator)`, one of them 1:
+/// `G^{1,0}_{0,1}(b; z) = z^b/E^z`,
+/// `G^{1,1}_{1,1}(a; b; z) = z^b*(1 + z)^(-1 + a - b)*Gamma[1 - a + b]`,
+/// `G^{1,0}_{0,2}(a, b; z) = z^(a + (-a + b)/2)*BesselJ[a - b, 2*Sqrt[z]]`,
+/// those of `z^m` written with powers of `z` (`z^(3*a)/E^z^3`). For an
+/// integer `m >= 2` the Bessel form is
+/// `z^(m a)*(z^(m/2))^(-a + b)*(z^m)^((a - b)/2 + (-a + b)/2)*
+/// BesselJ[a - b, 2*z^(m/2)]`, for `m = 1/n` it is
+/// `z^(a/n + (-a + b)/(2 n))*BesselJ[a - b, 2*z^(1/(2 n))]`. The argument
+/// is a symbol, or an exact number for the elementary forms; `None` for
+/// other shapes.
+fn meijer_g_closed_form(
+  alist: &Expr,
+  blist: &Expr,
+  z: &Expr,
+  (m_num, m_den): (i128, i128),
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let lists = |e: &Expr| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    match e {
+      Expr::List(v) if v.len() == 2 => match (&v[0], &v[1]) {
+        (Expr::List(x), Expr::List(y)) => Some((x.to_vec(), y.to_vec())),
+        _ => None,
+      },
+      _ => None,
+    }
+  };
+  let (Some((an, ap)), Some((bm, bq))) = (lists(alist), lists(blist)) else {
+    return Ok(None);
+  };
+  let symbol = matches!(z, Expr::Identifier(_));
+  let exact_number = matches!(z, Expr::Integer(_))
+    || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational");
+  // z = 0 is left to the residue evaluation (`G^{1,0}_{0,1}(0; 0) = 1`).
+  if (!symbol && !exact_number) || matches!(z, Expr::Integer(0)) {
+    return Ok(None);
+  }
+  let m = make_rational(m_num, m_den);
+  let unit = m_num == 1 && m_den == 1;
+  // z^(m k).
+  let zpow = |k: Expr| -> Expr {
+    if unit {
+      pow2(z.clone(), k)
+    } else {
+      pow2(z.clone(), times(vec![m.clone(), k]))
+    }
+  };
+  // w = z^m and its square root.
+  let w = if unit {
+    z.clone()
+  } else {
+    pow2(z.clone(), m.clone())
+  };
+  let sqrt_w = if unit {
+    call1("Sqrt", z.clone())
+  } else {
+    pow2(z.clone(), make_rational(m_num, 2 * m_den))
+  };
+  let neg = |e: Expr| times(vec![Expr::Integer(-1), e]);
+  let result =
+    match (an.as_slice(), ap.as_slice(), bm.as_slice(), bq.as_slice()) {
+      ([], [], [b], []) => times(vec![zpow(b.clone()), call1("Exp", neg(w))]),
+      ([a], [], [b], []) => times(vec![
+        zpow(b.clone()),
+        pow2(
+          plus(vec![Expr::Integer(1), w]),
+          plus(vec![Expr::Integer(-1), a.clone(), neg(b.clone())]),
+        ),
+        call1(
+          "Gamma",
+          plus(vec![Expr::Integer(1), neg(a.clone()), b.clone()]),
+        ),
+      ]),
+      ([], [], [a], [b]) if symbol => {
+        let scaled =
+          |c: (i128, i128), e: Expr| times(vec![make_rational(c.0, c.1), e]);
+        let b_minus_a = plus(vec![neg(a.clone()), b.clone()]);
+        let bessel = call(
+          "BesselJ",
+          vec![
+            plus(vec![a.clone(), neg(b.clone())]),
+            times(vec![Expr::Integer(2), sqrt_w.clone()]),
+          ],
+        );
+        if m_den == 1 && m_num >= 2 {
+          times(vec![
+            zpow(a.clone()),
+            pow2(sqrt_w, b_minus_a.clone()),
+            pow2(
+              w,
+              plus(vec![
+                scaled((1, 2), plus(vec![a.clone(), neg(b.clone())])),
+                scaled((1, 2), b_minus_a),
+              ]),
+            ),
+            bessel,
+          ])
+        } else {
+          times(vec![
+            pow2(
+              z.clone(),
+              plus(vec![
+                scaled((m_num, m_den), a.clone()),
+                scaled((m_num, 2 * m_den), b_minus_a),
+              ]),
+            ),
+            bessel,
+          ])
+        }
+      }
+      _ => return Ok(None),
+    };
+  Ok(Some(eval(&result)?))
+}
+
 pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 4 {
     return meijer_g_scaled(args);
   }
   if args.len() != 3 {
     return Ok(unevaluated("MeijerG", args));
+  }
+  if let Some(closed) =
+    meijer_g_closed_form(&args[0], &args[1], &args[2], (1, 1))?
+  {
+    return Ok(closed);
   }
   // wolframscript emits `MeijerG::hdiv` when the upper/lower parameter
   // arguments aren't both nested length-2 lists. Trigger the same warning
