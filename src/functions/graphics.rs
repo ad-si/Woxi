@@ -13636,8 +13636,9 @@ fn group_digits_svg(s: &str) -> String {
   }
 
   // Group from the right in threes.
-  // Wrap every group after the first in a <tspan dx="0.3ch"> so that
-  // the dx offset actually shifts the characters inside the tspan.
+  // Wrap every group after the first in a <tspan dx="0.18em"> so that
+  // the dx offset actually shifts the characters inside the tspan. (An
+  // `em`, not a `ch`: rasterizers such as resvg ignore `ch` lengths.)
   let remainder = digits.len() % 3;
   let mut result = String::with_capacity(s.len() + 20);
   result.push_str(sign);
@@ -13649,7 +13650,7 @@ fn group_digits_svg(s: &str) -> String {
     let chunk_str = std::str::from_utf8(chunk).unwrap();
     if i > 0 || remainder > 0 {
       // Thin space between groups (~30% of a monospace character width)
-      result.push_str("<tspan dx=\"0.3ch\">");
+      result.push_str("<tspan dx=\"0.18em\">");
       result.push_str(chunk_str);
       result.push_str("</tspan>");
     } else {
