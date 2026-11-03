@@ -4867,6 +4867,76 @@ fn tf_box(name: &str, args: Vec<Expr>) -> Expr {
   call(name, args)
 }
 
+/// `Piecewise[{{v1, c1}, …}, default]`: Wolfram's box — a `\[Piecewise]`
+/// brace beside a left-aligned grid of value/condition rows, the default
+/// (when given) in a last row conditioned on `True`.
+fn tf_piecewise(args: &[Expr]) -> Expr {
+  use crate::helpers::rule_expr;
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let list = |v: Vec<Expr>| Expr::List(v.into());
+  let Expr::List(cases) = &args[0] else {
+    unreachable!("guarded by the match arm")
+  };
+  let mut rows: Vec<Expr> = cases
+    .iter()
+    .filter_map(|c| match c {
+      Expr::List(vc) => Some(list(vec![tf(&vc[0]), tf(&vc[1])])),
+      _ => None,
+    })
+    .collect();
+  if let Some(default) = args.get(1) {
+    rows.push(list(vec![
+      tf(default),
+      tf_box(
+        "TagBox",
+        vec![
+          tf_string("True"),
+          tf_string("PiecewiseDefault"),
+          rule_expr(sym("AutoDelete"), sym("True")),
+        ],
+      ),
+    ]));
+  }
+  let left = || rule_expr(sym("ColumnAlignments"), list(vec![sym("Left")]));
+  let inner = tf_box(
+    "GridBox",
+    vec![
+      list(rows),
+      left(),
+      rule_expr(sym("ColumnSpacings"), Expr::Real(1.2)),
+      rule_expr(sym("ColumnWidths"), sym("Automatic")),
+      rule_expr(
+        sym("AllowedDimensions"),
+        list(vec![Expr::Integer(2), sym("Automatic")]),
+      ),
+      rule_expr(sym("Selectable"), sym("True")),
+      rule_expr(sym("Editable"), sym("True")),
+    ],
+  );
+  let outer = tf_box(
+    "GridBox",
+    vec![
+      list(vec![list(vec![tf_string("\u{F361}"), inner])]),
+      left(),
+      rule_expr(sym("ColumnSpacings"), Expr::Real(0.5)),
+      rule_expr(sym("ColumnWidths"), sym("Automatic")),
+    ],
+  );
+  tf_box(
+    "TagBox",
+    vec![
+      outer,
+      tf_string("Piecewise"),
+      rule_expr(sym("SyntaxForm"), sym("Equal")),
+      rule_expr(sym("SelectWithContents"), sym("True")),
+      rule_expr(sym("StripWrapperBoxes"), sym("True")),
+      rule_expr(sym("Selectable"), sym("False")),
+      rule_expr(sym("Editable"), sym("False")),
+      rule_expr(sym("DeleteWithContents"), sym("True")),
+    ],
+  )
+}
+
 /// Thin space used between implicitly-multiplied factors (`2 a`, `n x`).
 /// The SVG text renderer draws a standalone U+2009 as a narrow gap.
 fn tf_thin_space() -> Expr {
@@ -6053,6 +6123,13 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_row(items)
     }
     "Sqrt" if args.len() == 1 => tf_box("SqrtBox", vec![tf(&args[0])]),
+    "Piecewise"
+      if (1..=2).contains(&args.len())
+        && matches!(&args[0], Expr::List(cases)
+          if cases.iter().all(|c| matches!(c, Expr::List(vc) if vc.len() == 2))) =>
+    {
+      tf_piecewise(args)
+    }
     "Power" if args.len() == 2 => tf_power(&args[0], &args[1]),
     "Rational" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
     "Times" if args.len() >= 2 => tf_times(&unevaluated("Times", args)),

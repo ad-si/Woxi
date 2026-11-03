@@ -45351,6 +45351,36 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn traditional_form_piecewise_is_a_braced_grid() {
+    // Wolfram's box: a \[Piecewise] brace beside a left-aligned grid of
+    // cases, the default in a `True` row.
+    assert_eq!(
+      interpret(
+        "ToString[ToBoxes[TraditionalForm[HoldForm[Piecewise[{{a, c}}, b]]]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "TagBox[FormBox[TagBox[TagBox[GridBox[{{\"\u{F361}\", GridBox[{{\"a\", \"c\"}, \
+       {\"b\", TagBox[\"True\", \"PiecewiseDefault\", AutoDelete -> True]}}, \
+       ColumnAlignments -> {Left}, ColumnSpacings -> 1.2, ColumnWidths -> \
+       Automatic, AllowedDimensions -> {2, Automatic}, Selectable -> True, \
+       Editable -> True]}}, ColumnAlignments -> {Left}, ColumnSpacings -> 0.5, \
+       ColumnWidths -> Automatic], \"Piecewise\", SyntaxForm -> Equal, \
+       SelectWithContents -> True, StripWrapperBoxes -> True, Selectable -> \
+       False, Editable -> False, DeleteWithContents -> True], HoldForm], \
+       TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+    // It draws as a stretched brace, not as `Piecewise(…)`.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Piecewise[{{-x, x < 0}, {x, x >= \
+       0}}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Piecewise"), "{svg}");
+    assert!(svg.contains("<path"), "{svg}");
+  }
+
+  #[test]
   fn traditional_form_held_exp_is_a_function_call() {
     // A held `Exp[…]` typesets as `exp(…)`, like `sin(…)`; only `E^x` is
     // a superscript.

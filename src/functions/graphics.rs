@@ -13410,6 +13410,46 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
       }
 
+      // `Piecewise`'s box: a `\[Piecewise]` brace stretched beside the
+      // grid of cases, 0.5 em apart (its `ColumnSpacings`).
+      "GridBox"
+        if matches!(&args[0], Expr::List(rows) if rows.len() == 1
+          && matches!(&rows[0], Expr::List(cells) if cells.len() == 2
+            && matches!(&cells[0], Expr::String(s) if s == "\u{F361}"))) =>
+      {
+        let Expr::List(rows) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let Expr::List(cells) = &rows[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let cases = layout_box(&cells[1], font_size);
+        // The cases are centred on the math axis, 0.26 em above the
+        // surrounding baseline.
+        let axis_baseline = cases.height / 2.0 + 0.26 * font_size;
+        let brace = render_stretchy_delim(
+          '{',
+          axis_baseline,
+          cases.height - axis_baseline,
+          font_size,
+          true,
+          false,
+        );
+        let gap = 0.5 * ch;
+        let cases_y = brace.baseline - axis_baseline;
+        let elements = format!(
+          "{}{}",
+          brace.translate(0.0, 0.0),
+          cases.translate(brace.width + gap, cases_y)
+        );
+        BoxLayout {
+          width: brace.width + gap + cases.width,
+          height: brace.height.max(cases_y + cases.height),
+          baseline: brace.baseline,
+          elements,
+        }
+      }
+
       // GridBox
       "GridBox" if !args.is_empty() => {
         if let Expr::List(rows) = &args[0] {
@@ -13417,6 +13457,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           // 1 adds 0.4 em to a 0.93 em line, a row pitch of 1.33 em.
           let gap_x = font_size * 0.8;
           let gap_y = font_size * 0.28;
+          // `ColumnAlignments -> {Left}` (Piecewise's cases) left-aligns the
+          // columns; they are centred otherwise.
+          let left_aligned = args[1..].iter().any(|o| {
+            matches!(o, Expr::Rule { pattern, replacement }
+              if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ColumnAlignments")
+                && matches!(replacement.as_ref(), Expr::List(a)
+                  if matches!(a.first(), Some(Expr::Identifier(l)) if l == "Left")))
+          });
           let laid_out: Vec<Vec<BoxLayout>> = rows
             .iter()
             .map(|row| {
@@ -13470,7 +13518,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               let dy = row_bl - cell.baseline;
               // Columns are centred (ColumnAlignments -> Center).
               let col_w = *col_widths.get(ci).unwrap_or(&0.0);
-              let dx = (col_w - cell.width) / 2.0;
+              let dx = if left_aligned {
+                0.0
+              } else {
+                (col_w - cell.width) / 2.0
+              };
               elements.push_str(&cell.translate(x + dx, y + dy));
               x += col_w + gap_x;
             }
