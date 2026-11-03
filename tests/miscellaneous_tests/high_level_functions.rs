@@ -300,7 +300,10 @@ mod high_level_functions {
     }
     #[test]
     fn test_arccosh_real() {
-      assert_eq!(interpret("ArcCosh[2.0]").unwrap(), "1.3169578969248166");
+      // The last digit depends on the CPU-specific libm `log` variant, so
+      // compare within one ulp of 1.3169578969248166 (Wolfram's result).
+      let v: f64 = interpret("ArcCosh[2.0]").unwrap().parse().unwrap();
+      assert!((v - 1.3169578969248166).abs() <= 2.3e-16, "{v}");
     }
     #[test]
     fn test_arccosh_bigfloat_zero() {
