@@ -4332,11 +4332,57 @@ mod image_advanced {
       .unwrap(),
       plain
     );
-    // Methods that are not implemented stay unevaluated.
     assert_eq!(
       interpret("Head[EdgeDetect[Image[{{0., 1.}}], Method -> \"Sobel\"]]")
         .unwrap(),
-      "EdgeDetect"
+      "Image"
+    );
+  }
+
+  // Method -> "Sobel": binomial smoothing and difference kernels of
+  // half-width r over an edge-replicated image.
+  #[test]
+  fn gradient_filter_sobel_kernels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0.1,0.5,0.2,0.9,0.3,0.7},{0.4,0.8,0.6,0.1,0.0,0.2},{0.9,0.3,0.5,0.7,0.6,0.4},{0.2,0.2,0.8,0.1,0.9,0.5},{0.6,0.0,0.3,0.4,0.2,0.8}}]; \
+         Round[ImageData[GradientFilter[img, 2, Method -> \"Sobel\"]][[1]], 0.0001]"
+      )
+      .unwrap(),
+      "{0.171, 0.1241, 0.0374, 0.0692, 0.1125, 0.1486}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[ImageData[GradientFilter[Image[{{0,0,0,1,1,1,1,1}}], 1, Method -> \"Sobel\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.5, 0.5, 0., 0., 0., 0.}}"
+    );
+  }
+
+  // EdgeDetect thins by comparing each pixel with the magnitude one pixel
+  // ahead and behind along the gradient (bilinear), then keeps every
+  // connected ridge whose strongest pixel reaches the threshold.
+  #[test]
+  fn edge_detect_sobel_and_ridge_runs() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0.1,0.5,0.2,0.9,0.3,0.7},{0.4,0.8,0.6,0.1,0.0,0.2},{0.9,0.3,0.5,0.7,0.6,0.4},{0.2,0.2,0.8,0.1,0.9,0.5},{0.6,0.0,0.3,0.4,0.2,0.8}}]; \
+         {ImageData[EdgeDetect[img, Method -> \"Sobel\"]], ImageData[EdgeDetect[img, 1, 0.1, Method -> \"Sobel\"]]}"
+      )
+      .unwrap(),
+      "{{{1, 0, 0, 1, 1, 1}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 1}, {1, 1, 1, 0, 0, 0}, {1, 0, 1, 1, 1, 1}}, \
+{{1, 1, 0, 1, 1, 1}, {1, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 1}, {1, 0, 1, 0, 0, 0}, {1, 0, 1, 0, 1, 0}}}"
+    );
+    // A disk's outline is one pixel wide on the diagonals too.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[Table[If[(x - 8)^2 + (y - 7)^2 < 20, 1, 0], {y, 14}, {x, 16}]]]][[3 ;; 5]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0}}"
     );
   }
 

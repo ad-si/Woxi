@@ -4299,6 +4299,7 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => match pattern.as_ref() {
       Expr::Identifier(k) if k == "Method" => {
         is_str(replacement, "Canny")
+          || is_str(replacement, "Sobel")
           || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
       }
       p if is_str(p, "StraightEdges") => {
@@ -4365,39 +4366,115 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  let (dx, dy) = plane_gradient(
-    &gray,
-    w,
-    h,
-    gaussian_axis_from_radius(rows),
-    gaussian_axis_from_radius(columns),
+  let sobel = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method")
+        && is_str(replacement, "Sobel"))
+  });
+  let axis_kernels = |radius: f64| {
+    if sobel {
+      GradientKernels::sobel(radius.ceil().max(1.0) as usize)
+    } else {
+      GradientKernels::gaussian(gaussian_axis_from_radius(radius))
+    }
+  };
+  // The gradient of the image grown by one replicated pixel on each side:
+  // non-maximum suppression samples the magnitude up to a pixel outside
+  // the image, where wolframscript uses the gradient of the padded image.
+  let (pw, ph) = (w + 2, h + 2);
+  let padded: Vec<f64> = (0..ph * pw)
+    .map(|i| {
+      let (py, px) = (i / pw, i % pw);
+      gray
+        [py.saturating_sub(1).min(h - 1) * w + px.saturating_sub(1).min(w - 1)]
+    })
+    .collect();
+  let (pdx, pdy) = plane_gradient(
+    &padded,
+    pw,
+    ph,
+    &axis_kernels(rows),
+    &axis_kernels(columns),
   );
-  let magnitudes: Vec<f64> = (0..w * h).map(|i| dx[i].hypot(dy[i])).collect();
+  let padded_magnitudes: Vec<f64> =
+    (0..pw * ph).map(|i| pdx[i].hypot(pdy[i])).collect();
+  let inner = |y: usize, x: usize| (y + 1) * pw + x + 1;
+  let magnitudes: Vec<f64> = (0..w * h)
+    .map(|i| padded_magnitudes[inner(i / w, i % w)])
+    .collect();
 
   let threshold =
     user_threshold.unwrap_or_else(|| cluster_variance_threshold(&magnitudes));
 
-  // Non-maximum suppression thins each ridge to one pixel: keep a pixel
-  // only if neither neighbour along the quantized gradient direction is
-  // stronger.
-  let clamp_y = |y: i32| y.clamp(0, h as i32 - 1) as usize;
-  let clamp_x = |x: i32| x.clamp(0, w as i32 - 1) as usize;
-  let mut result = vec![0.0_f64; w * h];
+  // Non-maximum suppression thins each ridge to one pixel: a pixel stays
+  // when the magnitude one pixel ahead and one behind along the gradient
+  // (interpolated bilinearly) is no larger.
+  let sample = |yf: f64, xf: f64| {
+    let at = |y: i64, x: i64| {
+      padded_magnitudes[y.clamp(0, ph as i64 - 1) as usize * pw
+        + x.clamp(0, pw as i64 - 1) as usize]
+    };
+    let (y0, x0) = (yf.floor(), xf.floor());
+    let (fy, fx) = (yf - y0, xf - x0);
+    let (y0, x0) = (y0 as i64, x0 as i64);
+    at(y0, x0) * (1.0 - fy) * (1.0 - fx)
+      + at(y0 + 1, x0) * fy * (1.0 - fx)
+      + at(y0, x0 + 1) * (1.0 - fy) * fx
+      + at(y0 + 1, x0 + 1) * fy * fx
+  };
+  let mut ridge = vec![false; w * h];
   for y in 0..h {
     for x in 0..w {
-      let index = y * w + x;
-      let magnitude = magnitudes[index];
-      if magnitude <= 0.0 || magnitude < threshold {
+      let at = inner(y, x);
+      let magnitude = padded_magnitudes[at];
+      if magnitude <= 0.0 {
         continue;
       }
-      let (step_y, step_x) =
-        quantize_gradient_direction(dy[index].atan2(dx[index]));
-      let ahead =
-        magnitudes[clamp_y(y as i32 + step_y) * w + clamp_x(x as i32 + step_x)];
-      let behind =
-        magnitudes[clamp_y(y as i32 - step_y) * w + clamp_x(x as i32 - step_x)];
-      if magnitude >= ahead && magnitude >= behind {
-        result[index] = 1.0;
+      let (ux, uy) = (pdx[at] / magnitude, pdy[at] / magnitude);
+      let (cy, cx) = ((y + 1) as f64, (x + 1) as f64);
+      ridge[y * w + x] = magnitude >= sample(cy + uy, cx + ux)
+        && magnitude >= sample(cy - uy, cx - ux);
+    }
+  }
+
+  // A connected (8-neighbour) run of ridge pixels is an edge when its
+  // strongest pixel reaches the threshold; the whole run is kept.
+  let mut result = vec![0.0_f64; w * h];
+  let mut seen = vec![false; w * h];
+  for start in 0..w * h {
+    if !ridge[start] || seen[start] {
+      continue;
+    }
+    seen[start] = true;
+    let mut run = vec![start];
+    let mut next = 0;
+    while next < run.len() {
+      let (y, x) = ((run[next] / w) as i64, (run[next] % w) as i64);
+      next += 1;
+      for (dy, dx) in [
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
+      ] {
+        let (ny, nx) = (y + dy, x + dx);
+        if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+          continue;
+        }
+        let n = ny as usize * w + nx as usize;
+        if ridge[n] && !seen[n] {
+          seen[n] = true;
+          run.push(n);
+        }
+      }
+    }
+    if run.iter().any(|&i| magnitudes[i] >= threshold) {
+      for i in run {
+        result[i] = 1.0;
       }
     }
   }
@@ -4419,22 +4496,6 @@ fn cluster_variance_threshold(values: &[f64]) -> f64 {
   match otsu_threshold(values, ImageType::Real64, false) {
     Some(t) => crate::functions::math_ast::try_eval_to_f64(&t).unwrap_or(0.0),
     None => values.first().map_or(0.0, |v| v.max(0.0)),
-  }
-}
-
-/// Quantize gradient direction to one of 4 axes and return (dy, dx) neighbor offset.
-fn quantize_gradient_direction(angle: f64) -> (i32, i32) {
-  use std::f64::consts::PI;
-  // Normalize angle to [0, π) — we only care about the axis, not the sign
-  let a = ((angle % PI) + PI) % PI;
-  if !(PI / 8.0..7.0 * PI / 8.0).contains(&a) {
-    (0, 1) // horizontal edge → compare left/right
-  } else if a < 3.0 * PI / 8.0 {
-    (1, 1) // 45° diagonal
-  } else if a < 5.0 * PI / 8.0 {
-    (1, 0) // vertical edge → compare up/down
-  } else {
-    (-1, 1) // 135° diagonal
   }
 }
 
@@ -6201,11 +6262,21 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// at the boundaries), matching wolframscript's `GradientFilter[list, 1]`
 /// output for purely numeric input. Larger radii or non-list inputs stay
 /// symbolic.
-pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || unevaluated("GradientFilter", args);
+pub fn gradient_filter_ast(
+  all_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("GradientFilter", all_args);
+  let option_start = all_args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(all_args.len());
+  let (args, opts) = all_args.split_at(option_start);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
+  let Some(sobel) = gradient_method_is_sobel(opts) else {
+    return Ok(unevaluated());
+  };
 
   // 1D list input with radius 1: use the original central-difference
   // path (matches wolframscript's GradientFilter[{...}, 1] output).
@@ -6215,6 +6286,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .filter(|v| *v >= 0.0)
       .map(|v| v as usize),
   ) && r == 1
+    && !sobel
     // Restrict to flat numeric lists (not nested-list matrices, which
     // need the 2D path further down).
     && !elems.iter().any(|e| matches!(e, Expr::List(_)))
@@ -6296,8 +6368,17 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut out: Vec<f64> = vec![0.0; data.len()];
     for c_idx in 0..ch {
       let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
-      let axis = GaussianAxis { radius, sigma };
-      let (dx, dy) = plane_gradient(&plane, w, h, axis, axis);
+      let kernels = if sobel {
+        // The Sobel kernel's half-width is the radius rounded up.
+        let r = match &args[1] {
+          Expr::Real(f) => f.ceil() as usize,
+          _ => radius,
+        };
+        GradientKernels::sobel(r)
+      } else {
+        GradientKernels::gaussian(GaussianAxis { radius, sigma })
+      };
+      let (dx, dy) = plane_gradient(&plane, w, h, &kernels, &kernels);
       for i in 0..w * h {
         out[i * ch + c_idx] = dx[i].hypot(dy[i]);
       }
@@ -6316,6 +6397,36 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated())
 }
 
+/// Read a gradient's `Method` option: `Some(true)` for `"Sobel"`,
+/// `Some(false)` for the default derivative of Gaussian, `None` for
+/// anything else (left unevaluated).
+fn gradient_method_is_sobel(opts: &[Expr]) -> Option<bool> {
+  let mut sobel = false;
+  for o in opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = o
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method") {
+      return None;
+    }
+    match replacement.as_ref() {
+      Expr::String(m) if m == "Sobel" => sobel = true,
+      Expr::String(m) if m == "Canny" || m == "Gaussian" => sobel = false,
+      Expr::Identifier(a) if a == "Automatic" => sobel = false,
+      _ => return None,
+    }
+  }
+  Some(sobel)
+}
+
 /// The two partial derivatives of one image plane, smoothed by the
 /// discrete Gaussian of half-width `radius` and standard deviation
 /// `sigma`: `dx = D ⊛_x (T ⊛_y plane)` and `dy = D ⊛_y (T ⊛_x plane)`,
@@ -6326,13 +6437,13 @@ fn plane_gradient(
   plane: &[f64],
   w: usize,
   h: usize,
-  vertical: GaussianAxis,
-  horizontal: GaussianAxis,
+  vertical: &GradientKernels,
+  horizontal: &GradientKernels,
 ) -> (Vec<f64>, Vec<f64>) {
-  let smooth_rows = gaussian_filter_kernel(horizontal.radius, horizontal.sigma);
-  let smooth_columns = gaussian_filter_kernel(vertical.radius, vertical.sigma);
-  let derivative_rows = gradient_filter_derivative_kernel(&smooth_rows);
-  let derivative_columns = gradient_filter_derivative_kernel(&smooth_columns);
+  let (smooth_rows, derivative_rows) =
+    (&horizontal.smooth, &horizontal.derivative);
+  let (smooth_columns, derivative_columns) =
+    (&vertical.smooth, &vertical.derivative);
   let along_rows = |source: &[f64], kernel: &[f64]| {
     let mut out = vec![0.0; w * h];
     for y in 0..h {
@@ -6356,9 +6467,52 @@ fn plane_gradient(
     out
   };
   (
-    along_rows(&along_columns(plane, &smooth_columns), &derivative_rows),
-    along_columns(&along_rows(plane, &smooth_rows), &derivative_columns),
+    along_rows(&along_columns(plane, smooth_columns), derivative_rows),
+    along_columns(&along_rows(plane, smooth_rows), derivative_columns),
   )
+}
+
+/// The smoothing and derivative kernels a gradient uses along one axis.
+struct GradientKernels {
+  smooth: Vec<f64>,
+  derivative: Vec<f64>,
+}
+
+impl GradientKernels {
+  /// The discrete Gaussian and its derivative (`GradientFilter`'s default).
+  fn gaussian(axis: GaussianAxis) -> Self {
+    let smooth = gaussian_filter_kernel(axis.radius, axis.sigma);
+    let derivative = gradient_filter_derivative_kernel(&smooth);
+    GradientKernels { smooth, derivative }
+  }
+
+  /// `Method -> "Sobel"` of half-width `r`: the binomial smoothing kernel
+  /// `Binomial[2r, k]/2^(2r)` and the difference of the order `2r-1`
+  /// binomial (`{1, 0, -1}/2` for `r = 1`, `{1, 2, 0, -2, -1}/8` for
+  /// `r = 2`), so a unit ramp has slope 1.
+  fn sobel(radius: usize) -> Self {
+    let radius = radius.max(1);
+    let binomial = |n: usize| -> Vec<f64> {
+      let mut row = vec![1.0_f64];
+      for _ in 0..n {
+        let mut next = vec![0.0; row.len() + 1];
+        for (i, v) in row.iter().enumerate() {
+          next[i] += v / 2.0;
+          next[i + 1] += v / 2.0;
+        }
+        row = next;
+      }
+      row
+    };
+    let smooth = binomial(2 * radius);
+    let b = binomial(2 * radius - 1);
+    let derivative = (0..=2 * radius)
+      .map(|i| {
+        b.get(i).copied().unwrap_or(0.0) - if i == 0 { 0.0 } else { b[i - 1] }
+      })
+      .collect();
+    GradientKernels { smooth, derivative }
+  }
 }
 
 /// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The
