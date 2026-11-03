@@ -12488,6 +12488,25 @@ fn render_stretchy_delim(
         "<line x1=\"{cx:.2}\" y1=\"{y1:.2}\" x2=\"{cx:.2}\" y2=\"{y2:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
       )
     }
+    // Matrix parentheses: hairlines, 0.12 em short of the grid's top and
+    // bottom, nearly straight with their tips 0.49 em and their middle
+    // 0.28 em from the outer edge, 0.4 em off the grid.
+    '(' | ')' if around_grid => {
+      let (y0, y1) = (pad + font_size * 0.12, h - pad - font_size * 0.12);
+      let sw = (font_size * 0.04).max(0.5);
+      w = font_size * 0.89;
+      let (tip, mid) = if closing {
+        (font_size * 0.4, font_size * 0.61)
+      } else {
+        (font_size * 0.49, font_size * 0.28)
+      };
+      // A cubic's middle lies 3/4 of the way to its control points.
+      let cx = tip + (mid - tip) * 4.0 / 3.0;
+      let (ya, yb) = (y0 + (y1 - y0) * 0.125, y1 - (y1 - y0) * 0.125);
+      format!(
+        "<path d=\"M {tip:.2} {y0:.2} C {cx:.2} {ya:.2}, {cx:.2} {yb:.2}, {tip:.2} {y1:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+      )
+    }
     '|' => {
       let cx = f64::midpoint(x0, x1);
       format!(
@@ -12722,7 +12741,12 @@ impl BoxLayout {
       })
       .collect();
     let s = mapped.as_str();
-    let w = s.chars().count() as f64 * ch;
+    // `\[NoBreak]` (which a TraditionalForm matrix sets inside its
+    // parentheses), zero-width spaces and `\[InvisibleApplication]` take no
+    // room.
+    let zero_width =
+      |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
+    let w = s.chars().filter(|c| !zero_width(c)).count() as f64 * ch;
     let escaped = svg_escape(s);
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
@@ -12870,9 +12894,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             // glyphs so ordinary parenthesized expressions are unaffected.
             if inner_ascent + inner_descent > natural * 1.5 {
               let last = children.len() - 1;
-              let around_grid = items.len() == 3
-                && matches!(&items[1], Expr::FunctionCall { name, .. }
-                  if name == "GridBox");
+              let around_grid = items[1..items.len() - 1].iter().any(|it| {
+                matches!(it, Expr::FunctionCall { name, .. } if name == "GridBox")
+              });
               children[0] = render_stretchy_delim(
                 o,
                 inner_ascent,
@@ -20078,6 +20102,11 @@ fn grid_svg_styled_internal(
   let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
   let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
+  // A parenthesized matrix (MatrixForm) is a TableForm with
+  // TableSpacing -> {1, 1} inside its parentheses.
+  if parens && table_spacing.is_none() {
+    table_spacing = Some((Some(1.0), Some(1.0)));
+  }
   let is_table_form = table_spacing.is_some();
   // TableForm: a column unit is 0.7 em (default 3). A row unit is 0.4 em on
   // top of Wolfram's 0.927 em line, which is shorter than the
@@ -20408,7 +20437,7 @@ fn grid_svg_styled_internal(
     !row_dividers.is_empty() || !col_dividers.is_empty();
 
   // When parentheses are enabled, reserve space on left and right
-  let paren_margin: f64 = if parens { 12.0 } else { 0.0 };
+  let paren_margin: f64 = if parens { 0.86 * font_size } else { 0.0 };
   let total_width: f64 = grid_width + 2.0 * paren_margin;
 
   // Build SVG — add padding when frame borders are drawn so strokes aren't clipped
@@ -20433,29 +20462,23 @@ fn grid_svg_styled_internal(
 
   // Draw round parentheses if enabled
   if parens {
-    let h = total_height;
-    let inset = 8.0; // how far the curve bows inward
-    let stroke_w = 1.2;
+    // Wolfram's parentheses are hairlines (0.04 em) nearly as tall as the
+    // matrix (0.12 em short at each end), their tips 0.49 em and their
+    // middle 0.28 em from the outer edge.
+    let (y0, y1) = (0.12 * font_size, total_height - 0.12 * font_size);
+    let stroke_w = (0.04 * font_size).max(0.5);
     let stroke_color = theme().stroke_default;
-    // Left parenthesis: smooth arc from top to bottom, bowing left
-    // Cubic Bézier: start at (margin, 0), control points pull left, end at (margin, h)
-    let lx = paren_margin;
-    svg.push_str(&format!(
-      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
-      lx, 0.0,
-      lx - inset, h * 0.33,
-      lx - inset, h * 0.67,
-      lx, h
-    ));
-    // Right parenthesis: smooth arc from top to bottom, bowing right
-    let rx = paren_margin + grid_width;
-    svg.push_str(&format!(
-      "<path d=\"M {:.1} {:.1} C {:.1} {:.1}, {:.1} {:.1}, {:.1} {:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w}\"/>\n",
-      rx, 0.0,
-      rx + inset, h * 0.33,
-      rx + inset, h * 0.67,
-      rx, h
-    ));
+    let tip = 0.49 * font_size;
+    // A cubic's middle lies 3/4 of the way to its control points.
+    let bow = (tip - 0.28 * font_size) * 4.0 / 3.0;
+    let (ya, yb) = (y0 + 0.25 * (y1 - y0) * 0.5, y1 - 0.25 * (y1 - y0) * 0.5);
+    let right_tip = paren_margin * 2.0 + grid_width - tip;
+    for (x, dx) in [(tip, -bow), (right_tip, bow)] {
+      svg.push_str(&format!(
+        "<path d=\"M {x:.1} {y0:.1} C {cx:.1} {ya:.1}, {cx:.1} {yb:.1}, {x:.1} {y1:.1}\" fill=\"none\" stroke=\"{stroke_color}\" stroke-width=\"{stroke_w:.2}\"/>\n",
+        cx = x + dx,
+      ));
+    }
   }
 
   // Precompute divider/frame drawing flags (needed for visual bounds below)

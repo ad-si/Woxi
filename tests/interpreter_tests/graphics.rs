@@ -45010,6 +45010,40 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn matrix_form_spacing_and_parentheses() {
+    // MatrixForm is a TableForm with TableSpacing -> {1, 1} between hairline
+    // parentheses that stop 0.12 em short of its top and bottom.
+    let svg = export_svg("MatrixForm[{{a, b}, {c, d}}]");
+    assert!(svg.starts_with("<svg width=\"51\" height=\"35\""), "{svg}");
+    assert_eq!(
+      attr_values(&svg, "<text x=\""),
+      vec![16.2, 34.4, 16.2, 34.4],
+      "{svg}"
+    );
+    assert!(
+      svg.contains(
+        "<path d=\"M 6.9 1.7 C 2.9 5.6, 2.9 29.0, 6.9 32.9\" fill=\"none\" \
+         stroke=\"black\" stroke-width=\"0.56\"/>"
+      ),
+      "{svg}"
+    );
+    // The TraditionalForm matrix: the same parentheses, and the
+    // `\[NoBreak]`s inside them take no room.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[MatrixForm[{{a, b}, {c, d}}]]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width=\"54\" height=\"38\""), "{svg}");
+    assert!(
+      svg.contains(
+        "<path d=\"M 6.86 3.64 C 2.94 7.38, 2.94 29.86, 6.86 33.60\""
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn tall_graphics_of_automatic_size_are_capped_at_432() {
     // Wolfram draws an automatically sized picture at most 1.2 × 360 tall,
     // narrowing it to keep its shape.
