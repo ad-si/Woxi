@@ -5,7 +5,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, FillTarget, Filling, IntervalMarkers,
   PLOT_COLORS, PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
-  apply_filling_option, apply_plot_theme, build_plot_source,
+  apply_filling_option, build_plot_source, expand_plot_theme,
   generate_scatter_svg_with_options, generate_svg_with_filling,
   parse_image_size, parse_plot_style,
 };
@@ -956,185 +956,14 @@ struct ParsedOptions {
   /// `MeshShading -> {s0, s1, …}`: the style of each region between mesh
   /// values, in increasing order of the mesh function.
   mesh_shading: Vec<SeriesStyle>,
-  /// The plot theme labels its frame with `Charting`SimpleTicks` (majors
-  /// only, about six of them) instead of the automatic ticks.
-  simple_ticks: bool,
-}
-
-/// The WL 15 palette of `PlotTheme -> "Marketing"`.
-const MARKETING_COLORS: [&str; 15] = [
-  "RGBColor[1., 0.4, 0.]",
-  "RGBColor[0.655728, 0.8, 0.]",
-  "RGBColor[0., 0.742291, 0.873126]",
-  "RGBColor[1., 0.656408, 0.]",
-  "RGBColor[0.893126, 0.4, 0.767184]",
-  "RGBColor[0.295048, 0.8, 0.286932]",
-  "RGBColor[0.238758, 0.610466, 1.]",
-  "RGBColor[1., 0.325204, 0.406504]",
-  "RGBColor[0., 0.786874, 0.739379]",
-  "RGBColor[1., 0.520437, 0.]",
-  "RGBColor[0.7529330319872088, 0.4176501130047967, 1.]",
-  "RGBColor[0.5572809000084149, 0.8, 0]",
-  "RGBColor[1., 0.06811595600706821, 0.0851449450088353]",
-  "RGBColor[0, 0.7226017980018511, 0.9321946059944466]",
-  "RGBColor[1., 0.7154761789941944, 0]",
-];
-
-/// The WL 15 palette of `PlotTheme -> "Business"`.
-const BUSINESS_COLORS: [&str; 15] = [
-  "RGBColor[0.34398, 0.49112, 0.89936]",
-  "RGBColor[0.97, 0.606, 0.081]",
-  "RGBColor[0.91, 0.318, 0.243]",
-  "RGBColor[0.448, 0.69232, 0.1538]",
-  "RGBColor[0.62168, 0.2798, 0.6914]",
-  "RGBColor[0.09096, 0.6296, 0.85532]",
-  "RGBColor[0.46056, 0.40064, 0.81392]",
-  "RGBColor[0.94, 0.462, 0.162]",
-  "RGBColor[0., 0.7, 0.7]",
-  "RGBColor[0.827051, 0.418034, 0.0243459]",
-  "RGBColor[0.5511749434976025, 0.32014794962639853, 0.8720626412559938]",
-  "RGBColor[0.72694101250947, 0.7196601125010522, 0.]",
-  "RGBColor[0.8680706456216862, 0.2563858708756628, 0.30321559063052295]",
-  "RGBColor[0.2418693812442152, 0.5065044950046278, 0.9902432574930582]",
-  "RGBColor[0.9573908706237908, 0.5369543531189542, 0.11504464931576472]",
-];
-
-/// The options a list plot's `PlotTheme` stands for, as
-/// `Charting`ResolvePlotTheme[theme, ListPlot]` resolves them in WL 15
-/// (`DefaultPlotStyle` becoming `PlotStyle`), in input form; `None` for a
-/// theme without such a table. Explicit options override them. The
-/// `Charting`SimpleTicks` frame ticks of a theme are flagged separately
-/// (`ParsedOptions::simple_ticks`).
-fn list_plot_theme_options(theme: &str) -> Option<(Vec<String>, bool)> {
-  let palette = |colors: &[&str]| {
-    let styles: Vec<String> = colors
-      .iter()
-      .map(|c| {
-        format!("Directive[{c}, CapForm[\"Butt\"], AbsoluteThickness[3]]")
-      })
-      .collect();
-    format!("PlotStyle -> {{{}}}", styles.join(", "))
-  };
-  let dotted = "GridLinesStyle -> Directive[GrayLevel[0.4, 0.5], \
-                AbsoluteThickness[1], AbsoluteDashing[{1, 2}]]";
-  let left_bottom = "Frame -> {{True, False}, {True, False}}";
-  let hidden_left = "FrameStyle -> {{StrokeForm[Opacity[0]], \
-                     StrokeForm[Opacity[0]]}, {Automatic, None}}";
-  let opts: (Vec<String>, bool) = match theme {
-    "Marketing" => (
-      vec![
-        "Axes -> False".into(),
-        "FillingStyle -> Opacity[0.3]".into(),
-        left_bottom.into(),
-        "GridLines -> Automatic".into(),
-        "GridLinesStyle -> Directive[AbsoluteThickness[1], GrayLevel[0, 0.2]]"
-          .into(),
-        "PlotMarkers -> \"OpenMarkers\"".into(),
-        "Prolog -> {GrayLevel[0, 0.7], Rectangle[Scaled[{0, 0}], \
-         Scaled[{1, 1}]]}"
-          .into(),
-        palette(&MARKETING_COLORS),
-      ],
-      true,
-    ),
-    "Business" => (
-      vec![
-        "Axes -> False".into(),
-        "FillingStyle -> Opacity[0.3]".into(),
-        left_bottom.into(),
-        hidden_left.into(),
-        "GridLines -> {None, Automatic}".into(),
-        dotted.into(),
-        "PlotMarkers -> \"OpenMarkers\"".into(),
-        palette(&BUSINESS_COLORS),
-      ],
-      true,
-    ),
-    "Web" => (
-      vec![
-        "Axes -> False".into(),
-        "FillingStyle -> Opacity[0.3]".into(),
-        left_bottom.into(),
-        hidden_left.into(),
-        "GridLines -> None".into(),
-      ],
-      true,
-    ),
-    "Detailed" => (
-      vec![
-        "Axes -> False".into(),
-        "Frame -> True".into(),
-        "GridLines -> Automatic".into(),
-        dotted.into(),
-      ],
-      false,
-    ),
-    "Scientific" => (
-      vec![
-        "Axes -> False".into(),
-        "FillingStyle -> Opacity[0.3]".into(),
-        "Frame -> True".into(),
-        "GridLines -> {{0}, {0}}".into(),
-        "GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]".into(),
-      ],
-      false,
-    ),
-    "Minimal" => (
-      vec![
-        "Axes -> True".into(),
-        "Frame -> False".into(),
-        "Ticks -> None".into(),
-      ],
-      false,
-    ),
-    "Grid" => (vec!["GridLines -> Automatic".into(), dotted.into()], false),
-    "Frame" => (
-      vec![
-        "Axes -> False".into(),
-        "Frame -> True".into(),
-        "GridLines -> None".into(),
-      ],
-      false,
-    ),
-    _ => return None,
-  };
-  Some(opts)
-}
-
-/// The options of a list plot call with its `PlotTheme` expanded into the
-/// options the theme stands for, placed before the explicit ones so those
-/// override it, plus whether the theme asks for `SimpleTicks`. A theme
-/// without an expansion table stays in the list for [`apply_plot_theme`].
-fn options_with_theme(args: &[Expr]) -> (Vec<Expr>, bool) {
-  let mut theme_opts = Vec::new();
-  let mut simple_ticks = false;
-  let mut rest = Vec::with_capacity(args.len().saturating_sub(1));
-  for opt in args.iter().skip(1) {
-    if let Some((name, value)) =
-      crate::functions::graphics::option_name_value(opt)
-      && name == "PlotTheme"
-      && let Expr::String(theme) = &*value
-      && let Some((opts, simple)) = list_plot_theme_options(theme)
-    {
-      theme_opts = opts
-        .iter()
-        .filter_map(|o| crate::syntax::string_to_expr(o).ok())
-        .collect();
-      simple_ticks = simple;
-      continue;
-    }
-    rest.push(opt.clone());
-  }
-  theme_opts.extend(rest);
-  (theme_opts, simple_ticks)
 }
 
 /// Parse common plot options from args[1..].
 fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
-  let (options, simple_ticks) = options_with_theme(args);
-  out.simple_ticks = simple_ticks;
+  let (options, simple_ticks) = expand_plot_theme(&args[1..], true);
   let opts = &mut out.opts;
+  opts.simple_ticks = simple_ticks;
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
@@ -1401,11 +1230,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             && n >= 0
           {
             out.interpolation_order = Some(n);
-          }
-        }
-        "PlotTheme" => {
-          if let Expr::String(theme) = replacement {
-            apply_plot_theme(opts, theme);
           }
         }
         "GridLines" => {
@@ -1787,27 +1611,6 @@ fn list_plot_ranges(
   (x, y_padded)
 }
 
-/// Label the frame with `Charting`SimpleTicks` when the plot theme asks for
-/// them, on the axes without explicit ticks, over the displayed (padded)
-/// ranges.
-fn apply_simple_ticks(
-  parsed: &mut ParsedOptions,
-  (x_range, y_range): ((f64, f64), (f64, f64)),
-) {
-  if !parsed.simple_ticks {
-    return;
-  }
-  let opts = &mut parsed.opts;
-  if opts.ticks_x.is_none() {
-    opts.ticks_x =
-      Some(crate::functions::plot::simple_ticks(x_range.0, x_range.1));
-  }
-  if opts.ticks_y.is_none() {
-    opts.ticks_y =
-      Some(crate::functions::plot::simple_ticks(y_range.0, y_range.1));
-  }
-}
-
 /// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 7/6000
 /// of the image width per step, from 7 steps for series of fewer than 50
 /// points down to 3 from 1000 points on (the longest series decides).
@@ -2088,7 +1891,6 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  apply_simple_ticks(&mut parsed, (x_range, y_range));
   let joined = parsed.joined;
   let mut parsed = parsed;
   if draw_series.len() == 1 {
@@ -2286,7 +2088,6 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  apply_simple_ticks(&mut parsed, (x_range, y_range));
 
   // A single curve takes a `PlotStyle` list as one combined style, as
   // `ListPlot` and `Plot` do: `{Thick, Orange}` is one thick orange line.

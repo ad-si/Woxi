@@ -4978,8 +4978,6 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
 - A framed `ListPlot` (`Frame -> True`) also draws the axes inside the
   frame in WL 15 (the gray y = 0 line); Woxi draws no axis inside a frame.
 - `PlotLegends` on a `Legended` dataset of `ListPlot` is not drawn.
-- `PlotTheme` is expanded into options for the list plots only; `Plot`
-  still goes through the older `apply_plot_theme` approximation.
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.
 
@@ -5212,7 +5210,7 @@ accepted, but the picture is the same as without it.
   `"Log2"`, `"SignedLog"`), and `ScalingFunctions` on `ParametricPlot`.
 - `Graphics`: `PlotRegion`, `RotateLabel`, `AlignmentPoint`,
   `BaselinePosition`, `FormatType`; `LabelStyle` sets only the colour.
-- `ParametricPlot`: `BoundaryStyle`, `PlotTheme`.
+- `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
   `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
 - `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
@@ -7648,19 +7646,10 @@ Found comparing the graphics-tests renders (2026-11):
 
 Found comparing the graphics-tests renders (2026-11):
 
-- Unframed `Plot`/`ListPlot` axes step like `Charting`ScaledTicks` with a
-  target of 7 (`ORIGIN_AXIS_TICK_TARGET`), which matches every axis checked
-  so far, but frames do not follow one fixed target: a framed 0..2 Pi axis
-  is labelled every 1 (target 7), a framed 0..17 axis every 5 (target 6).
-  Framed plots keep target 6. The same rule is unknown for log axes over
-  more than 6 decades (WL labels every 2nd decade over 8, every 3rd over 9,
+- The automatic tick step rule is unknown for log axes over more than 6
+  decades (WL labels every 2nd decade over 8, every 3rd over 9,
   every 4th over 12 and 20) and for `ListPolarPlot`, whose x axis over 3.4
   steps by 1 while its y axis over 3.5 steps by 0.5.
-- `PlotTheme -> "Business"` (left/bottom frame without frame lines, dotted
-  y grid lines, `AbsoluteThickness[3]` curves in its own palette) and
-  `"Marketing"` (dark `Prolog` backdrop, grid lines, own palette) are not
-  implemented for `Plot`; `Charting`ResolvePlotTheme[theme, Plot]` gives
-  the full option sets.
 - `Plot[{f1, f2, …}, …, PlotLayout -> "Column" | "Row" | {"Row", n}]` is
   ignored: wolframscript draws one framed panel per curve, all in the first
   palette color, sharing the axis that runs along the layout.

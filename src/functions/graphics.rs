@@ -17281,7 +17281,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       series_prims.push(Expr::List(stems.into()));
     }
     // Color directive
-    series_prims.push(crate::functions::plot::rgb_u8_expr(sd.color));
+    series_prims.push(crate::functions::plot::series_color_expr(sd));
     // `Opacity[a]` from `PlotStyle`; once any series is faded, the rest
     // state their own (opaque) level so the directive can't leak onto them.
     if let Some(a) = sd

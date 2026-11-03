@@ -207,6 +207,10 @@ pub struct PlotMarker {
 pub struct PlotSeriesData {
   pub points: Vec<(f64, f64)>,
   pub color: (u8, u8, u8),
+  /// The color as `PlotStyle` gave it (`Hue[0.3]`, `RGBColor[1, 0, 0]`),
+  /// which the plot expression keeps verbatim as WL does; `None` for a
+  /// palette color or one without an exact source form.
+  pub color_expr: Option<crate::syntax::Expr>,
   pub is_scatter: bool,
   pub filling: SeriesFilling,
   /// Fill color override from `FillingStyle` (`None` = use `color`).

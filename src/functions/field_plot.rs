@@ -3055,6 +3055,7 @@ fn contour_plot_equations(
         series.push(crate::syntax::PlotSeriesData {
           points,
           color: series_color,
+          color_expr: None,
           is_scatter: false,
           filling: crate::syntax::SeriesFilling::None,
           fill_color: None,

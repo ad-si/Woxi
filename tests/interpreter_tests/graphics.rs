@@ -45412,3 +45412,85 @@ mod list_plot_wl15_ranges {
     assert_eq!(dot_radius(&svg), 46);
   }
 }
+
+mod shared_plot_theme {
+  use super::*;
+
+  #[test]
+  fn plot_takes_the_marketing_palette() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Marketing\"], \
+         _RGBColor, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0.4, 0.], RGBColor[0.655728, 0.8, 0.]}"
+    );
+  }
+
+  #[test]
+  fn web_and_scientific_themes_bring_their_palettes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Web\"], _RGBColor, \
+         Infinity], Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotTheme -> \
+         \"Scientific\"], _RGBColor, Infinity]}"
+      )
+      .unwrap(),
+      "{{RGBColor[0.790588, 0.201176, 0.], RGBColor[0.192157, 0.388235, \
+       0.807843]}, {RGBColor[0.9, 0.36, 0.054], RGBColor[0.365248, \
+       0.427802, 0.758297]}}"
+    );
+  }
+
+  #[test]
+  fn an_explicit_plot_style_overrides_the_theme_palette() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[Plot[x, {x, 0, 1}, PlotTheme -> \"Web\", PlotStyle -> Red], \
+         _RGBColor, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0]}"
+    );
+  }
+
+  #[test]
+  fn marketing_plot_draws_its_backdrop_thick_curves_and_simple_ticks() {
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 6}, PlotTheme -> \"Marketing\", ImageSize -> 360]",
+    );
+    // `Prolog -> {GrayLevel[0, 0.7], Rectangle[Scaled[{0, 0}], …]}`
+    assert!(svg.contains("fill=\"rgb(0,0,0)\" fill-opacity=\"0.700\""));
+    // `AbsoluteThickness[3]` at the 10× render scale
+    assert!(svg.contains("stroke-width=\"30\""));
+    // `Charting`SimpleTicks`: 0, 2, 4, 6 on x
+    let labels: Vec<&str> = svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| t.split('>').nth(1)?.split('<').next())
+      .collect();
+    assert_eq!(
+      labels,
+      ["0", "2", "4", "6", "-1.0", "-0.5", "0", "0.5", "1.0"]
+    );
+  }
+
+  #[test]
+  fn plot_style_colors_stay_as_written() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Map[Cases[Plot[x, {x, 0, 1}, PlotStyle -> #], _RGBColor | _Hue | \
+         _GrayLevel, Infinity] &, {Red, Hue[0.3], GrayLevel[0.5], \
+         RGBColor[1, 0, 0, 0.5], RGBColor[0.655728, 0.8, 0.]}]"
+      )
+      .unwrap(),
+      "{{RGBColor[1, 0, 0]}, {Hue[0.3]}, {GrayLevel[0.5]}, \
+       {RGBColor[1, 0, 0]}, {RGBColor[0.655728, 0.8, 0.]}}"
+    );
+  }
+}

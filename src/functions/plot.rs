@@ -2464,6 +2464,9 @@ pub(crate) fn adjust_y_range_for_filling_opts(
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SeriesStyle {
   pub color: Option<WoxiColor>,
+  /// `color` as written (evaluated), kept for the plot expression; see
+  /// `PlotSeriesData::color_expr`.
+  pub color_expr: Option<Expr>,
   /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
   /// None means use the default (1.5px).
   pub thickness: Option<f64>,
@@ -2574,6 +2577,10 @@ pub(crate) struct PlotOptions {
   /// Explicit `FrameTicks` on the top and right edge of a frame.
   pub ticks_top: Option<Vec<(f64, String)>>,
   pub ticks_right: Option<Vec<(f64, String)>>,
+  /// The plot theme labels the axes without explicit ticks with
+  /// `Charting`SimpleTicks` (majors only, about six) over the displayed
+  /// range instead of the automatic ticks.
+  pub simple_ticks: bool,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
   pub plot_points: usize,
   /// `MaxRecursion -> n`: how many times the adaptive sampler may halve an
@@ -2823,6 +2830,7 @@ impl Default for PlotOptions {
       ticks_y: None,
       ticks_top: None,
       ticks_right: None,
+      simple_ticks: false,
       frame_label_bottom: None,
       frame_label_left: None,
       frame_label_top: None,
@@ -3797,6 +3805,26 @@ fn with_automatic_aspect(
   }
 }
 
+/// `opts` with the `Charting`SimpleTicks` of its plot theme filled in on
+/// the axes without explicit ticks, over the displayed ranges.
+fn with_simple_ticks(
+  opts: &PlotOptions,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+) -> std::borrow::Cow<'_, PlotOptions> {
+  if !opts.simple_ticks || (opts.ticks_x.is_some() && opts.ticks_y.is_some()) {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut resolved = opts.clone();
+  resolved
+    .ticks_x
+    .get_or_insert_with(|| simple_ticks(x_range.0, x_range.1));
+  resolved
+    .ticks_y
+    .get_or_insert_with(|| simple_ticks(y_range.0, y_range.1));
+  std::borrow::Cow::Owned(resolved)
+}
+
 /// A linear plotters axis whose tick positions are given explicitly (see
 /// the frame ticks in [`generate_svg_with_options`]); without points it
 /// falls back to plotters' own choice.
@@ -3842,6 +3870,7 @@ fn generate_svg_with_options(
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
+  let opts = &*with_simple_ticks(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   // `ColorFunctionScaling` rescales over the sampled data, not the padded
@@ -5698,6 +5727,9 @@ pub(crate) fn build_plot_source(
       let opacity = plot_style
         .get(i % plot_style.len().max(1))
         .and_then(|s| s.opacity);
+      let color_expr = plot_style
+        .get(i % plot_style.len().max(1))
+        .and_then(|s| s.color_expr.clone());
       let scatter = if is_scatter.is_empty() {
         false
       } else {
@@ -5706,6 +5738,7 @@ pub(crate) fn build_plot_source(
       crate::syntax::PlotSeriesData {
         points: points.clone(),
         color,
+        color_expr,
         is_scatter: scatter,
         filling: series_filling,
         fill_color,
@@ -6063,7 +6096,9 @@ pub(crate) fn render_merged_plot_source(
     ..PlotOptions::default()
   };
   let mut overrides = PlotRangeOverrides::default();
-  for opt in &source.options {
+  let (options, simple_ticks) = expand_plot_theme(&source.options, false);
+  opts.simple_ticks = simple_ticks;
+  for opt in &options {
     if let Some((name, value)) =
       crate::functions::graphics::option_name_value(opt)
       && !apply_common_plot_option(name, &value, &mut opts, &mut overrides)
@@ -6108,6 +6143,7 @@ pub(crate) fn render_merged_plot_source(
         s.color.1 as f64 / 255.0,
         s.color.2 as f64 / 255.0,
       )),
+      color_expr: s.color_expr.clone(),
       thickness: s.thickness,
       point_size: s.point_size,
       dashing: s.dashing.clone(),
@@ -6202,7 +6238,7 @@ fn scatter_overlay_primitives(
   if finite.is_empty() {
     return Vec::new();
   }
-  let color = rgb_u8_expr(series.color);
+  let color = series_color_expr(series);
   let mut prims = vec![color];
   // Stems of a filled scatter series, drawn to the same reference level the
   // standalone scatter plot would use.
@@ -8636,6 +8672,7 @@ pub(crate) fn histogram_plot_source(
     series.push(crate::syntax::PlotSeriesData {
       points,
       color: (128, 128, 128),
+      color_expr: None,
       is_scatter: false,
       filling: crate::syntax::SeriesFilling::Axis,
       fill_color: Some(color),
@@ -9762,6 +9799,50 @@ fn parse_one_series_style(expr: &Expr) -> SeriesStyle {
   style
 }
 
+/// A color directive as the plot expression writes it: evaluated (`Red`
+/// becomes `RGBColor[1, 0, 0]`), with the alpha of a four-argument
+/// `RGBColor` dropped, since the series carries it as its opacity.
+fn opaque_color_expr(expr: &Expr) -> Option<Expr> {
+  let value = crate::evaluator::evaluate_expr_to_expr(expr).ok()?;
+  match value {
+    Expr::FunctionCall { ref name, ref args }
+      if name == "RGBColor" && args.len() == 4 =>
+    {
+      Some(Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: args[..3].to_vec().into(),
+      })
+    }
+    Expr::FunctionCall { ref name, .. }
+      if matches!(
+        name.as_str(),
+        "RGBColor"
+          | "Hue"
+          | "GrayLevel"
+          | "CMYKColor"
+          | "LABColor"
+          | "XYZColor"
+          | "LCHColor"
+          | "LUVColor"
+      ) =>
+    {
+      Some(value)
+    }
+    _ => None,
+  }
+}
+
+/// The color directive of a plot series in the plot expression: the color
+/// as `PlotStyle` wrote it, else the exact palette color.
+pub(crate) fn series_color_expr(
+  series: &crate::syntax::PlotSeriesData,
+) -> Expr {
+  series
+    .color_expr
+    .clone()
+    .unwrap_or_else(|| rgb_u8_expr(series.color))
+}
+
 /// Apply a style directive expression to a SeriesStyle.
 fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   // Try as a color first
@@ -9772,6 +9853,7 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       style.opacity = Some(c.a);
     }
     style.color = Some(c);
+    style.color_expr = opaque_color_expr(expr);
     return;
   }
   match expr {
@@ -9804,6 +9886,7 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
         }
         if let Some(c) = args.get(1).and_then(parse_color) {
           style.color = Some(c);
+          style.color_expr = opaque_color_expr(&args[1]);
         }
       }
       "Thickness" if args.len() == 1 => {
@@ -10266,35 +10349,256 @@ pub(crate) fn parse_plot_style(replacement: &Expr) -> Vec<SeriesStyle> {
   }
 }
 
-/// Apply a named PlotTheme to PlotOptions.
-pub(crate) fn apply_plot_theme(opts: &mut PlotOptions, theme: &str) {
-  match theme {
-    "Scientific" => {
-      opts.frame = true;
-      opts.grid_lines_x = true;
-      opts.grid_lines_y = true;
+/// The WL 15 palette of `PlotTheme -> "Marketing"`.
+const MARKETING_COLORS: [&str; 15] = [
+  "RGBColor[1., 0.4, 0.]",
+  "RGBColor[0.655728, 0.8, 0.]",
+  "RGBColor[0., 0.742291, 0.873126]",
+  "RGBColor[1., 0.656408, 0.]",
+  "RGBColor[0.893126, 0.4, 0.767184]",
+  "RGBColor[0.295048, 0.8, 0.286932]",
+  "RGBColor[0.238758, 0.610466, 1.]",
+  "RGBColor[1., 0.325204, 0.406504]",
+  "RGBColor[0., 0.786874, 0.739379]",
+  "RGBColor[1., 0.520437, 0.]",
+  "RGBColor[0.7529330319872088, 0.4176501130047967, 1.]",
+  "RGBColor[0.5572809000084149, 0.8, 0]",
+  "RGBColor[1., 0.06811595600706821, 0.0851449450088353]",
+  "RGBColor[0, 0.7226017980018511, 0.9321946059944466]",
+  "RGBColor[1., 0.7154761789941944, 0]",
+];
+
+/// The WL 15 palette of `PlotTheme -> "Business"`.
+const BUSINESS_COLORS: [&str; 15] = [
+  "RGBColor[0.34398, 0.49112, 0.89936]",
+  "RGBColor[0.97, 0.606, 0.081]",
+  "RGBColor[0.91, 0.318, 0.243]",
+  "RGBColor[0.448, 0.69232, 0.1538]",
+  "RGBColor[0.62168, 0.2798, 0.6914]",
+  "RGBColor[0.09096, 0.6296, 0.85532]",
+  "RGBColor[0.46056, 0.40064, 0.81392]",
+  "RGBColor[0.94, 0.462, 0.162]",
+  "RGBColor[0., 0.7, 0.7]",
+  "RGBColor[0.827051, 0.418034, 0.0243459]",
+  "RGBColor[0.5511749434976025, 0.32014794962639853, 0.8720626412559938]",
+  "RGBColor[0.72694101250947, 0.7196601125010522, 0.]",
+  "RGBColor[0.8680706456216862, 0.2563858708756628, 0.30321559063052295]",
+  "RGBColor[0.2418693812442152, 0.5065044950046278, 0.9902432574930582]",
+  "RGBColor[0.9573908706237908, 0.5369543531189542, 0.11504464931576472]",
+];
+
+/// The WL 15 palette of `PlotTheme -> "Web"`.
+const WEB_COLORS: [&str; 15] = [
+  "RGBColor[0.790588, 0.201176, 0.]",
+  "RGBColor[0.192157, 0.388235, 0.807843]",
+  "RGBColor[1., 0.607843, 0.]",
+  "RGBColor[0., 0.596078, 0.109804]",
+  "RGBColor[0.567426, 0.32317, 0.729831]",
+  "RGBColor[0., 0.588235, 0.705882]",
+  "RGBColor[0.8505, 0.4275, 0.13185]",
+  "RGBColor[0.499929, 0.285875, 0.775177]",
+  "RGBColor[0.12490296143062507, 0.63, 0.47103259454284074]",
+  "RGBColor[0.823948950768196, 0.29474475384097976, 0.19291741323314934]",
+  "RGBColor[0.42126358105951733, 0.33224185136428963, 0.9]",
+  "RGBColor[0.7239916650994997, 0.6554435183443889, 0.]",
+  "RGBColor[0.6746366424582266, 0.252, 0.45055901160272827]",
+  "RGBColor[0.12582006271512805, 0.5293439498278976, 0.7809840752581536]",
+  "RGBColor[0.8604677779867332, 0.4773388899336664, 0.10673699943582014]",
+];
+
+/// The WL 15 palette of `PlotTheme -> "Scientific"`.
+const SCIENTIFIC_COLORS: [&str; 15] = [
+  "RGBColor[0.9, 0.36, 0.054]",
+  "RGBColor[0.365248, 0.427802, 0.758297]",
+  "RGBColor[0.945109, 0.593901, 0.]",
+  "RGBColor[0.645957, 0.253192, 0.685109]",
+  "RGBColor[0.285821, 0.56, 0.450773]",
+  "RGBColor[0.7, 0.336, 0.]",
+  "RGBColor[0.491486, 0.345109, 0.8]",
+  "RGBColor[0.71788, 0.568653, 0.]",
+  "RGBColor[0.70743, 0.224, 0.542415]",
+  "RGBColor[0.287228, 0.490217, 0.664674]",
+  "RGBColor[0.982289285128704, 0.5771321368979874, 0.011542503255145636]",
+  "RGBColor[0.5876740325800278, 0.2877284499870081, 0.7500695697462922]",
+  "RGBColor[0.4262088601796793, 0.5581552810007578, 0.2777996730417023]",
+  "RGBColor[0.9431487543762861, 0.414555896337833, 0.07140829055870854]",
+  "RGBColor[0.41497437140121635, 0.393632147507352, 0.7842993779115092]",
+];
+
+/// The options a `PlotTheme` stands for, as
+/// `Charting`ResolvePlotTheme[theme, Plot]` (or `ListPlot` for
+/// `list_plot`) resolves them in WL 15, with `DefaultPlotStyle` becoming
+/// `PlotStyle`, in input form; `None` for a theme without such a table.
+/// The second value is whether the theme labels the plot with
+/// `Charting`SimpleTicks` (`PlotOptions::simple_ticks`).
+fn plot_theme_options(
+  theme: &str,
+  list_plot: bool,
+) -> Option<(Vec<String>, bool)> {
+  let palette = |colors: &[&str], thickness: &str| {
+    let styles: Vec<String> = colors
+      .iter()
+      .map(|c| {
+        format!(
+          "Directive[{c}, CapForm[\"Butt\"], AbsoluteThickness[{thickness}]]"
+        )
+      })
+      .collect();
+    format!("PlotStyle -> {{{}}}", styles.join(", "))
+  };
+  let dotted = "GridLinesStyle -> Directive[GrayLevel[0.4, 0.5], \
+                AbsoluteThickness[1], AbsoluteDashing[{1, 2}]]";
+  let left_bottom = "Frame -> {{True, False}, {True, False}}";
+  let hidden_left = "FrameStyle -> {{StrokeForm[Opacity[0]], \
+                     StrokeForm[Opacity[0]]}, {Automatic, None}}";
+  // Only the list plots of these themes mark their points.
+  let open_markers =
+    || list_plot.then(|| "PlotMarkers -> \"OpenMarkers\"".to_string());
+  let opts: (Vec<String>, bool) = match theme {
+    "Marketing" => (
+      [
+        Some("Axes -> False".into()),
+        Some("FillingStyle -> Opacity[0.3]".into()),
+        Some(left_bottom.into()),
+        Some("GridLines -> Automatic".into()),
+        Some(
+          "GridLinesStyle -> Directive[AbsoluteThickness[1], GrayLevel[0, 0.2]]"
+            .into(),
+        ),
+        open_markers(),
+        Some(
+          "Prolog -> {GrayLevel[0, 0.7], Rectangle[Scaled[{0, 0}], \
+           Scaled[{1, 1}]]}"
+            .into(),
+        ),
+        Some(palette(&MARKETING_COLORS, "3")),
+      ]
+      .into_iter()
+      .flatten()
+      .collect(),
+      true,
+    ),
+    "Business" => (
+      [
+        Some("Axes -> False".into()),
+        Some("FillingStyle -> Opacity[0.3]".into()),
+        Some(left_bottom.into()),
+        Some(hidden_left.into()),
+        Some("GridLines -> {None, Automatic}".into()),
+        Some(dotted.into()),
+        open_markers(),
+        Some(palette(&BUSINESS_COLORS, "3")),
+      ]
+      .into_iter()
+      .flatten()
+      .collect(),
+      true,
+    ),
+    "Web" => (
+      vec![
+        "Axes -> False".into(),
+        "FillingStyle -> Opacity[0.3]".into(),
+        left_bottom.into(),
+        hidden_left.into(),
+        "GridLines -> None".into(),
+        palette(&WEB_COLORS, "3"),
+      ],
+      true,
+    ),
+    "Detailed" => (
+      vec![
+        "Axes -> False".into(),
+        "Frame -> True".into(),
+        "GridLines -> Automatic".into(),
+        dotted.into(),
+      ],
+      false,
+    ),
+    "Scientific" => (
+      vec![
+        "Axes -> False".into(),
+        "FillingStyle -> Opacity[0.3]".into(),
+        "Frame -> True".into(),
+        "GridLines -> {{0}, {0}}".into(),
+        "GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]".into(),
+        palette(&SCIENTIFIC_COLORS, "1.6"),
+      ],
+      false,
+    ),
+    "Minimal" => (
+      vec![
+        "Axes -> True".into(),
+        "Frame -> False".into(),
+        "Ticks -> None".into(),
+      ],
+      false,
+    ),
+    "Grid" => (vec!["GridLines -> Automatic".into(), dotted.into()], false),
+    "Frame" => (
+      vec![
+        "Axes -> False".into(),
+        "Frame -> True".into(),
+        "GridLines -> None".into(),
+      ],
+      false,
+    ),
+    _ => return None,
+  };
+  Some(opts)
+}
+
+/// The option name of a `name -> value` or `name :> value` rule, read
+/// without evaluating the value (a held `EvaluationMonitor` must not fire).
+fn rule_option_name(opt: &Expr) -> Option<&str> {
+  match opt {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(name) => Some(name.as_str()),
+        Expr::String(name) => Some(name.as_str()),
+        _ => None,
+      }
     }
-    "Business" => {
-      opts.frame = true;
-      opts.grid_lines_y = true;
-    }
-    "Detailed" => {
-      opts.frame = true;
-      opts.grid_lines_x = true;
-      opts.grid_lines_y = true;
-    }
-    "Web" => {
-      opts.grid_lines_y = true;
-    }
-    "Minimal" => {
-      opts.axes = (false, false);
-      opts.ticks = false;
-    }
-    "Classic" => {
-      // Default Wolfram look: axes, no frame, no grid
-    }
-    _ => {}
+    _ => None,
   }
+}
+
+/// The options of a plot call with its `PlotTheme` expanded: the explicit
+/// options, then those of the theme (see [`plot_theme_options`]) that no
+/// explicit option sets. No name is given twice by the theme part, so the
+/// result reads the same to a parser that keeps the first setting of an
+/// option as to one that keeps the last. A theme without a table is left
+/// in place. The flag is whether the theme asks for `SimpleTicks`.
+pub(crate) fn expand_plot_theme(
+  options: &[Expr],
+  list_plot: bool,
+) -> (Vec<Expr>, bool) {
+  let mut theme_opts = None;
+  let mut explicit = Vec::with_capacity(options.len());
+  for opt in options {
+    if rule_option_name(opt) == Some("PlotTheme")
+      && let Some((_, value)) =
+        crate::functions::graphics::option_name_value(opt)
+      && let Expr::String(theme) = &*value
+      && let Some(table) = plot_theme_options(theme, list_plot)
+    {
+      // The first `PlotTheme` wins, like any other repeated option.
+      theme_opts.get_or_insert(table);
+      continue;
+    }
+    explicit.push(opt.clone());
+  }
+  let Some((table, simple_ticks)) = theme_opts else {
+    return (explicit, false);
+  };
+  let given: std::collections::HashSet<&str> =
+    options.iter().filter_map(rule_option_name).collect();
+  let themed: Vec<Expr> = table
+    .iter()
+    .filter_map(|o| crate::syntax::string_to_expr(o).ok())
+    .filter(|o| rule_option_name(o).is_none_or(|n| !given.contains(n)))
+    .collect();
+  explicit.extend(themed);
+  (explicit, simple_ticks)
 }
 
 /// Parse a `GridLines` option value into per-axis (x, y) specifications.
@@ -11235,11 +11539,9 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.color_function_scaling =
         !matches!(replacement, Expr::Identifier(v) if v == "False");
     }
-    "PlotTheme" => {
-      if let Expr::String(theme) = replacement {
-        apply_plot_theme(plot_opts, theme);
-      }
-    }
+    // Expanded into the options it stands for by `expand_plot_theme`;
+    // a theme without a table changes nothing.
+    "PlotTheme" => {}
     "GridLines" => {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
@@ -11679,7 +11981,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut monitor: Option<Expr> = None;
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
-  for opt in &args[2..] {
+  let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
+  plot_opts.simple_ticks = simple_ticks;
+  for opt in &options {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -12116,7 +12420,9 @@ fn log_scale_plot_ast(
   let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
-  for opt in &args[2..] {
+  let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
+  plot_opts.simple_ticks = simple_ticks;
+  for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {

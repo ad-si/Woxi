@@ -36,7 +36,10 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
   let mut overrides = PlotRangeOverrides::default();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
-  for opt in opts {
+  let (opts, simple_ticks) =
+    crate::functions::plot::expand_plot_theme(opts, false);
+  plot_opts.simple_ticks = simple_ticks;
+  for opt in &opts {
     // `:>` options are evaluated by `option_name_value`, but the monitor
     // must stay held until each sample fires it.
     if is_evaluation_monitor(opt) {

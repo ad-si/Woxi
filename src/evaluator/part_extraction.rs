@@ -666,7 +666,8 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         );
         let rgb_expr = crate::functions::plot::rgb_u8_expr;
         let draw = call1(if s.is_scatter { "Point" } else { "Line" }, points);
-        let mut prims = vec![Expr::List(vec![rgb_expr(s.color), draw].into())];
+        let color = crate::functions::plot::series_color_expr(s);
+        let mut prims = vec![Expr::List(vec![color, draw].into())];
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =
