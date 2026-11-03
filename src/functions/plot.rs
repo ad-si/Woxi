@@ -3210,6 +3210,10 @@ pub(crate) struct PlotOptions {
   /// The `PointSize` (a fraction of the image width) of scatter dots whose
   /// style sets none; `None` = the fixed 3 px radius dot.
   pub default_point_size: Option<f64>,
+  /// Points of a list plot written `Style[point, colour]`: per series, each
+  /// such point's coordinates and the colour its dot takes (over the
+  /// series' own).
+  pub point_colors: Vec<Vec<((f64, f64), (u8, u8, u8))>>,
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
@@ -3392,6 +3396,7 @@ impl Default for PlotOptions {
       exclusion_marks: Vec::new(),
       plot_markers: Vec::new(),
       default_point_size: None,
+      point_colors: Vec::new(),
       label_style: None,
       tick_label_style: None,
       joined_per_series: None,
@@ -11047,6 +11052,72 @@ fn open_marker_outline(glyph: &str) -> Option<Vec<(f64, f64)>> {
   })
 }
 
+/// The shapes `PlotMarkers -> Automatic` cycles over the series (WL 15's
+/// order): five filled, then the same five outlined.
+const AUTOMATIC_MARKER_GLYPHS: [&str; 10] =
+  ["●", "■", "◆", "▲", "▼", "○", "□", "◇", "△", "▽"];
+
+/// The marker size a named `PlotMarkers -> {Automatic, size}` stands for,
+/// in points.
+fn named_marker_size(name: &str) -> Option<f64> {
+  Some(match name {
+    "Tiny" => 4.0,
+    "Small" => 7.0,
+    "Medium" => 10.0,
+    "Large" => 20.0,
+    _ => return None,
+  })
+}
+
+/// An automatic marker's shape around the data point, in points (y up):
+/// a circle of the given radius or a polygon, and whether it is filled
+/// (else outlined 2 pt wide). These are the sizes WL 15 draws at its
+/// default marker size; an explicit size `s` scales a disk to radius
+/// 0.35 (s - 1) and the rest in proportion.
+enum MarkerShape {
+  Circle(f64),
+  Polygon(Vec<(f64, f64)>),
+}
+
+fn automatic_marker_shape(
+  glyph: &str,
+  size: f64,
+) -> Option<(MarkerShape, bool)> {
+  let k = if size > 0.0 {
+    0.35 * (size - 1.0) / 3.49
+  } else {
+    1.0
+  };
+  let poly = |pts: &[(f64, f64)]| {
+    MarkerShape::Polygon(pts.iter().map(|&(x, y)| (x * k, y * k)).collect())
+  };
+  Some(match glyph {
+    "●" => (MarkerShape::Circle(3.49 * k), true),
+    "■" => (
+      poly(&[(-3.32, -3.32), (3.32, -3.32), (3.32, 3.32), (-3.32, 3.32)]),
+      true,
+    ),
+    "◆" => (
+      poly(&[(0.0, 4.41), (4.41, 0.0), (0.0, -4.41), (-4.41, 0.0)]),
+      true,
+    ),
+    "▲" => (poly(&[(0.0, 4.33), (-4.99, -4.32), (4.99, -4.32)]), true),
+    "▼" => (poly(&[(0.0, -4.37), (-5.05, 4.37), (5.05, 4.37)]), true),
+    "○" => (MarkerShape::Circle(3.41 * k), false),
+    "□" => (
+      poly(&[(-3.41, -3.41), (3.41, -3.41), (3.41, 3.41), (-3.41, 3.41)]),
+      false,
+    ),
+    "◇" => (
+      poly(&[(0.0, 4.22), (4.22, 0.0), (0.0, -4.22), (-4.22, 0.0)]),
+      false,
+    ),
+    "△" => (poly(&[(0.0, 3.46), (-3.95, -3.39), (3.95, -3.39)]), false),
+    "▽" => (poly(&[(0.0, -3.46), (-3.95, 3.39), (3.95, 3.39)]), false),
+    _ => return None,
+  })
+}
+
 /// Draw the `PlotMarkers` glyph `marker` at each of `points`, centred on
 /// the point: text at the marker's size, or for an `"OpenMarkers"` shape a
 /// white-filled outline stroked 1.5 pt wide in `rgb` (the series colour).
@@ -11065,6 +11136,50 @@ where
   };
   let (mr, mg, mb) = marker.color.unwrap_or(rgb);
   let color = RGBColor(mr, mg, mb);
+  if marker.automatic
+    && let Some((shape, filled)) =
+      automatic_marker_shape(&marker.glyph, marker.size)
+  {
+    let scale = RESOLUTION_SCALE as f64;
+    let stroke = color.stroke_width((2.0 * scale).round() as u32);
+    match shape {
+      MarkerShape::Circle(r) => {
+        let r = (r * scale).round() as i32;
+        let style = if filled { color.filled() } else { stroke };
+        chart
+          .draw_series(
+            points
+              .iter()
+              .map(|&p| EmptyElement::at(p) + Circle::new((0, 0), r, style)),
+          )
+          .map_err(err)?;
+      }
+      MarkerShape::Polygon(outline) => {
+        let px: Vec<(i32, i32)> = outline
+          .iter()
+          .map(|&(dx, dy)| {
+            ((dx * scale).round() as i32, (-dy * scale).round() as i32)
+          })
+          .collect();
+        if filled {
+          chart
+            .draw_series(points.iter().map(|&p| {
+              EmptyElement::at(p) + Polygon::new(px.clone(), color.filled())
+            }))
+            .map_err(err)?;
+        } else {
+          let mut closed = px.clone();
+          closed.push(px[0]);
+          chart
+            .draw_series(points.iter().map(|&p| {
+              EmptyElement::at(p) + PathElement::new(closed.clone(), stroke)
+            }))
+            .map_err(err)?;
+        }
+      }
+    }
+    return Ok(());
+  }
   if marker.open {
     let scale = RESOLUTION_SCALE as f64;
     let stroke = color.stroke_width((1.5 * scale).round() as u32);
@@ -11123,6 +11238,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
       size: DEFAULT_MARKER_SIZE,
       color: None,
       open: false,
+      automatic: false,
     }),
     // `Row[{a, b, …}]` — the pieces laid side by side as one text glyph,
     // e.g. a number followed by its unit.
@@ -11146,6 +11262,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         size: DEFAULT_MARKER_SIZE,
         color: None,
         open: false,
+        automatic: false,
       })
     }
     // `Style[marker, directives…]` — a colour and/or a font size.
@@ -11202,6 +11319,36 @@ pub(crate) fn parse_plot_markers(
           size: DEFAULT_MARKER_SIZE,
           color: None,
           open: true,
+          automatic: false,
+        })
+      })
+      .collect();
+  }
+  // `Automatic` (or `{Automatic, size}`) cycles WL's filled and outlined
+  // shapes over the series.
+  let automatic_size = match &val {
+    Expr::Identifier(s) if s == "Automatic" => Some(0.0),
+    Expr::List(items)
+      if items.len() == 2
+        && matches!(&items[0], Expr::Identifier(s) if s == "Automatic") =>
+    {
+      match &items[1] {
+        Expr::Identifier(name) => named_marker_size(name),
+        other => try_eval_to_f64(other),
+      }
+    }
+    _ => None,
+  };
+  if let Some(size) = automatic_size {
+    return AUTOMATIC_MARKER_GLYPHS
+      .iter()
+      .map(|glyph| {
+        Some(PlotMarker {
+          glyph: (*glyph).to_string(),
+          size,
+          color: None,
+          open: false,
+          automatic: true,
         })
       })
       .collect();
@@ -11329,12 +11476,20 @@ where
     // (rescaled over the plotted data when `ColorFunctionScaling` is on).
     let cf_ranges =
       data_extents(all_series).unwrap_or((x_min, x_max, y_min, y_max));
-    let dot_color = |p: (f64, f64)| match &opts.color_function {
-      Some(cf) => {
-        color_function_rgb(cf, opts.color_function_scaling, p, cf_ranges)
-          .map_or(color, |(r, g, b)| RGBColor(r, g, b))
+    let styled = opts.point_colors.get(series_idx);
+    let dot_color = |p: (f64, f64)| {
+      if let Some(&(_, (r, g, b))) =
+        styled.and_then(|pts| pts.iter().find(|(q, _)| *q == p))
+      {
+        return RGBColor(r, g, b);
       }
-      None => color,
+      match &opts.color_function {
+        Some(cf) => {
+          color_function_rgb(cf, opts.color_function_scaling, p, cf_ranges)
+            .map_or(color, |(r, g, b)| RGBColor(r, g, b))
+        }
+        None => color,
+      }
     };
     chart
       .draw_series(finite_pts.iter().map(|&(x, y)| {

@@ -13211,6 +13211,77 @@ mod plot3d {
       ));
     }
 
+    /// `PlotMarkers -> Automatic` cycles WL 15's shapes over the series:
+    /// a disk, then filled square, diamond and triangles (polygons), then
+    /// the outlined ones; `{Automatic, Small}` shrinks them.
+    #[test]
+    fn plot_markers_automatic_cycles_shapes() {
+      let svg = export_svg(
+        "ListPlot[Table[{{1, i}}, {i, 6}], PlotMarkers -> Automatic]",
+      );
+      let circles: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<circle")).collect();
+      // The filled disk (r 3.49 pt) and the outlined circle (stroke 2 pt).
+      assert_eq!(circles.len(), 2, "{svg}");
+      assert!(circles[0].contains("r=\"35\""), "{svg}");
+      assert!(circles[1].contains("fill=\"none\""), "{svg}");
+      assert_eq!(svg.matches("<polygon").count(), 4, "{svg}");
+      let small =
+        export_svg("ListPlot[{{{1, 1}}}, PlotMarkers -> {Automatic, Small}]");
+      // r = 0.35 (7 - 1) = 2.1 pt.
+      assert!(small.contains("r=\"21\""), "{small}");
+    }
+
+    /// `Style[point, colour]` colours that one dot; the innermost `Style`
+    /// wins over its dataset's, and a dataset's over one around all the
+    /// data (WL 15).
+    #[test]
+    fn list_plot_styled_points_and_nested_styles() {
+      let fills = |code: &str| -> Vec<String> {
+        let mut f: Vec<String> = export_svg(code)
+          .lines()
+          .filter(|l| l.starts_with("<circle"))
+          .map(|l| {
+            l.split("fill=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .to_string()
+          })
+          .collect();
+        f.sort();
+        f
+      };
+      assert_eq!(
+        fills("ListPlot[{{1, Style[2, Red], 3}, {4, 5, 6}}]"),
+        [
+          "#3D99CC", "#3D99CC", "#F2A024", "#F2A024", "#F2A024", "#FF0000"
+        ]
+      );
+      assert_eq!(
+        fills(
+          "ListPlot[Style[{Style[{1, Style[2, Red], 3}, Green], {4, 5, 6}}, \
+           Blue]]"
+        ),
+        [
+          "#0000FF", "#0000FF", "#0000FF", "#00FF00", "#00FF00", "#FF0000"
+        ]
+      );
+      // Styled `{x, y}` points of one dataset.
+      let hues = fills(
+        "ListPlot[Table[Style[{Cos[t], Sin[t]}, Hue[t/(2 Pi)]], \
+         {t, 0, 3 Pi/2, Pi/2}]]",
+      );
+      assert!(hues.contains(&"#FF0000".to_string()), "{hues:?}");
+      assert_eq!(
+        hues.iter().collect::<std::collections::HashSet<_>>().len(),
+        4,
+        "{hues:?}"
+      );
+    }
+
     #[test]
     fn list_plot_plot_style() {
       insta::assert_snapshot!(export_svg(

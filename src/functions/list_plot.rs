@@ -1738,6 +1738,8 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
           *s = style_of(args, s.clone());
         }
       }
+      // A dataset's own `Style` inside still wins over the outer one.
+      apply_styled_datasets(&args[0], opts);
     }
     Expr::List(items) => {
       let is_styled_dataset = |e: &Expr| {
@@ -1782,6 +1784,74 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
     }
     _ => {}
   }
+}
+
+/// The points of a list plot's data written `Style[point, dirs…]` (`{1,
+/// Style[2, Red], 3}`, `Style[{x, y}, Hue[t]]`): per dataset, the parsed
+/// coordinates of each such point and the colour it is drawn in. The
+/// innermost `Style` wins, so a point's own colour beats its dataset's.
+fn styled_point_colors(
+  data: &Expr,
+  series: &[Vec<(f64, f64)>],
+) -> Vec<Vec<((f64, f64), (u8, u8, u8))>> {
+  fn unstyle(e: &Expr) -> &Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Style" && !args.is_empty() =>
+      {
+        unstyle(&args[0])
+      }
+      _ => e,
+    }
+  }
+  let style_color = |e: &Expr| -> Option<(u8, u8, u8)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if name != "Style" || args.len() < 2 {
+      return None;
+    }
+    let mut style = SeriesStyle::default();
+    for d in &args[1..] {
+      crate::functions::plot::apply_style_directive(d, &mut style);
+    }
+    let c = style.color?;
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some((ch(c.r), ch(c.g), ch(c.b)))
+  };
+  let is_dataset = |e: &Expr| {
+    matches!(unstyle(e), Expr::List(items)
+      if items.len() != 2 || items.iter().any(|v| matches!(v, Expr::List(_))))
+  };
+  let Expr::List(items) = unstyle(data) else {
+    return Vec::new();
+  };
+  // Several datasets, or one dataset of points.
+  let datasets: Vec<&Expr> = if series.len() > 1
+    && series.len() == items.len()
+    && items.iter().all(is_dataset)
+  {
+    items.iter().collect()
+  } else {
+    vec![unstyle(data)]
+  };
+  let mut out = Vec::new();
+  let mut any = false;
+  for (i, ds) in datasets.iter().enumerate() {
+    let mut colors = Vec::new();
+    if let (Expr::List(points), Some(parsed)) = (unstyle(ds), series.get(i))
+      && points.len() == parsed.len()
+    {
+      for (point, &xy) in points.iter().zip(parsed) {
+        if let Some(rgb) = style_color(point) {
+          colors.push((xy, rgb));
+          any = true;
+        }
+      }
+    }
+    out.push(colors);
+  }
+  if any { out } else { Vec::new() }
 }
 
 fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
@@ -1903,6 +1973,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     point_labels
   };
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  parsed.opts.point_colors = styled_point_colors(&data, &all_series);
 
   // InterpolationOrder reshapes only a joined series into a curve (0 =
   // steps, >= 2 = smooth spline); a series marked `Joined -> False` keeps
