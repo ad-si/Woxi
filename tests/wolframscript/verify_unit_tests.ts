@@ -791,6 +791,12 @@ const APPROX_MATCH = new Set([
 // neighbours in conformance_gaps.md — or where both engines iterate to a
 // root and stop in different places.
 const NEAR_MATCH = new Set([
+  // BarChart's layout is reproduced from wolframscript's numbers, but its bar
+  // edges and extents come out an ulp or two away (see "Chart functions:
+  // symbolic primitives").
+  'BarChart[<|"a" -> 1, "b" -> 2, "c" -> 5, "d" -> 3|>]',
+  "g = BarChart[{3, 1/2}]; {Cases[g, Point[p_] :> p, Infinity], Cases[g, Rectangle[{a_, _}, {b_, h_}, ___] :> {a, b, h}, Infinity], Cases[g, Tooltip[_, Style[v_, _]] :> v, Infinity], Cases[g, {{} ..}, Infinity]}",
+  "Table[First[Cases[BarChart[Range[n]], Rectangle[{a_, _}, _, ___] :> a, Infinity]], {n, {12, 40, 60}}]",
   "PolyGamma[-7.7]",
   "PolyGamma[2, 0.3]",
   "PolyGamma[1.46]",
