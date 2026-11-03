@@ -7673,9 +7673,6 @@ Found comparing the graphics-tests renders (2026-11):
   width with Woxi's usual small-plot layout: its tick labels crowd, where
   WL keeps the full-size fonts and leaves out the minor ticks.
 - `PlotLegends -> BarLegend[…]` with a `ColorFunction` draws no legend.
-- `HankelH1[1, x]` (and the other Hankel functions) stay unevaluated for
-  negative real `x`, so `ReImPlot[HankelH1[1, x], {x, -10, 10}]` leaves
-  out the negative half; wolframscript evaluates them to complex numbers.
 - Woxi's own SVG rasterizer (`Export[…png, Import[svg]]`) shows thin seams
   between abutting opaque polygons that other renderers (rsvg) do not.
 

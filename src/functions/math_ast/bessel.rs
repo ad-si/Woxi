@@ -1162,6 +1162,10 @@ fn build_hankel(
       "{name} expects exactly 2 arguments"
     )));
   }
+  // Only an inexact argument evaluates: `HankelH1[1, 2]` stays as it is.
+  if !args.iter().any(contains_inexact_real) {
+    return Ok(unevaluated(name, args));
+  }
   // Try numeric evaluation: compute BesselJ + sign*I*BesselY
   let j_result =
     crate::evaluator::evaluate_expr_to_expr(&call(j_name, args.to_vec()))?;
@@ -1182,6 +1186,17 @@ fn build_hankel(
       ]),
     ]);
     return crate::evaluator::evaluate_expr_to_expr(&expr);
+  }
+  // Complex values — a negative real argument puts `BesselY` (and a
+  // non-integer order `BesselJ`) on its branch cut: J + sign i Y.
+  if let (Some((jr, ji)), Some((yr, yi))) = (
+    try_extract_complex_float(&j_result),
+    try_extract_complex_float(&y_result),
+  ) && (contains_inexact_real(&j_result) || contains_inexact_real(&y_result))
+    && [jr, ji, yr, yi].iter().all(|v| v.is_finite())
+  {
+    let s = sign as f64;
+    return Ok(build_complex_float_expr(jr - s * yi, ji + s * yr));
   }
   Ok(unevaluated(name, args))
 }

@@ -2290,6 +2290,44 @@ mod hankel_h1_h2 {
     );
   }
 
+  // A negative real argument puts BesselY on its branch cut: the Hankel
+  // functions still evaluate, to J + I Y with a complex Y (wolframscript:
+  // HankelH1[1, -2.5] = 0.4970941024642741 - 0.14591813796678565 I).
+  #[test]
+  fn hankel_negative_real_argument() {
+    let close = |expr: &str, re: f64, im: f64| {
+      let result = interpret(expr).unwrap();
+      let (r, i) = parse_complex(&result);
+      assert!(
+        (r - re).abs() < 1e-12 && (i - im).abs() < 1e-12,
+        "{expr}: {result}"
+      );
+    };
+    close(
+      "HankelH1[1, -2.5]",
+      0.4970941024642741,
+      -0.14591813796678565,
+    );
+    close(
+      "HankelH2[1, -2.5]",
+      -1.4912823073928223,
+      0.14591813796678565,
+    );
+    close("HankelH1[0, -1.]", -0.7651976865579666, 0.0882569642156771);
+    close("HankelH1[0.5, -2.]", 0.2347857104062485, 0.5130161365618278);
+  }
+
+  // Exact arguments stay symbolic, as in wolframscript.
+  #[test]
+  fn hankel_exact_arguments_stay_unevaluated() {
+    assert_eq!(interpret("HankelH1[1, 2]").unwrap(), "HankelH1[1, 2]");
+    assert_eq!(interpret("HankelH2[0, 3/2]").unwrap(), "HankelH2[0, 3/2]");
+    assert_eq!(
+      interpret("SphericalHankelH1[1, 2]").unwrap(),
+      "SphericalHankelH1[1, 2]"
+    );
+  }
+
   #[test]
   fn hankel_h2_is_conjugate_of_hankel_h1_for_real_arg() {
     let h1 = parse_complex(&interpret("HankelH1[1.5, 4]").unwrap());
