@@ -2687,6 +2687,11 @@ function main() {
     // A DifferentialEquations`InterpolatingFunctionAnatomy` function, which
     // wolframscript only knows after Needs; Woxi provides it built in.
     "InterpolatingFunctionDomain[Interpolation[{{1}, {4}, {9}}]]",
+    // A difference of symbolic order takes wolframscript minutes, past the
+    // batch timeout (the forms were checked one by one).
+    "DifferenceDelta[i^2, {i, n}]",
+    "DifferenceDelta[i, {i, n}]",
+    "DifferenceDelta[i^2, {i, n, h}]",
     // NDSolve / NDEigensystem / FEM / FindFit numerics: wolframscript's
     // methods meet the asserted tolerances differently (or, for the DAE,
     // fail); see "NDSolve accuracy and step control" in conformance_gaps.md.
