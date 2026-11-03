@@ -2461,6 +2461,11 @@ function main() {
     "Hold[{1, 2}?f]",
     'Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}, VertexLabels -> {1 -> "one"}]',
 
+    // Batch artifact: an earlier case in the same wolframscript session
+    // loads GraphUtilities`, so the "not loaded" probe sees the package
+    // (run alone, wolframscript agrees with Woxi).
+    "{Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]], Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]], Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]]}",
+
     // Plot internals: Woxi builds its plots with its own primitive layout
     // (see the three-renderers note), so the sampling grid, the wrapper
     // heads (GraphicsComplex / Annotation / Legended) and where a style
@@ -2644,7 +2649,24 @@ function main() {
     "ImageDimensions[Image[Graphics[{White, Disk[]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {{246, 246}, {246, 246}}, Background -> Black]]]",
     "m = Image[{{1, 0}, {1, 1}}]; {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}",
     // Adaptive sampling and the nesting of the 3D plot primitives are not
-    // decoded (see "3D plots sample and nest differently").
+    // decoded (see "3D plots sample and nest differently"); likewise the
+    // ParametricPlot / ComplexRegionPlot region meshes, ComplexPlot3D's grid
+    // (just inside the range) with its Legended wrapper, and textured
+    // surfaces (see "Plot parts nest differently").
+    "ParametricPlot[{(v + u)*Cos[u], (v + u)*Sin[u]}, {u, 0, 2*Pi}, {v, 0, 5}, PlotStyle -> {Opacity[1], Texture[Image[{{{0.5, 0.5, 0.5}, {0.6, 0.6, 0.6}}, {{0.7, 0.7, 0.7}, {0.8, 0.8, 0.8}}}]]}]",
+    "gc = SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, PlotPoints -> 5, TextureCoordinateFunction -> ({#5, 1 - #4} &), PlotStyle -> Directive[Texture[Image[{{0, 1}, {1, 0}}]]]][[1]]; {Length[Cases[gc[[2]], _Texture]], Length[gc[[3]][[2]]] == Length[gc[[1]]]}",
+    "Block[{conv = 2, dis = -3, icos = 1, sep = 0}, v = PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"]; h1a = SphericalPlot3D[Norm[v[[2]]], {theta, 0, VectorAngle[v[[2]], v[[4]]]}, {phi, 0, (2 Pi)/5}, RegionFunction -> ({#1, #2, #3} . v[[4]] \\[Cross] v[[12]] > 0 &), MaxRecursion -> 0, PlotPoints -> conv, Mesh -> None, BoundaryStyle -> Black][[1]]; h1 = Translate[h1a, dis Mean[v[[{2, 4, 12}]]]]; h2 = Rotate[h1, -(1/5) (2 Pi), v[[4]]]; h3 = Translate[(Rotate[{h1, h2}, (2 Pi #1)/5, {0, 0, 1}] &) /@ Range[5], {0, 0, sep}]; h4 = {RGBColor[0.3, 1, 0.8], Rotate[h3, Pi, {0, 1, 0}]}; Graphics3D[{{RGBColor[0.9, 1, 0.5], PolyhedronData[\"Icosahedron\", \"Insphere\"]}, {Scale[GraphicsComplex[PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"], Line[PolyhedronData[\"Icosahedron\", \"EdgeIndices\"]]], icos {1, 1, 1}, {0, 0, 0}]}, {RGBColor[0.7, 1, 1], h3}, h4}, Boxed -> False, SphericalRegion -> True, ViewAngle -> 0.09, ViewPoint -> {3.2, -10, 5.2}, PlotRange -> 1.7, ImageSize -> 380]]",
+    "ListPlot3D[{{1,2,3},{4,5,6},{7,8,9}}]",
+    "ComplexRegionPlot[Abs[z] <= 1, {z, -1 - I, 1 + I}]",
+    "ComplexRegionPlot[{Re[z^2] < 1, Im[z^2] < 1}, {z, 2}]",
+    "ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[WeberE[2, z], {z, -2 - 2*I, 2 + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[HermiteH[1/2, z], {z, -1 - I, 1 + I}, PlotLegends -> Automatic]",
+    "w[x_] := Piecewise[{{{Sin[x], x}, x > 0.5}, {{x, -1}, x <= 0.5}}]; p = First[Cases[ParametricPlot3D[With[{temp = w[t]}, Flatten@{AngleVector[{temp[[1]], t}], temp[[2]] + 1}], {t, 0, 1}], Line[q_] :> q, Infinity]]; {First[p], Last[p]}",
+    "Max[ParametricPlot3D[{u, v, 0}, {u, 0, 2}, {v, 0, u}, PlotPoints -> 5][[1, 1]][[All, 2]]]",
+    "pts = First[RevolutionPlot3D[2, {t, 1, 3}, {th, 0, 2 Pi}, RevolutionAxis -> {1, 0, 0}]][[1]]; {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 2]]], 0.01]}",
     "Length[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}], Line[p_] :> p, Infinity][[1]]]",
     "Length[Cases[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]], _Line]]",
     "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), ColorFunctionScaling -> False, PlotPoints -> 4]; Take[p[[1, 2]], {2, 3}]",
