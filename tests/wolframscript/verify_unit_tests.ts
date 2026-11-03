@@ -2566,6 +2566,8 @@ function main() {
     // bisects the whole batch down to this one case, ten kernel starts
     // deep, before writing it off.
     "$RecursionLimit = 40; b[n_] := b[n - 1] + b[n - 2] + b[n - 3]; b[1]",
+    // The same termination, from a value that re-reads its own symbol.
+    "ys = Append[ys, 1]; Head[ys]",
 
     // Socket failure model: wolframscript answers every operation on an
     // unusable socket with a Failure["SocketsLink", …] carrying the live

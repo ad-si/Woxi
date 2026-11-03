@@ -25100,7 +25100,10 @@ mod shared_own_value_lists {
       interpret("ys = Append[ys, 1]; Head[ys]").unwrap(),
       "TerminatedEvaluation[RecursionLimit]"
     );
-    // Appending a different symbol is an ordinary assignment.
+  }
+
+  #[test]
+  fn appending_another_symbol_is_an_ordinary_assignment() {
     assert_eq!(
       interpret("a = {1}; b = {2}; a = Append[b, 3]; {a, b}").unwrap(),
       "{{2, 3}, {2}}"
