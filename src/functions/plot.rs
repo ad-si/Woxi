@@ -2361,6 +2361,9 @@ pub(crate) struct FillStyle {
   /// Second color of a two-color style `{above, below}`: used where the
   /// filled curve lies below the curve it is filled to.
   pub below_color: Option<(u8, u8, u8)>,
+  /// `Dashed`/`Dashing[…]`: the dash and gap length, in points, of a
+  /// list plot's filling stems.
+  pub dashing: Option<(f64, f64)>,
 }
 
 impl FillStyle {
@@ -2375,6 +2378,13 @@ impl FillStyle {
 /// `Opacity[a]`, `Opacity[a, color]`, `Directive[…]`, and a directive list
 /// `{Opacity[a], color}`. Returns `None` for `Automatic`/`None`/unrecognized
 /// values (keeping the default fill appearance).
+/// The first dash and gap, in points, of a dashing directive.
+fn dash_pair(e: &Expr) -> Option<(f64, f64)> {
+  let dashes = parse_style_directives(e)?.dashing?;
+  let dash = *dashes.first()?;
+  Some((dash, dashes.get(1).copied().unwrap_or(dash)))
+}
+
 pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
   fn walk(e: &Expr, fs: &mut FillStyle) {
     match e {
@@ -2413,6 +2423,16 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
         }
       }
       Expr::Identifier(s) if s == "Automatic" || s == "None" => {}
+      Expr::Identifier(s)
+        if matches!(s.as_str(), "Dashed" | "Dotted" | "DotDashed") =>
+      {
+        fs.dashing = dash_pair(e);
+      }
+      Expr::FunctionCall { name, .. }
+        if name == "Dashing" || name == "AbsoluteDashing" =>
+      {
+        fs.dashing = dash_pair(e);
+      }
       other => {
         if let Some(c) = parse_color(other) {
           fs.color = Some(color_to_rgb8(c));
@@ -2430,9 +2450,10 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
     color: None,
     opacity: None,
     below_color: None,
+    dashing: None,
   };
   walk(&val, &mut fs);
-  if fs.color.is_none() && fs.opacity.is_none() {
+  if fs.color.is_none() && fs.opacity.is_none() && fs.dashing.is_none() {
     None
   } else {
     Some(fs)
@@ -2459,6 +2480,7 @@ fn fill_paint(
     color: None,
     opacity: None,
     below_color: None,
+    dashing: None,
   });
   let (r, g, b) = fs.color.unwrap_or(series_rgb);
   RGBColor(r, g, b).mix(fs.effective_opacity().unwrap_or(0.2))
@@ -7111,6 +7133,7 @@ pub(crate) fn render_merged_plot_source(
           color: s.fill_color,
           opacity: s.fill_opacity,
           below_color: None,
+          dashing: None,
         },
       )
     })
@@ -11431,11 +11454,27 @@ where
   // irregularly spaced datasets fill correctly.
   // WL 15 draws the stems of a filled scatter at Opacity[0.3], a little
   // stronger than the 0.2 of a filled curve's area.
-  let stem_style = match series_filling_style(opts, series_idx) {
+  let fill_style = series_filling_style(opts, series_idx);
+  let stem_style = match fill_style {
     None => RGBColor(r, g, b).mix(0.3),
     fs => fill_paint(fs, (r, g, b)),
   }
   .stroke_width(RESOLUTION_SCALE);
+  // A two-colour `{below, above}` style paints the stems of points under
+  // their reference in the first colour.
+  let below_style =
+    fill_style
+      .and_then(|fs| fs.below_color)
+      .map(|(br, bg, bb)| {
+        RGBColor(br, bg, bb)
+          .mix(
+            fill_style
+              .and_then(|fs| fs.effective_opacity())
+              .unwrap_or(1.0),
+          )
+          .stroke_width(RESOLUTION_SCALE)
+      });
+  let stem_dashes = fill_style.and_then(|fs| fs.dashing);
   let stem_targets: Vec<((f64, f64), f64)> =
     match series_fill_target(opts, series_idx) {
       FillTarget::Level(level) => level
@@ -11459,11 +11498,26 @@ where
       }
     };
   for ((x, y), ref_y) in stem_targets {
-    chart
-      .draw_series(std::iter::once(PathElement::new(
-        vec![(x, y), (x, ref_y)],
-        stem_style,
-      )))
+    let style = match below_style {
+      Some(below) if y < ref_y => below,
+      _ => stem_style,
+    };
+    let stem = vec![(x, y), (x, ref_y)];
+    let drawn = match stem_dashes {
+      Some((dash, gap)) => {
+        let scale = RESOLUTION_SCALE as f64;
+        chart.draw_series(std::iter::once(
+          plotters::element::DashedPathElement::new(
+            stem,
+            (dash * scale).round().max(1.0) as u32,
+            (gap * scale).round().max(1.0) as u32,
+            style,
+          ),
+        ))
+      }
+      None => chart.draw_series(std::iter::once(PathElement::new(stem, style))),
+    };
+    drawn
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
 

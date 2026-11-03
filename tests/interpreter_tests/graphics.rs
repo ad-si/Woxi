@@ -13211,6 +13211,36 @@ mod plot3d {
       ));
     }
 
+    /// A list plot's filling stems take a two-colour `{below, above}`
+    /// `FillingStyle` by side of the reference, and a `Dashed` style draws
+    /// them dashed (WL 15: 4 pt dashes, fully opaque with a colour).
+    #[test]
+    fn list_plot_filling_stems_two_colours_and_dashes() {
+      let svg = export_svg(
+        "ListPlot[Table[{x, Sin[x]}, {x, 1, 6}], Filling -> Axis, \
+         FillingStyle -> {Red, Blue}]",
+      );
+      let stems = |c: &str| {
+        svg
+          .lines()
+          .filter(|l| l.contains(&format!("stroke=\"{c}\"")))
+          .count()
+      };
+      // sin 1, 2, 3 > 0 (blue); sin 4, 5, 6 < 0 (red).
+      assert_eq!(stems("#0000FF"), 3, "{svg}");
+      assert_eq!(stems("#FF0000"), 3, "{svg}");
+      let solid = export_svg(
+        "ListPlot[{1, 2, 3}, Filling -> Axis, FillingStyle -> Magenta]",
+      );
+      let dashed = export_svg(
+        "ListPlot[{1, 2, 3}, Filling -> Axis, \
+         FillingStyle -> Directive[Magenta, Dashed]]",
+      );
+      let count = |s: &str| s.matches("stroke=\"#FF00FF\"").count();
+      assert_eq!(count(&solid), 3);
+      assert!(count(&dashed) > 3, "dashes are separate segments: {dashed}");
+    }
+
     /// `PlotMarkers -> Automatic` cycles WL 15's shapes over the series:
     /// a disk, then filled square, diamond and triangles (polygons), then
     /// the outlined ones; `{Automatic, Small}` shrinks them.
