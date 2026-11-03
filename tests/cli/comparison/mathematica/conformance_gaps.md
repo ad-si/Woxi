@@ -5199,8 +5199,9 @@ Found by the round-5 parameter sweep of the plot reference pages: each is
 accepted, but the picture is the same as without it.
 
 - `Plot`: `ClippingStyle`, `ExclusionsStyle`, `MeshShading`,
-  `PlotRangeClipping`, `RegionFunction`, `PlotLayout`; `MeshFunctions` is
-  ignored (the mesh is spaced along the curve).
+  `PlotRangeClipping`, `PlotLayout`; `MeshFunctions` is ignored (the mesh is
+  spaced along the curve), and an explicit `Mesh -> {{x1, x2, …}}` draws no
+  points.
 - `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
   `LabelingFunction -> f` with a pure function.
 - `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
@@ -5220,6 +5221,36 @@ accepted, but the picture is the same as without it.
 - `PieChart`: `PlotTheme`, `ChartElementFunction`.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
+
+### Side-by-side comparison with wolframscript: remaining differences
+
+Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
+(wolframscript and Woxi rendering the same `Export[…, "SVG"]` calls):
+
+- `Show[p1, p2]` merges the plot ranges; Wolfram keeps the first plot's
+  automatic `PlotRange`, cutting off the second plot's data outside it.
+- The automatic `PlotRange` of `ListPlot` keeps every point; Wolfram drops
+  outliers (`ListPlot[{0, 1, 2, 3, 100, 5, 6, 7}]` shows about 0–16).
+- `PlotLegends -> Automatic` labels the legend with the curves'
+  expressions; Wolfram shows numbered `Placeholder` boxes, and
+  `Placeholder[…]` itself has no display form.
+- `Labeled[f, label, pos]` / `Callout[f, label, pos]` inside `Plot` and
+  `ListPlot` ignore `pos`; `PlotLabels -> Placed[{…}, pos]` and per-curve
+  `Callout[label, pos]` draw the labels at the curve ends.
+- Graphics `PlotMarkers` (`PlotMarkers -> {{Graphics[…], size}, …}`) and
+  `PlotMarkers -> Automatic` shapes draw the default dot.
+- Point-level `Style[point, …]` in `ListPlot` data is not applied (a styled
+  dataset or the whole styled data is).
+- Tick labels are sized for Arial (to reproduce WL 15's `ImagePadding`), but
+  drawn in Atkinson Hyperlegible Next, whose digits are wider: a long left
+  tick label such as `6000` loses part of its first glyph at the image edge.
+- A list of plots draws each at its full automatic size; Wolfram's front
+  end applies `ImageSizeMultipliers -> {0.5, 0.25}` to automatically sized
+  graphics inside list-like (`{…}`, `->`, `Grid`) and text-like (`f[…]`,
+  `a + g`) constructs.
+- TraditionalForm: `Binomial` and `HypergeometricPFQ` are written as calls,
+  `Div`/`Grad`/`Laplacian` lose their variable subscript, and a product
+  with a fraction factor is not merged into one fraction.
 
 ### Merged graphics use a different tick font
 

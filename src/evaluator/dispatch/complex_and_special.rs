@@ -5371,6 +5371,26 @@ fn tf_needs_paren_factor(expr: &Expr) -> bool {
   }
 }
 
+/// Is this a sum of terms (`a + b`, `a - b`)?
+fn tf_is_additive(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
+}
+
+/// Is this a large operator — `Sum`, `Product` or `Integrate` — whose
+/// operand runs on to the right of its `∑`/`∏`/`∫`? Anything set after it
+/// (another factor, an exponent, an outer integral's `ⅆx`) would read as
+/// part of that operand, so it is parenthesised there.
+fn tf_is_big_operator(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if matches!(name.as_str(), "Sum" | "Product" | "Integrate") && args.len() >= 2)
+}
+
 fn tf_factor_boxed(expr: &Expr) -> Expr {
   let boxed = tf(expr);
   if tf_needs_paren_factor(expr) {
@@ -5430,6 +5450,7 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
       }
     )
     || matches!(base, Expr::FunctionCall { name, args } if name == "Power" || name == "Rational" || (name == "Exp" && args.len() == 1))
+    || tf_is_big_operator(base)
   {
     tf_parens(tf(base))
   } else {
@@ -5525,6 +5546,21 @@ fn tf_times(expr: &Expr) -> Expr {
   tf_flatten_times(expr, &mut factors);
   // Pull a leading -1 / negative numeric coefficient into a sign.
   let mut negative = false;
+  // A held `-a x` is `Times[-a, x]`: the sign of `-a` is the product's.
+  if let Some(Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  }) = factors.first()
+  {
+    let operand = (**operand).clone();
+    factors.remove(0);
+    let mut inner = Vec::new();
+    tf_flatten_times(&operand, &mut inner);
+    for (i, f) in inner.into_iter().enumerate() {
+      factors.insert(i, f);
+    }
+    negative = true;
+  }
   if let Some(Expr::Integer(n)) = factors.first()
     && *n < 0
   {
@@ -5565,7 +5601,13 @@ fn tf_times(expr: &Expr) -> Expr {
       if i > 0 {
         items.push(tf_thin_space());
       }
-      items.push(tf_factor_boxed(f));
+      // A large operator followed by another factor is parenthesised;
+      // the last one runs on to the end of the product.
+      if i + 1 < parts.len() && tf_is_big_operator(f) {
+        items.push(tf_parens(tf(f)));
+      } else {
+        items.push(tf_factor_boxed(f));
+      }
     }
     tf_row(items)
   };
@@ -5678,7 +5720,12 @@ fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
   }
   let mut items = ops;
   items.push(tf_thin_space());
-  items.push(tf(&args[0]));
+  // A sum of terms as the operand is parenthesised: `∑ (a + b)`.
+  if tf_is_additive(&args[0]) {
+    items.push(tf_parens(tf(&args[0])));
+  } else {
+    items.push(tf(&args[0]));
+  }
   tf_row(items)
 }
 
@@ -5713,13 +5760,10 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   }
   let mut items = ops;
   items.push(tf_thin_space());
-  let body_needs_paren = matches!(
-    &args[0],
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus | BinaryOperator::Minus,
-      ..
-    }
-  ) || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus");
+  // A sum, or an inner large operator, is parenthesised so the `ⅆx`
+  // closes this integral: `∫ (∫ f ⅆy) ⅆx`.
+  let body_needs_paren =
+    tf_is_additive(&args[0]) || tf_is_big_operator(&args[0]);
   if body_needs_paren {
     items.push(tf_parens(tf(&args[0])));
   } else {

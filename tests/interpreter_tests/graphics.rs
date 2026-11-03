@@ -12016,15 +12016,11 @@ mod plot3d {
       let svg = export_svg(
         r#"Plot[{Sin[x], Sin[2 x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
       );
-      // "Expressions" legends should use output form of the expressions
-      assert!(
-        svg.contains("Sin[x]"),
-        "Expressions legend should contain Sin[x]"
-      );
-      assert!(
-        svg.contains("Sin[2*x]") || svg.contains("Sin[2 x]"),
-        "Expressions legend should contain Sin[2*x] or Sin[2 x]"
-      );
+      // "Expressions" legends set the expressions in TraditionalForm, as
+      // WL does (`sin(x)`, not `Sin[x]`).
+      assert!(svg.contains(">sin(x)<"), "legend should read sin(x)");
+      assert!(svg.contains(">sin(2"), "legend should read sin(2 x)");
+      assert!(!svg.contains("Sin["), "no InputForm legend text");
     }
 
     #[test]
@@ -35993,8 +35989,8 @@ fn plot_legends_placed_top() {
   let svg = export_svg(
     r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Placed["Expressions", Top]]"#,
   );
-  assert!(svg.contains("Sin[x]"), "Should contain Sin[x] legend");
-  assert!(svg.contains("Cos[x]"), "Should contain Cos[x] legend");
+  assert!(svg.contains(">sin(x)<"), "Should contain the sin(x) legend");
+  assert!(svg.contains(">cos(x)<"), "Should contain the cos(x) legend");
   // Top placement shifts content down via a translate group
   assert!(
     svg.contains("translate(0,"),
@@ -36021,8 +36017,8 @@ fn plot_legends_expressions_right_regression() {
   let svg = export_svg(
     r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
   );
-  assert!(svg.contains("Sin[x]"), "Should contain Sin[x] legend");
-  assert!(svg.contains("Cos[x]"), "Should contain Cos[x] legend");
+  assert!(svg.contains(">sin(x)<"), "Should contain the sin(x) legend");
+  assert!(svg.contains(">cos(x)<"), "Should contain the cos(x) legend");
   // Right placement should NOT have a translate group for shifting content
   assert!(
     !svg.contains("translate(0,"),
@@ -46043,5 +46039,166 @@ mod plot_area_aspect {
       head("Graphics[Disk[], ImageSize -> Large]")
         .starts_with("<svg width=\"576\"")
     );
+  }
+}
+
+/// Regressions found by comparing Woxi's plots with wolframscript's
+/// side by side (missing elements, wrong colours, raw-expression labels).
+mod plot_content_regressions {
+  use super::*;
+
+  /// The `x` of the first `<text>` element whose content is `label`.
+  fn text_x(svg: &str, label: &str) -> Option<f64> {
+    let close = format!(">{label}</text>");
+    let end = svg.find(&close)?;
+    let start = svg[..end].rfind("<text")?;
+    let tag = &svg[start..end];
+    let x = tag.split("x=\"").nth(1)?.split('"').next()?;
+    x.parse().ok()
+  }
+
+  /// `PlotLegends -> SwatchLegend[{styles}, {labels}]` draws squares in the
+  /// legend's own colours, not line swatches in the series colours.
+  #[test]
+  fn swatch_legend_uses_its_own_colours() {
+    let svg = export_svg(
+      r#"Plot[Sin[x], {x, 0, 5}, PlotLegends -> SwatchLegend[{Blue, Red}, {"a", "b"}]]"#,
+    );
+    assert!(svg.contains("<rect") && svg.contains("fill=\"rgb(0,0,255)\""));
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    // No line swatch in the second series colour.
+    assert!(!svg.contains("stroke=\"rgb(242,160,36)\""));
+  }
+
+  /// `SwatchLegend[{labels}]` keeps the series colours but draws squares.
+  #[test]
+  fn swatch_legend_without_styles_uses_series_colours() {
+    let svg = export_svg(
+      r#"Plot[{Sin[x], Cos[x]}, {x, 0, 5}, PlotLegends -> SwatchLegend[{"a", "b"}]]"#,
+    );
+    assert!(svg.contains("fill=\"rgb(61,153,204)\""));
+    assert!(svg.contains("fill=\"rgb(242,160,36)\""));
+  }
+
+  /// `RegionFunction` keeps only the stretches of the curve it accepts:
+  /// `Sin[x] > 0` on 0..10 leaves two arcs.
+  #[test]
+  fn plot_region_function_clips_the_curve() {
+    let curves = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(curves("Plot[Sin[x], {x, 0, 10}]"), 1);
+    assert_eq!(
+      curves(
+        "Plot[Sin[x], {x, 0, 10}, RegionFunction -> Function[{x, y}, y > 0]]"
+      ),
+      2
+    );
+    // `Evaluate` inside the function is worked out before it is called.
+    assert_eq!(
+      curves(
+        "f = Sin[x]; Plot[f, {x, 0, 10}, \
+         RegionFunction -> Function[{x, y}, Evaluate[D[f, x] >= 0]]]"
+      ),
+      2
+    );
+  }
+
+  /// The `"Business"` theme hides the left frame edge but keeps its tick
+  /// labels, with room for them inside the image.
+  #[test]
+  fn business_theme_keeps_left_tick_labels() {
+    let svg = export_svg(r#"Plot[Sin[x], {x, 0, 6}, PlotTheme -> "Business"]"#);
+    let x = text_x(&svg, "-0.5").expect("the -0.5 tick label is drawn");
+    // Right-aligned at `x`: the label's 1.81 em (Atkinson Hyperlegible
+    // Next) at 10 pt, in render units (×10), must fit.
+    assert!(x >= 181.0, "label x = {x}");
+  }
+
+  /// `Style[dataset, dirs…]` in the data styles that dataset, and around
+  /// the whole data every dataset, instead of being dropped.
+  #[test]
+  fn style_wrapped_datasets_keep_their_style() {
+    let svg = export_svg("ListPlot[{Style[{1, 2, 3}, Green], {4, 5, 6}}]");
+    assert!(svg.contains(r##"fill="#00FF00""##));
+    // The unstyled dataset keeps the second default colour.
+    assert!(svg.contains(r##"fill="#F2A024""##));
+    let svg = export_svg("ListPlot[Style[{{1, 2, 3}, {4, 5, 6}}, Blue]]");
+    assert!(svg.contains(r##"fill="#0000FF""##));
+    assert!(
+      !svg.contains(r##"fill="#3D99CC""##)
+        && !svg.contains(r##"fill="#F2A024""##)
+    );
+    let svg =
+      export_svg("ListLinePlot[{Style[{1, 2, 3}, Red, Dashed], {4, 5, 6}}]");
+    assert!(svg.contains(r#"stroke="rgb(255,0,0)""#));
+    assert!(svg.contains("stroke-dasharray"));
+  }
+
+  /// `Exclusions -> Automatic` breaks a step function's curve at its jumps
+  /// (separate flat segments, no vertical risers); `Exclusions -> None`
+  /// joins them, and a smooth curve stays in one piece.
+  #[test]
+  fn step_functions_are_excluded_at_their_jumps() {
+    let pieces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(pieces("Plot[Floor[x], {x, 0, 5}]"), 5);
+    assert_eq!(pieces("Plot[Floor[Sqrt[x]], {x, 0, 100}]"), 10);
+    assert_eq!(pieces("Plot[Sin[Floor[x]], {x, 0, 10}]"), 10);
+    assert_eq!(pieces("Plot[Floor[x], {x, 0, 5}, Exclusions -> None]"), 1);
+    assert_eq!(pieces("Plot[Sin[x] + x, {x, 0, 5}]"), 1);
+  }
+
+  /// `PlotLabels -> Placed[{…}, pos]`, `Callout[{…}, pos]` and per-curve
+  /// `Callout`/`Placed` entries label the curves instead of being printed.
+  #[test]
+  fn plot_labels_wrappers_are_not_printed() {
+    for labels in [
+      r#"Placed[{"sine", "cosine"}, Above]"#,
+      r#"Callout[{"sine", "cosine"}, After]"#,
+      r#"{Callout["sine", {Scaled[0.25], Above}], Placed["cosine", Below]}"#,
+    ] {
+      let svg = export_svg(&format!(
+        "Plot[{{Sin[x], Cos[x]}}, {{x, 0, 2 Pi}}, PlotLabels -> {labels}]"
+      ));
+      assert!(text_x(&svg, "sine").is_some(), "{labels}");
+      assert!(text_x(&svg, "cosine").is_some(), "{labels}");
+      assert!(
+        !svg.contains("Placed") && !svg.contains("Callout"),
+        "{labels}"
+      );
+    }
+    let svg = export_svg(
+      r#"ListPlot[{Table[{Cos[t], Sin[t]}, {t, 0, 2 Pi, 0.1}], Table[{Cos[t], Sin[3 t]}, {t, 0, 2 Pi, 0.1}]}, Joined -> True, PlotLabels -> Callout[{"label1", "label2"}, After]]"#,
+    );
+    assert!(text_x(&svg, "label1").is_some() && !svg.contains("Callout"));
+  }
+
+  /// `PlotLabels -> Automatic | "Expressions"` label each curve with its
+  /// expression and `PlotLegends -> "Expressions"` sets the legend
+  /// entries in TraditionalForm.
+  #[test]
+  fn expression_labels_are_traditional_form() {
+    for labels in ["Automatic", "\"Expressions\""] {
+      let svg = export_svg(&format!(
+        "Plot[{{Sin[x], Cos[x]}}, {{x, 0, 2 Pi}}, PlotLabels -> {labels}]"
+      ));
+      assert!(text_x(&svg, "sin(x)").is_some(), "{labels}");
+      assert!(text_x(&svg, "cos(x)").is_some(), "{labels}");
+      assert!(!svg.contains("Expressions"), "{labels}");
+    }
+    let svg = export_svg(
+      r#"Plot[{Sin[x], Sin[2 x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
+    );
+    assert!(text_x(&svg, "sin(x)").is_some());
+    assert!(svg.contains(">sin(2"));
+    assert!(!svg.contains("Sin["));
   }
 }

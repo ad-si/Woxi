@@ -1762,6 +1762,75 @@ fn render_panel_layout(
 /// `ListPlot[{a, Legended[b, label], …}]`: a dataset wrapped in `Legended`
 /// gets a legend entry (`Placed[label, pos]` places the legend), unless
 /// `PlotLegends` already gave one.
+/// `Style[data, dirs…]` around the whole data styles every dataset, and
+/// around one dataset of a list (`{Style[{1, 2, 3}, Green], {4, 5, 6}}`)
+/// that dataset: its directives are laid over the dataset's `PlotStyle`
+/// (or default) style, the way WL lets the wrapper win.
+fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
+  let style_of = |args: &[Expr], base: SeriesStyle| -> SeriesStyle {
+    let mut style = base;
+    for d in &args[1..] {
+      crate::functions::plot::apply_style_directive(d, &mut style);
+    }
+    style
+  };
+  match data {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      let base = opts.plot_style.first().cloned().unwrap_or_default();
+      let style = style_of(args, base);
+      if opts.plot_style.is_empty() {
+        opts.plot_style = vec![style];
+      } else {
+        for s in &mut opts.plot_style {
+          *s = style_of(args, s.clone());
+        }
+      }
+    }
+    Expr::List(items) => {
+      let is_styled_dataset = |e: &Expr| {
+        matches!(e, Expr::FunctionCall { name, args }
+          if name == "Style" && args.len() >= 2
+            && matches!(&args[0], Expr::List(ds)
+              // A dataset, not a styled `{x, y}` point.
+              if ds.len() != 2 || ds.iter().any(|v| matches!(v, Expr::List(_)))))
+      };
+      if !items.iter().any(is_styled_dataset) {
+        return;
+      }
+      let base = opts.plot_style.clone();
+      opts.plot_style = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+          let mut style = if base.is_empty() {
+            SeriesStyle::default()
+          } else {
+            base[i % base.len()].clone()
+          };
+          // An unstyled entry keeps the default palette colour of its slot.
+          if style.color.is_none() {
+            let (r, g, b) = crate::functions::plot::PLOT_COLORS
+              [i % crate::functions::plot::PLOT_COLORS.len()];
+            style.color = Some(crate::functions::graphics::Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+          style.from_list = true;
+          match item {
+            Expr::FunctionCall { args, .. } if is_styled_dataset(item) => {
+              style_of(args, style)
+            }
+            _ => style,
+          }
+        })
+        .collect();
+    }
+    _ => {}
+  }
+}
+
 fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
   let Expr::List(items) = data else {
     return;
@@ -1868,6 +1937,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
   apply_legended_datasets(&data, &mut parsed.opts);
+  apply_styled_datasets(&data, &mut parsed.opts);
   parsed.opts.point_label_callouts = labels_are_callouts(&data);
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, true)?;
@@ -2095,6 +2165,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // labels for ListPlot but not for ListLinePlot.
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
   apply_legended_datasets(&data, &mut parsed.opts);
+  apply_styled_datasets(&data, &mut parsed.opts);
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, false)?;
   let all_series = strip_errors(&err_series);

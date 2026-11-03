@@ -8009,6 +8009,55 @@ mod cases {
     );
   }
 
+  /// A large operator's operand, base or neighbour is parenthesised the way
+  /// WL does, so the typeset formula reads as the expression it came from:
+  /// a sum of terms under `∑`/`∏`, a `∑` raised to a power or followed by
+  /// another factor, and an integral as an outer integral's integrand.
+  #[test]
+  fn traditional_form_parenthesises_large_operators() {
+    let boxes = |code: &str| {
+      woxi::interpret(&format!(
+        "ToString[ToBoxes[TraditionalForm[HoldForm[{code}]]], InputForm]"
+      ))
+      .unwrap()
+    };
+    assert!(boxes("Sum[a[n] + b[n], {n, 0, Infinity}]").contains(
+      r#""∞"], " ", RowBox[{"(", RowBox[{RowBox[{"a", "(", "n", ")"}], "+""#
+    ));
+    assert!(
+      boxes("Product[1 + 1/k^2, {k, 1, Infinity}]")
+        .contains(r#"" ", RowBox[{"(", RowBox[{"1", "+", FractionBox"#)
+    );
+    assert!(boxes("Sum[a[k], {k, 1, n}]^2").contains(
+      r#"SuperscriptBox[RowBox[{"(", RowBox[{UnderoverscriptBox["∑""#
+    ));
+    // Only the first of two summed factors needs the parentheses.
+    let product = boxes("Sum[a[k], {k, 1, n}] Sum[b[k], {k, 1, n}]");
+    assert!(product.starts_with(
+      r#"TagBox[FormBox[TagBox[RowBox[{RowBox[{"(", RowBox[{UnderoverscriptBox["∑""#
+    ));
+    assert_eq!(
+      product
+        .matches(r#""(", RowBox[{UnderoverscriptBox"#)
+        .count(),
+      1
+    );
+    assert!(
+      boxes("Integrate[Integrate[f[x, y], {y, 0, 1}], {x, 0, 1}]")
+        .contains(r#""1"], " ", RowBox[{"(", RowBox[{SubsuperscriptBox["∫""#)
+    );
+  }
+
+  /// A held `-a x` sets its sign in front of the product, not as a
+  /// parenthesised `(-a)` factor.
+  #[test]
+  fn traditional_form_leading_negated_factor() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[Exp[-a x]]]]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{exp, (, RowBox[{-, RowBox[{a,  , x}]}], )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// `a ≈ b` is typeset infix in TraditionalForm, not as `TildeTilde[a, b]`
   /// (the Gregory Series demo labels its plot with a held `π/4 ≈ Sum[…]`).
   #[test]

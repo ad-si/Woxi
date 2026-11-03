@@ -75,7 +75,7 @@ expression: "export_svg(r#\"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotStyle -> {D
 <line x1="232.4" y1="110.7" x2="272.4" y2="110.7" stroke="#666" stroke-width="5"/>
 <text x="202.4" y="145.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
 <line x1="3650.0" y1="958.0" x2="3850.0" y2="958.0" stroke="rgb(255,0,0)" stroke-width="20"/>
-<text x="3910.0" y="1007.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Sin[x]</text>
+<text x="3910.0" y="1007.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">sin(x)</text>
 <line x1="3650.0" y1="1182.0" x2="3850.0" y2="1182.0" stroke="rgb(0,0,255)" stroke-width="20" stroke-dasharray="40.0,40.0"/>
-<text x="3910.0" y="1231.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Cos[x]</text>
+<text x="3910.0" y="1231.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">cos(x)</text>
 </svg>
