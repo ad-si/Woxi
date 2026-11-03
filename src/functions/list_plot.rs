@@ -927,6 +927,9 @@ struct ParsedOptions {
   joined: bool,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or `All` in the slot of an axis): the axis shows
+  /// every point, outliers included.
+  plot_range_all: (bool, bool),
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
   hide_point_labels: bool,
   /// `InterpolationOrder -> n` for joined curves: 0 draws piecewise-constant
@@ -943,6 +946,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let (options, simple_ticks) = expand_plot_theme(&args[1..], true);
   let opts = &mut out.opts;
   opts.simple_ticks = simple_ticks;
+  // Joined data points are joined as given, also across a jump.
+  opts.join_across_jumps = true;
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
@@ -978,6 +983,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             crate::functions::plot::parse_series_plot_range(replacement);
           out.plot_range_x = rx;
           out.plot_range_y = ry;
+          out.plot_range_all =
+            crate::functions::plot::plot_range_all_axes(replacement);
         }
         "DataRange" => {
           out.data_range = match replacement {
@@ -1163,6 +1170,10 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.image_padding =
             crate::functions::plot::parse_image_padding(replacement);
         }
+        "ClippingStyle" => {
+          opts.clipping_style =
+            crate::functions::plot::parse_clipping_style(replacement);
+        }
         // "Fences" (capped error bars) is the default; "Bars" renders with
         // the same bar geometry. None hides the uncertainty intervals.
         "IntervalMarkers" => match replacement {
@@ -1208,10 +1219,22 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   out
 }
 
+/// What `PlotRange` asks of the automatic range of each axis.
+#[derive(Clone, Copy)]
+struct RangeRequest {
+  /// The axis range is given explicitly.
+  explicit: (bool, bool),
+  /// `All`: the whole extent of the points, outliers included.
+  keep_outliers: (bool, bool),
+}
+
 impl ParsedOptions {
-  /// Whether `PlotRange` fixes the x and the y range.
-  fn explicit_range(&self) -> (bool, bool) {
-    (self.plot_range_x.is_some(), self.plot_range_y.is_some())
+  /// What `PlotRange` fixes of the x and the y range.
+  fn explicit_range(&self) -> RangeRequest {
+    RangeRequest {
+      explicit: (self.plot_range_x.is_some(), self.plot_range_y.is_some()),
+      keep_outliers: self.plot_range_all,
+    }
   }
 }
 
@@ -1452,21 +1475,32 @@ fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
 fn list_plot_ranges(
   all_series: &[Vec<(f64, f64)>],
   implicit_x: bool,
-  (explicit_x, explicit_y): (bool, bool),
+  request: RangeRequest,
   opts: &mut PlotOptions,
 ) -> ((f64, f64), (f64, f64)) {
-  let bounds = |pick: fn(&(f64, f64)) -> f64| {
-    all_series
+  let (explicit_x, explicit_y) = request.explicit;
+  // The points' extent, outliers clipped off an axis whose range is
+  // automatic (WL does not on a logarithmic one, which never gets here).
+  // A numeric `AxesOrigin` is part of the range, but not of the
+  // distribution the outliers are told apart by.
+  let bounds = |pick: fn(&(f64, f64)) -> f64, keep_outliers: bool, origin| {
+    let values = all_series
       .iter()
       .flatten()
-      .map(pick)
-      .filter(|v| v.is_finite())
-      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
-        (lo.min(v), hi.max(v))
-      })
+      .filter(|p| p.0.is_finite() && p.1.is_finite())
+      .map(pick);
+    let (lo, hi) =
+      crate::functions::plot::list_value_extent(values, keep_outliers)
+        .unwrap_or((f64::INFINITY, f64::NEG_INFINITY));
+    match origin {
+      Some(o) if lo <= hi => (lo.min(o), hi.max(o)),
+      _ => (lo, hi),
+    }
   };
-  let (x_min, x_max) = bounds(|p| p.0);
-  let (y_min, y_max) = bounds(|p| p.1);
+  let (x_min, x_max) =
+    bounds(|p| p.0, request.keep_outliers.0, opts.axes_origin.0);
+  let (y_min, y_max) =
+    bounds(|p| p.1, request.keep_outliers.1, opts.axes_origin.1);
   let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x);
   let y = list_axis_extent(y_min, y_max, ListAxis::Y, false);
   if !explicit_x {
@@ -1495,6 +1529,10 @@ fn list_plot_ranges(
         at_axis(level);
       }
     }
+  }
+  if !explicit_y {
+    opts.curve_clip_y =
+      Some(crate::functions::plot::include_filling_levels(opts, y));
   }
   (x, y_padded)
 }
@@ -1618,14 +1656,14 @@ fn render_panel_layout(
   };
   let mut base = parsed.opts.clone();
   let (x_range, y_range) = if base.log_x || base.log_y {
-    let (x_range, y_range) =
-      compute_ranges_scaled(range_series, base.log_x, base.log_y);
-    (x_range, adjust_y_range_for_filling_opts(&base, y_range))
-  } else {
     let mut range_series = range_series.to_vec();
     include_axes_origin(&mut range_series, base.axes_origin);
+    let (x_range, y_range) =
+      compute_ranges_scaled(&range_series, base.log_x, base.log_y);
+    (x_range, adjust_y_range_for_filling_opts(&base, y_range))
+  } else {
     list_plot_ranges(
-      &range_series,
+      range_series,
       implicit_x,
       parsed.explicit_range(),
       &mut base,
@@ -1916,7 +1954,6 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &draw_series
     }));
   if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
-    include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
       &draw_series,
       &range_series,
@@ -1926,7 +1963,6 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
-  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,
@@ -2127,7 +2163,6 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
-  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,

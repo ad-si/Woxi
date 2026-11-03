@@ -5313,6 +5313,28 @@ Found comparing `Export[…, "SVG"]` of both engines:
   (`n=0` under a `∑`, `1+x` in a matrix fraction); an implicit product's
   space is a full monospace advance, wider than Wolfram's.
 
+### Automatic `Plot` range: outlier quantiles are approximate
+
+Both engines clip outliers off an automatic range with the rule of
+``Charting`CommonDump`icomputeSceneRange`` (17.5 % / 82.5 % quantiles `lo`,
+`hi`; an extreme further than `2.5 (hi - lo)` beyond is replaced by
+`1.5 (hi - lo)` beyond). `ListPlot` matches exactly. For `Plot` the rule runs
+inside the kernel's `Visualization`Core`Plot` on its own adaptive samples;
+Woxi weighs its samples by the x stretch each stands for, which lands within
+about 1 % of WL's value (`Plot[Exp[x], {x, -1, 10}]`: WL 7948, Woxi ≈ 8070),
+not on it. WL also clips some curves the rule leaves alone on the continuous
+curve (`Plot[x^6, {x, 0, 1}]` stops at 0.634 in WL, Woxi shows all of it to 1).
+
+A partly automatic range, `PlotRange -> {0, Automatic}`, still gives the fully
+automatic range in Woxi; WL clips its automatic end against the given one
+(`ListPlot[{1, 2, 3, 4, 100, 5, 6, 7}, PlotRange -> {0, Automatic}]` → WL
+y range `{0, 17.5}`).
+
+`ListPlot` of `NIntegrate`'s `EvaluationMonitor` samples
+(`list-plot-app-eval-values`) still differs: Woxi's `NIntegrate` samples
+`1/Abs[Sqrt[x]]` much closer to the singularity (its 82.5 % quantile is
+2·10⁵, WL's 11), so the same range rule gives a far taller range.
+
 
 ## Images
 

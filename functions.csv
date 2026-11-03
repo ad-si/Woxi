@@ -1086,7 +1086,7 @@ PreDecrement,"Decrements a variable by 1 and returns the new value",✅,stateful
 MultinormalDistribution,"Multivariate normal distribution (PDF for diagonal covariance; numeric bivariate CDF; Mean/Covariance/Variance; RandomVariate sampling for any dimension via numeric Cholesky decomposition)",✅,pure,8.0,1042
 UnitBox,"Unit box function (1 for |x| <= 1/2)",✅,pure,7.0,1043
 Today,"Returns a DateObject representing the current date",✅,contextual,10.0,1044
-ClippingStyle,"",🚫,,6.0,1046
+ClippingStyle,"Option for styling where curves are cut off at the plot range",✅,none,6.0,1046
 Del,"Symbolic nabla operator with Unicode display",✅,none,3.0,1046
 Resolve,"Quantifier elimination for univariate and additively separable multivariate polynomial formulas",✅,pure,5.0,1047
 MorphologicalComponents,"Label connected foreground components of an array or image",✅,pure,7.0,1048

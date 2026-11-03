@@ -484,6 +484,12 @@ pub(crate) fn exclusion_roots(
   };
   let mut roots = Vec::new();
   for condition in &conditions {
+    // `{eq, test, …}`: the roots of `eq` at which every test holds.
+    let (condition, tests) = match condition {
+      Expr::List(parts) if !parts.is_empty() => (&parts[0], &parts[1..]),
+      other => (other, &[][..]),
+    };
+    let first_new = roots.len();
     let (lhs, rhs) = match condition {
       Expr::Comparison {
         operands,
@@ -543,6 +549,26 @@ pub(crate) fn exclusion_roots(
         }
       }
       prev = cur;
+    }
+    // A root on an end of the domain, where rounding may leave the
+    // difference a hair off 0 without changing sign (`Sin[Pi x] == 0` at
+    // `x = 10`).
+    for end in [t_min, t_max] {
+      if diff(end).is_some_and(|f| f.abs() < 1e-12)
+        && !roots[first_new..].iter().any(|&r| (r - end).abs() <= step)
+      {
+        roots.push(end);
+      }
+    }
+    if !tests.is_empty() {
+      let mut kept = roots.split_off(first_new);
+      kept.retain(|&t| {
+        tests.iter().all(|test| {
+          let at = crate::syntax::substitute_variable(test, var, &Expr::Real(t));
+          matches!(evaluate_expr_to_expr(&at), Ok(Expr::Identifier(ref b)) if b == "True")
+        })
+      });
+      roots.extend(kept);
     }
   }
   roots

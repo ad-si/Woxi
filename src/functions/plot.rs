@@ -759,36 +759,108 @@ fn clip_to_region_function(
   out
 }
 
-/// The y extent of the drawn (finite) points of every curve; with
-/// `keep_outliers` unset, extreme values are fenced off as
-/// [`sampled_y_range`] does.
+/// The automatic extent WL gives one coordinate of a plot's points
+/// (`Charting`CommonDump`icomputeSceneRange`): with `lo`/`hi` the 17.5%
+/// and 82.5% quantiles of the values and `min`/`max` their extremes, an
+/// extreme further than 2.5 quantile spans beyond its quantile is an
+/// outlier, and the range stops 1.5 spans beyond the quantile instead. An
+/// extreme of exactly 0 is always kept.
+pub(crate) fn outlier_clipped_extent(
+  (lo, hi): (f64, f64),
+  (min, max): (f64, f64),
+) -> (f64, f64) {
+  let (lo, hi) = if lo == hi { (min, max) } else { (lo, hi) };
+  let span = hi - lo;
+  let min = if min >= lo - 2.5 * span || min == 0.0 {
+    min
+  } else {
+    lo - 1.5 * span
+  };
+  let max = if max <= hi + 2.5 * span || max == 0.0 {
+    max
+  } else {
+    hi + 1.5 * span
+  };
+  (min, max)
+}
+
+/// `Quantile[values, q]` with WL's default parameters (the
+/// `Ceiling[n q]`-th smallest) of the ascending `sorted` values.
+pub(crate) fn sorted_quantile(sorted: &[f64], q: f64) -> f64 {
+  let n = sorted.len();
+  let k = ((n as f64) * q).ceil().clamp(1.0, n as f64) as usize;
+  sorted[k - 1]
+}
+
+/// The automatic extent of a list of values: the whole extent when
+/// `keep_outliers` (`PlotRange -> All`), else [`outlier_clipped_extent`]
+/// of their quantiles. `None` when there is no finite value.
+pub(crate) fn list_value_extent(
+  values: impl IntoIterator<Item = f64>,
+  keep_outliers: bool,
+) -> Option<(f64, f64)> {
+  let mut sorted: Vec<f64> =
+    values.into_iter().filter(|v| v.is_finite()).collect();
+  if sorted.is_empty() {
+    return None;
+  }
+  sorted.sort_by(f64::total_cmp);
+  let extent = (sorted[0], sorted[sorted.len() - 1]);
+  if keep_outliers {
+    return Some(extent);
+  }
+  let quantiles = (
+    sorted_quantile(&sorted, 0.175),
+    sorted_quantile(&sorted, 0.825),
+  );
+  Some(outlier_clipped_extent(quantiles, extent))
+}
+
+/// The automatic y extent of the drawn curves of a `Plot`: the y extent of
+/// every stretch of two or more finite points (an isolated point, such as
+/// a step function's value at a jump on the end of the domain, is not
+/// drawn), with outliers clipped as [`outlier_clipped_extent`] does unless
+/// `keep_outliers`. The quantiles weigh each sample by the stretch of x it
+/// stands for, so the refinement that piles samples up at a pole does not
+/// skew them: they are the quantiles of the curve over its domain.
 fn drawn_y_range(
   curves: &[Vec<(f64, f64)>],
   keep_outliers: bool,
 ) -> (f64, f64) {
-  let mut ys: Vec<f64> = curves
-    .iter()
-    .flatten()
-    .map(|&(_, y)| y)
-    .filter(|y| y.is_finite())
-    .collect();
-  if ys.is_empty() {
+  let mut weighted: Vec<(f64, f64)> = Vec::new();
+  for curve in curves {
+    for segment in split_into_segments(curve) {
+      let n = segment.len();
+      for i in 0..n {
+        let left = segment[i.saturating_sub(1)].0;
+        let right = segment[(i + 1).min(n - 1)].0;
+        weighted.push((segment[i].1, ((right - left) / 2.0).abs()));
+      }
+    }
+  }
+  if weighted.is_empty() {
     return (-1.0, 1.0);
   }
-  ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-  let n = ys.len();
-  if keep_outliers || n < 4 {
-    return (ys[0], ys[n - 1]);
+  weighted.sort_by(|a, b| a.0.total_cmp(&b.0));
+  let extent = (weighted[0].0, weighted[weighted.len() - 1].0);
+  if keep_outliers {
+    return extent;
   }
-  let (q1, q3) = (ys[n / 4], ys[3 * n / 4]);
-  let iqr = q3 - q1;
-  if iqr < 1e-10 {
-    return (ys[0], ys[n - 1]);
+  let total: f64 = weighted.iter().map(|&(_, w)| w).sum();
+  if !(total > 0.0) {
+    return extent;
   }
-  let (lo, hi) = (q1 - 3.0 * iqr, q3 + 3.0 * iqr);
-  let kept: Vec<f64> =
-    ys.iter().copied().filter(|&y| y >= lo && y <= hi).collect();
-  (kept[0], kept[kept.len() - 1])
+  let quantile = |q: f64| {
+    let mut acc = 0.0;
+    for &(y, w) in &weighted {
+      acc += w;
+      if acc >= q * total {
+        return y;
+      }
+    }
+    extent.1
+  };
+  outlier_clipped_extent((quantile(0.175), quantile(0.825)), extent)
 }
 
 /// Whether `Exclusions` leaves the automatic exclusions on: the option is
@@ -813,6 +885,40 @@ fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
     Some(Expr::List(items)) => items.iter().any(is_auto),
     Some(v) => is_auto(v),
   }
+}
+
+/// Whether the step from `a` to `b` between neighbouring samples is a pole
+/// rather than a steep stretch of curve, for the y range `[lo, hi]`: both
+/// lie on opposite sides, each more than a range height beyond its edge. A
+/// steep but continuous curve stays within a range height of the edges.
+fn is_pole_jump(a: f64, b: f64, lo: f64, hi: f64) -> bool {
+  let height = hi - lo;
+  (a > hi + height && b < lo - height) || (a < lo - height && b > hi + height)
+}
+
+/// Whether `body` takes a function with a branch cut (`Sqrt`, `Log`, a
+/// fractional power, …) of something complex, where its value can jump as
+/// the argument crosses the cut.
+fn has_branch_cut(body: &Expr) -> bool {
+  const BRANCH_HEADS: [&str; 9] = [
+    "Sqrt", "Log", "Power", "ArcSin", "ArcCos", "ArcTan", "ArcCosh", "ArcTanh",
+    "Arg",
+  ];
+  fn is_complex(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(n) if n == "I")
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Complex")
+      || crate::syntax::expr_children(e).into_iter().any(is_complex)
+  }
+  fn branch(e: &Expr) -> bool {
+    if let Expr::FunctionCall { name, args } = e
+      && BRANCH_HEADS.contains(&name.as_str())
+      && args.iter().any(is_complex)
+    {
+      return true;
+    }
+    crate::syntax::expr_children(e).into_iter().any(branch)
+  }
+  branch(body)
 }
 
 /// Whether `body` contains a function that jumps between constant (or
@@ -871,6 +977,9 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
       else {
         break;
       };
+      if (yb - ya).abs() <= tolerance {
+        break;
+      }
       if (ym - ya).abs() >= (yb - ym).abs() {
         b = m;
         yb = ym;
@@ -895,78 +1004,21 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
 fn plot_range_requests_all_y(value: &Expr) -> bool {
+  plot_range_all_axes(value).1
+}
+
+/// Which axes a `PlotRange` value asks to show the whole extent of, outliers
+/// included: both for `All`, one for `All` in its slot of `{xrange, yrange}`.
+pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
   match &val {
-    e if is_all(e) => true,
-    Expr::List(items) if items.len() == 2 => is_all(&items[1]),
-    _ => false,
-  }
-}
-
-/// Compute the y-range from uniformly-spaced x samples — uniform rather than
-/// the adaptively refined plot points so a singularity can't bias the
-/// distribution.
-///
-/// `keep_outliers` is `PlotRange -> All`: report the whole extent. Otherwise
-/// extreme values are excluded by an IQR fence, which is what keeps a pole
-/// from flattening the rest of the curve into the axis.
-fn sampled_y_range(
-  bodies: &[&Expr],
-  var_name: &str,
-  x_min: f64,
-  x_max: f64,
-  keep_outliers: bool,
-) -> (f64, f64) {
-  // Evaluate at uniformly-spaced x values to get an unbiased y distribution
-  let n_uniform = 200;
-  let step = (x_max - x_min) / (n_uniform - 1) as f64;
-  let mut ys: Vec<f64> = Vec::new();
-  for body in bodies {
-    for i in 0..n_uniform {
-      let x = x_min + i as f64 * step;
-      if let Some(y) = evaluate_at_point(body, var_name, x)
-        && y.is_finite()
-      {
-        ys.push(y);
-      }
+    e if is_all(e) => (true, true),
+    Expr::List(items) if items.len() == 2 => {
+      (is_all(&items[0]), is_all(&items[1]))
     }
+    _ => (false, false),
   }
-
-  if ys.is_empty() {
-    return (-1.0, 1.0);
-  }
-  ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-  let n = ys.len();
-  if n == 1 {
-    return (ys[0], ys[0]);
-  }
-
-  if keep_outliers {
-    return (ys[0], ys[n - 1]);
-  }
-
-  let q1 = ys[n / 4];
-  let q3 = ys[3 * n / 4];
-  let iqr = q3 - q1;
-
-  // If IQR is negligible, no outliers — use full min/max
-  if iqr < 1e-10 {
-    return (ys[0], ys[n - 1]);
-  }
-
-  let fence_lo = q1 - 3.0 * iqr;
-  let fence_hi = q3 + 3.0 * iqr;
-
-  let y_min = ys.iter().copied().find(|&y| y >= fence_lo).unwrap_or(ys[0]);
-  let y_max = ys
-    .iter()
-    .rev()
-    .copied()
-    .find(|&y| y <= fence_hi)
-    .unwrap_or(ys[n - 1]);
-
-  (y_min, y_max)
 }
 
 /// Split points into contiguous finite segments, breaking at NaN/Infinity
@@ -1019,6 +1071,7 @@ fn clip_segments_to_y_range(
   segments: Vec<Vec<(f64, f64)>>,
   y_min: f64,
   y_max: f64,
+  join_across_jumps: bool,
 ) -> Vec<Vec<(f64, f64)>> {
   let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
 
@@ -1062,11 +1115,8 @@ fn clip_segments_to_y_range(
           // the range (a full range height or more); that gap must not be
           // bridged by a vertical line. A steep but continuous curve stays
           // within a range height of the boundaries.
-          let height = y_max - y_min;
-          let far_apart = (py - y).abs() > 3.0 * height
-            && (py > y_max + height || py < y_min - height)
-            && (y > y_max + height || y < y_min - height);
-          if !far_apart
+          let far_apart = is_pole_jump(py, y, y_min, y_max);
+          if (join_across_jumps || !far_apart)
             && ((py > y_max && y < y_min) || (py < y_min && y > y_max))
           {
             // Crosses both boundaries
@@ -1113,7 +1163,239 @@ fn clip_segments_to_x_range(
       .map(|seg| seg.into_iter().map(|(a, b)| (b, a)).collect())
       .collect()
   };
-  swap(clip_segments_to_y_range(swap(segments), x_min, x_max))
+  swap(clip_segments_to_y_range(
+    swap(segments),
+    x_min,
+    x_max,
+    false,
+  ))
+}
+
+/// A curve broken at `x` by an exclusion, with its values just left and
+/// right of the break.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ExclusionMark {
+  pub x: f64,
+  pub y_left: f64,
+  pub y_right: f64,
+}
+
+/// Parse an `ExclusionsStyle` value into the styles of the joining line and
+/// of the end points: a single style is the line's, `{line, points}` gives
+/// both, and `None` leaves a part out.
+pub(crate) fn parse_exclusions_style(value: &Expr) -> [Option<SeriesStyle>; 2] {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let part = |e: &Expr| -> Option<SeriesStyle> {
+    match e {
+      Expr::Identifier(s) if s == "None" => None,
+      // A style that sets nothing (`Automatic`) draws in the default one.
+      other => Some(parse_style_directives(other).unwrap_or_default()),
+    }
+  };
+  match &val {
+    Expr::List(items) if items.len() == 2 => [part(&items[0]), part(&items[1])],
+    other => [part(other), None],
+  }
+}
+
+/// The marks of `ExclusionsStyle` as SVG, in the render space of the plot
+/// area at (`plot_x0`, `plot_y0`) of size `plot_w` × `plot_h` showing
+/// `x_range` × `y_range`: each break's ends joined by a line, cut to the
+/// y range `clip` (black, 1 pt wide unless styled; a break the curve does
+/// not jump at draws as a square dot), and its two ends as points.
+#[allow(clippy::too_many_arguments)]
+fn render_exclusion_marks(
+  opts: &PlotOptions,
+  plot_x0: f64,
+  plot_y0: f64,
+  plot_w: f64,
+  plot_h: f64,
+  render_w: f64,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  (clip_min, clip_max): (f64, f64),
+) -> String {
+  let (xr, yr) = (x_max - x_min, y_max - y_min);
+  if !(xr.abs() > 1e-300 && yr.abs() > 1e-300) {
+    return String::new();
+  }
+  let px = |x: f64| plot_x0 + (x - x_min) / xr * plot_w;
+  let py = |y: f64| plot_y0 + (y_max - y) / yr * plot_h;
+  let scale = RESOLUTION_SCALE as f64;
+  let rgb = |style: &SeriesStyle| {
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    style
+      .color
+      .as_ref()
+      .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
+  };
+  let opacity = |style: &SeriesStyle| match style.opacity {
+    Some(a) if a < 1.0 => {
+      format!(" stroke-opacity=\"{a}\" fill-opacity=\"{a}\"")
+    }
+    _ => String::new(),
+  };
+  let mut svg = String::new();
+  for mark in &opts.exclusion_marks {
+    if !(mark.x > x_min && mark.x < x_max) {
+      continue;
+    }
+    if let Some(style) = &opts.exclusions_style[0] {
+      let finite = |v: f64| if v.is_nan() { None } else { Some(v) };
+      if let (Some(a), Some(b)) = (finite(mark.y_left), finite(mark.y_right)) {
+        let (lo, hi) = (a.min(b).max(clip_min), a.max(b).min(clip_max));
+        if lo <= hi {
+          let (r, g, b) = rgb(style);
+          let width = style.thickness.unwrap_or(1.0) * scale;
+          let dash = style
+            .dashing
+            .as_ref()
+            .map(|d| {
+              let lens: Vec<String> = d
+                .iter()
+                .map(|&l| format!("{:.1}", dash_len(l, render_w, scale)))
+                .collect();
+              format!(" stroke-dasharray=\"{}\"", lens.join(","))
+            })
+            .unwrap_or_default();
+          if (py(hi) - py(lo)).abs() < 0.5 {
+            // The zero-length line WL strokes with square caps: a square
+            // as wide as the line.
+            svg.push_str(&format!(
+              "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{width:.1}\" \
+               height=\"{width:.1}\" fill=\"rgb({r},{g},{b})\"{}/>\n",
+              px(mark.x) - width / 2.0,
+              py(hi) - width / 2.0,
+              opacity(style),
+            ));
+          } else {
+            svg.push_str(&format!(
+              "<line x1=\"{x:.1}\" y1=\"{y1:.1}\" x2=\"{x:.1}\" y2=\"{y2:.1}\" \
+               stroke=\"rgb({r},{g},{b})\" stroke-width=\"{width:.1}\"{dash}{op}/>\n",
+              x = px(mark.x),
+              y1 = py(hi),
+              y2 = py(lo),
+              op = opacity(style),
+            ));
+          }
+        }
+      }
+    }
+    if let Some(style) = &opts.exclusions_style[1] {
+      let (r, g, b) = rgb(style);
+      let radius = match style.point_size {
+        Some(f) if f > 0.0 => f * render_w * 0.5,
+        Some(p) => -p * 0.5 * scale,
+        None => 1.5 * scale,
+      };
+      for y in [mark.y_left, mark.y_right] {
+        if y.is_finite() && y >= clip_min && y <= clip_max {
+          svg.push_str(&format!(
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{radius:.1}\" \
+             fill=\"rgb({r},{g},{b})\"{}/>\n",
+            px(mark.x),
+            py(y),
+            opacity(style),
+          ));
+        }
+      }
+    }
+  }
+  svg
+}
+
+/// How one edge of the plot range draws the stretches where a curve is cut
+/// off there (`ClippingStyle`).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ClipEdgeStyle {
+  /// Directives overriding the curve's own style.
+  pub style: SeriesStyle,
+  /// `Automatic`: the curve's style, dotted.
+  pub dotted: bool,
+}
+
+/// Parse a `ClippingStyle` value into its bottom and top edge styles:
+/// `None` draws nothing, `Automatic` a dotted line in the curve's style, a
+/// style (`Red`, `Directive[…]`) both edges in it, and `{bottom, top}` each
+/// edge in its own.
+pub(crate) fn parse_clipping_style(value: &Expr) -> [Option<ClipEdgeStyle>; 2] {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let edge = |e: &Expr| -> Option<ClipEdgeStyle> {
+    match e {
+      Expr::Identifier(s) if s == "None" || s == "False" => None,
+      Expr::Identifier(s) if s == "Automatic" || s == "True" => {
+        Some(ClipEdgeStyle {
+          style: SeriesStyle::default(),
+          dotted: true,
+        })
+      }
+      other => parse_style_directives(other).map(|style| ClipEdgeStyle {
+        style,
+        dotted: false,
+      }),
+    }
+  };
+  match &val {
+    Expr::List(items) if items.len() == 2 => [edge(&items[0]), edge(&items[1])],
+    other => {
+      let e = edge(other);
+      [e.clone(), e]
+    }
+  }
+}
+
+/// The stretches where the finite curve `segment` lies below `y_min`
+/// (`false`) or above `y_max` (`true`), as the x interval along that edge
+/// from where the curve leaves the range to where it comes back (or ends).
+fn clipped_edge_runs(
+  segment: &[(f64, f64)],
+  y_min: f64,
+  y_max: f64,
+) -> Vec<(bool, f64, f64)> {
+  // -1 below, 0 inside, 1 above.
+  let side = |y: f64| {
+    if y > y_max {
+      1
+    } else if y < y_min {
+      -1
+    } else {
+      0
+    }
+  };
+  let crossing = |(px, py): (f64, f64), (x, y): (f64, f64), level: f64| {
+    if y == py {
+      x
+    } else {
+      px + (level - py) / (y - py) * (x - px)
+    }
+  };
+  let mut runs = Vec::new();
+  let mut open: Option<(bool, f64)> = None;
+  for (i, &(x, y)) in segment.iter().enumerate() {
+    let here = side(y);
+    if i == 0 {
+      if here != 0 {
+        open = Some((here > 0, x));
+      }
+      continue;
+    }
+    let prev = segment[i - 1];
+    if side(prev.1) == here {
+      continue;
+    }
+    if let Some((top, start)) = open.take() {
+      let level = if top { y_max } else { y_min };
+      runs.push((top, start, crossing(prev, (x, y), level)));
+    }
+    if here != 0 {
+      let level = if here > 0 { y_max } else { y_min };
+      open = Some((here > 0, crossing(prev, (x, y), level)));
+    }
+  }
+  if let (Some((top, start)), Some(&(x, _))) = (open, segment.last()) {
+    runs.push((top, start, x));
+  }
+  runs
 }
 
 /// Compute a "nice" major tick step given the axis range and desired label
@@ -2598,6 +2880,30 @@ pub(crate) fn adjust_y_range_for_filling_opts(
   y_range
 }
 
+/// `y_range` stretched to the constant levels the curves are filled to, so
+/// that a fill does not stop short of them.
+pub(crate) fn include_filling_levels(
+  opts: &PlotOptions,
+  mut y_range: (f64, f64),
+) -> (f64, f64) {
+  let levels =
+    std::iter::once(opts.filling).chain(opts.filling_rules.iter().filter_map(
+      |(_, target)| match target {
+        FillTarget::Level(level) => Some(*level),
+        FillTarget::Series(_) => None,
+      },
+    ));
+  for level in levels {
+    let v = match level {
+      Filling::Axis => 0.0,
+      Filling::Value(v) => v,
+      _ => continue,
+    };
+    y_range = (y_range.0.min(v), y_range.1.max(v));
+  }
+  y_range
+}
+
 /// Per-series style: color, line thickness, and dashing pattern.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SeriesStyle {
@@ -2881,6 +3187,23 @@ pub(crate) struct PlotOptions {
   /// framed plot are drawn only where the origin lies inside it. List
   /// plots keep theirs in `grid_interior`.
   pub unpadded_range: Option<((f64, f64), (f64, f64))>,
+  /// The y range proper of the plot, inside its padding: a joined curve is
+  /// cut off where it leaves it, and `Filling -> Bottom | Top` fills to its
+  /// edges. `None` uses the displayed range.
+  pub curve_clip_y: Option<(f64, f64)>,
+  /// `ClippingStyle`: how the stretches where a curve is cut off at the
+  /// bottom / top of the plot range are drawn along that edge (`None`:
+  /// left out).
+  pub clipping_style: [Option<ClipEdgeStyle>; 2],
+  /// A joined list of data points is drawn through a jump right across the
+  /// plot range, which for a sampled function is a pole left out.
+  pub join_across_jumps: bool,
+  /// `ExclusionsStyle`: the style of the line joining the two ends of a
+  /// curve broken at an exclusion, and of the points marking those ends
+  /// (`None`: not drawn).
+  pub exclusions_style: [Option<SeriesStyle>; 2],
+  /// Where the curves are broken at an exclusion, for `ExclusionsStyle`.
+  pub exclusion_marks: Vec<ExclusionMark>,
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -3062,6 +3385,11 @@ impl Default for PlotOptions {
       plot_layout: None,
       image_size_value: None,
       unpadded_range: None,
+      curve_clip_y: None,
+      clipping_style: [None, None],
+      join_across_jumps: false,
+      exclusions_style: [None, None],
+      exclusion_marks: Vec::new(),
       plot_markers: Vec::new(),
       default_point_size: None,
       label_style: None,
@@ -4718,9 +5046,12 @@ fn generate_svg_with_options(
               fill_paint(series_filling_style(opts, series_idx), (r, g, b));
             match series_fill_target(opts, series_idx) {
               FillTarget::Level(level) => {
-                if let Some(ref_y) = level.reference_y(y_min, y_max) {
+                // Fills stop at the plot range, not in its padding.
+                let (fill_min, fill_max) =
+                  opts.curve_clip_y.unwrap_or((y_min, y_max));
+                if let Some(ref_y) = level.reference_y(fill_min, fill_max) {
                   let fill_segments = clip_segments_to_x_range(
-                    clamp_segments_to_y_range(points, y_min, y_max),
+                    clamp_segments_to_y_range(points, fill_min, fill_max),
                     x_min,
                     x_max,
                   );
@@ -4871,11 +5202,14 @@ fn generate_svg_with_options(
           &all_points
             .iter()
             .map(|points| {
+              let (clip_min, clip_max) =
+                opts.curve_clip_y.unwrap_or((y_min, y_max));
               clip_segments_to_x_range(
                 clip_segments_to_y_range(
                   split_into_segments(points),
-                  y_min,
-                  y_max,
+                  clip_min,
+                  clip_max,
+                  opts.join_across_jumps,
                 ),
                 x_min,
                 x_max,
@@ -4894,15 +5228,84 @@ fn generate_svg_with_options(
           let color = RGBColor(r, g, b);
           let stroke_w = series_thickness(&opts.plot_style, series_idx);
           let dashing = series_dashing(&opts.plot_style, series_idx);
+          let (clip_min, clip_max) = opts.curve_clip_y.unwrap_or((y_min, y_max));
           let segments = clip_segments_to_x_range(
             clip_segments_to_y_range(
               split_into_segments(points),
-              y_min,
-              y_max,
+              clip_min,
+              clip_max,
+              opts.join_across_jumps,
             ),
             x_min,
             x_max,
           );
+
+          // `ClippingStyle`: where the curve is cut off, a line along the
+          // edge of the plot range stands in for it.
+          if opts.clipping_style.iter().any(Option::is_some)
+            && resolve_series_joined(opts.joined_per_series.as_deref(), series_idx)
+          {
+            for segment in split_into_segments(points) {
+              for (top, from, to) in clipped_edge_runs(&segment, clip_min, clip_max) {
+                let Some(edge) = &opts.clipping_style[usize::from(top)] else {
+                  continue;
+                };
+                let (from, to) = (from.clamp(x_min, x_max), to.clamp(x_min, x_max));
+                if to <= from {
+                  continue;
+                }
+                let level = if top { clip_max } else { clip_min };
+                let (er, eg, eb) = edge
+                  .style
+                  .color
+                  .as_ref()
+                  .map(|c| {
+                    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                    (ch(c.r), ch(c.g), ch(c.b))
+                  })
+                  .unwrap_or((r, g, b));
+                let width = edge
+                  .style
+                  .thickness
+                  .map(|t| (t * RESOLUTION_SCALE as f64).round() as u32)
+                  .unwrap_or(stroke_w);
+                // WL dots the line 2.5 pt on, 4.5 pt off with flat ends; the
+                // overlays have round caps, which add the line width to
+                // every dash.
+                let dashes = if edge.dotted {
+                  let w = width as f64 / RESOLUTION_SCALE as f64;
+                  let on = (2.5 - w).max(0.5);
+                  Some(vec![-on, -(7.0 - on)])
+                } else {
+                  edge.style.dashing.clone()
+                };
+                let opacity = edge
+                  .style
+                  .opacity
+                  .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
+                let line = vec![(from, level), (to, level)];
+                match dashes {
+                  Some(dashes) => dashed_overlays.push(DashedOverlay {
+                    color: (er, eg, eb),
+                    opacity,
+                    stroke_w: width,
+                    dashes,
+                    points: line,
+                  }),
+                  None => {
+                    chart
+                      .draw_series(LineSeries::new(
+                        line,
+                        RGBColor(er, eg, eb).mix(opacity).stroke_width(width),
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!("Plot: {e}"))
+                      })?;
+                  }
+                }
+              }
+            }
+          }
 
           // Uncertainty bands lie underneath the curve and any filling.
           // Like the bars, they are parallel to the original data points,
@@ -5355,6 +5758,37 @@ fn generate_svg_with_options(
     );
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &series_svg);
+    }
+  }
+
+  if !opts.exclusion_marks.is_empty()
+    && opts.exclusions_style.iter().any(Option::is_some)
+    && !opts.log_x
+    && !opts.log_y
+  {
+    let plot_x0 = margin_left as f64 + y_label_area as f64;
+    let plot_y0 = top_margin as f64;
+    let plot_w = render_width as f64
+      - margin_left as f64
+      - margin_right as f64
+      - y_label_area as f64;
+    let plot_h = render_height as f64
+      - top_margin as f64
+      - margin_bottom as f64
+      - x_label_area as f64;
+    let marks_svg = render_exclusion_marks(
+      opts,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      render_width as f64,
+      (x_min, x_max),
+      (y_min, y_max),
+      opts.curve_clip_y.unwrap_or((y_min, y_max)),
+    );
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &marks_svg);
     }
   }
 
@@ -12197,6 +12631,12 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.image_size_value = Some(replacement.clone());
       }
     }
+    "ClippingStyle" => {
+      plot_opts.clipping_style = parse_clipping_style(replacement);
+    }
+    "ExclusionsStyle" => {
+      plot_opts.exclusions_style = parse_exclusions_style(replacement);
+    }
     "PlotLabel" => {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
@@ -13020,9 +13460,28 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     // `Exclusions -> Automatic` breaks the curve where a step function in
     // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
+    // So does a branch cut a complex-valued part of it is taken across.
     let mut excluded_here = excluded.clone();
-    if auto_exclusions && has_step_function(func_body) {
+    if auto_exclusions
+      && (has_step_function(func_body) || has_branch_cut(func_body))
+    {
       excluded_here.extend(jump_points(&points, func_body, &var_name));
+    }
+    if plot_opts.exclusions_style.iter().any(Option::is_some) {
+      let eps = (x_max - x_min) * 1e-9;
+      let at =
+        |x: f64| evaluate_at_point(func_body, &var_name, x).unwrap_or(f64::NAN);
+      // A break at an end of the domain only drops the value there.
+      plot_opts.exclusion_marks.extend(
+        excluded_here
+          .iter()
+          .filter(|&&x| x > x_min + eps && x < x_max - eps)
+          .map(|&x| ExclusionMark {
+            x,
+            y_left: at(x - eps),
+            y_right: at(x + eps),
+          }),
+      );
     }
     let points = break_at_exclusions(
       points,
@@ -13047,13 +13506,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       collapse_style_for_single_series(&plot_opts.plot_style);
   }
 
-  // Compute Y range using robust outlier exclusion on uniform samples —
-  // unless `PlotRange -> All` asked for every sampled value to be shown.
-  let (y_data_min, y_data_max) = match &region_function {
-    // Only the drawn stretches count towards the automatic range.
-    Some(_) => drawn_y_range(&all_points, plot_range_y_all),
-    None => sampled_y_range(&bodies, &var_name, x_min, x_max, plot_range_y_all),
-  };
+  // The automatic y range clips outliers off the drawn curves — unless
+  // `PlotRange -> All` asked for every sampled value to be shown.
+  let (y_data_min, y_data_max) = drawn_y_range(&all_points, plot_range_y_all);
 
   // Check if we have any plottable data
   let has_finite = all_points
@@ -13120,6 +13575,26 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_range_x.unwrap_or((x_min, x_max)),
     plot_range_y.unwrap_or((y_data_min, y_data_max)),
   ));
+  plot_opts.curve_clip_y = Some(plot_range_y.unwrap_or_else(|| {
+    include_filling_levels(&plot_opts, (y_data_min, y_data_max))
+  }));
+  // The poles `Exclusions -> Automatic` leaves out: the curve jumps from
+  // far beyond one edge of the plot range to far beyond the other.
+  if auto_exclusions && plot_opts.exclusions_style.iter().any(Option::is_some) {
+    let (lo, hi) = plot_opts.curve_clip_y.unwrap_or((y_data_min, y_data_max));
+    for curve in &all_points {
+      for pair in curve.windows(2) {
+        let ((px, py), (x, y)) = (pair[0], pair[1]);
+        if px.is_finite() && x.is_finite() && is_pole_jump(py, y, lo, hi) {
+          plot_opts.exclusion_marks.push(ExclusionMark {
+            x: f64::midpoint(px, x),
+            y_left: py,
+            y_right: y,
+          });
+        }
+      }
+    }
+  }
 
   // `PlotLayout -> "Row" | "Column" | …`: one panel per curve, all over
   // the same plot range.

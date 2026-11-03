@@ -46440,3 +46440,195 @@ mod plot_content_regressions {
     assert!(!svg.contains("Sin["));
   }
 }
+
+// The automatic plot range clips outliers off (WL's
+// `Charting`CommonDump`icomputeSceneRange`), curves are cut off at the plot
+// range rather than in its padding, and `ClippingStyle` / `ExclusionsStyle`
+// draw where they are cut or broken.
+mod plot_range_clipping_and_exclusions {
+  use super::*;
+
+  /// The y coordinates of every `points="…"` list of the `tag` elements.
+  fn ys_of(svg: &str, tag: &str) -> Vec<f64> {
+    svg
+      .split(&format!("<{tag} "))
+      .skip(1)
+      .filter_map(|el| el.split("points=\"").nth(1)?.split('"').next())
+      .flat_map(|pts| {
+        pts
+          .split_whitespace()
+          .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+          .collect::<Vec<_>>()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn list_plot_clips_an_outlier() {
+    // y quantiles 1 and 7 span 6: 100 lies beyond 7 + 2.5·6, so the range
+    // stops at 7 + 1.5·6 = 16.
+    let labels =
+      y_tick_labels(&export_svg("ListPlot[{0, 1, 2, 3, 100, 5, 6, 7}]"));
+    assert_eq!(labels.first().map(String::as_str), Some("15"), "{labels:?}");
+    let labels = y_tick_labels(&export_svg(
+      "ListPlot[{0, 1, 2, 3, 100, 5, 6, 7}, PlotRange -> All]",
+    ));
+    assert_eq!(
+      labels.first().map(String::as_str),
+      Some("100"),
+      "{labels:?}"
+    );
+  }
+
+  #[test]
+  fn list_plot_keeps_a_moderate_extreme() {
+    // 60 stays inside 35 + 2.5·27, 105 does not: the range ends at 75.5.
+    let labels = y_tick_labels(&export_svg(
+      "ListPlot[Table[i + 100 KroneckerDelta[i - 5] + 50 KroneckerDelta[i - 10], {i, 40}]]",
+    ));
+    assert_eq!(labels.first().map(String::as_str), Some("60"), "{labels:?}");
+  }
+
+  #[test]
+  fn list_plot_clips_an_outlier_on_x_too() {
+    let labels = x_tick_labels(&export_svg(
+      "ListPlot[Append[Table[{i, i}, {i, 8}], {100, 9}]]",
+    ));
+    assert!(
+      !labels.iter().any(|l| l == "100" || l == "50"),
+      "{labels:?}"
+    );
+  }
+
+  #[test]
+  fn plot_clips_poles_by_quantiles() {
+    let labels = y_tick_labels(&export_svg(
+      "Plot[{Sin[x], Cos[x], Tan[x]}, {x, -6 Pi, 6 Pi}]",
+    ));
+    assert_eq!(labels.first().map(String::as_str), Some("4"), "{labels:?}");
+  }
+
+  #[test]
+  fn plot_range_ignores_an_isolated_end_value() {
+    // `Floor[x]` is 5 only at the end point, which is not drawn.
+    let labels = y_tick_labels(&export_svg("Plot[Floor[x], {x, 0, 5}]"));
+    assert_eq!(labels.first().map(String::as_str), Some("4"), "{labels:?}");
+  }
+
+  #[test]
+  fn clipping_style_draws_along_the_cut_edges() {
+    let plot = |style: &str| {
+      export_svg(&format!(
+        "Plot[Sin[x]/x^2, {{x, -10, 10}}, ClippingStyle -> {style}, Axes -> False]"
+      ))
+    };
+    let none = plot("None");
+    assert!(!none.contains("#FF0000") && !none.contains("stroke-dasharray"));
+    let red = plot("Red");
+    assert_eq!(red.matches("stroke=\"#FF0000\"").count(), 2, "{red}");
+    assert!(plot("Automatic").contains("stroke-dasharray"));
+    // `{bottom, top}`: only the bottom edge red.
+    assert_eq!(plot("{Red, None}").matches("stroke=\"#FF0000\"").count(), 1);
+  }
+
+  #[test]
+  fn curves_stop_at_the_plot_range() {
+    // The cut-off curve and the `ClippingStyle` line end on the same level,
+    // the edge of the plot range, not the padded edge of the image.
+    let svg = export_svg(
+      "Plot[Sin[x]/x^2, {x, -10, 10}, ClippingStyle -> Red, Axes -> False]",
+    );
+    let curve_bottom =
+      ys_of(&svg, "polyline").into_iter().fold(f64::MIN, f64::max);
+    assert!(curve_bottom.is_finite());
+    let red_bottom = svg
+      .split("<polyline ")
+      .filter(|el| el.contains("#FF0000"))
+      .flat_map(|el| ys_of(&format!("<polyline {el}"), "polyline"))
+      .fold(f64::MIN, f64::max);
+    assert!(
+      (curve_bottom - red_bottom).abs() <= 1.0,
+      "{curve_bottom} {red_bottom}"
+    );
+  }
+
+  #[test]
+  fn list_plot_clipping_style_and_joined_jump() {
+    let svg = export_svg(
+      "Quiet[ListPlot[Table[{x, Sin[x]/x^2}, {x, -10, 10, 0.2}], Joined -> True, \
+         ClippingStyle -> Red, Axes -> False]]",
+    );
+    assert!(svg.contains("#FF0000"));
+    // The joined data is drawn right across the jump at 0: one piece of
+    // curve on each side of the clipped stretches plus the crossing.
+    assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 3, "{svg}");
+  }
+
+  #[test]
+  fn filling_to_bottom_stops_at_the_plot_range() {
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Filling -> Bottom, Axes -> False]",
+    );
+    let curve = ys_of(&svg, "polyline").into_iter().fold(f64::MIN, f64::max);
+    let fill = ys_of(&svg, "polygon").into_iter().fold(f64::MIN, f64::max);
+    assert!((fill - curve).abs() <= 1.0, "fill {fill} vs curve {curve}");
+  }
+
+  #[test]
+  fn exclusions_style_joins_breaks_and_marks_ends() {
+    // A dashed line at each of the four poles of Tan in {-5, 5}.
+    let svg = export_svg("Plot[Tan[x], {x, -5, 5}, ExclusionsStyle -> Dashed]");
+    let dashed = svg
+      .split("<line ")
+      .filter(|el| el.contains("stroke-dasharray"))
+      .count();
+    assert_eq!(dashed, 4);
+    // `{None, Red}`: no line, a red point on both ends of each of 4 jumps.
+    let svg =
+      export_svg("Plot[Floor[x], {x, 0, 5}, ExclusionsStyle -> {None, Red}]");
+    assert_eq!(svg.matches("<circle ").count(), 8);
+    let plain = export_svg("Plot[Floor[x], {x, 0, 5}]");
+    assert_eq!(
+      svg.matches("<line ").count(),
+      plain.matches("<line ").count()
+    );
+  }
+
+  #[test]
+  fn exclusions_with_a_test_mark_only_matching_roots() {
+    // The maxima of Sin in {0, 10} (π/2, 5π/2) as squares; the minimum at
+    // 3π/2 fails the test.
+    let svg = export_svg(
+      "Plot[Sin[x], {x, 0, 10}, Exclusions -> {{Cos[x] == 0, -Sin[x] <= 0}}, \
+         ExclusionsStyle -> Directive[Thickness[0.02], Red]]",
+    );
+    assert_eq!(
+      svg.matches("<rect ").count()
+        - export_svg("Plot[Sin[x], {x, 0, 10}]")
+          .matches("<rect ")
+          .count(),
+      2
+    );
+  }
+
+  #[test]
+  fn exclusion_on_the_domain_end_drops_the_end_value() {
+    // `Sin[Pi x] == 0` holds at x = 10 too: the step's value there is not
+    // joined to the last stretch.
+    let svg = export_svg(
+      "Plot[Sin[Floor[x]], {x, 0, 10}, Exclusions -> {Sin[Pi x] == 0}, Axes -> False]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 10);
+  }
+
+  #[test]
+  fn automatic_exclusions_break_at_a_branch_cut() {
+    let svg =
+      export_svg("Plot[Im[Sqrt[-1 + I (y + 1)]], {y, -2, 0}, Axes -> False]");
+    assert_eq!(svg.matches("<polyline").count(), 2);
+    let svg = export_svg(
+      "Plot[Im[Sqrt[-1 + I (y + 1)]], {y, -2, 0}, Exclusions -> None, Axes -> False]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 1);
+  }
+}
