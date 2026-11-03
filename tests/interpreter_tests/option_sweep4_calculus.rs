@@ -50,7 +50,7 @@ mod difference_delta_symbolic_order_polynomial {
   use super::*;
 
   #[test]
-  fn polynomials() {
+  fn square() {
     assert_eq!(
       interpret("DifferenceDelta[i^2, {i, n}]").unwrap(),
       "2*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
@@ -60,11 +60,19 @@ mod difference_delta_symbolic_order_polynomial {
        n^2*HypergeometricPFQ[{-n}, {}, 1] - \
        n*HypergeometricPFQ[{2, 1 - n}, {1}, 1]"
     );
+  }
+
+  #[test]
+  fn linear() {
     assert_eq!(
       interpret("DifferenceDelta[i, {i, n}]").unwrap(),
       "n*HypergeometricPFQ[{1 - n}, {}, 1] + \
        i*HypergeometricPFQ[{-n}, {}, 1] + n*HypergeometricPFQ[{-n}, {}, 1]"
     );
+  }
+
+  #[test]
+  fn square_with_step() {
     assert_eq!(
       interpret("DifferenceDelta[i^2, {i, n, h}]").unwrap(),
       "2*h*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
