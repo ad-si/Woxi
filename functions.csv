@@ -6450,6 +6450,7 @@ Combinatorica`FromCycles,"The permutation sending each element of a cycle to the
 Combinatorica`PermutationWithCycle,"The size-n permutation with one given cycle and every other point fixed",✅,pure,6.0,
 Combinatorica`CompleteGraph,"The complete Combinatorica graph on n vertices on the circular embedding",✅,pure,6.0,
 Combinatorica`GridGraph,"The n by m grid graph as the product of two paths with vertex k at its grid point",✅,pure,6.0,
+Combinatorica`BooleanAlgebra,"The Hasse diagram of the subsets of an n-set as a Combinatorica graph with one row per subset size",✅,pure,6.0,
 Combinatorica`InduceSubgraph,"The subgraph of a Combinatorica graph induced by a vertex set with its vertices renumbered",✅,pure,6.0,
 Combinatorica`ListGraphs,"One Combinatorica graph per isomorphism class of graphs with n vertices (and m edges)",✅,pure,6.0,
 Combinatorica`CodeToLabeledTree,"The labeled tree with a given Pruefer code",✅,pure,6.0,

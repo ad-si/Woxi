@@ -730,6 +730,53 @@ fn grid_graph(args: &[Expr]) -> Option<Expr> {
   ))
 }
 
+/// `BooleanAlgebra[n]`: the Hasse diagram of the subsets of an n-set. Vertex
+/// `k` is the subset whose characteristic bits are those of `k - 1`; two
+/// vertices are joined when their subsets differ by one element. Subsets of
+/// equal size share a row (height = size), centred horizontally.
+fn boolean_algebra(args: &[Expr]) -> Option<Expr> {
+  let [Expr::Integer(n)] = args else {
+    return None;
+  };
+  if !(1..=16).contains(n) {
+    return None;
+  }
+  let n = *n as u32;
+  let count = 1u32 << n;
+  let mut edges = Vec::new();
+  for v in 0..count {
+    for b in 0..n {
+      if v & (1 << b) == 0 {
+        edges.push(((v + 1) as i128, ((v | (1 << b)) + 1) as i128));
+      }
+    }
+  }
+  let mut placed = vec![0u32; n as usize + 1];
+  let mut points = Vec::new();
+  for v in 0..count {
+    let size = v.count_ones() as usize;
+    points.push((placed[size], size));
+    placed[size] += 1;
+  }
+  let vs = points
+    .into_iter()
+    .map(|(i, size)| {
+      let row = placed[size] as f64;
+      let x = i as f64 - (row - 1.0) / 2.0;
+      Expr::List(
+        vec![Expr::List(
+          vec![Expr::Real(x), Expr::Real(size as f64)].into(),
+        )]
+        .into(),
+      )
+    })
+    .collect::<Vec<_>>();
+  Some(crate::helpers::call(
+    GRAPH,
+    vec![edge_list(&edges), Expr::List(vs.into())],
+  ))
+}
+
 /// `InduceSubgraph[g, s]`: the subgraph on the vertices `s` (taken in
 /// increasing order and renumbered), with the edges joining two of them and
 /// those vertices' coordinates and options.
@@ -1104,6 +1151,9 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   if name == "Combinatorica`GridGraph" {
     return grid_graph(args);
+  }
+  if name == "Combinatorica`BooleanAlgebra" {
+    return boolean_algebra(args);
   }
   if name == "Combinatorica`InduceSubgraph" {
     return induce_subgraph(args);
