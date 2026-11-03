@@ -7617,8 +7617,10 @@ Verified against the reference pages, but not (fully) implemented:
 
 Found comparing the graphics-tests renders (2026-11):
 
-- `ListPlot3D` draws no default mesh; wolframscript rules one line per
-  data row and column.
+- `ListPlot3D` and `Plot3D` draw their default mesh (15 lines across each
+  direction plus the outline) as segments painted among the facets with a
+  small depth bias, so where a fold lies within that bias of the surface
+  behind it a few segments still show through; WL clips them exactly.
 - `SphericalPlot3D` (drawn through the `Graphics3D` renderer, in the WL 15
   `DefaultPlotStyle` colours) draws no default mesh (`Mesh -> Automatic`
   rules lines of constant θ and φ in wolframscript), and its orange
@@ -7663,8 +7665,19 @@ Found comparing the graphics-tests renders (2026-11):
   not the plotting area: `Graphics[Line[{{0, -1}, {10, 1}}], Axes -> True,
   AspectRatio -> 1/GoldenRatio, ImageSize -> 380]` is 380 x 210 (WL 227), and
   a `Plot` turned into one by `/. Line -> Arrow` grows from 227 to 238.
-- `Plot3D` and the other 3D plots stay square at a named size (`ImageSize
-  -> Large` is 576 x 576; WL 576 x 452).
+- `Plot3D`, `Graphics3D` and the other 3D pictures are always square
+  (360 x 360). WL's height follows the projected box: with `a` the
+  height / width of the box corners under a *perspective* projection from
+  `ViewPoint` (the eye at `|ViewPoint|` times the box's longest side from
+  its centre, `z` up), the picture is `(w - pw) a + ph` tall, where the
+  automatic `ImagePadding` is `pw = 19.15`, `ph = 14.26` with axes (it
+  holds the tick labels) and `pw = ph = 2` without. That reproduces
+  `Plot3D` (`a = 0.811`: 360 x 290.7, `Large` 576 x 465, `Small` 180 x
+  142.8), the unit `Cuboid[]` (`a = 1.085`: 360 x 390.6) and a
+  `{2, 1, 1}` cuboid (`a = 0.812`). The height is capped at 432 (1.2 x
+  360), the width then shrinking to keep `a` (`Cuboid[{0, 0, 0}, {1, 1,
+  3}]` is 200.1 x 432). Woxi's own projection is orthographic, which
+  gives a slightly different `a` (0.829 for `Plot3D`).
 
 - The automatic tick step rule is unknown for log axes over more than 6
   decades (WL labels every 2nd decade over 8, every 3rd over 9,

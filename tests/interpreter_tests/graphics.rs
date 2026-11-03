@@ -22988,6 +22988,30 @@ mod list_plot_3d {
     assert!(svg.contains("</svg>"));
   }
 
+  /// Regression: ListPlot3D drew no mesh. As in WL, `Mesh -> Automatic`
+  /// rules 15 lines across each direction of the data plus its outline
+  /// (17 per direction, each crossing the 31 cells of a 32 x 32 matrix),
+  /// painted among the facets so the surface hides the lines behind it.
+  #[test]
+  fn list_plot3d_draws_the_default_mesh() {
+    let mesh = |opts: &str| {
+      export_svg(&format!(
+        "ListPlot3D[Table[Sin[j^2 + i], {{i, 0, Pi, 0.1}}, \
+         {{j, 0, Pi, 0.1}}]{opts}]"
+      ))
+      .matches("stroke=\"#000000a0\"")
+      .count()
+    };
+    assert_eq!(mesh(""), 2 * 17 * 31);
+    assert_eq!(mesh(", Mesh -> None"), 0);
+    // Some mesh segments lie under facets painted after them.
+    let svg = export_svg(
+      "ListPlot3D[Table[Sin[j^2 + i], {i, 0, Pi, 0.1}, {j, 0, Pi, 0.1}]]",
+    );
+    let last_polygon = svg.rfind("<polygon").unwrap();
+    assert!(svg.find("stroke=\"#000000a0\"").unwrap() < last_polygon);
+  }
+
   #[test]
   fn list_plot3d_with_options() {
     clear_state();

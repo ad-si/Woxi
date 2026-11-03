@@ -460,6 +460,84 @@ fn painter_order(
 
 struct MeshLine {
   projected: [(f64, f64); 2],
+  /// Depth of the segment's midpoint, pulled slightly towards the viewer
+  /// (see [`MESH_DEPTH_BIAS`]): the renderer paints it among the surface
+  /// triangles, so a line behind a hill is hidden by it.
+  depth: f64,
+}
+
+/// How far a mesh segment's depth is pulled towards the viewer, in the
+/// normalized box units: enough that it is painted after the facets it
+/// lies on (whose centroids sit a fraction of a cell off the line), not so
+/// much that it shows through a fold in front of it.
+const MESH_DEPTH_BIAS: f64 = 0.05;
+
+/// A mesh segment between two points of the normalized box.
+fn mesh_segment(p0: Point3D, p1: Point3D, camera: &Camera) -> MeshLine {
+  let mid = Point3D {
+    x: f64::midpoint(p0.x, p1.x),
+    y: f64::midpoint(p0.y, p1.y),
+    z: f64::midpoint(p0.z, p1.z),
+  };
+  MeshLine {
+    projected: [project(p0, camera), project(p1, camera)],
+    depth: depth(mid, camera) - MESH_DEPTH_BIAS,
+  }
+}
+
+/// The default mesh of a surface sampled on a `[i][j]` grid of heights
+/// (`ListPlot3D`'s data): `count` lines evenly spaced across each
+/// direction plus the outline, each following the surface linearly between
+/// the samples it crosses. `to_box` maps fractional grid indices and a
+/// height into the normalized box.
+fn grid_mesh_lines(
+  grid: &[Vec<f64>],
+  count: usize,
+  to_box: &dyn Fn(f64, f64, f64) -> Point3D,
+  camera: &Camera,
+) -> Vec<MeshLine> {
+  let rows = grid.len();
+  let cols = grid.first().map_or(0, Vec::len);
+  if rows < 2 || cols < 2 {
+    return Vec::new();
+  }
+  let mut lines = Vec::new();
+  // Height at fractional row `fi` of column `j` (and the transpose).
+  let along_rows = |fi: f64, j: usize| {
+    let i0 = (fi.floor() as usize).min(rows - 2);
+    let t = fi - i0 as f64;
+    grid[i0][j] * (1.0 - t) + grid[i0 + 1][j] * t
+  };
+  let along_cols = |i: usize, fj: f64| {
+    let j0 = (fj.floor() as usize).min(cols - 2);
+    let t = fj - j0 as f64;
+    grid[i][j0] * (1.0 - t) + grid[i][j0 + 1] * t
+  };
+  for k in 0..=count + 1 {
+    let fi = k as f64 / (count + 1) as f64 * (rows - 1) as f64;
+    for j in 0..cols - 1 {
+      let (z0, z1) = (along_rows(fi, j), along_rows(fi, j + 1));
+      if z0.is_finite() && z1.is_finite() {
+        lines.push(mesh_segment(
+          to_box(fi, j as f64, z0),
+          to_box(fi, (j + 1) as f64, z1),
+          camera,
+        ));
+      }
+    }
+    let fj = k as f64 / (count + 1) as f64 * (cols - 1) as f64;
+    for i in 0..rows - 1 {
+      let (z0, z1) = (along_cols(i, fj), along_cols(i + 1, fj));
+      if z0.is_finite() && z1.is_finite() {
+        lines.push(mesh_segment(
+          to_box(i as f64, fj, z0),
+          to_box((i + 1) as f64, fj, z1),
+          camera,
+        ));
+      }
+    }
+  }
+  lines
 }
 
 /// A bounding-box edge segment with a depth value so it can be
@@ -763,9 +841,7 @@ fn generate_mesh_lines(
           y: ny(j),
           z: nz(cz1),
         };
-        lines.push(MeshLine {
-          projected: [project(p0, camera), project(p1, camera)],
-        });
+        lines.push(mesh_segment(p0, p1, camera));
       }
     }
   }
@@ -788,9 +864,7 @@ fn generate_mesh_lines(
           y: ny(j + 1),
           z: nz(cz1),
         };
-        lines.push(MeshLine {
-          projected: [project(p0, camera), project(p1, camera)],
-        });
+        lines.push(mesh_segment(p0, p1, camera));
       }
     }
   }
@@ -1566,10 +1640,31 @@ fn generate_svg(
   };
   let (sorted_edges, axis_color) = box_edges;
 
+  // Mesh segments are painted among the triangles too, so the surface
+  // hides the parts of the mesh it covers.
+  let mut sorted_mesh: Vec<&MeshLine> = mesh_lines.iter().collect();
+  sorted_mesh.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let mesh_svg = |line: &MeshLine| {
+    let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
+    let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
+    format!(
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n"
+    )
+  };
+
   // Merge-render triangles and box edges back-to-front (painter's algorithm)
   {
     let mut ei = 0; // index into sorted_edges
+    let mut mi = 0; // index into sorted_mesh
     for tri in triangles {
+      while mi < sorted_mesh.len() && sorted_mesh[mi].depth >= tri.depth {
+        svg.push_str(&mesh_svg(sorted_mesh[mi]));
+        mi += 1;
+      }
       // Emit any box edges that are further from the camera than this triangle
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= tri.depth {
         let edge = &sorted_edges[ei];
@@ -1615,6 +1710,9 @@ fn generate_svg(
         ));
       }
     }
+    for line in &sorted_mesh[mi..] {
+      svg.push_str(&mesh_svg(line));
+    }
     // Emit remaining box edges (closest to viewer)
     while ei < sorted_edges.len() {
       let edge = &sorted_edges[ei];
@@ -1631,15 +1729,6 @@ fn generate_svg(
       ));
       ei += 1;
     }
-  }
-
-  // Draw mesh lines on top of all triangles so they're fully visible
-  for line in mesh_lines {
-    let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
-    let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
-    svg.push_str(&format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n"
-    ));
   }
 
   // Draw axes (ticks, labels) on top of everything
@@ -9957,9 +10046,24 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
+  // `Mesh -> Automatic`: as in WL, 15 lines across each direction of the
+  // data plus its outline, whatever the size of the data.
+  let mesh_lines = if mesh_mode == MeshMode::Default {
+    let to_box = |fi: f64, fj: f64, z: f64| Point3D {
+      x: fi / (rows - 1).max(1) as f64 * 2.0 - 1.0,
+      y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
+      z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+    };
+    let rows_of: Vec<Vec<f64>> =
+      (0..rows).map(|i| grid[i][..cols].to_vec()).collect();
+    grid_mesh_lines(&rows_of, 15, &to_box, &camera)
+  } else {
+    Vec::new()
+  };
+
   let svg = generate_svg(
     &all_triangles,
-    &[],
+    &mesh_lines,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
