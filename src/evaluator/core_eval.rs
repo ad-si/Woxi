@@ -291,7 +291,15 @@ fn is_machine_complex_number(expr: &Expr) -> bool {
       right,
     } => {
       matches!(left.as_ref(), Expr::Real(re) if *re != 0.0 && re.is_finite())
-        && imaginary_term(right)
+        && (imaginary_term(right)
+          // A machine complex number with an exactly zero imaginary part
+          // keeps its `re + 0.*I` shape (`z Conjugate[z]` is one); without
+          // this a whole array of them was re-evaluated on every lookup.
+          || (matches!(expr, Expr::BinaryOp { op: BinaryOperator::Plus, .. })
+            && matches!(right.as_ref(), Expr::BinaryOp {
+              op: BinaryOperator::Times, left: z, right: i }
+              if matches!(z.as_ref(), Expr::Real(im) if *im == 0.0)
+                && matches!(i.as_ref(), Expr::Identifier(n) if n == "I"))))
     }
     // A unit coefficient alone is not kept (`1.*I` becomes `I`).
     Expr::BinaryOp { left, .. } => {
