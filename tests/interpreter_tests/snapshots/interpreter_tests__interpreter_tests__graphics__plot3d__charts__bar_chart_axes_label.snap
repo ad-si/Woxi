@@ -70,13 +70,13 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3}, AxesLabel -> {\"X Axis\", \"Y Ax
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,458 749,458 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,2030 2750,2030 "/>
-<rect x="816" y="1506" width="534" height="523" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>1</title></rect>
-<rect x="1483" y="982" width="533" height="1047" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>2</title></rect>
-<rect x="2150" y="458" width="533" height="1571" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<rect x="816" y="1506" width="534" height="523" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="1483" y="982" width="533" height="1047" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="2150" y="458" width="533" height="1571" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
 <line x1="710.0" y1="2030.0" x2="680.0" y2="2030.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1505.8" x2="680.0" y2="1505.8" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="981.5" x2="680.0" y2="981.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="457.3" x2="680.0" y2="457.3" stroke="#666" stroke-width="10"/>
-<text x="2859.0" y="2030.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">X Axis</text>
-<text x="750.0" y="192.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Y Axis</text>
+<text x="2829.0" y="2030.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">X Axis</text>
+<text x="750.0" y="222.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Y Axis</text>
 </svg>

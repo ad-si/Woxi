@@ -114,23 +114,23 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,569 749,569 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1790 2750,1790 "/>
-<rect x="790" y="1555" width="320" height="234" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>5</title></rect>
-<rect x="1190" y="1367" width="320" height="422" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>9</title></rect>
-<rect x="1590" y="663" width="320" height="1126" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>24</title></rect>
-<rect x="1990" y="1226" width="320" height="563" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>12</title></rect>
-<rect x="2390" y="1273" width="320" height="516" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>11</title></rect>
+<rect x="790" y="1555" width="320" height="234" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
+<rect x="1190" y="1367" width="320" height="422" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>9</title></rect>
+<rect x="1590" y="663" width="320" height="1126" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>24</title></rect>
+<rect x="1990" y="1226" width="320" height="563" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>12</title></rect>
+<rect x="2390" y="1273" width="320" height="516" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>11</title></rect>
 <line x1="710.0" y1="1790.0" x2="680.0" y2="1790.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1555.2" x2="680.0" y2="1555.2" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1320.3" x2="680.0" y2="1320.3" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1085.5" x2="680.0" y2="1085.5" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="850.6" x2="680.0" y2="850.6" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="615.8" x2="680.0" y2="615.8" stroke="#666" stroke-width="10"/>
-<text x="950.1" y="2060.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Anna</text>
-<text x="1350.3" y="2060.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Ben</text>
-<text x="1750.5" y="2060.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Carl</text>
-<text x="2150.7" y="2060.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Marc</text>
-<text x="2550.9" y="2060.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Sven</text>
-<text x="2859.0" y="1790.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Person</text>
-<text x="750.0" y="442.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" fill="#666">Fruits</text>
-<text x="1750.5" y="224.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="220" fill="#333">Fruit Consumption</text>
+<text x="950.1" y="1985.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Anna</text>
+<text x="1350.3" y="1985.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Ben</text>
+<text x="1750.5" y="1985.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Carl</text>
+<text x="2150.7" y="1985.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Marc</text>
+<text x="2550.9" y="1985.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Sven</text>
+<text x="2829.0" y="1790.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Person</text>
+<text x="750.0" y="472.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Fruits</text>
+<text x="1750.5" y="319.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="150" fill="#333">Fruit Consumption</text>
 </svg>

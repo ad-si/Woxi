@@ -15508,6 +15508,58 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_bins_like_histogram_list() {
+      // Regression: Histogram had its own automatic binning (Sturges bins
+      // from the minimum), drawing this data in 5 bins where wolframscript
+      // (and HistogramList) uses the 7 unit bins centered on the integers.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 7}]",
+      );
+      for bin in [
+        "[0.5, 1.5): 1",
+        "[1.5, 2.5): 2",
+        "[3.5, 4.5): 4",
+        "[6.5, 7.5): 1",
+      ] {
+        assert!(svg.contains(&format!("<title>{bin}</title>")), "{bin}");
+      }
+      // `{w}` bins are centered on commensurate data too.
+      let svg = export_svg("Histogram[Range[0, 9], {1}]");
+      assert!(svg.contains("<title>[-0.5, 0.5): 1</title>"), "{svg}");
+    }
+
+    #[test]
+    fn histogram_wl15_style() {
+      // One dataset: WL 15's chart yellow under a thin translucent edge.
+      let svg = export_svg("Histogram[{1, 2, 2, 3, 3, 3}]");
+      assert_eq!(svg.matches("fill=\"#FFD540\"").count(), 3, "{svg}");
+      assert!(svg.contains("stroke-opacity=\"0.66\""), "{svg}");
+      // Overlaid datasets: RGBColor[1, 0.8, 0] at 0.8, then the chart
+      // palette at 0.7.
+      let svg = export_svg("Histogram[{{1, 2, 2, 3}, {2, 3, 3, 4}}]");
+      assert!(svg.contains("opacity=\"0.8\" fill=\"#FFCC00\""), "{svg}");
+      assert!(svg.contains("opacity=\"0.7\" fill=\"#00AAF2\""), "{svg}");
+    }
+
+    #[test]
+    fn charts_use_wl15_chart_palette() {
+      // WL 15 2D charts color with ColorData[118] (their theme's
+      // ChartDefaultStyle), not the plot-curve palette.
+      let flat = export_svg("BarChart[{5, 3, 8}]");
+      assert_eq!(flat.matches("fill=\"#FFD540\"").count(), 3, "{flat}");
+      let grouped = export_svg("BarChart[{{1, 2, 3}, {3, 4, 5}}]");
+      for c in ["#FFD540", "#00AAF2", "#60BF00"] {
+        assert!(grouped.contains(c), "{c}: {grouped}");
+      }
+      let pie = export_svg("PieChart[{3, 5, 2}]");
+      for c in ["rgb(255,213,64)", "rgb(0,170,242)", "rgb(96,191,0)"] {
+        assert!(pie.contains(c), "{c}: {pie}");
+      }
+      // Slices are outlined with EdgeForm[GrayLevel[0, 0.5]].
+      assert!(pie.contains("stroke=\"black\" stroke-opacity=\"0.5\""));
+    }
+
+    #[test]
     fn histogram_single_value() {
       insta::assert_snapshot!(export_svg("Histogram[{5}]"));
     }
@@ -15880,7 +15932,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "expected 18 circles (9 bubbles × 2) in multi-dataset BubbleChart: {svg}"
       );
       // Each dataset gets its own color from the default palette.
-      for color in ["#3D99CC", "#74B336", "#F2A024"] {
+      for color in ["#FFD540", "#00AAF2", "#60BF00"] {
         assert!(
           svg.contains(color),
           "multi-dataset BubbleChart should use color {color}: {svg}"
@@ -16086,7 +16138,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
       // Each dataset gets its own color from the default palette —
       // assert that at least four distinct palette colors are used.
-      let distinct_colors = ["#3D99CC", "#74B336", "#F2A024", "#EB6235"];
+      let distinct_colors = ["#FFD540", "#00AAF2", "#60BF00", "#FF5E1A"];
       for color in distinct_colors {
         assert!(
           svg.contains(color),
@@ -16730,10 +16782,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">\n250\n"), "y-axis should reach 250");
 
       // Collect bar rect x positions (filled bars have the default
-      // series color #3D99CC).
+      // series color #FFD540).
       let bar_xs: Vec<f64> = svg
         .lines()
-        .filter(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
+        .filter(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
         .map(|l| {
           let x_str =
             l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
@@ -16763,7 +16815,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // occupy 71/250 of the plot height (~1926 px) ≈ 547 px.
       let last_bar_line = svg
         .lines()
-        .rfind(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
+        .rfind(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
         .unwrap();
       let h_str = last_bar_line
         .split("height=\"")
@@ -16822,7 +16874,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // The three bars still fill the whole plot width.
       let bar_xs: Vec<f64> = svg
         .lines()
-        .filter(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
+        .filter(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
         .map(|l| {
           let x_str =
             l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();

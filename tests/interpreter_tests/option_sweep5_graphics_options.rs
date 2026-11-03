@@ -331,7 +331,7 @@ mod charts {
       let rect = s
         .split("<rect")
         .skip(1)
-        .find(|r| r.contains("#3D99CC") || r.contains("rgb(61,153,204)"))
+        .find(|r| r.contains("#FFD540") || r.contains("rgb(255,213,64)"))
         .unwrap();
       let w = rect.split("width=\"").nth(1).unwrap();
       w[..w.find('"').unwrap()].parse().unwrap()

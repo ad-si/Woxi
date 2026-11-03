@@ -99,6 +99,6 @@ expression: "export_svg(\"BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]\")"
 <line x1="2000.0" y1="235.9" x2="2000.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="235.9" x2="2450.0" y2="235.9" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="1934.1" x2="2450.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
-<rect x="1100.0" y="613.3" width="1800.0" height="943.5" fill="rgb(61,153,204)" stroke="#666" stroke-width="5.4"/>
+<rect x="1100.0" y="613.3" width="1800.0" height="943.5" fill="rgb(255,213,64)" stroke="#666" stroke-width="5.4"/>
 <line x1="1100.0" y1="1085.0" x2="2900.0" y2="1085.0" stroke="white" stroke-width="8.1"/>
 </svg>

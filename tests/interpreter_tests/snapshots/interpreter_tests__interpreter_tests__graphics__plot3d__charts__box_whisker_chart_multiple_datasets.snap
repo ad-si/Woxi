@@ -96,16 +96,16 @@ expression: "export_svg(\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}, {5
 <line x1="1000.0" y1="235.9" x2="1000.0" y2="1234.8" stroke="#666" stroke-width="5.4"/>
 <line x1="850.0" y1="235.9" x2="1150.0" y2="235.9" stroke="#666" stroke-width="5.4"/>
 <line x1="850.0" y1="1234.8" x2="1150.0" y2="1234.8" stroke="#666" stroke-width="5.4"/>
-<rect x="700.0" y="435.7" width="600.0" height="649.3" fill="rgb(61,153,204)" stroke="#666" stroke-width="5.4"/>
+<rect x="700.0" y="435.7" width="600.0" height="649.3" fill="rgb(255,213,64)" stroke="#666" stroke-width="5.4"/>
 <line x1="700.0" y1="785.3" x2="1300.0" y2="785.3" stroke="white" stroke-width="8.1"/>
 <line x1="2000.0" y1="835.3" x2="2000.0" y2="1634.4" stroke="#666" stroke-width="5.4"/>
 <line x1="1850.0" y1="835.3" x2="2150.0" y2="835.3" stroke="#666" stroke-width="5.4"/>
 <line x1="1850.0" y1="1634.4" x2="2150.0" y2="1634.4" stroke="#666" stroke-width="5.4"/>
-<rect x="1700.0" y="935.2" width="600.0" height="599.4" fill="rgb(61,153,204)" stroke="#666" stroke-width="5.4"/>
+<rect x="1700.0" y="935.2" width="600.0" height="599.4" fill="rgb(255,213,64)" stroke="#666" stroke-width="5.4"/>
 <line x1="1700.0" y1="1234.8" x2="2300.0" y2="1234.8" stroke="white" stroke-width="8.1"/>
 <line x1="3000.0" y1="935.2" x2="3000.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
 <line x1="2850.0" y1="935.2" x2="3150.0" y2="935.2" stroke="#666" stroke-width="5.4"/>
 <line x1="2850.0" y1="1934.1" x2="3150.0" y2="1934.1" stroke="#666" stroke-width="5.4"/>
-<rect x="2700.0" y="1085.0" width="600.0" height="649.3" fill="rgb(61,153,204)" stroke="#666" stroke-width="5.4"/>
+<rect x="2700.0" y="1085.0" width="600.0" height="649.3" fill="rgb(255,213,64)" stroke="#666" stroke-width="5.4"/>
 <line x1="2700.0" y1="1384.7" x2="3300.0" y2="1384.7" stroke="white" stroke-width="8.1"/>
 </svg>

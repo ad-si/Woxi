@@ -19,14 +19,8 @@ use crate::helpers::unevaluated;
 use crate::syntax::Expr;
 
 /// wolframscript's default chart colours, by position within a dataset.
-const PALETTE: [(f64, f64, f64); 6] = [
-  (1., 0.835, 0.25),
-  (0., 0.665, 0.95),
-  (0.375, 0.75, 0.),
-  (1., 0.37, 0.1),
-  (0.725, 0.45, 1.),
-  (0.85, 0.51, 0.),
-];
+const PALETTE: [(f64, f64, f64); 15] =
+  crate::functions::chart::CHART_COLORS_RGB;
 
 const GROUP_GAP: f64 = 0.2;
 const GROUP_INSET: f64 = 0.1;

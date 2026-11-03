@@ -70,9 +70,9 @@ expression: "export_svg(\"BarChart[{1, 2, 3}, ImageSize -> 400]\")"
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,299 749,299 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,2280 3899,2280 "/>
-<rect x="854" y="1619" width="840" height="660" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>1</title></rect>
-<rect x="1904" y="959" width="840" height="1320" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>2</title></rect>
-<rect x="2954" y="299" width="840" height="1980" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>3</title></rect>
+<rect x="854" y="1619" width="840" height="660" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="1904" y="959" width="840" height="1320" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="2954" y="299" width="840" height="1980" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
 <line x1="710.0" y1="2280.0" x2="680.0" y2="2280.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1619.4" x2="680.0" y2="1619.4" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="958.8" x2="680.0" y2="958.8" stroke="#666" stroke-width="10"/>

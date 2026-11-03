@@ -4,7 +4,7 @@ expression: "export_svg(\"PieChart[{30, 20, 10}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="360" fill="rgb(255,255,255)"/>
-<path d="M180.00,180.00 L33.00,180.00 A147.00,147.00 0 0,1 327.00,180.00 Z" fill="rgb(61,153,204)" stroke="black" stroke-width="1"><title>30</title></path>
-<path d="M180.00,180.00 L327.00,180.00 A147.00,147.00 0 0,1 106.50,307.31 Z" fill="rgb(242,160,36)" stroke="black" stroke-width="1"><title>20</title></path>
-<path d="M180.00,180.00 L106.50,307.31 A147.00,147.00 0 0,1 33.00,180.00 Z" fill="rgb(116,179,54)" stroke="black" stroke-width="1"><title>10</title></path>
+<path d="M180.00,180.00 L33.00,180.00 A147.00,147.00 0 0,1 327.00,180.00 Z" fill="rgb(255,213,64)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>30</title></path>
+<path d="M180.00,180.00 L327.00,180.00 A147.00,147.00 0 0,1 106.50,307.31 Z" fill="rgb(0,170,242)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>20</title></path>
+<path d="M180.00,180.00 L106.50,307.31 A147.00,147.00 0 0,1 33.00,180.00 Z" fill="rgb(96,191,0)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>10</title></path>
 </svg>

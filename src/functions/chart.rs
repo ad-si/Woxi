@@ -9,6 +9,43 @@ use crate::functions::plot::{
   plot_label_extra_lines, svg_header,
 };
 
+/// Default colors of WL 15's 2D charts (`BarChart`, `PieChart`,
+/// `Histogram`, `BubbleChart`, …): their theme's `"ChartDefaultStyle" -> 118`,
+/// i.e. `ColorData[118, "ColorList"]`, exactly as WL writes them.
+pub(crate) const CHART_COLORS_RGB: [(f64, f64, f64); 15] = [
+  (1., 0.835, 0.25),
+  (0., 0.665, 0.95),
+  (0.375, 0.75, 0.),
+  (1., 0.37, 0.1),
+  (0.725, 0.45, 1.),
+  (0.85, 0.51, 0.),
+  (0., 0.7, 0.7),
+  (1., 0.4, 0.76),
+  (0.64, 0.8, 0.),
+  (1., 0.61, 0.),
+  (0.65, 0.664, 1.),
+  (1., 0.5, 0.5),
+  (0.7792381093092542, 0.8593242721122579, 0.14568974765050105),
+  (0.8795508847078471, 0.35632892385929255, 0.8609048228736547),
+  (0.15342460575502262, 0.7830599790949564, 0.6021943875429379),
+];
+
+/// `CHART_COLORS_RGB` quantized to 8-bit channels for the SVG renderers.
+pub(crate) const CHART_COLORS: [(u8, u8, u8); 15] = {
+  let mut out = [(0u8, 0u8, 0u8); 15];
+  let mut i = 0;
+  while i < 15 {
+    let (r, g, b) = CHART_COLORS_RGB[i];
+    out[i] = (
+      (r * 255.0 + 0.5) as u8,
+      (g * 255.0 + 0.5) as u8,
+      (b * 255.0 + 0.5) as u8,
+    );
+    i += 1;
+  }
+  out
+};
+
 /// Extract grouped values from the first argument.
 /// Returns a list of groups, where each group is a list of f64 values.
 /// - `{1, 2, 3}` → `[[1], [2], [3]]` (flat: each value is its own group)
@@ -3403,8 +3440,15 @@ fn bar_chart_structure(
     let (mut up, mut down) = (0.0_f64, 0.0_f64);
     for (bi, &val) in group.iter().enumerate() {
       let color_idx = if bars_per_group > 1 { bi } else { gi };
+      // Without ChartStyle a single flat dataset is drawn in one color.
+      let default_idx = if bars_per_group > 1 || !opts.chart_legends.is_empty()
+      {
+        color_idx
+      } else {
+        0
+      };
       let (r, g, b) = if opts.chart_style.is_empty() {
-        PLOT_COLORS[color_idx % PLOT_COLORS.len()]
+        CHART_COLORS[default_idx % CHART_COLORS.len()]
       } else {
         let c = &opts.chart_style[color_idx % opts.chart_style.len()];
         (
@@ -3689,7 +3733,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cy - opts.chart_legends.len() as f64 * line_height / 2.0 + 5.0;
   for (i, label) in opts.chart_legends.iter().enumerate() {
     let color = if opts.chart_style.is_empty() {
-      PLOT_COLORS[i % PLOT_COLORS.len()]
+      CHART_COLORS[i % CHART_COLORS.len()]
     } else {
       let c = &opts.chart_style[i % opts.chart_style.len()];
       (
@@ -3745,7 +3789,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // draw order), matching wolframscript: `ChartStyle -> {c1, c2, ...}`
       // and `ChartLabels -> {l1, l2, ...}` align with the input values.
       let (r, g, b) = if opts.chart_style.is_empty() {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
+        CHART_COLORS[i % CHART_COLORS.len()]
       } else {
         let c = &opts.chart_style[i % opts.chart_style.len()];
         (
@@ -3810,6 +3854,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
+      // Slices are outlined with WL 15's `EdgeForm[GrayLevel[0, 0.5]]`.
       if r_in <= 1e-9 {
         // Innermost ring with no hole: render as a center-anchored wedge.
         let x1 = cx + r_out * start_angle.cos();
@@ -3818,7 +3863,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let y2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
         ));
       } else {
         // Outer ring: render as an annulus wedge.
@@ -3832,7 +3877,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let yo2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{xi1:.2},{yi1:.2} L{xo1:.2},{yo1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {xo2:.2},{yo2:.2} L{xi2:.2},{yi2:.2} A{r_in:.2},{r_in:.2} 0 {large_arc},0 {xi1:.2},{yi1:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
         ));
       }
 
@@ -4729,7 +4774,7 @@ fn extract_sector_rows(
 /// way the other chart renderers do.
 fn sector_color(opts: &ChartOptions, idx: usize) -> (u8, u8, u8) {
   if opts.chart_style.is_empty() {
-    PLOT_COLORS[idx % PLOT_COLORS.len()]
+    CHART_COLORS[idx % CHART_COLORS.len()]
   } else {
     let c = &opts.chart_style[idx % opts.chart_style.len()];
     (
@@ -5306,7 +5351,7 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let colors: Vec<(u8, u8, u8)> = (0..datasets.len())
     .map(|di| {
       if opts.chart_style.is_empty() {
-        PLOT_COLORS[di % PLOT_COLORS.len()]
+        CHART_COLORS[di % CHART_COLORS.len()]
       } else {
         let c = &opts.chart_style[di % opts.chart_style.len()];
         (
@@ -5566,7 +5611,7 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for (i, &(lo, q1, med, q3, hi)) in all_stats.iter().enumerate() {
     let (r, g, b) = if opts.chart_style.is_empty() {
-      PLOT_COLORS[0]
+      CHART_COLORS[0]
     } else {
       let c = &opts.chart_style[i % opts.chart_style.len()];
       (
@@ -6242,14 +6287,14 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   let mut start_angle = std::f64::consts::PI;
-  let mut colors = vec![PLOT_COLORS[0]; sectors.len()];
+  let mut colors = vec![CHART_COLORS[0]; sectors.len()];
   let mut labels_svg = String::new();
   let (_, _, _, label_fill, _) = crate::functions::plot::plot_theme();
   for (slice_idx, &i) in order.iter().enumerate() {
     let (angle_val, radius_val) = sectors[i];
     // A `ChartStyle` list colours the sectors in data order.
     let (r, g, b) = if opts.chart_style.is_empty() {
-      PLOT_COLORS[slice_idx % PLOT_COLORS.len()]
+      CHART_COLORS[slice_idx % CHART_COLORS.len()]
     } else {
       sector_color(&opts, i)
     };

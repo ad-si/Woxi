@@ -2868,6 +2868,12 @@ pub(crate) const PLOT_COLORS_RGB: [(f64, f64, f64); 15] = [
   (0.032972823413648836, 0.7396719749139476, 0.534700104525218),
 ];
 
+/// Font size of chart labels (`ChartLabels`, axes and frame labels) in the
+/// bar, bubble and histogram renderers, in display pixels.
+const CHART_LABEL_FONT: f64 = 13.0;
+/// Font size of a chart's `PlotLabel`, in display pixels.
+const CHART_TITLE_FONT: f64 = 15.0;
+
 /// `PLOT_COLORS_RGB` quantized to 8-bit channels for the SVG renderers.
 pub(crate) const PLOT_COLORS: [(u8, u8, u8); 15] = {
   let mut out = [(0u8, 0u8, 0u8); 15];
@@ -6649,13 +6655,15 @@ pub(crate) fn generate_bar_svg(
           )
         } else if k_colors > 1 {
           // Grouped: color by position within group
-          PLOT_COLORS[bi % PLOT_COLORS.len()]
+          crate::functions::chart::CHART_COLORS
+            [bi % crate::functions::chart::CHART_COLORS.len()]
         } else if !chart_legends.is_empty() {
           // Flat with legends: distinct color per group
-          PLOT_COLORS[gi % PLOT_COLORS.len()]
+          crate::functions::chart::CHART_COLORS
+            [gi % crate::functions::chart::CHART_COLORS.len()]
         } else {
           // Flat: single default color
-          PLOT_COLORS[0]
+          crate::functions::chart::CHART_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
         let (x0, y0, y1) = if stacked {
@@ -6753,8 +6761,10 @@ pub(crate) fn generate_bar_svg(
     label_fill,
   );
 
-  let font_size = sf * 18.0;
-  let title_font_size = sf * 22.0;
+  // WL 15 sets chart labels at the tick-label size and the PlotLabel a
+  // little larger.
+  let font_size = sf * CHART_LABEL_FONT;
+  let title_font_size = sf * CHART_TITLE_FONT;
 
   // `Epilog` primitives are written in chart coordinates, where the first bar
   // group is centred at `x = 1`; the axis here puts it at `0.5`.
@@ -7006,7 +7016,8 @@ pub(crate) fn generate_bar_svg(
 
       for (i, label) in chart_legends.iter().enumerate() {
         let (cr, cg, cb) = if chart_style.is_empty() {
-          PLOT_COLORS[i % PLOT_COLORS.len()]
+          crate::functions::chart::CHART_COLORS
+            [i % crate::functions::chart::CHART_COLORS.len()]
         } else {
           let c = &chart_style[i % chart_style.len()];
           (
@@ -7128,8 +7139,8 @@ pub(crate) fn generate_horizontal_bar_svg(
   let axis_stroke =
     format!("rgb({},{},{})", axis_gray.0, axis_gray.1, axis_gray.2);
 
-  let font_size = sf * 14.0;
-  let title_font_size = sf * 16.0;
+  let font_size = sf * CHART_LABEL_FONT;
+  let title_font_size = sf * CHART_TITLE_FONT;
   let char_w = font_size * 0.55;
 
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
@@ -7242,11 +7253,13 @@ pub(crate) fn generate_horizontal_bar_svg(
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
       } else if k > 1 {
-        PLOT_COLORS[bi % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [bi % crate::functions::chart::CHART_COLORS.len()]
       } else if !chart_legends.is_empty() {
-        PLOT_COLORS[gi % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [gi % crate::functions::chart::CHART_COLORS.len()]
       } else {
-        PLOT_COLORS[0]
+        crate::functions::chart::CHART_COLORS[0]
       };
       let y0 = inner_top + bi as f64 * sub_h;
       let x_end = map_x(val);
@@ -7394,7 +7407,8 @@ pub(crate) fn generate_horizontal_bar_svg(
     let line_height = sf * 22.0;
     for (i, label) in chart_legends.iter().enumerate() {
       let (cr, cg, cb) = if chart_style.is_empty() {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [i % crate::functions::chart::CHART_COLORS.len()]
       } else {
         let c = &chart_style[i % chart_style.len()];
         (
@@ -7845,7 +7859,8 @@ pub(crate) fn generate_bubble_chart_svg(
     let mut flat_idx = 0usize;
     for (gi, group) in groups.iter().enumerate() {
       let (cr, cg, cb) = if chart_style.is_empty() {
-        PLOT_COLORS[gi % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [gi % crate::functions::chart::CHART_COLORS.len()]
       } else {
         let c = &chart_style[gi % chart_style.len()];
         (
@@ -7956,8 +7971,10 @@ pub(crate) fn generate_bubble_chart_svg(
     label_fill,
   );
 
-  let font_size = sf * 18.0;
-  let title_font_size = sf * 22.0;
+  // WL 15 sets chart labels at the tick-label size and the PlotLabel a
+  // little larger.
+  let font_size = sf * CHART_LABEL_FONT;
+  let title_font_size = sf * CHART_TITLE_FONT;
 
   if let Some(insert_pos) = buf.rfind("</svg>") {
     let mut labels_svg = String::new();
@@ -8024,7 +8041,8 @@ pub(crate) fn generate_bubble_chart_svg(
 
       for (i, label) in chart_legends.iter().enumerate() {
         let (cr, cg, cb) = if chart_style.is_empty() {
-          PLOT_COLORS[i % PLOT_COLORS.len()]
+          crate::functions::chart::CHART_COLORS
+            [i % crate::functions::chart::CHART_COLORS.len()]
         } else {
           let c = &chart_style[i % chart_style.len()];
           (
@@ -8643,33 +8661,35 @@ pub(crate) fn histogram_plot_source(
   for (di, d) in datasets.iter().enumerate() {
     let counts = histogram_bin_counts(d, &bin_edges);
     let heights = histogram_bin_heights(&counts, &bin_edges, height);
-    // Trace the bar silhouette: up each bar's left edge, across its top,
-    // then back down to the axis at the end. Filling to the axis paints
-    // the bars.
-    let mut points = Vec::with_capacity(num_bins * 2 + 2);
-    points.push((bin_edges[0], 0.0));
+    // Trace every bar — up its left edge, across its top, down its right
+    // edge — so the outline also separates neighbouring bars. Filling to
+    // the axis paints the bars.
+    let mut points = Vec::with_capacity(num_bins * 4);
     for i in 0..num_bins {
+      points.push((bin_edges[i], 0.0));
       points.push((bin_edges[i], heights[i]));
       points.push((bin_edges[i + 1], heights[i]));
+      points.push((bin_edges[i + 1], 0.0));
       max_h = max_h.max(heights[i]);
     }
-    points.push((bin_edges[num_bins], 0.0));
-    let color = colors
-      .get(di)
-      .copied()
-      .unwrap_or(PLOT_COLORS[di % PLOT_COLORS.len()]);
+    let color = colors.get(di).copied().unwrap_or(
+      crate::functions::chart::CHART_COLORS
+        [di % crate::functions::chart::CHART_COLORS.len()],
+    );
+    // WL 15 bars: the chart color as the face (translucent when datasets
+    // overlap) under a thin, translucent gray edge.
     series.push(crate::syntax::PlotSeriesData {
       points,
-      color,
+      color: (128, 128, 128),
       is_scatter: false,
       filling: crate::syntax::SeriesFilling::Axis,
-      fill_color: None,
-      fill_opacity: None,
+      fill_color: Some(color),
+      fill_opacity: Some(if datasets.len() > 1 { 0.7 } else { 1.0 }),
       marker: None,
-      thickness: None,
+      thickness: Some(0.5),
       point_size: None,
       dashing: None,
-      opacity: None,
+      opacity: Some(0.66),
       labels: Vec::new(),
     });
   }
@@ -8873,9 +8893,10 @@ pub(crate) fn generate_histogram_svg(
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
       } else if multi {
-        PLOT_COLORS[idx % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [idx % crate::functions::chart::CHART_COLORS.len()]
       } else {
-        PLOT_COLORS[0]
+        crate::functions::chart::CHART_COLORS[0]
       }
     };
     for (di, heights) in dataset_heights.iter().enumerate() {
@@ -8888,10 +8909,15 @@ pub(crate) fn generate_histogram_svg(
         let color = RGBColor(r, g, b);
         let bx0 = bin_edges[i];
         let bx1 = bin_edges[i + 1];
-        let fill: ShapeStyle = if multi {
-          color.mix(0.55).filled()
-        } else {
+        // Overlaid datasets are translucent: WL 15's first chart style is
+        // `RGBColor[1, 0.8, 0]` at opacity 0.8, the others their color at
+        // opacity 0.7.
+        let fill: ShapeStyle = if !multi {
           color.filled()
+        } else if di == 0 && opts.chart_style.is_empty() {
+          RGBColor(255, 204, 0).mix(0.8).filled()
+        } else {
+          color.mix(0.7).filled()
         };
         chart
           .draw_series(std::iter::once(Rectangle::new(
@@ -8994,8 +9020,10 @@ pub(crate) fn generate_histogram_svg(
   }
 
   // AxesLabel / FrameLabel and PlotLabel, inserted before </svg>.
-  let font_size = sf * 18.0;
-  let title_font_size = sf * 22.0;
+  // WL 15 sets chart labels at the tick-label size and the PlotLabel a
+  // little larger.
+  let font_size = sf * CHART_LABEL_FONT;
+  let title_font_size = sf * CHART_TITLE_FONT;
   if let Some(insert_pos) = buf.rfind("</svg>") {
     let mut labels_svg = explicit_ticks_svg(
       opts.ticks_x.as_ref(),
@@ -9044,7 +9072,8 @@ pub(crate) fn generate_histogram_svg(
     // Legend entries, one per dataset, in the datasets' colours.
     for (i, label) in opts.chart_legends.iter().enumerate() {
       let color = if opts.chart_style.is_empty() {
-        PLOT_COLORS[i % PLOT_COLORS.len()]
+        crate::functions::chart::CHART_COLORS
+          [i % crate::functions::chart::CHART_COLORS.len()]
       } else {
         let c = &opts.chart_style[i % opts.chart_style.len()];
         (
@@ -9474,14 +9503,18 @@ pub(crate) fn generate_axes_only_opts(
 fn add_bar_borders(buf: &mut String, stroke_width: u32) {
   // The first <rect> is the background, skip it.
   // All subsequent filled rects (with stroke="none") are bars.
+  // WL 15 charts outline bars with `EdgeForm[Directive[Thickness[Small],
+  // Opacity[0.66]]]`: a thin, translucent dark edge.
   let marker = "stroke=\"none\"/>";
   let color = if crate::is_dark_mode() {
     "#555555"
   } else {
     "#000000"
   };
-  let replacement =
-    format!("stroke=\"{color}\" stroke-width=\"{stroke_width}\"/>");
+  let width = 0.75 * stroke_width as f64;
+  let replacement = format!(
+    "stroke=\"{color}\" stroke-opacity=\"0.66\" stroke-width=\"{width}\"/>"
+  );
   // Skip the first occurrence (background rect)
   if let Some(first) = buf.find(marker) {
     let after_first = first + marker.len();
