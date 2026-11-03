@@ -10,9 +10,11 @@ use crate::functions::plot::{
   SeriesStyle, axis_tick_step, format_date_tick, format_tick_with_step,
   generate_date_ticks, minor_tick_divisions, style_stroke,
 };
+use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 
 /// Tick-label font size, in display pixels.
-pub(crate) const AXIS_TICK_FONT: f64 = 10.5;
+pub(crate) const AXIS_TICK_FONT: f64 =
+  crate::functions::plot_padding::TICK_FONT;
 /// Stroke width of the axis lines and tick marks, in display pixels.
 const AXIS_STROKE: f64 = 0.5;
 /// Length of a labelled tick mark, in display pixels (Wolfram draws 4).
@@ -216,15 +218,6 @@ impl AxisTicks {
     }
     ticks
   }
-
-  /// Widest label, in estimated display pixels at the tick font.
-  pub(crate) fn max_label_width(&self) -> f64 {
-    self
-      .majors
-      .iter()
-      .map(|(_, l)| label_width(l))
-      .fold(0.0, f64::max)
-  }
 }
 
 /// The label of the log-axis tick `m × 10^exp`.
@@ -263,32 +256,6 @@ fn label_width(markup: &str) -> f64 {
     }
   }
   visible as f64 * AXIS_TICK_FONT * 0.6
-}
-
-/// Room, in display pixels, the tick labels of an axis need on the far side
-/// of it: the y labels to the left of the vertical axis, the x labels
-/// below the horizontal one.
-pub(crate) fn y_tick_label_room(ticks: &AxisTicks) -> f64 {
-  if ticks.majors.is_empty() {
-    0.0
-  } else {
-    ticks.max_label_width() + AXIS_TICK_FONT * 0.45 + 2.0
-  }
-}
-
-pub(crate) fn x_tick_label_room(ticks: &AxisTicks) -> f64 {
-  if ticks.majors.is_empty() {
-    0.0
-  } else {
-    AXIS_TICK_FONT * 1.45
-  }
-}
-
-/// The gutter an axis's labels need outside the plotting area when the axis
-/// sits `frac` of the way along the other axis's `length` (all in render
-/// units): whatever part of `room` the distance to the edge does not cover.
-pub(crate) fn label_gutter(room: f64, frac: f64, length: f64) -> f64 {
-  (room - frac.clamp(0.0, 1.0) * length).max(0.0)
 }
 
 /// Everything [`origin_axes_svg`] draws from.
@@ -382,11 +349,12 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         {
           continue;
         }
+        // The top of the label sits 3 pt below the axis.
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\">{label}</text>\n",
-          axis_y + font * 1.15
+          axis_y + (TICK_LABEL_GAP + ascent(AXIS_TICK_FONT)) * sf
         ));
       }
     }
@@ -416,8 +384,8 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\">{label}</text>\n",
-          axis_x - font * 0.45,
-          y + font * 0.35
+          axis_x - TICK_LABEL_GAP * sf,
+          y + (ascent(AXIS_TICK_FONT) - line_height(AXIS_TICK_FONT) / 2.0) * sf
         ));
       }
     }

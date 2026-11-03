@@ -698,3 +698,207 @@ mod panel_layout {
     assert_eq!(svg.matches(">7.5</text>").count(), 4);
   }
 }
+
+/// The automatic `ImagePadding`: the room the frame, the axes and their
+/// labels take around the plotting area, and so the picture's height.
+/// Every size here is what wolframscript (WL 15) exports.
+mod automatic_image_padding {
+  use super::*;
+
+  fn size(expr: &str) -> (f64, f64) {
+    svg_size(&svg_of(expr))
+  }
+
+  #[test]
+  fn framed_plots_pad_for_their_tick_labels() {
+    // Left: the widest y tick label plus 3 pt; bottom: a label line plus
+    // 3 pt plus the extra point every bottom edge keeps.
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Frame -> True]"),
+      (360.0, 223.0)
+    );
+    assert_eq!(size("Plot[x, {x, 0, 1}, Frame -> True]"), (360.0, 227.0));
+    assert_eq!(size("Plot[x, {x, 0, 1000}, Frame -> True]"), (360.0, 220.0));
+    // `10 000` is set in digit blocks, a little wider still.
+    assert_eq!(
+      size("Plot[x, {x, 0, 10000}, Frame -> True]"),
+      (360.0, 213.0)
+    );
+    assert_eq!(size("Plot[x, {x, -10, 10}, Frame -> True]"), (360.0, 225.0));
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Frame -> True, ImageSize -> 600]"),
+      (600.0, 372.0)
+    );
+  }
+
+  #[test]
+  fn end_labels_overhanging_a_small_frame_widen_its_padding() {
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Frame -> True, ImageSize -> Small]"),
+      (180.0, 111.0)
+    );
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, ImageSize -> Tiny]"),
+      (100.0, 53.0)
+    );
+  }
+
+  #[test]
+  fn labels_add_their_own_room() {
+    assert_eq!(
+      size(
+        "Plot[Sin[x], {x, 0, 10}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]"
+      ),
+      (360.0, 230.0)
+    );
+    assert_eq!(
+      size(
+        "Plot[Sin[x], {x, 0, 10}, Frame -> True, \
+         FrameLabel -> {{\"l\", \"r\"}, {\"b\", \"t\"}}]"
+      ),
+      (360.0, 236.0)
+    );
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, PlotLabel -> \"Title\"]"),
+      (360.0, 227.0)
+    );
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Frame -> True, PlotLabel -> \"Title\"]"),
+      (360.0, 237.0)
+    );
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, AxesLabel -> {\"x\", \"y\"}]"),
+      (360.0, 223.0)
+    );
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, AxesLabel -> {\"time\", \"amplitude\"}]"),
+      (360.0, 214.0)
+    );
+  }
+
+  #[test]
+  fn unframed_plots_pad_only_where_the_axes_labels_stick_out() {
+    assert_eq!(size("Plot[Sin[x], {x, 0, 10}]"), (360.0, 214.0));
+    assert_eq!(size("Plot[x^2, {x, -3, 3}]"), (360.0, 226.0));
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Ticks -> None]"),
+      (360.0, 224.0)
+    );
+    // No axes: no padding at all.
+    assert_eq!(
+      size("Plot[Sin[x], {x, 0, 10}, Axes -> False]"),
+      (360.0, 223.0)
+    );
+    assert_eq!(
+      size("ParametricPlot[{2 Cos[t], Sin[t]}, {t, 0, 2 Pi}]"),
+      (360.0, 181.0)
+    );
+  }
+
+  #[test]
+  fn list_plots() {
+    assert_eq!(size("ListPlot[Range[10]]"), (360.0, 229.0));
+    assert_eq!(size("ListPlot[{1, 4, 9}]"), (360.0, 232.0));
+    assert_eq!(size("ListPlot[{1, 4, 9}, Frame -> True]"), (360.0, 232.0));
+    assert_eq!(
+      size("ListLinePlot[{3, 1, 4, 1, 5, 9, 2, 6}]"),
+      (360.0, 232.0)
+    );
+    assert_eq!(
+      size("StackedListPlot[{{1, 2, 3}, {2, 3, 1}}]"),
+      (360.0, 232.0)
+    );
+  }
+
+  #[test]
+  fn log_plots_pad_their_range_like_plot() {
+    assert_eq!(size("LogPlot[Exp[x], {x, 0, 10}]"), (360.0, 216.0));
+  }
+
+  #[test]
+  fn graphics_with_axes_or_a_frame_keep_their_image_width() {
+    assert_eq!(
+      size(
+        "Graphics[Line[{{0, -1}, {10, 1}}], Axes -> True, \
+         AspectRatio -> 1/GoldenRatio, ImageSize -> 380]"
+      ),
+      (380.0, 227.0)
+    );
+    assert_eq!(
+      size(
+        "Graphics[Line[{{0, -1}, {10, 1}}], Frame -> True, \
+         AspectRatio -> 1/GoldenRatio, ImageSize -> 380]"
+      ),
+      (380.0, 236.0)
+    );
+    // An automatic size is 360 wide, axes and labels included.
+    assert_eq!(
+      size("Graphics[Line[{{0, -1}, {10, 1}}], Axes -> True]"),
+      (360.0, 81.0)
+    );
+    assert_eq!(
+      size("Graphics[Line[{{0, -1}, {10, 1}}], Frame -> True]"),
+      (360.0, 93.0)
+    );
+    assert_eq!(size("Graphics[Circle[], Frame -> True]"), (360.0, 351.0));
+    assert_eq!(
+      size("Graphics[Disk[], Frame -> True, FrameLabel -> {\"x\", \"y\"}]"),
+      (360.0, 351.0)
+    );
+  }
+
+  #[test]
+  fn bare_graphics_keep_a_point_right_and_below() {
+    // The y range is padded by 0.02 of the x span, the x range by 1/48.
+    assert_eq!(size("Graphics[Circle[]]"), (360.0, 360.0));
+    assert_eq!(size("Graphics[Rectangle[{0, 0}, {2, 1}]]"), (360.0, 188.0));
+    assert_eq!(size("Graphics[Rectangle[{0, 0}, {3, 1}]]"), (360.0, 130.0));
+    assert_eq!(
+      size("Graphics[Rectangle[{0, 0}, {3, 1}], ImageSize -> 200]"),
+      (200.0, 73.0)
+    );
+    // Too tall for 1.2 × 360: the height is capped, the width follows.
+    assert_eq!(size("Graphics[Rectangle[{0, 0}, {1, 3}]]"), (149.0, 432.0));
+    assert_eq!(
+      size(
+        "Graphics[Line[{{0, -1}, {10, 1}}], AspectRatio -> 1/GoldenRatio, \
+         ImageSize -> 380]"
+      ),
+      (380.0, 236.0)
+    );
+    // A title band replaces that point.
+    assert_eq!(
+      size("Graphics[Disk[], PlotLabel -> \"Title\"]"),
+      (360.0, 373.0)
+    );
+    assert_eq!(
+      size("Graphics[Rectangle[{0, 0}, {2, 1}], PlotLabel -> \"T\"]"),
+      (360.0, 201.0)
+    );
+  }
+
+  #[test]
+  fn frame_tick_labels_sit_three_points_outside_the_frame() {
+    // `Plot[Sin[x], {x, 0, 10}, Frame -> True]`: the y labels end 3 pt left
+    // of the frame at x = 23.2.
+    let svg = svg_of("Plot[Sin[x], {x, 0, 10}, Frame -> True]");
+    let label = svg
+      .split("<text ")
+      .find(|t| {
+        t.contains("text-anchor=\"end\"")
+          && t.split_once('>').is_some_and(|(_, text)| {
+            text.split('<').next().map(str::trim) == Some("1.0")
+          })
+      })
+      .expect("no 1.0 label");
+    let x: f64 = label
+      .split("x=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .unwrap()
+      .parse()
+      .unwrap();
+    // Render units are tenths of a point.
+    assert!((x / 10.0 - (23.2 - 3.0)).abs() < 0.2, "label ends at {x}");
+  }
+}

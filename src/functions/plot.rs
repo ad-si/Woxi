@@ -8,8 +8,7 @@ use crate::functions::chart::{
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot_axes::{
-  AxisScale, AxisTicks, OriginAxes, label_gutter, origin_axes_svg,
-  x_tick_label_room, y_tick_label_room,
+  AxisScale, AxisTicks, OriginAxes, origin_axes_svg,
 };
 use crate::syntax::PlotMarker;
 
@@ -974,28 +973,6 @@ pub(crate) fn minor_tick_step(major: f64) -> f64 {
   major / minor_tick_divisions(major) as f64
 }
 
-/// Widest major y-axis tick label, in characters. Used to position the rotated
-/// y-axis/frame label just left of the tick column instead of at the far edge
-/// of the (fixed-width) gutter — so narrow ticks (e.g. single digits) don't
-/// leave a large gap.
-fn max_y_tick_label_chars(y_min: f64, y_max: f64) -> usize {
-  let step = axis_tick_step(y_max - y_min);
-  if step <= 0.0 || !step.is_finite() {
-    return 3;
-  }
-  let mut max_len = 1usize;
-  let mut v = (y_min / step).ceil() * step;
-  let mut guard = 0;
-  while v <= y_max + step * 1e-9 && guard < 1000 {
-    if is_major_tick(v, step) {
-      max_len = max_len.max(format_tick_with_step(v, step).chars().count());
-    }
-    v += step;
-    guard += 1;
-  }
-  max_len
-}
-
 /// Check whether a tick value falls on a major tick grid.
 pub(crate) fn is_major_tick(v: f64, step: f64) -> bool {
   if step == 0.0 {
@@ -1311,7 +1288,9 @@ pub(crate) fn axes_label_svg_at(
   };
   let mut svg = String::new();
   if show_x_axis && !x_label.is_empty() {
-    let label_x = x0 + w + font_size * 0.6;
+    // 8 pt past the end of the axis, vertically centred on it.
+    let k = font_size / plot_padding::LABEL_FONT;
+    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
     // A label wider than the room left of the canvas edge (an
     // `ImagePadding` can state less than it needs) shrinks to fit rather
     // than being clipped.
@@ -1331,9 +1310,11 @@ pub(crate) fn axes_label_svg_at(
       None => font_size,
     };
     svg.push_str(&format!(
-      "<text x=\"{label_x:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
-       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+      "<text x=\"{label_x:.1}\" y=\"{:.1}\" text-anchor=\"start\" \
+       font-family=\"sans-serif\" \
        font-size=\"{label_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
+      axis_y + plot_padding::ascent(label_font)
+        - plot_padding::line_height(label_font) / 2.0,
       crate::functions::graphics::box_string_to_svg_scaled(
         x_label,
         RESOLUTION_SCALE as f64
@@ -1355,7 +1336,10 @@ pub(crate) fn axes_label_svg_at(
       "<text x=\"{lx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
        fill=\"{label_fill}\">{}</text>\n",
-      y0 - font_size * 0.6,
+      // 6 pt above the top of the axis.
+      y0 - plot_padding::AXES_LABEL_GAP_Y * font_size
+        / plot_padding::LABEL_FONT
+        - plot_padding::descent(font_size),
       crate::functions::graphics::box_string_to_svg_scaled(
         y_label,
         RESOLUTION_SCALE as f64
@@ -2795,7 +2779,7 @@ pub(crate) struct LabelStyleSpec {
 impl PlotOptions {
   /// Whether tick marks and their labels are drawn at all: `Ticks -> None`
   /// removes them everywhere, `FrameTicks -> None` only on a frame.
-  fn ticks_visible(&self) -> bool {
+  pub(crate) fn ticks_visible(&self) -> bool {
     self.ticks && (self.frame_ticks || !self.frame)
   }
 
@@ -3388,20 +3372,25 @@ pub(crate) fn plot_labels_svg(
   opts: &PlotOptions,
   (plot_x0, margin_top, plot_w, plot_h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
-  margin_left_f: f64,
+  layout: &plot_padding::LabelLayout,
   sf: f64,
   label_fill: &str,
   title_default_fill: &str,
   canvas_width: f64,
 ) -> String {
+  use plot_padding::{
+    FRAME_LABEL_GAP, ascent, block_height, line_height, line_pitch,
+  };
   let axis_y = margin_top + plot_h;
   // `LabelStyle` overrides the frame/axes/title text's default size and
   // color; either half may be absent, in which case that property keeps
   // the theme default.
-  let label_style_font_size = opts.label_style.and_then(|s| s.font_size);
   let label_style_color = opts.label_style.and_then(|s| s.color);
-  let font_size = label_style_font_size.map_or(sf * 14.0, |pt| sf * pt);
-  let title_font_size = label_style_font_size.map_or(sf * 17.0, |pt| sf * pt);
+  let label_pt = plot_padding::plot_label_font(opts);
+  let title_pt = plot_padding::plot_title_font(opts);
+  let font_size = label_pt * sf;
+  let pitch = line_pitch(label_pt) * sf;
+  let lines_of = |t: &str| t.split('\n').count();
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
@@ -3410,43 +3399,35 @@ pub(crate) fn plot_labels_svg(
   let title_default_fill = title_default_fill_owned
     .as_deref()
     .unwrap_or(title_default_fill);
-  let has_top_label =
-    opts.frame_label_top.as_ref().is_some_and(|t| !t.is_empty())
-      || opts.frame_label_top_graphic.is_some();
-  let axes_label_y = opts
-    .axes_label
-    .as_ref()
-    .map(|(_, y)| y.as_str())
-    .filter(|y| !y.is_empty() && opts.axes.1);
+  let [room_bottom, room_left, room_top, room_right] =
+    layout.tick_room.map(|r| r * sf);
+  let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
-  // Bottom/left FrameLabel: centred outside the plot area.
+  let text_svg = |label: &str, x: f64| {
+    stacked_lines_svg(
+      &crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      ),
+      x,
+      pitch,
+    )
+  };
+  // Bottom/left FrameLabel: centred outside the plot area, 6 pt beyond
+  // the tick labels of their edge.
+  let bottom_label_top = axis_y + room_bottom + gap;
+  let mut bottom_text_h = 0.0;
   if let Some(x_label) = &opts.frame_label_bottom
     && !x_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    // Sit clearly below the x tick labels (which occupy ~one tick-font
-    // height below the axis) rather than crowding the frame.
-    // Tick labels stacked over several lines push the label further down.
-    let tick_lines = opts.ticks_x.as_ref().map_or(1, |ticks| {
-      ticks
-        .iter()
-        .map(|(_, l)| l.split('\n').count())
-        .max()
-        .unwrap_or(1)
-    });
-    let base_y = axis_y + sf * 13.0 * tick_lines as f64 + font_size * 1.4;
+    let base_y = bottom_label_top + ascent(label_pt) * sf;
+    bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\">{}</text>\n",
-      stacked_lines_svg(
-        &crate::functions::graphics::box_string_to_svg_scaled(
-          x_label,
-          RESOLUTION_SCALE as f64
-        ),
-        cx,
-        font_size * 1.2
-      )
+      text_svg(x_label, cx)
     ));
   }
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
@@ -3454,18 +3435,13 @@ pub(crate) fn plot_labels_svg(
   if let Some(graphic) = &opts.frame_label_bottom_graphic {
     let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
     let cx = plot_x0 + plot_w / 2.0;
-    // Stack below the plain-text bottom label when both are present;
-    // otherwise sit just below the x tick labels, as the text case does.
-    let text_gap = if opts
-      .frame_label_bottom
-      .as_ref()
-      .is_some_and(|t| !t.is_empty())
-    {
-      font_size * 1.6
-    } else {
-      0.0
-    };
-    let top_y = axis_y + sf * 13.0 + font_size * 0.4 + text_gap;
+    // Stack below the plain-text bottom label when both are present.
+    let top_y = bottom_label_top
+      + if bottom_text_h > 0.0 {
+        bottom_text_h + gap
+      } else {
+        0.0
+      };
     let cy = top_y + gh / 2.0;
     labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
       &graphic.svg,
@@ -3479,33 +3455,18 @@ pub(crate) fn plot_labels_svg(
     && !y_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
-    // Place the rotated label just left of the y tick-label column
-    // (which right-aligns near the axis) instead of at the far gutter
-    // edge — adapting to the actual tick width.
-    let tick_w = max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
-    let tick_left = plot_x0 - 8.0 * sf - tick_w;
-    // `lx` is the text baseline: the glyphs extend ~0.75em to its left
-    // (the rotated "up" direction) and ~0.25em to its right, so the clamp
-    // must keep the ascenders inside the image.
-    // A multi-line label stacks its lines towards the plot, the first
-    // line outermost; the last line sits where a one-line label would.
-    let line_height = font_size * 1.2;
-    let extra_lines = y_label.split('\n').count().saturating_sub(1) as f64;
-    let lx =
-      (tick_left - font_size * 0.25 - sf * 5.0 - extra_lines * line_height)
-        .max(margin_left_f + font_size * 0.8);
+    // Rotated a quarter turn counterclockwise, the glyphs rise to the
+    // left of the baseline; the first line is the outermost one.
+    let box_left = plot_x0
+      - room_left
+      - gap
+      - block_height(lines_of(y_label), label_pt) * sf;
+    let lx = box_left + ascent(label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      stacked_lines_svg(
-        &crate::functions::graphics::box_string_to_svg_scaled(
-          y_label,
-          RESOLUTION_SCALE as f64
-        ),
-        lx,
-        line_height
-      )
+      text_svg(y_label, lx)
     ));
   }
 
@@ -3536,25 +3497,23 @@ pub(crate) fn plot_labels_svg(
     Some(canvas_width),
   ));
 
-  // Top FrameLabel (sits just above the plot's top edge)
+  // Top FrameLabel: 6 pt above the frame (and its tick labels).
   if let Some(top_label) = &opts.frame_label_top
     && !top_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    let ty = margin_top - font_size * 0.6;
-    // A label with line breaks stacks upward: the last line sits just
-    // above the frame, earlier ones above it.
-    let lines: Vec<&str> = top_label.split('\n').collect();
-    for (i, line) in lines.iter().enumerate() {
-      let ly = ty - (lines.len() - 1 - i) as f64 * font_size * 1.2;
+    let top = margin_top
+      - room_top
+      - gap
+      - block_height(lines_of(top_label), label_pt) * sf;
+    // One element per line, so no renderer collapses the breaks.
+    for (i, line) in top_label.split('\n').enumerate() {
+      let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
       labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{label_fill}\">{}</text>\n",
-        crate::functions::graphics::box_string_to_svg_scaled(
-          line,
-          RESOLUTION_SCALE as f64
-        )
+        text_svg(line, cx)
       ));
     }
   }
@@ -3563,7 +3522,7 @@ pub(crate) fn plot_labels_svg(
   if let Some(graphic) = &opts.frame_label_top_graphic {
     let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
     let cx = plot_x0 + plot_w / 2.0;
-    let cy = margin_top - font_size * 0.4 - gh / 2.0;
+    let cy = margin_top - room_top - gap - gh / 2.0;
     labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
       &graphic.svg,
       cx,
@@ -3573,30 +3532,27 @@ pub(crate) fn plot_labels_svg(
     ));
   }
 
-  // Right FrameLabel (rotated +90 on the right frame edge)
+  // Right FrameLabel: 6 pt right of the frame, reading upwards like the
+  // left one (the glyphs rise to the left of the baseline).
   if let Some(right_label) = &opts.frame_label_right
     && !right_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
-    let rx = plot_x0 + plot_w + font_size * 1.4;
+    let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{label_fill}\" transform=\"rotate(90,{rx:.1},{cy:.1})\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg_scaled(right_label, RESOLUTION_SCALE as f64)
+         fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
+      text_svg(right_label, rx)
     ));
   }
 
-  // PlotLabel — shifted above the top FrameLabel and/or the y AxesLabel
-  // when they share the top margin.
+  // PlotLabel: centred over the plotting area in its own band at the top.
   if let Some(sl) = &opts.plot_label
     && !sl.text.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    let stacked = if has_top_label { 1.0 } else { 0.0 }
-      + if axes_label_y.is_some() { 1.0 } else { 0.0 };
-    let ty = margin_top - title_font_size * 0.5 - stacked * font_size * 1.2;
-    let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
+    let fs = title_pt * sf;
     // A title wider than the picture (a long `Row` of text) shrinks to fit
     // instead of being clipped at both edges.
     let widest = sl.max_line_chars() as f64;
@@ -3605,10 +3561,7 @@ pub(crate) fn plot_labels_svg(
     } else {
       fs
     };
-    // A stacked title grows upwards: its last line stays where a one-line
-    // title would sit, so whatever shares the top margin below it (the y
-    // `AxesLabel`) is not written over.
-    let ty = ty - sl.extra_line_count() as f64 * fs * 1.2;
+    let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
     // `ImagePadding` leaves less room above the plot than the box needs.
     let ty = if sl.framed {
@@ -3628,13 +3581,15 @@ pub(crate) fn plot_labels_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
+    let title_pitch = line_pitch(fs / sf) * sf;
     if sl.framed {
       // Box the title: the widest line plus Framed's 6pt margin per side.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
       let lines = 1.0 + sl.extra_line_count() as f64;
-      let h = lines * fs * 1.2 + 2.0 * margin - fs * 0.2;
-      let top = ty - fs * 0.9 - margin;
+      let h =
+        line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
+      let top = ty - ascent(fs / sf) * sf - margin;
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
            height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
@@ -3645,11 +3600,26 @@ pub(crate) fn plot_labels_svg(
         sf,
       ));
     }
+    // A plain string with line breaks stacks its lines too.
+    let body = if sl.markup.is_none()
+      && sl.extra_line_count() == 0
+      && sl.text.contains('\n')
+    {
+      stacked_lines_svg(
+        &crate::functions::graphics::box_string_to_svg_scaled(
+          &sl.text,
+          RESOLUTION_SCALE as f64,
+        ),
+        cx,
+        title_pitch,
+      )
+    } else {
+      sl.svg_scaled_stacked(sf, cx, title_pitch)
+    };
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-         fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+         fill=\"{fill}\"{style_attrs}>{body}</text>\n",
     ));
   }
 
@@ -3918,7 +3888,6 @@ fn generate_svg_with_options(
   let mut render_height = svg_height * RESOLUTION_SCALE;
 
   let sf = RESOLUTION_SCALE as f64;
-  let s = RESOLUTION_SCALE as i32;
 
   // Compute dynamic margins for labels
   let has_plot_label = opts
@@ -3955,111 +3924,7 @@ fn generate_svg_with_options(
     .as_ref()
     .is_some_and(|t| !t.is_empty());
 
-  // Reserve top room for a PlotLabel, a top FrameLabel and/or the y AxesLabel
-  // (they stack).
-  let top_margin = 10 * s
-    + if has_plot_label { 25 * s } else { 0 }
-    + plot_label_extra_lines(opts.plot_label.as_ref()) as i32 * 20 * s
-    + if has_top_label { 25 * s } else { 0 }
-    + if axes_label_y.is_some() { 20 * s } else { 0 };
-
-  // Label areas and margins computed per-axis.
-  // Setting a label area to 0 suppresses that axis line in plotters.
-  // `margin_left`/`margin_right`/`y_label_area` are computed ahead of
-  // `bottom_extra` (rather than in their natural reading order below) so a
-  // `frame_label_bottom_graphic` can be scaled to the frame's actual width.
-  let y_label_area: u32 = if !tick_axis_y {
-    0
-  } else if !show_ticks {
-    5 * RESOLUTION_SCALE
-  } else {
-    65 * RESOLUTION_SCALE
-  };
-  // Each further line of a multi-line left `FrameLabel` needs a line's
-  // worth of room beside the tick labels.
-  let y_label_area = y_label_area
-    + opts.frame_label_left.as_ref().map_or(0, |label| {
-      (label.split('\n').count().saturating_sub(1) as f64 * sf * 14.0 * 1.2)
-        .round() as u32
-    });
-  let margin_left: u32 = if tick_axis_y {
-    10 * s as u32
-  } else {
-    5 * s as u32
-  };
-  let margin_right: u32 = if has_right_label {
-    40 * s as u32
-  } else if let Some(label) = axes_label_x {
-    // Enough room for the x AxesLabel, which runs to the right of the axis
-    // at `sf * 14` — ~0.62 em per character covers the proportional font.
-    (10.0 * sf
-      + 8.0 * sf
-      + crate::functions::graphics::box_string_visible_len(label) as f64
-        * 0.62
-        * sf
-        * 14.0)
-      .round() as u32
-  } else {
-    10 * s as u32
-  };
-  // `PlotLabels` sit just past the right-hand end of each curve.
-  let margin_right = margin_right.max(
-    if opts.plot_labels.iter().any(std::option::Option::is_some) {
-      let widest = opts
-        .plot_labels
-        .iter()
-        .flatten()
-        .map(|l| crate::functions::graphics::box_string_visible_len(l))
-        .max()
-        .unwrap_or(0);
-      // The gap to the label (past a callout leader) and the label, set at
-      // 11 pt, plus a little room behind it.
-      let gap = if opts.plot_label_leaders.iter().any(|&l| l) {
-        (5.5 + PLOT_LABEL_LEADER) * sf
-      } else {
-        6.0 * sf
-      };
-      (gap + 4.0 * sf + widest as f64 * 0.55 * sf * 11.0).round() as u32
-    } else {
-      0
-    },
-  );
-  // A rough estimate of the plot frame's width, used only to scale a
-  // `frame_label_bottom_graphic` (a `Grid[…]` FrameLabel) to fit under it;
-  // the exact frame width, known once labels are actually drawn, may differ
-  // slightly (e.g. under `ImagePadding` or the width-budget clamp below).
-  let plot_w_estimate = (render_width as f64
-    - margin_left as f64
-    - margin_right as f64
-    - y_label_area as f64)
-    .max(1.0);
-  let bottom_extra = if tick_axis_x && show_ticks && has_x_axis_label {
-    24.0 * sf
-      + opts
-        .frame_label_bottom_graphic
-        .as_ref()
-        .map_or(0.0, |g| scaled_graphic_label_size(g, plot_w_estimate, sf).1)
-  } else {
-    0.0
-  };
-  let x_label_area: u32 = if !tick_axis_x {
-    0
-  } else if !show_ticks {
-    5 * RESOLUTION_SCALE
-  } else {
-    40 * RESOLUTION_SCALE + bottom_extra as u32
-  };
-  let margin_bottom: u32 = if tick_axis_x {
-    10 * s as u32
-  } else {
-    5 * s as u32
-  };
-
-  // An unframed plot draws its axes itself, crossing at the `AxesOrigin`
-  // (see `plot_axes`); plotters only maps the data. Their tick labels hang
-  // off the axes, so the gutters only need to hold whatever part of them
-  // the plotting area does not.
-  let origin_axes = !opts.frame && (show_x_axis || show_y_axis);
+  // The axes' scales and ticks, and where the axes cross.
   let x_scale = AxisScale {
     min: x_min,
     max: x_max,
@@ -4073,41 +3938,52 @@ fn generate_svg_with_options(
   let x_ticks = AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref());
   let y_ticks = AxisTicks::new(y_scale, false, opts.ticks_y.as_ref());
   let origin = opts.axes_origin_point(x_scale, y_scale);
-  let (y_label_area, x_label_area) = if origin_axes {
-    let y_room = if show_y_axis && show_ticks {
-      y_tick_label_room(&y_ticks) * sf
-    } else {
-      0.0
-    };
-    let x_room = if show_x_axis && show_ticks {
-      x_tick_label_room(&x_ticks) * sf
-    } else {
-      0.0
-    };
-    let plot_w_est =
-      (render_width as f64 - margin_left as f64 - margin_right as f64 - y_room)
-        .max(1.0);
-    let y_area = label_gutter(y_room, x_scale.frac(origin.0), plot_w_est);
-    let plot_h_est = match opts.aspect_ratio {
-      Some(ar) if opts.image_padding.is_none() => {
-        (render_width as f64
-          - margin_left as f64
-          - margin_right as f64
-          - y_area)
-          * ar
-      }
-      _ => {
-        render_height as f64 - top_margin as f64 - margin_bottom as f64 - x_room
-      }
-    }
-    .max(1.0);
-    let x_area =
-      label_gutter(x_room, y_scale.frac(origin.1), plot_h_est) + bottom_extra;
-    (y_area.round() as u32, x_area.round() as u32)
-  } else {
-    (y_label_area, x_label_area)
-  };
+  // An unframed plot draws its axes itself, crossing at the `AxesOrigin`
+  // (see `plot_axes`); plotters only maps the data.
+  let origin_axes = !opts.frame && (show_x_axis || show_y_axis);
 
+  // Without `ImagePadding` the room around the plotting area follows the
+  // Wolfram front end's rules for what the frame, the axes and their labels
+  // need (see `plot_padding`). A framed plot hands the left and bottom room
+  // to plotters as label areas, which draws the frame's tick labels in
+  // them; unframed axes draw their own labels, so it is plain margin.
+  let bottom_graphic_h =
+    opts.frame_label_bottom_graphic.as_ref().map_or(0.0, |g| {
+      scaled_graphic_label_size(g, render_width as f64 * 0.85, sf).1 / sf
+    });
+  let decorations = plot_padding::plot_decorations(
+    opts,
+    &x_ticks,
+    &y_ticks,
+    (x_scale, y_scale),
+    origin,
+    bottom_graphic_h,
+  );
+  let auto_padding = opts.image_padding.is_none().then(|| {
+    let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
+    let fixed_h = (opts.image_size_explicit.1 || opts.aspect_full)
+      .then_some(svg_height as f64);
+    decorations.solve(svg_width as f64, |w| match fixed_h {
+      Some(h) => {
+        (h - 16.0).min(if opts.aspect_full { f64::MAX } else { w * ar })
+      }
+      None => w * ar,
+    })
+  });
+  let to_render = |v: f64| (v * sf).round().max(0.0) as u32;
+  let pad = auto_padding.unwrap_or_default();
+  let top_margin = to_render(pad.above()) as i32;
+  let margin_right = to_render(pad.right);
+  let (margin_left, y_label_area) = if opts.frame {
+    (0, to_render(pad.left))
+  } else {
+    (to_render(pad.left), 0)
+  };
+  let (margin_bottom, x_label_area) = if opts.frame {
+    (0, to_render(pad.bottom))
+  } else {
+    (to_render(pad.bottom), 0)
+  };
   // With `ImagePadding` the padding *is* the margin, so an `AspectRatio`
   // fixes the canvas height directly: the plot area spans the width the
   // padding leaves, and the height follows from the ratio. Deriving it here,
@@ -4169,34 +4045,6 @@ fn generate_svg_with_options(
     ),
   };
 
-  // A tick label centred on the right end of the x axis hangs half its width
-  // past the plotting area; keep that part of the label inside the image.
-  if opts.image_padding.is_none()
-    && let Some(ticks) = opts.ticks_x.as_ref()
-    && !opts.log_x
-    && x_max > x_min
-  {
-    let tick_font = sf * 13.0;
-    let overhang = ticks
-      .iter()
-      .filter(|(pos, _)| *pos >= x_min && *pos <= x_max)
-      .map(|(pos, label)| {
-        let half_width = label
-          .lines()
-          .map(crate::functions::graphics::box_string_visible_len)
-          .max()
-          .unwrap_or(0) as f64
-          * 0.6
-          * tick_font
-          / 2.0;
-        // Distance the label reaches beyond the right end of the axis
-        // (in pixels, assuming the plot fills roughly the canvas).
-        half_width - (x_max - pos) / (x_max - x_min) * render_width as f64
-      })
-      .fold(0.0_f64, f64::max);
-    margin_right = margin_right.max(overhang.ceil() as u32);
-  }
-
   // The automatic margins above are fixed pixel sizes tuned for a
   // normal-sized plot; a small explicit `ImageSize` (an 80x80 panel in a
   // Manipulate's GraphicsGrid, say) can ask for less canvas than they add up
@@ -4217,7 +4065,11 @@ fn generate_svg_with_options(
   }
   let v_budget = top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
   let max_v_budget = render_height as f64 * 0.5;
-  if opts.image_padding.is_none() && v_budget > 0.0 && v_budget > max_v_budget {
+  if opts.image_padding.is_none()
+    && opts.image_size_explicit.1
+    && v_budget > 0.0
+    && v_budget > max_v_budget
+  {
     let f = max_v_budget / v_budget;
     top_margin = (top_margin as f64 * f).round() as i32;
     margin_bottom = (margin_bottom as f64 * f).round() as u32;
@@ -4276,12 +4128,19 @@ fn generate_svg_with_options(
       - y_label_area as f64;
     if plot_w > 0.0 {
       let plot_h = plot_w * ar;
-      let target_render_h =
-        plot_h + top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
-      // Round to a whole svg unit so svg_height * scale == render_height.
-      svg_height =
-        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+      // Wolfram rounds the image height up to a whole point and leaves the
+      // spare fraction below the picture.
+      svg_height = (plot_padding::image_height(plot_h / sf, &pad) as u32)
+        .clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
+      let bottom = (render_height as f64 - top_margin as f64 - plot_h)
+        .round()
+        .max(0.0) as u32;
+      if opts.frame {
+        x_label_area = bottom.saturating_sub(margin_bottom);
+      } else {
+        margin_bottom = bottom.saturating_sub(x_label_area);
+      }
     }
   }
 
@@ -4315,7 +4174,18 @@ fn generate_svg_with_options(
       .fill(&bg_color)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    let tick = MINOR_TICK_LEN * s;
+    // Plotters sets a tick label twice the tick mark's length away from the
+    // frame (the marks themselves are invisible: the frame draws its own).
+    // Wolfram puts the y labels 3 pt left of the frame and the top of the
+    // x labels 3 pt below it; plotters hangs the x labels' baseline 0.76 em
+    // below their top, Arial's ascent 0.905 em.
+    let frame_tick_font = plot_padding::plot_tick_font(opts);
+    let x_tick_mark = ((plot_padding::TICK_LABEL_GAP
+      + (plot_padding::ascent(frame_tick_font) - 0.76 * frame_tick_font))
+      * sf
+      / 2.0)
+      .round() as i32;
+    let y_tick_mark = (plot_padding::TICK_LABEL_GAP * sf / 2.0).round() as i32;
 
     // Macro to configure mesh and draw series on any chart coordinate type.
     // This avoids duplicating the drawing code for each LogCoord combination.
@@ -4363,8 +4233,8 @@ fn generate_svg_with_options(
           } else {
             ((y_max - y_min) / y_minor).round() as usize + 1
           };
-          x_tick_size = if tick_axis_x { tick } else { 0 };
-          y_tick_size = if tick_axis_y { tick } else { 0 };
+          x_tick_size = if tick_axis_x { x_tick_mark } else { 0 };
+          y_tick_size = if tick_axis_y { y_tick_mark } else { 0 };
         } else {
           x_major = 1.0;
           y_major = 1.0;
@@ -4419,10 +4289,8 @@ fn generate_svg_with_options(
             .label_style(
               (
                 "sans-serif",
-                opts
-                  .tick_label_style
-                  .and_then(|s| s.font_size)
-                  .map_or(sf * 13.0, |pt| RESOLUTION_SCALE as f64 * pt),
+                // Plotters' SVG backend writes 1/1.24 of the size it is given.
+                frame_tick_font * sf * 1.24,
               )
                 .into_font()
                 .color(&tick_text_color),
@@ -5289,11 +5157,19 @@ fn generate_svg_with_options(
         label_fill,
       ));
 
+      let top_pad = match opts.image_padding {
+        Some([_, _, _, top]) => top,
+        None => pad.top,
+      };
+      let layout = plot_padding::LabelLayout {
+        tick_room: decorations.tick_rooms(),
+        title_top: (margin_top - (top_pad + decorations.title) * sf).max(0.0),
+      };
       labels_svg.push_str(&plot_labels_svg(
         opts,
         (plot_x0, margin_top, plot_w, plot_h),
         (x_min, x_max, y_min, y_max),
-        margin_left_f,
+        &layout,
         sf,
         label_fill,
         title_default_fill,
@@ -5512,7 +5388,7 @@ fn inject_plot_labels(
   let (y_min, y_max) = y_range;
   let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
   let sf = RESOLUTION_SCALE as f64;
-  let font_size = sf * 11.0;
+  let font_size = sf * plot_padding::LABEL_FONT;
   let (_, _, _, _, text_fill) = plot_theme();
 
   let Some(insert_pos) = buf.rfind("</svg>") else {
@@ -12923,11 +12799,19 @@ fn log_scale_plot_ast(
     .collect();
 
   let (x_min_display, x_max_display) = overrides.x.unwrap_or_else(|| {
-    (
-      finite_xs.iter().copied().fold(f64::INFINITY, f64::min),
-      finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-    )
+    let lo = finite_xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if log_x {
+      let factor = ((hi / lo).ln() / 48.0).exp();
+      (lo / factor, hi * factor)
+    } else {
+      let pad = (hi - lo) / 48.0;
+      (lo - pad, hi + pad)
+    }
   });
+  if overrides.x.is_none() {
+    plot_opts.axes_origin_low.0 = finite_xs.iter().copied().reduce(f64::min);
+  }
   let y_data_min = finite_ys.iter().copied().fold(f64::INFINITY, f64::min);
   let y_data_max = finite_ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
   let (y_data_min, y_data_max) = if log_y {
@@ -12936,17 +12820,17 @@ fn log_scale_plot_ast(
     include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1)
   };
 
+  // The same `PlotRangePadding` as `Plot` (1/48 of the x span and 1/18 of
+  // the y span on each side), taken in log space on a log axis.
   let (y_auto_min, y_auto_max) = if log_y {
-    // Multiplicative padding in log space (equivalent to additive 4% in log10)
-    let log_range = (y_data_max / y_data_min).ln();
-    let factor = (log_range * 0.04).exp();
+    let factor = ((y_data_max / y_data_min).ln() / 18.0).exp();
     (y_data_min / factor, y_data_max * factor)
   } else {
     let y_range = y_data_max - y_data_min;
     let padding = if y_range.abs() < f64::EPSILON {
       1.0
     } else {
-      y_range * 0.04
+      y_range / 18.0
     };
     (y_data_min - padding, y_data_max + padding)
   };

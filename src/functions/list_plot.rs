@@ -1525,7 +1525,8 @@ fn list_axis_extent(
 
 /// Pad an automatic list-plot range by its `PlotRangePadding`: `Scaled[0.02]`
 /// on both ends of the x axis; on the y axis `Scaled[0.02]` at an end that is
-/// 0 and `Scaled[0.05]` elsewhere.
+/// 0 and `Scaled[0.05]` elsewhere. `Scaled[s]` is that fraction of the
+/// *padded* span, so `{0, 3}` pads to `{-1/16, 3 + 1/16}`.
 fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
   let span = hi - lo;
   let side = |v: f64| {
@@ -1535,7 +1536,9 @@ fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
       0.05
     }
   };
-  (lo - span * side(lo), hi + span * side(hi))
+  let (s_lo, s_hi) = (side(lo), side(hi));
+  let total = span / (1.0 - s_lo - s_hi);
+  (lo - total * s_lo, hi + total * s_hi)
 }
 
 /// The automatic, padded x/y ranges of a linear `ListPlot` /
@@ -2228,8 +2231,13 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     cumulative.push(curve);
   }
 
-  let (x_range, mut y_range) = compute_ranges(&cumulative);
-  y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
+  // The automatic range of a WL 15 list plot, over the stacked curves.
+  let (x_range, y_range) = list_plot_ranges(
+    &cumulative,
+    false,
+    parsed.explicit_range(),
+    &mut parsed.opts,
+  );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
 
   let svg =

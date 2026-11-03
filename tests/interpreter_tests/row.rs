@@ -473,8 +473,9 @@ mod row_visual_mode {
       .unwrap();
     let (w, h) = root_size(&svg);
     assert!(w <= 120.0 && h <= 80.0, "{w}x{h}");
-    // The plot's own 360 x 224 drawing, scaled down whole.
-    assert!(svg.contains("viewBox=\"0 0 3600 2240\""));
+    // The plot's own 360 x 221 drawing (as in wolframscript), scaled down
+    // whole.
+    assert!(svg.contains("viewBox=\"0 0 3600 2210\""));
     assert!(!svg.contains("paneClip"));
   }
 

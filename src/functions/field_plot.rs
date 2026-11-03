@@ -1375,6 +1375,40 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   Some(svg)
 }
 
+/// The frame tick rooms of a field plot, for placing its `FrameLabel`s:
+/// the automatic tick labels of its bottom and left edges.
+fn field_label_layout(
+  area: &crate::functions::plot::PlotArea,
+) -> crate::functions::plot_padding::LabelLayout {
+  use crate::functions::plot_axes::{AxisScale, AxisTicks};
+  use crate::functions::plot_padding as pp;
+  let ticks = |min: f64, max: f64| {
+    AxisTicks::new(
+      AxisScale {
+        min,
+        max,
+        log: false,
+      },
+      false,
+      None,
+    )
+  };
+  let y_width = ticks(area.y_min, area.y_max)
+    .majors
+    .iter()
+    .map(|(_, l)| pp::tick_label_width(l, pp::TICK_FONT))
+    .fold(0.0, f64::max);
+  pp::LabelLayout {
+    tick_room: [
+      pp::TICK_LABEL_GAP + pp::line_height(pp::TICK_FONT),
+      pp::TICK_LABEL_GAP + y_width,
+      0.0,
+      0.0,
+    ],
+    title_top: 0.0,
+  }
+}
+
 /// Write a plot's `FrameLabel` text along the frame edges it names.
 fn push_frame_labels(
   svg: &mut String,
@@ -1399,7 +1433,7 @@ fn push_frame_labels(
     &plot_opts,
     (area.plot_x0, area.plot_y0, area.plot_w, area.plot_h),
     (area.x_min, area.x_max, area.y_min, area.y_max),
-    0.0,
+    &field_label_layout(area),
     RESOLUTION_SCALE as f64,
     label_fill,
     title_fill,

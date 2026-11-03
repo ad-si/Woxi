@@ -1728,8 +1728,8 @@ mod plot {
         .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains("width=\"100\""));
-    // WL: 55; Woxi's tick labels take a little more room at this size.
-    assert!(svg.contains("height=\"52\""));
+    // As in WL 15.
+    assert!(svg.contains("height=\"55\""));
   }
 
   #[test]
