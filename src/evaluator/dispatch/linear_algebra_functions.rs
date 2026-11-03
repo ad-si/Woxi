@@ -179,9 +179,22 @@ pub fn dispatch_linear_algebra_functions(
       // avoid recursing forever on a form we could not expand.
       if !dense.iter().any(is_sparse) {
         let result = dispatch_linear_algebra_functions(name, &dense);
-        // The inverse, exponential and powers of a SparseArray are
-        // SparseArrays themselves.
-        if matches!(name, "Inverse" | "MatrixExp" | "MatrixPower")
+        // A positive integer power of a SparseArray, and the exponential of
+        // a machine-number one, are SparseArrays themselves; the inverse, a
+        // negative power and an exact exponential come back as lists, as in
+        // wolframscript.
+        let stays_sparse = match name {
+          "MatrixPower" => {
+            matches!(args.get(1), Some(Expr::Integer(k)) if *k >= 0)
+          }
+          "MatrixExp" => {
+            crate::functions::math_ast::numeric_utils::contains_inexact_real(
+              &dense[0],
+            )
+          }
+          _ => false,
+        };
+        if stays_sparse
           && let Some(Ok(inv @ Expr::List(rows))) = &result
           // `MatrixExp[m, v]` is a vector.
           && rows.iter().all(|r| matches!(r, Expr::List(_)))
@@ -622,13 +635,33 @@ pub fn dispatch_linear_algebra_functions(
     "IdentityMatrix" | "DiagonalMatrix" | "UpperTriangularize"
     | "LowerTriangularize" | "CompanionMatrix" | "ToeplitzMatrix"
     | "HankelMatrix" | "VandermondeMatrix" | "HadamardMatrix"
-    | "RotationMatrix"
+    | "RotationMatrix" | "PermutationMatrix"
       if args.len() >= 2
         && option_rule_value(&args[args.len() - 1], "TargetStructure")
           .is_some() =>
     {
+      // The structured matrices (Toeplitz, Hankel, …) have no sparse form,
+      // and a rotation matrix no generic structured one.
+      let rejects = |target: &str| match target {
+        "Sparse" => matches!(
+          name,
+          "ToeplitzMatrix"
+            | "HankelMatrix"
+            | "VandermondeMatrix"
+            | "HadamardMatrix"
+            | "RotationMatrix"
+        ),
+        "Structured" => name == "RotationMatrix",
+        _ => false,
+      };
       let target =
         match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
+          Expr::String(s) if rejects(s) || !is_target_structure_name(s) => {
+            crate::emit_message(&format!(
+              "{name}::badts: {s} is not a valid target structure."
+            ));
+            return Some(Ok(unevaluated(name, args)));
+          }
           Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
           Expr::Identifier(s) if s == "Automatic" => "Automatic",
           _ => return Some(Ok(unevaluated(name, args))),
@@ -640,6 +673,22 @@ pub fn dispatch_linear_algebra_functions(
         Ok(d) => d,
         Err(e) => return Some(Err(e)),
       };
+      // A structured result (VandermondeMatrix[StructuredData[…]]) is made
+      // dense for "Dense" and a SparseArray for "Sparse".
+      if let Some(dense) =
+        crate::functions::linear_algebra_ast::structured_matrix_to_dense(
+          &result,
+        )
+      {
+        return Some(match target {
+          "Dense" => Ok(dense),
+          "Sparse" => crate::evaluator::evaluate_function_call_ast(
+            "SparseArray",
+            &[dense],
+          ),
+          _ => Ok(result),
+        });
+      }
       let is_sparse = matches!(&result, Expr::FunctionCall { name: h, .. } if h == "SparseArray");
       return Some(match target {
         "Dense" if is_sparse => {
@@ -670,6 +719,11 @@ pub fn dispatch_linear_algebra_functions(
         match option_rule_value(&args[args.len() - 1], "TargetStructure")? {
           Expr::String(s) if s == "Dense" || s == "Sparse" => s.as_str(),
           Expr::Identifier(s) if s == "Automatic" => "Automatic",
+          // LUDecomposition's own factors are already the structured
+          // triangular and permutation matrices.
+          Expr::String(s) if s == "Structured" && name == "LUDecomposition" => {
+            "Automatic"
+          }
           _ => return Some(Ok(unevaluated(name, args))),
         };
       let result = match crate::evaluator::evaluate_function_call_ast(
@@ -1244,11 +1298,16 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     // `Method -> …` (Arnoldi, Banded, Direct, FEAST, …) picks only the
-    // algorithm that finds the eigenvalues, never their values.
+    // algorithm that finds the eigenvalues, never their values — except that
+    // Arnoldi refuses work it cannot do (see `arnoldi_refusal`).
     "Eigenvalues" | "Eigenvectors" | "Eigensystem"
       if (2..=3).contains(&args.len())
         && option_rule_value(&args[args.len() - 1], "Method").is_some() =>
     {
+      let method = option_rule_value(&args[args.len() - 1], "Method")?;
+      if is_arnoldi_method(method) && arnoldi_refusal(name, args) {
+        return Some(Ok(crate::helpers::unevaluated(name, args)));
+      }
       return Some(crate::evaluator::evaluate_function_call_ast(
         name,
         &args[..args.len() - 1],
@@ -1961,6 +2020,12 @@ pub fn dispatch_linear_algebra_functions(
         )
       {
         return Some(Ok(result));
+      }
+      // A symbolic power of a matrix whose Jordan form Woxi computes the way
+      // wolframscript does (rational matrices with rational eigenvalues,
+      // and upper-triangular matrices): s . J^n . s^-1.
+      if let Some(result) = symbolic_matrix_power(&args[0], &args[1]) {
+        return Some(result);
       }
       // Symbolic n with a matrix that splits (after a row/column
       // permutation) into multiple connected components: handle each
@@ -3003,7 +3068,7 @@ pub fn dispatch_linear_algebra_functions(
       );
     }
     // SingularValueList[m, k, Tolerance -> t]: singular values smaller than
-    // t times the largest one are dropped (before taking k of them).
+    // t times the largest one count as zero.
     "SingularValueList"
       if (2..=3).contains(&args.len())
         && matches!(args.last(), Some(Expr::Rule { pattern, .. })
@@ -3016,39 +3081,18 @@ pub fn dispatch_linear_algebra_functions(
       else {
         return Some(Ok(unevaluated(name, args)));
       };
-      let all = match crate::functions::linear_algebra_ast::singular_value_list_with_tolerance(
-          &pos[..1],
+      return Some(
+        crate::functions::linear_algebra_ast::singular_value_list_with_tolerance(
+          pos,
           Some(tol),
-        ) {
-          Ok(Expr::List(ref values)) => values.to_vec(),
-          Ok(_) => return Some(Ok(unevaluated(name, args))),
-          Err(e) => return Some(Err(e)),
-        };
-      let nums: Option<Vec<f64>> = all
-        .iter()
-        .map(crate::functions::math_ast::try_eval_to_f64)
-        .collect();
-      let Some(nums) = nums else {
-        return Some(Ok(unevaluated(name, args)));
-      };
-      let max = nums.iter().copied().fold(0.0_f64, f64::max);
-      let mut kept: Vec<Expr> = all
-        .iter()
-        .zip(&nums)
-        .filter(|(_, v)| **v >= tol * max)
-        .map(|(e, _)| e.clone())
-        .collect();
-      if let Some(k) = pos.get(1) {
-        match crate::functions::math_ast::expr_to_i128(k) {
-          Some(k) if k >= 0 => kept.truncate(k as usize),
-          Some(k) => {
-            let skip = kept.len().saturating_sub((-k) as usize);
-            kept = kept.split_off(skip);
+        )
+        .map(|r| match r {
+          Expr::FunctionCall { ref name, .. } if name == "SingularValueList" => {
+            unevaluated("SingularValueList", args)
           }
-          None => return Some(Ok(unevaluated(name, args))),
-        }
-      }
-      return Some(Ok(Expr::List(kept.into())));
+          other => other,
+        }),
+      );
     }
     "SingularValueList" if args.len() == 1 || args.len() == 2 => {
       return Some(
@@ -5267,8 +5311,12 @@ fn rotation_transform_3d_axis(
 
   let mut rows = Vec::with_capacity(4);
   for (i, r_row) in r.iter().enumerate() {
-    let mut row: Vec<Expr> =
-      r_row.iter().map(|e| call1("Together", e.clone())).collect();
+    // Multiplied out first, so an irrational factor of the axis stays on
+    // each term: `(Sqrt[2] - Sqrt[2]*Cos[t])/3`, as in wolframscript.
+    let mut row: Vec<Expr> = r_row
+      .iter()
+      .map(|e| call1("Together", call1("Expand", e.clone())))
+      .collect();
     let translation = match point {
       Some(p) => {
         let r_dot_p: Vec<Expr> = (0..3)
@@ -6005,6 +6053,101 @@ fn matrix_function_by_eigensystem(f: &Expr, m: &Expr) -> Option<Expr> {
   (out_rows.len() == n).then_some(result)
 }
 
+/// Whether `s` names a `TargetStructure` WL knows (even where a given
+/// constructor does not support it); any other string is `::badts`.
+fn is_target_structure_name(s: &str) -> bool {
+  matches!(
+    s,
+    "Dense"
+      | "Sparse"
+      | "Structured"
+      | "Orthogonal"
+      | "Unitary"
+      | "Symmetric"
+      | "Hermitian"
+      | "Antisymmetric"
+      | "Antihermitian"
+      | "Diagonal"
+      | "UpperTriangular"
+      | "LowerTriangular"
+      | "Permutation"
+      | "Banded"
+  )
+}
+
+/// `Method -> "Arnoldi"` (or `Arnoldi`, or `{"Arnoldi", subopts…}`).
+fn is_arnoldi_method(method: &Expr) -> bool {
+  match method {
+    Expr::String(m) | Expr::Identifier(m) => m == "Arnoldi",
+    Expr::List(items) => items.first().is_some_and(is_arnoldi_method),
+    _ => false,
+  }
+}
+
+/// Whether `Method -> "Arnoldi"` refuses `name[m, (k,) Method -> …]`, after
+/// reporting why the way wolframscript does. The Arnoldi iteration finds at
+/// most n - 2 of an n×n matrix's eigenvalues (`::arall`, preceded by the
+/// `::ars` advice when more than half of them are asked for), and only of a
+/// matrix of machine- or arbitrary-precision reals (`::arm`).
+fn arnoldi_refusal(name: &str, args: &[Expr]) -> bool {
+  let Expr::List(rows) = &args[0] else {
+    return false;
+  };
+  let n = rows.len();
+  let square = rows
+    .iter()
+    .all(|r| matches!(r, Expr::List(cols) if cols.len() == n));
+  if n == 0 || !square {
+    return false;
+  }
+  let requested = match args.len() {
+    3 => match &args[1] {
+      Expr::Integer(k) => k.unsigned_abs() as usize,
+      _ => return false,
+    },
+    _ => n,
+  }
+  .min(n);
+  let most = n.saturating_sub(2);
+  if requested > most {
+    if 2 * requested > n {
+      crate::emit_message(&format!(
+        "{name}::ars: Method -> Arnoldi is typically only effective for \
+         finding a few eigenvalues and/or eigenvectors. Finding the requested \
+         {requested} out of {n} eigenvalues and eigenvectors may be faster \
+         with dense matrix methods."
+      ));
+    }
+    crate::emit_message(&format!(
+      "{name}::arall: Method -> Arnoldi cannot be used to compute more than \
+       {most} out of the {n} eigenvalues and/or eigenvectors."
+    ));
+    return true;
+  }
+  let entries = rows.iter().flat_map(|r| match r {
+    Expr::List(cols) => cols.to_vec(),
+    _ => Vec::new(),
+  });
+  let mut inexact = false;
+  let mut real = true;
+  for e in entries {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => inexact = true,
+      Expr::Integer(_) | Expr::BigInteger(_) => {}
+      Expr::FunctionCall { ref name, .. } if name == "Rational" => {}
+      _ => real = false,
+    }
+  }
+  if !(inexact && real) {
+    crate::emit_message(&format!(
+      "{name}::arm: Method -> Arnoldi can only be used for matrices of \
+       machine- or arbitrary-precision real numbers."
+    ));
+    return true;
+  }
+  false
+}
+
 /// The value of `opt -> value` when `e` is that option rule.
 fn option_rule_value<'a>(e: &'a Expr, opt: &str) -> Option<&'a Expr> {
   match e {
@@ -6343,5 +6486,80 @@ fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
       cols,
       args[0].clone(),
     )),
+  }
+}
+
+/// The Wolfram Language definition of a symbolic `MatrixPower[m, k]`,
+/// applied as `Function[{m, k}, …]`. It reproduces wolframscript's result:
+///
+/// - `s . J^k . Inverse[s]` from the Jordan decomposition `m = s . J . s^-1`
+///   (`JordanDecomposition`, or Jordan chains built from the null spaces of
+///   `(m - λ)^j` where it is not available), a Jordan block of λ of size L
+///   contributing `Binomial`-like `k (k - 1) … / d! λ^(k - d)` entries;
+/// - for a defective matrix each entry is then factored with the powers
+///   `b^(k + c)` read as `b^c Y` (`2^n + 2^(-1 + n) n` is
+///   `2^(-1 + n) (2 + n)`).
+///
+/// It only answers (otherwise `$Failed`) for matrices whose decomposition
+/// and arithmetic agree with wolframscript's: upper-triangular ones and
+/// rational ones with rational, nonzero eigenvalues.
+const SYMBOLIC_MATRIX_POWER_WL: &str = r#"Function[{m$mp, k$mp}, Module[{dim$mp = Length[m$mp], ev$mp, data$mp = {}, s$mp, blocks$mp, jn$mp, jd$mp, defective$mp, expTog$mp, r$mp},
+  ev$mp = Tally[Eigenvalues[m$mp]];
+  If[!FreeQ[ev$mp, Eigenvalues | Root] || MemberQ[ev$mp[[All, 1]], 0], Return[$Failed, Module]];
+  If[!(And @@ Flatten[Table[m$mp[[i$mp, j$mp]] === 0, {i$mp, dim$mp}, {j$mp, i$mp - 1}]] ||
+       (MatrixQ[m$mp, IntegerQ[#] || Head[#] === Rational &] &&
+        AllTrue[ev$mp[[All, 1]], IntegerQ[#] || Head[#] === Rational &])),
+    Return[$Failed, Module]];
+  jd$mp = JordanDecomposition[m$mp];
+  If[MatchQ[jd$mp, {_?MatrixQ, _?MatrixQ}],
+    s$mp = jd$mp[[1]];
+    blocks$mp = Module[{j$mp = jd$mp[[2]], out$mp = {}, i$mp = 1, len$mp},
+      While[i$mp <= dim$mp, len$mp = 1;
+        While[i$mp + len$mp <= dim$mp && j$mp[[i$mp + len$mp - 1, i$mp + len$mp]] === 1, len$mp++];
+        AppendTo[out$mp, {j$mp[[i$mp, i$mp]], len$mp}]; i$mp += len$mp];
+      out$mp],
+    Do[Module[{lam$mp = e$mp[[1]], mult$mp = e$mp[[2]], nm$mp, kmax$mp = 1, chains$mp = {}, basis$mp = {}},
+       nm$mp = m$mp - lam$mp IdentityMatrix[dim$mp];
+       While[MatrixRank[MatrixPower[nm$mp, kmax$mp]] > dim$mp - mult$mp && kmax$mp < mult$mp, kmax$mp++];
+       Do[Do[If[Length[basis$mp] < mult$mp,
+            Module[{ch$mp = Reverse[NestList[nm$mp . # &, v$mp, len$mp - 1]]},
+             If[MatrixPower[nm$mp, len$mp - 1] . v$mp =!= ConstantArray[0, dim$mp] &&
+                MatrixRank[Join[basis$mp, ch$mp]] == Length[basis$mp] + len$mp,
+              basis$mp = Join[basis$mp, ch$mp]; AppendTo[chains$mp, ch$mp]]]],
+          {v$mp, NullSpace[MatrixPower[nm$mp, len$mp]]}], {len$mp, kmax$mp, 1, -1}];
+       If[Length[basis$mp] < mult$mp, Return[$Failed, Module]];
+       AppendTo[data$mp, {lam$mp, chains$mp}]], {e$mp, ev$mp}];
+    s$mp = Transpose[Flatten[Map[Flatten[#[[2]], 1] &, data$mp], 1]];
+    blocks$mp = Flatten[Map[Function[d$mp, Map[{d$mp[[1]], Length[#]} &, d$mp[[2]]]], data$mp], 1]];
+  jn$mp = ConstantArray[0, {dim$mp, dim$mp}];
+  Module[{off$mp = 0},
+    Do[Do[If[jj$mp >= ii$mp,
+        jn$mp[[off$mp + ii$mp, off$mp + jj$mp]] = Product[k$mp - t$mp, {t$mp, 0, jj$mp - ii$mp - 1}]/(jj$mp - ii$mp)! b$mp[[1]]^(k$mp - jj$mp + ii$mp)],
+       {ii$mp, b$mp[[2]]}, {jj$mp, b$mp[[2]]}]; off$mp += b$mp[[2]], {b$mp, blocks$mp}]];
+  r$mp = s$mp . jn$mp . Inverse[s$mp];
+  If[Max[blocks$mp[[All, 2]]] > 1,
+    expTog$mp = Function[e$mp, Module[{pw$mp, rules$mp},
+      pw$mp = DeleteDuplicates[Cases[e$mp, Power[bb$mp_, x$mp_] /; !FreeQ[x$mp, k$mp], {0, Infinity}]];
+      rules$mp = Map[Function[p$mp, Module[{x$mp = Expand[p$mp[[2]]], c$mp}, c$mp = x$mp /. k$mp -> 0; p$mp -> p$mp[[1]]^c$mp woxiY$mp[p$mp[[1]], x$mp - c$mp]]], pw$mp];
+      Factor[e$mp /. rules$mp] /. woxiY$mp[bb$mp_, x$mp_] :> bb$mp^x$mp]];
+    Map[expTog$mp, r$mp, {2}],
+    r$mp]]]"#;
+
+/// `MatrixPower[m, k]` for a symbolic `k` through
+/// [`SYMBOLIC_MATRIX_POWER_WL`]; `None` when that declines.
+fn symbolic_matrix_power(
+  m: &Expr,
+  k: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let func = crate::syntax::string_to_expr(SYMBOLIC_MATRIX_POWER_WL).ok()?;
+  let call = Expr::CurriedCall {
+    func: Box::new(func),
+    args: vec![m.clone(), k.clone()],
+  };
+  match crate::evaluator::evaluate_expr_to_expr(&call) {
+    Ok(Expr::Identifier(ref f)) if f == "$Failed" => None,
+    Ok(r @ Expr::List(_)) => Some(Ok(r)),
+    Ok(_) => None,
+    Err(e) => Some(Err(e)),
   }
 }

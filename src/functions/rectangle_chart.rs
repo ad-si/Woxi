@@ -4,10 +4,13 @@
 //! `Rectangle` (`Cuboid`) primitives, so `ChartStyle`/`ChartBaseStyle`
 //! directives and the ordinary graphics options pass straight through to the
 //! shared renderer. Layout follows wolframscript: rectangles stand on the axis
-//! from x = 0, separated by a gap of about 0.0975 (`BarSpacing -> s` sets it,
-//! `None` removes it); with several datasets each starts 0.1 in and datasets
-//! are 0.2 apart, and the default colours run by position within a dataset
-//! (a single dataset is drawn in the first colour).
+//! from x = 0, separated by a gap of 0.1 - 0.001 n for n rectangles in all
+//! (`BarSpacing -> s` sets it, `None` removes it); with several datasets each
+//! starts 0.1 in and datasets are 0.2 apart, and the default colours run by
+//! position within a dataset (a single dataset is drawn in the first colour).
+//! Each 2D bar is wrapped the way wolframscript's chart holds it:
+//! `{style, Tooltip[StatusArea[Charting`DelayedMouseEffect[Rectangle[…,
+//! "RoundingRadius" -> 0], effect], {w, h}], Style[{w, h}, {}]]}`.
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -25,7 +28,6 @@ const PALETTE: [(f64, f64, f64); 6] = [
   (0.85, 0.51, 0.),
 ];
 
-const DEFAULT_GAP: f64 = 0.0975;
 const GROUP_GAP: f64 = 0.2;
 const GROUP_INSET: f64 = 0.1;
 
@@ -93,6 +95,15 @@ fn parse_datasets(data: &Expr, arity: usize) -> Option<Vec<Vec<Item>>> {
   (!sets.is_empty()).then_some(sets)
 }
 
+/// A bar size as the chart's tooltip writes it: the number given.
+fn sizes_expr(v: f64) -> Expr {
+  if v.fract() == 0.0 && v.abs() < 1e15 {
+    Expr::Integer(v as i128)
+  } else {
+    Expr::Real(v)
+  }
+}
+
 fn palette_color(i: usize) -> Expr {
   let (r, g, b) = PALETTE[i % PALETTE.len()];
   call(
@@ -142,7 +153,8 @@ pub fn rectangle_chart_ast(
   let mut base_style = None;
   let mut labels = None;
   let mut legends = None;
-  let mut gap = DEFAULT_GAP;
+  let n_bars: usize = sets.iter().map(Vec::len).sum();
+  let mut gap = 0.1 - 0.001 * n_bars as f64;
   let mut passthrough = Vec::new();
   let mut has = std::collections::HashSet::new();
   for opt in &args[1..] {
@@ -190,24 +202,49 @@ pub fn rectangle_chart_ast(
   // `Placed[labels, pos]` / `Callout[labels, pos]` wrap the label list;
   // `Above` / `Top` put the labels over the bars instead of under them.
   let mut labels_above = false;
+  let mut callout = false;
   if let Some(Expr::FunctionCall { name, args: wargs }) = &labels
     && (name == "Placed" || name == "Callout")
     && let Some(inner) = wargs.first()
   {
-    labels_above = name == "Callout"
-      || matches!(wargs.get(1), Some(Expr::Identifier(p)) if p == "Above" || p == "Top");
+    callout = name == "Callout";
+    labels_above = matches!(wargs.get(1), Some(Expr::Identifier(p)) if p == "Above" || p == "Top")
+      || (callout && wargs.len() == 1);
     labels = Some(inner.clone());
   }
   let n_sets = sets.len();
   let multi = n_sets > 1;
+  // The bars' edges fade a little with every bar.
+  let edge = call(
+    "EdgeForm",
+    vec![call(
+      "Directive",
+      vec![
+        call("Thickness", vec![Expr::Identifier("Small".into())]),
+        call("Opacity", vec![Expr::Real(0.7 - 0.007 * n_bars as f64)]),
+      ],
+    )],
+  );
+  let max_depth = sets
+    .iter()
+    .flatten()
+    .map(|item| item.sizes.get(1).copied().unwrap_or(0.0))
+    .fold(0.0_f64, f64::max);
+  let max_height = sets
+    .iter()
+    .flatten()
+    .map(|item| item.sizes.get(2).copied().unwrap_or(0.0))
+    .fold(0.0_f64, f64::max);
   let mut x = if multi { GROUP_INSET } else { 0.0 };
+  let mut end = x;
   let mut prims = Vec::new();
   let mut label_prims = Vec::new();
   let mut flat_index = 0usize;
   let mut swatches = Vec::new();
   for (s, set) in sets.iter().enumerate() {
+    // A dataset starts 0.2 past the end of the one before.
     if s > 0 {
-      x += GROUP_GAP - gap;
+      x = end + GROUP_GAP;
     }
     for (pos, item) in set.iter().enumerate() {
       let w = item.sizes[0];
@@ -216,17 +253,47 @@ pub fn rectangle_chart_ast(
         swatches.push(style.clone());
       }
       let shape = if three_d {
+        // A box is six polygons over its corners, flush with the back of
+        // the deepest box, as wolframscript draws it.
         let (d, h) = (item.sizes[1], item.sizes[2]);
+        let y0 = max_depth - d;
+        let v = |a: f64, b: f64, c: f64| {
+          Expr::List(vec![Expr::Real(a), Expr::Real(b), Expr::Real(c)].into())
+        };
+        let corners = vec![
+          v(x, y0, 0.0),
+          v(x, max_depth, 0.0),
+          v(x, max_depth, h),
+          v(x, y0, h),
+          v(x + w, y0, 0.0),
+          v(x + w, max_depth, 0.0),
+          v(x + w, max_depth, h),
+          v(x + w, y0, h),
+        ];
+        let faces = [
+          [4, 3, 2, 1],
+          [5, 6, 7, 8],
+          [2, 3, 7, 6],
+          [5, 8, 4, 1],
+          [4, 8, 7, 3],
+          [2, 6, 5, 1],
+        ]
+        .iter()
+        .map(|f| {
+          call(
+            "Polygon",
+            vec![Expr::List(
+              f.iter()
+                .map(|&i| Expr::Integer(i))
+                .collect::<Vec<_>>()
+                .into(),
+            )],
+          )
+        })
+        .collect::<Vec<_>>();
         call(
-          "Cuboid",
-          vec![
-            Expr::List(
-              vec![Expr::Real(x), Expr::Real(0.0), Expr::Real(0.0)].into(),
-            ),
-            Expr::List(
-              vec![Expr::Real(x + w), Expr::Real(d), Expr::Real(h)].into(),
-            ),
-          ],
+          "GraphicsComplex",
+          vec![Expr::List(corners.into()), Expr::List(faces.into())],
         )
       } else {
         let h = item.sizes[1];
@@ -235,12 +302,67 @@ pub fn rectangle_chart_ast(
           vec![
             Expr::List(vec![Expr::Real(x), Expr::Real(0.0)].into()),
             Expr::List(vec![Expr::Real(x + w), Expr::Real(h)].into()),
+            Expr::Rule {
+              pattern: Box::new(Expr::String("RoundingRadius".into())),
+              replacement: Box::new(Expr::Integer(0)),
+            },
           ],
         )
       };
       let mut group = vec![style];
       group.extend(item.style.iter().cloned());
-      group.push(shape);
+      if three_d {
+        group.push(shape);
+      } else {
+        group = vec![call("Directive", {
+          let mut d = vec![edge.clone()];
+          d.extend(group);
+          d
+        })];
+        let size = Expr::List(
+          item
+            .sizes
+            .iter()
+            .map(|v| sizes_expr(*v))
+            .collect::<Vec<_>>()
+            .into(),
+        );
+        group.push(call(
+          "Tooltip",
+          vec![
+            call(
+              "StatusArea",
+              vec![
+                call(
+                  "Charting`DelayedMouseEffect",
+                  vec![
+                    shape,
+                    Expr::List(
+                      vec![
+                        Expr::String("Style".into()),
+                        call(
+                          "EdgeForm",
+                          vec![Expr::List(
+                            vec![
+                              call("GrayLevel", vec![Expr::Real(0.5)]),
+                              call("AbsoluteThickness", vec![Expr::Real(1.5)]),
+                              call("Opacity", vec![Expr::Real(0.66)]),
+                            ]
+                            .into(),
+                          )],
+                        ),
+                      ]
+                      .into(),
+                    ),
+                  ],
+                ),
+                size.clone(),
+              ],
+            ),
+            call("Style", vec![size, Expr::List(vec![].into())]),
+          ],
+        ));
+      }
       prims.push(Expr::List(group.into()));
       if !three_d
         && let Some(Expr::List(ls)) = &labels
@@ -251,6 +373,18 @@ pub fn rectangle_chart_ast(
         } else {
           (0.0, 1.5)
         };
+        if callout {
+          label_prims.extend(callout_label(
+            label,
+            (x + (x + w)) / 2.0,
+            y,
+            labels_above,
+          ));
+          flat_index += 1;
+          end = x + w;
+          x = x + w + gap;
+          continue;
+        }
         label_prims.push(call(
           "Text",
           vec![
@@ -261,21 +395,44 @@ pub fn rectangle_chart_ast(
         ));
       }
       flat_index += 1;
-      x += w + gap;
+      end = x + w;
+      x = x + w + gap;
     }
   }
 
-  let edge = call(
-    "EdgeForm",
-    vec![call(
-      "Directive",
+  let mut content = if three_d { vec![edge.clone()] } else { vec![] };
+  if three_d {
+    // The invisible base plate that sets the scene's extent.
+    let (x1, z1) = (end, max_height);
+    content.push(Expr::List(
       vec![
-        call("Thickness", vec![Expr::Identifier("Small".into())]),
-        call("Opacity", vec![Expr::Real(0.686)]),
-      ],
-    )],
-  );
-  let mut content = vec![edge];
+        call("Opacity", vec![Expr::Integer(0)]),
+        call("EdgeForm", vec![]),
+        call(
+          "Cuboid",
+          vec![
+            Expr::List(
+              vec![
+                Expr::Real(-0.05 * x1),
+                Expr::Real(-0.25 * max_depth),
+                Expr::Integer(0),
+              ]
+              .into(),
+            ),
+            Expr::List(
+              vec![
+                Expr::Real(x1 + 0.05 * x1),
+                Expr::Real(max_depth + 0.25 * max_depth),
+                Expr::Real(0.008 * z1),
+              ]
+              .into(),
+            ),
+          ],
+        ),
+      ]
+      .into(),
+    ));
+  }
   if let Some(b) = base_style {
     content.push(b);
   }
@@ -310,11 +467,7 @@ pub fn rectangle_chart_ast(
         |on: bool| Expr::Identifier(if on { "True" } else { "False" }.into());
       opts.push(rule(
         "Axes",
-        if framed {
-          flag(false)
-        } else {
-          Expr::List(vec![flag(false), flag(true)].into())
-        },
+        Expr::List(vec![flag(false), flag(!framed)].into()),
       ));
     }
     if framed && !has.contains("FrameTicks") {
@@ -385,31 +538,26 @@ pub fn rectangle_chart_ast(
 }
 
 /// `` BarCharts`GeneralizedBarChart[{{x1, h1, w1}, …}] `` — the legacy
-/// package chart: a bar of height `h` and width `w` centred at `x`, drawn
-/// as plain `Rectangle` primitives in a `Graphics` with axes. `` BarCharts`BarStyle ``
-/// holds the directive applied to every bar; other options pass straight
-/// through to `Graphics`.
+/// package chart, once the package is loaded: a bar of height `h` and width
+/// `w` centred at `x`, each drawn as `{style, EdgeForm[Opacity[0.5]],
+/// Rectangle[…]}` in the bars' own arithmetic, in a `Graphics` with axes.
+/// `` BarCharts`BarStyle `` gives the style (the package's blue
+/// `Hue[0.67, 0.45, 0.65]` by default); other options pass through to
+/// `Graphics`.
 pub fn generalized_bar_chart_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   const HEAD: &str = "BarCharts`GeneralizedBarChart";
+  if !crate::packages_list().iter().any(|p| p == "BarCharts`") {
+    return Ok(unevaluated(HEAD, args));
+  }
   let Some(Expr::List(bars)) = args.first() else {
     return Ok(unevaluated(HEAD, args));
   };
-  let mut rects = Vec::new();
-  for bar in bars {
-    let Some(Item { sizes, .. }) = parse_item(bar, 3) else {
-      return Ok(unevaluated(HEAD, args));
-    };
-    let (x, h, w) = (sizes[0], sizes[1], sizes[2]);
-    let pt =
-      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-    rects.push(call(
-      "Rectangle",
-      vec![pt(x - w / 2.0, 0.0), pt(x + w / 2.0, h)],
-    ));
-  }
-  let mut style = None;
+  let mut style = call(
+    "Hue",
+    vec![Expr::Real(0.67), Expr::Real(0.45), Expr::Real(0.65)],
+  );
   let mut options = Vec::new();
   let mut has_axes = false;
   for opt in &args[1..] {
@@ -422,7 +570,7 @@ pub fn generalized_bar_chart_ast(
     };
     match pattern.as_ref() {
       Expr::Identifier(n) if n == "BarCharts`BarStyle" || n == "BarStyle" => {
-        style = Some(replacement.as_ref().clone());
+        style = replacement.as_ref().clone();
       }
       Expr::Identifier(n) => {
         has_axes |= n == "Axes";
@@ -431,13 +579,108 @@ pub fn generalized_bar_chart_ast(
       _ => options.push(opt.clone()),
     }
   }
+  let mut prims = Vec::new();
+  for bar in bars {
+    let Expr::List(xhw) = bar else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    let [x, h, w] = xhw.as_slice() else {
+      return Ok(unevaluated(HEAD, args));
+    };
+    if [x, h, w]
+      .iter()
+      .any(|v| crate::functions::math_ast::try_eval_to_f64(v).is_none())
+    {
+      return Ok(unevaluated(HEAD, args));
+    }
+    let half = crate::helpers::times2(
+      w.clone(),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+    );
+    let left =
+      evaluate_expr_to_expr(&crate::helpers::minus2(x.clone(), half.clone()))?;
+    let right = evaluate_expr_to_expr(&crate::helpers::plus2(x.clone(), half))?;
+    let pt = |a: Expr, b: Expr| Expr::List(vec![a, b].into());
+    prims.push(Expr::List(
+      vec![
+        style.clone(),
+        call("EdgeForm", vec![call("Opacity", vec![Expr::Real(0.5)])]),
+        call(
+          "Rectangle",
+          vec![pt(left, Expr::Integer(0)), pt(right, h.clone())],
+        ),
+      ]
+      .into(),
+    ));
+  }
   if !has_axes {
     options.push(rule("Axes", Expr::Identifier("True".into())));
   }
-  let mut prims = Vec::new();
-  prims.extend(style);
-  prims.extend(rects);
   let mut graphics_args = vec![Expr::List(prims.into())];
   graphics_args.extend(options);
   evaluate_expr_to_expr(&call("Graphics", graphics_args))
+}
+
+/// A `Callout` label as wolframscript places it: the label, unrotated and
+/// opaque, a fixed number of printer points past the bar's end (19, or 20
+/// when the text rises above the x-height), with a leader curve from the
+/// bar to the label.
+fn callout_label(label: &Expr, xc: f64, y: f64, above: bool) -> Vec<Expr> {
+  let angle = if above {
+    std::f64::consts::FRAC_PI_2
+  } else {
+    3.0 * std::f64::consts::FRAC_PI_2
+  };
+  let sign = if above { 1.0 } else { -1.0 };
+  let tall = match label {
+    Expr::String(t) => t.chars().any(|c| {
+      c.is_ascii_uppercase() || c.is_ascii_digit() || "bdfhklt".contains(c)
+    }),
+    _ => true,
+  };
+  let distance = if tall { 20.0 } else { 19.0 };
+  let anchor = Expr::List(vec![Expr::Real(xc), Expr::Real(y)].into());
+  let offset = |dx: f64, dy: f64| {
+    call(
+      "Offset",
+      vec![
+        Expr::List(vec![Expr::Real(dx), Expr::Real(dy)].into()),
+        anchor.clone(),
+      ],
+    )
+  };
+  let text = call(
+    "Text",
+    vec![
+      call(
+        "Style",
+        vec![
+          call("Rotate", vec![label.clone(), Expr::Integer(0)]),
+          Expr::List(
+            vec![
+              call("Directive", vec![]),
+              call("Opacity", vec![Expr::Integer(1)]),
+            ]
+            .into(),
+          ),
+        ],
+      ),
+      offset(angle.cos() * 10.0, sign * distance),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+    ],
+  );
+  let leader = call(
+    "BSplineCurve",
+    vec![Expr::List(
+      vec![
+        offset(angle.cos() * 3.0, sign * 3.0),
+        offset(angle.cos() * 10.0, sign * 10.0),
+        offset(angle.cos() * 10.0, sign * 12.0),
+        offset(angle.cos() * 10.0, sign * 14.0),
+        offset(angle.cos() * 10.0, sign * 14.0),
+      ]
+      .into(),
+    )],
+  );
+  vec![leader, text]
 }

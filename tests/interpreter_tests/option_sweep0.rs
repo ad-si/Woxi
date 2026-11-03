@@ -21,18 +21,28 @@ mod roots_options {
   }
 
   #[test]
-  fn multiplicity_caps_repeated_roots() {
+  fn multiplicity_scales_repeated_roots() {
     assert_eq!(
       interpret("Roots[(x - a)^3 (x - b) == 0, x, Multiplicity -> 2]").unwrap(),
-      "x == a || x == a || x == b"
+      "x == a || x == a || x == a || x == a || x == a || x == a || x == b || \
+       x == b"
     );
     assert_eq!(
       interpret("Roots[(x - a)^3 (x - b) == 0, x, Multiplicity -> 1]").unwrap(),
-      "x == a || x == b"
+      "x == a || x == a || x == a || x == b"
     );
     assert_eq!(
       interpret("Roots[(x - 2)^2 == 0, x, Multiplicity -> 1]").unwrap(),
-      "x == 2"
+      "x == 2 || x == 2"
+    );
+    assert_eq!(
+      interpret("Roots[x^2 == 1, x, Multiplicity -> 2]").unwrap(),
+      "x == 1 || x == 1 || x == -1 || x == -1"
+    );
+    // An invalid value is reported and ignored.
+    assert_eq!(
+      interpret("Roots[x^2 == 1, x, Multiplicity -> 1.5]").unwrap(),
+      "x == 1 || x == -1"
     );
   }
 
@@ -45,10 +55,10 @@ mod roots_options {
   }
 
   #[test]
-  fn unknown_option_stays_unevaluated() {
+  fn unknown_option_is_ignored() {
     assert_eq!(
       interpret("Roots[x^2 == 1, x, Foo -> 1]").unwrap(),
-      "Roots[x^2 == 1, x, Foo -> 1]"
+      "x == 1 || x == -1"
     );
   }
 }
@@ -221,7 +231,32 @@ mod polynomial_modulus {
   fn decompose_with_modulus() {
     assert_eq!(
       interpret("Decompose[x^3 + 2x^2 + 4x + 7, x, Modulus -> 2]").unwrap(),
-      "{1 + x^3}"
+      "{1 + x, x^3}"
+    );
+    // Decompositions that exist only over GF(p).
+    assert_eq!(
+      interpret(
+        "Decompose[(x^2 + 2 x)^2 + 3 (x^2 + 2 x) + 1, x, Modulus -> 7]"
+      )
+      .unwrap(),
+      "{1 + 3*x + x^2, 2*x + x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(x^2 + x)^2 + 3, x, Modulus -> 7]").unwrap(),
+      "{3 + x, x^2, x + x^2}"
+    );
+    // The prime dividing the outer degree: only a monomial inner part.
+    assert_eq!(
+      interpret("Decompose[x^6 + x^2 + 2, x, Modulus -> 3]").unwrap(),
+      "{2 + x + x^3, x^2}"
+    );
+    assert_eq!(
+      interpret("Decompose[(x^3 + x)^3 + x^3 + x, x, Modulus -> 3]").unwrap(),
+      "{x + 2*x^3 + x^9}"
+    );
+    assert_eq!(
+      interpret("Decompose[x^4 + x^2 + 1, x, Modulus -> 4]").unwrap(),
+      "Decompose[1 + x^2 + x^4, x, Modulus -> 4]"
     );
     assert_eq!(
       interpret("Decompose[7x^4 + 2x^2 + 3, x, Modulus -> 5]").unwrap(),
@@ -311,6 +346,27 @@ mod resolve_context_aliases {
          Contexts[\"abc`\", ResolveContextAliases -> False]}"
       )
       .unwrap(),
+      // `abc`newSymbol` is created when the line is read, before the alias
+      // exists (wolframscript also warns `$ContextAliases::cxinuse`).
+      "{{}, {abc`newSymbol}, {}, {abc`}}"
+    );
+    clear_state();
+  }
+
+  // A name read on a later line than the alias goes through it.
+  #[test]
+  fn an_alias_redirects_a_name_read_after_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "$ContextAliases[\"abc`\"] = \"NewContext`\"\n\
+         abc`newSymbol; \
+         {Names[\"abc`newSymbol\"], \
+         Names[\"abc`newSymbol\", ResolveContextAliases -> False], \
+         Contexts[\"abc`\"], \
+         Contexts[\"abc`\", ResolveContextAliases -> False]}"
+      )
+      .unwrap(),
       "{{NewContext`newSymbol}, {}, {NewContext`}, {}}"
     );
     clear_state();
@@ -321,7 +377,7 @@ mod time_zone_option {
   use super::*;
 
   #[test]
-  fn absolute_time_reads_the_date_in_the_zone() {
+  fn absolute_time_counts_on_the_zone_clock() {
     // New York is on daylight saving time (UTC-4) in August.
     assert_eq!(
       interpret(
@@ -337,7 +393,15 @@ mod time_zone_option {
          AbsoluteTime[{2022, 8, 4}, TimeZone -> 0]"
       )
       .unwrap(),
-      "14400"
+      "-14400"
+    );
+    assert_eq!(
+      interpret(
+        "AbsoluteTime[{2022, 8, 4}, TimeZone -> 3] - \
+         AbsoluteTime[{2022, 8, 4}, TimeZone -> 0]"
+      )
+      .unwrap(),
+      "10800"
     );
     assert_eq!(
       interpret(
@@ -467,7 +531,7 @@ mod scaling_sides {
     assert_eq!(
       interpret("DivideSides[a x^2 > b x + c, a, Assumptions -> a < 0]")
         .unwrap(),
-      "x^2 < (c + b*x)/a"
+      "(c + b*x)/a > x^2"
     );
     assert_eq!(
       interpret("DivideSides[a == b, c, Assumptions -> c > 0]").unwrap(),
@@ -479,11 +543,20 @@ mod scaling_sides {
   fn a_negative_number_reverses_an_inequality() {
     assert_eq!(
       interpret("DivideSides[x > 1, -2]").unwrap(),
-      "-1/2*x < -1/2"
+      "-1/2 > -1/2*x"
     );
     assert_eq!(
       interpret("MultiplySides[x >= 1, -2]").unwrap(),
-      "-2*x <= -2"
+      "-2 >= -2*x"
+    );
+    // The sides swap and the operators stay; an equation keeps its sides.
+    assert_eq!(
+      interpret("MultiplySides[1 < x <= 2, -1]").unwrap(),
+      "Inequality[-2, LessEqual, -x, Less, -1]"
+    );
+    assert_eq!(
+      interpret("MultiplySides[a == b, -2]").unwrap(),
+      "-2*a == -2*b"
     );
   }
 }

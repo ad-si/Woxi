@@ -117,7 +117,7 @@ mod permutation_product_symbolic {
     assert_eq!(
       interpret("PermutationProduct[a, b, a, a, a, a, InversePermutation[a]]")
         .unwrap(),
-      "PermutationProduct[a, b, PermutationPower[a, 3]]"
+      "a \u{F3DE} b \u{F3DE} PermutationPower[a, 3]"
     );
   }
 
@@ -128,7 +128,7 @@ mod permutation_product_symbolic {
         "PermutationProduct[a, b, Cycles[{{1, 2, 3}}], Cycles[{{2, 3}}], c]"
       )
       .unwrap(),
-      "PermutationProduct[a, b, Cycles[{{1, 3}}], c]"
+      "a \u{F3DE} b \u{F3DE} Cycles[{{1, 3}}] \u{F3DE} c"
     );
   }
 
@@ -136,6 +136,30 @@ mod permutation_product_symbolic {
   fn irreducible_products_stay() {
     assert_eq!(
       interpret("PermutationProduct[a, b]").unwrap(),
+      "a \u{F3DE} b"
+    );
+    assert_eq!(
+      interpret("Head[PermutationProduct[a, b]]").unwrap(),
+      "PermutationProduct"
+    );
+  }
+
+  // PermutationProduct prints infix with U+F3DE (precedence 520): looser
+  // operands are parenthesized, and so is the product as a power's base.
+  #[test]
+  fn infix_display_brackets_looser_operands() {
+    assert_eq!(
+      interpret(
+        "{PermutationProduct[a + b, c], PermutationProduct[a, b]^2, \
+         x PermutationProduct[b, c], PermutationProduct[x y, c], \
+         PermutationProduct[a^2, b], PermutationProduct[-a, b]}"
+      )
+      .unwrap(),
+      "{(a + b) \u{F3DE} c, (a \u{F3DE} b)^2, x*b \u{F3DE} c, \
+       (x*y) \u{F3DE} c, a^2 \u{F3DE} b, (-a) \u{F3DE} b}"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[PermutationProduct[a, b]]]").unwrap(),
       "PermutationProduct[a, b]"
     );
   }
@@ -233,7 +257,7 @@ mod string_template_defaults {
   use super::*;
 
   #[test]
-  fn defaults_fill_missing_named_slots() {
+  fn bound_values_win_over_the_applied_ones() {
     assert_eq!(
       interpret(
         "t = StringTemplate[\"a is `a`, b is `b`\", <|\"a\" -> 5|>]; \
@@ -248,7 +272,7 @@ mod string_template_defaults {
          TemplateApply[t, <|\"a\" -> 1, \"b\" -> 2|>]"
       )
       .unwrap(),
-      "a is 1, b is 2"
+      "a is 5, b is 2"
     );
     assert_eq!(
       interpret(

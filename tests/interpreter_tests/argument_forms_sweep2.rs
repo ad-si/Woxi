@@ -280,6 +280,46 @@ mod matrix_options {
          Tolerance -> 1/5]"
       )
       .unwrap(),
+      "{3, 2, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 1/10}}, \
+         Tolerance -> 1/5]"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "SingularValueList[{{3., 0, 0}, {0, 2, 0}, {0, 0, 0.01}}, 3, \
+         Tolerance -> 0.1]"
+      )
+      .unwrap(),
+      "{3., 2., 0.}"
+    );
+  }
+
+  #[test]
+  fn singular_value_list_count_keeps_zeros() {
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, 3]")
+        .unwrap(),
+      "{3, 2, 0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, -2]")
+        .unwrap(),
+      "{2, 0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}, {3}]")
+        .unwrap(),
+      "{0}"
+    );
+    assert_eq!(
+      interpret("SingularValueList[{{3, 0, 0}, {0, 2, 0}, {0, 0, 0}}]")
+        .unwrap(),
       "{3, 2}"
     );
   }
@@ -378,6 +418,30 @@ mod image_forms {
       )
       .unwrap(),
       "-Image-"
+    );
+    assert_eq!(
+      interpret(
+        "Options[ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, \
+         ImageSize -> 100], {ColorSpace, ImageSize}]"
+      )
+      .unwrap(),
+      "{ColorSpace -> RGB, ImageSize -> 100}"
+    );
+  }
+
+  #[test]
+  fn constant_image_input_form() {
+    assert_eq!(
+      interpret("ToString[ConstantImage[Red, {2, 1}, \"Byte\"], InputForm]")
+        .unwrap(),
+      "Image[NumericArray[{{{255, 0, 0}, {255, 0, 0}}}, \"UnsignedInteger8\"], \
+       \"Byte\", ColorSpace -> \"RGB\", Interleaving -> True]"
+    );
+    assert_eq!(
+      interpret("ToString[Image[{{0, 1}}, ImageSize -> 100], InputForm]")
+        .unwrap(),
+      "Image[NumericArray[{{0., 1.}}, \"Real32\"], \"Real32\", \
+       ColorSpace -> Automatic, ImageSize -> 100, Interleaving -> None]"
     );
   }
 
@@ -500,16 +564,20 @@ mod random_working_precision {
 
   #[test]
   fn random_complex_precision() {
+    // wolframscript's precision depends on the draw (49.999999999999986 for
+    // some), so it is compared rounded.
     assert_eq!(
-      interpret("Precision[RandomComplex[WorkingPrecision -> 50]]").unwrap(),
-      "50."
+      interpret("Round[Precision[RandomComplex[WorkingPrecision -> 50]]]")
+        .unwrap(),
+      "50"
     );
     assert_eq!(
       interpret(
-        "Precision /@ RandomComplex[{-1 - I, 1 + I}, 3, WorkingPrecision -> 20]"
+        "Round[Precision /@ RandomComplex[{-1 - I, 1 + I}, 3, \
+         WorkingPrecision -> 20]]"
       )
       .unwrap(),
-      "{20., 20., 20.}"
+      "{20, 20, 20}"
     );
     assert_eq!(
       interpret(
@@ -559,7 +627,55 @@ mod number_theory_options {
     assert_eq!(
       interpret("FactorSquareFreeList[x^2 (x + 1)^2 (x + 2), Modulus -> 3]")
         .unwrap(),
-      "{{1, 1}, {2 + x, 1}, {x + x^2, 2}}"
+      "{{1, 1}, {x, 2}, {1 + x, 2}, {2 + x, 1}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_keeps_product_factors() {
+    assert_eq!(
+      interpret("FactorSquareFreeList[(x + 1)^2 (x + 3)^2, Modulus -> 5]")
+        .unwrap(),
+      "{{1, 1}, {1 + x, 2}, {3 + x, 2}}"
+    );
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[(x + 1)^2 (x + 3)^2], Modulus -> 5]"
+      )
+      .unwrap(),
+      "{{1, 1}, {3 + 4*x + x^2, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorSquareFreeList[(x^2 + 1)^2 (x + 3), Modulus -> 7]")
+        .unwrap(),
+      "{{1, 1}, {3 + x, 1}, {1 + x^2, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorSquareFreeList[3 (x + 1)^2 (x + 2)^2, Modulus -> 5]")
+        .unwrap(),
+      "{{3, 1}, {1 + x, 2}, {2 + x, 2}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_merges_coinciding_factors() {
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[(x + 1)^2 (x + 2)^2 (x + 4), Modulus -> 3]"
+      )
+      .unwrap(),
+      "{{1, 1}, {1 + x, 3}, {2 + x, 2}}"
+    );
+  }
+
+  #[test]
+  fn factor_square_free_list_modulus_lists_monomial_variables() {
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[x^2 (x + 1)^2 (x + 2)], Modulus -> 3]"
+      )
+      .unwrap(),
+      "{{1, 1}, {x, 2}, {1 + x, 2}, {2 + x, 1}}"
     );
   }
 }

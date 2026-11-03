@@ -659,16 +659,19 @@ fn time_series(mut pairs: Vec<Expr>) -> Expr {
 }
 
 /// One realization of `DiscreteMarkovProcess[i0 | p0, m]` over the integer
-/// times `{tmin, tmax}`, as `{{t, state}, …}` pairs. The state at `tmin` is
-/// `i0` (or drawn from the initial distribution `p0`); each later state is
-/// drawn from the row of `m` belonging to the previous one. Rows are
-/// normalized by their sum, so non-exact floating-point input still works.
+/// times `{tmin, tmax}`, as `{{t, state}, …}` pairs. The process starts at
+/// time 0 in `i0` (or a state drawn from the initial distribution `p0`), so
+/// a window that begins later reports the chain after `tmin` steps
+/// (`{{0, 1}, {1, 0}}` started in 2 is in state 1 at time 1). Each later
+/// state is drawn from the row of `m` belonging to the previous one. Rows
+/// are normalized by their sum, so non-exact floating-point input still
+/// works.
 fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
   let (p0, matrix, n) = crate::functions::math_ast::dmp_parts(dargs)?;
   let [Expr::Integer(tmin), Expr::Integer(tmax)] = spec else {
     return None;
   };
-  if tmax < tmin {
+  if tmax < tmin || *tmin < 0 {
     return None;
   }
   let to_weights = |items: &[Expr]| -> Option<Vec<f64>> {
@@ -703,9 +706,12 @@ fn discrete_markov_path(dargs: &[Expr], spec: &[Expr]) -> Option<Vec<Expr>> {
   let mut state = draw(&to_weights(&p0)?);
   debug_assert!(state < n);
   let mut pairs = Vec::with_capacity((tmax - tmin + 1) as usize);
-  for t in *tmin..=*tmax {
-    if t > *tmin {
+  for t in 0..=*tmax {
+    if t > 0 {
       state = draw(&rows[state]);
+    }
+    if t < *tmin {
+      continue;
     }
     pairs.push(Expr::List(
       vec![Expr::Integer(t), Expr::Integer(state as i128 + 1)].into(),

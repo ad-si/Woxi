@@ -2513,9 +2513,26 @@ pub fn dispatch_io_functions(
           }
         }
       }
-      let Some(search) =
-        RecordSearch::parse(&super::split_trailing_options(&args[2..]).1)
-      else {
+      let options = super::split_trailing_options(&args[2..]).1;
+      // An option FindList does not know is an error: FindList::optx and
+      // $Failed, as in wolframscript.
+      if let Some((unknown, _)) = options.iter().find(|(name, _)| {
+        !matches!(
+          name.as_str(),
+          "AnchoredSearch"
+            | "WordSearch"
+            | "IgnoreCase"
+            | "RecordSeparators"
+            | "WordSeparators"
+        )
+      }) {
+        crate::emit_message(&format!(
+          "FindList::optx: Unknown option {unknown} in {}.",
+          call_display()
+        ));
+        return failed();
+      }
+      let Some(search) = RecordSearch::parse(&options) else {
         return Some(Ok(unevaluated("FindList", args)));
       };
       let terms: Vec<String> = match &args[1] {
@@ -2669,38 +2686,51 @@ pub fn dispatch_io_functions(
     }
     #[cfg(not(target_arch = "wasm32"))]
     // ParentDirectory[], ParentDirectory[dir], ParentDirectory[dir, n] (n
-    // levels up); a File[dir] gives a File.
+    // levels up). The directory (a string or File[…]) must exist, as in WL:
+    // anything else is ::dirnex and stays unevaluated. The result is always
+    // a string.
     "ParentDirectory" if args.len() <= 2 => {
-      let (base, as_file) = match args.first() {
-        None => (crate::vfs::current_dir(), false),
-        Some(Expr::String(s)) => (s.clone(), false),
+      let base = match args.first() {
+        None => crate::vfs::current_dir(),
+        Some(Expr::String(s)) => s.clone(),
         Some(Expr::FunctionCall { name, args: fa })
           if name == "File" && matches!(fa.as_slice(), [Expr::String(_)]) =>
         {
           let Expr::String(s) = &fa[0] else {
             return None;
           };
-          (s.clone(), true)
+          s.clone()
         }
         _ => return Some(Ok(unevaluated("ParentDirectory", args))),
       };
       let levels = match args.get(1) {
         None => 1,
-        Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
-        _ => return Some(Ok(unevaluated("ParentDirectory", args))),
+        Some(Expr::Integer(n)) if *n >= 1 => *n as usize,
+        Some(_) => {
+          crate::emit_message(&format!(
+            "ParentDirectory::intpm: Positive machine-sized integer expected \
+             at position 2 in {}.",
+            crate::syntax::format_expr(
+              &unevaluated("ParentDirectory", args),
+              crate::syntax::ExprForm::Output
+            )
+          ));
+          return Some(Ok(unevaluated("ParentDirectory", args)));
+        }
       };
+      if !crate::vfs::is_dir(&base) {
+        crate::emit_message(&format!(
+          "ParentDirectory::dirnex: Directory {base} does not exist."
+        ));
+        return Some(Ok(unevaluated("ParentDirectory", args)));
+      }
       let mut parent = base;
       for _ in 0..levels {
         parent = std::path::Path::new(&parent)
           .parent()
           .map_or_else(|| parent.clone(), |p| p.to_string_lossy().into_owned());
       }
-      let parent = Expr::String(parent);
-      return Some(Ok(if as_file {
-        call1("File", parent)
-      } else {
-        parent
-      }));
+      return Some(Ok(Expr::String(parent)));
     }
     // DirectoryName["path"] or DirectoryName["path", n]
     "DirectoryName" if args.len() == 1 || args.len() == 2 => {
@@ -5017,13 +5047,9 @@ fn url_with_query(
   all.extend(pairs);
   sa::arrange_query_pairs(&mut all, sort_queries, remove_empty);
   let mut out = base.to_string();
+  // An empty path stays empty: `URLBuild["https://x.com", {"q" -> 1}]` is
+  // "https://x.com?q=1", not "https://x.com/?q=1".
   if !all.is_empty() {
-    let has_empty_path = base
-      .split_once("://")
-      .is_some_and(|(_, rest)| !rest.is_empty() && !rest.contains('/'));
-    if has_empty_path {
-      out.push('/');
-    }
     out.push('?');
     out.push_str(&sa::encode_query_pairs(&all, charset));
   }
@@ -5547,7 +5573,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   // `Animate[expr, spec, …]` nested in a display draws its first frame
   // (see `animate_snapshot_svg`), so it counts as a picture too.
-  if matches!(expr, Expr::FunctionCall { name, args } if name == "Animate" && args.len() >= 2)
+  if matches!(expr, Expr::FunctionCall { name, args } if crate::functions::graphics::is_animate_call(name, args))
   {
     return true;
   }
@@ -7134,7 +7160,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // …]` sitting in a `Grid` cell) rather than being the whole Manipulate
     // output — draw its first frame instead of the unevaluated source.
     Expr::FunctionCall { name, args }
-      if name == "Animate" && args.len() >= 2 =>
+      if crate::functions::graphics::is_animate_call(name, args) =>
     {
       crate::functions::graphics::animate_snapshot_svg(args).unwrap_or_default()
     }

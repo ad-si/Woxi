@@ -46,18 +46,18 @@ pub fn dispatch_datetime_functions(
     "TimeZoneConvert" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::datetime_ast::time_zone_convert_ast(args));
     }
-    // DatePlus[n] — n days (or the given duration) after today.
+    // DatePlus[n] — n days after the current instant, as a date list (the
+    // one DateList[] gives); DatePlus[duration] — the duration after Now, as
+    // a DateObject.
     "DatePlus" if args.len() == 1 => {
-      return Some(
-        crate::evaluator::evaluate_expr_to_expr(&id_expr("Today")).and_then(
-          |today| {
-            crate::functions::datetime_ast::date_plus_ast(&[
-              today,
-              args[0].clone(),
-            ])
-          },
-        ),
-      );
+      let base = if matches!(args[0], Expr::Integer(_) | Expr::Real(_)) {
+        crate::functions::datetime_ast::date_list_ast(&[])
+      } else {
+        crate::evaluator::evaluate_expr_to_expr(&id_expr("Now"))
+      };
+      return Some(base.and_then(|base| {
+        crate::functions::datetime_ast::date_plus_ast(&[base, args[0].clone()])
+      }));
     }
     "DatePlus" if args.len() == 2 => {
       return Some(crate::functions::datetime_ast::date_plus_ast(args));

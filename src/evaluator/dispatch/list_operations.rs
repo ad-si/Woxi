@@ -868,8 +868,8 @@ fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
 // is processed character-wise and the result is rebuilt as a string.
 fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let symbolic = || unevaluated("LongestOrderedSequence", args);
-  // IgnoreCase -> True: a string is compared in lower case, but the result
-  // keeps the characters as they occur in the string.
+  // IgnoreCase -> True: a string is compared, and answered, in lower case
+  // (`LongestOrderedSequence["dAbC", IgnoreCase -> True]` is "abc").
   if let Some(Expr::Rule {
     pattern,
     replacement,
@@ -889,7 +889,15 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|c| Expr::String(c.to_lowercase().collect()))
           .collect();
         let idxs = longest_ordered_indices(&folded, None)?;
-        Ok(Expr::String(idxs.iter().map(|&i| original[i]).collect()))
+        Ok(Expr::String(
+          idxs
+            .iter()
+            .filter_map(|&i| match &folded[i] {
+              Expr::String(c) => Some(c.as_str()),
+              _ => None,
+            })
+            .collect(),
+        ))
       }
       _ => Ok(symbolic()),
     };
@@ -2138,7 +2146,8 @@ pub fn dispatch_list_operations(
       }
     }
     // TakeList[list, seqs1, seqs2, ...] — split at level 1 by seqs1, then
-    // split every element of each resulting sublist by seqs2, ...
+    // split every group at level 2 by seqs2, ...: result[[i, j, …]] is the
+    // block of the rows in chunk i restricted to the columns of chunk j, ….
     "TakeList" if args.len() > 2 => {
       let outer = match evaluate_function_call_ast(
         "TakeList",
@@ -2150,6 +2159,7 @@ pub fn dispatch_list_operations(
       let Expr::List(groups) = &outer else {
         return Some(Ok(unevaluated("TakeList", args)));
       };
+      let depth = args.len() - 2;
       let mut new_groups = Vec::with_capacity(groups.len());
       for group in groups {
         let (head, elems) = match group {
@@ -2157,8 +2167,24 @@ pub fn dispatch_list_operations(
           Expr::FunctionCall { name, args: xs } => (Some(name.clone()), xs),
           _ => return Some(Ok(unevaluated("TakeList", args))),
         };
-        let mut new_elems = Vec::with_capacity(elems.len());
+        // Split every row by the remaining specifications ...
+        let mut rows = Vec::with_capacity(elems.len());
         for elem in elems {
+          if !matches!(elem, Expr::List(_) | Expr::FunctionCall { .. }) {
+            crate::emit_message(&format!(
+              "TakeList::iseqs: Cannot take list {} of sequence \
+               specifications at level 2 of {}.",
+              crate::syntax::format_expr(
+                &args[2],
+                crate::syntax::ExprForm::Output
+              ),
+              crate::syntax::format_expr(
+                &args[0],
+                crate::syntax::ExprForm::Output
+              ),
+            ));
+            return Some(Ok(unevaluated("TakeList", args)));
+          }
           let mut inner_args = Vec::with_capacity(args.len() - 1);
           inner_args.push(elem.clone());
           inner_args.extend(args[2..].iter().cloned());
@@ -2166,17 +2192,15 @@ pub fn dispatch_list_operations(
             Ok(Expr::FunctionCall { ref name, .. }) if name == "TakeList" => {
               return Some(Ok(unevaluated("TakeList", args)));
             }
-            Ok(r) => new_elems.push(r),
+            Ok(r) => rows.push(r),
             Err(e) => return Some(Err(e)),
           }
         }
-        new_groups.push(match head {
-          None => Expr::List(new_elems.into()),
-          Some(name) => Expr::FunctionCall {
-            name,
-            args: new_elems.into(),
-          },
-        });
+        // ... then gather the rows' pieces with the same chunk indices.
+        match gather_take_list_blocks(&rows, depth, head.as_ref()) {
+          Some(block) => new_groups.push(block),
+          None => return Some(Ok(unevaluated("TakeList", args))),
+        }
       }
       return Some(Ok(Expr::List(new_groups.into())));
     }
@@ -6249,8 +6273,9 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::identity_ast(&args[0]));
     }
     // Setting[expr] is expr with every Dynamic[x, …] replaced by x and every
-    // control (Slider[…], Checkbox[…], an inline colour control, …) by the
-    // setting it holds, then evaluated: Setting[Dynamic[rs]] is rs's value.
+    // control (Slider[…], Checkbox[…], ColorSlider[…], …) by the setting it
+    // holds, then evaluated: Setting[Dynamic[rs]] is rs's value. Boxes are
+    // not controls: Setting[SliderBox[0.5]] stays as it is.
     "Setting" if args.len() == 1 => {
       fn settle(e: &Expr) -> Expr {
         match e {
@@ -6261,8 +6286,8 @@ pub fn dispatch_list_operations(
               | "Checkbox" | "CheckboxBar" | "InputField" | "PopupMenu"
               | "ActionMenu" | "SetterBar" | "RadioButtonBar" | "Toggler"
               | "TogglerBar" | "Opener" | "Manipulator" | "Animator"
-              | "ColorSetter" | "ColorSetterBox" | "ColorSlider"
-              | "ProgressIndicator" | "LocatorPane" => settle(&args[0]),
+              | "ColorSetter" | "ColorSlider" | "ProgressIndicator"
+              | "LocatorPane" => settle(&args[0]),
               _ => Expr::FunctionCall {
                 name: name.clone(),
                 args: args.iter().map(settle).collect(),
@@ -6653,6 +6678,43 @@ pub fn dispatch_list_operations(
         return dispatch_list_operations(name, &dense);
       }
     }
+    // A kernel or list of numbers with a machine number among them is a
+    // packed array to wolframscript, so all of its numbers are machine
+    // numbers — and so are those of the other one, when it is all numbers
+    // too: `ListConvolve[{1, 2}, {0., 0, 1}]` and `ListConvolve[{1., 2},
+    // {0, 0, 1}]` are both `{0., 1.}`.
+    "ListConvolve" | "ListCorrelate"
+      if args.len() >= 2
+        && let (Some(ker), Some(data)) =
+          (numeric_array_kind(&args[0]), numeric_array_kind(&args[1]))
+        && (ker.0 || data.0)
+        && (ker.1 || data.1) =>
+    {
+      let mut packed = args.to_vec();
+      for a in packed.iter_mut().take(2) {
+        if let Ok(n) = evaluate_expr_to_expr(&call1("N", a.clone())) {
+          *a = n;
+        }
+      }
+      return dispatch_list_operations(name, &packed);
+    }
+    "ListConvolve" | "ListCorrelate"
+      if args.len() >= 2
+        && args[..2].iter().any(|a| {
+          numeric_array_kind(a).is_some_and(|(machine, exact)| machine && exact)
+        }) =>
+    {
+      let mut packed = args.to_vec();
+      for a in packed.iter_mut().take(2) {
+        if numeric_array_kind(a)
+          .is_some_and(|(machine, exact)| machine && exact)
+          && let Ok(n) = evaluate_expr_to_expr(&call1("N", a.clone()))
+        {
+          *a = n;
+        }
+      }
+      return dispatch_list_operations(name, &packed);
+    }
     // ListConvolve[kernel, list] — discrete convolution
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));
@@ -6790,10 +6852,19 @@ pub fn dispatch_list_operations(
       else {
         return None;
       };
-      return Some(fold_pair_steps(args, elems).map(|steps| match steps {
-        FoldPairSteps::Emitted(results) => Expr::List(results.into()),
-        FoldPairSteps::NotAPair { result, .. } => result,
-      }));
+      // The emitted values keep the elements' head:
+      // `FoldPairList[TakeDrop, {a, b, c}, h[1, 2]]` is `h[{a}, {b, c}]`.
+      return Some(fold_pair_steps(args, elems).and_then(
+        |steps| match steps {
+          FoldPairSteps::Emitted(results) => match &args[2] {
+            Expr::FunctionCall { name: head, .. } => {
+              crate::evaluator::evaluate_function_call_ast(head, &results)
+            }
+            _ => Ok(Expr::List(results.into())),
+          },
+          FoldPairSteps::NotAPair { result, .. } => Ok(result),
+        },
+      ));
     }
     // JoinAcross[alist, blist, keyspec, joinspec, KeyCollisionFunction -> f]
     // joins the associations of two lists whose join keys match.
@@ -10473,6 +10544,42 @@ fn try_2d_conv_corr(
   Some(Ok(Expr::List(rows.into())))
 }
 
+/// For a (nested) list of numbers: whether it holds a machine number and
+/// whether it holds an exact one. `None` when it is not a list or has an
+/// entry that is not a number.
+fn numeric_array_kind(e: &Expr) -> Option<(bool, bool)> {
+  fn scan(e: &Expr, acc: &mut (bool, bool)) -> Option<()> {
+    match e {
+      Expr::List(items) => items.iter().try_for_each(|i| scan(i, acc)),
+      Expr::Real(_) => {
+        acc.0 = true;
+        Some(())
+      }
+      Expr::Integer(_) | Expr::BigInteger(_) => {
+        acc.1 = true;
+        Some(())
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        acc.1 = true;
+        Some(())
+      }
+      _ if crate::functions::math_ast::machine_complex_parts(e).is_some() => {
+        acc.0 = true;
+        Some(())
+      }
+      _ => None,
+    }
+  }
+  if !matches!(e, Expr::List(_)) {
+    return None;
+  }
+  let mut acc = (false, false);
+  scan(e, &mut acc)?;
+  Some(acc)
+}
+
 fn list_convolve_ast(
   kernel: &Expr,
   list: &Expr,
@@ -11802,4 +11909,41 @@ fn join_across(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
     }
   }
   Some(Ok(Expr::List(results.into())))
+}
+
+/// Regroup the per-row results of a multi-level `TakeList`: every row is
+/// nested `depth` levels deep by chunk index; the result has the same chunk
+/// nesting with, at each leaf, the rows' pieces wrapped in the group head.
+/// `None` when the rows do not split into the same number of chunks.
+fn gather_take_list_blocks(
+  rows: &[Expr],
+  depth: usize,
+  head: Option<&String>,
+) -> Option<Expr> {
+  if depth == 0 {
+    return Some(match head {
+      None => Expr::List(rows.to_vec().into()),
+      Some(name) => Expr::FunctionCall {
+        name: name.clone(),
+        args: rows.to_vec().into(),
+      },
+    });
+  }
+  let mut parts: Vec<&[Expr]> = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(xs) = row else {
+      return None;
+    };
+    parts.push(xs);
+  }
+  let len = parts.first().map_or(0, |p| p.len());
+  if parts.iter().any(|p| p.len() != len) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(len);
+  for j in 0..len {
+    let column: Vec<Expr> = parts.iter().map(|p| p[j].clone()).collect();
+    out.push(gather_take_list_blocks(&column, depth - 1, head)?);
+  }
+  Some(Expr::List(out.into()))
 }

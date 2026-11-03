@@ -4506,12 +4506,19 @@ mod parent_directory {
 
   #[test]
   fn arg_absolute() {
-    assert_eq!(interpret(r#"ParentDirectory["/a/b/c"]"#).unwrap(), "/a/b");
+    assert_eq!(interpret(r#"ParentDirectory["/usr/bin"]"#).unwrap(), "/usr");
   }
 
   #[test]
-  fn arg_relative() {
-    assert_eq!(interpret(r#"ParentDirectory["a/b/c"]"#).unwrap(), "a/b");
+  fn missing_directory_stays_unevaluated() {
+    assert_eq!(
+      interpret(r#"ParentDirectory["/a/b/c"]"#).unwrap(),
+      "ParentDirectory[/a/b/c]"
+    );
+    assert_eq!(
+      interpret(r#"ParentDirectory["a/b/c"]"#).unwrap(),
+      "ParentDirectory[a/b/c]"
+    );
   }
 
   #[test]

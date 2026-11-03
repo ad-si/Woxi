@@ -788,6 +788,9 @@ fn is_identifier_like(s: &str) -> bool {
 /// else would create them — and a package that reads one of the names by its
 /// short form has to land on the same symbol the built-in produces.
 pub(crate) fn register_standard_context_symbols(ctx: &str) {
+  // Loaded is loaded: the package is in `$Packages` from now on, and the
+  // functions it defines answer to their qualified names.
+  crate::register_package(ctx.to_string());
   if ctx == "CodeParser`" {
     crate::functions::code_parser::register_context_symbols();
     // Reading `LeafNode` after the context is loaded has to find
@@ -797,9 +800,52 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "ComputationalGeometry`" {
-    // Like Combinatorica, it only shadows bare names (`ConvexHull`), which
-    // `evaluate_function_call_ast_inner` redirects while the context is on
-    // `$ContextPath`.
+    // Its exports, so a bare `ConvexHull` read after loading is
+    // `ComputationalGeometry`ConvexHull`; one read before it (on the same
+    // line, say) stays the `Global`` symbol, as in wolframscript.
+    for name in [
+      "AllPoints",
+      "BoundedDiagram",
+      "ConvexHull",
+      "ConvexHullArea",
+      "ConvexHullMedian",
+      "DelaunayTriangulation",
+      "DelaunayTriangulationQ",
+      "DiagramPlot",
+      "Hull",
+      "LabelPoints",
+      "NearestNeighbor",
+      "PlanarGraphPlot",
+      "Ray",
+      "TileAreas",
+      "TriangularSurfacePlot",
+      "TrimPoints",
+      "VoronoiDiagram",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!(
+        "ComputationalGeometry`{name}"
+      ));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "BarCharts`" {
+    // Its exports that are not System symbols (its own `BarChart` would
+    // shadow the System one, which Woxi keeps).
+    for name in [
+      "BarEdgeStyle",
+      "BarEdges",
+      "BarGroupSpacing",
+      "BarLabels",
+      "BarOrientation",
+      "BarStyle",
+      "BarValues",
+      "GeneralizedBarChart",
+      "GeneralizedBarChart3D",
+      "PercentileBarChart",
+      "StackedBarChart",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "Polytopes`" {
@@ -911,6 +957,26 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "HierarchicalClustering`" {
+    // A bare `ClusterFlatten` read after the package is loaded is the
+    // package's; one read on the same line as the `Get` (before it ran) is
+    // `Global\`ClusterFlatten` and stays undefined, as in wolframscript.
+    for name in [
+      "Agglomerate",
+      "Cluster",
+      "ClusterFlatten",
+      "ClusterSplit",
+      "DendrogramPlot",
+      "DirectAgglomerate",
+      "DistanceMatrix",
+      "HighlightLevel",
+      "HighlightStyle",
+      "LeafLabels",
+      "Linkage",
+      "Orientation",
+      "TruncateDendrogram",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
     crate::prepend_to_context_path(ctx);
   }
   if ctx == "Combinatorica`" {
@@ -1175,6 +1241,13 @@ fn evaluate_function_call_ast_inner(
     return Ok(series);
   }
 
+  // Matrix and list functions see the matrix a structured array stands for.
+  if let Some(result) =
+    crate::functions::linear_algebra_ast::structured_matrix_call(name, args)
+  {
+    return result;
+  }
+
   // Legacy standard-distribution package functions whose modern built-in
   // equivalent lives under a different name. Woxi keeps every built-in in
   // one flat namespace (see `is_standard_distribution_context`), so a
@@ -1190,12 +1263,10 @@ fn evaluate_function_call_ast_inner(
   // Combinatorica only extends it to accept a bare integer `n` (meaning
   // `Range[n]`), so only that shape is redirected — a list argument keeps
   // using the built-in's identical (lexicographic) algorithm.
-  // The `HierarchicalClustering`` package, by its full names or by the bare
-  // ones once the package is on `$ContextPath`.
+  // The `HierarchicalClustering`` package: its symbols are read under
+  // their full names once the package is loaded.
   {
-    let bare = name.strip_prefix("HierarchicalClustering`").or_else(|| {
-      crate::context_path_contains("HierarchicalClustering`").then_some(name)
-    });
+    let bare = name.strip_prefix("HierarchicalClustering`");
     match bare {
       Some("Agglomerate") => {
         return crate::functions::hierarchical_clustering::agglomerate_ast(
@@ -1287,23 +1358,30 @@ fn evaluate_function_call_ast_inner(
       .map(|r| r.unwrap_or_else(|| unevaluated(name, args)));
   }
 
-  // `GraphUtilities\`GraphCoordinates[rules]` / `GraphCoordinates3D[rules]`:
-  // one position per vertex, in `VertexList` order.
+  // `GraphUtilities\`GraphCoordinates[g]` / `GraphCoordinates3D[g]`, once
+  // the package is loaded. The package reads the coordinates out of the
+  // `VertexCoordinateRules` option of a `GraphPlot`, which today's
+  // `GraphPlot` no longer sets — so in wolframscript every non-empty graph
+  // comes back as the bare symbol `VertexCoordinateRules`, and an empty one
+  // as `{}`.
   if let Some(short) = name.strip_prefix("GraphUtilities`")
     && matches!(short, "GraphCoordinates" | "GraphCoordinates3D")
     && args.len() == 1
-    && matches!(&args[0], Expr::List(_))
+    && package_loaded("GraphUtilities`")
   {
-    let dim = if short == "GraphCoordinates3D" { 3 } else { 2 };
-    return match crate::functions::graph::graph_coordinates(&args[0], dim)? {
-      Some((_, _, coords)) => Ok(Expr::List(
-        coords
-          .into_iter()
-          .map(|p| Expr::List(p.into_iter().map(Expr::Real).collect()))
-          .collect(),
-      )),
-      None => Ok(unevaluated(name, args)),
+    let empty = match &args[0] {
+      Expr::List(items) => items.is_empty(),
+      g => evaluate_expr_to_expr(&call1("VertexCount", g.clone()))
+        .is_ok_and(|c| matches!(c, Expr::Integer(0))),
     };
+    if empty {
+      return Ok(Expr::List(vec![].into()));
+    }
+    if matches!(&args[0], Expr::List(_))
+      || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graph")
+    {
+      return Ok(id_expr("VertexCoordinateRules"));
+    }
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules
@@ -1410,8 +1488,6 @@ fn evaluate_function_call_ast_inner(
   // Read only by the arms below that need them, so other calls skip the
   // `$ContextPath` lookups.
   let combinatorica_active = || crate::context_path_contains("Combinatorica`");
-  let computational_geometry_active =
-    || crate::context_path_contains("ComputationalGeometry`");
   let graph_utilities_active =
     || crate::context_path_contains("GraphUtilities`");
   let combinatorica_graph_first = matches!(
@@ -1432,21 +1508,6 @@ fn evaluate_function_call_ast_inner(
     "GraphPath" if graph_utilities_active() => "GraphUtilities`GraphPath",
     "HamiltonianCycles" if graph_utilities_active() => {
       "GraphUtilities`HamiltonianCycles"
-    }
-    "ConvexHull" if computational_geometry_active() => {
-      "ComputationalGeometry`ConvexHull"
-    }
-    "ConvexHullArea" if computational_geometry_active() => {
-      "ComputationalGeometry`ConvexHullArea"
-    }
-    "DelaunayTriangulation" | "DiagramPlot" | "VoronoiDiagram"
-      if computational_geometry_active() =>
-    {
-      match name {
-        "DiagramPlot" => "ComputationalGeometry`DiagramPlot",
-        "VoronoiDiagram" => "ComputationalGeometry`VoronoiDiagram",
-        _ => "ComputationalGeometry`DelaunayTriangulation",
-      }
     }
     // Combinatorica's permutation inverse is the built-in one.
     "Combinatorica`InversePermutation" => "InversePermutation",
@@ -3114,30 +3175,6 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // A number format around a `Style` formats the styled content and keeps
-  // the style: `NumberForm[Style[x, Red], {4, 2}]` is `Style[NumberForm[x,
-  // {4, 2}], Red]`.
-  if matches!(
-    name,
-    "NumberForm"
-      | "PaddedForm"
-      | "AccountingForm"
-      | "ScientificForm"
-      | "EngineeringForm"
-  ) && let Some(Expr::FunctionCall {
-    name: style_name,
-    args: style_args,
-  }) = args.first()
-    && style_name == "Style"
-    && !style_args.is_empty()
-  {
-    let mut form_args = vec![style_args[0].clone()];
-    form_args.extend(args[1..].iter().cloned());
-    let mut new_args = vec![call(name, form_args)];
-    new_args.extend(style_args[1..].iter().cloned());
-    return evaluate_expr_to_expr(&call("Style", new_args));
-  }
-
   // MessageName[sym, tag] — fall back to built-in message templates when
   // the user has not installed their own DownValue. Wolfram returns the
   // template text; without this, e.g. `General::argr` would stay
@@ -3218,19 +3255,6 @@ fn evaluate_function_call_ast_inner(
       "RGBColor",
       channels.into_iter().map(Expr::Real).collect(),
     ));
-  }
-
-  // RGBColor[{r, g, b}] and RGBColor[{r, g, b, a}] are the list forms of the
-  // plain channel arguments.
-  if name == "RGBColor"
-    && args.len() == 1
-    && let Expr::List(channels) = &args[0]
-    && (channels.len() == 3 || channels.len() == 4)
-    && channels
-      .iter()
-      .all(crate::functions::predicate_ast::is_numeric_q)
-  {
-    return Ok(call("RGBColor", channels.to_vec()));
   }
 
   // Graphics primitives and style directives: return as symbolic (unevaluated)
@@ -5712,9 +5736,8 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
-  // HighlightMesh[mesh, spec, opts…] displays the mesh itself; the
-  // highlighting (and the cell labels `Labeled[…]` or `MeshCellLabel` would
-  // add) is not drawn.
+  // HighlightMesh[mesh, spec, opts…] is the mesh carrying the highlights and
+  // labels as `Properties` (which the renderer does not draw).
   if name == "HighlightMesh"
     && args.len() >= 2
     && args[2..]
@@ -5722,7 +5745,7 @@ fn evaluate_function_call_ast_inner(
       .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
     && crate::functions::mesh_region::is_mesh_region(&args[0])
   {
-    return Ok(args[0].clone());
+    return highlight_mesh(args);
   }
 
   if name == "DiscretizeGraphics"
@@ -5745,73 +5768,45 @@ fn evaluate_function_call_ast_inner(
   }
 
   // The legacy package's DistanceMatrix[data, DistanceFunction -> f] is the
-  // built-in DistanceMatrix.
+  // built-in DistanceMatrix, with its own Automatic distance.
   if name == "HierarchicalClustering`DistanceMatrix"
     && (args.len() == 1 || args.len() == 2)
   {
-    return crate::functions::list_helpers_ast::distance_matrix_ast(args);
+    return hierarchical_clustering_distance_matrix(args);
   }
 
-  // ComputationalGeometry`ConvexHull[{{x1,y1},...}] → indices of the hull
-  // corners, counter-clockwise.
-  if name == "ComputationalGeometry`ConvexHull" && args.len() == 1 {
-    return crate::functions::convex_hull::convex_hull_indices_ast(args);
-  }
-  // ComputationalGeometry`ConvexHullArea[pts]: the shoelace area of the
-  // hull, exact for exact points.
-  if name == "ComputationalGeometry`ConvexHullArea"
-    && let [Expr::List(points)] = args
+  // The legacy ComputationalGeometry` package, once loaded.
+  if name.starts_with("ComputationalGeometry`")
+    && package_loaded("ComputationalGeometry`")
   {
-    let hull = crate::functions::convex_hull::convex_hull_indices_ast(args)?;
-    let Expr::List(indices) = &hull else {
-      return Ok(unevaluated(name, args));
-    };
-    let corners: Vec<Expr> = indices
-      .iter()
-      .filter_map(|i| {
-        expr_to_i128(i).and_then(|k| points.get(k as usize - 1).cloned())
-      })
-      .collect();
-    if corners.len() < 3 {
-      return Ok(Expr::Integer(0));
+    use crate::functions::computational_geometry as cg;
+    match name {
+      "ComputationalGeometry`ConvexHull" if !args.is_empty() => {
+        return cg::convex_hull_ast(args);
+      }
+      "ComputationalGeometry`ConvexHullArea" if args.len() == 1 => {
+        return cg::convex_hull_area_ast(args);
+      }
+      _ => {}
     }
-    let coord = |p: &Expr, k: usize| match p {
-      Expr::List(c) if c.len() == 2 => Some(c[k].clone()),
-      _ => None,
-    };
-    let mut terms = Vec::with_capacity(corners.len());
-    for (j, p) in corners.iter().enumerate() {
-      let next = &corners[(j + 1) % corners.len()];
-      let (Some(x1), Some(y1), Some(x2), Some(y2)) =
-        (coord(p, 0), coord(p, 1), coord(next, 0), coord(next, 1))
-      else {
-        return Ok(unevaluated(name, args));
-      };
-      terms.push(call(
-        "Subtract",
-        vec![call("Times", vec![x1, y2]), call("Times", vec![x2, y1])],
-      ));
-    }
-    return evaluate_expr_to_expr(&call(
-      "Times",
-      vec![
-        Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        },
-        call("Abs", vec![call("Plus", terms)]),
-      ],
-    ));
   }
-
-  if name == "ComputationalGeometry`DelaunayTriangulation" && args.len() == 1 {
-    return crate::functions::delaunay::delaunay_triangulation_ast(args);
+  if name == "ComputationalGeometry`DelaunayTriangulation"
+    && package_loaded("ComputationalGeometry`")
+    && !args.is_empty()
+  {
+    return crate::functions::computational_geometry::delaunay_triangulation_ast(args);
   }
-  if name == "ComputationalGeometry`VoronoiDiagram" && args.len() == 1 {
-    return crate::functions::delaunay::voronoi_diagram_ast(args);
+  if name == "ComputationalGeometry`VoronoiDiagram"
+    && package_loaded("ComputationalGeometry`")
+    && args.len() == 1
+  {
+    return crate::functions::computational_geometry::voronoi_diagram_ast(args);
   }
-  if name == "ComputationalGeometry`DiagramPlot" && !args.is_empty() {
-    return crate::functions::delaunay::diagram_plot_ast(args);
+  if name == "ComputationalGeometry`DiagramPlot"
+    && package_loaded("ComputationalGeometry`")
+    && !args.is_empty()
+  {
+    return crate::functions::computational_geometry::diagram_plot_ast(args);
   }
 
   // ExpressionGraph[expr] → Graph of the expression tree
@@ -6009,6 +6004,42 @@ fn evaluate_function_call_ast_inner(
         }
       }
       merged.extend(args[1..].iter().cloned());
+      // Re-made with new options, the graph records its layout as
+      // `{"Dimension" -> 2, "VertexLayout" -> layout}` — just the
+      // dimension when it had none — unless a layout is among the new
+      // options.
+      if !new_names.contains(&Some("GraphLayout".to_string())) {
+        let dimension =
+          || rule_expr(Expr::String("Dimension".to_string()), Expr::Integer(2));
+        let position = merged
+          .iter()
+          .position(|o| option_name(o).as_deref() == Some("GraphLayout"));
+        match position {
+          Some(i) => {
+            if let Expr::Rule { replacement, .. } = &merged[i]
+              && let Expr::String(layout) = replacement.as_ref()
+            {
+              merged[i] = rule_expr(
+                id_expr("GraphLayout"),
+                Expr::List(
+                  vec![
+                    dimension(),
+                    rule_expr(
+                      Expr::String("VertexLayout".to_string()),
+                      Expr::String(layout.clone()),
+                    ),
+                  ]
+                  .into(),
+                ),
+              );
+            }
+          }
+          None => merged.push(rule_expr(
+            id_expr("GraphLayout"),
+            Expr::List(vec![dimension()].into()),
+          )),
+        }
+      }
       return evaluate_function_call_ast("Graph", &merged);
     }
 
@@ -6187,19 +6218,21 @@ fn evaluate_function_call_ast_inner(
 
   // The legacy `Polytopes`` package: regular polygons with their vertices
   // on the unit circle (`Vertices`), and radii for unit edge length.
-  // `Triangle` is shadowed by `System`Triangle`, so the package never
-  // reaches it in wolframscript either.
-  let name = name.strip_prefix("Polytopes`").unwrap_or(name);
-  if matches!(
-    name,
-    "Vertices"
-      | "NumberOfVertices"
-      | "NumberOfEdges"
-      | "NumberOfFaces"
-      | "Faces"
-      | "InscribedRadius"
-      | "CircumscribedRadius"
-  ) && crate::context_path_contains("Polytopes`")
+  // The functions are the package's own symbols, so a name read before the
+  // package was loaded is a `Global`` one and stays unevaluated. `Triangle`
+  // and `Square` are the System symbols, which the package's rules take too.
+  if let Some(pname) = name.strip_prefix("Polytopes`")
+    && package_loaded("Polytopes`")
+    && matches!(
+      pname,
+      "Vertices"
+        | "NumberOfVertices"
+        | "NumberOfEdges"
+        | "NumberOfFaces"
+        | "Faces"
+        | "InscribedRadius"
+        | "CircumscribedRadius"
+    )
     && let [Expr::Identifier(poly)] = args
     && let Some(n) = polytopes_polygon_sides(poly)
   {
@@ -6211,7 +6244,7 @@ fn evaluate_function_call_ast_inner(
         call("Power", vec![n_e.clone(), Expr::Integer(-1)]),
       ],
     );
-    let value = match name {
+    let value = match pname {
       "Vertices" => call(
         "Table",
         vec![
@@ -6364,9 +6397,33 @@ fn evaluate_function_call_ast_inner(
     && let Some(opts) = flatten_rule_args(&args[1..])
   {
     let converted = evaluate_function_call_ast(name, &args[..1])?;
+    let had_layout = matches!(&converted, Expr::FunctionCall { args: ga, .. }
+      if ga.iter().any(|o| matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout"))));
     let mut graph_args = vec![converted];
     graph_args.extend(opts);
-    return evaluate_function_call_ast("Graph", &graph_args);
+    let result = evaluate_function_call_ast("Graph", &graph_args)?;
+    // Only `DirectedGraph` records the dimension of a layout-free graph.
+    if name != "DirectedGraph"
+      && !had_layout
+      && let Expr::FunctionCall {
+        name: head,
+        args: ga,
+      } = &result
+      && head == "Graph"
+    {
+      let kept: Vec<Expr> = ga
+        .iter()
+        .filter(|o| {
+          !matches!(o, Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphLayout")
+              && matches!(replacement.as_ref(), Expr::List(l) if l.len() == 1))
+        })
+        .cloned()
+        .collect();
+      return Ok(call("Graph", kept));
+    }
+    return Ok(result);
   }
 
   // FindHamiltonianPath[graph] / [graph, s, t] → one Hamiltonian path
@@ -6387,7 +6444,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // FindIndependentVertexSet[graph] → {maximum independent vertex set}
-  if name == "FindIndependentVertexSet" && args.len() == 1 {
+  if name == "FindIndependentVertexSet" && (1..=3).contains(&args.len()) {
     return crate::functions::graph::find_independent_vertex_set_ast(args);
   }
 
@@ -11383,6 +11440,33 @@ fn evaluate_function_call_ast_inner(
     {
       return Ok(pw);
     }
+    // A Piecewise itself takes its canonical form: disjoint conditions, the
+    // greatest value (or 0) as the default.
+    if args.len() == 1
+      && let Expr::FunctionCall {
+        name: pw,
+        args: pargs,
+      } = &args[0]
+      && pw == "Piecewise"
+      && (1..=2).contains(&pargs.len())
+      && let Expr::List(pieces) = &pargs[0]
+      && let Some(pairs) = pieces
+        .iter()
+        .map(|p| match p {
+          Expr::List(pv) if pv.len() == 2 => {
+            Some((pv[0].clone(), pv[1].clone()))
+          }
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+      && let Some(canonical) =
+        crate::functions::calculus_ast::canonical_piecewise(
+          &pairs,
+          pargs.get(1).unwrap_or(&Expr::Integer(0)),
+        )?
+    {
+      return Ok(canonical);
+    }
 
     // A Piecewise nested inside another collapses into a single one.
     if let Some(flat) = flatten_nested_piecewise(&args[0])? {
@@ -12334,12 +12418,29 @@ fn evaluate_function_call_ast_inner(
 
   if name == "CirclePoints" && (1..=3).contains(&args.len()) {
     let unevaluated = || Ok(unevaluated("CirclePoints", args));
-    // n is always the last argument and must be a positive integer; a
-    // whole-number real asks for the machine-precision points.
-    let (n, numeric) = match args.last() {
-      Some(Expr::Integer(n)) if *n >= 1 => (*n as usize, false),
-      Some(Expr::Real(r)) if *r >= 1.0 && r.fract() == 0.0 => {
-        (*r as usize, true)
+    // n is always the last argument: a positive number. A fractional n
+    // still spaces the points 2 Pi/n apart, Floor[n] of them; a real n asks
+    // for the machine-precision points.
+    let (count, n_expr, numeric) = match args.last() {
+      Some(Expr::Integer(n)) if *n >= 1 => {
+        (*n as usize, Expr::Integer(*n), false)
+      }
+      Some(Expr::Real(r)) if *r > 0.0 && r.is_finite() => {
+        (r.floor() as usize, Expr::Real(*r), true)
+      }
+      Some(
+        q @ Expr::FunctionCall {
+          name: rational_head,
+          args: qa,
+        },
+      ) if rational_head == "Rational"
+        && qa.len() == 2
+        && matches!((&qa[0], &qa[1]), (Expr::Integer(a), Expr::Integer(b)) if *a > 0 && *b > 0) =>
+      {
+        let (Expr::Integer(a), Expr::Integer(b)) = (&qa[0], &qa[1]) else {
+          unreachable!()
+        };
+        ((a / b) as usize, q.clone(), false)
       }
       _ => return unevaluated(),
     };
@@ -12371,26 +12472,19 @@ fn evaluate_function_call_ast_inner(
       _ if args.len() == 1 => (Expr::Integer(1), None),
       _ => return unevaluated(),
     };
-    // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
+    // Base angle theta0: explicit, or the default Pi/n - Pi/2 (summed in
+    // this order, which fixes the last bit for a real n).
     let pi = || id_expr("Pi");
     let base = theta.unwrap_or_else(|| {
-      minus2(
-        div2(pi(), Expr::Integer(2)),
-        div2(
-          times2(Expr::Integer((n - 1) as i128), pi()),
-          Expr::Integer(n as i128),
-        ),
-      )
+      minus2(div2(pi(), n_expr.clone()), div2(pi(), Expr::Integer(2)))
     });
-    let mut points = Vec::with_capacity(n);
-    for k in 0..n {
+    let base = evaluate_expr_to_expr(&base)?;
+    let mut points = Vec::with_capacity(count);
+    for k in 0..count {
       // angle_k = base + 2*k*Pi/n
       let angle = plus2(
         base.clone(),
-        div2(
-          times2(Expr::Integer(k as i128 * 2), pi()),
-          Expr::Integer(n as i128),
-        ),
+        div2(times2(Expr::Integer(k as i128 * 2), pi()), n_expr.clone()),
       );
       // coordinate = center + radius * trig(angle)
       let coord = |trig: &str, c: &Expr| {
@@ -12408,6 +12502,14 @@ fn evaluate_function_call_ast_inner(
       return evaluate_expr_to_expr(&call1("N", points));
     }
     return Ok(points);
+  }
+
+  // Multicolumn[list, spec, opts] is the Grid it lays the items out in.
+  if name == "Multicolumn"
+    && !args.is_empty()
+    && let Some(grid) = multicolumn_grid(args)
+  {
+    return Ok(grid);
   }
 
   // Key[k] is an operator form — return unevaluated (applied via CurriedCall)
@@ -12976,6 +13078,9 @@ fn evaluate_function_call_ast_inner(
         | "LowerTriangularMatrix"
         | "UpperTriangularMatrix"
         | "PermutationMatrix"
+        | "VandermondeMatrix"
+        | "CauchyMatrix"
+        | "BlockDiagonalMatrix"
         // Inert region forms produced by the region set operations: the
         // empty region and the Boolean combination they fall back to. A
         // ParametricRegion likewise stays as written (RandomPoint samples it).
@@ -13008,6 +13113,8 @@ fn evaluate_function_call_ast_inner(
         // An element of a number field, c0 + c1 θ + …; N, RootReduce and
         // ToRadicals read it.
         | "AlgebraicNumber"
+        // A biological sequence object: the String* family reads it.
+        | "BioSequence"
     )
   {
     let args_str = args
@@ -16347,13 +16454,395 @@ fn apply_user_overloads_to_subsets(
   Ok(None)
 }
 
-/// The number of sides of a `Polytopes`` polygon symbol (bare or qualified).
+/// `HighlightMesh[mesh, spec, opts]`: the mesh with a `Properties` option
+/// holding a `MeshCellHighlight` and a `MeshCellLabel` entry per cell named
+/// (`{d, i}`, `{d, All}`) or per dimension (`{d, Default}`), the highlights
+/// first, by dimension, each dimension's named cells before its default
+/// (`Automatic` when only cells were named). `Labeled[spec, l]` labels,
+/// `Style[spec, s]` styles; a bare spec gets the default highlight.
+#[allow(clippy::unnecessary_wraps)]
+fn highlight_mesh(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let mesh = &args[0];
+  let lab = || {
+    call(
+      "LABColor",
+      vec![
+        Expr::Real(0.46955436271454654),
+        Expr::Real(0.6458308777218053),
+        Expr::Real(0.45400449528052444),
+      ],
+    )
+  };
+  let default_highlight = |d: i128, specific: bool| match d {
+    0 => call(
+      "Directive",
+      vec![call1("AbsolutePointSize", Expr::Integer(5)), lab()],
+    ),
+    1 => call(
+      "Directive",
+      vec![
+        call1("JoinForm", Expr::String("Round".to_string())),
+        call1("AbsoluteThickness", Expr::Integer(3)),
+        lab(),
+      ],
+    ),
+    _ if specific => call(
+      "Hue",
+      vec![Expr::Real(0.125), Expr::Real(0.5), Expr::Real(0.95)],
+    ),
+    _ => call(
+      "Directive",
+      vec![
+        lab(),
+        call1(
+          "EdgeForm",
+          Expr::List(
+            vec![call1("JoinForm", Expr::String("Round".to_string())), lab()]
+              .into(),
+          ),
+        ),
+      ],
+    ),
+  };
+  let cell_count = |d: i128| -> usize {
+    evaluate_expr_to_expr(&call(
+      "MeshCellCount",
+      vec![mesh.clone(), Expr::Integer(d)],
+    ))
+    .ok()
+    .and_then(|c| expr_to_i128(&c))
+    .map_or(0, |c| c.max(0) as usize)
+  };
+  // (property: 0 highlight / 1 label, dim, cell or None for the default,
+  // value)
+  let mut entries: Vec<(u8, i128, Option<i128>, Expr)> = Vec::new();
+  // `value`: None for the default highlight of the cells named.
+  fn walk(
+    spec: &Expr,
+    prop: u8,
+    value: Option<&Expr>,
+    out: &mut Vec<(u8, i128, Option<i128>, Option<Expr>)>,
+    count: &dyn Fn(i128) -> usize,
+  ) {
+    match spec {
+      Expr::FunctionCall { name, args }
+        if name == "Labeled" && args.len() == 2 =>
+      {
+        walk(&args[0], 1, Some(&args[1]), out, count);
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() == 2 =>
+      {
+        let style = if args.len() == 2 {
+          args[1].clone()
+        } else {
+          call("Directive", args[1..].to_vec())
+        };
+        walk(&args[0], 0, Some(&style), out, count);
+      }
+      Expr::Integer(d) => out.push((prop, *d, None, value.cloned())),
+      Expr::List(items) => match items.as_slice() {
+        [Expr::Integer(d), Expr::Integer(i)] => {
+          out.push((prop, *d, Some(*i), value.cloned()));
+        }
+        [Expr::Integer(d), Expr::Identifier(all)] if all == "All" => {
+          for i in 1..=count(*d) {
+            out.push((prop, *d, Some(i as i128), value.cloned()));
+          }
+        }
+        [Expr::Integer(d), Expr::String(_)] => {
+          out.push((prop, *d, None, value.cloned()));
+        }
+        _ => {
+          for item in items {
+            walk(item, prop, value, out, count);
+          }
+        }
+      },
+      _ => {}
+    }
+  }
+  let mut raw: Vec<(u8, i128, Option<i128>, Option<Expr>)> = Vec::new();
+  walk(&args[1], 0, None, &mut raw, &cell_count);
+  for opt in &args[2..] {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      continue;
+    };
+    let prop = match pattern.as_ref() {
+      Expr::Identifier(n) if n == "MeshCellHighlight" => 0,
+      Expr::Identifier(n) if n == "MeshCellLabel" => 1,
+      _ => continue,
+    };
+    let rules: Vec<&Expr> = match replacement.as_ref() {
+      Expr::List(items) => items.iter().collect(),
+      other => vec![other],
+    };
+    for rule in rules {
+      if let Expr::Rule {
+        pattern: lhs,
+        replacement: rhs,
+      } = rule
+      {
+        walk(lhs, prop, Some(rhs), &mut raw, &cell_count);
+      }
+    }
+  }
+  for (prop, d, cell, value) in raw {
+    let value = value.unwrap_or_else(|| default_highlight(d, cell.is_some()));
+    entries.push((prop, d, cell, value));
+  }
+  let mut rules = Vec::new();
+  for prop in [0u8, 1] {
+    let mut dims: Vec<i128> = entries
+      .iter()
+      .filter(|e| e.0 == prop)
+      .map(|e| e.1)
+      .collect();
+    dims.sort_unstable();
+    dims.dedup();
+    let key = if prop == 0 {
+      "MeshCellHighlight"
+    } else {
+      "MeshCellLabel"
+    };
+    for d in dims {
+      let rule = |cell: Expr, value: Expr| {
+        rule_expr(
+          Expr::List(vec![Expr::Integer(d), cell].into()),
+          rule_expr(id_expr(key), value),
+        )
+      };
+      for e in entries.iter().filter(|e| e.0 == prop && e.1 == d) {
+        if let Some(i) = e.2 {
+          rules.push(rule(Expr::Integer(i), e.3.clone()));
+        }
+      }
+      let default = entries
+        .iter()
+        .rfind(|e| e.0 == prop && e.1 == d && e.2.is_none())
+        .map_or_else(|| id_expr("Automatic"), |e| e.3.clone());
+      rules.push(rule(id_expr("Default"), default));
+    }
+  }
+  let Expr::FunctionCall {
+    name: mesh_head,
+    args: mesh_args,
+  } = mesh
+  else {
+    return Ok(mesh.clone());
+  };
+  let mut new_args: Vec<Expr> = mesh_args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Properties"))
+    })
+    .cloned()
+    .collect();
+  if !rules.is_empty() {
+    new_args.push(rule_expr(id_expr("Properties"), Expr::List(rules.into())));
+  }
+  Ok(call(mesh_head, new_args))
+}
+
+/// `Multicolumn[{e1, …}, spec, opts]` as the `Grid` wolframscript makes of
+/// it: `n` columns (by default Ceiling[Sqrt[len]]), or `{rows, cols}` with
+/// either Automatic, filled column by column (row by row for `Appearance
+/// -> "Horizontal"`), padded with Null, the options followed by
+/// `Alignment -> {Left, Baseline}`.
+fn multicolumn_grid(args: &[Expr]) -> Option<Expr> {
+  let Expr::List(items) = &args[0] else {
+    return None;
+  };
+  let (spec, opts) = match args.get(1) {
+    Some(Expr::Rule { .. }) | None => (None, &args[1..]),
+    Some(s) => (Some(s), &args[2..]),
+  };
+  if !opts.iter().all(|o| matches!(o, Expr::Rule { .. })) {
+    return None;
+  }
+  let len = items.len();
+  let positive = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+    _ => None,
+  };
+  let auto = |e: &Expr| matches!(e, Expr::Identifier(a) if a == "Automatic");
+  let (rows, cols) = match spec {
+    None => {
+      let cols = ((len as f64).sqrt().ceil() as usize).max(1);
+      (len.div_ceil(cols).max(1), cols)
+    }
+    Some(Expr::List(rc)) if rc.len() == 2 => {
+      match (positive(&rc[0]), positive(&rc[1])) {
+        (Some(r), Some(c)) => (r, c),
+        (Some(r), None) if auto(&rc[1]) => (r, len.div_ceil(r).max(1)),
+        (None, Some(c)) if auto(&rc[0]) => (len.div_ceil(c).max(1), c),
+        _ => return None,
+      }
+    }
+    Some(n) => {
+      let cols = positive(n)?;
+      (len.div_ceil(cols).max(1), cols)
+    }
+  };
+  let horizontal = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Appearance")
+        && matches!(replacement.as_ref(), Expr::String(s) if s == "Horizontal"))
+  });
+  let cell = |r: usize, c: usize| {
+    let k = if horizontal {
+      r * cols + c
+    } else {
+      c * rows + r
+    };
+    items.get(k).cloned().unwrap_or_else(|| id_expr("Null"))
+  };
+  let grid: Vec<Expr> = (0..rows)
+    .map(|r| Expr::List((0..cols).map(|c| cell(r, c)).collect()))
+    .collect();
+  let mut grid_args = vec![Expr::List(grid.into())];
+  grid_args.extend(
+    opts
+      .iter()
+      .filter(|o| {
+        !matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Appearance"))
+      })
+      .cloned(),
+  );
+  grid_args.push(rule_expr(
+    id_expr("Alignment"),
+    Expr::List(vec![id_expr("Left"), id_expr("Baseline")].into()),
+  ));
+  Some(call("Grid", grid_args))
+}
+
+/// Whether a package has been loaded (`Get`/`Needs`) this session. Until it
+/// is, its qualified names are plain symbols without definitions.
+fn package_loaded(ctx: &str) -> bool {
+  crate::packages_list().iter().any(|pkg| pkg == ctx)
+}
+
+/// `HierarchicalClustering`DistanceMatrix[data]`: the package's Automatic
+/// distance is SquaredEuclideanDistance for numbers and numeric vectors,
+/// EditDistance for strings and HammingDistance for boolean vectors; other
+/// data has no automatic distance (`DistanceMatrix::amtd`). The diagonal is
+/// an exact 0 whatever the data.
+fn hierarchical_clustering_distance_matrix(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let name = "HierarchicalClustering`DistanceMatrix";
+  let Expr::List(items) = &args[0] else {
+    return Ok(unevaluated(name, args));
+  };
+  let given = match args.get(1) {
+    None => None,
+    Some(Expr::Rule {
+      pattern,
+      replacement,
+    }) if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "DistanceFunction") => {
+      Some(replacement.as_ref().clone())
+    }
+    Some(_) => {
+      crate::emit_message(
+        "DistanceMatrix::argx: DistanceMatrix called with 2 arguments; 1 argument is expected.",
+      );
+      return Ok(unevaluated(name, args));
+    }
+  };
+  let automatic = match &given {
+    None => true,
+    Some(Expr::Identifier(f)) => f == "Automatic",
+    Some(_) => false,
+  };
+  let function = if automatic {
+    let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+    let boolean = |e: &Expr| matches!(e, Expr::Identifier(b) if b == "True" || b == "False");
+    let vectors: Option<Vec<&[Expr]>> = items
+      .iter()
+      .map(|e| match e {
+        Expr::List(v) => Some(v.as_slice()),
+        _ => None,
+      })
+      .collect();
+    let same_length =
+      |vs: &[&[Expr]]| vs.iter().all(|v| v.len() == vs[0].len());
+    let chosen = if items.is_empty() {
+      None
+    } else if items.iter().all(numeric) {
+      Some("SquaredEuclideanDistance")
+    } else if items.iter().all(|e| matches!(e, Expr::String(_))) {
+      Some("EditDistance")
+    } else if let Some(vs) = vectors.filter(|vs| same_length(vs)) {
+      if vs.iter().all(|v| v.iter().all(numeric)) {
+        Some("SquaredEuclideanDistance")
+      } else if vs.iter().all(|v| v.iter().all(boolean)) {
+        Some("HammingDistance")
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    if let Some(f) = chosen {
+      Expr::Identifier(f.to_string())
+    } else {
+      crate::emit_message(&format!(
+        "DistanceMatrix::amtd: DistanceMatrix is unable to automatically select an appropriate dissimilarity function for the input data {}.",
+        expr_to_string(&args[0])
+      ));
+      return Ok(unevaluated(name, args));
+    }
+  } else {
+    given.unwrap()
+  };
+  let matrix = crate::functions::list_helpers_ast::distance_matrix_ast(&[
+    args[0].clone(),
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier("DistanceFunction".to_string())),
+      replacement: Box::new(function),
+    },
+  ])?;
+  let Expr::List(rows) = &matrix else {
+    return Ok(unevaluated(name, args));
+  };
+  let rows: Vec<Expr> = rows
+    .iter()
+    .enumerate()
+    .map(|(i, row)| match row {
+      Expr::List(cells) => {
+        let mut cells = cells.to_vec();
+        if let Some(c) = cells.get_mut(i) {
+          *c = Expr::Integer(0);
+        }
+        Expr::List(cells.into())
+      }
+      other => other.clone(),
+    })
+    .collect();
+  Ok(Expr::List(rows.into()))
+}
+
+/// The number of sides of a `Polytopes`` polygon symbol: one of the
+/// package's own, or the System `Triangle` and `Square`.
 fn polytopes_polygon_sides(symbol: &str) -> Option<i128> {
-  let bare = symbol.strip_prefix("Polytopes`").unwrap_or(symbol);
+  match symbol {
+    "Triangle" | "System`Triangle" => return Some(3),
+    "Square" | "System`Square" => return Some(4),
+    _ => {}
+  }
+  let bare = symbol.strip_prefix("Polytopes`")?;
   Some(match bare {
     "Digon" => 2,
-    "Triangle" => 3,
-    "Square" => 4,
     "Pentagon" => 5,
     "Hexagon" => 6,
     "Heptagon" => 7,

@@ -1099,9 +1099,9 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if (first - v).abs() > tol && first != v {
           return Ok(bool_expr(false));
         }
-      } else if v != first
-        && !exact_difference_vanishes(&args[0], &args[i], first, v)
-      {
+      // Exact operands compare exactly even when their machine values
+      // coincide: `Equal[1, 1 + 10^-17]` is False.
+      } else if !exact_difference_vanishes(&args[0], &args[i], first, v) {
         return Ok(bool_expr(false));
       }
     }

@@ -2043,9 +2043,35 @@ mod circle_points {
     );
   }
 
+  // A fractional n keeps the 2 Pi/n spacing and draws Floor[n] points.
   #[test]
-  fn fractional_real_stays_unevaluated() {
-    assert_eq!(interpret("CirclePoints[4.5]").unwrap(), "CirclePoints[4.5]");
+  fn fractional_real_n() {
+    assert_eq!(
+      interpret("CirclePoints[4.5]").unwrap(),
+      "{{0.6427876096865394, -0.766044443118978}, {0.8660254037844387, 0.49999999999999994}, {-0.3420201433256687, 0.9396926207859084}, {-0.9848077530122081, -0.17364817766693003}}"
+    );
+    assert_eq!(
+      interpret("{CirclePoints[2.5], CirclePoints[0.5], CirclePoints[1.5]}")
+        .unwrap(),
+      "{{{0.9510565162951535, -0.3090169943749474}, {-0.587785252292473, 0.8090169943749475}}, {}, {{0.8660254037844387, 0.49999999999999983}}}"
+    );
+  }
+
+  #[test]
+  fn fractional_rational_n_is_exact() {
+    assert_eq!(
+      interpret("CirclePoints[9/2]").unwrap(),
+      "{{Sin[(2*Pi)/9], -Cos[(2*Pi)/9]}, {Sqrt[3]/2, 1/2}, {-Sin[Pi/9], Cos[Pi/9]}, {-Cos[Pi/18], -Sin[Pi/18]}}"
+    );
+  }
+
+  #[test]
+  fn fractional_n_with_center_and_angle() {
+    assert_eq!(
+      interpret("{CirclePoints[{1, 2}, 3, 4.5], CirclePoints[{2, Pi}, 4.5]}")
+        .unwrap(),
+      "{{{2.928362829059618, -0.29813332935693415}, {3.598076211353316, 3.5}, {-0.026060429977006194, 4.819077862357725}, {-1.9544232590366244, 1.47905546699921}}, {{-2., 2.4492935982947064*^-16}, {-0.34729635533386066, -1.969615506024416}, {1.8793852415718169, -0.6840402866513372}, {1.000000000000001, 1.7320508075688767}}}"
+    );
   }
 
   #[test]
@@ -3014,10 +3040,11 @@ mod delaunay_mesh {
 mod computational_geometry_convex_hull {
   use super::*;
 
-  // The hull's area: exact for exact points, a machine number otherwise,
-  // 0 for a degenerate hull.
+  // A line is read before it runs: the bare names on the line that loads
+  // the package are `Global`` symbols, and print as such once the package
+  // exports the same names.
   #[test]
-  fn convex_hull_area() {
+  fn bare_names_on_the_loading_line_stay_global() {
     assert_eq!(
       interpret(
         "Get[\"ComputationalGeometry`\"]; \
@@ -3026,67 +3053,180 @@ mod computational_geometry_convex_hull {
            ComputationalGeometry`ConvexHullArea[{{0,0},{3,0},{1,2},{1,1}}]}]"
       )
       .unwrap(),
-      "InputForm[{1, 3., 0, 3}]"
+      "InputForm[{Global`ConvexHullArea[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {1/2, 1/2}}], Global`ConvexHullArea[{{0., 0}, {2, 0}, {0, 3}}], Global`ConvexHullArea[{{0, 0}, {1, 1}}], 3}]"
     );
   }
 
-  // Indices of the strict corners, counter-clockwise from the leftmost one.
+  // The hull's area: the triangles each hull edge makes with the centroid,
+  // exact for exact points, a machine number otherwise, 0 for a degenerate
+  // hull. Read on a later line, the bare name is the package's.
+  #[test]
+  fn convex_hull_area() {
+    assert_eq!(
+      interpret(
+        "Get[\"ComputationalGeometry`\"]\n\
+         InputForm[{ConvexHullArea[{{0,0},{1,0},{1,1},{0,1},{1/2,1/2}}], \
+           ConvexHullArea[{{0.,0},{2,0},{0,3}}], ConvexHullArea[{{0,0},{1,1}}], \
+           ConvexHullArea[{{0.1,0.2},{2.3,0.1},{1.7,3.3},{0.5,2.9}}]}]"
+      )
+      .unwrap(),
+      "InputForm[{1, 3., 0, 5.029999999999999}]"
+    );
+  }
+
+  // Until the package is loaded its qualified names have no definitions.
+  // (Two lines, so the conformance run, whose session may have loaded the
+  // package already, leaves it alone.)
+  #[test]
+  fn qualified_name_before_loading() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = {{0,0},{1,1},{2,0}};\nComputationalGeometry`ConvexHull[pts]"
+      )
+      .unwrap(),
+      "ComputationalGeometry`ConvexHull[{{0, 0}, {1, 1}, {2, 0}}]"
+    );
+  }
+
+  // Graham's scan as the package runs it: counter-clockwise from the first
+  // rightmost point of the polar order, the lowest of the rightmost ones.
   #[test]
   fn qualified_name() {
     assert_eq!(
       interpret(
-        "ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,0},{1,0.5},{1,-1}}]"
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,0},{1,0.5},{1,-1}}]"
       )
       .unwrap(),
-      "{1, 5, 3, 2}"
+      "{3, 2, 1, 5}"
     );
   }
 
-  // Loading the package puts the bare name in scope.
+  #[test]
+  fn hull_start_and_direction() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`ConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}], ComputationalGeometry`ConvexHull[{{0,0},{0,2},{2,2},{2,0}}], ComputationalGeometry`ConvexHull[{{1,0},{0,1},{-1,0},{0,-1}}], ComputationalGeometry`ConvexHull[{{0,1},{0,0},{1,0},{1,1}}], ComputationalGeometry`ConvexHull[{{3,0},{3,1},{0,0},{0,1},{1,5}}]}"
+      )
+      .unwrap(),
+      "{{2, 3, 5, 1}, {4, 3, 2, 1}, {1, 2, 3, 4}, {3, 4, 1, 2}, {1, 2, 5, 4, 3}}"
+    );
+  }
+
+  // AllPoints -> True (the default) keeps points on a hull edge; collinear
+  // points come back sorted by position; a duplicate is dropped with a
+  // message.
+  #[test]
+  fn edge_points_collinear_sets_and_duplicates() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`ConvexHull[{{0,0},{1,0},{2,0},{2,2},{1,2},{0,2}}], ComputationalGeometry`ConvexHull[{{0,0},{1,0},{2,0},{2,2},{0,2}}, ComputationalGeometry`AllPoints -> False], ComputationalGeometry`ConvexHull[{{0,0},{1,1},{2,2},{3,3}}], ComputationalGeometry`ConvexHull[{{0,0},{1,1}}]}"
+      )
+      .unwrap(),
+      "{{3, 4, 5, 6, 1, 2}, {3, 4, 5, 1}, {1, 2, 3, 4}, {1, 2}}"
+    );
+    let r = interpret_with_stdout(
+      "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`ConvexHull[{{0,0},{0,0},{1,0},{0,1}}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{3, 4, 1}");
+    assert!(r.warnings.iter().any(|w| {
+      w.contains("ConvexHull::duplicated: 1 duplicated point(s) ignored.")
+    }));
+  }
+
+  // Loading the package puts the bare name in scope for the lines after.
   #[test]
   fn bare_name_after_get() {
     assert_eq!(
       interpret(
-        "<<\"ComputationalGeometry`\"; ConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}]"
+        "<<\"ComputationalGeometry`\"\nConvexHull[{{0,0},{4,0},{4,3},{1,1},{0,3}}]"
       )
       .unwrap(),
-      "{1, 2, 3, 5}"
+      "{2, 3, 5, 1}"
     );
   }
 
-  // The legacy adjacency-list triangulation: neighbours of each point.
+  // The legacy adjacency-list triangulation: the neighbours of each point
+  // counter-clockwise, in the order the package's divide-and-conquer merge
+  // leaves them.
   #[test]
   fn delaunay_triangulation_adjacency() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; DelaunayTriangulation[{{-3,-3},{2,-2},{4,2},{1,3}}]"
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`DelaunayTriangulation[{{-3,-3},{2,-2},{4,2},{1,3}}]"
       )
       .unwrap(),
-      "{{1, {2, 4}}, {2, {1, 3, 4}}, {3, {2, 4}}, {4, {1, 2, 3}}}"
+      "{{1, {2, 4}}, {2, {3, 4, 1}}, {3, {4, 2}}, {4, {1, 2, 3}}}"
     );
   }
 
-  // The Voronoi diagram: cell edges clipped to a frame, sites, index labels.
+  // With Hull -> True the hull comes too; an interior point's list and a
+  // collinear half are merged the package's way.
+  #[test]
+  fn delaunay_triangulation_hull_and_collinear_halves() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; {ComputationalGeometry`DelaunayTriangulation[{{0,0},{4,0},{0,4},{4,4},{1,2}}, ComputationalGeometry`Hull -> True], ComputationalGeometry`DelaunayTriangulation[{{0,0},{1,0},{2,0},{0,1},{1,1},{2,1}}]}"
+      )
+      .unwrap(),
+      "{{{{1, {2, 5, 3}}, {2, {4, 5, 1}}, {3, {1, 5, 4}}, {4, {3, 5, 2}}, {5, {3, 1, 2, 4}}}, {3, 1, 2, 4}}, {{1, {2, 5, 4}}, {2, {3, 6, 5, 1}}, {3, {6, 2}}, {4, {1, 5}}, {5, {4, 1, 2, 6}}, {6, {5, 2, 3}}}}"
+    );
+  }
+
+  // Twelve points with repeated abscissae, by the package's labels.
+  #[test]
+  fn delaunay_triangulation_larger_set() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; ComputationalGeometry`DelaunayTriangulation[Table[{Mod[i*37, 11], Mod[i*61, 13]}, {i, 12}], ComputationalGeometry`Hull -> True]"
+      )
+      .unwrap(),
+      "{{{1, {11, 12, 2, 4}}, {2, {5, 4, 1, 12, 9, 6, 3}}, {3, {2, 6, 11}}, {4, {11, 1, 2, 5, 8, 7}}, {5, {8, 4, 2}}, {6, {9, 11, 3, 2}}, {7, {11, 4, 8, 10}}, {8, {10, 7, 4, 5}}, {9, {12, 11, 6, 2}}, {10, {11, 7, 8}}, {11, {3, 6, 9, 12, 1, 4, 7, 10}}, {12, {1, 11, 9, 2}}}, {11, 3, 2, 5, 8, 10}}"
+    );
+  }
+
+  // The Voronoi diagram as graphics: the site labels, the finite vertex,
+  // the rays and the (open) cell outlines, in the points' own arithmetic.
   #[test]
   fn diagram_plot_voronoi_edges_sites_and_labels() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; g = DiagramPlot[{{0,0},{4,0},{0,3}}, LabelPoints -> True]; {Length[Cases[g, _Line, Infinity]], Cases[g, _Point, Infinity], Cases[g, _Text, Infinity]}"
+        "Needs[\"ComputationalGeometry`\"]; g = ComputationalGeometry`DiagramPlot[{{0,0},{4,0},{0,3}}, ComputationalGeometry`LabelPoints -> True]; {Length[Cases[g, _Line, Infinity]], Cases[g, _Point, Infinity], Cases[g, _Text, Infinity]}"
       )
       .unwrap(),
-      "{3, {Point[{0., 0.}], Point[{4., 0.}], Point[{0., 3.}]}, {Text[1, {0., 0.}], Text[2, {4., 0.}], Text[3, {0., 3.}]}}"
+      "{6, {Point[{2, 3/2}]}, {Text[1, {0, 0}], Text[2, {4, 0}], Text[3, {0, 3}]}}"
     );
   }
 
-  // One finite vertex (the circumcentre) followed by a ray per hull edge.
+  #[test]
+  fn diagram_plot_structure() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; ToString[ComputationalGeometry`DiagramPlot[{{0,0},{4,0},{0,3},{2,2}}, ComputationalGeometry`LabelPoints -> False], InputForm]"
+      )
+      .unwrap(),
+      "Graphics[{{PointSize[0.012], Point[{0, 0}], Point[{4, 0}], Point[{0, 3}], Point[{2, 2}]}, {PointSize[0.012], Point[{1/2, 3/2}], Point[{2, 0}]}, {Thickness[0.003], Line[{{2, 0}, {2, -4}}], Line[{{1/2, 3/2}, {-3, 3/2}}], Line[{{2, 0}, {5, 3}}], Line[{{1/2, 3/2}, {2, 9/2}}], Line[{{2, 0}, {1/2, 3/2}}], Line[{{2, 0}}], Line[{{1/2, 3/2}}], Line[{{1/2, 3/2}, {2, 0}}]}}, {PlotRange -> {{-3.473684210526316, 5.473684210526316}, {-4.223684210526316, 4.723684210526316}}, AspectRatio -> 1}]"
+    );
+  }
+
+  // One finite vertex (the circumcentre) followed by a ray per hull edge,
+  // exact for exact points; the ray's second point is its tail.
   #[test]
   fn voronoi_diagram_vertices_rays_and_cells() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,3}}]; {Length[v], v[[1]], Head /@ Rest[v], Length /@ c[[All, 2]], c[[All, 1]]}"
+        "Needs[\"ComputationalGeometry`\"]; {v, c} = ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,3}}]; {Length[v], v[[1]], Head /@ Rest[v], Length /@ c[[All, 2]], c[[All, 1]]}"
       )
       .unwrap(),
-      "{4, {2., 1.5}, {Ray, Ray, Ray}, {3, 3, 3}, {1, 2, 3}}"
+      "{4, {2, 3/2}, {Ray, Ray, Ray}, {3, 3, 3}, {1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,3}}]]"
+      )
+      .unwrap(),
+      "InputForm[{{{2, 3/2}, Ray[{2, 3/2}, {2, -4}], Ray[{2, 3/2}, {-3, 3/2}], Ray[{2, 3/2}, {5, 11/2}]}, {{1, {1, 3, 2}}, {2, {1, 2, 4}}, {3, {1, 4, 3}}}}]"
     );
   }
 
@@ -3095,10 +3235,22 @@ mod computational_geometry_convex_hull {
   fn voronoi_diagram_bounded_cell() {
     assert_eq!(
       interpret(
-        "Needs[\"ComputationalGeometry`\"]; {v, c} = VoronoiDiagram[{{0,0},{4,0},{0,4},{-4,0},{0,-4}}]; {Length[c[[1, 2]]], AllTrue[c[[1, 2]], # <= Length[v] - 4 &]}"
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{4,0},{0,4},{-4,0},{0,-4}}]]"
       )
       .unwrap(),
-      "{4, True}"
+      "InputForm[{{{-2, -2}, {-2, 2}, {2, -2}, {2, 2}, Ray[{2, 2}, {6, 6}], Ray[{2, -2}, {6, -6}], Ray[{-2, 2}, {-6, 6}], Ray[{-2, -2}, {-6, -6}]}, {{1, {2, 1, 3, 4}}, {2, {4, 3, 6, 5}}, {3, {2, 4, 5, 7}}, {4, {1, 2, 7, 8}}, {5, {3, 1, 8, 6}}}}]"
+    );
+  }
+
+  // Collinear sites: a pair of rays between each two neighbours.
+  #[test]
+  fn voronoi_diagram_collinear_sites() {
+    assert_eq!(
+      interpret(
+        "Needs[\"ComputationalGeometry`\"]; InputForm[ComputationalGeometry`VoronoiDiagram[{{0,0},{1,1},{2,2}}]]"
+      )
+      .unwrap(),
+      "InputForm[{{Ray[{1/2, 1/2}, {2., -1.}], Ray[{1/2, 1/2}, {-1., 2.}], Ray[{3/2, 3/2}, {3., 0.}], Ray[{3/2, 3/2}, {0., 3.}]}, {{1, {1, 2}}, {2, {1, 2, 3, 4}}, {3, {3, 4}}}}]"
     );
   }
 }
@@ -9432,12 +9584,14 @@ mod triangulate_mesh {
     );
   }
 
+  // (Rounded: wolframscript refines the mesh into many machine-number
+  // triangles whose areas add up to 6 only to the last bits.)
   #[test]
   fn clockwise_boundary_gives_the_same_area() {
     assert_eq!(
       interpret(
-        "RegionMeasure[TriangulateMesh[BoundaryMeshRegion[\
-         {{0,3},{1,3},{1,1},{4,1},{4,0},{0,0}}, Line[{1,2,3,4,5,6,1}]]]]"
+        "Round[RegionMeasure[TriangulateMesh[BoundaryMeshRegion[\
+         {{0,3},{1,3},{1,1},{4,1},{4,0},{0,0}}, Line[{1,2,3,4,5,6,1}]]]], 10^-9]"
       )
       .unwrap(),
       "6"
@@ -9477,6 +9631,7 @@ mod triangulate_mesh {
     );
   }
 
+  // The highlights and labels ride along as the mesh's `Properties`.
   #[test]
   fn highlight_mesh_shows_the_mesh() {
     assert_eq!(
@@ -9486,7 +9641,14 @@ mod triangulate_mesh {
          Triangle[{{1,2,3}}]]"
       )
       .unwrap(),
-      "True"
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "m = MeshRegion[{{0,0},{1,0},{0,1}}, Triangle[{{1,2,3}}]]; ToString[Options /@ {HighlightMesh[m, Labeled[0, \"Index\"]], HighlightMesh[m, {{1, 2}, {0, 3}}], HighlightMesh[m, Labeled[{1, All}, \"Index\"]], HighlightMesh[m, {Style[0, Blue], Labeled[2, \"x\"]}], HighlightMesh[m, {2, 1}]}, InputForm]"
+      )
+      .unwrap(),
+      "{{Properties -> {{0, Default} -> MeshCellLabel -> \"Index\"}}, {Properties -> {{0, 3} -> MeshCellHighlight -> Directive[AbsolutePointSize[5], LABColor[0.46955436271454654, 0.6458308777218053, 0.45400449528052444]], {0, Default} -> MeshCellHighlight -> Automatic, {1, 2} -> MeshCellHighlight -> Directive[JoinForm[\"Round\"], AbsoluteThickness[3], LABColor[0.46955436271454654, 0.6458308777218053, 0.45400449528052444]], {1, Default} -> MeshCellHighlight -> Automatic}}, {Properties -> {{1, 1} -> MeshCellLabel -> \"Index\", {1, 2} -> MeshCellLabel -> \"Index\", {1, 3} -> MeshCellLabel -> \"Index\", {1, Default} -> MeshCellLabel -> Automatic}}, {Properties -> {{0, Default} -> MeshCellHighlight -> RGBColor[0, 0, 1], {2, Default} -> MeshCellLabel -> \"x\"}}, {Properties -> {{2, 1} -> MeshCellHighlight -> Hue[0.125, 0.5, 0.95], {2, Default} -> MeshCellHighlight -> Automatic}}}"
     );
   }
 
@@ -9827,12 +9989,26 @@ mod hierarchical_clustering_distance_matrix {
         "Needs[\"HierarchicalClustering`\"]; HierarchicalClustering`DistanceMatrix[{{0, 0}, {3, 4}}]"
       )
       .unwrap(),
-      "{{0, 5}, {5, 0}}"
+      "{{0, 25}, {25, 0}}"
+    );
+  }
+
+  // The package's Automatic distance: squared Euclidean for numbers, edit
+  // distance for strings, Hamming for booleans; the diagonal stays exact.
+  #[test]
+  fn automatic_distance_by_data_kind() {
+    assert_eq!(
+      interpret(
+        "InputForm[{HierarchicalClustering`DistanceMatrix[{1.5, 2, 5}], HierarchicalClustering`DistanceMatrix[{\"abc\", \"abd\", \"xyz\"}], HierarchicalClustering`DistanceMatrix[{{True, False}, {False, False}}], HierarchicalClustering`DistanceMatrix[{{0, 0}, {3, 4}, {1, 1}}, DistanceFunction -> EuclideanDistance]}]"
+      )
+      .unwrap(),
+      "InputForm[{{{0, 0.25, 12.25}, {0.25, 0, 9}, {12.25, 9, 0}}, {{0, 1, 3}, {1, 0, 3}, {3, 3, 0}}, {{0, 1}, {1, 0}}, {{0, 5, Sqrt[2]}, {5, 0, Sqrt[13]}, {Sqrt[2], Sqrt[13], 0}}}]"
     );
   }
 }
 
-// Derivatives of a B-spline curve evaluate as the derivative curve.
+// The derivative of a B-spline is the spline object carrying the derivative
+// order (its seventh slot); applied, it evaluates the derivative curve.
 mod bspline_function_derivatives {
   use super::*;
 
@@ -9844,9 +10020,10 @@ mod bspline_function_derivatives {
        {1.5, 0.3}, {2.1, 0.5}}]; g = BSplineFunction[{1, 3, 2, 5}];",
     )
     .unwrap();
+    // (Rounded: the last bits depend on how the derivative is summed.)
     assert_eq!(
-      interpret("rear'[0.5]").unwrap(),
-      "{1.6875, 0.22499999999999992}"
+      interpret("Round[rear'[0.5], 10^-9]").unwrap(),
+      "{27/16, 9/40}"
     );
     assert_eq!(
       interpret("Chop[rear''[0.3] - {-3.375, 1.485}, 10^-12]").unwrap(),
@@ -9856,8 +10033,10 @@ mod bspline_function_derivatives {
     assert_eq!(interpret("g'[0.5]").unwrap(), "2.25");
     assert_eq!(
       interpret("Head[rear'[x]]").unwrap(),
-      "Derivative[1][BSplineFunction[1, {{0., 1.}}, {3}, {False}, {{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, {1.5, 0.3}, {2.1, 0.5}}, Automatic}, {{0., 0., 0., 0., 0.3333333333333333, 0.6666666666666666, 1., 1., 1., 1.}}, {0}, MachinePrecision, Unevaluated]]"
+      "BSplineFunction[1, {{0., 1.}}, {3}, {False}, {{{-0.5, 0.3}, {0., 0.5}, {0.5, 0.4}, {1., 0.6}, {1.5, 0.3}, {2.1, 0.5}}, Automatic}, {{0., 0., 0., 0., 0.3333333333333333, 0.6666666666666666, 1., 1., 1., 1.}}, {1}, MachinePrecision, Unevaluated]"
     );
+    // A derivative of a derivative adds to the order the object carries.
+    assert_eq!(interpret("Derivative[2][rear'][[7]]").unwrap(), "{3}");
   }
 }
 
@@ -10080,20 +10259,35 @@ mod polytopes_package {
   use super::*;
 
   // The legacy Polytopes` package: polygon vertices on the unit circle,
-  // radii for unit edge length.
+  // radii for unit edge length. The names are read on the line after the
+  // one that loads it; `Triangle` and `Square` are the System symbols.
   #[test]
   fn regular_polygons() {
     assert_eq!(
       interpret(
-        "Quiet[Get[\"Polytopes`\"]]; \
+        "Quiet[Get[\"Polytopes`\"]]\n\
          {NumberOfVertices[Pentagon], NumberOfFaces[Pentagon], InscribedRadius[Square], \
           CircumscribedRadius[Square], Faces[Square], Vertices[Digon], Vertices[Square], \
-          Vertices[Heptagon][[1]], Vertices[Triangle]}"
+          Vertices[Heptagon][[1]], Vertices[Triangle], Vertices[Global`Pentagon]}"
       )
       .unwrap(),
       "{5, 1, 1/2, 1/Sqrt[2], {1, 2, 3, 4}, {{-1, 0}, {1, 0}}, \
        {{0, 1}, {-1, 0}, {0, -1}, {1, 0}}, {Sin[(3*Pi)/14], Cos[(3*Pi)/14]}, \
-       {{-1/2, Sqrt[3]/2}, {-1/2, -1/2*Sqrt[3]}, {1, 0}}}"
+       {{-1/2, Sqrt[3]/2}, {-1/2, -1/2*Sqrt[3]}, {1, 0}}, Vertices[Global`Pentagon]}"
+    );
+  }
+
+  // On the loading line itself every name is read as a `Global`` symbol
+  // before the package defines its own.
+  #[test]
+  fn names_on_the_loading_line_stay_global() {
+    assert_eq!(
+      interpret(
+        "Quiet[Get[\"Polytopes`\"]]; \
+         {NumberOfVertices[Pentagon], InscribedRadius[Square], Vertices[Heptagon][[1]], Vertices[Triangle]}"
+      )
+      .unwrap(),
+      "{Global`NumberOfVertices[Global`Pentagon], Global`InscribedRadius[Square], Global`Heptagon, Global`Vertices[Triangle]}"
     );
   }
 }
@@ -10346,7 +10540,7 @@ mod planar_mesh_booleans {
       )
       .unwrap(),
       "{15., {2.033333333333333, 2.033333333333333}, 15., \
-       {2.033333333333333, 2.033333333333333}, 7, BoundaryMeshRegion}"
+       {2.033333333333333, 2.033333333333333}, 8, BoundaryMeshRegion}"
     );
   }
 
@@ -10361,12 +10555,11 @@ mod planar_mesh_booleans {
          r = BoundaryMeshRegion[{{0, 0}, {1, 0}, {1, 1}, {-1, 1}, {-1, -1}, \
          {1, -1}}, Line[{1, 2, 3, 4, 5, 6, 1}]]; \
          d = RegionDifference[b, r]; \
-         {Head[d], MeshCoordinates[d], MeshCells[d, 1], \
+         {Head[d], Sort[MeshCoordinates[d]], Length[MeshCells[d, 1]], \
           Area[RegionIntersection[b, r]]}"
       )
       .unwrap(),
-      "{BoundaryMeshRegion, {{1., -1.}, {1., 0.}, {0., 0.}}, \
-       {Line[{1, 2}], Line[{2, 3}], Line[{3, 1}]}, 3.5}"
+      "{BoundaryMeshRegion, {{0., 0.}, {1., -1.}, {1., 0.}}, 3, 3.5}"
     );
   }
 
@@ -10380,11 +10573,11 @@ mod planar_mesh_booleans {
           Triangle[{1, 2, 3}]], MeshRegion[{{1, 0}, {1, 1}, {0, 1}}, \
           Triangle[{1, 2, 3}]]]; \
          {RegionIntersection[q, t], Area[RegionUnion[q, t]], \
-          MeshCoordinates[u], MeshCells[u, 2]}"
+          Sort[MeshCoordinates[u]], Length /@ MeshCells[u, 2], Area[u]}"
       )
       .unwrap(),
-      "{EmptyRegion[2], 1.5, {{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}}, \
-       {Polygon[{1, 2, 3, 4}]}}"
+      "{EmptyRegion[2], 1.5, {{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}, \
+       {1}, 1.}"
     );
   }
 

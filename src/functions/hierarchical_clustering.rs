@@ -22,6 +22,12 @@ fn ev(e: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&e)
 }
 
+/// A package symbol's short name: once the package is loaded its symbols
+/// (`Cluster`, `Linkage`, …) are read under their full names.
+fn local(name: &str) -> &str {
+  name.strip_prefix(CTX).unwrap_or(name)
+}
+
 fn option<'a>(opts: &'a [Expr], name: &str) -> Option<&'a Expr> {
   opts.iter().find_map(|o| match o {
     Expr::Rule {
@@ -31,7 +37,7 @@ fn option<'a>(opts: &'a [Expr], name: &str) -> Option<&'a Expr> {
     | Expr::RuleDelayed {
       pattern,
       replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if local(n) == name) => {
       Some(replacement.as_ref())
     }
     _ => None,
@@ -101,7 +107,7 @@ impl Tree {
         distance,
         sizes,
       } => call(
-        "Cluster",
+        &format!("{CTX}Cluster"),
         vec![
           left.to_expr(labels),
           right.to_expr(labels),
@@ -294,7 +300,7 @@ pub fn agglomerate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn leaves(e: &Expr, out: &mut Vec<Expr>) {
   match e {
     Expr::FunctionCall { name, args }
-      if name == "Cluster" && args.len() == 5 =>
+      if local(name) == "Cluster" && args.len() == 5 =>
     {
       leaves(&args[0], out);
       leaves(&args[1], out);
@@ -304,7 +310,7 @@ fn leaves(e: &Expr, out: &mut Vec<Expr>) {
 }
 
 fn is_cluster(e: &Expr) -> bool {
-  matches!(e, Expr::FunctionCall { name, args } if name == "Cluster" && args.len() == 5)
+  matches!(e, Expr::FunctionCall { name, args } if local(name) == "Cluster" && args.len() == 5)
 }
 
 /// `ClusterFlatten[c]`.
@@ -363,7 +369,7 @@ pub fn dendrogram_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) -> Result<(Expr, Expr), InterpreterError> {
     match e {
       Expr::FunctionCall { name, args }
-        if name == "Cluster" && args.len() == 5 =>
+        if local(name) == "Cluster" && args.len() == 5 =>
       {
         let (x1, h1) = walk(&args[0], next_leaf, lines, place)?;
         let (x2, h2) = walk(&args[1], next_leaf, lines, place)?;
@@ -474,7 +480,7 @@ pub fn dendrogram_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } = o
       && let Expr::Identifier(n) = pattern.as_ref()
       && matches!(
-        n.as_str(),
+        local(n),
         "DistanceFunction"
           | "LeafLabels"
           | "TruncateDendrogram"

@@ -4024,15 +4024,24 @@ mod graphics {
       ));
     }
 
+    // The list form stays as written: a color all the same, but not the
+    // same expression as the spread-out channels.
     #[test]
     fn rgb_color_list_form() {
       assert_eq!(
         interpret("RGBColor[{1, 0.5, 0}]").unwrap(),
-        "RGBColor[1, 0.5, 0]"
+        "RGBColor[{1, 0.5, 0}]"
       );
       assert_eq!(
         interpret("RGBColor[{0.1, 0.2, 0.3, 0.4}]").unwrap(),
-        "RGBColor[0.1, 0.2, 0.3, 0.4]"
+        "RGBColor[{0.1, 0.2, 0.3, 0.4}]"
+      );
+      assert_eq!(
+        interpret(
+          "{ColorQ[RGBColor[{1, 0, 0}]], RGBColor[{1, 0, 0}] === RGBColor[1, 0, 0], RGBColor[{1, 0, 0}][[1]], ColorConvert[RGBColor[{1, 0, 0}], \"HSB\"]}"
+        )
+        .unwrap(),
+        "{True, False, {1, 0, 0}, Hue[0., 1., 1.]}"
       );
     }
 
@@ -22149,6 +22158,50 @@ mod show {
     assert_eq!(interpret("Show[1, 2, 3]").unwrap(), "Show[1, 2, 3]");
   }
 
+  // `Show` of symbolic graphics builds what Wolfram builds: an option-free
+  // single graphic comes back as is; otherwise one primitive list (a
+  // single graphic's own, or a list of each graphic's) and one option list
+  // — Show's own options first, then the first graphic's.
+  #[test]
+  fn show_symbolic_result_structure() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[#, InputForm] & /@ {Show[Graphics[{Circle[{0, 0}]}]], Show[Graphics[Circle[{0, 0}]]], Show[Graphics[{Circle[{0, 0}]}, Axes -> True]], Show[Graphics[{Circle[{0, 0}]}], Axes -> True], Show[Graphics[{Circle[{0, 0}]}, Frame -> True], {}]}"
+      )
+      .unwrap(),
+      "{Graphics[{Circle[{0, 0}]}], Graphics[Circle[{0, 0}]], Graphics[{Circle[{0, 0}]}, {Axes -> True}], Graphics[{Circle[{0, 0}]}, {Axes -> True}], Graphics[{Circle[{0, 0}]}, {Frame -> True}]}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[#, InputForm] & /@ {Show[Graphics[{Red, Disk[{0, 0}]}], Graphics[{Blue, Circle[{1, 0}]}]], Show[Graphics[{Red, Disk[{0, 0}]}, Axes -> True], Graphics[{Blue, Circle[{1, 0}]}, Frame -> True]], Show[{Graphics[Disk[{0, 0}]], Graphics[Circle[{0, 0}]]}], Show[Graphics[Disk[{0, 0}], PlotRange -> 1, Axes -> True], PlotRange -> 3], Show[Graphics3D[Sphere[{0, 0, 0}]], Graphics3D[Cuboid[{0, 0, 0}]]]}"
+      )
+      .unwrap(),
+      "{Graphics[{{RGBColor[1, 0, 0], Disk[{0, 0}]}, {RGBColor[0, 0, 1], Circle[{1, 0}]}}, {}], Graphics[{{RGBColor[1, 0, 0], Disk[{0, 0}]}, {RGBColor[0, 0, 1], Circle[{1, 0}]}}, {Axes -> True}], Graphics[{Disk[{0, 0}], Circle[{0, 0}]}, {}], Graphics[Disk[{0, 0}], {PlotRange -> 3, PlotRange -> 1, Axes -> True}], Graphics3D[{Sphere[{0, 0, 0}], Cuboid[{0, 0, 0}]}, {}]}"
+    );
+  }
+
+  // A symbol without a value is no graphic: Show stays unevaluated.
+  #[test]
+  fn show_of_a_symbol_cannot_combine() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "ToString[Show[undefinedSymbol, Graphics[{Disk[]}]], InputForm]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Show[undefinedSymbol, Graphics[{Disk[{0, 0}]}]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Show::gcomb: Could not combine the graphics objects in Show[undefinedSymbol, -Graphics-]."
+    )));
+    let r = interpret_with_stdout("Show[undefinedSymbol]").unwrap();
+    assert_eq!(r.result, "Show[undefinedSymbol]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("Show::gtype: Symbol is not a type of graphics."))
+    );
+  }
+
   /// Two plots merged by `Show` render through the ordinary plot renderer,
   /// so the first plot's frame and labels survive and each curve keeps the
   /// colour its own `PlotStyle` gave it.
@@ -23672,9 +23725,8 @@ mod graphics_grid {
     assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
   }
 
-  /// `Multicolumn[{e1, e2, …}, n]` is a display wrapper like `Column`: the
-  /// head stays symbolic, while a notebook host draws the items down `n`
-  /// columns (one column is a plain vertical stack).
+  /// `Multicolumn[{e1, e2, …}, n]` evaluates to the `Grid` holding the
+  /// items down `n` columns.
   #[test]
   fn multicolumn_draws_items_in_columns() {
     clear_state();
@@ -23683,7 +23735,14 @@ mod graphics_grid {
         "Head[Multicolumn[{Graphics[{Disk[]}], Graphics[{Circle[]}]}, 1]]"
       )
       .unwrap(),
-      "Multicolumn"
+      "Grid"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[{Multicolumn[Range[5], 2], Multicolumn[Range[10]], Multicolumn[Range[5], {2, Automatic}], Multicolumn[Range[5], {2, 2}], Multicolumn[Range[6], 2, Appearance -> \"Horizontal\"], Multicolumn[Range[5], 2, Frame -> All], Multicolumn[{}]}, InputForm]"
+      )
+      .unwrap(),
+      "{Grid[{{1, 4}, {2, 5}, {3, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 4, 7, 10}, {2, 5, 8, Null}, {3, 6, 9, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 3, 5}, {2, 4, Null}}, Alignment -> {Left, Baseline}], Grid[{{1, 3}, {2, 4}}, Alignment -> {Left, Baseline}], Grid[{{1, 2}, {3, 4}, {5, 6}}, Alignment -> {Left, Baseline}], Grid[{{1, 4}, {2, 5}, {3, Null}}, Frame -> All, Alignment -> {Left, Baseline}], Grid[{{Null}}, Alignment -> {Left, Baseline}]}"
     );
     let one = interpret_with_stdout(
       "Multicolumn[{Graphics[{Disk[]}, ImageSize -> 100], \
@@ -24858,32 +24917,23 @@ mod grid_rasterize {
     assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
   }
 
+  // An image is an atom: Part cannot reach inside it (Part::partd), and it
+  // has no length; ImageData is what reads the pixels.
   #[test]
-  fn image_part_reaches_pixel_data() {
+  fn image_has_no_parts() {
     clear_state();
-    // `img[[1]]` is the pixel array, `img[[2]]` the image type.
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]").unwrap(),
-      "{{0, 255}, {255, 0}}"
-    );
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1, 2]]").unwrap(),
-      "{255, 0}"
-    );
-    assert_eq!(
-      interpret("Image[{{0, 255}, {255, 0}}, \"Byte\"][[2]]").unwrap(),
-      "Byte"
-    );
-    // Part on a rasterized graphic feeds ordinary list functions.
+    let r = interpret_with_stdout("Image[{{0, 255}, {255, 0}}, \"Byte\"][[1]]")
+      .unwrap();
+    assert_eq!(r.result, "-Image-[[1]]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Part::partd: Part specification -Image-[[1]] is longer than depth of object."
+    )));
     assert_eq!(
       interpret(
-        "Dimensions[Rasterize[Graphics[{Disk[]}], ImageSize -> 10][[1]]]"
+        "{Length[Image[{{0, 255}, {255, 0}}, \"Byte\"]], AtomQ[Image[{{0, 255}, {255, 0}}, \"Byte\"]], ImageData[Image[{{0, 255}, {255, 0}}, \"Byte\"], \"Byte\"]}"
       )
       .unwrap(),
-      interpret(
-        "Dimensions[ImageData[Rasterize[Graphics[{Disk[]}], ImageSize -> 10], \"Byte\"]]"
-      )
-      .unwrap()
+      "{0, True, {{0, 255}, {255, 0}}}"
     );
   }
 
@@ -27436,6 +27486,34 @@ mod rule_plot {
       )
       .unwrap(),
       "-Graphics-"
+    );
+  }
+
+  // One inset per rule (the cell, an arrow, the block) between light grey
+  // rules; the insets keep their plot range's aspect.
+  #[test]
+  fn substitution_system_insets() {
+    assert_eq!(
+      interpret(
+        "g = RulePlot[SubstitutionSystem[{1 -> {{1, 0, 1}, {0, 1, 0}, {1, 0, 1}}, 0 -> {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}]]; \
+         {Cases[g, Inset[_, p_, _, s_] :> {p, s}, Infinity], Cases[g, (PlotRange -> r_) :> r, Infinity, 1], Cases[g, Rectangle[{2, 1}, _], Infinity]}"
+      )
+      .unwrap(),
+      "{{{{0.875, 1/2}, {1.75, 1}}, {{2.625, 1/2}, {1.75, 1}}}, {{{-3/2, 11/2}, {-3/2, 5/2}}}, {Rectangle[{2, 1}, {3, 2}], Rectangle[{2, 1}, {3, 2}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RulePlot[SubstitutionSystem[{1 -> {{1, 2}, {0, 1}}, 0 -> {{0, 0}, {0, 0}}, 2 -> {{2, 2}, {1, 0}}}]], _GrayLevel, Infinity] // Union"
+      )
+      .unwrap(),
+      "{GrayLevel[0], GrayLevel[1/2], GrayLevel[0.8], GrayLevel[1], GrayLevel[-1 + GoldenRatio]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RulePlot[SubstitutionSystem[{1 -> {1, 0}, 0 -> {0, 1}}]], Inset[_, p_, _, s_] :> {p, s}, Infinity]"
+      )
+      .unwrap(),
+      "{{{0.46153846153846156, 1/2}, {0.9230769230769231, 1}}, {{1.3846153846153846, 1/2}, {0.9230769230769231, 1}}}"
     );
   }
 
@@ -31764,7 +31842,9 @@ mod manipulate {
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed animate");
     assert!(spec.animated, "Animate widget must auto-play");
-    assert!(spec.appearance_none, "Appearance -> None must be captured");
+    // Animate does not know `Appearance`: wolframscript drops it
+    // (Animate::unknop), so the animator controls stay visible.
+    assert!(!spec.appearance_none, "Appearance -> None is dropped");
     match &spec.controls[0] {
       ManipulateControl::Continuous {
         name,
@@ -31784,7 +31864,6 @@ mod manipulate {
     }
     let json = manipulate_spec_to_json(&spec);
     assert!(json.contains(r#""animated":true"#));
-    assert!(json.contains(r#""appearanceNone":true"#));
 
     // A frame rendered at the initial tt must contain the three styled
     // curves and the Epilog overlay (red line + black circle).
@@ -38145,7 +38224,7 @@ mod color_data_indexed {
           Length[labels] > 0, labels[[1, 1]], IntegerQ[labels[[1, 2]]]}"
       )
       .unwrap(),
-      "{True, 1, True, True, 1., True}"
+      "{True, 1, True, True, 1, True}"
     );
   }
 
@@ -42389,7 +42468,36 @@ mod animate_result_display {
     clear_state();
     let out =
       interpret("Head[Animate[Graphics[{Disk[{T, 0}]}], {T, 0, 1}]]").unwrap();
-    assert_eq!(out, "Animate");
+    assert_eq!(out, "Manipulate");
+  }
+
+  // Animate evaluates to the Manipulate wolframscript builds: animator
+  // options go into every control, the rest are sorted, then the defaults.
+  #[test]
+  fn animate_is_a_manipulate_with_animator_controls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Animate[x + y, {x, 0, 1}, {{y, 0.5, \"why\"}, 0, 2}, AnimationRunning -> False, Paneled -> False, AnimationRepetitions -> 3, Bookmarks -> {}], InputForm]"
+      )
+      .unwrap(),
+      "Manipulate[x + y, {x, 0, 1, AnimationRunning -> False, AnimationRepetitions -> 3, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, {{y, 0.5, \"why\"}, 0, 2, AnimationRunning -> False, AnimationRepetitions -> 3, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, Bookmarks -> {}, Paneled -> False, ControlType -> Animator, AppearanceElements -> None, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 10.]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Animate[x, {x, 0, 1}, ControlType -> Trigger, AppearanceElements -> All, ShrinkingDelay -> 3, Deinitialization :> 1, Alignment -> Center], InputForm]"
+      )
+      .unwrap(),
+      "Manipulate[x, {x, 0, 1, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, Alignment -> Center, ControlType -> Trigger, ShrinkingDelay -> 3, Deinitialization :> 1, ControlType -> Trigger, AppearanceElements -> All, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 3.]"
+    );
+    assert_eq!(
+      interpret("Quiet[ToString[Animate[x, {x, {1, 2}}, Appearance -> None], InputForm]]").unwrap(),
+      "Manipulate[x, {x, {1, 2}, AppearanceElements -> {\"ProgressSlider\", \"PlayPauseButton\", \"FasterSlowerButtons\", \"DirectionButton\"}}, ControlType -> Animator, AppearanceElements -> None, DefaultBaseStyle -> \"Animate\", DefaultLabelStyle -> \"AnimateLabel\", SynchronousUpdating -> True, ShrinkingDelay -> 10.]"
+    );
+    assert_eq!(
+      interpret("ToString[Animate[x], InputForm]").unwrap(),
+      "Animate[x]"
+    );
   }
 }
 
@@ -43030,7 +43138,7 @@ mod rectangle_chart {
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, Frame -> True], HoldPattern[Axes -> a_] :> a, Infinity]"
       )
       .unwrap(),
-      "{False}"
+      "{{False, False}}"
     );
     assert_eq!(
       interpret(
@@ -43048,21 +43156,21 @@ mod rectangle_chart {
         "Cases[RectangleChart[{{1, 2}, {2, 3}}], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.0975, 0.}, {3.0975, 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1.098, 0.}, {3.098, 3.}, RoundingRadius -> 0]}"
     );
     assert_eq!(
       interpret(
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> 0.5], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1.5, 0.}, {2.5, 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1.5, 0.}, {2.5, 3.}, RoundingRadius -> 0]}"
     );
     assert_eq!(
       interpret(
         "Cases[RectangleChart[{{1, 2}, {1, 3}}, BarSpacing -> None], _Rectangle, Infinity]"
       )
       .unwrap(),
-      "{Rectangle[{0., 0.}, {1., 2.}], Rectangle[{1., 0.}, {2., 3.}]}"
+      "{Rectangle[{0., 0.}, {1., 2.}, RoundingRadius -> 0], Rectangle[{1., 0.}, {2., 3.}, RoundingRadius -> 0]}"
     );
   }
 
@@ -43070,14 +43178,14 @@ mod rectangle_chart {
   fn several_datasets_are_inset_and_coloured_by_position() {
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, _] :> a[[1]], Infinity]"
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, __] :> a[[1]], Infinity]"
       )
       .unwrap(),
-      "{0.1, 1.1975, 2.3975, 3.495}"
+      "{0.1, 1.1960000000000002, 2.3960000000000004, 3.4920000000000004}"
     );
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], {c_RGBColor, _Rectangle} :> c, Infinity]"
+        "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Directive[_EdgeForm, c_RGBColor] :> c, Infinity]"
       )
       .unwrap(),
       "{RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95], RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95]}"
@@ -43085,7 +43193,7 @@ mod rectangle_chart {
     // A single dataset uses the first colour throughout.
     assert_eq!(
       interpret(
-        "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], {c_RGBColor, _Rectangle} :> c, Infinity]]"
+        "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], Directive[_EdgeForm, c_RGBColor] :> c, Infinity]]"
       )
       .unwrap(),
       "{RGBColor[1., 0.835, 0.25]}"
@@ -43096,10 +43204,10 @@ mod rectangle_chart {
   fn chart_style_and_legends() {
     assert_eq!(
       interpret(
-        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, {Opacity[0.5], Blue}}], {c_, _Rectangle} :> c, Infinity]"
+        "Cases[RectangleChart[{{1, 2}, {1, 3}}, ChartStyle -> {Red, Blue}], {Directive[_EdgeForm, c__], _Tooltip} :> {c}, Infinity]"
       )
       .unwrap(),
-      "{RGBColor[1, 0, 0], Directive[Opacity[0.5], RGBColor[0, 0, 1]]}"
+      "{{RGBColor[1, 0, 0]}, {RGBColor[0, 0, 1]}}"
     );
     assert_eq!(
       interpret(
@@ -43110,14 +43218,24 @@ mod rectangle_chart {
     );
   }
 
+  // The boxes are polygons over their corners, flush with the back of the
+  // deepest one; the only Cuboid is the invisible base plate.
   #[test]
-  fn three_d_chart_uses_cuboids() {
+  fn three_d_chart_boxes_and_plate() {
     assert_eq!(
       interpret(
         "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], _Cuboid, Infinity]"
       )
       .unwrap(),
-      "{Cuboid[{0., 0., 0.}, {1., 2., 3.}], Cuboid[{1.0975, 0., 0.}, {3.0975, 1., 1.}]}"
+      "{Cuboid[{-0.1549, -0.5, 0}, {3.2529, 2.5, 0.024}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], GraphicsComplex[p_, _] :> p, Infinity]"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.}, {0., 2., 0.}, {0., 2., 3.}, {0., 0., 3.}, {1., 0., 0.}, {1., 2., 0.}, {1., 2., 3.}, {1., 0., 3.}}, \
+{{1.098, 1., 0.}, {1.098, 2., 0.}, {1.098, 2., 1.}, {1.098, 1., 1.}, {3.098, 1., 0.}, {3.098, 2., 0.}, {3.098, 2., 1.}, {3.098, 1., 1.}}}"
     );
   }
 
@@ -43607,16 +43725,24 @@ mod highlighted_list_plot {
   use super::*;
 
   // `Highlighted[data, Placed["XSlice", {{i}}]]` plots the data and marks
-  // the i-th point with a vertical line (SphericalShellAndLatticePoints).
+  // the i-th point with a vertical line (SphericalShellAndLatticePoints),
+  // the ray up from it as wolframscript writes it.
   #[test]
   fn x_slice_is_drawn() {
     assert_eq!(
       interpret(
         "g = ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]]; \
-         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]]}"
+         {Head[g], Length[Cases[g, InfiniteLine[{2, 4}, {0, 1}], Infinity]], Cases[g, _ConicHullRegion, Infinity]}"
       )
       .unwrap(),
-      "{Graphics, 1}"
+      "{Graphics, 0, {ConicHullRegion[{2., 4.}, {{0, 1}}]}}"
+    );
+    assert!(
+      interpret(
+        "ExportString[ListPlot[Highlighted[{1, 4, 9, 16}, Placed[\"XSlice\", {{2}}]]], \"SVG\"]"
+      )
+      .unwrap()
+      .contains("<polyline")
     );
     assert_eq!(
       interpret("Head[ListPlot[Highlighted[{1, 2, 3}]]]").unwrap(),
@@ -43843,17 +43969,58 @@ mod styled_text_and_computed_options_in_graphics_layouts {
   }
 }
 
+mod plain_bar_chart_tree {
+  use super::*;
+
+  // One plain dataset: an invisible Point pair for the extent (padded as
+  // though there were five bars), tooltip rectangles, n + 2 tick slots.
+  #[test]
+  fn extents_bars_and_slots() {
+    assert_eq!(
+      interpret(
+        "g = BarChart[{3, 1/2}]; {Cases[g, Point[p_] :> p, Infinity], Cases[g, Rectangle[{a_, _}, {b_, h_}, ___] :> {a, b, h}, Infinity], Cases[g, Tooltip[_, Style[v_, _]] :> v, Infinity], Cases[g, {{} ..}, Infinity]}"
+      )
+      .unwrap(),
+      "{{{{-0.030691915513474277, 0.}, {2.992643845593591, 0.}}}, {{0.5487982520029133, 1.4512017479970867, 3.}, {1.5487982520029133, 2.4512017479970867, 0.5}}, {3, 1/2}, {{{}, {}, {}, {}}}}"
+    );
+  }
+
+  // From ten bars on the bars narrow; from 46 on they touch.
+  #[test]
+  fn bar_width_by_count() {
+    assert_eq!(
+      interpret(
+        "Table[First[Cases[BarChart[Range[n]], Rectangle[{a_, _}, _, ___] :> a, Infinity]], {n, {12, 40, 60}}]"
+      )
+      .unwrap(),
+      "{0.5553185633686528, 0.6297088450393267, 0.5}"
+    );
+  }
+}
+
 mod generalized_bar_chart {
   use super::*;
 
+  // Bars centred on their position, in the bars' own arithmetic; the
+  // package's names exist once it is loaded.
   #[test]
   fn bars_are_centred_on_their_position() {
     assert_eq!(
       interpret(
-        "Cases[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}], _Rectangle, Infinity]"
+        "Needs[\"BarCharts`\"]; ToString[First[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}]], InputForm]"
       )
       .unwrap(),
-      "{Rectangle[{-0.5, 0.}, {0.5, 3.}], Rectangle[{1.75, 0.}, {2.25, 5.}]}"
+      "{{Hue[0.67, 0.45, 0.65], EdgeForm[Opacity[0.5]], Rectangle[{-1/2, 0}, {1/2, 3}]}, {Hue[0.67, 0.45, 0.65], EdgeForm[Opacity[0.5]], Rectangle[{1.75, 0}, {2.25, 5}]}}"
+    );
+  }
+
+  #[test]
+  fn unloaded_package_has_no_definitions() {
+    clear_state();
+    assert_eq!(
+      interpret("x = 1;\nHead[BarCharts`GeneralizedBarChart[{{0, 3, 1}}]]")
+        .unwrap(),
+      "BarCharts`GeneralizedBarChart"
     );
   }
 
@@ -43861,14 +44028,14 @@ mod generalized_bar_chart {
   fn bar_style_and_options_reach_the_graphics() {
     assert_eq!(
       interpret(
-        "Head[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red, PlotRange -> {{-1, 1}, {0, 4}}]]"
+        "Needs[\"BarCharts`\"]; Head[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red, PlotRange -> {{-1, 1}, {0, 4}}]]"
       )
       .unwrap(),
       "Graphics"
     );
     assert_eq!(
       interpret(
-        "FreeQ[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red], Red]"
+        "Needs[\"BarCharts`\"]; FreeQ[BarCharts`GeneralizedBarChart[{{0, 3, 1}}, BarCharts`BarStyle -> Red], Red]"
       )
       .unwrap(),
       "False"
@@ -44136,22 +44303,31 @@ mod cayley_graph {
 mod paired_charts {
   use super::*;
 
-  // The first series extends left of a central gap, the second right.
+  // The first series extends left of a central gap, the second right;
+  // each bar is a highlighted rectangle at Offset points, as in
+  // wolframscript's charts.
   #[test]
   fn back_to_back_bars() {
     assert_eq!(
       interpret(
-        "Cases[First[PairedBarChart[{1, 2, 3}, {4, 5, 6}]], Rectangle[a_, b_] :> {a[[1]], b[[1]]}, Infinity]"
+        "Cases[First[PairedBarChart[{1, 2, 3}, {4, 5, 6}]], Rectangle[Offset[_, a_], Offset[_, b_], ___] :> {a[[1]], b[[1]]}, Infinity]"
       )
       .unwrap(),
       "{{-1.45, -0.44999999999999996}, {-2.45, -0.44999999999999996}, \
        {-3.45, -0.44999999999999996}, {0.44999999999999996, 4.45}, \
        {0.44999999999999996, 5.45}, {0.44999999999999996, 6.45}}"
     );
+    assert_eq!(
+      interpret(
+        "{Cases[First[PairedBarChart[{1, 2, 3}, {4, 5, 6}]], Rectangle[a_, b_] :> {a[[1]], b[[1]]}, Infinity], Cases[PairedBarChart[{1, 2, 3}, {4, 5, 6}], Tooltip[_, Style[v_, _]] :> v, Infinity]}"
+      )
+      .unwrap(),
+      "{{}, {1, 2, 3, 4, 5, 6}}"
+    );
     // Histograms share the bins of the joined data.
     assert_eq!(
       interpret(
-        "Cases[First[PairedHistogram[{1, 2, 2, 3, 3, 3}, {1, 1, 2, 4}]], Rectangle[a_, b_] :> {a[[2]], b[[2]]}, Infinity]"
+        "Cases[First[PairedHistogram[{1, 2, 2, 3, 3, 3}, {1, 1, 2, 4}]], Rectangle[Offset[_, a_], Offset[_, b_], ___] :> {a[[2]], b[[2]]}, Infinity]"
       )
       .unwrap(),
       "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
@@ -44231,11 +44407,19 @@ mod graphics3d_overlay_and_atom_colors {
     );
     assert_eq!(
       interpret("Round[List @@ ColorData[\"Atoms\", \"O\"] * 255]").unwrap(),
-      "{255, 13, 13}"
+      "{204, 51, 49}"
     );
     assert_eq!(
       interpret("Round[List @@ ColorData[\"Atoms\", \"H\"] * 255]").unwrap(),
-      "{255, 255, 255}"
+      "{166, 178, 178}"
+    );
+    // All 118 elements, exact zero channels kept exact.
+    assert_eq!(
+      interpret(
+        "{ColorData[\"Atoms\", \"P\"], ColorData[\"Atoms\", 53], ColorData[\"Atoms\", \"Og\"]}"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0.501961, 0], RGBColor[0.580392, 0, 0.580392], RGBColor[0.635401, 0.0528, 0.226184]}"
     );
     assert_eq!(
       interpret("ColorData[\"Atoms\", \"Xx\"]").unwrap(),
@@ -44275,10 +44459,14 @@ mod smooth_histogram_3d {
       .unwrap(),
       "Graphics3D"
     );
-    // Not 2D numeric data: stays unevaluated.
+    // A list without numeric pairs is drawn as wolframscript's empty
+    // surface.
     assert_eq!(
-      interpret("SmoothHistogram3D[{a, b}]").unwrap(),
-      "SmoothHistogram3D[{a, b}]"
+      interpret(
+        "{Head[SmoothHistogram3D[{a, b}]], SmoothHistogram3D[{a, b}][[1]], Length[SmoothHistogram3D[{a, b}][[2]]], PlotRange /. SmoothHistogram3D[{a, b}][[2]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {{{}, {}}}, 20, {{-1, 1}, {-1, 1}, {0., 0.}}}"
     );
   }
 }

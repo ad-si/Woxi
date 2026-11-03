@@ -9121,7 +9121,7 @@ mod rotation_matrix {
   fn axis_of_exact_numeric_expressions_evaluates() {
     assert_eq!(
       interpret("RotationMatrix[t, {Sqrt[2], 1, 0}]").unwrap(),
-      "{{(2 + Cos[t])/3, (Sqrt[2]*(1 - Cos[t]))/3, Sin[t]/Sqrt[3]}, {(Sqrt[2]*(1 - Cos[t]))/3, (1 + 2*Cos[t])/3, -(Sqrt[2/3]*Sin[t])}, {-(Sin[t]/Sqrt[3]), Sqrt[2/3]*Sin[t], Cos[t]}}"
+      "{{(2 + Cos[t])/3, (Sqrt[2] - Sqrt[2]*Cos[t])/3, Sin[t]/Sqrt[3]}, {(Sqrt[2] - Sqrt[2]*Cos[t])/3, (1 + 2*Cos[t])/3, -(Sqrt[2/3]*Sin[t])}, {-(Sin[t]/Sqrt[3]), Sqrt[2/3]*Sin[t], Cos[t]}}"
     );
     assert_eq!(
       interpret("RotationMatrix[t, {a, 1, 0}]").unwrap(),

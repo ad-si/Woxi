@@ -353,13 +353,23 @@ mod image_core {
         "ImageAdjust[Image3D[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 9}}}, Background -> Black]]"
       )
       .unwrap(),
-      "Image3D[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, Background -> GrayLevel[0]]"
+      "-Image3D-"
     );
-    // The filter preserves the total mass of a single bright voxel and
-    // spreads it symmetrically over the neighbouring voxels.
+    // Written out, the voxels are the Real32 NumericArray wolframscript
+    // stores, followed by the options.
     assert_eq!(
       interpret(
-        "v = GaussianFilter[Image3D[Table[If[{i, j, k} == {2, 2, 2}, 9, 0], {i, 3}, {j, 3}, {k, 3}]], 1][[1]]; \
+        "ToString[{ImageAdjust[Image3D[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 9}}}, Background -> Black]], Image3D[{{{0, 255}}}, \"Byte\"], Image3D[{{{0.5, 0.2}}}, ColorSpace -> \"Grayscale\"], Image3D[{{{{1, 0, 0}, {0, 1, 0}}}}]}, InputForm]"
+      )
+      .unwrap(),
+      "{Image3D[NumericArray[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, \"Real32\"], \"Real32\", Background -> GrayLevel[0], ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0, 255}}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0.5, 0.20000000298023224}}}, \"Real32\"], \"Real32\", ColorSpace -> \"Grayscale\", Interleaving -> None], Image3D[NumericArray[{{{{1., 0., 0.}, {0., 1., 0.}}}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, Interleaving -> True]}"
+    );
+    // The filter preserves the total mass of a single bright voxel and
+    // spreads it symmetrically over the neighbouring voxels. (An image is
+    // an atom; ImageData reads the voxels.)
+    assert_eq!(
+      interpret(
+        "v = ImageData[GaussianFilter[Image3D[Table[If[{i, j, k} == {2, 2, 2}, 9, 0], {i, 3}, {j, 3}, {k, 3}]], 1]]; \
          {Dimensions[v], Round[Total[Flatten[v]], 0.001], v[[1, 2, 2]] == v[[3, 2, 2]]}"
       )
       .unwrap(),
@@ -3453,17 +3463,52 @@ mod image_processing {
     );
   }
 
-  // HighlightImage draws marks over the image, in pixel coordinates, and
-  // returns an image of the same size.
+  // HighlightImage returns wolframscript's Graphics: the image as an RGB
+  // byte inset over {{0, w}, {0, h}}, the marks in pixel coordinates, and a
+  // magenta default style.
   #[test]
-  fn highlight_image_marker_line() {
+  fn highlight_image_graphics() {
     clear_state();
     assert_eq!(
       interpret(
-        "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}"
+        "ToString[InputForm[HighlightImage[Image[{{0, 1}, {1, 0}}], Point[{1, 1}]]]]"
       )
       .unwrap(),
-      "{{20, 10}, True, 0.}"
+      "Graphics[{Style[Inset[Image[NumericArray[{{{0, 0, 0}, {255, 255, 255}}, {{255, 255, 255}, {0, 0, 0}}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> \"RGB\", Interleaving -> True], {0, 0}, {0, 0}, {2, 2}], Selectable -> False], {Opacity[1], Point[{1, 1}]}}, {PlotRange -> {{0, 2}, {0, 2}}, PlotRangePadding -> None, ImageSizeRaw -> {2., 2.}, Method -> {Automatic, \"GridLinesInFront\" -> True}, DefaultBaseStyle -> {\"Graphics\", RGBColor[1, 0, 1], FaceForm[Opacity[0.2]], Thickness[0.006], PointSize[0.018], EdgeForm[{Thickness[0.004], RGBColor[1, 0, 1]}]}}]"
+    );
+    // Colors also color edges; curves are opaque; regions stay as given.
+    assert_eq!(
+      interpret(
+        "Rest[First[HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], {Red, Point[{1, 1}], Blue, Disk[{1, 1}, 1]}]]]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0], EdgeForm[RGBColor[1, 0, 0]], {Opacity[1], Point[{1, 1}]}, RGBColor[0, 0, 1], EdgeForm[RGBColor[0, 0, 1]], Disk[{1, 1}, 1]}"
+    );
+    // Pixel positions become points.
+    assert_eq!(
+      interpret(
+        "i = Image[{{0, 1, 0}, {1, 0.5, 1}}]; {Rest[First[HighlightImage[i, {2, 1}]]], Rest[First[HighlightImage[i, {{2, 1}, {1, 1}}]]]}"
+      )
+      .unwrap(),
+      "{{Opacity[1], Point[{2, 1}]}, {{Opacity[1], Point[{{2, 1}, {1, 1}}]}}}"
+    );
+    // An ImageMarker graphic is inset at each point.
+    assert_eq!(
+      interpret(
+        "ToString[Cases[HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], ImageMarker[{{1, 0}, {1, 1}}, Graphics[{White, Line[{{0, 0}, {0, 1}}]}]]], _GeometricTransformation, Infinity], InputForm]"
+      )
+      .unwrap(),
+      "{GeometricTransformation[Inset[Graphics[{GrayLevel[1], Line[{{0, 0}, {0, 1}}]}], {0, 0}, Center, Automatic, {1, 0}], {{{1, 0}}, {{1, 1}}}]}"
+    );
+    // A style gives the image an alpha channel and unfilled faces;
+    // "HighlightColor" recolors the default style.
+    assert_eq!(
+      interpret(
+        "h = HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], Point[{1, 1}], \"Darken\", \"HighlightColor\" -> Green]; \
+         {ImageData[h[[1, 1, 1, 1]], \"Byte\"], Last[Last[h]]}"
+      )
+      .unwrap(),
+      "{{{{0, 0, 0, 255}, {76, 76, 76, 255}, {0, 0, 0, 255}}, {{76, 76, 76, 255}, {38, 38, 38, 255}, {76, 76, 76, 255}}}, DefaultBaseStyle -> {Graphics, RGBColor[0, 1, 0], FaceForm[Opacity[0]], Thickness[0.006], PointSize[0.018], EdgeForm[{Thickness[0.004], RGBColor[0, 1, 0]}]}}"
     );
   }
 
@@ -4322,11 +4367,57 @@ mod image_advanced {
       .unwrap(),
       plain
     );
-    // Methods that are not implemented stay unevaluated.
     assert_eq!(
       interpret("Head[EdgeDetect[Image[{{0., 1.}}], Method -> \"Sobel\"]]")
         .unwrap(),
-      "EdgeDetect"
+      "Image"
+    );
+  }
+
+  // Method -> "Sobel": binomial smoothing and difference kernels of
+  // half-width r over an edge-replicated image.
+  #[test]
+  fn gradient_filter_sobel_kernels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0.1,0.5,0.2,0.9,0.3,0.7},{0.4,0.8,0.6,0.1,0.0,0.2},{0.9,0.3,0.5,0.7,0.6,0.4},{0.2,0.2,0.8,0.1,0.9,0.5},{0.6,0.0,0.3,0.4,0.2,0.8}}]; \
+         Round[ImageData[GradientFilter[img, 2, Method -> \"Sobel\"]][[1]], 0.0001]"
+      )
+      .unwrap(),
+      "{0.171, 0.1241, 0.0374, 0.0692, 0.1125, 0.1486}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[ImageData[GradientFilter[Image[{{0,0,0,1,1,1,1,1}}], 1, Method -> \"Sobel\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.5, 0.5, 0., 0., 0., 0.}}"
+    );
+  }
+
+  // EdgeDetect thins by comparing each pixel with the magnitude one pixel
+  // ahead and behind along the gradient (bilinear), then keeps every
+  // connected ridge whose strongest pixel reaches the threshold.
+  #[test]
+  fn edge_detect_sobel_and_ridge_runs() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0.1,0.5,0.2,0.9,0.3,0.7},{0.4,0.8,0.6,0.1,0.0,0.2},{0.9,0.3,0.5,0.7,0.6,0.4},{0.2,0.2,0.8,0.1,0.9,0.5},{0.6,0.0,0.3,0.4,0.2,0.8}}]; \
+         {ImageData[EdgeDetect[img, Method -> \"Sobel\"]], ImageData[EdgeDetect[img, 1, 0.1, Method -> \"Sobel\"]]}"
+      )
+      .unwrap(),
+      "{{{1, 0, 0, 1, 1, 1}, {0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 1}, {1, 1, 1, 0, 0, 0}, {1, 0, 1, 1, 1, 1}}, \
+{{1, 1, 0, 1, 1, 1}, {1, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 1}, {1, 0, 1, 0, 0, 0}, {1, 0, 1, 0, 1, 0}}}"
+    );
+    // A disk's outline is one pixel wide on the diagonals too.
+    assert_eq!(
+      interpret(
+        "ImageData[EdgeDetect[Image[Table[If[(x - 8)^2 + (y - 7)^2 < 20, 1, 0], {y, 14}, {x, 16}]]]][[3 ;; 5]]"
+      )
+      .unwrap(),
+      "{{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0}}"
     );
   }
 
@@ -9747,11 +9838,13 @@ mod morphology_3d {
     );
     assert_eq!(
       interpret(
-        "StringEndsQ[ToString[InputForm[ExampleData[{\"TestImage\", \"Moon\"}]]], \
+        "StringContainsQ[ToString[InputForm[ExampleData[{\"TestImage\", \"Moon\"}]]], \
          \"\\\"UnsignedInteger8\\\"], \\\"Byte\\\", ColorSpace -> \\\"Grayscale\\\", \
-         Interleaving -> None]\"]"
+         Interleaving -> None\"]"
       )
       .unwrap(),
+      // (Contains, not ends with: wolframscript's test image also carries
+      // a MetaInformation option, which Woxi's images do not have.)
       "True"
     );
   }
@@ -9783,16 +9876,27 @@ mod watershed_and_morphological_graph {
     );
   }
 
+  // Markers are an image or {x, y} positions (y from the bottom); each
+  // group of marked pixels seeds a basin, numbered in reading order. A
+  // label matrix is neither (WatershedComponents::mkinv).
   #[test]
   fn watershed_with_explicit_markers() {
     clear_state();
     assert_eq!(
       interpret(
-        "WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], {{1, 0, 0, 0, 2}}]"
+        "{WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], Image[{{1, 0, 0, 0, 1}}]], WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}, {0, 0.5, 1, 0.5, 0}}], {{1, 1}, {5, 2}}]}"
       )
       .unwrap(),
-      "{{1, 1, 0, 2, 2}}"
+      "{{{1, 1, 0, 2, 2}}, {{2, 2, 0, 1, 1}, {2, 2, 0, 1, 1}}}"
     );
+    let r = interpret_with_stdout(
+      "WatershedComponents[Image[{{0, 0.5, 1, 0.5, 0}}], {{1, 0, 0, 0, 2}}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "WatershedComponents[-Image-, {{1, 0, 0, 0, 2}}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "WatershedComponents::mkinv: Expecting either an image or graphics with dimensions {5, 1} or a list of positions to specify markers instead of {{1, 0, 0, 0, 2}}."
+    )));
   }
 
   #[test]
@@ -9844,7 +9948,21 @@ mod watershed_and_morphological_graph {
       )
       .unwrap(),
       "FullForm[Graph[{1, 2}, {UndirectedEdge[1, 2]}, \
-       VertexCoordinates -> {{0.5, 0.5}, {2.5, 0.5}}, ImageSize -> 50]]"
+       {EdgeWeight -> {2}, ImageSize -> 50, VertexCoordinates -> {{0.5, 0.5}, {2.5, 0.5}}}]]"
+    );
+  }
+
+  // Each arm of a branch point is its own edge, weighted by its length in
+  // pixel steps, even where two arms touch diagonally.
+  #[test]
+  fn morphological_graph_arms_and_weights() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = MorphologicalGraph[Image[{{1, 1, 1, 1, 1}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}}]]; ToString[{EdgeList[g], PropertyValue[g, EdgeWeight], g}, InputForm]"
+      )
+      .unwrap(),
+      "{{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[2, 4]}, {2, 2, 2}, Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[2, 4]}, {EdgeWeight -> {2, 2, 2}, VertexCoordinates -> {{0.5, 2.5}, {2.5, 2.5}, {4.5, 2.5}, {2.5, 0.5}}}]}"
     );
   }
 }
@@ -10056,7 +10174,7 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]"
+        "Round[First /@ ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]"
       )
       .unwrap(),
       "{{{0., 15.5}, {30., 15.5}}, {{9.5, 0.}, {9.5, 20.}}}"
@@ -10080,10 +10198,18 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]"
+        "Round[First /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]"
       )
       .unwrap(),
       "{{{0., 20.}, {20., 0.}}}"
+    );
+    // The lines are Line primitives.
+    assert_eq!(
+      interpret(
+        "Union[Head /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]]"
+      )
+      .unwrap(),
+      "{Line}"
     );
   }
 
@@ -10101,10 +10227,10 @@ mod image_lines {
     clear_state();
     assert_eq!(
       interpret(
-        "Head[HighlightImage[#, Line /@ ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
+        "Head[HighlightImage[#, ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
       )
       .unwrap(),
-      "Image"
+      "Graphics"
     );
   }
 }
@@ -10287,18 +10413,52 @@ mod find_threshold {
 mod color_profile_data {
   use super::*;
 
-  // A ColorProfileData color space names its data space.
+  // A ColorProfileData color space names its data space, once it holds a
+  // profile (the 128-byte ICC header with its `acsp` signature).
   #[test]
   fn image_with_color_profile_color_space() {
     clear_state();
     assert_eq!(
       interpret(
-        "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
-         NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+        "bytes = ReplacePart[ConstantArray[0, 200], Thread[Range[37, 40] -> ToCharacterCode[\"acsp\"]]];\n\
+         i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[bytes, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
          {ImageQ[i], ImageColorSpace[i]}"
       )
       .unwrap(),
       "{True, RGB}"
+    );
+    // Without the signature the bytes are no profile.
+    assert_eq!(
+      interpret(
+        "Quiet[ImageQ[Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+         NumericArray[ConstantArray[0, 200], \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]]]"
+      )
+      .unwrap(),
+      "False"
+    );
+  }
+
+  // Three bytes are no profile: the image is no image.
+  #[test]
+  fn too_short_a_profile_is_invalid() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "i = Image[{{{0.1, 0.2, 0.3}}}, ColorSpace -> ColorProfileData[\
+       NumericArray[{0, 1, 2}, \"UnsignedInteger8\"], \"RGB\", \"XYZ\"]]; \
+       ImageQ[i]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "False");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ColorProfileData::iccinv"))
+    );
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("is an invalid color space specification."))
     );
   }
 }

@@ -621,6 +621,58 @@ mod arithmetic {
     // monomial down; the first differing position decides (smaller monomial
     // first, equal monomials by numerically smaller coefficient) —
     // wolframscript-verified.
+    // A numeric factor of a power's base comes out, its sign staying inside.
+    #[test]
+    fn numeric_factor_out_of_a_power() {
+      assert_eq!(interpret("(-2 p)^(3/2)").unwrap(), "2*Sqrt[2]*(-p)^(3/2)");
+      assert_eq!(interpret("(-3 p)^(1/3)").unwrap(), "3^(1/3)*(-p)^(1/3)");
+      assert_eq!(interpret("(2 p)^n").unwrap(), "2^n*p^n");
+      assert_eq!(interpret("(-2 p)^n").unwrap(), "2^n*(-p)^n");
+      assert_eq!(interpret("(2/3 p)^n").unwrap(), "(2/3)^n*p^n");
+      assert_eq!(interpret("(2 Pi)^n").unwrap(), "(2*Pi)^n");
+    }
+
+    // A scaled sum against a symbol: by the sum's last term, a tie going to
+    // the symbol unless that term is negated.
+    #[test]
+    fn scaled_sum_against_a_symbol() {
+      assert_eq!(interpret("c + 0.5 (b - c)").unwrap(), "0.5*(b - c) + c");
+      assert_eq!(interpret("c + (b + c)/2").unwrap(), "c + (b + c)/2");
+      assert_eq!(interpret("c + (a + b)/2").unwrap(), "(a + b)/2 + c");
+      assert_eq!(
+        interpret("b + c + 0.5 (2 a - b - c)").unwrap(),
+        "b + 0.5*(2*a - b - c) + c"
+      );
+    }
+
+    // A sum topped by a reciprocal leads a symbolic power of its base.
+    #[test]
+    fn reciprocal_topped_sum_before_symbolic_power() {
+      assert_eq!(interpret("(1 + 1/n) n^a").unwrap(), "(1 + n^(-1))*n^a");
+      assert_eq!(
+        interpret("(1 + 1/(12 n)) n^(1/2 + n)").unwrap(),
+        "(1 + 1/(12*n))*n^(1/2 + n)"
+      );
+      assert_eq!(interpret("(1 + n) n^n").unwrap(), "n^n*(1 + n)");
+    }
+
+    // A power of `-s` sorts before `s` in a product.
+    #[test]
+    fn power_of_negated_symbol_before_the_symbol() {
+      assert_eq!(interpret("p (-p)^(3/2)").unwrap(), "(-p)^(3/2)*p");
+      assert_eq!(interpret("p Sqrt[-p]").unwrap(), "Sqrt[-p]*p");
+      assert_eq!(interpret("p q (-p)^n").unwrap(), "(-p)^n*p*q");
+    }
+
+    // A sum in front of a power of a symbol orders like a coefficient.
+    #[test]
+    fn sum_coefficient_term_orders_by_its_power() {
+      assert_eq!(interpret("x^2 + (a + b) x").unwrap(), "(a + b)*x + x^2");
+      assert_eq!(interpret("x^2 - (a + b) x").unwrap(), "-((a + b)*x) + x^2");
+      assert_eq!(interpret("x^3 + (a + b) x^2").unwrap(), "(a + b)*x^2 + x^3");
+      assert_eq!(interpret("x^2 + (a + b) x^3").unwrap(), "x^2 + (a + b)*x^3");
+    }
+
     #[test]
     fn sum_vs_sum_factor_order_by_top_coefficients() {
       assert_eq!(
@@ -3570,7 +3622,7 @@ mod n_beyond_machine_range {
     );
     assert_eq!(
       interpret("N[10^400]").unwrap(),
-      "1.`15.954589770191003*^400"
+      "1.`15.954589770191005*^400"
     );
     assert_eq!(
       interpret(
@@ -12382,7 +12434,30 @@ mod bigfloat_subtract {
   fn overflowing_scientific_literal() {
     assert_eq!(
       interpret("{Precision[1.*^400], 1.*^400 > 10^399, 1.*^-400}").unwrap(),
-      "{15.954589770191003, True, 0.}"
+      "{15.954589770191005, True, 0.}"
+    );
+  }
+
+  // Machine arithmetic that leaves the machine range keeps the mantissa's
+  // 53 bits (one fewer for an exact integer power); an inexact exponent
+  // loses the digits it amplifies.
+  #[test]
+  fn overflowing_machine_arithmetic_precision() {
+    assert_eq!(
+      interpret("Precision[1.*^200 * 1.*^200]").unwrap(),
+      "15.954589770191005"
+    );
+    assert_eq!(
+      interpret("Precision[10.^400]").unwrap(),
+      "15.653559774527023"
+    );
+    assert_eq!(
+      interpret("Precision[1.5^3000]").unwrap(),
+      "15.653559774527023"
+    );
+    assert_eq!(
+      interpret("Precision[10.^400.]").unwrap(),
+      "12.990314090163578"
     );
   }
 
@@ -13874,6 +13949,15 @@ mod big_exact_complex {
       interpret("2 - (10^40/3) I").unwrap(),
       "2 - (10000000000000000000000000000000000000000*I)/3"
     );
+    // A negative numerator past i128 still prints as a subtraction.
+    assert_eq!(
+      interpret("ToString[2 - (10^40/3) I, InputForm]").unwrap(),
+      "2 - (10000000000000000000000000000000000000000*I)/3"
+    );
+    assert_eq!(
+      interpret("ToString[x - (10^40/3) y, InputForm]").unwrap(),
+      "x - (10000000000000000000000000000000000000000*y)/3"
+    );
     assert_eq!(
       interpret("ToString[FullForm[(10^40/7) I]]").unwrap(),
       "Complex[0, Rational[10000000000000000000000000000000000000000, 7]]"
@@ -14374,10 +14458,18 @@ mod exact_base_bigfloat_exponent {
     }
 
     #[test]
-    fn unsolvable_stays_unevaluated_without_range_message() {
+    fn step_dividing_the_lower_bound_reads_as_series_in_step_multiples() {
       assert_eq!(
         interpret("Sum[x^n/n, {n, 2, Infinity, 2}]").unwrap(),
-        "Sum[x^n/n, {n, 2, Infinity, 2}]"
+        "-1/2*Log[1 - x^2]"
+      );
+    }
+
+    #[test]
+    fn unsolvable_stays_unevaluated_without_range_message() {
+      assert_eq!(
+        interpret("Sum[f[n], {n, 2, Infinity, 2}]").unwrap(),
+        "Sum[f[n], {n, 2, Infinity, 2}]"
       );
     }
 
@@ -14433,6 +14525,33 @@ mod machine_real_over_exact {
   }
 }
 
+// Terms over a power of a sum order as `Order` does: from the last factor
+// back, so the power decides and then the rest (wolframscript).
+mod plus_order_over_power_of_sum {
+  use super::*;
+
+  #[test]
+  fn power_first_then_numerator() {
+    assert_eq!(
+      interpret(
+        "{z/(1 + c) + a/(2 + c), x/(1 + c) - a/(1 + c), x/(b - a) - a/(b - a), \
+         (x + y)/(1 + c) + a/(1 + c), z/(1 + c)^2 + a/(2 + c)^2, \
+         z Sqrt[1 + c] + a Sqrt[2 + c]}"
+      )
+      .unwrap(),
+      "{a/(2 + c) + z/(1 + c), -(a/(1 + c)) + x/(1 + c), \
+       -(a/(-a + b)) + x/(-a + b), a/(1 + c) + (x + y)/(1 + c), \
+       a/(2 + c)^2 + z/(1 + c)^2, a*Sqrt[2 + c] + Sqrt[1 + c]*z}"
+    );
+    // Rescale's line form is written in that order.
+    assert_eq!(
+      interpret("{Rescale[x, {a, b}], Rescale[x, {a, b}, {c, d}]}").unwrap(),
+      "{-(a/(-a + b)) + x/(-a + b), \
+       -((-(b*c) + a*d)/(-a + b)) + ((-c + d)*x)/(-a + b)}"
+    );
+  }
+}
+
 mod machine_real_ordering_tolerance {
   use super::*;
 
@@ -14460,6 +14579,8 @@ mod machine_real_ordering_tolerance {
   #[test]
   fn exact_operands_compare_exactly() {
     assert_eq!(interpret("1 + 10^-17 > 1").unwrap(), "True");
+    // The long form as well, though the machine values coincide.
+    assert_eq!(interpret("Equal[1, 1 + 10^-17]").unwrap(), "False");
   }
 
   #[test]
@@ -14659,5 +14780,152 @@ mod big_exact_numbers_with_other_terms {
       "False"
     );
     assert_eq!(interpret(&format!("{setup}; e > 0")).unwrap(), "False");
+  }
+}
+
+// `Pi`, `E` and `Degree` have one canonical node after evaluation, and the
+// Plus order places a power of a constant among the symbols by its base.
+mod constant_power_plus_order {
+  use super::*;
+
+  #[test]
+  fn constant_spelled_as_symbol_orders_as_constant() {
+    // `Pi k` parses Pi as a symbol node.
+    assert_eq!(interpret("x = Pi k; x/k + k").unwrap(), "k + Pi");
+    assert_eq!(interpret("Pi k + k^2").unwrap(), "k^2 + k*Pi");
+  }
+
+  #[test]
+  fn symbolic_power_of_constant_sorts_by_base() {
+    assert_eq!(interpret("a + E^t").unwrap(), "a + E^t");
+    assert_eq!(interpret("e + E^t").unwrap(), "e + E^t");
+    assert_eq!(interpret("f + E^t").unwrap(), "E^t + f");
+    assert_eq!(interpret("p + Pi^t").unwrap(), "p + Pi^t");
+    assert_eq!(interpret("q + Pi^t").unwrap(), "Pi^t + q");
+    assert_eq!(interpret("a^2 + E^t").unwrap(), "a^2 + E^t");
+    assert_eq!(interpret("a b + E^t").unwrap(), "a*b + E^t");
+    assert_eq!(interpret("E^a + a").unwrap(), "a + E^a");
+    assert_eq!(interpret("x^2 + E^x").unwrap(), "E^x + x^2");
+    assert_eq!(interpret("1 + x + E^x").unwrap(), "1 + E^x + x");
+  }
+
+  #[test]
+  fn products_with_exponentials_compare_from_last_factor() {
+    assert_eq!(
+      interpret("a E^(b x) + c E^(b x) + a E^(d x) + c E^(d x)").unwrap(),
+      "a*E^(b*x) + c*E^(b*x) + a*E^(d*x) + c*E^(d*x)"
+    );
+    assert_eq!(
+      interpret("k^2 + E^t k^2 + 4 Pi^2 + 4 E^t Pi^2").unwrap(),
+      "k^2 + E^t*k^2 + 4*Pi^2 + 4*E^t*Pi^2"
+    );
+  }
+
+  #[test]
+  fn numeric_exponent_before_symbolic_exponent() {
+    assert_eq!(interpret("E^(-2) - E^(-y)").unwrap(), "E^(-2) - E^(-y)");
+    assert_eq!(interpret("Pi^2 + Pi^y").unwrap(), "Pi^2 + Pi^y");
+    assert_eq!(interpret("Sqrt[3] + 3^y").unwrap(), "Sqrt[3] + 3^y");
+    assert_eq!(interpret("Gamma[1, 2, y]").unwrap(), "E^(-2) - E^(-y)");
+  }
+
+  #[test]
+  fn negated_negative_integer_power_keeps_power_form() {
+    assert_eq!(interpret("-E^(-3)").unwrap(), "-E^(-3)");
+    assert_eq!(
+      interpret("-(1 + Sqrt[2])^(-2)").unwrap(),
+      "-(1 + Sqrt[2])^(-2)"
+    );
+    assert_eq!(interpret("-1/(x + y)^2").unwrap(), "-(x + y)^(-2)");
+    assert_eq!(interpret("-1/Sqrt[Pi]").unwrap(), "-(1/Sqrt[Pi])");
+  }
+}
+
+// Sums against symbols in canonical order, and call-led Plus terms by
+// their calls' arguments, then the rest, in canonical order.
+mod canonical_sum_and_call_led_order {
+  use super::*;
+
+  #[test]
+  fn sum_led_by_another_symbol_or_with_symbolic_lower_terms() {
+    assert_eq!(interpret("Sort[{-2/b + q, q}]").unwrap(), "{q, -2/b + q}");
+    assert_eq!(interpret("Sort[{q - b, q}]").unwrap(), "{q, -b + q}");
+    assert_eq!(
+      interpret("Sort[{q, -3 + b + q}]").unwrap(),
+      "{q, -3 + b + q}"
+    );
+    assert_eq!(
+      interpret("Sort[{1/q, -b + q}]").unwrap(),
+      "{q^(-1), -b + q}"
+    );
+    assert_eq!(interpret("Sort[{x, -3 + x}]").unwrap(), "{-3 + x, x}");
+    assert_eq!(interpret("Sort[{a, a - 2/c}]").unwrap(), "{a, a - 2/c}");
+    assert_eq!(interpret("Sort[{y, 1 + x}]").unwrap(), "{1 + x, y}");
+    assert_eq!(
+      interpret("Gamma[a] Gamma[a - 2/c] - Gamma[a - 1/c]^2").unwrap(),
+      "Gamma[a]*Gamma[a - 2/c] - Gamma[a - c^(-1)]^2"
+    );
+  }
+
+  #[test]
+  fn call_led_terms() {
+    assert_eq!(
+      interpret("a f[1 - n] + b f[-n]").unwrap(),
+      "a*f[1 - n] + b*f[-n]"
+    );
+    assert_eq!(
+      interpret("n^2 f[x] + i n f[x] + i^2 f[x]").unwrap(),
+      "i^2*f[x] + i*n*f[x] + n^2*f[x]"
+    );
+  }
+}
+
+// A number sharing a prime with q splits (q s)^k for a symbolic k, so the
+// prime's powers combine.
+mod scaled_power_prime_split {
+  use super::*;
+
+  #[test]
+  fn coefficient_sharing_a_prime() {
+    assert_eq!(
+      interpret("1/2 ((-1 + Sqrt[5])/2)^(-1 - n)").unwrap(),
+      "2^n*(-1 + Sqrt[5])^(-1 - n)"
+    );
+    assert_eq!(
+      interpret("2 ((1 + Sqrt[5])/2)^n").unwrap(),
+      "2^(1 - n)*(1 + Sqrt[5])^n"
+    );
+    assert_eq!(
+      interpret("3 ((-1 + Sqrt[5])/2)^(-1 - n)").unwrap(),
+      "3*((-1 + Sqrt[5])/2)^(-1 - n)"
+    );
+    assert_eq!(
+      interpret("4*Sqrt[2*(5 + Sqrt[5])]").unwrap(),
+      "4*Sqrt[2*(5 + Sqrt[5])]"
+    );
+  }
+
+  #[test]
+  fn numerator_of_a_negated_quotient() {
+    assert_eq!(
+      interpret("Numerator[Together[E^z/(1 - 2 z)]]").unwrap(),
+      "-E^z"
+    );
+    assert_eq!(
+      interpret("Denominator[Together[E^z/(1 - 2 z)]]").unwrap(),
+      "-1 + 2*z"
+    );
+  }
+
+  #[test]
+  fn empty_rational_series_starts_at_the_leading_power() {
+    assert_eq!(
+      interpret("Series[x^3/(1 - x), {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {}, 3, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[x^5/(2 + x), {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {}, 5, 5, 1]"
+    );
   }
 }

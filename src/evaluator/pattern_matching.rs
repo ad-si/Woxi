@@ -5380,6 +5380,27 @@ fn match_pattern_impl(
   if let Some(canonical) = canonical_arithmetic_form(pattern) {
     return match_pattern_impl(expr, &canonical);
   }
+  // A pattern spelled as a call (`Power[b_, e_]`, held by Condition or
+  // Hold so it never became an operator node) matches an operator node
+  // (`a^b`, a held `a + b`) with the same head: compare them as calls.
+  if let Expr::FunctionCall { name: pat_name, .. } = pattern
+    && let Expr::BinaryOp { op, .. } = expr
+  {
+    let func_name = binary_op_to_func_name(*op);
+    if !func_name.is_empty() && func_name == pat_name {
+      let operands: Vec<Expr> =
+        if matches!(func_name, "Plus" | "Times" | "And" | "Or") {
+          let mut ops = Vec::new();
+          collect_flat_binary_operands(expr, *op, &mut ops);
+          ops
+        } else if let Expr::BinaryOp { left, right, .. } = expr {
+          vec![left.as_ref().clone(), right.as_ref().clone()]
+        } else {
+          unreachable!()
+        };
+      return match_pattern_impl(&call(func_name, operands), pattern);
+    }
+  }
   // HoldPattern[p] is transparent to pattern matching: it only prevents
   // evaluation of the wrapped expression when parsed, and the matcher
   // should treat it as if it were just `p`.
@@ -6375,6 +6396,19 @@ pub fn get_expr_head(expr: &Expr) -> String {
       crate::functions::predicate_ast::rendered_object_head(expr)
         .unwrap_or("Symbol")
     }
+    // A pattern held in an expression is a compound, not a symbol: `_Symbol`
+    // matches the `t` of `t_` but not `t_` itself.
+    Expr::Pattern {
+      name, blank_type, ..
+    } if name.is_empty() => match blank_type {
+      2 => "BlankSequence",
+      3 => "BlankNullSequence",
+      _ => "Blank",
+    },
+    Expr::Pattern { .. } => "Pattern",
+    Expr::PatternOptional { .. } => "Optional",
+    Expr::PatternTest { .. } => "PatternTest",
+    Expr::Slot(_) => "Slot",
     _ => "Symbol",
   };
   result.to_string()

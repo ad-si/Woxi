@@ -372,7 +372,32 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ("SpaceCurve", _) => space_curve(knot).unwrap_or_else(unevaluated),
         ("ImageData", _) => image_data(knot).map_or_else(unevaluated, Ok),
         ("Image", _) => match image_data(knot) {
-          Some(mesh) => Ok(call1("Graphics3D", mesh)),
+          // Nested and styled as wolframscript's picture holds the tube.
+          Some(mesh) => Ok(call1(
+            "Graphics3D",
+            Expr::List(
+              vec![Expr::List(
+                vec![Expr::List(
+                  vec![
+                    call(
+                      "RGBColor",
+                      vec![Expr::Real(0.24), Expr::Real(0.6), Expr::Real(0.8)],
+                    ),
+                    call1("AbsoluteThickness", Expr::Integer(2)),
+                  ]
+                  .into_iter()
+                  .chain(match &mesh {
+                    Expr::List(items) => items.to_vec(),
+                    other => vec![other.clone()],
+                  })
+                  .collect::<Vec<_>>()
+                  .into(),
+                )]
+                .into(),
+              )]
+              .into(),
+            ),
+          )),
           None => unevaluated(),
         },
         ("CrossingNumber", _) => Ok(crossing_number(knot)),

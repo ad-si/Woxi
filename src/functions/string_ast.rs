@@ -9975,15 +9975,10 @@ pub fn apply_string_template_with(
   }
   match combiner {
     Some(c) => apply_and_evaluate(c, Expr::List(pieces.into())),
-    None => Ok(Expr::String(
-      pieces
-        .iter()
-        .map(|p| match p {
-          Expr::String(s) => s.clone(),
-          other => expr_to_output(other),
-        })
-        .collect(),
-    )),
+    // The default combiner is StringJoin itself: inserted values an
+    // InsertionFunction left as non-strings make it fail (and stay
+    // unevaluated), as in WL.
+    None => crate::evaluator::evaluate_function_call_ast("StringJoin", &pieces),
   }
 }
 
@@ -12145,35 +12140,41 @@ fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
 }
 
 /// Options of NeedlemanWunschSimilarity / SmithWatermanSimilarity:
-/// `GapPenalty -> g` (a real number, default 1), `IgnoreCase -> True|False`
+/// `GapPenalty -> g` (a real number, default 0), `IgnoreCase -> True|False`
 /// and `SimilarityRules -> {{a, b} -> s, …}` (the score of aligning a with b,
-/// in place of the default +1 for a match and -1 for a mismatch).
-/// Returns `None` for any other option or value.
+/// patterns allowed, in place of the default +1 for a match and -1 for a
+/// mismatch). Returns `None` for any other option or value.
 struct AlignmentOptions {
   gap: f64,
   ignore_case: bool,
-  rules: Vec<(String, String, f64)>,
+  rules: Vec<(Expr, f64)>,
 }
 
 impl AlignmentOptions {
-  /// The score of aligning token `a` (from the first sequence) with `b`.
+  /// The score of aligning token `a` (from the first sequence) with `b`:
+  /// the first rule whose left side matches `{a, b}` (or `{b, a}`).
   fn score(&self, a: &str, b: &str) -> f64 {
-    let rule = self
-      .rules
-      .iter()
-      .find(|(x, y, _)| x == a && y == b)
-      .or_else(|| self.rules.iter().find(|(x, y, _)| x == b && y == a));
-    match rule {
-      Some((_, _, s)) => *s,
-      None if a == b => 1.0,
-      None => -1.0,
+    let pair = |x: &str, y: &str| {
+      Expr::List(
+        vec![Expr::String(x.to_string()), Expr::String(y.to_string())].into(),
+      )
+    };
+    for candidate in [pair(a, b), pair(b, a)] {
+      for (lhs, s) in &self.rules {
+        if crate::evaluator::pattern_matching::match_pattern(&candidate, lhs)
+          .is_some()
+        {
+          return *s;
+        }
+      }
     }
+    if a == b { 1.0 } else { -1.0 }
   }
 }
 
 fn alignment_similarity_options(opts: &[Expr]) -> Option<AlignmentOptions> {
   let mut options = AlignmentOptions {
-    gap: 1.0,
+    gap: 0.0,
     ignore_case: false,
     rules: Vec::new(),
   };
@@ -12198,27 +12199,70 @@ fn alignment_similarity_options(opts: &[Expr]) -> Option<AlignmentOptions> {
         let Expr::List(rules) = value else {
           return None;
         };
-        let token = |e: &Expr| match e {
-          Expr::String(s) => s.clone(),
-          other => expr_to_output(other),
-        };
         for rule in rules {
-          let (Expr::List(pair), score, _) =
+          let (lhs @ Expr::List(pair), score, _) =
             crate::functions::expr_form::rule_parts(rule)?
           else {
             return None;
           };
-          let [a, b] = pair.as_slice() else {
+          if pair.len() != 2 {
             return None;
-          };
+          }
           let score = crate::functions::math_ast::try_eval_to_f64(score)?;
-          options.rules.push((token(a), token(b), score));
+          options.rules.push((lhs.clone(), score));
         }
       }
       _ => return None,
     }
   }
   Some(options)
+}
+
+/// The alignment score of token sequences `a` and `b` with affine gaps: a
+/// run of L gap characters costs `gap + L` (each character against a gap
+/// scores -1 and opening the run costs the GapPenalty). Global
+/// (Needleman–Wunsch) or local (Smith–Waterman, cells floored at 0 and the
+/// best cell taken) by `local`; Gotoh's three-table recurrence.
+fn affine_alignment_score(
+  a: &[String],
+  b: &[String],
+  options: &AlignmentOptions,
+  local: bool,
+) -> f64 {
+  let (n, m) = (a.len(), b.len());
+  let open = options.gap + 1.0;
+  let extend = 1.0;
+  let neg = f64::NEG_INFINITY;
+  // h: best ending anywhere; e: ending in a gap in `a` (consuming b);
+  // f: ending in a gap in `b` (consuming a).
+  let mut h = vec![vec![0f64; m + 1]; n + 1];
+  let mut e = vec![vec![neg; m + 1]; n + 1];
+  let mut f = vec![vec![neg; m + 1]; n + 1];
+  if !local {
+    for i in 1..=n {
+      f[i][0] = -(options.gap + i as f64);
+      h[i][0] = f[i][0];
+    }
+    for j in 1..=m {
+      e[0][j] = -(options.gap + j as f64);
+      h[0][j] = e[0][j];
+    }
+  }
+  let mut best = 0f64;
+  for i in 1..=n {
+    for j in 1..=m {
+      e[i][j] = (h[i][j - 1] - open).max(e[i][j - 1] - extend);
+      f[i][j] = (h[i - 1][j] - open).max(f[i - 1][j] - extend);
+      let diag = h[i - 1][j - 1] + options.score(&a[i - 1], &b[j - 1]);
+      let mut v = diag.max(e[i][j]).max(f[i][j]);
+      if local {
+        v = v.max(0.0);
+        best = best.max(v);
+      }
+      h[i][j] = v;
+    }
+  }
+  if local { best } else { h[n][m] }
 }
 
 /// The tokens of both alignment arguments, lower-cased for IgnoreCase.
@@ -12238,7 +12282,7 @@ fn alignment_token_pair(
 }
 
 /// NeedlemanWunschSimilarity[s1, s2] - global sequence-alignment score with the
-/// default scoring (match +1, mismatch -1, gap penalty 1). When one input is
+/// default scoring (match +1, mismatch -1, each gap character -1). When one input is
 /// empty, wolframscript returns the length of the other. The options
 /// GapPenalty, IgnoreCase and SimilarityRules are supported.
 pub fn needleman_wunsch_similarity_ast(
@@ -12257,31 +12301,16 @@ pub fn needleman_wunsch_similarity_ast(
   let (n, m) = (a.len(), b.len());
   if n == 0 || m == 0 {
     // Only the default scoring's empty-input value is known.
-    if gap != 1.0 || !options.rules.is_empty() {
+    if gap != 0.0 || !options.rules.is_empty() {
       return Ok(unevaluated("NeedlemanWunschSimilarity", args));
     }
     return Ok(Expr::Real(n.max(m) as f64));
   }
-  let mut dp = vec![vec![0f64; m + 1]; n + 1];
-  for (i, row) in dp.iter_mut().enumerate() {
-    row[0] = -(i as f64) * gap;
-  }
-  for j in 0..=m {
-    dp[0][j] = -(j as f64) * gap;
-  }
-  for i in 1..=n {
-    for j in 1..=m {
-      let s = options.score(&a[i - 1], &b[j - 1]);
-      dp[i][j] = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - gap)
-        .max(dp[i][j - 1] - gap);
-    }
-  }
-  Ok(Expr::Real(dp[n][m]))
+  Ok(Expr::Real(affine_alignment_score(&a, &b, &options, false)))
 }
 
 /// SmithWatermanSimilarity[s1, s2] - local sequence-alignment score with the
-/// default scoring (match +1, mismatch -1, gap penalty 1). Cell scores are
+/// default scoring (match +1, mismatch -1, each gap character -1). Cell scores are
 /// floored at 0 and the result is the maximum cell value. The options
 /// GapPenalty, IgnoreCase and SimilarityRules are supported.
 pub fn smith_waterman_similarity_ast(
@@ -12297,21 +12326,8 @@ pub fn smith_waterman_similarity_ast(
     return Ok(unevaluated("SmithWatermanSimilarity", args));
   }
   let (a, b) = alignment_token_pair(args, ignore_case);
-  let (n, m) = (a.len(), b.len());
-  let mut dp = vec![vec![0f64; m + 1]; n + 1];
-  let mut best = 0f64;
-  for i in 1..=n {
-    for j in 1..=m {
-      let s = options.score(&a[i - 1], &b[j - 1]);
-      let v = (dp[i - 1][j - 1] + s)
-        .max(dp[i - 1][j] - gap)
-        .max(dp[i][j - 1] - gap)
-        .max(0.0);
-      dp[i][j] = v;
-      best = best.max(v);
-    }
-  }
-  Ok(Expr::Real(best))
+  let _ = gap;
+  Ok(Expr::Real(affine_alignment_score(&a, &b, &options, true)))
 }
 
 /// DamerauLevenshteinDistance[s1, s2] - like Levenshtein distance but also
@@ -12763,58 +12779,49 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let len = aligned1.len();
 
   while k < len {
-    if aligned1[k].is_some() && aligned2[k].is_some() {
-      let i1 = aligned1[k].unwrap();
-      let j1 = aligned2[k].unwrap();
-      if chars1[i1] == chars2[j1] {
-        // Matching segment (both sides identical, so emit one piece).
-        let mut idxs = vec![i1];
-        k += 1;
-        while k < len
-          && aligned1[k].is_some()
-          && aligned2[k].is_some()
-          && chars1[aligned1[k].unwrap()] == chars2[aligned2[k].unwrap()]
-        {
-          idxs.push(aligned1[k].unwrap());
-          k += 1;
-        }
-        result.push(make_seg(&idxs, true));
-      } else {
-        // Mismatch: a {removed, inserted} pair.
-        let mut idx1 = vec![i1];
-        let mut idx2 = vec![j1];
-        k += 1;
-        while k < len
-          && aligned1[k].is_some()
-          && aligned2[k].is_some()
-          && chars1[aligned1[k].unwrap()] != chars2[aligned2[k].unwrap()]
-          && merge_differences
-        {
-          idx1.push(aligned1[k].unwrap());
-          idx2.push(aligned2[k].unwrap());
-          k += 1;
-        }
-        result.push(Expr::List(
-          vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
-        ));
-      }
-    } else {
-      // Gap on one side: a {removed, inserted} pair where one side is empty.
-      let mut idx1 = Vec::new();
-      let mut idx2 = Vec::new();
-      while k < len && (aligned1[k].is_none() || aligned2[k].is_none()) {
-        if let Some(i1) = aligned1[k] {
-          idx1.push(i1);
-        }
-        if let Some(j1) = aligned2[k] {
-          idx2.push(j1);
-        }
+    if let (Some(i1), Some(j1)) = (aligned1[k], aligned2[k])
+      && chars1[i1] == chars2[j1]
+    {
+      // Matching segment (both sides identical, so emit one piece).
+      let mut idxs = vec![i1];
+      k += 1;
+      while k < len
+        && aligned1[k].is_some()
+        && aligned2[k].is_some()
+        && chars1[aligned1[k].unwrap()] == chars2[aligned2[k].unwrap()]
+      {
+        idxs.push(aligned1[k].unwrap());
         k += 1;
       }
-      result.push(Expr::List(
-        vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
-      ));
+      result.push(make_seg(&idxs, true));
+      continue;
     }
+    // A run of differing columns becomes one {removed, inserted} pair. With
+    // MergeDifferences -> True (the default) the whole run merges; with
+    // False a run of substitutions and a run of gaps stay separate pairs:
+    // "abxcd" vs "aycd" is {"a", {"bx", "y"}, "cd"} by default but
+    // {"a", {"b", ""}, {"x", "y"}, "cd"} with False.
+    let is_match = |k: usize| match (aligned1[k], aligned2[k]) {
+      (Some(a), Some(b)) => chars1[a] == chars2[b],
+      _ => false,
+    };
+    let is_gap = |k: usize| aligned1[k].is_none() || aligned2[k].is_none();
+    let run_gap = is_gap(k);
+    let mut idx1 = Vec::new();
+    let mut idx2 = Vec::new();
+    while k < len && !is_match(k) && (merge_differences || is_gap(k) == run_gap)
+    {
+      if let Some(i1) = aligned1[k] {
+        idx1.push(i1);
+      }
+      if let Some(j1) = aligned2[k] {
+        idx2.push(j1);
+      }
+      k += 1;
+    }
+    result.push(Expr::List(
+      vec![make_seg(&idx1, true), make_seg(&idx2, false)].into(),
+    ));
   }
 
   Ok(Expr::List(result.into()))
@@ -15775,9 +15782,11 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     unwrapped.extend(args[1..].iter().cloned());
     return template_apply_ast(&unwrapped);
   }
-  // `StringTemplate[s, <|defaults|>]`: the defaults fill the named slots the
-  // applied association leaves out. Delayed defaults (`"a" :> RandomReal[]`)
-  // are evaluated afresh on every application.
+  // `StringTemplate[s, <|bound|>]`: the bound values win over the applied
+  // association, which only fills the slots they leave out (wolframscript:
+  // a template bound to `"a" -> 5` applied to `<|"a" -> 1, "b" -> 2|>` says
+  // "a is 5, b is 2"). Delayed values (`"a" :> RandomReal[]`) are evaluated
+  // afresh on every application.
   if let Expr::FunctionCall { name, args: inner } = &args[0]
     && name == "StringTemplate"
     && inner.len() == 2
@@ -15803,9 +15812,8 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           other => other.clone(),
         };
         let key = expr_to_string(k);
-        match merged.iter_mut().find(|(mk, _)| expr_to_string(mk) == key) {
-          Some(slot) => slot.1 = v,
-          None => merged.push((k.clone(), v)),
+        if !merged.iter().any(|(mk, _)| expr_to_string(mk) == key) {
+          merged.push((k.clone(), v));
         }
       }
     }
@@ -16416,11 +16424,30 @@ pub fn url_query_encode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// URLQueryDecode[string] - parse a URL query string into a list of rules.
+/// `OptionValue::nodef` for each option `known` rejects: functions that
+/// read their options through `OptionValue` report an unknown one this way
+/// and carry on without it.
+fn report_unknown_options(
+  head: &str,
+  opts: &[(String, Expr)],
+  known: impl Fn(&str) -> bool,
+) {
+  for (name, _) in opts {
+    if !known(name) {
+      crate::emit_message(&format!(
+        "OptionValue::nodef: Unknown option {name} for {head}."
+      ));
+    }
+  }
+}
+
 pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, mut opts) =
     crate::evaluator::dispatch::split_trailing_options(args);
   let (sort_queries, remove_empty) = take_query_options(&mut opts);
-  let ([arg], true) = (positional, opts.is_empty()) else {
+  // Any other option is reported and ignored.
+  report_unknown_options("URLQueryDecode", &opts, |_| false);
+  let [arg] = positional else {
     return Ok(unevaluated("URLQueryDecode", args));
   };
   let evaluated = crate::evaluator::evaluate_expr_to_expr(arg)?;
@@ -16963,26 +16990,28 @@ fn quantity_to_text(args: &[Expr], abbreviated: bool) -> Option<String> {
 pub fn text_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, opts) =
     crate::evaluator::dispatch::split_trailing_options(args);
+  // An option TextString does not take is reported and ignored.
+  let known = |name: &str| {
+    matches!(
+      name,
+      "AssociationFormat"
+        | "BooleanStrings"
+        | "DateFormat"
+        | "ElidedForms"
+        | "ListFormat"
+        | "MissingString"
+        | "TimeFormat"
+        | "TimeZone"
+    )
+  };
+  let opts: Vec<(String, Expr)> = if let [_] = positional {
+    report_unknown_options("TextString", &opts, known);
+    opts.into_iter().filter(|(name, _)| known(name)).collect()
+  } else {
+    opts
+  };
   let text_opts = match (positional, opts.is_empty()) {
-    (_, true) if args.len() == 1 => TextStringOptions::default(),
-    // An option TextString does not take leaves the call unevaluated.
-    ([_], false)
-      if opts.iter().any(|(name, _)| {
-        !matches!(
-          name.as_str(),
-          "AssociationFormat"
-            | "BooleanStrings"
-            | "DateFormat"
-            | "ElidedForms"
-            | "ListFormat"
-            | "MissingString"
-            | "TimeFormat"
-            | "TimeZone"
-        )
-      }) =>
-    {
-      return Ok(unevaluated("TextString", args));
-    }
+    ([_], true) => TextStringOptions::default(),
     ([_], false) => match TextStringOptions::parse(&opts) {
       Some(o) => o,
       None => return to_string_ast(args),
@@ -17716,6 +17745,16 @@ pub(crate) fn number_form_family_to_string(
   head: &str,
   inner: &[Expr],
 ) -> Option<String> {
+  // As text a styled number is just the number: `NumberForm[Style[2.5,
+  // Bold], {4, 2}]` is "2.50".
+  if let Some(Expr::FunctionCall { name, args }) = inner.first()
+    && name == "Style"
+    && !args.is_empty()
+  {
+    let mut unstyled = inner.to_vec();
+    unstyled[0] = args[0].clone();
+    return number_form_family_to_string(head, &unstyled);
+  }
   // A wrapper around another wrapper (`AccountingForm[NumberForm[x, {12, 2}],
   // 12]`) formats the innermost number with the inner wrapper's own spec and
   // options; the outer arguments only fill in what the inner one left out.

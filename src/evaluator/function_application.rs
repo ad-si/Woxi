@@ -2970,7 +2970,26 @@ pub fn apply_curried_call(
       args: func_args,
     } if name == "BSplineFunction" && func_args.len() == 9 => {
       // BSplineFunction[dim, ranges, degrees, closed, {net, Automatic},
-      // knots, ...][params] — evaluate the spline at the given parameters.
+      // knots, orders, ...][params] — evaluate the spline (or the
+      // derivative its orders slot asks for) at the given parameters.
+      if let Expr::List(orders) = &func_args[6]
+        && let [Expr::Integer(k)] = orders.as_slice()
+        && *k > 0
+      {
+        let mut base = func_args.to_vec();
+        base[6] = Expr::List(vec![Expr::Integer(0)].into());
+        if args
+          .iter()
+          .all(|a| crate::functions::math_ast::try_eval_to_f64(a).is_some())
+          && let Some(derived) = bspline_curve_derivative(&base, *k as usize)
+        {
+          return Ok(evaluate_bspline_function(&derived, args));
+        }
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
       Ok(evaluate_bspline_function(func_args, args))
     }
     Expr::FunctionCall {
@@ -3694,6 +3713,35 @@ pub fn apply_curried_call(
             new_args.push(Expr::Integer(total));
           }
           return Ok(call("InterpolatingFunction", new_args));
+        }
+        // `Derivative[k…][BSplineFunction[…]]` is the spline object again,
+        // with the derivative orders it is to be evaluated at in its
+        // seventh slot.
+        if name == "Derivative"
+          && args.len() == 1
+          && let Expr::FunctionCall {
+            name: spline_name,
+            args: spline,
+          } = &args[0]
+          && spline_name == "BSplineFunction"
+          && spline.len() == 9
+          && let Expr::List(orders) = &spline[6]
+          && orders.len() == func_args.len()
+          && func_args
+            .iter()
+            .all(|k| matches!(k, Expr::Integer(n) if *n >= 0))
+        {
+          let summed: Vec<Expr> = orders
+            .iter()
+            .zip(func_args.iter())
+            .map(|(o, k)| match (o, k) {
+              (Expr::Integer(a), Expr::Integer(b)) => Expr::Integer(a + b),
+              _ => o.clone(),
+            })
+            .collect();
+          let mut new_args = spline.to_vec();
+          new_args[6] = Expr::List(summed.into());
+          return Ok(call("BSplineFunction", new_args));
         }
         if name == "Derivative" && func_args.len() == 1 && args.len() == 1 {
           let arg0 = &args[0];

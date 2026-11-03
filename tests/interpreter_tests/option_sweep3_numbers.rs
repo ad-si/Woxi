@@ -297,8 +297,64 @@ mod meijer_g_scaled {
     );
     assert_eq!(
       interpret("MeijerG[{{}, {}}, {{a}, {b}}, z, 1/3]").unwrap(),
-      "MeijerG[{{}, {}}, {{a}, {b}}, z, 1/3]"
+      "z^(3*a)*(z^(3/2))^(-a + b)*(z^3)^((a - b)/2 + (-a + b)/2)*\
+       BesselJ[a - b, 2*z^(3/2)]"
     );
+  }
+
+  // The elementary and Bessel closed forms for a symbolic argument, also
+  // with r = n and r = 1/n.
+  #[test]
+  fn closed_forms_in_powers_of_the_argument() {
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {b}}, w]").unwrap(),
+      "w^(a + (-a + b)/2)*BesselJ[a - b, 2*Sqrt[w]]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {b}}, z, 1/2]").unwrap(),
+      "z^(a + b)*(z^2)^((a - b)/2 + (-a + b)/2)*BesselJ[a - b, 2*z]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {b}}, z, 2]").unwrap(),
+      "z^(a/2 + (-a + b)/4)*BesselJ[a - b, 2*z^(1/4)]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{1}, {2}}, z, 1/3]").unwrap(),
+      "-(z^(9/2)*BesselJ[1, 2*z^(3/2)])"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{0}, {1/2}}, z]").unwrap(),
+      "Cos[2*Sqrt[z]]/Sqrt[Pi]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {}}, z]").unwrap(),
+      "z^a/E^z"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {}}, z, 1/3]").unwrap(),
+      "z^(3*a)/E^z^3"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {}}, z, 2]").unwrap(),
+      "z^(a/2)/E^Sqrt[z]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{}, {}}, {{a}, {}}, 2]").unwrap(),
+      "2^a/E^2"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{a}, {}}, {{b}, {}}, z]").unwrap(),
+      "z^b*(1 + z)^(-1 + a - b)*Gamma[1 - a + b]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{a}, {}}, {{b}, {}}, z, 1/2]").unwrap(),
+      "z^(2*b)*(1 + z^2)^(-1 + a - b)*Gamma[1 - a + b]"
+    );
+    assert_eq!(
+      interpret("MeijerG[{{1}, {}}, {{1}, {}}, 2]").unwrap(),
+      "2/3"
+    );
+    assert_eq!(interpret("MeijerG[{{}, {}}, {{0}, {}}, 0]").unwrap(), "1");
   }
 }
 

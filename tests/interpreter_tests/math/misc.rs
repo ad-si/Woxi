@@ -2064,6 +2064,28 @@ mod numeric_radical_products {
 mod radical_coefficient_merge {
   use super::*;
 
+  // A radicand made only of numbers stays merged however often it is
+  // evaluated (a stored `Sqrt[2/(5 - Sqrt[5])]` used to split into
+  // `Sqrt[2]*Sqrt[1/(5 - Sqrt[5])]` when read back), and the root of the
+  // reciprocal of a positive numeric sum is the reciprocal of its root.
+  #[test]
+  fn numeric_radicand_with_reciprocal_sum() {
+    clear_state();
+    assert_eq!(
+      interpret("r = Sqrt[2/(5 - Sqrt[5])]; {r, Power[2/(5 - Sqrt[5]), 1/2], Power[2/(5 - Sqrt[5]), 3/2], Sqrt[2 y/(5 - Sqrt[5])]}").unwrap(),
+      "{Sqrt[2/(5 - Sqrt[5])], Sqrt[2/(5 - Sqrt[5])], (2*Sqrt[2])/(5 - Sqrt[5])^(3/2), Sqrt[2/(5 - Sqrt[5])]*Sqrt[y]}"
+    );
+    assert_eq!(
+      interpret("{Sqrt[1/(5 - Sqrt[5])], Sqrt[4/(1 + Sqrt[2])], (4/(1 + Sqrt[2]))^(1/2), Sqrt[1/(1 + x)], Sqrt[1/(2 Pi)]}").unwrap(),
+      "{1/Sqrt[5 - Sqrt[5]], 2/Sqrt[1 + Sqrt[2]], 2/Sqrt[1 + Sqrt[2]], Sqrt[(1 + x)^(-1)], 1/Sqrt[2*Pi]}"
+    );
+    // A negative numeric sum takes the I outside.
+    assert_eq!(
+      interpret("{Sqrt[1/(-1 - Sqrt[2])], Sqrt[1/(1 - Sqrt[2])]}").unwrap(),
+      "{I/Sqrt[1 + Sqrt[2]], I/Sqrt[-1 + Sqrt[2]]}"
+    );
+  }
+
   // A rational coefficient times a square root of a positive rational
   // merges into one canonical radical: square the coefficient into the
   // radicand, reduce, then pull the largest square factors back out of

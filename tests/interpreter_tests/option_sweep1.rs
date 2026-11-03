@@ -95,11 +95,11 @@ mod url_character_encoding {
          \"Eötvös Loránd University\"}, CharacterEncoding -> \"MacintoshRoman\"]"
       )
       .unwrap(),
-      "https://university.com/?university=E%9Atv%9As+Lor%87nd+University"
+      "https://university.com?university=E%9Atv%9As+Lor%87nd+University"
     );
     assert_eq!(
       interpret("URLBuild[\"https://x.com\", {\"q\" -> \"a b&c\"}]").unwrap(),
-      "https://x.com/?q=a+b%26c"
+      "https://x.com?q=a+b%26c"
     );
   }
 
@@ -251,14 +251,34 @@ mod algorithm_options {
   #[test]
   fn eigensystem_method() {
     assert_eq!(
+      interpret("Eigenvalues[{{2, 0}, {0, 3}}, Method -> \"Direct\"]").unwrap(),
+      "{3, 2}"
+    );
+    // Arnoldi finds at most n - 2 eigenvalues, and only of an inexact matrix.
+    assert_eq!(
       interpret("Eigenvalues[{{2, 0}, {0, 3}}, Method -> \"Arnoldi\"]")
         .unwrap(),
-      "{3, 2}"
+      "Eigenvalues[{{2, 0}, {0, 3}}, Method -> Arnoldi]"
     );
     assert_eq!(
       interpret("Eigensystem[{{2, 0}, {0, 3}}, 1, Method -> \"Arnoldi\"]")
         .unwrap(),
-      "{{3}, {{0, 1}}}"
+      "Eigensystem[{{2, 0}, {0, 3}}, 1, Method -> Arnoldi]"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 1, Method -> \"Arnoldi\"]"
+      )
+      .unwrap(),
+      "Eigenvalues[{{2, 0, 0}, {0, 3, 0}, {0, 0, 1}}, 1, Method -> Arnoldi]"
+    );
+    assert_eq!(
+      interpret(
+        "Abs[First[Eigenvalues[{{2., 0, 0}, {0, 3., 0}, {0, 0, 1.}}, 1, \
+         Method -> \"Arnoldi\"]] - 3] < 10^-12"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
@@ -291,7 +311,25 @@ mod algorithm_options {
   fn region_measure_goal_options() {
     assert_eq!(interpret("Area[Disk[], AccuracyGoal -> 8]").unwrap(), "Pi");
     assert_eq!(
-      interpret("Volume[Ball[], PrecisionGoal -> 5]").unwrap(),
+      interpret("Precision[Volume[Ball[], PrecisionGoal -> 5]]").unwrap(),
+      "5."
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], PrecisionGoal -> 5] == 4 Pi/3").unwrap(),
+      "True"
+    );
+    // Without a PrecisionGoal the WorkingPrecision decides the digits.
+    assert_eq!(
+      interpret("Precision[Area[Disk[], WorkingPrecision -> 20]]").unwrap(),
+      "20."
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], WorkingPrecision -> MachinePrecision]")
+        .unwrap(),
+      "4.1887902047863905"
+    );
+    assert_eq!(
+      interpret("Volume[Ball[], PerformanceGoal -> \"Speed\"]").unwrap(),
       "(4*Pi)/3"
     );
   }
@@ -351,7 +389,22 @@ mod overflow_regressions {
   fn random_complex_beyond_machine_range() {
     assert_eq!(
       interpret("Head[RandomComplex[10^1000 + 10^1000 I]]").unwrap(),
-      "RandomComplex"
+      "Complex"
+    );
+    // Past the machine range the draw is a machine-precision bignum.
+    assert_eq!(
+      interpret(
+        "z = RandomComplex[10^1000 + 10^1000 I]; \
+         {Round[Precision[z], 0.001], 0 <= Re[z] <= 10^1000, \
+         0 <= Im[z] <= 10^1000}"
+      )
+      .unwrap(),
+      "{15.955, True, True}"
+    );
+    assert_eq!(
+      interpret("x = RandomReal[{0, 10^400}]; {Precision[x], x < 10^400}")
+        .unwrap(),
+      "{15.954589770191005, True}"
     );
   }
 

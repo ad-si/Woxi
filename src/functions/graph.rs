@@ -740,6 +740,21 @@ fn graph_render(
         // distance from a root instead of spreading them on a circle.
         // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
         "GraphLayout" => {
+          // `{"Dimension" -> 2, "VertexLayout" -> layout}` (what `Graph`
+          // makes of a re-graphed graph's layout) is that layout.
+          let vertex_layout = match replacement {
+            Expr::List(items) => items.iter().find_map(|i| match i {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(), Expr::String(s) if s == "VertexLayout") => {
+                Some(replacement.as_ref())
+              }
+              _ => None,
+            }),
+            _ => None,
+          };
+          let replacement = vertex_layout.unwrap_or(replacement);
           (layered, layered_root) = match parse_layered_layout(replacement) {
             Some((dir, root)) => (Some(dir), root),
             None => (None, None),
@@ -5528,7 +5543,7 @@ pub fn find_independent_vertex_set_ast(
 ) -> Result<Expr, InterpreterError> {
   let unevaluated =
     |args: &[Expr]| unevaluated("FindIndependentVertexSet", args);
-  if args.len() != 1 {
+  if !(1..=3).contains(&args.len()) {
     return Ok(unevaluated(args));
   }
   let graph = match &args[0] {
@@ -5589,6 +5604,12 @@ pub fn find_independent_vertex_set_ast(
   }
 
   let full = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
+  if args.len() > 1 {
+    return Ok(
+      maximal_independent_sets(&vertices, &nbr, &args[1..])
+        .unwrap_or_else(|| unevaluated(args)),
+    );
+  }
   let target = mis(full, &nbr);
   // Greedy lexicographic selection: take vertex i whenever doing so
   // still extends to a maximum independent set
@@ -5608,6 +5629,77 @@ pub fn find_independent_vertex_set_ast(
     }
   }
   Ok(Expr::List(vec![Expr::List(chosen.into())].into()))
+}
+
+/// `FindIndependentVertexSet[g, spec, n]`: the first `n` (default 1, or
+/// All) maximal independent sets, in the lexicographic order of their
+/// vertex positions, whose size `spec` allows (`Infinity`, at most `k`,
+/// exactly `{k}`, or `{kmin, kmax}`); listed largest first, and within a
+/// size in reverse lexicographic order, as wolframscript lists them.
+fn maximal_independent_sets(
+  vertices: &[Expr],
+  nbr: &[u64],
+  rest: &[Expr],
+) -> Option<Expr> {
+  let n = vertices.len();
+  let (lo, hi) = match &rest[0] {
+    Expr::Identifier(s) if s == "Infinity" => (0, usize::MAX),
+    Expr::Integer(k) if *k >= 0 => (0, *k as usize),
+    Expr::List(b) => match b.as_slice() {
+      [Expr::Integer(k)] if *k >= 0 => (*k as usize, *k as usize),
+      [Expr::Integer(a), Expr::Integer(b)] if *a >= 0 && *b >= *a => {
+        (*a as usize, *b as usize)
+      }
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let limit = match rest.get(1) {
+    None => 1,
+    Some(Expr::Identifier(s)) if s == "All" => usize::MAX,
+    Some(Expr::Integer(k)) if *k >= 0 => *k as usize,
+    Some(_) => return None,
+  };
+  if rest.len() > 2 {
+    return None;
+  }
+  // Include-first depth-first search lists the sets lexicographically
+  // (no maximal set is a prefix of another).
+  fn search(
+    i: usize,
+    n: usize,
+    chosen: &mut Vec<usize>,
+    mask: u64,
+    nbr: &[u64],
+    out: &mut Vec<Vec<usize>>,
+    bounds: (usize, usize, usize),
+  ) {
+    if out.len() >= bounds.2 || chosen.len() > bounds.1 {
+      return;
+    }
+    if i == n {
+      let maximal = (0..n).all(|v| mask & (1 << v) != 0 || nbr[v] & mask != 0);
+      if maximal && chosen.len() >= bounds.0 {
+        out.push(chosen.clone());
+      }
+      return;
+    }
+    if nbr[i] & mask == 0 {
+      chosen.push(i);
+      search(i + 1, n, chosen, mask | (1 << i), nbr, out, bounds);
+      chosen.pop();
+    }
+    search(i + 1, n, chosen, mask, nbr, out, bounds);
+  }
+  let mut sets = Vec::new();
+  search(0, n, &mut Vec::new(), 0, nbr, &mut sets, (lo, hi, limit));
+  sets.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| b.cmp(a)));
+  Some(Expr::List(
+    sets
+      .into_iter()
+      .map(|s| Expr::List(s.into_iter().map(|i| vertices[i].clone()).collect()))
+      .collect(),
+  ))
 }
 
 /// VertexComponent[g, v] / VertexComponent[g, {v1, ...}] - vertices
@@ -6178,8 +6270,15 @@ pub fn find_minimum_cost_flow_ast(
       v = u;
     }
   }
+  // A sink the source cannot reach carries no flow, at cost 0; a matrix
+  // without any arc is no network at all.
   if !augmented_any {
-    return Ok(unevaluated(args));
+    let any_arc = cost.iter().flatten().any(|c| *c != 0.0);
+    return Ok(if any_arc {
+      Expr::Integer(0)
+    } else {
+      unevaluated(args)
+    });
   }
   if all_integer {
     Ok(Expr::Integer(total_int))
@@ -9995,6 +10094,40 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Graph", graph_args))
 }
 
+/// The form a graph with options is written in (InputForm, FullForm), as
+/// wolframscript stores it: `Graph[vertices, edges, {opts}]` with the
+/// options in one list, alphabetical, a single per-element value listed.
+/// None for anything else (no options, or already in that form).
+pub fn graph_display_form(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Graph"
+    || args.len() < 3
+    || !matches!(&args[0], Expr::List(_))
+    || !matches!(&args[1], Expr::List(_))
+    || !args[2..]
+      .iter()
+      .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    return None;
+  }
+  // Only a graph of edge objects (a Combinatorica graph, printed under the
+  // same name, lists its edges as index pairs).
+  let Expr::List(edges) = &args[1] else {
+    return None;
+  };
+  if !edges.iter().all(|e| {
+    matches!(e, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "UndirectedEdge" | "DirectedEdge"))
+  }) {
+    return None;
+  }
+  let options = graph_options_ast(std::slice::from_ref(expr)).ok()?;
+  matches!(options, Expr::List(_))
+    .then(|| call("Graph", vec![args[0].clone(), args[1].clone(), options]))
+}
+
 /// `Options[graph]` / `Options[graph, name]` — the annotations the graph
 /// carries, named in alphabetical order however the graph was written.
 pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -10017,6 +10150,23 @@ pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .cmp(&0)
     .reverse()
   });
+  // A per-vertex or per-edge annotation given one value for all of them is
+  // stored as a one-element list of it.
+  for opt in &mut options {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if matches!(n.as_str(),
+        "VertexLabels" | "VertexSize" | "VertexStyle" | "VertexShape"
+          | "VertexShapeFunction" | "VertexLabelStyle" | "EdgeStyle"
+          | "EdgeLabels" | "EdgeLabelStyle" | "EdgeShapeFunction"
+          | "GraphHighlightStyle"))
+      && !matches!(replacement.as_ref(), Expr::List(_))
+    {
+      **replacement = Expr::List(vec![replacement.as_ref().clone()].into());
+    }
+  }
   if args.len() == 1 {
     return Ok(Expr::List(options.into()));
   }
@@ -10399,8 +10549,10 @@ pub(crate) fn graph_coordinates(
   Ok(Some((vertices.to_vec(), edges, coords)))
 }
 
-/// `GraphPlot3D[edges]`: the graph drawn as a `Graphics3D` with one `Line`
-/// per edge and a `Point` per vertex.
+/// `GraphPlot3D[edges]`: the graph drawn the way wolframscript draws it, a
+/// `GraphicsComplex` over the vertex positions holding one tube per edge
+/// (`Arrow[Tube[{{i, j}, …}], r]`, the vertex pairs sorted) and a sphere
+/// per vertex, both of radius `r` = 1/40 of the mean edge length.
 pub(crate) fn graph_plot3d_ast(
   graph_input: &Expr,
   options: &[Expr],
@@ -10410,16 +10562,72 @@ pub(crate) fn graph_plot3d_ast(
   };
   let point =
     |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
-  let lines: Vec<Expr> = edges
+  let mut pairs: Vec<(usize, usize)> = edges
     .iter()
-    .map(|&(a, b)| {
-      call("Line", vec![Expr::List(vec![point(a), point(b)].into())])
-    })
+    .filter(|(a, b)| a != b)
+    .map(|&(a, b)| (a.min(b), a.max(b)))
     .collect();
-  let points =
-    call1("Point", Expr::List((0..coords.len()).map(point).collect()));
-  let mut args =
-    vec![Expr::List(vec![Expr::List(lines.into()), points].into())];
+  pairs.sort_unstable();
+  pairs.dedup();
+  let mean_length = if pairs.is_empty() {
+    1.0
+  } else {
+    pairs
+      .iter()
+      .map(|&(a, b)| {
+        coords[a]
+          .iter()
+          .zip(&coords[b])
+          .map(|(p, q)| (p - q) * (p - q))
+          .sum::<f64>()
+          .sqrt()
+      })
+      .sum::<f64>()
+      / pairs.len() as f64
+  };
+  let radius = Expr::Real(mean_length / 40.0);
+  let int = |i: usize| Expr::Integer(i as i128 + 1);
+  let tube = call(
+    "Tube",
+    vec![Expr::List(
+      pairs
+        .iter()
+        .map(|&(a, b)| Expr::List(vec![int(a), int(b)].into()))
+        .collect(),
+    )],
+  );
+  let hue = |s: f64, b: f64| {
+    call1(
+      "Directive",
+      call("Hue", vec![Expr::Real(0.6), Expr::Real(s), Expr::Real(b)]),
+    )
+  };
+  let edge_group = Expr::List(
+    vec![
+      hue(0.2, 0.8),
+      call1("Arrowheads", Expr::Real(0.0)),
+      Expr::List(vec![call("Arrow", vec![tube, radius.clone()])].into()),
+    ]
+    .into(),
+  );
+  let mut vertex_group = vec![call(
+    "Directive",
+    vec![call(
+      "Hue",
+      vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Integer(1)],
+    )],
+  )];
+  vertex_group.extend(
+    (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
+  );
+  let complex = call(
+    "GraphicsComplex",
+    vec![
+      Expr::List((0..coords.len()).map(point).collect()),
+      Expr::List(vec![edge_group, Expr::List(vertex_group.into())].into()),
+    ],
+  );
+  let mut args = vec![complex];
   args.extend(options.iter().cloned());
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
     "Graphics3D",

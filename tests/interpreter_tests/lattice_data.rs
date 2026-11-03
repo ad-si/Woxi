@@ -3,39 +3,36 @@ use super::*;
 mod lattice_data_tests {
   use super::*;
 
+  // Only wolframscript's property names are properties, and only its
+  // entity names (no abbreviations) are entities.
   #[test]
-  fn coordination_numbers() {
+  fn unknown_properties_and_abbreviations() {
+    clear_state();
+    let r = interpret_with_stdout(
+      r#"{LatticeData["SimpleCubic", "CoordinationNumber"], LatticeData["BCC", "Image"]}"#,
+    )
+    .unwrap();
     assert_eq!(
-      interpret(
-        r#"Map[LatticeData[#, "CoordinationNumber"] &, {"SC", "BCC", "FCC"}]"#
-      )
-      .unwrap(),
-      "{6, 8, 12}"
+      r.result,
+      "{LatticeData[SimpleCubic, CoordinationNumber], LatticeData[BCC, Image]}"
+    );
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "LatticeData::notprop: CoordinationNumber is not a known property for LatticeData."
+    )));
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "LatticeData::notent: BCC is not a known entity, class or tag for LatticeData."
+    )));
+    assert_eq!(
+      interpret(r#"{Length[LatticeData[]], Length[LatticeData["Properties"]], MemberQ[LatticeData[], "FaceCenteredCubic"]}"#)
+        .unwrap(),
+      "{21, 38, True}"
     );
   }
 
   #[test]
-  fn unit_cell_point_counts() {
-    assert_eq!(
-      interpret(
-        r#"Map[Length[LatticeData[#, "LatticePoints"]] &, {"SimpleCubic", "BodyCenteredCubic", "FaceCenteredCubic"}]"#
-      )
-      .unwrap(),
-      "{8, 9, 14}"
-    );
-  }
-
-  #[test]
-  fn image_is_graphics3d_usable_in_show() {
+  fn image_is_graphics3d() {
     assert_eq!(
       interpret(r#"Head[LatticeData["FaceCenteredCubic", "Image"]]"#).unwrap(),
-      "Graphics3D"
-    );
-    assert_eq!(
-      interpret(
-        r#"Head[Show[LatticeData["BCC", "Image"], Graphics3D[{Red, Point[{0, 0, 0}]}]]]"#
-      )
-      .unwrap(),
       "Graphics3D"
     );
   }

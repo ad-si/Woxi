@@ -2966,7 +2966,12 @@ mod linear_solve {
     );
     assert_eq!(
       interpret("LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]").unwrap(),
-      "{1., 0., 0.}"
+      "{0.5, 0.5, 0.}"
+    );
+    // A singular machine system has many solutions: the shortest one.
+    assert_eq!(
+      interpret("LinearSolve[{{1., 2}, {2, 4}}, {1, 2}]").unwrap(),
+      "{0.2, 0.4}"
     );
   }
 
@@ -12243,7 +12248,21 @@ mod sparse_array_part_set_and_inverse {
          m[[3, 1]] = 1; {Head[Inverse[m]], Normal[Inverse[m]]}"
       )
       .unwrap(),
-      "{SparseArray, {{1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}}"
+      "{List, {{1/2, -1/2, 1/2}, {1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}}"
+    );
+  }
+
+  // A positive power, and the exponential of a machine matrix, stay sparse;
+  // a negative power and an exact exponential do not.
+  #[test]
+  fn sparse_matrix_function_heads() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 1}, {0, 1}}]; {Head[MatrixPower[s, 3]], \
+         Head[MatrixPower[s, -1]], Head[MatrixExp[s]], Head[MatrixExp[N[s]]]}"
+      )
+      .unwrap(),
+      "{SparseArray, List, List, SparseArray}"
     );
   }
 }
@@ -12789,10 +12808,132 @@ mod generalized_eigen_singular_b {
       .unwrap(),
       "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}"
     );
-    // A scale factor must not be dropped when the result is unresolved.
+    // A common factor of the entries does not change the eigenvectors.
     assert_eq!(
-      interpret("Eigenvectors[t {{a, b, c}, {d, e, f}, {g, h, k}}]").unwrap(),
-      "Eigenvectors[{{a*t, b*t, c*t}, {d*t, e*t, f*t}, {g*t, h*t, k*t}}]"
+      interpret(
+        "Eigenvectors[t {{a, b, c}, {d, e, f}, {g, h, k}}] === \
+         Eigenvectors[{{a, b, c}, {d, e, f}, {g, h, k}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+// Symbolic eigenvalues and eigenvectors in wolframscript's forms: the Root
+// objects of an irreducible cubic, back-substituted 3×3 vectors, split 2×2
+// characteristic polynomials and square content out of the discriminant.
+mod symbolic_eigen_forms {
+  use super::*;
+
+  const CUBIC: &str = "c*e*g - b*f*g - c*d*h + a*f*h + b*d*k - a*e*k + \
+    (-(b*d) + a*e - c*g - f*h + a*k + e*k)*#1 + (-a - e - k)*#1^2 + #1^3";
+
+  fn root(k: u8) -> String {
+    format!("Root[{CUBIC} & , {k}]")
+  }
+
+  #[test]
+  fn general_3x3_eigenvalues_are_roots() {
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b, c}, {d, e, f}, {g, h, k}}]").unwrap(),
+      format!("{{{}, {}, {}}}", root(1), root(2), root(3))
+    );
+    assert_eq!(
+      interpret("Eigenvalues[t {{a, b, c}, {d, e, f}, {g, h, k}}]").unwrap(),
+      format!("{{t*{}, t*{}, t*{}}}", root(1), root(2), root(3))
+    );
+  }
+
+  #[test]
+  fn general_3x3_eigenvectors_back_substituted() {
+    let l = root(1);
+    assert_eq!(
+      interpret("Eigenvectors[{{a, b, c}, {d, e, f}, {g, h, k}}][[1]]")
+        .unwrap(),
+      format!(
+        "{{-((k - {l})/g) + (h*(-(f*g) + d*k - d*{l}))/(g*(-(e*g) + d*h + \
+         g*{l})), -((-(f*g) + d*k - d*{l})/(-(e*g) + d*h + g*{l})), 1}}"
+      )
+    );
+    let m = "Root[a*f*h + b*d*k - a*e*k + (-(b*d) + a*e - f*h + a*k + e*k)*#1 \
+      + (-a - e - k)*#1^2 + #1^3 & , 1]";
+    assert_eq!(
+      interpret("Eigenvectors[{{a, b, 0}, {d, e, f}, {0, h, k}}][[1]]")
+        .unwrap(),
+      format!("{{-(f/d) + ((e - {m})*(k - {m}))/(d*h), -((k - {m})/h), 1}}")
+    );
+  }
+
+  #[test]
+  fn root_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret("Root[#1^3 + b #1 + c &, 2]").unwrap(),
+      "Root[c + b*#1 + #1^3 & , 2]"
+    );
+    assert_eq!(
+      interpret("Root[(-a - e) #1^2 + #1^3 + (a e - b d) #1 + c &, 1]")
+        .unwrap(),
+      "Root[c + (-(b*d) + a*e)*#1 + (-a - e)*#1^2 + #1^3 & , 1]"
+    );
+    // Slots order after symbols in a sum.
+    assert_eq!(interpret("b #1 + c").unwrap(), "c + b*#1");
+    assert_eq!(interpret("(a + b) #1 + c").unwrap(), "c + (a + b)*#1");
+  }
+
+  #[test]
+  fn symbolic_2x2_eigenvalues() {
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {b, a}}]").unwrap(),
+      "{a - b, a + b}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, 1}, {1, a}}]").unwrap(),
+      "{-1 + a, 1 + a}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {c, a}}]").unwrap(),
+      "{a - Sqrt[b]*Sqrt[c], a + Sqrt[b]*Sqrt[c]}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, b}, {c, -a}}]").unwrap(),
+      "{-Sqrt[a^2 + b*c], Sqrt[a^2 + b*c]}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{a, -b}, {b, a}}]").unwrap(),
+      "{a - I*b, a + I*b}"
+    );
+    assert_eq!(
+      interpret("Eigenvalues[{{Cos[t], -Sin[t]}, {Sin[t], Cos[t]}}]").unwrap(),
+      "{Cos[t] - I*Sin[t], Cos[t] + I*Sin[t]}"
+    );
+  }
+
+  #[test]
+  fn symbolic_2x2_eigenvectors() {
+    assert_eq!(
+      interpret("Eigenvectors[{{a, b}, {c, d}}]").unwrap(),
+      "{{-1/2*(-a + d + Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/c, 1}, \
+       {-1/2*(-a + d - Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/c, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "Eigenvectors[t {{a, b}, {c, d}}] === Eigenvectors[{{a, b}, {c, d}}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{a, b}, {b, a}}]").unwrap(),
+      "{{-1, 1}, {1, 1}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{0, b}, {c, 0}}]").unwrap(),
+      "{{-(Sqrt[b]/Sqrt[c]), 1}, {Sqrt[b]/Sqrt[c], 1}}"
+    );
+    assert_eq!(
+      interpret("Eigenvectors[{{Cos[t], -Sin[t]}, {Sin[t], Cos[t]}}]").unwrap(),
+      "{{-I, 1}, {I, 1}}"
     );
   }
 }

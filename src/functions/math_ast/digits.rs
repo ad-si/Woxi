@@ -88,21 +88,22 @@ pub fn digit_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// DigitSum[n] - sum of digits in base 10
 /// DigitSum[n, b] - sum of digits in base b
-/// DigitSum[n, b, k] - sum of the k-th powers of the base-b digits
+/// DigitSum[n, b, k] - sum of the first k base-b digits (the last -k for a
+/// negative k)
 pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "DigitSum expects 1 to 3 arguments".into(),
     ));
   }
-  // The power each digit is raised to (1 unless a third argument is given).
-  let power: u32 = match args.get(2) {
-    None => 1,
-    Some(Expr::Integer(k)) if *k >= 0 && *k <= u32::MAX as i128 => *k as u32,
+  // How many leading (positive) or trailing (negative) digits to add.
+  let count: Option<i128> = match args.get(2) {
+    None => None,
+    Some(Expr::Integer(k)) => Some(*k),
     Some(_) => return Ok(unevaluated("DigitSum", args)),
   };
   let add_digit = |sum: &mut BigInt, d: BigInt| {
-    *sum += if power == 1 { d } else { d.pow(power) };
+    *sum += d;
   };
   let n = match expr_to_bigint(&args[0]) {
     Some(n) => n.abs(),
@@ -160,14 +161,26 @@ pub fn digit_sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     10
   };
   let big_base = BigInt::from(base);
-  let mut sum = BigInt::from(0);
   let mut val = n;
   if val.is_zero() {
     return Ok(Expr::Integer(0));
   }
+  // Digits least significant first.
+  let mut digits: Vec<BigInt> = Vec::new();
   while !val.is_zero() {
-    add_digit(&mut sum, &val % &big_base);
+    digits.push(&val % &big_base);
     val /= &big_base;
+  }
+  let len = digits.len();
+  let range = match count {
+    None => 0..len,
+    // The first k digits are the most significant ones.
+    Some(k) if k >= 0 => len - usize::try_from(k).unwrap_or(len).min(len)..len,
+    Some(k) => 0..usize::try_from(k.unsigned_abs()).unwrap_or(len).min(len),
+  };
+  let mut sum = BigInt::from(0);
+  for d in digits.drain(range) {
+    add_digit(&mut sum, d);
   }
   Ok(bigint_to_expr(sum))
 }
@@ -1236,31 +1249,23 @@ pub fn from_continued_fraction_ast(
     if let Some(n) = expr_to_bigint(elem) {
       ints.push(n);
     } else {
-      // Symbolic terms: fold from the right, combining into a single
-      // fraction at every step (the convergent recurrence).
+      // Symbolic terms: the convergent recurrence p_k = a_k p_(k-1) +
+      // p_(k-2), q_k = a_k q_(k-1) + q_(k-2), evaluated but not multiplied
+      // out, which is the form wolframscript prints:
+      // `FromContinuedFraction[{a, b, c}]` is `(a + (1 + a*b)*c)/(1 + b*c)`.
       if elements.iter().any(|e| matches!(e, Expr::List(_))) {
         return Ok(unevaluated("FromContinuedFraction", args));
       }
-      let mut acc = elements.last().unwrap().clone();
-      for e in elements[..elements.len() - 1].iter().rev() {
-        let step = Expr::FunctionCall {
-          name: "Together".to_string(),
-          args: vec![Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              e.clone(),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![acc, Expr::Integer(-1)].into(),
-              },
-            ]
-            .into(),
-          }]
-          .into(),
-        };
-        acc = crate::evaluator::evaluate_expr_to_expr(&step)?;
+      let eval = crate::evaluator::evaluate_expr_to_expr;
+      let (mut p_prev, mut p) = (Expr::Integer(0), Expr::Integer(1));
+      let (mut q_prev, mut q) = (Expr::Integer(1), Expr::Integer(0));
+      for e in elements {
+        let p_next = eval(&plus2(times2(e.clone(), p.clone()), p_prev))?;
+        let q_next = eval(&plus2(times2(e.clone(), q.clone()), q_prev))?;
+        p_prev = std::mem::replace(&mut p, p_next);
+        q_prev = std::mem::replace(&mut q, q_next);
       }
-      return Ok(acc);
+      return eval(&times2(p, pow2(q, Expr::Integer(-1))));
     }
   }
 

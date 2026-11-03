@@ -1,22 +1,14 @@
 //! Mathieu function numerical evaluation.
 //!
-//! For real `(a, q, z)` we provide a Floquet-based numerical solver.
-//! Wolfram's Mathieu functions use a specific (a, q)-dependent
-//! normalisation tied to the Hill tridiagonal eigenvalue problem; that
-//! normalisation is not reproduced here. Instead each solution is
-//! anchored by the boundary condition that matches its `q → 0` limit:
-//! `MathieuS(a, 0, z) = sin(√a · z)`, `MathieuSPrime(a, 0, z) = √a ·
-//! cos(√a · z)`, `MathieuC(a, 0, z) = cos(√a · z)`, and
-//! `MathieuCPrime(a, 0, z) = -√a · sin(√a · z)`.
-//!
-//! For `q = 0` the closed forms above are exact; for `q ≠ 0` the result
-//! is the analytic continuation under the respective boundary condition
-//! (`y(0) = 0, y'(0) = √a` for the S family; `y(0) = 1, y'(0) = 0` for
-//! the C family) — which differs from wolframscript's specific
-//! numerical scaling by a smooth (a, q)-dependent factor. Users who
-//! need exact wolframscript agreement should compare ratios such as
-//! `MathieuSPrime(a, q, z) / MathieuSPrime(a, q, 0)` (these match to
-//! numerical precision).
+//! For real `(a, q, z)` we provide a Floquet-based numerical solver. Each
+//! solution is integrated from the boundary condition that matches its
+//! `q → 0` limit (`y(0) = 1, y'(0) = 0` for the C family, `y(0) = 0,
+//! y'(0) = √a` for the S family) and then scaled to wolframscript's
+//! normalisation where the characteristic exponent ν is real and not an
+//! integer: the Floquet solution `Σ c_k e^{i(ν+2k)z}` with `Σ c_k² = 1` (see
+//! `wolfram_normalisation`). For an integer ν (the periodic `ce`/`se`
+//! functions) or an unstable `(a, q)` the boundary-anchored scaling is kept,
+//! which differs from wolframscript's by an `(a, q)`-dependent factor.
 
 #[allow(unused_imports)]
 use super::*;
@@ -196,6 +188,61 @@ fn pure_imaginary_f64(e: &Expr) -> Option<f64> {
   (re == 0.0 && im != 0.0).then_some(im)
 }
 
+/// The factor taking the boundary-anchored solution (`y(0) = 1` for C,
+/// `y'(0) = √a` for S) to wolframscript's normalisation for a stable,
+/// non-integer characteristic exponent ν: the Floquet solution
+/// `Σ c_k e^{i(ν+2k)z}` with `c_0 > 0` and `Σ c_k² = 1`, so
+/// `MathieuC(0) = Σ c_k` and `MathieuS'(0) = Σ (ν + 2k) c_k`
+/// (`MathieuC[1.5, 0.5, 0.]` is `1.3027092577566124`). The coefficients come
+/// from the three-term recurrence `(a - (ν + 2k)²) c_k = q (c_{k-1} + c_{k+1})`
+/// by continued fractions outward from `c_0 = 1`. 1 where this does not
+/// apply (an integer or complex ν, q = 0).
+fn wolfram_normalisation(a: f64, q: f64, odd: bool) -> f64 {
+  if q == 0.0 {
+    return 1.0;
+  }
+  let (nu, im) = mathieu_characteristic_exponent(a, q);
+  if im != 0.0 || (nu - nu.round()).abs() < 1e-9 || !nu.is_finite() {
+    return 1.0;
+  }
+  const K: i32 = 40;
+  // Ratios c_k / c_{k-1} (upward) and c_{-k} / c_{-k+1} (downward).
+  let ratios = |sign: f64| -> Vec<f64> {
+    let mut r = vec![0.0; (K + 2) as usize];
+    for k in (1..=K).rev() {
+      let shift = nu + sign * 2.0 * k as f64;
+      let denom = (a - shift * shift) - q * r[(k + 1) as usize];
+      r[k as usize] = if denom == 0.0 { 0.0 } else { q / denom };
+    }
+    r
+  };
+  let up = ratios(1.0);
+  let down = ratios(-1.0);
+  let mut sum = 1.0;
+  let mut sum_sq = 1.0;
+  let mut sum_weighted = nu;
+  let (mut cu, mut cd) = (1.0, 1.0);
+  for k in 1..=K {
+    cu *= up[k as usize];
+    cd *= down[k as usize];
+    sum += cu + cd;
+    sum_sq += cu * cu + cd * cd;
+    sum_weighted += (nu + 2.0 * k as f64) * cu + (nu - 2.0 * k as f64) * cd;
+  }
+  let norm = sum_sq.sqrt();
+  if !norm.is_finite() || norm == 0.0 {
+    return 1.0;
+  }
+  if odd {
+    if a <= 0.0 {
+      return 1.0;
+    }
+    sum_weighted / norm / a.sqrt()
+  } else {
+    sum / norm
+  }
+}
+
 /// MathieuS[a, q, z] — odd Mathieu function, normalised to match
 /// `sin(√a · z)` at q = 0 (BC `y(0) = 0`, `y'(0) = √a`).
 pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -210,7 +257,10 @@ pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     // y(i·t) = Y(t) with Y(0) = 0 and Y'(0) = i·√a, so Y = i·(real solution).
     let (y, _) = integrate_mathieu_imaginary(a, q, t, 0.0, a.sqrt());
-    return Ok(build_complex_float_expr(0.0, y));
+    return Ok(build_complex_float_expr(
+      0.0,
+      y * wolfram_normalisation(a, q, true),
+    ));
   }
   let (Some(a), Some(q), Some(z)) = (
     try_real_f64(&args[0]),
@@ -224,7 +274,7 @@ pub fn mathieu_s_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let yp0 = a.sqrt();
   let (y, _) = integrate_mathieu(a, q, z, 0.0, yp0);
-  Ok(Expr::Real(y))
+  Ok(Expr::Real(y * wolfram_normalisation(a, q, true)))
 }
 
 /// MathieuSPrime[a, q, z] — derivative of MathieuS w.r.t. z.
@@ -244,7 +294,7 @@ pub fn mathieu_s_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let yp0 = a.sqrt();
   let (_, yp) = integrate_mathieu(a, q, z, 0.0, yp0);
-  Ok(Expr::Real(yp))
+  Ok(Expr::Real(yp * wolfram_normalisation(a, q, true)))
 }
 
 /// MathieuC[a, q, z] — even Mathieu function, normalised to match
@@ -259,7 +309,7 @@ pub fn mathieu_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     pure_imaginary_f64(&args[2]),
   ) {
     let (y, _) = integrate_mathieu_imaginary(a, q, t, 1.0, 0.0);
-    return Ok(Expr::Real(y));
+    return Ok(Expr::Real(y * wolfram_normalisation(a, q, false)));
   }
   let (Some(a), Some(q), Some(z)) = (
     try_real_f64(&args[0]),
@@ -271,7 +321,7 @@ pub fn mathieu_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Unlike MathieuS, the y(0) = 1, y'(0) = 0 boundary condition is real for
   // any real `a` (it never involves `√a`), so negative `a` is fine here.
   let (y, _) = integrate_mathieu(a, q, z, 1.0, 0.0);
-  Ok(Expr::Real(y))
+  Ok(Expr::Real(y * wolfram_normalisation(a, q, false)))
 }
 
 /// MathieuCPrime[a, q, z] — derivative of MathieuC w.r.t. z.
@@ -288,7 +338,7 @@ pub fn mathieu_c_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Same real boundary condition as MathieuC, so negative `a` is fine here.
   let (_, yp) = integrate_mathieu(a, q, z, 1.0, 0.0);
-  Ok(Expr::Real(yp))
+  Ok(Expr::Real(yp * wolfram_normalisation(a, q, false)))
 }
 
 /// Number of eigenvalues below `x` of the symmetric tridiagonal matrix with

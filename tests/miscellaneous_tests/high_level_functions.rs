@@ -1014,7 +1014,15 @@ mod high_level_functions {
     fn test_symbolic_terms() {
       assert_eq!(
         interpret("FromContinuedFraction[{a, b, c}]").unwrap(),
-        "(a + c + a*b*c)/(1 + b*c)"
+        "(a + (1 + a*b)*c)/(1 + b*c)"
+      );
+      assert_eq!(
+        interpret("FromContinuedFraction[{1, a, 2}]").unwrap(),
+        "(1 + 2*(1 + a))/(1 + 2*a)"
+      );
+      assert_eq!(
+        interpret("FromContinuedFraction[{a, b, c, d}]").unwrap(),
+        "(1 + a*b + (a + (1 + a*b)*c)*d)/(b + (1 + b*c)*d)"
       );
       assert_eq!(
         interpret("FromContinuedFraction[{1, x}]").unwrap(),

@@ -560,11 +560,19 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(unevaluated("StandbyDistribution", args)));
     }
     // The constructor never validates (wolframscript echoes even
-    // non-symmetric matrices silently); Mean/Variance validate.
+    // non-symmetric matrices silently); Mean/Variance validate. The size-only
+    // form fills in the default scale: `GaussianOrthogonalMatrixDistribution[3]`
+    // is `GaussianOrthogonalMatrixDistribution[1, 3]`.
     "GaussianOrthogonalMatrixDistribution"
     | "GaussianUnitaryMatrixDistribution"
       if args.len() == 1 || args.len() == 2 =>
     {
+      if args.len() == 1 {
+        return Some(Ok(unevaluated(
+          name,
+          &[Expr::Integer(1), args[0].clone()],
+        )));
+      }
       return Some(Ok(unevaluated(name, args)));
     }
     // The property (args[0]) stays held, as it is a function of the matrix

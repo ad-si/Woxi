@@ -190,10 +190,12 @@ mod moving_average {
     assert_eq!(
       interpret(
         "d = N[Table[Sin[k^2], {k, 30}]]; \
-         MovingAverage[d, 7] - Table[(Plus @@ d[[i ;; i + 6]])/7, {i, 24}] // Union"
+         Max[Abs[MovingAverage[d, 7] - \
+         Table[(Plus @@ d[[i ;; i + 6]])/7, {i, 24}]]] < 10^-15"
       )
       .unwrap(),
-      "{0.}"
+      // Only to rounding: the summation order is the implementation's.
+      "True"
     );
   }
 

@@ -957,14 +957,18 @@ fn ear_clip(pts: &[(f64, f64)], indices: &[usize]) -> Option<Vec<[usize; 3]>> {
   while ring.len() > 3 {
     let n = ring.len();
     let mut clipped = false;
+    let mut straight = None;
     for k in 0..n {
       let (ia, ib, ic) = (ring[(k + n - 1) % n], ring[k], ring[(k + 1) % n]);
       let (a, b, c) = (at(ia)?, at(ib)?, at(ic)?);
       let turn = cross(a, b, c);
+      // A vertex on a straight stretch is no ear; it is clipped as the
+      // corner of a neighbouring ear instead, so it stays a vertex of the
+      // triangulation (dropping it would leave it in the middle of a
+      // triangle's edge — a hole's corner, say).
       if turn == 0.0 {
-        ring.remove(k);
-        clipped = true;
-        break;
+        straight.get_or_insert(k);
+        continue;
       }
       if turn < 0.0 {
         continue;
@@ -987,7 +991,8 @@ fn ear_clip(pts: &[(f64, f64)], indices: &[usize]) -> Option<Vec<[usize; 3]>> {
       }
     }
     if !clipped {
-      return None;
+      // Only straight vertices left to take: drop one.
+      ring.remove(straight?);
     }
   }
   if ring.len() == 3 && cross(at(ring[0])?, at(ring[1])?, at(ring[2])?) != 0.0 {

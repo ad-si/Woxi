@@ -194,6 +194,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
   // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
   if a_list.len() == 1 && b_list.is_empty() {
+    // At z = 1 the value 0^(-a) depends on the sign of a, so a symbolic a
+    // stays unevaluated, as in wolframscript.
+    if matches!(z, Expr::Integer(1))
+      && !crate::functions::predicate_ast::is_numeric_q(&a_list[0])
+    {
+      return Ok(unevaluated("HypergeometricPFQ", args));
+    }
     let one_minus_z = plus(vec![Expr::Integer(1), neg(z.clone())]);
     let neg_a = neg(a_list[0].clone());
     let pow = pow(one_minus_z, neg_a);

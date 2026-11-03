@@ -289,8 +289,13 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // so the option is read and dropped.
   let (args, working_precision) = split_random_options(args);
   let args = args.as_slice();
-  if let Some(p) = working_precision.as_ref().and_then(extended_precision) {
-    // A uniform draw at a precision beyond machine numbers.
+  if let Some(p) = working_precision
+    .as_ref()
+    .and_then(extended_precision)
+    .or_else(|| beyond_machine_range(args.first()).then_some(MACHINE_DIGITS))
+  {
+    // A uniform draw at a precision beyond machine numbers, or of
+    // machine-precision numbers too large for a machine real.
     if let Some(bounds) = match args.first() {
       None => Some((Expr::Integer(0), Expr::Integer(1))),
       Some(Expr::FunctionCall { name, .. })
@@ -428,6 +433,27 @@ pub fn random_real_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// A `WorkingPrecision` beyond machine precision, in decimal digits.
 /// `None` for MachinePrecision or anything at or below it.
+/// `$MachinePrecision`, the digits of a machine number.
+const MACHINE_DIGITS: f64 = 15.954589770191005;
+
+/// Whether a range (`max`, `{min, max}`, real or complex) has a bound past
+/// the largest machine real: wolframscript then draws arbitrary-precision
+/// numbers of machine precision (`RandomComplex[10^1000 + 10^1000 I]`).
+fn beyond_machine_range(spec: Option<&Expr>) -> bool {
+  let huge = |e: &Expr| {
+    crate::functions::list_helpers_ast::expr_to_complex_parts(e)
+      .is_some_and(|(re, im)| !re.is_finite() || !im.is_finite())
+  };
+  match spec {
+    Some(Expr::List(items)) if items.len() == 2 => items.iter().any(huge),
+    Some(Expr::FunctionCall { name, .. }) if name.ends_with("Distribution") => {
+      false
+    }
+    Some(e) => huge(e),
+    None => false,
+  }
+}
+
 fn extended_precision(wp: &Expr) -> Option<f64> {
   let p = try_eval_to_f64(wp)?;
   (p.is_finite() && p > 15.954589770191003).then_some(p)
@@ -554,7 +580,10 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Options (WorkingPrecision) follow the range and dimensions.
   let (args, working_precision) = split_random_options(args);
   let args = args.as_slice();
-  if let Some(p) = working_precision.as_ref().and_then(extended_precision)
+  if let Some(p) = working_precision
+    .as_ref()
+    .and_then(extended_precision)
+    .or_else(|| beyond_machine_range(args.first()).then_some(MACHINE_DIGITS))
     && let Some((lo, hi)) = match args.first() {
       None => Some((
         Expr::Integer(0),
@@ -714,19 +743,8 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   }
 
-  // A color template such as RGBColor[_, _, _] or Hue[_, 1, 1]: every
-  // blank is filled with a uniform random number.
-  fn template_color(model: &Expr) -> Option<Expr> {
-    let Expr::FunctionCall { name, args } = model else {
-      return None;
-    };
-    if !matches!(
-      name.as_str(),
-      "RGBColor" | "Hue" | "GrayLevel" | "CMYKColor" | "XYZColor" | "LABColor"
-    ) {
-      return None;
-    }
-    let is_blank = |e: &Expr| match e {
+  fn is_blank(e: &Expr) -> bool {
+    match e {
       Expr::Pattern {
         name,
         head: None,
@@ -734,24 +752,58 @@ pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } => name.is_empty(),
       Expr::FunctionCall { name, args } => name == "Blank" && args.is_empty(),
       _ => false,
+    }
+  }
+  // Whether `model` is a color template such as RGBColor[_, _, _] or
+  // Hue[_, 1, 1] (`None` when it is not a template at all), and if so
+  // whether its fixed components are numbers, as they must be.
+  fn template_kind(model: &Expr) -> Option<bool> {
+    let Expr::FunctionCall { name, args } = model else {
+      return None;
     };
-    if !args.iter().any(is_blank) {
+    if !matches!(
+      name.as_str(),
+      "RGBColor" | "Hue" | "GrayLevel" | "CMYKColor" | "XYZColor" | "LABColor"
+    ) || !args.iter().any(is_blank)
+    {
       return None;
     }
-    let filled: Vec<Expr> = args
-      .iter()
-      .map(|a| {
-        if is_blank(a) {
-          Expr::Real(crate::with_rng(|rng| rng.random_range(0.0..1.0)))
-        } else {
-          a.clone()
-        }
-      })
-      .collect();
+    Some(args.iter().all(|a| {
+      is_blank(a) || crate::functions::math_ast::try_eval_to_f64(a).is_some()
+    }))
+  }
+  // A valid color template with every blank filled with a uniform random
+  // number and the fixed components made machine numbers (RGBColor[1, _, _]
+  // gives RGBColor[1., …]).
+  fn template_color(model: &Expr) -> Option<Expr> {
+    let Expr::FunctionCall { name, args } = model else {
+      return None;
+    };
+    let mut filled = Vec::with_capacity(args.len());
+    for a in args {
+      if is_blank(a) {
+        filled.push(Expr::Real(crate::with_rng(|rng| {
+          rng.random_range(0.0..1.0)
+        })));
+      } else {
+        filled
+          .push(Expr::Real(crate::functions::math_ast::try_eval_to_f64(a)?));
+      }
+    }
     Some(call(name, filled))
   }
   if let Some(model) = args.first()
-    && template_color(model).is_some()
+    && template_kind(model) == Some(false)
+  {
+    crate::emit_message(&format!(
+      "RandomColor::bdmdl: {} is not a valid model specification. Models \
+       can be specified through color directive patterns.",
+      crate::syntax::format_expr(model, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(unevaluated("RandomColor", args));
+  }
+  if let Some(model) = args.first()
+    && template_kind(model) == Some(true)
   {
     fn fill(model: &Expr, dims: &[usize]) -> Expr {
       match dims.split_first() {

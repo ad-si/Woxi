@@ -114,7 +114,26 @@ fn sequence_alignment_merge_differences_false() {
       r#"SequenceAlignment["abcde", "axyde", MergeDifferences -> False]"#
     )
     .unwrap(),
-    "{a, {b, x}, {c, y}, de}"
+    "{a, {bc, xy}, de}"
+  );
+  // False only keeps a run of substitutions apart from a run of gaps.
+  assert_eq!(
+    interpret(
+      r#"SequenceAlignment["abxcd", "aycd", MergeDifferences -> False]"#
+    )
+    .unwrap(),
+    "{a, {b, }, {x, y}, cd}"
+  );
+  assert_eq!(
+    interpret(r#"SequenceAlignment["abxcd", "aycd"]"#).unwrap(),
+    "{a, {bx, y}, cd}"
+  );
+  assert_eq!(
+    interpret(
+      "SequenceAlignment[{1, 2, 3, 4}, {1, 5, 6, 4}, MergeDifferences -> False]"
+    )
+    .unwrap(),
+    "{{1}, {{2, 3}, {5, 6}}, {4}}"
   );
   assert_eq!(
     interpret(
@@ -2551,8 +2570,22 @@ mod plus_minus {
          2*MinusPlus[a, b]}"
       )
       .unwrap(),
-      "{2*(a ± b), (a ± b)^2, c + (a ± b), -(a ± b), 2*±a, (±a)^2, x + ±a, \
-       2*(a ∓ b)}"
+      "{2*(a ± b), (a ± b)^2, c + (a ± b), -(a ± b), 2*(±a), (±a)^2, \
+       x + (±a), 2*(a ∓ b)}"
+    );
+  }
+
+  #[test]
+  fn prefix_operand_parentheses() {
+    // The prefix `±a` is bracketed as the operand of every arithmetic
+    // operator, but not as a function argument or list element.
+    assert_eq!(
+      interpret(
+        "{-PlusMinus[a], PlusMinus[a] b, f[PlusMinus[a]], {PlusMinus[a]}, \
+         MinusPlus[a] + x, PlusMinus[a]^PlusMinus[b], PlusMinus[a]/2}"
+      )
+      .unwrap(),
+      "{-(±a), b*(±a), f[±a], {±a}, x + (∓a), (±a)^(±b), (±a)/2}"
     );
   }
 }
@@ -3570,27 +3603,33 @@ mod session_time {
 mod clock {
   use super::*;
 
+  // Outside Dynamic the kernel does not tick a clock: it answers the
+  // starting value, exactly as written.
   #[test]
-  fn stays_within_range() {
-    assert_eq!(interpret("Head[Clock[{2, 5}, 3]]").unwrap(), "Real");
-    assert_eq!(interpret("2 <= Clock[{2, 5}, 3] <= 5").unwrap(), "True");
-    assert_eq!(interpret("0 <= Clock[] <= 1").unwrap(), "True");
-    assert_eq!(interpret("0 <= Clock[7, 2] <= 7").unwrap(), "True");
-  }
-
-  #[test]
-  fn step_size_quantizes_value() {
+  fn evaluates_to_its_starting_value() {
+    assert_eq!(interpret("Head[Clock[{2, 5}, 3]]").unwrap(), "Integer");
     assert_eq!(
-      interpret("Mod[Clock[{0, 4, 1}, 2], 1] == 0").unwrap(),
-      "True"
+      interpret(
+        "{Clock[], Clock[7, 2], Clock[{0, 4, 1}, 2], Clock[{a, b}], \
+         Clock[{1, 2, 0.5}], Clock[{2., 5}], Clock[{1/2, 5}, 3]}"
+      )
+      .unwrap(),
+      "{0, 0, 0, a, 1, 2., 1/2}"
     );
   }
 
   #[test]
-  fn symbolic_period_stays_unevaluated() {
+  fn invalid_period_still_gives_the_starting_value() {
+    assert_eq!(interpret("Clock[{0, Pi}, 60/t]").unwrap(), "0");
+    assert_eq!(interpret("Clock[{3, 1}]").unwrap(), "3");
+    assert_eq!(interpret("Clock[{0, 1}, -1]").unwrap(), "0");
+  }
+
+  #[test]
+  fn malformed_iterator_stays_unevaluated() {
     assert_eq!(
-      interpret("Clock[{0, Pi}, 60/t]").unwrap(),
-      "Clock[{0, Pi}, 60/t]"
+      interpret("Clock[{0, 1, 2, 3}]").unwrap(),
+      "Clock[{0, 1, 2, 3}]"
     );
   }
 }

@@ -393,7 +393,7 @@ mod date_plus {
     assert_eq!(
       interpret("DatePlus[{2026, 10, 27, 10, 0, 0}, {100000, \"Second\"}]")
         .unwrap(),
-      "{2026, 10, 28, 13, 46, 40.}"
+      "{2026, 10, 28, 13, 46, 40}"
     );
   }
 
@@ -402,7 +402,64 @@ mod date_plus {
     assert_eq!(
       interpret("DatePlus[{2026, 12, 31}, {{25, \"Hour\"}, {30, \"Minute\"}}]")
         .unwrap(),
-      "{2027, 1, 1, 1, 30, 0.}"
+      "{2027, 1, 1, 1, 30}"
+    );
+  }
+
+  #[test]
+  fn date_plus_result_grows_only_to_the_nonzero_clock_fields() {
+    assert_eq!(
+      interpret("DatePlus[{2026, 12, 31}, {24, \"Hour\"}]").unwrap(),
+      "{2027, 1, 1}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 12, 31}, {90, \"Second\"}]").unwrap(),
+      "{2026, 12, 31, 0, 1, 30}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27}, {1.3, \"Day\"}]").unwrap(),
+      "{2026, 10, 28, 7, 12}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27, 10}, {2, \"Day\"}]").unwrap(),
+      "{2026, 10, 29, 10}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27, 10.5}, {1, \"Day\"}]").unwrap(),
+      "{2026, 10, 28, 10, 30, 0}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27, 10, 0, 0.}, {100000, \"Second\"}]")
+        .unwrap(),
+      "{2026, 10, 28, 13, 46, 40.}"
+    );
+    assert_eq!(
+      interpret("DatePlus[{2026, 10, 27, 10, 0, 0}, {1.5, \"Second\"}]")
+        .unwrap(),
+      "{2026, 10, 27, 10, 0, 1.5}"
+    );
+    assert_eq!(
+      interpret(
+        "{DatePlus[{2026, 10, 27, 10, 0, 0}, {2., \"Second\"}], \
+         DatePlus[{2026, 10, 27, 10, 0, 0}, {0.5, \"Minute\"}]}"
+      )
+      .unwrap(),
+      "{{2026, 10, 27, 10, 0, 2.}, {2026, 10, 27, 10, 0, 30}}"
+    );
+  }
+
+  #[test]
+  fn date_plus_instant_keeps_seconds_exactness() {
+    // An Instant follows the same rule as a date list: its seconds turn
+    // inexact only for inexact seconds in the date or the increment.
+    assert_eq!(
+      interpret(
+        "First /@ {DatePlus[DateObject[{2024, 1, 1, 10, 0, 0}], {2, \"Second\"}], \
+         DatePlus[DateObject[{2024, 1, 1, 10, 0, 0.}], {2, \"Hour\"}], \
+         DatePlus[DateObject[{2024, 1, 1, 10, 0, 0}], {2., \"Second\"}]}"
+      )
+      .unwrap(),
+      "{{2024, 1, 1, 10, 0, 2}, {2024, 1, 1, 12, 0, 0.}, {2024, 1, 1, 10, 0, 2.}}"
     );
   }
 
@@ -410,7 +467,7 @@ mod date_plus {
   fn date_plus_fractional_days() {
     assert_eq!(
       interpret("DatePlus[{2026, 10, 27}, {1.5, \"Day\"}]").unwrap(),
-      "{2026, 10, 28, 12, 0, 0.}"
+      "{2026, 10, 28, 12}"
     );
   }
 

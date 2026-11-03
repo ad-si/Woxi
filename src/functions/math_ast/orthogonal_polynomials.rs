@@ -3122,6 +3122,60 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         return Ok(v);
       }
+      // A machine complex argument: the same Kummer form, summed by the
+      // complex Hypergeometric1F1.
+      if crate::functions::math_ast::try_eval_to_f64(&args[0]).is_some()
+        && crate::syntax::contains_inexact(&args[1])
+        && crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(
+          &args[1],
+        )
+        .is_some()
+      {
+        let nu = || args[0].clone();
+        let z = || args[1].clone();
+        let half = |e: Expr| times2(e, make_rational(1, 2));
+        let kummer = times(vec![
+          pow2(Expr::Integer(2), nu()),
+          call1("Sqrt", const_expr("Pi")),
+          minus2(
+            div2(
+              call(
+                "Hypergeometric1F1",
+                vec![
+                  neg(half(nu())),
+                  make_rational(1, 2),
+                  pow2(z(), Expr::Integer(2)),
+                ],
+              ),
+              call1("Gamma", half(minus2(Expr::Integer(1), nu()))),
+            ),
+            div2(
+              times(vec![
+                Expr::Integer(2),
+                z(),
+                call(
+                  "Hypergeometric1F1",
+                  vec![
+                    half(minus2(Expr::Integer(1), nu())),
+                    make_rational(3, 2),
+                    pow2(z(), Expr::Integer(2)),
+                  ],
+                ),
+              ]),
+              call1("Gamma", neg(half(nu()))),
+            ),
+          ),
+        ]);
+        let value =
+          crate::evaluator::evaluate_expr_to_expr(&call1("N", kummer))?;
+        if crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(
+          &value,
+        )
+        .is_some()
+        {
+          return Ok(value);
+        }
+      }
       return Ok(unevaluated("HermiteH", args));
     }
   };

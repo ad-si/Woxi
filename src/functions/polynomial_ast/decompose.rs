@@ -47,6 +47,52 @@ pub fn decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(exprs.into()))
 }
 
+/// Decompose[poly, x, Modulus -> p] for a prime `p`: the same search as over
+/// the rationals, with every coefficient taken in GF(p) (as its residue in
+/// `0 … p-1`). `Decompose[x^4 + 4 x^3 + 6 x + 1, x, Modulus -> 7]` is
+/// `{1 + 3 x + x^2, 2 x + x^2}`, which has no counterpart over Q.
+pub fn decompose_modulo(
+  poly: &Expr,
+  var: &Expr,
+  p: i128,
+) -> Result<Expr, InterpreterError> {
+  let previous = DECOMPOSE_MODULUS.with(|m| m.replace(Some(p)));
+  let result = decompose_ast(&[poly.clone(), var.clone()]);
+  DECOMPOSE_MODULUS.with(|m| m.set(previous));
+  result
+}
+
+thread_local! {
+  /// The prime the coefficients live modulo while `decompose_modulo` runs.
+  static DECOMPOSE_MODULUS: std::cell::Cell<Option<i128>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Normalise `n/d`: reduced over Q, or the residue `n * d^-1 mod p` (as
+/// `(residue, 1)`) under a modulus. A denominator divisible by `p` has no
+/// inverse; callers avoid producing one (`try_decompose_step` skips outer
+/// degrees divisible by `p`).
+fn rat_reduce(n: i128, d: i128) -> Rat {
+  match DECOMPOSE_MODULUS.with(std::cell::Cell::get) {
+    None => crate::functions::math_ast::rat_reduce(n, d),
+    Some(p) => {
+      let inv = mod_inverse(d.rem_euclid(p), p).unwrap_or(0);
+      ((n.rem_euclid(p) * inv).rem_euclid(p), 1)
+    }
+  }
+}
+
+fn mod_inverse(a: i128, p: i128) -> Option<i128> {
+  let (mut old_r, mut r) = (a, p);
+  let (mut old_s, mut s) = (1i128, 0i128);
+  while r != 0 {
+    let q = old_r / r;
+    (old_r, r) = (r, old_r - q * r);
+    (old_s, s) = (s, old_s - q * s);
+  }
+  (old_r == 1).then(|| old_s.rem_euclid(p))
+}
+
 // ──── Rational arithmetic helpers ────────────────────────────────────
 
 type Rat = (i128, i128); // (numerator, denominator), always reduced
@@ -204,7 +250,7 @@ fn expr_to_rat(expr: &Expr) -> Option<Rat> {
       operand,
     } => {
       let (n, d) = expr_to_rat(operand)?;
-      Some((-n, d))
+      Some(rat_reduce(-n, d))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
@@ -301,6 +347,14 @@ fn try_decompose_step(f: &[Rat], s: usize) -> Option<(Vec<Rat>, Vec<Rat>)> {
     return None;
   }
   let r = n / s;
+  // Solving for h divides by the outer degree, which has no inverse modulo
+  // a prime dividing it; there the (finitely many) monic inner candidates
+  // are searched instead.
+  if let Some(p) = DECOMPOSE_MODULUS.with(std::cell::Cell::get)
+    && (r as i128) % p == 0
+  {
+    return search_inner_modulo(f, s, r);
+  }
 
   let d_r = f[n]; // leading coefficient of f = leading coefficient of g
 
@@ -345,6 +399,26 @@ fn try_decompose_step(f: &[Rat], s: usize) -> Option<(Vec<Rat>, Vec<Rat>)> {
     return None;
   }
 
+  Some((g, h))
+}
+
+/// `try_decompose_step` over GF(p) when `p` divides the outer degree `r`.
+/// The inner polynomial cannot be solved for there, and wolframscript only
+/// recognises the monomial one: `f` is a polynomial in `x^s` when every
+/// exponent it has is a multiple of `s` (`x^6 + x^2 + 2` modulo 3 is
+/// `{2 + x + x^3, x^2}`, while the also-valid `(x^3 + x) ∘ (x^3 + x)` modulo
+/// 3 is not found).
+fn search_inner_modulo(
+  f: &[Rat],
+  s: usize,
+  r: usize,
+) -> Option<(Vec<Rat>, Vec<Rat>)> {
+  let mut h = vec![RAT_ZERO; s + 1];
+  h[s] = RAT_ONE;
+  let g = try_express_in_h_basis(f, &h, r)?;
+  if poly_degree(&poly_sub(f, &poly_compose(&g, &h))) >= 0 {
+    return None;
+  }
   Some((g, h))
 }
 

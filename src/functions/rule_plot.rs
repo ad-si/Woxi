@@ -53,6 +53,9 @@ pub fn rule_plot_graphics(
   let Expr::FunctionCall { name, args: ca } = &args[0] else {
     return None;
   };
+  if name == "SubstitutionSystem" && ca.len() == 1 && args.len() == 1 {
+    return substitution_system_plot(&ca[0]);
+  }
   if name != "CellularAutomaton" || ca.len() != 1 {
     return None;
   }
@@ -162,4 +165,205 @@ pub fn rule_plot_graphics(
   Some(crate::functions::graphics::show_ast(&[call(
     "Graphics", gargs,
   )]))
+}
+
+/// `n/2` as exact Wolfram source (`3/2`, `-1`, `0`).
+fn half(n: i64) -> String {
+  if n % 2 == 0 {
+    (n / 2).to_string()
+  } else {
+    format!("{n}/2")
+  }
+}
+
+/// `RulePlot[SubstitutionSystem[{v -> rhs, …}]]`, as wolframscript draws
+/// it: one inset per rule — the cell, an arrow and the block it becomes (a
+/// 2D rule), or the cell above the row it becomes (a 1D rule) — side by
+/// side between light grey rules. Colours run from white (0) to black (the
+/// largest value).
+fn substitution_system_plot(
+  rules: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::List(rules) = rules else {
+    return None;
+  };
+  let value = |e: &Expr| match e {
+    Expr::Integer(v) if (0..=255).contains(v) => Some(*v as i64),
+    _ => None,
+  };
+  let mut parsed: Vec<(i64, Vec<Vec<i64>>, bool)> = Vec::new();
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      return None;
+    };
+    let lhs = value(pattern)?;
+    let Expr::List(rows) = replacement.as_ref() else {
+      return None;
+    };
+    if rows.iter().all(|r| matches!(r, Expr::List(_))) {
+      let grid: Option<Vec<Vec<i64>>> = rows
+        .iter()
+        .map(|r| match r {
+          Expr::List(cells) => cells.iter().map(value).collect(),
+          _ => None,
+        })
+        .collect();
+      parsed.push((lhs, grid?, true));
+    } else {
+      parsed.push((
+        lhs,
+        vec![rows.iter().map(value).collect::<Option<_>>()?],
+        false,
+      ));
+    }
+  }
+  let (Some(first), true) = (parsed.first(), !parsed.is_empty()) else {
+    return None;
+  };
+  let two_d = first.2;
+  let (r, c) = (first.1.len() as i64, first.1.first()?.len() as i64);
+  if r == 0
+    || c == 0
+    || parsed.iter().any(|(_, g, d)| {
+      *d != two_d
+        || g.len() as i64 != r
+        || g.iter().any(|row| row.len() as i64 != c)
+    })
+  {
+    return None;
+  }
+  let max = parsed
+    .iter()
+    .flat_map(|(l, g, _)| {
+      std::iter::once(*l).chain(g.iter().flatten().copied())
+    })
+    .max()
+    .unwrap_or(1)
+    .max(1);
+  let gray = |v: i64| {
+    let (num, den) = (max - v, max);
+    let g = gcd(num, den);
+    let (num, den) = (num / g, den / g);
+    if den == 1 {
+      format!("GrayLevel[{num}]")
+    } else {
+      format!("GrayLevel[{num}/{den}]")
+    }
+  };
+  let edge = "EdgeForm[GrayLevel[-1 + GoldenRatio]]";
+  // The inset's plot range, in halves (2D) or quarters (1D).
+  let (width, height, range) = if two_d {
+    (
+      (c + 4) as f64,
+      (r + 1) as f64,
+      format!(
+        "{{{{-3/2, {}}}, {{{}, {}}}}}",
+        half(2 * (2 + c) + 1),
+        half(-r),
+        half((r - 1) + 2 + 1)
+      ),
+    )
+  } else {
+    (
+      (c + 1) as f64,
+      13.0 / 4.0,
+      format!("{{{{-1, {c}}}, {{-7/4, 3/2}}}}"),
+    )
+  };
+  let s = width / height;
+  let real = |x: f64| crate::syntax::expr_to_source_form(&Expr::Real(x));
+  let mut insets = Vec::new();
+  for (k, (lhs, grid, _)) in parsed.iter().enumerate() {
+    let body = if two_d {
+      let rows: Vec<String> = grid
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+          // Row i spans y from (r - 1)/2 - i to one above.
+          let y0 = (r - 1) - 2 * i as i64;
+          let cells: Vec<String> = row
+            .iter()
+            .enumerate()
+            .map(|(j, v)| {
+              format!(
+                "{{{}, Rectangle[{{{}, {}}}, {{{}, {}}}]}}",
+                gray(*v),
+                2 + j as i64,
+                half(y0),
+                3 + j as i64,
+                half(y0 + 2)
+              )
+            })
+            .collect();
+          format!("{{{edge}, {{{}}}}}", cells.join(", "))
+        })
+        .collect();
+      format!(
+        "{{{{{{{edge}, {{{{{}, Rectangle[{{-1, 0}}, {{0, 1}}]}}}}}}}}, \
+         {{Arrowheads[{{{{Automatic, Automatic, Graphics[Line[{{{{-1/2*Sqrt[3], 1/2}}, {{0, 0}}, {{-1/2*Sqrt[3], -1/2}}}}]]}}}}], Arrow[{{{{0.5, 1/2}}, {{1.5, 1/2}}}}]}}, \
+         {{{}}}}}",
+        gray(*lhs),
+        rows.join(", ")
+      )
+    } else {
+      let cells: Vec<String> = grid[0]
+        .iter()
+        .enumerate()
+        .map(|(j, v)| {
+          format!(
+            "{{{}, Rectangle[{{{}, -5/4}}, {{{}, -1/4}}]}}",
+            gray(*v),
+            half(2 * j as i64 - 1),
+            half(2 * j as i64 + 1)
+          )
+        })
+        .collect();
+      format!(
+        "{{{{{edge}, {{{{{}, Rectangle[{{-1/2, 0}}, {{1/2, 1}}]}}}}}}, {{{edge}, {{{}}}}}}}",
+        gray(*lhs),
+        cells.join(", ")
+      )
+    };
+    insets.push(format!(
+      "Inset[Graphics[{body}, PlotRange -> {range}], {{{}, 1/2}}, {{Center, Center}}, {{{}, 1}}]",
+      real(s * (k as f64 + 0.5)),
+      real(s)
+    ));
+  }
+  let n = parsed.len();
+  let xs: Vec<String> = (0..=n)
+    .map(|k| {
+      if k == 0 {
+        "0".to_string()
+      } else {
+        real(s * k as f64)
+      }
+    })
+    .collect();
+  let vlines: Vec<String> = xs
+    .iter()
+    .map(|x| format!("Line[{{{{{x}, 0}}, {{{x}, 1}}}}]"))
+    .collect();
+  let end = &xs[n];
+  let source = format!(
+    "Graphics[{{{{{{{}}}}}, {{GrayLevel[0.8], {{{}}}, {{Line[{{{{0, 0}}, {{{end}, 0}}}}], Line[{{{{0, 1}}, {{{end}, 1}}}}]}}}}}}]",
+    insets.join(", "),
+    vlines.join(", ")
+  );
+  Some(
+    crate::syntax::string_to_expr(&source)
+      .and_then(|e| evaluate_expr_to_expr(&e)),
+  )
+}
+
+fn gcd(a: i64, b: i64) -> i64 {
+  if b == 0 {
+    a.abs().max(1)
+  } else {
+    gcd(b, a % b)
+  }
 }
