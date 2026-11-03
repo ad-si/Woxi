@@ -5346,6 +5346,31 @@ A plot merged with other graphics by `Show` (say a `DensityPlot` under a
 monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
 both alike.
 
+### Graphics inside lists and layouts: remaining differences
+
+An automatically sized picture in a list, `Grid`, `Column`, `TableForm` or
+`Row` with a separator is drawn at half its size (a quarter in a `Row` of
+several items), at that size, as Wolfram draws it. What still differs:
+
+- A picture whose data Woxi cannot draw again keeps its full-size rendering,
+  shrunk: one whose `Show` redraw differs from it (`Plot` with
+  `PlotLegends`, a few `ListPlot` ranges with `AspectRatio -> Automatic`)
+  and whose call cannot be evaluated again (it has a side effect, or its
+  meaning depends on something other than its own arguments and their
+  symbols' values, such as a function that reads a `Table` iterator).
+- `Legended[plot, legend]` in a list: Wolfram fits plot and legend together
+  into the 180 pt (`{Plot[x, {x, 0, 1}, PlotLegends -> Automatic]}` is
+  196 pt wide); Woxi draws the plot 180 wide and puts the legend beside it.
+- `Graphics3D` at a reduced width is square in Woxi and taller in Wolfram
+  (`{Graphics3D[Sphere[]]}` 196 x 196 vs 196 x 180), and the 3D surfaces of
+  a `TableForm` of `SphericalPlot3D`s come out somewhat smaller.
+- Line wrapping only breaks between the list's own elements; a nested list
+  wider than the page is not broken inside, as Wolfram does.
+- The braces are a stretched serif glyph approximating Wolfram's; plot
+  heights are whole points, so a wrapped list can be 1 pt taller.
+- `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
+  (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+
 ### Tables, grids and typeset math: remaining layout differences
 
 Found comparing `Export[…, "SVG"]` of both engines:

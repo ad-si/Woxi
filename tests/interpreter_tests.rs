@@ -6935,6 +6935,7 @@ mod interpreter_tests {
   mod bullet_gauge;
   mod cellular_automaton;
   mod column;
+  mod container_layout;
   mod distribution_chart;
   mod graphics;
   mod image;

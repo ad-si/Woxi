@@ -249,6 +249,9 @@ pub struct PlotSeriesData {
   /// (empty when the series has none). Travel with the series so `Show`
   /// keeps drawing them.
   pub labels: Vec<Option<String>>,
+  /// The curve's initial sampling grid, the points `Mesh -> Full` marks
+  /// (empty when the plot has none), so a redraw marks the same points.
+  pub mesh_full_points: Vec<(f64, f64)>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

@@ -30,6 +30,7 @@ pub mod combinatorica_graph;
 pub mod compile_vm;
 pub mod computational_geometry;
 pub mod confirm_ast;
+pub mod container_layout;
 pub mod control_flow_ast;
 pub mod control_systems;
 pub mod convex_hull;

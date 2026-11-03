@@ -22015,7 +22015,7 @@ mod graphics_list {
     assert!(svg.contains(">}</text>"), "should have closing brace");
     assert!(svg.contains(">,</text>"), "should have comma separators");
     // Extract widths from every nested cell.
-    let cell_widths: Vec<u32> = svg
+    let cell_widths: Vec<f64> = svg
       .match_indices("<svg x=\"")
       .filter_map(|(idx, _)| {
         let rest = &svg[idx..];
@@ -22029,16 +22029,12 @@ mod graphics_list {
       3,
       "expected 3 nested cell widths, got {cell_widths:?}"
     );
-    // All three native widths are 360 → all three cell widths should
-    // be equal (and far above the old 100 px fixed square).
+    // All three native widths are 360 → in a list each is drawn at half
+    // that, 180 wide, as wolframscript does (and far above the old 100 px
+    // fixed square).
     assert!(
-      cell_widths.iter().all(|w| *w == cell_widths[0]),
-      "expected all 3 list cells to have equal widths, got {cell_widths:?}"
-    );
-    assert!(
-      cell_widths[0] >= 300,
-      "expected list cells to render near their native 360 width, got \
-       {cell_widths:?}"
+      cell_widths.iter().all(|w| *w == 180.0),
+      "expected all 3 list cells to be 180 wide, got {cell_widths:?}"
     );
   }
 
@@ -22124,7 +22120,7 @@ mod graphics_list {
     let svg = result.graphics.unwrap();
     // Inner cell widths should reflect the shrunk ImageSize, not the
     // original 360 px native. Skip the outermost <svg> wrapper.
-    let cell_widths: Vec<u32> = svg
+    let cell_widths: Vec<f64> = svg
       .match_indices("<svg x=\"")
       .filter_map(|(idx, _)| {
         let rest = &svg[idx..];
@@ -22139,7 +22135,7 @@ mod graphics_list {
       "expected 6 nested cells for a 6-element list, got {cell_widths:?}"
     );
     assert!(
-      cell_widths.iter().all(|w| (120..=240).contains(w)),
+      cell_widths.iter().all(|w| (120.0..=240.0).contains(w)),
       "expected each list cell to be re-rendered near 180 px, got {cell_widths:?}"
     );
   }

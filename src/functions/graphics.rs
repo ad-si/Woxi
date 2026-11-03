@@ -22444,100 +22444,23 @@ pub fn combine_graphics_svgs_with_options(
   combine_svgs_grid(rows, &parse_layout_options(option_args))
 }
 
-/// Render a 1-D list of SVGs as `{ svg₁, svg₂, … }` with brace/comma text
-/// interleaved between the nested graphic cells.
-///
-/// Uses the same natural-dimension layout as `GraphicsRow` so each cell
-/// renders near its native size, with brace and comma decorations sized
-/// proportionally to the row height.
-pub fn graphics_list_svg(svgs: &[String]) -> Option<String> {
-  if svgs.is_empty() {
-    return None;
+/// Like [`combine_graphics_svgs_with_options`], for a `Grid`, `Column` or
+/// `Row` (not `GraphicsGrid`): without `Spacings` the cells are `gap`
+/// points apart whatever their size, as the front end spaces a table,
+/// instead of a tenth of a cell.
+pub fn combine_layout_svgs(
+  rows: &[Vec<String>],
+  option_args: &[Expr],
+  gap: f64,
+) -> Option<String> {
+  let mut opts = parse_layout_options(option_args);
+  if !opts.spacings_explicit {
+    // `Points` counts printer's points at 96 dpi; the layout works in the
+    // pictures' own units, which are points already.
+    opts.h_spacing = SpacingSpec::Points(gap * 0.75);
+    opts.v_spacing = SpacingSpec::Points(gap * 0.75);
   }
-
-  // Lay out the cells as a single row using the shared grid engine.
-  let rows = vec![svgs.to_vec()];
-  let layout = compute_grid_layout(&rows, &default_layout_options())?;
-  let row = layout.rows.first()?;
-  if row.cells.is_empty() {
-    return None;
-  }
-
-  // Decoration sizes scale with the row height so braces/commas match
-  // the visual weight of the contained graphics.
-  let row_h = row.row_h;
-  let font_size = (row_h * 0.18).max(12.0);
-  let brace_w = (row_h * 0.12).max(10.0);
-  let comma_w = (row_h * 0.08).max(6.0);
-  let text_y = row_h / 2.0;
-
-  // Extra horizontal space needed for braces and per-gap commas. The
-  // grid layout already placed cells at x = Σ(prev cell_w + h_gap); we
-  // shift everything right by brace_w and inject extra comma_w slots
-  // into each gap between cells.
-  let n = row.cells.len();
-  let n_gaps = (n - 1) as f64;
-  let total_width = layout.total_width + 2.0 * brace_w + n_gaps * comma_w;
-
-  let mut out = String::with_capacity(4096);
-  out.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
-     xmlns=\"http://www.w3.org/2000/svg\">\n",
-    total_width.ceil() as u32,
-    row_h.ceil() as u32,
-    total_width.ceil() as u32,
-    row_h.ceil() as u32,
-  ));
-
-  let text_fill = theme().text_primary;
-
-  // Opening brace
-  out.push_str(&format!(
-    "<text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
-     dominant-baseline=\"central\">{{</text>\n",
-    brace_w / 2.0,
-  ));
-
-  // Place each cell at its layout-computed x, shifted by brace_w plus
-  // one comma_w for every preceding gap.
-  for (i, cell) in row.cells.iter().enumerate() {
-    let shift = brace_w + (i as f64) * comma_w;
-    let cell_x = cell.x + shift;
-
-    if i > 0 {
-      // Comma goes in the middle of the slot between the previous cell
-      // and this one, i.e. just left of the current shifted cell x.
-      let comma_center = cell_x - comma_w / 2.0;
-      out.push_str(&format!(
-        "<text x=\"{comma_center:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-         font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
-         dominant-baseline=\"central\">,</text>\n",
-      ));
-    }
-
-    out.push_str(&format!(
-      "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
-      cell_x,
-      cell.y_off,
-      cell.w,
-      cell.h,
-      cell.view_box,
-    ));
-    out.push_str(&cell.inner);
-    out.push_str("</svg>\n");
-  }
-
-  // Closing brace — sits just past the last cell's right edge.
-  let close_x = total_width - brace_w / 2.0;
-  out.push_str(&format!(
-    "<text x=\"{close_x:.1}\" y=\"{text_y:.1}\" font-family=\"monospace\" \
-     font-size=\"{font_size:.1}\" fill=\"{text_fill}\" text-anchor=\"middle\" \
-     dominant-baseline=\"central\">}}</text>\n",
-  ));
-
-  out.push_str("</svg>");
-  Some(out)
+  combine_svgs_grid(rows, &opts)
 }
 
 // ── GraphicsRow / GraphicsColumn / GraphicsGrid ────────────────────────
@@ -23482,12 +23405,7 @@ fn with_default_image_size_shaped(
 /// (`Graphics[…, ImageSize -> {94, 64}]`) only contributes its aspect
 /// ratio — keeping the absolute size would leave that cell a different
 /// scale than its neighbours (a padded grid whose first cell is a big
-/// picture and whose other cells are tiny).
-fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
-  with_cell_image_size_shaped(expr, size, true)
-}
-
-/// `with_cell_image_size`, with `golden_cells` as in
+/// picture and whose other cells are tiny). `golden_cells` is as in
 /// `with_default_image_size_shaped`.
 fn with_cell_image_size_shaped(
   expr: &Expr,
@@ -23574,86 +23492,6 @@ fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
     Expr::List(vec![Expr::Integer(w), Expr::Integer(h)].into()),
   ));
   call(name.as_str(), new_args)
-}
-
-/// If `expr` is a top-level list that looks like a list of graphics
-/// (1-D `{p1, p2, ...}` or 2-D `{{p1, p2}, {p3, p4}}`), return a new
-/// expression with `ImageSize -> per_cell_w` injected on each child so
-/// the items get re-rendered at the correct per-cell size during
-/// evaluation. Returns `None` for anything else so the caller can
-/// evaluate the original expression unchanged.
-pub fn inject_image_size_for_list_of_graphics(expr: &Expr) -> Option<Expr> {
-  // 2-D list (grid): rows × cells
-  if let Expr::List(rows) = expr
-    && !rows.is_empty()
-    && rows.iter().all(|r| matches!(r, Expr::List(_)))
-  {
-    let any_graphic = rows.iter().any(|r| {
-      if let Expr::List(items) = r {
-        items.iter().any(|it| {
-          matches!(it, Expr::FunctionCall { name, .. }
-            if is_graphics_producing_head(name))
-        })
-      } else {
-        false
-      }
-    });
-    if !any_graphic {
-      return None;
-    }
-    let max_cols = rows
-      .iter()
-      .map(|r| {
-        if let Expr::List(items) = r {
-          items.len()
-        } else {
-          0
-        }
-      })
-      .max()
-      .unwrap_or(0);
-    if max_cols == 0 {
-      return None;
-    }
-    let per_cell_w = compute_per_cell_width(max_cols, None);
-    let new_rows: Vec<Expr> = rows
-      .iter()
-      .map(|row| {
-        if let Expr::List(items) = row {
-          Expr::List(
-            items
-              .iter()
-              .map(|it| with_cell_image_size(it, per_cell_w))
-              .collect(),
-          )
-        } else {
-          row.clone()
-        }
-      })
-      .collect();
-    return Some(Expr::List(new_rows.into()));
-  }
-
-  // 1-D list
-  if let Expr::List(items) = expr
-    && !items.is_empty()
-  {
-    let any_graphic = items.iter().any(|it| {
-      matches!(it, Expr::FunctionCall { name, .. }
-        if is_graphics_producing_head(name))
-    });
-    if !any_graphic {
-      return None;
-    }
-    let per_cell_w = compute_per_cell_width(items.len(), None);
-    let new_items: Vec<Expr> = items
-      .iter()
-      .map(|it| with_cell_image_size(it, per_cell_w))
-      .collect();
-    return Some(Expr::List(new_items.into()));
-  }
-
-  None
 }
 
 /// Prefix of the `id` on the invisible rectangle that marks a pressable

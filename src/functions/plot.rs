@@ -6527,6 +6527,7 @@ pub(crate) fn build_plot_source(
         dashing,
         opacity,
         labels: Vec::new(),
+        mesh_full_points: Vec::new(),
       }
     })
     .collect();
@@ -7052,6 +7053,12 @@ pub(crate) fn render_merged_plot_source(
   }
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
+  }
+  // `Mesh -> Full` marks each curve's initial sampling grid, not its
+  // refined points.
+  if drawn.iter().any(|s| !s.mesh_full_points.is_empty()) {
+    opts.mesh_full_points =
+      drawn.iter().map(|s| s.mesh_full_points.clone()).collect();
   }
   opts.filling_rules = drawn
     .iter()
@@ -9673,6 +9680,7 @@ pub(crate) fn histogram_plot_source(
       dashing: None,
       opacity: Some(0.66),
       labels: Vec::new(),
+      mesh_full_points: Vec::new(),
     });
   }
 
@@ -14094,6 +14102,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   source.plot_range = plot_opts.unpadded_range;
   source.log_x = plot_opts.log_x;
   source.log_y = plot_opts.log_y;
+  // A redraw marks the `Mesh -> Full` points the plot sampled first.
+  for (s, grid) in source.series.iter_mut().zip(&plot_opts.mesh_full_points) {
+    s.mesh_full_points = grid.clone();
+  }
   // `build_plot_source` only knows the single global `Filling` mode; a
   // per-series `Filling -> {i -> spec, …}` rule list is resolved here
   // instead, so `source.series[i].filling` (which `Part`/`First` reads to

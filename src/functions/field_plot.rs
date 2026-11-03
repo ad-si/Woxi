@@ -3480,6 +3480,7 @@ fn contour_plot_equations(
           dashing: None,
           opacity: None,
           labels: Vec::new(),
+          mesh_full_points: Vec::new(),
         });
       }
     }

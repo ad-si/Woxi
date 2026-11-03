@@ -3101,21 +3101,9 @@ fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
         // Evaluate using AST-based evaluation
         // At top level, uncaught Return[] just yields its argument value
         // (matching wolframscript: `Return[5]` outputs `5`, not `Return[5]`).
-        //
-        // Pre-pass (visual mode only): when the top-level expression is a
-        // list (1-D or 2-D) of graphics-producing function calls, inject
-        // `ImageSize -> per_cell_w` into each child so plots are rendered
-        // at the right per-cell size instead of being scaled down after
-        // the fact. Skipped in plain `interpret()` mode so symbolic text
-        // output (e.g. `{TreeForm[f[x]], TreeForm[g[y]]}`) isn't polluted
-        // with an injected ImageSize option that was never written.
-        let rewritten_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-          functions::graphics::inject_image_size_for_list_of_graphics(expr)
-        } else {
-          None
-        };
-        let expr_to_eval: &syntax::Expr =
-          rewritten_expr.as_ref().unwrap_or(expr);
+        // (A list of graphics is drawn at its cells' size when it is
+        // displayed — see `container_layout`.)
+        let expr_to_eval: &syntax::Expr = expr;
         // Track Return propagation so multi-statement programs short-
         // circuit at the first Return — wolframscript treats top-level
         // `;`-separated statements as a CompoundExpression, where Return
@@ -5629,6 +5617,16 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
     return graphics_result(composed);
   }
 
+  // A list (or nested lists) of pictures that carry their own renderings is
+  // set as a notebook shows it: `{g1, g2, …}` with each picture drawn at
+  // the reduced size a list gives it.
+  if !has_tableform
+    && let Some(svg) = crate::evaluator::graphics_list_layout_svg(inner)
+  {
+    clear_captured_graphics();
+    return graphics_result(svg);
+  }
+
   // 1D list of Graphics
   if let syntax::Expr::List(items) = inner {
     if items.iter().all(is_graphics_placeholder) && items.len() > 1 {
@@ -5654,7 +5652,12 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           })
         });
       if let Some(row) = row
-        && let Some(combined) = functions::graphics::graphics_list_svg(&row)
+        && let Some(combined) = functions::container_layout::list_layout_svg(
+          row
+            .into_iter()
+            .map(functions::container_layout::ListCell::Picture)
+            .collect(),
+        )
       {
         // Clear and re-capture with the combined SVG
         clear_captured_graphics();
