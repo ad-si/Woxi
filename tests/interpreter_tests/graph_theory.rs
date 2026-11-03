@@ -9116,7 +9116,7 @@ mod graph_background {
     .unwrap();
     assert!(
       svg
-        .contains("<rect width=\"360\" height=\"315\" fill=\"rgb(255,0,0)\"/>")
+        .contains("<rect width=\"360\" height=\"317\" fill=\"rgb(255,0,0)\"/>")
     );
   }
 

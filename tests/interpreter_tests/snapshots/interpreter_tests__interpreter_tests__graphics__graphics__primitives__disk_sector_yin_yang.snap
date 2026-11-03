@@ -7,9 +7,9 @@ expression: "export_svg(\"Graphics[{Red, Disk[{0, 0}, 2, {0, Pi}], Blue, Disk[{0
 <clipPath id="plotClip_150x150"><rect x="0" y="0" width="150.00" height="150.00"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_150x150)">
-<path d="M 75.00,75.00 L 144.44,75.00 A 69.44,69.44 0 0 0 5.56,75.00 Z" fill="rgb(255,0,0)"/>
-<path d="M 75.00,75.00 L 5.56,75.00 A 69.44,69.44 0 0 0 144.44,75.00 Z" fill="rgb(0,0,255)"/>
-<ellipse cx="40.28" cy="75.00" rx="34.72" ry="34.72" fill="rgb(255,0,0)"/>
-<ellipse cx="109.72" cy="75.00" rx="34.72" ry="34.72" fill="rgb(0,0,255)"/>
+<path d="M 75.00,75.00 L 147.00,75.00 A 72.00,72.00 0 0 0 3.00,75.00 Z" fill="rgb(255,0,0)"/>
+<path d="M 75.00,75.00 L 3.00,75.00 A 72.00,72.00 0 0 0 147.00,75.00 Z" fill="rgb(0,0,255)"/>
+<ellipse cx="39.00" cy="75.00" rx="36.00" ry="36.00" fill="rgb(255,0,0)"/>
+<ellipse cx="111.00" cy="75.00" rx="36.00" ry="36.00" fill="rgb(0,0,255)"/>
 </g>
 </svg>

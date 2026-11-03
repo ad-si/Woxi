@@ -697,7 +697,10 @@ impl BBox {
     self.x_min > self.x_max || self.y_min > self.y_max
   }
 
-  fn with_padding(self, frac: f64) -> Self {
+  /// Pad each axis by `frac` of its span; with `uniform` both axes get
+  /// `frac` of the horizontal span, i.e. the same margin in pixels all
+  /// round.
+  fn with_padding_shaped(self, frac: f64, uniform: bool) -> Self {
     if self.is_empty() {
       return self;
     }
@@ -721,8 +724,14 @@ impl BBox {
         (bb.y_min, bb.y_max) = widen(bb.y_min);
       }
     }
-    let dx = (bb.x_max - bb.x_min) * frac;
-    let dy = (bb.y_max - bb.y_min) * frac;
+    let (mut dx, mut dy) =
+      ((bb.x_max - bb.x_min) * frac, (bb.y_max - bb.y_min) * frac);
+    if uniform {
+      if dx < 1e-10 {
+        dx = dy;
+      }
+      dy = dx;
+    }
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
     let dy = if dy < 1e-10 { 0.5 } else { dy };
@@ -8639,17 +8648,18 @@ fn nice_tick_step(min: f64, max: f64, target_count: usize) -> f64 {
   if !range.is_finite() || range <= 0.0 {
     return 1.0;
   }
-  let raw_step = range / (target_count.max(2) as f64);
+  // As in Wolfram: the largest step of 1, 2 or 5 times a power of ten that
+  // still fits `target_count` steps into the range (4 steps: a span of 4–7
+  // gets unit ticks, 8–19 steps of 2, 2–3.9 steps of 0.5).
+  let raw_step = range / (target_count.max(1) as f64);
   let magnitude = 10f64.powf(raw_step.log10().floor());
   let normalized = raw_step / magnitude;
-  let nice = if normalized < 1.5 {
+  let nice = if normalized < 2.0 {
     1.0
-  } else if normalized < 3.0 {
+  } else if normalized < 5.0 {
     2.0
-  } else if normalized < 7.0 {
-    5.0
   } else {
-    10.0
+    5.0
   };
   nice * magnitude
 }
@@ -8733,7 +8743,7 @@ fn axis_ticks(
 ) -> Vec<(f64, Option<String>)> {
   match spec {
     TickSpec::None => Vec::new(),
-    TickSpec::Automatic => generate_ticks(min, max, 6)
+    TickSpec::Automatic => generate_ticks(min, max, 4)
       .into_iter()
       .map(|t| (t, None))
       .collect(),
@@ -9159,8 +9169,8 @@ fn render_frame(
     return;
   }
 
-  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
-  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 4);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 4);
   let x_step = tick_sequence_step(&x_ticks);
   let y_step = tick_sequence_step(&y_ticks);
   // A tick starting on the origin edge is written as a bare `0`.
@@ -9331,8 +9341,8 @@ fn render_grid_lines(
   grid_y: &GridSpec,
   default_style: &StyleState,
 ) {
-  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 6);
-  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 4);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 4);
 
   for (pos, style) in grid_positions(grid_x, &x_ticks, default_style) {
     let x = coord_x(pos, bb, svg_w);
@@ -11548,9 +11558,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     bb.y_min = y_min - spec.y.lo.resolve(y_span, 0.04);
     bb.y_max = y_max + spec.y.hi.resolve(y_span, 0.04);
   } else {
-    // Default: flat 4% padding on automatically-computed axes; an axis
+    // Default: a margin of 2% of the picture's width all round (1/48 of
+    // the horizontal span on each side, as in Wolfram); an axis
     // pinned by an explicit `PlotRange` is drawn exactly, with no padding.
-    bb = bb.with_padding(0.04);
+    bb = bb.with_padding_shaped(1.0 / 48.0, true);
     if let Some((lo, hi)) = plot_range_x {
       bb.x_min = lo;
       bb.x_max = hi;

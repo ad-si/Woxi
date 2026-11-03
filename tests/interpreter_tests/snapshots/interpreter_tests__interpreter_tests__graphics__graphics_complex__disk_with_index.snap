@@ -7,7 +7,7 @@ expression: "export_svg(\"Graphics[GraphicsComplex[{{0.5,0.5},{0,0}}, {Disk[1, 0
 <clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_360x360)">
-<ellipse cx="246.67" cy="113.33" rx="100.00" ry="100.00" fill="rgb(0,0,0)"/>
-<ellipse cx="80.00" cy="280.00" rx="66.67" ry="66.67" fill="rgb(0,0,0)"/>
+<ellipse cx="249.12" cy="110.88" rx="103.68" ry="103.68" fill="rgb(0,0,0)"/>
+<ellipse cx="76.32" cy="283.68" rx="69.12" ry="69.12" fill="rgb(0,0,0)"/>
 </g>
 </svg>

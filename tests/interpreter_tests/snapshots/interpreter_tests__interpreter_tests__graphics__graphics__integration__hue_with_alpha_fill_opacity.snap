@@ -7,6 +7,6 @@ expression: "export_svg(\"Graphics[{Hue[0, 1, 1, 0.6], Disk[]}]\")"
 <clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_360x360)">
-<ellipse cx="180.00" cy="180.00" rx="166.67" ry="166.67" fill="rgb(255,0,0)" fill-opacity="0.6"/>
+<ellipse cx="180.00" cy="180.00" rx="172.80" ry="172.80" fill="rgb(255,0,0)" fill-opacity="0.6"/>
 </g>
 </svg>

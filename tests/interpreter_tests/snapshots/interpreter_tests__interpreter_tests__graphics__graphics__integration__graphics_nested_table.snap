@@ -7,13 +7,13 @@ expression: "export_svg(\"Graphics[Table[Disk[{r*Cos[2 Pi q/4], r*Sin[2 Pi q/4]}
 <clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_360x360)">
-<ellipse cx="180.00" cy="107.54" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="107.54" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="180.00" cy="252.46" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="252.46" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="180.00" cy="35.07" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="35.07" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="180.00" cy="324.93" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
-<ellipse cx="324.93" cy="180.00" rx="21.74" ry="21.74" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="104.87" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="104.87" cy="180.00" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="255.13" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="255.13" cy="180.00" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="29.74" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="29.74" cy="180.00" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="180.00" cy="330.26" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
+<ellipse cx="330.26" cy="180.00" rx="22.54" ry="22.54" fill="rgb(0,0,0)"/>
 </g>
 </svg>

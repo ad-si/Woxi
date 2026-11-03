@@ -12,58 +12,34 @@ expression: "export_svg(\"RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]\")"
 </g>
 <rect x="0" y="0" width="360.00" height="360.00" fill="none" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="6.92" y1="355.00" x2="6.92" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="6.92" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-2.0</text>
-<line x1="50.19" y1="355.00" x2="50.19" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="50.19" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-1.5</text>
+<text x="6.92" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-2</text>
 <line x1="93.46" y1="355.00" x2="93.46" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="93.46" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-1.0</text>
-<line x1="136.73" y1="355.00" x2="136.73" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="136.73" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-0.5</text>
+<text x="93.46" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">-1</text>
 <line x1="180.00" y1="355.00" x2="180.00" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="180.00" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">0.0</text>
-<line x1="223.27" y1="355.00" x2="223.27" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="223.27" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">0.5</text>
+<text x="180.00" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">0</text>
 <line x1="266.54" y1="355.00" x2="266.54" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="266.54" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">1.0</text>
-<line x1="309.81" y1="355.00" x2="309.81" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="309.81" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">1.5</text>
+<text x="266.54" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">1</text>
 <line x1="353.08" y1="355.00" x2="353.08" y2="360.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="353.08" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">2.0</text>
+<text x="353.08" y="364.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="middle" dominant-baseline="hanging">2</text>
 <line x1="6.92" y1="0" x2="6.92" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="50.19" y1="0" x2="50.19" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="93.46" y1="0" x2="93.46" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="136.73" y1="0" x2="136.73" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="180.00" y1="0" x2="180.00" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="223.27" y1="0" x2="223.27" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="266.54" y1="0" x2="266.54" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="309.81" y1="0" x2="309.81" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="353.08" y1="0" x2="353.08" y2="5.00" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="0" y1="353.08" x2="5.00" y2="353.08" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="353.08" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-2.0</text>
-<line x1="0" y1="309.81" x2="5.00" y2="309.81" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="309.81" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-1.5</text>
+<text x="-4.00" y="353.08" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-2</text>
 <line x1="0" y1="266.54" x2="5.00" y2="266.54" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="266.54" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-1.0</text>
-<line x1="0" y1="223.27" x2="5.00" y2="223.27" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="223.27" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-0.5</text>
+<text x="-4.00" y="266.54" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">-1</text>
 <line x1="0" y1="180.00" x2="5.00" y2="180.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="180.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">0.0</text>
-<line x1="0" y1="136.73" x2="5.00" y2="136.73" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="136.73" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">0.5</text>
+<text x="-4.00" y="180.00" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">0</text>
 <line x1="0" y1="93.46" x2="5.00" y2="93.46" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="93.46" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">1.0</text>
-<line x1="0" y1="50.19" x2="5.00" y2="50.19" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="50.19" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">1.5</text>
+<text x="-4.00" y="93.46" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">1</text>
 <line x1="0" y1="6.92" x2="5.00" y2="6.92" stroke="rgb(190,190,190)" stroke-width="1"/>
-<text x="-4.00" y="6.92" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">2.0</text>
+<text x="-4.00" y="6.92" fill="#555555" font-size="12" font-family="Atkinson Hyperlegible Mono, monospace" text-anchor="end" dominant-baseline="middle">2</text>
 <line x1="355.00" y1="353.08" x2="360.00" y2="353.08" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="355.00" y1="309.81" x2="360.00" y2="309.81" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="355.00" y1="266.54" x2="360.00" y2="266.54" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="355.00" y1="223.27" x2="360.00" y2="223.27" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="355.00" y1="180.00" x2="360.00" y2="180.00" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="355.00" y1="136.73" x2="360.00" y2="136.73" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="355.00" y1="93.46" x2="360.00" y2="93.46" stroke="rgb(190,190,190)" stroke-width="1"/>
-<line x1="355.00" y1="50.19" x2="360.00" y2="50.19" stroke="rgb(190,190,190)" stroke-width="1"/>
 <line x1="355.00" y1="6.92" x2="360.00" y2="6.92" stroke="rgb(190,190,190)" stroke-width="1"/>
 </g>
 </svg>

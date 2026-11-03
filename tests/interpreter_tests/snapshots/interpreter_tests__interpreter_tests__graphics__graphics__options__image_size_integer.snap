@@ -7,6 +7,6 @@ expression: "export_svg(\"Graphics[{Circle[]}, ImageSize -> 200]\")"
 <clipPath id="plotClip_200x200"><rect x="0" y="0" width="200.00" height="200.00"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_200x200)">
-<ellipse cx="100.00" cy="100.00" rx="92.59" ry="92.59" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
+<ellipse cx="100.00" cy="100.00" rx="96.00" ry="96.00" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
 </g>
 </svg>

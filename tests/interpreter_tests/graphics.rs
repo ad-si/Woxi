@@ -710,8 +710,10 @@ mod graphics {
         "Graphics[{Rectangle[{0, 0}, {4, 1}, RoundingRadius -> {0.2, 0.1}]}, \
          AspectRatio -> 1/4]",
       ));
-      // 0.2 across vs 0.1 up on an equally scaled canvas.
-      assert!((rx / ry - 2.0).abs() < 0.05, "rx={rx} ry={ry}");
+      // 0.2 across vs 0.1 up. The 360 x 90 canvas keeps a margin of the same
+      // 7.2 px all round, as in wolframscript, so a unit across (86 px) is
+      // longer than a unit up (76 px).
+      assert!((rx / ry - 2.27).abs() < 0.05, "rx={rx} ry={ry}");
       // Square corners carry no radius at all.
       assert!(
         !export_svg("Graphics[{Rectangle[{0, 0}, {1, 1}]}]").contains(" rx=")
@@ -18634,7 +18636,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       let x: f64 = svg
         .split("</text>")
-        .find(|chunk| chunk.ends_with(">-1.0"))
+        .find(|chunk| chunk.ends_with(">-1"))
         .and_then(|chunk| chunk.rsplit("<text x=\"").next())
         .and_then(|rest| rest.split('"').next())
         .expect("an x tick labelled -1.0")
@@ -43251,11 +43253,12 @@ mod circle_arc_extent {
   }
 
   /// An arc only occupies the angles it sweeps, so a half circle is twice
-  /// as wide as it is tall and a full circle is square.
+  /// as wide as it is tall (plus the margin all round: 360 x 188 in
+  /// wolframscript) and a full circle is square.
   #[test]
   fn half_circle_arc_fits_its_swept_extent() {
     let (w, h) = view_box("Graphics[Circle[{0, 0}, 1, {0, Pi}]]");
-    assert!((w - 2.0 * h).abs() < 1.0, "{w} x {h}");
+    assert!(w == 360.0 && (h - 187.5).abs() < 1.0, "{w} x {h}");
     let (w, h) = view_box("Graphics[Circle[{0, 0}, 1]]");
     assert!((w - h).abs() < 1.0, "{w} x {h}");
   }
@@ -44975,7 +44978,7 @@ mod wl_table_layout {
         format!("{{{{{g}}}, {{{g}}}}}"),
         "width=\"350\" height=\"700\"",
       ),
-      (format!("{{{{{r}, {r}}}}}"), "width=\"600\" height=\"165\""),
+      (format!("{{{{{r}, {r}}}}}"), "width=\"600\" height=\"170\""),
     ] {
       let svg = export_svg(&format!("GraphicsGrid[{grid}]"));
       assert!(svg.starts_with(&format!("<svg {size}")), "{grid}: {svg}");
@@ -44986,7 +44989,7 @@ mod wl_table_layout {
     // A row of narrow pictures is only as wide as they are on their own.
     let tall = "Graphics[Rectangle[{0, 0}, {1, 4}]]";
     let svg = export_svg(&format!("GraphicsGrid[{{{{{tall}, {tall}}}}}]"));
-    assert!(svg.starts_with("<svg width=\"216\""), "{svg}");
+    assert!(svg.starts_with("<svg width=\"222\""), "{svg}");
   }
 
   #[test]
@@ -45055,13 +45058,33 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn graphics_margin_and_axis_tick_steps() {
+    // A margin of 2% of the width all round: a unit disk is 345.6 across.
+    let svg = export_svg("Graphics[Disk[]]");
+    assert!(svg.contains("rx=\"172.80\" ry=\"172.80\""), "{svg}");
+    // Automatic axis ticks take the largest 1/2/5 step that still fits four
+    // steps: spans 1–1.5 → 0.2, 2–3.5 → 0.5, 4–7 → 1, 8–10 → 2.
+    for (r, first) in [(1.5, "0.2"), (3.5, "0.5"), (7.0, "1"), (8.0, "2")] {
+      let svg = export_svg(&format!(
+        "Graphics[Line[{{{{0, 0}}, {{{r}, {r}}}}}], Axes -> True]"
+      ));
+      let first_label = svg
+        .split("</text>")
+        .next()
+        .and_then(|s| s.rsplit('>').next())
+        .unwrap_or("");
+      assert_eq!(first_label, first, "span {r}: {svg}");
+    }
+  }
+
+  #[test]
   fn tall_graphics_of_automatic_size_are_capped_at_432() {
     // Wolfram draws an automatically sized picture at most 1.2 × 360 tall,
     // narrowing it to keep its shape.
     for (rect, size) in [
       ("{1, 1}", "width=\"360\" height=\"360\""),
-      ("{1, 1.2}", "width=\"360\" height=\"432\""),
-      ("{1, 2}", "width=\"216\" height=\"432\""),
+      ("{1, 1.2}", "width=\"360\" height=\"429\""),
+      ("{1, 2}", "width=\"220\" height=\"432\""),
     ] {
       let svg = export_svg(&format!("Graphics[Rectangle[{{0, 0}}, {rect}]]"));
       assert!(svg.starts_with(&format!("<svg {size}")), "{rect}: {svg}");
@@ -45070,7 +45093,7 @@ mod wl_table_layout {
     let svg =
       export_svg("Graphics[Rectangle[{0, 0}, {1, 2}], ImageSize -> 100]");
     assert!(
-      svg.starts_with("<svg width=\"100\" height=\"200\""),
+      svg.starts_with("<svg width=\"100\" height=\"196\""),
       "{svg}"
     );
   }
