@@ -7577,6 +7577,33 @@ Verified against the reference pages, but not (fully) implemented:
   `PlotLabels -> Placed[…, pos]` and `QuantityArray` data are not handled.
 - `ListFitPlot` examples built on `ResourceData`, `FinancialData` or
   `AirTemperatureData` cannot be fetched.
+
+## WL 15 chart and color-function plot styling: open items
+
+Found comparing the graphics-tests renders (2026-11):
+
+- Automatic axis ticks are sparser than wolframscript's: a histogram over
+  `0.5..7.5` or a bar chart up to 7 is labelled every 2, wolframscript
+  every 1 (`nice_step` with `AXIS_TICK_TARGET`).
+- `ListPlot3D` draws no default mesh; wolframscript rules one line per
+  data row and column.
+- `ContourPlot[Sin[x] Sin[y], {x, 0, 2 Pi}, {y, 0, 2 Pi}]` draws no
+  contour along the zero level (`x = Pi`, `y = Pi`), which wolframscript
+  shows.
+- Density and contour plots leave no `PlotRangePadding` between the
+  shading and the frame, and label their frame ticks on two edges only
+  (wolframscript marks all four).
+- `MatrixPlot`'s `FrameTicks` labels are strings (`{11.5, "1"}`) where
+  wolframscript has integers, and the `Raster` colors are 8-bit quantized
+  (wolframscript gives the exact blend).
+- `ColorData["WL14DefaultDensityGradient"]` (and its `"BlendArgument"`) is
+  unknown, although the plots use it as their default color function.
+- `WaveletMatrixPlot`'s coefficient layout and scaling differ:
+  wolframscript scales symmetrically about 0 over coefficients that Woxi's
+  pyramid does not reproduce.
+- A vertical `BarChart` with `ChartLabels` keeps a taller label area, so
+  its bars are shorter than wolframscript's.
+
 ## Parameter sweep 5 (long tail, batch 2): known divergences and unverified forms
 
 `HornerForm[p, {y, x}]` has the right nesting, but Woxi's canonical
