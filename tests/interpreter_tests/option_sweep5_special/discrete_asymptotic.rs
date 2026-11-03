@@ -160,7 +160,40 @@ mod discrete_asymptotic {
   fn log_factorial() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Log[n!], n -> Infinity]").unwrap(),
-      "n*Log[n]"
+      "Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n]"
+    );
+    // Gamma[n] with goal terms; n! and Gamma[n + 1] as n Gamma[n] with one
+    // more; a power of the logarithm and E^(n!) likewise.
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Log[Gamma[n]], n -> Infinity]").unwrap(),
+      "Log[(n^(-1/2 + n)*Sqrt[2*Pi])/E^n]"
+    );
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Log[Gamma[n + 1]], n -> Infinity]")
+        .unwrap(),
+      "Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n]"
+    );
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Log[n!/2], n -> Infinity]").unwrap(),
+      "Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(12*E^n) + (n^(1/2 + n)*Sqrt[Pi/2])/E^n]"
+    );
+    assert_eq!(
+      interpret(
+        "DiscreteAsymptotic[Log[n!], n -> Infinity, SeriesTermGoal -> 3]"
+      )
+      .unwrap(),
+      "Log[(-139*n^(-5/2 + n)*Sqrt[Pi/2])/(25920*E^n) + \
+       (n^(-3/2 + n)*Sqrt[Pi/2])/(144*E^n) + \
+       (n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n]"
+    );
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Log[n!]^2, n -> Infinity]").unwrap(),
+      "Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + \
+       (n^(1/2 + n)*Sqrt[2*Pi])/E^n]^2"
+    );
+    assert_eq!(
+      interpret("DiscreteAsymptotic[Exp[n!], n -> Infinity]").unwrap(),
+      "E^((n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) + (n^(1/2 + n)*Sqrt[2*Pi])/E^n)"
     );
   }
 
@@ -341,8 +374,27 @@ mod discrete_asymptotic {
   fn generating_function_rational() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Inactive[SeriesCoefficient][-(z/(-1 + z + z^2)), {z, 0, n}], n -> Infinity]").unwrap(),
-      "(2/(-1 + Sqrt[5]))^n/Sqrt[5]"
+      "2^n*(-1 + Sqrt[5])^(-1 - n) - (2^n*(-1 + Sqrt[5])^(-1 - n))/Sqrt[5]"
     );
+    // The expanded product of -g/h' at the pole z0 and z0^(-1 - n).
+    let coefficient = |f: &str| {
+      interpret(&format!(
+        "DiscreteAsymptotic[Inactive[SeriesCoefficient][{f}, {{z, 0, n}}], \
+         n -> Infinity]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(coefficient("1/(1 - 2 z)"), "2^n");
+    assert_eq!(
+      coefficient("1/(1 - z - z^2)"),
+      "((-1 + Sqrt[5])/2)^(-1 - n)/Sqrt[5]"
+    );
+    assert_eq!(coefficient("1/((1 - 2 z) (1 - z))"), "2^(1 + n)");
+    assert_eq!(
+      coefficient("z/(1 - 3 z + z^2)"),
+      "-(2^n*(3 - Sqrt[5])^(-1 - n)) + (3*2^n*(3 - Sqrt[5])^(-1 - n))/Sqrt[5]"
+    );
+    assert_eq!(coefficient("E^z/(1 - 2 z)"), "2^n*Sqrt[E]");
   }
 
   #[test]

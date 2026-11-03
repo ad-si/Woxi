@@ -14879,3 +14879,53 @@ mod canonical_sum_and_call_led_order {
     );
   }
 }
+
+// A number sharing a prime with q splits (q s)^k for a symbolic k, so the
+// prime's powers combine.
+mod scaled_power_prime_split {
+  use super::*;
+
+  #[test]
+  fn coefficient_sharing_a_prime() {
+    assert_eq!(
+      interpret("1/2 ((-1 + Sqrt[5])/2)^(-1 - n)").unwrap(),
+      "2^n*(-1 + Sqrt[5])^(-1 - n)"
+    );
+    assert_eq!(
+      interpret("2 ((1 + Sqrt[5])/2)^n").unwrap(),
+      "2^(1 - n)*(1 + Sqrt[5])^n"
+    );
+    assert_eq!(
+      interpret("3 ((-1 + Sqrt[5])/2)^(-1 - n)").unwrap(),
+      "3*((-1 + Sqrt[5])/2)^(-1 - n)"
+    );
+    assert_eq!(
+      interpret("4*Sqrt[2*(5 + Sqrt[5])]").unwrap(),
+      "4*Sqrt[2*(5 + Sqrt[5])]"
+    );
+  }
+
+  #[test]
+  fn numerator_of_a_negated_quotient() {
+    assert_eq!(
+      interpret("Numerator[Together[E^z/(1 - 2 z)]]").unwrap(),
+      "-E^z"
+    );
+    assert_eq!(
+      interpret("Denominator[Together[E^z/(1 - 2 z)]]").unwrap(),
+      "-1 + 2*z"
+    );
+  }
+
+  #[test]
+  fn empty_rational_series_starts_at_the_leading_power() {
+    assert_eq!(
+      interpret("Series[x^3/(1 - x), {x, 0, 1}]").unwrap(),
+      "SeriesData[x, 0, {}, 3, 3, 1]"
+    );
+    assert_eq!(
+      interpret("Series[x^5/(2 + x), {x, 0, 2}]").unwrap(),
+      "SeriesData[x, 0, {}, 5, 5, 1]"
+    );
+  }
+}

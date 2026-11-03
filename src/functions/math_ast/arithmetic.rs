@@ -9541,6 +9541,105 @@ fn split_shared_prime_radicals(
   Ok(out)
 }
 
+/// A power `(q s)^k` of a positive rational `q` times something that stays
+/// whole (`(-1 + Sqrt[5])/2`) splits into `q^k s^k` when another factor
+/// is a number or a power of one sharing a prime with `q`, so the powers of
+/// that prime combine, as in wolframscript:
+/// `1/2 ((-1 + Sqrt[5])/2)^(-1 - n)` is `2^n*(-1 + Sqrt[5])^(-1 - n)`, while
+/// `3 ((-1 + Sqrt[5])/2)^(-1 - n)` stays.
+fn split_scaled_powers_sharing_a_prime(
+  args: Vec<Expr>,
+) -> Result<Vec<Expr>, InterpreterError> {
+  if args.len() < 2 {
+    return Ok(args);
+  }
+  let positive_rational = |e: &Expr| -> Option<(u128, u128)> {
+    match e {
+      Expr::Integer(n) if *n > 1 => Some((*n as u128, 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *n > 0 && *d > 0 => {
+            Some((*n as u128, *d as u128))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  // The (numerator * denominator) of a number factor (of either sign) or a
+  // power of a positive one.
+  let number_part = |e: &Expr| -> Option<u128> {
+    let magnitude = match e {
+      Expr::Integer(n) => Some((n.unsigned_abs(), 1)),
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d > 0 => {
+            Some((n.unsigned_abs(), *d as u128))
+          }
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    if let Some((n, d)) = magnitude {
+      return Some(n * d);
+    }
+    let (base, _) = extract_base_exponent_ref(e);
+    positive_rational(base.as_ref()).map(|(n, d)| n * d)
+  };
+  // (index, q, rest, exponent) of each `(q rest)^k`.
+  let scaled: Vec<(usize, Expr, Expr, Expr)> = args
+    .iter()
+    .enumerate()
+    .filter_map(|(i, f)| {
+      let (base, exp) = extract_base_exponent_ref(f);
+      if crate::functions::predicate_ast::is_numeric_q(exp.as_ref()) {
+        return None;
+      }
+      let Expr::FunctionCall { name, args: fs } = base.as_ref() else {
+        return None;
+      };
+      if name != "Times" || fs.len() != 2 {
+        return None;
+      }
+      positive_rational(&fs[0])?;
+      Some((i, fs[0].clone(), fs[1].clone(), exp.into_owned()))
+    })
+    .collect();
+  if scaled.is_empty() {
+    return Ok(args);
+  }
+  let gcd = |mut a: u128, mut b: u128| {
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a
+  };
+  let mut out = args.clone();
+  let mut changed = false;
+  for (i, q, rest, exp) in scaled.iter().rev() {
+    let (qn, qd) = positive_rational(q).unwrap_or((1, 1));
+    let shares = args.iter().enumerate().any(|(j, f)| {
+      j != *i && number_part(f).is_some_and(|m| gcd(m, qn * qd) > 1)
+    });
+    if shares {
+      out.remove(*i);
+      out.push(power_two(q, exp)?);
+      out.push(power_two(rest, exp)?);
+      changed = true;
+    }
+  }
+  if !changed {
+    return Ok(args);
+  }
+  Ok(out)
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   combine_like_bases_depth(args, 0)
 }
@@ -9559,7 +9658,7 @@ fn combine_like_bases_depth(
     return Ok(args);
   }
   let args = if depth == 0 {
-    split_shared_prime_radicals(args)?
+    split_scaled_powers_sharing_a_prime(split_shared_prime_radicals(args)?)?
   } else {
     args
   };
@@ -12186,6 +12285,18 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|a| times_ast(&[Expr::Integer(-1), a.clone()]))
       .collect();
     return plus_ast(&negated?);
+  }
+
+  // A number coefficient sharing a prime with the q of a `(q s)^k` factor
+  // takes part in that prime's powers: `1/2 ((-1 + Sqrt[5])/2)^(-1 - n)` is
+  // `2^n*(-1 + Sqrt[5])^(-1 - n)`.
+  if !matches!(&coeff, Expr::Integer(1 | -1)) {
+    let mut with_coeff = vec![coeff.clone()];
+    with_coeff.extend(symbolic_args.iter().cloned());
+    let split = split_scaled_powers_sharing_a_prime(with_coeff.clone())?;
+    if split.len() != with_coeff.len() {
+      return times_ast(&split);
+    }
   }
 
   // Combine like bases: x^a * x^b → x^(a+b)

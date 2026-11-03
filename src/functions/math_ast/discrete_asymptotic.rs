@@ -731,20 +731,26 @@ fn lead_series_coefficient(f: &Expr, spec: &[Expr], var: &str) -> Option<Lead> {
   {
     return None;
   }
-  // -g/(z h') is cancelled as a function of z before z0 is substituted, so
-  // a factor z0 shared with g drops out exactly.
+  // wolframscript writes the term as the expanded product of -g/h' at z0
+  // and z0^(-1 - n): `2^n*(-1 + Sqrt[5])^(-1 - n) - (2^n*(-1 +
+  // Sqrt[5])^(-1 - n))/Sqrt[5]` for -z/(-1 + z + z^2).
   let ratio = ev_call(
     "Cancel",
     &[ev(&times(vec![
       Expr::Integer(-1),
       g.clone(),
       pow(dh.clone(), Expr::Integer(-1)),
-      pow(id_expr(z), Expr::Integer(-1)),
     ]))?],
   )?;
-  let coef = ev_call("Simplify", &[at(&ratio)?])?;
-  let rho = ev(&pow(root, Expr::Integer(-1)))?;
-  let e = ev(&times(vec![coef, positive_power(&rho, &id_expr(var))?]))?;
+  let coef = ev_call("Expand", &[ev_call("Simplify", &[at(&ratio)?])?])?;
+  let power = ev(&pow(
+    root,
+    plus(vec![
+      Expr::Integer(-1),
+      times(vec![Expr::Integer(-1), id_expr(var)]),
+    ]),
+  ))?;
+  let e = ev_call("Expand", &[ev(&times(vec![coef, power]))?])?;
   Some(Lead::new(
     e,
     Growth {
@@ -752,20 +758,6 @@ fn lead_series_coefficient(f: &Expr, spec: &[Expr], var: &str) -> Option<Lead> {
       ..Growth::ONE
     },
   ))
-}
-
-/// `rho^n`, folding `(b^e)^n` into `b^(e n)` for a positive numeric base `b`
-/// and a real exponent `e`.
-fn positive_power(rho: &Expr, n: &Expr) -> Option<Expr> {
-  if let Some((h, a)) = full_form(rho)
-    && h == "Power"
-    && let [b, e] = a.as_slice()
-    && numeric(b).is_some_and(|v| v > 0.0)
-    && numeric(e).is_some()
-  {
-    return ev(&pow(b.clone(), times(vec![e.clone(), n.clone()])));
-  }
-  ev(&pow(rho.clone(), n.clone()))
 }
 
 /// Combine several exponential factors `r^(c n + d)` with positive rational
@@ -810,9 +802,88 @@ fn merge_rational_exponentials(e: Expr, var: &str) -> Option<Expr> {
   ev(&times(rest))
 }
 
+/// `Log[c f]` with `f` a factorial or Gamma function of the index: the
+/// logarithm of the expanded Stirling form, as wolframscript writes it —
+/// `Gamma[n]` with `goal` terms, `n!` (and `Gamma[n + 1]`) as `n Gamma[n]`
+/// with one term more: `Log[(n^(-1/2 + n)*Sqrt[Pi/2])/(6*E^n) +
+/// (n^(1/2 + n)*Sqrt[2*Pi])/E^n]` for `Log[n!]`. `None` for other shapes.
+fn log_of_gamma_type(expr: &Expr, var: &str, goal: usize) -> Option<Expr> {
+  let (h, args) = full_form(expr)?;
+  // A power of such a logarithm (`Log[n!]^2`) is that power of its form.
+  if h == "Power"
+    && args.len() == 2
+    && is_constant_wrt(&args[1], var)
+    && let Some(inner) = log_of_gamma_type(&args[0], var, goal)
+  {
+    return ev(&pow(inner, args[1].clone()));
+  }
+  // E^(n!) likewise holds the expanded form in its exponent.
+  let (h, args) = if h == "Power"
+    && args.len() == 2
+    && matches!(&args[0], Expr::Constant(c) | Expr::Identifier(c) if c == "E")
+  {
+    ("Exp".to_string(), vec![args[1].clone()])
+  } else {
+    (h, args)
+  };
+  if (h != "Log" && h != "Exp") || args.len() != 1 {
+    return None;
+  }
+  let head = h;
+  let (h, factors) = full_form(&args[0]).unwrap_or((String::new(), vec![]));
+  let factors = if h == "Times" {
+    factors
+  } else {
+    vec![args[0].clone()]
+  };
+  let mut constant = Vec::new();
+  let mut growing = None;
+  // An exponential b^n with a constant base rides along (`Log[n! 2^n]`).
+  let exponential = |f: &Expr| {
+    matches!(full_form(f), Some((h, a)) if h == "Power" && a.len() == 2
+      && is_constant_wrt(&a[0], var) && !is_constant_wrt(&a[1], var))
+  };
+  for f in factors {
+    if is_constant_wrt(&f, var) || exponential(&f) {
+      constant.push(f);
+    } else if growing.is_none() {
+      growing = Some(f);
+    } else {
+      return None;
+    }
+  }
+  let x = id_expr(var);
+  let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
+  let shifted_by_one = |e: &Expr| {
+    ev(&plus(vec![e.clone(), Expr::Integer(-1)])).is_some_and(|d| is_var(&d))
+  };
+  let (stirling_goal, extra) = match full_form(&growing?)? {
+    (h, a) if h == "Gamma" && a.len() == 1 && is_var(&a[0]) => (goal, None),
+    (h, a) if h == "Gamma" && a.len() == 1 && shifted_by_one(&a[0]) => {
+      (goal + 1, Some(x.clone()))
+    }
+    (h, a) if h == "Factorial" && a.len() == 1 && is_var(&a[0]) => {
+      (goal + 1, Some(x.clone()))
+    }
+    _ => return None,
+  };
+  let l = lead_gamma(&x, var, stirling_goal)?;
+  constant.push(l.expr);
+  constant.extend(extra);
+  let inner = crate::evaluator::evaluate_function_call_ast(
+    "Expand",
+    &[ev(&times(constant))?],
+  )
+  .ok()?;
+  ev(&call1(&head, inner))
+}
+
 /// Leading term of `expr`, with `goal` terms of its expansion for the
 /// Gamma-type sequences.
 fn discrete_asymptotic(expr: &Expr, var: &str, goal: usize) -> Option<Expr> {
+  if let Some(result) = log_of_gamma_type(expr, var, goal) {
+    return Some(result);
+  }
   let result = if goal > 1 {
     // c Gamma[n + c0]-type products: the correction series multiplies the
     // single growing factor.

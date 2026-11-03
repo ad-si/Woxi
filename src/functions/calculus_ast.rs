@@ -23391,6 +23391,15 @@ fn rational_function_series(f: &Expr, var: &str, order: i128) -> Option<Expr> {
   let first = c.iter().position(|v| !v.0.is_zero());
   let to_expr =
     |q: &Q| crate::functions::math_ast::make_rational_expr(&q.0, &q.1);
+  // With no term up to the order, the remainder starts at the function's
+  // own leading power when that is higher: `Series[x^3/(1 - x), {x, 0, 1}]`
+  // is `SeriesData[x, 0, {}, 3, 3, 1]`.
+  let mut order = order;
+  if first.is_none()
+    && let Some(lead) = num.iter().position(|v| !v.0.is_zero())
+  {
+    order = order.max(lead as i128 - valuation as i128 - 1);
+  }
   let (nmin, list): (i128, Vec<Expr>) = match first {
     Some(i) => {
       let last = c.iter().rposition(|v| !v.0.is_zero())?;
