@@ -5381,10 +5381,30 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if eigs.iter().all(is_real_num) {
       sort_eigenvalues(&mut eigs);
+    } else if !eigs
+      .iter()
+      .all(crate::functions::predicate_ast::is_numeric_q)
+    {
+      // Symbolic pairs in canonical order: `{a - I*b, a + I*b}` for both
+      // `{{a, b}, {-b, a}}` and `{{a, -b}, {b, a}}`.
+      eigs = sort_with_canonical(eigs);
     } else {
       machine_conjugate_pair_upper_first(&matrix, &mut eigs);
     }
     return Ok(Expr::List(eigs.into()));
+  }
+
+  // A symbolic 2×2 whose characteristic polynomial splits over the
+  // entries' field: its roots, in canonical order (`{a - b, a + b}` for
+  // `{{a, b}, {b, a}}`).
+  if n == 2
+    && !matrix
+      .iter()
+      .flatten()
+      .all(crate::functions::predicate_ast::is_numeric_q)
+    && let Some(roots) = split_symbolic_2x2_eigenvalues(&matrix)?
+  {
+    return Ok(Expr::List(sort_with_canonical(roots).into()));
   }
 
   // Generic symbolic 2×2: characteristic polynomial λ^2 − (a+d)λ + (ad−bc)
@@ -5402,15 +5422,75 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       times(vec![Expr::Integer(-2), a.clone(), d.clone()]),
       pow(d.clone(), Expr::Integer(2)),
     ]);
-    let sqrt_disc = call1("Sqrt", disc);
+    // A square integer content of the discriminant comes out of the root,
+    // and the root of a monomial splits: `{a - Sqrt[b]*Sqrt[c], …}` for
+    // `{{a, b c}, {1, a}}`, `{-Sqrt[a^2 + b*c], …}` for `{{a, b}, {c, -a}}`.
+    let disc = crate::evaluator::evaluate_expr_to_expr(&call1("Expand", disc))?;
+    let (content, rest) = match crate::evaluator::evaluate_expr_to_expr(
+      &call1("FactorTermsList", disc.clone()),
+    )? {
+      Expr::List(ref parts) if parts.len() == 2 => {
+        (parts[0].clone(), parts[1].clone())
+      }
+      _ => (Expr::Integer(1), disc.clone()),
+    };
+    let root_content = match &content {
+      Expr::Integer(c) if *c > 1 => {
+        let r = (*c as f64).sqrt().round() as i128;
+        (r * r == *c).then_some(r)
+      }
+      _ => None,
+    };
+    let monomial = |e: &Expr| {
+      crate::functions::polynomial_ast::collect_multiplicative_factors(e)
+        .iter()
+        .all(|f| match f {
+          Expr::Identifier(_) => true,
+          Expr::FunctionCall { name, args } if name == "Power" => {
+            matches!(&args[0], Expr::Identifier(_))
+              && matches!(&args[1], Expr::Integer(k) if *k > 0)
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => {
+            matches!(left.as_ref(), Expr::Identifier(_))
+              && matches!(right.as_ref(), Expr::Integer(k) if *k > 0)
+          }
+          _ => false,
+        })
+    };
+    let (sqrt_disc, halve) = match root_content {
+      Some(r) => {
+        let root = if monomial(&rest) {
+          crate::evaluator::evaluate_expr_to_expr(&call1(
+            "PowerExpand",
+            call1("Sqrt", rest.clone()),
+          ))?
+        } else {
+          call1("Sqrt", rest.clone())
+        };
+        (times(vec![Expr::Integer(r), root]), true)
+      }
+      None => (call1("Sqrt", disc), false),
+    };
     let trace = plus(vec![a, d]);
     let lambda_minus = div2(
       plus(vec![trace.clone(), neg(sqrt_disc.clone())]),
       Expr::Integer(2),
     );
     let lambda_plus = div2(plus(vec![trace, sqrt_disc]), Expr::Integer(2));
-    let lm = crate::evaluator::evaluate_expr_to_expr(&lambda_minus)?;
-    let lp = crate::evaluator::evaluate_expr_to_expr(&lambda_plus)?;
+    let finish = |e: &Expr| -> Result<Expr, InterpreterError> {
+      let v = crate::evaluator::evaluate_expr_to_expr(e)?;
+      if halve {
+        crate::evaluator::evaluate_expr_to_expr(&call1("Expand", v))
+      } else {
+        Ok(v)
+      }
+    };
+    let lm = finish(&lambda_minus)?;
+    let lp = finish(&lambda_plus)?;
     let mut result = vec![lm, lp];
     // When both eigenvalues are real numbers (a complex Hermitian matrix whose
     // diagonal differs, e.g. {{4, I}, {-I, 1}}), order them like wolframscript
@@ -5579,9 +5659,317 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(all.into()));
   }
 
+  if let Some(values) = symbolic_3x3_eigenvalues(&matrix)? {
+    return Ok(Expr::List(values.into()));
+  }
+
   // Return unevaluated for matrices we can't yet handle (defective, complex
   // eigenvalues for floats, larger non-integer matrices, etc.).
   Ok(unevaluated("Eigenvalues", args))
+}
+
+/// The eigenvalues of a symbolic 2×2 matrix when its characteristic
+/// polynomial factors into linear pieces; `None` otherwise.
+fn split_symbolic_2x2_eigenvalues(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  let var = "\u{2620}eig\u{2620}";
+  let x = Expr::Identifier(var.into());
+  let poly = evaluate_expr_to_expr(&call(
+    "CharacteristicPolynomial",
+    vec![matrix_to_expr(matrix.to_vec()), x.clone()],
+  ))?;
+  let factored = evaluate_expr_to_expr(&call1("Factor", poly))?;
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(&factored);
+  let mut roots = Vec::with_capacity(2);
+  for f in &factors {
+    let (base, m) = match f {
+      Expr::FunctionCall { name, args } if name == "Power" => match &args[1] {
+        Expr::Integer(m) => (args[0].clone(), *m),
+        _ => return Ok(None),
+      },
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => match right.as_ref() {
+        Expr::Integer(m) => (*left.clone(), *m),
+        _ => return Ok(None),
+      },
+      other => (other.clone(), 1),
+    };
+    if !crate::functions::polynomial_ast::contains_var(&base, var) {
+      continue;
+    }
+    if !matches!(
+      evaluate_expr_to_expr(&call("Exponent", vec![base.clone(), x.clone()]))?,
+      Expr::Integer(1)
+    ) {
+      return Ok(None);
+    }
+    let c1 = evaluate_expr_to_expr(&call(
+      "Coefficient",
+      vec![base.clone(), x.clone(), Expr::Integer(1)],
+    ))?;
+    let c0 = evaluate_expr_to_expr(&call(
+      "Coefficient",
+      vec![base.clone(), x.clone(), Expr::Integer(0)],
+    ))?;
+    let root = evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      c0,
+      pow(c1, Expr::Integer(-1)),
+    ]))?;
+    for _ in 0..m {
+      roots.push(root.clone());
+    }
+  }
+  Ok((roots.len() == 2).then_some(roots))
+}
+
+/// A symbolic 3×3 matrix as `scale * rest` with `scale` the polynomial
+/// content of its entries (`t {{a, b, c}, …}` is `t` times `{{a, b, c}, …}`).
+/// `None` when the content is a number.
+fn split_polynomial_content(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<(Expr, Vec<Vec<Expr>>)>, InterpreterError> {
+  let entries: Vec<Expr> = matrix
+    .iter()
+    .flatten()
+    .filter(|e| !is_zero_expr(e))
+    .cloned()
+    .collect();
+  if entries.is_empty() {
+    return Ok(None);
+  }
+  let content = evaluate_expr_to_expr(&call("PolynomialGCD", entries))?;
+  if crate::functions::predicate_ast::is_numeric_q(&content)
+    || matches!(&content, Expr::FunctionCall { name, .. } if name == "PolynomialGCD")
+  {
+    return Ok(None);
+  }
+  let rest = matrix
+    .iter()
+    .map(|row| {
+      row
+        .iter()
+        .map(|e| {
+          evaluate_expr_to_expr(&call1(
+            "Cancel",
+            div(e.clone(), content.clone()),
+          ))
+        })
+        .collect::<Result<Vec<_>, _>>()
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+  Ok(Some((content, rest)))
+}
+
+/// The cubic `Det[x I - m]` of a 3×3 matrix as the body of a pure
+/// function in `#1`.
+fn monic_characteristic_body(
+  matrix: &[Vec<Expr>],
+) -> Result<Expr, InterpreterError> {
+  let var = "\u{2620}eig\u{2620}";
+  let poly = evaluate_expr_to_expr(&call(
+    "Expand",
+    vec![times(vec![
+      Expr::Integer(-1),
+      call(
+        "CharacteristicPolynomial",
+        vec![
+          matrix_to_expr(matrix.to_vec()),
+          Expr::Identifier(var.into()),
+        ],
+      ),
+    ])],
+  ))?;
+  Ok(crate::syntax::substitute_variable(
+    &poly,
+    var,
+    &Expr::Slot(1),
+  ))
+}
+
+/// Eigenvalues of a 3×3 matrix with symbolic entries whose characteristic
+/// polynomial is irreducible: its three `Root` objects, times the
+/// polynomial content of the entries —
+/// `{t*Root[c*e*g - … + #1^3 & , 1], …}` for `t {{a, b, c}, …}`. `None`
+/// for numeric matrices, other sizes, or a factoring polynomial.
+fn symbolic_3x3_eigenvalues(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Vec<Expr>>, InterpreterError> {
+  if matrix.len() != 3
+    || matrix
+      .iter()
+      .flatten()
+      .all(crate::functions::predicate_ast::is_numeric_q)
+  {
+    return Ok(None);
+  }
+  let (scale, rest) = match split_polynomial_content(matrix)? {
+    Some((s, r)) => (Some(s), r),
+    None => (None, matrix.to_vec()),
+  };
+  let body = monic_characteristic_body(&rest)?;
+  let factored = evaluate_expr_to_expr(&call1("Factor", body.clone()))?;
+  if matches!(&factored, Expr::FunctionCall { name, .. } if name == "Times") {
+    return Ok(None);
+  }
+  let mut values = Vec::with_capacity(3);
+  for k in 1..=3 {
+    let root = evaluate_expr_to_expr(&call(
+      "Root",
+      vec![
+        Expr::Function {
+          body: Box::new(body.clone()),
+        },
+        Expr::Integer(k),
+      ],
+    ))?;
+    if !matches!(&root, Expr::FunctionCall { name, .. } if name == "Root") {
+      return Ok(None);
+    }
+    values.push(match &scale {
+      Some(s) => evaluate_expr_to_expr(&times(vec![s.clone(), root]))?,
+      None => root,
+    });
+  }
+  Ok(Some(values))
+}
+
+/// Eigenvectors of a symbolic 2×2 matrix `{{a, b}, {c, d}}` with `c != 0`:
+/// `{-(d - λ)/c, 1}` for each eigenvalue, `d - λ` over one denominator —
+/// `{{-1/2*(-a + d + Sqrt[a^2 + 4*b*c - 2*a*d + d^2])/c, 1}, …}`. The
+/// content of the entries does not change them. `None` for numeric
+/// matrices or `c == 0`.
+fn symbolic_2x2_eigenvectors(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Expr>, InterpreterError> {
+  if matrix
+    .iter()
+    .flatten()
+    .all(crate::functions::predicate_ast::is_numeric_q)
+  {
+    return Ok(None);
+  }
+  let rest = match split_polynomial_content(matrix)? {
+    Some((_, r)) => r,
+    None => matrix.to_vec(),
+  };
+  if is_zero_expr(&rest[1][0]) {
+    return Ok(None);
+  }
+  let Expr::List(ref values) =
+    eigenvalues_ast(&[matrix_to_expr(rest.clone())])?
+  else {
+    return Ok(None);
+  };
+  if values.len() != 2 {
+    return Ok(None);
+  }
+  let mut vectors = Vec::with_capacity(2);
+  for l in values {
+    let shifted = evaluate_expr_to_expr(&call1(
+      "Together",
+      plus(vec![
+        rest[1][1].clone(),
+        times(vec![Expr::Integer(-1), l.clone()]),
+      ]),
+    ))?;
+    let v1 = evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      shifted,
+      pow(rest[1][0].clone(), Expr::Integer(-1)),
+    ]))?;
+    vectors.push(Expr::List(vec![v1, Expr::Integer(1)].into()));
+  }
+  Ok(Some(Expr::List(vectors.into())))
+}
+
+/// Eigenvectors of a symbolic 3×3 matrix with `Root` eigenvalues (see
+/// [`symbolic_3x3_eigenvalues`]; the content of the entries does not change
+/// them). Each vector ends in 1; the last row is solved for its first
+/// unknown, the second row then for the remaining one, and that value is
+/// put back, as wolframscript writes them:
+/// `{-((k - λ)/g) + (h*(-(f*g) + d*k - d*λ))/(g*(-(e*g) + d*h + g*λ)),
+/// -((-(f*g) + d*k - d*λ)/(-(e*g) + d*h + g*λ)), 1}`.
+fn symbolic_3x3_eigenvectors(
+  matrix: &[Vec<Expr>],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some(_) = symbolic_3x3_eigenvalues(matrix)? else {
+    return Ok(None);
+  };
+  let rest = match split_polynomial_content(matrix)? {
+    Some((_, r)) => r,
+    None => matrix.to_vec(),
+  };
+  let Some(values) = symbolic_3x3_eigenvalues(&rest)? else {
+    return Ok(None);
+  };
+  let neg_over = |num: &Expr, den: &Expr| -> Result<Expr, InterpreterError> {
+    evaluate_expr_to_expr(&times(vec![
+      Expr::Integer(-1),
+      num.clone(),
+      pow(den.clone(), Expr::Integer(-1)),
+    ]))
+  };
+  let mut vectors = Vec::with_capacity(3);
+  for l in &values {
+    // A = rest - l I, by rows.
+    let a: Vec<Vec<Expr>> = (0..3)
+      .map(|i| {
+        (0..3)
+          .map(|j| {
+            if i == j {
+              evaluate_expr_to_expr(&plus(vec![
+                rest[i][j].clone(),
+                times(vec![Expr::Integer(-1), l.clone()]),
+              ]))
+            } else {
+              Ok(rest[i][j].clone())
+            }
+          })
+          .collect::<Result<Vec<_>, _>>()
+      })
+      .collect::<Result<_, _>>()?;
+    let (v1, v2) = if !is_zero_expr(&a[2][0]) {
+      // Row 3 for v1: v1 = -(A33 + A32 v2)/A31; row 2 then gives v2.
+      let num = evaluate_expr_to_expr(&call(
+        "Expand",
+        vec![plus(vec![
+          times(vec![a[1][0].clone(), a[2][2].clone()]),
+          times(vec![Expr::Integer(-1), a[1][2].clone(), a[2][0].clone()]),
+        ])],
+      ))?;
+      let den = evaluate_expr_to_expr(&call(
+        "Expand",
+        vec![plus(vec![
+          times(vec![a[1][0].clone(), a[2][1].clone()]),
+          times(vec![Expr::Integer(-1), a[1][1].clone(), a[2][0].clone()]),
+        ])],
+      ))?;
+      let v2 = neg_over(&num, &den)?;
+      let v1 = evaluate_expr_to_expr(&plus(vec![
+        neg_over(&a[2][2], &a[2][0])?,
+        neg_over(&times(vec![a[2][1].clone(), v2.clone()]), &a[2][0])?,
+      ]))?;
+      (v1, v2)
+    } else if !is_zero_expr(&a[2][1]) && !is_zero_expr(&a[1][0]) {
+      // Row 3 for v2, row 2 for v1.
+      let v2 = neg_over(&a[2][2], &a[2][1])?;
+      let v1 = evaluate_expr_to_expr(&plus(vec![
+        neg_over(&a[1][2], &a[1][0])?,
+        neg_over(&times(vec![a[1][1].clone(), v2.clone()]), &a[1][0])?,
+      ]))?;
+      (v1, v2)
+    } else {
+      return Ok(None);
+    };
+    vectors.push(Expr::List(vec![v1, v2, Expr::Integer(1)].into()));
+  }
+  Ok(Some(Expr::List(vectors.into())))
 }
 
 /// Connected components of the graph whose edges are the nonzero entries of
@@ -6192,6 +6580,17 @@ fn eigenvectors_impl(
   }
 
   if let Some(result) = complex_machine_eigenvectors(args, &matrix, false) {
+    return Ok(result);
+  }
+
+  if n == 3
+    && let Some(result) = symbolic_3x3_eigenvectors(&matrix)?
+  {
+    return Ok(result);
+  }
+  if n == 2
+    && let Some(result) = symbolic_2x2_eigenvectors(&matrix)?
+  {
     return Ok(result);
   }
 

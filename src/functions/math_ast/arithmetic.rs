@@ -3317,6 +3317,11 @@ fn is_numeric_factor(e: &Expr) -> bool {
 /// atomic arguments. Builtin heads (Sin, Log, ...) keep their existing
 /// transcendental-priority ordering.
 fn is_indexed_variable(e: &Expr) -> bool {
+  // A slot `#n` is the compound `Slot[n]`: a polynomial variable that sorts
+  // after every symbol (`c + b*#1 + #1^3`).
+  if matches!(e, Expr::Slot(n) if *n >= 1) {
+    return true;
+  }
   if let Expr::FunctionCall { name, args } = e
     && !args.is_empty()
     && crate::evaluator::dispatch::arg_count::get_arg_count_range(name)
@@ -3354,6 +3359,10 @@ fn is_indexed_variable(e: &Expr) -> bool {
 /// numerically (x[2] < x[10]), matching Wolfram. Symbol names themselves
 /// stay plainly lexicographic (x10 < x2).
 fn indexed_var_key(e: &Expr) -> String {
+  if let Expr::Slot(n) = e {
+    // Past every letter under `plus_var_name_cmp`, and all-indexed.
+    return format!("\u{E000}Slot[{n:020}]");
+  }
   if let Expr::FunctionCall { name, args } = e {
     let parts: Vec<String> = args
       .iter()
@@ -3793,6 +3802,9 @@ fn sum_coefficient_power_order(
       match (base, exp.as_ref()) {
         (Expr::Identifier(s), Expr::Integer(k)) if *k >= 1 => {
           monomial = Some((s.clone(), *k));
+        }
+        (Expr::Slot(n), Expr::Integer(k)) if *k >= 1 => {
+          monomial = Some((format!("#{n}"), *k));
         }
         _ => return None,
       }
@@ -5749,6 +5761,8 @@ fn plus_term_call_head(e: &Expr) -> Option<&str> {
       plus_term_call_head(&args[0])
     }
     e if is_curried_derivative(e) => Some(CURRIED_HEAD_KEY),
+    // `#n` is the call `Slot[n]`: `c + (a + b)*#1`.
+    Expr::Slot(_) => Some("Slot"),
     Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => Some(name),
     Expr::BinaryOp {
       op: BinaryOperator::Times | BinaryOperator::Divide,

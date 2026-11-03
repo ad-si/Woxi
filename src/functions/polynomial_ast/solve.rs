@@ -13243,6 +13243,39 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(root_degree_message(args));
   }
+  // Symbolic coefficients: the polynomial collected in #1, and two
+  // arguments, as wolframscript keeps it —
+  // `Root[c + (-(b*d) + a*e)*#1 + (-a - e)*#1^2 + #1^3 & , 1]`.
+  {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&expanded_poly, &mut vars);
+    vars.remove(var_name);
+    vars.remove("I");
+    if !vars.is_empty()
+      && matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3)
+    {
+      let collected = crate::evaluator::evaluate_function_call_ast(
+        "Collect",
+        &[expanded_poly.clone(), id_expr(var_name)],
+      )?;
+      let body = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(
+          &collected,
+          var_name,
+          &Expr::Slot(1),
+        ),
+      )?;
+      return Ok(unevaluated(
+        "Root",
+        &[
+          Expr::Function {
+            body: Box::new(body),
+          },
+          Expr::Integer(k),
+        ],
+      ));
+    }
+  }
   let factor_degree = |factor: &Expr| -> Option<i128> {
     let base = match factor {
       Expr::BinaryOp {
