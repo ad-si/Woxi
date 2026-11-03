@@ -6503,6 +6503,13 @@ pub(crate) fn bar_group_gap(bar_spacing: Option<f64>) -> f64 {
   }
 }
 
+/// The bare margin left of and below a vertical bar chart's label areas,
+/// in display points (WL 15's automatic `ImagePadding` hugs the labels).
+const BAR_SIDE_MARGIN: f64 = 2.0;
+/// The size plotters draws the y tick labels of a bar chart at (it renders
+/// a size smaller than an SVG `font-size` of the same value).
+const BAR_TICK_FONT: f64 = 13.0;
+
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
   svg_width: u32,
@@ -6548,8 +6555,10 @@ pub(crate) fn generate_bar_svg(
     }
   };
 
-  // y-axis range: explicit PlotRange overrides the auto-computed extent
-  // (which adds 10% headroom above the tallest bar and anchors at 0).
+  // y-axis range: explicit PlotRange overrides the auto-computed extent,
+  // which anchors at 0 and leaves WL's `Scaled[0.05]` headroom above the
+  // tallest bar (5% of the padded span, whose lower `Scaled[0.02]` the
+  // axis at 0 takes up).
   let (y_min, y_max) = if let Some((ymin, ymax)) = plot_range_y {
     (ymin, ymax)
   } else {
@@ -6558,7 +6567,7 @@ pub(crate) fn generate_bar_svg(
       .map(|g| group_top(g))
       .fold(f64::NEG_INFINITY, f64::max)
       .max(0.0)
-      * 1.1;
+      * (1.0 + 0.05 / 0.93);
     let y_max_auto = if y_max_auto <= 0.0 { 1.0 } else { y_max_auto };
     (0.0, y_max_auto)
   };
@@ -6585,7 +6594,9 @@ pub(crate) fn generate_bar_svg(
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+  // WL 15 leaves only the room the labels take: half a point above the
+  // plotting area, a strip for a `PlotLabel`.
+  let top_margin = if has_plot_label { 20 * s } else { 4 * s }
     + plot_label_extra_lines(plot_label) as i32 * 20 * s
     + if axes_label_y.is_some() { 20 * s } else { 0 };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
@@ -6600,7 +6611,7 @@ pub(crate) fn generate_bar_svg(
     bottom_extra += if has_rotated_labels {
       50.0 * sf
     } else {
-      24.0 * sf
+      12.0 * sf
     };
   }
   if has_value_labels {
@@ -6615,8 +6626,28 @@ pub(crate) fn generate_bar_svg(
   if frame_label_x.is_some() {
     bottom_extra += 24.0 * sf;
   }
-  let x_label_area = 12 * RESOLUTION_SCALE + bottom_extra as u32;
-  let y_label_area = 65 * RESOLUTION_SCALE;
+  // The bars' group ticks hang 6 points below the axis.
+  let x_label_area = 7 * RESOLUTION_SCALE + bottom_extra as u32;
+  // The y tick labels, right-aligned beside their tick marks: as wide as
+  // the widest label (WL's 0.556 em digits) plus the tick and a gap.
+  let y_label_area = if show_ticks {
+    let y_major = axis_tick_step(y_max - y_min);
+    let widest = {
+      let first = (y_min / y_major - 1e-9).ceil() as i64;
+      let last = (y_max / y_major + 1e-9).floor() as i64;
+      (first..=last)
+        .map(|k| format_tick_with_step(k as f64 * y_major, y_major))
+        .map(|l| {
+          l.chars()
+            .map(|c| if c == '.' { 0.278 } else { 0.556 })
+            .sum::<f64>()
+        })
+        .fold(0.0, f64::max)
+    };
+    ((widest * BAR_TICK_FONT + 12.0) * sf) as u32
+  } else {
+    4 * RESOLUTION_SCALE
+  };
 
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
@@ -6632,7 +6663,7 @@ pub(crate) fn generate_bar_svg(
         * 18.0
   }) as u32;
   let legend_margin_right = if chart_legends.is_empty() || row_legend {
-    10 * s as u32
+    4 * s as u32
   } else {
     chart_legend_column_width(chart_legends, sf) as u32
   };
@@ -6642,10 +6673,11 @@ pub(crate) fn generate_bar_svg(
   // as tall as it is wide; the image grows or shrinks around it.
   if let Some(r) = look.aspect_ratio {
     let area_w = render_width as f64
-      - 10.0 * sf
+      - BAR_SIDE_MARGIN * sf
       - legend_margin_right as f64
       - y_label_area as f64;
-    let margins_v = top_margin as f64 + 10.0 * sf + x_label_area as f64;
+    let margins_v =
+      top_margin as f64 + BAR_SIDE_MARGIN * sf + x_label_area as f64;
     let target = area_w.max(1.0) * r + margins_v;
     svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
     render_height = svg_height * RESOLUTION_SCALE;
@@ -6653,7 +6685,8 @@ pub(crate) fn generate_bar_svg(
   // `AxesStyle` recolours the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
   let axis_line = if look.axes {
-    axis_color.stroke_width(look.axes_width.unwrap_or(RESOLUTION_SCALE))
+    // A hairline, like WL 15's chart axes.
+    axis_color.stroke_width(look.axes_width.unwrap_or(RESOLUTION_SCALE / 2))
   } else {
     ShapeStyle::from(&bg_color).stroke_width(0)
   };
@@ -6671,8 +6704,8 @@ pub(crate) fn generate_bar_svg(
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
       .margin_right(legend_margin_right)
-      .margin_bottom(10 * s as u32)
-      .margin_left(10 * s as u32)
+      .margin_bottom((BAR_SIDE_MARGIN * sf) as u32)
+      .margin_left((BAR_SIDE_MARGIN * sf) as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
@@ -6700,7 +6733,11 @@ pub(crate) fn generate_bar_svg(
       .axis_style(axis_line)
       // Tick labels are typeset smaller than in-chart labels, matching
       // wolframscript's proportionally small default axis ticks.
-      .label_style(("sans-serif", sf * 13.0).into_font().color(&axis_color))
+      .label_style(
+        ("sans-serif", sf * BAR_TICK_FONT)
+          .into_font()
+          .color(&axis_color),
+      )
       .set_tick_mark_size(
         LabelAreaPosition::Left,
         if show_ticks { tick } else { 0 },
@@ -6809,15 +6846,17 @@ pub(crate) fn generate_bar_svg(
   );
 
   // Compute plot area coordinates (same logic as generate_axes_only_opts)
-  let margin_left = 10.0 * sf;
+  let margin_left = BAR_SIDE_MARGIN * sf;
   let margin_top = top_margin as f64;
   let margin_right = legend_margin_right as f64;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = margin_top;
   let plot_w =
     render_width as f64 - margin_left - margin_right - y_label_area as f64;
-  let plot_h =
-    render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
+  let plot_h = render_height as f64
+    - margin_top
+    - BAR_SIDE_MARGIN * sf
+    - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
   // Extend labeled (major) y ticks. BarChart has no x ticks.

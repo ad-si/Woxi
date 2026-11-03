@@ -16864,6 +16864,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// y-axis (bars retain their heights on the new scale) and pad the
     /// x-axis so the categorical bar slots occupy only the left portion
     /// of the plot area. Mirrors list_line_plot_plot_range_both_axes.
+    /// WL 15's bar chart layout: the plotting area takes `1/GoldenRatio`
+    /// (the picture grows for a `PlotLabel` and chart labels: wolframscript
+    /// makes these 360 x 224 and 360 x 245), the y gutter only holds the
+    /// tick labels, and the headroom above the tallest bar is
+    /// `Scaled[0.05]`, so a chart up to 7 is labelled every 1 and one up
+    /// to 8 every 2. Regression: a fixed 65 pt gutter and 10% headroom
+    /// left the bars small.
+    #[test]
+    fn bar_chart_wl15_layout() {
+      let plain = export_svg("BarChart[{5, 3, 8, 2, 6}]");
+      assert!(
+        plain.contains("<svg width=\"360\" height=\"220\""),
+        "{plain}"
+      );
+      for label in ["0", "2", "4", "6", "8"] {
+        assert!(plain.contains(&format!(">\n{label}\n</text>")), "{label}");
+      }
+      assert!(!plain.contains(">\n7\n</text>"));
+      let labelled = export_svg(
+        "BarChart[{3, 7, 1, 5}, ChartLabels -> {\"a\", \"b\", \"c\", \"d\"}, \
+         PlotLabel -> \"Styled bar chart\"]",
+      );
+      assert!(
+        labelled.contains("<svg width=\"360\" height=\"248\""),
+        "{labelled}"
+      );
+      for label in 1..=7 {
+        assert!(labelled.contains(&format!(">\n{label}\n</text>")));
+      }
+    }
+
     #[test]
     fn bar_chart_plot_range_both_axes() {
       let svg = export_svg(
@@ -16889,25 +16920,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .collect();
       assert_eq!(bar_xs.len(), 20, "expected 20 bars");
 
-      // Plot area left edge ~749, right edge ~3499 (width 2750). With
-      // x ∈ [0, 50] in chart coordinates (bar i centred at i + 1), bar i
-      // spans [i + 0.6, i + 1.4], so the first bar starts at
-      // ~749 + 0.6/50 * 2750 ≈ 782 and the last (i=19) at
-      // ~749 + 19.6/50 * 2750 ≈ 1827 — i.e. the bars only cover ~38% of
-      // the plot width.
+      // Plot area left edge ~356, right edge ~3560 (width ~3204: the y
+      // label area only holds the "250" labels). With x ∈ [0, 50] in chart
+      // coordinates (bar i centred at i + 1), bar i spans [i + 0.6,
+      // i + 1.4], so the first bar starts at ~356 + 0.6/50 * 3204 ≈ 394
+      // and the last (i=19) at ~356 + 19.6/50 * 3204 ≈ 1612 — i.e. the
+      // bars only cover ~38% of the plot width.
       assert!(
-        (bar_xs[0] - 782.0).abs() < 5.0,
-        "first bar x {} should be near 782",
+        (bar_xs[0] - 394.0).abs() < 5.0,
+        "first bar x {} should be near 394",
         bar_xs[0]
       );
       assert!(
-        (bar_xs[19] - 1827.0).abs() < 5.0,
-        "last bar x {} should be near 1827",
+        (bar_xs[19] - 1612.0).abs() < 5.0,
+        "last bar x {} should be near 1612",
         bar_xs[19]
       );
 
       // Bar heights follow the y override: Prime[20]=71 at y=250 should
-      // occupy 71/250 of the plot height (~1926 px) ≈ 547 px.
+      // occupy 71/250 of the plot height (~1980 px: the plot area's width
+      // over GoldenRatio) ≈ 562 px.
       let last_bar_line = svg
         .lines()
         .rfind(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
@@ -16921,8 +16953,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .unwrap();
       let last_h: f64 = h_str.parse().unwrap();
       assert!(
-        (last_h - 547.0).abs() < 5.0,
-        "last bar height {last_h} should be near 547"
+        (last_h - 562.0).abs() < 5.0,
+        "last bar height {last_h} should be near 562"
       );
     }
 

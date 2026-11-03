@@ -3185,6 +3185,17 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       _ => {}
     }
   }
+  // As in WL, the plotting area takes the default `1/GoldenRatio` and the
+  // picture's height follows (a `PlotLabel` or chart labels make it
+  // taller), unless `ImageSize -> {w, h}` fixes the height.
+  let fixed_height = args[1..].iter().any(|o| {
+    crate::functions::graphics::option_name_value(o).is_some_and(|(n, v)| {
+      n == "ImageSize" && matches!(&*v, Expr::List(wh) if wh.len() == 2)
+    })
+  });
+  if look.aspect_ratio.is_none() && !fixed_height {
+    look.aspect_ratio = Some(1.0 / f64::midpoint(1.0, 5f64.sqrt()));
+  }
   look
 }
 

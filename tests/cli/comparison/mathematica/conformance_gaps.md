@@ -7617,9 +7617,6 @@ Verified against the reference pages, but not (fully) implemented:
 
 Found comparing the graphics-tests renders (2026-11):
 
-- Automatic axis ticks are sparser than wolframscript's: a histogram over
-  `0.5..7.5` or a bar chart up to 7 is labelled every 2, wolframscript
-  every 1 (`nice_step` with `AXIS_TICK_TARGET`).
 - `ListPlot3D` draws no default mesh; wolframscript rules one line per
   data row and column.
 - `SphericalPlot3D` (drawn through the `Graphics3D` renderer, in the WL 15
@@ -7644,8 +7641,13 @@ Found comparing the graphics-tests renders (2026-11):
 - `WaveletMatrixPlot`'s coefficient layout and scaling differ:
   wolframscript scales symmetrically about 0 over coefficients that Woxi's
   pyramid does not reproduce.
-- A vertical `BarChart` with `ChartLabels` keeps a taller label area, so
-  its bars are shorter than wolframscript's.
+- A vertical `BarChart` follows WL 15's sizing (plot area at
+  `1/GoldenRatio`, label-sized y gutter, `Scaled[0.05]` headroom), but its
+  axes are still plotters': the y axis sits at the plot area's left edge
+  (WL: at the bars' extent, inside a 2% `PlotRangePadding`), the ticks
+  point outward (WL: inward), there is no zero baseline with the two
+  group-end ticks, and the pictures come out a few points off (360 x 220
+  and 360 x 248 where wolframscript has 224 and 245).
 
 ## WL 15 `Plot` styling and layout: open items
 
