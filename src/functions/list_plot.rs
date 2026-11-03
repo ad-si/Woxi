@@ -935,13 +935,6 @@ struct ParsedOptions {
   interpolation_order: Option<i128>,
   /// `DataRange -> All` / `{xmin, xmax}` (None for the Automatic default).
   data_range: Option<DataRangeSpec>,
-  /// `MeshFunctions -> {f, …}`: only the first function shades a curve.
-  mesh_function: Option<Expr>,
-  /// `Mesh -> {{v1, v2, …}, …}`: the first function's mesh values.
-  mesh_levels: Vec<f64>,
-  /// `MeshShading -> {s0, s1, …}`: the style of each region between mesh
-  /// values, in increasing order of the mesh function.
-  mesh_shading: Vec<SeriesStyle>,
 }
 
 /// Parse common plot options from args[1..].
@@ -1049,6 +1042,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "AxesStyle"
         | "TicksStyle"
         | "FrameStyle"
+        | "Mesh"
+        | "MeshFunctions"
+        | "MeshShading"
         | "MeshStyle"
         | "PlotLabels"
         | "PlotLegends" => {
@@ -1178,34 +1174,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
           _ => {}
         },
-        "Mesh" => match replacement {
-          Expr::List(per_function) => {
-            if let Some(Expr::List(levels)) = per_function.first() {
-              out.mesh_levels =
-                levels.iter().filter_map(try_eval_to_f64).collect();
-              out.mesh_levels.sort_by(f64::total_cmp);
-            }
-          }
-          _ => {
-            crate::functions::plot::apply_common_plot_option(
-              name,
-              replacement,
-              opts,
-              &mut crate::functions::plot::PlotRangeOverrides::default(),
-            );
-          }
-        },
-        "MeshFunctions" => {
-          if let Expr::List(items) = replacement {
-            out.mesh_function = items.first().cloned();
-          }
-        }
-        "MeshShading" => {
-          if matches!(replacement, Expr::List(_)) {
-            out.mesh_shading =
-              crate::functions::plot::parse_plot_style(replacement);
-          }
-        }
         // `None` (the default) means straight lines, like order 1.
         "InterpolationOrder" => {
           if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
@@ -1238,71 +1206,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
     }
   }
   out
-}
-
-/// Split a polyline where `f(x, y)` crosses one of the sorted mesh `levels`,
-/// returning each piece with the index of the region (the number of levels
-/// below the function value) it lies in. Crossings are found by linear
-/// interpolation of the function between consecutive points.
-fn split_at_mesh_levels(
-  series: &[(f64, f64)],
-  f: &Expr,
-  levels: &[f64],
-) -> Vec<(usize, Vec<(f64, f64)>)> {
-  let value = |&(x, y): &(f64, f64)| -> Option<f64> {
-    let r = crate::functions::list_helpers_ast::apply_func_to_two_args(
-      f,
-      &Expr::Real(x),
-      &Expr::Real(y),
-    )
-    .ok()?;
-    try_eval_to_f64(&r)
-  };
-  let region = |v: f64| levels.iter().filter(|l| v > **l).count();
-  let mut pieces: Vec<(usize, Vec<(f64, f64)>)> = Vec::new();
-  let mut prev: Option<(f64, f64, f64)> = None;
-  for pt in series {
-    let Some(v) = value(pt) else { continue };
-    let cur = region(v);
-    if let Some((px, py, pv)) = prev {
-      let pr = region(pv);
-      if pr != cur {
-        // Mesh values crossed between the two points, in travel order.
-        let mut crossed: Vec<f64> = levels
-          .iter()
-          .copied()
-          .filter(|l| (pv.min(v)..=pv.max(v)).contains(l))
-          .collect();
-        if pv > v {
-          crossed.reverse();
-        }
-        let n = crossed.len();
-        for (k, l) in crossed.into_iter().enumerate() {
-          let t = (l - pv) / (v - pv);
-          let at = (px + t * (pt.0 - px), py + t * (pt.1 - py));
-          if let Some((_, piece)) = pieces.last_mut() {
-            piece.push(at);
-          }
-          // Each crossing steps one region up or down; the last lands on
-          // the region of the new point.
-          let next = if k + 1 == n {
-            cur
-          } else if v > pv {
-            pr + k + 1
-          } else {
-            pr.saturating_sub(k + 1)
-          };
-          pieces.push((next, vec![at]));
-        }
-      }
-    }
-    match pieces.last_mut() {
-      Some((_, piece)) => piece.push(*pt),
-      None => pieces.push((cur, vec![*pt])),
-    }
-    prev = Some((pt.0, pt.1, v));
-  }
-  pieces
 }
 
 impl ParsedOptions {
@@ -1596,19 +1499,31 @@ fn list_plot_ranges(
   (x, y_padded)
 }
 
-/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 7/6000
-/// of the image width per step, from 7 steps for series of fewer than 50
-/// points down to 3 from 1000 points on (the longest series decides).
-fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+/// The automatic `PointSize` of a list plot's dots comes in steps, from 7
+/// for series of fewer than 50 points down to 3 from 1000 points on (the
+/// longest series decides).
+fn point_size_steps(all_series: &[Vec<(f64, f64)>]) -> f64 {
   let n = all_series.iter().map(Vec::len).max().unwrap_or(0);
-  let steps = match n {
+  match n {
     0..50 => 7.0,
     50..100 => 6.0,
     100..250 => 5.0,
     250..1000 => 4.0,
     _ => 3.0,
-  };
-  steps * 11.0 / 6000.0
+  }
+}
+
+/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 11/6000
+/// of the image width per step.
+fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  point_size_steps(all_series) * 11.0 / 6000.0
+}
+
+/// The automatic `PointSize` of a `ListLinePlot`'s mesh points: 1/360 of
+/// the image width per step (`PointSize[7/360]` for 8 points, `1/90` for
+/// 300).
+fn list_line_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  point_size_steps(all_series) / 360.0
 }
 
 /// Compute x/y ranges from data with 4% padding.
@@ -1993,7 +1908,13 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  parsed.opts.default_point_size = Some(list_plot_point_size(&draw_series));
+  // The data decide the dot size, not an interpolated curve through them.
+  parsed.opts.default_point_size =
+    Some(list_plot_point_size(if curve_transformed {
+      &parsed.opts.data_points
+    } else {
+      &draw_series
+    }));
   if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
     include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
@@ -2169,6 +2090,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, false)?;
   let all_series = strip_errors(&err_series);
+  parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels = if parsed.hide_point_labels {
@@ -2221,29 +2143,6 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::plot::collapse_style_for_single_series(
         &parsed.opts.plot_style,
       );
-  }
-
-  // `MeshShading` colours the stretches of the curve between mesh values.
-  let mut draw_series = draw_series;
-  if let (Some(f), false, false) = (
-    &parsed.mesh_function,
-    parsed.mesh_levels.is_empty(),
-    parsed.mesh_shading.is_empty(),
-  ) {
-    let mut pieces = Vec::new();
-    let mut styles = Vec::new();
-    for series in &draw_series {
-      for (region, piece) in
-        split_at_mesh_levels(series, f, &parsed.mesh_levels)
-      {
-        styles.push(
-          parsed.mesh_shading[region % parsed.mesh_shading.len()].clone(),
-        );
-        pieces.push(piece);
-      }
-    }
-    draw_series = pieces;
-    parsed.opts.plot_style = styles;
   }
 
   let svg =

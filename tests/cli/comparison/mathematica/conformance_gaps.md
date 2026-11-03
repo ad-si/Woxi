@@ -5198,10 +5198,8 @@ expected pictures come from the reference pages' own examples.
 Found by the round-5 parameter sweep of the plot reference pages: each is
 accepted, but the picture is the same as without it.
 
-- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `MeshShading`,
-  `PlotRangeClipping`, `PlotLayout`; `MeshFunctions` is ignored (the mesh is
-  spaced along the curve), and an explicit `Mesh -> {{x1, x2, …}}` draws no
-  points.
+- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `PlotRangeClipping`,
+  `PlotLayout`.
 - `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
   `LabelingFunction -> f` with a pure function.
 - `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
@@ -5221,6 +5219,34 @@ accepted, but the picture is the same as without it.
 - `PieChart`: `PlotTheme`, `ChartElementFunction`.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
+
+### Curve meshes: remaining differences
+
+`Mesh`, `MeshFunctions`, `MeshStyle` and `MeshShading` on the curves of
+`Plot`, joined `ListPlot` and `ListLinePlot` match wolframscript in the mesh
+point positions, counts, colours and radii, except for:
+
+- `MeshShading` with several mesh functions. Both take a rank-`k` array, and
+  both reject a flat list (`MeshShading::colshd`, which Woxi does not print).
+  Woxi indexes the array by each function's region in turn. Wolfram's
+  indexing does not follow the regions:
+  `Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> {1, 1}, MeshFunctions -> {#1 &, #2 &},
+  MeshShading -> {{Red, Blue}, {Green, Orange}}]` draws Green then Red, and
+  with `Mesh -> {1, 2}` one stretch runs across the x mesh value without
+  being split.
+- `ListPlot[…, Joined -> True, Mesh -> Full]` draws each data point twice in
+  Wolfram (16 points for 8 data), once in Woxi. The picture is the same.
+- A list plot's dot `PointSize` is a fraction of the plot area's width in
+  Wolfram (about 340 pt of a 360 pt image, depending on the tick labels).
+  Woxi uses the image width, so dots, and list-plot mesh points with them,
+  are about 5% larger.
+- `Mesh -> True` (Wolfram: 50 x values) and `Mesh -> {1.5, 3}`, which
+  Wolfram rejects with `Mesh::ilevels`, give no mesh. Woxi does not print
+  the message.
+- In `{Plot[…, Mesh -> Full], Plot[…, Mesh -> All]}`, Wolfram draws each plot
+  half as wide while keeping the absolute dot and line sizes. Woxi draws the
+  plots full size, so the mesh points look much smaller when the picture is
+  scaled down.
 
 ### Side-by-side comparison with wolframscript: remaining differences
 

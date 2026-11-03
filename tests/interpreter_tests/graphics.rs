@@ -12531,7 +12531,9 @@ mod plot3d {
         "ListPlot[Table[{Cos[t], Sin[t]}, {t, 0, 6, 0.1}], Joined -> True, \
          Mesh -> 25]",
       );
-      assert_eq!(svg.matches("<circle").count(), 25);
+      // The default mesh function is x: on the circle each of the 25 x
+      // values is met twice (as in wolframscript).
+      assert_eq!(svg.matches("<circle").count(), 50);
       let svg = export_svg(
         "ListPlot[Table[{t, t^2}, {t, 0, 5, 0.5}], Joined -> True, Mesh -> None]",
       );

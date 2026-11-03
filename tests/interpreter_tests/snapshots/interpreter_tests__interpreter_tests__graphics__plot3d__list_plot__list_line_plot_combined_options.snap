@@ -9,31 +9,6 @@ expression: "export_svg(r#\"ListLinePlot[Prime[Range[1, 25]], PlotTheme -> \"Bus
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="197,2104 3584,2104 "/>
 <polygon opacity="0.3" fill="#587DE5" points="394,2023 524,2002 654,1962 784,1922 915,1842 1045,1802 1175,1722 1305,1681 1435,1601 1565,1481 1695,1441 1825,1320 1955,1240 2085,1200 2215,1119 2345,999 2475,879 2605,839 2735,718 2865,638 2996,598 3126,477 3256,397 3386,277 3516,116 3516,2063 394,2063 "/>
 <polyline fill="none" opacity="1" stroke="#587DE5" stroke-width="30" points="394,2023 524,2002 654,1962 784,1922 915,1842 1045,1802 1175,1722 1305,1681 1435,1601 1565,1481 1695,1441 1825,1320 1955,1240 2085,1200 2215,1119 2345,999 2475,879 2605,839 2735,718 2865,638 2996,598 3126,477 3256,397 3386,277 3516,116 "/>
-<circle cx="394" cy="2023" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="524" cy="2002" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="654" cy="1962" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="784" cy="1922" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="915" cy="1842" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1045" cy="1802" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1175" cy="1722" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1305" cy="1681" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1435" cy="1601" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1565" cy="1481" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1695" cy="1441" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1825" cy="1320" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="1955" cy="1240" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2085" cy="1200" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2215" cy="1119" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2345" cy="999" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2475" cy="879" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2605" cy="839" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2735" cy="718" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2865" cy="638" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="2996" cy="598" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="3126" cy="477" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="3256" cy="397" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="3386" cy="277" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
-<circle cx="3516" cy="116" r="15" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
 <circle cx="394" cy="2023" r="30" opacity="1" fill="#FFFFFF" stroke="none" stroke-width="1"/>
 <circle cx="394" cy="2023" r="30" opacity="1" fill="none" stroke="#587DE5" stroke-width="15"/>
 <circle cx="524" cy="2002" r="30" opacity="1" fill="#FFFFFF" stroke="none" stroke-width="1"/>
@@ -84,6 +59,31 @@ expression: "export_svg(r#\"ListLinePlot[Prime[Range[1, 25]], PlotTheme -> \"Bus
 <circle cx="3386" cy="277" r="30" opacity="1" fill="none" stroke="#587DE5" stroke-width="15"/>
 <circle cx="3516" cy="116" r="30" opacity="1" fill="#FFFFFF" stroke="none" stroke-width="1"/>
 <circle cx="3516" cy="116" r="30" opacity="1" fill="none" stroke="#587DE5" stroke-width="15"/>
+<circle cx="394" cy="2023" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="524" cy="2002" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="654" cy="1962" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="784" cy="1922" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="915" cy="1842" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1045" cy="1802" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1175" cy="1722" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1305" cy="1681" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1435" cy="1601" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1565" cy="1481" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1695" cy="1441" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1825" cy="1320" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="1955" cy="1240" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2085" cy="1200" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2215" cy="1119" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2345" cy="999" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2475" cy="879" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2605" cy="839" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2735" cy="718" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2865" cy="638" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="2996" cy="598" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="3126" cy="477" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="3256" cy="397" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="3386" cy="277" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
+<circle cx="3516" cy="116" r="35" opacity="1" fill="#587DE5" stroke="none" stroke-width="1"/>
 <polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="197.0,1661.6 3585.0,1661.6"/>
 <polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="197.0,1260.1 3585.0,1260.1"/>
 <polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="197.0,858.5 3585.0,858.5"/>

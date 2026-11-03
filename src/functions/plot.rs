@@ -2041,52 +2041,7 @@ pub(crate) enum Filling {
   Value(f64),
 }
 
-/// Mesh mode for line plots. `All` marks every point of the drawn curve,
-/// `Full` marks the original data points (the two differ when the curve is
-/// interpolated, e.g. `InterpolationOrder -> 0` steps).
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum Mesh {
-  None,
-  All,
-  Full,
-  /// `Mesh -> n`: `n` marks equally spaced along the curve.
-  Count(usize),
-}
-
-/// The `n` interior points that split a curve into `n + 1` equal parts. The
-/// split is by x when the curve is a function graph (x never decreases) and
-/// by position along the point list for a parametric curve.
-pub(crate) fn mesh_count_points(
-  points: &[(f64, f64)],
-  n: usize,
-) -> Vec<(f64, f64)> {
-  let pts: Vec<(f64, f64)> = points
-    .iter()
-    .copied()
-    .filter(|(x, y)| x.is_finite() && y.is_finite())
-    .collect();
-  if pts.len() < 2 {
-    return Vec::new();
-  }
-  let by_x =
-    pts.windows(2).all(|w| w[0].0 <= w[1].0) && pts[pts.len() - 1].0 > pts[0].0;
-  let param = |i: usize| if by_x { pts[i].0 } else { i as f64 };
-  let (lo, hi) = (param(0), param(pts.len() - 1));
-  (1..=n)
-    .map(|k| {
-      let t = lo + (hi - lo) * k as f64 / (n + 1) as f64;
-      let seg = (0..pts.len() - 1)
-        .find(|&i| param(i + 1) >= t)
-        .unwrap_or(pts.len() - 2);
-      let (t0, t1) = (param(seg), param(seg + 1));
-      let f = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
-      (
-        pts[seg].0 + (pts[seg + 1].0 - pts[seg].0) * f,
-        pts[seg].1 + (pts[seg + 1].1 - pts[seg].1) * f,
-      )
-    })
-    .collect()
-}
+pub(crate) use crate::functions::plot_mesh::Mesh;
 
 impl Filling {
   /// Compute the y-value to fill to, given the current plot y-range.
@@ -2957,9 +2912,25 @@ pub(crate) struct PlotOptions {
   /// `FrameStyle -> s`: the style of the frame edges, their tick marks and
   /// tick labels.
   pub frame_style: Option<SeriesStyle>,
-  /// `MeshStyle -> s`: the style of the mesh points along a curve. `None`
-  /// draws them in the curve's own colour.
-  pub mesh_style: Option<SeriesStyle>,
+  /// `MeshStyle -> s | {s1, s2, …}`: the style of the mesh points of each
+  /// mesh function (cycled). `None` entries draw them in the curve's style.
+  pub mesh_styles: Vec<Option<SeriesStyle>>,
+  /// `MeshFunctions -> {f1, …}`; empty for the default `{#1 &}`.
+  pub mesh_functions: Vec<Expr>,
+  /// `MeshShading -> {s1, s2, …}`: the styles of the stretches of a curve
+  /// between its mesh points.
+  pub mesh_shading: Option<crate::functions::plot_mesh::MeshShade>,
+  /// `Plot`'s initial sampling grid per curve, the points of `Mesh -> Full`.
+  pub mesh_full_points: Vec<Vec<(f64, f64)>>,
+  /// The default mesh function is the curve parameter (`ParametricPlot`),
+  /// taken as the position along the point list, instead of x.
+  pub mesh_by_parameter: bool,
+  /// Mesh values met exactly at the ends of a curve are not marked
+  /// (`Plot`, which samples just inside its domain).
+  pub mesh_open_ends: bool,
+  /// The automatic `PointSize` of the mesh points when it differs from
+  /// `default_point_size` (`ListLinePlot`); `None` falls back to that.
+  pub mesh_point_size: Option<f64>,
 }
 
 /// A `FrameLabel` entry that renders as a picture (`Grid[…]`/`TableForm[…]`)
@@ -3099,7 +3070,13 @@ impl Default for PlotOptions {
       axes_style: [None, None],
       ticks_style: [None, None],
       frame_style: None,
-      mesh_style: None,
+      mesh_styles: Vec::new(),
+      mesh_functions: Vec::new(),
+      mesh_shading: None,
+      mesh_full_points: Vec::new(),
+      mesh_by_parameter: false,
+      mesh_open_ends: false,
+      mesh_point_size: None,
       axes_origin: (None, None),
       axes_origin_low: (None, None),
     }
@@ -4888,6 +4865,30 @@ fn generate_svg_with_options(
           }
         }
 
+        // The mesh values, from the range the mesh functions take over all
+        // the drawn (clipped) curves.
+        let mesh_levels = crate::functions::plot_mesh::mesh_levels(
+          &all_points
+            .iter()
+            .map(|points| {
+              clip_segments_to_x_range(
+                clip_segments_to_y_range(
+                  split_into_segments(points),
+                  y_min,
+                  y_max,
+                ),
+                x_min,
+                x_max,
+              )
+            })
+            .collect::<Vec<_>>(),
+          &opts.mesh,
+          &opts.mesh_functions,
+          opts.mesh_by_parameter,
+        );
+        // (position, radius, colour, opacity) of every curve's mesh points.
+        let mut pending_mesh_dots: Vec<((f64, f64), u32, (u8, u8, u8), f64)> =
+          Vec::new();
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
@@ -4922,6 +4923,18 @@ fn generate_svg_with_options(
           // series in the same chart still join.
           let series_joined =
             resolve_series_joined(opts.joined_per_series.as_deref(), series_idx);
+          // The mesh points (and `MeshShading` stretches) of the drawn,
+          // clipped curve: a curve leaving the plot range ends there.
+          let curve_mesh = mesh_levels.as_ref().filter(|_| series_joined).map(|levels| {
+            crate::functions::plot_mesh::curve_mesh(
+              &segments,
+              levels,
+              &opts.mesh_functions,
+              opts.mesh_shading.as_ref(),
+              opts.mesh_by_parameter,
+              opts.mesh_open_ends,
+            )
+          });
 
           if !series_joined {
             // Capped error bars sit under the points of a scatter series.
@@ -4977,72 +4990,111 @@ fn generate_svg_with_options(
               }
             }
 
-            if let Some(ref dash_pattern) = dashing {
-              // Defer to a single <polyline stroke-dasharray> per segment,
-              // emitted after the plot is drawn.
-              // Defer to a single <polyline stroke-dasharray> per segment,
-              // emitted after the plot is drawn.
-              for segment in &segments {
-                if segment.len() >= 2 {
-                  dashed_overlays.push(DashedOverlay {
-                    color: (r, g, b),
-                    opacity: series_opacity(&opts.plot_style, series_idx),
-                    stroke_w,
-                    dashes: dash_pattern.clone(),
-                    points: segment.clone(),
-                  });
+            // `MeshShading` cuts the curve at its mesh points into
+            // stretches styled in turn; `Automatic` stretches keep the
+            // curve's own style (and `ColorFunction`).
+            let shaded_runs: Vec<(Option<&SeriesStyle>, &[Vec<(f64, f64)>])> =
+              match curve_mesh.as_ref().and_then(|m| m.pieces.as_ref()) {
+                Some(pieces) => pieces
+                  .iter()
+                  .map(|(shade, piece)| {
+                    let style = match shade {
+                      crate::functions::plot_mesh::MeshShade::Style(st) => Some(st.as_ref()),
+                      _ => None,
+                    };
+                    (style, std::slice::from_ref(piece))
+                  })
+                  .collect(),
+                None => vec![(None, segments.as_slice())],
+              };
+            let base_color = color;
+            let base_stroke_w = stroke_w;
+            let base_dashing = dashing.clone();
+            for &(shade, segments) in &shaded_runs {
+              let shade_color = shade.and_then(|st| st.color).map(color_to_rgb8);
+              let (r, g, b) = shade_color.unwrap_or((r, g, b));
+              let color = shade_color
+                .map(|(r, g, b)| RGBColor(r, g, b))
+                .unwrap_or(base_color);
+              let stroke_w = match shade {
+                Some(st) if st.thickness.is_some() => {
+                  series_thickness(std::slice::from_ref(st), 0)
                 }
-              }
-            } else if let Some(cf) = &opts.color_function {
-              for segment in &segments {
-                if let Some(stops) = color_function_gradient_stops(
-                  segment,
-                  cf,
-                  opts.color_function_scaling,
-                  color_scale_ranges,
-                  opts.log_x,
-                ) {
-                  let sentinel =
-                    color_function_gradient_sentinel(cf_gradients.len());
-                  cf_gradients.push(ColorFunctionGradient { sentinel, stops });
-                  let (sr, sg, sb) = sentinel;
+                _ => base_stroke_w,
+              };
+              let dashing = shade
+                .and_then(|st| st.dashing.clone())
+                .or_else(|| base_dashing.clone());
+              let line_opacity = shade
+                .and_then(|st| st.opacity)
+                .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
+              let color_function =
+                opts.color_function.as_ref().filter(|_| shade_color.is_none());
+              if let Some(ref dash_pattern) = dashing {
+                // Defer to a single <polyline stroke-dasharray> per segment,
+                // emitted after the plot is drawn.
+                for segment in segments {
+                  if segment.len() >= 2 {
+                    dashed_overlays.push(DashedOverlay {
+                      color: (r, g, b),
+                      opacity: line_opacity,
+                      stroke_w,
+                      dashes: dash_pattern.clone(),
+                      points: segment.clone(),
+                    });
+                  }
+                }
+              } else if let Some(cf) = color_function {
+                for segment in segments {
+                  if let Some(stops) = color_function_gradient_stops(
+                    segment,
+                    cf,
+                    opts.color_function_scaling,
+                    color_scale_ranges,
+                    opts.log_x,
+                  ) {
+                    let sentinel =
+                      color_function_gradient_sentinel(cf_gradients.len());
+                    cf_gradients.push(ColorFunctionGradient { sentinel, stops });
+                    let (sr, sg, sb) = sentinel;
+                    chart
+                      .draw_series(LineSeries::new(
+                        segment.iter().copied(),
+                        RGBColor(sr, sg, sb).stroke_width(stroke_w),
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!("Plot: {e}"))
+                      })?;
+                    continue;
+                  }
+                  for (run_color, run) in color_function_runs(
+                    segment,
+                    cf,
+                    opts.color_function_scaling,
+                    color_scale_ranges,
+                  ) {
+                    chart
+                      .draw_series(LineSeries::new(
+                        run,
+                        RGBColor(run_color.0, run_color.1, run_color.2)
+                          .stroke_width(stroke_w),
+                      ))
+                      .map_err(|e| {
+                        InterpreterError::EvaluationError(format!("Plot: {e}"))
+                      })?;
+                  }
+                }
+              } else {
+                let line_style = color
+                  .mix(line_opacity)
+                  .stroke_width(stroke_w);
+                for segment in segments {
                   chart
-                    .draw_series(LineSeries::new(
-                      segment.iter().copied(),
-                      RGBColor(sr, sg, sb).stroke_width(stroke_w),
-                    ))
+                    .draw_series(LineSeries::new(segment.iter().copied(), line_style))
                     .map_err(|e| {
                       InterpreterError::EvaluationError(format!("Plot: {e}"))
                     })?;
-                  continue;
                 }
-                for (run_color, run) in color_function_runs(
-                  segment,
-                  cf,
-                  opts.color_function_scaling,
-                  color_scale_ranges,
-                ) {
-                  chart
-                    .draw_series(LineSeries::new(
-                      run,
-                      RGBColor(run_color.0, run_color.1, run_color.2)
-                        .stroke_width(stroke_w),
-                    ))
-                    .map_err(|e| {
-                      InterpreterError::EvaluationError(format!("Plot: {e}"))
-                    })?;
-                }
-              }
-            } else {
-              let line_style = color
-                .mix(series_opacity(&opts.plot_style, series_idx))
-                .stroke_width(stroke_w);
-              for segment in &segments {
-                chart
-                  .draw_series(LineSeries::new(segment.iter().copied(), line_style))
-                  .map_err(|e| {
-                    InterpreterError::EvaluationError(format!("Plot: {e}"))
-                  })?;
               }
             }
           }
@@ -5069,49 +5121,86 @@ fn generate_svg_with_options(
             )?;
           }
 
-          // Draw mesh dots: at every curve point for Mesh -> All, at the
-          // original data points for Mesh -> Full.
-          if series_joined && opts.mesh != Mesh::None {
-            let counted;
-            let mesh_src: &[(f64, f64)] = match opts.mesh {
-              Mesh::Full => opts
-                .data_points
-                .get(series_idx)
-                .map(|v| v.as_slice())
-                .unwrap_or(points),
-              Mesh::Count(n) => {
-                counted = mesh_count_points(points, n);
-                &counted
-              }
-              _ => points,
+          // Mesh points: every curve point for `Mesh -> All`, the regular
+          // points for `Mesh -> Full`, else where the mesh functions take
+          // their mesh values. They are drawn over every curve.
+          if series_joined && !opts.mesh.is_none() {
+            let in_view = |&(x, y): &(f64, f64)| {
+              marker_in_view(x, y, (x_min, x_max), (y_min, y_max))
             };
-            // WL 15 exports curve mesh points as 3 pt dots (radius 1.5).
-            let marker_size = 15 * RESOLUTION_SCALE / 10;
-            // `MeshStyle` recolours the mesh points; without it they take
-            // the curve's colour.
-            let mesh_color = opts
-              .mesh_style
-              .as_ref()
-              .and_then(|s| s.color)
-              .map(|c| {
-                let (r, g, b) = color_to_rgb8(c);
-                RGBColor(r, g, b).to_rgba()
-              })
-              .unwrap_or_else(|| color.to_rgba());
-            let finite_pts: Vec<(f64, f64)> = mesh_src
-              .iter()
-              .copied()
-              .filter(|&(x, y)| marker_in_view(x, y, (x_min, x_max), (y_min, y_max)))
-              .collect();
-            chart
-              .draw_series(
-                finite_pts
+            let dots: Vec<crate::functions::plot_mesh::MeshDot> = match &opts.mesh {
+              Mesh::All | Mesh::Full => {
+                let src: &[(f64, f64)] = match opts.mesh {
+                  Mesh::Full => opts
+                    .mesh_full_points
+                    .get(series_idx)
+                    .or_else(|| opts.data_points.get(series_idx))
+                    .map(|v| v.as_slice())
+                    .unwrap_or(points),
+                  _ => points,
+                };
+                src
                   .iter()
-                  .map(|&(x, y)| Circle::new((x, y), marker_size, mesh_color.filled())),
-              )
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+                  .filter(|p| in_view(p))
+                  .map(|&pos| crate::functions::plot_mesh::MeshDot {
+                    pos,
+                    func: 0,
+                    style: None,
+                  })
+                  .collect()
+              }
+              _ => curve_mesh
+                .as_ref()
+                .map(|m| m.dots.iter().filter(|d| in_view(&d.pos)).cloned().collect())
+                .unwrap_or_default(),
+            };
+            let series_style = opts
+              .plot_style
+              .get(series_idx % opts.plot_style.len().max(1));
+            for dot in dots {
+              let mesh_style = opts
+                .mesh_styles
+                .get(dot.func % opts.mesh_styles.len().max(1))
+                .and_then(|s| s.as_ref());
+              let layers = [dot.style.as_ref(), mesh_style];
+              let pick = |f: &dyn Fn(&SeriesStyle) -> Option<f64>| {
+                layers.iter().flatten().find_map(|s| f(s))
+              };
+              // The curve's colour (its `ColorFunction` colour there),
+              // unless `MeshStyle` or the mesh value's style sets one.
+              let rgb = layers
+                .iter()
+                .flatten()
+                .find_map(|s| s.color)
+                .map(color_to_rgb8)
+                .or_else(|| {
+                  opts.color_function.as_ref().and_then(|cf| {
+                    color_function_rgb(
+                      cf,
+                      opts.color_function_scaling,
+                      dot.pos,
+                      color_scale_ranges,
+                    )
+                  })
+                })
+                .unwrap_or((r, g, b));
+              let opacity = pick(&|s| s.opacity)
+                .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
+              // WL 15 draws a curve's mesh points 3 pt across, a list
+              // plot's at its automatic `PointSize`.
+              let size = pick(&|s| s.point_size)
+                .or(series_style.and_then(|s| s.point_size))
+                .or(opts.mesh_point_size)
+                .or(opts.default_point_size);
+              let radius = match size {
+                Some(f) if f > 0.0 => {
+                  (f * render_width as f64 * 0.5).round() as u32
+                }
+                Some(p) => (-p * 0.5 * RESOLUTION_SCALE as f64).round() as u32,
+                None => 15 * RESOLUTION_SCALE / 10,
+              };
+              pending_mesh_dots.push((dot.pos, radius, rgb, opacity));
+            }
           }
 
           // `PlotMarkers` glyphs sit on the data points of a joined plot,
@@ -5135,6 +5224,14 @@ fn generate_svg_with_options(
             draw_marker_glyphs(&mut chart, &in_view, marker, (c.0, c.1, c.2))?;
           }
         }
+
+        // The mesh points of every curve lie over all the curves, as in
+        // Wolfram's graphics (one point group after the lines).
+        chart
+          .draw_series(pending_mesh_dots.iter().map(|&(pos, radius, (r, g, b), a)| {
+            Circle::new(pos, radius, RGBColor(r, g, b).mix(a).filled())
+          }))
+          .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
         root
           .present()
@@ -12231,19 +12328,20 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.frame_style = parse_style_directives(replacement);
       hide_transparent_frame_edges(replacement, plot_opts);
     }
-    "MeshStyle" => plot_opts.mesh_style = parse_style_directives(replacement),
+    "MeshStyle" => {
+      plot_opts.mesh_styles =
+        crate::functions::plot_mesh::parse_mesh_styles(replacement);
+    }
     "Mesh" => {
-      let val = evaluate_expr_to_expr(replacement)
-        .unwrap_or_else(|_| replacement.clone());
-      match &val {
-        Expr::Identifier(v) if v == "All" => plot_opts.mesh = Mesh::All,
-        Expr::Identifier(v) if v == "Full" => plot_opts.mesh = Mesh::Full,
-        Expr::Identifier(v) if v == "None" || v == "False" => {
-          plot_opts.mesh = Mesh::None;
-        }
-        Expr::Integer(n) if *n > 0 => plot_opts.mesh = Mesh::Count(*n as usize),
-        _ => {}
-      }
+      plot_opts.mesh = crate::functions::plot_mesh::parse_mesh(replacement);
+    }
+    "MeshFunctions" => {
+      plot_opts.mesh_functions =
+        crate::functions::plot_mesh::parse_mesh_functions(replacement);
+    }
+    "MeshShading" => {
+      plot_opts.mesh_shading =
+        crate::functions::plot_mesh::parse_mesh_shading(replacement);
     }
     "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
@@ -12597,6 +12695,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     std::collections::HashSet::new();
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
   plot_opts.simple_ticks = simple_ticks;
+  // A function plot samples just inside its domain: a mesh value taken at
+  // an endpoint is not marked.
+  plot_opts.mesh_open_ends = true;
   for opt in &options {
     if let Expr::Rule {
       pattern,
@@ -12887,6 +12988,26 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let auto_exclusions = automatic_exclusions_enabled(&args[2..]);
 
   for func_body in &bodies {
+    // `Mesh -> Full` marks the initial sampling grid, before refinement —
+    // all but its first point, as in WL 15.
+    if matches!(plot_opts.mesh, Mesh::Full) {
+      let step = (x_max - x_min) / (initial_samples - 1) as f64;
+      plot_opts.mesh_full_points.push(
+        (1..initial_samples)
+          .map(|i| {
+            let x = if i + 1 == initial_samples {
+              x_max
+            } else {
+              x_min + i as f64 * step
+            };
+            (
+              x,
+              evaluate_at_point(func_body, &var_name, x).unwrap_or(f64::NAN),
+            )
+          })
+          .collect(),
+      );
+    }
     let points = adaptive_sample(
       func_body,
       &var_name,
@@ -13126,6 +13247,9 @@ fn log_scale_plot_ast(
   let mut legends_expressions = false;
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
   plot_opts.simple_ticks = simple_ticks;
+  // A function plot samples just inside its domain: a mesh value taken at
+  // an endpoint is not marked.
+  plot_opts.mesh_open_ends = true;
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)

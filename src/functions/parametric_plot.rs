@@ -32,7 +32,11 @@ fn evaluation_monitor(opts: &[Expr]) -> Option<Expr> {
 /// Matching Wolfram Language, the first occurrence of a repeated option
 /// wins (e.g. `PlotPoints -> 200, …, PlotPoints -> 10` uses 200).
 fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
-  let mut plot_opts = PlotOptions::default();
+  // The default `MeshFunctions` of a parametric curve is its parameter.
+  let mut plot_opts = PlotOptions {
+    mesh_by_parameter: true,
+    ..PlotOptions::default()
+  };
   let mut overrides = PlotRangeOverrides::default();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();

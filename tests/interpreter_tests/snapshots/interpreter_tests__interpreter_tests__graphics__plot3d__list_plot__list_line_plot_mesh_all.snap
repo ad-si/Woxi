@@ -5,11 +5,11 @@ expression: "export_svg(\"ListLinePlot[{1, 2, 3, 2, 1}, Mesh -> All]\")"
 <svg width="360" height="227" viewBox="0 0 3600 2270" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2270" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="837,1448 1506,781 2176,113 2845,781 3514,1448 "/>
-<circle cx="837" cy="1448" r="15" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="1506" cy="781" r="15" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="2176" cy="113" r="15" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="2845" cy="781" r="15" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="3514" cy="1448" r="15" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="837" cy="1448" r="35" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1506" cy="781" r="35" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2176" cy="113" r="35" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2845" cy="781" r="35" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3514" cy="1448" r="35" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="99.0" y1="2115.9" x2="3585.0" y2="2115.9" stroke="#666" stroke-width="5"/>
 <line x1="302.6" y1="2115.9" x2="302.6" y2="2091.9" stroke="#666" stroke-width="5"/>
 <line x1="436.4" y1="2115.9" x2="436.4" y2="2091.9" stroke="#666" stroke-width="5"/>
