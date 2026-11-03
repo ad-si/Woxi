@@ -2083,6 +2083,11 @@ function main() {
     // sum of terms (I*Sqrt[3]+ArcSin[2]/2) that doesn't match WL's single
     // fraction; the design deliberately leaves out-of-domain cases unevaluated.
     "Integrate[Sqrt[1 - x^2], {x, 0, 2}]",
+    // WL answers with four terms in Cos[1/2], Sin[1/2] and powers of
+    // (Cos[1/2] + I Sin[1/2])/(Cos[1/2] - I Sin[1/2]) — an artifact of its
+    // exponential rewrite, not a closed form (see the DiscreteAsymptotic
+    // entry in conformance_gaps.md); Woxi leaves it unevaluated.
+    "DiscreteAsymptotic[Sin[n], n -> Infinity]",
     // Sum[1/(2 n - 1), ...]: a divergent harmonic sum both engines echo
     // unevaluated; only the held body's Plus ordering differs (Woxi 2*n - 1 vs
     // WL -1 + 2*n). Woxi's standalone canonical order matches WL, but held
