@@ -5022,27 +5022,46 @@ as the fraction `1/x`.
 
 With the same scene both engines place every primitive identically, but:
 
-- **Lighting.** Woxi applies a single diffuse term; Wolfram adds specular
-  highlights and coloured light sources, so faces of one polygon come out at
-  noticeably different brightness (its default face colour reads cream where
-  Woxi's reads blue-grey). Woxi also clamps intensity to 1, so a face can never
-  be brighter than its base colour, while Wolfram's ambient plus three
-  directional lights routinely saturate a channel.
+- **Lighting** follows WL's model (`src/functions/lighting3d.rs`, decoded by
+  rasterising single polygons at known normals with wolframscript and
+  validated on random unseen orientations, to within 1/255): colour = glow +
+  Σ ambient·c + Σ light·(c·max(0, n·l) + s·(n·h)^e), clipped per channel, with
+  faces lit two-sided and `"Directional"` lights at `ImageScaled[p]` pointing
+  along `p` in the camera frame. `Lighting -> Automatic` is WL's ambient plus
+  four coloured lights, plots use the default theme's per-surface material
+  (`System`PlotThemeDump`$ThemeDefaultLighting`: palette colour, its own
+  darkened lights, `Specularity[White, 3 | 6]`), a `ColorFunction` surface is
+  lit by `"Neutral"` lights, and explicit specs (`"Ambient"`, `"Directional"`,
+  `"Point"`, `"Spot"`, the named sets, `None`, and `Lighting` inside a
+  `Directive`) replace them. Remaining differences:
+  - Woxi shades each facet flat with its face normal; WL interpolates vertex
+    normals per pixel, so curved surfaces read smooth there and faceted here,
+    and a highlight smaller than a facet is lost or smeared.
+  - WL's camera is perspective, so its specular half vector varies across a
+    face (local viewer); Woxi's is the same everywhere. A highlight on a large
+    flat face can sit a little off (up to a few levels of 255).
+  - `"Spot"` lights are implemented from the documentation's form (cone half
+    angle, `cos^s` falloff, default target the scene centre) but were not
+    measured against wolframscript; `"Point"` lights are, without
+    attenuation.
+  - `MeshShading` colours are lit like a `PlotStyle` colour; not measured.
+  - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
+    lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
+    WL 15 gradient bar style is not implemented.
 - **Projection.** `ViewAngle` drives a perspective camera in Wolfram; Woxi's
   projection stays effectively orthographic, so a lattice looks uniform instead
   of splaying toward the viewer. A wide angle (≳30°) leaves the silhouette a
   few percent narrow.
 
-Compare geometry — vertex positions, which primitives appear, occlusion order —
-not pixels.
+### `Specularity`
 
-### `Specularity` is accepted and ignored
-
-Measured against wolframscript on a sphere under an explicit `Lighting` spec
-matching Woxi's model, `Specularity[0.7]`, `Specularity[1]` and no
-`Specularity` at all give **pixel-identical** output. The highlight only appears
-under WL's *default* light set. So a specular term added to Woxi's single-light
-model would be invented behaviour; it needs the default lighting first.
+`Specularity[s, e]` adds the Blinn highlight `light · s · (n·h)^e` per
+directional, point or spot light that reaches the face (never for ambient
+light). `Specularity[s]` without an exponent falls off as `(n·h)^1.5` in
+wolframscript (fitted over four angles; every explicit exponent is used as
+given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
+colours — wolframscript draws no highlight even though the plot's style names
+`Specularity[White, 3]`, so Woxi leaves it out there too.
 
 ### `SphericalRegion -> True` shrinks about 17 % more than Wolfram
 
@@ -7804,11 +7823,8 @@ Found comparing the graphics-tests renders (2026-11):
   small depth bias, so where a fold lies within that bias of the surface
   behind it a few segments still show through; WL clips them exactly.
 - `SphericalPlot3D` (drawn through the `Graphics3D` renderer, in the WL 15
-  `DefaultPlotStyle` colours) draws no default mesh (`Mesh -> Automatic`
-  rules lines of constant θ and φ in wolframscript), and its orange
-  surface looks duller: WL lights it with the style's own warm ambient
-  and three directional lights plus `Specularity[White, 3]` (see
-  "Graphics3D lighting and projection").
+  default theme materials) draws no default mesh (`Mesh -> Automatic`
+  rules lines of constant θ and φ in wolframscript).
 - Density and contour plots follow WL 15's frame layout (2% padding,
   ticks on all four edges, label-sized `ImagePadding`), but where a
   contour runs exactly through grid nodes at the domain's edge

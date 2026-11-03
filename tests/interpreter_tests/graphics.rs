@@ -4937,14 +4937,18 @@ mod plot3d {
         styled,
         "PlotStyle must change the rendered SVG"
       );
-      // Diffuse+ambient lighting attenuates the requested colour but keeps
-      // its channel ordering (green brightest, blue darkest), so check the
-      // ratio rather than an exact unlit RGBColor[0.6, 0.73, 0.36] byte match.
+      // The default lights are coloured, so a facet turned to the red one
+      // reads redder than the requested colour (wolframscript's render
+      // shows the same brown flanks); on average the surface still reads
+      // green over blue, unlike the default orange.
       let colors = fill_colors(&styled);
       assert!(!colors.is_empty(), "expected shaded fills: {styled}");
+      let sum = |k: usize| -> u64 {
+        colors.iter().map(|&(r, g, b)| [r, g, b][k] as u64).sum()
+      };
       assert!(
-        colors.iter().all(|&(r, g, b)| g >= r && r >= b && g > 0),
-        "expected every fill tinted toward the requested green, got {colors:?}"
+        sum(1) > sum(2) && sum(0) > sum(2),
+        "expected the fills tinted toward the requested green, got {colors:?}"
       );
     }
 
@@ -6577,9 +6581,11 @@ mod plot3d {
         "matte GrayLevel[.25] sphere should stay dark, got {}",
         brightest(&plain)
       );
+      // Under the default lights the peak is wolframscript's (225, 213,
+      // 147): the highlight is the coloured lights' own sum.
       assert!(
-        brightest(&shiny) > 250,
-        "Specularity[White, …] should add a near-white highlight, got {}",
+        brightest(&shiny) > 200,
+        "Specularity[White, …] should add a bright highlight, got {}",
         brightest(&shiny)
       );
     }
@@ -7710,15 +7716,17 @@ mod plot3d {
          Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}], \
          Polygon[{{0,1,1},{1,1,1},{1,0,1},{0,0,1}}]}, Boxed -> False]",
       );
-      assert!(svg.contains("fill=\"rgb(0,0,216)\""), "{svg}");
-      assert!(svg.contains("fill=\"rgb(216,216,0)\""), "{svg}");
+      // Both read exactly as in wolframscript's rasterization under the
+      // default lights.
+      assert!(svg.contains("fill=\"rgb(0,0,169)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,220,0)\""), "{svg}");
       // A one-argument FaceForm colours both sides the same.
       let one = export_svg(
         "Graphics3D[{FaceForm[Blue], \
          Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}], \
          Polygon[{{0,1,1},{1,1,1},{1,0,1},{0,0,1}}]}, Boxed -> False]",
       );
-      assert!(!one.contains("fill=\"rgb(216,216,0)\""), "{one}");
+      assert!(!one.contains("fill=\"rgb(255,220,0)\""), "{one}");
     }
 
     // A scene with many spheres scales each sphere's tessellation with
@@ -20612,8 +20620,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          ViewPoint -> {0, 0, 10}, Boxed -> False], \"SVG\"]",
       )
       .unwrap();
-      let red = svg.find("rgb(221,0,0)").expect("red face drawn");
-      let blue = svg.find("rgb(0,0,216)").expect("blue face drawn");
+      let red = svg.find("rgb(102,0,0)").expect("red face drawn");
+      let blue = svg.find("rgb(0,0,220)").expect("blue face drawn");
       assert!(red < blue, "the front face must be painted last: {svg}");
     }
 
@@ -20625,8 +20633,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          ViewPoint -> {0, 0, 10}, Boxed -> False], \"SVG\"]",
       )
       .unwrap();
-      let red = svg.find("rgb(221,0,0)").expect("red face drawn");
-      let blue = svg.find("rgb(0,0,216)").expect("blue face drawn");
+      let red = svg.find("rgb(102,0,0)").expect("red face drawn");
+      let blue = svg.find("rgb(0,0,220)").expect("blue face drawn");
       assert!(blue < red, "the rear face must be painted first: {svg}");
     }
 
@@ -23519,15 +23527,20 @@ mod list_plot_3d {
       .unwrap(),
       "{{3., 3., 1.}, {4., 3., 5.}}"
     );
-    // No height gradient: the facets are WL 15's orange (the black is the
-    // mesh).
-    assert_eq!(
+    // No height gradient: the surface is styled with WL 15's first theme
+    // material, the orange lit by a darkened copy of itself.
+    assert!(
       interpret(
-        "Round[List @@@ Union[Cases[ListPlot3D[{{1, 2, 3}, {2, 3, 4}}], \
-         _RGBColor, Infinity]], 0.01]"
+        "ToString[InputForm[ListPlot3D[{{1, 2}, {2, 3}}, Mesh -> None][[1]]]]"
       )
-      .unwrap(),
-      "{{0., 0., 0.}, {0.88, 0.61, 0.14}}"
+      .unwrap()
+      .contains(
+        "Directive[Specularity[GrayLevel[1], 3], \
+         RGBColor[0.880722, 0.611041, 0.142051], Lighting -> \
+         {{\"Ambient\", RGBColor[0.30100577, 0.224146685, 0.090484535]}, \
+         {\"Directional\", RGBColor[0.2642166, 0.1833123, \
+         0.04261530000000001], ImageScaled[{0, 2, 2}]}"
+      )
     );
   }
 
@@ -43817,7 +43830,7 @@ mod surface_vertex_colors {
          VertexColors -> {colors}]], \"SVG\"]"
       );
       let svg = interpret(&code).unwrap();
-      assert!(svg.contains("fill=\"rgb(115,115,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(81,46,0)\""), "{svg}");
     }
   }
 
@@ -47681,5 +47694,137 @@ mod list_plot_data_forms {
         "no {color} axis"
       );
     }
+  }
+}
+
+/// WL's default lights (`Lighting -> Automatic`) and the plots' default
+/// theme materials. Every colour here is the one wolframscript's own
+/// rasterization reads for the same face.
+mod default_lighting {
+  use super::*;
+
+  /// How often `fill="rgb(r,g,b)"` occurs in a rendered graphic.
+  fn fills(code: &str, rgb: &str) -> usize {
+    export_svg(code)
+      .matches(&format!("fill=\"rgb({rgb})\""))
+      .count()
+  }
+
+  const SQUARE: &str = "Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]";
+
+  #[test]
+  fn graphics3d_face_is_white_under_the_coloured_default_lights() {
+    // The ambient term and four coloured directional lights tint a white
+    // face looked at from the default view point: cream, not blue.
+    assert_eq!(
+      fills(
+        &format!("Graphics3D[{SQUARE}, Boxed -> False]"),
+        "255,220,169"
+      ),
+      2
+    );
+  }
+
+  #[test]
+  fn plot3d_uses_the_theme_material_of_each_surface() {
+    // Orange lit by a darkened copy of itself, plus a white highlight;
+    // the second surface takes the theme's blue material.
+    let code = "Plot3D[{0, 1}, {x, 0, 1}, {y, 0, 1}, Mesh -> None]";
+    assert!(fills(code, "255,157,20") > 0);
+    assert!(fills(code, "101,162,255") > 0);
+  }
+
+  #[test]
+  fn plot3d_structure_carries_the_theme_directive() {
+    clear_state();
+    let form = interpret(
+      "ToString[InputForm[Plot3D[0, {x, 0, 1}, {y, 0, 1}, Mesh -> None, \
+       PlotPoints -> 2][[1]]]]",
+    )
+    .unwrap();
+    assert!(
+      form.contains(
+        "Directive[Specularity[GrayLevel[1], 3], \
+         RGBColor[0.880722, 0.611041, 0.142051], Lighting -> \
+         {{\"Ambient\", RGBColor[0.30100577, 0.224146685, 0.090484535]}"
+      ),
+      "{form}"
+    );
+  }
+
+  #[test]
+  fn color_function_colours_are_lit_by_neutral_lights() {
+    assert!(
+      fills(
+        "Plot3D[0, {x, 0, 1}, {y, 0, 1}, Mesh -> None, ColorFunction -> \
+         Function[{x, y, z}, RGBColor[0.8, 0.3, 0.2]]]",
+        "238,90,60"
+      ) > 0
+    );
+  }
+
+  #[test]
+  fn named_color_function_colours_a_surface_by_height() {
+    let svg = export_svg(
+      "Plot3D[x, {x, 0, 1}, {y, 0, 1}, Mesh -> None, ColorFunction -> \
+       \"Rainbow\"]",
+    );
+    let plain = export_svg("Plot3D[x, {x, 0, 1}, {y, 0, 1}, Mesh -> None]");
+    assert_ne!(svg, plain);
+  }
+
+  #[test]
+  fn lighting_option_replaces_the_lights() {
+    // A single ambient light shows the face's own colour times the light.
+    assert_eq!(
+      fills(
+        &format!(
+          "Graphics3D[{SQUARE}, Boxed -> False, \
+           Lighting -> {{{{\"Ambient\", RGBColor[0.2, 0.4, 0.6]}}}}]"
+        ),
+        "51,102,153"
+      ),
+      2
+    );
+    // No lights at all: only the glow shows.
+    assert_eq!(
+      fills(
+        &format!(
+          "Graphics3D[{{Red, Glow[Blue], {SQUARE}}}, Boxed -> False, \
+           Lighting -> None]"
+        ),
+        "0,0,255"
+      ),
+      2
+    );
+  }
+
+  #[test]
+  fn lighting_inside_a_directive_overrides_the_scene() {
+    // A view-fixed light straight from the viewer shows the full colour.
+    assert_eq!(
+      fills(
+        &format!(
+          "Graphics3D[{{Directive[Orange, Lighting -> {{{{\"Directional\", \
+           White, ImageScaled[{{0, 0, 2}}]}}}}], {SQUARE}}}, Boxed -> False, \
+           ViewPoint -> {{0, 0, 10}}]"
+        ),
+        "255,128,0"
+      ),
+      2
+    );
+  }
+
+  #[test]
+  fn plot_style_colour_is_matte_under_the_default_lights() {
+    // `PlotStyle -> colour` drops the theme's highlight and own lights:
+    // wolframscript's flat LightBlue sheet reads (231, 207, 169).
+    assert!(
+      fills(
+        "Plot3D[0, {x, 0, 1}, {y, 0, 1}, Mesh -> None, \
+         PlotStyle -> LightBlue]",
+        "231,207,169"
+      ) > 0
+    );
   }
 }

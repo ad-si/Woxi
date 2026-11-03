@@ -261,7 +261,9 @@ mod chart_labels_and_legends {
        PlotLegends -> Automatic]",
     );
     assert_texts(&s, &["ka", "kb"]);
-    assert_eq!(fills(&s, "255,0,0"), 1);
+    // The legend swatch, plus the top of the red sector: `"Neutral"` lights
+    // saturate a face turned up to them, as in wolframscript.
+    assert!(fills(&s, "255,0,0") >= 2);
   }
 
   #[test]

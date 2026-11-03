@@ -58,7 +58,39 @@ impl Camera {
     let right = [right[0] / len, right[1] / len, right[2] / len];
     Some((right, cross(d, right)))
   }
+
+  /// The camera frame lights fixed to the view (`ImageScaled`) are placed
+  /// in: the screen basis `project` draws with and the direction towards
+  /// the viewer. The scene placement defaults to a box of side 2 about
+  /// the origin, which is what the plots normalize their data into.
+  pub(crate) fn view_frame(&self) -> ViewFrame {
+    let (sa, ca) = self.azimuth.sin_cos();
+    let (se, ce) = self.elevation.sin_cos();
+    let toward = [ce * ca, ce * sa, se];
+    let (right, up) = if self.vertical != Camera::DEFAULT_VERTICAL
+      && let Some(basis) = self.tilted_basis()
+    {
+      basis
+    } else if (self.elevation.abs() - std::f64::consts::FRAC_PI_2).abs() < 1e-9
+    {
+      let s = if self.elevation > 0.0 { 1.0 } else { -1.0 };
+      ([1.0, 0.0, 0.0], [0.0, s, 0.0])
+    } else {
+      ([-sa, ca, 0.0], [-ca * se, -sa * se, ce])
+    };
+    ViewFrame {
+      right,
+      up,
+      toward,
+      center: [0.0; 3],
+      size: 2.0,
+      scale: [1.0; 3],
+      offset: [0.0; 3],
+    }
+  }
 }
+
+pub(crate) use crate::functions::lighting3d::{Lighting, Material, ViewFrame};
 
 impl Default for Camera {
   fn default() -> Self {
@@ -592,6 +624,15 @@ pub(crate) fn depth(p: Point3D, cam: &Camera) -> f64 {
   -(p.x * ce * ca + p.y * ce * sa + p.z * se)
 }
 
+/// The centroid of a triangle.
+pub(crate) fn tri_center(a: Point3D, b: Point3D, c: Point3D) -> Point3D {
+  Point3D {
+    x: (a.x + b.x + c.x) / 3.0,
+    y: (a.y + b.y + c.y) / 3.0,
+    z: (a.z + b.z + c.z) / 3.0,
+  }
+}
+
 /// Cross product for triangle normal (used for lighting)
 pub(crate) fn triangle_normal(
   v0: Point3D,
@@ -615,46 +656,6 @@ pub(crate) fn triangle_normal(
   }
 }
 
-/// Per-surface color based on height, tinted by the surface's palette color.
-/// When there are multiple surfaces, each gets a distinct base hue from
-/// PLOT_COLORS; the height variation is applied as a lightness shift on top.
-fn surface_height_color(
-  z_norm: f64,
-  surface_idx: usize,
-  num_surfaces: usize,
-) -> (u8, u8, u8) {
-  if num_surfaces <= 1 {
-    return height_color(z_norm);
-  }
-  let base = PLOT_COLORS[surface_idx % PLOT_COLORS.len()];
-  // Apply height-based brightness variation: darker at bottom, brighter at top
-  let t = z_norm.clamp(0.0, 1.0);
-  // Range from 0.6 (dark) to 1.1 (bright, clamped)
-  let factor = 0.6 + t * 0.5;
-  let r = (base.0 as f64 * factor).round().min(255.0) as u8;
-  let g = (base.1 as f64 * factor).round().min(255.0) as u8;
-  let b = (base.2 as f64 * factor).round().min(255.0) as u8;
-  (r, g, b)
-}
-
-/// Height-based color: blue at bottom to green in middle to orange at top
-fn height_color(z_norm: f64) -> (u8, u8, u8) {
-  let t = z_norm.clamp(0.0, 1.0);
-  if t < 0.5 {
-    let s = t * 2.0;
-    let r = (0.37 * (1.0 - s) + 0.39 * s) * 255.0;
-    let g = (0.51 * (1.0 - s) + 0.69 * s) * 255.0;
-    let b = (0.71 * (1.0 - s) + 0.29 * s) * 255.0;
-    (r as u8, g as u8, b as u8)
-  } else {
-    let s = (t - 0.5) * 2.0;
-    let r = (0.39 * (1.0 - s) + 0.88 * s) * 255.0;
-    let g = (0.69 * (1.0 - s) + 0.58 * s) * 255.0;
-    let b = (0.29 * (1.0 - s) + 0.17 * s) * 255.0;
-    (r as u8, g as u8, b as u8)
-  }
-}
-
 /// Evaluates a `MeshFunctions`/`RegionFunction`-style function at a
 /// facet's `(x, y, z)`, called positionally exactly like
 /// `Plot3D`/`ContourPlot3D`'s region function (see
@@ -668,77 +669,59 @@ fn eval_mesh_function(f: &Expr, x: f64, y: f64, z: f64) -> Option<f64> {
   try_eval_to_f64(&evaluate_expr_to_expr(&call).ok()?)
 }
 
-/// The scene's single light, pointing from the surface towards the lamp
-/// (upper-left-front), normalized.
-fn light_direction() -> [f64; 3] {
-  let lx = 0.4_f64;
-  let ly = -0.5_f64;
-  let lz = 0.76_f64;
-  let len = (lx * lx + ly * ly + lz * lz).sqrt();
-  [lx / len, ly / len, lz / len]
+fn rgb_f64(c: (u8, u8, u8)) -> [f64; 3] {
+  [c.0 as f64 / 255.0, c.1 as f64 / 255.0, c.2 as f64 / 255.0]
 }
 
-/// Apply diffuse + ambient lighting
+/// The surface a facet is drawn with: its colour plus whatever
+/// `Specularity` and `Glow` the style carries.
+pub(crate) fn facet_material(
+  color: (u8, u8, u8),
+  specular: Option<((u8, u8, u8), f64)>,
+  glow: Option<(u8, u8, u8)>,
+) -> Material {
+  Material {
+    color: rgb_f64(color),
+    specular: specular.map(|(c, e)| (rgb_f64(c), e)),
+    glow: glow.map(rgb_f64),
+  }
+}
+
+/// Shade one facet with the lighting model shared by every 3D renderer
+/// (see `lighting3d`).
+pub(crate) fn light_facet(
+  material: &Material,
+  normal: [f64; 3],
+  position: Point3D,
+  lighting: &Lighting,
+  frame: &ViewFrame,
+) -> (u8, u8, u8) {
+  crate::functions::lighting3d::shade(
+    material,
+    normal,
+    [position.x, position.y, position.z],
+    lighting,
+    frame,
+  )
+}
+
+/// A plain facet under `Lighting -> "Neutral"` seen from the default
+/// camera — how the 3D charts light their bars and sectors.
 pub(crate) fn apply_lighting(
   color: (u8, u8, u8),
   normal: [f64; 3],
 ) -> (u8, u8, u8) {
-  let light = light_direction();
-
-  let dot = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
-  let diffuse = dot.abs(); // use abs to light both sides
-
-  let ambient = 0.35;
-  let intensity = (ambient + (1.0 - ambient) * diffuse).clamp(0.0, 1.0);
-
-  let r = (color.0 as f64 * intensity).round() as u8;
-  let g = (color.1 as f64 * intensity).round() as u8;
-  let b = (color.2 as f64 * intensity).round() as u8;
-  (r, g, b)
-}
-
-/// Diffuse + ambient lighting with the highlight a `Specularity` directive
-/// asks for laid over it. `view_dir` points from the scene towards the
-/// viewer, so the highlight sits where the light reflects into the camera —
-/// which is what makes `Specularity[White, 10]` read as a glossy sphere
-/// rather than just a brighter one.
-pub(crate) fn apply_lighting_specular(
-  color: (u8, u8, u8),
-  normal: [f64; 3],
-  specular: Option<((u8, u8, u8), f64)>,
-  view_dir: [f64; 3],
-) -> (u8, u8, u8) {
-  let base = apply_lighting(color, normal);
-  let Some((hi, exponent)) = specular else {
-    return base;
-  };
-  let light = light_direction();
-  // Blinn-Phong: the highlight peaks where the surface normal bisects the
-  // directions to the lamp and to the viewer.
-  let half = {
-    let h = [
-      light[0] + view_dir[0],
-      light[1] + view_dir[1],
-      light[2] + view_dir[2],
-    ];
-    let len = (h[0] * h[0] + h[1] * h[1] + h[2] * h[2]).sqrt();
-    if len < 1e-12 {
-      return base;
-    }
-    [h[0] / len, h[1] / len, h[2] / len]
-  };
-  // `abs`, matching the two-sided diffuse term above: a tessellated sphere
-  // hands back outward and inward normals depending on winding.
-  let cos = (normal[0] * half[0] + normal[1] * half[1] + normal[2] * half[2])
-    .abs()
-    .clamp(0.0, 1.0);
-  let strength = cos.powf(exponent);
-  let mix = |b: u8, h: u8| {
-    (b as f64 + (h as f64 / 255.0) * strength * 255.0)
-      .round()
-      .min(255.0) as u8
-  };
-  (mix(base.0, hi.0), mix(base.1, hi.1), mix(base.2, hi.2))
+  light_facet(
+    &facet_material(color, None, None),
+    normal,
+    Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    },
+    &Lighting::neutral(),
+    &Camera::default().view_frame(),
+  )
 }
 
 fn parse_iterator(
@@ -1026,19 +1009,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
-  // given, so the height-based rainbow default is used unchanged.
+  // given, so the default theme material is used.
   let plot_styles: Vec<StyleState3D> = plot_style_expr
     .map(|e| parse_plot_style_3d(e, bodies.len()))
     .unwrap_or_default();
 
   let camera = Camera::default();
-  // Direction from the scene towards the viewer, used to place a
-  // `Specularity` highlight from `PlotStyle`.
-  let view_dir = {
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
+  let mut scene = Scene::new(&camera, &args[3..]);
   let x_step = (x_max - x_min) / GRID_N as f64;
   let y_step = (y_max - y_min) / GRID_N as f64;
 
@@ -1081,14 +1058,24 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     z_hi - z_lo
   };
 
+  // Lights placed at scene coordinates (`{"Point", c, {x, y, z}}`) follow
+  // the data into the normalized box the surface is drawn in.
+  {
+    let sx = 2.0 / (x_max - x_min);
+    let sy = 2.0 / (y_max - y_min);
+    let sz = 2.0 * Z_SCALE / z_range;
+    scene.frame.scale = [sx, sy, sz];
+    scene.frame.offset =
+      [-1.0 - x_min * sx, -1.0 - y_min * sy, -Z_SCALE - z_lo * sz];
+  }
+
   // Phase 2: Build triangles using the shared z range
   let mut all_triangles: Vec<Triangle> = Vec::new();
-  let num_surfaces = grids.len();
 
   // The style `ColorFunction` gives the facet over grid cell `(i, j)`,
   // evaluated at the cell's centre.
   let cell_color_style = |grid: &[Vec<f64>], i: usize, j: usize| {
-    color_fn.function.as_ref()?;
+    color_fn.is_set().then_some(())?;
     let corners = [
       grid[i][j],
       grid[i + 1][j],
@@ -1113,8 +1100,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
   // together with a `Graphics3D`. Emitting the sampled surface in world
-  // coordinates — coloured by height, the way the standalone render
-  // colours it — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
+  // coordinates — styled with the directives the standalone render
+  // shades it by — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
   let structure = {
     let complexes: Vec<Expr> = grids
       .iter()
@@ -1147,6 +1134,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content.push(call0("EdgeForm"));
         }
         content.extend(surface_opacity_directive(&plot_styles, surface_idx));
+        content.extend(surface_style_directives(
+          surface_idx,
+          plot_style_for_surface(&plot_styles, surface_idx),
+          color_fn.is_set(),
+          &scene,
+        ));
         for i in 0..GRID_N {
           for j in 0..GRID_N {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -1157,42 +1150,25 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ) else {
               continue;
             };
-            let avg_z_norm = [
-              grid[i][j],
-              grid[i + 1][j],
-              grid[i + 1][j + 1],
-              grid[i][j + 1],
-            ]
-            .iter()
-            .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
-            .sum::<f64>()
-              / 4.0;
-            let height_color =
-              surface_height_color(avg_z_norm, surface_idx, num_surfaces);
             let facet_style = cell_color_style(grid, i, j);
-            let (cr, cg, cb) = match facet_style
-              .as_ref()
-              .or(plot_style_for_surface(&plot_styles, surface_idx))
-            {
-              Some(style) => style.color.unwrap_or(height_color),
-              None => height_color,
-            };
             // Colour and polygon travel in a sublist so the directive does
             // not leak onto the quads drawn after it.
             let mut quad: Vec<Expr> = Vec::new();
-            if let Some(style) = &facet_style
-              && style.opacity < 1.0
-            {
-              quad.push(call1("Opacity", Expr::Real(style.opacity)));
+            if let Some(style) = &facet_style {
+              if style.opacity < 1.0 {
+                quad.push(call1("Opacity", Expr::Real(style.opacity)));
+              }
+              if let Some((cr, cg, cb)) = style.color {
+                quad.push(call(
+                  "RGBColor",
+                  vec![
+                    Expr::Real(cr as f64 / 255.0),
+                    Expr::Real(cg as f64 / 255.0),
+                    Expr::Real(cb as f64 / 255.0),
+                  ],
+                ));
+              }
             }
-            quad.push(call(
-              "RGBColor",
-              vec![
-                Expr::Real(cr as f64 / 255.0),
-                Expr::Real(cg as f64 / 255.0),
-                Expr::Real(cb as f64 / 255.0),
-              ],
-            ));
             quad.push(call1(
               "Polygon",
               Expr::List(
@@ -1351,18 +1327,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: nz(cz01),
           };
 
-          let avg_z_norm = ((cz00 - z_lo) / z_range
-            + (cz10 - z_lo) / z_range
-            + (cz01 - z_lo) / z_range)
-            / 3.0;
-          let default_color =
-            surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let style = cell_style
-            .as_ref()
-            .or(plot_style_for_surface(&plot_styles, surface_idx));
-          let (color, opacity) =
-            shade_facet(default_color, style, normal, view_dir);
+          let (color, opacity) = shade_facet(
+            SurfaceDefault::Theme(surface_idx),
+            cell_style.as_ref(),
+            plot_style_for_surface(&plot_styles, surface_idx),
+            normal,
+            tri_center(v0, v1, v2),
+            &scene,
+          );
 
           let p0 = project(v0, &camera);
           let p1 = project(v1, &camera);
@@ -1407,18 +1380,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             z: nz(cz10),
           };
 
-          let avg_z_norm = ((cz11 - z_lo) / z_range
-            + (cz01 - z_lo) / z_range
-            + (cz10 - z_lo) / z_range)
-            / 3.0;
-          let default_color =
-            surface_height_color(avg_z_norm, surface_idx, num_surfaces);
           let normal = triangle_normal(v0, v1, v2);
-          let style = cell_style
-            .as_ref()
-            .or(plot_style_for_surface(&plot_styles, surface_idx));
-          let (color, opacity) =
-            shade_facet(default_color, style, normal, view_dir);
+          let (color, opacity) = shade_facet(
+            SurfaceDefault::Theme(surface_idx),
+            cell_style.as_ref(),
+            plot_style_for_surface(&plot_styles, surface_idx),
+            normal,
+            tri_center(v0, v1, v2),
+            &scene,
+          );
 
           let p0 = project(v0, &camera);
           let p1 = project(v1, &camera);
@@ -3599,6 +3569,9 @@ struct StyleState3D {
   /// the lit colour (`Glow[White]` renders a face plain white whatever its
   /// angle to the lamp). `None` is a non-emissive surface.
   glow: Option<(u8, u8, u8)>,
+  /// `Lighting -> spec` inside a `Directive`: the lights this surface is
+  /// shaded under instead of the scene's. `None` inherits them.
+  lighting: Option<Lighting>,
   /// `Dashing[{d1, d2, ...}]`/`Dashed`/`Dotted`/`DotDashed` for `Line3D`
   /// primitives, in the same units `dash_size_to_f64` uses for 2D: negative
   /// is literal pixels (a named size), positive is a fraction of the image
@@ -3623,7 +3596,7 @@ struct StyleState3D {
 impl Default for StyleState3D {
   fn default() -> Self {
     Self {
-      color: None, // None means use default blue
+      color: None, // None means the renderer's default
       back_color: None,
       opacity: 1.0,
       thickness: None,
@@ -3633,6 +3606,7 @@ impl Default for StyleState3D {
       edge_width: None,
       specular: None,
       glow: None,
+      lighting: None,
       dashing: None,
       point_size: None,
       texture: None,
@@ -3743,6 +3717,19 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     if color.a < 1.0 {
       style.opacity = color.a;
     }
+    return true;
+  }
+
+  // `Directive[…, Lighting -> spec]`: the lights the surfaces that follow
+  // are shaded under (how a plot's default style carries its own lights).
+  // `Automatic` hands them back to the scene.
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = expr
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Lighting")
+  {
+    style.lighting = Lighting::parse(replacement);
     return true;
   }
 
@@ -4032,22 +4019,11 @@ fn parse_glow(arg: &Expr) -> Option<(u8, u8, u8)> {
   (rgb != (0, 0, 0)).then_some(rgb)
 }
 
-/// Add a `Glow` emission to an already lit colour.
-fn add_glow(color: (u8, u8, u8), glow: Option<(u8, u8, u8)>) -> (u8, u8, u8) {
-  match glow {
-    Some(g) => (
-      color.0.saturating_add(g.0),
-      color.1.saturating_add(g.1),
-      color.2.saturating_add(g.2),
-    ),
-    None => color,
-  }
-}
-
 /// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
 /// The reflectance may be a colour (`Specularity[White, 10]`) or a plain
 /// number standing for that grey level (`Specularity[.5]`); the exponent
-/// defaults to Wolfram's `1`. A reflectance of zero (black) means a matte
+/// defaults to 1.5 (measured: `Specularity[s]` falls off as `(n·h)^1.5`,
+/// while every explicit exponent is used as given). A reflectance of zero (black) means a matte
 /// surface, i.e. no highlight at all.
 fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
   use crate::functions::graphics::parse_color;
@@ -4071,28 +4047,40 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
     .get(1)
     .and_then(expr_to_f64)
     .filter(|n| *n > 0.0)
-    .unwrap_or(1.0);
+    .unwrap_or(1.5);
   Some((rgb, exponent))
 }
 
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
 /// the style (colour and, for `Directive[Opacity[o], colour]`, opacity) it
-/// gives the facet at a point. Named schemes are not handled here.
+/// gives the facet at a point. A named gradient (`ColorFunction ->
+/// "Rainbow"`) colours by the scaled height, as WL's surfaces do.
 #[derive(Default)]
 struct FacetColorFunction {
   function: Option<Expr>,
+  scheme: Option<String>,
   /// `ColorFunctionScaling -> False` hands the function raw coordinates
   /// instead of ones rescaled to 0..1 over the plotted range.
   unscaled: bool,
 }
 
 impl FacetColorFunction {
+  /// Whether a `ColorFunction` this reads was given.
+  fn is_set(&self) -> bool {
+    self.function.is_some() || self.scheme.is_some()
+  }
+
   fn read_option(&mut self, pattern: &Expr, replacement: &Expr) {
     match pattern {
       Expr::Identifier(name) if name == "ColorFunction" => {
         self.function = matches!(replacement,
           Expr::FunctionCall { name, .. } if name == "Function")
         .then(|| replacement.clone());
+        self.scheme = if self.function.is_some() {
+          None
+        } else {
+          crate::functions::field_plot::color_function_scheme_name(replacement)
+        };
       }
       Expr::Identifier(name) if name == "ColorFunctionScaling" => {
         self.unscaled =
@@ -4108,6 +4096,20 @@ impl FacetColorFunction {
     point: [f64; 3],
     ranges: [(f64, f64); 3],
   ) -> Option<StyleState3D> {
+    if let Some(name) = &self.scheme {
+      let (lo, hi) = ranges[2];
+      let t = if (hi - lo).abs() < 1e-15 {
+        0.5
+      } else {
+        (point[2] - lo) / (hi - lo)
+      };
+      return Some(StyleState3D {
+        color: Some(crate::functions::field_plot::apply_named_color_function(
+          name, t,
+        )),
+        ..StyleState3D::default()
+      });
+    }
     let function = self.function.as_ref()?;
     let args = (0..3)
       .map(|k| {
@@ -4191,7 +4193,7 @@ fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
 /// Parse a `PlotStyle` option value into one style per surface, cycling
 /// through fewer styles than surfaces. An empty result means `PlotStyle`
 /// was not given (or produced nothing applicable), so callers keep drawing
-/// the height-based rainbow default.
+/// the default theme material.
 fn parse_plot_style_3d(
   replacement: &Expr,
   num_surfaces: usize,
@@ -4206,43 +4208,210 @@ fn parse_plot_style_3d(
     .collect()
 }
 
-/// Shade one triangle facet, folding in a `PlotStyle` override:
-/// `default_color` is the plot's ordinary colour for this facet (height-
-/// based, as today) and is used unchanged — through the same diffuse +
-/// ambient lighting as before — when `style` is `None`, so a plot without
-/// `PlotStyle` renders byte-identically to before this existed. When a
-/// style is given, its own colour (falling back to `default_color` if the
-/// style set no colour of its own, e.g. `PlotStyle -> Opacity[.5]`) is
-/// shaded instead, with any `Specularity` the style carries layered on top,
-/// and the style's opacity is returned alongside the colour for the
-/// triangle to draw translucently. `PlotStyle -> FaceForm[front, back]`
-/// swaps in the style's `back_color` for a facet turned away from the
-/// viewer, the same test `Graphics3D`'s own polygon shading uses.
+/// The scene-wide inputs of facet shading: the camera frame the view-fixed
+/// lights hang in, and the `Lighting` option the graphic was given (`None`
+/// is `Automatic`, which leaves each surface its own default lights).
+pub(crate) struct Scene {
+  pub frame: ViewFrame,
+  pub lighting: Option<Lighting>,
+}
+
+impl Scene {
+  /// The scene of a plot drawn from `camera` with options `opts` (the
+  /// `Lighting` rule among them, if any).
+  pub(crate) fn new(camera: &Camera, opts: &[Expr]) -> Self {
+    Scene {
+      frame: camera.view_frame(),
+      lighting: lighting_option(opts),
+    }
+  }
+}
+
+/// The value of a `Lighting -> …` rule among `opts`; `None` for
+/// `Automatic`, an unreadable value or no rule at all.
+pub(crate) fn lighting_option(opts: &[Expr]) -> Option<Lighting> {
+  opts.iter().rev().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Lighting") => {
+      Some(Lighting::parse(
+        &evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ))
+    }
+    _ => None,
+  })?
+}
+
+/// What a facet is drawn with when no style says otherwise.
+#[derive(Clone, Copy)]
+pub(crate) enum SurfaceDefault {
+  /// The `index`-th surface of a plot: the default theme's colour,
+  /// `Specularity` and lights for it (`Lighting::plot_theme`).
+  Theme(usize),
+  /// A plain colour under the scene's lights, as `Graphics3D` primitives
+  /// without a colour directive are drawn (white).
+  Plain((u8, u8, u8)),
+}
+
+/// Shade one plot facet the way WL's default plot theme styles it:
+///
+/// - with a `ColorFunction` colour (`color_fn`), that colour under
+///   `"Neutral"` lights. WL's style still names `Specularity[White, 3]`,
+///   but the colours arrive as `VertexColors`, which render without the
+///   highlight (measured: a sloped facet reads `c · 0.9`, no white);
+/// - with a `PlotStyle` that sets a colour, that colour, matte unless the
+///   style asks for `Specularity`, under the scene's lights;
+/// - otherwise the surface's `default` material, keeping any `Opacity`,
+///   `Specularity` or `Glow` the style adds.
+///
+/// A `Lighting` option replaces the default lights in every case, and a
+/// `Lighting` inside the style replaces both. `PlotStyle -> FaceForm[front,
+/// back]` colours a facet turned away from the viewer with `back`. Returns
+/// the colour and the opacity to draw it with.
 fn shade_facet(
-  default_color: (u8, u8, u8),
+  default: SurfaceDefault,
+  color_fn: Option<&StyleState3D>,
   style: Option<&StyleState3D>,
   normal: [f64; 3],
-  view_dir: [f64; 3],
+  position: Point3D,
+  scene: &Scene,
 ) -> ((u8, u8, u8), f64) {
-  match style {
-    Some(s) => {
-      let facing = normal[0] * view_dir[0]
-        + normal[1] * view_dir[1]
-        + normal[2] * view_dir[2];
-      let base = match s.back_color {
-        Some(back) if facing < 0.0 => back,
-        _ => s.color.unwrap_or(default_color),
-      };
+  use crate::functions::lighting3d::{
+    neutral_lighting, standard_lighting, theme_surface,
+  };
+  let facing = normal[0] * scene.frame.toward[0]
+    + normal[1] * scene.frame.toward[1]
+    + normal[2] * scene.frame.toward[2];
+  let own_lighting = style.and_then(|s| s.lighting.as_ref());
+  let scene_lighting = scene.lighting.as_ref();
+  let specular = style.and_then(|s| s.specular);
+  let glow = style.and_then(|s| s.glow);
+  let opacity = match (color_fn, style) {
+    (Some(cf), _) if cf.opacity < 1.0 => cf.opacity,
+    (_, Some(s)) => s.opacity,
+    _ => 1.0,
+  };
+  let styled_color = style.and_then(|s| match s.back_color {
+    Some(back) if facing < 0.0 => Some(back),
+    _ => s.color,
+  });
+  let cf_color = color_fn.and_then(|cf| cf.color);
+  let (material, lighting) = match (default, cf_color, styled_color) {
+    (_, Some(color), _) => (
+      facet_material(color, specular, glow),
+      own_lighting
+        .or(scene_lighting)
+        .unwrap_or(neutral_lighting()),
+    ),
+    (_, None, Some(color)) => (
+      facet_material(color, specular, glow),
+      own_lighting
+        .or(scene_lighting)
+        .unwrap_or(standard_lighting()),
+    ),
+    (SurfaceDefault::Theme(index), None, None) => {
+      let (color, exponent, theme_lighting) = theme_surface(index);
+      let mut material = facet_material((0, 0, 0), specular, glow);
+      material.color = *color;
+      if material.specular.is_none() {
+        material.specular = Some(([1.0; 3], *exponent));
+      }
       (
-        add_glow(
-          apply_lighting_specular(base, normal, s.specular, view_dir),
-          s.glow,
-        ),
-        s.opacity,
+        material,
+        own_lighting.or(scene_lighting).unwrap_or(theme_lighting),
       )
     }
-    None => (apply_lighting(default_color, normal), 1.0),
+    (SurfaceDefault::Plain(color), None, None) => (
+      facet_material(color, specular, glow),
+      own_lighting
+        .or(scene_lighting)
+        .unwrap_or(standard_lighting()),
+    ),
+  };
+  (
+    light_facet(&material, normal, position, lighting, &scene.frame),
+    opacity,
+  )
+}
+
+/// The directives that give a plot surface's symbolic `Graphics3D` the
+/// look [`shade_facet`] renders it with, as WL writes them: the default
+/// theme's `Directive[Specularity[White, e], colour, Lighting -> …]`, the
+/// colour of a `PlotStyle`, or — under a `ColorFunction`, whose colours
+/// sit on the facets — the `"Neutral"` lights. A `Lighting` option
+/// is written into the directive in place of the theme's own lights.
+fn surface_style_directives(
+  surface_idx: usize,
+  style: Option<&StyleState3D>,
+  has_color_function: bool,
+  scene: &Scene,
+) -> Vec<Expr> {
+  use crate::functions::lighting3d::theme_surface;
+  let rgb = |c: [f64; 3]| {
+    call(
+      "RGBColor",
+      vec![Expr::Real(c[0]), Expr::Real(c[1]), Expr::Real(c[2])],
+    )
+  };
+  let lighting_rule = |l: &Lighting| {
+    crate::helpers::rule_expr(Expr::Identifier("Lighting".into()), l.to_expr())
+  };
+  // Whole numbers print as integers, as in WL's `Specularity[GrayLevel[1], 3]`.
+  let num = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let specularity = |c: [f64; 3], e: f64| {
+    call(
+      "Specularity",
+      vec![
+        if c[0] == c[1] && c[1] == c[2] {
+          call1("GrayLevel", num(c[0]))
+        } else {
+          rgb(c)
+        },
+        num(e),
+      ],
+    )
+  };
+  let own_specular = style
+    .and_then(|s| s.specular)
+    .map(|(c, e)| specularity(rgb_f64(c), e));
+  let lighting = style
+    .and_then(|s| s.lighting.as_ref())
+    .or(scene.lighting.as_ref());
+  if has_color_function {
+    // No default highlight: see `shade_facet`.
+    let mut out: Vec<Expr> = own_specular.into_iter().collect();
+    out.push(lighting_rule(
+      lighting.unwrap_or(crate::functions::lighting3d::neutral_lighting()),
+    ));
+    return out;
   }
+  if let Some(color) = style.and_then(|s| s.color) {
+    let mut out = vec![rgb(rgb_f64(color))];
+    out.extend(own_specular);
+    out.extend(lighting.map(lighting_rule));
+    return out;
+  }
+  let (color, exponent, theme_lighting) = theme_surface(surface_idx);
+  vec![call(
+    "Directive",
+    vec![
+      own_specular.unwrap_or_else(|| specularity([1.0; 3], *exponent)),
+      rgb(*color),
+      lighting_rule(lighting.unwrap_or(theme_lighting)),
+    ],
+  )]
 }
 
 /// The first `Texture[image]` inside a style expression.
@@ -7734,9 +7903,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
-  // `Lighting -> "Neutral"`: colourless lights, so a surface without a
-  // colour directive shows its own white rather than the default blue.
-  let mut neutral_lighting = false;
+  // `Lighting -> spec`: the lights every surface without its own
+  // `Lighting` directive is shaded under. `None` is `Automatic`.
+  let mut scene_lighting: Option<Lighting> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -7761,8 +7930,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         "Lighting" => {
-          neutral_lighting =
-            matches!(replacement.as_ref(), Expr::String(s) if s == "Neutral");
+          scene_lighting = Lighting::parse(replacement);
         }
         "SphericalRegion" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => spherical_region = false,
@@ -8094,10 +8262,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Tessellate all primitives into triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut triangle_vertices: Vec<[Point3D; 3]> = Vec::new();
-  let base_color = if neutral_lighting {
-    (0xFF_u8, 0xFF_u8, 0xFF_u8)
-  } else {
-    (0x5E_u8, 0x81_u8, 0xB5_u8) // Default blue
+  // A face without a colour directive is white; the coloured default
+  // lights are what tint it.
+  let base_color = (0xFF_u8, 0xFF_u8, 0xFF_u8);
+  let scene = {
+    let mut frame = camera.view_frame();
+    let bounds = primitives_bounds(&prims);
+    if bounds
+      .iter()
+      .all(|(lo, hi)| lo.is_finite() && hi.is_finite())
+    {
+      frame.center = bounds.map(|(lo, hi)| f64::midpoint(lo, hi));
+      frame.size = bounds
+        .iter()
+        .map(|(lo, hi)| hi - lo)
+        .fold(0.0, f64::max)
+        .max(1e-12);
+    }
+    frame.scale = axis_scale;
+    Scene {
+      frame,
+      lighting: scene_lighting,
+    }
   };
 
   // Sphere-scene statistics for adaptive tessellation (see
@@ -8279,6 +8465,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_width: None,
             specular: None,
             glow: None,
+            lighting: None,
             dashing: None,
             point_size: None,
             texture: None,
@@ -8287,16 +8474,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         ),
       };
-    let prim_color = prim_style.color.unwrap_or(base_color);
-    let prim_back_color = prim_style.back_color;
     let prim_opacity = prim_style.opacity;
-    // Direction from the scene towards the viewer; a face whose normal
-    // points along it shows its front side.
-    let view_dir = {
-      let (sa, ca) = camera.azimuth.sin_cos();
-      let (se, ce) = camera.elevation.sin_cos();
-      [ce * ca, ce * sa, se]
-    };
 
     // A polygon with more than three corners was fan-triangulated above:
     // every triangle keeps the polygon edge it sits on, but the cuts back
@@ -8341,21 +8519,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           [true; 3]
         };
       let normal = triangle_normal(v0, v1, v2);
-      let facing = normal[0] * view_dir[0]
-        + normal[1] * view_dir[1]
-        + normal[2] * view_dir[2];
-      let side_color = match prim_back_color {
-        Some(back) if facing < 0.0 => back,
-        _ => prim_color,
-      };
-      let color = add_glow(
-        apply_lighting_specular(
-          side_color,
-          normal,
-          prim_style.specular,
-          view_dir,
-        ),
-        prim_style.glow,
+      let (color, _) = shade_facet(
+        SurfaceDefault::Plain(base_color),
+        None,
+        Some(prim_style),
+        normal,
+        tri_center(v0, v1, v2),
+        &scene,
       );
       let p0 = project(v0, &camera);
       let p1 = project(v1, &camera);
@@ -9534,21 +9704,6 @@ fn list_curve_colors_3d() -> [(u8, u8, u8); 15] {
   out
 }
 
-/// The surface colors of `ListPlot3D` in WL 15 (the colors of its theme's
-/// `"DefaultPlotStyle"`), one per dataset.
-const LIST_SURFACE_COLORS: [(f64, f64, f64); 10] = [
-  (0.880722, 0.611041, 0.142051),
-  (0.368417, 0.506779, 0.709798),
-  (0.560181, 0.691569, 0.194885),
-  (0.922526, 0.385626, 0.209179),
-  (0.528488, 0.470624, 0.701351),
-  (0.772079, 0.431554, 0.102387),
-  (0.363898, 0.618501, 0.782349),
-  (1., 0.75, 0.),
-  (0.647624, 0.37816, 0.614037),
-  (0.571589, 0.586483, 0.),
-];
-
 fn list_plot3d_multi(
   datasets: &[Expr],
   args: &[Expr],
@@ -9575,12 +9730,16 @@ fn list_plot3d_multi(
     .collect();
   let mut surfaces = Vec::with_capacity(datasets.len());
   for (i, data) in datasets.iter().enumerate() {
+    // Each dataset gets the default theme's material for its position,
+    // spelled out as the `Directive` WL itself styles it with.
     let style = if style_items.is_empty() {
-      let (r, g, b) = LIST_SURFACE_COLORS[i % LIST_SURFACE_COLORS.len()];
-      call(
-        "RGBColor",
-        vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
-      )
+      let scene = Scene {
+        frame: Camera::default().view_frame(),
+        lighting: lighting_option(&other_opts),
+      };
+      surface_style_directives(i, None, false, &scene)
+        .pop()
+        .unwrap_or_else(|| Expr::List(vec![].into()))
     } else {
       style_items[i % style_items.len()].clone()
     };
@@ -9689,15 +9848,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // is drawn in: a recognized `ColorFunction` scheme, or the surface's
   // default height gradient when none was given (or it named a scheme Woxi
   // does not have swatches for).
-  let color_at = |t: f64| -> (u8, u8, u8) {
-    if let Some(name) = &color_function {
-      crate::functions::field_plot::apply_named_color_function(name, t)
-    } else {
-      // WL 15 draws a list surface in its first 3D plot style color.
-      let (r, g, b) = LIST_SURFACE_COLORS[0];
-      let q = |c: f64| (c * 255.0).round() as u8;
-      (q(r), q(g), q(b))
-    }
+  // `None` leaves the surface in the default theme's first material.
+  let color_at = |t: f64| -> Option<StyleState3D> {
+    let name = color_function.as_ref()?;
+    Some(StyleState3D {
+      color: Some(crate::functions::field_plot::apply_named_color_function(
+        name, t,
+      )),
+      ..StyleState3D::default()
+    })
   };
 
   // Evaluate the data argument
@@ -9708,12 +9867,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return list_plot3d_multi(&datasets, args);
   }
   let surface_style = plot_style_for_surface(&plot_styles, 0);
-  let view_dir = {
-    let camera = Camera::default();
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
+  let scene = Scene::new(&Camera::default(), &args[1..]);
 
   // Determine the data format and build a grid
   let (grid, rows, cols, x_min, x_max, y_min, y_max) = match &evaled_data {
@@ -9952,10 +10106,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z10.clamp(z_lo, z_hi) - z_lo) / z_range
           + (z01.clamp(z_lo, z_hi) - z_lo) / z_range)
           / 3.0;
-        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(base_color, surface_style, normal, view_dir);
+        let (color, opacity) = shade_facet(
+          SurfaceDefault::Theme(0),
+          color_at(avg).as_ref(),
+          surface_style,
+          normal,
+          tri_center(v0, v1, v2),
+          &scene,
+        );
 
         let p0 = project(v0, &camera);
         let p1 = project(v1, &camera);
@@ -10000,10 +10159,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z01.clamp(z_lo, z_hi) - z_lo) / z_range
           + (z10.clamp(z_lo, z_hi) - z_lo) / z_range)
           / 3.0;
-        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
-        let (color, opacity) =
-          shade_facet(base_color, surface_style, normal, view_dir);
+        let (color, opacity) = shade_facet(
+          SurfaceDefault::Theme(0),
+          color_at(avg).as_ref(),
+          surface_style,
+          normal,
+          tri_center(v0, v1, v2),
+          &scene,
+        );
 
         let p0 = project(v0, &camera);
         let p1 = project(v1, &camera);
@@ -10123,6 +10287,12 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     complex_content.push(call0("EdgeForm"));
   }
   complex_content.extend(surface_opacity_directive(&plot_styles, 0));
+  complex_content.extend(surface_style_directives(
+    0,
+    surface_style,
+    color_function.is_some(),
+    &scene,
+  ));
   for i in 0..rows.saturating_sub(1) {
     for j in 0..cols.saturating_sub(1) {
       let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -10133,6 +10303,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) else {
         continue;
       };
+      let polygon = call1(
+        "Polygon",
+        Expr::List(
+          [a, b, c, d]
+            .iter()
+            .map(|&k| Expr::Integer(k as i128 + 1))
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+      );
       let avg_z_norm = [
         grid[i][j],
         grid[i + 1][j],
@@ -10143,32 +10323,25 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
       .sum::<f64>()
         / 4.0;
-      let (cr, cg, cb) = surface_style
-        .and_then(|st| st.color)
-        .unwrap_or_else(|| color_at(avg_z_norm));
-      complex_content.push(Expr::List(
-        vec![
-          call(
-            "RGBColor",
-            vec![
-              Expr::Real(cr as f64 / 255.0),
-              Expr::Real(cg as f64 / 255.0),
-              Expr::Real(cb as f64 / 255.0),
-            ],
-          ),
-          call1(
-            "Polygon",
-            Expr::List(
-              [a, b, c, d]
-                .iter()
-                .map(|&k| Expr::Integer(k as i128 + 1))
-                .collect::<Vec<_>>()
-                .into(),
+      // A `ColorFunction` colours each quad; otherwise the surface's
+      // directives above do.
+      match color_at(avg_z_norm).and_then(|st| st.color) {
+        Some((cr, cg, cb)) => complex_content.push(Expr::List(
+          vec![
+            call(
+              "RGBColor",
+              vec![
+                Expr::Real(cr as f64 / 255.0),
+                Expr::Real(cg as f64 / 255.0),
+                Expr::Real(cb as f64 / 255.0),
+              ],
             ),
-          ),
-        ]
-        .into(),
-      ));
+            polygon,
+          ]
+          .into(),
+        )),
+        None => complex_content.push(polygon),
+      }
     }
   }
   // The mesh, at the spacing the standalone render rules it with.
@@ -10653,13 +10826,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     apply_3d_directive(ps, &mut style);
     style
   });
-  // Direction from the scene towards the viewer, used to place a
-  // `Specularity` highlight from `PlotStyle`.
-  let view_dir = {
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
+  let scene = Scene::new(&camera, &args[opt_start..]);
 
   let nz = |z: f64| -> f64 {
     let cz = z.clamp(z_lo, z_hi);
@@ -10680,7 +10847,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (global_y_min, global_y_max)
   };
   let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
-    color_fn.function.as_ref()?;
+    color_fn.is_set().then_some(())?;
     let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
     color_fn.style_at(
       [
@@ -10719,26 +10886,21 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
-        let z_norm_of = |p: Point3D| -> f64 {
-          ((p.z.clamp(z_lo, z_hi) - z_lo) / z_range).clamp(0.0, 1.0)
-        };
-
         // Triangle 1: p00, p10, p01
         if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
           let v0 = normalize(pp00);
           let v1 = normalize(pp10);
           let v2 = normalize(pp01);
 
-          let avg_z_norm =
-            (z_norm_of(pp00) + z_norm_of(pp10) + z_norm_of(pp01)) / 3.0;
-          let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp00, pp10, pp01]);
           let (color, opacity) = shade_facet(
-            default_color,
-            cf_style.as_ref().or(render_style.as_ref()),
+            SurfaceDefault::Theme(0),
+            cf_style.as_ref(),
+            render_style.as_ref(),
             normal,
-            view_dir,
+            tri_center(v0, v1, v2),
+            &scene,
           );
 
           let proj0 = project(v0, &camera);
@@ -10768,16 +10930,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(pp01);
           let v2 = normalize(pp10);
 
-          let avg_z_norm =
-            (z_norm_of(pp11) + z_norm_of(pp01) + z_norm_of(pp10)) / 3.0;
-          let default_color = height_color(avg_z_norm);
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp11, pp01, pp10]);
           let (color, opacity) = shade_facet(
-            default_color,
-            cf_style.as_ref().or(render_style.as_ref()),
+            SurfaceDefault::Theme(0),
+            cf_style.as_ref(),
+            render_style.as_ref(),
             normal,
-            view_dir,
+            tri_center(v0, v1, v2),
+            &scene,
           );
 
           let proj0 = project(v0, &camera);
@@ -11024,10 +11185,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The `ColorFunction` style of each of those quads.
   let mut quad_styles: Vec<Option<StyleState3D>> = Vec::new();
 
-  // Default surface color (Mathematica-like blue with opacity)
-  let base_r = 0x5E_u8;
-  let base_g = 0x81_u8;
-  let base_b = 0xB5_u8;
+  let scene = Scene::new(&camera, &args[4..]);
 
   // For each voxel, emit faces between true and false cells
   // Each face is a quad split into two triangles
@@ -11240,17 +11398,23 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             [wcx, wcy, wcz],
             [(x_min, x_max), (y_min, y_max), (z_min, z_max)],
           );
-          let face_base = face_style
-            .as_ref()
-            .and_then(|s| s.color)
-            .unwrap_or((base_r, base_g, base_b));
           let face_opacity = face_style.as_ref().map_or(1.0, |s| s.opacity);
-          quad_styles.push(face_style);
+          quad_styles.push(face_style.clone());
+          let shade = |a: Point3D, b: Point3D, c: Point3D| {
+            shade_facet(
+              SurfaceDefault::Theme(0),
+              face_style.as_ref(),
+              None,
+              triangle_normal(a, b, c),
+              tri_center(a, b, c),
+              &scene,
+            )
+            .0
+          };
 
           // Triangle 1: v0, v1, v2
           {
-            let normal = triangle_normal(v0, v1, v2);
-            let color = apply_lighting(face_base, normal);
+            let color = shade(v0, v1, v2);
             let p0 = project(v0, &camera);
             let p1 = project(v1, &camera);
             let p2 = project(v2, &camera);
@@ -11273,8 +11437,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
           // Triangle 2: v0, v2, v3
           {
-            let normal = triangle_normal(v0, v2, v3);
-            let color = apply_lighting(face_base, normal);
+            let color = shade(v0, v2, v3);
             let p0 = project(v0, &camera);
             let p2 = project(v2, &camera);
             let p3 = project(v3, &camera);
@@ -11356,9 +11519,15 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
       ));
     }
+    complex_content.extend(surface_style_directives(
+      0,
+      None,
+      color_fn.is_set(),
+      &scene,
+    ));
     // A `ColorFunction` colours each face on its own; otherwise one polygon
     // holds every face.
-    if color_fn.function.is_some() {
+    if color_fn.is_set() {
       for (quad, style) in quads.into_iter().zip(&quad_styles) {
         let mut face: Vec<Expr> = Vec::new();
         if let Some(style) = style {
@@ -11767,11 +11936,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z_step = (z_max - z_min) / n as f64;
 
   let camera = Camera::default();
-  let view_dir = {
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
+  let scene = Scene::new(&camera, &args[4..]);
 
   // Normalize coordinates to [-1, 1] for x,y and [-Z_SCALE, Z_SCALE] for z,
   // matching every other 3D plot in this module.
@@ -11780,7 +11945,6 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nz =
     |v: f64| -> f64 { (v - z_min) / (z_max - z_min) * 2.0 * Z_SCALE - Z_SCALE };
 
-  let default_color = (0x5E_u8, 0x81_u8, 0xB5_u8);
   let mut all_triangles: Vec<Triangle> = Vec::new();
   // The surfaces' vertices, shared between the triangles that meet at them
   // (keyed by their exact coordinates), with accumulated face normals.
@@ -11813,15 +11977,8 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Some(&styles[surf_idx % styles.len()])
     };
-    let (cr, cg, cb) = style.and_then(|s| s.color).unwrap_or(default_color);
-    let color_directive = call(
-      "RGBColor",
-      vec![
-        Expr::Real(cr as f64 / 255.0),
-        Expr::Real(cg as f64 / 255.0),
-        Expr::Real(cb as f64 / 255.0),
-      ],
-    );
+    let color_directives =
+      surface_style_directives(surf_idx, style, false, &scene);
 
     let levels: Vec<f64> = if let Some(explicit) = &contour_levels {
       explicit.clone()
@@ -11936,8 +12093,14 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   });
                   let normal =
                     triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
-                  let (color, opacity) =
-                    shade_facet(default_color, style, normal, view_dir);
+                  let (color, opacity) = shade_facet(
+                    SurfaceDefault::Theme(surf_idx),
+                    None,
+                    style,
+                    normal,
+                    tri_center(tri_norm[0], tri_norm[1], tri_norm[2]),
+                    &scene,
+                  );
                   let p0 = project(tri_norm[0], &camera);
                   let p1 = project(tri_norm[1], &camera);
                   let p2 = project(tri_norm[2], &camera);
@@ -12033,7 +12196,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         if !level_triangles.is_empty() {
-          let mut item = vec![color_directive.clone()];
+          let mut item = color_directives.clone();
           // A translucent surface stays translucent when its primitives
           // are merged into another graphic.
           if let Some(st) = style
@@ -13188,6 +13351,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // x, y, z and the angles arrive rescaled to 0..1 over their ranges.
   let mut color_fn: Option<Expr> = None;
   let mut color_scaling = true;
+  let scene = Scene::new(&Camera::default(), &args[3..]);
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -13264,7 +13428,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
-  // given, so the height-based default colouring is used unchanged.
+  // given, so the default theme material is used.
   let plot_styles: Vec<StyleState3D> = plot_style_expr
     .map(|e| parse_plot_style_3d(e, bodies.len()))
     .unwrap_or_default();
@@ -13743,29 +13907,17 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         polygon_of(&tri_indices)
       };
-      // A `PlotStyle` colour wraps the whole surface's polygons; with no
-      // style given this is the bare polygon list, unchanged from before
-      // multi-surface support existed.
-      let mut gc_content =
-        match plot_style_for_surface(&plot_styles, surface_idx)
-          .and_then(|s| s.color)
-        {
-          Some((r, g, b)) => vec![Expr::List(
-            vec![
-              call(
-                "RGBColor",
-                vec![
-                  Expr::Real(r as f64 / 255.0),
-                  Expr::Real(g as f64 / 255.0),
-                  Expr::Real(b as f64 / 255.0),
-                ],
-              ),
-              polygon_expr,
-            ]
-            .into(),
-          )],
-          None => vec![polygon_expr],
-        };
+      // The surface's style wraps its polygons: the default theme's
+      // material, a `PlotStyle` colour, or the neutral lights a
+      // `ColorFunction`'s facet colours are lit under.
+      let mut directives = surface_style_directives(
+        surface_idx,
+        plot_style_for_surface(&plot_styles, surface_idx),
+        color_fn.is_some(),
+        &scene,
+      );
+      directives.push(polygon_expr);
+      let mut gc_content = vec![Expr::List(directives.into())];
       if let Some(opacity) =
         surface_opacity_directive(&plot_styles, surface_idx)
       {
@@ -13841,29 +13993,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Boxed`, `Axes` and the view options behave as they do for any 3D
   // graphic. An unstyled surface takes the next colour of WL 15's
   // `DefaultPlotStyle`. ──
-  let unstyled =
-    plot_styles.is_empty() && color_fn.is_none() && plot_style_expr.is_none();
-  let render_items: Vec<Expr> = complexes
-    .iter()
-    .enumerate()
-    .map(|(i, complex)| {
-      if unstyled {
-        let (r, g, b) = LIST_SURFACE_COLORS[i % LIST_SURFACE_COLORS.len()];
-        Expr::List(
-          vec![
-            call(
-              "RGBColor",
-              vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
-            ),
-            complex.clone(),
-          ]
-          .into(),
-        )
-      } else {
-        complex.clone()
-      }
-    })
-    .collect();
+  let render_items: Vec<Expr> = complexes.clone();
   // The options only the plot itself reads stay behind.
   const PLOT_ONLY_OPTIONS: &[&str] = &[
     "PlotStyle",
@@ -15382,19 +15512,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
-  // given, so the height-based rainbow default is used unchanged.
+  // given, so the default theme material is used.
   let plot_styles: Vec<StyleState3D> = plot_style_expr
     .map(|e| parse_plot_style_3d(e, surfaces.len()))
     .unwrap_or_default();
 
   let camera = Camera::default();
-  // Direction from the scene towards the viewer, used to place a
-  // `Specularity` highlight from `PlotStyle`.
-  let view_dir = {
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
+  let scene = Scene::new(&camera, args);
   // Without an explicit `PlotPoints` the grid is 50 samples per direction,
   // refined to about 20 per full turn (2π) of a long parameter span, so a
   // surface winding many times around (a Klein bottle over `{u, 0, 30 π}`)
@@ -15611,8 +15735,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
   // together with a `Graphics3D`. Emitting the sampled surface in world
-  // coordinates — coloured by height, the way the standalone render
-  // colours it — lets `Show[ParametricPlot3D[…], Graphics3D[…]]` draw both.
+  // coordinates — styled with the directives the standalone render
+  // shades it by — lets `Show[ParametricPlot3D[…], Graphics3D[…]]` draw both.
   let structure = {
     let complexes: Vec<Expr> = all_surface_points
       .iter()
@@ -15811,10 +15935,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
-        let z_norm = |z: f64| -> f64 { (z - gz_min) / rz };
-
         // `MeshFunctions`/`Mesh`/`MeshShading`: override a facet's default
-        // height-based colour with the region colour its average `(x, y,
+        // default colour with the region colour its average `(x, y,
         // z)` falls in — only when there is no `PlotStyle` for this surface,
         // matching Phase 1's `content` colouring above.
         let mesh_facet_color = |a: (f64, f64, f64),
@@ -15847,13 +15969,27 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v0 = normalize(a);
           let v1 = normalize(b);
           let v2 = normalize(c);
-          let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = facet_colors[surface_idx][i][j]
-            .or_else(|| mesh_facet_color(a, b, c))
-            .unwrap_or_else(|| height_color(avg_z_norm));
+          // A `ColorFunction` colour is lit like WL's, under neutral
+          // lights; a `MeshShading` colour like a `PlotStyle` one.
+          let cf_style =
+            facet_colors[surface_idx][i][j].map(|c| StyleState3D {
+              color: Some(c),
+              ..StyleState3D::default()
+            });
+          let shaded_style = mesh_facet_color(a, b, c).map(|c| {
+            let mut st = style.cloned().unwrap_or_default();
+            st.color = Some(c);
+            st
+          });
           let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) =
-            shade_facet(default_color, style, normal, view_dir);
+          let (color, opacity) = shade_facet(
+            SurfaceDefault::Theme(surface_idx),
+            cf_style.as_ref(),
+            shaded_style.as_ref().or(style),
+            normal,
+            tri_center(v0, v1, v2),
+            &scene,
+          );
           let center = Point3D {
             x: (v0.x + v1.x + v2.x) / 3.0,
             y: (v0.y + v1.y + v2.y) / 3.0,
@@ -15880,13 +16016,27 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v0 = normalize(a);
           let v1 = normalize(b);
           let v2 = normalize(c);
-          let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = facet_colors[surface_idx][i][j]
-            .or_else(|| mesh_facet_color(a, b, c))
-            .unwrap_or_else(|| height_color(avg_z_norm));
+          // A `ColorFunction` colour is lit like WL's, under neutral
+          // lights; a `MeshShading` colour like a `PlotStyle` one.
+          let cf_style =
+            facet_colors[surface_idx][i][j].map(|c| StyleState3D {
+              color: Some(c),
+              ..StyleState3D::default()
+            });
+          let shaded_style = mesh_facet_color(a, b, c).map(|c| {
+            let mut st = style.cloned().unwrap_or_default();
+            st.color = Some(c);
+            st
+          });
           let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) =
-            shade_facet(default_color, style, normal, view_dir);
+          let (color, opacity) = shade_facet(
+            SurfaceDefault::Theme(surface_idx),
+            cf_style.as_ref(),
+            shaded_style.as_ref().or(style),
+            normal,
+            tri_center(v0, v1, v2),
+            &scene,
+          );
           let center = Point3D {
             x: (v0.x + v1.x + v2.x) / 3.0,
             y: (v0.y + v1.y + v2.y) / 3.0,

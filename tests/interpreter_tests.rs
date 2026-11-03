@@ -1986,11 +1986,13 @@ mod interpreter_tests {
     .graphics
     .expect("Show should produce a graphics SVG");
     assert!(
-      svg.contains("rgb(188,203,216)"),
+      // LightBlue under the default coloured lights, as wolframscript's
+      // rasterization reads the flat sheets.
+      svg.contains("rgb(231,207,169)"),
       "the two LightBlue surfaces must keep their PlotStyle colour:\n{svg}"
     );
     assert!(
-      svg.contains("rgb(216,216,0)"),
+      svg.contains("rgb(255,220,0)"),
       "the Yellow surface must keep its PlotStyle colour:\n{svg}"
     );
   }
