@@ -4858,9 +4858,10 @@ Wolfram shows.
 
 ### Tick step from the padded range
 
-Woxi derives the tick step from the *padded* display range, so a `ListPlot`
-whose data ends at 6e15 can pick a coarser step than Wolfram, which uses the
-data range.
+Woxi derives the tick step from the *padded* display range, as WL 15 does
+for ordinary ranges (`ListPlot[{{0, 0}, {1, 7.8}}]` steps its y axis by 2);
+a `ListPlot` whose data ends at 6e15 can still pick a coarser step than
+Wolfram.
 
 ### `ParametricPlot` samples uniformly
 
@@ -4957,11 +4958,30 @@ reproduce wolframscript's primitive tree:
   draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
   scale's tick marks have no length.
 
-### `PointSize` in `PlotStyle` and `ListPlot`'s `PlotLabel`
+### WL 15 list plots: remaining layout gaps
 
-`PointSize` inside `PlotStyle` is dropped — the three scatter renderers
-hardcode the marker size. `ListPlot[…, PlotLabel -> "x"]` parses the option but
-never draws it (`Show[…, PlotLabel -> …]` does work).
+Matched: the automatic `PlotRange`/padding/`AxesOrigin` rule, the
+`PointSize[k 11/6000]` dots, the tick steps (smallest 1, 2, 5 × 10^k giving
+fewer than 8 intervals of the padded range, as `AbsoluteOptions[g, Ticks]`
+reports them), open markers, the Marketing/Business/Web/Detailed/Scientific/
+Minimal/Grid/Frame themes and callout leaders. Still different:
+
+- WL widens the `PlotRange` so point labels and callouts fit
+  (`ListPlot[data -> labels]` reaches y = 12.7 for data up to 10); Woxi keeps
+  the data range and drops callouts that do not fit inside it. The callout
+  positions themselves come from a greedy search, not WL's optimiser, so
+  the subset shown and the leader directions differ.
+- `Callout[dataset, label]` / `Labeled[dataset, label]` on a whole series
+  places the label at the series' end with a horizontal leader in WL;
+  Woxi draws it beside the last point, and as `InputForm` text rather than
+  `TraditionalForm` (`q(n)`).
+- A framed `ListPlot` (`Frame -> True`) also draws the axes inside the
+  frame in WL 15 (the gray y = 0 line); Woxi draws no axis inside a frame.
+- `PlotLegends` on a `Legended` dataset of `ListPlot` is not drawn.
+- `PlotTheme` is expanded into options for the list plots only; `Plot`
+  still goes through the older `apply_plot_theme` approximation.
+- `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
+  are reproduced, but their tick marks keep the default length.
 
 ### An `AxesLabel` carrying a reciprocal power
 
